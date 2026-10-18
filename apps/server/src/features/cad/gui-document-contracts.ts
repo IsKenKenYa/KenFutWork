@@ -34,6 +34,76 @@ export const cadGuiDocumentsInputSchema = z
   })
   .strict();
 
+export const cadGuiInspectDocumentInputSchema = z
+  .object({
+    application: cadGuiApplicationSchema.strict(),
+    bridgeEpoch: z.string().uuid(),
+    documentHandle: z.string().uuid(),
+    expectedApplicationRevision: observationRevision,
+    expectedDocumentRevision: observationRevision,
+    objectNames: z
+      .array(z.string().min(1))
+      .min(1)
+      .refine((names) => new Set(names).size === names.length)
+      .optional(),
+  })
+  .strict();
+export type CadGuiInspectDocumentInput = z.infer<
+  typeof cadGuiInspectDocumentInputSchema
+>;
+
+export const cadGuiPropertyValueSchema = z.union([
+  z.boolean(),
+  z.string(),
+  z.number().finite(),
+  z
+    .object({
+      kind: z.literal("quantity"),
+      value: z.number().finite(),
+      unitSignature: z.tuple([
+        z.number().int(),
+        z.number().int(),
+        z.number().int(),
+        z.number().int(),
+        z.number().int(),
+        z.number().int(),
+        z.number().int(),
+        z.number().int(),
+      ]),
+    })
+    .strict(),
+]);
+export const cadGuiPropertyInspectionSchema = z
+  .object({
+    name: z.string().min(1),
+    typeId: z.string().min(1),
+    value: cadGuiPropertyValueSchema.optional(),
+    readOnly: z.boolean(),
+    immutable: z.boolean(),
+    expression: z.string().optional(),
+    editable: z.boolean(),
+    unsupportedReason: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine(
+    (property) =>
+      !property.editable ||
+      (property.value !== undefined &&
+        !property.readOnly &&
+        !property.immutable &&
+        property.expression === undefined &&
+        property.unsupportedReason === undefined),
+    "可编辑属性必须具有可用值，且无只读标记或表达式绑定。",
+  );
+export const cadGuiObjectInspectionSchema = z
+  .object({
+    name: z.string().min(1),
+    label: z.string(),
+    typeId: z.string().min(1),
+    properties: z.array(cadGuiPropertyInspectionSchema).optional(),
+  })
+  .strict();
+
 export const cadGuiDocumentMetadataSchema = z
   .object({
     name: z.string().min(1),
@@ -88,4 +158,41 @@ export type CadGuiDocumentsSnapshot = {
   applicationRevision: number;
   version: string[];
   documents: CadGuiDocumentMetadata[];
+};
+
+export const cadGuiInspectDocumentReplySchema = z.discriminatedUnion(
+  "success",
+  [
+    z
+      .object({
+        ...replyFields,
+        protocol: z.literal("kfw-cad-gui-inspect/1"),
+        success: z.literal(true),
+        bridgeEpoch: z.string().uuid(),
+        applicationRevision: observationRevision,
+        document: cadGuiDocumentMetadataSchema,
+        objects: z.array(cadGuiObjectInspectionSchema),
+      })
+      .strict(),
+    z
+      .object({
+        ...replyFields,
+        protocol: z.literal("kfw-cad-gui-inspect/1"),
+        success: z.literal(false),
+        bridgeEpoch: z.null(),
+        applicationRevision: z.null(),
+        document: z.null(),
+        objects: z.tuple([]),
+      })
+      .strict(),
+  ],
+);
+export type CadGuiDocumentInspection = {
+  application: CadGuiApplication;
+  observationId: string;
+  bridgeEpoch: string;
+  applicationRevision: number;
+  version: string[];
+  document: CadGuiDocumentMetadata;
+  objects: z.infer<typeof cadGuiObjectInspectionSchema>[];
 };

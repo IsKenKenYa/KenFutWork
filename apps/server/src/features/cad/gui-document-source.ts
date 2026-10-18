@@ -1,8 +1,10 @@
 import { CAD_GUI_DOCUMENT_OBSERVER_SOURCE } from "./gui-document-observer-source.js";
+import { CAD_GUI_PROPERTY_INSPECTION_SOURCE } from "./gui-property-source.js";
 
 /** 固定提供方代码；模型只能提交应用身份，不能提交 source、宏路径或端点。 */
 export const CAD_GUI_DOCUMENT_QUERY_SOURCE =
   CAD_GUI_DOCUMENT_OBSERVER_SOURCE +
+  CAD_GUI_PROPERTY_INSPECTION_SOURCE +
   `
 def _kfw_cad_query_documents(request_path, reply_path, cancelled_path):
     import json, os, time
@@ -16,14 +18,20 @@ def _kfw_cad_query_documents(request_path, reply_path, cancelled_path):
                 request = json.load(stream)
         except (OSError, ValueError):
             return
-        if not isinstance(request, dict) or request.get('operation') != 'list-document-metadata' or request.get('pid') != os.getpid():
+        if (not isinstance(request, dict)
+                or request.get('operation') not in ('list-document-metadata', 'inspect-document')
+                or request.get('pid') != os.getpid()):
             return
+        inspecting = request['operation'] == 'inspect-document'
         qapp = QtWidgets.QApplication.instance()
         gui_thread = qapp is not None and QtCore.QThread.currentThread() == qapp.thread()
-        reply = {'protocol': 'kfw-cad-gui-query/2', 'requestId': request['requestId'],
+        reply = {'protocol': 'kfw-cad-gui-inspect/1' if inspecting else 'kfw-cad-gui-query/2',
+                 'requestId': request['requestId'],
                  'pid': os.getpid(), 'completed': True, 'guiThread': bool(gui_thread),
-                 'success': False, 'version': [], 'documents': [],
+                 'success': False, 'version': [],
                  'bridgeEpoch': None, 'applicationRevision': None}
+        empty_payload = {'document': None, 'objects': []} if inspecting else {'documents': []}
+        reply.update(empty_payload)
         bridge = None
         try:
             if not gui_thread:
@@ -32,19 +40,23 @@ def _kfw_cad_query_documents(request_path, reply_path, cancelled_path):
                 reply['error'] = 'cancelled_or_expired'
             else:
                 bridge = _kfw_cad_document_bridge(App, Gui)
-                observation = bridge.snapshot()
+                observation = (_kfw_cad_inspect_document(bridge, request)
+                               if inspecting else bridge.snapshot())
                 version = list(App.Version())
                 bridge.require_valid()
-                if os.path.exists(cancelled_path):
+                if os.path.exists(cancelled_path) or time.time() * 1000 > request['expiresAt']:
                     reply['error'] = 'cancelled_or_expired'
                 else:
                     reply.update(observation)
                     reply['version'] = version
                     reply['success'] = True
+        except _KfwCadInspectionError as error:
+            reply['error'] = error.code
         except BaseException:
             if bridge is not None:
                 bridge.valid = False
-            reply.update(success=False, bridgeEpoch=None, applicationRevision=None, documents=[], version=[])
+            reply.update(success=False, bridgeEpoch=None, applicationRevision=None, version=[])
+            reply.update(empty_payload)
             reply['error'] = 'document_metadata_unavailable'
         temporary = reply_path + '.tmp'
         try:

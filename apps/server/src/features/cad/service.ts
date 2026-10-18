@@ -12,7 +12,10 @@ import type {
   ProcessStdioSpawnRequest,
 } from "../process-sandbox/types.js";
 import { ProcessSandboxError } from "../process-sandbox/types.js";
-import type { CadGuiApplication } from "./gui-document-contracts.js";
+import type {
+  CadGuiApplication,
+  CadGuiInspectDocumentInput,
+} from "./gui-document-contracts.js";
 import {
   CadGuiDocumentQueryError,
   type CadGuiDocumentReader,
@@ -20,6 +23,7 @@ import {
 } from "./gui-document-reader.js";
 import {
   type CadGuiProbe,
+  type CadGuiProbeContext,
   CadGuiProbeError,
   createMacosCadGuiProbe,
 } from "./gui-probe.js";
@@ -62,6 +66,10 @@ export interface CadService {
   guiStatus(context: ToolExecutionContext): Promise<CadToolResult>;
   guiDocuments(
     application: CadGuiApplication,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
+  guiInspectDocument(
+    input: CadGuiInspectDocumentInput,
     context: ToolExecutionContext,
   ): Promise<CadToolResult>;
   execute(
@@ -543,7 +551,8 @@ export function createCadService(options: CadServiceOptions): CadService {
   const invoke = (
     payload:
       | CadRequest
-      | { action: "gui-documents"; application: CadGuiApplication },
+      | { action: "gui-documents"; application: CadGuiApplication }
+      | { action: "gui-inspect"; input: CadGuiInspectDocumentInput },
     context: ToolExecutionContext,
     operation: (
       context: ToolExecutionContext,
@@ -597,6 +606,36 @@ export function createCadService(options: CadServiceOptions): CadService {
       }
     });
   };
+  const readGui = async <T extends object>(
+    context: ToolExecutionContext,
+    activeGuard: (context: ToolExecutionContext) => Promise<void>,
+    read: (context: CadGuiProbeContext) => Promise<T>,
+    summary: (snapshot: T) => string,
+  ): Promise<CadToolResult> => {
+    await activeGuard(context);
+    if (requireCadContext(context).describe().sandboxMode === "read-only")
+      throw new CadError(
+        "forbidden",
+        "当前 Task 仅允许读取，不能向 FreeCAD 加载宏。",
+      );
+    const { limits, timeoutMs } = await options.resolveLimits(context);
+    await activeGuard(context);
+    const signal = AbortSignal.any(
+      [context.signal, context.taskWorkContext?.signal].filter(
+        (entry): entry is AbortSignal => entry !== undefined,
+      ),
+    );
+    const snapshot = await read({
+      signal,
+      timeoutMs: Math.min(timeoutMs ?? 10_000, 10_000),
+      maxOutputBytes: limits.maxOutputBytes,
+    });
+    await activeGuard(context);
+    return {
+      content: [{ type: "text", text: summary(snapshot) }],
+      structuredContent: { ...snapshot, currentDocumentControl: false },
+    };
+  };
   return {
     pluginLifecycle: lifecycle.plugin,
     get activationEpoch() {
@@ -646,36 +685,27 @@ export function createCadService(options: CadServiceOptions): CadService {
       return invoke(
         { action: "gui-documents", application: target },
         context,
-        async (context, activeGuard) => {
-          await activeGuard(context);
-          if (requireCadContext(context).describe().sandboxMode === "read-only")
-            throw new CadError(
-              "forbidden",
-              "当前 Task 仅允许读取，不能向 FreeCAD 加载宏。",
-            );
-          const { limits, timeoutMs } = await options.resolveLimits(context);
-          await activeGuard(context);
-          const signal = AbortSignal.any(
-            [context.signal, context.taskWorkContext?.signal].filter(
-              (entry): entry is AbortSignal => entry !== undefined,
-            ),
-          );
-          const snapshot = await guiDocumentReader.read(target, {
-            signal,
-            timeoutMs: Math.min(timeoutMs ?? 10_000, 10_000),
-            maxOutputBytes: limits.maxOutputBytes,
-          });
-          await activeGuard(context);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `已查询 ${snapshot.documents.length} 个打开的文档。`,
-              },
-            ],
-            structuredContent: { ...snapshot, currentDocumentControl: false },
-          };
-        },
+        (context, activeGuard) =>
+          readGui(
+            context,
+            activeGuard,
+            (queryContext) => guiDocumentReader.read(target, queryContext),
+            (snapshot) => `已查询 ${snapshot.documents.length} 个打开的文档。`,
+          ),
+      );
+    },
+    guiInspectDocument(input, context) {
+      const target = structuredClone(input);
+      return invoke(
+        { action: "gui-inspect", input: target },
+        context,
+        (context, activeGuard) =>
+          readGui(
+            context,
+            activeGuard,
+            (queryContext) => guiDocumentReader.inspect(target, queryContext),
+            (snapshot) => `已读取 ${snapshot.objects.length} 个对象。`,
+          ),
       );
     },
     execute(request, context) {

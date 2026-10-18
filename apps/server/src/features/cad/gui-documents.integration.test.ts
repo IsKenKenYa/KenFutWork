@@ -77,7 +77,14 @@ def prepare():
     try:
         assert not App.listDocuments() and App.getActiveTransaction() is None, 'fixture refuses existing work'
         assert QtCore.QThread.currentThread()==QtWidgets.QApplication.instance().thread()
-        saved=App.newDocument('saved'); box=saved.addObject('Part::Box','Box'); box.Length=20; saved.recompute(); saved.saveAs(${JSON.stringify(savedPath)})
+        saved=App.newDocument('saved'); box=saved.addObject('Part::Box','Box'); box.Length=20
+        box.addProperty('App::PropertyInteger','ReadOnlyCount'); box.ReadOnlyCount=4; box.setEditorMode('ReadOnlyCount',1)
+        box.addProperty('App::PropertyString','Note'); box.Note='自有验收属性'
+        box.addProperty('App::PropertyString','FrozenNote'); box.FrozenNote='不可修改'; box.setPropertyStatus('FrozenNote','Immutable')
+        box.addProperty('App::PropertyBool','Enabled'); box.Enabled=True
+        box.addProperty('App::PropertyEnumeration','Choice'); box.Choice=['A','B']; box.Choice='B'
+        box.setExpression('Width','Length * 2')
+        saved.recompute(); saved.saveAs(${JSON.stringify(savedPath)})
         unsaved=App.newDocument('KfwGuiUnsaved'); unsaved.Label='未保存验收'; part=unsaved.addObject('Part::Box','Box'); part.Width=9; unsaved.recompute()
         unsaved.openTransaction('KFW metadata fixture pending'); part.Length=8
         App.setActiveDocument(unsaved.Name)
@@ -251,6 +258,113 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
       expect(unchanged).toEqual(initial);
       const saved = initial.documents.find((doc) => doc.name === "saved");
       if (!saved) throw new Error("缺少自有保存文档的打开句柄");
+      const inspectTool = createCadTools(service).find(
+        (entry) => entry.name === "cad_gui_inspect_document",
+      );
+      if (!inspectTool) throw new Error("缺少实际GUI对象读取工具");
+      const target = {
+        application,
+        bridgeEpoch: initial.bridgeEpoch,
+        documentHandle: saved.documentHandle,
+        expectedApplicationRevision: initial.applicationRevision,
+        expectedDocumentRevision: saved.revision,
+      };
+      const objectList = await executeCadTestTool(inspectTool, target, {
+        ...context,
+        toolCallId: "list-current-objects",
+      });
+      expect(objectList.isError, JSON.stringify(objectList)).not.toBe(true);
+      expect(objectList.structuredContent.objects).toEqual([
+        { name: "Box", label: "Box", typeId: "Part::Box" },
+      ]);
+      const inspected = await executeCadTestTool(
+        inspectTool,
+        { ...target, objectNames: ["Box"] },
+        { ...context, toolCallId: "inspect-current-properties" },
+      );
+      expect(inspected.isError, JSON.stringify(inspected)).not.toBe(true);
+      const properties = z
+        .object({
+          objects: z.tuple([
+            z.object({
+              properties: z.array(
+                z.object({
+                  name: z.string(),
+                  typeId: z.string(),
+                  value: z.unknown().optional(),
+                  editable: z.boolean(),
+                  readOnly: z.boolean(),
+                  immutable: z.boolean(),
+                  expression: z.string().optional(),
+                }),
+              ),
+            }),
+          ]),
+        })
+        .parse(inspected.structuredContent).objects[0].properties;
+      expect(properties).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "Length",
+            typeId: "App::PropertyLength",
+            editable: true,
+            value: {
+              kind: "quantity",
+              value: 20,
+              unitSignature: [1, 0, 0, 0, 0, 0, 0, 0],
+            },
+          }),
+          expect.objectContaining({
+            name: "Width",
+            editable: false,
+            expression: "Length * 2",
+            value: {
+              kind: "quantity",
+              value: 40,
+              unitSignature: [1, 0, 0, 0, 0, 0, 0, 0],
+            },
+          }),
+          expect.objectContaining({
+            name: "ReadOnlyCount",
+            value: 4,
+            readOnly: true,
+            editable: false,
+          }),
+          expect.objectContaining({
+            name: "Note",
+            value: "自有验收属性",
+            editable: true,
+          }),
+          expect.objectContaining({
+            name: "FrozenNote",
+            value: "不可修改",
+            immutable: true,
+            editable: false,
+          }),
+          expect.objectContaining({
+            name: "Enabled",
+            value: true,
+            editable: true,
+          }),
+          expect.objectContaining({ name: "Choice", value: "B" }),
+          expect.objectContaining({ name: "Shape", editable: false }),
+        ]),
+      );
+      const missingObject = await executeCadTestTool(
+        inspectTool,
+        { ...target, objectNames: ["Missing"] },
+        { ...context, toolCallId: "inspect-missing-object" },
+      );
+      expect(missingObject.isError).toBe(true);
+      expect(missingObject.structuredContent).not.toHaveProperty("objects");
+      const afterInspection = await executeCadTestTool(
+        tool,
+        { application },
+        { ...context, toolCallId: "after-inspection" },
+      );
+      expect(observations.parse(afterInspection.structuredContent)).toEqual(
+        initial,
+      );
       let sequence = 0;
       const mutateFixture = async (source: string) => {
         sequence++;
@@ -309,6 +423,13 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       expect(changed.applicationRevision).toBeGreaterThan(
         initial.applicationRevision,
       );
+      const staleInspection = await executeCadTestTool(
+        inspectTool,
+        { ...target, objectNames: ["Box"] },
+        { ...context, toolCallId: "inspect-stale-revision" },
+      );
+      expect(staleInspection.isError).toBe(true);
+      expect(staleInspection.structuredContent).not.toHaveProperty("objects");
       await mutateFixture(
         "owned[0].undo()\nGui.getDocument(owned[0].Name).Modified=True",
       );

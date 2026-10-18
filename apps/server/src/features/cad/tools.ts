@@ -4,7 +4,10 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ApprovalReviewKind } from "../permissions/approval-review-context.js";
-import { cadGuiDocumentsInputSchema } from "./gui-document-contracts.js";
+import {
+  cadGuiDocumentsInputSchema,
+  cadGuiInspectDocumentInputSchema,
+} from "./gui-document-contracts.js";
 import type { CadService, CadToolResult } from "./service.js";
 import {
   cadDescribeInputSchema,
@@ -77,6 +80,14 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       approvalReviewKind: "cad-gui-inspect",
       execute: (input, context) =>
         service.guiDocuments(input.application, context),
+    }),
+    definition({
+      name: "cad_gui_inspect_document",
+      description:
+        "读取指定 FreeCAD GUI 文档的对象与直接标量属性。先用 cad_gui_documents 取得完整 application、bridgeEpoch、documentHandle 和两个观察修订，原样填入 expectedApplicationRevision/expectedDocumentRevision；目标已变化时重新查询。省略 objectNames 仅列对象，显式指定对象才读取属性。返回当前值、原生类型、单位维度、只读/不可变标志和表达式；editable 仅表示此类直接标量可进入后续受控修改，不是编辑授权。通过固定宏读取外部应用及其属性 getter，按执行权限审批，GUI 不继承 Task OS 沙箱；不保存、重算或修改工程，不执行模型提交的 Python。",
+      schema: cadGuiInspectDocumentInputSchema,
+      approvalReviewKind: "cad-gui-inspect",
+      execute: (input, context) => service.guiInspectDocument(input, context),
     }),
     definition({
       name: "cad_describe_document",

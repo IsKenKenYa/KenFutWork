@@ -139,3 +139,14 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 同一独立 GUI、真实 Task 的回绕验收已通过：连续查询保持代际／句柄／计数不变；自有夹具改尺寸并重算、undo、对象 touch、清除 Modified 后均观察到对应计数变化；关闭后重开同名同 UID 的 FCStd，旧句柄消失、新句柄不同，源文件 SHA-256 不变。测试中的修改来自专用夹具宏，产品工具仍只有元数据查询，不将该结果称为受控编辑交付。合法失败 ACK 不签发桥身份并可清理请求，迟到／畸形／旧协议回执仍拒绝。
 
 额外边界已获得真实 RED→GREEN：非空 `doc.clearDocument()` 在同一缓存 wrapper 上发 Delete→Created，原 Created 复用普通枚举逻辑会一直跳过旧墓碑，实际查询漏掉仍存活的文档。修复将显式 Created 单独处理：重新签打开代际，Deleted 仍不枚举、不读代理。原生回归同时调用 `clearDocument()` 和 `restore()`，确认 `App.getDocument(name) is 原doc`、新句柄不同且旧句柄消失，恢复后 Box.Length 仍是源文件20 mm，文件 SHA-256 不变。`restore()` 的 NewDocument 信号早于 ZIP 读取及 Restoring 状态设置；该信号不能单独成为后续编辑就绪证明。[公开 Python 入口](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp)与 [Document 实现](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)分别核对。
+
+
+## 10. 当前对象与直接标量属性读取
+
+`cad_gui_inspect_document` 已在同一固定宏、进程复验和私有请求管线中接线。每次读取先匹配桥代际、文档打开句柄和两个观察修订；省略对象选择只列对象摘要，指定对象才投影直接标量属性。复杂类型不取值，原生 getter 之间立即复验，失效／缺失对象不发布部分对象清单。此读取本身不保存、重算或修改，但外部工程的 getter 不是 Task 沙箱内的纯文件读取，审批据实声明。
+
+固定官方版本的 `getPropertyByName(name, 2)` 返回 `(实际属性容器, 属性值)`，不能仅凭 `getTypeIdOfProperty` 判断 Link 属性归属；`.pyi` 对 mode 1 的描述与实现不同，因此直接使用 mode 2 核对 Python 对象 `is`。见 [PropertyContainerPyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyContainerPyImp.cpp#L49) 和 [Link.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Link.cpp#L2541)。`App.Units.Quantity(value, current.Unit)` 有 `(double, UnitPy)` 构造，值使用内部基础单位口径；[QuantityPyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Base/QuantityPyImp.cpp#L84)。本机后台真实 Task 另验证 owner、Link 转发、23.5 的单位构造，以及 `Immutable` 字符串状态，作为后续写入依据。
+
+安装版 FreeCAD 1.1.4 的 `getEditorMode` 是字符串列表，`getPropertyStatus` 混合字符串与数字，数字并不一律代表只读；文档没有 `.State`、ViewObject 没有 `ShapeColor`，未按旧文档猜接。读取以明确的 `ReadOnly`／`Immutable` 标志识别不可编辑属性，仅阻止表达式绑定的目标属性，保留 Length 驱动 Width 的形态。Quantity 返回八维单位签名；枚举只读并标明后续需要候选值验证。
+
+同一隔离 GUI 的真实 Task 工具验收通过：默认只列 Box；指定 Box 返回 Length=20 mm、Width=40 mm 及 `Length * 2`、只读整数、不可变字符串、布尔／字符串和枚举值；缺失对象、改变尺寸后的旧修订均拒绝。读取后观察快照和源 FCStd SHA-256 不变，随后既有 undo、touch、重开、同 wrapper clear／restore 回绕仍通过。运行时间约33秒；仅操作自有实例，没有用户现存 GUI／AX 验收。该结果不代表受控写入、保存或撤销已完成。

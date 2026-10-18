@@ -119,6 +119,35 @@ it("GUI 文档查询拒绝未知参数、Python、endpoint 与不完整的应用
   }
 });
 
+it("GUI 对象读取审批包含精确目标和属性 getter 的外部执行事实", () => {
+  const args = {
+    application: guiApplication(),
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    objectNames: ["Box"],
+  };
+  expect(approvalReviewEvidence(input("cad-gui-inspect", args))).toMatchObject({
+    executionBoundary: {
+      taskOsSandboxEnforced: false,
+      documentAccess: "selected-scalar-properties",
+      effects: expect.arrayContaining(["execute-property-getters"]),
+    },
+    untrustedData: { operation: { args } },
+  });
+  for (const extra of [
+    { source: "unsafe()" },
+    { objectNames: [] },
+    { objectNames: ["Box", "Box"] },
+    { expectedDocumentRevision: -1 },
+    { documentHandle: "Box" },
+  ])
+    expect(
+      approvalReviewEvidence(input("cad-gui-inspect", { ...args, ...extra })),
+    ).toBeUndefined();
+});
+
 it("GUI 调用参数不能签发审批边界，注入文字仍留在不可信应用字段", () => {
   const application = guiApplication();
   const executionBoundary = {

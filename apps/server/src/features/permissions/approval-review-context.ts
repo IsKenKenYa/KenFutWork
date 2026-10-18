@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { cadGuiDocumentsInputSchema } from "../cad/gui-document-contracts.js";
+import {
+  cadGuiDocumentsInputSchema,
+  cadGuiInspectDocumentInputSchema,
+} from "../cad/gui-document-contracts.js";
 import {
   cadDescribeInputSchema,
   cadExportInputSchema,
@@ -12,7 +15,10 @@ import {
 export type ApprovalReviewKind = keyof typeof operationSchemas;
 
 const operationSchemas = {
-  "cad-gui-inspect": cadGuiDocumentsInputSchema,
+  "cad-gui-inspect": z.union([
+    cadGuiDocumentsInputSchema,
+    cadGuiInspectDocumentInputSchema,
+  ]),
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
   "cad-operations": cadOperationsInputSchema,
@@ -76,6 +82,21 @@ const CAD_GUI_INSPECT_EXECUTION_BOUNDARY = {
   excludedOperations: ["arbitrary-python", "geometry", "save", "recompute"],
   applicationIdentity: "untrusted-until-dispatch-verification",
 } as const;
+
+function guiInspectionBoundary(args: Record<string, unknown>) {
+  if (!("documentHandle" in args))
+    return structuredClone(CAD_GUI_INSPECT_EXECUTION_BOUNDARY);
+  return {
+    ...structuredClone(CAD_GUI_INSPECT_EXECUTION_BOUNDARY),
+    effects: [
+      ...CAD_GUI_INSPECT_EXECUTION_BOUNDARY.effects,
+      "execute-property-getters",
+    ],
+    documentAccess: args.objectNames
+      ? "selected-scalar-properties"
+      : "object-list",
+  };
+}
 
 const inputSchema = z
   .object({
@@ -172,9 +193,7 @@ export function approvalReviewEvidence(input: {
   const evidence = {
     ...(context.kind === "cad-gui-inspect"
       ? {
-          executionBoundary: structuredClone(
-            CAD_GUI_INSPECT_EXECUTION_BOUNDARY,
-          ),
+          executionBoundary: guiInspectionBoundary(operation.data),
         }
       : {}),
     untrustedData: {

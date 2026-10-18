@@ -58,7 +58,28 @@ async function fixture() {
       },
     ],
   };
-  const reader = { read: vi.fn(async () => snapshot) };
+  const document = snapshot.documents[0];
+  if (!document) throw new Error("测试夹具缺少目标文档");
+  const inspection = {
+    application,
+    observationId: snapshot.observationId,
+    version: snapshot.version,
+    bridgeEpoch: snapshot.bridgeEpoch,
+    applicationRevision: snapshot.applicationRevision,
+    document,
+    objects: [{ name: "Box", label: "零件", typeId: "Part::Box" }],
+  };
+  const target = {
+    application,
+    bridgeEpoch: snapshot.bridgeEpoch,
+    documentHandle: document.documentHandle,
+    expectedApplicationRevision: snapshot.applicationRevision,
+    expectedDocumentRevision: document.revision,
+  };
+  const reader = {
+    read: vi.fn(async () => snapshot),
+    inspect: vi.fn(async () => inspection),
+  };
   let installed = true;
   const service = createCadService({
     sandbox,
@@ -71,6 +92,8 @@ async function fixture() {
     ...task,
     application,
     snapshot,
+    inspection,
+    target,
     reader,
     service,
     spawn,
@@ -104,6 +127,95 @@ test("当前文档清单声明外部应用执行审批，不接受任意宏或�
       tool.zodSchema.safeParse({ application: f.application, ...extra })
         .success,
     ).toBe(false);
+});
+
+test("GUI 对象读取沿用真实 Task、执行审批与参数冻结，重放不重复读取", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_inspect_document",
+  );
+  expect(tool).toMatchObject({
+    access: "execute",
+    approvalReviewKind: "cad-gui-inspect",
+    scope: "shared",
+    exposure: "deferred",
+  });
+  if (!tool) throw new Error("缺少当前文档对象读取工具");
+  const input = { ...f.target, objectNames: ["Box"] };
+  const [first, replay] = await Promise.all([
+    tool.execute(input, f.context),
+    tool.execute(input, f.context),
+  ]);
+  expect(first).toMatchObject({ structuredContent: f.inspection });
+  expect(replay).toEqual(first);
+  expect(f.reader.inspect).toHaveBeenCalledOnce();
+  expect(f.reader.inspect).toHaveBeenCalledWith(
+    input,
+    expect.objectContaining({
+      timeoutMs: 10_000,
+      signal: expect.any(AbortSignal),
+    }),
+  );
+  expect(f.spawn).not.toHaveBeenCalled();
+  expect(
+    await tool.execute({ ...input, objectNames: ["Other"] }, f.context),
+  ).toMatchObject({
+    isError: true,
+    structuredContent: { error: { code: "invocation_conflict" } },
+  });
+  expect(f.reader.inspect).toHaveBeenCalledOnce();
+});
+
+test("GUI 对象读取拒绝未知代码与含糊对象选择，撤权后不返回迟到内容", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_inspect_document",
+  );
+  if (!tool) throw new Error("缺少当前文档对象读取工具");
+  for (const extra of [
+    { source: "unsafe()" },
+    { endpoint: "/tmp/FreeCAD" },
+    { objectNames: [] },
+    { objectNames: ["Box", "Box"] },
+  ])
+    expect(
+      await tool.execute({ ...f.target, ...extra }, f.context),
+    ).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "invalid_arguments" } },
+    });
+  expect(f.reader.inspect).not.toHaveBeenCalled();
+  f.reader.inspect.mockImplementation(async () => {
+    f.stored.scope.generation++;
+    return f.inspection;
+  });
+  const late = await tool.execute(f.target, f.context);
+  expect(late).toMatchObject({ isError: true });
+  expect(late).not.toHaveProperty("structuredContent.objects");
+});
+
+test("GUI 对象读取不以文档句柄绕过 Task 只读或插件安装状态", async () => {
+  const f = await fixture();
+  f.stored.scope.sandboxMode = "read-only";
+  expect(await f.service.guiInspectDocument(f.target, f.context)).toMatchObject(
+    {
+      isError: true,
+      structuredContent: { error: { code: "forbidden" } },
+    },
+  );
+  expect(f.reader.inspect).not.toHaveBeenCalled();
+  const disabled = await fixture();
+  disabled.disableGate();
+  expect(
+    await disabled.service.guiInspectDocument(
+      disabled.target,
+      disabled.context,
+    ),
+  ).toMatchObject({
+    isError: true,
+    structuredContent: { error: { code: "plugin_disabled" } },
+  });
+  expect(disabled.reader.inspect).not.toHaveBeenCalled();
 });
 
 test("通过现有Task与安装门控查询文档元数据，GUI不冒充Task沙箱进程", async () => {

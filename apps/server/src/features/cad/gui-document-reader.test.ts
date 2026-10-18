@@ -100,6 +100,40 @@ async function fixture(replyChange: Record<string, unknown> = {}) {
   };
 }
 
+async function inspectionFixture(replyChange: Record<string, unknown> = {}) {
+  const f = await fixture();
+  const originalSend = f.send.getMockImplementation();
+  if (!originalSend) throw new Error("缺少发送夹具");
+  const input = {
+    application: f.application,
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    objectNames: ["Box"],
+  };
+  f.send.mockImplementation(async (application, macroPath) => {
+    await originalSend(application, macroPath);
+    const replyPath = join(dirname(macroPath), "reply.json");
+    const { documents, ...reply } = JSON.parse(
+      await readFile(replyPath, "utf8"),
+    );
+    await writeFile(
+      replyPath,
+      JSON.stringify({
+        ...reply,
+        protocol: "kfw-cad-gui-inspect/1",
+        document: documents[0],
+        objects: [
+          { name: "Box", label: "盒子", typeId: "Part::Box", properties: [] },
+        ],
+        ...replyChange,
+      }),
+    );
+  });
+  return { ...f, input };
+}
+
 test("固定查询验证前后应用身份，返回原生元数据且完成后清理私有回执", async () => {
   const f = await fixture();
   const result = await f.reader.read(f.application, f.context);
@@ -125,6 +159,150 @@ test("固定查询验证前后应用身份，返回原生元数据且完成后�
   expect(f.probe.verify).toHaveBeenCalledTimes(2);
   expect(f.send).toHaveBeenCalledOnce();
   expect(await readdir(f.root)).toEqual([]);
+});
+
+test("结构检查通过同一固定查询管线发送目标与选定对象并清理回执", async () => {
+  const f = await fixture();
+  const input = {
+    application: f.application,
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    objectNames: ["Box"],
+  };
+  f.send.mockImplementation(async (_application, macroPath) => {
+    const request = JSON.parse(
+      await readFile(join(dirname(macroPath), "request.json"), "utf8"),
+    );
+    expect(request).toMatchObject({
+      operation: "inspect-document",
+      bridgeEpoch: input.bridgeEpoch,
+      documentHandle: input.documentHandle,
+      expectedApplicationRevision: 2,
+      expectedDocumentRevision: 3,
+      objectNames: ["Box"],
+    });
+    await writeFile(
+      join(dirname(macroPath), "reply.json"),
+      JSON.stringify({
+        protocol: "kfw-cad-gui-inspect/1",
+        requestId: request.requestId,
+        pid: f.application.pid,
+        completed: true,
+        guiThread: true,
+        success: true,
+        version: ["1", "1", "4"],
+        bridgeEpoch: input.bridgeEpoch,
+        applicationRevision: 2,
+        document: {
+          name: "Part",
+          label: "用户零件",
+          fileName: "",
+          uid: "native-uid",
+          modified: true,
+          touched: false,
+          pendingTransaction: false,
+          active: true,
+          documentHandle: input.documentHandle,
+          revision: 3,
+        },
+        objects: [
+          {
+            name: "Box",
+            label: "盒子",
+            typeId: "Part::Box",
+            properties: [
+              {
+                name: "Length",
+                typeId: "App::PropertyLength",
+                value: {
+                  kind: "quantity",
+                  value: 10,
+                  unitSignature: [1, 0, 0, 0, 0, 0, 0, 0],
+                },
+                readOnly: false,
+                immutable: false,
+                editable: true,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+  const result = await f.reader.inspect(input, f.context);
+  expect(result.objects).toMatchObject([
+    { name: "Box", properties: [{ name: "Length", editable: true }] },
+  ]);
+  expect(result.document.documentHandle).toBe(input.documentHandle);
+  expect(f.probe.verify).toHaveBeenCalledTimes(2);
+  expect(f.send).toHaveBeenCalledOnce();
+  expect(await readdir(f.root)).toEqual([]);
+});
+
+test.each(["stale_target", "object_missing"])(
+  "结构检查已知失败 %s 保留可读原因并清理确认回执",
+  async (code) => {
+    const f = await inspectionFixture({
+      success: false,
+      bridgeEpoch: null,
+      applicationRevision: null,
+      document: null,
+      objects: [],
+      version: [],
+      error: code,
+    });
+    await expect(f.reader.inspect(f.input, f.context)).rejects.toMatchObject({
+      code,
+      message: expect.stringContaining("重新读取"),
+      actionSent: true,
+      observationConfirmed: true,
+    });
+    expect(f.send).toHaveBeenCalledOnce();
+    expect(await readdir(f.root)).toEqual([]);
+  },
+);
+
+test.each([
+  { bridgeEpoch: "f3fc0f25-434f-45bc-bd84-43964bf43d6a" },
+  { applicationRevision: 4 },
+  {
+    objects: [
+      { name: "Other", label: "其他", typeId: "Part::Box", properties: [] },
+    ],
+  },
+  { objects: [{ name: "Box", label: "盒子", typeId: "Part::Box" }] },
+])("结构检查拒绝与指定目标不一致的完整回执 %j", async (change) => {
+  const f = await inspectionFixture(change);
+  await expect(f.reader.inspect(f.input, f.context)).rejects.toMatchObject({
+    code: "query_failed",
+    observationConfirmed: true,
+  });
+  expect(await readdir(f.root)).toEqual([]);
+});
+
+test.each([
+  { objectNames: [] },
+  { objectNames: ["Box", "Box"] },
+  { expectedDocumentRevision: -1 },
+  { source: "unexpected()" },
+])("结构检查无效选择或额外代码不会派发固定宏 %j", async (change) => {
+  const f = await inspectionFixture();
+  await expect(
+    f.reader.inspect({ ...f.input, ...change }, f.context),
+  ).rejects.toThrow();
+  expect(f.send).not.toHaveBeenCalled();
+  expect(await readdir(f.root)).toEqual([]);
+});
+
+test("未选择对象的结构摘要不接受属性值夹带", async () => {
+  const f = await inspectionFixture();
+  const { objectNames: _unused, ...input } = f.input;
+  await expect(f.reader.inspect(input, f.context)).rejects.toMatchObject({
+    code: "query_failed",
+    observationConfirmed: true,
+  });
 });
 
 test.each([
