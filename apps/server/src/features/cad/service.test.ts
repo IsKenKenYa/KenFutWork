@@ -1464,3 +1464,126 @@ describe("结构化圆角倒角契约", () => {
     expect(f.spawn).not.toHaveBeenCalled();
   });
 });
+
+describe("结构化阵列契约", () => {
+  it.each([
+    {
+      kind: "create_linear_pattern",
+      dimension: "length",
+      vector: "direction",
+      type: "PartDesign::LinearPattern",
+    },
+    {
+      kind: "create_polar_pattern",
+      dimension: "angle",
+      vector: "axis",
+      type: "PartDesign::PolarPattern",
+    },
+  ])("$kind与参数批改沿同一工具和审批派发", async (mode) => {
+    const data = {
+      operations: [
+        {
+          kind: mode.kind,
+          objectName: "Pattern",
+          type: mode.type,
+          occurrences: 4,
+        },
+      ],
+    };
+    const f = await fixture({ data });
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少CAD结构化工具");
+    const input = {
+      operations: [
+        {
+          kind: mode.kind,
+          name: "Pattern",
+          body: "Body",
+          original: "Pad",
+          [mode.vector]: { sketch: "Sketch", axis: "H_Axis" },
+          [mode.dimension]: mode.dimension === "angle" ? 360 : 30,
+          occurrences: 4,
+          reversed: false,
+        },
+        {
+          kind: "set_pattern_parameters",
+          object: "Pattern",
+          [mode.dimension]: mode.dimension === "angle" ? 180 : 21,
+          occurrences: 3,
+        },
+      ],
+    };
+    expect(z.fromJSONSchema(tool.parameters).safeParse(input).success).toBe(
+      true,
+    );
+    const result = await executeCadTestTool(tool, input, f.context);
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect(result.structuredContent.data).toEqual(data);
+    expect(tool).toMatchObject({
+      approvalReviewKind: "cad-operations",
+      access: "execute",
+    });
+    const request = f.spawn.mock.calls[0]?.[0];
+    expect(
+      JSON.parse(await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8")),
+    ).toMatchObject({ action: "operations", input });
+  });
+
+  it("次数服从原生整数范围且拒绝空批改、外部脚本和不适用字段", async () => {
+    const f = await fixture();
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少CAD结构化工具");
+    const base = {
+      kind: "create_linear_pattern",
+      name: "Pattern",
+      body: "Body",
+      original: "Pad",
+      direction: { sketch: "Sketch", axis: "H_Axis" },
+      length: 30,
+      occurrences: 4,
+    };
+    for (const operation of [
+      { ...base, occurrences: 0 },
+      { ...base, occurrences: -1 },
+      { ...base, occurrences: 1.2 },
+      { ...base, occurrences: 2_147_483_648 },
+      { ...base, length: 0 },
+      { ...base, direction: { sketch: "Sketch", axis: "Edge1" } },
+      { ...base, source: "doc.clearDocument()" },
+      { ...base, wholeShape: true },
+      { kind: "set_pattern_parameters", object: "Pattern" },
+      {
+        kind: "set_pattern_parameters",
+        object: "Pattern",
+        length: 10,
+        angle: 90,
+      },
+      { kind: "set_pattern_parameters", object: "Pattern", occurrences: 0 },
+      { kind: "set_pattern_parameters", object: "Pattern", angle: 720 },
+      { kind: "set_pattern_parameters", object: "Pattern", angle: 360.0001 },
+      {
+        kind: "create_polar_pattern",
+        name: "Pattern",
+        body: "Body",
+        original: "Pad",
+        axis: { sketch: "Sketch", axis: "N_Axis" },
+        angle: 720,
+        occurrences: 4,
+      },
+
+      { kind: "set_pattern_parameters", object: "Pattern", reversed: "true" },
+      { kind: "set_pattern_parameters", object: "Pattern", original: "Other" },
+    ])
+      expect(
+        await tool.execute({ operations: [operation] }, f.context),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "invalid_arguments" } },
+      });
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+});

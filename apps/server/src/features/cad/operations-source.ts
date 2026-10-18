@@ -1,4 +1,5 @@
 import { FREECAD_DRESSUP_SOURCE } from "./dressup-source.js";
+import { FREECAD_PATTERN_SOURCE } from "./pattern-source.js";
 
 /** 可信结构化建模操作；由 FreeCAD runner 在同一 Task 进程中装配。 */
 export const FREECAD_OPERATIONS_SOURCE = `def create_named_object(doc, type_id, operation, body=None):
@@ -165,6 +166,10 @@ def apply_operations(doc, operations):
                 obj = create_boolean(doc, operation)
             elif kind in ("create_fillet", "create_chamfer"):
                 obj = create_dressup(doc, operation)
+            elif kind in ("create_linear_pattern", "create_polar_pattern"):
+                obj = create_pattern(doc, operation)
+            elif kind == "set_pattern_parameters":
+                obj = set_pattern_parameters(doc, operation)
             elif kind == "create_pocket":
                 obj = create_pocket(doc, operation)
             elif kind == "set_dimension":
@@ -185,6 +190,8 @@ def apply_operations(doc, operations):
                 receipt.update(boolean_receipt(obj))
             elif obj.TypeId in _KFW_DRESSUP_TYPES:
                 receipt.update(dressup_receipt(obj))
+            elif obj.TypeId in _KFW_PATTERN_TYPES:
+                receipt.update(pattern_receipt(obj))
             receipts.append(receipt)
         except Exception as error:
             raise ValueError("第 " + str(index) + " 项操作 " + kind + " 失败: " + str(error)) from error
@@ -258,6 +265,9 @@ def validate_single_solid(obj):
 def validate_body_result(body):
     if body is None or body.Tip is None:
         raise ValueError("Body 缺少实体 Tip")
+    if body.Tip.TypeId in _KFW_PATTERN_TYPES:
+        validate_pattern_result(body.Tip, body, require_pattern_links(body.Tip, body))
+        return
     validate_single_solid(body.Tip)
     validate_single_solid(body)
     if body.Tip.TypeId == "PartDesign::Pocket":
@@ -458,4 +468,7 @@ def feature_receipt(feature):
 
 
 ${FREECAD_DRESSUP_SOURCE}
+
+
+${FREECAD_PATTERN_SOURCE}
 `;

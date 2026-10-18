@@ -38,7 +38,7 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | 2D 几何与草图 | Sketcher `addGeometry`、几何／尺寸约束 | 闭合轮廓、约束状态、尺寸回读与矛盾约束错误 | 结构化约束／改尺寸及真实 Design 整轮已验，见 §9.5、§9.7 |
 | 3D 原语、布尔、位置 | Part 形状及文档对象 | 有效性、实体数、体积、包围盒与预期对应 | 原语与位移／旋转有既有证据；Python 布尔及结构化 Body 布尔三模式、参数联动与来源保护已验，见 §9.14、§9.20 |
 | 参数化实体 | PartDesign Body、草图和特征 | 拉伸／凹槽／旋转等有真实依赖；改源尺寸后下游随动 | 结构化 Pad／Pocket、厚度联动与首个固定角 Revolution 已有原生证据，见 §9.8、§9.13 |
-| 进阶建模 | 圆角、倒角、阵列及其他官方特征 | 合理参数成功；失效参数能识别；重开后依赖保留 | Python 单边修饰／线性与环形阵列四阶段见 §9.14；结构化显式多边修饰与命名适配见 §9.23 |
+| 进阶建模 | 圆角、倒角、阵列及其他官方特征 | 合理参数成功；失效参数能识别；重开后依赖保留 | Python 单边修饰／线性与环形阵列四阶段见 §9.14；结构化多边修饰见 §9.23；线性／环形阵列及完整结果证明见 §9.24 |
 | 表达式与单位 | Quantity、属性、表达式接口 | 显式单位输入、正确回读、关联参数更新 | 后台厚度／角度联动见 §9.8、§9.13；GUI Quantity 基础数值／单位签名、直接属性表达式读取及保留绑定的标量写入已有实证，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §10、§11；不代表任意显示单位转换或 GUI 表达式编辑已验收 |
 | 工程文件及交换格式 | `Std Export` 与对应格式模块 | 导出正确对象；再导入核对几何和单位 | STEP／STL／BREP／SVG／DXF 已有分层回读证据，见 §9 |
 | 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 A4／俯视图／真实尺寸及整页 SVG 已验，见 §9.14；独立 GUI 原生夹具另验证单页 PDF 导出与栅格查看，见 §9.17，不代表正式 PDF 工具或完整比例／标注验收 |
@@ -453,6 +453,24 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 后台结构化修饰操作采用这一官方完整名称形态，输出工程持久保留 `UseHasher=false`。转换前后所选同编号边必须具有等于双方完整长度的共同几何，且共同长度为正；容差随极小边收紧，不能把不相交小边当作一致。随后每条边原生预检、特征状态与单实体、参数／链接回读、整工程最终检查及原发布屏障全部保留。任何选边几何变化或依赖失效均拒绝发布；不手工修补坏链接，不触碰只读源文件或用户 GUI。
 
 七项原生正向回归已通过：两种特征的两条相对竖边、Pad.Length10→12与Radius／Size1→2、解析体积、保存重开；同批创建草图／Pad／修饰再跨进程改长度；已有默认 True 原生工程改修饰尺寸再改上游长度；早期 Fillet／Chamfer 的反向后继修饰，保持末端 Tip、各层 Base 对象及显隐。另保留零参数选边与原生混选对照。失败边界及最终门禁按同批《日志》实际结果登记，不把本例推广为任意复杂拓扑、全部模式或 GUI 修饰验收。
+
+### 9.24 结构化阵列、全部实例与参数联动
+
+`cad_apply_operations` 已接入 `create_linear_pattern`／`create_polar_pattern`，以及非空参数子集 `set_pattern_parameters`。首批为 Features／Extent、单原件、线性单方向，原件可选当前支撑历史中的 exact Pad／Pocket／Revolution；当前 Tip 才是 BaseFeature，原件不必是 Tip。真实 `Originals`、草图轴引用、参数、实体数、体积与 AllowCompound 进入回执。固定版没有 `OriginalSubFeatures`；模式／字段不能照后续版本或营销示例猜测。依据 [FeatureTransformed.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureTransformed.cpp)、[FeatureLinearPattern.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureLinearPattern.cpp)、[FeaturePolarPattern.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeaturePolarPattern.cpp)。
+
+线性 Length 是首末总距离，N>1 时步距 Length/(N-1)；Occurrences 包含原件，原生允许1，N=1 没有额外工具副本。环形接近360°时使用 Angle/N，其它角度使用 Angle/(N-1)，精确遵循原生 abs(Angle-360)<1e-7 判据，不能默认 math.isclose。H／V／N 方向及中心来自真实 Sketch Placement，经 pattern.Placement 逆变换进入支撑局部坐标；不额外乘 Body 世界变换。真实可回读直接角度输入为正向(0,360]，反向由 Reversed 表达。
+
+公开 `AddSubShape` 为 Part::PropertyPartShape；增减材类型及 getTransformations／rejected 未暴露到固定版 Python。按官方构造函数确定 Pad／Revolution 为增材、Pocket 为减材，不从实际结果反推。支撑 Shape 只清顶层 Placement；工具按 original.Placement × inverse(base.Shape.Placement) 变换，再构建所有 j=1…N-1 实例。完整期望为支撑对全部工具的 fuse/cut，实际结果清顶层 Placement 后比较。双方均须有效且有实体，实体数量一致，双方差集均不得残留 Solid；布尔异常不吞掉，不按整体体积百分比放过小副本。Body.Shape 另与末端 Tip 在统一世界坐标比较。依据 [FeatureAddSub.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureAddSub.cpp)、上述变换源码及 [PartFeature.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Part/App/PartFeature.cpp)。
+
+`Body.AllowCompound` 必须按实际工程读取。安装版默认 True 的原生对照保留四个断开实体、约2000mm³；显式 False 后，同样请求仍可返回 Valid／Up-to-date，却只保留第一个实体、约500mm³。该截断分支已真实复现，但不能称为默认行为。新工具不切换此设置：允许多实体时交付全部零件及 STEP；要求单实体时，完整期望为多实体即拒绝发布。减材副本位于支撑外可不改变材料，沿用完整布尔语义，不要求每个实例都改变体积。单实体分支依据 [Feature.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/Feature.cpp)。
+
+首次只改次数的真实回归揭示：Length=Occurrences*5mm／Angle=Occurrences*90deg 合法联动，却被旧参数全量冻结误拒。修复仅核对请求字段，并保留原 ExpressionEngine 绑定文本与顺序；未指定字段按原生表达式联动，直接修改绑定目标仍拒绝。只批赋允许参数后统一重算，保留 BaseFeature 历史、Originals、轴引用、Group、后继 Tip、显隐、Refine 和 AllowCompound；已删除的实例导致后继 Fillet 失效时拒绝发布，不重绑边号。
+
+另一真实边界是 PropertyAngle 的写入路径。[PropertyUnits.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyUnits.cpp) 的默认 AngleStandard 为[-360,360]，Python setPyObject 夹值，实测直接赋720得到360；因此结构化直接输入限制(0,360]。表达式 setPathValue 直接赋数值，实测只改 Occurrences 到8可使已有 Angle=Occurrences*90deg 得到720且绑定保留，完整几何验证通过。不能把直接赋值范围扩大成全局表达式范围；Offset 同为 PropertyAngle，亦不能声称直接赋720原样保留，多圈 Spacing 另可累计或使用间隔列表，仍由完整 Python 承接。
+
+原生抑制也不能按普通空几何处理：合法 Suppressed Pad 被清空 Shape，原通用 runner 因此拒绝有效 Extra 工程。实测 RED 后，空形状豁免只识别原生 PartDesign::Feature 继承链、真正 App::PropertyBool 的 Suppressed=True；Error／Invalid 状态仍优先拒绝，非空坏几何、普通空特征、requireSolids 保留。Part::Feature 自添同名属性与未抑制空 PartDesign 特征均实测拒绝。合法抑制工程可保存／描述，阵列另拒绝抑制原件，避免原生 getOriginals 静默过滤。
+
+本批原生矩阵35项已逐项完成：线性／环形的增材、Pocket 减材、Revolution 原件与上游改角；全部草图主轴、反向、Count1、首末范围／次数批改、表达式联动及多圈路径；默认多实体及全部 STEP 零件、False 单实体截断拒绝；较早原件与后加特征、非单位 Body／Sketch Placement 和 STEP 世界尺寸；后继 Fillet 的引用／Tip／显隐保留及减少数量删除引用拒绝；跨 Body／错类型／碰撞、ReadOnly／Immutable、表达式目标、Spacing／二维阵列模式拒绝，以及合法抑制和伪造空几何边界。源字节与失败目标不存在分别检查。测试复用同一真实服务／Task 作用域与工具消费方，未操作用户 GUI；不是全部工作台、全部阵列模式、任意复杂 TNP 或真实 LLM 自主建模验收。范围／原生／全包证据有重叠，最终门禁及拆分运行记录见同批《日志》。
 
 ## 10. 来源地图与证据限制
 

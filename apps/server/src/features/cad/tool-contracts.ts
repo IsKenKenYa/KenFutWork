@@ -61,6 +61,64 @@ const dressupTarget = {
       "所选边不能重复。",
     ),
 };
+const patternAxisSchema = z
+  .object({
+    sketch: z.string().min(1).describe("同一 Body 中位于阵列之前的草图。"),
+    axis: z.enum(["H_Axis", "V_Axis", "N_Axis"]),
+  })
+  .strict();
+const patternOccurrences = z
+  .number()
+  .int()
+  .min(1)
+  .max(2_147_483_647)
+  .describe("包含原件的总实例数，遵循 FreeCAD 原生整数范围。");
+const patternAngle = positive
+  .max(360)
+  .describe("正向 Extent 总角度，单位 deg；原生直接赋值范围 (0,360]。");
+const patternLength = positive.describe(
+  "首个到末个实例的总距离，单位 mm；次数大于1时，间距为 length/(occurrences-1)。",
+);
+const patternTarget = {
+  name: z.string().min(1),
+  label: z.string().optional(),
+  body: z.string().min(1),
+  original: z
+    .string()
+    .min(1)
+    .describe("当前支撑历史中的同 Body Pad、Pocket 或 Revolution。"),
+  occurrences: patternOccurrences,
+  reversed: z.boolean().optional(),
+};
+const patternParametersSchema = z
+  .object({
+    kind: z.literal("set_pattern_parameters"),
+    object: z.string().min(1),
+    length: patternLength.optional(),
+    angle: patternAngle.optional(),
+    occurrences: patternOccurrences.optional(),
+    reversed: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((operation, ctx) => {
+    if (operation.length !== undefined && operation.angle !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        message: "不能同时修改线性长度与环形角度。",
+      });
+    if (
+      [
+        operation.length,
+        operation.angle,
+        operation.occurrences,
+        operation.reversed,
+      ].every((value) => value === undefined)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "至少指定一个阵列参数。",
+      });
+  });
 const pocketOperationSchema = z.discriminatedUnion("mode", [
   z
     .object({
@@ -187,6 +245,23 @@ const operationSchema = z.discriminatedUnion("kind", [
       size: positive,
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("create_linear_pattern"),
+      ...patternTarget,
+      direction: patternAxisSchema,
+      length: patternLength,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("create_polar_pattern"),
+      ...patternTarget,
+      axis: patternAxisSchema,
+      angle: patternAngle,
+    })
+    .strict(),
+  patternParametersSchema,
   z
     .object({
       kind: z.literal("create_boolean"),

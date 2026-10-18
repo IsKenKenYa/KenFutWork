@@ -32,6 +32,12 @@ GUI 副本已在独立实例经真实 Task 验证发布、后台检查／修改�
 
 后台结构化修饰工程采用 FreeCAD 官方完整拓扑名称（`UseHasher=false`），保留 TNP 和自动链接更新。切换会原生重算工作副本，并核验原选边几何；不手工重绑失效的 Base。此适配针对已实测的 1.1.4 哈希映射重开后重算失配，不修改源文件或用户 GUI 文档。其它倒角模式、面选择和全边模式由 Python 承接。
 
+`create_linear_pattern`／`create_polar_pattern` 创建特征阵列：指定 `body`、当前支撑历史中的单个 `original`（Pad／Pocket／Revolution），以及同 Body 上游草图的 H／V／N 主轴。线性用 `direction:{sketch,axis}` 与首末总距离 `length`；环形用 `axis:{sketch,axis}` 与正向总角度 `angle`（0～360°，不含0）。`occurrences` 包含原件，可为1；`reversed` 反向。当前 Tip 作支撑，可只重复较早的增材或减材特征；已有后加特征保留原位。原件抑制、跨 Body 或缺少历史关系会拒绝。
+
+`set_pattern_parameters` 用 `object` 与 `length`／`angle`／`occurrences`／`reversed` 批改后统一重算，保留后继 Tip、原件／轴引用、显示、Refine 及多实体设置。已有表达式目标不能直接改；未指定的表达式字段可随数量联动，绑定保留。此固定入口采用 Features／Extent、单原件与单方向；其它原生模式由 Python 承接。直接赋角度超出360°会被原生夹值，因此结构化输入明确限制；表达式计算走另一条原生路径，仍按实际值与完整几何验证，不强制套直接赋值范围。
+
+阵列保留工程的 `Body.AllowCompound`：允许多实体时交付全部实体和交换文件；要求单实体时拒绝截断。验证独立构建全部副本的增减材布尔结果，核对实体数量和双向差集，避免只凭有效 Shape 报告成功。原生已抑制的 PartDesign 特征可有空 Shape；真实错误、普通空特征及当前活动结果仍分别校验。
+
 后台运行沿用 Task 的目录授权、执行审批、超时与停止机制。输出默认保存在 Task 目录的 `.kfw-cad/`；指定输出时必须使用新文件名。源工程不会被工具保存覆盖。后台建模与检查会重算并检查几何及对象错误状态，可额外要求实体或预期体积；GUI 副本不执行这些重算或几何修复。PartDesign 脚本应明确设置 `Body.Tip` 并检查最终对象。
 
 Python 脚本可选设置 `result = {"radius": 10}` 等普通 JSON 值，由回执 `data` 返回；未设置时不增加该字段。脚本命名空间与宿主回执分离，`result` 不能覆盖执行状态。自定义 JSON 原样返回，不自动去敏，完整回执受当前进程输出设置约束；大结果和媒体写入 Task 文件再返回路径，stdout 保留为私有日志。

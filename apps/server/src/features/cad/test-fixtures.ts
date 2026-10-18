@@ -13,6 +13,7 @@ import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { ProcessExit, ProcessLimits } from "../process-sandbox/types.js";
 import { detectFreeCadRuntime } from "./runtime.js";
 import { type CadService, createCadService } from "./service.js";
+import { createCadTools } from "./tools.js";
 
 /** 独立服务夹具显式模拟市场已成功装载；生产只能消费真实库存生命周期。 */
 export function activateCadTestService(service: CadService): void {
@@ -38,6 +39,19 @@ export async function executeCadTestTool(
       structuredContent: z.record(z.string(), z.unknown()),
     })
     .parse(await tool.execute(args, context));
+}
+
+export async function invokeCadTestTool(
+  host: { service: CadService; context: ToolExecutionContext },
+  name: string,
+  args: Record<string, unknown>,
+  toolCallId: string,
+) {
+  const tool = createCadTools(host.service).find(
+    (entry) => entry.name === name,
+  );
+  if (!tool) throw new Error(`缺少 CAD 工具: ${name}`);
+  return executeCadTestTool(tool, args, { ...host.context, toolCallId });
 }
 
 export const cadTestLimits: ProcessLimits = {
@@ -140,4 +154,24 @@ export async function withNativeCad(
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1)
     throw new AggregateError(failures, "CAD 原生验收和资源清理均失败。");
+}
+
+/** 阵列回归共用的独立 10×10×5 mm 参数化基体；每次调用返回新参数。 */
+export function createCadPadTestOperations() {
+  return [
+    { kind: "create_body", name: "Body" },
+    {
+      kind: "create_sketch",
+      name: "Sketch",
+      body: "Body",
+      profiles: [{ kind: "rectangle", name: "Base", width: 10, height: 10 }],
+    },
+    {
+      kind: "create_pad",
+      name: "Pad",
+      body: "Body",
+      profile: "Sketch",
+      length: 5,
+    },
+  ];
 }

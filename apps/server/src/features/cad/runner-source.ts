@@ -22,6 +22,13 @@ def is_sketch_only_body(obj):
     return bool(features) and all(member.isDerivedFrom("Sketcher::SketchObject") for member in features)
 
 
+def is_suppressed_feature(obj):
+    return (obj.isDerivedFrom("PartDesign::Feature")
+            and "Suppressed" in obj.PropertiesList
+            and obj.getTypeIdOfProperty("Suppressed") == "App::PropertyBool"
+            and obj.Suppressed)
+
+
 def describe(doc):
     objects = []
     for obj in doc.Objects:
@@ -61,8 +68,8 @@ def validate(doc, require_solids=False, expected_volume=None):
         if not has_shape_property(obj):
             continue
         shape = obj.Shape
-        if shape.isNull() and is_sketch_only_body(obj):
-            # 纯二维草图不产生 Body 实体聚合；Sketch 自身仍在本循环逐项校验。
+        if shape.isNull() and (is_sketch_only_body(obj) or is_suppressed_feature(obj)):
+            # 原生抑制特征可为空；二维 Body 的 Sketch 仍逐项校验，真实错误状态已在前面拦截。
             continue
         if shape.isNull() or not shape.isValid():
             raise ValueError("对象几何为空或无效: " + obj.Name)

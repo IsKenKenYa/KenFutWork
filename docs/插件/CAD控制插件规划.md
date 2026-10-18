@@ -25,11 +25,11 @@ Run／Task 取消覆盖后台启动等待：派发前中止本调用等待，派
 
 ## 常用结构化操作
 
-`cad_apply_operations` 复用既有 Task、审批、安装门控与新文件发布，不引入独立运行链路。输入为按序执行的 `operations`，支持 `create_body`、`create_sketch`、`create_pad`、`create_pocket`、`create_revolution`、`create_boolean`、`create_fillet`、`create_chamfer` 与 `set_dimension`；同一 Sketch 的 `profiles` 可同时含矩形与圆，轮廓名不得重复。内部直接用已解析的 JSON 调可信 API，不将参数拼成 Python 源码执行。
+`cad_apply_operations` 复用既有 Task、审批、安装门控与新文件发布，不引入独立运行链路。输入为按序执行的 `operations`，支持 `create_body`、`create_sketch`、`create_pad`、`create_pocket`、`create_revolution`、`create_boolean`、`create_fillet`、`create_chamfer`、`create_linear_pattern`、`create_polar_pattern`、`set_pattern_parameters` 与 `set_dimension`；同一 Sketch 的 `profiles` 可同时含矩形与圆，轮廓名不得重复。内部直接用已解析的 JSON 调可信 API，不将参数拼成 Python 源码执行。
 
 矩形宽高与圆半径为正毫米数；`origin`／`center` 为固定绝对二维坐标，默认 `[0,0]`。固定位置只保证请求时的位置，不暗含改尺寸后相对居中。创建的矩形使用闭合、水平／垂直、位置与有向宽高约束，圆使用位置与半径约束；驱动尺寸命名为 `轮廓名_Width`／`_Height`／`_Radius`。`set_dimension` 只接受唯一、类型匹配的命名驱动尺寸，拒绝参考／停用约束和已有表达式，不解除用户已有关系。操作后须求解成功、完全约束并回读生效数值。
 
-内部对象名称若已存在或被 FreeCAD 自动改名则明确失败，中文显示可用 `label`。每步回执 `data.operations` 含序号、操作类型、实际对象、求解状态及实际读取的命名尺寸。失败标明操作序号与原因，不发布最终文件；输入工程仍只读。工作副本／诊断文件的创建不是数据库事务，不承诺中间副作用全部回滚。空 Body 中途可存在，批末仍执行既有完整几何校验。阵列等常用封装继续分批交付，复杂形态仍由完整 Python 承接。
+内部对象名称若已存在或被 FreeCAD 自动改名则明确失败，中文显示可用 `label`。每步回执 `data.operations` 含序号、操作类型、实际对象、求解状态及实际读取的命名尺寸。失败标明操作序号与原因，不发布最终文件；输入工程仍只读。工作副本／诊断文件的创建不是数据库事务，不承诺中间副作用全部回滚。空 Body 中途可存在，批末仍执行既有完整几何校验。复杂形态继续由完整 Python 承接。
 
 
 ### 拉伸、切除与厚度联动
@@ -61,6 +61,18 @@ Run／Task 取消覆盖后台启动等待：派发前中止本调用等待，派
 `set_dimension` 的无 `profile` `radius` 只改 Fillet，`size` 只改显式选边等距 Chamfer。草图圆半径仍带 `profile`，按实际类型分流。只改标量，不重写 Base／BaseFeature；保留原生 TNP 更新、后继 Tip 和显示状态。表达式、只读、不可变属性及其它修饰模式均不由固定入口改配置，完整 Python 仍可承接其它官方模式。
 
 后台结构化修饰工程使用官方 `UseHasher=false` 保留未压缩的完整拓扑名称。安装版 1.1.4 的原生对照已证实哈希名缓存重开后首次重算可丢失索引；这不是关闭 TNP。切换会原生重算全部几何，仅操作本次工作副本，并检查原选边与重算后同编号边的共同长度等于双方完整长度。几何变化或任何依赖失效拒绝发布；不修补既存无效引用、不改用户 GUI，不承诺任意拓扑重命名均可恢复。证据与固定源码见主调研「结构化修饰与原生命名适配」。
+
+### 线性与环形特征阵列
+
+`create_linear_pattern`／`create_polar_pattern` 显式指定 `body` 与同 Body 支撑历史中的单个 `original`（exact Pad／Pocket／Revolution），当前 Tip 为真正支撑 BaseFeature；不强制原件必须是当前 Tip。方向／轴为同 Body 上游草图的 H_Axis／V_Axis／N_Axis，按真实 Placement 变换；不再额外乘 Body 世界坐标。线性 `length` 是首末总距离，步距为 length/(occurrences-1)；环形 `angle` 是正向总角度，直接输入范围(0,360]。整周按原生 Precision::Confusion 分支分配，非整周包含首尾；`reversed` 反向。次数含原件，允许1且无除零，遵循原生整数范围，不加固定总实例预算。
+
+固定入口使用 Features／Extent、单原件／单方向；其它原生模式保持 Python 能力。`set_pattern_parameters` 用 object 与非空参数子集批改，长度与角度不能同时指定；按实际类型拒绝错字段、只读／不可变或已有表达式的修改目标。只赋参数再统一重算，允许未指定表达式驱动字段联动，并保留绑定文本、各层 BaseFeature、原件、轴引用、Group、末端 Tip、显隐、Refine 和 AllowCompound。减少数量导致下游链接失效时不重绑边号，拒绝发布。
+
+几何判定尊重真实 Body.AllowCompound。允许多实体时保留全部结果；单实体模式完整期望若为多实体则拒绝，防止 FreeCAD 的 getSolid 分支只保留第一实体。以公开 AddSubShape、真实 Placement 和全部实例构造独立 fuse/cut 期望，再比较实体数及双方差集是否无 Solid；布尔异常不吞掉，不用整体体积百分比忽略小副本。Body.Shape 还须包含末端 Tip 的全部几何。减材工具位于支撑外可不改变结果，沿用原生布尔语义，不要求每个工具都增加或减少体积。
+
+原生 Suppressed 特征的空 Shape 是合法停用状态：通用校验只对原生 PartDesign 特征的真实布尔抑制标志放行空形状，错误状态仍先校验，普通空特征与伪造同名属性仍拒绝；活动结果及 requireSolids 保持。抑制原件另在阵列准入拒绝，避免 SDK 静默过滤它。
+
+直接赋 Angle 的默认 Python setter 会将越界值夹到360；表达式 setPathValue 不走同一夹值分支，因此未指定的表达式联动结果可跨多圈，由实际原生结果和完整几何判定。该区别不能扩大为“所有 FreeCAD 角度一律只支持一周”。固定源码、原生矩阵与限制见主调研§9.24和同批《日志》。
 
 ## 几何与产物判定
 
