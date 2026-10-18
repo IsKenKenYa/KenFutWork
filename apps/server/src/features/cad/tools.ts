@@ -157,7 +157,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_export",
       description:
-        "重算并验证 FreeCAD 工程后导出新 STEP/STL/OBJ/BREP 或2D SVG/DXF 文件，不覆盖已有文件。可用 objectNames 显式指定几何对象；默认使用依赖图末端几何。SVG/DXF按view投影（默认top）；先检查 Body.Tip 与目标对象，避免导出被替代的历史形状。SVG的高阶或有理曲线可能使用折线近似，精度要求查看preview.svgEncoding中的近似记录；可编辑原曲线仍在FCStd。",
+        "重算并验证 FreeCAD 工程后导出新 STEP/STL/OBJ/BREP 或2D SVG/DXF 文件，不覆盖已有文件。可用 objectNames 显式指定几何对象；默认使用依赖图末端几何。SVG/DXF按view投影（默认top）；PartDesign先检查Body.Tip，其它工程核对实际目标对象，避免导出被替代的历史形状。SVG的高阶或有理曲线可能使用折线近似，精度要求查看preview.svgEncoding中的近似记录；可编辑原曲线仍在FCStd。",
       schema: cadExportInputSchema,
       approvalReviewKind: "cad-export",
       execute: (input, context) =>

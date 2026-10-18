@@ -1,6 +1,6 @@
 # FreeCAD 专业工作台接口核验
 
-> **角色：调研 + Assembly／CAM／FEM 代表流程实测记录。** 官方研究日期：2026-10-18；Assembly／CAM／FEM 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过既有 CAD Python 工具验收内置 Grounded＋Fixed 装配（§3.3）、CAM Profile＋LinuxCNC后处理（§4.3）及真实 Task 的 FEM 轴向压力（§5.3）代表闭环；BIM／Draft 仍未实测。本页未新增安装应用、库或求解器，后台独立工程证据不覆盖用户现存 GUI 文档。
+> **角色：调研 + Assembly／CAM／FEM／Draft 代表流程实测记录。** 官方研究日期：2026-10-18；Assembly／CAM／FEM／Draft 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过既有 CAD Python 工具验收内置 Grounded＋Fixed 装配（§3.3）、CAM Profile＋LinuxCNC后处理（§4.3）及真实 Task 的 FEM 轴向压力（§5.3）代表闭环；Draft实测见§6.1；BIM仍未实测。本页未新增安装应用、库或求解器，后台独立工程证据不覆盖用户现存 GUI 文档。
 >
 > 实施方向仍归[CAD 控制插件规划](../插件/CAD控制插件规划.md)。已完成的布尔、圆角／倒角、阵列及 TechDraw 代表工作流见[主调研 §9.14](CAD官方接口与插件接入调研.md)，本文不重复研究，也不把这些证据扩大为专业工作台已验收。AutoCAD／Blender 沿用主调研，不在本批重新研究。
 
@@ -149,7 +149,7 @@ Job 会创建模型资源／stock／刀具控制器等关联对象；不能只�
 
 拒绝边界也已真实通过：缺失后处理器时工厂实际返回None，脚本明确报错；清空 `job.Operations.Group` 后，由真实linuxcnc生成非空的首尾及WCS文本，原生Path回读没有G1／G2／G3实际运动，脚本据此拒绝。这份无切削文本由官方后处理真实生成，没有手写或mock；两种失败均保持源FCStd字节，显式目标文件为ENOENT，未发布失败工程。
 
-**当前证据边界**：已通过的仅是该矩形外轮廓、随包LinuxCNC后处理、参数重开折返及两种拒绝。SafeHeight／ClearanceHeight、单位、刀具半径、主轴和终止检查属于此次文件与路径语义证据；通用几何校验不证明刀路可制造。其他CAM策略、其他机床方言、碰撞／去料仿真、实际机床与制造、用户当前GUI、BIM／Draft仍待独立验收。本节不把原生矩阵通过扩大为本批所有workspace门禁已完成。
+**当前证据边界**：已通过的仅是该矩形外轮廓、随包LinuxCNC后处理、参数重开折返及两种拒绝。SafeHeight／ClearanceHeight、单位、刀具半径、主轴和终止检查属于此次文件与路径语义证据；通用几何校验不证明刀路可制造。其他CAM策略、其他机床方言、碰撞／去料仿真、实际机床与制造、用户当前GUI、BIM仍待独立验收；Draft独立证据见§6.1。本节不把原生矩阵通过扩大为本批所有workspace门禁已完成。
 
 NC 模态验收另补顺序回归：不能只检查G17／G21／G90／G94／G91.1在全文件出现，须在相关运动前生效；当前G54及G43H1也检查。把声明移至运动之后的反例先取得RED，再按当前模式检查修正并覆盖G55切换。最终3项（两项原生＋该单元反例）15.81秒通过，三轮后六份旧NC哈希仍保持。原生与先前定向证据有重叠，不相加。
 
@@ -225,7 +225,11 @@ Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FR
 
 当前 `Draft.make_wire(pointslist, closed=False, placement=None, face=None, support=None, bs2wire=False)` 可接 App.Vector 列表；`Draft.makeWire` 在安装版是兼容别名。无活动文档、点类型不符或错误输入可返回 None，而不是总会抛异常。应显式持有独立文档、placement、closed／face，不依赖交互工具的工作平面或吸附状态。官方旧 Draft API 页自己注明内容可能陈旧，所以精确拼法与参数以安装版源为准。[D1][D2]
 
-**待执行建议**：创建1000×500 mm闭合矩形 wire／face，保存重开，修改 points 后再核对；交付 FCStd 与二维交换文件。检查闭合性、四条有效边、平面、位置、面积500000 mm²及周长3000 mm，回读确认尺度和轮廓。空点列、自交、非共面或错误 placement 是独立失败输入。Draft polyline 是参数对象，不等于 Sketcher 的尺寸约束／完全约束草图；两者不可混称。其二维几何／交换可先沿后台 API 验证，交互绘制、文字和视图格式另验。
+**2026-10-19真实Task验收**：使用正式`Draft.make_wire`创建1000×500mm闭合面，显式平移(125,-75,0)mm并绕Z30°。工厂将传入世界点逆变换到局部Points，不能把局部点当成世界点重复变换。原生Wire与ViewProviderWire均真实创建并随FCStd重开；每次重开先核验旧参数与Shape，再改尺寸，1000×500→1250×600→1500×750→1000×500三轮往返保持对象身份、Closed/MakeFace、位置、完整四边／四点、平面、零实体及解析面积／周长；源文件字节保持。
+
+每轮交付新FCStd及SVG／DXF，六份独立正式回读核对mm、四边轮廓、全局位置、面积与周长，最后复核各文件独立SHA-256不变。SVG使用importSVG.insert；DXF使用核心Import.readDXF的Task专用参数组（dxfScaling=1、IndividualShapes），不调用会询问或下载的旧wrapper。独立测量临时Face只用于计算围面积，不加入导入文档或冒充文件自带面。精度缺陷及修复单列主调研§9.28，本节不沿用旧约六位有效数导出。
+
+要求实体的二维面及真实自交面两种失败均不发布目标，原FCStd字节保持。2项原生矩阵17.23s通过：`KENFUTWORK_CAD_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/cad/draft-operations.integration.test.ts --maxWorkers=1 --no-file-parallelism`。Draft polyline参数不等于Sketcher的尺寸约束／完全约束；空点列、非共面、其它Placement组合、交互绘制、文字及其它Draft对象未由这两个样例推出，BIM／IFC另验。
 
 ### 6.2 Arch 数据 API 与集成 BIM 工作台
 
@@ -260,7 +264,7 @@ Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FR
 
 每项先在新的独立工程中验证，再通过真实 Task 的既有 CAD Python／文件交付链验证，最后才决定是否增加专业结构化工具。Assembly 已完成 §3.3 代表文档的原生代理恢复与显式约束求解，CAM已完成 §4.3 的Job恢复、实际后处理及新NC交付，FEM已完成 §5.3 代表文档及Shape Link的实际交付；其他专业Job、复杂Analysis、Proxy文档的兼容性仍须分别验证，不能从这些样例推定全部文档能通过产品交付。GUI 当前文档接入另遵守已有打开句柄、观察前提和审批；不能把后台 Python 的权限证明移植为任意 GUI Python 权限。
 
-E 批次原交付是只读官方研究；随后新增的Assembly、CAM、FEM实测分别单列 §3.3、§4.3、§5.3。Assembly仅完成上述Grounded＋Fixed代表闭环、双零件STEP及所列拒绝；CAM仅完成Profile／LinuxCNC代表闭环及两种拒绝；FEM仅完成该线弹性样件及所列失败／取消。BIM／IFC、Draft仍未实测，不能扩展为所有专业工作台、全部关节、CAM策略／机床制造、求解器或物理场已验收。用户现存GUI操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import或官方测试文件存在替代。
+E 批次原交付是只读官方研究；随后新增的Assembly、CAM、FEM、Draft实测分别单列 §3.3、§4.3、§5.3、§6.1。Assembly仅完成上述Grounded＋Fixed代表闭环、双零件STEP及所列拒绝；CAM仅完成Profile／LinuxCNC代表闭环及两种拒绝；FEM仅完成该线弹性样件及所列失败／取消。Draft已完成§6.1参数面与二维交换闭环；BIM／IFC仍未实测，不能扩展为所有专业工作台、全部关节、CAM策略／机床制造、求解器或物理场已验收。用户现存GUI操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import或官方测试文件存在替代。
 
 ## 8. 来源
 

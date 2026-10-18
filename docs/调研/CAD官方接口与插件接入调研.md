@@ -539,3 +539,12 @@ KFW保留官方投影，仅对已投影原生边做17位有效数的SVG编码：
 球体／圆环还暴露旧`project()[:2]`取范围的缺陷：`project()`只返回V/V1/H/H1，没有VO外轮廓。改用`projectEx()`的VO与V（索引3、0），与官方默认Plain SVG相同；bounds、SVG和DXF共用选择，不混入hidden/seam/iso。DXF改走官方`Import.writeDXFShape(...,14,False,Task专用参数组)`完整R14 writer，实体数字固定九位小数、毫米单位；显式隔离writer配置，不再手包低精度片段。[Python绑定](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/TechDraw/App/AppTechDrawPy.cpp#L1086)、[默认可见线组合](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/TechDraw/App/ProjectionAlgos.cpp#L147)、[DXF实体数字精度](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Import/App/dxf/dxf.cpp#L124)
 
 独立回读矩阵从数学定义重建14种源几何，包括大坐标短线、旋转矩形、圆／圆弧、旋转椭圆／弧、二／三阶Bezier、普通／有理／五阶B-spline及球／柱／圆环。正式`importSVG.insert`导入后核对闭合性、包围盒、逐边长度和双向各129个样点的原生距离；三种实体另走正式PNG预览。样点不是穷尽Hausdorff证明，投影预览不是工程图标注或着色渲染。长度使用`math.fsum(Edge.Length)`，避免聚合Shape固定阶积分与Edge容差积分的差异导致假红；对数千折线边用保守包围盒下界剔除，再逐候选原生distToShape，未放宽原几何／弧长门槛。初版通用path的SVG导入超时，改为同点polyline后约0.22秒；另一次超时来自独立距离oracle，未因此提高生产时限。本批旋转矩形回读覆盖原尺寸精度问题。最终命令与门禁见同批《日志》，不把这些证据扩大为所有CAD曲线、视图、交换格式或用户现存GUI均已通过。
+
+
+### 9.29 Draft 参数面与独立二维交换闭环
+
+既有Task／后台Python链使用正式Draft.make_wire及原生Wire／ViewProviderWire完成闭合矩形面。显式(125,-75,0)mm＋Z30°位置，工厂世界点输入／局部Points、真实局部／全局四点四边分别核对；1000×500→1250×600→1500×750→1000×500三轮改宽高及独立FCStd重开保留同一对象身份、Closed/MakeFace、平面、零实体与解析面积／周长，不通过直接设置Shape伪造参数对象。
+
+六份新SVG／DXF正式独立读回mm尺度、全局位置、四边闭合轮廓、长度及围面积；DXF核心Import.readDXF使用Task私有配置，SVG使用importSVG.insert，保留真实导入对象。测量Face不加入文档、不冒称文件自带面；原工程与全部旧交换文件字节／SHA-256保持。二维面要求实体、真实自交面均拒绝且目标不存在，源工程字节保持。原生2项17.23s通过，命令及门禁见同批《日志》；精度修复见§9.28。
+
+这不是新增结构化Draft工具，也不是Sketcher全约束、全部Draft对象或交互绘制验收；Agent通过既有cad_run_python到达官方能力，2D指导与PartDesign的Body.Tip要求分清。BIM／IFC、GUI原位保存与有限进阶真实Agent收尾继续，未操作用户现存GUI或扩大Qt崩溃调查。
