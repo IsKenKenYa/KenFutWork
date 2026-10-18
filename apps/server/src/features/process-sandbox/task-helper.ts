@@ -627,8 +627,14 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     return this.closePromise;
   }
 
-  send(message: HelperResponse): void {
-    if (process.connected) process.send?.(message);
+  send(message: HelperResponse, disconnectAfterSend = false): void {
+    if (!process.connected) return;
+    if (disconnectAfterSend) {
+      // 先交付关闭回执再由helper结束IPC，让父端完整观察stdio和close。
+      process.send?.(message, () => {
+        if (process.connected) process.disconnect();
+      });
+    } else process.send?.(message);
   }
 }
 
@@ -642,11 +648,14 @@ process.on("message", (message: HelperRequest) => {
     return;
   void helper.execute(message).then(
     (value) => {
-      helper.send({
-        id: message.id,
-        ok: true,
-        value: (value ?? null) as ManagedProcessSnapshot | ProcessExit | null,
-      });
+      helper.send(
+        {
+          id: message.id,
+          ok: true,
+          value: (value ?? null) as ManagedProcessSnapshot | ProcessExit | null,
+        },
+        message.method === "close",
+      );
     },
     (error: unknown) => {
       helper.send({

@@ -39,6 +39,12 @@ class TaskConnection {
   private closed = false;
   private readonly lifecycle: HelperLifecycle;
   private closePromise: Promise<void> | undefined;
+  private readonly closeGraceMs: number;
+  private helperHasClosed = false;
+  private settleHelperClosed: (() => void) | undefined;
+  private readonly helperClosed = new Promise<void>((resolve) => {
+    this.settleHelperClosed = resolve;
+  });
   private readonly liveOutput = new Map<string, LiveOutputConsumer>();
 
   constructor(
@@ -59,6 +65,7 @@ class TaskConnection {
         "enforcement_unavailable",
         "SEA 服务必须配置随包的独立 Node binary，不能拿服务本体启动 helper。",
       );
+    this.closeGraceMs = initial.limits.killGraceMs;
     this.lifecycle = new HelperLifecycle(
       options.captureRoot,
       initial.scope,
@@ -98,6 +105,8 @@ class TaskConnection {
     this.child.on("close", (code, signal) => {
       this.lifecycle.observe({ kind: "close", code, signal }, this.child.pid);
       this.disconnect();
+      this.helperHasClosed = true;
+      this.settleHelperClosed?.();
     });
   }
 
@@ -202,9 +211,33 @@ class TaskConnection {
     this.closePromise ??= (async () => {
       await this.rpc({ method: "close", reason });
       this.lifecycle.acknowledgeClose();
-      if (this.child.connected) this.child.disconnect();
+      await this.finishHelperClose();
     })();
     return this.closePromise;
+  }
+
+  /** 只有真实关闭ACK后才进入此收尾；不能用helper退出反推命令范围已清空。 */
+  private async finishHelperClose(): Promise<void> {
+    if (await this.helperClosedWithinGrace()) return;
+    for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+      if (!this.helperHasClosed) this.child.kill(signal);
+      if (await this.helperClosedWithinGrace()) return;
+    }
+    throw this.lifecycle.failure();
+  }
+
+  private helperClosedWithinGrace(): Promise<boolean> {
+    if (this.helperHasClosed) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(
+        () => resolve(this.helperHasClosed),
+        this.closeGraceMs,
+      );
+      void this.helperClosed.then(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
   }
 
   private disconnect(): void {

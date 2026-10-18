@@ -285,6 +285,19 @@ Agent 用一次 `cad_apply_operations` 创建 40×30 mm 板、初始 Pad 10 mm�
 
 另以真实 Task stdio 建立明确首帧 ACK 屏障：子进程写 A、等待 stdin，再写 B 后退出；父端持有 A 的 listener Promise。该独立探针稳定复现同类 helper 失联，新的私有 stderr 记录 `PipeOutputRelay.publish` 对未 ACK 前帧抛 output_failed，helper退出1。该堆栈证明了一个实际退出竞态，下一批先将探针锁为回归再修复；原 NrqudE 没有 helper stderr，不能将这份新堆栈冒充原现场证据。
 
+
+### 9.11 stdio 退出冲洗与 ACK 的回归修复
+
+本机 Node v24.18.0 内嵌 `internal/child_process` 第304行在 child 退出时 nextTick 调 `flushStdio`，第331行对仍可读的 stdio 调 `resume()`。因此应用前一帧主动 pause，并不保证退出时不会再收到数据。旧 PipeOutputRelay 将这种尾部交付视为“前帧未 ACK”而直接在 data 监听器抛错，终止整个 Task helper；前述独立探针的私有堆栈与该路径一致。
+
+正式回归先全部 RED：真实 macOS Task 中，stdout／stderr 各自持住 A 的 listener Promise，另一路报自身实际 PID，stdin 命令使 B 写入回调后正常退出；确实观察该测试 PID 退出后才释放 ACK。旧版两条流均无法获得完整 AB 与退出证明，另四项纯流回归覆盖强制 resume、跨块 UTF8／EOF、序号／字节游标及关闭后历史采集。
+
+修复仅在原 relay 中接受退出冲洗带来的额外文本，立即再次 pause 并排队，收到前帧 ACK 后按序发送；单帧在途、完整协议与有界 capture 分离、重复／未来 ACK 及关闭语义保留。不吞数据、不用历史截断替代协议、不加重试或任意新字节预算。六项回归转绿；后续原生 CAD 与全仓门禁另记日志。这证明该退出竞态已修复，不代表所有 helper 失联原因都被覆盖。
+
+原生全套复验又发现取证写入的收尾竞争：关闭 RPC ACK 后父端立即返回，exit／close 的私有记录与测试删目录相撞。新增明确存活屏障的 helper 回归先 RED，现由 helper 在关闭回执发送回调后自行断开 IPC，父端等待实际 close 和最后记录写完才返回。独立 Node 探针确认当前运行时父端抢先断开 IPC 可能只有 exit、缺 close，不能用该方式判断最终资源边界。关闭已 ACK 但 helper 仍存活时复用既有 killGraceMs 收尾自己的 helper，SIGTERM／SIGKILL 两条路径有回归；未收到关闭 ACK 时不使用此终止流程，继续保持 stop_unconfirmed 与不可重开屏障。没有给目录删除增加重试。
+
+最终范围回归六文件53项、启用真实 FreeCAD 的 CAD 四文件49项均通过；workspace38项、串行全包19任务、全类型26任务及lint零错误通过，默认跳过和既有警告另计。独立只读复核未发现该输出与关闭组合的新缺陷。该结果覆盖本节确定性竞态及既有后台 CAD 场景，原始缺少 stderr 的间歇现场仍保留未完全归因边界。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

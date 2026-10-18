@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   realpath,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
@@ -18,6 +20,16 @@ import type { ProcessSandbox, ProcessSpawnRequest } from "./types.js";
 const STDERR_MARKER = "PRIVATE_HELPER_STDERR_MARKER";
 const ENV_MARKER = "PRIVATE_HELPER_ENV_VALUE";
 const COMMAND_MARKER = "PRIVATE_HELPER_COMMAND_VALUE";
+
+function ownHelperExited(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return true;
+    throw error;
+  }
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -136,19 +148,7 @@ async function controlChannel() {
     async confirmExited(pid: number) {
       await closed.promise;
       await expect
-        .poll(
-          () => {
-            try {
-              process.kill(pid, 0);
-              return false;
-            } catch (error) {
-              if ((error as NodeJS.ErrnoException).code === "ESRCH")
-                return true;
-              throw error;
-            }
-          },
-          { timeout: 5000 },
-        )
+        .poll(() => ownHelperExited(pid), { timeout: 5000 })
         .toBe(true);
     },
     async close() {
@@ -160,16 +160,24 @@ async function controlChannel() {
   };
 }
 
-function syntheticHelper(port: number, outputPath: string) {
+function syntheticHelper(
+  port: number,
+  outputPath: string,
+  mode: "fault" | "normal-close" = "fault",
+  ignoreTerm = false,
+) {
   return `import net from "node:net";
+const normalClose=${mode === "normal-close"};
+if(${ignoreTerm})process.on("SIGTERM",()=>{});
 const control = net.createConnection({host:"127.0.0.1",port:${port}});
 control.on("connect",()=>control.write(JSON.stringify({kind:"ready",pid:process.pid})+"\\n"));
 let buffer="";
 control.setEncoding("utf8");
 control.on("data",data=>{
   buffer+=data;
-  if(buffer.includes("exit\\n"))process.exit(23);
+  if(buffer.includes("exit\\n"))process.exit(normalClose ? 0 : 23);
 });
+if(normalClose)process.on("disconnect",()=>control.write(JSON.stringify({kind:"disconnected"})+"\\n"));
 process.on("message",message=>{
   if(message.method==="initialize") {
     process.send({id:message.id,ok:true,value:null});
@@ -183,6 +191,8 @@ process.on("message",message=>{
       enforcement:null,exit:null,retainedBytes:0,totalBytes:0,discardedBytes:0,
       outputPath:${JSON.stringify(outputPath)}
     }});
+  } else if(message.method==="close" && normalClose) {
+    process.send({id:message.id,ok:true,value:null},()=>{if(process.connected)process.disconnect();});
   } else if(message.method==="wait") {
     process.stderr.write(${JSON.stringify(`${STDERR_MARKER}\n`)},()=>{
       process.disconnect();
@@ -192,6 +202,217 @@ process.on("message",message=>{
 });
 `;
 }
+
+test("helper关闭ACK不代表OS资源已关闭，close须等真实退出和最终诊断写完再允许删除", async () => {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-helper-close-")),
+  );
+  const control = await controlChannel();
+  const captureRoot = join(root, "capture");
+  const helperPath = join(root, "normal-close-helper.mjs");
+  await mkdir(captureRoot);
+  await writeFile(
+    helperPath,
+    syntheticHelper(control.port, join(root, "unused.bin"), "normal-close"),
+  );
+  const sandbox = createProcessSandbox({
+    helperPath,
+    helperExecArgv: [],
+    nodePath: process.execPath,
+    captureRoot,
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  const input = request(root);
+  let pid: number | undefined;
+  let closing: Promise<{ closed: true } | { error: unknown }> | undefined;
+  let closeSettled = false;
+  let closeChecked = false;
+  let channelClosed = false;
+  const failures: unknown[] = [];
+  try {
+    // 合成快照仅签发RPC句柄；fixture不创建命令子进程或伪造rangeEmpty。
+    await sandbox.spawn(input);
+    const helperPid = await control.ready;
+    pid = helperPid;
+    closing = sandbox.close("normal_close_barrier").then(
+      () => {
+        closeSettled = true;
+        return { closed: true as const };
+      },
+      (error: unknown) => {
+        closeSettled = true;
+        return { error };
+      },
+    );
+    // helper已回close ACK，IPC也已断开；控制socket仍明确阻止helper退出。
+    await control.disconnected;
+    expect(closeSettled).toBe(false);
+    expect(() => process.kill(helperPid, 0)).not.toThrow();
+    control.releaseExit();
+    await control.confirmExited(helperPid);
+    const outcome = await closing;
+    closeChecked = true;
+    if ("error" in outcome) throw outcome.error;
+    expect(outcome).toEqual({ closed: true });
+    expect(closeSettled).toBe(true);
+
+    const directory = join(
+      captureRoot,
+      createHash("sha256").update(input.scope.taskId).digest("hex"),
+      "helpers",
+    );
+    const journals = (await readdir(directory)).filter((name) =>
+      name.endsWith(".json"),
+    );
+    expect(journals).toHaveLength(1);
+    const name = journals[0];
+    if (!name) throw new Error("关闭成功后缺少最终helper诊断");
+    const journal = JSON.parse(await readFile(join(directory, name), "utf8"));
+    expect(journal).toMatchObject({
+      helperPid,
+      closeAcknowledgedAt: expect.any(String),
+      exit: { code: 0, signal: null },
+    });
+    expect(journal.events).toContainEqual(
+      expect.objectContaining({ kind: "exit", code: 0, signal: null }),
+    );
+    expect(journal.events).toContainEqual(
+      expect.objectContaining({ kind: "close", code: 0, signal: null }),
+    );
+    await rm(root, { recursive: true, force: true });
+    // 控制通道close事件是额外的资源边界；不靠sleep猜是否还有迟到写入。
+    await control.close();
+    channelClosed = true;
+    await expect(stat(root)).rejects.toMatchObject({ code: "ENOENT" });
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    control.releaseExit();
+    try {
+      if (pid !== undefined) await control.confirmExited(pid);
+      if (closing && !closeChecked) {
+        const outcome = await closing;
+        if ("error" in outcome) failures.push(outcome.error);
+      } else if (!closing) {
+        await sandbox.close("normal_close_fixture_cleanup");
+      }
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      if (!channelClosed) await control.close();
+      await rm(root, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, "helper关闭边界或自身fixture清理失败");
+});
+
+test.skipIf(process.platform === "win32").each([
+  { ignoreTerm: false, expectedSignal: "SIGTERM" },
+  { ignoreTerm: true, expectedSignal: "SIGKILL" },
+])(
+  "helper已ACK但保留自有控制socket时，确认$expectedSignal终止才完成关闭",
+  async ({ ignoreTerm, expectedSignal }) => {
+    const root = await realpath(
+      await mkdtemp(join(tmpdir(), "kfw-helper-close-signal-")),
+    );
+    const control = await controlChannel();
+    const captureRoot = join(root, "capture");
+    const helperPath = join(root, "normal-close-helper.mjs");
+    await mkdir(captureRoot);
+    await writeFile(
+      helperPath,
+      syntheticHelper(
+        control.port,
+        join(root, "unused.bin"),
+        "normal-close",
+        ignoreTerm,
+      ),
+    );
+    const sandbox = createProcessSandbox({
+      helperPath,
+      helperExecArgv: [],
+      nodePath: process.execPath,
+      captureRoot,
+      network: { allowedDomains: [], deniedDomains: [] },
+    });
+    const input = request(root);
+    input.limits = { ...input.limits, killGraceMs: 100 };
+    let pid: number | undefined;
+    let closing: Promise<{ closed: true } | { error: unknown }> | undefined;
+    let closeChecked = false;
+    const failures: unknown[] = [];
+    try {
+      await sandbox.spawn(input);
+      const helperPid = await control.ready;
+      pid = helperPid;
+      closing = sandbox.close("normal_close_signal").then(
+        () => ({ closed: true as const }),
+        (error: unknown) => ({ error }),
+      );
+      await control.disconnected;
+      // 不发release：这个合成helper只有控制socket，无命令子进程，等待宿主清理自身。
+      const outcome = await closing;
+      closeChecked = true;
+      if ("error" in outcome) throw outcome.error;
+      expect(ownHelperExited(helperPid)).toBe(true);
+      await control.confirmExited(helperPid);
+      const directory = join(
+        captureRoot,
+        createHash("sha256").update(input.scope.taskId).digest("hex"),
+        "helpers",
+      );
+      const journals = (await readdir(directory)).filter((name) =>
+        name.endsWith(".json"),
+      );
+      expect(journals).toHaveLength(1);
+      const name = journals[0];
+      if (!name) throw new Error("自有helper终止后缺少诊断");
+      const journal = JSON.parse(await readFile(join(directory, name), "utf8"));
+      expect(journal).toMatchObject({
+        helperPid,
+        closeAcknowledgedAt: expect.any(String),
+        exit: { code: null, signal: expectedSignal },
+      });
+      expect(journal.events).toContainEqual(
+        expect.objectContaining({
+          kind: "close",
+          code: null,
+          signal: expectedSignal,
+        }),
+      );
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      // RED下旧实现只回ACK；释放自己的fixture helper，不能遗留真实进程。
+      control.releaseExit();
+      try {
+        if (pid !== undefined) await control.confirmExited(pid);
+        if (closing && !closeChecked) {
+          const outcome = await closing;
+          if ("error" in outcome) failures.push(outcome.error);
+        } else if (!closing) {
+          await sandbox.close("normal_close_signal_cleanup");
+        }
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        await control.close();
+        await rm(root, { recursive: true, force: true });
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1)
+      throw new AggregateError(failures, "helper终止边界或自身fixture清理失败");
+  },
+);
 
 test("helper运行中先断连后退出：后续RPC保留首因、私有日志补齐退出，不能伪造范围已清空", async () => {
   const root = await realpath(
