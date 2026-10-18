@@ -45,9 +45,9 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | PNG 预览 | GUI view 的图像导出、scenegraph 路线 | 真实图像、视角和对象可见性正确；缺图形环境可解释 | 后台真实几何线框 PNG 已验，见 §9.1、§9.7；独立 GUI 原生夹具已导出并查看着色 PNG，见 §9.17，不代表正式 GUI 预览工具已交付 |
 | Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | 广泛可达不等于已验收 |
 | FEM／CAM 等 | 官方工作台与外部工具链 | 网格／求解器／后处理器可用；输出语义正确 | 外部依赖、领域验收另列 |
-| 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 固定查询／观察、直接标量读写及副本发布已有独立 GUI 的真实 Task 工具实证；显式撤销与原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §8～§14 |
+| 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 固定查询／观察、直接标量读写、副本发布及自身已提交属性操作的显式撤销已有独立 GUI 的真实 Task 工具实证；原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §8～§15 |
 
-本表区分后台工具、独立 GUI 的真实 Task 工具和专用原生夹具。GUI 工具的逐项行为与验收范围以[桥接核验](FreeCAD当前文档桥接接口核验.md)为准；现有证据未覆盖用户现存 GUI、任意 GUI Python、全部属性或全部工作台。`undoProvenance` 只记录自身事务归属，夹具内的原生 undo／redo 回绕不等于正式撤销工具；覆盖保存源文件也不能由副本发布推定完成。
+本表区分后台工具、独立 GUI 的真实 Task 工具和专用原生夹具。GUI 工具的逐项行为与验收范围以[桥接核验](FreeCAD当前文档桥接接口核验.md)为准；现有证据未覆盖用户现存 GUI、任意 GUI Python、全部属性或全部工作台。该文第14节的归属／原生 undo／redo 仍是夹具证据，正式显式撤销的工具实证单列第15节；它只支持自身有证明的已提交属性操作。覆盖保存源文件不能由副本发布或显式撤销推定完成。
 
 矩阵来源：[Sketcher scripting](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Sketcher_scripting.md)、[PartDesign Workbench](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/PartDesign_Workbench.md)、[Quantity](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Quantity.md)、[Std Export](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_Export.md)、[TechDraw 官方测试](https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/TechDraw/TDTest)、[TechDrawGui API](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDrawGui_API.md)、[Std ViewScreenShot](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_ViewScreenShot.md)。
 
@@ -154,7 +154,7 @@ Extension manifest 提供平台、版本、许可和 files／network 等权限�
 | 本轮优先 | 基础 2D／3D 参数化闭环 | 草图约束→实体特征→源尺寸变化→重算→保存重开→再修改→导出再导入；不能只做单次法兰截图 |
 | 本轮优先 | 操作结果可判断与可恢复 | 正常及错误样件均覆盖；无效几何不标成功；失败／停止不覆盖有效源工程，不误报交付 |
 | 后续一阶段 | 更多官方工作台与更好诊断 | 每个域有版本／依赖、代表性任务、失败与交付证据；不以大量工具名代替能力 |
-| 当前推进 | 当前可见 FreeCAD 文档控制 | 固定查询／观察、标量读写与副本→Task 已有实证；显式撤销与覆盖保存仍须独立产品工具整链验收，详见[桥接核验](FreeCAD当前文档桥接接口核验.md) |
+| 当前推进 | 当前可见 FreeCAD 文档控制 | 固定查询／观察、标量读写、副本→Task 与自身属性显式撤销已有工具实证；覆盖保存仍须独立产品工具整链验收，详见[桥接核验](FreeCAD当前文档桥接接口核验.md) |
 | 后续一阶段 | Blender 可选场景／渲染适配 | 用户安装后验证后台保存、渲染、导出；若复用官方 MCP，再核对运行协议、取消和脚本权限 |
 | 深入研究 | AutoCAD 本机适配与许可 | 取得对应平台安装及授权后，Windows／Mac 分别验证；公开控制 MCP 与只读 Help MCP 分清 |
 | 深入研究 | CAM／FEM 等专业交付与跨应用交换 | 外部求解器／后处理器、几何精度、单位和交付要求按领域验证；生成文件不等于物理制造验收 |

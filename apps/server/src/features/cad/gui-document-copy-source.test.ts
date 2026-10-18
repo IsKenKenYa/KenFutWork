@@ -12,7 +12,7 @@ import { CAD_GUI_PROPERTY_INSPECTION_SOURCE } from "./gui-property-source.js";
 
 const execute = promisify(execFile);
 const fixtureSource = String.raw`
-import hashlib, json, os, sys, tempfile, time, types, zipfile
+import hashlib, io, json, os, sys, tempfile, time, types, zipfile
 
 calls, dumped = [], []
 class PropertyKind:
@@ -35,7 +35,7 @@ class NativePropertyObject:
     def dumpPropertyContent(self, name, Compression):
         assert Compression == 0
         dumped.append(self.kind)
-        stream = _kfw_cad_copy_io.BytesIO()
+        stream = io.BytesIO()
         with zipfile.ZipFile(stream, 'w') as archive:
             archive.writestr('Persistence.xml', self.xml)
         return bytearray(stream.getvalue())

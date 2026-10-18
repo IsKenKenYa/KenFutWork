@@ -30,6 +30,14 @@ import {
   type CadGuiMacroTransport,
   createMacosCadGuiTransport,
 } from "./gui-transport.js";
+import {
+  type CadGuiUndoOperationInput,
+  type CadGuiUndoOperationReceipt,
+  cadGuiUndoOperationInputSchema,
+  cadGuiUndoOperationReceiptSchema,
+  cadGuiUndoSourceSchema,
+} from "./gui-undo-contracts.js";
+import { CAD_GUI_UNDO_SOURCE } from "./gui-undo-source.js";
 
 export interface CadGuiOperationResult {
   operationId: string;
@@ -39,9 +47,13 @@ export interface CadGuiOperationResult {
     | "cancelled"
     | "unknown"
     | CadGuiOperationReceipt["outcome"]
-    | CadGuiCopyDocumentReceipt["outcome"];
+    | CadGuiCopyDocumentReceipt["outcome"]
+    | CadGuiUndoOperationReceipt["outcome"];
   cancellationRequested: boolean;
-  receipt?: CadGuiOperationReceipt | CadGuiCopyDocumentReceipt;
+  receipt?:
+    | CadGuiOperationReceipt
+    | CadGuiCopyDocumentReceipt
+    | CadGuiUndoOperationReceipt;
   reason?: string;
 }
 
@@ -54,6 +66,12 @@ export interface CadGuiOperationController {
   ): Promise<CadGuiOperationResult>;
   copyDocument(
     input: CadGuiCopyDocumentInput,
+    binding: CadGuiOperationBinding,
+    context: CadGuiProbeContext,
+    guard?: () => Promise<void>,
+  ): Promise<CadGuiOperationResult>;
+  undoOperation(
+    input: CadGuiUndoOperationInput,
     binding: CadGuiOperationBinding,
     context: CadGuiProbeContext,
     guard?: () => Promise<void>,
@@ -76,8 +94,11 @@ export class CadGuiOperationError extends Error {
 // 私有文件协议的轮询间隔，不是运行额度、重试或模型输出预算。
 const PUBLICATION_POLL_MS = 20;
 
-type OperationInput = CadGuiSetPropertiesInput | CadGuiCopyDocumentInput;
-type OperationName = "set-properties" | "save-copy";
+type OperationInput =
+  | CadGuiSetPropertiesInput
+  | CadGuiCopyDocumentInput
+  | CadGuiUndoOperationInput;
+type OperationName = "set-properties" | "save-copy" | "undo";
 
 function macroPaths(paths: CadGuiOperationPaths): CadGuiOperationPaths {
   return {
@@ -112,6 +133,19 @@ export function buildCadGuiCopyDocumentMacro(
     CAD_GUI_PROPERTY_MUTATION_SOURCE,
     CAD_GUI_DOCUMENT_COPY_SOURCE,
     `\n_kfw_cad_copy_document(${JSON.stringify(fixedPaths)})\n`,
+  ].join("\n");
+}
+
+export function buildCadGuiUndoOperationMacro(
+  paths: CadGuiOperationPaths,
+): string {
+  const fixedPaths = macroPaths(paths);
+  return [
+    CAD_GUI_DOCUMENT_OBSERVER_SOURCE,
+    CAD_GUI_PROPERTY_INSPECTION_SOURCE,
+    CAD_GUI_PROPERTY_MUTATION_SOURCE,
+    CAD_GUI_UNDO_SOURCE,
+    `\n_kfw_cad_undo_operation(${JSON.stringify(fixedPaths)})\n`,
   ].join("\n");
 }
 
@@ -153,39 +187,6 @@ function validTimeout(value: unknown): value is number {
     value > 0 &&
     value <= 2_147_483_647
   );
-}
-
-function operationPayload(
-  input: OperationInput,
-  operation: OperationName,
-  timeoutMs: number,
-  existing: CadGuiOperationRecord | null,
-) {
-  if (existing) {
-    const payload = existing.payload;
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      !("timeoutMs" in payload) ||
-      !validTimeout(payload.timeoutMs)
-    )
-      throw new CadGuiOperationError(
-        "invalid_record",
-        "CAD 操作记录参数无效，请检查实例数据目录。",
-        input.operationId,
-        "unknown",
-      );
-    timeoutMs = payload.timeoutMs;
-  }
-  const payload = { operation, ...input, timeoutMs };
-  if (existing && !isDeepStrictEqual(existing.payload, payload))
-    throw new CadGuiOperationError(
-      "conflict",
-      "CAD 操作编号已用于不同请求，请先查询原操作状态；独立的新操作才使用新编号。",
-      input.operationId,
-      "unknown",
-    );
-  return payload;
 }
 
 function receiptMatchesRequest(
@@ -279,6 +280,107 @@ function copyReceiptMatchesRequest(
   );
 }
 
+function parseUndoSource(value: unknown) {
+  const parsed = cadGuiUndoSourceSchema.safeParse(value);
+  if (!parsed.success) return null;
+  const { input, receipt } = parsed.data;
+  const undoProvenance = receipt.undoProvenance;
+  const snapshot = receipt.snapshot;
+  if (receipt.outcome !== "committed" || !undoProvenance || !snapshot)
+    return null;
+  return {
+    input,
+    receipt: {
+      ...receipt,
+      outcome: "committed" as const,
+      undoProvenance,
+      snapshot,
+    },
+  };
+}
+
+function undoTargetMatches(
+  input: CadGuiUndoOperationInput,
+  source: NonNullable<ReturnType<typeof parseUndoSource>>,
+): boolean {
+  const snapshot = source.receipt.snapshot;
+  return (
+    input.sourceOperationId === source.receipt.operationId &&
+    input.sourceOperationId === source.input.operationId &&
+    isDeepStrictEqual(input.application, source.input.application) &&
+    input.bridgeEpoch === snapshot.bridgeEpoch &&
+    input.documentHandle === snapshot.document.documentHandle &&
+    input.expectedApplicationRevision === snapshot.applicationRevision &&
+    input.expectedDocumentRevision === snapshot.document.revision
+  );
+}
+
+function undoReceiptMatchesRequest(
+  receipt: CadGuiUndoOperationReceipt,
+  record: CadGuiOperationRecord,
+): boolean {
+  if (!record.payload || typeof record.payload !== "object") return false;
+  const { operation, timeoutMs, undoSource, ...rawInput } =
+    record.payload as Record<string, unknown>;
+  const input = cadGuiUndoOperationInputSchema.safeParse(rawInput);
+  const source = parseUndoSource(undoSource);
+  if (
+    operation !== "undo" ||
+    !validTimeout(timeoutMs) ||
+    !input.success ||
+    !source ||
+    !undoTargetMatches(input.data, source) ||
+    input.data.operationId !== record.operationId ||
+    receipt.operationId !== record.operationId ||
+    receipt.fingerprint !== record.fingerprint ||
+    receipt.pid !== input.data.application.pid ||
+    receipt.sourceOperationId !== input.data.sourceOperationId ||
+    receipt.sourceFingerprint !== source.receipt.fingerprint ||
+    (receipt.transactionName !== undefined &&
+      receipt.transactionName !== source.receipt.undoProvenance.transactionName)
+  )
+    return false;
+  const rows = new Map(
+    source.receipt.changes.map((change) => [
+      JSON.stringify([change.objectName, change.propertyName]),
+      change,
+    ]),
+  );
+  const seen = new Set<string>();
+  for (const change of receipt.changes) {
+    const key = JSON.stringify([change.objectName, change.propertyName]);
+    const original = rows.get(key);
+    if (
+      seen.has(key) ||
+      !original ||
+      !isDeepStrictEqual(change.before, original.observed)
+    )
+      return false;
+    seen.add(key);
+    if (
+      receipt.outcome === "undone" &&
+      (!isDeepStrictEqual(change.observed, original.before) ||
+        change.changed !== !isDeepStrictEqual(change.before, change.observed))
+    )
+      return false;
+  }
+  if (receipt.outcome !== "undone") return true;
+  const snapshot = receipt.snapshot;
+  return (
+    seen.size === rows.size &&
+    receipt.transactionName === source.receipt.undoProvenance.transactionName &&
+    receipt.undoHistory?.count ===
+      source.receipt.undoProvenance.undoHistory.count - 1 &&
+    receipt.redoHistory?.count ===
+      source.receipt.undoProvenance.redoHistory.count + 1 &&
+    snapshot !== undefined &&
+    snapshot.bridgeEpoch === input.data.bridgeEpoch &&
+    snapshot.document.documentHandle === input.data.documentHandle &&
+    snapshot.applicationRevision >= input.data.expectedApplicationRevision &&
+    snapshot.document.revision >= input.data.expectedDocumentRevision
+  );
+}
+
 export function createCadGuiOperationController(options: {
   store: CadGuiOperationStore;
   probe: CadGuiProbe;
@@ -297,19 +399,25 @@ export function createCadGuiOperationController(options: {
       cancellationRequested: state.cancelled,
     };
     if (state.status === "terminal") {
-      const isCopy =
+      const operation =
         record.payload &&
         typeof record.payload === "object" &&
-        "operation" in record.payload &&
-        record.payload.operation === "save-copy";
-      const receipt = isCopy
-        ? cadGuiCopyDocumentReceiptSchema.safeParse(state.receipt)
-        : cadGuiOperationReceiptSchema.safeParse(state.receipt);
+        "operation" in record.payload
+          ? record.payload.operation
+          : undefined;
+      const receipt =
+        operation === "undo"
+          ? cadGuiUndoOperationReceiptSchema.safeParse(state.receipt)
+          : operation === "save-copy"
+            ? cadGuiCopyDocumentReceiptSchema.safeParse(state.receipt)
+            : cadGuiOperationReceiptSchema.safeParse(state.receipt);
       if (
         !receipt.success ||
-        !(receipt.data.protocol === "kfw-cad-gui-copy/1"
-          ? copyReceiptMatchesRequest(receipt.data, record)
-          : receiptMatchesRequest(receipt.data, record))
+        !(receipt.data.protocol === "kfw-cad-gui-undo/1"
+          ? undoReceiptMatchesRequest(receipt.data, record)
+          : receipt.data.protocol === "kfw-cad-gui-copy/1"
+            ? copyReceiptMatchesRequest(receipt.data, record)
+            : receiptMatchesRequest(receipt.data, record))
       )
         return { ...base, outcome: "unknown", reason: "invalid_receipt" };
       return {
@@ -343,6 +451,126 @@ export function createCadGuiOperationController(options: {
     }
   }
 
+  async function loadUndoSource(
+    input: CadGuiUndoOperationInput,
+    binding: CadGuiOperationBinding,
+  ) {
+    const sourceRecord = await store.lookup({
+      instanceId: binding.instanceId,
+      taskId: binding.taskId,
+      operationId: input.sourceOperationId,
+    });
+    const unavailable = () =>
+      new CadGuiOperationError(
+        "undo_source_unavailable",
+        "原操作缺少已确认的撤销证明，请查询原操作状态。",
+        input.operationId,
+        "rejected",
+      );
+    if (
+      !sourceRecord ||
+      sourceRecord.binding.instanceId !== binding.instanceId ||
+      sourceRecord.binding.taskId !== binding.taskId ||
+      sourceRecord.binding.projectId !== binding.projectId ||
+      !sourceRecord.payload ||
+      typeof sourceRecord.payload !== "object"
+    )
+      throw unavailable();
+    const { operation, timeoutMs, ...rawSourceInput } =
+      sourceRecord.payload as Record<string, unknown>;
+    const sourceInput =
+      cadGuiSetPropertiesInputSchema.safeParse(rawSourceInput);
+    if (
+      operation !== "set-properties" ||
+      !validTimeout(timeoutMs) ||
+      !sourceInput.success
+    )
+      throw unavailable();
+    const original = await result(sourceRecord);
+    if (
+      original.outcome !== "committed" ||
+      original.receipt?.protocol !== "kfw-cad-gui-operation/1"
+    )
+      throw unavailable();
+    const source = parseUndoSource({
+      input: sourceInput.data,
+      receipt: original.receipt,
+    });
+    if (!source) throw unavailable();
+    return source;
+  }
+
+  async function operationPayload(
+    input: OperationInput,
+    operation: OperationName,
+    timeoutMs: number,
+    existing: CadGuiOperationRecord | null,
+    binding: CadGuiOperationBinding,
+  ) {
+    const conflict = () =>
+      new CadGuiOperationError(
+        "conflict",
+        "CAD 操作编号已用于不同请求，请先查询原操作状态；独立的新操作才使用新编号。",
+        input.operationId,
+        "unknown",
+      );
+    let saved: Record<string, unknown> | undefined;
+    if (existing) {
+      if (
+        !existing.payload ||
+        typeof existing.payload !== "object" ||
+        !("timeoutMs" in existing.payload) ||
+        !validTimeout(existing.payload.timeoutMs)
+      )
+        throw new CadGuiOperationError(
+          "invalid_record",
+          "CAD 操作记录参数无效，请检查实例数据目录。",
+          input.operationId,
+          "unknown",
+        );
+      saved = existing.payload as Record<string, unknown>;
+      timeoutMs = existing.payload.timeoutMs;
+      if (saved.operation !== operation) throw conflict();
+    }
+    let source: ReturnType<typeof parseUndoSource> = null;
+    if (operation === "undo") {
+      if (!("sourceOperationId" in input)) throw conflict();
+      if (saved) {
+        const {
+          operation: _operation,
+          timeoutMs: _timeoutMs,
+          undoSource,
+          ...publicInput
+        } = saved;
+        if (!isDeepStrictEqual(publicInput, input)) throw conflict();
+        source = parseUndoSource(undoSource);
+      } else source = await loadUndoSource(input, binding);
+      if (!source)
+        throw new CadGuiOperationError(
+          "invalid_record",
+          "撤销操作的来源证明无效，请查询原操作状态。",
+          input.operationId,
+          "unknown",
+        );
+      if (!undoTargetMatches(input, source))
+        throw new CadGuiOperationError(
+          "undo_target_mismatch",
+          "撤销目标与原提交后的状态不一致，请使用原操作的目标快照。",
+          input.operationId,
+          "rejected",
+        );
+    }
+    const payload = {
+      operation,
+      ...input,
+      timeoutMs,
+      ...(operation === "undo" ? { undoSource: source } : {}),
+    };
+    if (existing && !isDeepStrictEqual(existing.payload, payload))
+      throw conflict();
+    return payload;
+  }
+
   async function runOperation(
     input: OperationInput,
     operation: OperationName,
@@ -350,10 +578,11 @@ export function createCadGuiOperationController(options: {
     rawContext: CadGuiProbeContext,
     guard?: () => Promise<void>,
   ): Promise<CadGuiOperationResult> {
-    const macroBuilder =
-      operation === "save-copy"
-        ? buildCadGuiCopyDocumentMacro
-        : buildCadGuiOperationMacro;
+    const macroBuilder = {
+      "set-properties": buildCadGuiOperationMacro,
+      "save-copy": buildCadGuiCopyDocumentMacro,
+      undo: buildCadGuiUndoOperationMacro,
+    }[operation];
     const binding = { ...rawBinding };
     const context = { ...rawContext };
     if (
@@ -437,11 +666,12 @@ export function createCadGuiOperationController(options: {
     try {
       for (;;) {
         const existing = await published();
-        const payload = operationPayload(
+        const payload = await operationPayload(
           input,
           operation,
           context.timeoutMs,
           existing,
+          binding,
         );
         await boundary();
         try {
@@ -464,11 +694,12 @@ export function createCadGuiOperationController(options: {
       // 已认领操作只能读既有状态；transport 成功不代替 GUI 的事务 ACK。
       if (current.state !== "prepared" || current.outcome !== "prepared")
         return current;
-      const payload = operationPayload(
+      const payload = await operationPayload(
         input,
         operation,
         context.timeoutMs,
         record,
+        binding,
       );
       deadline = Math.min(deadline, record.preparedAt + payload.timeoutMs);
       clearTimeout(timer);
@@ -531,6 +762,16 @@ export function createCadGuiOperationController(options: {
   }
 
   return {
+    async undoOperation(rawInput, binding, context, guard) {
+      const parsed = cadGuiUndoOperationInputSchema.safeParse(rawInput);
+      if (!parsed.success)
+        throw new CadGuiOperationError(
+          "invalid_input",
+          "CAD 撤销参数无效，请检查原操作编号和目标快照。",
+          rawInput.operationId,
+        );
+      return runOperation(parsed.data, "undo", binding, context, guard);
+    },
     async execute(rawInput, binding, context, guard) {
       const parsed = cadGuiSetPropertiesInputSchema.safeParse(rawInput);
       if (!parsed.success)

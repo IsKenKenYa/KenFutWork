@@ -6,7 +6,7 @@ import {
 } from "./gui-document-contracts.js";
 
 const operationId = z.string().uuid().toLowerCase();
-const historySummarySchema = z
+export const cadGuiHistorySummarySchema = z
   .object({
     count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     sha256: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -19,12 +19,12 @@ const undoProvenanceSchema = z
       .regex(
         /^KFW CAD [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
       ),
-    undoHistory: historySummarySchema
+    undoHistory: cadGuiHistorySummarySchema
       .extend({
         count: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
       })
       .strict(),
-    redoHistory: historySummarySchema,
+    redoHistory: cadGuiHistorySummarySchema,
   })
   .strict();
 const propertyChangeSchema = z

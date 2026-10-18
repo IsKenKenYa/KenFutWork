@@ -1,7 +1,9 @@
+import { CAD_GUI_NATIVE_STATE_SOURCE } from "./gui-native-state-source.js";
+
 /** 固定文档副本入口；GUI 只写持久操作目录，Task 文件由宿主另行发布。 */
-export const CAD_GUI_DOCUMENT_COPY_SOURCE = String.raw`
-import io as _kfw_cad_copy_io
-import xml.etree.ElementTree as _kfw_cad_copy_xml
+export const CAD_GUI_DOCUMENT_COPY_SOURCE =
+  CAD_GUI_NATIVE_STATE_SOURCE +
+  String.raw`
 import zipfile as _kfw_cad_copy_zip
 
 
@@ -57,78 +59,19 @@ def _kfw_cad_copy_read(ctx, getter):
 
 
 def _kfw_cad_copy_state(ctx):
-    result = {}
     read = lambda getter: _kfw_cad_copy_read(ctx, getter)
-    if read(lambda: ctx['app'].getActiveTransaction()) is not None:
-        raise _KfwCadCopyError('document_busy')
-    for name, doc in ctx['openDocuments'].items():
-        gui_doc = read(lambda: ctx['gui'].getDocument(name))
-        if read(lambda: gui_doc.getInEdit()) is not None or read(lambda: gui_doc.Transacting):
-            raise _KfwCadCopyError('document_busy')
-        flags = tuple(read(lambda key=key: bool(getattr(doc, key)))
-                      for key in ('Restoring', 'Partial', 'Importing', 'Recomputing', 'Transacting', 'HasPendingTransaction'))
-        if any(flags):
-            raise _KfwCadCopyError('document_busy')
-        result[name] = {
-            'fileName': read(lambda: doc.FileName), 'label': read(lambda: doc.Label),
-            'uid': read(lambda: str(doc.Uid)), 'modified': read(lambda: bool(gui_doc.Modified)),
-            'touched': read(lambda: bool(doc.isTouched())), 'flags': flags,
-            'frozen': read(lambda: bool(doc.RecomputesFrozen)),
-            'undoMode': read(lambda: doc.UndoMode), 'undoCount': read(lambda: doc.UndoCount),
-            'redoCount': read(lambda: doc.RedoCount),
-            'undo': _kfw_cad_history_summary(read(lambda: doc.UndoNames)),
-            'redo': _kfw_cad_history_summary(read(lambda: doc.RedoNames)),
-        }
-    return result
+    return _kfw_cad_native_document_state(ctx['app'], ctx['gui'], ctx['openDocuments'], read, _KfwCadCopyError)
 
 
 def _kfw_cad_copy_link_properties(ctx, doc):
     read = lambda getter: _kfw_cad_copy_read(ctx, getter)
-    for obj in read(lambda: list(doc.Objects)):
-        for name in read(lambda: list(obj.PropertiesList)):
-            type_name = read(lambda: obj.getTypeIdOfProperty(name))
-            kind = read(lambda: ctx['app'].Base.TypeId.fromName(type_name))
-            if read(lambda: kind.isBad()):
-                raise _KfwCadCopyError('unsupported_external_reference')
-            supported = any(read(lambda base=base: kind.isDerivedFrom(base))
-                            for base in ('App::PropertyXLink', 'App::PropertyXLinkSubList', 'App::PropertyXLinkContainer'))
-            if supported:
-                yield obj, name
+    yield from _kfw_cad_native_link_properties(ctx['app'], doc, read, _KfwCadCopyError)
 
 
 def _kfw_cad_copy_link_files(ctx, obj, name):
-    raw = _kfw_cad_copy_read(ctx, lambda: obj.dumpPropertyContent(name, Compression=0))
-    if type(raw) not in (bytes, bytearray):
-        raise _KfwCadCopyError('unsupported_external_reference')
-    try:
-        with _kfw_cad_copy_zip.ZipFile(_kfw_cad_copy_io.BytesIO(raw)) as archive:
-            if archive.namelist().count('Persistence.xml') != 1:
-                raise ValueError('missing property persistence')
-            root = _kfw_cad_copy_xml.fromstring(archive.read('Persistence.xml'))
-        if root.tag != 'Content':
-            raise ValueError('unsupported property persistence')
-        files = []
-        for link in root.iter('XLink'):
-            file_name = link.get('file')
-            if file_name is None:
-                raise _KfwCadCopyError('unsupported_external_reference')
-            if file_name:
-                files.append(file_name)
-            # 官方Restore将file空的name解析为owner自己的Document，包括本地未解析名称。
-        for links in root.iter('XLinks'):
-            count = links.get('count')
-            children = list(links)
-            entries = [link for link in children if link.tag == 'XLink']
-            if count is None or not count.isdecimal() or int(count) != len(entries):
-                raise ValueError('unsupported external link list')
-            if any(link.tag not in ('XLink', 'DocMap') for link in children):
-                raise _KfwCadCopyError('unsupported_external_reference')
-        _kfw_cad_copy_guard(ctx)
-        return files
-    except _KfwCadCopyError:
-        raise
-    except BaseException:
-        raise _KfwCadCopyError('unsupported_external_reference')
+    files = _kfw_cad_native_link_files(obj, name, lambda getter: _kfw_cad_copy_read(ctx, getter), _KfwCadCopyError)
+    _kfw_cad_copy_guard(ctx)
+    return files
 
 
 def _kfw_cad_copy_check_links(ctx):

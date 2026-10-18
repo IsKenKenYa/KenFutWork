@@ -43,6 +43,7 @@ import {
   CadGuiProbeError,
   createMacosCadGuiProbe,
 } from "./gui-probe.js";
+import type { CadGuiUndoOperationInput } from "./gui-undo-contracts.js";
 import {
   CadOperationError,
   createCadOperationLifecycle,
@@ -94,6 +95,10 @@ export interface CadService {
   ): Promise<CadToolResult>;
   guiCopyDocument(
     input: CadGuiCopyDocumentInput,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
+  guiUndoOperation(
+    input: CadGuiUndoOperationInput,
     context: ToolExecutionContext,
   ): Promise<CadToolResult>;
   guiOperationStatus(
@@ -546,6 +551,22 @@ function cadStatus(runtime: CadRuntime | null): CadToolResult {
   };
 }
 
+const guiUndoRejections: Record<string, string> = {
+  stale_target: "原修改后文档状态已变化，本次撤销未执行。",
+  source_snapshot_changed: "原修改后文档状态已变化，本次撤销未执行。",
+  source_state_changed: "原修改后文档状态已变化，本次撤销未执行。",
+  history_changed: "撤销历史已变化，本次撤销未执行。",
+  value_changed: "相关属性已变化，本次撤销未执行。",
+  expression_changed: "相关表达式已变化，本次撤销未执行。",
+  property_changed: "相关属性已变化，本次撤销未执行。",
+  document_busy: "文档仍在编辑或事务未结束，请完成后再撤销。",
+  incoming_external_reference:
+    "其它工程引用了此文档，请先在 FreeCAD 检查关联。",
+  unsupported_external_reference: "无法确认跨文档关联，本次撤销未执行。",
+  cancelled: "本次撤销已取消，未执行原生撤销。",
+  operation_expired: "撤销请求已过期，请查询原操作状态。",
+};
+
 function guiOperationResult(
   result: CadGuiOperationResult,
   statusOnly = false,
@@ -553,6 +574,7 @@ function guiOperationResult(
   const messages = {
     copied: "已生成 FreeCAD 副本，尚未发布到 Task。",
     committed: "已修改当前 FreeCAD 文档，尚未保存。",
+    undone: "已撤销该次修改，尚未保存。",
     no_op: "属性值无需修改。",
     rejected: "本次操作未执行，请重新读取文档并检查。",
     partial:
@@ -561,11 +583,21 @@ function guiOperationResult(
     prepared: "操作已准备，尚未派发。",
     cancelled: "操作在派发前已取消。",
   };
+  const undoRejection =
+    result.receipt?.protocol === "kfw-cad-gui-undo/1" &&
+    result.outcome === "rejected" &&
+    result.reason &&
+    Object.hasOwn(guiUndoRejections, result.reason)
+      ? guiUndoRejections[result.reason]
+      : undefined;
   return {
-    ...(!statusOnly && !["committed", "no_op"].includes(result.outcome)
+    ...(!statusOnly &&
+    !["committed", "no_op", "undone"].includes(result.outcome)
       ? { isError: true }
       : {}),
-    content: [{ type: "text", text: messages[result.outcome] }],
+    content: [
+      { type: "text", text: undoRejection ?? messages[result.outcome] },
+    ],
     structuredContent: { ...result },
   };
 }
@@ -668,7 +700,8 @@ export function createCadService(options: CadServiceOptions): CadService {
       | { action: "gui-documents"; application: CadGuiApplication }
       | { action: "gui-inspect"; input: CadGuiInspectDocumentInput }
       | { action: "gui-set-properties"; input: CadGuiSetPropertiesInput }
-      | { action: "gui-copy-document"; input: CadGuiCopyDocumentInput },
+      | { action: "gui-copy-document"; input: CadGuiCopyDocumentInput }
+      | { action: "gui-undo-operation"; input: CadGuiUndoOperationInput },
     context: ToolExecutionContext,
     operation: (
       context: ToolExecutionContext,
@@ -829,6 +862,37 @@ export function createCadService(options: CadServiceOptions): CadService {
           },
         }
       : result;
+  const invokeGuiEdit = (
+    payload:
+      | { action: "gui-set-properties"; input: CadGuiSetPropertiesInput }
+      | { action: "gui-undo-operation"; input: CadGuiUndoOperationInput },
+    context: ToolExecutionContext,
+  ) => {
+    const target = structuredClone(payload);
+    return invoke(target, context, async (context, activeGuard) => {
+      let possible = false;
+      try {
+        const action = await guiActionContext(context, activeGuard);
+        const dispatch =
+          target.action === "gui-set-properties"
+            ? action.controller.execute.bind(action.controller, target.input)
+            : action.controller.undoOperation.bind(
+                action.controller,
+                target.input,
+              );
+        possible = true;
+        const result = await dispatch(
+          action.binding,
+          action.probeContext,
+          action.guard,
+        );
+        await action.guard();
+        return guiOperationResult(result);
+      } catch (error) {
+        return guiFailure(error, context, target.input.operationId, possible);
+      }
+    }).then((result) => identifyFailure(result, target.input.operationId));
+  };
   return {
     pluginLifecycle: lifecycle.plugin,
     get activationEpoch() {
@@ -905,28 +969,10 @@ export function createCadService(options: CadServiceOptions): CadService {
       );
     },
     guiSetProperties(input, context) {
-      const target = structuredClone(input);
-      return invoke(
-        { action: "gui-set-properties", input: target },
-        context,
-        async (context, activeGuard) => {
-          let possible = false;
-          try {
-            const action = await guiActionContext(context, activeGuard);
-            possible = true;
-            const result = await action.controller.execute(
-              target,
-              action.binding,
-              action.probeContext,
-              action.guard,
-            );
-            await action.guard();
-            return guiOperationResult(result);
-          } catch (error) {
-            return guiFailure(error, context, target.operationId, possible);
-          }
-        },
-      ).then((result) => identifyFailure(result, target.operationId));
+      return invokeGuiEdit({ action: "gui-set-properties", input }, context);
+    },
+    guiUndoOperation(input, context) {
+      return invokeGuiEdit({ action: "gui-undo-operation", input }, context);
     },
     guiCopyDocument(input, context) {
       const target = structuredClone(input);

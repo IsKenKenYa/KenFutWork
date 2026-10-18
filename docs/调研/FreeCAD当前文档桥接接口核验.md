@@ -1,6 +1,6 @@
 # FreeCAD 当前文档桥接接口核验
 
-> **角色：调研。** 核验日期：2026-10-18。范围：已安装 FreeCAD 1.1.4 对应官方提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的 GUI 启动、官方本地消息通道、宏与主线程调度及当前文档接口。第2—7节保留最初只读桥调研；后续固定查询、属性读写与副本接线分别登记在第8—13节。方向与权限仍以[CAD 控制插件规划](../插件/CAD控制插件规划.md)为准。
+> **角色：调研。** 核验日期：2026-10-18。范围：已安装 FreeCAD 1.1.4 对应官方提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的 GUI 启动、官方本地消息通道、宏与主线程调度及当前文档接口。第2—7节保留最初只读桥调研；后续固定查询、属性读写、副本及显式撤销接线登记在第8—15节。方向与权限仍以[CAD 控制插件规划](../插件/CAD控制插件规划.md)为准。
 >
 > 资料核验阶段只读取官方资料、源码和既有诊断文件；第6节是旧回执的复核。后续实现与原生验收另行登记，不将源码／API探针与产品整链验收混算。
 
@@ -12,7 +12,7 @@ FreeCAD 1.1.4 自带的是**本地文件打开通道**，可以请求 GUI 进程
 | --- | --- |
 | 官方源码已证实 | `GUISingleApplication` 监听本地消息；`OpenFile:` 经主窗口交给 `App::Application::processFiles()`；宏在该进程 Python 解释器执行。见第 2～4 节。 |
 | 已有本机原生证据 | 独立 GUI 实例实际收到宏路径，返回真实 PID／版本／隔离路径；另一固定行为探针完成 13 步、55 断言。见第 6 节；不是产品桥验收。 |
-| 本文最初建议 | 独立 endpoint、bootstrap nonce、请求／文档代际、鉴权及回执。见第5节；现行逐次固定宏的接线见第8—13节，尚未建立独立持久endpoint。 |
+| 本文最初建议 | 独立 endpoint、bootstrap nonce、请求／文档代际、鉴权及回执。见第5节；现行逐次固定宏的接线见第8—15节，尚未建立独立持久endpoint。 |
 | 尚不能证明 | 任意现存 GUI 的通用自动附着、跨平台产品桥、长期稳定、GUI 内任意 Python 的 Task OS 沙箱隔离。 |
 
 ## 2. CLI 与官方本地消息协议
@@ -106,7 +106,7 @@ latest.json             04c9eca94eb205cddbdc49826c78c9de45ec86713b5962c440bdead1
 
 ## 7. 未验证项与下一批验收要求
 
-- 持久 `QLocalServer` bridge 尚未实现；逐次固定宏查询／观察／检查／属性写入及本批副本接线见第8—13节，不能据此声称持久server或任意GUI Python已交付。
+- 持久 `QLocalServer` bridge 尚未实现；逐次固定宏查询／观察／检查／属性写入／副本及显式撤销接线见第8—15节，不能据此声称持久server或任意GUI Python已交付。
 - 未在用户当前 GUI 加载桥或建立连接；不默认恢复 AX 自动化。Qt 6.8.3 的既有崩溃证据与未证实因果仍见原调研 §9.16；避免 AX 不等于修复了 Qt。
 - `--hidden`、独立目录和 Qt socket 规则有源码依据；本轮没有另做隐藏实例启动、恶意 peer、socket 替换、请求排队或回执后长期存活验收。
 - Windows／Linux 的控制与身份机制需各自验证；不能照搬 macOS peer PID 常量、Unix 地址或权限结论。
@@ -162,7 +162,7 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 
 派发与执行各有持久认领，文件写齐和fsync后再用硬链接独占发布；重复宏不覆盖首回执。准备时间不因重启延长，已有认领无回执永不自动重发。只有严格匹配原请求及行为语义的回执才报告成功。FreeCAD提交与磁盘回执落盘之间仍有不可消除的未知窗口，不能宣称最终恰好一次。
 
-本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。覆盖保存源文件和显式撤销仍未交付；副本与Task发布的本批接线及验证范围见第13节。
+本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。该次验收只覆盖属性写入；后续副本／Task发布及显式撤销接线分别见第13、15节，覆盖保存源文件仍未交付。
 
 
 ## 12. 跨宿主停止与迟到固定宏
@@ -196,9 +196,23 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 
 成功的 `cad_gui_set_properties` 可选回传 `undoProvenance`：KFW 自己生成的准确随机事务名，以及 Undo／Redo 名称列表的项数和 SHA-256。只有原生栈顶确为该事务、计数与名称长度一致、原生／GUI 非忙碌、提交后快照可靠且读取期间观察修订未推进时才记录；回执不包含完整用户历史名。宿主还匹配原请求的桥代际、打开句柄及两项观察修订不倒退。历史或快照不可确认时不签归属，仍保留原生实际 committed；旧无字段回执继续可查。事务名称不是权限令牌；这些观察记录不提供完整内容 CAS，也不授予撤销权限。
 
-原生 Python `App.Document.undo()` 不接事务 ID，返回 None；底层遇到 pending 会先提交 pending，调用方不能把它当作“只撤销指定事务”的安全原语。GUI `Document::undo()`／`Std_Undo` 还会按内部事务 ID 扫描其它文档，可能连带撤销或弹窗。固定工具后续应直接使用 App 文档入口，观察 `slotUndoDocument(doc)` 并核对实际恢复，而不能等待 GUI 层才发的无参 `slotUndo()`。依据固定版本 [Python 绑定](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp#L601)、[原生撤销](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)及 [GUI 跨文档分派](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp#L2866)。
+原生 Python `App.Document.undo()` 不接事务 ID，返回 None；底层遇到 pending 会先提交 pending，调用方不能把它当作“只撤销指定事务”的安全原语。GUI `Document::undo()`／`Std_Undo` 还会按内部事务 ID 扫描其它文档，可能连带撤销或弹窗。正式固定工具直接使用 App 文档入口，观察 `slotUndoDocument(doc)` 并核对实际恢复，而不等待 GUI 层才发的无参 `slotUndo()`。依据固定版本 [Python 绑定](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp#L601)、[原生撤销](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)及 [GUI 跨文档分派](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp#L2866)。
 
-显式撤销产品工具尚未交付。下一切片仍须验证原操作所属 Task／授权代际、原完成后的观察前提、准确栈顶与历史摘要、当前属性仍为原 observed 值；拒绝后来事务、同名重开和 pending，不按事务名前缀猜归属。执行后须核对事件、before 值及历史转移；未知回执不重发，不自动 redo 或关闭用户事务。原生接口与固定观察器都不提供强内容 CAS，不能把一次成功探针扩大成任意工作台回调下安全撤销。
+本节的归属证据与原生夹具不单独授予撤销权限；正式工具的接线及真实 Task 验收另见第15节。原生接口与固定观察器都不提供强内容 CAS，不能把一次成功探针扩大成任意工作台回调下安全撤销。
 
 
 本批独立 LaunchServices GUI 与 Task 工具整链约70.16秒通过：修改回执的随机事务名、历史项数／摘要与原生 Undo／Redo 栈一致；自有夹具直接调用无参数 App `doc.undo()`，收到 `slotUndoDocument(doc)`，Length／表达式宽度恢复20／40mm，真实 Shape 体积恢复8000mm³，原名称移入 Redo 栈顶。随后原生 redo 恢复25／50mm与12500mm³，原历史列表恢复，另一打开文档的状态和历史保持。固定观察器计数随此次回绕推进，即使值与历史再相同也不会重用原完成快照。后续副本→Task→后台修改／STEP链继续通过，源FCStd SHA-256不变，自有实例正常退出。此处 undo／redo 来自专用夹具，不是已暴露的产品撤销工具。
+
+## 15. 显式撤销自身已提交属性操作
+
+`cad_gui_undo_operation` 已接到共享 CAD 工具、Service／Provider、持久控制器及独立 `cad-gui-undo` 执行审批。新 `operationId` 引用同一实例／Task 的 `sourceOperationId`，宿主只从可信持久记录取得原 committed 请求、回执、`undoProvenance` 和提交后 snapshot，并冻结到本次请求；模型不能提供证明、事务名、代码或私有路径。新 Run 按当前 Task 的 scope／branch 代际和权限准入；原操作可以来自历史代际，其记录仅证明历史归属，不为当前操作授予权限。
+
+应用身份沿用原操作，桥代际、打开句柄和两个预期修订严格匹配原提交 snapshot。新的 inspect 不能刷新已经变化的原撤销前提。预检还匹配准确事务栈顶、Undo／Redo 摘要、当前属性与原 observed 值，拒绝后来事务、同名重开、待提交事务、编辑或恢复态。会检查外部引用方及无法确认的引用关系，不因目标只有向外依赖就一刀切；隐藏表达式可在源属性变化时直接写入引用方，不能由空 InList 推断无影响。此边界来自 [PropertyExpressionEngine 的变化订阅与赋值](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyExpressionEngine.cpp#L230)，不是套用 saveCopy 的保存通知副作用。
+
+固定宏在主线程只调用一次无参数 App `doc.undo()`，不调用 recompute、redo、保存、关闭或事务补偿。原生 apply 期间会为 Redo 建立临时 pending，此时 Transacting／HasPendingTransaction 可为 true；调用前后仍须确认无用户 pending，并核对目标 `slotUndoDocument`、原 before 值及完整历史迁移。属性恢复顺序不固定，原生 Paste 的部分异常还可能被内部捕获，因此事件或 None 返回值都不单独证明成功。成功回执为 `undone`；partial 保留现场，不自动 redo／保存或关闭用户事务。取消不能中断已经开始的原生 undo，原生操作和回执也不是原子事务。
+
+同编号终态重放只使用本次冻结请求和可信回执，不依赖原修改记录、原 GUI 或新的来源读取；新编号仍须重新通过全部前提。认领后没有可信回执时保持 unknown，不重发；停止或结果未知先查原编号，不通过更换编号或重新 inspect 绕过。请求与实际撤销值、历史摘要的留存见《隐私政策》§4.2，契约见 [gui-undo-contracts.ts](../../apps/server/src/features/cad/gui-undo-contracts.ts)。
+
+本批独立 LaunchServices GUI 的真实 Task 工具整链约89.52秒通过：正式工具将 Length=26 与已改 Note 的批次恢复至25及原 Note，Width 绑定恢复50，真实 Shape 体积恢复12500mm³；工具本身没有额外重算。删除原修改记录后重建 service／store，同一撤销编号仍返回冻结 ACK；直接重复原宏不再执行第二次 undo。后来事务、改用刷新后的目标和其它文档 pending 均拒绝，后来事务的值／历史及用户 pending 保留。源 FCStd SHA-256 不变，既有副本→Task→后台修改／STEP链继续通过。
+
+上述证据只覆盖该隔离实例和代表性多属性操作，没有操作用户现存 GUI／AX，也不代表全部属性、工作台、原生回调或任意撤销均已验收。固定源码、控制器及工具消费方的边界回归与原生场景有重叠，不相加；本批最终全仓门禁由《日志》单独记账。

@@ -5,6 +5,7 @@ import {
 } from "../cad/gui-document-contracts.js";
 import { cadGuiCopyDocumentInputSchema } from "../cad/gui-document-copy-contracts.js";
 import { cadGuiSetPropertiesInputSchema } from "../cad/gui-operation-contracts.js";
+import { cadGuiUndoOperationInputSchema } from "../cad/gui-undo-contracts.js";
 import {
   cadDescribeInputSchema,
   cadExportInputSchema,
@@ -23,6 +24,7 @@ const operationSchemas = {
   ]),
   "cad-gui-mutate": cadGuiSetPropertiesInputSchema,
   "cad-gui-copy": cadGuiCopyDocumentInputSchema,
+  "cad-gui-undo": cadGuiUndoOperationInputSchema,
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
   "cad-operations": cadOperationsInputSchema,
@@ -154,6 +156,51 @@ const CAD_GUI_COPY_EXECUTION_BOUNDARY = {
   ],
 } as const;
 
+const CAD_GUI_UNDO_EXECUTION_BOUNDARY = {
+  kind: "external-gui",
+  taskOsSandboxEnforced: false,
+  documentAccess: "undo-selected-owned-transaction",
+  savesSourceFile: false,
+  rollbackGuaranteed: false,
+  effects: [
+    "execute-fixed-macro",
+    "change-file-dialog-working-directory",
+    "observe-document-events",
+    "execute-property-getters",
+    "undo-owned-native-transaction",
+    "execute-native-provider-callbacks",
+  ],
+  applicationIdentity: "untrusted-until-dispatch-verification",
+  documentIdentity: "untrusted-until-source-and-native-state-verified",
+  operationIdAuthority: "idempotency-only",
+  sourceOperationIdAuthority: "historical-reference-only",
+  excludedOperations: [
+    "arbitrary-python",
+    "save-source",
+    "close-document",
+    "automatic-redo",
+    "recompute",
+  ],
+} as const;
+
+function guiExecutionBoundary(
+  kind: ApprovalReviewKind,
+  args: Record<string, unknown>,
+) {
+  switch (kind) {
+    case "cad-gui-inspect":
+      return guiInspectionBoundary(args);
+    case "cad-gui-mutate":
+      return structuredClone(CAD_GUI_MUTATION_EXECUTION_BOUNDARY);
+    case "cad-gui-copy":
+      return structuredClone(CAD_GUI_COPY_EXECUTION_BOUNDARY);
+    case "cad-gui-undo":
+      return structuredClone(CAD_GUI_UNDO_EXECUTION_BOUNDARY);
+    default:
+      return undefined;
+  }
+}
+
 const inputSchema = z
   .object({
     kind: z.enum([
@@ -170,6 +217,7 @@ const inputSchema = z
       "cad-gui-inspect",
       "cad-gui-mutate",
       "cad-gui-copy",
+      "cad-gui-undo",
     ]),
     args: z.record(z.string(), z.unknown()),
     userRequest: z.string(),
@@ -248,24 +296,9 @@ export function approvalReviewEvidence(input: {
     return undefined;
   const operation = operationSchemas[context.kind].safeParse(context.args);
   if (!operation.success) return undefined;
+  const executionBoundary = guiExecutionBoundary(context.kind, operation.data);
   const evidence = {
-    ...(context.kind === "cad-gui-inspect"
-      ? {
-          executionBoundary: guiInspectionBoundary(operation.data),
-        }
-      : context.kind === "cad-gui-mutate"
-        ? {
-            executionBoundary: structuredClone(
-              CAD_GUI_MUTATION_EXECUTION_BOUNDARY,
-            ),
-          }
-        : context.kind === "cad-gui-copy"
-          ? {
-              executionBoundary: structuredClone(
-                CAD_GUI_COPY_EXECUTION_BOUNDARY,
-              ),
-            }
-          : {}),
+    ...(executionBoundary ? { executionBoundary } : {}),
     untrustedData: {
       userRequest: context.userRequest,
       workspace: {

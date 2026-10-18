@@ -218,6 +218,116 @@ function undoProvenanceReceipt(f: Fixture) {
   };
 }
 
+async function prepareUndo(
+  f: Fixture,
+  sourceFields: Record<string, unknown> = {},
+) {
+  const source = undoProvenanceReceipt(f);
+  f.send.mockImplementation(async (_application, macroPath) =>
+    f.publish(macroPath, { ...source, ...sourceFields }),
+  );
+  await f.controller.execute(f.input, f.binding, f.context);
+  const sourceRecord = await operation(f);
+  const input = {
+    application: f.input.application,
+    operationId: randomUUID(),
+    sourceOperationId: f.input.operationId,
+    bridgeEpoch: source.snapshot.bridgeEpoch,
+    documentHandle: source.snapshot.document.documentHandle,
+    expectedApplicationRevision: source.snapshot.applicationRevision,
+    expectedDocumentRevision: source.snapshot.document.revision,
+  };
+  const binding = {
+    ...f.binding,
+    scopeGeneration: 2,
+    branchGeneration: 2,
+    runId: "undo-run",
+    toolCallId: "undo-call",
+  };
+  return { source, sourceRecord, input, binding };
+}
+
+type UndoFixture = Awaited<ReturnType<typeof prepareUndo>>;
+
+function configureUndo(
+  f: Fixture,
+  prepared: UndoFixture,
+  changed: Record<string, unknown> = {},
+) {
+  const { source, sourceRecord, input } = prepared;
+  f.send.mockImplementation(async (_application, macroPath) => {
+    const manifest = JSON.parse(
+      await readFile(join(dirname(macroPath), "manifest.json"), "utf8"),
+    );
+    const history = (names: string[]) => ({
+      count: names.length,
+      sha256: createHash("sha256").update(JSON.stringify(names)).digest("hex"),
+    });
+    await f.publish(
+      macroPath,
+      {},
+      JSON.stringify({
+        protocol: "kfw-cad-gui-undo/1",
+        operationId: input.operationId,
+        fingerprint: manifest.fingerprint,
+        pid: input.application.pid,
+        sourceOperationId: input.sourceOperationId,
+        sourceFingerprint: sourceRecord.fingerprint,
+        guiThread: true,
+        completed: true,
+        outcome: "undone",
+        undoStarted: true,
+        undoObserved: true,
+        historyVerified: true,
+        transactionName: source.undoProvenance.transactionName,
+        changes: [
+          {
+            objectName: "Box",
+            propertyName: "Label",
+            before: "零件",
+            observed: "Box",
+            changed: true,
+          },
+        ],
+        undoHistory: history([]),
+        redoHistory: history([source.undoProvenance.transactionName]),
+        snapshot: {
+          ...source.snapshot,
+          applicationRevision: input.expectedApplicationRevision + 1,
+          document: {
+            ...source.snapshot.document,
+            revision: input.expectedDocumentRevision + 1,
+          },
+        },
+        ...changed,
+      }),
+    );
+  });
+}
+
+test("当前Run用持久源提交的原post snapshot撤销自身事务，匹配完整撤销回执", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  configureUndo(f, prepared);
+  expect(
+    await f.controller.undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).toMatchObject({
+    state: "terminal",
+    outcome: "undone",
+    cancellationRequested: false,
+    receipt: {
+      sourceOperationId: prepared.input.sourceOperationId,
+      sourceFingerprint: prepared.sourceRecord.fingerprint,
+      historyVerified: true,
+    },
+  });
+  expect(f.send).toHaveBeenCalledTimes(2);
+});
+
 test("提交回执持久保留自身事务归属，重建控制器查询不连接GUI", async () => {
   const f = await fixture();
   const receipt = undoProvenanceReceipt(f);
@@ -1115,3 +1225,423 @@ test.each([
     expect(await f.store.readPublication(await operation(f))).toEqual({});
   },
 );
+
+async function storedUndo(f: Fixture, input: UndoFixture["input"]) {
+  const record = await f.store.lookup({
+    ...f.binding,
+    operationId: input.operationId,
+  });
+  if (!record) throw new Error("应找到持久撤销记录");
+  return record;
+}
+
+async function prepareUndoWithoutClaim(f: Fixture, prepared: UndoFixture) {
+  const interrupted: CadGuiOperationStore = {
+    ...f.store,
+    async prepare(input) {
+      await f.store.prepare(input);
+      throw new Error("撤销准备响应丢失");
+    },
+  };
+  await expect(
+    restart(f, interrupted).undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).rejects.toThrow("撤销准备响应丢失");
+  return storedUndo(f, prepared.input);
+}
+
+test("Undo终态重放只读取冻结来源，不依赖已删除的源记录或存活GUI", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  configureUndo(f, prepared);
+  const original = await f.controller.undoOperation(
+    prepared.input,
+    prepared.binding,
+    f.context,
+  );
+  await rm(prepared.sourceRecord.directory, { recursive: true });
+  f.probe.verify.mockRejectedValue(new Error("原GUI已关闭"));
+
+  expect(
+    await restart(f).undoOperation(
+      prepared.input,
+      { ...prepared.binding, runId: "later-run", toolCallId: "later-call" },
+      { ...f.context, timeoutMs: 2000 },
+    ),
+  ).toEqual(original);
+  expect(
+    await restart(f).status({
+      ...prepared.binding,
+      operationId: prepared.input.operationId,
+    }),
+  ).toEqual(original);
+  expect(f.send).toHaveBeenCalledTimes(2);
+});
+
+test("Undo prepared重放沿用原timeout和冻结proof，源记录删除后仍由当前Run授权一次", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  const record = await prepareUndoWithoutClaim(f, prepared);
+  await rm(prepared.sourceRecord.directory, { recursive: true });
+  configureUndo(f, prepared);
+
+  expect(
+    await restart(f).undoOperation(
+      prepared.input,
+      { ...prepared.binding, runId: "later-run" },
+      { ...f.context, timeoutMs: 2000 },
+    ),
+  ).toMatchObject({ outcome: "undone" });
+  const persisted = await storedUndo(f, prepared.input);
+  expect(persisted.preparedAt).toBe(record.preparedAt);
+  expect(persisted.payload).toMatchObject({
+    operation: "undo",
+    timeoutMs: 1000,
+    undoSource: {
+      input: f.input,
+      receipt: { operationId: f.input.operationId },
+    },
+  });
+  expect(f.send).toHaveBeenCalledTimes(2);
+});
+
+test("Undo claim后send前丢失响应保持unknown，重建后不查旧来源或重新派发", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  const record = await prepareUndoWithoutClaim(f, prepared);
+  const claimable = await f.store.prepare({
+    binding: prepared.binding,
+    operationId: prepared.input.operationId,
+    payload: record.payload,
+    buildMacro: () => {
+      throw new Error("不应重建宏");
+    },
+  });
+  expect(await f.store.claimDispatch(claimable)).toBe(true);
+  await rm(prepared.sourceRecord.directory, { recursive: true });
+  f.probe.verify.mockRejectedValue(new Error("不应查询GUI"));
+
+  expect(
+    await restart(f).undoOperation(
+      prepared.input,
+      { ...prepared.binding, runId: "later-run" },
+      f.context,
+    ),
+  ).toMatchObject({
+    state: "dispatched",
+    outcome: "unknown",
+    cancellationRequested: false,
+  });
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+
+test("Undo同编号更改public参数冲突，不允许用新快照刷新旧前提", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  configureUndo(f, prepared);
+  await f.controller.undoOperation(prepared.input, prepared.binding, f.context);
+
+  await expect(
+    restart(f).undoOperation(
+      {
+        ...prepared.input,
+        expectedDocumentRevision: prepared.input.expectedDocumentRevision + 1,
+      },
+      prepared.binding,
+      f.context,
+    ),
+  ).rejects.toMatchObject({ code: "conflict" });
+  expect(f.send).toHaveBeenCalledTimes(2);
+});
+
+test.each(["missing", "no-proof", "partial"] as const)(
+  "新Undo来源%s时拒绝派发",
+  async (kind) => {
+    const f = await fixture();
+    const prepared = await prepareUndo(f);
+    if (kind === "missing")
+      await rm(prepared.sourceRecord.directory, { recursive: true });
+    else {
+      const receipt = JSON.parse(
+        await readFile(prepared.sourceRecord.receiptPath, "utf8"),
+      );
+      delete receipt.undoProvenance;
+      if (kind === "partial") receipt.outcome = "partial";
+      await writeFile(
+        prepared.sourceRecord.receiptPath,
+        JSON.stringify(receipt),
+      );
+    }
+
+    await expect(
+      f.controller.undoOperation(prepared.input, prepared.binding, f.context),
+    ).rejects.toMatchObject({ code: "undo_source_unavailable" });
+    expect(
+      await f.store.lookup({
+        ...prepared.binding,
+        operationId: prepared.input.operationId,
+      }),
+    ).toBeNull();
+    expect(f.send).toHaveBeenCalledTimes(1);
+  },
+);
+
+test.each([
+  { taskId: "other-task" },
+  { instanceId: "other-instance" },
+  { projectId: "other-project" },
+])("新Undo不得消费其它归属的源记录：%j", async (changed) => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+
+  await expect(
+    f.controller.undoOperation(
+      prepared.input,
+      { ...prepared.binding, ...changed },
+      f.context,
+    ),
+  ).rejects.toMatchObject({ code: "undo_source_unavailable" });
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  "application",
+  "epoch",
+  "handle",
+  "applicationRevision",
+  "documentRevision",
+] as const)("新Undo的%s必须完全匹配原source post snapshot", async (field) => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  const input = structuredClone(prepared.input);
+  if (field === "application") input.application.pid++;
+  if (field === "epoch") input.bridgeEpoch = randomUUID();
+  if (field === "handle") input.documentHandle = randomUUID();
+  if (field === "applicationRevision") input.expectedApplicationRevision++;
+  if (field === "documentRevision") input.expectedDocumentRevision++;
+
+  await expect(
+    f.controller.undoOperation(input, prepared.binding, f.context),
+  ).rejects.toMatchObject({ code: "undo_target_mismatch" });
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+
+test("public Undo参数不能携带自行伪造的undoSource", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  const forged = Object.assign({}, prepared.input, { undoSource: {} });
+
+  await expect(
+    f.controller.undoOperation(forged, prepared.binding, f.context),
+  ).rejects.toMatchObject({ code: "invalid_input" });
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  { operationId: "57ac0119-b842-4968-bc10-81c922722911" },
+  { fingerprint: "0".repeat(64) },
+  { pid: 9876 },
+  { sourceOperationId: "57ac0119-b842-4968-bc10-81c922722911" },
+  { sourceFingerprint: "0".repeat(64) },
+  { transactionName: "KFW CAD 57ac0119-b842-4968-bc10-81c922722911" },
+  {
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        before: "别的起点",
+        observed: "Box",
+        changed: true,
+      },
+    ],
+  },
+  {
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        before: "零件",
+        observed: "别的终点",
+        changed: true,
+      },
+    ],
+  },
+  {
+    changes: [
+      {
+        objectName: "Other",
+        propertyName: "Label",
+        before: "零件",
+        observed: "Box",
+        changed: true,
+      },
+    ],
+  },
+  {
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        before: "零件",
+        observed: "Box",
+        changed: true,
+      },
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        before: "零件",
+        observed: "Box",
+        changed: true,
+      },
+    ],
+  },
+  { undoHistory: { count: 1, sha256: "a".repeat(64) } },
+  { redoHistory: { count: 0, sha256: "a".repeat(64) } },
+])("Undo回执身份、原事务或反向结果不匹配时保持unknown：%j", async (changed) => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  configureUndo(f, prepared, changed);
+
+  expect(
+    await f.controller.undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+  expect(
+    await restart(f).undoOperation(
+      prepared.input,
+      { ...prepared.binding, runId: "later-run" },
+      f.context,
+    ),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+  expect(f.send).toHaveBeenCalledTimes(2);
+});
+
+test("Undo成功回执必须包含源提交的完整批次，不能只恢复其中一项", async () => {
+  const f = await fixture();
+  f.input.changes.push({
+    objectName: "Box",
+    propertyName: "Description",
+    expectedValue: "旧描述",
+    value: "新描述",
+  });
+  const prepared = await prepareUndo(f, {
+    changes: [
+      {
+        objectName: "Box",
+        propertyName: "Label",
+        before: "Box",
+        requested: "零件",
+        observed: "零件",
+        changed: true,
+      },
+      {
+        objectName: "Box",
+        propertyName: "Description",
+        before: "旧描述",
+        requested: "新描述",
+        observed: "新描述",
+        changed: true,
+      },
+    ],
+  });
+  configureUndo(f, prepared);
+
+  expect(
+    await f.controller.undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+});
+
+test.each([
+  "epoch",
+  "handle",
+  "applicationRevision",
+  "documentRevision",
+] as const)("Undo完成后的%s不能失配或倒退", async (kind) => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  const snapshot = structuredClone(prepared.source.snapshot);
+  if (kind === "epoch") snapshot.bridgeEpoch = randomUUID();
+  if (kind === "handle") snapshot.document.documentHandle = randomUUID();
+  if (kind === "applicationRevision")
+    snapshot.applicationRevision =
+      prepared.input.expectedApplicationRevision - 1;
+  if (kind === "documentRevision")
+    snapshot.document.revision = prepared.input.expectedDocumentRevision - 1;
+  configureUndo(f, prepared, { snapshot });
+
+  expect(
+    await f.controller.undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+});
+
+test("Undo预检拒绝可以携带匹配源observed的只读before诊断，不声称撤销成功", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  configureUndo(f, prepared, {
+    outcome: "rejected",
+    undoStarted: false,
+    undoObserved: false,
+    historyVerified: false,
+    transactionName: undefined,
+    undoHistory: undefined,
+    redoHistory: undefined,
+    snapshot: undefined,
+    changes: [{ objectName: "Box", propertyName: "Label", before: "零件" }],
+    reason: "history_changed",
+  });
+
+  expect(
+    await f.controller.undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).toMatchObject({
+    state: "terminal",
+    outcome: "rejected",
+    reason: "history_changed",
+  });
+});
+
+test("Undo已开始但无法完整观察时保留partial诊断，不伪装undone", async () => {
+  const f = await fixture();
+  const prepared = await prepareUndo(f);
+  configureUndo(f, prepared, {
+    outcome: "partial",
+    undoStarted: true,
+    undoObserved: false,
+    historyVerified: false,
+    transactionName: undefined,
+    undoHistory: undefined,
+    redoHistory: undefined,
+    snapshot: undefined,
+    changes: [{ objectName: "Box", propertyName: "Label", before: "零件" }],
+    reason: "native_operation_failed",
+  });
+
+  expect(
+    await f.controller.undoOperation(
+      prepared.input,
+      prepared.binding,
+      f.context,
+    ),
+  ).toMatchObject({
+    state: "terminal",
+    outcome: "partial",
+    reason: "native_operation_failed",
+  });
+});

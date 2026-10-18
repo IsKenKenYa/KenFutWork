@@ -13,6 +13,7 @@ import {
   cadGuiOperationStatusInputSchema,
   cadGuiSetPropertiesInputSchema,
 } from "./gui-operation-contracts.js";
+import { cadGuiUndoOperationInputSchema } from "./gui-undo-contracts.js";
 import type { CadService, CadToolResult } from "./service.js";
 import {
   cadDescribeInputSchema,
@@ -109,6 +110,14 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       schema: cadGuiCopyDocumentInputSchema,
       approvalReviewKind: "cad-gui-copy",
       execute: (input, context) => service.guiCopyDocument(input, context),
+    }),
+    definition({
+      name: "cad_gui_undo_operation",
+      description:
+        "显式撤销当前Task中自身已确认提交的FreeCAD属性修改。先用cad_gui_operation_status查原sourceOperationId，只有committed且有undoProvenance和snapshot的操作可用；本次operationId必须是新的编号。完整application来自原应用身份，bridgeEpoch/documentHandle及两个expected修订必须沿用原提交snapshot，不能用新inspect刷新旧撤销前提。原操作后发生编辑、保存或undo/redo等观察事件、历史或值变化时拒绝；检查现场，不换编号绕过。宿主从Task私有记录冻结原证明，模型不能提供证明、事务名、代码或私有路径。通过新Run当前权限/代际与独立执行审批，在GUI主线程仅调用一次原生doc.undo，核对原before值和Undo/Redo历史迁移；不重算、保存、redo或关闭文档，不能保证任意原生回调的原子回滚。外部GUI不继承Task OS沙箱；有待提交事务/编辑态或外部引用方时拒绝。partial/unknown/停止后查同一operationId，不重复撤销或自动redo。",
+      schema: cadGuiUndoOperationInputSchema,
+      approvalReviewKind: "cad-gui-undo",
+      execute: (input, context) => service.guiUndoOperation(input, context),
     }),
     definition({
       name: "cad_gui_operation_status",

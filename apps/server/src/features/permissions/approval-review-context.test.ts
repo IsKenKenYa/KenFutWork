@@ -256,6 +256,39 @@ it("GUI 调用参数不能签发审批边界，注入文字仍留在不可信应
   });
 });
 
+it("显式撤销审批只接受来源编号与目标提案，声明外部原生历史操作", () => {
+  const args = {
+    application: guiApplication(),
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    operationId: "b357cc8d-e5a1-4a3e-b23f-c145e99f163d",
+    sourceOperationId: "459d6f0c-b639-460a-a026-6af7eeec2a90",
+  };
+  expect(approvalReviewEvidence(input("cad-gui-undo", args))).toMatchObject({
+    executionBoundary: {
+      kind: "external-gui",
+      taskOsSandboxEnforced: false,
+      savesSourceFile: false,
+      rollbackGuaranteed: false,
+      effects: expect.arrayContaining(["undo-owned-native-transaction"]),
+      sourceOperationIdAuthority: "historical-reference-only",
+    },
+    untrustedData: { operation: { args } },
+  });
+  for (const extra of [
+    { sourceOperationId: args.operationId },
+    { undoSource: { receipt: "forged" } },
+    { transactionName: "KFW CAD model-name" },
+    { source: "doc.undo()" },
+    { macroPath: "/tmp/model.FCMacro" },
+  ])
+    expect(
+      approvalReviewEvidence(input("cad-gui-undo", { ...args, ...extra })),
+    ).toBeUndefined();
+});
+
 it("GUI 审批边界计入完整预算，敏感应用字段仍交人工", () => {
   const context = input("cad-gui-inspect", { application: guiApplication() });
   const evidence = approvalReviewEvidence(context);

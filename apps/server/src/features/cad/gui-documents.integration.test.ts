@@ -19,12 +19,13 @@ import { runJxa } from "../computer-use/jxa.js";
 import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { CadGuiApplication } from "./gui-document-contracts.js";
+import { cadGuiOperationReceiptSchema } from "./gui-operation-contracts.js";
 import { buildCadGuiOperationMacro } from "./gui-operation-controller.js";
 import { createCadGuiOperationStore } from "./gui-operation-store.js";
 import { createMacosCadGuiProbe } from "./gui-probe.js";
 import { createMacosCadGuiTransport } from "./gui-transport.js";
 import { detectFreeCadRuntime } from "./runtime.js";
-import { createCadService } from "./service.js";
+import { type CadService, createCadService } from "./service.js";
 import {
   activateCadTestService,
   cadTestLimits,
@@ -214,6 +215,239 @@ finally:
     App.removeDocumentObserver(observer)`);
 }
 
+interface GuiUndoFixture {
+  tools: ToolDefinition[];
+  context: ToolExecutionContext;
+  application: CadGuiApplication;
+  root: string;
+  target(name?: string): Promise<Record<string, unknown>>;
+  mutate(source: string): Promise<void>;
+  reopen(): CadService;
+}
+
+async function createUndoSource(
+  fixture: GuiUndoFixture,
+  before: number,
+  after: number,
+  id: string,
+  note = false,
+) {
+  const quantity = (value: number) => ({
+    kind: "quantity",
+    value,
+    unitSignature: [1, 0, 0, 0, 0, 0, 0, 0],
+  });
+  return nativeToolCall(
+    fixture.tools,
+    "cad_gui_set_properties",
+    {
+      ...(await fixture.target()),
+      operationId: randomUUID(),
+      changes: [
+        {
+          objectName: "Box",
+          propertyName: "Length",
+          expectedValue: quantity(before),
+          value: quantity(after),
+        },
+        ...(note
+          ? [
+              {
+                objectName: "Box",
+                propertyName: "Note",
+                expectedValue: "自有验收属性",
+                value: "待撤销",
+              },
+            ]
+          : []),
+      ],
+    },
+    { ...fixture.context, toolCallId: id },
+  );
+}
+
+function undoInput(fixture: GuiUndoFixture, source: Record<string, unknown>) {
+  const receipt = cadGuiOperationReceiptSchema.parse(source.receipt);
+  if (!receipt.snapshot || !receipt.undoProvenance)
+    throw new Error("原生源操作缺少可验证撤销归属");
+  return {
+    application: fixture.application,
+    bridgeEpoch: receipt.snapshot.bridgeEpoch,
+    documentHandle: receipt.snapshot.document.documentHandle,
+    expectedApplicationRevision: receipt.snapshot.applicationRevision,
+    expectedDocumentRevision: receipt.snapshot.document.revision,
+    sourceOperationId: receipt.operationId,
+    operationId: randomUUID(),
+  };
+}
+
+async function verifyPersistentUndoReplay(
+  fixture: GuiUndoFixture,
+  input: ReturnType<typeof undoInput>,
+  result: Record<string, unknown>,
+) {
+  const scope = fixture.context.scopeHandle?.describe();
+  if (!scope) throw new Error("缺少自有Task作用域");
+  const store = createCadGuiOperationStore({ rootDirectory: fixture.root });
+  const sourceRecord = await store.lookup({
+    instanceId: scope.instanceId,
+    taskId: scope.taskId,
+    operationId: input.sourceOperationId,
+  });
+  const undoRecord = await store.lookup({
+    instanceId: scope.instanceId,
+    taskId: scope.taskId,
+    operationId: input.operationId,
+  });
+  if (!sourceRecord || !undoRecord) throw new Error("缺少真实持久撤销记录");
+  // 模拟用户移除来源文件；终态重放必须仅依赖自己的冻结请求与回执。
+  await rm(sourceRecord.directory, { recursive: true });
+  const reopened = fixture.reopen();
+  try {
+    expect(
+      await nativeToolCall(
+        createCadTools(reopened),
+        "cad_gui_undo_operation",
+        input,
+        { ...fixture.context, toolCallId: "undo-restart-replay" },
+      ),
+    ).toEqual(result);
+    expect(
+      await nativeToolCall(
+        createCadTools(reopened),
+        "cad_gui_operation_status",
+        { operationId: input.operationId },
+        { ...fixture.context, toolCallId: "undo-persisted-status" },
+      ),
+    ).toEqual(result);
+  } finally {
+    await reopened.dispose();
+  }
+  await createMacosCadGuiTransport().send(
+    fixture.application,
+    undoRecord.macroPath,
+    {
+      timeoutMs: 10_000,
+      maxOutputBytes: 65_536,
+    },
+  );
+  await delay(100);
+}
+
+async function verifyGuiUndoOperation(fixture: GuiUndoFixture) {
+  const source = await createUndoSource(
+    fixture,
+    25,
+    26,
+    "undo-source-success",
+    true,
+  );
+  const input = undoInput(fixture, source);
+  const result = await nativeToolCall(
+    fixture.tools,
+    "cad_gui_undo_operation",
+    input,
+    {
+      ...fixture.context,
+      toolCallId: "undo-success",
+    },
+  );
+  expect(result).toMatchObject({
+    operationId: input.operationId,
+    outcome: "undone",
+    receipt: {
+      undoStarted: true,
+      undoObserved: true,
+      historyVerified: true,
+      changes: expect.arrayContaining([
+        expect.objectContaining({
+          objectName: "Box",
+          propertyName: "Length",
+          observed: expect.objectContaining({ value: 25 }),
+          changed: true,
+        }),
+        expect.objectContaining({
+          objectName: "Box",
+          propertyName: "Note",
+          observed: "自有验收属性",
+          changed: true,
+        }),
+      ]),
+    },
+  });
+  await verifyPersistentUndoReplay(fixture, input, result);
+  await fixture.mutate(
+    "doc=owned[0]\nbox=doc.getObject('Box')\nassert (box.Length.Value,box.Width.Value)==(25,50)\nassert box.Note=='自有验收属性'\nassert abs(box.Shape.Volume-12500)<1e-6\nassert dict(box.ExpressionEngine)['Width']=='Length * 2'\nassert not doc.HasPendingTransaction\nbuiltins.__kfw_actual_undo_history__=(list(doc.UndoNames),list(doc.RedoNames))",
+  );
+  expect(
+    await nativeToolCall(
+      fixture.tools,
+      "cad_gui_operation_status",
+      { operationId: input.operationId },
+      { ...fixture.context, toolCallId: "undo-after-duplicate" },
+    ),
+  ).toEqual(result);
+  await fixture.mutate(
+    "assert (list(owned[0].UndoNames),list(owned[0].RedoNames))==builtins.__kfw_actual_undo_history__",
+  );
+}
+
+async function verifyGuiUndoRefusals(fixture: GuiUndoFixture) {
+  const tool = fixture.tools.find(
+    (entry) => entry.name === "cad_gui_undo_operation",
+  );
+  if (!tool) throw new Error("缺少正式撤销工具");
+  const source = await createUndoSource(fixture, 25, 27, "undo-source-later");
+  const input = undoInput(fixture, source);
+  await fixture.mutate(
+    "doc=owned[0]\ndoc.openTransaction('KFW fixture later user')\ndoc.getObject('Box').Length=28\ndoc.recompute()\ndoc.commitTransaction()\nbuiltins.__kfw_later_history__=(list(doc.UndoNames),list(doc.RedoNames))",
+  );
+  const rejected = await executeCadTestTool(tool, input, {
+    ...fixture.context,
+    toolCallId: "undo-later-rejected",
+  });
+  expect(rejected.isError).toBe(true);
+  expect(rejected.structuredContent).toMatchObject({
+    outcome: "rejected",
+    receipt: { undoStarted: false },
+  });
+  expect(
+    await executeCadTestTool(
+      tool,
+      {
+        ...(await fixture.target()),
+        operationId: randomUUID(),
+        sourceOperationId: input.sourceOperationId,
+      },
+      { ...fixture.context, toolCallId: "undo-refreshed-target-rejected" },
+    ),
+  ).toMatchObject({ isError: true });
+  await fixture.mutate(
+    "doc=owned[0]\nassert (doc.getObject('Box').Length.Value,doc.getObject('Box').Width.Value)==(28,56)\nassert (list(doc.UndoNames),list(doc.RedoNames))==builtins.__kfw_later_history__",
+  );
+  const pendingSource = await createUndoSource(
+    fixture,
+    28,
+    29,
+    "undo-source-pending",
+  );
+  await fixture.mutate(
+    "owned[1].openTransaction('KFW fixture user pending')\nowned[1].getObject('Box').Width=10\nassert owned[1].HasPendingTransaction",
+  );
+  expect(
+    await executeCadTestTool(tool, undoInput(fixture, pendingSource), {
+      ...fixture.context,
+      toolCallId: "undo-pending-rejected",
+    }),
+  ).toMatchObject({
+    isError: true,
+    structuredContent: { outcome: "rejected", receipt: { undoStarted: false } },
+  });
+  await fixture.mutate(
+    "assert owned[0].getObject('Box').Length.Value==29\nassert owned[1].HasPendingTransaction\nassert owned[1].getObject('Box').Width.Value==10",
+  );
+}
+
 async function waitJson(path: string) {
   const deadline = Date.now() + 20_000;
   for (;;) {
@@ -384,17 +618,23 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
         throw new Error("无法以系统事实绑定独立测试GUI，不选择其它应用兜底");
       }
       const { context } = await createCadTestContext(root);
-      const service = createCadService({
-        sandbox: work,
-        guiProbe: probe,
-        guiOperationStore: createCadGuiOperationStore({ rootDirectory: root }),
-        gate: async () => ({ ok: true }),
-        resolveLimits: async () => ({
-          limits: cadTestLimits,
-          timeoutMs: 30_000,
-        }),
-      });
-      activateCadTestService(service);
+      const reopen = () => {
+        const current = createCadService({
+          sandbox: work,
+          guiProbe: probe,
+          guiOperationStore: createCadGuiOperationStore({
+            rootDirectory: root,
+          }),
+          gate: async () => ({ ok: true }),
+          resolveLimits: async () => ({
+            limits: cadTestLimits,
+            timeoutMs: 30_000,
+          }),
+        });
+        activateCadTestService(current);
+        return current;
+      };
+      const service = reopen();
       const tool = createCadTools(service).find(
         (entry) => entry.name === "cad_gui_documents",
       );
@@ -987,6 +1227,17 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       await mutateFixture(
         "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert len(doc.UndoNames)==builtins.__kfw_edit_undo_count__\nassert not doc.HasPendingTransaction",
       );
+      const undoFixture = {
+        tools: createCadTools(service),
+        context,
+        application,
+        root,
+        target: currentTarget,
+        mutate: mutateFixture,
+        reopen,
+      };
+      await verifyGuiUndoOperation(undoFixture);
+      await verifyGuiUndoRefusals(undoFixture);
       expect(
         createHash("sha256")
           .update(await readFile(savedPath))

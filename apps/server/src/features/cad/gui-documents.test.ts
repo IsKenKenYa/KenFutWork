@@ -102,6 +102,10 @@ async function fixture() {
   const store = createCadGuiOperationStore({ rootDirectory: root });
   const operations = {
     execute: vi.fn(async () => operationResult),
+    undoOperation: vi.fn(async (..._args: unknown[]) => ({
+      ...operationResult,
+      outcome: "undone" as const,
+    })),
     status: vi.fn(
       async (
         identity: CadGuiOperationIdentity,
@@ -405,6 +409,109 @@ test("副本发布目录未授权时先拒绝，不向GUI发送复制请求", as
     ),
   ).toMatchObject({ isError: true });
   expect(f.operations.copyDocument).not.toHaveBeenCalled();
+});
+
+test("显式撤销工具使用独立审批与当前Task权限，参数冻结且状态查询不派发", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_undo_operation",
+  );
+  expect(tool).toMatchObject({
+    access: "execute",
+    approvalReviewKind: "cad-gui-undo",
+    scope: "shared",
+    exposure: "deferred",
+  });
+  if (!tool?.zodSchema) throw new Error("缺少正式撤销工具");
+  const input = {
+    ...f.target,
+    operationId: randomUUID(),
+    sourceOperationId: f.operationResult.operationId,
+  };
+  const original = structuredClone(input);
+  const undone = {
+    ...f.operationResult,
+    operationId: input.operationId,
+    outcome: "undone" as const,
+  };
+  let finish = () => {};
+  f.operations.undoOperation.mockImplementation(async (payload) => {
+    expect(payload).toEqual(original);
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return undone;
+  });
+  const first = tool.execute(input, f.context);
+  input.sourceOperationId = randomUUID();
+  await vi.waitFor(() =>
+    expect(f.operations.undoOperation).toHaveBeenCalledOnce(),
+  );
+  finish();
+  expect(await first).toMatchObject({ structuredContent: undone });
+  expect(await tool.execute(original, f.context)).toMatchObject({
+    structuredContent: undone,
+  });
+  expect(f.operations.undoOperation).toHaveBeenCalledOnce();
+  expect(f.operations.undoOperation).toHaveBeenCalledWith(
+    original,
+    expect.objectContaining({
+      taskId: f.scope.taskId,
+      scopeGeneration: 1,
+      branchGeneration: 1,
+    }),
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    expect.any(Function),
+  );
+  f.operations.status.mockResolvedValue(undone);
+  expect(
+    await f.service.guiOperationStatus(undone.operationId, {
+      ...f.context,
+      toolCallId: "undo-status",
+    }),
+  ).toMatchObject({ structuredContent: undone });
+  expect(f.operations.undoOperation).toHaveBeenCalledOnce();
+  expect(f.reader.read).not.toHaveBeenCalled();
+  for (const extra of [
+    { source: "unsafe()" },
+    { undoSource: { receipt: "model-proof" } },
+    { sourceOperationId: input.operationId },
+    { macroPath: "/tmp/undo.FCMacro" },
+  ])
+    expect(tool.zodSchema.safeParse({ ...original, ...extra }).success).toBe(
+      false,
+    );
+});
+
+test("撤销调用拒绝只读与停用，迟到代际变化不发布成功", async () => {
+  for (const mode of ["readonly", "disabled", "generation"] as const) {
+    const f = await fixture();
+    const tool = createCadTools(f.service).find(
+      (entry) => entry.name === "cad_gui_undo_operation",
+    );
+    if (!tool) throw new Error("缺少正式撤销工具");
+    const input = {
+      ...f.target,
+      operationId: randomUUID(),
+      sourceOperationId: f.operationResult.operationId,
+    };
+    if (mode === "readonly") f.stored.scope.sandboxMode = "read-only";
+    if (mode === "disabled") f.disableGate();
+    if (mode === "generation")
+      f.operations.undoOperation.mockImplementation(async () => {
+        f.stored.scope.generation++;
+        return {
+          ...f.operationResult,
+          operationId: input.operationId,
+          outcome: "undone",
+        };
+      });
+    expect(await tool.execute(input, f.context)).toMatchObject({
+      isError: true,
+    });
+    if (mode !== "generation")
+      expect(f.operations.undoOperation).not.toHaveBeenCalled();
+  }
 });
 
 test("当前文档清单声明外部应用执行审批，不接受任意宏或端点", async () => {
