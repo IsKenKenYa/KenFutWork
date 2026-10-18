@@ -2,6 +2,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import type {
   ProcessSandbox,
   ProcessStdioSpawnRequest,
@@ -205,6 +206,199 @@ describe("官方 CAD Task 执行", () => {
       await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
     );
     expect(wire).toMatchObject({ action: "operations", input: args });
+  });
+
+  it.each(["depth", "through_all"])(
+    "结构化 Pad、孔草图与 Pocket JSON 原样传入沙箱：%s",
+    async (mode) => {
+      const data = {
+        operations: [{ kind: "create_pocket", objectName: "Pocket", mode }],
+      };
+      const f = await fixture({ data });
+      const tool = createCadTools(f.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const args = {
+        operations: [
+          { kind: "create_body", name: "Body", label: "圆板" },
+          {
+            kind: "create_sketch",
+            name: "BaseProfile",
+            body: "Body",
+            profiles: [{ kind: "circle", name: "Base", radius: 20 }],
+          },
+          {
+            kind: "create_pad",
+            name: "Pad",
+            label: "底板",
+            body: "Body",
+            profile: "BaseProfile",
+            length: 10,
+          },
+          {
+            kind: "create_sketch",
+            name: "HoleSketch",
+            body: "Body",
+            supportPad: "Pad",
+            profiles: [
+              { kind: "circle", name: "Hole", radius: 2, center: [10, 0] },
+            ],
+          },
+          {
+            kind: "create_pocket",
+            name: "Pocket",
+            label: "圆孔",
+            body: "Body",
+            profile: "HoleSketch",
+            mode,
+            ...(mode === "depth" ? { depth: 4 } : {}),
+          },
+          {
+            kind: "set_dimension",
+            object: "Pad",
+            dimension: "length",
+            value: 12,
+          },
+          ...(mode === "depth"
+            ? [
+                {
+                  kind: "set_dimension",
+                  object: "Pocket",
+                  dimension: "depth",
+                  value: 6,
+                },
+              ]
+            : []),
+          {
+            kind: "set_dimension",
+            object: "HoleSketch",
+            profile: "Hole",
+            dimension: "radius",
+            value: 3,
+          },
+        ],
+      };
+      const original = structuredClone(args);
+      expect(z.fromJSONSchema(tool.parameters).safeParse(args).success).toBe(
+        true,
+      );
+      const result = await executeCadTestTool(tool, args, f.context);
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(result.structuredContent.data).toEqual(data);
+      expect(f.spawn).toHaveBeenCalledOnce();
+      const request = f.spawn.mock.calls[0]?.[0];
+      const wire = JSON.parse(
+        await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
+      );
+      expect(wire.action).toBe("operations");
+      expect(wire.input).toEqual(args);
+      expect(args).toEqual(original);
+    },
+  );
+
+  it("特征操作的无效字段组合在 service 和沙箱派发前拒绝", async () => {
+    const f = await fixture();
+    const execute = vi.spyOn(f.service, "execute");
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少结构化 CAD 工具");
+    const pad = {
+      kind: "create_pad",
+      name: "Pad",
+      body: "Body",
+      profile: "BaseProfile",
+      length: 10,
+    };
+    const pocket = {
+      kind: "create_pocket",
+      name: "Pocket",
+      body: "Body",
+      profile: "HoleSketch",
+    };
+    const operations = [
+      {
+        kind: "create_sketch",
+        name: "HoleSketch",
+        supportPad: "Pad",
+        profiles: [{ kind: "circle", name: "Hole", radius: 2 }],
+      },
+      { ...pad, body: undefined },
+      { ...pad, profile: undefined },
+      { ...pad, length: undefined },
+      { ...pad, reversed: true },
+      { ...pocket, mode: "depth" },
+      { ...pocket, mode: "length", depth: 4 },
+      { ...pocket, mode: "through_all", depth: 4 },
+      { ...pocket, mode: "through_all", depth: undefined },
+      { ...pocket, mode: "through_all", supportPad: "Pad" },
+      { ...pocket, mode: "through_all", body: undefined },
+      { ...pocket, mode: "through_all", profile: undefined },
+      ...["width", "height", "radius"].map((dimension) => ({
+        kind: "set_dimension",
+        object: "BaseProfile",
+        dimension,
+        value: 3,
+      })),
+      ...["length", "depth"].flatMap((dimension) => [
+        {
+          kind: "set_dimension",
+          object: "Pad",
+          profile: "Base",
+          dimension,
+          value: 3,
+        },
+        {
+          kind: "set_dimension",
+          object: "Pad",
+          profile: undefined,
+          dimension,
+          value: 3,
+        },
+      ]),
+      ...[0, -1, Number.NaN, Number.POSITIVE_INFINITY].flatMap((value) => [
+        { ...pad, length: value },
+        { ...pocket, mode: "depth", depth: value },
+        { kind: "set_dimension", object: "Pad", dimension: "length", value },
+        { kind: "set_dimension", object: "Pocket", dimension: "depth", value },
+      ]),
+    ];
+    for (const operation of operations) {
+      expect(
+        await tool.execute({ operations: [operation] }, f.context),
+        JSON.stringify(operation),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "invalid_arguments" } },
+      });
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+    const discoverySchema = z.fromJSONSchema(tool.parameters);
+    for (const operation of [
+      { ...pocket, mode: "depth" },
+      { ...pocket, mode: "through_all", depth: 4 },
+      { ...pocket, mode: "through_all", supportPad: "Pad" },
+      {
+        kind: "set_dimension",
+        object: "BaseProfile",
+        dimension: "width",
+        value: 40,
+      },
+      {
+        kind: "set_dimension",
+        object: "Pad",
+        profile: "Base",
+        dimension: "length",
+        value: 12,
+      },
+    ]) {
+      expect(
+        discoverySchema.safeParse({ operations: [operation] }).success,
+        JSON.stringify(operation),
+      ).toBe(false);
+    }
   });
 
   it("结构化操作拒绝空批次、重复轮廓、无效尺寸、未知操作和权限注入", async () => {

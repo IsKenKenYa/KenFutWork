@@ -1,3 +1,6 @@
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { z } from "zod";
 import type {
@@ -5,7 +8,10 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
+import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { ProcessExit, ProcessLimits } from "../process-sandbox/types.js";
+import { detectFreeCadRuntime } from "./runtime.js";
+import { type CadService, createCadService } from "./service.js";
 
 export async function executeCadTestTool(
   tool: ToolDefinition,
@@ -75,4 +81,45 @@ export async function createCadTestContext(root: string) {
     },
   };
   return { context, controller, scope, stored };
+}
+
+export async function withNativeCad(
+  run: (fixture: {
+    root: string;
+    service: CadService;
+    context: ToolExecutionContext;
+  }) => Promise<void>,
+) {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-cad-native-")));
+  const sandbox = createProcessSandbox({
+    captureRoot: join(root, "capture"),
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  const failures: unknown[] = [];
+  try {
+    const runtime = await detectFreeCadRuntime();
+    if (!runtime) throw new Error("显式原生验收要求本机已安装 FreeCAD");
+    const { context } = await createCadTestContext(root);
+    const service = createCadService({
+      sandbox,
+      gate: async () => ({ ok: true }),
+      detectRuntime: async () => runtime,
+      resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
+    });
+    await run({ root, service, context });
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      await sandbox.close("cad_native_integration_cleanup");
+      if (failures.length === 0)
+        await rm(root, { recursive: true, force: true });
+      else console.error(`CAD 原生验收诊断目录：${root}`);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(failures, "CAD 原生验收和资源清理均失败。");
 }

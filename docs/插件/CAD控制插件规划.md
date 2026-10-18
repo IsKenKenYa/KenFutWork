@@ -23,15 +23,26 @@
 
 ## 常用结构化操作
 
-`cad_apply_operations` 复用既有 Task、审批、安装门控与新文件发布，不引入独立运行链路。输入为按序执行的 `operations`，首批支持 `create_body`、`create_sketch` 与 `set_dimension`；同一 Sketch 的 `profiles` 可同时含矩形与圆，轮廓名不得重复。内部直接用已解析的 JSON 调可信 API，不将参数拼成 Python 源码执行。
+`cad_apply_operations` 复用既有 Task、审批、安装门控与新文件发布，不引入独立运行链路。输入为按序执行的 `operations`，支持 `create_body`、`create_sketch`、`create_pad`、`create_pocket` 与 `set_dimension`；同一 Sketch 的 `profiles` 可同时含矩形与圆，轮廓名不得重复。内部直接用已解析的 JSON 调可信 API，不将参数拼成 Python 源码执行。
 
 矩形宽高与圆半径为正毫米数；`origin`／`center` 为固定绝对二维坐标，默认 `[0,0]`。固定位置只保证请求时的位置，不暗含改尺寸后相对居中。创建的矩形使用闭合、水平／垂直、位置与有向宽高约束，圆使用位置与半径约束；驱动尺寸命名为 `轮廓名_Width`／`_Height`／`_Radius`。`set_dimension` 只接受唯一、类型匹配的命名驱动尺寸，拒绝参考／停用约束和已有表达式，不解除用户已有关系。操作后须求解成功、完全约束并回读生效数值。
 
-内部对象名称若已存在或被 FreeCAD 自动改名则明确失败，中文显示可用 `label`。每步回执 `data.operations` 含序号、操作类型、实际对象、求解状态及实际读取的命名尺寸。失败标明操作序号与原因，不发布最终文件；输入工程仍只读。工作副本／诊断文件的创建不是数据库事务，不承诺中间副作用全部回滚。空 Body 中途可存在，批末仍执行既有完整几何校验。Pad／Pocket 等常用封装继续分批交付，不把首批草图等同于完整结构化建模。
+内部对象名称若已存在或被 FreeCAD 自动改名则明确失败，中文显示可用 `label`。每步回执 `data.operations` 含序号、操作类型、实际对象、求解状态及实际读取的命名尺寸。失败标明操作序号与原因，不发布最终文件；输入工程仍只读。工作副本／诊断文件的创建不是数据库事务，不承诺中间副作用全部回滚。空 Body 中途可存在，批末仍执行既有完整几何校验。旋转、布尔、圆角／倒角及阵列等常用封装继续分批交付，复杂形态仍由完整 Python 承接。
+
+
+### 拉伸、切除与厚度联动
+
+`create_pad` 显式指定 `body`、`profile`、`length`，提供 Body 内首个正向 XY、单侧、定长拉伸。`create_sketch.supportPad` 在同一 Body 的自由孔草图上，用固定的 `Placement.Base.z = Pad.Length` 表达式跟随当前 Pad；不引用易变的 Face 编号。草图二维坐标仍固定，厚度联动不等于相对居中。
+
+`create_pocket` 显式指定 `body` 与 `profile`，作用于当前 Tip 的基础 Pad；孔草图须绑定此 Pad。`mode:depth` 必须提供正数 `depth`，`mode:through_all` 不接受 `depth`。不猜 ActiveBody、不重用其它 Body 或已被特征消费的草图、不静默重绑定过时支持或替换已有 Tip。更广的附着面、多侧／反向拉伸及特征链由 Python 承接，结构化入口不会把它们错误解释成这条基础链。
+
+`set_dimension` 的 `length` 对应定长 Pad，`depth` 对应有限 Pocket；这两类不传 `profile`，也不解除已有 Length 表达式。草图宽高／半径仍必须带 `profile`。修改后重算并检查真实属性、单实体及实际材料切除；保留最终 Pocket Tip 与既有可见性。新特征只隐藏被消费草图与旧 Tip、显示新特征，不统一改写 Body 或其它对象的可见性。
+
+操作回执在原序号／对象信息外，记录实际 Body、Profile、BaseFeature、当前 Tip、长度或切除模式、实体数和体积；孔草图另记录实际局部 Z 与支持 Pad。每步回执反映该步完成时的状态，最终文件的状态由整批末尾校验与重新打开验收确认。
 
 ## 几何与产物判定
 
-`recompute()` 的返回值是重算数量，不能当成功布尔值。对象错误状态、非空 Shape、有效性、实体数以及任务特定的尺寸／体积分别检查。`check()` 对空 Shape 不抛异常不能当成功。2D 草图可不包含实体，须由任务显式采用对应判定。无 Tip 且仅含有效草图几何的 Body 可以没有聚合 Shape，其包围盒返回 null；草图自身仍逐项校验，普通空 Feature、空 Body、有实体特征却缺 Tip 或坏 Pad 不适用。3D 任务显式设置 `requireSolids:true`。
+`recompute()` 的返回值是重算数量，不能当成功布尔值。对象错误状态、非空 Shape、有效性、实体数以及任务特定的尺寸／体积分别检查。`check()` 对空 Shape 不抛异常不能当成功。2D 草图可不包含实体，须由任务显式采用对应判定。无 Tip 且仅含有效草图几何的 Body 可以没有聚合 Shape，其包围盒返回 null；草图自身仍逐项校验，普通空 Feature、空 Body、有实体特征却缺 Tip 或坏 Pad 不适用。Python 三维任务显式设置 `requireSolids:true`。
 
 `documentPath` 仅用于读取已有工程，新建省略；`outputPath` 是工具最终发布的新路径。Python 中的保存重开验证使用 `output_directory` 暂存，最终保留 `doc` 交给工具保存，不先写占用 `outputPath`。
 

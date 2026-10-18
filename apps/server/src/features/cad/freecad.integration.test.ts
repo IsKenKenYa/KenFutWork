@@ -14,6 +14,7 @@ import {
   cadTestLimits,
   createCadTestContext,
   executeCadTestTool,
+  withNativeCad,
 } from "./test-fixtures.js";
 import { cadResultSchema } from "./tool-contracts.js";
 import { createCadTools } from "./tools.js";
@@ -652,47 +653,6 @@ const SKETCH_ONLY_SOURCE = [
   "doc.recompute()",
   "result = {'body_tip': body.Tip.Name if body.Tip else None, 'sketch_valid': sketch.Shape.isValid(), 'geometry_count': sketch.GeometryCount}",
 ].join("\n");
-
-async function withNativeCad(
-  run: (fixture: {
-    root: string;
-    service: CadService;
-    context: ToolExecutionContext;
-  }) => Promise<void>,
-) {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-cad-native-")));
-  const sandbox = createProcessSandbox({
-    captureRoot: join(root, "capture"),
-    network: { allowedDomains: [], deniedDomains: [] },
-  });
-  const failures: unknown[] = [];
-  try {
-    const runtime = await detectFreeCadRuntime();
-    if (!runtime) throw new Error("显式原生验收要求本机已安装 FreeCAD");
-    const { context } = await createCadTestContext(root);
-    const service = createCadService({
-      sandbox,
-      gate: async () => ({ ok: true }),
-      detectRuntime: async () => runtime,
-      resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
-    });
-    await run({ root, service, context });
-  } catch (error) {
-    failures.push(error);
-  } finally {
-    try {
-      await sandbox.close("cad_native_integration_cleanup");
-      if (failures.length === 0)
-        await rm(root, { recursive: true, force: true });
-      else console.error(`CAD 原生验收诊断目录：${root}`);
-    } catch (error) {
-      failures.push(error);
-    }
-  }
-  if (failures.length === 1) throw failures[0];
-  if (failures.length > 1)
-    throw new AggregateError(failures, "CAD 原生验收和资源清理均失败。");
-}
 
 it.skipIf(
   process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||

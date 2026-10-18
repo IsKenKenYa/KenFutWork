@@ -39,6 +39,49 @@ const profileSchema = z.discriminatedUnion("kind", [
     })
     .strict(),
 ]);
+const featureTarget = {
+  name: z.string().min(1),
+  label: z.string().optional(),
+  body: z.string().min(1),
+  profile: z.string().min(1),
+};
+const pocketOperationSchema = z.discriminatedUnion("mode", [
+  z
+    .object({
+      kind: z.literal("create_pocket"),
+      ...featureTarget,
+      mode: z.literal("depth"),
+      depth: positive,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("create_pocket"),
+      ...featureTarget,
+      mode: z.literal("through_all"),
+    })
+    .strict(),
+]);
+const dimensionTarget = {
+  kind: z.literal("set_dimension"),
+  object: z.string().min(1),
+  value: positive,
+};
+const dimensionOperationSchema = z.discriminatedUnion("dimension", [
+  z
+    .object({
+      ...dimensionTarget,
+      profile: z.string().min(1),
+      dimension: z.enum(["width", "height", "radius"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...dimensionTarget,
+      dimension: z.enum(["length", "depth"]),
+    })
+    .strict(),
+]);
 const operationSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -53,6 +96,13 @@ const operationSchema = z.discriminatedUnion("kind", [
       name: z.string().min(1),
       body: z.string().min(1).optional(),
       label: z.string().optional(),
+      supportPad: z
+        .string()
+        .min(1)
+        .describe(
+          "将自由孔草图的局部 Z 绑定到同 Body 基础 Pad.Length；必须同时提供 body。",
+        )
+        .optional(),
       profiles: z
         .array(profileSchema)
         .min(1)
@@ -69,16 +119,24 @@ const operationSchema = z.discriminatedUnion("kind", [
           }
         }),
     })
-    .strict(),
+    .strict()
+    .superRefine((operation, ctx) => {
+      if (operation.supportPad !== undefined && operation.body === undefined)
+        ctx.addIssue({
+          code: "custom",
+          path: ["body"],
+          message: "supportPad 必须同时指定草图所属 body",
+        });
+    }),
   z
     .object({
-      kind: z.literal("set_dimension"),
-      object: z.string().min(1),
-      profile: z.string().min(1),
-      dimension: z.enum(["width", "height", "radius"]),
-      value: positive,
+      kind: z.literal("create_pad"),
+      ...featureTarget,
+      length: positive,
     })
     .strict(),
+  pocketOperationSchema,
+  dimensionOperationSchema,
 ]);
 export const cadOperationsInputSchema = z
   .object({
