@@ -190,6 +190,39 @@ it("GUI 受控修改审批明确原位写入、重算与事务边界，不把幂
     ).toBeUndefined();
 });
 
+it("GUI 副本审批同时表达外部文档序列化与Task新文件权限，拒绝私有路径注入", () => {
+  const args = {
+    application: guiApplication(),
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    operationId: "b357cc8d-e5a1-4a3e-b23f-c145e99f163d",
+    outputPath: "exports/副本.FCStd",
+  };
+  expect(approvalReviewEvidence(input("cad-gui-copy", args))).toMatchObject({
+    executionBoundary: {
+      kind: "external-gui",
+      taskOsSandboxEnforced: false,
+      savesSourceFile: false,
+      publicationFilesystemAccess: "task-authorized-new-file",
+      effects: expect.arrayContaining([
+        "serialize-document-providers",
+        "publish-new-task-file",
+      ]),
+    },
+    untrustedData: { operation: { args } },
+  });
+  for (const extra of [
+    { source: "unsafe()" },
+    { privatePath: "/tmp/copy.FCStd" },
+    { outputPath: "export.txt" },
+  ])
+    expect(
+      approvalReviewEvidence(input("cad-gui-copy", { ...args, ...extra })),
+    ).toBeUndefined();
+});
+
 it("GUI 调用参数不能签发审批边界，注入文字仍留在不可信应用字段", () => {
   const application = guiApplication();
   const executionBoundary = {

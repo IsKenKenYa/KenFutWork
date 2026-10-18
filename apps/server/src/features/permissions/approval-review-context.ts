@@ -3,6 +3,7 @@ import {
   cadGuiDocumentsInputSchema,
   cadGuiInspectDocumentInputSchema,
 } from "../cad/gui-document-contracts.js";
+import { cadGuiCopyDocumentInputSchema } from "../cad/gui-document-copy-contracts.js";
 import { cadGuiSetPropertiesInputSchema } from "../cad/gui-operation-contracts.js";
 import {
   cadDescribeInputSchema,
@@ -21,6 +22,7 @@ const operationSchemas = {
     cadGuiInspectDocumentInputSchema,
   ]),
   "cad-gui-mutate": cadGuiSetPropertiesInputSchema,
+  "cad-gui-copy": cadGuiCopyDocumentInputSchema,
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
   "cad-operations": cadOperationsInputSchema,
@@ -126,6 +128,32 @@ const CAD_GUI_MUTATION_EXECUTION_BOUNDARY = {
   ],
 } as const;
 
+const CAD_GUI_COPY_EXECUTION_BOUNDARY = {
+  kind: "external-gui",
+  taskOsSandboxEnforced: false,
+  documentAccess: "serialize-selected-document",
+  savesSourceFile: false,
+  publicationFilesystemAccess: "task-authorized-new-file",
+  effects: [
+    "execute-fixed-macro",
+    "change-file-dialog-working-directory",
+    "observe-document-events",
+    "serialize-document-providers",
+    "write-private-document-copy",
+    "publish-new-task-file",
+  ],
+  applicationIdentity: "untrusted-until-dispatch-verification",
+  documentIdentity: "untrusted-until-epoch-handle-and-revision-verification",
+  operationIdAuthority: "idempotency-only",
+  excludedOperations: [
+    "arbitrary-python",
+    "save-source",
+    "recompute",
+    "close-document",
+    "automatic-undo",
+  ],
+} as const;
+
 const inputSchema = z
   .object({
     kind: z.enum([
@@ -141,6 +169,7 @@ const inputSchema = z
       "cad-preview",
       "cad-gui-inspect",
       "cad-gui-mutate",
+      "cad-gui-copy",
     ]),
     args: z.record(z.string(), z.unknown()),
     userRequest: z.string(),
@@ -230,7 +259,13 @@ export function approvalReviewEvidence(input: {
               CAD_GUI_MUTATION_EXECUTION_BOUNDARY,
             ),
           }
-        : {}),
+        : context.kind === "cad-gui-copy"
+          ? {
+              executionBoundary: structuredClone(
+                CAD_GUI_COPY_EXECUTION_BOUNDARY,
+              ),
+            }
+          : {}),
     untrustedData: {
       userRequest: context.userRequest,
       workspace: {

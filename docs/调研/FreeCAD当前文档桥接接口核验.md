@@ -1,8 +1,8 @@
 # FreeCAD 当前文档桥接接口核验
 
-> **角色：调研。** 核验日期：2026-10-18。范围：已安装 FreeCAD 1.1.4 对应官方提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的 GUI 启动、官方本地消息通道、宏与主线程调度；为下一批固定只读桥提供依据，不声明当前文档控制已交付。方向与权限仍以[CAD 控制插件规划](../插件/CAD控制插件规划.md)为准。
+> **角色：调研。** 核验日期：2026-10-18。范围：已安装 FreeCAD 1.1.4 对应官方提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的 GUI 启动、官方本地消息通道、宏与主线程调度及当前文档接口。第2—7节保留最初只读桥调研；后续固定查询、属性读写与副本接线分别登记在第8—13节。方向与权限仍以[CAD 控制插件规划](../插件/CAD控制插件规划.md)为准。
 >
-> 资料核验阶段只读取官方资料、源码和既有诊断文件；第 6 节是旧回执的复核。随后 KFW 固定文档查询的实现与新原生验收单独记在第 8 节，不将两种证据混算。
+> 资料核验阶段只读取官方资料、源码和既有诊断文件；第6节是旧回执的复核。后续实现与原生验收另行登记，不将源码／API探针与产品整链验收混算。
 
 ## 1. 结论与证据层级
 
@@ -12,7 +12,7 @@ FreeCAD 1.1.4 自带的是**本地文件打开通道**，可以请求 GUI 进程
 | --- | --- |
 | 官方源码已证实 | `GUISingleApplication` 监听本地消息；`OpenFile:` 经主窗口交给 `App::Application::processFiles()`；宏在该进程 Python 解释器执行。见第 2～4 节。 |
 | 已有本机原生证据 | 独立 GUI 实例实际收到宏路径，返回真实 PID／版本／隔离路径；另一固定行为探针完成 13 步、55 断言。见第 6 节；不是产品桥验收。 |
-| 本文建议，尚未实现 | 固定只读桥的独立 endpoint、bootstrap nonce、请求／文档代际、鉴权及回执。见第 5 节。 |
+| 本文最初建议 | 独立 endpoint、bootstrap nonce、请求／文档代际、鉴权及回执。见第5节；现行逐次固定宏的接线见第8—13节，尚未建立独立持久endpoint。 |
 | 尚不能证明 | 任意现存 GUI 的通用自动附着、跨平台产品桥、长期稳定、GUI 内任意 Python 的 Task OS 沙箱隔离。 |
 
 ## 2. CLI 与官方本地消息协议
@@ -106,7 +106,7 @@ latest.json             04c9eca94eb205cddbdc49826c78c9de45ec86713b5962c440bdead1
 
 ## 7. 未验证项与下一批验收要求
 
-- 持久 `QLocalServer` bridge 尚未实现；已交付的逐次固定宏查询／观察／检查／属性写入见第8—11节，不能据此声称持久server或任意GUI Python已交付。
+- 持久 `QLocalServer` bridge 尚未实现；逐次固定宏查询／观察／检查／属性写入及本批副本接线见第8—13节，不能据此声称持久server或任意GUI Python已交付。
 - 未在用户当前 GUI 加载桥或建立连接；不默认恢复 AX 自动化。Qt 6.8.3 的既有崩溃证据与未证实因果仍见原调研 §9.16；避免 AX 不等于修复了 Qt。
 - `--hidden`、独立目录和 Qt socket 规则有源码依据；本轮没有另做隐藏实例启动、恶意 peer、socket 替换、请求排队或回执后长期存活验收。
 - Windows／Linux 的控制与身份机制需各自验证；不能照搬 macOS peer PID 常量、Unix 地址或权限结论。
@@ -162,7 +162,7 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 
 派发与执行各有持久认领，文件写齐和fsync后再用硬链接独占发布；重复宏不覆盖首回执。准备时间不因重启延长，已有认领无回执永不自动重发。只有严格匹配原请求及行为语义的回执才报告成功。FreeCAD提交与磁盘回执落盘之间仍有不可消除的未知窗口，不能宣称最终恰好一次。
 
-本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。保存、副本发布和显式撤销仍未交付。
+本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。覆盖保存源文件和显式撤销仍未交付；副本与Task发布的本批接线及验证范围见第13节。
 
 
 ## 12. 跨宿主停止与迟到固定宏
@@ -172,3 +172,21 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 关闭屏障等待内存取消与持久对账均完成；任一失败都不能由afterStateChanged启用绕过，成功重试全量撤销后才可恢复。此对账本身不连接FreeCAD、不重发，也不把“取消标记已持久化”称为已回滚或已中断当前原生函数。
 
 真实隔离GUI回归复用生产固定宏builder：制造旧宿主claim后无内存调用的持久记录，创建新service并停用，再让同一固定宏迟到进入官方socket。回执为rejected/cancelled且mutationStarted=false，实际Length仍25mm、表达式Width仍50mm、撤销记录与源FCStd SHA-256不变。随后启用仅读原状态，不重发。该场景模拟旧宿主消失，不声称做过任意时刻真实系统崩溃注入；GUI迟到执行是真实工具路径，独立实例全链约52秒通过。
+
+## 13. GUI 副本与 Task 新文件发布
+
+`cad_gui_copy_document` 复用固定宏、现有观察器及持久操作记录，显式选择的目标可以不是活动文档。GUI 只向本次私有操作目录的 `document.FCStd` 调用 `saveCopy`；模型的 `outputPath` 只供后续 Task 发布，不进入 GUI 保存路径。工具不调用源文件保存、重算、清除修改状态或事务关闭 API。FreeCAD 序列化可能执行文档 provider，因此沿独立 GUI 执行审批，不能称为 Task OS 沙箱内的文件复制；不整对象拒绝 Python Proxy，意外可观察改变则报告 `partial` 并保留现场。
+
+官方 `saveCopy` 返回 None，且相同文件名可能不写入，返回值或保存事件均不足以证明副本成功。实现复验新文件为稳定常规文件而非符号链接，流式校验完整 ZIP／CRC、`Document.xml`／`GuiDocument.xml`、SHA-256 与大小；不套固定工作区字节预算。几何检查不在此时重算源文档，touched 或错误模型可以按原貌复制；后续可由 `cad_describe_document` 在 Task 沙箱中打开发布文件作独立几何检查。源码见固定版本 [DocumentPyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp) 与 [Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)。
+
+链接检查不能以空的 `doc.InList`／`OutList` 或 `getDependentDocuments(False)` 证明无依赖；这些视图只覆盖已加载且经标志筛选的关系。固定检查逐属性使用 `App.Base.TypeId.fromName(typeId)`／`isDerivedFrom(str)`，只对 `App::PropertyXLink`、`App::PropertyXLinkSubList`、`App::PropertyXLinkContainer` 的派生属性调用 `dumpPropertyContent(name, Compression=0)`，不 dump Shape。ExpressionEngine、Spreadsheet 属性也在继承范围内，不能只按名称前缀识别。转储为含 `Persistence.xml` 的 ZIP，根为 Content；本地表达式没有 XLinks 也合法。API 与继承依据分别见 [TypePyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Base/TypePyImp.cpp)、[PropertyContainerPyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyContainerPyImp.cpp#L516) 和 [PropertyLinks.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyLinks.cpp)。
+
+`XLink file=''` 是 owner 自己文档内的引用，name 非空但对象未解析仍属本地状态，不因它自动拒绝复制。非空 file 在目标关闭、getter 为 None 后仍保留，须据此识别外链。XLinks 的 count 只数 XLink 子项，可附 DocMap 元数据；数量或结构无法解释时明确拒绝。官方导出态另有省略 file 的分支，当前固定快照不把这种未确认状态当作“无外链”。相对 file 以 owner 工程真实文件所在目录解析（先解析工程文件自身的符号链接），https 保持 URI，不拼成本地相对路径。对应原生实现见 [本地恢复语义](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyLinks.cpp#L4261)、[导出态分支](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyLinks.cpp#L4149)、[XLinks 保存](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyLinks.cpp#L5771)及 [DocInfo 路径](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyLinks.cpp#L3317)。首期也扫描其它打开文档的此类属性以补充隐藏引用者；目标尚无文件名、URI 或未知结构导致归属无法确认时拒绝，不将空的已加载关系当作完整证明。
+
+安装版 FreeCAD 1.1.4 的后台真实 Task 已核对上述 TypeId、bytearray 转储、本地／未设值 Link、关闭目标后仍保留的外链 file，以及 Undo／Redo 名称、计数、模式和 Gui 编辑／事务字段。该 API 探针不是副本产品工具验收。保存前后复验打开身份、活动文档、FileName／Label／UID、Modified／touched、原生状态及 Undo／Redo 历史摘要；完整历史名称不写进回执。`statePreserved` 仅表示这些已观察状态保持，不能包装成完整内容 CAS。
+
+`copied` 仅表示私有 FCStd 与原生回执已经验证；宿主还须按当前 Task 目录权限、授权代际及停止状态，把相同大小／SHA-256 的稳定字节作为新文件发布，确认后才是 `published`。既有输出拒绝覆盖；副本生成与 Task 发布分别持久认领并对账。`cad_gui_operation_status` 只查询原编号，不连接 FreeCAD或发布文件。已认领无可信回执、复制完成但发布未确认等窗口保留 `unknown`；不重发、不换新编号掩盖未知，也不靠撤销／关闭用户文档伪造取消。请求、回执和私有副本保留见《隐私政策》§4.2；具体请求／回执契约以 [gui-document-copy-contracts.ts](../../apps/server/src/features/cad/gui-document-copy-contracts.ts) 为准。
+
+本批第二轮真实独立 GUI 整链约67.64秒通过：GUI 内存模型的12500 mm³副本经固定工具发布到Task，后台 `cad_describe_document` 读回；再用后台 Python 改 Height=15，得到18750 mm³并导出 STEP。源 GUI 状态、Undo／Redo、活动文档及源 FCStd SHA-256保持，未保存文档复制后 FileName仍空；其它打开文档有pending时拒绝，同编号重放与状态查询一致。首轮体积断言遇到12500与12499.999999999996的浮点差异，改用容差后完成第二轮复验。
+
+该整链只操作自有隔离实例，没有用户现存GUI／AX、任意provider或全部工作台保存的验收。预检拒绝、坏副本、原生状态改变、持久重放及未知窗口另由固定源码、控制器和发布边界测试覆盖；这些层级各自保留，不把API探针替代产品工具链。正式证据与遗留项由《日志》记账。

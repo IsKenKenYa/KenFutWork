@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   link,
   mkdtemp,
@@ -155,7 +155,86 @@ test("先持久认领再派发固定写入宏，匹配回执后返回已提交",
   expect(f.probe.verify).toHaveBeenCalled();
 });
 
+test("复制当前文档后仅匹配私有native副本回执，不宣称Task文件已发布", async () => {
+  const f = await fixture();
+  const input = configureCopy(f);
+  expect(
+    await f.controller.copyDocument(input, f.binding, f.context),
+  ).toMatchObject({
+    state: "terminal",
+    outcome: "copied",
+    cancellationRequested: false,
+    receipt: {
+      artifact: { name: "document.FCStd", hasGuiDocument: true },
+      statePreserved: true,
+    },
+  });
+  f.probe.verify.mockRejectedValue(new Error("GUI已经退出"));
+  expect(
+    await restart(f).copyDocument(
+      input,
+      { ...f.binding, runId: "run-2" },
+      { ...f.context, timeoutMs: 2000 },
+    ),
+  ).toMatchObject({ outcome: "copied" });
+  expect(
+    await restart(f).status({ ...f.binding, operationId: input.operationId }),
+  ).toMatchObject({ outcome: "copied" });
+  expect(await f.store.readPublication(await operation(f))).toEqual({});
+  expect(f.send).toHaveBeenCalledOnce();
+  expect(f.probe.verify).toHaveBeenCalledTimes(2);
+});
+
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+function copyInput(f: Fixture) {
+  return {
+    application: f.input.application,
+    operationId: f.input.operationId,
+    bridgeEpoch: f.input.bridgeEpoch,
+    documentHandle: f.input.documentHandle,
+    expectedApplicationRevision: f.input.expectedApplicationRevision,
+    expectedDocumentRevision: f.input.expectedDocumentRevision,
+  };
+}
+
+function configureCopy(f: Fixture, changed: Record<string, unknown> = {}) {
+  const input = copyInput(f);
+  f.send.mockImplementation(async (_app, macroPath) => {
+    const directory = dirname(macroPath);
+    const manifest = JSON.parse(
+      await readFile(join(directory, "manifest.json"), "utf8"),
+    );
+    const bytes = Buffer.from("private native FCStd");
+    await writeFile(join(directory, "document.FCStd"), bytes, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    await f.publish(
+      macroPath,
+      {},
+      JSON.stringify({
+        protocol: "kfw-cad-gui-copy/1",
+        operationId: input.operationId,
+        fingerprint: manifest.fingerprint,
+        pid: input.application.pid,
+        guiThread: true,
+        completed: true,
+        outcome: "copied",
+        copyStarted: true,
+        statePreserved: true,
+        artifact: {
+          name: "document.FCStd",
+          size: bytes.length,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          hasGuiDocument: true,
+        },
+        ...changed,
+      }),
+    );
+  });
+  return input;
+}
 
 async function operation(f: Fixture) {
   const record = await f.store.lookup({
@@ -772,6 +851,80 @@ test("no_op的changed标记必须与before和requested实际是否相等一致",
   ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
 });
 
+test.each([
+  { operationId: "7cce6253-b797-427b-99d4-5d10204cb5ae" },
+  { fingerprint: "0".repeat(64) },
+  { pid: 9876 },
+  { statePreserved: false },
+  { artifact: undefined },
+  { protocol: "kfw-cad-gui-operation/1" },
+])("复制回执身份或副本证明无效时保持unknown且不重发：%j", async (changed) => {
+  const f = await fixture();
+  const input = configureCopy(f, changed);
+
+  expect(
+    await f.controller.copyDocument(input, f.binding, f.context),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+  expect(
+    await restart(f).copyDocument(
+      input,
+      { ...f.binding, runId: "run-2" },
+      f.context,
+    ),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+  expect(f.send).toHaveBeenCalledOnce();
+});
+
+test("复制记录不能跨授权代际、参数或操作种类复用", async () => {
+  const f = await fixture();
+  const input = configureCopy(f);
+  await f.controller.copyDocument(input, f.binding, f.context);
+
+  await expect(
+    restart(f).copyDocument(
+      input,
+      { ...f.binding, branchGeneration: 2 },
+      f.context,
+    ),
+  ).rejects.toMatchObject({ code: "conflict" });
+  await expect(
+    restart(f).copyDocument(
+      { ...input, outputPath: "different.FCStd" },
+      f.binding,
+      f.context,
+    ),
+  ).rejects.toMatchObject({ code: "conflict" });
+  await expect(
+    restart(f).execute(f.input, f.binding, f.context),
+  ).rejects.toMatchObject({ code: "conflict" });
+  expect(f.send).toHaveBeenCalledOnce();
+});
+
+test("复制认领后无GUI ACK时持久取消且未知不重发，也不认领Node发布", async () => {
+  const f = await fixture();
+  const input = copyInput(f);
+  f.send.mockImplementation(async () => {
+    f.signal.abort();
+  });
+
+  expect(
+    await f.controller.copyDocument(input, f.binding, f.context),
+  ).toMatchObject({
+    state: "dispatched",
+    outcome: "unknown",
+    cancellationRequested: true,
+  });
+  expect(
+    await restart(f).status({ ...f.binding, operationId: input.operationId }),
+  ).toMatchObject({
+    state: "dispatched",
+    outcome: "unknown",
+    cancellationRequested: true,
+  });
+  expect(await f.store.readPublication(await operation(f))).toEqual({});
+  expect(f.send).toHaveBeenCalledOnce();
+});
+
 test("preflight拒绝的空修改子集可以接受，不伪造已开始修改", async () => {
   const f = await fixture();
   f.send.mockImplementation(async (_app, macroPath) =>
@@ -855,3 +1008,35 @@ test("partial也不能携带另一批次的修改条目", async () => {
     await f.controller.execute(f.input, f.binding, f.context),
   ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
 });
+
+test.each([
+  {
+    outcome: "rejected",
+    copyStarted: false,
+    statePreserved: true,
+    artifact: undefined,
+    reason: "stale_target",
+  },
+  {
+    outcome: "partial",
+    copyStarted: true,
+    statePreserved: false,
+    artifact: undefined,
+    reason: "state_changed",
+  },
+])(
+  "匹配的复制$outcome回执保留实际结果，不伪装copied或发布Task文件",
+  async (receipt) => {
+    const f = await fixture();
+    const input = configureCopy(f, receipt);
+
+    expect(
+      await f.controller.copyDocument(input, f.binding, f.context),
+    ).toMatchObject({
+      state: "terminal",
+      outcome: receipt.outcome,
+      reason: receipt.reason,
+    });
+    expect(await f.store.readPublication(await operation(f))).toEqual({});
+  },
+);

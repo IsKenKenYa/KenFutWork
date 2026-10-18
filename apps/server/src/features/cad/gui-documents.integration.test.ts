@@ -11,6 +11,10 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "vitest";
 import { z } from "zod";
+import type {
+  ToolDefinition,
+  ToolExecutionContext,
+} from "../../kernel/types.js";
 import { runJxa } from "../computer-use/jxa.js";
 import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
@@ -27,7 +31,130 @@ import {
   createCadTestContext,
   executeCadTestTool,
 } from "./test-fixtures.js";
+import { cadResultSchema } from "./tool-contracts.js";
 import { createCadTools } from "./tools.js";
+
+async function nativeToolCall(
+  tools: ToolDefinition[],
+  name: string,
+  args: Record<string, unknown>,
+  context: ToolExecutionContext,
+) {
+  const tool = tools.find((entry) => entry.name === name);
+  if (!tool) throw new Error(`缺少真实CAD工具：${name}`);
+  const result = await executeCadTestTool(tool, args, context);
+  expect(result.isError, JSON.stringify(result)).not.toBe(true);
+  return result.structuredContent;
+}
+
+async function verifyBackgroundCopy(
+  tools: ToolDefinition[],
+  documentPath: string,
+  context: ToolExecutionContext,
+) {
+  const call = async (name: string, input: Record<string, unknown>) =>
+    cadResultSchema.parse(
+      await nativeToolCall(tools, name, input, {
+        ...context,
+        toolCallId: `gui-copy-handoff-${name}`,
+      }),
+    );
+  const bytes = await readFile(documentPath);
+  const described = await call("cad_describe_document", { documentPath });
+  const shape = described.document?.objects.find(
+    (entry) => entry.name === "Box",
+  )?.shape;
+  expect(shape).toMatchObject({ valid: true, null: false, solids: 1 });
+  expect(shape?.volume).toBeCloseTo(12500, 6);
+  const edited = await call("cad_run_python", {
+    documentPath,
+    source:
+      "box = doc.getObject('Box')\nbox.Height = 15\nresult = {'height': box.Height.Value, 'expression': dict(box.ExpressionEngine)['Width']}",
+    requireSolids: true,
+    expectedVolume: { objectName: "Box", value: 18750 },
+  });
+  expect(edited.data).toEqual({ height: 15, expression: "Length * 2" });
+  expect(edited.outputPath).not.toBe(documentPath);
+  const exported = await call("cad_export", {
+    documentPath: edited.outputPath,
+    format: "step",
+  });
+  expect(await readFile(String(exported.outputPath), "utf8")).toContain(
+    "ISO-10303-21",
+  );
+  expect(await readFile(documentPath)).toEqual(bytes);
+}
+
+async function verifyGuiCopies(options: {
+  tools: ToolDefinition[];
+  context: ToolExecutionContext;
+  target(name?: string): Promise<Record<string, unknown>>;
+  mutate(source: string): Promise<void>;
+}) {
+  const { tools, context, target, mutate } = options;
+  const call = (name: string, args: Record<string, unknown>, id: string) =>
+    nativeToolCall(tools, name, args, { ...context, toolCallId: id });
+  await mutate(
+    "doc=owned[0]\ndoc.openTransaction('KFW copy redo fixture')\ndoc.getObject('Box').Height=11\ndoc.recompute()\ndoc.commitTransaction()\ndoc.undo()\ndoc.recompute()\ndoc.getObject('Box').touch()\nGui.getDocument(doc.Name).Modified=True\nApp.setActiveDocument(owned[1].Name)\nbuiltins.__kfw_copy_state__=(doc.FileName,Gui.getDocument(doc.Name).Modified,doc.isTouched(),list(doc.UndoNames),list(doc.RedoNames),App.ActiveDocument.Name)\nassert doc.RedoCount>0 and doc.UndoCount>0",
+  );
+  const input = { ...(await target()), operationId: randomUUID() };
+  const copied = await call("cad_gui_copy_document", input, "copy-saved");
+  expect(copied).toMatchObject({
+    outcome: "published",
+    nativeOutcome: "copied",
+    publicationOutcome: "published",
+    receipt: { copyStarted: true, statePreserved: true },
+  });
+  const documentPath = z.string().parse(copied.outputPath);
+  expect(documentPath).toMatch(/\.kfw-cad\/gui-snapshots\/.*\.FCStd$/u);
+  const bytes = await readFile(documentPath);
+  expect(createHash("sha256").update(bytes).digest("hex")).toBe(copied.sha256);
+  expect(bytes.length).toBe(copied.sizeBytes);
+  expect(await call("cad_gui_copy_document", input, "copy-replay")).toEqual(
+    copied,
+  );
+  expect(
+    await call(
+      "cad_gui_operation_status",
+      { operationId: input.operationId },
+      "copy-status",
+    ),
+  ).toEqual(copied);
+  await verifyBackgroundCopy(tools, documentPath, context);
+  await mutate(
+    "doc=owned[0]\nassert (doc.FileName,Gui.getDocument(doc.Name).Modified,doc.isTouched(),list(doc.UndoNames),list(doc.RedoNames),App.ActiveDocument.Name)==builtins.__kfw_copy_state__, 'copy changed source/native history/active document'\nbox=doc.getObject('Box')\nassert (box.Length.Value,box.Width.Value,box.Height.Value)==(25,50,10)\nassert dict(box.ExpressionEngine)['Width']=='Length * 2'\nassert owned[1].FileName==''",
+  );
+  const unsaved = await call(
+    "cad_gui_copy_document",
+    { ...(await target("KfwGuiUnsaved")), operationId: randomUUID() },
+    "copy-unsaved",
+  );
+  expect(unsaved).toMatchObject({
+    outcome: "published",
+    nativeOutcome: "copied",
+    receipt: { statePreserved: true },
+  });
+  await mutate(
+    "assert owned[1].FileName==''\nassert Gui.getDocument(owned[1].Name).Modified\nassert App.ActiveDocument is owned[1]\nowned[1].openTransaction('KFW copy busy fixture')\nowned[1].getObject('Box').Height=12",
+  );
+  const copyTool = tools.find(
+    (entry) => entry.name === "cad_gui_copy_document",
+  );
+  if (!copyTool) throw new Error("缺少实际GUI副本工具");
+  const rejected = await executeCadTestTool(
+    copyTool,
+    { ...(await target()), operationId: randomUUID() },
+    { ...context, toolCallId: "copy-pending-rejected" },
+  );
+  expect(rejected.isError).toBe(true);
+  expect(rejected.structuredContent).toMatchObject({
+    outcome: "rejected",
+    receipt: { reason: "document_busy", copyStarted: false },
+  });
+  await mutate(
+    "owned[1].abortTransaction()\nApp.setActiveDocument(owned[0].Name)",
+  );
+}
 
 async function waitJson(path: string) {
   const deadline = Date.now() + 20_000;
@@ -49,7 +176,7 @@ test.skipIf(
   process.platform !== "darwin" ||
     process.env.KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION !== "1",
 )(
-  "独立GUI经Task工具检查与修改属性，重放不重复执行且不保存源文件",
+  "独立GUI经Task工具检查、修改与复制，后台接力且重放不保存源文件",
   async () => {
     const root = await realpath(
       await mkdtemp("/private/tmp/kfw-gui-document-"),
@@ -206,7 +333,7 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
         gate: async () => ({ ok: true }),
         resolveLimits: async () => ({
           limits: cadTestLimits,
-          timeoutMs: 10_000,
+          timeoutMs: 30_000,
         }),
       });
       activateCadTestService(service);
@@ -527,7 +654,7 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
         value,
         unitSignature: [1, 0, 0, 0, 0, 0, 0, 0],
       });
-      const currentTarget = async () => {
+      const currentTarget = async (documentName = saved.name) => {
         const latest = await executeCadTestTool(
           tool,
           { application },
@@ -536,7 +663,7 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
         expect(latest.isError, JSON.stringify(latest)).not.toBe(true);
         const observation = observations.parse(latest.structuredContent);
         const document = observation.documents.find(
-          (doc) => doc.name === saved.name,
+          (doc) => doc.name === documentName,
         );
         if (!document) throw new Error("自有编辑文档已离开实例");
         return {
@@ -686,6 +813,15 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       }
       await mutateFixture(
         "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert not doc.HasPendingTransaction\nassert len(doc.UndoNames)==builtins.__kfw_edit_undo_count__, 'replay/noop/rejected operation changed undo history'",
+      );
+      await verifyGuiCopies({
+        tools: createCadTools(service),
+        context,
+        target: currentTarget,
+        mutate: mutateFixture,
+      });
+      await mutateFixture(
+        "builtins.__kfw_edit_undo_count__=len(owned[0].UndoNames)",
       );
       const recoveryStore = createCadGuiOperationStore({ rootDirectory: root });
       const delayedInput = {

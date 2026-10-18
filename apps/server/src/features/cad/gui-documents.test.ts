@@ -1,13 +1,19 @@
-import { randomUUID } from "node:crypto";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { CadGuiDocumentsSnapshot } from "./gui-document-contracts.js";
+import {
+  type CadGuiCopyDocumentInput,
+  cadGuiCopyDocumentReceiptSchema,
+} from "./gui-document-copy-contracts.js";
 import type { CadGuiOperationResult } from "./gui-operation-controller.js";
 import {
+  type CadGuiOperationBinding,
+  type CadGuiOperationIdentity,
   CadGuiOperationStoreError,
   createCadGuiOperationStore,
 } from "./gui-operation-store.js";
@@ -93,11 +99,80 @@ async function fixture() {
     outcome: "committed",
     cancellationRequested: false,
   };
+  const store = createCadGuiOperationStore({ rootDirectory: root });
   const operations = {
     execute: vi.fn(async () => operationResult),
-    status: vi.fn(async () => operationResult),
+    status: vi.fn(
+      async (
+        identity: CadGuiOperationIdentity,
+      ): Promise<CadGuiOperationResult> => {
+        const record = await store.lookup(identity);
+        if (
+          record?.payload &&
+          typeof record.payload === "object" &&
+          "operation" in record.payload &&
+          record.payload.operation === "save-copy"
+        ) {
+          const state = await store.readState(record);
+          const receipt = cadGuiCopyDocumentReceiptSchema.parse(state.receipt);
+          return {
+            operationId: identity.operationId,
+            state: "terminal",
+            outcome: receipt.outcome,
+            receipt,
+            cancellationRequested: state.cancelled,
+          };
+        }
+        return operationResult;
+      },
+    ),
+    copyDocument: vi.fn(
+      async (
+        input: CadGuiCopyDocumentInput,
+        binding: CadGuiOperationBinding,
+      ): Promise<CadGuiOperationResult> => {
+        const record = await store.prepare({
+          operationId: input.operationId,
+          binding,
+          payload: { operation: "save-copy", ...input, timeoutMs: 30_000 },
+          buildMacro: () => "# native copy fixture\n",
+        });
+        const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x81]);
+        const receipt = cadGuiCopyDocumentReceiptSchema.parse({
+          protocol: "kfw-cad-gui-copy/1",
+          operationId: input.operationId,
+          fingerprint: record.fingerprint,
+          pid: input.application.pid,
+          completed: true,
+          guiThread: true,
+          outcome: "copied",
+          copyStarted: true,
+          statePreserved: true,
+          artifact: {
+            name: "document.FCStd",
+            size: bytes.length,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+            hasGuiDocument: true,
+          },
+        });
+        await writeFile(join(record.directory, "document.FCStd"), bytes, {
+          flag: "wx",
+          mode: 0o600,
+        });
+        await writeFile(record.receiptPath, JSON.stringify(receipt), {
+          flag: "wx",
+          mode: 0o600,
+        });
+        return {
+          operationId: input.operationId,
+          state: "terminal",
+          outcome: "copied",
+          receipt,
+          cancellationRequested: false,
+        };
+      },
+    ),
   };
-  const store = createCadGuiOperationStore({ rootDirectory: root });
   let installed = true;
   const service = createCadService({
     sandbox,
@@ -262,6 +337,74 @@ test("其它插件停用不取消CAD，Run关闭等待持久扫描结束才放�
   expect(f.reader.read).not.toHaveBeenCalled();
   finish();
   await closing;
+});
+
+test("副本工具有独立序列化与文件发布审批，真实Task权限发布新FCStd", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_copy_document",
+  );
+  expect(tool).toMatchObject({
+    access: "execute",
+    approvalReviewKind: "cad-gui-copy",
+  });
+  if (!tool) throw new Error("缺少文档副本工具");
+  const operationId = randomUUID();
+  const input = { ...f.target, operationId, outputPath: "exports/副本.FCStd" };
+  const result = await tool.execute(input, f.context);
+  expect(result).toMatchObject({
+    structuredContent: {
+      operationId,
+      outcome: "published",
+      nativeOutcome: "copied",
+      outputPath: join(f.root, "exports/副本.FCStd"),
+    },
+  });
+  expect(f.operations.copyDocument).toHaveBeenCalledWith(
+    { ...input, outputPath: join(f.root, "exports/副本.FCStd") },
+    expect.objectContaining({
+      taskId: f.scope.taskId,
+      scopeGeneration: 1,
+      branchGeneration: 1,
+    }),
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    expect.any(Function),
+  );
+  expect(await readFile(join(f.root, "exports/副本.FCStd"))).toEqual(
+    Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x81]),
+  );
+  expect(f.operations.execute).not.toHaveBeenCalled();
+  const status = await f.service.guiOperationStatus(operationId, {
+    ...f.context,
+    toolCallId: "copy-status",
+  });
+  expect(status).toMatchObject({
+    structuredContent: {
+      operationId,
+      nativeOutcome: "copied",
+      outcome: "published",
+      publicationOutcome: "published",
+    },
+  });
+});
+
+test("副本发布目录未授权时先拒绝，不向GUI发送复制请求", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_copy_document",
+  );
+  if (!tool) throw new Error("缺少文档副本工具");
+  expect(
+    await tool.execute(
+      {
+        ...f.target,
+        operationId: randomUUID(),
+        outputPath: "/outside/副本.FCStd",
+      },
+      f.context,
+    ),
+  ).toMatchObject({ isError: true });
+  expect(f.operations.copyDocument).not.toHaveBeenCalled();
 });
 
 test("当前文档清单声明外部应用执行审批，不接受任意宏或端点", async () => {

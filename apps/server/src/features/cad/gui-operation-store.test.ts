@@ -702,3 +702,201 @@ describe("CAD GUI 重建服务后的持久取消", () => {
     expect(await readdir(external)).toEqual(["keep"]);
   });
 });
+
+describe("CAD GUI Task副本发布的持久日志", () => {
+  it("两个独立store只允许一个Node发布认领，完成回执跨重建可读", async () => {
+    const { first, second } = await fixture();
+    const one = await first.prepare(request());
+    const two = await second.prepare(request());
+    const claim = {
+      destination: "parts/copy.FCStd",
+      artifactSha256: "a".repeat(64),
+    };
+
+    const claimed = await Promise.all([
+      first.claimPublication(one, claim),
+      second.claimPublication(two, claim),
+    ]);
+    expect(claimed.filter(Boolean)).toHaveLength(1);
+    const receipt = {
+      outcome: "published",
+      destination: "parts/copy.FCStd",
+      sha256: "a".repeat(64),
+    };
+    await first.completePublication(one, receipt);
+    expect(await second.readPublication(two)).toEqual({ claim, receipt });
+  });
+
+  it("发布认领后无完成回执始终保留claim，新store不能重发或重建", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    const payload = {
+      destination: "copy.FCStd",
+      artifactSha256: "a".repeat(64),
+      nested: { version: 1 },
+    };
+    const pending = first.claimPublication(record, payload);
+    payload.destination = "changed.FCStd";
+    payload.nested.version = 2;
+    expect(await pending).toBe(true);
+
+    expect(await second.readPublication(record)).toEqual({
+      claim: {
+        destination: "copy.FCStd",
+        artifactSha256: "a".repeat(64),
+        nested: { version: 1 },
+      },
+    });
+    expect(
+      await second.claimPublication(record, { destination: "different.FCStd" }),
+    ).toBe(false);
+    await expect(
+      lstat(join(record.directory, "publication.receipt.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("发布完成需要既有claim，回执同内容幂等而不同内容冲突", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    const receipt = { outcome: "published", destination: "copy.FCStd" };
+    await expect(
+      first.completePublication(record, receipt),
+    ).rejects.toMatchObject({ code: "invalid_record" });
+    await first.claimPublication(record, { destination: "copy.FCStd" });
+    await first.completePublication(record, receipt);
+    await second.completePublication(record, {
+      destination: "copy.FCStd",
+      outcome: "published",
+    });
+
+    await expect(
+      second.completePublication(record, {
+        ...receipt,
+        destination: "other.FCStd",
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect((await second.readPublication(record)).receipt).toEqual(receipt);
+    expect(
+      await readFile(
+        join(record.directory, "publication.receipt.json"),
+        "utf8",
+      ),
+    ).toBe('{"destination":"copy.FCStd","outcome":"published"}\n');
+  });
+
+  it("完成回执存在但claim丢失时拒绝重建或再次认领", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimPublication(record, { destination: "copy.FCStd" });
+    await first.completePublication(record, { outcome: "published" });
+    await rm(join(record.directory, "publication.claim.json"));
+
+    await expect(second.readPublication(record)).rejects.toMatchObject({
+      code: "invalid_record",
+    });
+    await expect(
+      second.claimPublication(record, { destination: "copy.FCStd" }),
+    ).rejects.toMatchObject({ code: "invalid_record" });
+    expect(
+      await readFile(
+        join(record.directory, "publication.receipt.json"),
+        "utf8",
+      ),
+    ).toBe('{"outcome":"published"}\n');
+  });
+
+  it.each([
+    { name: "publication.claim.json", text: "{" },
+    { name: "publication.receipt.json", text: "{" },
+    {
+      name: "publication.claim.json",
+      text: "x".repeat(CAD_GUI_OPERATION_RECEIPT_MAX_BYTES + 1),
+    },
+    {
+      name: "publication.receipt.json",
+      text: "x".repeat(CAD_GUI_OPERATION_RECEIPT_MAX_BYTES + 1),
+    },
+  ])("损坏或超界的$name保留unknown，不覆盖日志", async ({ name, text }) => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimPublication(record, { destination: "copy.FCStd" });
+    await writeFile(join(record.directory, name), text);
+
+    await expect(second.readPublication(record)).rejects.toMatchObject({
+      code: "invalid_record",
+    });
+    await expect(
+      second.claimPublication(record, { destination: "copy.FCStd" }),
+    ).rejects.toMatchObject({ code: "invalid_record" });
+    expect(await readFile(join(record.directory, name), "utf8")).toBe(text);
+  });
+
+  it("发布日志不跟随symlink，取消pending不删除已认领和已完成日志", async () => {
+    const { first, second, rootDirectory } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimPublication(record, { destination: "copy.FCStd" });
+    const external = join(rootDirectory, "external-publication.json");
+    await writeFile(external, '{"outcome":"published"}');
+    await symlink(external, join(record.directory, "publication.receipt.json"));
+    await expect(second.readPublication(record)).rejects.toMatchObject({
+      code: "invalid_record",
+    });
+    await rm(join(record.directory, "publication.receipt.json"));
+    await first.completePublication(record, { outcome: "published" });
+
+    await second.cancelPending();
+
+    expect(await second.readPublication(record)).toEqual({
+      claim: { destination: "copy.FCStd" },
+      receipt: { outcome: "published" },
+    });
+    for (const name of ["publication.claim.json", "publication.receipt.json"])
+      expect((await lstat(join(record.directory, name))).mode & 0o777).toBe(
+        0o600,
+      );
+    expect(await readFile(external, "utf8")).toBe('{"outcome":"published"}');
+  });
+});
+
+describe("CAD GUI 发布控制JSON边界", () => {
+  it("并发完成回执不相同时仅一个成功，另一个冲突且原回执不改", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimPublication(record, { destination: "copy.FCStd" });
+    const one = { outcome: "published", version: "one" };
+    const two = { outcome: "published", version: "two" };
+
+    const completed = await Promise.allSettled([
+      first.completePublication(record, one),
+      second.completePublication(record, two),
+    ]);
+
+    expect(
+      completed.filter((entry) => entry.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = completed.find((entry) => entry.status === "rejected");
+    if (rejected?.status !== "rejected")
+      throw new Error("并发不同回执应有一次冲突");
+    expect(rejected.reason).toMatchObject({ code: "conflict" });
+    expect([one, two]).toContainEqual(
+      (await first.readPublication(record)).receipt,
+    );
+  });
+
+  it("发布控制JSON输入超过64KiB时拒绝，不创建或补写日志", async () => {
+    const { first } = await fixture();
+    const record = await first.prepare(request());
+    const tooLarge = { value: "x".repeat(CAD_GUI_OPERATION_RECEIPT_MAX_BYTES) };
+    await expect(
+      first.claimPublication(record, tooLarge),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(await first.readPublication(record)).toEqual({});
+    await first.claimPublication(record, { destination: "copy.FCStd" });
+    await expect(
+      first.completePublication(record, tooLarge),
+    ).rejects.toMatchObject({ code: "invalid_input" });
+    expect(await first.readPublication(record)).toEqual({
+      claim: { destination: "copy.FCStd" },
+    });
+  });
+});

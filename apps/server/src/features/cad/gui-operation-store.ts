@@ -71,6 +71,17 @@ export interface CadGuiOperationStore {
   claimDispatch(record: CadGuiOperationRecord): Promise<boolean>;
   cancel(record: CadGuiOperationRecord): Promise<void>;
   cancelPending(filter?: { runId?: string }): Promise<void>;
+  readPublication(
+    record: CadGuiOperationRecord,
+  ): Promise<{ claim?: unknown; receipt?: unknown }>;
+  claimPublication(
+    record: CadGuiOperationRecord,
+    payload: unknown,
+  ): Promise<boolean>;
+  completePublication(
+    record: CadGuiOperationRecord,
+    receipt: unknown,
+  ): Promise<void>;
   readState(
     record: CadGuiOperationRecord | CadGuiOperationIdentity,
   ): Promise<CadGuiOperationState>;
@@ -103,7 +114,7 @@ interface Manifest {
   sourceHash: string;
 }
 
-// 固定磁盘协议边界，避免损坏或伪造的回执占满内存；不是执行额度或截断预算。
+// 固定磁盘协议边界，避免损坏或伪造的控制JSON占满内存；不是执行额度或文件容量预算。
 export const CAD_GUI_OPERATION_RECEIPT_MAX_BYTES = 64 * 1024;
 const RECORD_MAX_BYTES = 4 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -374,6 +385,40 @@ async function hasMarker(path: string): Promise<boolean> {
   } catch {
     return fail("invalid_record");
   }
+}
+
+function publicationJson(value: unknown): string {
+  const contents = `${canonicalJson(value)}\n`;
+  if (Buffer.byteLength(contents) > CAD_GUI_OPERATION_RECEIPT_MAX_BYTES)
+    fail("invalid_input");
+  return contents;
+}
+
+async function readPublicationFile(path: string): Promise<unknown | undefined> {
+  try {
+    const bytes = await readRegular(path, CAD_GUI_OPERATION_RECEIPT_MAX_BYTES);
+    return bytes ? freeze(JSON.parse(bytes.toString("utf8"))) : undefined;
+  } catch {
+    return fail("invalid_record");
+  }
+}
+
+async function readPublicationFiles(
+  record: CadGuiOperationRecord,
+): Promise<{ claim?: unknown; receipt?: unknown }> {
+  const claimPath = join(record.directory, "publication.claim.json");
+  let claim = await readPublicationFile(claimPath);
+  const receipt = await readPublicationFile(
+    join(record.directory, "publication.receipt.json"),
+  );
+  // 完成回执可能恰在首次读取claim之后发布；只重读已有日志，不重建认领。
+  if (receipt !== undefined && claim === undefined)
+    claim = await readPublicationFile(claimPath);
+  if (receipt !== undefined && claim === undefined) fail("invalid_record");
+  return {
+    ...(claim !== undefined ? { claim } : {}),
+    ...(receipt !== undefined ? { receipt } : {}),
+  };
 }
 
 function parseManifest(bytes: Buffer): Manifest {
@@ -683,6 +728,41 @@ export function createCadGuiOperationStore(options: {
     prepare,
     lookup,
     cancelPending,
+    async readPublication(record) {
+      return readPublicationFiles(await verified(record));
+    },
+    async claimPublication(record, payload) {
+      const contents = publicationJson(payload);
+      const current = await verified(record);
+      if ((await readPublicationFiles(current)).claim !== undefined)
+        return false;
+      const claimed = await publishMarker(
+        join(current.directory, "publication.claim.json"),
+        contents,
+      );
+      if (!claimed) await readPublicationFiles(current);
+      return claimed;
+    },
+    async completePublication(record, receipt) {
+      const contents = publicationJson(receipt);
+      const current = await verified(record);
+      const state = await readPublicationFiles(current);
+      if (state.claim === undefined) fail("invalid_record");
+      if (state.receipt !== undefined) {
+        if (publicationJson(state.receipt) !== contents) fail("conflict");
+        return;
+      }
+      if (
+        await publishMarker(
+          join(current.directory, "publication.receipt.json"),
+          contents,
+        )
+      )
+        return;
+      const raced = await readPublicationFiles(current);
+      if (raced.receipt === undefined) fail("invalid_record");
+      if (publicationJson(raced.receipt) !== contents) fail("conflict");
+    },
     async claimDispatch(record) {
       if (!dispatchable.has(record)) fail("read_only");
       const current = await verified(record);

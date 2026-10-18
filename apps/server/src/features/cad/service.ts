@@ -12,10 +12,15 @@ import type {
   ProcessStdioSpawnRequest,
 } from "../process-sandbox/types.js";
 import { ProcessSandboxError } from "../process-sandbox/types.js";
+import {
+  type CadGuiCopyPublicationResult,
+  createCadGuiCopyPublisher,
+} from "./gui-copy-publication.js";
 import type {
   CadGuiApplication,
   CadGuiInspectDocumentInput,
 } from "./gui-document-contracts.js";
+import type { CadGuiCopyDocumentInput } from "./gui-document-copy-contracts.js";
 import {
   CadGuiDocumentQueryError,
   type CadGuiDocumentReader,
@@ -85,6 +90,10 @@ export interface CadService {
   ): Promise<CadToolResult>;
   guiSetProperties(
     input: CadGuiSetPropertiesInput,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
+  guiCopyDocument(
+    input: CadGuiCopyDocumentInput,
     context: ToolExecutionContext,
   ): Promise<CadToolResult>;
   guiOperationStatus(
@@ -542,12 +551,13 @@ function guiOperationResult(
   statusOnly = false,
 ): CadToolResult {
   const messages = {
+    copied: "已生成 FreeCAD 副本，尚未发布到 Task。",
     committed: "已修改当前 FreeCAD 文档，尚未保存。",
     no_op: "属性值无需修改。",
-    rejected: "本次修改未执行，请重新读取文档和属性后检查。",
+    rejected: "本次操作未执行，请重新读取文档并检查。",
     partial:
-      "修改未完整完成，可能保留部分更改。请查询操作状态并检查 FreeCAD，勿直接重复执行。",
-    unknown: "修改结果尚未确认。请用同一操作编号查询状态，勿换编号重试。",
+      "本次操作未完整完成，可能保留部分影响。请查询操作状态并检查 FreeCAD，勿直接重复执行。",
+    unknown: "操作结果尚未确认。请用同一操作编号查询状态，勿换编号重试。",
     prepared: "操作已准备，尚未派发。",
     cancelled: "操作在派发前已取消。",
   };
@@ -557,6 +567,45 @@ function guiOperationResult(
       : {}),
     content: [{ type: "text", text: messages[result.outcome] }],
     structuredContent: { ...result },
+  };
+}
+
+function guiCopyResult(
+  native: CadGuiOperationResult,
+  publication: CadGuiCopyPublicationResult,
+  statusOnly = false,
+): CadToolResult {
+  const published = publication.outcome === "published";
+  const outcome =
+    publication.outcome === "not_published" ? "copied" : publication.outcome;
+  const text = published
+    ? `已发布 FreeCAD 副本：${publication.outputPath}`
+    : publication.outcome === "unknown"
+      ? "副本发布结果尚未确认，请查询同一操作编号，勿换编号盲重试。"
+      : "已生成 FreeCAD 副本，尚未发布到 Task。请检查目标目录和原操作状态。";
+  const canonicalOutput = published
+    ? {
+        type: "cad-document-copy",
+        operationId: native.operationId,
+        outputPath: publication.outputPath,
+        filePath: publication.outputPath,
+        mimeType: "application/x-freecad",
+        sizeBytes: publication.sizeBytes,
+        sha256: publication.sha256,
+        version: publication.version,
+      }
+    : undefined;
+  return {
+    ...(!published && !statusOnly ? { isError: true } : {}),
+    content: [{ type: "text", text }],
+    structuredContent: {
+      ...native,
+      ...publication,
+      nativeOutcome: native.outcome,
+      outcome,
+      publicationOutcome: publication.outcome,
+    },
+    ...(canonicalOutput ? { canonicalOutput } : {}),
   };
 }
 
@@ -573,6 +622,9 @@ export function createCadService(options: CadServiceOptions): CadService {
           probe: guiProbe,
         })
       : null);
+  const guiCopyPublisher = options.guiOperationStore
+    ? createCadGuiCopyPublisher({ store: options.guiOperationStore })
+    : null;
   const invocations = new Map<
     string,
     {
@@ -615,7 +667,8 @@ export function createCadService(options: CadServiceOptions): CadService {
       | CadRequest
       | { action: "gui-documents"; application: CadGuiApplication }
       | { action: "gui-inspect"; input: CadGuiInspectDocumentInput }
-      | { action: "gui-set-properties"; input: CadGuiSetPropertiesInput },
+      | { action: "gui-set-properties"; input: CadGuiSetPropertiesInput }
+      | { action: "gui-copy-document"; input: CadGuiCopyDocumentInput },
     context: ToolExecutionContext,
     operation: (
       context: ToolExecutionContext,
@@ -702,6 +755,80 @@ export function createCadService(options: CadServiceOptions): CadService {
       },
     };
   };
+  const guiActionContext = async (
+    context: ToolExecutionContext,
+    activeGuard: (context: ToolExecutionContext) => Promise<void>,
+  ) => {
+    await activeGuard(context);
+    const handle = requireCadContext(context);
+    const scope = handle.describe();
+    if (scope.sandboxMode === "read-only")
+      throw new CadError(
+        "forbidden",
+        "当前 Task 仅允许读取，不能执行 FreeCAD 操作。",
+      );
+    if (!guiOperations)
+      throw new CadError(
+        "operation_storage_unavailable",
+        "CAD 操作存储尚未就绪，请重新启动应用后重试。",
+      );
+    const { limits, timeoutMs } = await options.resolveLimits(context);
+    await activeGuard(context);
+    const signal = AbortSignal.any(
+      [context.signal, context.taskWorkContext?.signal].filter(
+        (value): value is AbortSignal => value !== undefined,
+      ),
+    );
+    return {
+      handle,
+      controller: guiOperations,
+      binding: {
+        instanceId: scope.instanceId,
+        projectId: scope.projectId,
+        taskId: scope.taskId,
+        scopeGeneration: scope.generation,
+        branchGeneration: handle.branchGeneration,
+        runId: context.runId ?? "",
+        toolCallId: context.toolCallId ?? "",
+      },
+      probeContext: {
+        signal,
+        timeoutMs: timeoutMs ?? 60_000,
+        maxOutputBytes: limits.maxOutputBytes,
+      },
+      guard: () => activeGuard(context),
+    };
+  };
+  const guiFailure = (
+    error: unknown,
+    context: ToolExecutionContext,
+    operationId: string,
+    possible: boolean,
+  ) => {
+    const result = onFailure(error, context);
+    return {
+      ...result,
+      structuredContent: {
+        ...result.structuredContent,
+        operationId,
+        outcome: possible ? "unknown" : "rejected",
+      },
+    };
+  };
+  const identifyFailure = (
+    result: CadToolResult,
+    operationId: string,
+  ): CadToolResult =>
+    result.isError && !result.structuredContent.operationId
+      ? {
+          ...result,
+          structuredContent: {
+            ...result.structuredContent,
+            operationId,
+            outcome: "unknown",
+          },
+        }
+      : result;
   return {
     pluginLifecycle: lifecycle.plugin,
     get activationEpoch() {
@@ -783,68 +910,89 @@ export function createCadService(options: CadServiceOptions): CadService {
         { action: "gui-set-properties", input: target },
         context,
         async (context, activeGuard) => {
-          let mutationPossible = false;
+          let possible = false;
           try {
-            await activeGuard(context);
-            const handle = requireCadContext(context);
-            const scope = handle.describe();
-            if (scope.sandboxMode === "read-only")
-              throw new CadError(
-                "forbidden",
-                "当前 Task 仅允许读取，不能修改 FreeCAD 文档。",
-              );
-            if (!guiOperations)
-              throw new CadError(
-                "operation_storage_unavailable",
-                "CAD 操作存储尚未就绪，请重新启动应用后重试。",
-              );
-            const { limits, timeoutMs } = await options.resolveLimits(context);
-            await activeGuard(context);
-            mutationPossible = true;
-            const result = await guiOperations.execute(
+            const action = await guiActionContext(context, activeGuard);
+            possible = true;
+            const result = await action.controller.execute(
               target,
-              {
-                instanceId: scope.instanceId,
-                projectId: scope.projectId,
-                taskId: scope.taskId,
-                scopeGeneration: scope.generation,
-                branchGeneration: handle.branchGeneration,
-                runId: context.runId ?? "",
-                toolCallId: context.toolCallId ?? "",
-              },
-              {
-                ...(context.signal ? { signal: context.signal } : {}),
-                timeoutMs: timeoutMs ?? 60_000,
-                maxOutputBytes: limits.maxOutputBytes,
-              },
-              () => activeGuard(context),
+              action.binding,
+              action.probeContext,
+              action.guard,
             );
-            await activeGuard(context);
+            await action.guard();
             return guiOperationResult(result);
           } catch (error) {
-            const result = onFailure(error, context);
-            return {
-              ...result,
-              structuredContent: {
-                ...result.structuredContent,
-                operationId: target.operationId,
-                outcome: mutationPossible ? "unknown" : "rejected",
-              },
-            };
+            return guiFailure(error, context, target.operationId, possible);
           }
         },
-      ).then((result) =>
-        result.isError && !result.structuredContent.operationId
-          ? {
-              ...result,
-              structuredContent: {
-                ...result.structuredContent,
-                operationId: target.operationId,
-                outcome: "unknown",
-              },
-            }
-          : result,
-      );
+      ).then((result) => identifyFailure(result, target.operationId));
+    },
+    guiCopyDocument(input, context) {
+      const target = structuredClone(input);
+      return invoke(
+        { action: "gui-copy-document", input: target },
+        context,
+        async (context, activeGuard) => {
+          let possible = false;
+          try {
+            const action = await guiActionContext(context, activeGuard);
+            if (!guiCopyPublisher || !options.guiOperationStore)
+              throw new CadError(
+                "operation_storage_unavailable",
+                "CAD 副本存储尚未就绪，请重新启动应用后重试。",
+              );
+            const outputPath = await action.handle.resolvePath(
+              target.outputPath ??
+                `.kfw-cad/gui-snapshots/${target.operationId}.FCStd`,
+              "write",
+            );
+            await action.guard();
+            const previous = await options.guiOperationStore.lookup({
+              instanceId: action.binding.instanceId,
+              taskId: action.binding.taskId,
+              operationId: target.operationId,
+            });
+            if (!previous && (await existing(outputPath)))
+              throw new CadError(
+                "output_exists",
+                "目标文件已存在，请使用新的文件名。",
+              );
+            possible = true;
+            const native = await action.controller.copyDocument(
+              { ...target, outputPath },
+              action.binding,
+              action.probeContext,
+              action.guard,
+            );
+            await action.guard();
+            const record = await options.guiOperationStore.lookup({
+              instanceId: action.binding.instanceId,
+              taskId: action.binding.taskId,
+              operationId: target.operationId,
+            });
+            if (!record)
+              throw new CadError(
+                "operation_record_missing",
+                "CAD 副本记录缺失，请检查原操作状态。",
+              );
+            const publication = await guiCopyPublisher.status(record);
+            if (publication.outcome !== "not_published")
+              return guiCopyResult(native, publication);
+            if (native.outcome !== "copied") return guiOperationResult(native);
+            const published = await guiCopyPublisher.publish(
+              record,
+              action.handle,
+              action.probeContext.signal,
+              action.guard,
+            );
+            await action.guard();
+            return guiCopyResult(native, published);
+          } catch (error) {
+            return guiFailure(error, context, target.operationId, possible);
+          }
+        },
+      ).then((result) => identifyFailure(result, target.operationId));
     },
     guiOperationStatus(operationId, context) {
       return lifecycle.run(context, async (context) => {
@@ -861,6 +1009,27 @@ export function createCadService(options: CadServiceOptions): CadService {
           operationId,
         });
         await guard(context);
+        if (options.guiOperationStore && guiCopyPublisher) {
+          const record = await options.guiOperationStore.lookup({
+            instanceId: scope.instanceId,
+            taskId: scope.taskId,
+            operationId,
+          });
+          if (
+            record?.payload &&
+            typeof record.payload === "object" &&
+            "operation" in record.payload &&
+            record.payload.operation === "save-copy"
+          ) {
+            const publication = await guiCopyPublisher.status(record);
+            await guard(context);
+            if (
+              result.outcome === "copied" ||
+              publication.outcome !== "not_published"
+            )
+              return guiCopyResult(result, publication, true);
+          }
+        }
         return guiOperationResult(result, true);
       });
     },

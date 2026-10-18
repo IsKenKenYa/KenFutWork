@@ -54,7 +54,10 @@ export const cadTestExit: ProcessExit = {
   rangeEmpty: true,
 };
 
-export async function createCadTestContext(root: string) {
+export async function createCadTestContext(
+  root: string,
+  sandboxMode: CodeExecutionScope["sandboxMode"] = "workspace-write",
+) {
   const scope: CodeExecutionScope = {
     instanceId: "00000000-0000-4000-8000-000000000001",
     projectId: "00000000-0000-4000-8000-000000000002",
@@ -62,7 +65,7 @@ export async function createCadTestContext(root: string) {
     generation: 1,
     rootDirectory: root,
     additionalDirectories: [],
-    sandboxMode: "workspace-write",
+    sandboxMode,
   };
   const actor = { instanceId: scope.instanceId, accessClientId: null };
   const stored = {

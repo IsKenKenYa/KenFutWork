@@ -8,6 +8,7 @@ import {
   cadGuiDocumentsInputSchema,
   cadGuiInspectDocumentInputSchema,
 } from "./gui-document-contracts.js";
+import { cadGuiCopyDocumentInputSchema } from "./gui-document-copy-contracts.js";
 import {
   cadGuiOperationStatusInputSchema,
   cadGuiSetPropertiesInputSchema,
@@ -100,6 +101,14 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       schema: cadGuiSetPropertiesInputSchema,
       approvalReviewKind: "cad-gui-mutate",
       execute: (input, context) => service.guiSetProperties(input, context),
+    }),
+    definition({
+      name: "cad_gui_copy_document",
+      description:
+        "将指定 FreeCAD GUI 当前内存文档复制为新的 Task FCStd 文件，不重算或保存源文件。先用 cad_gui_documents 取得完整应用/桥/文档句柄和两个预期修订；目标可为非活动文档。operationId用于持久幂等，同一请求重放沿用原编号。GUI只向KFW私有操作目录调用原生saveCopy，随后宿主按当前Task目录权限发布到outputPath（默认Task的.kfw-cad/gui-snapshots/编号.FCStd），绝不覆盖已有文件。外部GUI不继承Task OS沙箱，序列化可能调用文档provider，独立执行审批；不接模型Python/私有路径。首期拒绝外部依赖或引用及无法可靠解释的链接，避免保存通知影响其它工程。copied只表示私有副本，published才表示Task文件发布完成；unknown/partial/停止后先查cad_gui_operation_status，不换编号盲重试。发布文件可继续交给cad_describe_document/cad_run_python/cad_export处理；复制未验证几何有效性，保留源的touched/错误状态。",
+      schema: cadGuiCopyDocumentInputSchema,
+      approvalReviewKind: "cad-gui-copy",
+      execute: (input, context) => service.guiCopyDocument(input, context),
     }),
     definition({
       name: "cad_gui_operation_status",
