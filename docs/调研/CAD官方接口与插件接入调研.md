@@ -44,7 +44,7 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 A4／俯视图／真实尺寸及整页 SVG 已验，见 §9.14；独立 GUI 原生夹具另验证单页 PDF 导出与栅格查看，见 §9.17，不代表正式 PDF 工具或完整比例／标注验收 |
 | PNG 预览 | GUI view 的图像导出、scenegraph 路线 | 真实图像、视角和对象可见性正确；缺图形环境可解释 | 后台真实几何线框 PNG 已验，见 §9.1、§9.7；独立 GUI 原生夹具已导出并查看着色 PNG，见 §9.17，不代表正式 GUI 预览工具已交付 |
 | Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | 内置Assembly Grounded＋Fixed、完整Provider、重开折返与交换及未连通拒绝已验，见§9.26；其它关节与Draft／BIM仍待验，接口见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
-| FEM／CAM 等 | 官方工作台与外部工具链 | 网格／求解器／后处理器可用；输出语义正确 | FEM真实新网格／CalculiX轴向压力及失败／停止代表流程见§9.25；其它FEM领域及CAM后处理待验，接口依赖见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
+| FEM／CAM 等 | 官方工作台与外部工具链 | 网格／求解器／后处理器可用；输出语义正确 | FEM真实新网格／CalculiX轴向压力及失败／停止代表流程见§9.25；CAM外轮廓／官方linuxcnc与真实NC核验见§9.27；其它FEM领域及CAM策略／后处理器待验，接口依赖见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
 | 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 固定查询／观察、直接标量读写、副本发布及自身已提交属性操作的显式撤销已有独立 GUI 的真实 Task 工具实证；原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §8～§15 |
 
 本表区分后台工具、独立 GUI 的真实 Task 工具和专用原生夹具。GUI 工具的逐项行为与验收范围以[桥接核验](FreeCAD当前文档桥接接口核验.md)为准；现有证据未覆盖用户现存 GUI、任意 GUI Python、全部属性或全部工作台。该文第14节的归属／原生 undo／redo 仍是夹具证据，正式显式撤销的工具实证单列第15节；它只支持自身有证明的已提交属性操作。覆盖保存源文件不能由副本发布或显式撤销推定完成。
@@ -501,7 +501,7 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 
 脚本使用官方分阶段Gmsh输入／网格装载和CalculiX INP／FRD接口配显式subprocess，避开便捷方法重设工作目录；本次输入、日志、网格及结果均在Task私有新目录，每个外部程序超时9秒、线程1。实际二进制从App.getHomePath()/bin定位，App.getResourceDir()在本机为Resources/share；报告记录候选与命中，不改用户全局偏好、不安装依赖、不使用示例的预制网格回退。
 
-这是后台Python代表验收及一处真实属性类型兼容修复，不是新增结构化FEM工具。通用几何检查不能证明物理分析正确，领域判据由Agent脚本核验。该ν=0单轴样件未做独立网格收敛研究，也不覆盖其它材料、物理场、非线性、接触或其它求解器。Assembly代表流程续见§9.26；CAM／BIM仍待验，未操作用户现存GUI或扩大Qt崩溃调查。最终命令与层级证据见同批《日志》，不相加。
+这是后台Python代表验收及一处真实属性类型兼容修复，不是新增结构化FEM工具。通用几何检查不能证明物理分析正确，领域判据由Agent脚本核验。该ν=0单轴样件未做独立网格收敛研究，也不覆盖其它材料、物理场、非线性、接触或其它求解器。Assembly代表流程续见§9.26；CAM代表流程续见§9.27；BIM仍待验，未操作用户现存GUI或扩大Qt崩溃调查。最终命令与层级证据见同批《日志》，不相加。
 
 
 ### 9.26 内置 Assembly Fixed 的真实求解与完整 Provider
@@ -515,3 +515,16 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 另一个原生RED否定了“删Grounded必返回-6”的验收假设。[固定源码AssemblyObject.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Assembly/App/AssemblyObject.cpp#L707)的getGroundedParts包含原生Origin；removeUnconnectedJoints会把不与任何固定对象连接的关节从本次求解vector过滤，而不删除文档关节。两零件均未连接Origin时，原生可跳过其约束并返回0，不会自动固定首个Box。必须继续核对`isPartGrounded`／`isPartConnected`与实际连接器残差，不能把返回码0或旧有效Shape单独当成功。
 
 这是一条Fixed代表流程，不是全部关节、运动、BOM、外部零件文件或当前GUI装配验收。通用CAD几何检查不能证明约束满足，脚本负责领域判据；其它工作台按独立流程推进，未操作用户现存GUI或扩大Qt崩溃调查。最终原生命令、失败不发布与STEP回读及门禁见同批《日志》。
+
+
+### 9.27 CAM Job、真实后处理与 NC 运动语义
+
+既有后台Python／Task链完成原生Job、跟随模型的stock、6mm端铣刀ToolBit／Controller与Outside／CW／Round软件刀径补偿Profile。40×20×5mm板件先改长50，独立保存重开50→70，再独立重开70→40；每阶段新factory／UUID文件，六份NC分别核对实际字节、返回文本和独立Node哈希，最后复核旧NC哈希不变。stock为XY每边3mm余量、Z0～5；唯一源模型、clone、stock、operation、controller和tool引用、原生App／ViewProvider以及真实几何均保留，输入FCStd字节逐轮保持。
+
+实际使用随包linuxcnc Factory→WrapperPost的完整Job导出，不把Profile.toGCode()当后处理。export返回`[('allitems', text)]`，`'-'`不会自动写NC，脚本在本次Task目录独占写入。实际script_path／module.__file__／export.co_filename与应用随包文件规范路径一致，来源SHA-256独立核对；每阶段新实例，未改用户搜索路径或偏好。参数显式`--no-show-editor --precision 6 --preamble "G17 G54 G40 G49 G80 G90 G94 G91.1"`，后处理另发G21；不触发GUI编辑器或文件选择框。
+
+NC独立读取后按本例绝对XYZ、XY增量I/J与mm/min解析，逐段核对内部Path的G0／G1／G2／G3端点、圆心和进给；内部F为mm/s，NC为mm/min，换算×60。每层闭合、到成品矩形的刀心距离3mm、圆弧半径3mm、CW总转角2π及圆角矩形解析面积分别检查，不能只比包围盒。校验5层、下刀步距、安全高度8／净空10、水平300／垂直120mm/min、刀1/M6/G43H1与12000rpm的M3→M5/M2时序。模态在相关运动前生效，不能把末尾补写单位／坐标声明当作有效；窄审反例已先取得RED再修正验收器，并覆盖坐标系切换。
+
+两项原生行为纠正了初始断言：[固定Area.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/CAM/App/Area.cpp#L1748)会把触底显式截面改成zMin+SectionTolerance，Area.py设置该值为Precision.confusion()*10。本例请求FinalDepth0，实际末层1e-6mm，前四层4/3/2/1不变；记录并精确检查这个原生偏移，未笼统放宽所有深度，也未误归因于后处理舍入。Profile在圆角中点开始，会把同一角分成两段G2；按闭合几何／总转角验收，不要求固定4段。
+
+真实失败边界：不存在的后处理工厂返回None，脚本明确拒绝；清空Job操作后，真实linuxcnc仍可返回非空首尾／WCS文本，原生Path回读没有实际切削运动，脚本拒绝。两者均源FCStd字节保持、显式目标不存在，未用mock或手写NC替代失败。通用CAD几何校验不证明刀路可制造，领域判据由脚本与本例独立oracle核验；这些证据不覆盖其它CAM策略、控制器、仿真、真实机床执行或用户现存GUI。最终命令、门禁与重叠统计见同批《日志》。
