@@ -216,3 +216,65 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 本批独立 LaunchServices GUI 的真实 Task 工具整链约89.52秒通过：正式工具将 Length=26 与已改 Note 的批次恢复至25及原 Note，Width 绑定恢复50，真实 Shape 体积恢复12500mm³；工具本身没有额外重算。删除原修改记录后重建 service／store，同一撤销编号仍返回冻结 ACK；直接重复原宏不再执行第二次 undo。后来事务、改用刷新后的目标和其它文档 pending 均拒绝，后来事务的值／历史及用户 pending 保留。源 FCStd SHA-256 不变，既有副本→Task→后台修改／STEP链继续通过。
 
 上述证据只覆盖该隔离实例和代表性多属性操作，没有操作用户现存 GUI／AX，也不代表全部属性、工作台、原生回调或任意撤销均已验收。固定源码、控制器及工具消费方的边界回归与原生场景有重叠，不相加；本批最终全仓门禁由《日志》单独记账。
+
+## 16. 显式保存前置核验
+
+**覆盖保存当前 GUI 文档的源 FCStd 尚未交付。** 第13节的私有 `saveCopy` 与 Task 新文件发布不覆盖原位保存；本节记录固定版本源码和现有宿主边界，以及后续保存切片需要补齐的最小接线。第16.5节是独立 GUI 内自有文档的原生 API 探针，不代表产品保存工具已接线。
+
+### 16.1 原生保存的三个完成边界
+
+`doc.save()`／`doc.saveAs(path)` 是同步调用，但**原生方法完成、目标文件实际写入／替换、KFW 持久回执发布是三个边界**。调用返回 None、收到某个保存事件或方法抛异常，都不能单独推导文件未写入、已经可靠保存或可以重试。以下事实来自固定版本 [App 保存实现](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp#L1700)与 [Python 绑定](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp#L124)。
+
+| 已核验行为 | 保存接线的含义 |
+| --- | --- |
+| Python `save()`、`saveAs()` 成功均返回 None；`save()` 检查底层 bool 与文件可读，`saveAs()` 忽略底层 bool。 | 返回值不是文件完成证明，两种入口的失败语义也不能合并。 |
+| C++ `save()` 遇到 PartialDoc 直接返回 true，不写文件。`isSaved()` 只判断 FileName 非空。 | 保存前须识别并拒绝 PartialDoc；已有文件名不证明当前内存已经保存。 |
+| IO 前会更新 TipName、LastModifiedDate，并按设置更新 LastModifiedBy。 | 保存失败也可能已有内存元数据变化，不能按异常盲目恢复旧值。 |
+| `saveAs()` 在 IO 前改 FileName、Label，再 `Uid.touch()` 触发临时目录迁移，没有生成新的 UID。 | 失败可能保留新身份；另存为不是只更换一个磁盘目标，不能隐含在原位保存权限中。 |
+| App save 不主动重算、purgeTouched、commit／abort 或清除事务历史。 | 不能为了“保存成功”额外做这些操作；provider 与保存通知的影响仍需验证。 |
+| App 保存路径没有清除 Gui.Modified；GUI 保存流程在 App 调用之后另行 `setModified(false)`。 | 原生保存与 GUI 脏状态分别观察，不能把 App 返回当成清脏授权或清脏完成。 |
+
+同步 IO 顺序是：StartSave 通知 → 规范化目标、创建父目录并检查可写性 → 写 ZIP／Document.xml／GUI 数据及附属文件 → C++ `App.signalSaveDocument` → ZipWriter 析构关闭 ZIP 与文件流 → 按备份策略处理旧文件并把临时文件 rename 到目标 → FinishSave 通知 → 方法返回。`App.signalSaveDocument` 发出时 ZIP writer 尚未离开作用域，最终替换也尚未完成；FinishSave 在替换之后，但没有与之对应的独立失败完成通知。见 [ZIP 关闭](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Base/Writer.cpp#L359)和 [GUI 保存后清脏](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp#L1670)。
+
+备份策略也不是整个保存过程的原子事务：关闭 BackupPolicy 时直接写目标，失败可能留下已截断或不完整文件；启用时先写 `目标.UUID`，再移动／删除旧文件及替换目标。时间戳策略可能在**目标已经替换完成后**，因备份清理失败抛出 `Save complete, but error while managing backup history`。因此异常不能标为零写入，也不能触发自动重试、恢复旧元数据或盲目覆盖补偿。见 [BackupPolicy.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/BackupPolicy.cpp)。已核验路径中未见文件／目录 fsync；FinishSave 只表示这条同步应用流程走完，不提供断电持久性保证，也不等于 KFW 回执已落盘。
+
+保存通知可能触碰引用方 Comment；`saveAs()` 改路径后还可能重建引用路径。App save 不自动保存全部依赖文档，GUI 保存流程另有依赖遍历。后续固定保存必须按实际调用的 App 路径核对这些影响，不能拿 `saveCopy` 的检查或 GUI 菜单行为替代。
+
+### 16.2 当前 Task 权限、停止与恢复边界
+
+现有 Scope 的 `resolvePath()` 在真实路径解析前后都重新加载持久授权，拒绝分支改变及非 ready 的普通操作；保存目标仍需按当前 Task／Run 的真实权限和代际校验，历史文档路径或旧操作归属不能代替当前写权限。见 [scope-service.ts 的 resolvePath 与 load](../../apps/server/src/features/execution/scope-service.ts)。但外部 FreeCAD 不继承 Task OS 沙箱，对目标路径的宿主校验不能声称约束了 GUI／provider 的所有 IO 副作用。
+
+| 现有机制 | 能保证的范围与缺口 |
+| --- | --- |
+| [runFileOperation](../../apps/server/src/features/code-tools/file-operations.ts) 在回调启动前登记 active，回调 Promise 的 `finally` 才删除。 | abort 本身不会释放仍在执行的回调；但回调返回 unknown 或抛错就会释放，即使外部 GUI 仍可能写入。`revokeTaskFileOperations()` 使用 `Promise.allSettled`，不会保留回调拒绝所表达的外部停止未知。 |
+| 同文件的 active、revoking、restoreBarriers、restorePermits 是模块内 Map／Set／WeakMap。 | 它们不是持久记录，服务重建后不存在；当前 [ScopedFilesystemScope](../../apps/server/src/features/execution/scoped-filesystem.ts) 也没有持久外部写域登记接口。 |
+| 文件恢复屏障拒绝其他 Task 的相交 active 写域，同 Task 由调用方另行 drain。 | [applyFileRewind](../../apps/server/src/features/code-ui/file-rewind.ts) 关闭进程、撤销文件操作并检查 active 后才写恢复文件，但成功或异常最终都会释放临时文件／进程屏障。仅把 GUI 保存包在一个会提前结束的 Node 回调里不足以保护恢复。 |
+| [进程恢复协调器](../../apps/server/src/features/process-sandbox/restore-barrier.ts) 只在可信 `exit.rangeEmpty` 后移除受管进程写域；不确认退出时保留。 | 该机制明确不宣称管理外部 shell／editor。加载宏的 helper 退出，不证明外部 FreeCAD 原生保存已停止。 |
+| [Scope repository](../../apps/server/src/features/execution/scope-repository.ts) 持久保存 revoking／failed 与代际，所有 `onRevoke` 成功后才转 ready。 | 此状态能阻止本 Task 新操作，但不是跨 Task 的目录写域 fence，不能阻止其他 Task 对相交目录恢复。 |
+
+CAD 现有 [持久操作 store](../../apps/server/src/features/cad/gui-operation-store.ts) 能保留 dispatched／executing／unknown 并阻止重发，但尚未接到 Task 文件恢复的相交写域检查。`cancelPending()` 对无回执请求持久写取消 marker；marker 仅供尚未进入原生调用的固定宏检查，**不是外部 GUI 已停止、保存已中断或已经回滚的证明**。dispatched／executing 即使已有取消 marker，仍可能是 unknown。当前 store 对账无法核验记录时会报 `stop_unconfirmed`，也不能反向把“取消 marker 写入成功”当作原生停止确认。
+
+### 16.3 后续保存切片的最小接线建议
+
+本节建议只连接 CAD 外部保存与既有文件操作／Task 生命周期，不扩展通用 Harness，不新增 ctx key，也不把用户 GUI 变成受管子进程。
+
+1. **在既有 CAD durable operation record 中保存写域事实。** 冻结 canonical 目标与当前 Task／scope／branch 绑定，在派发保存宏之前建立持久外部写域 fence。原生保存开始后，取消、超时、缺失／非法 ACK、回调结束和服务重建均不解除；只有可信的“尚未开始写入”或“写入已经结束”事实才能解除。业务保存失败与写入是否仍在进行分别判断，不能因备份异常自动推导仍未写入或安全重试。
+2. **让现有文件操作管理器看见这份写域。** 增加有限的外部写域参与者注册口，由 CAD plugin 注册，事实仍读取既有 store。保存写域准入与恢复屏障安装共用原子准入步骤，覆盖检查后派发竞态；相交目录检查跨 Task 生效。临时恢复 lease 的 finally 清理不能删除或掩盖尚未确认结束的持久外部写域。
+3. **复用现有撤销与关闭扩展点。** `executionScopes.onRevoke` 和 [task-before-process-close](../../apps/server/src/features/task-work/close-resources.ts) 请求持久取消并核对外部写入结束；unknown 必须拒绝报告关闭成功，让现有 Task revoking／failed 纪律继续生效。不能只等待 Node helper、只等当前回调或只写取消 marker。服务重建后先恢复未确认写域，再开放保存工具与恢复准入。
+4. **沿同一 operationId 对账。** 原生文件写入／替换与 KFW 回执无法组成一个原子事务。原生已完成但回执未发布时保持 unknown，状态查询只读原编号；不重发、不换编号、不通过清 Modified、undo、改回 FileName／Label 或覆盖旧文件伪造取消和补偿。
+
+### 16.4 保存实现前仍需取得的原生证据
+
+- 正常 `save()` 与首次 `saveAs()`：核对实际文件、重开参数及 GUI 数据，并分别记录 FileName／Label／Uid／TransientDir、保存元数据、Modified／touched、事务／历史、通知顺序与实际扩展名。
+- 失败分界：不可写目标、序列化失败、备份处理失败；检查目标／临时文件／备份及内存身份，覆盖“目标已替换但方法抛异常”，不得只断言工具报错。
+- 引用与回执窗口：用自有链接文档核对 Comment／路径副作用；原生完成后阻断回执发布，确认同编号保留 unknown 且不再次保存；同时验证停止、服务重建与相交 Task 恢复不会越过未确认外部写域。
+
+这些是后续切片的验收前置条件；下节只覆盖其中的代表性原生行为，不替代完整矩阵。
+
+### 16.5 隔离 GUI 原生保存探针
+
+复用独立 LaunchServices 实例和主线程诊断夹具，新增自有文档核验 `saveAs` 首次保存、改尺寸后 `save`、坏父路径的 `saveAs` 失败，再关闭重开已保存文件。成功调用返回 None，Start／Finish 顺序成对；实际 ZIP／CRC 包含 Document.xml 与 GuiDocument.xml。UID 保持，保存不清 GUI Modified；首次保存前主动 touch 的状态和 Undo／Redo 历史保留，第二次保存后历史也保持。重开得到 Height=13mm、真实体积约1300mm³。
+
+失败目标的父路径为常规文件。安装版抛 FreeCADError，目标不存在，但 FileName 已改成失败目标，Label 已改成其文件名；记录只有 Start、没有本次 Finish。原已成功保存的文件仍可重开到 Height=13mm。因此不能把此异常解释成“内存身份未改变”，也不能用 FileName 或保存开始事件判定成功。该场景不覆盖序列化失败、备份替换后异常、跨文档保存通知副作用、断电或 KFW 回执丢失。
+
+首轮原生断言已完成，但 TS 将1299.9999999999995与1300精确比较而失败；改为几何容差后，同一 GUI 整链90.79秒通过，并确认自有实例正常退出。既有属性写入、副本发布、后台接力、显式撤销与源FCStd SHA-256保护同时通过；结果有重叠，不相加。此处直接原生保存来自专用夹具 [gui-native-save.py](../../apps/server/src/features/cad/fixtures/gui-native-save.py)，不是暴露给Agent的新工具，也不证明现有Task停止／恢复屏障已覆盖外部GUI写入。没有用户现存GUI／AX操作，没有继续崩溃根因调查。

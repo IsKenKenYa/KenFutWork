@@ -1238,6 +1238,29 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       };
       await verifyGuiUndoOperation(undoFixture);
       await verifyGuiUndoRefusals(undoFixture);
+      const saveProbe = await readFile(
+        new URL("./fixtures/gui-native-save.py", import.meta.url),
+        "utf8",
+      );
+      await mutateFixture(
+        `save_probe_root=${JSON.stringify(root)}\n${saveProbe}`,
+      );
+      const saveObservation = z
+        .object({
+          success: z.literal(true),
+          height: z.number(),
+          volume: z.number(),
+          failureType: z.string().nullable(),
+          fileNameAfterFailure: z.string(),
+        })
+        .parse(await waitJson(join(root, "native-save-result.json")));
+      expect(saveObservation).toMatchObject({
+        success: true,
+        height: 13,
+        failureType: "FreeCADError",
+        fileNameAfterFailure: join(root, "blocked-parent/cannot-save.FCStd"),
+      });
+      expect(saveObservation.volume).toBeCloseTo(1300, 6);
       expect(
         createHash("sha256")
           .update(await readFile(savedPath))
