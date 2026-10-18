@@ -9,6 +9,7 @@ import {
   cadGuiInspectDocumentInputSchema,
 } from "./gui-document-contracts.js";
 import { cadGuiCopyDocumentInputSchema } from "./gui-document-copy-contracts.js";
+import { cadGuiSaveDocumentInputSchema } from "./gui-document-save-contracts.js";
 import {
   cadGuiOperationStatusInputSchema,
   cadGuiSetPropertiesInputSchema,
@@ -110,6 +111,14 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       schema: cadGuiCopyDocumentInputSchema,
       approvalReviewKind: "cad-gui-copy",
       execute: (input, context) => service.guiCopyDocument(input, context),
+    }),
+    definition({
+      name: "cad_gui_save_document",
+      description:
+        "显式保存当前活动FreeCAD文档到已有FCStd原路径。完整应用身份、桥代际、句柄、两个expected修订和expectedFileName均来自最新文档快照。宿主按当前Task写权限授权规范化文件与备份所在父目录，固定宏只调用一次App.save；不另存、重算、关闭、撤销或清GUI未保存标记，外部GUI不继承Task OS沙箱。operationId用于持久幂等，同一请求沿用原编号；保存异常可能已更新文件，partial/unknown/停止后先查同编号，禁止自动重试或补偿。未确认结束的写域跨重启继续阻止相交文件恢复。未保存文档请用cad_gui_copy_document。",
+      schema: cadGuiSaveDocumentInputSchema,
+      approvalReviewKind: "cad-gui-save",
+      execute: (input, context) => service.guiSaveDocument(input, context),
     }),
     definition({
       name: "cad_gui_undo_operation",

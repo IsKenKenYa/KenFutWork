@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ToolExecutionContext } from "../../kernel/types.js";
 import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import {
   CadOperationError,
@@ -26,10 +27,13 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture() {
+function fixture(
+  options: { confirmPersistedOperationsStopped?(): Promise<void> } = {},
+) {
   const lifecycle = createCadOperationLifecycle({
     bundleName: plugin.name,
     installationId: plugin.id,
+    ...options,
     failure(error) {
       return {
         isError: true,
@@ -154,6 +158,112 @@ describe("CAD 安装代际与在途收尾", () => {
     await expect(f.dispose()).rejects.toMatchObject({
       code: "stop_unconfirmed",
     });
+  });
+
+  it("全局持久确认成功不能洗掉没有独立结束证明的后台操作", async () => {
+    const confirmPersisted = vi.fn(async () => {});
+    const f = fixture({
+      confirmPersistedOperationsStopped: confirmPersisted,
+    });
+    const execute = vi.fn(
+      async (): Promise<CadToolResult> => ({
+        isError: true,
+        content: [{ type: "text", text: "后台进程尚未确认退出" }],
+        structuredContent: { error: { code: "stop_unconfirmed" } },
+      }),
+    );
+    await f.run({ runId: "backend" }, execute);
+
+    await expect(f.closeRun("backend")).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+    await expect(f.closeRun("backend")).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+    expect(confirmPersisted).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it.each(["run", "uninstall", "dispose"] as const)(
+    "%s仅在同一GUI操作可信结束后解除旧失败，不重执行原操作",
+    async (kind) => {
+      const f = fixture();
+      let proof: "missing" | "pending" | "finished" = "missing";
+      const confirmStopped = vi.fn(async () => {
+        if (proof !== "finished")
+          throw new CadOperationError(
+            "stop_unconfirmed",
+            proof === "missing" ? "原操作记录不存在" : "写入结束尚未确认",
+          );
+      });
+      const execute = vi.fn(
+        async (): Promise<CadToolResult> => ({
+          isError: true,
+          content: [{ type: "text", text: "取消请求暂时无法落盘" }],
+          structuredContent: { error: { code: "stop_unconfirmed" } },
+        }),
+      );
+      await f.run({ runId: "gui-save" }, execute, confirmStopped);
+      const stop = () =>
+        kind === "run"
+          ? f.closeRun("gui-save")
+          : kind === "dispose"
+            ? f.dispose()
+            : Promise.resolve(f.plugin.onStateRevoking?.(event));
+
+      await expect(stop()).rejects.toMatchObject({ code: "stop_unconfirmed" });
+      proof = "pending";
+      await expect(stop()).rejects.toMatchObject({ code: "stop_unconfirmed" });
+      proof = "finished";
+      await expect(stop()).resolves.toBeUndefined();
+      await expect(stop()).resolves.toBeUndefined();
+      expect(confirmStopped).toHaveBeenCalledTimes(3);
+      expect(execute).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("多操作停止先取消全部信号并等待全部收尾，独立证明不提前释放其它操作", async () => {
+    const f = fixture();
+    const stickySignal = deferred<AbortSignal | undefined>();
+    const runningSignal = deferred<AbortSignal | undefined>();
+    const finished = deferred<CadToolResult>();
+    const confirmStopped = vi.fn(async () => {});
+    const execute = vi.fn(
+      async (context: ToolExecutionContext): Promise<CadToolResult> => {
+        stickySignal.resolve(context.signal);
+        return {
+          isError: true,
+          content: [{ type: "text", text: "先前取消失败" }],
+          structuredContent: { error: { code: "stop_unconfirmed" } },
+        };
+      },
+    );
+    await f.run({ runId: "saved" }, execute, confirmStopped);
+    const pending = f.run({ runId: "still-running" }, async (context) => {
+      runningSignal.resolve(context.signal);
+      return finished.promise;
+    });
+    const firstSignal = await stickySignal.promise;
+    const secondSignal = await runningSignal.promise;
+    let stopped = false;
+    const stopping = Promise.resolve(f.plugin.onStateRevoking?.(event)).then(
+      () => {
+        stopped = true;
+      },
+    );
+    const outcome = Promise.allSettled([stopping]);
+    expect(firstSignal?.aborted).toBe(true);
+    expect(secondSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    expect(confirmStopped).not.toHaveBeenCalled();
+
+    finished.resolve(ok);
+    expect((await pending).isError).toBe(true);
+    expect(await outcome).toEqual([{ status: "fulfilled", value: undefined }]);
+    expect(stopped).toBe(true);
+    expect(confirmStopped).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledOnce();
   });
 
   it("Run 关闭只取消自己的调用，关闭服务后所有新调用均拒绝", async () => {

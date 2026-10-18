@@ -4,6 +4,7 @@ import {
   cadGuiInspectDocumentInputSchema,
 } from "../cad/gui-document-contracts.js";
 import { cadGuiCopyDocumentInputSchema } from "../cad/gui-document-copy-contracts.js";
+import { cadGuiSaveDocumentInputSchema } from "../cad/gui-document-save-contracts.js";
 import { cadGuiSetPropertiesInputSchema } from "../cad/gui-operation-contracts.js";
 import { cadGuiUndoOperationInputSchema } from "../cad/gui-undo-contracts.js";
 import {
@@ -24,6 +25,7 @@ const operationSchemas = {
   ]),
   "cad-gui-mutate": cadGuiSetPropertiesInputSchema,
   "cad-gui-copy": cadGuiCopyDocumentInputSchema,
+  "cad-gui-save": cadGuiSaveDocumentInputSchema,
   "cad-gui-undo": cadGuiUndoOperationInputSchema,
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
@@ -156,6 +158,32 @@ const CAD_GUI_COPY_EXECUTION_BOUNDARY = {
   ],
 } as const;
 
+const CAD_GUI_SAVE_EXECUTION_BOUNDARY = {
+  kind: "external-gui",
+  taskOsSandboxEnforced: false,
+  savesSourceFile: true,
+  filesystemAccess: "task-authorized-current-file-and-parent-backups",
+  unknownWriteBlocksRestore: true,
+  effects: [
+    "execute-fixed-macro",
+    "observe-document-events",
+    "serialize-document-providers",
+    "overwrite-current-file",
+    "rotate-native-backups",
+  ],
+  excludedOperations: [
+    "arbitrary-python",
+    "save-as",
+    "recompute",
+    "close-document",
+    "automatic-undo",
+    "clear-gui-modified",
+  ],
+  applicationIdentity: "untrusted-until-dispatch-verification",
+  documentIdentity: "untrusted-until-epoch-handle-and-revision-verification",
+  operationIdAuthority: "idempotency-only",
+} as const;
+
 const CAD_GUI_UNDO_EXECUTION_BOUNDARY = {
   kind: "external-gui",
   taskOsSandboxEnforced: false,
@@ -194,6 +222,8 @@ function guiExecutionBoundary(
       return structuredClone(CAD_GUI_MUTATION_EXECUTION_BOUNDARY);
     case "cad-gui-copy":
       return structuredClone(CAD_GUI_COPY_EXECUTION_BOUNDARY);
+    case "cad-gui-save":
+      return structuredClone(CAD_GUI_SAVE_EXECUTION_BOUNDARY);
     case "cad-gui-undo":
       return structuredClone(CAD_GUI_UNDO_EXECUTION_BOUNDARY);
     default:
@@ -217,6 +247,7 @@ const inputSchema = z
       "cad-gui-inspect",
       "cad-gui-mutate",
       "cad-gui-copy",
+      "cad-gui-save",
       "cad-gui-undo",
     ]),
     args: z.record(z.string(), z.unknown()),

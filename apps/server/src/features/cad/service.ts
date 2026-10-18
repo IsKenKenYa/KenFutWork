@@ -2,6 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import {
+  runFileOperation,
+  type TaskFileOperationParticipant,
+} from "../code-tools/file-operations.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import type { PluginStateLifecycle } from "../plugins/state-lifecycle.js";
 import type {
@@ -26,6 +30,7 @@ import {
   type CadGuiDocumentReader,
   createMacosCadGuiDocumentReader,
 } from "./gui-document-reader.js";
+import type { CadGuiSaveDocumentInput } from "./gui-document-save-contracts.js";
 import type { CadGuiSetPropertiesInput } from "./gui-operation-contracts.js";
 import {
   type CadGuiOperationController,
@@ -43,6 +48,11 @@ import {
   CadGuiProbeError,
   createMacosCadGuiProbe,
 } from "./gui-probe.js";
+import {
+  confirmCadGuiSaveOperationStopped,
+  confirmCadGuiSaveWritesStopped,
+  createCadGuiFileOperationParticipant,
+} from "./gui-save-write-domains.js";
 import type { CadGuiUndoOperationInput } from "./gui-undo-contracts.js";
 import {
   CadOperationError,
@@ -76,6 +86,7 @@ export interface CadToolResult {
   >;
 }
 export interface CadService {
+  readonly fileOperationParticipant: TaskFileOperationParticipant | null;
   readonly pluginLifecycle: PluginStateLifecycle;
   readonly activationEpoch: number;
   readonly activationAvailable: boolean;
@@ -95,6 +106,10 @@ export interface CadService {
   ): Promise<CadToolResult>;
   guiCopyDocument(
     input: CadGuiCopyDocumentInput,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
+  guiSaveDocument(
+    input: CadGuiSaveDocumentInput,
     context: ToolExecutionContext,
   ): Promise<CadToolResult>;
   guiUndoOperation(
@@ -572,6 +587,7 @@ function guiOperationResult(
   statusOnly = false,
 ): CadToolResult {
   const messages = {
+    saved: "已保存当前 FreeCAD 文件。",
     copied: "已生成 FreeCAD 副本，尚未发布到 Task。",
     committed: "已修改当前 FreeCAD 文档，尚未保存。",
     undone: "已撤销该次修改，尚未保存。",
@@ -590,15 +606,33 @@ function guiOperationResult(
     Object.hasOwn(guiUndoRejections, result.reason)
       ? guiUndoRejections[result.reason]
       : undefined;
+  const saved =
+    result.outcome === "saved" &&
+    result.receipt?.protocol === "kfw-cad-gui-save/1"
+      ? result.receipt.artifact
+      : undefined;
   return {
     ...(!statusOnly &&
-    !["committed", "no_op", "undone"].includes(result.outcome)
+    !["committed", "no_op", "undone", "saved"].includes(result.outcome)
       ? { isError: true }
       : {}),
     content: [
       { type: "text", text: undoRejection ?? messages[result.outcome] },
     ],
     structuredContent: { ...result },
+    ...(saved
+      ? {
+          canonicalOutput: {
+            type: "cad-document-save",
+            operationId: result.operationId,
+            filePath: saved.canonicalPath,
+            outputPath: saved.canonicalPath,
+            mimeType: "application/x-freecad",
+            sizeBytes: saved.size,
+            sha256: saved.sha256,
+          },
+        }
+      : {}),
   };
 }
 
@@ -657,6 +691,13 @@ export function createCadService(options: CadServiceOptions): CadService {
   const guiCopyPublisher = options.guiOperationStore
     ? createCadGuiCopyPublisher({ store: options.guiOperationStore })
     : null;
+  const fileOperationParticipant =
+    options.guiOperationStore && guiOperations
+      ? createCadGuiFileOperationParticipant({
+          store: options.guiOperationStore,
+          controller: guiOperations,
+        })
+      : null;
   const invocations = new Map<
     string,
     {
@@ -693,6 +734,13 @@ export function createCadService(options: CadServiceOptions): CadService {
         runId === undefined ? undefined : { runId },
       );
     },
+    async confirmPersistedOperationsStopped(runId) {
+      if (options.guiOperationStore && guiOperations)
+        await confirmCadGuiSaveWritesStopped(
+          { store: options.guiOperationStore, controller: guiOperations },
+          runId === undefined ? undefined : { runId },
+        );
+    },
   });
   const invoke = (
     payload:
@@ -701,6 +749,7 @@ export function createCadService(options: CadServiceOptions): CadService {
       | { action: "gui-inspect"; input: CadGuiInspectDocumentInput }
       | { action: "gui-set-properties"; input: CadGuiSetPropertiesInput }
       | { action: "gui-copy-document"; input: CadGuiCopyDocumentInput }
+      | { action: "gui-save-document"; input: CadGuiSaveDocumentInput }
       | { action: "gui-undo-operation"; input: CadGuiUndoOperationInput },
     context: ToolExecutionContext,
     operation: (
@@ -708,52 +757,73 @@ export function createCadService(options: CadServiceOptions): CadService {
       guard: (context: ToolExecutionContext) => Promise<void>,
     ) => Promise<CadToolResult>,
   ): Promise<CadToolResult> => {
-    return lifecycle.run(context, async (context, epoch, assertActive) => {
-      const activeGuard = async (current: ToolExecutionContext) => {
-        assertActive();
-        await guard(current);
-        assertActive();
-      };
-      try {
-        await activeGuard(context);
-        const scope = requireCadContext(context).describe();
-        const key = JSON.stringify([
-          scope.instanceId,
-          scope.taskId,
-          context.runId,
-          context.toolCallId,
-        ]);
-        const fingerprint = createHash("sha256")
-          .update(JSON.stringify(payload))
-          .digest("hex");
-        const previous = invocations.get(key);
-        if (previous) {
-          if (previous.epoch !== epoch)
-            throw new CadError(
-              "invocation_revoked",
-              "CAD 插件已重新装载，这次旧调用不能重放，请发起新的调用。",
-            );
-          if (previous.fingerprint !== fingerprint)
-            throw new CadError(
-              "invocation_conflict",
-              "同一次 CAD 调用不能替换参数，请发起新的调用。",
-            );
-          return await previous.result;
+    const original = context.scopeHandle?.describe();
+    const operationStore = options.guiOperationStore;
+    const confirmStopped =
+      payload.action === "gui-save-document" &&
+      original &&
+      operationStore &&
+      guiOperations
+        ? () =>
+            confirmCadGuiSaveOperationStopped(
+              { store: operationStore, controller: guiOperations },
+              {
+                instanceId: original.instanceId,
+                taskId: original.taskId,
+                operationId: payload.input.operationId,
+              },
+            )
+        : undefined;
+    return lifecycle.run(
+      context,
+      async (context, epoch, assertActive) => {
+        const activeGuard = async (current: ToolExecutionContext) => {
+          assertActive();
+          await guard(current);
+          assertActive();
+        };
+        try {
+          await activeGuard(context);
+          const scope = requireCadContext(context).describe();
+          const key = JSON.stringify([
+            scope.instanceId,
+            scope.taskId,
+            context.runId,
+            context.toolCallId,
+          ]);
+          const fingerprint = createHash("sha256")
+            .update(JSON.stringify(payload))
+            .digest("hex");
+          const previous = invocations.get(key);
+          if (previous) {
+            if (previous.epoch !== epoch)
+              throw new CadError(
+                "invocation_revoked",
+                "CAD 插件已重新装载，这次旧调用不能重放，请发起新的调用。",
+              );
+            if (previous.fingerprint !== fingerprint)
+              throw new CadError(
+                "invocation_conflict",
+                "同一次 CAD 调用不能替换参数，请发起新的调用。",
+              );
+            return await previous.result;
+          }
+          const result = operation(context, activeGuard).catch(
+            (error: unknown) => onFailure(error, context),
+          );
+          invocations.set(key, {
+            runId: context.runId ?? "",
+            epoch,
+            fingerprint,
+            result,
+          });
+          return await result;
+        } catch (error) {
+          return onFailure(error, context);
         }
-        const result = operation(context, activeGuard).catch((error: unknown) =>
-          onFailure(error, context),
-        );
-        invocations.set(key, {
-          runId: context.runId ?? "",
-          epoch,
-          fingerprint,
-          result,
-        });
-        return await result;
-      } catch (error) {
-        return onFailure(error, context);
-      }
-    });
+      },
+      confirmStopped,
+    );
   };
   const readGui = async <T extends object>(
     context: ToolExecutionContext,
@@ -894,6 +964,7 @@ export function createCadService(options: CadServiceOptions): CadService {
     }).then((result) => identifyFailure(result, target.input.operationId));
   };
   return {
+    fileOperationParticipant,
     pluginLifecycle: lifecycle.plugin,
     get activationEpoch() {
       return lifecycle.epoch();
@@ -973,6 +1044,58 @@ export function createCadService(options: CadServiceOptions): CadService {
     },
     guiUndoOperation(input, context) {
       return invokeGuiEdit({ action: "gui-undo-operation", input }, context);
+    },
+    guiSaveDocument(input, context) {
+      const target = structuredClone(input);
+      return invoke(
+        { action: "gui-save-document", input: target },
+        context,
+        async (context, activeGuard) => {
+          let possible = false;
+          try {
+            const action = await guiActionContext(context, activeGuard);
+            if (!fileOperationParticipant)
+              throw new CadError(
+                "operation_storage_unavailable",
+                "CAD 保存存储尚未就绪，请重新启动应用后重试。",
+              );
+            return await runFileOperation(
+              action.handle,
+              action.probeContext.signal,
+              async (signal) => {
+                const canonicalPath = await action.handle.resolvePath(
+                  target.expectedFileName,
+                  "write",
+                );
+                const parent = await action.handle.resolvePath(
+                  dirname(canonicalPath),
+                  "write",
+                );
+                const current = await stat(canonicalPath);
+                if (!current.isFile())
+                  throw new CadError(
+                    "invalid_save_target",
+                    "保存目标不是已有的工程文件。",
+                  );
+                await action.guard();
+                signal.throwIfAborted();
+                possible = true;
+                const result = await action.controller.saveDocument(
+                  { ...target, canonicalPath, writeRoots: [parent] },
+                  action.binding,
+                  { ...action.probeContext, signal },
+                  action.guard,
+                );
+                await action.guard();
+                return guiOperationResult(result);
+              },
+              "write",
+            );
+          } catch (error) {
+            return guiFailure(error, context, target.operationId, possible);
+          }
+        },
+      ).then((result) => identifyFailure(result, target.operationId));
     },
     guiCopyDocument(input, context) {
       const target = structuredClone(input);

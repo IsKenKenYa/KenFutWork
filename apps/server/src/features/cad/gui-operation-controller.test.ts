@@ -20,6 +20,7 @@ import {
   createCadGuiOperationStore,
 } from "./gui-operation-store.js";
 import { CadGuiProbeError } from "./gui-probe.js";
+import type { CadGuiSaveDocumentRequest } from "./gui-save-write-domains.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -413,6 +414,56 @@ function configureCopy(f: Fixture, changed: Record<string, unknown> = {}) {
           size: bytes.length,
           sha256: createHash("sha256").update(bytes).digest("hex"),
           hasGuiDocument: true,
+        },
+        ...changed,
+      }),
+    );
+  });
+  return input;
+}
+
+function saveInput(f: Fixture): CadGuiSaveDocumentRequest {
+  const canonicalPath = join(f.root, "original.FCStd");
+  return {
+    ...copyInput(f),
+    expectedFileName: canonicalPath,
+    canonicalPath,
+    writeRoots: [f.root],
+  };
+}
+
+function configureSave(f: Fixture, changed: Record<string, unknown> = {}) {
+  const input = saveInput(f);
+  f.send.mockImplementation(async (_application, macroPath) => {
+    const manifest = JSON.parse(
+      await readFile(join(dirname(macroPath), "manifest.json"), "utf8"),
+    );
+    await f.publish(
+      macroPath,
+      {},
+      JSON.stringify({
+        protocol: "kfw-cad-gui-save/1",
+        operationId: input.operationId,
+        fingerprint: manifest.fingerprint,
+        pid: input.application.pid,
+        guiThread: true,
+        completed: true,
+        outcome: "saved",
+        saveStarted: true,
+        writeFinished: true,
+        artifact: {
+          canonicalPath: input.canonicalPath,
+          size: 1234,
+          sha256: "a".repeat(64),
+          hasGuiDocument: true,
+        },
+        snapshot: {
+          ...undoProvenanceReceipt(f).snapshot,
+          document: {
+            ...undoProvenanceReceipt(f).snapshot.document,
+            fileName: input.expectedFileName,
+            modified: true,
+          },
         },
         ...changed,
       }),
@@ -1645,3 +1696,179 @@ test("Undo已开始但无法完整观察时保留partial诊断，不伪装undone
     reason: "native_operation_failed",
   });
 });
+
+test.each(["saved", "partial", "rejected"] as const)(
+  "保存%s回执仅确认固定Native已返回，保留真实文件结果与有限快照",
+  async (outcome) => {
+    const f = await fixture();
+    const changed: Record<string, unknown> = { outcome };
+    if (outcome !== "saved") {
+      changed.artifact = undefined;
+      changed.saveStarted = outcome === "partial";
+      changed.reason = outcome === "partial" ? "state_changed" : "stale_target";
+    }
+    if (outcome === "partial")
+      changed.snapshot = {
+        bridgeEpoch: randomUUID(),
+        applicationRevision: f.input.expectedApplicationRevision + 10,
+        document: {
+          ...undoProvenanceReceipt(f).snapshot.document,
+          documentHandle: randomUUID(),
+          revision: f.input.expectedDocumentRevision + 10,
+          active: false,
+          modified: true,
+        },
+      };
+    const input = configureSave(f, changed);
+
+    const result = await f.controller.saveDocument(input, f.binding, f.context);
+    expect(result).toMatchObject({
+      state: "terminal",
+      outcome,
+      cancellationRequested: false,
+      receipt: { protocol: "kfw-cad-gui-save/1", writeFinished: true },
+    });
+    if (outcome === "saved")
+      expect(result).toMatchObject({
+        receipt: {
+          artifact: { canonicalPath: input.canonicalPath },
+          snapshot: { document: { modified: true } },
+        },
+      });
+    expect(await f.store.readState(await operation(f))).toMatchObject({
+      status: "terminal",
+    });
+    expect(f.send).toHaveBeenCalledOnce();
+  },
+);
+
+test.each([
+  "path",
+  "pid",
+  "fingerprint",
+  "operationId",
+  "unfinished",
+  "unexpected-field",
+] as const)(
+  "保存回执%s不可信时原始terminal仍保持unknown，重建只对账不重发",
+  async (kind) => {
+    const f = await fixture();
+    const changed: Record<string, unknown> = {};
+    if (kind === "path")
+      changed.artifact = {
+        canonicalPath: join(f.root, "another.FCStd"),
+        size: 1234,
+        sha256: "a".repeat(64),
+        hasGuiDocument: true,
+      };
+    if (kind === "pid") changed.pid = 9876;
+    if (kind === "fingerprint") changed.fingerprint = "0".repeat(64);
+    if (kind === "operationId") changed.operationId = randomUUID();
+    if (kind === "unfinished") changed.writeFinished = undefined;
+    if (kind === "unexpected-field") changed.untrustedHostState = true;
+    const input = configureSave(f, changed);
+
+    expect(
+      await f.controller.saveDocument(input, f.binding, f.context),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(await f.store.readState(await operation(f))).toMatchObject({
+      status: "terminal",
+    });
+    expect(
+      await restart(f).saveDocument(
+        input,
+        { ...f.binding, runId: "later-run" },
+        f.context,
+      ),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(
+      await restart(f).status({ ...f.binding, operationId: input.operationId }),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(f.send).toHaveBeenCalledOnce();
+  },
+);
+
+test("保存固定public与Host字段同一fingerprint，终态重建不依赖GUI且target变更冲突", async () => {
+  const f = await fixture();
+  const input = configureSave(f);
+  const original = await f.controller.saveDocument(input, f.binding, f.context);
+  const record = await operation(f);
+  expect(record.payload).toMatchObject({
+    operation: "save-document",
+    ...input,
+    timeoutMs: f.context.timeoutMs,
+  });
+  expect(await readFile(record.macroPath, "utf8")).toContain(
+    "_kfw_cad_save_document(",
+  );
+  f.probe.verify.mockRejectedValue(new Error("GUI已经退出"));
+  expect(
+    await restart(f).saveDocument(
+      input,
+      { ...f.binding, runId: "later-run", toolCallId: "later-call" },
+      { ...f.context, timeoutMs: 2000 },
+    ),
+  ).toEqual(original);
+  expect(
+    await restart(f).status({ ...f.binding, operationId: input.operationId }),
+  ).toEqual(original);
+  const changedInputs: CadGuiSaveDocumentRequest[] = [
+    { ...input, canonicalPath: join(f.root, "another.FCStd") },
+    { ...input, expectedFileName: join(f.root, "renamed.FCStd") },
+    {
+      ...input,
+      expectedDocumentRevision: input.expectedDocumentRevision + 1,
+    },
+    {
+      ...input,
+      canonicalPath: join(f.root, "other-parent", "original.FCStd"),
+      writeRoots: [join(f.root, "other-parent")],
+    },
+  ];
+  for (const changed of changedInputs)
+    await expect(
+      restart(f).saveDocument(changed, f.binding, f.context),
+    ).rejects.toMatchObject({ code: "conflict" });
+  await expect(
+    restart(f).copyDocument(copyInput(f), f.binding, f.context),
+  ).rejects.toMatchObject({ code: "conflict" });
+  expect(f.send).toHaveBeenCalledOnce();
+  expect(f.probe.verify).toHaveBeenCalledTimes(2);
+});
+
+test.each(["cancelled", "timeout"] as const)(
+  "保存派发后%s但没有Native完成ACK，unknown与取消墓碑保持且重建不重发",
+  async (kind) => {
+    const f = await fixture();
+    const input = saveInput(f);
+    f.send.mockImplementation(async () => {
+      if (kind === "cancelled") f.signal.abort();
+    });
+    // 固定宏与manifest先完成真实磁盘准备；本例验证派发后无ACK，不能用短准备窗口代替。
+    const context = {
+      ...f.context,
+      timeoutMs: kind === "timeout" ? 2000 : 1000,
+    };
+    expect(
+      await f.controller.saveDocument(input, f.binding, context),
+    ).toMatchObject({
+      state: "dispatched",
+      outcome: "unknown",
+      cancellationRequested: true,
+      reason: kind,
+    });
+    f.probe.verify.mockRejectedValue(new Error("不应重新连接GUI"));
+    expect(
+      await restart(f).saveDocument(
+        input,
+        { ...f.binding, runId: "later-run" },
+        { ...f.context, signal: new AbortController().signal },
+      ),
+    ).toMatchObject({
+      state: "dispatched",
+      outcome: "unknown",
+      cancellationRequested: true,
+    });
+    expect(f.send).toHaveBeenCalledOnce();
+  },
+);

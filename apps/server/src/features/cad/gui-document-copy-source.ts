@@ -1,10 +1,9 @@
-import { CAD_GUI_NATIVE_STATE_SOURCE } from "./gui-native-state-source.js";
+import { CAD_GUI_DOCUMENT_FILE_SOURCE } from "./gui-document-file-source.js";
 
 /** 固定文档副本入口；GUI 只写持久操作目录，Task 文件由宿主另行发布。 */
 export const CAD_GUI_DOCUMENT_COPY_SOURCE =
-  CAD_GUI_NATIVE_STATE_SOURCE +
+  CAD_GUI_DOCUMENT_FILE_SOURCE +
   String.raw`
-import zipfile as _kfw_cad_copy_zip
 
 
 class _KfwCadCopyError(Exception):
@@ -63,53 +62,9 @@ def _kfw_cad_copy_state(ctx):
     return _kfw_cad_native_document_state(ctx['app'], ctx['gui'], ctx['openDocuments'], read, _KfwCadCopyError)
 
 
-def _kfw_cad_copy_link_properties(ctx, doc):
-    read = lambda getter: _kfw_cad_copy_read(ctx, getter)
-    yield from _kfw_cad_native_link_properties(ctx['app'], doc, read, _KfwCadCopyError)
-
-
-def _kfw_cad_copy_link_files(ctx, obj, name):
-    files = _kfw_cad_native_link_files(obj, name, lambda getter: _kfw_cad_copy_read(ctx, getter), _KfwCadCopyError)
-    _kfw_cad_copy_guard(ctx)
-    return files
-
-
 def _kfw_cad_copy_check_links(ctx):
     read = lambda getter: _kfw_cad_copy_read(ctx, getter)
-    target = ctx['copyDocument']
-    if read(lambda: target.InList) or read(lambda: target.OutList):
-        raise _KfwCadCopyError('external_dependencies')
-    target_file = read(lambda: target.FileName)
-    target_path = _kfw_cad_os.path.realpath(target_file) if target_file else None
-    for name, doc in ctx['openDocuments'].items():
-        for obj, property_name in _kfw_cad_copy_link_properties(ctx, doc):
-            files = _kfw_cad_copy_link_files(ctx, obj, property_name)
-            if doc is target and files:
-                raise _KfwCadCopyError('external_dependencies')
-            if doc is not target and files and target_path is None:
-                raise _KfwCadCopyError('unsupported_external_reference')
-            for file_name in files:
-                if doc is target:
-                    continue
-                if file_name.startswith('https://') or '://' in file_name:
-                    if file_name == target_file:
-                        raise _KfwCadCopyError('external_referrers')
-                    raise _KfwCadCopyError('unsupported_external_reference')
-                if target_file.startswith('https://') or '://' in target_file:
-                    raise _KfwCadCopyError('unsupported_external_reference')
-                source_file = read(lambda: doc.FileName)
-                if not _kfw_cad_os.path.isabs(file_name):
-                    if not source_file:
-                        raise _KfwCadCopyError('unsupported_external_reference')
-                    file_name = _kfw_cad_os.path.join(_kfw_cad_os.path.dirname(_kfw_cad_os.path.realpath(source_file)), file_name)
-                matches = _kfw_cad_os.path.realpath(file_name) == target_path
-                if not matches:
-                    try:
-                        matches = _kfw_cad_os.path.samefile(file_name, target_path)
-                    except OSError:
-                        pass
-                if matches:
-                    raise _KfwCadCopyError('external_referrers')
+    _kfw_cad_native_document_links(ctx['app'], ctx['copyDocument'], ctx['openDocuments'], read, _KfwCadCopyError)
 
 
 def _kfw_cad_copy_observer(ctx, base, surface):
@@ -129,38 +84,8 @@ def _kfw_cad_copy_observer(ctx, base, surface):
 
 
 def _kfw_cad_copy_artifact(ctx, path):
-    _kfw_cad_copy_guard(ctx)
-    descriptor = _kfw_cad_os.open(path, _kfw_cad_os.O_RDONLY | _kfw_cad_os.O_NOFOLLOW | _kfw_cad_os.O_NONBLOCK)
-    with _kfw_cad_os.fdopen(descriptor, 'rb') as stream:
-        before = _kfw_cad_os.fstat(stream.fileno())
-        if not _kfw_cad_stat.S_ISREG(before.st_mode) or not 0 <= before.st_size <= _KFW_CAD_MAX_REVISION:
-            raise _KfwCadCopyError('invalid_copy_artifact')
-        digest = _kfw_cad_hashlib.sha256()
-        while True:
-            chunk = stream.read(1048576)
-            if not chunk:
-                break
-            digest.update(chunk)
-            _kfw_cad_copy_guard(ctx)
-        stream.seek(0)
-        with _kfw_cad_copy_zip.ZipFile(stream) as archive:
-            names = archive.namelist()
-            if names.count('Document.xml') != 1 or names.count('GuiDocument.xml') != 1:
-                raise _KfwCadCopyError('invalid_copy_artifact')
-            for item in archive.infolist():
-                if item.is_dir():
-                    continue
-                with archive.open(item) as member:
-                    while member.read(1048576):
-                        _kfw_cad_copy_guard(ctx)
-                _kfw_cad_copy_guard(ctx)
-        after = _kfw_cad_os.lstat(path)
-        current = _kfw_cad_os.fstat(stream.fileno())
-        identity = lambda info: (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
-        if not _kfw_cad_stat.S_ISREG(after.st_mode) or identity(before) != identity(after) or identity(before) != identity(current):
-            raise _KfwCadCopyError('invalid_copy_artifact')
-    _kfw_cad_copy_guard(ctx)
-    return {'name': 'document.FCStd', 'size': before.st_size, 'sha256': digest.hexdigest(), 'hasGuiDocument': True}
+    artifact = _kfw_cad_native_document_archive(path, lambda: _kfw_cad_copy_guard(ctx), _KfwCadCopyError, 'invalid_copy_artifact')
+    return {'name': 'document.FCStd', **artifact}
 
 
 def _kfw_cad_copy_snapshot(ctx):

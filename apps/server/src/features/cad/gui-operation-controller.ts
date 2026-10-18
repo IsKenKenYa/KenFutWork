@@ -10,6 +10,11 @@ import {
 import { CAD_GUI_DOCUMENT_COPY_SOURCE } from "./gui-document-copy-source.js";
 import { CAD_GUI_DOCUMENT_OBSERVER_SOURCE } from "./gui-document-observer-source.js";
 import {
+  type CadGuiSaveDocumentReceipt,
+  cadGuiSaveDocumentReceiptSchema,
+} from "./gui-document-save-contracts.js";
+import { CAD_GUI_DOCUMENT_SAVE_SOURCE } from "./gui-document-save-source.js";
+import {
   type CadGuiOperationReceipt,
   type CadGuiSetPropertiesInput,
   cadGuiOperationReceiptSchema,
@@ -26,6 +31,10 @@ import {
 import type { CadGuiProbe, CadGuiProbeContext } from "./gui-probe.js";
 import { CAD_GUI_PROPERTY_MUTATION_SOURCE } from "./gui-property-mutation-source.js";
 import { CAD_GUI_PROPERTY_INSPECTION_SOURCE } from "./gui-property-source.js";
+import {
+  type CadGuiSaveDocumentRequest,
+  cadGuiSaveDocumentRequestSchema,
+} from "./gui-save-write-domains.js";
 import {
   type CadGuiMacroTransport,
   createMacosCadGuiTransport,
@@ -48,12 +57,14 @@ export interface CadGuiOperationResult {
     | "unknown"
     | CadGuiOperationReceipt["outcome"]
     | CadGuiCopyDocumentReceipt["outcome"]
-    | CadGuiUndoOperationReceipt["outcome"];
+    | CadGuiUndoOperationReceipt["outcome"]
+    | CadGuiSaveDocumentReceipt["outcome"];
   cancellationRequested: boolean;
   receipt?:
     | CadGuiOperationReceipt
     | CadGuiCopyDocumentReceipt
-    | CadGuiUndoOperationReceipt;
+    | CadGuiUndoOperationReceipt
+    | CadGuiSaveDocumentReceipt;
   reason?: string;
 }
 
@@ -66,6 +77,12 @@ export interface CadGuiOperationController {
   ): Promise<CadGuiOperationResult>;
   copyDocument(
     input: CadGuiCopyDocumentInput,
+    binding: CadGuiOperationBinding,
+    context: CadGuiProbeContext,
+    guard?: () => Promise<void>,
+  ): Promise<CadGuiOperationResult>;
+  saveDocument(
+    input: CadGuiSaveDocumentRequest,
     binding: CadGuiOperationBinding,
     context: CadGuiProbeContext,
     guard?: () => Promise<void>,
@@ -97,8 +114,9 @@ const PUBLICATION_POLL_MS = 20;
 type OperationInput =
   | CadGuiSetPropertiesInput
   | CadGuiCopyDocumentInput
+  | CadGuiSaveDocumentRequest
   | CadGuiUndoOperationInput;
-type OperationName = "set-properties" | "save-copy" | "undo";
+type OperationName = "set-properties" | "save-copy" | "save-document" | "undo";
 
 function macroPaths(paths: CadGuiOperationPaths): CadGuiOperationPaths {
   return {
@@ -133,6 +151,19 @@ export function buildCadGuiCopyDocumentMacro(
     CAD_GUI_PROPERTY_MUTATION_SOURCE,
     CAD_GUI_DOCUMENT_COPY_SOURCE,
     `\n_kfw_cad_copy_document(${JSON.stringify(fixedPaths)})\n`,
+  ].join("\n");
+}
+
+export function buildCadGuiSaveDocumentMacro(
+  paths: CadGuiOperationPaths,
+): string {
+  const fixedPaths = macroPaths(paths);
+  return [
+    CAD_GUI_DOCUMENT_OBSERVER_SOURCE,
+    CAD_GUI_PROPERTY_INSPECTION_SOURCE,
+    CAD_GUI_PROPERTY_MUTATION_SOURCE,
+    CAD_GUI_DOCUMENT_SAVE_SOURCE,
+    `\n_kfw_cad_save_document(${JSON.stringify(fixedPaths)})\n`,
   ].join("\n");
 }
 
@@ -280,6 +311,29 @@ function copyReceiptMatchesRequest(
   );
 }
 
+function saveReceiptMatchesRequest(
+  receipt: CadGuiSaveDocumentReceipt,
+  record: CadGuiOperationRecord,
+): boolean {
+  if (!record.payload || typeof record.payload !== "object") return false;
+  const { operation, timeoutMs, ...rawInput } = record.payload as Record<
+    string,
+    unknown
+  >;
+  const input = cadGuiSaveDocumentRequestSchema.safeParse(rawInput);
+  return (
+    operation === "save-document" &&
+    validTimeout(timeoutMs) &&
+    input.success &&
+    input.data.operationId === record.operationId &&
+    receipt.operationId === record.operationId &&
+    receipt.fingerprint === record.fingerprint &&
+    receipt.pid === input.data.application.pid &&
+    (receipt.artifact === undefined ||
+      receipt.artifact.canonicalPath === input.data.canonicalPath)
+  );
+}
+
 function parseUndoSource(value: unknown) {
   const parsed = cadGuiUndoSourceSchema.safeParse(value);
   if (!parsed.success) return null;
@@ -410,14 +464,18 @@ export function createCadGuiOperationController(options: {
           ? cadGuiUndoOperationReceiptSchema.safeParse(state.receipt)
           : operation === "save-copy"
             ? cadGuiCopyDocumentReceiptSchema.safeParse(state.receipt)
-            : cadGuiOperationReceiptSchema.safeParse(state.receipt);
+            : operation === "save-document"
+              ? cadGuiSaveDocumentReceiptSchema.safeParse(state.receipt)
+              : cadGuiOperationReceiptSchema.safeParse(state.receipt);
       if (
         !receipt.success ||
         !(receipt.data.protocol === "kfw-cad-gui-undo/1"
           ? undoReceiptMatchesRequest(receipt.data, record)
           : receipt.data.protocol === "kfw-cad-gui-copy/1"
             ? copyReceiptMatchesRequest(receipt.data, record)
-            : receiptMatchesRequest(receipt.data, record))
+            : receipt.data.protocol === "kfw-cad-gui-save/1"
+              ? saveReceiptMatchesRequest(receipt.data, record)
+              : receiptMatchesRequest(receipt.data, record))
       )
         return { ...base, outcome: "unknown", reason: "invalid_receipt" };
       return {
@@ -581,6 +639,7 @@ export function createCadGuiOperationController(options: {
     const macroBuilder = {
       "set-properties": buildCadGuiOperationMacro,
       "save-copy": buildCadGuiCopyDocumentMacro,
+      "save-document": buildCadGuiSaveDocumentMacro,
       undo: buildCadGuiUndoOperationMacro,
     }[operation];
     const binding = { ...rawBinding };
@@ -797,6 +856,22 @@ export function createCadGuiOperationController(options: {
           rawInput.operationId,
         );
       return runOperation(parsed.data, "save-copy", binding, context, guard);
+    },
+    async saveDocument(rawInput, binding, context, guard) {
+      const parsed = cadGuiSaveDocumentRequestSchema.safeParse(rawInput);
+      if (!parsed.success)
+        throw new CadGuiOperationError(
+          "invalid_input",
+          "CAD 文档保存参数无效，请重新查询已有文档和文件路径。",
+          rawInput.operationId,
+        );
+      return runOperation(
+        parsed.data,
+        "save-document",
+        binding,
+        context,
+        guard,
+      );
     },
     async status(identity) {
       try {

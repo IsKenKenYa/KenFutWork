@@ -31,6 +31,36 @@ function guiApplication() {
   };
 }
 
+it("原位保存审批明确源文件覆盖与外部GUI边界，拒绝Host路径注入", () => {
+  const args = {
+    application: guiApplication(),
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    expectedApplicationRevision: 2,
+    expectedDocumentRevision: 3,
+    operationId: "b357cc8d-e5a1-4a3e-b23f-c145e99f163d",
+    expectedFileName: "/workspace/计算器/零件.FCStd",
+  };
+  expect(approvalReviewEvidence(input("cad-gui-save", args))).toMatchObject({
+    executionBoundary: {
+      kind: "external-gui",
+      taskOsSandboxEnforced: false,
+      savesSourceFile: true,
+      filesystemAccess: "task-authorized-current-file-and-parent-backups",
+      unknownWriteBlocksRestore: true,
+    },
+    untrustedData: { operation: { args } },
+  });
+  expect(
+    approvalReviewEvidence(
+      input("cad-gui-save", {
+        ...args,
+        canonicalPath: "/private/foreign.FCStd",
+      }),
+    ),
+  ).toBeUndefined();
+});
+
 it("GUI 文档查询审批声明宿主执行边界，目标应用身份仍是不可信提案", () => {
   const application = guiApplication();
   const context = input("cad-gui-inspect", { application });

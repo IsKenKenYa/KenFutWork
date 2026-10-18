@@ -15,6 +15,7 @@ import {
   CAD_GUI_OPERATION_RECEIPT_MAX_BYTES,
   type CadGuiOperationBinding,
   type CadGuiOperationPaths,
+  type CadGuiOperationRecord,
   createCadGuiOperationStore,
 } from "./gui-operation-store.js";
 
@@ -897,6 +898,227 @@ describe("CAD GUI 发布控制JSON边界", () => {
     ).rejects.toMatchObject({ code: "invalid_input" });
     expect(await first.readPublication(record)).toEqual({
       claim: { destination: "copy.FCStd" },
+    });
+  });
+});
+
+describe("CAD GUI 持久记录只读枚举", () => {
+  it("冷重建列出prepared、dispatched和原始terminal记录，保留历史写域且不授予派发权限", async () => {
+    const { first, rootDirectory } = await fixture();
+    const payload = {
+      operation: "save",
+      canonicalPath: join(rootDirectory, "model.FCStd"),
+      writeRoots: [rootDirectory],
+    };
+    const prepared = await first.prepare({ ...request(), payload });
+    const dispatched = await first.prepare({
+      ...request(),
+      operationId: "e4034716-7273-45ee-8ed1-23ce085324f8",
+    });
+    const terminal = await first.prepare({
+      ...request(),
+      operationId: "1298cf74-4232-4825-89e3-79a6f868cbe4",
+    });
+    await first.claimDispatch(dispatched);
+    await first.claimDispatch(terminal);
+    await writeFile(terminal.receiptPath, "null\n", { mode: 0o600 });
+    const originalClaim = await readFile(dispatched.dispatchClaimPath, "utf8");
+    const rebuilt = createCadGuiOperationStore({ rootDirectory });
+
+    const records = await rebuilt.listRecords();
+    expect(records).toHaveLength(3);
+    expect(records).toContainEqual(prepared);
+    expect(records).toContainEqual(dispatched);
+    expect(records).toContainEqual(terminal);
+    const states = await Promise.all(
+      records.map((record) => rebuilt.readState(record)),
+    );
+    expect(states.map((state) => state.status).sort()).toEqual([
+      "dispatched",
+      "prepared",
+      "terminal",
+    ]);
+    expect(
+      states.find((state) => state.record.operationId === operationId)?.record
+        .payload,
+    ).toEqual(payload);
+    expect(
+      states.find((state) => state.record.operationId === terminal.operationId),
+    ).toMatchObject({ status: "terminal", receipt: null });
+
+    const sameStoreRecords = await first.listRecords();
+    const readOnly = sameStoreRecords.find(
+      (record) => record.operationId === operationId,
+    );
+    if (!readOnly) throw new Error("枚举缺少已准备记录");
+    await expect(first.claimDispatch(readOnly)).rejects.toMatchObject({
+      code: "read_only",
+    });
+    await expect(lstat(prepared.dispatchClaimPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(lstat(prepared.cancelledPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(lstat(prepared.executionClaimPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(dispatched.dispatchClaimPath, "utf8")).toBe(
+      originalClaim,
+    );
+    expect(await readFile(terminal.receiptPath, "utf8")).toBe("null\n");
+  });
+
+  it("instance、Task和原来源Run可分别或组合过滤，不混入同编号的其它归属", async () => {
+    const { first, second } = await fixture();
+    await first.prepare(request());
+    await first.prepare({
+      ...request({ runId: "run-2" }),
+      operationId: "e4034716-7273-45ee-8ed1-23ce085324f8",
+    });
+    await first.prepare(request({ taskId: "task-2" }));
+    await first.prepare(request({ instanceId: "instance-2" }));
+    const keys = async (filter: {
+      instanceId?: string;
+      taskId?: string;
+      runId?: string;
+    }) => {
+      const records: readonly CadGuiOperationRecord[] =
+        await second.listRecords(filter);
+      return records
+        .map((record) =>
+          [
+            record.binding.instanceId,
+            record.binding.taskId,
+            record.binding.runId,
+          ].join("/"),
+        )
+        .sort();
+    };
+
+    expect(await keys({ instanceId: "instance-1" })).toEqual([
+      "instance-1/task-1/run-1",
+      "instance-1/task-1/run-2",
+      "instance-1/task-2/run-1",
+    ]);
+    expect(await keys({ taskId: "task-1" })).toEqual([
+      "instance-1/task-1/run-1",
+      "instance-1/task-1/run-2",
+      "instance-2/task-1/run-1",
+    ]);
+    expect(await keys({ runId: "run-1" })).toEqual([
+      "instance-1/task-1/run-1",
+      "instance-1/task-2/run-1",
+      "instance-2/task-1/run-1",
+    ]);
+    expect(await keys({ instanceId: "instance-1", taskId: "task-1" })).toEqual([
+      "instance-1/task-1/run-1",
+      "instance-1/task-1/run-2",
+    ]);
+    expect(
+      await keys({
+        instanceId: "instance-1",
+        taskId: "task-1",
+        runId: "run-2",
+      }),
+    ).toEqual(["instance-1/task-1/run-2"]);
+    expect(await keys({ instanceId: "missing" })).toEqual([]);
+  });
+
+  it("按实例和Task枚举的只读记录可以取消，但不取消其它归属或获得派发权限", async () => {
+    const { first, second } = await fixture();
+    const selected = await first.prepare(request());
+    const otherTask = await first.prepare(request({ taskId: "task-2" }));
+    const otherInstance = await first.prepare(
+      request({ instanceId: "instance-2" }),
+    );
+    await first.claimDispatch(selected);
+
+    const records = await second.listRecords({
+      instanceId: binding.instanceId,
+      taskId: binding.taskId,
+    });
+    expect(records).toEqual([selected]);
+    const record = records[0];
+    if (!record) throw new Error("枚举缺少要取消的记录");
+    await second.cancel(record);
+    expect(await second.readState(selected)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    await expect(second.claimDispatch(record)).rejects.toMatchObject({
+      code: "read_only",
+    });
+    for (const other of [otherTask, otherInstance]) {
+      expect(await second.readState(other)).toMatchObject({
+        status: "prepared",
+        cancelled: false,
+      });
+      await expect(lstat(other.cancelledPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
+  });
+
+  it.each(["manifest", "request", "macro", "claimed-without-manifest"])(
+    "已发布记录%s损坏时明确失败，不能当作没有待核验记录",
+    async (damage) => {
+      const { first, second } = await fixture();
+      const record = await first.prepare(request());
+      await first.claimDispatch(record);
+      if (damage === "claimed-without-manifest") await rm(record.manifestPath);
+      else {
+        const path =
+          damage === "manifest"
+            ? record.manifestPath
+            : damage === "request"
+              ? record.requestPath
+              : record.macroPath;
+        await writeFile(path, "damaged");
+      }
+
+      await expect(second.listRecords()).rejects.toMatchObject({
+        code: "invalid_record",
+      });
+      await expect(lstat(record.cancelledPath)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(await readFile(record.dispatchClaimPath, "utf8")).toMatch(
+        /^[a-f0-9-]+\n$/u,
+      );
+    },
+  );
+
+  it("不跟随hash目录symlink，枚举失败不修改外部目标", async () => {
+    const { first, second, rootDirectory } = await fixture();
+    const record = await first.prepare(request());
+    const external = join(rootDirectory, "external-list-records");
+    mkdirSync(external, { mode: 0o700 });
+    await writeFile(join(external, "keep"), "外部文件");
+    await rm(record.directory, { recursive: true });
+    await symlink(external, record.directory);
+
+    await expect(second.listRecords()).rejects.toMatchObject({
+      code: "invalid_record",
+    });
+    expect(await readFile(join(external, "keep"), "utf8")).toBe("外部文件");
+    expect(await readdir(external)).toEqual(["keep"]);
+  });
+
+  it("空store枚举不创建目录，非hash旁杂文件不成为记录或被清理", async () => {
+    const { first, second, rootDirectory } = await fixture();
+    expect(await second.listRecords()).toEqual([]);
+    expect(await readdir(rootDirectory)).toEqual([]);
+    const record = await first.prepare(request());
+    const metadata = join(rootDirectory, "cad", "gui-operations", ".DS_Store");
+    await writeFile(metadata, "Finder metadata");
+
+    expect(await second.listRecords()).toEqual([record]);
+    expect(await readFile(metadata, "utf8")).toBe("Finder metadata");
+    expect(await second.readState(record)).toMatchObject({
+      status: "prepared",
+      cancelled: false,
     });
   });
 });

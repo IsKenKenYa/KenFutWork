@@ -48,6 +48,12 @@ export interface CadGuiOperationIdentity {
   operationId: string;
 }
 
+export interface CadGuiOperationRecordFilter {
+  instanceId?: string;
+  taskId?: string;
+  runId?: string;
+}
+
 export type CadGuiOperationState = {
   status: "prepared" | "cancelled" | "dispatched" | "executing" | "terminal";
   record: CadGuiOperationRecord;
@@ -68,6 +74,10 @@ export interface CadGuiOperationStore {
   lookup(
     identity: CadGuiOperationIdentity,
   ): Promise<CadGuiOperationRecord | null>;
+  /** 只读枚举不授予派发权限；原始 terminal 仍须由 Controller 校验业务回执。 */
+  listRecords(
+    filter?: CadGuiOperationRecordFilter,
+  ): Promise<readonly CadGuiOperationRecord[]>;
   claimDispatch(record: CadGuiOperationRecord): Promise<boolean>;
   cancel(record: CadGuiOperationRecord): Promise<void>;
   cancelPending(filter?: { runId?: string }): Promise<void>;
@@ -640,10 +650,10 @@ export function createCadGuiOperationStore(options: {
     }
   }
 
-  async function cancelPendingDirectory(
+  async function scannedRecord(
     directory: string,
-    filter: { runId?: string },
-  ): Promise<void> {
+    filter: CadGuiOperationRecordFilter,
+  ): Promise<CadGuiOperationRecord | null> {
     const paths = operationPaths(directory);
     const bytes = await readRegular(paths.manifestPath, RECORD_MAX_BYTES);
     if (!bytes) {
@@ -655,16 +665,31 @@ export function createCadGuiOperationStore(options: {
         paths.cancelledPath,
       ])
         if (await hasMarker(path)) fail("invalid_record");
-      return;
+      return null;
     }
     const manifest = parseManifest(bytes);
     const identity = { ...manifest.binding, operationId: manifest.operationId };
     if ((await directoryFor(identity, false)) !== directory)
       fail("invalid_record");
-    if (filter.runId !== undefined && manifest.binding.runId !== filter.runId)
-      return;
+    if (
+      (filter.instanceId !== undefined &&
+        manifest.binding.instanceId !== filter.instanceId) ||
+      (filter.taskId !== undefined &&
+        manifest.binding.taskId !== filter.taskId) ||
+      (filter.runId !== undefined && manifest.binding.runId !== filter.runId)
+    )
+      return null;
     const record = await lookup(identity);
     if (!record) fail("invalid_record");
+    return record;
+  }
+
+  async function cancelPendingDirectory(
+    directory: string,
+    filter: { runId?: string },
+  ): Promise<void> {
+    const record = await scannedRecord(directory, filter);
+    if (!record) return;
     for (const path of [
       record.dispatchClaimPath,
       record.executionClaimPath,
@@ -683,8 +708,10 @@ export function createCadGuiOperationStore(options: {
     await publishMarker(record.cancelledPath, "cancelled\n");
   }
 
-  async function cancelPending(filter: { runId?: string } = {}): Promise<void> {
-    let unconfirmed = false;
+  async function scanOperationDirectories(
+    accept: (directory: string) => Promise<void>,
+  ): Promise<boolean> {
+    let complete = true;
     async function visit(
       directory: string,
       remainingLevels: number,
@@ -693,7 +720,7 @@ export function createCadGuiOperationStore(options: {
       try {
         names = await readdir(directory);
       } catch {
-        unconfirmed = true;
+        complete = false;
         return;
       }
       for (const name of names) {
@@ -702,31 +729,53 @@ export function createCadGuiOperationStore(options: {
         try {
           if (!(await checkedDirectory(child, false))) fail("invalid_record");
           if (remainingLevels > 1) await visit(child, remainingLevels - 1);
-          else await cancelPendingDirectory(child, filter);
+          else await accept(child);
         } catch {
-          // 一个坏记录不能阻止其它可验证请求收到持久取消标记。
-          unconfirmed = true;
+          // 一个坏记录不能阻止其它可验证记录继续对账。
+          complete = false;
         }
       }
     }
     try {
-      if (!(await checkedDirectory(root, false))) return;
+      if (!(await checkedDirectory(root, false))) return true;
       let directory = await realpath(root);
       for (const component of ["cad", "gui-operations"]) {
         directory = join(directory, component);
-        if (!(await checkedDirectory(directory, false))) return;
+        if (!(await checkedDirectory(directory, false))) return true;
       }
       // 磁盘格式固定为instance/task/operation三层hash，不接受调用方路径或新索引。
       await visit(directory, 3);
     } catch {
-      unconfirmed = true;
+      complete = false;
     }
-    if (unconfirmed) fail("stop_unconfirmed");
+    return complete;
+  }
+
+  async function cancelPending(filter: { runId?: string } = {}): Promise<void> {
+    if (
+      !(await scanOperationDirectories((directory) =>
+        cancelPendingDirectory(directory, filter),
+      ))
+    )
+      fail("stop_unconfirmed");
+  }
+
+  async function listRecords(
+    filter: CadGuiOperationRecordFilter = {},
+  ): Promise<readonly CadGuiOperationRecord[]> {
+    const records: CadGuiOperationRecord[] = [];
+    const complete = await scanOperationDirectories(async (directory) => {
+      const record = await scannedRecord(directory, filter);
+      if (record) records.push(record);
+    });
+    if (!complete) fail("invalid_record");
+    return records;
   }
 
   return {
     prepare,
     lookup,
+    listRecords,
     cancelPending,
     async readPublication(record) {
       return readPublicationFiles(await verified(record));

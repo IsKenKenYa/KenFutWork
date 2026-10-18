@@ -50,8 +50,10 @@ FEM 可通过 `cad_run_python` 使用已安装的 ObjectsFem、Gmsh 与 CalculiX
 
 Python 脚本可选设置 `result = {"radius": 10}` 等普通 JSON 值，由回执 `data` 返回；未设置时不增加该字段。脚本命名空间与宿主回执分离，`result` 不能覆盖执行状态。自定义 JSON 原样返回，不自动去敏，完整回执受当前进程输出设置约束；大结果和媒体写入 Task 文件再返回路径，stdout 保留为私有日志。
 
-`cad_preview` 用官方 TechDraw 真实几何投影生成线框 SVG，再栅格化 PNG，提供等轴、俯视、正视与右视，不依赖 Blender 或 GUI。图片只在当次模型观察中传递，持久工具回执保存文件路径与几何元数据。SVG / DXF 是投影交换文件。线框预览不是着色渲染，可编辑工程使用 FCStd，在 FreeCAD 中显式打开检查；AutoCAD、Blender及覆盖保存 GUI 源文件尚未接入。
+`cad_preview` 用官方 TechDraw 真实几何投影生成线框 SVG，再栅格化 PNG，提供等轴、俯视、正视与右视，不依赖 Blender 或 GUI。图片只在当次模型观察中传递，持久工具回执保存文件路径与几何元数据。SVG / DXF 是投影交换文件。线框预览不是着色渲染，可编辑工程使用 FCStd，在 FreeCAD 中显式打开检查；AutoCAD、Blender尚未接入。
 
 投影使用官方 `projectEx` 的可见外轮廓和锐边，范围、SVG／DXF 使用同一组几何。SVG 以17位有效数编码直线、圆／椭圆弧及非有理低阶 Bezier；B-spline 精确分解后编码，不能直接表达的高阶／有理曲线用原生 C2 离散化，容差和实际折线段数见 `preview.svgEncoding`。这不表示所有曲线都保持解析形式，也不是全模型 Hausdorff 误差证明。DXF 使用官方完整 R14 writer，毫米单位与九位小数，配置隔离在本次 Task。
 
 Arch/BIM 可通过后台 Python 使用 Draft 基线、`Arch.makeWall`、`ArchStructure.makeStructure` 和 `Arch.makeFloor`。当前实测为直墙／矩形柱／真实楼层的参数修改、三轮FCStd重开与六份IFC4独立读回，核验原生代理、引用、IfcType、GUID、单位、空间包含和完整世界几何。IFC导出显式传入本地preferences；`STORE_UID=True` 会修改工作副本的GUID数据，导出后再核验、随FCStd保存。IfcOpenShell0.8的SERIALIZED回读是文件互操作，不是Native-IFC编辑或全部BIM能力验收。
+
+`cad_gui_save_document` 显式原位保存当前活动文档：提供最新目标快照及已有绝对`expectedFileName`，Host授权规范化文件和父目录，原生只调用一次App.save。它不另存、重算或清GUI未保存标记；原生异常可能已更新文件，partial／unknown时查询同编号，不换号重试。实际文件与备份目录严格受本次冻结目标检查，外部GUI仍不继承Task OS沙箱。未确认Native写入结束的持久记录会阻止相交文件恢复和假停止完成；可信结束后可继续恢复。未保存文档用副本工具，任意GUI Python和SaveAs不在此入口。

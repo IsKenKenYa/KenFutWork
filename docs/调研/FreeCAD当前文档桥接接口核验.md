@@ -1,6 +1,6 @@
 # FreeCAD 当前文档桥接接口核验
 
-> **角色：调研。** 核验日期：2026-10-18。范围：已安装 FreeCAD 1.1.4 对应官方提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的 GUI 启动、官方本地消息通道、宏与主线程调度及当前文档接口。第2—7节保留最初只读桥调研；后续固定查询、属性读写、副本及显式撤销接线登记在第8—15节。方向与权限仍以[CAD 控制插件规划](../插件/CAD控制插件规划.md)为准。
+> **角色：调研。** 核验日期：2026-10-18—19。范围：已安装 FreeCAD 1.1.4 对应官方提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的 GUI 启动、官方本地消息通道、宏与主线程调度及当前文档接口。第2—7节保留最初只读桥调研；后续固定查询、属性读写、副本、显式撤销和原位保存接线登记在第8—16节。方向与权限仍以[CAD 控制插件规划](../插件/CAD控制插件规划.md)为准。
 >
 > 资料核验阶段只读取官方资料、源码和既有诊断文件；第6节是旧回执的复核。后续实现与原生验收另行登记，不将源码／API探针与产品整链验收混算。
 
@@ -162,7 +162,7 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 
 派发与执行各有持久认领，文件写齐和fsync后再用硬链接独占发布；重复宏不覆盖首回执。准备时间不因重启延长，已有认领无回执永不自动重发。只有严格匹配原请求及行为语义的回执才报告成功。FreeCAD提交与磁盘回执落盘之间仍有不可消除的未知窗口，不能宣称最终恰好一次。
 
-本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。该次验收只覆盖属性写入；后续副本／Task发布及显式撤销接线分别见第13、15节，覆盖保存源文件仍未交付。
+本机独立 GUI 的 Task 工具完整链约48秒通过：Length 20→25mm、Width绑定重算为50mm；no-op不增加撤销记录；绑定目标、只读属性及“第一项有效、第二项不可变”的混合批均零写；重建服务和store后同一编号返回原回执，撤销记录未增加，源FCStd SHA-256不变。原生验收未覆盖任意工作台回调、全部FreeCAD属性或用户现存GUI；部分失败、取消、无回执及回执落盘失败另由固定源码与控制器边界测试验证。该次验收只覆盖属性写入；后续副本／Task发布及显式撤销接线分别见第13、15节，原位保存后来已接线，正式证据见§16.7。
 
 
 ## 12. 跨宿主停止与迟到固定宏
@@ -219,7 +219,7 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 
 ## 16. 显式保存前置核验
 
-**覆盖保存当前 GUI 文档的源 FCStd 尚未交付。** 第13节的私有 `saveCopy` 与 Task 新文件发布不覆盖原位保存；本节记录固定版本源码和现有宿主边界，以及后续保存切片需要补齐的最小接线。第16.5节是独立 GUI 内自有文档的原生 API 探针，不代表产品保存工具已接线。
+**已交付固定原位保存工具 `cad_gui_save_document`，正式接线与原生证据见§16.7。** 第13节的私有 `saveCopy` 与 Task 新文件发布不覆盖原位保存；本节记录固定版本源码和现有宿主边界，以及后续保存切片需要补齐的最小接线。第16.5节是独立 GUI 内自有文档的原生 API 探针，不代表产品保存工具已接线。
 
 ### 16.1 原生保存的三个完成边界
 
@@ -278,3 +278,26 @@ CAD 现有 [持久操作 store](../../apps/server/src/features/cad/gui-operation
 失败目标的父路径为常规文件。安装版抛 FreeCADError，目标不存在，但 FileName 已改成失败目标，Label 已改成其文件名；记录只有 Start、没有本次 Finish。原已成功保存的文件仍可重开到 Height=13mm。因此不能把此异常解释成“内存身份未改变”，也不能用 FileName 或保存开始事件判定成功。该场景不覆盖序列化失败、备份替换后异常、跨文档保存通知副作用、断电或 KFW 回执丢失。
 
 首轮原生断言已完成，但 TS 将1299.9999999999995与1300精确比较而失败；改为几何容差后，同一 GUI 整链90.79秒通过，并确认自有实例正常退出。既有属性写入、副本发布、后台接力、显式撤销与源FCStd SHA-256保护同时通过；结果有重叠，不相加。此处直接原生保存来自专用夹具 [gui-native-save.py](../../apps/server/src/features/cad/fixtures/gui-native-save.py)，不是暴露给Agent的新工具，也不证明现有Task停止／恢复屏障已覆盖外部GUI写入。没有用户现存GUI／AX操作，没有继续崩溃根因调查。
+
+
+### 16.6 公共 GUI 保存入口与调用取舍
+
+固定1.1.4的`Gui.Document.save()`公开返回bool，`Modified`也有可写Python属性；不是只能通过Std_Save菜单。但GUI保存入口可能提示旧版本、关联文档保存、相同物理路径或失败后另存，且遍历依赖文档时可重算。因此固定工具直接使用App `doc.save()`，不调用Gui.save/Std_Save或单独清Modified，避免隐式另存／其它文档保存／重算。公共Modified setter只清GUI标记，不证明文件保存成功；保存回调中的新编辑也不应被清脏掩盖。[Python声明](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.pyi#L154)、[GUI保存路径](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp#L1597)
+
+当前内存Preferences/Document的BackupPolicy、CreateBackupFiles、CountBackupFiles、UseFCBakExtension及SaveBackupDateFormat决定备份；固定版本没有独立backupDir偏好或公共backupPath查询API。标准数字备份、临时UUID和历史清理都在规范化目标父目录。时间戳取旧文件mtime的本地时间，格式点号换短横，128字节strftime失败走官方fallback；格式结果可带分隔符并经过已有符号链接，故固定宏计算实际候选父目录并验证仍在Host授权冻结目录内，越出即拒绝，不修改偏好或猜目录配置。保存通知／第三方provider额外IO仍不由Task OS沙箱约束。[主文件及参数读取](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp#L1763)、[备份策略](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/BackupPolicy.cpp#L128)
+
+固定Document.cpp在保存前对FileName做absolute＋weakly_canonical；临时文件与BackupPolicy的目标均使用该nativePath，原FileName在末尾仅作为FinishSave信号参数。因此正常解析的符号链接入口不是另一份临时文件／备份落点。该结论来自固定源码，不扩为任意文件系统竞争或异常fallback路径的保证。[路径规范化与保存目标](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp#L1783)
+
+### 16.7 固定原位保存与持久外部写域
+
+`cad_gui_save_document`接现有共享Controller的唯一runOperation；公共输入沿用完整application、bridgeEpoch、documentHandle、两个expected修订及operationId，另要求最新快照的已有绝对FCStd `expectedFileName`。公共参数拒绝源码／另存路径／Host canonicalPath/writeRoots。Service按当前真实Task、scope／branch及写权限规范化文件和父目录，固定进持久请求／指纹后才派发。原生仅对当前活动完整文档调用一次App.save；不重算、SaveAs、undo、关闭、处理后来事务或清GUI.Modified。外部依赖／引用、恢复／部分加载／编辑／原生事务等不满足前提时拒绝。
+
+Native函数返回或抛出后才给可信`writeFinished:true`。正常保存还校验实际regular文件身份、流式ZIP成员／CRC／SHA-256及状态；`saved`与“IO已结束”分别表达，异常可能已经更新文件，报告partial不补偿／重试，普通新编辑保留并报告partial。Host严格匹配原编号／指纹／PID及冻结文件路径，坏ACK/raw terminal均unknown；同编号重建只读冻结回执，不再连接GUI。回执大小上限仍只是固定JSON格式，不是工程容量预算，也不提供断电fsync保证。
+
+持久写域直接来自现有操作store，经只读可信listRecords枚举和Controller严格结果判断。CAD Provider注册到现有Task文件操作管理器；恢复先安装临时屏障再异步扫描，跨Task相交写域拒绝。Node回调结束、取消标记、超时、坏ACK或服务重建不解除未确认域；同Task撤销必须确认Native结束，unknown向上传播。Run结束／插件停用卸载／宿主关闭在取消和回调清理后再次确认，不能因标记已写就报告停止成功。扫描失败释放临时屏障但不删持久事实，不建第二写域索引，也不把外部GUI变成受管子进程。
+
+活跃调用曾返回stop_unconfirmed时，重试停止只由该操作冻结的instance／Task／operationId查询可信持久完成事实来解除旧错误；缺记录、非保存记录及未知回执仍拒绝。所有在途调用先取消并join，随后逐操作确认，最后再做全局持久对账；全局空扫描不能洗掉后台进程或单操作停止失败。独立回归先4失败／6通过，再经接线后58项通过，覆盖同宿主迟到完成后重试、缺失／未结束证明及多个在途先收尾；类型检查的exactOptionalPropertyTypes声明已同步修正。
+
+独立自有LaunchServices GUI经真实Task完整链104.27s通过：原位保存41×82×7mm Box，实际ZIP／哈希及独立后台重开体积23534mm³；UID／Label／Undo／Redo／表达式／touched与GUI.Modified保持。冷重建同编号回执相同，原生StartSave计数仍1。第二次Length43，真实slotStartSave握手hold Native，Node取消返回unknown且active文件回调已结束；冷Provider仍使跨Task相交恢复restore_busy、原Task撤销stop_unconfirmed。释放Native后收到partial/writeFinished，沿同编号状态对账才放行恢复，Native计数仅2，GUI仍活且新参数保留。最终自有文档／实例正常清理，未操作用户现存GUI／AX。
+
+以上是自有Box流程与停止窗口，不是任意provider／全部备份异常、SaveAs、外部进程死亡后的结果恢复或所有当前文档的验收；提交与文件替换、持久回执仍有未知窗口，严格保留未知结果。正式原生命令为`KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/cad/gui-documents.integration.test.ts --maxWorkers=1 --no-file-parallelism`，与已有读写／副本／撤销证据重叠不相加，最终门禁见同批《日志》。

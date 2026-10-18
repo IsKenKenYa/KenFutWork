@@ -23,6 +23,7 @@ import { cadGuiOperationReceiptSchema } from "./gui-operation-contracts.js";
 import { buildCadGuiOperationMacro } from "./gui-operation-controller.js";
 import { createCadGuiOperationStore } from "./gui-operation-store.js";
 import { createMacosCadGuiProbe } from "./gui-probe.js";
+import { verifyGuiSaveOperations } from "./gui-save-native-fixture.js";
 import { createMacosCadGuiTransport } from "./gui-transport.js";
 import { detectFreeCadRuntime } from "./runtime.js";
 import { type CadService, createCadService } from "./service.js";
@@ -1266,6 +1267,17 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
           .update(await readFile(savedPath))
           .digest("hex"),
       ).toBe(beforeHash);
+      await verifyGuiSaveOperations({
+        tools: createCadTools(service),
+        context,
+        application,
+        root,
+        sourcePath: savedPath,
+        service,
+        target: currentTarget,
+        mutate: mutateFixture,
+        reopen,
+      });
       await delay(500);
       await probe.verify(application, {
         timeoutMs: 10_000,

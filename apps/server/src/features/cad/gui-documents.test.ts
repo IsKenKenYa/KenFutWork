@@ -1,5 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
@@ -10,10 +17,18 @@ import {
   type CadGuiCopyDocumentInput,
   cadGuiCopyDocumentReceiptSchema,
 } from "./gui-document-copy-contracts.js";
-import type { CadGuiOperationResult } from "./gui-operation-controller.js";
+import {
+  type CadGuiSaveDocumentInput,
+  cadGuiSaveDocumentReceiptSchema,
+} from "./gui-document-save-contracts.js";
+import {
+  CadGuiOperationError,
+  type CadGuiOperationResult,
+} from "./gui-operation-controller.js";
 import {
   type CadGuiOperationBinding,
   type CadGuiOperationIdentity,
+  type CadGuiOperationRecord,
   CadGuiOperationStoreError,
   createCadGuiOperationStore,
 } from "./gui-operation-store.js";
@@ -102,6 +117,51 @@ async function fixture() {
   const store = createCadGuiOperationStore({ rootDirectory: root });
   const operations = {
     execute: vi.fn(async () => operationResult),
+    saveDocument: vi.fn(
+      async (
+        input: CadGuiSaveDocumentInput & {
+          canonicalPath: string;
+          writeRoots: string[];
+        },
+        binding: CadGuiOperationBinding,
+      ): Promise<CadGuiOperationResult> => {
+        const record = await store.prepare({
+          operationId: input.operationId,
+          binding,
+          payload: { operation: "save-document", ...input, timeoutMs: 30_000 },
+          buildMacro: () => "# native save fixture\n",
+        });
+        const bytes = Buffer.from("saved native document");
+        await writeFile(input.canonicalPath, bytes);
+        const receipt = cadGuiSaveDocumentReceiptSchema.parse({
+          protocol: "kfw-cad-gui-save/1",
+          operationId: input.operationId,
+          fingerprint: record.fingerprint,
+          pid: input.application.pid,
+          completed: true,
+          guiThread: true,
+          outcome: "saved",
+          saveStarted: true,
+          writeFinished: true,
+          artifact: {
+            canonicalPath: input.canonicalPath,
+            size: bytes.length,
+            sha256: createHash("sha256").update(bytes).digest("hex"),
+            hasGuiDocument: true,
+          },
+        });
+        await writeFile(record.receiptPath, JSON.stringify(receipt), {
+          flag: "wx",
+        });
+        return {
+          operationId: input.operationId,
+          state: "terminal",
+          outcome: "saved",
+          receipt,
+          cancellationRequested: false,
+        };
+      },
+    ),
     undoOperation: vi.fn(async (..._args: unknown[]) => ({
       ...operationResult,
       outcome: "undone" as const,
@@ -115,10 +175,24 @@ async function fixture() {
           record?.payload &&
           typeof record.payload === "object" &&
           "operation" in record.payload &&
-          record.payload.operation === "save-copy"
+          ["save-copy", "save-document"].includes(
+            String(record.payload.operation),
+          )
         ) {
           const state = await store.readState(record);
-          const receipt = cadGuiCopyDocumentReceiptSchema.parse(state.receipt);
+          const parsed = (
+            record.payload.operation === "save-copy"
+              ? cadGuiCopyDocumentReceiptSchema
+              : cadGuiSaveDocumentReceiptSchema
+          ).safeParse(state.receipt);
+          if (!parsed.success)
+            return {
+              operationId: identity.operationId,
+              state: state.status,
+              outcome: "unknown",
+              cancellationRequested: state.cancelled,
+            };
+          const receipt = parsed.data;
           return {
             operationId: identity.operationId,
             state: "terminal",
@@ -264,6 +338,229 @@ test("Run关闭只取消其来源旧请求，宿主dispose再收束其它旧请�
   expect(await f.store.readState(two)).toMatchObject({ cancelled: false });
   await f.service.dispose();
   expect(await f.store.readState(two)).toMatchObject({ cancelled: true });
+});
+
+test.each(["run", "uninstall", "dispose"] as const)(
+  "%s不能将已请求取消的外部保存当已停止，迟到可信回执后才完成",
+  async (kind) => {
+    const f = await fixture();
+    const file = join(f.root, "existing.FCStd");
+    await writeFile(file, "original");
+    const operationId = randomUUID();
+    const record = await f.store.prepare({
+      operationId,
+      binding: {
+        instanceId: f.scope.instanceId,
+        projectId: f.scope.projectId,
+        taskId: f.scope.taskId,
+        scopeGeneration: f.scope.generation,
+        branchGeneration: 1,
+        runId: "old-save-run",
+        toolCallId: "old-save-call",
+      },
+      payload: {
+        operation: "save-document",
+        ...f.target,
+        operationId,
+        expectedFileName: file,
+        canonicalPath: file,
+        writeRoots: [f.root],
+        timeoutMs: 30_000,
+      },
+      buildMacro: () => "# old save fixture\n",
+    });
+    await f.store.claimDispatch(record);
+    const stop = () =>
+      kind === "run"
+        ? f.service.releaseRun("old-save-run")
+        : kind === "dispose"
+          ? f.service.dispose()
+          : f.service.pluginLifecycle.onStateRevoking?.({
+              reason: "uninstall",
+              previous: {
+                id: "bundled__kenfutwork-cad",
+                name: "kenfutwork-cad",
+                enabled: true,
+              },
+              current: null,
+            } as PluginStateRevokingEvent);
+    await expect(stop()).rejects.toMatchObject({ code: "stop_unconfirmed" });
+    expect(await f.store.readState(record)).toMatchObject({
+      cancelled: true,
+      status: "dispatched",
+    });
+    const receipt = cadGuiSaveDocumentReceiptSchema.parse({
+      protocol: "kfw-cad-gui-save/1",
+      operationId: record.operationId,
+      fingerprint: record.fingerprint,
+      pid: f.application.pid,
+      guiThread: true,
+      completed: true,
+      outcome: "partial",
+      saveStarted: true,
+      writeFinished: true,
+    });
+    await writeFile(record.receiptPath, JSON.stringify(receipt));
+    await expect(stop()).resolves.toBeUndefined();
+    expect(f.operations.saveDocument).not.toHaveBeenCalled();
+    expect(await readFile(file, "utf8")).toBe("original");
+  },
+);
+
+test("活跃保存首次取消失败的旧错误只能由该编号迟到可信完成证明消解", async () => {
+  const f = await fixture();
+  const file = join(f.root, "existing.FCStd");
+  await writeFile(file, "original");
+  let record: CadGuiOperationRecord | undefined;
+  f.operations.saveDocument.mockImplementationOnce(async (input, binding) => {
+    record = await f.store.prepare({
+      operationId: input.operationId,
+      binding,
+      payload: { operation: "save-document", ...input, timeoutMs: 30_000 },
+      buildMacro: () => "# failed cancellation fixture\n",
+    });
+    await f.store.claimDispatch(record);
+    throw new CadGuiOperationError(
+      "stop_unconfirmed",
+      "无法保存取消标记",
+      input.operationId,
+      "unknown",
+    );
+  });
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_save_document",
+  );
+  if (!tool) throw new Error("缺少原位保存工具消费方");
+  expect(
+    await tool.execute(
+      { ...f.target, operationId: randomUUID(), expectedFileName: file },
+      f.context,
+    ),
+  ).toMatchObject({
+    isError: true,
+    structuredContent: { error: { code: "stop_unconfirmed" } },
+  });
+  await expect(
+    f.service.releaseRun(f.context.runId ?? ""),
+  ).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  if (!record) throw new Error("保存记录未准备");
+  const receipt = cadGuiSaveDocumentReceiptSchema.parse({
+    protocol: "kfw-cad-gui-save/1",
+    operationId: record.operationId,
+    fingerprint: record.fingerprint,
+    pid: f.application.pid,
+    guiThread: true,
+    completed: true,
+    outcome: "partial",
+    saveStarted: true,
+    writeFinished: true,
+  });
+  await writeFile(record.receiptPath, JSON.stringify(receipt));
+  await expect(
+    f.service.releaseRun(f.context.runId ?? ""),
+  ).resolves.toBeUndefined();
+  expect(f.operations.saveDocument).toHaveBeenCalledOnce();
+  expect(f.spawn).not.toHaveBeenCalled();
+});
+
+test("原位保存工具冻结真实Task写域与绑定，覆盖已有文件且同调用不重复保存", async () => {
+  const f = await fixture();
+  const file = join(f.root, "existing.FCStd");
+  await writeFile(file, "original");
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_save_document",
+  );
+  if (!tool) throw new Error("缺少原位保存工具消费方");
+  expect(tool.approvalReviewKind).toBe("cad-gui-save");
+  const args = {
+    ...f.target,
+    operationId: randomUUID(),
+    expectedFileName: file,
+  };
+  const [first, second] = await Promise.all([
+    tool.execute(args, f.context),
+    tool.execute(args, f.context),
+  ]);
+  expect(first).toEqual(second);
+  expect(first).toMatchObject({ structuredContent: { outcome: "saved" } });
+  expect(first).not.toHaveProperty("isError", true);
+  expect(f.operations.saveDocument).toHaveBeenCalledOnce();
+  expect(f.operations.saveDocument).toHaveBeenCalledWith(
+    { ...args, canonicalPath: file, writeRoots: [f.root] },
+    expect.objectContaining({
+      instanceId: f.scope.instanceId,
+      taskId: f.scope.taskId,
+      scopeGeneration: f.scope.generation,
+      branchGeneration: 1,
+      runId: f.context.runId,
+    }),
+    expect.objectContaining({ timeoutMs: 30_000 }),
+    expect.any(Function),
+  );
+  expect(await readFile(file, "utf8")).toBe("saved native document");
+  expect(f.spawn).not.toHaveBeenCalled();
+});
+
+test.each(["outside", "read-only", "stale", "missing", "directory"] as const)(
+  "原位保存%s前置失败不进入外部GUI也不改文件",
+  async (kind) => {
+    const f = await fixture();
+    const file =
+      kind === "outside"
+        ? join(f.root, "..", `${randomUUID()}.FCStd`)
+        : kind === "directory"
+          ? join(f.root, "directory.FCStd")
+          : join(f.root, "existing.FCStd");
+    if (kind !== "missing" && kind !== "directory") {
+      await writeFile(file, "original");
+      if (kind === "outside") closes.push(() => rm(file, { force: true }));
+    }
+    if (kind === "directory") await mkdir(file);
+    if (kind === "read-only") f.stored.scope.sandboxMode = "read-only";
+    if (kind === "stale") f.stored.scope.generation++;
+    const tool = createCadTools(f.service).find(
+      (entry) => entry.name === "cad_gui_save_document",
+    );
+    if (!tool) throw new Error("缺少原位保存工具消费方");
+    const result = await tool.execute(
+      { ...f.target, operationId: randomUUID(), expectedFileName: file },
+      f.context,
+    );
+    expect(result).toMatchObject({ isError: true });
+    expect(f.operations.saveDocument).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+    if (kind !== "missing" && kind !== "directory")
+      expect(await readFile(file, "utf8")).toBe("original");
+  },
+);
+
+test("原位保存公共工具拒绝Host写域与任意输出路径参数", async () => {
+  const f = await fixture();
+  const tool = createCadTools(f.service).find(
+    (entry) => entry.name === "cad_gui_save_document",
+  );
+  if (!tool) throw new Error("缺少原位保存工具消费方");
+  for (const injected of [
+    { canonicalPath: "/tmp/foreign.FCStd" },
+    { writeRoots: ["/"] },
+    { outputPath: "/tmp/foreign.FCStd" },
+  ]) {
+    expect(
+      await tool.execute(
+        {
+          ...f.target,
+          operationId: randomUUID(),
+          expectedFileName: join(f.root, "existing.FCStd"),
+          ...injected,
+        },
+        f.context,
+      ),
+    ).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "invalid_arguments" } },
+    });
+  }
+  expect(f.operations.saveDocument).not.toHaveBeenCalled();
 });
 
 test("持久取消失败不宣称停用成功，也不能用重新启用绕过，成功重试后恢复", async () => {

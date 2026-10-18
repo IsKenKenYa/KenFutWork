@@ -16,6 +16,7 @@ interface ActiveOperation {
   runId: string;
   controller: AbortController;
   done: Promise<CadToolResult>;
+  confirmStopped: (() => Promise<void>) | undefined;
 }
 
 /** CAD 安装代际及在途操作；只取消自己发起的工作，不接管外部应用进程。 */
@@ -24,6 +25,7 @@ export function createCadOperationLifecycle(options: {
   installationId: string;
   failure(error: unknown, context: ToolExecutionContext): CadToolResult;
   cancelPersistedOperations?(runId?: string): Promise<void>;
+  confirmPersistedOperationsStopped?(runId?: string): Promise<void>;
 }) {
   const active = new Set<ActiveOperation>();
   const closingRuns = new Map<string, Promise<void>>();
@@ -35,18 +37,32 @@ export function createCadOperationLifecycle(options: {
   async function cancelAndJoin(operations: ActiveOperation[]) {
     for (const operation of operations) operation.controller.abort();
     const results = await Promise.all(
-      operations.map((operation) => operation.done),
+      operations.map(async (operation) => ({
+        operation,
+        result: await operation.done,
+      })),
     );
-    const unconfirmed = results.find(
-      (result) =>
-        (result.structuredContent.error as { code?: unknown } | undefined)
-          ?.code === "stop_unconfirmed",
+    const confirmations = await Promise.allSettled(
+      results.map(async ({ operation, result }) => {
+        if (
+          (result.structuredContent.error as { code?: unknown } | undefined)
+            ?.code !== "stop_unconfirmed"
+        )
+          return;
+        if (!operation.confirmStopped)
+          throw new CadOperationError(
+            "stop_unconfirmed",
+            result.content.map((entry) => entry.text).join("\n"),
+          );
+        // 只允许本次操作冻结的可信证明消解旧错误；全局扫描不能替代它。
+        await operation.confirmStopped();
+        active.delete(operation);
+      }),
     );
-    if (unconfirmed)
-      throw new CadOperationError(
-        "stop_unconfirmed",
-        unconfirmed.content.map((entry) => entry.text).join("\n"),
-      );
+    const rejected = confirmations.find(
+      (result) => result.status === "rejected",
+    );
+    if (rejected?.status === "rejected") throw rejected.reason;
   }
 
   async function cancelAndReconcile(
@@ -58,6 +74,13 @@ export function createCadOperationLifecycle(options: {
       cancelAndJoin(operations),
       Promise.resolve().then(() => options.cancelPersistedOperations?.(runId)),
     ]);
+    // 原生调用可能在Node取消回调结束后仍写文件；须在清理后读可信持久完成点。
+    const confirmation = await Promise.allSettled([
+      Promise.resolve().then(() =>
+        options.confirmPersistedOperationsStopped?.(runId),
+      ),
+    ]);
+    results.push(...confirmation);
     const rejected = results.find((result) => result.status === "rejected");
     if (rejected) {
       failedReconciliations.add(runId);
@@ -109,6 +132,7 @@ export function createCadOperationLifecycle(options: {
         activationEpoch: number,
         assertActive: () => void,
       ) => Promise<CadToolResult>,
+      confirmStopped?: () => Promise<void>,
     ): Promise<CadToolResult> {
       const activationEpoch = epoch;
       const controller = new AbortController();
@@ -137,6 +161,7 @@ export function createCadOperationLifecycle(options: {
       const operation: ActiveOperation = {
         runId: context.runId ?? "",
         controller,
+        confirmStopped,
         done: Promise.resolve()
           .then(async () => {
             assertActive();
