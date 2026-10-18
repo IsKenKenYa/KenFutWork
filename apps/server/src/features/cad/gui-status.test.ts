@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProcessSandbox } from "../process-sandbox/service.js";
-import { type CadGuiProbe, CadGuiProbeError } from "./gui-probe.js";
+import {
+  type CadGuiApplication,
+  type CadGuiProbe,
+  CadGuiProbeError,
+} from "./gui-probe.js";
 import { createCadService } from "./service.js";
 import {
   activateCadTestService,
@@ -23,13 +27,14 @@ async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-cad-gui-")));
   roots.push(root);
   const task = await createCadTestContext(root);
-  const application = {
+  const application: CadGuiApplication = {
     pid: 42,
     bundleId: "org.freecad.FreeCAD",
     name: "FreeCAD",
     executablePath: "/Applications/FreeCAD.app/Contents/Resources/bin/freecad",
     bundlePath: "/Applications/FreeCAD.app",
     launchedAt: 1_792_000_000_123.25,
+    birth: { startSeconds: 1_792_000_000, startMicroseconds: 174_553 },
   };
   const list = vi.fn<CadGuiProbe["list"]>(async () => [application]);
   const gate = vi.fn(async () => ({ ok: true }));

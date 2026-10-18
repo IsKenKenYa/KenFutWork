@@ -12,6 +12,12 @@ import type {
   ProcessStdioSpawnRequest,
 } from "../process-sandbox/types.js";
 import { ProcessSandboxError } from "../process-sandbox/types.js";
+import type { CadGuiApplication } from "./gui-document-contracts.js";
+import {
+  CadGuiDocumentQueryError,
+  type CadGuiDocumentReader,
+  createMacosCadGuiDocumentReader,
+} from "./gui-document-reader.js";
 import {
   type CadGuiProbe,
   CadGuiProbeError,
@@ -54,6 +60,10 @@ export interface CadService {
   readonly activationAvailable: boolean;
   status(context: ToolExecutionContext): Promise<CadToolResult>;
   guiStatus(context: ToolExecutionContext): Promise<CadToolResult>;
+  guiDocuments(
+    application: CadGuiApplication,
+    context: ToolExecutionContext,
+  ): Promise<CadToolResult>;
   execute(
     request: CadRequest,
     context: ToolExecutionContext,
@@ -69,6 +79,7 @@ export interface CadServiceOptions {
   ): Promise<{ limits: ProcessLimits; timeoutMs: number | null }>;
   detectRuntime?: () => Promise<CadRuntime | null>;
   guiProbe?: CadGuiProbe;
+  guiDocumentReader?: CadGuiDocumentReader;
 }
 
 class CadError extends Error {
@@ -124,7 +135,8 @@ function failure(error: unknown, cancelled = false): CadToolResult {
     error instanceof CadError ||
     error instanceof CadOperationError ||
     error instanceof ProcessSandboxError ||
-    error instanceof CadGuiProbeError
+    error instanceof CadGuiProbeError ||
+    error instanceof CadGuiDocumentQueryError
       ? error.code
       : cancelled || (error instanceof Error && error.name === "AbortError")
         ? "cancelled"
@@ -132,7 +144,21 @@ function failure(error: unknown, cancelled = false): CadToolResult {
   return {
     isError: true,
     content: [{ type: "text", text: message }],
-    structuredContent: { error: { code, message } },
+    structuredContent: {
+      error: {
+        code,
+        message,
+        ...(error instanceof CadGuiDocumentQueryError
+          ? {
+              requestId: error.requestId,
+              ...(error.actionSent !== undefined
+                ? { actionSent: error.actionSent }
+                : {}),
+              observationConfirmed: error.observationConfirmed,
+            }
+          : {}),
+      },
+    },
   };
 }
 
@@ -479,6 +505,9 @@ function cadStatus(runtime: CadRuntime | null): CadToolResult {
 
 export function createCadService(options: CadServiceOptions): CadService {
   const guiProbe = options.guiProbe ?? createMacosCadGuiProbe();
+  const guiDocumentReader =
+    options.guiDocumentReader ??
+    createMacosCadGuiDocumentReader({ probe: guiProbe });
   const invocations = new Map<
     string,
     {
@@ -511,6 +540,63 @@ export function createCadService(options: CadServiceOptions): CadService {
     installationId: CAD_PLUGIN_INSTALLATION_ID,
     failure: onFailure,
   });
+  const invoke = (
+    payload:
+      | CadRequest
+      | { action: "gui-documents"; application: CadGuiApplication },
+    context: ToolExecutionContext,
+    operation: (
+      context: ToolExecutionContext,
+      guard: (context: ToolExecutionContext) => Promise<void>,
+    ) => Promise<CadToolResult>,
+  ): Promise<CadToolResult> => {
+    return lifecycle.run(context, async (context, epoch, assertActive) => {
+      const activeGuard = async (current: ToolExecutionContext) => {
+        assertActive();
+        await guard(current);
+        assertActive();
+      };
+      try {
+        await activeGuard(context);
+        const scope = requireCadContext(context).describe();
+        const key = JSON.stringify([
+          scope.instanceId,
+          scope.taskId,
+          context.runId,
+          context.toolCallId,
+        ]);
+        const fingerprint = createHash("sha256")
+          .update(JSON.stringify(payload))
+          .digest("hex");
+        const previous = invocations.get(key);
+        if (previous) {
+          if (previous.epoch !== epoch)
+            throw new CadError(
+              "invocation_revoked",
+              "CAD 插件已重新装载，这次旧调用不能重放，请发起新的调用。",
+            );
+          if (previous.fingerprint !== fingerprint)
+            throw new CadError(
+              "invocation_conflict",
+              "同一次 CAD 调用不能替换参数，请发起新的调用。",
+            );
+          return await previous.result;
+        }
+        const result = operation(context, activeGuard).catch((error: unknown) =>
+          onFailure(error, context),
+        );
+        invocations.set(key, {
+          runId: context.runId ?? "",
+          epoch,
+          fingerprint,
+          result,
+        });
+        return await result;
+      } catch (error) {
+        return onFailure(error, context);
+      }
+    });
+  };
   return {
     pluginLifecycle: lifecycle.plugin,
     get activationEpoch() {
@@ -555,56 +641,47 @@ export function createCadService(options: CadServiceOptions): CadService {
         };
       });
     },
-    execute(request, context) {
-      return lifecycle.run(context, async (context, epoch, assertActive) => {
-        const activeGuard = async (current: ToolExecutionContext) => {
-          assertActive();
-          await guard(current);
-          assertActive();
-        };
-        try {
+    guiDocuments(application, context) {
+      const target = structuredClone(application);
+      return invoke(
+        { action: "gui-documents", application: target },
+        context,
+        async (context, activeGuard) => {
           await activeGuard(context);
-          const scope = requireCadContext(context).describe();
-          const key = JSON.stringify([
-            scope.instanceId,
-            scope.taskId,
-            context.runId,
-            context.toolCallId,
-          ]);
-          const fingerprint = createHash("sha256")
-            .update(JSON.stringify(request))
-            .digest("hex");
-          const previous = invocations.get(key);
-          if (previous) {
-            if (previous.epoch !== epoch)
-              throw new CadError(
-                "invocation_revoked",
-                "CAD 插件已重新装载，这次旧调用不能重放，请发起新的调用。",
-              );
-            if (previous.fingerprint !== fingerprint)
-              throw new CadError(
-                "invocation_conflict",
-                "同一次 CAD 调用不能替换参数，请发起新的调用。",
-              );
-            return await previous.result;
-          }
-          const result = executeCadRequest(
-            options,
-            request,
-            context,
-            activeGuard,
-          ).catch((error: unknown) => onFailure(error, context));
-          invocations.set(key, {
-            runId: context.runId ?? "",
-            epoch,
-            fingerprint,
-            result,
+          if (requireCadContext(context).describe().sandboxMode === "read-only")
+            throw new CadError(
+              "forbidden",
+              "当前 Task 仅允许读取，不能向 FreeCAD 加载宏。",
+            );
+          const { limits, timeoutMs } = await options.resolveLimits(context);
+          await activeGuard(context);
+          const signal = AbortSignal.any(
+            [context.signal, context.taskWorkContext?.signal].filter(
+              (entry): entry is AbortSignal => entry !== undefined,
+            ),
+          );
+          const snapshot = await guiDocumentReader.read(target, {
+            signal,
+            timeoutMs: Math.min(timeoutMs ?? 10_000, 10_000),
+            maxOutputBytes: limits.maxOutputBytes,
           });
-          return await result;
-        } catch (error) {
-          return onFailure(error, context);
-        }
-      });
+          await activeGuard(context);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `已查询 ${snapshot.documents.length} 个打开的文档。`,
+              },
+            ],
+            structuredContent: { ...snapshot, currentDocumentControl: false },
+          };
+        },
+      );
+    },
+    execute(request, context) {
+      return invoke(request, context, (context, guard) =>
+        executeCadRequest(options, request, context, guard),
+      );
     },
     async releaseRun(runId) {
       await lifecycle.closeRun(runId);

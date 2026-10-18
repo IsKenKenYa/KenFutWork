@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { expect, it } from "vitest";
 import { z } from "zod";
+import { cadGuiApplicationSchema } from "./gui-document-contracts.js";
 import { createMacosCadGuiProbe } from "./gui-probe.js";
 import { executeCadTestTool, withNativeCad } from "./test-fixtures.js";
 import { createCadTools } from "./tools.js";
@@ -17,16 +18,7 @@ it.skipIf(process.env.KENFUTWORK_CAD_GUI_INTEGRATION !== "1")(
       expect(result.isError, JSON.stringify(result)).not.toBe(true);
       const { applications, currentDocumentControl } = z
         .object({
-          applications: z.array(
-            z.object({
-              pid: z.number().int().positive(),
-              bundleId: z.literal("org.freecad.FreeCAD"),
-              name: z.string(),
-              executablePath: z.string(),
-              bundlePath: z.string(),
-              launchedAt: z.number().finite().positive(),
-            }),
-          ),
+          applications: z.array(cadGuiApplicationSchema),
           currentDocumentControl: z.literal(false),
         })
         .parse(result.structuredContent);

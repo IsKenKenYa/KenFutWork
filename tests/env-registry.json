@@ -10,6 +10,15 @@
       "status": "test-gate",
       "note": "显式启用 macOS 原生进程出生身份、私有启动握手与无放行拒绝执行验收"
     },
+    "KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/cad/gui-documents.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启动独立配置的FreeCAD GUI，以真实Task查询自有文档并正常退出；不操作现存应用"
+    },
     "KENFUTWORK_CAD_GUI_INTEGRATION": {
       "surface": "test",
       "readers": [

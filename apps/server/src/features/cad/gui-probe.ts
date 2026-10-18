@@ -3,20 +3,19 @@ import { access, realpath, stat } from "node:fs/promises";
 import { posix } from "node:path";
 import { z } from "zod";
 import { runJxa } from "../computer-use/jxa.js";
+import {
+  cadGuiApplicationSchema as applicationSchema,
+  type CadGuiApplication,
+  cadGuiProcessBirthSchema,
+} from "./gui-document-contracts.js";
+import { readCadGuiProcessIdentity } from "./gui-native.js";
+
+export type { CadGuiApplication } from "./gui-document-contracts.js";
 
 export interface CadGuiProbeContext {
   signal?: AbortSignal;
   timeoutMs: number;
   maxOutputBytes: number;
-}
-
-export interface CadGuiApplication {
-  pid: number;
-  bundleId: string;
-  name: string;
-  executablePath: string;
-  bundlePath: string;
-  launchedAt: number;
 }
 
 export interface CadGuiProbe {
@@ -44,19 +43,19 @@ export interface CadGuiProbeOptions {
   realpath?: (path: string) => Promise<string>;
   stat?: (path: string) => Promise<FileStatus>;
   access?: (path: string, mode: number) => Promise<void>;
+  readIdentity?: (
+    application: Pick<CadGuiApplication, "pid" | "bundlePath">,
+    context: CadGuiProbeContext,
+  ) => Promise<{
+    birth: CadGuiApplication["birth"];
+    executablePath: string;
+  }>;
 }
 
 const absolutePath = z.string().min(1).refine(posix.isAbsolute);
-const applicationSchema = z.object({
-  pid: z.number().int().positive(),
-  bundleId: z.literal("org.freecad.FreeCAD"),
-  name: z.string(),
-  executablePath: absolutePath,
-  bundlePath: absolutePath,
-  launchedAt: z.number().finite().positive(),
-});
 const snapshotSchema = z.array(
   applicationSchema
+    .omit({ birth: true })
     .extend({
       activationPolicy: z.literal(0),
       bundleIdentifier: z.literal("org.freecad.FreeCAD"),
@@ -179,6 +178,7 @@ export function createMacosCadGuiProbe(
   const resolvePath = options.realpath ?? realpath;
   const readStatus = options.stat ?? stat;
   const readAccess = options.access ?? access;
+  const readIdentity = options.readIdentity ?? readCadGuiProcessIdentity;
 
   async function normalize(
     snapshot: ApplicationSnapshot,
@@ -249,6 +249,19 @@ export function createMacosCadGuiProbe(
       readAccess(launcher, constants.X_OK),
     ]);
     context.signal?.throwIfAborted();
+    const identity = z
+      .object({
+        birth: cadGuiProcessBirthSchema,
+        executablePath: absolutePath,
+      })
+      .strict()
+      .parse(await readIdentity({ pid: snapshot.pid, bundlePath }, context));
+    if ((await resolvePath(identity.executablePath)) !== executablePath)
+      throw new CadGuiProbeError(
+        "probe_failed",
+        "FreeCAD 内核进程与应用登记不符，请重新查询",
+      );
+    context.signal?.throwIfAborted();
     return {
       pid: snapshot.pid,
       bundleId: snapshot.bundleId,
@@ -256,6 +269,7 @@ export function createMacosCadGuiProbe(
       executablePath,
       bundlePath,
       launchedAt: snapshot.launchedAt,
+      birth: identity.birth,
     };
   }
 
@@ -309,6 +323,9 @@ export function createMacosCadGuiProbe(
       if (
         !application ||
         application.launchedAt !== expected.launchedAt ||
+        application.birth.startSeconds !== expected.birth.startSeconds ||
+        application.birth.startMicroseconds !==
+          expected.birth.startMicroseconds ||
         application.bundleId !== expected.bundleId ||
         application.executablePath !== expected.executablePath ||
         application.bundlePath !== expected.bundlePath

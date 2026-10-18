@@ -4,6 +4,7 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ApprovalReviewKind } from "../permissions/approval-review-context.js";
+import { cadGuiDocumentsInputSchema } from "./gui-document-contracts.js";
 import type { CadService, CadToolResult } from "./service.js";
 import {
   cadDescribeInputSchema,
@@ -64,9 +65,18 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_gui_status",
       description:
-        "查询当前运行的 FreeCAD GUI 实例（目前支持 macOS），返回真实 PID、启动时间与安装路径。只读应用身份，不启动应用、不读取或修改当前文档，不授予该应用 Task 沙箱身份；后台建模仍用其它 CAD 工具。",
+        "查询当前运行的 FreeCAD GUI 实例（目前支持 macOS），返回真实 PID、系统启动时间、内核出生身份与安装路径。只读应用身份，不启动应用、不读取或修改当前文档，不授予该应用 Task 沙箱身份；后台建模仍用其它 CAD 工具。",
       schema: cadStatusSchema,
       execute: (_input, context) => service.guiStatus(context),
+    }),
+    definition({
+      name: "cad_gui_documents",
+      description:
+        "查询指定 FreeCAD GUI 当前打开文档的名称、文件名、原生 UID、脏状态与活动状态。application 必须来自 cad_gui_status 的完整身份。通过固定宏连接外部应用，按执行权限审批；GUI 不继承 Task OS 沙箱。只读取元数据，不读取几何、不修改、重算、保存或关闭文档；Name/Uid 是观察快照，不能作为后续修改授权句柄。模型不能提交宏源码、宏路径或连接端点。目前支持 macOS 官方安装包。",
+      schema: cadGuiDocumentsInputSchema,
+      approvalReviewKind: "cad-gui-inspect",
+      execute: (input, context) =>
+        service.guiDocuments(input.application, context),
     }),
     definition({
       name: "cad_describe_document",

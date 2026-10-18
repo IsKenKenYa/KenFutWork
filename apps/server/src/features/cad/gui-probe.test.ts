@@ -10,7 +10,12 @@ const bundle = "/Applications/FreeCAD.app";
 const volume = "/Volumes/FreeCAD/FreeCAD.app";
 const context: CadGuiProbeContext = { timeoutMs: 1_000, maxOutputBytes: 8_192 };
 
-function application(pid = 101, bundlePath = bundle): CadGuiApplication {
+function application(
+  pid = 101,
+  bundlePath = bundle,
+): CadGuiApplication & {
+  birth: { startSeconds: number; startMicroseconds: number };
+} {
   return {
     pid,
     bundleId: "org.freecad.FreeCAD",
@@ -18,12 +23,14 @@ function application(pid = 101, bundlePath = bundle): CadGuiApplication {
     executablePath: `${bundlePath}/Contents/Resources/bin/freecad`,
     bundlePath,
     launchedAt: 1_760_000_000_123.25,
+    birth: { startSeconds: 1_760_000_000, startMicroseconds: 174_553 },
   };
 }
 
 function snapshot(app = application()) {
+  const { birth: _birth, ...registered } = app;
   return {
-    ...app,
+    ...registered,
     activationPolicy: 0,
     bundleIdentifier: "org.freecad.FreeCAD",
     bundleExecutablePath: `${app.bundlePath}/Contents/MacOS/FreeCAD`,
@@ -51,14 +58,23 @@ function fixture(rows: unknown = [snapshot()]) {
   const resolvePath = vi.fn(async (path: string) => path);
   const readStatus = vi.fn(async (path: string) => status(path));
   const readAccess = vi.fn(async (_path: string, _mode: number) => {});
+  const readIdentity = vi.fn(
+    async (app: { pid: number; bundlePath: string }) => ({
+      birth: application(app.pid, app.bundlePath).birth,
+      executablePath: (Array.isArray(rows) ? rows : [])
+        .find((row) => row?.pid === app.pid)
+        ?.executablePath.replace("/Applications/FreeCAD Alias.app", volume),
+    }),
+  );
   const probe = createMacosCadGuiProbe({
     platform: "darwin",
     run,
     realpath: resolvePath,
     stat: readStatus,
     access: readAccess,
+    readIdentity,
   });
-  return { probe, run, resolvePath, readStatus, readAccess };
+  return { probe, run, resolvePath, readStatus, readAccess, readIdentity };
 }
 
 afterEach(() => {
@@ -113,6 +129,45 @@ describe("FreeCAD 只读 GUI 应用探针", () => {
     const renamed = { ...app, name: "FreeCAD 工程" };
     const f = fixture([snapshot(renamed)]);
     expect(await f.probe.verify(app, context)).toEqual(renamed);
+  });
+
+  it("启动时间仅作NS登记事实，内核出生身份独立签发且不能由NSDate换算", async () => {
+    const f = fixture();
+    const [actual] = await f.probe.list(context);
+    expect(f.readIdentity).toHaveBeenCalledOnce();
+    expect(actual?.birth).toEqual(application().birth);
+    expect(actual?.launchedAt).toBe(application().launchedAt);
+    expect(actual?.birth.startMicroseconds).not.toBe(
+      (application().launchedAt % 1000) * 1000,
+    );
+  });
+
+  it("NS登记未变化但同PID出生身份变化时拒绝旧绑定", async () => {
+    const f = fixture();
+    f.readIdentity.mockResolvedValue({
+      birth: { ...application().birth, startMicroseconds: 174_554 },
+      executablePath: application().executablePath,
+    });
+    await expect(f.probe.verify(application(), context)).rejects.toMatchObject({
+      code: "application_changed",
+    });
+  });
+
+  it("内核可执行路径与NS登记不符或身份读取失败时不签发应用", async () => {
+    const f = fixture();
+    f.readIdentity.mockResolvedValue({
+      birth: application().birth,
+      executablePath: "/tmp/other-executable",
+    });
+    await expect(f.probe.list(context)).rejects.toMatchObject({
+      code: "probe_failed",
+    });
+    f.readIdentity.mockRejectedValue(
+      new Error("private identity read failure"),
+    );
+    await expect(f.probe.list(context)).rejects.toMatchObject({
+      code: "probe_failed",
+    });
   });
 
   it.each([

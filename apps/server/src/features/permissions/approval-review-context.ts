@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cadGuiDocumentsInputSchema } from "../cad/gui-document-contracts.js";
 import {
   cadDescribeInputSchema,
   cadExportInputSchema,
@@ -11,6 +12,7 @@ import {
 export type ApprovalReviewKind = keyof typeof operationSchemas;
 
 const operationSchemas = {
+  "cad-gui-inspect": cadGuiDocumentsInputSchema,
   "cad-python": cadPythonInputSchema,
   "cad-primitive": cadPrimitiveInputSchema,
   "cad-operations": cadOperationsInputSchema,
@@ -47,6 +49,26 @@ const operationSchemas = {
     .strict(),
 };
 
+/** 固定 GUI 宏的宿主事实；目标应用参数仍须在实际派发时核验。 */
+const CAD_GUI_INSPECT_EXECUTION_BOUNDARY = {
+  kind: "external-gui",
+  taskOsSandboxEnforced: false,
+  effects: ["execute-fixed-macro", "change-file-dialog-working-directory"],
+  documentAccess: "metadata-only",
+  metadataFields: [
+    "name",
+    "label",
+    "fileName",
+    "uid",
+    "modified",
+    "touched",
+    "pendingTransaction",
+    "active",
+  ],
+  excludedOperations: ["arbitrary-python", "geometry", "save", "recompute"],
+  applicationIdentity: "untrusted-until-dispatch-verification",
+} as const;
+
 const inputSchema = z
   .object({
     kind: z.enum([
@@ -60,6 +82,7 @@ const inputSchema = z
       "cad-export",
       "cad-describe",
       "cad-preview",
+      "cad-gui-inspect",
     ]),
     args: z.record(z.string(), z.unknown()),
     userRequest: z.string(),
@@ -139,6 +162,13 @@ export function approvalReviewEvidence(input: {
   const operation = operationSchemas[context.kind].safeParse(context.args);
   if (!operation.success) return undefined;
   const evidence = {
+    ...(context.kind === "cad-gui-inspect"
+      ? {
+          executionBoundary: structuredClone(
+            CAD_GUI_INSPECT_EXECUTION_BOUNDARY,
+          ),
+        }
+      : {}),
     untrustedData: {
       userRequest: context.userRequest,
       workspace: {
