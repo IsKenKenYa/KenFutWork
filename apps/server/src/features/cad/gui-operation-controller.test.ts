@@ -187,6 +187,81 @@ test("复制当前文档后仅匹配私有native副本回执，不宣称Task文�
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
+function undoProvenanceReceipt(f: Fixture) {
+  const transactionName = `KFW CAD ${randomUUID()}`;
+  const history = (names: string[]) => ({
+    count: names.length,
+    sha256: createHash("sha256").update(JSON.stringify(names)).digest("hex"),
+  });
+  return {
+    undoProvenance: {
+      transactionName,
+      undoHistory: history([transactionName]),
+      redoHistory: history([]),
+    },
+    snapshot: {
+      bridgeEpoch: f.input.bridgeEpoch,
+      applicationRevision: f.input.expectedApplicationRevision + 1,
+      document: {
+        name: "Part",
+        label: "零件",
+        fileName: "",
+        uid: "native-uid",
+        modified: true,
+        touched: false,
+        pendingTransaction: false,
+        active: true,
+        documentHandle: f.input.documentHandle,
+        revision: f.input.expectedDocumentRevision + 1,
+      },
+    },
+  };
+}
+
+test("提交回执持久保留自身事务归属，重建控制器查询不连接GUI", async () => {
+  const f = await fixture();
+  const receipt = undoProvenanceReceipt(f);
+  f.send.mockImplementation(async (_application, macroPath) =>
+    f.publish(macroPath, receipt),
+  );
+  const result = await f.controller.execute(f.input, f.binding, f.context);
+  expect(result).toMatchObject({ outcome: "committed", receipt });
+  f.probe.verify.mockRejectedValue(new Error("GUI已经退出"));
+  expect(
+    await restart(f).status({ ...f.binding, operationId: f.input.operationId }),
+  ).toEqual(result);
+  expect(f.send).toHaveBeenCalledOnce();
+});
+
+test.each([
+  "epoch",
+  "handle",
+  "applicationRevision",
+  "documentRevision",
+  "pending",
+  "inactive",
+] as const)("带撤销归属的%s不一致回执不能作为可信提交", async (changed) => {
+  const f = await fixture();
+  const receipt = undoProvenanceReceipt(f);
+  if (changed === "epoch") receipt.snapshot.bridgeEpoch = randomUUID();
+  if (changed === "handle")
+    receipt.snapshot.document.documentHandle = randomUUID();
+  if (changed === "applicationRevision")
+    receipt.snapshot.applicationRevision =
+      f.input.expectedApplicationRevision - 1;
+  if (changed === "documentRevision")
+    receipt.snapshot.document.revision = f.input.expectedDocumentRevision - 1;
+  if (changed === "pending")
+    receipt.snapshot.document.pendingTransaction = true;
+  if (changed === "inactive") receipt.snapshot.document.active = false;
+  f.send.mockImplementation(async (_application, macroPath) =>
+    f.publish(macroPath, receipt),
+  );
+  expect(
+    await f.controller.execute(f.input, f.binding, f.context),
+  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+});
+
 function copyInput(f: Fixture) {
   return {
     application: f.input.application,

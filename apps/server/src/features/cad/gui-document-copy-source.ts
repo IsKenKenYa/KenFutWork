@@ -56,13 +56,6 @@ def _kfw_cad_copy_read(ctx, getter):
     return value
 
 
-def _kfw_cad_copy_history(values):
-    if type(values) not in (tuple, list) or any(type(value) is not str for value in values):
-        raise _KfwCadCopyError('unsupported_native_state')
-    raw = _kfw_cad_json.dumps(list(values), ensure_ascii=False, separators=(',', ':')).encode('utf-8')
-    return (len(values), _kfw_cad_hashlib.sha256(raw).hexdigest())
-
-
 def _kfw_cad_copy_state(ctx):
     result = {}
     read = lambda getter: _kfw_cad_copy_read(ctx, getter)
@@ -83,8 +76,8 @@ def _kfw_cad_copy_state(ctx):
             'frozen': read(lambda: bool(doc.RecomputesFrozen)),
             'undoMode': read(lambda: doc.UndoMode), 'undoCount': read(lambda: doc.UndoCount),
             'redoCount': read(lambda: doc.RedoCount),
-            'undo': _kfw_cad_copy_history(read(lambda: doc.UndoNames)),
-            'redo': _kfw_cad_copy_history(read(lambda: doc.RedoNames)),
+            'undo': _kfw_cad_history_summary(read(lambda: doc.UndoNames)),
+            'redo': _kfw_cad_history_summary(read(lambda: doc.RedoNames)),
         }
     return result
 

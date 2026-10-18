@@ -282,6 +282,85 @@ def _kfw_cad_mutation_snapshot(ctx):
         pass
 
 
+def _kfw_cad_history_summary(values):
+    if type(values) not in (tuple, list) or any(type(value) is not str for value in values):
+        raise _KfwCadMutationError('unsupported_native_state')
+    raw = _kfw_cad_json.dumps(list(values), ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    return {'count': len(values), 'sha256': _kfw_cad_hashlib.sha256(raw).hexdigest()}
+
+
+class _KfwCadHistoryUnavailable(Exception):
+    pass
+
+
+def _kfw_cad_provenance_read(ctx, getter):
+    _kfw_cad_mutation_guard(ctx)
+    try:
+        value = getter()
+    except BaseException:
+        _kfw_cad_mutation_guard(ctx)
+        raise _KfwCadHistoryUnavailable()
+    _kfw_cad_mutation_guard(ctx)
+    return value
+
+
+def _kfw_cad_record_undo_provenance(ctx):
+    receipt, request = ctx['receipt'], ctx['request']
+    snapshot = receipt.get('snapshot')
+    if receipt['outcome'] != 'committed' or type(snapshot) is not dict:
+        return
+    metadata = snapshot.get('document')
+    if type(metadata) is not dict:
+        return
+    if (snapshot.get('bridgeEpoch') != request['bridgeEpoch']
+            or metadata.get('documentHandle') != request['documentHandle']
+            or type(snapshot.get('applicationRevision')) is not int
+            or type(metadata.get('revision')) is not int
+            or snapshot['applicationRevision'] < request['expectedApplicationRevision']
+            or metadata['revision'] < request['expectedDocumentRevision']
+            or metadata.get('active') is not True or metadata.get('pendingTransaction') is not False):
+        return
+    read = lambda getter: _kfw_cad_provenance_read(ctx, getter)
+    doc = ctx['doc']
+    try:
+        name = read(lambda: doc.Name)
+        gui_doc = read(lambda: ctx['gui'].getDocument(name))
+        if read(lambda: gui_doc.getInEdit()) is not None or read(lambda: gui_doc.Transacting) is not False:
+            return
+        if any(read(lambda name=name: bool(getattr(doc, name))) for name in
+               ('Restoring', 'Partial', 'Importing', 'Recomputing', 'Transacting', 'RecomputesFrozen')):
+            return
+        mode = read(lambda: doc.UndoMode)
+        if type(mode) is not int or mode <= 0:
+            return
+        undo_names = read(lambda: doc.UndoNames)
+        undo_count = read(lambda: doc.UndoCount)
+        redo_names = read(lambda: doc.RedoNames)
+        redo_count = read(lambda: doc.RedoCount)
+        undo = _kfw_cad_history_summary(undo_names)
+        redo = _kfw_cad_history_summary(redo_names)
+        if (not undo_names or undo_names[0] != ctx['transactionName']
+                or type(undo_count) is not int or type(redo_count) is not int
+                or undo_count != undo['count'] or redo_count != redo['count']):
+            return
+    except _KfwCadHistoryUnavailable:
+        return
+    except _KfwCadMutationError as error:
+        if error.code == 'unsupported_native_state':
+            _kfw_cad_mutation_guard(ctx)
+            return
+        raise
+    except BaseException:
+        _kfw_cad_mutation_guard(ctx)
+        return
+    _kfw_cad_mutation_guard(ctx)
+    record = ctx['bridge'].find(doc)
+    if (ctx['bridge'].application_revision != snapshot['applicationRevision']
+            or record['revision'] != metadata['revision']):
+        return
+    receipt['undoProvenance'] = {'transactionName': ctx['transactionName'], 'undoHistory': undo, 'redoHistory': redo}
+
+
 def _kfw_cad_apply_mutation(ctx):
     changing = [entry for entry in ctx['entries'] if entry['receipt']['before'] != entry['receipt']['requested']]
     if not changing:
@@ -341,6 +420,17 @@ def _kfw_cad_operation_bytes(receipt):
     return _kfw_cad_json.dumps(receipt, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8') + b'\n'
 
 
+def _kfw_cad_mutation_failure(ctx, error):
+    receipt = ctx['receipt']
+    receipt.pop('undoProvenance', None)
+    receipt['outcome'] = 'partial' if receipt['mutationStarted'] else 'rejected'
+    receipt['reason'] = error.code if isinstance(error, (_KfwCadMutationError, _KfwCadInspectionError)) else 'native_operation_failed'
+    if receipt['mutationStarted']:
+        receipt['transactionState'] = 'unknown' if ctx['controlLost'] else _kfw_cad_mutation_transaction_state(ctx)
+    else:
+        receipt['changes'] = []
+
+
 def _kfw_cad_execute_mutation(paths, app, gui):
     try:
         manifest, request = _kfw_cad_operation_record(paths)
@@ -381,12 +471,7 @@ def _kfw_cad_execute_mutation(paths, app, gui):
         _kfw_cad_mutation_guard(ctx)
         _kfw_cad_apply_mutation(ctx)
     except BaseException as error:
-        receipt['outcome'] = 'partial' if receipt['mutationStarted'] else 'rejected'
-        receipt['reason'] = error.code if isinstance(error, (_KfwCadMutationError, _KfwCadInspectionError)) else 'native_operation_failed'
-        if receipt['mutationStarted']:
-            receipt['transactionState'] = 'unknown' if ctx['controlLost'] else _kfw_cad_mutation_transaction_state(ctx)
-        else:
-            receipt['changes'] = []
+        _kfw_cad_mutation_failure(ctx, error)
     finally:
         for module, observer in reversed(registrations):
             try:
@@ -397,10 +482,15 @@ def _kfw_cad_execute_mutation(paths, app, gui):
             ctx['bridge'].active_mutation = None
     if not ctx['controlLost']:
         _kfw_cad_mutation_snapshot(ctx)
+        try:
+            _kfw_cad_record_undo_provenance(ctx)
+        except (_KfwCadMutationError, _KfwCadInspectionError) as error:
+            _kfw_cad_mutation_failure(ctx, error)
     try:
         content = _kfw_cad_operation_bytes(receipt)
         if len(content) > _KFW_CAD_RECEIPT_LIMIT:
             receipt.pop('snapshot', None)
+            receipt.pop('undoProvenance', None)
             content = _kfw_cad_operation_bytes(receipt)
         if len(content) <= _KFW_CAD_RECEIPT_LIMIT:
             _kfw_cad_publish_operation_file(paths['receiptPath'], content)

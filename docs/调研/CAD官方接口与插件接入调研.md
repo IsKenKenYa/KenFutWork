@@ -34,18 +34,20 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 
 | 工作流 | 官方接口依据 | 应交付的行为证据 | 本文状态 |
 | --- | --- | --- | --- |
-| 文档创建、保存、重开 | App Document／Python 接口 | 原生工程可重开；对象、约束和参数保留 | 后台插件保存／重开与源保护已验，见 §9.1～§9.8 |
+| 文档创建、保存、重开 | App Document／Python 接口 | 原生工程可重开；对象、约束和参数保留 | 后台保存／重开与源保护已验，见 §9.1～§9.8；GUI 内存副本→Task 发布已有工具实证，原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §13 |
 | 2D 几何与草图 | Sketcher `addGeometry`、几何／尺寸约束 | 闭合轮廓、约束状态、尺寸回读与矛盾约束错误 | 结构化约束／改尺寸及真实 Design 整轮已验，见 §9.5、§9.7 |
 | 3D 原语、布尔、位置 | Part 形状及文档对象 | 有效性、实体数、体积、包围盒与预期对应 | 原语与位移／旋转有既有证据；Python 布尔三模式及参数联动已验，见 §9.14 |
 | 参数化实体 | PartDesign Body、草图和特征 | 拉伸／凹槽／旋转等有真实依赖；改源尺寸后下游随动 | 结构化 Pad／Pocket、厚度联动与首个固定角 Revolution 已有原生证据，见 §9.8、§9.13 |
 | 进阶建模 | 圆角、倒角、阵列及其他官方特征 | 合理参数成功；失效参数能识别；重开后依赖保留 | Python 单边圆角／倒角、线性／环形阵列四阶段已验，具体范围见 §9.14 |
-| 表达式与单位 | Quantity、属性、表达式接口 | 显式单位输入、正确回读、关联参数更新 | 需要独立覆盖 |
+| 表达式与单位 | Quantity、属性、表达式接口 | 显式单位输入、正确回读、关联参数更新 | 后台厚度／角度联动见 §9.8、§9.13；GUI Quantity 基础数值／单位签名、直接属性表达式读取及保留绑定的标量写入已有实证，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §10、§11；不代表任意显示单位转换或 GUI 表达式编辑已验收 |
 | 工程文件及交换格式 | `Std Export` 与对应格式模块 | 导出正确对象；再导入核对几何和单位 | STEP／STL／BREP／SVG／DXF 已有分层回读证据，见 §9 |
-| 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 Qt 的 A4／俯视图／真实总尺寸及整页 SVG 已验，PDF及标准制图符合性不在该证据内，见 §9.14 |
-| PNG 预览 | GUI view 的图像导出、scenegraph 路线 | 真实图像、视角和对象可见性正确；缺图形环境可解释 | 后台真实几何线框 PNG 已验；GUI 着色截图另验，见 §9.1、§9.7 |
+| 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 A4／俯视图／真实尺寸及整页 SVG 已验，见 §9.14；独立 GUI 原生夹具另验证单页 PDF 导出与栅格查看，见 §9.17，不代表正式 PDF 工具或完整比例／标注验收 |
+| PNG 预览 | GUI view 的图像导出、scenegraph 路线 | 真实图像、视角和对象可见性正确；缺图形环境可解释 | 后台真实几何线框 PNG 已验，见 §9.1、§9.7；独立 GUI 原生夹具已导出并查看着色 PNG，见 §9.17，不代表正式 GUI 预览工具已交付 |
 | Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | 广泛可达不等于已验收 |
 | FEM／CAM 等 | 官方工作台与外部工具链 | 网格／求解器／后处理器可用；输出语义正确 | 外部依赖、领域验收另列 |
-| 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 后续能力，本轮后台链不冒充覆盖 |
+| 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 固定查询／观察、直接标量读写及副本发布已有独立 GUI 的真实 Task 工具实证；显式撤销与原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §8～§14 |
+
+本表区分后台工具、独立 GUI 的真实 Task 工具和专用原生夹具。GUI 工具的逐项行为与验收范围以[桥接核验](FreeCAD当前文档桥接接口核验.md)为准；现有证据未覆盖用户现存 GUI、任意 GUI Python、全部属性或全部工作台。`undoProvenance` 只记录自身事务归属，夹具内的原生 undo／redo 回绕不等于正式撤销工具；覆盖保存源文件也不能由副本发布推定完成。
 
 矩阵来源：[Sketcher scripting](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Sketcher_scripting.md)、[PartDesign Workbench](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/PartDesign_Workbench.md)、[Quantity](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Quantity.md)、[Std Export](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_Export.md)、[TechDraw 官方测试](https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/TechDraw/TDTest)、[TechDrawGui API](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDrawGui_API.md)、[Std ViewScreenShot](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_ViewScreenShot.md)。
 
@@ -152,7 +154,7 @@ Extension manifest 提供平台、版本、许可和 files／network 等权限�
 | 本轮优先 | 基础 2D／3D 参数化闭环 | 草图约束→实体特征→源尺寸变化→重算→保存重开→再修改→导出再导入；不能只做单次法兰截图 |
 | 本轮优先 | 操作结果可判断与可恢复 | 正常及错误样件均覆盖；无效几何不标成功；失败／停止不覆盖有效源工程，不误报交付 |
 | 后续一阶段 | 更多官方工作台与更好诊断 | 每个域有版本／依赖、代表性任务、失败与交付证据；不以大量工具名代替能力 |
-| 后续一阶段 | 当前可见 FreeCAD 文档控制 | 明确连接的应用／文档，保护未保存修改；选择、撤销、保存、取消和应用退出分别验证 |
+| 当前推进 | 当前可见 FreeCAD 文档控制 | 固定查询／观察、标量读写与副本→Task 已有实证；显式撤销与覆盖保存仍须独立产品工具整链验收，详见[桥接核验](FreeCAD当前文档桥接接口核验.md) |
 | 后续一阶段 | Blender 可选场景／渲染适配 | 用户安装后验证后台保存、渲染、导出；若复用官方 MCP，再核对运行协议、取消和脚本权限 |
 | 深入研究 | AutoCAD 本机适配与许可 | 取得对应平台安装及授权后，Windows／Mac 分别验证；公开控制 MCP 与只读 Help MCP 分清 |
 | 深入研究 | CAM／FEM 等专业交付与跨应用交换 | 外部求解器／后处理器、几何精度、单位和交付要求按领域验证；生成文件不等于物理制造验收 |

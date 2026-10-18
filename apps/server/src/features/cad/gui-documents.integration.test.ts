@@ -156,6 +156,64 @@ async function verifyGuiCopies(options: {
   );
 }
 
+async function verifyNativeUndoProvenance(
+  receipt: unknown,
+  mutate: (source: string) => Promise<void>,
+) {
+  const history = z.object({
+    count: z.number().int().nonnegative(),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  });
+  const provenance = z
+    .object({
+      undoProvenance: z.object({
+        transactionName: z.string(),
+        undoHistory: history,
+        redoHistory: history,
+      }),
+    })
+    .parse(receipt).undoProvenance;
+  await mutate(`import hashlib
+doc, other = owned
+expected = ${JSON.stringify(provenance)}
+def summary(names):
+    return {'count':len(names),'sha256':hashlib.sha256(json.dumps(list(names),ensure_ascii=False,separators=(',',':')).encode('utf-8')).hexdigest()}
+def other_state():
+    return (other.FileName,Gui.getDocument(other.Name).Modified,other.isTouched(),list(other.UndoNames),list(other.RedoNames),other.HasPendingTransaction)
+assert doc.UndoNames[0]==expected['transactionName']
+assert summary(doc.UndoNames)==expected['undoHistory']
+assert summary(doc.RedoNames)==expected['redoHistory']
+assert doc.UndoCount==len(doc.UndoNames) and doc.RedoCount==len(doc.RedoNames)
+assert App.getActiveTransaction() is None and not doc.HasPendingTransaction
+before_undo, before_redo = list(doc.UndoNames), list(doc.RedoNames)
+other_before = other_state()
+events=[]
+class UndoProbe:
+    def slotUndoDocument(self, current): events.append(('undo',current is doc))
+    def slotRedoDocument(self, current): events.append(('redo',current is doc))
+observer=UndoProbe()
+App.addDocumentObserver(observer)
+try:
+    assert doc.undo() is None
+    assert events==[('undo',True)]
+    assert list(doc.UndoNames)==before_undo[1:]
+    assert list(doc.RedoNames)==[expected['transactionName']]+before_redo
+    box=doc.getObject('Box')
+    assert (box.Length.Value,box.Width.Value)==(20,40)
+    assert abs(box.Shape.Volume-8000)<1e-6
+    assert dict(box.ExpressionEngine)['Width']=='Length * 2'
+    assert other_state()==other_before
+    assert doc.redo() is None
+    assert events==[('undo',True),('redo',True)]
+    assert list(doc.UndoNames)==before_undo and list(doc.RedoNames)==before_redo
+    assert (box.Length.Value,box.Width.Value)==(25,50)
+    assert abs(box.Shape.Volume-12500)<1e-6
+    assert not doc.HasPendingTransaction and App.getActiveTransaction() is None
+    assert other_state()==other_before
+finally:
+    App.removeDocumentObserver(observer)`);
+}
+
 async function waitJson(path: string) {
   const deadline = Date.now() + 20_000;
   for (;;) {
@@ -176,7 +234,7 @@ test.skipIf(
   process.platform !== "darwin" ||
     process.env.KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION !== "1",
 )(
-  "独立GUI经Task工具检查、修改与复制，后台接力且重放不保存源文件",
+  "独立GUI经Task检查修改复制及原生撤销归属核验，重放不保存源文件",
   async () => {
     const root = await realpath(
       await mkdtemp("/private/tmp/kfw-gui-document-"),
@@ -705,6 +763,16 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
           transactionState: "none",
         },
       });
+      await verifyNativeUndoProvenance(
+        changedProperties.structuredContent.receipt,
+        mutateFixture,
+      );
+      const committedObservation = z
+        .object({ snapshot: z.object({ applicationRevision: z.number() }) })
+        .parse(changedProperties.structuredContent.receipt).snapshot;
+      expect((await observe()).applicationRevision).toBeGreaterThan(
+        committedObservation.applicationRevision,
+      );
       await mutateFixture(
         "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert dict(doc.getObject('Box').ExpressionEngine).get('Width')=='Length * 2'\nassert not doc.HasPendingTransaction\nbuiltins.__kfw_edit_undo_count__=len(doc.UndoNames)",
       );

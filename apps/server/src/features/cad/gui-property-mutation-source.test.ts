@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { expect, test } from "vitest";
 import { CAD_GUI_DOCUMENT_OBSERVER_SOURCE } from "./gui-document-observer-source.js";
@@ -43,6 +44,7 @@ class NativeObject:
             return
         if App.active is not None and not self.doc.HasPendingTransaction:
             self.doc.HasPendingTransaction = True
+            self.doc.RedoNames = []
             self.doc.UndoNames = [App.active[0]] + self.doc.UndoNames
             App.emit('slotOpenTransaction', self.doc, App.active[0])
         App.emit('slotBeforeChangeObject', self, name)
@@ -69,7 +71,14 @@ class NativeDocument:
     RecomputesFrozen = False
     def __init__(self):
         self.UndoNames = []
+        self.RedoNames = []
         self.Objects = [NativeObject(self)]
+    @property
+    def UndoCount(self):
+        return len(self.UndoNames)
+    @property
+    def RedoCount(self):
+        return len(self.RedoNames)
     def getObject(self, name):
         return next((obj for obj in self.Objects if obj.Name == name), None)
     def isTouched(self):
@@ -122,7 +131,8 @@ Gui = types.ModuleType('FreeCADGui')
 Gui.observers = []
 Gui.addDocumentObserver = Gui.observers.append
 Gui.removeDocumentObserver = Gui.observers.remove
-Gui.getDocument = lambda name: types.SimpleNamespace(Modified=True, getObject=lambda name: doc.getObject(name).ViewObject)
+Gui.getDocument = lambda name: types.SimpleNamespace(Modified=True, getInEdit=lambda: None, Transacting=False,
+                                                   getObject=lambda name: doc.getObject(name).ViewObject)
 Gui.activeDocument = lambda: Gui.getDocument(doc.Name)
 sys.modules.update(FreeCAD=App, FreeCADGui=Gui)
 qapp = types.SimpleNamespace(thread=lambda: 'gui-thread')
@@ -258,6 +268,228 @@ with tempfile.TemporaryDirectory() as directory:
   });
 });
 
+function historySummary(names: string[]) {
+  return {
+    count: names.length,
+    sha256: createHash("sha256").update(JSON.stringify(names)).digest("hex"),
+  };
+}
+
+test("成功提交持久记录自有事务及Undo/Redo摘要，不暴露完整历史名", async () => {
+  const result = await evaluate(`
+doc.UndoNames = ['用户之前的操作🧩']
+doc.RedoNames = ['已被新修改清除的重做项']
+with tempfile.TemporaryDirectory() as directory:
+    paths = prepare(directory)
+    _kfw_cad_set_properties(paths)
+    with open(paths['receiptPath']) as stream:
+        receipt = json.load(stream)
+    print(json.dumps({'receipt': receipt, 'undoNames': doc.UndoNames, 'redoNames': doc.RedoNames}))
+`);
+  expect(result.receipt).toMatchObject({
+    outcome: "committed",
+    undoProvenance: {
+      transactionName: result.undoNames[0],
+      undoHistory: historySummary(result.undoNames),
+      redoHistory: historySummary(result.redoNames),
+    },
+  });
+  expect(result.receipt.undoProvenance.transactionName).toMatch(
+    /^KFW CAD [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
+  );
+  expect(JSON.stringify(result.receipt)).not.toContain("用户之前的操作");
+  expect(JSON.stringify(result.receipt)).not.toContain(
+    "已被新修改清除的重做项",
+  );
+  expect(cadGuiOperationReceiptSchema.safeParse(result.receipt).success).toBe(
+    true,
+  );
+});
+
+test("严格回执接纳新增撤销归属，同时保留旧无归属回执的读取兼容", async () => {
+  const result = await runMutation();
+  const legacy = { ...result.receipt };
+  delete legacy.undoProvenance;
+  expect(cadGuiOperationReceiptSchema.safeParse(legacy).success).toBe(true);
+  const undoProvenance = {
+    transactionName: "KFW CAD 11111111-2222-4333-8444-555555555555",
+    undoHistory: historySummary([
+      "KFW CAD 11111111-2222-4333-8444-555555555555",
+    ]),
+    redoHistory: historySummary([]),
+  };
+  expect(
+    cadGuiOperationReceiptSchema.safeParse({ ...legacy, undoProvenance })
+      .success,
+  ).toBe(true);
+  expect(
+    cadGuiOperationReceiptSchema.safeParse({
+      ...legacy,
+      snapshot: undefined,
+      undoProvenance,
+    }).success,
+  ).toBe(false);
+  for (const changed of [
+    { transactionName: "KFW CAD 11111111-2222-4333-8444-AAAAAAAAAAAA" },
+    { transactionName: "用户事务" },
+    { transactionName: undefined },
+    { undoHistory: { ...undoProvenance.undoHistory, count: -1 } },
+    {
+      undoHistory: {
+        ...undoProvenance.undoHistory,
+        count: Number.MAX_SAFE_INTEGER + 1,
+      },
+    },
+    { redoHistory: { count: 0, sha256: "invalid" } },
+    { extra: "not a provenance field" },
+  ]) {
+    expect(
+      cadGuiOperationReceiptSchema.safeParse({
+        ...legacy,
+        undoProvenance: { ...undoProvenance, ...changed },
+      }).success,
+    ).toBe(false);
+  }
+  for (const outcome of ["no_op", "rejected", "partial"]) {
+    const flags =
+      outcome === "partial"
+        ? {}
+        : {
+            mutationStarted: false,
+            commitAttempted: false,
+            commitObserved: false,
+            changes: [],
+          };
+    expect(
+      cadGuiOperationReceiptSchema.safeParse({
+        ...legacy,
+        ...flags,
+        outcome,
+        undoProvenance,
+      }).success,
+    ).toBe(false);
+  }
+});
+
+test.each(["UndoCount", "RedoCount"])(
+  "提交后%s与名称长度不符时保留committed但不签撤销归属",
+  async (field) => {
+    const names = field === "UndoCount" ? "UndoNames" : "RedoNames";
+    const result = await runMutation(
+      `NativeDocument.${field} = property(lambda self: len(self.${names}) + 1)`,
+    );
+    expect(result.receipt).toMatchObject({
+      outcome: "committed",
+      mutationStarted: true,
+      commitAttempted: true,
+      commitObserved: true,
+    });
+    expect(result.receipt).not.toHaveProperty("undoProvenance");
+    expect(result.calls).toEqual(["begin", "recompute", "commit"]);
+    expect(result.length).toBe(25);
+  },
+);
+
+test("提交后栈顶归属改变保留committed但不签撤销凭据", async () => {
+  const result = await runMutation(`
+original_commit = doc.commitTransaction
+def replaced_head():
+    original_commit()
+    doc.UndoNames[0] = '后来出现的事务'
+doc.commitTransaction = replaced_head
+`);
+  expect(result.receipt).toMatchObject({
+    outcome: "committed",
+    mutationStarted: true,
+    commitAttempted: true,
+    commitObserved: true,
+  });
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
+  expect(result.calls).toEqual(["begin", "recompute", "commit"]);
+  expect(result.length).toBe(25);
+});
+
+test("提交成功但post snapshot失败时保留committed且不签撤销归属", async () => {
+  const result = await runMutation(`
+original_snapshot = bridge.snapshot
+def failed_post_snapshot():
+    if 'commit' in calls:
+        raise RuntimeError('post snapshot unavailable')
+    return original_snapshot()
+bridge.snapshot = failed_post_snapshot
+`);
+  expect(cadGuiOperationReceiptSchema.parse(result.receipt)).toMatchObject({
+    outcome: "committed",
+    mutationStarted: true,
+    commitObserved: true,
+  });
+  expect(result.receipt).not.toHaveProperty("snapshot");
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
+  expect(result.calls).toEqual(["begin", "recompute", "commit"]);
+});
+
+test("超长post snapshot被省略时也删除撤销归属，不丢真实committed回执", async () => {
+  const result = await runMutation("doc.Label = 'x' * 70000");
+  expect(cadGuiOperationReceiptSchema.parse(result.receipt).outcome).toBe(
+    "committed",
+  );
+  expect(result.receipt).not.toHaveProperty("snapshot");
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
+});
+
+test("历史读取期间观察事件推进时不拼接旧快照与新归属", async () => {
+  const result = await runMutation(`
+original_summary = _kfw_cad_history_summary
+def event_during_history(values):
+    result = original_summary(values)
+    App.emit('slotChangedDocument', doc, 'Comment')
+    return result
+_kfw_cad_history_summary = event_during_history
+`);
+  expect(result.receipt).toMatchObject({
+    outcome: "committed",
+    commitObserved: true,
+  });
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
+  expect(result.calls).toEqual(["begin", "recompute", "commit"]);
+});
+
+test("提交后归属读取期间取消仍生效，不签凭据或重复修改", async () => {
+  const result = await runMutation(`
+original_summary = _kfw_cad_history_summary
+def cancel_during_history(values):
+    result = original_summary(values)
+    with open(paths['cancelledPath'], 'w') as stream: stream.write('cancelled')
+    return result
+_kfw_cad_history_summary = cancel_during_history
+`);
+  expect(result.receipt).toMatchObject({
+    outcome: "partial",
+    reason: "cancelled",
+    commitObserved: true,
+    transactionState: "none",
+  });
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
+  expect(result.calls).toEqual(["begin", "recompute", "commit"]);
+  expect(result.length).toBe(25);
+});
+
+test.each(["editing", "transacting"])(
+  "Gui进入%s时不签撤销归属，原属性提交仍保留committed",
+  async (state) => {
+    const result = await runMutation(`
+Gui.getDocument = lambda name: types.SimpleNamespace(Modified=True,
+    getInEdit=lambda: object() if ${JSON.stringify(state)} == 'editing' else None,
+    Transacting=${JSON.stringify(state)} == 'transacting')
+`);
+    expect(cadGuiOperationReceiptSchema.parse(result.receipt).outcome).toBe(
+      "committed",
+    );
+    expect(result.receipt).not.toHaveProperty("undoProvenance");
+    expect(result.calls).toEqual(["begin", "recompute", "commit"]);
+  },
+);
+
 test("相同值只返回no_op，不开事务、不重算或写入", async () => {
   const result = await runMutation(
     "request['changes'][0]['value']['value'] = 10",
@@ -276,6 +508,7 @@ test("相同值只返回no_op，不开事务、不重算或写入", async () => 
     pending: false,
     observers: 0,
   });
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
 });
 
 test.each([
@@ -331,6 +564,7 @@ test.each([
     width: 20,
     observers: 0,
   });
+  expect(result.receipt).not.toHaveProperty("undoProvenance");
 });
 
 test("原生夹取不能冒充成功，保留自己的待提交事务与实际读回值", async () => {

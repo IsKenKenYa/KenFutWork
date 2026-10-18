@@ -190,3 +190,15 @@ App 观察器能收到创建／删除、文档及对象属性、重算、文档 
 本批第二轮真实独立 GUI 整链约67.64秒通过：GUI 内存模型的12500 mm³副本经固定工具发布到Task，后台 `cad_describe_document` 读回；再用后台 Python 改 Height=15，得到18750 mm³并导出 STEP。源 GUI 状态、Undo／Redo、活动文档及源 FCStd SHA-256保持，未保存文档复制后 FileName仍空；其它打开文档有pending时拒绝，同编号重放与状态查询一致。首轮体积断言遇到12500与12499.999999999996的浮点差异，改用容差后完成第二轮复验。
 
 该整链只操作自有隔离实例，没有用户现存GUI／AX、任意provider或全部工作台保存的验收。预检拒绝、坏副本、原生状态改变、持久重放及未知窗口另由固定源码、控制器和发布边界测试覆盖；这些层级各自保留，不把API探针替代产品工具链。正式证据与遗留项由《日志》记账。
+
+
+## 14. 自身事务归属与显式撤销前提
+
+成功的 `cad_gui_set_properties` 可选回传 `undoProvenance`：KFW 自己生成的准确随机事务名，以及 Undo／Redo 名称列表的项数和 SHA-256。只有原生栈顶确为该事务、计数与名称长度一致、原生／GUI 非忙碌、提交后快照可靠且读取期间观察修订未推进时才记录；回执不包含完整用户历史名。宿主还匹配原请求的桥代际、打开句柄及两项观察修订不倒退。历史或快照不可确认时不签归属，仍保留原生实际 committed；旧无字段回执继续可查。事务名称不是权限令牌；这些观察记录不提供完整内容 CAS，也不授予撤销权限。
+
+原生 Python `App.Document.undo()` 不接事务 ID，返回 None；底层遇到 pending 会先提交 pending，调用方不能把它当作“只撤销指定事务”的安全原语。GUI `Document::undo()`／`Std_Undo` 还会按内部事务 ID 扫描其它文档，可能连带撤销或弹窗。固定工具后续应直接使用 App 文档入口，观察 `slotUndoDocument(doc)` 并核对实际恢复，而不能等待 GUI 层才发的无参 `slotUndo()`。依据固定版本 [Python 绑定](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp#L601)、[原生撤销](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)及 [GUI 跨文档分派](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp#L2866)。
+
+显式撤销产品工具尚未交付。下一切片仍须验证原操作所属 Task／授权代际、原完成后的观察前提、准确栈顶与历史摘要、当前属性仍为原 observed 值；拒绝后来事务、同名重开和 pending，不按事务名前缀猜归属。执行后须核对事件、before 值及历史转移；未知回执不重发，不自动 redo 或关闭用户事务。原生接口与固定观察器都不提供强内容 CAS，不能把一次成功探针扩大成任意工作台回调下安全撤销。
+
+
+本批独立 LaunchServices GUI 与 Task 工具整链约70.16秒通过：修改回执的随机事务名、历史项数／摘要与原生 Undo／Redo 栈一致；自有夹具直接调用无参数 App `doc.undo()`，收到 `slotUndoDocument(doc)`，Length／表达式宽度恢复20／40mm，真实 Shape 体积恢复8000mm³，原名称移入 Redo 栈顶。随后原生 redo 恢复25／50mm与12500mm³，原历史列表恢复，另一打开文档的状态和历史保持。固定观察器计数随此次回绕推进，即使值与历史再相同也不会重用原完成快照。后续副本→Task→后台修改／STEP链继续通过，源FCStd SHA-256不变，自有实例正常退出。此处 undo／redo 来自专用夹具，不是已暴露的产品撤销工具。

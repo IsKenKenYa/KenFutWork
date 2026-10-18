@@ -6,6 +6,27 @@ import {
 } from "./gui-document-contracts.js";
 
 const operationId = z.string().uuid().toLowerCase();
+const historySummarySchema = z
+  .object({
+    count: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  })
+  .strict();
+const undoProvenanceSchema = z
+  .object({
+    transactionName: z
+      .string()
+      .regex(
+        /^KFW CAD [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u,
+      ),
+    undoHistory: historySummarySchema
+      .extend({
+        count: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict(),
+    redoHistory: historySummarySchema,
+  })
+  .strict();
 const propertyChangeSchema = z
   .object({
     objectName: z.string().min(1),
@@ -68,6 +89,7 @@ export const cadGuiOperationReceiptSchema = z
         .strict(),
     ),
     transactionState: z.enum(["none", "own_pending", "changed", "unknown"]),
+    undoProvenance: undoProvenanceSchema.optional(),
     snapshot: z
       .object({
         bridgeEpoch: z.string().uuid(),
@@ -88,6 +110,11 @@ export const cadGuiOperationReceiptSchema = z
       (!receipt.commitAttempted || receipt.mutationStarted) &&
       (receipt.outcome !== "committed" ||
         (receipt.commitObserved && receipt.transactionState === "none")) &&
+      (receipt.undoProvenance === undefined ||
+        (receipt.outcome === "committed" &&
+          receipt.snapshot !== undefined &&
+          receipt.snapshot.document.active &&
+          !receipt.snapshot.document.pendingTransaction)) &&
       (!["no_op", "rejected"].includes(receipt.outcome) ||
         (!receipt.mutationStarted &&
           !receipt.commitAttempted &&

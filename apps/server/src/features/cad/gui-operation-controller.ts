@@ -212,6 +212,17 @@ function receiptMatchesRequest(
     input.data.application.pid !== receipt.pid
   )
     return false;
+  if (receipt.undoProvenance) {
+    const snapshot = receipt.snapshot;
+    if (
+      !snapshot ||
+      snapshot.bridgeEpoch !== input.data.bridgeEpoch ||
+      snapshot.document.documentHandle !== input.data.documentHandle ||
+      snapshot.applicationRevision < input.data.expectedApplicationRevision ||
+      snapshot.document.revision < input.data.expectedDocumentRevision
+    )
+      return false;
+  }
   const requested = new Map(
     input.data.changes.map((change) => [
       JSON.stringify([change.objectName, change.propertyName]),
