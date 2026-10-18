@@ -1,6 +1,6 @@
 # 智能家居（Home Assistant）插件的能力声明（inject = 需要内核提供的能力）。
-# routes/ui：面板与它的数据面；storage：HA 地址与长期令牌按实例持久保存（服务端重启免重填）。
+# tools：agent 工具；routes/ui：面板与它的数据面；storage：HA 地址与长期令牌按实例持久保存。
 - insert:
     - id: kenfutwork-ha
       name: kenfutwork-ha
-      inject: [routes, ui, storage]
+      inject: [tools, routes, ui, storage]

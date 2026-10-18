@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
-import type { LocalInstanceService } from "../local-instance/types.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
 import { createPluginRegistryService } from "./plugin-registry-service.js";
 import { createPersistentPluginStorage } from "./plugin-storage.test-fixture.js";
 
@@ -130,6 +133,32 @@ interface EntityModelModule {
     total: number;
     truncated: boolean;
   };
+}
+
+interface HaWsSession {
+  readonly phase: string;
+  start(): void;
+  stop(): void;
+  restart(): void;
+  request(type: string, extra?: Record<string, unknown>): Promise<unknown>;
+}
+
+interface HaWsModule {
+  WS_BACKOFF_INITIAL_MS: number;
+  WS_BACKOFF_MAX_MS: number;
+  WS_ENTITY_REGISTRY_LIST: string;
+  HaWsError: new (message: string, code?: string) => Error & { code: string };
+  haWebSocketUrl: (baseUrl: string) => string;
+  nextBackoffMs: (attempt: number, random?: () => number) => number;
+  createHaWsSession: (options: {
+    baseUrl: string;
+    token: string;
+    onStateChange?: (entityId: string, newState: HaEntityState | null) => void;
+    onReady?: () => void | Promise<void>;
+    onPhaseChange?: (event: { phase: string; reason?: string }) => void;
+    logger?: { warn: (message: unknown, ...rest: unknown[]) => void };
+    random?: () => number;
+  }) => HaWsSession;
 }
 
 async function loadPluginModule<ModuleShape>(
@@ -451,7 +480,151 @@ let pluginsDir: string;
 let storageFile: string;
 let localInstances: Map<string, LocalInstanceService>;
 const kernels: Array<{ dispose(): void }> = [];
+/** 与生产同一收口路径：`preClose` 先 `registry.shutdown()`，插件的 effect disposer 才跑到。 */
+const services: Array<{ shutdown(): Promise<void> }> = [];
 const realFetch = globalThis.fetch;
+const realWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket;
+
+// === 假 HA 的 WebSocket（可脚本化的握手 / 订阅 / 注册表 / 断线） ===
+
+interface SocketHubOptions {
+  /** 连上就以 1006 断开（模拟「HA 没开 WS / 地址不通」，走 REST 兜底）。 */
+  refuse?: boolean;
+  /** 令牌被判无效：会话必须停止重试。 */
+  authInvalid?: boolean;
+  entities?: unknown[];
+  areas?: unknown[];
+  devices?: unknown[];
+}
+
+interface FakeSocket {
+  url: string;
+  readyState: number;
+  onopen: null | (() => void);
+  onmessage: null | ((event: { data: string }) => void);
+  onclose: null | ((event: { code: number }) => void);
+  onerror: null | (() => void);
+  sent: Array<Record<string, unknown>>;
+  emit(message: Record<string, unknown>): void;
+  pushState(entityId: string, newState: HaEntityState | null): void;
+  closeAbruptly(): void;
+  kill(): void;
+}
+
+function createSocketHub(options: SocketHubOptions = {}) {
+  const instances: FakeSocket[] = [];
+
+  class Socket {
+    url: string;
+    readyState = 1;
+    onopen: null | (() => void) = null;
+    onmessage: null | ((event: { data: string }) => void) = null;
+    onclose: null | ((event: { code: number }) => void) = null;
+    onerror: null | (() => void) = null;
+    sent: Array<Record<string, unknown>> = [];
+
+    constructor(url: string) {
+      this.url = url;
+      instances.push(this as unknown as FakeSocket);
+      setTimeout(() => {
+        if (options.refuse) {
+          this.readyState = 3;
+          this.onclose?.({ code: 1006 });
+          return;
+        }
+        this.onopen?.();
+        this.emit({ type: "auth_required", ha_version: "2026.10.1" });
+      }, 0);
+    }
+
+    emit(message: Record<string, unknown>) {
+      this.onmessage?.({ data: JSON.stringify(message) });
+    }
+
+    pushState(entityId: string, newState: HaEntityState | null) {
+      this.emit({
+        id: 1,
+        type: "event",
+        event: {
+          event_type: "state_changed",
+          data: { entity_id: entityId, new_state: newState },
+        },
+      });
+    }
+
+    send(text: string) {
+      const message = JSON.parse(text) as Record<string, unknown>;
+      this.sent.push(message);
+      const type = String(message.type);
+      if (type === "auth") {
+        if (options.authInvalid) {
+          this.emit({ type: "auth_invalid", message: "Broken access token" });
+          this.kill();
+          return;
+        }
+        this.emit({ type: "auth_ok", ha_version: "2026.10.1" });
+        return;
+      }
+      if (type === "subscribe_events") {
+        this.emit({ id: message.id, type: "result", success: true });
+        return;
+      }
+      if (
+        type === "config/entity_registry/list" ||
+        type === "config/area_registry/list" ||
+        type === "config/device_registry/list"
+      ) {
+        const result =
+          type === "config/entity_registry/list"
+            ? (options.entities ?? [])
+            : type === "config/area_registry/list"
+              ? (options.areas ?? [])
+              : (options.devices ?? []);
+        this.emit({ id: message.id, type: "result", success: true, result });
+      }
+    }
+
+    /** 插件主动 stop() 时会先把回调置空，所以这里不再触发重连。 */
+    kill() {
+      this.readyState = 3;
+    }
+
+    closeAbruptly() {
+      this.readyState = 3;
+      setTimeout(() => this.onclose?.({ code: 1006 }), 0);
+    }
+  }
+
+  const SocketCtor = Socket as unknown as new (url: string) => FakeSocket;
+  return {
+    instances,
+    install() {
+      (globalThis as { WebSocket?: unknown }).WebSocket = SocketCtor;
+    },
+    last() {
+      const socket = instances[instances.length - 1];
+      if (!socket) throw new Error("假 socket 还没被建过。");
+      return socket;
+    },
+  };
+}
+
+function installSocketHub(options: SocketHubOptions = {}) {
+  const hub = createSocketHub(options);
+  hub.install();
+  return hub;
+}
+
+/** 等某件事在预算内成立（假 socket 与 REST 都是宏任务，轮询比猜延时可靠）。 */
+async function until(assertion: () => boolean, hint = "条件未成立") {
+  // 预算给到 5 秒：退避本身要 1 秒，全仓并行跑时（turbo 多包）不能卡在毫秒级余量上
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    if (assertion()) return;
+    if (Date.now() > deadline) throw new Error(`等待超时：${hint}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 
 function installPlugin(options: FakeHaOptions = {}) {
   const kernel = composePlugins(makeEnv(), []);
@@ -467,6 +640,7 @@ function installPlugin(options: FakeHaOptions = {}) {
     builtinCatalog: [],
     storage: store.storage,
   });
+  services.push(service);
   return { kernel, service, fake, store };
 }
 
@@ -507,6 +681,36 @@ function bodyOf<T>(result: { body?: unknown } | undefined): T {
   return (result?.body ?? {}) as T;
 }
 
+async function fixtureActor(instanceId: string): Promise<LocalActor> {
+  const service = localInstances.get(instanceId);
+  if (!service) throw new Error("夹具未定义该本地实例。");
+  return service.serviceActor();
+}
+
+type TestKernel = ReturnType<typeof composePlugins>;
+
+function installedToolNames(kernel: TestKernel) {
+  return kernel
+    .get("tools")
+    .list()
+    .map((tool) => tool.name)
+    .sort();
+}
+
+/** 以 agent 的调用上下文执行插件工具。 */
+async function runTool<T>(
+  kernel: TestKernel,
+  name: string,
+  args: Record<string, unknown>,
+  instanceId: string,
+): Promise<T> {
+  const tool = kernel.get("tools").require(name);
+  return (await tool.execute(args, {
+    actor: await fixtureActor(instanceId),
+    instanceId,
+  })) as T;
+}
+
 async function installFromRepo(options: FakeHaOptions = {}) {
   const harness = installPlugin(options);
   const { installed, report } = await harness.service.install({
@@ -544,10 +748,18 @@ beforeEach(async () => {
       }),
     );
   }
+  // 默认没有可用的 WS：走 REST 轮询兜底（要测实时态的用例自己换成假 socket）
+  installSocketHub({ refuse: true });
 });
 
 afterEach(async () => {
+  // 先按生产路径收插件（registry.shutdown → 插件 effect disposer → WS 会话与重连定时器一起停），
+  // 再恢复全局：否则留着退避定时器的会话会带着上一个用例的 fetch 活到下一个用例里
+  for (const service of services.splice(0)) {
+    await service.shutdown();
+  }
   globalThis.fetch = realFetch;
+  (globalThis as { WebSocket?: unknown }).WebSocket = realWebSocket;
   for (const kernel of kernels.splice(0)) {
     kernel.dispose();
   }
@@ -708,17 +920,17 @@ describe("HA 插件：REST 原语", () => {
 });
 
 describe("HA 插件：安装与门禁", () => {
-  it("通过门禁安装：能力面 routes/ui/storage，侧栏入口标题「智能家居」", async () => {
+  it("通过门禁安装：能力面 tools/routes/ui/storage，侧栏入口标题「智能家居」", async () => {
     const { kernel, service, installed, report } = await installFromRepo();
     expect(report.compatible).toBe(true);
-    expect(report.supportedCapabilities).toEqual(["routes", "ui", "storage"]);
+    expect(report.supportedCapabilities).toEqual([
+      "tools",
+      "routes",
+      "ui",
+      "storage",
+    ]);
     expect(installed.name).toBe("kenfutwork-ha");
-    expect(
-      kernel
-        .get("tools")
-        .list()
-        .map((tool) => tool.name),
-    ).toEqual([]);
+    expect(installedToolNames(kernel)).toEqual(["ha_control", "ha_entities"]);
     expect(
       service.listUiEntries().filter((entry) => entry.slot === "sidebar"),
     ).toEqual([
@@ -1502,5 +1714,436 @@ describe("HA 插件：实体网格与控制（假 HA 全链路）", () => {
     expect(result?.status).toBe(401);
     expect(bodyOf<{ code: string }>(result).code).toBe("unauthorized");
     expect(bodyOf<{ error: string }>(result).error).toContain("个人资料");
+  });
+});
+
+interface EntitiesPayload {
+  mode: string;
+  grouping: string;
+  total: number;
+  truncated: boolean;
+  groups: Array<{
+    name: string;
+    items: Array<{
+      entityId: string;
+      name: string;
+      area: string;
+      state: string;
+      unavailable: boolean;
+      controls: HaControlNode[];
+    }>;
+  }>;
+}
+
+function entitiesOf(result: { body?: unknown } | undefined): EntitiesPayload {
+  return bodyOf<EntitiesPayload>(result);
+}
+
+/** 取实体视图，直到 WS 把状态从 polling 翻成 realtime（没翻成就把最后一版返回）。 */
+async function waitRealtime(
+  service: ReturnType<typeof createPluginRegistryService>,
+  pluginId: string,
+): Promise<EntitiesPayload> {
+  let payload = entitiesOf(
+    await dispatch(service, pluginId, {
+      path: "entities",
+      instanceId: INSTANCE_ID,
+    }),
+  );
+  for (let i = 0; i < 40 && payload.mode !== "realtime"; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    payload = entitiesOf(
+      await dispatch(service, pluginId, {
+        path: "entities",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+  }
+  return payload;
+}
+
+describe("HA 插件：WebSocket 状态机", () => {
+  it("端点换算：http→ws、https→wss、保留 ingress 子路径", async () => {
+    const ws = await loadPluginModule<HaWsModule>("lib/ha-ws.js");
+    expect(ws.haWebSocketUrl("http://192.168.1.20:8123")).toBe(
+      "ws://192.168.1.20:8123/api/websocket",
+    );
+    expect(ws.haWebSocketUrl("https://ha.example.com/home/")).toBe(
+      "wss://ha.example.com/home/api/websocket",
+    );
+  });
+
+  it("退避：1 秒起步、翻倍、封顶 30 秒，抖动按注入的随机数可复现", async () => {
+    const ws = await loadPluginModule<HaWsModule>("lib/ha-ws.js");
+    const half = () => 0.5;
+    expect(ws.nextBackoffMs(0, half)).toBe(ws.WS_BACKOFF_INITIAL_MS);
+    expect(ws.nextBackoffMs(1, half)).toBe(1000);
+    expect(ws.nextBackoffMs(2, half)).toBe(2000);
+    expect(ws.nextBackoffMs(3, half)).toBe(4000);
+    expect(ws.nextBackoffMs(12, half)).toBe(ws.WS_BACKOFF_MAX_MS);
+    // 抖动是 ±20%：两端值可复现，多实例重启才不齐步
+    expect(ws.nextBackoffMs(1, () => 0)).toBe(800);
+    expect(ws.nextBackoffMs(1, () => 1)).toBe(1200);
+  });
+
+  it("握手：auth_required → auth → auth_ok → 订阅 state_changed，命令拿到裸数组结果", async () => {
+    const hub = installSocketHub({
+      entities: [{ entity_id: "light.bedroom", area_id: "living" }],
+      areas: [{ area_id: "living", name: "客厅" }],
+    });
+    const ws = await loadPluginModule<HaWsModule>("lib/ha-ws.js");
+    let readyCount = 0;
+    const session = ws.createHaWsSession({
+      baseUrl: "http://ha.test.local:8123",
+      token: FAKE_TOKEN,
+      onReady: () => {
+        readyCount += 1;
+      },
+    });
+    session.start();
+    await until(() => session.phase === "ready", "会话未进入 ready");
+    expect(readyCount).toBe(1);
+    const socket = hub.last();
+    expect(socket.url).toBe("ws://ha.test.local:8123/api/websocket");
+    expect(socket.sent.map((message) => message.type)).toEqual([
+      "auth",
+      "subscribe_events",
+    ]);
+    expect(socket.sent[0]?.access_token).toBe(FAKE_TOKEN);
+    expect(await session.request(ws.WS_ENTITY_REGISTRY_LIST)).toMatchObject([
+      { entity_id: "light.bedroom" },
+    ]);
+    session.stop();
+  });
+
+  it("令牌被判 auth_invalid：如实 failed 且不再重试（不撞 HA 的认证日志）", async () => {
+    const hub = installSocketHub({ authInvalid: true });
+    const ws = await loadPluginModule<HaWsModule>("lib/ha-ws.js");
+    const phases: string[] = [];
+    const session = ws.createHaWsSession({
+      baseUrl: "http://ha.test.local:8123",
+      token: "revoked",
+      onPhaseChange: (event) => phases.push(event.phase),
+    });
+    session.start();
+    await until(() => session.phase === "failed", "会话没有判失败");
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(hub.instances.length).toBe(1);
+    expect(phases).toContain("failed");
+    session.stop();
+  });
+
+  it("断线后重连并重新握手；stop() 之后不再重连", async () => {
+    const hub = installSocketHub();
+    const ws = await loadPluginModule<HaWsModule>("lib/ha-ws.js");
+    const session = ws.createHaWsSession({
+      baseUrl: "http://ha.test.local:8123",
+      token: FAKE_TOKEN,
+    });
+    session.start();
+    await until(() => session.phase === "ready", "首次握手没完成");
+    hub.last().closeAbruptly();
+    await until(() => hub.instances.length === 2, "没有起第二条连接");
+    await until(() => session.phase === "ready", "重连后没有恢复 ready");
+    expect(hub.instances[1]?.sent.map((message) => message.type)).toContain(
+      "auth",
+    );
+    session.stop();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(hub.instances.length).toBe(2);
+  });
+
+  it("缺令牌时直接报错，不去建连接", async () => {
+    const hub = installSocketHub();
+    const ws = await loadPluginModule<HaWsModule>("lib/ha-ws.js");
+    expect(() =>
+      ws.createHaWsSession({ baseUrl: "http://ha.test.local:8123", token: "" }),
+    ).toThrow(/令牌/);
+    expect(hub.instances.length).toBe(0);
+  });
+});
+
+describe("HA 插件：实时态（WS 快照 + 注册表补齐区域）", () => {
+  it("就绪后走快照：按区域分组、增量跟随、不再打 REST 全量", async () => {
+    const hub = installSocketHub({
+      entities: [
+        {
+          entity_id: "light.bedroom",
+          area_id: "living",
+          name: null,
+          original_name: "卧室灯（注册表名）",
+        },
+        { entity_id: "switch.plug", device_id: "dev-1" },
+      ],
+      devices: [{ id: "dev-1", area_id: "bed" }],
+      areas: [
+        { area_id: "living", name: "客厅" },
+        { area_id: "bed", name: "卧室" },
+      ],
+    });
+    const { service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const view = await waitRealtime(service, installed.id);
+    expect(view.mode).toBe("realtime");
+    expect(view.grouping).toBe("area");
+    expect(view.groups.map((group) => group.name)).toEqual([
+      "客厅",
+      "卧室",
+      "未分区",
+    ]);
+    // 注册表里的名字优先于 REST 属性里的 friendly_name
+    const bedroom = view.groups
+      .flatMap((group) => group.items)
+      .find((item) => item.entityId === "light.bedroom");
+    expect(bedroom?.name).toBe("卧室灯（注册表名）");
+    expect(
+      view.groups
+        .flatMap((group) => group.items)
+        .find((item) => item.entityId === "switch.plug")?.area,
+    ).toBe("卧室");
+
+    const statesCalls = fake.calls.filter((call) =>
+      call.url.endsWith("/api/states"),
+    ).length;
+    hub.last().pushState("light.kitchen", {
+      entity_id: "light.kitchen",
+      state: "on",
+      attributes: { friendly_name: "厨房灯", brightness: 255 },
+    });
+    const after = entitiesOf(
+      await dispatch(service, installed.id, {
+        path: "entities",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    const kitchen = after.groups
+      .flatMap((group) => group.items)
+      .find((item) => item.entityId === "light.kitchen");
+    expect(kitchen).toMatchObject({ state: "on", unavailable: false });
+    expect(kitchen?.controls.map((node) => node.key)).toEqual([
+      "power",
+      "brightness",
+    ]);
+    // 增量来自 WS：这一轮没有再打 REST 全量
+    expect(
+      fake.calls.filter((call) => call.url.endsWith("/api/states")).length,
+    ).toBe(statesCalls);
+  });
+
+  it("实体被删除（new_state 为 null）时从快照消失，不留在面板上", async () => {
+    const hub = installSocketHub();
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    await waitRealtime(service, installed.id);
+    hub.last().pushState("sensor.temperature", null);
+    const view = entitiesOf(
+      await dispatch(service, installed.id, {
+        path: "entities",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(
+      view.groups.flatMap((group) => group.items).map((item) => item.entityId),
+    ).not.toContain("sensor.temperature");
+  });
+
+  it("控制后把读回真值同步进快照（实时态下面板下一轮就是真相）", async () => {
+    installSocketHub();
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    await waitRealtime(service, installed.id);
+    const result = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: {
+        entityId: "cover.window",
+        key: "position",
+        service: "set_cover_position",
+        value: 40,
+      },
+      instanceId: INSTANCE_ID,
+    });
+    expect(bodyOf<Record<string, unknown>>(result)).toMatchObject({
+      changed: true,
+      before: 0,
+      after: 40,
+    });
+    const view = entitiesOf(
+      await dispatch(service, installed.id, {
+        path: "entities",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    const cover = view.groups
+      .flatMap((group) => group.items)
+      .find((item) => item.entityId === "cover.window");
+    expect(cover?.state).toBe("closed");
+    expect(cover?.controls.find((node) => node.key === "position")?.value).toBe(
+      40,
+    );
+  });
+
+  it("WS 连不上时整条链路仍可用：REST 轮询 + 面板如实标注", async () => {
+    installSocketHub({ refuse: true });
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const view = entitiesOf(
+      await dispatch(service, installed.id, {
+        path: "entities",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(view.mode).toBe("polling");
+    expect(view.total).toBeGreaterThan(0);
+    expect(view.grouping).toBe("domain");
+  });
+});
+
+describe("HA 插件：agent 工具", () => {
+  it("未配置时 fail loud：报「去面板配置」，不假装成功", async () => {
+    const { kernel } = await installFromRepo();
+    await expect(
+      runTool(kernel, "ha_entities", {}, INSTANCE_ID),
+    ).rejects.toThrow(/尚未配置 Home Assistant/);
+    await expect(
+      runTool(
+        kernel,
+        "ha_control",
+        { entityId: "light.a", key: "power", service: "turn_on" },
+        INSTANCE_ID,
+      ),
+    ).rejects.toThrow(/尚未配置 Home Assistant/);
+  });
+
+  it("ha_entities：按域/区域/关键字过滤，超限如实标 truncated", async () => {
+    installSocketHub({
+      entities: [
+        {
+          entity_id: "light.bedroom",
+          area_id: "living",
+          name: null,
+          original_name: "卧室灯",
+        },
+      ],
+      areas: [{ area_id: "living", name: "客厅" }],
+    });
+    const { kernel, service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    await waitRealtime(service, installed.id);
+    const listed = await runTool<{
+      mode: string;
+      total: number;
+      truncated: boolean;
+      entities: Array<Record<string, unknown>>;
+    }>(kernel, "ha_entities", { domain: "light" }, INSTANCE_ID);
+    expect(listed.mode).toBe("realtime");
+    expect(listed.total).toBe(3);
+    expect(listed.entities.map((item) => item.entityId).sort()).toEqual([
+      "light.bedroom",
+      "light.dead",
+      "light.kitchen",
+    ]);
+    expect(
+      listed.entities.find((item) => item.entityId === "light.bedroom"),
+    ).toMatchObject({ name: "卧室灯", area: "客厅", state: "on" });
+    const byArea = await runTool<{ total: number }>(
+      kernel,
+      "ha_entities",
+      { area: "客厅" },
+      INSTANCE_ID,
+    );
+    expect(byArea.total).toBe(1);
+    const limited = await runTool<{ entities: unknown[]; truncated: boolean }>(
+      kernel,
+      "ha_entities",
+      { limit: 2 },
+      INSTANCE_ID,
+    );
+    expect(limited.entities.length).toBe(2);
+    expect(limited.truncated).toBe(true);
+    const none = await runTool<{ entities: unknown[]; note?: string }>(
+      kernel,
+      "ha_entities",
+      { query: "根本没有这台设备" },
+      INSTANCE_ID,
+    );
+    expect(none.entities).toEqual([]);
+    expect(none.note).toBe("HA 里没有匹配的实体。");
+  });
+
+  it("ha_control：下发后读回真值，未变化时如实说「已发出，状态未变」", async () => {
+    const { kernel, service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const written = await runTool<{
+      ok: boolean;
+      changed: boolean;
+      state: string;
+      message: string;
+    }>(
+      kernel,
+      "ha_control",
+      { entityId: "light.kitchen", key: "power", service: "turn_on" },
+      INSTANCE_ID,
+    );
+    expect(written).toMatchObject({
+      ok: true,
+      changed: true,
+      state: "on",
+      message: "已生效",
+    });
+    expect(fake.states.get("light.kitchen")?.state).toBe("on");
+    const again = await runTool<{ changed: boolean; message: string }>(
+      kernel,
+      "ha_control",
+      { entityId: "light.kitchen", key: "power", service: "turn_on" },
+      INSTANCE_ID,
+    );
+    expect(again).toMatchObject({
+      changed: false,
+      message: "已发出，状态未变",
+    });
+    await expect(
+      runTool(
+        kernel,
+        "ha_control",
+        {
+          entityId: "light.kitchen",
+          key: "temperature",
+          service: "set_temperature",
+          value: 22,
+        },
+        INSTANCE_ID,
+      ),
+    ).rejects.toThrow(/没有「temperature」控件/);
+    await expect(
+      runTool(
+        kernel,
+        "ha_control",
+        {
+          entityId: "sensor.temperature",
+          key: "readout",
+          service: "turn_on",
+          value: 1,
+        },
+        INSTANCE_ID,
+      ),
+    ).rejects.toThrow(/没有「readout」控件/);
+  });
+
+  it("工具的效果声明：读工具 read、写工具 write（默认档审批靠它）", async () => {
+    const { kernel } = await installFromRepo();
+    expect(kernel.get("tools").require("ha_entities").access).toBe("read");
+    expect(kernel.get("tools").require("ha_control").access).toBe("write");
+  });
+
+  it("调用者与执行作用域必须同实例：拿别人的 instanceId 直接拒", async () => {
+    const { kernel } = await installFromRepo();
+    const tool = kernel.get("tools").require("ha_entities");
+    await expect(
+      tool.execute(
+        {},
+        { actor: await fixtureActor(INSTANCE_ID), instanceId: INSTANCE_B },
+      ),
+    ).rejects.toThrow(/不属于同一本地实例/);
   });
 });
