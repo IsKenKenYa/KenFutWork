@@ -166,7 +166,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_preview",
       description:
-        "基于 FreeCAD TechDraw 的真实几何投影生成线框 PNG 预览与 SVG，返回模型可观察的图片并保留 Task 文件。不依赖 Blender 或 GUI，不是着色渲染。view 可为isometric/top/front/right（默认isometric），objectNames可显式选几何；outputPath必须是新PNG文件。先核对Body.Tip。",
+        "基于 FreeCAD TechDraw 的真实几何投影生成线框 PNG 预览与 SVG，返回模型可观察的图片并保留 Task 文件。不依赖 Blender 或 GUI，不是着色渲染。view 可为isometric/top/front/right（默认isometric），objectNames可显式选几何；outputPath必须是新PNG文件。PartDesign先核对Body.Tip，其它工程核对实际目标对象。",
       schema: cadPreviewInputSchema,
       approvalReviewKind: "cad-preview",
       execute: (input, context) =>

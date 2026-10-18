@@ -548,3 +548,12 @@ KFW保留官方投影，仅对已投影原生边做17位有效数的SVG编码：
 六份新SVG／DXF正式独立读回mm尺度、全局位置、四边闭合轮廓、长度及围面积；DXF核心Import.readDXF使用Task私有配置，SVG使用importSVG.insert，保留真实导入对象。测量Face不加入文档、不冒称文件自带面；原工程与全部旧交换文件字节／SHA-256保持。二维面要求实体、真实自交面均拒绝且目标不存在，源工程字节保持。原生2项17.23s通过，命令及门禁见同批《日志》；精度修复见§9.28。
 
 这不是新增结构化Draft工具，也不是Sketcher全约束、全部Draft对象或交互绘制验收；Agent通过既有cad_run_python到达官方能力，2D指导与PartDesign的Body.Tip要求分清。BIM／IFC、GUI原位保存与有限进阶真实Agent收尾继续，未操作用户现存GUI或扩大Qt崩溃调查。
+
+
+### 9.30 Arch/BIM 参数工程与 IFC4 独立互操作
+
+正式Draft基线、Arch Wall／Structure／Floor建立直墙、矩形柱和真实楼层，App／ViewProvider、Base／Group与IfcType均核验。墙长／高／柱高4000/3000/3000→5000/3500/3200→3000/2500/2800→4000/3000/3000三轮独立FCStd保存重开，修改前先验证旧工程，再由原Points/Height参数重算；墙Center对齐与柱中心位置、完整实体双向差集、面积／体积／bounds匹配独立解析长方体，源字节保持。
+
+六阶段各新IFC4，以显式本地preferences导出米制arch模型与默认Site／Building；STORE_UID=True仅更新Task工作副本，源工程不改，墙／柱／楼层GUID跨导出和重开保持。独立进程的空doc使用随包IfcOpenShell0.8.4 SERIALIZED世界BRep，米→毫米×1000，逐叶真实几何回读及双向差集、单位／schema／唯一类别／GUID／空间包含与Storey→Building→Site→Project链都通过；不依赖原FCStd重建或FreeCAD IFC导入器。FCStd及旧IFC的字节／哈希最终保持。零长度、该柱模板不接纳的300mm高度、缺墙IFC均拒绝且目标不存在。
+
+原生2项44.02s通过，最终门禁见同批《日志》。初版把LinkSubList的空Tool误判为None、后来容差元数据精确比较误判浮点末位，两者均为夹具修正，不修改产品限制或放宽几何门槛。细节、接口与证据边界见专业核验§6.2／§6.3；不扩大成复杂BIM、其它IFC schema、Native-IFC编辑或当前GUI全面验收。GUI原位保存与有限真实Agent收尾继续，未扩大FreeCAD崩溃调查。

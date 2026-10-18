@@ -1,6 +1,6 @@
 # FreeCAD 专业工作台接口核验
 
-> **角色：调研 + Assembly／CAM／FEM／Draft 代表流程实测记录。** 官方研究日期：2026-10-18；Assembly／CAM／FEM／Draft 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过既有 CAD Python 工具验收内置 Grounded＋Fixed 装配（§3.3）、CAM Profile＋LinuxCNC后处理（§4.3）及真实 Task 的 FEM 轴向压力（§5.3）代表闭环；Draft实测见§6.1；BIM仍未实测。本页未新增安装应用、库或求解器，后台独立工程证据不覆盖用户现存 GUI 文档。
+> **角色：调研 + Assembly／CAM／FEM／Draft／BIM 代表流程实测记录。** 官方研究日期：2026-10-18；Assembly／CAM／FEM／Draft／BIM 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过既有 CAD Python 工具验收内置 Grounded＋Fixed 装配（§3.3）、CAM Profile＋LinuxCNC后处理（§4.3）及真实 Task 的 FEM 轴向压力（§5.3）代表闭环；Draft实测见§6.1，Arch/BIM与独立IFC4交换见§6.2／§6.3。本页未新增安装应用、库或求解器，后台独立工程证据不覆盖用户现存 GUI 文档。
 >
 > 实施方向仍归[CAD 控制插件规划](../插件/CAD控制插件规划.md)。已完成的布尔、圆角／倒角、阵列及 TechDraw 代表工作流见[主调研 §9.14](CAD官方接口与插件接入调研.md)，本文不重复研究，也不把这些证据扩大为专业工作台已验收。AutoCAD／Blender 沿用主调研，不在本批重新研究。
 
@@ -241,9 +241,11 @@ Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FR
 - `ArchStructure.makeStructure(baseobj=None, length=None, width=None, height=None, name=None)`，Arch facade 导出该功能；未给尺寸会读取 Arch 偏好，后台应显式提供。
 - `Arch.makeBuildingPart(objectslist=None, baseobj=None, name=None)` 组织建筑／楼层部件。几何、建筑类型、层级及材料应分别读取，不能仅凭 Part::FeaturePython 类型判断 BIM 语义。
 
-**待执行建议**：4 m直基线生成200 mm厚、3 m高直墙，另建300×300×3000 mm结构柱，归入明确楼层；保存重开，改基线长度及墙高，检查依赖和数量。直墙基线场景的理论体积为2.4 m³，但需同时核对对齐侧、端点及实际包围盒。源码的 makeWall 单位说明仍有 TODO，首次样例必须通过真实几何量确认尺度，不能把函数接受 float 当作单位证明。多段墙接角、多层材料、洞口／门窗、楼梯、屋顶及钢筋属于随后单独样例，不由该直墙推出。[B2][B3]
+**2026-10-19真实Task验收**：使用正式Draft.make_wire→Arch.makeWall、ArchStructure.makeStructure和Arch.makeFloor，建立4m直墙（宽200mm、高3000mm）、300×300×3000mm矩形柱与真实Building Storey。墙Center对齐，Offset显式回写0，避免工厂falsy参数转读偏好；柱位于(4500,500,0)mm且截面以自身原点居中。墙初始bounds为[0,-100,0,4000,100,3000]mm、体积2.4e9mm³；柱bounds为[4350,350,0,4650,650,3000]mm、体积2.7e8mm³。检查真实App／VP、IfcType、楼层成员、墙Base与基线点，轮廓和实体双向差集／面积／体积均与独立解析长方体一致。
 
-无 base／错误 base、退化轮廓、墙宽或高度无效、复杂接角失败、分组层级与 IFC 类型错误均需明确诊断。大量 BIM 对象使用 Python Proxy，GUI 标量工具现有限制并未因为其属于官方工作台而解除；本轮只确认后台 API 候选路线。
+三轮参数为墙长／墙高／柱高4000/3000/3000→5000/3500/3200→3000/2500/2800→4000/3000/3000，每轮保存独立重开，修改前先核验旧参数／代理和引用，再改Points及Height并核验实际几何。原生Structure.Tool是App::PropertyLinkSubList，合法空值为[]；初版误用is None造成夹具RED，按官方类型与空列表严格修正，不放行非空挤出路径。与之无关的后一次RED是JS／原生浮点计算的容差末位不一致，只将容差元数据断言改为12位近似，几何差集阈值仍为max(1e-3mm³,解析体积×1e-10)。源FCStd字节逐轮保持。
+
+这是独立工程中的直墙／矩形柱／楼层参数链，不是新增结构化BIM工具，也不是洞口、接角、多层材料、屋顶、楼梯、钢筋或用户当前GUI的全面验收。零基线长、该柱样例不接纳的300mm高度和下节缺墙IFC分别命中准确领域拒绝、不发布FCStd目标且源文件保持。
 
 ### 6.3 IFC：互操作与 Native-IFC 分开
 
@@ -251,20 +253,24 @@ Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FR
 
 传统 Arch 导出入口是 `importers.exportIFC.export(exportList, filename, colors=None, preferences=None)`；缺少 IfcOpenShell 时可打印错误并返回，不一定抛异常。非 GUI 模式可显式提供 colors。Native-IFC 有 `open(filename)` 和 `insert(filename, docname, strategy=None, shapemode=None, switchwb=None, silent=False, singledoc=False)`；open 会新建／激活文档，并通过 Qt timer 安排后续修改标志处理，insert 也会读取策略设置，不能把它当成不需要事件循环、没有状态变化的纯文件解析。[B5][B6]
 
-**待执行建议**：将上面的墙／柱／楼层导出 IFC，再在另一独立文档／进程回读。核对 IFC schema、长度单位、类别、GUID、空间包含关系、数量和实际几何尺度；保存 FCStd 后仍保留原可编辑参数链。Native-IFC 的 IFC 主数据编辑、传统 Arch 几何参数工程和单向导出是不同流程，不能互相代替。缺依赖、无输出、丢对象／类别、单位缩放错误或语义关系丢失均失败；文件扩展名、非空文件或一次 import 成功不足以证明互操作。
+**2026-10-19真实互操作验收**：每轮incoming／resized各导出新IFC4，共六份新文件；exportIFC使用完整传入preferences、米单位、SCALE_FACTOR=.001、arch模型、显式默认Site／Building且不自动创建第二Storey。STORE_UID=True会把GUID写进Task工作副本IfcData，并重算；导出前后重新核验参数和几何，GUID随FCStd保存、重开和折返保持，不把这个导出称为只读。未写用户全局偏好或修改输入源工程。
+
+另一次无documentPath的cad_run_python使用独立进程／全新空文档，以随包IfcOpenShell0.8.4独立打开六份IFC，不调用待验导出器或FreeCAD IFC导入器。SERIALIZED、世界坐标、convert-back-units=False取得米制BRep，再明确×1000到FreeCAD毫米；墙／柱逐个核对完整有效单实体、解析Box的双向差集、面积／体积／bounds。另核对IFC4、无前缀METRE、唯一IfcWall／IfcColumn、稳定且匹配的GUID、唯一IfcBuildingStorey包含关系及Storey→Building→Site→Project聚合链。新建Part::Feature仅承载读回几何，不假装恢复原参数墙柱。FCStd源字节、全部IFC输入及六旧文件最终SHA-256保持；缺墙的新IFC在实体语义阶段拒绝。
+
+最终2项原生矩阵44.02s通过：`KENFUTWORK_CAD_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/cad/bim-operations.integration.test.ts --maxWorkers=1 --no-file-parallelism`。独立回读仍在同一测试Task授权目录内，每次为独立进程／空文档，不宣称新Task UUID。这个证据是IFC4导出互操作，不是Native-IFC主数据编辑、传统FreeCAD IFC导入器、其它schema或所有BIM对象验收；未安装依赖、未操作用户现存GUI。
 
 ## 7. 后续接线与验收顺序
 
 | 原建议顺序 | 最小独立交付 | 当前状态及仍需的本机／Task证据 |
 | --- | --- | --- |
-| 1 | Draft 二维对象→Arch 直墙／结构件→FCStd | 数据 API 与偏好隔离、参数变化、保存重开、几何／语义；再单独验证 IFC 回读 |
+| 1 | Draft 二维对象→Arch 直墙／结构件→FCStd | §6.1～§6.3已完成参数面、直墙／柱／楼层三轮重开及六IFC4独立语义／几何回读；其它对象与Native-IFC编辑另验 |
 | 2 | 内置 Assembly 的 grounded＋Fixed 闭环 | §3.3的原生装载、显式求解0及残差检查、基准Placement、代理恢复、参数重开折返与STEP回读已通过；原生返回0但目标未连通／残差超限的拒绝与不发布也已通过，其余关节与失败另验 |
 | 3 | CAM Profile＋一个指定 post | §4.3的真实Job／stock／刀具、全层运动／包络／实际切深、LinuxCNC后处理、NC独立回读与两种拒绝已通过；其他策略、方言、仿真及机床另验 |
 | 4 | FEM 线弹性三维分析 | §5.3的新网格、ccx、真实结果、解析检查及重开已通过；三种失败拒绝与真实Gmsh取消另通过，网格收敛及其他领域另验 |
 
 每项先在新的独立工程中验证，再通过真实 Task 的既有 CAD Python／文件交付链验证，最后才决定是否增加专业结构化工具。Assembly 已完成 §3.3 代表文档的原生代理恢复与显式约束求解，CAM已完成 §4.3 的Job恢复、实际后处理及新NC交付，FEM已完成 §5.3 代表文档及Shape Link的实际交付；其他专业Job、复杂Analysis、Proxy文档的兼容性仍须分别验证，不能从这些样例推定全部文档能通过产品交付。GUI 当前文档接入另遵守已有打开句柄、观察前提和审批；不能把后台 Python 的权限证明移植为任意 GUI Python 权限。
 
-E 批次原交付是只读官方研究；随后新增的Assembly、CAM、FEM、Draft实测分别单列 §3.3、§4.3、§5.3、§6.1。Assembly仅完成上述Grounded＋Fixed代表闭环、双零件STEP及所列拒绝；CAM仅完成Profile／LinuxCNC代表闭环及两种拒绝；FEM仅完成该线弹性样件及所列失败／取消。Draft已完成§6.1参数面与二维交换闭环；BIM／IFC仍未实测，不能扩展为所有专业工作台、全部关节、CAM策略／机床制造、求解器或物理场已验收。用户现存GUI操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import或官方测试文件存在替代。
+E 批次原交付是只读官方研究；随后新增的Assembly、CAM、FEM、Draft实测分别单列 §3.3、§4.3、§5.3、§6.1。Assembly仅完成上述Grounded＋Fixed代表闭环、双零件STEP及所列拒绝；CAM仅完成Profile／LinuxCNC代表闭环及两种拒绝；FEM仅完成该线弹性样件及所列失败／取消。Draft已完成§6.1参数面与二维交换闭环；Arch/BIM直墙／柱／楼层及IFC4交换已完成§6.2／§6.3代表闭环，其余BIM／Native-IFC仍未实测，不能扩展为所有专业工作台、全部关节、CAM策略／机床制造、求解器或物理场已验收。用户现存GUI操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import或官方测试文件存在替代。
 
 ## 8. 来源
 
