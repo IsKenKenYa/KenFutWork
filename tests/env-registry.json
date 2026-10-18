@@ -1,6 +1,15 @@
 {
   "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
+    "KENFUTWORK_CAD_GUI_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/cad/gui-status.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用运行中 FreeCAD GUI 的真实 Task 工具查询与只读身份复核"
+    },
     "KENFUTWORK_CAD_INTEGRATION": {
       "surface": "test",
       "readers": ["apps/server/src/features/cad/freecad.integration.test.ts"],

@@ -61,6 +61,13 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       execute: (_input, context) => service.status(context),
     }),
     definition({
+      name: "cad_gui_status",
+      description:
+        "查询当前运行的 FreeCAD GUI 实例（目前支持 macOS），返回真实 PID、启动时间与安装路径。只读应用身份，不启动应用、不读取或修改当前文档，不授予该应用 Task 沙箱身份；后台建模仍用其它 CAD 工具。",
+      schema: cadStatusSchema,
+      execute: (_input, context) => service.guiStatus(context),
+    }),
+    definition({
       name: "cad_describe_document",
       description:
         "在 Task 沙箱中打开独立 FCStd 工程，重算并检查对象类型、状态、Shape 有效性、实体数、体积、包围盒与 Body.Tip。源文件不保存；工程恢复会执行 FreeCAD，因此仍按执行权限审批。",

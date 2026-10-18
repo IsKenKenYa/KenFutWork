@@ -10,6 +10,11 @@ import type {
   ProcessSandbox,
 } from "../process-sandbox/types.js";
 import { ProcessSandboxError } from "../process-sandbox/types.js";
+import {
+  type CadGuiProbe,
+  CadGuiProbeError,
+  createMacosCadGuiProbe,
+} from "./gui-probe.js";
 import { createCadPreviewResult } from "./preview.js";
 import { FREECAD_RUNNER_SOURCE } from "./runner-source.js";
 import { type CadRuntime, detectFreeCadRuntime } from "./runtime.js";
@@ -38,6 +43,7 @@ export interface CadToolResult {
 }
 export interface CadService {
   status(context: ToolExecutionContext): Promise<CadToolResult>;
+  guiStatus(context: ToolExecutionContext): Promise<CadToolResult>;
   execute(
     request: CadRequest,
     context: ToolExecutionContext,
@@ -51,6 +57,7 @@ export interface CadServiceOptions {
     context: ToolExecutionContext,
   ): Promise<{ limits: ProcessLimits; timeoutMs: number | null }>;
   detectRuntime?: () => Promise<CadRuntime | null>;
+  guiProbe?: CadGuiProbe;
 }
 
 class CadError extends Error {
@@ -103,7 +110,9 @@ export function requireCadContext(
 function failure(error: unknown, cancelled = false): CadToolResult {
   const message = error instanceof Error ? error.message : String(error);
   const code =
-    error instanceof CadError || error instanceof ProcessSandboxError
+    error instanceof CadError ||
+    error instanceof ProcessSandboxError ||
+    error instanceof CadGuiProbeError
       ? error.code
       : cancelled || (error instanceof Error && error.name === "AbortError")
         ? "cancelled"
@@ -450,6 +459,7 @@ function cadStatus(runtime: CadRuntime | null): CadToolResult {
 }
 
 export function createCadService(options: CadServiceOptions): CadService {
+  const guiProbe = options.guiProbe ?? createMacosCadGuiProbe();
   const invocations = new Map<
     string,
     { runId: string; fingerprint: string; result: Promise<CadToolResult> }
@@ -479,6 +489,36 @@ export function createCadService(options: CadServiceOptions): CadService {
         return cadStatus(
           await (options.detectRuntime ?? detectFreeCadRuntime)(),
         );
+      } catch (error) {
+        return onFailure(error, context);
+      }
+    },
+    async guiStatus(context) {
+      try {
+        await guard(context);
+        const { limits, timeoutMs } = await options.resolveLimits(context);
+        await guard(context);
+        const signals = [
+          context.signal,
+          context.taskWorkContext?.signal,
+        ].filter((signal): signal is AbortSignal => signal !== undefined);
+        const applications = await guiProbe.list({
+          signal: AbortSignal.any(signals),
+          timeoutMs: Math.min(timeoutMs ?? 10_000, 10_000),
+          maxOutputBytes: limits.maxOutputBytes,
+        });
+        await guard(context);
+        return {
+          content: [
+            {
+              type: "text",
+              text: applications.length
+                ? `发现 ${applications.length} 个运行中的 FreeCAD 应用。`
+                : "没有运行中的 FreeCAD 应用。",
+            },
+          ],
+          structuredContent: { applications, currentDocumentControl: false },
+        };
       } catch (error) {
         return onFailure(error, context);
       }

@@ -830,7 +830,7 @@ describe("官方 CAD Task 执行", () => {
     expect(f.stop).toHaveBeenCalledOnce();
   });
 
-  it("6个共享按需工具，执行工具全部有完整审批kind且严格拒绝未知参数", async () => {
+  it("共享按需工具的执行入口全部有完整审批kind且严格拒绝未知参数", async () => {
     const f = await fixture();
     const tools = createCadTools(f.service);
     expect(
@@ -842,6 +842,7 @@ describe("官方 CAD Task 执行", () => {
       ]),
     ).toEqual([
       ["cad_status", "shared", "deferred", undefined],
+      ["cad_gui_status", "shared", "deferred", undefined],
       ["cad_describe_document", "shared", "deferred", "cad-describe"],
       ["cad_create_primitive", "shared", "deferred", "cad-primitive"],
       ["cad_apply_operations", "shared", "deferred", "cad-operations"],

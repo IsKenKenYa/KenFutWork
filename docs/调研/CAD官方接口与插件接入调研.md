@@ -327,6 +327,14 @@ Agent 用一次 `cad_apply_operations` 创建 40×30 mm 板、初始 Pad 10 mm�
 
 32项阶段检查后再启动独立 FreeCAD 进程 describe 最终文件，八项最终几何均有效单实体，解析体积一致，FCStd 源字节保持；正式原生测试将同一流程和读回接线，默认关闭、显式开关启用。本项证明这些代表性后台 Python 工作流，不代表所有拓扑／参数组合、结构化封装、PDF、可见应用渲染或当前 GUI 文档桥接均已验收。
 
+### 9.15 原生权限与 GUI 实例查询
+
+当前 Codex 原生通道实测能够读取已安装 FreeCAD 1.1.4 的界面、截图，以及通过键盘新建并关闭独立空文档，没有待确认的系统权限弹窗。另一个使用独立配置、数据、缓存和 Qt 临时目录的测试进程，经本机 Unix socket 的实际 peer PID 核验后执行固定只读宏；延迟到 GUI 事件循环后回报 PID、空文档列表、配置路径和窗口状态。初版诊断误用不存在的 `getUserConfigPath`，改用官方 `ConfigGet("UserConfigPath")` 后所有隔离路径均通过；这不是产品运行器缺陷。
+
+实际 NSWorkspace 结果中，`NSBundle.executableURL` 为 `Contents/MacOS/FreeCAD`，运行进程的 executableURL 为同安装中的 `Contents/Resources/bin/freecad`。二者不相等是当前官方包的实际启动结构，不能据此把正常 GUI 错判为其它程序。机器上 `/Applications` 与挂载盘存在相同 bundleId 的应用，直接按 bundleId 选择也存在歧义；查询只返回系统实际枚举的 GUI 实例，并分别验证真实路径和可执行性。
+
+官方 CAD 插件的 `cad_gui_status` 通过现有 Task、安装门控、限时和取消调用这个固定探针；查询完成前再次核对授权。原生集成测试经真实工具入口查询当前应用，再按 PID、系统启动时间、真实可执行路径及 bundle 路径独立复核，拒绝把空枚举当作这项原生验收通过。该结果只证明当前通道权限和只读实例查询；不证明 KFW 已能读写当前文档，也不宣称用户应用已被 Task OS 沙箱收养。当前文档控制继续按独立批次推进。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |
