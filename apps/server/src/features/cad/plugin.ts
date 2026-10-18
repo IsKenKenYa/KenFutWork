@@ -93,7 +93,7 @@ export function createCadPlugin(options?: {
           scope: "always",
           async resolve() {
             if (!(await gate()).ok) return null;
-            return "CAD 插件：用 cad_status 发现 FreeCAD，用按需 CAD 工具操作独立工程。Body、矩形/圆约束草图、基础正向Pad、绑定孔草图及有限/贯穿Pocket与尺寸修改优先用cad_apply_operations，复杂操作再用cad_run_python；固定坐标不等于相对居中。documentPath仅读已有工程，新建省略；outputPath是由工具发布的新文件，中间验证用output_directory，最终doc交给工具保存。优先保留可编辑 FCStd，再导出交换文件；不操作当前 GUI 文档。Python受Task审批与OS沙箱约束。Python三维任务设置requireSolids:true、Body.Tip为最终特征并检查数值；2D检查Sketch自身几何，纯草图Body可无Tip/空Shape。失败后检查错误，不用旧Shape或残留文件冒充成功。cad_preview提供真实线框PNG，SVG/DXF保留交换尺寸；预览不是GUI着色渲染。";
+            return "CAD 插件：用 cad_status 发现 FreeCAD，用按需 CAD 工具操作独立工程。Body、矩形/圆约束草图、基础正向Pad、绑定孔草图及有限/贯穿Pocket、绕草图局部X/Y轴的首个固定角Revolution与尺寸修改优先用cad_apply_operations（长度mm、角度deg），复杂操作再用cad_run_python；固定坐标不等于相对居中。documentPath仅读已有工程，新建省略；outputPath是由工具发布的新文件，中间验证用output_directory，最终doc交给工具保存。优先保留可编辑 FCStd，再导出交换文件；不操作当前 GUI 文档。Python受Task审批与OS沙箱约束。Python三维任务设置requireSolids:true、Body.Tip为最终特征并检查数值；2D检查Sketch自身几何，纯草图Body可无Tip/空Shape。失败后检查错误，不用旧Shape或残留文件冒充成功。cad_preview提供真实线框PNG，SVG/DXF保留交换尺寸；预览不是GUI着色渲染。";
           },
         }),
       );

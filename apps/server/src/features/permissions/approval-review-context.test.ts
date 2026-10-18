@@ -56,6 +56,27 @@ it("CAD 审批保留完整 Python、工程和几何参数，不能把操作伪�
       },
     ],
     [
+      "cad-operations",
+      {
+        operations: [
+          {
+            kind: "create_revolution",
+            name: "Ring",
+            body: "Body",
+            profile: "Profile",
+            axis: "y",
+            angle: 360,
+          },
+          {
+            kind: "set_dimension",
+            object: "Ring",
+            dimension: "angle",
+            value: 90,
+          },
+        ],
+      },
+    ],
+    [
       "cad-export",
       { documentPath: "零件.FCStd", format: "step", objectNames: ["Body"] },
     ],
@@ -81,6 +102,28 @@ it("CAD 缺失脚本、未知参数、敏感访问与超长源码均交人工", 
     input("cad-primitive", { kind: "box", length: -1, width: 2, height: 3 }),
     input("cad-operations", {
       operations: [{ kind: "create_body", name: "Body", command: "hidden" }],
+    }),
+    input("cad-operations", {
+      operations: [
+        {
+          kind: "create_revolution",
+          name: "Ring",
+          body: "Body",
+          profile: "Profile",
+          axis: "z",
+          angle: 90,
+        },
+      ],
+    }),
+    input("cad-operations", {
+      operations: [
+        {
+          kind: "set_dimension",
+          object: "Ring",
+          dimension: "angle",
+          value: 361,
+        },
+      ],
     }),
     input("cad-operations", {
       operations: [{ kind: "create_body", name: "Body" }],

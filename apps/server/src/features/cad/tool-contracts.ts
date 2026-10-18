@@ -2,6 +2,9 @@ import { z } from "zod";
 
 const path = z.string().min(1);
 const positive = z.number().finite().positive();
+const revolutionAngle = positive
+  .max(360)
+  .describe("固定旋转角度，单位 deg，取值 (0,360]。");
 const destination = {
   documentPath: path
     .describe("只读入已有的 FCStd 工程；新建工程时省略。")
@@ -81,6 +84,13 @@ const dimensionOperationSchema = z.discriminatedUnion("dimension", [
       dimension: z.enum(["length", "depth"]),
     })
     .strict(),
+  z
+    .object({
+      ...dimensionTarget,
+      dimension: z.literal("angle"),
+      value: revolutionAngle,
+    })
+    .strict(),
 ]);
 const operationSchema = z.discriminatedUnion("kind", [
   z
@@ -133,6 +143,14 @@ const operationSchema = z.discriminatedUnion("kind", [
       kind: z.literal("create_pad"),
       ...featureTarget,
       length: positive,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("create_revolution"),
+      ...featureTarget,
+      axis: z.enum(["x", "y"]),
+      angle: revolutionAngle,
     })
     .strict(),
   pocketOperationSchema,

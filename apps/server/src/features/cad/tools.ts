@@ -81,7 +81,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_apply_operations",
       description:
-        "在独立 FreeCAD 工程按顺序创建 Body、矩形/圆约束草图、首个 Pad、Pocket 或修改尺寸，单位 mm。轮廓名在同一草图内唯一；origin 为矩形左下角、center 为圆心，均为固定绝对坐标，不自动随其它轮廓改尺寸居中。草图完全约束，驱动尺寸命名为轮廓名_Width/_Height/_Radius。结构化 Pad 限同 Body 首个正向 XY 定长单侧特征；孔草图同时指定 body/supportPad，将局部 Z 以固定表达式绑定该 Pad.Length。Pocket 使用当前 Body.Tip 的该 Pad 为基体，profile 必须是与其绑定且尚未被特征消费的孔草图；mode=depth 必填 depth，through_all 不带 depth。set_dimension 的 width/height/radius 必须带 profile，仅修改唯一且类型匹配的命名驱动尺寸；length 只改固定长度 Pad、depth 只改有限 Pocket，两者不带 profile。拒绝已有表达式、参考或停用尺寸，不解除绑定。修改尺寸保持当前 Tip 和可见性。documentPath只读源工程，outputPath必须是新FCStd；不接管当前GUI文档。data.operations返回实际状态和尺寸；失败不发布最终文件，不承诺中间副作用事务回滚。更广建模形态用cad_run_python，沿用Task权限和审批。",
+        "在独立 FreeCAD 工程按顺序创建 Body、矩形/圆约束草图、首个 Pad、Pocket、首个 Revolution 或修改尺寸；长度单位 mm，角度单位 deg。轮廓名在同一草图内唯一；origin 为矩形左下角、center 为圆心，均为固定绝对坐标，不自动随其它轮廓改尺寸居中。草图完全约束，驱动尺寸命名为轮廓名_Width/_Height/_Radius。结构化 Pad 限同 Body 首个正向 XY 定长单侧特征；孔草图同时指定 body/supportPad，将局部 Z 以固定表达式绑定该 Pad.Length。Pocket 使用当前 Body.Tip 的该 Pad 为基体，profile 必须是与其绑定且尚未被特征消费的孔草图；mode=depth 必填 depth，through_all 不带 depth。Revolution 限同 Body 首个自由 XY 草图绕本草图局部轴正向单侧旋转，axis=x/y，angle取值(0,360]；不使用任意外部轴。set_dimension 的 width/height/radius 必须带 profile，仅修改唯一且类型匹配的命名驱动尺寸；length 只改固定长度 Pad、depth 只改有限 Pocket，angle 只改固定角 Revolution；length/depth/angle 均不带 profile。拒绝已有表达式、参考或停用尺寸，不解除绑定。修改尺寸保持当前 Tip 和可见性。documentPath只读源工程，outputPath必须是新FCStd；不接管当前GUI文档。data.operations返回实际状态和尺寸；失败不发布最终文件，不承诺中间副作用事务回滚。更广建模形态用cad_run_python，沿用Task权限和审批。",
       schema: cadOperationsInputSchema,
       approvalReviewKind: "cad-operations",
       execute: (input, context) =>

@@ -906,3 +906,123 @@ describe("官方 CAD Task 执行", () => {
     });
   });
 });
+
+describe("结构化旋转契约", () => {
+  it.each(["x", "y"])(
+    "%s轴旋转与角度修改沿用同一工具JSON和沙箱",
+    async (axis) => {
+      const f = await fixture({
+        data: { operations: [{ objectName: "Revolution", angle: 90, axis }] },
+      });
+      const tool = createCadTools(f.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const input = {
+        operations: [
+          { kind: "create_body", name: "Body" },
+          {
+            kind: "create_sketch",
+            name: "Profile",
+            body: "Body",
+            profiles: [
+              {
+                kind: "circle",
+                name: "Ring",
+                radius: 2,
+                center: axis === "x" ? [0, 10] : [10, 0],
+              },
+            ],
+          },
+          {
+            kind: "create_revolution",
+            name: "Revolution",
+            label: "旋转体",
+            body: "Body",
+            profile: "Profile",
+            axis,
+            angle: 360,
+          },
+          {
+            kind: "set_dimension",
+            object: "Revolution",
+            dimension: "angle",
+            value: 90,
+          },
+        ],
+      };
+      const original = structuredClone(input);
+      expect(z.fromJSONSchema(tool.parameters).safeParse(input).success).toBe(
+        true,
+      );
+      const result = await executeCadTestTool(tool, input, f.context);
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(result.structuredContent.data).toEqual({
+        operations: [{ objectName: "Revolution", angle: 90, axis }],
+      });
+      expect(f.spawn).toHaveBeenCalledOnce();
+      const request = f.spawn.mock.calls[0]?.[0];
+      const wire = JSON.parse(
+        await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
+      );
+      expect(wire.input).toEqual(original);
+      expect(request?.env?.QT_QPA_PLATFORM).toBe("offscreen");
+      expect(input).toEqual(original);
+    },
+  );
+
+  it("缺失或非法旋转轴、角度及混入尺寸字段在派发前拒绝", async () => {
+    const f = await fixture();
+    const execute = vi.spyOn(f.service, "execute");
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少结构化 CAD 工具");
+    const revolution = {
+      kind: "create_revolution",
+      name: "Revolution",
+      body: "Body",
+      profile: "Profile",
+      axis: "y",
+      angle: 180,
+    };
+    const angle = {
+      kind: "set_dimension",
+      object: "Revolution",
+      dimension: "angle",
+      value: 90,
+    };
+    const invalid = [
+      { ...revolution, axis: undefined },
+      { ...revolution, axis: "z" },
+      { ...revolution, body: undefined },
+      { ...revolution, profile: undefined },
+      { ...revolution, reversed: true },
+      { ...revolution, midplane: true },
+      { ...angle, profile: "Ring" },
+      { ...angle, axis: "x" },
+      ...[
+        undefined,
+        0,
+        -1,
+        360.001,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+      ].flatMap((value) => [
+        { ...revolution, angle: value },
+        { ...angle, value },
+      ]),
+    ];
+    for (const operation of invalid) {
+      expect(
+        await tool.execute({ operations: [operation] }, f.context),
+        JSON.stringify(operation),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "invalid_arguments" } },
+      });
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+});

@@ -146,8 +146,12 @@ def apply_operations(doc, operations):
                 obj = create_sketch(doc, operation)
             elif kind == "create_pad":
                 obj = create_pad(doc, operation)
+            elif kind == "create_revolution":
+                obj = create_revolution(doc, operation)
             elif kind == "create_pocket":
                 obj = create_pocket(doc, operation)
+            elif kind == "set_dimension" and operation["dimension"] == "angle":
+                obj = set_revolution_angle(doc, operation)
             elif kind == "set_dimension":
                 obj = set_feature_dimension(doc, operation) if operation["dimension"] in ("length", "depth") else set_sketch_dimension(doc, operation)
             else:
@@ -160,7 +164,7 @@ def apply_operations(doc, operations):
                 receipt["placementZ"] = obj.Placement.Base.z
                 if "supportPad" in operation:
                     receipt["supportPad"] = doc.getObject(operation["supportPad"]).Name
-            if obj.TypeId in ("PartDesign::Pad", "PartDesign::Pocket"):
+            if obj.TypeId in ("PartDesign::Pad", "PartDesign::Pocket", "PartDesign::Revolution"):
                 receipt.update(feature_receipt(obj))
             receipts.append(receipt)
         except Exception as error:
@@ -206,6 +210,24 @@ def require_fixed_pad(pad, body):
     return pad
 
 
+def require_fixed_revolution(feature, body):
+    if feature is None or feature.TypeId != "PartDesign::Revolution" or feature not in body.Group:
+        raise ValueError("对象不是本 Body 的 Revolution")
+    if feature.Type != "Angle" or feature.Midplane or feature.Reversed or feature.BaseFeature is not None:
+        raise ValueError("结构化工具仅支持首个正向单侧固定角 Revolution: " + feature.Name)
+    if not math.isfinite(feature.Angle.Value) or not 0 < feature.Angle.Value <= 360:
+        raise ValueError("Revolution 角度不在 (0,360] 范围: " + feature.Name)
+    profile = feature.Profile
+    if not profile or profile[0] is None:
+        raise ValueError("Revolution 缺少草图 Profile: " + feature.Name)
+    sketch = require_body_sketch(feature.Document, body, profile[0].Name)
+    require_free_xy_sketch(sketch)
+    axis = feature.ReferenceAxis
+    if not axis or axis[0] != sketch or list(axis[1]) not in (["H_Axis"], ["V_Axis"]):
+        raise ValueError("Revolution 必须绕本草图局部 X/Y 轴: " + feature.Name)
+    return feature
+
+
 def validate_single_solid(obj):
     if any("error" in state.lower() or "invalid" in state.lower() for state in obj.State):
         raise ValueError("特征重算失败: " + obj.Name + " " + str(obj.State))
@@ -238,10 +260,14 @@ def finish_feature(doc, body, feature, profile, previous):
     feature.ViewObject.Visibility = True
 
 
+def require_first_solid_feature(body, feature_name):
+    if any(has_shape_property(member) and not member.isDerivedFrom("Sketcher::SketchObject") for member in body.Group):
+        raise ValueError("结构化 " + feature_name + " 必须是 Body 的首个实体特征")
+
+
 def create_pad(doc, operation):
     body = require_body(doc, operation["body"])
-    if any(has_shape_property(member) and not member.isDerivedFrom("Sketcher::SketchObject") for member in body.Group):
-        raise ValueError("结构化 Pad 必须是 Body 的首个实体特征")
+    require_first_solid_feature(body, "Pad")
     sketch = require_body_sketch(doc, body, operation["profile"])
     require_free_xy_sketch(sketch)
     feature = create_named_object(doc, "PartDesign::Pad", operation, body)
@@ -253,6 +279,25 @@ def create_pad(doc, operation):
     feature.AlongSketchNormal = True
     feature.Length = operation["length"]
     finish_feature(doc, body, feature, sketch, None)
+    return feature
+
+
+def create_revolution(doc, operation):
+    body = require_body(doc, operation["body"])
+    require_first_solid_feature(body, "Revolution")
+    sketch = require_body_sketch(doc, body, operation["profile"])
+    require_free_xy_sketch(sketch)
+    feature = create_named_object(doc, "PartDesign::Revolution", operation, body)
+    feature.Profile = sketch
+    feature.ReferenceAxis = (sketch, [{"x": "H_Axis", "y": "V_Axis"}[operation["axis"]]])
+    feature.Type = "Angle"
+    feature.Midplane = False
+    feature.Reversed = False
+    feature.Angle = operation["angle"]
+    finish_feature(doc, body, feature, sketch, None)
+    require_fixed_revolution(feature, body)
+    if not math.isclose(feature.Angle.Value, operation["angle"], rel_tol=1e-9, abs_tol=1e-9):
+        raise ValueError("旋转角度创建未生效: " + feature.Name)
     return feature
 
 
@@ -305,6 +350,28 @@ def set_feature_dimension(doc, operation):
     return feature
 
 
+def set_revolution_angle(doc, operation):
+    feature = doc.getObject(operation["object"])
+    if feature is None or feature.TypeId != "PartDesign::Revolution":
+        raise ValueError("尺寸对象不是 Revolution: " + operation["object"])
+    body = feature.getParentGeoFeatureGroup()
+    if body is None or not body.isDerivedFrom("PartDesign::Body"):
+        raise ValueError("旋转对象没有所属 Body")
+    require_fixed_revolution(feature, body)
+    if any(path.lstrip(".") == "Angle" and expression is not None for path, expression in feature.ExpressionEngine):
+        raise ValueError("旋转角度已有表达式，不能直接修改: " + feature.Name)
+    tip = body.Tip
+    feature.Angle = operation["value"]
+    doc.recompute()
+    if not math.isclose(feature.Angle.Value, operation["value"], rel_tol=1e-9, abs_tol=1e-9):
+        raise ValueError("旋转角度修改未生效: " + feature.Name)
+    if body.Tip != tip:
+        raise ValueError("旋转角度修改意外改变 Body.Tip: " + body.Name)
+    validate_single_solid(feature)
+    validate_body_result(body)
+    return feature
+
+
 def feature_receipt(feature):
     body = feature.getParentGeoFeatureGroup()
     receipt = {"bodyName": body.Name, "profileName": feature.Profile[0].Name,
@@ -313,10 +380,13 @@ def feature_receipt(feature):
                "volume": feature.Shape.Volume, "solids": len(feature.Shape.Solids)}
     if feature.TypeId == "PartDesign::Pad":
         receipt["length"] = feature.Length.Value
-    else:
+    elif feature.TypeId == "PartDesign::Pocket":
         mode = "depth" if feature.Type == feature.getEnumerationsOfProperty("Type")[0] else "through_all"
         receipt["mode"] = mode
         if mode == "depth":
             receipt["depth"] = feature.Length.Value
+    else:
+        receipt["axis"] = {"H_Axis": "x", "V_Axis": "y"}[feature.ReferenceAxis[1][0]]
+        receipt["angle"] = feature.Angle.Value
     return receipt
 `;

@@ -693,3 +693,491 @@ it.skipIf(nativeUnavailable)(
     }),
   120_000,
 );
+
+type RevolutionAxis = "x" | "y";
+
+function revolutionOperations(axis: RevolutionAxis): Operation[] {
+  return [
+    { kind: "create_body", name: "Body" },
+    {
+      kind: "create_sketch",
+      name: "Profile",
+      body: "Body",
+      profiles: [
+        {
+          kind: "rectangle",
+          name: "Ring",
+          width: axis === "x" ? 20 : 5,
+          height: axis === "x" ? 5 : 20,
+          origin: axis === "x" ? [0, 5] : [5, 0],
+        },
+      ],
+    },
+    {
+      kind: "create_revolution",
+      name: "Revolution",
+      body: "Body",
+      profile: "Profile",
+      axis,
+      angle: 180,
+    },
+    { kind: "create_body", name: "TorusBody" },
+    {
+      kind: "create_sketch",
+      name: "TorusProfile",
+      body: "TorusBody",
+      profiles: [
+        {
+          kind: "circle",
+          name: "Tube",
+          radius: 2,
+          center: axis === "x" ? [0, 10] : [10, 0],
+        },
+      ],
+    },
+    {
+      kind: "create_revolution",
+      name: "Torus",
+      body: "TorusBody",
+      profile: "TorusProfile",
+      axis,
+      angle: 360,
+    },
+  ];
+}
+
+function expectRevolutionBounds(
+  result: CadResult,
+  name: string,
+  expected: number[],
+) {
+  const shape = result.document?.objects.find(
+    (object) => object.name === name,
+  )?.shape;
+  expect(shape).toMatchObject({ valid: true, null: false, solids: 1 });
+  const bounds = z.array(z.number()).length(6).parse(shape?.bounds);
+  for (const [index, value] of expected.entries())
+    expect(bounds[index]).toBeCloseTo(value, 6);
+}
+
+async function checkRevolutionReadback(
+  fixture: NativeCad,
+  documentPath: string,
+  axis: RevolutionAxis,
+  edited: boolean,
+) {
+  const angle = edited ? 90 : 180;
+  return python(
+    fixture,
+    documentPath,
+    [
+      "import math",
+      `axis_name = '${axis === "x" ? "H_Axis" : "V_Axis"}'`,
+      `for body_name, feature_name, profile_name, angle, volume in [('Body','Revolution','Profile',${angle},${(edited ? 714 : 750) * Math.PI}),('TorusBody','Torus','TorusProfile',${edited ? 90 : 360},${(edited ? 45 : 80) * Math.PI ** 2})]:`,
+      "    body, feature, sketch = [doc.getObject(name) for name in (body_name, feature_name, profile_name)]",
+      "    assert body.Tip == feature and feature.Profile[0] == sketch and sketch in body.Group",
+      "    assert feature.ReferenceAxis[0] == sketch and list(feature.ReferenceAxis[1]) == [axis_name]",
+      "    assert feature.Type == 'Angle' and not feature.Midplane and not feature.Reversed",
+      "    assert sketch.FullyConstrained and sketch.solve() == 0",
+      "    assert math.isclose(feature.Angle.Value, angle, abs_tol=1e-9)",
+      "    assert feature.Shape.isValid() and len(feature.Shape.Solids) == 1",
+      "    assert math.isclose(feature.Shape.Volume, volume, abs_tol=1e-6)",
+      "    assert math.isclose(body.Shape.Volume, volume, abs_tol=1e-6)",
+      "    assert not sketch.ViewObject.Visibility and feature.ViewObject.Visibility",
+      ...(edited
+        ? [
+            `sample = lambda degrees: App.Vector(12, 8*math.cos(math.radians(degrees)), 8*math.sin(math.radians(degrees))) if '${axis}' == 'x' else App.Vector(8*math.cos(math.radians(degrees)), 12, -8*math.sin(math.radians(degrees)))`,
+            "assert doc.getObject('Revolution').Shape.isInside(sample(45), 1e-7, True)",
+            "assert not doc.getObject('Revolution').Shape.isInside(sample(135), 1e-7, True)",
+          ]
+        : []),
+      "result = {'readback':True}",
+    ],
+    `rotation-${axis}-${edited ? "edited" : "initial"}-readback`,
+  );
+}
+
+async function checkRevolutionStep(
+  fixture: NativeCad,
+  documentPath: string,
+  axis: RevolutionAxis,
+) {
+  const transformed = await python(
+    fixture,
+    documentPath,
+    [
+      "doc.getObject('Body').Placement = App.Placement(App.Vector(100,200,30), App.Rotation(App.Vector(0,0,1),90))",
+      "doc.recompute()",
+    ],
+    `rotation-${axis}-body-transform`,
+  );
+  const exported = await fixture.service.execute(
+    {
+      action: "export",
+      input: {
+        documentPath: outputPath(transformed),
+        format: "step",
+        objectNames: ["Body"],
+      },
+    },
+    { ...fixture.context, toolCallId: `rotation-${axis}-step-export` },
+  );
+  expect(exported.isError, JSON.stringify(exported)).not.toBe(true);
+  const stepPath = outputPath(
+    cadResultSchema.parse(exported.structuredContent),
+  );
+  const expected =
+    axis === "x" ? [88, 200, 30, 100, 224, 42] : [76, 200, 18, 100, 212, 30];
+  const roundtrip = await python(
+    fixture,
+    outputPath(transformed),
+    [
+      `obj = doc.addObject('Part::Feature','StepReadback')`,
+      `obj.Shape = Part.read(${JSON.stringify(stepPath)})`,
+      "assert obj.Shape.isValid() and len(obj.Shape.Solids) == 1",
+      `assert abs(obj.Shape.Volume - ${714 * Math.PI}) < 1e-5`,
+    ],
+    `rotation-${axis}-step-readback`,
+  );
+  expectRevolutionBounds(roundtrip, "StepReadback", expected);
+}
+
+async function editRevolutionDimensions(
+  fixture: NativeCad,
+  seedPath: string,
+  axis: RevolutionAxis,
+) {
+  return apply(
+    fixture,
+    {
+      documentPath: seedPath,
+      operations: [
+        {
+          kind: "set_dimension",
+          object: "Profile",
+          profile: "Ring",
+          dimension: "width",
+          value: axis === "x" ? 24 : 7,
+        },
+        {
+          kind: "set_dimension",
+          object: "Profile",
+          profile: "Ring",
+          dimension: "height",
+          value: axis === "x" ? 7 : 24,
+        },
+        {
+          kind: "set_dimension",
+          object: "TorusProfile",
+          profile: "Tube",
+          dimension: "radius",
+          value: 3,
+        },
+        {
+          kind: "set_dimension",
+          object: "Revolution",
+          dimension: "angle",
+          value: 90,
+        },
+        {
+          kind: "set_dimension",
+          object: "Torus",
+          dimension: "angle",
+          value: 90,
+        },
+      ],
+    },
+    `rotation-${axis}-edit`,
+  );
+}
+
+it.skipIf(nativeUnavailable).each(["x", "y"] as const)(
+  "结构化%s轴旋转保留角度/草图参数链，重开和Body变换后STEP核对真实体积与方向",
+  async (axis) =>
+    withNativeCad(async (fixture) => {
+      const seed = await apply(
+        fixture,
+        { operations: revolutionOperations(axis) },
+        `rotation-${axis}-seed`,
+      );
+      expect(seed.data).toMatchObject({
+        operations: [
+          {},
+          {},
+          {
+            objectName: "Revolution",
+            bodyName: "Body",
+            profileName: "Profile",
+            baseFeatureName: null,
+            tip: "Revolution",
+            axis,
+            angle: 180,
+            solids: 1,
+          },
+          {},
+          {},
+          { objectName: "Torus", axis, angle: 360, solids: 1 },
+        ],
+      });
+      const seedPath = outputPath(seed);
+      const seedBytes = await readFile(seedPath);
+      await checkRevolutionReadback(fixture, seedPath, axis, false);
+      const edited = await editRevolutionDimensions(fixture, seedPath, axis);
+      const expected =
+        axis === "x" ? [0, 0, 0, 24, 12, 12] : [0, 0, -12, 12, 24, 0];
+      expectRevolutionBounds(edited, "Body", expected);
+      const reopened = await checkRevolutionReadback(
+        fixture,
+        outputPath(edited),
+        axis,
+        true,
+      );
+      expectRevolutionBounds(reopened, "Body", expected);
+      await checkRevolutionStep(fixture, outputPath(edited), axis);
+      const restored = await apply(
+        fixture,
+        {
+          documentPath: outputPath(edited),
+          operations: [
+            {
+              kind: "set_dimension",
+              object: "Revolution",
+              dimension: "angle",
+              value: 360,
+            },
+            {
+              kind: "set_dimension",
+              object: "Torus",
+              dimension: "angle",
+              value: 360,
+            },
+          ],
+        },
+        `rotation-${axis}-restore`,
+      );
+      const body = restored.document?.objects.find(
+        (object) => object.name === "Body",
+      )?.shape;
+      expect(body?.volume).toBeCloseTo(2856 * Math.PI, 6);
+      expect(await readFile(seedPath)).toEqual(seedBytes);
+    }),
+  120_000,
+);
+
+it.skipIf(nativeUnavailable)(
+  "结构化旋转拒绝错Body/草图、已消费实体、自交轮廓和表达式角度，失败不发布或改变源工程",
+  async () =>
+    withNativeCad(async (fixture) => {
+      const seed = await apply(
+        fixture,
+        { operations: revolutionOperations("y") },
+        "rotation-protection-seed",
+      );
+      const seedPath = outputPath(seed);
+      for (const [name, operation] of [
+        [
+          "second-revolution",
+          {
+            kind: "create_revolution",
+            name: "Second",
+            body: "Body",
+            profile: "Profile",
+            axis: "y",
+            angle: 90,
+          },
+        ],
+        [
+          "foreign-profile",
+          {
+            kind: "create_revolution",
+            name: "Foreign",
+            body: "EmptyBody",
+            profile: "Profile",
+            axis: "y",
+            angle: 90,
+          },
+        ],
+        [
+          "wrong-angle-object",
+          {
+            kind: "set_dimension",
+            object: "Profile",
+            dimension: "angle",
+            value: 90,
+          },
+        ],
+      ] as const)
+        await refuse(
+          fixture,
+          {
+            documentPath: seedPath,
+            operations: [{ kind: "create_body", name: "EmptyBody" }, operation],
+          },
+          name,
+        );
+      const crossing = revolutionOperations("y").slice(0, 3);
+      crossing[1] = {
+        kind: "create_sketch",
+        name: "Profile",
+        body: "Body",
+        profiles: [
+          { kind: "circle", name: "Crossing", radius: 4, center: [2, 0] },
+        ],
+      };
+      await refuse(fixture, { operations: crossing }, "rotation-crosses-axis");
+      for (const [name, source] of [
+        [
+          "bound-angle",
+          "doc.getObject('Revolution').setExpression('Angle','180 deg')",
+        ],
+        ["symmetric", "doc.getObject('Revolution').Midplane = True"],
+        ["reversed", "doc.getObject('Revolution').Reversed = True"],
+      ]) {
+        const changed = await python(
+          fixture,
+          seedPath,
+          [source ?? "", "doc.recompute()"],
+          `rotation-${name}-seed`,
+        );
+        await refuse(
+          fixture,
+          {
+            documentPath: outputPath(changed),
+            operations: [
+              {
+                kind: "set_dimension",
+                object: "Revolution",
+                dimension: "angle",
+                value: 90,
+              },
+            ],
+          },
+          `rotation-${name}-edit`,
+          name === "bound-angle" ? /表达式/u : undefined,
+        );
+      }
+    }),
+  120_000,
+);
+
+async function verifyRevolutionDownstream(
+  fixture: NativeCad,
+  seedPath: string,
+) {
+  const downstream = await python(
+    fixture,
+    seedPath,
+    [
+      "body = doc.getObject('Body')",
+      "extra = body.newObject('PartDesign::AdditiveBox','Extra')",
+      "extra.Length, extra.Width, extra.Height = 4, 5, 2",
+      "extra.Placement.Base = App.Vector(8,0,-2)",
+      "body.Tip = extra",
+      "doc.recompute()",
+      "assert extra.BaseFeature == doc.getObject('Revolution')",
+      "assert extra.Shape.isValid() and len(extra.Shape.Solids) == 1",
+      "doc.getObject('Revolution').ViewObject.Visibility = False",
+      "extra.ViewObject.Visibility = True",
+    ],
+    "rotation-downstream-seed",
+  );
+  const changed = await apply(
+    fixture,
+    {
+      documentPath: outputPath(downstream),
+      operations: [
+        {
+          kind: "set_dimension",
+          object: "Revolution",
+          dimension: "angle",
+          value: 90,
+        },
+      ],
+    },
+    "rotation-upstream-angle-edit",
+  );
+  expect(changed.data).toMatchObject({
+    operations: [{ objectName: "Revolution", tip: "Extra", angle: 90 }],
+  });
+  await python(
+    fixture,
+    outputPath(changed),
+    [
+      "body, feature, extra = [doc.getObject(name) for name in ('Body','Revolution','Extra')]",
+      "assert body.Tip == extra and extra.BaseFeature == feature",
+      "assert extra.Shape.isValid() and len(extra.Shape.Solids) == 1",
+      "assert body.Shape.Volume > feature.Shape.Volume",
+      "assert not feature.ViewObject.Visibility and extra.ViewObject.Visibility",
+      `assert abs(feature.Shape.Volume - ${375 * Math.PI}) < 1e-6`,
+    ],
+    "rotation-downstream-reopened",
+  );
+  const failingDownstream = await python(
+    fixture,
+    outputPath(downstream),
+    [
+      "doc.getObject('Extra').Placement.Base = App.Vector(-12,0,-2)",
+      "doc.recompute()",
+      "assert len(doc.getObject('Extra').Shape.Solids) == 1",
+    ],
+    "rotation-failing-downstream-seed",
+  );
+  await refuse(
+    fixture,
+    {
+      documentPath: outputPath(failingDownstream),
+      operations: [
+        {
+          kind: "set_dimension",
+          object: "Revolution",
+          dimension: "angle",
+          value: 90,
+        },
+      ],
+    },
+    "rotation-breaks-downstream",
+  );
+}
+
+it.skipIf(nativeUnavailable)(
+  "上游旋转改角保持真实后继Tip与显示状态，同方向基准轴仍拒绝冒用",
+  async () =>
+    withNativeCad(async (fixture) => {
+      const seed = await apply(
+        fixture,
+        { operations: revolutionOperations("y") },
+        "rotation-tip-seed",
+      );
+      await verifyRevolutionDownstream(fixture, outputPath(seed));
+      const foreignAxis = await python(
+        fixture,
+        outputPath(seed),
+        [
+          "body = doc.getObject('Body')",
+          "axis = doc.getObject('Y_Axis')",
+          "assert axis is not None",
+          "doc.getObject('Revolution').ReferenceAxis = (axis,[''])",
+          "body.Tip = doc.getObject('Revolution')",
+          "doc.recompute()",
+        ],
+        "rotation-alternate-axis-seed",
+      );
+      await refuse(
+        fixture,
+        {
+          documentPath: outputPath(foreignAxis),
+          operations: [
+            {
+              kind: "set_dimension",
+              object: "Revolution",
+              dimension: "angle",
+              value: 90,
+            },
+          ],
+        },
+        "rotation-alternate-axis-edit",
+        /本草图局部/u,
+      );
+    }),
+  90_000,
+);
