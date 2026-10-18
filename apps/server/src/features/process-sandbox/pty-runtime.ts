@@ -11,6 +11,7 @@ import { ProcessSandboxError } from "./types.js";
 export async function loadTaskPtyRuntime(
   privateDirectory: string,
   limits: ProcessLimits,
+  inspector?: Promise<string>,
 ): Promise<{ module: typeof NodePty; inspector?: string }> {
   const require = createRequire(import.meta.url);
   const source = dirname(dirname(require.resolve("node-pty")));
@@ -49,7 +50,8 @@ export async function loadTaskPtyRuntime(
     module: require(target) as typeof NodePty,
     ...(process.platform === "darwin"
       ? {
-          inspector: await preparePtySessionInspector(privateDirectory, limits),
+          inspector: await (inspector ??
+            preparePtySessionInspector(privateDirectory, limits)),
         }
       : {}),
   };

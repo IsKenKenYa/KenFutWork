@@ -359,6 +359,18 @@ Agent 用一次 `cad_apply_operations` 创建 40×30 mm 板、初始 Pad 10 mm�
 
 此探针不是生产 GUI 工具。官方 socket 没有业务 ACK；主线程宏回执需要包含请求及文档代际，仍须核验回执后存活。`closeActiveTransaction(False, id)` 才是正确签名，错 ID 可先清全局事务身份；`saveCopy` 不等于 `saveAs`，重开可以复用 Name／Uid，均已由原生行为记录确认。源宏与逐项回执留在本机明确的诊断目录，尚未作为稳定产品桥发布。
 
+### 9.18 macOS 后台 pipes 的启动身份与停止边界
+
+崩溃对账后继续审计后台停止路径，发现原 pipes 直接启动目标并按数值 PGID 收尾；PTY 的 SID／birth 证明并未覆盖它。真实最小回归先 RED：刻意延后范围签发时，目标已创建文件。此缺口与三次 Qt SIGSEGV 是分别成立的事实，不据此把进程清理定为崩溃根因。
+
+现在 macOS pipes 先启动随包固定 native wrapper，由私有 fd3 报告 SID／出生时间；独立 inspector 只按这份 birth 复验活动 leader、PGID 与 SID，范围装入 owner 后重新检查 Task 准入和启动取消，再发送 R 及目标环境。wrapper 在完整校验前不执行目标、不应用其环境，也不 fork；wrapper 环境不继承用户的动态库注入变量。exec 保留原 argv、PID 与 OS sandbox launcher，fd3 设置 CLOEXEC，不混入标准输出、采集或 MCP 协议；exec errno 仍返回 spawn_failed。
+
+无放行或身份失败时关闭私有通道并等待固定 wrapper 自行退出；已签发范围则按原 birth 停止并确认清空。该路径明确不退回数值 PID／PGID 猜杀；无法确认仍保留 stop_unconfirmed。握手有独立时限，不受长命令 timeoutMs:null 影响；背压写入与取消／EOF 竞争，避免 write callback 挂住使超时失效。启动结果与清理结果分开：ready／wait 保留启动错误，但 stop 在已保存 rangeEmpty:true 后返回清空事实，不把成功撤权误报为失败。
+
+针对上述启动前执行、背压取消和清空误报分别取得 RED→GREEN；父端还覆盖坏身份／非 UTF8／超长协议、exec 失败、短命尾部及自有父子停止不影响独立会话。原生夹具验证缺失／截断／非法放行帧、原 birth、停止 leader 拒绝接纳、目标环境替换和 fd3 不继承。首轮广范围在 Codex 外层沙箱内触发 sandbox-exec 禁止嵌套／ps EPERM，另发现模型预览长度误截身份协议；私有身份读取已与预览长度分离，并在授权的真实 macOS 权限下复验，未关闭产品沙箱。
+
+本批接通的是 Task 撤权／关闭与已有 owner.stop 的启动取消。调用方 Run signal 在 spawnStdio 返回前仍无专用传递通道，应作为下一独立取消批次接入，不能把本批称为任意时点 Run 取消均保证零执行。Linux 与 Windows 原有进程范围保持独立，不借本机 macOS 结果宣称跨平台实测。本轮未向现存用户或隔离 GUI 实例发送 AX／宏操作，也未修改 FreeCAD 安装和全局设置。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

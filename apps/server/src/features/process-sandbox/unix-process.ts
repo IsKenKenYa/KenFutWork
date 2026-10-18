@@ -3,9 +3,14 @@ import { constants } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import type * as NodePty from "node-pty";
 import type { IPty } from "node-pty";
+import { executionEnvironment } from "./environment.js";
 import { LinuxProcessRange } from "./linux-process-range.js";
 import type { ProcessOutputCapture } from "./output-capture.js";
 import { PipeOutputRelay } from "./pipe-output.js";
+import {
+  type PipeLaunchAdmission,
+  PipeSessionLaunch,
+} from "./pipe-session-launch.js";
 import { PtySessionRange } from "./pty-session-range.js";
 import type {
   ManagedProcessSnapshot,
@@ -80,6 +85,8 @@ export class UnixManagedProcess {
   private nativeExited = false;
   private stoppingGroup: Promise<void> | undefined;
   private readonly pipeOutput = new Map<ProcessOutputStream, PipeOutputRelay>();
+  private pipeLaunch: PipeSessionLaunch | undefined;
+  private startupFailure: unknown;
 
   constructor(
     descriptor: { argv: string[]; env: NodeJS.ProcessEnv },
@@ -99,6 +106,7 @@ export class UnixManagedProcess {
     ) => void,
     private readonly sessionInspector?: string,
     private readonly linuxInspector?: string,
+    private readonly pipeAdmission: PipeLaunchAdmission = {},
   ) {
     this.scope = structuredClone(request.scope);
     this.snapshotValue = initial;
@@ -240,13 +248,27 @@ export class UnixManagedProcess {
     cwd: string,
     env: NodeJS.ProcessEnv,
   ): ChildProcess {
-    const child = spawn(executable, args, {
-      cwd,
-      env,
-      shell: false,
-      detached: true,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const launcher =
+      process.platform === "darwin" ? this.sessionInspector : undefined;
+    if (process.platform === "darwin" && !launcher)
+      throw new ProcessSandboxError(
+        "enforcement_unavailable",
+        "缺少原生进程启动与范围核验能力。",
+      );
+    const child = spawn(
+      launcher ?? executable,
+      launcher ? ["launch", executable, ...args] : args,
+      {
+        cwd,
+        env: launcher ? executionEnvironment(process.env) : env,
+        shell: false,
+        detached: true,
+        stdio: launcher
+          ? ["pipe", "pipe", "pipe", "pipe"]
+          : ["pipe", "pipe", "pipe"],
+      },
+    );
+    if (launcher) this.trackPipeLaunch(child, launcher, env);
     for (const [stream, input] of [
       ["stdout", child.stdout],
       ["stderr", child.stderr],
@@ -267,6 +289,7 @@ export class UnixManagedProcess {
     }
     child.on("spawn", () => {
       this.snapshotValue.pid = child.pid ?? null;
+      if (launcher) return;
       if (
         this.snapshotValue.enforcement?.processRange === "pid-namespace" &&
         child.pid
@@ -286,12 +309,44 @@ export class UnixManagedProcess {
         "spawn_failed",
         `命令启动失败：${error.message}`,
       );
+      this.startupFailure = failure;
+      this.pipeLaunch?.cancel(failure);
       this.settled.reject(failure);
       this.ready.reject(failure);
       this.finishCapture();
     });
     child.on("close", (exitCode, signal) => this.exited(exitCode, signal));
     return child;
+  }
+
+  private trackPipeLaunch(
+    child: ChildProcess,
+    inspector: string,
+    env: NodeJS.ProcessEnv,
+  ): void {
+    const launch = new PipeSessionLaunch(
+      child,
+      inspector,
+      env,
+      this.request.limits,
+      this.pipeAdmission,
+    );
+    this.pipeLaunch = launch;
+    void launch.ready.then(
+      () => {
+        if (this.requestedReason === null && this.snapshotValue.exit === null)
+          this.snapshotValue.state = "running";
+        this.publish();
+        this.ready.resolve();
+      },
+      (error: unknown) => {
+        this.startupFailure = error;
+        void this.stop(this.requestedReason ?? "startup_failed").then(
+          () => this.ready.reject(error),
+          (stopError: unknown) => this.ready.reject(stopError),
+        );
+      },
+    );
   }
 
   private openLinuxRange(pid: number, kill: () => unknown): void {
@@ -515,6 +570,19 @@ export class UnixManagedProcess {
     this.pty?.resume();
     this.child?.stdin?.destroy();
     for (const relay of this.pipeOutput.values()) relay.close();
+    if (this.pipeLaunch) {
+      this.pipeLaunch.cancel();
+      await (await this.pipeLaunch.ownership)?.stop();
+      await this.waitPipeClosed();
+      try {
+        return await this.wait();
+      } catch (error) {
+        // 启动失败仍由 ready/wait 报告；不能把已确认清空误判为撤权失败。
+        const exit = this.snapshot().exit;
+        if (exit?.rangeEmpty) return exit;
+        throw error;
+      }
+    }
     if (this.ptyRange || this.linuxRange) {
       await (await (this.ptyRange ?? this.linuxRange))?.stop();
       await this.closed.promise;
@@ -533,6 +601,29 @@ export class UnixManagedProcess {
   private stopGroup(pid: number): Promise<void> {
     this.stoppingGroup ??= this.terminateGroup(pid);
     return this.stoppingGroup;
+  }
+
+  private async waitPipeClosed(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.closed.promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new ProcessSandboxError(
+                  "stop_unconfirmed",
+                  "命令启动器尚未确认退出。",
+                ),
+              ),
+            this.request.limits.killGraceMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private async terminateGroup(pid: number): Promise<void> {
@@ -565,7 +656,12 @@ export class UnixManagedProcess {
     signal: NodeJS.Signals | null,
   ): Promise<void> {
     if (this.snapshotValue.exit !== null) return;
-    if (this.ptyRange || this.linuxRange)
+    if (this.pipeLaunch) {
+      await this.pipeLaunch.ready.catch((error: unknown) => {
+        this.startupFailure ??= error;
+      });
+      await (await this.pipeLaunch.ownership)?.stop();
+    } else if (this.ptyRange || this.linuxRange)
       await (await (this.ptyRange ?? this.linuxRange))?.stop();
     else {
       const pid = this.child?.pid ?? this.pty?.pid;
@@ -584,10 +680,15 @@ export class UnixManagedProcess {
     };
     this.snapshotValue.exit = exit;
     this.snapshotValue.finishedAt = new Date().toISOString();
-    this.snapshotValue.state = exit.stopped ? "stopped" : "exited";
+    this.snapshotValue.state = this.startupFailure
+      ? "failed"
+      : exit.stopped
+        ? "stopped"
+        : "exited";
     this.finishCapture();
     this.publish();
-    this.settled.resolve(exit);
+    if (this.startupFailure) this.settled.reject(this.startupFailure);
+    else this.settled.resolve(exit);
   }
 
   private finishCapture(): void {

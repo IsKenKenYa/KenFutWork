@@ -12,7 +12,10 @@ import type { ProcessOwner } from "./managed-process.js";
 import { ProcessOutputCapture } from "./output-capture.js";
 import { commandDirectory, unixPolicy } from "./policy.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
-import { prepareLinuxProcessInspector } from "./pty-native-runtime.js";
+import {
+  prepareLinuxProcessInspector,
+  preparePtySessionInspector,
+} from "./pty-native-runtime.js";
 import { loadTaskPtyRuntime } from "./pty-runtime.js";
 import { readonlyProbe } from "./readonly-probe.js";
 import { losesExecutionRights } from "./scope-change.js";
@@ -48,6 +51,7 @@ class TaskProcessHelper {
   private readonly wrapping = new Set<AbortController>();
   private ptyRuntime: ReturnType<typeof loadTaskPtyRuntime> | undefined;
   private linuxInspector: Promise<string> | undefined;
+  private sessionInspector: Promise<string> | undefined;
   private closePromise: Promise<void> | undefined;
   private initialization: Promise<null> | undefined;
   private readonly invalidatedProcesses = new Set<string>();
@@ -452,10 +456,16 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
         descriptor.env as Record<string, string>,
         this.requireOptions().runtimePathAdditions,
       );
+      if (process.platform === "darwin")
+        this.sessionInspector ??= preparePtySessionInspector(
+          this.privateDirectory,
+          request.limits,
+        );
       if (request.pty)
         this.ptyRuntime ??= loadTaskPtyRuntime(
           this.privateDirectory,
           request.limits,
+          this.sessionInspector,
         );
       const ptyModule = request.pty ? await this.ptyRuntime : undefined;
       if (!probe) this.assertReady(request);
@@ -466,6 +476,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           request.limits,
         );
       const linuxInspector = await this.linuxInspector;
+      const sessionInspector = await this.sessionInspector;
       if (!probe) this.assertReady(request);
       abort.signal.throwIfAborted();
       const { output, snapshot } = this.captureProcess(request, id);
@@ -491,8 +502,14 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
             nextOffset,
             stream,
           ),
-        ptyModule?.inspector,
+        sessionInspector ?? ptyModule?.inspector,
         linuxInspector,
+        {
+          signal: abort.signal,
+          assertReady: () => {
+            if (!probe) this.assertReady(request);
+          },
+        },
       );
       this.processes.set(id, child);
       wrapped = false; // 命令 owner 已接管恰好一次 cleanup。

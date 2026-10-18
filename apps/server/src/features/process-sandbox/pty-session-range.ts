@@ -6,10 +6,13 @@ import { executionEnvironment } from "./environment.js";
 import type { ProcessLimits } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
-interface SessionSnapshot {
+export interface PosixSessionIdentity {
   sessionId: number;
   startSec: number;
   startUsec: number;
+}
+
+interface SessionSnapshot extends PosixSessionIdentity {
   members: Array<{
     pid: number;
     groupId: number;
@@ -47,6 +50,54 @@ export class PtySessionRange {
     return new PtySessionRange(binary, identity, limits);
   }
 
+  /** 接纳私有启动握手的原身份；不能按当前数值 PID 重新签发 birth。 */
+  static async adopt(
+    binary: string,
+    identity: PosixSessionIdentity,
+    limits: ProcessLimits,
+  ): Promise<PtySessionRange> {
+    if (
+      !Number.isSafeInteger(identity.sessionId) ||
+      identity.sessionId < 2 ||
+      !Number.isSafeInteger(identity.startSec) ||
+      identity.startSec < 0 ||
+      !Number.isSafeInteger(identity.startUsec) ||
+      identity.startUsec < 0 ||
+      identity.startUsec >= 1_000_000
+    )
+      throw new ProcessSandboxError(
+        "stop_unconfirmed",
+        "启动握手未提供有效的 session/birth 身份。",
+      );
+    const snapshot = await PtySessionRange.call(
+      binary,
+      [
+        "scan",
+        String(identity.sessionId),
+        String(identity.startSec),
+        String(identity.startUsec),
+      ],
+      limits,
+    );
+    const leader = snapshot.members.find(
+      (member) => member.pid === identity.sessionId,
+    );
+    if (
+      snapshot.sessionId !== identity.sessionId ||
+      snapshot.startSec !== identity.startSec ||
+      snapshot.startUsec !== identity.startUsec ||
+      leader?.state !== "active" ||
+      leader.groupId !== identity.sessionId ||
+      leader.startSec !== identity.startSec ||
+      leader.startUsec !== identity.startUsec
+    )
+      throw new ProcessSandboxError(
+        "stop_unconfirmed",
+        "启动握手的原 session leader 已改变或不再活动。",
+      );
+    return new PtySessionRange(binary, snapshot, limits);
+  }
+
   private static async call(
     binary: string,
     args: string[],
@@ -56,7 +107,7 @@ export class PtySessionRange {
       const result = await execute(binary, args, {
         env: executionEnvironment(process.env),
         timeout: limits.killGraceMs,
-        maxBuffer: limits.previewMaxChars,
+        // 私有身份协议使用 execFile 的默认有界缓冲，不受模型输出预览长度截断。
       });
       const snapshot = JSON.parse(result.stdout) as SessionSnapshot;
       if (
