@@ -103,6 +103,108 @@
         gap: 8px;
         margin-top: 10px;
       }
+      .group {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--muted);
+        margin: 14px 0 6px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 10px;
+      }
+      .device {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .device.offline {
+        opacity: 0.6;
+      }
+      .device h2 {
+        font-size: 13px;
+        font-weight: 600;
+        margin: 0 0 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .badge {
+        font-size: 11px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 6px;
+      }
+      /* 一行一个配置项/控件：标签在左、控件在右 */
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .row .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .value {
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+      .row .value.off {
+        color: var(--danger);
+      }
+      .switch {
+        width: 40px;
+        height: 22px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        position: relative;
+        cursor: pointer;
+        flex: none;
+        padding: 0;
+      }
+      .switch[data-on="1"] {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .switch i {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: left 0.12s ease;
+      }
+      .switch[data-on="1"] i {
+        left: 20px;
+      }
+      input[type="range"] {
+        flex: 1;
+        min-width: 90px;
+        accent-color: var(--accent);
+      }
+      select {
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 2px 6px;
+        max-width: 55%;
+      }
+      .buttons {
+        display: flex;
+        gap: 6px;
+      }
       footer {
         margin-top: 12px;
       }
@@ -113,6 +215,7 @@
       <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态与操作 -->
       <span id="state" class="hint"></span>
       <span class="grow"></span>
+      <button id="refresh" type="button" hidden>刷新</button>
       <button id="retest" type="button" hidden>重新测试</button>
       <button id="edit" type="button" hidden>修改配置</button>
       <button id="disconnect" type="button" hidden>断开</button>

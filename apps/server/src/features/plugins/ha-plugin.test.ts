@@ -68,6 +68,70 @@ interface HaRestModule {
   };
 }
 
+interface HaControlNode {
+  key: string;
+  label?: string;
+  kind: string;
+  value?: unknown;
+  unit?: string | null;
+  min?: number;
+  max?: number;
+  isOn?: boolean;
+  options?: Array<{ value: string; label: string }>;
+  buttons?: Array<{ key: string; label: string; service: string }>;
+}
+
+interface EntityModelModule {
+  AREA_FALLBACK: string;
+  MAX_ENTITIES_PER_VIEW: number;
+  entityDomain: (entityId: unknown) => string;
+  displayName: (
+    entity: { entity_id?: string; attributes?: Record<string, unknown> },
+    registryEntry: Record<string, unknown> | null,
+  ) => string;
+  buildControls: (entity: {
+    entity_id: string;
+    state: string;
+    attributes: Record<string, unknown>;
+  }) => HaControlNode[];
+  readDisplay: (entity: {
+    entity_id: string;
+    state: string;
+    attributes: Record<string, unknown>;
+  }) => { text: string; unit: string | null };
+  toServiceCall: (
+    entity: unknown,
+    key: unknown,
+    service: unknown,
+    value?: unknown,
+  ) => { domain: string; service: string; data: Record<string, unknown> };
+  controlValue: (entity: unknown, key: string) => unknown;
+  buildEntityView: (
+    states: Array<{
+      entity_id: string;
+      state: string;
+      attributes: Record<string, unknown>;
+    }>,
+    registries?: {
+      entities?: Array<Record<string, unknown>>;
+      devices?: Array<Record<string, unknown>>;
+      areas?: Array<{ area_id: string; name: string }>;
+    },
+  ) => {
+    grouping: string;
+    groups: Array<{
+      name: string;
+      items: Array<{
+        entityId: string;
+        name: string;
+        controls: HaControlNode[];
+      }>;
+    }>;
+    total: number;
+    truncated: boolean;
+  };
+}
+
 async function loadPluginModule<ModuleShape>(
   relative: string,
 ): Promise<ModuleShape> {
@@ -94,6 +158,12 @@ interface FakeHaCall {
   body: unknown;
 }
 
+interface HaEntityState {
+  entity_id: string;
+  state: string;
+  attributes: Record<string, unknown>;
+}
+
 interface FakeHaOptions {
   /** 认这个令牌；请求头不符即 401。 */
   token?: string;
@@ -103,11 +173,179 @@ interface FakeHaOptions {
   throwOnRequest?: boolean;
   /** 挂起不返回（配合极短超时模拟超时分支）。 */
   neverRespond?: boolean;
+  /** 覆盖初始实体（默认给一套跨域的样例行）。 */
+  states?: HaEntityState[];
+  /** 服务调用「成功但设备没动」：用于验证读回校验不报假成功。 */
+  serviceIsNoop?: boolean;
+}
+
+/** 跨域样例：灯/开关/窗帘/空调/风扇/媒体播放器/传感器/坏设备各一条。 */
+function sampleStates(): HaEntityState[] {
+  return [
+    {
+      entity_id: "light.bedroom",
+      state: "on",
+      attributes: {
+        friendly_name: "卧室灯",
+        brightness: 128,
+        color_temp: 300,
+        min_mireds: 153,
+        max_mireds: 454,
+      },
+    },
+    {
+      entity_id: "light.kitchen",
+      state: "off",
+      attributes: { friendly_name: "厨房灯" },
+    },
+    {
+      entity_id: "switch.plug",
+      state: "on",
+      attributes: { friendly_name: "插座" },
+    },
+    {
+      entity_id: "input_boolean.guest_mode",
+      state: "off",
+      attributes: { friendly_name: "访客模式" },
+    },
+    {
+      entity_id: "cover.window",
+      state: "closed",
+      attributes: { friendly_name: "客厅窗帘", current_position: 0 },
+    },
+    {
+      entity_id: "climate.ac",
+      state: "heat",
+      attributes: {
+        friendly_name: "客厅空调",
+        temperature: 22,
+        min_temp: 16,
+        max_temp: 30,
+        hvac_mode: "heat",
+        hvac_modes: ["off", "heat", "eco"],
+      },
+    },
+    {
+      entity_id: "fan.desk",
+      state: "on",
+      attributes: { friendly_name: "桌面风扇", percentage: 40 },
+    },
+    {
+      entity_id: "media_player.tv",
+      state: "playing",
+      attributes: { friendly_name: "电视", volume_level: 0.4 },
+    },
+    {
+      entity_id: "sensor.temperature",
+      state: "21.5",
+      attributes: {
+        friendly_name: "室温",
+        unit_of_measurement: "°C",
+        device_class: "temperature",
+      },
+    },
+    {
+      entity_id: "binary_sensor.door",
+      state: "off",
+      attributes: { friendly_name: "门磁", device_class: "door" },
+    },
+    {
+      entity_id: "light.dead",
+      state: "unavailable",
+      attributes: { friendly_name: "离线的灯" },
+    },
+    {
+      entity_id: "sun.sun",
+      state: "above_horizon",
+      attributes: { friendly_name: "太阳" },
+    },
+  ];
+}
+
+/** HA 的服务语义（够用即可：只实现本插件会下发的这几个）。 */
+function applyService(
+  entity: HaEntityState,
+  service: string,
+  data: Record<string, unknown>,
+): void {
+  const attributes = entity.attributes;
+  switch (`${entity.entity_id.split(".")[0]}.${service}`) {
+    case "light.turn_on":
+      entity.state = "on";
+      if (typeof data.brightness_pct === "number") {
+        attributes.brightness = Math.round((data.brightness_pct / 100) * 255);
+      } else if (typeof attributes.brightness !== "number") {
+        attributes.brightness = 255;
+      }
+      if (typeof data.color_temp === "number")
+        attributes.color_temp = data.color_temp;
+      break;
+    case "light.turn_off":
+      entity.state = "off";
+      delete attributes.brightness;
+      break;
+    case "cover.open_cover":
+      entity.state = "open";
+      attributes.current_position = 100;
+      break;
+    case "cover.close_cover":
+      entity.state = "closed";
+      attributes.current_position = 0;
+      break;
+    case "cover.stop_cover":
+      entity.state = "closed";
+      break;
+    case "cover.set_cover_position":
+      entity.state = Number(data.position) >= 100 ? "open" : "closed";
+      attributes.current_position = Number(data.position);
+      break;
+    case "climate.set_temperature":
+      attributes.temperature = Number(data.temperature);
+      break;
+    case "climate.set_hvac_mode":
+      entity.state = String(data.hvac_mode);
+      attributes.hvac_mode = String(data.hvac_mode);
+      break;
+    case "fan.turn_on":
+      entity.state = "on";
+      break;
+    case "fan.turn_off":
+      entity.state = "off";
+      break;
+    case "fan.set_percentage":
+      entity.state = "on";
+      attributes.percentage = Number(data.percentage);
+      break;
+    case "media_player.turn_on":
+      entity.state = "idle";
+      break;
+    case "media_player.turn_off":
+      entity.state = "off";
+      break;
+    case "media_player.volume_set":
+      attributes.volume_level = Number(data.volume_level);
+      break;
+    default:
+      if (service === "turn_on") {
+        entity.state = "on";
+        break;
+      }
+      if (service === "turn_off") {
+        entity.state = "off";
+        break;
+      }
+      throw new Error(`Service not found: ${entity.entity_id}.${service}`);
+  }
 }
 
 function fakeHomeAssistant(options: FakeHaOptions = {}) {
   const expected = `Bearer ${options.token ?? FAKE_TOKEN}`;
   const calls: FakeHaCall[] = [];
+  /** 真值表：服务调用改它，`GET /api/states` 读它——读回校验因此有对象可对。 */
+  const states = new Map<string, HaEntityState>();
+  for (const entity of options.states ?? sampleStates()) {
+    states.set(entity.entity_id, entity);
+  }
   const fetchImpl = async (
     input: string | URL,
     init?: RequestInit,
@@ -147,7 +385,8 @@ function fakeHomeAssistant(options: FakeHaOptions = {}) {
         { status: 401 },
       );
     }
-    const pathname = new URL(url).pathname;
+    const parsed = new URL(url);
+    const pathname = parsed.pathname;
     if (pathname === "/api/") {
       return Response.json({ message: "API running." });
     }
@@ -158,9 +397,54 @@ function fakeHomeAssistant(options: FakeHaOptions = {}) {
         unit_system: { temperature: "°C" },
       });
     }
+    if (pathname === "/api/states") {
+      return Response.json([...states.values()]);
+    }
+    const single = pathname.match(/^\/api\/states\/(.+)$/);
+    if (single) {
+      const entityId = decodeURIComponent(single[1] as string);
+      const entity = states.get(entityId);
+      if (!entity) {
+        return Response.json(
+          { message: `Entity not found: ${entityId}` },
+          { status: 404 },
+        );
+      }
+      return Response.json(entity);
+    }
+    const service = pathname.match(/^\/api\/services\/([^/]+)\/([^/]+)$/);
+    if (service) {
+      const domain = decodeURIComponent(service[1] as string);
+      const serviceName = decodeURIComponent(service[2] as string);
+      const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+        string,
+        unknown
+      >;
+      const entityId = String(body.entity_id ?? "");
+      const target = states.get(entityId);
+      if (!target || !entityId.startsWith(`${domain}.`)) {
+        return Response.json(
+          { message: `Entity not found: ${entityId}` },
+          { status: 404 },
+        );
+      }
+      if (!options.serviceIsNoop) {
+        try {
+          applyService(target, serviceName, body);
+        } catch (error) {
+          return Response.json(
+            { message: error instanceof Error ? error.message : String(error) },
+            { status: 400 },
+          );
+        }
+      }
+      return Response.json([
+        { entity_id: target.entity_id, state: target.state },
+      ]);
+    }
     return Response.json({ message: "not found" }, { status: 404 });
   };
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, states };
 }
 
 let pluginsDir: string;
@@ -671,5 +955,552 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
     await service.uninstall(installed.id);
     expect(store.purged).toContain(installed.id);
     expect([...store.rows.keys()]).toEqual([]);
+  });
+});
+
+describe("HA 插件：域 + 属性 → 控件模型", () => {
+  it("灯：开关 + 亮度（百分比）+ 色温（mired 量程取自属性）", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    const controls = model.buildControls({
+      entity_id: "light.bedroom",
+      state: "on",
+      attributes: {
+        brightness: 128,
+        color_temp: 300,
+        min_mireds: 153,
+        max_mireds: 454,
+      },
+    });
+    expect(controls).toEqual([
+      {
+        key: "power",
+        label: "开关",
+        kind: "toggle",
+        isOn: true,
+        onService: "turn_on",
+        offService: "turn_off",
+      },
+      {
+        key: "brightness",
+        label: "亮度",
+        kind: "slider",
+        service: "turn_on",
+        value: 50,
+        min: 0,
+        max: 100,
+        step: 1,
+        unit: "%",
+      },
+      {
+        key: "color_temp",
+        label: "色温",
+        kind: "slider",
+        service: "turn_on",
+        value: 300,
+        min: 153,
+        max: 454,
+        step: 1,
+        unit: "mired",
+      },
+    ]);
+  });
+
+  it("属性里没有量程就不放控件：灭了且没亮度属性的灯只给开关", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    expect(
+      model.buildControls({
+        entity_id: "light.kitchen",
+        state: "off",
+        attributes: {},
+      }),
+    ).toEqual([
+      {
+        key: "power",
+        label: "开关",
+        kind: "toggle",
+        isOn: false,
+        onService: "turn_on",
+        offService: "turn_off",
+      },
+    ]);
+    // 离线/未知：不给任何可写控件（前端置灰）
+    expect(
+      model.buildControls({
+        entity_id: "light.dead",
+        state: "unavailable",
+        attributes: { brightness: 10 },
+      }),
+    ).toEqual([]);
+  });
+
+  it("窗帘：开/合/停三个按钮 + 位置滑杆；空调：目标温度 + 模式下拉", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    const cover = model.buildControls({
+      entity_id: "cover.window",
+      state: "closed",
+      attributes: { current_position: 20 },
+    });
+    expect(cover[0]?.kind).toBe("buttons");
+    expect(cover[0]?.buttons?.map((item) => item.service)).toEqual([
+      "open_cover",
+      "close_cover",
+      "stop_cover",
+    ]);
+    expect(cover[1]).toMatchObject({
+      key: "position",
+      kind: "slider",
+      service: "set_cover_position",
+      value: 20,
+    });
+    const climate = model.buildControls({
+      entity_id: "climate.ac",
+      state: "heat",
+      attributes: {
+        temperature: 22,
+        min_temp: 16,
+        max_temp: 30,
+        hvac_mode: "heat",
+        hvac_modes: ["off", "heat", "eco"],
+      },
+    });
+    expect(climate[0]).toMatchObject({
+      key: "temperature",
+      kind: "slider",
+      service: "set_temperature",
+      min: 16,
+      max: 30,
+      step: 0.5,
+    });
+    expect(climate[1]?.options).toEqual([
+      { value: "off", label: "off" },
+      { value: "heat", label: "heat" },
+      { value: "eco", label: "eco" },
+    ]);
+  });
+
+  it("媒体播放器按状态判开关，音量说百分比、下发 0~1", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    const controls = model.buildControls({
+      entity_id: "media_player.tv",
+      state: "playing",
+      attributes: { volume_level: 0.4 },
+    });
+    expect(controls[0]).toMatchObject({ kind: "toggle", isOn: true });
+    expect(controls[1]).toMatchObject({
+      key: "volume",
+      value: 40,
+      min: 0,
+      max: 100,
+    });
+    const call = model.toServiceCall(
+      {
+        entity_id: "media_player.tv",
+        state: "playing",
+        attributes: { volume_level: 0.4 },
+      },
+      "volume",
+      "volume_set",
+      65,
+    );
+    expect(call.data).toEqual({
+      volume_level: 0.65,
+      entity_id: "media_player.tv",
+    });
+  });
+
+  it("只读品类给读数：传感器带单位，二值与状态词翻成中文", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    expect(
+      model.readDisplay({
+        entity_id: "sensor.temperature",
+        state: "21.5",
+        attributes: { unit_of_measurement: "°C" },
+      }),
+    ).toEqual({ text: "21.5", unit: "°C" });
+    expect(
+      model.readDisplay({
+        entity_id: "binary_sensor.door",
+        state: "off",
+        attributes: {},
+      }),
+    ).toEqual({ text: "关", unit: null });
+    expect(
+      model.readDisplay({
+        entity_id: "sun.sun",
+        state: "above_horizon",
+        attributes: {},
+      }),
+    ).toEqual({ text: "above_horizon", unit: null });
+    // 视图里：没有可写控件的实体被包成一个 read 控件（面板一行渲染）
+    const view = model.buildEntityView([
+      {
+        entity_id: "sensor.temperature",
+        state: "21.5",
+        attributes: { unit_of_measurement: "°C" },
+      },
+    ]);
+    expect(view.groups[0]?.items[0]?.controls).toEqual([
+      {
+        key: "readout",
+        label: "状态",
+        kind: "read",
+        value: "21.5",
+        unit: "°C",
+      },
+    ]);
+  });
+
+  it("参数换算与量程都在服务端：entity_id 必带、越界与改服务名一律拒", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    const light = {
+      entity_id: "light.bedroom",
+      state: "on",
+      attributes: {
+        brightness: 128,
+        color_temp: 300,
+        min_mireds: 153,
+        max_mireds: 454,
+      },
+    };
+    expect(model.toServiceCall(light, "brightness", "turn_on", 75)).toEqual({
+      domain: "light",
+      service: "turn_on",
+      data: { brightness_pct: 75, entity_id: "light.bedroom" },
+    });
+    expect(
+      model.toServiceCall(light, "power", "turn_off", undefined).data,
+    ).toEqual({
+      entity_id: "light.bedroom",
+    });
+    // 漏 entity_id 会打给该域全部实体——这条必须锁死
+    expect(model.toServiceCall(light, "power", "turn_on").data.entity_id).toBe(
+      "light.bedroom",
+    );
+    expect(() =>
+      model.toServiceCall(light, "brightness", "turn_on", 120),
+    ).toThrow(/亮度超出量程：需要 0~100/);
+    expect(() =>
+      model.toServiceCall(light, "brightness", "turn_on", "abc"),
+    ).toThrow(/要一个数字/);
+    expect(() => model.toServiceCall(light, "power", "turn_up")).toThrow(
+      /不支持服务/,
+    );
+    expect(() => model.toServiceCall(light, "readout", "turn_on")).toThrow(
+      /没有「readout」控件/,
+    );
+    expect(() =>
+      model.toServiceCall({ entity_id: "" }, "power", "turn_on"),
+    ).toThrow(/实体 id 不合法/);
+    const climate = {
+      entity_id: "climate.ac",
+      state: "heat",
+      attributes: {
+        temperature: 22,
+        min_temp: 16,
+        max_temp: 30,
+        hvac_mode: "heat",
+        hvac_modes: ["off", "heat"],
+      },
+    };
+    expect(() =>
+      model.toServiceCall(climate, "hvac_mode", "set_hvac_mode", "turbo"),
+    ).toThrow(/模式没有「turbo」这个取值：可选 off \/ heat/);
+    expect(
+      model.controlValue(
+        { ...climate, attributes: { ...climate.attributes, temperature: 25 } },
+        "temperature",
+      ),
+    ).toBe(25);
+  });
+
+  it("分组：没注册表按域，有注册表按区域且未分区排最后", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    const states = [
+      {
+        entity_id: "light.a",
+        state: "on",
+        attributes: { friendly_name: "A 灯" },
+      },
+      {
+        entity_id: "switch.b",
+        state: "on",
+        attributes: { friendly_name: "B 开关" },
+      },
+      {
+        entity_id: "light.c",
+        state: "on",
+        attributes: { friendly_name: "C 灯" },
+      },
+    ];
+    const byDomain = model.buildEntityView(states);
+    expect(byDomain.grouping).toBe("domain");
+    expect(byDomain.groups.map((group) => group.name)).toEqual([
+      "light",
+      "switch",
+    ]);
+    expect(byDomain.groups[0]?.items.map((item) => item.entityId)).toEqual([
+      "light.a",
+      "light.c",
+    ]);
+
+    const byArea = model.buildEntityView(states, {
+      entities: [
+        // 区域可挂在实体上，也可经设备继承
+        { entity_id: "light.a", name: "改名灯", area_id: "living" },
+        { entity_id: "switch.b", device_id: "dev-1" },
+      ],
+      devices: [{ id: "dev-1", area_id: "bed" }],
+      areas: [
+        { area_id: "living", name: "客厅" },
+        { area_id: "bed", name: "卧室" },
+      ],
+    });
+    expect(byArea.grouping).toBe("area");
+    expect(byArea.groups.map((group) => group.name)).toEqual([
+      "客厅",
+      "卧室",
+      "未分区",
+    ]);
+    // 注册表里的自定义名优先于属性里的 friendly_name
+    expect(byArea.groups[0]?.items[0]?.name).toBe("改名灯");
+  });
+
+  it("超上限如实标 truncated（不静默丢实体）", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    const states = Array.from(
+      { length: model.MAX_ENTITIES_PER_VIEW + 5 },
+      (_, i) => ({
+        entity_id: `sensor.s_${i}`,
+        state: String(i),
+        attributes: {},
+      }),
+    );
+    const view = model.buildEntityView(states);
+    expect(view.total).toBe(model.MAX_ENTITIES_PER_VIEW + 5);
+    expect(view.truncated).toBe(true);
+    expect(view.groups[0]?.items.length).toBe(model.MAX_ENTITIES_PER_VIEW);
+  });
+});
+
+describe("HA 插件：实体网格与控制（假 HA 全链路）", () => {
+  it("未配置时报可读错误，面板据此回到配置态", async () => {
+    const { service, installed } = await installFromRepo();
+    const result = await dispatch(service, installed.id, {
+      path: "entities",
+      instanceId: INSTANCE_ID,
+    });
+    expect(result?.status).toBe(401);
+    expect(bodyOf<{ code: string }>(result).code).toBe("not_configured");
+  });
+
+  it("列实体：按域分组、轮询态如实标注、控件齐全", async () => {
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const result = await dispatch(service, installed.id, {
+      path: "entities",
+      instanceId: INSTANCE_ID,
+    });
+    expect(result?.status).toBe(200);
+    const view = bodyOf<{
+      mode: string;
+      grouping: string;
+      total: number;
+      truncated: boolean;
+      groups: Array<{
+        name: string;
+        items: Array<{
+          entityId: string;
+          name: string;
+          state: string;
+          unavailable: boolean;
+          controls: HaControlNode[];
+        }>;
+      }>;
+    }>(result);
+    expect(view.mode).toBe("polling");
+    expect(view.grouping).toBe("domain");
+    expect(view.total).toBe(12);
+    expect(view.truncated).toBe(false);
+    const light = view.groups.find((group) => group.name === "light");
+    // 组内按显示名排序（中文按拼音），这里只断集合本身
+    expect(light?.items.map((item) => item.entityId).sort()).toEqual([
+      "light.bedroom",
+      "light.dead",
+      "light.kitchen",
+    ]);
+    const bedroom = light?.items.find(
+      (item) => item.entityId === "light.bedroom",
+    );
+    expect(bedroom).toMatchObject({
+      name: "卧室灯",
+      state: "on",
+      unavailable: false,
+    });
+    expect((bedroom?.controls ?? []).map((node) => node.key)).toEqual([
+      "power",
+      "brightness",
+      "color_temp",
+    ]);
+    const dead = view.groups
+      .flatMap((group) => group.items)
+      .find((item) => item.entityId === "light.dead");
+    expect(dead).toMatchObject({ unavailable: true });
+    expect((dead?.controls ?? []).map((node) => node.kind)).toEqual(["read"]);
+  });
+
+  it("控制走通并读回真值：改完假 HA 的真值真的变了", async () => {
+    const { service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const result = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: { entityId: "light.kitchen", key: "power", service: "turn_on" },
+      instanceId: INSTANCE_ID,
+    });
+    expect(result?.status).toBe(200);
+    expect(bodyOf<Record<string, unknown>>(result)).toMatchObject({
+      ok: true,
+      before: false,
+      after: true,
+      changed: true,
+      state: "on",
+      message: "已生效",
+    });
+    expect(fake.states.get("light.kitchen")?.state).toBe("on");
+    const call = fake.calls.find((item) => item.method === "POST");
+    expect(call?.url).toBe(
+      "http://ha.test.local:8123/api/services/light/turn_on",
+    );
+    expect(call?.body).toEqual({ entity_id: "light.kitchen" });
+  });
+
+  it("亮度换算在线上：面板说百分比，HA 收到 brightness_pct", async () => {
+    const { service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const result = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: {
+        entityId: "light.bedroom",
+        key: "brightness",
+        service: "turn_on",
+        value: 75,
+      },
+      instanceId: INSTANCE_ID,
+    });
+    expect(result?.status).toBe(200);
+    expect(
+      fake.calls.find((item) => item.url.endsWith("/services/light/turn_on"))
+        ?.body,
+    ).toEqual({ brightness_pct: 75, entity_id: "light.bedroom" });
+    // 128 → 75% 是真变化：亮度读数跟着变
+    expect(bodyOf<{ after: number }>(result).after).toBe(75);
+  });
+
+  it("设备没动时如实说「已发出，状态未变」，不报假成功", async () => {
+    const { service, installed } = await installFromRepo({
+      serviceIsNoop: true,
+    });
+    await configureConnected(service, installed.id);
+    const result = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: { entityId: "light.bedroom", key: "power", service: "turn_off" },
+      instanceId: INSTANCE_ID,
+    });
+    expect(bodyOf<Record<string, unknown>>(result)).toMatchObject({
+      ok: true,
+      changed: false,
+      before: true,
+      after: true,
+      message: "已发出，状态未变",
+    });
+  });
+
+  it("控制面的错误面：脏 id、越界、只读实体、HA 里不存在的实体", async () => {
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+
+    const dirty = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: { entityId: "light/../config", key: "power", service: "turn_on" },
+      instanceId: INSTANCE_ID,
+    });
+    expect(dirty?.status).toBe(400);
+    expect(bodyOf<{ code: string }>(dirty).code).toBe("bad_service");
+
+    const outOfRange = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: {
+        entityId: "cover.window",
+        key: "position",
+        service: "set_cover_position",
+        value: 300,
+      },
+      instanceId: INSTANCE_ID,
+    });
+    expect(outOfRange?.status).toBe(400);
+    expect(bodyOf<{ error: string }>(outOfRange).error).toContain(
+      "位置超出量程",
+    );
+
+    const readOnly = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: {
+        entityId: "sensor.temperature",
+        key: "readout",
+        service: "turn_on",
+        value: 1,
+      },
+      instanceId: INSTANCE_ID,
+    });
+    expect(readOnly?.status).toBe(400);
+    expect(bodyOf<{ error: string }>(readOnly).error).toContain(
+      "没有「readout」控件",
+    );
+
+    const missing = await dispatch(service, installed.id, {
+      method: "POST",
+      path: "control",
+      body: { entityId: "light.gone", key: "power", service: "turn_on" },
+      instanceId: INSTANCE_ID,
+    });
+    expect(missing?.status).toBe(404);
+    expect(bodyOf<{ code: string }>(missing).code).toBe("not_found");
+  });
+
+  it("HA 令牌被吊销：列实体回 401 原话，面板据此回配置态", async () => {
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    // 换掉假 HA 认的那个令牌 = 用户在 HA 侧吊销/重建了令牌，库里这份已失效
+    globalThis.fetch = fakeHomeAssistant({
+      token: "rotated-by-ha",
+    }).fetchImpl as typeof fetch;
+    const result = await dispatch(service, installed.id, {
+      path: "entities",
+      instanceId: INSTANCE_ID,
+    });
+    expect(result?.status).toBe(401);
+    expect(bodyOf<{ code: string }>(result).code).toBe("unauthorized");
+    expect(bodyOf<{ error: string }>(result).error).toContain("个人资料");
   });
 });

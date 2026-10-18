@@ -17,8 +17,14 @@
  */
 
 import {
+  buildEntityView,
+  controlValue,
+  toServiceCall,
+} from "./lib/entity-model.js";
+import {
   createHaRest,
   HA_DEFAULT_BASE_URL,
+  isValidEntityId,
   normalizeHaBaseUrl,
 } from "./lib/ha-rest.js";
 
@@ -28,13 +34,20 @@ export const inject = ["routes", "ui", "storage"];
 
 const CONFIG_KEY = "config";
 
+/**
+ * 错误码 → HTTP 状态。401 是「需要用户先动面板」的信号（面板据此回到配置态，
+ * 与米家插件的 `not_connected` 同口径）；其余按语义给 404/400。
+ */
+const STATUS_BY_CODE = {
+  unauthorized: 401,
+  not_configured: 401,
+  not_found: 404,
+};
+
 function errorResult(error) {
   const code = typeof error?.code === "string" ? error.code : "http_error";
-  // 401 = 「需要用户先动面板」的信号：面板据此回到配置态（与米家插件的 not_connected 同口径）
-  const status =
-    code === "unauthorized" || code === "not_configured" ? 401 : 400;
   return {
-    status,
+    status: STATUS_BY_CODE[code] ?? 400,
     body: {
       error: error instanceof Error ? error.message : String(error),
       code,
@@ -179,6 +192,74 @@ export function apply(ctx) {
             ok: true,
             version: info?.version ?? null,
             locationName: info?.location_name ?? null,
+          },
+        };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "entities",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "列实体");
+      try {
+        const rest = await restFor(instanceId);
+        const states = await rest.getStates();
+        const view = buildEntityView(Array.isArray(states) ? states : []);
+        return {
+          status: 200,
+          body: {
+            ...view,
+            // 实时态由 WebSocket 决定（P3）；REST 轮询期如实标 polling
+            mode: "polling",
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "control",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "控制实体");
+      const body = request.body ?? {};
+      const entityId = typeof body.entityId === "string" ? body.entityId : "";
+      if (!isValidEntityId(entityId)) {
+        return {
+          status: 400,
+          body: {
+            error: `实体 id 不合法（${entityId.slice(0, 60)}）。`,
+            code: "bad_service",
+          },
+        };
+      }
+      try {
+        const rest = await restFor(instanceId);
+        const entity = await rest.getState(entityId);
+        // 参数换算与量程复核都在 entity-model 里：面板只能点亮它看得见的控件
+        const call = toServiceCall(entity, body.key, body.service, body.value);
+        const before = controlValue(entity, body.key);
+        await rest.callService(call.domain, call.service, call.data);
+        // 读回真值：HA 会「服务调用成功但设备没动」，只报 200 是假成功
+        const after = await rest.getState(entityId);
+        const afterValue = controlValue(after, body.key);
+        const changed = afterValue !== before;
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            entityId,
+            state: String(after?.state ?? ""),
+            before,
+            after: afterValue,
+            changed,
+            message: changed ? "已生效" : "已发出，状态未变",
           },
         };
       } catch (error) {
