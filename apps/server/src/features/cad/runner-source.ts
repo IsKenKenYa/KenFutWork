@@ -36,7 +36,7 @@ def describe(doc):
         if has_shape_property(obj):
             shape = obj.Shape
             empty = shape.isNull()
-            bounds = None if empty else shape.BoundBox
+            bounds = None if empty else shape.optimalBoundingBox(False, False)
             item["shape"] = {
                 "null": empty,
                 "valid": not empty and shape.isValid(),

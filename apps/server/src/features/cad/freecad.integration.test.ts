@@ -1336,3 +1336,59 @@ it.skipIf(
     }),
   90_000,
 );
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "曲面工程的尺寸回执使用解析几何边界，不受已有显示三角网格影响",
+  async () =>
+    withNativeCad(async ({ service, context }) => {
+      const created = await service.execute(
+        {
+          action: "python",
+          input: {
+            source: [
+              "ring = doc.addObject('Part::Torus', 'Ring')",
+              "ring.Radius1 = 10",
+              "ring.Radius2 = 2",
+              "doc.recompute()",
+              "ring.Shape.tessellate(0.5)",
+            ].join("\n"),
+            requireSolids: true,
+            expectedVolume: { objectName: "Ring", value: 80 * Math.PI ** 2 },
+          },
+        },
+        context,
+      );
+      expect(created.isError, JSON.stringify(created)).not.toBe(true);
+      const result = cadResultSchema.parse(created.structuredContent);
+      const shape = result.document?.objects.find(
+        (object) => object.name === "Ring",
+      )?.shape;
+      expect(shape).toMatchObject({ valid: true, null: false, solids: 1 });
+      const bounds = z.array(z.number()).length(6).parse(shape?.bounds);
+      for (const [index, expected] of [-12, -12, -2, 12, 12, 2].entries())
+        expect(bounds[index]).toBeCloseTo(expected, 6);
+      const bytes = await readFile(String(result.outputPath));
+      const reopened = await service.execute(
+        {
+          action: "describe",
+          input: { documentPath: String(result.outputPath) },
+        },
+        { ...context, toolCallId: "exact-bounds-reopened" },
+      );
+      expect(reopened.isError, JSON.stringify(reopened)).not.toBe(true);
+      const reopenedShape = cadResultSchema
+        .parse(reopened.structuredContent)
+        .document?.objects.find((object) => object.name === "Ring")?.shape;
+      const reopenedBounds = z
+        .array(z.number())
+        .length(6)
+        .parse(reopenedShape?.bounds);
+      for (const [index, expected] of [-12, -12, -2, 12, 12, 2].entries())
+        expect(reopenedBounds[index]).toBeCloseTo(expected, 6);
+      expect(await readFile(String(result.outputPath))).toEqual(bytes);
+    }),
+  60_000,
+);
