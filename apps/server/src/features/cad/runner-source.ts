@@ -1,4 +1,5 @@
 import { FREECAD_OPERATIONS_SOURCE } from "./operations-source.js";
+import { FREECAD_SVG_SOURCE } from "./svg-source.js";
 import { FREECAD_TOPOLOGY_SOURCE } from "./topology-source.js";
 
 /** 单次隔离 FreeCADCmd 的 Python 程序；以文本随服务端与桌面打包。 */
@@ -98,6 +99,8 @@ def primitive(doc, args):
 
 ${FREECAD_OPERATIONS_SOURCE}
 
+${FREECAD_SVG_SOURCE}
+
 
 def publish(source, destination, execution_id):
     # 同目录临时文件 + 独占链接发布；即使目标已存在或跨卷也不覆盖用户文件。
@@ -169,8 +172,9 @@ def projection(objects, view):
     import TechDraw
     direction = App.Vector(*{"isometric": (1, -1, 1), "top": (0, 0, 1), "front": (0, -1, 0), "right": (1, 0, 0)}[view])
     shape = Part.makeCompound([global_shape(obj) for obj in objects])
-    groups = TechDraw.project(shape, direction)
-    visible = [group for group in groups[:2] if not group.isNull() and group.Edges]
+    # project() 不返回外轮廓；projectEx 的 VO、V 对齐官方默认 Plain SVG。
+    groups = TechDraw.projectEx(shape, direction)
+    visible = [groups[index] for index in (3, 0) if not groups[index].isNull() and groups[index].Edges]
     if not visible:
         raise ValueError("所选几何在此视图没有可见投影线")
     bounds = App.BoundBox()
@@ -179,15 +183,19 @@ def projection(objects, view):
     span = max(bounds.XLength, bounds.YLength)
     if not math.isfinite(span) or span <= 0:
         raise ValueError("投影范围无效")
+    metadata = {"kind": "wireframe", "view": view, "objectNames": [obj.Name for obj in objects], "projectedBounds": [bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax]}
+    return visible, bounds, span, metadata
+
+
+def projection_svg(groups, bounds, span):
     margin = span * 0.05
-    style = {"stroke": "#243447", "stroke-width": str(span / 700), "fill": "none"}
-    fragment = TechDraw.projectToSVG(shape, direction, vStyle=style, v0Style=style, v1Style=style)
-    # TechDraw 片段自带 scale(1,-1)；viewBox 使用真实投影形状的翻转后坐标。
+    style = {"stroke": "#243447", "stroke-width": span / 700, "fill": "none"}
+    fragment, encoding = precise_svg_fragment(groups, style)
+    # SVG 片段自带 scale(1,-1)；viewBox 使用真实投影形状的翻转后坐标。
     viewbox = [bounds.XMin - margin, -bounds.YMax - margin, bounds.XLength + margin * 2, bounds.YLength + margin * 2]
     # 与 FreeCAD Draft 的交换约定一致：一个 SVG 坐标单位对应一毫米。
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + str(viewbox[2]) + 'mm" height="' + str(viewbox[3]) + 'mm" viewBox="' + " ".join(str(value) for value in viewbox) + '" preserveAspectRatio="xMidYMid meet">' + fragment + '</svg>'
-    metadata = {"kind": "wireframe", "view": view, "objectNames": [obj.Name for obj in objects], "projectedBounds": [bounds.XMin, bounds.YMin, bounds.XMax, bounds.YMax]}
-    return svg, metadata, shape, direction
+    return svg, encoding
 
 
 def describe_error(error):
@@ -263,16 +271,21 @@ def perform(request):
         elif extension == "brep":
             Part.makeCompound([global_shape(obj) for obj in objects]).exportBrep(temporary)
         elif extension in ("svg", "dxf"):
-            svg, metadata, shape, direction = projection(objects, args.get("view", "isometric" if action == "preview" else "top"))
+            groups, bounds, span, metadata = projection(objects, args.get("view", "isometric" if action == "preview" else "top"))
             response["preview"] = metadata
             if extension == "svg":
+                svg, metadata["svgEncoding"] = projection_svg(groups, bounds, span)
                 with open(temporary, "x", encoding="utf-8") as stream:
                     stream.write(svg)
             else:
-                import TechDraw
-                entities = TechDraw.projectToDXF(shape, direction)
-                with open(temporary, "x", encoding="utf-8") as stream:
-                    stream.write("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n" + entities + "0\nENDSEC\n0\nEOF\n")
+                import Import
+                options = "User parameter:BaseApp/KfwCad/DxfExport/" + request["executionId"]
+                parameters = App.ParamGet(options)
+                parameters.SetInt("DxfVersionOut", 14)
+                parameters.SetBool("ExportPoints", False)
+                parameters.SetBool("DiscretizeEllipses", False)
+                parameters.SetFloat("maxsegmentlength", 5.0)
+                Import.writeDXFShape(groups, temporary, 14, False, options)
     else:
         App.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt("CountBackupFiles", 0)
         doc.saveAs(temporary)

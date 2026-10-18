@@ -472,6 +472,23 @@ export const cadResultSchema = z.object({
       view: cadViewSchema,
       objectNames: z.array(z.string()),
       projectedBounds: z.array(z.number().finite()).length(4),
+      svgEncoding: z
+        .object({
+          numericPrecision: z.literal(17),
+          edgeCount: z.number().int().positive(),
+          approximationToleranceMm: z.number().finite().positive(),
+          approximatedEdges: z.array(
+            z.object({
+              groupIndex: z.number().int().nonnegative(),
+              edgeIndex: z.number().int().positive(),
+              curveType: z.string(),
+              lineSegments: z.number().int().positive(),
+              method: z.literal("GCPnts_UniformDeflection"),
+              toleranceMm: z.number().finite().positive(),
+            }),
+          ),
+        })
+        .optional(),
     })
     .optional(),
   error: z.string().optional(),

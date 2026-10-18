@@ -528,3 +528,14 @@ NC独立读取后按本例绝对XYZ、XY增量I/J与mm/min解析，逐段核对�
 两项原生行为纠正了初始断言：[固定Area.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/CAM/App/Area.cpp#L1748)会把触底显式截面改成zMin+SectionTolerance，Area.py设置该值为Precision.confusion()*10。本例请求FinalDepth0，实际末层1e-6mm，前四层4/3/2/1不变；记录并精确检查这个原生偏移，未笼统放宽所有深度，也未误归因于后处理舍入。Profile在圆角中点开始，会把同一角分成两段G2；按闭合几何／总转角验收，不要求固定4段。
 
 真实失败边界：不存在的后处理工厂返回None，脚本明确拒绝；清空Job操作后，真实linuxcnc仍可返回非空首尾／WCS文本，原生Path回读没有实际切削运动，脚本拒绝。两者均源FCStd字节保持、显式目标不存在，未用mock或手写NC替代失败。通用CAD几何校验不证明刀路可制造，领域判据由脚本与本例独立oracle核验；这些证据不覆盖其它CAM策略、控制器、仿真、真实机床执行或用户现存GUI。最终命令、门禁与重叠统计见同批《日志》。
+
+
+### 9.28 投影外轮廓与二维交换数值精度
+
+旋转后的1250×600mm Draft矩形暴露生产缺陷：旧`TechDraw.projectToSVG`／`projectToDXF`使用默认约六位有效数，回读边长偏差约0.003mm、面积约750002.17689mm²；原FCStd参数和几何正确。不是修改尺寸参数或放宽验收解决。固定源码确认SVG内部局部stringstream未提供Python精度参数，`tolerance`控制曲线网格，不能当作数字有效位数。[SVG序列化源码](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/TechDraw/App/TechDrawExport.cpp#L156)
+
+KFW保留官方投影，仅对已投影原生边做17位有效数的SVG编码：直线、圆／旋转椭圆及裁剪弧、非有理一至三阶Bezier保持解析表达；B-spline先原生裁剪并精确拆Bezier，高阶／有理片段及无Python包装的OtherCurve在可确认C2时使用原生`GCPnts_UniformDeflection`，当前请求容差`Precision.confusion()*10`，即1e-6mm。折线使用标准polyline，回执分别记录数字精度、近似容差、曲线类型和段数；不能把近似曲线说成解析曲线。退化边或无法确认连续度时明确失败，不改安装的FreeCAD、不补猜舍入后的坐标。原生FCStd保留原始可编辑曲线。
+
+球体／圆环还暴露旧`project()[:2]`取范围的缺陷：`project()`只返回V/V1/H/H1，没有VO外轮廓。改用`projectEx()`的VO与V（索引3、0），与官方默认Plain SVG相同；bounds、SVG和DXF共用选择，不混入hidden/seam/iso。DXF改走官方`Import.writeDXFShape(...,14,False,Task专用参数组)`完整R14 writer，实体数字固定九位小数、毫米单位；显式隔离writer配置，不再手包低精度片段。[Python绑定](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/TechDraw/App/AppTechDrawPy.cpp#L1086)、[默认可见线组合](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/TechDraw/App/ProjectionAlgos.cpp#L147)、[DXF实体数字精度](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Import/App/dxf/dxf.cpp#L124)
+
+独立回读矩阵从数学定义重建14种源几何，包括大坐标短线、旋转矩形、圆／圆弧、旋转椭圆／弧、二／三阶Bezier、普通／有理／五阶B-spline及球／柱／圆环。正式`importSVG.insert`导入后核对闭合性、包围盒、逐边长度和双向各129个样点的原生距离；三种实体另走正式PNG预览。样点不是穷尽Hausdorff证明，投影预览不是工程图标注或着色渲染。长度使用`math.fsum(Edge.Length)`，避免聚合Shape固定阶积分与Edge容差积分的差异导致假红；对数千折线边用保守包围盒下界剔除，再逐候选原生distToShape，未放宽原几何／弧长门槛。初版通用path的SVG导入超时，改为同点polyline后约0.22秒；另一次超时来自独立距离oracle，未因此提高生产时限。本批旋转矩形回读覆盖原尺寸精度问题。最终命令与门禁见同批《日志》，不把这些证据扩大为所有CAD曲线、视图、交换格式或用户现存GUI均已通过。
