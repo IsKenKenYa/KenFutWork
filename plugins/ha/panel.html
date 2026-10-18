@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>智能家居</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #12141c;
+        --panel: #1b1e29;
+        --line: #2b3040;
+        --text: #e7e9f2;
+        --muted: #9aa1b5;
+        --accent: #7f9cf5;
+        --danger: #f08a8a;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f8fb;
+          --panel: #ffffff;
+          --line: #e3e6ef;
+          --text: #22262f;
+          --muted: #6b7280;
+          --accent: #4c63b6;
+          --danger: #b4453f;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: 13px/1.55 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei",
+          sans-serif;
+        scrollbar-gutter: stable;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      header .grow {
+        flex: 1;
+      }
+      .hint {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .error {
+        color: var(--danger);
+        font-size: 12px;
+      }
+      button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 5px 10px;
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px 14px;
+      }
+      /* 一行一个配置项：标签在左、控件在右 */
+      .field {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 8px 0;
+      }
+      .field label {
+        flex: none;
+        width: 44px;
+        color: var(--muted);
+      }
+      .field input {
+        flex: 1;
+        min-width: 0;
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 5px 8px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      footer {
+        margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态与操作 -->
+      <span id="state" class="hint"></span>
+      <span class="grow"></span>
+      <button id="retest" type="button" hidden>重新测试</button>
+      <button id="edit" type="button" hidden>修改配置</button>
+      <button id="disconnect" type="button" hidden>断开</button>
+    </header>
+    <main id="body">
+      <div class="card hint">正在获取配置…</div>
+    </main>
+    <footer id="footer">
+      <p id="note" hidden></p>
+    </footer>
+    <!-- 面板脚本是经典脚本（无 import/export）：与米家面板同一口径，避开宿主 WebView
+         拒同源 module 请求的问题 -->
+    <script src="./panel.js"></script>
+  </body>
+</html>

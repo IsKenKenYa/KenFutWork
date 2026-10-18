@@ -1,10 +1,4 @@
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -25,6 +19,7 @@ import {
   type BundledBundle,
   createPluginRegistryService,
 } from "./plugin-registry-service.js";
+import { createPersistentPluginStorage } from "./plugin-storage.test-fixture.js";
 
 /**
  * 米家插件测试。分两层：
@@ -885,43 +880,6 @@ describe("米家插件：规格 → 控件模型", () => {
 
 // === 2. 全链路（真门禁 + 假云） ===
 
-class PersistentTestStorage extends Map<string, string> {
-  constructor(private readonly file: string) {
-    super();
-    if (!existsSync(file)) return;
-    const entries: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (!Array.isArray(entries)) throw new Error("持久插件夹具格式无效。");
-    for (const entry of entries) {
-      if (
-        !Array.isArray(entry) ||
-        typeof entry[0] !== "string" ||
-        typeof entry[1] !== "string"
-      ) {
-        throw new Error("持久插件夹具条目无效。");
-      }
-      super.set(entry[0], entry[1]);
-    }
-  }
-
-  private persist() {
-    const temporary = `${this.file}.tmp`;
-    writeFileSync(temporary, JSON.stringify([...this]), { mode: 0o600 });
-    renameSync(temporary, this.file);
-  }
-
-  override set(key: string, value: string): this {
-    super.set(key, value);
-    this.persist();
-    return this;
-  }
-
-  override delete(key: string): boolean {
-    const removed = super.delete(key);
-    if (removed) this.persist();
-    return removed;
-  }
-}
-
 let pluginsDir: string;
 let localInstances: Map<string, LocalInstanceService>;
 
@@ -955,10 +913,9 @@ function installPlugin(
     ...(options.pollThrows ? { pollThrows: options.pollThrows } : {}),
   });
   globalThis.fetch = cloud.fetchImpl as typeof fetch;
-  const storage = new PersistentTestStorage(
+  const store = createPersistentPluginStorage(
     path.join(pluginsDir, "test-session-storage.json"),
   );
-  const purged: string[] = [];
   const service = createPluginRegistryService({
     pluginsDir,
     tools: kernel.get("tools"),
@@ -968,39 +925,17 @@ function installPlugin(
     ...(options.bundledBundles
       ? { bundledBundles: options.bundledBundles }
       : {}),
-    storage: {
-      async get(instanceId, pluginId, key) {
-        return storage.get(JSON.stringify([instanceId, pluginId, key])) ?? null;
-      },
-      async set(instanceId, pluginId, key, value) {
-        storage.set(JSON.stringify([instanceId, pluginId, key]), value);
-      },
-      async remove(instanceId, pluginId, key) {
-        return storage.delete(JSON.stringify([instanceId, pluginId, key]));
-      },
-      async keys(instanceId, pluginId) {
-        return [...storage.keys()]
-          .map((raw) => JSON.parse(raw) as [string, string, string])
-          .filter(([ws, id]) => ws === instanceId && id === pluginId)
-          .map(([, , key]) => key);
-      },
-      async purgePlugin(pluginId) {
-        purged.push(pluginId);
-        let removed = 0;
-        for (const key of [...storage.keys()]) {
-          const identity: unknown = JSON.parse(key);
-          if (
-            Array.isArray(identity) &&
-            identity[1] === pluginId &&
-            storage.delete(key)
-          )
-            removed += 1;
-        }
-        return removed;
-      },
-    },
+    storage: store.storage,
   });
-  return { kernel, service, cloud, storage, purged };
+  return {
+    kernel,
+    service,
+    cloud,
+    store,
+    /** 行视图（键=`[实例, 插件, 键]` 的 JSON），供用例直接篡改落库内容。 */
+    storage: store.rows,
+    purged: store.purged,
+  };
 }
 
 async function dispatch(

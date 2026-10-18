@@ -1,0 +1,12 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="智能家居">
+  <!-- 自绘的房子+信号点图标（不复制 Home Assistant 的商标图形） -->
+  <path
+    d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4v-5.5H9V21H5a1 1 0 0 1-1-1z"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  />
+  <circle cx="12" cy="10.6" r="1.5" fill="currentColor" />
+</svg>
