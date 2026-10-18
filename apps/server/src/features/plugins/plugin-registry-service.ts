@@ -45,6 +45,10 @@ import {
   type PluginExportSpec,
 } from "./plugin-exporter.js";
 import type { PluginStorage } from "./plugin-storage.js";
+import type {
+  PluginStateChangedEvent,
+  PluginStateRevokingEvent,
+} from "./state-lifecycle.js";
 
 /**
  * 插件注册表服务：安装 / 卸载 / 启停 / 导入校验 / 导出。
@@ -131,6 +135,10 @@ export interface PluginRegistryDeps {
    * （见文件头注释），而插件数据挂在「工作区」上，必须走 DB 与工作区隔离缝。
    */
   storage: PluginStorage;
+  /** 可信宿主消费者先停止派发、等待资源退出，成功后才变更安装态。 */
+  onStateRevoking?(event: PluginStateRevokingEvent): void | Promise<void>;
+  /** 状态写入后的同步通知；通知异常不回滚或伪装已提交的状态。 */
+  afterStateChanged?(event: PluginStateChangedEvent): void;
   /** GitHub token（可选，提升匿名速率上限） */
   githubToken?: string;
   logger?: {
@@ -371,6 +379,17 @@ export function createPluginRegistryService(
    * 且 UI 用的是**插件名**而非注册表 id，解析需要内存这份索引。
    */
   const records = new Map<string, InstalledPlugin>();
+  // 撤销失败并不等于插件仍可执行；明确启用须重新确认资源退出。
+  const pendingRevocations = new Set<string>();
+  const rollbackDirectories = new Map<string, string>();
+
+  function notifyStateChanged(event: PluginStateChangedEvent): void {
+    try {
+      deps.afterStateChanged?.(event);
+    } catch (error) {
+      log.warn("[plugins] 安装态已提交，但生命周期通知失败：", error);
+    }
+  }
 
   async function readState(): Promise<RegistryState> {
     let raw: string;
@@ -624,6 +643,75 @@ export function createPluginRegistryService(
     loaded.delete(id);
   }
 
+  async function revokeAndUnload(
+    event: PluginStateRevokingEvent,
+  ): Promise<void> {
+    pendingRevocations.add(event.previous.id);
+    await deps.onStateRevoking?.(event);
+    await unloadPlugin(event.previous.id);
+  }
+
+  /** 只在卸载成功后还原旧文件；失败时保留备份与撤销屏障供显式重试。 */
+  async function restoreBundleDirectory(id: string): Promise<void> {
+    const backup = rollbackDirectories.get(id);
+    if (!backup) return;
+    await rm(bundleDirOf(id), { recursive: true, force: true });
+    await rename(backup, bundleDirOf(id));
+    rollbackDirectories.delete(id);
+  }
+
+  async function rollbackFailedInstallation(input: {
+    record: InstalledPlugin;
+    previous: InstalledPlugin | undefined;
+    state: RegistryState;
+    error: unknown;
+  }): Promise<void> {
+    const { record, previous, state, error } = input;
+    try {
+      await unloadPlugin(record.id);
+      if (!previous) {
+        await rm(bundleDirOf(record.id), { recursive: true, force: true });
+        records.delete(record.id);
+        return;
+      }
+      await restoreBundleDirectory(record.id);
+      await writeState(state);
+      records.set(record.id, previous);
+      if (previous.enabled && !(await loadInstalledPlugin(previous)))
+        throw new Error(`旧插件装载失败：${previous.name}`);
+      pendingRevocations.delete(record.id);
+      notifyStateChanged({
+        reason: "restore",
+        previous: record,
+        current: previous,
+      });
+    } catch (restoreError) {
+      pendingRevocations.add(record.id);
+      let failure = restoreError;
+      if (previous) {
+        const disabled = { ...previous, enabled: false };
+        records.set(record.id, disabled);
+        try {
+          await writeState({
+            version: 1,
+            installed: state.installed.map((item) =>
+              item.id === record.id ? disabled : item,
+            ),
+          });
+        } catch (stateError) {
+          failure = new AggregateError(
+            [restoreError, stateError],
+            "旧版本恢复及停用态写入均失败",
+          );
+        }
+      }
+      throw new AggregateError(
+        [error, failure],
+        "插件安装失败且旧版本恢复未完成，保持停用；请修复后重新安装或启用。",
+      );
+    }
+  }
+
   /** 安装事务共用体：先门禁、后落盘、再装载；装载失败回滚落盘。 */
   async function installFromFiles(
     files: BundleFiles,
@@ -661,13 +749,6 @@ export function createPluginRegistryService(
 
     const state = await readState();
     const previous = state.installed.find((record) => record.id === id);
-    if (previous) {
-      // 重装：先卸载旧实例，避免工具重名冲突
-      await unloadPlugin(id);
-    }
-
-    await writeBundleFiles(id, files);
-
     const record: InstalledPlugin = {
       id,
       name: manifest.name,
@@ -679,29 +760,67 @@ export function createPluginRegistryService(
         options.activation === "preserve" ? (previous?.enabled ?? true) : true,
       manifest,
       report,
-      installedAt: new Date().toISOString(),
+      installedAt: new Date(
+        Math.max(
+          Date.now(),
+          previous ? Date.parse(previous.installedAt) + 1 : 0,
+        ),
+      ).toISOString(),
     };
 
-    const loadResult = record.enabled
-      ? await loadInstalledPlugin(record)
-      : undefined;
-    if (record.enabled && !loadResult) {
-      // 装载失败：回滚落盘，保持「装了的都能用」
-      await rm(bundleDirOf(id), { recursive: true, force: true });
-      records.delete(id);
-      throw new PluginRegistryError(
-        `插件装载失败，已回滚：${manifest.name}`,
-        "install_failed",
-        report,
-      );
+    if (previous) {
+      await revokeAndUnload({
+        reason: "replace",
+        previous,
+        current: record,
+      });
+      await restoreBundleDirectory(id);
+    }
+
+    try {
+      if (previous) {
+        const backup = `${bundleDirOf(id)}.rollback-${randomUUID()}`;
+        await rename(bundleDirOf(id), backup);
+        rollbackDirectories.set(id, backup);
+      }
+      await writeBundleFiles(id, files);
+      const loadResult = record.enabled
+        ? await loadInstalledPlugin(record)
+        : undefined;
+      if (record.enabled && !loadResult)
+        throw new PluginRegistryError(
+          `插件装载失败：${manifest.name}`,
+          "install_failed",
+          report,
+        );
+      await writeState({
+        version: 1,
+        installed: [
+          ...state.installed.filter((item) => item.id !== id),
+          record,
+        ],
+      });
+    } catch (error) {
+      await rollbackFailedInstallation({ record, previous, state, error });
+      throw error;
     }
 
     records.set(id, record);
-    const next: RegistryState = {
-      version: 1,
-      installed: [...state.installed.filter((item) => item.id !== id), record],
-    };
-    await writeState(next);
+    pendingRevocations.delete(id);
+    notifyStateChanged({
+      reason: previous ? "replace" : "install",
+      previous: previous ?? null,
+      current: record,
+    });
+    const backup = rollbackDirectories.get(id);
+    if (backup) {
+      rollbackDirectories.delete(id);
+      await rm(backup, { recursive: true, force: true }).catch(
+        (error: unknown) => {
+          log.warn("[plugins] 插件已安装，但旧版本备份清理失败：", error);
+        },
+      );
+    }
 
     return { installed: record, report };
   }
@@ -1075,17 +1194,25 @@ export function createPluginRegistryService(
         throw new PluginRegistryError("系统插件不可卸载。", "system_plugin");
       }
       const state = await readState();
-      if (!state.installed.some((record) => record.id === id)) {
+      const previous = state.installed.find((record) => record.id === id);
+      if (!previous) {
         throw new PluginRegistryError("插件未安装。", "not_installed");
       }
-      await unloadPlugin(id);
+      await revokeAndUnload({
+        reason: "uninstall",
+        previous,
+        current: null,
+      });
+      await restoreBundleDirectory(id);
       if (options?.removeCache !== false)
         await rm(bundleDirOf(id), { recursive: true, force: true });
-      records.delete(id);
       await writeState({
         version: 1,
         installed: state.installed.filter((record) => record.id !== id),
       });
+      records.delete(id);
+      pendingRevocations.delete(id);
+      notifyStateChanged({ reason: "uninstall", previous, current: null });
       // 默认彻底清除缓存与数据；原协议显式保留缓存时也保留其持久数据。
       // 停用只收贡献物，不删除数据；原HTTP未传选项仍沿彻底卸载行为。
       if (options?.removeCache !== false) await deps.storage.purgePlugin(id);
@@ -1097,12 +1224,27 @@ export function createPluginRegistryService(
       if (!record) {
         throw new PluginRegistryError("插件未安装。", "not_installed");
       }
+      if (
+        !pendingRevocations.has(id) &&
+        record.enabled === enabled &&
+        (!enabled || loaded.has(id))
+      )
+        return record;
+      const updated: InstalledPlugin = { ...record, enabled };
       if (enabled) {
         if (!canLoadInstalledPackage(record))
           throw new PluginRegistryError(
             "当前部署不允许启用第三方插件",
             "install_failed",
           );
+        if (pendingRevocations.has(id)) {
+          await revokeAndUnload({
+            reason: "disable",
+            previous: record,
+            current: { ...record, enabled: false },
+          });
+          await restoreBundleDirectory(id);
+        }
         const handle = await loadInstalledPlugin(record);
         if (!handle) {
           throw new PluginRegistryError(
@@ -1111,15 +1253,25 @@ export function createPluginRegistryService(
           );
         }
       } else {
-        await unloadPlugin(id);
+        await revokeAndUnload({
+          reason: "disable",
+          previous: record,
+          current: updated,
+        });
+        await restoreBundleDirectory(id);
       }
-      const updated: InstalledPlugin = { ...record, enabled };
-      records.set(id, updated);
       await writeState({
         version: 1,
         installed: state.installed.map((item) =>
           item.id === id ? updated : item,
         ),
+      });
+      records.set(id, updated);
+      pendingRevocations.delete(id);
+      notifyStateChanged({
+        reason: enabled ? "enable" : "disable",
+        previous: record,
+        current: updated,
       });
       return updated;
     },
@@ -1176,6 +1328,10 @@ export function createPluginRegistryService(
       const state = await readState();
       for (const record of state.installed) {
         records.set(record.id, record);
+        if (pendingRevocations.has(record.id)) {
+          log.warn(`[plugins] ${record.id} 撤销未完成，请显式重新启用或卸载。`);
+          continue;
+        }
         if (!record.enabled) continue;
         if (!canLoadInstalledPackage(record)) {
           log.info(
@@ -1183,18 +1339,40 @@ export function createPluginRegistryService(
           );
           continue;
         }
+        const alreadyLoaded = loaded.has(record.id);
         const handle = await loadInstalledPlugin(record);
         if (!handle) {
           log.warn(
             `[plugins] ${record.id} 启动装载失败，已跳过（不阻断启动）。`,
           );
+        } else if (!alreadyLoaded) {
+          notifyStateChanged({
+            reason: "restore",
+            previous: null,
+            current: record,
+          });
         }
       }
     },
 
     async shutdown() {
-      for (const id of [...loaded.keys()]) {
-        await unloadPlugin(id);
+      for (const id of new Set([...loaded.keys(), ...pendingRevocations])) {
+        const record = records.get(id);
+        if (record)
+          await revokeAndUnload({
+            reason: "shutdown",
+            previous: record,
+            current: record,
+          });
+        else await unloadPlugin(id);
+        await restoreBundleDirectory(id);
+        pendingRevocations.delete(id);
+        if (record)
+          notifyStateChanged({
+            reason: "shutdown",
+            previous: record,
+            current: record,
+          });
       }
     },
   };

@@ -23,6 +23,10 @@ import {
   type PluginRegistryService,
 } from "./plugin-registry-service.js";
 import { createPluginStorage } from "./plugin-storage.js";
+import {
+  PLUGIN_STATE_LIFECYCLE_CAPABILITY,
+  type PluginStateLifecycle,
+} from "./state-lifecycle.js";
 
 /**
  * plugin-registry 插件：插件市场的服务端（目录 / 安装 / 卸载 / 启停 / 导入校验 / 导出）。
@@ -244,6 +248,38 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
           hostNodeMajor,
           builtinCatalog: deps.builtinCatalog,
           bundledBundles,
+          async onStateRevoking(event) {
+            const results = await Promise.allSettled(
+              ctx
+                .get("capabilities")
+                .list<PluginStateLifecycle>(PLUGIN_STATE_LIFECYCLE_CAPABILITY)
+                .map(({ value }) => {
+                  try {
+                    return Promise.resolve(value.onStateRevoking?.(event));
+                  } catch (error) {
+                    return Promise.reject(error);
+                  }
+                }),
+            );
+            const failure = results.find(
+              (result) => result.status === "rejected",
+            );
+            if (failure?.status === "rejected") throw failure.reason;
+          },
+          afterStateChanged(event) {
+            for (const { value } of ctx
+              .get("capabilities")
+              .list<PluginStateLifecycle>(PLUGIN_STATE_LIFECYCLE_CAPABILITY)) {
+              try {
+                value.afterStateChanged?.(event);
+              } catch (error) {
+                console.warn(
+                  "[plugins] 安装态已提交，但生命周期通知失败：",
+                  error,
+                );
+              }
+            }
+          },
           storage: createPluginStorage({
             persistence: ctx.get("persistence"),
           }),

@@ -52,6 +52,7 @@ function definition<T extends z.ZodType>(options: {
 }
 
 export function createCadTools(service: CadService): ToolDefinition[] {
+  const epoch = service.activationEpoch;
   return [
     definition({
       name: "cad_status",
@@ -121,5 +122,21 @@ export function createCadTools(service: CadService): ToolDefinition[] {
       execute: (input, context) =>
         service.execute({ action: "python", input }, context),
     }),
-  ];
+  ].map(
+    (tool): ToolDefinition => ({
+      ...tool,
+      configurationVersion: `cad:${epoch}`,
+      execute(args, context) {
+        if (service.activationEpoch !== epoch)
+          return Promise.resolve({
+            isError: true,
+            content: [
+              { type: "text", text: "CAD 插件已重新装载，请发起新的调用。" },
+            ],
+            structuredContent: { error: { code: "invocation_revoked" } },
+          });
+        return tool.execute(args, context);
+      },
+    }),
+  );
 }

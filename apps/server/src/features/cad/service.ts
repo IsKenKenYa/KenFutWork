@@ -3,6 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import type { PluginStateLifecycle } from "../plugins/state-lifecycle.js";
 import type {
   ManagedStdioProcess,
   ProcessExit,
@@ -15,6 +16,10 @@ import {
   CadGuiProbeError,
   createMacosCadGuiProbe,
 } from "./gui-probe.js";
+import {
+  CadOperationError,
+  createCadOperationLifecycle,
+} from "./operation-lifecycle.js";
 import { createCadPreviewResult } from "./preview.js";
 import { FREECAD_RUNNER_SOURCE } from "./runner-source.js";
 import { type CadRuntime, detectFreeCadRuntime } from "./runtime.js";
@@ -25,6 +30,7 @@ import {
 } from "./tool-contracts.js";
 
 export const CAD_BUNDLE_ID = "kenfutwork-cad";
+export const CAD_PLUGIN_INSTALLATION_ID = `bundled__${CAD_BUNDLE_ID}`;
 
 export interface CadToolResult {
   content: Array<{ type: "text"; text: string }>;
@@ -42,13 +48,17 @@ export interface CadToolResult {
   >;
 }
 export interface CadService {
+  readonly pluginLifecycle: PluginStateLifecycle;
+  readonly activationEpoch: number;
+  readonly activationAvailable: boolean;
   status(context: ToolExecutionContext): Promise<CadToolResult>;
   guiStatus(context: ToolExecutionContext): Promise<CadToolResult>;
   execute(
     request: CadRequest,
     context: ToolExecutionContext,
   ): Promise<CadToolResult>;
-  releaseRun(runId: string): void;
+  releaseRun(runId: string): Promise<void>;
+  dispose(): Promise<void>;
 }
 export interface CadServiceOptions {
   sandbox: ProcessSandbox;
@@ -111,6 +121,7 @@ function failure(error: unknown, cancelled = false): CadToolResult {
   const message = error instanceof Error ? error.message : String(error);
   const code =
     error instanceof CadError ||
+    error instanceof CadOperationError ||
     error instanceof ProcessSandboxError ||
     error instanceof CadGuiProbeError
       ? error.code
@@ -228,7 +239,13 @@ async function waitForProcess(
           throw new CadError("stop_unconfirmed", "CAD 进程尚未确认停止。");
       })
       .catch((error: unknown) => {
-        stopError = error;
+        stopError =
+          error instanceof CadError && error.code === "stop_unconfirmed"
+            ? error
+            : new CadError(
+                "stop_unconfirmed",
+                `CAD 停止未确认：${error instanceof Error ? error.message : String(error)}`,
+              );
       });
   };
   signal.addEventListener("abort", stop, { once: true });
@@ -462,7 +479,12 @@ export function createCadService(options: CadServiceOptions): CadService {
   const guiProbe = options.guiProbe ?? createMacosCadGuiProbe();
   const invocations = new Map<
     string,
-    { runId: string; fingerprint: string; result: Promise<CadToolResult> }
+    {
+      runId: string;
+      epoch: number;
+      fingerprint: string;
+      result: Promise<CadToolResult>;
+    }
   >();
   const guard = async (context: ToolExecutionContext) => {
     const handle = requireCadContext(context);
@@ -482,19 +504,29 @@ export function createCadService(options: CadServiceOptions): CadService {
         context.signal?.aborted || context.taskWorkContext?.signal?.aborted,
       ),
     );
+  const lifecycle = createCadOperationLifecycle({
+    bundleName: CAD_BUNDLE_ID,
+    installationId: CAD_PLUGIN_INSTALLATION_ID,
+    failure: onFailure,
+  });
   return {
-    async status(context) {
-      try {
+    pluginLifecycle: lifecycle.plugin,
+    get activationEpoch() {
+      return lifecycle.epoch();
+    },
+    get activationAvailable() {
+      return lifecycle.available();
+    },
+    status(context) {
+      return lifecycle.run(context, async (context) => {
         await guard(context);
         return cadStatus(
           await (options.detectRuntime ?? detectFreeCadRuntime)(),
         );
-      } catch (error) {
-        return onFailure(error, context);
-      }
+      });
     },
-    async guiStatus(context) {
-      try {
+    guiStatus(context) {
+      return lifecycle.run(context, async (context) => {
         await guard(context);
         const { limits, timeoutMs } = await options.resolveLimits(context);
         await guard(context);
@@ -519,51 +551,64 @@ export function createCadService(options: CadServiceOptions): CadService {
           ],
           structuredContent: { applications, currentDocumentControl: false },
         };
-      } catch (error) {
-        return onFailure(error, context);
-      }
+      });
     },
-    async execute(request, context) {
-      try {
-        await guard(context);
-        const scope = requireCadContext(context).describe();
-        const key = JSON.stringify([
-          scope.instanceId,
-          scope.taskId,
-          context.runId,
-          context.toolCallId,
-        ]);
-        const fingerprint = createHash("sha256")
-          .update(JSON.stringify(request))
-          .digest("hex");
-        const previous = invocations.get(key);
-        if (previous) {
-          if (previous.fingerprint !== fingerprint)
-            throw new CadError(
-              "invocation_conflict",
-              "同一次 CAD 调用不能替换参数，请发起新的调用。",
-            );
-          return await previous.result;
+    execute(request, context) {
+      return lifecycle.run(context, async (context, epoch, assertActive) => {
+        const activeGuard = async (current: ToolExecutionContext) => {
+          assertActive();
+          await guard(current);
+          assertActive();
+        };
+        try {
+          await activeGuard(context);
+          const scope = requireCadContext(context).describe();
+          const key = JSON.stringify([
+            scope.instanceId,
+            scope.taskId,
+            context.runId,
+            context.toolCallId,
+          ]);
+          const fingerprint = createHash("sha256")
+            .update(JSON.stringify(request))
+            .digest("hex");
+          const previous = invocations.get(key);
+          if (previous) {
+            if (previous.epoch !== epoch)
+              throw new CadError(
+                "invocation_revoked",
+                "CAD 插件已重新装载，这次旧调用不能重放，请发起新的调用。",
+              );
+            if (previous.fingerprint !== fingerprint)
+              throw new CadError(
+                "invocation_conflict",
+                "同一次 CAD 调用不能替换参数，请发起新的调用。",
+              );
+            return await previous.result;
+          }
+          const result = executeCadRequest(
+            options,
+            request,
+            context,
+            activeGuard,
+          ).catch((error: unknown) => onFailure(error, context));
+          invocations.set(key, {
+            runId: context.runId ?? "",
+            epoch,
+            fingerprint,
+            result,
+          });
+          return await result;
+        } catch (error) {
+          return onFailure(error, context);
         }
-        const result = executeCadRequest(
-          options,
-          request,
-          context,
-          guard,
-        ).catch((error: unknown) => onFailure(error, context));
-        invocations.set(key, {
-          runId: context.runId ?? "",
-          fingerprint,
-          result,
-        });
-        return await result;
-      } catch (error) {
-        return onFailure(error, context);
-      }
+      });
     },
-    releaseRun(runId) {
+    async releaseRun(runId) {
+      await lifecycle.closeRun(runId);
       for (const [key, invocation] of invocations)
         if (invocation.runId === runId) invocations.delete(key);
     },
+    dispose: () => lifecycle.dispose(),
   };
 }

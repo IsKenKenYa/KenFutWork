@@ -3,6 +3,7 @@ import { createServer, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import * as cadRuntime from "../cad/runtime.js";
 import { CAD_BUNDLE_ID } from "../cad/service.js";
 import { ProcessSandboxError } from "../process-sandbox/types.js";
@@ -639,14 +640,30 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           f.reviewer.allow(0);
           await finishCadReview(f, 2);
           expect(f.dispatch).not.toHaveBeenCalled();
-          expect(JSON.stringify(f.model.requests[2]?.body.messages)).toContain(
-            "plugin_disabled",
-          );
+          const rejectedMessages = z
+            .array(
+              z.object({
+                role: z.string(),
+                name: z.string().optional(),
+                content: z.unknown(),
+              }),
+            )
+            .parse(f.model.requests[2]?.body.messages);
+          expect(
+            rejectedMessages.find(
+              (message) =>
+                message.role === "tool" && message.name === f.cadTool,
+            )?.content,
+          ).toContain("工具注册或schema已改变");
           const denied = await approvalEvents(f.fixture, f.host, CAD_CALL);
           expect(denied.map(({ payload }) => payload.type)).toEqual([
             "requested",
             "resolved",
+            "cancelled",
           ]);
+          expect(denied[2]).toMatchObject({
+            payload: { reason: "工具注册已撤销，原审批不能重用。" },
+          });
           expect(denied[1]?.payload.decision).toBe("allow");
           expect(denied[0]?.payload.identity.taskId).toBe(f.host.sessionId);
           await expect(

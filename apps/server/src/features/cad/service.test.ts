@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import type {
   ProcessSandbox,
   ProcessStdioSpawnRequest,
@@ -11,6 +12,7 @@ import type {
 import { createCadBundleGate } from "./plugin.js";
 import { createCadService } from "./service.js";
 import {
+  activateCadTestService,
   cadTestExit,
   cadTestLimits,
   createCadTestContext,
@@ -154,6 +156,7 @@ async function fixture(options?: {
       timeoutMs: 30_000,
     }),
   });
+  activateCadTestService(service);
   return {
     ...task,
     root,
@@ -167,6 +170,102 @@ async function fixture(options?: {
 }
 
 describe("官方 CAD Task 执行", () => {
+  it("停用先取消并等待在途进程，重新启用不能重放旧调用", async () => {
+    const f = await fixture();
+    const staleTool = createCadTools(f.service).find(
+      (tool) => tool.name === "cad_create_primitive",
+    );
+    if (!staleTool) throw new Error("缺少旧工具定义");
+    const lifecycle = f.service.pluginLifecycle;
+    const revoke = lifecycle.onStateRevoking;
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const original = f.spawn.getMockImplementation();
+    if (!original || !revoke) throw new Error("缺少 CAD 生命周期接线");
+    f.spawn.mockImplementation(async (request) => {
+      const process = await original(request);
+      const wait = process.waitForExit;
+      process.waitForExit = async () => {
+        enter();
+        await finished;
+        return wait();
+      };
+      return process;
+    });
+    const request = {
+      action: "primitive" as const,
+      input: { kind: "sphere" as const, radius: 2 },
+    };
+    const pending = f.service.execute(request, f.context);
+    await entered;
+    const event = {
+      reason: "disable",
+      previous: {
+        id: "bundled__kenfutwork-cad",
+        name: "kenfutwork-cad",
+        enabled: true,
+      },
+      current: null,
+    } as PluginStateRevokingEvent;
+    let closed = false;
+    const closing = Promise.resolve(revoke(event)).then(() => {
+      closed = true;
+    });
+    try {
+      expect(f.stop).toHaveBeenCalledOnce();
+      expect(closed).toBe(false);
+      expect(
+        (
+          await f.service.execute(request, {
+            ...f.context,
+            toolCallId: "blocked",
+          })
+        ).isError,
+      ).toBe(true);
+      expect(f.spawn).toHaveBeenCalledOnce();
+    } finally {
+      finish();
+    }
+    expect((await pending).isError).toBe(true);
+    await closing;
+    lifecycle.afterStateChanged?.({
+      reason: "enable",
+      previous: event.previous,
+      current: event.previous,
+    });
+    expect(
+      await staleTool.execute(
+        { kind: "sphere", radius: 2 },
+        { ...f.context, toolCallId: "old-approved" },
+      ),
+    ).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "invocation_revoked" } },
+    });
+    const currentTool = createCadTools(f.service).find(
+      (tool) => tool.name === staleTool.name,
+    );
+    expect(currentTool?.configurationVersion).not.toBe(
+      staleTool.configurationVersion,
+    );
+    expect(await f.service.execute(request, f.context)).toMatchObject({
+      isError: true,
+      structuredContent: { error: { code: "invocation_revoked" } },
+    });
+    expect(f.spawn).toHaveBeenCalledOnce();
+    expect(
+      (await f.service.execute(request, { ...f.context, toolCallId: "new" }))
+        .isError,
+    ).not.toBe(true);
+    expect(f.spawn).toHaveBeenCalledTimes(2);
+  });
+
   it("结构化操作完整传递 JSON 并沿用离屏沙箱与结果回执", async () => {
     const data = {
       operations: [{ objectName: "Sketch", fullyConstrained: true }],
@@ -553,7 +652,7 @@ describe("官方 CAD Task 执行", () => {
   );
   it("安装态实时查询：未安装/停用/注册表错误均拒绝", async () => {
     const bundle = {
-      id: "kenfutwork-cad",
+      id: "bundled__kenfutwork-cad",
       name: "kenfutwork-cad",
       installed: false,
       enabled: true,
@@ -565,6 +664,15 @@ describe("官方 CAD Task 执行", () => {
     expect((await gate()).ok).toBe(false);
     entries = [{ ...bundle, installed: true, enabled: true }];
     expect((await gate()).ok).toBe(true);
+    entries = [
+      {
+        ...bundle,
+        id: "local__kenfutwork-cad",
+        installed: true,
+        enabled: true,
+      },
+    ];
+    expect((await gate()).ok).toBe(false);
     expect((await createCadBundleGate(() => undefined)()).ok).toBe(false);
     expect(
       (

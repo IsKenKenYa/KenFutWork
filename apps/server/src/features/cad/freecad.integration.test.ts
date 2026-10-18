@@ -11,6 +11,7 @@ import { createProcessSandbox } from "../process-sandbox/service.js";
 import { detectFreeCadRuntime } from "./runtime.js";
 import { type CadService, createCadService } from "./service.js";
 import {
+  activateCadTestService,
   cadTestLimits,
   createCadTestContext,
   executeCadTestTool,
@@ -46,12 +47,15 @@ it.skipIf(
           timeoutMs: 30_000,
         }),
       });
+      activateCadTestService(service);
       const first = await service.execute(
         {
           action: "python",
           input: {
             source: [
               "import os",
+              "import FreeCADGui as Gui",
+              "from PySide import QtGui",
               "for directory in (doc.TransientDir, App.getUserAppDataDir(), App.getUserCachePath(), App.getTempPath()):",
               "    assert directory and os.path.isdir(directory) and os.path.commonpath([os.path.realpath(directory), output_directory]) == output_directory, 'FreeCAD Task目录未隔离'",
               "import Sketcher",
@@ -64,7 +68,7 @@ it.skipIf(
               "pad.Length = 5",
               "body.Tip = pad",
               "doc.recompute()",
-              "result = {'radius': sketch.Geometry[0].Radius}",
+              "result = {'radius': sketch.Geometry[0].Radius, 'guiPlatform': QtGui.QGuiApplication.platformName(), 'mainWindowVisible': Gui.getMainWindow().isVisible()}",
             ].join("\n"),
             requireSolids: true,
             expectedVolume: { objectName: "Body", value: Math.PI * 500 },
@@ -73,7 +77,11 @@ it.skipIf(
         context,
       );
       expect(first.isError, JSON.stringify(first)).not.toBe(true);
-      expect(first.structuredContent.data).toEqual({ radius: 10 });
+      expect(first.structuredContent.data).toEqual({
+        radius: 10,
+        guiPlatform: "offscreen",
+        mainWindowVisible: false,
+      });
       const originalPath = String(first.structuredContent.outputPath);
       const original = await readFile(originalPath);
       const changed = await service.execute(

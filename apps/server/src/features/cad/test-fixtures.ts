@@ -8,10 +8,24 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
+import type { PluginStateChangedEvent } from "../plugins/state-lifecycle.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { ProcessExit, ProcessLimits } from "../process-sandbox/types.js";
 import { detectFreeCadRuntime } from "./runtime.js";
 import { type CadService, createCadService } from "./service.js";
+
+/** 独立服务夹具显式模拟市场已成功装载；生产只能消费真实库存生命周期。 */
+export function activateCadTestService(service: CadService): void {
+  service.pluginLifecycle.afterStateChanged?.({
+    reason: "install",
+    previous: null,
+    current: {
+      id: "bundled__kenfutwork-cad",
+      name: "kenfutwork-cad",
+      enabled: true,
+    } as NonNullable<PluginStateChangedEvent["current"]>,
+  });
+}
 
 export async function executeCadTestTool(
   tool: ToolDefinition,
@@ -106,6 +120,7 @@ export async function withNativeCad(
       detectRuntime: async () => runtime,
       resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
     });
+    activateCadTestService(service);
     await run({ root, service, context });
   } catch (error) {
     failures.push(error);

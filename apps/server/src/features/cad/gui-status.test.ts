@@ -6,6 +6,7 @@ import { createProcessSandbox } from "../process-sandbox/service.js";
 import { type CadGuiProbe, CadGuiProbeError } from "./gui-probe.js";
 import { createCadService } from "./service.js";
 import {
+  activateCadTestService,
   cadTestLimits,
   createCadTestContext,
   executeCadTestTool,
@@ -45,6 +46,7 @@ async function fixture() {
     resolveLimits,
     guiProbe: { list, verify: vi.fn() },
   });
+  activateCadTestService(service);
   const tool = createCadTools(service).find(
     (item) => item.name === "cad_gui_status",
   );
