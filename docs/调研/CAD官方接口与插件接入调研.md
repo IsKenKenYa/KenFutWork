@@ -399,6 +399,47 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 
 夹具首轮误以为预置了标准库 os，另一轮误把原生多工具 Common 当逐次交集；分别补显式导入及一手取证后纠正夹具，未添加生产兼容别名或改变原生语义。临时几何输出由固定回归断言取代。运行命令、时间及最终全仓门禁由《日志》单独记账，不把诊断工程当 Common 产品成功。
 
+### 9.21 结构化圆角／倒角接口核验与验收边界
+
+本节核验官方 `1.1.4` 固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的接口，供下一步结构化封装使用；本节调研未启动 FreeCAD 或新增原生验收。已有 §9.14 的后台 Python 圆角／倒角四阶段证据继续有效，但不据此宣称新的结构化入口已经通过。
+
+原生实体分别是 `PartDesign::Fillet` 与 `PartDesign::Chamfer`，均继承 `DressUp`；选中的基体和子元素存于 `Base`（`App::PropertyLinkSub`），Body 内的 `BaseFeature` 与 `Base` 对象由 `onChanged` 双向保持一致。圆角通过 `Radius` 控制；倒角模式及有效参数如下。属性有单位和编辑状态，不能把存在的属性一律当作当前模式的有效输入。[FeatureFillet.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureFillet.cpp)、[FeatureChamfer.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureChamfer.cpp)、[FeatureDressUp.h](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureDressUp.h)、[FeatureDressUp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureDressUp.cpp)
+
+| 特征／原生模式 | 求解参数 | 原生执行检查 |
+| --- | --- | --- |
+| Fillet | `Radius`（Length） | `Radius > 0` |
+| Chamfer `Equal distance`（0） | `Size`（Length） | `Size > 0`；`Size2`、`Angle` 只读 |
+| Chamfer `Two distances`（1） | `Size`、`Size2`（Length），`FlipDirection` | 两个距离均大于 0；`Angle` 只读 |
+| Chamfer `Distance and Angle`（2） | `Size`（Length）、`Angle`（角度），`FlipDirection` | `Size > 0`，`0 < Angle < 180`；`Size2` 只读 |
+
+`UseAllEdges=true` 时，两种特征直接取基体全部边，忽略 `Base` 的子元素选择。安装版随附官方测试用立方体六个面创建特征，并分别验证全边模式可覆盖空子名乃至无效的 `Face50`，关掉全边模式后改选单面会改变结果。这只证明全边分支覆盖选择，不能解释为显式选择时允许无效边。首期结构化封装可先提供显式边的定半径圆角／等距倒角，其余原生模式、面选择和全边模式继续由 Python 承接；这是产品封装范围，不是 FreeCAD 能力限制。[TestFillet.py](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/PartDesignTests/TestFillet.py)、[TestChamfer.py](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/PartDesignTests/TestChamfer.py)
+
+显式分支的实际 `getContinuousEdges(const TopoShape&)` 优先读取 `Base` shadow 的 `newName`，回落 `oldName`；边直接进入筛选，面／Wire 展开为边，形状去重。无法解析的链接抛 `Invalid edge link`；不是恰有两个相邻面或连续性不是 `C0` 的边会被跳过，最终空边集再由特征执行拒绝。因而不能仅校验 `EdgeN` 字符串格式或最终 Shape 非空，就声称每条请求边都已处理。结构化显式边应以当前基体拓扑核验选择，并明确处理被原生跳过的边；不要把静态 `EdgeN` 约定成跨任意几何修改的永久身份。[FeatureDressUp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureDressUp.cpp)
+
+已有高级 Python 夹具按端点位置及长度，在当前 Box.Shape.Edges 中唯一定位原点竖边，再构造从 1 开始的 `EdgeN`；它不是预先猜测固定编号。创建后检查单实体、有效性、解析体积、被移除角与保留角，并在基体边长 10→12、Radius／Size 1→2 后重算、保存重开。新增结构化验收可复用这一几何判据，但必须通过真实 `cad_apply_operations` 消费方，不能把直接执行该夹具等同于结构化工具已经接通。夹具见 `apps/server/src/features/cad/fixtures/advanced-operations.py`，既有结果见 §9.14。
+
+失败判断必须同时覆盖求解状态与几何：圆角／倒角源码均在参数、基体、选边、内核构造、空形状和实体规则检查通过后，才于尾部 `Shape.setValue`。此前失败可保留旧 Shape，所以旧形状仍 valid／single 不能证明本次请求成功。应沿用已有 runner 的整工程错误检查和发布屏障，并核对操作要求的参数、链接及新结果；超大半径／距离等内核拒绝不应发布最终 FCStd，也不能回退为静态 Shape 假装完成。[FeatureFillet.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureFillet.cpp)、[FeatureChamfer.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureChamfer.cpp)、[Feature.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/Feature.cpp)
+
+创建与编辑须区分。`Body.addObject` 会把新实体特征设为 Tip；`insertObject`／`setBaseProperty` 还会重接相邻实体的 `BaseFeature`，而 Body 求解直接读取当前 Tip.Shape。修改已有早期圆角／倒角应原位改参数并重算，不重新 addObject、不无条件把 Tip 设回被编辑对象；应保留已有下游 Tip、依赖和显示状态，并检查下游重算。不能由这些重接行为推出“存在下游就一概禁止修改”；未支持的历史插入／换基体行为应与普通尺寸编辑明确区分。[Body.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/Body.cpp)、[FeatureDressUp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureDressUp.cpp)
+
+公开 Python 未暴露 `getContinuousEdges`／实际接受边列表；仅靠最终 Shape 有效不能证明多选边都被处理。后续可先验证一个限于独立后台副本的候选：创建不加入 Body 的自有新鲜修饰 probe，同时设 BaseFeature 和 Base，利用零 Radius／Size 在原生选边之后、几何构造之前的参数检查区别被接纳与空边集。单设 Base 会因缺少容器失败；两种参数的属性下界是0且零值不被夹成正数。probe 仍会暂时改变文档 ActiveObject／Modified 和目标 InList，不能迁入用户 GUI 或宣称无状态变化；单边完整建模的成功／失败也不能代替多边组合可行性。
+
+固定版可从公开 `probe.getStatusString()` 读取具体执行 Why，底层日志链没有翻译调用；`doc.getErrorDescription` 仅为C++内部接口。对应正参数错误源文是 `Fillet radius must be greater than zero`／`Size must be greater than zero`，重算后应立即读取，不能用 GUI 翻译文本比较。上述候选还没有原生验证，也没有进入本轮运行时；出现其它状态不能当作接纳证明。依据 [DocumentObject.pyi](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.pyi)、[状态包装](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObjectPyImp.cpp)、[参数夹取](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyUnits.cpp)及上述 Feature 源码。
+
+下一轮真实 Task 验收至少覆盖：两种结构化创建→保存重开→修改基体和特征尺寸→再次重开；显式多边、重复边、缺失／越界链接和会被跳过的边；零／负参数、过大参数、错误对象／Body 与名称碰撞；已有下游时原位改早期特征并保留末端 Tip；修改表达式绑定属性时沿用既有保护。每项核对参数链、当前选择、错误状态、单实体与可计算几何；失败保持源字节且不发布目标文件。此处是待执行矩阵，不能作为已通过测试的计数，也不扩大为全部倒角模式或复杂拓扑重命名验收。
+
+### 9.22 当前边拓扑的按需读取
+
+为结构化修饰操作提供真实选边前提，既有 `cad_describe_document` 新增可选 `edges:{objectName,offset,limit}`；沿同一 Task、执行审批、后台进程和只读来源文件接线，默认 describe 概要不变。显式查询才返回 typed `edgePage`，包含当前对象的 EdgeN、全局毫米坐标、曲线类型、线性度量、原生顶点、包围盒及闭合状态。输入与审批共用 schema，返回契约也同步扩展，避免服务端解析丢掉新字段。
+
+`countElement("Edge")`／`getElement("EdgeN")` 可按原生编号仅包装当前页；原概要的实体／面／边数量也等价改用 countElement。默认50条、可显式放大正安全整数页数并沿 nextOffset 继续，超尾返回空页；不是固定总边数或工程容量额度。边详情只复用父容器变换，避免重复应用对象自身 Placement。EdgeN 对应当前文件重算后的对象，不是跨改模的永久身份。依据固定版 [TopoShapePyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Part/App/TopoShapePyImp.cpp)、[TopoShapeEdgePyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Part/App/TopoShapeEdgePyImp.cpp)及既有 global_shape 实证。
+
+官方退化边属性 `Degenerated` 来自 BRep_Tool。其 Curve／Length getter 经曲线 adaptor，不能假定存在普通三维曲线；查询用原生 Mass 取线性度量，退化边的 curveType／bounds 返回 null。闭合圆的拓扑顶点集合可只有一个，保留真实唯一顶点，不能制造两个端点。首次真实 Sphere 查询已暴露 `optimalBoundingBox` 可在返回 BoundBox 之前抛 `Bnd_Box is void`；后置 isValid 不能兜住，改为退化分支根本不调用该方法，普通边保持严格原生路径，不吞未知几何异常。
+
+契约正向1项先RED、非法输入1项GREEN；原生两项先在未接线参数层RED。接线后发现上述退化框错误，再最小修复。最终新原生两项7.26秒通过：嵌套App::Part旋转与对象自身旋转的全局顶点范围，4／6／8mm边长、闭合Circle、Sphere两条退化边、120边默认50及更大显式页、超尾空页、缺失／无Shape目标拒绝；源工程设为只读后字节保持，不返回新工程路径。既有参数化／容器／全局坐标／交换物理尺寸原生整链另12.59秒通过；层级证据不相加。
+
+这不是 GUI 当前文档的边查询，也不提供两相邻面的C0判定：公开 edge.Continuity 只描述一维曲线，不能包装成“可圆角”的布尔值。其它工作台、全部曲线类型和复杂父容器组合仍按实际证据验收；圆角／倒角结构化创建和尺寸修改保留下一独立切片。最终门禁见同批《日志》。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

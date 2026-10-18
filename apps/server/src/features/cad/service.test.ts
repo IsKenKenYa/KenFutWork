@@ -886,7 +886,7 @@ describe("官方 CAD Task 执行", () => {
       isError: true,
       structuredContent: { error: { code: "context_required" } },
     });
-    expect(result.structuredContent).not.toHaveProperty("outputPath");
+    expect(result.structuredContent.outputPath).toBeUndefined();
     expect(await f.service.execute(request, f.context)).toEqual(result);
     expect(f.spawn).toHaveBeenCalledOnce();
   });
@@ -1293,6 +1293,73 @@ describe("结构化Body布尔契约", () => {
       });
     }
     expect(execute).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe("结构化边查询契约", () => {
+  it("真实边分页沿用describe工具、审批与只读源文件", async () => {
+    const f = await fixture();
+    const documentPath = join(f.root, "edges.FCStd");
+    await writeFile(documentPath, "source fixture");
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_describe_document",
+    );
+    if (!tool) throw new Error("缺少CAD工程检查工具");
+    const input = {
+      documentPath,
+      edges: { objectName: "Pad", offset: 2, limit: 1000 },
+    };
+    expect(z.fromJSONSchema(tool.parameters).safeParse(input).success).toBe(
+      true,
+    );
+    const result = await executeCadTestTool(tool, input, f.context);
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect(result.structuredContent.outputPath).toBeUndefined();
+    expect(tool).toMatchObject({
+      approvalReviewKind: "cad-describe",
+      access: "execute",
+    });
+    const request = f.spawn.mock.calls[0]?.[0];
+    const wire = JSON.parse(
+      await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
+    );
+    expect(wire).toMatchObject({ action: "describe", input });
+    expect(request?.env).not.toHaveProperty("QT_QPA_PLATFORM");
+    expect(await readFile(documentPath, "utf8")).toBe("source fixture");
+  });
+
+  it("分页拒绝无效字段与越权参数，不派发原生进程", async () => {
+    const f = await fixture();
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_describe_document",
+    );
+    if (!tool) throw new Error("缺少CAD工程检查工具");
+    for (const edges of [
+      null,
+      [],
+      "Pad",
+      {},
+      { objectName: "" },
+      { objectName: 1 },
+      { objectName: "Pad", offset: -1 },
+      { objectName: "Pad", offset: 0.5 },
+      { objectName: "Pad", limit: 0 },
+      { objectName: "Pad", limit: -1 },
+      { objectName: "Pad", limit: 1.2 },
+      { objectName: "Pad", limit: Infinity },
+      { objectName: "Pad", offset: Number.MAX_SAFE_INTEGER + 1 },
+      { objectName: "Pad", limit: Number.MAX_SAFE_INTEGER + 1 },
+      { objectName: "Pad", source: "doc.removeObject('Pad')" },
+      { objectName: "Pad", runtimeReadRoots: ["/"] },
+    ]) {
+      expect(
+        await tool.execute({ documentPath: "part.FCStd", edges }, f.context),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "invalid_arguments" } },
+      });
+    }
     expect(f.spawn).not.toHaveBeenCalled();
   });
 });

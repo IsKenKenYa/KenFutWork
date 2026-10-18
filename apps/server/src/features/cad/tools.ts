@@ -130,7 +130,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_describe_document",
       description:
-        "在 Task 沙箱中打开独立 FCStd 工程，重算并检查对象类型、状态、Shape 有效性、实体数、体积、包围盒与 Body.Tip。源文件不保存；工程恢复会执行 FreeCAD，因此仍按执行权限审批。",
+        "在 Task 沙箱中打开独立 FCStd 工程，重算并检查对象类型、状态、Shape 有效性、实体数、体积、包围盒与 Body.Tip。可选 edges={objectName,offset,limit} 按页读取指定对象当前真实 EdgeN，默认50条，沿 edgePage.nextOffset 可继续取完；返回全局毫米坐标、曲线类型、长度、原生顶点、边界与闭合状态。退化边的曲线和边界为null，闭合圆可以只有一个顶点。几何改变后重新读取边编号。源文件不保存；工程恢复会执行 FreeCAD，因此仍按执行权限审批。",
       schema: cadDescribeInputSchema,
       approvalReviewKind: "cad-describe",
       execute: (input, context) =>

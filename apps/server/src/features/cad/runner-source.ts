@@ -1,4 +1,5 @@
 import { FREECAD_OPERATIONS_SOURCE } from "./operations-source.js";
+import { FREECAD_TOPOLOGY_SOURCE } from "./topology-source.js";
 
 /** 单次隔离 FreeCADCmd 的 Python 程序；以文本随服务端与桌面打包。 */
 export const FREECAD_RUNNER_SOURCE = String.raw`"""KFW FreeCAD worker. Input and output files are private to one invocation."""
@@ -40,11 +41,11 @@ def describe(doc):
             item["shape"] = {
                 "null": empty,
                 "valid": not empty and shape.isValid(),
-                "solids": 0 if empty else len(shape.Solids),
+                "solids": 0 if empty else shape.countElement("Solid"),
                 "volume": 0 if empty else shape.Volume,
                 "area": 0 if empty else shape.Area,
-                "faces": 0 if empty else len(shape.Faces),
-                "edges": 0 if empty else len(shape.Edges),
+                "faces": 0 if empty else shape.countElement("Face"),
+                "edges": 0 if empty else shape.countElement("Edge"),
                 "bounds": None if empty else [bounds.XMin, bounds.YMin, bounds.ZMin, bounds.XMax, bounds.YMax, bounds.ZMax],
             }
         objects.append(item)
@@ -121,12 +122,15 @@ def export_objects(doc, args):
     return objects
 
 
-def global_shape(obj):
-    shape = obj.Shape.copy()
+def global_shape(obj, source_shape=None):
+    shape = (obj.Shape if source_shape is None else source_shape).copy()
     if hasattr(obj, "getGlobalPlacement"):
         # Shape 已包含对象自身 Placement；这里只追加父容器变换。
         shape.Placement = obj.getGlobalPlacement() * obj.Placement.inverse() * shape.Placement
     return shape
+
+
+${FREECAD_TOPOLOGY_SOURCE}
 
 
 def require_task_directory(path, working_directory):
@@ -221,6 +225,8 @@ def perform(request):
         operation_data = apply_operations(doc, args["operations"])
     validate(doc, action == "primitive" or args.get("requireSolids", False), args.get("expectedVolume"))
     response = {"version": [str(value) for value in App.Version()], "document": describe(doc)}
+    if action == "describe" and "edges" in args:
+        response["edgePage"] = edge_page(doc, args["edges"])
     if action == "operations":
         response["data"] = operation_data
     if action == "python" and "result" in namespace:

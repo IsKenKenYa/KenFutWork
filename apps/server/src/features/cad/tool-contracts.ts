@@ -259,7 +259,22 @@ export const cadExportInputSchema = z
   })
   .strict();
 export const cadDescribeInputSchema = z
-  .object({ documentPath: path.describe("只读入已有的 FCStd 工程。") })
+  .object({
+    documentPath: path.describe("只读入已有的 FCStd 工程。"),
+    edges: z
+      .object({
+        objectName: z.string().min(1),
+        offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(Number.MAX_SAFE_INTEGER)
+          .default(50),
+      })
+      .strict()
+      .optional(),
+  })
   .strict();
 export const cadPreviewInputSchema = z
   .object({
@@ -289,6 +304,34 @@ const shapeSchema = z.object({
   edges: z.number().int().nonnegative(),
   bounds: z.array(z.number().finite()).length(6).nullable(),
 });
+const edgePageSchema = z
+  .object({
+    objectName: z.string().min(1),
+    coordinateFrame: z.literal("global"),
+    unit: z.literal("mm"),
+    offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    total: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    nextOffset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable(),
+    items: z.array(
+      z
+        .object({
+          name: z.string().regex(/^Edge[1-9]\d*$/u),
+          curveType: z.string().min(1).nullable(),
+          length: z.number().finite().nonnegative(),
+          vertices: z.array(
+            z.tuple([
+              z.number().finite(),
+              z.number().finite(),
+              z.number().finite(),
+            ]),
+          ),
+          bounds: shapeSchema.shape.bounds,
+          closed: z.boolean(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 export const cadResultSchema = z.object({
   protocol: z.literal("kfw-cad/1"),
   executionId: z.string(),
@@ -313,6 +356,7 @@ export const cadResultSchema = z.object({
     .optional(),
   outputPath: z.string().optional(),
   data: z.json().optional(),
+  edgePage: edgePageSchema.optional(),
   preview: z
     .object({
       kind: z.literal("wireframe"),

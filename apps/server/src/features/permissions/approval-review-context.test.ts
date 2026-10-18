@@ -387,6 +387,13 @@ it("CAD 审批保留完整 Python、工程和几何参数，不能把操作伪�
     ],
     ["cad-describe", { documentPath: "零件.FCStd" }],
     [
+      "cad-describe",
+      {
+        documentPath: "零件.FCStd",
+        edges: { objectName: "Pad", offset: 50, limit: 1000 },
+      },
+    ],
+    [
       "cad-preview",
       { documentPath: "零件.FCStd", view: "isometric", outputPath: "预览.png" },
     ],
@@ -407,6 +414,14 @@ it("CAD 缺失脚本、未知参数、敏感访问与超长源码均交人工", 
     input("cad-python", { source: "open('/home/test/.ssh/id_rsa').read()" }),
     input("cad-python", { source: "#".repeat(8001) }),
     input("cad-primitive", { kind: "box", length: -1, width: 2, height: 3 }),
+    input("cad-describe", {
+      documentPath: "零件.FCStd",
+      edges: { objectName: "Pad", offset: -1 },
+    }),
+    input("cad-describe", {
+      documentPath: "零件.FCStd",
+      edges: { objectName: "Pad", runtimeReadRoots: ["/"] },
+    }),
     input("cad-operations", {
       operations: [{ kind: "create_body", name: "Body", command: "hidden" }],
     }),

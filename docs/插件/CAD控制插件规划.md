@@ -56,6 +56,10 @@ Run／Task 取消覆盖后台启动等待：派发前中止本调用等待，派
 
 ## 几何与产物判定
 
+选边先使用既有 `cad_describe_document` 的可选 `edges:{objectName,offset,limit}`，不另建 Agent 工具。默认概要保持原语义；只有显式请求才增加 typed `edgePage`，包含当前对象的 EdgeN、全局毫米坐标、曲线类型、原生长度／顶点／边界和闭合状态。默认50条，可继续翻页或显式放大页数，没有固定总边数或工程容量额度。通过 countElement/getElement 只包装当页边，避免先构造整份 Python 边列表；工程本身仍按原流程恢复、重算和校验。
+
+退化边没有可供读取的普通三维曲线，曲线与边界返回 null，保留真实顶点和线性度量；不能制造两个圆端点或返回 void 包围盒哨兵。EdgeN 不是跨改模的永久身份，修改几何后重新查询。查询不保存源文件、不新增工程版本，沿原 Task 权限、CAD执行审批、代际及取消运行。
+
 `recompute()` 的返回值是重算数量，不能当成功布尔值。对象错误状态、非空 Shape、有效性、实体数以及任务特定的尺寸／体积分别检查。`check()` 对空 Shape 不抛异常不能当成功。2D 草图可不包含实体，须由任务显式采用对应判定。无 Tip 且仅含有效草图几何的 Body 可以没有聚合 Shape，其包围盒返回 null；草图自身仍逐项校验，普通空 Feature、空 Body、有实体特征却缺 Tip 或坏 Pad 不适用。Python 三维任务显式设置 `requireSolids:true`。
 
 `documentPath` 仅用于读取已有工程，新建省略；`outputPath` 是工具最终发布的新路径。Python 中的保存重开验证使用 `output_directory` 暂存，最终保留 `doc` 交给工具保存，不先写占用 `outputPath`。
