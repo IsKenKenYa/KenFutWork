@@ -1192,3 +1192,107 @@ describe("结构化旋转契约", () => {
     expect(f.spawn).not.toHaveBeenCalled();
   });
 });
+
+describe("结构化Body布尔契约", () => {
+  it.each(["fuse", "cut", "common"])(
+    "%s保留工具Body引用并沿用既有审批与离屏沙箱",
+    async (operation) => {
+      const data = {
+        operations: [
+          {
+            kind: "create_boolean",
+            objectName: "Boolean",
+            type: "PartDesign::Boolean",
+            operation,
+            bodyName: "Target",
+            toolBodyNames: ["ToolA", "ToolB"],
+            baseFeatureName: "TargetPad",
+            tip: "Boolean",
+            solids: 1,
+            volume: 1400,
+          },
+        ],
+      };
+      const f = await fixture({ data });
+      const tool = createCadTools(f.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const input = {
+        operations: [
+          {
+            kind: "create_boolean",
+            name: "Boolean",
+            label: "布尔特征",
+            body: "Target",
+            toolBodies: ["ToolA", "ToolB"],
+            operation,
+          },
+        ],
+      };
+      const original = structuredClone(input);
+      expect(z.fromJSONSchema(tool.parameters).safeParse(input).success).toBe(
+        true,
+      );
+      const result = await executeCadTestTool(tool, input, f.context);
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(result.structuredContent.data).toEqual(data);
+      expect(tool).toMatchObject({
+        approvalReviewKind: "cad-operations",
+        access: "execute",
+      });
+      expect(f.spawn).toHaveBeenCalledOnce();
+      const request = f.spawn.mock.calls[0]?.[0];
+      const wire = JSON.parse(
+        await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
+      );
+      expect(wire).toMatchObject({ action: "operations", input: original });
+      expect(request?.env?.QT_QPA_PLATFORM).toBe("offscreen");
+      expect(input).toEqual(original);
+    },
+  );
+
+  it("布尔操作拒绝同Body、重复或空工具、未知模式及权限注入，不派发进程", async () => {
+    const f = await fixture();
+    const execute = vi.spyOn(f.service, "execute");
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少结构化 CAD 工具");
+    const valid = {
+      kind: "create_boolean",
+      name: "Boolean",
+      body: "Target",
+      toolBodies: ["Tool"],
+      operation: "fuse",
+    };
+    for (const operation of [
+      { ...valid, body: undefined },
+      { ...valid, name: "" },
+      { ...valid, operation: undefined },
+      { ...valid, operation: "union" },
+      { ...valid, operation: "Fuse" },
+      { ...valid, toolBodies: undefined },
+      { ...valid, toolBodies: [] },
+      { ...valid, toolBodies: [""] },
+      { ...valid, toolBodies: ["Tool", "Tool"] },
+      { ...valid, toolBodies: ["Target"] },
+      { ...valid, toolBodies: ["Tool", "Target"] },
+      { ...valid, toolBodies: "Tool" },
+      { ...valid, body: "Target", source: "doc.removeObject('Target')" },
+      { ...valid, runtimeReadRoots: ["/"] },
+      { ...valid, keepTools: true },
+      { ...valid, type: 0 },
+    ]) {
+      expect(
+        await tool.execute({ operations: [operation] }, f.context),
+        JSON.stringify(operation),
+      ).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "invalid_arguments" } },
+      });
+    }
+    expect(execute).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+});

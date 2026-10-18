@@ -153,6 +153,26 @@ const operationSchema = z.discriminatedUnion("kind", [
       angle: revolutionAngle,
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("create_boolean"),
+      name: z.string().min(1),
+      label: z.string().optional(),
+      body: z.string().min(1),
+      toolBodies: z
+        .array(z.string().min(1))
+        .min(1)
+        .refine(
+          (names) => new Set(names).size === names.length,
+          "布尔工具 Body 不能重复。",
+        ),
+      operation: z.enum(["fuse", "cut", "common"]),
+    })
+    .strict()
+    .refine(
+      (operation) => !operation.toolBodies.includes(operation.body),
+      "布尔工具不能包含目标 Body。",
+    ),
   pocketOperationSchema,
   dimensionOperationSchema,
 ]);

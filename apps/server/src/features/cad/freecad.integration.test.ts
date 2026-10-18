@@ -312,6 +312,569 @@ it.skipIf(
   120_000,
 );
 
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "布尔工具已有归属时拒绝迁移，保留旧Boolean的Group与参数链",
+  async () =>
+    withNativeCad(async (fixture) => {
+      const seeded = await fixture.service.execute(
+        {
+          action: "python",
+          input: {
+            source: [
+              "for prefix, x in [('First',0),('Second',0),('Tool',5)]:",
+              "    body = doc.addObject('PartDesign::Body',prefix + 'Body')",
+              "    box = body.newObject('PartDesign::AdditiveBox',prefix + 'Box')",
+              "    box.Length, box.Width, box.Height = 10,10,10",
+              "    box.Placement.Base = App.Vector(x,0,0)",
+              "    body.Tip = box",
+              "doc.recompute()",
+              "body, tool_body = doc.getObject('FirstBody'),doc.getObject('ToolBody')",
+              "feature = body.newObject('PartDesign::Boolean','FirstBoolean')",
+              "feature.setObjects([tool_body])",
+              "feature.Type = 0",
+              "body.Tip = feature",
+              "doc.recompute()",
+              "assert feature.Group == [tool_body] and abs(feature.Shape.Volume - 1500) < 1e-6",
+            ].join("\n"),
+            requireSolids: true,
+          },
+        },
+        { ...fixture.context, toolCallId: "boolean-owned-tool-seed" },
+      );
+      expect(seeded.isError, JSON.stringify(seeded)).not.toBe(true);
+      const documentPath = z
+        .string()
+        .min(1)
+        .parse(seeded.structuredContent.outputPath);
+      const original = await readFile(documentPath);
+      const outputPath = join(fixture.root, "stolen-tool.FCStd");
+      const tool = createCadTools(fixture.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const attempted = await executeCadTestTool(
+        tool,
+        {
+          documentPath,
+          outputPath,
+          operations: [
+            {
+              kind: "create_boolean",
+              name: "SecondBoolean",
+              body: "SecondBody",
+              toolBodies: ["ToolBody"],
+              operation: "fuse",
+            },
+          ],
+        },
+        { ...fixture.context, toolCallId: "boolean-owned-tool-refuse" },
+      );
+      expect(attempted).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "execution_failed" } },
+      });
+      expect(JSON.stringify(attempted.structuredContent)).toContain(
+        "已被布尔特征使用",
+      );
+      await expect(stat(outputPath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(documentPath)).toEqual(original);
+      const verified = await fixture.service.execute(
+        {
+          action: "python",
+          input: {
+            documentPath,
+            source: [
+              "feature, tool_body = doc.getObject('FirstBoolean'),doc.getObject('ToolBody')",
+              "assert feature.Group == [tool_body] and tool_body.getParentGeoFeatureGroup() == feature",
+              "assert doc.getObject('FirstBody').Tip == feature and feature.BaseFeature == doc.getObject('FirstBox')",
+              "assert abs(feature.Shape.Volume - 1500) < 1e-6 and len(feature.Shape.Solids) == 1",
+              "assert doc.getObject('SecondBoolean') is None",
+              "result = {'originalParameterLinks': True}",
+            ].join("\n"),
+          },
+        },
+        { ...fixture.context, toolCallId: "boolean-owned-tool-readback" },
+      );
+      expect(verified.isError, JSON.stringify(verified)).not.toBe(true);
+      expect(verified.structuredContent.data).toEqual({
+        originalParameterLinks: true,
+      });
+      expect(await readFile(documentPath)).toEqual(original);
+    }),
+  90_000,
+);
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "结构化Body布尔拒绝失效输入和非单实体结果，多工具及无交集切除仍保留参数链",
+  async () =>
+    withNativeCad(async (fixture) => {
+      const seeded = await fixture.service.execute(
+        {
+          action: "python",
+          input: {
+            source: [
+              "import os",
+              "def body_box(prefix,x=0):",
+              "    body = doc.addObject('PartDesign::Body',prefix + 'Body')",
+              "    box = body.newObject('PartDesign::AdditiveBox',prefix + 'Box')",
+              "    box.Length,box.Width,box.Height = 10,10,10",
+              "    box.Placement.Base = App.Vector(x,0,0)",
+              "    body.Tip = box",
+              "    return body,box",
+              "for prefix,x in [('Target',0),('Overlap',5),('Far',30),('ToolA',2),('ToolB',4)]:",
+              "    body_box(prefix,x)",
+              "cover,box = body_box('Cover')",
+              "box.Length,box.Width,box.Height = 12,12,12",
+              "box.Placement.Base = App.Vector(-1,-1,-1)",
+              "multi = doc.addObject('PartDesign::Body','MultiBody')",
+              "multi.AllowCompound = True",
+              "parts = multi.newObject('PartDesign::Feature','MultiFeature')",
+              "parts.Shape = Part.makeCompound([Part.makeBox(2,2,2),Part.makeBox(2,2,2,App.Vector(20,0,0))])",
+              "multi.Tip = parts",
+              "surface = doc.addObject('PartDesign::Body','SurfaceBody')",
+              "plane = surface.newObject('PartDesign::Feature','SurfaceFeature')",
+              "plane.Shape = Part.makePlane(10,10)",
+              "surface.Tip = plane",
+              "bad = doc.addObject('PartDesign::Body','InvalidBody')",
+              "empty = bad.newObject('PartDesign::Feature','InvalidFeature')",
+              "empty.Shape = Part.Shape()",
+              "bad.Tip = empty",
+              "doc.recompute()",
+              "invalid_path = os.path.join(output_directory,'invalid-boolean-source.FCStd')",
+              "doc.saveCopy(invalid_path)",
+              "doc.removeObject(empty.Name)",
+              "doc.removeObject(bad.Name)",
+              "doc.recompute()",
+              "assert len(multi.Shape.Solids) == 2 and surface.Shape.isValid() and len(surface.Shape.Solids) == 0",
+              "result = {'invalidPath':invalid_path}",
+            ].join("\n"),
+          },
+        },
+        { ...fixture.context, toolCallId: "boolean-boundaries-seed" },
+      );
+      expect(seeded.isError, JSON.stringify(seeded)).not.toBe(true);
+      const documentPath = z
+        .string()
+        .min(1)
+        .parse(seeded.structuredContent.outputPath);
+      const invalidPath = z
+        .object({ invalidPath: z.string().min(1) })
+        .parse(seeded.structuredContent.data).invalidPath;
+      const tool = createCadTools(fixture.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const pythonTool = createCadTools(fixture.service).find(
+        (item) => item.name === "cad_run_python",
+      );
+      if (!pythonTool) throw new Error("缺少 FreeCAD Python 工具");
+      const nativeCommon = await executeCadTestTool(
+        pythonTool,
+        {
+          documentPath,
+          source: [
+            "body = doc.getObject('TargetBody')",
+            "feature = body.newObject('PartDesign::Boolean','NativeCommonProbe')",
+            "feature.setObjects([doc.getObject('ToolABody'),doc.getObject('ToolBBody')])",
+            "feature.Type = 2",
+            "body.Tip = feature",
+            "doc.recompute()",
+            "shape = feature.Shape",
+            "result = {'shapeType':shape.ShapeType,'valid':bool(shape.isValid()),'null':bool(shape.isNull()),'solids':len(shape.Solids),'volume':shape.Volume,'state':list(feature.State)}",
+            // 仅采集原生语义；关闭自有副本，以有效诊断工程结束，不宣称产品 Common 成功。
+            "App.closeDocument(doc.Name)",
+            "doc = App.newDocument('BooleanSemanticsDiagnostic')",
+            "proof = doc.addObject('Part::Box','Probe')",
+            "proof.Length,proof.Width,proof.Height = 1,1,1",
+            "doc.recompute()",
+          ].join("\n"),
+          requireSolids: true,
+          expectedVolume: { objectName: "Probe", value: 1 },
+        },
+        {
+          ...fixture.context,
+          toolCallId: "boolean-native-common-semantics-probe",
+        },
+      );
+      expect(nativeCommon.isError, JSON.stringify(nativeCommon)).not.toBe(true);
+      const rawCommon = z
+        .object({
+          shapeType: z.string(),
+          valid: z.boolean(),
+          null: z.boolean(),
+          solids: z.number().int().nonnegative(),
+          volume: z.number().finite(),
+          state: z.array(z.string()),
+        })
+        .parse(nativeCommon.structuredContent.data);
+      expect(rawCommon).toMatchObject({
+        shapeType: "Compound",
+        valid: true,
+        null: false,
+        solids: 2,
+      });
+      expect(rawCommon.volume).toBeCloseTo(800, 6);
+      expect(rawCommon.state.join(" ")).not.toMatch(/error|invalid/i);
+      const base = {
+        kind: "create_boolean",
+        name: "Boolean",
+        body: "TargetBody",
+        toolBodies: ["OverlapBody"],
+        operation: "fuse",
+      };
+      const cases = [
+        { id: "duplicate-name", operations: [{ ...base, name: "TargetBox" }] },
+        { id: "missing-target", operations: [{ ...base, body: "Missing" }] },
+        {
+          id: "missing-tool",
+          operations: [{ ...base, toolBodies: ["Missing"] }],
+        },
+        { id: "target-feature", operations: [{ ...base, body: "TargetBox" }] },
+        {
+          id: "tool-feature",
+          operations: [{ ...base, toolBodies: ["OverlapBox"] }],
+        },
+        {
+          id: "empty-target",
+          operations: [
+            { kind: "create_body", name: "Empty" },
+            { ...base, body: "Empty" },
+          ],
+        },
+        {
+          id: "empty-tool",
+          operations: [
+            { kind: "create_body", name: "Empty" },
+            { ...base, toolBodies: ["Empty"] },
+          ],
+        },
+        { id: "multi-target", operations: [{ ...base, body: "MultiBody" }] },
+        {
+          id: "multi-tool",
+          operations: [{ ...base, toolBodies: ["MultiBody"] }],
+        },
+        {
+          id: "surface-target",
+          operations: [{ ...base, body: "SurfaceBody" }],
+        },
+        {
+          id: "surface-tool",
+          operations: [{ ...base, toolBodies: ["SurfaceBody"] }],
+        },
+        {
+          id: "invalid-tool",
+          documentPath: invalidPath,
+          operations: [{ ...base, toolBodies: ["InvalidBody"] }],
+        },
+        {
+          id: "disjoint-fuse",
+          operations: [{ ...base, toolBodies: ["FarBody"] }],
+        },
+        {
+          id: "empty-common",
+          operations: [
+            { ...base, toolBodies: ["FarBody"], operation: "common" },
+          ],
+        },
+        {
+          id: "empty-cut",
+          operations: [
+            { ...base, toolBodies: ["CoverBody"], operation: "cut" },
+          ],
+        },
+        {
+          id: "multiple-common-pieces",
+          operations: [
+            {
+              ...base,
+              operation: "common",
+              toolBodies: ["ToolABody", "ToolBBody"],
+            },
+          ],
+        },
+      ];
+      for (const testCase of cases) {
+        const source = testCase.documentPath ?? documentPath;
+        const bytes = await readFile(source);
+        const outputPath = join(
+          fixture.root,
+          `boolean-refused-${testCase.id}.FCStd`,
+        );
+        const result = await executeCadTestTool(
+          tool,
+          { documentPath: source, outputPath, operations: testCase.operations },
+          { ...fixture.context, toolCallId: `boolean-refused-${testCase.id}` },
+        );
+        expect(result, testCase.id).toMatchObject({
+          isError: true,
+          structuredContent: { error: { code: "execution_failed" } },
+        });
+        expect(JSON.stringify(result.structuredContent), testCase.id).toContain(
+          "create_boolean",
+        );
+        await expect(stat(outputPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(await readFile(source), testCase.id).toEqual(bytes);
+      }
+      for (const [operation, expected] of [
+        ["fuse", 1400],
+        ["cut", 200],
+      ] as const) {
+        const result = await executeCadTestTool(
+          tool,
+          {
+            documentPath,
+            operations: [
+              { ...base, operation, toolBodies: ["ToolABody", "ToolBBody"] },
+            ],
+          },
+          {
+            ...fixture.context,
+            toolCallId: `boolean-multiple-tools-${operation}`,
+          },
+        );
+        expect(result.isError, JSON.stringify(result)).not.toBe(true);
+        const model = cadResultSchema.parse(result.structuredContent);
+        const feature = model.document?.objects.find(
+          (object) => object.name === "Boolean",
+        );
+        expect(feature?.shape).toMatchObject({
+          valid: true,
+          null: false,
+          solids: 1,
+        });
+        expect(z.number().parse(feature?.shape?.volume)).toBeCloseTo(
+          expected,
+          6,
+        );
+        expect(model.data).toMatchObject({
+          operations: [
+            { operation, toolBodyNames: ["ToolABody", "ToolBBody"] },
+          ],
+        });
+      }
+      const sequential = await executeCadTestTool(
+        tool,
+        {
+          documentPath,
+          operations: [
+            {
+              ...base,
+              name: "CommonA",
+              operation: "common",
+              toolBodies: ["ToolABody"],
+            },
+            {
+              ...base,
+              name: "CommonB",
+              operation: "common",
+              toolBodies: ["ToolBBody"],
+            },
+          ],
+        },
+        { ...fixture.context, toolCallId: "boolean-sequential-common" },
+      );
+      expect(sequential.isError, JSON.stringify(sequential)).not.toBe(true);
+      const sequentialModel = cadResultSchema.parse(
+        sequential.structuredContent,
+      );
+      const commonA = sequentialModel.document?.objects.find(
+        (object) => object.name === "CommonA",
+      );
+      const commonB = sequentialModel.document?.objects.find(
+        (object) => object.name === "CommonB",
+      );
+      expect(commonB?.shape).toMatchObject({
+        valid: true,
+        null: false,
+        solids: 1,
+      });
+      expect(z.number().parse(commonA?.shape?.volume)).toBeCloseTo(800, 6);
+      expect(z.number().parse(commonB?.shape?.volume)).toBeCloseTo(600, 6);
+      const checkedSequential = await executeCadTestTool(
+        pythonTool,
+        {
+          documentPath: z.string().min(1).parse(sequentialModel.outputPath),
+          source: [
+            "body,first,second = [doc.getObject(name) for name in ('TargetBody','CommonA','CommonB')]",
+            "assert first.TypeId == second.TypeId == 'PartDesign::Boolean'",
+            "assert first.Group == [doc.getObject('ToolABody')] and second.Group == [doc.getObject('ToolBBody')]",
+            "assert first.BaseFeature == doc.getObject('TargetBox') and second.BaseFeature == first and body.Tip == second",
+            "assert str(first.Type) == str(second.Type) == first.getEnumerationsOfProperty('Type')[2]",
+            "assert abs(first.Shape.Volume - 800) < 1e-6 and abs(second.Shape.Volume - 600) < 1e-6",
+            "result = {'commonLayers':2}",
+          ].join("\n"),
+        },
+        {
+          ...fixture.context,
+          toolCallId: "boolean-sequential-common-reopened",
+        },
+      );
+      expect(
+        checkedSequential.isError,
+        JSON.stringify(checkedSequential),
+      ).not.toBe(true);
+      expect(checkedSequential.structuredContent.data).toEqual({
+        commonLayers: 2,
+      });
+      const disjoint = await executeCadTestTool(
+        tool,
+        {
+          documentPath,
+          operations: [{ ...base, operation: "cut", toolBodies: ["FarBody"] }],
+        },
+        { ...fixture.context, toolCallId: "boolean-disjoint-cut" },
+      );
+      expect(disjoint.isError, JSON.stringify(disjoint)).not.toBe(true);
+      const feature = cadResultSchema
+        .parse(disjoint.structuredContent)
+        .document?.objects.find((object) => object.name === "Boolean");
+      expect(feature?.type).toBe("PartDesign::Boolean");
+      expect(z.number().parse(feature?.shape?.volume)).toBeCloseTo(1000, 6);
+    }),
+  180_000,
+);
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "布尔目标已有消费者仍可追加特征，下游依赖不能反向成为工具形成循环",
+  async () =>
+    withNativeCad(async (fixture) => {
+      const seeded = await fixture.service.execute(
+        {
+          action: "python",
+          input: {
+            source: [
+              "for prefix,x in [('Target',0),('Outer',-5),('NewTool',5)]:",
+              "    body = doc.addObject('PartDesign::Body',prefix + 'Body')",
+              "    box = body.newObject('PartDesign::AdditiveBox',prefix + 'Box')",
+              "    box.Length,box.Width,box.Height = 10,10,10",
+              "    box.Placement.Base = App.Vector(x,0,0)",
+              "    body.Tip = box",
+              "doc.getObject('NewToolBox').setExpression('Length','TargetBox.Length')",
+              "doc.recompute()",
+              "outer,target = doc.getObject('OuterBody'),doc.getObject('TargetBody')",
+              "consumer = outer.newObject('PartDesign::Boolean','OuterBoolean')",
+              "consumer.setObjects([target])",
+              "consumer.Type = 0",
+              "outer.Tip = consumer",
+              "doc.recompute()",
+              "assert consumer.Group == [target] and abs(consumer.Shape.Volume - 1500) < 1e-6",
+            ].join("\n"),
+            requireSolids: true,
+          },
+        },
+        { ...fixture.context, toolCallId: "boolean-existing-consumer-seed" },
+      );
+      expect(seeded.isError, JSON.stringify(seeded)).not.toBe(true);
+      const documentPath = z
+        .string()
+        .min(1)
+        .parse(seeded.structuredContent.outputPath);
+      const original = await readFile(documentPath);
+      const tool = createCadTools(fixture.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const changed = await executeCadTestTool(
+        tool,
+        {
+          documentPath,
+          operations: [
+            {
+              kind: "create_boolean",
+              name: "TargetBoolean",
+              body: "TargetBody",
+              toolBodies: ["NewToolBody"],
+              operation: "fuse",
+            },
+          ],
+        },
+        { ...fixture.context, toolCallId: "boolean-existing-consumer-append" },
+      );
+      expect(changed.isError, JSON.stringify(changed)).not.toBe(true);
+      const model = cadResultSchema.parse(changed.structuredContent);
+      const target = model.document?.objects.find(
+        (object) => object.name === "TargetBody",
+      );
+      const outer = model.document?.objects.find(
+        (object) => object.name === "OuterBody",
+      );
+      expect(z.number().parse(target?.shape?.volume)).toBeCloseTo(1500, 6);
+      expect(z.number().parse(outer?.shape?.volume)).toBeCloseTo(2000, 6);
+      const readback = await fixture.service.execute(
+        {
+          action: "python",
+          input: {
+            documentPath: z.string().min(1).parse(model.outputPath),
+            source: [
+              "target,consumer = doc.getObject('TargetBody'),doc.getObject('OuterBoolean')",
+              "feature,tool_body = doc.getObject('TargetBoolean'),doc.getObject('NewToolBody')",
+              "assert target.Tip == feature and feature.BaseFeature == doc.getObject('TargetBox')",
+              "assert consumer.Group == [target] and target.getParentGeoFeatureGroup() == consumer",
+              "assert feature.Group == [tool_body]",
+              "assert dict(doc.getObject('NewToolBox').ExpressionEngine)['Length'] == 'TargetBox.Length'",
+              "assert abs(consumer.Shape.Volume - 2000) < 1e-6 and len(consumer.Shape.Solids) == 1",
+              "result = {'downstreamIntact':True}",
+            ].join("\n"),
+          },
+        },
+        {
+          ...fixture.context,
+          toolCallId: "boolean-existing-consumer-readback",
+        },
+      );
+      expect(readback.isError, JSON.stringify(readback)).not.toBe(true);
+      expect(readback.structuredContent.data).toEqual({
+        downstreamIntact: true,
+      });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const outputPath = join(fixture.root, `boolean-cycle-${attempt}.FCStd`);
+        const cycle = await executeCadTestTool(
+          tool,
+          {
+            documentPath,
+            outputPath,
+            operations: [
+              {
+                kind: "create_boolean",
+                name: "CycleBoolean",
+                body: "TargetBody",
+                toolBodies: ["OuterBody"],
+                operation: "fuse",
+              },
+            ],
+          },
+          {
+            ...fixture.context,
+            toolCallId: `boolean-existing-consumer-cycle-${attempt}`,
+          },
+        );
+        expect(cycle).toMatchObject({
+          isError: true,
+          structuredContent: { error: { code: "execution_failed" } },
+        });
+        await expect(stat(outputPath)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(JSON.stringify(cycle.structuredContent)).toContain(
+          "不能创建循环布尔特征",
+        );
+      }
+      expect(await readFile(documentPath)).toEqual(original);
+    }),
+  120_000,
+);
+
 async function reopenWithGuiAssertions(input: {
   service: CadService;
   context: ToolExecutionContext;
@@ -1117,6 +1680,146 @@ it.skipIf(
       ).toBe("PNG");
     }),
   60_000,
+);
+
+it.skipIf(
+  process.env.KENFUTWORK_CAD_INTEGRATION !== "1" ||
+    process.platform !== "darwin",
+)(
+  "结构化Body布尔保留参数特征、工具引用与Tip，修改工具Pad后重开仍可重算",
+  async () =>
+    withNativeCad(async (fixture) => {
+      const tool = createCadTools(fixture.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少结构化 CAD 工具");
+      const modes = ["fuse", "cut", "common"] as const;
+      const operations = modes.flatMap((operation) => [
+        { kind: "create_body", name: `${operation}Body` },
+        {
+          kind: "create_sketch",
+          name: `${operation}Profile`,
+          body: `${operation}Body`,
+          profiles: [
+            { kind: "rectangle", name: "Base", width: 10, height: 10 },
+          ],
+        },
+        {
+          kind: "create_pad",
+          name: `${operation}Pad`,
+          body: `${operation}Body`,
+          profile: `${operation}Profile`,
+          length: 10,
+        },
+        { kind: "create_body", name: `${operation}ToolBody` },
+        {
+          kind: "create_sketch",
+          name: `${operation}ToolProfile`,
+          body: `${operation}ToolBody`,
+          profiles: [
+            {
+              kind: "rectangle",
+              name: "Tool",
+              width: 10,
+              height: 10,
+              origin: [5, 0],
+            },
+          ],
+        },
+        {
+          kind: "create_pad",
+          name: `${operation}ToolPad`,
+          body: `${operation}ToolBody`,
+          profile: `${operation}ToolProfile`,
+          length: 10,
+        },
+        {
+          kind: "create_boolean",
+          name: `${operation}Boolean`,
+          label: `${operation}特征`,
+          body: `${operation}Body`,
+          toolBodies: [`${operation}ToolBody`],
+          operation,
+        },
+      ]);
+      const created = await executeCadTestTool(
+        tool,
+        { operations },
+        { ...fixture.context, toolCallId: "body-boolean-create" },
+      );
+      expect(created.isError, JSON.stringify(created)).not.toBe(true);
+      const first = cadResultSchema.parse(created.structuredContent);
+      const documentPath = z.string().min(1).parse(first.outputPath);
+      const sourceBytes = await readFile(documentPath);
+      const booleanReceipts = z
+        .object({
+          operations: z.array(z.object({ kind: z.string() }).passthrough()),
+        })
+        .parse(first.data)
+        .operations.filter((receipt) => receipt.kind === "create_boolean");
+      expect(booleanReceipts).toHaveLength(3);
+      for (const [index, operation] of modes.entries()) {
+        expect(booleanReceipts[index]).toMatchObject({
+          kind: "create_boolean",
+          objectName: `${operation}Boolean`,
+          type: "PartDesign::Boolean",
+          operation,
+          bodyName: `${operation}Body`,
+          baseFeatureName: `${operation}Pad`,
+          toolBodyNames: [`${operation}ToolBody`],
+          tip: `${operation}Boolean`,
+          solids: 1,
+        });
+        expect(z.number().parse(booleanReceipts[index]?.volume)).toBeCloseTo(
+          operation === "fuse" ? 1500 : 500,
+          6,
+        );
+      }
+      const changed = await executeCadTestTool(
+        tool,
+        {
+          documentPath,
+          operations: modes.map((operation) => ({
+            kind: "set_dimension",
+            object: `${operation}ToolPad`,
+            dimension: "length",
+            value: 8,
+          })),
+        },
+        { ...fixture.context, toolCallId: "body-boolean-change-tools" },
+      );
+      expect(changed.isError, JSON.stringify(changed)).not.toBe(true);
+      const edited = cadResultSchema.parse(changed.structuredContent);
+      const editedPath = z.string().min(1).parse(edited.outputPath);
+      const editedBytes = await readFile(editedPath);
+      const verified = await fixture.service.execute(
+        {
+          action: "python",
+          input: {
+            documentPath: editedPath,
+            source: [
+              "for mode, kind, expected in [('fuse',0,1400.0),('cut',1,600.0),('common',2,400.0)]:",
+              "    body, feature, base, tool_body, tool_pad = [doc.getObject(mode + suffix) for suffix in ('Body','Boolean','Pad','ToolBody','ToolPad')]",
+              "    assert feature.TypeId == 'PartDesign::Boolean' and feature.BaseFeature == base",
+              "    assert feature.Group == [tool_body] and body.Tip == feature",
+              "    assert str(feature.Type) == feature.getEnumerationsOfProperty('Type')[kind]",
+              "    assert abs(tool_pad.Length.Value - 8) < 1e-9",
+              "    assert not feature.Shape.isNull() and feature.Shape.isValid() and len(feature.Shape.Solids) == 1",
+              "    assert abs(feature.Shape.Volume - expected) < 1e-6 and abs(body.Shape.Volume - expected) < 1e-6",
+              "    assert not base.ViewObject.Visibility and not tool_body.ViewObject.Visibility and feature.ViewObject.Visibility",
+              "result = {'parameterLinks': True}",
+            ].join("\n"),
+            requireSolids: true,
+          },
+        },
+        { ...fixture.context, toolCallId: "body-boolean-independent-reopen" },
+      );
+      expect(verified.isError, JSON.stringify(verified)).not.toBe(true);
+      expect(verified.structuredContent.data).toEqual({ parameterLinks: true });
+      expect(await readFile(documentPath)).toEqual(sourceBytes);
+      expect(await readFile(editedPath)).toEqual(editedBytes);
+    }),
+  120_000,
 );
 
 it.skipIf(

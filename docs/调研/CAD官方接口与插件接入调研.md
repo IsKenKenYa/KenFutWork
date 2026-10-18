@@ -36,7 +36,7 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | --- | --- | --- | --- |
 | 文档创建、保存、重开 | App Document／Python 接口 | 原生工程可重开；对象、约束和参数保留 | 后台保存／重开与源保护已验，见 §9.1～§9.8；GUI 内存副本→Task 发布已有工具实证，原位保存仍待交付，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §13 |
 | 2D 几何与草图 | Sketcher `addGeometry`、几何／尺寸约束 | 闭合轮廓、约束状态、尺寸回读与矛盾约束错误 | 结构化约束／改尺寸及真实 Design 整轮已验，见 §9.5、§9.7 |
-| 3D 原语、布尔、位置 | Part 形状及文档对象 | 有效性、实体数、体积、包围盒与预期对应 | 原语与位移／旋转有既有证据；Python 布尔三模式及参数联动已验，见 §9.14 |
+| 3D 原语、布尔、位置 | Part 形状及文档对象 | 有效性、实体数、体积、包围盒与预期对应 | 原语与位移／旋转有既有证据；Python 布尔及结构化 Body 布尔三模式、参数联动与来源保护已验，见 §9.14、§9.20 |
 | 参数化实体 | PartDesign Body、草图和特征 | 拉伸／凹槽／旋转等有真实依赖；改源尺寸后下游随动 | 结构化 Pad／Pocket、厚度联动与首个固定角 Revolution 已有原生证据，见 §9.8、§9.13 |
 | 进阶建模 | 圆角、倒角、阵列及其他官方特征 | 合理参数成功；失效参数能识别；重开后依赖保留 | Python 单边圆角／倒角、线性／环形阵列四阶段已验，具体范围见 §9.14 |
 | 表达式与单位 | Quantity、属性、表达式接口 | 显式单位输入、正确回读、关联参数更新 | 后台厚度／角度联动见 §9.8、§9.13；GUI Quantity 基础数值／单位签名、直接属性表达式读取及保留绑定的标量写入已有实证，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §10、§11；不代表任意显示单位转换或 GUI 表达式编辑已验收 |
@@ -384,6 +384,20 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 取消快返使共享准备与 Task 关闭的交叠成为实际路径。安装版 SRT 0.0.78 的 `reset()` 不等待 `initializationPromise`，因此 helper 关闭先禁止新派发并停止已有 proof owner，再等待初始化与只读证明收束，最后 reset／清理临时目录。每个 probe 派发点和原生 R 前均检查关闭闸门，避免关闭后迟到重建状态。准备失败可以被关闭过程收束，真实停止未确认仍保留失败。
 
 父端／消费者分别取得已取消请求仍被接纳、共享等待不能中断、取消身份随原对象漂移，以及 CAD 未转交 signal 的 RED；helper 取得精确取消身份、无 owner／已有 owner 收尾、关闭越过共享准备等 RED。新增真实 macOS 公共入口验证在 running 事件与 spawn 返回之间取消，原 PID 清空、重放不重启、新调用恢复；合成回执测试单独验证 ACK 丢失／错身份／未清空的父端屏障，不冒充 OS 证据。最终命令与结果见《日志》同批记录。本轮仍不对用户 FreeCAD GUI 进行 AX 或宏操作。
+
+### 9.20 结构化 Body 布尔与原生 Common 语义
+
+同一个 `cad_apply_operations` 新增 `create_boolean`，以 `body`、`toolBodies`、`operation:fuse/cut/common` 创建真实 `PartDesign::Boolean`，复核原生 `BaseFeature`／`Group`／模式及实际 Body.Tip，不用静态 Shape 替代参数链。契约和审批共用 schema，仍沿既有 Task／后台沙箱／新文件发布；首次契约三模式与原生工具整链均先取得未接线的 RED。原生入口来自固定版 [TestBoolean.py](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/PartDesignTests/TestBoolean.py)与 [FeatureBoolean.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/PartDesign/App/FeatureBoolean.cpp)。
+
+工具 Body 已被另一个 Boolean 使用时，原生 `setObjects` 会将它从旧 GeoFeatureGroup 移走，旧 Boolean 的工具列表可被清空，而空工具执行分支不保证抛错或清掉旧 Shape。先用真实回归确认当前实现错误接受第二个 Boolean，再在 `setObjects` 前拒绝已归属 Boolean 的工具；不由此普遍禁止目标已有下游消费者。依据 [GeoFeatureGroupExtension.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/GeoFeatureGroupExtension.cpp)及上述 Boolean 实现，原生回归保留旧 Group／Tip／参数链及源字节。
+
+四项原生测试覆盖：三模式保存重开及修改工具 Pad 后下游体积；已消费工具不能迁移；缺失／错误／空／多实体／曲面 Body、对象名碰撞、无效几何与空结果不发布；多工具 fuse／cut、无交集 cut、两层单工具 common；目标已有消费者可继续追加并联动，而下游反向成为工具的循环被拒绝。失败工程的源字节保持，原生重开核对每层 Group／BaseFeature／Tip／显示状态。该范围不代表复杂父容器坐标组合、全部拓扑异常或当前 GUI 布尔工具已验收。
+
+重复验收另捕获循环请求被原生间歇接受：Shape valid／single，特征仅标 Touched，仍返回旧几何。因此不能依赖重算后的错误状态自行拒绝。调用原生布尔前读取工具 `OutListRecursive`，当它已依赖目标 Body 本身时明确拒绝；该接口递归构造真实链接与表达式依赖，见固定版 [DocumentObjectPyImp.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObjectPyImp.cpp)与 [DocumentObject.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.cpp)。不因工具表达式只引用旧 TargetBox.Length 就禁止合法共同上游；原生正向已覆盖此表达式与既有消费者同时存在，反向请求重复三次并锁定明确循环拒绝原因。
+
+多工具 Common 不能假设为顺序求交。固定版将首形状与工具组交给原生 Objects／Tools 布尔算法，见 [TopoShapeExpansion.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Part/App/TopoShapeExpansion.cpp)。本机自有三盒场景实际得到 `Compound`、Shape valid、两个实体、体积约800mm³，状态仍为 Up-to-date；这不满足本工具单实体交付规则。工具没有改写原生算法或放宽判据，明确拒绝该结果。用户若要依次相交，可用两个单工具 Common，实际体积800→600mm³，并保留两层参数引用。
+
+夹具首轮误以为预置了标准库 os，另一轮误把原生多工具 Common 当逐次交集；分别补显式导入及一手取证后纠正夹具，未添加生产兼容别名或改变原生语义。临时几何输出由固定回归断言取代。运行命令、时间及最终全仓门禁由《日志》单独记账，不把诊断工程当 Common 产品成功。
 
 ## 10. 来源地图与证据限制
 

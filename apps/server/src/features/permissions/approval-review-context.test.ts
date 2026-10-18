@@ -370,6 +370,21 @@ it("CAD 审批保留完整 Python、工程和几何参数，不能把操作伪�
       "cad-export",
       { documentPath: "零件.FCStd", format: "step", objectNames: ["Body"] },
     ],
+    [
+      "cad-operations",
+      {
+        documentPath: "布尔.FCStd",
+        operations: [
+          {
+            kind: "create_boolean",
+            name: "Union",
+            body: "Target",
+            toolBodies: ["ToolA", "ToolB"],
+            operation: "fuse",
+          },
+        ],
+      },
+    ],
     ["cad-describe", { documentPath: "零件.FCStd" }],
     [
       "cad-preview",
@@ -394,6 +409,17 @@ it("CAD 缺失脚本、未知参数、敏感访问与超长源码均交人工", 
     input("cad-primitive", { kind: "box", length: -1, width: 2, height: 3 }),
     input("cad-operations", {
       operations: [{ kind: "create_body", name: "Body", command: "hidden" }],
+    }),
+    input("cad-operations", {
+      operations: [
+        {
+          kind: "create_boolean",
+          name: "Union",
+          body: "Target",
+          toolBodies: ["Target"],
+          operation: "fuse",
+        },
+      ],
     }),
     input("cad-operations", {
       operations: [

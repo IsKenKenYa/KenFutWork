@@ -148,6 +148,8 @@ def apply_operations(doc, operations):
                 obj = create_pad(doc, operation)
             elif kind == "create_revolution":
                 obj = create_revolution(doc, operation)
+            elif kind == "create_boolean":
+                obj = create_boolean(doc, operation)
             elif kind == "create_pocket":
                 obj = create_pocket(doc, operation)
             elif kind == "set_dimension" and operation["dimension"] == "angle":
@@ -166,6 +168,8 @@ def apply_operations(doc, operations):
                     receipt["supportPad"] = doc.getObject(operation["supportPad"]).Name
             if obj.TypeId in ("PartDesign::Pad", "PartDesign::Pocket", "PartDesign::Revolution"):
                 receipt.update(feature_receipt(obj))
+            elif obj.TypeId == "PartDesign::Boolean":
+                receipt.update(boolean_receipt(obj))
             receipts.append(receipt)
         except Exception as error:
             raise ValueError("第 " + str(index) + " 项操作 " + kind + " 失败: " + str(error)) from error
@@ -254,7 +258,8 @@ def finish_feature(doc, body, feature, profile, previous):
     body.Tip = feature
     doc.recompute()
     validate_body_result(body)
-    profile.ViewObject.Visibility = False
+    if profile is not None:
+        profile.ViewObject.Visibility = False
     if previous is not None:
         previous.ViewObject.Visibility = False
     feature.ViewObject.Visibility = True
@@ -321,6 +326,52 @@ def create_pocket(doc, operation):
         feature.Length = operation["depth"]
     finish_feature(doc, body, feature, sketch, pad)
     return feature
+
+
+def require_boolean_body(doc, name):
+    body = require_body(doc, name)
+    tip = body.Tip
+    if tip is None or tip not in body.Group or not tip.isDerivedFrom("PartDesign::Feature"):
+        raise ValueError("布尔 Body 缺少所属实体 Tip: " + name)
+    validate_body_result(body)
+    return body
+
+
+def create_boolean(doc, operation):
+    names = operation["toolBodies"]
+    if not names or len(set(names)) != len(names) or operation["body"] in names:
+        raise ValueError("布尔工具 Body 不能为空、重复或包含目标 Body")
+    doc.recompute()
+    body = require_boolean_body(doc, operation["body"])
+    tools = [require_boolean_body(doc, name) for name in names]
+    for tool in tools:
+        if body in tool.OutListRecursive:
+            raise ValueError("工具 Body 依赖目标 Body，不能创建循环布尔特征: " + tool.Name)
+        owner = tool.getParentGeoFeatureGroup()
+        if owner is not None and owner.isDerivedFrom("PartDesign::Boolean"):
+            raise ValueError("工具 Body 已被布尔特征使用: " + tool.Name)
+    previous = body.Tip
+    feature = create_named_object(doc, "PartDesign::Boolean", operation, body)
+    feature.setObjects(tools)
+    mode = {"fuse": 0, "cut": 1, "common": 2}[operation["operation"]]
+    feature.Type = mode
+    finish_feature(doc, body, feature, None, previous)
+    if (feature.BaseFeature != previous or list(feature.Group) != tools
+            or feature.Type != feature.getEnumerationsOfProperty("Type")[mode]):
+        raise ValueError("布尔特征的基体、工具或模式没有按请求保留: " + feature.Name)
+    for tool in tools:
+        tool.ViewObject.Visibility = False
+    body.ViewObject.Visibility = True
+    return feature
+
+
+def boolean_receipt(feature):
+    body = feature.getParentGeoFeatureGroup()
+    mode = list(feature.getEnumerationsOfProperty("Type")).index(str(feature.Type))
+    return {"bodyName": body.Name, "baseFeatureName": feature.BaseFeature.Name,
+            "toolBodyNames": [tool.Name for tool in feature.Group],
+            "operation": ("fuse", "cut", "common")[mode], "tip": body.Tip.Name,
+            "volume": feature.Shape.Volume, "solids": len(feature.Shape.Solids)}
 
 
 def set_feature_dimension(doc, operation):

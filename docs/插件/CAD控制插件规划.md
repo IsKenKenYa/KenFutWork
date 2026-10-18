@@ -25,11 +25,11 @@ Run／Task 取消覆盖后台启动等待：派发前中止本调用等待，派
 
 ## 常用结构化操作
 
-`cad_apply_operations` 复用既有 Task、审批、安装门控与新文件发布，不引入独立运行链路。输入为按序执行的 `operations`，支持 `create_body`、`create_sketch`、`create_pad`、`create_pocket`、`create_revolution` 与 `set_dimension`；同一 Sketch 的 `profiles` 可同时含矩形与圆，轮廓名不得重复。内部直接用已解析的 JSON 调可信 API，不将参数拼成 Python 源码执行。
+`cad_apply_operations` 复用既有 Task、审批、安装门控与新文件发布，不引入独立运行链路。输入为按序执行的 `operations`，支持 `create_body`、`create_sketch`、`create_pad`、`create_pocket`、`create_revolution`、`create_boolean` 与 `set_dimension`；同一 Sketch 的 `profiles` 可同时含矩形与圆，轮廓名不得重复。内部直接用已解析的 JSON 调可信 API，不将参数拼成 Python 源码执行。
 
 矩形宽高与圆半径为正毫米数；`origin`／`center` 为固定绝对二维坐标，默认 `[0,0]`。固定位置只保证请求时的位置，不暗含改尺寸后相对居中。创建的矩形使用闭合、水平／垂直、位置与有向宽高约束，圆使用位置与半径约束；驱动尺寸命名为 `轮廓名_Width`／`_Height`／`_Radius`。`set_dimension` 只接受唯一、类型匹配的命名驱动尺寸，拒绝参考／停用约束和已有表达式，不解除用户已有关系。操作后须求解成功、完全约束并回读生效数值。
 
-内部对象名称若已存在或被 FreeCAD 自动改名则明确失败，中文显示可用 `label`。每步回执 `data.operations` 含序号、操作类型、实际对象、求解状态及实际读取的命名尺寸。失败标明操作序号与原因，不发布最终文件；输入工程仍只读。工作副本／诊断文件的创建不是数据库事务，不承诺中间副作用全部回滚。空 Body 中途可存在，批末仍执行既有完整几何校验。布尔、圆角／倒角及阵列等常用封装继续分批交付，复杂形态仍由完整 Python 承接。
+内部对象名称若已存在或被 FreeCAD 自动改名则明确失败，中文显示可用 `label`。每步回执 `data.operations` 含序号、操作类型、实际对象、求解状态及实际读取的命名尺寸。失败标明操作序号与原因，不发布最终文件；输入工程仍只读。工作副本／诊断文件的创建不是数据库事务，不承诺中间副作用全部回滚。空 Body 中途可存在，批末仍执行既有完整几何校验。圆角／倒角及阵列等常用封装继续分批交付，复杂形态仍由完整 Python 承接。
 
 
 ### 拉伸、切除与厚度联动
@@ -47,6 +47,12 @@ Run／Task 取消覆盖后台启动等待：派发前中止本调用等待，派
 `create_revolution` 指定 `body`、`profile`、`axis` 与 `angle`。它是同 Body 的首个实体特征，轮廓为自由 XY 草图；`axis:x/y` 分别绑定本草图的局部 H／V 轴，按右手方向正向单侧旋转。角度单位为度，范围 `(0,360]`；长度和草图尺寸仍为毫米。矩形可形成环形柱或部分扇段，轴外圆可形成环体；跨轴自交、多实体或无效几何明确失败，不交付旧 Shape。
 
 `set_dimension` 的 `angle` 不带 `profile`，只修改上述固定角 Revolution，拒绝反向、对称、多角、已有基体或外部基准轴等其它配置；不解除已有 Angle 表达式。草图宽高／半径修改仍沿命名尺寸路径，重算后核对旋转体及实际 Body／Tip。修改上游旋转保持现有后继 Tip 和可见性；下游失效则拒绝发布，源文件保持不变。回执追加实际 `axis`、`angle`，同时保留 Body、Profile、BaseFeature、Tip、实体数和体积。任意放置、外部轴、多侧或后续增材旋转由完整 Python 承接。
+
+### Body 参数化布尔
+
+`create_boolean` 指定目标 `body`、非空且唯一的 `toolBodies` 与 `operation:fuse/cut/common`，创建真实 `PartDesign::Boolean`，保留 `BaseFeature`、工具 `Group` 和当前 `Body.Tip`。目标与工具都须有所属、有效的单实体 Tip；不接受目标自身、已被其它 Boolean 使用的工具 Body、已有对象名、失效或空结果。工具 Body 隐藏，旧目标 Tip 隐藏，新特征显示；不把已消费的工具移动到另一个 Boolean 破坏旧参数链。无交集 cut 是合法的参数化结果，可保持原体；fuse 的不连通多实体及 common 的空结果拒绝发布。
+
+回执增加实际 `operation`、`bodyName`、`baseFeatureName`、`toolBodyNames`、`tip`、体积和实体数。调用前检查工具的递归依赖，不能把已依赖目标 Body 的下游消费者反向作为工具制造循环；只引用旧基体属性的合法共享上游仍可使用，再由原生重算核验。源工程只读，失败不发布新FCStd，也不以残留旧Shape冒充成功。多工具 Common 沿用 FreeCAD 原生 Objects／Tools 算法，不偷偷改成顺序求交；即使原生报告 Shape valid，结果仍须单实体。需要依次求交时，按序创建多个单工具 Common，保留每层真实参数引用。后续用既有尺寸工具或Python修改上游，再保存重开核验参数与最终几何。安装版实证范围和未覆盖条件由《日志》及主调研矩阵记账。
 
 ## 几何与产物判定
 
