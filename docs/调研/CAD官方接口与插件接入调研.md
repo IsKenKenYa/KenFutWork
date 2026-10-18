@@ -38,7 +38,7 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | 2D 几何与草图 | Sketcher `addGeometry`、几何／尺寸约束 | 闭合轮廓、约束状态、尺寸回读与矛盾约束错误 | 结构化约束／改尺寸及真实 Design 整轮已验，见 §9.5、§9.7 |
 | 3D 原语、布尔、位置 | Part 形状及文档对象 | 有效性、实体数、体积、包围盒与预期对应 | 原语与位移／旋转有既有证据；Python 布尔及结构化 Body 布尔三模式、参数联动与来源保护已验，见 §9.14、§9.20 |
 | 参数化实体 | PartDesign Body、草图和特征 | 拉伸／凹槽／旋转等有真实依赖；改源尺寸后下游随动 | 结构化 Pad／Pocket、厚度联动与首个固定角 Revolution 已有原生证据，见 §9.8、§9.13 |
-| 进阶建模 | 圆角、倒角、阵列及其他官方特征 | 合理参数成功；失效参数能识别；重开后依赖保留 | Python 单边圆角／倒角、线性／环形阵列四阶段已验，具体范围见 §9.14 |
+| 进阶建模 | 圆角、倒角、阵列及其他官方特征 | 合理参数成功；失效参数能识别；重开后依赖保留 | Python 单边修饰／线性与环形阵列四阶段见 §9.14；结构化显式多边修饰与命名适配见 §9.23 |
 | 表达式与单位 | Quantity、属性、表达式接口 | 显式单位输入、正确回读、关联参数更新 | 后台厚度／角度联动见 §9.8、§9.13；GUI Quantity 基础数值／单位签名、直接属性表达式读取及保留绑定的标量写入已有实证，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §10、§11；不代表任意显示单位转换或 GUI 表达式编辑已验收 |
 | 工程文件及交换格式 | `Std Export` 与对应格式模块 | 导出正确对象；再导入核对几何和单位 | STEP／STL／BREP／SVG／DXF 已有分层回读证据，见 §9 |
 | 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 A4／俯视图／真实尺寸及整页 SVG 已验，见 §9.14；独立 GUI 原生夹具另验证单页 PDF 导出与栅格查看，见 §9.17，不代表正式 PDF 工具或完整比例／标注验收 |
@@ -424,7 +424,7 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 
 公开 Python 未暴露 `getContinuousEdges`／实际接受边列表；仅靠最终 Shape 有效不能证明多选边都被处理。后续可先验证一个限于独立后台副本的候选：创建不加入 Body 的自有新鲜修饰 probe，同时设 BaseFeature 和 Base，利用零 Radius／Size 在原生选边之后、几何构造之前的参数检查区别被接纳与空边集。单设 Base 会因缺少容器失败；两种参数的属性下界是0且零值不被夹成正数。probe 仍会暂时改变文档 ActiveObject／Modified 和目标 InList，不能迁入用户 GUI 或宣称无状态变化；单边完整建模的成功／失败也不能代替多边组合可行性。
 
-固定版可从公开 `probe.getStatusString()` 读取具体执行 Why，底层日志链没有翻译调用；`doc.getErrorDescription` 仅为C++内部接口。对应正参数错误源文是 `Fillet radius must be greater than zero`／`Size must be greater than zero`，重算后应立即读取，不能用 GUI 翻译文本比较。上述候选还没有原生验证，也没有进入本轮运行时；出现其它状态不能当作接纳证明。依据 [DocumentObject.pyi](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.pyi)、[状态包装](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObjectPyImp.cpp)、[参数夹取](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyUnits.cpp)及上述 Feature 源码。
+固定版可从公开 `probe.getStatusString()` 读取具体执行 Why，底层日志链没有翻译调用；`doc.getErrorDescription` 仅为C++内部接口。对应正参数错误源文是 `Fillet radius must be greater than zero`／`Size must be greater than zero`，重算后应立即读取，不能用 GUI 翻译文本比较。本节为实现前的候选记录；随后原生验证与运行时接线见 §9.23，出现其它状态不能当作接纳证明。依据 [DocumentObject.pyi](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.pyi)、[状态包装](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObjectPyImp.cpp)、[参数夹取](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/PropertyUnits.cpp)及上述 Feature 源码。
 
 下一轮真实 Task 验收至少覆盖：两种结构化创建→保存重开→修改基体和特征尺寸→再次重开；显式多边、重复边、缺失／越界链接和会被跳过的边；零／负参数、过大参数、错误对象／Body 与名称碰撞；已有下游时原位改早期特征并保留末端 Tip；修改表达式绑定属性时沿用既有保护。每项核对参数链、当前选择、错误状态、单实体与可计算几何；失败保持源字节且不发布目标文件。此处是待执行矩阵，不能作为已通过测试的计数，也不扩大为全部倒角模式或复杂拓扑重命名验收。
 
@@ -438,7 +438,21 @@ CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`�
 
 契约正向1项先RED、非法输入1项GREEN；原生两项先在未接线参数层RED。接线后发现上述退化框错误，再最小修复。最终新原生两项7.26秒通过：嵌套App::Part旋转与对象自身旋转的全局顶点范围，4／6／8mm边长、闭合Circle、Sphere两条退化边、120边默认50及更大显式页、超尾空页、缺失／无Shape目标拒绝；源工程设为只读后字节保持，不返回新工程路径。既有参数化／容器／全局坐标／交换物理尺寸原生整链另12.59秒通过；层级证据不相加。
 
-这不是 GUI 当前文档的边查询，也不提供两相邻面的C0判定：公开 edge.Continuity 只描述一维曲线，不能包装成“可圆角”的布尔值。其它工作台、全部曲线类型和复杂父容器组合仍按实际证据验收；圆角／倒角结构化创建和尺寸修改保留下一独立切片。最终门禁见同批《日志》。
+这不是 GUI 当前文档的边查询，也不提供两相邻面的C0判定：公开 edge.Continuity 只描述一维曲线，不能包装成“可圆角”的布尔值。其它工作台、全部曲线类型和复杂父容器组合仍按实际证据验收；圆角／倒角结构化创建和尺寸修改已在后续独立切片接入，见 §9.23。最终门禁见同批《日志》。
+
+### 9.23 结构化修饰与原生命名适配
+
+`cad_apply_operations` 已接入显式多边 `create_fillet`／`create_chamfer` 与无 profile 的 radius／size 修改；草图半径仍带 profile。实际类型分流，参数必须为 `App::PropertyQuantityConstraint` 且非 ReadOnly／Immutable／表达式绑定。创建只消费所属 Body 的当前 Tip，编辑只赋标量并保留当前末端 Tip、Base 对象及显隐；允许原生更新 TNP 子名，不重写 Base 或 BaseFeature。完整 Python 继续承接面／全边／其它倒角模式。
+
+独立原生零参数 probe 已验证 §9.21 的候选：不加入 Body，同时设 BaseFeature 与 Base；每条锐边返回确切正参数错误，平滑边返回空选择错误。实际混选 `[锐边,平滑边]` 的原生 Fillet 会成功并忽略平滑边，证明有效 Shape 不是全选边完成证明。结构化入口逐条检查，多边组合仍须求解成功；finally 只删除本次持有的真实对象，不按名称前缀清理。probe 改变后台临时文档状态，不迁入 GUI，不宣称无副作用。
+
+初始结构化回归在修改 Pad.Length 时稳定失败：`Invalid edge link`，旧 Shape 仍有效且保留旧体积。无 probe 的纯原生 Python 创建后，保存跨进程重开，仅改 Length 同样失败；单独 sketch.solve 正常，关闭工作副本 saveAs 也不能消除。公开 ElementMap 实测，Hasher／Tag／MapVersion 不变，原 `#f:2;…`／`#11:6;…` 重算后变 `#f;…`／`#11;…`；未改参数的基体 touch 重算也会改变此缓存映射。全新手写 Sketch＋Pad 同样复现，不能把失败归为新工具选边或草图求解。此证据定位到安装版哈希化命名与恢复后重算的不一致；未定位到 SDK 的唯一缺陷行，不扩大为其它版本通病。
+
+官方 `Document.UseHasher=false` 只停止名称压缩，仍保留 ElementMap、完整 TNP 名称和自动 `updateElementReferences`。切换会对有 geometry 属性的对象 enforceRecompute；旧显式索引 hasher 仍可恢复，不能假称瞬间无损展开或修复旧坏链接。固定提交依据：[Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)、[GeoFeature.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/GeoFeature.cpp)、[TopoShapeExpansion.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Mod/Part/App/TopoShapeExpansion.cpp)、[StringHasher.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/StringHasher.cpp)。
+
+后台结构化修饰操作采用这一官方完整名称形态，输出工程持久保留 `UseHasher=false`。转换前后所选同编号边必须具有等于双方完整长度的共同几何，且共同长度为正；容差随极小边收紧，不能把不相交小边当作一致。随后每条边原生预检、特征状态与单实体、参数／链接回读、整工程最终检查及原发布屏障全部保留。任何选边几何变化或依赖失效均拒绝发布；不手工修补坏链接，不触碰只读源文件或用户 GUI。
+
+七项原生正向回归已通过：两种特征的两条相对竖边、Pad.Length10→12与Radius／Size1→2、解析体积、保存重开；同批创建草图／Pad／修饰再跨进程改长度；已有默认 True 原生工程改修饰尺寸再改上游长度；早期 Fillet／Chamfer 的反向后继修饰，保持末端 Tip、各层 Base 对象及显隐。另保留零参数选边与原生混选对照。失败边界及最终门禁按同批《日志》实际结果登记，不把本例推广为任意复杂拓扑、全部模式或 GUI 修饰验收。
 
 ## 10. 来源地图与证据限制
 

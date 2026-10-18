@@ -28,6 +28,10 @@ GUI 副本已在独立实例经真实 Task 验证发布、后台检查／修改�
 
 `create_boolean` 在 `cad_apply_operations` 中创建参数化 Body 布尔，显式指定目标 `body`、工具列表 `toolBodies` 和 `operation: fuse/cut/common`。目标与工具须有有效单实体 Tip，工具不得包含目标、重复或已被另一 Boolean 使用的 Body。回执记录实际基体、工具、Tip、实体数和体积；保留真实参数引用，可继续修改上游尺寸后重算。工具 Body 会隐藏；无交集切除可保持原体，空结果或多实体结果不发布文件。多工具 `common` 使用 FreeCAD 原生语义，需要依次求交时使用多个单工具 `common` 操作。
 
+`create_fillet`／`create_chamfer` 在 `cad_apply_operations` 中创建定半径圆角／等距倒角。指定 `body`、当前 Tip 的 `base`、真实且不重复的 `edges`，以及正数 `radius`／`size`（mm）。每条边均须由原生选边接纳；混入会被忽略的平滑边会整体拒绝。`set_dimension` 不带 `profile` 的 `radius` 修改 Fillet，`size` 修改显式选边等距 Chamfer；草图半径仍带 `profile`。已有表达式、只读或不可变参数拒绝修改；修改早期特征保留后继 Tip、引用和显示状态，下游重算失效不发布文件。
+
+后台结构化修饰工程采用 FreeCAD 官方完整拓扑名称（`UseHasher=false`），保留 TNP 和自动链接更新。切换会原生重算工作副本，并核验原选边几何；不手工重绑失效的 Base。此适配针对已实测的 1.1.4 哈希映射重开后重算失配，不修改源文件或用户 GUI 文档。其它倒角模式、面选择和全边模式由 Python 承接。
+
 后台运行沿用 Task 的目录授权、执行审批、超时与停止机制。输出默认保存在 Task 目录的 `.kfw-cad/`；指定输出时必须使用新文件名。源工程不会被工具保存覆盖。后台建模与检查会重算并检查几何及对象错误状态，可额外要求实体或预期体积；GUI 副本不执行这些重算或几何修复。PartDesign 脚本应明确设置 `Body.Tip` 并检查最终对象。
 
 Python 脚本可选设置 `result = {"radius": 10}` 等普通 JSON 值，由回执 `data` 返回；未设置时不增加该字段。脚本命名空间与宿主回执分离，`result` 不能覆盖执行状态。自定义 JSON 原样返回，不自动去敏，完整回执受当前进程输出设置约束；大结果和媒体写入 Task 文件再返回路径，stdout 保留为私有日志。

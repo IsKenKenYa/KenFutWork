@@ -1,3 +1,5 @@
+import { FREECAD_DRESSUP_SOURCE } from "./dressup-source.js";
+
 /** 可信结构化建模操作；由 FreeCAD runner 在同一 Task 进程中装配。 */
 export const FREECAD_OPERATIONS_SOURCE = `def create_named_object(doc, type_id, operation, body=None):
     name = operation["name"]
@@ -134,6 +136,17 @@ def set_sketch_dimension(doc, operation):
     return sketch
 
 
+def apply_dimension(doc, operation):
+    dimension = operation["dimension"]
+    if dimension == "angle":
+        return set_revolution_angle(doc, operation)
+    if dimension in ("length", "depth"):
+        return set_feature_dimension(doc, operation)
+    if dimension == "size" or (dimension == "radius" and "profile" not in operation):
+        return set_dressup_dimension(doc, operation)
+    return set_sketch_dimension(doc, operation)
+
+
 def apply_operations(doc, operations):
     receipts = []
     for index, operation in enumerate(operations, 1):
@@ -150,12 +163,12 @@ def apply_operations(doc, operations):
                 obj = create_revolution(doc, operation)
             elif kind == "create_boolean":
                 obj = create_boolean(doc, operation)
+            elif kind in ("create_fillet", "create_chamfer"):
+                obj = create_dressup(doc, operation)
             elif kind == "create_pocket":
                 obj = create_pocket(doc, operation)
-            elif kind == "set_dimension" and operation["dimension"] == "angle":
-                obj = set_revolution_angle(doc, operation)
             elif kind == "set_dimension":
-                obj = set_feature_dimension(doc, operation) if operation["dimension"] in ("length", "depth") else set_sketch_dimension(doc, operation)
+                obj = apply_dimension(doc, operation)
             else:
                 raise ValueError("不支持的 CAD 操作: " + kind)
             receipt = {"index": index, "kind": kind, "objectName": obj.Name, "type": obj.TypeId}
@@ -170,6 +183,8 @@ def apply_operations(doc, operations):
                 receipt.update(feature_receipt(obj))
             elif obj.TypeId == "PartDesign::Boolean":
                 receipt.update(boolean_receipt(obj))
+            elif obj.TypeId in _KFW_DRESSUP_TYPES:
+                receipt.update(dressup_receipt(obj))
             receipts.append(receipt)
         except Exception as error:
             raise ValueError("第 " + str(index) + " 项操作 " + kind + " 失败: " + str(error)) from error
@@ -440,4 +455,7 @@ def feature_receipt(feature):
         receipt["axis"] = {"H_Axis": "x", "V_Axis": "y"}[feature.ReferenceAxis[1][0]]
         receipt["angle"] = feature.Angle.Value
     return receipt
+
+
+${FREECAD_DRESSUP_SOURCE}
 `;

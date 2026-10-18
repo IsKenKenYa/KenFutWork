@@ -485,7 +485,7 @@ describe("官方 CAD Task 执行", () => {
       { ...pocket, mode: "through_all", supportPad: "Pad" },
       { ...pocket, mode: "through_all", body: undefined },
       { ...pocket, mode: "through_all", profile: undefined },
-      ...["width", "height", "radius"].map((dimension) => ({
+      ...["width", "height"].map((dimension) => ({
         kind: "set_dimension",
         object: "BaseProfile",
         dimension,
@@ -1359,6 +1359,107 @@ describe("结构化边查询契约", () => {
         isError: true,
         structuredContent: { error: { code: "invalid_arguments" } },
       });
+    }
+    expect(f.spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe("结构化圆角倒角契约", () => {
+  it.each([
+    { kind: "create_fillet", dimension: "radius", type: "PartDesign::Fillet" },
+    { kind: "create_chamfer", dimension: "size", type: "PartDesign::Chamfer" },
+  ])(
+    "$kind与原位尺寸编辑经现有工具和审批完整派发",
+    async ({ kind, dimension, type }) => {
+      const data = {
+        operations: [
+          {
+            kind,
+            type,
+            objectName: "Dressed",
+            bodyName: "Body",
+            baseFeatureName: "Pad",
+            edges: ["Edge1", "Edge3"],
+            [dimension]: 1,
+          },
+        ],
+      };
+      const f = await fixture({ data });
+      const tool = createCadTools(f.service).find(
+        (item) => item.name === "cad_apply_operations",
+      );
+      if (!tool) throw new Error("缺少CAD结构化工具");
+      const input = {
+        operations: [
+          {
+            kind,
+            name: "Dressed",
+            body: "Body",
+            base: "Pad",
+            edges: ["Edge1", "Edge3"],
+            [dimension]: 1,
+          },
+          { kind: "set_dimension", object: "Dressed", dimension, value: 2 },
+        ],
+      };
+      expect(z.fromJSONSchema(tool.parameters).safeParse(input).success).toBe(
+        true,
+      );
+      const result = await executeCadTestTool(tool, input, f.context);
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(result.structuredContent.data).toEqual(data);
+      expect(tool).toMatchObject({
+        approvalReviewKind: "cad-operations",
+        access: "execute",
+      });
+      const request = f.spawn.mock.calls[0]?.[0];
+      const wire = JSON.parse(
+        await readFile(request?.env?.KFW_CAD_REQUEST ?? "", "utf8"),
+      );
+      expect(wire).toMatchObject({ action: "operations", input });
+    },
+  );
+
+  it("固定修饰入口拒绝空或重复边、未知参数和非正尺寸", async () => {
+    const f = await fixture();
+    const tool = createCadTools(f.service).find(
+      (item) => item.name === "cad_apply_operations",
+    );
+    if (!tool) throw new Error("缺少CAD结构化工具");
+    for (const kind of ["create_fillet", "create_chamfer"]) {
+      const parameter = kind === "create_fillet" ? "radius" : "size";
+      const valid = {
+        kind,
+        name: "Dressed",
+        body: "Body",
+        base: "Pad",
+        edges: ["Edge1"],
+        [parameter]: 1,
+      };
+      for (const operation of [
+        { ...valid, name: "" },
+        { ...valid, body: undefined },
+        { ...valid, base: undefined },
+        { ...valid, edges: [] },
+        { ...valid, edges: ["Edge1", "Edge1"] },
+        { ...valid, edges: ["Edge0"] },
+        { ...valid, edges: ["Face1"] },
+        { ...valid, edges: ["Edge-1"] },
+        { ...valid, edges: ["Edge1;command"] },
+        { ...valid, [parameter]: 0 },
+        { ...valid, [parameter]: -1 },
+        { ...valid, [parameter]: Number.POSITIVE_INFINITY },
+        { ...valid, source: "doc.clearDocument()" },
+        { ...valid, useAllEdges: true },
+        { ...valid, runtimeReadRoots: ["/"] },
+      ]) {
+        expect(
+          await tool.execute({ operations: [operation] }, f.context),
+        ).toMatchObject({
+          isError: true,
+          structuredContent: { error: { code: "invalid_arguments" } },
+        });
+      }
     }
     expect(f.spawn).not.toHaveBeenCalled();
   });

@@ -48,6 +48,19 @@ const featureTarget = {
   body: z.string().min(1),
   profile: z.string().min(1),
 };
+const dressupTarget = {
+  name: z.string().min(1),
+  label: z.string().optional(),
+  body: z.string().min(1),
+  base: z.string().min(1),
+  edges: z
+    .array(z.string().regex(/^Edge[1-9]\d*$/u))
+    .min(1)
+    .refine(
+      (names) => new Set(names).size === names.length,
+      "所选边不能重复。",
+    ),
+};
 const pocketOperationSchema = z.discriminatedUnion("mode", [
   z
     .object({
@@ -75,13 +88,20 @@ const dimensionOperationSchema = z.discriminatedUnion("dimension", [
     .object({
       ...dimensionTarget,
       profile: z.string().min(1),
-      dimension: z.enum(["width", "height", "radius"]),
+      dimension: z.enum(["width", "height"]),
     })
     .strict(),
   z
     .object({
       ...dimensionTarget,
-      dimension: z.enum(["length", "depth"]),
+      dimension: z.enum(["length", "depth", "size"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...dimensionTarget,
+      dimension: z.literal("radius"),
+      profile: z.string().min(1).optional(),
     })
     .strict(),
   z
@@ -151,6 +171,20 @@ const operationSchema = z.discriminatedUnion("kind", [
       ...featureTarget,
       axis: z.enum(["x", "y"]),
       angle: revolutionAngle,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("create_fillet"),
+      ...dressupTarget,
+      radius: positive,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("create_chamfer"),
+      ...dressupTarget,
+      size: positive,
     })
     .strict(),
   z
