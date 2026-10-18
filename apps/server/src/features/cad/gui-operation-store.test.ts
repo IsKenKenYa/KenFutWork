@@ -505,3 +505,200 @@ describe("CAD GUI 记录发布边界", () => {
     expect(await readdir(external)).toEqual([]);
   });
 });
+
+describe("CAD GUI 重建服务后的持久取消", () => {
+  it("忽略固定hash层级旁杂的.DS_Store，同时取消合法pending记录", async () => {
+    const { first, second, rootDirectory } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimDispatch(record);
+    const metadata = join(rootDirectory, "cad", "gui-operations", ".DS_Store");
+    await writeFile(metadata, "Finder metadata");
+
+    await second.cancelPending();
+
+    expect(await first.readState(record)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    expect(await readFile(metadata, "utf8")).toBe("Finder metadata");
+  });
+
+  it("按run取消不校验其它已知run的损坏宏，全量撤销仍严格校验", async () => {
+    const { first, second } = await fixture();
+    const selected = await first.prepare(request());
+    const other = await first.prepare({
+      ...request({ runId: "run-2" }),
+      operationId: "e4034716-7273-45ee-8ed1-23ce085324f8",
+    });
+    await first.claimDispatch(selected);
+    await first.claimDispatch(other);
+    await writeFile(other.macroPath, "damaged-other-run");
+
+    await second.cancelPending({ runId: "run-1" });
+
+    expect(await first.readState(selected)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    await expect(lstat(other.cancelledPath)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(other.macroPath, "utf8")).toBe("damaged-other-run");
+    await expect(second.cancelPending()).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+  });
+
+  it("新store没有内存active记录时仍取消旧派发认领，保留unknown事实", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    expect(await first.claimDispatch(record)).toBe(true);
+
+    await second.cancelPending();
+
+    expect(await first.readState(record)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    expect(await readFile(record.cancelledPath, "utf8")).toBe("cancelled\n");
+    expect(await readFile(record.dispatchClaimPath, "utf8")).toMatch(
+      /^[a-f0-9-]+\n$/u,
+    );
+  });
+
+  it("按原来源run筛选，保留其它run及终态记录的原始文件", async () => {
+    const { first, second } = await fixture();
+    const selected = await first.prepare(request());
+    const other = await first.prepare({
+      ...request({ runId: "run-2" }),
+      operationId: "dc3573c0-cf0e-44b3-8974-cce099dc39bc",
+    });
+    const terminal = await first.prepare({
+      ...request(),
+      operationId: "1298cf74-4232-4825-89e3-79a6f868cbe4",
+    });
+    await first.claimDispatch(selected);
+    await first.claimDispatch(other);
+    await first.claimDispatch(terminal);
+    await writeFile(terminal.receiptPath, '{"completed":true}\n', {
+      flag: "wx",
+      mode: 0o600,
+    });
+    const terminalBefore = await readFile(terminal.receiptPath, "utf8");
+
+    await second.cancelPending({ runId: "run-1" });
+
+    expect(await first.readState(selected)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    expect(await first.readState(other)).toMatchObject({
+      status: "dispatched",
+      cancelled: false,
+      outcome: "unknown",
+    });
+    expect(await first.readState(terminal)).toMatchObject({
+      status: "terminal",
+      cancelled: false,
+    });
+    expect(await readFile(terminal.receiptPath, "utf8")).toBe(terminalBefore);
+    expect(await readFile(other.macroPath, "utf8")).toContain("pass");
+  });
+
+  it("不重建残缺未发布slot，仍取消其它完整prepared记录", async () => {
+    const { first, second } = await fixture();
+    await expect(
+      first.prepare({
+        ...request(),
+        buildMacro: () => {
+          throw new Error("准备尚未发布");
+        },
+      }),
+    ).rejects.toThrow("准备尚未发布");
+    const prepared = await first.prepare({
+      ...request(),
+      operationId: "6119e42c-4e5c-4287-9a3b-a7de83db8ed5",
+    });
+
+    await second.cancelPending();
+
+    await expect(
+      first.lookup({ ...binding, operationId }),
+    ).rejects.toMatchObject({ code: "busy" });
+    expect(await first.readState(prepared)).toMatchObject({
+      status: "cancelled",
+      cancelled: true,
+    });
+  });
+
+  it("已发布记录损坏时不能声称停止已确认", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimDispatch(record);
+    await writeFile(record.manifestPath, "damaged");
+
+    await expect(second.cancelPending()).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+    expect(await readFile(record.dispatchClaimPath, "utf8")).toMatch(
+      /^[a-f0-9-]+\n$/u,
+    );
+  });
+
+  it("manifest缺失但已有认领痕迹时不能冒充未发布slot跳过", async () => {
+    const { first, second } = await fixture();
+    const record = await first.prepare(request());
+    await first.claimDispatch(record);
+    await rm(record.manifestPath);
+
+    await expect(second.cancelPending()).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+    expect(await readFile(record.dispatchClaimPath, "utf8")).toMatch(
+      /^[a-f0-9-]+\n$/u,
+    );
+  });
+
+  it("一个损坏记录不阻止其它合法pending收到持久取消标记", async () => {
+    const { first, second } = await fixture();
+    const damaged = await first.prepare(request());
+    const pending = await first.prepare({
+      ...request({ runId: "run-2" }),
+      operationId: "38431b57-9fb7-44a6-bc0c-b12e62753899",
+    });
+    await first.claimDispatch(damaged);
+    await first.claimDispatch(pending);
+    const sourceBefore = await readFile(pending.macroPath, "utf8");
+    await writeFile(damaged.manifestPath, "damaged");
+
+    await expect(second.cancelPending()).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+    expect(await first.readState(pending)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    expect(await readFile(pending.macroPath, "utf8")).toBe(sourceBefore);
+  });
+
+  it("不跟随hash层级中的目录symlink，也不修改其外部目标", async () => {
+    const { first, second, rootDirectory } = await fixture();
+    const record = await first.prepare(request());
+    const external = join(rootDirectory, "external");
+    mkdirSync(external, { mode: 0o700 });
+    await writeFile(join(external, "keep"), "外部文件");
+    await rm(record.directory, { recursive: true });
+    await symlink(external, record.directory);
+
+    await expect(second.cancelPending()).rejects.toMatchObject({
+      code: "stop_unconfirmed",
+    });
+    expect(await readFile(join(external, "keep"), "utf8")).toBe("外部文件");
+    expect(await readdir(external)).toEqual(["keep"]);
+  });
+});

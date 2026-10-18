@@ -12,8 +12,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { expect, test } from "vitest";
 import { z } from "zod";
 import { runJxa } from "../computer-use/jxa.js";
+import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { CadGuiApplication } from "./gui-document-contracts.js";
+import { buildCadGuiOperationMacro } from "./gui-operation-controller.js";
 import { createCadGuiOperationStore } from "./gui-operation-store.js";
 import { createMacosCadGuiProbe } from "./gui-probe.js";
 import { createMacosCadGuiTransport } from "./gui-transport.js";
@@ -684,6 +686,102 @@ QtCore.QTimer.singleShot(0,apply_fixture_step)
       }
       await mutateFixture(
         "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert not doc.HasPendingTransaction\nassert len(doc.UndoNames)==builtins.__kfw_edit_undo_count__, 'replay/noop/rejected operation changed undo history'",
+      );
+      const recoveryStore = createCadGuiOperationStore({ rootDirectory: root });
+      const delayedInput = {
+        ...(await currentTarget()),
+        operationId: randomUUID(),
+        recompute: true,
+        changes: [
+          {
+            objectName: "Box",
+            propertyName: "Length",
+            expectedValue: quantity(25),
+            value: quantity(30),
+          },
+        ],
+      };
+      const taskScope = context.scopeHandle?.describe();
+      if (!taskScope) throw new Error("缺少自有Task作用域");
+      // 模拟旧宿主在持久claim后退出；新宿主没有任何在途内存调用。
+      const delayedRecord = await recoveryStore.prepare({
+        operationId: delayedInput.operationId,
+        binding: {
+          instanceId: taskScope.instanceId,
+          projectId: taskScope.projectId,
+          taskId: taskScope.taskId,
+          scopeGeneration: taskScope.generation,
+          branchGeneration: 1,
+          runId: "old-server-run",
+          toolCallId: "old-queued-call",
+        },
+        payload: {
+          operation: "set-properties",
+          ...delayedInput,
+          timeoutMs: 10_000,
+        },
+        buildMacro: buildCadGuiOperationMacro,
+      });
+      expect(await recoveryStore.claimDispatch(delayedRecord)).toBe(true);
+      const cold = createCadService({
+        sandbox: work,
+        guiProbe: probe,
+        guiOperationStore: recoveryStore,
+        gate: async () => ({ ok: true }),
+        resolveLimits: async () => ({
+          limits: cadTestLimits,
+          timeoutMs: 10_000,
+        }),
+      });
+      activateCadTestService(cold);
+      const revoking = {
+        reason: "disable",
+        previous: {
+          id: "bundled__kenfutwork-cad",
+          name: "kenfutwork-cad",
+          enabled: true,
+        },
+        current: null,
+      } as PluginStateRevokingEvent;
+      try {
+        await cold.pluginLifecycle.onStateRevoking?.(revoking);
+        expect(await recoveryStore.readState(delayedRecord)).toMatchObject({
+          cancelled: true,
+          outcome: "unknown",
+        });
+        // 原官方队列迟到装载同一固定宏，取消标记须在首项原生修改前生效。
+        await createMacosCadGuiTransport().send(
+          application,
+          delayedRecord.macroPath,
+          probeContext,
+        );
+        expect(await waitJson(delayedRecord.receiptPath)).toMatchObject({
+          outcome: "rejected",
+          reason: "cancelled",
+          mutationStarted: false,
+        });
+        cold.pluginLifecycle.afterStateChanged?.({
+          reason: "enable",
+          previous: revoking.previous,
+          current: revoking.previous,
+        });
+        expect(
+          await cold.guiOperationStatus(delayedInput.operationId, {
+            ...context,
+            toolCallId: "cold-cancel-status",
+          }),
+        ).toMatchObject({
+          structuredContent: {
+            operationId: delayedInput.operationId,
+            cancellationRequested: true,
+            outcome: "rejected",
+          },
+        });
+      } finally {
+        await cold.dispose();
+      }
+      await mutateFixture(
+        "doc=owned[0]\nassert doc.getObject('Box').Length.Value==25\nassert doc.getObject('Box').Width.Value==50\nassert len(doc.UndoNames)==builtins.__kfw_edit_undo_count__\nassert not doc.HasPendingTransaction",
       );
       expect(
         createHash("sha256")

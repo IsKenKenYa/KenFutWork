@@ -1,10 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
+import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { CadGuiDocumentsSnapshot } from "./gui-document-contracts.js";
 import type { CadGuiOperationResult } from "./gui-operation-controller.js";
+import {
+  CadGuiOperationStoreError,
+  createCadGuiOperationStore,
+} from "./gui-operation-store.js";
 import { createCadService } from "./service.js";
 import {
   activateCadTestService,
@@ -91,11 +97,13 @@ async function fixture() {
     execute: vi.fn(async () => operationResult),
     status: vi.fn(async () => operationResult),
   };
+  const store = createCadGuiOperationStore({ rootDirectory: root });
   let installed = true;
   const service = createCadService({
     sandbox,
     guiDocumentReader: reader,
     guiOperationController: operations,
+    guiOperationStore: store,
     gate: async () => ({ ok: installed }),
     resolveLimits: async () => ({ limits: cadTestLimits, timeoutMs: 30_000 }),
   });
@@ -109,6 +117,8 @@ async function fixture() {
     reader,
     operations,
     operationResult,
+    store,
+    root,
     service,
     spawn,
     disableGate() {
@@ -116,6 +126,143 @@ async function fixture() {
     },
   };
 }
+
+async function oldPending(
+  f: Awaited<ReturnType<typeof fixture>>,
+  runId: string,
+) {
+  const old = createCadGuiOperationStore({ rootDirectory: f.root });
+  const record = await old.prepare({
+    operationId: randomUUID(),
+    binding: {
+      instanceId: f.scope.instanceId,
+      projectId: f.scope.projectId,
+      taskId: f.scope.taskId,
+      scopeGeneration: f.scope.generation,
+      branchGeneration: 1,
+      runId,
+      toolCallId: "old-call",
+    },
+    payload: { operation: "fixed-old-operation" },
+    buildMacro: () => "pass\n",
+  });
+  await old.claimDispatch(record);
+  return record;
+}
+
+test.each(["disable", "uninstall", "replace", "shutdown"] as const)(
+  "新宿主无内存调用时，%s仍取消旧持久派发且不重新连接GUI",
+  async (reason) => {
+    const f = await fixture();
+    const record = await oldPending(f, "prior-server-run");
+    const event = {
+      reason,
+      previous: {
+        id: "bundled__kenfutwork-cad",
+        name: "kenfutwork-cad",
+        enabled: true,
+      },
+      current: null,
+    } as PluginStateRevokingEvent;
+    await f.service.pluginLifecycle.onStateRevoking?.(event);
+    expect(await f.store.readState(record)).toMatchObject({
+      status: "dispatched",
+      cancelled: true,
+      outcome: "unknown",
+    });
+    expect(f.operations.execute).not.toHaveBeenCalled();
+    expect(f.operations.status).not.toHaveBeenCalled();
+    expect(f.spawn).not.toHaveBeenCalled();
+  },
+);
+
+test("Run关闭只取消其来源旧请求，宿主dispose再收束其它旧请求", async () => {
+  const f = await fixture();
+  const one = await oldPending(f, "prior-one");
+  const two = await oldPending(f, "prior-two");
+  await f.service.releaseRun("prior-one");
+  expect(await f.store.readState(one)).toMatchObject({ cancelled: true });
+  expect(await f.store.readState(two)).toMatchObject({ cancelled: false });
+  await f.service.dispose();
+  expect(await f.store.readState(two)).toMatchObject({ cancelled: true });
+});
+
+test("持久取消失败不宣称停用成功，也不能用重新启用绕过，成功重试后恢复", async () => {
+  const f = await fixture();
+  const record = await oldPending(f, "prior-server-run");
+  const event = {
+    reason: "disable",
+    previous: {
+      id: "bundled__kenfutwork-cad",
+      name: "kenfutwork-cad",
+      enabled: true,
+    },
+    current: null,
+  } as PluginStateRevokingEvent;
+  const cancel = vi
+    .spyOn(f.store, "cancelPending")
+    .mockRejectedValue(
+      new CadGuiOperationStoreError(
+        "stop_unconfirmed",
+        "无法确认旧操作已取消。",
+      ),
+    );
+  await expect(
+    f.service.pluginLifecycle.onStateRevoking?.(event),
+  ).rejects.toMatchObject({ code: "stop_unconfirmed" });
+  f.service.pluginLifecycle.afterStateChanged?.({
+    reason: "enable",
+    previous: event.previous,
+    current: event.previous,
+  });
+  expect(f.service.activationAvailable).toBe(false);
+  cancel.mockRestore();
+  await f.service.releaseRun("unrelated-run");
+  f.service.pluginLifecycle.afterStateChanged?.({
+    reason: "enable",
+    previous: event.previous,
+    current: event.previous,
+  });
+  expect(f.service.activationAvailable).toBe(false);
+  await f.service.pluginLifecycle.onStateRevoking?.(event);
+  f.service.pluginLifecycle.afterStateChanged?.({
+    reason: "enable",
+    previous: event.previous,
+    current: event.previous,
+  });
+  expect(f.service.activationAvailable).toBe(true);
+  expect(await f.store.readState(record)).toMatchObject({ cancelled: true });
+});
+
+test("其它插件停用不取消CAD，Run关闭等待持久扫描结束才放开屏障", async () => {
+  const f = await fixture();
+  const cancel = vi.spyOn(f.store, "cancelPending");
+  await f.service.pluginLifecycle.onStateRevoking?.({
+    reason: "disable",
+    previous: {
+      id: "local__kenfutwork-cad",
+      name: "kenfutwork-cad",
+      enabled: true,
+    },
+    current: null,
+  } as PluginStateRevokingEvent);
+  expect(cancel).not.toHaveBeenCalled();
+  let finish = () => {};
+  const pending = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  cancel.mockImplementation(async () => pending);
+  const closing = f.service.releaseRun(f.context.runId ?? "");
+  await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  const result = await f.service.guiDocuments(f.application, f.context);
+  expect(result).toMatchObject({
+    isError: true,
+    structuredContent: { error: { code: "cancelled" } },
+  });
+  expect(f.reader.read).not.toHaveBeenCalled();
+  finish();
+  await closing;
+});
 
 test("当前文档清单声明外部应用执行审批，不接受任意宏或端点", async () => {
   const f = await fixture();

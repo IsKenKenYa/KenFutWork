@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   open,
+  readdir,
   realpath,
   rm,
 } from "node:fs/promises";
@@ -69,6 +70,7 @@ export interface CadGuiOperationStore {
   ): Promise<CadGuiOperationRecord | null>;
   claimDispatch(record: CadGuiOperationRecord): Promise<boolean>;
   cancel(record: CadGuiOperationRecord): Promise<void>;
+  cancelPending(filter?: { runId?: string }): Promise<void>;
   readState(
     record: CadGuiOperationRecord | CadGuiOperationIdentity,
   ): Promise<CadGuiOperationState>;
@@ -82,7 +84,8 @@ export class CadGuiOperationStoreError extends Error {
       | "busy"
       | "invalid_record"
       | "not_found"
-      | "read_only",
+      | "read_only"
+      | "stop_unconfirmed",
     message: string,
   ) {
     super(message);
@@ -124,6 +127,7 @@ function fail(code: CadGuiOperationStoreError["code"]): never {
     invalid_record: "CAD 操作记录不完整或已改变，请检查实例数据目录。",
     not_found: "CAD 操作记录不存在，请检查操作编号。",
     read_only: "CAD 状态查询不能派发操作，请发起当前任务的操作请求。",
+    stop_unconfirmed: "无法确认历史 CAD 操作已停止，请检查操作记录。",
   };
   throw new CadGuiOperationStoreError(code, messages[code]);
 }
@@ -591,9 +595,94 @@ export function createCadGuiOperationStore(options: {
     }
   }
 
+  async function cancelPendingDirectory(
+    directory: string,
+    filter: { runId?: string },
+  ): Promise<void> {
+    const paths = operationPaths(directory);
+    const bytes = await readRegular(paths.manifestPath, RECORD_MAX_BYTES);
+    if (!bytes) {
+      // 没有发布痕迹才是未完成的prepare；丢失manifest的旧认领不能被误判为安全。
+      for (const path of [
+        paths.dispatchClaimPath,
+        paths.executionClaimPath,
+        paths.receiptPath,
+        paths.cancelledPath,
+      ])
+        if (await hasMarker(path)) fail("invalid_record");
+      return;
+    }
+    const manifest = parseManifest(bytes);
+    const identity = { ...manifest.binding, operationId: manifest.operationId };
+    if ((await directoryFor(identity, false)) !== directory)
+      fail("invalid_record");
+    if (filter.runId !== undefined && manifest.binding.runId !== filter.runId)
+      return;
+    const record = await lookup(identity);
+    if (!record) fail("invalid_record");
+    for (const path of [
+      record.dispatchClaimPath,
+      record.executionClaimPath,
+      record.cancelledPath,
+    ])
+      await hasMarker(path);
+    const receipt = await readRegular(
+      record.receiptPath,
+      CAD_GUI_OPERATION_RECEIPT_MAX_BYTES,
+    );
+    if (receipt) {
+      // 这里只识别安全的物理终态；业务ACK仍由controller严格校验。
+      JSON.parse(receipt.toString("utf8"));
+      return;
+    }
+    await publishMarker(record.cancelledPath, "cancelled\n");
+  }
+
+  async function cancelPending(filter: { runId?: string } = {}): Promise<void> {
+    let unconfirmed = false;
+    async function visit(
+      directory: string,
+      remainingLevels: number,
+    ): Promise<void> {
+      let names: string[];
+      try {
+        names = await readdir(directory);
+      } catch {
+        unconfirmed = true;
+        return;
+      }
+      for (const name of names) {
+        if (!HASH.test(name)) continue;
+        const child = join(directory, name);
+        try {
+          if (!(await checkedDirectory(child, false))) fail("invalid_record");
+          if (remainingLevels > 1) await visit(child, remainingLevels - 1);
+          else await cancelPendingDirectory(child, filter);
+        } catch {
+          // 一个坏记录不能阻止其它可验证请求收到持久取消标记。
+          unconfirmed = true;
+        }
+      }
+    }
+    try {
+      if (!(await checkedDirectory(root, false))) return;
+      let directory = await realpath(root);
+      for (const component of ["cad", "gui-operations"]) {
+        directory = join(directory, component);
+        if (!(await checkedDirectory(directory, false))) return;
+      }
+      // 磁盘格式固定为instance/task/operation三层hash，不接受调用方路径或新索引。
+      await visit(directory, 3);
+    } catch {
+      unconfirmed = true;
+    }
+    if (unconfirmed) fail("stop_unconfirmed");
+  }
+
   return {
     prepare,
     lookup,
+    cancelPending,
     async claimDispatch(record) {
       if (!dispatchable.has(record)) fail("read_only");
       const current = await verified(record);

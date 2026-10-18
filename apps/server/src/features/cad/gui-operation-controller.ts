@@ -62,7 +62,7 @@ export class CadGuiOperationError extends Error {
 // 私有文件协议的轮询间隔，不是运行额度、重试或模型输出预算。
 const PUBLICATION_POLL_MS = 20;
 
-function buildMacro(paths: CadGuiOperationPaths): string {
+export function buildCadGuiOperationMacro(paths: CadGuiOperationPaths): string {
   const fixedPaths: CadGuiOperationPaths = {
     directory: paths.directory,
     manifestPath: paths.manifestPath,
@@ -380,7 +380,7 @@ export function createCadGuiOperationController(options: {
               binding,
               operationId: input.operationId,
               payload,
-              buildMacro,
+              buildMacro: buildCadGuiOperationMacro,
             });
             break;
           } catch (error) {
@@ -402,7 +402,7 @@ export function createCadGuiOperationController(options: {
         cancellationNeeded = true;
         await boundary();
         const sourceHash = createHash("sha256")
-          .update(buildMacro(record))
+          .update(buildCadGuiOperationMacro(record))
           .digest("hex");
         if (sourceHash !== record.sourceHash)
           throw new CadGuiOperationError(

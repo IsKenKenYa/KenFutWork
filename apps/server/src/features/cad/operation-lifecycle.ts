@@ -23,9 +23,11 @@ export function createCadOperationLifecycle(options: {
   bundleName: string;
   installationId: string;
   failure(error: unknown, context: ToolExecutionContext): CadToolResult;
+  cancelPersistedOperations?(runId?: string): Promise<void>;
 }) {
   const active = new Set<ActiveOperation>();
   const closingRuns = new Map<string, Promise<void>>();
+  const failedReconciliations = new Set<string | undefined>();
   let epoch = 0;
   let blocked = true;
   let disposed = false;
@@ -47,6 +49,24 @@ export function createCadOperationLifecycle(options: {
       );
   }
 
+  async function cancelAndReconcile(
+    operations: ActiveOperation[],
+    runId?: string,
+  ) {
+    // 在途取消和旧持久记录都须尝试，不能因一处失败遗漏另一处。
+    const results = await Promise.allSettled([
+      cancelAndJoin(operations),
+      Promise.resolve().then(() => options.cancelPersistedOperations?.(runId)),
+    ]);
+    const rejected = results.find((result) => result.status === "rejected");
+    if (rejected) {
+      failedReconciliations.add(runId);
+      throw rejected.reason;
+    }
+    if (runId === undefined) failedReconciliations.clear();
+    else failedReconciliations.delete(runId);
+  }
+
   const plugin: PluginStateLifecycle = {
     async onStateRevoking(event) {
       if (
@@ -56,7 +76,7 @@ export function createCadOperationLifecycle(options: {
         return;
       blocked = true;
       epoch++;
-      await cancelAndJoin([...active]);
+      await cancelAndReconcile([...active]);
     },
     afterStateChanged(event) {
       if (
@@ -70,7 +90,11 @@ export function createCadOperationLifecycle(options: {
         event.current?.id === options.installationId &&
         event.current.name === options.bundleName &&
         event.current.enabled;
-      blocked = !activated || active.size > 0 || disposed;
+      blocked =
+        !activated ||
+        active.size > 0 ||
+        disposed ||
+        failedReconciliations.size > 0;
     },
   };
 
@@ -97,7 +121,11 @@ export function createCadOperationLifecycle(options: {
       );
       const activeContext = { ...context, signal };
       const assertActive = () => {
-        if (disposed || closingRuns.has(context.runId ?? ""))
+        if (
+          disposed ||
+          closingRuns.has(context.runId ?? "") ||
+          failedReconciliations.has(context.runId)
+        )
           throw new CadOperationError("cancelled", "CAD 操作正在关闭。");
         if (blocked || epoch !== activationEpoch)
           throw new CadOperationError(
@@ -136,8 +164,9 @@ export function createCadOperationLifecycle(options: {
     closeRun(runId: string): Promise<void> {
       const existing = closingRuns.get(runId);
       if (existing) return existing;
-      const closing = cancelAndJoin(
+      const closing = cancelAndReconcile(
         [...active].filter((operation) => operation.runId === runId),
+        runId,
       ).finally(() => closingRuns.delete(runId));
       closingRuns.set(runId, closing);
       return closing;
@@ -145,7 +174,7 @@ export function createCadOperationLifecycle(options: {
     async dispose() {
       disposed = true;
       epoch++;
-      await cancelAndJoin([...active]);
+      await cancelAndReconcile([...active]);
     },
   };
 }

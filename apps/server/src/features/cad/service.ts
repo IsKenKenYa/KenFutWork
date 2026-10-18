@@ -604,6 +604,11 @@ export function createCadService(options: CadServiceOptions): CadService {
     bundleName: CAD_BUNDLE_ID,
     installationId: CAD_PLUGIN_INSTALLATION_ID,
     failure: onFailure,
+    async cancelPersistedOperations(runId) {
+      await options.guiOperationStore?.cancelPending(
+        runId === undefined ? undefined : { runId },
+      );
+    },
   });
   const invoke = (
     payload:
