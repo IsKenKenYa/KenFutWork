@@ -5,6 +5,7 @@
 > **进展（2026-10-09 第二轮）**：本轮的**三个仓库侧缺口已按文内推荐落地**（不依赖 HA 插件本身）：① 桌面发布包/自托管镜像补自带插件 bundle（§3.5）；② MCP `http` 传输支持自定义请求头（§5.1）；③ 插件工具可声明 `access: read/write/execute` 并据此进默认档审批（§3.3）。插件本体（P1–P4）**尚未开工**。
 > **拍板（2026-10-09，用户口径）**：面板/侧栏入口标题 = **「智能家居」**（§8-1）；**米家插件保留**、与 HA 插件并存不撤（§8-5）。§8-6（v1 控制面只做常用域）仍待拍板。
 > 需求来源：2026-10-09 用户口径——「我想兼容 HA，可以同时兼容米家和华为的」。
+> **进展（2026-10-18 第三轮）**：插件本体 **P1–P4 已落地**（自带 bundle `plugins/ha/`，三个提交 `601155e5` / `9dfa4b8b` / `8aad304c`，测试 49 条），台账见《日志》二百二十四。**真机走查未做**（本机无 HA 实例，需用户侧起 HA 并登录米家/华为账号）。§8-6 按本文件建议采纳「v1 只做常用域」；本轮另发现 §3.2 的 postMessage 令牌握手口径已过期（见该节更正）。
 > 与既有文档的关系：本条是《[米家插件规划](#附米家插件规划原独立文档2026-10-16-并入本章)》**路线 A** 的落地化设计（该文档推荐的 HA 路线当时因「本机无 HA、端到端验收做不了」改走了路线 B 自包含实现；本轮用户明确要兼容 HA 且要覆盖华为，故把路线 A 正式立项）。已落地的米家插件（`plugins/mihome/`）**保留不撤**，两者关系见 §4.7 与 §8。
 
 ## 0. 结论速览
@@ -94,7 +95,7 @@
 ### 3.2 面板与登录态握手
 
 - 面板槽位固定四种：`sidebar` / `conversation` / `canvas` / `settings`（`packages/shared/src/plugin-contracts.ts`）。
-- iframe 面板**带不上 Authorization 头**，宿主经 `postMessage` 把令牌递进去：`kenfutwork:plugin-panel-token`（宿主→面板）+ `kenfutwork:plugin-panel-ready`（面板→宿主，防「监听器晚于 onLoad」丢令牌）；判据是「消息来自父窗口」而不是同源（开发态 3000/3001 本非同源，同源判据会让面板永远停在「获取登录态」）——见 `plugins/mihome/lib/panel-host-message.js` 与宿主侧 `apps/web/src/lib/plugin-panels.tsx`。
+- **面板登录态口径已变（2026-10-18 更正）**：`DEC-20`（2026-10-05）后本机接入态由浏览器 **HttpOnly 会话 cookie** 持有，面板是同源 iframe，直接带 `credentials: "include"` 调插件的私有路由，服务端据此解析稳定实例——**不再需要**早先设计的 `kenfutwork:plugin-panel-token` / `plugin-panel-ready` postMessage 令牌握手（本条此前引用的 `plugins/mihome/lib/panel-host-message.js` 在仓库里并不存在）。HA 面板沿用米家面板同一写法（`plugins/mihome/panel.js` 与 `plugins/ha/panel.js`）；HA 令牌仍只存服务端，面板写入一次后只显示「已配置」。
 - 面板静态资源：`/api/plugins/<id>/assets/*` 只读公开，须清单声明 `kenfutwork.assets: true`；URL 前缀 `assets/` 映射 **bundle 根**（`apps/server/src/http/plugins.ts` 资源路由；米家插件有回归测试锁死该口径）。
 
 ### 3.3 插件工具面与审批（关键缺口）
@@ -221,12 +222,12 @@ HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 | # | 步骤 | 状态 | 验证 |
 | --- | --- | --- | --- |
 | P0 | 本文档 + `docs/README.md` 文档地图登记 | ✅ 2026-10-09 | `pnpm test:docs` |
-| P1 | bundle 骨架（package.json/patch/入口/README）+ `lib/ha-rest.js`（URL 归一、错误映射）+ 单测（假 HA 的 fetch 层） | 未开工 | `pnpm --filter @kenfutwork/server test` |
-| P2 | 面板 + 路由（配置/连接测试/实体列表/控制）+ 存储 + 面板握手接线 | 未开工 | 假 HA 全链路单测 + 真机走查（docker HA：配置 → 列实体 → 开关灯真变） |
-| P3 | WS：`subscribe_events` 增量 + 退避重连 + 降级轮询；`ha-ws.js` 的 connect 可注入 | 未开工 | 单测（假 socket 驱动状态机：auth 流/断线/重连/降级）+ 真机（HA 里改灯，面板跟随） |
-| P4 | agent 工具 `ha_entities`/`ha_control` + 读回校验 + 未配置 fail loud | 未开工 | 假 HA 单测 + 真机「让 agent 开客厅灯」并核对读回 |
+| P1 | bundle 骨架（package.json/patch/入口/README）+ `lib/ha-rest.js`（URL 归一、错误映射）+ 单测（假 HA 的 fetch 层） | ✅ 2026-10-18（`601155e5`） | `pnpm --filter @kenfutwork/server test` |
+| P2 | 面板 + 路由（配置/连接测试/实体列表/控制）+ 存储 + 面板握手接线 | ✅ 2026-10-18（`9dfa4b8b`；面板用 DEC-20 的会话 cookie，不再需要 postMessage 递令牌，见 §3.2 更正） | 假 HA 全链路单测已过；**真机走查待用户侧 HA**（docker HA：配置 → 列实体 → 开关灯真变） |
+| P3 | WS：`subscribe_events` 增量 + 退避重连 + 降级轮询；`ha-ws.js` 的 connect 可注入 | ✅ 2026-10-18（`8aad304c`） | 单测（假 socket 驱动状态机：auth 流/断线/重连/降级）已过；真机（HA 里改灯，面板跟随）待用户侧 |
+| P4 | agent 工具 `ha_entities`/`ha_control` + 读回校验 + 未配置 fail loud | ✅ 2026-10-18（`8aad304c`） | 假 HA 单测已过；真机「让 agent 开客厅灯」并核对读回待用户侧 |
 | P5 | 前置缺口：桌面发布包/镜像补 `plugins/` 拷贝；MCP 自定义头（§5.1）；插件工具 `access` 声明进审批（§3.3） | ✅ 2026-10-09（先于 P1 落地，缺口修复独立于插件本体） | `pnpm package:win` 后核 `release/plugins` 存在且市场列出（真机复验见《日志》本轮遗留）；`plugin-bundled-dir.test.ts`、`mcp-service.test.ts` 的线上桩、`permission-service.test.ts` 的声明判据 |
-| P6 | 台账（《[日志](../日志.md)》）+ 面板文案复核 + 与米家插件的互斥说明（§4.7） | 未开工（随 P1–P4） | `pnpm test` + `pnpm typecheck` + 真机看图 |
+| P6 | 台账（《[日志](../日志.md)》）+ 面板文案复核 + 与米家插件的互斥说明（§4.7） | ✅ 2026-10-18（《日志》二百二十四；互斥说明落进两个 README） | `pnpm test` + `pnpm typecheck` 已过；**面板已真机看图**（Edge headless + CDP + 桩服务，抓到 `controlRow` 漏回 `row` 导致整张网格不渲染的缺陷）；真机走查仍待用户侧 HA |
 
 真机验收配方（用户侧一次性）：
 
@@ -246,14 +247,14 @@ HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 
 ## 8. 待拍板问题
 
-> 2026-10-09 第二轮：2–4 已按文内建议落地（缺口修复先于插件本体）；1、5 已由用户拍板（入口叫「智能家居」、米家插件保留）；6 仍待拍板（属插件本体的产品口径，不影响本轮已落地的三处修复）。
+> 2026-10-09 第二轮：2–4 已按文内建议落地（缺口修复先于插件本体）；1、5 已由用户拍板（入口叫「智能家居」、米家插件保留）；6 于 2026-10-18 随插件本体落地时按文内建议采纳（v1 只做常用域，其余如实只读）——要扩域只改 `plugins/ha/lib/entity-model.js` 一处。
 
 1. **插件标题**：**已拍板（用户 2026-10-09）→ 「智能家居」**。面板与侧栏入口用这个名字；HA 字样只出现在配置项与 README（如实说明底层是 Home Assistant）。
 2. ~~**写工具审批缺口**（§3.3）~~ **已按建议落地（2026-10-09）**：`CompatToolDefinition.access`（`read`/`write`/`execute`，不声明按 `execute`）映射进内核 `access` 并纳入危险判据；`mihome_control` 已声明 `write`、`mihome_devices` 声明 `read`。**副作用需知**：判据同时对内建共享工具生效——`browser_navigate`/`browser_act`/`browser_eval`、`create_skill`、`install_plugin` 声明的是 `execute`/`write`，在**非 Code 场景（画布助手等）的默认档下从此需要审批**（Code 场景走既有的 Task 审批策略，行为不变）。若认为其中某个不该拦，把它的 `access` 改成与实际效果相符的值即可。
 3. ~~**桌面发布包补 `plugins/` 拷贝**（§3.5）~~ **已落地（2026-10-09）**：本轮一并做（win/mac/镜像三处 + 契约测试），并额外排除 Windows 形态下跑不起来的 `computer-use`（§3.5 末）。
 4. ~~**MCP 自定义头**（§5.1）~~ **已落地（2026-10-09）**：面板可直连 HA 的 `POST /api/mcp`，无需 `npx`。
 5. **米家插件去留**：**已拍板（用户 2026-10-09）→ 两者并存，米家插件保留不撤**（无 HA 场景的兜底，也是自研云客户端的唯一存量实现）。未来是否收敛掉自包含实现——不在本期。
-6. **面板控制面**（`HA-3`）：v1 只做常用域（灯/开关/窗帘/空调/传感器），其余域如实只读——是否接受？（**仍待拍板**）
+6. **面板控制面**（`HA-3`）：v1 只做常用域（灯/开关/窗帘/空调/传感器），其余域如实只读——**已按建议采纳（2026-10-18 落地）**：`lib/entity-model.js` 的可写域是 `light`/`switch`/`input_boolean`/`cover`/`climate`/`fan`/`media_player`（后两者按 §4.3 的「基础项」），其余域一律只读读数；要扩域只改这一处。
 
 ## 9. 参考链接
 

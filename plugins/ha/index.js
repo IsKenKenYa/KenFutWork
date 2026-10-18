@@ -127,12 +127,9 @@ export function apply(ctx) {
   }
 
   async function writeConfig(instanceId, config) {
-    configs.set(instanceId, config);
-    await ctx.storage.set(
-      instanceId,
-      CONFIG_KEY,
-      JSON.stringify({ ...config, savedAt: new Date().toISOString() }),
-    );
+    const saved = { ...config, savedAt: new Date().toISOString() };
+    configs.set(instanceId, saved);
+    await ctx.storage.set(instanceId, CONFIG_KEY, JSON.stringify(saved));
   }
 
   async function clearConfig(instanceId) {

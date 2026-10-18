@@ -15,12 +15,15 @@
   - `mihome_devices`：列设备 + 每台设备可读写属性（含 `siid`/`piid` 与当前值）；
   - `mihome_control`：按 `did/siid/piid/value` 写入，返回**读回的真值**（米家云会接受指令但器件不响应，只报成功是假成功）。
   - 未连接时工具会明确报「请先打开面板扫码」，不会假装成功。
+- **与「智能家居」（HA）插件的关系**：两者并存、互不联动（规划 `HA-7`）。已经用 HA 接入米家的用户
+  **不需要再装本插件**，否则同一批设备会在两处各出现一次；没有 HA 的用户才用这条自包含通路。
 
 ## 能力与接线
 
 - 能力声明：`tools` + `routes` + `ui` + `storage`。
-- 路由（私有，需登录）：`login/qr`、`login/poll`、`status`、`devices`、`control`、`disconnect`，
-  面板经宿主 `postMessage` 拿到令牌后带 `Authorization` 调用。
+- 路由（私有，需登录）：`login/qr`、`login/poll`、`status`、`devices`、`control`、`disconnect`。
+  面板是同源 iframe，本机接入态由 HttpOnly 会话 cookie 携带（`DEC-20` 后的口径），
+  服务端据此解析稳定实例——不需要宿主再往面板里递令牌。
 - 会话（`mijia` 登录字段 + callback cookies + `ssecurity` + 设备标识）存在插件存储里：**按实例隔离、值在本机明文保存、HTTP 永不回显**；
   API 请求只带参考实现规定的 CookieJar（`cUserId`、两份 serviceToken、时区/地区、`PassportDeviceId`）；
   卸载插件会一并清空（重装需重新扫码），只「停用」则保留。

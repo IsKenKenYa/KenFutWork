@@ -222,7 +222,7 @@ function controlRow(entity, node) {
     };
     apply(entity);
     row.appendChild(toggle);
-    return { key: node.key, apply, update: (next) => (current = next) };
+    return { row, key: node.key, apply, update: (next) => (current = next) };
   }
 
   if (node.kind === "slider") {
@@ -249,7 +249,7 @@ function controlRow(entity, node) {
     apply(entity);
     row.appendChild(input);
     row.appendChild(valueEl);
-    return { key: node.key, apply, update: (next) => (current = next) };
+    return { row, key: node.key, apply, update: (next) => (current = next) };
   }
 
   if (node.kind === "select") {
@@ -271,7 +271,7 @@ function controlRow(entity, node) {
     });
     apply(entity);
     row.appendChild(select);
-    return { key: node.key, apply, update: (next) => (current = next) };
+    return { row, key: node.key, apply, update: (next) => (current = next) };
   }
 
   if (node.kind === "buttons") {
@@ -291,7 +291,7 @@ function controlRow(entity, node) {
     };
     apply(entity);
     row.appendChild(box);
-    return { key: node.key, apply, update: () => {} };
+    return { row, key: node.key, apply, update: () => {} };
   }
 
   // 只读读数（服务端把无控件的实体包成一个 `read` 控件）
@@ -302,7 +302,7 @@ function controlRow(entity, node) {
   };
   apply(entity);
   row.appendChild(valueEl);
-  return { key: node.key, apply, update: (next) => (current = next) };
+  return { row, key: node.key, apply, update: (next) => (current = next) };
 }
 
 function entityCard(entity) {
@@ -313,11 +313,14 @@ function entityCard(entity) {
   if (entity.unavailable) title.appendChild(el("span", "badge", "离线"));
   card.appendChild(title);
 
-  const rows = (entity.controls ?? []).map((node) => {
-    const item = controlRow(entity, node);
-    card.appendChild(item.row);
-    return item;
-  });
+  // 离线的实体不重复出「状态 离线」一行：标题徽章 + 整卡置灰已经说了同一件事
+  const rows = (entity.controls ?? [])
+    .filter((node) => !(node.kind === "read" && entity.unavailable === true))
+    .map((node) => {
+      const item = controlRow(entity, node);
+      card.appendChild(item.row);
+      return item;
+    });
   const apply = (next) => {
     const controls = next.controls ?? [];
     for (const item of rows) {
