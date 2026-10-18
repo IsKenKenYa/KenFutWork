@@ -1,6 +1,6 @@
 # CAD 官方接口与插件接入调研
 
-> **角色：调研**。资料核验日期：2026-10-18。面向在 KFW 中使用 Agent 进行建模、改尺寸、检查及交付文件的用户，研究本轮 FreeCAD 接入及后续 AutoCAD、Blender 的可行性与工作流风险。本文区分官方接口事实、工程推断、用户确认和本机验收；不代替实施规格或发布验收。插件扩展点及服务契约仍以《[改造计划](../方案设计/改造计划.md)》§4.2、§4.10 为准。
+> **角色：调研**。资料核验日期：2026-10-18—19。面向在 KFW 中使用 Agent 进行建模、改尺寸、检查及交付文件的用户，研究本轮 FreeCAD 接入及后续 AutoCAD、Blender 的可行性与工作流风险。本文区分官方接口事实、工程推断、用户确认和本机验收；不代替实施规格或发布验收。插件扩展点及服务契约仍以《[改造计划](../方案设计/改造计划.md)》§4.2、§4.10 为准。
 
 ## 1. 研究结论
 
@@ -43,11 +43,11 @@ Headless 文档明确区分应用文档与 GUI 文档：导入 `FreeCADGui` 不�
 | 工程文件及交换格式 | `Std Export` 与对应格式模块 | 导出正确对象；再导入核对几何和单位 | STEP／STL／BREP／SVG／DXF 已有分层回读证据，见 §9 |
 | 工程图 | TechDraw 文档对象、官方 TDTest | 投影完成后导出；模板、比例、尺寸与异步计算正确 | 离屏 A4／俯视图／真实尺寸及整页 SVG 已验，见 §9.14；独立 GUI 原生夹具另验证单页 PDF 导出与栅格查看，见 §9.17，不代表正式 PDF 工具或完整比例／标注验收 |
 | PNG 预览 | GUI view 的图像导出、scenegraph 路线 | 真实图像、视角和对象可见性正确；缺图形环境可解释 | 后台真实几何线框 PNG 已验，见 §9.1、§9.7；独立 GUI 原生夹具已导出并查看着色 PNG，见 §9.17，不代表正式 GUI 预览工具已交付 |
-| Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | 内置Assembly Grounded＋Fixed、完整Provider、重开折返与交换及未连通拒绝已验，见§9.26；其它关节与Draft／BIM仍待验，接口见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
+| Draft／BIM／Assembly 等 | 对应工作台 Python／命令接口 | 安装模块、依赖和代表性任务分别通过 | Assembly Grounded＋Fixed、完整Provider、重开折返与交换及未连通拒绝见§9.26；Draft参数面及SVG／DXF闭环见§9.29，Arch墙柱楼层与独立IFC4互操作见§9.30；其它关节／对象／复杂BIM待验，接口见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
 | FEM／CAM 等 | 官方工作台与外部工具链 | 网格／求解器／后处理器可用；输出语义正确 | FEM真实新网格／CalculiX轴向压力及失败／停止代表流程见§9.25；CAM外轮廓／官方linuxcnc与真实NC核验见§9.27；其它FEM领域及CAM策略／后处理器待验，接口依赖见[专业工作台核验](FreeCAD专业工作台接口核验.md) |
 | 当前 GUI 文档 | 应用内 Python／GUI API | 明确文档身份、保留未保存工作、正确撤销和选择 | 固定查询／观察、直接标量读写、副本发布及自身已提交属性操作的显式撤销已有独立 GUI 的真实 Task 工具实证；固定原位保存与停止／恢复已有真实工具证据，见[桥接核验](FreeCAD当前文档桥接接口核验.md) §8～§16 |
 
-本表区分后台工具、独立 GUI 的真实 Task 工具和专用原生夹具。GUI 工具的逐项行为与验收范围以[桥接核验](FreeCAD当前文档桥接接口核验.md)为准；现有证据未覆盖用户现存 GUI、任意 GUI Python、全部属性或全部工作台。该文第14节的归属／原生 undo／redo 仍是夹具证据，正式显式撤销的工具实证单列第15节；它只支持自身有证明的已提交属性操作。覆盖保存源文件不能由副本发布或显式撤销推定完成。
+本表区分后台工具、独立 GUI 的真实 Task 工具和专用原生夹具。GUI 工具的逐项行为与验收范围以[桥接核验](FreeCAD当前文档桥接接口核验.md)为准；现有证据未覆盖用户现存 GUI、任意 GUI Python、全部属性或全部工作台。该文第14节的归属／原生 undo／redo 仍是夹具证据，正式显式撤销的工具实证单列第15节；它只支持自身有证明的已提交属性操作。原位保存的独立工具证据见第16.7节，不能从副本发布或撤销结果推定。
 
 矩阵来源：[Sketcher scripting](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Sketcher_scripting.md)、[PartDesign Workbench](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/PartDesign_Workbench.md)、[Quantity](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Quantity.md)、[Std Export](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_Export.md)、[TechDraw 官方测试](https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/TechDraw/TDTest)、[TechDrawGui API](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/TechDrawGui_API.md)、[Std ViewScreenShot](https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Std_ViewScreenShot.md)。
 
@@ -154,7 +154,7 @@ Extension manifest 提供平台、版本、许可和 files／network 等权限�
 | 本轮优先 | 基础 2D／3D 参数化闭环 | 草图约束→实体特征→源尺寸变化→重算→保存重开→再修改→导出再导入；不能只做单次法兰截图 |
 | 本轮优先 | 操作结果可判断与可恢复 | 正常及错误样件均覆盖；无效几何不标成功；失败／停止不覆盖有效源工程，不误报交付 |
 | 后续一阶段 | 更多官方工作台与更好诊断 | 每个域有版本／依赖、代表性任务、失败与交付证据；不以大量工具名代替能力 |
-| 当前推进 | 当前可见 FreeCAD 文档控制 | 固定查询／观察、标量读写、副本→Task 与自身属性显式撤销已有工具实证；固定原位保存、Native-held取消及持久恢复写域已有独立产品工具整链验收，详见[桥接核验](FreeCAD当前文档桥接接口核验.md) |
+| 本轮已验 | 当前可见 FreeCAD 文档固定控制 | 固定查询／观察、标量读写、副本→Task 与自身属性显式撤销已有工具实证；固定原位保存、Native-held取消及持久恢复写域已有独立产品工具整链验收，详见[桥接核验](FreeCAD当前文档桥接接口核验.md)；不等于用户任意现存文档全面验收 |
 | 后续一阶段 | Blender 可选场景／渲染适配 | 用户安装后验证后台保存、渲染、导出；若复用官方 MCP，再核对运行协议、取消和脚本权限 |
 | 深入研究 | AutoCAD 本机适配与许可 | 取得对应平台安装及授权后，Windows／Mac 分别验证；公开控制 MCP 与只读 Help MCP 分清 |
 | 深入研究 | CAM／FEM 等专业交付与跨应用交换 | 外部求解器／后处理器、几何精度、单位和交付要求按领域验证；生成文件不等于物理制造验收 |
@@ -565,4 +565,15 @@ KFW保留官方投影，仅对已投影原生边做17位有效数的SVG编码：
 
 原有操作store增加只读可信枚举，CAD以真实Provider接入文件恢复与撤销参与者，冻结写域跨回调／服务重启保留；扫描前先装恢复屏障，unknown不能被allSettled、取消marker或Run／插件关闭吞掉。没有新ctx key、另一个Task宿主或第二写域缓存。声明的写域只覆盖固定保存的标准文件／备份，外部GUI及第三方provider不继承Task OS沙箱。
 
-自有GUI真实Task整链104.27s通过：41×82×7mm原位文件与独立后台体积23534、完整原生身份／历史／GUI脏标保持，冷同编号重放不再次保存；另一次Native持有时取消，Node回调结束后冷Provider仍拒跨Task相交恢复与本Task停止，可信partial/writeFinished到达后才放行。计数严格两次、新参数保留、实例正常清理，未操作用户现存文档或扩大崩溃调查。准确条件、原生命令及限制见桥接核验§16.6／§16.7，最后有限真实Agent收尾另计。
+自有GUI真实Task整链104.27s通过：41×82×7mm原位文件与独立后台体积23534、完整原生身份／历史／GUI脏标保持，冷同编号重放不再次保存；另一次Native持有时取消，Node回调结束后冷Provider仍拒跨Task相交恢复与本Task停止，可信partial/writeFinished到达后才放行。计数严格两次、新参数保留、实例正常清理，未操作用户现存文档或扩大崩溃调查。准确条件、原生命令及限制见桥接核验§16.6／§16.7，有限真实Agent收尾见§9.32。
+
+
+### 9.32 首期交付对账与有限 GLM 进阶验收
+
+本轮已确认的FreeCAD首期范围已交付：共用官方插件／Task与目录权限、后台结构化操作及完整Python、真实工程与交换文件／线框预览、当前文档固定查询／属性写入／副本／自身撤销／原位保存，以及取消、幂等与文件恢复边界。基础Code三维和Design二维的真实官方GLM整轮证据仍见§9.9／§9.7；进阶零件、Assembly／CAM／FEM／Draft／BIM仅按前文逐项实测范围记账，不扩大成全部工作台、任意provider或工程认证。AutoCAD／Blender仍只有官方接口研究，未安装和本机验收。
+
+新增一次有限BIM自主交付场景，仅复用一个新隔离Code Project `98fbcb21-7fda-454e-b797-f7fff1492fa8` 和Task `00a1adfa-22cf-4fef-bbc5-ee967955f718`，现有官方GLM `glm-5.3-flash`／max；未改供应商、Key、默认模型、审批设置或提交IGM／VGM。首Run `8ef9494a-90cd-4c47-bfe4-a937c8b724f4` 模型流180秒无输出终止；preserve重跑原输入的中间Run `a48f71f8-30dd-4471-944a-2aa5a8166ed4` 在请求模型前因缺能力快照被拒，暴露并促成独立修复 `cfe90a7b`，真实PG／本地受控模型10项通过，细节见同批《日志》。准备脚本另曾把创建响应的camelCase误写为数据库字段，在创建Task／发送前停止；修正后核对项目及会话为空，复用原项目，未重复创建。
+
+修复后同Task用原文再次接纳，Run `26e799d9-9514-4b65-8e0d-39e57dbf35ec` 仍因模型流180秒无输出终止，未进入任何CAD工具。最终零活动、零待审批，隔离目录为空，没有professional.FCStd／professional.ifc，独立产物oracle因无输入未执行；**本次进阶GLM验收未通过，不能算作BIM自主交付证据**。两次模型流尝试没有证明是供应商、网络还是协议原因；未用未认证健康连接冒充推理通过，也未延长超时、切换模型或无限重试。原生BIM与IFC4的独立几何证据见§9.30，不与本次失败混算。
+
+本机私有证据保留在`/private/tmp/kfw-cad-research/probe-20261019/`：bim-agent-acceptance.json、bim-agent-full-snapshot.json及单Run／独立核验脚本；本机凭据仅在请求内存使用，未写入这些证据或提交仓库。交付提交包括`3e57cb7a`（BIM／IFC）、`25c7ff72`（原位保存）和`cfe90a7b`（历史重跑）；最终代码门禁为workspace38项、串行全包19任务、typecheck26任务及lint零错误，默认skip／既有warning另计。用户现存GUI／AX未被操作，main／future未动；本次外部模型流失败保留在验收矩阵，不阻止已完成CAD适配的交付。
