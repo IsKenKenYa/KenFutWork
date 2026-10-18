@@ -5,6 +5,7 @@ import { isAbsolute } from "node:path";
 import { isSea } from "node:sea";
 import { fileURLToPath } from "node:url";
 import { executionEnvironment } from "./environment.js";
+import { HelperLifecycle } from "./helper-lifecycle.js";
 import { LiveOutputConsumer } from "./live-output.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
 import { createProcessRestoreCoordinator } from "./restore-barrier.js";
@@ -36,7 +37,7 @@ class TaskConnection {
   >();
   readonly snapshots = new Map<string, ManagedProcessSnapshot>();
   private closed = false;
-  private diagnostics = "";
+  private readonly lifecycle: HelperLifecycle;
   private closePromise: Promise<void> | undefined;
   private readonly liveOutput = new Map<string, LiveOutputConsumer>();
 
@@ -58,6 +59,12 @@ class TaskConnection {
         "enforcement_unavailable",
         "SEA 服务必须配置随包的独立 Node binary，不能拿服务本体启动 helper。",
       );
+    this.lifecycle = new HelperLifecycle(
+      options.captureRoot,
+      initial.scope,
+      initial.limits.previewMaxChars,
+      () => this.snapshots.values(),
+    );
     this.child = fork(helper, [], {
       execPath: options.nodePath ?? process.execPath,
       execArgv:
@@ -70,46 +77,54 @@ class TaskConnection {
       stdio: ["ignore", "ignore", "pipe", "ipc"],
       serialization: "advanced",
     });
-    this.child.stderr?.on("data", (data: Buffer) => {
-      this.diagnostics = (this.diagnostics + data.toString("utf8")).slice(
-        -initial.limits.previewMaxChars,
-      );
+    this.child.stderr?.on("data", (data: Buffer) =>
+      this.lifecycle.stderr(data),
+    );
+    this.child.on("message", (message: HelperResponse) =>
+      this.receive(message),
+    );
+    this.child.on("error", (error) => {
+      this.lifecycle.observe({ kind: "error", error }, this.child.pid);
+      this.disconnect();
     });
-    this.child.on("message", (message: HelperResponse) => {
-      if ("event" in message) {
-        if (
-          message.event === "pty-output" ||
-          message.event === "stdio-output"
-        ) {
-          this.outputConsumer(
-            message.processId,
-            message.event === "stdio-output" ? message.stream : undefined,
-          ).receive(message);
-          return;
-        }
-        this.snapshots.set(message.snapshot.id, message.snapshot);
-        options.onSnapshot?.(structuredClone(message.snapshot));
+    this.child.on("exit", (code, signal) => {
+      this.lifecycle.observe({ kind: "exit", code, signal }, this.child.pid);
+      this.disconnect();
+    });
+    this.child.on("disconnect", () => {
+      this.lifecycle.observe({ kind: "disconnect" }, this.child.pid);
+      this.disconnect();
+    });
+    this.child.on("close", (code, signal) => {
+      this.lifecycle.observe({ kind: "close", code, signal }, this.child.pid);
+      this.disconnect();
+    });
+  }
+
+  private receive(message: HelperResponse): void {
+    if ("event" in message) {
+      if (message.event === "pty-output" || message.event === "stdio-output") {
+        this.outputConsumer(
+          message.processId,
+          message.event === "stdio-output" ? message.stream : undefined,
+        ).receive(message);
         return;
       }
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.ok) pending.resolve(message.value);
-      else
-        pending.reject(
-          new ProcessSandboxError(
-            message.error.code as ProcessSandboxError["code"],
-            message.error.message,
-          ),
-        );
-    });
-    this.child.on("error", (error) => this.disconnect(error.message));
-    this.child.on("exit", (code, signal) =>
-      this.disconnect(`helper 退出（${signal ?? code}）：${this.diagnostics}`),
-    );
-    this.child.on("disconnect", () =>
-      this.disconnect("进程 helper IPC 已断开。"),
-    );
+      this.snapshots.set(message.snapshot.id, message.snapshot);
+      this.options.onSnapshot?.(structuredClone(message.snapshot));
+      return;
+    }
+    const pending = this.pending.get(message.id);
+    if (!pending) return;
+    this.pending.delete(message.id);
+    if (message.ok) pending.resolve(message.value);
+    else
+      pending.reject(
+        new ProcessSandboxError(
+          message.error.code as ProcessSandboxError["code"],
+          message.error.message,
+        ),
+      );
   }
 
   outputConsumer(
@@ -168,11 +183,7 @@ class TaskConnection {
   }
 
   async rpc(input: RpcInput): Promise<unknown> {
-    if (this.closed || !this.child.connected)
-      throw new ProcessSandboxError(
-        "stop_unconfirmed",
-        "进程 helper 不可达，尚无管理范围退出证据。",
-      );
+    if (this.closed || !this.child.connected) throw this.lifecycle.failure();
     const id = randomUUID();
     const promise = new Promise<unknown>((resolve, reject) =>
       this.pending.set(id, { resolve, reject }),
@@ -190,15 +201,16 @@ class TaskConnection {
   close(reason: string): Promise<void> {
     this.closePromise ??= (async () => {
       await this.rpc({ method: "close", reason });
+      this.lifecycle.acknowledgeClose();
       if (this.child.connected) this.child.disconnect();
     })();
     return this.closePromise;
   }
 
-  private disconnect(detail: string): void {
+  private disconnect(): void {
     this.closed = true;
     for (const pending of this.pending.values())
-      pending.reject(new ProcessSandboxError("stop_unconfirmed", detail));
+      pending.reject(this.lifecycle.failure());
     this.pending.clear();
   }
 }
@@ -206,7 +218,7 @@ class TaskConnection {
 interface TaskEntry {
   connection: Promise<TaskConnection>;
   initialized: Promise<unknown>;
-  initializedError?: string;
+  initializedError?: Error;
   generation: number;
   instanceId: string;
   projectId: string;
@@ -372,7 +384,7 @@ export function createProcessSandbox(
       const created = entry;
       void created.initialized.catch((error: unknown) => {
         created.initializedError =
-          error instanceof Error ? error.message : String(error);
+          error instanceof Error ? error : new Error(String(error));
         if (created.phase !== "closed") created.phase = "failed";
       });
     }
@@ -388,7 +400,8 @@ export function createProcessSandbox(
     if (entry.phase === "failed")
       throw new ProcessSandboxError(
         "enforcement_unavailable",
-        `Task 进程沙箱初始化失败，命令无法执行：${entry.initializedError ?? "原因未知"}`,
+        `Task 进程沙箱初始化失败，命令无法执行：${entry.initializedError?.message ?? "原因未知"}`,
+        { cause: entry.initializedError },
       );
     if (entry.phase !== "ready" || request.scope.generation < entry.generation)
       throw new ProcessSandboxError(

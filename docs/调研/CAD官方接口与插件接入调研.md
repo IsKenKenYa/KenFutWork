@@ -276,6 +276,15 @@ Agent 用一次 `cad_apply_operations` 创建 40×30 mm 板、初始 Pad 10 mm�
 
 三份原片独立检查前后哈希相同，启动前目录内既有12份文件的哈希也全部保持。真实 Task／Project／目录、两类代际和 Code Run 绑定已从持久事件核对。此项覆盖后台 Code 三维工具整轮，与 §9.7 的独立 Design 二维任务分别记账，不冒充同 Task 真实跨模式或当前 GUI 文档控制已验；同 Task 共享与权限恢复仍由 §9.3 的完整宿主测试证明。此前单次 helper 失联的死因仍未确认，不能用这次模型成功替代该问题的独立调查。
 
+
+### 9.10 helper 失联的生命周期取证
+
+针对 §9.8 中单次 STEP 后 helper 不可达，先用真实合成 helper 建立成功的 initialize／spawn 句柄，再以独立控制通道制造“断连→退出23”。确定性 RED 表明，后续 Stop／Close 丢失首因；修复后标准 Error.cause 关联同一诊断 ID，父端在现有 captureRoot／Task 哈希私有目录记录事件顺序、helper PID、后到退出码／信号、有界 stderr 和最后进程快照。没有命令参数／环境变量，普通错误消息不含 stderr，文件权限600；写入失败不替代执行错误。诊断 consumer 修改 cause 不能反向篡改内部首因。五项回归通过，全类型26任务通过。
+
+未知退出仍返回 stop_unconfirmed，Close 失败与禁止重开、代际及恢复屏障保持。没有从 helper 退出或文件成功反推命令 rangeEmpty。取证后的同模型连续80次 STEP 全部成功，私有记录确认80个进程退出、关闭 ACK、helper退出0；仍不把连续成功称为原间歇死因已经修复。
+
+另以真实 Task stdio 建立明确首帧 ACK 屏障：子进程写 A、等待 stdin，再写 B 后退出；父端持有 A 的 listener Promise。该独立探针稳定复现同类 helper 失联，新的私有 stderr 记录 `PipeOutputRelay.publish` 对未 ACK 前帧抛 output_failed，helper退出1。该堆栈证明了一个实际退出竞态，下一批先将探针锁为回归再修复；原 NrqudE 没有 helper stderr，不能将这份新堆栈冒充原现场证据。
+
 ## 10. 来源地图与证据限制
 
 | 来源组 | 用途 | 强项与限制 |

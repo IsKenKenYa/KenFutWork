@@ -204,8 +204,9 @@ export class ProcessSandboxError extends Error {
       | "invalid_process_request"
       | "output_failed",
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "ProcessSandboxError";
   }
 }
