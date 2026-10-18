@@ -11,8 +11,9 @@ import shutil
 import traceback
 
 def has_shape_property(obj):
-    # App::Part/Origin 基准也会动态响应 .Shape；只有真实属性才是建模几何。
-    return "Shape" in obj.PropertiesList
+    # 同名属性也可能是 FEM 几何链接；只有真实 Part Shape 才能调用拓扑 API。
+    return ("Shape" in obj.PropertiesList
+            and obj.getTypeIdOfProperty("Shape") == "Part::PropertyPartShape")
 
 
 def is_sketch_only_body(obj):
@@ -78,8 +79,8 @@ def validate(doc, require_solids=False, expected_volume=None):
         raise ValueError("工程没有有效实体")
     if expected_volume:
         obj = doc.getObject(expected_volume["objectName"])
-        if not obj or not hasattr(obj, "Shape"):
-            raise ValueError("体积检查对象不存在")
+        if not obj or not has_shape_property(obj):
+            raise ValueError("体积检查对象不存在或没有几何")
         value = obj.Shape.Volume
         if not math.isfinite(value) or not math.isclose(value, expected_volume["value"], rel_tol=0, abs_tol=expected_volume.get("tolerance", 0.000001)):
             raise ValueError("体积不符合预期: " + str(value))

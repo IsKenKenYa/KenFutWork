@@ -1,6 +1,6 @@
 # FreeCAD 专业工作台接口核验
 
-> **角色：调研。** 核验日期：2026-10-18。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对。本轮没有导入或执行这些工作台、求解器、后处理器，没有运行测试、操作 GUI 或安装依赖。
+> **角色：调研 + FEM 代表流程实测记录。** 官方研究日期：2026-10-18；FEM 实测追加：2026-10-19。范围：内置 Assembly、CAM／Path、FEM、BIM／Arch／Draft 的官方接口、依赖、运行形态和后续验收要求。原研究批次优先读取本机 FreeCAD 1.1.4 随包 Python，再以官方固定提交 `4fd3bf320d9566a27e60069fc8387448aaa3a094` 的源码及官方文档交叉核对，当时未执行这些工作台或外部程序。随后已通过真实 Task 的 CAD 工具运行 FEM 轴向压力闭环，见 §5.3；Assembly、CAM、BIM／Draft 仍未实测。本页未新增安装应用、库或求解器，后台 FEM 证据不覆盖用户现存 GUI 文档。
 >
 > 实施方向仍归[CAD 控制插件规划](../插件/CAD控制插件规划.md)。已完成的布尔、圆角／倒角、阵列及 TechDraw 代表工作流见[主调研 §9.14](CAD官方接口与插件接入调研.md)，本文不重复研究，也不把这些证据扩大为专业工作台已验收。AutoCAD／Blender 沿用主调研，不在本批重新研究。
 
@@ -8,27 +8,27 @@
 
 这些专业能力有官方 Python 入口，适合先通过独立 FreeCAD 进程和现有后台 Python 工具验证；并不需要把工作台 UI 嵌入 KFW。它们不是同一种执行任务：Assembly 在进程内求解装配；CAM 生成并后处理刀路；FEM 通常还需网格器和外部求解器；BIM 同时涉及几何、对象语义和 IFC 数据。GUI 命令、数据 API 和外部程序的成功条件应分别记录。[A1][C1][F1][B1]
 
-| 证据层 | 本轮确认 | 不能据此声称 |
+| 证据层 | 当前确认 | 不能据此声称 |
 | --- | --- | --- |
 | 官方接口／源码 | 下文列出的函数、对象类型、返回值、依赖查找和 GUI 条件分支存在 | 本机导入成功、完整任务可执行或结果正确 |
 | 安装文件 | 本机存在对应模块、动态库、可执行文件及包版本记录 | 动态装载、ABI、PATH、外部进程或本机求解已通过 |
-| 代表流程 | 下文给出待执行的输入、闭环和成功判据 | 已生成对应工程、刀路、有限元结果或 IFC |
-| KFW 产品整链 | 本轮没有新增专业工作台工具或真实 Task 执行证据 | 当前插件已完整支持这些领域，或 GUI 固定标量工具能编辑其全部对象 |
+| 代表流程 | FEM 轴向压力的新网格、新求解、结果校验及保存重开已实测，见 §5.3；其他专业流程仍是待执行建议 | FEM 所有物理场／求解器、装配、刀路或 IFC 已通过 |
+| KFW 产品整链 | 已由真实 Task 的既有 CAD Python／文件交付链完成 §5.3 的独立 FEM 工程、三种失败拒绝与真实Gmsh子进程取消 | 当前插件完整支持全部专业领域，或 GUI 固定标量工具能编辑其全部对象 |
 
 官方 Headless 文档提供 `FreeCADCmd` 的无界面 Python 入口；领域脚本仍须由应用自己的解释器和模块环境执行，不能用系统 Python 的可导入性代替。Assembly／Draft／BIM 的数据 API、CAM 的 Job／Operation 与 FEM 的建模对象可以作为候选调用面，但 Qt、Coin、文档激活和外部进程仍需按下文逐项验证。没有查到可以替代这些流程的统一“专业工作台 CLI RPC”。[G1]
 
 ## 2. 本机只读盘点
 
-根路径为 `/Applications/FreeCAD.app/Contents/Resources/`。Info.plist 的 `CFBundleVersion` 及 conda 元数据均记录 FreeCAD 1.1.4；随包 Python 为 3.11.14。以下只读取文件和元数据，未执行二进制：
+根路径为 `/Applications/FreeCAD.app/Contents/Resources/`。Info.plist 的 `CFBundleVersion` 及 conda 元数据均记录 FreeCAD 1.1.4；随包 Python 为 3.11.14。下表来自原研究批次的只读文件及元数据盘点；随后 FEM 的实际执行证据单列于 §5.3，不能倒写成原盘点时已经运行：
 
 | 项目 | 已找到的条目 | 版本事实／限制 |
 | --- | --- | --- |
 | Assembly | `Mod/Assembly/`、`lib/AssemblyApp.so`、`lib/AssemblyGui.so`、`lib/libOndselSolver.1.0.1.dylib` | `share/pkgconfig/OndselSolver.pc` 记录 1.0.1；未验证装载及求解 |
 | CAM | `Mod/CAM/Path/`、`lib/area.so`、`lib/python3.11/site-packages/opencamlib/ocl.so` | conda 记录 OpenCamLib 2023.01.11；未验证具体算法或后处理器 |
-| FEM | `Mod/Fem/`、`bin/gmsh`、`bin/ccx` | conda 记录 Gmsh 4.15.0、CalculiX 2.23、VTK 9.3.1；未启动网格器或求解器 |
+| FEM | `Mod/Fem/`、`bin/gmsh`、`bin/ccx` | conda 记录 Gmsh 4.15.0、CalculiX 2.23、VTK 9.3.1；随后 Gmsh／CalculiX 实际执行见 §5.3 |
 | BIM／Draft | `Mod/BIM/`、`Mod/Draft/`、IfcOpenShell 扩展模块 | conda 记录 IfcOpenShell 0.8.4；未验证 IFC 导入／导出及回读 |
 
-安装包内有依赖不代表 KFW 子进程能找到它们：例如 FEM 会从用户配置或 PATH 查找 ccx／gmsh。后续须在本次 Task 的隔离配置和进程环境中核验实际命中的路径，不改用户全局设置；所有中间输入、网格、求解日志和输出须落入 Task 授权目录，外部子进程须进入已有停止／撤权机制。这些是接线验收要求，不是本轮已完成事实。[F2][F3]
+安装包内有依赖不代表 KFW 子进程能找到它们：例如 FEM 便捷方法会从用户配置或 PATH 查找 ccx／gmsh。§5.3 已显式选择应用随包二进制，将本次中间输入、网格、求解日志和输出置于 Task 授权目录，且不改用户全局设置。真实Gmsh子进程取消与三种失败已单独验证，见§5.3；这不扩大为全部外部求解器或专业流程的停止／撤权证明。[F2][F3]
 
 ## 3. 内置 Assembly
 
@@ -96,14 +96,14 @@ Job 会创建模型资源／stock／刀具控制器等关联对象；不能只�
 | --- | --- |
 | Analysis | `ObjectsFem.makeAnalysis(doc, name="Analysis")` |
 | 材料 | `ObjectsFem.makeMaterialSolid(doc, name="MaterialSolid")`，Material 字典包含带单位的模量、密度等；须加入 Analysis |
-| 约束／载荷 | `makeConstraintFixed(doc, name=...)`、`makeConstraintForce(doc, name=...)`；References 显式绑定几何 |
+| 约束／载荷 | `makeConstraintFixed(doc, name=...)`、`makeConstraintForce(doc, name=...)`、`makeConstraintPressure(doc, name=...)`；References 显式绑定几何 |
 | 网格对象 | `ObjectsFem.makeMeshGmsh(doc, name="MeshGmsh")`，设置 Shape、单元阶次及尺寸 |
 | 网格执行 | `femmesh.gmshtools.GmshTools(mesh_obj)`；有 prepare／compute／update_properties 路径，旧 `create_mesh()` 是兼容入口 |
 | CalculiX 对象 | `ObjectsFem.makeSolverCalculiXCcxTools(doc, name="SolverCcxTools")` |
 | 求解工具 | `femtools.ccxtools.FemToolsCcx(analysis=None, solver=None, test_mode=False)`；显式提供同文档、同 Analysis 的 solver |
 | 求解步骤 | `check_prerequisites()` 返回诊断字符串；`write_inp_file()`、`setup_ccx()`、`ccx_run()`、`load_results()`／`run()` |
 
-GmshTools 使用配置的 gmshBinaryPath 或 PATH，随后启动外部进程；ccxtools 同样从 ccxBinaryPath／PATH 定位并探测 CalculiX。网格计算、进程结束、读取网格和结果装载是不同阶段。QtCore／过程管理仍参与，GUI 分支还可能显示错误对话框；须验证独立后台宿主的事件循环、工作目录和停止范围，不能从函数定义推定纯 headless 整链已通过。[F2][F3]
+GmshTools 使用配置的 gmshBinaryPath 或 PATH，随后启动外部进程；ccxtools 同样从 ccxBinaryPath／PATH 定位并探测 CalculiX。网格计算、进程结束、读取网格和结果装载是不同阶段。QtCore／过程管理仍参与，GUI 分支还可能显示错误对话框；不能从函数定义推定纯 headless 整链已通过。§5.3 实测的是 KFW 独立后台宿主及显式子进程路线，不覆盖全部 GUI 分支或其他运行环境。[F2][F3]
 
 有两个会造成假验收的明确源码边界：
 
@@ -112,11 +112,45 @@ GmshTools 使用配置的 gmshBinaryPath 或 PATH，随后启动外部进程；c
 
 ### 5.2 最小代表流程与判据
 
-**待执行建议**：线弹性三维直杆，明确长度／截面、材料模量与泊松比，一端固定、另一端施加轴向力，使用新生成的四面体网格，完成 INP→CalculiX→FRD／DAT→结果对象，保存重开。可用100×10×10 mm、E=210000 MPa、F=1000 N作为建议输入；这些数值没有在本轮执行。
+**原研究建议**：线弹性三维直杆，明确长度／截面、材料模量与泊松比，一端固定、另一端施加轴向力，使用新生成的四面体网格，完成 INP→CalculiX→FRD／DAT→结果对象，保存重开。当时建议的100×10×10 mm、E=210000 MPa、F=1000 N力载荷样件未执行；随后实际采用 §5.3 的1 MPa面压力、泊松比0样件，不能把两组输入混称为同一验收。
 
 成功至少需要：Analysis 完整、材料覆盖全部单元、约束方向及单位正确；节点和体单元非零且不存在非正 Jacobian；求解实际结束并有可信结果；位移／应力数组长度与网格对应、数值有限。远离端部的名义轴向应力应与 F/A、位移与 FL/(EA) 的解析基线及网格收敛趋势相符；夹持端局部效应不应被统一误差比例掩盖。求解日志、网格参数、载荷／材料和结果文件一并保留，不能只交付彩色云图。[F1][F2]
 
 失败覆盖至少包含无材料、未充分约束、载荷／References 错误、网格失败／坏单元、二进制不存在、求解非零退出、结果缺失与无法装载。Elmer、Mystran、Z88、非线性、热／流／电磁问题分别是后续独立领域验收，不能从线弹性 CalculiX 结果推出。
+
+### 5.3 真实 Task：轴向压力、参数折返与原生工程重开
+
+2026-10-19 主执行线程通过真实 Task 的既有 CAD Python 工具运行了独立验收夹具 [fem-axial-pressure.py](../../apps/server/src/features/cad/fixtures/fem-axial-pressure.py)。这是新创建／修改本次模型后实际执行 Gmsh 与 CalculiX 的数值证据，不是官方示例 setup、旧网格导入或旧 FRD 读取。夹具按本机1.1.4随包 `ObjectsFem.py`、`femmesh/gmshtools.py`、`femtools/ccxtools.py`、`feminout/importCcxFrdResults.py` 的接口组织；对应固定版本一手来源仍见 [F2][F3][F5]。
+
+| 基线项 | 实际输入或结果 |
+| --- | --- |
+| 宿主／外部程序 | FreeCAD 1.1.4；应用随包 Gmsh 4.15.0、CalculiX 2.23 |
+| 几何及材料 | Box 为100×10×10 mm；E=210000 MPa，ν=0，线弹性静力 |
+| 边界及载荷 | x=0面三平动固定；x=L面1 MPa均匀压力，未反向，压力指向-x |
+| 实际新网格 | 198节点、493个三维体单元；本次 Gmsh 新生成 UNV |
+| 实际新结果 | 本次 CCX 新生成 FRD；完整节点位移、六个应力分量与 von Mises 数组长度匹配、数值有限，按结果自身 compact 网格映射节点 |
+| 解析基线 | ux(x)=-p·x/E，uy=uz=0；σxx=-p，其余应力分量为0；von Mises=p |
+| 数值门槛及观测 | 全场按1%相对误差阈值检查，失败不自动放宽；基线 ux 最大归一化误差约1.4×10⁻⁶，自由端平均 ux 约-0.00047619 mm，与-pL/E一致 |
+| 原生文件交付 | 保存 FCStd 后由独立进程重开，结果数组保持；不是只保留图片或最终结果摘要 |
+
+参数折返复用几何、Analysis、材料、约束、网格对象与求解器引用，每轮重新建网格、重新写 INP、重新求解并读取新的 FRD：
+
+| 轮次 | L／压力／方向 | 理论自由端 ux | 真实链路结果 |
+| --- | --- | --- | --- |
+| 初始 | 100 mm／1 MPa／向内 | -100/210000 mm | 新网格、新求解及完整数组解析检查通过 |
+| 改参数及反向 | 200 mm／2 MPa／`Reversed=True` | +400/210000 mm | 新网格、新 FRD 通过同一严格阈值；不是缩放旧数组 |
+| 恢复原参数 | 100 mm／1 MPa／向内 | -100/210000 mm | 再次生成新网格、新 FRD并通过；输入源文件字节保持 |
+
+实际执行还确认了两处接线边界：
+
+- `App.getResourceDir()` 在本机指向 `Resources/share`，不能拼接成 `share/bin/gmsh`。夹具优先按 `App.getHomePath()/bin` 找到 `Resources/bin/gmsh` 与 `Resources/bin/ccx`，并记录两个 App 路径、候选及实际二进制，不扫描或安装其他程序。
+- FEM `mesh.Shape` 是 `App::PropertyLink`，不是几何 `Part::PropertyPartShape`。通用交付校验已经按属性类型区分，不能对所有名为 Shape 的属性直接调用几何方法；该 Shape Link 原生回归已通过，不意味着所有专业 Proxy／属性类型都已兼容。
+
+Gmsh 采用分阶段准备／写入 API，CalculiX 采用官方 INP 写入和 FRD 装载 API，实际外部执行由显式 `subprocess` 负责。本次 `.brep`、`.geo`、UNV、INP、FRD、stdout／stderr及报告位于本轮 Task 的新目录，运行标识和路径单独记录；每个外部进程超时9秒，线程数为1。Gmsh 线程数仅写入本次 `.geo`，不修改用户全局配置。夹具检查 INP 中真实的 `BOUNDARY`、`DLOAD`、`ELASTIC` 记录，并保留逐阶段报告；不使用 `boxanalysis_base` 的预制网格回退，也不以 `run()` 返回 True 或结果对象存在代替数值检查。
+
+失败边界已实际通过：从有结果的源工程重开，每轮重新网格；Analysis 移除材料、清空压力 References 均拒绝；真实 CCX 成功后删除本次 FRD 也拒绝，已有结果不算本次成功，目标文件不存在、输入字节保持。取消另用真实 Gmsh 解析 `.geo` 后自行写就绪标记再进入等待，确认父 FreeCAD 与子 Gmsh 两个 PID 存活后取消 Task，回执为 cancelled，两个 PID 均不存在，目标工程未发布。这条取消证据是进程范围验收，不把等待脚本当作网格成功，也不扩大为所有外部求解器的进程行为。
+
+**当前证据边界**：上述正常流程、参数折返、保存重开、三种失败及真实 Gmsh 子进程取消均已通过；通用 CAD 校验只保证对象状态与几何，有限元数值／载荷验证由本次脚本负责，不是新增固定 FEM 工具。该样件采用ν=0的均匀单轴场，未做独立网格收敛研究；它不覆盖其他材料、几何、接触、非线性、热／流／电磁、其他求解器、全部 FEM 工作台，也不构成制造或工程设计认证。Assembly、CAM、BIM／IFC及用户当前 GUI 文档仍是本页独立待验项。
 
 ## 6. Draft、Arch／BIM 与 IFC
 
@@ -150,20 +184,20 @@ GmshTools 使用配置的 gmshBinaryPath 或 PATH，随后启动外部进程；c
 
 ## 7. 后续接线与验收顺序
 
-| 建议顺序 | 最小独立交付 | 必须补的本机／Task证据 |
+| 原建议顺序 | 最小独立交付 | 当前状态及仍需的本机／Task证据 |
 | --- | --- | --- |
 | 1 | Draft 二维对象→Arch 直墙／结构件→FCStd | 数据 API 与偏好隔离、参数变化、保存重开、几何／语义；再单独验证 IFC 回读 |
 | 2 | 内置 Assembly 的 grounded＋Fixed 闭环 | AssemblyApp 装载、明确求解码、连接器残差、Placement、保存重开及失败状态 |
 | 3 | CAM Profile＋一个指定 post | 模型／stock／刀具、有效运动、包络／深度、真实后处理及 NC 回读 |
-| 4 | FEM 线弹性三维分析 | 实际新网格、ccx 执行、真实结果装载、解析／收敛基线及停止范围 |
+| 4 | FEM 线弹性三维分析 | §5.3的新网格、ccx、真实结果、解析检查及重开已通过；三种失败拒绝与真实Gmsh取消另通过，网格收敛及其他领域另验 |
 
-每项先在新的独立工程中验证，再通过真实 Task 的既有 CAD Python／文件交付链验证，最后才决定是否增加专业结构化工具。当前通用几何校验器对专业 Job、Analysis、mesh、结果和 Proxy 文档的兼容性也尚未实证，不能从 Python 接口存在推定这些文档能直接通过产品交付。GUI 当前文档接入另遵守已有打开句柄、观察前提和审批；不能把后台 Python 的权限证明移植为任意 GUI Python 权限。
+每项先在新的独立工程中验证，再通过真实 Task 的既有 CAD Python／文件交付链验证，最后才决定是否增加专业结构化工具。FEM 已完成 §5.3 代表文档及 Shape Link 的实际交付；其他专业 Job、复杂 Analysis、Proxy 文档的兼容性仍须分别验证，不能从该样例推定全部文档能通过产品交付。GUI 当前文档接入另遵守已有打开句柄、观察前提和审批；不能把后台 Python 的权限证明移植为任意 GUI Python 权限。
 
-本轮交付仅为 E 批次官方研究记录。Assembly 全部关节／运动、CAM 全部策略／控制器、FEM 全部求解器／物理场、BIM 全部构件／IFC往返及用户现存 GUI 的操作均未验收；也没有新安装或要求安装任何应用、库或求解器。专业流程的可执行性、性能和领域正确性保留待验，不能用包存在、import 或官方测试文件存在替代。
+E 批次原交付是只读官方研究；随后新增的 FEM 数值实测已单列 §5.3。Assembly、CAM、BIM／IFC仍未实测，FEM 也仅完成该线弹性样件及§5.3列出的失败／取消边界，不能扩展为全部求解器／物理场已验收；用户现存 GUI 操作另验。没有新安装或要求安装任何应用、库或求解器。尚未覆盖的可执行性、性能和领域正确性保留待验，不能用包存在、import 或官方测试文件存在替代。
 
 ## 8. 来源
 
-下列源码固定到安装版对应提交；官方文档用于语义和流程概览，遇旧函数拼法或目录变化，以1.1.4源码与随包实现为准。随包测试只作为 API／预期行为示例，本轮未运行。
+下列源码固定到安装版对应提交；官方文档用于语义和流程概览，遇旧函数拼法或目录变化，以1.1.4源码与随包实现为准。原研究引用的随包测试仅作 API／预期行为依据；§5.3 是另外执行的 KFW 独立夹具，不能混称为这些官方测试全部通过。
 
 [G1]: https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Headless_FreeCAD.md
 [A1]: https://github.com/FreeCAD/FreeCAD-documentation/blob/main/wiki/Assembly_Workbench.md
