@@ -369,7 +369,19 @@ Agent 用一次 `cad_apply_operations` 创建 40×30 mm 板、初始 Pad 10 mm�
 
 针对上述启动前执行、背压取消和清空误报分别取得 RED→GREEN；父端还覆盖坏身份／非 UTF8／超长协议、exec 失败、短命尾部及自有父子停止不影响独立会话。原生夹具验证缺失／截断／非法放行帧、原 birth、停止 leader 拒绝接纳、目标环境替换和 fd3 不继承。首轮广范围在 Codex 外层沙箱内触发 sandbox-exec 禁止嵌套／ps EPERM，另发现模型预览长度误截身份协议；私有身份读取已与预览长度分离，并在授权的真实 macOS 权限下复验，未关闭产品沙箱。
 
-本批接通的是 Task 撤权／关闭与已有 owner.stop 的启动取消。调用方 Run signal 在 spawnStdio 返回前仍无专用传递通道，应作为下一独立取消批次接入，不能把本批称为任意时点 Run 取消均保证零执行。Linux 与 Windows 原有进程范围保持独立，不借本机 macOS 结果宣称跨平台实测。本轮未向现存用户或隔离 GUI 实例发送 AX／宏操作，也未修改 FreeCAD 安装和全局设置。
+这一身份批次先接通 Task 撤权／关闭与已有 owner.stop 的启动取消；其后补齐的 Run signal 启动取消见 §9.19。不能把 RPC 发出时点当成 helper 已受理取消，更不承诺跨进程传递前任意时点均保证零执行。Linux 与 Windows 原有进程范围保持独立，不借本机 macOS 结果宣称跨平台实测。本轮未向现存用户或隔离 GUI 实例发送 AX／宏操作，也未修改 FreeCAD 安装和全局设置。
+
+### 9.19 Run／Task 在启动等待阶段的取消
+
+CAD 将既有 Run／Task 合并 signal 传入 `spawnStdio(request, { signal })`。该选项只控制启动等待，返回句柄后的取消继续由 CAD 的 drain／stop 消费；signal 不放入请求、IPC、指纹或持久事件。请求在接纳时复制，调用方随后修改原对象不改变派发与取消身份。
+
+派发前可中止当前调用对目录、恢复准入或共享初始化的等待；共享准备继续供同 Task 其它调用使用，不因一个 Run 取消而停用整个 Task。派发后固定绑定原 helper 连接，按 Task／原代际／invocation／原参数指纹发送 `cancelspawn`。helper 在首次 await 前登记取消控制器及结果墓碑；不同参数、未知调用或代际不匹配均拒绝，不允许冲突请求的取消停止已有正确命令。同一 helper 生命周期内，同参数重放继承取消事实，换一个 signal 不会重启副作用；跨服务重启的 Run 恢复仍由原有持久 Task／Run 协议负责。
+
+无 owner 时，空回执只在已永久禁止该调用后续派发后返回；已有 owner 则等待 stop 及最终 `rangeEmpty:true` 快照。父端收到匹配身份的停止回执后才结束为取消；未清空、错身份、失联或回执超时均保留 `stop_unconfirmed` 与恢复写域。超时只说明未知，不代表进程已退出；真实迟到退出仍由既有快照通道观察。停止回执的时限按既有 killGraceMs 覆盖冻结、TERM／CONT、再次冻结及 KILL 阶段，不新增文件或媒体存储限额。
+
+取消快返使共享准备与 Task 关闭的交叠成为实际路径。安装版 SRT 0.0.78 的 `reset()` 不等待 `initializationPromise`，因此 helper 关闭先禁止新派发并停止已有 proof owner，再等待初始化与只读证明收束，最后 reset／清理临时目录。每个 probe 派发点和原生 R 前均检查关闭闸门，避免关闭后迟到重建状态。准备失败可以被关闭过程收束，真实停止未确认仍保留失败。
+
+父端／消费者分别取得已取消请求仍被接纳、共享等待不能中断、取消身份随原对象漂移，以及 CAD 未转交 signal 的 RED；helper 取得精确取消身份、无 owner／已有 owner 收尾、关闭越过共享准备等 RED。新增真实 macOS 公共入口验证在 running 事件与 spawn 返回之间取消，原 PID 清空、重放不重启、新调用恢复；合成回执测试单独验证 ACK 丢失／错身份／未清空的父端屏障，不冒充 OS 证据。最终命令与结果见《日志》同批记录。本轮仍不对用户 FreeCAD GUI 进行 AX 或宏操作。
 
 ## 10. 来源地图与证据限制
 

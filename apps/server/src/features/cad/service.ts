@@ -9,6 +9,7 @@ import type {
   ProcessExit,
   ProcessLimits,
   ProcessSandbox,
+  ProcessStdioSpawnRequest,
 } from "../process-sandbox/types.js";
 import { ProcessSandboxError } from "../process-sandbox/types.js";
 import {
@@ -379,7 +380,7 @@ async function executeCadRequest(
   if (staged.outputPath)
     await staged.handle.resolvePath(staged.outputPath, "write");
   requireCadContext(context);
-  const process = await options.sandbox.spawnStdio({
+  const processRequest: ProcessStdioSpawnRequest = {
     scope: staged.handle.describe(),
     agentId: staged.handle.agentId,
     invocationId: `${context.runId}:${context.toolCallId}:${staged.executionId}`,
@@ -414,7 +415,8 @@ async function executeCadRequest(
       XDG_DATA_HOME: join(staged.workingDirectory, "data"),
       TMPDIR: staged.workingDirectory,
     },
-  });
+  };
+  const process = await options.sandbox.spawnStdio(processRequest, { signal });
   const exit = await drainCadProcess(process, signal);
   requireCadContext(context);
   const result = await readCadResult(staged, exit, limits.maxOutputBytes);

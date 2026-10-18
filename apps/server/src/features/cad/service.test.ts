@@ -6,7 +6,6 @@ import { z } from "zod";
 import type { PluginStateRevokingEvent } from "../plugins/state-lifecycle.js";
 import type {
   ProcessSandbox,
-  ProcessStdioSpawnRequest,
   TerminalOutputListener,
 } from "../process-sandbox/types.js";
 import { createCadBundleGate } from "./plugin.js";
@@ -22,6 +21,7 @@ import { cadResultSchema } from "./tool-contracts.js";
 import { createCadTools } from "./tools.js";
 
 const roots: string[] = [];
+type StdioArguments = Parameters<ProcessSandbox["spawnStdio"]>;
 afterEach(async () => {
   for (const root of roots.splice(0))
     await rm(root, { recursive: true, force: true });
@@ -50,7 +50,7 @@ async function fixture(options?: {
   const stdoutDisposer = vi.fn(() => lifecycle.push("stdout-disposed"));
   const stderrDisposer = vi.fn(() => lifecycle.push("stderr-disposed"));
   const stop = vi.fn(async () => ({ ...cadTestExit, stopped: true }));
-  const spawn = vi.fn(async (request: ProcessStdioSpawnRequest) => {
+  const spawn = vi.fn(async (...[request]: StdioArguments) => {
     const input = JSON.parse(
       await readFile(request.env?.KFW_CAD_REQUEST ?? "", "utf8"),
     );
@@ -90,7 +90,11 @@ async function fixture(options?: {
         lifecycle.push("waiting");
         if (!stdout || !stderr) throw new Error("CAD输出管道没有consumer ACK");
         if (options?.mode !== "silent") {
-          await stdout("startup\n", { sequence: 1, offset: 0, nextOffset: 8 });
+          await stdout("startup\n", {
+            sequence: 1,
+            offset: 0,
+            nextOffset: 8,
+          });
           await stderr("diagnostic\n", {
             sequence: 1,
             offset: 0,
@@ -168,6 +172,53 @@ async function fixture(options?: {
     stderrDisposer,
   };
 }
+
+it.each(["Run", "Task"] as const)(
+  "%s 在 CAD spawn 返回前取消也传到后台启动边界，不发布迟到成功",
+  async (source) => {
+    const f = await fixture();
+    let enter!: (signal: AbortSignal | undefined) => void;
+    const entered = new Promise<AbortSignal | undefined>((resolve) => {
+      enter = resolve;
+    });
+    f.spawn.mockImplementation(async (_request, options) => {
+      enter(options?.signal);
+      if (!options?.signal) throw new Error("缺少启动取消信号");
+      const signal = options.signal;
+      return new Promise<never>((_, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+        if (signal.aborted) reject(signal.reason);
+      });
+    });
+    const taskController = new AbortController();
+    const work = f.context.taskWorkContext;
+    if (!work) throw new Error("缺少真实 Task 工作上下文");
+    const pending = f.service.execute(
+      { action: "primitive", input: { kind: "sphere", radius: 2 } },
+      {
+        ...f.context,
+        taskWorkContext: { ...work, signal: taskController.signal },
+      },
+    );
+    try {
+      const signal = await entered;
+      expect(signal).toBeInstanceOf(AbortSignal);
+      (source === "Run" ? f.controller : taskController).abort();
+      expect(signal?.aborted).toBe(true);
+      expect(await pending).toMatchObject({
+        isError: true,
+        structuredContent: { error: { code: "cancelled" } },
+      });
+      expect(f.stop).not.toHaveBeenCalled();
+    } finally {
+      f.controller.abort();
+      taskController.abort();
+      await pending;
+    }
+  },
+);
 
 describe("官方 CAD Task 执行", () => {
   it("停用先取消并等待在途进程，重新启用不能重放旧调用", async () => {

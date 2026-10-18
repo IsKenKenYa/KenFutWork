@@ -9,6 +9,10 @@ import { HelperLifecycle } from "./helper-lifecycle.js";
 import { LiveOutputConsumer } from "./live-output.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
 import { createProcessRestoreCoordinator } from "./restore-barrier.js";
+import {
+  spawnWithCancellation,
+  waitForSpawnAdmission,
+} from "./spawn-cancellation.js";
 import type {
   ManagedProcessSnapshot,
   ManagedStdioProcess,
@@ -499,19 +503,26 @@ export function createProcessSandbox(
   const spawn = async (
     request: ProcessSpawnRequest,
     internalWriteRoots: readonly string[] = [],
+    signal?: AbortSignal,
   ): Promise<ManagedTerminalProcess & ManagedStdioProcess> => {
+    signal?.throwIfAborted();
     validateRequest(request);
+    // 启动等待和取消必须引用同一份接纳输入，调用方后续编辑不能改变取消身份。
+    request = structuredClone(request);
     if (request.runtimeReadRoots?.length) {
-      const roots = await Promise.all(
-        request.runtimeReadRoots.map(async (root) => {
-          const canonical = await realpath(root);
-          if (!(await stat(canonical)).isDirectory())
-            throw new ProcessSandboxError(
-              "invalid_process_request",
-              "运行时读取根必须是已安装运行时的目录。",
-            );
-          return canonical;
-        }),
+      const roots = await waitForSpawnAdmission(
+        Promise.all(
+          request.runtimeReadRoots.map(async (root) => {
+            const canonical = await realpath(root);
+            if (!(await stat(canonical)).isDirectory())
+              throw new ProcessSandboxError(
+                "invalid_process_request",
+                "运行时读取根必须是已安装运行时的目录。",
+              );
+            return canonical;
+          }),
+        ),
+        signal,
       );
       request = { ...request, runtimeReadRoots: [...new Set(roots)] };
     }
@@ -522,20 +533,28 @@ export function createProcessSandbox(
     let snapshot: ManagedProcessSnapshot;
     try {
       entry = ensureTask(request);
-      await restore.admit(admission);
-      await entry.initialized;
+      await waitForSpawnAdmission(restore.admit(admission), signal);
+      await waitForSpawnAdmission(entry.initialized, signal);
       if (entry.phase !== "ready")
         throw new ProcessSandboxError(
           "scope_revoked",
           "Task 正在撤销执行资源。",
         );
-      connection = await entry.connection;
+      connection = await waitForSpawnAdmission(entry.connection, signal);
+      signal?.throwIfAborted();
       dispatched = true;
-      snapshot = (await connection.rpc({
-        method: "spawn",
+      snapshot = await spawnWithCancellation(
+        connection,
         request,
         internalWriteRoots,
-      })) as ManagedProcessSnapshot;
+        signal,
+        (receipt) => {
+          if (receipt) {
+            connection.snapshots.set(receipt.id, receipt);
+            restore.observe(receipt);
+          } else restore.discardUnlaunched(admission);
+        },
+      );
     } catch (error) {
       // IPC/启动结果不确定时保留写域；停止失败或helper失联绝不当作gone。
       if (
@@ -644,7 +663,8 @@ export function createProcessSandbox(
       !options.resolveNetwork && options.network.allowedDomains.length === 0,
     spawn: (request) => spawn(request),
     spawnPty: (request: ProcessPtySpawnRequest) => spawn(request),
-    spawnStdio: (request) => spawn({ ...request, stdio: "stream" }),
+    spawnStdio: (request, options) =>
+      spawn({ ...request, stdio: "stream" }, [], options?.signal),
     async spawnCheckpoint(request) {
       if (!options.resolveInternalWriteRoots || !request.argv)
         throw new ProcessSandboxError(
