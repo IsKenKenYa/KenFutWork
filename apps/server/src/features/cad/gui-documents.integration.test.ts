@@ -77,7 +77,7 @@ def prepare():
     try:
         assert not App.listDocuments() and App.getActiveTransaction() is None, 'fixture refuses existing work'
         assert QtCore.QThread.currentThread()==QtWidgets.QApplication.instance().thread()
-        saved=App.newDocument('KfwGuiSaved'); box=saved.addObject('Part::Box','Box'); box.Length=20; saved.recompute(); saved.saveAs(${JSON.stringify(savedPath)})
+        saved=App.newDocument('saved'); box=saved.addObject('Part::Box','Box'); box.Length=20; saved.recompute(); saved.saveAs(${JSON.stringify(savedPath)})
         unsaved=App.newDocument('KfwGuiUnsaved'); unsaved.Label='未保存验收'; part=unsaved.addObject('Part::Box','Box'); part.Width=9; unsaved.recompute()
         unsaved.openTransaction('KFW metadata fixture pending'); part.Length=8
         App.setActiveDocument(unsaved.Name)
@@ -90,7 +90,7 @@ def prepare():
     os.replace(${JSON.stringify(readyTemporary)},${JSON.stringify(readyPath)})
 QtCore.QTimer.singleShot(0,prepare)
 # 测试宿主失联时也只清理本实例的自有文档，绝不按PID杀其它应用。
-QtCore.QTimer.singleShot(45000,lambda:exec(compile(open(${JSON.stringify(cleanupPath)},encoding='utf-8').read(),'kfw-fixture-cleanup','exec'),{}))
+QtCore.QTimer.singleShot(90000,lambda:exec(compile(open(${JSON.stringify(cleanupPath)},encoding='utf-8').read(),'kfw-fixture-cleanup','exec'),{}))
 `,
       { mode: 0o600 },
     );
@@ -207,7 +207,11 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
       expect(first.isError, JSON.stringify(first)).not.toBe(true);
       expect(first.structuredContent).toMatchObject({
         application,
-        documents: ready.documents,
+        documents: expect.arrayContaining(
+          ready.documents.map((doc: Record<string, unknown>) =>
+            expect.objectContaining(doc),
+          ),
+        ),
         currentDocumentControl: false,
       });
       const second = await executeCadTestTool(
@@ -216,9 +220,170 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
         { ...context, toolCallId: "second-observation" },
       );
       expect(second.isError, JSON.stringify(second)).not.toBe(true);
-      expect(second.structuredContent.documents).toEqual(ready.documents);
+      expect(first.structuredContent.documents).toHaveLength(2);
+      expect(second.structuredContent.documents).toEqual(
+        expect.arrayContaining(
+          ready.documents.map((doc: Record<string, unknown>) =>
+            expect.objectContaining(doc),
+          ),
+        ),
+      );
+      expect(second.structuredContent.documents).toHaveLength(2);
       expect(second.structuredContent.observationId).not.toBe(
         first.structuredContent.observationId,
+      );
+      const observations = z.object({
+        bridgeEpoch: z.string().uuid(),
+        applicationRevision: z.number().int().nonnegative(),
+        documents: z.array(
+          z.object({
+            name: z.string(),
+            uid: z.string(),
+            documentHandle: z.string().uuid(),
+            revision: z.number().int().nonnegative(),
+            touched: z.boolean(),
+            modified: z.boolean(),
+          }),
+        ),
+      });
+      const initial = observations.parse(first.structuredContent);
+      const unchanged = observations.parse(second.structuredContent);
+      expect(unchanged).toEqual(initial);
+      const saved = initial.documents.find((doc) => doc.name === "saved");
+      if (!saved) throw new Error("缺少自有保存文档的打开句柄");
+      let sequence = 0;
+      const mutateFixture = async (source: string) => {
+        sequence++;
+        const receipt = join(root, `stage-${sequence}.json`);
+        const macro = join(root, `stage-${sequence}.FCMacro`);
+        await writeFile(
+          macro,
+          `import FreeCAD as App, FreeCADGui as Gui, builtins, json, os
+from PySide import QtCore, QtWidgets
+def apply_fixture_step():
+    result={'pid':os.getpid(),'success':False}
+    try:
+        assert getattr(builtins,'__kfw_gui_metadata_nonce__',None)==${JSON.stringify(nonce)}
+        assert QtCore.QThread.currentThread()==QtWidgets.QApplication.instance().thread()
+        owned=builtins.__kfw_gui_metadata_fixture__
+${source
+  .split("\n")
+  .map((line) => `        ${line}`)
+  .join("\n")}
+        result['success']=True
+    except Exception as error: result['error']=str(error)
+    with open(${JSON.stringify(receipt)},'w') as stream: json.dump(result,stream)
+QtCore.QTimer.singleShot(0,apply_fixture_step)
+`,
+          { mode: 0o600 },
+        );
+        if (!application) throw new Error("缺少已绑定的测试GUI");
+        await createMacosCadGuiTransport().send(
+          application,
+          macro,
+          probeContext,
+        );
+        expect(await waitJson(receipt)).toMatchObject({
+          pid: application.pid,
+          success: true,
+        });
+      };
+      const observe = async () => {
+        const result = await executeCadTestTool(
+          tool,
+          { application },
+          { ...context, toolCallId: `observe-stage-${sequence}` },
+        );
+        expect(result.isError, JSON.stringify(result)).not.toBe(true);
+        return observations.parse(result.structuredContent);
+      };
+      await mutateFixture(
+        "doc=owned[0]\ndoc.openTransaction('KFW observer fixture')\ndoc.getObject('Box').Length=21\ndoc.recompute()\ndoc.commitTransaction()",
+      );
+      const changed = await observe();
+      const changedSaved = changed.documents.find(
+        (doc) => doc.documentHandle === saved.documentHandle,
+      );
+      expect(changed.bridgeEpoch).toBe(initial.bridgeEpoch);
+      expect(changedSaved?.revision).toBeGreaterThan(saved.revision);
+      expect(changed.applicationRevision).toBeGreaterThan(
+        initial.applicationRevision,
+      );
+      await mutateFixture(
+        "owned[0].undo()\nGui.getDocument(owned[0].Name).Modified=True",
+      );
+      const undone = await observe();
+      expect(
+        undone.documents.find(
+          (doc) => doc.documentHandle === saved.documentHandle,
+        )?.revision,
+      ).toBeGreaterThan(changedSaved?.revision ?? -1);
+      await mutateFixture("owned[0].recompute()");
+      const beforeTouch = await observe();
+      expect(
+        beforeTouch.documents.find(
+          (doc) => doc.documentHandle === saved.documentHandle,
+        )?.touched,
+      ).toBe(false);
+      await mutateFixture("owned[0].getObject('Box').touch()");
+      const touched = await observe();
+      const touchedSaved = touched.documents.find(
+        (doc) => doc.documentHandle === saved.documentHandle,
+      );
+      expect(touchedSaved?.touched).toBe(true);
+      expect(touchedSaved?.revision).toBeGreaterThan(
+        beforeTouch.documents.find(
+          (doc) => doc.documentHandle === saved.documentHandle,
+        )?.revision ?? -1,
+      );
+      expect(touchedSaved?.modified).toBe(true);
+      await mutateFixture("Gui.getDocument(owned[0].Name).Modified=False");
+      const cleared = await observe();
+      const clearedSaved = cleared.documents.find(
+        (doc) => doc.documentHandle === saved.documentHandle,
+      );
+      expect(clearedSaved?.modified).toBe(false);
+      expect(clearedSaved?.revision).toBeGreaterThan(
+        touchedSaved?.revision ?? -1,
+      );
+      await mutateFixture(
+        `App.closeDocument(owned[0].Name)\nowned[0]=App.openDocument(${JSON.stringify(savedPath)})`,
+      );
+      const reopened = await observe();
+      const reopenedSaved = reopened.documents.find(
+        (doc) => doc.name === saved.name,
+      );
+      expect(reopenedSaved?.uid).toBe(saved.uid);
+      expect(reopenedSaved?.documentHandle).not.toBe(saved.documentHandle);
+      expect(reopened.documents.map((doc) => doc.documentHandle)).not.toContain(
+        saved.documentHandle,
+      );
+      await mutateFixture(
+        "doc=owned[0]\ndoc.clearDocument()\nassert App.getDocument(doc.Name) is doc, 'native clear replaced wrapper'",
+      );
+      const reset = await observe();
+      const resetSaved = reset.documents.find((doc) => doc.name === saved.name);
+      expect(resetSaved?.name).toBe(saved.name);
+      expect(resetSaved?.documentHandle).not.toBe(
+        reopenedSaved?.documentHandle,
+      );
+      expect(reset.documents.map((doc) => doc.documentHandle)).not.toContain(
+        reopenedSaved?.documentHandle,
+      );
+      await mutateFixture(
+        "doc=owned[0]\ndoc.addObject('Part::Box','Temporary')\ndoc.recompute()\ndoc.restore()\nassert App.getDocument(doc.Name) is doc, 'native restore replaced wrapper'\nassert abs(doc.getObject('Box').Length.Value-20)<1e-6, 'source model was not restored'",
+      );
+      const restored = await observe();
+      const restoredSaved = restored.documents.find(
+        (doc) => doc.name === saved.name,
+      );
+      expect(restoredSaved?.uid).toBe(saved.uid);
+      expect(restoredSaved?.documentHandle).not.toBe(
+        resetSaved?.documentHandle,
+      );
+      expect(restored.bridgeEpoch).toBe(initial.bridgeEpoch);
+      expect(restored.documents.map((doc) => doc.documentHandle)).not.toContain(
+        resetSaved?.documentHandle,
       );
       expect(
         createHash("sha256")
@@ -266,5 +431,5 @@ JSON.stringify({count:Number(apps.count),target: a.isNil() ? null : {
       else console.error(`GUI文档原生验收诊断目录：${root}`);
     }
   },
-  60_000,
+  120_000,
 );

@@ -1,5 +1,9 @@
+import { CAD_GUI_DOCUMENT_OBSERVER_SOURCE } from "./gui-document-observer-source.js";
+
 /** 固定提供方代码；模型只能提交应用身份，不能提交 source、宏路径或端点。 */
-export const CAD_GUI_DOCUMENT_QUERY_SOURCE = `
+export const CAD_GUI_DOCUMENT_QUERY_SOURCE =
+  CAD_GUI_DOCUMENT_OBSERVER_SOURCE +
+  `
 def _kfw_cad_query_documents(request_path, reply_path, cancelled_path):
     import json, os, time
     import FreeCAD as App
@@ -12,33 +16,35 @@ def _kfw_cad_query_documents(request_path, reply_path, cancelled_path):
                 request = json.load(stream)
         except (OSError, ValueError):
             return
-        if request.get('operation') != 'list-document-metadata' or request.get('pid') != os.getpid():
+        if not isinstance(request, dict) or request.get('operation') != 'list-document-metadata' or request.get('pid') != os.getpid():
             return
         qapp = QtWidgets.QApplication.instance()
         gui_thread = qapp is not None and QtCore.QThread.currentThread() == qapp.thread()
-        reply = {'protocol': 'kfw-cad-gui-query/1', 'requestId': request['requestId'],
+        reply = {'protocol': 'kfw-cad-gui-query/2', 'requestId': request['requestId'],
                  'pid': os.getpid(), 'completed': True, 'guiThread': bool(gui_thread),
-                 'success': False, 'version': [], 'documents': []}
+                 'success': False, 'version': [], 'documents': [],
+                 'bridgeEpoch': None, 'applicationRevision': None}
+        bridge = None
         try:
             if not gui_thread:
                 raise RuntimeError('GUI thread required')
             if os.path.exists(cancelled_path) or time.time() * 1000 > request['expiresAt']:
                 reply['error'] = 'cancelled_or_expired'
             else:
-                documents = []
-                for name, doc in App.listDocuments().items():
-                    documents.append({'name': name, 'label': doc.Label, 'fileName': doc.FileName,
-                                      'uid': str(doc.Uid), 'modified': bool(Gui.getDocument(name).Modified),
-                                      'touched': bool(doc.isTouched()),
-                                      'pendingTransaction': bool(doc.HasPendingTransaction),
-                                      'active': doc is App.ActiveDocument})
-                reply['version'] = list(App.Version())
+                bridge = _kfw_cad_document_bridge(App, Gui)
+                observation = bridge.snapshot()
+                version = list(App.Version())
+                bridge.require_valid()
                 if os.path.exists(cancelled_path):
                     reply['error'] = 'cancelled_or_expired'
                 else:
-                    reply['documents'] = documents
+                    reply.update(observation)
+                    reply['version'] = version
                     reply['success'] = True
-        except Exception:
+        except BaseException:
+            if bridge is not None:
+                bridge.valid = False
+            reply.update(success=False, bridgeEpoch=None, applicationRevision=None, documents=[], version=[])
             reply['error'] = 'document_metadata_unavailable'
         temporary = reply_path + '.tmp'
         try:

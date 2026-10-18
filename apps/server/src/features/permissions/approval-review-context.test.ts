@@ -38,7 +38,11 @@ it("GUI 文档查询审批声明宿主执行边界，目标应用身份仍是不
     executionBoundary: {
       kind: "external-gui",
       taskOsSandboxEnforced: false,
-      effects: ["execute-fixed-macro", "change-file-dialog-working-directory"],
+      effects: [
+        "execute-fixed-macro",
+        "change-file-dialog-working-directory",
+        "observe-document-events",
+      ],
       documentAccess: "metadata-only",
       metadataFields: [
         "name",
@@ -49,6 +53,10 @@ it("GUI 文档查询审批声明宿主执行边界，目标应用身份仍是不
         "touched",
         "pendingTransaction",
         "active",
+        "bridgeEpoch",
+        "applicationRevision",
+        "documentHandle",
+        "revision",
       ],
       excludedOperations: ["arbitrary-python", "geometry", "save", "recompute"],
       applicationIdentity: "untrusted-until-dispatch-verification",

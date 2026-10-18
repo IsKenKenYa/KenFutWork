@@ -2,6 +2,11 @@ import { posix } from "node:path";
 import { z } from "zod";
 
 const absolutePath = z.string().min(1).refine(posix.isAbsolute);
+const observationRevision = z
+  .number()
+  .int()
+  .min(0)
+  .max(Number.MAX_SAFE_INTEGER);
 export const cadGuiProcessBirthSchema = z
   .object({
     startSeconds: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -39,28 +44,48 @@ export const cadGuiDocumentMetadataSchema = z
     touched: z.boolean(),
     pendingTransaction: z.boolean(),
     active: z.boolean(),
+    documentHandle: z.string().uuid(),
+    revision: observationRevision,
   })
   .strict();
 export type CadGuiDocumentMetadata = z.infer<
   typeof cadGuiDocumentMetadataSchema
 >;
 
-export const cadGuiDocumentsReplySchema = z
-  .object({
-    protocol: z.literal("kfw-cad-gui-query/1"),
-    requestId: z.string().uuid(),
-    pid: z.number().int().positive(),
-    completed: z.literal(true),
-    guiThread: z.literal(true),
-    success: z.boolean(),
-    version: z.array(z.string()),
-    documents: z.array(cadGuiDocumentMetadataSchema),
-    error: z.string().optional(),
-  })
-  .strict();
+const replyFields = {
+  protocol: z.literal("kfw-cad-gui-query/2"),
+  requestId: z.string().uuid(),
+  pid: z.number().int().positive(),
+  completed: z.literal(true),
+  guiThread: z.literal(true),
+  version: z.array(z.string()),
+  error: z.string().optional(),
+};
+export const cadGuiDocumentsReplySchema = z.discriminatedUnion("success", [
+  z
+    .object({
+      ...replyFields,
+      success: z.literal(true),
+      bridgeEpoch: z.string().uuid(),
+      applicationRevision: observationRevision,
+      documents: z.array(cadGuiDocumentMetadataSchema),
+    })
+    .strict(),
+  z
+    .object({
+      ...replyFields,
+      success: z.literal(false),
+      bridgeEpoch: z.null(),
+      applicationRevision: z.null(),
+      documents: z.tuple([]),
+    })
+    .strict(),
+]);
 export type CadGuiDocumentsSnapshot = {
   application: CadGuiApplication;
   observationId: string;
+  bridgeEpoch: string;
+  applicationRevision: number;
   version: string[];
   documents: CadGuiDocumentMetadata[];
 };

@@ -114,8 +114,12 @@ function assertDocumentIdentities(
   reply: NonNullable<Awaited<ReturnType<typeof readReply>>>,
 ) {
   const names = new Set(reply.documents.map((document) => document.name));
+  const handles = new Set(
+    reply.documents.map((document) => document.documentHandle),
+  );
   if (
     names.size !== reply.documents.length ||
+    handles.size !== reply.documents.length ||
     reply.documents.filter((document) => document.active).length > 1
   )
     throw new Error("文档清单身份重复");
@@ -228,6 +232,8 @@ export function createMacosCadGuiDocumentReader(options: {
         return {
           application: verified,
           observationId: requestId,
+          bridgeEpoch: reply.bridgeEpoch,
+          applicationRevision: reply.applicationRevision,
           version: reply.version,
           documents: reply.documents,
         };

@@ -72,7 +72,7 @@ export function createCadTools(service: CadService): ToolDefinition[] {
     definition({
       name: "cad_gui_documents",
       description:
-        "查询指定 FreeCAD GUI 当前打开文档的名称、文件名、原生 UID、脏状态与活动状态。application 必须来自 cad_gui_status 的完整身份。通过固定宏连接外部应用，按执行权限审批；GUI 不继承 Task OS 沙箱。只读取元数据，不读取几何、不修改、重算、保存或关闭文档；Name/Uid 是观察快照，不能作为后续修改授权句柄。模型不能提交宏源码、宏路径或连接端点。目前支持 macOS 官方安装包。",
+        "查询指定 FreeCAD GUI 当前打开文档的名称、文件名、原生 UID、脏状态与活动状态。application 必须来自 cad_gui_status 的完整身份。通过固定宏连接外部应用，按执行权限审批；GUI 不继承 Task OS 沙箱。只读取元数据，不读取几何、不修改、重算、保存或关闭文档；保留事件观察器以返回 bridgeEpoch、每次打开的新 documentHandle 及观察修订。修订只统计已收到事件和查询时元数据差异，不是完整内容版本。Name/Uid/句柄均不授予编辑权限。模型不能提交宏源码、宏路径或连接端点。目前支持 macOS 官方安装包。",
       schema: cadGuiDocumentsInputSchema,
       approvalReviewKind: "cad-gui-inspect",
       execute: (input, context) =>

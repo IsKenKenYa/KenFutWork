@@ -53,7 +53,11 @@ const operationSchemas = {
 const CAD_GUI_INSPECT_EXECUTION_BOUNDARY = {
   kind: "external-gui",
   taskOsSandboxEnforced: false,
-  effects: ["execute-fixed-macro", "change-file-dialog-working-directory"],
+  effects: [
+    "execute-fixed-macro",
+    "change-file-dialog-working-directory",
+    "observe-document-events",
+  ],
   documentAccess: "metadata-only",
   metadataFields: [
     "name",
@@ -64,6 +68,10 @@ const CAD_GUI_INSPECT_EXECUTION_BOUNDARY = {
     "touched",
     "pendingTransaction",
     "active",
+    "bridgeEpoch",
+    "applicationRevision",
+    "documentHandle",
+    "revision",
   ],
   excludedOperations: ["arbitrary-python", "geometry", "save", "recompute"],
   applicationIdentity: "untrusted-until-dispatch-verification",

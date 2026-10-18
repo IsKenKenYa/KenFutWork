@@ -127,3 +127,15 @@ KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION=1 pnpm --filter @kenfutwork/server exec
 本机 FreeCAD 1.1.4 实测通过：独立实例创建保存及未保存的自有文档，经真实 Task 工具连续两次查询，原生 Modified／touched／待提交事务／活动文档均保持，保存文件 SHA-256 不变，返回不同观察 ID；随后由持有 nonce 和原文档对象的固定清理宏关闭自有文档及实例。未向用户现存 FreeCAD 发宏或读取 AX；没有依据此结果认定 Qt 崩溃已修复或长期稳定。
 
 验收启动方式也单独核对：直接 exec 内部 bin／官方 launcher 在本环境只登记为无 bundleId 的进程，生产探针正确拒绝，不补造身份；测试改经 NSWorkspace／LaunchServices 的 NewInstance 与 WithoutActivation，传入隔离配置／HOME／data／cache／TMPDIR。外部 GUI 不作为 Task 子进程或 OS 沙箱成员，清理只请求该测试实例的 nonce／文档对象，另设自有超时宏，不按裸 PID 杀应用。完整检查与提交记录见《日志》本批。
+
+## 9. 打开代际与观察计数
+
+固定宏 v2 在同一解释器保留一个按固定版本复用的 App／Gui 观察器，不新增 socket 或任意 GUI Python 入口。每次文档打开签发随机句柄，桥重建换代际；查询必须先按 Python 对象 `is` 确认仍在实际清单中，再读取属性。官方 `getPyObject()` 返回缓存包装对象，关闭信号则早于 DocMap 移除，故删除回调只墓碑，不枚举重新发现。见固定版本 [Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)、[Application.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Application.cpp)。
+
+App 观察器能收到创建／删除、文档及对象属性、重算、文档 undo／redo、事务与保存事件；无文档参数的事件只增加全局观察计数。Gui ViewProvider 的删除／退出编辑参数可能正在失效，本实现完全不解引用，只计全局事件。回调源与签名见 [App 观察器](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObserverPython.cpp)、[Gui 观察器](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/DocumentObserverPython.cpp)。
+
+**事件不完整，不能包装成内容版本。** `DocumentObject::touch()` 没有该 Python observer 接线，GUI Modified setter 也不发观察事件；查询重读 primitive 元数据的差异会补增计数，但无法发现两次查询间改动后恢复原值。相机、选区和恢复完成也不由这些回调完整表达。见 [DocumentObject.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentObject.cpp)、[Gui Document.cpp](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/Document.cpp)。当前只返回观察标识，不授权编辑；将来的固定操作还须复验原生状态、事务与预期属性。
+
+同一独立 GUI、真实 Task 的回绕验收已通过：连续查询保持代际／句柄／计数不变；自有夹具改尺寸并重算、undo、对象 touch、清除 Modified 后均观察到对应计数变化；关闭后重开同名同 UID 的 FCStd，旧句柄消失、新句柄不同，源文件 SHA-256 不变。测试中的修改来自专用夹具宏，产品工具仍只有元数据查询，不将该结果称为受控编辑交付。合法失败 ACK 不签发桥身份并可清理请求，迟到／畸形／旧协议回执仍拒绝。
+
+额外边界已获得真实 RED→GREEN：非空 `doc.clearDocument()` 在同一缓存 wrapper 上发 Delete→Created，原 Created 复用普通枚举逻辑会一直跳过旧墓碑，实际查询漏掉仍存活的文档。修复将显式 Created 单独处理：重新签打开代际，Deleted 仍不枚举、不读代理。原生回归同时调用 `clearDocument()` 和 `restore()`，确认 `App.getDocument(name) is 原doc`、新句柄不同且旧句柄消失，恢复后 Box.Length 仍是源文件20 mm，文件 SHA-256 不变。`restore()` 的 NewDocument 信号早于 ZIP 读取及 Restoring 状态设置；该信号不能单独成为后续编辑就绪证明。[公开 Python 入口](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/DocumentPyImp.cpp)与 [Document 实现](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/Document.cpp)分别核对。

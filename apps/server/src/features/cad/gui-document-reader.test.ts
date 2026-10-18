@@ -54,16 +54,20 @@ async function fixture(replyChange: Record<string, unknown> = {}) {
       await writeFile(
         join(directory, "reply.json"),
         JSON.stringify({
-          protocol: "kfw-cad-gui-query/1",
+          protocol: "kfw-cad-gui-query/2",
           requestId: request.requestId,
           pid: application.pid,
           completed: true,
           guiThread: true,
           success: true,
           version: ["1", "1", "4"],
+          bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+          applicationRevision: 2,
           documents: [
             {
               name: "Part",
+              documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+              revision: 3,
               label: "用户零件",
               fileName: "/outside-task/part.FCStd",
               uid: "native-uid",
@@ -102,6 +106,8 @@ test("固定查询验证前后应用身份，返回原生元数据且完成后�
   expect(result.documents).toEqual([
     {
       name: "Part",
+      documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+      revision: 3,
       label: "用户零件",
       fileName: "/outside-task/part.FCStd",
       uid: "native-uid",
@@ -111,6 +117,10 @@ test("固定查询验证前后应用身份，返回原生元数据且完成后�
       active: true,
     },
   ]);
+  expect(result).toMatchObject({
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    applicationRevision: 2,
+  });
   expect(result.observationId).toMatch(/^[0-9a-f-]{36}$/u);
   expect(f.probe.verify).toHaveBeenCalledTimes(2);
   expect(f.send).toHaveBeenCalledOnce();
@@ -122,6 +132,11 @@ test.each([
   { pid: 1235 },
   { guiThread: false },
   { geometry: { volume: 100 } },
+  { protocol: "kfw-cad-gui-query/1" },
+  { bridgeEpoch: "untrusted-bridge" },
+  { applicationRevision: -1 },
+  { bridgeEpoch: null },
+  { applicationRevision: null },
 ])("拒绝不属于本次固定查询的回执 %j，不返回文档", async (changed) => {
   const f = await fixture(changed);
   await expect(f.reader.read(f.application, f.context)).rejects.toMatchObject({
@@ -136,6 +151,61 @@ test.each([
   await expect(
     access(join(f.directory(), "cancelled")),
   ).resolves.toBeUndefined();
+});
+
+test("合法失败ACK不签发虚假桥身份，确认结束后清理私有请求", async () => {
+  const f = await fixture({
+    success: false,
+    bridgeEpoch: null,
+    applicationRevision: null,
+    documents: [],
+    version: [],
+    error: "observer_unavailable",
+  });
+  await expect(f.reader.read(f.application, f.context)).rejects.toMatchObject({
+    code: "query_failed",
+    observationConfirmed: true,
+    actionSent: true,
+  });
+  expect(await readdir(f.root)).toEqual([]);
+});
+
+test("名称不同的文档不能共享打开句柄，相同UID不作为去重依据", async () => {
+  const first = {
+    name: "Part",
+    label: "零件",
+    fileName: "/outside-task/part.FCStd",
+    uid: "same-native-uid",
+    modified: false,
+    touched: false,
+    pendingTransaction: false,
+    active: false,
+    documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+    revision: 1,
+  };
+  const duplicate = await fixture({
+    documents: [first, { ...first, name: "Part002" }],
+  });
+  await expect(
+    duplicate.reader.read(duplicate.application, duplicate.context),
+  ).rejects.toMatchObject({
+    code: "query_failed",
+    observationConfirmed: true,
+  });
+  const distinct = await fixture({
+    documents: [
+      first,
+      {
+        ...first,
+        name: "Part002",
+        documentHandle: "b53b5e19-a3af-4cba-8ca4-707aacdb0431",
+      },
+    ],
+  });
+  expect(
+    (await distinct.reader.read(distinct.application, distinct.context))
+      .documents,
+  ).toHaveLength(2);
 });
 
 test("回执完成后应用代际变化，拒绝发布该快照", async () => {

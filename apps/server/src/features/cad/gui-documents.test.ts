@@ -41,9 +41,13 @@ async function fixture() {
     application,
     observationId: "441b3b2a-c732-473c-99d6-9b82dad0039d",
     version: ["1", "1", "4"],
+    bridgeEpoch: "b1ff2ef8-0854-40c9-9da8-c9ff07bfb219",
+    applicationRevision: 2,
     documents: [
       {
         name: "Unnamed",
+        documentHandle: "28686cba-59d6-44c3-a30c-bbca88a7d737",
+        revision: 3,
         label: "未保存零件",
         fileName: "",
         uid: "native-uid",
