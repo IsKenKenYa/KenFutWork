@@ -188,10 +188,10 @@ export function ConversationDraftEmptyState({
     }
 
     // 标题字号曾直接绑定整个视口宽度，最小窗口里文字两侧仍有大量空间却被
-    // 强制缩到 20px。分别观察标题容器和 30px 原始文案，只在两者真实相撞时缩小。
+    // 强制缩到 20px。这里只观察容器：测量用的 <span> 字号已固定在 36px，
+    // 宽度不再随字号变化，观察它等于把「字号」接回「字号」的输入端。
     const observer = new ResizeObserver(scheduleMeasure);
     observer.observe(container);
-    observer.observe(measurement);
     return () => {
       if (frameId !== null) {
         window.cancelAnimationFrame(frameId);
@@ -316,6 +316,10 @@ export function ConversationDraftEmptyState({
             <span
               ref={greetingMeasurementRef}
               aria-hidden="true"
+              // 基准字号固定为上限：这里量的是「36px 下这段文案有多宽」。
+              // 若让它继承 <p> 的当前字号，量出来的宽度会随字号变，
+              // 于是 字号→宽度→字号 自激振荡（实测 36px↔21px 每帧来回，标题左右跳动）。
+              style={{ fontSize: GREETING_MAX_FONT_SIZE_PX }}
               className="pointer-events-none invisible absolute whitespace-nowrap"
             >
               {designHero ? "Design with KenFutWork" : "Code with KenFutWork"}
