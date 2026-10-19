@@ -58,6 +58,7 @@ import { CodeDirectoryRecoveryProvider } from "./ProjectDirectoryRecovery.js";
 import { requestParentBootstrap } from "./parentBridge.js";
 
 import { createCodePlatform } from "./platform.js";
+import { dismissStartupOverlay } from "./startupOverlay.js";
 import { setSurfaceApiBase } from "./surfaceApi.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
@@ -210,7 +211,8 @@ function CodeHost({
   );
 }
 
-root.render(<RootStartupLoading label="加载 Code 工作台" />);
+// 启动期间不渲染第二屏加载界面：预渲染层（#zcode-boot）常驻在 #root 之外，
+// 一直盖到应用提交完成，避免「壳层屏 → React 屏 → 应用」的连环换屏。
 try {
   if (!bootstrap) await client.request<InstanceContext>("/api/instance");
   await client.connect();
@@ -263,6 +265,10 @@ try {
     />,
   );
 }
+// 应用（或失败屏）已提交：等两帧确认画出来了，再摘掉预渲染加载层并让父页撤下同一形态的那一屏。
+requestAnimationFrame(() =>
+  requestAnimationFrame(() => dismissStartupOverlay()),
+);
 window.addEventListener(
   "pagehide",
   () => {

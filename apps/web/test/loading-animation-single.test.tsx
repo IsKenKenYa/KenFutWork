@@ -64,6 +64,24 @@ describe("全站唯一加载动画", () => {
     );
   });
 
+  it("启动链路不再串第二屏：预渲染层常驻 #root 之外，父页盖到壳层挂载为止", () => {
+    const shell = source("components/workbench/zcode/index.html");
+    expect(shell.indexOf('<div id="root">')).toBeLessThan(
+      shell.indexOf('id="zcode-boot"'),
+    );
+    expect(shell).toContain("position: fixed");
+    // 壳层入口不再渲染 React 版启动屏（那正是「换屏=重播动画」的那一跳）
+    expect(source("components/workbench/zcode/host/main.tsx")).not.toContain(
+      'label="加载 Code 工作台"',
+    );
+    expect(source("components/workbench/zcode/host/main.tsx")).toContain(
+      "dismissStartupOverlay",
+    );
+    const frame = source("components/workbench/code-workbench-frame.tsx");
+    expect(frame).toContain("kenfutwork:code-mounted");
+    expect(frame).toContain("<LoadingScreen />");
+  });
+
   it("渲染出的加载屏是黑色 logo + 一个旋转圈，无底板", () => {
     const { container } = render(<LoadingScreen label="连接中" />);
     const status = screen.getByRole("status");

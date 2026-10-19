@@ -9,6 +9,7 @@ import {
 } from "@kenfutwork/shared";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LoadingScreen } from "@/components/loading-screen";
 import { getServerBaseUrl } from "@/lib/env";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { useLocalInstance } from "@/lib/local-instance-context";
@@ -41,11 +42,20 @@ export function CodeWorkbenchFrame({
   // 侧栏底部显示用户而不是「连接使用」。
   const { instance: localInstance } = useLocalInstance();
   const [activePanel, setActivePanel] = useState<PluginPanelEntry | null>(null);
+  // 壳层应用挂载前，由父页这一屏盖住 iframe：启动链路自始至终只有一张加载屏。
+  const [shellMounted, setShellMounted] = useState(false);
   const {
     panels,
     refresh: refreshPanels,
     error: panelError,
   } = usePluginPanels(null, "sidebar", "code");
+  // 壳层挂了或信号丢了，都不能把用户永久关在加载屏后面：到点放行，露出壳层自己的状态。
+  // 15s 是一次性兜底常量（非运行可调治理项），远大于本机冷启动实测耗时。
+  useEffect(() => {
+    if (shellMounted) return;
+    const timer = setTimeout(() => setShellMounted(true), 15_000);
+    return () => clearTimeout(timer);
+  }, [shellMounted]);
   const panelRequest = useRef(0);
   useEffect(
     () => () => {
@@ -157,6 +167,8 @@ export function CodeWorkbenchFrame({
           });
       } else if (parsed.data.type === "kenfutwork:code-access-lost")
         window.dispatchEvent(new Event(LOCAL_ACCESS_LOST_EVENT));
+      else if (parsed.data.type === "kenfutwork:code-mounted")
+        setShellMounted(true);
       else if (parsed.data.type === "kenfutwork:code-ready") {
         ready.current = true;
         bootstrap();
@@ -194,6 +206,7 @@ export function CodeWorkbenchFrame({
         inert={!active}
         tabIndex={active ? 0 : -1}
       />
+      {!shellMounted ? <LoadingScreen /> : null}
       {panelError ? (
         <p
           role="alert"

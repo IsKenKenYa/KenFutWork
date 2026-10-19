@@ -178,6 +178,31 @@ it("Code宿主退出后，晚到的打开读取不再补发请求或打开面板
   expect(screen.queryByTitle("米家")).toBeNull();
 });
 
+it("壳层挂载前由父页盖一张启动加载屏，收到本壳的 code-mounted 才撤下", async () => {
+  vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
+  const view = render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  const loader = () => view.container.querySelector('[aria-busy="true"]');
+  expect(loader(), "挂载信号前必须有一屏加载动画").not.toBeNull();
+
+  const post = (source: Window | null) =>
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source,
+        data: { type: "kenfutwork:code-mounted" },
+      }),
+    );
+  // 别的窗口（含父页自己）冒充壳层发信号不算数
+  post(window);
+  post(null);
+  expect(loader(), "非本壳的信号不得提前撤屏").not.toBeNull();
+
+  post(frame.contentWindow);
+  await waitFor(() => expect(loader()).toBeNull());
+});
+
 it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人（侧栏显示用户而非连接使用），仍无接入令牌", async () => {
   render(<CodeWorkbenchFrame />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;

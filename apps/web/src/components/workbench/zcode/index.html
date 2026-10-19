@@ -106,8 +106,9 @@
         align-items: center;
         justify-content: center;
         gap: 20px;
-        width: 100%;
-        height: 100%;
+        position: fixed;
+        inset: 0;
+        z-index: 50;
         /* UI 全局样式会把 body/#root 置为透明，预渲染壳必须自己承接主题背景，否则深色主题会露出浏览器白底。*/
         background: var(--zcode-bootstrap-bg, var(--color-background, #0f172a));
         color: var(--zcode-bootstrap-fg, var(--color-foreground, #e2e8f0));
@@ -143,25 +144,33 @@
     </style>
   </head>
   <body>
-    <div id="root">
-      <!-- 远程控制跨 workspace 时会整页跳转；在 JS 入口执行前先给出 loading 壳，避免出现白屏空档。-->
-      <div
-        class="zcode-boot-loading"
-        role="status"
-        aria-live="polite"
-        aria-busy="true"
-        aria-label="Loading..."
-      >
-        <img
-          src="/kenfutwork-mark.png"
-          class="zcode-boot-loading__logo"
-          aria-hidden="true"
-          draggable="false"
-          alt=""
-        />
-        <div class="zcode-boot-loading__spinner" aria-hidden="true"></div>
-      </div>
+    <div id="root"></div>
+    <!-- 启动加载层常驻在 #root 之外：React 挂载不会替换它，因此旋转不会归零重播。
+         应用提交到 DOM 后由 host/startupOverlay.ts 摘掉，并同时通知父页撤下同一形态的加载屏。 -->
+    <div
+      id="zcode-boot"
+      class="zcode-boot-loading"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      aria-label="加载 Code 工作台"
+    >
+      <img
+        src="/kenfutwork-mark.png"
+        class="zcode-boot-loading__logo"
+        aria-hidden="true"
+        draggable="false"
+        alt=""
+      />
+      <div class="zcode-boot-loading__spinner" aria-hidden="true"></div>
     </div>
+    <script>
+      // 旋转相位按墙上时钟对齐：不同时刻挂载的加载层转到同一角度，换屏看不出来。
+      document
+        .getElementById("zcode-boot")
+        .querySelector(".zcode-boot-loading__spinner")
+        .style.animationDelay = -(Date.now() % 1e3) + "ms";
+    </script>
     <script type="module" src="/host/main.tsx"></script>
   </body>
 </html>

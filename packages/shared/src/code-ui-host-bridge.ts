@@ -94,6 +94,8 @@ export const managementNavigationSchema = z
 
 export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("kenfutwork:code-ready") }),
+  // 壳层应用已提交到 DOM：父页据此撤下启动加载屏（`code-ready` 只是「来要身份」，界面还没出来）。
+  z.object({ type: z.literal("kenfutwork:code-mounted") }),
   z.object({ type: z.literal("kenfutwork:code-access-lost") }),
   z.object({ type: z.literal("kenfutwork:code-plugins-changed") }),
   z.object({ type: z.literal("kenfutwork:management-close") }),
