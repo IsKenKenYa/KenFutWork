@@ -53,7 +53,7 @@ export function SidebarCanvasSection({
   if (!projectId)
     return (
       <p className="px-3 py-2 text-ui-base text-foreground-subtle">
-        没有打开的项目。
+        未打开项目
       </p>
     );
   if (error)
@@ -68,9 +68,7 @@ export function SidebarCanvasSection({
     );
   if (canvases.length === 0)
     return (
-      <p className="px-3 py-2 text-ui-base text-foreground-subtle">
-        还没有画布。
-      </p>
+      <p className="px-3 py-2 text-ui-base text-foreground-subtle">暂无画布</p>
     );
   return (
     <ul className="flex flex-col gap-0.5" aria-label="画布">

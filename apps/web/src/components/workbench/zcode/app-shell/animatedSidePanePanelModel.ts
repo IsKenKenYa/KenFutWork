@@ -1,38 +1,5 @@
 const MIN_PREVIEW_PANE_HEAVY_CONTENT_VISIBLE_INLINE_SIZE_PX = 96;
 
-/** 判定「拖到上限」的百分比容差（库在边界附近会给小数抖动）。 */
-const PANEL_MAX_REACHED_EPSILON = 0.5;
-
-/** 解析面板布局里的百分比字符串（"65%" → 65）；非百分比（px）返回 null。 */
-export function parsePanelMaxSizePercent(
-  maxSize: string | number,
-): number | null {
-  if (typeof maxSize === "number") return maxSize > 0 ? maxSize : null;
-  const match = /^([\d.]+)%$/.exec(maxSize.trim());
-  if (!match) return null;
-  const value = Number(match[1]);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-/**
- * P2（G11）：右栏拖到宽度上限时是否通知壳层收起左侧栏腾地方。
- *
- * 旧版行为 = 面板拖到上限自动收左栏；这里只在「确实到顶」时为真，
- * 程序化展开（默认见 SIDE_PANE_DEFAULT_EXPANDED_SIZE，低于 65% 上限）与普通拖拽都不触发。
- */
-export function shouldCollapseSidebarAtPanelMax({
-  panelSizePercent,
-  maxSizePercent,
-}: {
-  panelSizePercent: number;
-  maxSizePercent: number;
-}): boolean {
-  if (!Number.isFinite(panelSizePercent) || !Number.isFinite(maxSizePercent)) {
-    return false;
-  }
-  return panelSizePercent >= maxSizePercent - PANEL_MAX_REACHED_EPSILON;
-}
-
 export type OpenTabLauncherItemId =
   | "selection-side-conversation"
   | "review"

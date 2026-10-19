@@ -126,7 +126,6 @@ const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: NonNullable<
 const EMPTY_REMOTE_WORKSPACE_SESSIONS: NonNullable<
   WorkspaceShellLayoutProps["remoteWorkspaceSessions"]
 > = [];
-const CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX = 360;
 const CONVERSATION_AUTO_COLLAPSE_RESIZE_IDLE_MS = 300;
 // 性能修复：ResizablePanelGroup 收到深相等的新 panelIds 数组，
 // 会跟随 chat streaming render 重算布局上下文；固定数组语义上不会随消息变化。
@@ -420,9 +419,7 @@ export const WorkspaceShellLayout = memo(
     const workspaceSidebarPanelElementRef = useRef<HTMLDivElement | null>(null);
     const conversationPanelElementRef = useRef<HTMLDivElement | null>(null);
     const conversationAutoCollapseStateRef = useRef({
-      handleToggleSidebar,
       handleToggleSidePane,
-      isSidebarVisible,
       isSidePaneOpen,
       workspaceKey,
     });
@@ -493,19 +490,11 @@ export const WorkspaceShellLayout = memo(
 
     useEffect(() => {
       conversationAutoCollapseStateRef.current = {
-        handleToggleSidebar,
         handleToggleSidePane,
-        isSidebarVisible,
         isSidePaneOpen,
         workspaceKey,
       };
-    }, [
-      handleToggleSidebar,
-      handleToggleSidePane,
-      isSidebarVisible,
-      isSidePaneOpen,
-      workspaceKey,
-    ]);
+    }, [handleToggleSidePane, isSidePaneOpen, workspaceKey]);
 
     useEffect(() => {
       if (workspaceMainView !== "chat" && workspaceMainView !== "design") {
@@ -519,34 +508,6 @@ export const WorkspaceShellLayout = memo(
       const readConversationWidthPx = () =>
         conversationPanelElementRef.current?.getBoundingClientRect().width ??
         null;
-
-      const collapseSidebarIfStillNarrow = () => {
-        const widthPx = readConversationWidthPx();
-        if (widthPx === null) {
-          return;
-        }
-
-        const {
-          handleToggleSidebar: collapseSidebar,
-          isSidebarVisible: latestIsSidebarVisible,
-          workspaceKey: latestWorkspaceKey,
-        } = conversationAutoCollapseStateRef.current;
-
-        if (
-          latestIsSidebarVisible &&
-          widthPx < CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX
-        ) {
-          logger.info(
-            "[WorkspaceShellLayout] conversation 过窄，自动收起左侧栏",
-            {
-              widthPx: Math.round(widthPx),
-              thresholdPx: CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX,
-              workspaceKey: latestWorkspaceKey,
-            },
-          );
-          collapseSidebar();
-        }
-      };
 
       const runAutoCollapseForWindowResize = () => {
         const widthPx = readConversationWidthPx();
@@ -562,6 +523,8 @@ export const WorkspaceShellLayout = memo(
 
         // 功能说明：自动收起只响应用户改变窗口尺寸后的 conversation 实际宽度。
         // 不监听 conversation 自身 ResizeObserver，避免用户手动打开面板时又被策略关回去。
+        // 左侧栏不参与本策略：收起后 rail 承载不了插件市场/技能/MCP/新建任务/搜索这些入口
+        // （用户 2026-10-19 口径），只保留用户手动收起。
         if (
           latestIsSidePaneOpen &&
           workspaceMainView !== "design" &&
@@ -576,13 +539,7 @@ export const WorkspaceShellLayout = memo(
             },
           );
           collapseSidePane();
-          window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(collapseSidebarIfStillNarrow);
-          });
-          return;
         }
-
-        collapseSidebarIfStillNarrow();
       };
 
       const handleWindowResize = () => {
@@ -615,19 +572,6 @@ export const WorkspaceShellLayout = memo(
     useEffect(() => {
       workspaceSidebarPanelWidthPxRef.current = workspaceSidebarPanelWidthPx;
     }, [workspaceSidebarPanelWidthPx]);
-
-    // P2（G11）：右栏拖到宽度上限 → 收起左侧栏腾地方（旧版布局行为；
-    // 与窗口过窄自动收起共用同一个开关，已收起时不再动作）。
-    const handleSidePaneReachMaxSize = useCallback(() => {
-      if (!isSidebarVisible) {
-        return;
-      }
-      logger.info(
-        "[WorkspaceShellLayout] 右栏拖到宽度上限，自动收起左侧栏",
-        { workspaceKey },
-      );
-      handleToggleSidebar();
-    }, [handleToggleSidebar, isSidebarVisible, workspaceKey]);
 
     const applyWorkspaceSidebarWidthDuringDrag = useCallback(
       (nextWidthPx: number) => {
@@ -1644,7 +1588,6 @@ export const WorkspaceShellLayout = memo(
         isVisible={isSidePaneVisible}
         onCloseSidePane={handleToggleSidePane}
         toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
-        onSidePaneReachMaxSize={handleSidePaneReachMaxSize}
         projectId={parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId ?? null}
         sidePaneState={sidePaneState}
         recentClosedSidePaneTabs={recentClosedSidePaneTabs}

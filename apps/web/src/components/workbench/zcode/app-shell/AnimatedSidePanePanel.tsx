@@ -63,10 +63,8 @@ import {
   SIDE_PANE_DEFAULT_EXPANDED_RATIO,
 } from "@zui/app-shell/sidePaneLayout.js";
 import {
-  parsePanelMaxSizePercent,
   resolveAnimatedSidePanePanelLayout,
   resolveOpenTabLauncherItemIds,
-  shouldCollapseSidebarAtPanelMax,
   shouldOfferSelectionSideConversation,
   shouldRenderPreviewPaneHeavyContent,
   type OpenTabLauncherItemId,
@@ -345,7 +343,6 @@ export function AnimatedSidePanePanel({
   showWindowControls,
   onCloseSidePane,
   toggleSidePaneShortcutLabel,
-  onSidePaneReachMaxSize,
 }: {
   services: IServiceAccessor;
   frameClassName?: string;
@@ -353,8 +350,6 @@ export function AnimatedSidePanePanel({
   showWindowControls?: boolean;
   onCloseSidePane?: () => void;
   toggleSidePaneShortcutLabel?: string;
-  /** P2（G11）：右栏拖到宽度上限时通知壳层收起左侧栏腾地方。 */
-  onSidePaneReachMaxSize?: () => void;
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
   isVisible: boolean;
@@ -462,28 +457,6 @@ export function AnimatedSidePanePanel({
   const widthUnlockTimerRef = useRef<number | null>(null);
   const previousIsVisibleRef = useRef(isVisible);
   const panelLayout = resolveAnimatedSidePanePanelLayout();
-  // P2（G11）：拖到宽度上限 → 壳层收左栏腾地方。 notified ref 防粘连：
-  // 停在上限期间 onResize 连续触发只报一次；拖离上限后重置。
-  const panelMaxSizePercent = parsePanelMaxSizePercent(panelLayout.maxSize);
-  const panelMaxNotifiedRef = useRef(false);
-  const handlePanelResize = useCallback(
-    (panelSize: { asPercentage: number }) => {
-      if (!onSidePaneReachMaxSize || panelMaxSizePercent === null || !isVisible) {
-        return;
-      }
-      const atMax = shouldCollapseSidebarAtPanelMax({
-        panelSizePercent: panelSize.asPercentage,
-        maxSizePercent: panelMaxSizePercent,
-      });
-      if (atMax && !panelMaxNotifiedRef.current) {
-        panelMaxNotifiedRef.current = true;
-        onSidePaneReachMaxSize();
-      } else if (!atMax) {
-        panelMaxNotifiedRef.current = false;
-      }
-    },
-    [isVisible, onSidePaneReachMaxSize, panelMaxSizePercent],
-  );
   const hasReviewTab = visibleTabs.some((tab) => tab.type === "git");
   const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation({
     activeTaskId,
@@ -1415,7 +1388,6 @@ export function AnimatedSidePanePanel({
         // preview/side pane 收起时没有 ResizableHandle，但库仍会暴露 collapsed panel 边缘拖拽区。
         // 收起后禁用面板 resize target，避免用户绕过显式开关从右侧边缘拖出面板。
         disabled={isResizeDisabled}
-        onResize={handlePanelResize}
         className={cn(
           "!overflow-hidden transition-opacity duration-200 ease-out",
           // 截图期间 panel 仍保持 opacity=1，避免 opacity=0 让 Chromium 丢弃 guest
