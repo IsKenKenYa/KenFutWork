@@ -52,9 +52,14 @@ HA 里装了什么生态集成，这里就覆盖什么设备——米家靠 HA �
    `config/device_registry/list` 的 `result` 都是**裸数组**（HA core 源码
    `homeassistant/components/config/*_registry.py`）；实体条目直接带 `area_id` 与 `device_id`，
    所以区域可以先取实体自己的 `area_id`，没有再经设备继承。
-4. 面板不能嵌 HA 前端：它默认发 `X-Frame-Options: SAMEORIGIN`，嵌进去还要再登录一次，
+4. **控件判据取「能力」不取「当前属性」**（真机 2026.10.2 实测）：灯关着时 HA 不再报
+   `brightness` 属性，但 `supported_color_modes` 仍在（demo 灯为 `["color_temp","hs"]`）——
+   亮度控件按前者给，当前值拿不到就如实给 `null`（面板显示「—」）。若按当前属性判，
+   「把关着的灯调到 30%」这条最自然的指令会被自己拒掉（`turn_on` + `brightness_pct` 正是 HA 的语义）。
+   只支持 `onoff` 的灯不给亮度控件。
+5. 面板不能嵌 HA 前端：它默认发 `X-Frame-Options: SAMEORIGIN`，嵌进去还要再登录一次，
    观感与工作台割裂（沿用规划 §4.4 的既有结论）。
-5. 只想给 agent 用、不做面板：HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`），
+6. 只想给 agent 用、不做面板：HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`），
    在本产品「MCP」面板「手动添加 → 远程端点」填 `<HA 地址>/api/mcp`，请求头一栏写
    `Authorization=Bearer <长期令牌>` 即可直连（本仓的 MCP `http` 传输已支持自定义头）。
    它的暴露面仅限「已暴露给 Assist 的实体」，且工具进 `mcp__` 前缀每次审批——所以本插件仍是主路。

@@ -47,6 +47,12 @@ function toNumber(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** 灯是否可调光：HA 用 `supported_color_modes` 声明能力，与当前开关状态无关。 */
+function supportsDimming(attributes) {
+  const modes = attributes?.supported_color_modes;
+  return Array.isArray(modes) && modes.some((mode) => mode && mode !== "onoff");
+}
+
 /** 注册表能给名字与归属；缺注册表（WS 未就绪）时退回 REST 属性里的 friendly_name。 */
 export function displayName(entity, registryEntry) {
   return (
@@ -61,8 +67,10 @@ export function displayName(entity, registryEntry) {
 /**
  * 域 + 属性 → 控件列表。
  *
- * 只给「现在真能生效」的控件：属性里没有量程就不放（放了点了没用的控件比不放更糟），
- * 其余域一律只读读数（v1 控制面口径，规划 §8-6）。
+ * 只给「真能生效」的控件：能力判据取 HA 声明的能力位/能力表（如灯的
+ * `supported_color_modes`），不是取当前属性值——关着的灯照样能被设亮度。
+ * 判据不足时不放控件（放了点了没用的控件比不放更糟），其余域一律只读读数
+ * （v1 控制面口径，规划 §8-6）。
  */
 export function buildControls(entity) {
   const domain = entityDomain(entity?.entity_id);
@@ -83,13 +91,17 @@ export function buildControls(entity) {
     case "light": {
       const controls = [toggle("turn_on", "turn_off", entity.state === "on")];
       const brightness = toNumber(attributes.brightness);
-      if (brightness !== null) {
+      // 关灯后 HA 不再报 brightness 属性，但 `supported_color_modes` 仍在：
+      // 能力要看它，不能看当前值——否则「把关着的灯调到 30%」这条最自然的指令会被拒
+      // （真机实测：demo 灯 off 时 brightness=null、supported_color_modes=["color_temp","hs"]）。
+      if (brightness !== null || supportsDimming(attributes)) {
         controls.push({
           key: "brightness",
           label: "亮度",
           kind: "slider",
           service: "turn_on",
-          value: Math.round((brightness / 255) * 100),
+          value:
+            brightness === null ? null : Math.round((brightness / 255) * 100),
           min: 0,
           max: 100,
           step: 1,

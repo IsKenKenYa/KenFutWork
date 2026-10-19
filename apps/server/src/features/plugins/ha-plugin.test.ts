@@ -225,7 +225,11 @@ function sampleStates(): HaEntityState[] {
     {
       entity_id: "light.kitchen",
       state: "off",
-      attributes: { friendly_name: "厨房灯" },
+      // 与真机 demo 灯同形：off 时没有 brightness，但能力表还在
+      attributes: {
+        friendly_name: "厨房灯",
+        supported_color_modes: ["color_temp", "hs"],
+      },
     },
     {
       entity_id: "switch.plug",
@@ -1247,6 +1251,48 @@ describe("HA 插件：域 + 属性 → 控件模型", () => {
         attributes: { brightness: 10 },
       }),
     ).toEqual([]);
+  });
+
+  it("关着的灯仍可设亮度：能力判据取 supported_color_modes，不取当前属性（真机缺陷回归）", async () => {
+    const model = await loadPluginModule<EntityModelModule>(
+      "lib/entity-model.js",
+    );
+    // 真机取证：demo 灯 off 时 HA 不再报 brightness 属性，但 supported_color_modes 仍在
+    const offDimmable = {
+      entity_id: "light.kitchen_lights",
+      state: "off",
+      attributes: {
+        friendly_name: "厨房灯",
+        supported_color_modes: ["color_temp", "hs"],
+      },
+    };
+    const controls = model.buildControls(offDimmable);
+    expect(controls.map((node) => node.key)).toEqual(["power", "brightness"]);
+    // 没有当前值就如实给 null（面板显示「—」，不编一个数上去）
+    expect(controls[1]).toMatchObject({
+      kind: "slider",
+      value: null,
+      min: 0,
+      max: 100,
+    });
+    // 「把关着的灯调到 30%」= turn_on + brightness_pct，HA 的语义正是开灯并给亮度
+    expect(
+      model.toServiceCall(offDimmable, "brightness", "turn_on", 30),
+    ).toEqual({
+      domain: "light",
+      service: "turn_on",
+      data: { brightness_pct: 30, entity_id: "light.kitchen_lights" },
+    });
+    // 只支持 onoff 的灯：不放亮度（不放点了没用的控件）
+    expect(
+      model
+        .buildControls({
+          entity_id: "light.dumb",
+          state: "off",
+          attributes: { supported_color_modes: ["onoff"] },
+        })
+        .map((node) => node.key),
+    ).toEqual(["power"]);
   });
 
   it("窗帘：开/合/停三个按钮 + 位置滑杆；空调：目标温度 + 模式下拉", async () => {

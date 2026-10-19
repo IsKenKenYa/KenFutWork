@@ -233,8 +233,10 @@ function controlRow(entity, node) {
     input.step = String(node.step);
     const valueEl = el("span", "value");
     const apply = (item) => {
-      // 拖动中不打断（否则会被上一轮的旧值弹回去）
-      if (document.activeElement !== input) input.value = String(current.value);
+      // 拖动中不打断（否则会被上一轮的旧值弹回去）；关灯后没有当前亮度，滑杆停在量程左端
+      if (document.activeElement !== input) {
+        input.value = String(current.value ?? current.min);
+      }
       valueEl.textContent = `${current.value ?? "—"}${current.unit ? ` ${current.unit}` : ""}`;
       input.disabled = item.unavailable === true;
     };
