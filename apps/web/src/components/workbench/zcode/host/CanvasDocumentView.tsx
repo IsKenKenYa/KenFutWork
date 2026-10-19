@@ -290,9 +290,10 @@ function useCanvasDocumentActions(
     [list, run, tab.projectId],
   );
   /**
-   * 进入 Design 且当前标签没有指向具体画布时，默认打开项目自己的画布（主画布优先）。
-   * 每次「未选中」只试一次：选中后重新解除（例如删除最后一个画布）会再武装一次。
-   * 项目里一个画布都没有时不自动创建——空态给「新建画布」入口，创建是用户的动作不是副作用。
+   * 进入 Design 且当前标签没有指向具体画布时，默认打开项目自己的画布（主画布优先）；
+   * 项目里一个画布都没有就自动新建一个再打开——Design 的默认内容必须是能编辑的画布，
+   * 不摆「还没有画布 + 新建画布」这种要用户再点一下才成立的入口（用户 2026-10-20 口径）。
+   * 每次「未选中」只试一次：删除最后一个画布后重新解除会再武装一次。
    */
   const autoOpened = useRef<string | null>(null);
   useEffect(() => {
@@ -310,7 +311,8 @@ function useCanvasDocumentActions(
         documentId: target.id,
         title: target.name,
       });
-  }, [canvases, isVisible, loaded, tab.documentId, tab.projectId]);
+    else void create();
+  }, [canvases, create, isVisible, loaded, tab.documentId, tab.projectId]);
   const remove = useCallback(
     () =>
       run(async () => {

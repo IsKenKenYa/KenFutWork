@@ -221,6 +221,7 @@ export function App({
     isSidePaneCollapsed,
     setIsSidePaneCollapsed,
     isSidebarVisible,
+    setIsSidebarVisible,
     browserNavigationRequest,
     setBrowserNavigationRequest,
     handleOpenCodeViewer,
@@ -835,9 +836,18 @@ export function App({
   );
   useTestActions(testActions);
   const [workspaceMainView, setWorkspaceMainView] = useState<WorkspaceMainView>("chat");
-  // 暂不自动收起侧栏（用户 2026-10-19 反馈）：现在的收起态 rail 只有 logo／展开／模式三个图标，
-  // 插件市场·技能·MCP·米家·智能家居·新建任务·搜索都没有落点，且桌面浮层的「新建任务」会压住 logo。
-  // 等 rail 承载这些入口后再恢复自动收起。
+  // Design 把宽度让给画布：进入 Design 自动收起侧栏（用户 2026-10-20 口径）。
+  // 2026-10-19 曾因「收起后 rail 只有 logo／展开／模式三个图标，插件市场·技能·MCP·
+  // 新建任务·搜索没有落点」回退过同一触发点；现在 rail 承载全部入口（实测 10 个 32×32
+  // 图标），收起不再吞入口，故恢复。
+  // 仍只在「收起后仍有 rail」的形态生效：桌面 chrome 收起会连 aside 一起隐藏，
+  // 模式切换器没有落点，会把用户关在 Design 里换不回来。
+  const sidebarRailsWhenCollapsed = !isDesktop && !isMacDesktop && !isWindowsDesktop;
+  useEffect(() => {
+    if (workspaceMainView === "design" && sidebarRailsWhenCollapsed) {
+      setIsSidebarVisible(false);
+    }
+  }, [workspaceMainView, sidebarRailsWhenCollapsed, setIsSidebarVisible]);
   const [openAutomationId, setOpenAutomationId] = useState<string | null>(null);
   const [openAutomationTab, setOpenAutomationTab] = useState<NonNullable<
     AutomationsNavigationTarget["automationTab"]

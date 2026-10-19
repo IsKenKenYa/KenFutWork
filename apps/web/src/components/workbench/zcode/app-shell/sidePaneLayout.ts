@@ -1,7 +1,8 @@
-// 默认口径：对话约 1/3、内容面约 2/3（用户口径）。
-// 百分比与比例两个常量必须同步改。
-export const SIDE_PANE_DEFAULT_EXPANDED_SIZE = "64%";
-export const SIDE_PANE_DEFAULT_EXPANDED_RATIO = 0.64;
+// 默认口径：对话 1 / 内容面 2（用户 2026-10-20 口径 1:2）。
+// 百分比与比例两个常量必须同步改；内容面还受 maxSize 上限约束，见
+// resolveAnimatedSidePanePanelLayout。
+export const SIDE_PANE_DEFAULT_EXPANDED_SIZE = "66.67%";
+export const SIDE_PANE_DEFAULT_EXPANDED_RATIO = 2 / 3;
 
 const SIDE_PANE_TAB_MIN_WIDTH_PX = 60;
 const SIDE_PANE_TAB_GAP_PX = 4;

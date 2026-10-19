@@ -65,7 +65,8 @@ export function resolveAnimatedSidePanePanelLayout() {
   return {
     collapsedSize: "0px",
     defaultSize: "0px",
-    maxSize: "65%",
+    // 上限必须高于 1:2 默认口径（66.67%），否则内容面被夹到 65%，分栏拿不到 2/3。
+    maxSize: "75%",
     minSize: "240px",
     useResizablePanel: true,
   };
