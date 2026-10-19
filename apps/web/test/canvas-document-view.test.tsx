@@ -152,6 +152,26 @@ test("空项目不自动创建画布，未选中态只给新建入口", async ()
   window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
 });
 
+test("画布列表在途时不闪空态：项目有画布就全程不出现「还没有画布」", async () => {
+  let release: () => void = () => {};
+  mocks.json.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ canvases: rows });
+      }),
+  );
+  const view = render(<CanvasDocumentView {...blank()} />);
+  await waitFor(() => expect(mocks.json).toHaveBeenCalledOnce());
+  const flashed = () =>
+    (view.container.textContent ?? "").includes("还没有画布");
+  // 列表还没回，不能凭「当前未选中」就下空态结论
+  expect(flashed()).toBe(false);
+  expect(view.queryByRole("button", { name: "新建画布" })).toBeNull();
+  release();
+  await waitFor(() => expect(mocks.json).toHaveBeenCalledOnce());
+  expect(flashed()).toBe(false);
+});
+
 test("每次解除选中只默认打开一次，重新指向后再次解除可再来", async () => {
   const opened = vi.fn();
   window.addEventListener(OPEN_DOCUMENT_EVENT, opened);

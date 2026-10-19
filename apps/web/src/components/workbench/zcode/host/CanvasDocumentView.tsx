@@ -334,17 +334,26 @@ function useCanvasDocumentActions(
       }),
     [list, prepare, run, tab.documentId, tab.projectId],
   );
-  return { error, busy, create, remove };
+  return {
+    error,
+    busy,
+    create,
+    remove,
+    /**
+     * 列表是否已落定（成功或失败）。未落定前不能下「还没有画布」的结论，
+     * 否则每次进 Design 都会先闪一帧空态、再被默认打开的画布顶掉。
+     */
+    listSettled: loaded === tab.projectId || error !== null,
+    hasCanvases: canvases.length > 0,
+  };
 }
 
 /** Canvas 插件提供编辑内容；会话、审批与模型执行属于共享 SessionPane。 */
 export function CanvasDocumentView(props: DocumentPaneRendererProps) {
   const { tab, isVisible } = props;
   const host = useCanvasDocumentHost(props);
-  const { error, busy, create, remove } = useCanvasDocumentActions(
-    props,
-    host.prepare,
-  );
+  const { error, busy, create, remove, listSettled, hasCanvases } =
+    useCanvasDocumentActions(props, host.prepare);
   const live = useRef({ create, remove });
   live.current = { create, remove };
   useEffect(() => {
@@ -374,13 +383,16 @@ export function CanvasDocumentView(props: DocumentPaneRendererProps) {
           tabIndex={isVisible ? 0 : -1}
           className="min-h-0 flex-1 border-0"
         />
-      ) : (
+      ) : listSettled && !hasCanvases ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-foreground-subtle">
           <p>还没有画布</p>
           <Button size="sm" disabled={busy} onClick={() => void create()}>
             新建画布
           </Button>
         </div>
+      ) : (
+        // 列表在途、或已落定但默认画布还没接上：留白，不抢一帧空态。
+        <div className="min-h-0 flex-1 bg-background" />
       )}
     </div>
   );
