@@ -35,11 +35,20 @@ export function WorkbenchModeNavigation({
   }));
   if (collapsed)
     return (
-      <>
+      // 收起态与展开态是同一个控件：保留 radiogroup/radio 语义，
+      // 否则侧栏一收，模式切换在读屏与自动化里就"消失"了。
+      <div
+        role="radiogroup"
+        aria-label="模式切换"
+        className="flex flex-col items-center gap-1"
+      >
         {modeItems.map((item) => (
+          // biome-ignore lint/a11y/useSemanticElements: 与展开态同款 radio 按钮，保持图标和布局
           <button
             key={item.id}
             type="button"
+            role="radio"
+            aria-checked={mode === item.id}
             title={item.label}
             aria-label={item.label}
             data-active={mode === item.id}
@@ -49,7 +58,7 @@ export function WorkbenchModeNavigation({
             {item.icon}
           </button>
         ))}
-      </>
+      </div>
     );
   return (
     <div className="px-2 pt-3 pb-1">

@@ -9,7 +9,6 @@ import {
 import {
   filterProjectTabs,
   projectSupportsMode,
-  taskMatchesWorkMode,
 } from "../src/components/workbench/zcode/host/SharedProjectNavigation";
 
 const code: CodeUiWorkspace = {
@@ -49,18 +48,6 @@ it("同目录项目仍按真实身份隔离；共享项目同时可见", () => {
     filterProjectTabs(tabs, projects, "design").map((item) => item.id),
   ).toEqual([design.projectId, shared.projectId]);
   expect(projectSupportsMode(code, "design")).toBe(false);
-});
-it("按使用过的工作方式展示整条会话，不修改历史或固定目录", () => {
-  const task = {
-    taskId: "task",
-    workModes: ["code", "design"],
-    workspacePath: "/fixed",
-  } as unknown as import("../../../packages/zcode-shared/dist/index.js").ZCodeTaskMeta;
-  const before = structuredClone(task);
-  expect(taskMatchesWorkMode(task, "all")).toBe(true);
-  expect(taskMatchesWorkMode(task, "code")).toBe(true);
-  expect(taskMatchesWorkMode(task, "design")).toBe(true);
-  expect(task).toEqual(before);
 });
 it("托管目录的项目导航使用服务端名称，重命名不改目录或会话身份", () => {
   const opened = { ...tab(shared), label: "managed-directory-uuid" };

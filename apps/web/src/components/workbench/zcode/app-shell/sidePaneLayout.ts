@@ -1,5 +1,8 @@
-export const SIDE_PANE_DEFAULT_EXPANDED_SIZE = "45%";
-export const SIDE_PANE_DEFAULT_EXPANDED_RATIO = 0.45;
+// 默认口径：对话约 1/3、内容面约 2/3（用户口径）。必须低于 maxSize 65%——
+// 等于上限会被 shouldCollapseSidebarAtPanelMax 判成「拖到顶」，任何模式打开面板都会误收左栏。
+// 百分比与比例两个常量必须同步改。
+export const SIDE_PANE_DEFAULT_EXPANDED_SIZE = "64%";
+export const SIDE_PANE_DEFAULT_EXPANDED_RATIO = 0.64;
 
 const SIDE_PANE_TAB_MIN_WIDTH_PX = 60;
 const SIDE_PANE_TAB_GAP_PX = 4;

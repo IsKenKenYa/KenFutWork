@@ -8,9 +8,10 @@
 import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import { cn } from "@zui/components/lib/utils.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
-import { Code2 } from "lucide-react";
+import { Code2, Palette } from "lucide-react";
 import {
   type CSSProperties,
   useEffect,
@@ -18,6 +19,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 
 const GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23] as const;
@@ -100,6 +102,13 @@ export function ConversationDraftEmptyState({
   // 线稿描边滤镜 id：组件可能多处挂载（手机远控复用），id 不能撞
   const outlineFilterId = `kfw-mark-outline-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const isOfficeMode = useIsOfficeMode();
+  // Design 是壳内主区视图，原树 interfaceMode 恒为 coding，标题只能读工作台模式。
+  const workbenchNavigation = useOptionalPlatform()?.workbenchNavigation;
+  const workbenchMode = useSyncExternalStore(
+    workbenchNavigation?.subscribe ?? (() => () => {}),
+    () => workbenchNavigation?.getSnapshot().mode ?? "code",
+  );
+  const designHero = workbenchMode === "design";
   const [greetingDate, setGreetingDate] = useState(() => new Date());
   const [greetingFontSizePx, setGreetingFontSizePx] = useState(
     GREETING_MAX_FONT_SIZE_PX,
@@ -287,11 +296,14 @@ export function ConversationDraftEmptyState({
         }
         className="relative z-10 flex w-full flex-col items-center justify-center gap-2 text-muted-foreground/50"
       >
-        {/* 用户口径：Code 空态与 Design 同款命名式标题（「Code with KenFutWork」，
-            font-wordmark 字体 + tracking-tight——与 canvas-empty-hint 的 Design 版同款），
-            时间问候语降为次行小字。 */}
+        {/* 用户口径：空态用命名式标题（「Code / Design with KenFutWork」，font-wordmark +
+            tracking-tight），时间问候语降为次行小字；Design 视图下换 Design 名号与调色板图标。 */}
         <div className="flex items-center justify-center gap-3">
-          <Code2 className="size-10 shrink-0" strokeWidth={3} />
+          {designHero ? (
+            <Palette className="size-10 shrink-0" strokeWidth={3} />
+          ) : (
+            <Code2 className="size-10 shrink-0" strokeWidth={3} />
+          )}
           <p
             style={
               {
@@ -306,9 +318,9 @@ export function ConversationDraftEmptyState({
               aria-hidden="true"
               className="pointer-events-none invisible absolute whitespace-nowrap"
             >
-              Code with KenFutWork
+              {designHero ? "Design with KenFutWork" : "Code with KenFutWork"}
             </span>
-            Code with KenFutWork
+            {designHero ? "Design with KenFutWork" : "Code with KenFutWork"}
           </p>
         </div>
         <p className="text-sm text-muted-foreground/70">{greeting}</p>

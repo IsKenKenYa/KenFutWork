@@ -2,15 +2,7 @@ import type { CodeUiWorkspace } from "@kenfutwork/shared";
 import {
   type HostWorkbenchNavigation,
   parseLocalWorkspaceIdentity,
-  type ZCodeTaskMeta,
 } from "@zcode/shared";
-import { Button } from "@zui/components/ui/button.js";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@zui/components/ui/dialog.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useTabStoreApi } from "@zui/store/TabStoreProvider.js";
 import {
@@ -34,7 +26,6 @@ import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 
 type Preset = "code" | "design";
-type TaskFilter = "all" | Preset;
 type ProjectHost = Pick<
   CodeHttpChannelClient,
   | "workspaces"
@@ -43,16 +34,8 @@ type ProjectHost = Pick<
   | "refreshWorkspaces"
   | "currentWorkPreset"
 >;
-interface ShareRequest {
-  project: CodeUiWorkspace;
-  preset: Preset;
-  promise: Promise<boolean>;
-  resolve: (shared: boolean) => void;
-}
 interface NavigationContext {
   projects: CodeUiWorkspace[];
-  taskFilter: TaskFilter;
-  setTaskFilter: (filter: TaskFilter) => void;
   openProject: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>;
   createProject: (preset: Preset) => Promise<void>;
   registerTabs: (tabs: TabStore | null) => void;
@@ -90,10 +73,6 @@ export function filterProjectTabs(
       : [];
   });
 }
-export function taskMatchesWorkMode(task: ZCodeTaskMeta, filter: TaskFilter) {
-  return filter === "all" || (task.workModes ?? ["code"]).includes(filter);
-}
-
 function activeProject(client: ProjectHost, tabs: TabStore | null) {
   const state = tabs?.getState();
   const tab = state?.tabs.find((item) => item.id === state.activeTabId);
@@ -108,7 +87,6 @@ function useProjectModeAdmission(
   tabs: TabStore | null,
   navigation: HostWorkbenchNavigation | undefined,
   askShare: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>,
-  finishShare: (shared: boolean) => void,
   transition: { current: boolean },
 ) {
   useEffect(() => {
@@ -136,10 +114,7 @@ function useProjectModeAdmission(
       const snapshot = navigation?.getSnapshot();
       if (snapshot?.documentTarget !== checkedDocument) {
         checkedDocument = snapshot?.documentTarget;
-        if (checkedDocument) {
-          unboundPreset = null;
-          finishShare(false);
-        }
+        if (checkedDocument) unboundPreset = null;
       }
       const project = activeProject(client, tabs);
       const mode = snapshot?.mode;
@@ -182,7 +157,7 @@ function useProjectModeAdmission(
       releaseNavigation?.();
       if (modeAdmission === admit) modeAdmission = null;
     };
-  }, [askShare, client, finishShare, navigation, tabs, transition]);
+  }, [askShare, client, navigation, tabs, transition]);
 }
 
 type OpenProject = (
@@ -280,15 +255,9 @@ export function SharedProjectNavigationProvider({
     tabsRef.current = store;
     setTabs(() => store);
   }, []);
-  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
-  const [request, setRequest] = useState<ShareRequest | null>(null);
-  const requestRef = useRef<ShareRequest | null>(null);
+  const sharingRef = useRef(new Map<string, Promise<boolean>>());
   const [error, setError] = useState<string | null>(null);
-  const finish = useCallback((shared: boolean) => {
-    requestRef.current?.resolve(shared);
-    requestRef.current = null;
-    setRequest(null);
-  }, []);
+  /** 切工作方式为该项目启用新档位：不弹确认框，失败才回落成侧栏错误提示。 */
   const askShare = useCallback(
     (project: CodeUiWorkspace, preset: Preset) => {
       const latest =
@@ -296,24 +265,40 @@ export function SharedProjectNavigationProvider({
           .projectCatalog()
           .find((item) => item.projectId === project.projectId) ?? project;
       if (projectSupportsMode(latest, preset)) return Promise.resolve(true);
-      if (
-        requestRef.current?.project.projectId === project.projectId &&
-        requestRef.current.preset === preset
+      const key = `${latest.projectId}:${preset}`;
+      const inflight = sharingRef.current.get(key);
+      if (inflight) return inflight;
+      const request: Promise<boolean> = surfaceRequest(
+        `/api/projects/${encodeURIComponent(latest.projectId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            enabled_modes: [
+              ...(latest.enabledModes ?? [latest.kind ?? "code"]),
+              preset,
+            ],
+          }),
+        },
       )
-        return requestRef.current.promise;
-      requestRef.current?.resolve(false);
-      let finish!: (shared: boolean) => void;
-      const promise = new Promise<boolean>((resolve) => {
-        finish = resolve;
-      });
-      requestRef.current = {
-        project: latest,
-        preset,
-        promise,
-        resolve: finish,
-      };
-      setRequest(requestRef.current);
-      return promise;
+        .then(() => client.refreshWorkspaces())
+        .then(() => {
+          setError(null);
+          return true;
+        })
+        .catch((failure: unknown) => {
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "无法为该项目启用这个工作方式，请重试。",
+          );
+          return false;
+        })
+        .finally(() => {
+          sharingRef.current.delete(key);
+        });
+      sharingRef.current.set(key, request);
+      return request;
     },
     [client],
   );
@@ -330,13 +315,10 @@ export function SharedProjectNavigationProvider({
     tabs,
     navigation,
     askShare,
-    finish,
     projectTransition,
   );
   useEffect(
     () => () => {
-      requestRef.current?.resolve(false);
-      requestRef.current = null;
       for (const pending of pendingAdmissions) pending.resolve(false);
       pendingAdmissions.clear();
     },
@@ -443,43 +425,10 @@ export function SharedProjectNavigationProvider({
       window.removeEventListener("kenfutwork:project-deleted", deleted);
     };
   }, [client]);
-  const share = async () => {
-    const current = requestRef.current;
-    if (!current) return;
-    try {
-      await surfaceRequest(
-        `/api/projects/${encodeURIComponent(current.project.projectId)}`,
-        {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            enabled_modes: [
-              ...(current.project.enabledModes ?? [
-                current.project.kind ?? "code",
-              ]),
-              current.preset,
-            ],
-          }),
-        },
-      );
-      await client.refreshWorkspaces();
-      if (current === requestRef.current) {
-        setError(null);
-        finish(true);
-      }
-    } catch (failure) {
-      if (current === requestRef.current)
-        setError(
-          failure instanceof Error ? failure.message : "无法共享项目，请重试。",
-        );
-    }
-  };
   return (
     <Context.Provider
       value={{
         projects,
-        taskFilter,
-        setTaskFilter,
         openProject,
         createProject,
         registerTabs,
@@ -488,26 +437,6 @@ export function SharedProjectNavigationProvider({
       }}
     >
       {children}
-      <Dialog
-        open={Boolean(request)}
-        onOpenChange={(open) => {
-          if (!open) finish(false);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>共享项目</DialogTitle>
-          </DialogHeader>
-          <p>{request?.project.name}</p>
-          <Button onClick={() => void share()}>
-            启用 {request?.preset === "design" ? "Design" : "Code"}
-          </Button>
-          <Button variant="ghost" onClick={() => finish(false)}>
-            取消
-          </Button>
-          {error ? <p role="alert">{error}</p> : null}
-        </DialogContent>
-      </Dialog>
     </Context.Provider>
   );
 }
@@ -537,9 +466,7 @@ export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {
     [context, mode, tabs],
   );
 }
-export function useSharedTaskFilter() {
-  return useContext(Context)?.taskFilter ?? "all";
-}
+/** 侧栏顶部的项目故障面：打开/新建项目与工作方式筛选都不在这里（项目列表与 composer 的项目选择器承载）。 */
 export function SharedProjectNavigation() {
   const context = useContext(Context);
   const navigation = useOptionalPlatform()?.workbenchNavigation;
@@ -547,62 +474,11 @@ export function SharedProjectNavigation() {
     navigation?.subscribe ?? (() => () => {}),
     () => navigation?.getSnapshot().mode ?? "code",
   );
-  const [error, setError] = useState<string | null>(null);
   if (!context || mode === "flow") return null;
-  const preset = mode === "design" ? "design" : "code";
-  const act = (action: Promise<unknown>) => {
-    setError(null);
-    void action.catch((failure) =>
-      setError(
-        failure instanceof Error ? failure.message : "项目不可用，请重试。",
-      ),
-    );
-  };
+  if (!context.error && !context.retryDocument) return null;
   return (
     <div className="flex flex-col gap-1 px-3 py-1 text-xs">
-      <div className="flex gap-2">
-        <select
-          aria-label="打开项目"
-          value=""
-          className="min-w-0 flex-1 bg-transparent"
-          onChange={(event) => {
-            const project = context.projects.find(
-              (item) => item.projectId === event.target.value,
-            );
-            if (project) act(context.openProject(project, preset));
-          }}
-        >
-          <option value="">打开项目</option>
-          {context.projects.map((project) => (
-            <option key={project.projectId} value={project.projectId}>
-              {project.name}
-              {projectSupportsMode(project, preset) ? "" : " · 共享"}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          aria-label="新建项目"
-          onClick={() => act(context.createProject(preset))}
-        >
-          +
-        </button>
-      </div>
-      <select
-        aria-label="会话工作方式"
-        value={context.taskFilter}
-        className="bg-transparent"
-        onChange={(event) =>
-          context.setTaskFilter(event.target.value as TaskFilter)
-        }
-      >
-        <option value="all">全部会话</option>
-        <option value="code">Code</option>
-        <option value="design">Design</option>
-      </select>
-      {error || context.error ? (
-        <p role="alert">{error ?? context.error}</p>
-      ) : null}
+      {context.error ? <p role="alert">{context.error}</p> : null}
       {context.retryDocument ? (
         <button type="button" onClick={context.retryDocument}>
           重试画布

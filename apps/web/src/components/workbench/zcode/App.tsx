@@ -221,6 +221,7 @@ export function App({
     isSidePaneCollapsed,
     setIsSidePaneCollapsed,
     isSidebarVisible,
+    setIsSidebarVisible,
     browserNavigationRequest,
     setBrowserNavigationRequest,
     handleOpenCodeViewer,
@@ -835,6 +836,15 @@ export function App({
   );
   useTestActions(testActions);
   const [workspaceMainView, setWorkspaceMainView] = useState<WorkspaceMainView>("chat");
+  // 用户口径：切到 Design 自动收起侧栏，把宽度让给画布；手动展开后本次不再自动收起。
+  // 只在「收起后仍有 rail」的形态生效——桌面 chrome 收起会连 aside 一起隐藏，模式切换器
+  // 没有落点，自动收起会把用户关在 Design 里换不回来。
+  const sidebarRailsWhenCollapsed = !isDesktop && !isMacDesktop && !isWindowsDesktop;
+  useEffect(() => {
+    if (workspaceMainView === "design" && sidebarRailsWhenCollapsed) {
+      setIsSidebarVisible(false);
+    }
+  }, [workspaceMainView, sidebarRailsWhenCollapsed, setIsSidebarVisible]);
   const [openAutomationId, setOpenAutomationId] = useState<string | null>(null);
   const [openAutomationTab, setOpenAutomationTab] = useState<NonNullable<
     AutomationsNavigationTarget["automationTab"]

@@ -1631,6 +1631,7 @@ export function useAppPanels(options: {
     isSidePaneCollapsed,
     setIsSidePaneCollapsed,
     isSidebarVisible,
+    setIsSidebarVisible,
     browserNavigationRequest,
     setBrowserNavigationRequest,
     // 回调
