@@ -1,5 +1,6 @@
 /* KenFutWork 同 Task helper 的 macOS PTY session 范围探针；不拥有第二套运行时。 */
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <libproc.h>
 #include <limits.h>
@@ -13,6 +14,7 @@
 
 typedef struct { pid_t pid; struct proc_bsdinfo info; } Member;
 typedef struct { pid_t session; uint64_t sec; uint64_t usec; } Identity;
+extern char **environ;
 
 static void fail(const char *message) {
   fprintf(stderr, "PTY session 范围检查失败：%s（errno=%d）\n", message, errno);
@@ -106,7 +108,113 @@ static void print_members(Identity *identity, Member *members, int count) {
   printf("]}\n");
 }
 
+static void write_private(const char *data, size_t length) {
+  while (length > 0) {
+    ssize_t written = write(3, data, length);
+    if (written < 0 && errno == EINTR) continue;
+    if (written <= 0) fail("无法写入启动私有通道");
+    data += written;
+    length -= (size_t)written;
+  }
+}
+
+static void read_private(void *buffer, size_t length) {
+  char *data = buffer;
+  while (length > 0) {
+    ssize_t received = read(3, data, length);
+    if (received < 0 && errno == EINTR) continue;
+    if (received <= 0) fail("启动放行帧未完整送达");
+    data += received;
+    length -= (size_t)received;
+  }
+}
+
+static int valid_utf8(const unsigned char *data, size_t length) {
+  size_t index = 0;
+  while (index < length) {
+    uint32_t codepoint = data[index++];
+    if (codepoint < 0x80) continue;
+    int continuation;
+    uint32_t minimum;
+    if (codepoint >= 0xc2 && codepoint <= 0xdf) {
+      continuation = 1; minimum = 0x80; codepoint &= 0x1f;
+    } else if (codepoint >= 0xe0 && codepoint <= 0xef) {
+      continuation = 2; minimum = 0x800; codepoint &= 0x0f;
+    } else if (codepoint >= 0xf0 && codepoint <= 0xf4) {
+      continuation = 3; minimum = 0x10000; codepoint &= 0x07;
+    } else return 0;
+    if ((size_t)continuation > length - index) return 0;
+    for (int i = 0; i < continuation; i++) {
+      unsigned char next = data[index++];
+      if ((next & 0xc0) != 0x80) return 0;
+      codepoint = (codepoint << 6) | (next & 0x3f);
+    }
+    if (codepoint < minimum || codepoint > 0x10ffff ||
+        (codepoint >= 0xd800 && codepoint <= 0xdfff)) return 0;
+  }
+  return 1;
+}
+
+static char **read_environment(void) {
+  unsigned char header[5];
+  read_private(header, sizeof(header));
+  if (header[0] != 'R') fail("无效启动放行标记");
+  uint32_t length = ((uint32_t)header[1] << 24) | ((uint32_t)header[2] << 16) |
+                    ((uint32_t)header[3] << 8) | (uint32_t)header[4];
+  long maximum = sysconf(_SC_ARG_MAX);
+  if (maximum <= 0 || (uint64_t)length > (uint64_t)maximum)
+    fail("启动环境超过系统 ARG_MAX");
+  char *payload = malloc((size_t)length + 1);
+  if (!payload) fail("无法分配启动环境");
+  read_private(payload, length);
+  payload[length] = '\0';
+  if ((length > 0 && payload[length - 1] != '\0') ||
+      !valid_utf8((const unsigned char *)payload, length)) fail("启动环境帧格式无效");
+  size_t count = 0;
+  for (size_t i = 0; i < length; i++) if (payload[i] == '\0') count++;
+  char **environment = calloc(count + 1, sizeof(char *));
+  if (!environment) fail("无法分配启动环境条目");
+  size_t offset = 0;
+  for (size_t i = 0; i < count; i++) {
+    char *entry = payload + offset;
+    char *equals = strchr(entry, '=');
+    if (!equals || equals == entry) fail("启动环境条目必须为非空 key=value");
+    environment[i] = entry;
+    offset += strlen(entry) + 1;
+  }
+  return environment;
+}
+
+static int launch(int argc, char **argv) {
+  if (argc < 3 || argv[2][0] == '\0') fail("缺少启动目标");
+  Identity identity = { getpid(), 0, 0 };
+  verify_leader(&identity, 1);
+  if (getpgrp() != identity.session) fail("启动进程不是 session/进程组 leader");
+  int flags = fcntl(3, F_GETFD);
+  if (flags == -1 || fcntl(3, F_SETFD, flags | FD_CLOEXEC) == -1)
+    fail("无法保护启动私有通道");
+  char hello[160];
+  int hello_length = snprintf(hello, sizeof(hello),
+    "{\"sessionId\":%d,\"startSec\":%" PRIu64 ",\"startUsec\":%" PRIu64 "}\n",
+    identity.session, identity.sec, identity.usec);
+  if (hello_length < 0 || (size_t)hello_length >= sizeof(hello)) fail("无法编码启动身份");
+  write_private(hello, (size_t)hello_length);
+  char **environment = read_environment();
+  /* 完整私有帧校验之前不应用目标环境，目标凭据不会出现在 wrapper argv。 */
+  environ = environment;
+  const char released[] = "{\"released\":true}\n";
+  write_private(released, sizeof(released) - 1);
+  execvp(argv[2], argv + 2);
+  int exec_errno = errno;
+  char error[80];
+  int error_length = snprintf(error, sizeof(error), "{\"exec_failed\":%d}\n", exec_errno);
+  if (error_length > 0 && (size_t)error_length < sizeof(error))
+    write_private(error, (size_t)error_length);
+  return 127;
+}
+
 int main(int argc, char **argv) {
+  if (argc >= 2 && strcmp(argv[1], "launch") == 0) return launch(argc, argv);
   if (argc != 5 && argc != 6) fail("无效调用参数");
   long pid = strtol(argv[2], NULL, 10);
   if (pid < 2 || pid > INT_MAX) fail("无效 leader PID");

@@ -435,6 +435,9 @@ export class CodeUiService {
     });
     this.historyEdit = createCodeUiHistoryEdit({
       goals: this.goals,
+      ...(deps.captureContributions
+        ? { captureContributions: deps.captureContributions }
+        : {}),
       repository: deps.repository,
       settings: deps.settings,
       agentRuns: deps.agentRuns,
@@ -443,6 +446,8 @@ export class CodeUiService {
       inputOwner: this.inputOwner,
       load: (actor, sessionId) => this.loadConversation(actor, sessionId),
       model: (actor, selection) => this.prepareInputModel(actor, selection),
+      executionMode: (actor, threadId) =>
+        resolveCodeExecutionMode(deps.agentModes, threadId, actor.instanceId),
       inputs: async (actor, sessionId, attachments) => {
         if (!attachments.length) return [];
         if (!this.attachments)
@@ -472,7 +477,8 @@ export class CodeUiService {
           record.modelInvocation,
           inputs,
         ),
-      fingerprint: codeUiCommandFingerprint,
+      fingerprint: (envelope, executionMode) =>
+        codeUiCommandFingerprint(envelope, undefined, executionMode),
     });
     this.workspaceConfig = createCodeUiWorkspaceConfigHost({
       connections: this.connections,
@@ -2530,7 +2536,12 @@ export class CodeUiService {
         parsed.envelope.type === "editUserQuery" ||
         parsed.envelope.type === "retryTurn"
       )
-        return this.historyEdit.command(user, target, parsed.envelope);
+        return this.historyEdit.command(
+          user,
+          target,
+          parsed.envelope,
+          requestedMode,
+        );
       if (parsed.envelope.type === "forkAssistant")
         return this.historyFork.command(user, target, parsed.envelope);
       if (parsed.envelope.type === "applyFileRewind")

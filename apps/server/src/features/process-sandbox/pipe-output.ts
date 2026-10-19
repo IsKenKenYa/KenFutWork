@@ -6,10 +6,10 @@ import { ProcessSandboxError } from "./types.js";
 /** 完整协议流与有界历史分开；每 stream 一帧 ACK，UTF8 未完成字符由 decoder 保留。 */
 export class PipeOutputRelay {
   private readonly decoder = new StringDecoder("utf8");
+  private readonly queued: string[] = [];
   private sequence = 0;
   private offset = 0;
   private pending: number | null = null;
-  private tail = "";
   private closed = false;
 
   constructor(
@@ -26,23 +26,20 @@ export class PipeOutputRelay {
   ) {
     input.on("data", (chunk: Buffer) => {
       append(stream, chunk);
-      this.publish(this.decoder.write(chunk));
+      this.accept(this.decoder.write(chunk));
     });
-    input.on("end", () => {
-      const tail = this.decoder.end();
-      if (this.pending !== null) this.tail = tail;
-      else this.publish(tail);
-    });
+    input.on("end", () => this.accept(this.decoder.end()));
+  }
+
+  private accept(data: string): void {
+    if (!data || this.closed) return;
+    // Node在子进程退出时会flushStdio/resume，不能把这次额外读到的尾部当成协议违例。
+    this.input.pause();
+    if (this.pending !== null) this.queued.push(data);
+    else this.publish(data);
   }
 
   private publish(data: string): void {
-    if (!data || this.closed) return;
-    if (this.pending !== null)
-      throw new ProcessSandboxError(
-        "output_failed",
-        "stdio 上一帧未 ACK，不能覆盖协议输出。",
-      );
-    this.input.pause();
     this.pending = ++this.sequence;
     const offset = this.offset;
     this.offset += Buffer.byteLength(data);
@@ -61,15 +58,15 @@ export class PipeOutputRelay {
       );
     if (sequence !== this.pending) return;
     this.pending = null;
-    if (this.tail) {
-      const tail = this.tail;
-      this.tail = "";
-      this.publish(tail);
-    } else if (!this.closed) this.input.resume();
+    if (this.closed) return;
+    const next = this.queued.shift();
+    if (next !== undefined) this.publish(next);
+    else this.input.resume();
   }
 
   close(): void {
     this.closed = true;
+    this.queued.length = 0;
     this.input.resume();
   }
 }

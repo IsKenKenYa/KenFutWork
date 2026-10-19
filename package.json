@@ -44,7 +44,8 @@
   "pnpm": {
     "patchedDependencies": {
       "langchain@1.5.11": "patches/langchain@1.5.11.patch",
-      "@modelcontextprotocol/sdk@1.32.1": "patches/@modelcontextprotocol__sdk@1.32.1.patch"
+      "@modelcontextprotocol/sdk@1.32.1": "patches/@modelcontextprotocol__sdk@1.32.1.patch",
+      "@anthropic-ai/sandbox-runtime@0.0.78": "patches/@anthropic-ai__sandbox-runtime@0.0.78.patch"
     },
     "overrides": {
       "@modelcontextprotocol/sdk@<1.32.1": "1.32.1",

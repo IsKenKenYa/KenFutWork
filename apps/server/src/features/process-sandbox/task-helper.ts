@@ -7,15 +7,20 @@ import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import { accountCommand } from "./account-command.js";
 import { unixCommand } from "./command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
+import { processInvocationFingerprint } from "./invocation-identity.js";
 import { prepareLinuxSandboxArgv } from "./linux-launch.js";
 import type { ProcessOwner } from "./managed-process.js";
 import { ProcessOutputCapture } from "./output-capture.js";
 import { commandDirectory, unixPolicy } from "./policy.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
-import { prepareLinuxProcessInspector } from "./pty-native-runtime.js";
+import {
+  prepareLinuxProcessInspector,
+  preparePtySessionInspector,
+} from "./pty-native-runtime.js";
 import { loadTaskPtyRuntime } from "./pty-runtime.js";
 import { readonlyProbe } from "./readonly-probe.js";
 import { losesExecutionRights } from "./scope-change.js";
+import { waitForSpawnAdmission } from "./spawn-cancellation.js";
 import type {
   ManagedProcessSnapshot,
   ProcessExit,
@@ -27,6 +32,16 @@ import { UnixManagedProcess } from "./unix-process.js";
 import { WindowsTaskBroker } from "./windows-broker.js";
 import { windowsLaunch } from "./windows-policy.js";
 import { WindowsManagedProcess } from "./windows-process.js";
+
+interface ProcessInvocation {
+  taskId: string;
+  generation: number;
+  fingerprint: string;
+  controller: AbortController;
+  child: Promise<ProcessOwner>;
+  owner?: ProcessOwner;
+  cancellation?: Promise<ManagedProcessSnapshot | null>;
+}
 
 class TaskProcessHelper {
   private taskId = "";
@@ -41,13 +56,11 @@ class TaskProcessHelper {
   private readonly processes = new Map<string, ProcessOwner>();
   private windowsBroker: WindowsTaskBroker | undefined;
   private windowsBrokerPath = "";
-  private readonly invocations = new Map<
-    string,
-    { child: Promise<ProcessOwner>; fingerprint: string }
-  >();
+  private readonly invocations = new Map<string, ProcessInvocation>();
   private readonly wrapping = new Set<AbortController>();
   private ptyRuntime: ReturnType<typeof loadTaskPtyRuntime> | undefined;
   private linuxInspector: Promise<string> | undefined;
+  private sessionInspector: Promise<string> | undefined;
   private closePromise: Promise<void> | undefined;
   private initialization: Promise<null> | undefined;
   private readonly invalidatedProcesses = new Set<string>();
@@ -67,6 +80,7 @@ class TaskProcessHelper {
     if (input.method === "close") return this.close(input.reason);
     if (input.method === "spawn")
       return this.spawn(input.request, input.internalWriteRoots);
+    if (input.method === "cancelspawn") return this.cancelSpawn(input);
     const child = this.processes.get(input.processId);
     if (!child)
       throw new ProcessSandboxError("process_closed", "命令句柄不存在。");
@@ -247,9 +261,10 @@ class TaskProcessHelper {
       temporaryDirectory: this.temporaryDirectory,
       network: options.network,
       internalWriteRoots,
-      ...(options.runtimeReadRoots
-        ? { runtimeReadRoots: options.runtimeReadRoots }
-        : {}),
+      runtimeReadRoots: [
+        ...(options.runtimeReadRoots ?? []),
+        ...(request.runtimeReadRoots ?? []),
+      ],
     });
     // SRT 明确的 macOS PTY ioctl 能力；仅该次 PTY 命令启用，目录与网络授权不变。
     return { ...policy, allowPty: request.pty !== undefined };
@@ -323,47 +338,129 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     internalWriteRoots: readonly string[],
   ): Promise<ManagedProcessSnapshot> {
     this.assertReady(request);
-    const fingerprint = createHash("sha256")
-      .update(JSON.stringify({ request, internalWriteRoots }))
-      .digest("hex");
+    const fingerprint = processInvocationFingerprint(
+      request,
+      internalWriteRoots,
+    );
     const previous = this.invocations.get(request.invocationId);
     if (previous && previous.fingerprint !== fingerprint)
       throw new ProcessSandboxError(
         "invalid_process_request",
         "同一调用身份不能启动不同参数的命令。",
       );
-    // 在第一次 await 前预留启动 Promise；失败也保留，不能重放不安全副作用。
-    const pending = previous ?? {
-      child: (async () => {
-        if (
-          !this.windowsBroker &&
-          request.scope.sandboxMode !== "danger-full-access"
-        )
-          await this.ensureSandbox(request);
-        if (request.scope.sandboxMode === "read-only")
-          await this.ensureReadOnlyProof(request);
-        this.assertReady(request);
-        return this.launch(request, false, internalWriteRoots);
-      })(),
-      fingerprint,
-    };
-    this.invocations.set(request.invocationId, pending);
+    let pending = previous;
+    if (!pending) {
+      const controller = new AbortController();
+      // 先签发取消身份再进入准备；失败和取消均保留，重放不能重启副作用。
+      const invocation: ProcessInvocation = {
+        taskId: request.scope.taskId,
+        generation: request.scope.generation,
+        fingerprint,
+        controller,
+        child: Promise.resolve().then(async () => {
+          try {
+            controller.signal.throwIfAborted();
+            if (
+              !this.windowsBroker &&
+              request.scope.sandboxMode !== "danger-full-access"
+            )
+              await waitForSpawnAdmission(
+                this.ensureSandbox(request),
+                controller.signal,
+              );
+            if (request.scope.sandboxMode === "read-only")
+              await waitForSpawnAdmission(
+                this.ensureReadOnlyProof(request),
+                controller.signal,
+              );
+            controller.signal.throwIfAborted();
+            this.assertReady(request);
+            return await this.launch(
+              request,
+              false,
+              internalWriteRoots,
+              invocation,
+            );
+          } finally {
+            this.wrapping.delete(controller);
+          }
+        }),
+      };
+      this.invocations.set(request.invocationId, invocation);
+      this.wrapping.add(controller);
+      pending = invocation;
+    }
+    pending.controller.signal.throwIfAborted();
     return (await pending.child).snapshot();
+  }
+
+  private cancelSpawn(
+    input: Extract<HelperRequest, { method: "cancelspawn" }>,
+  ): Promise<ManagedProcessSnapshot | null> {
+    const invocation = this.invocations.get(input.invocationId);
+    if (
+      input.taskId !== this.taskId ||
+      !invocation ||
+      invocation.taskId !== input.taskId ||
+      invocation.generation !== input.generation ||
+      invocation.fingerprint !== input.fingerprint
+    )
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "取消请求与原命令的 Task、代际或调用身份不匹配。",
+      );
+    invocation.cancellation ??= (async () => {
+      invocation.controller.abort(
+        new ProcessSandboxError("process_closed", "命令启动已取消。"),
+      );
+      // owner 赋值到下一次 await 之间是同步步骤；此处无 owner 且已封死后续派发。
+      const owner = invocation.owner;
+      if (!owner) return null;
+      try {
+        const exit = await owner.stop(input.reason);
+        if (!exit.rangeEmpty)
+          throw new ProcessSandboxError(
+            "stop_unconfirmed",
+            "取消命令后，进程范围尚未确认清空。",
+          );
+      } catch (error) {
+        // ready/wait 可能保留启动错误；最终清空事实不能被该错误覆盖。
+        if (!owner.snapshot().exit?.rangeEmpty)
+          throw new ProcessSandboxError(
+            "stop_unconfirmed",
+            `取消命令尚未确认停止：${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          );
+      }
+      const snapshot = owner.snapshot();
+      if (!snapshot.exit?.rangeEmpty)
+        throw new ProcessSandboxError(
+          "stop_unconfirmed",
+          "取消命令缺少进程范围清空的最终快照。",
+        );
+      return snapshot;
+    })();
+    return invocation.cancellation;
   }
 
   private async launch(
     request: ProcessSpawnRequest,
     probe = false,
     internalWriteRoots: readonly string[] = [],
+    invocation?: ProcessInvocation,
   ): Promise<ProcessOwner> {
-    const abort = new AbortController();
+    const abort = invocation?.controller ?? new AbortController();
     this.wrapping.add(abort);
     let wrapped = false;
     try {
+      this.assertReady(request, probe);
+      abort.signal.throwIfAborted();
       const cwd = await commandDirectory(request.scope, request.cwd);
+      abort.signal.throwIfAborted();
+      this.assertReady(request, probe);
       const id = randomUUID();
       if (this.windowsBroker) {
-        if (!probe) this.assertReady(request);
+        this.assertReady(request, probe);
         const launch = await windowsLaunch({
           request,
           processId: id,
@@ -373,9 +470,10 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           brokerPath: this.windowsBrokerPath,
           internalWriteRoots,
           accountHome: this.accountHome,
-          ...(this.requireOptions().runtimeReadRoots
-            ? { runtimeReadRoots: this.requireOptions().runtimeReadRoots }
-            : {}),
+          runtimeReadRoots: [
+            ...(this.requireOptions().runtimeReadRoots ?? []),
+            ...(request.runtimeReadRoots ?? []),
+          ],
           ...(this.requireOptions().runtimePathAdditions
             ? {
                 runtimePathAdditions:
@@ -383,7 +481,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
               }
             : {}),
         });
-        if (!probe) this.assertReady(request);
+        this.assertReady(request, probe);
         abort.signal.throwIfAborted();
         const { output, snapshot } = this.captureProcess(request, id);
         const child = new WindowsManagedProcess(
@@ -405,8 +503,11 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
               stream,
             ),
         );
+        if (invocation) invocation.owner = child;
         this.processes.set(id, child);
         await child.ready.promise;
+        abort.signal.throwIfAborted();
+        this.assertReady(request, probe);
         return child;
       }
       const unrestricted = request.scope.sandboxMode === "danger-full-access";
@@ -437,7 +538,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           this.privateDirectory,
           request.scope.sandboxMode === "read-only",
         );
-      if (!probe) this.assertReady(request);
+      this.assertReady(request, probe);
       abort.signal.throwIfAborted();
       if (!unrestricted)
         descriptor.env = {
@@ -450,13 +551,19 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
         descriptor.env as Record<string, string>,
         this.requireOptions().runtimePathAdditions,
       );
+      if (process.platform === "darwin")
+        this.sessionInspector ??= preparePtySessionInspector(
+          this.privateDirectory,
+          request.limits,
+        );
       if (request.pty)
         this.ptyRuntime ??= loadTaskPtyRuntime(
           this.privateDirectory,
           request.limits,
+          this.sessionInspector,
         );
       const ptyModule = request.pty ? await this.ptyRuntime : undefined;
-      if (!probe) this.assertReady(request);
+      this.assertReady(request, probe);
       abort.signal.throwIfAborted();
       if (!unrestricted && process.platform === "linux")
         this.linuxInspector ??= prepareLinuxProcessInspector(
@@ -464,7 +571,8 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
           request.limits,
         );
       const linuxInspector = await this.linuxInspector;
-      if (!probe) this.assertReady(request);
+      const sessionInspector = await this.sessionInspector;
+      this.assertReady(request, probe);
       abort.signal.throwIfAborted();
       const { output, snapshot } = this.captureProcess(request, id);
       const child = new UnixManagedProcess(
@@ -489,12 +597,21 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
             nextOffset,
             stream,
           ),
-        ptyModule?.inspector,
+        sessionInspector ?? ptyModule?.inspector,
         linuxInspector,
+        {
+          signal: abort.signal,
+          assertReady: () => {
+            this.assertReady(request, probe);
+          },
+        },
       );
+      if (invocation) invocation.owner = child;
       this.processes.set(id, child);
       wrapped = false; // 命令 owner 已接管恰好一次 cleanup。
       await child.ready.promise;
+      abort.signal.throwIfAborted();
+      this.assertReady(request, probe);
       return child;
     } finally {
       this.wrapping.delete(abort);
@@ -566,9 +683,12 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     return { output, snapshot };
   }
 
-  private assertReady(request: ProcessSpawnRequest): void {
+  private assertReady(request: ProcessSpawnRequest, probe = false): void {
     if (
-      this.phase !== "ready" ||
+      this.closePromise ||
+      (probe
+        ? this.phase !== "starting" && this.phase !== "ready"
+        : this.phase !== "ready") ||
       request.scope.taskId !== this.taskId ||
       request.scope.generation < this.generation
     ) {
@@ -612,10 +732,13 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
 
   close(reason: string): Promise<void> {
     this.closePromise ??= (async () => {
-      for (const abort of this.wrapping)
-        abort.abort(new ProcessSandboxError("scope_revoked", reason));
-      await this.initialization?.catch(() => {});
+      // 先停已有 proof owner，不能等待其所属初始化结束后才发停止。
       await this.revoke(this.generation, reason);
+      await this.initialization?.catch(() => {});
+      await this.sandboxInitialization?.catch(() => {});
+      await Promise.all(
+        [...this.readOnlyProofs.values()].map((proof) => proof.catch(() => {})),
+      );
       this.phase = "closed";
       if (this.windowsBroker) await this.windowsBroker.close();
       else if (this.sandboxInitialization) await SandboxManager.reset();
@@ -625,8 +748,14 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     return this.closePromise;
   }
 
-  send(message: HelperResponse): void {
-    if (process.connected) process.send?.(message);
+  send(message: HelperResponse, disconnectAfterSend = false): void {
+    if (!process.connected) return;
+    if (disconnectAfterSend) {
+      // 先交付关闭回执再由helper结束IPC，让父端完整观察stdio和close。
+      process.send?.(message, () => {
+        if (process.connected) process.disconnect();
+      });
+    } else process.send?.(message);
   }
 }
 
@@ -640,11 +769,14 @@ process.on("message", (message: HelperRequest) => {
     return;
   void helper.execute(message).then(
     (value) => {
-      helper.send({
-        id: message.id,
-        ok: true,
-        value: (value ?? null) as ManagedProcessSnapshot | ProcessExit | null,
-      });
+      helper.send(
+        {
+          id: message.id,
+          ok: true,
+          value: (value ?? null) as ManagedProcessSnapshot | ProcessExit | null,
+        },
+        message.method === "close",
+      );
     },
     (error: unknown) => {
       helper.send({

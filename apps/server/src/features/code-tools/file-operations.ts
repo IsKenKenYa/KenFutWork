@@ -1,6 +1,24 @@
 import type { ScopedFilesystemScope } from "../execution/scoped-filesystem.js";
 import { pathWithin } from "../process-sandbox/policy.js";
 
+export interface TaskFileOperationParticipant {
+  pendingWrites(): Promise<
+    { instanceId: string; taskId: string; writeRoots: string[] }[]
+  >;
+  revoke(instanceId: string, taskId: string): Promise<void>;
+}
+
+const participants = new Set<TaskFileOperationParticipant>();
+
+export function registerTaskFileOperationParticipant(
+  participant: TaskFileOperationParticipant,
+): () => void {
+  participants.add(participant);
+  return () => {
+    participants.delete(participant);
+  };
+}
+
 interface ActiveFileOperation {
   controller: AbortController;
   finished: Promise<unknown>;
@@ -108,6 +126,27 @@ export async function acquireTaskFileRestoreBarrier(
     roots: canonical,
   };
   restoreBarriers.add(barrier);
+  try {
+    // 扫描持久事实期间先封锁新写入与恢复；同 Task 仍由 revoke 排空。
+    const pending = await Promise.all(
+      [...participants].map((participant) => participant.pendingWrites()),
+    );
+    if (
+      pending.some((writes) =>
+        writes.some(
+          (write) =>
+            taskKey(write.instanceId, write.taskId) !== key &&
+            overlaps(canonical, write.writeRoots),
+        ),
+      )
+    )
+      throw new FileRestoreBarrierError(
+        "其他 Task 的外部文件写入尚未确认结束，不能开始恢复。",
+      );
+  } catch (error) {
+    restoreBarriers.delete(barrier);
+    throw error;
+  }
   let released = false;
   return {
     authorize(next) {
@@ -144,8 +183,16 @@ export function revokeTaskFileOperations(
     entry.controller.abort(
       new DOMException("Task 文件操作授权已撤销", "AbortError"),
     );
-  const finished = Promise.allSettled(entries.map((entry) => entry.finished))
-    .then(() => {})
+  const finished = Promise.allSettled([
+    Promise.allSettled(entries.map((entry) => entry.finished)),
+    ...[...participants].map((participant) =>
+      Promise.resolve().then(() => participant.revoke(instanceId, taskId)),
+    ),
+  ])
+    .then((results) => {
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    })
     .finally(() => {
       if (revoking.get(key) === finished) revoking.delete(key);
     });

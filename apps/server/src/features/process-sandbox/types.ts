@@ -36,6 +36,8 @@ export interface ProcessSpawnRequest {
   limits: ProcessLimits;
   /** 用户显式执行环境；不从服务端 process.env 批量继承。 */
   env?: Readonly<Record<string, string>>;
+  /** 仅可信执行 Provider 签发的本次运行时目录；不是模型参数，不增加 Task 文件写权限。 */
+  runtimeReadRoots?: readonly string[];
 }
 
 export type ProcessPtySpawnRequest = Omit<
@@ -147,7 +149,11 @@ export interface ProcessSandbox {
   ): Promise<{ release(): void | Promise<void> }>;
   spawn(request: ProcessSpawnRequest): Promise<ManagedProcess>;
   spawnPty(request: ProcessPtySpawnRequest): Promise<ManagedTerminalProcess>;
-  spawnStdio(request: ProcessStdioSpawnRequest): Promise<ManagedStdioProcess>;
+  /** signal 取消启动等待；返回句柄后的运行取消由消费方调用 stop 并确认退出。 */
+  spawnStdio(
+    request: ProcessStdioSpawnRequest,
+    options?: { signal?: AbortSignal },
+  ): Promise<ManagedStdioProcess>;
   /** 仅系统 checkpoint consumer 使用；私有根由 Profile 解析，模型输入不能签发。 */
   spawnCheckpoint(request: ProcessSpawnRequest): Promise<ManagedProcess>;
   applyScopeChange(
@@ -202,8 +208,9 @@ export class ProcessSandboxError extends Error {
       | "invalid_process_request"
       | "output_failed",
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "ProcessSandboxError";
   }
 }

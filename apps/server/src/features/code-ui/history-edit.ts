@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  type ExecutionMode,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import { createGoalService } from "../goals/service.js";
 import type { LocalActor } from "../local-instance/types.js";
@@ -42,6 +45,7 @@ type Deps = Pick<
   | "threads"
   | "settings"
   | "goals"
+  | "captureContributions"
 > & {
   inputOwner: { hostId: string; runtimeId: string };
   load(actor: LocalActor, sessionId: string): Promise<Loaded>;
@@ -49,6 +53,10 @@ type Deps = Pick<
     actor: LocalActor,
     selection: protocol.SessionConfigState["modelSelection"],
   ): Promise<ModelPlan>;
+  executionMode(
+    actor: LocalActor,
+    threadId: string,
+  ): Promise<ExecutionMode | undefined>;
   inputs(
     actor: LocalActor,
     sessionId: string,
@@ -74,7 +82,10 @@ type Deps = Pick<
     record: CodeAdmittedInput,
     inputs: TrustedCodeInput[],
   ): Promise<void>;
-  fingerprint(envelope: protocol.CommandEnvelope): string;
+  fingerprint(
+    envelope: protocol.CommandEnvelope,
+    executionMode?: ExecutionMode,
+  ): string;
 };
 
 function latestEditableInput(
@@ -224,6 +235,7 @@ type EditOperation = {
   loaded: Loaded;
   envelope: protocol.CommandEnvelope;
   targetThreadId: string;
+  requestedMode: ExecutionMode | undefined;
   progress: EditProgress;
   publication?: Promise<void>;
 } & (
@@ -231,6 +243,7 @@ type EditOperation = {
   | { kind: "retryTurn"; payload: RetryPayload }
 );
 type EditSource = {
+  executionMode: ExecutionMode | undefined;
   workContext: protocol.ConversationWorkContext;
   row: EditableRow & { sourceCommandId: string };
   snapshot: protocol.ConversationSnapshot;
@@ -263,6 +276,7 @@ async function createOperation(
   actor: LocalActor,
   target: WorkspaceTarget,
   envelope: protocol.CommandEnvelope,
+  requestedMode: ExecutionMode | undefined,
 ): Promise<EditOperation> {
   if (!envelope.sessionId)
     throw new CodeUiRepositoryError("not_found", "历史编辑缺少Task身份");
@@ -283,6 +297,7 @@ async function createOperation(
     actor,
     loaded,
     envelope,
+    requestedMode,
     targetThreadId: deps.threads.createThreadId(),
     progress: { phase: "preparing" as const },
   };
@@ -454,6 +469,11 @@ async function prepareEditSource(
     history,
   );
   return {
+    executionMode: canonical
+      ? canonical.executionMode
+      : (operation.requestedMode ??
+        (await deps.executionMode(operation.actor, binding.threadId)) ??
+        "agent"),
     row: { ...row, sourceCommandId: row.sourceCommandId },
     workContext: freezeWorkContext(
       turn.canonical?.intent.workContext ??
@@ -502,22 +522,20 @@ async function retainedHistory(
 }
 
 function createEditedInput(
+  deps: Deps,
   operation: EditOperation,
   root: CodeUiSessionRecord,
   source: EditSource,
   scope: ExecutionScopeHandle,
 ): CodeAdmittedInput {
+  const frozenContributions = deps.captureContributions?.(
+    source.workContext.preset,
+  );
   return {
     runId: randomUUID(),
-    ...(source.canonical?.executionMode
-      ? { executionMode: source.canonical.executionMode }
-      : {}),
-    ...(source.canonical?.frozenContributions
-      ? {
-          frozenContributions: structuredClone(
-            source.canonical.frozenContributions,
-          ),
-        }
+    ...(source.executionMode ? { executionMode: source.executionMode } : {}),
+    ...(frozenContributions
+      ? { frozenContributions: structuredClone(frozenContributions) }
       : {}),
     modelInvocation: source.model.modelInvocation,
     scopeGeneration: scope.describe().generation,
@@ -598,7 +616,7 @@ async function cloneAndFenceEdit(
   );
   operation.progress = { phase: "fenced", clone, scope };
   const prepared: PreparedEdit = {
-    record: createEditedInput(operation, root, source, scope),
+    record: createEditedInput(deps, operation, root, source, scope),
     inputs: source.inputs,
     previousThreadId: source.previousThreadId,
     turnId: source.row.turnId,
@@ -823,12 +841,22 @@ export function createCodeUiHistoryEdit(deps: Deps) {
       actor: LocalActor,
       target: WorkspaceTarget,
       envelope: protocol.CommandEnvelope,
+      requestedMode?: ExecutionMode,
     ) {
-      const operation = await createOperation(deps, actor, target, envelope);
+      const operation = await createOperation(
+        deps,
+        actor,
+        target,
+        envelope,
+        requestedMode,
+      );
       const ack = await deps.repository.applyScopeCommand(
         operation.loaded.instanceId,
         envelope,
-        deps.fingerprint(envelope),
+        deps.fingerprint(
+          envelope,
+          operation.kind === "editUserQuery" ? requestedMode : undefined,
+        ),
         (root) => cloneAndFenceEdit(deps, operation, root),
         (root) => decideEditPublication(deps, operation, root),
         (result) => finishCommittedEdit(deps, operation, result),

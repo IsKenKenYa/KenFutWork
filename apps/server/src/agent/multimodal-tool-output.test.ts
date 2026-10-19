@@ -11,7 +11,7 @@ import { loadServerEnv } from "../config/env.js";
 import { createInstanceChatModel } from "../providers/openai-compatible/index.js";
 import { createKenFutWorkDeepAgent } from "./deep-agent.js";
 
-it("超过SDK文字驱逐阈值的预算内PNG完整经过Code Harness进入模型HTTP", async () => {
+it("空文字工具结果先规范为字符串，后续预算内PNG完整进入Code模型请求", async () => {
   const directory = await mkdtemp(join(tmpdir(), "kfw-multimodal-output-"));
   const png = new PNG({ width: 192, height: 128 });
   png.data = randomBytes(png.width * png.height * 4);
@@ -24,23 +24,52 @@ it("超过SDK文字驱逐阈值的预算内PNG完整经过Code Harness进入模�
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     requests.push(JSON.parse(Buffer.concat(chunks).toString()));
+    const messages = requests.at(-1)?.messages ?? [];
+    const hasImage = messages.some(
+      (message) =>
+        Array.isArray(message.content) &&
+        message.content.some((block) => block.type === "image_url"),
+    );
+    const hasEmptyToolText = messages.some(
+      (message) =>
+        message.role === "tool" &&
+        Array.isArray(message.content) &&
+        message.content.some(
+          (block) => block.type === "text" && block.text === "",
+        ),
+    );
+    if (hasImage && hasEmptyToolText) {
+      response.writeHead(400, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            code: "1210",
+            message: "multimodal history rejects empty tool text blocks",
+          },
+        }),
+      );
+      return;
+    }
     response.writeHead(200, { "content-type": "text/event-stream" });
-    const first = requests.length === 1;
-    const delta = first
+    const toolTurn = requests.length <= 2;
+    const delta = toolTurn
       ? {
           role: "assistant",
           tool_calls: [
             {
               index: 0,
-              id: "image-call",
+              id: requests.length === 1 ? "text-call" : "image-call",
               type: "function",
-              function: { name: "observe_image", arguments: "{}" },
+              function: {
+                name: requests.length === 1 ? "observe_text" : "observe_image",
+                arguments: "{}",
+              },
             },
           ],
         }
       : { role: "assistant", content: "观察完成" };
     response.end(
-      `data: ${JSON.stringify({ id: "reply", object: "chat.completion.chunk", created: 1, model: "test", choices: [{ index: 0, delta, finish_reason: first ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
+      `data: ${JSON.stringify({ id: `reply-${requests.length}`, object: "chat.completion.chunk", created: 1, model: "test", choices: [{ index: 0, delta, finish_reason: toolTurn ? "tool_calls" : "stop" }] })}\n\ndata: [DONE]\n\n`,
     );
   });
   server.listen(0, "127.0.0.1");
@@ -74,6 +103,15 @@ it("超过SDK文字驱逐阈值的预算内PNG完整经过Code Harness进入模�
       llmRetry: { maxAttempts: 1, infinite: false },
       kernelTools: [
         {
+          name: "observe_text",
+          description: "普通文字工具",
+          scope: "code",
+          parameters: { type: "object" },
+          execute: async () => ({
+            modelContent: [{ type: "text", text: "" }],
+          }),
+        },
+        {
           name: "observe_image",
           description: "外部图像观察",
           scope: "code",
@@ -97,9 +135,17 @@ it("超过SDK文字驱逐阈值的预算内PNG完整经过Code Harness进入模�
     )) {
       /* 消费实际Harness */
     }
-    expect(requests).toHaveLength(2);
-    const message = requests[1]?.messages.find(
-      (entry) => entry.role === "tool",
+    expect(requests).toHaveLength(3);
+    expect(
+      requests[2]?.messages.find(
+        (entry) =>
+          entry.role === "tool" &&
+          "tool_call_id" in entry &&
+          entry.tool_call_id === "text-call",
+      )?.content,
+    ).toBe("");
+    const message = requests[2]?.messages.find(
+      (entry) => entry.role === "tool" && Array.isArray(entry.content),
     );
     const blocks = message?.content;
     if (!Array.isArray(blocks)) throw new Error("PNG被文字驱逐或转成文字结果");

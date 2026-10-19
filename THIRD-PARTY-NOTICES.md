@@ -56,6 +56,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 项目 | 许可 | 用在哪 |
 | --- | --- | --- |
 | [DeepAgents](https://github.com/langchain-ai/deepagents) | MIT | agent 运行时（规划/子代理/文件系统工具） |
+| [Anthropic sandbox-runtime](https://github.com/anthropics/sandbox-runtime) `0.0.78` | Apache-2.0 | Task OS 沙箱；本仓 `patches/@anthropic-ai__sandbox-runtime@0.0.78.patch` 仅补 macOS ARM 的 `hw.optional.neon` 读取，修改者为 KenFutWork 贡献者。上游作者 Anthropic PBC；完整许可保留于 `patches/LICENSE-sandbox-runtime.txt`，桌面分发复制到 `legal/sandbox-runtime-LICENSE.txt` |
 | [LangChain](https://github.com/langchain-ai/langchainjs) / [LangGraph](https://github.com/langchain-ai/langgraph) | MIT | 模型接入、agent 编排与 checkpoint 持久化 |
 | [Next.js](https://github.com/vercel/next.js) / [React](https://github.com/facebook/react) | MIT | 前端框架（App Router + React 19） |
 | [Base UI](https://github.com/mui/base-ui)（`@base-ui/react`） | MIT | 无头组件原语（A4 的运行时底座） |

@@ -1,4 +1,11 @@
-import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -8,8 +15,13 @@ import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import {
   createPluginRegistryService,
+  type PluginRegistryDeps,
   PluginRegistryError,
 } from "./plugin-registry-service.js";
+import type {
+  PluginStateChangedEvent,
+  PluginStateRevokingEvent,
+} from "./state-lifecycle.js";
 
 /**
  * 插件注册表集成测试（真实内核注册表 + 真实落盘，不走网络）。
@@ -85,7 +97,12 @@ function fakePluginStorage() {
   };
 }
 
-function makeService() {
+function makeService(
+  lifecycle: Pick<
+    PluginRegistryDeps,
+    "onStateRevoking" | "afterStateChanged"
+  > = {},
+) {
   const kernel = composePlugins(makeEnv(), []);
   kernels.push(kernel);
   const fake = fakePluginStorage();
@@ -106,8 +123,17 @@ function makeService() {
         },
       ],
       storage: fake.storage,
+      ...lifecycle,
     }),
   };
+}
+
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 async function exists(target: string): Promise<boolean> {
@@ -197,6 +223,45 @@ async function writeStorageBundle(): Promise<string> {
   return dir;
 }
 
+async function writeLifecycleBundle(options: {
+  version: string;
+  failApply?: boolean;
+  failAfterFirstApply?: boolean;
+}): Promise<string> {
+  const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-lifecycle-"));
+  tempDirs.push(dir);
+  await writeFile(
+    path.join(dir, "package.json"),
+    JSON.stringify({
+      name: "lifecycle-probe",
+      version: options.version,
+      type: "module",
+      main: "index.js",
+      dsh: { bundle: { patch: "./cordis.patch.yml" } },
+    }),
+  );
+  await writeFile(
+    path.join(dir, "cordis.patch.yml"),
+    "- insert:\n    - id: lifecycle-probe\n      name: lifecycle-probe\n      inject: [tools]\n",
+  );
+  await writeFile(
+    path.join(dir, "index.js"),
+    [
+      'export const name = "lifecycle-probe";',
+      'export const inject = ["tools"];',
+      "let applications = 0;",
+      "export function apply(ctx) {",
+      "  applications++;",
+      `  if (${Boolean(options.failApply)} || (${Boolean(options.failAfterFirstApply)} && applications > 1)) throw new Error("fixture apply failed");`,
+      '  ctx.tools.register({ name: "lifecycle_value", parameters: { type: "object", properties: {} },',
+      `    execute() { return ${JSON.stringify(options.version)}; }`,
+      "  });",
+      "}",
+    ].join("\n"),
+  );
+  return dir;
+}
+
 beforeEach(async () => {
   pluginsDir = await mkdtemp(path.join(tmpdir(), "kenfutwork-plugins-"));
 });
@@ -209,6 +274,400 @@ afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
   }
   await rm(pluginsDir, { recursive: true, force: true });
+});
+
+describe("plugin-registry：可信安装态生命周期", () => {
+  it("重装装载失败真实恢复旧目录、代码与库存后才通知新激活，返回原安装失败", async () => {
+    const changed: PluginStateChangedEvent[] = [];
+    let blocked = false;
+    const { service, kernel } = makeService({
+      onStateRevoking() {
+        blocked = true;
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+        blocked = false;
+      },
+    });
+    const original = await writeLifecycleBundle({ version: "1.0.0" });
+    const broken = await writeLifecycleBundle({
+      version: "2.0.0",
+      failApply: true,
+    });
+    const { installed } = await service.install({
+      url: original,
+      allowLifecycleScripts: false,
+    });
+    await expect(
+      service.install({ url: broken, allowLifecycleScripts: false }),
+    ).rejects.toMatchObject({ code: "install_failed" });
+
+    expect(blocked).toBe(false);
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "restore",
+    ]);
+    expect(changed[1]?.current).toEqual(installed);
+    expect((await service.readPackageInventory()).installed[0]?.record).toEqual(
+      installed,
+    );
+    expect(
+      JSON.parse(
+        await readFile(
+          path.join(pluginsDir, installed.id, "package.json"),
+          "utf8",
+        ),
+      ).version,
+    ).toBe("1.0.0");
+    expect(
+      await kernel.get("tools").require("lifecycle_value").execute({}, {}),
+    ).toBe("1.0.0");
+    await service.setEnabled(installed.id, true);
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "restore",
+    ]);
+  });
+
+  it("失败撤销后的显式启用先重试完整撤销与卸载，再发新激活；正常重复启用幂等", async () => {
+    const failure = new Error("暂时未退出");
+    const changed: string[] = [];
+    let attempts = 0;
+    const { service, kernel } = makeService({
+      onStateRevoking() {
+        if (++attempts === 1) throw failure;
+      },
+      afterStateChanged(event) {
+        changed.push(event.reason);
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const oldTool = kernel.get("tools").require("clock_now");
+    await expect(service.setEnabled(installed.id, false)).rejects.toBe(failure);
+    await service.restore();
+    expect(changed).toEqual(["install"]);
+    const enabled = await service.setEnabled(installed.id, true);
+    expect(attempts).toBe(2);
+    expect(enabled).toEqual(installed);
+    expect(kernel.get("tools").require("clock_now")).not.toBe(oldTool);
+    expect(changed).toEqual(["install", "enable"]);
+    await service.setEnabled(installed.id, true);
+    expect(attempts).toBe(2);
+    expect(changed).toEqual(["install", "enable"]);
+  });
+
+  it("停止持续未确认时，显式启用和恢复均不能绕过撤销屏障", async () => {
+    const failure = Object.assign(new Error("停止仍未确认"), {
+      code: "stop_unconfirmed",
+    });
+    const changed: string[] = [];
+    let attempts = 0;
+    const { service, kernel } = makeService({
+      onStateRevoking() {
+        attempts++;
+        throw failure;
+      },
+      afterStateChanged(event) {
+        changed.push(event.reason);
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const oldTool = kernel.get("tools").require("clock_now");
+    await expect(service.setEnabled(installed.id, false)).rejects.toBe(failure);
+    await expect(service.setEnabled(installed.id, true)).rejects.toBe(failure);
+    await service.restore();
+    await expect(service.setEnabled(installed.id, true)).rejects.toBe(failure);
+    expect(attempts).toBe(3);
+    expect(changed).toEqual(["install"]);
+    expect(kernel.get("tools").require("clock_now")).toBe(oldTool);
+    expect((await service.readPackageInventory()).installed[0]?.record).toEqual(
+      installed,
+    );
+  });
+
+  it("旧实现恢复也失败时明确持久停用，不发恢复或启用通知", async () => {
+    const changed: string[] = [];
+    const { service, kernel } = makeService({
+      afterStateChanged(event) {
+        changed.push(event.reason);
+      },
+    });
+    const original = await writeLifecycleBundle({
+      version: "1.0.0",
+      failAfterFirstApply: true,
+    });
+    const broken = await writeLifecycleBundle({
+      version: "2.0.0",
+      failApply: true,
+    });
+    const { installed } = await service.install({
+      url: original,
+      allowLifecycleScripts: false,
+    });
+    await expect(
+      service.install({ url: broken, allowLifecycleScripts: false }),
+    ).rejects.toThrow("旧版本恢复未完成");
+    expect((await service.readPackageInventory()).installed[0]?.record).toEqual(
+      { ...installed, enabled: false },
+    );
+    expect(kernel.get("tools").get("lifecycle_value")).toBeUndefined();
+    await expect(service.setEnabled(installed.id, true)).rejects.toMatchObject({
+      code: "install_failed",
+    });
+    expect(changed).toEqual(["install"]);
+  });
+
+  it("卸载先通知撤销并等待资源退出，随后才收回工具、删除文件和写入安装态", async () => {
+    const started = deferred();
+    const stopped = deferred();
+    const events: string[] = [];
+    let afterUninstallHadTool: boolean | null = null;
+    const { service, kernel, fake } = makeService({
+      async onStateRevoking(event) {
+        events.push(`before:${event.reason}`);
+        expect(event.current).toBeNull();
+        expect(kernel.get("tools").get("clock_now")).toBeDefined();
+        expect(await exists(path.join(pluginsDir, event.previous.id))).toBe(
+          true,
+        );
+        started.resolve();
+        await stopped.promise;
+        events.push("resources-stopped");
+      },
+      afterStateChanged(event) {
+        events.push(`after:${event.reason}`);
+        if (event.reason === "uninstall")
+          afterUninstallHadTool =
+            kernel.get("tools").get("clock_now") !== undefined;
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const uninstalling = service.uninstall(installed.id);
+    await started.promise;
+    expect((await service.readPackageInventory()).installed[0]?.record.id).toBe(
+      installed.id,
+    );
+    expect(fake.purged).toEqual([]);
+    expect(events).toEqual(["after:install", "before:uninstall"]);
+
+    stopped.resolve();
+    await uninstalling;
+    expect(events).toEqual([
+      "after:install",
+      "before:uninstall",
+      "resources-stopped",
+      "after:uninstall",
+    ]);
+    expect((await service.readPackageInventory()).installed).toEqual([]);
+    expect(afterUninstallHadTool).toBe(false);
+    expect(await exists(path.join(pluginsDir, installed.id))).toBe(false);
+    expect(fake.purged).toEqual([installed.id]);
+  });
+
+  it.each(["disable", "uninstall", "replace", "shutdown"] as const)(
+    "%s 的资源撤销失败时保留工具、目录和已安装记录，并且不通知状态完成",
+    async (reason) => {
+      const failure = new Error("外部资源仍在运行");
+      const changed: string[] = [];
+      const { service, kernel, fake } = makeService({
+        onStateRevoking(event) {
+          expect(event.reason).toBe(reason);
+          throw failure;
+        },
+        afterStateChanged(event) {
+          changed.push(event.reason);
+        },
+      });
+      const { installed } = await service.install({
+        url: EXAMPLE_PLUGIN,
+        allowLifecycleScripts: false,
+      });
+      const operations = {
+        disable: () => service.setEnabled(installed.id, false),
+        uninstall: () => service.uninstall(installed.id),
+        replace: () =>
+          service.install({
+            url: EXAMPLE_PLUGIN,
+            allowLifecycleScripts: false,
+          }),
+        shutdown: () => service.shutdown(),
+      };
+      await expect(operations[reason]()).rejects.toBe(failure);
+      expect(changed).toEqual(["install"]);
+      expect(kernel.get("tools").get("clock_now")).toBeDefined();
+      expect(await exists(path.join(pluginsDir, installed.id))).toBe(true);
+      expect(
+        (await service.readPackageInventory()).installed[0]?.record,
+      ).toEqual(installed);
+      expect(fake.purged).toEqual([]);
+    },
+  );
+
+  it("撤销等待包含在同一个库存事务内，重新启用在停用完成后获得独立激活通知", async () => {
+    const started = deferred();
+    const stopped = deferred();
+    const revoked: PluginStateRevokingEvent[] = [];
+    const changed: PluginStateChangedEvent[] = [];
+    const { service, kernel } = makeService({
+      async onStateRevoking(event) {
+        revoked.push(event);
+        started.resolve();
+        await stopped.promise;
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    const disabling = service.setEnabled(installed.id, false);
+    await started.promise;
+    const enabling = service.setEnabled(installed.id, true);
+    expect(changed.map((event) => event.reason)).toEqual(["install"]);
+    expect(kernel.get("tools").get("clock_now")).toBeDefined();
+    stopped.resolve();
+    await disabling;
+    await enabling;
+    // 重复写相同启用态不能被消费者误认为一次新激活。
+    await service.setEnabled(installed.id, true);
+    await service.restore();
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "disable",
+      "enable",
+    ]);
+    expect(revoked).toEqual([
+      {
+        reason: "disable",
+        previous: installed,
+        current: { ...installed, enabled: false },
+      },
+    ]);
+    expect(changed[2]).toEqual({
+      reason: "enable",
+      previous: { ...installed, enabled: false },
+      current: installed,
+    });
+    expect(kernel.get("tools").get("clock_now")).toBeDefined();
+  });
+
+  it("停用、保留停用态重装、启用、卸载与重装均通知真实前后安装身份", async () => {
+    const revoked: PluginStateRevokingEvent[] = [];
+    const changed: PluginStateChangedEvent[] = [];
+    const { service } = makeService({
+      onStateRevoking(event) {
+        revoked.push(event);
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+      },
+    });
+    const install = (activation?: "preserve") =>
+      service.install({
+        url: EXAMPLE_PLUGIN,
+        allowLifecycleScripts: false,
+        ...(activation ? { activation } : {}),
+      });
+    const first = await install();
+    const disabled = await service.setEnabled(first.installed.id, false);
+    await service.setEnabled(first.installed.id, false);
+    const replacement = await install("preserve");
+    expect(replacement.installed.enabled).toBe(false);
+    await service.setEnabled(first.installed.id, true);
+    await service.uninstall(first.installed.id);
+    const final = await install();
+
+    expect(changed.map((event) => event.reason)).toEqual([
+      "install",
+      "disable",
+      "replace",
+      "enable",
+      "uninstall",
+      "install",
+    ]);
+    expect(revoked.map((event) => event.reason)).toEqual([
+      "disable",
+      "replace",
+      "uninstall",
+    ]);
+    expect(revoked[1]).toEqual({
+      reason: "replace",
+      previous: disabled,
+      current: replacement.installed,
+    });
+    expect(changed[4]?.current).toBeNull();
+    expect(changed[5]).toEqual({
+      reason: "install",
+      previous: null,
+      current: final.installed,
+    });
+  });
+
+  it("持久写入后通知抛错仍返回实际提交结果，后续读盘与重启状态一致", async () => {
+    const { service } = makeService({
+      afterStateChanged() {
+        throw new Error("通知消费方故障");
+      },
+    });
+    const { installed } = await service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    await service.setEnabled(installed.id, false);
+    const persisted = JSON.parse(
+      await readFile(path.join(pluginsDir, "installed.json"), "utf8"),
+    );
+    expect(persisted.installed).toEqual([{ ...installed, enabled: false }]);
+    await service.uninstall(installed.id);
+    expect((await service.readPackageInventory()).installed).toEqual([]);
+  });
+
+  it("重启恢复只在首次装载后通知激活，关闭先撤销资源且保留安装记录", async () => {
+    const first = makeService();
+    const { installed } = await first.service.install({
+      url: EXAMPLE_PLUGIN,
+      allowLifecycleScripts: false,
+    });
+    await first.service.shutdown();
+    const changed: PluginStateChangedEvent[] = [];
+    const revoked: PluginStateRevokingEvent[] = [];
+    const second = makeService({
+      onStateRevoking(event) {
+        revoked.push(event);
+      },
+      afterStateChanged(event) {
+        changed.push(event);
+      },
+    });
+    await second.service.restore();
+    await second.service.restore();
+    await second.service.shutdown();
+    expect(changed.map((event) => event.reason)).toEqual([
+      "restore",
+      "shutdown",
+    ]);
+    expect(revoked).toEqual([
+      {
+        reason: "shutdown",
+        previous: installed,
+        current: installed,
+      },
+    ]);
+    expect(
+      (await second.service.readPackageInventory()).installed[0]?.record,
+    ).toEqual(installed);
+  });
 });
 
 describe("plugin-registry：安装并真的能用", () => {

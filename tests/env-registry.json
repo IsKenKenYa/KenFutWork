@@ -1,6 +1,40 @@
 {
   "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
+    "KENFUTWORK_POSIX_SESSION_NATIVE_TESTS": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/process-sandbox/posix-session-launch.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用 macOS 原生进程出生身份、私有启动握手与无放行拒绝执行验收"
+    },
+    "KENFUTWORK_CAD_GUI_DOCUMENTS_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/cad/gui-documents.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启动独立配置的FreeCAD GUI，以真实Task查询自有文档并正常退出；不操作现存应用"
+    },
+    "KENFUTWORK_CAD_GUI_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/cad/gui-status.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用运行中 FreeCAD GUI 的真实 Task 工具查询与只读身份复核"
+    },
+    "KENFUTWORK_CAD_INTEGRATION": {
+      "surface": "test",
+      "readers": ["apps/server/src/features/cad/freecad.integration.test.ts"],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用已安装 FreeCAD 的真实 Task 沙箱、参数化工程与导出验收"
+    },
     "KENFUTWORK_MEDIA_JOBS_TEST_PG": {
       "surface": "test",
       "readers": [

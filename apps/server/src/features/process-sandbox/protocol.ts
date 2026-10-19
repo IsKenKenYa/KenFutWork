@@ -46,6 +46,15 @@ export type HelperRequest =
     }
   | {
       id: string;
+      method: "cancelspawn";
+      taskId: string;
+      generation: number;
+      invocationId: string;
+      fingerprint: string;
+      reason: string;
+    }
+  | {
+      id: string;
       method: "output";
       processId: string;
       offset: number;
