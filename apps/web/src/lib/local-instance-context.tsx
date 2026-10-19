@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { LoadingScreen } from "@/components/loading-screen";
 import {
   LOCAL_ACCESS_LOST_EVENT,
   LocalAccessError,
@@ -90,25 +91,8 @@ export function useLocalInstance(): LocalInstanceContextValue {
 export function LocalInstanceBoundary({ children }: { children: ReactNode }) {
   const { status, message, retry } = useLocalInstance();
   if (status === "ready") return children;
-  // 加载态不放文字（用户口径）：黑白 logo + 加载动画即可；断连/错误仍给可读原因与重试。
-  if (status === "loading") {
-    return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-5 bg-background">
-        {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-        <img
-          src="/logo-mark.png"
-          alt=""
-          className="h-14 w-auto select-none brightness-0"
-          draggable={false}
-        />
-        <div
-          role="status"
-          aria-label="连接中"
-          className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70"
-        />
-      </main>
-    );
-  }
+  // 加载态不放文字（用户口径）：只用全站唯一加载屏；断连/错误仍给可读原因与重试。
+  if (status === "loading") return <LoadingScreen label="连接中" />;
   return (
     <main className="flex min-h-dvh items-center justify-center bg-background p-6">
       <section className="max-w-md space-y-4 text-center" aria-live="polite">

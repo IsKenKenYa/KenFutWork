@@ -4,7 +4,7 @@ import {
   isAllowedOpenDesignOrigin,
   parseOpenDesignInbound,
 } from "@kenfutwork/shared";
-import { Loader2 } from "lucide-react";
+import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOpenDesignEntry } from "./openDesignHost.js";
 
@@ -74,10 +74,10 @@ export function OpenDesignPane() {
       <div
         data-testid="open-design-pane"
         data-od-handshake={handshake}
-        className="flex h-full items-center justify-center gap-2 bg-background text-xs text-foreground-subtle"
+        className="flex h-full flex-col items-center justify-center gap-5 bg-background"
       >
-        <Loader2 className="size-3.5 animate-spin" />
-        <span>正在连接 OpenDesign…</span>
+        <ZCodeStartupLogoBadge />
+        <ZCodeStartupSpinner />
       </div>
     );
   }
@@ -98,7 +98,7 @@ export function OpenDesignPane() {
     <div
       data-testid="open-design-pane"
       data-od-handshake={handshake}
-      className="h-full w-full bg-background"
+      className="relative h-full w-full bg-background"
     >
       <iframe
         ref={frameRef}
@@ -110,6 +110,15 @@ export function OpenDesignPane() {
         onLoad={() => setFrameLoaded(true)}
         allow="clipboard-read; clipboard-write; fullscreen"
       />
+      {!frameLoaded ? (
+        <div
+          role="status"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-background"
+        >
+          <ZCodeStartupLogoBadge />
+          <ZCodeStartupSpinner />
+        </div>
+      ) : null}
     </div>
   );
 }

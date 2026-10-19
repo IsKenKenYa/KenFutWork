@@ -23,17 +23,24 @@ export function RootStartupLoading({
       data-testid="root-startup-loading"
     >
       <ZCodeStartupLogoBadge />
-      {/* 与 web 层连接加载屏同款动画（用户口径：logo 黑白 + 加载动画；两屏完全同款
+      <ZCodeStartupSpinner />
+      {/* 与 web 层连接加载屏同款动画（用户口径：只留黑色 logo + 无底板 + 下方转圈；两屏完全同款
           ——logo 位置一致，切换不跳位=不闪）。色值内联：本主题无 muted 系 token。 */}
-      <div
-        className="h-6 w-6 animate-spin rounded-full border-2"
-        style={{
-          borderColor: "rgba(13, 13, 13, 0.15)",
-          borderTopColor: "rgba(13, 13, 13, 0.6)",
-        }}
-      />
       {children}
     </div>
+  );
+}
+
+/** 加载旋转圈，全站唯一形态；与 web 层 `LoadingScreen` 同尺寸。 */
+export function ZCodeStartupSpinner() {
+  return (
+    <div
+      className="h-6 w-6 animate-spin rounded-full border-2"
+      style={{
+        borderColor: "rgba(13, 13, 13, 0.15)",
+        borderTopColor: "rgba(13, 13, 13, 0.6)",
+      }}
+    />
   );
 }
 

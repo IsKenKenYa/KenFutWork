@@ -12,7 +12,7 @@ import {
   isFlowProjectReady,
   parseFlowInbound,
 } from "@kenfutwork/shared";
-import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
+import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
 
 import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import {
@@ -35,9 +35,6 @@ import {
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
-
-// 与 AboutSection 同一边界：Code 宿主的 Vite PNG 导入在运行时为 URL 字符串。
-const logoSrc = appLogoUrl as unknown as string;
 
 /** 引擎安装状态（与 shared 的 flowEngineInstallStatusSchema.state 同一枚举）。 */
 type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
@@ -423,21 +420,9 @@ function FlowCanvasEmbed({
           role="status"
           className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-background"
         >
-          {/* 与启动屏/连接屏同款加载动画（logo 黑白 + 旋转），全程无文字跳动 */}
-          {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-          <img
-            src={logoSrc}
-            alt=""
-            className="h-14 w-auto select-none brightness-0"
-            draggable={false}
-          />
-          <div
-            className="h-6 w-6 animate-spin rounded-full border-2"
-            style={{
-              borderColor: "rgba(13, 13, 13, 0.15)",
-              borderTopColor: "rgba(13, 13, 13, 0.6)",
-            }}
-          />
+          {/* 全站唯一加载动画（黑色 logo + 无底板 + 下方转圈），与启动屏同一组件 */}
+          <ZCodeStartupLogoBadge />
+          <ZCodeStartupSpinner />
           {loadTimedOut ? (
             <button
               type="button"
