@@ -39,6 +39,7 @@ import {
   createTaskWorkNotificationMiddleware,
   type TaskWorkBinding,
 } from "../features/task-work/model-mailbox.js";
+import { findOwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type {
@@ -194,6 +195,7 @@ export function createToolErrorGuardMiddleware(
         failures.delete(toolName);
         return result;
       } catch (error) {
+        if (findOwnedToolInterruption(error)) throw error;
         const reason = error instanceof Error ? error.message : String(error);
         const count = (failures.get(toolName) ?? 0) + 1;
         failures.set(toolName, count);
@@ -701,7 +703,7 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.taskWork
       ? [createTaskWorkNotificationMiddleware(options.taskWork)]
       : []),
-    ...(preset === "code"
+    ...(scopeHandle || preset === "code"
       ? [
           createCodeFilesystemMiddleware(backendResult.factory),
           createNativeToolExclusionMiddleware(),

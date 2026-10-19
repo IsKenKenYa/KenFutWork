@@ -20,14 +20,24 @@ export type ImageGeneratorStatus =
   | "completed"
   | "error";
 
-export type ImageGeneratorData = {
+export type ImageGeneratorParams = {
+  count?: number | undefined;
+  aspectRatio: string;
+  quality: string;
+  size?: string | undefined;
+  outputFormat?: "png" | "jpg" | "webp" | undefined;
+  inputImages?: string[] | undefined;
+};
+
+export type ImageGeneratorData = ImageGeneratorParams & {
   type: "image-generator";
+  requestId?: string;
+  jobIds?: string[];
+  cancelRequested?: boolean;
   status: ImageGeneratorStatus;
   prompt: string;
   model: string;
-  aspectRatio: string;
-  quality: string;
-  inputImages?: string[];
+  modelDrafts?: Record<string, ImageGeneratorParams>;
   errorMessage?: string;
 };
 
@@ -87,9 +97,10 @@ export function createImageGeneratorElement(
     type: "image-generator",
     status: "idle",
     prompt: "",
-    model: options?.model ?? "google/nano-banana-2",
-    aspectRatio,
-    quality: options?.quality ?? "hd",
+    model: options?.model ?? "",
+    aspectRatio: options?.aspectRatio ?? "",
+    quality: options?.quality ?? "",
+    count: 1,
   };
 
   const id = generateId();

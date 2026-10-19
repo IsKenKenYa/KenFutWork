@@ -15,7 +15,7 @@
       "repository": "https://github.com/microsoft/mxc",
       "commit": "6cd3d58f05d3447e67109cfb75e042803b843ca4",
       "license": "MIT",
-      "consumers": ["native/src/windows.rs"],
+      "consumers": ["native/src/windows.rs", "native/src/windows_account.rs"],
       "method": "pinned-low-level-rust-dependency",
       "licenseFile": "native/licenses/LICENSE-Microsoft-MXC.txt"
     },
@@ -48,23 +48,25 @@
         }
       ],
       "target": "native/src/windows.rs",
-      "targetSha256": "cc8c1961586eb8d3d3a924c8489a440d6e8173835c09c26fd97d04482ac48095",
+      "targetSha256": "5c679465e1e92b003cd93d5b142910122341d2667e851689eb86654664eb10f0",
       "changes": [
         "KFW Task identity, generation and exact directory DTO replace Codex canonical permission/profile types",
-        "Per-command native PSEC read domain via fixed MXC, no global read ACL group or AgentCore",
+        "Confined scopes use per-command native PSEC read domains via fixed MXC, no global read ACL group or AgentCore",
         "The same native binary creates trusted per-command controllers suspended and assigns an outer Job before any user launch DTO is sent",
         "Before MXC wait/teardown the controller proves outer Job ActiveProcesses=1; broker proves ActiveProcesses=0 before physical rangeEmpty",
         "ConPTY allocation/resize/raw input is separate from private inherited IPC handles; controller marks control and query handles non-inheritable before MXC user spawn",
         "Each stdout/stderr raw stream waits for its own ACK; helper UTF8 frame ACK and EOF tail are independent from bounded capture",
         "Pending spawn cancellation, output failure and physical Job termination have separate receipts; unconfirmed range never releases writer",
-        "No DACL fallback, permissive learning mode, pipes-as-PTY fallback, or network posture weakening"
+        "No DACL fallback, permissive learning mode, pipes-as-PTY fallback, or unrestricted fallback after confinement failure",
+        "Explicit danger-full-access selects current-OS-account execution without PSEC file/network restrictions or token elevation; controllers and workloads remain inside the original outer Job",
+        "First-party windows_account.rs implements the public SandboxProcess interface with account Child pipes/inherited ConPTY and revalidated Job-member termination; it does not copy an upstream execution implementation"
       ],
       "licenseFile": "native/licenses/LICENSE-Codex.txt",
       "noticeFile": "native/licenses/NOTICE-Codex.txt",
       "targetFiles": [
         {
           "path": "native/src/windows.rs",
-          "sha256": "cc8c1961586eb8d3d3a924c8489a440d6e8173835c09c26fd97d04482ac48095"
+          "sha256": "5c679465e1e92b003cd93d5b142910122341d2667e851689eb86654664eb10f0"
         },
         {
           "path": "native/src/windows_conpty.rs",
@@ -72,11 +74,11 @@
         },
         {
           "path": "native/src/windows_controller.rs",
-          "sha256": "3735ac59b327d91a5bd580bfca1b5131aefaffa6a6d14da7babd4fa78fd386da"
+          "sha256": "871c4360e5ec089f757838deea8393ae3b661178ccb68efaaf4b159942ddec39"
         },
         {
           "path": "native/src/windows_handles.rs",
-          "sha256": "b1a0a94ca360348d6d458731ceb808c6708ee24e2745661e8142eca439becb95"
+          "sha256": "0c7ac3b6a435eee8fe2c639b5e8cdb685e61d4b980d3d07688392a5a9fe7cbfd"
         },
         {
           "path": "native/src/windows_launch.rs",
@@ -88,11 +90,19 @@
         },
         {
           "path": "native/src/windows_process.rs",
-          "sha256": "73e21d76e9e095349f64d4dc15f5305ff4cf6386f5db67a97d33b3c2dace249b"
+          "sha256": "21d07e7ceebe804bd8d47249a8dd2b935623e6ce897d10ceccf796da540028a1"
         },
         {
           "path": "native/src/windows_protocol.rs",
-          "sha256": "48fcc24f53ccc431f41d31fb886008949a8fb0c67fd63f73bc9b59ea3be89cf1"
+          "sha256": "12e873732cf3804e88af6aa9a5c8c12898c9261165d46d3727f054eaff88aeb4"
+        },
+        {
+          "path": "native/src/main.rs",
+          "sha256": "d491abd584cc70a836efbd6a737ac22cf8c468b5bdcd43a597581092dce65f55"
+        },
+        {
+          "path": "native/src/windows_account.rs",
+          "sha256": "42a87328d56e486cb97f55a83c06e8774a60a9c08410cdd102855474155a2b28"
         }
       ]
     },

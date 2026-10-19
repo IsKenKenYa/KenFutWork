@@ -3,6 +3,7 @@ import { dispatchCustomEvent } from "@langchain/core/callbacks/dispatch";
 import { ToolMessage } from "@langchain/core/messages";
 import type { AgentMiddleware } from "langchain";
 import type { AgentRunExtensionContext } from "../../agent/run-extension.js";
+import { findOwnedToolInterruption } from "../../kernel/owned-tool-interruption.js";
 import { publicToolArguments } from "../../kernel/tool-arguments.js";
 
 /** 展示是独立公开投影；不改handler返回值、canonical artifact或模型内容。 */
@@ -70,10 +71,15 @@ export function createToolLifecycleMiddleware(
         });
         return output;
       } catch (error) {
+        const interruption = findOwnedToolInterruption(error);
         await dispatchCustomEvent("kenfutwork.tool", {
           ...entry,
-          phase: "failed",
-          error: error instanceof Error ? error.message : String(error),
+          phase: interruption ? "cancelled" : "failed",
+          ...(interruption
+            ? {}
+            : {
+                error: error instanceof Error ? error.message : String(error),
+              }),
         });
         throw error;
       }

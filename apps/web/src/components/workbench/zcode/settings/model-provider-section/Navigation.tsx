@@ -26,7 +26,9 @@ import {
   TID_MODEL_PROVIDER_NAV_ITEM,
   testId,
 } from "@zcode/shared";
-import { useCallback, useMemo, type KeyboardEvent } from "react";
+import { ProviderNavigationSummary } from "@zui/host/ModelSettingsSummary.js";
+import { Input } from "@zui/components/ui/input.js";
+import { useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import type { ModelProviderNavGroup, ModelProviderNavItem } from "./constants.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
@@ -113,7 +115,7 @@ function ModelProviderNavigationButton({
           }
           onSelectNavItem(item);
         }}
-        className={`relative box-border flex h-8 w-full items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors max-md:size-8 max-md:justify-center max-md:gap-0 max-md:px-0 ${
+        className={`relative box-border flex min-h-12 w-full items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors max-md:size-8 max-md:justify-center max-md:gap-0 max-md:px-0 ${
           isSelected
             ? "border-border-hover bg-card-selected text-foreground"
             : inactiveItemClassName
@@ -124,9 +126,7 @@ function ModelProviderNavigationButton({
         ) : showIcon ? (
           <span className="shrink-0 text-current">{renderModelProviderNavIcon(item)}</span>
         ) : null}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 max-md:sr-only">
-          <span className="min-w-0 truncate">{label}</span>
-        </span>
+        <ProviderNavigationSummary label={label} models={"provider" in item ? item.provider?.models : undefined} />
         {"provider" in item ? (
           <ProviderStatusIndicator
             provider={item.type === "preset" ? item.statusProvider : item.provider}
@@ -195,7 +195,7 @@ function SortableModelProviderNavigationButton({
         {...attributes}
         {...listeners}
         onKeyDown={handleKeyDown}
-        className={`relative box-border flex h-8 w-full cursor-grab touch-pan-y select-none items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 max-md:size-8 max-md:justify-center max-md:gap-0 max-md:px-0 ${
+        className={`relative box-border flex min-h-12 w-full cursor-grab touch-pan-y select-none items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 max-md:size-8 max-md:justify-center max-md:gap-0 max-md:px-0 ${
           isSelected
             ? "border-border-hover bg-card-selected text-foreground"
             : inactiveItemClassName
@@ -204,9 +204,7 @@ function SortableModelProviderNavigationButton({
         <span className="shrink-0 text-current" aria-hidden="true">
           {renderModelProviderNavIcon(item)}
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 max-md:sr-only">
-          <span className="min-w-0 truncate">{label}</span>
-        </span>
+        <ProviderNavigationSummary label={label} models={"provider" in item ? item.provider?.models : undefined} />
         {"provider" in item ? (
           <ProviderStatusIndicator
             provider={item.type === "preset" ? item.statusProvider : item.provider}
@@ -376,6 +374,8 @@ export function ModelProviderSectionNavigation({
   onReorderProviderIds?: (providerIds: string[]) => Promise<void>;
   reorderableProviderIds?: ReadonlySet<string>;
 }) {
+  const [query, setQuery] = useState("");
+  const filteredGroups = navigationGroups.map(group => ({ ...group, items: group.items.filter(item => resolveModelProviderSideNavLabel(item).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) }));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
@@ -385,8 +385,9 @@ export function ModelProviderSectionNavigation({
 
   return (
     <aside className="px-1.5 py-3 md:py-2 md:px-2">
+      <Input size="lg" aria-label="搜索供应商" placeholder="搜索供应商" value={query} onChange={event => setQuery(event.target.value)} className="mb-3 hidden md:flex" />
       <div className="flex min-h-0 flex-col gap-3 max-md:gap-1">
-        {navigationGroups
+        {filteredGroups
           .filter((group) => group.id !== "custom" || group.items.length > 0)
           .map((group) => (
             <div key={group.id} className="flex flex-col gap-2 max-md:gap-1">
@@ -412,7 +413,7 @@ export function ModelProviderSectionNavigation({
                   group={group}
                   selectedNodeKey={selectedNodeKey}
                   onSelectNavItem={onSelectNavItem}
-                  onReorderProviderIds={onReorderProviderIds}
+                  onReorderProviderIds={query.trim() ? undefined : onReorderProviderIds}
                   reorderableProviderIds={reorderableProviderIds}
                   sensors={sensors}
                 />

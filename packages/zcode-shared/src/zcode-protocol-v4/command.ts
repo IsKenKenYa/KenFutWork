@@ -25,6 +25,7 @@ import {
   zcodeProtocolMcpServerSchema,
 } from "../zcode-protocol/index.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
+import { conversationWorkContextSchema } from "./work-context.js";
 export type { SharedContextRef } from "./shared-context-ref.js";
 
 const createSessionRequestedConfigSchema = z.object({
@@ -45,6 +46,7 @@ export const commandPayloadSchemas = {
   // firstInput 缺省 → phase=draft 空会话；携带 → 直接 turnHeader+userInput rows。
   createSession: z.object({
     workspaceId: z.string(),
+    workContext: conversationWorkContextSchema.optional(),
     firstInput: z
       .object({
         text: z.string(),
@@ -52,6 +54,7 @@ export const commandPayloadSchemas = {
         modelSelection: modelSelectionSchema.optional(),
         mode: submissionModeSchema.optional(),
         planEnabled: z.boolean().optional(),
+        workContext: conversationWorkContextSchema.optional(),
       })
       .optional(),
     config: createSessionRequestedConfigSchema.optional(),
@@ -98,6 +101,7 @@ export const commandPayloadSchemas = {
       modelSelection: modelSelectionSchema.optional(),
       mode: submissionModeSchema.optional(),
       planEnabled: z.boolean().optional(),
+      workContext: conversationWorkContextSchema.optional(),
       // 本次执行仍使用上面的标准 Selection；这里只携带不持久化语义、动态鉴权和 child 策略。
       // 仅 idle startNow 接受，防止 Secret/Ticket 进入普通 CommandInbox。
       modelExecution: modelExecutionSchema.optional(),
@@ -138,6 +142,7 @@ export const commandPayloadSchemas = {
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),
+    workContext: conversationWorkContextSchema.optional(),
     heldQueueDisposition: z.enum(["clearQueueAndSend", "keepQueueAndSend"]).optional(),
     expectedHeldQueueItemIds: z.array(z.string().min(1)).optional(),
   }),

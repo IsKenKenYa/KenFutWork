@@ -15,16 +15,13 @@ import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCanvasFileStore } from "../canvas/file-store.js";
 import { createCanvasRepository } from "../canvas/repository.js";
-import { createChatRepository } from "../chat/repository.js";
 import { createCheckpointRepository } from "../checkpoints/repository.js";
 import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
-import { createDesignGoals } from "../execution/design-goals.js";
-import { createTestDesignModelSelection } from "../execution/design-goals-test-fixture.js";
-import { createDesignTasksService } from "../execution/design-tasks.js";
+import { createCodeUiRepository } from "../code-ui/repository.js";
+import { createUnifiedDesignTaskFixture } from "../code-ui/unified-task-test-fixture.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGoalService } from "../goals/service.js";
-import { createPermissionService } from "../permissions/permission-service.js";
 import type {
   PersistenceService,
   SqlRow,
@@ -373,187 +370,130 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
     afterEach(async () => {
       await database?.close();
     });
-    it("Canvas/Design托管根一致迁移，外部根不动，素材可读且Goal冷恢复必须手动resume", async () => {
+    it("Canvas与统一Design Task托管根一致迁移，外部根不动，素材可读且Goal冷恢复必须手动resume", async () => {
       await setup();
       const projects = createProjectRepository(database.persistence);
       const canvases = createCanvasRepository(database.persistence);
-      const tasks = createDesignTasksService({
-        persistence: database.persistence,
+      const managed = join(f.oldDir, "sandbox", "design-canvas");
+      const external = join(database.directory, "external-design");
+      await mkdir(managed, { recursive: true });
+      await mkdir(external);
+      const files = createProjectFileService({
+        repository: createProjectFileRepository(database.persistence),
         localInstance: database.localInstance,
-      });
-      const goalOptions = {
-        modelSelection: createTestDesignModelSelection(),
-        persistence: database.persistence,
-        localInstance: database.localInstance,
-        goals: createGoalService(),
-        permissions: createPermissionService(),
-      };
-      const goals = createDesignGoals(goalOptions);
-      let reopened: ReturnType<typeof createDesignGoals> | undefined;
-      try {
-        const managed = join(f.oldDir, "sandbox", "design-canvas");
-        const external = join(database.directory, "external-design");
-        await mkdir(managed, { recursive: true });
-        await mkdir(external);
-        const facts: {
-          canvasId: string;
-          taskId: string;
-          assetId: string;
-          root: string;
-          generation: number;
-          goalId: string;
-        }[] = [];
-        const files = createProjectFileService({
-          repository: createProjectFileRepository(database.persistence),
-          localInstance: database.localInstance,
-          canvases,
-          projects: {
-            getProject: async (actor, id) => {
-              const row = await projects.findActiveById(actor.instanceId, id);
-              if (!row) throw new Error("项目缺失");
-              return row;
-            },
+        canvases,
+        projects: {
+          getProject: async (actor, id) => {
+            const row = await projects.findActiveById(actor.instanceId, id);
+            if (!row) throw new Error("项目缺失");
+            return row;
           },
-          executionScopes: createExecutionScopes({
-            repository: createScopeRepository(database.persistence),
-            localInstance: database.localInstance,
-          }),
+        },
+        executionScopes: createExecutionScopes({
+          repository: createScopeRepository(database.persistence),
+          localInstance: database.localInstance,
+        }),
+      });
+      const facts = [];
+      const bytes = Buffer.from("托管与外部Canvas原字节");
+      for (const root of [managed, external]) {
+        const canonical = await createUnifiedDesignTaskFixture(database, {
+          root,
+          name: "迁移Canvas",
+          budget: 17,
         });
-        const bytes = Buffer.from("托管与外部Canvas原字节");
-        for (const root of [managed, external]) {
-          const { canvas } = await projects.createProject({
-            instanceId: database.instanceId,
-            createdByClientId: database.actor.accessClientId,
-            kind: "design",
-            name: "迁移Canvas",
-            slug: randomUUID(),
-            description: null,
-            canvasName: "Canvas",
-            workDir: root,
-          });
-          if (!canvas) throw new Error("Canvas缺失");
-          const prepared = await tasks.prepareCreation(
-            database.actor,
-            canvas.id,
-          );
-          if (!prepared) throw new Error("Task准备缺失");
-          const session = await createChatRepository(
-            database.persistence,
-          ).createSession(database.instanceId, {
-            canvasId: canvas.id,
-            threadId: randomUUID(),
-            createdByClientId: database.actor.accessClientId,
-            designTaskPreparation: prepared,
-          });
-          if (!session) throw new Error("Task缺失");
-          const goal = await goals.create(database.actor, {
-            taskId: session.id,
-            objective: `保留目标文字 ${root}`,
-            tokenBudget: 17,
-          });
-          const assetId = randomUUID();
-          await files.prepareWrite(database.actor, {
-            target: {
-              kind: "canvas",
-              canvasId: canvas.id,
-              projectId: prepared.projectId,
-            },
-            assetId,
-            relativePath: "image.png",
-            mimeType: "image/png",
-            writeFingerprint: hash(bytes.toString()),
-          });
-          await files.namespaceProvider.upload(
-            `${database.instanceId}/project-files/${assetId}`,
-            bytes,
-            { upsert: true, contentType: "image/png" },
-          );
-          await createCanvasFileStore({ projectRoot: root }).save(
-            canvas.id,
-            {
-              elements: [],
-              appState: {},
-              files: {
-                image: {
-                  assetId,
-                  relativePath: "image.png",
-                  version: hash(bytes.toString()),
-                  storageRef: `oss://project-assets/${database.instanceId}/project-files/${assetId}`,
-                },
+        const assetId = randomUUID();
+        await files.prepareWrite(database.actor, {
+          target: {
+            kind: "canvas",
+            canvasId: canonical.canvas.id,
+            projectId: canonical.project.id,
+          },
+          assetId,
+          relativePath: "image.png",
+          mimeType: "image/png",
+          writeFingerprint: hash(bytes.toString()),
+        });
+        await files.namespaceProvider.upload(
+          `${database.instanceId}/project-files/${assetId}`,
+          bytes,
+          { upsert: true, contentType: "image/png" },
+        );
+        await createCanvasFileStore({ projectRoot: root }).save(
+          canonical.canvas.id,
+          {
+            elements: [],
+            appState: {},
+            files: {
+              image: {
+                assetId,
+                relativePath: "image.png",
+                version: hash(bytes.toString()),
+                storageRef: `oss://project-assets/${database.instanceId}/project-files/${assetId}`,
               },
             },
-            null,
-          );
-          facts.push({
-            canvasId: canvas.id,
-            taskId: session.id,
-            assetId,
-            root,
-            generation: (await tasks.readPolicy(database.actor, session.id))
-              .scopeGeneration,
-            goalId: goal.goalId,
-          });
-        }
-        const before = await Promise.all(
-          facts.map((fact) => goals.readTask(database.actor, fact.taskId)),
+          },
+          null,
         );
-        await goals.close();
-        await cp(f.oldDir, f.newDir, { recursive: true });
-        await rm(f.oldDir, { recursive: true });
-        await bindLocalInstanceDataRoot({
-          persistence: database.persistence,
-          instanceId: database.instanceId,
-          dataDir: f.newDir,
+        facts.push({
+          canonical,
+          root,
+          assetId,
+          before: await canonical.readGoal(),
         });
-        for (const [index, fact] of facts.entries()) {
-          const expected =
-            fact.root === managed
-              ? join(f.newDir, "sandbox", "design-canvas")
-              : external;
-          expect(
-            (await canvases.findById(database.instanceId, fact.canvasId))
-              ?.root_directory,
-          ).toBe(expected);
-          const policy = await tasks.readPolicy(database.actor, fact.taskId);
-          expect(policy.rootDirectory).toBe(expected);
-          expect(policy.scopeGeneration).toBe(
-            fact.generation + (fact.root === managed ? 1 : 0),
-          );
-          expect(policy.branchGeneration).toBe(1);
-          expect(policy.activeRunId).toBeNull();
-          expect(await files.read(database.actor, fact.assetId)).toEqual(bytes);
-          expect(
-            (
-              await createCanvasFileStore({ projectRoot: expected }).read(
-                fact.canvasId,
-              )
-            )?.content.files.image?.assetId,
-          ).toBe(fact.assetId);
-          const persisted = await database.persistence
-            .forInstance(database.instanceId)
-            .queryOne<{ state: unknown }>(
-              "select state from public.design_task_goals where instance_id=:instance and task_id=$1",
-              [fact.taskId],
-            );
-          expect(persisted?.state).toEqual(before[index]);
-        }
-        reopened = createDesignGoals(goalOptions);
-        await reopened.initialize();
-        for (const fact of facts)
-          expect(
-            await reopened.readTask(database.actor, fact.taskId),
-          ).toMatchObject({
-            goalId: fact.goalId,
-            status: "paused",
-            tokenBudget: 17,
-            tokensUsed: 0,
-            iteration: 0,
-            reason: "host.restarted",
-          });
-      } finally {
-        await reopened?.close();
-        await goals.close();
-        await tasks.close();
+      }
+      await cp(f.oldDir, f.newDir, { recursive: true });
+      await rm(f.oldDir, { recursive: true });
+      await bindLocalInstanceDataRoot({
+        persistence: database.persistence,
+        instanceId: database.instanceId,
+        dataDir: f.newDir,
+      });
+      for (const fact of facts) {
+        const expected =
+          fact.root === managed
+            ? join(f.newDir, "sandbox", "design-canvas")
+            : external;
+        expect(
+          (
+            await canvases.findById(
+              database.instanceId,
+              fact.canonical.canvas.id,
+            )
+          )?.root_directory,
+        ).toBe(expected);
+        expect(await fact.canonical.readTask()).toMatchObject({
+          rootDirectory: expected,
+          scopeGeneration: fact.root === managed ? 2 : 1,
+          branchGeneration: 1,
+          activeRunId: null,
+        });
+        expect(await files.read(database.actor, fact.assetId)).toEqual(bytes);
+        expect(
+          (
+            await createCanvasFileStore({ projectRoot: expected }).read(
+              fact.canonical.canvas.id,
+            )
+          )?.content.files.image?.assetId,
+        ).toBe(fact.assetId);
+        expect(await fact.canonical.readGoal()).toEqual(fact.before);
+        await fact.canonical.recover();
+        expect(await fact.canonical.readGoal()).toMatchObject({
+          goalId: fact.canonical.goal.goalId,
+          status: "paused",
+          tokenBudget: 17,
+          tokensUsed: 0,
+          iteration: 0,
+          reason: "host.restarted",
+        });
+        expect(
+          (
+            await createCodeUiRepository(database.persistence).find(
+              database.instanceId,
+              fact.canonical.task.id,
+            )
+          )?.active_run_id,
+        ).toBeNull();
       }
     }, 60000);
 

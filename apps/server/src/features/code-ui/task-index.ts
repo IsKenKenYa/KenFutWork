@@ -16,6 +16,21 @@ export function codeUiTaskMeta(
     !snapshot.rows.window.some((row) => row.kind === "userInput")
   )
     return null;
+  const workModes = [
+    ...new Set([
+      ...(record.state?.runWorkContexts ?? []).map(
+        ([, context]) => context.preset,
+      ),
+      ...(record.state?.inputs ?? []).flatMap((input) =>
+        input.intent.workContext ? [input.intent.workContext.preset] : [],
+      ),
+      ...(record.state?.inheritedHistory ?? []).flatMap((turn) =>
+        turn.canonical?.intent.workContext
+          ? [turn.canonical.intent.workContext.preset]
+          : [],
+      ),
+    ]),
+  ];
   return {
     taskId: record.id,
     traceId: record.id,
@@ -25,6 +40,7 @@ export function codeUiTaskMeta(
       workspacePath,
     ),
     projectId: record.project_id,
+    workModes: workModes.length ? workModes : ["code"],
     title: snapshot.meta.title,
     titleOverridden: snapshot.meta.titleSource === "custom",
     createdAt: Date.parse(record.created_at),

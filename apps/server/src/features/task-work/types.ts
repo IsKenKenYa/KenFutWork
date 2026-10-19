@@ -118,7 +118,7 @@ export interface TaskWorkContext {
   actor?: LocalActor;
   signal?: AbortSignal;
   scope: CodeExecutionScope;
-  /** Omitted legacy contexts are Code; Design is always explicit. */
+  /** Code/Design Run均使用code权威；design值仅用于拒绝已退役的执行身份。 */
   ownerKind?: TaskWorkOwnerKind;
   agentId: string;
   runId: string;

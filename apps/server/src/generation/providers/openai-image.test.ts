@@ -13,6 +13,7 @@ type Captured = {
   contentType: string;
   authorization: string | null;
   body: FormData | undefined;
+  json: Record<string, unknown> | undefined;
 };
 
 function captureFetch(responds: Array<unknown>) {
@@ -26,6 +27,7 @@ function captureFetch(responds: Array<unknown>) {
       contentType: String(headers.get("content-type") ?? ""),
       authorization: headers.get("authorization"),
       body: rawBody instanceof FormData ? rawBody : undefined,
+      json: typeof rawBody === "string" ? JSON.parse(rawBody) : undefined,
     };
     requests.push(request);
     const payload = responds[Math.min(index, responds.length - 1)];
@@ -43,7 +45,91 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("自定义网关模型的原生质量格式和像素在生成与编辑中一致发送", async () => {
+  const requests = captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
+  const provider = new OpenAIImageProvider(
+    "gateway-key",
+    "https://gw.example/v1",
+  );
+  const params = {
+    model: "gateway-custom-image-v2",
+    prompt: "一只猫",
+    width: 3072,
+    height: 2048,
+    aspectRatio: "1:1",
+    quality: "cinematic",
+    outputFormat: "jpg",
+  } as const;
+
+  const generated = await provider.generate(params);
+  const edited = await provider.generate({
+    ...params,
+    inputImages: ["data:image/png;base64,aGk="],
+  });
+
+  expect(requests).toHaveLength(2);
+  expect(requests[0]?.url).toBe("https://gw.example/v1/images/generations");
+  expect(requests[0]?.json).toMatchObject({
+    model: "gateway-custom-image-v2",
+    size: "3072x2048",
+    quality: "cinematic",
+    output_format: "jpeg",
+  });
+  expect(requests[1]?.url).toBe("https://gw.example/v1/images/edits");
+  const form = requests[1]?.body;
+  expect(form).toBeInstanceOf(FormData);
+  expect(form?.get("model")).toBe("gateway-custom-image-v2");
+  expect(form?.get("size")).toBe("3072x2048");
+  expect(form?.get("quality")).toBe("cinematic");
+  expect(form?.get("output_format")).toBe("jpeg");
+  expect(form?.get("image")).toBeInstanceOf(File);
+  for (const image of [generated, edited]) {
+    expect(image).toMatchObject({
+      url: "data:image/jpeg;base64,aGk=",
+      mimeType: "image/jpeg",
+      width: 3072,
+      height: 2048,
+    });
+  }
+});
+
 describe("OpenAIImageProvider（生成路径，行为不变回归）", () => {
+  it("GPT官方别名使用标准横图与质量参数", async () => {
+    const requests = captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
+    await new OpenAIImageProvider("key", "https://gw.example/v1").generate({
+      model: "chatgpt-image-latest",
+      prompt: "cat",
+      aspectRatio: "16:9",
+      quality: "hd",
+    });
+    expect(requests[0]?.json).toMatchObject({
+      size: "1536x1024",
+      quality: "medium",
+    });
+  });
+
+  it("DALL-E沿用原请求形状，不接收GPT专用格式或质量", async () => {
+    const requests = captureFetch([
+      { data: [{ url: "https://cdn.example/image.png" }] },
+    ]);
+    const image = await new OpenAIImageProvider(
+      "key",
+      "https://gw.example/v1",
+    ).generate({
+      model: "dall-e-3",
+      prompt: "cat",
+      aspectRatio: "1:1",
+      quality: "ultra",
+      outputFormat: "webp",
+    });
+    expect(requests[0]?.json).toEqual({
+      model: "dall-e-3",
+      prompt: "cat",
+      size: "1024x1024",
+      n: 1,
+    });
+    expect(image.mimeType).toBe("image/png");
+  });
   it("无参考图 → /images/generations，url 响应透传", async () => {
     const requests = captureFetch([
       { data: [{ url: "https://cdn.example/out.png" }] },
@@ -63,13 +149,46 @@ describe("OpenAIImageProvider（生成路径，行为不变回归）", () => {
     });
   });
 
-  it("响应无 url → no_output（既有语义保留）", async () => {
-    captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
+  it("响应无产物 → no_output", async () => {
+    captureFetch([{ data: [{}] }]);
     const provider = new OpenAIImageProvider("sk-key", "https://gw.example/v1");
     await expect(
       provider.generate({ model: "m", prompt: "p", aspectRatio: "1:1" }),
     ).rejects.toMatchObject({ code: "no_output" });
   });
+
+  it.each([
+    ["1:1", "1024x1024", 1024, 1024],
+    ["16:9", "1536x1024", 1536, 1024],
+    ["9:16", "1024x1536", 1024, 1536],
+  ])(
+    "GPT Image %s 使用标准尺寸并接收 base64",
+    async (aspectRatio, size, width, height) => {
+      const requests = captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
+      const image = await new OpenAIImageProvider(
+        "key",
+        "https://gw.example/v1/",
+      ).generate({
+        model: "gpt-image-1.5",
+        prompt: "cat",
+        aspectRatio,
+        quality: "ultra",
+        outputFormat: "webp",
+      });
+      expect(requests[0]?.url).toBe("https://gw.example/v1/images/generations");
+      expect(requests[0]?.json).toMatchObject({
+        size,
+        quality: "high",
+        output_format: "webp",
+      });
+      expect(image).toEqual({
+        url: "data:image/webp;base64,aGk=",
+        mimeType: "image/webp",
+        width,
+        height,
+      });
+    },
+  );
 });
 
 describe("OpenAIImageProvider（编辑路径 S5）", () => {
@@ -124,6 +243,7 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
           contentType: String(headers.get("content-type") ?? ""),
           authorization: headers.get("authorization"),
           body: init?.body instanceof FormData ? init.body : undefined,
+          json: undefined,
         };
         requests.push(request);
         return upload(url);
@@ -142,7 +262,33 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
     expect(requests[0]?.url).toBe("https://gw.example/v1/images/edits");
     const form = requests[0]?.body;
     expect(form).toBeInstanceOf(FormData);
-    expect(form?.getAll("image")).toHaveLength(2);
+    expect(form?.getAll("image[]")).toHaveLength(2);
+  });
+
+  it("GPT编辑同样接收base64，格式/质量随multipart送达", async () => {
+    const requests = captureFetch([{ data: [{ b64_json: "aGk=" }] }]);
+    const image = await new OpenAIImageProvider(
+      "key",
+      "https://gw.example/v1/",
+    ).generate({
+      model: "gpt-image-1",
+      prompt: "edit",
+      aspectRatio: "9:16",
+      inputImages: ["data:image/png;base64,aGk="],
+      quality: "standard",
+      outputFormat: "jpg",
+    });
+    expect(requests[0]?.url).toBe("https://gw.example/v1/images/edits");
+    const form = requests[0]?.body;
+    expect(form?.get("size")).toBe("1024x1536");
+    expect(form?.get("quality")).toBe("low");
+    expect(form?.get("output_format")).toBe("jpeg");
+    expect(image).toMatchObject({
+      url: "data:image/jpeg;base64,aGk=",
+      mimeType: "image/jpeg",
+      width: 1024,
+      height: 1536,
+    });
   });
 
   it("URL 参考图下载失败 → api_error 且可读", async () => {
@@ -160,4 +306,21 @@ describe("OpenAIImageProvider（编辑路径 S5）", () => {
       }),
     ).rejects.toMatchObject({ code: "api_error" });
   });
+});
+
+it("429由共享Job引擎调度，SDK不在一次执行中隐式重发", async () => {
+  const request = vi.fn(async () =>
+    Response.json(
+      { error: { code: "rate_limit_exceeded", message: "模拟限流" } },
+      { status: 429, headers: { "Retry-After": "0.001" } },
+    ),
+  );
+  vi.stubGlobal("fetch", request);
+  await expect(
+    new OpenAIImageProvider(
+      "test-only",
+      "https://controlled.invalid/v1",
+    ).generate({ model: "gpt-image-1", prompt: "cat" }),
+  ).rejects.toMatchObject({ code: "api_error" });
+  expect(request).toHaveBeenCalledOnce();
 });

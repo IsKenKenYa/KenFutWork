@@ -18,6 +18,7 @@ function ctxWith(models: Array<{ id: string; capability: string }>) {
         apiKey: "sk-test",
         baseUrl: "https://gw.example/v1",
         headers: undefined,
+        configRevision: 1,
         models,
       })),
     },
@@ -34,8 +35,8 @@ describe("resolveInstance*ProviderFromPayload（capability 过滤）", () => {
         { id: "vid-1", capability: "video" },
       ]) as never,
     );
-    expect(provider).toBeDefined();
-    expect(provider?.models.map((m) => m.id).sort()).toEqual([
+    expect(provider?.configRevision).toBe(1);
+    expect(provider?.provider.models.map((m) => m.id).sort()).toEqual([
       "edit-1",
       "img-1",
     ]);

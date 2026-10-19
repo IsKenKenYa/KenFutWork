@@ -28,7 +28,10 @@ import type {
   PreStepPayload,
 } from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
-import { evaluateToolPolicy } from "../agent-modes/execution-mode-service.js";
+import {
+  evaluateToolPolicy,
+  policyForMode,
+} from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createProjectRepository } from "../projects/repository.js";
 import { createProjectWorkDirLoader } from "../projects/work-dir.js";
@@ -129,18 +132,27 @@ export function createAgentRunsPlugin(
         // 权限档同门：内置工具（execute/write_file/edit_file）不经过 ctx.tools.execute，
         // tool-pre-execute 事件缝拦不到它们，必须在这里与模式判定合并（见 tool-gate.ts）。
         const permissions = ctx.tryGet("permissions");
-        const toolGateFor = (threadId: string): ToolGate => {
-          const policy = agentModes.resolveToolPolicy(threadId);
+        const toolGateFor = (
+          threadId: string,
+          executionMode?: import("@kenfutwork/shared").ExecutionMode,
+          scoped = false,
+        ): ToolGate => {
+          // Task规划由可退出的planEnabled持有；策略快照只强制纯对话禁工具。
+          const policy = executionMode
+            ? policyForMode(
+                scoped && executionMode === "plan" ? "agent" : executionMode,
+              )
+            : agentModes.resolveToolPolicy(threadId);
           // 分场景（R5-3）：目标/循环这类无人值守轮次走「自动化任务」那一档
           const scenario = isAutomationExecutionMode(
-            agentModes.getMode(threadId),
+            executionMode ?? agentModes.getMode(threadId),
           )
             ? ("automation" as const)
             : ("interactive" as const);
           return composeToolGate({
             modeVerdict: (toolName, detail) =>
               evaluateToolPolicy(policy, toolName, detail),
-            ...(permissions
+            ...(permissions && !scoped
               ? {
                   permissionVerdict: (toolName: string) => {
                     const decision = permissions.evaluate({
@@ -179,18 +191,6 @@ export function createAgentRunsPlugin(
             ),
           resolveCodeApprovalMode: async (handle, actor) => {
             const scope = handle.describe();
-            if (handle.preset === "design") {
-              const policy = await ctx
-                .get("designTasks")
-                .readPolicy(actor, scope.taskId);
-              return {
-                mode: policy.planEnabled ? "plan" : policy.mode,
-                planEnabled: policy.planEnabled,
-                planningEpoch: policy.planningEpoch,
-                scopeGeneration: policy.scopeGeneration,
-                branchGeneration: policy.branchGeneration,
-              };
-            }
             const row = await ctx
               .get("persistence")
               .forInstance(scope.instanceId)
@@ -218,6 +218,7 @@ export function createAgentRunsPlugin(
             return {
               // Task保留基础mode；规划仅收窄本次实际权限，不改写配置。
               mode: planEnabled ? "plan" : mode,
+              baseMode: mode,
               planEnabled,
               planningEpoch: row.state.planningEpoch ?? 0,
               scopeGeneration: Number(row.scope_generation),
@@ -228,19 +229,6 @@ export function createAgentRunsPlugin(
           processSandbox: ctx.get("processSandbox"),
           resolveTaskWorkContext: async (actor, scopeHandle, runId) => {
             const scope = scopeHandle.describe();
-            if (scopeHandle.preset === "design") {
-              const policy = await ctx
-                .get("designTasks")
-                .readPolicy(actor, scope.taskId);
-              return {
-                actor,
-                scope,
-                ownerKind: "design" as const,
-                agentId: scopeHandle.agentId,
-                runId,
-                branchGeneration: policy.branchGeneration,
-              };
-            }
             const row = await ctx
               .get("persistence")
               .forInstance(scope.instanceId)
@@ -338,8 +326,6 @@ export function createAgentRunsPlugin(
       };
     },
     mounted(ctx) {
-      const designTasks = ctx.tryGet("designTasks");
-      const designRunHost = ctx.tryGet("designRunHost");
       void registerRunRoutes(ctx.app, ctx.get("agentRuns"), {
         // 活动查询：mounted 与 apply 是两段作用域，这里按需新建一个仓储包装
         // （仓储是无状态包装，重建不引入额外连接/状态）
@@ -354,8 +340,6 @@ export function createAgentRunsPlugin(
         agentModes: ctx.get("agentModes"),
         executionScopes: ctx.get("executionScopes"),
         codeUi: ctx.get("codeUi"),
-        ...(designTasks ? { designTasks } : {}),
-        ...(designRunHost ? { designRunHost } : {}),
         agentRunMetadataService: ctx.get("agentRunMetadata"),
         localAccess: ctx.get("localAccess"),
         settingsService: ctx.get("settings"),

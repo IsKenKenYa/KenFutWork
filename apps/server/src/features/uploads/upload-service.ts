@@ -41,6 +41,11 @@ export type UploadService = {
 
   getAssetUrl(actor: LocalActor, assetId: string): Promise<string>;
 
+  readAsset(
+    actor: LocalActor,
+    assetId: string,
+  ): Promise<{ bytes: Uint8Array; mimeType: string }>;
+
   deleteAsset(actor: LocalActor, assetId: string): Promise<void>;
 };
 
@@ -130,6 +135,23 @@ export function createUploadService(options: {
       }
 
       return resolveAssetUrl(blob, location.bucket, location.object_path);
+    },
+
+    async readAsset(actor, assetId) {
+      const instanceId = await resolveId(actor);
+      const location = await repository.findLocation(instanceId, assetId);
+      if (!location)
+        throw new UploadServiceError(
+          "asset_not_found",
+          ASSET_NOT_FOUND_MESSAGE,
+          404,
+        );
+      return {
+        bytes: await blob
+          .bucket(location.bucket)
+          .download(location.object_path),
+        mimeType: location.mime_type ?? "application/octet-stream",
+      };
     },
 
     async deleteAsset(actor, assetId) {

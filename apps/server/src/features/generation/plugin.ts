@@ -4,6 +4,8 @@ import { registerImageModelRoutes } from "../../http/image-models.js";
 import { registerModelRoutes } from "../../http/models.js";
 import { registerVideoModelRoutes } from "../../http/video-models.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import type { CanvasDocumentAccess } from "../canvas/document-access.js";
+import { CODE_UI_WORK_CONTEXT_CAPABILITY } from "../code-ui/work-context.js";
 import { createImageGenerateToolDefinition } from "./tools/image-generate.js";
 import { createVideoGenerateToolDefinition } from "./tools/video-generate.js";
 
@@ -30,14 +32,28 @@ export function createGenerationPlugin(deps: {
       "modelCatalog",
       "modelProviders",
       "usage",
+      "capabilities",
     ],
     apply(ctx) {
       const tools = ctx.get("tools");
+      const resolveMediaReferences: CanvasDocumentAccess["resolveMediaReferences"] =
+        (context, requests) => {
+          const documents = ctx
+            .get("capabilities")
+            .get<CanvasDocumentAccess>(
+              CODE_UI_WORK_CONTEXT_CAPABILITY,
+              "design",
+            );
+          if (!documents)
+            throw new Error("设计素材读取能力未加载，请重启工作台。 ");
+          return documents.resolveMediaReferences(context, requests);
+        };
       tools.registerDynamic({
         id: "generation.image",
         scope: "design",
         resolve: (run) =>
           createImageGenerateToolDefinition({
+            resolveMediaReferences,
             ...(run.persistImage ? { persistImage: run.persistImage } : {}),
             ...(run.submitImageJob
               ? { submitImageJob: run.submitImageJob }
@@ -52,6 +68,7 @@ export function createGenerationPlugin(deps: {
         scope: "design",
         resolve: (run) =>
           createVideoGenerateToolDefinition({
+            resolveMediaReferences,
             ...(run.submitVideoJob
               ? { submitVideoJob: run.submitVideoJob }
               : {}),
@@ -77,8 +94,6 @@ export function createGenerationPlugin(deps: {
       });
       void registerGenerateRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
-        uploadService: ctx.get("uploads"),
-        usage: ctx.get("usage"),
         localInstance: ctx.get("localInstance"),
         modelProviders: ctx.get("modelProviders"),
         jobService: ctx.get("jobs"),

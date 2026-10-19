@@ -211,6 +211,13 @@ it("the product stream gate rejects raw SDK events, foreign identity, late event
     const session = {
       async *stream() {
         yield started;
+        yield {
+          type: "message.delta" as const,
+          runId: f.context.runId,
+          messageId: randomUUID(),
+          delta: "可见回复",
+          timestamp: started.timestamp,
+        };
         yield completed;
         yield completed;
       },
@@ -219,7 +226,11 @@ it("the product stream gate rejects raw SDK events, foreign identity, late event
       await collect(
         consumeAgentProviderStream(session, { messages: [] }, f.context),
       ),
-    ).toEqual([started, { ...completed, stopReason: "completed" }]);
+    ).toMatchObject([
+      started,
+      { type: "message.delta", delta: "可见回复" },
+      { ...completed, stopReason: "completed" },
+    ]);
   } finally {
     await f.cleanup();
   }
@@ -230,6 +241,65 @@ async function collect<T>(source: AsyncIterable<T>): Promise<T[]> {
   for await (const value of source) values.push(value);
   return values;
 }
+
+it.each(["code", "design"] as const)(
+  "%s共用运行入口拒绝只有思考和空白的完成事件",
+  async (preset) => {
+    const provider: AgentRuntimeProvider = {
+      id: "empty-result",
+      open(context) {
+        return {
+          async *stream() {
+            const timestamp = new Date().toISOString();
+            yield {
+              type: "run.started",
+              runId: context.runId,
+              sessionId: context.sessionId,
+              conversationId: context.conversationId,
+              timestamp,
+            };
+            yield {
+              type: "thinking.delta",
+              runId: context.runId,
+              messageId: "thought",
+              delta: "正在思考",
+              timestamp,
+            };
+            yield {
+              type: "message.delta",
+              runId: context.runId,
+              messageId: "empty",
+              delta: "  \n",
+              timestamp,
+            };
+            yield { type: "run.completed", runId: context.runId, timestamp };
+          },
+        };
+      },
+    };
+    const runFixture = await runtimeFixture(
+      provider,
+      1000,
+      undefined,
+      "build",
+      { preset },
+    );
+    try {
+      const events = await collect(
+        runFixture.runtime.streamRun(runFixture.created.runId),
+      );
+      expect(events.at(-1)).toMatchObject({
+        type: "run.failed",
+        error: { message: "本轮没有产生回复或工具结果，请重试或更换模型。" },
+      });
+      expect(events.filter((event) => event.type === "run.completed")).toEqual(
+        [],
+      );
+    } finally {
+      await runFixture.cleanup();
+    }
+  },
+);
 
 it("actual RunService injects a second Provider while retaining real Task authorization and execution", async () => {
   const f = await fixture();
@@ -328,7 +398,7 @@ async function runtimeFixture(
       Parameters<typeof createAgentRunService>[0],
       "systemPromptRegistry" | "codeProjectContextLoader" | "settingsService"
     >
-  > & { roleInstructions?: string } = {},
+  > & { roleInstructions?: string; preset?: "code" | "design" } = {},
 ) {
   const f = await fixture();
   const workContext = {
@@ -389,11 +459,12 @@ async function runtimeFixture(
       conversationId: f.task.identity.taskId,
       taskId: f.task.identity.taskId,
       projectId: f.task.identity.projectId,
-      preset: "code",
+      preset: extra.preset ?? "code",
       prompt: "provider lifecycle",
     },
     {
       scopeHandle: f.task.handle,
+      ...(extra.preset ? { workContext: { preset: extra.preset } } : {}),
       actor: f.task.actor,
       threadId: randomUUID(),
       inputIdentity: {
@@ -1264,6 +1335,13 @@ it("a second Provider receives the same composed role, project and registered sy
             runId: context.runId,
             sessionId: context.sessionId,
             conversationId: context.conversationId,
+            timestamp,
+          };
+          yield {
+            type: "message.delta",
+            runId: context.runId,
+            messageId: randomUUID(),
+            delta: "提示已处理",
             timestamp,
           };
           yield { type: "run.completed", runId: context.runId, timestamp };

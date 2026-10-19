@@ -9,6 +9,7 @@ import { installDesktopTitlebarDrag } from "@zcode/ui/design-shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
+import { addModelSettingsOpenListener } from "@/lib/model-settings-navigation";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
 import { ManagementDocumentFrame } from "./management-document-frame";
 
@@ -23,6 +24,7 @@ function WorkbenchModeSurface() {
   // 深链意图只在挂载时取一次：随后 URL 参数会被清掉（见 Workbench），不能让
   // 「参数消失」把已进入的 design/flow 又弹回 code——壳内切模式才是后续的真相源。
   const [requested] = useState(() => search.get("mode"));
+  const [requestedCanvas] = useState(() => search.get("canvasId"));
   const { entry: flowEntry } = useFlowHostEntry();
   const availableModes = useMemo<WorkbenchModes>(
     () =>
@@ -31,7 +33,7 @@ function WorkbenchModeSurface() {
   );
   // 深链解析：flow 探针未落定前不推 flow（落定后可用才推，不可用回落 design——
   // 与旧壳「flow 不可用时弹回 Design」同一条纪律）。
-  const mode = useMemo<WorkbenchMode>(() => {
+  const mode = useMemo<WorkbenchMode | undefined>(() => {
     if (requested === "design") return "design";
     if (requested === "flow")
       return flowEntry === null
@@ -39,20 +41,28 @@ function WorkbenchModeSurface() {
         : flowEntry.available
           ? "flow"
           : "design";
-    return "code";
+    return requested === "code" ? "code" : undefined;
   }, [requested, flowEntry]);
   // 管理文档 keep-alive：首次打开后持续挂载（hidden 收起），重复打开不重载。
   const [management, setManagement] = useState<ManagementTarget | null>(null);
   const openManagement = useCallback((target: ManagementTarget) => {
     setManagement(target);
   }, []);
+  useEffect(
+    () =>
+      addModelSettingsOpenListener(() =>
+        openManagement({ page: "settings", section: "modelProvider" }),
+      ),
+    [openManagement],
+  );
   const closeManagement = useCallback(() => setManagement(null), []);
 
   return (
     <>
       <CodeWorkbenchFrame
         availableModes={availableModes}
-        mode={mode}
+        {...(mode ? { mode } : {})}
+        {...(requestedCanvas ? { canvasId: requestedCanvas } : {})}
         onOpenManagement={openManagement}
       />
       {/* 管理文档**预加载**：页面挂载即后台建好 iframe（hidden），点设置/插件市场

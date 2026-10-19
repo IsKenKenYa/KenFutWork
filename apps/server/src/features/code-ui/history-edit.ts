@@ -21,6 +21,7 @@ import {
   type CodeUiSessionRecord,
 } from "./repository.js";
 import type { CodeUiService, CodeUiServiceDeps } from "./service.js";
+import { freezeWorkContext, workContextForRun } from "./work-context.js";
 
 type Loaded = Awaited<ReturnType<CodeUiService["loadConversation"]>>;
 type WorkspaceTarget = {
@@ -230,6 +231,7 @@ type EditOperation = {
   | { kind: "retryTurn"; payload: RetryPayload }
 );
 type EditSource = {
+  workContext: protocol.ConversationWorkContext;
   row: EditableRow & { sourceCommandId: string };
   snapshot: protocol.ConversationSnapshot;
   threadId: string;
@@ -453,6 +455,10 @@ async function prepareEditSource(
   );
   return {
     row: { ...row, sourceCommandId: row.sourceCommandId },
+    workContext: freezeWorkContext(
+      turn.canonical?.intent.workContext ??
+        workContextForRun(root.state!, row.turnId),
+    ),
     snapshot,
     threadId: turn.context.threadId,
     reference: turn.context.pre.reference,
@@ -503,6 +509,16 @@ function createEditedInput(
 ): CodeAdmittedInput {
   return {
     runId: randomUUID(),
+    ...(source.canonical?.executionMode
+      ? { executionMode: source.canonical.executionMode }
+      : {}),
+    ...(source.canonical?.frozenContributions
+      ? {
+          frozenContributions: structuredClone(
+            source.canonical.frozenContributions,
+          ),
+        }
+      : {}),
     modelInvocation: source.model.modelInvocation,
     scopeGeneration: scope.describe().generation,
     branchGeneration: Number(root.branch_generation) + 1,
@@ -530,6 +546,7 @@ function createEditedInput(
       planEnabled: source.canonical
         ? source.canonical.intent.planEnabled
         : source.snapshot.config.planEnabled,
+      workContext: structuredClone(source.workContext),
       delivery: { requested: "startNow", admitted: "startNow" },
       order: {
         admissionSeq:

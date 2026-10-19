@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -9,30 +10,9 @@ import {
 } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
+import { verifyZcodeInventory } from "./zcode-provenance.mjs";
 
 const { parse } = createRequire(import.meta.url)("@babel/parser");
-
-/**
- * 参考侧（`references/zcode`）的 sha 比对：**原始与 LF 归一任一命中即视为未漂移**。
- *
- * 为什么不能只比一种：清单是在 LF 检出的机器上逐字节记录的，而参考子模块的行尾随宿主
- * git 配置走——`core.autocrlf=true` 的 Windows 检出会把 3000 个源文件里的 1852 个转成
- * CRLF，只比原始就是满屏「漂移」假红（2026-10-09 实测；父仓 `.gitattributes` 钉 LF 管不到
- * 子模块内容）。反过来，上游 `.gitattributes` 标了 `-text` 的文件（如
- * `THIRD-PARTY-NOTICES.md`）原文本就是 CRLF，只有原始 sha 对得上。
- * 二进制（含 NUL）只认逐字节；本仓自己的副本仍逐字节比（父仓钉 LF，保真口径不变）。
- */
-function matchesReferenceSha(path, expected) {
-  const bytes = readFileSync(path);
-  if (createHash("sha256").update(bytes).digest("hex") === expected)
-    return true;
-  if (bytes.includes(0)) return false;
-  return (
-    createHash("sha256")
-      .update(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8")
-      .digest("hex") === expected
-  );
-}
 
 // 固定源码与实际复制记录；只负责机械移植，不生成或仿制界面。
 const root = resolve(import.meta.dirname, "..");
@@ -42,34 +22,21 @@ if (sourceOption >= 0 && !process.argv[sourceOption + 1])
 const sourceRoot =
   sourceOption >= 0 ? resolve(process.argv[sourceOption + 1]) : root;
 const donor = join(sourceRoot, "references/zcode");
-const donorManifest = JSON.parse(
-  readFileSync(join(donor, "package.json"), "utf8"),
-);
 const uiTarget = join(root, "apps/web/src/components/workbench/zcode");
-const revision = "29628c9acdb81b703bbd4080c207a0e7ce5e276e";
 const inventoryPath = join(root, "packages/third-party/zcode/来源清单.json");
 // 已建立清单后默认只核对，禁止重新复制覆盖宿主接线或并行修改。
 if (existsSync(inventoryPath)) {
-  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-  const drift = inventory.records.filter((record) => {
-    const source = join(sourceRoot, record.source);
-    const target = join(root, record.target);
-    return (
-      !existsSync(source) ||
-      !existsSync(target) ||
-      !matchesReferenceSha(source, record.sha256) ||
-      createHash("sha256").update(readFileSync(target)).digest("hex") !==
-        record.copiedSha256
-    );
+  const { inventory, drift } = verifyZcodeInventory({
+    root,
+    ...(sourceOption >= 0 ? { sourceRoot } : {}),
+    prepare: process.argv.includes("--prepare-source"),
   });
-  if (inventory.revision !== revision)
-    throw new Error("源码清单的提交与固定基线不一致");
   process.stdout.write(
-    `已核对 ${inventory.records.length} 个来源文件，漂移 ${drift.length} 个。\n`,
+    `已按清单提交 ${inventory.revision} 核对 ${inventory.records.length} 个来源文件，漂移 ${drift.length} 个。\n`,
   );
   if (drift.length) {
     process.stdout.write(
-      `${drift.map((record) => record.target).join("\n")}\n`,
+      `${drift.map((record) => `${record.target}：${record.reasons.join("、")}`).join("\n")}\n`,
     );
     process.exitCode = 1;
   }
@@ -77,6 +44,17 @@ if (existsSync(inventoryPath)) {
 } else {
   if (sourceOption >= 0)
     throw new Error("--source-root 仅允许已有清单的只读校验，不允许复制源码");
+  if (process.argv.includes("--prepare-source"))
+    throw new Error("准备基线需要已有源码清单。");
+  const donorManifest = JSON.parse(
+    readFileSync(join(donor, "package.json"), "utf8"),
+  );
+  const head = spawnSync("git", ["-C", donor, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  });
+  if (head.status !== 0 || !/^[a-f0-9]{40}$/u.test(head.stdout.trim()))
+    throw new Error("无法取得移植来源提交。");
+  const revision = head.stdout.trim();
   const packageNames = [
     "ui",
     "shared",
@@ -322,7 +300,7 @@ if (existsSync(inventoryPath)) {
   mkdirSync(dirname(inventory), { recursive: true });
   writeFileSync(
     inventory,
-    `${JSON.stringify({ revision, version: "3.14.3", license: "Apache-2.0", records }, null, 2)}\n`,
+    `${JSON.stringify({ revision, version: donorManifest.version, license: "Apache-2.0", records }, null, 2)}\n`,
   );
   process.stdout.write(
     `已机械移植 ${records.length} 个真实源码／资源文件；来源：${revision}\n`,

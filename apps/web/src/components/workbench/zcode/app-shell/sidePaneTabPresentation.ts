@@ -59,6 +59,9 @@ export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
   if (tab.type === "git") return "git diff";
   if (tab.type === "treemapping") return "file activity diff map treemapping";
   if (tab.type === "whiteboard") return `${tab.title} whiteboard canvas draw sketch`;
+  if (tab.type === "document") {
+    return `${tab.title} ${tab.projectId} ${tab.documentId ?? ""} ${tab.resourceType} document`;
+  }
   if (tab.type === "open-design")
     return "open design canvas prototype page dashboard export";
   if (tab.type === "model-trajectory") {
@@ -119,6 +122,7 @@ export function getSidePaneTabTypeLabel(
   if (tab.type === "git") return labels.reviewTitle;
   if (tab.type === "treemapping") return labels.treemappingTitle;
   if (tab.type === "whiteboard") return labels.whiteboardTitle;
+  if (tab.type === "document") return "画布";
   if (tab.type === "open-design") return labels.openDesignTitle;
   if (tab.type === "model-trajectory") return labels.modelTrajectoryTitle;
   if (tab.type === "developer-tools") return labels.developerToolsTitle;

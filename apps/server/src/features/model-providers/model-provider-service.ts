@@ -145,7 +145,19 @@ function toPatch(input: ProviderInstanceUpdateRequest) {
   return patch;
 }
 
+/** 配置提交后的失效信号；不携带凭据、自定义头或模型请求内容。 */
+export interface ModelProviderChangeEvent {
+  readonly instanceId: string;
+  readonly providerId: string;
+  /** 删除后不存在新修订。 */
+  readonly configRevision?: number;
+}
+
 export interface ModelProviderService {
+  /** 注入替身可省略；真实服务在更新、删除或探测改变修订后同步通知。 */
+  onChanged?(
+    listener: (event: ModelProviderChangeEvent) => void | Promise<void>,
+  ): () => void;
   testModelConnectivity(
     actor: LocalActor,
     input: ModelConnectivityInput,
@@ -186,6 +198,20 @@ export function createModelProviderService(options: {
 }): ModelProviderService {
   const { repository, localInstance } = options;
   const stores = new Map<string, LocalCredentialStore>();
+  const listeners = new Set<
+    (event: ModelProviderChangeEvent) => void | Promise<void>
+  >();
+
+  async function notifyChanged(event: ModelProviderChangeEvent): Promise<void> {
+    const notified = await Promise.allSettled(
+      [...listeners].map((listener) =>
+        Promise.resolve().then(() => listener({ ...event })),
+      ),
+    );
+    for (const result of notified)
+      if (result.status === "rejected")
+        console.warn("[model-providers] 配置已提交，变更通知失败。");
+  }
 
   function credentials(context: InstanceContext): LocalCredentialStore {
     let store = stores.get(context.dataDir);
@@ -286,6 +312,12 @@ export function createModelProviderService(options: {
   }
 
   const service: ModelProviderService = {
+    onChanged(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     async testModelConnectivity(actor, input, options) {
       return testInstanceModelConnectivity(
         () => service.resolveCredentials(actor, input.instanceId),
@@ -359,6 +391,11 @@ export function createModelProviderService(options: {
         input.apiKey === undefined
           ? await commit()
           : await credentials(context).change(providerId, input.apiKey, commit);
+      await notifyChanged({
+        instanceId: context.instanceId,
+        providerId,
+        configRevision: Number(row.config_revision),
+      });
       return toResponse(row);
     },
 
@@ -366,11 +403,13 @@ export function createModelProviderService(options: {
       const context = await localInstance.resolve(actor);
       const row = await repository.findInstance(context.instanceId, providerId);
       if (!row) return;
-      await credentials(context).change(
+      const deleted = await credentials(context).change(
         row.api_key_ref ?? providerId,
         null,
         () => repository.deleteInstance(context.instanceId, providerId),
       );
+      if (deleted > 0)
+        await notifyChanged({ instanceId: context.instanceId, providerId });
     },
 
     async readCredential(actor, providerId) {
@@ -395,6 +434,7 @@ export function createModelProviderService(options: {
     async probeInstance(actor, providerId, fetchFn) {
       const context = await localInstance.resolve(actor);
       const row = await findProvider(context, providerId);
+      const previousRevision = Number(row.config_revision);
       const resolved = await resolveRow(context, row);
       const chatModel = resolved.models.find(
         (model) => model.capability === "chat" && model.enabled !== false,
@@ -428,7 +468,17 @@ export function createModelProviderService(options: {
         ...(chatModel ? { model: chatModel } : {}),
       };
       const result = await probeInstance(fetchFn ?? fetch, target);
-      await repository.setProbeResult(context.instanceId, providerId, result);
+      const updated = await repository.setProbeResult(
+        context.instanceId,
+        providerId,
+        result,
+      );
+      if (updated && Number(updated.config_revision) !== previousRevision)
+        await notifyChanged({
+          instanceId: context.instanceId,
+          providerId,
+          configRevision: Number(updated.config_revision),
+        });
       return result;
     },
   };

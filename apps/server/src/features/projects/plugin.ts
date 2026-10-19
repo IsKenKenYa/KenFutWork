@@ -10,7 +10,7 @@ import { createProjectRepository } from "./repository.js";
 
 type ProjectArchiveConsumers = Pick<
   Parameters<typeof createProjectService>[0],
-  "beforeArchiveCodeProject" | "beforeArchiveDesignProject"
+  "beforeArchiveCodeProject"
 >;
 
 /** Archive closing is an HTTP/server consumer; the queue worker only reads projects. */
@@ -27,20 +27,6 @@ function createProjectArchiveConsumers(
     }),
   });
   return {
-    beforeArchiveDesignProject: async (actor, _projectId, taskIds) => {
-      const settled = await Promise.allSettled(
-        taskIds.map(async (taskId) => {
-          const closed = await Promise.allSettled([
-            ctx.get("designRunHost").stop(actor, { taskId }),
-            close(actor, taskId, "项目已关闭", "design"),
-          ]);
-          const failure = closed.find((result) => result.status === "rejected");
-          if (failure?.status === "rejected") throw failure.reason;
-        }),
-      );
-      const failure = settled.find((result) => result.status === "rejected");
-      if (failure?.status === "rejected") throw failure.reason;
-    },
     beforeArchiveCodeProject: async (actor, projectId) => {
       const context = await ctx.get("localInstance").resolve(actor);
       const roots = (
@@ -77,7 +63,6 @@ export function createProjectsPlugin(
           "taskWork",
           "processSandbox",
           "capabilities",
-          "designRunHost",
         ]
       : ["blob", "persistence", "localInstance"],
     apply(ctx) {

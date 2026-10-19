@@ -122,11 +122,13 @@ describe("profiles（P7 单一插件清单）", async () => {
           statusCode: 503,
         });
       }
-      expect(calls).toHaveLength(3);
-      expect(calls.every(({ text }) => /^\s*select\b/iu.test(text))).toBe(true);
-      expect(calls.every(({ values }) => values.includes(instanceId))).toBe(
-        true,
+      const projectQueries = calls.filter(({ text }) =>
+        /^\s*select\b/iu.test(text),
       );
+      expect(projectQueries).toHaveLength(3);
+      expect(
+        projectQueries.every(({ values }) => values.includes(instanceId)),
+      ).toBe(true);
       expect(worker.get("jobLoop").inFlightCount()).toBe(0);
     } finally {
       await worker.dispose();

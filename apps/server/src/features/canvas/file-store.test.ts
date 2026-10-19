@@ -41,6 +41,129 @@ const content = {
   files: {},
 };
 
+it.each([
+  { kind: "empty", value: content },
+  {
+    kind: "nonempty",
+    value: { ...content, elements: [{ id: "original", x: 0 }] },
+  },
+])("同内容确认保存必须推进提交身份并拒绝迟到B：$kind", async ({ value }) => {
+  const { root, store } = await fixture();
+  const initial = await store.save("canvas", value, null);
+  const otherProvider = createCanvasFileStore({ projectRoot: root });
+  const confirmed = await otherProvider.save("canvas", value, initial.revision);
+  const cold = createCanvasFileStore({ projectRoot: root });
+  expect(await cold.read("canvas")).toEqual(confirmed);
+  const late = { ...value, elements: [{ id: "late-B", x: 40 }] };
+
+  await expect(
+    cold.save("canvas", late, initial.revision),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+  expect(await cold.read("canvas")).toEqual(confirmed);
+  expect(confirmed.content).toEqual(value);
+  expect(confirmed.revision).not.toBe(initial.revision);
+  const bytes = await readFile(canvasContentPath(root, "canvas"));
+  expect(confirmed.revision).toBe(
+    createHash("sha256").update(bytes).digest("hex"),
+  );
+});
+
+it("A→B→A的ABA不能复活最初提交令牌，跨provider冷读取保持当前身份", async () => {
+  const { root, store } = await fixture();
+  const a = { ...content, elements: [{ id: "original", x: 0 }] };
+  const first = await store.save("canvas", a, null);
+  const b = await createCanvasFileStore({ projectRoot: root }).save(
+    "canvas",
+    { ...a, elements: [{ id: "original", x: 25 }] },
+    first.revision,
+  );
+  const restored = await createCanvasFileStore({ projectRoot: root }).save(
+    "canvas",
+    a,
+    b.revision,
+  );
+  const cold = createCanvasFileStore({ projectRoot: root });
+  expect(await cold.read("canvas")).toEqual(restored);
+
+  await expect(
+    cold.save(
+      "canvas",
+      { ...a, elements: [{ id: "late", x: 40 }] },
+      first.revision,
+    ),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+  expect(restored.revision).not.toBe(first.revision);
+  expect((await cold.read("canvas"))?.content).toEqual(a);
+});
+
+it("相同insertion生成事实重放保留用户移动后的快照与提交身份", async () => {
+  const { root, store } = await fixture();
+  await store.save("canvas", content, null);
+  const generated = {
+    id: "image",
+    type: "image",
+    x: 0,
+    customData: { generationFingerprint: "insertion-1" },
+  };
+  const first = await store.appendLatest("canvas", { elements: [generated] });
+  const moved = await store.save(
+    "canvas",
+    {
+      ...first.content,
+      elements: [{ ...generated, x: 25 }],
+    },
+    first.revision,
+  );
+  const cold = createCanvasFileStore({ projectRoot: root });
+  expect(await cold.appendLatest("canvas", { elements: [generated] })).toEqual(
+    moved,
+  );
+  expect(
+    await createCanvasFileStore({ projectRoot: root }).read("canvas"),
+  ).toEqual(moved);
+  expect(moved.content.elements).toEqual([{ ...generated, x: 25 }]);
+});
+
+it("同内容update仍执行发布前操作并推进提交身份", async () => {
+  const { root, store } = await fixture();
+  const saved = await store.save("canvas", content, null);
+  const beforePublish = vi.fn(async () => {});
+
+  const updated = await store.update(
+    "canvas",
+    content,
+    saved.revision,
+    beforePublish,
+  );
+
+  expect(beforePublish).toHaveBeenCalledTimes(1);
+  expect(updated.content).toEqual(content);
+  expect(updated.revision).not.toBe(saved.revision);
+  expect(
+    await createCanvasFileStore({ projectRoot: root }).read("canvas"),
+  ).toEqual(updated);
+  await expect(
+    store.save("canvas", content, saved.revision),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+});
+
+it("同内容update的发布前拒绝必须保留原始文件与提交身份", async () => {
+  const { root, store } = await fixture();
+  const saved = await store.save("canvas", content, null);
+  const bytes = await readFile(canvasContentPath(root, "canvas"));
+  const denied = new Error("画布权限已撤销");
+  const beforePublish = vi.fn(async () => {
+    throw denied;
+  });
+
+  await expect(
+    store.update("canvas", content, saved.revision, beforePublish),
+  ).rejects.toBe(denied);
+  expect(beforePublish).toHaveBeenCalledTimes(1);
+  expect(await store.read("canvas")).toEqual(saved);
+  expect(await readFile(canvasContentPath(root, "canvas"))).toEqual(bytes);
+});
+
 it("appendLatest并发不丢元素，同内容同ID重放幂等而冲突ID拒绝", async () => {
   const { store } = await fixture();
   await store.save("canvas", content, null);
@@ -124,6 +247,29 @@ it("缺失只返回null，显式create原子写入固定路径且已有文件不
   expect(await readdir(join(root, ".kenfutwork", "canvases"))).toEqual([
     "canvas.json",
   ]);
+});
+
+it("旧flat画布可冷读取，确认提交后公开内容保持纯CanvasContent", async () => {
+  const { root, store } = await fixture();
+  await store.save("canvas", content, null);
+  const legacyBytes = Buffer.from(JSON.stringify(content));
+  await writeFile(canvasContentPath(root, "canvas"), legacyBytes);
+  const cold = createCanvasFileStore({ projectRoot: root });
+  const legacy = await cold.read("canvas");
+  expect(legacy).toEqual({
+    content,
+    revision: createHash("sha256").update(legacyBytes).digest("hex"),
+  });
+  const confirmed = await cold.save("canvas", content, legacy!.revision);
+  expect(confirmed.content).toEqual(content);
+  expect(confirmed.revision).not.toBe(legacy!.revision);
+  expect(
+    await createCanvasFileStore({ projectRoot: root }).read("canvas"),
+  ).toEqual(confirmed);
+  const bytes = await readFile(canvasContentPath(root, "canvas"));
+  expect(confirmed.revision).toBe(
+    createHash("sha256").update(bytes).digest("hex"),
+  );
 });
 
 it("原始字节变更即使JSON含义相同也使旧revision冲突", async () => {

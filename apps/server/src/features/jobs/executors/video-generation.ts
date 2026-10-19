@@ -1,7 +1,10 @@
 import type { BackgroundJob } from "@kenfutwork/shared";
+import type { VideoGenerateParams } from "../../../generation/types.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
-import { publishGeneratedFile } from "./generated-file.js";
+import { resolveJobMediaInputs } from "../job-inputs.js";
+import { readJobExecution } from "../job-progress.js";
 import { resolveInstanceVideoProviderFromPayload } from "./instance-provider.js";
+import { completeMediaJob } from "./media-result.js";
 
 /**
  * 视频任务执行器（S6 状态机）。
@@ -57,6 +60,9 @@ registerExecutor(
       console.log(`${tag} ${label} +${Date.now() - t0}ms`);
 
     await ctx.generationTargets.resolve(jobRow);
+    const execution = readJobExecution(jobRow);
+    if (execution.outputs?.length || execution.generated || execution.stored)
+      return completeMediaJob(jobRow, undefined, ctx);
 
     const payload = (jobRow.payload ?? {}) as {
       prompt: string;
@@ -73,9 +79,6 @@ registerExecutor(
 
     if (!payload.prompt)
       throw new Error(`Job ${jobId} has no prompt in payload`);
-
-    const createdBy: string | null = jobRow.created_by_client_id ?? null;
-    const instanceId: string = jobRow.instance_id;
 
     // BYOK-only：生成任务必须携带供应商实例（内置目录/遗留 env 注册已退役）。
     if (!payload.provider_instance_id || !payload.model) {
@@ -101,6 +104,9 @@ registerExecutor(
       );
     }
     const providerName = instance.provider.name;
+    const references = jobRow.provider_job_id
+      ? {}
+      : await resolveJobMediaInputs(jobRow, ctx.uploads);
 
     const startAsync = instance.provider.startAsync;
     const pollAsync = instance.provider.pollAsync;
@@ -110,8 +116,10 @@ registerExecutor(
     if (instance && jobRow.provider_job_id) {
       const submittedRevision = payload.provider_config_revision;
       if (
-        submittedRevision != null &&
-        Number(submittedRevision) !== instance.configRevision
+        submittedRevision == null ||
+        Number(submittedRevision) !== instance.configRevision ||
+        !startAsync ||
+        !pollAsync
       ) {
         throw fatal(
           PROVIDER_CONFIG_STALE,
@@ -129,11 +137,7 @@ registerExecutor(
         ctx.env.videoJobTimeoutMs ?? DEFAULT_VIDEO_JOB_TIMEOUT_MS;
 
       const scheduleNextPoll = () =>
-        ctx.queue.send(
-          ctx.queueName,
-          { job_id: jobId, job_type: "video_generation" },
-          pollDelaySeconds,
-        );
+        ctx.jobService.scheduleJob(jobId, pollDelaySeconds);
 
       if (jobRow.provider_job_id) {
         // ── poll 分支（含崩溃恢复：重启后消息重投，见 provider_job_id 即续查）──
@@ -147,6 +151,7 @@ registerExecutor(
           );
         }
 
+        await ctx.assertExecution?.();
         const pollResult = await pollAsync(jobRow.provider_job_id);
         if (pollResult.state === "in_progress") {
           await scheduleNextPoll();
@@ -156,26 +161,16 @@ registerExecutor(
           throw fatal(PROVIDER_TASK_FAILED, pollResult.errorMessage);
         }
         lap("provider_poll_succeeded");
-        return await finishVideoJob(
+        return completeMediaJob(
+          jobRow,
           { url: pollResult.videoUrl, mimeType: "video/mp4" },
-          {
-            job: jobRow,
-            jobId,
-            instanceId,
-            createdBy,
-            providerLabel: instance.provider.name,
-            model,
-            providerInstanceId: payload.provider_instance_id,
-            durationSeconds: payload.duration ?? 5,
-          },
           ctx,
-          lap,
         );
       }
 
       // ── submit 分支：提交即落引用，投首条延迟 poll 消息，本次执行结束 ──
       lap(`${providerName}_submit_start`);
-      const { providerJobId } = await startAsync({
+      let params: VideoGenerateParams = {
         prompt: payload.prompt,
         model,
         ...(payload.duration != null ? { duration: payload.duration } : {}),
@@ -183,19 +178,21 @@ registerExecutor(
           ? { resolution: payload.resolution as "480p" | "720p" | "1080p" }
           : {}),
         ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
-        ...(payload.input_images?.length
-          ? { inputImages: payload.input_images }
-          : {}),
-        ...(payload.input_video ? { inputVideo: payload.input_video } : {}),
+        ...references,
         ...(payload.enable_audio != null
           ? { enableAudio: payload.enable_audio }
           : {}),
-      });
-      await ctx.jobService.setProviderJobId(jobId, providerJobId);
-      // 修订号落 payload（跨修订防护的比对基准；列不加第二个，payload 即执行上下文）
-      await ctx.jobService.appendJobPayload(jobId, {
-        provider_config_revision: instance.configRevision,
-      });
+      };
+      if (instance.provider.prepareInputs)
+        params = await instance.provider.prepareInputs(params);
+      await ctx.assertExecution?.();
+      const attemptId = await ctx.jobService.beginSubmission(
+        jobId,
+        instance.configRevision,
+      );
+      const { providerJobId } = await startAsync(params);
+      await ctx.jobService.recordSubmission(jobId, attemptId, providerJobId);
+      await ctx.assertExecution?.();
       await scheduleNextPoll();
       lap(`${providerName}_submitted`);
       throw fatal(PROVIDER_POLL_SCHEDULED, "提交完成，轮询已排程");
@@ -213,7 +210,7 @@ registerExecutor(
 
     let timeoutTimer: NodeJS.Timeout | undefined;
     const generatePromise = (async () => {
-      const generateParams = {
+      let generateParams: VideoGenerateParams = {
         prompt: payload.prompt,
         model,
         ...(payload.duration != null ? { duration: payload.duration } : {}),
@@ -221,15 +218,16 @@ registerExecutor(
           ? { resolution: payload.resolution as "480p" | "720p" | "1080p" }
           : {}),
         ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
-        ...(payload.input_images?.length
-          ? { inputImages: payload.input_images }
-          : {}),
-        ...(payload.input_video ? { inputVideo: payload.input_video } : {}),
+        ...references,
         ...(payload.enable_audio != null
           ? { enableAudio: payload.enable_audio }
           : {}),
       };
+      if (instance.provider.prepareInputs)
+        generateParams = await instance.provider.prepareInputs(generateParams);
       lap(`${providerName}_call_start`);
+      await ctx.assertExecution?.();
+      await ctx.jobService.beginSubmission(jobId, instance.configRevision);
       return instance.provider.generate(generateParams);
     })();
 
@@ -250,42 +248,13 @@ registerExecutor(
       if (timeoutTimer) clearTimeout(timeoutTimer);
       lap(`${providerName}_call_done`);
 
-      // 用量落账（DEC-6 直连生成链路）：视频 provider 不报 token，记 0 留痕不留盲区
-      if (instanceId) {
-        ctx.usageService
-          ?.record({
-            instanceId,
-            provider: providerName,
-            model,
-            capability: "video",
-            ...(payload.provider_instance_id
-              ? { providerInstanceId: payload.provider_instance_id }
-              : {}),
-            jobId,
-          })
-          .catch(() => {});
-      }
-
-      return await finishVideoJob(
-        generated,
-        {
-          job: jobRow,
-          jobId,
-          instanceId,
-          createdBy,
-          providerLabel: providerName,
-          model,
-          providerInstanceId: payload.provider_instance_id,
-          durationSeconds: generated.durationSeconds,
-        },
-        ctx,
-        lap,
-      );
+      return completeMediaJob(jobRow, generated, ctx);
     } catch (err) {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       const detail = err instanceof Error ? err.message : String(err);
       const wrapped = new Error(
         `Video generation failed for model ${model}: ${detail}`,
+        { cause: err },
       );
       // Preserve the original error code so the worker can distinguish
       // non-retryable errors (e.g. invalid_input) from transient failures.
@@ -297,79 +266,3 @@ registerExecutor(
     }
   },
 );
-
-interface FinishContext {
-  job: BackgroundJob;
-  jobId: string;
-  instanceId: string;
-  createdBy: string | null;
-  providerLabel: string;
-  model: string;
-  providerInstanceId: string | undefined;
-  durationSeconds: number;
-}
-
-/** 终态收尾：下载产物 → blob 落盘 → 资产登记 → 组装 job result（两条执行面共用）。 */
-async function finishVideoJob(
-  generated: { url: string; mimeType: string },
-  meta: FinishContext,
-  ctx: ExecutorContext,
-  lap: (label: string) => void,
-): Promise<Record<string, unknown>> {
-  const { jobId, instanceId } = meta;
-
-  // 用量落账（DEC-6 直连生成链路）：视频 provider 不报 token，记 0 留痕不留盲区
-  if (instanceId) {
-    ctx.usageService
-      ?.record({
-        instanceId,
-        provider: meta.providerInstanceId ? "instance" : meta.providerLabel,
-        model: meta.model,
-        capability: "video",
-        ...(meta.providerInstanceId
-          ? { providerInstanceId: meta.providerInstanceId }
-          : {}),
-        jobId,
-      })
-      .catch(() => {});
-  }
-
-  // Vertex AI returns inline base64 data URIs; Developer API returns HTTP URLs.
-  let buffer: Buffer;
-  if (generated.url.startsWith("data:")) {
-    const commaIdx = generated.url.indexOf(",");
-    if (commaIdx === -1)
-      throw new Error("Invalid data URI: no comma separator");
-    buffer = Buffer.from(generated.url.slice(commaIdx + 1), "base64");
-  } else {
-    const response = await fetch(generated.url);
-    if (!response.ok) {
-      throw new Error(
-        `Failed to download video: ${response.status} ${response.statusText}`,
-      );
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    buffer = Buffer.from(arrayBuffer);
-  }
-  lap("video_download_done");
-
-  const ext = generated.mimeType === "video/webm" ? "webm" : "mp4";
-  const stored = await publishGeneratedFile(
-    meta.job,
-    buffer,
-    generated.mimeType ?? "video/mp4",
-    ext,
-    ctx,
-  );
-  const assetId = stored.assetId;
-  const objectPath = stored.objectPath;
-  const resultUrl = stored.url;
-  lap("total");
-  return {
-    asset_id: assetId,
-    signed_url: resultUrl,
-    object_path: objectPath,
-    duration_seconds: meta.durationSeconds,
-    mime_type: generated.mimeType ?? "video/mp4",
-  };
-}

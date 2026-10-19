@@ -109,7 +109,9 @@ export interface PermissionService extends CodeApprovalService {
   listApprovedForever(): string[];
 }
 
-export function createPermissionService(): PermissionService {
+export function createPermissionService(
+  options: Parameters<typeof createCodeApprovalService>[0] = {},
+): PermissionService {
   let settings: PermissionSettings = { ...DEFAULT_PERMISSION_SETTINGS };
   const threadTiers = new Map<string, PermissionTier>();
   // 「永久」批准的快速判定集：与 settings.approvedForever 同步（applySettings 覆盖，
@@ -129,7 +131,7 @@ export function createPermissionService(): PermissionService {
   };
 
   const service: PermissionService = {
-    ...createCodeApprovalService(),
+    ...createCodeApprovalService(options),
     getTier(threadId) {
       return (threadId && threadTiers.get(threadId)) || settings.tier;
     },

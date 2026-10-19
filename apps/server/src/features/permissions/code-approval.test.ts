@@ -74,13 +74,20 @@ describe("Code 逐调用审批公共服务", () => {
     const service = createPermissionService();
     for (const toolName of ["Write", "Edit", "ApplyPatch"]) {
       expect(
-        service.peek(invocation({ mode: "edit", toolName, access: "write" }))
-          .decision,
+        service.peek(
+          invocation({
+            mode: "edit",
+            approvalCeiling: "edit",
+            toolName,
+            access: "write",
+          }),
+        ).decision,
         toolName,
       ).toBe("allow");
     }
     const input = invocation({
       mode: "edit",
+      approvalCeiling: "edit",
       toolName: "create_skill",
       access: "write",
       args: { name: "review", content: "manifest" },
@@ -99,6 +106,7 @@ describe("Code 逐调用审批公共服务", () => {
       service.peek(
         invocation({
           mode: "edit",
+          approvalCeiling: "edit",
           toolName: "create_mcp_server",
           access: "write",
         }),
@@ -218,7 +226,7 @@ describe("Code 逐调用审批公共服务", () => {
 
   it("自动放行也在最终入口消费，重复调用不能再执行", () => {
     const service = createPermissionService();
-    const input = invocation({ mode: "edit" });
+    const input = invocation({ mode: "edit", approvalCeiling: "edit" });
     expect(service.claim(input).decision).toBe("allow");
     expect(service.claim(input).decision).toBe("deny");
   });
@@ -313,7 +321,7 @@ describe("Code 逐调用审批公共服务", () => {
     expect(service.claim(input).decision).toBe("deny");
   });
 
-  it("main plan 的可信只读 Bash 仍逐调用 ask；非只读命令不能冒充已批准那条", async () => {
+  it("main plan 的可信只读 Bash 逐调用 ask；改变调用字段不能复用原审批", async () => {
     const service = createPermissionService();
     const input = invocation({
       mode: "plan",
@@ -432,17 +440,30 @@ describe("Code 逐调用审批公共服务", () => {
 
   it("Task 自动编辑与 yolo 按本地模式放行，不借用全局权限档", () => {
     const service = createPermissionService();
-    expect(service.peek(invocation({ mode: "edit" })).decision).toBe("allow");
+    expect(
+      service.peek(invocation({ mode: "edit", approvalCeiling: "edit" }))
+        .decision,
+    ).toBe("allow");
     expect(
       service.peek(
-        invocation({ mode: "yolo", toolName: "Bash", access: "execute" }),
+        invocation({
+          mode: "yolo",
+          approvalCeiling: "yolo",
+          toolName: "Bash",
+          access: "execute",
+        }),
       ).decision,
     ).toBe("allow");
     service.setTier(undefined, "full-access");
     expect(service.peek(invocation({ mode: "build" })).decision).toBe("deny");
     expect(
       service.peek(
-        invocation({ mode: "edit", toolName: "Bash", access: "execute" }),
+        invocation({
+          mode: "edit",
+          approvalCeiling: "edit",
+          toolName: "Bash",
+          access: "execute",
+        }),
       ).decision,
     ).toBe("deny");
   });

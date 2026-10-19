@@ -117,7 +117,7 @@ async function fixture(options: Parameters<typeof stdioSandbox>[0] = {}) {
   return { ...f, kernel, app };
 }
 
-it("MCP真实插件入口按Design/Code一处分派，Code创建接共同Harness与Task前close capability", async () => {
+it("MCP两个模式复用真实Task工作域与共同Harness，画布不赋予目录权限", async () => {
   const f = await fixture();
   const code = f.registry.resolveRunTools(f.resolution());
   const creator = code.find((entry) => entry.name === "create_mcp_server");
@@ -125,21 +125,31 @@ it("MCP真实插件入口按Design/Code一处分派，Code创建接共同Harness
   expect(
     code.filter((entry) => entry.name === "create_mcp_server"),
   ).toHaveLength(1);
-  expect(creator.scope).toBe("code");
+  expect(creator.scope).toBe("shared");
   const design = f.registry.resolveRunTools({
     ...f.resolution(),
     preset: "design",
-    scopeHandle: undefined,
   });
   expect(
     design.filter((entry) => entry.name === "create_mcp_server"),
   ).toHaveLength(1);
   expect(
     design.find((entry) => entry.name === "create_mcp_server")?.scope,
-  ).toBe("design");
+  ).toBe("shared");
+  expect(
+    f.registry.resolveRunTools({
+      ...f.resolution(),
+      preset: "design",
+      scopeHandle: undefined,
+    }),
+  ).toEqual([]);
+  const sharedCreator = design.find(
+    (entry) => entry.name === "create_mcp_server",
+  );
+  if (!sharedCreator) throw new Error("Design真实Task MCP未接线");
   expect(
     await f.registry.executeDefinition(
-      creator,
+      sharedCreator,
       { name: "owned", path: "server.mjs", env: { USER_TOKEN: "private" } },
       f.context,
     ),

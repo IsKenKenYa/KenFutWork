@@ -28,10 +28,10 @@ export function createTaskWorkPlugin(): PluginDefinition {
         }),
       );
       const commands = new Map<
-        "code" | "design",
+        "code",
         ReturnType<typeof createTaskCommandTools>
       >();
-      const getCommands = (ownerKind: "code" | "design") => {
+      const getCommands = (ownerKind: "code") => {
         let tools = commands.get(ownerKind);
         if (!tools) {
           tools = createTaskCommandTools(
@@ -39,18 +39,14 @@ export function createTaskWorkPlugin(): PluginDefinition {
               manager: ctx.get("taskWork"),
               sandbox: ctx.get("processSandbox"),
               settings: ctx.get("settings"),
-              ...(ownerKind === "code"
-                ? {
-                    historicalOutputs: {
-                      read: (context, id, offset, maxBytes) =>
-                        ctx
-                          .get("codeUi")
-                          .outputHistory.read(context, id, offset, maxBytes),
-                      manifest: (context) =>
-                        ctx.get("codeUi").outputHistory.manifest(context),
-                    },
-                  }
-                : {}),
+              historicalOutputs: {
+                read: (context, id, offset, maxBytes) =>
+                  ctx
+                    .get("codeUi")
+                    .outputHistory.read(context, id, offset, maxBytes),
+                manifest: (context) =>
+                  ctx.get("codeUi").outputHistory.manifest(context),
+              },
             },
             { scope: ownerKind },
           );
@@ -58,11 +54,11 @@ export function createTaskWorkPlugin(): PluginDefinition {
         }
         return tools;
       };
-      for (const ownerKind of ["code", "design"] as const) {
+      for (const ownerKind of ["code"] as const) {
         for (const name of ["Bash", "TaskOutput", "TaskInput", "TaskStop"]) {
           ctx.get("tools").registerDynamic({
             id: `task-work:${ownerKind}:${name}`,
-            scope: ownerKind,
+            scope: "shared",
             resolve(run) {
               if (
                 !run.scopeHandle ||
@@ -83,10 +79,11 @@ export function createTaskWorkPlugin(): PluginDefinition {
               return name === "Bash"
                 ? {
                     ...tool,
+                    scope: "shared" as const,
                     readonlyExecution:
                       ctx.get("processSandbox").readonlyExecution === true,
                   }
-                : tool;
+                : { ...tool, scope: "shared" as const };
             },
           });
         }

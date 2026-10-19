@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentMiddleware } from "langchain";
 import { publicToolOutput } from "../features/code-ui/tool-lifecycle.js";
+import { findOwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type { AgentRunExtensionContext } from "./run-extension.js";
 import { projectCanonicalToolEvent } from "./stream-adapter.js";
@@ -69,15 +70,20 @@ export function createNativeToolProofMiddleware(options: {
         });
         return output;
       } catch (error) {
+        const interruption = findOwnedToolInterruption(error);
         const failed: ProductToolEvent[] = events.filter(
           (event) => event.type === "tool.started",
         );
         for await (const event of projectCanonicalToolEvent(
           {
-            phase: "failed",
+            phase: interruption ? "cancelled" : "failed",
             toolCallId,
             toolName,
-            error: error instanceof Error ? error.message : String(error),
+            ...(interruption
+              ? {}
+              : {
+                  error: error instanceof Error ? error.message : String(error),
+                }),
           },
           options.identity,
         ))
@@ -87,6 +93,7 @@ export function createNativeToolProofMiddleware(options: {
           toolCallId,
           registered: Boolean(definition),
           events: failed,
+          ...(interruption ? { interruption } : {}),
         });
         throw error;
       }

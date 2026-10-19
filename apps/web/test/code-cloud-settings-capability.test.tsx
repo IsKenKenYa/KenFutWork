@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatErrorBanner } from "@zui/ChatErrorBanner";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
@@ -133,4 +139,144 @@ it("未声明宿主能力时原错误横幅仍保持原套餐入口与操作语�
   expect(screen.getByText(/开通编程套餐/)).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: /开通|升级|套餐/ }));
   expect(upgrade).toHaveBeenCalledOnce();
+});
+
+it("BYOK 零供应商加载完成后不显示加载占位，出现空态引导与添加入口", async () => {
+  const view = {
+    revision: 1,
+    providerTemplates: [],
+    providerOrder: [],
+    providers: [],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
+        return codeHostNotificationResponse(options?.signal);
+      const call = JSON.parse(options.body);
+      if (call.service === "providerSettingsService")
+        return new Response(JSON.stringify({ result: view }));
+      if (call.service === "setting")
+        return new Response(JSON.stringify({ result: {} }));
+      return new Response(JSON.stringify({ result: null }));
+    }),
+  );
+  const client = new CodeHttpChannelClient({
+    apiBase: "http://localhost:3001",
+  });
+  await client.connect();
+  render(
+    <ServiceProvider services={client.services}>
+      <PlatformProvider platform={createCodePlatform(client)}>
+        <ZCodeIntlProvider initialLocale="zh-CN">
+          <StoreProvider broadcastService={client.services.broadcastService}>
+            <TooltipProvider>
+              <CodingPlanUpgradeDialogProvider>
+                <ModelProviderSection workspacePath="/fixture" />
+              </CodingPlanUpgradeDialogProvider>
+            </TooltipProvider>
+          </StoreProvider>
+        </ZCodeIntlProvider>
+      </PlatformProvider>
+    </ServiceProvider>,
+  );
+  try {
+    const emptyState = await screen.findByTestId("model-provider-empty-state");
+    expect(screen.queryByText("加载中...")).toBeNull();
+    expect(screen.getByText("还没有供应商")).toBeTruthy();
+    within(emptyState).getByRole("button", { name: "添加供应商" });
+  } finally {
+    client.dispose();
+  }
+});
+
+it("BYOK 零供应商加载期间仍显示加载占位", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
+        return codeHostNotificationResponse(options?.signal);
+      const call = JSON.parse(options.body);
+      if (call.service === "providerSettingsService")
+        return new Promise<Response>(() => {});
+      if (call.service === "setting")
+        return new Response(JSON.stringify({ result: {} }));
+      return new Response(JSON.stringify({ result: null }));
+    }),
+  );
+  const client = new CodeHttpChannelClient({
+    apiBase: "http://localhost:3001",
+  });
+  await client.connect();
+  render(
+    <ServiceProvider services={client.services}>
+      <PlatformProvider platform={createCodePlatform(client)}>
+        <ZCodeIntlProvider initialLocale="zh-CN">
+          <StoreProvider broadcastService={client.services.broadcastService}>
+            <TooltipProvider>
+              <CodingPlanUpgradeDialogProvider>
+                <ModelProviderSection workspacePath="/fixture" />
+              </CodingPlanUpgradeDialogProvider>
+            </TooltipProvider>
+          </StoreProvider>
+        </ZCodeIntlProvider>
+      </PlatformProvider>
+    </ServiceProvider>,
+  );
+  try {
+    expect(await screen.findByText("加载中...")).toBeTruthy();
+    expect(screen.queryByTestId("model-provider-empty-state")).toBeNull();
+  } finally {
+    client.dispose();
+  }
+});
+
+it("空态卡的添加入口打开供应商模板选择器", async () => {
+  const view = {
+    revision: 1,
+    providerTemplates: [],
+    providerOrder: [],
+    providers: [],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_input, options) => {
+      if (String(_input).endsWith("/events"))
+        return codeHostNotificationResponse(options?.signal);
+      const call = JSON.parse(options.body);
+      if (call.service === "providerSettingsService")
+        return new Response(JSON.stringify({ result: view }));
+      if (call.service === "setting")
+        return new Response(JSON.stringify({ result: {} }));
+      return new Response(JSON.stringify({ result: null }));
+    }),
+  );
+  const client = new CodeHttpChannelClient({
+    apiBase: "http://localhost:3001",
+  });
+  await client.connect();
+  render(
+    <ServiceProvider services={client.services}>
+      <PlatformProvider platform={createCodePlatform(client)}>
+        <ZCodeIntlProvider initialLocale="zh-CN">
+          <StoreProvider broadcastService={client.services.broadcastService}>
+            <TooltipProvider>
+              <CodingPlanUpgradeDialogProvider>
+                <ModelProviderSection workspacePath="/fixture" />
+              </CodingPlanUpgradeDialogProvider>
+            </TooltipProvider>
+          </StoreProvider>
+        </ZCodeIntlProvider>
+      </PlatformProvider>
+    </ServiceProvider>,
+  );
+  try {
+    const emptyState = await screen.findByTestId("model-provider-empty-state");
+    await userEvent.click(
+      within(emptyState).getByRole("button", { name: "添加供应商" }),
+    );
+    expect(await screen.findByText("创建自定义供应商")).toBeTruthy();
+  } finally {
+    client.dispose();
+  }
 });

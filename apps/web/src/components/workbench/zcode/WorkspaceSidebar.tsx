@@ -148,6 +148,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
+import { useSharedProjectTabs, useSharedTaskFilter, taskMatchesWorkMode } from "./host/SharedProjectNavigation.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
 import {
   HostSidebarRail,
@@ -425,7 +426,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     (state) => state.collapseAllWorkspaceTabs,
   );
 
-  const workspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
+  const allWorkspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
+  const workspaceTabs = useSharedProjectTabs(allWorkspaceTabs);
+  const workModeFilter = useSharedTaskFilter();
   const { conversationWorkspaceTabs, projectWorkspaceTabs } = useMemo(
     () => partitionWorkspaceTabsByPurpose(workspaceTabs),
     [workspaceTabs],
@@ -721,16 +724,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     sortBy: taskSortBy,
     visibleLimitByWorkspaceKey: workspaceTaskVisibleLimitByKey,
     defaultVisibleLimit: WORKSPACE_TASK_PAGE_SIZE,
+    ...(workModeFilter === "all" ? {} : { workModeFilter }),
   });
   const workspaceTaskGroupByKey = useMemo(
     () =>
       new Map(
         workspaceTaskLists.groups.map((group) => [
           buildTaskWorkspaceKey(group.workspacePath, group.workspaceIdentity),
-          group,
+          { ...group, items: group.items.filter((task) => taskMatchesWorkMode(task, workModeFilter)) },
         ]),
       ),
-    [workspaceTaskLists.groups],
+    [workspaceTaskLists.groups, workModeFilter],
   );
   const handleShowMoreWorkspaceTasks = useCallback((workspaceKey: string) => {
     setWorkspaceTaskVisibleLimitByKey((current) =>

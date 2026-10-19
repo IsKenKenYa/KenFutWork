@@ -23,6 +23,7 @@ export function isGoalToolEvidence(
     const result = objectValue(outputText);
     const normalized = command.trim().replace(/;$/u, "").trim();
     return (
+      normalized.length > 0 &&
       result?.state === "exited" &&
       result.exitCode === 0 &&
       !["true", ":", "exit 0"].includes(normalized)
@@ -38,5 +39,11 @@ export function isGoalToolEvidence(
       (summary.state === "exited" && summary.exitCode === 0)
     );
   }
-  return true;
+  const result = objectValue(outputText);
+  return (
+    !result?.error &&
+    result?.success !== false &&
+    result?.ok !== false &&
+    (toolName !== "manipulate_canvas" || result?.applied !== 0)
+  );
 }

@@ -1,11 +1,21 @@
-import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import type {
+  ExecutionMode,
+  zcodeUiProtocol as protocol,
+  SandboxMode,
+} from "@kenfutwork/shared";
+import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 
 /** Durable canonical input; credentials and attachment bytes remain outside persisted state. */
 export interface CodeAdmittedInput {
+  /** Host execution strategy captured at admission; never re-read from session settings. */
+  executionMode?: ExecutionMode;
   intent: protocol.ConversationInputIntent;
   runId: string;
   modelInvocation: ModelInvocationSnapshot;
+  frozenContributions?: ToolContributionSnapshot;
+  /** 本次用户输入待消费的物理权限选择；历史重试不得重新签发。 */
+  pendingScopeSelection?: SandboxMode;
   scopeGeneration: number;
   branchGeneration: number;
   status: "queued" | "reserved" | "active" | "settled" | "discarded";

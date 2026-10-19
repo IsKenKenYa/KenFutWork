@@ -14,7 +14,7 @@ export function createAskUserQuestionToolDefinition(options: {
 }): ToolDefinition {
   return {
     name: ASK_USER_QUESTION_TOOL_NAME,
-    scope: "code",
+    scope: "shared",
     access: "read",
     exposure: "core",
     description:

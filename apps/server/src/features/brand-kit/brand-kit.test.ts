@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { createLocalInstanceService } from "../local-instance/service.js";
@@ -233,11 +234,17 @@ function createFakeRepository(
   };
 }
 
-function createStorageStub() {
+function createStorageStub(bytes: Uint8Array = new Uint8Array()) {
   const calls: string[] = [];
   // blob 缝替身：只记录调用，不断言 Provider 细节
   const blob = {
     bucket: (bucket: string) => ({
+      download: async (path: string, options?: { maxBytes: number }) => {
+        calls.push(`download:${bucket}:${path}:${options?.maxBytes}`);
+        if (options && bytes.byteLength > options.maxBytes)
+          throw new Error("超过读取限制");
+        return bytes;
+      },
       isPublic: async () => false,
       resolveUrl: async (path: string) => {
         calls.push(`resolveUrl:${bucket}:${path}`);
@@ -491,4 +498,85 @@ it("品牌实例 Actor 在父资源读取前验证，创建客户端不是归属
       accessClientId: "other-browser",
     }),
   ).toEqual([]);
+});
+
+function referenceAsset(bytes: Uint8Array) {
+  return {
+    id: ASSET_ID,
+    asset_type: "logo",
+    display_name: "品牌标志",
+    role: null,
+    sort_order: 0,
+    text_content: null,
+    file_url: "instance-1/kit-1/logo.png",
+    metadata: { sha256: createHash("sha256").update(bytes).digest("hex") },
+    created_at: KIT_ROW.created_at,
+    updated_at: KIT_ROW.updated_at,
+  };
+}
+
+it("品牌引用按真实kit父链读取存储字节与MIME，不把签名URL当路径", async () => {
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const storage = createStorageStub(bytes);
+  const seen: string[] = [];
+  const { service } = buildService({
+    storage,
+    repository: {
+      findAsset: async (instance, kit) => {
+        seen.push(`${instance}:${kit}`);
+        return kit === KIT_ID ? referenceAsset(bytes) : null;
+      },
+    },
+  });
+  expect(await service.readAsset(ACTOR, KIT_ID, ASSET_ID, 100)).toEqual({
+    bytes,
+    mimeType: "image/png",
+    version: createHash("sha256").update(bytes).digest("hex"),
+  });
+  expect(seen).toEqual([
+    `${INSTANCE_ID}:${KIT_ID}`,
+    `${INSTANCE_ID}:${KIT_ID}`,
+  ]);
+  expect(storage.calls).toContain(
+    "download:brand-kit-assets:instance-1/kit-1/logo.png:100",
+  );
+  await expect(
+    service.readAsset(ACTOR, "other-kit", ASSET_ID, 100),
+  ).rejects.toThrow("不属于所选品牌");
+  await expect(service.readAsset(ACTOR, KIT_ID, ASSET_ID, 4)).rejects.toThrow(
+    "超过读取限制",
+  );
+});
+
+it("未知MIME、字节版本不符及读取期间删除的品牌素材都保留失败", async () => {
+  const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const invalid = buildService({
+    storage: createStorageStub(Buffer.from("unknown")),
+    repository: { findAsset: async () => referenceAsset(bytes) },
+  });
+  await expect(
+    invalid.service.readAsset(ACTOR, KIT_ID, ASSET_ID, 100),
+  ).rejects.toThrow("格式无法识别");
+  const changed = buildService({
+    storage: createStorageStub(bytes),
+    repository: {
+      findAsset: async () => ({
+        ...referenceAsset(bytes),
+        metadata: { sha256: "b".repeat(64) },
+      }),
+    },
+  });
+  await expect(
+    changed.service.readAsset(ACTOR, KIT_ID, ASSET_ID, 100),
+  ).rejects.toThrow("文件已变化");
+  let reads = 0;
+  const deleted = buildService({
+    storage: createStorageStub(bytes),
+    repository: {
+      findAsset: async () => (++reads === 1 ? referenceAsset(bytes) : null),
+    },
+  });
+  await expect(
+    deleted.service.readAsset(ACTOR, KIT_ID, ASSET_ID, 100),
+  ).rejects.toThrow("读取期间变化");
 });

@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { StreamEvent } from "@kenfutwork/shared";
+import type {
+  CanvasDocumentUpdatedMessage,
+  StreamEvent,
+} from "@kenfutwork/shared";
 import type { WebSocket } from "ws";
 
 type PendingRPC = {
@@ -213,13 +216,21 @@ export class ConnectionManager {
   // ---------------------------------------------------------------------------
 
   /** Send a StreamEvent to ALL connections viewing a specific canvas. */
-  pushToCanvas(canvasId: string, event: StreamEvent): void {
+  pushToCanvas(
+    canvasId: string,
+    event: StreamEvent,
+    instanceId?: string,
+  ): void {
     const ids = this.canvasIndex.get(canvasId);
     if (!ids) return;
     const payload = JSON.stringify({ type: "event", event });
     for (const cid of ids) {
       const entry = this.connections.get(cid);
-      if (entry && entry.ws.readyState === 1) {
+      if (
+        entry &&
+        entry.ws.readyState === 1 &&
+        (instanceId === undefined || entry.instanceId === instanceId)
+      ) {
         entry.ws.send(payload);
       }
     }
@@ -282,6 +293,13 @@ export class ConnectionManager {
    * Backward-compatible send: delegates to sendToUser.
    */
   send(instanceId: string, message: Record<string, unknown>): boolean {
+    return this.sendToUser(instanceId, message);
+  }
+
+  sendCanvasDocumentUpdatedToInstance(
+    instanceId: string,
+    message: CanvasDocumentUpdatedMessage,
+  ): boolean {
     return this.sendToUser(instanceId, message);
   }
 

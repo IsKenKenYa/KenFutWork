@@ -13,6 +13,43 @@ const topicKinds = [
   "workspace-config",
 ] as const;
 
+it("文档通知只发送给同实例活动通知连接；不要求Task订阅或V4握手", async () => {
+  const connections = new CodeUiConnections();
+  const owner = randomUUID();
+  const deliveries: string[] = [];
+  const open = (instanceId: string, id: string, receivesNotifications = true) =>
+    connections.open(
+      instanceId,
+      instanceId,
+      async () => {
+        deliveries.push(id);
+      },
+      () => {},
+      false,
+      receivesNotifications,
+    );
+  const first = open(owner, "first");
+  open(owner, "second");
+  open(randomUUID(), "foreign");
+  open(owner, "control-only", false);
+  const revoked = open(owner, "revoked");
+  revoked.dispose();
+  const event: CodeUiEvent = {
+    event: "canvasDocumentUpdated",
+    data: {
+      type: "canvas.document.updated",
+      canvasId: randomUUID(),
+      projectId: randomUUID(),
+      deleted: false,
+    },
+  };
+  await connections.notifyEvent(owner, event);
+  expect(deliveries).toEqual(["first", "second"]);
+  first.dispose();
+  await connections.notifyEvent(owner, event);
+  expect(deliveries).toEqual(["first", "second", "second"]);
+});
+
 function fixture(kind: (typeof topicKinds)[number]) {
   const owner = randomUUID();
   const projectId = randomUUID();

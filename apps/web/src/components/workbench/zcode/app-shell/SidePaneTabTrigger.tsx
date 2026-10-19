@@ -321,6 +321,10 @@ export function SidePaneTabIcon({ tab }: { tab: WorkspaceSidePaneTab }) {
     return <PaletteIcon className="size-3.5" />;
   }
 
+  if (tab.type === "document") {
+    return <PaletteIcon className="size-3.5" />;
+  }
+
   if (tab.type === "open-design") {
     return <PenToolIcon className="size-3.5" />;
   }
@@ -531,6 +535,10 @@ export function getSidePaneTabTitle(
 
   if (tab.type === "whiteboard") {
     return tab.title || formatMessage({ id: "whiteboard.title" });
+  }
+
+  if (tab.type === "document") {
+    return tab.title;
   }
 
   // open-design 无 title/source 字段：必须在此分派，否则会 fallthrough 到底部

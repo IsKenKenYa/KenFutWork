@@ -13,11 +13,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { checkActions } from "../scripts/check-actions.mjs";
 import { checkDocs, updateFrozenLock } from "../scripts/check-docs.mjs";
 import * as envModule from "../scripts/check-env.mjs";
+import { verifyZcodeInventory } from "../scripts/zcode-provenance.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -1329,4 +1330,171 @@ test("打包 external 原生模块不得静态 import（SEA 加载期会崩）",
     [],
     `这些文件把打包 external 写成了静态 import/裸 require（SEA 加载期会崩，改用 createRequire 懒加载）：\n${offenders.join("\n")}`,
   );
+});
+
+async function zcodeProvenanceFixture(t) {
+  const root = await mkdtemp(path.join(tmpdir(), "kfw-provenance-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const donor = path.join(root, "references/zcode");
+  await mkdir(path.join(donor, "src"), { recursive: true });
+  await mkdir(path.join(root, "copied"));
+  await mkdir(path.join(root, "packages/third-party/zcode"), {
+    recursive: true,
+  });
+  const git = async (...args) =>
+    (await execFileAsync("git", ["-C", donor, ...args])).stdout.trim();
+  const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  await git("init", "-q");
+  await git("config", "user.name", "provenance-fixture");
+  await git("config", "user.email", "provenance@example.invalid");
+  await git("config", "core.autocrlf", "false");
+  const original = "original source\n",
+    copied = "explicit adaptation\n";
+  const binary = Buffer.from([0, 10, 13, 255, 10]);
+  await writeFile(
+    path.join(donor, "package.json"),
+    JSON.stringify({ version: "1.0.0" }),
+  );
+  await writeFile(path.join(donor, "src/example.ts"), original);
+  await writeFile(path.join(donor, "src/说明 空白.bin"), binary);
+  await git("add", "package.json", "src/example.ts", "src/说明 空白.bin");
+  await git("commit", "-qm", "original fixture");
+  const revision = await git("rev-parse", "HEAD");
+  await writeFile(path.join(root, "copied/example.ts"), copied);
+  await writeFile(path.join(root, "copied/说明 空白.bin"), binary);
+  const inventory = {
+    revision,
+    version: "1.0.0",
+    records: [
+      {
+        source: "references/zcode/src/example.ts",
+        target: "copied/example.ts",
+        sha256: hash(original),
+        copiedSha256: hash(copied),
+      },
+      {
+        source: "references/zcode/src/说明 空白.bin",
+        target: "copied/说明 空白.bin",
+        sha256: hash(binary),
+        copiedSha256: hash(binary),
+      },
+    ],
+  };
+  const save = () =>
+    writeFile(
+      path.join(root, "packages/third-party/zcode/来源清单.json"),
+      JSON.stringify(inventory),
+    );
+  await save();
+  await writeFile(
+    path.join(donor, "package.json"),
+    JSON.stringify({ version: "2.0.0" }),
+  );
+  await writeFile(path.join(donor, "src/example.ts"), "new upstream source\n");
+  await git("add", "package.json", "src/example.ts");
+  await git("commit", "-qm", "upstream update fixture");
+  return { root, donor, git, hash, inventory, save, original, binary };
+}
+
+test("ZCode provenance reads inventory commit without depending on reference HEAD or dirty files", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const head = await f.git("rev-parse", "HEAD");
+  await writeFile(
+    path.join(f.donor, "src/example.ts"),
+    "uncommitted upstream research\n",
+  );
+  const status = await f.git("status", "--porcelain");
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("status", "--porcelain"), status);
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "unregistered target edit\n",
+  );
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["副本字节漂移"] },
+  ]);
+});
+
+test("ZCode baseline upgrades are driven by inventory metadata and real source/target hashes", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  f.inventory.revision = await f.git("rev-parse", "HEAD");
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单版本/);
+  f.inventory.version = "2.0.0";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift[0].reasons, [
+    "清单基线来源不符",
+  ]);
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  f.inventory.records[0].copiedSha256 = f.hash("new explicit adaptation\n");
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "new explicit adaptation\n",
+  );
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  f.inventory.records[0].source = "references/zcode/src/missing.ts";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift[0].reasons, [
+    "清单基线来源不符",
+  ]);
+});
+
+test("ZCode shallow CI preparation fetches baseline objects without moving any existing refs", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const origin = `${f.donor}-origin`;
+  await execFileAsync("git", ["clone", "-q", "--bare", f.donor, origin]);
+  await rm(f.donor, { recursive: true });
+  await execFileAsync("git", [
+    "clone",
+    "-q",
+    "--depth=1",
+    pathToFileURL(origin).href,
+    f.donor,
+  ]);
+  const head = await f.git("rev-parse", "HEAD"),
+    refs = await f.git("show-ref");
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root }),
+    /--prepare-source/,
+  );
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, prepare: true }).drift,
+    [],
+  );
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("show-ref"), refs);
+  assert.equal(await f.git("status", "--porcelain"), "");
+});
+
+test("explicit ZCode source mirrors retain CRLF compatibility and exact binary/target integrity", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const mirror = path.join(f.root, "mirror");
+  const donor = path.join(mirror, "references/zcode");
+  await mkdir(path.join(donor, "src"), { recursive: true });
+  await writeFile(
+    path.join(donor, "package.json"),
+    JSON.stringify({ version: "1.0.0" }),
+  );
+  await writeFile(
+    path.join(donor, "src/example.ts"),
+    f.original.replaceAll("\n", "\r\n"),
+  );
+  await writeFile(path.join(donor, "src/说明 空白.bin"), f.binary);
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, sourceRoot: mirror }).drift,
+    [],
+  );
+  await writeFile(
+    path.join(donor, "src/说明 空白.bin"),
+    Buffer.from([0, 13, 10, 13, 255, 10]),
+  );
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, sourceRoot: mirror }).drift[0].reasons,
+    ["清单基线来源不符"],
+  );
+  f.inventory.records[0].target = "../outside";
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单记录无效/);
 });

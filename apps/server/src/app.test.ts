@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { KenFutWorkAgentFactory } from "./agent/deep-agent.js";
 import type { AgentRuntimeProvider } from "./agent/provider-contract.js";
 import { buildApp } from "./app.js";
+import { createCodeUiConversation } from "./features/code-ui/conversation.js";
+import type { CodeUiSessionRecord } from "./features/code-ui/repository.js";
 import { createExecutionScopes } from "./features/execution/scope-service.js";
 import type { ProjectDirectoryRelinkService } from "./features/projects/directory-relink.js";
 import { createTaskWorkManager } from "./features/task-work/service.js";
@@ -86,10 +88,32 @@ function buildRuntimeProbeApp(
   } = {},
 ) {
   const persistence = createStartupPersistenceFixture();
-  const taskPolicies = new Map<
-    string,
-    { instanceId: string; accessClientId: string | null; policy: object }
-  >();
+  const taskRecords = new Map<string, CodeUiSessionRecord>();
+  const originalForInstance = persistence.forInstance.bind(persistence);
+  persistence.forInstance = (instanceId) => {
+    const original = originalForInstance(instanceId);
+    return {
+      ...original,
+      async queryOne(statement, params = []) {
+        if (/from public\.code_ui_sessions/i.test(statement)) {
+          const record = taskRecords.get(String(params[0]));
+          return record?.instance_id === instanceId
+            ? (structuredClone(record) as never)
+            : null;
+        }
+        return original.queryOne(statement, params);
+      },
+      async query(statement, params = []) {
+        if (
+          /from public\.(code_ui_events|code_ui_outputs|agent_turn_boundaries)/i.test(
+            statement,
+          )
+        )
+          return [];
+        return original.query(statement, params);
+      },
+    };
+  };
   const taskWorkStore = createMemoryTaskWorkStore();
   const taskWork = createTaskWorkManager({
     store: taskWorkStore,
@@ -108,51 +132,24 @@ function buildRuntimeProbeApp(
       taskWork,
       persistence,
       modelCatalog: { listCatalog: async () => [] } as never,
-      designTasks: {
-        readPolicy: async (
-          actor: { instanceId: string; accessClientId: string | null },
-          taskId: string,
-        ) => {
-          const entry = taskPolicies.get(taskId);
-          if (
-            !entry ||
-            entry.instanceId !== actor.instanceId ||
-            entry.accessClientId !== actor.accessClientId
-          )
-            throw new Error("测试 Design Task scope 不匹配。");
-          return entry.policy;
-        },
-        recoverInterruptedTasks: async () => 0,
-        onLeaseLost: () => () => {},
-        close: async () => {},
-      } as never,
-      designGoals: {
-        initialize: async () => {},
-        close: async () => {},
-        onLost: () => () => {},
-        readTask: async () => null,
-        read: async () => null,
-        verify: async () => {
-          throw new Error("NoGoal Provider probe cannot verify goal evidence.");
-        },
-        observe: async () => ({ stop: false }),
-        continuation: async () => null,
-      } as never,
     },
   });
   return {
     app,
-    async openDesignTask(actor: {
-      instanceId: string;
-      accessClientId: string | null;
-    }) {
+    async openTask(
+      actor: {
+        instanceId: string;
+        accessClientId: string | null;
+      },
+      runId: string,
+    ) {
       const localInstance = app.kernel.get("localInstance");
       const instance = await localInstance.getContext();
       const scope: CodeExecutionScope = {
         instanceId: actor.instanceId,
         projectId: randomUUID(),
         taskId: randomUUID(),
-        generation: 0,
+        generation: 1,
         rootDirectory: await realpath(instance.dataDir),
         additionalDirectories: [],
         sandboxMode: "workspace-write",
@@ -162,7 +159,7 @@ function buildRuntimeProbeApp(
           load: async (instanceId, taskId) =>
             instanceId === scope.instanceId && taskId === scope.taskId
               ? {
-                  preset: "design",
+                  preset: "code",
                   scope,
                   state: "ready",
                   branchGeneration: 1,
@@ -172,20 +169,48 @@ function buildRuntimeProbeApp(
         localInstance,
       });
       const handle = await scopes.openTask(actor, scope.taskId);
-      taskPolicies.set(scope.taskId, {
-        instanceId: actor.instanceId,
-        accessClientId: actor.accessClientId,
-        policy: {
-          mode: "build",
-          planEnabled: false,
-          planningEpoch: 0,
-          scopeGeneration: scope.generation,
-          branchGeneration: handle.branchGeneration,
+      const host = createCodeUiConversation({
+        sessionId: scope.taskId,
+        workspacePath: scope.rootDirectory,
+        config: {
+          provider: "probe",
+          model: "probe",
+          thought: "",
+          followupMode: "queue",
         },
+      });
+      host.startTurn({
+        runId,
+        commandId: "provider-probe",
+        text: "provider wiring probe",
+        workContext: { preset: "code" },
+      });
+      taskRecords.set(scope.taskId, {
+        id: scope.taskId,
+        instance_id: actor.instanceId,
+        project_id: scope.projectId,
+        root_directory: scope.rootDirectory,
+        additional_directories: [],
+        sandbox_mode: "workspace-write",
+        scope_generation: 1,
+        branch_generation: 1,
+        execution_state: "ready",
+        chat_session_id: scope.taskId,
+        root_session_id: scope.taskId,
+        parent_session_id: null,
+        parent_tool_call_id: null,
+        state: host.exportState(),
+        revision: 0,
+        active_run_id: runId,
+        archived: false,
+        pinned: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        deleted_at: null,
       });
       taskWorkStore.setTask({
         actor,
-        ownerKind: "design",
+        ownerKind: "code",
         scope: handle.describe(),
         agentId: handle.agentId,
         runId: "provider-probe-setup",
@@ -208,7 +233,8 @@ async function streamRuntimeProbe(
     headers: { authorization: `Bearer ${token}` },
   });
   if (!actor) throw new Error("测试桌面接入身份不可用。");
-  const scopeHandle = await probe.openDesignTask(actor);
+  const acceptedRunId = randomUUID();
+  const scopeHandle = await probe.openTask(actor, acceptedRunId);
   const scope = scopeHandle.describe();
   const runtime = app.kernel.get("agentRuns");
   const { runId } = runtime.createRun(
@@ -218,9 +244,14 @@ async function streamRuntimeProbe(
       taskId: scope.taskId,
       projectId: scope.projectId,
       prompt: "provider wiring probe",
-      preset: "design",
+      preset: "code",
     },
-    { actor, scopeHandle },
+    {
+      actor,
+      scopeHandle,
+      runId: acceptedRunId,
+      workContext: { preset: "code" },
+    },
   );
   const events = [];
   for await (const event of runtime.streamRun(runId)) events.push(event);
@@ -344,6 +375,13 @@ describe("buildApp AgentRuntimeProvider bridge", () => {
               timestamp: "2026-10-12T00:00:00.000Z",
             };
             yield {
+              type: "message.delta" as const,
+              runId: context.runId,
+              messageId: randomUUID(),
+              delta: "configured-provider-result",
+              timestamp: "2026-10-12T00:00:00.500Z",
+            };
+            yield {
               type: "run.completed" as const,
               runId: context.runId,
               timestamp: "2026-10-12T00:00:01.000Z",
@@ -357,6 +395,12 @@ describe("buildApp AgentRuntimeProvider bridge", () => {
     try {
       const events = await streamRuntimeProbe(probe);
       expect(open).toHaveBeenCalledOnce();
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "message.delta",
+          delta: "configured-provider-result",
+        }),
+      );
       expect(events.some((event) => event.type === "run.completed")).toBe(true);
       expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
     } finally {
@@ -369,13 +413,24 @@ describe("buildApp AgentRuntimeProvider bridge", () => {
       () =>
         ({
           stream: async function* () {},
-          streamEvents: async function* () {},
+          streamEvents: async function* () {
+            yield {
+              event: "on_chat_model_stream",
+              data: { chunk: { content: "default-provider-result" } },
+            };
+          },
         }) as never,
     );
     const probe = buildRuntimeProbeApp({ agentFactory });
     try {
       const events = await streamRuntimeProbe(probe);
       expect(agentFactory).toHaveBeenCalledOnce();
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "message.delta",
+          delta: "default-provider-result",
+        }),
+      );
       expect(events.some((event) => event.type === "run.completed")).toBe(true);
       expect(events.filter((event) => event.type === "run.failed")).toEqual([]);
     } finally {

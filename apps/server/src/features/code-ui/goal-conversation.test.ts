@@ -2,7 +2,7 @@ import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
 import { createGoalService } from "../goals/service.js";
 import { createCodeUiConversation } from "./conversation.js";
-import { pauseTaskGoal } from "./goals.js";
+import { pauseTaskGoal, projectGoal } from "./goals.js";
 
 const config = {
   provider: "zcode",
@@ -17,6 +17,212 @@ function host() {
     config,
   });
 }
+
+it("Goal公共投影区分已claim工作轮与原协议验收轮，不提前显示下一次迭代", () => {
+  const goals = createGoalService();
+  let record = goals.create(null, {
+    goalId: "projection-goal",
+    objective: "创建文件并验收",
+    branchGeneration: 1,
+    at: 0,
+  });
+  const claim = (runId: string, at: number) => {
+    record = goals.claimRun(record, {
+      goalId: record.goalId,
+      revision: record.revision,
+      runId,
+      at,
+      foreground: {
+        branchGeneration: 1,
+        taskReady: true,
+        activeRunId: null,
+        userReserved: false,
+        userQueued: false,
+        approvalWaiting: false,
+      },
+    });
+  };
+  const projected = () => protocol.goalStateSchema.parse(projectGoal(record));
+  const legacyProjected = () => {
+    const legacy = structuredClone(record);
+    if (legacy.verification) delete legacy.verification.iteration;
+    return projectGoal(legacy);
+  };
+  expect(projected()).toMatchObject({ status: "active", iteration: 0 });
+  claim("first-run", 1000);
+  expect(record.iteration).toBe(1);
+  expect(projected()).toMatchObject({ status: "active", iteration: 0 });
+
+  const paused = goals.pause(record, {
+    goalId: record.goalId,
+    revision: record.revision,
+    reason: "user.pause",
+    at: 2000,
+  });
+  expect(projectGoal(paused)).toMatchObject({ status: "paused", iteration: 1 });
+  const canceled = goals.observeTerminal(paused, {
+    runId: "first-run",
+    outcome: "canceled",
+    at: 3000,
+  });
+  expect(projectGoal(canceled)).toMatchObject({
+    status: "paused",
+    iteration: 1,
+    verifications: [],
+  });
+
+  record = goals.beginVerification(record, {
+    goalId: record.goalId,
+    revision: record.revision,
+    runId: "first-run",
+  });
+  expect(projected()).toMatchObject({ status: "verifying", iteration: 1 });
+  record = goals.verify(record, {
+    goalId: record.goalId,
+    revision: record.revision,
+    runId: "first-run",
+    evidence: [{ sourceId: "row:1", passed: true }],
+    verdict: { passed: false, reason: "缺少第二份文件" },
+    at: 4000,
+  });
+  expect(projected()).toMatchObject({
+    status: "notSatisfied",
+    iteration: 1,
+    verifications: [{ iteration: 1, outcome: "notSatisfied" }],
+  });
+  expect(legacyProjected()?.verifications).toMatchObject([{ iteration: 1 }]);
+  record = goals.observeTerminal(record, {
+    runId: "first-run",
+    outcome: "completed",
+    at: 5000,
+  });
+  expect(projected()).toMatchObject({
+    status: "notSatisfied",
+    iteration: 1,
+    verifications: [{ iteration: 1, outcome: "notSatisfied" }],
+  });
+  expect(legacyProjected()?.verifications).toMatchObject([{ iteration: 1 }]);
+  claim("second-run", 6000);
+  expect(record.iteration).toBe(2);
+  expect(projected()).toMatchObject({
+    status: "active",
+    iteration: 1,
+    verifications: [{ iteration: 1, outcome: "notSatisfied" }],
+  });
+  expect(legacyProjected()?.verifications).toMatchObject([{ iteration: 1 }]);
+  record = goals.beginVerification(record, {
+    goalId: record.goalId,
+    revision: record.revision,
+    runId: "second-run",
+  });
+  expect(projected()).toMatchObject({
+    status: "verifying",
+    iteration: 2,
+    verifications: [{ iteration: 1, outcome: "notSatisfied" }],
+  });
+  record = goals.verify(record, {
+    goalId: record.goalId,
+    revision: record.revision,
+    runId: "second-run",
+    evidence: [{ sourceId: "row:2", passed: true }],
+    verdict: { passed: true, reason: "文件已验收" },
+    at: 7000,
+  });
+  record = goals.observeTerminal(record, {
+    runId: "second-run",
+    outcome: "completed",
+    at: 8000,
+  });
+  expect(projected()).toMatchObject({
+    status: "verified",
+    iteration: 2,
+    verifications: [{ iteration: 2, outcome: "pass" }],
+  });
+  expect(record.iteration).toBe(2);
+});
+
+it("Goal验收轮次跨连续取消恢复和冷恢复保持原归属，旧记录不猜无法确定的轮次", () => {
+  const goals = createGoalService();
+  let current = host();
+  current.setGoal(
+    goals.create(null, {
+      goalId: "verification-goal",
+      objective: "验收文件",
+      branchGeneration: 1,
+      at: 0,
+    }),
+  );
+  current.startTurn({ runId: "first-run", commandId: "first", text: "验收" });
+  const claimed = current.getGoal()!;
+  current.setGoal(
+    goals.verify(claimed, {
+      goalId: claimed.goalId,
+      revision: claimed.revision,
+      runId: "first-run",
+      evidence: [{ sourceId: "row:1", passed: true }],
+      verdict: { passed: false, reason: "文件未齐" },
+      at: 1000,
+    }),
+  );
+  current.recordEvent({
+    type: "run.completed",
+    runId: "first-run",
+    timestamp: new Date(2000).toISOString(),
+  });
+  for (let iteration = 2; iteration <= 4; iteration += 1) {
+    const runId = `run-${iteration}`;
+    current.startTurn({ runId, commandId: runId, text: "继续" });
+    expect(current.getGoal()?.iteration).toBe(iteration);
+    expect(current.getSnapshot().goal).toMatchObject({
+      status: "active",
+      iteration: iteration - 1,
+      verifications: [{ iteration: 1, outcome: "notSatisfied" }],
+    });
+    const goal = current.getGoal()!;
+    current.setGoal(
+      goals.pause(goal, {
+        goalId: goal.goalId,
+        revision: goal.revision,
+        reason: "user.stop",
+        at: iteration * 1000,
+      }),
+    );
+    current.recordEvent({
+      type: "run.canceled",
+      runId,
+      timestamp: new Date(iteration * 1000 + 1000).toISOString(),
+    });
+    current = createCodeUiConversation({
+      sessionId: "task",
+      workspacePath: "/project",
+      config,
+      state: JSON.parse(JSON.stringify(current.exportState())),
+    });
+    const settled = current.getGoal()!;
+    expect(settled.verification).toMatchObject({
+      runId: "first-run",
+      iteration: 1,
+    });
+    expect(current.getSnapshot().goal).toMatchObject({
+      status: "paused",
+      iteration,
+      verifications: [{ iteration: 1, outcome: "notSatisfied" }],
+    });
+    const legacy = structuredClone(settled);
+    if (legacy.verification) delete legacy.verification.iteration;
+    const audit = structuredClone(legacy);
+    expect(projectGoal(legacy)?.verifications).toEqual([]);
+    expect(legacy).toEqual(audit);
+    current.setGoal(
+      goals.resume(settled, {
+        goalId: settled.goalId,
+        revision: settled.revision,
+        branchGeneration: 1,
+      }),
+    );
+  }
+});
+
 it("恢复先按持久Goal重建按钮投影，不信任过期可用性", () => {
   const current = host();
   const goals = createGoalService();

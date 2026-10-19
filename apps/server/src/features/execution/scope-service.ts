@@ -20,6 +20,7 @@ import type {
 import type {
   ScopeRepository,
   StoredExecutionScope,
+  TaskScopeInputFence,
   TaskScopePatch,
 } from "./scope-repository.js";
 import {
@@ -36,6 +37,8 @@ export interface ExecutionScopeHandle {
   readonly role: ExecutionRole;
   readonly agentId: string;
   derive(role: ExecutionRole, agentId?: string): ExecutionScopeHandle;
+  /** 仅收窄本次执行的文件权限；保留同一 Task、代际、角色与 agent 身份。 */
+  restrictReadOnly(): ExecutionScopeHandle;
   resolvePath(path: string, operation: "read" | "write"): Promise<string>;
   readonly backend: ScopedBackend;
 }
@@ -55,6 +58,7 @@ export interface ExecutionScopes {
     actor: LocalActor,
     taskId: string,
     patch: TaskScopePatch,
+    inputFence?: TaskScopeInputFence,
   ): Promise<CodeExecutionScope>;
   onRevoke(listener: (event: ScopeRevocation) => Promise<void>): () => void;
   onUpdated(listener: (event: ScopeRevocation) => Promise<void>): () => void;
@@ -86,6 +90,7 @@ function accessAt(
   >,
   path: string,
 ): "read-only" | "read-write" | null {
+  if (scope.sandboxMode === "danger-full-access") return "read-write";
   const roots = [
     { path: scope.rootDirectory, access: "read-write" as const },
     ...scope.additionalDirectories,
@@ -287,6 +292,7 @@ function intersect(
 class ScopeHandle implements ExecutionScopeHandle {
   readonly backend: ScopedBackend;
   private current: CodeExecutionScope;
+  private unrestrictedReadActive: boolean;
   constructor(
     private readonly load: () => Promise<CodeExecutionScope>,
     private readonly ceiling: CodeExecutionScope,
@@ -296,8 +302,11 @@ class ScopeHandle implements ExecutionScopeHandle {
     readonly agentId: string,
     private readonly readOnly: boolean,
     private readonly limits?: FileLimits,
+    private readonly unrestrictedRead = ceiling.sandboxMode ===
+      "danger-full-access",
   ) {
     this.current = intersect(ceiling, ceiling, readOnly);
+    this.unrestrictedReadActive = unrestrictedRead;
     this.backend = createScopedBackend(this, limits ? { limits } : {});
   }
   describe(): CodeExecutionScope {
@@ -313,6 +322,20 @@ class ScopeHandle implements ExecutionScopeHandle {
       agentId,
       this.readOnly || role === "explore" || role === "review",
       this.limits,
+      this.unrestrictedReadActive,
+    );
+  }
+  restrictReadOnly(): ExecutionScopeHandle {
+    return new ScopeHandle(
+      this.load,
+      this.current,
+      this.preset,
+      this.branchGeneration,
+      this.role,
+      this.agentId,
+      true,
+      this.limits,
+      this.unrestrictedReadActive,
     );
   }
   async resolvePath(
@@ -325,12 +348,29 @@ class ScopeHandle implements ExecutionScopeHandle {
         "路径不能为空或包含空字符。",
         400,
       );
-    this.current = intersect(await this.load(), this.ceiling, this.readOnly);
+    const opened = await this.load();
+    this.unrestrictedReadActive =
+      this.unrestrictedRead && opened.sandboxMode === "danger-full-access";
+    this.current = intersect(opened, this.ceiling, this.readOnly);
     const target = await canonicalTarget(
       resolve(this.current.rootDirectory, path),
     );
     // realpath 等待期间发生撤销时，本操作也必须拒绝。
-    this.current = intersect(await this.load(), this.ceiling, this.readOnly);
+    const live = await this.load();
+    this.unrestrictedReadActive =
+      this.unrestrictedRead && live.sandboxMode === "danger-full-access";
+    this.current = intersect(live, this.ceiling, this.readOnly);
+    if (this.unrestrictedRead && live.sandboxMode === "danger-full-access") {
+      if (
+        operation === "read" ||
+        (!this.readOnly && this.current.sandboxMode === "danger-full-access")
+      )
+        return target;
+      throw new ExecutionScopeError(
+        "read_only",
+        "当前角色或执行方式只允许读取文件。",
+      );
+    }
     const access = accessAt(this.current, target);
     if (!access)
       throw new ExecutionScopeError(
@@ -466,7 +506,7 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
     openTask: (actor, taskId) => open(actor, taskId),
     openRestoringTask: (actor, taskId, expectedGeneration) =>
       open(actor, taskId, expectedGeneration),
-    async updateTask(actor, taskId, patch) {
+    async updateTask(actor, taskId, patch, inputFence) {
       const workspace = await options.localInstance.resolve(actor);
       const stored = await requireStored(
         options.repository,
@@ -480,6 +520,17 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
           409,
         );
       const previous = codeExecutionScopeSchema.parse(stored.scope);
+      if (
+        inputFence &&
+        (inputFence.scopeGeneration !== previous.generation ||
+          inputFence.branchGeneration !== stored.branchGeneration ||
+          patch.sandboxMode === undefined)
+      )
+        throw new ExecutionScopeError(
+          "scope_conflict",
+          "这条输入的Task授权已改变，请重新提交。",
+          409,
+        );
       if (stored.preset === "design") {
         if (!options.repository.isProjectOpen)
           throw new ExecutionScopeError(
@@ -541,6 +592,7 @@ export function createExecutionScopes(options: ScopeOptions): ExecutionScopes {
       const pending = await options.repository.beginUpdate(
         previous,
         normalizedPatch,
+        inputFence,
       );
       if (!pending)
         throw new ExecutionScopeError(

@@ -180,7 +180,12 @@ export function applyCodeQueueCommand(
       snapshot.queue.items.splice(index, 1);
       record.status = "reserved";
       record.autoDrainAtAdmission = snapshot.queue.autoDrain;
-      if (previousRunId) record.previousRunId = previousRunId;
+      if (previousRunId) {
+        record.previousRunId = previousRunId;
+        state.stopRequestedRuns = [
+          ...new Set([...(state.stopRequestedRuns ?? []), previousRunId]),
+        ];
+      }
       record.intent.dispatch = {
         state: "reserved",
         reservationId: record.runId,

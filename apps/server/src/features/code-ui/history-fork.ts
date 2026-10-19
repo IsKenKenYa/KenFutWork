@@ -197,6 +197,9 @@ function forkState(
     sessionId: id,
     workspacePath: path,
     config,
+    ...(inherited.at(-1)?.canonical?.intent.workContext
+      ? { workContext: inherited.at(-1)!.canonical!.intent.workContext! }
+      : {}),
   }).exportState();
   const child = state.snapshots[0];
   if (!child) throw new Error("分叉Task初始化未生成根快照。");

@@ -34,12 +34,17 @@ const fakeUser: LocalActor = {
   accessClientId: "client-1",
 };
 
-/** 真实内核 + 真实 permissions 插件（fake 只替本机接入与持久化，判据全走生产代码）。 */
+/** 真实内核与权限策略；外部边界不启用模型审查。 */
 function assembly() {
   const app = Fastify({ logger: false });
   const kernel = composePlugins(testEnv, [createPermissionsPlugin({})], {
     app,
     overrides: {
+      approvalReview: {
+        review: async () => "manual",
+        invalidate() {},
+        close() {},
+      },
       localAccess: createConsumerLocalAccessService(async () => fakeUser),
       localInstance: createLocalInstanceService({
         repository: { ensure: async () => fakeUser.instanceId },

@@ -3,20 +3,19 @@ import {
   assetObjectSchema,
   canvasContentSchema,
   canvasDetailSchema,
+  canvasSummarySchema,
   chatMessageSchema,
   chatSessionSummarySchema,
   instanceSettingsSchema,
   modelInfoSchema,
   projectKindSchema,
+  projectModesSchema,
   projectSummarySchema,
   runIdSchema,
   terminalShellSchema,
 } from "./contracts.js";
 import { runStopReasonSchema } from "./events.js";
-import {
-  additionalDirectorySchema,
-  sandboxModeSchema,
-} from "./execution-contracts.js";
+import { additionalDirectorySchema } from "./execution-contracts.js";
 
 export const healthResponseSchema = z.object({
   ok: z.literal(true),
@@ -34,7 +33,7 @@ export const projectListResponseSchema = z.object({
 });
 
 export const projectListQuerySchema = z.object({
-  /** 只取该类型的项目；缺省取 design（画布项目）。 */
+  /** 按已启用工作方式筛选；缺省 design。 */
   kind: projectKindSchema.optional(),
 });
 
@@ -51,32 +50,27 @@ export const projectCreateRequestSchema = z.object({
    * 不合格返回 400 `invalid_work_dir` 并给出可读原因。
    */
   work_dir: z.string().trim().min(1).optional(),
+  directory_choice: z.literal("independent").optional(),
   additional_directories: z.array(additionalDirectorySchema).optional(),
+});
+
+export const projectDirectoryQuerySchema = z.object({
+  path: z.string().trim().min(1),
+});
+export const projectDirectoryCandidatesSchema = z.object({
+  projects: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      kind: projectKindSchema,
+      enabledModes: projectModesSchema,
+      workDir: z.string(),
+    }),
+  ),
 });
 
 export const projectCreateResponseSchema = z.object({
   project: projectSummarySchema,
-});
-
-export const designTaskParamsSchema = z.object({ taskId: z.uuid() }).strict();
-export const designTaskPolicyResponseSchema = z.object({
-  task: z
-    .object({
-      taskId: z.uuid(),
-      projectId: z.uuid(),
-      canvasId: z.uuid(),
-      rootDirectory: z.string().min(1),
-      additionalDirectories: z.array(additionalDirectorySchema),
-      sandboxMode: sandboxModeSchema,
-      scopeGeneration: z.number().int().nonnegative().safe(),
-      branchGeneration: z.number().int().positive().safe(),
-      mode: z.enum(["build", "edit", "yolo"]),
-      planEnabled: z.boolean(),
-      planningEpoch: z.number().int().nonnegative().safe(),
-      activeRunId: runIdSchema.nullable(),
-      executionState: z.enum(["ready", "revoking", "failed"]),
-    })
-    .strict(),
 });
 
 export const unauthenticatedErrorResponseSchema = z.object({
@@ -85,11 +79,6 @@ export const unauthenticatedErrorResponseSchema = z.object({
     message: z.string().min(1),
   }),
 });
-export type DesignTaskParams = z.infer<typeof designTaskParamsSchema>;
-export type DesignTaskPolicyResponse = z.infer<
-  typeof designTaskPolicyResponseSchema
->;
-
 // --- Code 模式 git 分支视图（工作目录=项目） ---
 
 export const codeGitBranchSchema = z.object({
@@ -497,6 +486,8 @@ export const applicationErrorCodeSchema = z.enum([
   "project_not_found",
   "project_slug_taken",
   "project_update_failed",
+  "invalid_project_modes",
+  "project_directory_conflict",
   // 索引库（R4-3）：两个开关各自的可读拒绝（不在枚举里 → 响应会退化成 ZodError 转储）
   "index_disabled",
   "index_not_built",
@@ -518,6 +509,7 @@ export const applicationErrorCodeSchema = z.enum([
   "asset_not_found",
   "job_not_found",
   "job_create_failed",
+  "job_request_conflict",
   "job_query_failed",
   "job_cancel_failed",
   "skill_not_found",
@@ -644,6 +636,27 @@ export const canvasGetResponseSchema = z.object({
   canvas: canvasDetailSchema,
 });
 
+export const canvasListRequestSchema = z.object({
+  query: z.string().trim().max(200).optional(),
+});
+export const canvasListResponseSchema = z.object({
+  canvases: z.array(canvasSummarySchema),
+});
+export const canvasCreateRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  requestId: z.uuid().optional(),
+});
+export const canvasCreateResponseSchema = canvasGetResponseSchema;
+export const canvasRenameRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  expectedName: z.string().min(1).max(200),
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+export const canvasDeleteRequestSchema = z.object({
+  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+export const canvasDeleteResponseSchema = z.object({ ok: z.literal(true) });
+
 export const canvasSaveRequestSchema = z.object({
   content: canvasContentSchema,
   expectedRevision: z
@@ -737,6 +750,13 @@ export type SessionCreateResponse = z.infer<typeof sessionCreateResponseSchema>;
 export type MessageListResponse = z.infer<typeof messageListResponseSchema>;
 export type MessageCreateResponse = z.infer<typeof messageCreateResponseSchema>;
 export type CanvasGetResponse = z.infer<typeof canvasGetResponseSchema>;
+export type CanvasListRequest = z.infer<typeof canvasListRequestSchema>;
+export type CanvasListResponse = z.infer<typeof canvasListResponseSchema>;
+export type CanvasCreateRequest = z.infer<typeof canvasCreateRequestSchema>;
+export type CanvasCreateResponse = z.infer<typeof canvasCreateResponseSchema>;
+export type CanvasRenameRequest = z.infer<typeof canvasRenameRequestSchema>;
+export type CanvasDeleteRequest = z.infer<typeof canvasDeleteRequestSchema>;
+export type CanvasDeleteResponse = z.infer<typeof canvasDeleteResponseSchema>;
 export type CanvasSaveRequest = z.infer<typeof canvasSaveRequestSchema>;
 export type CanvasSaveResponse = z.infer<typeof canvasSaveResponseSchema>;
 export type InstanceSettingsResponse = z.infer<
@@ -762,6 +782,8 @@ export type AssetSignedUrlResponse = z.infer<
 >;
 
 export const projectUpdateRequestSchema = z.object({
+  /** 显式跨模式打开项目；默认工作方式必须保留，Flow 不混用。 */
+  enabled_modes: projectModesSchema.optional(),
   brand_kit_id: z.uuid().nullable().optional(),
   name: z.string().min(1).max(100).optional(),
   /** 固定项目目录；仅接受与已有目录相同的幂等值，null 或切换目录均拒绝。 */

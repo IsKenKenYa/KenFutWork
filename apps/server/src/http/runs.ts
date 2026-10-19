@@ -17,7 +17,6 @@ import {
   SUBAGENT_DISPATCH_TOOLS,
 } from "../agent/subagent-definitions.js";
 import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
-import { isPlanApprovalInput } from "../features/agent-modes/execution-mode-service.js";
 import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
@@ -26,10 +25,8 @@ import {
   type ThreadService,
   ThreadServiceError,
 } from "../features/chat/thread-service.js";
+import { CodeUiRepositoryError } from "../features/code-ui/repository.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
-import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
-import { DesignTaskError } from "../features/execution/design-task-errors.js";
-import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import {
   ExecutionScopeError,
   type ExecutionScopes,
@@ -43,7 +40,7 @@ import { isZodError } from "./zod-error.js";
 
 export async function registerRunRoutes(
   app: FastifyInstance,
-  agentRuns: AgentRunService,
+  _agentRuns: AgentRunService,
   options: {
     /** 运行活动查询（Git 弹层的「智能体 N 秒 · M 运行」；口径见仓储 workspaceActivity）。 */
     activityQuery?: (input: {
@@ -61,9 +58,7 @@ export async function registerRunRoutes(
     localInstance: LocalInstanceService;
     modelProviders?: ModelProviderService;
     executionScopes?: ExecutionScopes;
-    codeUi?: Pick<CodeUiService, "admitExternalRun">;
-    designTasks?: Pick<DesignTasksService, "readPolicy">;
-    designRunHost?: Pick<DesignRunHost, "submit">;
+    codeUi?: Pick<CodeUiService, "admitExternalRun" | "cancelExternalRun">;
   },
 ) {
   /**
@@ -156,253 +151,75 @@ export async function registerRunRoutes(
     let releaseAdmission: (() => void) | undefined;
     try {
       const payload = runCreateRequestSchema.parse(request.body);
-      const authenticatedUser = await options.localAccess.authenticate(request);
-      if (!authenticatedUser) return sendUnauthorized(reply);
+      const actor = await options.localAccess.authenticate(request);
+      if (!actor) return sendUnauthorized(reply);
       releaseAdmission = options.localInstance.beginAdmission();
-      // Code 模式会话供给（方案 A，与 WS 路径同口径）：客户端自造的 sessionId 在库里没有
-      // 会话行 → 线程解析失败且助手消息无处落库。此处先按该 id 供给真实会话与线程。
-      // Design 模式不供给：其会话由画布页经 API 先建行，缺行属真错误，不该被掩盖。
-      const sessionThread =
-        authenticatedUser && options?.threadService
-          ? await options.threadService.resolveOwnedSessionThread(
-              authenticatedUser,
-              payload.sessionId,
-            )
-          : null;
-      const codeMode =
-        sessionThread?.mode === "code" || payload.preset === "code";
-      if (
-        sessionThread &&
-        payload.preset &&
-        payload.preset !== sessionThread.mode
-      )
+      if (!options.executionScopes || !options.codeUi)
         throw new ExecutionScopeError(
-          "mode_mismatch",
-          "Run 不能改变会话所属模式。",
-          409,
+          "admission_unavailable",
+          "共享会话服务未加载，请重启应用后重试。",
+          503,
         );
-      if (payload.projectId && sessionThread?.projectId !== payload.projectId)
-        throw new ExecutionScopeError(
-          "scope_mismatch",
-          "Run 的项目与持久 Task 不一致。",
-          409,
-        );
-      if (
-        codeMode &&
-        (payload.canvasId ||
-          (payload.taskId && payload.taskId !== payload.sessionId))
-      )
-        throw new ExecutionScopeError(
-          "scope_mismatch",
-          "Code Run 只能使用所属 Task 工作域，不能传 Canvas 或另一 Task。",
-          400,
-        );
-      if (!codeMode) {
-        if (
-          !sessionThread ||
-          sessionThread.mode !== "design" ||
-          !payload.taskId ||
-          payload.taskId !== payload.sessionId
-        )
-          throw new ExecutionScopeError(
-            "scope_mismatch",
-            "Design 运行需要所属的持久 Task。",
-            400,
-          );
-        if (!options.designTasks || !options.designRunHost)
-          throw new ExecutionScopeError(
-            "admission_unavailable",
-            "Design 任务运行服务不可用，请稍后重试。",
-            503,
-          );
-        const policy = await options.designTasks.readPolicy(
-          authenticatedUser,
-          payload.taskId,
-        );
-        if (
-          policy.taskId !== payload.sessionId ||
-          policy.projectId !== sessionThread.projectId ||
-          policy.canvasId !== sessionThread.canvasId ||
-          (payload.projectId && payload.projectId !== policy.projectId) ||
-          (payload.canvasId && payload.canvasId !== policy.canvasId)
-        )
-          throw new ExecutionScopeError(
-            "scope_mismatch",
-            "运行的任务、项目或画布不一致。",
-            409,
-          );
-        if (!options.executionScopes)
-          throw new ExecutionScopeError(
-            "scope_unavailable",
-            "Design 执行需要持久 Task 工作域。",
-            503,
-          );
-        const preflight = await options.executionScopes.openTask(
-          authenticatedUser,
-          policy.taskId,
-        );
-        const scope = preflight.describe();
-        if (
-          preflight.preset !== "design" ||
-          scope.instanceId !== authenticatedUser.instanceId ||
-          scope.taskId !== policy.taskId ||
-          scope.projectId !== policy.projectId ||
-          scope.rootDirectory !== policy.rootDirectory
-        )
-          throw new ExecutionScopeError(
-            "scope_mismatch",
-            "任务工作目录或授权身份不一致，请重新关联。",
-            409,
-          );
-        const receipt = await options.designRunHost.submit(authenticatedUser, {
-          taskId: policy.taskId,
-          inputId: randomUUID(),
-          scopeGeneration: policy.scopeGeneration,
-          branchGeneration: policy.branchGeneration,
-          request: payload,
-        });
-        return reply.code(202).send(
-          runCreateResponseSchema.parse({
-            runId: receipt.runId,
-            sessionId: payload.sessionId,
-            conversationId: payload.conversationId,
-            status: "accepted",
-          }),
-        );
-      }
-      const scopeHandle = codeMode
-        ? authenticatedUser && options.executionScopes
-          ? await options.executionScopes.openTask(
-              authenticatedUser,
-              payload.sessionId,
-            )
-          : (() => {
-              throw new ExecutionScopeError(
-                "scope_unavailable",
-                "Code 执行需要已认证的持久 Task 工作域。",
-                503,
-              );
-            })()
-        : undefined;
-
-      const context = await options.localInstance.resolve(authenticatedUser);
-      const settings = options.settingsService
-        ? await options.settingsService.getInstanceSettings(
-            authenticatedUser,
-            context.instanceId,
-          )
-        : undefined;
-      const model = settings?.defaultModel;
-
-      // 执行模式（DEC-3）：载荷声明 → 按真实 threadId 激活并写穿持久化；
-      // 未声明 → 读回线程持久化模式（与 WS 路径同口径，重启后仍按线程模式走）。
-      // plan 批准门（机器可读）：与 WS 路径同口径，批准短语本条消息起按 agent 执行。
-      if (sessionThread && options.agentModes) {
-        const modeScope = { instanceId: context.instanceId };
-        let effectiveMode = payload.executionMode;
-        if (effectiveMode === "plan" && isPlanApprovalInput(payload.prompt)) {
-          effectiveMode = "agent";
-        }
-        try {
-          if (effectiveMode) {
-            await options.agentModes.activate(
-              sessionThread.threadId,
-              effectiveMode,
-              modeScope,
-            );
-          } else if (modeScope) {
-            await options.agentModes.hydrate(sessionThread.threadId, modeScope);
-          }
-        } catch {
-          return reply.code(503).send(
-            applicationErrorResponseSchema.parse({
-              error: {
-                code: "service_unavailable",
-                message: "无法确认执行模式，运行未启动，请稍后重试。",
-              },
-            }),
-          );
-        }
-      }
-
-      const runId = randomUUID();
-      const eventSink = scopeHandle
-        ? authenticatedUser && options.codeUi
-          ? await options.codeUi.admitExternalRun(
-              authenticatedUser,
-              scopeHandle,
-              runId,
-              payload.prompt,
-            )
-          : (() => {
-              throw new ExecutionScopeError(
-                "admission_unavailable",
-                "Code Task 前台 admission 未装配，不能绕过 Task 并发控制。",
-                503,
-              );
-            })()
-        : undefined;
-      const response = runCreateResponseSchema.parse(
-        agentRuns.createRun(payload, {
-          runId,
-          ...(eventSink ? { eventSink } : {}),
-          ...(scopeHandle ? { scopeHandle } : {}),
-          ...(authenticatedUser
-            ? {
-                actor: authenticatedUser,
-              }
-            : {}),
-          ...(model ? { model } : {}),
-          ...(sessionThread ? { threadId: sessionThread.threadId } : {}),
-        }),
+      const scope = await options.executionScopes.openTask(
+        actor,
+        payload.taskId ?? payload.sessionId,
       );
-
-      if (sessionThread && options.agentRunMetadataService) {
-        await options.agentRunMetadataService.createAcceptedRun({
-          ...(model ? { model } : {}),
-          runId: response.runId,
-          sessionId: payload.sessionId,
-          threadId: sessionThread.threadId,
-        });
-      }
-
-      return reply.code(202).send(response);
+      if (scope.describe().taskId !== payload.sessionId)
+        throw new ExecutionScopeError(
+          "scope_mismatch",
+          "运行必须绑定所属会话的任务。",
+          409,
+        );
+      const idempotencyHeader = request.headers["x-idempotency-key"];
+      const inputId =
+        payload.inputId ??
+        (typeof idempotencyHeader === "string" && idempotencyHeader
+          ? idempotencyHeader
+          : randomUUID());
+      const admitted = await options.codeUi.admitExternalRun(
+        actor,
+        scope,
+        inputId,
+        payload.prompt,
+        payload,
+      );
+      void admitted
+        .publish()
+        .catch((error: unknown) =>
+          app.log.error({ err: error }, "共享会话运行发布失败"),
+        );
+      return reply.code(202).send(runCreateResponseSchema.parse(admitted));
     } catch (error) {
       if (error instanceof LocalInstanceMaintenanceError)
         return reply
           .code(503)
           .send({ error: { code: error.code, message: error.message } });
       if (
-        error instanceof DesignTaskError ||
-        error instanceof ExecutionScopeError
+        error instanceof ExecutionScopeError ||
+        error instanceof CodeUiRepositoryError
+      )
+        return reply
+          .code(
+            error instanceof ExecutionScopeError
+              ? error.statusCode
+              : error.code === "not_found"
+                ? 404
+                : 409,
+          )
+          .send(
+            applicationErrorResponseSchema.parse({
+              error: { code: error.code, message: error.message },
+            }),
+          );
+      if (
+        error instanceof ThreadServiceError ||
+        error instanceof AgentRunPersistenceError
       )
         return reply.code(error.statusCode).send(
           applicationErrorResponseSchema.parse({
             error: { code: error.code, message: error.message },
           }),
         );
-      if (error instanceof ThreadServiceError) {
-        return reply.code(error.statusCode).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: error.code,
-              message: error.message,
-            },
-          }),
-        );
-      }
-
-      if (error instanceof AgentRunPersistenceError) {
-        return reply.code(error.statusCode).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: error.code,
-              message: error.message,
-            },
-          }),
-        );
-      }
-
       return handleZodError(error, reply);
     } finally {
       releaseAdmission?.();
@@ -414,12 +231,22 @@ export async function registerRunRoutes(
     if (!actor) return sendUnauthorized(reply);
     await options.localInstance.resolve(actor);
     const { runId } = request.params as { runId: string };
-    const canceledRun = agentRuns.cancelRun(runId);
-
-    if (!canceledRun) {
-      return reply.code(404).send({
-        message: `Run not found: ${runId}`,
+    if (!options.codeUi)
+      return reply.code(503).send({
+        error: {
+          code: "admission_unavailable",
+          message: "共享会话服务未加载，请重启应用后重试。",
+        },
       });
+    let canceledRun: Awaited<ReturnType<CodeUiService["cancelExternalRun"]>>;
+    try {
+      canceledRun = await options.codeUi.cancelExternalRun(actor, runId);
+    } catch (error) {
+      if (error instanceof CodeUiRepositoryError)
+        return reply
+          .code(error.code === "not_found" ? 404 : 409)
+          .send({ error: { code: error.code, message: error.message } });
+      throw error;
     }
 
     const response = runCancelResponseSchema.parse(canceledRun);

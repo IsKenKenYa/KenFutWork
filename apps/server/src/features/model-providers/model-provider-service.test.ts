@@ -14,7 +14,10 @@ import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createLocalCredentialStore } from "./local-credential-store.js";
 import { createModelCatalogService } from "./model-catalog-service.js";
-import { createModelProviderService } from "./model-provider-service.js";
+import {
+  createModelProviderService,
+  type ModelProviderChangeEvent,
+} from "./model-provider-service.js";
 import type {
   ModelProviderRepository,
   NewProviderInstance,
@@ -579,5 +582,163 @@ describe("本地供应商自定义请求头", () => {
     expect(
       await context.service.resolveCredentials(ACTOR, created.id),
     ).not.toHaveProperty("headers");
+  });
+});
+
+describe("供应商配置变更订阅", () => {
+  it("Key和元数据均已提交后通知，事件只含身份与修订，解绑后不再通知", async () => {
+    const context = await fixture();
+    const created = await context.service.createInstance(ACTOR, INPUT);
+    const changes: ModelProviderChangeEvent[] = [];
+    let committed:
+      | { key: string | null; enabled: boolean | undefined }
+      | undefined;
+    const unsubscribe = context.service.onChanged?.(async (event) => {
+      changes.push(event);
+      committed = {
+        key: await context.service.readCredential(ACTOR, created.id),
+        enabled: (await context.service.listInstances(ACTOR))[0]?.enabled,
+      };
+    });
+    await context.service.updateInstance(ACTOR, created.id, {
+      apiKey: "changed-provider-key",
+      headers: { "x-private": "changed-private-header" },
+      enabled: false,
+      expectedRevision: 1,
+    });
+    expect(changes).toEqual([
+      { instanceId: LOCAL_ID, providerId: created.id, configRevision: 2 },
+    ]);
+    expect(committed).toEqual({ key: "changed-provider-key", enabled: false });
+    const exposed = JSON.stringify(changes);
+    expect(exposed).not.toContain("changed-provider-key");
+    expect(exposed).not.toContain("changed-private-header");
+    unsubscribe?.();
+    await context.service.updateInstance(ACTOR, created.id, { enabled: true });
+    expect(changes).toHaveLength(1);
+  });
+
+  it("成功删除后通知且凭据已清除，重复删除不再通知", async () => {
+    const context = await fixture();
+    const created = await context.service.createInstance(ACTOR, INPUT);
+    const changes: ModelProviderChangeEvent[] = [];
+    let remainingKey: string | null = "not-notified";
+    context.service.onChanged?.(async (event) => {
+      changes.push(event);
+      remainingKey = await context.credentials.get(created.id);
+    });
+    await context.service.deleteInstance(ACTOR, created.id);
+    expect(changes).toEqual([{ instanceId: LOCAL_ID, providerId: created.id }]);
+    expect(remainingKey).toBeNull();
+    expect(await context.service.listInstances(ACTOR)).toEqual([]);
+    await context.service.deleteInstance(ACTOR, created.id);
+    expect(changes).toHaveLength(1);
+  });
+
+  it("数据库、CAS或凭据提交失败均不发送配置变更通知", async () => {
+    const context = await fixture();
+    const created = await context.service.createInstance(ACTOR, INPUT);
+    const changed = vi.fn();
+    context.service.onChanged?.(changed);
+    const failure = new Error("配置提交失败");
+    vi.spyOn(context.repository, "updateInstance").mockRejectedValueOnce(
+      failure,
+    );
+    await expect(
+      context.service.updateInstance(ACTOR, created.id, {
+        apiKey: "failed-provider-key",
+      }),
+    ).rejects.toBe(failure);
+    await expect(
+      context.service.updateInstance(ACTOR, created.id, {
+        apiKey: "stale-provider-key",
+        expectedRevision: 2,
+      }),
+    ).rejects.toMatchObject({ code: "instance_revision_conflict" });
+    vi.spyOn(context.repository, "deleteInstance").mockRejectedValueOnce(
+      failure,
+    );
+    await expect(
+      context.service.deleteInstance(ACTOR, created.id),
+    ).rejects.toBe(failure);
+    expect(await context.service.readCredential(ACTOR, created.id)).toBe(
+      INPUT.apiKey,
+    );
+    await writeFile(context.filePath, '{"broken":"private-key"');
+    await expect(
+      context.service.updateInstance(ACTOR, created.id, {
+        apiKey: "uncommitted-key",
+      }),
+    ).rejects.toThrow(/有效 JSON/);
+    expect(changed).not.toHaveBeenCalled();
+  });
+
+  it("探测仅在存储回执确认实际修订改变后通知，未改变或保存失败不通知", async () => {
+    const context = await fixture();
+    const created = await context.service.createInstance(ACTOR, INPUT);
+    const changes: ModelProviderChangeEvent[] = [];
+    context.service.onChanged?.((event) => {
+      changes.push(event);
+    });
+    const fetchFn = async () => new Response("{}", { status: 200 });
+    await context.service.probeInstance(ACTOR, created.id, fetchFn);
+    expect(changes).toEqual([]);
+    const persist = context.repository.setProbeResult;
+    vi.spyOn(context.repository, "setProbeResult").mockImplementationOnce(
+      async (instanceId, providerId, result) => {
+        const row = await persist(instanceId, providerId, result);
+        if (!row) throw new Error("探测所属供应商缺失。");
+        const changed = { ...row, config_revision: "2" };
+        context.rows.set(providerId, changed);
+        return changed;
+      },
+    );
+    await context.service.probeInstance(ACTOR, created.id, fetchFn);
+    expect(changes).toEqual([
+      { instanceId: LOCAL_ID, providerId: created.id, configRevision: 2 },
+    ]);
+    const failure = new Error("探测保存失败");
+    vi.spyOn(context.repository, "setProbeResult").mockRejectedValueOnce(
+      failure,
+    );
+    await expect(
+      context.service.probeInstance(ACTOR, created.id, fetchFn),
+    ).rejects.toBe(failure);
+    expect(changes).toHaveLength(1);
+  });
+
+  it("同步与异步监听失败不撤销已提交配置，也不泄漏监听错误内容", async () => {
+    const context = await fixture();
+    const created = await context.service.createInstance(ACTOR, INPUT);
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const changed = vi.fn();
+    context.service.onChanged?.(() => {
+      throw new Error("private-listener-key");
+    });
+    context.service.onChanged?.(async () => {
+      throw new Error("private-listener-header");
+    });
+    context.service.onChanged?.(changed);
+    try {
+      await expect(
+        context.service.updateInstance(ACTOR, created.id, {
+          apiKey: "committed-provider-key",
+        }),
+      ).resolves.toMatchObject({ configRevision: 2 });
+      expect(await context.service.readCredential(ACTOR, created.id)).toBe(
+        "committed-provider-key",
+      );
+      expect(changed).toHaveBeenCalledWith({
+        instanceId: LOCAL_ID,
+        providerId: created.id,
+        configRevision: 2,
+      });
+      const logs = JSON.stringify(warned.mock.calls);
+      expect(logs).not.toContain("private-listener-key");
+      expect(logs).not.toContain("private-listener-header");
+      expect(logs).not.toContain("committed-provider-key");
+    } finally {
+      warned.mockRestore();
+    }
   });
 });

@@ -19,6 +19,12 @@ export type CanvasFileAppend = {
   files?: Record<string, Record<string, unknown>> | undefined;
 };
 export type CanvasFileStore = {
+  /** 元数据变更与内容写入共用锁；CAS通过后才提交索引变更。 */
+  mutateIndex<T>(
+    canvasId: string,
+    expectedRevision: string,
+    mutation: () => Promise<T>,
+  ): Promise<T>;
   appendLatest(
     canvasId: string,
     input: CanvasFileAppend,
@@ -146,7 +152,10 @@ export function createCanvasFileStore(options: {
     canvasId: string,
     expectedRevision: string | null | "latest",
     change: (previous: CanvasFileSnapshot | null) => CanvasContent,
-    beforePublish?: () => Promise<void>,
+    publication: {
+      beforePublish?: () => Promise<void>;
+      preserveUnchanged?: boolean;
+    } = {},
   ) => {
     canvasContentPath(options.projectRoot, canvasId);
     const root = await realpath(options.projectRoot);
@@ -166,9 +175,17 @@ export function createCanvasFileStore(options: {
         if (expectedRevision === "latest" && !previous) throw conflict();
         if ((previous?.revision ?? null) !== revision) throw conflict();
         const content = canvasContentSchema.parse(change(previous));
-        const bytes = Buffer.from(JSON.stringify(content));
+        if (
+          publication.preserveUnchanged &&
+          previous &&
+          isDeepStrictEqual(previous.content, content)
+        )
+          return previous;
+        // 显式保存即新提交；私有身份留在文件中，使字节SHA不复用旧CAS令牌。
+        const bytes = Buffer.from(
+          JSON.stringify({ ...content, _kenfutworkCommit: randomUUID() }),
+        );
         const result = { content, revision: hash(bytes) };
-        if (previous?.revision === result.revision) return result;
         const temporary = join(
           root,
           ".kenfutwork",
@@ -195,7 +212,7 @@ export function createCanvasFileStore(options: {
             throw invalidPath();
           if (((await readPath(path))?.revision ?? null) !== revision)
             throw conflict();
-          await beforePublish?.();
+          await publication.beforePublish?.();
           if ((await checkedRoot(options.projectRoot, false)) !== root)
             throw invalidPath();
           if (((await readPath(path))?.revision ?? null) !== revision)
@@ -224,23 +241,54 @@ export function createCanvasFileStore(options: {
     }
   };
   return {
+    async mutateIndex(canvasId, expectedRevision, mutation) {
+      canvasContentPath(options.projectRoot, canvasId);
+      const root = await realpath(options.projectRoot);
+      const path = canvasContentPath(root, canvasId);
+      const previousLock = locks.get(path) ?? Promise.resolve();
+      const operation = previousLock
+        .catch(() => {})
+        .then(async () => {
+          await options.beforePublish?.();
+          if ((await checkedRoot(options.projectRoot, false)) !== root)
+            throw invalidPath();
+          if ((await readPath(path))?.revision !== expectedRevision)
+            throw conflict();
+          return mutation();
+        });
+      locks.set(path, operation);
+      try {
+        return await operation;
+      } finally {
+        if (locks.get(path) === operation) locks.delete(path);
+      }
+    },
     read,
     save: (canvasId, content, expectedRevision) =>
       publish(canvasId, expectedRevision, () => content),
     appendLatest: (canvasId, input) =>
-      publish(canvasId, "latest", (previous) => {
-        if (!previous) throw conflict();
-        return mergeAppend(previous.content, input);
-      }),
+      publish(
+        canvasId,
+        "latest",
+        (previous) => {
+          if (!previous) throw conflict();
+          return mergeAppend(previous.content, input);
+        },
+        { preserveUnchanged: true },
+      ),
     append: (canvasId, input, expectedRevision) =>
-      publish(canvasId, expectedRevision, (previous) =>
-        mergeAppend(
-          previous?.content ?? { elements: [], appState: {}, files: {} },
-          input,
-        ),
+      publish(
+        canvasId,
+        expectedRevision,
+        (previous) =>
+          mergeAppend(
+            previous?.content ?? { elements: [], appState: {}, files: {} },
+            input,
+          ),
+        { preserveUnchanged: true },
       ),
     update: (canvasId, content, expectedRevision, beforePublish) =>
-      publish(canvasId, expectedRevision, () => content, beforePublish),
+      publish(canvasId, expectedRevision, () => content, { beforePublish }),
   };
 }
 
@@ -255,7 +303,17 @@ function mergeAppend(
         ? elements.find((entry) => entry.id === element.id)
         : undefined;
     if (previous) {
-      if (!isDeepStrictEqual(previous, element)) throw conflict();
+      const published = (
+        previous.customData as Record<string, unknown> | undefined
+      )?.generationFingerprint;
+      const incoming = (
+        element.customData as Record<string, unknown> | undefined
+      )?.generationFingerprint;
+      if (
+        !(typeof published === "string" && published === incoming) &&
+        !isDeepStrictEqual(previous, element)
+      )
+        throw conflict();
     } else elements.push(element);
   }
   const files = { ...content.files };

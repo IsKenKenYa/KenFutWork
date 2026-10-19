@@ -174,7 +174,9 @@ describe("jobs repository（background_jobs）", () => {
     ).cancel(INSTANCE_ID, JOB_ID);
     const cancelSql = cancel.sqls()[0] ?? "";
     expect(cancelSql).toContain("set status = 'canceled'");
-    expect(cancelSql).toContain("and status in ('queued', 'running')");
+    expect(cancelSql).toContain(
+      "and status in ('queued', 'running', 'failed', 'canceled')",
+    );
     expect(cancelSql).toContain("where instance_id = $2 and id = $1");
   });
 
@@ -222,6 +224,7 @@ describe("jobs repository（background_jobs）", () => {
     expect(succeeded.calls[0]?.values).toEqual([
       JOB_ID,
       JSON.stringify({ url: "https://x/y.png" }),
+      null,
     ]);
 
     const failed = createRunner(() => ({ rowCount: 1, rows: [] }));
@@ -229,7 +232,12 @@ describe("jobs repository（background_jobs）", () => {
       createPersistenceFromRunner(failed.runner),
     ).markDeadLetter(JOB_ID, "provider_error", "超时");
     expect(failed.sqls()[0]).toContain("set status = 'dead_letter'");
-    expect(failed.calls[0]?.values).toEqual([JOB_ID, "provider_error", "超时"]);
+    expect(failed.calls[0]?.values).toEqual([
+      JOB_ID,
+      "provider_error",
+      "超时",
+      null,
+    ]);
   });
 
   it("尝试次数走库函数（原子累加）；未命中回默认值", async () => {
@@ -258,13 +266,25 @@ function createFakeRepository(
   overrides: Partial<JobRepository> = {},
 ): JobRepository {
   return {
+    beginSubmission: async () => 1,
+    recordSubmission: async () => JOB_ROW,
+    saveCancellation: async () => 1,
+    retry: async () => 1,
+    markUncertain: async () => 1,
+    saveExecution: async () => 1,
     cancel: async () => JOB_ROW,
     countActive: async () => 0,
     delete: async () => 1,
     findById: async () => JOB_ROW,
     findByIdInInstance: async () => JOB_ROW,
+    takeWakeups: async () => [],
+    schedule: async () => 1,
+    claim: async () => null,
+    renewLease: async () => 1,
+    releaseLease: async () => 1,
     incrementAttempt: async () => ({ attempt_count: 1, max_attempts: 3 }),
     insert: async () => JOB_ROW,
+    insertMany: async () => [JOB_ROW],
     listForInstance: async () => [],
     markDeadLetter: async () => 1,
     markFailed: async () => 1,
@@ -285,6 +305,8 @@ function buildService(
 ) {
   return createJobService({
     generationTargets: {
+      withOriginLock: async (_job, operation) =>
+        operation(new AbortController().signal),
       prepareOrigin: async () => ({ kind: "standalone" }),
       resolve: async () => null,
     },
@@ -345,7 +367,7 @@ describe("job service", () => {
     expect(listing).toHaveBeenCalledWith(INSTANCE_ID, {});
   });
 
-  it("投递失败时回滚任务行并报 job_create_failed", async () => {
+  it("投递失败时保留持久任务及受理回执", async () => {
     const removed: string[] = [];
     const service = buildService({
       queue: fakeQueue({
@@ -366,8 +388,8 @@ describe("job service", () => {
         jobType: "video_generation",
         payload: { prompt: "x" },
       }),
-    ).rejects.toMatchObject({ code: "job_create_failed", statusCode: 500 });
-    expect(removed).toEqual([JOB_ID]);
+    ).resolves.toMatchObject({ id: JOB_ID });
+    expect(removed).toEqual([]);
   });
 
   it("落库失败报 job_create_failed 且不投递", async () => {
@@ -456,6 +478,8 @@ it("Job创建保存服务器来源，忽略payload伪造file_target", async () =
     localInstance: INSTANCE_STUB,
     repository: createFakeRepository({ insert }),
     generationTargets: {
+      withOriginLock: async (_job, operation) =>
+        operation(new AbortController().signal),
       prepareOrigin: async () => ({ kind: "standalone" }),
       resolve: async () => null,
     },
@@ -477,6 +501,8 @@ it("来源归属失败返回可读409，不落Job或投队列", async () => {
     localInstance: INSTANCE_STUB,
     repository: createFakeRepository({ insert }),
     generationTargets: {
+      withOriginLock: async (_job, operation) =>
+        operation(new AbortController().signal),
       prepareOrigin: async () => {
         throw new GenerationTargetError("生成任务的原Run授权代际已失效");
       },

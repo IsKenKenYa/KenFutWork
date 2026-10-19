@@ -43,6 +43,49 @@ function fakeSocket() {
  * run 的 ack/流式事件全部 delivered=false（消息进得来、推送出不去，实测整轮假失败）。
  */
 describe("ConnectionManager 画布RPC绑定", () => {
+  it("文档更新发给实例全部已鉴权连接，无文档绑定也接收且不发往另一实例", () => {
+    const manager = new ConnectionManager();
+    const own = fakeSocket(),
+      another = fakeSocket(),
+      foreign = fakeSocket();
+    manager.register("own", "instance-A", own);
+    manager.register("another", "instance-A", another);
+    manager.register("foreign", "instance-B", foreign);
+    const message = {
+      type: "canvas.document.updated" as const,
+      canvasId: "canvas",
+      projectId: "project",
+      deleted: false,
+    };
+    expect(
+      manager.sendCanvasDocumentUpdatedToInstance("instance-A", message),
+    ).toBe(true);
+    expect(own.sent.map((value) => JSON.parse(value))).toEqual([message]);
+    expect(another.sent.map((value) => JSON.parse(value))).toEqual([message]);
+    expect(foreign.sent).toEqual([]);
+    manager.dispose();
+  });
+  it("后台画布同步显式过滤实例，另一实例即使绑定相同ID也不能接收", () => {
+    const manager = new ConnectionManager();
+    const own = fakeSocket(),
+      foreign = fakeSocket();
+    manager.register("own", "instance-A", own);
+    manager.register("foreign", "instance-B", foreign);
+    manager.bindCanvas("own", "canvas");
+    manager.bindCanvas("foreign", "canvas");
+    manager.pushToCanvas(
+      "canvas",
+      {
+        type: "canvas.sync",
+        runId: "actual-job",
+        timestamp: new Date().toISOString(),
+      },
+      "instance-A",
+    );
+    expect(own.sent).toHaveLength(1);
+    expect(foreign.sent).toHaveLength(0);
+    manager.dispose();
+  });
   it("只向同实例且绑定目标画布的在线连接发送RPC", async () => {
     const manager = new ConnectionManager();
     const foreignInstance = fakeSocket();

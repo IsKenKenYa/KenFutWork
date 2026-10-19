@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createCodeUiConversation } from "../code-ui/conversation.js";
+import { createCodeUiRepository } from "../code-ui/repository.js";
 import { createProcessSandbox } from "../process-sandbox/service.js";
 import type { ManagedProcess } from "../process-sandbox/types.js";
+import { createProjectRepository } from "../projects/repository.js";
 import { createTaskWorkStore } from "./repository.js";
 import { createTaskWorkManager } from "./service.js";
 import { createTaskWorkDatabase } from "./test-postgres-schema.js";
@@ -23,6 +26,162 @@ describe.skipIf(process.env.KENFUTWORK_TASK_WORK_PG_TEST !== "1")(
     });
     afterAll(async () => {
       await database?.close();
+    });
+
+    it("Design-only项目的冻结Design Run使用唯一Code owner；旧Design身份不能新派发或消费", async () => {
+      const rootDirectory = join(
+        database.directory,
+        `design-task-${randomUUID()}`,
+      );
+      await mkdir(rootDirectory);
+      const { project } = await createProjectRepository(
+        database.persistence,
+      ).createProject({
+        instanceId: database.instanceId,
+        createdByClientId: database.actor.accessClientId,
+        kind: "design",
+        name: "共享Design Task",
+        slug: randomUUID(),
+        description: null,
+        canvasName: "unused",
+        workDir: rootDirectory,
+      });
+      const taskId = randomUUID();
+      const scope = {
+        ...database.context.scope,
+        taskId,
+        projectId: project.id,
+        rootDirectory,
+      };
+      const context = {
+        ...database.context,
+        scope,
+        ownerKind: "code" as const,
+        runId: "canonical-design-run",
+      };
+      const host = createCodeUiConversation({
+        sessionId: taskId,
+        workspacePath: rootDirectory,
+        config: {
+          provider: "fixture",
+          model: "fixture",
+          thought: "",
+          followupMode: "queue",
+        },
+        workContext: { preset: "design" },
+      });
+      host.startTurn({
+        runId: context.runId,
+        commandId: randomUUID(),
+        text: "处理设计文件",
+        workContext: { preset: "design" },
+      });
+      await createCodeUiRepository(database.persistence).createRoot(
+        database.instanceId,
+        {
+          sessionId: taskId,
+          projectId: project.id,
+          scope,
+          createdByClientId: database.actor.accessClientId,
+          threadId: randomUUID(),
+          state: host.exportState(),
+          command: {
+            clientId: "fixture",
+            commandId: randomUUID(),
+            fingerprint: randomUUID(),
+          },
+        },
+      );
+      const store = createTaskWorkStore(database.persistence);
+      const manager = createTaskWorkManager({
+        store,
+        executionHostId: `shared-design-${taskId}`,
+        resolveMaxConcurrent: async () => 4,
+      });
+      const legacy = { ...context, ownerKind: "design" as const };
+      const runner = vi.fn(
+        async (): Promise<TaskWorkOutcome> => ({
+          status: "completed",
+          summary: "共享Task结果",
+        }),
+      );
+      try {
+        expect(await store.isCurrent(context)).toBe(true);
+        expect(await store.isCurrent(legacy)).toBe(false);
+        expect(
+          await store.closeFence(database.instanceId, taskId, "design"),
+        ).toBeNull();
+        await expect(
+          manager.start(
+            legacy,
+            {
+              kind: "command",
+              label: "退役执行",
+              toolCallId: "legacy-dispatch",
+            },
+            { run: runner, stop: async () => {} },
+          ),
+        ).rejects.toMatchObject({ code: "task_closed" });
+        expect(runner).not.toHaveBeenCalled();
+        const legacyRecord: TaskWorkRecord = {
+          id: randomUUID(),
+          scope,
+          ownerKind: "design",
+          agentId: "main",
+          kind: "command",
+          detached: true,
+          label: "退役记录",
+          originRunId: context.runId,
+          toolCallId: "legacy-create",
+          parameterFingerprint: "legacy",
+          branchGeneration: 1,
+          status: "running",
+          startedAt: new Date().toISOString(),
+          consumed: false,
+          ownerId: randomUUID(),
+          executionHostId: "legacy-host",
+        };
+        await expect(store.create(legacyRecord)).rejects.toMatchObject({
+          code: "task_closed",
+        });
+        expect(await store.list(database.instanceId, taskId)).toEqual([]);
+        const record = await manager.start(
+          context,
+          {
+            kind: "command",
+            detached: true,
+            label: "Design工作",
+            toolCallId: "canonical-dispatch",
+          },
+          { run: runner, stop: async () => {} },
+        );
+        await vi.waitFor(async () =>
+          expect((await manager.find(context, record.id))?.status).toBe(
+            "completed",
+          ),
+        );
+        expect(
+          await store.find(database.instanceId, taskId, record.id),
+        ).toMatchObject({ ownerKind: "code", originRunId: context.runId });
+        expect(await store.consume(legacy)).toEqual([]);
+        expect(await store.consume(context)).toMatchObject([
+          { id: record.id, ownerKind: "code", consumed: true },
+        ]);
+        expect(
+          await database.persistence
+            .forInstance(database.instanceId)
+            .queryOne(
+              "select task_kind,code_task_id,design_task_id from public.execution_task_owners where instance_id=:instance and task_id=$1",
+              [taskId],
+            ),
+        ).toEqual({
+          task_kind: "code",
+          code_task_id: taskId,
+          design_task_id: null,
+        });
+      } finally {
+        await manager.close("cleanup");
+      }
     });
 
     it("日志先采集再终态，缺少outcome引用也保留真实输出与统计；全迁移重放后no-op", async () => {

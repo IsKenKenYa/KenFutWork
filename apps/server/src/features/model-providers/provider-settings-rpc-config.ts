@@ -84,6 +84,26 @@ export function codeUiProviderIssues(instance: ProviderInstanceResponse) {
   ]);
 }
 
+/** 预设 → 移植侧 ProviderLogo 内置图标 key。只登记上游已核来源的素材，缺省回落通用图标。 */
+const PRESET_BUILTIN_LOGO_KEYS: Readonly<Record<string, string>> = {
+  anthropic: "anthropic",
+  openai: "openai",
+  deepseek: "deepseek",
+  xai: "xai",
+  openrouter: "openrouter",
+  zai: "zai",
+  "zai-coding-plan": "zai",
+  zhipuai: "bigmodel",
+  "zhipuai-coding-plan": "bigmodel",
+  moonshotai: "moonshot-kimi",
+  "moonshotai-cn": "moonshot-kimi",
+  "kimi-for-coding": "moonshot-kimi",
+  minimax: "minimax",
+  "minimax-cn": "minimax",
+  "minimax-coding-plan": "minimax",
+  "minimax-cn-coding-plan": "minimax",
+};
+
 export function codeUiTemplateConfig(
   preset: ProviderPreset,
 ): ProviderConfigObject {
@@ -99,8 +119,10 @@ export function codeUiTemplateConfig(
       : protocol === "anthropic"
         ? "anthropic-messages"
         : "openai-chat-completions";
+  const logoKey = PRESET_BUILTIN_LOGO_KEYS[preset.id];
   return {
     group: "standard-personal",
+    ...(logoKey ? { logo: { type: "builtin" as const, key: logoKey } } : {}),
     access: { type: "api-key" },
     api: { type: apiType, baseUrl: preset.api ?? defaultBaseUrls[protocol] },
     personalModelIds: preset.models

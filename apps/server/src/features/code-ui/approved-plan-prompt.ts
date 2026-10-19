@@ -7,7 +7,7 @@ export function createApprovedPlanPromptSection(
 ): PromptSectionDefinition {
   return {
     name: "code.approved-plan",
-    scope: "code",
+    scope: "always",
     order: 30,
     async resolve(context) {
       if (!context.executionScope) return null;

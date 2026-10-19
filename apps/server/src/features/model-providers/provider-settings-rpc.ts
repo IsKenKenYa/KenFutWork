@@ -144,10 +144,41 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
       .update(JSON.stringify(publicViews))
       .digest("hex");
     const previous = this.revisions.get(instanceId);
-    const revision = previous
-      ? previous.revision + Number(previous.fingerprint !== fingerprint)
-      : 0;
+    // 修订账本持久化到 human preferences：进程重启后修订续增不归零，
+    // 否则前端 revision 守卫会把重启后的新视图当旧视图静默丢弃。
+    let revision: number;
+    let persistRevision = false;
+    if (previous) {
+      revision =
+        previous.revision + Number(previous.fingerprint !== fingerprint);
+      persistRevision = previous.fingerprint !== fingerprint;
+    } else if (
+      typeof preferences.codeUiViewRevision === "number" &&
+      Number.isInteger(preferences.codeUiViewRevision) &&
+      preferences.codeUiViewRevision >= 0
+    ) {
+      const storedFingerprint =
+        typeof preferences.codeUiViewFingerprint === "string"
+          ? preferences.codeUiViewFingerprint
+          : null;
+      const changed = storedFingerprint !== fingerprint;
+      revision = preferences.codeUiViewRevision + Number(changed);
+      persistRevision = changed;
+    } else {
+      revision = 0;
+      persistRevision = true;
+    }
     this.revisions.set(instanceId, { fingerprint, revision });
+    if (persistRevision) {
+      try {
+        await this.deps.preferences.updateHumanPreferences(instanceId, {
+          codeUiViewRevision: revision,
+          codeUiViewFingerprint: fingerprint,
+        });
+      } catch {
+        // 账本写失败不阻断读取：进程内仍单调，只是重启后可能从较旧的持久值续增。
+      }
+    }
     return buildCodeUiModelViews({
       ...base,
       revision,

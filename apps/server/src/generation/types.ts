@@ -1,3 +1,5 @@
+import type { VideoGenerationCaps } from "@kenfutwork/shared";
+
 /** Metadata describing a model supported by a provider. */
 export interface ModelInfo {
   /** Provider-scoped model ID, e.g. "google/nano-banana-pro" */
@@ -16,11 +18,15 @@ export interface ModelInfo {
  * - hd:       ~2K (default, production quality)
  * - ultra:    ~4K (highest, print quality — not all models support this)
  */
-export type ImageQuality = "standard" | "hd" | "ultra";
+export type ImageQuality = string;
 
 export type OutputFormat = "png" | "jpg" | "webp";
 
 export interface ImageGenerateParams {
+  count?: number;
+  width?: number;
+  height?: number;
+  signal?: AbortSignal;
   prompt: string;
   model: string;
   aspectRatio?: string;
@@ -39,16 +45,30 @@ export interface GeneratedImage {
   height: number;
 }
 
+export type ImageAsyncPollResult =
+  | { state: "in_progress" }
+  | { state: "succeeded"; images: GeneratedImage[] }
+  | { state: "failed"; errorMessage: string };
+
 export interface ImageProvider {
   readonly name: string;
   readonly models: readonly ModelInfo[];
+  /** 上传参考素材等准备工作；Job须在登记付费提交阶段之前完成。 */
+  prepareInputs?(params: ImageGenerateParams): Promise<ImageGenerateParams>;
   generate(params: ImageGenerateParams): Promise<GeneratedImage>;
+  generateMany?(params: ImageGenerateParams): Promise<GeneratedImage[]>;
+  /** startAsync可按count原生批量；仍须模型明确声明maxOutputs，未知模型按单图。 */
+  readonly supportsAsyncBatch?: true;
+  startAsync?(params: ImageGenerateParams): Promise<{ providerJobId: string }>;
+  pollAsync?(providerJobId: string): Promise<ImageAsyncPollResult>;
+  cancelAsync?(providerJobId: string): Promise<void>;
 }
 
 export interface VideoGenerateParams {
+  signal?: AbortSignal;
   prompt: string;
   model: string;
-  resolution?: "480p" | "720p" | "1080p";
+  resolution?: string;
   duration?: number;
   aspectRatio?: string;
   inputImages?: string[];
@@ -78,6 +98,8 @@ export type VideoAsyncPollResult =
 export interface VideoProvider {
   readonly name: string;
   readonly models: readonly VideoModelInfo[];
+  /** 上传参考素材等准备工作；不创建上游生成任务。 */
+  prepareInputs?(params: VideoGenerateParams): Promise<VideoGenerateParams>;
   generate(params: VideoGenerateParams): Promise<GeneratedVideo>;
   /**
    * 异步任务面（可选，S6）：submit 立即返回外部任务引用，由 executor 落库
@@ -87,6 +109,7 @@ export interface VideoProvider {
    */
   startAsync?(params: VideoGenerateParams): Promise<{ providerJobId: string }>;
   pollAsync?(providerJobId: string): Promise<VideoAsyncPollResult>;
+  cancelAsync?(providerJobId: string): Promise<void>;
 }
 
 export interface VideoPriceRate {
@@ -120,17 +143,19 @@ export interface AvailableVideoModel extends VideoModelInfo {
 
 /** Extended model info with video-specific capabilities metadata. */
 export interface VideoModelInfo extends ModelInfo {
+  /** 实例模型声明；缺省保持未知，旧provider继续使用capabilities/limits。 */
+  videoGeneration?: VideoGenerationCaps;
   capabilities: {
-    textToVideo: boolean;
-    imageToVideo: boolean;
-    videoToVideo: boolean;
-    audio: boolean;
+    textToVideo?: boolean;
+    imageToVideo?: boolean;
+    videoToVideo?: boolean;
+    audio?: boolean;
   };
   limits: {
-    maxDuration: number;
+    maxDuration?: number;
     allowedDurations?: number[];
-    maxResolution: "480p" | "720p" | "1080p" | "2160p";
-    maxInputImages: number;
+    maxResolution?: "480p" | "720p" | "1080p" | "2160p";
+    maxInputImages?: number;
   };
   /** Verified provider pricing, separate from KenFutWork's own credit balance. */
   pricing?: VideoPricingInfo;

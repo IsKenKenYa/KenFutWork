@@ -1,4 +1,8 @@
-import type { StreamEvent } from "@kenfutwork/shared";
+import type {
+  zcodeUiProtocol as protocol,
+  StreamEvent,
+} from "@kenfutwork/shared";
+import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { CodeApprovalMode } from "../permissions/approval-types.js";
@@ -15,6 +19,9 @@ export interface ChildSession {
   }>;
 }
 export interface CodeChildRequest {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
+  workContext?: protocol.ConversationWorkContext;
+  frozenContributions?: ToolContributionSnapshot;
   childSessionId: string;
   approvalCeiling: CodeApprovalMode;
   actor: LocalActor;

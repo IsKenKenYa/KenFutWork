@@ -14,6 +14,8 @@ import type {
 import type { ModelConnectivityResult } from "@zcode/shared";
 import type { ProviderApiType } from "@zcode/provider";
 import { type ProviderInstanceResponse, type ProviderInstanceModel, type ProviderProtocol } from "@kenfutwork/shared";
+import { MODEL_KIND_LABELS, modelKind, type ModelKind } from "@zui/host/ModelSettingsSummary.js";
+import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
 import { GenerationModelFields, parseGenerationModelDraft } from "@zui/host/GenerationModelFields.js";
 import {
   TID_MODEL_PROVIDER_ADD_MODEL_BUTTON,
@@ -27,6 +29,8 @@ import {
 import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import { Button } from "@zui/components/ui/button.js";
 import { Input } from "@zui/components/ui/input.js";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@zui/components/ui/select.js";
+import { modelCapabilitySchema } from "@kenfutwork/shared";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -273,7 +277,7 @@ export function ProviderConnectionSection({
           <label className="mb-1 block text-ui-base text-foreground-subtle">
             {intl.formatMessage({ id: "settings.modelProvider.apiFormat" })}
           </label>
-          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} nativeProtocol={nativeProtocol} onNativeProtocolChange={onNativeProtocolChange} />
+          <ProviderApiFormatSelect value={apiFormat} onChange={onApiFormatChange} nativeProtocol={nativeProtocol} onNativeProtocolChange={provider.native ? onNativeProtocolChange : undefined} />
         </div>
       ) : null}
     </>
@@ -390,14 +394,21 @@ export function ProviderModelsSection({
   nativeProvider?: ProviderInstanceResponse | undefined;
 }) {
   const { intl } = useZCodeIntl();
+  const [kind, setKind] = useState<ModelKind | "all">("all");
+  const [query, setQuery] = useState("");
+  const visibleModels = models.filter(model =>
+    (kind === "all" || modelKind(model) === kind) &&
+    `${model.modelId} ${model.native?.name ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+  );
   const { providerSettingsService } = useServices();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addSaving, setAddSaving] = useState(false);
   const addSavingRef = useRef(false);
   const [addCommitError, setAddCommitError] = useState<string | null>(null);
   const [addModel] = useState(createEmptyModel);
-  const generation = Boolean(nativeProvider && !["openai-compatible", "anthropic", "gemini"].includes(nativeProvider.protocol));
-  const [nativeDraft, setNativeDraft] = useState<ProviderInstanceModel>({ id: "", name: "", capability: "image" });
+  const defaultCapability = nativeProvider && !["openai-compatible", "anthropic", "gemini"].includes(nativeProvider.protocol) ? "image" : "chat";
+  const [nativeDraft, setNativeDraft] = useState<ProviderInstanceModel>({ id: "", name: "", capability: defaultCapability });
+  const generation = Boolean(nativeProvider && nativeDraft.capability !== "chat");
   const nativeDraftRef = useRef(nativeDraft);
   const changeNativeDraft = (model: ProviderInstanceModel) => { nativeDraftRef.current = model; setNativeDraft(model); };
   const addRevisionRef = useRef(providerRevision);
@@ -423,13 +434,13 @@ export function ProviderModelsSection({
   const { draft: addDraft } = editor;
 
   const openAddDialog = useCallback(() => {
-    changeNativeDraft({ id: "", name: "", capability: "image" });
+    changeNativeDraft({ id: "", name: "", capability: kind === "all" ? defaultCapability : kind });
     addRevisionRef.current = providerRevision;
     editor.reset(createEmptyModel());
     setAddDraftErrorField(null);
     setAddCommitError(null);
     setAddDialogOpen(true);
-  }, [editor.reset, providerRevision]);
+  }, [editor.reset, providerRevision, kind, defaultCapability]);
 
   const updateAddDraft = (patch: Partial<ProviderModelDraftValues>) => {
     editor.change(patch);
@@ -494,10 +505,17 @@ export function ProviderModelsSection({
 
   return (
     <div>
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
-        <span className="text-ui-base text-foreground-subtle">
-          {intl.formatMessage({ id: "settings.modelProvider.models" })}
-        </span>
+      <Tabs className="max-w-full overflow-x-auto" value={kind} onValueChange={(value) => { setKind(value as ModelKind | "all"); setQuery(""); }}>
+        <TabsList variant="line" className="mb-4">
+          <TabsTrigger value="all">全部 {models.length}</TabsTrigger>
+          {(Object.keys(MODEL_KIND_LABELS) as ModelKind[]).map(value => {
+            const count = models.filter(model => modelKind(model) === value).length;
+            return count > 0 ? <TabsTrigger key={value} value={value}>{MODEL_KIND_LABELS[value]} {count}</TabsTrigger> : null;
+          })}
+        </TabsList>
+      </Tabs>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <Input size="lg" aria-label="搜索模型" placeholder="搜索名称或模型 ID" value={query} onChange={event => setQuery(event.target.value)} className="w-64 max-w-full" />
         <Button
           type="button"
           variant="secondary"
@@ -510,14 +528,14 @@ export function ProviderModelsSection({
           {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
         </Button>
       </div>
-      {models.length > 0 ? (
+      {visibleModels.length > 0 ? (
         <div className="overflow-hidden rounded-lg border border-input-border bg-input">
           <SortableProviderModelList
-            modelIds={models.map((model) => model.modelId)}
-            sortableModelIds={models.map((model) => model.modelId)}
-            onReorder={onReorderModelIds}
+            modelIds={visibleModels.map((model) => model.modelId)}
+            sortableModelIds={visibleModels.map((model) => model.modelId)}
+            onReorder={kind === "all" && !query.trim() ? onReorderModelIds : undefined}
             renderModel={(_modelId, index) => {
-              const model = models[index]!;
+              const model = visibleModels[index]!;
               const inputFormat = model.config.properties?.inputFormat;
               const outputFormat = model.config.properties?.outputFormat;
               const completeProperties =
@@ -574,12 +592,25 @@ export function ProviderModelsSection({
       ) : (
         <div className="mt-1 flex h-12 items-center justify-start gap-2 rounded-lg border border-dashed border-border px-4 text-left text-ui-base text-foreground-subtle">
           <InfoIcon className="size-4 shrink-0" aria-hidden="true" />
-          {intl.formatMessage({ id: "settings.modelProvider.modelsEmpty" })}
+          {query ? "没有匹配的模型" : intl.formatMessage({ id: "settings.modelProvider.modelsEmpty" })}
         </div>
       )}
       <>
         <ProviderModelMetadataDialog
-          editorContent={generation ? <GenerationModelFields model={nativeDraft} onChange={changeNativeDraft} /> : undefined}
+          headerContent={nativeProvider ? <div className="flex items-center justify-between gap-4 pt-2">
+            <span className="text-ui-base text-foreground-subtle">用途</span>
+            <Select value={nativeDraft.capability} onValueChange={value => changeNativeDraft({ ...nativeDraftRef.current, capability: modelCapabilitySchema.parse(value) })}>
+              <SelectTrigger aria-label="用途" className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="chat">对话</SelectItem>
+                <SelectItem value="image">图像</SelectItem>
+                <SelectItem value="image-edit">图像编辑</SelectItem>
+                <SelectItem value="video">视频</SelectItem>
+                <SelectItem value="audio">音频</SelectItem>
+              </SelectContent>
+            </Select>
+          </div> : undefined}
+          editorContent={generation ? <GenerationModelFields hideCapability model={nativeDraft} onChange={changeNativeDraft} /> : undefined}
           onRestore={() => {
             setAddDraftErrorField(null);
             setAddCommitError(null);

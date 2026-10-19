@@ -49,7 +49,7 @@ export const taskWorkDirectoryPromptSection: PromptSectionDefinition = {
   order: 0,
   scope: "design",
   resolve: (ctx) =>
-    ctx.scopeHandle?.preset === "design" && ctx.preset === "design"
+    ctx.scopeHandle && ctx.preset === "design"
       ? TASK_WORK_DIRECTORY_PROMPT
       : null,
 };

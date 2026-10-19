@@ -1,3 +1,4 @@
+import type { ConversationWorkContext } from "./zcode-protocol-v4/work-context.js";
 /* eslint-disable max-lines -- 跨端 platform contract 集中声明 renderer 能力；OAuth 与 browser lifecycle 必须保持 desktop/web 类型合同，本 MR 不拆分平台边界。 */
 import type {
   DockerConnectOptions,
@@ -536,7 +537,7 @@ export interface HostPluginSidebarEntry {
 
 export type HostWorkbenchMode = "code" | "design" | "flow";
 export interface HostWorkbenchNavigation {
-  getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[] };
+  getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[]; documentTarget?: { resourceType: "canvas"; documentId: string } };
   subscribe(listener: () => void): () => void;
   open(mode: HostWorkbenchMode): void;
   /** 壳内主区视图变化后回写当前模式（模式 pills 的 active 态以此为准）。 */
@@ -546,6 +547,8 @@ export interface HostWorkbenchNavigation {
 export interface IPlatformService {
   /** 宿主模式导航；运行和原会话仍留在各自文档。 */
   workbenchNavigation?: HostWorkbenchNavigation;
+  /** 在提交时读取宿主的资源上下文；不改变Task或正在执行的Run。 */
+  getConversationWorkContext?: (workspace: { workspacePath: string; workspaceIdentity?: string }) => ConversationWorkContext;
   /** 宿主独立管理文档；未声明的平台保留原窗口导航。 */
   openSettingsDocument?: () => void;
   openPluginStoreDocument?: (target: { pluginId?: string; intent?: "add-marketplace"; returnScopeKey?: string }) => void;

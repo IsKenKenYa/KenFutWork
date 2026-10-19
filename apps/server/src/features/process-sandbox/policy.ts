@@ -20,6 +20,7 @@ export async function commandDirectory(
   requested?: string,
 ): Promise<string> {
   const path = await realpath(resolve(scope.rootDirectory, requested ?? "."));
+  if (scope.sandboxMode === "danger-full-access") return path;
   const roots = [
     scope.rootDirectory,
     ...scope.additionalDirectories.map((directory) => directory.path),
@@ -129,7 +130,10 @@ export async function unixPolicy(input: {
   const privateDirectory = await realpath(input.privateDirectory);
   return {
     network: {
-      allowedDomains: [...input.network.allowedDomains],
+      allowedDomains:
+        input.scope.sandboxMode === "read-only"
+          ? []
+          : [...input.network.allowedDomains],
       deniedDomains: [...input.network.deniedDomains],
       strictAllowlist: true,
     },

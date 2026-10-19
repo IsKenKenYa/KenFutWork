@@ -11,6 +11,8 @@ pub struct PtySize {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Launch {
+    #[serde(default)]
+    pub unrestricted: bool,
     pub process_id: String,
     pub task_id: String,
     pub generation: u64,
@@ -32,6 +34,8 @@ pub struct Launch {
 pub enum Request {
     Probe {
         id: String,
+        #[serde(default)]
+        unrestricted: bool,
     },
     Spawn {
         id: String,

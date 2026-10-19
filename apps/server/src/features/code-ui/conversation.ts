@@ -4,6 +4,7 @@ import {
   type StreamEvent,
 } from "@kenfutwork/shared";
 import type { z } from "zod";
+import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import { deriveSessionTitle } from "../chat/session-title.js";
 import {
@@ -11,7 +12,10 @@ import {
   type GoalRecord,
   type GoalService,
 } from "../goals/service.js";
-import type { ApprovalEvent } from "../permissions/approval-types.js";
+import type {
+  ApprovalEvent,
+  CodeApprovalMode,
+} from "../permissions/approval-types.js";
 import type { RunUsageTotals } from "../usage/run-usage-accumulator.js";
 import { freezeChildSnapshots } from "./child-history.js";
 import { updateTurnFileSummary } from "./file-changes.js";
@@ -20,17 +24,22 @@ import { type CodeAdmittedInput, codeGuideMessageId } from "./input-intents.js";
 import type { OwnedHistoryOutput } from "./output-history-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
+import { codeUiRunHasStopIntent } from "./run-outcome.js";
 import type { UserInputEvent } from "./user-input-types.js";
+import { freezeWorkContext } from "./work-context.js";
 
 type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
 type Config = protocol.SessionConfigState;
 type ExecutionStart = {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   runId: string;
   commandId: string;
   modelSelection?: NonNullable<Config["modelSelection"]>;
   mode?: string | undefined;
   planEnabled?: boolean | undefined;
+  workContext?: protocol.ConversationWorkContext | undefined;
+  frozenContributions?: ToolContributionSnapshot | undefined;
 };
 
 function setManualCompactStatus(
@@ -62,11 +71,24 @@ export type CodeUiCompletedTurnView = Pick<
 };
 
 export interface CodeUiConversationState {
+  runExecutionModes?: Array<
+    [string, import("@kenfutwork/shared").ExecutionMode]
+  >;
+  runApprovalCeilings?: Array<[string, CodeApprovalMode]>;
+  initialWorkContext?: protocol.ConversationWorkContext;
+  runWorkContexts?: Array<[string, protocol.ConversationWorkContext]>;
+  runContributions?: Array<[string, ToolContributionSnapshot]>;
+  runOutcomes?: Array<[string, "completed" | "failed" | "canceled"]>;
+  /** Private executor/host recovery provenance; never inferred from public errors. */
+  hostShutdownRuns?: string[];
+  /** Exact Run ids from applied Stop or accepted preemption, never the raw ledger. */
+  stopRequestedRuns?: string[];
   goalRecord?: GoalRecord | null;
   goalModel?: {
     goalId: string;
     selection: NonNullable<Config["modelSelection"]>;
     invocation: ModelInvocationSnapshot;
+    workContext?: protocol.ConversationWorkContext;
   } | null;
   version: 1;
   runId: string;
@@ -356,6 +378,7 @@ export function createCodeUiConversation(input: {
   goals?: GoalService;
   clock?: () => number;
   state?: CodeUiConversationState;
+  workContext?: protocol.ConversationWorkContext | undefined;
 }) {
   const clock = input.clock ?? Date.now;
   const snapshots = new Map<string, Snapshot>();
@@ -365,6 +388,20 @@ export function createCodeUiConversation(input: {
   const inputs = structuredClone(input.state?.inputs ?? []);
   let inputOwner = input.state?.inputOwner;
   const runUsage = new Map(input.state?.runUsage ?? []);
+  const initialWorkContext = freezeWorkContext(
+    input.state?.initialWorkContext ?? input.workContext,
+  );
+  const runWorkContexts = new Map(
+    structuredClone(input.state?.runWorkContexts ?? []),
+  );
+  const runContributions = new Map(
+    structuredClone(input.state?.runContributions ?? []),
+  );
+  const runExecutionModes = new Map(input.state?.runExecutionModes ?? []);
+  const runApprovalCeilings = new Map(input.state?.runApprovalCeilings ?? []);
+  const runOutcomes = new Map(input.state?.runOutcomes ?? []);
+  const hostShutdownRuns = new Set(input.state?.hostShutdownRuns ?? []);
+  const stopRequestedRuns = [...(input.state?.stopRequestedRuns ?? [])];
   const contextWindowProjections = new Map(
     input.state?.contextWindowProjections ?? [],
   );
@@ -380,7 +417,18 @@ export function createCodeUiConversation(input: {
   const planningEpoch = input.state?.planningEpoch ?? 0;
   const approvedPlan = input.state?.approvedPlan;
   let goalRecord = structuredClone(input.state?.goalRecord ?? null);
-  let goalModel = structuredClone(input.state?.goalModel ?? null);
+  const storedGoalModel = input.state?.goalModel;
+  let goalModel: Exclude<CodeUiConversationState["goalModel"], undefined> =
+    storedGoalModel
+      ? {
+          goalId: storedGoalModel.goalId,
+          selection: structuredClone(storedGoalModel.selection),
+          invocation: structuredClone(storedGoalModel.invocation),
+          ...(storedGoalModel.workContext
+            ? { workContext: freezeWorkContext(storedGoalModel.workContext) }
+            : {}),
+        }
+      : null;
   const config = protocol.sessionConfigStateSchema.parse(input.config);
   if (input.state) {
     if (input.state.version !== 1) throw new Error("Code 会话状态版本不匹配");
@@ -430,6 +478,21 @@ export function createCodeUiConversation(input: {
       contextWindowProjections.delete(root.sessionId);
     }
     runId = turn.runId;
+    const mode = protocol.commandPayloadSchemas.switchCollaborationMode.parse({
+      mode: turn.mode ?? root.config.mode,
+    }).mode;
+    runApprovalCeilings.set(turn.runId, mode === "plan" ? "build" : mode);
+    if (turn.executionMode)
+      runExecutionModes.set(turn.runId, turn.executionMode);
+    runWorkContexts.set(
+      turn.runId,
+      freezeWorkContext(turn.workContext ?? initialWorkContext),
+    );
+    if (turn.frozenContributions)
+      runContributions.set(
+        turn.runId,
+        structuredClone(turn.frozenContributions),
+      );
     root.config = protocol.sessionConfigStateSchema.parse({
       ...root.config,
       ...(turn.modelSelection !== undefined
@@ -503,6 +566,16 @@ export function createCodeUiConversation(input: {
         goalModel,
         version: 1,
         runId,
+        initialWorkContext,
+        runWorkContexts: [...runWorkContexts],
+        runContributions: [...runContributions],
+        runExecutionModes: [...runExecutionModes],
+        runApprovalCeilings: [...runApprovalCeilings],
+        runOutcomes: [...runOutcomes],
+        ...(hostShutdownRuns.size
+          ? { hostShutdownRuns: [...hostShutdownRuns] }
+          : {}),
+        ...(stopRequestedRuns.length ? { stopRequestedRuns } : {}),
         snapshots: [...snapshots.values()],
         dispatches: [...childByDispatch.entries()],
         closedRuns: [...closedRuns],
@@ -533,6 +606,12 @@ export function createCodeUiConversation(input: {
       owner?: { hostId: string; runtimeId: string },
     ) {
       if (owner) inputOwner = { ...owner };
+      if (
+        record.status === "reserved" &&
+        record.previousRunId &&
+        !stopRequestedRuns.includes(record.previousRunId)
+      )
+        stopRequestedRuns.push(record.previousRunId);
       inputs.push(structuredClone(record));
       if (record.status === "queued") {
         root.queue.items.push(protocol.queueItemSchema.parse(record.intent));
@@ -711,7 +790,12 @@ export function createCodeUiConversation(input: {
       };
       return child.sessionId;
     },
-    recordChildRunEvent(childSessionId: string, event: StreamEvent) {
+    recordChildRunEvent(
+      childSessionId: string,
+      event: StreamEvent,
+      workContext?: protocol.ConversationWorkContext,
+      frozenContributions?: ToolContributionSnapshot,
+    ) {
       if (
         inheritedSessions.some(
           (session) => session.owner.sessionId === childSessionId,
@@ -742,9 +826,30 @@ export function createCodeUiConversation(input: {
         sessionId: childSessionId,
         workspacePath: input.workspacePath,
         config: child.config,
+        workContext,
         state: {
           version: 1,
           runId: event.runId,
+          initialWorkContext: freezeWorkContext(workContext),
+          runWorkContexts: [...runWorkContexts].filter(
+            ([id]) => id === event.runId,
+          ),
+          runContributions: [...runContributions].filter(
+            ([id]) => id === event.runId,
+          ),
+          runExecutionModes: [...runExecutionModes].filter(
+            ([id]) => id === event.runId,
+          ),
+          runApprovalCeilings: [...runApprovalCeilings].filter(
+            ([id]) => id === event.runId,
+          ),
+          runOutcomes: [...runOutcomes].filter(([id]) => id === event.runId),
+          hostShutdownRuns: [...hostShutdownRuns].filter(
+            (id) => id === event.runId,
+          ),
+          stopRequestedRuns: stopRequestedRuns.filter(
+            (id) => id === event.runId,
+          ),
           runUsage: childRunUsage.get(childSessionId) ?? [],
           contextWindowProjections: [...contextWindowProjections].filter(
             ([id]) => descendants.has(id),
@@ -767,9 +872,25 @@ export function createCodeUiConversation(input: {
           runId: event.runId,
           commandId: `child:${childSessionId}`,
           text: child.meta.title ?? "子任务",
+          workContext,
+          frozenContributions,
+          executionMode: runExecutionModes.get(event.runId),
         });
       host.recordEvent(event);
       const state = host.exportState();
+      for (const [id, context] of state.runWorkContexts ?? [])
+        runWorkContexts.set(id, context);
+      for (const [id, contribution] of state.runContributions ?? [])
+        runContributions.set(id, contribution);
+      for (const [id, mode] of state.runExecutionModes ?? [])
+        runExecutionModes.set(id, mode);
+      for (const [id, ceiling] of state.runApprovalCeilings ?? [])
+        runApprovalCeilings.set(id, ceiling);
+      for (const [id, outcome] of state.runOutcomes ?? [])
+        runOutcomes.set(id, outcome);
+      for (const id of state.hostShutdownRuns ?? []) hostShutdownRuns.add(id);
+      for (const id of state.stopRequestedRuns ?? [])
+        if (!stopRequestedRuns.includes(id)) stopRequestedRuns.push(id);
       for (const id of descendants) contextWindowProjections.delete(id);
       for (const [id, projectedRun] of state.contextWindowProjections ?? [])
         contextWindowProjections.set(id, projectedRun);
@@ -884,11 +1005,14 @@ export function createCodeUiConversation(input: {
     },
     startInput(record: CodeAdmittedInput) {
       const execution = {
+        executionMode: record.executionMode,
         runId: record.runId,
         commandId: record.intent.sourceCommandId,
         modelSelection: record.intent.modelSelection!,
         mode: record.intent.mode,
         planEnabled: record.intent.planEnabled,
+        workContext: freezeWorkContext(record.intent.workContext),
+        frozenContributions: record.frozenContributions,
       };
       if (record.intent.kind === "compact") {
         const at = beginExecution(execution);
@@ -917,6 +1041,7 @@ export function createCodeUiConversation(input: {
         });
     },
     startTurn(turn: {
+      executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
       runId: string;
       commandId: string;
       text: string;
@@ -924,6 +1049,8 @@ export function createCodeUiConversation(input: {
       clientId?: string;
       mode?: string | undefined;
       planEnabled?: boolean | undefined;
+      workContext?: protocol.ConversationWorkContext | undefined;
+      frozenContributions?: ToolContributionSnapshot | undefined;
       origin?: "userInput" | "backgroundResult" | "editRerun";
       rootSourceCommandId?: string;
       modelSelection?: NonNullable<
@@ -1245,6 +1372,16 @@ export function createCodeUiConversation(input: {
       const at = Date.parse(event.timestamp);
       if (event.type === "run.canceled" || event.type === "run.failed") {
         if (
+          event.type === "run.canceled" &&
+          event.stopReason === "host_shutdown" &&
+          !codeUiRunHasStopIntent({ inputs, stopRequestedRuns }, event.runId)
+        )
+          hostShutdownRuns.add(event.runId);
+        runOutcomes.set(
+          event.runId,
+          event.type === "run.failed" ? "failed" : "canceled",
+        );
+        if (
           inputs.some(
             (input) =>
               input.runId === event.runId && input.intent.kind === "compact",
@@ -1277,6 +1414,12 @@ export function createCodeUiConversation(input: {
           if (snapshot.control.phase !== "running") continue;
           snapshot.seq += 1;
           snapshot.revision += 1;
+          for (const work of snapshot.control.activeWorks)
+            if (
+              work.foregroundExecutionId &&
+              work.foregroundExecutionId !== event.runId
+            )
+              runOutcomes.set(work.foregroundExecutionId, "canceled");
           cancelSnapshot(snapshot, at, retained);
           if (event.type === "run.failed")
             snapshot.control = {
@@ -1297,6 +1440,7 @@ export function createCodeUiConversation(input: {
         return;
       }
       if (event.type === "run.completed") {
+        runOutcomes.set(event.runId, "completed");
         if (event.operationResult?.kind === "compact")
           setManualCompactStatus(
             root,

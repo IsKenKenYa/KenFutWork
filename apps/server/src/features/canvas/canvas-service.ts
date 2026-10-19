@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
-import type { CanvasContent, CanvasDetail } from "@kenfutwork/shared";
+import type {
+  CanvasContent,
+  CanvasCreateRequest,
+  CanvasDetail,
+  CanvasRenameRequest,
+  CanvasSummary,
+} from "@kenfutwork/shared";
 import { canvasContentSchema } from "@kenfutwork/shared";
 import type { BlobStore } from "../blob/types.js";
 import type {
@@ -39,6 +45,7 @@ export class CanvasServiceError extends Error {
 }
 
 export type ImageInsertRequest = {
+  insertionId?: string;
   canvasId: string;
   objectPath: string;
   width: number;
@@ -49,6 +56,7 @@ export type ImageInsertRequest = {
 };
 
 export type VideoInsertRequest = {
+  insertionId?: string;
   canvasId: string;
   assetId?: string;
   signedUrl: string;
@@ -62,12 +70,40 @@ export type VideoInsertRequest = {
 };
 
 export type CanvasService = {
+  listCanvases(
+    actor: LocalActor,
+    projectId: string,
+    query?: string,
+  ): Promise<CanvasSummary[]>;
+  createCanvas(
+    actor: LocalActor,
+    projectId: string,
+    input: CanvasCreateRequest,
+    beforePublish?: () => Promise<void>,
+  ): Promise<CanvasDetail>;
+  renameCanvas(
+    actor: LocalActor,
+    canvasId: string,
+    input: CanvasRenameRequest,
+    beforePublish?: () => Promise<void>,
+  ): Promise<CanvasDetail>;
+  deleteCanvas(
+    actor: LocalActor,
+    canvasId: string,
+    expectedRevision: string,
+    beforePublish?: () => Promise<void>,
+  ): Promise<void>;
   /** 服务端消费者读取权威布局，保留素材逻辑URI，不解析下载或签名URL。 */
   readCanvasContent(
     actor: LocalActor,
     canvasId: string,
+    beforePublish?: () => Promise<void>,
   ): Promise<CanvasContent>;
-  getCanvas(actor: LocalActor, canvasId: string): Promise<CanvasDetail>;
+  getCanvas(
+    actor: LocalActor,
+    canvasId: string,
+    beforePublish?: () => Promise<void>,
+  ): Promise<CanvasDetail>;
   saveCanvasContent(
     actor: LocalActor,
     canvasId: string,
@@ -79,10 +115,12 @@ export type CanvasService = {
   insertImageElement(
     actor: LocalActor,
     request: ImageInsertRequest,
+    beforePublish?: () => Promise<void>,
   ): Promise<{ elementId: string }>;
   insertVideoElement(
     actor: LocalActor,
     request: VideoInsertRequest,
+    beforePublish?: () => Promise<void>,
   ): Promise<{ elementId: string }>;
 };
 
@@ -223,11 +261,18 @@ export function createCanvasService(options: {
     }
     return { ...location, store, snapshot };
   };
-  const contentStore = (actor: LocalActor): CanvasContentStore => ({
+  const contentStore = (
+    actor: LocalActor,
+    beforePublish?: () => Promise<void>,
+  ): CanvasContentStore => ({
     readContent: async (canvasId) =>
-      (await load(actor, canvasId)).snapshot.content,
+      (await load(actor, canvasId, beforePublish)).snapshot.content,
     appendContent: async (canvasId, input) => {
-      const { store, snapshot, row } = await load(actor, canvasId);
+      const { store, snapshot, row } = await load(
+        actor,
+        canvasId,
+        beforePublish,
+      );
       const prepared = await extractFilesToStorage(
         options.blob,
         options.projectFiles,
@@ -243,11 +288,81 @@ export function createCanvasService(options: {
       });
     },
   });
-  return {
-    readCanvasContent: async (actor, canvasId) =>
-      (await load(actor, canvasId)).snapshot.content,
-    async getCanvas(actor, canvasId) {
-      const { row, snapshot } = await load(actor, canvasId);
+  const service: CanvasService = {
+    async listCanvases(actor, projectId, query) {
+      await localInstance.resolve(actor);
+      await projects.getProject(actor, projectId);
+      return (await repository.list(actor.instanceId, projectId, query)).map(
+        (row) => ({
+          id: row.id,
+          name: row.name,
+          isPrimary: row.is_primary ?? false,
+        }),
+      );
+    },
+    async createCanvas(actor, projectId, input, beforePublish) {
+      await localInstance.resolve(actor);
+      const project = await projects.getProject(actor, projectId);
+      if (
+        !project.enabled_modes.includes("design") &&
+        !project.enabled_modes.includes("flow")
+      )
+        throw new CanvasServiceError(
+          "canvas_save_failed",
+          "请先为项目启用Design。",
+          403,
+        );
+      await beforePublish?.();
+      const row = await repository.create({
+        instanceId: actor.instanceId,
+        projectId,
+        canvasId: input.requestId ?? randomUUID(),
+        name: input.name,
+      });
+      if (!row)
+        throw new CanvasServiceError(
+          "canvas_save_failed",
+          "画布创建请求已失效，请重新创建。",
+          409,
+        );
+      await load(actor, row.id, beforePublish);
+      return this.getCanvas(actor, row.id, beforePublish);
+    },
+    async renameCanvas(actor, canvasId, input, beforePublish) {
+      const { store } = await load(actor, canvasId, beforePublish);
+      await store.mutateIndex(canvasId, input.expectedRevision, async () => {
+        await beforePublish?.();
+        if (
+          !(await repository.rename(
+            actor.instanceId,
+            canvasId,
+            input.expectedName,
+            input.name,
+          ))
+        )
+          throw new CanvasFileStoreError(
+            "revision_conflict",
+            "画布名称已改变，请重新加载后命名。",
+          );
+      });
+      return this.getCanvas(actor, canvasId, beforePublish);
+    },
+    async deleteCanvas(actor, canvasId, expectedRevision, beforePublish) {
+      const { store } = await load(actor, canvasId, beforePublish);
+      await store.mutateIndex(canvasId, expectedRevision, async () => {
+        await beforePublish?.();
+        if (!(await repository.remove(actor.instanceId, canvasId)))
+          throw new CanvasServiceError(
+            "canvas_not_found",
+            "画布已删除，请选择其他画布。",
+            404,
+          );
+      });
+    },
+    readCanvasContent: async (actor, canvasId, beforePublish) =>
+      (await load(actor, canvasId, beforePublish)).snapshot.content,
+    async getCanvas(actor, canvasId, beforePublish) {
+      const { row, snapshot } = await load(actor, canvasId, beforePublish);
       return {
         id: row.id,
         name: row.name,
@@ -306,12 +421,16 @@ export function createCanvasService(options: {
         ),
       };
     },
-    insertImageElement: (actor, request) =>
-      insertImageElement(contentStore(actor), request, request.placement),
-    insertVideoElement: async (actor, request) => {
+    insertImageElement: (actor, request, beforePublish) =>
+      insertImageElement(
+        contentStore(actor, beforePublish),
+        request,
+        request.placement,
+      ),
+    insertVideoElement: async (actor, request, beforePublish) => {
       if (!request.assetId)
         return insertVideoElement(
-          contentStore(actor),
+          contentStore(actor, beforePublish),
           request,
           request.placement,
         );
@@ -327,7 +446,7 @@ export function createCanvasService(options: {
           409,
         );
       return insertVideoElement(
-        contentStore(actor),
+        contentStore(actor, beforePublish),
         {
           ...request,
           signedUrl: await options.blob
@@ -339,6 +458,115 @@ export function createCanvasService(options: {
         request.placement,
       );
     },
+  };
+  const locked = <T>(
+    actor: LocalActor,
+    canvasId: string,
+    guard: (() => Promise<void>) | undefined,
+    operation: (authorize: () => Promise<void>) => Promise<T>,
+  ) =>
+    repository.withDocumentLock(actor.instanceId, canvasId, (signal) =>
+      operation(async () => {
+        signal.throwIfAborted();
+        await guard?.();
+        signal.throwIfAborted();
+      }),
+    );
+  return {
+    ...service,
+    readCanvasContent: (actor, id, guard) =>
+      locked(actor, id, guard, (authorize) =>
+        service.readCanvasContent(actor, id, authorize),
+      ),
+    getCanvas: (actor, id, guard) =>
+      locked(actor, id, guard, (authorize) =>
+        service.getCanvas(actor, id, authorize),
+      ),
+    createCanvas: (actor, projectId, input, guard) => {
+      const request = { ...input, requestId: input.requestId ?? randomUUID() };
+      return locked(actor, request.requestId, guard, async (authorize) => {
+        const previous = await repository.findById(
+          actor.instanceId,
+          request.requestId,
+        );
+        const created = await service.createCanvas(
+          actor,
+          projectId,
+          request,
+          authorize,
+        );
+        if (!previous)
+          await repository.notifyChanged(actor.instanceId, created.id);
+        return created;
+      });
+    },
+    saveCanvasContent: (actor, id, content, revision, guard) =>
+      locked(actor, id, guard, async (authorize) => {
+        const saved = await service.saveCanvasContent(
+          actor,
+          id,
+          content,
+          revision,
+          authorize,
+        );
+        if (saved.revision !== revision)
+          await repository.notifyChanged(actor.instanceId, id);
+        return saved;
+      }),
+    renameCanvas: (actor, id, input, guard) =>
+      locked(actor, id, guard, async (authorize) => {
+        const renamed = await service.renameCanvas(actor, id, input, authorize);
+        if (input.expectedName !== input.name)
+          await repository.notifyChanged(actor.instanceId, id);
+        return renamed;
+      }),
+    deleteCanvas: (actor, id, revision, guard) =>
+      locked(actor, id, guard, async (authorize) => {
+        await service.deleteCanvas(actor, id, revision, authorize);
+        await repository.notifyChanged(actor.instanceId, id);
+      }),
+    insertImageElement: (actor, input, guard) =>
+      locked(actor, input.canvasId, guard, async (authorize) => {
+        const previous = await service.getCanvas(
+          actor,
+          input.canvasId,
+          authorize,
+        );
+        const inserted = await service.insertImageElement(
+          actor,
+          input,
+          authorize,
+        );
+        const current = await service.getCanvas(
+          actor,
+          input.canvasId,
+          authorize,
+        );
+        if (previous.revision !== current.revision)
+          await repository.notifyChanged(actor.instanceId, input.canvasId);
+        return inserted;
+      }),
+    insertVideoElement: (actor, input, guard) =>
+      locked(actor, input.canvasId, guard, async (authorize) => {
+        const previous = await service.getCanvas(
+          actor,
+          input.canvasId,
+          authorize,
+        );
+        const inserted = await service.insertVideoElement(
+          actor,
+          input,
+          authorize,
+        );
+        const current = await service.getCanvas(
+          actor,
+          input.canvasId,
+          authorize,
+        );
+        if (previous.revision !== current.revision)
+          await repository.notifyChanged(actor.instanceId, input.canvasId);
+        return inserted;
+      }),
   };
 }
 

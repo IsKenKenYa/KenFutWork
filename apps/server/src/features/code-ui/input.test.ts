@@ -11,6 +11,7 @@ import Fastify from "fastify";
 import { afterEach, expect, it, vi } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
+import { createGoalService } from "../goals/service.js";
 import type {
   CodeAttachmentRecord,
   CodeAttachmentRepository,
@@ -21,6 +22,7 @@ import { createCodeUiConversation } from "./conversation.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
+import type { ConversationWorkContextProvider } from "./work-context.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -33,6 +35,9 @@ async function fixture(
     backgroundReady?: boolean;
     compactOutcome?: "applied" | "unchanged" | "failed" | "canceled";
     compactReason?: "insufficient_history" | "not_reduced";
+    enabledModes?: Array<"code" | "design">;
+    workContextProvider?: ConversationWorkContextProvider;
+    captureContributions?: CodeUiServiceDeps["captureContributions"];
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-code-input-"));
@@ -275,6 +280,8 @@ async function fixture(
   const createAcceptedRun = vi.fn(async () => {});
   const updateRun = vi.fn(async () => {});
   const service = new CodeUiService({
+    workContextProvider: (preset: "code" | "design") =>
+      preset === "design" ? options.workContextProvider : undefined,
     repository,
     attachmentRepository,
     blob: createLocalFsBlobStore({
@@ -284,15 +291,19 @@ async function fixture(
     }),
     localInstance: createCodeUiTestInstance(instanceId).localInstance,
     projects: {
-      listProjects: async () => [
-        {
-          id: projectId,
-          kind: "code",
-          name: "Test",
-          workDir: directory,
-          additionalDirectories: [],
-        },
-      ],
+      listProjects: async (_actor: unknown, preset: "code" | "design") =>
+        (options.enabledModes ?? ["code"]).includes(preset)
+          ? [
+              {
+                id: projectId,
+                kind: "code",
+                enabledModes: options.enabledModes ?? ["code"],
+                name: "Test",
+                workDir: directory,
+                additionalDirectories: [],
+              },
+            ]
+          : [],
     },
     modelProviders: {
       listInstances: async () => [provider],
@@ -409,6 +420,9 @@ async function fixture(
           : [],
     },
     env: {},
+    ...(options.captureContributions
+      ? { captureContributions: options.captureContributions }
+      : {}),
   } as unknown as CodeUiServiceDeps);
   cleanups.push(() => service.closeConnections());
   const events: unknown[] = [];
@@ -506,6 +520,7 @@ async function fixture(
     connectionId: connection.hello.connectionId,
     events,
     root,
+    scope,
     createAcceptedRun,
     updateRun,
   };
@@ -556,6 +571,225 @@ it("纯附件输入由真实提交ref进入共同Harness并持久为原消息附
   expect(host.runs).toHaveLength(1);
 });
 
+it("同一Task跨Code/Design排队固定模式和画布，异资源guide退回队列且源输入修改不改变已接纳Run", async () => {
+  const prepare = vi.fn(
+    async ({
+      context,
+    }: Parameters<ConversationWorkContextProvider["prepare"]>[0]) => context,
+  );
+  const revalidate = vi.fn(async () => {});
+  const host = await fixture({
+    hang: true,
+    enabledModes: ["code", "design"],
+    workContextProvider: { prepare, revalidate },
+  });
+  const original: protocol.ConversationWorkContext = {
+    preset: "design",
+    canvasId: "canvas-a",
+    selectedCanvasElements: [
+      { id: "element-a", type: "image", customData: { label: "原选区" } },
+    ],
+    imageGenerationPreference: { mode: "manual", models: ["image-a"] },
+  };
+  const first = await host.send({
+    text: "设计第一幅",
+    modelSelection: host.selection,
+    workContext: original,
+  });
+  const running = first!.publish!();
+  await host.waitRuns(1);
+  original.canvasId = "canvas-mutated";
+  original.imageGenerationPreference!.models[0] = "image-mutated";
+  const code = await host.send({
+    text: "读取文件",
+    workContext: { preset: "code" },
+  });
+  await code!.publish?.();
+  const design = await host.send({
+    text: "设计第二幅",
+    requestedDelivery: "guide",
+    workContext: { preset: "design", canvasId: "canvas-b" },
+  });
+  await design!.publish?.();
+  expect(design!.result).toMatchObject({
+    result: { type: "inputAccepted", delivery: "queue" },
+  });
+  expect(host.runs[0]).toMatchObject({
+    input: { taskId: host.taskId, preset: "design", canvasId: "canvas-a" },
+    options: {
+      workContext: {
+        preset: "design",
+        canvasId: "canvas-a",
+        imageGenerationPreference: { models: ["image-a"] },
+      },
+    },
+  });
+  expect(
+    host.root.state!.inputs!.map((entry) => entry.intent.workContext?.preset),
+  ).toEqual(["design", "code", "design"]);
+  host.finishRun(0);
+  await running;
+  await host.waitRuns(2);
+  expect(host.runs[1]).toMatchObject({
+    input: { taskId: host.taskId, preset: "code" },
+    options: { workContext: { preset: "code" } },
+  });
+  host.finishRun(1);
+  await host.waitRuns(3);
+  expect(host.runs[2]).toMatchObject({
+    input: { taskId: host.taskId, preset: "design", canvasId: "canvas-b" },
+  });
+  host.finishRun(2);
+  await expect.poll(() => host.root.active_run_id).toBeNull();
+  expect(revalidate.mock.calls).toHaveLength(2);
+});
+
+it("未启用Design或文档provider拒绝时不写输入、不启动模型", async () => {
+  const disabled = await fixture();
+  await expect(
+    disabled.send({
+      text: "设计",
+      workContext: { preset: "design", canvasId: "foreign" },
+    }),
+  ).rejects.toMatchObject({ code: "command_conflict" });
+  expect(disabled.root.state!.inputs).toEqual([]);
+  expect(disabled.runs).toEqual([]);
+  const denied = await fixture({
+    enabledModes: ["code", "design"],
+    workContextProvider: {
+      prepare: async () => {
+        throw new Error("画布不属于当前项目");
+      },
+      revalidate: async () => {},
+    },
+  });
+  await expect(
+    denied.send({
+      text: "设计",
+      workContext: { preset: "design", canvasId: "foreign" },
+    }),
+  ).rejects.toThrow("画布不属于当前项目");
+  expect(denied.root.state!.inputs).toEqual([]);
+  expect(denied.runs).toEqual([]);
+});
+
+it("画布在排队后被删除，派发前复核拒绝并发布原会话失败，不启动模型或替换目标", async () => {
+  let available = true;
+  const revalidate = vi.fn(async () => {
+    if (!available) throw new Error("画布已删除，请重新选择画布。");
+  });
+  const host = await fixture({
+    hang: true,
+    enabledModes: ["code", "design"],
+    workContextProvider: {
+      prepare: async ({ context }) => context,
+      revalidate,
+    },
+  });
+  const first = await host.send({
+    text: "当前文件工作",
+    workContext: { preset: "code" },
+  });
+  const running = first!.publish!();
+  await host.waitRuns(1);
+  const queued = await host.send({
+    text: "绘制原画布",
+    workContext: { preset: "design", canvasId: "canvas-original" },
+  });
+  await queued!.publish?.();
+  available = false;
+  host.finishRun(0);
+  await running;
+  await expect.poll(() => host.root.active_run_id).toBeNull();
+  expect(host.runs).toHaveLength(1);
+  expect(host.root.state!.inputs!.at(-1)).toMatchObject({
+    status: "settled",
+    intent: { workContext: { preset: "design", canvasId: "canvas-original" } },
+  });
+  expect(await host.service.getSnapshot(host.actor, host.taskId)).toMatchObject(
+    { control: { lastError: { message: "画布已删除，请重新选择画布。" } } },
+  );
+  expect(revalidate).toHaveBeenCalledOnce();
+});
+
+it("Code显式引用画布同样经过文档准入和派发复核，不改变工作方式或固定目录", async () => {
+  const prepare = vi.fn(
+    async ({
+      context,
+    }: Parameters<ConversationWorkContextProvider["prepare"]>[0]) => context,
+  );
+  const revalidate = vi.fn(async () => {});
+  const host = await fixture({
+    enabledModes: ["code", "design"],
+    workContextProvider: { prepare, revalidate },
+  });
+  const accepted = await host.send({
+    text: "参考画布分析文件",
+    workContext: { preset: "code", canvasId: "canvas" },
+  });
+  await accepted!.publish?.();
+  expect(prepare).toHaveBeenCalledOnce();
+  expect(revalidate).toHaveBeenCalledOnce();
+  expect(host.runs[0]).toMatchObject({
+    input: { preset: "code", taskId: host.taskId, canvasId: "canvas" },
+    options: { workContext: { preset: "code", canvasId: "canvas" } },
+  });
+  expect(host.root.root_directory).toBe(host.directory);
+  expect(host.root.scope_generation).toBe(1);
+});
+
+it("HTTP/WS公共adapter复用canonical输入与publisher，重放同输入键不再运行，旧素材参数无副作用", async () => {
+  const host = await fixture();
+  const handle = { describe: () => host.scope, branchGeneration: 1 } as never;
+  const inputId = randomUUID();
+  const request = {
+    sessionId: host.taskId,
+    taskId: host.taskId,
+    conversationId: host.taskId,
+    prompt: "共同输入",
+    preset: "code" as const,
+  };
+  const first = await host.service.admitExternalRun(
+    host.actor,
+    handle,
+    inputId,
+    request.prompt,
+    request,
+  );
+  await first.publish();
+  const duplicate = await host.service.admitExternalRun(
+    host.actor,
+    handle,
+    inputId,
+    request.prompt,
+    request,
+  );
+  await duplicate.publish();
+  expect(duplicate.runId).toBe(first.runId);
+  expect(host.runs).toHaveLength(1);
+  expect(host.root.state?.inputs).toHaveLength(1);
+  expect(host.root.state?.inputs?.[0]?.intent).toMatchObject({
+    sourceCommandId: inputId,
+    workContext: { preset: "code" },
+    text: request.prompt,
+  });
+  const before = structuredClone(host.root.state);
+  await expect(
+    host.service.admitExternalRun(host.actor, handle, randomUUID(), "旧附件", {
+      ...request,
+      attachments: [
+        {
+          assetId: "asset",
+          url: "https://example.com/private.png",
+          mimeType: "image/png",
+        },
+      ],
+    }),
+  ).rejects.toThrow("会话附件或资源引用");
+  expect(host.root.state).toEqual(before);
+  expect(host.runs).toHaveLength(1);
+});
+
 it("后台终态自动续跑传持久host命令身份与background来源，重复通知不新建Run", async () => {
   const host = await fixture({ backgroundReady: true });
   await host.service.getSnapshot(host.actor, host.taskId);
@@ -583,6 +817,118 @@ it("后台终态自动续跑传持久host命令身份与background来源，重�
     true,
   );
   expect(host.runs).toHaveLength(1);
+});
+
+it("后台新输入接纳重新捕获能力，前一Run快照保留", async () => {
+  let capability = "initial";
+  const host = await fixture({
+    backgroundReady: true,
+    hang: true,
+    captureContributions: (preset) => ({
+      version: 1,
+      preset,
+      entries: [
+        { kind: "dynamic", id: "configured-tool", signature: capability },
+      ],
+    }),
+  });
+  const first = await host.send({ text: "首轮" });
+  const running = first!.publish!();
+  await host.waitRuns(1);
+  capability = "newly-installed";
+  host.finishRun(0);
+  await running;
+  const goals = createGoalService();
+  let completed = goals.create(null, {
+    goalId: "previous-goal",
+    objective: "之前的画布目标",
+    branchGeneration: 1,
+    at: 0,
+  });
+  completed = goals.claimRun(completed, {
+    goalId: completed.goalId,
+    revision: completed.revision,
+    runId: "previous-design-run",
+    at: 1,
+    foreground: {
+      branchGeneration: 1,
+      taskReady: true,
+      activeRunId: null,
+      userReserved: false,
+      userQueued: false,
+      approvalWaiting: false,
+    },
+  });
+  completed = goals.verify(completed, {
+    goalId: completed.goalId,
+    revision: completed.revision,
+    runId: "previous-design-run",
+    evidence: [{ sourceId: "prior-result", passed: true, detail: "已验收" }],
+    verdict: { passed: true, reason: "已验收" },
+    at: 2,
+  });
+  host.root.state!.goalRecord = completed;
+  host.root.state!.goalModel = {
+    goalId: completed.goalId,
+    selection: host.selection,
+    invocation: {
+      providerId: host.selection.providerId,
+      modelId: host.selection.modelId,
+      configRevision: 1,
+      body: {},
+      inputCapabilities: { image: false, pdf: false },
+    },
+    workContext: { preset: "design" },
+  };
+  try {
+    expect(
+      await host.service.resumeTaskWork(host.instanceId, host.taskId),
+    ).toBe(true);
+    await host.waitRuns(2);
+    expect(host.runs[0]!.options).toMatchObject({
+      frozenContributions: { entries: [{ signature: "initial" }] },
+    });
+    expect(host.runs[1]!.options).toMatchObject({
+      workContext: { preset: "code" },
+      frozenContributions: {
+        preset: "code",
+        entries: [{ signature: "newly-installed" }],
+      },
+    });
+  } finally {
+    if (host.runs.length > 1) host.finishRun(1);
+  }
+});
+
+it("已接纳队列保持原能力快照，不因等待期间安装新能力而改写", async () => {
+  let capability = "at-admission";
+  const host = await fixture({
+    hang: true,
+    captureContributions: (preset) => ({
+      version: 1,
+      preset,
+      entries: [
+        { kind: "dynamic", id: "configured-tool", signature: capability },
+      ],
+    }),
+  });
+  const first = await host.send({ text: "首轮" });
+  const running = first!.publish!();
+  await host.waitRuns(1);
+  try {
+    const second = await host.send({ text: "排队输入" });
+    await second!.publish?.();
+    capability = "changed-after-admission";
+    host.finishRun(0);
+    await running;
+    await host.waitRuns(2);
+    expect(host.runs[1]!.options).toMatchObject({
+      frozenContributions: { entries: [{ signature: "at-admission" }] },
+    });
+  } finally {
+    host.finishRun(0);
+    if (host.runs.length > 1) host.finishRun(1);
+  }
 });
 
 it("忙时sendText进入同一Task持久FIFO，冻结完整提交选项且不伪造已开始的用户行", async () => {

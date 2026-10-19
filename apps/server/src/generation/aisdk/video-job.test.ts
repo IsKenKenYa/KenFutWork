@@ -1,4 +1,5 @@
 import type { Experimental_VideoModelV4 } from "@ai-sdk/provider";
+import { APICallError } from "@ai-sdk/provider";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertOperationSerializable,
@@ -115,7 +116,6 @@ describe("pollVideoJob（三态归一）", () => {
       {
         headers: { "x-poll": "1" },
         abortSignal,
-        maxRetries: 0,
       },
     );
     expect(result).toEqual({ state: "in_progress" });
@@ -213,4 +213,20 @@ describe("createVideoJobDriver（取消两层语义）", () => {
       state: "in_progress",
     });
   });
+});
+
+it("视频start SDK只调用一次，可重试429留给Job引擎", async () => {
+  const doStart = vi.fn().mockRejectedValue(
+    new APICallError({
+      message: "模拟限流",
+      url: "https://controlled.invalid",
+      requestBodyValues: {},
+      statusCode: 429,
+      responseHeaders: { "retry-after": "0.001" },
+    }),
+  );
+  await expect(
+    submitVideoJob(stubModel({ doStart }), { prompt: "cat" }),
+  ).rejects.toThrow();
+  expect(doStart).toHaveBeenCalledOnce();
 });

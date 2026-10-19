@@ -1,10 +1,11 @@
 import { canvasContentSchema } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolDefinition } from "../../../kernel/types.js";
-import type { DesignTasksService } from "../../execution/design-task-types.js";
 import type { LocalInstanceService } from "../../local-instance/types.js";
 import { resolveCanvasActor } from "../canvas-actor.js";
 import type { CanvasService } from "../canvas-service.js";
+import type { CanvasDocumentAccess } from "../document-access.js";
+import { canvasElementVersion } from "../goal-evidence.js";
 import {
   BINDING_GAP,
   bumpVersion,
@@ -135,6 +136,12 @@ const operationSchema = z.object({
 });
 
 const manipulateCanvasSchema = z.object({
+  canvas_id: z
+    .uuid({ error: "画布引用无效，请从项目画布列表重新选择。" })
+    .optional()
+    .describe(
+      "Canvas document ID in the current project; defaults to the input canvas.",
+    ),
   operations: z
     .array(operationSchema)
     .min(1)
@@ -819,7 +826,7 @@ export function createManipulateCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读写不再直连 SDK。 */
   canvasService?: Pick<CanvasService, "getCanvas" | "saveCanvasContent">;
   localInstance: LocalInstanceService;
-  designTasks: Pick<DesignTasksService, "readPolicy">;
+  documentAccess: Pick<CanvasDocumentAccess, "authorize">;
 }): ToolDefinition {
   return {
     name: "manipulate_canvas",
@@ -830,7 +837,8 @@ export function createManipulateCanvasToolDefinition(deps: {
     zodSchema: manipulateCanvasSchema,
     parameters: z.toJSONSchema(manipulateCanvasSchema),
     execute: async (args, execCtx) => {
-      const canvasId = execCtx.canvasId;
+      const input = manipulateCanvasSchema.parse(args);
+      const canvasId = input.canvas_id ?? execCtx.canvasId;
 
       if (typeof canvasId !== "string" || !canvasId) {
         return JSON.stringify({
@@ -840,13 +848,13 @@ export function createManipulateCanvasToolDefinition(deps: {
         });
       }
 
-      const input = manipulateCanvasSchema.parse(args);
-
       // --- Read current canvas -------------------------------------------------
       const actor = await resolveCanvasActor(
         deps.localInstance,
         execCtx,
-        deps.designTasks,
+        deps.documentAccess,
+        "write",
+        canvasId,
       );
       const service = deps.canvasService;
       const canvasRow = await service?.getCanvas(actor, canvasId);
@@ -867,6 +875,7 @@ export function createManipulateCanvasToolDefinition(deps: {
         appState?: Record<string, unknown>;
       };
       const elements: CanvasElement[] = content.elements ?? [];
+      const previousIds = new Set(elements.map((element) => element.id));
 
       // --- Apply operations ----------------------------------------------------
       const descriptions: string[] = [];
@@ -896,10 +905,16 @@ export function createManipulateCanvasToolDefinition(deps: {
 
       // --- Write back ----------------------------------------------------------
       const updatedContent = { ...content, elements };
+      let revision: string;
       try {
-        await resolveCanvasActor(deps.localInstance, execCtx, deps.designTasks);
-        await execCtx.scopeHandle?.resolvePath(".", "write");
-        await service.saveCanvasContent(
+        await resolveCanvasActor(
+          deps.localInstance,
+          execCtx,
+          deps.documentAccess,
+          "write",
+          canvasId,
+        );
+        const saved = await service.saveCanvasContent(
           actor,
           canvasId,
           canvasContentSchema.parse(updatedContent),
@@ -908,11 +923,13 @@ export function createManipulateCanvasToolDefinition(deps: {
             await resolveCanvasActor(
               deps.localInstance,
               execCtx,
-              deps.designTasks,
+              deps.documentAccess,
+              "write",
+              canvasId,
             );
-            await execCtx.scopeHandle?.resolvePath(".", "write");
           },
         );
+        revision = saved.revision;
       } catch (error) {
         return JSON.stringify({
           error: "write_failed",
@@ -925,6 +942,15 @@ export function createManipulateCanvasToolDefinition(deps: {
         success: true,
         applied: descriptions.length,
         summary: descriptions.join("; "),
+        canvasId,
+        revision,
+        createdElements: updatedContent.elements.flatMap((element) =>
+          typeof element.id === "string" &&
+          !element.isDeleted &&
+          !previousIds.has(element.id)
+            ? [{ id: element.id, version: canvasElementVersion(element) }]
+            : [],
+        ),
       };
       if (Object.keys(createdIds).length > 0) {
         result.createdIds = createdIds;

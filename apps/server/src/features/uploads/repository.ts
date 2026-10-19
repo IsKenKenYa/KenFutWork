@@ -20,9 +20,12 @@ export type AssetRecord = {
 export type AssetLocation = {
   bucket: string;
   object_path: string;
+  mime_type: string | null;
 };
 
 export type NewAssetInput = {
+  assetId?: string;
+  generationFingerprint?: string;
   bucket: string;
   byteSize: number;
   mimeType: string;
@@ -40,7 +43,7 @@ export type NewAssetInput = {
 export interface UploadRepository {
   /** 删除元数据行；返回受影响行数。 */
   deleteById(instanceId: string, assetId: string): Promise<number>;
-  /** 取对象位置（bucket + path），用于签发 URL 或删除对象。 */
+  /** 取对象位置与MIME，用于读取字节、签发URL或删除对象。 */
   findLocation(
     instanceId: string,
     assetId: string,
@@ -76,9 +79,14 @@ export function createUploadRepository(
         .forInstance(input.instanceId)
         .queryOne<RawAssetRow>(
           `insert into public.asset_objects
-                  (instance_id, bucket, object_path, mime_type, byte_size, created_by_client_id, project_id)
-           select :instance, $1, $2, $3, $4, $5::uuid, $6::uuid
+                  (instance_id, bucket, object_path, mime_type, byte_size, created_by_client_id, project_id${input.assetId ? ", id, generation_fingerprint" : ""})
+           select :instance, $1, $2, $3, $4, $5::uuid, $6::uuid${input.assetId ? ", $7::uuid, $8" : ""}
            where $6::uuid is null or exists (select 1 from public.projects p where p.id = $6::uuid and p.instance_id = :instance)
+           on conflict (id) do update set id=excluded.id
+           where asset_objects.instance_id=excluded.instance_id
+             and asset_objects.bucket=excluded.bucket
+             and asset_objects.object_path=excluded.object_path
+             and asset_objects.generation_fingerprint is not distinct from excluded.generation_fingerprint
            returning ${ASSET_COLUMNS}`,
           [
             input.bucket,
@@ -87,6 +95,9 @@ export function createUploadRepository(
             input.byteSize,
             input.createdByClientId ?? null,
             input.projectId ?? null,
+            ...(input.assetId
+              ? [input.assetId, input.generationFingerprint ?? null]
+              : []),
           ],
         );
 
@@ -97,7 +108,7 @@ export function createUploadRepository(
       const row = await persistence
         .forInstance(instanceId)
         .queryOne<AssetLocation>(
-          `select bucket, object_path
+          `select bucket, object_path, mime_type
              from public.asset_objects
             where instance_id = :instance
               and id = $1`,

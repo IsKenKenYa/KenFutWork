@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import type { BackgroundJob, BackgroundJobType } from "@kenfutwork/shared";
 import type { ServerEnv } from "../../config/env.js";
 import { type QueueClient, QueueClosedError } from "../queue/types.js";
+import { executeJobCancellation } from "./job-cancellation.js";
 import { type ExecutorContext, getExecutor } from "./job-executor.js";
+import { classifyJobFailure } from "./job-failure.js";
+import { createLeasedContext } from "./job-lease.js";
+import { readJobCancellation, readJobExecution } from "./job-progress.js";
 import { JobServiceError } from "./job-service.js";
 
 /**
@@ -35,7 +39,7 @@ const VT_BY_QUEUE: Record<string, number> = {
 /** 除逐消息字段（queueName/msgId/renewVt）外的执行上下文。 */
 export type JobLoopContext = Omit<
   ExecutorContext,
-  "msgId" | "queueName" | "renewVt"
+  "msgId" | "queueName" | "renewVt" | "retryBaseDelayMs"
 > & { env: ServerEnv };
 
 export type JobLoopHandle = {
@@ -56,8 +60,10 @@ export function startJobLoop(
   const env = ctx.env;
 
   const concurrencyByQueue: Record<string, number> = {
-    image_generation_jobs: env.workerImageConcurrency ?? 3,
-    video_generation_jobs: env.workerVideoConcurrency ?? 2,
+    image_generation_jobs:
+      env.workerImageConcurrency ?? Number.POSITIVE_INFINITY,
+    video_generation_jobs:
+      env.workerVideoConcurrency ?? Number.POSITIVE_INFINITY,
   };
 
   const inFlightByQueue = new Map<string, Set<Promise<void>>>(
@@ -82,35 +88,52 @@ export function startJobLoop(
     `${tag} Started. concurrency={${concurrencyDesc}}, longPollTimeout=${pollTimeoutSeconds}s`,
   );
 
-  const consumerPromise = (async () => {
-    while (running) {
-      // `queueName` 是队列名，`queue` 是队列缝客户端——两者都用，故名字必须区分
-      for (const queueName of queues) {
-        if (!running) break;
-        try {
-          // 在建集合在启动期按 queues 建全，缺失分支不可达（仅用于类型收窄）
-          const inFlight = inFlightByQueue.get(queueName);
-          if (!inFlight) continue;
-          const cap = concurrencyByQueue[queueName] ?? 1;
-          const available = cap - inFlight.size;
-          if (available <= 0) continue;
+  let recoveryTask: Promise<void> | undefined;
+  const recover = () => {
+    recoveryTask ??= ctx.jobService
+      .recoverPendingJobs(queues, pollTimeoutSeconds)
+      .catch((error) => console.error(`${tag} Job recovery failed:`, error))
+      .finally(() => {
+        recoveryTask = undefined;
+      });
+    return recoveryTask;
+  };
+  void recover();
+  const recoveryTimer = setInterval(() => {
+    void recover();
+  }, pollTimeoutSeconds * 1000);
 
-          const vt = VT_BY_QUEUE[queueName] ?? 120;
+  // 两种队列独立长轮询，空队列和显式限流不阻塞另一种媒体。
+  const consumerPromise = Promise.all(
+    queues.map(async (queueName) => {
+      const inFlight = inFlightByQueue.get(queueName);
+      if (!inFlight) return;
+      const cap = concurrencyByQueue[queueName] ?? 1;
+      while (running) {
+        const available = Math.min(
+          env.workerMaxBatchSize ?? 1,
+          cap - inFlight.size,
+        );
+        if (available <= 0) {
+          await Promise.race(inFlight);
+          continue;
+        }
+        try {
           const messages = await ctx.queue.readWithPoll(
             queueName,
-            vt,
+            VT_BY_QUEUE[queueName] ?? 120,
             available,
             pollTimeoutSeconds,
             500,
           );
           if (!running) break;
-
           for (const msg of messages) {
             const messageCtx: ExecutorContext = {
               ...ctx,
               queueName,
               msgId: msg.msg_id,
-              renewVt: async (vtSeconds: number) => {
+              retryBaseDelayMs: pollTimeoutSeconds * 1000,
+              renewVt: async (vtSeconds) => {
                 try {
                   await ctx.queue.setVisibilityTimeout(
                     queueName,
@@ -125,12 +148,12 @@ export function startJobLoop(
                 }
               },
             };
-            const task = processMessage(
-              queueName,
-              msg,
-              messageCtx,
-              tag,
-            ).finally(() => inFlight.delete(task));
+            const task = processMessage(queueName, msg, messageCtx, tag)
+              .catch((error) => {
+                // 数据库暂不可用时保留消息，不能绕过认领执行供应商请求。
+                console.error(`${tag} Message execution interrupted:`, error);
+              })
+              .finally(() => inFlight.delete(task));
             inFlight.add(task);
           }
         } catch (error) {
@@ -141,33 +164,8 @@ export function startJobLoop(
           console.error(`${tag} Error polling ${queueName}:`, error);
         }
       }
-
-      if (!running) break;
-      const saturated = queues.every((queueName) => {
-        const inFlight = inFlightByQueue.get(queueName);
-        return (
-          inFlight && inFlight.size >= (concurrencyByQueue[queueName] ?? 1)
-        );
-      });
-      if (saturated) {
-        const pending = [...inFlightByQueue.values()].flatMap((set) => [
-          ...set,
-        ]);
-        if (pending.length === 0) {
-          running = false;
-          break;
-        }
-        await Promise.race(
-          pending.map((task) =>
-            task.then(
-              () => undefined,
-              () => undefined,
-            ),
-          ),
-        );
-      }
-    }
-  })();
+    }),
+  );
 
   let shutdownPromise: Promise<void> | undefined;
   return {
@@ -179,6 +177,8 @@ export function startJobLoop(
           `${tag} Shutting down, waiting for ${count} in-flight jobs...`,
         );
         running = false;
+        clearInterval(recoveryTimer);
+        await recoveryTask;
         const tasks = [...inFlightByQueue.values()].flatMap((set) => [...set]);
         if (tasks.length > 0) {
           await Promise.allSettled(tasks);
@@ -218,16 +218,6 @@ async function processMessage(
   );
 
   const executor = getExecutor(jobType);
-  if (!executor) {
-    console.error(`${tag} No executor for job type: ${jobType}`);
-    await ctx.jobService.markFailed(
-      jobId,
-      "no_executor",
-      `No executor registered for ${jobType}`,
-    );
-    await ctx.queue.archive(queue, msg.msg_id);
-    return;
-  }
 
   let current: BackgroundJob;
   try {
@@ -239,7 +229,11 @@ async function processMessage(
     return;
   }
   if (
-    current.status === "canceled" ||
+    (current.error_code === "submission_unknown" &&
+      !current.provider_job_id &&
+      current.status !== "canceled") ||
+    (current.status === "canceled" &&
+      readJobCancellation(current)?.state !== "pending") ||
     current.status === "succeeded" ||
     current.status === "dead_letter"
   ) {
@@ -247,63 +241,118 @@ async function processMessage(
     return;
   }
 
-  const { attempt_count, max_attempts } =
-    await ctx.jobService.incrementAttempt(jobId);
-
-  await ctx.jobService.markRunning(jobId);
+  const token = randomUUID();
+  const leaseSeconds = VT_BY_QUEUE[queue] ?? 120;
+  const claimed = await ctx.jobService.claimJob(jobId, token, leaseSeconds);
+  if (!claimed) {
+    await ctx.queue.setVisibilityTimeout(queue, msg.msg_id, leaseSeconds);
+    return;
+  }
+  const lease = createLeasedContext(ctx, jobId, token, leaseSeconds, {
+    allowCanceled: claimed.status === "canceled",
+  });
 
   try {
+    if (claimed.status === "canceled") {
+      await executeJobCancellation(claimed, lease.context, token);
+      await ctx.queue.archive(queue, msg.msg_id);
+      return;
+    }
+    if (!executor) {
+      await ctx.jobService.markDeadLetter(
+        jobId,
+        "no_executor",
+        `No executor registered for ${jobType}`,
+        token,
+      );
+      await ctx.queue.archive(queue, msg.msg_id);
+      return;
+    }
     const result = await executor(
       jobId,
       msg.message as Record<string, unknown>,
-      ctx,
+      lease.context,
     );
-    await ctx.jobService.markSucceeded(jobId, result);
+    await ctx.jobService.markSucceeded(jobId, result, token);
     await ctx.queue.deleteMessage(queue, msg.msg_id);
     console.log(`${tag} Job ${jobId} succeeded +${Date.now() - startTime}ms`);
   } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    const errorCode = (err as { code?: string })?.code ?? "executor_error";
-
-    // 异步任务面（S6）：executor 已投下一条延迟 poll 消息——本次消费到此为止，
-    // job 行保持 running（轮询状态不在行上推进），当前消息直接归档。
-    if (errorCode === "provider_poll_scheduled") {
-      await ctx.queue.archive(queue, msg.msg_id);
-      console.log(
-        `${tag} Job ${jobId} poll scheduled +${Date.now() - startTime}ms`,
-      );
-      return;
-    }
-
-    // 不可重试的错误：同输入重试必然再失败，直接死信，让调用方快速拿到反馈
-    const NON_RETRYABLE_CODES = new Set([
-      "invalid_input",
-      "model_not_found",
-      "provider_not_found",
-      "safety_filter",
-      // 厂商明确失败 / 绝对超时 / 跨修订拒绝：同输入重试必然再失败
-      "provider_task_failed",
-      "video_job_timeout",
-      "provider_config_stale",
-    ]);
-    const shouldDeadLetter =
-      attempt_count >= max_attempts || NON_RETRYABLE_CODES.has(errorCode);
-
-    if (shouldDeadLetter) {
-      await ctx.jobService.markDeadLetter(jobId, errorCode, errorMessage);
-      await ctx.queue.archive(queue, msg.msg_id);
-
-      console.error(
-        `${tag} Job ${jobId} dead-lettered after ${attempt_count} attempts +${Date.now() - startTime}ms: ${errorMessage}`,
-      );
-    } else {
-      await ctx.jobService.markFailed(jobId, errorCode, errorMessage);
-      // 消息在可见性超时后重新可见，走重试
-      console.warn(
-        `${tag} Job ${jobId} failed (attempt ${attempt_count}/${max_attempts}) +${Date.now() - startTime}ms: ${errorMessage}`,
-      );
-    }
+    await handleExecutionFailure(err, jobId, ctx, token, tag, startTime);
+  } finally {
+    await lease.close();
   }
 }
 
 export type { QueueClient };
+
+async function handleExecutionFailure(
+  err: unknown,
+  jobId: string,
+  ctx: ExecutorContext,
+  token: string,
+  tag: string,
+  startTime: number,
+) {
+  const errorCode = (err as { code?: string })?.code ?? "executor_error";
+
+  if (errorCode === "job_lease_lost") return;
+
+  // 异步任务面（S6）：executor 已投下一条延迟 poll 消息——本次消费到此为止，
+  // job 行保持 running（轮询状态不在行上推进），当前消息直接归档。
+  if (errorCode === "provider_poll_scheduled") {
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+    console.log(
+      `${tag} Job ${jobId} poll scheduled +${Date.now() - startTime}ms`,
+    );
+    return;
+  }
+
+  const current = await ctx.jobService.getJobForWorker(jobId);
+  if (current.status === "canceled") {
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+    return;
+  }
+  const policy = classifyJobFailure(
+    current,
+    err,
+    current.attempt_count + 1,
+    ctx.retryBaseDelayMs,
+  );
+  if (policy.kind === "uncertain") {
+    await ctx.jobService.markUncertain(jobId, policy.message, token);
+    await ctx.queue.archive(ctx.queueName, ctx.msgId);
+    return;
+  }
+  const { attempt_count, max_attempts } = await ctx.jobService.incrementAttempt(
+    jobId,
+    token,
+  );
+  if (policy.kind === "terminal" || attempt_count >= max_attempts) {
+    const completed =
+      readJobExecution(current).outputs?.flatMap((output) =>
+        output.stored ? [output.stored] : [],
+      ) ?? [];
+    const partialResult = completed.length
+      ? { ...completed[0], outputs: completed }
+      : undefined;
+    await ctx.jobService.markDeadLetter(
+      jobId,
+      policy.code,
+      policy.message,
+      token,
+      partialResult,
+    );
+  } else {
+    await ctx.jobService.retryJob(
+      jobId,
+      {
+        errorCode: policy.code,
+        errorMessage: policy.message,
+        delaySeconds: policy.delaySeconds,
+        ...(policy.execution ? { execution: policy.execution } : {}),
+      },
+      token,
+    );
+  }
+  await ctx.queue.archive(ctx.queueName, ctx.msgId);
+}

@@ -417,6 +417,7 @@ export function ModelProviderSectionDetail({
     return (
       <ProviderFamilyDetailShell header={presetFamilyHeader}>
         <InlineEditableProviderCard
+          connectionCollapsed
           provider={presetProvider}
           onSave={onSave}
           {...modelEditingProps}
@@ -697,6 +698,7 @@ export function ModelProviderSectionDetail({
       return (
         <ProviderFamilyDetailShell header={codingPlanFamilyHeader}>
           <InlineEditableProviderCard
+          connectionCollapsed
             provider={dedicatedProvider}
             onSave={onSave}
             {...modelEditingProps}
@@ -843,6 +845,7 @@ export function ModelProviderSectionDetail({
   return (
     // 仅展示预设模板声明的入口，不根据地址猜测自定义 Provider 的 Key 控制台。
     <InlineEditableProviderCard
+          connectionCollapsed
       provider={customProvider}
       onSave={onSave}
       {...modelEditingProps}

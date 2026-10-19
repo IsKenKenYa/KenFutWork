@@ -1,12 +1,15 @@
+import {
+  type ReplicatePrediction,
+  ReplicatePredictionsClient,
+} from "../../providers/replicate/predictions.js";
 import type {
   GeneratedImage,
+  ImageAsyncPollResult,
   ImageGenerateParams,
   ImageProvider,
   ModelInfo,
 } from "../types.js";
 import { aspectRatioToDimensions, GenerationError } from "../utils.js";
-
-const REPLICATE_API_BASE = "https://api.replicate.com/v1";
 
 /**
  * Image input parameter mapping per model.
@@ -143,8 +146,7 @@ type QualityMap = Record<
 >;
 
 /**
- * Maps (model prefix → quality level → { paramName, paramValue }).
- * Lookup order: exact model ID → prefix before "/" → fallback.
+ * Maps known semantic quality values to a model's native parameter.
  */
 const QUALITY_MAP: QualityMap = {
   // Google Nano Banana Pro / 2: uses `resolution`
@@ -162,7 +164,6 @@ const QUALITY_MAP: QualityMap = {
   "google/imagen-4": {
     standard: { param: "image_size", value: "1K" },
     hd: { param: "image_size", value: "2K" },
-    ultra: { param: "image_size", value: "2K" }, // max 2K, cap silently
   },
   // ByteDance Seedream 5 Lite: uses `size`, max 3K
   "bytedance/seedream-5-lite": {
@@ -198,21 +199,40 @@ function applyQuality(
 ): void {
   if (!quality) return;
 
-  // GPT Image has native `quality` param
   if (INPUT_IMAGES_MODELS.has(model)) {
-    input.quality = GPT_IMAGE_QUALITY[quality] ?? "auto";
+    const nativeQuality = GPT_IMAGE_QUALITY[quality] ?? quality;
+    if (!["low", "medium", "high", "auto"].includes(nativeQuality)) {
+      throw new GenerationError(
+        "replicate",
+        "unsupported",
+        `模型${model}不支持质量${quality}。`,
+      );
+    }
+    input.quality = nativeQuality;
     return;
   }
-
-  // Lookup quality translation for this model
   const modelMap = QUALITY_MAP[model];
   if (modelMap) {
-    const entry = modelMap[quality];
-    if (entry) {
-      input[entry.param] = entry.value;
-    }
+    const entry =
+      modelMap[quality] ??
+      Object.values(modelMap).find((item) => item.value === quality);
+    if (!entry)
+      throw new GenerationError(
+        "replicate",
+        "unsupported",
+        `模型${model}不支持质量${quality}。`,
+      );
+    input[entry.param] = entry.value;
+    return;
   }
-  // Models not in QUALITY_MAP (Flux, Nano Banana, Recraft): no resolution param, skip
+  if (REPLICATE_IMAGE_MODELS.some((known) => known.id === model)) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${model}不支持此质量参数。`,
+    );
+  }
+  input.quality = quality;
 }
 
 // ── Aspect ratio normalization ────────────────────────────────────────────
@@ -226,34 +246,16 @@ const MODEL_ASPECT_RATIOS: Record<string, string[]> = {
   "openai/gpt-image-1": ["1:1", "3:2", "2:3"],
 };
 
-function parseRatio(ratio: string): number {
-  const [w, h] = ratio.split(":").map(Number);
-  return w && h ? w / h : 1;
-}
-
-/**
- * If the model doesn't support the requested ratio, find the nearest one.
- * e.g. "16:9" (1.78) → "3:2" (1.5) for GPT Image.
- */
-function normalizeAspectRatio(model: string, ratio: string): string {
+function validateAspectRatio(model: string, ratio: string): string {
   const supported = MODEL_ASPECT_RATIOS[model];
-  if (!supported || supported.includes(ratio)) return ratio;
-
-  const target = parseRatio(ratio);
-  // 支持列表均为硬编码非空数组；空表时无从比较，原样返回请求比例
-  const initial = supported.at(0);
-  if (initial === undefined) return ratio;
-  let best = initial;
-  let bestDiff = Math.abs(parseRatio(best) - target);
-
-  for (const candidate of supported) {
-    const diff = Math.abs(parseRatio(candidate) - target);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = candidate;
-    }
+  if (supported && !supported.includes(ratio)) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${model}不支持比例${ratio}。`,
+    );
   }
-  return best;
+  return ratio;
 }
 
 // ── Output format translation ────────────────────────────────────────────
@@ -270,7 +272,14 @@ function applyOutputFormat(
   model: string,
   format: string | undefined,
 ): void {
-  if (!format || NO_OUTPUT_FORMAT_MODELS.has(model)) return;
+  if (!format) return;
+  if (NO_OUTPUT_FORMAT_MODELS.has(model)) {
+    throw new GenerationError(
+      "replicate",
+      "unsupported",
+      `模型${model}不支持指定输出格式。`,
+    );
+  }
   input.output_format = format;
 }
 
@@ -279,35 +288,154 @@ function applyOutputFormat(
 export class ReplicateImageProvider implements ImageProvider {
   readonly name = "replicate";
   readonly models = REPLICATE_IMAGE_MODELS;
-  private apiToken: string;
-  private headers: Record<string, string> | undefined;
+  private readonly predictions: ReplicatePredictionsClient;
 
-  constructor(apiToken: string, headers?: Record<string, string>) {
-    this.apiToken = apiToken;
-    this.headers = headers;
+  constructor(
+    apiToken: string,
+    headers?: Record<string, string>,
+    baseUrl?: string,
+  ) {
+    this.predictions = new ReplicatePredictionsClient(
+      apiToken,
+      headers,
+      baseUrl,
+    );
+  }
+
+  prepareInputs(params: ImageGenerateParams): Promise<ImageGenerateParams> {
+    this.buildInput(params);
+    return this.predictions.prepareInputs(params);
+  }
+
+  async startAsync(
+    params: ImageGenerateParams,
+  ): Promise<{ providerJobId: string }> {
+    params = await this.prepareInputs(params);
+    const { input } = this.buildInput(params);
+    const prediction = await this.predictions.create(params.model, input, {
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
+    if (!prediction.id) {
+      throw new GenerationError(
+        "replicate",
+        "malformed_response",
+        "Replicate submit response missing prediction id",
+      );
+    }
+    return { providerJobId: prediction.id };
+  }
+
+  async pollAsync(providerJobId: string): Promise<ImageAsyncPollResult> {
+    const prediction = await this.predictions.get(providerJobId);
+    if (prediction.status === "succeeded") {
+      const images = this.readImages(prediction);
+      return images.length
+        ? { state: "succeeded", images }
+        : {
+            state: "failed",
+            errorMessage: "Replicate returned no image output URL",
+          };
+    }
+    if (prediction.status === "failed" || prediction.status === "canceled") {
+      return {
+        state: "failed",
+        errorMessage: prediction.error ?? prediction.status,
+      };
+    }
+    return { state: "in_progress" };
+  }
+
+  cancelAsync(providerJobId: string): Promise<void> {
+    return this.predictions.cancel(providerJobId);
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
+    params = await this.prepareInputs(params);
+    const { input, width, height } = this.buildInput(params);
+    const prediction = await this.predictions.create(params.model, input, {
+      wait: true,
+      ...(params.signal ? { signal: params.signal } : {}),
+    });
+    const image = this.readImages({ ...prediction, input })[0];
+    if (!image) {
+      throw new GenerationError(
+        "replicate",
+        "no_output",
+        "Replicate returned no output URL",
+      );
+    }
+    return { ...image, width, height };
+  }
+
+  private readImages(prediction: ReplicatePrediction): GeneratedImage[] {
+    const input = prediction.input ?? {};
+    const dimensions = aspectRatioToDimensions(
+      typeof input.aspect_ratio === "string" ? input.aspect_ratio : "1:1",
+    );
+    const width =
+      typeof input.width === "number" ? input.width : dimensions.width;
+    const height =
+      typeof input.height === "number" ? input.height : dimensions.height;
+    const outputs = Array.isArray(prediction.output)
+      ? prediction.output
+      : prediction.output
+        ? [prediction.output]
+        : [];
+    return outputs
+      .filter((url) => typeof url === "string" && url.length > 0)
+      .map((url) => ({
+        url,
+        mimeType:
+          input.output_format === "jpg"
+            ? "image/jpeg"
+            : input.output_format === "webp"
+              ? "image/webp"
+              : "image/png",
+        width,
+        height,
+      }));
+  }
+
+  private buildInput(params: ImageGenerateParams): {
+    input: Record<string, unknown>;
+    width: number;
+    height: number;
+  } {
+    const model = params.model.split(":")[0] ?? params.model;
     const rawRatio = params.aspectRatio ?? "1:1";
-    const aspectRatio = normalizeAspectRatio(params.model, rawRatio);
-    const { width, height } = aspectRatioToDimensions(aspectRatio);
+    const aspectRatio = validateAspectRatio(model, rawRatio);
+    const defaults = aspectRatioToDimensions(aspectRatio);
+    const width = params.width ?? defaults.width;
+    const height = params.height ?? defaults.height;
 
     const input: Record<string, unknown> = {
       prompt: params.prompt,
     };
 
     // Aspect ratio / size — Recraft uses pixel `size`, others use `aspect_ratio`
-    if (RECRAFT_MODELS.has(params.model)) {
+    if (RECRAFT_MODELS.has(model)) {
       input.size = `${width}x${height}`;
     } else {
       input.aspect_ratio = aspectRatio;
+      if (params.width !== undefined) input.width = params.width;
+      if (params.height !== undefined) input.height = params.height;
     }
 
     // Image input — parameter name varies by model
-    if (params.inputImages?.length && !TEXT_ONLY_MODELS.has(params.model)) {
-      if (SINGLE_IMAGE_INPUT_MODELS.has(params.model)) {
+    if (params.inputImages?.length) {
+      if (
+        TEXT_ONLY_MODELS.has(model) ||
+        (SINGLE_IMAGE_INPUT_MODELS.has(model) && params.inputImages.length > 1)
+      ) {
+        throw new GenerationError(
+          "replicate",
+          "unsupported",
+          `模型${model}不支持这些参考图。`,
+        );
+      }
+      if (SINGLE_IMAGE_INPUT_MODELS.has(model)) {
         input.input_image = params.inputImages[0];
-      } else if (INPUT_IMAGES_MODELS.has(params.model)) {
+      } else if (INPUT_IMAGES_MODELS.has(model)) {
         input.input_images = params.inputImages;
       } else {
         input.image_input = params.inputImages;
@@ -315,55 +443,13 @@ export class ReplicateImageProvider implements ImageProvider {
     }
 
     // Semantic params → model-specific translation
-    applyQuality(input, params.model, params.quality);
-    applyOutputFormat(input, params.model, params.outputFormat);
+    applyQuality(input, model, params.quality);
+    applyOutputFormat(input, model, params.outputFormat);
 
-    const response = await fetch(
-      `${REPLICATE_API_BASE}/models/${params.model}/predictions`,
-      {
-        method: "POST",
-        headers: {
-          // 自定义头（§4.8）在前，凭证与内容类型随后——保留头永远由适配器说了算
-          ...this.headers,
-          Authorization: `Bearer ${this.apiToken}`,
-          "Content-Type": "application/json",
-          Prefer: "wait",
-        },
-        body: JSON.stringify({ input }),
-        signal: AbortSignal.timeout(120_000), // 120s — guard against Replicate hanging
-      },
-    );
-
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => null);
-      throw new GenerationError(
-        "replicate",
-        "api_error",
-        `Replicate API error ${response.status}: ${(errorBody as { detail?: string })?.detail ?? "Unknown error"}`,
-      );
-    }
-
-    const data = (await response.json()) as {
-      output: string[] | string;
-      status: string;
+    return {
+      input,
+      width,
+      height,
     };
-    const outputUrl = Array.isArray(data.output) ? data.output[0] : data.output;
-
-    if (!outputUrl) {
-      throw new GenerationError(
-        "replicate",
-        "no_output",
-        "Replicate returned no output URL",
-      );
-    }
-
-    const mimeType =
-      params.outputFormat === "jpg"
-        ? "image/jpeg"
-        : params.outputFormat === "webp"
-          ? "image/webp"
-          : "image/png";
-
-    return { url: outputUrl, mimeType, width, height };
   }
 }

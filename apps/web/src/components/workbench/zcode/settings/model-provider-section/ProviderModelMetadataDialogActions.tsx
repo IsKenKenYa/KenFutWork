@@ -95,7 +95,7 @@ export function ProviderModelMetadataDialogActions({
   leadingAction?: ReactNode;
 }) {
   return (
-    <div data-model-settings-footer="true" className="flex items-center justify-between gap-2 pt-1">
+    <div data-model-settings-footer="true" className={`flex items-center gap-2 pt-1 ${leadingAction ? "justify-between" : "justify-end"}`}>
       {leadingAction}
       <div className="flex items-center gap-2">
         <Button type="button" variant="ghost" size="lg" disabled={saving} onClick={onCancel}>

@@ -5,7 +5,69 @@ import type {
   ImageGenerateParams,
   ImageProvider,
 } from "../types.js";
-import { aspectRatioToDimensions, GenerationError } from "../utils.js";
+import {
+  aspectRatioToDimensions,
+  GenerationError,
+  generationHttpError,
+  readGeneratedImage,
+} from "../utils.js";
+
+function imageOptions(params: ImageGenerateParams) {
+  if ((params.width === undefined) !== (params.height === undefined))
+    throw new GenerationError(
+      "openai",
+      "invalid_input",
+      "请同时填写图片宽度和高度。",
+    );
+  const dimensions =
+    params.width !== undefined && params.height !== undefined
+      ? { width: params.width, height: params.height }
+      : aspectRatioToDimensions(params.aspectRatio ?? "1:1");
+  // GPT Image 的标准尺寸不能用通用画布比例生成任意像素值。
+  const gptImage =
+    params.model.startsWith("gpt-image-") ||
+    params.model === "chatgpt-image-latest";
+  const { width, height } =
+    gptImage && params.width === undefined
+      ? dimensions.width === dimensions.height
+        ? { width: 1024, height: 1024 }
+        : dimensions.width > dimensions.height
+          ? { width: 1536, height: 1024 }
+          : { width: 1024, height: 1536 }
+      : dimensions;
+  const legacyDalle =
+    params.model === "dall-e-2" || params.model === "dall-e-3";
+  const outputFormat: "png" | "jpeg" | "webp" | undefined = legacyDalle
+    ? undefined
+    : params.outputFormat === "jpg"
+      ? "jpeg"
+      : params.outputFormat;
+  const semanticQuality: Record<string, string> = {
+    standard: "low",
+    hd: "medium",
+    ultra: "high",
+  };
+  const quality = params.quality
+    ? gptImage
+      ? (semanticQuality[params.quality] ?? params.quality)
+      : params.quality
+    : undefined;
+  return {
+    width,
+    height,
+    size: `${width}x${height}`,
+    mimeType:
+      outputFormat === "jpeg"
+        ? "image/jpeg"
+        : outputFormat === "webp"
+          ? "image/webp"
+          : "image/png",
+    ...(!legacyDalle && quality
+      ? { quality: quality as "low" | "medium" | "high" }
+      : {}),
+    ...(outputFormat ? { output_format: outputFormat } : {}),
+  };
+}
 
 /**
  * 参考图 → multipart 文件体：URL 先下载、data URL 就地解码、裸 base64 兜底。
@@ -56,12 +118,14 @@ export class OpenAIImageProvider implements ImageProvider {
   ) {
     this.client = new OpenAI({
       apiKey,
+      // 适配器只执行一次请求；可调重试由共享Job引擎统一负责。
+      maxRetries: 0,
       ...(baseURL ? { baseURL } : {}),
       // 自定义头（§4.8）：authorization 等保留头由 SDK 按 apiKey 生成，不受其影响
       ...(headers ? { defaultHeaders: headers } : {}),
     });
     this.apiKey = apiKey;
-    this.baseURL = baseURL;
+    this.baseURL = baseURL?.replace(/\/+$/, "");
     this.headers = headers;
   }
 
@@ -72,16 +136,21 @@ export class OpenAIImageProvider implements ImageProvider {
    */
   private async generateEdit(
     params: ImageGenerateParams,
-    size: string,
-  ): Promise<GeneratedImage> {
+    options: ReturnType<typeof imageOptions>,
+  ): Promise<GeneratedImage[]> {
     const baseURL = this.baseURL ?? "https://api.openai.com/v1";
     const form = new FormData();
     form.append("model", params.model);
     form.append("prompt", params.prompt);
-    form.append("n", "1");
-    form.append("size", size);
+    form.append("n", String(params.count ?? 1));
+    form.append("size", options.size);
+    if (options.quality) form.append("quality", options.quality);
+    if (options.output_format)
+      form.append("output_format", options.output_format);
+    const imageField =
+      (params.inputImages?.length ?? 0) > 1 ? "image[]" : "image";
     for (const source of params.inputImages ?? []) {
-      form.append("image", await toUploadFile(source));
+      form.append(imageField, await toUploadFile(source));
     }
 
     const response = await fetch(`${baseURL}/images/edits`, {
@@ -96,67 +165,71 @@ export class OpenAIImageProvider implements ImageProvider {
 
     if (!response.ok) {
       const errorBody = (await response.json().catch(() => null)) as {
-        error?: { message?: string };
+        error?: { message?: string; code?: string };
       } | null;
-      throw new GenerationError(
+      throw generationHttpError(
         "openai",
-        "api_error",
+        response,
         `OpenAI edits error ${response.status}: ${errorBody?.error?.message ?? "Unknown error"}`,
+        errorBody?.error?.code,
       );
     }
 
     const data = (await response.json()) as {
       data: Array<{ url?: string; b64_json?: string }>;
     };
-    const url = data.data[0]?.url;
-    if (!url) {
-      throw new GenerationError(
-        "openai",
-        "no_output",
-        "OpenAI edits returned no image URL",
-      );
-    }
-    const { width, height } = aspectRatioToDimensions(
-      params.aspectRatio ?? "1:1",
+    return this.readImages(data, options);
+  }
+
+  private readImages(
+    response: Parameters<typeof readGeneratedImage>[1],
+    options: ReturnType<typeof imageOptions>,
+  ): GeneratedImage[] {
+    if (!response.data?.length)
+      return [readGeneratedImage("openai", response, options)];
+    return response.data.map((image) =>
+      readGeneratedImage("openai", { ...response, data: [image] }, options),
     );
-    return { url, mimeType: "image/png", width, height };
   }
 
   async generate(params: ImageGenerateParams): Promise<GeneratedImage> {
-    const { width, height } = aspectRatioToDimensions(
-      params.aspectRatio ?? "1:1",
-    );
-    const size = `${width}x${height}`;
+    const images = await this.generateMany({ ...params, count: 1 });
+    return images[0]!;
+  }
+
+  async generateMany(params: ImageGenerateParams): Promise<GeneratedImage[]> {
+    const options = imageOptions(params);
 
     try {
       // 带参考图 → 编辑路径；否则生成路径不变。
       if (params.inputImages?.length) {
-        return await this.generateEdit(params, size);
+        return await this.generateEdit(params, options);
       }
 
       const response = await this.client.images.generate({
         model: params.model,
         prompt: params.prompt,
-        size: size as "1024x1024",
-        n: 1,
+        size: options.size as "1024x1024",
+        n: params.count ?? 1,
+        ...(options.quality ? { quality: options.quality } : {}),
+        ...(options.output_format
+          ? { output_format: options.output_format }
+          : {}),
       });
-
-      const url = response.data?.[0]?.url;
-      if (!url) {
-        throw new GenerationError(
-          "openai",
-          "no_output",
-          "OpenAI returned no image URL",
-        );
-      }
-
-      return { url, mimeType: "image/png", width, height };
+      return this.readImages(response, options);
     } catch (error) {
       if (error instanceof GenerationError) throw error;
       throw new GenerationError(
         "openai",
         "api_error",
         error instanceof Error ? error.message : "Unknown OpenAI error",
+        error instanceof OpenAI.APIError
+          ? {
+              status: error.status,
+              retryAfter: error.headers?.get("retry-after"),
+              upstreamCode: error.code,
+            }
+          : {},
       );
     }
   }

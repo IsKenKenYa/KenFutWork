@@ -129,7 +129,7 @@ export function createCodeAttachmentRepository(
         and t.id = $1 and t.project_id = $2 and t.root_session_id = t.id and t.chat_session_id = t.id
         and t.parent_session_id is null and t.deleted_at is null and t.archived = false and t.state is not null
         and t.execution_state = 'ready' and t.scope_generation = $3 and t.branch_generation = $4
-        and p.kind = 'code' and p.archived_at is null and c.mode = 'code'
+        and p.enabled_modes && array['code','design']::text[] and p.archived_at is null and c.mode = 'code'
         and c.created_by_client_id is not distinct from $5::uuid for update of t, p, c`,
       [
         target.taskId,
@@ -228,7 +228,7 @@ export function createCodeAttachmentRepository(
                 and t.id = $1 and t.project_id = $2 and s.id = $3 and s.deleted_at is null and s.archived = false
                 and t.parent_session_id is null and t.deleted_at is null and t.archived = false
                 and t.execution_state = 'ready' and t.scope_generation = $4 and t.branch_generation = $5
-                and p.kind = 'code' and p.archived_at is null for update of t`,
+                and p.enabled_modes && array['code','design']::text[] and p.archived_at is null for update of t`,
               [
                 expected.taskId,
                 expected.projectId,
@@ -311,7 +311,7 @@ export function createCodeAttachmentRepository(
           join public.projects p on p.id = t.project_id and p.instance_id = t.instance_id
           where t.instance_id = :instance and p.instance_id = :instance and t.id = $1 and t.project_id = $2
             and t.parent_session_id is null and t.scope_generation = $3 and t.execution_state = 'revoking'
-            and t.deleted_at is null and p.kind = 'code' for update of t`,
+            and t.deleted_at is null and p.enabled_modes && array['code','design']::text[] for update of t`,
           [session.taskId, session.projectId, expectedScopeGeneration],
         );
         if (!task)

@@ -47,7 +47,7 @@
 
 ### A5. 图标库 lucide-react（ISC）
 
-npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/package.json`）。上游 [lucide-icons/lucide](https://github.com/lucide-icons/lucide)，许可 ISC。义务按 B 段随依赖清单一并履行。
+npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/package.json`、`apps/landing/package.json`）。上游 [lucide-icons/lucide](https://github.com/lucide-icons/lucide)，许可 ISC。义务按 B 段随依赖清单一并履行。
 
 ## B. 运行时与构建期开源依赖
 
@@ -104,7 +104,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 | 素材 | 许可 | 状态 |
 | --- | --- | --- |
-| Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
+| Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/` 与 `apps/landing/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
 | CaveatBrush、ChakraPetch、GochiHand、K2D、Pacifico、PermanentMarker | SIL OFL 1.1 | 仅作为 `docs/视觉设计/logo/字体/` 的候选样张存在，未打进产物 |
 | ArtierEN-2、No.019-Sounso-Quality-2、YEFONTPaws-Bold-2 | **需商业授权**（分别来自天津卓漫、上首品牌策划、深圳仪品） | 样张留在仓库**不构成授权**；未在产物中使用。逐字段落原文见 `docs/视觉设计/logo/字体/字体说明.md` |
 | `skills/canvas-design/canvas-fonts/` | **54 个字体文件，仓库内无任何许可文本** | **待核**：分发前必须逐支确认来源与许可，不能默认沿用 GPL 或 OFL |
@@ -119,6 +119,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | --- | --- | --- |
 | 现行 KF 标识（2026-09-15 换版） | `apps/web/src/components/icons/kenfutwork-logo.tsx`、`docs/视觉设计/logo/新版.png`（源图）、`docs/视觉设计/logo/应用图标-白底圆角.png` | 组件注释记载为 **GPT 生成图定稿**，源图即上表 PNG |
 | Web 静态标识 | `apps/web/public/` 的 `logo.png`、`logo-mark.png`、`app-icon.png`、`apple-touch-icon.png`、`favicon.png`、`og-image.png` | 由现行源图派生 |
+| 落地页标识与点阵 | `apps/landing/public/assets/logo-mark.png`、`apps/landing/public/favicon.png` | 复用正式 Web 品牌；浏览器通过格点遮罩呈现点阵，不重画 Logo。装饰使用上列 Lucide 图标；动效视觉参考与独立实现说明见 `apps/landing/素材生成说明.md` |
 | 桌面/移动应用图标 | `apps/desktop/src-tauri/icons/`（含 android `mipmap-*`、Windows `SquareNxNLogo.png`、StoreLogo） | 由 `apps/desktop/scripts/icons.mjs` 从**同一份墨迹**批量生成（2026-09-26 口径：墨迹占画布 80%） |
 | 旧版字标 KF-2 骨架版 C（留档） | `docs/视觉设计/旧版/品牌Logo说明.md`（权威说明与几何/色值）、`docs/视觉设计/旧版/字体风格对比.html` | 纯手写 SVG；白字形是 **Chakra Petch Italic**（SIL OFL-1.1）字形的 K 轮廓 + 裁短 F 顶横的布尔并集，样张 `docs/视觉设计/logo/字体/ChakraPetch.woff2` |
 
@@ -136,6 +137,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | Dify（flow 的执行引擎方向，`DEC-11`） | Apache-2.0 + 附加条款（source-available） | 以**独立容器 + API 通信**接入，属聚合而非衍生作品；**禁止把 Dify 的 Python 代码复制进本 monorepo**，保持容器边界，分发时附其 `LICENSE`/`NOTICE` |
 | OpenDesign（伴随容器，规划 §9-3 于 2026-10-15 拍板） | Apache-2.0（上游 [nexu-io/open-design](https://github.com/nexu-io/open-design)） | 以**独立伴随容器 + API 通信**接入，属聚合而非衍生作品。本仓仅收录伴随 compose `open-design/docker-compose.open-design.yml`（派生自上游 release `open-design-v0.24.1` 的 `deploy/docker-compose.yml`，改动：端口写死伴随 origin、restart 改 `unless-stopped`、去掉自托管透传项）；镜像按 digest 钉死 `ghcr.io/nexu-io/od@sha256:587a992857d0f8b71011e4bc55c5851e33ef9fc4c169fc17e6447700ac428f22`（2026-10-15 观测的 `latest`，registry 无版本形态 tag）；**不把上游源码克隆进 monorepo**，Apache-2.0 义务在镜像层内履行 |
 | `references/` 全部子模块（Codex、Cherry Studio、Jaaz、kimi-code、langgraph、MCP SDK、Octop、nomifun-tauri、Loomic 等） | 各自许可（Apache-2.0/MIT 等） | **只作方向参考，未复制代码、schema、字段名与素材**（`flow/` 与 Code 模式的 ZCode 全量移植是明确例外，见 `AGENTS.md`）。子模块内容不随本仓库产物分发 |
+| [Toonflow-app](https://github.com/HBAI-Ltd/Toonflow-app)，`references/toonflow-app`，固定 `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` | MIT；Copyright (c) 2026 HBAI-Ltd，见[上游许可](https://github.com/HBAI-Ltd/Toonflow-app/blob/d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d/LICENSE) | depth 1 只读参考；用于核验本地画布、媒体文件保存与任务恢复，不安装或执行上游，不复制实现，内容不随本仓库产物分发 |
 | 技能市场与 MCP 目录下载的第三方技能/server | 各自许可 | 由你在市场/注册表安装，安装时应核对；本仓库不为其许可背书 |
 
 ## G. 分发义务

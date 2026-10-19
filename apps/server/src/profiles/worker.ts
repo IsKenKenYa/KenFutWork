@@ -1,4 +1,5 @@
 import { createBlobPlugin } from "../features/blob/plugin.js";
+import { createCanvasPlugin } from "../features/canvas/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createJobLoopPlugin } from "../features/jobs/job-loop-plugin.js";
@@ -34,6 +35,7 @@ export function workerProfile(): PluginDefinition[] {
     createModelProvidersPlugin(),
     createSettingsPlugin(),
     createProjectsPlugin({ withRoutes: false }),
+    createCanvasPlugin({ withRoutes: false }),
     createExecutionScopesPlugin({ withRoutes: false }),
     createProjectFilesPlugin(),
     createGenerationTargetsPlugin(),

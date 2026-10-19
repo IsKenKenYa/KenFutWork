@@ -1,10 +1,5 @@
 import type { ProjectKind } from "@kenfutwork/shared";
-import { insertDesignTaskInTransaction } from "../execution/design-task-metadata.js";
-import type { DesignTaskPreparation } from "../execution/design-task-types.js";
-import type {
-  InstanceSqlClient,
-  PersistenceService,
-} from "../persistence/types.js";
+import type { PersistenceService } from "../persistence/types.js";
 
 export type ChatSessionRow = {
   id: string;
@@ -43,7 +38,6 @@ export type NewChatMessage = {
 
 export type NewChatSession = {
   canvasId: string;
-  designTaskPreparation?: DesignTaskPreparation | undefined;
   /** 缺省即省略该列，由 `chat_sessions.title` 的默认值落库（不写 NULL）。 */
   title?: string | undefined;
   threadId: string;
@@ -61,7 +55,7 @@ export interface ChatRepository {
     input: NewChatSession,
   ): Promise<ChatSessionRow | null>;
   /**
-   * 以指定 id 供给 Design/Flow 会话；Code Task 只由 CodeUi.createRoot 原子创建。
+   * 以指定 id 供给 Flow 会话；Code/Design Task 只由 CodeUi.createRoot 原子创建。
    *
    * 语义：不存在则插入（挂给定画布 + 线程）；已存在则回读并**复用其 `thread_id`**
    * （多轮必须同一 thread），仅当既有行没有线程时才绑定传入线程。幂等与并发安全靠
@@ -131,25 +125,16 @@ export function createChatRepository(
         ? [input.canvasId, input.createdByClientId, input.threadId, input.title]
         : [input.canvasId, input.createdByClientId, input.threadId];
 
-      const insert = (sql: InstanceSqlClient) =>
-        sql.queryOne<ChatSessionRow>(
-          `insert into public.chat_sessions ${columns}
+      return persistence.forInstance(instanceId).queryOne<ChatSessionRow>(
+        `insert into public.chat_sessions ${columns}
          select :instance, p.id, p.kind, c.id, ${selectList}
            from public.canvases c
            join public.projects p on p.id = c.project_id
           where c.id = $1
-            and p.instance_id = :instance and p.kind <> 'code'
+            and p.instance_id = :instance and p.kind = 'flow'
          returning id, title, updated_at, project_id, mode`,
-          params,
-        );
-      const prepared = input.designTaskPreparation;
-      if (!prepared) return insert(persistence.forInstance(instanceId));
-      return persistence.transaction(async (tx) => {
-        const sql = tx.forInstance(instanceId);
-        const row = await insert(sql);
-        if (row) await insertDesignTaskInTransaction(sql, row.id, prepared);
-        return row;
-      });
+        params,
+      );
     },
 
     async ensureSessionWithId(instanceId, input) {
@@ -174,7 +159,7 @@ export function createChatRepository(
              from public.canvases c
              join public.projects p on p.id = c.project_id
             where c.id = ${canvasParam}::uuid
-              and p.instance_id = :instance and p.kind <> 'code'
+              and p.instance_id = :instance and p.kind = 'flow'
            on conflict (id) do nothing
            returning id, thread_id, canvas_id, project_id, mode`,
           [
@@ -199,7 +184,7 @@ export function createChatRepository(
         );
         if (
           !existing ||
-          existing.mode === "code" ||
+          existing.mode !== "flow" ||
           existing.canvas_id !== input.canvasId
         ) {
           return null;
@@ -230,7 +215,7 @@ export function createChatRepository(
             set title = $1
            from public.projects p
           where p.id = s.project_id and s.instance_id = :instance
-            and s.id = $2 and s.mode <> 'code'
+            and s.id = $2 and s.mode = 'flow'
             and p.instance_id = :instance`,
         [title, sessionId],
       );
@@ -241,7 +226,7 @@ export function createChatRepository(
         `delete from public.chat_sessions s
           using public.projects p
           where p.id = s.project_id and s.instance_id = :instance
-            and s.id = $1 and s.mode <> 'code'
+            and s.id = $1 and s.mode = 'flow'
             and p.instance_id = :instance`,
         [sessionId],
       );
@@ -267,7 +252,7 @@ export function createChatRepository(
            from public.chat_messages m
            join public.chat_sessions s on s.id = m.session_id
            join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
-          where m.session_id = $1 and s.mode <> 'code'
+          where m.session_id = $1 and s.mode = 'flow'
             and p.instance_id = :instance
           order by m.created_at asc`,
         [sessionId],
@@ -290,7 +275,7 @@ export function createChatRepository(
          select s.id, $2, $3, $4::jsonb, $5::jsonb
            from public.chat_sessions s
            join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
-          where s.id = $1 and s.mode <> 'code'
+          where s.id = $1 and s.mode = 'flow'
             and p.instance_id = :instance
          returning ${MESSAGE_COLUMNS.replaceAll("m.", "")}`,
         [

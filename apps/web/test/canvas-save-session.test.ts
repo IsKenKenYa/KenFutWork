@@ -227,4 +227,108 @@ describe("canvas save session", () => {
     });
     await regularSave;
   });
+
+  it("defers new saves until remote acceptance and reads the latest merged content when resumed", async () => {
+    const session = createCanvasSaveSession({
+      revision: "r1",
+      fileReferences: {},
+    });
+    const release = session.beginRemoteSnapshot();
+    let latest = content;
+    const send = vi.fn(async () => ({
+      ok: true as const,
+      revision: "r3",
+      fileReferences: {},
+    }));
+    const save = session.save(() => latest, send);
+    await session.waitForIdle();
+    expect(send).not.toHaveBeenCalled();
+    expect(session.isIdle).toBe(true);
+    expect(session.saveKeepalive(content, send)).toBe(false);
+    latest = {
+      ...content,
+      elements: [{ id: "local", x: 30 }, { id: "remote-image" }],
+    };
+    expect(
+      session.acceptRemoteSnapshot({
+        revision: "r2",
+        fileReferences: {},
+        files: {},
+      }),
+    ).toBe(true);
+    release();
+    await save;
+    expect(send).toHaveBeenCalledWith(latest, "r2");
+    expect(session.isAcceptingRemote).toBe(false);
+  });
+
+  it("drains an already submitted save without waiting on saves deferred by the remote window", async () => {
+    const session = createCanvasSaveSession({
+      revision: "r1",
+      fileReferences: {},
+    });
+    let complete = (_value: CanvasSaveResponse) => {};
+    const first = session.save(
+      content,
+      () =>
+        new Promise<CanvasSaveResponse>((resolve) => {
+          complete = resolve;
+        }),
+    );
+    await Promise.resolve();
+    const release = session.beginRemoteSnapshot();
+    const send = vi.fn(async () => ({
+      ok: true as const,
+      revision: "r4",
+      fileReferences: {},
+    }));
+    const deferred = session.save(() => content, send);
+    complete({ ok: true, revision: "r2", fileReferences: {} });
+    await first;
+    await session.waitForIdle();
+    expect(send).not.toHaveBeenCalled();
+    expect(
+      session.acceptRemoteSnapshot({
+        revision: "r3",
+        fileReferences: {},
+        files: {},
+      }),
+    ).toBe(true);
+    release();
+    await deferred;
+    expect(send).toHaveBeenCalledWith(expect.any(Object), "r3");
+  });
+
+  it("releases overlapping remote windows once and never resumes a conflicted save", async () => {
+    const session = createCanvasSaveSession({
+      revision: "r1",
+      fileReferences: {},
+    });
+    const firstRelease = session.beginRemoteSnapshot();
+    const finalRelease = session.beginRemoteSnapshot();
+    const send = vi.fn();
+    const source = vi.fn(() => content);
+    const pending = session.save(source, send);
+    firstRelease();
+    firstRelease();
+    await Promise.resolve();
+    expect(session.isAcceptingRemote).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    session.conflict("草稿冲突");
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: "canvas_revision_conflict",
+    });
+    finalRelease();
+    await rejected;
+    expect(source).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(
+      session.acceptRemoteSnapshot({
+        revision: "r2",
+        fileReferences: {},
+        files: {},
+      }),
+    ).toBe(false);
+    expect(session.revision).toBe("r1");
+  });
 });

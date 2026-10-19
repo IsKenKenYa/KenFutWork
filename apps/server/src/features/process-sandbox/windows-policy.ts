@@ -1,5 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { accountEnvironment } from "./account-command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import type { ProcessSpawnRequest } from "./types.js";
 import type { NativeLaunch } from "./windows-broker.js";
@@ -15,8 +17,34 @@ export async function windowsLaunch(input: {
   runtimeReadRoots?: readonly string[];
   runtimePathAdditions?: readonly string[];
   internalWriteRoots?: readonly string[];
+  accountHome?: string;
 }): Promise<NativeLaunch> {
   const scope = input.request.scope;
+  if (scope.sandboxMode === "danger-full-access")
+    return {
+      unrestricted: true,
+      processId: input.processId,
+      taskId: scope.taskId,
+      generation: scope.generation,
+      command: windowsCommand(input.request),
+      cwd: input.cwd,
+      env: accountEnvironment(
+        input.request,
+        input.accountHome ?? homedir(),
+        input.runtimePathAdditions,
+      ),
+      readRoots: [],
+      writeRoots: [],
+      denyRoots: [],
+      yieldMs: input.request.limits.yieldMs,
+      killGraceMs: input.request.limits.killGraceMs,
+      liveStreams: input.request.stdio !== undefined,
+      pty: input.request.pty ?? null,
+      chunkBytes: Math.min(
+        input.request.limits.maxOutputBytes,
+        input.request.limits.previewMaxChars,
+      ),
+    };
   const root = await realpath(scope.rootDirectory);
   const extra = await Promise.all(
     scope.additionalDirectories.map(async (directory) => ({

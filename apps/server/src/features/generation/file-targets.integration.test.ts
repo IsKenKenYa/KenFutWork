@@ -3,8 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { backgroundJobSchema } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
-import { createChatRepository } from "../chat/repository.js";
-import { createDesignTasksService } from "../execution/design-tasks.js";
+import { createCanvasRepository } from "../canvas/repository.js";
+import { createCodeUiConversation } from "../code-ui/conversation.js";
+import { createCodeUiRepository } from "../code-ui/repository.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createJobService } from "../jobs/job-service.js";
@@ -19,13 +20,8 @@ describe.skipIf(process.env.KENFUTWORK_GENERATION_FILES_TEST_PG !== "1")(
   () => {
     it("Design生成使用项目固定目录，普通更新拒绝换根，撤权阻止接纳和发布", async () => {
       const db = await createTaskWorkDatabase();
-      const tasks = createDesignTasksService({
-        persistence: db.persistence,
-        localInstance: db.localInstance,
-        sandboxRoot: db.directory,
-      });
       try {
-        const { project, canvas } = await createProjectRepository(
+        const { project } = await createProjectRepository(
           db.persistence,
         ).createProject({
           instanceId: db.instanceId,
@@ -36,29 +32,71 @@ describe.skipIf(process.env.KENFUTWORK_GENERATION_FILES_TEST_PG !== "1")(
           canvasName: "generation",
           description: null,
           workDir: db.context.scope.rootDirectory,
+          // 夹具库已用同一目录建隔离项目；按现行目录契约显式独立创建。
+          directoryChoice: "independent",
+        });
+        await db.persistence
+          .forInstance(db.instanceId)
+          .execute(
+            "update public.projects set enabled_modes=array['design','code']::text[] where id=$1 and instance_id=:instance",
+            [project.id],
+          );
+        const canvas = await createCanvasRepository(db.persistence).create({
+          instanceId: db.instanceId,
+          projectId: project.id,
+          canvasId: randomUUID(),
+          name: "generation",
         });
         if (!canvas) throw new Error("缺少画布");
-        const preparation = await tasks.prepareCreation(db.actor, canvas.id);
-        if (!preparation) throw new Error("缺少Task准备");
-        const session = await createChatRepository(
-          db.persistence,
-        ).createSession(db.instanceId, {
-          canvasId: canvas.id,
-          threadId: randomUUID(),
-          createdByClientId: db.actor.accessClientId,
-          designTaskPreparation: preparation,
+        const session = { id: randomUUID() };
+        const runId = randomUUID();
+        const host = createCodeUiConversation({
+          sessionId: session.id,
+          workspacePath: db.context.scope.rootDirectory,
+          config: {
+            provider: "zcode",
+            model: "test",
+            thought: "",
+            followupMode: "queue",
+          },
+          workContext: { preset: "design", canvasId: canvas.id },
         });
-        if (!session) throw new Error("缺少Task");
+        host.startTurn({
+          runId,
+          commandId: randomUUID(),
+          text: "实际生成",
+          workContext: { preset: "design", canvasId: canvas.id },
+        });
+        await createCodeUiRepository(db.persistence).createRoot(db.instanceId, {
+          sessionId: session.id,
+          projectId: project.id,
+          scope: {
+            ...db.context.scope,
+            projectId: project.id,
+            taskId: session.id,
+          },
+          createdByClientId: db.actor.accessClientId,
+          threadId: randomUUID(),
+          state: host.exportState(),
+          command: {
+            clientId: "fixture",
+            commandId: randomUUID(),
+            fingerprint: randomUUID(),
+          },
+        });
         const scopes = createExecutionScopes({
           repository: createScopeRepository(db.persistence),
           localInstance: db.localInstance,
         });
+        // 现行 updateTask 契约要求至少注册一个撤销监听才允许改授权。
+        scopes.onRevoke(async () => {});
         const targets = createGenerationTargets({
           persistence: db.persistence,
           executionScopes: scopes,
         });
         const source = await targets.prepareOrigin({
           actor: db.actor,
+          runId,
           sessionId: session.id,
           canvasId: canvas.id,
           projectId: project.id,
@@ -112,17 +150,12 @@ describe.skipIf(process.env.KENFUTWORK_GENERATION_FILES_TEST_PG !== "1")(
           kind: "task",
           taskId: session.id,
         });
-        await tasks.updatePolicy(db.actor, {
-          taskId: session.id,
-          scopeGeneration: 1,
-          planningEpoch: 0,
-          mode: "edit",
-          planEnabled: false,
+        await scopes.updateTask(db.actor, session.id, {
+          sandboxMode: "read-only",
         });
         await expect(targets.resolve(frozenJob)).rejects.toThrow("原Run授权");
         await expect(repo.insert(input)).rejects.toThrow("原Run授权");
       } finally {
-        await tasks.close();
         await db.close();
       }
     });

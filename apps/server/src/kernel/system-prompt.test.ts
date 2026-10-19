@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   basePromptSection,
   createRulesPromptSection,
@@ -17,6 +17,7 @@ import {
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { SystemPromptRegistryImpl } from "./context.js";
+import { promptExecutionContext } from "./prompt-execution.js";
 import type { PromptSectionDefinition } from "./types.js";
 
 const promptRoots: string[] = [];
@@ -27,13 +28,17 @@ afterEach(async () => {
       .map((path) => rm(path, { recursive: true, force: true })),
   );
 });
-async function promptTask(preset: "code" | "design") {
+async function promptTask(
+  preset: "code" | "design",
+  taskId = "00000000-0000-4000-8000-000000000003",
+  projectId = "00000000-0000-4000-8000-000000000002",
+) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "task-prompt-")));
   promptRoots.push(root);
   const scope = {
     instanceId: "00000000-0000-4000-8000-000000000001",
-    projectId: "00000000-0000-4000-8000-000000000002",
-    taskId: "00000000-0000-4000-8000-000000000003",
+    projectId,
+    taskId,
     generation: 1,
     rootDirectory: root,
     additionalDirectories: [],
@@ -87,6 +92,69 @@ it("Design真实Task共享文件工作提示并保留画布，scope快照不能�
   await expect(
     registry.compose({ preset: "code", scopeHandle: handle }),
   ).rejects.toThrow(/工作模式/);
+});
+
+it("冻结工作方式不能覆盖另一Task句柄、缺失Run身份或跨实例身份", async () => {
+  const handle = await promptTask("code");
+  const otherHandle = await promptTask(
+    "code",
+    "00000000-0000-4000-8000-000000000004",
+    "00000000-0000-4000-8000-000000000005",
+  );
+  const actor = {
+    instanceId: handle.describe().instanceId,
+    accessClientId: null,
+  };
+  const execution = promptExecutionContext({
+    actor,
+    scopeHandle: handle,
+    runId: "accepted-run",
+    workContext: { preset: "design" },
+  });
+  const resolve = vi.fn(() => "DESIGN");
+  const registry = new SystemPromptRegistryImpl();
+  registry.register(section({ name: "trusted", scope: "design", resolve }));
+  for (const context of [
+    { preset: "code" as const, scopeHandle: handle, execution },
+    { preset: "design" as const, scopeHandle: otherHandle, execution },
+    {
+      preset: "design" as const,
+      scopeHandle: handle.derive("review", "readonly-child"),
+      execution,
+    },
+    {
+      preset: "design" as const,
+      scopeHandle: handle,
+      execution: { ...execution, scopeHandle: undefined },
+    },
+    {
+      preset: "design" as const,
+      scopeHandle: handle,
+      execution: { ...execution, runId: undefined },
+    },
+    {
+      preset: "design" as const,
+      scopeHandle: handle,
+      execution: {
+        ...execution,
+        actor: { ...actor, instanceId: "other-instance" },
+      },
+    },
+    { preset: "design" as const, execution },
+    { preset: "design" as const, scopeHandle: handle },
+  ])
+    await expect(registry.compose(context)).rejects.toThrow(
+      "系统提示工作模式与可信Task不匹配。",
+    );
+  expect(resolve).not.toHaveBeenCalled();
+  expect(
+    await registry.compose({
+      preset: "design",
+      scopeHandle: handle,
+      execution,
+    }),
+  ).toBe("DESIGN");
+  expect(handle.preset).toBe("code");
 });
 
 describe("SystemPromptRegistryImpl（内核提示段注册表）", () => {

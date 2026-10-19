@@ -78,7 +78,7 @@ export function createToolCatalogueMiddleware(
       .filter(
         (definition) =>
           definition.planControl === undefined ||
-          (definition.scope === "code" &&
+          ((definition.scope === "code" || definition.scope === "shared") &&
             !!context.execution.scopeHandle &&
             allowsPlanControl({
               role: context.execution.scopeHandle.role,

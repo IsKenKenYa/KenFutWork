@@ -17,7 +17,7 @@ const DEFAULT_MAX_WAIT_MS = 300_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const ALLOWED_RATIOS = new Set(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]);
 
-const METASO_VIDEO_MODELS: readonly VideoModelInfo[] = [
+const METASO_VIDEO_MODELS: readonly [VideoModelInfo] = [
   {
     id: METASO_VIDEO_MODEL_ID,
     displayName: "MiniMax H3 (Metaso)",
@@ -191,7 +191,20 @@ export class MetasoVideoProvider implements VideoProvider {
       return { state: "failed", errorMessage: `${code}: ${detail}` };
     }
 
-    return { state: "in_progress" };
+    if (status === "cancelled") {
+      return {
+        state: "failed",
+        errorMessage: "Metaso video generation was cancelled",
+      };
+    }
+    if (status === "queued" || status === "running") {
+      return { state: "in_progress" };
+    }
+    throw new GenerationError(
+      PROVIDER_NAME,
+      "malformed_response",
+      `Metaso returned an unknown task status: ${redactSensitiveValue(sanitizeMessage(status), this.apiKey)}`,
+    );
   }
 
   async generate(params: VideoGenerateParams): Promise<GeneratedVideo> {
@@ -352,11 +365,20 @@ export class MetasoVideoProvider implements VideoProvider {
         PROVIDER_NAME,
         "malformed_response",
         `Metaso returned invalid JSON (HTTP ${response.status})`,
+        {
+          status: response.status,
+          retryAfter: response.headers.get("retry-after"),
+        },
       );
     }
 
     if (!response.ok) {
-      throw mapApiError(response.status, body, this.apiKey);
+      throw mapApiError(
+        response.status,
+        body,
+        this.apiKey,
+        response.headers.get("retry-after"),
+      );
     }
     if (!isRecord(body)) {
       throw new GenerationError(
@@ -370,7 +392,7 @@ export class MetasoVideoProvider implements VideoProvider {
 }
 
 function buildCreateRequest(params: VideoGenerateParams) {
-  if (params.model !== METASO_VIDEO_MODEL_ID) {
+  if (params.model !== METASO_VIDEO_MODEL_ID && params.model !== API_MODEL_ID) {
     throw new GenerationError(
       PROVIDER_NAME,
       "model_not_found",
@@ -460,8 +482,9 @@ function buildCreateRequest(params: VideoGenerateParams) {
 function mapResolution(
   resolution: VideoGenerateParams["resolution"],
 ): "768P" | "2K" {
-  if (resolution == null || resolution === "720p") return "768P";
-  if (resolution === "1080p") return "2K";
+  if (resolution == null || resolution === "720p" || resolution === "768P")
+    return "768P";
+  if (resolution === "1080p" || resolution === "2K") return "2K";
   throw new GenerationError(
     PROVIDER_NAME,
     "invalid_input",
@@ -570,6 +593,7 @@ function mapApiError(
   status: number,
   body: unknown,
   sensitiveValue: string,
+  retryAfter?: string | null,
 ): GenerationError {
   const envelope = isRecord(body) ? (body as ApiErrorEnvelope) : undefined;
   const apiType =
@@ -603,7 +627,11 @@ function mapApiError(
     "api_error";
   const detail = apiMessage ?? `Metaso API request failed with HTTP ${status}`;
   const suffix = requestId ? ` (request ${requestId})` : "";
-  return new GenerationError(PROVIDER_NAME, code, `${detail}${suffix}`);
+  return new GenerationError(PROVIDER_NAME, code, `${detail}${suffix}`, {
+    status,
+    retryAfter,
+    upstreamCode: apiType,
+  });
 }
 
 function redactSensitiveValue(value: string, sensitiveValue: string): string {

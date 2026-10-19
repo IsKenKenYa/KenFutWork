@@ -46,7 +46,7 @@ process.stdin.on("end", () => { clearInterval(timer); process.exit(0); });
 `;
 
 it.skipIf(!enabled || process.platform !== "darwin")(
-  "实际compiled helper：Code MCP Task工作域/无ambient provider env/跨Run/外域写拒绝/关闭后无迟到写",
+  "实际compiled helper：Code/Design同Task MCP/无ambient provider env/跨Run/外域写拒绝/关闭后无迟到写",
   async () => {
     if (!helper)
       throw new Error(
@@ -96,17 +96,23 @@ it.skipIf(!enabled || process.platform !== "darwin")(
       },
       f.context,
     );
-    const tool = f.registry
-      .resolveRunTools(f.resolution())
-      .find((entry) => status.toolNames.includes(entry.name));
-    if (!tool) throw new Error("真实Code MCP未进入共同Harness。");
     const results: string[] = [];
-    for (const run of ["first", "second"]) {
+    for (const [preset, run] of [
+      ["code", "first"],
+      ["design", "second"],
+    ] as const) {
+      const frozenContributions = f.registry.captureContributions(preset);
+      const tool = f.registry
+        .resolveRunTools({ ...f.resolution(), preset, frozenContributions })
+        .find((entry) => status.toolNames.includes(entry.name));
+      if (!tool) throw new Error("真实Task MCP未进入共享Harness");
       const result = await f.registry.executeDefinition(
         tool,
         { outside: join(outside, "escape"), text: `Unicode😀${run}` },
         {
           ...f.context,
+          workContext: { preset },
+          frozenContributions,
           runId: run,
           toolCallId: run,
           taskWorkContext: { ...f.work, runId: run },

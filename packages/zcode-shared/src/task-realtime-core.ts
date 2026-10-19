@@ -50,6 +50,7 @@ const taskMetaRealtimeSchema = z.object({
   titleOverridden: z.boolean().optional(),
   workspacePath: nonEmptyString,
   workspaceIdentity: nonEmptyString.optional(),
+  workModes: z.array(z.enum(["code", "design"])).optional(),
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   // realtime deliver 的运行时 schema 之前把 mode 放宽成 string，

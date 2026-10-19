@@ -15,7 +15,6 @@ export function createProjectDirectoryRelinkPlugin(): PluginDefinition {
       "taskWork",
       "processSandbox",
       "capabilities",
-      "designRunHost",
       "flowProjectControl",
     ],
     apply(ctx) {
@@ -26,8 +25,6 @@ export function createProjectDirectoryRelinkPlugin(): PluginDefinition {
           localInstance: ctx.get("localInstance"),
           goals: ctx.get("goals"),
           closeResources: async (actor, taskId, reason, kind) => {
-            if (kind === "design")
-              await ctx.get("designRunHost").stop(actor, { taskId });
             await createTaskResourceCloser({
               localInstance: ctx.get("localInstance"),
               resources: () => ({

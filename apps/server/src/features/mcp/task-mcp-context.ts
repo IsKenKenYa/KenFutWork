@@ -1,3 +1,4 @@
+import { extname } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolExecutionContext } from "../../kernel/types.js";
@@ -27,6 +28,13 @@ export const taskMcpCreateSchema = z
     path: z.string().trim().min(1),
   })
   .strict();
+
+export function inferMcpCommand(scriptPath: string): string {
+  const extension = extname(scriptPath).toLowerCase();
+  if (extension === ".py") return "python";
+  if ([".js", ".mjs", ".cjs"].includes(extension)) return "node";
+  return scriptPath;
+}
 
 export interface McpTaskContext {
   handle: ExecutionScopeHandle;

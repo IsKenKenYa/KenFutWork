@@ -47,8 +47,9 @@ export function resolveProcessRuntime(input: {
   // 「PATH 决定找得到，readRoots 决定跑得起来」不变量一致，这里补齐读根。
   // 授权给**安装根**而非 bin 的直接父级：git 运行时还要读安装根下的 etc/gitconfig，
   // 只给 mingw64 子树时会报 `unable to access '…/etc/gitconfig': Permission denied`。
-  const bundledGitBin = bundledRuntimes.find((root) => root.name === "git")
-    ?.binDir;
+  const bundledGitBin = bundledRuntimes.find(
+    (root) => root.name === "git",
+  )?.binDir;
   const systemGitReadRoot =
     input.gitBinDir && input.gitBinDir !== bundledGitBin
       ? basename(input.gitBinDir) === "bin"

@@ -58,6 +58,13 @@ export interface AgentRuntimeProvider {
     context: AgentProviderContext,
   ): AgentProviderSession | Promise<AgentProviderSession>;
 }
+class EmptyProviderResultError extends Error {
+  readonly exposeToClient = true;
+  constructor() {
+    super("本轮没有产生回复或工具结果，请重试或更换模型。");
+    this.name = "EmptyProviderResultError";
+  }
+}
 
 /** Opening is one guarded upstream wait. Unknown outcomes are never replayed. */
 export async function openAgentProviderSession(
@@ -137,6 +144,7 @@ export async function* consumeAgentProviderStream(
   }
   let started = false;
   let terminal = false;
+  let producedResult = false;
   const iterator = session.stream(input)[Symbol.asyncIterator]();
   // Provider cleanup may itself wait for an uncooperative pending next(); never block host settlement.
   const source: AsyncIterable<StreamEvent> = {
@@ -180,7 +188,15 @@ export async function* consumeAgentProviderStream(
         event.conversationId !== context.conversationId)
     )
       throw new Error("Provider事件不属于当前Task会话。");
-    for (const actual of toolReceipts?.drain() ?? []) yield actual;
+    for (const actual of toolReceipts?.drain() ?? []) {
+      if (actual.type === "tool.completed") producedResult = true;
+      yield actual;
+    }
+    if (
+      (event.type === "message.delta" && event.delta.trim().length > 0) ||
+      event.type === "task.notification"
+    )
+      producedResult = true;
     if (event.type === "tool.started" || event.type === "tool.completed") {
       if (
         !toolReceipts &&
@@ -189,11 +205,15 @@ export async function* consumeAgentProviderStream(
       )
         throw new Error("工具成功事件缺少真实执行结果。");
       toolReceipts?.verify(event);
+      if (event.type === "tool.completed") producedResult = true;
       if (toolReceipts) continue;
     }
     if (event.type === "run.completed" && toolReceipts?.isExecuting()) {
       context.abortRun?.();
       throw new Error("真实工具调用尚未结算，不能完成当前Run。");
+    }
+    if (event.type === "run.completed" && !producedResult) {
+      throw new EmptyProviderResultError();
     }
     terminal =
       event.type === "run.completed" ||

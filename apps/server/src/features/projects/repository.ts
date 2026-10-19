@@ -1,12 +1,16 @@
 import type { AdditionalDirectory, ProjectKind } from "@kenfutwork/shared";
 
-import type { PersistenceService } from "../persistence/types.js";
+import type {
+  PersistenceService,
+  SqlTransaction,
+} from "../persistence/types.js";
 
 export type ProjectListRow = {
   id: string;
   name: string;
   slug: string;
   kind: ProjectKind;
+  enabled_modes: ProjectKind[];
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -19,6 +23,7 @@ export type ProjectListRow = {
 export type ProjectDetailRow = {
   id: string;
   kind: ProjectKind;
+  enabled_modes: ProjectKind[];
   name: string;
   slug: string;
   description: string | null;
@@ -42,6 +47,7 @@ export type CreatedProjectRow = {
   name: string;
   slug: string;
   kind: ProjectKind;
+  enabled_modes: ProjectKind[];
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -59,6 +65,7 @@ export type CreatedCanvasRow = {
 /** 更新补丁：`undefined` = 不改；显式 `null` = 清空（如解绑品牌套件）。 */
 export type ProjectUpdatePatch = {
   name?: string | undefined;
+  enabledModes?: ProjectKind[];
   brandKitId?: string | null | undefined;
   /** 绑定的本机工作目录；`null` = 解绑（回落沙箱目录）。 */
   workDir?: string | null | undefined;
@@ -76,9 +83,21 @@ export type CreateProjectInput = {
   kind?: ProjectKind;
   /** 已校验的本机工作目录绝对路径（缺省不绑定）。 */
   workDir?: string | undefined;
+  directoryChoice?: "independent";
   createdByClientId: string | null;
   instanceId: string;
 };
+
+export class ProjectDirectoryConflictError extends Error {
+  constructor() {
+    super("此目录已关联项目，请选择复用或独立创建。");
+  }
+}
+
+/** 创建与恢复关联必须争用同一把目录锁；目录已由服务层归一化。 */
+export function projectDirectoryLockKey(instanceId: string, path: string) {
+  return JSON.stringify([instanceId, path]);
+}
 
 /**
  * projects 聚合的数据访问（`projects`/`canvases`）。
@@ -86,17 +105,12 @@ export type CreateProjectInput = {
  * JOIN `projects` 后施加谓词（`FORM-9` 单一隔离入口）。
  */
 export interface ProjectRepository {
-  beginCloseProject(instanceId: string, projectId: string): Promise<void>;
-  beginCloseDesignProject(
-    instanceId: string,
-    projectId: string,
-  ): Promise<string[]>;
-  failCloseDesignProject(instanceId: string, projectId: string): Promise<void>;
-  failCloseProject(instanceId: string, projectId: string): Promise<void>;
-  findActiveCodeDirectory(
+  findDirectoryProjects(
     instanceId: string,
     path: string,
-  ): Promise<{ project: CreatedProjectRow; canvas: null } | null>;
+  ): Promise<ProjectDetailRow[]>;
+  beginCloseProject(instanceId: string, projectId: string): Promise<void>;
+  failCloseProject(instanceId: string, projectId: string): Promise<void>;
   /** 归档（软删）活跃项目；返回受影响行数（0 = 不存在或已归档）。 */
   archive(instanceId: string, projectId: string): Promise<number>;
   /** 建项目 + 主画布，同一事务（原子性不依赖 DB 函数）。 */
@@ -138,48 +152,23 @@ export interface ProjectRepository {
 }
 
 const PROJECT_LIST_COLUMNS =
-  "id, name, slug, kind, description, created_at, updated_at, instance_id, thumbnail_path, work_dir, additional_directories";
+  "id, name, slug, kind, description, created_at, updated_at, instance_id, thumbnail_path, work_dir, additional_directories, enabled_modes";
 const PROJECT_DETAIL_COLUMNS =
-  "id, name, slug, kind, description, instance_id, brand_kit_id, created_at, updated_at, work_dir, additional_directories";
+  "id, name, slug, kind, description, instance_id, brand_kit_id, created_at, updated_at, work_dir, additional_directories, enabled_modes";
 const PROJECT_CREATED_COLUMNS =
-  "id, name, slug, kind, description, created_at, updated_at, instance_id, work_dir, additional_directories";
+  "id, name, slug, kind, description, created_at, updated_at, instance_id, work_dir, additional_directories, enabled_modes";
 
 export function createProjectRepository(
   persistence: PersistenceService,
 ): ProjectRepository {
   return {
-    async beginCloseDesignProject(instanceId, projectId) {
-      return persistence.transaction(async (tx) => {
-        const sql = tx.forInstance(instanceId);
-        const changed = await sql.execute(
-          `update public.projects set archive_state = 'closing'
-           where instance_id=:instance and id=$1 and kind='design' and archived_at is null and archive_state in ('open', 'failed')`,
-          [projectId],
-        );
-        if (!changed) throw new Error("画布项目不可用，关闭未开始。");
-        const tasks = await sql.query<{ task_id: string }>(
-          `update public.design_task_executions set execution_state = 'revoking',
-             scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
-           where instance_id=:instance and project_id=$1 returning task_id`,
-          [projectId],
-        );
-        return tasks.map((task) => task.task_id);
-      });
-    },
-    async failCloseDesignProject(instanceId, projectId) {
-      await persistence.transaction(async (tx) => {
-        const sql = tx.forInstance(instanceId);
-        await sql.execute(
-          `update public.projects set archive_state = 'failed'
-          where instance_id=:instance and id=$1 and kind='design' and archive_state='closing' and archived_at is null`,
-          [projectId],
-        );
-        await sql.execute(
-          `update public.design_task_executions set execution_state = 'failed'
-          where instance_id=:instance and project_id=$1 and execution_state='revoking'`,
-          [projectId],
-        );
-      });
+    async findDirectoryProjects(instanceId, path) {
+      return persistence.forInstance(instanceId).query<ProjectDetailRow>(
+        `select ${PROJECT_DETAIL_COLUMNS} from public.projects
+          where instance_id=:instance and work_dir=$1 and archived_at is null
+          order by created_at,id`,
+        [path],
+      );
     },
     async beginCloseProject(instanceId, projectId) {
       await persistence.forInstance(instanceId).execute(
@@ -196,24 +185,13 @@ export function createProjectRepository(
         [projectId],
       );
     },
-    async findActiveCodeDirectory(instanceId, path) {
-      return persistence
-        .forInstance(instanceId)
-        .queryOne<{ project: CreatedProjectRow; canvas: null }>(
-          `select to_jsonb(p) as project, null::jsonb as canvas
-         from public.projects p
-         where p.instance_id=:instance and p.archived_at is null and p.kind='code' and p.work_dir=$1
-         order by p.created_at asc limit 1`,
-          [path],
-        );
-    },
     async listActive(instanceId, kind = "design") {
       return persistence.forInstance(instanceId).query<ProjectListRow>(
         `select ${PROJECT_LIST_COLUMNS}
            from public.projects
           where instance_id = :instance
             and archived_at is null
-            and kind = $1
+            and $1 = any(enabled_modes)
           order by updated_at desc`,
         [kind],
       );
@@ -229,7 +207,7 @@ export function createProjectRepository(
            from public.canvases c
            join public.projects p on p.id = c.project_id
           where p.instance_id = :instance
-            and c.is_primary = true
+            and c.is_primary = true and c.deleted_at is null
             and c.project_id = any($1::uuid[])`,
         [projectIds],
       );
@@ -284,6 +262,11 @@ export function createProjectRepository(
         assignments.push(`additional_directories = $${values.length}::jsonb`);
       }
 
+      if (patch.enabledModes !== undefined) {
+        values.push(patch.enabledModes);
+        assignments.push(`enabled_modes = $${values.length}::text[]`);
+      }
+
       if (assignments.length === 0) {
         return 0;
       }
@@ -299,13 +282,26 @@ export function createProjectRepository(
     },
 
     async createProject(input) {
-      return persistence.transaction(async (tx) => {
+      const create = async (tx: SqlTransaction) => {
         const scoped = tx.forInstance(input.instanceId);
+
+        if (input.workDir && input.kind !== "flow") {
+          await tx.query(
+            "select pg_advisory_xact_lock(hashtextextended($1,0))",
+            [projectDirectoryLockKey(input.instanceId, input.workDir)],
+          );
+          const existing = await scoped.queryOne<{ id: string }>(
+            "select id from public.projects where instance_id=:instance and work_dir=$1 and archived_at is null limit 1",
+            [input.workDir],
+          );
+          if (existing && input.directoryChoice !== "independent")
+            throw new ProjectDirectoryConflictError();
+        }
 
         const project = await scoped.queryOne<CreatedProjectRow>(
           `insert into public.projects
-                  (id, instance_id, name, slug, kind, description, work_dir, created_by_client_id, additional_directories)
-           values (coalesce($7::uuid, gen_random_uuid()), :instance, $1, $2, $3, $4, $5, $6, $8::jsonb)
+                  (id, instance_id, name, slug, kind, description, work_dir, created_by_client_id, additional_directories, enabled_modes)
+           values (coalesce($7::uuid, gen_random_uuid()), :instance, $1, $2, $3, $4, $5, $6, $8::jsonb, $9::text[])
            returning ${PROJECT_CREATED_COLUMNS}`,
           [
             input.name,
@@ -316,6 +312,7 @@ export function createProjectRepository(
             input.createdByClientId,
             input.id ?? null,
             JSON.stringify(input.additionalDirectories ?? []),
+            [input.kind ?? "design"],
           ],
         );
 
@@ -323,7 +320,7 @@ export function createProjectRepository(
           throw new Error("[projects] 建项目未返回行。");
         }
 
-        if (project.kind === "code") return { canvas: null, project };
+        if (project.kind !== "flow") return { canvas: null, project };
 
         const canvas = await scoped.queryOne<CreatedCanvasRow>(
           // canvases 无 instance_id 列：经 projects 父链施加谓词，
@@ -347,7 +344,14 @@ export function createProjectRepository(
         }
 
         return { canvas, project };
-      });
+      };
+      // 等待目录锁不得占普通查询池；恢复关联需要该池关闭已有 Task 资源。
+      return input.workDir && input.kind !== "flow"
+        ? persistence.withSessionTransaction((tx, signal) => {
+            signal.throwIfAborted();
+            return create(tx);
+          })
+        : persistence.transaction(create);
     },
 
     async setThumbnailPath(instanceId, projectId, thumbnailPath) {
@@ -370,7 +374,7 @@ export function createProjectRepository(
            join public.projects p on p.id = c.project_id
           where p.instance_id = :instance
             and c.id = $1
-            and p.archived_at is null and p.kind <> 'code'`,
+            and p.archived_at is null and ('design' = any(p.enabled_modes) or p.kind = 'flow')`,
         [canvasId],
       );
       return row?.work_dir ?? null;

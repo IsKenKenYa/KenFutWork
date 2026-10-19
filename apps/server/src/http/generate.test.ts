@@ -23,10 +23,18 @@ function buildGenerateApp() {
   const localInstance = createRuntimeTestInstance(ACTOR.instanceId);
   const app = Fastify();
   const jobService = {
+    createJobs: vi.fn(
+      async (_actor: unknown, input: Record<string, unknown>) => {
+        createdJobs.push(input);
+        return [
+          { id: "33333333-3333-4333-8333-333333333333", status: "queued" },
+        ];
+      },
+    ),
     createJob: vi.fn(
       async (_actor: unknown, input: Record<string, unknown>) => {
         createdJobs.push(input);
-        return { id: "job-1" };
+        return { id: "33333333-3333-4333-8333-333333333333", status: "queued" };
       },
     ),
   };
@@ -42,13 +50,64 @@ function buildGenerateApp() {
       }),
     } as never,
     jobService: jobService as never,
-    uploadService: {} as never,
-    usage: { record: async () => {} } as never,
   });
   return { app, createdJobs, jobService, localInstance };
 }
 
 describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染依赖它）", () => {
+  it("图片与视频一样受理为后台Job并返回共享提交结果", async () => {
+    const { app, createdJobs } = buildGenerateApp();
+    vi.stubGlobal("fetch", async () =>
+      Response.json(
+        { error: { message: "测试禁止供应商直连" } },
+        { status: 400 },
+      ),
+    );
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/agent/generate-image",
+        payload: {
+          prompt: "猫",
+          model: "image",
+          providerInstanceId: "11111111-2222-4333-8444-555555555555",
+        },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(response.json()).toMatchObject({
+        jobs: [
+          { job_id: "33333333-3333-4333-8333-333333333333", status: "queued" },
+        ],
+      });
+      expect(createdJobs[0]).toMatchObject({
+        jobType: "image_generation",
+        payload: { prompt: "猫", model: "image" },
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      await app.close();
+    }
+  });
+  it("视频受理传递客户端持久请求标识", async () => {
+    const { app, createdJobs } = buildGenerateApp();
+    const requestId = "aaaaaaaa-1111-4111-8111-111111111111";
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/agent/generate-video",
+        payload: {
+          requestId,
+          prompt: "猫",
+          model: "video",
+          providerInstanceId: "11111111-2222-4333-8444-555555555555",
+        },
+      });
+      expect(response.statusCode).toBe(202);
+      expect(createdJobs[0]).toMatchObject({ requestId });
+    } finally {
+      await app.close();
+    }
+  });
   it("入队失败释放实例准入；准备迁移后拒绝新任务且不再提交", async () => {
     const { app, jobService, localInstance } = buildGenerateApp();
     const payload = {
@@ -95,7 +154,7 @@ describe("直连生成：会话上下文落进 job 行（§4.8 占位符渲染�
       });
 
       expect(response.statusCode).toBe(202);
-      expect(response.json().job_id).toBeTruthy();
+      expect(response.json().jobs[0].job_id).toBeTruthy();
       expect(createdJobs).toHaveLength(1);
       expect(createdJobs[0]?.sessionId).toBe(SESSION_ID);
       expect(createdJobs[0]).toMatchObject({ interactiveRequest: true });

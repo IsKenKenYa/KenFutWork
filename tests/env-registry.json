@@ -1,6 +1,15 @@
 {
   "$comment": "env 名唯一权威机械表。新增/改名 env 先登记这里再使用——scripts/check-env.mjs（pnpm test:env 与 tests/workspace.test.mjs）会扫描全仓引用逐名对表：表外即 fail。surface: server|shell|script|test|build；status: active|test-gate|external|retired；inExamples=true 表示应在 .env.example 出现。第三方既有约定（OPENAI_/GOOGLE_ 等）标 external，允许不出现在 .env.example。",
   "vars": {
+    "KENFUTWORK_MEDIA_JOBS_TEST_PG": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/jobs/media-jobs.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "显式启用媒体Job并发、恢复及取消临时PostgreSQL回归"
+    },
     "KENFUTWORK_GENERATION_FILES_TEST_PG": {
       "surface": "test",
       "readers": [
@@ -14,17 +23,11 @@
     "KENFUTWORK_DESIGN_TASK_TEST_PG": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/canvas/root-directory.integration.test.ts",
-        "apps/server/src/features/checkpoints/design-checkpoints.integration.test.ts",
-        "apps/server/src/features/execution/design-goals-runtime.integration.test.ts",
-        "apps/server/src/features/execution/design-goals.integration.test.ts",
-        "apps/server/src/features/execution/design-model-selection.integration.test.ts",
-        "apps/server/src/features/execution/design-run-host.integration.test.ts",
-        "apps/server/src/features/execution/design-tasks.integration.test.ts"
+        "apps/server/src/features/canvas/root-directory.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
-      "note": "显式启用真实Design Task/RunHost/检查点临时PostgreSQL回归"
+      "note": "显式启用统一Task画布目录临时PostgreSQL回归；旧Design宿主已退役。"
     },
     "KENFUTWORK_PROJECT_FILES_TEST_PG": {
       "surface": "test",
@@ -277,6 +280,15 @@
       "inExamples": true,
       "status": "active",
       "note": "独立kernel/测试的插件目录注入；正式本机入口统一为数据根/plugins"
+    },
+    "RUN_FULL_ACCESS_INTEGRATION": {
+      "surface": "test",
+      "readers": [
+        "apps/server/src/features/execution/full-access.integration.test.ts"
+      ],
+      "inExamples": false,
+      "status": "test-gate",
+      "note": "=1 在真实Unix主机启用账户级完全访问/受限/Plan/角色及降档回收回归；仅临时目录与本机HTTP，无生产读者"
     },
     "RUN_LOCAL_INSTANCE_SCHEMA_INTEGRATION": {
       "surface": "test",

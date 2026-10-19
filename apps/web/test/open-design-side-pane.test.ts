@@ -4,12 +4,21 @@
 import { resolveOpenTabLauncherItemIds } from "@zui/app-shell/animatedSidePanePanelModel";
 import {
   getLocalizedSidePaneTabTitle,
+  getSidePaneTabSearchHint,
+  getSidePaneTabTypeLabel,
   type SidePaneTabPresentationLabels,
 } from "@zui/app-shell/sidePaneTabPresentation";
 import {
+  applyBrowserUseSidePaneEvent,
   getActiveSidePaneTab,
+  getVisibleSidePaneTabs,
+  type OpenDocumentSidePaneRequest,
   openBrowserSidePane,
+  openDocumentSidePane,
   openOpenDesignSidePane,
+  preserveDocumentSidePaneForAutomaticEvent,
+  resolveSidePaneScopeState,
+  stampSidePaneTabsOwnership,
 } from "@zui/lib/workspaceSidePane";
 import { expect, test } from "vitest";
 
@@ -88,4 +97,99 @@ test("open-design tab 有标题分派：不 fallthrough 到 tab.source（browser
   const tab = openOpenDesignSidePane(null).tabs[0];
   if (!tab) throw new Error("openOpenDesignSidePane 未产出 tab");
   expect(getLocalizedSidePaneTabTitle(tab, LABELS)).toBe("OpenDesign");
+});
+
+const CANVAS_REQUEST: OpenDocumentSidePaneRequest & { workspaceKey: string } = {
+  resourceType: "canvas",
+  projectId: "project-a",
+  documentId: "canvas-a",
+  title: "画布 A",
+  workspaceKey: "workspace-a",
+};
+
+test("OpenDesign 与项目画布共存，重复打开和显式切换不丢失画布", () => {
+  const document = openDocumentSidePane(null, CANVAS_REQUEST);
+  const withOpenDesign = openOpenDesignSidePane(document);
+  const reopened = openOpenDesignSidePane(withOpenDesign);
+  expect(reopened.tabs.map((tab) => tab.type)).toEqual([
+    "document",
+    "open-design",
+  ]);
+  expect(getActiveSidePaneTab(reopened)?.type).toBe("open-design");
+  expect(reopened.tabs[0]).toBe(document.tabs[0]);
+
+  const canvas = openDocumentSidePane(reopened, CANVAS_REQUEST);
+  expect(canvas.tabs).toHaveLength(2);
+  expect(canvas.activeTabId).toBe(document.activeTabId);
+  expect(
+    canvas.tabs.map((tab) => getLocalizedSidePaneTabTitle(tab, LABELS)),
+  ).toEqual(["画布 A", "OpenDesign"]);
+  expect(
+    canvas.tabs.map((tab) => getSidePaneTabTypeLabel(tab, LABELS)),
+  ).toEqual(["画布", "OpenDesign"]);
+  expect(canvas.tabs.map(getSidePaneTabSearchHint)).toEqual([
+    "画布 A project-a canvas-a canvas document",
+    "open design canvas prototype page dashboard export",
+  ]);
+});
+
+test("OpenDesign 跨会话可见，项目画布的隔离与当前选中项保持有效", () => {
+  const openDesign = stampSidePaneTabsOwnership(openOpenDesignSidePane(null), {
+    ownerTaskId: "task-a",
+    workspaceKey: "workspace-a",
+  });
+  const document = openDocumentSidePane(openDesign, CANVAS_REQUEST);
+  const scope = {
+    workspaceKey: "workspace-a",
+    projectId: "project-a",
+    ownerTaskId: "task-b",
+  };
+  expect(
+    getVisibleSidePaneTabs(document.tabs, scope).map((tab) => tab.type),
+  ).toEqual(["open-design", "document"]);
+  expect(
+    resolveSidePaneScopeState(document, scope, "open-design").sidePaneState
+      ?.activeTabId,
+  ).toBe(document.activeTabId);
+  expect(
+    getVisibleSidePaneTabs(document.tabs, {
+      ...scope,
+      projectId: "project-b",
+    }).map((tab) => tab.type),
+  ).toEqual(["open-design"]);
+  expect(
+    getVisibleSidePaneTabs(document.tabs, {
+      ...scope,
+      workspaceKey: "workspace-b",
+    }),
+  ).toEqual([]);
+});
+
+test("同时保留 OpenDesign 时，浏览器自动事件仍不抢占当前画布", () => {
+  const document = openDocumentSidePane(
+    openOpenDesignSidePane(null),
+    CANVAS_REQUEST,
+  );
+  const browser = applyBrowserUseSidePaneEvent(
+    document,
+    { workspaceKey: "workspace-a", sessionId: "task-a", tabId: "browser-a" },
+    { workspaceKey: "workspace-a", ownerTaskId: "task-a" },
+  );
+  const preserved = preserveDocumentSidePaneForAutomaticEvent(
+    document,
+    browser.state,
+    {
+      projectId: "project-a",
+      workspaceKey: "workspace-a",
+    },
+  );
+  expect(preserved?.activeTabId).toBe(document.activeTabId);
+  expect(preserved?.tabs.map((tab) => tab.type)).toEqual([
+    "open-design",
+    "document",
+    "browser-use",
+  ]);
+  expect(getActiveSidePaneTab(openOpenDesignSidePane(preserved))?.type).toBe(
+    "open-design",
+  );
 });

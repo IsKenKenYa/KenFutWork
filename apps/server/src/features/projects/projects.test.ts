@@ -30,6 +30,8 @@ import {
 import {
   type CreateProjectInput,
   createProjectRepository,
+  type ProjectDetailRow,
+  ProjectDirectoryConflictError,
   type ProjectUpdatePatch,
 } from "./repository.js";
 
@@ -103,6 +105,86 @@ const LOCAL_INSTANCE = createLocalInstanceService({
 });
 
 describe("projects repository（SQL 与隔离谓词）", () => {
+  it("已有目录拒绝未确认的创建，独立创建使用池外事务保留各自项目", async () => {
+    const { runner } = createRunner((text) => ({
+      rowCount: 1,
+      rows: text.includes("select id from public.projects")
+        ? [{ id: "existing" }]
+        : text.includes("insert into public.projects")
+          ? [
+              {
+                id: PROJECT_ID,
+                kind: "code",
+                enabled_modes: ["code"],
+                work_dir: "/shared",
+              },
+            ]
+          : [],
+    }));
+    // 普通查询池即使忙碌，等待目录锁的创建也不能占用它。
+    runner.acquire = vi.fn(async () => {
+      throw new Error("普通池已满");
+    });
+    const repository = createProjectRepository(
+      createPersistenceFromRunner(runner),
+    );
+    const input = {
+      instanceId: INSTANCE_ID,
+      createdByClientId: CLIENT_ID,
+      name: "独立项目",
+      slug: "independent",
+      kind: "code" as const,
+      workDir: "/shared",
+      description: null,
+      canvasName: "unused",
+    };
+    await expect(repository.createProject(input)).rejects.toBeInstanceOf(
+      ProjectDirectoryConflictError,
+    );
+    expect(
+      (
+        await repository.createProject({
+          ...input,
+          directoryChoice: "independent",
+        })
+      ).project,
+    ).toMatchObject({ id: PROJECT_ID, kind: "code", work_dir: "/shared" });
+    expect(runner.acquire).not.toHaveBeenCalled();
+  });
+  it("按已启用工作方式取项目，不按默认方式排除显式共享项目", async () => {
+    const { calls, runner } = createRunner();
+    await createProjectRepository(
+      createPersistenceFromRunner(runner),
+    ).listActive(INSTANCE_ID, "code");
+    expect(dataCalls(calls)[0]?.sql).toContain("$1 = any(enabled_modes)");
+  });
+
+  it("新建 Design 项目不创建画布；项目资源按需求独立创建", async () => {
+    const { calls, runner } = createRunner((text) => ({
+      rowCount: 1,
+      rows: text.includes("insert into public.projects")
+        ? [{ id: PROJECT_ID, kind: "design", enabled_modes: ["design"] }]
+        : [{ id: "unexpected-canvas" }],
+    }));
+    const result = await createProjectRepository(
+      createPersistenceFromRunner(runner),
+    ).createProject({
+      kind: "design",
+      name: "创作",
+      slug: "design-project",
+      description: null,
+      canvasName: "Main Canvas",
+      createdByClientId: CLIENT_ID,
+      instanceId: INSTANCE_ID,
+    });
+    expect(result.canvas).toBeNull();
+    expect(
+      dataCalls(calls).some((call) =>
+        call.sql.includes("insert into public.canvases"),
+      ),
+    ).toBe(false);
+  });
+
   it("列表按实例作用域 + 未归档 + updated_at 倒序", async () => {
     const { calls, runner } = createRunner();
     await createProjectRepository(
@@ -112,7 +194,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     const [call] = dataCalls(calls);
     expect(call?.sql).toContain("from public.projects");
     // kind 决定取哪一类项目（design=画布 / code=工作目录）
-    expect(call?.sql).toContain("kind = $1");
+    expect(call?.sql).toContain("$1 = any(enabled_modes)");
     // :instance 由缝追加为末位参数
     expect(call?.sql).toContain("where instance_id = $2");
     expect(call?.sql).toContain("and archived_at is null");
@@ -133,7 +215,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
 
     const [call] = dataCalls(calls);
     expect(call?.values).toEqual(["code", INSTANCE_ID]);
-    expect(call?.sql).toContain("kind = $1");
+    expect(call?.sql).toContain("$1 = any(enabled_modes)");
   });
 
   it("建 code 类项目时 kind 随参数落库（不落 design）", async () => {
@@ -145,6 +227,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
             {
               id: PROJECT_ID,
               kind: "code",
+              enabled_modes: ["code"],
               name: "kenfutwork",
               slug: "kenfutwork-ab12cd",
               description: null,
@@ -186,6 +269,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
       CLIENT_ID,
       null,
       "[]",
+      ["code"],
       INSTANCE_ID,
     ]);
     expect(created.project.kind).toBe("code");
@@ -275,7 +359,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("建项目 + 主画布在同一事务内，且建项目带实例谓词", async () => {
+  it("Flow 项目与主画布在同一事务内，且建项目带实例谓词", async () => {
     const { calls, runner } = createRunner((text) => {
       if (text.includes("insert into public.projects")) {
         return {
@@ -283,6 +367,8 @@ describe("projects repository（SQL 与隔离谓词）", () => {
           rows: [
             {
               id: PROJECT_ID,
+              kind: "flow",
+              enabled_modes: ["flow"],
               name: "新项目",
               slug: "xin-xiangmu-ab12cd",
               description: null,
@@ -306,6 +392,7 @@ describe("projects repository（SQL 与隔离谓词）", () => {
       createPersistenceFromRunner(runner),
     ).createProject({
       canvasName: "Main Canvas",
+      kind: "flow",
       description: null,
       name: "新项目",
       slug: "xin-xiangmu-ab12cd",
@@ -328,12 +415,13 @@ describe("projects repository（SQL 与隔离谓词）", () => {
     expect(projectInsert?.values).toEqual([
       "新项目",
       "xin-xiangmu-ab12cd",
-      "design",
+      "flow",
       null,
       null,
       CLIENT_ID,
       null,
       "[]",
+      ["flow"],
       INSTANCE_ID,
     ]);
     expect(canvasInsert?.sql).toContain("insert into public.canvases");
@@ -417,6 +505,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             name: "项目",
             slug: "xiangmu",
             kind: "design",
+            enabled_modes: ["design"],
             description: "描述",
             created_at: "2026-09-13T00:00:00+00:00",
             updated_at: "2026-09-13T01:00:00+00:00",
@@ -443,6 +532,7 @@ describe("project service（错误映射与行为保持不变）", () => {
         description: "描述",
         id: PROJECT_ID,
         kind: "design",
+        enabledModes: ["design"],
         name: "项目",
         primaryCanvas: {
           id: "canvas-1",
@@ -458,7 +548,7 @@ describe("project service（错误映射与行为保持不变）", () => {
     ]);
   });
 
-  it("项目缺主画布时按 project_query_failed 报错（保持历史行为）", async () => {
+  it("Design 项目没有画布时仍可列出，画布按需求创建", async () => {
     const service = buildService({
       repository: {
         listActive: async () => [
@@ -467,6 +557,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             name: "项目",
             slug: "xiangmu",
             kind: "design",
+            enabled_modes: ["design"],
             description: null,
             created_at: "2026-09-13T00:00:00+00:00",
             updated_at: "2026-09-13T00:00:00+00:00",
@@ -480,12 +571,50 @@ describe("project service（错误映射与行为保持不变）", () => {
       },
     });
 
-    const error = await service.listProjects(ACTOR).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ProjectServiceError);
-    expect(error).toMatchObject({
-      code: "project_query_failed",
-      statusCode: 500,
+    const projects = await service.listProjects(ACTOR);
+    expect(projects).toHaveLength(1);
+    expect(projects[0]).toMatchObject({ id: PROJECT_ID, kind: "design" });
+    expect(projects[0]).not.toHaveProperty("primaryCanvas");
+  });
+
+  it("显式启用第二种工作方式保留同一项目，不能移除默认方式", async () => {
+    const row: ProjectDetailRow = {
+      id: PROJECT_ID,
+      kind: "code",
+      enabled_modes: ["code"],
+      name: "共享项目",
+      slug: "shared-project",
+      description: null,
+      instance_id: INSTANCE_ID,
+      brand_kit_id: null,
+      created_at: "2026-10-14T00:00:00.000Z",
+      updated_at: "2026-10-14T00:00:00.000Z",
+      work_dir: "/project",
+      additional_directories: [],
+    };
+    const service = buildService({
+      repository: {
+        findActiveById: async () => row,
+        update: async (_instance, _project, patch) => {
+          if (patch.enabledModes) row.enabled_modes = patch.enabledModes;
+          return 1;
+        },
+      },
     });
+    await service.updateProject(ACTOR, PROJECT_ID, {
+      enabled_modes: ["code", "design"],
+    });
+    expect(await service.getProject(ACTOR, PROJECT_ID)).toMatchObject({
+      id: PROJECT_ID,
+      enabled_modes: ["code", "design"],
+      work_dir: "/project",
+    });
+    await expect(
+      service.updateProject(ACTOR, PROJECT_ID, {
+        enabled_modes: ["design"],
+      }),
+    ).rejects.toMatchObject({ code: "invalid_project_modes", statusCode: 400 });
+    expect(row.enabled_modes).toEqual(["code", "design"]);
   });
 
   it("slug 唯一冲突映射为 409 project_slug_taken", async () => {
@@ -599,6 +728,7 @@ describe("project service（错误映射与行为保持不变）", () => {
           description: null,
           instance_id: INSTANCE_ID,
           kind: "design",
+          enabled_modes: ["design"],
           brand_kit_id: null,
           work_dir: null,
           additional_directories: [],
@@ -630,6 +760,7 @@ describe("project service（错误映射与行为保持不变）", () => {
           description: null,
           instance_id: INSTANCE_ID,
           kind: "design",
+          enabled_modes: ["design"],
           brand_kit_id: null,
           work_dir: null,
           additional_directories: [],
@@ -663,10 +794,11 @@ describe("project service（错误映射与行为保持不变）", () => {
         createProject: async (input) => {
           captured = input;
           return {
-            canvas: { id: "canvas-1", name: "Main Canvas", is_primary: true },
+            canvas: null,
             project: {
               id: PROJECT_ID,
               kind: "code",
+              enabled_modes: ["code"],
               name: input.name,
               slug: input.slug,
               description: null,
@@ -711,6 +843,7 @@ describe("project service（错误映射与行为保持不变）", () => {
             project: {
               id: input.id ?? PROJECT_ID,
               kind: input.kind ?? "design",
+              enabled_modes: [input.kind ?? "design"],
               name: input.name,
               slug: input.slug,
               description: null,
@@ -794,6 +927,7 @@ describe("project service（错误映射与行为保持不变）", () => {
           id: PROJECT_ID,
           instance_id: INSTANCE_ID,
           kind: "design",
+          enabled_modes: ["design"],
           name: "Project",
           slug: "project",
           description: null,
@@ -886,8 +1020,11 @@ it.each(["settled", "work-close-failed"] as const)(
         trace.push("archive");
         return { rowCount: 1, rows: [] };
       }
-      if (text.includes("design_task_executions"))
-        return { rowCount: 1, rows: [{ task_id: taskId, id: taskId }] };
+      if (text.includes("from public.code_ui_sessions"))
+        return {
+          rowCount: 1,
+          rows: [{ id: taskId, project_id: PROJECT_ID, deleted_at: null }],
+        };
       if (text.includes("from public.projects"))
         return {
           rowCount: 1,
@@ -896,6 +1033,7 @@ it.each(["settled", "work-close-failed"] as const)(
               id: PROJECT_ID,
               instance_id: INSTANCE_ID,
               kind: "design",
+              enabled_modes: ["design"],
               name: "Design",
               slug: "design",
               description: null,
@@ -926,7 +1064,7 @@ it.each(["settled", "work-close-failed"] as const)(
         _reason: string,
         ownerKind: "code" | "design",
       ) => {
-        expect(ownerKind).toBe("design");
+        expect(ownerKind).toBe("code");
         expect([instanceId, closingTaskId]).toEqual([INSTANCE_ID, taskId]);
         trace.push("work-close");
         await work;
@@ -950,8 +1088,10 @@ it.each(["settled", "work-close-failed"] as const)(
           persistence: createPersistenceFromRunner(runner),
           localInstance: LOCAL_INSTANCE,
           blob: {} as never,
-          designRunHost: { stop } as never,
-          agentRuns: { cancelTaskRuns: async () => foreground } as never,
+          agentRuns: {
+            cancelTaskRuns: (closingTaskId: string) =>
+              stop(ACTOR, { taskId: closingTaskId }),
+          } as never,
           taskWork: { closeTask: closeWork } as never,
           processSandbox: { closeTask: closeProcess } as never,
         },
@@ -1015,7 +1155,7 @@ it.each(["settled", "work-close-failed"] as const)(
 it("Design resource closer waits for actual TaskWork exit and preserves a Code sibling", async () => {
   const design: TaskWorkContext = {
     actor: ACTOR,
-    ownerKind: "design",
+    ownerKind: "code",
     agentId: "main",
     runId: "design-run",
     branchGeneration: 1,
@@ -1069,6 +1209,8 @@ it("Design resource closer waits for actual TaskWork exit and preserves a Code s
     { kind: "command", label: "Code sibling", toolCallId: "code-bash" },
     { run: () => codeResult, stop: stopCode },
   );
+  expect(designRecord.ownerKind).toBe("code");
+  expect(codeRecord.ownerKind).toBe("code");
   const sandboxClose = vi.fn(async () => {});
   const closer = createTaskResourceCloser({
     localInstance: LOCAL_INSTANCE,
@@ -1080,7 +1222,7 @@ it("Design resource closer waits for actual TaskWork exit and preserves a Code s
     }),
   });
   let settled = false;
-  const closing = closer(ACTOR, design.scope.taskId, "项目已关闭", "design");
+  const closing = closer(ACTOR, design.scope.taskId, "项目已关闭");
   void closing.then(() => {
     settled = true;
   });

@@ -3,6 +3,7 @@
 > 角色：**方案稿 + 执行手册 + 施工回执 + 临时交接**（四合一，按「为什么这么做 → 怎么施工 → 已做了什么 → 现在接到哪」的顺序成章）。
 > 唯一源码基线：ZCode 3.14.3 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；逐文件来源、校验和与宿主适配偏差由 [`packages/third-party/zcode/来源清单.json`](../../packages/third-party/zcode/来源清单.json) 单处持有。
 > Code 的工作域、工具与权限契约见 [《Code工作域与工具内核实施规格》](./Code工作域与工具内核实施规格.md)；服务 key 与扩展点仍由 [《改造计划》](./改造计划.md) 持有；落轮次与回执记 [《日志》](../日志.md)。
+> 当前口径：下文施工与交接正文按当时检查点保留，其中「实施中」「active」「待验」、独立 Design 壳及旧身份/凭据描述不作为当前状态。Code/Design 的共享会话、持久 Task、内容标签及 2026-10-16 本轮完成状态，以《Code工作域与工具内核实施规格》「Code/Design 统一实施」和《日志》「Code/Design 统一工作台本轮最终验收（2026-10-16）」为准；本篇历史回执不覆盖现行产品不变量。
 
 ---
 
@@ -209,6 +210,8 @@ file.ensureConversationWorkspace 按真实 Workspace 身份在配置的 sandboxR
 
 自带目录统一采用原安装器的ID规范化，包括scoped npm名称。原overview与安装记录按同一稳定id关联，资产、恢复与启用不另猜身份；公开scoped包目录installed:true、重启路由和启用均通过。与自带同名同id的URL来源包仍被策略阻止，不以目录命中替代真实source。
 
+
+BYOK 零供应商空态已补齐：supportsCloudAccounts:false 关闭云账号后 presetProviders 恒空、preset 分组整组移除，零自定义供应商时导航项为零，原 Detail 的 !selectedNavItem 分支（上游仅作加载期兜底，上游稳态必有预置项）把合法稳态渲染成永久加载占位。现 ModelProviderSection 在非加载且导航为空时改渲染 EmptyState 引导卡（「还没有供应商」+「添加供应商」，复用原 ProviderTemplatePicker），加载期原加载卡语义保留。源码偏差登记：ModelProviderSection.tsx（空态分支接线）与 zh-CN/en-US locale（新增 settings.modelProvider.emptyTitle），清单哈希同变更更新，漂移 0。
 
 ---
 

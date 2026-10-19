@@ -1,6 +1,5 @@
-import { createHash, randomUUID } from "node:crypto";
-import { realpath } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
 import type {
   AdditionalDirectory,
   ProjectCreateRequest,
@@ -8,6 +7,7 @@ import type {
   ProjectSummary,
   ProjectUpdateRequest,
 } from "@kenfutwork/shared";
+import { projectModesSchema } from "@kenfutwork/shared";
 import type { BlobStore } from "../blob/types.js";
 import type {
   LocalActor,
@@ -19,6 +19,7 @@ import type {
   ProjectRepository,
   ProjectUpdatePatch,
 } from "./repository.js";
+import { ProjectDirectoryConflictError } from "./repository.js";
 import {
   normalizeAdditionalDirectories,
   resolveProjectWorkDirectory,
@@ -40,10 +41,15 @@ type ProjectErrorCode =
   | "project_not_found"
   | "project_query_failed"
   | "project_slug_taken"
-  | "project_update_failed";
+  | "project_update_failed"
+  | "invalid_project_modes"
+  | "project_directory_conflict";
 
 export type ProjectService = {
-  openCodeDirectory(actor: LocalActor, path: string): Promise<ProjectSummary>;
+  directoryProjects(
+    actor: LocalActor,
+    path: string,
+  ): Promise<ProjectDetailRow[]>;
   archiveProject(actor: LocalActor, projectId: string): Promise<void>;
   createProject(
     actor: LocalActor,
@@ -86,11 +92,6 @@ export function createProjectService(options: {
   repository: ProjectRepository;
   localInstance: LocalInstanceService;
   sandboxRoot?: string | undefined;
-  beforeArchiveDesignProject?: (
-    actor: LocalActor,
-    projectId: string,
-    taskIds: string[],
-  ) => Promise<void>;
   beforeArchiveCodeProject?: (
     actor: LocalActor,
     projectId: string,
@@ -99,59 +100,12 @@ export function createProjectService(options: {
   const { repository, localInstance } = options;
 
   return {
-    async openCodeDirectory(actor, path) {
+    async directoryProjects(actor, path) {
       const context = await localInstance.resolve(actor);
-      const workDir = await realpath(requireWorkDir(path)).catch((error) => {
-        throw new ProjectServiceError(
-          "invalid_work_dir",
-          `工作目录不可用：${error instanceof Error ? error.message : String(error)}`,
-          400,
-        );
-      });
-      const existing = await repository.findActiveCodeDirectory(
-        context.instanceId,
-        workDir,
-      );
-      if (existing)
-        return mapProjectSummary({
-          ...existing,
-          instanceId: context.instanceId,
-        });
-      try {
-        const created = await repository.createProject({
-          canvasName: "Main Canvas",
-          description: null,
-          kind: "code",
-          name: basename(workDir) || workDir,
-          slug: `code-directory-${createHash("sha256").update(workDir).digest("hex")}`,
-          workDir,
-          createdByClientId: actor.accessClientId,
-          instanceId: context.instanceId,
-        });
-        return mapProjectSummary({
-          canvas: created.canvas,
-          project: created.project,
-          instanceId: context.instanceId,
-        });
-      } catch (error) {
-        if ((error as { code?: string })?.code === SQLSTATE_UNIQUE_VIOLATION) {
-          const concurrent = await repository.findActiveCodeDirectory(
-            context.instanceId,
-            workDir,
-          );
-          if (concurrent)
-            return mapProjectSummary({
-              ...concurrent,
-              instanceId: context.instanceId,
-            });
-          throw new ProjectServiceError(
-            "project_slug_taken",
-            "工作目录对应的项目已归档，无法重新打开。",
-            409,
-          );
-        }
-        throw mapProjectCreateError(error);
-      }
+      const verdict = validateWorkDir(path);
+      if (!verdict.ok)
+        throw new ProjectServiceError("invalid_work_dir", verdict.reason, 400);
+      return repository.findDirectoryProjects(context.instanceId, verdict.path);
     },
     async archiveProject(actor, projectId) {
       const context = await localInstance.resolve(actor);
@@ -165,7 +119,7 @@ export function createProjectService(options: {
           PROJECT_NOT_FOUND_MESSAGE,
           404,
         );
-      if (project.kind === "code") {
+      if (project.kind !== "flow") {
         if (!options.beforeArchiveCodeProject)
           throw new ProjectServiceError(
             "project_delete_failed",
@@ -182,41 +136,6 @@ export function createProjectService(options: {
             error instanceof Error
               ? error.message
               : "Code 执行资源尚未确认关闭。",
-            503,
-          );
-        }
-      }
-
-      if (project.kind === "design") {
-        if (!options.beforeArchiveDesignProject)
-          throw new ProjectServiceError(
-            "project_delete_failed",
-            "画布任务关闭器不可用，项目未归档。",
-            503,
-          );
-        let taskIds: string[];
-        try {
-          taskIds = await repository.beginCloseDesignProject(
-            context.instanceId,
-            projectId,
-          );
-        } catch (error) {
-          throw new ProjectServiceError(
-            "project_delete_failed",
-            error instanceof Error ? error.message : "画布项目关闭未开始。",
-            503,
-          );
-        }
-        try {
-          await options.beforeArchiveDesignProject(actor, projectId, taskIds);
-        } catch (error) {
-          await repository.failCloseDesignProject(
-            context.instanceId,
-            projectId,
-          );
-          throw new ProjectServiceError(
-            "project_delete_failed",
-            error instanceof Error ? error.message : "画布任务尚未确认关闭。",
             503,
           );
         }
@@ -289,6 +208,9 @@ export function createProjectService(options: {
         .createProject({
           id: projectId,
           additionalDirectories,
+          ...(input.directory_choice
+            ? { directoryChoice: input.directory_choice }
+            : {}),
           canvasName: "Main Canvas",
           description: normalizeDescription(input.description),
           // 缺省 design：存量调用方（Design 建项目）语义不变
@@ -328,26 +250,6 @@ export function createProjectService(options: {
         return [];
       }
 
-      if (kind === "code") {
-        return Promise.all(
-          projects.map(async (project) =>
-            mapProjectSummary({
-              project: {
-                ...project,
-                work_dir:
-                  project.work_dir ??
-                  resolve(
-                    options.sandboxRoot ?? join(context.dataDir, "sandbox"),
-                    context.instanceId,
-                    project.id,
-                  ),
-              },
-              instanceId: context.instanceId,
-            }),
-          ),
-        );
-      }
-
       const canvases = await repository
         .listPrimaryCanvases(
           context.instanceId,
@@ -365,7 +267,8 @@ export function createProjectService(options: {
         canvases.map((canvas) => [canvas.project_id, canvas]),
       );
       const projectIdsMissingCanvas = projects.filter(
-        (project) => !primaryCanvasByProjectId.has(project.id),
+        (project) =>
+          project.kind === "flow" && !primaryCanvasByProjectId.has(project.id),
       );
 
       if (projectIdsMissingCanvas.length > 0) {
@@ -384,11 +287,7 @@ export function createProjectService(options: {
       return projects.map((project) =>
         mapProjectSummary({
           // 上面的缺失检查保证存在；此处断言避免在每个 map 里再抛一次。
-          canvas: primaryCanvasByProjectId.get(project.id) as {
-            id: string;
-            is_primary: boolean;
-            name: string;
-          },
+          canvas: primaryCanvasByProjectId.get(project.id) ?? null,
           project,
           thumbnailUrl: thumbnailUrls.get(project.id) ?? null,
           instanceId: context.instanceId,
@@ -448,6 +347,26 @@ export function createProjectService(options: {
     async updateProject(actor, projectId, input) {
       const context = await localInstance.resolve(actor);
       const patch: ProjectUpdatePatch = {};
+      if (input.enabled_modes !== undefined) {
+        const current = await repository.findActiveById(
+          context.instanceId,
+          projectId,
+        );
+        if (!current)
+          throw new ProjectServiceError(
+            "project_not_found",
+            PROJECT_NOT_FOUND_MESSAGE,
+            404,
+          );
+        const modes = projectModesSchema.parse(input.enabled_modes);
+        if (!modes.includes(current.kind))
+          throw new ProjectServiceError(
+            "invalid_project_modes",
+            "默认工作方式必须保留。",
+            400,
+          );
+        patch.enabledModes = modes;
+      }
       if (input.brand_kit_id !== undefined) {
         patch.brandKitId = input.brand_kit_id;
       }
@@ -491,7 +410,8 @@ export function createProjectService(options: {
         patch.name === undefined &&
         patch.brandKitId === undefined &&
         patch.workDir === undefined &&
-        patch.additionalDirectories === undefined
+        patch.additionalDirectories === undefined &&
+        patch.enabledModes === undefined
       ) {
         return;
       }
@@ -544,6 +464,12 @@ function requireAdditionalDirectories(
 }
 
 function mapProjectCreateError(error: unknown) {
+  if (error instanceof ProjectDirectoryConflictError)
+    return new ProjectServiceError(
+      "project_directory_conflict",
+      error.message,
+      409,
+    );
   if (
     error instanceof Error &&
     "code" in error &&
@@ -574,6 +500,7 @@ function mapProjectSummary(options: {
     description: string | null;
     id: string;
     kind: ProjectKind;
+    enabled_modes: ProjectKind[];
     name: string;
     slug: string;
     updated_at: string;
@@ -588,6 +515,7 @@ function mapProjectSummary(options: {
     description: options.project.description,
     id: options.project.id,
     name: options.project.name,
+    enabledModes: options.project.enabled_modes,
     slug: options.project.slug,
     // 显式 null 也回传：界面要能区分「未绑定」与「字段缺省」（列表里显示绑定状态）
     workDir: options.project.work_dir ?? null,
@@ -596,29 +524,39 @@ function mapProjectSummary(options: {
     updatedAt: options.project.updated_at,
     instanceId: options.instanceId,
   };
+  const primaryCanvas = options.canvas && {
+    id: options.canvas.id,
+    isPrimary: options.canvas.is_primary,
+    name: options.canvas.name,
+  };
   if (options.project.kind === "code") {
-    if (!options.project.work_dir)
+    const workDir = options.project.work_dir;
+    if (!workDir)
       throw new ProjectServiceError(
         "invalid_work_dir",
-        "Code 项目缺少主工作目录。",
+        "项目缺少主工作目录。",
         500,
       );
-    return { ...base, kind: "code", workDir: options.project.work_dir };
+    return {
+      ...base,
+      kind: "code",
+      workDir,
+      ...(primaryCanvas ? { primaryCanvas } : {}),
+    };
   }
-  if (!options.canvas)
-    throw new ProjectServiceError(
-      "project_query_failed",
-      "画布项目缺少主画布。",
-      500,
-    );
+  if (options.project.kind === "flow") {
+    if (!primaryCanvas)
+      throw new ProjectServiceError(
+        "project_query_failed",
+        "工作流项目缺少主画布。",
+        500,
+      );
+    return { ...base, kind: "flow", primaryCanvas };
+  }
   return {
     ...base,
-    kind: options.project.kind,
-    primaryCanvas: {
-      id: options.canvas.id,
-      isPrimary: options.canvas.is_primary,
-      name: options.canvas.name,
-    },
+    kind: "design",
+    ...(primaryCanvas ? { primaryCanvas } : {}),
   };
 }
 

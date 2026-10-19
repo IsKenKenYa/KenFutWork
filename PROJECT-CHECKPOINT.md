@@ -35,12 +35,12 @@
 |---|---|---|---|---|
 | U1 | 未做需求#1 沙箱 broker Windows 派生缺陷 | P0 | **CLOSED（环境条件转移）** | 引号 cc0764fe + stop_unconfirmed c5dcc32e + generation 修；**本轮再修两条真实打包缺陷**（`isPackagedRuntime` 改 `isSea()`；发布 helper 依赖打包 + fail-loud 自检；影子仓库短布局三处对齐）；新 Code 壳终端实测可用（`echo KFWT` 回显）；剩余 service.test 8 红全为已登记 PSEC 环境族（本机 26340 insider transitional）→ 验收口径转「换 PSEC 正常机器复跑全绿」 |
 | U2 | 未做需求#2 格式基线轮 | P2 | DONE | 历史收口 2026-10-09 |
-| U3 | 未做需求#3 WSL2 真机验收 | P1 | **DONE** | `wsl --import kfw-ubuntu`（noble-wsl-amd64.wsl，sha256 与官方 SHA256SUMS 逐字符一致）+ docker.io/compose-v2；8 镜像经宿主 `docker save`→`docker load`；`docker ps` **9/9 Up（api healthy）**；停止并保留数据 → 容器清零、6 卷保留、distro Stopped；见《日志》一百八十一 |
+| U3 | 未做需求#3 WSL2 真机验收 | P1 | **DONE** | `wsl --import kfw-ubuntu`（noble-wsl-amd64.wsl，sha256 与官方 SHA256SUMS 逐字符一致）+ docker.io/compose-v2；8 镜像经宿主 `docker save`→`docker load`；`docker ps` **9/9 Up（api healthy）**；停止并保留数据 → 容器清零、6 卷保留、distro Stopped；见《日志》一百八十七 |
 | U4 | 未做需求#4 桌面端 GUI 走查 | P1 | **DONE** | 卸载核验（`/S`：主程序 + 17,959/17,980 项清除、`KENFUTWORK_HOME` 清空、HKLM 卸载项 0 条、应用数据保留；残留 11 个 `app\web\_next` 跨版本文件已手工清）+ 新包重装（19,211 文件、runtime 五项、HKLM `0.1.3`）+ 冒烟（3001 监听、工作台渲染、BYOK 随数据目录存活、无凭据 401）；市场点装内置插件见 2026-10-12 轮 |
 | U5 | 未做需求#5 Design 语音点击 | P2 | DONE | 历史收口 2026-10-10 |
 | U6 | 未做需求#6 语音离线「想」档真机 | P2 | **DONE** | `llamafile.integration.test.ts` 真机 1/1（3.9s）+ 读数回填《语音助手插件规划》§3.2 |
 | U7 | 未做需求#7 Apifox 契约同步 | P1 | **DONE** | AI 分支导入 169 端点 + 幂等验收（§一百七十九）；用户 2026-10-13 确认已合并回 main |
-| U8 | 未做需求#8 HA 插件本体 | P1 | **代码 DONE / 真机待用户侧** | 用户 2026-10-18 口径解冻；P1–P4 落地为自带 bundle `plugins/ha/`（REST+WS+面板+`ha_entities`/`ha_control`，49 条假 HA 测试，台账《日志》二百二十四）。原 2026-10-13「不在当前融合范围内」的暂缓理由已被推翻。遗留：docker HA 真机走查与面板看图（需用户起 HA 并登录米家/华为账号） |
+| U8 | 未做需求#8 HA 插件本体 | P1 | **代码 DONE / 真机待用户侧** | 用户 2026-10-18 口径解冻；P1–P4 落地为自带 bundle `plugins/ha/`（REST+WS+面板+`ha_entities`/`ha_control`，49 条假 HA 测试，台账《日志》「HA 插件本体落地」）。原 2026-10-13「不在当前融合范围内」的暂缓理由已被推翻。遗留：docker HA 真机走查与面板看图（需用户起 HA 并登录米家/华为账号） |
 | U9 | 未做需求#9 Work/OpenDesign 规划 | P2 | 暂缓 | 用户 2026-10-13 口径：不在当前融合范围内 |
 | U10 | 未做需求#10 flow P7 + 上游 MIT LICENSE | P2 | **LICENSE DONE / P7 待上游** | 上游 MIT LICENSE 推送 `future73807/futureFlow@cc10b0b` + 主仓指针跟进（2026-10-14 工作区曾回退到 `cc10b0b8`，已 `git submodule update flow` 复原到记录值 `d6c6af79`）；P7 评估稿已退役（**结论保留**：四条触发条件 3 条不满足，#3 验收后条件②转「部分满足」；评估内容见《日志》一百七十六，退役记账见一百八十九） |
 | U11 | 未做需求#11 语言回写竞态 | P1 | DONE | 60c9f06d + 回归测试 |
@@ -102,7 +102,7 @@
 ## IMPORTANT FILES
 
 - 台账：**已退役**（`docs/未做需求.md` 2026-10-13 全表清空后删除）；规划侧 `docs/方案设计/工作台融合兼容计划.md`
-- 日志：`docs/日志.md`（§一百八十 上半场、**§一百八十一 终章**）
+- 日志：`docs/日志.md`（§一百八十六 上半场、**§一百八十七 终章**）
 - E2E 脚手架：`tmp/e2e/`（lib.mjs / walk-*.mjs / feature-*.mjs / probe-*.mjs；tmp/ 不入库）
 - 交付工程：`D:\Desktop\test\kfw-e2e`（wordstats 包 + pytest + FastMCP MCP 服务器 + SKILL.md）
 
@@ -137,11 +137,11 @@
 | SKILLPUB | 技能发布（创造路径） | **DONE** | `/api/skills` 落库 `kfw-wordstats` |
 | SEARCH | 联网搜索 | **DONE（工具可用）** | 多轮真实 `web_search` 返回真实来源；模型如实报出代理的上游退化与 5002 |
 | RUN-AUTO | 自主档真实 run | **DONE** | `kfw-probe.txt` 落盘 + `type` 读回退出码 0 |
-| MODE6 | 六档执行模式端到端 | **DONE（五档实测 + 循环设计退役）** | 方法：暖场建会话→点 `[data-testid="execution-mode-chip"]`→取证 `chat_sessions.execution_mode`。结果：`对话=solo`（答 1024）、`计划=plan`（计划门；Bash 已改真执行——只读兜底从 OS 级移到内核层 + 逐次审批，见《日志》§一百八十六）、`目标=goal`（标准+差距）、`自主=agent`（落盘并读回）、`创造=creative`（技能 `mode-creative-demo` 落库）；`循环` 不在 `/api/execution-modes`（`RetiredExecutionModeError`，设计退役） |
+| MODE6 | 六档执行模式端到端 | **DONE（五档实测 + 循环设计退役）** | 方法：暖场建会话→点 `[data-testid="execution-mode-chip"]`→取证 `chat_sessions.execution_mode`。结果：`对话=solo`（答 1024）、`计划=plan`（计划门；Bash 已改真执行——只读兜底从 OS 级移到内核层 + 逐次审批，见《日志》§一百九十二）、`目标=goal`（标准+差距）、`自主=agent`（落盘并读回）、`创造=creative`（技能 `mode-creative-demo` 落库）；`循环` 不在 `/api/execution-modes`（`RetiredExecutionModeError`，设计退役） |
 | MCPREG | MCP 注册/发现（`install_mcp_server` → ToolSearch → 调用） | **DONE** | Task 绑到脚本所在目录后三步一次跑通：install（connected、PYTHONPATH 生效）→ `list_mcp_servers`（列出 kfwstats + 两工具）→ ToolSearch 发现 → 真实调用 `word_stats`（total_tokens=3 / unique_words=2 / isError:false）。此前「不可用」的根因是回执门第二处误判（宿主 `outputText` 空 vs provider 有内容 → 判成「替换了真实执行结果」），已修 + 回归测试 |
 | ENV-GIT2 | 沙箱 git 报 `fatal: this operation must be run in a work tree` | **DONE（两个根因都已修，端到端复跑通过）** | 根因一：检查点 Git 之前跑在 `derive("review")` 只读作用域，Windows PSEC 只读授权不含目录 traverse ⇒ `chdir` 报 Permission denied；`git add`/`commit` 的 `setup_work_tree()` 必须 chdir（git 源码：`if (!work_tree \|\| chdir_notify(work_tree)) die("this operation must be run in a work tree")`）⇒ 整族失效。已改 `derive("review")` → `derive("worker")`（固定 argv 的系统 consumer，模型输入到不了）。根因二：沙箱捕获层 `stripNulCharacters` 把 `-z` 清单的 NUL 剥掉，路径被粘成一条（`pathspec ... did not match any files`）；已加显式 `preserveNul` 开口，只在影子 Git 读取时开启。**验证**：影子仓库出现 `轮次开始快照`/`轮次结束快照` 两个真实提交、日志不再有 `[turn-boundary] 文件边界捕获失败`；三个定向套件 29/29 绿 |
-| BASH-DIR | cmd `dir` 在沙箱内恒报 `Access is denied.` | **DONE** | 根因：沙箱只读根缺**系统盘根**（cmd 的 `dir` 先取卷信息）。非 cmd 枚举器（bundled node `readdirSync`）在同一作用域**列出 26 项**⇒沙箱枚举权本就正常。修法 1 行：runtime 只读根加 `SystemDrive\`（只读，不扩写域）。验证：沙箱级 `dir` 0 + 真实卷信息；**计划档模拟点击**：`dir` 0（26 文件/4 目录）、`cd sub` 0、`dir /b` 0（`inner.txt`）、`type sub\inner.txt` ✓（《日志》§一百八十七） |
-| G1BROWSER | 浏览器面板点击验收 | **DONE** | 模拟点击 **16/16**：入口→挂载→导航 2s 出画面→流解出真实帧 1280×720→服务端 connected 同 URL→视口换真视口→拾取叠框→引用进 composer→调试口注入→历史栈前后退且保持画面态→收起隐藏→关闭移除（`tmp/e2e/report.jsonl` + `shots/browser-*.png`；《日志》§一百八十八）。**验收修出 4 个真实缺陷**：①面板读错 `{cdp:…}` 信封恒报「浏览器启动失败」（改读信封+夹具对齐真契约）；②静态页单帧永不渲染（开流立即补一张 JPEG 静止帧；Chromium 只在下一分界结束 part）；③旧流占满连接池致面板卡「正在打开…」（新流开起时收掉上一路流）；④Q5 引用被上游草稿门挡掉+toast 虚报（放开到 Live 会话） |
+| BASH-DIR | cmd `dir` 在沙箱内恒报 `Access is denied.` | **DONE** | 根因：沙箱只读根缺**系统盘根**（cmd 的 `dir` 先取卷信息）。非 cmd 枚举器（bundled node `readdirSync`）在同一作用域**列出 26 项**⇒沙箱枚举权本就正常。修法 1 行：runtime 只读根加 `SystemDrive\`（只读，不扩写域）。验证：沙箱级 `dir` 0 + 真实卷信息；**计划档模拟点击**：`dir` 0（26 文件/4 目录）、`cd sub` 0、`dir /b` 0（`inner.txt`）、`type sub\inner.txt` ✓（《日志》§一百九十三） |
+| G1BROWSER | 浏览器面板点击验收 | **DONE** | 模拟点击 **16/16**：入口→挂载→导航 2s 出画面→流解出真实帧 1280×720→服务端 connected 同 URL→视口换真视口→拾取叠框→引用进 composer→调试口注入→历史栈前后退且保持画面态→收起隐藏→关闭移除（`tmp/e2e/report.jsonl` + `shots/browser-*.png`；《日志》§一百九十四）。**验收修出 4 个真实缺陷**：①面板读错 `{cdp:…}` 信封恒报「浏览器启动失败」（改读信封+夹具对齐真契约）；②静态页单帧永不渲染（开流立即补一张 JPEG 静止帧；Chromium 只在下一分界结束 part）；③旧流占满连接池致面板卡「正在打开…」（新流开起时收掉上一路流）；④Q5 引用被上游草稿门挡掉+toast 虚报（放开到 Live 会话） |
 
 ## NEXT ACTION
 
@@ -149,5 +149,3 @@
 2. **已查清、不作为本计划修复项：Windows 只读档缺目录 traverse。** 机制（一手证据）：Windows 分两条执行层 —— T3 宿主路径 DACL 的只读掩码 `RO_MASK = FILE_GENERIC_READ \| FILE_GENERIC_EXECUTE` 含 traverse；而**本机（Win11 26340 insider）走的是 T1 原生 PSEC**，其 `fs_read_only` 只给「读 + 列目录」，**不含目录 traverse**。实测：只读作用域下 `git -C <workTree> …` 报 `Permission denied`（chdir 被拒），而 `rev-parse --show-toplevel` / `--is-inside-work-tree` / `ls-files --others` 全部 exit 0 —— 即「读得到、进不去」，`git add`/`commit` 的 `setup_work_tree()` 恰好死在 chdir 那一步。
    **已实测过 T3 路线（结论：可恢复 traverse，但不作为本轮改动）**：把只读档临时指到 DACL 层（`AppContainerScriptRunner::with_filesystem_mode(Dacl)` + 自己打 RW/RO ACE）后，沙箱内实测 `cd sub` ✓、`type sub\inner.txt` 读到 `ok-inner` ✓、`echo > evil2.txt` 被拒（`Access is denied`，只读保持）✓、私有影子仓库目录可写 ✓；失败的是 `mkdir` 既有目录正常而 **`move`（rename）被拒** —— rename 需要源文件 `DELETE`，只读掩码本就不含它（对只读档是正确行为）。代价面：① T3 要临时改写**宿主路径安全描述符**（与 `FallbackPolicy { allow_dacl_mutation: false }` 的取向冲突，MXC 定义该开关为「operator consent for host-impacting containment fallbacks」）；② MXC 的 `build_t3_dacl`/`derive_sid_string` 等 glue 部分私有，要在 adapter 里复刻；③ 每 spawn 会现建 AppContainer profile，需接 `sandbox_tracking` 的清理/身份生命周期。**故本轮只把检查点 Git 放行到可写档（已修）；只读档未改**——若后续确有「计划档 Bash 需要 `cd`/读子目录」的真实诉求，再单独立项落 T3 DACL，并按上面三条代价评估。（取证：`tmp/e2e-server29/30/31.log` 的 `[probe-ro]` 行）
 3. 提示：六档端到端驱动方式已定型（暖场建会话 → 点 `[data-testid="execution-mode-chip"]`），复跑直接复用 `tmp/e2e/run-mode.mjs`；MCP 端到端复用 `tmp/e2e/run-mcp-e2e.mjs`（需 Task 绑到脚本所在目录）；检查点/落盘复跑复用 `tmp/e2e/run-task.mjs`（复用绑定 `test` 项目的会话）。
-
-

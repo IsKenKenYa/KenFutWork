@@ -1,3 +1,25 @@
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
+import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
+import { ComposerContextProvider } from "@zui/v4/composer/ComposerContext.js";
+import { CanvasDocumentView } from "./CanvasDocumentView.js";
+import { ConversationWorkContextHeader } from "./ConversationWorkContextHeader.js";
+import { conversationWorkContext } from "./conversationWorkContext.js";
+import {
+  type DocumentPaneRendererDefinition,
+  DocumentPaneRendererProvider,
+} from "./DocumentPane.js";
+import { generatedMediaRenderer } from "./GeneratedMediaRenderer.js";
+import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
+import {
+  admitProjectMode,
+  SharedProjectNavigationProvider,
+} from "./SharedProjectNavigation.js";
+
+const documentRenderers: readonly DocumentPaneRendererDefinition[] = [
+  { resourceType: "canvas", component: CanvasDocumentView },
+];
+const toolCallRenderers = [generatedMediaRenderer];
+
 import type {
   CodeUiWorkspace,
   InstanceContext,
@@ -79,7 +101,12 @@ const voiceTransport: CodeVoiceTransport = {
   },
 };
 const workbenchNavigation = bootstrap?.workbenchModes
-  ? createHostWorkbenchNavigation(window.parent, bootstrap.workbenchModes)
+  ? createHostWorkbenchNavigation(
+      window.parent,
+      bootstrap.workbenchModes,
+      (mode) =>
+        mode === "flow" ? Promise.resolve(true) : admitProjectMode(mode),
+    )
   : undefined;
 const platform = createCodePlatform(client, {
   ...(bootstrap?.managementAvailable
@@ -87,6 +114,17 @@ const platform = createCodePlatform(client, {
     : {}),
   ...(workbenchNavigation ? { workbenchNavigation } : {}),
 });
+client.setWorkPresetResolver(() =>
+  workbenchNavigation?.getSnapshot().mode === "design" ? "design" : "code",
+);
+platform.getConversationWorkContext = (workspace) =>
+  conversationWorkContext(
+    parseLocalWorkspaceIdentity(
+      workspace.workspaceIdentity ?? "",
+      workspace.workspacePath,
+    )?.projectId ?? null,
+    workbenchNavigation?.getSnapshot().mode === "design" ? "design" : "code",
+  );
 const onWorkspaceContextChange = createCodeWorkspaceContextResolver(client);
 const element = document.getElementById("root");
 if (!element) throw new Error("Code 宿主缺少 root 容器");
@@ -117,37 +155,55 @@ function CodeHost({
         broadcastService={services.broadcastService}
       >
         <ScopedErrorBoundary scope="kenfutwork-code-host">
-          <CodeDirectoryRecoveryProvider client={client}>
-            <Root
-              services={services}
-              platform={platform}
-              isMacDesktop={Boolean(desktopChrome)}
-              directoryServices={client.directoryServices()}
-              onWorkspaceContextChange={onWorkspaceContextChange}
-              initialUserInfo={user}
-              {...(workspace
-                ? { initialWorkspaceAbsPath: workspace.path }
+          <ProjectDirectoryChoiceProvider>
+            <SharedProjectNavigationProvider
+              client={client}
+              {...(workbenchNavigation
+                ? { navigation: workbenchNavigation }
                 : {})}
-              {...(workspaceIdentity
-                ? { initialWorkspaceIdentity: workspaceIdentity }
-                : {})}
-              workbenchGroupClientMode={clientMode}
-              onInterfaceModeChange={(mode) => {
-                // 融合后 Design 是壳内主区视图（不再换壳导航）；独立打开（无父窗口）时无处可切，保持 coding。
-                if (mode === "office") workbenchNavigation?.open("design");
-              }}
-              preferDirectoryBrowser
-              restoreSession
-              allowRemoteWorkspace={false}
-              // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
-              // 不再依赖桌面主进程 BrowserView。
-              supportsEmbeddedBrowser={true}
-              assistantCodeCommentCardsEnabled
-              initialWorkspaceLoadingFallback={
-                <RootStartupLoading label="打开 Code 工作目录" />
-              }
-            />
-          </CodeDirectoryRecoveryProvider>
+            >
+              <DocumentPaneRendererProvider renderers={documentRenderers}>
+                <ToolCallRendererProvider renderers={toolCallRenderers}>
+                  <ComposerContextProvider
+                    renderer={ConversationWorkContextHeader}
+                  >
+                    <CodeDirectoryRecoveryProvider client={client}>
+                      <Root
+                        services={services}
+                        platform={platform}
+                        isMacDesktop={Boolean(desktopChrome)}
+                        directoryServices={client.directoryServices()}
+                        onWorkspaceContextChange={onWorkspaceContextChange}
+                        initialUserInfo={user}
+                        {...(workspace
+                          ? { initialWorkspaceAbsPath: workspace.path }
+                          : {})}
+                        {...(workspaceIdentity
+                          ? { initialWorkspaceIdentity: workspaceIdentity }
+                          : {})}
+                        workbenchGroupClientMode={clientMode}
+                        onInterfaceModeChange={(mode) => {
+                          // 融合后 Design 是壳内主区视图（不再换壳导航）；独立打开（无父窗口）时无处可切，保持 coding。
+                          if (mode === "office")
+                            workbenchNavigation?.open("design");
+                        }}
+                        preferDirectoryBrowser
+                        restoreSession
+                        allowRemoteWorkspace={false}
+                        // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
+                        // 不再依赖桌面主进程 BrowserView。
+                        supportsEmbeddedBrowser={true}
+                        assistantCodeCommentCardsEnabled
+                        initialWorkspaceLoadingFallback={
+                          <RootStartupLoading label="打开 Code 工作目录" />
+                        }
+                      />
+                    </CodeDirectoryRecoveryProvider>
+                  </ComposerContextProvider>
+                </ToolCallRendererProvider>
+              </DocumentPaneRendererProvider>
+            </SharedProjectNavigationProvider>
+          </ProjectDirectoryChoiceProvider>
         </ScopedErrorBoundary>
       </ZCodeIntlProvider>
     </CuaSnapshotReader>

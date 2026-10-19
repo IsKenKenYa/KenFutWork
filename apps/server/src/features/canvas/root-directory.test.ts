@@ -35,7 +35,7 @@ it("first Canvas claims default once; changed Project default cannot rebind it",
   ).rejects.toThrow("目录不一致");
   expect(f.execute).toHaveBeenCalledTimes(1);
 });
-it("Task and Canvas inherit the same stable Project root", async () => {
+it("Canvas stable document root does not depend on legacy Task roots", async () => {
   const f = fixture(null, ["/old-task", "/old-task"], "/old-task");
   expect(await claimCanvasRootInTransaction(f.sql, "canvas", f.resolve)).toBe(
     "/old-task",
@@ -43,20 +43,13 @@ it("Task and Canvas inherit the same stable Project root", async () => {
   expect(f.root()).toBe("/old-task");
   expect(f.resolve).toHaveBeenCalledTimes(1);
 });
-it.each([
-  [null, ["/one", "/two"]],
-  ["/canvas", ["/other-task"]],
-] as const)(
-  "conflicting Canvas or Task roots fail before binding",
-  async (root, roots) => {
-    const f = fixture(root, [...roots]);
-    await expect(
-      claimCanvasRootInTransaction(f.sql, "canvas", f.resolve),
-    ).rejects.toThrow("目录冲突");
-    expect(f.execute).not.toHaveBeenCalled();
-    expect(f.resolve).not.toHaveBeenCalled();
-  },
-);
+it("unrelated Task directories do not rebind or block a project document", async () => {
+  const f = fixture(null, ["/one", "/two"]);
+  expect(await claimCanvasRootInTransaction(f.sql, "canvas", f.resolve)).toBe(
+    "/new-project-default",
+  );
+  expect(f.execute).toHaveBeenCalledTimes(1);
+});
 it("historical Project/Canvas directory split fails without rewriting either index", async () => {
   const f = fixture("/old", ["/old"], "/new-project-default");
   await expect(

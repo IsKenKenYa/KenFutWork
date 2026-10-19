@@ -1,11 +1,18 @@
 import { z } from "zod";
 import type { ToolDefinition } from "../../../kernel/types.js";
-import type { DesignTasksService } from "../../execution/design-task-types.js";
 import type { LocalInstanceService } from "../../local-instance/types.js";
 import { resolveCanvasActor } from "../canvas-actor.js";
 import type { CanvasService } from "../canvas-service.js";
+import type { CanvasDocumentAccess } from "../document-access.js";
+import { withCanvasAssetReference } from "../selection-context.js";
 
 const inspectCanvasSchema = z.object({
+  canvas_id: z
+    .uuid({ error: "画布引用无效，请从项目画布列表重新选择。" })
+    .optional()
+    .describe(
+      "Canvas document ID in the current project; defaults to the input canvas.",
+    ),
   detail_level: z
     .enum(["summary", "full"])
     .default("summary")
@@ -53,6 +60,8 @@ function summarizeElement(el: CanvasElement) {
 
   if (el.type === "image") {
     const customData = el.customData as Record<string, unknown> | undefined;
+    if (typeof customData?.assetId === "string")
+      base.assetId = customData.assetId;
     // Video elements are stored as Excalidraw image elements with customData.isVideo = true
     if (customData?.isVideo === true) {
       base.type = "video";
@@ -71,6 +80,8 @@ function summarizeElement(el: CanvasElement) {
   if (el.type === "embeddable") {
     const customData = el.customData as Record<string, unknown> | undefined;
     if (customData?.isVideo === true) {
+      if (typeof customData.assetId === "string")
+        base.assetId = customData.assetId;
       base.type = "video";
       if (customData.title) base.title = customData.title;
       if (customData.prompt) base.prompt = customData.prompt;
@@ -146,6 +157,7 @@ export function buildCanvasSummaryForContext(
     );
     if (s.text) parts.push(`"${s.text}"`);
     if (s.title) parts.push(`title="${s.title}"`);
+    if (s.assetId) parts.push(`asset_id=${s.assetId}`);
     if (s.type === "video") {
       if (s.durationSeconds) parts.push(`${s.durationSeconds}s`);
       if (s.prompt)
@@ -171,7 +183,7 @@ export function createInspectCanvasToolDefinition(deps: {
   /** 画布数据访问（工作区作用域）：内容读取不再直连 SDK。 */
   canvasService?: Pick<CanvasService, "getCanvas" | "saveCanvasContent">;
   localInstance: LocalInstanceService;
-  designTasks: Pick<DesignTasksService, "readPolicy">;
+  documentAccess: Pick<CanvasDocumentAccess, "authorize">;
 }): ToolDefinition {
   return {
     name: "inspect_canvas",
@@ -182,7 +194,8 @@ export function createInspectCanvasToolDefinition(deps: {
     zodSchema: inspectCanvasSchema,
     parameters: z.toJSONSchema(inspectCanvasSchema),
     execute: async (args, execCtx) => {
-      const canvasId = execCtx.canvasId;
+      const input = inspectCanvasSchema.parse(args);
+      const canvasId = input.canvas_id ?? execCtx.canvasId;
 
       if (typeof canvasId !== "string" || !canvasId) {
         return JSON.stringify({
@@ -201,13 +214,13 @@ export function createInspectCanvasToolDefinition(deps: {
         });
       }
 
-      const input = inspectCanvasSchema.parse(args);
-
       // 经 projects 父链解析工作区，再按工作区作用域取内容（不直连 SDK）
       const actor = await resolveCanvasActor(
         deps.localInstance,
         execCtx,
-        deps.designTasks,
+        deps.documentAccess,
+        "read",
+        canvasId,
       );
       const canvasRow = await deps.canvasService?.getCanvas(actor, canvasId);
 
@@ -221,9 +234,14 @@ export function createInspectCanvasToolDefinition(deps: {
       const content = canvasRow.content as {
         elements?: CanvasElement[];
         appState?: Record<string, unknown>;
+        files?: Record<string, Record<string, unknown>>;
       };
 
-      const elements = (content.elements ?? []).filter((el) => !el.isDeleted);
+      const elements = (content.elements ?? [])
+        .filter((el) => !el.isDeleted)
+        .map((element) =>
+          withCanvasAssetReference(element, content.files ?? {}),
+        );
 
       if (input.element_id) {
         const found = elements.find((el) => el.id === input.element_id);

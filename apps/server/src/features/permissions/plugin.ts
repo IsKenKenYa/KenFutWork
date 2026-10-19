@@ -19,9 +19,12 @@ export function createPermissionsPlugin(_deps: {
 }): PluginDefinition {
   return {
     name: "permissions",
-    inject: ["localAccess", "persistence"],
+    inject: ["localAccess", "persistence", "approvalReview"],
     apply(ctx) {
-      const service: PermissionService = createPermissionService();
+      const service: PermissionService = createPermissionService({
+        review: (input, signal) =>
+          ctx.get("approvalReview").review(input, signal),
+      });
       ctx.register("permissions", () => service);
 
       // Code 在此等待真实人审；所有 waterfall 消费方放行后才由 kernel claim。

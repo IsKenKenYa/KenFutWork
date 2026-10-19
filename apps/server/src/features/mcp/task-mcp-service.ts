@@ -8,13 +8,19 @@ import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { losesExecutionRights } from "../process-sandbox/scope-change.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
-import { inferMcpCommand } from "./create-mcp-server-tool.js";
-import { createMcpToolDefinition } from "./mcp-tools.js";
+import type { McpConnectionConfiguration } from "./mcp-service.js";
+import {
+  assertMcpContribution,
+  createMcpToolDefinition,
+  type McpServerToolLike,
+  mcpConfigurationVersion,
+} from "./mcp-tools.js";
 import {
   createScopedMcpTransport,
   type ScopedMcpTransport,
 } from "./scoped-stdio-transport.js";
 import {
+  inferMcpCommand,
   type McpTaskContext,
   mcpFailure,
   refreshMcpScope,
@@ -45,6 +51,13 @@ export interface TaskMcpStatus {
   error?: string;
 }
 export interface TaskMcpService {
+  callConfigured(
+    source: McpConnectionConfiguration,
+    tool: McpServerToolLike,
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ): Promise<unknown>;
+  closeSource(name: string): Promise<void>;
   computerUseConnections(
     context: ToolExecutionContext,
   ): Promise<ComputerUseMcpConnection[]>;
@@ -71,11 +84,13 @@ interface Connection {
   owner: McpTaskContext;
   input: StartInput;
   signature: string;
+  sourceName?: string;
   status: TaskMcpStatus["status"];
   error?: string;
   closing: boolean;
   scope: CodeExecutionScope;
   toolNames: string[];
+  toolSchemas: Map<string, string>;
   disposeTools: Array<() => void>;
   client: Client;
   transport?: ScopedMcpTransport;
@@ -157,6 +172,12 @@ export function createTaskMcpService(deps: {
       );
     await refreshMcpScope(owner);
     ensureOpen(record);
+    if (!record.sourceName)
+      assertMcpContribution(
+        deps.registry,
+        `mcp:${record.key}:${name}`,
+        execution,
+      );
     if (
       records.get(record.key) !== record ||
       losesExecutionRights(record.scope, owner.scope)
@@ -253,14 +274,20 @@ export function createTaskMcpService(deps: {
           name: alias,
           description: `${record.input.name}/${metadata.name}: ${metadata.description ?? "MCP工具"}`,
         },
-        "code",
+        "shared",
         (args, context) => call(record, metadata.name, args, context),
       );
       record.toolNames.push(tool.name);
       record.disposeTools.push(
         deps.registry.registerDynamic({
           id: `mcp:${record.key}:${metadata.name}`,
-          scope: "code",
+          scope: "shared",
+          configurationVersion: mcpConfigurationVersion({
+            configuration: record.signature,
+            branchGeneration: record.owner.branchGeneration,
+            name: metadata.name,
+            parameters: tool.parameters,
+          }),
           resolve(run) {
             const handle = run.scopeHandle;
             if (
@@ -309,7 +336,15 @@ export function createTaskMcpService(deps: {
         await requestOptions(record.owner),
       );
       ensureOpen(record);
-      registerTools(record, tools);
+      for (const tool of tools)
+        record.toolSchemas.set(
+          tool.name,
+          mcpConfigurationVersion({
+            name: tool.name,
+            inputSchema: tool.inputSchema,
+          }),
+        );
+      if (!record.sourceName) registerTools(record, tools);
       record.status = "connected";
       return publicStatus(record);
     } catch (error) {
@@ -342,6 +377,7 @@ export function createTaskMcpService(deps: {
   const start = (
     input: StartInput,
     context: ToolExecutionContext,
+    sourceName?: string,
   ): Promise<TaskMcpStatus> => {
     const owner = taskMcpContext(context);
     if (closed || closedTasks.has(taskKey(owner.scope)))
@@ -351,22 +387,14 @@ export function createTaskMcpService(deps: {
       owner.scope.taskId,
       input.name,
     ]);
-    const signature = createHash("sha256")
-      .update(
-        JSON.stringify({
-          ...input,
-          env: Object.fromEntries(
-            Object.entries(input.env).sort(([a], [b]) => a.localeCompare(b)),
-          ),
-        }),
-      )
-      .digest("hex");
+    const signature = mcpConfigurationVersion(input);
     const prior = records.get(key);
     if (prior) {
       ensureOpen(prior);
       if (
         prior.signature !== signature ||
         prior.owner.actor.instanceId !== owner.actor.instanceId ||
+        prior.sourceName !== sourceName ||
         prior.owner.branchGeneration !== owner.branchGeneration
       )
         throw new TaskMcpError(
@@ -385,10 +413,12 @@ export function createTaskMcpService(deps: {
       owner,
       input,
       signature,
+      ...(sourceName ? { sourceName } : {}),
       status: "connecting",
       closing: false,
       scope: owner.scope,
       toolNames: [],
+      toolSchemas: new Map(),
       disposeTools: [],
       client: new Client({ name: "kenfutwork-task", version: deps.version }),
       ready: ready.promise,
@@ -435,6 +465,42 @@ export function createTaskMcpService(deps: {
   };
 
   return {
+    async callConfigured(source, tool, args, context) {
+      const owner = taskMcpContext(context);
+      const input = taskMcpInstallSchema.parse({
+        name: `instance_${source.name}`,
+        command: source.command,
+        args: source.args,
+        env: source.env,
+      });
+      await start(input, context, source.name);
+      const record = records.get(
+        JSON.stringify([
+          owner.scope.instanceId,
+          owner.scope.taskId,
+          input.name,
+        ]),
+      );
+      if (
+        !record ||
+        record.toolSchemas.get(tool.name) !==
+          mcpConfigurationVersion({
+            name: tool.name,
+            inputSchema: tool.inputSchema,
+          })
+      )
+        throw new TaskMcpError(
+          "mcp_schema_changed",
+          "MCP在当前Task返回了不同工具定义，请重新连接后发起新运行。",
+        );
+      return call(record, tool.name, args, context);
+    },
+    async closeSource(name) {
+      await closeRecords(
+        [...records.values()].filter((record) => record.sourceName === name),
+        "实例MCP配置或连接已改变",
+      );
+    },
     async computerUseConnections(context) {
       const owner = taskMcpContext(context);
       await refreshMcpScope(owner);
@@ -445,6 +511,7 @@ export function createTaskMcpService(deps: {
           | undefined;
         if (
           record.closing ||
+          record.sourceName ||
           record.status !== "connected" ||
           taskKey(record.scope) !== taskKey(owner.scope) ||
           capability?.version !== 1
@@ -479,6 +546,7 @@ export function createTaskMcpService(deps: {
       return [...records.values()]
         .filter(
           (record) =>
+            !record.sourceName &&
             taskKey(record.scope) === taskKey(owner.scope) &&
             record.owner.actor.instanceId === owner.actor.instanceId,
         )

@@ -23,16 +23,18 @@ const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
 /** Code 的独立原文档保护 Design 的 CSS、theme 与 portal。 */
 export function CodeWorkbenchFrame({
-  mode = "code",
+  mode,
   active = true,
   onOpenManagement,
   availableModes = DEFAULT_MODES,
+  canvasId,
 }: {
   /** 当前工作台模式（深链解析结果）；融合后 Design/Flow 是壳内视图，由这里推给壳。 */
   mode?: WorkbenchMode;
   active?: boolean;
   onOpenManagement?: (target: ManagementTarget) => void;
   availableModes?: WorkbenchModes;
+  canvasId?: string;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // 本地实例的主人即当前用户（DEC-20 免账户）：bootstrap 带给 Code 壳，
@@ -59,6 +61,7 @@ export function CodeWorkbenchFrame({
     );
   }, [panels]);
   const ready = useRef(false);
+  const sentMode = useRef<WorkbenchMode | undefined>(undefined);
   const sendActivity = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
       { type: "kenfutwork:workspace-activity", active },
@@ -67,11 +70,20 @@ export function CodeWorkbenchFrame({
   }, [active]);
   useEffect(sendActivity, [sendActivity]);
   const sendNavigation = useCallback(() => {
+    if (!ready.current) return;
     frame.current?.contentWindow?.postMessage(
-      { type: "kenfutwork:workbench-navigation", availableModes, mode },
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes,
+        ...(mode !== undefined && sentMode.current !== mode ? { mode } : {}),
+        ...(canvasId
+          ? { documentTarget: { resourceType: "canvas", documentId: canvasId } }
+          : {}),
+      },
       window.location.origin,
     );
-  }, [availableModes, mode]);
+    sentMode.current = mode;
+  }, [availableModes, mode, canvasId]);
   useEffect(sendNavigation, [sendNavigation]);
   const bootstrap = useCallback(() => {
     if (!ready.current) return;

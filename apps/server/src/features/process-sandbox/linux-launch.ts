@@ -64,6 +64,7 @@ export function prepareLinuxSandboxArgv(
   argv: string[],
   pty: boolean,
   privateDirectory?: string,
+  readOnly = false,
 ): string[] {
   if (argv.length !== 3 || argv[0] !== "/bin/sh" || argv[1] !== "-c")
     unavailable();
@@ -111,7 +112,7 @@ export function prepareLinuxSandboxArgv(
   )
     unavailable();
   const mountFlags =
-    launcher === 5 && privateDirectory
+    launcher === 5 && (privateDirectory || readOnly)
       ? [
           ...flags,
           ...readFileSync(words[4]?.value ?? unavailable())
@@ -154,21 +155,31 @@ export function prepareLinuxSandboxArgv(
   }
   const destination = words[device];
   if (!destination) unavailable();
-  const privateMask =
-    privateDirectory &&
-    mountFlags.some(
-      (word, index) =>
-        word === "--tmpfs" && mountFlags[index + 1] === privateDirectory,
-    );
-  if (privateMask)
-    socketBinds.push(
-      `--remount-ro '${privateDirectory.replaceAll("'", "'\\''")}'`,
-    );
-  if (socketBinds.length)
+  // denyRead 的隔离 tmpfs 默认可写；只读请求在 mounts/socket 后收紧遮蔽层。
+  // --remount-ro 非递归，保留其内 Task 专属临时目录的显式 RW bind。
+  const readOnlyMasks = new Set<string>();
+  for (let index = 0; index < mountFlags.length; index++) {
+    if (readOnly && mountFlags[index] === "--setenv") {
+      index += 2;
+      continue;
+    }
+    if (mountFlags[index] !== "--tmpfs") continue;
+    const path = mountFlags[index + 1];
+    if (readOnly && !path?.startsWith("/")) unavailable();
+    if (path && (readOnly || path === privateDirectory))
+      readOnlyMasks.add(path);
+  }
+  const finalMounts = [
+    ...socketBinds,
+    ...[...readOnlyMasks].map(
+      (path) => `--remount-ro '${path.replaceAll("'", "'\\''")}'`,
+    ),
+  ];
+  if (finalMounts.length)
     edits.push({
       start: destination.start,
       end: destination.start,
-      replacement: `${socketBinds.join(" ")} `,
+      replacement: `${finalMounts.join(" ")} `,
     });
   let adapted = source;
   for (const edit of edits.sort((a, b) => b.start - a.start))

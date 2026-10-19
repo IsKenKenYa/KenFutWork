@@ -68,6 +68,9 @@ export class TaskWorkspaceRegistry {
           : [],
     );
   }
+  projectCatalog() {
+    return [...this.projects.values()];
+  }
   selectProject(projectId: string, selectedPath?: string) {
     const project = this.projects.get(projectId);
     if (!project) throw new Error("Code 项目已经不可用，请重新选择。");

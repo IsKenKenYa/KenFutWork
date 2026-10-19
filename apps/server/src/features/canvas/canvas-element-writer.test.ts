@@ -7,6 +7,74 @@ import {
   insertVideoElement,
 } from "./canvas-element-writer.js";
 
+it("相同生成Job重复发布只创建一个元素，不复活用户删除或覆盖用户调整", async () => {
+  let content: CanvasContent = { elements: [], files: {}, appState: {} };
+  let writes = 0;
+  const store: CanvasContentStore = {
+    readContent: async () => structuredClone(content),
+    appendContent: async (_canvas, input) => {
+      writes++;
+      content = {
+        ...content,
+        elements: [...content.elements, ...input.elements],
+        files: { ...content.files, ...input.files },
+      };
+    },
+  };
+  const input = {
+    canvasId: "canvas",
+    insertionId: "job",
+    objectPath: "file",
+    width: 100,
+    height: 200,
+    mimeType: "image/png",
+  };
+  const first = await insertImageElement(store, input);
+  const second = await insertImageElement(store, input);
+  expect(second).toEqual(first);
+  expect(writes).toBe(1);
+  const element = content.elements[0];
+  if (!element) throw new Error("测试前置缺失");
+  element.x = 999;
+  element.isDeleted = true;
+  expect(await insertImageElement(store, input)).toEqual(first);
+  expect(writes).toBe(1);
+  expect(content.elements[0]).toMatchObject({ x: 999, isDeleted: true });
+  await expect(
+    insertImageElement(store, { ...input, objectPath: "different-source" }),
+  ).rejects.toThrow("身份冲突");
+});
+
+it("同一视频Job的URL刷新不创建新元素，素材身份变化则拒绝", async () => {
+  const content: CanvasContent = { elements: [], files: {}, appState: {} };
+  const store: CanvasContentStore = {
+    readContent: async () => content,
+    appendContent: async (_id, input) => {
+      content.elements.push(...input.elements);
+    },
+  };
+  const input = {
+    canvasId: "canvas",
+    insertionId: "video-job",
+    assetId: "asset",
+    signedUrl: "http://file?sig=old",
+    width: 640,
+    height: 360,
+    mimeType: "video/mp4",
+  };
+  const first = await insertVideoElement(store, input);
+  expect(
+    await insertVideoElement(store, {
+      ...input,
+      signedUrl: "http://file?sig=fresh",
+    }),
+  ).toEqual(first);
+  expect(content.elements).toHaveLength(1);
+  await expect(
+    insertVideoElement(store, { ...input, assetId: "other-asset" }),
+  ).rejects.toThrow("身份冲突");
+});
+
 /**
  * 落画布必须走「原子追加」，不能「读-改-写」。
  * 回归锁：曾经是 read → append → writeContent(整份覆盖)，并发任务互相覆盖（丢元素）。

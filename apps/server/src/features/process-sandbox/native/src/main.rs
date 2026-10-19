@@ -1,6 +1,8 @@
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
+mod windows_account;
+#[cfg(windows)]
 mod windows_conpty;
 #[cfg(windows)]
 mod windows_controller;

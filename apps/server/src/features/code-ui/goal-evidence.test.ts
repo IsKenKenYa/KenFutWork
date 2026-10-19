@@ -29,6 +29,14 @@ it("验收根据canonical退出事实，不猜命令或输出文本", () => {
     "printf answer",
   ]) {
     expect(
+      goalEvidence([row(command, { state: "exited", exitCode: 0 })], "r", [
+        "row:1",
+      ])[0]?.tool,
+    ).toEqual({
+      name: "Bash",
+      inputText: JSON.stringify({ command }),
+    });
+    expect(
       goalEvidence(
         [row(command, { state: "exited", exitCode: 0, output: "" })],
         "r",
@@ -149,4 +157,52 @@ it("Goal control tools remain excluded from real tool evidence", () => {
         1,
       ),
     ).toEqual([]);
+});
+
+it("缺少原始命令的成功退出结果不能作为Goal验收证据", () => {
+  for (const command of ["", " ", ";"]) {
+    const receipt = row(command, { state: "exited", exitCode: 0 });
+    expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([]);
+    expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
+  }
+  for (const input of [{}, { command: null }, { command: 123 }]) {
+    const receipt = {
+      ...row("ignored", { state: "exited", exitCode: 0 }),
+      input,
+      inputText: JSON.stringify(input),
+    };
+    expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([]);
+    expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
+  }
+});
+
+it("画布工具的失败和零应用结果不能验收，部分成功保留真实结果", () => {
+  for (const result of [
+    { error: "write_failed", message: "画布保存失败。" },
+    { success: false },
+    { ok: false },
+    { success: true, applied: 0, errors: ["[skip] element not found"] },
+  ]) {
+    const receipt = {
+      ...row("ignored", result),
+      toolName: "manipulate_canvas",
+    };
+    expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([]);
+    expect(() => goalEvidence([receipt], "r", ["row:1"])).toThrow();
+  }
+
+  const result = {
+    success: true,
+    applied: 1,
+    summary: "added text",
+    errors: ["[skip] element not found"],
+  };
+  const receipt = { ...row("ignored", result), toolName: "manipulate_canvas" };
+  expect(goalEvidenceCandidates([receipt], "r", 7)).toEqual([
+    { id: "row:1", kind: "toolCall", revision: 7 },
+  ]);
+  expect(goalEvidence([receipt], "r", ["row:1"])[0]).toMatchObject({
+    passed: true,
+    detail: JSON.stringify(result),
+  });
 });

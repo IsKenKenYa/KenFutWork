@@ -20,6 +20,7 @@ beforeEach(() => {
 it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer关闭同一loop", async () => {
   const dependencies = {
     assetWriter: {},
+    uploads: {},
     blob: {},
     jobs: {},
     modelProviders: {},
@@ -27,6 +28,7 @@ it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer�
     usage: {},
     projectFiles: {},
     generationTargets: {},
+    canvas: {},
   } as unknown as Partial<ServiceMap>;
   const env = loadServerEnv({}, {});
   const kernel = composePlugins(
@@ -41,6 +43,7 @@ it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer�
     {
       env,
       assetWriter: dependencies.assetWriter,
+      uploads: dependencies.uploads,
       blob: dependencies.blob,
       jobService: dependencies.jobs,
       modelProviders: dependencies.modelProviders,
@@ -48,6 +51,7 @@ it("JobLoop使用同内核依赖只启动一次，get返回原handle，disposer�
       usageService: dependencies.usage,
       projectFiles: dependencies.projectFiles,
       generationTargets: dependencies.generationTargets,
+      canvas: dependencies.canvas,
     },
     { tag: "[fixture-worker]" },
   );

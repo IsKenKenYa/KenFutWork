@@ -18,8 +18,9 @@ import type { CanvasContent } from "@kenfutwork/shared";
 import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { useCanvasDrafts } from "../hooks/use-canvas-drafts";
 import type { WebSocketHandle } from "../hooks/use-websocket";
+import { recoverCanvasDrafts } from "../lib/canvas-draft-recovery";
 import { isVideoUrl } from "../lib/canvas-elements";
 import { normalizeCanvasElements } from "../lib/canvas-normalize";
 import { shouldRefuseEmptySave } from "../lib/canvas-save-guard";
@@ -27,6 +28,13 @@ import {
   createCanvasSaveSession,
   initialCanvasFileReferences,
 } from "../lib/canvas-save-session";
+import {
+  canvasDocumentSettings,
+  canvasSceneKey,
+  createCanvasSceneState,
+} from "../lib/canvas-scene-state";
+import { resolveCanvasSnapshotFiles } from "../lib/canvas-snapshot-files";
+import { triggerDownload } from "../lib/download";
 import { saveCanvas, uploadThumbnail } from "../lib/server-api";
 import { VideoCanvasElement } from "./canvas/video-canvas-element";
 import { CanvasStatsPanel } from "./canvas-stats-panel";
@@ -86,7 +94,16 @@ const SAVE_DEBOUNCE_MS = 1500;
 const THUMBNAIL_DEBOUNCE_MS = 10_000;
 const THUMBNAIL_MAX_SIZE = 400;
 
-export function CanvasEditor({
+export function CanvasEditor(props: CanvasEditorProps) {
+  return (
+    <CanvasEditorSession
+      key={JSON.stringify([props.projectId, props.canvasId])}
+      {...props}
+    />
+  );
+}
+
+function CanvasEditorSession({
   canvasId,
   projectId,
   revision,
@@ -109,6 +126,7 @@ export function CanvasEditor({
   const saveSessionRef = useRef<{
     canvasId: string;
     session: ReturnType<typeof createCanvasSaveSession>;
+    scene: ReturnType<typeof createCanvasSceneState>;
   } | null>(null);
   let activeSaveSession = saveSessionRef.current;
   if (!activeSaveSession || activeSaveSession.canvasId !== canvasId) {
@@ -119,10 +137,14 @@ export function CanvasEditor({
         fileReferences: initialCanvasFileReferences(initialContent.files),
         files: initialContent.files,
       }),
+      scene: createCanvasSceneState({ revision, content: initialContent }),
     };
     saveSessionRef.current = activeSaveSession;
   }
   const canvasSaveSession = activeSaveSession.session;
+  const canvasSceneState = activeSaveSession.scene;
+  const drafts = useCanvasDrafts(projectId, canvasId);
+  const [draftConflict, setDraftConflict] = useState(false);
   const [saveConflict, setSaveConflict] = useState<{
     session: ReturnType<typeof createCanvasSaveSession>;
     message: string;
@@ -135,17 +157,74 @@ export function CanvasEditor({
   // Tracks whether the one-time normalization pass has already run
   const normalizedRef = useRef(false);
 
+  const writeDraft = useCallback(
+    (
+      content: CanvasContent,
+      submitted: { revision: string; sceneKey: string } | null = null,
+    ) => {
+      const baseline = canvasSceneState.baseline;
+      const files = canvasSaveSession.knownFiles;
+      return drafts.write({
+        content,
+        base: {
+          revision: canvasSaveSession.revision ?? revision,
+          content: {
+            ...baseline.confirmed,
+            elements: [...baseline.confirmed.elements],
+            files,
+          },
+          localContent: {
+            ...baseline.local,
+            elements: [...baseline.local.elements],
+            files,
+          },
+        },
+        submitted,
+      });
+    },
+    [canvasSaveSession, canvasSceneState, drafts.write, revision],
+  );
   const sendCanvasSave = useCallback(
-    (content: CanvasContent, expectedRevision: string | null) =>
-      saveCanvas(accessTokenRef.current, canvasId, content, expectedRevision),
-    [canvasId],
+    (content: CanvasContent, expectedRevision: string | null) => {
+      const draft = writeDraft(content, {
+        revision: expectedRevision ?? revision,
+        sceneKey: canvasSceneKey(content),
+      });
+      return saveCanvas(
+        accessTokenRef.current,
+        canvasId,
+        content,
+        expectedRevision,
+      ).then((result) => {
+        void draft.acknowledge(result);
+        return result;
+      });
+    },
+    [canvasId, revision, writeDraft],
   );
   const sendCanvasKeepalive = useCallback(
-    (content: CanvasContent, expectedRevision: string | null) =>
-      saveCanvas(accessTokenRef.current, canvasId, content, expectedRevision, {
-        keepalive: true,
-      }),
-    [canvasId],
+    (content: CanvasContent, expectedRevision: string | null) => {
+      const snapshot = structuredClone(content);
+      const savedScene = canvasSceneState.captureSave(snapshot);
+      const draft = writeDraft(snapshot, {
+        revision: expectedRevision ?? revision,
+        sceneKey: savedScene.key,
+      });
+      return saveCanvas(
+        accessTokenRef.current,
+        canvasId,
+        snapshot,
+        expectedRevision,
+        {
+          keepalive: true,
+        },
+      ).then((result) => {
+        canvasSceneState.acknowledgeSave(savedScene, result.revision);
+        void draft.acknowledge(result);
+        return result;
+      });
+    },
+    [canvasId, canvasSceneState, revision, writeDraft],
   );
   const onSaveConflict = useCallback(
     (error: Error) =>
@@ -153,22 +232,51 @@ export function CanvasEditor({
     [canvasSaveSession],
   );
   const saveCanvasContent = useCallback(
-    async (content: CanvasContent) => {
-      const result = await canvasSaveSession.save(
-        content,
-        sendCanvasSave,
-        onSaveConflict,
-      );
-      onRevisionChanged?.(canvasSaveSession.revision ?? result.revision);
-      return result;
+    (content: CanvasContent) => {
+      let snapshot = structuredClone(content);
+      const deferred = canvasSaveSession.isAcceptingRemote;
+      let savedScene = deferred ? null : canvasSceneState.captureSave(snapshot);
+      const latestContent = () => {
+        if (saveSessionRef.current?.session !== canvasSaveSession)
+          throw new Error("画布已切换，未保存旧操作");
+        const latest = buildSavePayloadRef.current();
+        if (!latest) throw new Error("画布尚未就绪，请稍后保存");
+        snapshot = structuredClone(latest);
+        savedScene = canvasSceneState.captureSave(snapshot);
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        pendingSaveRef.current = snapshot;
+        return snapshot;
+      };
+      return canvasSaveSession
+        .save(
+          deferred ? latestContent : snapshot,
+          sendCanvasSave,
+          onSaveConflict,
+        )
+        .then((result) => {
+          if (savedScene)
+            canvasSceneState.acknowledgeSave(savedScene, result.revision);
+          if (pendingSaveRef.current === snapshot)
+            pendingSaveRef.current = null;
+          onRevisionChanged?.(canvasSaveSession.revision ?? result.revision);
+          return result;
+        });
     },
-    [canvasSaveSession, onRevisionChanged, onSaveConflict, sendCanvasSave],
+    [
+      canvasSaveSession,
+      canvasSceneState,
+      onRevisionChanged,
+      onSaveConflict,
+      sendCanvasSave,
+    ],
   );
 
   // Guard: prevent auto-save until Excalidraw has fully hydrated with initial data.
   // Without this, a page reload can fire onChange with empty elements before
   // initialData is applied, causing a FULL REPLACE that wipes existing content.
   const hydratedRef = useRef(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // Track pending save payload so we can flush on tab close / unmount
   const pendingSaveRef = useRef<{
@@ -180,8 +288,6 @@ export function CanvasEditor({
   // Ref to hold initialContent.files for storageUrl lookup in handleChange
   // without adding the full initialContent to the dependency array.
   const initialFilesRef = useRef(initialContent.files);
-  const localChangeVersionRef = useRef(0);
-  const remoteApplyingRef = useRef(false);
 
   const buildKnownFiles = useCallback(
     (live: BinaryFiles) => {
@@ -302,119 +408,130 @@ export function CanvasEditor({
     if (
       !remoteSnapshot ||
       !excalidrawApi ||
-      !hydratedRef.current ||
+      !isHydrated ||
       !initialFilesHydrated
     )
       return;
     if (handledRemoteRevisionRef.current === remoteSnapshot.revision) return;
-    if (localChangeVersionRef.current > 0 || !canvasSaveSession.isIdle) {
+
+    let cancelled = false;
+    const releaseRemote = canvasSaveSession.beginRemoteSnapshot();
+    const finishRemote = () => {
+      handledRemoteRevisionRef.current = remoteSnapshot.revision;
+      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
+    };
+    const preserveDraft = () =>
       canvasSaveSession.conflict(
         "画布已在其他位置更新，当前草稿已保留。请复制草稿后重新加载。",
         onSaveConflict,
       );
-      handledRemoteRevisionRef.current = remoteSnapshot.revision;
-      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
-      return;
-    }
-
-    let cancelled = false;
-    const localVersion = localChangeVersionRef.current;
     const adopt = async () => {
-      const content = remoteSnapshot.content;
-      const resolved: BinaryFileData[] = [];
-      for (const [fileId, value] of Object.entries(content.files)) {
-        const storageUrl =
-          typeof value.storageUrl === "string" ? value.storageUrl : null;
-        if (!storageUrl) {
-          if (typeof value.dataURL === "string") {
-            resolved.push(value as unknown as BinaryFileData);
-          }
-          continue;
-        }
-        const response = await serverFetch(storageUrl);
-        if (!response.ok) throw new Error(`文件 ${fileId} 加载失败`);
-        const blob = await response.blob();
-        const dataURL = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-        resolved.push({
-          id: (typeof value.id === "string"
-            ? value.id
-            : fileId) as BinaryFileData["id"],
-          mimeType: (typeof value.mimeType === "string"
-            ? value.mimeType
-            : blob.type) as BinaryFileData["mimeType"],
-          created:
-            typeof value.created === "number" ? value.created : Date.now(),
-          dataURL: dataURL as BinaryFileData["dataURL"],
-        });
+      await canvasSaveSession.waitForIdle();
+      if (cancelled) return;
+      if (canvasSceneState.hasKnownRevision(remoteSnapshot.revision)) {
+        finishRemote();
+        return;
       }
+      const localVersion = canvasSceneState.version;
+      const localRevision = canvasSaveSession.revision;
+      const content = remoteSnapshot.content;
+      const reconcile = () =>
+        canvasSceneState.reconcileRemote(
+          {
+            elements: excalidrawApi.getSceneElementsIncludingDeleted(),
+            appState: canvasDocumentSettings(excalidrawApi.getAppState()),
+          },
+          content,
+        );
+      let reconciliation = reconcile();
+      if (!reconciliation) {
+        preserveDraft();
+        finishRemote();
+        return;
+      }
+      const resolved = await resolveCanvasSnapshotFiles(content.files);
       if (cancelled) return;
       if (
-        localChangeVersionRef.current !== localVersion ||
+        canvasSaveSession.revision !== localRevision ||
         !canvasSaveSession.isIdle
       ) {
-        canvasSaveSession.conflict(
-          "画布已在其他位置更新，当前草稿已保留。请复制草稿后重新加载。",
-          onSaveConflict,
-        );
-      } else if (
-        canvasSaveSession.acceptRemoteSnapshot({
+        preserveDraft();
+        finishRemote();
+        return;
+      }
+      if (canvasSceneState.version !== localVersion) {
+        reconciliation = reconcile();
+        if (!reconciliation) {
+          preserveDraft();
+          finishRemote();
+          return;
+        }
+      }
+      const files = { ...canvasSaveSession.knownFiles, ...content.files };
+      if (
+        !canvasSaveSession.acceptRemoteSnapshot({
           revision: remoteSnapshot.revision,
-          fileReferences: initialCanvasFileReferences(content.files),
-          files: content.files,
+          fileReferences: {
+            ...canvasSaveSession.fileReferences,
+            ...initialCanvasFileReferences(files),
+          },
+          files,
         })
       ) {
-        onRevisionChanged?.(remoteSnapshot.revision);
-        remoteApplyingRef.current = true;
-        initialFilesRef.current = content.files;
-        if (resolved.length) excalidrawApi.addFiles(resolved);
-        excalidrawApi.updateScene({
-          elements: content.elements as unknown as readonly ExcalidrawElement[],
-          appState: {
-            viewBackgroundColor:
-              typeof content.appState.viewBackgroundColor === "string"
-                ? content.appState.viewBackgroundColor
-                : excalidrawApi.getAppState().viewBackgroundColor,
-            gridModeEnabled:
-              typeof content.appState.gridModeEnabled === "boolean"
-                ? content.appState.gridModeEnabled
-                : excalidrawApi.getAppState().gridModeEnabled,
-          },
-          captureUpdate: "IMMEDIATELY",
-        });
-        localChangeVersionRef.current = 0;
-        queueMicrotask(() => {
-          remoteApplyingRef.current = false;
-        });
-      } else {
+        preserveDraft();
+        finishRemote();
+        return;
+      }
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      pendingSaveRef.current = null;
+      initialFilesRef.current = files;
+      onRevisionChanged?.(remoteSnapshot.revision);
+      canvasSceneState.acceptRemote(
+        reconciliation.remote,
+        remoteSnapshot.revision,
+        content,
+      );
+      const currentAppState = excalidrawApi.getAppState();
+      const appState = {
+        viewBackgroundColor:
+          typeof reconciliation.merged.appState.viewBackgroundColor === "string"
+            ? reconciliation.merged.appState.viewBackgroundColor
+            : currentAppState.viewBackgroundColor,
+        gridModeEnabled:
+          typeof reconciliation.merged.appState.gridModeEnabled === "boolean"
+            ? reconciliation.merged.appState.gridModeEnabled
+            : currentAppState.gridModeEnabled,
+      };
+      if (resolved.length) excalidrawApi.addFiles(resolved);
+      excalidrawApi.updateScene({
+        elements: reconciliation.merged
+          .elements as unknown as readonly ExcalidrawElement[],
+        appState,
+        captureUpdate: "NEVER",
+      });
+      finishRemote();
+    };
+    adopt()
+      .catch(() => {
+        if (cancelled) return;
         canvasSaveSession.conflict(
-          "画布已在其他位置更新，当前草稿已保留。请复制草稿后重新加载。",
+          "远端画布文件加载失败，当前草稿已保留。请复制草稿后重新加载。",
           onSaveConflict,
         );
-      }
-      handledRemoteRevisionRef.current = remoteSnapshot.revision;
-      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
-    };
-    adopt().catch(() => {
-      if (cancelled) return;
-      canvasSaveSession.conflict(
-        "远端画布文件加载失败，当前草稿已保留。请复制草稿后重新加载。",
-        onSaveConflict,
-      );
-      handledRemoteRevisionRef.current = remoteSnapshot.revision;
-      onRemoteSnapshotHandled?.(remoteSnapshot.revision);
-    });
+        handledRemoteRevisionRef.current = remoteSnapshot.revision;
+        onRemoteSnapshotHandled?.(remoteSnapshot.revision);
+      })
+      .finally(releaseRemote);
     return () => {
       cancelled = true;
+      releaseRemote();
     };
   }, [
     canvasSaveSession,
+    canvasSceneState,
     excalidrawApi,
     initialFilesHydrated,
+    isHydrated,
     onRevisionChanged,
     onRemoteSnapshotHandled,
     onSaveConflict,
@@ -429,70 +546,21 @@ export function CanvasEditor({
     [onApiReady],
   );
 
-  // Normalize agent-created elements on initial load.
-  // Uses DOM text measurement to fix server-side approximation errors.
-  useEffect(() => {
-    if (!excalidrawApi || normalizedRef.current) return;
-    normalizedRef.current = true;
-
-    // Run normalization after Excalidraw has loaded fonts.
-    // Store the handle so we can cancel on unmount to prevent memory leaks.
-    const idleHandle = ric(() => {
-      try {
-        const sceneElements = excalidrawApi.getSceneElements();
-        // Create mutable copies for normalization
-        const mutableElements = sceneElements.map((el) => ({ ...el }));
-        const { changed } = normalizeCanvasElements(mutableElements);
-
-        if (changed) {
-          console.log("[canvas-editor] normalized agent-created elements");
-          excalidrawApi.updateScene({
-            elements: mutableElements,
-            // 旧写法 "NONE" 不在 0.18 的捕获枚举（NEVER/IMMEDIATELY/EVENTUALLY）里，
-            // 运行时不匹配任何分支、等价 EVENTUALLY；这里保持原值以免改变撤销栈行为。
-            captureUpdate: "NONE" as CaptureUpdateActionType,
-          });
-          // Persist normalized elements to DB
-          const files = buildKnownFiles(excalidrawApi.getFiles());
-          const appState = excalidrawApi.getAppState();
-          saveCanvasContent({
-            elements: mutableElements.filter((el) => !el.isDeleted),
-            appState: {
-              viewBackgroundColor: appState.viewBackgroundColor,
-              gridModeEnabled: appState.gridModeEnabled,
-            },
-            files,
-          }).catch((err: Error) =>
-            console.warn("[canvas-editor] normalization save failed:", err),
-          );
-        }
-      } catch (err) {
-        console.warn("[canvas-editor] normalization failed:", err);
-      }
-
-      // Mark hydrated after normalization — auto-save is now safe.
-      // Before this point, onChange may fire with incomplete element lists
-      // during Excalidraw's internal initialization, which would cause a
-      // FULL REPLACE with empty content and silently wipe existing data.
-      hydratedRef.current = true;
-    });
-    return () => cic(idleHandle);
-  }, [buildKnownFiles, excalidrawApi, saveCanvasContent]);
-
-  const handleChange = useCallback(
+  const queueSceneSave = useCallback(
     (elements: readonly ExcalidrawElement[], appState: AppState) => {
-      // Skip auto-save until Excalidraw has fully hydrated with initial data.
-      // During initialization, onChange may fire with empty/partial elements
-      // which would wipe the persisted canvas via FULL REPLACE.
-      if (!hydratedRef.current) return;
-      if (!remoteApplyingRef.current) localChangeVersionRef.current++;
-
       // --- 1. Debounced save ---
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
       // Mark that a save is pending. The full payload is built lazily inside
       // the timeout to avoid constructing the files map on every drag frame.
       pendingSaveRef.current = { elements: [], appState: {}, files: {} };
+      writeDraft({
+        elements: elements.map((element) => ({ ...element })),
+        appState: canvasDocumentSettings(appState),
+        files: excalidrawApi
+          ? buildKnownFiles(excalidrawApi.getFiles())
+          : { ...initialFilesRef.current },
+      });
 
       saveTimerRef.current = setTimeout(() => {
         // Build the full payload only when the debounce fires
@@ -501,18 +569,17 @@ export function CanvasEditor({
           : { ...initialFilesRef.current };
         const content = {
           elements: elements.filter((el) => !el.isDeleted),
-          appState: {
-            viewBackgroundColor: appState.viewBackgroundColor,
-            gridModeEnabled: appState.gridModeEnabled,
-          },
+          appState: canvasDocumentSettings(appState),
           files,
         };
 
-        // 空场景覆盖护栏（与卸载前 flush 共用同一判定）：空内容一律不写——整表替换下
-        // 「写空」等于删光，而空场景本身没有可写的信息。实测吃过两次亏：挂载期 Excalidraw
-        // 先回调一次空列表，以及同一画布在别处（工作台 iframe）也开着、那份空场景因焦点
-        // 变化触发保存。判定收敛在纯函数里，两条写路径共用，别再各自漂移。
-        if (shouldRefuseEmptySave({ incomingCount: content.elements.length })) {
+        if (
+          shouldRefuseEmptySave({
+            incomingCount: content.elements.length,
+            deletedCount: elements.filter((element) => element.isDeleted)
+              .length,
+          })
+        ) {
           console.warn("[canvas-editor] 跳过空场景保存（空内容不写库）");
           pendingSaveRef.current = null;
           return;
@@ -527,40 +594,47 @@ export function CanvasEditor({
           })
           .catch((err) => console.error("[canvas-editor] save failed:", err));
       }, SAVE_DEBOUNCE_MS);
+    },
+    [buildKnownFiles, excalidrawApi, saveCanvasContent, writeDraft],
+  );
 
-      // --- 2. Debounced thumbnail (runs much less frequently than save) ---
-      if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
-      thumbnailTimerRef.current = setTimeout(async () => {
-        if (!excalidrawApi) return;
-        try {
-          const { exportToBlob } = await import("@excalidraw/excalidraw");
-          const sceneElements = excalidrawApi.getSceneElements();
-          const sceneFiles = excalidrawApi.getFiles();
-          if (!sceneElements.length) return;
+  const queueThumbnail = useCallback(() => {
+    // --- 2. Debounced thumbnail (runs much less frequently than save) ---
+    if (thumbnailTimerRef.current) clearTimeout(thumbnailTimerRef.current);
+    thumbnailTimerRef.current = setTimeout(async () => {
+      if (!excalidrawApi) return;
+      try {
+        const { exportToBlob } = await import("@excalidraw/excalidraw");
+        const sceneElements = excalidrawApi.getSceneElements();
+        const sceneFiles = excalidrawApi.getFiles();
+        if (!sceneElements.length) return;
 
-          const blob = await exportToBlob({
-            elements: sceneElements,
-            appState: { exportBackground: true },
-            files: sceneFiles,
-            mimeType: "image/webp",
-            quality: 0.8,
-            maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
-          });
+        const blob = await exportToBlob({
+          elements: sceneElements,
+          appState: { exportBackground: true },
+          files: sceneFiles,
+          mimeType: "image/webp",
+          quality: 0.8,
+          maxWidthOrHeight: THUMBNAIL_MAX_SIZE,
+        });
 
-          console.log(
-            "[canvas-editor] uploading thumbnail, blob size:",
-            blob.size,
-          );
-          await uploadThumbnail(accessTokenRef.current, projectId, blob);
-          console.log("[canvas-editor] thumbnail uploaded OK");
-        } catch (err) {
-          console.warn(
-            "[canvas-editor] thumbnail generation/upload failed:",
-            err,
-          );
-        }
-      }, THUMBNAIL_DEBOUNCE_MS);
+        console.log(
+          "[canvas-editor] uploading thumbnail, blob size:",
+          blob.size,
+        );
+        await uploadThumbnail(accessTokenRef.current, projectId, blob);
+        console.log("[canvas-editor] thumbnail uploaded OK");
+      } catch (err) {
+        console.warn(
+          "[canvas-editor] thumbnail generation/upload failed:",
+          err,
+        );
+      }
+    }, THUMBNAIL_DEBOUNCE_MS);
+  }, [excalidrawApi, projectId]);
 
+  const publishSelection = useCallback(
+    (elements: readonly ExcalidrawElement[], appState: AppState) => {
       // --- 3. Selection change detection ---
       // Cheap string comparison avoids unnecessary downstream re-renders.
       const selectedIds = appState.selectedElementIds
@@ -570,8 +644,12 @@ export function CanvasEditor({
             .join(",")
         : "";
 
-      if (selectedIds !== prevSelectedIdsRef.current) {
-        prevSelectedIdsRef.current = selectedIds;
+      const selectionKey = JSON.stringify([
+        selectedIds,
+        canvasSceneState.version,
+      ]);
+      if (selectionKey !== prevSelectedIdsRef.current) {
+        prevSelectedIdsRef.current = selectionKey;
         if (onSelectionChangeRef.current) {
           if (!selectedIds) {
             onSelectionChangeRef.current([]);
@@ -615,8 +693,113 @@ export function CanvasEditor({
         }
       }
     },
-    [projectId, buildKnownFiles, excalidrawApi, saveCanvasContent],
+    [canvasSceneState, excalidrawApi],
   );
+
+  const handleChange = useCallback(
+    (elements: readonly ExcalidrawElement[], appState: AppState) => {
+      // 远端基线已先确认；onChange仍记录合并后保留的本地改动。
+      if (!hydratedRef.current) return;
+      const sceneChanged = canvasSceneState.observe({
+        elements,
+        appState: canvasDocumentSettings(appState),
+      });
+      if (sceneChanged) {
+        queueSceneSave(elements, appState);
+        queueThumbnail();
+      }
+      publishSelection(elements, appState);
+    },
+    [canvasSceneState, publishSelection, queueSceneSave, queueThumbnail],
+  );
+
+  // 先确认服务端快照的 hydrated 表示，再接纳本地稿，初始化空帧不能成为保存。
+  useEffect(() => {
+    if (!excalidrawApi || normalizedRef.current || !drafts.loaded) return;
+    const idleHandle = ric(() => {
+      normalizedRef.current = true;
+      const initialScene = {
+        elements: excalidrawApi.getSceneElements(),
+        appState: canvasDocumentSettings(excalidrawApi.getAppState()),
+      };
+      canvasSceneState.hydrate(initialScene);
+      const recovered = recoverCanvasDrafts(initialContent, drafts.drafts);
+      if (!recovered) setDraftConflict(true);
+      const content = recovered ?? initialContent;
+      // 任何一份冲突均不接纳之前的部分结果，所有原稿仍可单独导出。
+      const restored = !!recovered && drafts.drafts.length > 0;
+      const requiresFence =
+        restored &&
+        drafts.drafts.some(
+          (draft) =>
+            draft.submitted?.revision === canvasSaveSession.revision &&
+            draft.submitted.sceneKey !== canvasSceneKey(draft.content),
+        );
+      if (restored) {
+        drafts.restored(drafts.drafts);
+        initialFilesRef.current = content.files;
+        const inline = Object.values(content.files).filter(
+          (file) =>
+            typeof file.dataURL === "string" &&
+            file.dataURL.startsWith("data:"),
+        );
+        if (inline.length)
+          excalidrawApi.addFiles(inline as unknown as BinaryFileData[]);
+      }
+      const elements = (
+        restored ? content.elements : initialScene.elements
+      ).map((element) => ({ ...element }));
+      const { changed } = normalizeCanvasElements(elements);
+      hydratedRef.current = true;
+      setIsHydrated(true);
+      if (changed || restored) {
+        const settings = restored
+          ? canvasDocumentSettings(content.appState)
+          : initialScene.appState;
+        const currentAppState = excalidrawApi.getAppState();
+        const appState = {
+          viewBackgroundColor:
+            typeof settings.viewBackgroundColor === "string"
+              ? settings.viewBackgroundColor
+              : currentAppState.viewBackgroundColor,
+          gridModeEnabled:
+            typeof settings.gridModeEnabled === "boolean"
+              ? settings.gridModeEnabled
+              : currentAppState.gridModeEnabled,
+        };
+        excalidrawApi.updateScene({
+          elements: elements as unknown as readonly ExcalidrawElement[],
+          appState,
+          captureUpdate: "NONE" as CaptureUpdateActionType,
+        });
+        // updateScene 的 onChange 可延迟到下一帧；恢复完成即写本地日志。
+        handleChange(
+          elements as unknown as readonly ExcalidrawElement[],
+          excalidrawApi.getAppState(),
+        );
+        if (requiresFence && !canvasSceneState.isDirty)
+          queueSceneSave(
+            elements as unknown as readonly ExcalidrawElement[],
+            excalidrawApi.getAppState(),
+          );
+        else if (restored && !canvasSceneState.isDirty)
+          // 当前远端快照已覆盖全部恢复意图，无需再写服务器；仅确认原稿 token。
+          void drafts.confirmRestored(drafts.drafts);
+      }
+    });
+    return () => cic(idleHandle);
+  }, [
+    canvasSceneState,
+    canvasSaveSession,
+    drafts.drafts,
+    drafts.confirmRestored,
+    drafts.loaded,
+    drafts.restored,
+    excalidrawApi,
+    handleChange,
+    initialContent,
+    queueSceneSave,
+  ]);
 
   // Register screenshot RPC handler so the server can request canvas captures
   useEffect(() => {
@@ -711,23 +894,25 @@ export function CanvasEditor({
     // Never flush before hydration — Excalidraw may not have loaded elements yet
     if (!hydratedRef.current) return null;
     try {
-      const sceneElements = excalidrawApi.getSceneElements();
+      const sceneElements = excalidrawApi.getSceneElementsIncludingDeleted();
       const rawFiles = excalidrawApi.getFiles();
       const appState = excalidrawApi.getAppState();
 
       // 与防抖自动保存共用同一判定（canvas-save-guard），两条路径不再各写一份。
       const liveCount = sceneElements.filter((el) => !el.isDeleted).length;
-      if (shouldRefuseEmptySave({ incomingCount: liveCount })) {
+      if (
+        shouldRefuseEmptySave({
+          incomingCount: liveCount,
+          deletedCount: sceneElements.length - liveCount,
+        })
+      ) {
         console.warn("[canvas-editor] skipping save: 空场景不写库");
         return null;
       }
       const files = buildKnownFiles(rawFiles);
       return {
         elements: sceneElements.filter((el) => !el.isDeleted),
-        appState: {
-          viewBackgroundColor: appState.viewBackgroundColor,
-          gridModeEnabled: appState.gridModeEnabled,
-        },
+        appState: canvasDocumentSettings(appState),
         files,
       };
     } catch (err) {
@@ -743,7 +928,7 @@ export function CanvasEditor({
    * 立即保存（Ctrl/Cmd+S 与右键菜单「保存画布」共用）。
    *
    * 自动保存是防抖的（1.5s），手动保存要的是「按下去就落库」：先取消挂起的防抖任务，
-   * 再从 Excalidraw 当前状态取一份完整 payload 写库。空场景依旧不写（见 canvas-save-guard），
+   * 再从 Excalidraw 当前状态取一份完整 payload 写库。没有显式删除的空场景不写，
    * 且**空场景不算失败**——提示语区分「已保存 / 画布为空无需保存 / 保存失败」。
    */
   const saveNow = useCallback(async (): Promise<SaveOutcome> => {
@@ -771,12 +956,18 @@ export function CanvasEditor({
 
   const prepareAssetOperation = useCallback(async () => {
     const outcome = await saveNowRef.current();
-    if (outcome !== "saved") return null;
+    if (
+      outcome === "error" ||
+      !hydratedRef.current ||
+      canvasSceneState.isDirty ||
+      !canvasSaveSession.isIdle
+    )
+      return null;
     const currentRevision = canvasSaveSession.revision;
     if (!currentRevision) return null;
     onRevisionChanged?.(currentRevision);
     return currentRevision;
-  }, [canvasSaveSession, onRevisionChanged]);
+  }, [canvasSaveSession, canvasSceneState, onRevisionChanged]);
 
   useEffect(() => {
     onPrepareAssetOperation?.(prepareAssetOperation);
@@ -871,11 +1062,11 @@ export function CanvasEditor({
       // canvases with very large embedded files this may exceed the limit, but
       // it's the best-effort approach -- sendBeacon has the same constraint.
       try {
-        canvasSaveSession.saveKeepalive(payload, sendCanvasKeepalive);
+        if (canvasSaveSession.saveKeepalive(payload, sendCanvasKeepalive))
+          pendingSaveRef.current = null;
       } catch {
         // Best-effort -- nothing we can do if it fails during page teardown
       }
-      pendingSaveRef.current = null;
     };
 
     window.addEventListener("beforeunload", flushBeforeUnload);
@@ -904,7 +1095,10 @@ export function CanvasEditor({
   const renderEmbeddable: NonNullable<ExcalidrawProps["renderEmbeddable"]> =
     useCallback((element, _appState) => {
       const link = element.link;
-      if (typeof link === "string" && isVideoUrl(link)) {
+      if (
+        typeof link === "string" &&
+        (element.customData?.isVideo === true || isVideoUrl(link))
+      ) {
         return (
           <VideoCanvasElement
             src={link}
@@ -920,17 +1114,76 @@ export function CanvasEditor({
   // Allow any URL as a valid embeddable so our video links are accepted
   const validateEmbeddable = useCallback(() => true, []);
 
+  const exportDraft = async (content: CanvasContent, name: string) => {
+    try {
+      await triggerDownload(
+        `${name}.excalidraw`,
+        new Blob(
+          [
+            JSON.stringify({
+              type: "excalidraw",
+              version: 2,
+              source: "KenFutWork",
+              ...content,
+            }),
+          ],
+          { type: "application/json" },
+        ),
+      );
+    } catch {
+      setSaveHint("error");
+    }
+  };
+
   return (
     <ErrorBoundary
       onError={(err) => console.error("[canvas-editor] render crashed:", err)}
     >
-      <div className="h-full w-full relative">
+      <div className="h-full w-full relative" aria-busy={!isHydrated}>
         {saveConflict?.session === canvasSaveSession && (
           <div
             role="alert"
             className="absolute left-1/2 top-4 z-40 max-w-[min(90vw,48rem)] -translate-x-1/2 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs text-destructive shadow-card"
           >
             {saveConflict.message}
+            <button
+              type="button"
+              className="ml-3 underline"
+              onClick={() => {
+                const content = buildSavePayloadRef.current();
+                if (content) void exportDraft(content, "画布草稿");
+              }}
+            >
+              导出草稿
+            </button>
+          </div>
+        )}
+        {draftConflict && (
+          <div
+            role="alert"
+            className="absolute bottom-16 left-4 z-40 rounded-md border border-destructive/40 bg-card px-3 py-2 text-xs"
+          >
+            本地草稿存在冲突
+            {drafts.drafts.map((draft, index) => (
+              <button
+                key={draft.token}
+                type="button"
+                className="ml-3 underline"
+                onClick={() =>
+                  void exportDraft(draft.content, `画布草稿-${index + 1}`)
+                }
+              >
+                导出草稿 {index + 1}
+              </button>
+            ))}
+          </div>
+        )}
+        {drafts.error && (
+          <div
+            role="status"
+            className="absolute bottom-4 left-4 z-40 rounded-md border border-border bg-card px-3 py-2 text-xs"
+          >
+            {drafts.error}
           </div>
         )}
         {/* 提示放顶部居中（用户要求）：底部居中会被绘图工具条压住，角落又容易被忽略 */}
@@ -950,6 +1203,7 @@ export function CanvasEditor({
           // 原生 UI 语言：不指定则默认英文（右键菜单 / 缩放 / 帮助 等全英文）
           langCode="zh-CN"
           theme={resolvedTheme === "dark" ? "dark" : "light"}
+          viewModeEnabled={!isHydrated}
           initialData={{
             // 服务端契约把画布内容存成不透明 JSON（Record<string, unknown>），
             // 进画布时才按 Excalidraw 场景类型收窄；形状由写端（本组件）保证。

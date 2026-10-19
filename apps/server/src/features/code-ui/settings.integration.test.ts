@@ -1,7 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CodeUiWorkspace } from "@kenfutwork/shared";
+import {
+  type CodeUiWorkspace,
+  codeUiWorkspaceSchema,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectService } from "../projects/project-service.js";
@@ -155,7 +160,140 @@ const setting = (method: string, value?: unknown) =>
     args: value === undefined ? [] : [value],
   });
 
+async function createSettingsWorkspaceTask(
+  host: Awaited<ReturnType<typeof createCodeSessionFixture>>,
+  path: string,
+  modelSelection: NonNullable<
+    protocol.ConversationSnapshot["config"]["modelSelection"]
+  >,
+) {
+  const opened = await request("/api/code-ui/rpc", {
+    service: "workspace",
+    method: "open",
+    args: [{ path }],
+  });
+  expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+  const { projectId, path: workspacePath } = codeUiWorkspaceSchema.parse(
+    opened.body.result,
+  );
+  const created = await host.stream.rpc("sendConversationCommandV4", [
+    {
+      workspacePath,
+      projectId,
+      envelope: {
+        commandId: randomUUID(),
+        clientId: host.clientId,
+        sessionId: null,
+        type: "createSession",
+        issuedAt: Date.now(),
+        payload: {
+          workspaceId: projectId,
+          config: { modelSelection },
+        },
+      },
+    },
+  ]);
+  expect(created.status, JSON.stringify(created.body)).toBe(200);
+  const ack = protocol.commandAckSchema.parse(created.body.result);
+  if (ack.status !== "accepted" || ack.result?.type !== "createSession")
+    throw new Error("公开命令未创建设置验收Task");
+  return { projectId, workspacePath, sessionId: ack.result.sessionId };
+}
+
 describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
+  it("同目录独立项目的recent仅保存路径历史，去重读取且不放宽tab或Task身份", async () => {
+    const host = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
+    let independentProjectId: string | undefined;
+    try {
+      const independent = await request("/api/code-ui/rpc", {
+        service: "workspace",
+        method: "open",
+        args: [
+          {
+            path: host.workspacePath,
+            preset: "design",
+            directoryChoice: "independent",
+          },
+        ],
+      });
+      expect(independent.status, JSON.stringify(independent.body)).toBe(200);
+      independentProjectId = independent.body.result.projectId;
+      expect(independentProjectId).not.toBe(host.projectId);
+      expect(independent.body.result.path).toBe(host.workspacePath);
+      const saved = await setting("update", {
+        recentProjects: [host.workspacePath, host.workspacePath],
+      });
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expect((await setting("get")).body.result.recentProjects).toEqual([
+        host.workspacePath,
+      ]);
+      const before = (await setting("get")).body.result;
+      for (const patch of [
+        {
+          lastWorkspaceSession: [
+            { kind: "local", workspacePath: host.workspacePath },
+          ],
+        },
+        {
+          lastWorkspaceSession: [
+            {
+              kind: "local",
+              workspacePath: host.workspacePath,
+              workspaceIdentity: JSON.stringify([
+                randomUUID(),
+                host.workspacePath,
+              ]),
+            },
+          ],
+        },
+        {
+          lastActiveTaskByWorkspace: {
+            [JSON.stringify([independentProjectId, host.workspacePath])]:
+              host.sessionId,
+          },
+        },
+      ]) {
+        expect(
+          (await setting("update", { locale: "en-US", ...patch })).status,
+        ).toBe(404);
+        expect((await setting("get")).body.result).toEqual(before);
+      }
+      expect(
+        (
+          await request(
+            `/api/projects/${independentProjectId}`,
+            undefined,
+            "DELETE",
+          )
+        ).status,
+      ).toBe(204);
+      independentProjectId = undefined;
+      expect((await setting("get")).body.result.recentProjects).toEqual([
+        host.workspacePath,
+      ]);
+      expect(
+        (await request(`/api/projects/${host.projectId}`, undefined, "DELETE"))
+          .status,
+      ).toBe(204);
+      expect((await setting("get")).body.result.recentProjects).toEqual([]);
+      for (const path of [host.workspacePath, join(host.workspacePath, "未知")])
+        expect(
+          (await setting("update", { recentProjects: [path] })).status,
+        ).toBe(404);
+      expect((await setting("get")).body.result.recentProjects).toEqual([]);
+    } finally {
+      await setting("update", { recentProjects: [] });
+      if (independentProjectId)
+        await request(
+          `/api/projects/${independentProjectId}`,
+          undefined,
+          "DELETE",
+        );
+      await host.dispose();
+    }
+  });
   it("原语言、展示偏好与工作区 tab 快照稀疏保存后可重新读取，保持同一项目目录", async () => {
     const host = await createCodeSessionFixture("https://example.invalid/v1", {
       client: isolatedHttp,
@@ -257,12 +395,26 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
     });
     try {
       const before = (await setting("get")).body.result;
-      for (const patch of [
-        { locale: "invalid" },
-        { apiKey: "integration-not-a-key" },
-        { messageStreamShowTodos: "yes" },
+      for (const { patch, status, code } of [
+        {
+          patch: { locale: "invalid", messageStreamShowTodos: true },
+          status: 400,
+          code: "invalid_code_ui_request",
+        },
+        {
+          patch: { locale: "en-US", apiKey: "integration-not-a-key" },
+          status: 409,
+          code: "code_ui_command_conflict",
+        },
+        {
+          patch: { locale: "en-US", messageStreamShowTodos: "yes" },
+          status: 400,
+          code: "invalid_code_ui_request",
+        },
       ]) {
-        expect((await setting("update", patch)).status).toBe(400);
+        const rejected = await setting("update", patch);
+        expect(rejected.status, JSON.stringify(rejected.body)).toBe(status);
+        expect(rejected.body.error.code).toBe(code);
         expect((await setting("get")).body.result).toEqual(before);
       }
       expect(
@@ -346,16 +498,33 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
     }
   });
   it("过滤归档tab时仍激活原目录，关联任务焦点不保留归档键", async () => {
-    const hosts = await Promise.all(
-      [1, 2, 3].map(() =>
-        createCodeSessionFixture("https://example.invalid/v1", {
-          client: isolatedHttp,
-        }),
-      ),
-    );
-    const [first, active, last] = hosts;
-    if (!first || !active || !last) throw new Error("工作区夹具未建立");
+    const first = await createCodeSessionFixture("https://example.invalid/v1", {
+      client: isolatedHttp,
+    });
+    const dir = await mkdtemp(join(tmpdir(), "code-ui-settings-tabs-"));
+    const others: Array<
+      Awaited<ReturnType<typeof createSettingsWorkspaceTask>>
+    > = [];
     try {
+      const initial = protocol.conversationSnapshotSchema.parse(
+        await first.snapshot(),
+      );
+      if (!initial.config.modelSelection)
+        throw new Error("设置验收缺少真实模型选择");
+      for (const name of ["active", "last"]) {
+        const path = join(dir, name);
+        await mkdir(path);
+        others.push(
+          await createSettingsWorkspaceTask(
+            first,
+            path,
+            initial.config.modelSelection,
+          ),
+        );
+      }
+      const [active, last] = others;
+      if (!active || !last) throw new Error("工作区夹具未建立");
+      const hosts = [first, active, last];
       expect(
         (
           await setting("update", {
@@ -398,7 +567,10 @@ describe.skipIf(!enabled)("原 Root 设置公开宿主 integration", () => {
         lastActiveTabIndex: 0,
         lastActiveTaskByWorkspace: {},
       });
-      await Promise.all(hosts.map((host) => host.dispose()));
+      for (const host of others)
+        await request(`/api/projects/${host.projectId}`, undefined, "DELETE");
+      await first.dispose();
+      await rm(dir, { recursive: true, force: true });
     }
   });
   it("原recentProjects去重后保留前10项，关闭后重新读取保持原顺序", async () => {

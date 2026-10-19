@@ -51,6 +51,7 @@ function buildHttpApp(
           project: {
             id: typed.id,
             kind: "code" as const,
+            enabled_modes: ["code" as const],
             name: typed.name,
             slug: typed.slug,
             description: null,

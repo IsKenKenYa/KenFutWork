@@ -134,7 +134,7 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
               thread_id: "thread_existing",
               canvas_id: CANVAS_ID,
               project_id: "visual-project",
-              mode: "design",
+              mode: "flow",
             },
           ],
         };
@@ -178,7 +178,7 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
               thread_id: null,
               canvas_id: CANVAS_ID,
               project_id: "visual-project",
-              mode: "design",
+              mode: "flow",
             },
           ],
         };
@@ -192,7 +192,7 @@ describe("chat repository：按 id 供给会话（SQL 形状）", () => {
               thread_id: "thread_new",
               canvas_id: CANVAS_ID,
               project_id: "visual-project",
-              mode: "design",
+              mode: "flow",
             },
           ],
         };

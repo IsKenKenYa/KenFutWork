@@ -7,9 +7,8 @@ import type {
 
 /**
  * agentModes 缝（DEC-3，P6）：只管激活/切换/持久化当前模式。
- * 指令引导（inputDirective）+ 工具硬约束（resolveToolPolicy）双层：
- * plan/solo 在引导之外还有 tool-pre-execute 级别的强制拦截（§4.6「引导不是强制」
- * 仅适用于 goal/loop/creative 等无法机械判定的模式）。
+ * Task消费Run接纳的策略快照：solo硬禁工具；plan的强制收窄与批准退出
+ * 由独立planEnabled持有。没有Task的调用保留线程策略与plan只读白名单。
  *
  * 持久化是**写穿缓存**：Map 是本进程热缓存，activate 带 scope 时写回
  * chat_sessions.execution_mode；未声明模式的 run 起跑前 hydrate 读回。
@@ -51,10 +50,10 @@ export const BUILTIN_EXECUTION_MODES: Array<{
   },
   {
     id: "creative",
-    label: "创造",
-    description: "插件/技能创造引导：按规范产出 SKILL.md 或插件 bundle 产物。",
+    label: "技能插件",
+    description: "创建技能、插件或 MCP 连接。",
     inputDirective:
-      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前实例**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（目录须含 package.json / cordis.patch.yml / index.js）：package.json 用**嵌套声明** `"kenfutwork": {"bundle": {"patch": "./cordis.patch.yml"}}`（或 `"dsh"` 同形；平键 `"kenfutwork.bundle"` 无效），并含 `"type":"module"` 与 `"main":"index.js"`；cordis.patch.yml 的 `- insert:` 下为**数组**（每项含 id/name/inject）；index.js 为 ESM（导出 name/inject/apply(ctx)）；写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册都需要管理员：当前用户不是管理员时，如实说明并给出文件位置，让管理员去插件市场 / MCP 面板安装；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
+      '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前实例**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（目录须含 package.json / cordis.patch.yml / index.js）：package.json 用**嵌套声明** `"kenfutwork": {"bundle": {"patch": "./cordis.patch.yml"}}`（或 `"dsh"` 同形；平键 `"kenfutwork.bundle"` 无效），并含 `"type":"module"` 与 `"main":"index.js"`；cordis.patch.yml 的 `- insert:` 下为**数组**（每项含 id/name/inject）；index.js 为 ESM（导出 name/inject/apply(ctx)）；写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册面向当前本地实例或 Task；遵守工具审批、工作目录授权和安装兼容性检查，失败时说明具体原因；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
   },
 ];
 
@@ -204,7 +203,7 @@ export function evaluateToolPolicy(
   return { allowed: false, reason: policy.reason };
 }
 
-function policyForMode(mode: ExecutionMode): ToolPolicy {
+export function policyForMode(mode: ExecutionMode): ToolPolicy {
   switch (mode) {
     case "solo":
       return { kind: "deny-all", reason: SOLO_DENY_REASON };

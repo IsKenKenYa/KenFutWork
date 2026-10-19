@@ -28,6 +28,10 @@ export function parseGenerationModelDraft(
     referenceImages: "参考图上限需填写非负整数。",
     aspectRatios: "请填写有效的画幅。",
     resolutions: "请填写有效的分辨率。",
+    sizes: "尺寸需使用宽x高，如 1024x1024。",
+    qualities: "请填写有效的质量值。",
+    outputFormats: "输出格式仅支持 png、jpg 或 webp。",
+    maxOutputs: "单次多图上限需填写正整数。",
   };
   const field = result.error.issues[0]?.path.find(
     (part) => typeof part === "string" && part in messages,
@@ -107,8 +111,10 @@ function BooleanField({
 export function GenerationModelFields({
   model,
   onChange,
+  hideCapability = false,
 }: {
   model: ProviderInstanceModel;
+  hideCapability?: boolean;
   onChange(model: ProviderInstanceModel): void;
 }) {
   const capabilityId = useId();
@@ -135,33 +141,35 @@ export function GenerationModelFields({
       : undefined;
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-4">
-        <label
-          htmlFor={capabilityId}
-          className="text-ui-base text-foreground-subtle"
-        >
-          用途
-        </label>
-        <Select
-          value={model.capability}
-          onValueChange={(value) =>
-            onChange({
-              ...model,
-              capability: modelCapabilitySchema.parse(value),
-            })
-          }
-        >
-          <SelectTrigger id={capabilityId} className="w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="image">图像</SelectItem>
-            <SelectItem value="image-edit">图像编辑</SelectItem>
-            <SelectItem value="video">视频</SelectItem>
-            <SelectItem value="audio">音频</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {hideCapability ? null : (
+        <div className="flex items-center justify-between gap-4">
+          <label
+            htmlFor={capabilityId}
+            className="text-ui-base text-foreground-subtle"
+          >
+            用途
+          </label>
+          <Select
+            value={model.capability}
+            onValueChange={(value) =>
+              onChange({
+                ...model,
+                capability: modelCapabilitySchema.parse(value),
+              })
+            }
+          >
+            <SelectTrigger id={capabilityId} className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="image">图像</SelectItem>
+              <SelectItem value="image-edit">图像编辑</SelectItem>
+              <SelectItem value="video">视频</SelectItem>
+              <SelectItem value="audio">音频</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <TextField
         label="模型 ID"
         value={model.id}
@@ -218,6 +226,35 @@ export function GenerationModelFields({
         </Fragment>
       ) : model.capability === "image" || model.capability === "image-edit" ? (
         <Fragment key="image">
+          <TextField
+            label="画幅"
+            value={model.imageGeneration?.aspectRatios?.join(",") ?? ""}
+            onChange={(value) => changeImage({ aspectRatios: list(value) })}
+          />
+          <TextField
+            label="尺寸"
+            value={model.imageGeneration?.sizes?.join(",") ?? ""}
+            onChange={(value) => changeImage({ sizes: list(value) })}
+          />
+          <TextField
+            label="质量"
+            value={model.imageGeneration?.qualities?.join(",") ?? ""}
+            onChange={(value) => changeImage({ qualities: list(value) })}
+          />
+          <TextField
+            label="输出格式"
+            value={model.imageGeneration?.outputFormats?.join(",") ?? ""}
+            onChange={(value) => changeImage({ outputFormats: list(value) })}
+          />
+          <TextField
+            label="单次多图上限"
+            value={model.imageGeneration?.maxOutputs?.toString() ?? ""}
+            onChange={(value) =>
+              changeImage({
+                maxOutputs: value.trim() ? Number(value) : undefined,
+              })
+            }
+          />
           <TextField
             label="模式"
             value={model.imageGeneration?.modes?.join(",") ?? ""}

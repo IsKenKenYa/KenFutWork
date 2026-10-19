@@ -27,6 +27,8 @@ import {
   publishHistoryPreparation,
 } from "./history-preparation.js";
 import type { CodeInputSettlement } from "./queue-control.js";
+import { codeUiRunHasStopIntent, codeUiRunOutcome } from "./run-outcome.js";
+import { freezeWorkContext, workContextForRun } from "./work-context.js";
 
 export type CodeUiSessionRecord = SqlRow & {
   id: string;
@@ -69,6 +71,58 @@ export class CodeUiCommandOutcomeUnknownError extends CodeUiRepositoryError {
       "命令发表结果尚未确认；保留准备资源，请重新连接后查看持久状态。",
     );
   }
+}
+
+type CreationCommand = {
+  clientId: string;
+  commandId: string;
+  fingerprint: string;
+};
+async function readCreationReceipt(
+  scoped: InstanceSqlClient,
+  projectId: string,
+  command: CreationCommand,
+) {
+  const previous = await scoped.queryOne<
+    SqlRow & {
+      parameter_fingerprint: string | null;
+      ack: protocol.CommandAck | null;
+      status: string;
+      session_id: string;
+    }
+  >(
+    "select parameter_fingerprint, ack, status, session_id from public.code_ui_commands where instance_id=:instance and client_id=$1 and command_id=$2",
+    [command.clientId, command.commandId],
+  );
+  if (!previous) return null;
+  if (previous.status === "deleted")
+    throw new CodeUiRepositoryError("not_found", "命令所属会话已删除");
+  const owner = await scoped.queryOne<SqlRow & { id: string }>(
+    "select id from public.code_ui_sessions where instance_id=:instance and id=$1 and project_id=$2 and parent_session_id is null and deleted_at is null",
+    [previous.session_id, projectId],
+  );
+  if (!owner)
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "创建回执不属于当前项目或会话。",
+    );
+  if (previous.parameter_fingerprint !== command.fingerprint)
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "同一命令键不能提交不同参数",
+    );
+  if (!previous.ack)
+    throw new CodeUiRepositoryError("command_conflict", "命令尚未完成");
+  const ack = protocol.commandAckSchema.parse({
+    ...previous.ack,
+    status: "duplicate",
+  });
+  if (ack.result?.type !== "createSession" || ack.result.sessionId !== owner.id)
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "创建命令回执与会话身份不一致。",
+    );
+  return ack;
 }
 
 async function readPreparedCommandAck(
@@ -337,8 +391,10 @@ async function lockActiveProject(
   scoped: InstanceSqlClient,
   root: CodeUiSessionRecord,
 ) {
-  return scoped.queryOne<SqlRow & { id: string }>(
-    "select id from public.projects where instance_id=:instance and id=$1 and kind='code' and archived_at is null for share",
+  return scoped.queryOne<
+    SqlRow & { id: string; enabled_modes: Array<"code" | "design"> }
+  >(
+    "select id,enabled_modes from public.projects where instance_id=:instance and id=$1 and enabled_modes && array['code','design']::text[] and archived_at is null for share",
     [root.project_id],
   );
 }
@@ -383,6 +439,12 @@ export function createCodeUiRepository(
             config: snapshot.config,
             state: root.state!,
           });
+          const lostRunId =
+            root.active_run_id &&
+            codeUiRunOutcome(root.state, root.active_run_id) === "active" &&
+            !codeUiRunHasStopIntent(root.state, root.active_run_id)
+              ? root.active_run_id
+              : null;
           if (root.active_run_id)
             host.recordEvent({
               type: "run.failed",
@@ -390,7 +452,21 @@ export function createCodeUiRepository(
               timestamp: new Date().toISOString(),
               error: { code: "run_failed", message: INTERRUPTED_RUN_MESSAGE },
             });
+          const goal = host.getGoal();
+          if (
+            goal &&
+            ["active", "verifying", "notSatisfied"].includes(goal.status)
+          )
+            host.setGoal(
+              goals.recover(goal, new Date(root.updated_at).getTime()),
+              root.state!.goalModel,
+            );
           const state = host.exportState();
+          // 同一宿主的排他恢复只记录本次确实丢失的活跃Run，不补写旧终态。
+          if (lostRunId)
+            state.hostShutdownRuns = [
+              ...new Set([...(state.hostShutdownRuns ?? []), lostRunId]),
+            ];
           const current = state.snapshots.find(
             (entry) => entry.sessionId === root.id,
           )!;
@@ -453,7 +529,7 @@ export function createCodeUiRepository(
         .forInstance(instanceId)
         .queryOne<{ instance_id: string }>(
           `with live_projects as (
-           select id from public.projects where instance_id=:instance and kind='code'
+           select id from public.projects where instance_id=:instance and enabled_modes && array['code','design']::text[]
              and archived_at is null and id=any($3::uuid[]) order by id for share
          )
          insert into public.instance_settings (instance_id,code_ui_preferences)
@@ -595,6 +671,20 @@ export function createCodeUiRepository(
         );
       return Number(row.branch_generation);
     },
+    async readCreationCommand(
+      instanceId: string,
+      projectId: string,
+      command: CreationCommand,
+    ) {
+      return persistence.transaction(async (tx) => {
+        const scoped = tx.forInstance(instanceId);
+        await scoped.query(
+          "select pg_advisory_xact_lock(hashtextextended(:instance::text || '/' || $1 || '/' || $2, 0))",
+          [command.clientId, command.commandId],
+        );
+        return readCreationReceipt(scoped, projectId, command);
+      });
+    },
     async createRoot(
       instanceId: string,
       input: {
@@ -614,36 +704,22 @@ export function createCodeUiRepository(
           "select pg_advisory_xact_lock(hashtextextended(:instance::text || '/' || $1 || '/' || $2, 0))",
           [input.command.clientId, input.command.commandId],
         );
-        const previous = await scoped.queryOne<
-          SqlRow & {
-            parameter_fingerprint: string | null;
-            ack: protocol.CommandAck | null;
-            status: string;
-          }
-        >(
-          "select parameter_fingerprint, ack, status from public.code_ui_commands where instance_id = :instance and client_id = $1 and command_id = $2",
-          [input.command.clientId, input.command.commandId],
+        const previous = await readCreationReceipt(
+          scoped,
+          input.projectId,
+          input.command,
         );
-        if (previous) {
-          if (previous.status === "deleted")
-            throw new CodeUiRepositoryError("not_found", "命令所属会话已删除");
-          if (previous.parameter_fingerprint !== input.command.fingerprint)
-            throw new CodeUiRepositoryError(
-              "command_conflict",
-              "同一命令键不能提交不同参数",
-            );
-          if (previous.ack)
-            return protocol.commandAckSchema.parse({
-              ...previous.ack,
-              status: "duplicate",
-            });
-          throw new CodeUiRepositoryError("command_conflict", "命令尚未完成");
-        }
-        const project = await scoped.queryOne<SqlRow & { id: string }>(
+        if (previous) return previous;
+        const project = await scoped.queryOne<
+          SqlRow & { id: string; enabled_modes: Array<"code" | "design"> }
+        >(
           `select id from public.projects
-           where instance_id = :instance and id = $1 and kind = 'code' and archived_at is null
+           where instance_id = :instance and id = $1 and $2 = any(enabled_modes) and archived_at is null
            for update`,
-          [input.projectId],
+          [
+            input.projectId,
+            freezeWorkContext(input.state.initialWorkContext).preset,
+          ],
         );
         if (
           !project ||
@@ -691,6 +767,18 @@ export function createCodeUiRepository(
         [sessionId, runId],
       );
     },
+    async findRunOwner(
+      instanceId: string,
+      runId: string,
+    ): Promise<CodeUiSessionRecord | null> {
+      return persistence.forInstance(instanceId).queryOne<CodeUiSessionRecord>(
+        `select s.* from public.code_ui_sessions s where s.instance_id=:instance
+          and s.parent_session_id is null and s.deleted_at is null
+          and (exists(select 1 from jsonb_array_elements(coalesce(s.state->'inputs','[]'::jsonb)) i where i->>'runId'=$1)
+            or exists(select 1 from jsonb_array_elements(coalesce(s.state->'runWorkContexts','[]'::jsonb)) r where r->>0=$1))`,
+        [runId],
+      );
+    },
     async find(
       instanceId: string,
       sessionId: string,
@@ -716,7 +804,7 @@ export function createCodeUiRepository(
     async listRoots(instanceId: string): Promise<CodeUiSessionRecord[]> {
       return persistence.forInstance(instanceId).query<CodeUiSessionRecord>(
         `select s.* from public.code_ui_sessions s join public.projects p on p.id = s.project_id
-         where s.instance_id = :instance and p.instance_id = :instance and p.kind = 'code' and p.archived_at is null
+         where s.instance_id = :instance and p.instance_id = :instance and p.enabled_modes && array['code','design']::text[] and p.archived_at is null
            and s.parent_session_id is null order by s.updated_at desc, s.id`,
       );
     },
@@ -775,12 +863,41 @@ export function createCodeUiRepository(
           });
         }
         const root = await lockRoot(scoped, envelope.sessionId!);
-        if (!(await lockActiveProject(scoped, root)))
+        const project = await lockActiveProject(scoped, root);
+        if (!project)
           throw new CodeUiRepositoryError(
             "not_found",
             "Code 项目已归档或不存在",
           );
+        const requestedContext = (
+          envelope.payload as { workContext?: protocol.ConversationWorkContext }
+        ).workContext;
+        if (
+          requestedContext &&
+          !project.enabled_modes.includes(
+            freezeWorkContext(requestedContext).preset,
+          )
+        )
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "项目工作方式已改变，请重新提交。",
+          );
         const decision = decide(root);
+        const admitted = decision.state?.inputs?.find(
+          (input) =>
+            input.intent.sourceCommandId === envelope.commandId &&
+            input.intent.clientId === envelope.clientId,
+        );
+        if (
+          admitted &&
+          !project.enabled_modes.includes(
+            freezeWorkContext(admitted.intent.workContext).preset,
+          )
+        )
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "项目工作方式已改变，输入未接纳。",
+          );
         const ack = protocol.commandAckSchema.parse(decision.ack);
         if (decision.state)
           await writeState(scoped, root, decision.state, decision.activeRunId);
@@ -1007,7 +1124,13 @@ export function createCodeUiRepository(
         )
           return false;
         const project = await lockActiveProject(scoped, root);
-        if (!project) return false;
+        if (
+          !project ||
+          !project.enabled_modes.includes(
+            workContextForRun(root.state!, runId).preset,
+          )
+        )
+          return false;
         // 只登记同步运行句柄，不执行模型 I/O；与 Stop 的同一根锁消除检查/启动窗口。
         start(root);
         return true;

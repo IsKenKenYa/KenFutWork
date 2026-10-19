@@ -6,6 +6,8 @@ import { createTaskMcpTools } from "./task-mcp-tools.js";
 it("Code创建/安装/卸载入口是execute，状态只读；参数投影幂等但真实env照常送达服务", async () => {
   const calls: unknown[] = [];
   const service: TaskMcpService = {
+    callConfigured: async () => null,
+    closeSource: async () => {},
     computerUseConnections: async () => [],
     create: async (input) => {
       calls.push(input);
@@ -36,10 +38,10 @@ it("Code创建/安装/卸载入口是execute，状态只读；参数投影幂等
   const tools = createTaskMcpTools(service);
   expect(tools.map((entry) => [entry.name, entry.scope, entry.access])).toEqual(
     [
-      ["create_mcp_server", "code", "execute"],
-      ["install_mcp_server", "code", "execute"],
-      ["uninstall_mcp_server", "code", "execute"],
-      ["list_mcp_servers", "code", "read"],
+      ["create_mcp_server", "shared", "execute"],
+      ["install_mcp_server", "shared", "execute"],
+      ["uninstall_mcp_server", "shared", "execute"],
+      ["list_mcp_servers", "shared", "read"],
     ],
   );
   const creator = tools.find((entry) => entry.name === "create_mcp_server");
@@ -65,13 +67,13 @@ it("Code创建/安装/卸载入口是execute，状态只读；参数投影幂等
   expect(args.env.USER_TOKEN).toBe("private-value");
 });
 
-it("全局Design MCP工具不再借shared进入Code；readOnlyHint不是执行权限", () => {
+it("实例MCP工具共享真实Task上下文；readOnlyHint不是执行权限", () => {
   const tool = toKernelTool(
     "legacy",
     { name: "lookup", inputSchema: { type: "object" } },
     { listTools: async () => ({ tools: [] }), callTool: async () => null },
   );
-  expect(tool.scope).toBe("design");
+  expect(tool.scope).toBe("shared");
   expect(tool.access).toBe("execute");
   expect(tool.readonlyExecution).not.toBe(true);
 });

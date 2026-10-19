@@ -18,7 +18,7 @@ export function createExitPlanModeToolDefinition(options: {
 }): ToolDefinition {
   return {
     name: EXIT_PLAN_MODE_TOOL_NAME,
-    scope: "code",
+    scope: "shared",
     exposure: "core",
     planControl: "exit",
     description:

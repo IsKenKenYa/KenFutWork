@@ -3,7 +3,9 @@ import type {
   PendingInteraction,
   PermissionRequestPayload,
 } from "@zcode/shared/zcode-protocol-v4";
+import type { ModelRequestPort } from "../../agent/model-request.js";
 import type { ExecutionRole } from "../execution/scope-service.js";
+import type { ApprovalReviewKind } from "./approval-review-context.js";
 
 /** Task-local V4 modes; never implemented by changing the instance tier. */
 export type CodeApprovalMode =
@@ -25,12 +27,30 @@ export interface ApprovalIdentity {
   planningEpoch?: number | undefined;
 }
 
+export interface ApprovalHostContext {
+  userRequest: string;
+  remainingTokens: number | null;
+  requirementsVersion: string;
+}
+
+/** Kept current until the broker's final one-time claim. */
+export interface ApprovalReviewGrant {
+  decision: "allow";
+  signal: AbortSignal;
+  validate(): Promise<boolean>;
+  release(): void;
+}
+export type ApprovalReviewer = (
+  input: PermissionInvocation,
+  signal: AbortSignal,
+) => Promise<ApprovalReviewGrant | "manual">;
+
 /** All fields except args originate from the trusted host/tool owner. */
 export interface PermissionInvocation extends ApprovalIdentity {
   preset: "code" | "design";
   threadId?: string | undefined;
   mode: CodeApprovalMode;
-  /** Immutable dispatch-time ceiling for worker agents. */
+  /** Immutable Run/child-dispatch ceiling, enforced for every scoped role. */
   approvalCeiling: CodeApprovalMode;
   toolName: string;
   /** Parsed by the actual tool schema before either admission gate. */
@@ -41,6 +61,18 @@ export interface PermissionInvocation extends ApprovalIdentity {
   planControl?: CodePlanControl | undefined;
   /** Trusted proof of a readonly filesystem AND denied network. */
   readonlyExecution?: boolean | undefined;
+  /** Trusted tool-owner declaration; unknown tools always retain human approval. */
+  reviewKind?: ApprovalReviewKind | undefined;
+  /** Private host evidence and tool-free Run usage port; never part of public events. */
+  reviewContext?:
+    | {
+        actor: import("../local-instance/types.js").LocalActor;
+        readContext(): Promise<ApprovalHostContext | null>;
+        scope: import("@kenfutwork/shared").CodeExecutionScope;
+        maxCharacters: number;
+        requestModel: ModelRequestPort;
+      }
+    | undefined;
   summary?: string | undefined;
   display?: PermissionRequestPayload["display"] | undefined;
   signal?: AbortSignal | undefined;
@@ -94,6 +126,10 @@ export type ApprovalCancellation = Partial<
   Pick<ApprovalIdentity, "instanceId" | "taskId">;
 
 export interface CodeApprovalService {
+  /** Asynchronous reviewer/configuration proof immediately before the final execution gates. */
+  revalidate(
+    invocation: PermissionInvocation,
+  ): Promise<import("./permission-service.js").PermissionDecision>;
   /** Wait for this actual invocation's human answer. Does not consume grant. */
   admit(
     invocation: PermissionInvocation,

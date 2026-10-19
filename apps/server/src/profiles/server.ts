@@ -9,6 +9,7 @@ import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
+import { createCanvasPublicationRelayPlugin } from "../features/canvas/generation-publication-relay.js";
 import {
   createCanvasPlugin,
   createCanvasToolsPlugin,
@@ -25,12 +26,6 @@ import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
-import { createDesignApprovalsPlugin } from "../features/execution/design-approvals-plugin.js";
-import { createDesignGoalHttpPlugin } from "../features/execution/design-goal-http-plugin.js";
-import { createDesignGoalsPlugin } from "../features/execution/design-goals-plugin.js";
-import { createDesignRunHostPlugin } from "../features/execution/design-run-host-plugin.js";
-import { createDesignTaskHttpPlugin } from "../features/execution/design-task-http-plugin.js";
-import { createDesignTasksPlugin } from "../features/execution/design-tasks-plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
@@ -52,6 +47,7 @@ import {
   createModelProvidersPlugin,
 } from "../features/model-providers/plugin.js";
 import { createOpenDesignHostPlugin } from "../features/open-design/plugin.js";
+import { createApprovalReviewPlugin } from "../features/permissions/approval-review-plugin.js";
 import { createPermissionsPlugin } from "../features/permissions/plugin.js";
 import { persistencePlugin } from "../features/persistence/plugin.js";
 import {
@@ -193,15 +189,11 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     brandKitPlugin,
     createCanvasPlugin(),
     createCanvasToolsPlugin(),
+    createCanvasPublicationRelayPlugin(),
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
     createGoalsPlugin(),
-    createDesignGoalsPlugin(),
-    createDesignTasksPlugin(),
-    createDesignTaskHttpPlugin(),
-    createDesignGoalHttpPlugin(),
-    createDesignApprovalsPlugin(),
     createChatPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
@@ -225,6 +217,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createSkillsPlugin(),
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
+    createApprovalReviewPlugin(),
     createAgentModesPlugin(),
     createCodeToolsPlugin(),
     createCodeUiAgentEventsPlugin(),
@@ -279,7 +272,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
     createCodeUiPlugin(),
-    createDesignRunHostPlugin(),
     createRealtimePlugin(),
   ];
 }

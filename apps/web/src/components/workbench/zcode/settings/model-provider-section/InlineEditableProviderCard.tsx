@@ -1,4 +1,5 @@
 /* oxlint-disable eslint(max-lines) -- provider 卡片同时承载名称、连接、鉴权、模型和映射编辑；本阶段先维持单组件，后续再按表单域拆分。 */
+import { ProviderConnectionPanel } from "@zui/host/ProviderConnectionPanel.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   getProviderFormApiKey,
@@ -150,6 +151,7 @@ export function InlineEditableProviderCard({
   onOpenPresetApiKey,
   statusSection,
   nameEditable,
+  connectionCollapsed = false,
   headerVisible = true,
   headerActionsVisible,
   settingsRevision,
@@ -177,6 +179,7 @@ export function InlineEditableProviderCard({
   onOpenPresetApiKey?: () => void;
   statusSection?: ReactNode;
   nameEditable?: boolean;
+  connectionCollapsed?: boolean;
   headerVisible?: boolean;
   headerActionsVisible?: boolean;
   settingsRevision?: number;
@@ -213,6 +216,7 @@ export function InlineEditableProviderCard({
   const draftRevisionRef = useRef(0);
   const apiKeyDraftRevisionRef = useRef(0);
   const lastSubmittedDraftSignatureRef = useRef<string | null>(null);
+  const pendingDraftSaveRef = useRef<{ signature: string; operation: Promise<void> } | null>(null);
   const providerDisplayName = resolveModelProviderDisplayName(provider);
   const saveNotificationRef = useRef({
     providerId: provider.providerId,
@@ -387,12 +391,20 @@ export function InlineEditableProviderCard({
   const saveProviderWithCleanupGuard = useCallback(
     async (nextProvider: ProviderSettingsFormProvider, onFailure?: () => void): Promise<void> => {
       const keyRevision = apiKeyDraftRevisionRef.current;
+      // 原生协议/模型补丁不会提交连接字段，不能确认或清理这些字段的草稿。
+      const submitsProviderFields = !nextProvider.nativeProtocolUpdate && !nextProvider.nativeModelUpdate;
+      const submittedHeaders = submitsProviderFields && nextProvider.personalConfig.api?.headers !== undefined
+        ? draftRef.current.headersValue : undefined;
       const submittedProviderId = nextProvider.providerId;
-      const submittedKey = isApiKeyAccess(nextProvider.personalConfig.access)
+      const submittedKey = submitsProviderFields && isApiKeyAccess(nextProvider.personalConfig.access)
         ? nextProvider.personalConfig.access.apiKey
         : undefined;
       const operation = async () => {
         await onSave(nextProvider);
+        if (submittedHeaders !== undefined && providerIdRef.current === submittedProviderId && draftRef.current.headersValue === submittedHeaders) {
+          delete draftRef.current.headersValue;
+          dirtyProviderFieldsRef.current.delete("headersValue");
+        }
         // 只清除已成功写入且未继续编辑的 Key；不覆盖其它字段或新供应商草稿。
         if (
           provider.credentialConfigured !== undefined &&
@@ -439,7 +451,10 @@ export function InlineEditableProviderCard({
         ...draftRef.current,
         nameValue: nameConfirmed ? draftRef.current.nameValue : getProviderFormLabel(provider),
       });
-      if (lastSubmittedDraftSignatureRef.current === signature) return;
+      if (lastSubmittedDraftSignatureRef.current === signature) {
+        await pendingDraftSaveRef.current?.operation;
+        return;
+      }
       lastSubmittedDraftSignatureRef.current = signature;
 
       // Linux 下点击左侧供应商切换时，输入框 blur 与 Popover 关闭顺序不稳定，
@@ -449,11 +464,14 @@ export function InlineEditableProviderCard({
         providerId: provider.providerId,
         reason,
       });
-      await saveProviderWithCleanupGuard(nextProvider, () => {
+      const operation = saveProviderWithCleanupGuard(nextProvider, () => {
         if (lastSubmittedDraftSignatureRef.current === signature) {
           lastSubmittedDraftSignatureRef.current = null;
         }
       });
+      pendingDraftSaveRef.current = { signature, operation };
+      try { await operation; }
+      finally { if (pendingDraftSaveRef.current?.operation === operation) pendingDraftSaveRef.current = null; }
     },
     [provider, readOnlyEndpoints, saveProviderWithCleanupGuard],
   );
@@ -846,6 +864,7 @@ export function InlineEditableProviderCard({
       {statusSection}
 
       <div className="space-y-3">
+        <ProviderConnectionPanel provider={provider} collapsed={connectionCollapsed} onCommit={() => commitPendingDraft("connection-close")} onHeadersChange={value => { draftRef.current.headersValue = value; markDraftDirty("headersValue"); }}>
         {isAccountProvider ? null : (
           <ProviderConnectionSection
             provider={provider}
@@ -883,6 +902,7 @@ export function InlineEditableProviderCard({
           />
         ) : null}
 
+        </ProviderConnectionPanel>
         {provider.native?.protocol === "dify-engine" ? null : <ProviderModelsSection
           nativeProvider={provider.native}
           // 不同 Provider 可以有同名模型；不能复用上一供应商的打开中草稿和版本。

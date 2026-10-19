@@ -1,15 +1,24 @@
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
+import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import {
   createExecutionScopes,
   type ExecutionScopeHandle,
 } from "../execution/scope-service.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
+import { createPermissionService } from "../permissions/permission-service.js";
 import {
   createPersistenceFromRunner,
   type PostgresQueryRunner,
@@ -83,7 +92,7 @@ async function fixture(preset: "code" | "design" = "code") {
   const scopes = createExecutionScopes({
     repository: {
       load: async () => ({
-        preset,
+        preset: "code",
         scope,
         state: "ready",
         branchGeneration: 1,
@@ -100,7 +109,7 @@ async function fixture(preset: "code" | "design" = "code") {
   const context: TaskWorkContext = {
     actor,
     scope,
-    ownerKind: preset,
+    ownerKind: "code",
     agentId: "main",
     runId: "run-main",
     branchGeneration: 1,
@@ -134,7 +143,7 @@ async function fixture(preset: "code" | "design" = "code") {
   });
   const controller = createTaskCommandTools(
     { manager, sandbox, settings },
-    { scope: preset },
+    { scope: "shared" },
   );
   const tool = (name: string) => {
     const found = controller.tools.find((entry) => entry.name === name);
@@ -146,6 +155,7 @@ async function fixture(preset: "code" | "design" = "code") {
     call: string,
   ): ToolExecutionContext => ({
     actor,
+    workContext: { preset },
     scopeHandle: handle,
     taskWorkContext: { ...context, runId: `run-${handle.agentId}` },
     toolCallId: call,
@@ -193,17 +203,128 @@ async function fixture(preset: "code" | "design" = "code") {
       .toContain("ready");
     return work.taskId;
   };
-  return { root, main, manager, context, tool, execution, start, failFast };
+  return {
+    root,
+    main,
+    manager,
+    context,
+    tool,
+    execution,
+    start,
+    failFast,
+    sandbox,
+  };
 }
 
+it
+  .skipIf(process.platform !== "darwin" && process.platform !== "linux")
+  .each([false, true])(
+  "Plan主Task真实人审批准Bash后仍只能读取，不能写Task文件或外部目录（已有可写helper=%s）",
+  async (warmed) => {
+    const state = await fixture();
+    const marker = join(state.root, "plan-original.txt");
+    const outside = join(state.root, "..", "plan-outside.txt");
+    await writeFile(marker, "original");
+    // 同一真实 Task/helper 先完成可写命令，Plan 不能复用它的可写物理策略。
+    if (warmed) {
+      const warmup = `require('node:fs').writeFileSync(${JSON.stringify(join(state.root, "warmup.txt"))},'warm')`;
+      await state.tool("Bash").execute(
+        {
+          command: nodeCommand(warmup),
+          run_in_background: false,
+        },
+        state.execution(state.main, "writable-warmup"),
+      );
+      expect(await readFile(join(state.root, "warmup.txt"), "utf8")).toBe(
+        "warm",
+      );
+    }
+    const permissions = createPermissionService();
+    const events = new AgentRunEventBus();
+    events.on("tool-pre-execute", async (payload, next) => {
+      if (!payload.permissionInvocation) return next(payload);
+      const result = await permissions.admit(payload.permissionInvocation);
+      return next({ ...payload, decision: result.decision });
+    });
+    let approved = 0;
+    permissions.onEvent(async (event) => {
+      if (event.type !== "requested") return;
+      const result = await permissions.resolve({
+        interactionId: event.interaction.interactionId,
+        answer: { optionId: "allowOnce", action: "accept" },
+        binding: event.identity,
+      });
+      expect(result).toMatchObject({ status: "resolved", decision: "allow" });
+      approved++;
+    });
+    const registry = new ToolRegistryImpl(events, () => permissions);
+    const bash = {
+      ...state.tool("Bash"),
+      readonlyExecution: state.sandbox.readonlyExecution === true,
+    };
+    registry.register(bash);
+    const execution = state.execution(state.main, "plan-approved-write");
+    execution.codeApproval = {
+      ceiling: "plan",
+      resolve: async () => ({
+        mode: "plan",
+        planEnabled: true,
+        planningEpoch: 1,
+        scopeGeneration: state.context.scope.generation,
+        branchGeneration: state.context.branchGeneration,
+      }),
+    };
+    const program = `const fs=require('node:fs');process.stdout.write('read:'+fs.readFileSync(${JSON.stringify(marker)},'utf8')+'\\n');for(const [label,path] of [['task',${JSON.stringify(marker)}],['outside',${JSON.stringify(outside)}]]){try{fs.writeFileSync(path,'mutated');process.stdout.write(label+':write-open\\n')}catch{process.stdout.write(label+':write-denied\\n')}}`;
+    const result = z
+      .object({ canonicalOutput: z.object({ output: z.string() }) })
+      .parse(
+        await registry.executeDefinition(
+          bash,
+          {
+            command: nodeCommand(program),
+            run_in_background: false,
+          },
+          execution,
+        ),
+      );
+    expect(approved).toBe(1);
+    expect(result.canonicalOutput.output).toContain("read:original");
+    expect(await readFile(marker, "utf8")).toBe("original");
+    expect(result.canonicalOutput.output).toContain("task:write-denied");
+    expect(result.canonicalOutput.output).toContain("outside:write-denied");
+    await expect(readFile(outside, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(state.main.describe()).toMatchObject({
+      taskId: state.context.scope.taskId,
+      generation: state.context.scope.generation,
+      rootDirectory: state.root,
+      sandboxMode: "workspace-write",
+    });
+    const afterPlan = `require('node:fs').writeFileSync(${JSON.stringify(join(state.root, "after-plan.txt"))},'writable')`;
+    await state.tool("Bash").execute(
+      {
+        command: nodeCommand(afterPlan),
+        run_in_background: false,
+      },
+      state.execution(state.main, "writable-after-plan"),
+    );
+    expect(await readFile(join(state.root, "after-plan.txt"), "utf8")).toBe(
+      "writable",
+    );
+  },
+  REAL_PROCESS_TEST_MS,
+);
+
 it(
-  "Design Task 命令沿真实 Design ScopeHandle 接入共享 TaskWork",
+  "Design Run命令使用固定Code Task Scope与共享TaskWork",
   async () => {
     const f = await fixture("design");
-    expect(f.tool("Bash").scope).toBe("design");
+    expect(f.tool("Bash").scope).toBe("shared");
+    expect(f.main.preset).toBe("code");
     const workId = await f.start(f.main, "design-command");
     expect(await f.manager.find(f.context, workId)).toMatchObject({
-      ownerKind: "design",
+      ownerKind: "code",
       scope: {
         instanceId: f.context.scope.instanceId,
         projectId: f.context.scope.projectId,
@@ -320,21 +441,79 @@ it(
   REAL_PROCESS_TEST_MS,
 );
 
+it.each([
+  { original: "plan", approved: "yolo", readonly: false },
+  { original: "build", approved: "plan", readonly: false },
+  { original: "plan", approved: "plan", readonly: true },
+] as const)(
+  "原$original/final $approved 的 Bash 收窄为同Task只读作用域（只读child=$readonly）",
+  async ({ original, approved, readonly }) => {
+    const state = await fixture();
+    const handle = readonly
+      ? state.main.derive("review", "review-plan")
+      : state.main;
+    const exec = state.execution(handle, "approved-plan");
+    const marker = join(state.root, "plan-command-output.txt");
+    const program = `require('node:fs').writeFileSync('${slashPath(marker)}','approved')`;
+    const command = nodeCommand(program);
+    exec.permissionInvocation = {
+      preset: "code",
+      instanceId: state.context.scope.instanceId,
+      taskId: state.context.scope.taskId,
+      runId: state.context.runId,
+      toolCallId: "approved-plan",
+      agentId: handle.agentId,
+      role: readonly ? "review" : "main",
+      scopeGeneration: 1,
+      branchGeneration: 1,
+      mode: original,
+      approvalCeiling: "plan",
+      toolName: "Bash",
+      access: "execute",
+      args: { command, run_in_background: true },
+      readonlyExecution: true,
+    };
+    exec.codeApproval = {
+      ceiling: "plan",
+      resolve: async () => ({
+        mode: "yolo",
+        scopeGeneration: 1,
+        branchGeneration: 1,
+      }),
+    };
+    exec.approvedExecutionMode = approved;
+    const work = bashResult.parse(
+      await state
+        .tool("Bash")
+        .execute({ command, run_in_background: true }, exec),
+    );
+    await expect
+      .poll(
+        async () =>
+          (await state.manager.find(state.context, work.taskId))?.status,
+        { timeout: SANDBOX_STARTUP_MS },
+      )
+      .toBe("failed");
+    expect(await state.manager.find(state.context, work.taskId)).toMatchObject({
+      scope: { sandboxMode: "read-only" },
+    });
+    await expect(
+      state.main.backend.readPage({ path: marker }),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  },
+  REAL_PROCESS_TEST_MS,
+);
+
 /**
- * §186 起，计划档不再为 Bash 派生只读作用域：只读由**文件工具**与**内核层逐次审批**兑现
- * （见 `kernel/code-approval.test.ts`），不由沙箱假装 —— Windows 的只读沙箱不给目录
- * traverse，派生只读会让 `cd`／子目录读写一律被拒，是假可用。
- *
- * 本例锁住这一层的真实行为：直连工具执行时，进程按 Task 当前作用域真执行、写盘成功、
- * 记账如实。原用例挂的 `permissionInvocation` / `codeApproval` / `approvedExecutionMode`
- * 三个字段不在 `ToolExecutionContext` 上，Bash 工具读不到，审批语义也不在这一层，故删除。
+ * 直连工具且没有审批上下文时，验证普通 Task 的真实写盘与记账；这不代表 Plan 授权。
+ * Plan 的原/最终审批档由上例与真实 kernel 路径验证，不能用直连调用推断其权限。
  */
 it(
-  "计划档 Bash 真执行：批准后写盘成功且记账如实（§186 口径）",
+  "普通Task直连Bash按现有作用域写盘成功且记账如实",
   async () => {
     const state = await fixture();
-    const exec = state.execution(state.main, "plan-bash-writes");
-    const marker = join(state.root, "plan-writes-forreal.txt");
+    const exec = state.execution(state.main, "task-bash-writes");
+    const marker = join(state.root, "task-writes-forreal.txt");
     // 正斜杠 + 单引号：整段程序里没有双引号，PowerShell 的 -Command 才不会把路径引号吞掉。
     const program = `require('node:fs').writeFileSync('${slashPath(marker)}','written')`;
     const work = bashResult.parse(

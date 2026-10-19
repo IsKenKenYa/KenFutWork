@@ -21,6 +21,7 @@ import {
   closeGitSidePane,
   closeCodeViewerSidePane,
   openWhiteboardSidePane,
+  openDocumentSidePane,
   openOpenDesignSidePane,
   openModelTrajectorySidePane,
   openTerminalSidePane,
@@ -46,6 +47,7 @@ import {
   openCodeViewerSidePanes,
   activateGitSidePane,
   getActiveSidePaneTab,
+  preserveDocumentSidePaneForAutomaticEvent,
   getVisibleSidePaneTabs,
   sidePaneOwnerKey,
   markBrowserUseSidePaneTabOperation,
@@ -62,6 +64,7 @@ import {
   type TreemappingSidePaneTab,
   type OpenScopedSubagentSideTabRequest,
   type OpenBackgroundBashSideTabRequest,
+  type OpenDocumentSidePaneRequest,
   openBackgroundBashSidePane,
   type OpenScopedSubagentDirectorySideTabRequest,
   type OpenSelectionSideChatRequest,
@@ -132,6 +135,7 @@ function createTerminalSidePaneTitle(
 export function useAppPanels(options: {
   workspaceAbsPath: string;
   workspaceIdentity?: string;
+  projectId?: string | null;
   workspaceRemoteSessionId?: string | null;
   activeTaskId: string | null;
   /** 草稿态与正式任务共用稳定 id，作为侧栏对话隔离边界。 */
@@ -164,6 +168,7 @@ export function useAppPanels(options: {
   const {
     workspaceAbsPath,
     workspaceIdentity,
+    projectId,
     workspaceRemoteSessionId,
     activeTaskId,
     sidePaneOwnerId,
@@ -214,6 +219,8 @@ export function useAppPanels(options: {
   sidePaneOwnerIdRef.current = sidePaneOwnerId;
   const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
   activeWorkspaceKeyRef.current = activeWorkspaceKey;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
   const activeTabByOwnerRef = useRef<Map<string, string>>(new Map());
   const activeSidePaneMemoryKeyRef = useRef<string | null>(sidePaneMemoryKey);
   const latestSidePaneMemoryRef = useRef({
@@ -267,7 +274,7 @@ export function useAppPanels(options: {
     [commitSidePaneState, workspaceRemoteSessionId],
   );
 
-  useEffect(() => {
+  const restoreSidePaneWorkspaceMemory = useCallback(() => {
     const previousKey = activeSidePaneMemoryKeyRef.current;
     if (previousKey === sidePaneMemoryKey) {
       return;
@@ -285,6 +292,7 @@ export function useAppPanels(options: {
         restored.isSidePaneCollapsed,
     );
   }, [commitSidePaneState, sidePaneMemoryKey]);
+  useEffect(restoreSidePaneWorkspaceMemory, [restoreSidePaneWorkspaceMemory]);
 
   useEffect(() => {
     return () => {
@@ -302,9 +310,10 @@ export function useAppPanels(options: {
         getVisibleSidePaneTabs(next.tabs, {
           workspaceKey: activeWorkspaceKey,
           ownerTaskId: sidePaneOwnerId,
+          projectId,
         }).length,
       ),
-    [activeWorkspaceKey, sidePaneOwnerId],
+    [activeWorkspaceKey, projectId, sidePaneOwnerId],
   );
 
   const syncSidePaneCollapsedWithTabs = useCallback(
@@ -330,7 +339,7 @@ export function useAppPanels(options: {
       );
       const resolved = resolveSidePaneScopeState(
         current,
-        { workspaceKey: activeWorkspaceKey, ownerTaskId: sidePaneOwnerId },
+        { workspaceKey: activeWorkspaceKey, ownerTaskId: sidePaneOwnerId, projectId },
         preferredTabId,
         collapsedPreference,
       );
@@ -345,7 +354,21 @@ export function useAppPanels(options: {
       });
       return resolved.sidePaneState;
     });
-  }, [activeTaskId, activeWorkspaceKey, commitSidePaneState, sidePaneOwnerId]);
+  }, [activeTaskId, activeWorkspaceKey, commitSidePaneState, projectId, sidePaneOwnerId]);
+
+  const handleOpenDocument = useCallback(
+    (request: OpenDocumentSidePaneRequest) => {
+      if (!projectId || request.projectId !== projectId || !activeWorkspaceKey.trim()) {
+        throw new Error("请先打开文档所属项目");
+      }
+      restoreSidePaneWorkspaceMemory();
+      commitSidePaneState((current) =>
+        openDocumentSidePane(current, { ...request, workspaceKey: activeWorkspaceKey }),
+      );
+      revealSidePaneForCurrentOwner();
+    },
+    [activeWorkspaceKey, commitSidePaneState, projectId, restoreSidePaneWorkspaceMemory, revealSidePaneForCurrentOwner],
+  );
 
   const handleOpenCodeViewer = useCallback(
     (source: CodeViewerSource) => {
@@ -549,10 +572,13 @@ export function useAppPanels(options: {
         payload,
         activeScope,
       );
-      commitSidePaneState(() => result.state);
-      if (result.shouldReveal) revealSidePaneForCurrentOwner();
+      const state = preserveDocumentSidePaneForAutomaticEvent(latestSidePaneMemoryRef.current.sidePaneState, result.state,
+        { projectId: projectIdRef.current, workspaceKey: activeWorkspaceKeyRef.current });
+      const shouldReveal = result.shouldReveal && state?.activeTabId === result.state.activeTabId;
+      commitSidePaneState(() => state);
+      if (shouldReveal) revealSidePaneForCurrentOwner();
       logger.info(
-        `[App] ${result.shouldReveal ? "展开并激活" : "后台挂载"} browser-use tab workspace=${payload.workspaceKey} sessionId=${payload.sessionId} tabId=${payload.tabId}`,
+        `[App] ${shouldReveal ? "展开并激活" : "后台挂载"} browser-use tab workspace=${payload.workspaceKey} sessionId=${payload.sessionId} tabId=${payload.tabId}`,
       );
     },
     [commitSidePaneState, isDesktop, revealSidePaneForCurrentOwner, workspaceRemoteSessionId],
@@ -609,8 +635,11 @@ export function useAppPanels(options: {
             workspaceKey: payload.workspaceKey,
           });
         }
-        commitSidePaneState(() => result.state);
-        if (result.shouldReveal) revealSidePaneForCurrentOwner();
+        const state = preserveDocumentSidePaneForAutomaticEvent(latestSidePaneMemoryRef.current.sidePaneState, result.state,
+          { projectId: projectIdRef.current, workspaceKey: activeWorkspaceKeyRef.current });
+        const shouldReveal = result.shouldReveal && state?.activeTabId === result.state?.activeTabId;
+        commitSidePaneState(() => state);
+        if (shouldReveal) revealSidePaneForCurrentOwner();
         return;
       }
 
@@ -669,7 +698,7 @@ export function useAppPanels(options: {
         const targetId = findTargetId(current);
         if (!targetId) return current;
         didClose = true;
-        return closeSidePaneTabForParent(current, targetId, sidePaneOwnerIdRef.current);
+        return closeSidePaneTabForParent(current, targetId, sidePaneOwnerIdRef.current, undefined, projectIdRef.current);
       });
       if (didClose) syncSidePaneCollapsedWithTabs(next);
     });
@@ -1215,7 +1244,7 @@ export function useAppPanels(options: {
         if (!current) return current;
         let next: WorkspaceSidePaneState | null = current;
         for (const tabId of closingIds) {
-          next = closeSidePaneTabForParent(next, tabId, activeTaskId);
+          next = closeSidePaneTabForParent(next, tabId, activeTaskId, undefined, projectId);
         }
         syncSidePaneCollapsedWithTabs(next);
         return next;
@@ -1228,6 +1257,7 @@ export function useAppPanels(options: {
     });
   }, [
     activeTaskId,
+    projectId,
     closeSelectionSideChatRuntime,
     commitSidePaneState,
     syncSidePaneCollapsedWithTabs,
@@ -1427,6 +1457,7 @@ export function useAppPanels(options: {
             tabId,
             activeTaskId,
             activeTaskId ? lastActiveSubagentTabByRootRef.current.get(activeTaskId) : null,
+            projectId,
           ),
         );
         syncSidePaneCollapsedWithTabs(next);
@@ -1438,6 +1469,7 @@ export function useAppPanels(options: {
     },
     [
       activeTaskId,
+      projectId,
       closeSelectionSideChatRuntime,
       closeBrowserTabsWithAuthority,
       commitSidePaneState,
@@ -1451,7 +1483,7 @@ export function useAppPanels(options: {
   const handleCloseOtherSidePaneTabs = useCallback(
     (tabId: string) => {
       const visibleTabs =
-        sidePaneState?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, activeTaskId)) ?? [];
+        sidePaneState?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, activeTaskId, projectId)) ?? [];
       const targetExists = visibleTabs.some((tab) => tab.id === tabId);
       const closingTabs = targetExists ? visibleTabs.filter((tab) => tab.id !== tabId) : [];
       void closeBrowserTabsWithAuthority(closingTabs).then((authorized) => {
@@ -1467,7 +1499,7 @@ export function useAppPanels(options: {
         }
         rememberClosedSidePaneTabs(closingTabs);
         commitSidePaneState((current) => {
-          const next = closeVisibleOtherSidePaneTabs(current, tabId, activeTaskId);
+          const next = closeVisibleOtherSidePaneTabs(current, tabId, activeTaskId, projectId);
           logger.info(
             `[App] 关闭其他右侧面板 tab=${tabId} workspace=${workspaceAbsPath} tabs=${next?.tabs.length ?? 0}`,
           );
@@ -1477,6 +1509,7 @@ export function useAppPanels(options: {
     },
     [
       activeTaskId,
+      projectId,
       closeSelectionSideChatRuntime,
       closeBrowserTabsWithAuthority,
       commitSidePaneState,
@@ -1488,7 +1521,7 @@ export function useAppPanels(options: {
 
   const handleCloseAllSidePaneTabs = useCallback(() => {
     const visibleTabs =
-      sidePaneState?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, activeTaskId)) ?? [];
+      sidePaneState?.tabs.filter((tab) => isSidePaneTabVisibleForParent(tab, activeTaskId, projectId)) ?? [];
     void closeBrowserTabsWithAuthority(visibleTabs).then((authorized) => {
       if (!authorized) return;
       for (const tab of visibleTabs) {
@@ -1503,13 +1536,14 @@ export function useAppPanels(options: {
       rememberClosedSidePaneTabs(visibleTabs);
       commitSidePaneState((current) => {
         logger.info(`[App] 关闭全部右侧面板 tabs workspace=${workspaceAbsPath}`);
-        const next = closeVisibleSidePaneTabs(current, activeTaskId);
+        const next = closeVisibleSidePaneTabs(current, activeTaskId, projectId);
         syncSidePaneCollapsedWithTabs(next);
         return next;
       });
     });
   }, [
     activeTaskId,
+    projectId,
     closeSelectionSideChatRuntime,
     closeBrowserTabsWithAuthority,
     commitSidePaneState,
@@ -1522,7 +1556,9 @@ export function useAppPanels(options: {
   const handleReopenClosedSidePaneTab = useCallback(
     (tabId: string) => {
       const item = allRecentClosedSidePaneTabs.find((entry) => entry.tab.id === tabId);
-      if (!item || (isOfficeMode && (item.tab.type === "terminal" || item.tab.type === "git")))
+      if (!item || !isSidePaneTabVisibleForParent(item.tab, activeTaskId, projectId) ||
+        (item.tab.type === "document" && item.tab.workspaceKey !== activeWorkspaceKey) ||
+        (isOfficeMode && (item.tab.type === "terminal" || item.tab.type === "git")))
         return;
 
       // 交互说明：最近关闭列表里的 tab 被点回打开时，需要同步展开右侧面板。
@@ -1551,6 +1587,9 @@ export function useAppPanels(options: {
     },
     [
       isOfficeMode,
+      activeTaskId,
+      activeWorkspaceKey,
+      projectId,
       allRecentClosedSidePaneTabs,
       commitSidePaneState,
       revealSidePaneForCurrentOwner,
@@ -1575,10 +1614,11 @@ export function useAppPanels(options: {
     () =>
       allRecentClosedSidePaneTabs.filter(
         (item) =>
-          isSidePaneTabVisibleForParent(item.tab, activeTaskId) &&
+          isSidePaneTabVisibleForParent(item.tab, activeTaskId, projectId) &&
+          (item.tab.type !== "document" || item.tab.workspaceKey === activeWorkspaceKey) &&
           (!isOfficeMode || (item.tab.type !== "terminal" && item.tab.type !== "git")),
       ),
-    [activeTaskId, allRecentClosedSidePaneTabs, isOfficeMode],
+    [activeTaskId, activeWorkspaceKey, allRecentClosedSidePaneTabs, isOfficeMode, projectId],
   );
 
   return {
@@ -1586,6 +1626,7 @@ export function useAppPanels(options: {
     isTerminalOpen,
     setIsTerminalOpen,
     sidePaneState,
+    handleOpenDocument,
     recentClosedSidePaneTabs,
     isSidePaneCollapsed,
     setIsSidePaneCollapsed,

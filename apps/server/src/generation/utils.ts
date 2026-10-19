@@ -1,3 +1,38 @@
+import type { GeneratedImage } from "./types.js";
+
+/** OpenAI/Ark Images API 均可能返回 URL 或 base64，不能把同步产物误当空结果。 */
+export function readGeneratedImage(
+  provider: string,
+  response: {
+    data?: Array<{ url?: string; b64_json?: string; size?: string }>;
+    output_format?: string;
+  },
+  defaults: { width: number; height: number; mimeType: string },
+): GeneratedImage {
+  const image = response.data?.[0];
+  const mimeType =
+    response.output_format === "png"
+      ? "image/png"
+      : response.output_format === "jpeg"
+        ? "image/jpeg"
+        : response.output_format === "webp"
+          ? "image/webp"
+          : defaults.mimeType;
+  const url =
+    image?.url ||
+    (image?.b64_json ? `data:${mimeType};base64,${image.b64_json}` : undefined);
+  if (!url)
+    throw new GenerationError(
+      provider,
+      "no_output",
+      "供应商未返回图片，请检查模型与生成结果。",
+    );
+  const actualSize = image?.size?.match(/^(\d+)x(\d+)$/);
+  const width = Number(actualSize?.[1]) || defaults.width;
+  const height = Number(actualSize?.[2]) || defaults.height;
+  return { url, mimeType, width, height };
+}
+
 const KNOWN_RATIOS: Record<string, { width: number; height: number }> = {
   "1:1": { width: 1024, height: 1024 },
   "16:9": { width: 1024, height: 576 },
@@ -82,12 +117,84 @@ export async function fetchAsBase64(
 }
 
 export class GenerationError extends Error {
+  readonly status: number | undefined;
+  readonly retryAfter: string | undefined;
+  readonly upstreamCode: string | undefined;
   constructor(
     public readonly provider: string,
     public readonly code: string,
     message: string,
+    details: {
+      status?: number | undefined;
+      retryAfter?: string | null | undefined;
+      upstreamCode?: string | null | undefined;
+    } = {},
   ) {
     super(message);
     this.name = "GenerationError";
+    this.status = details.status;
+    this.retryAfter = details.retryAfter ?? undefined;
+    this.upstreamCode = details.upstreamCode ?? undefined;
   }
+}
+
+export function generationHttpError(
+  provider: string,
+  response: Response,
+  message: string,
+  upstreamCode?: string,
+) {
+  return new GenerationError(provider, "api_error", message, {
+    status: response.status,
+    retryAfter: response.headers.get("retry-after"),
+    upstreamCode,
+  });
+}
+
+/** 供应商错误只保留可读原因，清除明文及URL编码凭据。 */
+export function redactGenerationMessage(
+  message: string,
+  sensitiveValues: readonly string[],
+): string {
+  for (const value of sensitiveValues) {
+    if (value)
+      message = message
+        .replaceAll(value, "[redacted]")
+        .replaceAll(encodeURIComponent(value), "[redacted]");
+  }
+  return message.replace(/[\r\n\t]+/g, " ").slice(0, 500);
+}
+
+/** SDK 的 HTTP 边界保留 Job 调度需要的安全字段，不保留请求与凭据。 */
+export function createGenerationFetch(
+  provider: string,
+  sensitiveValues: readonly string[] = [],
+): typeof fetch {
+  const redact = (value: string) =>
+    redactGenerationMessage(value, sensitiveValues);
+  return async (input, init) => {
+    const response = await fetch(input, init);
+    if (response.ok) return response;
+
+    const body = (await response.json().catch(() => null)) as {
+      error?: { message?: unknown; status?: unknown; code?: unknown };
+    } | null;
+    const detail = body?.error;
+    const message =
+      typeof detail?.message === "string"
+        ? redact(detail.message)
+        : `供应商请求失败（HTTP ${response.status}）。`;
+    const upstreamCode =
+      typeof detail?.status === "string"
+        ? detail.status
+        : typeof detail?.code === "string"
+          ? detail.code
+          : undefined;
+    throw generationHttpError(
+      provider,
+      response,
+      message,
+      upstreamCode ? redact(upstreamCode) : undefined,
+    );
+  };
 }

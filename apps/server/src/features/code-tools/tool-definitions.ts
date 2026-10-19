@@ -5,6 +5,7 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ScopedBackend } from "../execution/scoped-filesystem.js";
+import type { ApprovalReviewKind } from "../permissions/approval-review-context.js";
 import { diffLines, summarizeDiff } from "./diff.js";
 import { fileDiffDisplay, fileDiffsDisplay } from "./file-display.js";
 import type { FileModelCapabilities } from "./file-types.js";
@@ -35,6 +36,13 @@ const mediaExtensions = new Set([
   ".heif",
   ".pdf",
 ]);
+const approvalReviewKinds: Readonly<
+  Record<string, ApprovalReviewKind | undefined>
+> = {
+  Write: "write",
+  Edit: "edit",
+  ApplyPatch: "patch",
+};
 
 function tool(
   name: string,
@@ -47,6 +55,7 @@ function tool(
     scope: "code",
     exposure: "core",
     access: ["Write", "Edit", "ApplyPatch"].includes(name) ? "write" : "read",
+    approvalReviewKind: approvalReviewKinds[name],
     description,
     parameters: z.toJSONSchema(schema),
     zodSchema: schema,

@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { CodeWorkbenchFrame } from "../src/components/workbench/code-workbench-frame";
 import { Workbench } from "../src/components/workbench/workbench";
 import {
   LocalInstanceBoundary,
@@ -32,9 +33,8 @@ afterEach(() => {
 });
 
 /**
- * 主区懒加载块（CodeWorkbenchFrame 首包）在满负载的**全量并发**里可能明显慢于
- * Testing Library 默认 1s，属已登记的「首包懒加载超时」家族；显式放宽等待
- * （15s，留出 vitest 单测 20s 上限的余量）。
+ * 实例接入及工作台挂载可能慢于 Testing Library 默认等待；
+ * 保留既有15s边界，ready握手仍只发送一次。
  */
 const LAZY = { timeout: 15_000 } as const;
 
@@ -57,7 +57,7 @@ function installFixture(
         };
       if (path.endsWith("/api/plugins"))
         result = {
-          plugins:
+          plugins: (
             plugins ??
             (flowInstalled
               ? [
@@ -67,7 +67,8 @@ function installFixture(
                     enabled: pluginEnabled,
                   },
                 ]
-              : []),
+              : [])
+          ).map((plugin) => ({ ...plugin, id: plugin.name, ui: [] })),
         };
       if (path.endsWith("/api/flow/host/status")) {
         if (flowStatus) return flowStatus.then((response) => response.clone());
@@ -95,8 +96,12 @@ function host() {
   );
 }
 
-async function renderCodeFrame() {
-  render(host());
+async function renderCodeFrame(tree = host()) {
+  let view!: ReturnType<typeof render>;
+  // 先结算实例加载触发的React提交与effect，再模拟子文档的单次ready。
+  await act(async () => {
+    view = render(tree);
+  });
   const frame = (await screen.findByTitle(
     "Code 工作台",
     {},
@@ -114,7 +119,7 @@ async function renderCodeFrame() {
       }),
     );
   message({ type: "kenfutwork:code-ready" });
-  return { frame, send, message };
+  return { view, frame, send, message };
 }
 
 it("工作台恒渲染Code壳：深链design也不换壳，mode经导航消息推给壳且URL参数一次性消费", async () => {
@@ -149,23 +154,86 @@ it("深链design向壳推mode=design；无flow插件时availableModes只有code/
   });
 });
 
+it("刷新没有深链时只同步可用方式，让壳恢复当前窗口的选择", async () => {
+  installFixture();
+  const { send } = await renderCodeFrame();
+  const initial = send.mock.calls
+    .map(([message]) => message)
+    .filter((message) => message.type === "kenfutwork:workbench-navigation");
+  expect(initial.length).toBeGreaterThan(0);
+  expect(initial.every((message) => !("mode" in message))).toBe(true);
+});
+
+it("明确Code深链仍推送Code，覆盖壳先前的界面选择", async () => {
+  installFixture();
+  navigation.query = "mode=code";
+  const { send } = await renderCodeFrame();
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:workbench-navigation",
+      availableModes: ["code", "design"],
+      mode: "code",
+    },
+    window.location.origin,
+  );
+});
+
 it("flow可用时availableModes带flow；插件停用后库存事件即时收口并保持当前mode", async () => {
   const plugin = { name: "kenfutwork-flow", installed: true, enabled: true };
   installFixture(true, true, undefined, true, [plugin]);
   const { send } = await renderCodeFrame();
   await waitFor(() => {
     expect(send).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         type: "kenfutwork:workbench-navigation",
         availableModes: ["code", "design", "flow"],
-        mode: "code",
-      },
+      }),
       window.location.origin,
     );
-  });
+  }, LAZY);
+  const initialNavigation = send.mock.calls
+    .map(([message]) => message)
+    .filter((message) => message.type === "kenfutwork:workbench-navigation");
+  expect(initialNavigation.filter((message) => "mode" in message)).toHaveLength(
+    0,
+  );
   send.mockClear();
   plugin.enabled = false;
   fireEvent(window, new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
+  await waitFor(
+    () =>
+      expect(send).toHaveBeenCalledWith(
+        {
+          type: "kenfutwork:workbench-navigation",
+          availableModes: ["code", "design"],
+        },
+        window.location.origin,
+      ),
+    LAZY,
+  );
+  expect(
+    send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "kenfutwork:workbench-navigation")
+      .every((message) => !("mode" in message)),
+  ).toBe(true);
+});
+
+it("同一Code文档仅初始与明确外部模式变更带mode，能力更新不重推旧mode", async () => {
+  installFixture();
+  const tree = (mode: "code" | "design", flow = false) => (
+    <LocalInstanceProvider>
+      <LocalInstanceBoundary>
+        <CodeWorkbenchFrame
+          mode={mode}
+          availableModes={
+            flow ? ["code", "design", "flow"] : ["code", "design"]
+          }
+        />
+      </LocalInstanceBoundary>
+    </LocalInstanceProvider>
+  );
+  const { view, frame, send } = await renderCodeFrame(tree("code"));
   await waitFor(() =>
     expect(send).toHaveBeenCalledWith(
       {
@@ -176,6 +244,36 @@ it("flow可用时availableModes带flow；插件停用后库存事件即时收口
       window.location.origin,
     ),
   );
+  send.mockClear();
+  view.rerender(tree("code", true));
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design", "flow"],
+      },
+      window.location.origin,
+    ),
+  );
+  expect(
+    send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "kenfutwork:workbench-navigation")
+      .every((message) => !("mode" in message)),
+  ).toBe(true);
+  send.mockClear();
+  view.rerender(tree("design", true));
+  await waitFor(() =>
+    expect(send).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:workbench-navigation",
+        availableModes: ["code", "design", "flow"],
+        mode: "design",
+      },
+      window.location.origin,
+    ),
+  );
+  expect(screen.getByTitle("Code 工作台")).toBe(frame);
 });
 
 it("状态探针慢于插件探针：?mode=flow 不被中间态改写成 design，落定后按真实可用性推送", async () => {
@@ -238,7 +336,7 @@ it("深链flow但宿主适配层未配齐时回落design（不放空壳）", asy
 
 it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效目标，关闭保留Codeiframe", async () => {
   installFixture();
-  const { frame, message } = await renderCodeFrame();
+  const { frame } = await renderCodeFrame();
   const open = {
     type: "kenfutwork:open-management",
     target: {
@@ -326,4 +424,29 @@ it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", 
     (screen.getByTitle("管理设置") as HTMLIFrameElement).hasAttribute("hidden"),
   ).toBe(true);
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
+});
+
+it("旧模型入口打开同一管理文档并定位模型设置，重复打开不创建第二个页面", async () => {
+  installFixture();
+  render(host());
+  const manager = (await screen.findByTitle(
+    "管理设置",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  expect(manager.hidden).toBe(true);
+  if (!manager.contentWindow) throw new Error("管理文档未创建");
+  const send = vi.spyOn(manager.contentWindow, "postMessage");
+  act(() => window.dispatchEvent(new Event("kenfutwork:open-model-settings")));
+  await waitFor(() => expect(manager.hidden).toBe(false));
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:management-target",
+      target: { page: "settings", section: "modelProvider" },
+    },
+    window.location.origin,
+  );
+  act(() => window.dispatchEvent(new Event("kenfutwork:open-model-settings")));
+  expect(screen.getAllByTitle("管理设置")).toHaveLength(1);
+  expect(screen.getByTitle("管理设置")).toBe(manager);
 });

@@ -1,5 +1,6 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { AgentContextHistoryReference } from "../../agent/context-history.js";
+import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import type { AgentBoundaryCapture } from "../agent-runs/types.js";
 import type { CodeUiCompletedTurnView } from "./conversation.js";
@@ -14,8 +15,11 @@ export type CodeReplayIntent = Pick<
   | "modelSelection"
   | "mode"
   | "planEnabled"
+  | "workContext"
 >;
 export interface CodeReplayInput {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
+  frozenContributions?: ToolContributionSnapshot;
   intent: CodeReplayIntent;
   modelInvocation: ModelInvocationSnapshot;
 }

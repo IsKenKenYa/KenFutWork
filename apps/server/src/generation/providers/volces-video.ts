@@ -9,7 +9,7 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { GenerationError } from "../utils.js";
+import { createGenerationFetch, GenerationError } from "../utils.js";
 
 /**
  * volces（火山方舟）视频 provider——Seedance 系（G4 关闭项）。
@@ -95,6 +95,7 @@ export class VolcesVideoProvider implements VideoProvider {
   private videoModel(modelId: string): Experimental_VideoModelV4 {
     return createVolcesProvider({
       apiKey: this.apiKey,
+      fetch: createGenerationFetch("volces", [this.apiKey]),
       ...(this.baseUrl ? { baseUrl: this.baseUrl } : {}),
       ...(this.headers ? { headers: this.headers } : {}),
     }).videoModel(modelId);
@@ -103,9 +104,23 @@ export class VolcesVideoProvider implements VideoProvider {
   async startAsync(
     params: VideoGenerateParams,
   ): Promise<{ providerJobId: string }> {
+    if ((params.inputImages?.length ?? 0) > 2 || params.inputVideo) {
+      throw new GenerationError(
+        "volces",
+        "unsupported",
+        "当前 Seedance 接口支持首尾两帧，请移除额外参考图或视频。",
+      );
+    }
     const submit = await submitVideoJob(this.videoModel(params.model), {
       prompt: params.prompt,
       ...(params.duration != null ? { duration: params.duration } : {}),
+      ...(params.resolution
+        ? /^\d+x\d+$/.test(params.resolution)
+          ? { resolution: params.resolution as `${number}x${number}` }
+          : {
+              providerOptions: { bytedance: { resolution: params.resolution } },
+            }
+        : {}),
       // spec 的 aspectRatio 形如 `${number}:${number}`；非常规值交给上层校验拒绝
       ...(params.aspectRatio
         ? { aspectRatio: params.aspectRatio as `${number}:${number}` }
@@ -113,12 +128,13 @@ export class VolcesVideoProvider implements VideoProvider {
       // 图生视频：参考图作首帧（Seedance i2v 语义）
       ...(params.inputImages?.length
         ? {
-            frameImages: [
-              {
-                image: params.inputImages[0] as string | Uint8Array,
-                frameType: "first_frame" as const,
-              },
-            ],
+            frameImages: params.inputImages.map((image, index) => ({
+              image,
+              frameType:
+                index === 0
+                  ? ("first_frame" as const)
+                  : ("last_frame" as const),
+            })),
           }
         : {}),
       ...(params.enableAudio != null

@@ -26,6 +26,9 @@ function scope(
     derive: () => {
       throw new Error("本用例不派生作用域");
     },
+    restrictReadOnly: () => {
+      throw new Error("本用例不收窄执行作用域");
+    },
   };
   return { ...input, branchGeneration: 1, backend: createScopedBackend(input) };
 }
@@ -124,17 +127,16 @@ it("profiles mount core file tools by actual Task scope and readonly roles recei
         backendFactory: () => scope("main").backend,
       }),
     ).toThrow(/作用域/);
-    expect(() =>
-      tools.resolveRunTools({
-        preset: "design",
-        scopeHandle: scope("main", "code"),
-        backendFactory: () => scope("main").backend,
-      }),
-    ).toThrow(/工作模式/);
+    const designWorker = tools.resolveRunTools({
+      preset: "design",
+      scopeHandle: scope("main", "code"),
+      backendFactory: () => scope("main").backend,
+    });
+    expect(designWorker.map((tool) => tool.name)).toContain("Write");
     const designReader = tools.resolveRunTools({
       preset: "design",
-      scopeHandle: scope("review", "design"),
-      backendFactory: () => scope("review", "design").backend,
+      scopeHandle: scope("review", "code"),
+      backendFactory: () => scope("review", "code").backend,
     });
     expect(designReader.map((tool) => tool.name)).toEqual([
       "Read",

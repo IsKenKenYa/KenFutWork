@@ -62,7 +62,10 @@ export async function registerProjectDirectoryRelinkRoutes(
           .send(
             applicationErrorResponseSchema.parse({
               error: {
-                code: "invalid_request",
+                code:
+                  error instanceof ProjectDirectoryRelinkError
+                    ? error.code
+                    : "invalid_request",
                 message:
                   error instanceof ProjectDirectoryRelinkError
                     ? error.message

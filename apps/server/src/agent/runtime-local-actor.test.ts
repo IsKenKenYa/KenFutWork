@@ -28,7 +28,10 @@ function fixture(action?: () => Promise<void>, tools?: ToolRegistryImpl) {
       ) {
         configurations.push(configuration?.configurable);
         await action?.();
-        yield { event: "__test_noop__" };
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: { content: "BYOK请求已处理" } },
+        };
       },
     } as unknown as KenFutWorkAgent;
   };
@@ -133,8 +136,12 @@ describe("Runtime 本地调用身份", () => {
             title: "test",
             model: `${providerId}:image-model`,
             aspectRatio: "1:1",
+            outputFormat: "webp",
           });
-          yield { event: "__test_noop__" };
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: "BYOK请求已处理" } },
+          };
         },
       }) as unknown as KenFutWorkAgent;
     const runtime = createAgentRunService({
@@ -160,6 +167,7 @@ describe("Runtime 本地调用身份", () => {
         payload: expect.objectContaining({
           model: "image-model",
           provider_instance_id: providerId,
+          output_format: "webp",
         }),
       }),
     );

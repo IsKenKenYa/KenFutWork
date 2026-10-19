@@ -8,7 +8,7 @@ it.each(["Bash", "execute"])(
     expect(isGoalToolEvidence(name, exited, "pnpm test --grep true")).toBe(
       true,
     );
-    for (const command of ["true", " :; ", "exit 0;"])
+    for (const command of ["", " ", ";", "true", " :; ", "exit 0;"])
       expect(isGoalToolEvidence(name, exited, command)).toBe(false);
     for (const output of [
       { state: "running", exitCode: 0 },

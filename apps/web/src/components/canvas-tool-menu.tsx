@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useCanvasGenerationJobs } from "../hooks/use-canvas-generation-jobs";
 import { isVideoUrl } from "../lib/canvas-elements";
 import {
   createImageGeneratorElement,
@@ -119,6 +120,10 @@ const TOOL_LABELS: Record<ToolType, string> = {
 };
 
 type CanvasToolMenuProps = {
+  canvasId: string;
+  projectId: string;
+  prepare: () => Promise<string | null>;
+  refresh: () => Promise<void>;
   accessToken: string | null;
   excalidrawApi: ExcalidrawImperativeAPI | null;
   /** 当前画布会话（§4.8）：透给生成面板，实例自定义头的 {{sessionId}} 按它渲染。 */
@@ -190,10 +195,21 @@ const GeneratingOverlay = memo(function GeneratingOverlay({
 });
 
 export function CanvasToolMenu({
+  canvasId,
+  projectId,
+  prepare,
+  refresh,
   accessToken,
   excalidrawApi,
   sessionId,
 }: CanvasToolMenuProps) {
+  useCanvasGenerationJobs({
+    api: excalidrawApi,
+    canvasId,
+    projectId,
+    accessToken,
+    refresh,
+  });
   const [activeTool, setActiveTool] = useState<string>("selection");
 
   // Image generator state
@@ -264,6 +280,8 @@ export function CanvasToolMenu({
   activeVideoGenIdRef.current = activeVideoGenId;
   const activeVideoPlayerIdRef = useRef(activeVideoPlayerId);
   activeVideoPlayerIdRef.current = activeVideoPlayerId;
+  const generatorRevisionRef = useRef("");
+  const videoGeneratorRevisionRef = useRef("");
 
   // Track previous generating element IDs to avoid re-renders when nothing changed
   const prevGeneratingKeyRef = useRef("");
@@ -318,11 +336,16 @@ export function CanvasToolMenu({
       const sel = selectedElements.at(0);
       if (selectedElements.length === 1 && sel) {
         if (isImageGeneratorElement(sel)) {
-          // Only update if the selected generator changed
+          const revision = `${sel.id}:${sel.version}:${sel.versionNonce}`;
+          if (
+            currentId !== sel.id ||
+            generatorRevisionRef.current !== revision
+          ) {
+            generatorRevisionRef.current = revision;
+            setGeneratorData(getImageGeneratorData(sel));
+          }
           if (currentId !== sel.id) {
-            const data = getImageGeneratorData(sel);
             setActiveGeneratorId(sel.id as string);
-            setGeneratorData(data);
             if (currentVideoId) {
               setActiveVideoGenId(null);
               setVideoGenData(null);
@@ -342,10 +365,16 @@ export function CanvasToolMenu({
             height: sel.height as number,
           });
         } else if (isVideoGeneratorElement(sel)) {
+          const revision = `${sel.id}:${sel.version}:${sel.versionNonce}`;
+          if (
+            currentVideoId !== sel.id ||
+            videoGeneratorRevisionRef.current !== revision
+          ) {
+            videoGeneratorRevisionRef.current = revision;
+            setVideoGenData(getVideoGeneratorData(sel));
+          }
           if (currentVideoId !== sel.id) {
-            const data = getVideoGeneratorData(sel);
             setActiveVideoGenId(sel.id as string);
-            setVideoGenData(data);
             if (currentId) {
               setActiveGeneratorId(null);
               setGeneratorData(null);
@@ -478,12 +507,6 @@ export function CanvasToolMenu({
     }
   }, [excalidrawApi]);
 
-  const handleCloseGenerator = useCallback(() => {
-    setActiveGeneratorId(null);
-    setGeneratorData(null);
-    setGeneratorBounds(null);
-  }, []);
-
   const handleCreateVideoGenerator = useCallback(() => {
     if (!excalidrawApi) return;
     const videoId = createVideoGeneratorElement(
@@ -510,12 +533,6 @@ export function CanvasToolMenu({
       });
     }
   }, [excalidrawApi]);
-
-  const handleCloseVideoGenerator = useCallback(() => {
-    setActiveVideoGenId(null);
-    setVideoGenData(null);
-    setVideoGenBounds(null);
-  }, []);
 
   const handleCloseVideoPlayer = useCallback(() => {
     setActiveVideoPlayerId(null);
@@ -609,6 +626,10 @@ export function CanvasToolMenu({
         generatorData &&
         generatorBounds && (
           <ImageGeneratorPanel
+            key={activeGeneratorId}
+            canvasId={canvasId}
+            projectId={projectId}
+            prepare={prepare}
             elementId={activeGeneratorId}
             elementBounds={generatorBounds}
             data={generatorData}
@@ -616,13 +637,16 @@ export function CanvasToolMenu({
             accessToken={accessToken}
             sessionId={sessionId}
             canvasScrollZoom={canvasScrollZoom}
-            onClose={handleCloseGenerator}
           />
         )}
 
       {/* Video Generator Panel -- floats below the selected placeholder */}
       {excalidrawApi && activeVideoGenId && videoGenData && videoGenBounds && (
         <VideoGeneratorPanel
+          key={activeVideoGenId}
+          canvasId={canvasId}
+          projectId={projectId}
+          prepare={prepare}
           elementId={activeVideoGenId}
           elementBounds={videoGenBounds}
           data={videoGenData}
@@ -630,7 +654,6 @@ export function CanvasToolMenu({
           accessToken={accessToken}
           sessionId={sessionId}
           canvasScrollZoom={canvasScrollZoom}
-          onClose={handleCloseVideoGenerator}
         />
       )}
 

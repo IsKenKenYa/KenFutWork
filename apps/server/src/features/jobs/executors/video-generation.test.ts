@@ -55,6 +55,29 @@ function makeCtx(job: BackgroundJob) {
   }> = [];
   const ctx = {
     jobService: {
+      beginSubmission: vi.fn(async (_id: string, revision: number) => {
+        job.payload._generation_execution = { phase: "submitting" };
+        job.payload.provider_config_revision = revision;
+        return "11111111-1111-4111-8111-111111111111";
+      }),
+      recordSubmission: vi.fn(
+        async (_id: string, _attemptId: string, providerJobId: string) => {
+          job.payload._generation_execution = { phase: "polling" };
+          job.provider_job_id = providerJobId;
+        },
+      ),
+      saveExecution: vi.fn(async (_id, execution, options) => {
+        job.payload._generation_execution = execution;
+        if (options?.providerJobId) job.provider_job_id = options.providerJobId;
+        if (options?.providerRevision)
+          job.payload.provider_config_revision = options.providerRevision;
+      }),
+      scheduleJob: vi.fn(async (id: string, delay: number) => {
+        sent.push({
+          payload: { job_id: id, job_type: "video_generation" },
+          delay,
+        });
+      }),
       getJobForWorker: vi.fn(async () => job),
       setProviderJobId: vi.fn(async () => {}),
       appendJobPayload: vi.fn(async () => {}),
@@ -80,6 +103,10 @@ function makeCtx(job: BackgroundJob) {
     blob: {
       bucket: () => ({
         upload: vi.fn(async () => {}),
+        download: async () => {
+          throw Object.assign(new Error("missing"), { code: "ENOENT" });
+        },
+        remove: async () => {},
         resolveUrl: vi.fn(async () => "https://blobs.example/video.mp4"),
       }),
     },
@@ -165,12 +192,10 @@ describe("video executor 状态机（S6）", () => {
     await expect(runExecutor(ctx)).rejects.toMatchObject({
       code: PROVIDER_POLL_SCHEDULED,
     });
-    expect(ctx.jobService.setProviderJobId).toHaveBeenCalledWith(
-      JOB_ID,
-      "cloud-task-1",
-    );
-    expect(ctx.jobService.appendJobPayload).toHaveBeenCalledWith(JOB_ID, {
+    expect(job.provider_job_id).toBe("cloud-task-1");
+    expect(job.payload).toMatchObject({
       provider_config_revision: 7,
+      _generation_execution: { phase: "polling" },
     });
     expect(ctx.sent).toHaveLength(1);
     expect(ctx.sent[0]?.payload).toMatchObject({
@@ -314,4 +339,15 @@ describe("video executor 状态机（S6）", () => {
       code: "video_job_timeout",
     });
   });
+});
+
+it("已保存句柄但提交修订缺失，不能退回同步付费生成", async () => {
+  const job = jobRow({ provider_job_id: "accepted-upstream" });
+  const instance = stubInstance({});
+  instance.provider.generate.mockResolvedValue({ url: "duplicate" });
+  mockInstanceResolver(instance);
+  await expect(runExecutor(makeCtx(job))).rejects.toMatchObject({
+    code: "provider_config_stale",
+  });
+  expect(instance.provider.generate).not.toHaveBeenCalled();
 });

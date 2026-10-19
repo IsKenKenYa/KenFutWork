@@ -11,9 +11,11 @@
 //
 // 结构：生命周期收敛在纯控制器 startDraftSessionPrewarm（可单测，无 React 依赖），
 // useDraftSessionPrewarm 只做 effect 接线与 owner-scoped binding 暴露。
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import type { CommandAck, CommandType, SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@zui/logger.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 
 type DispatchCommand = (
   type: CommandType,
@@ -483,6 +485,16 @@ export function useDraftSessionPrewarm(params: {
     dispatchCommand,
     resolveInitialConfig,
   } = params;
+  const platform = useOptionalPlatform();
+  const dispatchWithWorkContext = useCallback<DispatchCommand>((type, payload, targetSessionId) => {
+    if (type !== "createSession" || payload.workContext !== undefined) return dispatchCommand(type, payload, targetSessionId);
+    const identity = parseLocalWorkspaceIdentity(workspaceKey);
+    const context = platform?.getConversationWorkContext?.({
+      workspacePath: identity?.rootDirectory ?? workspaceKey,
+      ...(identity ? { workspaceIdentity: workspaceKey } : {}),
+    });
+    return dispatchCommand(type, { ...payload, ...(context ? { workContext: structuredClone(context) } : {}) }, targetSessionId);
+  }, [dispatchCommand, platform, workspaceKey]);
   // workspace/pane/transport 共同定义逻辑 owner：同 owner 重挂复用 single-flight，transport
   // 换代仍生成新 coordinator，确保旧 session 的清理不会误走新 transport。
   const owner = useMemo(
@@ -495,14 +507,14 @@ export function useDraftSessionPrewarm(params: {
         workspaceKey,
         paneId,
         transportIdentity,
-        dispatchCommand,
+        dispatchCommand: dispatchWithWorkContext,
         resolveInitialConfig,
       }),
     [owner],
   );
   useLayoutEffect(() => {
-    coordinator.update(dispatchCommand, resolveInitialConfig);
-  }, [coordinator, dispatchCommand, resolveInitialConfig]);
+    coordinator.update(dispatchWithWorkContext, resolveInitialConfig);
+  }, [coordinator, dispatchWithWorkContext, resolveInitialConfig]);
   const generation = useMemo(() => ({ owner }), [enabled, invalidationVersion, owner]);
   const [ready, setReady] = useState<{
     generation: typeof generation;

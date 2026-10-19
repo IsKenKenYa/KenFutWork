@@ -22,7 +22,7 @@ afterEach(async () => {
 
 /**
  * 最小装配：真实 conversation reducer + 内存 repository，经 `admitExternalRun`
- * 拿到 run 事件 sink——`recordRunEvent` 的终态分支就在这条链上（G3/Q8 接线验证）。
+ * 经canonical输入、publisher和真实执行器eventSink进入终态投影（G3/Q8 接线验证）。
  */
 async function fixture(options: { withCodeGit?: boolean } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-code-autocommit-"));
@@ -118,6 +118,16 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
     { fingerprint: string; ack: protocol.CommandAck }
   >();
   const events = new Map<string, string>();
+  let sink: ((event: StreamEvent) => Promise<void>) | undefined;
+  let signalStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    signalStarted = resolve;
+  });
+  let signalFinished!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    signalFinished = resolve;
+  });
+  const creates = vi.fn();
   const repository = {
     preparations: {
       recover: async () => {},
@@ -126,6 +136,22 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
       planObject: async () => {},
     },
     recoverRuntimeInputs: async () => {},
+    readRunFailure: async () => null,
+    async startRunIfCurrent(workspace, task, runId, expected, start) {
+      const input = root.state?.inputs?.find((entry) => entry.runId === runId);
+      if (
+        workspace !== instanceId ||
+        task !== taskId ||
+        root.active_run_id !== runId ||
+        root.execution_state !== "ready" ||
+        input?.status !== "active" ||
+        Number(root.scope_generation) !== expected.scopeGeneration ||
+        Number(root.branch_generation) !== expected.branchGeneration
+      )
+        return false;
+      start(structuredClone(root));
+      return true;
+    },
     readHumanPreferences: async () => ({}),
     find: async (workspace: string, id: string) =>
       workspace === instanceId && id === taskId ? structuredClone(root) : null,
@@ -206,9 +232,27 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
       resolveOwnedSessionThread: async () => ({ threadId: `thread:${taskId}` }),
     },
     executionScopes: { openTask: async () => ({ describe: () => scope }) },
-    agentRunMetadata: { createAcceptedRun: vi.fn(async () => {}) },
+    agentRunMetadata: {
+      createAcceptedRun: vi.fn(async () => {}),
+      updateRun: vi.fn(async () => {}),
+    },
     agentRuns: {
-      createRun: () => ({ runId: "unused" }),
+      createRun: (
+        _request: unknown,
+        options: {
+          runId: string;
+          eventSink: (event: StreamEvent) => Promise<void>;
+        },
+      ) => {
+        creates(options.runId);
+        sink = options.eventSink;
+        signalStarted();
+        return { runId: options.runId };
+      },
+      async *streamRun() {
+        await finished;
+        yield* [];
+      },
       cancelRun() {},
       cancelRunAndWait: async () => {},
     },
@@ -221,59 +265,97 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
     ...(options.withCodeGit === false ? {} : { codeGit: { autoCommitRun } }),
   } as unknown as CodeUiServiceDeps);
   cleanups.push(() => service.closeConnections());
+  cleanups.push(async () => {
+    signalFinished();
+  });
   const scopeHandle = {
     describe: () => scope,
   };
-  return { actor, taskId, service, autoCommitRun, scopeHandle };
+  return {
+    actor,
+    taskId,
+    service,
+    autoCommitRun,
+    scopeHandle,
+    started,
+    creates,
+    finish: signalFinished,
+    send: async (event: StreamEvent) => {
+      if (!sink) throw new Error("canonical执行器未启动");
+      await sink(event);
+    },
+  };
 }
 
-it("run 终态事件触发 code-git 自动提交缝，非终态与重复终态不触发", async () => {
-  const { actor, taskId, service, autoCommitRun, scopeHandle } =
-    await fixture();
-  const runId = randomUUID();
-  const sink = await service.admitExternalRun(
-    actor,
-    scopeHandle as never,
-    runId,
+it("canonical Run终态触发自动提交，非终态与准入重放不重复触发", async () => {
+  const f = await fixture();
+  const inputId = randomUUID();
+  const admission = await f.service.admitExternalRun(
+    f.actor,
+    f.scopeHandle as never,
+    inputId,
     "做点改动",
   );
-
-  const usage: StreamEvent = {
+  const running = admission.publish();
+  await f.started;
+  const runId = admission.runId;
+  expect(runId).not.toBe(inputId);
+  await f.send({
     type: "run.usage",
     runId,
     inputTokens: 1,
     outputTokens: 1,
     timestamp: new Date().toISOString(),
-  } as StreamEvent;
-  await sink(usage);
-  expect(autoCommitRun).not.toHaveBeenCalled();
-
-  await sink({
+  } as StreamEvent);
+  expect(f.autoCommitRun).not.toHaveBeenCalled();
+  const replay = await f.service.admitExternalRun(
+    f.actor,
+    f.scopeHandle as never,
+    inputId,
+    "做点改动",
+  );
+  expect(replay.runId).toBe(runId);
+  await replay.publish();
+  await f.send({
+    type: "message.delta",
+    runId,
+    messageId: randomUUID(),
+    delta: "本轮变更已处理",
+    timestamp: new Date().toISOString(),
+  });
+  await f.send({
     type: "run.completed",
     runId,
     timestamp: new Date().toISOString(),
   } as StreamEvent);
-  expect(autoCommitRun).toHaveBeenCalledTimes(1);
-  expect(autoCommitRun).toHaveBeenCalledWith(actor, taskId);
+  f.finish();
+  await running;
+  expect(f.creates).toHaveBeenCalledTimes(1);
+  expect(f.autoCommitRun).toHaveBeenCalledTimes(1);
+  expect(f.autoCommitRun).toHaveBeenCalledWith(f.actor, f.taskId);
 });
 
-it("未装配 codeGit 缝时终态事件不报错（测试/降级装配）", async () => {
-  const { actor, service, scopeHandle } = await fixture({
-    withCodeGit: false,
-  });
-  const runId = randomUUID();
-  const sink = await service.admitExternalRun(
-    actor,
-    scopeHandle as never,
-    runId,
+it("未装配codeGit时canonical终态仍正常落库", async () => {
+  const f = await fixture({ withCodeGit: false });
+  const admission = await f.service.admitExternalRun(
+    f.actor,
+    f.scopeHandle as never,
+    randomUUID(),
     "做点改动",
   );
+  const running = admission.publish();
+  await f.started;
   await expect(
-    sink({
+    f.send({
       type: "run.failed",
-      runId,
+      runId: admission.runId,
       error: { code: "run_failed", message: "上游拒绝" },
       timestamp: new Date().toISOString(),
     } as StreamEvent),
   ).resolves.toBeUndefined();
+  f.finish();
+  await running;
+  expect((await f.service.getSnapshot(f.actor, f.taskId)).control.phase).toBe(
+    "error",
+  );
 });

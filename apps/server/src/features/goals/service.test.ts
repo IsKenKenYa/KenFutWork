@@ -27,6 +27,45 @@ const claim = () =>
   });
 
 describe("Task Goal lifecycle", () => {
+  it("new user input invalidates verification while preserving the claimed Run and progress", () => {
+    const claimed = claim();
+    const current = service.beginVerification(claimed, {
+      goalId: "g",
+      revision: claimed.revision,
+      runId: "r",
+    });
+    const next = service.invalidateVerification(current, {
+      goalId: "g",
+      revision: current.revision,
+      runId: "r",
+    });
+    expect(next).toMatchObject({
+      status: "active",
+      claimedRunId: "r",
+      iteration: 1,
+      evaluation: null,
+      runs: current.runs,
+      tokensUsed: current.tokensUsed,
+      timeUsedSeconds: current.timeUsedSeconds,
+    });
+    expect(current.status).toBe("verifying");
+    expect(next.revision).toBe(current.revision + 1);
+    expect(() =>
+      service.invalidateVerification(next, {
+        goalId: "g",
+        revision: next.revision,
+        runId: "r",
+      }),
+    ).toThrow();
+    expect(() =>
+      service.invalidateVerification(current, {
+        goalId: "g",
+        revision: current.revision,
+        runId: "another-run",
+      }),
+    ).toThrow();
+  });
+
   it("clones input, has no default budget, and never completes on ordinary done", () => {
     const original = claim();
     const next = service.observeTerminal(original, {
@@ -115,6 +154,7 @@ describe("Task Goal lifecycle", () => {
       at: 2000,
     });
     expect(complete.status).toBe("complete");
+    expect(complete.verification).toMatchObject({ runId: "r", iteration: 1 });
     expect(
       service.observeTerminal(complete, {
         runId: "r",

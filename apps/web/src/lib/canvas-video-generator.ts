@@ -17,15 +17,26 @@ export type VideoGeneratorStatus =
   | "completed"
   | "error";
 
-export type VideoGeneratorData = {
+export type VideoGeneratorParams = {
+  aspectRatio?: string | undefined;
+  duration?: number | undefined;
+  resolution?: string | undefined;
+  firstFrame?: string | undefined;
+  lastFrame?: string | undefined;
+  inputVideo?: string | undefined;
+  enableAudio?: boolean | undefined;
+};
+
+export type VideoGeneratorData = VideoGeneratorParams & {
   type: "video-generator";
+  requestId?: string;
+  jobIds?: string[];
+  cancelRequested?: boolean;
   status: VideoGeneratorStatus;
   prompt: string;
   model: string;
-  aspectRatio: string;
-  duration: number;
-  resolution: string;
-  inputImages?: string[];
+  modelDrafts?: Record<string, VideoGeneratorParams>;
+  inputImages?: string[] | undefined;
   errorMessage?: string;
 };
 
@@ -71,10 +82,10 @@ export function createVideoGeneratorElement(
     type: "video-generator",
     status: "idle",
     prompt: "",
-    model: options?.model ?? "google-official/veo-3.1-generate-preview",
-    aspectRatio,
-    duration: options?.duration ?? 5,
-    resolution: options?.resolution ?? "720p",
+    model: options?.model ?? "",
+    aspectRatio: options?.aspectRatio,
+    duration: options?.duration,
+    resolution: options?.resolution,
   };
 
   const id = generateId();

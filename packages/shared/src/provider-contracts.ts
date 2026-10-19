@@ -7,7 +7,7 @@ import { z } from "zod";
  */
 
 /**
- * 线协议封闭集合：聊天 3 种 + 图视频 4 种 + flow 引擎 1 种；新增协议先扩这里再写适配器。
+ * 线协议封闭集合：聊天、媒体与Flow引擎；新增驱动先声明协议，再注册消费方。
  *
  * `dify-engine`（《flow 集成方案》P3 凭证缝）：Dify 引擎实例——**本仓不消费它的模型**，
  * 唯一读出方是 flow 宿主凭证回调（`POST /api/flow/host/credentials`，服务端到服务端，
@@ -21,6 +21,8 @@ export const providerProtocolSchema = z.enum([
   "replicate",
   "volces",
   "metaso",
+  "grsai",
+  "apimart",
   "dify-engine",
 ]);
 export type ProviderProtocol = z.infer<typeof providerProtocolSchema>;
@@ -45,6 +47,16 @@ export type ModelCapability = z.infer<typeof modelCapabilitySchema>;
  * 处理（kimi-code 的 UNKNOWN 语义）；只有显式声明的取值才可参与运行期裁剪。
  */
 export const imageGenerationCapsSchema = z.object({
+  /** 允许的画幅比；缺省为未知，空数组为不支持。 */
+  aspectRatios: z.array(z.string().min(1)).optional(),
+  /** 原生质量值；不推导像素，空数组为不支持。 */
+  qualities: z.array(z.string().min(1)).optional(),
+  /** 像素尺寸（如 1024x1536）；空数组为不支持。 */
+  sizes: z.array(z.string().regex(/^[1-9]\d*x[1-9]\d*$/)).optional(),
+  /** 原生可选产物格式；空数组为不支持。 */
+  outputFormats: z.array(z.enum(["png", "jpg", "webp"])).optional(),
+  /** 已确认的原生单次多图上限；缺省按单图请求。 */
+  maxOutputs: z.number().int().positive().optional(),
   /** 支持的生成模式（cherry 词表收窄版；缺省视为仅 generate）。 */
   modes: z
     .array(z.enum(["generate", "edit", "upscale", "remix", "merge"]))
@@ -56,6 +68,19 @@ export const imageGenerationCapsSchema = z.object({
   maxInputImages: z.number().int().nonnegative().optional(),
 });
 export type ImageGenerationCaps = z.infer<typeof imageGenerationCapsSchema>;
+
+/** 仅明确声明无需提示词的参考图任务允许空提示词；未知能力仍要求文字输入。 */
+export function hasImageGenerationInput(
+  prompt: string,
+  inputImages: readonly string[] | undefined,
+  caps: ImageGenerationCaps | undefined,
+): boolean {
+  return (
+    prompt.trim().length > 0 ||
+    (caps?.requirePrompt === false &&
+      inputImages?.some((source) => source.trim().length > 0) === true)
+  );
+}
 
 /** 视频任务能力（fal per-model input schema 收窄版）。缺省字段同样 = 未知。 */
 export const videoGenerationCapsSchema = z.object({
@@ -451,3 +476,23 @@ export const modelCatalogResponseSchema = z.object({
   models: z.array(modelCatalogEntrySchema),
 });
 export type ModelCatalogResponse = z.infer<typeof modelCatalogResponseSchema>;
+
+/** 解析 instance specifier；非实例 specifier（内置目录/裸模型名）返回 undefined。 */
+export function parseInstanceSpecifier(
+  specifier: string,
+): { instanceId: string; model: string } | undefined {
+  const separatorIndex = specifier.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex >= specifier.length - 1) {
+    return undefined;
+  }
+  const instanceId = specifier.slice(0, separatorIndex);
+  // 内置目录用 "openai:"/"google:" 等协议词前缀，实例 id 是 uuid（含连字符）。
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      instanceId,
+    )
+  ) {
+    return undefined;
+  }
+  return { instanceId, model: specifier.slice(separatorIndex + 1) };
+}

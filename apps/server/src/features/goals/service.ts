@@ -8,11 +8,63 @@ export type GoalStatus =
 /** Evidence is accepted only after the Task consumer validates its real Run provenance. */
 export interface GoalEvidence {
   sourceId: string;
+  sourceRunId?: string;
   passed: boolean;
   detail?: string;
+  /** Private evaluation context; public verification retains only source/result/detail. */
+  tool?: {
+    name: string;
+    inputText: string;
+    files?: Array<{ path: string; version: string }>;
+  };
+}
+export interface GoalRunMember {
+  runId: string;
+  branchGeneration: number;
+  iteration: number;
+}
+export interface GoalUserInputFact {
+  sourceId: string;
+  sourceSessionId: string;
+  sourceRunId: string;
+  sourceCommandId?: string;
+  clientId?: string;
+  at: number;
+  text: string;
+}
+/** Authenticated historical operations, separate from evidence of the current artifact state. */
+export interface GoalExecutionFacts {
+  complete: boolean;
+  runs: GoalRunMember[];
+  userInputs: Array<
+    GoalUserInputFact & { sourceRowId: number; guided: boolean }
+  >;
+  pendingUserInputs: Array<
+    GoalUserInputFact & {
+      sourceCommandId: string;
+      clientId: string;
+      admissionSeq: number;
+      status: string;
+      delivery: string;
+    }
+  >;
+  tools: Array<{
+    sourceId: string;
+    sourceSessionId: string;
+    sourceRunId: string;
+    sourceRowId: number;
+    at: number;
+    toolCallId: string;
+    status: string;
+    tool: { name: string; inputText: string };
+    outputText: string;
+    error?: { code: string; message: string };
+  }>;
 }
 export interface GoalVerification {
   runId: string;
+  /** Captured at verification; absent only in older persisted Goal records. */
+  iteration?: number;
   evidence: GoalEvidence[];
   passed: boolean;
   reason: string;
@@ -28,12 +80,23 @@ export interface GoalRecord {
   tokensUsed: number;
   timeUsedSeconds: number;
   iteration: number;
+  /** Real claims within this Goal; older records can lack this membership ledger. */
+  runs?: GoalRunMember[];
   claimedRunId: string | null;
   lastSettledRunId: string | null;
   runTokensUsed: number;
   runUsageObserved: boolean;
   runStartedAt: number | null;
   verification: GoalVerification | null;
+  /** Persisted under the Task lock before sending an independent model request. */
+  evaluation?: {
+    requestId: string;
+    runId: string;
+    revision: number;
+    evidence: GoalEvidence[];
+    executionFacts: GoalExecutionFacts;
+    proposal: { passed: boolean; reason: string };
+  } | null;
   reason: string | null;
 }
 export interface GoalFence {
@@ -73,6 +136,10 @@ export interface GoalService {
     input: GoalFence & { tokenBudget: number | null },
   ): GoalRecord;
   beginVerification(
+    current: GoalRecord,
+    input: GoalFence & { runId: string },
+  ): GoalRecord;
+  invalidateVerification(
     current: GoalRecord,
     input: GoalFence & { runId: string },
   ): GoalRecord;
@@ -143,6 +210,7 @@ const provider: GoalService = {
       tokensUsed: 0,
       timeUsedSeconds: 0,
       iteration: 0,
+      runs: [],
       claimedRunId: null,
       lastSettledRunId: null,
       runTokensUsed: 0,
@@ -158,6 +226,11 @@ const provider: GoalService = {
     const goal = clone(current);
     goal.tokenBudget = input.tokenBudget;
     goal.revision += 1;
+    if (goal.status === "verifying") {
+      goal.status = "paused";
+      goal.reason = "goal.evaluationChanged";
+      if (goal.evaluation) goal.evaluation = null;
+    }
     if (
       goal.tokenBudget !== null &&
       goal.tokensUsed >= goal.tokenBudget &&
@@ -177,11 +250,23 @@ const provider: GoalService = {
     goal.revision += 1;
     return goal;
   },
+  invalidateVerification(current, input) {
+    fence(current, input);
+    if (current.claimedRunId !== input.runId || current.status !== "verifying")
+      throw new Error("Verification Run is no longer current");
+    const goal = clone(current);
+    goal.status = "active";
+    goal.evaluation = null;
+    goal.reason = "goal.userInputChanged";
+    goal.revision += 1;
+    return goal;
+  },
   pause(current, input) {
     fence(current, input);
     const goal = clone(current);
     if (goal.status === "complete") return goal;
     goal.status = "paused";
+    if (goal.evaluation) goal.evaluation = null;
     goal.reason = input.reason;
     goal.revision += 1;
     return goal;
@@ -233,6 +318,14 @@ const provider: GoalService = {
     goal.runTokensUsed = 0;
     goal.runUsageObserved = false;
     goal.iteration += 1;
+    goal.runs = [
+      ...(goal.runs ?? []),
+      {
+        runId: input.runId,
+        branchGeneration: goal.branchGeneration,
+        iteration: goal.iteration,
+      },
+    ];
     goal.revision += 1;
     return goal;
   },
@@ -302,7 +395,15 @@ const provider: GoalService = {
       input.evidence.every((item) => item.passed);
     goal.verification = structuredClone({
       runId: input.runId,
-      evidence: input.evidence,
+      iteration: goal.iteration,
+      evidence: input.evidence.map(
+        ({ sourceId, sourceRunId, passed, detail }) => ({
+          sourceId,
+          ...(sourceRunId === undefined ? {} : { sourceRunId }),
+          passed,
+          ...(detail === undefined ? {} : { detail }),
+        }),
+      ),
       passed,
       reason: input.verdict.reason,
       at: input.at,
@@ -331,11 +432,13 @@ const provider: GoalService = {
     goal.runTokensUsed = 0;
     goal.runUsageObserved = false;
     goal.verification = null;
+    if (goal.evaluation) goal.evaluation = null;
     goal.revision += 1;
     return goal;
   },
   recover(current, at) {
     const goal = clone(current);
+    if (goal.evaluation) goal.evaluation = null;
     if (goal.claimedRunId) {
       settleTime(goal, at);
       goal.lastSettledRunId = goal.claimedRunId;

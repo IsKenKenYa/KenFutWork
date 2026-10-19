@@ -7,6 +7,7 @@ import {
   ToolMessage as ToolMessageClass,
 } from "@langchain/core/messages";
 import type { RunUsageTotals } from "../features/usage/run-usage-accumulator.js";
+import { TOOL_INTERRUPTION_SUMMARY } from "../kernel/owned-tool-interruption.js";
 import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { CompactionPlan } from "./auto-compact.js";
 import {
@@ -124,7 +125,12 @@ function canonicalToolEvent(
   const toolName = readString(data?.toolName);
   if (!toolCallId || !toolName) throw new Error("工具生命周期事实缺少调用身份");
   const phase = data?.phase;
-  if (phase !== "started" && phase !== "completed" && phase !== "failed") {
+  if (
+    phase !== "started" &&
+    phase !== "completed" &&
+    phase !== "failed" &&
+    phase !== "cancelled"
+  ) {
     throw new Error("工具生命周期事实缺少有效阶段");
   }
   return {
@@ -133,7 +139,9 @@ function canonicalToolEvent(
         ? "on_tool_start"
         : phase === "completed"
           ? "on_tool_end"
-          : "on_tool_error",
+          : phase === "cancelled"
+            ? "on_tool_cancelled"
+            : "on_tool_error",
     name: toolName,
     run_id: toolCallId,
     data:
@@ -624,21 +632,24 @@ export async function* adaptDeepAgentStream(
        * 用 `tool.completed` 收尾（契约里工具块只有 running/completed 两态），
        * 把可读原因放进 outputSummary，失败的块因此变成「有结论」而不是「卡住」。
        */
-      if (evt.event === "on_tool_error") {
+      if (evt.event === "on_tool_error" || evt.event === "on_tool_cancelled") {
         const toolName = evt.name ?? "unknown_tool";
         const toolCallId = readString(evt.run_id) ?? `tool_${Date.now()}`;
         if (seenCompletedToolCalls.has(toolCallId)) continue;
         seenCompletedToolCalls.add(toolCallId);
 
+        const cancelled = evt.event === "on_tool_cancelled";
         const reason = describeToolError(evt.data?.error);
         const errorSubagent =
           readSubagentName(evt, mainAgentName) ?? dispatchStack.at(-1)?.name;
         const errorCallId =
           readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
         yield {
-          output: { error: reason },
-          status: "error",
-          outputSummary: `失败：${reason}`,
+          ...(cancelled ? {} : { output: { error: reason } }),
+          status: cancelled ? "cancelled" : "error",
+          outputSummary: cancelled
+            ? TOOL_INTERRUPTION_SUMMARY
+            : `失败：${reason}`,
           runId: options.runId,
           timestamp: now(),
           toolCallId,

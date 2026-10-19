@@ -52,10 +52,10 @@ function repository(
     if (input.canvasId !== undefined) row.canvas_id = input.canvasId;
   };
   return {
-    find: async (instance, id) =>
-      rows.get(id)?.instance_id === instance
-        ? structuredClone(rows.get(id)!)
-        : null,
+    find: async (instance, id) => {
+      const row = rows.get(id);
+      return row?.instance_id === instance ? structuredClone(row) : null;
+    },
     prepare: async (record) => {
       if (!rows.has(record.id))
         rows.set(record.id, { ...structuredClone(record), byte_size: null });
@@ -120,6 +120,7 @@ async function fixture(
     id: projectId,
     instance_id: actor.instanceId,
     kind: "design",
+    enabled_modes: ["design"],
     name: "HTTP files",
     slug: "http-files",
     description: null,
@@ -136,7 +137,13 @@ async function fixture(
       return project;
     },
   };
-  const canvases: Pick<CanvasRepository, "findById" | "claimRoot"> = {
+  const canvases: Pick<
+    CanvasRepository,
+    "findById" | "claimRoot" | "withDocumentLock" | "notifyChanged"
+  > = {
+    notifyChanged: async () => {},
+    withDocumentLock: async (_instance, _id, operation) =>
+      operation(new AbortController().signal),
     findById: async (instance, id) =>
       instance === actor.instanceId && id === canvasId
         ? {

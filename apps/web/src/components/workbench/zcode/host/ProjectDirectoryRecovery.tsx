@@ -14,6 +14,7 @@ import {
 } from "react";
 import { applyDirectoryRelinkStores } from "./directoryRelinkStores.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+import { DirectoryChoiceCancelledError } from "./ProjectDirectoryChoice.js";
 import { ProjectDirectoryRecoveryDialog } from "./ProjectDirectoryRecoveryDialog.js";
 
 const ClientContext = createContext<CodeHttpChannelClient | null>(null);
@@ -93,6 +94,7 @@ function useDirectoryRecovery(client: CodeHttpChannelClient) {
       setPendingReceipt({ snapshot, receipt });
       await applyReceipt(snapshot, receipt);
     } catch (failure) {
+      if (failure instanceof DirectoryChoiceCancelledError) return;
       setError(
         failure instanceof Error
           ? failure.message

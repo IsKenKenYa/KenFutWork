@@ -1,38 +1,68 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
-import type { GoalRecord, GoalService } from "../goals/service.js";
+import type { ModelInvocationSnapshot } from "../../providers/types.js";
+import { evaluateGoal } from "../goals/evaluation.js";
+import type {
+  GoalEvidence,
+  GoalExecutionFacts,
+  GoalRecord,
+  GoalRunMember,
+  GoalService,
+} from "../goals/service.js";
 import { isGoalToolEvidence } from "../goals/tool-evidence.js";
+import { freezeChildSnapshots } from "./child-history.js";
 import type { CodeUiConversationState } from "./conversation.js";
+
+function verificationIteration(goal: GoalRecord): number | null {
+  const verification = goal.verification;
+  if (!verification) return null;
+  if (verification.iteration !== undefined)
+    return Number.isSafeInteger(verification.iteration) &&
+      verification.iteration > 0 &&
+      verification.iteration <= goal.iteration
+      ? verification.iteration
+      : null;
+  if (verification.runId === goal.claimedRunId) return goal.iteration;
+  if (verification.runId !== goal.lastSettledRunId) return null;
+  // Only the current or immediately preceding claim can be recovered from legacy Run identities.
+  return goal.claimedRunId ? Math.max(0, goal.iteration - 1) : goal.iteration;
+}
 
 export function projectGoal(
   goal: GoalRecord | null,
 ): protocol.GoalState | null {
   if (!goal) return null;
   const status = goal.status === "complete" ? "verified" : goal.status;
+  const verifiedIteration = verificationIteration(goal);
   return {
     targetId: goal.goalId,
     objective: goal.objective,
     summaryTitle: null,
     status,
-    iteration: goal.iteration,
+    // V4 active means the next open iteration; GoalRecord already counts its claimed Run.
+    iteration:
+      goal.status === "active" && goal.claimedRunId
+        ? Math.max(0, goal.iteration - 1)
+        : goal.iteration,
     iterations: [],
     timeUsedSeconds: goal.timeUsedSeconds,
     activeRunStartedAtMs: goal.runStartedAt,
-    verifications: goal.verification
-      ? [
-          {
-            iteration: goal.iteration,
-            outcome:
-              goal.status === "failed"
-                ? "failed"
-                : goal.verification.passed
-                  ? "pass"
-                  : "notSatisfied",
-            at: goal.verification.at,
-            anchorRowId: null,
-            reason: goal.verification.reason,
-          },
-        ]
-      : [],
+    verifications:
+      goal.verification && verifiedIteration !== null
+        ? [
+            {
+              iteration: verifiedIteration,
+              outcome:
+                goal.status === "failed"
+                  ? "failed"
+                  : goal.verification.passed
+                    ? "pass"
+                    : "notSatisfied",
+              at: goal.verification.at,
+              anchorRowId: null,
+              reason: goal.verification.reason,
+            },
+          ]
+        : [],
   };
 }
 export function projectGoalSnapshot(
@@ -83,13 +113,251 @@ import type {
   PromptExecutionContext,
   ToolExecutionContext,
 } from "../../kernel/types.js";
-import type { TaskGoalHost } from "../goals/consumer.js";
+import type {
+  GoalToolEvidenceValidator,
+  GoalToolEvidenceValidatorResolver,
+  TaskGoalHost,
+} from "../goals/consumer.js";
 import { matchesActiveCodeRun } from "./active-run-binding.js";
-import type { CodeUiRepository } from "./repository.js";
+import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
+
+function matchesGoalTaskRun(
+  root: CodeUiSessionRecord,
+  context: PromptExecutionContext,
+) {
+  const scope = context.scopeHandle?.describe();
+  return (
+    !!scope &&
+    root.id === scope.taskId &&
+    root.instance_id === scope.instanceId &&
+    root.project_id === scope.projectId &&
+    matchesActiveCodeRun(root, context)
+  );
+}
+
+async function revalidateEvidence(
+  context: ToolExecutionContext,
+  evidence: GoalEvidence[],
+  resolve?: GoalToolEvidenceValidatorResolver,
+) {
+  context.signal?.throwIfAborted();
+  for (const entry of evidence) {
+    for (const file of entry.tool?.files ?? []) {
+      if (!context.scopeHandle)
+        throw new Error("验收证据缺少可信Task目录授权。");
+      const current = await context.scopeHandle.backend.observeBinary(
+        file.path,
+      );
+      context.signal?.throwIfAborted();
+      if (current.path !== file.path || current.version !== file.version)
+        throw new Error("验收文件已删除或变化，请重新读取实际结果。");
+    }
+    if (!entry.tool) continue;
+    const validator = resolve?.(entry.tool.name);
+    if (!hasToolEvidenceProof(entry.tool.name, entry.detail ?? "", validator))
+      throw new Error("画布成果缺少版本核验，请重新读取实际结果。");
+    await validator?.validate(context, entry);
+    context.signal?.throwIfAborted();
+  }
+}
+
+function hasToolEvidenceProof(
+  toolName: string,
+  outputText: string,
+  validator?: GoalToolEvidenceValidator,
+): boolean {
+  return validator
+    ? validator.accepts(outputText)
+    : toolName !== "manipulate_canvas";
+}
+
+async function currentFileCandidateRows(
+  context: PromptExecutionContext,
+  rows: protocol.ConversationRow[],
+): Promise<protocol.ConversationRow[]> {
+  const observed = new Map<
+    string,
+    ReturnType<
+      NonNullable<typeof context.scopeHandle>["backend"]["observeBinary"]
+    >
+  >();
+  const current: protocol.ConversationRow[] = [];
+  for (const row of rows) {
+    let matches = true;
+    for (const file of row.kind === "toolCall"
+      ? (evidenceFiles(row) ?? [])
+      : []) {
+      if (!context.scopeHandle)
+        throw new Error("验收证据缺少可信Task目录授权。");
+      let observation = observed.get(file.path);
+      if (!observation) {
+        observation = context.scopeHandle.backend.observeBinary(file.path);
+        observed.set(file.path, observation);
+      }
+      const actual = await observation;
+      context.signal?.throwIfAborted();
+      if (actual.path !== file.path || actual.version !== file.version)
+        matches = false;
+    }
+    if (matches) current.push(row);
+  }
+  return current;
+}
+
+function goalExecutionFacts(
+  state: CodeUiConversationState,
+  rootId: string,
+  goal: GoalRecord,
+): GoalExecutionFacts {
+  const runs: GoalRunMember[] = (goal.runs ?? []).filter(
+    (member) => member.branchGeneration === goal.branchGeneration,
+  );
+  if (
+    goal.claimedRunId &&
+    !runs.some((member) => member.runId === goal.claimedRunId)
+  )
+    runs.push({
+      runId: goal.claimedRunId,
+      branchGeneration: goal.branchGeneration,
+      iteration: goal.iteration,
+    });
+  runs.sort((left, right) => left.iteration - right.iteration);
+  const facts: GoalExecutionFacts = {
+    complete:
+      runs.length === goal.iteration &&
+      new Set(runs.map((member) => member.runId)).size === goal.iteration &&
+      runs.every((member, index) => member.iteration === index + 1),
+    runs,
+    userInputs: [],
+    pendingUserInputs: [],
+    tools: [],
+  };
+  const root = state.snapshots.find(
+    (snapshot) => snapshot.sessionId === rootId,
+  );
+  if (!root) return { ...facts, complete: false };
+  const selected = {
+    ...root,
+    rows: {
+      ...root.rows,
+      window: root.rows.window.filter((row) =>
+        belongsToGoal(row.turnId, goal.claimedRunId ?? "", goal),
+      ),
+    },
+  };
+  appendRootUserInputs(facts, state, rootId, selected.rows.window);
+  let descendants: protocol.ConversationSnapshot[] = [];
+  try {
+    descendants = freezeChildSnapshots(
+      selected,
+      new Map(
+        state.snapshots.map((snapshot) => [snapshot.sessionId, snapshot]),
+      ),
+    );
+  } catch {
+    facts.complete = false;
+  }
+  for (const snapshot of [root, ...descendants])
+    appendExecutionFacts(
+      facts,
+      snapshot,
+      snapshot.sessionId === rootId
+        ? selected.rows.window
+        : snapshot.rows.window,
+    );
+  return facts;
+}
+
+function appendRootUserInputs(
+  facts: GoalExecutionFacts,
+  state: CodeUiConversationState,
+  rootId: string,
+  rows: protocol.ConversationRow[],
+): void {
+  for (const row of rows) {
+    if (row.kind !== "userInput" || row.origin !== "realUser") continue;
+    facts.userInputs.push({
+      sourceId: `session:${rootId}:row:${row.rowId}`,
+      sourceSessionId: rootId,
+      sourceRunId: row.turnId,
+      sourceRowId: row.rowId,
+      at: row.createdAt,
+      text:
+        row.epilogueStart === undefined
+          ? row.text
+          : row.text.slice(0, row.epilogueStart),
+      guided: row.guided === true,
+      ...(row.sourceCommandId ? { sourceCommandId: row.sourceCommandId } : {}),
+      ...(row.clientId ? { clientId: row.clientId } : {}),
+    });
+  }
+  for (const input of state.inputs ?? []) {
+    if (
+      input.intent.kind !== "sendText" ||
+      !["queued", "reserved"].includes(input.status) ||
+      !facts.runs.some((run) => run.branchGeneration === input.branchGeneration)
+    )
+      continue;
+    facts.pendingUserInputs.push({
+      sourceId: `input:${JSON.stringify([input.intent.clientId, input.intent.sourceCommandId])}`,
+      sourceSessionId: rootId,
+      sourceRunId: input.runId,
+      sourceCommandId: input.intent.sourceCommandId,
+      clientId: input.intent.clientId,
+      at: input.intent.admittedAt,
+      text: input.intent.text,
+      admissionSeq: input.intent.order.admissionSeq,
+      status: input.status,
+      delivery: input.intent.delivery.admitted,
+    });
+  }
+}
+
+function appendExecutionFacts(
+  facts: GoalExecutionFacts,
+  snapshot: protocol.ConversationSnapshot,
+  rows: protocol.ConversationRow[],
+): void {
+  if (
+    snapshot.rows.window.length < snapshot.rows.totalCount ||
+    (snapshot.rows.firstRowId !== null &&
+      !snapshot.rows.window.some(
+        (row) => row.rowId === snapshot.rows.firstRowId,
+      ))
+  )
+    facts.complete = false;
+  for (const row of rows) {
+    if (
+      row.kind !== "toolCall" ||
+      ["GetGoal", "VerifyGoal"].includes(row.toolName)
+    )
+      continue;
+    if (!row.toolCallId.startsWith(`${row.turnId}/`)) {
+      facts.complete = false;
+      continue;
+    }
+    facts.tools.push({
+      sourceId: `session:${snapshot.sessionId}:row:${row.rowId}`,
+      sourceSessionId: snapshot.sessionId,
+      sourceRunId: row.turnId,
+      sourceRowId: row.rowId,
+      at: row.createdAt,
+      toolCallId: row.toolCallId,
+      status: row.status,
+      tool: {
+        name: row.toolName,
+        inputText: row.input ? JSON.stringify(row.input) : row.inputText,
+      },
+      outputText: row.output?.text ?? "",
+      ...(row.error ? { error: structuredClone(row.error) } : {}),
+    });
+  }
+}
 
 export function createTaskGoalHost(deps: {
   goals: GoalService;
   repository: Pick<CodeUiRepository, "find" | "appendEvent">;
+  goalToolEvidenceValidator?: GoalToolEvidenceValidatorResolver;
   refresh(instanceId: string, path: string, projectId: string): Promise<void>;
 }): TaskGoalHost {
   function scopeOf(context: PromptExecutionContext) {
@@ -106,27 +374,146 @@ export function createTaskGoalHost(deps: {
     context.signal?.throwIfAborted();
     return scope;
   }
+  async function settleEvaluation(
+    context: ToolExecutionContext,
+    scope: ReturnType<typeof scopeOf>,
+    captured: { goal: GoalRecord },
+    verdict: Awaited<ReturnType<typeof evaluateGoal>>,
+  ) {
+    const requestId = captured.goal.evaluation!.requestId;
+    await revalidateEvidence(
+      context,
+      captured.goal.evaluation!.evidence,
+      deps.goalToolEvidenceValidator,
+    );
+    await deps.repository.appendEvent(
+      scope.instanceId,
+      scope.taskId,
+      {
+        key: `${requestId}:result`,
+        fingerprint: createHash("sha256")
+          .update(JSON.stringify(verdict))
+          .digest("hex"),
+        event: {
+          type: "goal.evaluation",
+          runId: context.runId,
+          requestId,
+          verdict,
+        },
+      },
+      (root) => {
+        const goal = root.state?.goalRecord;
+        if (
+          !matchesGoalTaskRun(root, context) ||
+          !goal ||
+          goal.revision !== captured.goal.revision ||
+          goal.status !== "verifying" ||
+          goal.evaluation?.requestId !== requestId ||
+          goal.branchGeneration !== Number(root.branch_generation)
+        )
+          throw new Error(
+            "独立评估所属目标、Run或授权代际已改变，旧结果不再生效。",
+          );
+        const rows =
+          root.state!.snapshots.find(
+            (snapshot) => snapshot.sessionId === root.id,
+          )?.rows.window ?? [];
+        const executionFacts = goalExecutionFacts(
+          root.state!,
+          root.id,
+          withGoalMembers(goal, rows),
+        );
+        const prior = captured.goal.evaluation!.executionFacts;
+        const userInputChanged =
+          JSON.stringify([
+            executionFacts.userInputs,
+            executionFacts.pendingUserInputs,
+          ]) !== JSON.stringify([prior.userInputs, prior.pendingUserInputs]);
+        if (
+          !userInputChanged &&
+          JSON.stringify(executionFacts) !== JSON.stringify(prior)
+        )
+          throw new Error("目标执行事实在独立评估期间变化，请重新验收。");
+        const state = structuredClone(root.state!);
+        state.goalRecord = userInputChanged
+          ? deps.goals.invalidateVerification(goal, {
+              goalId: goal.goalId,
+              revision: goal.revision,
+              runId: context.runId!,
+            })
+          : "error" in verdict
+            ? deps.goals.pause(goal, {
+                goalId: goal.goalId,
+                revision: goal.revision,
+                reason: verdict.error,
+                at: Date.now(),
+              })
+            : deps.goals.verify(goal, {
+                goalId: goal.goalId,
+                revision: goal.revision,
+                runId: context.runId!,
+                evidence: captured.goal.evaluation!.evidence,
+                verdict,
+                at: Date.now(),
+              });
+        state.goalRecord.evaluation = null;
+        syncGoal(state, root.id);
+        const snapshot = state.snapshots.find(
+          (item) => item.sessionId === root.id,
+        )!;
+        snapshot.revision += 1;
+        snapshot.seq += 1;
+        return { state, activeRunId: root.active_run_id };
+      },
+    );
+  }
   return {
     async read(context) {
       const scope = scopeOf(context);
       const root = await deps.repository.find(scope.instanceId, scope.taskId);
       if (!root?.state?.goalRecord) return null;
-      if (!root || !matchesActiveCodeRun(root, context))
+      if (!root || !matchesGoalTaskRun(root, context))
         throw new Error("目标所属Run已失效");
       const goal = root.state?.goalRecord;
       const snapshot = root.state?.snapshots.find(
         (item) => item.sessionId === root.id,
       );
-      const visible = goal ? structuredClone(goal) : null;
+      const boundGoal = goal
+        ? withGoalMembers(goal, snapshot?.rows.window ?? [])
+        : null;
+      const visible = boundGoal ? structuredClone(boundGoal) : null;
+      if (visible) delete visible.evaluation;
       for (const evidence of visible?.verification?.evidence ?? [])
         delete evidence.detail;
+      const proofRows = (snapshot?.rows.window ?? []).filter(
+        (row) =>
+          row.kind !== "toolCall" ||
+          hasToolEvidenceProof(
+            row.toolName,
+            row.output?.text ?? "",
+            deps.goalToolEvidenceValidator?.(row.toolName),
+          ),
+      );
+      const candidateIds = new Set(
+        goalEvidenceCandidates(
+          proofRows,
+          context.runId!,
+          goal.revision,
+          boundGoal ?? undefined,
+        ).map((candidate) => candidate.id),
+      );
+      const candidates = await currentFileCandidateRows(
+        context,
+        proofRows.filter((row) => candidateIds.has(`row:${row.rowId}`)),
+      );
       return goal && visible
         ? {
             ...visible,
             evidenceCandidates: goalEvidenceCandidates(
-              snapshot?.rows.window ?? [],
+              candidates,
               context.runId!,
               goal.revision,
+              boundGoal ?? undefined,
             ),
           }
         : null;
@@ -134,7 +521,28 @@ export function createTaskGoalHost(deps: {
     async verify(context: ToolExecutionContext, input) {
       const scope = scopeOf(context);
       if (!context.toolCallId) throw new Error("验证缺少可信工具调用身份");
-      let result: GoalRecord | undefined;
+      const before = await deps.repository.find(scope.instanceId, scope.taskId);
+      if (!before?.state?.goalRecord || !matchesGoalTaskRun(before, context))
+        throw new Error("目标验证所属Run或授权代际已失效");
+      const beforeRows =
+        before.state.snapshots.find((item) => item.sessionId === before.id)
+          ?.rows.window ?? [];
+      const beforeGoal = withGoalMembers(before.state.goalRecord, beforeRows);
+      const evidence = goalEvidence(
+        beforeRows,
+        context.runId!,
+        input.evidenceIds,
+        beforeGoal,
+      );
+      await revalidateEvidence(
+        context,
+        evidence,
+        deps.goalToolEvidenceValidator,
+      );
+      let pending:
+        | { goal: GoalRecord; invocation: ModelInvocationSnapshot | null }
+        | undefined;
+      const requestId = `goal-verify:${context.runId}/${context.toolCallId}`;
       const event = {
         type: "goal.verify",
         runId: context.runId,
@@ -145,50 +553,88 @@ export function createTaskGoalHost(deps: {
         scope.instanceId,
         scope.taskId,
         {
-          key: `goal-verify:${context.runId}/${context.toolCallId}`,
+          key: requestId,
           fingerprint: createHash("sha256")
             .update(JSON.stringify(event))
             .digest("hex"),
           event,
         },
         (root) => {
-          if (!matchesActiveCodeRun(root, context))
+          if (!matchesGoalTaskRun(root, context))
             throw new Error("目标验证所属Run或授权代际已失效");
           const state = structuredClone(root.state!);
           const snapshot = state.snapshots.find(
             (item) => item.sessionId === root.id,
           )!;
-          const goal = state.goalRecord;
+          const goal = state.goalRecord
+            ? withGoalMembers(state.goalRecord, snapshot.rows.window)
+            : null;
           if (!goal || goal.branchGeneration !== Number(root.branch_generation))
             throw new Error("当前Task没有有效目标");
-          const evidence = goalEvidence(
+          const currentEvidence = goalEvidence(
             snapshot.rows.window,
             context.runId!,
             input.evidenceIds,
+            goal,
           );
-          result = deps.goals.verify(goal, {
+          if (JSON.stringify(currentEvidence) !== JSON.stringify(evidence))
+            throw new Error("验收证据已改变，请重新读取GetGoal候选。");
+          const executionFacts = goalExecutionFacts(state, root.id, goal);
+          if (executionFacts.pendingUserInputs.length)
+            throw new Error("请先处理已接纳的用户输入，再提交验收。");
+          const started = deps.goals.beginVerification(goal, {
             goalId: goal.goalId,
             revision: input.revision,
             runId: context.runId!,
-            evidence,
-            verdict: { passed: input.passed, reason: input.reason },
-            at: Date.now(),
           });
-          state.goalRecord = result;
+          started.evaluation = {
+            requestId,
+            runId: context.runId!,
+            revision: started.revision,
+            evidence,
+            executionFacts,
+            proposal: { passed: input.passed, reason: input.reason },
+          };
+          state.goalRecord = started;
+          pending = {
+            goal: structuredClone(started),
+            invocation:
+              state.goalModel?.goalId === goal.goalId
+                ? structuredClone(state.goalModel.invocation)
+                : null,
+          };
           syncGoal(state, root.id);
           snapshot.revision += 1;
           snapshot.seq += 1;
           return { state, activeRunId: root.active_run_id };
         },
       );
+      // A replay reads persisted state; it must not send a second billable request.
+      if (pending) {
+        const captured = pending;
+        const verdict = await evaluateGoal({
+          request: context.requestModel,
+          invocation: captured.invocation,
+          goal: captured.goal,
+          evidence: captured.goal.evaluation!.evidence,
+          executionFacts: captured.goal.evaluation!.executionFacts,
+          proposal: captured.goal.evaluation!.proposal,
+        });
+        context.signal?.throwIfAborted();
+        await settleEvaluation(context, scope, captured, verdict);
+      }
       const root = await deps.repository.find(scope.instanceId, scope.taskId);
       if (!root?.state?.goalRecord) throw new Error("目标已删除");
+      if (!matchesGoalTaskRun(root, context))
+        throw new Error("目标所属Run或授权代际已失效。");
       await deps.refresh(
         scope.instanceId,
         root.root_directory!,
         root.project_id,
       );
-      return result ?? structuredClone(root.state.goalRecord);
+      const visible = structuredClone(root.state.goalRecord);
+      delete visible.evaluation;
+      return visible;
     },
   };
 }
@@ -207,8 +653,91 @@ function objectValue(value: unknown): Record<string, unknown> | null {
     ? (value as Record<string, unknown>)
     : null;
 }
+function withGoalMembers(
+  goal: GoalRecord,
+  rows: protocol.ConversationRow[],
+): GoalRecord {
+  const runs = [...(goal.runs ?? [])];
+  for (const row of rows) {
+    if (
+      row.kind !== "toolCall" ||
+      row.toolName !== "GetGoal" ||
+      row.status !== "success" ||
+      !row.toolCallId.startsWith(`${row.turnId}/`) ||
+      row.startedAt === undefined ||
+      row.endedAt === undefined ||
+      row.endedAt < row.startedAt
+    )
+      continue;
+    const receipt = objectValue(row.output?.text);
+    if (
+      !receipt ||
+      receipt.goalId !== goal.goalId ||
+      receipt.objective !== goal.objective ||
+      receipt.branchGeneration !== goal.branchGeneration ||
+      receipt.claimedRunId !== row.turnId ||
+      typeof receipt.iteration !== "number" ||
+      !Number.isSafeInteger(receipt.iteration) ||
+      receipt.iteration < 1 ||
+      receipt.iteration > goal.iteration
+    )
+      continue;
+    if (
+      !runs.some(
+        (member) =>
+          member.runId === row.turnId &&
+          member.branchGeneration === goal.branchGeneration,
+      )
+    )
+      runs.push({
+        runId: row.turnId,
+        branchGeneration: goal.branchGeneration,
+        iteration: receipt.iteration,
+      });
+  }
+  return { ...goal, runs };
+}
+
+function belongsToGoal(
+  runId: string,
+  currentRunId: string,
+  goal?: GoalRecord,
+): boolean {
+  if (!goal) return runId === currentRunId;
+  return (
+    goal.claimedRunId === runId ||
+    !!goal.runs?.some(
+      (member) =>
+        member.runId === runId &&
+        member.branchGeneration === goal.branchGeneration,
+    )
+  );
+}
+
+function evidenceFiles(
+  row: protocol.ToolCallRow,
+): Array<{ path: string; version: string }> | undefined {
+  const text = row.output?.text ?? "";
+  const display = row.output?.display;
+  if (["Write", "Edit"].includes(row.toolName)) {
+    const version = text.match(/，版本 ([a-f0-9]{64})$/u)?.[1];
+    if (display?.kind !== "file_diff" || !version) return;
+    return [{ path: display.filePath, version }];
+  }
+  if (["Read", "preview_file"].includes(row.toolName)) {
+    const media = objectValue(text);
+    if (
+      typeof media?.filePath === "string" &&
+      typeof media.version === "string"
+    )
+      return [{ path: media.filePath, version: media.version }];
+    const match = text.match(/^([^\n]+)\n版本：([a-f0-9]{64})\n/u);
+    if (match) return [{ path: match[1]!, version: match[2]! }];
+  }
+}
 function commandOf(row: protocol.ToolCallRow): string {
   const input = objectValue(row.input) ?? objectValue(row.inputText);
+  if (input && typeof input.command !== "string") return "";
   return typeof input?.command === "string"
     ? input.command.trim().replace(/;$/, "").trim()
     : row.inputText.trim().replace(/;$/, "").trim();
@@ -216,16 +745,27 @@ function commandOf(row: protocol.ToolCallRow): string {
 function evidenceDetail(
   row: protocol.ConversationRow,
   runId: string,
+  goal?: GoalRecord,
 ): string | null {
-  if (row.turnId !== runId) return null;
+  if (!belongsToGoal(row.turnId, runId, goal)) return null;
   if (row.kind === "assistantText")
-    return ["streaming", "complete"].includes(row.state) && row.text.trim()
+    return (row.state === "complete" ||
+      (row.turnId === runId && row.state === "streaming")) &&
+      row.text.trim()
       ? row.text
       : null;
   if (
     row.kind !== "toolCall" ||
-    !row.toolCallId.startsWith(`${runId}/`) ||
+    !row.toolCallId.startsWith(`${row.turnId}/`) ||
     row.status !== "success"
+  )
+    return null;
+  if (
+    row.turnId !== runId &&
+    ["Write", "Edit", "Read", "preview_file", "ApplyPatch"].includes(
+      row.toolName,
+    ) &&
+    !evidenceFiles(row)
   )
     return null;
   const text = row.output?.text ?? "";
@@ -235,9 +775,10 @@ export function goalEvidenceCandidates(
   rows: protocol.ConversationRow[],
   runId: string,
   revision: number,
+  goal?: GoalRecord,
 ): GoalEvidenceCandidate[] {
   return rows.flatMap((row) =>
-    evidenceDetail(row, runId) === null
+    evidenceDetail(row, runId, goal) === null
       ? []
       : [
           {
@@ -255,13 +796,29 @@ export function goalEvidence(
   rows: protocol.ConversationRow[],
   runId: string,
   evidenceIds: string[],
-) {
+  goal?: GoalRecord,
+): GoalEvidence[] {
   if (!evidenceIds.length) throw new Error("验收引用不能为空");
   return evidenceIds.map((id) => {
     const row = rows.find((item) => `row:${item.rowId}` === id);
-    const detail = row ? evidenceDetail(row, runId) : null;
+    const detail = row ? evidenceDetail(row, runId, goal) : null;
     if (detail === null)
-      throw new Error("验收引用不属于当前Run的有效结果，请先读取GetGoal候选");
-    return { sourceId: id, passed: true, detail };
+      throw new Error("验收引用不属于当前Goal的有效结果，请先读取GetGoal候选");
+    const files = row?.kind === "toolCall" ? evidenceFiles(row) : undefined;
+    return {
+      sourceId: id,
+      sourceRunId: row!.turnId,
+      passed: true,
+      detail,
+      ...(row?.kind === "toolCall"
+        ? {
+            tool: {
+              name: row.toolName,
+              inputText: row.input ? JSON.stringify(row.input) : row.inputText,
+              ...(files ? { files } : {}),
+            },
+          }
+        : {}),
+    };
   });
 }

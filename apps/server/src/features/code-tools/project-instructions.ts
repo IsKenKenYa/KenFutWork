@@ -1,4 +1,4 @@
-import { dirname, join, sep } from "node:path";
+import { dirname, join, parse, sep } from "node:path";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import { parseSkillManifest } from "../skills/skill-import-service.js";
 import type { ReadCursor } from "./file-types.js";
@@ -182,11 +182,12 @@ export async function loadCodeDirectoryInstructions(
     : facts.additionalDirectories
         .filter((entry) => within(entry.path, target))
         .sort((left, right) => right.path.length - left.path.length)[0]?.path;
-  if (!root) throw new Error("目录不在 Task 授权范围内。");
+  // resolvePath 是目录授权真相；完全访问的祖先规则读取可延伸到文件系统根。
+  const instructionRoot = root ?? parse(target).root;
   const ancestry: string[] = [];
   for (let current = target; ; current = dirname(current)) {
     ancestry.push(current);
-    if (current === root) break;
+    if (current === instructionRoot) break;
   }
   const result: CodeProjectInstructions = {
     instructions: [],

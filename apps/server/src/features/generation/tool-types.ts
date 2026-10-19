@@ -12,12 +12,14 @@ export type PersistImageFn = (
 
 /** 提交图片生成 job 并等待完成（PGMQ → worker → 落画布，runtime 闭包实现）。 */
 export type SubmitImageJobFn = (input: {
+  canvasId?: string;
   prompt: string;
   title: string;
   model: string;
   aspectRatio: string;
   inputImages?: string[];
   quality?: string;
+  outputFormat?: "png" | "jpg" | "webp";
   /** 画布落点（可选）：运行时的作业回调据此显式指定插入位置。 */
   placementX?: number;
   placementY?: number;
@@ -25,6 +27,7 @@ export type SubmitImageJobFn = (input: {
   placementHeight?: number;
 }) => Promise<{
   jobId: string;
+  assetId?: string;
   elementId?: string;
   imageUrl?: string;
   width?: number;
@@ -35,6 +38,7 @@ export type SubmitImageJobFn = (input: {
 
 /** 提交视频生成 job 并等待完成（PGMQ → worker → 落画布，runtime 闭包实现）。 */
 export type SubmitVideoJobFn = (input: {
+  canvasId?: string;
   prompt: string;
   model: string;
   title?: string;
@@ -51,6 +55,7 @@ export type SubmitVideoJobFn = (input: {
   placementHeight?: number;
 }) => Promise<{
   jobId: string;
+  assetId?: string;
   elementId?: string;
   videoUrl?: string;
   width?: number;

@@ -1,7 +1,6 @@
 import type { BrandKitDetail } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { ToolExecutionContext } from "../../kernel/types.js";
-import type { CanvasRepository } from "../canvas/repository.js";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { BrandKitService } from "./brand-kit-service.js";
@@ -67,30 +66,10 @@ function kitDetail(): BrandKitDetail {
   } as BrandKitDetail;
 }
 
-function canvasRepo(
-  findProjectBrandKitId: CanvasRepository["findProjectBrandKitId"],
-): CanvasRepository {
-  return {
-    claimRoot: async () => {
-      throw new Error("品牌套件测试不绑定画布目录");
-    },
-    recordFileIndex: async () => {
-      throw new Error("品牌套件测试不发布文件索引");
-    },
-    findById: async () => null,
-    findProjectBrandKitId,
-  };
-}
-
-function buildTool(
-  service: Partial<BrandKitService>,
-  findProjectBrandKitId: CanvasRepository["findProjectBrandKitId"] = async () =>
-    KIT_ID,
-) {
+function buildTool(service: Partial<BrandKitService>) {
   return createBrandKitToolDefinition({
     brandKitService: service as BrandKitService,
     localInstance,
-    canvasRepository: canvasRepo(findProjectBrandKitId),
   });
 }
 
@@ -107,10 +86,11 @@ const FULL_CTX: ToolExecutionContext = {
   actor: ACTOR,
   canvasId: CANVAS_ID,
   instanceId: INSTANCE_ID,
+  workContext: { preset: "design", canvasId: CANVAS_ID, brandKitId: KIT_ID },
 };
 
 describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () => {
-  it("用 execCtx 里的身份调服务、画布重推导套件绑定，并把资产按类型分组", async () => {
+  it("用 execCtx 里的身份和冻结品牌调服务，并把资产按类型分组", async () => {
     const seen: Array<{ actor: LocalActor; kitId: string }> = [];
     const tool = buildTool({
       getKit: vi.fn(async (user, kitId) => {
@@ -133,17 +113,25 @@ describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () =>
       colors: [{ name: "主色", hex: "#123456", role: "primary" }],
       fonts: [{ name: "正文", family: "Inter", weight: "700", role: null }],
       logos: [
-        { name: "标志", url: "https://signed.test/logo.png", role: null },
+        {
+          assetId: "a3",
+          name: "标志",
+          url: "https://signed.test/logo.png",
+          role: null,
+        },
       ],
       images: [],
     });
   });
 
-  it("画布未绑定品牌套件 → no_brand_kit_bound，不调服务", async () => {
+  it("本轮未绑定品牌套件 → no_brand_kit_bound，不调服务", async () => {
     const getKit = vi.fn();
-    const tool = buildTool({ getKit }, async () => null);
+    const tool = buildTool({ getKit });
 
-    const output = await invoke(tool, FULL_CTX);
+    const output = await invoke(tool, {
+      ...FULL_CTX,
+      workContext: { preset: "design", canvasId: CANVAS_ID },
+    });
 
     expect(output.error).toBe("no_brand_kit_bound");
     expect(getKit).not.toHaveBeenCalled();
@@ -186,4 +174,28 @@ describe("get_brand_kit 工具（身份与绑定取自执行上下文）", () =>
     const output = await invoke(tool, FULL_CTX);
     expect(output).toEqual({ error: "Brand kit not found" });
   });
+});
+
+it("后续画布或项目默认品牌变化不改变已冻结品牌，输出真实assetId与已知MIME", async () => {
+  const getKit = vi.fn(async () => {
+    const kit = kitDetail();
+    const asset = kit.assets[2];
+    if (!asset) throw new Error("测试前置缺失");
+    asset.metadata = { mime_type: "image/png" };
+    return kit;
+  });
+  const output = await invoke(buildTool({ getKit }), {
+    ...FULL_CTX,
+    canvasId: "another-canvas",
+  });
+  expect(getKit).toHaveBeenCalledWith(ACTOR, KIT_ID);
+  expect(output.logos).toEqual([
+    {
+      assetId: "a3",
+      mimeType: "image/png",
+      name: "标志",
+      url: "https://signed.test/logo.png",
+      role: null,
+    },
+  ]);
 });

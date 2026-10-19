@@ -20,9 +20,6 @@ import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
-import type { DesignGoalsService } from "../features/execution/design-goals-types.js";
-import type { DesignRunHost } from "../features/execution/design-run-host-types.js";
-import type { DesignTasksService } from "../features/execution/design-task-types.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
@@ -103,9 +100,6 @@ export interface ServiceMap {
   codeUi: CodeUiService;
   codeTerminal: CodeTerminalService;
   executionScopes: ExecutionScopes;
-  designTasks: DesignTasksService;
-  designGoals: DesignGoalsService;
-  designRunHost: DesignRunHost;
   processSandbox: ProcessSandbox;
   taskWork: TaskWorkManager;
   /**
@@ -117,6 +111,7 @@ export interface ServiceMap {
   projects: ProjectService;
   projectDirectoryRelink: ProjectDirectoryRelinkService;
   settings: SettingsService;
+  approvalReview: import("../features/permissions/approval-review-service.js").ApprovalReviewService;
   threads: ThreadService;
   uploads: UploadService;
   /**
@@ -217,6 +212,7 @@ export type DepsOf<_K extends ServiceKey> = {
 export type AgentRunEvent = "pre-step" | "tool-pre-execute" | "turn-stopping";
 
 export interface PreStepPayload {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   input: unknown;
   runId: string | undefined;
   threadId?: string | undefined;
@@ -228,6 +224,7 @@ export interface PreStepPayload {
 }
 
 export interface ToolPreExecutePayload {
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   permissionInvocation?: PermissionInvocation | undefined;
   args: Record<string, unknown>;
   decision: "allow" | "deny";
@@ -324,7 +321,12 @@ export interface PromptCompositionContext {
 
 export type PromptExecutionContext = Pick<
   ToolExecutionContext,
-  "actor" | "scopeHandle" | "taskWorkContext" | "runId" | "signal"
+  | "actor"
+  | "scopeHandle"
+  | "taskWorkContext"
+  | "runId"
+  | "signal"
+  | "workContext"
 >;
 
 /**
@@ -352,7 +354,7 @@ export interface SystemPromptRegistry {
 
 /** Private executor observation; providers receive no capability to mint these facts. */
 export type ToolExecutionObservation = {
-  phase: "started" | "completed" | "failed";
+  phase: "started" | "completed" | "failed" | "cancelled";
   runId: string | undefined;
   toolCallId: string | undefined;
   scopeHandle: ExecutionScopeHandle | undefined;
@@ -363,6 +365,23 @@ export type ToolExecutionObservation = {
 };
 
 export interface ToolExecutionContext {
+  /** Current authenticated root requirements and budget, supplied by its Task host. */
+  readApprovalContext?:
+    | (() => Promise<
+        | import("../features/permissions/approval-types.js").ApprovalHostContext
+        | null
+      >)
+    | undefined;
+  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
+  frozenContributions?: ToolContributionSnapshot | undefined;
+  /** Frozen input resource references; filesystem permissions remain in scopeHandle. */
+  workContext?:
+    | import("@zcode/shared/zcode-protocol-v4").ConversationWorkContext
+    | undefined;
+  /** Fresh tool-free model invocation; private host configuration and Run usage ownership. */
+  requestModel?:
+    | import("../agent/model-request.js").ModelRequestPort
+    | undefined;
   /** Kernel consumes and strips this callback before calling the tool implementation. */
   observeToolExecution?:
     | ((fact: ToolExecutionObservation) => Promise<void>)
@@ -431,6 +450,8 @@ export interface ToolExecutionContext {
  * MCP 工具命名约定：`mcp__<server>__<tool>`。
  */
 export interface ToolDefinition {
+  /** Stable owner configuration revision for closures whose source does not encode configuration. */
+  configurationVersion?: string | undefined;
   name: string;
   description: string;
   scope: ToolScope;
@@ -441,6 +462,10 @@ export interface ToolDefinition {
   planControl?: CodePlanControl | undefined;
   /** 仅可信执行属主签发：只读文件域且网络禁用，不来自模型参数。 */
   readonlyExecution?: boolean | undefined;
+  /** Enables a complete allowlisted approval projection; external tools do not mint it. */
+  approvalReviewKind?:
+    | import("../features/permissions/approval-review-context.js").ApprovalReviewKind
+    | undefined;
   parameters: Record<string, unknown>;
   /** 仅用于公开事件/显示/日志；执行与审批仍使用原始参数。 */
   projectArguments?:
@@ -459,6 +484,7 @@ export interface ToolDefinition {
 }
 
 export interface ToolRegistry {
+  captureContributions(preset: "code" | "design"): ToolContributionSnapshot;
   /** 注册工具，返回注销 disposer；重名 fail loud。 */
   register(tool: ToolDefinition): () => void;
   get(name: string): ToolDefinition | undefined;
@@ -493,6 +519,10 @@ export interface ToolRegistry {
 
 /** per-run 工具解析上下文：runtime 在 run 起始期构建，动态工具据此实例化。 */
 export interface RunToolResolutionContext {
+  frozenContributions?: ToolContributionSnapshot | undefined;
+  workContext?:
+    | import("@zcode/shared/zcode-protocol-v4").ConversationWorkContext
+    | undefined;
   sessionId?: string | undefined;
   modelSpecifier?: string | undefined;
   delegationDepth?: number | undefined;
@@ -522,8 +552,15 @@ export interface RunToolResolutionContext {
 export interface DynamicToolEntry {
   id: string;
   scope: ToolScope;
+  configurationVersion?: string | undefined;
   resolve: (ctx: RunToolResolutionContext) => ToolDefinition | null;
 }
+
+export type ToolContributionSnapshot = {
+  version: 1;
+  preset: "code" | "design";
+  entries: Array<{ kind: "static" | "dynamic"; id: string; signature: string }>;
+};
 
 /** 非工具能力贡献者条目（由运行时按 key 解析，模型不可见）。 */
 export interface CapabilityRegistration<T = unknown> {

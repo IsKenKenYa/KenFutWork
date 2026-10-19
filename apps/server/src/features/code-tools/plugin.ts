@@ -34,8 +34,6 @@ export function createCodeToolsPlugin(): PluginDefinition {
       const requireScope = (run: RunToolResolutionContext) => {
         if (!run.scopeHandle)
           throw new Error("文件工具必须绑定真实Task执行作用域");
-        if (run.scopeHandle.preset !== run.preset)
-          throw new Error("工具工作模式与可信Task作用域不匹配");
         return run.scopeHandle;
       };
       const resolveFiles = (run: RunToolResolutionContext) => {

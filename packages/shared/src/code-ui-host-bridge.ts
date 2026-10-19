@@ -14,6 +14,10 @@ export const workbenchNavigationSchema = z
     availableModes: workbenchModesSchema,
     /** 父→壳推送当前模式（深链 / 外部导航同步）；缺省 code。 */
     mode: workbenchModeSchema.optional(),
+    documentTarget: z
+      .object({ resourceType: z.literal("canvas"), documentId: z.uuid() })
+      .strict()
+      .optional(),
   })
   .strict();
 

@@ -100,6 +100,7 @@ async function fixture() {
     ): Promise<ProjectDetailRow> => ({
       id,
       kind: "flow",
+      enabled_modes: ["flow"],
       name: "Flow 项目",
       slug: "flow-project",
       description: null,

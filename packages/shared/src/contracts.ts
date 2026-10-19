@@ -1,3 +1,4 @@
+import { conversationWorkContextSchema } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
@@ -78,21 +79,23 @@ export const runCreateRequestSchema = z.object({
   projectId: projectIdSchema.optional(),
   taskId: sessionIdSchema.optional(),
   prompt: z.string(),
+  inputId: identifierSchema.optional(),
+  scopeGeneration: z.number().int().nonnegative().safe().optional(),
+  branchGeneration: z.number().int().positive().safe().optional(),
+  workContext: conversationWorkContextSchema.optional(),
   canvasId: canvasIdSchema.optional(),
   attachments: z.array(imageAttachmentSchema).optional(),
   imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
   videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
   mentions: z.array(messageMentionSchema).optional(),
-  accessToken: z.string().optional(),
   model: z.string().optional(),
   /**
-   * agent preset（DEC-2，会话级）：design=画布工具集，code=编码工具集；
-   * 会话模式由服务端持久 Task 持有；preset 仅是声明，不能改变模式或授权。
+   * 本次输入请求的工作方式；由统一Task宿主核验项目启用列表并冻结到Run。
+   * 画布是资源引用，preset不改变Task固定目录、文件授权或当前Run。
    */
   preset: z.enum(["design", "code"]).optional(),
   /**
-   * 执行模式（DEC-3，会话级）：WS 路径随 run 声明，服务端按真实 threadId 激活
-   * （threadId 是服务端内部 ID，客户端拿不到，故不走 PUT /execution-modes）。
+   * 旧传输策略字段；共享宿主只接受agent，其余方式通过原会话控制切换。
    */
   executionMode: executionModeSchema.optional(),
 });
@@ -110,17 +113,19 @@ export const canvasSummarySchema = z.object({
   isPrimary: z.boolean(),
 });
 
-/**
- * 项目类型：design=画布项目（Design 模式），code=工作目录项目（Code 模式
- * 「工作目录=项目」），flow=工作流项目（Flow 模式，可视化 AI 工作流的编排 / 发布 / 执行）。
- * 两端各自按 kind 取列表，各类项目互不串味。
- *
- * flow 子系统的落地节奏（《flow 集成方案》P1）：本阶段只落**契约与库约束**——
- * 类型由服务端一处持有，flow run 同样必绑项目（与 Code 模式同一条硬约束，画布 id 即作用域）；
- * flow 的模式入口与画布随宿主适配层（P2）接通后出现，未接通前界面上不出现空壳入口。
- */
+/** kind 表达项目默认工作方式；enabledModes 表达显式启用的工作方式。 */
 export const projectKindSchema = z.enum(["design", "code", "flow"]);
 export type ProjectKind = z.infer<typeof projectKindSchema>;
+
+export const projectModesSchema = z
+  .array(projectKindSchema)
+  .min(1)
+  .max(3)
+  .refine((modes) => new Set(modes).size === modes.length, "工作方式不能重复")
+  .refine(
+    (modes) => !modes.includes("flow") || modes.length === 1,
+    "Flow 项目保持独立",
+  );
 
 const projectSummaryFields = {
   id: projectIdSchema,
@@ -134,21 +139,32 @@ const projectSummaryFields = {
   instanceId: instanceIdSchema,
   createdAt: timestampSchema,
   updatedAt: timestampSchema,
+  enabledModes: projectModesSchema,
 };
 
-export const projectSummarySchema = z.discriminatedUnion("kind", [
-  z.object({
-    ...projectSummaryFields,
-    kind: z.literal("code"),
-    workDir: z.string().min(1),
-    primaryCanvas: z.never().optional(),
-  }),
-  z.object({
-    ...projectSummaryFields,
-    kind: z.enum(["design", "flow"]),
-    primaryCanvas: canvasSummarySchema,
-  }),
-]);
+export const projectSummarySchema = z
+  .discriminatedUnion("kind", [
+    z.object({
+      ...projectSummaryFields,
+      kind: z.literal("code"),
+      workDir: z.string().min(1),
+      primaryCanvas: canvasSummarySchema.optional(),
+    }),
+    z.object({
+      ...projectSummaryFields,
+      kind: z.literal("design"),
+      primaryCanvas: canvasSummarySchema.optional(),
+    }),
+    z.object({
+      ...projectSummaryFields,
+      kind: z.literal("flow"),
+      primaryCanvas: canvasSummarySchema,
+    }),
+  ])
+  .refine((project) => project.enabledModes.includes(project.kind), {
+    message: "默认工作方式必须已启用",
+    path: ["enabledModes"],
+  });
 
 export const canvasContentSchema = z.object({
   elements: z.array(z.record(z.string(), z.unknown())).default([]),

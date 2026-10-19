@@ -32,6 +32,7 @@ export type GenerationModelPolicy = z.infer<typeof generationModelPolicySchema>;
 export const modelDefaultsSchema = z
   .object({
     chat: modelReferenceSchema.nullable(),
+    approval: modelReferenceSchema.nullable().default(null),
     image: generationModelPolicySchema,
     video: generationModelPolicySchema,
   })

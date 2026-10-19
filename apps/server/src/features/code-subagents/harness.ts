@@ -35,14 +35,40 @@ export function createCodeChildHarness(deps: {
         conversationId: child.sessionId,
         projectId: scope.describe().projectId,
         taskId: scope.describe().taskId,
-        preset: "code",
+        preset: request.workContext?.preset ?? "code",
+        ...(request.workContext?.canvasId
+          ? { canvasId: request.workContext.canvasId }
+          : {}),
+        ...(request.workContext?.imageGenerationPreference
+          ? {
+              imageGenerationPreference:
+                request.workContext.imageGenerationPreference,
+            }
+          : {}),
+        ...(request.workContext?.videoGenerationPreference
+          ? {
+              videoGenerationPreference:
+                request.workContext.videoGenerationPreference,
+            }
+          : {}),
         prompt: instructions,
+        ...(request.executionMode
+          ? { executionMode: request.executionMode }
+          : {}),
         model: request.model,
       },
       {
         runId,
         threadId: child.threadId,
         scopeHandle: scope,
+        ...(request.workContext
+          ? { workContext: structuredClone(request.workContext) }
+          : {}),
+        ...(request.frozenContributions
+          ? {
+              frozenContributions: structuredClone(request.frozenContributions),
+            }
+          : {}),
         actor: request.actor,
         model: request.model,
         delegationDepth: request.delegationDepth + 1,

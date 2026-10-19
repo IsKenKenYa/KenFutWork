@@ -1,9 +1,10 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
 const getWorkspaceState = vi.fn();
+const toast = vi.fn();
 
 vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
@@ -15,22 +16,27 @@ vi.mock("@zui/store/zcodeSessionStore.js", () => ({
   },
 }));
 
+vi.mock("@zui/components/ui/toast.js", () => ({
+  toast: (message: string) => toast(message),
+}));
+
 const { WorktreeMenu } = await import(
   "../src/components/workbench/zcode/host/WorktreeMenu.js"
 );
 
 const user = userEvent.setup();
 
-afterEach(async () => {
+afterEach(() => {
   cleanup();
-  // React 19 调度器把未落地的 state 更新排到 setImmediate 上；用例收尾后 jsdom 已销毁，
-  // 那条回调再跑就抛 `window is not defined`（CI 上整包退 1，本机偶发不现）。趁环境还在排空。
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
   surfaceJson.mockReset();
   getWorkspaceState.mockReset();
+  toast.mockReset();
 });
+
+async function closeWorktreeMenu() {
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+}
 
 test("工作树菜单：列表渲染、新建 POST、删除确认、成功后刷新", async () => {
   const onDone = vi.fn();
@@ -99,6 +105,7 @@ test("工作树菜单：列表渲染、新建 POST、删除确认、成功后刷
     ),
   );
   expect(onDone).toHaveBeenCalledTimes(2);
+  await closeWorktreeMenu();
 });
 
 test("无活跃 Task 时新建给可读提示，不发请求", async () => {
@@ -109,10 +116,10 @@ test("无活跃 Task 时新建给可读提示，不发请求", async () => {
   await user.type(screen.getByLabelText("工作树目录"), "wt-x");
   await user.type(screen.getByLabelText("工作树分支"), "b");
   await user.click(screen.getByRole("button", { name: "新建" }));
-  await waitFor(() =>
-    expect(surfaceJson).not.toHaveBeenCalledWith(
-      "/api/code/git/worktrees",
-      expect.objectContaining({ method: "POST" }),
-    ),
+  expect(toast).toHaveBeenCalledWith("请先创建或选择 Code Task。");
+  expect(surfaceJson).not.toHaveBeenCalledWith(
+    "/api/code/git/worktrees",
+    expect.objectContaining({ method: "POST" }),
   );
+  await closeWorktreeMenu();
 });

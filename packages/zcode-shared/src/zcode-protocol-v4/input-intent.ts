@@ -6,6 +6,7 @@ import { attachmentRefSchema } from "./attachment-ref.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { submissionModeSchema } from "./submission.js";
 import { sharedContextRefSchema } from "./shared-context-ref.js";
+import { conversationWorkContextSchema } from "./work-context.js";
 
 export const conversationInputDeliverySchema = z
   .object({
@@ -49,6 +50,7 @@ export const conversationInputIntentSchema = z
     modelSelection: modelSelectionSchema.optional(),
     mode: submissionModeSchema.optional(),
     planEnabled: z.boolean().optional(),
+    workContext: conversationWorkContextSchema.optional(),
     sharedContextRefs: z.array(sharedContextRefSchema).max(1).optional(),
     delivery: conversationInputDeliverySchema,
     order: conversationInputOrderSchema,

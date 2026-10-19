@@ -5,11 +5,6 @@ import {
   createRuntimeTestInstance,
   RUNTIME_TEST_ACTOR,
 } from "../agent/runtime-test-fixtures.js";
-import { DesignTaskError } from "../features/execution/design-task-errors.js";
-import type {
-  DesignAdmissionReceipt,
-  DesignTaskPolicy,
-} from "../features/execution/design-task-types.js";
 import { ExecutionScopeError } from "../features/execution/scope-service.js";
 import { registerRunRoutes } from "./runs.js";
 
@@ -22,9 +17,10 @@ import { registerRunRoutes } from "./runs.js";
 function buildApp(
   authenticated: boolean,
   deps: Partial<Parameters<typeof registerRunRoutes>[2]> = {},
+  runtime: Parameters<typeof registerRunRoutes>[1] = {} as never,
 ) {
   const app = Fastify();
-  void registerRunRoutes(app, {} as never, {
+  void registerRunRoutes(app, runtime, {
     localAccess: {
       authenticate: async () => (authenticated ? RUNTIME_TEST_ACTOR : null),
     },
@@ -118,324 +114,152 @@ describe("最新 Run 的本机查询", () => {
   });
 });
 
-const designTaskId = "00000000-0000-4000-8000-000000000021";
-const designCanvasId = "00000000-0000-4000-8000-000000000022";
-const designProjectId = "00000000-0000-4000-8000-000000000023";
-const designRunId = "00000000-0000-4000-8000-000000000024";
-const designRequest: RunCreateRequest = {
-  sessionId: designTaskId,
-  taskId: designTaskId,
-  conversationId: designTaskId,
-  canvasId: designCanvasId,
-  projectId: designProjectId,
-  preset: "design",
-  prompt: "生成图片",
-  model: "provider/model",
-};
+const taskId = "00000000-0000-4000-8000-000000000021";
+const runId = "00000000-0000-4000-8000-000000000024";
 
-function buildDesignPostApp(scopeAvailable = true) {
-  const createRun = vi.fn(() => ({
-    runId: designRunId,
-    sessionId: designTaskId,
-    conversationId: designTaskId,
-    status: "accepted",
-  }));
-  const readPolicy = vi.fn(
-    async (): Promise<DesignTaskPolicy> => ({
-      taskId: designTaskId,
-      projectId: designProjectId,
-      canvasId: designCanvasId,
-      rootDirectory: "/authorized/design-task",
-      additionalDirectories: [],
-      sandboxMode: "workspace-write",
-      mode: "build",
-      planEnabled: false,
-      planningEpoch: 0,
-      activeRunId: null,
-      executionState: "ready",
-      scopeGeneration: 7,
-      branchGeneration: 3,
-    }),
-  );
-  const submit = vi.fn(
-    async (
-      _actor: unknown,
-      input: { inputId: string },
-    ): Promise<DesignAdmissionReceipt> => ({
-      kind: "running",
-      taskId: designTaskId,
-      inputId: input.inputId,
-      runId: designRunId,
-      sequence: 1,
-      request: designRequest,
-    }),
-  );
-  const scope = {
-    preset: "design",
-    describe: () => ({
-      instanceId: RUNTIME_TEST_ACTOR.instanceId,
-      taskId: designTaskId,
-      projectId: designProjectId,
-      rootDirectory: "/authorized/design-task",
-    }),
-  };
-  const openTask = vi.fn(async () => scope);
-  const app = Fastify();
-  void registerRunRoutes(
-    app,
-    { createRun } as never,
-    {
-      localAccess: { authenticate: async () => RUNTIME_TEST_ACTOR },
-      localInstance: createRuntimeTestInstance(),
-      threadService: {
-        resolveOwnedSessionThread: async () => ({
-          sessionId: designTaskId,
-          threadId: "design-thread",
-          projectId: designProjectId,
-          canvasId: designCanvasId,
-          mode: "design",
-        }),
-      } as never,
-      ...(scopeAvailable ? { executionScopes: { openTask } as never } : {}),
-      designTasks: { readPolicy },
-      designRunHost: { submit },
-    } as Parameters<typeof registerRunRoutes>[2],
-  );
-  return { app, createRun, readPolicy, submit, openTask, scope };
-}
-
-describe("POST /api/agent/runs Design 持久 Task admission", () => {
-  it("持久授权代际与模型输入交给 Design host，HTTP 不直接创建 Run", async () => {
-    const { app, createRun, readPolicy, submit } = buildDesignPostApp();
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/agent/runs",
-        payload: designRequest,
-      });
-      expect(response.statusCode).toBe(202);
-      expect(readPolicy).toHaveBeenCalledWith(RUNTIME_TEST_ACTOR, designTaskId);
-      expect(submit).toHaveBeenCalledWith(RUNTIME_TEST_ACTOR, {
-        taskId: designTaskId,
-        inputId: expect.any(String),
-        scopeGeneration: 7,
-        branchGeneration: 3,
-        request: designRequest,
-      });
-      expect(response.json().runId).toBe(designRunId);
-      expect(createRun).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it.each([
-    ["缺少 Task", { taskId: undefined }],
-    ["另一 Task", { taskId: "00000000-0000-4000-8000-000000000099" }],
-    ["另一画布", { canvasId: "00000000-0000-4000-8000-000000000099" }],
-    ["另一项目", { projectId: "00000000-0000-4000-8000-000000000099" }],
-  ])("%s 在 admission 前拒绝", async (_label, override) => {
-    const { app, createRun, submit } = buildDesignPostApp();
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/agent/runs",
-        payload: { ...designRequest, ...override },
-      });
-      expect(response.statusCode).toBeGreaterThanOrEqual(400);
-      expect(response.statusCode).toBeLessThan(500);
-      expect(response.json().error.message.length).toBeGreaterThan(0);
-      expect(submit).not.toHaveBeenCalled();
-      expect(createRun).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("作用域服务缺席时在 202 前拒绝", async () => {
-    const { app, submit, createRun } = buildDesignPostApp(false);
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/agent/runs",
-        payload: designRequest,
-      });
-      expect(response.statusCode).toBe(503);
-      expect(response.json().error.message.length).toBeGreaterThan(0);
-      expect(submit).not.toHaveBeenCalled();
-      expect(createRun).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("目录不可用时返回作用域原因，不先接受再失败", async () => {
-    const { app, openTask, submit, createRun } = buildDesignPostApp();
-    openTask.mockRejectedValue(
-      new ExecutionScopeError(
-        "scope_unavailable",
-        "工作目录不可用，请重新关联。",
-        409,
-      ),
-    );
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/agent/runs",
-        payload: designRequest,
-      });
-      expect(response.statusCode).toBe(409);
-      expect(response.json().error.message).toBe(
-        "工作目录不可用，请重新关联。",
+describe("HTTP共享Task准入", () => {
+  it.each(["code", "design"] as const)(
+    "%s仅委托canonical宿主，运输层不创建第二Run或消费SDK流",
+    async (preset) => {
+      const createRun = vi.fn();
+      const publish = vi.fn(async () => {});
+      const handle = { describe: () => ({ taskId }) };
+      const openTask = vi.fn(async () => handle);
+      const admitExternalRun = vi.fn(async () => ({
+        runId,
+        sessionId: taskId,
+        conversationId: taskId,
+        status: "accepted" as const,
+        publish,
+      }));
+      const app = buildApp(
+        true,
+        {
+          executionScopes: { openTask } as never,
+          codeUi: { admitExternalRun } as never,
+        },
+        { createRun } as never,
       );
-      expect(openTask).toHaveBeenCalledWith(RUNTIME_TEST_ACTOR, designTaskId);
-      expect(submit).not.toHaveBeenCalled();
-      expect(createRun).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it.each(["preset", "taskId", "projectId", "rootDirectory", "instanceId"])(
-    "作用域 %s 与持久 Task 不符时拒绝",
-    async (field) => {
-      const { app, scope, submit, createRun } = buildDesignPostApp();
-      if (field === "preset") scope.preset = "code";
-      else {
-        const describe = scope.describe;
-        scope.describe = () => ({ ...describe(), [field]: "other" });
-      }
       try {
+        const payload: RunCreateRequest = {
+          sessionId: taskId,
+          taskId,
+          conversationId: taskId,
+          prompt: "真实准入",
+          inputId: "stable-input",
+          workContext: { preset },
+          preset,
+        };
         const response = await app.inject({
           method: "POST",
           url: "/api/agent/runs",
-          payload: designRequest,
+          payload,
         });
-        expect(response.statusCode).toBe(409);
-        expect(response.json().error.message.length).toBeGreaterThan(0);
-        expect(submit).not.toHaveBeenCalled();
+        expect(response.statusCode).toBe(202);
+        expect(response.json()).toEqual({
+          runId,
+          sessionId: taskId,
+          conversationId: taskId,
+          status: "accepted",
+        });
+        expect(openTask).toHaveBeenCalledWith(RUNTIME_TEST_ACTOR, taskId);
+        expect(admitExternalRun).toHaveBeenCalledWith(
+          RUNTIME_TEST_ACTOR,
+          handle,
+          "stable-input",
+          payload.prompt,
+          payload,
+        );
+        expect(publish).toHaveBeenCalledOnce();
         expect(createRun).not.toHaveBeenCalled();
       } finally {
         await app.close();
       }
     },
   );
-
-  it("跨实例或已删除 Task 在持久归属检查时拒绝", async () => {
-    const { app, createRun, readPolicy, submit } = buildDesignPostApp();
-    readPolicy.mockRejectedValue(
-      new DesignTaskError(
-        "design_task_unprovisioned",
-        "任务不存在或无权访问。",
-        404,
-      ),
-    );
+  it("作用域缺席或真实Task错误时在接纳前拒绝，不回退直接runtime", async () => {
+    const admitted = vi.fn();
+    const missing = buildApp(true, {
+      codeUi: { admitExternalRun: admitted } as never,
+    });
+    const denied = buildApp(true, {
+      codeUi: { admitExternalRun: admitted } as never,
+      executionScopes: {
+        openTask: async () => {
+          throw new ExecutionScopeError(
+            "task_not_found",
+            "任务已删除，请新建会话。",
+            404,
+          );
+        },
+      } as never,
+    });
     try {
-      const response = await app.inject({
+      const payload = {
+        sessionId: taskId,
+        conversationId: taskId,
+        prompt: "执行",
+      };
+      expect(
+        (
+          await missing.inject({
+            method: "POST",
+            url: "/api/agent/runs",
+            payload,
+          })
+        ).statusCode,
+      ).toBe(503);
+      const response = await denied.inject({
         method: "POST",
         url: "/api/agent/runs",
-        payload: designRequest,
+        payload,
       });
       expect(response.statusCode).toBe(404);
-      expect(response.json().error.message).toBe("任务不存在或无权访问。");
-      expect(submit).not.toHaveBeenCalled();
-      expect(createRun).not.toHaveBeenCalled();
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("忙碌 Task 复用 host 的排队 receipt，不启动第二个前台 Run", async () => {
-    const { app, createRun, submit } = buildDesignPostApp();
-    submit.mockImplementation(async (_actor, input) => ({
-      kind: "queued",
-      taskId: designTaskId,
-      inputId: input.inputId,
-      runId: designRunId,
-      sequence: 2,
-      request: designRequest,
-    }));
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/api/agent/runs",
-        payload: designRequest,
+      expect(response.json()).toMatchObject({
+        error: { code: "task_not_found", message: "任务已删除，请新建会话。" },
       });
-      expect(response.statusCode).toBe(202);
-      expect(response.json().runId).toBe(designRunId);
-      expect(submit).toHaveBeenCalledTimes(1);
-      expect(createRun).not.toHaveBeenCalled();
+      expect(admitted).not.toHaveBeenCalled();
+    } finally {
+      await missing.close();
+      await denied.close();
+    }
+  });
+  it("传入另一Task不能替代会话身份，取消也必须委托共享宿主持久停止", async () => {
+    const admitted = vi.fn();
+    const cancelExternalRun = vi.fn(async () => ({
+      runId,
+      status: "canceled" as const,
+    }));
+    const app = buildApp(true, {
+      codeUi: { admitExternalRun: admitted, cancelExternalRun } as never,
+      executionScopes: {
+        openTask: async () => ({ describe: () => ({ taskId: "other" }) }),
+      } as never,
+    });
+    try {
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/agent/runs",
+            payload: {
+              sessionId: taskId,
+              taskId: "other",
+              conversationId: taskId,
+              prompt: "执行",
+            },
+          })
+        ).statusCode,
+      ).toBe(409);
+      expect(admitted).not.toHaveBeenCalled();
+      const canceled = await app.inject({
+        method: "POST",
+        url: `/api/agent/runs/${runId}/cancel`,
+      });
+      expect(canceled.statusCode).toBe(202);
+      expect(cancelExternalRun).toHaveBeenCalledWith(RUNTIME_TEST_ACTOR, runId);
     } finally {
       await app.close();
     }
   });
-});
-
-it("Code HTTP 仍打开持久 Task 并经过 Code admission", async () => {
-  const createRun = vi.fn(() => ({
-    runId: designRunId,
-    sessionId: designTaskId,
-    conversationId: designTaskId,
-    status: "accepted",
-  }));
-  const handle = { describe: () => ({ taskId: designTaskId }) };
-  const openTask = vi.fn(async () => handle);
-  const eventSink = vi.fn();
-  const admitExternalRun = vi.fn(async () => eventSink);
-  const submit = vi.fn();
-  const app = Fastify();
-  void registerRunRoutes(
-    app,
-    { createRun } as never,
-    {
-      localAccess: { authenticate: async () => RUNTIME_TEST_ACTOR },
-      localInstance: createRuntimeTestInstance(),
-      threadService: {
-        resolveOwnedSessionThread: async () => ({
-          sessionId: designTaskId,
-          threadId: "code-thread",
-          projectId: designProjectId,
-          mode: "code",
-        }),
-      } as never,
-      executionScopes: { openTask } as never,
-      codeUi: { admitExternalRun } as never,
-      designRunHost: { submit },
-    } as Parameters<typeof registerRunRoutes>[2],
-  );
-  try {
-    const payload = {
-      sessionId: designTaskId,
-      taskId: designTaskId,
-      conversationId: designTaskId,
-      projectId: designProjectId,
-      preset: "code",
-      prompt: "检查代码",
-    };
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/agent/runs",
-      payload,
-    });
-    expect(response.statusCode).toBe(202);
-    expect(openTask).toHaveBeenCalledWith(RUNTIME_TEST_ACTOR, designTaskId);
-    expect(admitExternalRun).toHaveBeenCalledWith(
-      RUNTIME_TEST_ACTOR,
-      handle,
-      expect.any(String),
-      payload.prompt,
-    );
-    expect(createRun).toHaveBeenCalledWith(
-      payload,
-      expect.objectContaining({
-        actor: RUNTIME_TEST_ACTOR,
-        scopeHandle: handle,
-        eventSink,
-        threadId: "code-thread",
-      }),
-    );
-    expect(submit).not.toHaveBeenCalled();
-  } finally {
-    await app.close();
-  }
 });

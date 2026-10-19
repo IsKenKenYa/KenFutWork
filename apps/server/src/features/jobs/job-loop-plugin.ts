@@ -14,6 +14,7 @@ export function createJobLoopPlugin(options: {
     enabled: options.enabled,
     inject: [
       "assetWriter",
+      "uploads",
       "blob",
       "jobs",
       "modelProviders",
@@ -21,6 +22,7 @@ export function createJobLoopPlugin(options: {
       "usage",
       "projectFiles",
       "generationTargets",
+      "canvas",
     ],
     apply(ctx) {
       let loop: JobLoopService | undefined;
@@ -29,6 +31,7 @@ export function createJobLoopPlugin(options: {
           {
             env: ctx.env,
             assetWriter: ctx.get("assetWriter"),
+            uploads: ctx.get("uploads"),
             blob: ctx.get("blob"),
             jobService: ctx.get("jobs"),
             modelProviders: ctx.get("modelProviders"),
@@ -36,6 +39,7 @@ export function createJobLoopPlugin(options: {
             usageService: ctx.get("usage"),
             projectFiles: ctx.get("projectFiles"),
             generationTargets: ctx.get("generationTargets"),
+            canvas: ctx.get("canvas"),
           },
           options.tag ? { tag: options.tag } : {},
         );

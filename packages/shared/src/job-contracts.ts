@@ -48,6 +48,7 @@ export type VideoGenerationPayload = z.infer<
 >;
 
 export const createVideoJobRequestSchema = z.object({
+  request_id: z.uuid().optional(),
   project_id: z.uuid().optional(),
   canvas_id: z.uuid().optional(),
   session_id: z.uuid().optional(),
@@ -84,12 +85,31 @@ export const generationFileTargetSchema = z.discriminatedUnion("kind", [
       projectId: z.uuid(),
       sessionId: z.uuid(),
       canvasId: z.uuid().optional(),
+      /** 明确null表示鉴权交互式来源；Agent须保存真实Run身份。 */
+      originRunId: z.string().min(1).nullable().optional(),
       scopeGeneration: z.number().int().nonnegative(),
       branchGeneration: z.number().int().nonnegative(),
     })
     .strict(),
 ]);
 export type GenerationFileTarget = z.infer<typeof generationFileTargetSchema>;
+
+/** 单个已保存产物；一个Job可有多个产物，部分失败仍保留成功项。 */
+export const generationOutputSchema = z.object({
+  asset_id: z.string().min(1),
+  object_path: z.string().min(1),
+  signed_url: z.string(),
+  mime_type: z.string().min(1),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  duration_seconds: z.number().optional(),
+  element_id: z.string().optional(),
+});
+export type GenerationOutput = z.infer<typeof generationOutputSchema>;
+
+export const backgroundJobResultSchema = z
+  .object({ outputs: z.array(generationOutputSchema).optional() })
+  .catchall(z.unknown());
 
 export const backgroundJobSchema = z.object({
   id: z.uuid(),
@@ -106,7 +126,7 @@ export const backgroundJobSchema = z.object({
   payload: z.record(z.string(), z.unknown()),
   /** 外部厂商任务引用（submit 成功落库；崩溃恢复据此续 poll）。 */
   provider_job_id: z.string().nullable(),
-  result: z.record(z.string(), z.unknown()).nullable(),
+  result: backgroundJobResultSchema.nullable(),
   error_code: z.string().nullable(),
   error_message: z.string().nullable(),
   attempt_count: z.number().int(),
@@ -124,6 +144,7 @@ export type BackgroundJob = z.infer<typeof backgroundJobSchema>;
 // --- API Request schemas ---
 
 export const createImageJobRequestSchema = z.object({
+  request_id: z.uuid().optional(),
   project_id: z.uuid().optional(),
   canvas_id: z.uuid().optional(),
   session_id: z.uuid().optional(),
@@ -135,20 +156,40 @@ export const createImageJobRequestSchema = z.object({
 });
 export type CreateImageJobRequest = z.infer<typeof createImageJobRequestSchema>;
 
-// 同步生成（http/generate.ts，直连 BYOK 实例不走队列）的请求契约：原先定义在路由文件本地，
-// 为让 API 文档管线（openapi/registry.ts）保持「契约一律出自 shared」而迁入。
+const generationTargetFields = {
+  requestId: z.uuid().optional(),
+  projectId: z.uuid().optional(),
+  canvasId: z.uuid().optional(),
+  generatorId: z.string().min(1).optional(),
+  placement: z
+    .object({
+      x: z.number().finite(),
+      y: z.number().finite(),
+      width: z.number().positive(),
+      height: z.number().positive(),
+    })
+    .optional(),
+};
+
+// 现有画布生成器的异步Job接纳契约；请求标识和冻结文档目标随Job持久化。
 export const generateImageRequestSchema = z.object({
-  prompt: z.string().min(1),
+  ...generationTargetFields,
+  count: z.number().int().positive().default(1),
+  /** 是否允许空提示词由服务端按模型能力与参考图共同校验。 */
+  prompt: z.string(),
   model: z.string().min(1),
   /** BYOK：本地供应商实例 id；携带时按实例实例化协议适配器（P4）。 */
   providerInstanceId: z.string().uuid().optional(),
-  aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
-  quality: z.enum(["standard", "hd", "ultra"]).optional(),
+  aspectRatio: z.string().min(1).optional(),
+  quality: z.string().min(1).optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  outputFormat: z.enum(["png", "jpg", "webp"]).optional(),
   /**
    * 参考图（URL / data URL / 裸 base64）：非空时适配器走 `/images/edits`
    * （参考图编辑/inpainting），空缺省仍走 `/images/generations`。
    */
-  inputImages: z.array(z.string().min(1)).max(4).optional(),
+  inputImages: z.array(z.string().min(1)).optional(),
   /**
    * 会话标识（§4.8 自定义头占位符的渲染上下文）：画布助手发起时带上当前会话，
    * 使 `{{sessionId}}` 能取到值；确无会话的调用方可缺省（实例若配了占位符会 fail loud）。
@@ -161,14 +202,17 @@ export const generateImageRequestSchema = z.object({
 export type GenerateImageRequest = z.infer<typeof generateImageRequestSchema>;
 
 export const generateVideoRequestSchema = z.object({
+  ...generationTargetFields,
   prompt: z.string().min(1),
   model: z.string().min(1),
   /** BYOK：本地供应商实例 id；携带时任务载荷透传，worker 按实例实例化适配器。 */
   providerInstanceId: z.string().uuid().optional(),
-  duration: z.number().int().min(3).max(16).optional(),
-  resolution: z.enum(["720p", "1080p", "4k"]).optional(),
-  aspectRatio: z.enum(["16:9", "9:16"]).optional(),
-  inputImages: z.array(z.string()).max(3).optional(),
+  duration: z.number().int().positive().optional(),
+  resolution: z.string().min(1).optional(),
+  aspectRatio: z.string().min(1).optional(),
+  inputImages: z.array(z.string().min(1)).optional(),
+  inputVideo: z.string().min(1).optional(),
+  enableAudio: z.boolean().optional(),
   /** 会话标识：随 job 行落库，worker 侧按同一口径渲染自定义头（§4.8）。口径同 run 路径。 */
   sessionId: z.string().min(1).optional(),
   threadId: z.string().min(1).optional(),
@@ -176,6 +220,14 @@ export const generateVideoRequestSchema = z.object({
 export type GenerateVideoRequest = z.infer<typeof generateVideoRequestSchema>;
 
 // --- API Response schemas ---
+
+export const generationSubmissionSchema = z.object({
+  request_id: z.uuid(),
+  jobs: z
+    .array(z.object({ job_id: z.uuid(), status: backgroundJobStatusSchema }))
+    .min(1),
+});
+export type GenerationSubmission = z.infer<typeof generationSubmissionSchema>;
 
 export const jobResponseSchema = z.object({
   job: backgroundJobSchema,

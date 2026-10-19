@@ -1,3 +1,4 @@
+import type { ProjectSummary } from "@kenfutwork/shared";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   Cpu,
@@ -17,17 +18,6 @@ import {
 } from "./canvasProjectDirectories.js";
 import { localCuaDesktopInvoke } from "./cuaPermissionPlatform.js";
 import {
-  type CanvasProject,
-  canvasFrameRef,
-  createDesignProject,
-  refreshDesignProjects,
-  removeDesignProject,
-  renameDesignProject,
-  selectDesignProject,
-  useDesignProjectsController,
-  useDesignProjectsSnapshot,
-} from "./designProjects.js";
-import {
   createFlowProject,
   selectFlowProject,
   useFlowProjectsController,
@@ -40,6 +30,7 @@ import {
   setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
+import { SharedProjectNavigation } from "./SharedProjectNavigation.js";
 
 const NOOP_SUBSCRIBE = () => () => {};
 const CODE_SNAPSHOT = {
@@ -78,105 +69,14 @@ export function HostModeSidebarContent({
       {shared}
       {/* 分界线：共用按钮与各模式专属内容之间（用户口径）。 */}
       <div className="mx-3 my-2 border-t border-foreground/20" />
-      {mode === "design" ? (
-        <DesignProjectsSidebar />
-      ) : mode === "flow" ? (
+      {mode === "flow" ? (
         <FlowNavSidebar />
       ) : (
-        children
+        <>
+          <SharedProjectNavigation />
+          {children}
+        </>
       )}
-    </div>
-  );
-}
-
-/** Design 模式的侧栏内容：项目列表（新建/行内改名/删除——原 CanvasSidebar 项目区同款元素）。
- *  独立导出供测试直接挂载（生产路径经 HostModeSidebarContent 按模式切换）。 */
-export function DesignProjectsSidebar() {
-  useDesignProjectsController(true);
-  const { projects, selectedProjectId, creating, notice } =
-    useDesignProjectsSnapshot();
-  const directory = useCanvasProjectDirectory("design", selectedProjectId);
-  const pickerAvailable = useDirectoryPickerAvailable();
-  const selectedProject = projects.find(
-    (project) => project.id === selectedProjectId,
-  );
-  return (
-    <div className="flex min-h-0 flex-1 flex-col px-2 pt-2">
-      <div className="flex items-center justify-between px-1 pb-1">
-        <span className="text-xs text-foreground-subtle">项目</span>
-        <button
-          type="button"
-          aria-label="创建项目"
-          title="创建项目"
-          disabled={creating}
-          onClick={() => void createDesignProject()}
-          className="rounded-md p-1 text-foreground-subtle hover:bg-surface-hover hover:text-foreground disabled:opacity-50"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      <ProjectDirectoryOpen path={selectedProject?.workDir ?? null} />
-      {pickerAvailable ? (
-        <button
-          type="button"
-          disabled={creating}
-          onClick={() => void createDesignProject(true)}
-          className="rounded-md px-2 py-1.5 text-left text-xs text-foreground-subtle hover:bg-surface-hover"
-        >
-          选目录新建
-        </button>
-      ) : null}
-      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto pb-2">
-        {projects.length === 0 ? (
-          <p className="px-2 py-6 text-center text-xs text-foreground-subtle">
-            {creating ? "创建中…" : "暂无项目"}
-          </p>
-        ) : (
-          projects.map((project) => (
-            <ProjectRow
-              key={project.id}
-              project={project}
-              active={selectedProjectId === project.id}
-              onOpen={() => selectDesignProject(project.id)}
-              onRename={(next) => void renameDesignProject(project.id, next)}
-              onDelete={() => void removeDesignProject(project.id)}
-            />
-          ))
-        )}
-      </div>
-      {directory.snapshot ? (
-        <button
-          type="button"
-          disabled={directory.busy}
-          onClick={() => {
-            void directory.recover().then((receipt) => {
-              if (!receipt) return;
-              void refreshDesignProjects(receipt.projectId);
-              canvasFrameRef.current?.contentWindow?.postMessage(
-                {
-                  type: "workbench:project-directory-relinked",
-                  projectId: receipt.projectId,
-                  tasks: receipt.affectedTaskIds,
-                },
-                window.location.origin,
-              );
-            });
-          }}
-          className="rounded-md border px-2 py-1.5 text-xs"
-        >
-          重新关联
-        </button>
-      ) : null}
-      {directory.error ? (
-        <p role="alert" className="px-2 py-2 text-xs text-destructive">
-          {directory.error}
-        </p>
-      ) : null}
-      {notice ? (
-        <p role="alert" className="border-t px-2 py-2 text-xs text-destructive">
-          {notice}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -189,7 +89,7 @@ function ProjectRow({
   onRename,
   onDelete,
 }: {
-  project: CanvasProject;
+  project: ProjectSummary;
   active: boolean;
   onOpen: () => void;
   onRename: (next: string) => void;

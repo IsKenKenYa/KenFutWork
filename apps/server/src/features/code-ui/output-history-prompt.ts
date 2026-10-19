@@ -7,7 +7,7 @@ export function createCodeHistoryOutputPrompt(
 ): PromptSectionDefinition {
   return {
     name: "code.history-outputs",
-    scope: "code",
+    scope: "always",
     order: 31,
     async resolve(context) {
       if (!context.executionScope) return null;

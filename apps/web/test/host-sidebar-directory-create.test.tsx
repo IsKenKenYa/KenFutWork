@@ -12,10 +12,7 @@ import {
   navigateFlowSurface,
   registerFlowNavigate,
 } from "@/components/workbench/zcode/host/flowSurfaceState";
-import {
-  DesignProjectsSidebar,
-  HostModeSidebarContent,
-} from "@/components/workbench/zcode/host/ModeSidebarContent";
+import { HostModeSidebarContent } from "@/components/workbench/zcode/host/ModeSidebarContent";
 
 const host = vi.hoisted(() => ({
   surfaceJson: vi.fn(),
@@ -58,23 +55,6 @@ vi.mock(
     }),
   }),
 );
-vi.mock("@/components/workbench/zcode/host/designProjects.js", () => ({
-  createDesignProject: host.createDesignProject,
-  useDesignProjectsController: () => {},
-  useDesignProjectsSnapshot: () => ({
-    projects: host.selectedPath
-      ? [{ id: "project", name: "项目", workDir: host.selectedPath }]
-      : [],
-    selectedProjectId: host.selectedPath ? "project" : null,
-    creating: false,
-    notice: null,
-  }),
-  canvasFrameRef: host.canvasFrameRef,
-  refreshDesignProjects: host.refreshDesignProjects,
-  removeDesignProject: vi.fn(),
-  renameDesignProject: vi.fn(),
-  selectDesignProject: vi.fn(),
-}));
 vi.mock("@/components/workbench/zcode/host/flowProjects.js", () => ({
   createFlowProject: host.createFlowProject,
   useFlowProjectsController: () => {},
@@ -102,84 +82,45 @@ afterEach(() => {
   host.canvasFrameRef.current?.remove();
   host.canvasFrameRef.current = null;
 });
-it("refreshes the matching Design project and notifies the actual canvas after a server receipt", async () => {
-  host.selectedPath = "/selected project root";
-  host.directorySnapshot = { projectId: "project" };
-  host.recover.mockResolvedValue({
-    projectId: "project",
-    affectedTaskIds: ["task-root", "task-child"],
+describe.each(["flow"] as const)("%s sidebar directory creation", (kind) => {
+  function mount() {
+    return render(<HostModeSidebarContent />);
+  }
+  it("hides directory creation when the server picker is unavailable", async () => {
+    host.surfaceJson.mockResolvedValue({ available: false });
+    mount();
+    await waitFor(() =>
+      expect(host.surfaceJson).toHaveBeenCalledWith(
+        "/api/system/directory-picker",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "选目录新建" })).toBeNull();
   });
-  const frame = document.createElement("iframe");
-  document.body.appendChild(frame);
-  host.canvasFrameRef.current = frame;
-  if (!frame.contentWindow) throw new Error("Missing canvas window");
-  const postMessage = vi.spyOn(frame.contentWindow, "postMessage");
-  render(<DesignProjectsSidebar />);
-  fireEvent.click(screen.getByRole("button", { name: "重新关联" }));
-  await waitFor(() =>
-    expect(host.refreshDesignProjects).toHaveBeenCalledWith("project"),
-  );
-  expect(postMessage).toHaveBeenCalledWith(
-    {
-      type: "workbench:project-directory-relinked",
-      projectId: "project",
-      tasks: ["task-root", "task-child"],
-    },
-    window.location.origin,
-  );
+  it("exposes a real optional directory creation action only after the server probe", async () => {
+    host.surfaceJson.mockResolvedValue({ available: true });
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "选目录新建" }));
+    expect(host.createFlowProject).toHaveBeenCalledWith(true);
+  });
+  it("opens precisely the selected directory using the existing native bridge", async () => {
+    host.selectedPath = "/selected project root";
+    host.localCuaDesktopInvoke.mockReturnValue(host.desktopInvoke);
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "打开目录" }));
+    await waitFor(() =>
+      expect(host.desktopInvoke).toHaveBeenCalledWith("reveal_path", {
+        path: "/selected project root",
+      }),
+    );
+  });
+  it("does not expose a native directory action in the browser", () => {
+    host.selectedPath = "/selected project root";
+    host.localCuaDesktopInvoke.mockReturnValue(null);
+    mount();
+    expect(screen.queryByRole("button", { name: "打开目录" })).toBeNull();
+    expect(host.desktopInvoke).not.toHaveBeenCalled();
+  });
 });
-describe.each(["design", "flow"] as const)(
-  "%s sidebar directory creation",
-  (kind) => {
-    function mount() {
-      return render(
-        kind === "design" ? (
-          <DesignProjectsSidebar />
-        ) : (
-          <HostModeSidebarContent />
-        ),
-      );
-    }
-    it("hides directory creation when the server picker is unavailable", async () => {
-      host.surfaceJson.mockResolvedValue({ available: false });
-      mount();
-      await waitFor(() =>
-        expect(host.surfaceJson).toHaveBeenCalledWith(
-          "/api/system/directory-picker",
-        ),
-      );
-      expect(screen.queryByRole("button", { name: "选目录新建" })).toBeNull();
-    });
-    it("exposes a real optional directory creation action only after the server probe", async () => {
-      host.surfaceJson.mockResolvedValue({ available: true });
-      mount();
-      fireEvent.click(
-        await screen.findByRole("button", { name: "选目录新建" }),
-      );
-      expect(
-        kind === "design" ? host.createDesignProject : host.createFlowProject,
-      ).toHaveBeenCalledWith(true);
-    });
-    it("opens precisely the selected directory using the existing native bridge", async () => {
-      host.selectedPath = "/selected project root";
-      host.localCuaDesktopInvoke.mockReturnValue(host.desktopInvoke);
-      mount();
-      fireEvent.click(screen.getByRole("button", { name: "打开目录" }));
-      await waitFor(() =>
-        expect(host.desktopInvoke).toHaveBeenCalledWith("reveal_path", {
-          path: "/selected project root",
-        }),
-      );
-    });
-    it("does not expose a native directory action in the browser", () => {
-      host.selectedPath = "/selected project root";
-      host.localCuaDesktopInvoke.mockReturnValue(null);
-      mount();
-      expect(screen.queryByRole("button", { name: "打开目录" })).toBeNull();
-      expect(host.desktopInvoke).not.toHaveBeenCalled();
-    });
-  },
-);
 
 it("gates Flow sidebar navigation by project and connected iframe readiness", () => {
   host.navigation.mode = "flow";

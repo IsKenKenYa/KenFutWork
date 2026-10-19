@@ -8,7 +8,7 @@ vi.mock("../../http/checkpoints.js", () => ({
   registerCheckpointsRoutes: vi.fn(async () => {}),
 }));
 
-it("检查点与消费运行时的Design宿主可装配，不在初始化时取得恢复宿主", async () => {
+it("检查点与共享Task宿主可装配，不在初始化时取得恢复宿主", async () => {
   let runtimeCheckpoints: ServiceMap["checkpoints"] | undefined;
   const kernel = composePlugins(
     loadServerEnv({}, {}),
@@ -22,9 +22,9 @@ it("检查点与消费运行时的Design宿主可装配，不在初始化时取�
             runtimeCheckpoints = ctx.get("checkpoints");
             return {} as ServiceMap["agentRuns"];
           });
-          ctx.register("designRunHost", () => {
+          ctx.register("codeUi", () => {
             ctx.get("agentRuns");
-            return {} as ServiceMap["designRunHost"];
+            return {} as ServiceMap["codeUi"];
           });
         },
       },

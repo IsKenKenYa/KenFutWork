@@ -21,12 +21,18 @@ const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
   "google-generative-language",
 ];
 const NATIVE_PROTOCOL_LABELS: Partial<Record<ProviderProtocol, string>> = {
+  "openai-compatible": "OpenAI 兼容", anthropic: "Anthropic", gemini: "Gemini", apimart: "APIMart",
   "google-image": "Google Image",
   replicate: "Replicate",
   volces: "Volcengine",
   metaso: "Metaso",
+  grsai: "GRSAI",
   "dify-engine": "Dify",
 };
+
+const NATIVE_PROTOCOLS = providerProtocolSchema.options.filter(
+  (protocol) => !["openai-compatible", "anthropic", "gemini"].includes(protocol),
+);
 
 const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
   "anthropic-messages": "/v1/messages",
@@ -50,7 +56,7 @@ export function resolveProviderConnectionApiFormatDisplayLabel(
   intl: { formatMessage: (descriptor: { id: string }) => string },
   format: ProviderApiType | ProviderProtocol,
 ): string {
-  if (format in NATIVE_PROTOCOL_LABELS) return NATIVE_PROTOCOL_LABELS[format as ProviderProtocol]!;
+  if (providerProtocolSchema.safeParse(format).success) return NATIVE_PROTOCOL_LABELS[format as ProviderProtocol] ?? format;
   const title = intl.formatMessage({
     id: PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS[format as ProviderApiType],
   });
@@ -73,9 +79,15 @@ export function ProviderApiFormatSelect({
   onNativeProtocolChange?: ((value: ProviderProtocol) => void) | undefined;
 }) {
   const { intl } = useZCodeIntl();
+  const options = nativeProtocol ? NATIVE_PROTOCOLS
+    : [...apiFormatOptions, ...(onNativeProtocolChange ? NATIVE_PROTOCOLS : [])];
 
   return (
-    <Select value={nativeProtocol ?? value} onValueChange={(nextValue) => nativeProtocol ? onNativeProtocolChange?.(providerProtocolSchema.parse(nextValue)) : onChange(nextValue as ProviderApiType)}>
+    <Select value={nativeProtocol ?? value} onValueChange={(nextValue) => {
+      const native = providerProtocolSchema.safeParse(nextValue);
+      if (native.success) onNativeProtocolChange?.(native.data);
+      else onChange(nextValue as ProviderApiType);
+    }}>
       <SelectTrigger
         id={triggerId}
         data-testid={TID_MODEL_PROVIDER_API_FORMAT_TRIGGER}
@@ -85,7 +97,7 @@ export function ProviderApiFormatSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="start">
-        {(nativeProtocol ? Object.keys(NATIVE_PROTOCOL_LABELS) as ProviderProtocol[] : apiFormatOptions).map((format) => (
+        {options.map((format) => (
           <SelectItem
             key={format}
             value={format}

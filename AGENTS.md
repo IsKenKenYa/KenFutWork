@@ -83,21 +83,18 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 6. **文档与提交同步**：里程碑或架构级改动在 `docs/日志.md`（历轮回执 + 变更台账）里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
 7. **不提交密钥与产物**：provider keys、`.env*`、凭据、`release/`、`data/`、日志、`**/dist` 一律不入库（见下节）。
 8. **新增第三方资产先登记归属**：vendored 代码、图标、字体、模型权重进仓库的同一 PR，须在根 `THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置；上游没有 LICENSE 文件的如实标「待核」，禁止默认按 GPL 分发。法律层三份文件是属主且互不复述：授权边界与免责见根 `EULA.md`（不得用它缩减 GPL-3.0 授予的权利），数据行为与已知缺口见根 `PRIVACY.md`（按代码实现写，不写愿望）。
+9. **及时分批提交，禁止长期堆积 WIP**：一个可验证的行为完成、范围测试与类型检查通过后立即提交，再开始下一模块；不得以“整体任务尚未完成”为由长期不提交，也不得最后用一个大提交打包多个独立功能。跨模块改造先列文件/hunk、用途、依赖和验证命令，按依赖顺序交付，每批新增引用与消费方必须完整、提交后的 HEAD 必须能构建。
+10. **积压先盘点，交接必对账**：发现大量未提交改动时，先停止扩展实现，逐项核对 `git status` / `git diff`，区分本任务、并行任务和来源不明的改动，登记批次并逐批复核、测试、提交；不能靠记忆归属或为清空工作区混交。收尾、上下文压缩或交接前记录已提交 SHA 与剩余文件/hunk、用途、验证状态及阻断原因；备份和记录不能替代已具备提交条件的 commit。
 
 ## 产品行为不变量（硬约束）
 主入口的行为约定在此登记，**任何 agent 改动前先读本节**，改动落点若与不变量冲突，先改回不变量再谈其它需求。
 
-- **工作台恒为 Code 壳（zcode UI），Design/Flow 是壳内主区视图（融合架构）**。`/workbench` 只渲染 `CodeWorkbenchFrame`（`/code-ui/index.html` iframe）；切 Design/Flow **不再换壳**——模式 pills 在壳内切换主区（`WorkspaceMainView` 增 `design`/`flow`，内嵌面 `zcode/host/DesignSurface.tsx`、`FlowSurface.tsx` 常驻挂载、按视图显隐）。深链 `?mode=` 由父页一次性解析后经 `kenfutwork:workbench-navigation`（含 `mode`）推给壳。**旧画布工作台壳（CanvasWorkbench 及其侧栏/空态）已退役删除**，不得复辟。
-- **Design 模式的主区恒为画布（canvas），永不被对话框取代**。壳内 `DesignSurface`：选中项目即整幅画布 iframe（`/canvas?id=…`），对话走**画布页自带的助手面板**；项目切换/新建/删除在面顶栏，自动进画布判定唯一处 `zcode/host/designAutoCanvas.ts`（按本列表过滤选中态），由 `apps/web/test/design-auto-canvas.test.ts` + `design-surface.test.ts` 锁死。**历史事故**：主区判定曾把 `activeTask` 排在画布之前，导致「发一条消息画布就被对话框顶掉」；跨上下文残留的选中 id 也会把自动进画布整段挡掉。**验收**：Design 主区必须是画布 iframe，任何把 `conversation` 暴露到 Design 模式的改动都不许合入。
+- **工作台恒为 Code 壳（zcode UI），Design/Flow 是壳内主区视图（融合架构）**。`/workbench` 只渲染 `CodeWorkbenchFrame`（`/code-ui/index.html` iframe）；切 Design/Flow **不再换壳**——模式 pills 在壳内切换主区（`WorkspaceMainView` 增 `design`/`flow`，Design 文档由 `zcode/host/DocumentPane.tsx` 的内容标签承载并保持挂载；`FlowSurface.tsx` 按视图显隐）。深链 `?mode=` 由父页一次性解析后经 `kenfutwork:workbench-navigation`（含 `mode`）推给壳。**旧画布工作台壳（CanvasWorkbench 及其侧栏/空态）已退役删除**，不得复辟。
+- **Code/Design 共用原 ZCode 会话 UI 与 Task 宿主**。项目导航可收起，左侧会话使用同一个 `SessionPane`，右侧承载画布、文件与浏览器内容标签。Design 默认内容为画布或文档创建入口；只有显式打开/切换动作改变内容标签，发送、审批、恢复及 Goal 不抢占画布。画布视口与选区保留。画布页只承载编辑能力，Agent 交互由共享会话接管；迁移中逐项验证媒体、选区、同步和权限后删除旧接线。实施与验收见 `docs/方案设计/Code工作域与工具内核实施规格.md`「Code/Design 统一实施」。
 - **Flow 模式：主区恒为 flow 内容面（默认工作流画布），入口按插件安装态出现**。壳内 `FlowSurface`：默认渲染 flow 前端 iframe（`ff-embed/v1` 握手与身份票据在面内完成）；「引擎」信息页（引擎栈状态 / 承载路径 / 地址 / 容器事实）仅当用户**显式点面顶栏「引擎」**时替换画布，任何对话框/会话仍不得占据主区。**入口纪律**：flow 以插件形态交付（`FORM-11`），未安装 / 宿主适配层未接通时不出现 flow 入口（父页按探针结果给 `availableModes`，不可用深链回落 design），不摆空壳、不放假开关。**验收**：flow 主区必须是工作流画布或显式切到的引擎页；未装插件时模式 pills 与路由都不得出现 flow 空壳入口。
-- **Code 模式：以编码为重点的通用工作，Run 必须绑定持久 Task 工作域**。Code 也承接调研、文档和数据处理；独立 Work 模式留待后续设计。本期 Code Project 的主目录与附加授权目录由服务端持有；Task 创建时固定自己的主目录，项目默认目录变更仅影响新 Task。Code Run 必须用 taskId 打开 executionScopes，由真实 Task 生成文件、命令和子任务权限；禁止用 canvasId、conversationId 或路径猜测替代执行身份。Code 不创建或借用 Design 画布。Design/Flow 主区画布不变量保持有效。验证由执行作用域、原 Code 宿主 RPC 与工作台主区公共接口测试覆盖；目录不可用、权限撤销及 Run 失败必须透出可读原因。
+- **Code 模式：以编码为重点的通用工作，Run 必须绑定持久 Task 工作域**。Code 也承接调研、文档和数据处理；独立 Work 模式留待后续设计。本期 Code Project 的主目录与附加授权目录由服务端持有；Task 创建时固定自己的主目录，项目默认目录变更仅影响新 Task。Code Run 必须用 taskId 打开 executionScopes，由真实 Task 生成文件、命令和子任务权限；禁止用 canvasId、conversationId 或路径猜测替代执行身份。Code/Design 共用真实 Task；画布是项目文档引用，选择画布不增加文件目录权限。每个 Run 冻结工作方式、能力、模型与资源目标；界面切换不改当前 Run。Flow 主区不变量保持有效。验证由执行作用域、原 Code 宿主 RPC 与工作台主区公共接口测试覆盖；目录不可用、权限撤销及 Run 失败必须透出可读原因。
 
-> **项目类型由服务端一处持有**：`projects.kind ∈ {design, code, flow}`（design=画布项目，code=工作目录项目，flow=工作流项目；flow 的入口与画布随插件与宿主适配层落地，类型先落契约与库约束）。
-> 契约枚举与库 CHECK 必须同改，由 `tests/workspace.test.mjs` 的「库约束 ↔ 契约枚举一致」门禁对账。
-> 各模式各自按 kind 取列表（`GET /api/projects?kind=…`），**不得**再在客户端另造一套项目（曾用
-> `localStorage` 的 `codeProjects`，与服务端 `projects` 两套真相：选了工作目录列表里看不见、
-> 对话因 `projectId` 指向不存在的分组而「凭空消失」）。Code 侧栏的分组必须容忍孤儿
-> `projectId`——认不出的 id 一律归入「未分组」，否则对话会消失。
+> **项目归属由服务端一处持有**：默认工作方式与已启用工作方式决定项目列表；新项目默认隔离，显式跨模式打开才共享同一项目 ID。相同目录提示复用或独立创建，不自动合并。项目、会话、目录和画布分别创建，Code/Design 不强制创建画布。共享项目默认展示全部会话，筛选仅影响展示。契约与前向数据库迁移同步，所有客户端消费同一项目真相；孤儿 projectId 的会话归入「未分组」。
 
 ## 本地实例与账户边界（硬约束）
 - 本期执行《用户与账户系统重构》（`DEC-20`）：免账户桌面及回环本机 Web，稳定实例拥有项目、Task、配置与插件；第一方用 LocalActor 区分 instanceId 与 accessClientId，不保留账户/成员/角色或 workspace/user 身份别名。

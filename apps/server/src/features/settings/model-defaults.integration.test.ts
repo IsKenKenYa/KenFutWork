@@ -103,7 +103,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       }
     }, 90_000); // 独占真实 PG/HTTP 的测试期限，不是业务限额。
 
-    it("模型默认可跨请求保存，其他设置的稀疏更新不重置聊天与图视频策略", async () => {
+    it("独立审批模型跨请求保存，稀疏更新与关闭审批保留其他用途策略", async () => {
       const fixture = await createCodeUiHttpFixture();
       try {
         const provider = await fixture.client.request(
@@ -114,6 +114,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             apiKey: "fixture-no-external-call",
             models: [
               { id: "chat/中文", name: "聊天", capability: "chat" },
+              { id: "reviewer/β", name: "审批", capability: "chat" },
               { id: "image/α", name: "图像", capability: "image" },
             ],
           },
@@ -122,6 +123,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         const providerId = provider.body.id;
         const defaults = {
           chat: { providerId, modelId: "chat/中文" },
+          approval: { providerId, modelId: "reviewer/β" },
           image: {
             mode: "manual",
             models: [{ providerId, modelId: "image/α" }],
@@ -146,6 +148,16 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(current.body.settings).toMatchObject({
           modelDefaults: defaults,
           userRules: "保持模型身份",
+        });
+        const manual = await fixture.client.request(
+          "/api/instance/settings",
+          { modelDefaults: { ...defaults, approval: null } },
+          "PATCH",
+        );
+        expect(manual.status, JSON.stringify(manual.body)).toBe(200);
+        expect(manual.body.settings.modelDefaults).toEqual({
+          ...defaults,
+          approval: null,
         });
       } finally {
         await fixture.close();

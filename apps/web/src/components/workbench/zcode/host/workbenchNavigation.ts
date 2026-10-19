@@ -13,26 +13,79 @@ import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
 export function createHostWorkbenchNavigation(
   parent: Window,
   availableModes: readonly HostWorkbenchMode[],
+  admitMode?: (mode: HostWorkbenchMode) => Promise<boolean>,
 ): HostWorkbenchNavigation & { dispose: () => void } {
+  let mode: HostWorkbenchMode = "code";
+  try {
+    const saved = window.sessionStorage.getItem("kenfutwork:workbench-mode");
+    if (saved === "code" || saved === "design" || saved === "flow") {
+      mode = availableModes.includes(saved)
+        ? saved
+        : saved === "flow"
+          ? "design"
+          : "code";
+    }
+  } catch {
+    // 窗口偏好不可用时仍可打开工作台，项目权限继续由服务端验证。
+  }
   let snapshot: {
     mode: HostWorkbenchMode;
     availableModes: readonly HostWorkbenchMode[];
-  } = { mode: "code", availableModes };
+    documentTarget?: { resourceType: "canvas"; documentId: string };
+  } = { mode, availableModes };
   const listeners = new Set<() => void>();
+  let modeRequest = 0;
+  let disposed = false;
   const publish = (next: typeof snapshot) => {
+    if (next.mode !== snapshot.mode) {
+      try {
+        window.sessionStorage.setItem("kenfutwork:workbench-mode", next.mode);
+      } catch {
+        // 仅保存当前窗口的界面选择，不影响本次导航或 Run 上下文。
+      }
+    }
     snapshot = next;
     for (const listener of listeners) listener();
+  };
+  const requestMode = (mode: HostWorkbenchMode) => {
+    const request = ++modeRequest;
+    if (!snapshot.availableModes.includes(mode)) return;
+    if (!admitMode) {
+      publish({ ...snapshot, mode });
+      return;
+    }
+    void admitMode(mode)
+      .then((allowed) => {
+        if (
+          !disposed &&
+          allowed &&
+          request === modeRequest &&
+          snapshot.availableModes.includes(mode)
+        )
+          publish({ ...snapshot, mode });
+      })
+      .catch(() => {});
   };
   const receive = (event: MessageEvent) => {
     if (event.source !== parent || event.origin !== window.location.origin)
       return;
     const parsed = workbenchNavigationSchema.safeParse(event.data);
     if (!parsed.success) return;
+    // 文档深链先解析真实项目并完成其准入，再由文档宿主切换工作方式。
+    // 不能先为当前旧项目启用新方式，更不能在解析期间直接改主区。
+    if (parsed.data.mode || parsed.data.documentTarget) modeRequest++;
     publish({
       // 不带 mode 的推送只更新可用模式，不改动当前模式（避免把壳内已切的面弹回去）。
-      mode: parsed.data.mode ?? snapshot.mode,
+      mode: snapshot.mode,
       availableModes: parsed.data.availableModes,
+      ...(parsed.data.documentTarget
+        ? { documentTarget: parsed.data.documentTarget }
+        : snapshot.documentTarget
+          ? { documentTarget: snapshot.documentTarget }
+          : {}),
     });
+    if (parsed.data.mode && !parsed.data.documentTarget)
+      requestMode(parsed.data.mode);
   };
   window.addEventListener("message", receive);
   return {
@@ -46,13 +99,16 @@ export function createHostWorkbenchNavigation(
     open: (mode) => {
       if (mode === snapshot.mode || !snapshot.availableModes.includes(mode))
         return;
-      publish({ ...snapshot, mode });
+      requestMode(mode);
     },
     setActiveMode: (mode) => {
+      modeRequest++;
       if (mode === snapshot.mode) return;
       publish({ ...snapshot, mode });
     },
     dispose: () => {
+      disposed = true;
+      modeRequest++;
       window.removeEventListener("message", receive);
       listeners.clear();
     },

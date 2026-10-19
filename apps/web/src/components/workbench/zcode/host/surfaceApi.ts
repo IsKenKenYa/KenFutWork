@@ -25,11 +25,11 @@ export async function surfaceFetch(
   });
 }
 
-/** JSON 数据面读取：非 2xx 时抛出服务端给的可读原因（error.message）。 */
-export async function surfaceJson<T>(
+/** 数据面请求：非 2xx 时抛出服务端给的可读原因（error.message）。 */
+export async function surfaceRequest(
   path: string,
   init?: RequestInit,
-): Promise<T> {
+): Promise<Response> {
   const response = await surfaceFetch(path, init);
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as {
@@ -37,5 +37,12 @@ export async function surfaceJson<T>(
     };
     throw new Error(body.error?.message ?? `HTTP ${response.status}`);
   }
-  return (await response.json()) as T;
+  return response;
+}
+
+export async function surfaceJson<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  return (await (await surfaceRequest(path, init)).json()) as T;
 }

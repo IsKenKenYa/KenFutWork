@@ -3,14 +3,18 @@ import { mkdir, open, rename } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
+  type CanvasDocumentUpdatedMessage,
   type CodeExecutionScope,
   type CodeGoalControl,
   type CodeUiEvent,
   type CodeUiWorkspace,
+  canvasDocumentUpdatedMessageSchema,
   codeGoalControlSchema,
+  codeUiCommandCompanionSchema,
   codeUiControllerTaskListQuerySchema,
   type ExecutionMode,
   zcodeUiProtocol as protocol,
+  type RunCreateRequest,
   resolveContextWindow,
   type StreamEvent,
 } from "@kenfutwork/shared";
@@ -25,6 +29,7 @@ import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
 import type {
   PromptExecutionContext,
+  ToolContributionSnapshot,
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
@@ -51,6 +56,7 @@ import {
   resolveReadOnlyProjectPath,
 } from "../execution/scope-service.js";
 import { forgetTaskFileState } from "../execution/scoped-filesystem.js";
+import type { GoalToolEvidenceValidatorResolver } from "../goals/consumer.js";
 import { createGoalService, type GoalService } from "../goals/service.js";
 import type {
   LocalActor,
@@ -62,7 +68,10 @@ import {
   type CodeUiProviderSettingsRpc,
   createCodeUiProviderSettingsRpc,
 } from "../model-providers/provider-settings-rpc.js";
-import type { ApprovalEvent } from "../permissions/approval-types.js";
+import type {
+  ApprovalEvent,
+  ApprovalHostContext,
+} from "../permissions/approval-types.js";
 import type { PermissionService } from "../permissions/permission-service.js";
 import type { PluginRegistryService } from "../plugins/plugin-registry-service.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
@@ -74,6 +83,7 @@ import type {
   TaskWorkManager,
   TaskWorkRecord,
 } from "../task-work/types.js";
+import { readCodeApprovalContext } from "./approval-context.js";
 import { createCodeApprovedPlanReader } from "./approved-plan-reader.js";
 import { createCodeApprovedPlanStore } from "./approved-plan-store.js";
 import { createCodeAttachmentHost } from "./attachments/host.js";
@@ -134,6 +144,14 @@ import type {
   UserInputResolutionResult,
 } from "./user-input-types.js";
 import {
+  type ConversationWorkContextProvider,
+  contributionsForRun,
+  freezeWorkContext,
+  latestWorkContext,
+  workContextForRun,
+  workContextProviderPreset,
+} from "./work-context.js";
+import {
   type CodeUiWorkspaceConfigRequest,
   type CodeUiWorkspaceConfigTarget,
   createCodeUiWorkspaceConfigHost,
@@ -144,7 +162,14 @@ import {
 } from "./workspace-rpc.js";
 
 export interface CodeUiServiceDeps {
+  captureContributions?: (
+    preset: "code" | "design",
+  ) => ToolContributionSnapshot;
+  workContextProvider?: (
+    preset: "code" | "design",
+  ) => ConversationWorkContextProvider | undefined;
   goals?: GoalService;
+  goalToolEvidenceValidator?: GoalToolEvidenceValidatorResolver;
   hostRpcHandler?: (
     service: string,
     method: string,
@@ -188,8 +213,7 @@ type CodePreparedModel = {
   modelInvocation: ModelInvocationSnapshot;
 };
 /**
- * 读回线程持久化的执行模式并 warm 缓存（G2/Q7，Code run 派发前调用）。
- * 模式存储故障回落缓存；已退役模式必须拒绝本轮执行。
+ * 接纳输入前读取持久策略；存储故障不能把旧缓存当成本次选择。
  */
 export async function resolveCodeExecutionMode(
   agentModes: ExecutionModeService | undefined,
@@ -201,7 +225,10 @@ export async function resolveCodeExecutionMode(
     return await agentModes.hydrate(threadId, { instanceId });
   } catch (error) {
     if (error instanceof RetiredExecutionModeError) throw error;
-    return agentModes.getMode(threadId);
+    throw new CodeUiRepositoryError(
+      "command_conflict",
+      "无法读取工作方式，请稍后重试。",
+    );
   }
 }
 
@@ -253,6 +280,7 @@ function publishOnce(operation: () => Promise<void>): () => Promise<void> {
 export function codeUiCommandFingerprint(
   envelope: protocol.CommandEnvelope,
   goalControl?: CodeGoalControl,
+  executionMode?: ExecutionMode,
 ): string {
   return createHash("sha256")
     .update(
@@ -261,6 +289,7 @@ export function codeUiCommandFingerprint(
         type: envelope.type,
         payload: envelope.payload,
         ...(goalControl ? { goalControl } : {}),
+        ...(executionMode ? { executionMode } : {}),
       }),
     )
     .digest("hex");
@@ -314,6 +343,9 @@ export class CodeUiService {
     this.taskGoals = createTaskGoalHost({
       goals: this.goals,
       repository: deps.repository,
+      ...(deps.goalToolEvidenceValidator
+        ? { goalToolEvidenceValidator: deps.goalToolEvidenceValidator }
+        : {}),
       refresh: (instanceId, path, projectId) =>
         this.refreshTaskProjection(instanceId, path, projectId),
     });
@@ -652,85 +684,175 @@ export class CodeUiService {
   async admitExternalRun(
     actor: LocalActor,
     scopeHandle: ExecutionScopeHandle,
-    runId: string,
+    inputCommandId: string,
     text: string,
-  ): Promise<(event: StreamEvent) => Promise<void>> {
+    request?: RunCreateRequest,
+  ) {
     const scope = scopeHandle.describe();
     const loaded = await this.loadConversation(actor, scope.taskId);
-    const commandId = `agent-run:${runId}`;
+    if (request?.attachments?.length || request?.mentions?.length)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "请通过会话附件或资源引用发送素材，旧素材参数已停用。",
+      );
+    if (request?.executionMode && request.executionMode !== "agent")
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "请在共享会话中切换执行方式后发送。",
+      );
+    if (
+      (request?.taskId && request.taskId !== scope.taskId) ||
+      (request?.projectId && request.projectId !== scope.projectId) ||
+      (request?.scopeGeneration !== undefined &&
+        request.scopeGeneration !== scope.generation) ||
+      (request?.branchGeneration !== undefined &&
+        request.branchGeneration !== scopeHandle.branchGeneration)
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "任务、项目或授权版本已改变，请重新提交。",
+      );
+    const workContext = request?.workContext ?? {
+      preset: request?.preset ?? "code",
+      ...(request?.canvasId ? { canvasId: request.canvasId } : {}),
+      ...(request?.imageGenerationPreference
+        ? { imageGenerationPreference: request.imageGenerationPreference }
+        : {}),
+      ...(request?.videoGenerationPreference
+        ? { videoGenerationPreference: request.videoGenerationPreference }
+        : {}),
+    };
+    if (
+      (request?.preset && request.preset !== workContext.preset) ||
+      (request?.canvasId && request.canvasId !== workContext.canvasId)
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "资源引用与工作方式不一致，请重新提交。",
+      );
+    let modelSelection: protocol.SessionConfigState["modelSelection"];
+    if (request?.model) {
+      const separator = request.model.indexOf(":");
+      if (separator < 1 || separator === request.model.length - 1)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "请使用供应商与模型的完整标识，或在会话中选择模型。",
+        );
+      const providerId = request.model.slice(0, separator);
+      const modelId = request.model.slice(separator + 1);
+      modelSelection = { providerId, modelId };
+    }
     const envelope: protocol.CommandEnvelope = {
-      clientId: "host.agent-runs",
-      commandId,
+      clientId: actor.accessClientId ?? "host.agent-runs",
+      commandId: inputCommandId,
       sessionId: scope.taskId,
       type: "sendText",
-      payload: { text },
+      payload: {
+        text,
+        workContext,
+        ...(modelSelection ? { modelSelection } : {}),
+      },
       issuedAt: Date.now(),
     };
-    await this.deps.repository.applyCommand(
-      scope.instanceId,
-      envelope,
-      codeUiCommandFingerprint(envelope),
-      (root) => {
-        if (
-          root.active_run_id ||
-          root.state?.inputs?.some((record) => record.status === "reserved") ||
-          root.execution_state !== "ready" ||
-          Number(root.scope_generation) !== scope.generation
-        )
-          throw new CodeUiRepositoryError(
-            "command_conflict",
-            "Task 已忙碌或工作域改变，未启动 Run",
-          );
-        const current = root.state!.snapshots.find(
-          (entry) => entry.sessionId === root.id,
-        )!;
-        const host = createCodeUiConversation({
-          goals: this.goals,
-          sessionId: root.id,
-          workspacePath: root.root_directory!,
-          config: current.config,
-          state: root.state!,
-        });
-        host.setInputOwner(this.inputOwner);
-        host.startTurn({ runId, commandId, text });
-        return {
-          state: host.exportState(),
-          activeRunId: runId,
-          ack: {
-            commandId,
-            status: "accepted",
-            revisionAtDecision: host.getSnapshot().revision,
-            result: {
-              type: "inputAccepted",
-              delivery: "startNow",
-              inputId: commandId,
-            },
-          },
-        };
-      },
-    );
-    this.taskActors.set(
-      JSON.stringify([scope.instanceId, scope.taskId]),
-      actor,
-    );
-    await this.refreshTaskProjection(
-      scope.instanceId,
-      loaded.project.path,
-      loaded.project.projectId,
-    );
-    let ordinal = 0;
-    return (event) =>
-      this.recordRunEvent(
-        actor,
-        loaded.project,
-        scope.taskId,
-        event,
-        ++ordinal,
+    const admitted = await this.admitText(actor, loaded.project.path, envelope);
+    if (!["accepted", "duplicate"].includes(admitted.result.status))
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        admitted.result.message ?? "输入未被接纳，请查看会话状态。",
       );
+    const persisted = await this.deps.repository.find(
+      scope.instanceId,
+      scope.taskId,
+    );
+    const input = persisted?.state?.inputs?.find(
+      (entry) =>
+        entry.intent.clientId === envelope.clientId &&
+        entry.intent.sourceCommandId === inputCommandId,
+    );
+    if (!input)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "已接纳输入的运行身份不存在，请重新连接。",
+      );
+    return {
+      runId: input.runId,
+      sessionId: scope.taskId,
+      conversationId: request?.conversationId ?? scope.taskId,
+      status: "accepted" as const,
+      publish: admitted.publish,
+    };
+  }
+
+  async cancelExternalRun(actor: LocalActor, runId: string, taskId?: string) {
+    const instance = await this.deps.localInstance.resolve(actor);
+    const root = await this.deps.repository.findRunOwner(
+      instance.instanceId,
+      runId,
+    );
+    if (!root?.state || (taskId && taskId !== root.id))
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "运行不属于当前任务或已经删除。",
+      );
+    const queued = root.state.inputs?.find(
+      (entry) =>
+        entry.runId === runId &&
+        entry.status === "queued" &&
+        entry.intent.delivery.admitted !== "guide",
+    );
+    const owner = root.state.snapshots.find(
+      (snapshot) =>
+        snapshot.control.phase === "running" &&
+        snapshot.control.activeWorks.some(
+          (work) => work.foregroundExecutionId === runId,
+        ),
+    );
+    if (!queued && !owner)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "运行已结束，请查看会话结果。",
+      );
+    const snapshot = root.state.snapshots.find(
+      (entry) => entry.sessionId === root.id,
+    )!;
+    const envelope: protocol.CommandEnvelope = {
+      clientId: actor.accessClientId ?? "host.agent-runs",
+      commandId: `cancel:${runId}`,
+      sessionId: queued ? root.id : owner!.sessionId,
+      type: queued ? "deleteQueueItem" : "stop",
+      payload: queued
+        ? { queueItemId: queued.intent.queueItemId }
+        : { expectedForegroundExecutionId: runId },
+      baseRevision: snapshot.revision,
+      baseLogEpoch: snapshot.logEpoch,
+      issuedAt: Date.now(),
+    };
+    const result = queued
+      ? await this.queueCommand(actor, root.root_directory!, envelope)
+      : await this.stopExecution(actor, envelope);
+    if (!["accepted", "duplicate"].includes(result.result.status))
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        result.result.message ?? "运行状态已改变，请重新查看会话。",
+      );
+    const publish =
+      "publish" in result
+        ? result.publish
+        : "afterSend" in result
+          ? result.afterSend
+          : undefined;
+    if (typeof publish === "function") await publish();
+    return { runId, status: "canceled" as const };
   }
 
   async onApprovalEvent(event: ApprovalEvent): Promise<void> {
     return this.onBoundInteractionEvent(event);
+  }
+
+  async readApprovalContext(
+    context: ToolExecutionContext,
+  ): Promise<ApprovalHostContext | null> {
+    return readCodeApprovalContext(this.deps.repository, context);
   }
 
   async onUserInputEvent(event: UserInputEvent): Promise<void> {
@@ -832,6 +954,8 @@ export class CodeUiService {
           ownership: request.ownership,
           criteria: request.completionCriteria,
           approvalCeiling: request.approvalCeiling,
+          workContext: request.workContext,
+          frozenContributions: request.frozenContributions,
         }),
       )
       .digest("hex");
@@ -918,7 +1042,12 @@ export class CodeUiService {
               config: snapshot.config,
               state: root.state!,
             });
-            host.recordChildRunEvent(request.childSessionId, event);
+            host.recordChildRunEvent(
+              request.childSessionId,
+              event,
+              request.workContext,
+              request.frozenContributions,
+            );
             return {
               state: host.exportState(),
               activeRunId: root.active_run_id,
@@ -1237,6 +1366,14 @@ export class CodeUiService {
       actor,
       taskId,
     );
+    const executionMode =
+      goal && goal.status !== "complete"
+        ? "goal"
+        : ((await resolveCodeExecutionMode(
+            this.deps.agentModes,
+            thread.threadId,
+            instanceId,
+          )) ?? "agent");
     const commandId = `task-work:${createHash("sha256")
       .update(
         `${context.branchGeneration}/${pending
@@ -1282,12 +1419,21 @@ export class CodeUiService {
           config: current.config,
           state: root.state!,
         });
+        const continuationWorkContext =
+          goal && goal.status !== "complete"
+            ? freezeWorkContext(root.state?.goalModel?.workContext)
+            : latestWorkContext(root.state!);
         host.startTurn({
+          executionMode,
           runId,
           commandId,
           text,
           origin: "backgroundResult",
           modelSelection: selection,
+          workContext: continuationWorkContext,
+          frozenContributions: this.deps.captureContributions?.(
+            continuationWorkContext.preset,
+          ),
         });
         return {
           state: host.exportState(),
@@ -1327,6 +1473,16 @@ export class CodeUiService {
       console.error("[task-work] 自动续跑失败：", error),
     );
     return true;
+  }
+
+  async notifyCanvasDocumentUpdated(
+    instanceId: string,
+    message: CanvasDocumentUpdatedMessage,
+  ): Promise<void> {
+    await this.connections.notifyEvent(instanceId, {
+      event: "canvasDocumentUpdated",
+      data: canvasDocumentUpdatedMessageSchema.parse(message),
+    });
   }
 
   async openConnection(
@@ -1535,11 +1691,14 @@ export class CodeUiService {
     connectionId?: string,
   ) {
     const contributed = this.deps.hostRpcHandler?.(service, method);
-    if (connectionId !== undefined || contributed) {
+    // 空字符串是客户端「尚未绑定连接」的载具口径，与未传等价；
+    // 否则重连窗口的 connection-less 读取会被所有权守卫误报成连接丢失。
+    const bound = connectionId ? connectionId : undefined;
+    if (bound !== undefined || contributed) {
       const owner = await this.deps.localInstance.resolve(user);
       this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
         user.accessClientId,
       );
@@ -1628,7 +1787,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       const connection = this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         true,
         user.accessClientId,
       );
@@ -1672,7 +1831,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
         user.accessClientId,
       );
@@ -1680,18 +1839,14 @@ export class CodeUiService {
     }
     if (service === "file-watcher" || service === "git") {
       const owner = await this.deps.localInstance.resolve(user);
-      const current = this.connections.require(
-        owner.instanceId,
-        connectionId,
-        false,
-      );
+      const current = this.connections.require(owner.instanceId, bound, false);
       if (current.hello.auth.userId !== user.instanceId)
         throw new CodeUiRepositoryError(
           "not_found",
           "宿主连接不属于当前用户。",
         );
       const connection = {
-        connectionId: connectionId!,
+        connectionId: bound!,
         instanceId: owner.instanceId,
       };
       return service === "file-watcher"
@@ -1702,20 +1857,23 @@ export class CodeUiService {
       service === "providerSettingsService" ||
       service === "modelSelectionService"
     ) {
-      const owner = await this.deps.localInstance.resolve(user);
-      this.connections.require(owner.instanceId, connectionId, false);
+      // 实例作用域读写不依赖通知连接；仅在携带绑定时校验连接所有权。
+      if (bound !== undefined) {
+        const owner = await this.deps.localInstance.resolve(user);
+        this.connections.require(owner.instanceId, bound, false);
+      }
       return this.providerSettings.call(user, service, method, args);
     }
     if (service === "terminal" && this.deps.terminals) {
       const owner = await this.deps.localInstance.resolve(user);
-      this.connections.require(owner.instanceId, connectionId, false);
+      this.connections.require(owner.instanceId, bound, false);
       const preferences = appSettingsSchema.parse(
         await this.deps.repository.readHumanPreferences(owner.instanceId),
       );
       return codeUiTerminalRpc({
         terminals: this.deps.terminals,
         actor: user,
-        connectionId: connectionId!,
+        connectionId: bound!,
         method,
         args,
         preferences: {
@@ -1727,7 +1885,7 @@ export class CodeUiService {
         },
         subscriber: (terminalId) => ({
           output: (data) =>
-            this.connections.send(owner.instanceId, connectionId!, {
+            this.connections.send(owner.instanceId, bound!, {
               event: "service",
               service: "terminal",
               name: "onDynamicData",
@@ -1735,7 +1893,7 @@ export class CodeUiService {
               data,
             }),
           exit: (exit) =>
-            this.connections.send(owner.instanceId, connectionId!, {
+            this.connections.send(owner.instanceId, bound!, {
               event: "service",
               service: "terminal",
               name: "onDynamicExit",
@@ -1753,7 +1911,7 @@ export class CodeUiService {
       const owner = await this.deps.localInstance.resolve(user);
       const connection = this.connections.require(
         owner.instanceId,
-        connectionId,
+        bound,
         false,
       );
       const human = await this.humanWorkspace.call(user, service, method, args);
@@ -2312,6 +2470,14 @@ export class CodeUiService {
         input.goalControl === undefined
           ? undefined
           : codeGoalControlSchema.parse(input.goalControl);
+      const requestedMode = codeUiCommandCompanionSchema.parse(
+        args[0],
+      ).executionMode;
+      if (requestedMode === "loop")
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "循环模式已停用，请重新选择执行策略。",
+        );
       if (connectionId) {
         const bound = this.connections.require(
           workspace.instanceId,
@@ -2358,6 +2524,7 @@ export class CodeUiService {
           input.workspacePath,
           parsed.envelope,
           goalControl,
+          requestedMode,
         );
       if (
         parsed.envelope.type === "editUserQuery" ||
@@ -2408,6 +2575,38 @@ export class CodeUiService {
     const loaded = await this.loadConversation(user, envelope.sessionId);
     if (loaded.entry.parent_session_id || loaded.project.path !== workspacePath)
       throw new Error("目标不属于当前Task");
+    const replay = await this.verifiedInputReplay(
+      loaded.instanceId,
+      envelope,
+      goalControl,
+    );
+    if (replay) return { result: replay, publish: publishOnce(async () => {}) };
+    try {
+      return await this.prepareGoalCommand(
+        user,
+        workspacePath,
+        envelope,
+        loaded,
+        goalControl,
+      );
+    } catch (error) {
+      const raced = await this.verifiedInputReplay(
+        loaded.instanceId,
+        envelope,
+        goalControl,
+      );
+      if (raced) return { result: raced, publish: publishOnce(async () => {}) };
+      throw error;
+    }
+  }
+
+  private async prepareGoalCommand(
+    user: LocalActor,
+    workspacePath: string,
+    envelope: protocol.CommandEnvelope,
+    loaded: Awaited<ReturnType<CodeUiService["loadConversation"]>>,
+    goalControl?: CodeGoalControl,
+  ) {
     const goals = this.goals;
     const resumedModel =
       envelope.type === "resumeGoal"
@@ -2444,12 +2643,14 @@ export class CodeUiService {
                 revision: goal.revision,
                 branchGeneration: Number(root.branch_generation),
               });
-        if (resumedModel)
+        if (resumedModel) {
           state.goalModel = {
             goalId: goal.goalId,
             selection: resumedModel.selection,
             invocation: resumedModel.modelInvocation,
+            workContext: freezeWorkContext(state.goalModel?.workContext),
           };
+        }
         syncGoal(state, root.id);
         const snapshot = state.snapshots.find(
           (item) => item.sessionId === root.id,
@@ -2469,7 +2670,7 @@ export class CodeUiService {
     );
     return {
       result: ack,
-      publish: async () => {
+      publish: publishOnce(async () => {
         if (
           ack.status === "accepted" &&
           envelope.type === "pauseGoal" &&
@@ -2483,7 +2684,7 @@ export class CodeUiService {
         );
         if (ack.status === "accepted" && envelope.type === "resumeGoal")
           await this.resumeGoal(user, loaded.root.id);
-      },
+      }),
     };
   }
 
@@ -2547,6 +2748,14 @@ export class CodeUiService {
             owner: this.inputOwner,
             at: Date.now(),
             modelSelection: selection,
+            ...(this.deps.captureContributions
+              ? {
+                  frozenContributions: this.deps.captureContributions(
+                    freezeWorkContext(root.state?.goalModel?.workContext)
+                      .preset,
+                  ),
+                }
+              : {}),
           },
           this.goals,
         );
@@ -2913,6 +3122,13 @@ export class CodeUiService {
                 payload.expectedForegroundExecutionId !== activeExecution
               )
                 return { state, activeRunId: current.active_run_id };
+              state.stopRequestedRuns = [
+                ...new Set([...(state.stopRequestedRuns ?? []), execution]),
+              ];
+              // 尚未派发的权限选择与停止同一根锁失效；迟到CAS不能再次签发。
+              for (const record of state.inputs ?? [])
+                if (record.runId === execution)
+                  delete record.pendingScopeSelection;
               const stopped =
                 state.inputs?.filter(
                   (entry) =>
@@ -3143,10 +3359,17 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
   ) {
     const release = this.deps.localInstance.beginAdmission();
     try {
-      return await this.admitText(user, workspacePath, envelope, goalControl);
+      return await this.admitText(
+        user,
+        workspacePath,
+        envelope,
+        goalControl,
+        requestedMode,
+      );
     } finally {
       release();
     }
@@ -3177,6 +3400,7 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
   ) {
     if (!envelope.sessionId)
       throw new CodeUiRepositoryError("not_found", "发送命令缺少会话");
@@ -3186,6 +3410,70 @@ export class CodeUiService {
         "not_found",
         "发送命令不属于根会话工作目录",
       );
+    const replay = await this.verifiedInputReplay(
+      loaded.instanceId,
+      envelope,
+      goalControl,
+      requestedMode,
+    );
+    if (replay) return { result: replay, publish: publishOnce(async () => {}) };
+    try {
+      return await this.admitPreparedText(
+        user,
+        workspacePath,
+        envelope,
+        loaded,
+        goalControl,
+        requestedMode,
+      );
+    } catch (error) {
+      // A concurrent copy may commit while this copy prepares resources. Return
+      // its verified receipt instead of treating a deleted reference as rejection.
+      const raced = await this.verifiedInputReplay(
+        loaded.instanceId,
+        envelope,
+        goalControl,
+        requestedMode,
+      );
+      if (raced) return { result: raced, publish: publishOnce(async () => {}) };
+      throw error;
+    }
+  }
+
+  private async verifiedInputReplay(
+    instanceId: string,
+    envelope: protocol.CommandEnvelope,
+    goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
+  ) {
+    const queried = await this.deps.repository.queryCommands(
+      instanceId,
+      envelope.clientId,
+      [{ commandId: envelope.commandId, sessionId: envelope.sessionId }],
+    );
+    const receipt = queried.results[0]?.result;
+    if (!receipt || receipt === "unknown") return null;
+    return this.deps.repository.applyCommand(
+      instanceId,
+      envelope,
+      codeUiCommandFingerprint(envelope, goalControl, requestedMode),
+      () => {
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "命令回执已变化，请重新连接后查看状态。",
+        );
+      },
+    );
+  }
+
+  private async admitPreparedText(
+    user: LocalActor,
+    workspacePath: string,
+    envelope: protocol.CommandEnvelope,
+    loaded: Awaited<ReturnType<CodeUiService["loadConversation"]>>,
+    goalControl?: CodeGoalControl,
+    requestedMode?: ExecutionMode,
+  ) {
     const compact = envelope.type === "compact";
     if (compact) protocol.commandPayloadSchemas.compact.parse(envelope.payload);
     const payload = protocol.commandPayloadSchemas.sendText.parse(
@@ -3208,6 +3496,15 @@ export class CodeUiService {
         )
       : [];
     const snapshot = loaded.host.getSnapshot();
+    const workContext = await this.prepareWorkContext(
+      user,
+      loaded.project.projectId,
+      compact ? latestWorkContext(loaded.root.state!) : payload.workContext,
+      loaded.root.id,
+    );
+    const frozenContributions = this.deps.captureContributions?.(
+      workContext.preset,
+    );
     const { selection, modelInvocation } = await this.prepareInputModel(
       user,
       payload.modelSelection !== undefined
@@ -3218,12 +3515,20 @@ export class CodeUiService {
       user,
       loaded.root.id,
     );
+    const executionMode =
+      requestedMode ??
+      (await resolveCodeExecutionMode(
+        this.deps.agentModes,
+        thread.threadId,
+        loaded.instanceId,
+      )) ??
+      "agent";
     const runId = randomUUID();
     const ack = await this.deps.repository.applyCommand(
       loaded.instanceId,
       envelope,
       // 运行身份来自本次事务；忙时立即发送先只认领，停止确认后才投影新一轮。
-      codeUiCommandFingerprint(envelope, goalControl),
+      codeUiCommandFingerprint(envelope, goalControl, requestedMode),
       (root) => {
         const host = createCodeUiConversation({
           goals: this.goals,
@@ -3283,6 +3588,36 @@ export class CodeUiService {
         const active = root.state?.inputs?.find(
           (input) => input.runId === previous && input.status === "active",
         );
+        // 在接纳边界用原resolver固定别名语义；不能先用current补flag再解释raw plan。
+        const currentExecution = resolveExecutionState({
+          mode: current.config.mode,
+          ...(current.config.planEnabled !== undefined
+            ? { planEnabled: current.config.planEnabled }
+            : {}),
+        });
+        const execution = resolveExecutionState(
+          {
+            ...(payload.mode !== undefined
+              ? {
+                  mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
+                    { mode: payload.mode },
+                  ).mode,
+                }
+              : {}),
+            ...(executionMode === "plan"
+              ? { planEnabled: true }
+              : payload.planEnabled !== undefined
+                ? { planEnabled: payload.planEnabled }
+                : {}),
+          },
+          currentExecution,
+        );
+        const requestedSandboxMode =
+          !compact && payload.mode !== undefined && payload.mode !== "plan"
+            ? execution.mode === "yolo"
+              ? ("danger-full-access" as const)
+              : ("workspace-write" as const)
+            : undefined;
         const requestedGuide =
           !compact &&
           busy &&
@@ -3293,6 +3628,13 @@ export class CodeUiService {
           requestedGuide &&
           !!previous &&
           active?.intent.kind === "sendText" &&
+          (!this.deps.captureContributions || !!active.frozenContributions) &&
+          active.executionMode === executionMode &&
+          active.intent.mode === execution.mode &&
+          (requestedSandboxMode === undefined ||
+            root.sandbox_mode === requestedSandboxMode) &&
+          canonical(workContextForRun(root.state!, previous!)) ===
+            canonical(workContext) &&
           !codeInputs.length;
         const delivery = guide
           ? "guide"
@@ -3325,28 +3667,6 @@ export class CodeUiService {
             };
           settlements = held.settlements;
         }
-        // 在接纳边界用原resolver固定别名语义；不能先用current补flag再解释raw plan。
-        const currentExecution = resolveExecutionState({
-          mode: current.config.mode,
-          ...(current.config.planEnabled !== undefined
-            ? { planEnabled: current.config.planEnabled }
-            : {}),
-        });
-        const execution = resolveExecutionState(
-          {
-            ...(payload.mode !== undefined
-              ? {
-                  mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
-                    { mode: payload.mode },
-                  ).mode,
-                }
-              : {}),
-            ...(payload.planEnabled !== undefined
-              ? { planEnabled: payload.planEnabled }
-              : {}),
-          },
-          currentExecution,
-        );
         const intent: protocol.ConversationInputIntent = {
           sourceCommandId: envelope.commandId,
           queueItemId: randomUUID(),
@@ -3359,6 +3679,7 @@ export class CodeUiService {
             mode: execution.mode,
           }).mode,
           planEnabled: execution.planEnabled,
+          workContext,
           delivery: {
             requested: payload.requestedDelivery ?? "auto",
             admitted: delivery,
@@ -3391,9 +3712,21 @@ export class CodeUiService {
           admittedAt: Date.now(),
         };
         const record: CodeAdmittedInput = {
+          executionMode,
+          ...(!guide && requestedSandboxMode
+            ? { pendingScopeSelection: requestedSandboxMode }
+            : {}),
           intent,
           runId: guide ? previous! : runId,
           modelInvocation,
+          ...(frozenContributions
+            ? {
+                frozenContributions: guide
+                  ? (contributionsForRun(root.state!, previous!) ??
+                    frozenContributions)
+                  : structuredClone(frozenContributions),
+              }
+            : {}),
           scopeGeneration: Number(root.scope_generation),
           branchGeneration: Number(root.branch_generation),
           status: preempt
@@ -3425,6 +3758,7 @@ export class CodeUiService {
             goalId: goal.goalId,
             selection,
             invocation: modelInvocation,
+            workContext,
           });
         }
         host.admitInput(record, this.inputOwner);
@@ -3779,6 +4113,92 @@ export class CodeUiService {
     };
   }
 
+  /** 新输入已占有原Run身份后才更新物理权限；不从历史重试或后台续跑重新签发。 */
+  private async applyInputScope(
+    user: LocalActor,
+    sessionId: string,
+    runId: string,
+  ): Promise<void> {
+    const workspace = await this.deps.localInstance.resolve(user);
+    const before = await this.deps.repository.find(
+      workspace.instanceId,
+      sessionId,
+    );
+    const input = before?.state?.inputs?.find(
+      (record) => record.runId === runId && record.status === "active",
+    );
+    if (!input?.pendingScopeSelection || input.historyOf) return;
+    if (
+      !before ||
+      before.archived ||
+      before.execution_state !== "ready" ||
+      before.active_run_id !== runId ||
+      input.scopeGeneration !== Number(before.scope_generation) ||
+      input.branchGeneration !== Number(before.branch_generation) ||
+      before.state?.inputs?.some((record) => record.status === "reserved")
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "这条输入的Task授权或运行已改变，请重新提交。",
+      );
+    const updated =
+      before.sandbox_mode === input.pendingScopeSelection
+        ? { generation: Number(before.scope_generation) }
+        : await this.deps.executionScopes.updateTask(
+            user,
+            sessionId,
+            { sandboxMode: input.pendingScopeSelection },
+            {
+              scopeGeneration: input.scopeGeneration,
+              branchGeneration: input.branchGeneration,
+              runId,
+              sourceCommandId: input.intent.sourceCommandId,
+            },
+          );
+    await this.deps.repository.appendEvent(
+      workspace.instanceId,
+      sessionId,
+      {
+        key: `input-scope:${runId}/${updated.generation}`,
+        fingerprint: `${input.scopeGeneration}/${updated.generation}`,
+        event: {
+          type: "input.scope_selected",
+          runId,
+          scopeGeneration: updated.generation,
+        },
+      },
+      (root) => {
+        const state = structuredClone(root.state!);
+        const active = state.inputs?.find(
+          (record) => record.runId === runId && record.status === "active",
+        );
+        if (
+          root.archived ||
+          root.execution_state !== "ready" ||
+          root.active_run_id !== runId ||
+          Number(root.scope_generation) !== updated.generation ||
+          Number(root.branch_generation) !== input.branchGeneration ||
+          active?.scopeGeneration !== input.scopeGeneration ||
+          active.pendingScopeSelection !== input.pendingScopeSelection
+        )
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "权限更新期间Task已停止或授权改变，输入未执行。",
+          );
+        // 只承接本次内部授权变化；外部撤权的代际不在此迁移。
+        for (const record of state.inputs ?? [])
+          if (
+            ["active", "queued"].includes(record.status) &&
+            record.scopeGeneration === input.scopeGeneration &&
+            record.branchGeneration === input.branchGeneration
+          )
+            record.scopeGeneration = updated.generation;
+        delete active.pendingScopeSelection;
+        return { state, activeRunId: root.active_run_id };
+      },
+    );
+  }
+
   private async runTurn(
     user: LocalActor,
     project: CodeUiWorkspace,
@@ -3798,6 +4218,7 @@ export class CodeUiService {
           "command_conflict",
           "执行宿主已关闭，不能启动新运行。",
         );
+      await this.applyInputScope(user, sessionId, runId);
       const scopeHandle = await this.deps.executionScopes.openTask(
         user,
         sessionId,
@@ -3821,15 +4242,51 @@ export class CodeUiService {
         threadId,
         model,
       });
-      // G2 六档执行模式（Q7）：Code run 与 Design 共用同一 agentModes 缝。
-      // 派发前按 threadId 读回持久化模式 warm 缓存——工具门（toolGateFor）、
-      // pre-step 引导、自动化分场景都按 threadId 消费；读回失败按现状（agent）继续，
-      // 不让模式存储故障挡掉 run（与 WS 路径同口径）。
-      const executionMode = await resolveCodeExecutionMode(
-        this.deps.agentModes,
-        threadId,
-        scopeHandle.describe().instanceId,
-      );
+      const workContext = workContextForRun(current.state!, runId);
+      const frozenContributions = contributionsForRun(current.state!, runId);
+      if (this.deps.captureContributions && !frozenContributions)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "运行缺少能力快照，请重新提交输入。",
+        );
+      const providerPreset = workContextProviderPreset(workContext);
+      const contextProvider = this.deps.workContextProvider?.(providerPreset);
+      if (providerPreset === "design" && !contextProvider)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "画布工作能力未加载，请检查插件设置。",
+        );
+      await contextProvider?.revalidate({
+        actor: user,
+        projectId: project.projectId,
+        taskId: sessionId,
+        runId,
+        scopeGeneration: scopeHandle.describe().generation,
+        branchGeneration: Number(current.branch_generation),
+        context: workContext,
+      });
+      const executionMode =
+        current.state!.inputs?.find(
+          (entry) =>
+            entry.runId === runId && entry.intent.delivery.admitted !== "guide",
+        )?.executionMode ??
+        current.state!.runExecutionModes?.find(([id]) => id === runId)?.[1];
+      if (!executionMode)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "这条输入缺少发送时的工作方式，请重新发送。",
+        );
+      const approvalCeiling =
+        current.state!.inputs?.find(
+          (entry) =>
+            entry.runId === runId && entry.intent.delivery.admitted !== "guide",
+        )?.intent.mode ??
+        current.state!.runApprovalCeilings?.find(([id]) => id === runId)?.[1];
+      if (!approvalCeiling)
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "这条输入缺少发送时的执行权限，请重新发送。",
+        );
       const started = await this.deps.repository.startRunIfCurrent(
         scopeHandle.describe().instanceId,
         sessionId,
@@ -3849,7 +4306,22 @@ export class CodeUiService {
               conversationId: sessionId,
               projectId: project.projectId,
               taskId: sessionId,
-              preset: "code",
+              preset: workContext.preset,
+              ...(workContext.canvasId
+                ? { canvasId: workContext.canvasId }
+                : {}),
+              ...(workContext.imageGenerationPreference
+                ? {
+                    imageGenerationPreference:
+                      workContext.imageGenerationPreference,
+                  }
+                : {}),
+              ...(workContext.videoGenerationPreference
+                ? {
+                    videoGenerationPreference:
+                      workContext.videoGenerationPreference,
+                  }
+                : {}),
               prompt: text,
               model,
               ...(executionMode ? { executionMode } : {}),
@@ -3858,6 +4330,8 @@ export class CodeUiService {
               runId,
               threadId,
               scopeHandle,
+              workContext,
+              ...(frozenContributions ? { frozenContributions } : {}),
               actor: user,
               model,
               ...(modelInvocation ? { modelInvocation } : {}),
@@ -3882,13 +4356,7 @@ export class CodeUiService {
                       inputOrigin: "backgroundResult" as const,
                     }
                   : {}),
-              ...(currentInput?.intent.mode
-                ? {
-                    approvalCeiling: currentInput.intent.planEnabled
-                      ? ("plan" as const)
-                      : currentInput.intent.mode,
-                  }
-                : {}),
+              approvalCeiling,
               eventSink: async (event) =>
                 this.recordRunEvent(
                   user,
@@ -4070,19 +4538,72 @@ export class CodeUiService {
   }
 
   async listWorkspaces(user: LocalActor): Promise<CodeUiWorkspace[]> {
-    const projects = await this.deps.projects.listProjects(user, "code");
-    return projects.flatMap((project) =>
-      project.kind === "code"
-        ? [
-            {
-              projectId: project.id,
-              name: project.name,
-              path: project.workDir,
-              additionalDirectories: project.additionalDirectories,
-            },
-          ]
-        : [],
+    const projects = [
+      ...(await this.deps.projects.listProjects(user, "code")),
+      ...(await this.deps.projects.listProjects(user, "design")),
+    ];
+    const unique = new Map(
+      projects
+        .filter((project) => project.kind !== "flow")
+        .map((project) => [project.id, project]),
     );
+    return [...unique.values()].map((project) => ({
+      projectId: project.id,
+      name: project.name,
+      kind: project.kind as "code" | "design",
+      enabledModes: project.enabledModes?.filter(
+        (mode) => mode === "code" || mode === "design",
+      ),
+      path:
+        project.workDir ??
+        resolve(
+          this.deps.env.sandboxRoot ?? DEFAULT_SANDBOX_ROOT,
+          user.instanceId,
+          project.id,
+        ),
+      additionalDirectories: project.additionalDirectories,
+    }));
+  }
+
+  private async prepareWorkContext(
+    actor: LocalActor,
+    projectId: string,
+    requested: protocol.ConversationWorkContext | undefined,
+    taskId?: string,
+  ) {
+    const context = freezeWorkContext(requested);
+    const projects = await this.deps.projects.listProjects(
+      actor,
+      context.preset,
+    );
+    if (!projects.some((project) => project.id === projectId))
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "项目尚未启用此工作方式，请先在项目中开启。",
+      );
+    const providerPreset = workContextProviderPreset(context);
+    const provider = this.deps.workContextProvider?.(providerPreset);
+    if (providerPreset === "design" && !provider)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "画布工作能力未加载，请检查插件设置。",
+      );
+    const prepared = freezeWorkContext(
+      provider
+        ? await provider.prepare({
+            actor,
+            projectId,
+            ...(taskId ? { taskId } : {}),
+            context,
+          })
+        : context,
+    );
+    if (prepared.preset !== context.preset)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "工作能力返回了不同的工作方式，请检查插件设置。",
+      );
+    return prepared;
   }
 
   async requireWorkspace(
@@ -4447,6 +4968,46 @@ export class CodeUiService {
     );
     const project = await this.requireWorkspace(user, payload.workspaceId);
     const workspace = await this.deps.localInstance.resolve(user);
+    const command = {
+      clientId: envelope.clientId,
+      commandId: envelope.commandId,
+      fingerprint: codeUiCommandFingerprint(envelope),
+    };
+    const readReceipt = () =>
+      this.deps.repository.readCreationCommand(
+        workspace.instanceId,
+        project.projectId,
+        command,
+      );
+    const replay = await readReceipt();
+    if (replay) return replay;
+    try {
+      return await this.prepareCreatedSession(
+        user,
+        payload,
+        project,
+        workspace.instanceId,
+        command,
+      );
+    } catch (error) {
+      const raced = await readReceipt();
+      if (raced) return raced;
+      throw error;
+    }
+  }
+
+  private async prepareCreatedSession(
+    user: LocalActor,
+    payload: protocol.CommandPayloadMap["createSession"],
+    project: CodeUiWorkspace,
+    instanceId: string,
+    command: { clientId: string; commandId: string; fingerprint: string },
+  ): Promise<protocol.CommandAck> {
+    const workContext = await this.prepareWorkContext(
+      user,
+      project.projectId,
+      payload.workContext ?? payload.firstInput?.workContext,
+    );
     const views = await this.modelViews(user, payload.config?.modelSelection);
     const selection =
       payload.config?.modelSelection ?? views.selection.preferredSelection;
@@ -4454,7 +5015,7 @@ export class CodeUiService {
     const record = await this.deps.projects.getProject(user, project.projectId);
     const additionalDirectories = record.additional_directories ?? [];
     const rootDirectory = await resolveProjectWorkDirectory({
-      instanceId: workspace.instanceId,
+      instanceId,
       projectId: project.projectId,
       sandboxRoot: this.deps.env.sandboxRoot ?? DEFAULT_SANDBOX_ROOT,
       workDir: record.work_dir,
@@ -4471,6 +5032,7 @@ export class CodeUiService {
       goals: this.goals,
       sessionId,
       workspacePath: rootDirectory,
+      workContext,
       config: {
         provider: "zcode",
         model: selection?.modelId ?? "",
@@ -4483,11 +5045,11 @@ export class CodeUiService {
         planEnabled: execution.planEnabled,
       },
     });
-    return this.deps.repository.createRoot(workspace.instanceId, {
+    return this.deps.repository.createRoot(instanceId, {
       sessionId,
       projectId: project.projectId,
       scope: {
-        instanceId: workspace.instanceId,
+        instanceId,
         projectId: project.projectId,
         taskId: sessionId,
         // 授权版本从 1 起铸：Windows 原生 broker 拒绝 generation<=0（「Task 执行身份
@@ -4501,11 +5063,7 @@ export class CodeUiService {
       createdByClientId: user.accessClientId,
       threadId: this.deps.threads.createThreadId(),
       state: host.exportState(),
-      command: {
-        clientId: envelope.clientId,
-        commandId: envelope.commandId,
-        fingerprint: codeUiCommandFingerprint(envelope),
-      },
+      command,
     });
   }
 

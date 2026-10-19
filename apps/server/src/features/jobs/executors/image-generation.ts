@@ -1,177 +1,160 @@
-import type { BackgroundJob } from "@kenfutwork/shared";
-import type { GeneratedImage } from "../../../generation/types.js";
+import {
+  type BackgroundJob,
+  hasImageGenerationInput,
+} from "@kenfutwork/shared";
+import type {
+  GeneratedImage,
+  ImageGenerateParams,
+} from "../../../generation/types.js";
 import { type ExecutorContext, registerExecutor } from "../job-executor.js";
-import { publishGeneratedFile } from "./generated-file.js";
+import { resolveJobMediaInputs } from "../job-inputs.js";
+import { readJobExecution } from "../job-progress.js";
 import { resolveInstanceImageProviderFromPayload } from "./instance-provider.js";
+import { completeMediaJob } from "./media-result.js";
+
+type ImageJobPayload = {
+  count?: number;
+  prompt: string;
+  model: string;
+  provider_instance_id: string;
+  provider_config_revision?: number;
+  aspect_ratio?: string;
+  quality?: string;
+  width?: number;
+  height?: number;
+  output_format?: "png" | "jpg" | "webp";
+};
+type ImageProviderSnapshot = NonNullable<
+  Awaited<ReturnType<typeof resolveInstanceImageProviderFromPayload>>
+>;
+
+function jobError(code: string, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+async function imageParams(
+  job: BackgroundJob,
+  payload: ImageJobPayload,
+  ctx: ExecutorContext,
+  instance: ImageProviderSnapshot,
+  abortable = true,
+): Promise<ImageGenerateParams> {
+  const params: ImageGenerateParams = {
+    prompt: payload.prompt,
+    count: payload.count ?? 1,
+    model: payload.model,
+    ...(payload.aspect_ratio ? { aspectRatio: payload.aspect_ratio } : {}),
+    ...(payload.quality ? { quality: payload.quality } : {}),
+    ...(payload.width !== undefined ? { width: payload.width } : {}),
+    ...(payload.height !== undefined ? { height: payload.height } : {}),
+    ...(payload.output_format ? { outputFormat: payload.output_format } : {}),
+    ...(await resolveJobMediaInputs(job, ctx.uploads)),
+    ...(abortable && ctx.signal ? { signal: ctx.signal } : {}),
+  };
+  if (
+    !hasImageGenerationInput(
+      params.prompt,
+      params.inputImages,
+      instance.modelConfig?.imageGeneration,
+    )
+  )
+    throw jobError(
+      "invalid_input",
+      "请输入提示词；无需提示词的模型请添加参考图。",
+    );
+  return params;
+}
+
+async function generateImage(
+  job: BackgroundJob,
+  payload: ImageJobPayload,
+  instance: ImageProviderSnapshot,
+  ctx: ExecutorContext,
+): Promise<GeneratedImage[]> {
+  const provider = instance.provider;
+  if (
+    job.provider_job_id &&
+    (payload.provider_config_revision == null ||
+      payload.provider_config_revision !== instance.configRevision ||
+      !provider.startAsync ||
+      !provider.pollAsync)
+  ) {
+    throw jobError(
+      "provider_config_stale",
+      "图片供应商配置已变更，无法续查原任务，请核对供应商记录。",
+    );
+  }
+  if (!provider.startAsync || !provider.pollAsync) {
+    let params = await imageParams(job, payload, ctx, instance);
+    if (provider.prepareInputs) params = await provider.prepareInputs(params);
+    await ctx.assertExecution?.();
+    await ctx.jobService.beginSubmission(job.id, instance.configRevision);
+    return provider.generateMany
+      ? provider.generateMany(params)
+      : [await provider.generate(params)];
+  }
+  if (!Number.isInteger(instance.configRevision)) {
+    throw jobError(
+      "provider_config_stale",
+      "图片供应商配置版本缺失，无法保存可恢复的任务。",
+    );
+  }
+  if (job.provider_job_id) {
+    await ctx.assertExecution?.();
+    const result = await provider.pollAsync(job.provider_job_id);
+    if (result.state === "failed")
+      throw jobError("provider_task_failed", result.errorMessage);
+    if (result.state === "succeeded") {
+      if (!result.images.length)
+        throw jobError("no_output", "图片供应商未返回生成结果。");
+      return result.images;
+    }
+  } else {
+    // 云端可能已接纳后才取消，本次响应仍须保留以登记句柄和补发远端取消。
+    let params = await imageParams(job, payload, ctx, instance, false);
+    if (provider.prepareInputs) params = await provider.prepareInputs(params);
+    await ctx.assertExecution?.();
+    const attemptId = await ctx.jobService.beginSubmission(
+      job.id,
+      instance.configRevision,
+    );
+    const { providerJobId } = await provider.startAsync(params);
+    await ctx.jobService.recordSubmission(job.id, attemptId, providerJobId);
+    await ctx.assertExecution?.();
+  }
+  await ctx.jobService.scheduleJob(job.id, 10);
+  throw jobError("provider_poll_scheduled", "图片任务已提交，等待供应商结果。");
+}
 
 registerExecutor(
   "image_generation",
-  async (jobId, _rawPayload, ctx: ExecutorContext) => {
-    const t0 = Date.now();
-
-    // Read the full job row including payload from the database.
-    // The PGMQ message only contains { job_id, job_type, instance_id },
-    // so we must fetch prompt/model/aspect_ratio from background_jobs.payload.
-    // 经 jobService 取（按 id 的系统级读，与 worker 其它状态迁移同一入口）。
-    let jobRow: BackgroundJob;
-    try {
-      jobRow = await ctx.jobService.getJobForWorker(jobId);
-    } catch {
-      throw new Error(`Job ${jobId} not found in database`);
-    }
-
-    // Build log tag with traceability context: jobId + sessionId (if available)
-    const sessionShort = jobRow.session_id?.slice(0, 8) ?? "no-session";
-    const tag = `[image-job:${jobId.slice(0, 8)} session:${sessionShort}]`;
-    const lap = (label: string) =>
-      console.log(`${tag} ${label} +${Date.now() - t0}ms`);
-    lap("db_fetch");
-
-    await ctx.generationTargets.resolve(jobRow);
-
-    const payload = (jobRow.payload ?? {}) as {
-      prompt: string;
-      model?: string;
-      provider_instance_id?: string;
-      aspect_ratio?: string;
-      title?: string;
-      input_images?: string[];
-    };
-
-    if (!payload.prompt)
-      throw new Error(`Job ${jobId} has no prompt in payload`);
-
-    const createdBy: string | null = jobRow.created_by_client_id ?? null;
-    const instanceId: string = jobRow.instance_id;
-
-    // BYOK-only：生成任务必须携带供应商实例（内置目录/遗留 env 注册已退役）。
-    const model = payload.model;
-    if (!payload.provider_instance_id || !model) {
-      const wrapped = new Error(
-        "生成任务缺少 provider_instance_id 或 model（请先在设置 → 供应商添加实例后再发起生成）",
-      );
-      (wrapped as Error & { code?: string }).code = "invalid_input";
-      throw wrapped;
-    }
-    const instanceProvider = await resolveInstanceImageProviderFromPayload(
+  async (jobId, _message, ctx: ExecutorContext) => {
+    const job = await ctx.jobService.getJobForWorker(jobId);
+    await ctx.generationTargets.resolve(job);
+    const execution = readJobExecution(job);
+    if (execution.generated || execution.stored || execution.outputs?.length)
+      return completeMediaJob(job, undefined, ctx);
+    const payload = job.payload as ImageJobPayload;
+    if (
+      typeof payload.prompt !== "string" ||
+      !payload.model ||
+      !payload.provider_instance_id
+    )
+      throw jobError("invalid_input", "请先选择供应商和图片模型。");
+    const instance = await resolveInstanceImageProviderFromPayload(
       payload.provider_instance_id,
       ctx,
-      // 自定义头（§4.8）的会话占位符按本条 job 的会话取值
       {
-        ...(jobRow.session_id ? { sessionId: jobRow.session_id } : {}),
-        ...(jobRow.thread_id ? { threadId: jobRow.thread_id } : {}),
+        ...(job.session_id ? { sessionId: job.session_id } : {}),
+        ...(job.thread_id ? { threadId: job.thread_id } : {}),
       },
+      payload.model,
     );
-    if (!instanceProvider) {
-      const wrapped = new Error(
-        `供应商实例 ${payload.provider_instance_id} 无法解析为图像适配器`,
-      );
-      (wrapped as Error & { code?: string }).code = "invalid_input";
-      throw wrapped;
-    }
-    const providerName = instanceProvider.name;
-
-    // Renew VT every 60s (half of the 120s image queue VT) to prevent
-    // the message from becoming visible while we are still processing.
-    const IMAGE_VT_SECONDS = 120;
-    const heartbeatTimer = setInterval(() => {
-      ctx.renewVt(IMAGE_VT_SECONDS);
-    }, 60_000);
-
-    // Log input image format for debugging the data-URI-passthrough pipeline
-    if (payload.input_images?.length) {
-      const formats = payload.input_images.map((img) =>
-        img.startsWith("data:") ? "data-uri" : "url",
-      );
-      console.log(
-        `${tag} input_images formats: [${formats.join(", ")}] (${formats.length} total)`,
-      );
-    }
-
-    try {
-      // Generate image via the registered provider
-      lap(`${providerName}_call_start`);
-      let generated: GeneratedImage;
-      try {
-        lap("instance_provider_call");
-        generated = await instanceProvider.generate({
-          prompt: payload.prompt,
-          model,
-          ...(payload.aspect_ratio !== undefined
-            ? { aspectRatio: payload.aspect_ratio }
-            : {}),
-          ...(payload.input_images?.length
-            ? { inputImages: payload.input_images }
-            : {}),
-        });
-      } catch (genError) {
-        const detail =
-          genError instanceof Error ? genError.message : String(genError);
-        const wrapped = new Error(
-          `Image generation failed for model ${model}: ${detail}`,
-        );
-        (wrapped as Error & { code?: string }).code =
-          (genError as { code?: string })?.code ?? "executor_error";
-        throw wrapped;
-      }
-      lap(`${providerName}_call_done`);
-
-      // 用量落账（DEC-6 直连生成链路）：图像 provider 不报 token，记 0 留痕不留盲区
-      if (instanceId) {
-        ctx.usageService
-          ?.record({
-            instanceId,
-            ...(createdBy ? { accessClientId: createdBy } : {}),
-            provider: instanceProvider ? "instance" : providerName,
-            model,
-            capability: "image",
-            ...(payload.provider_instance_id
-              ? { providerInstanceId: payload.provider_instance_id }
-              : {}),
-            jobId,
-          })
-          .catch(() => {});
-      }
-
-      // Download the generated image from the provider CDN
-      const response = await fetch(generated.url);
-      if (!response.ok) {
-        throw new Error(
-          `Failed to download generated image from ${model}: ${response.status} ${response.statusText}`,
-        );
-      }
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer: Buffer = Buffer.from(arrayBuffer);
-      lap("image_download_done");
-
-      const mimeType = generated.mimeType ?? "image/png";
-      const extension =
-        mimeType === "image/jpeg"
-          ? "jpg"
-          : mimeType === "image/webp"
-            ? "webp"
-            : "png";
-      const stored = await publishGeneratedFile(
-        jobRow,
-        buffer,
-        mimeType,
-        extension,
-        ctx,
-      );
-      const assetId = stored.assetId;
-      const objectPath = stored.objectPath;
-      const resultUrl = stored.url;
-      lap("total");
-      return {
-        asset_id: assetId,
-        signed_url: resultUrl,
-        object_path: objectPath,
-        width: generated.width,
-        height: generated.height,
-        mime_type: generated.mimeType ?? "image/png",
-      };
-    } finally {
-      clearInterval(heartbeatTimer);
-    }
+    if (!instance) throw jobError("invalid_input", "图片供应商不可用。");
+    return completeMediaJob(
+      job,
+      await generateImage(job, payload, instance, ctx),
+      ctx,
+    );
   },
 );

@@ -230,11 +230,12 @@ export function createUsageService(options: {
           ...(entry.costUsd != null ? { costUsd: entry.costUsd } : {}),
         });
       } catch (error) {
-        // 计量失败不阻断主链路（「有剑不用」：usage 是旁路观测，不是主链路）
+        // 媒体Job由持久检查点续写；不能把数据库写入失败确认成已记账。
         console.warn(
           "[usage] failed to record usage:",
           error instanceof Error ? error.message : error,
         );
+        if (entry.jobId) throw error;
       }
     },
 

@@ -9,12 +9,14 @@ import {
   wsServerMessageSchema,
 } from "@kenfutwork/shared";
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createCodeTerminalService } from "../features/code-terminal/service.js";
+import type { CodeUiService } from "../features/code-ui/service.js";
 import { createExecutionScopes } from "../features/execution/scope-service.js";
 import { createLocalAccessFixture } from "../features/local-access/test-fixture.js";
 import type { LocalAccessRequest } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
 import { createProcessSandbox } from "../features/process-sandbox/service.js";
 
 import { CanvasEventBuffer, flowEventScopeKey } from "./event-buffer.js";
@@ -57,8 +59,12 @@ async function makeStubs() {
           };
         }
         if (prop === "remove") {
-          return (connectionId: string) => {
-            sockets.delete(connectionId);
+          return (
+            connectionId: string,
+            expectedSocket?: { readyState: number; send: (d: string) => void },
+          ) => {
+            if (!expectedSocket || sockets.get(connectionId) === expectedSocket)
+              sockets.delete(connectionId);
           };
         }
         if (prop === "sendTo") {
@@ -75,7 +81,7 @@ async function makeStubs() {
   );
   const flowGate = { generation: 1, draining: false };
   const agentRuns = {
-    createRun: () => ({ runId: "run-1" }),
+    createRun: vi.fn(() => ({ runId: "run-1" })),
     cancelRun: () => true,
     // eslint-disable-next-line require-yield
     streamRun: async function* () {},
@@ -100,29 +106,30 @@ async function makeStubs() {
     captureRoot: join(workDirState.dir, "capture"),
     network: { allowedDomains: [], deniedDomains: [] },
   });
-  const terminals = createCodeTerminalService({
-    scopes: createExecutionScopes({
-      localInstance,
-      repository: {
-        load: async () => {
-          if (workDirState.deny) throw new Error("Task不属于当前实例。");
-          return {
-            preset: "code",
-            scope: {
-              instanceId,
-              projectId: "00000000-0000-4000-8000-000000000002",
-              taskId,
-              generation: 1,
-              rootDirectory: realpathSync(workDirState.dir),
-              additionalDirectories: [],
-              sandboxMode: "workspace-write" as const,
-            },
-            state: "ready",
-            branchGeneration: 1,
-          };
-        },
+  const executionScopes = createExecutionScopes({
+    localInstance,
+    repository: {
+      load: async () => {
+        if (workDirState.deny) throw new Error("Task不属于当前实例。");
+        return {
+          preset: "code",
+          scope: {
+            instanceId,
+            projectId: "00000000-0000-4000-8000-000000000002",
+            taskId,
+            generation: 1,
+            rootDirectory: realpathSync(workDirState.dir),
+            additionalDirectories: [],
+            sandboxMode: "workspace-write" as const,
+          },
+          state: "ready",
+          branchGeneration: 1,
+        };
       },
-    }),
+    },
+  });
+  const terminals = createCodeTerminalService({
+    scopes: executionScopes,
     sandbox,
     localInstance,
     settings: {
@@ -136,6 +143,26 @@ async function makeStubs() {
   return {
     connectionManager,
     agentRuns,
+    executionScopes,
+    codeUi: {
+      admitExternalRun: vi.fn(
+        async (
+          ...[_actor, handle, _inputId, _text, request]: Parameters<
+            CodeUiService["admitExternalRun"]
+          >
+        ) => ({
+          runId: "run-1",
+          sessionId: handle.describe().taskId,
+          conversationId: request?.conversationId ?? handle.describe().taskId,
+          status: "accepted" as const,
+          publish: async () => {},
+        }),
+      ),
+      cancelExternalRun: vi.fn(async (_actor: LocalActor, runId: string) => ({
+        runId,
+        status: "canceled" as const,
+      })),
+    },
     localAccess,
     authRequests,
     access,
@@ -161,6 +188,8 @@ async function startServer() {
     localAccess: stubs.localAccess,
     codeTerminal: stubs.terminals,
     localInstance: stubs.localInstance,
+    executionScopes: stubs.executionScopes,
+    codeUi: stubs.codeUi,
     eventBuffer: stubs.eventBuffer,
     flowProjectControl: {
       snapshot: async (_actor, projectId) => ({
@@ -196,7 +225,7 @@ async function sendImmediatelyOnOpen(
   headers: LocalAccessRequest["headers"],
 ): Promise<{ got: string | null }> {
   const client = new WebSocket(
-    `ws://127.0.0.1:${port}/api/ws?connectionId=c-${Date.now()}`,
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-${randomUUID()}`,
     { headers },
   );
   const got = await new Promise<string | null>((resolve) => {
@@ -226,7 +255,7 @@ async function collectMessages(
   count: number,
 ): Promise<string[]> {
   const client = new WebSocket(
-    `ws://127.0.0.1:${port}/api/ws?connectionId=c-flow-${Date.now()}`,
+    `ws://127.0.0.1:${port}/api/ws?connectionId=c-flow-${randomUUID()}`,
     { headers },
   );
   const collected = await new Promise<string[]>((resolve) => {
@@ -374,7 +403,7 @@ describe("WS 早期消息不丢失（回归）", () => {
   });
 
   it("open 后立即发送的合法 agent.run 会被受理（出现 command.ack 或失败事件）", async () => {
-    const { app, port, headers } = await startServer();
+    const { app, port, headers, stubs } = await startServer();
     try {
       const { got } = await sendImmediatelyOnOpen(
         port,
@@ -382,8 +411,9 @@ describe("WS 早期消息不丢失（回归）", () => {
           type: "command",
           action: "agent.run",
           payload: {
-            sessionId: "s-1",
-            conversationId: "c-1",
+            sessionId: stubs.taskId,
+            taskId: stubs.taskId,
+            conversationId: stubs.taskId,
             prompt: "hi",
           },
         }),
@@ -401,23 +431,32 @@ describe("WS 早期消息不丢失（回归）", () => {
   });
 
   it("agent.run 的 started 日志只报长度，不带 prompt 原文", async () => {
-    const { app, port, headers } = await startServer();
+    const { app, port, headers, stubs } = await startServer();
     const prompt = "口令-不要进日志";
-    const sessionId = `s-log-${randomUUID()}`;
+    const sessionId = stubs.taskId;
     try {
-      await sendImmediatelyOnOpen(
+      const { got } = await sendImmediatelyOnOpen(
         port,
         JSON.stringify({
           type: "command",
           action: "agent.run",
           payload: {
             sessionId,
-            conversationId: "c-1",
+            taskId: sessionId,
+            conversationId: sessionId,
             prompt,
           },
         }),
         headers,
       );
+      if (got === null) throw new Error("未收到共享Task运行的WS回执");
+      expect(wsServerMessageSchema.parse(JSON.parse(got))).toMatchObject({
+        type: "command.ack",
+        action: "agent.run",
+        payload: { sessionId, status: "accepted" },
+      });
+      expect(stubs.codeUi.admitExternalRun).toHaveBeenCalledTimes(1);
+      expect(stubs.agentRuns.createRun).not.toHaveBeenCalled();
       // logger 的结构化面（JSONL 落盘）才是「日志会不会带上用户内容」的判据；
       // 路径与 logger.ts 的落盘口径一致（未设 KENFUTWORK_DATA_DIR 时归 apps/server/logs）。
       const file = join(
@@ -440,9 +479,10 @@ describe("WS 早期消息不丢失（回归）", () => {
           (entry) =>
             entry?.scope === "agent.run" &&
             entry?.event === "started" &&
+            entry?.instanceId === stubs.access.instanceId &&
             entry?.sessionId === sessionId,
         );
-      expect(started.length).toBeGreaterThan(0);
+      expect(started).toHaveLength(1);
       const entry = started[started.length - 1] as Record<string, unknown>;
       expect(entry.prompt).toBeUndefined();
       expect(entry.promptChars).toBe(prompt.length);
@@ -796,7 +836,7 @@ it("WS correlated admission rejection preserves packet id and action instead of 
     await app.close();
   }
 });
-it("task.resume without a configured real host returns its exact correlated configuration failure", async () => {
+it("退役task.resume返回关联的共享会话连接提示", async () => {
   const { app, port, headers } = await startServer();
   try {
     const { got } = await sendImmediatelyOnOpen(
@@ -814,14 +854,14 @@ it("task.resume without a configured real host returns its exact correlated conf
       type: "error",
       requestId: "resume-request",
       action: "task.resume",
-      code: "design_host_unavailable",
+      code: "shared_conversation_required",
     });
   } finally {
     await app.close();
   }
 });
 
-it("canvas.resume, flow.resume and legacy Code cancel return the original command requestId", async () => {
+it("画布/Flow续传及共享取消保留原命令requestId", async () => {
   const { app, port, headers } = await startServer();
   try {
     for (const [action, payload] of [

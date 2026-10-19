@@ -74,6 +74,28 @@ export function createCanvasSaveSession(initial: {
   let blockedBy: unknown;
   let queue: Promise<void> = Promise.resolve();
   let activeSaves = 0;
+  const operations = new Set<Promise<unknown>>();
+  const remoteWindows = new Set<symbol>();
+  let remoteSettled: Promise<void> | null = null;
+  let finishRemote: (() => void) | null = null;
+
+  /** 窗口内的新保存等待接纳；已发送的保存仍先完成，不能与等待中的保存互锁。 */
+  const beginRemoteSnapshot = () => {
+    const token = Symbol();
+    remoteWindows.add(token);
+    if (!remoteSettled) {
+      remoteSettled = new Promise<void>((resolve) => {
+        finishRemote = resolve;
+      });
+    }
+    return () => {
+      if (!remoteWindows.delete(token) || remoteWindows.size > 0) return;
+      const finish = finishRemote;
+      remoteSettled = null;
+      finishRemote = null;
+      finish?.();
+    };
+  };
 
   const blockConflict = (
     error: Error & { code: "canvas_revision_conflict" },
@@ -85,23 +107,26 @@ export function createCanvasSaveSession(initial: {
   };
 
   const save = (
-    content: CanvasContent,
+    content: CanvasContent | (() => CanvasContent),
     send: CanvasSaveSender,
     onConflict?: (error: Error) => void,
   ): Promise<CanvasSaveResponse> => {
+    if (remoteSettled)
+      return remoteSettled.then(() => save(content, send, onConflict));
     activeSaves++;
     const operation = queue.then(async () => {
       if (blockedBy) throw blockedBy;
       try {
+        const snapshot = typeof content === "function" ? content() : content;
         const result = await send(
-          serializeCanvasSaveContent(content, fileReferences, knownFiles),
+          serializeCanvasSaveContent(snapshot, fileReferences, knownFiles),
           revision,
         );
         revision = result.revision;
         fileReferences = { ...fileReferences, ...result.fileReferences };
         knownFiles = {
           ...knownFiles,
-          ...content.files,
+          ...snapshot.files,
         };
         for (const [fileId, storageRef] of Object.entries(
           result.fileReferences,
@@ -117,12 +142,15 @@ export function createCanvasSaveSession(initial: {
         throw error;
       }
     });
+    operations.add(operation);
     queue = operation.then(
       () => {
         activeSaves--;
+        operations.delete(operation);
       },
       () => {
         activeSaves--;
+        operations.delete(operation);
       },
     );
     return operation;
@@ -133,11 +161,11 @@ export function createCanvasSaveSession(initial: {
     content: CanvasContent,
     send: CanvasSaveSender,
     onConflict?: (error: Error) => void,
-  ): void => {
-    if (blockedBy) return;
+  ): boolean => {
+    if (blockedBy || remoteSettled) return false;
     const expectedRevision = revision;
     activeSaves++;
-    void send(
+    const operation = send(
       serializeCanvasSaveContent(content, fileReferences, knownFiles),
       expectedRevision,
     )
@@ -159,7 +187,10 @@ export function createCanvasSaveSession(initial: {
       })
       .finally(() => {
         activeSaves--;
+        operations.delete(operation);
       });
+    operations.add(operation);
+    return true;
   };
 
   const acceptRemoteSnapshot = (snapshot: {
@@ -181,7 +212,14 @@ export function createCanvasSaveSession(initial: {
     save,
     saveKeepalive,
     acceptRemoteSnapshot,
+    beginRemoteSnapshot,
+    async waitForIdle() {
+      await Promise.allSettled([...operations]);
+    },
     conflict,
+    get isAcceptingRemote() {
+      return remoteSettled !== null;
+    },
     get isIdle() {
       return activeSaves === 0;
     },

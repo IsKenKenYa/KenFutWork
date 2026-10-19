@@ -2,6 +2,11 @@ import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ServiceChannels } from "../../../packages/zcode-shared/dist/channels.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
+import {
+  setSurfaceApiBase,
+  surfaceJson,
+  surfaceRequest,
+} from "../src/components/workbench/zcode/host/surfaceApi";
 import { codeHostNotificationResponse } from "./setup/code-host-http";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -24,6 +29,71 @@ function clientWith(result: unknown = { content: "read" }) {
   };
 }
 describe("Code human viewer channel", () => {
+  it("文档通知独立于Task订阅，新增与删除传递真实项目并拒绝坏帧", async () => {
+    const changed = vi.fn();
+    const deleted = vi.fn();
+    window.addEventListener("kenfutwork:document-updated", changed);
+    window.addEventListener("kenfutwork:document-deleted", deleted);
+    const document = {
+      type: "canvas.document.updated",
+      projectId: "8e1be764-638b-4a7a-9692-37de1222a21d",
+      canvasId: "e031c6d7-5a9b-4b14-8f4b-3bef9019f96a",
+      revision: "a".repeat(64),
+      deleted: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, options: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (const frame of [
+              {
+                event: "ready",
+                hello: { connectionId: "document-notifications" },
+              },
+              { event: "canvasDocumentUpdated", data: document },
+              {
+                event: "canvasDocumentUpdated",
+                data: { ...document, deleted: true },
+              },
+              {
+                event: "canvasDocumentUpdated",
+                data: { ...document, projectId: "bad" },
+              },
+            ])
+              controller.enqueue(
+                new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`),
+              );
+            options.signal?.addEventListener(
+              "abort",
+              () => controller.close(),
+              { once: true },
+            );
+          },
+        });
+        return new Response(body);
+      }),
+    );
+    const client = new CodeHttpChannelClient({ apiBase: "http://host.test" });
+    try {
+      await client.connect();
+      await vi.waitFor(() => expect(deleted).toHaveBeenCalledOnce());
+      expect(changed).toHaveBeenCalledOnce();
+      expect(
+        (changed.mock.calls[0]?.[0] as CustomEvent | undefined)?.detail,
+      ).toEqual(document);
+      expect(
+        (deleted.mock.calls[0]?.[0] as CustomEvent | undefined)?.detail,
+      ).toEqual({
+        ...document,
+        deleted: true,
+      });
+    } finally {
+      client.dispose();
+      window.removeEventListener("kenfutwork:document-updated", changed);
+      window.removeEventListener("kenfutwork:document-deleted", deleted);
+    }
+  });
   it("通知连接换代把生命周期送达各自的工作域监听，不能被路由过滤掉", async () => {
     let disconnect!: () => void;
     let connections = 0;
@@ -494,12 +564,16 @@ describe("Code human viewer channel", () => {
       additionalDirectories: [],
     };
     const opened = clientWith(workspace);
-    expect(await opened.client.openWorkspace("/alias")).toEqual(workspace);
+    expect(
+      await opened.client.openWorkspace("/alias", workspace.projectId),
+    ).toEqual(workspace);
     expect(opened.client.projectForPath("/canonical")).toEqual(workspace);
     expect(opened.requests[0]).toMatchObject({
       service: "workspace",
       method: "open",
-      args: [{ path: "/alias" }],
+      args: [
+        { path: "/alias", projectId: workspace.projectId, preset: "code" },
+      ],
     });
     opened.client.dispose();
     const bytes = clientWith({ encoding: "base64", data: "AP+A" });
@@ -515,6 +589,32 @@ describe("Code human viewer channel", () => {
       }),
     ).toEqual(new Uint8Array([0, 255, 128]));
     bytes.client.dispose();
+  });
+  it("已被更新导航取代的目录回执不选择旧项目", async () => {
+    const workspace = {
+      projectId: "old-project",
+      name: "旧项目",
+      path: "/same",
+      additionalDirectories: [],
+    };
+    const opened = clientWith(workspace);
+    const select = vi.spyOn(opened.client.workspaces, "selectProject");
+    try {
+      expect(
+        await opened.client.openWorkspace(
+          "/same",
+          workspace.projectId,
+          "design",
+          () => false,
+        ),
+      ).toEqual(workspace);
+      expect(select).not.toHaveBeenCalled();
+      expect(
+        opened.client.projectForPath("/same", '["old-project","/same"]'),
+      ).toEqual(workspace);
+    } finally {
+      opened.client.dispose();
+    }
   });
   it("共享目录新Task按选择Project UUID，既有Task RPC按其真实Project/固定目录", async () => {
     const { client, requests } = clientWith([]);
@@ -634,5 +734,65 @@ describe("Code 宿主语音转写通道", () => {
     } finally {
       client.dispose();
     }
+  });
+});
+
+describe("Code 宿主数据面请求", () => {
+  afterEach(() => setSurfaceApiBase(""));
+
+  it("204 成功请求保留无正文响应，不强制解析 JSON", async () => {
+    setSurfaceApiBase("http://host.test/");
+    const response = new Response(null, { status: 204 });
+    const fetchRequest = vi.fn(async () => response);
+    vi.stubGlobal("fetch", fetchRequest);
+    const input = {
+      method: "PATCH",
+      body: JSON.stringify({ enabledModes: ["code", "design"] }),
+    };
+
+    await expect(surfaceRequest("/api/projects/project", input)).resolves.toBe(
+      response,
+    );
+    expect(response.bodyUsed).toBe(false);
+    expect(fetchRequest).toHaveBeenCalledWith(
+      "http://host.test/api/projects/project",
+      { credentials: "include", ...input },
+    );
+  });
+
+  it("JSON 读取继续解析成功响应", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ name: "项目" }))),
+    );
+
+    await expect(surfaceJson("/api/projects/project")).resolves.toEqual({
+      name: "项目",
+    });
+  });
+
+  it.each([
+    ["无正文请求", surfaceRequest],
+    ["JSON 读取", surfaceJson],
+  ])("%s 保留服务端拒绝原因并拒绝非 JSON 错误", async (_name, request) => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: { message: "项目已关闭，请重新打开" } }),
+            { status: 409 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response("upstream failure", { status: 502 }),
+        ),
+    );
+
+    await expect(request("/api/projects/project")).rejects.toThrow(
+      "项目已关闭，请重新打开",
+    );
+    await expect(request("/api/projects/project")).rejects.toThrow("HTTP 502");
   });
 });

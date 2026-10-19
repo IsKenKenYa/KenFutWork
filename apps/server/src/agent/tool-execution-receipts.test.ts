@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  OwnedToolInterruption,
+  TOOL_INTERRUPTION_SUMMARY,
+} from "../kernel/owned-tool-interruption.js";
 import type { ProductToolEvent } from "./tool-execution-receipts.js";
 import { createToolExecutionReceipts } from "./tool-execution-receipts.js";
 
@@ -29,6 +33,66 @@ function makeReceipts(projected: Event[] = []) {
 }
 
 describe("工具执行回执门：目录层自带 SDK 工具的豁免", () => {
+  it.each(["error", "cancelled"] as const)(
+    "已注册工具在目录或中间层%s时发布可信拒绝事实，重复证明不重复发布",
+    async (status) => {
+      const { receipts, published } = makeReceipts();
+      const started = event({
+        type: "tool.started",
+        toolName: "Write",
+        toolCallId: "call_registered_denied",
+        input: { file_path: "forbidden.txt", content: "must not write" },
+      });
+      const completed = event({
+        type: "tool.completed",
+        toolName: "Write",
+        toolCallId: "call_registered_denied",
+        status,
+        outputSummary: "当前规划状态拒绝写入",
+      });
+      const proof = {
+        toolName: "Write",
+        toolCallId: "call_registered_denied",
+        registered: true,
+        events: [started, completed],
+      };
+
+      await receipts.observeNative(proof);
+      expect(published).toEqual([started, completed]);
+      expect(receipts.gate.drain()).toEqual([started, completed]);
+      expect(receipts.gate.isExecuting()).toBe(false);
+
+      await receipts.observeNative(proof);
+      expect(published).toEqual([started, completed]);
+      expect(receipts.gate.drain()).toEqual([]);
+    },
+  );
+
+  it("已注册工具只有native成功证明而没有真实内核回执，仍拒绝并且不发布成功", async () => {
+    const { receipts, published } = makeReceipts();
+    await expect(
+      receipts.observeNative({
+        toolName: "Write",
+        toolCallId: "call_unproven_success",
+        registered: true,
+        events: [
+          event({
+            type: "tool.started",
+            toolName: "Write",
+            toolCallId: "call_unproven_success",
+          }),
+          event({
+            type: "tool.completed",
+            toolName: "Write",
+            toolCallId: "call_unproven_success",
+          }),
+        ],
+      }),
+    ).rejects.toThrow("工具成功事件缺少真实执行结果。");
+    expect(published).toEqual([]);
+    expect(receipts.gate.isExecuting()).toBe(false);
+  });
+
   it("已观察的 SDK 工具（registered:false）成功完成事件不被内核回执校验误杀，且完成事实仍会下发", async () => {
     const { receipts, published } = makeReceipts();
     const started = event({
@@ -134,5 +198,95 @@ describe("工具执行回执门：目录层自带 SDK 工具的豁免", () => {
       status: "error",
     } as Partial<Event> & Pick<Event, "type" | "toolName" | "toolCallId">);
     expect(() => receipts.gate.verify(failed)).not.toThrow();
+  });
+
+  it.each(["success", "error"] as const)(
+    "真实%s先完成，私有native迟到中断只去重且不放宽provider证明门",
+    async (status) => {
+      const actual = event({
+        type: "tool.completed",
+        toolName: "Write",
+        toolCallId: "call_first_terminal",
+        status,
+        outputText: "先到的真实结论",
+      });
+      const { receipts, published } = makeReceipts([actual]);
+      await receipts.observe({
+        runId: RUN_ID,
+        toolCallId: actual.toolCallId,
+      } as unknown as Parameters<typeof receipts.observe>[0]);
+      const cancelled = event({
+        type: "tool.completed",
+        toolName: "Write",
+        toolCallId: actual.toolCallId,
+        status: "cancelled",
+        outputSummary: TOOL_INTERRUPTION_SUMMARY,
+      });
+      await receipts.observeNative({
+        toolName: "Write",
+        toolCallId: actual.toolCallId,
+        registered: true,
+        interruption: new OwnedToolInterruption(),
+        events: [cancelled],
+      });
+      expect(published).toEqual([actual]);
+      expect(receipts.gate.drain()).toEqual([actual]);
+      expect(() => receipts.gate.verify(cancelled)).toThrow(
+        "工具事件与真实执行身份或结果状态不一致。",
+      );
+    },
+  );
+
+  it.each([
+    { label: "缺少私有来源", interruption: undefined },
+    {
+      label: "仅同名Error",
+      interruption: Object.assign(new Error(TOOL_INTERRUPTION_SUMMARY), {
+        name: "OwnedToolInterruption",
+      }),
+    },
+    { label: "错误证明调用身份", header: { toolCallId: "another_call" } },
+    { label: "错误证明工具名", header: { toolName: "another_tool" } },
+    { label: "错误Run", change: { runId: "another_run" } },
+    { label: "错误代理归因", change: { agentName: "another_agent" } },
+    { label: "夹带业务输出", change: { output: { success: true } } },
+    { label: "夹带结果文本", change: { outputText: "伪造结果" } },
+    { label: "夹带产物", change: { artifacts: [] } },
+    { label: "改写中断摘要", change: { outputSummary: "伪造摘要" } },
+  ])("迟到取消$label仍保持严格结果验证", async (candidate) => {
+    const actual = event({
+      type: "tool.completed",
+      toolName: "Write",
+      toolCallId: "call_strict_terminal",
+      outputText: "先到的真实结果",
+    });
+    const { receipts, published } = makeReceipts([actual]);
+    await receipts.observe({
+      runId: RUN_ID,
+      toolCallId: actual.toolCallId,
+    } as unknown as Parameters<typeof receipts.observe>[0]);
+    const cancelled = event({
+      type: "tool.completed",
+      toolName: "Write",
+      toolCallId: actual.toolCallId,
+      status: "cancelled",
+      outputSummary: TOOL_INTERRUPTION_SUMMARY,
+      ...candidate.change,
+    });
+    await expect(
+      receipts.observeNative({
+        toolName: "Write",
+        toolCallId: actual.toolCallId,
+        registered: true,
+        ...("interruption" in candidate
+          ? candidate.interruption
+            ? { interruption: candidate.interruption }
+            : {}
+          : { interruption: new OwnedToolInterruption() }),
+        ...candidate.header,
+        events: [cancelled],
+      }),
+    ).rejects.toThrow("工具事件与真实执行身份或结果状态不一致。");
+    expect(published).toEqual([actual]);
   });
 });

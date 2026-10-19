@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -6,10 +7,12 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import * as notifications from "@zui/components/ui/toast.js";
 import { afterEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
 const requestComposerTextInsert = vi.fn();
+const toast = vi.spyOn(notifications, "toast");
 
 vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
@@ -28,8 +31,15 @@ const { BrowserPane } = await import(
 
 const user = userEvent.setup();
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // 通知自建根不属于Testing Library；按公开句柄关闭真实通知及其计时器。
+  await act(async () => {
+    for (const result of toast.mock.results) {
+      if (result.type === "return") notifications.dismissToast(result.value);
+    }
+  });
+  toast.mockClear();
   surfaceJson.mockReset();
   requestComposerTextInsert.mockReset();
 });

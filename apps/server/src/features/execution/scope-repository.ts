@@ -5,7 +5,6 @@ import {
   type SandboxMode,
 } from "@kenfutwork/shared";
 import type { PersistenceService, SqlRow } from "../persistence/types.js";
-import { loadOpenDesignProject } from "./design-project-authority.js";
 
 export type ScopeState = "ready" | "revoking" | "failed";
 export type StoredExecutionScope = {
@@ -18,6 +17,13 @@ export type TaskScopePatch = {
   additionalDirectories?: AdditionalDirectory[] | undefined;
   sandboxMode?: SandboxMode | undefined;
 };
+/** 仅新输入的权限效果使用；与原Task/Run/输入身份同一CAS校验。 */
+export type TaskScopeInputFence = {
+  scopeGeneration: number;
+  branchGeneration: number;
+  runId: string;
+  sourceCommandId: string;
+};
 export interface ScopeRepository {
   isProjectOpen?(scope: CodeExecutionScope): Promise<boolean>;
   load(
@@ -27,6 +33,7 @@ export interface ScopeRepository {
   beginUpdate?(
     scope: CodeExecutionScope,
     patch: TaskScopePatch,
+    inputFence?: TaskScopeInputFence,
   ): Promise<StoredExecutionScope | null>;
   finishUpdate?(
     scope: CodeExecutionScope,
@@ -78,68 +85,27 @@ export function createScopeRepository(
            join public.projects p on p.id = s.project_id and p.instance_id = s.instance_id
            join public.chat_sessions c on c.id = s.chat_session_id and c.project_id = p.id
           where s.instance_id = :instance and s.id = $1
-            and c.instance_id = :instance and c.mode = 'code' and p.kind = 'code'
+            and c.instance_id = :instance and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[]
             and p.archived_at is null and s.deleted_at is null and s.archived = false
             and s.parent_session_id is null`,
         [taskId],
       );
-      if (row) return fromRow(row);
-      const mode = await persistence.forInstance(instanceId).queryOne(
-        `select c.mode from public.chat_sessions c join public.projects p on p.id=c.project_id
-          where c.instance_id=:instance and p.instance_id=:instance and c.id=$1
-            and c.mode='design' and p.kind='design' and p.archived_at is null`,
-        [taskId],
-      );
-      if (!mode) return null;
-      const design = await persistence
-        .forInstance(instanceId)
-        .queryOne<ScopeRow>(
-          `select d.*, d.task_id as id from public.design_task_executions d
-          where d.instance_id=:instance and d.task_id=$1`,
-          [taskId],
-        );
-      return design ? fromRow(design, "design") : null;
+      return row ? fromRow(row) : null;
     },
     async isProjectOpen(scope) {
-      const project = await loadOpenDesignProject(
-        persistence.forInstance(scope.instanceId),
-        scope.taskId,
-      );
+      const project = await persistence
+        .forInstance(scope.instanceId)
+        .queryOne<SqlRow & { id: string }>(
+          `select p.id from public.projects p join public.code_ui_sessions s
+           on s.project_id=p.id and s.instance_id=p.instance_id
+         where p.instance_id=:instance and s.id=$1 and p.id=$2
+           and p.archived_at is null and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[]
+           and s.parent_session_id is null and s.deleted_at is null and s.archived=false`,
+          [scope.taskId, scope.projectId],
+        );
       return project?.id === scope.projectId;
     },
-    async beginUpdate(scope, patch) {
-      const current = await this.load(scope.instanceId, scope.taskId);
-      if (current?.preset === "design") {
-        return persistence.transaction(async (tx) => {
-          const sql = tx.forInstance(scope.instanceId);
-          if (
-            (await loadOpenDesignProject(sql, scope.taskId))?.id !==
-            scope.projectId
-          )
-            return null;
-          const row = await sql.queryOne<ScopeRow>(
-            `update public.design_task_executions d set
-             additional_directories=coalesce($3::jsonb,d.additional_directories),
-             sandbox_mode=coalesce($4::text,d.sandbox_mode),
-             scope_generation=scope_generation+1,execution_state='revoking'
-           from public.chat_sessions c, public.projects p
-           where d.instance_id=:instance and c.instance_id=:instance and p.instance_id=:instance
-             and c.id=d.task_id and c.project_id=d.project_id and p.id=d.project_id
-             and c.mode='design' and p.kind='design' and p.archived_at is null
-             and d.task_id=$1 and d.scope_generation=$2 and d.execution_state<>'revoking'
-           returning d.*,d.task_id as id`,
-            [
-              scope.taskId,
-              scope.generation,
-              patch.additionalDirectories === undefined
-                ? null
-                : JSON.stringify(patch.additionalDirectories),
-              patch.sandboxMode ?? null,
-            ],
-          );
-          return row ? fromRow(row, "design") : null;
-        });
-      }
+    async beginUpdate(scope, patch, inputFence) {
       const row = await persistence
         .forInstance(scope.instanceId)
         .queryOne<ScopeRow>(
@@ -149,9 +115,17 @@ export function createScopeRepository(
                 scope_generation = scope_generation + 1, execution_state = 'revoking'
            from public.projects p
           where s.instance_id = :instance and p.instance_id = :instance
-            and p.id = s.project_id and p.kind = 'code' and p.archived_at is null
+            and p.id = s.project_id and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[] and p.archived_at is null
             and s.id = $1 and s.scope_generation = $2 and s.deleted_at is null
             and s.parent_session_id is null and s.execution_state <> 'revoking'
+            and ($5::bigint is null or (
+              s.branch_generation = $5 and s.active_run_id = $6::uuid
+              and s.state->'inputs' @> $7::jsonb
+              and not exists (
+                select 1 from jsonb_array_elements(s.state->'inputs') input
+                where input->>'status' = 'reserved'
+              )
+            ))
           returning s.*`,
           [
             scope.taskId,
@@ -160,31 +134,27 @@ export function createScopeRepository(
               ? null
               : JSON.stringify(patch.additionalDirectories),
             patch.sandboxMode ?? null,
+            inputFence?.branchGeneration ?? null,
+            inputFence?.runId ?? null,
+            inputFence
+              ? JSON.stringify([
+                  {
+                    runId: inputFence.runId,
+                    status: "active",
+                    scopeGeneration: inputFence.scopeGeneration,
+                    branchGeneration: inputFence.branchGeneration,
+                    pendingScopeSelection: patch.sandboxMode,
+                    intent: {
+                      sourceCommandId: inputFence.sourceCommandId,
+                    },
+                  },
+                ])
+              : null,
           ],
         );
       return row ? fromRow(row) : null;
     },
     async finishUpdate(scope, state) {
-      const current = await this.load(scope.instanceId, scope.taskId);
-      if (current?.preset === "design") {
-        return persistence.transaction(async (tx) => {
-          const sql = tx.forInstance(scope.instanceId);
-          if (
-            state === "ready" &&
-            (await loadOpenDesignProject(sql, scope.taskId))?.id !==
-              scope.projectId
-          )
-            return false;
-          return (
-            (await sql.execute(
-              `update public.design_task_executions set execution_state=$3
-            where instance_id=:instance and task_id=$1 and scope_generation=$2
-              and execution_state='revoking'`,
-              [scope.taskId, scope.generation, state],
-            )) === 1
-          );
-        });
-      }
       return (
         (await persistence.forInstance(scope.instanceId).execute(
           `update public.code_ui_sessions set execution_state = $3

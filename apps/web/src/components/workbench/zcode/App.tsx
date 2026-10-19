@@ -1,3 +1,4 @@
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 /* eslint-disable max-lines -- App 当前集中编排 workspace 级状态、导航、Git 派生数据和 shell wiring；已将新增 side pane memory 桥接抽出，剩余拆分需要按 shell 边界单独重构。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -231,6 +232,7 @@ export function App({
     handleOpenGit,
     handleOpenTreemapping,
     handleOpenWhiteboard,
+    handleOpenDocument,
     handleOpenDeveloperTools,
     handleOpenOpenDesign,
     handleOpenTerminalTab,
@@ -259,6 +261,7 @@ export function App({
     handleBrowserNavigationRequestHandled,
     handleBrowserPageMetadataChange,
   } = useAppPanels({
+    projectId: parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId ?? null,
     workspaceAbsPath,
     workspaceIdentity,
     workspaceRemoteSessionId,
@@ -317,8 +320,13 @@ export function App({
       return;
     }
 
-    // 新建任务只会把 activeTaskId 切到 draft，不会触发 side pane 的 workspace 级内存切换。
-    // 因此用 startDraft 递增的版本号统一收起右侧面板，覆盖按钮、菜单、快捷键和远控入口。
+    // 项目文档独立于 Task；新建会话不能收起当前项目的文档或创建入口。
+    const activeTab = sidePaneState?.tabs.find((tab) => tab.id === sidePaneState.activeTabId);
+    const projectId = parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId;
+    if (activeTab?.type === "document" && activeTab.workspaceKey === workspaceKey && activeTab.projectId === projectId)
+      return;
+
+    // startDraft 不切换 workspace 面板内存；只收起 Task 自己的右侧内容。
     const sidePaneTabCount = sidePaneState?.tabs.length ?? 0;
     if (!isSidePaneCollapsed) {
       logger.info(
@@ -332,6 +340,7 @@ export function App({
     setIsSidePaneCollapsed,
     sidePaneState,
     workspaceAbsPath,
+    workspaceIdentity,
     workspaceKey,
   ]);
   const [testMessages, setTestMessages] = useState<TestChatMessage[] | null>(null);
@@ -833,8 +842,17 @@ export function App({
   const [pluginStoreReturnScopeKey, setPluginStoreReturnScopeKey] = useState("user");
   const [pluginStoreOpenVersion, setPluginStoreOpenVersion] = useState(0);
   const handleNavigateToTaskMain = useCallback(() => {
-    setWorkspaceMainView("chat");
-  }, []);
+    // Task 选择、草稿提升与恢复只定位会话；已确认的内容工作方式仍由宿主导航持有。
+    const mode = platform.workbenchNavigation?.getSnapshot().mode;
+    setWorkspaceMainView(mode === "design" || mode === "flow" ? mode : "chat");
+  }, [platform.workbenchNavigation]);
+  const handleWorkspaceMainViewChange = useCallback(
+    (view: WorkspaceMainView) => {
+      if (view === "chat") handleNavigateToTaskMain();
+      else setWorkspaceMainView(view);
+    },
+    [handleNavigateToTaskMain],
+  );
   const { preserveNextSettingsExit } = useWorkspaceMainViewSettingsExit({
     isWorkspaceVisible,
     workspaceMainView,
@@ -1140,7 +1158,7 @@ export function App({
         pluginStoreOpenVersion={pluginStoreOpenVersion}
         openAutomationId={openAutomationId}
         openAutomationTab={openAutomationTab}
-        onWorkspaceMainViewChange={setWorkspaceMainView}
+        onWorkspaceMainViewChange={handleWorkspaceMainViewChange}
         onOpenAutomationConsumed={handleOpenAutomationConsumed}
         handleOpenAutomations={handleOpenAutomations}
         handleOpenPluginStore={handleOpenPluginStoreForScope}
@@ -1254,6 +1272,7 @@ export function App({
         handleOpenBrowserTab={handleOpenBrowserTab}
         handleOpenTreemapping={handleOpenTreemappingIfWritable}
         handleOpenWhiteboard={handleOpenWhiteboard}
+        handleOpenDocument={handleOpenDocument}
         handleOpenDeveloperTools={handleOpenDeveloperTools}
         handleOpenOpenDesign={handleOpenOpenDesign}
         handleOpenTerminalTab={handleOpenTerminalTabIfWritable}

@@ -21,11 +21,15 @@ import type {
   SqlRow,
 } from "../persistence/types.js";
 import { createFlowDirectoryRelink } from "./directory-relink-flow.js";
+import { projectDirectoryLockKey } from "./repository.js";
 
 export class ProjectDirectoryRelinkError extends Error {
   constructor(
     message: string,
     readonly statusCode = 409,
+    readonly code:
+      | "invalid_request"
+      | "project_directory_conflict" = "invalid_request",
   ) {
     super(message);
   }
@@ -44,7 +48,7 @@ export interface ProjectDirectoryRelinkService {
 }
 type Task = SqlRow & {
   task_id: string;
-  kind: "code" | "design";
+  kind: "code";
   root_directory: string;
   scope_generation: number | string;
   branch_generation: number | string;
@@ -96,14 +100,9 @@ async function taskRows(sql: InstanceSqlClient, projectId: string) {
     "select id as task_id,'code' as kind,root_directory,additional_directories,scope_generation,branch_generation,execution_state,active_run_id,state from public.code_ui_sessions where instance_id=:instance and project_id=$1 and parent_session_id is null and deleted_at is null for update",
     [projectId],
   );
-  const design = await sql.query<Task>(
-    "select task_id,'design' as kind,root_directory,additional_directories,scope_generation,branch_generation,execution_state,active_run_id,null as state from public.design_task_executions where instance_id=:instance and project_id=$1 for update",
-    [projectId],
-  );
-  return [...code, ...design].sort((a, b) =>
-    a.task_id.localeCompare(b.task_id),
-  );
+  return code.sort((a, b) => a.task_id.localeCompare(b.task_id));
 }
+
 function checkTasks(
   rows: Task[],
   input: ProjectDirectoryRelinkRequest,
@@ -161,6 +160,55 @@ type RelinkDeps = {
     kind: "code" | "design",
   ): Promise<void>;
 };
+async function acquireDirectoryRelinkLocks(
+  persistence: PersistenceService,
+  instanceId: string,
+  projectId: string,
+  root: string,
+) {
+  const directory = await persistence.acquireSessionLock(
+    projectDirectoryLockKey(instanceId, root),
+  );
+  if (!directory)
+    throw new ProjectDirectoryRelinkError("目录正在关联，请稍后重试。");
+  const project = await persistence
+    .acquireSessionLock(`project-directory-relink:${instanceId}:${projectId}`)
+    .catch(async (error: unknown) => {
+      await directory.release();
+      throw error;
+    });
+  if (!project) {
+    await directory.release();
+    throw conflict();
+  }
+  return {
+    signal: AbortSignal.any([project.signal, directory.signal]),
+    async release() {
+      try {
+        await project.release();
+      } finally {
+        await directory.release();
+      }
+    },
+  };
+}
+async function requireIndependentDirectory(
+  sql: InstanceSqlClient,
+  projectId: string,
+  root: string,
+  choice: ProjectDirectoryRelinkRequest["directoryChoice"],
+) {
+  const existing = await sql.queryOne<{ id: string }>(
+    "select id from public.projects where instance_id=:instance and work_dir=$1 and id<>$2 and archived_at is null limit 1",
+    [root, projectId],
+  );
+  if (existing && choice !== "independent")
+    throw new ProjectDirectoryRelinkError(
+      "该目录已关联项目，请确认共用目录后重新关联。",
+      409,
+      "project_directory_conflict",
+    );
+}
 async function stageTasks(
   sql: InstanceSqlClient,
   deps: RelinkDeps,
@@ -187,55 +235,25 @@ async function stageTasks(
       "项目生成任务未结束，请停止后重新关联。",
     );
   for (const row of rows) {
-    if (row.kind === "code") {
-      await sql.execute(
-        "update public.code_ui_sessions set execution_state='revoking',scope_generation=scope_generation+1,state=$2::jsonb,revision=revision+1 where instance_id=:instance and id=$1",
-        [
-          row.task_id,
-          JSON.stringify(pausedCodeState(row.state, row.task_id, deps.goals)),
-        ],
-      );
-      const foreign = await sql.queryOne<{ count: number | string }>(
-        "select count(*) as count from public.code_ui_sessions where instance_id=:instance and root_session_id=$1 and project_id<>$2 and deleted_at is null",
-        [row.task_id, projectId],
-      );
-      if (Number(foreign?.count ?? 0)) throw conflict();
-      row.stagedChildren = await sql.query<{
-        id: string;
-        scope_generation: number | string;
-      }>(
-        "update public.code_ui_sessions set execution_state='revoking',scope_generation=$3 where instance_id=:instance and root_session_id=$1 and id<>$1 and project_id=$2 and deleted_at is null returning id,scope_generation",
-        [row.task_id, projectId, Number(row.scope_generation) + 1],
-      );
-    } else {
-      await sql.execute(
-        "update public.design_task_executions set execution_state='revoking',scope_generation=scope_generation+1 where instance_id=:instance and task_id=$1",
-        [row.task_id],
-      );
-      await sql.execute(
-        "update public.design_task_inputs set status='canceled',request=null where instance_id=:instance and task_id=$1 and status='queued'",
-        [row.task_id],
-      );
-      const goal = await sql.queryOne<{ state: GoalRecord }>(
-        "select state from public.design_task_goals where instance_id=:instance and task_id=$1 for update",
-        [row.task_id],
-      );
-      if (goal)
-        await sql.execute(
-          "update public.design_task_goals set state=$2::jsonb,observed_at=now() where instance_id=:instance and task_id=$1",
-          [
-            row.task_id,
-            JSON.stringify(
-              deps.goals.pause(goal.state, {
-                goalId: goal.state.goalId,
-                revision: goal.state.revision,
-                reason: "project.directoryRelink",
-                at: Date.now(),
-              }),
-            ),
-          ],
-        );
-    }
+    await sql.execute(
+      "update public.code_ui_sessions set execution_state='revoking',scope_generation=scope_generation+1,state=$2::jsonb,revision=revision+1 where instance_id=:instance and id=$1",
+      [
+        row.task_id,
+        JSON.stringify(pausedCodeState(row.state, row.task_id, deps.goals)),
+      ],
+    );
+    const foreign = await sql.queryOne<{ count: number | string }>(
+      "select count(*) as count from public.code_ui_sessions where instance_id=:instance and root_session_id=$1 and project_id<>$2 and deleted_at is null",
+      [row.task_id, projectId],
+    );
+    if (Number(foreign?.count ?? 0)) throw conflict();
+    row.stagedChildren = await sql.query<{
+      id: string;
+      scope_generation: number | string;
+    }>(
+      "update public.code_ui_sessions set execution_state='revoking',scope_generation=$3 where instance_id=:instance and root_session_id=$1 and id<>$1 and project_id=$2 and deleted_at is null returning id,scope_generation",
+      [row.task_id, projectId, Number(row.scope_generation) + 1],
+    );
   }
   return rows;
 }
@@ -252,87 +270,63 @@ async function publishTaskRoot(
     nextRoot,
   );
   const branch = Number(row.branch_generation) + 1;
-  if (row.kind === "code") {
-    const state = row.state ? structuredClone(row.state) : null;
-    if (state?.goalRecord) {
-      state.goalRecord = goals.rebranch(state.goalRecord, branch, Date.now());
-      syncGoal(state, row.task_id);
-    }
-    const children = await sql.query<{
-      id: string;
-      additional_directories: unknown;
-      root_directory: string;
-      scope_generation: number | string;
-      execution_state: string;
-    }>(
-      "select id,additional_directories,root_directory,scope_generation,execution_state from public.code_ui_sessions where instance_id=:instance and root_session_id=$1 and id<>$1 and project_id=$2 and deleted_at is null for update",
-      [row.task_id, projectId],
-    );
-    const expected = new Map(
-      (row.stagedChildren ?? []).map((child) => [
-        child.id,
-        Number(child.scope_generation),
-      ]),
-    );
-    if (
-      children.length !== expected.size ||
-      children.some(
-        (child) =>
-          expected.get(child.id) !== Number(child.scope_generation) ||
-          child.execution_state !== "revoking" ||
-          child.root_directory !== row.root_directory,
-      )
-    )
-      throw conflict();
-    const roots = await sql.query<{ id: string }>(
-      "update public.code_ui_sessions set root_directory=$2,branch_generation=branch_generation+1,execution_state='ready',state=$3::jsonb,additional_directories=$4::jsonb,revision=revision+1 where instance_id=:instance and id=$1 and deleted_at is null returning id",
-      [
-        row.task_id,
-        nextRoot,
-        JSON.stringify(state),
-        JSON.stringify(additional),
-      ],
-    );
-    const affected = roots.map((root) => root.id);
-    for (const child of children) {
-      const changed = await sql.query<{ id: string }>(
-        "update public.code_ui_sessions set root_directory=$2,branch_generation=branch_generation+1,execution_state='ready',additional_directories=$3::jsonb,revision=revision+1 where instance_id=:instance and id=$1 returning id",
-        [
-          child.id,
-          nextRoot,
-          JSON.stringify(
-            remapGrants(
-              child.additional_directories,
-              row.root_directory,
-              nextRoot,
-            ),
-          ),
-        ],
-      );
-      affected.push(...changed.map((item) => item.id));
-    }
-    if (affected.length !== children.length + 1) throw conflict();
-    return affected;
+  const state = row.state ? structuredClone(row.state) : null;
+  if (state?.goalRecord) {
+    state.goalRecord = goals.rebranch(state.goalRecord, branch, Date.now());
+    syncGoal(state, row.task_id);
   }
-  const changed = await sql.query<{ task_id: string }>(
-    "update public.design_task_executions set root_directory=$2,branch_generation=branch_generation+1,execution_state='ready',additional_directories=$3::jsonb where instance_id=:instance and task_id=$1 returning task_id",
-    [row.task_id, nextRoot, JSON.stringify(additional)],
+  const children = await sql.query<{
+    id: string;
+    additional_directories: unknown;
+    root_directory: string;
+    scope_generation: number | string;
+    execution_state: string;
+  }>(
+    "select id,additional_directories,root_directory,scope_generation,execution_state from public.code_ui_sessions where instance_id=:instance and root_session_id=$1 and id<>$1 and project_id=$2 and deleted_at is null for update",
+    [row.task_id, projectId],
   );
-  if (changed.length !== 1) throw conflict();
-  const goal = await sql.queryOne<{ state: GoalRecord }>(
-    "select state from public.design_task_goals where instance_id=:instance and task_id=$1",
-    [row.task_id],
+  const expected = new Map(
+    (row.stagedChildren ?? []).map((child) => [
+      child.id,
+      Number(child.scope_generation),
+    ]),
   );
-  if (goal)
-    await sql.execute(
-      "update public.design_task_goals set state=$2::jsonb,observed_at=now() where instance_id=:instance and task_id=$1",
+  if (
+    children.length !== expected.size ||
+    children.some(
+      (child) =>
+        expected.get(child.id) !== Number(child.scope_generation) ||
+        child.execution_state !== "revoking" ||
+        child.root_directory !== row.root_directory,
+    )
+  )
+    throw conflict();
+  const roots = await sql.query<{ id: string }>(
+    "update public.code_ui_sessions set root_directory=$2,branch_generation=branch_generation+1,execution_state='ready',state=$3::jsonb,additional_directories=$4::jsonb,revision=revision+1 where instance_id=:instance and id=$1 and deleted_at is null returning id",
+    [row.task_id, nextRoot, JSON.stringify(state), JSON.stringify(additional)],
+  );
+  const affected = roots.map((root) => root.id);
+  for (const child of children) {
+    const changed = await sql.query<{ id: string }>(
+      "update public.code_ui_sessions set root_directory=$2,branch_generation=branch_generation+1,execution_state='ready',additional_directories=$3::jsonb,revision=revision+1 where instance_id=:instance and id=$1 returning id",
       [
-        row.task_id,
-        JSON.stringify(goals.rebranch(goal.state, branch, Date.now())),
+        child.id,
+        nextRoot,
+        JSON.stringify(
+          remapGrants(
+            child.additional_directories,
+            row.root_directory,
+            nextRoot,
+          ),
+        ),
       ],
     );
-  return changed.map((item) => item.task_id);
+    affected.push(...changed.map((item) => item.id));
+  }
+  if (affected.length !== children.length + 1) throw conflict();
+  return affected;
 }
+
 function remapGrants(value: unknown, previousRoot: string, nextRoot: string) {
   if (!Array.isArray(value)) throw conflict();
   return value.map((entry: unknown) => {
@@ -521,14 +515,23 @@ export function createProjectDirectoryRelinkService(
       const nextRoot = await targetRoot(input.nextWorkDir);
       if (deps.localInstance.isDraining())
         throw new ProjectDirectoryRelinkError("实例正在维护，请稍后重试。");
-      const lock = await deps.persistence.acquireSessionLock(
-        `project-directory-relink:${actor.instanceId}:${projectId}`,
+      const lock = await acquireDirectoryRelinkLocks(
+        deps.persistence,
+        actor.instanceId,
+        projectId,
+        nextRoot,
       );
-      if (!lock) throw conflict();
       let rollbackCheckpoints: (() => Promise<void>) | undefined;
       let maintenanceOwned = false;
       let staged: Task[] = [];
       try {
+        lock.signal.throwIfAborted();
+        await requireIndependentDirectory(
+          deps.persistence.forInstance(actor.instanceId),
+          projectId,
+          nextRoot,
+          input.directoryChoice,
+        );
         if (deps.localInstance.isDraining())
           throw new ProjectDirectoryRelinkError("实例正在维护，请稍后重试。");
         maintenanceOwned = true;
@@ -572,15 +575,10 @@ export function createProjectDirectoryRelinkService(
       } catch (error) {
         await rollbackCheckpoints?.();
         for (const task of staged) {
-          const table =
-            task.kind === "code"
-              ? "code_ui_sessions"
-              : "design_task_executions";
-          const key = task.kind === "code" ? "id" : "task_id";
           await deps.persistence
             .forInstance(actor.instanceId)
             .execute(
-              `update public.${table} set execution_state='failed' where instance_id=:instance and ${key}=$1 and scope_generation=$2 and execution_state='revoking'`,
+              "update public.code_ui_sessions set execution_state='failed' where instance_id=:instance and id=$1 and scope_generation=$2 and execution_state='revoking'",
               [task.task_id, Number(task.scope_generation) + 1],
             );
         }

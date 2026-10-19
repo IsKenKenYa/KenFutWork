@@ -52,7 +52,7 @@ export function createInstanceVideoProvider(
       limits: {
         maxDuration: 15,
         maxResolution: "1080p",
-        maxInputImages: 4,
+        maxInputImages: 2,
       },
     })),
     generate: (params) => delegate.generate(params),

@@ -31,7 +31,9 @@ import { GitBranchSwitcher } from "@zui/GitBranchSwitcher.js";
 import { getGitDirtyFileCount } from "@zui/git-branch-switcher/display.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
-import { HostDesignSurface } from "@zui/host/DesignSurface.js";
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
+import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
+import { CANVAS_DOCUMENT_DELETED_EVENT, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@zui/lib/assistantPreviewCards.js";
@@ -326,6 +328,7 @@ export const WorkspaceShellLayout = memo(
     handleOpenBrowserTab,
     handleOpenTreemapping,
     handleOpenWhiteboard,
+    handleOpenDocument,
     handleOpenDeveloperTools,
     handleOpenOpenDesign,
     handleOpenTerminalTab,
@@ -471,7 +474,7 @@ export const WorkspaceShellLayout = memo(
       // 截图 surface 由 browser-use tab 自己的 fixed 承载层提供尺寸，不能再把整个右侧
       // ResizablePanel 撑开；否则自动化页会闪出空白的 tab 栏，且面板过渡期间 guest surface
       // 仍可能被 Chromium 判定为不可合成。
-      open: workspaceMainView === "chat" && isSidePaneOpen,
+      open: (workspaceMainView === "chat" || workspaceMainView === "design") && isSidePaneOpen,
       expandedSize: SIDE_PANE_DEFAULT_EXPANDED_SIZE,
       rememberExpandedSize: true,
       resizeOnInitialVisibleMount: false,
@@ -505,7 +508,7 @@ export const WorkspaceShellLayout = memo(
     ]);
 
     useEffect(() => {
-      if (workspaceMainView !== "chat") {
+      if (workspaceMainView !== "chat" && workspaceMainView !== "design") {
         return;
       }
 
@@ -561,6 +564,7 @@ export const WorkspaceShellLayout = memo(
         // 不监听 conversation 自身 ResizeObserver，避免用户手动打开面板时又被策略关回去。
         if (
           latestIsSidePaneOpen &&
+          workspaceMainView !== "design" &&
           widthPx < CONVERSATION_AUTO_COLLAPSE_SIDE_PANE_WIDTH_PX
         ) {
           logger.info(
@@ -1641,6 +1645,7 @@ export const WorkspaceShellLayout = memo(
         onCloseSidePane={handleToggleSidePane}
         toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
         onSidePaneReachMaxSize={handleSidePaneReachMaxSize}
+        projectId={parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId ?? null}
         sidePaneState={sidePaneState}
         recentClosedSidePaneTabs={recentClosedSidePaneTabs}
         isBrowserOpen={isBrowserOpen}
@@ -1709,7 +1714,7 @@ export const WorkspaceShellLayout = memo(
     // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
     // design/flow 内嵌面自带顶栏（项目切换 / 画布-引擎切换），不吃壳的 Task Header。
     const isEmbeddedSurfaceView =
-      workspaceMainView === "design" || workspaceMainView === "flow";
+      workspaceMainView === "flow";
     // 内嵌面首次进入后持续挂载（hidden + inert），design/flow → code → 回来不重载画布；
     // 对话等其余主区视图维持原有「切换即卸载」行为不变。
     const [visitedEmbeddedSurfaces, setVisitedEmbeddedSurfaces] = useState<
@@ -1723,6 +1728,57 @@ export const WorkspaceShellLayout = memo(
           : new Set(current).add(workspaceMainView),
       );
     }, [isEmbeddedSurfaceView, workspaceMainView]);
+    const documentProjectId = parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId ?? null;
+    const lastDesignEntryRef = useRef<string | null>(null);
+    const lastDocumentTabByWorkspaceRef = useRef(new Map<string, string>());
+    const documentSidePaneStateRef = useRef(sidePaneState);
+    documentSidePaneStateRef.current = sidePaneState;
+    useEffect(() => {
+      const active = sidePaneState?.tabs.find((tab) => tab.id === sidePaneState.activeTabId);
+      if (active?.type === "document" && active.workspaceKey === workspaceKey && active.projectId === documentProjectId)
+        lastDocumentTabByWorkspaceRef.current.set(workspaceKey, active.id);
+    }, [sidePaneState, workspaceKey, documentProjectId]);
+    useEffect(() => {
+      if (workspaceMainView !== "design" || !isWorkspaceVisible || !documentProjectId) {
+        lastDesignEntryRef.current = null;
+        return;
+      }
+      const entryKey = JSON.stringify([workspaceKey, documentProjectId]);
+      const explicit = takeCanvasDocumentOpen(documentProjectId);
+      if (explicit) {
+        lastDesignEntryRef.current = entryKey;
+        handleOpenDocument({ resourceType: "canvas", ...explicit });
+        return;
+      }
+      if (lastDesignEntryRef.current === entryKey || hasPendingDocumentWorkspaceRestore(sidePaneState, workspaceKey)) return;
+      lastDesignEntryRef.current = entryKey;
+      handleOpenDocument({ ...resolveDesignDocumentEntry(sidePaneState,
+        { projectId: documentProjectId, workspaceKey }, lastDocumentTabByWorkspaceRef.current.get(workspaceKey)), restoreExisting: true });
+    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleOpenDocument, sidePaneState]);
+    useEffect(() => {
+      const open = (event: Event) => {
+        const detail = (event as CustomEvent<OpenCanvasDocumentRequest>).detail;
+        if (!isWorkspaceVisible || !detail || detail.projectId !== documentProjectId) return;
+        handleOpenDocument({resourceType:"canvas", ...(takeCanvasDocumentOpen(documentProjectId) ?? detail)});
+      };
+      window.addEventListener(OPEN_DOCUMENT_EVENT, open);
+      return () => window.removeEventListener(OPEN_DOCUMENT_EVENT, open);
+    }, [documentProjectId, handleOpenDocument, isWorkspaceVisible]);
+    useEffect(() => {
+      const remove = (event: Event) => {
+        const detail = (event as CustomEvent<CanvasDocumentDeleted>).detail;
+        if (!detail || detail.projectId !== documentProjectId) return;
+        const state = documentSidePaneStateRef.current;
+        const deleted = state?.tabs.filter((tab) => tab.type === "document" &&
+          tab.projectId === detail.projectId && tab.workspaceKey === workspaceKey && tab.documentId === detail.canvasId) ?? [];
+        const wasActive = deleted.some((tab) => tab.id === state?.activeTabId);
+        for (const tab of deleted) handleCloseSidePaneTab(tab.id);
+        if (wasActive && isWorkspaceVisible)
+          handleOpenDocument({ resourceType: "canvas", projectId: detail.projectId, title: "画布" });
+      };
+      window.addEventListener(CANVAS_DOCUMENT_DELETED_EVENT, remove);
+      return () => window.removeEventListener(CANVAS_DOCUMENT_DELETED_EVENT, remove);
+    }, [documentProjectId, handleCloseSidePaneTab, handleOpenDocument, isWorkspaceVisible, workspaceKey]);
     const shouldRenderMainViewHeader =
       workspaceMainView !== "automations" &&
       workspaceMainView !== "plugin-store" &&
@@ -2017,20 +2073,6 @@ export const WorkspaceShellLayout = memo(
                       ) : null}
                       <div className="min-h-0 flex-1 overflow-hidden">
                         {/* 融合内嵌面（Design/Flow）：常驻挂载、按视图显隐（见 visitedEmbeddedSurfaces 注释）。 */}
-                        {visitedEmbeddedSurfaces.has("design") ? (
-                          <div
-                            className="h-full min-h-0"
-                            data-workspace-embedded-surface="design"
-                            hidden={workspaceMainView !== "design"}
-                            inert={
-                              workspaceMainView !== "design" ? true : undefined
-                            }
-                          >
-                            <HostDesignSurface
-                              active={workspaceMainView === "design"}
-                            />
-                          </div>
-                        ) : null}
                         {visitedEmbeddedSurfaces.has("flow") ? (
                           <div
                             className="h-full min-h-0"
@@ -2194,7 +2236,7 @@ export const WorkspaceShellLayout = memo(
                                 onOpenAutomationsMain={handleOpenAutomations}
                                 onOpenCodeViewer={handleOpenCodeViewer}
                                 onAutoOpenAssistantPptx={
-                                  isDesktop
+                                  isDesktop && workspaceMainView !== "design"
                                     ? handleAutoOpenAssistantPptx
                                     : undefined
                                 }

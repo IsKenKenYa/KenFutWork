@@ -65,27 +65,11 @@ const CURRENT_CODE_TASK = `select s.id from public.execution_task_owners o
   where o.instance_id=:instance and o.task_id=$1 and o.project_id=$2 and o.task_kind='code'
     and s.branch_generation=$3 and ($5::boolean or s.scope_generation=$4)
     and s.execution_state='ready' and s.parent_session_id is null
-    and s.deleted_at is null and s.archived=false and p.archived_at is null and p.kind='code'`;
-const CURRENT_DESIGN_TASK = `select d.task_id from public.execution_task_owners o
-  join public.design_task_executions d on d.task_id=o.task_id and d.instance_id=o.instance_id and d.project_id=o.project_id
-  join public.chat_sessions c on c.id=d.task_id and c.instance_id=d.instance_id and c.project_id=d.project_id
-  join public.projects p on p.id=d.project_id and p.instance_id=d.instance_id
-  where o.instance_id=:instance and o.task_id=$1 and o.project_id=$2 and o.task_kind='design'
-    and d.branch_generation=$3 and ($5::boolean or d.scope_generation=$4)
-    and d.execution_state='ready' and c.mode='design' and p.archived_at is null and p.kind='design'`;
-const currentTaskQuery = (ownerKind: TaskWorkOwnerKind) =>
-  ownerKind === "design" ? CURRENT_DESIGN_TASK : CURRENT_CODE_TASK;
-const closeFenceQuery = (ownerKind: TaskWorkOwnerKind) =>
-  ownerKind === "design"
-    ? `select d.scope_generation,d.branch_generation,d.execution_state
-       from public.execution_task_owners o join public.design_task_executions d
-         on d.task_id=o.task_id and d.instance_id=o.instance_id and d.project_id=o.project_id
-       where o.instance_id=:instance and o.task_id=$1 and o.task_kind='design'`
-    : `select s.scope_generation,s.branch_generation,s.execution_state
+    and s.deleted_at is null and s.archived=false and p.archived_at is null and p.kind in ('code','design') and p.enabled_modes && array['code','design']::text[]`;
+const CLOSE_TASK_FENCE = `select s.scope_generation,s.branch_generation,s.execution_state
        from public.execution_task_owners o join public.code_ui_sessions s
          on s.id=o.task_id and s.instance_id=o.instance_id and s.project_id=o.project_id
        where o.instance_id=:instance and o.task_id=$1 and o.task_kind='code' and s.parent_session_id is null`;
-const ownerKindOf = (context: TaskWorkContext) => context.ownerKind ?? "code";
 const contextParams = (context: TaskWorkContext, notification = false) => [
   context.scope.taskId,
   context.scope.projectId,
@@ -122,13 +106,14 @@ export function createTaskWorkStore(
       return lease;
     },
     async closeFence(instanceId, taskId, ownerKind = "code") {
+      if (ownerKind === "design") return null;
       const row = await persistence.forInstance(instanceId).queryOne<
         SqlRow & {
           scope_generation: number | string;
           branch_generation: number | string;
           execution_state: "ready" | "revoking" | "failed";
         }
-      >(closeFenceQuery(ownerKind), [taskId]);
+      >(CLOSE_TASK_FENCE, [taskId]);
       return row
         ? {
             scopeGeneration: Number(row.scope_generation),
@@ -138,28 +123,33 @@ export function createTaskWorkStore(
         : null;
     },
     async isCurrent(context, purpose) {
+      if (context.ownerKind === "design") return false;
       return (
         (await persistence
           .forInstance(context.scope.instanceId)
           .queryOne(
-            currentTaskQuery(ownerKindOf(context)),
+            CURRENT_CODE_TASK,
             contextParams(context, purpose === "notification"),
           )) !== null
       );
     },
     async create(record) {
+      if (record.ownerKind === "design")
+        throw new TaskWorkError(
+          "task_closed",
+          "旧画布执行已停用，请通过共享会话派发工作。",
+        );
       return persistence.transaction(async (transaction) => {
         const scoped = transaction.forInstance(record.scope.instanceId);
         const context: TaskWorkContext = {
           scope: record.scope,
-          ownerKind: record.ownerKind ?? "code",
           agentId: record.agentId,
           runId: record.originRunId,
           branchGeneration: record.branchGeneration,
         };
         if (
           !(await scoped.queryOne(
-            `${currentTaskQuery(ownerKindOf(context))} for update of ${ownerKindOf(context) === "design" ? "d" : "s"}`,
+            `${CURRENT_CODE_TASK} for update of s`,
             contextParams(context),
           ))
         )
@@ -186,7 +176,7 @@ export function createTaskWorkStore(
             record.scope.projectId,
             record.scope.taskId,
             JSON.stringify(record.scope),
-            record.ownerKind ?? "code",
+            "code",
             record.agentId,
             record.kind,
             record.label,
@@ -202,7 +192,7 @@ export function createTaskWorkStore(
             record.consumed ? record.startedAt : null,
           ],
         );
-        return { record, created: true };
+        return { record: { ...record, ownerKind: "code" }, created: true };
       });
     },
     async find(instanceId, taskId, workId) {
@@ -241,11 +231,12 @@ export function createTaskWorkStore(
       return row ? fromRow(row) : null;
     },
     async consume(context) {
+      if (context.ownerKind === "design") return [];
       return persistence.transaction(async (transaction) => {
         const scoped = transaction.forInstance(context.scope.instanceId);
         if (
           !(await scoped.queryOne(
-            `${currentTaskQuery(ownerKindOf(context))} for update of ${ownerKindOf(context) === "design" ? "d" : "s"}`,
+            `${CURRENT_CODE_TASK} for update of s`,
             contextParams(context),
           ))
         )

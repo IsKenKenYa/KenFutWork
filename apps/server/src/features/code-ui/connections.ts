@@ -122,16 +122,20 @@ export class CodeUiConnections {
     data: unknown,
     workspaceIdentity?: string,
   ) {
+    await this.notifyEvent(owner, {
+      event: "service",
+      service,
+      name,
+      workspacePath,
+      ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      data,
+    });
+  }
+
+  async notifyEvent(owner: string, event: CodeUiEvent) {
     for (const connection of this.connections.values()) {
       if (connection.owner === owner && connection.receivesNotifications)
-        await connection.send({
-          event: "service",
-          service,
-          name,
-          workspacePath,
-          ...(workspaceIdentity ? { workspaceIdentity } : {}),
-          data,
-        });
+        await connection.send(event);
     }
   }
 

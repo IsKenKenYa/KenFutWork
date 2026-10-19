@@ -8,6 +8,7 @@ import {
   type ImageGenerationPreference,
   type InstanceSettings,
   type MessageMention,
+  type zcodeUiProtocol as protocol,
   type RunCancellationReason,
   type RunCancelResponse,
   type RunCreateRequest,
@@ -74,12 +75,14 @@ import type {
   AvailableModel,
   AvailableVideoModel,
 } from "../generation/types.js";
+import { OwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import { promptExecutionContext } from "../kernel/prompt-execution.js";
 import { publicToolArguments } from "../kernel/tool-arguments.js";
 import type {
   PreStepPayload,
   PromptCompositionContext,
   SystemPromptRegistry,
+  ToolContributionSnapshot,
   ToolExecutionContext,
   ToolRegistry,
 } from "../kernel/types.js";
@@ -122,6 +125,7 @@ import {
   createRunModelControl,
   resolveInstanceModelExecution,
 } from "./model-execution.js";
+import { createRunModelRequestPort } from "./model-request.js";
 import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
 import { measureTools } from "./prompt-composition.js";
@@ -160,14 +164,16 @@ import type {
  */
 /**
  * run → agent preset（DEC-2 会话级能力集），**模式能力分离的口径源头**：
- * - 可信 Task scope 持有模式，画布身份不参与执行模式判定；
- * - 未显式声明时按 canvasId 兜底：有画布归 design（画布页会话），无画布归 code。
+ * - 共享宿主在接纳时冻结工作方式；Task scope 仅持有文件授权；
+ * - 旧 Code 无工作快照时保持原 Task 绑定；无 Task 的独立测试保留旧兜底。
  */
 export function resolvePresetForRun(run: {
   canvasId?: string | undefined;
   preset?: "design" | "code" | undefined;
   scopeHandle?: Pick<ExecutionScopeHandle, "preset"> | undefined;
+  workContext?: protocol.ConversationWorkContext | undefined;
 }): "design" | "code" {
+  if (run.workContext) return run.workContext.preset;
   if (run.scopeHandle) return run.scopeHandle.preset;
   return run.preset ?? (run.canvasId ? "design" : "code");
 }
@@ -410,8 +416,10 @@ type RuntimeRunStatus =
   | "running";
 
 type RuntimeRunRecord = RunCreateRequest & {
+  workContext?: protocol.ConversationWorkContext | undefined;
+  frozenContributions?: ToolContributionSnapshot;
   acceptedCancellation?: Promise<void>;
-  branchGeneration?: number;
+  branchGeneration?: number | undefined;
   turnBoundaryWrites?: Partial<
     Record<
       AgentTurnBoundaryPhase,
@@ -465,6 +473,7 @@ type CreateAgentRuntimeOptions = {
     actor: LocalActor,
   ) => Promise<{
     mode: import("../features/permissions/approval-types.js").CodeApprovalMode;
+    baseMode?: import("../features/permissions/approval-types.js").CodeApprovalMode;
     planEnabled?: boolean | undefined;
     planningEpoch?: number | undefined;
     scopeGeneration: number;
@@ -535,10 +544,13 @@ type CreateAgentRuntimeOptions = {
     },
   ) => Promise<{ input: unknown }>;
   /**
-   * 执行模式工具门（agent-modes 缝经 agent-runs 插件注入）：按线程返回
-   * solo/plan 的工具拦截判定；返回 undefined 表示全放行（agent 等模式）。
+   * 执行策略工具门：Task使用接纳快照，独立规划态仍由原Task审批链裁决。
    */
-  toolGateFor?: (threadId: string) => ToolGate | undefined;
+  toolGateFor?: (
+    threadId: string,
+    executionMode?: import("@kenfutwork/shared").ExecutionMode,
+    scoped?: boolean,
+  ) => ToolGate | undefined;
   /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
    * runtime 只负责在正确时机调用（beforeTurn 在流启动前、afterTurn 在收尾 finally，
@@ -701,6 +713,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input,
       runId: run.runId,
       preset: resolvePresetForRun(run),
+      ...(run.executionMode ? { executionMode: run.executionMode } : {}),
       ...(run.threadId ? { threadId: run.threadId } : {}),
       ...(run.sessionId ? { sessionId: run.sessionId } : {}),
       ...(scope ? { instanceId: scope.instanceId, taskId: scope.taskId } : {}),
@@ -798,6 +811,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         modelInvocation?: ModelInvocationSnapshot;
         codeInputs?: TrustedCodeInput[];
         scopeHandle?: ExecutionScopeHandle;
+        workContext?: protocol.ConversationWorkContext;
+        frozenContributions?: ToolContributionSnapshot;
         /** 沙箱目录名用的 id（画布 UUID）；缺省回落到 canvasId。 */
         sandboxScopeId?: string;
         threadId?: string;
@@ -864,6 +879,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         ...(runOptions?.scopeHandle
           ? { scopeHandle: runOptions.scopeHandle }
+          : {}),
+        ...(runOptions?.workContext
+          ? { workContext: structuredClone(runOptions.workContext) }
+          : {}),
+        ...(runOptions?.frozenContributions
+          ? {
+              frozenContributions: structuredClone(
+                runOptions.frozenContributions,
+              ),
+            }
           : {}),
         ...(runOptions?.sandboxScopeId
           ? { sandboxScopeId: runOptions.sandboxScopeId }
@@ -1075,6 +1100,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (typeof run.branchGeneration !== "number")
             throw new Error("本轮Task授权信息缺失，请重新开启会话。");
           return {
+            runId,
             projectId: scope.projectId,
             expectedScopeGeneration: scope.generation,
             expectedBranchGeneration: run.branchGeneration,
@@ -1082,6 +1108,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         };
 
         submitImageJob = async (input) => {
+          const targetCanvasId = input.canvasId ?? canvasId;
           const jobT0 = Date.now();
           const jobLap = (label: string, extra?: Record<string, unknown>) => {
             console.log(
@@ -1096,7 +1123,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const job = await jobSvc.createJob(actor, {
             ...generationOrigin(),
-            ...(canvasId ? { canvasId } : {}),
+            ...(targetCanvasId ? { canvasId: targetCanvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "image_generation",
             payload: {
@@ -1106,7 +1133,20 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               provider_instance_id: selected.instanceId,
               aspect_ratio: input.aspectRatio,
               ...(input.quality ? { quality: input.quality } : {}),
+              ...(input.outputFormat
+                ? { output_format: input.outputFormat }
+                : {}),
               ...(input.inputImages ? { input_images: input.inputImages } : {}),
+              ...(input.placementX != null && input.placementY != null
+                ? {
+                    placement: {
+                      x: input.placementX,
+                      y: input.placementY,
+                      width: input.placementWidth ?? 512,
+                      height: input.placementHeight ?? 512,
+                    },
+                  }
+                : {}),
             },
           });
 
@@ -1128,72 +1168,46 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             pollCount++;
 
             if (run.controller.signal.aborted) {
-              await jobSvc.cancelJob(actor, job.id).catch(() => {});
-              throw new Error("Run was canceled");
+              if (run.stopReason !== "host_shutdown")
+                await jobSvc.cancelJob(actor, job.id).catch(() => {});
+              throw new OwnedToolInterruption();
             }
 
             const current = await jobSvc.getJobForWorker(job.id);
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
+                element_id?: string;
                 signed_url?: string;
                 object_path?: string;
+                asset_id?: string;
                 width?: number;
                 height?: number;
                 mime_type?: string;
               };
               jobLap("job_poll_done", { pollCount, status: "succeeded" });
 
-              // Write element directly to canvas (backend-driven insertion)
-              let elementId: string | undefined;
-              if (canvasId && result.object_path && options.canvasService) {
-                try {
-                  const explicitPlacement =
-                    input.placementX != null && input.placementY != null
-                      ? {
-                          x: input.placementX,
-                          y: input.placementY,
-                          width: input.placementWidth ?? 512,
-                          height: input.placementHeight ?? 512,
-                        }
-                      : undefined;
-
-                  const insertResult =
-                    await options.canvasService.insertImageElement(actor, {
-                      canvasId,
-                      objectPath: result.object_path,
-                      width: result.width ?? 1024,
-                      height: result.height ?? 1024,
-                      mimeType: result.mime_type ?? "image/png",
-                      ...(input.title ? { title: input.title } : {}),
-                      ...(explicitPlacement
-                        ? { placement: explicitPlacement }
-                        : {}),
-                    });
-                  elementId = insertResult.elementId;
-
-                  // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
-                    type: "canvas.sync" as const,
-                    runId,
-                    timestamp: new Date().toISOString(),
-                  });
-                  jobLap("canvas_element_inserted", { elementId });
-                } catch (insertErr) {
-                  // Graceful degradation: log error but still return result
-                  console.error(
-                    "[submitImageJob] canvas insert failed:",
-                    insertErr,
-                  );
-                }
+              // The worker publishes once against the frozen document target.
+              const elementId = result.element_id;
+              if (targetCanvasId && elementId) {
+                options.connectionManager?.pushToCanvas(targetCanvasId, {
+                  type: "canvas.sync",
+                  runId,
+                  timestamp: new Date().toISOString(),
+                });
               }
 
               return {
                 jobId: job.id,
+                ...(result.asset_id ? { assetId: result.asset_id } : {}),
                 ...(elementId != null ? { elementId } : {}),
                 imageUrl: result.signed_url ?? "",
-                width: result.width ?? 1024,
-                height: result.height ?? 1024,
+                ...(typeof result.width === "number"
+                  ? { width: result.width }
+                  : {}),
+                ...(typeof result.height === "number"
+                  ? { height: result.height }
+                  : {}),
                 mimeType: result.mime_type ?? "image/png",
               };
             }
@@ -1233,6 +1247,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         };
 
         submitVideoJob = async (input) => {
+          const targetCanvasId = input.canvasId ?? canvasId;
           const jobT0 = Date.now();
           const jobLap = (label: string, extra?: Record<string, unknown>) => {
             console.log(
@@ -1247,11 +1262,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const job = await jobSvc.createJob(actor, {
             ...generationOrigin(),
-            ...(canvasId ? { canvasId } : {}),
+            ...(targetCanvasId ? { canvasId: targetCanvasId } : {}),
             ...(sessionId ? { sessionId } : {}),
             jobType: "video_generation",
             payload: {
               prompt: input.prompt,
+              ...(input.title ? { title: input.title } : {}),
               model: selected.model,
               provider_instance_id: selected.instanceId,
               ...(input.duration != null ? { duration: input.duration } : {}),
@@ -1261,6 +1277,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ...(input.inputVideo ? { input_video: input.inputVideo } : {}),
               ...(input.enableAudio != null
                 ? { enable_audio: input.enableAudio }
+                : {}),
+              ...(input.placementX != null && input.placementY != null
+                ? {
+                    placement: {
+                      x: input.placementX,
+                      y: input.placementY,
+                      width: input.placementWidth ?? 640,
+                      height: input.placementHeight ?? 360,
+                    },
+                  }
                 : {}),
             },
           });
@@ -1284,14 +1310,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             pollCount++;
 
             if (run.controller.signal.aborted) {
-              await jobSvc.cancelJob(actor, job.id).catch(() => {});
-              throw new Error("Run was canceled");
+              if (run.stopReason !== "host_shutdown")
+                await jobSvc.cancelJob(actor, job.id).catch(() => {});
+              throw new OwnedToolInterruption();
             }
 
             const current = await jobSvc.getJobForWorker(job.id);
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
+                element_id?: string;
                 signed_url?: string;
                 duration_seconds?: number;
                 asset_id?: string;
@@ -1301,61 +1329,26 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
               jobLap("job_poll_done", { pollCount, status: "succeeded" });
 
-              // Write element directly to canvas (backend-driven insertion)
-              let elementId: string | undefined;
-              if (canvasId && result.signed_url && options.canvasService) {
-                try {
-                  const explicitPlacement =
-                    input.placementX != null && input.placementY != null
-                      ? {
-                          x: input.placementX,
-                          y: input.placementY,
-                          width: input.placementWidth ?? 640,
-                          height: input.placementHeight ?? 360,
-                        }
-                      : undefined;
-
-                  const insertResult =
-                    await options.canvasService.insertVideoElement(actor, {
-                      canvasId,
-                      signedUrl: result.signed_url,
-                      ...(result.asset_id ? { assetId: result.asset_id } : {}),
-                      width: result.width ?? 1280,
-                      height: result.height ?? 720,
-                      mimeType: result.mime_type ?? "video/mp4",
-                      ...(result.duration_seconds != null
-                        ? { durationSeconds: result.duration_seconds }
-                        : {}),
-                      ...(input.title ? { title: input.title } : {}),
-                      ...(input.prompt ? { prompt: input.prompt } : {}),
-                      ...(explicitPlacement
-                        ? { placement: explicitPlacement }
-                        : {}),
-                    });
-                  elementId = insertResult.elementId;
-
-                  // Notify connected frontends to refresh canvas
-                  options.connectionManager?.pushToCanvas(canvasId, {
-                    type: "canvas.sync" as const,
-                    runId,
-                    timestamp: new Date().toISOString(),
-                  });
-                  jobLap("canvas_element_inserted", { elementId });
-                } catch (insertErr) {
-                  // Graceful degradation: log error but still return result
-                  console.error(
-                    "[submitVideoJob] canvas insert failed:",
-                    insertErr,
-                  );
-                }
+              const elementId = result.element_id;
+              if (targetCanvasId && elementId) {
+                options.connectionManager?.pushToCanvas(targetCanvasId, {
+                  type: "canvas.sync",
+                  runId,
+                  timestamp: new Date().toISOString(),
+                });
               }
 
               return {
                 jobId: job.id,
                 ...(elementId != null ? { elementId } : {}),
                 videoUrl: result.signed_url ?? "",
-                width: result.width ?? 1280,
-                height: result.height ?? 720,
+                ...(result.asset_id ? { assetId: result.asset_id } : {}),
+                ...(typeof result.width === "number"
+                  ? { width: result.width }
+                  : {}),
+                ...(typeof result.height === "number"
+                  ? { height: result.height }
+                  : {}),
                 mimeType: result.mime_type ?? "video/mp4",
                 ...(result.duration_seconds != null
                   ? { durationSeconds: result.duration_seconds }
@@ -1639,8 +1632,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           }
 
           // Resolve brand kit ID from canvas to project (single JOIN, workspace-scoped)
-          let brandKitId: string | null = null;
-          if (run.canvasId && options.canvasRepository) {
+          let brandKitId: string | null = run.workContext?.brandKitId ?? null;
+          if (!run.workContext && run.canvasId && options.canvasRepository) {
             const canvasWorkspace = await options.localInstance
               ?.resolve(run.actor)
               .catch(() => null);
@@ -1705,10 +1698,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const preset = resolvePresetForRun(run);
 
-          // 执行模式工具门：solo/plan 按线程策略拦截（undefined = 全放行）
+          // Task工具门消费Run快照；没有Task的旧调用继续使用线程策略。
           const toolGate =
-            !run.scopeHandle && run.threadId && options.toolGateFor
-              ? options.toolGateFor(run.threadId)
+            run.threadId && options.toolGateFor
+              ? options.toolGateFor(
+                  run.threadId,
+                  run.executionMode,
+                  !!run.scopeHandle,
+                )
               : undefined;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
           // （只有它拿得到 runId/时间戳/abort 控制器）
@@ -1981,24 +1978,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 .map(toListItem);
               availableVideoModels = entries
                 .filter((e) => e.capability === "video")
-                .map((entry) => ({
-                  id: `${entry.provider.instanceId}:${entry.id}`,
-                  displayName: entry.name,
-                  description: `${entry.name}（实例：${entry.provider.name}）`,
-                  provider: entry.provider.name,
-                  // 任务级能力未在实例模型行声明（缺省=未知），工具面用保守占位
-                  capabilities: {
-                    textToVideo: true,
-                    imageToVideo: false,
-                    videoToVideo: false,
-                    audio: false,
-                  },
-                  limits: {
-                    maxDuration: 15,
-                    maxResolution: "1080p" as const,
-                    maxInputImages: 4,
-                  },
-                }));
+                .map((entry) => {
+                  const declared = entry.model.videoGeneration;
+                  return {
+                    ...toListItem(entry),
+                    ...(declared
+                      ? { videoGeneration: structuredClone(declared) }
+                      : {}),
+                    capabilities: {
+                      ...(declared?.referenceImages !== undefined
+                        ? { imageToVideo: declared.referenceImages > 0 }
+                        : {}),
+                      ...(declared?.audio !== undefined
+                        ? { audio: declared.audio }
+                        : {}),
+                    },
+                    limits: {},
+                  };
+                });
             } catch (catalogError) {
               console.warn(
                 "[runtime] 实例模型清单拉取失败（生成工具将报告未配置）:",
@@ -2019,7 +2016,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             const resolve = () => resolver(handle, run.actor);
             const current = await resolve();
             codeApproval = {
-              ceiling: run.approvalCeiling ?? current.mode,
+              ceiling: run.approvalCeiling ?? current.baseMode ?? current.mode,
               resolve,
             };
           }
@@ -2047,7 +2044,40 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           });
           toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
+            ...(run.executionMode ? { executionMode: run.executionMode } : {}),
+            ...(run.frozenContributions
+              ? {
+                  frozenContributions: structuredClone(run.frozenContributions),
+                }
+              : {}),
+            ...(run.workContext
+              ? { workContext: structuredClone(run.workContext) }
+              : {}),
             observeToolExecution: executionReceipts.observe,
+            ...(options.modelProviders && options.runUsage && run.eventSink
+              ? {
+                  requestModel: createRunModelRequestPort({
+                    actor: run.actor,
+                    runId,
+                    sessionId: run.sessionId,
+                    threadId: run.threadId,
+                    signal: run.controller.signal,
+                    providers: options.modelProviders,
+                    catalog: options.modelCatalog,
+                    usage: options.runUsage,
+                    now,
+                    assertCurrent: () => {
+                      if (completions.get(runId)?.settled)
+                        throw new Error("模型请求所属Run已结束。");
+                    },
+                    publish: async (event) => {
+                      if (completions.get(runId)?.settled)
+                        throw new Error("模型请求所属Run已结束。");
+                      await run.eventSink!(event);
+                    },
+                  }),
+                }
+              : {}),
 
             ...(run.eventSink
               ? {
@@ -2092,6 +2122,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             instanceId: toolInstanceId,
           };
           const toolResolutionContext = {
+            ...(run.frozenContributions
+              ? {
+                  frozenContributions: structuredClone(run.frozenContributions),
+                }
+              : {}),
+            ...(run.workContext
+              ? { workContext: structuredClone(run.workContext) }
+              : {}),
             actor: run.actor,
             sessionId: run.sessionId,
             modelSpecifier: run.modelOverride ?? run.model,
@@ -2272,7 +2310,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? {
                   runExtensions: options
                     .runExtensions()
-                    .filter((extension) => extension.preset === preset),
+                    .filter(
+                      (extension) =>
+                        extension.preset === preset ||
+                        extension.preset === "shared",
+                    ),
                 }
               : {}),
             ...(kernelToolRegistry

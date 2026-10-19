@@ -8,8 +8,10 @@ import {
   providerInstanceResponseSchema,
   type StreamEvent,
 } from "@kenfutwork/shared";
+import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
 import { createGoalService } from "../goals/service.js";
+import type { CodeApprovalMode } from "../permissions/approval-types.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
@@ -24,9 +26,11 @@ function deferred() {
   return { promise, resolve };
 }
 export interface ControlledGoalRun {
+  approvalCeiling?: CodeApprovalMode;
   runId: string;
   prompt: string;
   modelInvocation?: ModelInvocationSnapshot;
+  frozenContributions?: ToolContributionSnapshot;
   sink(event: StreamEvent): Promise<void>;
   release: ReturnType<typeof deferred>;
   ended: ReturnType<typeof deferred>;
@@ -68,6 +72,18 @@ async function prepareGoalDatabase() {
     followupMode: "queue" as const,
     modelSelection: selection,
   };
+  await database.persistence
+    .forInstance(scope.instanceId)
+    .execute(
+      "insert into public.chat_sessions(id,instance_id,project_id,mode,created_by_client_id,thread_id) values($1,:instance,$2,'code',null,$3)",
+      [scope.taskId, scope.projectId, `thread:${scope.taskId}`],
+    );
+  await database.persistence
+    .forInstance(scope.instanceId)
+    .execute(
+      "update public.code_ui_sessions set chat_session_id=$1 where instance_id=:instance and id=$1",
+      [scope.taskId],
+    );
   await repository.save(
     scope.instanceId,
     scope.taskId,
@@ -92,16 +108,26 @@ function createControlledRuntime() {
     createRun(
       input: { prompt: string },
       options: {
+        approvalCeiling?: CodeApprovalMode;
         runId: string;
         modelInvocation?: ModelInvocationSnapshot;
+        frozenContributions?: ToolContributionSnapshot;
         eventSink(event: StreamEvent): Promise<void>;
       },
     ) {
       const run = {
+        ...(options.approvalCeiling
+          ? { approvalCeiling: options.approvalCeiling }
+          : {}),
         runId: options.runId,
         prompt: input.prompt,
         ...(options.modelInvocation
           ? { modelInvocation: structuredClone(options.modelInvocation) }
+          : {}),
+        ...(options.frozenContributions
+          ? {
+              frozenContributions: structuredClone(options.frozenContributions),
+            }
           : {}),
         sink: options.eventSink,
         release: deferred(),
@@ -153,6 +179,9 @@ function makeGoalHost(
   base: Awaited<ReturnType<typeof prepareGoalDatabase>>,
   runtime: ReturnType<typeof createControlledRuntime>["runtime"],
   name: string,
+  captureContributions?: CodeUiServiceDeps["captureContributions"],
+  workContextProvider?: CodeUiServiceDeps["workContextProvider"],
+  taskWork?: CodeUiServiceDeps["taskWork"],
 ) {
   const { database, scope, goals, repository, provider } = base;
   const service = new CodeUiService({
@@ -235,7 +264,10 @@ function makeGoalHost(
       notifyReady: async () => {},
       list: async () => [],
     },
+    ...(taskWork ? { taskWork } : {}),
     env: { checkpointRoot: join(database.directory, name) },
+    ...(captureContributions ? { captureContributions } : {}),
+    ...(workContextProvider ? { workContextProvider } : {}),
   } as unknown as CodeUiServiceDeps);
   return service;
 }
@@ -271,39 +303,42 @@ async function connectGoalHost(
     workspacePath: scope.rootDirectory,
     sessionId: scope.taskId,
   });
-  return async (
-    type: protocol.CommandType,
-    payload: unknown,
-    commandId = randomUUID(),
-    control?: CodeGoalControl | null,
-  ) => {
-    const root = await base.repository.find(scope.instanceId, scope.taskId);
-    const snapshot = root?.state?.snapshots.find(
-      (item) => item.sessionId === scope.taskId,
-    );
-    if (!snapshot) throw new Error("Goal测试没有可用Task快照");
-    const response = await rpc("sendConversationCommandV4", {
-      workspacePath: scope.rootDirectory,
-      ...(["sendGoalCommand", "pauseGoal", "resumeGoal"].includes(type) &&
-      control !== null
-        ? { goalControl: structuredClone(control ?? observed) }
-        : {}),
-      envelope: {
-        clientId,
-        commandId,
-        sessionId: scope.taskId,
-        type,
-        payload,
-        baseRevision: snapshot.revision,
-        baseLogEpoch: snapshot.logEpoch,
-        issuedAt: Date.now(),
-      },
-    });
-    const settled = response?.publish?.() ?? Promise.resolve();
-    void settled.catch(() => {});
-    publications.push(settled);
-    return { result: response?.result, settled };
-  };
+  return Object.assign(
+    async (
+      type: protocol.CommandType,
+      payload: unknown,
+      commandId = randomUUID(),
+      control?: CodeGoalControl | null,
+    ) => {
+      const root = await base.repository.find(scope.instanceId, scope.taskId);
+      const snapshot = root?.state?.snapshots.find(
+        (item) => item.sessionId === scope.taskId,
+      );
+      if (!snapshot) throw new Error("Goal测试没有可用Task快照");
+      const response = await rpc("sendConversationCommandV4", {
+        workspacePath: scope.rootDirectory,
+        ...(["sendGoalCommand", "pauseGoal", "resumeGoal"].includes(type) &&
+        control !== null
+          ? { goalControl: structuredClone(control ?? observed) }
+          : {}),
+        envelope: {
+          clientId,
+          commandId,
+          sessionId: scope.taskId,
+          type,
+          payload,
+          baseRevision: snapshot.revision,
+          baseLogEpoch: snapshot.logEpoch,
+          issuedAt: Date.now(),
+        },
+      });
+      const settled = response?.publish?.() ?? Promise.resolve();
+      void settled.catch(() => {});
+      publications.push(settled);
+      return { result: response?.result, settled };
+    },
+    { connectionId: connection.hello.connectionId, clientId },
+  );
 }
 export async function createGoalServiceFixture() {
   const base = await prepareGoalDatabase();
@@ -314,8 +349,20 @@ export async function createGoalServiceFixture() {
     ...base,
     runs: controlled.runs,
     waitRuns: controlled.waitRuns,
-    host(name: string) {
-      const service = makeGoalHost(base, controlled.runtime, name);
+    host(
+      name: string,
+      captureContributions?: CodeUiServiceDeps["captureContributions"],
+      workContextProvider?: CodeUiServiceDeps["workContextProvider"],
+      taskWork?: CodeUiServiceDeps["taskWork"],
+    ) {
+      const service = makeGoalHost(
+        base,
+        controlled.runtime,
+        name,
+        captureContributions,
+        workContextProvider,
+        taskWork,
+      );
       services.push(service);
       return service;
     },

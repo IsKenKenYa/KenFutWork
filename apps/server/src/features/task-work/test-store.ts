@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
-import { createTaskWorkManager } from "./service.js";
+import { createTaskWorkManager, TaskWorkError } from "./service.js";
 import type {
   TaskWorkCloseFence,
   TaskWorkContext,
@@ -84,11 +84,13 @@ export function createMemoryTaskWorkStore(
       return lease;
     },
     async closeFence(instanceId, taskId, ownerKind) {
+      if (ownerKind === "design") return null;
       return structuredClone(
         tasks.get(taskKey(instanceId, taskId, ownerKind)) ?? null,
       );
     },
     async isCurrent(context, purpose) {
+      if (context.ownerKind === "design") return false;
       const task = tasks.get(
         taskKey(
           context.scope.instanceId,
@@ -106,6 +108,8 @@ export function createMemoryTaskWorkStore(
       );
     },
     async create(record) {
+      if (record.ownerKind === "design")
+        throw new TaskWorkError("task_closed", "旧画布执行已停用");
       const existing = [...records.values()].find(
         (candidate) =>
           owned(
@@ -152,6 +156,7 @@ export function createMemoryTaskWorkStore(
       return structuredClone(record);
     },
     async consume(context: TaskWorkContext) {
+      if (context.ownerKind === "design") return [];
       if (!current) return [];
       const pending = [...records.values()].filter(
         (record) =>

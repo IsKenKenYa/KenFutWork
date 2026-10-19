@@ -97,7 +97,7 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   ).toBe("true");
   expect(
     document.querySelector('[data-workspace-embedded-surface="design"]'),
-  ).not.toBeNull();
+  ).toBeNull();
   const update = {
     type: "kenfutwork:workbench-navigation",
     availableModes: ["code", "design", "flow"],

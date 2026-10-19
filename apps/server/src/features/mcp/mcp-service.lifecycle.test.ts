@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -8,12 +10,15 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
-import type { ToolDefinition, ToolRegistry } from "../../kernel/types.js";
+import type { DynamicToolEntry, ToolDefinition } from "../../kernel/types.js";
+import { createProcessSandbox } from "../process-sandbox/service.js";
 import { createMcpService } from "./mcp-service.js";
 import type { McpServerStore, StoredMcpServer } from "./server-store.js";
+import { createTaskMcpService } from "./task-mcp-service.js";
+import { taskMcpFixture } from "./test-task-mcp-fixture.js";
 
 /**
  * MCP 生命周期真实链路测试（默认 skipped：需要 node 子进程 + SDK 握手）。
@@ -26,9 +31,20 @@ import type { McpServerStore, StoredMcpServer } from "./server-store.js";
  * 运行：KENFUTWORK_MCP_LIFECYCLE=1 pnpm --filter @kenfutwork/server exec vitest run mcp-service.lifecycle
  */
 const ENABLED = process.env.KENFUTWORK_MCP_LIFECYCLE === "1";
-const FIXTURE = fileURLToPath(
-  new URL("../../../scripts/mcp-test-server.mjs", import.meta.url),
-);
+// 独立Node内建协议夹具；两个真实SDK客户端都连接同一协议，不借Task外的node_modules授权。
+const fixtureScript = `
+import { createInterface } from "node:readline";
+const tool = { name: "add_numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] } };
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const request = JSON.parse(line);
+  if (request.id === undefined) return;
+  const result = request.method === "initialize"
+    ? { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } }
+    : request.method === "tools/list" ? { tools: [tool] }
+    : request.method === "tools/call" ? { content: [{ type: "text", text: String(Number(request.params.arguments?.a) + Number(request.params.arguments?.b)) }] } : {};
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) + "\\n");
+}).on("close", () => process.exit(0));
+`;
 
 function fixtureRow(over: Partial<StoredMcpServer> = {}): StoredMcpServer {
   return {
@@ -37,7 +53,7 @@ function fixtureRow(over: Partial<StoredMcpServer> = {}): StoredMcpServer {
     kind: "stdio",
     command: "node",
     url: null,
-    args: [FIXTURE],
+    args: [],
     env: {},
     headers: {},
     enabled: true,
@@ -108,30 +124,65 @@ function inMemoryStore(rows: StoredMcpServer[]): McpServerStore {
   };
 }
 
-function trackingRegistry() {
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+async function trackingRegistry() {
+  const f = await taskMcpFixture({}, (cleanup) => cleanups.push(cleanup));
+  const script = join(f.root, "mcp-test-server.mjs");
+  await writeFile(script, fixtureScript);
   const tools = new Map<string, ToolDefinition>();
-  const registry = {
-    register(definition: ToolDefinition) {
-      tools.set(definition.name, definition);
-      return () => {
-        tools.delete(definition.name);
-      };
+  const registry = f.registry;
+  const registerDynamic = registry.registerDynamic.bind(registry);
+  registry.registerDynamic = (entry: DynamicToolEntry) => {
+    const dispose = registerDynamic(entry);
+    const definition = entry.resolve(f.resolution());
+    if (definition) tools.set(definition.name, definition);
+    return () => {
+      dispose();
+      if (definition) tools.delete(definition.name);
+    };
+  };
+  const sandbox = createProcessSandbox({
+    captureRoot: join(f.root, "capture"),
+    network: { allowedDomains: [], deniedDomains: [] },
+  });
+  cleanups.push(() => sandbox.close("测试结束"));
+  const tasks = createTaskMcpService({
+    sandbox,
+    registry,
+    version: "1",
+    settings: {
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "fixture" }),
     },
-    get: (name: string) => tools.get(name),
-    list: () => [...tools.values()],
-  } as unknown as ToolRegistry;
-  return { registry, tools };
+  });
+  cleanups.push(() => tasks.shutdown("测试结束"));
+  const taskOptions: Pick<
+    Parameters<typeof createMcpService>[0],
+    "executeTool" | "onDisconnect"
+  > = {
+    executeTool: (source, tool, args, context, remoteCall) =>
+      source.kind === "stdio"
+        ? tasks.callConfigured(source, tool, args, context)
+        : remoteCall(),
+    onDisconnect: (name) => tasks.closeSource(name),
+  };
+  return { registry, tools, context: f.context, script, taskOptions };
 }
 
 describe.skipIf(!ENABLED)("MCP 生命周期（真实 stdio 握手）", () => {
   it("连接后注册工具且可真实调用；停用后工具被注销；再启用恢复", async () => {
-    const rows = [fixtureRow()];
+    const { registry, tools, context, script, taskOptions } =
+      await trackingRegistry();
+    const rows = [fixtureRow({ args: [script] })];
     const store = inMemoryStore(rows);
-    const { registry, tools } = trackingRegistry();
     const service = createMcpService({
       env: { version: "test" } as ServerEnv,
       registry,
       store,
+      ...taskOptions,
     });
 
     try {
@@ -147,7 +198,7 @@ describe.skipIf(!ENABLED)("MCP 生命周期（真实 stdio 握手）", () => {
       // 真实调用：走 MCP 协议回值
       const result = await tools
         .get("mcp__fixture__add_numbers")
-        ?.execute({ a: 20, b: 22 }, {});
+        ?.execute({ a: 20, b: 22 }, context);
       const text = typeof result === "string" ? result : JSON.stringify(result);
       expect(text).toContain("42");
 
@@ -175,13 +226,15 @@ describe.skipIf(!ENABLED)("MCP 生命周期（真实 stdio 握手）", () => {
   }, 30_000);
 
   it("reconnect 会重建连接（工具不重复、不残留）", async () => {
-    const rows = [fixtureRow()];
+    const { registry, tools, context, script, taskOptions } =
+      await trackingRegistry();
+    const rows = [fixtureRow({ args: [script] })];
     const store = inMemoryStore(rows);
-    const { registry, tools } = trackingRegistry();
     const service = createMcpService({
       env: { version: "test" } as ServerEnv,
       registry,
       store,
+      ...taskOptions,
     });
 
     try {
@@ -286,11 +339,13 @@ describe.skipIf(!ENABLED)("远程 MCP 实际协议", () => {
       const rows = [
         fixtureRow({ kind: "http", command: "", args: [], url: remote.url }),
       ];
-      const { registry, tools } = trackingRegistry();
+      const { registry, tools, context, taskOptions } =
+        await trackingRegistry();
       const service = createMcpService({
         env: { version: "test" } as ServerEnv,
         registry,
         store: inMemoryStore(rows),
+        ...taskOptions,
       });
       try {
         await service.connectAll();
@@ -304,7 +359,7 @@ describe.skipIf(!ENABLED)("远程 MCP 实际协议", () => {
         const tool = tools.get("mcp__fixture__add_numbers");
         if (!tool) throw new Error("真实远程工具未注册");
         expect(
-          JSON.stringify(await tool.execute({ a: 20, b: 22 }, {})),
+          JSON.stringify(await tool.execute({ a: 20, b: 22 }, context)),
         ).toContain("42");
         await service.setEnabled("fixture-1", false);
         expect(tools.size).toBe(0);

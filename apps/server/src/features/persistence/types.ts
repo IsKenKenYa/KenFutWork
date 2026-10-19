@@ -48,6 +48,15 @@ export interface PersistenceSessionLock {
 }
 
 export interface PersistenceService extends SqlClient {
+  /** 跨文件发布屏障使用池外专用事务，避免占满普通查询池后等待第二连接。 */
+  withSessionTransaction<T>(
+    fn: (tx: SqlTransaction, signal: AbortSignal) => Promise<T>,
+  ): Promise<T>;
+  /** 通知只传唤醒提示；消费者须重新读取持久事实。独占连接断开时signal终止。 */
+  subscribeNotifications(
+    channel: string,
+    listener: (payload: string) => void,
+  ): Promise<PersistenceSessionLock>;
   /** 实例隔离入口；实例归属数据一律经此访问。 */
   forInstance(instanceId: string): InstanceSqlClient;
   /** 原子写入口：回调内全部语句同事务，抛错回滚。 */

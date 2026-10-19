@@ -1,3 +1,4 @@
+import type { OpenDocumentSidePaneRequest } from "@zui/lib/workspaceSidePane.js";
 import type { RefObject } from "react";
 import type {
   ZCodeProvider,
@@ -236,6 +237,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenBrowserTab: () => void;
   handleOpenTreemapping: (source?: TreemappingSidePaneTab["source"]) => void;
   handleOpenWhiteboard: () => void;
+  handleOpenDocument: (request: OpenDocumentSidePaneRequest) => void;
   handleOpenDeveloperTools: () => void;
   handleOpenTerminalTab: () => void;
   /** 打开 OpenDesign 面板（Code 模式右侧栏的联动画布）。 */

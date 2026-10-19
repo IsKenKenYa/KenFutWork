@@ -20,7 +20,9 @@ export function createContextHistoryPlugin(): PluginDefinition {
         scope: "shared",
         resolve(run) {
           if (!run.scopeHandle) return null;
-          if (run.scopeHandle.preset !== run.preset)
+          if (
+            (run.workContext?.preset ?? run.scopeHandle.preset) !== run.preset
+          )
             throw new Error("历史工具工作模式与Task作用域不匹配。");
           return createReadHistoryTool(
             archives,

@@ -86,36 +86,57 @@ it("Task 工作跨前台 Run 存活，空闲终态只唤醒一次，新 Run 在�
   await manager.close("test complete");
 });
 
-it("Design Task 使用真实 owner kind 隔离状态与通知", async () => {
-  const designContext = { ...context, ownerKind: "design" as const };
+it("旧Design owner不能派发；Design工作沿共享Code owner结算与通知", async () => {
+  const legacy = { ...context, ownerKind: "design" as const };
+  const store = createMemoryTaskWorkStore([context]);
   const manager = createTaskWorkManager({
-    store: createMemoryTaskWorkStore([designContext]),
-    executionHostId: "design-owner-host",
+    store,
+    executionHostId: "shared-design-owner-host",
     resolveMaxConcurrent: async () => 4,
   });
   const ready = vi.fn(async () => true);
+  const retiredRunner = vi.fn(async () => ({
+    status: "completed" as const,
+    summary: "不应执行",
+  }));
   manager.onReady(ready);
   try {
+    await expect(
+      manager.start(
+        legacy,
+        {
+          kind: "command",
+          label: "退役执行",
+          toolCallId: "legacy-design-work",
+        },
+        { run: retiredRunner, stop: async () => {} },
+      ),
+    ).rejects.toMatchObject({ code: "task_closed" });
+    expect(retiredRunner).not.toHaveBeenCalled();
     const record = await manager.start(
-      designContext,
-      { kind: "command", label: "Design work", toolCallId: "design-work" },
+      context,
+      {
+        kind: "command",
+        label: "Design工作",
+        toolCallId: "shared-design-work",
+      },
       {
         run: async () => ({ status: "completed", summary: "已完成" }),
         stop: async () => {},
       },
     );
     await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
-    expect(record.ownerKind).toBe("design");
+    expect(record.ownerKind).toBe("code");
     expect(ready).toHaveBeenCalledWith({
-      instanceId: designContext.scope.instanceId,
-      taskId: designContext.scope.taskId,
-      ownerKind: "design",
+      instanceId: context.scope.instanceId,
+      taskId: context.scope.taskId,
+      ownerKind: "code",
     });
-    await expect(manager.consumeNotifications(context)).rejects.toMatchObject({
+    await expect(manager.consumeNotifications(legacy)).rejects.toMatchObject({
       code: "task_closed",
     });
-    expect(await manager.consumeNotifications(designContext)).toMatchObject([
-      { id: record.id, ownerKind: "design", status: "completed" },
+    expect(await manager.consumeNotifications(context)).toMatchObject([
+      { id: record.id, ownerKind: "code", status: "completed" },
     ]);
   } finally {
     await manager.close("cleanup");

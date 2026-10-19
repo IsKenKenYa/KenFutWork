@@ -21,9 +21,6 @@ vi.mock("@/lib/server-api", () => ({
 vi.mock("@/components/toast", () => ({
   useToast: () => ({ error: mocks.toastError }),
 }));
-vi.mock("@/hooks/use-create-project", () => ({
-  useCreateProject: () => ({ create: vi.fn() }),
-}));
 
 import { CanvasLogoMenu } from "../src/components/canvas-logo-menu";
 
@@ -34,6 +31,7 @@ const props = {
   projectName: "Canvas",
   excalidrawApi: null,
   onCanvasSync: vi.fn(async () => {}),
+  onNewProject: vi.fn(),
 };
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -52,6 +50,7 @@ describe("CanvasLogoMenu asset actions", () => {
       .mockResolvedValue({ revision: "revision-2", assetIds: [] });
     mocks.toastError.mockReset();
     props.onCanvasSync.mockClear();
+    props.onNewProject.mockClear();
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
       value: () => "blob:archive",
@@ -89,6 +88,15 @@ describe("CanvasLogoMenu asset actions", () => {
         "revision-after-save",
       ),
     );
+  });
+
+  it("requests a new project from the shared workbench without creating a canvas", async () => {
+    renderMenu(async () => "revision-after-save");
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "新建项目" }));
+    expect(props.onNewProject).toHaveBeenCalledOnce();
+    expect(props.onCanvasSync).not.toHaveBeenCalled();
+    expect(mocks.exportAssets).not.toHaveBeenCalled();
   });
 
   it("does not export or restore when draft flush fails", async () => {

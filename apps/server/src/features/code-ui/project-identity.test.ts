@@ -13,7 +13,11 @@ import { createAgentRunService } from "../../agent/runtime.js";
 import { loadServerEnv } from "../../config/env.js";
 import { createCodeUiConversation } from "./conversation.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
-import type { CodeUiRepository, CodeUiSessionRecord } from "./repository.js";
+import {
+  type CodeUiRepository,
+  CodeUiRepositoryError,
+  type CodeUiSessionRecord,
+} from "./repository.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
 const temporary: string[] = [];
@@ -95,6 +99,10 @@ async function fixture(
     deleted_at: null,
   };
   const roots = [root];
+  const creationReceipts = new Map<
+    string,
+    { projectId: string; fingerprint: string; ack: protocol.CommandAck }
+  >();
   const createRoot = vi.fn(
     async (
       _workspace: string,
@@ -111,15 +119,44 @@ async function fixture(
         sandbox_mode: input.scope.sandboxMode,
         state: input.state,
       });
-      return {
+      const ack = protocol.commandAckSchema.parse({
         commandId: input.command.commandId,
         status: "accepted",
         revisionAtDecision: 0,
         result: { type: "createSession", sessionId: input.sessionId },
-      };
+      });
+      creationReceipts.set(
+        JSON.stringify([
+          _workspace,
+          input.command.clientId,
+          input.command.commandId,
+        ]),
+        {
+          projectId: input.projectId,
+          fingerprint: input.command.fingerprint,
+          ack,
+        },
+      );
+      return ack;
     },
   );
   const repository = {
+    queryCommands: async (
+      instance: string,
+      clientId: string,
+      refs: Parameters<CodeUiRepository["queryCommands"]>[2],
+    ) => ({
+      results: refs.map((ref) => {
+        const receipt = creationReceipts.get(
+          JSON.stringify([instance, clientId, ref.commandId]),
+        );
+        return {
+          ...ref,
+          result:
+            !ref.sessionId && receipt ? receipt.ack : ("unknown" as const),
+        };
+      }),
+    }),
     preparations: { recover: async () => {} },
     recoverRuntimeInputs: async () => {},
     readHumanPreferences: async () => ({}),
@@ -145,6 +182,25 @@ async function fixture(
         record.archived = value.archived;
     },
     createRoot,
+    readCreationCommand: async (
+      instance: string,
+      projectId: string,
+      command: Parameters<CodeUiRepository["readCreationCommand"]>[2],
+    ) => {
+      const receipt = creationReceipts.get(
+        JSON.stringify([instance, command.clientId, command.commandId]),
+      );
+      if (!receipt) return null;
+      if (
+        receipt.projectId !== projectId ||
+        receipt.fingerprint !== command.fingerprint
+      )
+        throw new CodeUiRepositoryError("command_conflict", "创建回执不匹配");
+      return protocol.commandAckSchema.parse({
+        ...receipt.ack,
+        status: "duplicate",
+      });
+    },
   };
   const env = loadServerEnv(
     { agentBackendMode: "filesystem", agentFilesRoot: pathA },

@@ -8,17 +8,15 @@ import { describe, expect, it } from "vitest";
 import { registerProjectDirectoryRelinkRoutes } from "../../http/project-directory-relink.js";
 import { createCanvasFileStore } from "../canvas/file-store.js";
 import { createCanvasRepository } from "../canvas/repository.js";
-import { createChatRepository } from "../chat/repository.js";
 import { createCheckpointRepository } from "../checkpoints/repository.js";
+import { shadowRepositoryPath } from "../checkpoints/shadow-repo-path.js";
 import { createCodeUiConversation } from "../code-ui/conversation.js";
 import { createCodeUiRepository } from "../code-ui/repository.js";
-import { createDesignGoals } from "../execution/design-goals.js";
-import { createTestDesignModelSelection } from "../execution/design-goals-test-fixture.js";
-import { createDesignTasksService } from "../execution/design-tasks.js";
+import { createUnifiedDesignTaskFixture } from "../code-ui/unified-task-test-fixture.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGoalService } from "../goals/service.js";
-import { createPermissionService } from "../permissions/permission-service.js";
+import { createPostgresPersistence } from "../persistence/providers/postgres.js";
 import { createProjectFileRepository } from "../project-files/repository.js";
 import { createProjectFileService } from "../project-files/service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -36,37 +34,16 @@ async function fixture() {
   await mkdir(internalGrant);
   await mkdir(externalGrant);
   const projects = createProjectRepository(db.persistence);
-  const { project, canvas } = await projects.createProject({
-    instanceId: db.instanceId,
-    createdByClientId: db.actor.accessClientId,
-    kind: "design",
+  const canonical = await createUnifiedDesignTaskFixture(db, {
+    root: oldRoot,
     name: "缺失项目",
-    slug: randomUUID(),
-    description: null,
-    canvasName: "Canvas",
-    workDir: oldRoot,
+    budget: 37,
     additionalDirectories: [
       { path: internalGrant, access: "read-only" },
       { path: externalGrant, access: "read-write" },
     ],
   });
-  if (!canvas) throw new Error("Canvas缺失");
-  const tasks = createDesignTasksService({
-    persistence: db.persistence,
-    localInstance: db.localInstance,
-  });
-  const prepared = await tasks.prepareCreation(db.actor, canvas.id);
-  if (!prepared) throw new Error("Task准备缺失");
-  const task = await createChatRepository(db.persistence).createSession(
-    db.instanceId,
-    {
-      canvasId: canvas.id,
-      threadId: randomUUID(),
-      createdByClientId: db.actor.accessClientId,
-      designTaskPreparation: prepared,
-    },
-  );
-  if (!task) throw new Error("Task缺失");
+  const { project, canvas, task, goal } = canonical;
   const scopes = createExecutionScopes({
     repository: createScopeRepository(db.persistence),
     localInstance: db.localInstance,
@@ -114,26 +91,16 @@ async function fixture() {
     canvas.id,
   );
   const pure = createGoalService();
-  const goals = createDesignGoals({
-    modelSelection: createTestDesignModelSelection(),
-    persistence: db.persistence,
-    localInstance: db.localInstance,
-    goals: pure,
-    permissions: createPermissionService(),
-  });
-  const goal = await goals.create(db.actor, {
-    taskId: task.id,
-    objective: `保留目标 ${oldRoot}`,
-    tokenBudget: 37,
-  });
   const closed: string[] = [];
   let failClose = false;
+  let beforeClose: (() => Promise<void>) | undefined;
   const service = createProjectDirectoryRelinkService({
     persistence: db.persistence,
     localInstance: db.localInstance,
     goals: pure,
     closeResources: async (_actor, id) => {
       closed.push(id);
+      await beforeClose?.();
       if (failClose) throw new Error("真实资源关闭失败");
     },
   });
@@ -149,26 +116,28 @@ async function fixture() {
     nextRoot,
     project,
     canvas,
-    tasks,
     task,
+    readTask: canonical.readTask,
+    readGoal: canonical.readGoal,
+    admit: canonical.admit,
     handle,
     files,
     bytes,
     assetId,
     layout,
     goal,
-    goals,
     service,
     url,
     closed,
     failClose: (value: boolean) => {
       failClose = value;
     },
+    beforeClose: (callback: () => Promise<void>) => {
+      beforeClose = callback;
+    },
     move: () => rename(oldRoot, nextRoot),
     close: async () => {
       await app.close();
-      await goals.close();
-      await tasks.close();
       await db.close();
     },
   };
@@ -176,6 +145,143 @@ async function fixture() {
 describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
   "Project缺失目录受控重新关联真实PG",
   () => {
+    it("恢复到已有项目目录须明确共用；拒绝前不关闭Task，不改scope代际或项目身份", async () => {
+      const f = await fixture();
+      try {
+        await f.move();
+        const projects = createProjectRepository(f.db.persistence);
+        const { project: existing } = await projects.createProject({
+          instanceId: f.db.instanceId,
+          createdByClientId: f.db.actor.accessClientId,
+          name: "已有项目",
+          slug: randomUUID(),
+          kind: "code",
+          workDir: f.nextRoot,
+          description: null,
+          canvasName: "unused",
+        });
+        const snapshot = await f.service.snapshot(f.db.actor, f.project.id);
+        const input = {
+          expectedWorkDir: snapshot.workDir,
+          nextWorkDir: f.nextRoot,
+          expectedTasks: snapshot.tasks,
+        };
+        const denied = await f.app.inject({
+          method: "POST",
+          url: f.url,
+          payload: input,
+        });
+        expect(denied.statusCode).toBe(409);
+        expect(denied.json().error.code).toBe("project_directory_conflict");
+        expect(f.closed).toEqual([]);
+        expect(await f.service.snapshot(f.db.actor, f.project.id)).toEqual(
+          snapshot,
+        );
+        expect((await f.readTask()).executionState).toBe("ready");
+        const confirmed = await f.app.inject({
+          method: "POST",
+          url: f.url,
+          payload: { ...input, directoryChoice: "independent" },
+        });
+        expect(confirmed.statusCode).toBe(200);
+        expect(confirmed.json().projectId).toBe(f.project.id);
+        const shared = await projects.findDirectoryProjects(
+          f.db.instanceId,
+          f.nextRoot,
+        );
+        expect(new Set(shared.map((project) => project.id))).toEqual(
+          new Set([f.project.id, existing.id]),
+        );
+        expect(
+          (await projects.findActiveById(f.db.instanceId, existing.id))
+            ?.enabled_modes,
+        ).toEqual(["code"]);
+      } finally {
+        await f.close();
+      }
+    });
+    it("恢复发布前持有创建共用的目录锁；等待者不占单连接普通池，发布后重新检查真实归属", async () => {
+      const f = await fixture();
+      const other = createPostgresPersistence({
+        databaseUrl: f.db.connectionString,
+        maxConnections: 1,
+      });
+      let releaseClose!: () => void;
+      let enteredClose!: () => void;
+      const closing = new Promise<void>((resolve) => {
+        enteredClose = resolve;
+      });
+      const continueClose = new Promise<void>((resolve) => {
+        releaseClose = resolve;
+      });
+      let relinking: Promise<unknown> | undefined;
+      let creating: Promise<unknown> | undefined;
+      try {
+        await f.move();
+        f.beforeClose(async () => {
+          enteredClose();
+          await continueClose;
+        });
+        const snapshot = await f.service.snapshot(f.db.actor, f.project.id);
+        relinking = f.service.relink(f.db.actor, f.project.id, {
+          expectedWorkDir: snapshot.workDir,
+          nextWorkDir: f.nextRoot,
+          expectedTasks: snapshot.tasks,
+        });
+        await closing;
+        creating = createProjectRepository(other).createProject({
+          instanceId: f.db.instanceId,
+          createdByClientId: f.db.actor.accessClientId,
+          name: "竞争创建",
+          slug: randomUUID(),
+          kind: "code",
+          workDir: f.nextRoot,
+          description: null,
+          canvasName: "unused",
+        });
+        // 先挂接拒绝处理，避免失败后的迟到观察造成 unhandled rejection。
+        const createdOutcome = creating.then(
+          () => null,
+          (error: unknown) => error,
+        );
+        await expect
+          .poll(async () =>
+            Number(
+              (
+                await f.db.persistence.queryOne<{ count: string }>(
+                  "select count(*) as count from pg_stat_activity where datname=current_database() and wait_event='advisory' and query like 'select pg_advisory_xact_lock%'",
+                )
+              )?.count,
+            ),
+          )
+          .toBe(1);
+        const ordinary = other.queryOne<{ ok: number }>("select 1 as ok");
+        let normalResult: { ok: number } | null | undefined;
+        void ordinary.then((result) => {
+          normalResult = result;
+        });
+        await expect.poll(() => normalResult?.ok).toBe(1);
+        releaseClose();
+        expect(await relinking).toMatchObject({
+          projectId: f.project.id,
+          workDir: f.nextRoot,
+        });
+        expect(await createdOutcome).toMatchObject({
+          message: "此目录已关联项目，请选择复用或独立创建。",
+        });
+        expect(
+          await createProjectRepository(other).findDirectoryProjects(
+            f.db.instanceId,
+            f.nextRoot,
+          ),
+        ).toHaveLength(1);
+      } finally {
+        releaseClose();
+        await Promise.allSettled([relinking, creating]);
+        await other.close();
+        await f.close();
+      }
+    });
     it("Code根及真实Git检查点显式映射，保留Goal身份/预算与历史文字，不重放", async () => {
       const db = await createTaskWorkDatabase();
       try {
@@ -246,16 +352,11 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
             fingerprint: "relink-code-create",
           },
         });
-        const hash = (value: string) =>
-          createHash("sha256").update(value).digest("hex");
-        const gitDir = join(
+        const checkpointRoot = join(
           (await db.localInstance.getContext()).dataDir,
           "checkpoints",
-          db.instanceId,
-          project.id,
-          `${taskId}.git`,
-          hash(oldRoot),
         );
+        const gitDir = shadowRepositoryPath(checkpointRoot, taskId, oldRoot);
         await mkdir(gitDir, { recursive: true });
         const run = promisify(execFile);
         const git = (args: string[]) =>
@@ -352,14 +453,7 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
           shadowCommit: sha,
           directorySnapshots: [{ rootDirectory: nextRoot, shadowCommit: sha }],
         });
-        const movedGit = join(
-          (await db.localInstance.getContext()).dataDir,
-          "checkpoints",
-          db.instanceId,
-          project.id,
-          `${taskId}.git`,
-          hash(nextRoot),
-        );
+        const movedGit = shadowRepositoryPath(checkpointRoot, taskId, nextRoot);
         expect(
           (await run("git", ["--git-dir", movedGit, "show", `${sha}:note.txt`]))
             .stdout,
@@ -375,6 +469,68 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
             ])
           ).stdout.trim(),
         ).toBe(nextRoot);
+        expect(
+          (
+            await run("git", [
+              "config",
+              "--file",
+              join(movedGit, "config"),
+              "--get",
+              "core.excludesFile",
+            ])
+          ).stdout.trim(),
+        ).toBe(join(movedGit, "excludes"));
+        expect(await readFile(join(movedGit, "excludes"), "utf8")).toBe(
+          ".git\n",
+        );
+        await expect(readFile(join(gitDir, "config"))).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        expect(await readFile(join(nextRoot, "note.txt"), "utf8")).toBe(
+          "历史真实字节",
+        );
+
+        // 真实影子仓缺失时继续拒绝；保留仓库字节供证明失败没有偷偷重建或重放。
+        const secondRoot = join(db.directory, "second-code"),
+          heldGit = `${movedGit}.held`;
+        await rename(nextRoot, secondRoot);
+        await rename(movedGit, heldGit);
+        const missingShadow = await relink.snapshot(db.actor, project.id);
+        await expect(
+          relink.relink(db.actor, project.id, {
+            expectedWorkDir: missingShadow.workDir,
+            expectedTasks: missingShadow.tasks,
+            nextWorkDir: secondRoot,
+          }),
+        ).rejects.toThrow("缺少检查点影子仓库");
+        expect(
+          (
+            await createCheckpointRepository(db.persistence).getById(
+              db.instanceId,
+              checkpointId,
+            )
+          )?.rootDirectory,
+        ).toBe(nextRoot);
+        expect(
+          (
+            await createProjectRepository(db.persistence).findActiveById(
+              db.instanceId,
+              project.id,
+            )
+          )?.work_dir,
+        ).toBe(nextRoot);
+        expect(
+          (await run("git", ["--git-dir", heldGit, "show", `${sha}:note.txt`]))
+            .stdout,
+        ).toBe("历史真实字节");
+        await expect(
+          readFile(
+            join(
+              shadowRepositoryPath(checkpointRoot, taskId, secondRoot),
+              "config",
+            ),
+          ),
+        ).rejects.toMatchObject({ code: "ENOENT" });
       } finally {
         await db.close();
       }
@@ -424,7 +580,7 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
         await expect(
           f.handle.resolvePath("image.png", "read"),
         ).rejects.toThrow();
-        const policy = await f.tasks.readPolicy(f.db.actor, f.task.id);
+        const policy = await f.readTask();
         expect(policy).toMatchObject({
           rootDirectory: f.nextRoot,
           activeRunId: null,
@@ -447,7 +603,7 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
           )?.revision,
         ).toBe(f.layout.revision);
         expect(await readFile(join(f.nextRoot, "image.png"))).toEqual(f.bytes);
-        expect(await f.goals.readTask(f.db.actor, f.task.id)).toMatchObject({
+        expect(await f.readGoal()).toMatchObject({
           goalId: f.goal.goalId,
           objective: f.goal.objective,
           tokenBudget: 37,
@@ -477,9 +633,7 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
             expectedTasks: snapshot.tasks,
           }),
         ).rejects.toThrow("关闭失败");
-        expect(
-          (await f.tasks.readPolicy(f.db.actor, f.task.id)).executionState,
-        ).toBe("failed");
+        expect((await f.readTask()).executionState).toBe("failed");
         expect(
           (
             await createCanvasRepository(f.db.persistence).findById(
@@ -655,19 +809,7 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
     it("资源关闭回调返回但实际foreground未结算，不得伪造退出或发布新根", async () => {
       const f = await fixture();
       try {
-        const accepted = await f.tasks.admitInput(f.db.actor, {
-          taskId: f.task.id,
-          inputId: randomUUID(),
-          runId: randomUUID(),
-          scopeGeneration: 1,
-          branchGeneration: 1,
-          request: {
-            sessionId: f.task.id,
-            conversationId: f.task.id,
-            preset: "design",
-            prompt: "已接受且尚未真实结算",
-          },
-        });
+        const accepted = await f.admit(randomUUID(), "已接受且尚未真实结算");
         await f.move();
         const snapshot = await f.service.snapshot(f.db.actor, f.project.id);
         await expect(
@@ -677,7 +819,7 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
             nextWorkDir: f.nextRoot,
           }),
         ).rejects.toThrow("尚未停止");
-        const policy = await f.tasks.readPolicy(f.db.actor, f.task.id);
+        const policy = await f.readTask();
         expect(policy).toMatchObject({
           activeRunId: accepted.runId,
           executionState: "failed",
@@ -727,10 +869,8 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
         expect(
           (await f.files.inspect(f.db.actor, f.assetId)).relativePath,
         ).toBe("image.png");
-        expect(
-          (await f.tasks.readPolicy(f.db.actor, f.task.id)).activeRunId,
-        ).toBeNull();
-        expect(await f.goals.readTask(f.db.actor, f.task.id)).toMatchObject({
+        expect((await f.readTask()).activeRunId).toBeNull();
+        expect(await f.readGoal()).toMatchObject({
           goalId: f.goal.goalId,
           status: "paused",
           tokenBudget: 37,

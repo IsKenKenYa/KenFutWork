@@ -83,6 +83,9 @@ function elLabel(el: ExcalidrawElement): string {
   if (el.type === "image") {
     return el.customData?.title?.slice(0, 20) || "图像";
   }
+  if (el.type === "embeddable" && el.customData?.isVideo === true) {
+    return el.customData?.title?.slice(0, 20) || "视频";
+  }
   return el.type.charAt(0).toUpperCase() + el.type.slice(1);
 }
 

@@ -69,9 +69,11 @@ function makeScriptedFactory(
         rounds.push({ inputText: lastInputText });
         if (registry)
           onRound({ registry, round: rounds.length, lastInputText });
-        // 正常收尾：适配器在流自然结束时发 run.completed。
-        //（占位 yield：让本函数成为合法生成器；适配器忽略未知事件。）
-        yield { event: "__test_noop__" };
+        // 可见模型结果经真实适配器投影；后台结算仍由轮末闸门决定。
+        yield {
+          event: "on_chat_model_stream",
+          data: { chunk: { content: `已处理第${rounds.length}轮输入` } },
+        };
       },
     } as unknown as KenFutWorkAgent;
   };
@@ -267,6 +269,10 @@ describe("轮末闸门上限：挂死后台任务不产生无限续轮（DEC-18�
             });
             // 永不结算：轮末闸门会一直续轮直到打满上限
           }
+          yield {
+            event: "on_chat_model_stream",
+            data: { chunk: { content: `第${rounds}轮仍在等待后台构建` } },
+          };
         },
       } as unknown as KenFutWorkAgent;
     };

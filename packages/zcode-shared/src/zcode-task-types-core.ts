@@ -262,6 +262,8 @@ export interface ZCodeTaskPendingInteraction {
 }
 
 export interface ZCodeTaskMeta {
+  /** Work modes used by the same durable Task; filtering never partitions its history. */
+  workModes?: Array<"code" | "design">;
   /** UI taskId 与 ZCode agent sessionId 保持一致，用于列表选择、日志关联和恢复会话。 */
   taskId: string;
   /** session/任务级观测 traceId，不用于区分单次用户输入 */

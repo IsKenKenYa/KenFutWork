@@ -23,11 +23,13 @@ export class BlobError extends Error {
     bucket: string,
     path: string,
     message: string,
+    cause?: unknown,
   ) {
     super(
       `[blob] ${operation} 失败（bucket=${bucket} path=${path}）：${message}`,
     );
     this.name = "BlobError";
+    this.cause = cause;
     this.bucket = bucket;
     this.operation = operation;
     this.path = path;
@@ -46,6 +48,7 @@ export function failBlob(
     bucket,
     path,
     error instanceof Error ? error.message : String(error),
+    error,
   );
 }
 
