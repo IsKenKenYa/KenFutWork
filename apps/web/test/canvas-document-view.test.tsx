@@ -7,7 +7,11 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
   surfaceJson: mocks.json,
 }));
 
-import { CanvasDocumentView } from "../src/components/workbench/zcode/host/CanvasDocumentView.js";
+import {
+  CANVAS_CREATE_REQUEST_EVENT,
+  CANVAS_DELETE_REQUEST_EVENT,
+  CanvasDocumentView,
+} from "../src/components/workbench/zcode/host/CanvasDocumentView.js";
 import {
   CANVAS_DOCUMENT_DELETED_EVENT,
   CANVAS_DOCUMENT_UPDATED_EVENT,
@@ -56,6 +60,12 @@ function props(
     ...overrides,
   };
 }
+/** 未指向具体画布的标签（进入 Design 的默认入口形态）。 */
+function blank() {
+  const input = props();
+  delete input.tab.documentId;
+  return input;
+}
 function frame(view: ReturnType<typeof render>) {
   const iframe = view.container.querySelector("iframe");
   if (!iframe?.contentWindow) throw new Error("Missing canvas frame");
@@ -87,6 +97,10 @@ function acknowledgePrepare(target: Window) {
       });
   });
 }
+/** 等首轮画布列表落定（没有原生下拉可查了，用调用次数当同步点）。 */
+async function listed(times = 1) {
+  await waitFor(() => expect(mocks.json).toHaveBeenCalledTimes(times));
+}
 
 beforeEach(() => {
   mocks.json.mockReset().mockResolvedValue({ canvases: rows });
@@ -98,67 +112,58 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("空项目不自动创建画布，选择文档通过共享原标签打开", async () => {
-  const input = props();
-  delete input.tab.documentId;
+test("进入Design未选中画布时默认打开主画布，不新建", async () => {
   const opened = vi.fn();
   window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
-  const view = render(<CanvasDocumentView {...input} />);
+  render(<CanvasDocumentView {...blank()} />);
   await waitFor(() =>
-    expect(view.getByRole("option", { name: "画布 B" })).toBeTruthy(),
+    expect(opened.mock.calls[0]?.[0].detail).toEqual({
+      projectId,
+      documentId: canvasId,
+      title: "画布 A",
+    }),
   );
+  expect(opened).toHaveBeenCalledOnce();
+  expect(
+    mocks.json.mock.calls.some(([, options]) => options?.method === "POST"),
+  ).toBe(false);
+  window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
+});
+
+test("空项目不自动创建画布，未选中态只给新建入口", async () => {
+  mocks.json.mockImplementation(async (_path, init) =>
+    init?.method === "POST" ? canvas() : { canvases: [] },
+  );
+  const opened = vi.fn();
+  window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
+  const view = render(<CanvasDocumentView {...blank()} />);
+  await listed();
   expect(view.container.querySelector("iframe")).toBeNull();
   expect(
     mocks.json.mock.calls.some(([, options]) => options?.method === "POST"),
   ).toBe(false);
-  fireEvent.change(view.getByRole("combobox", { name: "画布" }), {
-    target: { value: otherId },
-  });
-  expect(opened).toHaveBeenCalledOnce();
+  fireEvent.click(view.getByRole("button", { name: "新建画布" }));
+  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
   expect(opened.mock.calls[0]?.[0].detail).toEqual({
     projectId,
-    documentId: otherId,
-    title: "画布 B",
+    documentId: canvasId,
+    title: "画布 A",
   });
   window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
 });
 
-test("保留的画布列表在显式聚焦、重新显示和同项目更新后重新对账", async () => {
-  const input = props();
-  delete input.tab.documentId;
-  const view = render(<CanvasDocumentView {...input} />);
-  await view.findByRole("option", { name: "画布 B" });
-  mocks.json.mockResolvedValue({
-    canvases: [
-      ...rows,
-      {
-        id: "20000000-0000-4000-8000-000000000003",
-        name: "新增画布",
-        isPrimary: false,
-      },
-    ],
-  });
-  fireEvent.focus(view.getByRole("combobox", { name: "画布" }));
-  await view.findByRole("option", { name: "新增画布" });
-  expect(mocks.json).toHaveBeenCalledTimes(2);
-  view.rerender(<CanvasDocumentView {...input} isVisible={false} />);
-  expect(mocks.json).toHaveBeenCalledTimes(2);
-  view.rerender(<CanvasDocumentView {...input} isVisible />);
-  await waitFor(() => expect(mocks.json).toHaveBeenCalledTimes(3));
-  window.dispatchEvent(
-    new CustomEvent(CANVAS_DOCUMENT_UPDATED_EVENT, {
-      detail: { projectId: "another-project", canvasId },
-    }),
-  );
-  expect(mocks.json).toHaveBeenCalledTimes(3);
-  window.dispatchEvent(
-    new CustomEvent(CANVAS_DOCUMENT_UPDATED_EVENT, {
-      detail: { projectId, canvasId },
-    }),
-  );
-  await waitFor(() => expect(mocks.json).toHaveBeenCalledTimes(4));
-  expect(view.container.querySelector("iframe")).toBeNull();
-  expect(mocks.json.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+test("每次解除选中只默认打开一次，重新指向后再次解除可再来", async () => {
+  const opened = vi.fn();
+  window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
+  const view = render(<CanvasDocumentView {...blank()} />);
+  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
+  view.rerender(<CanvasDocumentView {...props()} />);
+  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
+  view.rerender(<CanvasDocumentView {...blank()} isVisible={false} />);
+  expect(opened).toHaveBeenCalledTimes(1);
+  view.rerender(<CanvasDocumentView {...blank()} />);
+  await waitFor(() => expect(opened).toHaveBeenCalledTimes(2));
+  window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
 });
 
 test("画布隐藏后保持iframe及选区/品牌，隐藏交互不抢共享会话", async () => {
@@ -210,7 +215,7 @@ test("编辑器文档通知校验真实目标并更新列表，删除清理引�
   window.addEventListener(CANVAS_DOCUMENT_DELETED_EVENT, deleted);
   window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
   const view = render(<CanvasDocumentView {...props()} />);
-  await view.findByRole("option", { name: "画布 B" });
+  await listed();
   const { target } = frame(view);
   ready(target);
   await waitFor(() =>
@@ -226,7 +231,7 @@ test("编辑器文档通知校验真实目标并更新列表，删除清理引�
   send(target, { ...message, deleted: "false" });
   expect(updated).not.toHaveBeenCalled();
   send(target, message);
-  await waitFor(() => expect(mocks.json).toHaveBeenCalledTimes(2));
+  await listed(2);
   expect(updated.mock.calls[0]?.[0].detail).toEqual({
     type: "canvas.document.updated",
     projectId,
@@ -235,7 +240,7 @@ test("编辑器文档通知校验真实目标并更新列表，删除清理引�
     deleted: false,
   });
   send(target, { ...message, deleted: true });
-  await waitFor(() => expect(mocks.json).toHaveBeenCalledTimes(3));
+  await listed(3);
   expect(deleted.mock.calls[0]?.[0].detail.canvasId).toBe(canvasId);
   expect(getCanvasConversationContext(projectId)).toBeNull();
   ready(target, 4);
@@ -251,73 +256,96 @@ test("编辑器文档通知校验真实目标并更新列表，删除清理引�
   window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
 });
 
-test("重命名先等待编辑器真实保存revision，再带名称与CAS提交", async () => {
-  mocks.json.mockImplementation(async (_path, init) =>
-    init?.method === "PATCH" ? canvas(canvasId, "海报") : { canvases: rows },
+test("保留的画布列表在重新显示和同项目更新后重新对账", async () => {
+  const input = props();
+  const view = render(<CanvasDocumentView {...input} />);
+  await listed();
+  expect(mocks.json).toHaveBeenCalledTimes(1);
+  view.rerender(<CanvasDocumentView {...input} isVisible={false} />);
+  expect(mocks.json).toHaveBeenCalledTimes(1);
+  view.rerender(<CanvasDocumentView {...input} isVisible />);
+  await listed(2);
+  window.dispatchEvent(
+    new CustomEvent(CANVAS_DOCUMENT_UPDATED_EVENT, {
+      detail: { projectId: "another-project", canvasId },
+    }),
   );
+  expect(mocks.json).toHaveBeenCalledTimes(2);
+  window.dispatchEvent(
+    new CustomEvent(CANVAS_DOCUMENT_UPDATED_EVENT, {
+      detail: { projectId, canvasId },
+    }),
+  );
+  await listed(3);
+  expect(mocks.json.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+});
+
+test("菜单动作转成宿主事件：新建走幂等创建并打开新内容", async () => {
+  mocks.json.mockImplementation(async (_path, init) =>
+    init?.method === "POST"
+      ? canvas(otherId, "未命名画布")
+      : { canvases: rows },
+  );
+  const opened = vi.fn();
+  const create = vi.fn();
+  window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
+  window.addEventListener(CANVAS_CREATE_REQUEST_EVENT, create);
   const view = render(<CanvasDocumentView {...props()} />);
   const { target } = frame(view);
-  acknowledgePrepare(target);
-  ready(target);
-  await waitFor(() =>
-    expect(view.getByRole("option", { name: "画布 A" })).toBeTruthy(),
-  );
-  fireEvent.change(view.getByRole("textbox", { name: "画布名称" }), {
-    target: { value: "海报" },
-  });
-  fireEvent.click(view.getByRole("button", { name: "重命名" }));
+  send(target, { type: "kenfutwork:canvas-create" });
+  expect(create).toHaveBeenCalledOnce();
   await waitFor(() =>
     expect(
-      mocks.json.mock.calls.some(([, init]) => init?.method === "PATCH"),
+      mocks.json.mock.calls.some(([, init]) => init?.method === "POST"),
     ).toBe(true),
   );
   const mutation = mocks.json.mock.calls.find(
-    ([, init]) => init?.method === "PATCH",
+    ([, init]) => init?.method === "POST",
   );
-  expect(mutation?.[0]).toBe(`/api/canvases/${canvasId}`);
-  expect(JSON.parse(mutation?.[1].body)).toEqual({
-    name: "海报",
-    expectedName: "画布 A",
-    expectedRevision: revision,
+  expect(mutation?.[0]).toBe(`/api/projects/${projectId}/canvases`);
+  expect(JSON.parse(mutation?.[1].body).name).toBe("未命名画布");
+  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
+  expect(opened.mock.calls[0]?.[0].detail).toEqual({
+    projectId,
+    documentId: otherId,
+    title: "未命名画布",
   });
+  window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
+  window.removeEventListener(CANVAS_CREATE_REQUEST_EVENT, create);
 });
 
-test("删除需显式确认并用保存后的版本，删除事件指向对应项目文档", async () => {
+test("删除画布先等待编辑器真实保存版本，删除事件指向对应项目文档", async () => {
   mocks.json.mockImplementation(async (_path, init) =>
     init?.method === "DELETE" ? { ok: true } : { canvases: rows },
   );
   const deleted = vi.fn();
+  const remove = vi.fn();
   window.addEventListener(CANVAS_DOCUMENT_DELETED_EVENT, deleted);
+  window.addEventListener(CANVAS_DELETE_REQUEST_EVENT, remove);
   const view = render(<CanvasDocumentView {...props()} />);
   const { target } = frame(view);
   acknowledgePrepare(target);
   ready(target);
-  await waitFor(() =>
-    expect(
-      view.getByRole("button", { name: "删除" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  fireEvent.click(view.getByRole("button", { name: "删除" }));
-  expect(
-    mocks.json.mock.calls.some(([, init]) => init?.method === "DELETE"),
-  ).toBe(false);
-  fireEvent.click(view.getByRole("button", { name: "确认删除" }));
+  send(target, { type: "kenfutwork:canvas-delete" });
+  expect(remove).toHaveBeenCalledOnce();
   await waitFor(() => expect(deleted).toHaveBeenCalledOnce());
   const mutation = mocks.json.mock.calls.find(
     ([, init]) => init?.method === "DELETE",
   );
+  expect(mutation?.[0]).toBe(`/api/canvases/${canvasId}`);
   expect(JSON.parse(mutation?.[1].body)).toEqual({
     expectedRevision: revision,
   });
   expect(deleted.mock.calls[0]?.[0].detail).toEqual({ projectId, canvasId });
   window.removeEventListener(CANVAS_DOCUMENT_DELETED_EVENT, deleted);
+  window.removeEventListener(CANVAS_DELETE_REQUEST_EVENT, remove);
 });
 
 test("创建重试复用幂等请求，迟到创建结果不抢显式选择的新内容", async () => {
   let attempts = 0;
   let complete: ((value: ReturnType<typeof canvas>) => void) | undefined;
   mocks.json.mockImplementation(async (_path, init) => {
-    if (init?.method !== "POST") return { canvases: rows };
+    if (init?.method !== "POST") return { canvases: [] };
     attempts++;
     if (attempts === 1) throw new Error("创建失败，请重试");
     return new Promise<ReturnType<typeof canvas>>((resolve) => {
@@ -326,8 +354,8 @@ test("创建重试复用幂等请求，迟到创建结果不抢显式选择的�
   });
   const opened = vi.fn();
   window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
-  const view = render(<CanvasDocumentView {...props()} />);
-  fireEvent.click(view.getByRole("button", { name: "新建画布" }));
+  const view = render(<CanvasDocumentView {...blank()} />);
+  fireEvent.click(await view.findByRole("button", { name: "新建画布" }));
   await view.findByRole("alert");
   fireEvent.click(view.getByRole("button", { name: "新建画布" }));
   await waitFor(() => expect(attempts).toBe(2));
@@ -335,9 +363,8 @@ test("创建重试复用幂等请求，迟到创建结果不抢显式选择的�
     .filter(([, init]) => init?.method === "POST")
     .map(([, init]) => JSON.parse(init.body));
   expect(bodies[0].requestId).toBe(bodies[1].requestId);
-  view.rerender(<CanvasDocumentView {...props({ isVisible: false })} />);
+  view.rerender(<CanvasDocumentView {...blank()} isVisible={false} />);
   complete?.(canvas(otherId, "未命名画布"));
-  await waitFor(() => expect(mocks.json).toHaveBeenCalledTimes(4));
-  expect(opened).not.toHaveBeenCalled();
+  await waitFor(() => expect(opened).not.toHaveBeenCalled());
   window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
 });

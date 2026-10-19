@@ -22,7 +22,6 @@ const FILES = [
   "canvas-files-panel.tsx",
 
   "canvas-layers-panel.tsx",
-  "canvas-empty-hint.tsx",
   "canvas-tool-menu.tsx",
   join("canvas", "image-generator-panel.tsx"),
   join("canvas", "video-generator-panel.tsx"),

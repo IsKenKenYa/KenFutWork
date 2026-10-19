@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 vi.mock("@/lib/server-api", () => ({
-  deleteProject: vi.fn(),
   exportCanvasAssets: mocks.exportAssets,
   restoreCanvasAssets: mocks.restoreAssets,
 }));
@@ -26,12 +25,12 @@ import { CanvasLogoMenu } from "../src/components/canvas-logo-menu";
 
 const props = {
   accessToken: "token",
-  projectId: "project-1",
   canvasId: "canvas-1",
   projectName: "Canvas",
   excalidrawApi: null,
   onCanvasSync: vi.fn(async () => {}),
-  onNewProject: vi.fn(),
+  onNewCanvas: vi.fn(),
+  onDeleteCanvas: vi.fn(),
 };
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
@@ -50,7 +49,8 @@ describe("CanvasLogoMenu asset actions", () => {
       .mockResolvedValue({ revision: "revision-2", assetIds: [] });
     mocks.toastError.mockReset();
     props.onCanvasSync.mockClear();
-    props.onNewProject.mockClear();
+    props.onNewCanvas.mockClear();
+    props.onDeleteCanvas.mockClear();
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
       value: () => "blob:archive",
@@ -90,13 +90,22 @@ describe("CanvasLogoMenu asset actions", () => {
     );
   });
 
-  it("requests a new project from the shared workbench without creating a canvas", async () => {
+  it("requests a new canvas from the shared workbench without touching assets", async () => {
     renderMenu(async () => "revision-after-save");
     await openMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "新建项目" }));
-    expect(props.onNewProject).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("menuitem", { name: "新建画布" }));
+    expect(props.onNewCanvas).toHaveBeenCalledOnce();
     expect(props.onCanvasSync).not.toHaveBeenCalled();
     expect(mocks.exportAssets).not.toHaveBeenCalled();
+  });
+
+  it("deletes the canvas only after an explicit second confirmation", async () => {
+    renderMenu(async () => "revision-after-save");
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除画布" }));
+    expect(props.onDeleteCanvas).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("menuitem", { name: "确认删除?" }));
+    expect(props.onDeleteCanvas).toHaveBeenCalledOnce();
   });
 
   it("does not export or restore when draft flush fails", async () => {

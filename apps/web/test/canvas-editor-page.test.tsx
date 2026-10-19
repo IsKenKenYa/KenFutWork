@@ -122,13 +122,6 @@ vi.mock("../src/components/canvas-editor", async () => {
     },
   };
 });
-vi.mock("../src/components/canvas-empty-hint", () => ({
-  CanvasEmptyHint: ({ onOpenChat }: { onOpenChat: () => void }) => (
-    <button type="button" onClick={onOpenChat}>
-      聚焦会话
-    </button>
-  ),
-}));
 vi.mock("../src/components/canvas-inspector", async () => {
   const { useEffect } = await import("react");
   const restore = (operation: () => Promise<void>) => {
@@ -152,10 +145,21 @@ vi.mock("../src/components/canvas-inspector", async () => {
   };
 });
 vi.mock("../src/components/canvas-logo-menu", () => ({
-  CanvasLogoMenu: ({ onNewProject }: { onNewProject: () => void }) => (
-    <button type="button" onClick={onNewProject}>
-      新建项目
-    </button>
+  CanvasLogoMenu: ({
+    onNewCanvas,
+    onDeleteCanvas,
+  }: {
+    onNewCanvas: () => void;
+    onDeleteCanvas: () => void;
+  }) => (
+    <>
+      <button type="button" onClick={onNewCanvas}>
+        新建画布
+      </button>
+      <button type="button" onClick={onDeleteCanvas}>
+        删除画布
+      </button>
+    </>
   ),
 }));
 vi.mock("../src/components/canvas-tool-menu", () => ({
@@ -252,7 +256,7 @@ test("直接画布链接进入共享工作台，旧prompt和session不触发Agen
   expect(mocks.cancelRun).not.toHaveBeenCalled();
 });
 
-test("编辑器向共享宿主发真实选区、品牌、焦点和项目动作", async () => {
+test("编辑器向共享宿主发真实选区、品牌与建/删画布动作", async () => {
   const post = vi
     .spyOn(window.parent, "postMessage")
     .mockImplementation(() => {});
@@ -296,19 +300,19 @@ test("编辑器向共享宿主发真实选区、品牌、焦点和项目动作",
       origin,
     ),
   );
-  fireEvent.click(view.getByRole("button", { name: "聚焦会话" }));
+  fireEvent.click(view.getByRole("button", { name: "新建画布" }));
   expect(post).toHaveBeenCalledWith(
     {
-      type: "kenfutwork:canvas-focus-session",
+      type: "kenfutwork:canvas-create",
       canvasId: "canvas-a",
       projectId: "project-a",
     },
     origin,
   );
-  fireEvent.click(view.getByRole("button", { name: "新建项目" }));
+  fireEvent.click(view.getByRole("button", { name: "删除画布" }));
   expect(post).toHaveBeenCalledWith(
     {
-      type: "kenfutwork:canvas-new-project",
+      type: "kenfutwork:canvas-delete",
       canvasId: "canvas-a",
       projectId: "project-a",
     },

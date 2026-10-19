@@ -12,7 +12,6 @@ import {
   CanvasEditor,
   type CanvasSelectedElement,
 } from "../../components/canvas-editor";
-import { CanvasEmptyHint } from "../../components/canvas-empty-hint";
 import { CanvasInspector } from "../../components/canvas-inspector";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { CanvasToolMenu } from "../../components/canvas-tool-menu";
@@ -283,12 +282,12 @@ function CanvasPageContent() {
     },
     [brandKitId],
   );
-  const handleOpenSession = useCallback(
-    () => bridgeRef.current?.focusSession(),
+  const handleNewCanvas = useCallback(
+    () => bridgeRef.current?.requestCreateCanvas(),
     [],
   );
-  const handleNewProject = useCallback(
-    () => bridgeRef.current?.requestProject(),
+  const handleDeleteCanvas = useCallback(
+    () => bridgeRef.current?.requestDeleteCanvas(),
     [],
   );
 
@@ -373,11 +372,11 @@ function CanvasPageContent() {
       <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
         <CanvasLogoMenu
           accessToken={accessToken}
-          projectId={canvasData.projectId}
           canvasId={canvasData.id}
           onCanvasSync={handleCanvasSync}
           prepareCanvas={prepareCanvasAssetOperation}
-          onNewProject={handleNewProject}
+          onNewCanvas={handleNewCanvas}
+          onDeleteCanvas={handleDeleteCanvas}
           projectName={projectName}
           excalidrawApi={excalidrawApi}
         />
@@ -426,12 +425,6 @@ function CanvasPageContent() {
           onApiReady={setExcalidrawApi}
           ws={ws}
           onSelectionChange={handleSelectionChange}
-          overlay={
-            <CanvasEmptyHint
-              excalidrawApi={excalidrawApi}
-              onOpenChat={handleOpenSession}
-            />
-          }
         />
         {excalidrawApi && (
           <CanvasToolMenu

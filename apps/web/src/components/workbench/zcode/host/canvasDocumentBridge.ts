@@ -15,6 +15,8 @@ export function installCanvasDocumentBridge(options: {
   onContext: (context: ConversationWorkContext) => void;
   onFocus: () => void;
   onNewProject: () => void;
+  onCreateCanvas: () => void;
+  onDeleteCanvas: () => void;
   onProjectDeleted: () => void;
   onDocumentUpdated: (message: CanvasDocumentUpdatedMessage) => void;
 }) {
@@ -104,6 +106,8 @@ export function installCanvasDocumentBridge(options: {
       options.onFocus();
     else if (data.type === "kenfutwork:canvas-new-project")
       options.onNewProject();
+    else if (data.type === "kenfutwork:canvas-create") options.onCreateCanvas();
+    else if (data.type === "kenfutwork:canvas-delete") options.onDeleteCanvas();
   };
   window.addEventListener("message", receive);
   return {

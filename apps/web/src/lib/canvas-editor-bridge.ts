@@ -92,6 +92,13 @@ export function installCanvasEditorBridge(options: {
     requestProject() {
       post("kenfutwork:canvas-new-project");
     },
+    /** 建/删画布由宿主执行：列表、保存版本与标签归属都在宿主一侧。 */
+    requestCreateCanvas() {
+      post("kenfutwork:canvas-create");
+    },
+    requestDeleteCanvas() {
+      post("kenfutwork:canvas-delete");
+    },
     dispose() {
       disposed = true;
       preparations.clear();

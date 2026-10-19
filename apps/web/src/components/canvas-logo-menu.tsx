@@ -32,19 +32,16 @@ import {
   getViewportCenter,
   scaleToFit,
 } from "@/lib/canvas-elements";
-import {
-  deleteProject,
-  exportCanvasAssets,
-  restoreCanvasAssets,
-} from "@/lib/server-api";
+import { exportCanvasAssets, restoreCanvasAssets } from "@/lib/server-api";
 
 interface CanvasLogoMenuProps {
   accessToken: string | null;
-  projectId: string;
   canvasId: string;
   onCanvasSync: () => Promise<void>;
   prepareCanvas: () => Promise<string | null>;
-  onNewProject: () => void;
+  /** 建/删画布由宿主工作台执行（见 `canvas-editor-bridge`）。 */
+  onNewCanvas: () => void;
+  onDeleteCanvas: () => void;
   /** 项目名——导出画布时用作文件名（缺省回落到 canvas）。 */
   projectName?: string | undefined;
   excalidrawApi: ExcalidrawImperativeAPI | null;
@@ -77,11 +74,11 @@ function generateFileId(): string {
 
 export function CanvasLogoMenu({
   accessToken,
-  projectId,
   canvasId,
   onCanvasSync,
   prepareCanvas,
-  onNewProject,
+  onNewCanvas,
+  onDeleteCanvas,
   projectName,
   excalidrawApi,
 }: CanvasLogoMenuProps) {
@@ -148,30 +145,6 @@ export function CanvasLogoMenu({
       toastError("导出画布失败");
     }
   }, [excalidrawApi, projectName, toastError]);
-
-  const handleDeleteProject = useCallback(async () => {
-    if (!confirmingDelete) {
-      setConfirmingDelete(true);
-      return;
-    }
-    try {
-      await deleteProject(accessToken, projectId);
-      if (window.parent !== window) {
-        // 嵌入工作台 iframe：回传宿主清选中并刷新项目列表
-        window.parent.postMessage(
-          { type: "workbench:project-deleted", projectId },
-          window.location.origin,
-        );
-      } else {
-        window.location.replace("/workbench");
-      }
-    } catch (err) {
-      console.warn("Failed to delete project:", err);
-      toastError("项目删除失败");
-    } finally {
-      setConfirmingDelete(false);
-    }
-  }, [accessToken, projectId, confirmingDelete, toastError]);
 
   const handleExportAssets = useCallback(async () => {
     try {
@@ -286,11 +259,11 @@ export function CanvasLogoMenu({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="start" sideOffset={6} className="w-56">
-          {/* Group 1 — Project actions */}
+          {/* Group 1 — Canvas actions */}
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={onNewProject}>
+            <DropdownMenuItem onClick={onNewCanvas}>
               <Plus className="size-4" />
-              新建项目
+              新建画布
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
@@ -301,11 +274,11 @@ export function CanvasLogoMenu({
                   return;
                 }
                 setMenuOpen(false);
-                void handleDeleteProject();
+                onDeleteCanvas();
               }}
             >
               <Trash2 className="size-4" />
-              {confirmingDelete ? "确认删除?" : "删除当前项目"}
+              {confirmingDelete ? "确认删除?" : "删除画布"}
             </DropdownMenuItem>
           </DropdownMenuGroup>
 
