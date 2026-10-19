@@ -13,6 +13,8 @@ import {
   createOpenDesignCompanionController,
   resolveOpenDesignCarrierMode,
 } from "./companion.js";
+import { resolveOpenDesignCredentialEntries } from "./credentials.js";
+import { provisionOpenDesign } from "./provision.js";
 
 /**
  * 伴随容器 compose 资源（`open-design/`）：与 dify 同一条规则——**源码态**上溯 5 级到
@@ -111,12 +113,27 @@ export function createOpenDesignHostPlugin(deps: {
         ctx.effect(() => {
           void companion
             .start()
-            .then(() => {
+            .then(async () => {
               const snapshot = companion.snapshot();
               if (snapshot.state === "error") {
                 console.warn(
                   `[open-design] 伴随容器未起或启动失败：${snapshot.error ?? "原因未知"}（GET /api/open-design/host/status 可查）`,
                 );
+                return;
+              }
+              // 起好了就替用户把上游引导做完：不弹登录·注册，能配的 BYOK 一并写进去。
+              const credentials = await resolveOpenDesignCredentialEntries({
+                providers: ctx.get("modelProviders"),
+                serviceActor: () => ctx.get("localInstance").serviceActor(),
+              });
+              const result = await provisionOpenDesign({
+                baseUrl: deps.frontendUrl ?? "",
+                fetchImpl: deps.fetchImpl ?? fetch,
+                entries: credentials.ok ? credentials.entries : [],
+                log: (message) => console.log(message),
+              });
+              if (!result.done && result.reason) {
+                console.warn(`[open-design] ${result.reason}`);
               }
             })
             .catch((error: unknown) => {

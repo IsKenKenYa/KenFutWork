@@ -18,7 +18,7 @@ import {
   writeOpenDesignFileConfig,
 } from "../features/open-design/config-store.js";
 import {
-  resolveOpenDesignCredentials,
+  resolveOpenDesignCredentialEntries,
   resolveOpenDesignProtocolVersion,
 } from "../features/open-design/credentials.js";
 import { resolveOpenDesignHostStatus } from "../features/open-design/host-status.js";
@@ -211,20 +211,11 @@ export async function registerOpenDesignHostRoutes(
           "OpenDesign 协议版本不匹配。",
         );
 
-      const actor = await options.localInstance.serviceActor();
-      const resolved = await resolveOpenDesignCredentials({
-        instances: await options.providers.listInstances(actor),
-        readKey: async (providerId) => {
-          try {
-            const credentials =
-              await options.providers?.resolveCredentialsById(providerId);
-            return credentials?.apiKey ?? null;
-          } catch {
-            // 服务层的错误消息不排除未来变动会带敏感片段——统一按「读不到」处理，
-            // 由解析器产出只含实例名的可读原因（脱敏红线）。
-            return null;
-          }
-        },
+      // 守卫之后先捕获：闭包里读 options.localInstance 会丢掉 TS 的窄化。
+      const localInstance = options.localInstance;
+      const resolved = await resolveOpenDesignCredentialEntries({
+        providers: options.providers,
+        serviceActor: () => localInstance.serviceActor(),
       });
       if (!resolved.ok) {
         return error(

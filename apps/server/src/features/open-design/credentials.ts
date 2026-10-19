@@ -50,6 +50,47 @@ export function resolveOpenDesignProtocolVersion(
 }
 
 /**
+ * 从宿主服务取「可下发给 OpenDesign 的凭证清单」——HTTP 路由与启动期自动配置共用这一份，
+ * 避免两处各写一遍实例过滤与 Key 读取（脱敏口径也必须一致）。
+ */
+export async function resolveOpenDesignCredentialEntries<Actor>(input: {
+  providers:
+    | {
+        listInstances: (
+          actor: Actor,
+        ) => Promise<OpenDesignCredentialCandidate[]>;
+        resolveCredentialsById: (
+          providerId: string,
+        ) => Promise<{ apiKey?: string | null } | null | undefined>;
+      }
+    | undefined;
+  serviceActor: () => Promise<Actor>;
+}): Promise<OpenDesignCredentialsResolution> {
+  if (!input.providers) {
+    return {
+      ok: false,
+      status: 404,
+      message: "供应商服务未就绪，OpenDesign 暂时拿不到 BYOK 配置。",
+    };
+  }
+  const providers = input.providers;
+  const actor = await input.serviceActor();
+  return resolveOpenDesignCredentials({
+    instances: await providers.listInstances(actor),
+    readKey: async (providerId) => {
+      try {
+        const credentials = await providers.resolveCredentialsById(providerId);
+        return credentials?.apiKey ?? null;
+      } catch {
+        // 服务层的错误消息不排除未来变动会带敏感片段——统一按「读不到」处理，
+        // 由解析器产出只含实例名的可读原因（脱敏红线）。
+        return null;
+      }
+    },
+  });
+}
+
+/**
  * 解析下发给 OpenDesign 的凭证清单。
  *
  * @param instances 本地实例列表（已按当前实例作用域取好）。
