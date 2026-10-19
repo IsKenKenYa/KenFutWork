@@ -1504,6 +1504,7 @@ const zhCN: Record<string, string> = {
   "workspaceSidebar.organize": "视图",
   "workspaceSidebar.organizeGrouped": "分组",
   "workspaceSidebar.organizeByProject": "项目",
+  "workspaceSidebar.organizeCanvas": "画布",
   "workspaceSidebar.conversationsSection": "任务",
   "workspaceSidebar.projectsSection": "项目",
   "workspaceSidebar.newConversation": "新建任务",

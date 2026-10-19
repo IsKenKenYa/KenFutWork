@@ -1620,6 +1620,7 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.organize": "View",
   "workspaceSidebar.organizeGrouped": "Group",
   "workspaceSidebar.organizeByProject": "Project",
+  "workspaceSidebar.organizeCanvas": "Canvas",
   "workspaceSidebar.conversationsSection": "Tasks",
   "workspaceSidebar.projectsSection": "Projects",
   "workspaceSidebar.newConversation": "New task",

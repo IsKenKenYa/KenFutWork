@@ -25,6 +25,7 @@ import type {
 } from "@zcode/shared";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
+  parseLocalWorkspaceIdentity,
   TID_CONVERSATION_NEW_TASK,
   TID_CONVERSATION_SECTION,
   TID_PROJECT_ADD,
@@ -129,6 +130,7 @@ import {
   MessageCirclePlus,
   Minimize2,
   PanelLeftClose,
+  Palette,
   Plus,
   Search,
   WandSparkles,
@@ -145,10 +147,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
+import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
 import { useSharedProjectTabs } from "./host/SharedProjectNavigation.js";
 import {
   HostSidebarRail,
@@ -180,7 +184,7 @@ export { applyWorkspaceTriggerSelection } from "@zui/WorkspaceSidebar/workspaceS
 
 type TaskOrganizeBy = SidebarTaskOrganizeBy;
 type TaskSortBy = SidebarTaskSortBy;
-type PrimaryTaskMode = "workspace" | "grouped";
+type PrimaryTaskMode = "workspace" | "grouped" | "canvas";
 type SidebarTaskViewMode = "grouped" | "workspace" | "timeline" | "archived";
 
 interface SidebarFileTreeTarget {
@@ -453,6 +457,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const [taskOrganizeBy, setTaskOrganizeBy] = useState<TaskOrganizeBy>(
     () => readSidebarTaskPreferences().organizeBy,
   );
+  // Design 侧栏的「画布」页：与任务组织方式正交，选中时整块任务区换成画布列表。
+  const [canvasSection, setCanvasSection] = useState(false);
+  const workbenchNavigation = platform?.workbenchNavigation;
+  const workbenchMode = useSyncExternalStore(
+    workbenchNavigation?.subscribe ?? (() => () => {}),
+    () => workbenchNavigation?.getSnapshot().mode ?? "code",
+  );
+  const activeCanvasProjectId = parseLocalWorkspaceIdentity(
+    workspaceIdentity,
+    workspacePath,
+  )?.projectId ?? null;
   const [taskSortBy, setTaskSortBy] = useState<TaskSortBy>(
     () => readSidebarTaskPreferences().sortBy,
   );
@@ -540,6 +555,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   >({
     workspace: null,
     grouped: null,
+    canvas: null,
   });
   const [primaryTaskIndicatorStyle, setPrimaryTaskIndicatorStyle] =
     useState<CSSProperties>({
@@ -982,8 +998,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       },
       previous: lastStableTaskGroupTogglePresentationRef.current,
     });
-  const activePrimaryTaskMode: PrimaryTaskMode =
-    taskOrganizeBy === "grouped" ? "grouped" : "workspace";
+  const activePrimaryTaskMode: PrimaryTaskMode = canvasSection
+    ? "canvas"
+    : taskOrganizeBy === "grouped"
+      ? "grouped"
+      : "workspace";
   const workspaceTaskViewValue =
     taskOrganizeBy === "chronological" ? "chronological" : "project";
   const showTaskViewFilter =
@@ -1001,6 +1020,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         groupedCount: groupedTaskGroupIds.length,
         lastGroupedCount: lastNonEmptyGroupedTaskGroupIds.length,
       });
+      if (value === "canvas") {
+        setCanvasSection(true);
+        return;
+      }
+      setCanvasSection(false);
       if (value === "grouped") {
         setGroupedTaskGroupIdsHydrated(false);
         setTaskOrganizeBy("grouped");
@@ -1198,6 +1222,22 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     })}
                   </span>
                 </TabsTrigger>
+                {workbenchMode === "design" ? (
+                  <TabsTrigger
+                    ref={(node) => {
+                      primaryTaskTabTriggerRefs.current.canvas = node;
+                    }}
+                    value="canvas"
+                    className="relative z-10 h-6 flex-none gap-1 rounded-full border-transparent bg-transparent py-0 pl-1.5 pr-2 text-ui-sm font-medium text-foreground-subtle transition-colors data-active:border-transparent data-active:bg-transparent data-active:text-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-transparent"
+                  >
+                    <Palette aria-hidden="true" className="size-3 shrink-0" />
+                    <span>
+                      {intl.formatMessage({
+                        id: "workspaceSidebar.organizeCanvas",
+                      })}
+                    </span>
+                  </TabsTrigger>
+                ) : null}
               </TabsList>
             </Tabs>
             {toggleAllTaskGroupsPresentation ? (
@@ -1573,7 +1613,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                   />
                 ) : null}
                 <div className="flex min-h-0 flex-col gap-3 px-2">
-                  {taskViewMode === "archived" ? (
+                  {canvasSection ? (
+                    <SidebarCanvasSection
+                      projectId={activeCanvasProjectId}
+                    />
+                  ) : taskViewMode === "archived" ? (
                     <WorkspaceArchivedTasksFlatSection
                       actionsContainer={archivedActionsContainer}
                       workspaceTabs={workspaceTabs}
