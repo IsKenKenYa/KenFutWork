@@ -130,14 +130,16 @@ describe("可注入脚本：UMD 分支修正", () => {
     Reflect.deleteProperty(window, "define");
   });
 
-  it("悬浮窗改造：样式进 Eruda 自己的 root（影子根里页面样式进不去）+ 拖动 + 关闭", () => {
+  it("三态窗口改造：实底悬浮 + 悬浮球 + 贴底最大化 + 边线拖高", () => {
     const script = buildInjectableScript("var x = 1;");
     expect(script).toContain("getRootNode");
     expect(script).toContain(".eruda-container{position:fixed");
     // 正文面板拉满：Eruda 自己留的顶部空档在悬窗形态下是**透明死区**（用户圈过）
     expect(script).toContain(
-      ".eruda-dev-tools{top:0!important;height:100%!important}",
+      ".eruda-dev-tools{top:0!important;height:100%!important;pointer-events:auto!important}",
     );
+    // 实底：容器显式上底色——透明面板被用户圈过（页面内容透出来像坏掉）
+    expect(script).toContain("background:#fff!important");
     expect(script).toContain('setProperty("left"');
     expect(script).toContain("eruda.hide()");
     expect(script).toContain("__kfwFloating = true");
@@ -148,8 +150,23 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("nwse-resize");
     // 关闭要连**容器**一起收（光 eruda.hide() 会留个空框：我们的样式钉死了宽高）
     expect(script).toContain('setProperty("display", "none", "important")');
-    // 重新打开要放回来（幂等分支里）
+    // 重新打开要放回来（幂等分支里），并从任何状态回到悬浮窗
     expect(script).toContain('removeProperty("display")');
+    expect(script).toContain("__kfwConsoleRestore");
+    // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原
+    expect(script).toContain("kfw-ball-left");
+    expect(script).toContain("kfw-ball-right");
+    // 悬浮球图标与「打开调试工具」菜单同款（lucide square-terminal 的三段路径）
+    expect(script).toContain('<path d="m7 11 2-2-2-2"></path>');
+    expect(script).toContain('<path d="M11 13h4"></path>');
+    // 最大化 = 贴底全宽遮罩，上边线 ns-resize（上下箭头）拖高度（--kfw-mh）
+    expect(script).toContain("kfw-max");
+    expect(script).toContain("ns-resize");
+    expect(script).toContain("--kfw-mh");
+    // 三按钮（最小化/最大化/关闭）悬浮与最大化两态都在右上角
+    expect(script).toContain("kfw-btnbar");
+    expect(script).toContain("最小化为悬浮球");
+    expect(script).toContain("最大化（贴底）");
   });
 
   it("源码抛错也要把 define 还回去（不能把人家的加载器弄坏）", () => {

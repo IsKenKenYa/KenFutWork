@@ -48,23 +48,28 @@ const START_TAIL = `
 })();`;
 
 /**
-/**
- * 把 Eruda 的容器改成**悬浮窗**（可拖动 / 可关闭）。
+ * 把 Eruda 的容器改造成**三态窗口**（用户口径 2026-10-20）：
+ * - **悬浮**（默认）：实底悬浮窗，顶部标签栏拖动移动，右下角缩放，右上角三按钮；
+ * - **最小化**：收成**悬浮球**贴边半藏（图标与「打开调试工具」菜单同款 SquareTerminal），
+ *   悬停滑出、点一下还原悬浮窗；
+ * - **最大化**：贴页面底部的全宽遮罩，上边线 `ns-resize` 上下箭头可拖高度，右上角同样三按钮。
  *
- * 三个实现要点：
- * - 它的 DOM 在 **shadow root** 里（`eruda-container` 自建影子根），页面样式进不去，
- *   所以样式要 append 到容器所在的 root（`getRootNode()` 一次拿对，影子根与普通文档都吃）；
- * - 拖动与关闭都挂在容器上（**不新插标题栏**，避免破坏它内部的 flex 布局）：顶部 32px 那一条
- *   按下即拖（直接改内联 left/top），✕ 绝对定位浮在右上角；
- * - 幂等：`window.__kfwFloating` 标记，重复点不会叠第二套监听。
+ * 实现要点：
+ * - Eruda 的 DOM 在 **shadow root** 里，页面样式进不去——样式与悬浮球都挂在容器所在的
+ *   root（`getRootNode()` 拿对，影子根与普通文档都吃）；
+ * - 按钮条/边线手柄直接 append 到容器（不新插标题栏，避免破坏它内部 flex）；
+ * - 实底：容器显式 `background:#fff`——Eruda 自身不保证给容器上底色，透明面板真机被用户
+ *   圈过（页面内容透出来像坏掉）；
+ * - 幂等：`window.__kfwFloating` 标记，重复点「打开调试工具」从任何状态回到悬浮窗。
  */
 const FLOAT_SCRIPT = `
 ;(function () {
-  // 重新打开：把上一次「关闭」按下去的 display 放回来（幂等，不叠监听）
+  // 重新打开：从任何状态（关闭/悬浮球/最大化）回到悬浮窗（幂等，不叠监听）
   if (window.__kfwFloating) {
     var again = document.querySelector(".eruda-container");
     if (again) again.style.removeProperty("display");
     if (window.eruda) window.eruda.show();
+    if (window.__kfwConsoleRestore) window.__kfwConsoleRestore();
     return;
   }
   // 容器可能在**影子根**里（Eruda 自己建的）：document.querySelector 穿不过去，
@@ -89,49 +94,142 @@ const FLOAT_SCRIPT = `
   var root = container.getRootNode ? container.getRootNode() : document;
   var style = document.createElement("style");
   style.textContent =
-    ".eruda-container{position:fixed!important;left:24px;top:24px;right:auto!important;" +
-    "bottom:auto!important;width:var(--kfw-w,460px)!important;height:var(--kfw-h,340px)!important;" +
+    ".eruda-container{position:fixed!important;background:#fff!important;" +
+    "z-index:2147483646!important;pointer-events:auto!important;box-sizing:border-box!important}" +
+    // 悬浮态：位置/尺寸都由 CSS 变量驱动（拖动改 --kfw-x/--kfw-y，角柄改宽高）
+    ".eruda-container.kfw-float{left:24px;top:24px;right:auto!important;bottom:auto!important;" +
+    "width:var(--kfw-w,460px)!important;height:var(--kfw-h,340px)!important;" +
     "max-width:none!important;max-height:none!important;border-radius:6px!important;" +
-    "box-shadow:0 10px 28px rgba(0,0,0,.35)!important;z-index:2147483646!important;" +
-    "overflow:hidden!important;" +
-    // Eruda 的正文面板自己留了一条顶部空档（原来是放标题的）：悬窗形态下那条是**透明死区**
-    // （用户截图圈出来的就是它），把它拉满整块，同时让可见的标签栏正好落在拖动条里。
-    ".eruda-dev-tools{top:0!important;height:100%!important}" +
-    // Eruda 把容器设成 pointer-events:none（只有内层面板收事件）：悬窗形态下整块都要收
-    // ——否则顶部那一条拖动区点不到（真机实测：拖不动就是栽在这里）。
-    "pointer-events:auto!important;" +
-    ".eruda-dev-tools{pointer-events:auto!important}" +
-    ".eruda-entry-btn{display:none!important}";
+    "box-shadow:0 10px 28px rgba(0,0,0,.35)!important;overflow:hidden!important}" +
+    // 最大化态：贴底全宽遮罩，高度由 --kfw-mh 驱动（上边线拖拽改它）
+    ".eruda-container.kfw-max{left:0!important;right:0!important;top:auto!important;bottom:0!important;" +
+    "width:auto!important;height:var(--kfw-mh,60vh)!important;max-width:none!important;" +
+    "max-height:none!important;border-radius:8px 8px 0 0!important;" +
+    "box-shadow:0 -8px 28px rgba(0,0,0,.35)!important;overflow:hidden!important}" +
+    // Eruda 的正文面板自己留了一条顶部空档（原来是放标题的）：拉满整块，
+    // 同时让可见的标签栏正好落在拖动条里。
+    ".eruda-dev-tools{top:0!important;height:100%!important;pointer-events:auto!important}" +
+    ".eruda-entry-btn{display:none!important}" +
+    // 右上角三按钮（悬浮/最大化两态都显示；最大化时即面板右上=屏幕右上）
+    ".kfw-btnbar{position:absolute;right:2px;top:2px;z-index:2147483647;display:flex;gap:2px}" +
+    ".kfw-btn{width:20px;height:20px;line-height:18px;font-size:13px;font-family:system-ui,sans-serif;" +
+    "border:1px solid rgba(0,0,0,.15);border-radius:4px;background:#fff;color:#333;cursor:pointer;padding:0}" +
+    ".kfw-btn:hover{background:#eee}" +
+    // 最大化态的上边线：上下箭头光标 + 拖拽改高度
+    ".kfw-edge{position:absolute;left:0;right:0;top:-4px;height:8px;cursor:ns-resize;" +
+    "z-index:2147483647;display:none}" +
+    ".eruda-container.kfw-max .kfw-edge{display:block}" +
+    // 悬浮态右下角缩放手柄（最大化态藏起，改由上边线管高度）
+    ".kfw-corner{position:absolute;right:0;bottom:0;z-index:2147483647;width:14px;height:14px;" +
+    "cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,#999 45%,#999 55%,transparent 55%)}" +
+    ".eruda-container.kfw-max .kfw-corner{display:none}" +
+    // 悬浮球：贴边半藏（默认露出不到一半，悬停滑出），点击还原
+    ".kfw-ball{position:fixed;z-index:2147483647;width:44px;height:44px;border-radius:50%;" +
+    "background:#1a73e8;color:#fff;display:none;align-items:center;justify-content:center;" +
+    "box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:pointer;transition:transform .18s ease}" +
+    ".kfw-ball-left{left:0;transform:translateX(-58%)}" +
+    ".kfw-ball-right{right:0;transform:translateX(58%)}" +
+    ".kfw-ball-left:hover{transform:translateX(-16%)}" +
+    ".kfw-ball-right:hover{transform:translateX(16%)}";
   (root.head || root).appendChild(style);
+  // 悬浮球挂在与样式同一个 root（样式进影子根的话，挂 document.body 会丢样式）
+  var hostRoot = root === document ? document.body : root;
 
-  var close = document.createElement("button");
-  close.type = "button";
-  close.textContent = "×";
-  close.title = "关闭调试控制台";
-  close.setAttribute("aria-label", "关闭调试控制台");
-  close.style.cssText =
-    // z-index 必须高过 Eruda 正文面板（它是 500）：低了就被盖住、点不到（真机踩过）
-    "position:absolute;right:2px;top:2px;z-index:2147483647;width:20px;height:20px;" +
-    "line-height:18px;font-size:14px;border:1px solid rgba(0,0,0,.15);border-radius:4px;" +
-    "background:#fff;color:#333;cursor:pointer;padding:0";
-  close.onclick = function (event) {
+  function mkBtn(glyph, tip, label) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = glyph;
+    b.title = tip;
+    b.setAttribute("aria-label", label);
+    b.className = "kfw-btn";
+    return b;
+  }
+  var btnbar = document.createElement("div");
+  btnbar.className = "kfw-btnbar";
+  btnbar.title = "调试控制台";
+  var minBtn = mkBtn("–", "最小化为悬浮球", "最小化调试控制台");
+  var maxBtn = mkBtn("□", "最大化（贴底）", "最大化调试控制台");
+  var closeBtn = mkBtn("×", "关闭调试控制台", "关闭调试控制台");
+  btnbar.appendChild(minBtn);
+  btnbar.appendChild(maxBtn);
+  btnbar.appendChild(closeBtn);
+  container.appendChild(btnbar);
+
+  // 悬浮球（图标与「打开调试工具」菜单同款：lucide square-terminal）
+  var ball = document.createElement("div");
+  ball.className = "kfw-ball";
+  ball.title = "调试控制台";
+  ball.setAttribute("aria-label", "还原调试控制台");
+  ball.innerHTML =
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="m7 11 2-2-2-2"></path><path d="M11 13h4"></path>' +
+    '<rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>';
+  hostRoot.appendChild(ball);
+
+  function applyFloat() {
+    container.style.removeProperty("display");
+    container.classList.add("kfw-float");
+    container.classList.remove("kfw-max");
+    ball.style.display = "none";
+    maxBtn.title = "最大化（贴底）";
+    if (window.eruda) window.eruda.show();
+  }
+  function applyMax() {
+    var rect = container.getBoundingClientRect();
+    var height = Math.round(
+      Math.max(180, Math.min(rect.height, window.innerHeight * 0.8), window.innerHeight * 0.45),
+    );
+    container.style.setProperty("--kfw-mh", height + "px");
+    container.classList.add("kfw-max");
+    container.classList.remove("kfw-float");
+    container.style.removeProperty("display");
+    ball.style.display = "none";
+    maxBtn.title = "还原悬浮窗";
+    if (window.eruda) window.eruda.show();
+  }
+  function applyBall() {
+    var rect = container.getBoundingClientRect();
+    var side =
+      rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right";
+    var top = Math.min(
+      Math.max(rect.top + rect.height / 2 - 22, 60),
+      window.innerHeight - 104,
+    );
+    ball.className =
+      "kfw-ball " + (side === "left" ? "kfw-ball-left" : "kfw-ball-right");
+    ball.style.top = Math.round(top) + "px";
+    ball.style.display = "flex";
+    container.style.setProperty("display", "none", "important");
+  }
+
+  minBtn.onclick = function (event) {
+    event.stopPropagation();
+    applyBall();
+  };
+  maxBtn.onclick = function (event) {
+    event.stopPropagation();
+    if (container.classList.contains("kfw-max")) applyFloat();
+    else applyMax();
+  };
+  closeBtn.onclick = function (event) {
     event.stopPropagation();
     if (window.eruda) window.eruda.hide();
-    // 我们给容器加了 width/height/overflow，光 hide() 会留一个空框在页面上（真机看到的就是
-    // 「内容没了、框还在」）——所以整块收起来；下次注入时再把 display 放回来。
+    // 我们给容器钉了宽高，光 hide() 会留一个空框在页面上——整块收起；重开时再放回。
     container.style.setProperty("display", "none", "important");
+    ball.style.display = "none";
     if (window.__kfwFloatingClose) window.__kfwFloatingClose();
   };
-  container.appendChild(close);
-  container.title = "调试控制台：拖顶部可移动，点右上角关闭";
+  ball.onclick = function () {
+    applyFloat();
+  };
+  window.__kfwConsoleRestore = applyFloat;
 
-  // 右下角缩放手柄：改 CSS 变量（容器宽高由它驱动），夹在可用范围内
+  // 悬浮态右下角缩放手柄：改 CSS 变量（容器宽高由它驱动），夹在可用范围内
   var handle = document.createElement("div");
+  handle.className = "kfw-corner";
   handle.title = "拖动调整大小";
   handle.setAttribute("aria-label", "拖动调整调试控制台大小");
-  handle.style.cssText =
-    "position:absolute;right:0;bottom:0;z-index:2147483647;width:14px;height:14px;" +
-    "cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,#999 45%,#999 55%,transparent 55%)";
   var resizing = null;
   handle.addEventListener("mousedown", function (event) {
     event.preventDefault();
@@ -155,13 +253,47 @@ const FLOAT_SCRIPT = `
   });
   container.appendChild(handle);
 
+  // 最大化态的上边线：ns-resize 拖拽改高度（向上拖变高）
+  var edge = document.createElement("div");
+  edge.className = "kfw-edge";
+  edge.title = "拖动调整高度";
+  edge.setAttribute("aria-label", "拖动调整调试控制台高度");
+  var edgeDrag = null;
+  edge.addEventListener("mousedown", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    edgeDrag = {
+      y: event.clientY,
+      h: container.getBoundingClientRect().height,
+    };
+  });
+  window.addEventListener("mousemove", function (event) {
+    if (!edgeDrag) return;
+    var h = Math.min(
+      window.innerHeight - 100,
+      Math.max(180, edgeDrag.h + (edgeDrag.y - event.clientY)),
+    );
+    container.style.setProperty("--kfw-mh", Math.round(h) + "px");
+  });
+  window.addEventListener("mouseup", function () {
+    edgeDrag = null;
+  });
+  container.appendChild(edge);
+
+  // 悬浮态拖动：只认顶部那一条（标签栏），按钮/手柄不触发；下面的正文照常交互
   var dragging = null;
   container.addEventListener(
     "mousedown",
     function (event) {
-      if (event.target === close) return;
+      if (event.target === closeBtn) return;
+      var t = event.target;
+      if (
+        t &&
+        t.closest &&
+        (t.closest(".kfw-btnbar") || t.closest(".kfw-corner") || t.closest(".kfw-edge"))
+      )
+        return;
       var box = container.getBoundingClientRect();
-      // 只认顶部那一条（标签栏），下面的正文照常交互
       // 40px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶）
       if (event.clientY - box.top > 40) return;
       dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
@@ -179,6 +311,7 @@ const FLOAT_SCRIPT = `
   window.addEventListener("mouseup", function () {
     dragging = null;
   });
+  applyFloat();
   window.__kfwFloating = true;
 })();`;
 
