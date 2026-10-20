@@ -167,27 +167,40 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 悬浮球图标与「打开调试工具」菜单同款（lucide square-terminal 的三段路径）
     expect(script).toContain('<path d="m7 11 2-2-2-2"></path>');
     expect(script).toContain('<path d="M11 13h4"></path>');
-    // 最大化 = 贴底全宽遮罩，上边线 ns-resize（上下箭头）拖高度（--kfw-mh）；
-    // 拖标签栏 = 拿走（按当前几何转悬浮）
+    // 最大化 = 分屏卡片（贴底全宽、**上边无圆角**），上边线 ns-resize（上下箭头）
+    // 拖高度（--kfw-mh）；拖标签栏 = 拿走（按当前几何转悬浮）
     expect(script).toContain("kfw-max");
+    expect(script).toContain("border-radius:0!important");
     expect(script).toContain("ns-resize");
     expect(script).toContain("--kfw-mh");
     expect(script).toContain("top:-7px;height:14px");
     // 一个页面只开一个：已初始化只 show 不再 init
     expect(script).toContain("window.eruda._isInit");
-    // 三按钮在**窗外的梯形容器**里（body 级 fixed，脱离容器影子根与 overflow 裁剪）
+    // 三按钮在**窗外的小号直角梯形**容器里（直角在右边：右竖左斜），body 级 fixed；
+    // 悬浮球态也外挂同一条按钮（syncBtnbar 的 ball 分支）
     expect(script).toContain("kfw-btnbar");
     expect(script).toContain("document.body.appendChild(btnbar)");
-    expect(script).toContain("clip-path:polygon");
+    expect(script).toContain(
+      "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)",
+    );
+    expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
     expect(script).toContain("rect.top - barH - 2");
+    // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
+    expect(script).toContain('if (uiState === "ball") applyFloat();');
+    expect(script).toContain('if (uiState === "max") applyFloat();');
     // 自家 UI 标 data-kfw-ui：元素拾取器见标记即跳过（选择模式下按钮必须可点）
     expect(script).toContain('setAttribute("data-kfw-ui"');
+    // 自绘光标：截图流不含系统光标，画面里画跟手光标；拾取器在场时让位
+    expect(script).toContain("kfw-cursor");
+    expect(script).toContain('data-kfw-ui", "console-cursor');
+    expect(script).toContain("window.__kfwPicker");
+    expect(script).toContain("nwse");
     // 悬浮球：更浅的半透白 + 拖动自由跟手松手吸附
     expect(script).toContain("rgba(255,255,255,.6)");
     expect(script).toContain("kfw-ball-drag");
     expect(script).toContain("最小化为悬浮球");
-    expect(script).toContain("最大化（贴底）");
+    expect(script).toContain("分屏停靠");
   });
 
   it("源码抛错也要把 define 还回去（不能把人家的加载器弄坏）", () => {

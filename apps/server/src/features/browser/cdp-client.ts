@@ -726,7 +726,7 @@ export async function startScreencast(
     "Page.startScreencast",
     {
       format: "jpeg",
-      quality: options.quality ?? 70,
+      quality: options.quality ?? 55,
       maxWidth: options.maxWidth ?? 1600,
       maxHeight: options.maxHeight ?? 1200,
       everyNthFrame: options.everyNthFrame ?? 1,

@@ -72,7 +72,7 @@ const START_TAIL = `
  */
 const FLOAT_SCRIPT = `
 ;(function () {
-  // 重新打开：从任何状态（关闭/悬浮球/最大化）回到悬浮窗（幂等，不叠监听）
+  // 重新打开：从任何状态（关闭/悬浮球/分屏卡片）回到悬浮窗（幂等，不叠监听）
   if (window.__kfwFloating) {
     var again = document.querySelector(".eruda-container");
     if (again) again.style.removeProperty("display");
@@ -101,7 +101,7 @@ const FLOAT_SCRIPT = `
   }
   var root = container.getRootNode ? container.getRootNode() : document;
   // 容器样式必须进**它所在的 root**（影子根里页面样式进不去）；
-  // 按钮条/悬浮球挂 document.body（完全脱离容器的影子根与 overflow 裁剪），
+  // 按钮条/悬浮球/自绘光标挂 document.body（完全脱离容器的影子根与 overflow 裁剪），
   // 样式进 document.head。自家 UI 一律标 data-kfw-ui——元素拾取器见标记即跳过，
   // 否则选择模式下点控制台按钮会被当元素拾取且 preventDefault 吞掉点击。
   if (root.host && root.host.setAttribute) {
@@ -111,26 +111,26 @@ const FLOAT_SCRIPT = `
   style.textContent =
     ".eruda-container{position:fixed!important;background:#fff!important;" +
     "z-index:2147483646!important;pointer-events:auto!important;box-sizing:border-box!important}" +
-    // 悬浮态：位置/尺寸都由 CSS 变量驱动（拖动改 --kfw-x/--kfw-y，角柄改宽高）。
-    // 默认 top 留出 44px：窗外的梯形按钮条（高约 26px）才不会贴到视口顶被钳位压回窗上。
+    // 悬浮态：位置/尺寸都由 CSS 变量驱动（拖动改 left/top，角柄改宽高）。
+    // 默认 top 留出 44px：窗外的梯形按钮条（高约 24px）才不会贴到视口顶被钳位压回窗上。
     ".eruda-container.kfw-float{left:24px;top:44px;right:auto!important;bottom:auto!important;" +
     "width:var(--kfw-w,460px)!important;height:var(--kfw-h,340px)!important;" +
     "max-width:none!important;max-height:none!important;border-radius:6px!important;" +
     "box-shadow:0 10px 28px rgba(0,0,0,.35)!important;overflow:hidden!important}" +
-    // 最大化态：贴底全宽遮罩，高度由 --kfw-mh 驱动（上边线拖拽改它）
+    // 分屏卡片态：贴底全宽、**上边无圆角**（平边停靠），高度由 --kfw-mh 驱动（上边线拖拽改它）
     ".eruda-container.kfw-max{left:0!important;right:0!important;top:auto!important;bottom:0!important;" +
     "width:auto!important;height:var(--kfw-mh,60vh)!important;max-width:none!important;" +
-    "max-height:none!important;border-radius:8px 8px 0 0!important;" +
+    "max-height:none!important;border-radius:0!important;" +
     "box-shadow:0 -8px 28px rgba(0,0,0,.35)!important;overflow:hidden!important}" +
     // Eruda 的正文面板自己留了一条顶部空档（原来是放标题的）：拉满整块，
     // 同时让可见的标签栏正好落在拖动条里。
     ".eruda-dev-tools{top:0!important;height:100%!important;pointer-events:auto!important}" +
     ".eruda-entry-btn{display:none!important}" +
-    // 最大化态的上边线：上下箭头光标 + 拖拽改高度（热区 14px，灵敏度优先）
+    // 分屏卡片的上边线：上下箭头光标 + 拖拽改高度（热区 14px，灵敏度优先）
     ".kfw-edge{position:absolute;left:0;right:0;top:-7px;height:14px;cursor:ns-resize;" +
     "z-index:2147483647;display:none}" +
     ".eruda-container.kfw-max .kfw-edge{display:block}" +
-    // 悬浮态右下角缩放手柄（热区 18px；最大化态藏起）
+    // 悬浮态右下角缩放手柄（热区 18px；卡片态藏起）
     ".kfw-corner{position:absolute;right:0;bottom:0;z-index:2147483647;width:18px;height:18px;" +
     "cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,#999 45%,#999 55%,transparent 55%)}" +
     ".eruda-container.kfw-max .kfw-corner{display:none}";
@@ -138,12 +138,13 @@ const FLOAT_SCRIPT = `
 
   var headStyle = document.createElement("style");
   headStyle.textContent =
-    // 三按钮的**梯形容器**：完全在窗外（底边贴容器顶边），上窄下宽，浅底
-    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:3px;padding:3px 12px;" +
-    "background:rgba(255,255,255,.92);box-shadow:0 -2px 10px rgba(0,0,0,.15);" +
-    "clip-path:polygon(12% 0,88% 0,100% 100%,0 100%)}" +
-    ".kfw-btn{width:20px;height:20px;line-height:18px;font-size:13px;font-family:system-ui,sans-serif;" +
-    "border:1px solid rgba(0,0,0,.15);border-radius:4px;background:#fff;color:#333;cursor:pointer;padding:0}" +
+    // 三按钮的**小号直角梯形**容器（直角在右边：右边竖直、左上收斜边），
+    // 完全在窗外，跟随宿主（悬浮面板/分屏卡片的右上角，或悬浮球上方）
+    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 7px;" +
+    "background:rgba(255,255,255,.92);box-shadow:0 -2px 8px rgba(0,0,0,.15);" +
+    "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)}" +
+    ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
+    "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
     ".kfw-btn:hover{background:#eee}" +
     // 悬浮球：浅色半透白 + 毛玻璃、36px、贴边半藏 55%、悬停近全露；
     // 拖动时脱离贴边自由跟手（kfw-ball-drag），松手吸附最近边
@@ -159,7 +160,11 @@ const FLOAT_SCRIPT = `
     ".kfw-ball-right{transform:translateX(55%)}" +
     ".kfw-ball-left:hover{transform:translateX(-6%)}" +
     ".kfw-ball-right:hover{transform:translateX(6%)}" +
-    ".kfw-ball-drag{transform:none!important;transition:none!important;opacity:1;cursor:grabbing}";
+    ".kfw-ball-drag{transform:none!important;transition:none!important;opacity:1;cursor:grabbing}" +
+    // 自绘光标：远程画面的截图流不含系统光标（CSS cursor 传不过来），
+    // 控制台在场时画一个跟手光标；拾取器在场时让位（本地十字光标接管）
+    ".kfw-cursor{position:fixed;z-index:2147483646;pointer-events:none;display:none;" +
+    "filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}";
   document.head.appendChild(headStyle);
 
   function mkBtn(glyph, tip, label) {
@@ -176,17 +181,18 @@ const FLOAT_SCRIPT = `
   btnbar.title = "调试控制台";
   btnbar.setAttribute("data-kfw-ui", "console-buttons");
   var minBtn = mkBtn("–", "最小化为悬浮球", "最小化调试控制台");
-  var maxBtn = mkBtn("□", "最大化（贴底）", "最大化调试控制台");
+  var maxBtn = mkBtn("□", "分屏停靠", "最大化调试控制台");
   var closeBtn = mkBtn("×", "关闭调试控制台", "关闭调试控制台");
   btnbar.appendChild(minBtn);
   btnbar.appendChild(maxBtn);
   btnbar.appendChild(closeBtn);
   document.body.appendChild(btnbar);
 
-  // 按钮条跟随容器：**完全在窗外**（底边贴容器顶边上方 2px，右上对齐）。
+  // 按钮条跟随宿主：面板/卡片态贴容器**右上角外**；悬浮球态贴在**球上方**。
   // rAF 合帧 + 尺寸缓存：拖动/缩放的高频 mousemove 里不再每次强制回流。
+  var uiState = "float"; // float | max | ball
   var barW = 0;
-  var barH = 26;
+  var barH = 24;
   var syncPending = false;
   function syncBtnbar() {
     if (syncPending) return;
@@ -195,7 +201,18 @@ const FLOAT_SCRIPT = `
       syncPending = false;
       if (btnbar.offsetWidth) {
         barW = btnbar.offsetWidth;
-        barH = btnbar.offsetHeight || 26;
+        barH = btnbar.offsetHeight || 24;
+      }
+      if (uiState === "ball") {
+        var sideL = ball.classList.contains("kfw-ball-left");
+        var ballTop = parseFloat(ball.style.top) || 60;
+        btnbar.style.display = "flex";
+        btnbar.style.left = Math.max(
+          2,
+          Math.round(sideL ? 4 : window.innerWidth - barW - 4),
+        ) + "px";
+        btnbar.style.top = Math.max(2, Math.round(ballTop - barH - 4)) + "px";
+        return;
       }
       var rect = container.getBoundingClientRect();
       var hidden =
@@ -218,26 +235,88 @@ const FLOAT_SCRIPT = `
   // 悬浮球（图标与「打开调试工具」菜单同款：lucide square-terminal）
   var ball = document.createElement("div");
   ball.className = "kfw-ball";
-  ball.title = "调试控制台：点击还原，拖动换位置";
+  ball.title = "调试控制台：点击还原悬浮面板，拖动换位置";
   ball.setAttribute("aria-label", "还原调试控制台");
   ball.setAttribute("data-kfw-ui", "console-ball");
   ball.innerHTML =
-    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" ' +
+    '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" ' +
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="m7 11 2-2-2-2"></path><path d="M11 13h4"></path>' +
     '<rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>';
   document.body.appendChild(ball);
 
+  // ── 自绘光标（画面流里跟手；拾取器在场时让位） ──
+  var cursorEl = document.createElement("div");
+  cursorEl.className = "kfw-cursor";
+  cursorEl.setAttribute("data-kfw-ui", "console-cursor");
+  var CURSOR_SVGS = {
+    default:
+      '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 2l6 15 2.2-5.8L17 9z" fill="#222" stroke="#fff" stroke-width="1.2"/></svg>',
+    ns:
+      '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 3v14M6.5 6.5 10 3l3.5 3.5M6.5 13.5 10 17l3.5-3.5" fill="none" stroke="#222" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    nwse:
+      '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 4l12 12M4 8.5V4h4.5M16 11.5V16h-4.5" fill="none" stroke="#222" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    grab:
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
+  };
+  var cursorShape = "";
+  function setCursorShape(shape) {
+    if (shape === cursorShape) return;
+    cursorShape = shape;
+    cursorEl.innerHTML = CURSOR_SVGS[shape] || CURSOR_SVGS.default;
+  }
+  setCursorShape("default");
+  document.body.appendChild(cursorEl);
+  window.addEventListener(
+    "mousemove",
+    function (event) {
+      // 拾取器在场：让位（面板本地十字光标接管），自己收起
+      if (window.__kfwPicker) {
+        cursorEl.style.display = "none";
+        return;
+      }
+      cursorEl.style.display = "block";
+      cursorEl.style.left = event.clientX + "px";
+      cursorEl.style.top = event.clientY + "px";
+      var x = event.clientX;
+      var y = event.clientY;
+      var shape = "default";
+      var ballRect = ball.getBoundingClientRect();
+      if (
+        ball.style.display !== "none" &&
+        x >= ballRect.left - 2 &&
+        x <= ballRect.right + 2 &&
+        y >= ballRect.top - 2 &&
+        y <= ballRect.bottom + 2
+      ) {
+        shape = "grab";
+      } else if (container.style.display !== "none") {
+        var r = container.getBoundingClientRect();
+        var inside =
+          x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2;
+        if (inside && uiState === "float") {
+          if (x >= r.right - 22 && y >= r.bottom - 22) shape = "nwse";
+        } else if (uiState === "max" && y >= r.top - 8 && y <= r.top + 10) {
+          shape = "ns";
+        }
+      }
+      setCursorShape(shape);
+    },
+    true,
+  );
+
   function applyFloat() {
+    uiState = "float";
     container.style.removeProperty("display");
     container.classList.add("kfw-float");
     container.classList.remove("kfw-max");
     ball.style.display = "none";
-    maxBtn.title = "最大化（贴底）";
+    maxBtn.title = "分屏停靠";
     if (window.eruda) window.eruda.show();
     syncBtnbar();
   }
   function applyMax() {
+    uiState = "max";
     var rect = container.getBoundingClientRect();
     var height = Math.round(
       Math.max(180, Math.min(rect.height, window.innerHeight * 0.8), window.innerHeight * 0.45),
@@ -247,18 +326,16 @@ const FLOAT_SCRIPT = `
     container.classList.remove("kfw-float");
     container.style.removeProperty("display");
     ball.style.display = "none";
-    maxBtn.title = "还原悬浮窗";
+    maxBtn.title = "还原悬浮面板";
     if (window.eruda) window.eruda.show();
     syncBtnbar();
   }
   function applyBall() {
+    uiState = "ball";
     var rect = container.getBoundingClientRect();
     var side =
       rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right";
-    var top = Math.min(
-      Math.max(rect.top + rect.height / 2 - 18, 60),
-      window.innerHeight - 96,
-    );
+    var top = Math.max(60, Math.min(rect.top + rect.height / 2 - 18, window.innerHeight - 96));
     ball.className =
       "kfw-ball " + (side === "left" ? "kfw-ball-left" : "kfw-ball-right");
     ball.style.top = Math.round(top) + "px";
@@ -266,20 +343,24 @@ const FLOAT_SCRIPT = `
       side === "left" ? "0px" : Math.round(window.innerWidth - 16) + "px";
     ball.style.display = "flex";
     container.style.setProperty("display", "none", "important");
-    btnbar.style.display = "none";
+    syncBtnbar();
   }
 
+  // 最小化：当前状态 ↔ 悬浮球 互切（球态再点 – 回悬浮面板；卡片态点 – 也去球）
   minBtn.onclick = function (event) {
     event.stopPropagation();
-    applyBall();
+    if (uiState === "ball") applyFloat();
+    else applyBall();
   };
+  // 最大化：悬浮面板 ↔ 分屏卡片 互切（球态点 □ 直接进卡片）
   maxBtn.onclick = function (event) {
     event.stopPropagation();
-    if (container.classList.contains("kfw-max")) applyFloat();
+    if (uiState === "max") applyFloat();
     else applyMax();
   };
   closeBtn.onclick = function (event) {
     event.stopPropagation();
+    uiState = "closed";
     if (window.eruda) window.eruda.hide();
     // 我们给容器钉了宽高，光 hide() 会留一个空框在页面上——整块收起；重开时再放回。
     container.style.setProperty("display", "none", "important");
@@ -288,7 +369,7 @@ const FLOAT_SCRIPT = `
     if (window.__kfwFloatingClose) window.__kfwFloatingClose();
   };
 
-  // 悬浮球：点击还原，**拖动自由跟手**（脱离贴边平移），松手吸附最近边半藏
+  // 悬浮球：点击还原悬浮面板（球消失），**拖动自由跟手**，松手吸附最近边半藏
   var ballDrag = null;
   ball.addEventListener("mousedown", function (event) {
     event.preventDefault();
@@ -316,6 +397,7 @@ const FLOAT_SCRIPT = `
     var top = Math.min(Math.max(event.clientY - 18, 60), window.innerHeight - 96);
     ball.style.left = Math.round(left) + "px";
     ball.style.top = Math.round(top) + "px";
+    syncBtnbar();
   });
   window.addEventListener("mouseup", function () {
     if (!ballDrag) return;
@@ -334,6 +416,7 @@ const FLOAT_SCRIPT = `
     ball.classList.add(side === "left" ? "kfw-ball-left" : "kfw-ball-right");
     ball.style.left =
       side === "left" ? "0px" : Math.round(window.innerWidth - 16) + "px";
+    syncBtnbar();
   });
   window.__kfwConsoleRestore = applyFloat;
 
@@ -366,7 +449,7 @@ const FLOAT_SCRIPT = `
   });
   container.appendChild(handle);
 
-  // 最大化态的上边线：ns-resize 拖拽改高度（向上拖变高）
+  // 分屏卡片的上边线：ns-resize 拖拽改高度（向上拖变高）
   var edge = document.createElement("div");
   edge.className = "kfw-edge";
   edge.title = "拖动调整高度";
@@ -394,8 +477,8 @@ const FLOAT_SCRIPT = `
   });
   container.appendChild(edge);
 
-  // 拖动（两态通用）：只认顶部那一条（标签栏），按钮/角柄/边线不触发；下面的正文照常交互。
-  // 最大化态拖标签栏 = **拿走**：按当前最大化尺寸转成悬浮窗（left/top 跟手），贴底锁解除。
+  // 拖动（面板/卡片两态通用）：只认顶部那一条（标签栏），按钮/角柄/边线不触发；
+  // 下面的正文照常交互。卡片态拖标签栏 = **拿走**：按当前几何转悬浮面板。
   var dragging = null;
   container.addEventListener(
     "mousedown",
@@ -410,7 +493,7 @@ const FLOAT_SCRIPT = `
       var box = container.getBoundingClientRect();
       // 40px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶）
       if (event.clientY - box.top > 40) return;
-      if (container.classList.contains("kfw-max")) {
+      if (uiState === "max") {
         // 拿走：以当前几何转悬浮（宽高冻结成变量，边距取现值）
         container.style.setProperty(
           "--kfw-w",
@@ -422,7 +505,8 @@ const FLOAT_SCRIPT = `
         );
         container.classList.remove("kfw-max");
         container.classList.add("kfw-float");
-        maxBtn.title = "最大化（贴底）";
+        uiState = "float";
+        maxBtn.title = "分屏停靠";
       }
       dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
       event.preventDefault();

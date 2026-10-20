@@ -220,6 +220,12 @@ export function BrowserPane({
     height: 0,
     scale: 1,
   });
+  /**
+   * 控制台打开期间藏本地光标：页面里画了跟手的自绘光标（截图流不含系统光标，
+   * CSS cursor 传不过来——ns-resize 等提示只能在画面里画）。进拾取 / 换页 /
+   * 卸载时恢复本地光标。
+   */
+  const [consoleCursorHidden, setConsoleCursorHidden] = useState(false);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -306,6 +312,7 @@ export function BrowserPane({
           );
         }
       }
+      setConsoleCursorHidden(false);
       const opened = await surfaceJson<{
         ticket: string;
         viewport: CdpViewport;
@@ -547,8 +554,8 @@ export function BrowserPane({
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const now = Date.now();
-      // 拾取中节流 40ms：页面内高亮要跟手（非拾取 120ms 足够；拖拽中不限流）
-      const throttle = pickingRef.current ? 40 : 120;
+      // 恒 40ms：拾取高亮/自绘光标/控制台拖动都要跟手（拖拽中不限流）
+      const throttle = 40;
       if (!draggingRef.current && now - lastHoverRef.current < throttle) return;
       lastHoverRef.current = now;
       const point = pointFrom(event);
@@ -692,6 +699,7 @@ export function BrowserPane({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: target }),
       });
+      setConsoleCursorHidden(true);
       toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
     } catch (error) {
       toast(error instanceof Error ? error.message : "打开调试工具失败。");
@@ -713,6 +721,7 @@ export function BrowserPane({
       toast("先打开一个页面再拾取元素。");
       return;
     }
+    setConsoleCursorHidden(false);
     // 控制台悬浮窗盖在页面上会挡住元素：进拾取先收起（失败不阻塞拾取）
     surfaceJson("/api/browser/cdp/console", {
       method: "POST",
@@ -963,7 +972,15 @@ export function BrowserPane({
             ref={frameRef}
             role="group"
             aria-label="内嵌浏览器画面"
-            className={`absolute inset-0 overflow-auto bg-background-alt/50${picking ? " cursor-crosshair" : ""}`}
+            className={`absolute inset-0 overflow-auto bg-background-alt/50${
+              picking
+                ? " cursor-crosshair"
+                : // 控制台打开期间藏本地光标：页面里画了跟手的自绘光标（截图流
+                  // 不含系统光标，双光标会打架）
+                  consoleCursorHidden
+                  ? " cursor-none"
+                  : ""
+            }`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}

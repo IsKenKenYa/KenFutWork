@@ -1024,7 +1024,7 @@ export function createCdpBrowserSession(deps: {
        * 一直白屏（`img.naturalWidth=0`），页面下一次变化才出画面。先补一张静止帧，
        * 面板开流就有画面，也顺手把「这一页现在长什么样」定住。
        */
-      void captureScreenshotJpeg(cdp, id, options.quality ?? 70)
+      void captureScreenshotJpeg(cdp, id, options.quality ?? 55)
         .then(async (jpeg) => {
           await Promise.resolve(onFrame(jpeg)).catch(() => undefined);
         })
