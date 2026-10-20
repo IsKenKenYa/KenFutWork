@@ -14,7 +14,7 @@ import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
-import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon, Lock } from "lucide-react";
+import { Box, Cloud, Ellipsis, Folder, GitBranch, LoaderIcon, Lock } from "lucide-react";
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
 import { useGlobalTaskList } from "@zui/hooks/useGlobalTaskList.js";
 import { useBaseWorkspaceServices, useWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
@@ -32,7 +32,10 @@ import {
   formatRemoteWorkspaceDisplayLabel,
   formatRemoteWorkspaceHeaderHostLabel,
 } from "@zui/lib/remoteWorkspaceHistory.js";
-import { resolveWorkspaceHeaderProvider } from "@zui/lib/workspaceHeaderProvider.js";
+import {
+  isSandboxWorkspacePath,
+  resolveWorkspaceHeaderProvider,
+} from "@zui/lib/workspaceHeaderProvider.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useFeedbackStore } from "@zui/feedback/feedbackStore.js";
 import { useModelTrajectoryStore } from "@zui/store/modelTrajectoryStore.js";
@@ -209,6 +212,9 @@ export function WorkspaceHeaderTitleSection({
   const isRemoteWorkspace = Boolean(
     remoteWorkspaceHostLabel || workspaceIdentity?.trim() || remoteSessionId,
   );
+  // Task 主目录若是沙箱副本（`<dataDir>/sandbox/<workspaceId>/<taskId>`），先标「沙箱」：
+  // 它在本机而不是远端，云朵图标会误导。
+  const isSandboxWorkspace = isSandboxWorkspacePath(workspaceAbsPath);
   const showRemoteSkillSyncAction = shouldShowRemoteSkillSyncAction({
     remoteSessionId,
     remoteTarget,
@@ -423,14 +429,23 @@ export function WorkspaceHeaderTitleSection({
               className="flex w-full min-w-0 flex-col gap-3 text-left"
             >
               <span className="flex min-w-0 items-start gap-2">
-                {isRemoteWorkspace ? (
+                {isSandboxWorkspace ? (
+                  <Box className="size-4 shrink-0" />
+                ) : isRemoteWorkspace ? (
                   <Cloud className="size-4 shrink-0" />
                 ) : (
                   <Folder className="size-4 shrink-0" />
                 )}
                 <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-                    {workspaceContextLabel}
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                      {workspaceContextLabel}
+                    </span>
+                    {isSandboxWorkspace ? (
+                      <span className="shrink-0 rounded-sm border border-border px-1 text-ui-xs text-foreground-subtle">
+                        沙箱
+                      </span>
+                    ) : null}
                   </span>
                   {workspaceContextOpen ? (
                     <WorkspaceContextPath
@@ -462,10 +477,18 @@ export function WorkspaceHeaderTitleSection({
             variant="ghost"
             size={compact ? "icon-sm" : "icon-md"}
             data-testid={TID_WORKSPACE_PATH}
-            aria-label={[workspaceContextLabel, workspaceBranchLabel].filter(Boolean).join(" · ")}
+            aria-label={[
+              workspaceContextLabel,
+              isSandboxWorkspace ? "沙箱" : null,
+              workspaceBranchLabel,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             onClick={() => setWorkspaceContextOpen(true)}
           >
-            {isRemoteWorkspace ? (
+            {isSandboxWorkspace ? (
+              <Box className="size-4 text-foreground-subtle" />
+            ) : isRemoteWorkspace ? (
               <Cloud className="size-4 text-foreground-subtle" />
             ) : (
               <Folder className="size-4 text-foreground-subtle" />
