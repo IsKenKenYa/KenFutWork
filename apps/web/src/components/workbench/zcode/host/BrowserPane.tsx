@@ -279,6 +279,11 @@ export function BrowserPane({
       : 1;
   const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
   const scale = zoomPreset?.scale ?? fitScale;
+  /** 画面小于面板时水平/垂直居中（贴边显示上半截是旧版的观感缺口）；超出面板则回 0 可滚动。 */
+  const displayWidth = viewportWidth * scale;
+  const displayHeight = viewportHeight * scale;
+  const frameOffsetLeft = Math.max(0, (paneSize.width - displayWidth) / 2);
+  const frameOffsetTop = Math.max(0, (paneSize.height - displayHeight) / 2);
 
   useEffect(() => {
     retriesRef.current = 0;
@@ -687,7 +692,7 @@ export function BrowserPane({
             }
           }}
           placeholder="输入网址后回车"
-          className="h-7 min-w-0 flex-1 rounded-none border-transparent bg-hover/40 px-2 text-xs focus-visible:bg-transparent"
+          className="h-7 min-w-0 flex-1 border-transparent bg-hover/40 px-2 text-xs focus-visible:bg-transparent"
         />
         {/* 自由尺寸开关：点一下打开、再点一下取消（旧版口径） */}
         <button
@@ -723,7 +728,7 @@ export function BrowserPane({
               size="icon-sm"
               aria-label="浏览器菜单"
               title="更多"
-              className="shrink-0 rounded-none"
+              className="shrink-0"
             >
               <Ellipsis className="h-3.5 w-3.5" />
             </Button>
@@ -777,7 +782,7 @@ export function BrowserPane({
             <SelectTrigger
               aria-label="窗口比例"
               title="窗口比例"
-              className="min-w-24 shrink-0 rounded-none border-transparent bg-transparent px-1.5 py-0.5 text-[11px] font-medium"
+              className="min-w-24 shrink-0 border-transparent bg-transparent px-1.5 py-0.5 text-[11px] font-medium"
               data-testid="browser-zoom-select"
             >
               <SelectValue />
@@ -797,7 +802,7 @@ export function BrowserPane({
         <div className="relative min-h-0 flex-1">
           <div
             ref={frameRef}
-            className={`absolute inset-0 overflow-auto border bg-background${pick ? " cursor-crosshair" : ""}`}
+            className={`absolute inset-0 overflow-auto bg-background-alt/50${pick ? " cursor-crosshair" : ""}`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -806,11 +811,15 @@ export function BrowserPane({
             }}
             onContextMenu={(event) => event.preventDefault()}
           >
-            {/* 画面按真实视口尺寸排版再等比缩放——比例永远不变形 */}
+            {/* 画面按真实视口尺寸排版再等比缩放（比例永远不变形），
+                小于面板时水平垂直居中（computed offset），超出回 0 可滚动。
+                分隔用主题细环+圆角+浅影（旧版无黑边口径），不用实色 border。 */}
             <div
               data-role="live-browser-frame"
-              className="absolute top-0 left-0"
+              className="absolute overflow-hidden rounded-lg bg-card shadow-sm ring-1 ring-border"
               style={{
+                left: frameOffsetLeft,
+                top: frameOffsetTop,
                 width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
                 height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
                 transform: `scale(${scale})`,
@@ -910,10 +919,10 @@ export function BrowserPane({
                   window.addEventListener("mouseup", onUp);
                 }}
                 style={{
-                  left: `${viewportWidth * scale - 10}px`,
-                  top: `${viewportHeight * scale - 10}px`,
+                  left: `${frameOffsetLeft + displayWidth - 10}px`,
+                  top: `${frameOffsetTop + displayHeight - 10}px`,
                 }}
-                className="absolute h-3 w-3 cursor-nwse-resize border border-foreground/40 bg-background"
+                className="absolute h-3 w-3 cursor-nwse-resize rounded-sm border border-foreground/40 bg-background"
                 data-testid="browser-free-size-handle"
               />
             ) : null}
@@ -990,7 +999,7 @@ function ViewportSizeInput({
         onCommit(clamped);
       }}
       data-testid={`browser-free-size-${ariaLabel === "视口宽度" ? "width" : "height"}`}
-      className="w-16 border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
+      className="w-16 rounded-sm border-transparent bg-hover/40 px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:bg-transparent focus-visible:ring-1 focus-visible:ring-ring"
     />
   );
 }
