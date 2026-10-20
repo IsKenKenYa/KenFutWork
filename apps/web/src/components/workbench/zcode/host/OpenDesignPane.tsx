@@ -8,6 +8,7 @@ import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartu
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOpenDesignEntry } from "./openDesignHost.js";
 import { surfaceJson } from "./surfaceApi.js";
+import { OPEN_DESIGN_PROJECT_EVENT } from "./useOpenDesignProjectWatch.js";
 
 /**
  * OpenDesign 面板（Code 模式右侧栏的联动画布，与浏览器面板同位互斥）。
@@ -55,6 +56,23 @@ export function OpenDesignPane() {
       cancelled = true;
     };
   }, []);
+
+  // 面板已打开时又建了新项目：直接切过去，不要求重新挂载。
+  useEffect(() => {
+    const onProject = (event: Event) => {
+      const projectId = (event as CustomEvent<{ projectId?: unknown }>).detail
+        ?.projectId;
+      if (typeof projectId === "string") setProjectId(projectId);
+    };
+    window.addEventListener(OPEN_DESIGN_PROJECT_EVENT, onProject);
+    return () =>
+      window.removeEventListener(OPEN_DESIGN_PROJECT_EVENT, onProject);
+  }, []);
+
+  // 切项目时重新走一次加载态，避免旧画布在加载前被误认为新项目已就绪。
+  useEffect(() => {
+    setFrameLoaded(false);
+  }, [projectId]);
 
   /**
    * 上游就绪状态：没有可用 agent CLI 时，项目页会退到「模型与提供商」。
@@ -159,7 +177,12 @@ export function OpenDesignPane() {
           没有可用的设计引擎
         </div>
       ) : null}
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        {/*
+         * 上游没有「只看画布」的路由：项目页是 1:1 的聊天/画布分栏。这里按 2 倍宽度
+         * 渲染再把左半（上游聊天栏）裁掉，只露出 OpenDesign 自己的画布；默认分栏未
+         * 拖过时正好是一半，拖过聊天栏则只会更窄，不会露出聊天内容。
+         */}
         <iframe
           ref={frameRef}
           src={
@@ -168,7 +191,15 @@ export function OpenDesignPane() {
               : entry.frontendUrl
           }
           title="OpenDesign"
-          className={`h-full w-full border-0 transition-opacity duration-300 ${
+          data-od-canvas-only="true"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: "-100%",
+            width: "200%",
+            height: "100%",
+          }}
+          className={`border-0 transition-opacity duration-300 ${
             frameLoaded ? "opacity-100" : "opacity-0"
           }`}
           onLoad={() => setFrameLoaded(true)}

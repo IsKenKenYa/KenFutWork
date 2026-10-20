@@ -26,6 +26,9 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
 const { OpenDesignPane } = await import(
   "../src/components/workbench/zcode/host/OpenDesignPane.js"
 );
+const { OPEN_DESIGN_PROJECT_EVENT } = await import(
+  "../src/components/workbench/zcode/host/useOpenDesignProjectWatch.js"
+);
 
 const ORIGIN = "http://127.0.0.1:7456";
 
@@ -115,4 +118,28 @@ test("上游没有可用设计引擎时，面板说明原因而不是让人对�
   expect(
     screen.getByTestId("open-design-readiness").textContent,
   ).toContain("没有可用的设计引擎");
+});
+
+test("右栏只留 OpenDesign 自己的画布：2 倍宽度渲染，裁掉左侧聊天栏", async () => {
+  lastProjectRef.current = { projectId: "p-1", name: "订单仪表盘" };
+  await mount();
+  const frame = screen.getByTitle("OpenDesign");
+  expect(frame.getAttribute("data-od-canvas-only")).toBe("true");
+  expect(frame.style.width).toBe("200%");
+  expect(frame.style.left).toBe("-100%");
+});
+
+test("对话新建项目：已打开的画布直接切到新项目", async () => {
+  lastProjectRef.current = { projectId: "p-1", name: "旧项目" };
+  await mount();
+  act(() => {
+    window.dispatchEvent(
+      new CustomEvent(OPEN_DESIGN_PROJECT_EVENT, {
+        detail: { projectId: "p-2", name: "新项目" },
+      }),
+    );
+  });
+  expect(screen.getByTitle("OpenDesign").getAttribute("src")).toBe(
+    `${ORIGIN}/projects/p-2`,
+  );
 });

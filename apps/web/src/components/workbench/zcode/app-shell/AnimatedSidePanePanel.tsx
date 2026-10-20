@@ -26,6 +26,7 @@ import { findScreenshotSurfaceTabForRender } from "@zui/browser-use/useBrowserSc
 import { BrowserPane } from "@zui/host/BrowserPane.js";
 import { OpenDesignPane } from "@zui/host/OpenDesignPane.js";
 import { useOpenDesignEntry } from "@zui/host/openDesignHost.js";
+import { useOpenDesignProjectWatch } from "@zui/host/useOpenDesignProjectWatch.js";
 import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
 import { GitPane } from "@zui/GitPane.js";
 import { TreemappingPane } from "@zui/TreemappingPane.js";
@@ -694,6 +695,9 @@ export function AnimatedSidePanePanel({
    */
   const openDesignEntry = useOpenDesignEntry();
   const openDesignEnabled = openDesignEntry?.available === true;
+
+  // 对话侧用 OpenDesign 能力新建项目后，右侧画布自动接管主区（启动时的旧项目不抢焦点）。
+  useOpenDesignProjectWatch(openDesignEnabled, onOpenOpenDesignTab);
 
   const addTabMenu = (
     <DropdownMenu open={isAddMenuOpen} onOpenChange={setIsAddMenuOpen}>
