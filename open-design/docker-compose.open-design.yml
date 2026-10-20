@@ -34,6 +34,11 @@ services:
       OD_WEB_PORT: 7456
       OD_API_TOKEN: ${OD_API_TOKEN:-}
       OD_DISABLE_API_AUTH: "1"
+      # 容器内无法创建 user namespace（bwrap EPERM），Codex 的 workspace-write
+      # 内层沙箱会让所有写文件命令直接失败。上游为「无特权 Linux 容器」预留的
+      # 运维开关即此项：关掉 Codex 内层沙箱，隔离边界由本容器承担（只读根文件系统、
+      # 仅 /app/.od 可写、仅发布宿主环回）。
+      OD_CODEX_SANDBOX: danger-full-access
     ports:
       - "127.0.0.1:7456:7456"
     volumes:
