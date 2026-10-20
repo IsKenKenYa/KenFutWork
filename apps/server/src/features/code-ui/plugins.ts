@@ -15,8 +15,10 @@ import {
 } from "@kenfutwork/shared";
 import {
   HOST_BUNDLED_PLUGIN_MARKETPLACE_ID,
+  type ZCodePluginsReferenceCatalogResult,
   zcodePluginsDescribeParamsSchema,
   zcodePluginsDescribeResultSchema,
+  zcodePluginsReferenceCatalogResultSchema,
 } from "@zcode/shared";
 import { z } from "zod";
 import type { LocalActor } from "../local-instance/types.js";
@@ -53,6 +55,18 @@ type Inventory = Awaited<
 >;
 const BUNDLED_MARKETPLACE = HOST_BUNDLED_PLUGIN_MARKETPLACE_ID;
 const LOCAL_MARKETPLACE = "kenfutwork-local";
+const referenceCatalogParamsSchema = targetSchema.extend({
+  sessionId: z.string().trim().min(1).optional(),
+});
+/**
+ * 会话级冻结目录。只在进程内保留：agent runtime 与本目录同进程，进程换代时两边
+ * 一起重来，不会出现「目录冻结在旧版本、runtime 已是新版本」的错配。
+ * 刻意不落库——会话表没有 metadata 列，且这不是需要跨重启的持久真相。
+ */
+const frozenReferenceCatalogs = new Map<
+  string,
+  ZCodePluginsReferenceCatalogResult
+>();
 
 /** 图标沿已有包资源端点读取，不把目录或凭据放进引用。 */
 function pluginListing(id: string, manifest: PluginBundleManifest) {
@@ -395,12 +409,79 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
     });
   }
 
+  /**
+   * 对话引用 catalog：Composer 的「+ → 插件」读这一份。
+   *
+   * 带 sessionId 时按会话冻结（进程内），不带时读 workspace 当前——契约要求
+   * session-owned 不得被后续目录变化污染。这里没有会话级 runtime 快照可读，
+   * 所以冻结粒度取「本进程」：与 agent runtime 同生命周期，不会出现目录旧、
+   * runtime 新的错配。
+   */
+  async function referenceCatalog(actor: LocalActor, value: unknown) {
+    const params = referenceCatalogParamsSchema.parse(value);
+    await validateTarget(deps, actor, params);
+    const sessionId = params.sessionId;
+    if (sessionId) {
+      const frozen = frozenReferenceCatalogs.get(sessionId);
+      if (frozen) return frozen;
+    }
+    const inventory = await deps.registry.readPackageInventory();
+    const marketplace = marketplaceResolver(inventory);
+    // 同名 manifest 的启用插件互为冲突（V1 fail closed）：picker 禁选并给原因。
+    const enabledByName = new Map<string, string[]>();
+    for (const { record } of inventory.installed) {
+      if (!record.enabled) continue;
+      enabledByName.set(record.name, [
+        ...(enabledByName.get(record.name) ?? []),
+        record.id,
+      ]);
+    }
+    const plugins = await Promise.all(
+      inventory.installed.map(async ({ record }) => {
+        const description = await deps.registry.readPackageDescription(
+          record.id,
+        );
+        const listing = pluginListing(record.id, record.manifest);
+        return {
+          pluginId: record.id,
+          name: record.name,
+          marketplace: marketplace(record.id),
+          enabled: record.enabled,
+          conflictingPluginIds: record.enabled
+            ? (enabledByName.get(record.name) ?? []).filter(
+                (id) => id !== record.id,
+              )
+            : [],
+          skillQualifiedNames: description.skills.map((skill) => skill.name),
+          mcpServerNames: [],
+          subagentNames: [],
+          ...(record.manifest.description
+            ? { description: record.manifest.description }
+            : {}),
+          ...(listing.displayName
+            ? { displayName: listing.displayName }
+            : {}),
+          ...(listing.category ? { category: listing.category } : {}),
+          ...(listing.icon ? { icon: listing.icon } : {}),
+        };
+      }),
+    );
+    const result = zcodePluginsReferenceCatalogResultSchema.parse({
+      authority: sessionId ? "session" : "workspace",
+      plugins,
+    });
+    if (sessionId) frozenReferenceCatalogs.set(sessionId, result);
+    return result;
+  }
+
   return {
     async call(
       actor: LocalActor,
       method: string,
       value: unknown,
     ): Promise<{ result: unknown } | null> {
+      if (method === "getPluginReferenceCatalog")
+        return { result: await referenceCatalog(actor, value) };
       if (method === "describePlugin")
         return { result: await describe(actor, value) };
       if (method === "installPlugin")
