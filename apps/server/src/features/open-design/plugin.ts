@@ -15,7 +15,10 @@ import {
 } from "./companion.js";
 import { resolveOpenDesignCredentialEntries } from "./credentials.js";
 import { provisionOpenDesign } from "./provision.js";
-import { writeOpenDesignLastProject } from "./last-project.js";
+import {
+  readOpenDesignLastProject,
+  writeOpenDesignLastProject,
+} from "./last-project.js";
 import { createOpenDesignTools } from "./tools.js";
 
 /**
@@ -73,7 +76,7 @@ export function createOpenDesignHostPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "open-design-host",
-    inject: ["localAccess", "localInstance", "modelProviders", "tools"],
+    inject: ["localAccess", "localInstance", "modelProviders", "tools", "systemPrompt"],
     apply() {
       if (!deps.frontendUrl?.trim()) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
@@ -103,6 +106,26 @@ export function createOpenDesignHostPlugin(deps: {
       })) {
         ctx.get("tools").register(tool);
       }
+      /**
+       * 反向联动：右侧画布打开（存在当前 OpenDesign 项目）时，让对话知道这块
+       * 画布是什么、能用哪些工具——这就是「打开画布 → 会话自动启用 OpenDesign
+       * 能力」。没有项目或未配置地址时不出现该段（不摆空能力）。
+       */
+      ctx.get("systemPrompt").register({
+        name: "open-design-canvas",
+        order: 300,
+        scope: "code",
+        resolve: () => {
+          if (!deps.frontendUrl?.trim()) return null;
+          const project = readOpenDesignLastProject({ dataDir });
+          if (!project) return null;
+          return [
+            "## OpenDesign 画布",
+            `右侧面板当前打开的是 OpenDesign 项目「${project.name}」（${project.projectId}）。`,
+            "改这块画布前先用 open_design_project_files 看现有文件；要另起项目用 open_design_create_project。",
+          ].join("\n");
+        },
+      });
       const companion = createOpenDesignCompanionController({
         composeFile: deps.composeFile ?? resolveOpenDesignComposeFile(),
         ...(deps.secret?.trim() ? { apiToken: deps.secret.trim() } : {}),
