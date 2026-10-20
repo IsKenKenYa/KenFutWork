@@ -40,6 +40,28 @@ const projectsRef = {
     { projectId: "p-2", name: "登录页", updatedAt: 2 },
   ],
 };
+const reviewRef = {
+  current: {
+    comments: [] as Array<Record<string, unknown>>,
+    annotations: [] as Array<Record<string, unknown>>,
+  },
+};
+const savedCommentRef = {
+  current: {
+    id: "c-1",
+    projectId: "p-1",
+    file: "index.html",
+    body: "标题太浅",
+    status: "open",
+    anchor: {
+      path: "#app > h1",
+      rect: { x: 10, y: 20, w: 100, h: 30 },
+      excerpt: "当前设计",
+    },
+    createdAt: 1792477257537,
+    updatedAt: 1792477257537,
+  },
+};
 const fetched: string[] = [];
 const posted: Array<{ path: string; body: Record<string, unknown> }> = [];
 
@@ -49,7 +71,7 @@ vi.mock("../src/components/workbench/zcode/host/openDesignHost.js", () => ({
 vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
   surfaceJson: async (path: string, init?: RequestInit) => {
     fetched.push(path);
-    if (init?.method === "POST") {
+    if (init?.method && init.method !== "GET") {
       posted.push({
         path,
         body: JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>,
@@ -59,6 +81,13 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
     if (path.includes("last-project")) return { project: lastProjectRef.current };
     if (path.includes("/host/canvas/")) return canvasRef.current;
     if (path.includes("/host/projects")) return { projects: projectsRef.current };
+    if (path.startsWith("/api/design-review?")) return reviewRef.current;
+    if (path === "/api/design-review/comments")
+      return { comment: savedCommentRef.current };
+    if (path.startsWith("/api/design-review/comments/"))
+      return { comment: { ...savedCommentRef.current, status: "resolved" } };
+    if (path.startsWith("/api/design-review/annotations"))
+      return { annotation: { id: "a-1" } };
     if (path === "/api/open-design/host/file")
       return { file: { name: "logo.png", kind: "image" }, version: null };
     if (path.includes("preview-url")) return previewRef.current;
@@ -97,6 +126,11 @@ afterEach(() => {
   lastProjectRef.current = null;
   readinessRef.current = { reachable: true, agentAvailable: true };
   canvasRef.current = null;
+  reviewRef.current = { comments: [], annotations: [] };
+  savedCommentRef.current = {
+    ...savedCommentRef.current,
+    status: "open",
+  };
   fetched.length = 0;
   posted.length = 0;
   vi.clearAllMocks();
@@ -480,4 +514,107 @@ test("编辑：路径在正文里已经找不到时如实说明，不写回", as
   expect(
     posted.some((item) => item.path === "/api/open-design/host/file"),
   ).toBe(false);
+});
+
+/** 桥报一次矩形：图钉与笔迹的换算都要等这份度量到位。 */
+function emitBridgeRects(
+  frame: HTMLIFrameElement,
+  rects: Record<string, { h: number; w: number; x: number; y: number } | null>,
+) {
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      source: frame.contentWindow,
+      data: {
+        source: "kfw-od",
+        type: "rects",
+        rects,
+        doc: { w: 800, h: 600, vw: 800, vh: 600, sx: 0, sy: 0 },
+      },
+    }),
+  );
+}
+
+async function mountReadyCanvas() {
+  availableEntry();
+  canvasWithFile();
+  const rendered = mount({ projectId: "p-1" });
+  await waitFor(() => {
+    expect(
+      (screen.getByTitle("OpenDesign").getAttribute("srcdoc") ?? "").length,
+    ).toBeGreaterThan(0);
+  });
+  const frame = screen.getByTitle("OpenDesign") as HTMLIFrameElement;
+  return { ...rendered, frame };
+}
+
+test("评论：点选元素→落笔卡片→提交后图钉出现并自动开侧栏", async () => {
+  const { frame } = await mountReadyCanvas();
+  emitBridgeRects(frame, { "#app > h1": { x: 10, y: 20, w: 100, h: 30 } });
+
+  fireEvent.click(screen.getByRole("button", { name: "评论" }));
+  emitBridgeHit(frame, HIT);
+  const composer = await screen.findByTestId("open-design-comment-composer");
+  fireEvent.change(within(composer).getByRole("textbox"), {
+    target: { value: "标题太浅" },
+  });
+  fireEvent.click(within(composer).getByRole("button", { name: "提交" }));
+
+  await waitFor(() => {
+    const call = posted.find(
+      (item) => item.path === "/api/design-review/comments",
+    );
+    expect(call?.body).toMatchObject({
+      projectId: "p-1",
+      file: "index.html",
+      body: "标题太浅",
+      anchor: {
+        path: "#app > h1",
+        rect: { x: 10, y: 20, w: 120, h: 30 },
+        excerpt: "当前设计",
+      },
+    });
+  });
+  expect(
+    await screen.findByTestId("open-design-comment-sidebar"),
+  ).toBeTruthy();
+  expect(
+    document.querySelector('[data-design-comment-pin="c-1"]'),
+  ).toBeTruthy();
+  // 卡片收起，不再叠一层
+  expect(screen.queryByTestId("open-design-comment-composer")).toBeNull();
+});
+
+test("评论侧栏：计数只算未解决，能重开与删除", async () => {
+  reviewRef.current = {
+    comments: [
+      savedCommentRef.current,
+      { ...savedCommentRef.current, id: "c-2", status: "resolved" },
+    ],
+    annotations: [],
+  };
+  const { frame } = await mountReadyCanvas();
+  emitBridgeRects(frame, { "#app > h1": { x: 10, y: 20, w: 100, h: 30 } });
+
+  fireEvent.click(screen.getByRole("button", { name: "评论侧栏" }));
+  const sidebar = await screen.findByTestId("open-design-comment-sidebar");
+  expect(sidebar.textContent).toContain("评论 1");
+  expect(sidebar.textContent).toContain("标题太浅");
+  // 已解决的不出图钉
+  expect(
+    document.querySelectorAll("[data-design-comment-pin]").length,
+  ).toBe(1);
+
+  fireEvent.click(within(sidebar).getAllByRole("button", { name: "解决" })[0]);
+  await waitFor(() => {
+    expect(
+      posted.some((item) => item.path === "/api/design-review/comments/c-1"),
+    ).toBe(true);
+  });
+
+  fireEvent.click(within(sidebar).getAllByRole("button", { name: "删除评论" })[0]);
+  await waitFor(() => {
+    expect(
+      document.querySelectorAll("[data-design-comment-pin]").length,
+    ).toBe(0);
+  });
 });

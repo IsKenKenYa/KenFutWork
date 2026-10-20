@@ -49,10 +49,13 @@ const annotationRow: DesignReviewAnnotationRow = {
   updated_at: 1792477257600,
 };
 
+type RepositorySpies = Record<keyof DesignReviewRepository, ReturnType<typeof vi.fn>>;
+
+/** 假 repository：`service` 拿契约形状，`spies` 拿调用记录（两套类型各管各的）。 */
 function fakeRepository(
-  overrides: Partial<DesignReviewRepository> = {},
-): DesignReviewRepository & Record<string, ReturnType<typeof vi.fn>> {
-  return {
+  overrides: Partial<RepositorySpies> = {},
+): { service: DesignReviewRepository; spies: RepositorySpies } {
+  const spies: RepositorySpies = {
     listComments: vi.fn(async () => [commentRow]),
     insertComment: vi.fn(async () => commentRow),
     updateComment: vi.fn(async () => commentRow),
@@ -61,24 +64,24 @@ function fakeRepository(
     insertAnnotation: vi.fn(async () => annotationRow),
     deleteAnnotation: vi.fn(async () => 1),
     ...overrides,
-  } as unknown as DesignReviewRepository &
-    Record<string, ReturnType<typeof vi.fn>>;
+  };
+  return { spies, service: spies as unknown as DesignReviewRepository };
 }
 
 describe("design-review service", () => {
   it("list：两份清单都按实例作用域读，行形状映射成契约", async () => {
-    const repository = fakeRepository();
+    const { service: repository, spies } = fakeRepository();
     const service = createDesignReviewService({ repository });
     const result = await service.list(actor, {
       projectId: "p-1",
       file: "index.html",
     });
-    expect(repository.listComments).toHaveBeenCalledWith(
+    expect(spies.listComments).toHaveBeenCalledWith(
       actor.instanceId,
       "p-1",
       "index.html",
     );
-    expect(repository.listAnnotations).toHaveBeenCalledWith(
+    expect(spies.listAnnotations).toHaveBeenCalledWith(
       actor.instanceId,
       "p-1",
       "index.html",
@@ -120,7 +123,7 @@ describe("design-review service", () => {
   });
 
   it("写路径一律带调用者的 instanceId，不吃参数里的实例", async () => {
-    const repository = fakeRepository();
+    const { service: repository, spies } = fakeRepository();
     const service = createDesignReviewService({ repository });
     await service.addComment(actor, {
       projectId: "p-1",
@@ -132,13 +135,13 @@ describe("design-review service", () => {
         excerpt: "登录",
       },
     });
-    expect(repository.insertComment.mock.calls[0]?.[0]).toBe(actor.instanceId);
+    expect(spies.insertComment.mock.calls[0]?.[0]).toBe(actor.instanceId);
     await service.deleteComment({ ...actor, instanceId: otherInstance }, "c-1");
-    expect(repository.deleteComment.mock.calls[0]?.[0]).toBe(otherInstance);
+    expect(spies.deleteComment.mock.calls[0]?.[0]).toBe(otherInstance);
   });
 
   it("未知状态与未知 kind 落到可读的默认档，数值列从 numeric 字符串转出来", async () => {
-    const repository = fakeRepository({
+    const { service: repository } = fakeRepository({
       listComments: vi.fn(async () => [
         { ...commentRow, status: "archived" },
       ] as DesignReviewCommentRow[]),
@@ -157,7 +160,7 @@ describe("design-review service", () => {
   });
 
   it("锚点矩形形状不对时立即失败，不把残缺对象透给面板", async () => {
-    const repository = fakeRepository({
+    const { service: repository } = fakeRepository({
       listComments: vi.fn(async () => [
         { ...commentRow, anchor_rect: "not-a-rect" },
       ] as DesignReviewCommentRow[]),
@@ -169,13 +172,12 @@ describe("design-review service", () => {
   });
 
   it("update/delete 打不到行时返回 null/false，路由据此出 404", async () => {
-    const service = createDesignReviewService({
-      repository: fakeRepository({
-        updateComment: vi.fn(async () => null),
-        deleteComment: vi.fn(async () => 0),
-        deleteAnnotation: vi.fn(async () => 0),
-      }),
+    const { service: repository } = fakeRepository({
+      updateComment: vi.fn(async () => null),
+      deleteComment: vi.fn(async () => 0),
+      deleteAnnotation: vi.fn(async () => 0),
     });
+    const service = createDesignReviewService({ repository });
     await expect(
       service.updateComment(actor, "gone", { status: "resolved" }),
     ).resolves.toBeNull();

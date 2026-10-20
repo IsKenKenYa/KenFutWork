@@ -6,8 +6,11 @@ import {
   Eye,
   FolderInput,
   Globe,
+  Highlighter,
   History,
+  MessageSquarePlus,
   Monitor,
+  PanelRight,
   PenTool,
   Plus,
   RefreshCw,
@@ -83,6 +86,9 @@ export function OpenDesignToolbar({
   onZoom,
   tool,
   onTool,
+  commentCount,
+  sidebarOpen,
+  onToggleSidebar,
   openableCanvases,
   onCreateCanvas,
   onOpenCanvas,
@@ -110,6 +116,10 @@ export function OpenDesignToolbar({
   /** 当前工作模式（评论/标注/编辑互斥）；再点一次退出。 */
   tool: OpenDesignTool;
   onTool: (tool: OpenDesignTool) => void;
+  /** 未解决评论数（与画布上的图钉数一致）；侧栏按钮上的读数。 */
+  commentCount: number;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
   /** 「+」的「打开画布」清单（宿主代理的上游 project；空数组 = 只有「新建」）。 */
   openableCanvases: OpenDesignCanvasSummary[];
   onCreateCanvas: () => void;
@@ -247,6 +257,33 @@ export function OpenDesignToolbar({
       </DropdownMenu>
 
       <div className="ml-auto flex flex-wrap items-center gap-0.5">
+        <ToolbarToggleIconButton
+          label="评论"
+          active={tool === "comment"}
+          disabled={busy || !hasCanvas || viewMode === "code"}
+          onClick={() => onTool(tool === "comment" ? "none" : "comment")}
+        >
+          <MessageSquarePlus className="size-3" />
+        </ToolbarToggleIconButton>
+        <ToolbarIconButton
+          label="评论侧栏"
+          active={sidebarOpen}
+          disabled={!hasCanvas}
+          onClick={onToggleSidebar}
+        >
+          <PanelRight className="size-3" />
+          {commentCount > 0 ? (
+            <span className="text-ui-caption leading-none">{commentCount}</span>
+          ) : null}
+        </ToolbarIconButton>
+        <ToolbarToggleIconButton
+          label="标注"
+          active={tool === "annotate"}
+          disabled={busy || !hasCanvas || viewMode === "code"}
+          onClick={() => onTool(tool === "annotate" ? "none" : "annotate")}
+        >
+          <Highlighter className="size-3" />
+        </ToolbarToggleIconButton>
         <ToolbarToggleIconButton
           label="编辑"
           active={tool === "edit"}
@@ -408,11 +445,14 @@ function ViewModeButton({
 
 function ToolbarIconButton({
   label,
+  active,
   disabled,
   onClick,
   children,
 }: {
   label: string;
+  /** 开关型按钮（如评论侧栏）的按下态。 */
+  active?: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
@@ -421,12 +461,17 @@ function ToolbarIconButton({
     <ControlHintTooltip title={label} side="bottom">
       <Button
         type="button"
-        variant="ghost"
+        variant={active ? "secondary" : "ghost"}
         size="icon-sm"
         aria-label={label}
+        aria-pressed={active}
         disabled={disabled}
         onClick={onClick}
-        className="text-foreground-subtle hover:text-foreground"
+        className={
+          active
+            ? "text-foreground"
+            : "text-foreground-subtle hover:text-foreground"
+        }
       >
         {children}
       </Button>

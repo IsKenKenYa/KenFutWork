@@ -30,7 +30,12 @@ export interface OpenDesignHit {
 
 export interface OpenDesignRects {
   rects: Record<string, { x: number; y: number; w: number; h: number } | null>;
-  doc: { w: number; h: number };
+  /**
+   * `w/h` 是文档全尺寸，`vw/vh` 是那一侧的视口尺寸，`sx/sy` 是滚动量。
+   * 父层要靠这三组数换算：iframe 元素被 CSS zoom 与设备视口缩放过，
+   * 只有拿「元素宽 ÷ 内侧视口宽」当比例，图钉与笔迹才贴得住内容而不是贴住屏幕。
+   */
+  doc: { h: number; sx: number; sy: number; vh: number; vw: number; w: number };
 }
 
 /** 父子两侧之间的全部消息（双向共用一个判别联合）。 */
@@ -91,7 +96,12 @@ const BRIDGE_SCRIPT = `(function(){
   }
   function metrics(){
     var de=document.documentElement;
-    return {w:Math.max(de.scrollWidth,de.clientWidth),h:Math.max(de.scrollHeight,de.clientHeight)};
+    return {
+      w:Math.max(de.scrollWidth,de.clientWidth),
+      h:Math.max(de.scrollHeight,de.clientHeight),
+      vw:window.innerWidth, vh:window.innerHeight,
+      sx:window.scrollX||de.scrollLeft, sy:window.scrollY||de.scrollTop
+    };
   }
   function sendRects(type){
     var rects={};

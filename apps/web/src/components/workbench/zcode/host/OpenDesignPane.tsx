@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  DesignReviewAnnotation,
+  DesignReviewComment,
+} from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { dispatchOpenDesignCanvasAddToChat } from "@zui/lib/openDesignCanvasChat.js";
 import type { OpenDesignSidePaneMetadata } from "@zui/lib/workspaceSidePane.js";
@@ -8,9 +12,15 @@ import {
 } from "@zui/root/RootStartupLoading.js";
 import { rasterizeDesignHtml } from "./openDesignCapture.js";
 import {
+  OpenDesignCommentComposer,
+  OpenDesignCommentSidebar,
+} from "./OpenDesignCommentSidebar.js";
+import {
   OpenDesignEditInspector,
   type OpenDesignEditDraft,
 } from "./OpenDesignEditInspector.js";
+import { OpenDesignMarkup } from "./OpenDesignMarkup.js";
+import type { FrameMetrics, OverlayBox } from "./openDesignMarkupGeometry.js";
 import {
   buildCanvasDocument,
   type OpenDesignHit,
@@ -101,9 +111,20 @@ export function OpenDesignPane({
     reachable: boolean;
     agentAvailable: boolean;
   } | null>(null);
-  /** 画布上的工作模式（评论/标注/编辑互斥）与编辑模式选中的元素。 */
+  /** 画布上的工作模式（评论/标注/编辑互斥）与拾取到的元素。 */
   const [tool, setTool] = useState<OpenDesignTool>("none");
   const [picked, setPicked] = useState<OpenDesignHit | null>(null);
+  const [pendingComment, setPendingComment] = useState<OpenDesignHit | null>(
+    null,
+  );
+  const [review, setReview] = useState<{
+    annotations: DesignReviewAnnotation[];
+    comments: DesignReviewComment[];
+  }>({ annotations: [], comments: [] });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  /** iframe 元素在覆盖层坐标系里的盒子（换算图钉与笔迹落点要用）。 */
+  const [overlayBox, setOverlayBox] = useState<OverlayBox | null>(null);
 
   /**
    * 渲染文档：正文 + `<base>`（相对资源落回上游预览目录）+ 桥脚本。
@@ -126,21 +147,224 @@ export function OpenDesignPane({
   }:${documentHtml ? "doc" : "pending"}`;
 
   const onPickHit = useCallback((hit: OpenDesignHit) => {
-    setPicked(hit);
+    // 评论与编辑共用一次拾取，落点不同：评论进落笔卡片，编辑进检视器。
     setTool("none");
+    setPicked(hit);
   }, []);
-  const { ready: bridgeReady, setPicking } = useOpenDesignBridge({
+  const onCommentHit = useCallback((hit: OpenDesignHit) => {
+    setTool("none");
+    setPendingComment(hit);
+  }, []);
+  const trackedPaths = useMemo(
+    () =>
+      review.comments
+        .filter((comment) => comment.status === "open")
+        .map((comment) => comment.anchor.path),
+    [review.comments],
+  );
+  const {
+    ready: bridgeReady,
+    rects,
+    docSize,
+    setPicking,
+  } = useOpenDesignBridge({
     frameRef,
     documentKey,
-    trackedPaths: [],
-    onPickHit,
+    trackedPaths,
+    onPickHit: (hit) => {
+      if (pendingComment || tool === "comment") onCommentHit(hit);
+      else onPickHit(hit);
+    },
   });
 
   // 桥的重渲染会把它自己的 picking 态清掉，因此换文档后也要按当前模式重发一次。
   useEffect(() => {
     if (!bridgeReady) return;
-    setPicking(tool === "edit");
+    setPicking(tool === "edit" || tool === "comment");
   }, [bridgeReady, documentKey, setPicking, tool]);
+
+  // 覆盖层坐标系：以滚动容器左上角为原点，iframe 元素盒子换成相对坐标。
+  // 量到 0 也照记（首帧未布局、jsdom 无布局），下一次桥回传矩形时会再量一遍。
+  useEffect(() => {
+    const wrap = frameWrapRef.current;
+    const frame = frameRef.current;
+    if (!wrap || !frame) return;
+    const wr = wrap.getBoundingClientRect();
+    const fr = frame.getBoundingClientRect();
+    setOverlayBox({
+      left: fr.left - wr.left + wrap.scrollLeft,
+      top: fr.top - wr.top + wrap.scrollTop,
+      width: fr.width,
+      height: fr.height,
+    });
+  }, [docSize, documentKey, frameLoaded, overlayBox?.width, rects, zoom]);
+
+  /** 评论与标注：一块画布的一个文件一份清单。 */
+  const loadReview = useCallback(async () => {
+    if (!canvas?.entryFile) return;
+    try {
+      const data = await surfaceJson<{
+        annotations: DesignReviewAnnotation[];
+        comments: DesignReviewComment[];
+      }>(
+        `/api/design-review?projectId=${encodeURIComponent(canvas.projectId)}&file=${encodeURIComponent(canvas.entryFile)}`,
+      );
+      setReview(data);
+    } catch {
+      // 读不到评审数据不挡画布：图钉与笔迹只是不显示。
+    }
+  }, [canvas]);
+
+  useEffect(() => {
+    if (phase !== "ready" || !canvas?.entryFile) return;
+    void loadReview();
+  }, [canvas?.entryFile, loadReview, phase]);
+
+  const createComment = useCallback(
+    async (body: string) => {
+      if (!pendingComment || !canvas?.entryFile || !docSize) return;
+      setBusy(true);
+      setNotice(null);
+      try {
+        const data = await surfaceJson<{ comment: DesignReviewComment }>(
+          "/api/design-review/comments",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              projectId: canvas.projectId,
+              file: canvas.entryFile,
+              body,
+              // 锚点矩形存文档坐标：滚动之后仍能折算回屏幕位置。
+              anchor: {
+                path: pendingComment.path,
+                rect: {
+                  x: pendingComment.rect.x + docSize.sx,
+                  y: pendingComment.rect.y + docSize.sy,
+                  w: pendingComment.rect.w,
+                  h: pendingComment.rect.h,
+                },
+                excerpt: pendingComment.text.slice(0, 120),
+              },
+            }),
+          },
+        );
+        setReview((current) => ({
+          ...current,
+          comments: [...current.comments, data.comment],
+        }));
+        setPendingComment(null);
+        setSidebarOpen(true);
+      } catch (createError) {
+        setNotice(
+          createError instanceof Error
+            ? createError.message
+            : "评论失败。",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [canvas, docSize, pendingComment],
+  );
+
+  const patchComment = useCallback(
+    async (comment: DesignReviewComment, patch: { status?: string }) => {
+      setBusy(true);
+      try {
+        const data = await surfaceJson<{ comment: DesignReviewComment }>(
+          `/api/design-review/comments/${encodeURIComponent(comment.id)}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(patch),
+          },
+        );
+        setReview((current) => ({
+          ...current,
+          comments: current.comments.map((item) =>
+            item.id === data.comment.id ? data.comment : item,
+          ),
+        }));
+      } catch (patchError) {
+        setNotice(
+          patchError instanceof Error ? patchError.message : "改动评论失败。",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [],
+  );
+
+  const removeComment = useCallback(async (comment: DesignReviewComment) => {
+    setBusy(true);
+    try {
+      await surfaceJson(
+        `/api/design-review/comments/${encodeURIComponent(comment.id)}`,
+        { method: "DELETE" },
+      );
+      setReview((current) => ({
+        ...current,
+        comments: current.comments.filter((item) => item.id !== comment.id),
+      }));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const createAnnotation = useCallback(
+    async (draft: { kind: "pen"; points: [number, number][] }) => {
+      if (!canvas?.entryFile) return;
+      try {
+        const data = await surfaceJson<{
+          annotation: DesignReviewAnnotation;
+        }>("/api/design-review/annotations", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: canvas.projectId,
+            file: canvas.entryFile,
+            kind: draft.kind,
+            color: ANNOTATION_COLOR,
+            strokeWidth: 3,
+            points: draft.points,
+          }),
+        });
+        setReview((current) => ({
+          ...current,
+          annotations: [...current.annotations, data.annotation],
+        }));
+      } catch (drawError) {
+        setNotice(
+          drawError instanceof Error ? drawError.message : "保存标注失败。",
+        );
+      }
+    },
+    [canvas],
+  );
+
+  const removeAnnotation = useCallback(
+    async (id: string) => {
+      try {
+        await surfaceJson(
+          `/api/design-review/annotations/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        );
+        setReview((current) => ({
+          ...current,
+          annotations: current.annotations.filter((item) => item.id !== id),
+        }));
+      } catch (eraseError) {
+        setNotice(
+          eraseError instanceof Error
+            ? eraseError.message
+            : "删除标注失败。",
+        );
+      }
+    },
+    [],
+  );
 
   const reportMeta = useCallback(
     (metadata: OpenDesignSidePaneMetadata) => {
@@ -684,7 +908,13 @@ export function OpenDesignPane({
         onTool={(next) => {
           setTool(next);
           if (next !== "edit") setPicked(null);
+          if (next !== "comment") setPendingComment(null);
         }}
+        commentCount={
+          review.comments.filter((item) => item.status === "open").length
+        }
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
         openableCanvases={openableCanvases}
         onCreateCanvas={() => void createCanvas()}
         onOpenCanvas={openCanvas}
@@ -792,6 +1022,49 @@ export function OpenDesignPane({
             ) : null}
           </div>
         ) : null}
+        {showCanvas && viewMode === "preview" && overlayBox && docSize ? (
+          <OpenDesignMarkup
+            comments={review.comments}
+            annotations={review.annotations}
+            rects={rects}
+            box={overlayBox}
+            metrics={docSize}
+            drawing={tool === "annotate"}
+            color={ANNOTATION_COLOR}
+            onPickComment={(id) => {
+              setActiveCommentId(id);
+              setSidebarOpen(true);
+            }}
+            onCreateAnnotation={(draft) => void createAnnotation(draft)}
+            onDeleteAnnotation={(id) => void removeAnnotation(id)}
+          />
+        ) : null}
+        {pendingComment && viewMode === "preview" ? (
+          <OpenDesignCommentComposer
+            excerpt={pendingComment.text}
+            busy={busy}
+            onCancel={() => setPendingComment(null)}
+            onSubmit={(body) => void createComment(body)}
+          />
+        ) : null}
+        {sidebarOpen && canvas ? (
+          <OpenDesignCommentSidebar
+            comments={review.comments}
+            activeId={activeCommentId}
+            busy={busy}
+            onSelect={setActiveCommentId}
+            onToggleResolved={(comment) =>
+              void patchComment(comment, {
+                status: comment.status === "open" ? "resolved" : "open",
+              })
+            }
+            onDelete={(comment) => void removeComment(comment)}
+            onClose={() => {
+              setSidebarOpen(false);
+              setActiveCommentId(null);
+            }}
+          />
+        ) : null}
         {picked && viewMode === "preview" && !activeVersion ? (
           <OpenDesignEditInspector
             key={picked.path}
@@ -855,6 +1128,9 @@ async function dataUrlToFile(dataUrl: string, name: string): Promise<File> {
 
 /** 上传资源的体积上限：base64 后还要过宿主正文上限，超限直接拒，不半途截断。 */
 const UPLOAD_MAX_BYTES = 1.5 * 1024 * 1024;
+
+/** 标注笔迹色：先固定一支红笔，色板留给后续按需再加。 */
+const ANNOTATION_COLOR = "#ef4444";
 
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
