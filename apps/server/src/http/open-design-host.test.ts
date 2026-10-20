@@ -633,3 +633,135 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
   });
 });
 
+describe("GET /api/open-design/host/projects", () => {
+  it("按更新时间倒序、丢掉没有 id 的行；未授权 401", async () => {
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/api/projects": () =>
+          jsonResponse({
+            projects: [
+              { id: "p-old", name: "旧画布", updatedAt: 100 },
+              { name: "缺 id" },
+              { id: "p-new", name: "新画布", updatedAt: 300 },
+              { id: "p-mid", updatedAt: 200 },
+            ],
+          }),
+      }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/projects",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      projects: [
+        { projectId: "p-new", name: "新画布", updatedAt: 300 },
+        { projectId: "p-mid", name: "未命名画布", updatedAt: 200 },
+        { projectId: "p-old", name: "旧画布", updatedAt: 100 },
+      ],
+    });
+
+    const denied = canvasFixture({
+      authorized: false,
+      frontendUrl: "http://127.0.0.1:7456",
+    });
+    expect(
+      (
+        await denied.inject({ method: "GET", url: "/api/open-design/host/projects" })
+      ).statusCode,
+    ).toBe(401);
+  });
+});
+
+describe("POST /api/open-design/host/file", () => {
+  /** 记录上游请求体的假 daemon：只挂写文件这一条。 */
+  function writeFetch(reply: unknown) {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+      });
+      return jsonResponse(reply);
+    }) as typeof fetch;
+    return { calls, app: canvasFixture({ frontendUrl: "http://127.0.0.1:7456", fetchImpl }) };
+  }
+
+  it("HTML 写入代记 manual 版本，并透出上游版本", async () => {
+    const { calls, app } = writeFetch({
+      file: { name: "index.html", kind: "html" },
+      version: { id: "v-9", version: 9, label: "手动编辑" },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file",
+      payload: {
+        projectId: "p-1",
+        name: "index.html",
+        content: "<html>edited</html>",
+        versionLabel: "手动编辑",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      file: { name: "index.html", kind: "html" },
+      version: { id: "v-9", version: 9, label: "手动编辑" },
+    });
+    expect(calls[0]?.url).toBe("http://127.0.0.1:7456/api/projects/p-1/files");
+    expect(calls[0]?.body).toEqual({
+      name: "index.html",
+      content: "<html>edited</html>",
+      versionSource: "manual",
+      versionLabel: "手动编辑",
+    });
+  });
+
+  it("二进制资源走 base64 且不记版本", async () => {
+    const { calls, app } = writeFetch({ file: { name: "logo.png", kind: "image" } });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file",
+      payload: {
+        projectId: "p-1",
+        name: "assets/logo.png",
+        content: "aGVsbG8=",
+        encoding: "base64",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().version).toBeNull();
+    expect(calls[0]?.body).toEqual({
+      name: "assets/logo.png",
+      content: "aGVsbG8=",
+      encoding: "base64",
+    });
+  });
+
+  it("拒绝上级目录与绝对路径；上游 404 透出可读原因", async () => {
+    const traversal = writeFetch({ file: { name: "x", kind: "file" } });
+    for (const name of ["../escape.html", "/etc/passwd", "C:\\Windows\\x.html"]) {
+      const response = await traversal.app.inject({
+        method: "POST",
+        url: "/api/open-design/host/file",
+        payload: { projectId: "p-1", name, content: "x" },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.message).toContain("文件名");
+    }
+    expect(traversal.calls).toHaveLength(0);
+
+    const notFound = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({}),
+    });
+    const missing = await notFound.inject({
+      method: "POST",
+      url: "/api/open-design/host/file",
+      payload: { projectId: "p-404", name: "index.html", content: "x" },
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.message).toBe("上游没有这块画布。");
+  });
+});
+

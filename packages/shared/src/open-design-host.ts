@@ -209,6 +209,92 @@ export type OpenDesignHostFileTextResponse = z.infer<
   typeof openDesignHostFileTextResponseSchema
 >;
 
+/** 设计文件正文大小上限（读写同一口径；超限如实报错，不静默截断）。 */
+export const OPEN_DESIGN_HOST_TEXT_MAX_LENGTH = 2 * 1024 * 1024;
+
+/**
+ * 引擎就绪探针：上游可达 ≠ 能出画布。没有可用 agent CLI 时面板要说清是哪一层。
+ */
+export const openDesignHostReadinessResponseSchema = z.object({
+  reachable: z.boolean(),
+  agentAvailable: z.boolean(),
+  agentId: z.string().nullable(),
+  onboardingCompleted: z.boolean(),
+});
+export type OpenDesignHostReadinessResponse = z.infer<
+  typeof openDesignHostReadinessResponseSchema
+>;
+
+/** 「最近画布」槽位（桌面数据目录里的一个文件）；一个都没有时为 null。 */
+export const openDesignHostLastProjectResponseSchema = z.object({
+  project: z
+    .object({
+      projectId: z.string().min(1),
+      name: z.string(),
+    })
+    .nullable(),
+});
+export type OpenDesignHostLastProjectResponse = z.infer<
+  typeof openDesignHostLastProjectResponseSchema
+>;
+
+/** 显式「配置设计引擎」的结果：done=false 时 reason 说明卡在哪。 */
+export const openDesignHostProvisionResponseSchema = z.object({
+  done: z.boolean(),
+  agentId: z.string().nullable(),
+  reason: z.string().nullish(),
+});
+export type OpenDesignHostProvisionResponse = z.infer<
+  typeof openDesignHostProvisionResponseSchema
+>;
+
+/** 画布列表（面板「+」的「打开画布」项）：上游 project 概要，按更新时间倒序。 */
+export const openDesignHostProjectsResponseSchema = z.object({
+  projects: z
+    .array(
+      z.object({
+        projectId: z.string().min(1),
+        name: z.string(),
+        updatedAt: z.number(),
+      }),
+    )
+    .max(200),
+});
+export type OpenDesignHostProjectsResponse = z.infer<
+  typeof openDesignHostProjectsResponseSchema
+>;
+
+/**
+ * 写入画布文件（可视化编辑保存、上传资源）。
+ *
+ * HTML 写入由宿主代上游记一个 `manual` 版本——编辑历史与生成历史进同一条
+ * 「历史记录」，不分两套账。`encoding: "base64"` 给二进制资源（图片）。
+ */
+export const openDesignHostWriteFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+  content: z.string().max(OPEN_DESIGN_HOST_TEXT_MAX_LENGTH),
+  encoding: z.enum(["utf8", "base64"]).optional(),
+  versionLabel: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostWriteFileRequest = z.infer<
+  typeof openDesignHostWriteFileRequestSchema
+>;
+
+export const openDesignHostWriteFileResponseSchema = z.object({
+  file: z.object({ name: z.string().min(1), kind: z.string() }),
+  version: z
+    .object({
+      id: z.string().min(1),
+      version: z.number().int(),
+      label: z.string(),
+    })
+    .nullable(),
+});
+export type OpenDesignHostWriteFileResponse = z.infer<
+  typeof openDesignHostWriteFileResponseSchema
+>;
+
 /**
  * 宿主适配层协议版本：凭证缝（`POST /api/open-design/host/credentials`）的版本协商口径。
  * （原 `od/v1` iframe 握手随面板改嵌上游预览路由而移除——那条消息协议上游从未实现。）

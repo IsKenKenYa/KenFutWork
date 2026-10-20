@@ -5,12 +5,16 @@ import {
   Download,
   Eye,
   FolderInput,
+  Globe,
   History,
   Monitor,
+  PenTool,
+  Plus,
   RefreshCw,
   Share2,
   Smartphone,
   Tablet,
+  Upload,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
@@ -19,19 +23,27 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 
 /**
  * 画布工具栏（本仓口径，替代上游 FileViewer 那两行 chrome）。
  *
- * 上游控件逐项映射见台账 §二百〇四：刷新 / 预览·代码 / 设备视口 / 截图到对话 /
- * 交给对话（上游 Handoff 的文件夹按钮）/ 历史记录 / 导出 / 分享 / 缩放。
- * 上游的画布评论、标注、可视化编辑需要它自己的应用内运行时，纯预览嵌入承载不了，
- * 不在这里摆假开关。
+ * 上游控件逐项映射见台账 §二百〇四：「+」（新建画布 / 打开画布 / 上传资源 /
+ * 新建浏览器）/ 刷新 / 预览·代码 / 设备视口 / 截图到对话 /
+ * 交给对话（上游 Handoff 的文件夹按钮）/ 历史记录 / 导出（PNG、HTML）/ 分享 / 缩放。
+ * 评论、标注、可视化编辑是本仓自己的实现，不吃上游应用内运行时。
  */
 export type OpenDesignViewMode = "preview" | "code";
 export type OpenDesignViewport = "desktop" | "tablet" | "mobile";
+
+/** 「+」里「打开画布」的一条：宿主代理的上游 project 概要。 */
+export interface OpenDesignCanvasSummary {
+  projectId: string;
+  name: string;
+}
 
 export interface OpenDesignVersionSummary {
   id: string;
@@ -42,6 +54,9 @@ export interface OpenDesignVersionSummary {
 }
 
 export const OPEN_DESIGN_ZOOM_LEVELS = [50, 75, 100, 125, 150, 200] as const;
+
+/** 「+」里最多列几块已有画布（再多的话走对话侧或刷新后找）。 */
+const OPENABLE_CANVAS_LIMIT = 8;
 
 const VIEWPORTS: Array<{
   id: OpenDesignViewport;
@@ -62,6 +77,11 @@ export function OpenDesignToolbar({
   onViewport,
   zoom,
   onZoom,
+  openableCanvases,
+  onCreateCanvas,
+  onOpenCanvas,
+  onUploadAsset,
+  onOpenBrowserTab,
   versions,
   versionsLoading,
   activeVersionId,
@@ -81,6 +101,13 @@ export function OpenDesignToolbar({
   onViewport: (viewport: OpenDesignViewport) => void;
   zoom: number;
   onZoom: (zoom: number) => void;
+  /** 「+」的「打开画布」清单（宿主代理的上游 project；空数组 = 只有「新建」）。 */
+  openableCanvases: OpenDesignCanvasSummary[];
+  onCreateCanvas: () => void;
+  onOpenCanvas: (projectId: string) => void;
+  /** 选中文件即上传到当前画布（没有画布时先新建一块再传）。 */
+  onUploadAsset: (file: File) => void;
+  onOpenBrowserTab: () => void;
   versions: OpenDesignVersionSummary[] | null;
   versionsLoading: boolean;
   activeVersionId: string | null;
@@ -94,9 +121,73 @@ export function OpenDesignToolbar({
 }) {
   const activeViewport = VIEWPORTS.find((item) => item.id === viewport);
   const ViewportIcon = activeViewport?.icon ?? Monitor;
+  // 上传要有落点：没有当前画布时先由面板新建一块（与「新建画布」同一条宿主路由）。
+  const uploadInput = (
+    <input
+      ref={(node) => {
+        uploadInputRef.current = node;
+      }}
+      type="file"
+      className="hidden"
+      data-testid="open-design-upload-input"
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (file) onUploadAsset(file);
+      }}
+    />
+  );
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-1.5 py-1">
+      {uploadInput}
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-foreground-subtle hover:text-foreground"
+            aria-label="新建"
+            title="新建"
+            disabled={busy}
+          >
+            <Plus className="size-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuItem data-open-design-add="canvas" onSelect={onCreateCanvas}>
+            <PenTool className="size-3.5" />
+            <span className="flex-1">新建画布</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-open-design-add="upload"
+            onSelect={() => uploadInputRef.current?.click()}
+          >
+            <Upload className="size-3.5" />
+            <span className="flex-1">上传资源</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem data-open-design-add="browser" onSelect={onOpenBrowserTab}>
+            <Globe className="size-3.5" />
+            <span className="flex-1">新建浏览器</span>
+          </DropdownMenuItem>
+          {openableCanvases.length > 0 ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>打开画布</DropdownMenuLabel>
+              {openableCanvases.slice(0, OPENABLE_CANVAS_LIMIT).map((canvas) => (
+                <DropdownMenuItem
+                  key={canvas.projectId}
+                  data-open-design-open={canvas.projectId}
+                  onSelect={() => onOpenCanvas(canvas.projectId)}
+                >
+                  <span className="flex-1 truncate">{canvas.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ToolbarIconButton
         label="刷新"
         disabled={busy || !hasCanvas}
@@ -254,6 +345,12 @@ export function OpenDesignToolbar({
     </div>
   );
 }
+
+/**
+ * 上传用的隐藏 input：Radix 菜单项的 onSelect 里点它，比把 input 塞进菜单项更稳
+ * （菜单关闭会销毁焦点，链式 click 需要在菜单外持有引用）。
+ */
+const uploadInputRef: { current: HTMLInputElement | null } = { current: null };
 
 function formatVersionTime(timestamp: number): string {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "—";

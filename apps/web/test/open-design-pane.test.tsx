@@ -27,17 +27,33 @@ const previewRef = {
 const createdRef = {
   current: { project: { projectId: "p-new", name: "未命名画布" } },
 };
+const projectsRef = {
+  current: [
+    { projectId: "p-1", name: "订单页", updatedAt: 3 },
+    { projectId: "p-2", name: "登录页", updatedAt: 2 },
+  ],
+};
 const fetched: string[] = [];
+const posted: Array<{ path: string; body: Record<string, unknown> }> = [];
 
 vi.mock("../src/components/workbench/zcode/host/openDesignHost.js", () => ({
   useOpenDesignEntry: () => entryRef.current,
 }));
 vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
-  surfaceJson: async (path: string) => {
+  surfaceJson: async (path: string, init?: RequestInit) => {
     fetched.push(path);
+    if (init?.method === "POST") {
+      posted.push({
+        path,
+        body: JSON.parse(String(init.body ?? "{}")) as Record<string, unknown>,
+      });
+    }
     if (path.includes("readiness")) return readinessRef.current;
     if (path.includes("last-project")) return { project: lastProjectRef.current };
     if (path.includes("/host/canvas/")) return canvasRef.current;
+    if (path.includes("/host/projects")) return { projects: projectsRef.current };
+    if (path === "/api/open-design/host/file")
+      return { file: { name: "logo.png", kind: "image" }, version: null };
     if (path.includes("preview-url")) return previewRef.current;
     if (path.includes("file-text")) return { name: "index.html", text: "<html><body>当前设计</body></html>" };
     if (path.includes("version-content")) {
@@ -71,11 +87,13 @@ afterEach(() => {
   readinessRef.current = { reachable: true, agentAvailable: true };
   canvasRef.current = null;
   fetched.length = 0;
+  posted.length = 0;
   vi.clearAllMocks();
 });
 
 function mount(options: { projectId: string | null }) {
   const onMeta = vi.fn();
+  const onOpenBrowserTab = vi.fn();
   const view = render(
     <TooltipProvider>
       <OpenDesignPane
@@ -87,10 +105,11 @@ function mount(options: { projectId: string | null }) {
         projectId={options.projectId}
         onMeta={onMeta}
         workspacePath="C:/workspace"
+        onOpenBrowserTab={onOpenBrowserTab}
       />
     </TooltipProvider>,
   );
-  return { view, onMeta };
+  return { view, onMeta, onOpenBrowserTab };
 }
 
 function availableEntry() {
@@ -276,4 +295,80 @@ test("入口未就绪：直接说明原因，不摆空壳", async () => {
   expect(screen.getByTestId("open-design-pane").textContent).toContain(
     "未安装 OpenDesign 插件。",
   );
+});
+
+test("「+」选择器：新建画布 / 上传资源 / 新建浏览器 / 打开已有画布", async () => {
+  const user = userEvent.setup();
+  availableEntry();
+  canvasWithFile();
+  const { onOpenBrowserTab } = mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+
+  await openMenu(user, "新建");
+  expect(
+    await screen.findByTestId("open-design-upload-input"),
+  ).toBeTruthy();
+  const items = await screen.findAllByRole("menuitem");
+  expect(items.map((item) => item.textContent)).toEqual(
+    expect.arrayContaining(["新建画布", "上传资源", "新建浏览器", "登录页"]),
+  );
+
+  const browserItem = items.find((item) =>
+    item.dataset.openDesignAdd === "browser",
+  );
+  expect(browserItem).toBeTruthy();
+  fireEvent.click(browserItem as HTMLElement);
+  expect(onOpenBrowserTab).toHaveBeenCalledTimes(1);
+});
+
+test("「+」→「上传资源」：文件按 base64 经宿主写进当前画布", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+
+  const input = screen.getByTestId("open-design-upload-input");
+  fireEvent.change(input, {
+    target: { files: [new File([new Uint8Array([1, 2, 3])], "logo.png")] },
+  });
+
+  await waitFor(() => {
+    expect(posted.map((call) => call.path)).toContain(
+      "/api/open-design/host/file",
+    );
+  });
+  const call = posted.find((item) => item.path === "/api/open-design/host/file");
+  expect(call?.body).toEqual({
+    projectId: "p-1",
+    name: "logo.png",
+    content: "AQID",
+    encoding: "base64",
+  });
+  const notice = await screen.findByTestId("open-design-notice");
+  expect(notice.textContent).toContain("已上传 logo.png");
+});
+
+test("「+」→「打开画布」：当前标签换绑到那块画布并重读", async () => {
+  const user = userEvent.setup();
+  availableEntry();
+  canvasWithFile("p-1", "订单页");
+  const { onMeta } = mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+
+  await openMenu(user, "新建");
+  const openItem = (
+    await screen.findAllByRole("menuitem")
+  ).find((node) => node.dataset.openDesignOpen === "p-2");
+  expect(openItem).toBeTruthy();
+  fireEvent.click(openItem as HTMLElement);
+
+  await waitFor(() => {
+    expect(onMeta).toHaveBeenCalledWith("open-design:p-1", {
+      projectId: "p-2",
+      title: null,
+    });
+  });
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/canvas/p-2");
+  });
 });

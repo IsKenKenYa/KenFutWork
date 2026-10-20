@@ -7,10 +7,16 @@ import {
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
   openDesignHostFileTextResponseSchema,
+  openDesignHostLastProjectResponseSchema,
   openDesignHostPreviewUrlResponseSchema,
+  openDesignHostProjectsResponseSchema,
+  openDesignHostProvisionResponseSchema,
+  openDesignHostWriteFileRequestSchema,
+  openDesignHostWriteFileResponseSchema,
   openDesignHostVersionContentResponseSchema,
   openDesignHostVersionsResponseSchema,
   openDesignHostStatusResponseSchema,
+  OPEN_DESIGN_HOST_TEXT_MAX_LENGTH,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -46,9 +52,10 @@ import { authorizeOpenDesignGateway } from "./open-design-gateway-auth.js";
 const OPEN_DESIGN_CANVAS_TIMEOUT_MS = 5_000;
 
 /**
- * 设计文本上限（光栅化在浏览器里做，超限的页面不做截图/导出，如实报错）。
+ * 设计文本上限（读写同一口径，属主在 `@kenfutwork/shared`）：超限的页面不做
+ * 截图/导出，也写不回去，一律如实报错。
  */
-const OPEN_DESIGN_DESIGN_TEXT_MAX_LENGTH = 2 * 1024 * 1024;
+const OPEN_DESIGN_DESIGN_TEXT_MAX_LENGTH = OPEN_DESIGN_HOST_TEXT_MAX_LENGTH;
 
 interface DaemonProjectFile {
   name?: string;
@@ -64,6 +71,11 @@ function pickEntryFile(files: DaemonProjectFile[]): string | null {
   if (declared?.name) return declared.name;
   const html = files.find((file) => file.kind === "html" && file.name);
   return html?.name ?? null;
+}
+
+/** 上游只对 `.html`/`.htm` 记版本，宿主按同一口径判断。 */
+function isHtmlDesignFile(name: string): boolean {
+  return /\.html?$/iu.test(name);
 }
 
 /**
@@ -340,6 +352,35 @@ export async function registerOpenDesignHostRoutes(
     );
   });
 
+  /**
+   * 画布列表（面板「+」的「打开画布」项）：上游 project 概要按更新时间倒序。
+   * 上游返回 `projects`，字段名是 `id`/`name`/`updatedAt`——宿主侧收口成自己的契约，
+   * 面板不跟着上游改名。
+   */
+  app.get("/api/open-design/host/projects", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const listed = await daemonJson<{
+      projects?: Array<{ id?: string; name?: string; updatedAt?: number }>;
+    }>(base, "/api/projects");
+    if (!listed.ok)
+      return error(reply, listed.status, "service_unavailable", listed.message);
+    const projects = (listed.value.projects ?? [])
+      .filter((project): project is { id: string; name?: string; updatedAt?: number } =>
+        typeof project.id === "string" && project.id.length > 0,
+      )
+      .map((project) => ({
+        projectId: project.id,
+        name: project.name ?? "未命名画布",
+        updatedAt: project.updatedAt ?? 0,
+      }))
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, 200);
+    return reply.send(openDesignHostProjectsResponseSchema.parse({ projects }));
+  });
+
   // 读画布：项目名 + 文件表 + 入口文件（面板据此取标题与预览目标）。
   app.get("/api/open-design/host/canvas/:projectId", async (request, reply) => {
     if (!(await options.localAccess.authenticate(request)))
@@ -531,13 +572,73 @@ export async function registerOpenDesignHostRoutes(
     }
   });
 
+  /**
+   * 写入画布文件（可视化编辑保存、上传资源）。
+   *
+   * HTML 一律带 `versionSource: manual`：上游据此把这次手改记进**同一条**版本历史，
+   * 面板的「历史记录」自然看得见，不需要宿主另建一套账。二进制资源走 base64。
+   */
+  app.post("/api/open-design/host/file", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostWriteFileRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "写入文件请求格式不正确。");
+    const { projectId, name, content, encoding, versionLabel } = parsed.data;
+    if (name.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(name) || name.split(/[\\/]/u).includes("..")) {
+      return error(reply, 400, "application_error", "文件名不能带绝对路径或上级目录。");
+    }
+    const isHtml = isHtmlDesignFile(name);
+    const written = await daemonJson<{
+      file?: { name?: string; kind?: string };
+      version?: { id?: string; version?: number; label?: string };
+    }>(base, `/api/projects/${encodeURIComponent(projectId)}/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name,
+        content,
+        ...(encoding && encoding !== "utf8" ? { encoding } : {}),
+        ...(isHtml ? { versionSource: "manual" } : {}),
+        ...(versionLabel && isHtml ? { versionLabel } : {}),
+      }),
+    });
+    if (!written.ok)
+      return error(reply, written.status, "service_unavailable", written.message);
+    const version = written.value.version;
+    return reply.send(
+      openDesignHostWriteFileResponseSchema.parse({
+        file: {
+          name: written.value.file?.name ?? name,
+          kind: written.value.file?.kind ?? (isHtml ? "html" : "file"),
+        },
+        version:
+          typeof version?.id === "string" && version.id
+            ? {
+                id: version.id,
+                version: version.version ?? 0,
+                label: version.label ?? version.id,
+              }
+            : null,
+      }),
+    );
+  });
+
   if (options.dataDir) {
     const dataDir = options.dataDir;
     // 右侧面板读「最近创建的项目」，据此把 iframe 定位到 /projects/<id>。
     app.get("/api/open-design/last-project", async (request, reply) => {
       if (!(await options.localAccess.authenticate(request)))
         return unauthorized(reply, "本机接入凭据缺失或无效。");
-      return reply.send({ project: readOpenDesignLastProject({ dataDir }) });
+      return reply.send(
+        openDesignHostLastProjectResponseSchema.parse({
+          project: readOpenDesignLastProject({ dataDir }),
+        }),
+      );
     });
     // 桌面承载配置读写（§205 闭环）：本机接入门；文件值重启后经 Tauri 注入生效。
     app.get("/api/open-design/host/config", async (request, reply) => {
@@ -722,6 +823,6 @@ export async function registerOpenDesignHostRoutes(
       fetchImpl: options.fetchImpl ?? fetch,
       entries: resolved.entries,
     });
-    return reply.send(result);
+    return reply.send(openDesignHostProvisionResponseSchema.parse(result));
   });
 }

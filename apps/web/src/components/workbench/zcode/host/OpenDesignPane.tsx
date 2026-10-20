@@ -10,6 +10,7 @@ import { rasterizeDesignHtml } from "./openDesignCapture.js";
 import { useOpenDesignEntry } from "./openDesignHost.js";
 import {
   OpenDesignToolbar,
+  type OpenDesignCanvasSummary,
   type OpenDesignVersionSummary,
   type OpenDesignViewMode,
   type OpenDesignViewport,
@@ -30,6 +31,7 @@ export function OpenDesignPane({
   onMeta,
   workspacePath,
   workspaceIdentity,
+  onOpenBrowserTab,
 }: {
   /** 侧栏标签 id：画布名/绑定回写按它记账。 */
   tabId: string;
@@ -38,6 +40,8 @@ export function OpenDesignPane({
   onMeta: (tabId: string, metadata: OpenDesignSidePaneMetadata) => void;
   workspacePath: string;
   workspaceIdentity?: string;
+  /** 「+」里的「新建浏览器」：开侧栏浏览器标签（与画布标签同位）。 */
+  onOpenBrowserTab: () => void;
 }) {
   const entry = useOpenDesignEntry();
   const entryAvailable = entry?.available === true;
@@ -66,6 +70,9 @@ export function OpenDesignPane({
   const [versions, setVersions] = useState<OpenDesignVersionSummary[] | null>(
     null,
   );
+  const [openableCanvases, setOpenableCanvases] = useState<
+    OpenDesignCanvasSummary[]
+  >([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [activeVersion, setActiveVersion] = useState<{
     id: string;
@@ -235,7 +242,7 @@ export function OpenDesignPane({
     setBusy(false);
   }, [boundProjectId, loadCanvas, loadPreview]);
 
-  const createCanvas = useCallback(async () => {
+  const createCanvas = useCallback(async (): Promise<string | null> => {
     setBusy(true);
     setNotice(null);
     try {
@@ -253,14 +260,86 @@ export function OpenDesignPane({
         projectId: created.project.projectId,
         title: created.project.name,
       });
+      setOpenableCanvases((current) => [
+        { projectId: created.project.projectId, name: created.project.name },
+        ...current.filter((item) => item.projectId !== created.project.projectId),
+      ]);
+      return created.project.projectId;
     } catch (createError) {
       setNotice(
         createError instanceof Error ? createError.message : "新建画布失败。",
       );
+      return null;
     } finally {
       setBusy(false);
     }
   }, [reportMeta]);
+
+  /** 「+」的「打开画布」清单：上游 project 概要（本机 daemon，一次小请求）。 */
+  const loadCanvases = useCallback(async () => {
+    try {
+      const data = await surfaceJson<{
+        projects: Array<{ projectId: string; name: string }>;
+      }>("/api/open-design/host/projects");
+      setOpenableCanvases(data.projects);
+    } catch {
+      // 清单读不到不影响当前画布：菜单只剩「新建画布」，不报错挡路。
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!entryAvailable) return;
+    void loadCanvases();
+  }, [entryAvailable, loadCanvases]);
+
+  /** 本标签切到另一块画布（一块画布一个标签；这里只动当前标签的绑定）。 */
+  const openCanvas = useCallback(
+    (id: string) => {
+      if (id === boundProjectId) return;
+      setCanvas(null);
+      setPreview(null);
+      setBoundProjectId(id);
+      reportMeta({ projectId: id, title: null });
+    },
+    [boundProjectId, reportMeta],
+  );
+
+  /** 上传资源：二进制走 base64 经宿主写进画布目录；没有画布就先建一块。 */
+  const uploadAsset = useCallback(
+    async (file: File) => {
+      if (file.size > UPLOAD_MAX_BYTES) {
+        setNotice("文件超过 1.5 MB，请换小一点的资源。");
+        return;
+      }
+      setBusy(true);
+      setNotice(null);
+      try {
+        const target = boundProjectId ?? (await createCanvas());
+        if (!target) return;
+        const content = await fileToBase64(file);
+        await surfaceJson("/api/open-design/host/file", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: target,
+            name: file.name.replace(UNSAFE_FILENAME_CHARS, "-"),
+            content,
+            encoding: "base64",
+          }),
+        });
+        // 先刷新再报成功：refresh 会清 notice，反过来写会让提示刚出现就被抹掉。
+        if (target === boundProjectId) await refresh();
+        setNotice(`已上传 ${file.name}`);
+      } catch (uploadError) {
+        setNotice(
+          uploadError instanceof Error ? uploadError.message : "上传失败。",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [boundProjectId, createCanvas, refresh],
+  );
 
   /** 截图/导出/交接的输入：历史版本优先，否则当前文件正文。 */
   const resolveActiveHtml = useCallback(async (): Promise<string | null> => {
@@ -503,6 +582,11 @@ export function OpenDesignPane({
         onViewport={setViewport}
         zoom={zoom}
         onZoom={setZoom}
+        openableCanvases={openableCanvases}
+        onCreateCanvas={() => void createCanvas()}
+        onOpenCanvas={openCanvas}
+        onUploadAsset={(file) => void uploadAsset(file)}
+        onOpenBrowserTab={onOpenBrowserTab}
         versions={versions}
         versionsLoading={versionsLoading}
         activeVersionId={activeVersion?.id ?? null}
@@ -661,4 +745,18 @@ async function dataUrlToFile(dataUrl: string, name: string): Promise<File> {
   return new File([blob], `${name.replace(UNSAFE_FILENAME_CHARS, "-")}.png`, {
     type: "image/png",
   });
+}
+
+/** 上传资源的体积上限：base64 后还要过宿主正文上限，超限直接拒，不半途截断。 */
+const UPLOAD_MAX_BYTES = 1.5 * 1024 * 1024;
+
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  // 分块转码：单次 String.fromCharCode(...bytes) 在几百 KB 上会爆调用栈。
+  const chunk = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
+  }
+  return btoa(binary);
 }

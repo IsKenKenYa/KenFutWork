@@ -1335,6 +1335,7 @@ export function AnimatedSidePanePanel({
                             projectId={tab.projectId ?? null}
                             onMeta={onOpenDesignMetaChange}
                             workspacePath={workspaceAbsPath}
+                            onOpenBrowserTab={onOpenBrowserTab}
                             {...(workspaceIdentity ? { workspaceIdentity } : {})}
                           />
                         ) : (
