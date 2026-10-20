@@ -1718,9 +1718,9 @@ export const WorkspaceShellLayout = memo(
         })
         .catch(() => {
           if (lastDesignEntryRef.current !== entryKey) return;
-          // 建不出来就退回空标签，让画布视图露出可读的空态与手动新建入口
-          lastDesignEntryRef.current = null;
-          handleOpenDocument({ ...entry, restoreExisting: true });
+          // 建不出来就退回空标签，让画布视图露出可读的空态与手动新建入口。
+          // entryKey 保持「已尝试」：此处若把 ref 重置为 null，下一次 effect 运行
+          // 会立刻重试建画布，失败又触发 effect 重跑——请求与渲染的自激回路。
         });
     }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleOpenDocument, sidePaneState]);
     useEffect(() => {

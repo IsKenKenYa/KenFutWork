@@ -12,7 +12,10 @@ import {
   isFlowProjectReady,
   parseFlowInbound,
 } from "@kenfutwork/shared";
-import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
+import {
+  ZCodeStartupLogoBadge,
+  ZCodeStartupSpinner,
+} from "@zui/root/RootStartupLoading.js";
 
 import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
 import {

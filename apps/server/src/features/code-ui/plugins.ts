@@ -458,9 +458,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
           ...(record.manifest.description
             ? { description: record.manifest.description }
             : {}),
-          ...(listing.displayName
-            ? { displayName: listing.displayName }
-            : {}),
+          ...(listing.displayName ? { displayName: listing.displayName } : {}),
           ...(listing.category ? { category: listing.category } : {}),
           ...(listing.icon ? { icon: listing.icon } : {}),
         };

@@ -292,7 +292,8 @@ export async function renameCanvas(
   return (await response.json()) as { canvas: CanvasDetail };
 }
 
-export async function moveProjectFile(  accessToken: string | null | undefined,
+export async function moveProjectFile(
+  accessToken: string | null | undefined,
   assetId: string,
   request: ProjectFileMoveRequest,
 ): Promise<ProjectFileLocation> {

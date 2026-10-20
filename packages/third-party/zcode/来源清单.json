@@ -16,7 +16,7 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "ec4f3e9e0a8a1bbb0258073f5ad9715379f9a62884efe82a1632b1e4404d2470",
+      "copiedSha256": "2fdd95d77e898a5c8def298114b3448fa1086e5cf3d97e185f23977c8fa1292c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
@@ -27,7 +27,8 @@
         "Code/Design统一实施：原壳统一项目导航和共享会话，Design内容迁入右侧文档标签；Flow入口仍按插件能力控制。",
         "桌面验收修复：Task导航与草稿提升保留宿主已确认方式；新建会话保留当前项目文档，Task文件和终端沿原收起规则。",
         "2026-10-14 OpenDesign 集成（O0+O2）：透传 handleOpenOpenDesign 与 handleOpenOpenDesignPath 到工作台外壳。",
-        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。"
+        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
+        "主线 Design 收口系列：默认打开画布、自动收起回退为手动、删冗余下拉与确认弹窗（09130f21/c75485f1/e3817631）"
       ]
     },
     {
@@ -207,11 +208,12 @@
       "source": "references/zcode/packages/ui/src/DesktopTopOverlay.tsx",
       "target": "apps/web/src/components/workbench/zcode/DesktopTopOverlay.tsx",
       "sha256": "5d7ea8687a3e2a31762685664ffcf90ec9b277594cfcb483346590972bccee40",
-      "copiedSha256": "083b556271de8c5799b2acf87636ccc414873e93ba5d8ef7350547465c845aa1",
+      "copiedSha256": "3fdedb6695db2f4e9c98c7fe25582e56bc1e49a5067c1b72964bd8a4c16e914c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "主线：web 形态不再画浮层新建任务（f992490b）"
       ]
     },
     {
@@ -1674,7 +1676,7 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "6d8973130d6864d461a82af9b2ab10cae85d5d66aa3e7602f0e4ba5947742325",
+      "copiedSha256": "1ab06069cb259624a4a617a35139fc2c5b2e5e6f1d4620e759de49091f3ae00b",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -1683,7 +1685,8 @@
         "能力显隐：恢复原自动化Button/CalendarClock导航；分组任务快捷入口仍仅在服务可用时显示",
         "品牌／模式文案：原侧栏顶部插入既有横排模式按钮的共享展示，保留原导航与任务装配",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
-        "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。"
+        "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。",
+        "主线：收起态 rail 承载全部侧栏入口（新建任务/搜索/插件市场/技能/MCP/插件面板）+「分组/项目」加「画布」页 + Design 收口（f992490b/61ea2cb4/e3817631）"
       ]
     },
     {
@@ -1808,7 +1811,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx",
       "sha256": "0c5980f1abab4d9351e25abaef00a21ad50c861f98a9d6710adeeeea10306804",
-      "copiedSha256": "5f847f49546e4f023be00a94d9b6ae3838bdc4996199a55e2667056e0b2fd527",
+      "copiedSha256": "08626f6f5b620e48faed189cc1d51c8839101e3de4a4647c169b6fe385a6e17f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：browser 页签内容换宿主件 BrowserPane（G1/Q4 CDP MJPEG；HumanBrowserView 桌面主进程视图不再被消费）",
@@ -1817,7 +1820,8 @@
         "Code/Design统一实施：文档标签保持挂载和编辑状态，标签切换不重建画布。",
         "2026-10-14 OpenDesign 集成（O0+O2）：加 OpenDesign 启动卡与「添加页签」菜单项（按 useOpenDesignEntry 门控）、面板渲染分支（把 tab 的 navigatePath 透给面板），以及「在 OpenDesign 中打开当前文件」的深链菜单项。",
         "2026-10-15 OpenDesign 集成（O2 收尾）：深链来源判定改调 animatedSidePanePanelModel 的 resolveOpenDesignNavigateSource（纯函数入模型层，可单测）。",
-        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。"
+        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
+        "主线：左侧栏不再自动收起，rail 承载入口前只允许手动（e875ff32）"
       ]
     },
     {
@@ -2060,36 +2064,39 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "37207c726d0a9e6330197d99419d842922e062ea0bcfdc7e2f2766932e63c7e0",
+      "copiedSha256": "c2ea3fa7f0b471a6ddf7400b787829f894d863f0babf1d159b2d7a1811c40534",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "合并 origin/main e41d9fb8：保留宿主融合与右栏达到上限收起左栏的布局联动，复制哈希按合并后实际字节刷新；上游原始哈希保持。",
         "Code/Design统一实施：共享会话左侧、文档右侧；Design仅首次显式进入设默认内容，消息和resize不抢占。",
         "2026-10-14 OpenDesign 集成（O0+O2）：把两个 OpenDesign 开合回调接到侧栏面板。",
-        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。"
+        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
+        "主线 Design 收口与对话/内容面 1:2 默认口径（09130f21/e875ff32/e3817631）；本仓修复：design 入口 ensureDesignCanvasEntry 失败保持已尝试键，防建画布失败触发请求与渲染自激回路"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/app-shell/animatedSidePanePanelModel.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/animatedSidePanePanelModel.ts",
       "sha256": "3436e685496d8804638db44fbd5fb35ebcae6057c6475a4d5cccd0c6bec5a7eb",
-      "copiedSha256": "f6a69e1f850a0bbaca317af687d545e4aedc36cae0332aa6f3438b3a2f8d67e6",
+      "copiedSha256": "ed67115820d53d130fdeb5ffb1987f1650dad06c3ec008a8541cecf2bb536cd2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：P2 助手 parsePanelMaxSizePercent / shouldCollapseSidebarAtPanelMax（G11 右栏到上限收左栏）",
         "2026-10-14 OpenDesign 集成（O0）：启动卡新增 open-design 项（openDesignEnabled 缺省 false，不摆空壳）。",
         "2026-10-15 OpenDesign 集成（O2 收尾）：新增 resolveOpenDesignNavigateSource（可见活跃 code-viewer 的 path → od/navigate 深链来源；无 path / 空串 / 非 code-viewer 一律 null，不摆空开关）。",
-        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。"
+        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
+        "主线 Design 收口系列：默认面板口径与自动收起回退为手动（09130f21/e875ff32/e3817631）"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/app-shell/sidePaneLayout.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/sidePaneLayout.ts",
       "sha256": "18d0bd2bc9d2ed697a67b5b3960af2bd82e470437fd911ed9d09c6ae0570c469",
-      "copiedSha256": "18d0bd2bc9d2ed697a67b5b3960af2bd82e470437fd911ed9d09c6ae0570c469",
+      "copiedSha256": "a23baed8cd5b19803d866cd318d68a1f20fed8c58e7b752d98546c322faf2065",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "主线：对话/内容面默认 1:2（66.67%），对话下限降 25% 使 1:2 可落屏（09130f21/a58ba756）"
       ]
     },
     {
@@ -2969,9 +2976,10 @@
       "source": "references/zcode/packages/ui/src/chat-input-toolbar/RollingToolbarLabel.tsx",
       "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/RollingToolbarLabel.tsx",
       "sha256": "89cef26a57b2d48aff656d1291fcd2aa67ef37b4eea749c4dcb764ce2cd9ad59",
-      "copiedSha256": "bb0596fe5904933db7925fe52b7aef70f06aaf4800c37af2b753cd844baadad8",
+      "copiedSha256": "1282bd797717d2691160482daa827c622817b707df472e1775b74acdb4238e24",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "主线：工具条标签去掉滚动换字，装不下只截断（bcb075f3）"
       ]
     },
     {
@@ -4855,12 +4863,13 @@
       "source": "references/zcode/packages/ui/src/hooks/useAppPanels.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useAppPanels.ts",
       "sha256": "543b38d5f9e7f6f962001613986b4292d9ecb5db4f3da95305f654c853fb69cd",
-      "copiedSha256": "f057cbdfb48e3588316faa09e1d0eda93219b5337aefdb05fbf88181979d6e81",
+      "copiedSha256": "18f631e5cc89442433bc4a5df97703bfb63d84f7368c8a7a76b639bbe7e4b1dd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "Code/Design统一实施：文档标签按项目隔离，显式打开/关闭及删除后的迟到事件处理。",
         "2026-10-14 OpenDesign 集成（O0+O2）：新增 handleOpenOpenDesign 与 handleOpenOpenDesignPath（深链：把指定文件交给面板 od/navigate）。",
-        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。"
+        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
+        "主线 Design 收口系列：默认打开画布与自动收起回退（09130f21/c75485f1/e3817631）"
       ]
     },
     {
@@ -5741,7 +5750,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "b77a05a4d63738d5ef1d183988010152d993ff0b7fa6c706c90d37f19c976ad8",
+      "copiedSha256": "2c4d424d43f465848f3a8ee3f7b3bd0788e840172cc512b73091792042acb368",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5759,14 +5768,15 @@
         "共享Harness权限说明：短语区分变更前询问、自动文件编辑、只读调查规划与本机文件和网络访问，不承诺受限网络可逐次提权。",
         "2026-10-14 OpenDesign 集成（O0+O2）：补 sidePane.openDesign 与 sidePane.openDesignCurrentFile 词条。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
-        "KenFutWork 宿主偏差：settings.openDesign.title 英文标签"
+        "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
+        "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "89ffb53143bc98bd747666954285ae591f19251e50682e239acffc79091069b3",
+      "copiedSha256": "347c7f0e382f9847eb2096cff19b737bb0a183a602ef38d60c393d1c35c5b101",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5784,7 +5794,8 @@
         "共享Harness权限说明：短语区分变更前询问、自动文件编辑、只读调查规划与本机文件和网络访问，不承诺受限网络可逐次提权。",
         "2026-10-14 OpenDesign 集成（O0+O2）：补 sidePane.openDesign 与 sidePane.openDesignCurrentFile 词条。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
-        "KenFutWork 宿主偏差：settings.openDesign.title 中文标签"
+        "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
+        "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）"
       ]
     },
     {
@@ -8889,10 +8900,11 @@
       "source": "references/zcode/packages/ui/src/root/RootStartupLoading.tsx",
       "target": "apps/web/src/components/workbench/zcode/root/RootStartupLoading.tsx",
       "sha256": "2e13e6b3bb0ba9fc73104ae0f88f2bc74123ec378c34d832319b2e8995430721",
-      "copiedSha256": "9859b1b8b1bd3a9daeffcd8786a1c3a9bf6caef884cf7072cc59daa8e7a92ac4",
+      "copiedSha256": "0e209ac1d10b845ad1b35fa143a2a1ce5077ba29a40403975b5b5c76ffdd4650",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "主线：加载动画收敛为全站唯一形态，抽 ZCodeStartupSpinner 与 web 层 LoadingScreen 同尺寸（d012cb70）"
       ]
     },
     {
@@ -11898,10 +11910,11 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationDraftEmptyState.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationDraftEmptyState.tsx",
       "sha256": "e6e351ade21bb2ef5250ebf6ceabb7c793afe9a120b20393c90c7ed092121933",
-      "copiedSha256": "4fee3962b86847a6180112ec80408bc5fabfb3624efc98e0c22209a73bb9b557",
+      "copiedSha256": "a423f4cf9ad43891f5d81bc8b3e9308375eefe1b70e8009f87b7921e75da79d7",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "主线：空态标题随工作台模式切换 Design hero、修字号自激振荡与贴左（可用宽扣图标与间距、图标随字号等比缩）（19da664a/07b56531/e3817631）"
       ]
     },
     {
@@ -24681,10 +24694,11 @@
       "source": "references/zcode/packages/web/index.html",
       "target": "apps/web/src/components/workbench/zcode/index.html",
       "sha256": "9401ec7985ad7011dcca0714d88b8a5f9b9a7167183dc944bb05ee0152408785",
-      "copiedSha256": "c684297f63015665899b2921deca9bd4d7998e03fb95b4159b89aaf9e24d2bf7",
+      "copiedSha256": "ffc53aa742513212b87219377e96846994fa592837e5afadcfcea4f589fe022c",
       "adaptations": [
         "保留原 Web 启动主题、字体及标志；改入口、标题与语言",
-        "品牌适配：favicon 与启动闪屏换 KenFutWork 标识"
+        "品牌适配：favicon 与启动闪屏换 KenFutWork 标识",
+        "主线：启动加载层收敛为单一形态（黑标无底板+下方转圈），尺寸与 RootStartupLoading 交接对齐（d012cb70/7c0ed025）"
       ]
     },
     {

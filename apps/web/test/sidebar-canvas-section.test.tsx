@@ -33,7 +33,8 @@ it("点画布即以常驻文档意图打开，携带项目与标题", async () =
   window.addEventListener("kenfutwork:open-document", capture);
   try {
     render(<SidebarCanvasSection projectId="p9" />);
-    const row = await screen.findByRole("button", { name: /电机外壳/ });
+    // 精确匹配行按钮：改名入口的 aria-label「重命名 电机外壳」也含画布名，正则会双中
+    const row = await screen.findByRole("button", { name: "电机外壳" });
     await act(async () => {
       row.click();
     });
@@ -52,7 +53,7 @@ it("没有项目时不请求接口，只说明没有打开的项目", async () =
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   render(<SidebarCanvasSection projectId={null} />);
-  expect(await screen.findByText("没有打开的项目。")).toBeTruthy();
+  expect(await screen.findByText("未打开项目")).toBeTruthy();
   expect(fetchMock).not.toHaveBeenCalled();
 });
 

@@ -4,7 +4,10 @@ import {
   isAllowedOpenDesignOrigin,
   parseOpenDesignInbound,
 } from "@kenfutwork/shared";
-import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
+import {
+  ZCodeStartupLogoBadge,
+  ZCodeStartupSpinner,
+} from "@zui/root/RootStartupLoading.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOpenDesignEntry } from "./openDesignHost.js";
 

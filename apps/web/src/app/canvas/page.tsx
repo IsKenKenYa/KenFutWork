@@ -301,6 +301,7 @@ function CanvasPageContent() {
         : current,
     );
     bridgeRef.current?.publishDocumentUpdated({
+      type: "canvas.document.updated",
       canvasId: renamed.id,
       projectId: renamed.projectId,
       deleted: false,

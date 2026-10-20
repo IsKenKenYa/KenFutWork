@@ -292,29 +292,18 @@ it("画布深链读取失败后只显式重试；provider重渲染与能力推�
   expect(f.rpc).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "重试画布" })).toBeNull();
 });
-it("取消跨方式共享后深链可重新显式发起，取消期间不改项目也不自动重试", async () => {
+it("深链跨方式显式发起自动启用目标方式，打开请求的内容页且不重放", async () => {
   const f = await fixture(code);
   await act(async () => sendNavigation({ mode: "design", canvasId: canvasA }));
-  await screen.findByRole("button", { name: "启用 Design" });
-  await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "取消" })),
-  );
-  await screen.findByRole("button", { name: "重试画布" });
-  expect(f.navigation.getSnapshot().mode).toBe("code");
-  expect(f.rpc).not.toHaveBeenCalled();
-  expect(patches()).toHaveLength(0);
-  await act(async () => sendNavigation({}));
-  expect(canvasReads()).toHaveLength(1);
-  await act(async () => sendNavigation({ mode: "design", canvasId: canvasA }));
-  await act(async () =>
-    fireEvent.click(await screen.findByRole("button", { name: "启用 Design" })),
-  );
   await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("design"));
-  expect(canvasReads()).toHaveLength(2);
   expect(patches()).toHaveLength(1);
+  expect(canvasReads()).toHaveLength(1);
+  expect(f.rpc).toHaveBeenCalledTimes(1);
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([code.projectId, code.path]),
   );
+  await act(async () => sendNavigation({}));
+  expect(canvasReads()).toHaveLength(1);
 });
 it("A画布读取迟到不得打开A或抢走B文档焦点", async () => {
   const f = await fixture(sharedA);
@@ -376,27 +365,24 @@ it("A的open RPC已在飞，B先成功后A只能登记catalog，不能切回同�
   expect(takeCanvasDocumentOpen(sharedB.projectId)?.documentId).toBe(canvasB);
   expect(takeCanvasDocumentOpen(sharedA.projectId)).toBeUndefined();
 });
-it("初始父Design模式等待真实项目恢复与用户确认，取消留Code且不创建执行身份", async () => {
+it("初始父Design模式在真实项目恢复后自动启用；启用失败留提示且重发可成功", async () => {
   const f = await fixture(code, {
-    beforeRender: () => sendNavigation({ mode: "design" }),
+    beforeRender: () => {
+      harness.json.mockRejectedValueOnce(new Error("启用失败"));
+      sendNavigation({ mode: "design" });
+    },
   });
-  await screen.findByRole("button", { name: "启用 Design" });
+  expect((await screen.findByRole("alert")).textContent).toContain("启用失败");
   expect(f.navigation.getSnapshot().mode).toBe("code");
   expect(screen.getByTestId("main-view").textContent).toBe("chat");
-  await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "取消" })),
-  );
-  expect(f.navigation.getSnapshot().mode).toBe("code");
-  expect(patches()).toHaveLength(0);
+  expect(patches()).toHaveLength(1);
   expect(f.rpc).not.toHaveBeenCalled();
   await act(async () => sendNavigation({ mode: "design" }));
-  await act(async () =>
-    fireEvent.click(await screen.findByRole("button", { name: "启用 Design" })),
-  );
   await waitFor(() =>
     expect(screen.getByTestId("main-view").textContent).toBe("design"),
   );
   expect(f.navigation.getSnapshot().mode).toBe("design");
+  expect(patches()).toHaveLength(2);
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([code.projectId, code.path]),
   );
@@ -413,11 +399,11 @@ it("冷窗口恢复Design-only项目跟随项目方式，不把默认Code当成�
   expect(f.rpc).not.toHaveBeenCalled();
 });
 it.each([
-  ["design", code, "code", "启用 Design"],
-  ["code", design, "design", "启用 Code"],
+  ["design", code],
+  ["code", design],
 ] as const)(
-  "明确父%s模式在真实项目延迟恢复后仍等待跨方式确认",
-  async (requestedMode, project, retainedMode, label) => {
+  "明确父%s模式在真实项目延迟恢复后自动启用跨方式",
+  async (requestedMode, project) => {
     const f = await fixture(project, {
       deferRestore: true,
       beforeRender: () => sendNavigation({ mode: requestedMode }),
@@ -425,44 +411,34 @@ it.each([
     await waitFor(() =>
       expect(f.navigation.getSnapshot().mode).toBe(requestedMode),
     );
-    expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
     await act(async () => {
       f.restoreInitialProject();
     });
-    await screen.findByRole("button", { name: label });
-    expect(f.navigation.getSnapshot().mode).toBe(retainedMode);
-    expect(patches()).toHaveLength(0);
-    expect(f.rpc).not.toHaveBeenCalled();
-    await act(async () =>
-      fireEvent.click(screen.getByRole("button", { name: "取消" })),
+    await waitFor(() => expect(patches()).toHaveLength(1));
+    await waitFor(() =>
+      expect(f.navigation.getSnapshot().mode).toBe(requestedMode),
     );
-    expect(f.navigation.getSnapshot().mode).toBe(retainedMode);
-    expect(patches()).toHaveLength(0);
+    expect(f.rpc).not.toHaveBeenCalled();
   },
 );
-it("恢复Design-only项目后显式点击Code仍须确认，取消不共享，确认保留同一项目", async () => {
+it("恢复Design-only项目后显式点击Code自动启用；失败留提示，重试保留同一项目", async () => {
   const f = await fixture(design, {
-    beforeRender: (navigation) => navigation.setActiveMode("design"),
+    beforeRender: (navigation) => {
+      harness.json.mockRejectedValueOnce(new Error("启用失败"));
+      navigation.setActiveMode("design");
+    },
   });
   await act(async () =>
     fireEvent.click(screen.getByRole("radio", { name: "Code" })),
   );
-  await screen.findByRole("button", { name: "启用 Code" });
+  expect((await screen.findByRole("alert")).textContent).toContain("启用失败");
   expect(f.navigation.getSnapshot().mode).toBe("design");
-  expect(patches()).toHaveLength(0);
-  await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "取消" })),
-  );
-  expect(f.navigation.getSnapshot().mode).toBe("design");
-  expect(screen.queryByRole("dialog", { name: "共享项目" })).toBeNull();
+  expect(patches()).toHaveLength(1);
   await act(async () =>
     fireEvent.click(screen.getByRole("radio", { name: "Code" })),
   );
-  await act(async () =>
-    fireEvent.click(await screen.findByRole("button", { name: "启用 Code" })),
-  );
   await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
-  expect(patches()).toHaveLength(1);
+  expect(patches()).toHaveLength(2);
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([design.projectId, design.path]),
   );
@@ -515,7 +491,7 @@ it("已选Design时恢复Code-only项目回默认Code，不发起共享", async 
   await act(async () => sendNavigation({}));
   expect(screen.queryByRole("button", { name: "启用 Design" })).toBeNull();
 });
-it("Design-only项目跳到Code内容先确认；取消保留Design，确认后正确显示请求的内容页", async () => {
+it("Design-only项目跳到Code内容自动启用，直达请求的内容页", async () => {
   const f = await fixture(design, {
     beforeRender: (navigation) => navigation.setActiveMode("design"),
   });
@@ -525,22 +501,10 @@ it("Design-only项目跳到Code内容先确认；取消保留Design，确认后�
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "自动化" })),
   );
-  await screen.findByRole("button", { name: "启用 Code" });
-  expect(f.navigation.getSnapshot().mode).toBe("design");
-  expect(screen.getByTestId("main-view").textContent).toBe("design");
-  await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "取消" })),
-  );
-  expect(f.navigation.getSnapshot().mode).toBe("design");
-  await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "自动化" })),
-  );
-  await act(async () =>
-    fireEvent.click(await screen.findByRole("button", { name: "启用 Code" })),
-  );
   await waitFor(() =>
     expect(screen.getByTestId("main-view").textContent).toBe("automations"),
   );
   expect(f.navigation.getSnapshot().mode).toBe("code");
+  expect(patches()).toHaveLength(1);
   expect(f.rpc).not.toHaveBeenCalled();
 });

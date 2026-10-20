@@ -33,7 +33,10 @@ beforeEach(() => {
   mocks.open.mockReset();
   mocks.json.mockImplementation((path: string, init?: { method?: string }) => {
     if (init?.method === "PATCH") return Promise.resolve(detail("海报"));
-    if (String(path).includes("/canvases?") || String(path).endsWith("/canvases"))
+    if (
+      String(path).includes("/canvases?") ||
+      String(path).endsWith("/canvases")
+    )
       return Promise.resolve({
         canvases: [{ id: canvasId, name: "未命名画布", isPrimary: true }],
       });
@@ -44,9 +47,7 @@ afterEach(() => cleanup());
 
 test("画布行可重命名：读 revision → 带乐观锁 PATCH → 更新列表并广播", async () => {
   const view = render(<SidebarCanvasSection projectId={projectId} />);
-  await waitFor(() =>
-    expect(view.getByText("未命名画布")).toBeTruthy(),
-  );
+  await waitFor(() => expect(view.getByText("未命名画布")).toBeTruthy());
 
   fireEvent.click(view.getByRole("button", { name: "重命名 未命名画布" }));
   const input = view.getByRole("textbox", { name: "重命名" });
@@ -78,7 +79,8 @@ test("画布行可重命名：读 revision → 带乐观锁 PATCH → 更新列�
 
 test("改名失败把原因写在行内，不静默吞掉", async () => {
   mocks.json.mockImplementation((path: string, init?: { method?: string }) => {
-    if (init?.method === "PATCH") return Promise.reject(new Error("画布名称冲突"));
+    if (init?.method === "PATCH")
+      return Promise.reject(new Error("画布名称冲突"));
     if (String(path).endsWith("/canvases"))
       return Promise.resolve({
         canvases: [{ id: canvasId, name: "未命名画布", isPrimary: true }],

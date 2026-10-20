@@ -228,7 +228,9 @@ export function SidebarCanvasSection({
             canvas={canvas}
             onRenamed={(id, name) =>
               setCanvases((items) =>
-                items.map((item) => (item.id === id ? { ...item, name } : item)),
+                items.map((item) =>
+                  item.id === id ? { ...item, name } : item,
+                ),
               )
             }
           />

@@ -52,9 +52,7 @@ export function EditableCanvasName({
       onRenamed(result.canvas);
     } catch (failure) {
       setError(
-        failure instanceof Error
-          ? failure.message
-          : "画布改名失败，请重试。",
+        failure instanceof Error ? failure.message : "画布改名失败，请重试。",
       );
     } finally {
       setSaving(false);
@@ -80,7 +78,11 @@ export function EditableCanvasName({
           onBlur={() => !saving && void save()}
           onKeyDown={(e) => {
             // 输入法组合态的 Enter 是确认候选/上屏，不是提交改名
-            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+            if (
+              e.key === "Enter" &&
+              !e.nativeEvent.isComposing &&
+              e.keyCode !== 229
+            ) {
               e.preventDefault();
               void save();
             } else if (e.key === "Escape") {

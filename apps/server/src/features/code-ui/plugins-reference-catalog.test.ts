@@ -42,13 +42,15 @@ it("getPluginReferenceCatalog 有返回且形状合契约（无 sessionId = work
 it("带 sessionId 的目录按会话冻结，后续调用拿到同一份", async () => {
   const f = await fixture();
   const params = { ...f.target, sessionId: "session-freeze" };
-  const first = (await f.host.call(f.actor, "getPluginReferenceCatalog", params))
-    ?.result;
-  expect(
-    zcodePluginsReferenceCatalogResultSchema.parse(first).authority,
-  ).toBe("session");
-  const second = (await f.host.call(f.actor, "getPluginReferenceCatalog", params))
-    ?.result;
+  const first = (
+    await f.host.call(f.actor, "getPluginReferenceCatalog", params)
+  )?.result;
+  expect(zcodePluginsReferenceCatalogResultSchema.parse(first).authority).toBe(
+    "session",
+  );
+  const second = (
+    await f.host.call(f.actor, "getPluginReferenceCatalog", params)
+  )?.result;
   // 冻结的意义是「同一份对象」：不是重新算一遍再碰巧相等
   expect(second).toBe(first);
 });

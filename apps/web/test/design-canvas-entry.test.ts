@@ -48,17 +48,15 @@ describe("ensureDesignCanvasEntry", () => {
   });
 
   test("项目一个画布都没有时自动建一个再返回", async () => {
-    mocks.json
-      .mockResolvedValueOnce({ canvases: [] })
-      .mockResolvedValueOnce({
-        canvas: {
-          id: primaryId,
-          name: "未命名画布",
-          projectId,
-          revision,
-          content: { elements: [], appState: {}, files: {} },
-        },
-      });
+    mocks.json.mockResolvedValueOnce({ canvases: [] }).mockResolvedValueOnce({
+      canvas: {
+        id: primaryId,
+        name: "未命名画布",
+        projectId,
+        revision,
+        content: { elements: [], appState: {}, files: {} },
+      },
+    });
     await expect(ensureDesignCanvasEntry(projectId)).resolves.toEqual({
       documentId: primaryId,
       title: "未命名画布",
@@ -66,26 +64,22 @@ describe("ensureDesignCanvasEntry", () => {
     const post = mocks.json.mock.calls.find(
       ([, init]) => init?.method === "POST",
     );
-    expect(String(post?.[0])).toBe(
-      `/api/projects/${projectId}/canvases`,
-    );
+    expect(String(post?.[0])).toBe(`/api/projects/${projectId}/canvases`);
     const body = JSON.parse(String(post?.[1]?.body));
     expect(body.name).toBe("未命名画布");
     expect(body.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   test("建出来的画布不属于本项目时不返回它（防串项目）", async () => {
-    mocks.json
-      .mockResolvedValueOnce({ canvases: [] })
-      .mockResolvedValueOnce({
-        canvas: {
-          id: primaryId,
-          name: "别人的",
-          projectId: "99999999-0000-4000-8000-000000000009",
-          revision,
-          content: { elements: [], appState: {}, files: {} },
-        },
-      });
+    mocks.json.mockResolvedValueOnce({ canvases: [] }).mockResolvedValueOnce({
+      canvas: {
+        id: primaryId,
+        name: "别人的",
+        projectId: "99999999-0000-4000-8000-000000000009",
+        revision,
+        content: { elements: [], appState: {}, files: {} },
+      },
+    });
     await expect(ensureDesignCanvasEntry(projectId)).rejects.toThrow(
       /画布创建失败/,
     );
