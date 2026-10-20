@@ -54,6 +54,31 @@ describe("OpenDesign 自动配置计划", () => {
     });
   });
 
+  it("合并既有 CLI 环境：操作者预置的 CODEX_BIN/CODEX_HOME 不被供给流程抹掉", () => {
+    const plan = buildOpenDesignProvisionPlan({
+      entries: [{ ...anthropicEntry, protocol: "openai-compatible" }],
+      agents: [{ id: "codex", available: true }],
+      current: {
+        onboardingCompleted: true,
+        agentId: "codex",
+        agentCliEnv: {
+          codex: {
+            CODEX_BIN: "/app/.od/tools/node_modules/.bin/codex",
+            CODEX_HOME: "/app/.od/codex-home",
+          },
+        },
+      },
+    });
+    expect(plan.patch.agentCliEnv).toEqual({
+      codex: {
+        CODEX_BIN: "/app/.od/tools/node_modules/.bin/codex",
+        CODEX_HOME: "/app/.od/codex-home",
+        OPENAI_API_KEY: anthropicEntry.apiKey,
+        OPENAI_BASE_URL: anthropicEntry.apiBase,
+      },
+    });
+  });
+
   it("只接受上游白名单内的 agent：opencode 有 Key 也不注入", () => {
     const plan = buildOpenDesignProvisionPlan({
       entries: [{ ...anthropicEntry, protocol: "openai-compatible" }],
