@@ -23,6 +23,8 @@ import {
   openWhiteboardSidePane,
   openDocumentSidePane,
   openOpenDesignSidePane,
+  updateOpenDesignSidePaneTab,
+  type OpenDesignSidePaneMetadata,
   openModelTrajectorySidePane,
   openTerminalSidePane,
   openSubagentSessionSidePane,
@@ -83,6 +85,7 @@ import { getPathLeaf, joinFilePath, toFileUrl } from "@zui/lib/path.js";
 import { shouldOpenWorkflowArtifactInBrowser } from "@zui/lib/workflowArtifactOpen.js";
 import { useWhiteboardStore } from "@zui/store/whiteboardStore.js";
 import { useModelTrajectoryOpenBridge } from "@zui/hooks/useModelTrajectoryOpenBridge.js";
+import { surfaceJson } from "@zui/host/surfaceApi.js";
 import { useServices } from "@zui/hooks/useServices.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { clearSelectionSideChat } from "@zui/lib/selectionSideChatRuntime.js";
@@ -817,19 +820,58 @@ export function useAppPanels(options: {
   }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
 
   /**
-   * 打开 OpenDesign 面板（Code 模式右侧栏的联动画布）。
-   * 入口只在「插件已装 + 宿主就绪」时出现（门控见 AnimatedSidePanePanel 的 openDesignEnabled）。
+   * 打开 OpenDesign 面板（Code 模式右侧栏的联动画布，**一块画布一个标签**）。
+   *
+   * - 带 `projectId`（对话建完项目 / 联动打开）：直接开/激活该画布的标签；
+   * - 不带（侧栏「+ → OpenDesign」）：**新建一块画布**——宿主代理建项目，
+   *   再开标签。入口只在「插件已装 + 宿主就绪」时出现（门控见 AnimatedSidePanePanel）。
    */
-  const handleOpenOpenDesign = useCallback(() => {
-    revealSidePaneForCurrentOwner();
-    commitOpenedSidePaneState((current) => {
-      const next = openOpenDesignSidePane(current);
-      logger.info(
-        `[App] 打开右侧面板 mode=open-design workspace=${workspaceAbsPath} tabs=${next.tabs.length}`,
+  const handleOpenOpenDesign = useCallback(
+    async (options?: { projectId?: string | null; title?: string | null }) => {
+      revealSidePaneForCurrentOwner();
+      if (options?.projectId) {
+        commitOpenedSidePaneState((current) =>
+          openOpenDesignSidePane(current, options),
+        );
+        return;
+      }
+      try {
+        const created = await surfaceJson<{
+          project: { projectId: string; name: string };
+        }>("/api/open-design/host/canvas", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        commitOpenedSidePaneState((current) =>
+          openOpenDesignSidePane(current, {
+            projectId: created.project.projectId,
+            title: created.project.name,
+          }),
+        );
+      } catch (error) {
+        logger.warn(
+          `[App] 新建 OpenDesign 画布失败 mode=open-design workspace=${workspaceAbsPath}`,
+          error,
+        );
+      }
+    },
+    [
+      commitOpenedSidePaneState,
+      revealSidePaneForCurrentOwner,
+      workspaceAbsPath,
+    ],
+  );
+
+  /** 画布名 / 绑定回写：面板解析出项目后按 tab id 写回标签标题。 */
+  const handleOpenDesignMetaChange = useCallback(
+    (tabId: string, metadata: OpenDesignSidePaneMetadata) => {
+      commitSidePaneState((current) =>
+        updateOpenDesignSidePaneTab(current, tabId, metadata),
       );
-      return next;
-    });
-  }, [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath]);
+    },
+    [commitSidePaneState],
+  );
 
   const handleOpenTerminalTab = useCallback(() => {
     if (isOfficeMode) return;
@@ -1646,6 +1688,7 @@ export function useAppPanels(options: {
     handleOpenWhiteboard,
     handleOpenDeveloperTools,
     handleOpenOpenDesign,
+    handleOpenDesignMetaChange,
     handleOpenTerminalTab,
     handleOpenModelTrajectory,
     handleOpenSubagentSession,

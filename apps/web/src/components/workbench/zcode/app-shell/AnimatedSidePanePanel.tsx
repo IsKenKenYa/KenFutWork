@@ -81,6 +81,7 @@ import {
   type BrowserSidePaneTab,
   type BrowserUseSidePaneTab,
   type BrowserSidePaneMetadata,
+  type OpenDesignSidePaneMetadata,
   type OpenScopedSubagentSideTabRequest,
   type OpenScopedWorkflowActorSessionSideTabRequest,
   type OpenScopedWorkflowWorkspaceSideTabRequest,
@@ -322,6 +323,7 @@ export function AnimatedSidePanePanel({
   onOpenDeveloperTools,
   onOpenTerminalTab,
   onOpenOpenDesignTab,
+  onOpenDesignMetaChange,
   onOpenReviewTab,
   onOpenSelectionSideConversation,
   onRevealGitFileInTree,
@@ -388,7 +390,14 @@ export function AnimatedSidePanePanel({
   onOpenWhiteboard: () => void;
   onOpenDeveloperTools: () => void;
   onOpenTerminalTab: () => void;
-  onOpenOpenDesignTab: () => void;
+  onOpenOpenDesignTab: (options?: {
+    projectId?: string | null;
+    title?: string | null;
+  }) => void;
+  onOpenDesignMetaChange: (
+    tabId: string,
+    metadata: OpenDesignSidePaneMetadata,
+  ) => void;
   onOpenReviewTab: () => void;
   onOpenSelectionSideConversation: () => void;
   onRevealGitFileInTree?: (path: string) => void;
@@ -696,8 +705,10 @@ export function AnimatedSidePanePanel({
   const openDesignEntry = useOpenDesignEntry();
   const openDesignEnabled = openDesignEntry?.available === true;
 
-  // 对话侧用 OpenDesign 能力新建项目后，右侧画布自动接管主区（启动时的旧项目不抢焦点）。
-  useOpenDesignProjectWatch(openDesignEnabled, onOpenOpenDesignTab);
+  // 对话侧用 OpenDesign 能力新建项目后，右侧自动开出那块画布的标签（启动时的旧项目不抢焦点）。
+  useOpenDesignProjectWatch(openDesignEnabled, (projectId, name) =>
+    onOpenOpenDesignTab({ projectId, title: name }),
+  );
 
   const addTabMenu = (
     <DropdownMenu open={isAddMenuOpen} onOpenChange={setIsAddMenuOpen}>
@@ -1319,7 +1330,13 @@ export function AnimatedSidePanePanel({
                             onOpenBrowserUrl={onOpenBrowserUrl}
                           />
                         ) : tab.type === "open-design" ? (
-                          <OpenDesignPane />
+                          <OpenDesignPane
+                            tabId={tab.id}
+                            projectId={tab.projectId ?? null}
+                            onMeta={onOpenDesignMetaChange}
+                            workspacePath={workspaceAbsPath}
+                            {...(workspaceIdentity ? { workspaceIdentity } : {})}
+                          />
                         ) : (
                           <BrowserPane
                             initialUrl={browserRestoreUrls[tab.id] ?? tab.initialUrl ?? undefined}

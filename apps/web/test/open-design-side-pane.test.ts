@@ -17,6 +17,7 @@ import {
   openDocumentSidePane,
   openOpenDesignSidePane,
   preserveDocumentSidePaneForAutomaticEvent,
+  updateOpenDesignSidePaneTab,
   resolveSidePaneScopeState,
   stampSidePaneTabsOwnership,
 } from "@zui/lib/workspaceSidePane";
@@ -46,15 +47,36 @@ test("OpenDesign 启动卡缺省不出现，显式 enable 才出现（不摆空�
   expect(withFlag).toContain("open-design");
 });
 
-test("open-design 是单例 tab：重复打开只激活同一个，不叠出第二个", () => {
-  const first = openOpenDesignSidePane(null);
+test("一块画布一个标签：同项目复用，不同项目各开一个", () => {
+  const first = openOpenDesignSidePane(null, { projectId: "p-1", title: "登录页" });
   expect(first.tabs).toHaveLength(1);
   expect(first.tabs[0]?.type).toBe("open-design");
-  expect(first.activeTabId).toBe("open-design");
+  expect(first.activeTabId).toBe("open-design:p-1");
+  expect(first.tabs[0]?.projectId).toBe("p-1");
 
-  const second = openOpenDesignSidePane(first);
-  expect(second.tabs).toHaveLength(1);
-  expect(getActiveSidePaneTab(second)?.type).toBe("open-design");
+  const again = openOpenDesignSidePane(first, { projectId: "p-1" });
+  expect(again.tabs).toHaveLength(1);
+
+  const second = openOpenDesignSidePane(again, { projectId: "p-2", title: "订单页" });
+  expect(second.tabs).toHaveLength(2);
+  expect(getActiveSidePaneTab(second)?.id).toBe("open-design:p-2");
+});
+
+test("未绑定的旧标签照旧可开（面板自行解析最近画布），画布名按标签回写", () => {
+  const opened = openOpenDesignSidePane(null);
+  expect(opened.tabs[0]?.id).toBe("open-design");
+  expect(opened.tabs[0]?.projectId).toBeNull();
+
+  const titled = updateOpenDesignSidePaneTab(opened, "open-design", {
+    projectId: "p-9",
+    title: "登录页",
+  });
+  expect(getActiveSidePaneTab(titled)?.title).toBe("登录页");
+  expect(getActiveSidePaneTab(titled)?.projectId).toBe("p-9");
+  // 打偏的 tab id 不产生新状态（引用不变）。
+  expect(
+    updateOpenDesignSidePaneTab(opened, "open-design:missing", { title: "x" }),
+  ).toBe(opened);
 });
 
 test("open-design 与浏览器面板同位互斥（单 activeTabId 语义）", () => {

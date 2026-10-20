@@ -1,4 +1,7 @@
-import type { OpenDocumentSidePaneRequest } from "@zui/lib/workspaceSidePane.js";
+import type {
+  OpenDesignSidePaneMetadata,
+  OpenDocumentSidePaneRequest,
+} from "@zui/lib/workspaceSidePane.js";
 import type { RefObject } from "react";
 import type {
   ZCodeProvider,
@@ -240,8 +243,19 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenDocument: (request: OpenDocumentSidePaneRequest) => void;
   handleOpenDeveloperTools: () => void;
   handleOpenTerminalTab: () => void;
-  /** 打开 OpenDesign 面板（Code 模式右侧栏的联动画布）。 */
-  handleOpenOpenDesign: () => void;
+  /**
+   * 打开 OpenDesign 面板（一块画布一个标签）：带 projectId 打开该画布，
+   * 不带则新建一块画布再开标签。
+   */
+  handleOpenOpenDesign: (options?: {
+    projectId?: string | null;
+    title?: string | null;
+  }) => void;
+  /** 画布名 / 绑定按标签回写（面板解析出项目后写标题）。 */
+  handleOpenDesignMetaChange: (
+    tabId: string,
+    metadata: OpenDesignSidePaneMetadata,
+  ) => void;
   handleToggleGit: () => void;
   handleOpenGitReview: (sourceId?: GitChangeSourceId) => void;
   handleToggleSidePane: () => void;

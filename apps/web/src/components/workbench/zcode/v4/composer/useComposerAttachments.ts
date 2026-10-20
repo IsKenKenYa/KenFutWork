@@ -32,6 +32,11 @@ import {
   isWhiteboardAddToChatEvent,
   WHITEBOARD_ADD_TO_CHAT_EVENT,
 } from "@zui/lib/whiteboard.js";
+import {
+  buildOpenDesignCanvasWorkspaceKey,
+  isOpenDesignCanvasAddToChatEvent,
+  OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT,
+} from "@zui/lib/openDesignCanvasChat.js";
 import { WORKSPACE_FILE_DRAG_MIME } from "@zui/lib/workspaceFileDrag.js";
 import { logger } from "@zui/logger.js";
 import {
@@ -1039,6 +1044,36 @@ export function useComposerAttachments(
       window.removeEventListener(WHITEBOARD_ADD_TO_CHAT_EVENT, handle);
   }, [
     addWhiteboardToChat,
+    listenAddToChatEvents,
+    workspaceIdentity,
+    workspacePath,
+  ]);
+
+  useEffect(() => {
+    // 画布截图进对话：与白板同款早退 + 工作区匹配——只进同工作区、且聚焦的那个 composer。
+    if (!listenAddToChatEvents || typeof window === "undefined") return;
+    const handle = (event: Event) => {
+      if (!isOpenDesignCanvasAddToChatEvent(event)) return;
+      if (
+        buildOpenDesignCanvasWorkspaceKey(event.detail) !==
+        buildOpenDesignCanvasWorkspaceKey({ workspacePath, workspaceIdentity })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        addAttachmentFiles([event.detail.file]);
+      } catch (error) {
+        setAttachmentError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
+    window.addEventListener(OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT, handle);
+    return () =>
+      window.removeEventListener(OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT, handle);
+  }, [
+    addAttachmentFiles,
     listenAddToChatEvents,
     workspaceIdentity,
     workspacePath,

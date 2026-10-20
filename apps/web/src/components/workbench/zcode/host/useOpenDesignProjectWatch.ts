@@ -1,9 +1,6 @@
 import { useEffect, useRef } from "react";
 import { surfaceJson } from "./surfaceApi.js";
 
-/** 对话侧新建 OpenDesign 项目后，宿主广播给已挂载画布的事件。 */
-export const OPEN_DESIGN_PROJECT_EVENT = "kenfutwork:open-design-project";
-
 /** 项目槽位来自本地文件，没有推送通道；轮询间隔只需跟手，不必实时。 */
 const POLL_INTERVAL_MS = 4_000;
 
@@ -12,12 +9,12 @@ interface LastProjectResponse {
 }
 
 /**
- * 盯住「最近创建的 OpenDesign 项目」：一旦 agent 通过工具新建项目，
- * 打开右侧画布并广播项目变更；启动时的旧项目只记录、不抢焦点。
+ * 盯住「最近创建的 OpenDesign 项目」：agent 通过工具新建项目后回调打开那块画布的标签。
+ * 启动时已存在的旧项目只记账、不抢焦点——新画布要不要打开是用户的动作。
  */
 export function useOpenDesignProjectWatch(
   enabled: boolean,
-  onProjectCreated?: (projectId: string) => void,
+  onProjectCreated?: (projectId: string, name: string | null) => void,
 ) {
   const created = useRef(onProjectCreated);
   created.current = onProjectCreated;
@@ -46,12 +43,7 @@ export function useOpenDesignProjectWatch(
         }
         if (projectId === seen) return;
         seen = projectId;
-        window.dispatchEvent(
-          new CustomEvent(OPEN_DESIGN_PROJECT_EVENT, {
-            detail: { projectId, name: data?.project?.name ?? null },
-          }),
-        );
-        created.current?.(projectId);
+        created.current?.(projectId, data?.project?.name ?? null);
       } catch {
         // 探针失败不打断画布，下一轮再试。
       }

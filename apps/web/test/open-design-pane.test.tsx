@@ -1,33 +1,51 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+const { TooltipProvider } = await import(
+  "../src/components/workbench/zcode/components/ui/tooltip.js"
+);
+
 const entryRef = { current: null as unknown };
-const lastProjectRef = { current: null as { projectId: string; name: string } | null };
-const readinessRef = {
-  current: { reachable: true, agentAvailable: true },
+const lastProjectRef = {
+  current: null as { projectId: string; name: string } | null,
 };
+const readinessRef = { current: { reachable: true, agentAvailable: true } };
+const canvasRef = {
+  current: null as null | {
+    project: { projectId: string; name: string };
+    entryFile: string | null;
+    files: Array<{ name: string; kind: string }>;
+  },
+};
+const previewRef = {
+  current: {
+    url: "/api/projects/p-1/preview/tok/index.html",
+    iframeSandbox: "allow-scripts allow-forms",
+  },
+};
+const createdRef = {
+  current: { project: { projectId: "p-new", name: "未命名画布" } },
+};
+const fetched: string[] = [];
 
 vi.mock("../src/components/workbench/zcode/host/openDesignHost.js", () => ({
   useOpenDesignEntry: () => entryRef.current,
 }));
 vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
-  surfaceJson: async (path: string) =>
-    String(path).includes("readiness")
-      ? readinessRef.current
-      : { project: lastProjectRef.current },
+  surfaceJson: async (path: string) => {
+    fetched.push(path);
+    if (path.includes("readiness")) return readinessRef.current;
+    if (path.includes("last-project")) return { project: lastProjectRef.current };
+    if (path.includes("/host/canvas/")) return canvasRef.current;
+    if (path.includes("preview-url")) return previewRef.current;
+    if (path.includes("file-text")) return { name: "index.html", text: "<html></html>" };
+    if (path.includes("/host/canvas")) return createdRef.current;
+    throw new Error(`unexpected path ${path}`);
+  },
 }));
 
 const { OpenDesignPane } = await import(
   "../src/components/workbench/zcode/host/OpenDesignPane.js"
-);
-const { OPEN_DESIGN_PROJECT_EVENT } = await import(
-  "../src/components/workbench/zcode/host/useOpenDesignProjectWatch.js"
 );
 
 const ORIGIN = "http://127.0.0.1:7456";
@@ -37,109 +55,138 @@ afterEach(() => {
   entryRef.current = null;
   lastProjectRef.current = null;
   readinessRef.current = { reachable: true, agentAvailable: true };
+  canvasRef.current = null;
+  fetched.length = 0;
+  vi.clearAllMocks();
 });
 
-async function mount(available = true) {
-  entryRef.current = available
-    ? { available: true, frontendUrl: ORIGIN }
-    : { available: false, reason: "未就绪。" };
-  const view = render(<OpenDesignPane />);
-  // 面板先等「最近项目」落定再挂 iframe，避免先闪一帧首页
-  fireEvent.load(await screen.findByTitle("OpenDesign"));
-  return view;
+function mount(options: { projectId: string | null }) {
+  const onMeta = vi.fn();
+  const view = render(
+    <TooltipProvider>
+      <OpenDesignPane
+        tabId={
+          options.projectId
+            ? `open-design:${options.projectId}`
+            : "open-design"
+        }
+        projectId={options.projectId}
+        onMeta={onMeta}
+        workspacePath="C:/workspace"
+      />
+    </TooltipProvider>,
+  );
+  return { view, onMeta };
 }
 
-function paneRoot() {
-  return screen.getByTestId("open-design-pane");
+function availableEntry() {
+  entryRef.current = { available: true, frontendUrl: ORIGIN };
 }
 
-test("上游回 hello → 握手成立（ok）", async () => {
-  await mount();
-  act(() => {
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        data: { type: "od/hello", version: "v1" },
-        origin: ORIGIN,
-      }),
-    );
+function canvasWithFile(projectId = "p-1", name = "订单页") {
+  canvasRef.current = {
+    project: { projectId, name },
+    entryFile: "index.html",
+    files: [{ name: "index.html", kind: "html" }],
+  };
+}
+
+test("绑定画布：预览 iframe 用上游公开地址 + 下发 sandbox，画布名回写标签", async () => {
+  availableEntry();
+  canvasWithFile();
+  const { onMeta } = mount({ projectId: "p-1" });
+  const frame = await screen.findByTitle("OpenDesign");
+  expect(frame.getAttribute("src")).toBe(
+    `${ORIGIN}/api/projects/p-1/preview/tok/index.html`,
+  );
+  expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
+  await waitFor(() => {
+    expect(onMeta).toHaveBeenCalledWith("open-design:p-1", { title: "订单页" });
   });
-  expect(paneRoot().getAttribute("data-od-handshake")).toBe("ok");
 });
 
-test("跨源 hello 不放行：origin 白名单是第一道闸", async () => {
-  await mount();
-  act(() => {
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        data: { type: "od/hello", version: "v1" },
-        origin: "http://evil.example.com",
-      }),
-    );
+test("未绑定（旧状态）：退回最近画布并写回绑定，不要求重挂", async () => {
+  availableEntry();
+  lastProjectRef.current = { projectId: "p-9", name: "登录页" };
+  canvasRef.current = {
+    project: { projectId: "p-9", name: "登录页" },
+    entryFile: "index.html",
+    files: [{ name: "index.html", kind: "html" }],
+  };
+  const { onMeta } = mount({ projectId: null });
+  await screen.findByTitle("OpenDesign");
+  expect(onMeta).toHaveBeenCalledWith("open-design", {
+    projectId: "p-9",
+    title: "登录页",
   });
-  expect(paneRoot().getAttribute("data-od-handshake")).toBe("pending");
 });
 
-test("形状不明的消息不放行：schema 是第二道闸", async () => {
-  await mount();
-  act(() => {
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        data: { type: "od/hello" },
-        origin: ORIGIN,
-      }),
-    );
+test("没有画布：空态给「新建画布」，点它走宿主代理新建并写回标签", async () => {
+  availableEntry();
+  lastProjectRef.current = null;
+  canvasRef.current = {
+    project: { projectId: "p-new", name: "未命名画布" },
+    entryFile: null,
+    files: [],
+  };
+  const { onMeta } = mount({ projectId: null });
+  expect(await screen.findByText("还没有画布")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "新建画布" }));
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/canvas");
   });
-  expect(paneRoot().getAttribute("data-od-handshake")).toBe("pending");
+  await waitFor(() => {
+    expect(onMeta).toHaveBeenCalledWith("open-design", {
+      projectId: "p-new",
+      title: "未命名画布",
+    });
+  });
 });
 
-test("上游不回话：画布照常挂载，握手保持 pending（深链已移除，无提示条）", async () => {
-  await mount();
-  expect(screen.getByTitle("OpenDesign")).toBeTruthy();
-  expect(paneRoot().getAttribute("data-od-handshake")).toBe("pending");
-  expect(screen.queryByText(/暂不支持/)).toBeNull();
+test("画布没有入口文件：说清楚「还没有内容」，不挂空 iframe", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "订单页" },
+    entryFile: null,
+    files: [{ name: "notes.md", kind: "markdown" }],
+  };
+  mount({ projectId: "p-1" });
+  expect(await screen.findByText("画布还没有内容")).toBeTruthy();
+  expect(screen.queryByTitle("OpenDesign")).toBeNull();
 });
 
-test("有最近创建的项目时打开它的项目画布，而不是上游首页", async () => {
-  lastProjectRef.current = { projectId: "p-1", name: "订单仪表盘" };
-  await mount();
-  const frame = screen.getByTitle("OpenDesign");
-  expect(frame.getAttribute("src")).toBe(`${ORIGIN}/projects/p-1`);
+test("工具栏按钮齐备（截图到对话是画布专用适配）", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  for (const label of [
+    "刷新",
+    "截图到对话",
+    "导出图片",
+    "复制链接",
+    "在 OpenDesign 打开",
+    "缩放",
+  ]) {
+    expect(screen.getByRole("button", { name: label })).toBeTruthy();
+  }
 });
 
-test("没有最近项目时退回上游首页（首次使用仍能创建）", async () => {
-  await mount();
-  const frame = screen.getByTitle("OpenDesign");
-  expect(frame.getAttribute("src")).toBe(ORIGIN);
-});
-
-test("上游没有可用设计引擎时，面板说明原因而不是让人对着设置页猜", async () => {
+test("上游没有可用设计引擎时，面板说明原因而不是让人对着空白画布猜", async () => {
+  availableEntry();
+  canvasWithFile();
   readinessRef.current = { reachable: true, agentAvailable: false };
-  await mount();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
   expect(
     screen.getByTestId("open-design-readiness").textContent,
   ).toContain("没有可用的设计引擎");
 });
 
-test("右栏只留 OpenDesign 自己的画布：2 倍宽度渲染，裁掉左侧聊天栏", async () => {
-  lastProjectRef.current = { projectId: "p-1", name: "订单仪表盘" };
-  await mount();
-  const frame = screen.getByTitle("OpenDesign");
-  expect(frame.getAttribute("data-od-canvas-only")).toBe("true");
-  expect(frame.style.width).toBe("200%");
-  expect(frame.style.left).toBe("-100%");
-});
-
-test("对话新建项目：已打开的画布直接切到新项目", async () => {
-  lastProjectRef.current = { projectId: "p-1", name: "旧项目" };
-  await mount();
-  act(() => {
-    window.dispatchEvent(
-      new CustomEvent(OPEN_DESIGN_PROJECT_EVENT, {
-        detail: { projectId: "p-2", name: "新项目" },
-      }),
-    );
-  });
-  expect(screen.getByTitle("OpenDesign").getAttribute("src")).toBe(
-    `${ORIGIN}/projects/p-2`,
+test("入口未就绪：直接说明原因，不摆空壳", async () => {
+  entryRef.current = { available: false, reason: "未安装 OpenDesign 插件。" };
+  mount({ projectId: "p-1" });
+  expect(screen.getByTestId("open-design-pane").textContent).toContain(
+    "未安装 OpenDesign 插件。",
   );
 });
