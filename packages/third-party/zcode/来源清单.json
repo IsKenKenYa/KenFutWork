@@ -12728,7 +12728,8 @@
       "copiedSha256": "3c8f0784f8a2bad2ee3356c419447e6fc61bb29070b96b6c5a2e8cf40668ae89",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。"
+        "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
+        "2026-10-20 KenFutWork 宿主偏差：增浏览器截图进对话事件分支（BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT，与画布截图同路；右栏浏览器面板「截图到对话」）"
       ]
     },
     {

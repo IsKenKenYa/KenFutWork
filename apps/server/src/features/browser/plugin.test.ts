@@ -722,3 +722,71 @@ describe("面板画面流接口", () => {
     }
   });
 });
+
+describe("POST /api/browser/cdp/console 与 screenshot（面板拾取/截图配套）", () => {
+  it("action=close 只收起悬浮控制台，不导航不重新注入", async () => {
+    const hideDebugConsole = vi.fn(async () => {});
+    const injectDebugConsole = vi.fn(async () => ({
+      url: "https://example.com",
+    }));
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com",
+        }),
+        hideDebugConsole,
+        injectDebugConsole,
+      },
+    });
+    try {
+      const response = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/console",
+        payload: { action: "close" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(hideDebugConsole).toHaveBeenCalledTimes(1);
+      expect(injectDebugConsole).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("screenshot 直出 base64（面板组 File 用，不落 blob）", async () => {
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com",
+        }),
+        screenshotData: async () => ({
+          base64: Buffer.from("png-bytes").toString("base64"),
+          width: 1280,
+          height: 720,
+        }),
+      },
+    });
+    try {
+      const response = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/screenshot",
+        payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        base64: string;
+        width: number;
+        height: number;
+      };
+      expect(Buffer.from(body.base64, "base64").toString()).toBe("png-bytes");
+      expect(body.width).toBe(1280);
+    } finally {
+      await app.close();
+    }
+  });
+});

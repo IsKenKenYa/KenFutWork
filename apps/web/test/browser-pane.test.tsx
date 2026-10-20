@@ -12,7 +12,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
 const requestComposerTextInsert = vi.fn();
+const dispatchBrowserScreenshotAddToChat = vi.fn();
 const toast = vi.spyOn(notifications, "toast");
+
+vi.mock("@zui/lib/browserScreenshotChat.js", () => ({
+  dispatchBrowserScreenshotAddToChat: (payload: unknown) =>
+    dispatchBrowserScreenshotAddToChat(payload),
+}));
 
 vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
@@ -47,6 +53,7 @@ afterEach(async () => {
   toast.mockClear();
   surfaceJson.mockReset();
   requestComposerTextInsert.mockReset();
+  dispatchBrowserScreenshotAddToChat.mockReset();
 });
 
 /** Radix 下拉在跨用例后 pointer 路径不稳定；键盘 Enter 开菜单是同一交互。 */
@@ -468,10 +475,14 @@ test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", a
       expect.objectContaining({ method: "POST" }),
     ),
   );
-  expect(screen.getByText("点选元素填入输入框 · Esc 取消")).toBeTruthy();
+  expect(
+    screen.getByText("悬停切换元素 · 点击加入对话 · Esc 取消"),
+  ).toBeTruthy();
   await user.keyboard("{Escape}");
   await waitFor(() =>
-    expect(screen.queryByText("点选元素填入输入框 · Esc 取消")).toBeNull(),
+    expect(
+      screen.queryByText("悬停切换元素 · 点击加入对话 · Esc 取消"),
+    ).toBeNull(),
   );
 
   await user.click(screen.getByRole("button", { name: "刷新" }));
@@ -485,6 +496,168 @@ test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", a
           height: 720,
           reload: true,
         }),
+      }),
+    ),
+  );
+});
+
+test("拾取悬浮切换：悬停元素亮起并显示标签，点击加入的正是悬停的那个", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/browser/snapshot") {
+      return {
+        snapshot: {
+          url: "https://example.com",
+          title: "示例",
+          viewport: { width: 1280, height: 720 },
+          elements: [
+            {
+              tag: "a",
+              text: "链接一",
+              hint: "a.one",
+              box: { x: 0, y: 0, width: 100, height: 20 },
+            },
+            {
+              tag: "button",
+              text: "按钮二",
+              hint: "button.two",
+              box: { x: 0, y: 40, width: 100, height: 20 },
+            },
+          ],
+        },
+        source: "cdp",
+      };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "connected" } };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(
+    <BrowserPane
+      initialUrl="https://example.com"
+      workspacePath="D:/Desktop/test"
+      workspaceIdentity="ws-1"
+    />,
+  );
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+
+  await user.click(
+    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+  );
+  const first = await screen.findByRole("button", { name: "拾取 a" });
+  const second = screen.getByRole("button", { name: "拾取 button" });
+  // 默认无悬停标签
+  expect(screen.queryByText("<a> 链接一")).toBeNull();
+  // 悬停第二个：亮起 + 标签出现；点击加入的正是它
+  fireEvent.mouseEnter(second);
+  expect(await screen.findByText("<button> 按钮二")).toBeTruthy();
+  expect(second.getAttribute("class")).toContain("bg-primary/45");
+  expect(first.getAttribute("class")).not.toContain("bg-primary/45");
+  fireEvent.click(second);
+  await waitFor(() =>
+    expect(requestComposerTextInsert).toHaveBeenCalledWith(
+      "D:/Desktop/test",
+      expect.stringContaining("[<button> 按钮二](browser-element://pick?"),
+      "ws-1",
+      expect.objectContaining({ category: "browser" }),
+    ),
+  );
+});
+
+test("进入拾取自动收起调试控制台悬浮窗", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path === "/api/browser/snapshot") {
+      return {
+        snapshot: {
+          url: "https://example.com",
+          title: "示例",
+          viewport: { width: 1280, height: 720 },
+          elements: [],
+        },
+        source: "cdp",
+      };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "connected" } };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+  await user.click(
+    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+  );
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/console",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ action: "close" }),
+      }),
+    ),
+  );
+});
+
+test("截图到对话：菜单项截当前视口并派发 PNG 附件事件", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path === "/api/browser/cdp/screenshot") {
+      return {
+        base64: Buffer.from("fake-png").toString("base64"),
+        width: 1280,
+        height: 720,
+      };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "connected" } };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(
+    <BrowserPane
+      initialUrl="https://example.com"
+      workspacePath="D:/Desktop/test"
+    />,
+  );
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+
+  openBrowserMenu();
+  fireEvent.click(await screen.findByRole("menuitem", { name: "截图到对话" }));
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/screenshot",
+      expect.objectContaining({ method: "POST" }),
+    ),
+  );
+  await waitFor(() =>
+    expect(dispatchBrowserScreenshotAddToChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: null,
+        workspacePath: "D:/Desktop/test",
+        file: expect.any(File),
       }),
     ),
   );

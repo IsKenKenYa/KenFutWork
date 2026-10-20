@@ -789,7 +789,27 @@ export function registerBrowserRoutes(
   app.post("/api/browser/cdp/console", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
-    const url = (request.body as { url?: unknown } | undefined)?.url;
+    const body = request.body as
+      | { url?: unknown; action?: unknown }
+      | undefined;
+    const url = body?.url;
+    // 收起悬浮控制台（拾取等面板交互前清场）：只 hide 不销毁，可再唤出。
+    if (body?.action === "close") {
+      try {
+        await options.browser.cdp.hideDebugConsole();
+        return reply
+          .code(200)
+          .send({ url: typeof url === "string" ? url : "" });
+      } catch (error) {
+        return reply.code(502).send({
+          error: {
+            code: "cdp_console_failed",
+            message:
+              error instanceof Error ? error.message : "收起调试控制台失败。",
+          },
+        });
+      }
+    }
     if (typeof url !== "string" || !url.trim()) {
       return reply.code(400).send({
         error: { code: "invalid_request", message: "缺少 url。" },
@@ -804,6 +824,23 @@ export function registerBrowserRoutes(
           code: "cdp_console_failed",
           message:
             error instanceof Error ? error.message : "注入调试控制台失败。",
+        },
+      });
+    }
+  });
+
+  /** 截当前视口（base64 直出）——面板「截图到对话」组 File 用，不落 blob。 */
+  app.post("/api/browser/cdp/screenshot", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    try {
+      const shot = await options.browser.cdp.screenshotData();
+      return reply.code(200).send(shot);
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "cdp_screenshot_failed",
+          message: error instanceof Error ? error.message : "截图失败。",
         },
       });
     }

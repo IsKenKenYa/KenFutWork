@@ -107,6 +107,13 @@ export interface CdpBrowserSession {
   /** 调试控制台脚本源码（桌面形态 eval 进子 webview 用同一份）。 */
   debugConsoleScript(): Promise<string>;
   /**
+   * **收起**页面内调试控制台（Eruda 悬浮窗）。拾取元素等面板交互需要干净的页面，
+   * 悬浮窗挡视线；只 hide 不销毁，用户可从「打开调试工具」再唤出。
+   */
+  hideDebugConsole(): Promise<void>;
+  /** 截当前视口为 PNG（base64 直出，不落 blob——面板「截图到对话」直接组 File）。 */
+  screenshotData(): Promise<{ base64: string; width: number; height: number }>;
+  /**
    * 在**受控浏览器**里打开完整开发者工具，并取消停靠成**独立窗口**（浮动、可移动）。
    *
    * 做法与取舍见 `devtools-keys` 头注：真 DevTools 只有浏览器自己开得出来（CDP 开出来的
@@ -739,6 +746,26 @@ export function createCdpBrowserSession(deps: {
     },
     async debugConsoleScript() {
       return debugConsole.script();
+    },
+    async hideDebugConsole() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression: "window.eruda ? (window.eruda.hide(), true) : false",
+          returnByValue: true,
+        },
+        id,
+      );
+    },
+    async screenshotData() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const bytes = await captureScreenshot(cdp, id);
+      return {
+        base64: Buffer.from(bytes).toString("base64"),
+        width: portrait.width,
+        height: portrait.height,
+      };
     },
     async openDevToolsWindow(options = {}) {
       const { client: cdp, sessionId: id } = requireConnected();

@@ -12,6 +12,11 @@ import { useServices } from "@zui/hooks/useServices.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { ChatComposerPasteEvent } from "@zui/LexicalChatInput.js";
 import {
+  BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT,
+  buildBrowserScreenshotWorkspaceKey,
+  isBrowserScreenshotAddToChatEvent,
+} from "@zui/lib/browserScreenshotChat.js";
+import {
   type ChatComposerAttachment,
   createChatComposerAttachment,
   createChatComposerPathAttachment,
@@ -27,16 +32,16 @@ import {
   shouldPreferSpreadsheetClipboardText,
 } from "@zui/lib/chatAttachments.js";
 import {
+  buildOpenDesignCanvasWorkspaceKey,
+  isOpenDesignCanvasAddToChatEvent,
+  OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT,
+} from "@zui/lib/openDesignCanvasChat.js";
+import {
   buildWhiteboardWorkspaceKey,
   createWhiteboardPngFile,
   isWhiteboardAddToChatEvent,
   WHITEBOARD_ADD_TO_CHAT_EVENT,
 } from "@zui/lib/whiteboard.js";
-import {
-  buildOpenDesignCanvasWorkspaceKey,
-  isOpenDesignCanvasAddToChatEvent,
-  OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT,
-} from "@zui/lib/openDesignCanvasChat.js";
 import { WORKSPACE_FILE_DRAG_MIME } from "@zui/lib/workspaceFileDrag.js";
 import { logger } from "@zui/logger.js";
 import {
@@ -1072,6 +1077,36 @@ export function useComposerAttachments(
     window.addEventListener(OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT, handle);
     return () =>
       window.removeEventListener(OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT, handle);
+  }, [
+    addAttachmentFiles,
+    listenAddToChatEvents,
+    workspaceIdentity,
+    workspacePath,
+  ]);
+
+  useEffect(() => {
+    // 浏览器截图进对话：与画布截图同一条路（右栏浏览器面板「截图到对话」）。
+    if (!listenAddToChatEvents || typeof window === "undefined") return;
+    const handle = (event: Event) => {
+      if (!isBrowserScreenshotAddToChatEvent(event)) return;
+      if (
+        buildBrowserScreenshotWorkspaceKey(event.detail) !==
+        buildBrowserScreenshotWorkspaceKey({ workspacePath, workspaceIdentity })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        addAttachmentFiles([event.detail.file]);
+      } catch (error) {
+        setAttachmentError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
+    window.addEventListener(BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT, handle);
+    return () =>
+      window.removeEventListener(BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT, handle);
   }, [
     addAttachmentFiles,
     listenAddToChatEvents,

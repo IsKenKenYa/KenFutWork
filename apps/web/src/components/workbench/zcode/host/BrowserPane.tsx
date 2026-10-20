@@ -14,10 +14,12 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { toast } from "@zui/components/ui/toast.js";
+import { dispatchBrowserScreenshotAddToChat } from "@zui/lib/browserScreenshotChat.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import {
   ArrowLeft,
   ArrowRight,
+  Camera,
   Ellipsis,
   ExternalLink,
   Globe,
@@ -230,6 +232,8 @@ export function BrowserPane({
     elements: PickableElement[];
     viewport: { width: number; height: number };
   } | null>(null);
+  /** 悬停高亮的元素下标（悬浮切换、点击添加的用户口径）。 */
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -567,16 +571,23 @@ export function BrowserPane({
     if (url) window.open(url, "_blank", "noopener");
   }, [url]);
 
-  /** Q5：进入/退出拾取。进入时拉一次带盒模型的元素快照。 */
+  /** Q5：进入/退出拾取。进入时先收起调试控制台悬浮窗（别挡视线），再拉元素快照。 */
   const togglePicking = useCallback(async () => {
     if (pick) {
       setPick(null);
+      setHoveredIndex(null);
       return;
     }
     if (!url) {
       toast("先打开一个页面再拾取元素。");
       return;
     }
+    // 控制台悬浮窗盖在页面上会挡住元素：进拾取先收起（失败不阻塞拾取）
+    surfaceJson("/api/browser/cdp/console", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "close" }),
+    }).catch(() => {});
     try {
       const result = await surfaceJson<PickSnapshot>("/api/browser/snapshot", {
         method: "POST",
@@ -591,6 +602,48 @@ export function BrowserPane({
       toast(error instanceof Error ? error.message : "读取页面元素失败。");
     }
   }, [pick, url]);
+
+  /** 截图到对话：截当前视口（base64）组 PNG File，走附件事件进当前 composer。 */
+  const screenshotToChat = useCallback(async () => {
+    if (state.status !== "live") {
+      toast("先打开一个页面再截图。");
+      return;
+    }
+    try {
+      const shot = await surfaceJson<{
+        base64: string;
+        width: number;
+        height: number;
+      }>("/api/browser/cdp/screenshot", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      });
+      const bytes = Uint8Array.from(atob(shot.base64), (c) => c.charCodeAt(0));
+      const file = new File(
+        [bytes],
+        `浏览器截图-${shot.width}x${shot.height}.png`,
+        { type: "image/png" },
+      );
+      if (!workspacePath) {
+        toast("当前会话不接收截图");
+        return;
+      }
+      const dispatched = dispatchBrowserScreenshotAddToChat({
+        title: null,
+        file,
+        workspacePath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      });
+      if (!dispatched) {
+        toast("当前会话不接收截图");
+        return;
+      }
+      toast("截图已加入对话");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "截图失败。");
+    }
+  }, [state.status, workspaceIdentity, workspacePath]);
 
   /**
    * Q5：点选元素 → 生成坐标引用 → 填进 composer。缩略形态（用户口径）：composer 里
@@ -635,6 +688,7 @@ export function BrowserPane({
         toast("当前工作区不可用，引用未填入");
       }
       setPick(null);
+      setHoveredIndex(null);
     },
     [pick, url, workspaceIdentity, workspacePath],
   );
@@ -643,7 +697,10 @@ export function BrowserPane({
   useEffect(() => {
     if (!pick) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPick(null);
+      if (event.key === "Escape") {
+        setPick(null);
+        setHoveredIndex(null);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -750,6 +807,13 @@ export function BrowserPane({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuItem
+              disabled={state.status !== "live"}
+              onSelect={() => void screenshotToChat()}
+            >
+              <Camera className="h-3.5 w-3.5" />
+              <span>截图到对话</span>
+            </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!url}
               onSelect={() => openInSystemBrowser()}
@@ -861,26 +925,42 @@ export function BrowserPane({
                             type="button"
                             aria-label={`拾取 ${element.tag}`}
                             title={element.text || element.hint || element.tag}
-                            className="absolute rounded-sm border-2 border-primary bg-primary/25 shadow-[0_0_0_1px_rgb(0_0_0/0.05)] transition-colors hover:border-primary hover:bg-primary/45"
+                            className={`absolute rounded-sm border-2 transition-colors ${
+                              hoveredIndex === index
+                                ? "z-10 border-primary bg-primary/45 shadow-[0_0_0_2px_rgb(59_130_246/0.35)]"
+                                : "border-primary/60 bg-primary/15 hover:border-primary hover:bg-primary/30"
+                            }`}
                             style={{
                               left: `${(element.box.x / pick.viewport.width) * 100}%`,
                               top: `${(element.box.y / pick.viewport.height) * 100}%`,
                               width: `${(element.box.width / pick.viewport.width) * 100}%`,
                               height: `${(element.box.height / pick.viewport.height) * 100}%`,
                             }}
+                            onMouseEnter={() => setHoveredIndex(index)}
+                            onMouseLeave={() =>
+                              setHoveredIndex((current) =>
+                                current === index ? null : current,
+                              )
+                            }
                             onMouseDown={(event) => event.stopPropagation()}
                             onMouseUp={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.stopPropagation();
                               insertElementReference(element);
                             }}
-                          />
+                          >
+                            {hoveredIndex === index ? (
+                              <span className="pointer-events-none absolute -top-6 left-0 max-w-48 truncate rounded bg-primary px-1.5 py-0.5 text-[10px] leading-4 text-primary-foreground">
+                                {`<${element.tag}> ${element.text.trim() || element.hint.trim() || ""}`}
+                              </span>
+                            ) : null}
+                          </button>
                         ) : null,
                       )
                     : null}
                   {pick ? (
                     <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
-                      点选元素填入输入框 · Esc 取消
+                      悬停切换元素 · 点击加入对话 · Esc 取消
                     </p>
                   ) : null}
                 </div>
