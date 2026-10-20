@@ -183,8 +183,8 @@ vi.mock("../src/components/brand-kit-selector", () => ({
     </button>
   ),
 }));
-vi.mock("../src/components/editable-project-name", () => ({
-  EditableProjectName: () => null,
+vi.mock("../src/components/editable-canvas-name", () => ({
+  EditableCanvasName: () => null,
 }));
 vi.mock("../src/components/loading-screen", () => ({
   LoadingScreen: () => <span>加载画布</span>,

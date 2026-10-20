@@ -1,7 +1,7 @@
 "use client";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { CanvasContent } from "@kenfutwork/shared";
+import type { CanvasContent, CanvasDetail } from "@kenfutwork/shared";
 import { PanelsTopLeft } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -15,7 +15,7 @@ import {
 import { CanvasInspector } from "../../components/canvas-inspector";
 import { CanvasLogoMenu } from "../../components/canvas-logo-menu";
 import { CanvasToolMenu } from "../../components/canvas-tool-menu";
-import { EditableProjectName } from "../../components/editable-project-name";
+import { EditableCanvasName } from "../../components/editable-canvas-name";
 import { LoadingScreen } from "../../components/loading-screen";
 import { installHostWorkspaceActivity } from "../../components/workbench/zcode/host/workspaceActivity";
 import { useWebSocket } from "../../hooks/use-websocket";
@@ -290,6 +290,23 @@ function CanvasPageContent() {
     () => bridgeRef.current?.requestDeleteCanvas(),
     [],
   );
+  /**
+   * 改名落在画布自己：更新本地文档，并走已有的「文档已更新」通道通知宿主，
+   * 让标签标题与侧栏画布列表跟着换——宿主按列表里的 name 同步标题，不另立协议。
+   */
+  const handleCanvasRenamed = useCallback((renamed: CanvasDetail) => {
+    setCanvasData((current) =>
+      current && current.id === renamed.id
+        ? { ...current, name: renamed.name, revision: renamed.revision }
+        : current,
+    );
+    bridgeRef.current?.publishDocumentUpdated({
+      canvasId: renamed.id,
+      projectId: renamed.projectId,
+      deleted: false,
+      revision: renamed.revision,
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -380,10 +397,10 @@ function CanvasPageContent() {
           projectName={projectName}
           excalidrawApi={excalidrawApi}
         />
-        <EditableProjectName
+        <EditableCanvasName
           accessToken={accessToken}
-          projectId={canvasData.projectId}
-          initialName={projectName}
+          canvas={canvasData}
+          onRenamed={handleCanvasRenamed}
         />
         <BrandKitSelector
           accessToken={accessToken}

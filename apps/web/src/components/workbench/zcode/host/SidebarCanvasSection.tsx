@@ -100,7 +100,7 @@ function CanvasRow({
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => !saving && setEditing(false)}
           onKeyDown={(event) => {
-            // 中文输入法回车是上屏确认，不是提交改名（与 editable-project-name 同一坑）
+            // 中文输入法回车是上屏确认，不是提交改名（与 editable-canvas-name 同一坑）
             if (
               event.key === "Enter" &&
               !event.nativeEvent.isComposing &&

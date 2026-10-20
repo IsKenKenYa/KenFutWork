@@ -269,8 +269,30 @@ export async function saveCanvas(
   return (await response.json()) as CanvasSaveResponse;
 }
 
-export async function moveProjectFile(
+/**
+ * 画布改名：服务端按 expectedName + expectedRevision 做乐观锁，
+ * 两者任一过期都会被打回，调用方要把原因透出来（静默失败会被判成「改名没用」）。
+ */
+export async function renameCanvas(
   accessToken: string | null | undefined,
+  canvasId: string,
+  name: string,
+  expectedName: string,
+  expectedRevision: string,
+): Promise<{ canvas: CanvasDetail }> {
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/canvases/${canvasId}`,
+    {
+      method: "PATCH",
+      headers: authJsonHeaders(accessToken),
+      body: JSON.stringify({ name, expectedName, expectedRevision }),
+    },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return (await response.json()) as { canvas: CanvasDetail };
+}
+
+export async function moveProjectFile(  accessToken: string | null | undefined,
   assetId: string,
   request: ProjectFileMoveRequest,
 ): Promise<ProjectFileLocation> {
