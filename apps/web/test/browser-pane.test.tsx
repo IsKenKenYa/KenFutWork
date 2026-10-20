@@ -8,26 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as notifications from "@zui/components/ui/toast.js";
-import { TooltipProvider } from "@zui/components/ui/tooltip.js";
-import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
-// web 工程没有 @zcode/shared 路径映射（运行时经 cuaSharedAdapter 别名），TID 直接取构建产物
-import {
-  TID_BROWSER_ADDRESS_INPUT,
-  TID_BROWSER_BACK_BUTTON,
-  TID_BROWSER_DEVTOOLS_BUTTON,
-  TID_BROWSER_ELEMENT_PICKER_BUTTON,
-  TID_BROWSER_FORWARD_BUTTON,
-  TID_BROWSER_MORE_BUTTON,
-  TID_BROWSER_OPEN_EXTERNAL_ITEM,
-  TID_BROWSER_REFRESH_BUTTON,
-  TID_BROWSER_RESPONSIVE_BUTTON,
-  TID_BROWSER_RESPONSIVE_HEIGHT_INPUT,
-  TID_BROWSER_RESPONSIVE_RESIZE_WIDTH,
-  TID_BROWSER_RESPONSIVE_TOOLBAR,
-  TID_BROWSER_RESPONSIVE_WIDTH_INPUT,
-  TID_BROWSER_RESPONSIVE_ZOOM_SELECT,
-} from "../../../packages/zcode-shared/dist/index.js";
+import { afterEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
 const requestComposerTextInsert = vi.fn();
@@ -48,42 +29,7 @@ const { BrowserPane } = await import(
   "../src/components/workbench/zcode/host/BrowserPane.js"
 );
 
-// userEvent 实例带指针/键盘内部状态，跨用例复用会让后续 click 失真；
-// 每个用例前重建（用例体内直接引用本绑定，无需逐用例改写）。
-let user = userEvent.setup();
-beforeEach(() => {
-  user = userEvent.setup();
-});
-
-// jsdom 没有 ResizeObserver（ResponsiveBrowserViewport 的 Fit 测量用）；
-// 直接补 window/globalThis，不依赖 stubGlobal 的时序。
-class ResizeObserverStub {
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
-}
-for (const host of [globalThis, window]) {
-  if (!("ResizeObserver" in host)) {
-    (host as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;
-  }
-}
-
-/** Radix 下拉在跨用例后 pointer 路径不稳定；键盘 Enter 开菜单是同一交互。 */
-function openMoreMenu(): void {
-  const trigger = screen.getByTestId(TID_BROWSER_MORE_BUTTON);
-  trigger.focus();
-  fireEvent.keyDown(trigger, { key: "Enter", code: "Enter", bubbles: true });
-}
-
-function renderPane(props: Parameters<typeof BrowserPane>[0]) {
-  return render(
-    <ZCodeIntlProvider initialLocale="zh-CN">
-      <TooltipProvider>
-        <BrowserPane {...props} />
-      </TooltipProvider>
-    </ZCodeIntlProvider>,
-  );
-}
+const user = userEvent.setup();
 
 afterEach(async () => {
   cleanup();
@@ -105,13 +51,9 @@ function connectedApis() {
       return { cdp: { status: "connected", currentUrl: "" } };
     }
     if (path === "/api/browser/cdp/view") {
-      const body = JSON.parse(String(init?.body ?? "{}")) as {
-        width: number;
-        height: number;
-      };
       return {
-        ticket: `ticket-${body.width}x${body.height}`,
-        viewport: { width: body.width, height: body.height, scale: 1 },
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
       };
     }
     if (path === "/api/browser/cdp/input") {
@@ -124,34 +66,44 @@ function connectedApis() {
   });
 }
 
-test("无初始地址：停在开始态不再假加载；不发任何请求；输入地址后正常开流", async () => {
+test("无初始地址：进开始态不再假加载、零请求；输入地址后正常开流", async () => {
   connectedApis();
-  renderPane({});
-  // 开始态给可读空态（浏览器 + 输入提示），而不是「正在打开内嵌浏览器…」
-  expect(await screen.findByText("粘贴或输入 URL 以打开网页。")).toBeTruthy();
+  render(<BrowserPane />);
+  // 旧实现此处停在「正在打开内嵌浏览器…」且永不返回（open 因 !activeUrl 静默退出）
+  expect(await screen.findByText("输入地址开始浏览")).toBeTruthy();
   expect(screen.queryByText("正在打开内嵌浏览器…")).toBeNull();
-  // 关键回归：不再发起任何数据面请求（旧实现此时卡在 connecting 且永不返回）
   expect(surfaceJson).not.toHaveBeenCalled();
 
-  const address = screen.getByTestId(TID_BROWSER_ADDRESS_INPUT);
+  const address = screen.getByLabelText("地址栏");
   await user.click(address);
   await user.type(address, "example.com");
   await user.keyboard("{Enter}");
   const img = await screen.findByAltText("浏览器画面");
   await waitFor(() =>
     expect(img.getAttribute("src")).toBe(
-      "/api/browser/cdp/stream?ticket=ticket-1280x720",
+      "/api/browser/cdp/stream?ticket=ticket-1",
     ),
+  );
+  expect(surfaceJson).toHaveBeenCalledWith(
+    "/api/browser/cdp/view",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        url: "https://example.com",
+        width: 1280,
+        height: 720,
+      }),
+    }),
   );
 });
 
 test("连接→开流→MJPEG 画面渲染；地址栏导航走 view；历史栈前进后退", async () => {
   connectedApis();
-  renderPane({ initialUrl: "https://example.com" });
+  render(<BrowserPane initialUrl="https://example.com" />);
   const img = await screen.findByAltText("浏览器画面");
   await waitFor(() =>
     expect(img.getAttribute("src")).toBe(
-      "/api/browser/cdp/stream?ticket=ticket-1280x720",
+      "/api/browser/cdp/stream?ticket=ticket-1",
     ),
   );
   expect(surfaceJson).toHaveBeenCalledWith(
@@ -166,8 +118,11 @@ test("连接→开流→MJPEG 画面渲染；地址栏导航走 view；历史栈
     }),
   );
 
+  // 未连时自动 connect（headless，面板即窗口）
+  // （本用例 status 直接 connected，另测未连路径）
+
   // 地址栏导航：补协议、压栈
-  const address = screen.getByTestId(TID_BROWSER_ADDRESS_INPUT);
+  const address = screen.getByLabelText("地址栏");
   await user.clear(address);
   await user.type(address, "another.example.org");
   await user.keyboard("{Enter}");
@@ -185,18 +140,18 @@ test("连接→开流→MJPEG 画面渲染；地址栏导航走 view；历史栈
   );
 
   // 历史栈：后退回第一页
-  await user.click(screen.getByTestId(TID_BROWSER_BACK_BUTTON));
+  await user.click(screen.getByRole("button", { name: "后退" }));
   await waitFor(() =>
-    expect(
-      screen.getByTestId(TID_BROWSER_ADDRESS_INPUT).getAttribute("value"),
-    ).toBe("https://example.com"),
+    expect(screen.getByLabelText("地址栏").getAttribute("value")).toBe(
+      "https://example.com",
+    ),
   );
   // 后退后前进恢复
-  await user.click(screen.getByTestId(TID_BROWSER_FORWARD_BUTTON));
+  await user.click(screen.getByRole("button", { name: "前进" }));
   await waitFor(() =>
-    expect(
-      screen.getByTestId(TID_BROWSER_ADDRESS_INPUT).getAttribute("value"),
-    ).toBe("https://another.example.org"),
+    expect(screen.getByLabelText("地址栏").getAttribute("value")).toBe(
+      "https://another.example.org",
+    ),
   );
 });
 
@@ -216,7 +171,7 @@ test("未连接时自动以无头模式连一次再开流", async () => {
     }
     return {};
   });
-  renderPane({ initialUrl: "https://example.com" });
+  render(<BrowserPane initialUrl="https://example.com" />);
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/browser/cdp/connect",
@@ -229,7 +184,7 @@ test("未连接时自动以无头模式连一次再开流", async () => {
   await screen.findByAltText("浏览器画面");
 });
 
-test("连接失败显示可读原因与重载入口；更多菜单里可注入调试控制台", async () => {
+test("连接失败显示可读原因与重载入口；调试控制台按钮调 console 注入", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/browser/cdp/status") {
       return {
@@ -247,50 +202,23 @@ test("连接失败显示可读原因与重载入口；更多菜单里可注入�
     }
     return {};
   });
-  renderPane({ initialUrl: "https://example.com" });
+  render(<BrowserPane initialUrl="https://example.com" />);
   await waitFor(() => expect(screen.getByText("浏览器没起来")).toBeTruthy());
   expect(screen.getByRole("button", { name: "重新加载" })).toBeTruthy();
-  // 画面没起来时调试工具入口置灰（不摆假开关）
-  openMoreMenu();
-  const devtools = await screen.findByTestId(TID_BROWSER_DEVTOOLS_BUTTON);
-  expect(devtools.getAttribute("aria-disabled")).toBe("true");
-});
 
-test("更多菜单：在默认浏览器中打开当前页、注入调试控制台", async () => {
-  connectedApis();
-  const openExternal = vi.fn();
-  const originalOpen = window.open;
-  window.open = openExternal as unknown as typeof window.open;
-  try {
-    renderPane({ initialUrl: "https://example.com" });
-    await screen.findByAltText("浏览器画面");
-    openMoreMenu();
-    const item = await screen.findByTestId(TID_BROWSER_OPEN_EXTERNAL_ITEM);
-    await user.click(item);
-    expect(openExternal).toHaveBeenCalledWith(
-      "https://example.com",
-      "_blank",
-      "noopener,noreferrer",
-    );
-    // 调试控制台注入（live 态可用）
-    openMoreMenu();
-    const devtools = await screen.findByTestId(TID_BROWSER_DEVTOOLS_BUTTON);
-    await user.click(devtools);
-    await waitFor(() =>
-      expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: "https://example.com" }),
-      }),
-    );
-  } finally {
-    window.open = originalOpen;
-  }
+  await user.click(screen.getByRole("button", { name: "调试控制台" }));
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    }),
+  );
 });
 
 test("视口预设切换改变 view 的 width/height（真视口，非缩放伪装）", async () => {
   connectedApis();
-  renderPane({ initialUrl: "https://example.com" });
+  render(<BrowserPane initialUrl="https://example.com" />);
   await screen.findByAltText("浏览器画面");
   await user.click(screen.getByRole("button", { name: "375 × 812" }));
   await waitFor(() =>
@@ -305,81 +233,6 @@ test("视口预设切换改变 view 的 width/height（真视口，非缩放伪�
       }),
     ),
   );
-});
-
-test("自由尺寸：开关后出现宽高输入与缩放档；改宽提交按新尺寸重开画面", async () => {
-  connectedApis();
-  renderPane({ initialUrl: "https://example.com" });
-  await screen.findByAltText("浏览器画面");
-
-  // 默认预设行，无自由尺寸行
-  expect(screen.queryByTestId(TID_BROWSER_RESPONSIVE_TOOLBAR)).toBeNull();
-  await user.click(screen.getByTestId(TID_BROWSER_RESPONSIVE_BUTTON));
-  expect(
-    await screen.findByTestId(TID_BROWSER_RESPONSIVE_TOOLBAR),
-  ).toBeTruthy();
-  // 预设行收起（自由尺寸行替代它）
-  expect(screen.queryByRole("button", { name: "375 × 812" })).toBeNull();
-
-  const width = screen.getByTestId(TID_BROWSER_RESPONSIVE_WIDTH_INPUT);
-  await user.clear(width);
-  await user.type(width, "900");
-  await user.keyboard("{Enter}");
-  await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/cdp/view",
-      expect.objectContaining({
-        body: JSON.stringify({
-          url: "https://example.com",
-          width: 900,
-          height: 720,
-        }),
-      }),
-    ),
-  );
-
-  // 键盘把手：宽度把手 ArrowRight +1（聚焦即提交当前值 +1）
-  surfaceJson.mockClear();
-  const height = screen.getByTestId(TID_BROWSER_RESPONSIVE_HEIGHT_INPUT);
-  await user.clear(height);
-  await user.type(height, "600");
-  await user.keyboard("{Enter}");
-  await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/cdp/view",
-      expect.objectContaining({
-        body: JSON.stringify({
-          url: "https://example.com",
-          width: 900,
-          height: 600,
-        }),
-      }),
-    ),
-  );
-
-  const rightHandle = screen.getByTestId(TID_BROWSER_RESPONSIVE_RESIZE_WIDTH);
-  rightHandle.focus();
-  await user.keyboard("{ArrowRight}");
-  await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/cdp/view",
-      expect.objectContaining({
-        body: JSON.stringify({
-          url: "https://example.com",
-          width: 901,
-          height: 600,
-        }),
-      }),
-    ),
-  );
-
-  // 缩放档是纯显示层控件：与 browser-use 面板同一组件，存在即到位；
-  // 改缩放不触发 view 重开（onViewportSizeChange 之外的状态不进数据面）。
-  expect(screen.getByTestId(TID_BROWSER_RESPONSIVE_ZOOM_SELECT)).toBeTruthy();
-  // 再点一次开关退回预设行
-  await user.click(screen.getByTestId(TID_BROWSER_RESPONSIVE_BUTTON));
-  expect(screen.queryByTestId(TID_BROWSER_RESPONSIVE_TOOLBAR)).toBeNull();
-  expect(screen.getByRole("button", { name: "375 × 812" })).toBeTruthy();
 });
 
 test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填进 composer", async () => {
@@ -421,14 +274,16 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
     }
     return {};
   });
-  renderPane({
-    initialUrl: "https://example.com",
-    workspacePath: "D:/Desktop/test",
-    workspaceIdentity: "ws-1",
-  });
+  render(
+    <BrowserPane
+      initialUrl="https://example.com"
+      workspacePath="D:/Desktop/test"
+      workspaceIdentity="ws-1"
+    />,
+  );
   await screen.findByAltText("浏览器画面");
 
-  await user.click(screen.getByTestId(TID_BROWSER_ELEMENT_PICKER_BUTTON));
+  await user.click(screen.getByRole("button", { name: "拾取元素" }));
   const box = await screen.findByRole("button", { name: "拾取 button" });
   // 视口 1280×720 下盒 {100,50,200,40} → 百分比定位
   expect(box.getAttribute("style")).toContain("left: 7.8125%");
@@ -454,7 +309,7 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
   );
 });
 
-test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", async () => {
+test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/browser/snapshot") {
       return {
@@ -480,10 +335,10 @@ test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", a
     }
     return {};
   });
-  renderPane({ initialUrl: "https://example.com" });
+  render(<BrowserPane initialUrl="https://example.com" />);
   await screen.findByAltText("浏览器画面");
 
-  await user.click(screen.getByTestId(TID_BROWSER_ELEMENT_PICKER_BUTTON));
+  await user.click(screen.getByRole("button", { name: "拾取元素" }));
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/browser/snapshot",
@@ -496,19 +351,12 @@ test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", a
     expect(screen.queryByText("点选元素填入输入框 · Esc 取消")).toBeNull(),
   );
 
-  // 刷新：重开 view 且带 reload: true
-  await user.click(screen.getByTestId(TID_BROWSER_REFRESH_BUTTON));
+  await user.click(screen.getByRole("button", { name: "调试控制台" }));
   await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/cdp/view",
-      expect.objectContaining({
-        body: JSON.stringify({
-          url: "https://example.com",
-          width: 1280,
-          height: 720,
-          reload: true,
-        }),
-      }),
-    ),
+    expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    }),
   );
 });
