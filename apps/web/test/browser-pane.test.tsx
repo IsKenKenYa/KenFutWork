@@ -450,7 +450,7 @@ test("元素选择器：进入注入脚本+收控制台；点选读取结果填 
           viewport: { width: 1280, height: 720 },
           page: "https://example.com/",
         },
-        active: false,
+        active: true,
         error: null,
       };
     }
@@ -709,6 +709,103 @@ describe("元素选择器：退出必须两侧一起收（防僵尸选择器）"
       expect(surfaceJson).toHaveBeenCalledWith(
         "/api/browser/cdp/picker",
         expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
+      ),
+    );
+  });
+
+  test("打开调试工具：先退出拾取（对偶于进拾取收控制台）", async () => {
+    pickerApis();
+    await enterPicking();
+    openBrowserMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "打开调试工具" }),
+    );
+    // 注入前先收掉选择器（否则控制台悬浮窗盖在拾取高亮上，两套浮层打架）
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
+      ),
+    );
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+      }),
+    );
+    // 连点不重入：inflight 守卫下 console 注入（带 url 的那条）只发一次；
+    // 另一条 console 请求是进拾取的 action:close，不算注入
+    const injectCalls = surfaceJson.mock.calls.filter(
+      ([path, init]) =>
+        path === "/api/browser/cdp/console" &&
+        String(init?.body ?? "").includes('"url"'),
+    );
+    expect(injectCalls.length).toBeLessThanOrEqual(1);
+  });
+
+  test("页面选择器已死（read active:false）：面板同步退出，不留假拾取态", async () => {
+    pickerApis();
+    await enterPicking();
+    surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/api/browser/cdp/picker") {
+        const action = JSON.parse(String(init?.body)).action as string;
+        if (action === "start") return { ok: true };
+        if (action === "stop") return { ok: true };
+        return { picked: null, active: false, error: null };
+      }
+      if (path === "/api/browser/cdp/status") {
+        return { cdp: { status: "connected" } };
+      }
+      if (path === "/api/browser/cdp/view") {
+        return {
+          ticket: "ticket-1",
+          viewport: { width: 1280, height: 720, scale: 1 },
+        };
+      }
+      return {};
+    });
+    const stage = screen.getByRole("group", { name: "内嵌浏览器画面" });
+    fireEvent.mouseDown(stage, { clientX: 80, clientY: 60, button: 0 });
+    fireEvent.mouseUp(stage, { clientX: 80, clientY: 60, button: 0 });
+    // read 回 active:false → 退出拾取；再点按钮走 start（而不是 stop）
+    surfaceJson.mockClear();
+    pickerApis();
+    await user.click(
+      screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+    );
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "start" }) }),
+      ),
+    );
+    expect(requestComposerTextInsert).not.toHaveBeenCalled();
+  });
+
+  test("拾取中按 Esc：按键转发给页面，150ms 后探活（页面侧已收 → 面板同步退出）", async () => {
+    pickerApis();
+    await enterPicking();
+    // 直接对键盘收发用的透明 textarea 派发 Esc（真机等价：sink 是键事件的入口）
+    const sink = document.querySelector(
+      'textarea[aria-label="浏览器键盘输入"]',
+    ) as HTMLTextAreaElement | null;
+    expect(sink).toBeTruthy();
+    fireEvent.keyDown(sink as HTMLTextAreaElement, { key: "Escape" });
+    // ① Esc 作为按键转发给受控页面（页面侧选择器自行收起）
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/input",
+        expect.objectContaining({
+          body: expect.stringContaining('"Escape"'),
+        }),
+      ),
+    );
+    // ② 150ms 后面板探活：read（active:false → 同步退出假拾取态）
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "read" }) }),
       ),
     );
   });

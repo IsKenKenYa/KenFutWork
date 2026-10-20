@@ -156,13 +156,14 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
     expect(script).toContain("kfw-ball-right");
-    // 灵敏度/形态口径（用户 2026-10-20）：贴边藏 70%、悬停近全露；球 34px、
-    // 随页面风格的中性半透白（不是蓝色）、贴边透明度 0.45
-    expect(script).toContain("translateX(-70%)");
-    expect(script).toContain("translateX(-4%)");
-    expect(script).toContain("width:34px");
-    expect(script).toContain("rgba(255,255,255,.82)");
-    expect(script).toContain("opacity:.45");
+    // 灵敏度/形态口径（用户 2026-10-20）：贴边半藏 55%、悬停近全露；球 36px、
+    // 更浅的中性半透白、拖动自由跟手松手吸附
+    expect(script).toContain("translateX(-55%)");
+    expect(script).toContain("translateX(-6%)");
+    expect(script).toContain("width:36px");
+    expect(script).toContain("rgba(255,255,255,.6)");
+    expect(script).not.toContain("rgba(255,255,255,.82)");
+    expect(script).toContain("opacity:.9");
     // 悬浮球图标与「打开调试工具」菜单同款（lucide square-terminal 的三段路径）
     expect(script).toContain('<path d="m7 11 2-2-2-2"></path>');
     expect(script).toContain('<path d="M11 13h4"></path>');
@@ -172,9 +173,19 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("ns-resize");
     expect(script).toContain("--kfw-mh");
     expect(script).toContain("top:-7px;height:14px");
-    // 三按钮骑在顶边线上（top:-11px 半露窗外，用户图示口径）
+    // 一个页面只开一个：已初始化只 show 不再 init
+    expect(script).toContain("window.eruda._isInit");
+    // 三按钮在**窗外的梯形容器**里（body 级 fixed，脱离容器影子根与 overflow 裁剪）
     expect(script).toContain("kfw-btnbar");
-    expect(script).toContain("top:-11px");
+    expect(script).toContain("document.body.appendChild(btnbar)");
+    expect(script).toContain("clip-path:polygon");
+    expect(script).toContain("function syncBtnbar");
+    expect(script).toContain("rect.top - barH - 2");
+    // 自家 UI 标 data-kfw-ui：元素拾取器见标记即跳过（选择模式下按钮必须可点）
+    expect(script).toContain('setAttribute("data-kfw-ui"');
+    // 悬浮球：更浅的半透白 + 拖动自由跟手松手吸附
+    expect(script).toContain("rgba(255,255,255,.6)");
+    expect(script).toContain("kfw-ball-drag");
     expect(script).toContain("最小化为悬浮球");
     expect(script).toContain("最大化（贴底）");
   });

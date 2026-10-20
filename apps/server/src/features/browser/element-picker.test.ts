@@ -2,6 +2,7 @@ import vm from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import {
   ELEMENT_PICKER_READ_SCRIPT,
+  ELEMENT_PICKER_START_SCRIPT,
   parseElementPickerRead,
 } from "./element-picker.js";
 
@@ -59,6 +60,15 @@ describe("ELEMENT_PICKER_READ_SCRIPT（read 的求值契约）", () => {
     expect(parsed.picked).toBeNull();
     expect(parsed.active).toBe(true);
     expect(stopCalled).toBe(false);
+  });
+});
+
+describe("ELEMENT_PICKER_START_SCRIPT（拾取不拦自家浮层 UI）", () => {
+  it("data-kfw-ui 元素（调试控制台/按钮条/悬浮球）跳过拾取与高亮", () => {
+    // 根因：拾取的 document 捕获 mousedown 会把控制台按钮当元素拾取并
+    // preventDefault 吞掉点击——选择模式下按钮必须可点（真机踩过）。
+    expect(ELEMENT_PICKER_START_SCRIPT).toContain('closest("[data-kfw-ui]")');
+    expect(ELEMENT_PICKER_START_SCRIPT).toContain("isOurUi(event.target)");
   });
 });
 

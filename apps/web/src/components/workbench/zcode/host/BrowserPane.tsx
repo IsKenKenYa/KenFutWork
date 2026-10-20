@@ -471,6 +471,12 @@ export function BrowserPane({
         toast(result.error);
         return;
       }
+      // 页面侧选择器已经没了（Esc 被页面收掉 / 页面导航过）：面板同步退出，
+      // 别留在「按钮亮着但点击没反应」的假拾取态（真机踩过）。
+      if (!result.active) {
+        setPicking(false);
+        return;
+      }
       if (!result.picked) {
         // 点在了选择器自己的图层或空白处：保持选择模式，用户重试
         return;
@@ -541,8 +547,8 @@ export function BrowserPane({
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const now = Date.now();
-      // 拾取中节流降到 60ms：页面内高亮要跟手（非拾取 120ms 足够）
-      const throttle = pickingRef.current ? 60 : 120;
+      // 拾取中节流 40ms：页面内高亮要跟手（非拾取 120ms 足够；拖拽中不限流）
+      const throttle = pickingRef.current ? 40 : 120;
       if (!draggingRef.current && now - lastHoverRef.current < throttle) return;
       lastHoverRef.current = now;
       const point = pointFrom(event);
@@ -596,8 +602,15 @@ export function BrowserPane({
         code: event.code,
         modifiers: modifiersOf(event),
       });
+      // Esc 已转发给页面（页面选择器会自己收起）：稍后探活一次，
+      // 页面侧没了就把面板拾取态也收掉——否则按钮亮着但点击没反应（假拾取态）。
+      if (pickingRef.current && event.key === "Escape") {
+        window.setTimeout(() => {
+          void readPickedAndInsert();
+        }, 150);
+      }
     },
-    [send],
+    [readPickedAndInsert, send],
   );
 
   const handleInput = useCallback(
@@ -645,8 +658,14 @@ export function BrowserPane({
    * 打开调试工具（旧版口径）：Web 形态注入页面内控制台（Eruda 悬浮窗，
    * 可拖可关）。受控浏览器没连就先连上再注入——点一下就该能用，不摆假开关。
    */
+  /** 调试控制台注入在途标记：一个页面只开一个，菜单连点/双触发不重入。 */
+  const consoleInflightRef = useRef(false);
   const injectConsole = useCallback(async () => {
     const target = url || normalizeUrl(draft) || "about:blank";
+    // 控制台悬浮窗会盖住页面：在拾取先退出（与进拾取自动收控制台对偶）
+    if (pickingRef.current) stopPicking();
+    if (consoleInflightRef.current) return;
+    consoleInflightRef.current = true;
     try {
       const status = await surfaceJson<{ cdp: CdpStatus }>(
         "/api/browser/cdp/status",
@@ -676,8 +695,10 @@ export function BrowserPane({
       toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
     } catch (error) {
       toast(error instanceof Error ? error.message : "打开调试工具失败。");
+    } finally {
+      consoleInflightRef.current = false;
     }
-  }, [draft, url]);
+  }, [draft, stopPicking, url]);
 
   const openInSystemBrowser = useCallback(() => {
     if (url) window.open(url, "_blank", "noopener");

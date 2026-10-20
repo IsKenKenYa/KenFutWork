@@ -12,6 +12,8 @@ import { CdpError } from "./cdp-client.js";
  * 脚本由 `Runtime.evaluate` 整段注入（与 debug-console 同一结论：插 script 标签会把成败
  * 交给页面的 CSP 与网络，直投运行代码没有那类失败）。交互约定：
  * - `mousemove`（capture）：`elementFromPoint` → 画高亮框 + 标签（tag#id.class + 尺寸）；
+ * - **自家浮层 UI 不拦**：标了 `data-kfw-ui` 的元素（调试控制台/按钮条/悬浮球，见
+ *   debug-console 的 FLOAT_SCRIPT）跳过拾取与高亮——选择模式下还要能点控制台按钮；
  * - `mousedown`（capture，preventDefault + stopPropagation）：记录元素到
  *   `window.__kfwPickedElement` 并收起高亮——页面不会真的被点下去；
  * - 点选后同一次手势的 `mouseup`/`click`（capture）一并拦截：浏览器会为「按下→抬起」
@@ -52,6 +54,15 @@ export const ELEMENT_PICKER_START_SCRIPT = `
       return node === overlay || node === label || node === tip;
     }
 
+    // 自家浮层 UI（调试控制台/按钮条/悬浮球，标 data-kfw-ui）：拾取不拦它们的事件、
+    // 高亮跳过它们——否则选择模式下点控制台按钮会被当元素拾取且 preventDefault 吞掉点击
+    // （真机踩过：按钮点不动、退出逻辑「坏了」全是这个根因）。
+    function isOurUi(node) {
+      if (!node || node.nodeType !== 1) return false;
+      if (node.hasAttribute && node.hasAttribute("data-kfw-ui")) return true;
+      return !!(node.closest && node.closest("[data-kfw-ui]"));
+    }
+
     function describe(el) {
       var tag = el.tagName ? el.tagName.toLowerCase() : "node";
       var hint = tag;
@@ -77,7 +88,7 @@ export const ELEMENT_PICKER_START_SCRIPT = `
     function onMove(event) {
       if (picked) return;
       var el = document.elementFromPoint(event.clientX, event.clientY);
-      if (!el || isOwn(el)) {
+      if (!el || isOwn(el) || isOurUi(el)) {
         overlay.style.display = "none";
         label.style.display = "none";
         return;
@@ -121,8 +132,9 @@ export const ELEMENT_PICKER_START_SCRIPT = `
 
     function onDown(event) {
       if (event.button !== 0) return;
+      if (isOurUi(event.target)) return;
       var el = document.elementFromPoint(event.clientX, event.clientY);
-      if (!el || isOwn(el)) return;
+      if (!el || isOwn(el) || isOurUi(el)) return;
       event.preventDefault();
       event.stopPropagation();
       window.__kfwPickedElement = describe(el);
