@@ -27,3 +27,24 @@ test("ResizeObserver 只观察容器，不观察随字号变化的测量节点",
   expect(source).toContain("observer.observe(container)");
   expect(source).not.toContain("observer.observe(measurement)");
 });
+
+/**
+ * 只按文字宽判「放得下」会让整行（图标 + 间距 + 文字）顶出内容区：
+ * 实测 456px 内容区里塞进 40 + 12 + 423 = 475px，左右各溢出 9.5px——
+ * 左边吃掉 padding 看着贴边，右边因滚动条留白显得更宽，用户读作「没居中」。
+ */
+test("可用宽度扣掉了图标与间距，不只看文字", () => {
+  const measure = source.slice(
+    source.indexOf("const measure = () =>"),
+    source.indexOf("const scheduleMeasure"),
+  );
+  expect(measure).toContain("GREETING_ICON_MAX_PX");
+  expect(measure).toContain("rowGapPx");
+  expect(measure).toContain("horizontalPaddingPx -");
+});
+
+test("标题图标随字号等比缩放，不是死尺寸", () => {
+  expect(source).toContain("const greetingIconPx = Math.round(");
+  expect(source).toContain("GREETING_ICON_MAX_PX * greetingFontSizePx");
+  expect(source).not.toContain("size-10 shrink-0");
+});

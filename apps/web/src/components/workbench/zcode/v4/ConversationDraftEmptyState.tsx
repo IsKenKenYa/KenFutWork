@@ -25,6 +25,8 @@ import {
 const GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23] as const;
 const GREETING_MIN_FONT_SIZE_PX = 20;
 const GREETING_MAX_FONT_SIZE_PX = 36;
+/** 标题左侧图标在字号上限时的边长（原 `size-10`）；随字号等比缩放，不单独定尺寸。 */
+const GREETING_ICON_MAX_PX = 40;
 
 type ChatEmptyGreetingMessageId =
   | "chat.empty.greeting.morningEarly"
@@ -114,12 +116,18 @@ export function ConversationDraftEmptyState({
     GREETING_MAX_FONT_SIZE_PX,
   );
   const greetingContainerRef = useRef<HTMLParagraphElement | null>(null);
+  const greetingRowRef = useRef<HTMLDivElement | null>(null);
   const greetingMeasurementRef = useRef<HTMLSpanElement | null>(null);
   const greeting = intl.formatMessage({
     id: isOfficeMode
       ? "chat.empty.greeting.office"
       : getChatEmptyGreetingMessageId(greetingDate),
   });
+  // 图标跟着标题字号等比缩放：字号缩到 20px 时图标仍是 40px 会显得头重脚轻，
+  // 也是用户说的「画板不跟着变小」。
+  const greetingIconPx = Math.round(
+    (GREETING_ICON_MAX_PX * greetingFontSizePx) / GREETING_MAX_FONT_SIZE_PX,
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -145,9 +153,18 @@ export function ConversationDraftEmptyState({
       const horizontalPaddingPx =
         Number.parseFloat(containerStyle.paddingLeft) +
         Number.parseFloat(containerStyle.paddingRight);
+      const row = greetingRowRef.current;
+      const rowGapPx = row
+        ? Number.parseFloat(window.getComputedStyle(row).columnGap) || 0
+        : 0;
+      // 可用宽必须扣掉「图标 + 间距」：只按文字宽判会以为放得下，实际整行
+      // 顶出内容区，左边吃掉 padding、右边剩下滚动条留白——看起来就是没居中。
       const availableWidthPx = Math.max(
         0,
-        container.getBoundingClientRect().width - horizontalPaddingPx,
+        container.getBoundingClientRect().width -
+          horizontalPaddingPx -
+          GREETING_ICON_MAX_PX -
+          rowGapPx,
       );
       const naturalTextWidthPx = measurement.getBoundingClientRect().width;
       const nextFontSizePx = resolveGreetingFontSizePx({
@@ -298,11 +315,22 @@ export function ConversationDraftEmptyState({
       >
         {/* 用户口径：空态用命名式标题（「Code / Design with KenFutWork」，font-wordmark +
             tracking-tight），时间问候语降为次行小字；Design 视图下换 Design 名号与调色板图标。 */}
-        <div className="flex items-center justify-center gap-3">
+        <div
+          ref={greetingRowRef}
+          className="flex items-center justify-center gap-3"
+        >
           {designHero ? (
-            <Palette className="size-10 shrink-0" strokeWidth={3} />
+            <Palette
+              className="shrink-0"
+              strokeWidth={3}
+              style={{ width: greetingIconPx, height: greetingIconPx }}
+            />
           ) : (
-            <Code2 className="size-10 shrink-0" strokeWidth={3} />
+            <Code2
+              className="shrink-0"
+              strokeWidth={3}
+              style={{ width: greetingIconPx, height: greetingIconPx }}
+            />
           )}
           <p
             style={
