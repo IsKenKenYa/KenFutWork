@@ -85,4 +85,44 @@ describe("createOpenDesignTools", () => {
       byName(tools, "open_design_projects").execute!({}, {} as never),
     ).rejects.toThrow(/OpenDesign 不可达/);
   });
+
+  it("建项目：按上游契约带客户端生成的 id 与 pendingPrompt", async () => {
+    const fetchImpl = respond({
+      project: { id: "created-id", name: "订单仪表盘" },
+    });
+    const tools = createOpenDesignTools({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl,
+    });
+    const result = (await byName(
+      tools,
+      "open_design_create_project",
+    ).execute!(
+      { name: "订单仪表盘", prompt: "做一个订单跟踪仪表盘原型" },
+      {} as never,
+    )) as { structuredContent: { projectId: string; name: string } };
+    expect(result.structuredContent).toEqual({
+      projectId: "created-id",
+      name: "订单仪表盘",
+    });
+    const [, init] = (fetchImpl as unknown as { mock: { calls: unknown[][] } })
+      .mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(String(init.body));
+    expect(body.name).toBe("订单仪表盘");
+    expect(body.pendingPrompt).toBe("做一个订单跟踪仪表盘原型");
+    expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("建项目：缺 name 时不发请求", async () => {
+    const fetchImpl = respond({});
+    const tools = createOpenDesignTools({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl,
+    });
+    await expect(
+      byName(tools, "open_design_create_project").execute!({}, {} as never),
+    ).rejects.toThrow(/缺少 name/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

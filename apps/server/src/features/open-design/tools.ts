@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ToolDefinition } from "../../kernel/types.js";
 
 /** 与宿主探活同一档超时：这是外部服务，不能把 run 挂死。 */
@@ -38,11 +39,18 @@ export function createOpenDesignTools(input: {
   async function requestJson<T>(
     path: string,
     what: string,
+    init?: { method?: string; body?: unknown },
   ): Promise<T> {
     let response: Response;
     try {
       response = await fetchImpl(`${baseUrl}${path}`, {
-        method: "GET",
+        method: init?.method ?? "GET",
+        ...(init?.body === undefined
+          ? {}
+          : {
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(init.body),
+            }),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
@@ -134,6 +142,54 @@ export function createOpenDesignTools(input: {
             },
           ],
           structuredContent: { projectId, files },
+        };
+      },
+    },
+    {
+      name: "open_design_create_project",
+      // 会落盘并可能触发上游设计 agent：进默认档审批。
+      access: "write",
+      scope: "shared",
+      description:
+        "在 OpenDesign 里新建一个设计项目。prompt 写清要做什么（例如「做一个订单跟踪仪表盘原型」）。返回 projectId；之后用 open_design_project_files 查看生成的设计文件。",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "项目名（可读、简短）" },
+          prompt: {
+            type: "string",
+            description: "给设计 agent 的需求描述",
+          },
+        },
+        required: ["name"],
+      },
+      execute: async (args) => {
+        const name = String(args?.name ?? "").trim();
+        if (!name) throw new Error("缺少 name：给项目起一个可读的名字。");
+        const prompt = String(args?.prompt ?? "").trim();
+        // 上游要求客户端生成 id（`isSafeId`），并据此建目录。
+        const id = randomUUID();
+        const data = await requestJson<{
+          project?: { id?: string; name?: string };
+        }>("/api/projects", "创建 OpenDesign 项目", {
+          method: "POST",
+          body: {
+            id,
+            name,
+            ...(prompt ? { pendingPrompt: prompt } : {}),
+          },
+        });
+        const projectId = data?.project?.id ?? id;
+        if (!projectId)
+          throw new Error("创建 OpenDesign 项目失败：上游未返回项目 id");
+        return {
+          content: [
+            {
+              type: "text",
+              text: `已创建 OpenDesign 项目「${data?.project?.name ?? name}」（${projectId}）。`,
+            },
+          ],
+          structuredContent: { projectId, name: data?.project?.name ?? name },
         };
       },
     },
