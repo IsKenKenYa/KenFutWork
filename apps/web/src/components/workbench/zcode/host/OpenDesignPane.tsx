@@ -56,6 +56,30 @@ export function OpenDesignPane() {
     };
   }, []);
 
+  /**
+   * 上游就绪状态：没有可用 agent CLI 时，项目页会退到「模型与提供商」。
+   * 这条探针让面板自己说明原因，而不是让用户对着上游设置页猜。
+   */
+  const [readiness, setReadiness] = useState<{
+    reachable: boolean;
+    agentAvailable: boolean;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void surfaceJson<{ reachable: boolean; agentAvailable: boolean }>(
+      "/api/open-design/host/readiness",
+    )
+      .then((value) => {
+        if (!cancelled) setReadiness(value);
+      })
+      .catch(() => {
+        // 探针失败不挡面板
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const allowedOrigin = entry?.available
     ? new URL(entry.frontendUrl).origin
     : null;
@@ -124,31 +148,42 @@ export function OpenDesignPane() {
     <div
       data-testid="open-design-pane"
       data-od-handshake={handshake}
-      className="relative h-full w-full bg-background"
+      className="flex h-full w-full flex-col bg-background"
     >
-      <iframe
-        ref={frameRef}
-        src={
-          projectId
-            ? `${entry.frontendUrl.replace(/\/$/u, "")}/projects/${encodeURIComponent(projectId)}`
-            : entry.frontendUrl
-        }
-        title="OpenDesign"
-        className={`h-full w-full border-0 transition-opacity duration-300 ${
-          frameLoaded ? "opacity-100" : "opacity-0"
-        }`}
-        onLoad={() => setFrameLoaded(true)}
-        allow="clipboard-read; clipboard-write; fullscreen"
-      />
-      {!frameLoaded ? (
+      {readiness?.reachable && !readiness.agentAvailable ? (
         <div
           role="status"
-          className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-background"
+          data-testid="open-design-readiness"
+          className="shrink-0 border-b border-border px-3 py-2 text-ui-caption text-foreground-subtle"
         >
-          <ZCodeStartupLogoBadge />
-          <ZCodeStartupSpinner />
+          没有可用的设计引擎
         </div>
       ) : null}
+      <div className="relative min-h-0 flex-1">
+        <iframe
+          ref={frameRef}
+          src={
+            projectId
+              ? `${entry.frontendUrl.replace(/\/$/u, "")}/projects/${encodeURIComponent(projectId)}`
+              : entry.frontendUrl
+          }
+          title="OpenDesign"
+          className={`h-full w-full border-0 transition-opacity duration-300 ${
+            frameLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          onLoad={() => setFrameLoaded(true)}
+          allow="clipboard-read; clipboard-write; fullscreen"
+        />
+        {!frameLoaded ? (
+          <div
+            role="status"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-5 bg-background"
+          >
+            <ZCodeStartupLogoBadge />
+            <ZCodeStartupSpinner />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

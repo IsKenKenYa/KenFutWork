@@ -9,12 +9,18 @@ import { afterEach, expect, test, vi } from "vitest";
 
 const entryRef = { current: null as unknown };
 const lastProjectRef = { current: null as { projectId: string; name: string } | null };
+const readinessRef = {
+  current: { reachable: true, agentAvailable: true },
+};
 
 vi.mock("../src/components/workbench/zcode/host/openDesignHost.js", () => ({
   useOpenDesignEntry: () => entryRef.current,
 }));
 vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
-  surfaceJson: async () => ({ project: lastProjectRef.current }),
+  surfaceJson: async (path: string) =>
+    String(path).includes("readiness")
+      ? readinessRef.current
+      : { project: lastProjectRef.current },
 }));
 
 const { OpenDesignPane } = await import(
@@ -27,6 +33,7 @@ afterEach(() => {
   cleanup();
   entryRef.current = null;
   lastProjectRef.current = null;
+  readinessRef.current = { reachable: true, agentAvailable: true };
 });
 
 async function mount(available = true) {
@@ -100,4 +107,12 @@ test("没有最近项目时退回上游首页（首次使用仍能创建）", as
   await mount();
   const frame = screen.getByTitle("OpenDesign");
   expect(frame.getAttribute("src")).toBe(ORIGIN);
+});
+
+test("上游没有可用设计引擎时，面板说明原因而不是让人对着设置页猜", async () => {
+  readinessRef.current = { reachable: true, agentAvailable: false };
+  await mount();
+  expect(
+    screen.getByTestId("open-design-readiness").textContent,
+  ).toContain("没有可用的设计引擎");
 });

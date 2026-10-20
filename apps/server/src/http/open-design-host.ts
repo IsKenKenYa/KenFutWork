@@ -97,6 +97,60 @@ export async function registerOpenDesignHostRoutes(
     );
   });
 
+  /**
+   * 就绪探针：上游有没有可用的设计引擎（agent CLI）。
+   *
+   * 没有可用 CLI 时 `agentId` 只能是 null，项目页会退到「模型与提供商」——
+   * 面板据此说明原因，而不是让用户对着上游设置页猜「为什么没有画布」。
+   */
+  app.get("/api/open-design/host/readiness", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = options.frontendUrl?.trim().replace(/\/+$/u, "") ?? "";
+    if (!base)
+      return reply.send({
+        reachable: false,
+        agentAvailable: false,
+        agentId: null,
+        onboardingCompleted: false,
+      });
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const timeout = AbortSignal.timeout(OPEN_DESIGN_PROBE_TIMEOUT_MS);
+    try {
+      const [agentsResponse, configResponse] = await Promise.all([
+        fetchImpl(`${base}/api/agents`, { signal: timeout }),
+        fetchImpl(`${base}/api/app-config`, { signal: timeout }),
+      ]);
+      if (!agentsResponse.ok || !configResponse.ok)
+        return reply.send({
+          reachable: false,
+          agentAvailable: false,
+          agentId: null,
+          onboardingCompleted: false,
+        });
+      const agents = (await agentsResponse.json()) as {
+        agents?: Array<{ available?: boolean }>;
+      };
+      const config = (await configResponse.json()) as {
+        config?: { agentId?: string | null; onboardingCompleted?: boolean };
+      };
+      const list = agents.agents ?? [];
+      return reply.send({
+        reachable: true,
+        agentAvailable: list.some((agent) => agent.available === true),
+        agentId: config.config?.agentId ?? null,
+        onboardingCompleted: config.config?.onboardingCompleted === true,
+      });
+    } catch {
+      return reply.send({
+        reachable: false,
+        agentAvailable: false,
+        agentId: null,
+        onboardingCompleted: false,
+      });
+    }
+  });
+
   if (options.dataDir) {
     const dataDir = options.dataDir;
     // 右侧面板读「最近创建的项目」，据此把 iframe 定位到 /projects/<id>。
