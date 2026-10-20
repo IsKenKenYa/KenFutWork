@@ -153,18 +153,28 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 重新打开要放回来（幂等分支里），并从任何状态回到悬浮窗
     expect(script).toContain('removeProperty("display")');
     expect(script).toContain("__kfwConsoleRestore");
-    // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原
+    // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
     expect(script).toContain("kfw-ball-right");
+    // 灵敏度/形态口径（用户 2026-10-20）：贴边藏 70%、悬停近全露；球 34px、
+    // 随页面风格的中性半透白（不是蓝色）、贴边透明度 0.45
+    expect(script).toContain("translateX(-70%)");
+    expect(script).toContain("translateX(-4%)");
+    expect(script).toContain("width:34px");
+    expect(script).toContain("rgba(255,255,255,.82)");
+    expect(script).toContain("opacity:.45");
     // 悬浮球图标与「打开调试工具」菜单同款（lucide square-terminal 的三段路径）
     expect(script).toContain('<path d="m7 11 2-2-2-2"></path>');
     expect(script).toContain('<path d="M11 13h4"></path>');
-    // 最大化 = 贴底全宽遮罩，上边线 ns-resize（上下箭头）拖高度（--kfw-mh）
+    // 最大化 = 贴底全宽遮罩，上边线 ns-resize（上下箭头）拖高度（--kfw-mh）；
+    // 拖标签栏 = 拿走（按当前几何转悬浮）
     expect(script).toContain("kfw-max");
     expect(script).toContain("ns-resize");
     expect(script).toContain("--kfw-mh");
-    // 三按钮（最小化/最大化/关闭）悬浮与最大化两态都在右上角
+    expect(script).toContain("top:-7px;height:14px");
+    // 三按钮骑在顶边线上（top:-11px 半露窗外，用户图示口径）
     expect(script).toContain("kfw-btnbar");
+    expect(script).toContain("top:-11px");
     expect(script).toContain("最小化为悬浮球");
     expect(script).toContain("最大化（贴底）");
   });

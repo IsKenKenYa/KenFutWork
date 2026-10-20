@@ -110,27 +110,32 @@ const FLOAT_SCRIPT = `
     // 同时让可见的标签栏正好落在拖动条里。
     ".eruda-dev-tools{top:0!important;height:100%!important;pointer-events:auto!important}" +
     ".eruda-entry-btn{display:none!important}" +
-    // 右上角三按钮（悬浮/最大化两态都显示；最大化时即面板右上=屏幕右上）
-    ".kfw-btnbar{position:absolute;right:2px;top:2px;z-index:2147483647;display:flex;gap:2px}" +
+    // 右上角三按钮：**骑在顶边线上**（半露窗外，不占内部空间——用户图示口径）
+    ".kfw-btnbar{position:absolute;right:4px;top:-11px;z-index:2147483647;display:flex;gap:2px}" +
     ".kfw-btn{width:20px;height:20px;line-height:18px;font-size:13px;font-family:system-ui,sans-serif;" +
     "border:1px solid rgba(0,0,0,.15);border-radius:4px;background:#fff;color:#333;cursor:pointer;padding:0}" +
     ".kfw-btn:hover{background:#eee}" +
-    // 最大化态的上边线：上下箭头光标 + 拖拽改高度
-    ".kfw-edge{position:absolute;left:0;right:0;top:-4px;height:8px;cursor:ns-resize;" +
+    // 最大化态的上边线：上下箭头光标 + 拖拽改高度（热区 14px，灵敏度优先）
+    ".kfw-edge{position:absolute;left:0;right:0;top:-7px;height:14px;cursor:ns-resize;" +
     "z-index:2147483647;display:none}" +
     ".eruda-container.kfw-max .kfw-edge{display:block}" +
-    // 悬浮态右下角缩放手柄（最大化态藏起，改由上边线管高度）
-    ".kfw-corner{position:absolute;right:0;bottom:0;z-index:2147483647;width:14px;height:14px;" +
+    // 悬浮态右下角缩放手柄（热区 18px；最大化态藏起）
+    ".kfw-corner{position:absolute;right:0;bottom:0;z-index:2147483647;width:18px;height:18px;" +
     "cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,#999 45%,#999 55%,transparent 55%)}" +
     ".eruda-container.kfw-max .kfw-corner{display:none}" +
-    // 悬浮球：贴边半藏（默认露出不到一半，悬停滑出），点击还原
-    ".kfw-ball{position:fixed;z-index:2147483647;width:44px;height:44px;border-radius:50%;" +
-    "background:#1a73e8;color:#fff;display:none;align-items:center;justify-content:center;" +
-    "box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:pointer;transition:transform .18s ease}" +
-    ".kfw-ball-left{left:0;transform:translateX(-58%)}" +
-    ".kfw-ball-right{right:0;transform:translateX(58%)}" +
-    ".kfw-ball-left:hover{transform:translateX(-16%)}" +
-    ".kfw-ball-right:hover{transform:translateX(16%)}";
+    // 悬浮球：小号（34px）、随页面风格的中性半透白 + 毛玻璃（不是蓝色）、
+    // 贴边半藏 70%（贴边透明度大），悬停近全露出 + 不透明；可拖动换边换高度
+    ".kfw-ball{position:fixed;z-index:2147483647;width:34px;height:34px;border-radius:50%;" +
+    "background:rgba(255,255,255,.82);color:#333;border:1px solid rgba(0,0,0,.18);" +
+    "backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);" +
+    "display:none;align-items:center;justify-content:center;opacity:.45;" +
+    "box-shadow:0 3px 10px rgba(0,0,0,.25);cursor:grab;transition:transform .16s ease,opacity .16s ease}" +
+    ".kfw-ball:hover{opacity:1}" +
+    ".kfw-ball svg{width:17px;height:17px}" +
+    ".kfw-ball-left{left:0;transform:translateX(-70%)}" +
+    ".kfw-ball-right{right:0;transform:translateX(70%)}" +
+    ".kfw-ball-left:hover{transform:translateX(-4%)}" +
+    ".kfw-ball-right:hover{transform:translateX(4%)}";
   (root.head || root).appendChild(style);
   // 悬浮球挂在与样式同一个 root（样式进影子根的话，挂 document.body 会丢样式）
   var hostRoot = root === document ? document.body : root;
@@ -158,10 +163,10 @@ const FLOAT_SCRIPT = `
   // 悬浮球（图标与「打开调试工具」菜单同款：lucide square-terminal）
   var ball = document.createElement("div");
   ball.className = "kfw-ball";
-  ball.title = "调试控制台";
+  ball.title = "调试控制台：点击还原，拖动换位置";
   ball.setAttribute("aria-label", "还原调试控制台");
   ball.innerHTML =
-    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" ' +
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="m7 11 2-2-2-2"></path><path d="M11 13h4"></path>' +
     '<rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>';
@@ -193,8 +198,8 @@ const FLOAT_SCRIPT = `
     var side =
       rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right";
     var top = Math.min(
-      Math.max(rect.top + rect.height / 2 - 22, 60),
-      window.innerHeight - 104,
+      Math.max(rect.top + rect.height / 2 - 17, 60),
+      window.innerHeight - 94,
     );
     ball.className =
       "kfw-ball " + (side === "left" ? "kfw-ball-left" : "kfw-ball-right");
@@ -220,9 +225,43 @@ const FLOAT_SCRIPT = `
     ball.style.display = "none";
     if (window.__kfwFloatingClose) window.__kfwFloatingClose();
   };
-  ball.onclick = function () {
-    applyFloat();
-  };
+
+  // 悬浮球：点击还原，**拖动换位置**（位移超 5px 算拖动，松手不还原）
+  var ballDrag = null;
+  ball.addEventListener("mousedown", function (event) {
+    event.preventDefault();
+    ballDrag = {
+      x: event.clientX,
+      y: event.clientY,
+      top: parseFloat(ball.style.top) || ball.getBoundingClientRect().top,
+      moved: false,
+    };
+  });
+  window.addEventListener("mousemove", function (event) {
+    if (!ballDrag) return;
+    var dy = event.clientY - ballDrag.y;
+    var dx = event.clientX - ballDrag.x;
+    if (!ballDrag.moved && Math.abs(dx) * Math.abs(dx) + dy * dy < 25) return;
+    ballDrag.moved = true;
+    var half = 17;
+    var top = Math.min(
+      Math.max(ballDrag.top + dy, 60),
+      window.innerHeight - 94,
+    );
+    ball.style.top = Math.round(top) + "px";
+    // 拖过中线换贴边侧
+    var side =
+      event.clientX < window.innerWidth / 2 ? "left" : "right";
+    var want =
+      "kfw-ball " + (side === "left" ? "kfw-ball-left" : "kfw-ball-right");
+    if (ball.className !== want) ball.className = want;
+  });
+  window.addEventListener("mouseup", function () {
+    if (!ballDrag) return;
+    var moved = ballDrag.moved;
+    ballDrag = null;
+    if (!moved) applyFloat();
+  });
   window.__kfwConsoleRestore = applyFloat;
 
   // 悬浮态右下角缩放手柄：改 CSS 变量（容器宽高由它驱动），夹在可用范围内
@@ -280,12 +319,12 @@ const FLOAT_SCRIPT = `
   });
   container.appendChild(edge);
 
-  // 悬浮态拖动：只认顶部那一条（标签栏），按钮/手柄不触发；下面的正文照常交互
+  // 拖动（两态通用）：只认顶部那一条（标签栏），按钮/角柄/边线不触发；下面的正文照常交互。
+  // 最大化态拖标签栏 = **拿走**：按当前最大化尺寸转成悬浮窗（left/top 跟手），贴底锁解除。
   var dragging = null;
   container.addEventListener(
     "mousedown",
     function (event) {
-      if (event.target === closeBtn) return;
       var t = event.target;
       if (
         t &&
@@ -296,6 +335,20 @@ const FLOAT_SCRIPT = `
       var box = container.getBoundingClientRect();
       // 40px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶）
       if (event.clientY - box.top > 40) return;
+      if (container.classList.contains("kfw-max")) {
+        // 拿走：以当前几何转悬浮（宽高冻结成变量，边距取现值）
+        container.style.setProperty(
+          "--kfw-w",
+          Math.round(box.width) + "px",
+        );
+        container.style.setProperty(
+          "--kfw-h",
+          Math.round(box.height) + "px",
+        );
+        container.classList.remove("kfw-max");
+        container.classList.add("kfw-float");
+        maxBtn.title = "最大化（贴底）";
+      }
       dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
       event.preventDefault();
     },
