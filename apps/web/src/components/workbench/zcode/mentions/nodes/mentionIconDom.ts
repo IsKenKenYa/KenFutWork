@@ -44,6 +44,24 @@ export const WHITEBOARD_MENTION_ICON_NODE = [
   ["path", { d: "M14.5 9h.01" }],
   ["path", { d: "M17 12h.01" }],
 ] as const satisfies MentionLucideIconNode;
+// KenFutWork 宿主档（G1/Q5）：lucide square-dashed-mouse-pointer，与浏览器面板拾取按钮同款。
+export const BROWSER_MENTION_ICON_NODE = [
+  [
+    "path",
+    {
+      d: "M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z",
+    },
+  ],
+  ["path", { d: "M5 3a2 2 0 0 0-2 2" }],
+  ["path", { d: "M19 3a2 2 0 0 1 2 2" }],
+  ["path", { d: "M5 21a2 2 0 0 1-2-2" }],
+  ["path", { d: "M9 3h1" }],
+  ["path", { d: "M9 21h2" }],
+  ["path", { d: "M14 3h1" }],
+  ["path", { d: "M3 9v1" }],
+  ["path", { d: "M21 9v2" }],
+  ["path", { d: "M3 14v1" }],
+] as const satisfies MentionLucideIconNode;
 export const GOAL_COMMAND_MENTION_ICON_NODE = [
   ["path", { d: "M12 13V2l8 4-8 4" }],
   ["path", { d: "M20.561 10.222a9 9 0 1 1-12.55-5.29" }],
@@ -84,16 +102,28 @@ export const SESSION_MENTION_ICON_NODE = [
   ["path", { d: "M18 9h2a2 2 0 0 1 2 2v10l-4-4h-6a2 2 0 0 1-2-2v-1" }],
 ] as const satisfies MentionLucideIconNode;
 export const PLUGIN_MENTION_ICON_NODE = [
-  ["path", { d: "M17 19a1 1 0 0 1-1-1v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a1 1 0 0 1-1 1z" }],
+  [
+    "path",
+    {
+      d: "M17 19a1 1 0 0 1-1-1v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a1 1 0 0 1-1 1z",
+    },
+  ],
   ["path", { d: "M17 21v-2" }],
   ["path", { d: "M19 14V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V10" }],
   ["path", { d: "M21 21v-2" }],
   ["path", { d: "M3 5V3" }],
-  ["path", { d: "M4 10a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2a2 2 0 0 1-2 2z" }],
+  [
+    "path",
+    {
+      d: "M4 10a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2a2 2 0 0 1-2 2z",
+    },
+  ],
   ["path", { d: "M7 5V3" }],
 ] as const satisfies MentionLucideIconNode;
 
-export function createMentionSvgIcon(iconNode: MentionLucideIconNode): SVGSVGElement {
+export function createMentionSvgIcon(
+  iconNode: MentionLucideIconNode,
+): SVGSVGElement {
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", "16");

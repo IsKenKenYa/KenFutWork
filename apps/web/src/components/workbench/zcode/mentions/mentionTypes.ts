@@ -5,7 +5,10 @@ export type MentionCategory =
   | "subagents"
   | "whiteboards"
   | "sessions"
-  | "plugins";
+  | "plugins"
+  // KenFutWork 宿主档（G1/Q5）：右栏浏览器拾取的页面元素引用 chip；仅经外部插入
+  // 预填产生，不出现在 @ 搜索面板（registry 无此档 provider）。
+  | "browser";
 
 export interface MentionItemData {
   kind?: "file" | "directory" | "whiteboard";

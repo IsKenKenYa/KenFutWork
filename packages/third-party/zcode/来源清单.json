@@ -8113,7 +8113,8 @@
       "sha256": "b21d8834b0d74a79d71984f84c2bc1b61bbb487bea43427302378831732581f0",
       "copiedSha256": "b21d8834b0d74a79d71984f84c2bc1b61bbb487bea43427302378831732581f0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-20 KenFutWork 宿主偏差：MentionCategory 增 browser 档（G1/Q5 浏览器元素引用 chip，仅经外部插入预填产生，不进 @ 搜索面板）"
       ]
     },
     {
@@ -8131,7 +8132,8 @@
       "sha256": "e8bb5c239147719e40a757b7af9095d004f682309a0b950af66d7220fe30b187",
       "copiedSha256": "e8bb5c239147719e40a757b7af9095d004f682309a0b950af66d7220fe30b187",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-20 KenFutWork 宿主偏差：增 BROWSER_MENTION_ICON_NODE（lucide square-dashed-mouse-pointer path 数据，与拾取按钮同款）"
       ]
     },
     {
@@ -8140,7 +8142,8 @@
       "sha256": "041331e2ab5103caa47ebdbc9c2c4c84807b0dfbb9efd90d48e360696f6c3ef7",
       "copiedSha256": "2e2260dcd3e85bb6d2805890b267501403138d47b4874787ed0471f8da46e6a2",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-20 KenFutWork 宿主偏差：browser 档图标分支指向 BROWSER_MENTION_ICON_NODE"
       ]
     },
     {

@@ -592,27 +592,43 @@ export function BrowserPane({
     }
   }, [pick, url]);
 
-  /** Q5：点选元素 → 生成坐标引用 → 填进 composer（草稿态；与插件提及同语义）。 */
+  /**
+   * Q5：点选元素 → 生成坐标引用 → 填进 composer。缩略形态（用户口径）：composer 里
+   * 显示为可删的 browser 元素 chip（虚线鼠标图标 + `<a> Learn more`），发给模型的正文
+   * 是 chip 的 markdown——label 是元素、target 是 browser-element:// 链接，坐标/视口/
+   * 来源/定位提示都在 query 里，agent 可直接取 x/y 用 browser_act 点它。
+   */
   const insertElementReference = useCallback(
     (element: PickableElement) => {
       if (!element.box || !pick) return;
       const centerX = Math.round(element.box.x + element.box.width / 2);
       const centerY = Math.round(element.box.y + element.box.height / 2);
-      const label = element.text.trim();
-      const reference = [
-        `【页面元素】<${element.tag}>${label ? ` ${label}` : ""}`,
-        ` ｜ 定位提示：${element.hint.trim() || "无"}`,
-        ` ｜ 中心坐标：${centerX},${centerY}`,
-        ` ｜ 视口：${pick.viewport.width}×${pick.viewport.height}`,
-        ` ｜ 来自：${url}`,
-      ].join("");
+      const displayLabel = `<${element.tag}>${element.text.trim() ? ` ${element.text.trim()}` : ""}`;
+      const params = new URLSearchParams({
+        x: String(centerX),
+        y: String(centerY),
+        w: String(pick.viewport.width),
+        h: String(pick.viewport.height),
+        from: url,
+      });
+      const hint = element.hint.trim();
+      if (hint) params.set("hint", hint);
+      const target = `browser-element://pick?${params.toString()}`;
+      const markdown = `[${displayLabel.replace(/]/g, "\\]")}](${target})`;
       if (workspacePath) {
         useZCodeSessionStore
           .getState()
           .requestComposerTextInsert(
             workspacePath,
-            reference,
+            markdown,
             workspaceIdentity,
+            {
+              id: `browser-element:${Date.now()}`,
+              category: "browser",
+              label: markdown,
+              value: target,
+              markdown,
+            },
           );
         toast("元素引用已填入输入框");
       } else {
@@ -845,7 +861,7 @@ export function BrowserPane({
                             type="button"
                             aria-label={`拾取 ${element.tag}`}
                             title={element.text || element.hint || element.tag}
-                            className="absolute rounded-sm border border-primary/70 bg-primary/15 hover:border-primary hover:bg-primary/30"
+                            className="absolute rounded-sm border-2 border-primary bg-primary/25 shadow-[0_0_0_1px_rgb(0_0_0/0.05)] transition-colors hover:border-primary hover:bg-primary/45"
                             style={{
                               left: `${(element.box.x / pick.viewport.width) * 100}%`,
                               top: `${(element.box.y / pick.viewport.height) * 100}%`,

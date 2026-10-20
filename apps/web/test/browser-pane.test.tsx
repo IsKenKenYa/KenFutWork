@@ -409,11 +409,19 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
 
   // jsdom 无布局（矩形全零），叠框按钮用 fireEvent 直派 click（同一处理器）。
   fireEvent.click(box);
+  // 缩略形态：插入的是 browser 元素 chip 的 markdown（坐标/视口/来源进 target query）
   await waitFor(() =>
     expect(requestComposerTextInsert).toHaveBeenCalledWith(
       "D:/Desktop/test",
-      "【页面元素】<button> 提交订单 ｜ 定位提示：立即购买 ｜ 中心坐标：200,70 ｜ 视口：1280×720 ｜ 来自：https://example.com",
+      expect.stringContaining(
+        "[<button> 提交订单](browser-element://pick?x=200&y=70",
+      ),
       "ws-1",
+      expect.objectContaining({
+        category: "browser",
+        value: expect.stringContaining("from="),
+        markdown: expect.stringContaining("browser-element://pick?x=200"),
+      }),
     ),
   );
   await waitFor(() =>
