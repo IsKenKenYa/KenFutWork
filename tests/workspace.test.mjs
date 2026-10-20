@@ -1498,3 +1498,78 @@ test("explicit ZCode source mirrors retain CRLF compatibility and exact binary/t
   await f.save();
   assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单记录无效/);
 });
+
+test("contribution, CLA, and commercial-license documents are wired", async () => {
+  const required = [
+    "CONTRIBUTING.md",
+    "CLA.md",
+    "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "COMMERCIAL-LICENSING.md",
+    "COPYRIGHT.md",
+    "licenses/loomic-MIT.txt",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    ".github/ISSUE_TEMPLATE/feature_request.yml",
+    ".github/ISSUE_TEMPLATE/config.yml",
+    ".github/CODEOWNERS",
+  ];
+  for (const file of required) {
+    assert.ok(existsSync(path.join(rootDir, file)), `${file} 应存在`);
+  }
+
+  const readme = await readText("README.md");
+  for (const link of [
+    "CONTRIBUTING.md",
+    "CLA.md",
+    "COMMERCIAL-LICENSING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "COPYRIGHT.md",
+  ]) {
+    assert.match(
+      readme,
+      new RegExp(`\\]\\(${link.replaceAll(".", "\\.")}\\)`),
+      `README 应链接 ${link}`,
+    );
+  }
+
+  for (const script of ["scripts/package-mac.mjs", "scripts/package-win.mjs"]) {
+    const source = await readText(script);
+    assert.match(source, /COPYRIGHT\.md/);
+    assert.match(source, /licenses\/loomic-MIT\.txt/);
+  }
+
+  const eula = await readText("EULA.md");
+  assert.match(eula, /社区版/);
+  assert.match(eula, /商业版/);
+  assert.match(eula, /2026-10-20/);
+
+  const cla = await readText("CLA.md");
+  assert.match(cla, /1\.8 \*\*关联方\*\*/);
+  assert.match(cla, /本协议第 3–9、11、12 条（包括第 6 条陈述与保证）/);
+  assert.match(cla, /本协议不授予你对商业版的任何使用许可/);
+  assert.match(cla, /中英文不一致时以中文为准/);
+  assert.match(cla, /13\.1\.1 \*\*个人信息处理告知\*\*/);
+  assert.match(cla, /15\. 项目方签署与授权/);
+  assert.match(cla, /future73807 授权 IsKenKenYa/);
+
+  const privacy = await readText("PRIVACY.md");
+  assert.match(privacy, /## 13\. 贡献者 CLA 签署记录/);
+  assert.match(privacy, /SAP/);
+  assert.match(privacy, /## 14\. 变更与联系/);
+
+  const thirdParty = await readText("THIRD-PARTY-NOTICES.md");
+  assert.match(thirdParty, /Loomic/);
+  assert.match(thirdParty, /商业版资产合规/);
+
+  const docsIndex = await readText("docs/README.md");
+  assert.match(docsIndex, /DEC-24/);
+  assert.match(docsIndex, /DEC-25/);
+
+  const plan = await readText("docs/方案设计/改造计划.md");
+  assert.match(plan, /\[DEC-24\]/);
+  assert.match(plan, /\[DEC-25\]/);
+});

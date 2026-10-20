@@ -46,6 +46,8 @@ const LEGAL_DOCUMENTS = [
   ["EULA.md", "EULA.md"],
   ["PRIVACY.md", "PRIVACY.md"],
   ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+  ["COPYRIGHT.md", "COPYRIGHT.md"],
+  ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
 ];
 /** 上游许可文本：随移植代码与素材分发，源路径即仓库内的属主位置。 */
 const LEGAL_UPSTREAM = [

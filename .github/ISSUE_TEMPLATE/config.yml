@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 贡献指南
+    url: https://github.com/IsKenKenYa/KenFutWork/blob/main/CONTRIBUTING.md
+    about: 分支、测试、PR 与 CLA 流程
+  - name: 商业许可
+    url: https://github.com/IsKenKenYa/KenFutWork/blob/main/COMMERCIAL-LICENSING.md
+    about: 商业版与商业许可询价
+  - name: 安全漏洞私报
+    url: https://github.com/IsKenKenYa/KenFutWork/security/advisories/new
+    about: 不要公开披露漏洞细节

@@ -271,6 +271,10 @@ KenFutWork 站在开源社区的肩膀上，特别感谢：
 
 工具链：[pnpm](https://github.com/pnpm/pnpm) · [Turborepo](https://github.com/vercel/turborepo) · [Biome](https://github.com/biomejs/biome) · [Vitest](https://github.com/vitest-dev/vitest)；队列用 Postgres 的 PGMQ 扩展，桌面形态内嵌 [embedded-postgres](https://github.com/leinelissen/aeonik-embedded-postgres)（MIT）。
 
+### 项目前身 Loomic（MIT）
+
+本项目早期以 **Loomic** 名义开发，部分基础代码源自 Loomic。Loomic 以 MIT 许可发布，Copyright (c) 2026 Xinmin Zeng；完整许可见 [`licenses/loomic-MIT.txt`](licenses/loomic-MIT.txt)。社区版与商业版均保留该版权与许可声明。
+
 ### 仅方向参考（`references/` 子模块，未复制代码与素材）
 
 以下项目**只作方向参考，未复制任何代码、schema、字段名与素材**：
@@ -284,7 +288,7 @@ KenFutWork 站在开源社区的肩膀上，特别感谢：
 | [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) / [MCP servers](https://github.com/modelcontextprotocol/servers) | MCP 协议与 server 实现 |
 | [Octop](https://github.com/TencentCloud/Octop) | 多用户多 Agent 平台机制 |
 | [nomifun-tauri](https://github.com/nomifun/nomifun-tauri) | Tauri 桌面形态 |
-| [Jellyfish](https://github.com/Forget-C/Jellyfish)、[system-prompts-and-models-of-ai-tools](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools)、[seedance-2.0](https://github.com/Emily2040/seedance-2.0)、[Loomic](https://github.com/fancyboi999/Loomic) | 生成 provider、系统提示词合集、视频生成技能、品牌改名前的前身项目 |
+| [Jellyfish](https://github.com/Forget-C/Jellyfish)、[system-prompts-and-models-of-ai-tools](https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools)、[seedance-2.0](https://github.com/Emily2040/seedance-2.0) | 生成 provider、系统提示词合集、视频生成技能 |
 
 根级 `flow/`（[futureFlow](https://github.com/future73807/futureFlow)，本仓协作者项目）是**待合并子系统**而非纯参考：按 [`docs/插件/flow插件集成规划.md`](docs/插件/flow插件集成规划.md) 分阶段并入，并入后即成为真正的第三方代码，届时报许可与 attribution。
 
@@ -299,11 +303,21 @@ Code UI 移植携带的素材按来源分四层，归属与义务如下：
 
 以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。**逐项归属、义务履行位置与待核清单以根 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) 为准**，本段是摘要。
 
+## Contributing
+
+社区版以 GPL-3.0 发布。提交代码、文档、测试或素材前，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 并签署 [CLA.md](CLA.md)。
+
+- 行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- 安全漏洞：[SECURITY.md](SECURITY.md)（走私报，不要公开 issue）
+- 商业版与商业许可：[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md)
+
 ---
 
 ## License
 
-GPL-3.0（见 [LICENSE](LICENSE)）。所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)，逐项义务与履行位置见 [第三方声明与素材归属](THIRD-PARTY-NOTICES.md)。
+**社区版**：GPL-3.0-only（见 [LICENSE](LICENSE)）。**商业版**：按 [商业许可](COMMERCIAL-LICENSING.md) 单独授权；商业许可不影响社区版的 GPL 权利。版权归属见 [COPYRIGHT.md](COPYRIGHT.md)。
+
+所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)，逐项义务与履行位置见 [第三方声明与素材归属](THIRD-PARTY-NOTICES.md)。
 
 授权边界与使用声明见 [最终用户许可协议](EULA.md)（本文件不改动 GPL-3.0 授予你的权利，只处理它未覆盖的事项）；数据实际存在哪里、发给谁，见 [隐私政策](PRIVACY.md)。
 

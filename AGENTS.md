@@ -8,7 +8,7 @@
 - `packages/shared` — 跨端 zod 契约（HTTP API、WS 协议、job 事件、usage、skills 等），构建到 `dist/` 后被前后端引用；改契约先改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
 - `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
-- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/方案设计/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
+- `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/loomic` 是项目前身 Loomic 的 MIT 上游副本，本仓库早期代码在其基础上开发，按 MIT 保留声明（见 `COPYRIGHT.md`），不受本节「禁止复制」约束；根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已拍板），不是纯参考——集成方案见 `docs/方案设计/flow集成方案.md`；其代码按方案分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
 - `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/方案设计/改造计划.md` 是服务端架构演进蓝图，`docs/方案设计/多端产品设计.md` 是多端形态设计；`docs/调研/02-当前项目实现状态.md` 是代码现状快照。
 
 本地开发需根目录 `.env.local`（模板见 `.env.example`），server 通过 `--env-file=../../.env.local` 读取。
@@ -82,7 +82,7 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 5. **提交前必须复跑门禁**：`pnpm test`（含 `tests/workspace.test.mjs` 的仓库级棘轮/文档门禁）与 `pnpm typecheck` 至少要覆盖本次改动所在包；跨端契约（`packages/shared`）改动必须全量。
 6. **文档与提交同步**：里程碑或架构级改动在 `docs/日志.md`（历轮回执 + 变更台账）里**同一提交**内更新（含问题、方案、验证命令、遗留项）；只写代码不记账视为未完成。
 7. **不提交密钥与产物**：provider keys、`.env*`、凭据、`release/`、`data/`、日志、`**/dist` 一律不入库（见下节）。
-8. **新增第三方资产先登记归属**：vendored 代码、图标、字体、模型权重进仓库的同一 PR，须在根 `THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置；上游没有 LICENSE 文件的如实标「待核」，禁止默认按 GPL 分发。法律层三份文件是属主且互不复述：授权边界与免责见根 `EULA.md`（不得用它缩减 GPL-3.0 授予的权利），数据行为与已知缺口见根 `PRIVACY.md`（按代码实现写，不写愿望）。
+8. **新增第三方资产先登记归属**：vendored 代码、图标、字体、模型权重进仓库的同一 PR，须在根 `THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置；上游没有 LICENSE 文件的如实标「待核」，禁止默认按 GPL 分发。法律层文件是属主且互不复述：授权边界与免责见根 `EULA.md`（不得用它缩减 GPL-3.0 授予的权利），数据行为与已知缺口见根 `PRIVACY.md`（按代码实现写，不写愿望），贡献者授权见根 `CLA.md`，版权归属见根 `COPYRIGHT.md`。
 9. **及时分批提交，禁止长期堆积 WIP**：一个可验证的行为完成、范围测试与类型检查通过后立即提交，再开始下一模块；不得以“整体任务尚未完成”为由长期不提交，也不得最后用一个大提交打包多个独立功能。跨模块改造先列文件/hunk、用途、依赖和验证命令，按依赖顺序交付，每批新增引用与消费方必须完整、提交后的 HEAD 必须能构建。
 10. **积压先盘点，交接必对账**：发现大量未提交改动时，先停止扩展实现，逐项核对 `git status` / `git diff`，区分本任务、并行任务和来源不明的改动，登记批次并逐批复核、测试、提交；不能靠记忆归属或为清空工作区混交。收尾、上下文压缩或交接前记录已提交 SHA 与剩余文件/hunk、用途、验证状态及阻断原因；备份和记录不能替代已具备提交条件的 commit。
 
@@ -106,6 +106,16 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 
 ## 安全与配置提示
 禁止提交 provider keys、`.env`、`.env.local`、service account 凭据（`**/credentials/*.json` 已 gitignore）、构建产物、日志。`.env.local` 只放本机；CI 与生产密钥走平台环境变量。
+
+## 开源治理与双版本边界（硬约束）
+
+- 公开仓继续 **GPL-3.0**；禁止把公开仓改私有、删除历史，或提交商业版专有代码、客户合同、签名、个人邮箱、收益台账。
+- 外部 PR 必须签 CLA；未签不合并。托管 CLA Assistant 是辅助，维护者复核；公司贡献者走 PDF CCLA + 手动 allowlist。
+- 商业版在独立私有仓维护；公开→私有允许；私有→公开必须权利清理、CLA、许可扫描与两位共同所有者批准。
+- 历史贡献边界：future73807 由《共同所有者协议》覆盖；Loomic MIT 保留 `licenses/loomic-MIT.txt` 与 `COPYRIGHT.md` 声明；提交 `81eecbb4`（PR #4）未获书面许可前不得进入商业版。
+- 新增第三方资产必须在 `THIRD-PARTY-NOTICES.md` 登记来源/许可/商业版可用性；未满足许可证义务的 GPL/无许可资产不得进商业版。
+- 法务文件属主：`CLA.md`、`EULA.md`、`COPYRIGHT.md`、`THIRD-PARTY-NOTICES.md`、`GOVERNANCE.md`；修改需两位共同所有者同意。
+- 公开文档只写收益分配原则，不承诺具体比例；具体在内部协议。
 
 ## Agent 专用指令
 - 硬约束：`/init` 表示在编码前从仓库实时状态刷新本指南。

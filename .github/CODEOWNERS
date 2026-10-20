@@ -1,0 +1,15 @@
+# 法务、治理与打包清单需两位共同所有者复核
+
+/CLA.md @IsKenKenYa @future73807
+/EULA.md @IsKenKenYa @future73807
+/COPYRIGHT.md @IsKenKenYa @future73807
+/THIRD-PARTY-NOTICES.md @IsKenKenYa @future73807
+/GOVERNANCE.md @IsKenKenYa @future73807
+/MAINTAINERS.md @IsKenKenYa @future73807
+/COMMERCIAL-LICENSING.md @IsKenKenYa @future73807
+/CONTRIBUTING.md @IsKenKenYa @future73807
+/CODE_OF_CONDUCT.md @IsKenKenYa @future73807
+/SECURITY.md @IsKenKenYa @future73807
+/.github/ @IsKenKenYa @future73807
+/scripts/package-mac.mjs @IsKenKenYa @future73807
+/scripts/package-win.mjs @IsKenKenYa @future73807

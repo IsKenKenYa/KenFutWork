@@ -1,6 +1,6 @@
 # KenFutWork 第三方声明与素材归属
 
-版本：2026-10-10 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
+版本：2026-10-20 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
 
 本文件回答三个问题：哪些东西不是我们写的、它按什么许可进来、我们在分发时必须替下游做什么。许可义务**履行位置**逐条标注；上游移植目录内那份 `THIRD-PARTY-NOTICES.md` 是 ZCode 的上游产物（与上游逐字节一致），本文件不复制它的正文，只索引它。
 
@@ -11,7 +11,7 @@
 | 项 | 内容 |
 | --- | --- |
 | 上游 | [zai-org/ZCode](https://github.com/zai-org/ZCode) 3.14.3，固定提交 `29628c9acdb81b703bbd4080c207a0e7ce5e276e` |
-| 版权人 | Z.AI Co., Ltd |
+| 版权人 | Z.AI Co., Ltd（待核；上游 LICENSE/NOTICE 无 Copyright 行） |
 | 许可 | Apache License 2.0 |
 | 落点 | `apps/web/src/components/workbench/zcode/`（仓库内别名 `@zui/*`）、`packages/zcode-*`（由 `scripts/vendor-zcode.mjs` 装配，`package.json` 声明 `license: "Apache-2.0"`） |
 | 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
@@ -49,6 +49,15 @@
 
 npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/package.json`、`apps/landing/package.json`）。上游 [lucide-icons/lucide](https://github.com/lucide-icons/lucide)，许可 ISC。义务按 B 段随依赖清单一并履行。
 
+### A6. Loomic（MIT，项目前身）
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | 项目前身 Loomic（品牌改名前的项目），MIT，Copyright (c) 2026 Xinmin Zeng |
+| 许可 | MIT；全文见 [`licenses/loomic-MIT.txt`](licenses/loomic-MIT.txt) |
+| 落点 | 本仓库早期代码与基础能力；`references/loomic/` 为上游参考副本 |
+| 义务履行 | 社区版与商业版均保留 Copyright 与 MIT 全文；[`COPYRIGHT.md`](COPYRIGHT.md) 与安装包 `release/legal/loomic-MIT.txt` 承担随包声明；商业版使用前取得 Xinmin Zeng 的书面来源确认（见 `DEC-24`） |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。
@@ -69,8 +78,10 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | [xyflow/react](https://github.com/xyflow/xyflow) | MIT | 流程图/画布节点渲染；由移植包自己声明依赖（`apps/web/src/components/workbench/zcode/package.json` 的 `@xyflow/react ^12.10.1`，lock 解析 12.12.0） |
 | [embedded-postgres](https://github.com/leinelissen/aeonik-embedded-postgres) | MIT | 桌面形态内嵌 Postgres |
 | PostgreSQL 服务端 | PostgreSQL License | 数据库与内嵌实例 |
-| PGMQ（Postgres 扩展） | 见上游仓库 | 队列（许可文本待核，见 F 段） |
+| [sharp](https://github.com/lovell/sharp) / libvips | Apache-2.0 / LGPL-3.0-or-later | 服务端图片处理；商业版需履行 LGPL 或替换（见 §H） |
+| PGMQ（Postgres 扩展） | 见上游仓库（待核） | 队列；商业版默认排除，法务复核后使用（见 §H） |
 | Node.js 运行时与工具链（pnpm/Turborepo/Biome/Vitest） | MIT / Apache-2.0 等 | 构建与测试；打包进产物的部分见 G2 |
+| Temurin JDK 21（`runtime/jdk`） | GPLv2+CE | 桌面内置 Java 运行时；保留 NOTICE 与源码获取方式（见 §H） |
 | eruda | MIT | 浏览器调试面板，**运行时从 CDN 拉取**（`PRIVACY.md` §5），不签入仓库 |
 | sherpa-onnx / Silero VAD / Kokoro 多语版 / SenseVoiceSmall / espeak-ng 数据 | Apache-2.0 / MIT / Apache-2.0 / FunASR 许可 / GPL-3.0 | 语音链路（权重按需下载）。设置→关于页已列署名，其中 SenseVoiceSmall 的 FunASR 条款**须逐条核对是否允许你的用途** |
 
@@ -145,7 +156,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 ### G1. 随产物分发的声明文件
 
-安装包与应用数据产物须带上：`LICENSE`（GPL-3.0 全文）、`NOTICE.md`、`EULA.md`、`PRIVACY.md`、本文件，以及 A3 图标目录的 `LICENSE`、A1 上游三份文本。装配点：`apps/desktop`（Tauri bundle resources）与 `scripts/package-mac.mjs` / `scripts/package-win.mjs`。
+安装包与应用数据产物须带上：`LICENSE`（GPL-3.0 全文）、`NOTICE.md`、`EULA.md`、`PRIVACY.md`、本文件、`COPYRIGHT.md`、`licenses/loomic-MIT.txt`（产物内为 `loomic-MIT.txt`），以及 A3 图标目录的 `LICENSE`、A1 上游三份文本。装配点：`apps/desktop`（Tauri bundle resources）与 `scripts/package-mac.mjs` / `scripts/package-win.mjs`。
 
 ### G2. 待办（本轮如实登记，不假装已完成）
 
@@ -155,6 +166,58 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 4. PGMQ 与各 Python wheel 的许可文本抄录（B、F 段）。
 5. 本文件应随每次引入新依赖/新素材的 PR 更新；新增 vendored 文件却未在此登记，视为分发缺陷。
 
-## H. 联系
+## H. 商业版资产合规
 
-许可与授权问题见 [`EULA.md`](EULA.md)；数据处理见 [`PRIVACY.md`](PRIVACY.md)；权利人主张与缺陷报告统一走 `https://github.com/IsKenKenYa/KenFutWork/issues`。
+> 本节是商业版构建的许可白名单/排除清单。社区版继续按 GPL-3.0 分发，不受本节影响；商业版发布前必须逐项核对：红项清零，黄项义务落地，灰项法务放行。第三方许可事实的唯一属主仍是本文件；[`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md) 只引用本节。
+
+### H1. 分级
+
+- **绿**：可直接进入商业版；保留版权、许可与 NOTICE，标注修改。
+- **黄**：履行特定义务后可用（LGPL 重链接/源码、GPL+CE 声明、Dify 边界）。
+- **红**：不得进入商业版，除非替换或取得权利人书面授权。
+- **灰**：默认排除；法务复核后再决定。
+
+### H2. 矩阵
+
+| 资产 | 许可 | 商业版 | 义务/动作 |
+| --- | --- | --- | --- |
+| ZCode（含移植 UI） | Apache-2.0 | 绿 | 保留 `LICENSE`/`NOTICE.md`，标注修改，不用商标；确认版权人（现写 Z.AI Co., Ltd，上游无 Copyright 行）；补齐 `packages/zcode-*` 缺失的 LICENSE 文本 |
+| futureFlow（`flow/`） | MIT | 绿 | 保留 `Copyright (c) 2026 future73807` 与 MIT 全文；发布前核对固定提交远端可获取性 |
+| Loomic（项目前身） | MIT | 绿 | 保留 `licenses/loomic-MIT.txt` 与 `COPYRIGHT.md`；取得 Xinmin Zeng 书面来源确认 |
+| ai-elements | Apache-2.0 | 绿 | 保留 Vercel 版权与 Apache-2.0 NOTICE |
+| Material Icon Theme | MIT | 绿 | 保留 MIT 全文 |
+| shadcn/ui | MIT | 绿 | 保留来源注释与 MIT |
+| lucide-react | ISC | 绿 | 保留 ISC |
+| Excalidraw / Next.js / React / Tailwind / Base UI / embedded-postgres / PostgreSQL | MIT / PostgreSQL License | 绿 | 随包保留各自许可与版权 |
+| Momo Trust Display | OFL-1.1 | 绿 | 保留 OFL；确认无保留字体名冲突 |
+| sharp / libvips | Apache-2.0 / LGPL-3.0-or-later | 黄 | 确认 libvips 链接方式；提供 LGPL 声明、对应源码/修改与重链接方式，或替换为宽松许可库 |
+| Temurin JDK 21 | GPLv2+CE | 黄 | 独立 runtime；保留 NOTICE，提供源码获取方式；CE 允许闭源分发 |
+| Dify | Apache-2.0 + 附加条款 | 黄 | 保持用户自行拉取容器，商业版不捆绑镜像/代码；多租户 SaaS 需书面商业授权 |
+| espeak-ng data | GPL-3.0 | 红 | 商业版排除或替换；社区版按 GPL 履行 |
+| `skills/canvas-design/canvas-fonts/` | 无许可文本 | 红 | 商业版排除；逐支核实前不得分发 |
+| 三支商业字体 | 需商业授权 | 红 | 商业版排除，除非取得字体权利人授权 |
+| provider/channel 品牌图标、ZCode 品牌图标 / 供应商 logo | 无开源许可 | 红 | 商业版替换为文字标签或取得品牌方许可；仅指示性使用不等于授权 |
+| SenseVoiceSmall | FunASR Model License | 灰 | 法务逐条核对后再决定；默认排除 |
+| PGMQ | 见上游仓库 | 灰 | 法务复核；默认排除 |
+| `flow/` 内 vendored Python wheels | 各自许可 | 灰 | 逐 wheel 抄录许可与版权；未核完默认排除 |
+| Contributor Covenant 2.1（行为准则文本） | CC BY 4.0 | 绿 | 文档使用；保留署名与许可链接 |
+
+> 历史贡献不在本节：`81eecbb4`（PR #4）未获书面许可前不得进入商业版；future73807 的贡献由《共同所有者协议》覆盖；Loomic 由 MIT 与书面确认覆盖。见 `DEC-24` 与私有排除清单。
+
+### H3. 门禁
+
+1. 私有商业仓维护机器可读的 allowlist/denylist（从本节派生），构建时阻断红项与未登记资产。
+2. 每次发布生成 SBOM 与许可清单；新增/升级依赖必须重新核对本节。
+3. 商业版安装包必须带 `LICENSE`/`NOTICE.md`/`EULA`/`PRIVACY`/`THIRD-PARTY-NOTICES`/`COPYRIGHT` 与对应上游许可文本。
+4. 本节变更需两位共同所有者复核（`.github/CODEOWNERS`）。
+5. 商业版不得包含公开仓未出现、且未登记来源与许可的代码/素材。
+
+### H4. 复核记录
+
+| 日期 | 结论 | 备注 |
+| --- | --- | --- |
+| 2026-10-20 | 初版矩阵 | ZCode 版权人、sharp/libvips 链接方式、SenseVoice/PGMQ/flow wheels 仍待核；商业发布前必须清零 |
+
+## I. 联系
+
+许可与授权问题见 [`EULA.md`](EULA.md)；数据处理见 [`PRIVACY.md`](PRIVACY.md)；商业许可见 [`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md)；权利人主张与缺陷报告统一走 `https://github.com/IsKenKenYa/KenFutWork/issues`。
