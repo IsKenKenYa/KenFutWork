@@ -1817,7 +1817,8 @@
         "Code/Design统一实施：文档标签保持挂载和编辑状态，标签切换不重建画布。",
         "2026-10-14 OpenDesign 集成（O0+O2）：加 OpenDesign 启动卡与「添加页签」菜单项（按 useOpenDesignEntry 门控）、面板渲染分支（把 tab 的 navigatePath 透给面板），以及「在 OpenDesign 中打开当前文件」的深链菜单项。",
         "2026-10-15 OpenDesign 集成（O2 收尾）：深链来源判定改调 animatedSidePanePanelModel 的 resolveOpenDesignNavigateSource（纯函数入模型层，可单测）。",
-        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。"
+        "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
+        "2026-10-20 G1 重做：宿主件 BrowserPane 重建为消费 vendored 原件（BrowserToolbar/BrowserEmptyState/EmbeddedBrowserPaneParts + BrowserViewportToolbar/ResponsiveBrowserViewport/browser-use 系列），修空地址假加载死锁、找回自由尺寸/缩放档/更多菜单（默认浏览器打开与调试工具入口），Q5 拾取与 CDP MJPEG 数据面不变"
       ]
     },
     {

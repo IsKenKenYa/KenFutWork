@@ -1,26 +1,33 @@
-import { Button } from "@zui/components/ui/button.js";
-import { Input } from "@zui/components/ui/input.js";
-import { toast } from "@zui/components/ui/toast.js";
-import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import type { BrowserViewportSize } from "@zcode/shared";
+import { BrowserViewportToolbar } from "@zui/browser-use/BrowserViewportToolbar.js";
 import {
-  ArrowLeft,
-  ArrowRight,
-  Crosshair,
-  HistoryIcon,
-  RotateCw,
-  SquareTerminal,
-} from "lucide-react";
+  type BrowserViewportZoom,
+  DEFAULT_BROWSER_VIEWPORT_ZOOM,
+} from "@zui/browser-use/browserViewportZoom.js";
+import { ResponsiveBrowserViewport } from "@zui/browser-use/ResponsiveBrowserViewport.js";
+import { Button } from "@zui/components/ui/button.js";
+import { toast } from "@zui/components/ui/toast.js";
+import {
+  BrowserEmptyState,
+  BrowserToolbar,
+} from "@zui/EmbeddedBrowserPaneParts.js";
+import type { BrowserState } from "@zui/embeddedBrowserHelpers.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
 
 /**
  * 内嵌浏览器面板（G1/Q3-Q5，KenFutWork 宿主件）：旧 panel-browser-view/live 的
- * CDP MJPEG 形态在 ZCode 右栏页签的重实现。
+ * CDP MJPEG 形态在 ZCode 右栏页签的重实现。工具条/自由尺寸行/响应式画布复用
+ * ZCode 原生 EmbeddedBrowserPaneParts 与 browser-use 系列组件（Q1：交互按原版、
+ * 视觉用 ZCode），只把数据面接到本机 CDP。
  *
  * 数据面（cookie 会话）：/api/browser/cdp/{status,connect,view,input,console}，
  * 画面流 GET /api/browser/cdp/stream?ticket=…（票据在 query，img 不带登录头）。
  * 交互按视口 CSS 坐标回填（显示盒线性映射）；键盘走 1px 透明 textarea（输入法合成可达）。
- * 面板内历史栈（跨源 iframe 读不到页面自己的 history）；视口预设是真视口（非缩放伪装）。
+ * 面板内历史栈（跨源 iframe 读不到页面自己的 history）；预设/自由尺寸都是真视口。
  * Q5 元素拾取：/api/browser/snapshot 取带真实盒模型的元素列表 → 视口叠框点选 →
  * 坐标引用经 requestComposerTextInsert 填进 composer（草稿态生效，与插件提及同语义）。
  */
@@ -70,6 +77,12 @@ interface CdpInputEvent {
   text?: string;
 }
 
+type PaneState =
+  | { status: "idle" }
+  | { status: "connecting" }
+  | { status: "live"; src: string }
+  | { status: "error"; message: string };
+
 const VIEWPORT_PRESETS: ReadonlyArray<{
   label: string;
   width: number;
@@ -79,6 +92,9 @@ const VIEWPORT_PRESETS: ReadonlyArray<{
   { label: "1024 × 768", width: 1024, height: 768 },
   { label: "375 × 812", width: 375, height: 812 },
 ];
+
+/** view 重开的去抖间隔：拖拽/连击改尺寸时避免每帧重开 MJPEG 流。 */
+const VIEW_REOPEN_DEBOUNCE_MS = 180;
 
 /** 修饰键位掩码（CDP）：Alt=1 / Ctrl=2 / Meta=4 / Shift=8。 */
 function modifiersOf(event: {
@@ -130,6 +146,14 @@ function toViewportPoint(
   };
 }
 
+/** 自由尺寸拖拽把手上的指针不进 CDP（把手只改视口，不当页面点击）。 */
+function isResizeHandleTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest("[data-resize-edge], [data-resize-corner]") !== null
+  );
+}
+
 export function BrowserPane({
   initialUrl,
   workspacePath,
@@ -140,6 +164,7 @@ export function BrowserPane({
   workspacePath?: string;
   workspaceIdentity?: string;
 }) {
+  const { intl } = useZCodeIntl();
   const [urlInput, setUrlInput] = useState(initialUrl ?? "");
   const [activeUrl, setActiveUrl] = useState(initialUrl ?? "");
   /** 面板内历史栈（页面跨源，读不到它自己的 history）。 */
@@ -147,15 +172,22 @@ export function BrowserPane({
     initialUrl ? [initialUrl] : [],
   );
   const [historyIndex, setHistoryIndex] = useState(initialUrl ? 0 : -1);
-  const [frameSize, setFrameSize] = useState<(typeof VIEWPORT_PRESETS)[number]>(
-    VIEWPORT_PRESETS[0] ?? { label: "1280 × 720", width: 1280, height: 720 },
+  const [presetSize, setPresetSize] = useState<
+    (typeof VIEWPORT_PRESETS)[number]
+  >(VIEWPORT_PRESETS[0] ?? { label: "1280 × 720", width: 1280, height: 720 });
+  /** 自由尺寸（Q3）：真视口由用户拖/填，与 browser-use 面板同一组限值。 */
+  const [responsiveMode, setResponsiveMode] = useState(false);
+  const [responsiveSize, setResponsiveSize] = useState<BrowserViewportSize>({
+    width: VIEWPORT_PRESETS[0]?.width ?? 1280,
+    height: VIEWPORT_PRESETS[0]?.height ?? 720,
+  });
+  const [zoom, setZoom] = useState<BrowserViewportZoom>(
+    DEFAULT_BROWSER_VIEWPORT_ZOOM,
   );
   const [reloadToken, setReloadToken] = useState(0);
-  const [state, setState] = useState<
-    | { status: "connecting" }
-    | { status: "live"; src: string }
-    | { status: "error"; message: string }
-  >({ status: "connecting" });
+  const [state, setState] = useState<PaneState>(
+    initialUrl ? { status: "connecting" } : { status: "idle" },
+  );
   const [viewport, setViewport] = useState<CdpViewport>({
     width: 0,
     height: 0,
@@ -177,6 +209,8 @@ export function BrowserPane({
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
   const openRef = useRef<() => Promise<void>>(async () => {});
+
+  const frameSize = responsiveMode ? responsiveSize : presetSize;
 
   useEffect(() => {
     retriesRef.current = 0;
@@ -236,9 +270,12 @@ export function BrowserPane({
   }, [activeUrl, frameSize, reloadToken]);
   openRef.current = open;
 
+  // 地址/尺寸/刷新变化 → 去抖后重开画面流（拖拽自由尺寸时每帧只保留最后一击）。
   useEffect(() => {
-    void open();
-  }, [open]);
+    if (!activeUrl) return;
+    const timer = window.setTimeout(() => void open(), VIEW_REOPEN_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeUrl, open]);
 
   const handleFrameError = useCallback(() => {
     if (retriesRef.current >= 2) {
@@ -275,7 +312,7 @@ export function BrowserPane({
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (pick) return;
+      if (pick || isResizeHandleTarget(event.target)) return;
       sinkRef.current?.focus();
       const point = pointFrom(event);
       if (!point) return;
@@ -297,7 +334,7 @@ export function BrowserPane({
 
   const handleMouseUp = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (pick) return;
+      if (pick || isResizeHandleTarget(event.target)) return;
       const point = pointFrom(event);
       draggingRef.current = false;
       if (!point) return;
@@ -316,7 +353,7 @@ export function BrowserPane({
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (pick) return;
+      if (pick || isResizeHandleTarget(event.target)) return;
       const now = Date.now();
       if (!draggingRef.current && now - lastHoverRef.current < 120) return;
       lastHoverRef.current = now;
@@ -438,6 +475,10 @@ export function BrowserPane({
     }
   }, [activeUrl]);
 
+  const handleOpenExternal = useCallback(() => {
+    if (activeUrl) window.open(activeUrl, "_blank", "noopener,noreferrer");
+  }, [activeUrl]);
+
   /** Q5：进入/退出拾取。进入时拉一次带盒模型的元素快照。 */
   const togglePicking = useCallback(async () => {
     if (pick) {
@@ -511,94 +552,77 @@ export function BrowserPane({
     [viewport.scale],
   );
 
+  const browserState: BrowserState = {
+    canGoBack: canBack,
+    canGoForward: canForward,
+    currentUrl: activeUrl,
+    errorMessage: state.status === "error" ? state.message : null,
+    loadErrorCode: null,
+    guestFailure: null,
+    isLoading: state.status === "connecting",
+    isReady: state.status === "live",
+    title: "",
+  };
+  const formatMessage = useCallback(
+    (descriptor: { id: string }) => intl.formatMessage(descriptor),
+    [intl],
+  );
+
   return (
     <div
       className="flex h-full min-h-0 flex-col bg-background"
       data-testid="browser-pane"
     >
-      <div className="flex items-center gap-1 border-b px-1.5 py-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="后退"
-          disabled={!canBack}
-          onClick={() => goHistory(-1)}
-        >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="前进"
-          disabled={!canForward}
-          onClick={() => goHistory(1)}
-        >
-          <ArrowRight className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="刷新"
-          onClick={() => setReloadToken((token) => token + 1)}
-        >
-          <RotateCw className="size-4" />
-        </Button>
-        <Input
-          aria-label="地址栏"
-          value={urlInput}
-          onChange={(event) => setUrlInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") navigate(urlInput);
-          }}
-          className="h-7 flex-1 text-xs"
-          placeholder="输入地址"
+      <BrowserToolbar
+        addressValue={urlInput}
+        browserState={browserState}
+        formatMessage={formatMessage}
+        onAddressChange={setUrlInput}
+        onGoBack={() => goHistory(-1)}
+        onGoForward={() => goHistory(1)}
+        onOpenExternal={handleOpenExternal}
+        onOpenDevTools={() => void injectConsole()}
+        onPickElement={() => void togglePicking()}
+        onReload={() => setReloadToken((token) => token + 1)}
+        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          navigate(urlInput);
+        }}
+        onToggleResponsiveMode={() => setResponsiveMode((mode) => !mode)}
+        isElementPickerActive={pick !== null}
+        isResponsiveMode={responsiveMode}
+      />
+      {responsiveMode ? (
+        <BrowserViewportToolbar
+          isVisible
+          viewportSize={responsiveSize}
+          zoom={zoom}
+          onViewportSizeChange={setResponsiveSize}
+          onZoomChange={setZoom}
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="调试控制台"
-          onClick={() => void injectConsole()}
-        >
-          <SquareTerminal className="size-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="拾取元素"
-          aria-pressed={pick !== null}
-          className={pick ? "bg-hover" : undefined}
-          onClick={() => void togglePicking()}
-        >
-          <Crosshair className="size-4" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-1.5 border-b px-2 py-1 text-xs">
-        {VIEWPORT_PRESETS.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            className={`rounded px-1.5 py-0.5 transition-colors hover:bg-hover ${
-              preset === frameSize
-                ? "bg-hover font-medium"
-                : "text-foreground-subtle"
-            }`}
-            onClick={() => setFrameSize(preset)}
-          >
-            {preset.label}
-          </button>
-        ))}
-        {state.status === "live" ? (
-          <span className="ml-auto inline-flex items-center gap-1 text-foreground-subtle">
-            <HistoryIcon className="size-3" />
-            {scalePercent}%
-          </span>
-        ) : null}
-      </div>
+      ) : (
+        <div className="flex items-center gap-1.5 border-b px-2 py-1 text-xs">
+          {VIEWPORT_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              className={`rounded px-1.5 py-0.5 transition-colors hover:bg-hover ${
+                preset === presetSize
+                  ? "bg-hover font-medium"
+                  : "text-foreground-subtle"
+              }`}
+              onClick={() => setPresetSize(preset)}
+            >
+              {preset.label}
+            </button>
+          ))}
+          {state.status === "live" ? (
+            <span className="ml-auto inline-flex items-center gap-1 text-foreground-subtle">
+              {scalePercent}%
+            </span>
+          ) : null}
+        </div>
+      )}
       <div
         ref={viewerRef}
         role="group"
@@ -612,62 +636,81 @@ export function BrowserPane({
         }}
         onContextMenu={(event) => event.preventDefault()}
       >
-        {state.status === "live" ? (
-          // MJPEG 流（multipart/x-mixed-replace）
-          <img
-            ref={imgRef}
-            src={state.src}
-            alt="浏览器画面"
-            draggable={false}
-            onError={handleFrameError}
-            className="absolute top-0 left-0 h-full w-full select-none"
-          />
-        ) : state.status === "connecting" ? (
-          <p className="p-2 text-xs text-foreground-subtle">
-            正在打开内嵌浏览器…
-          </p>
-        ) : (
-          <div className="p-2 text-xs">
-            <p className="text-destructive">{state.message}</p>
-            <button
-              type="button"
-              onClick={() => setReloadToken((token) => token + 1)}
-              className="mt-1 rounded border px-1.5 py-0.5 hover:bg-hover"
-            >
-              重新加载
-            </button>
-          </div>
-        )}
-        {pick
-          ? pick.elements.map((element, index) =>
-              element.box ? (
-                <button
-                  key={`${element.tag}-${index}`}
-                  type="button"
-                  aria-label={`拾取 ${element.tag}`}
-                  title={element.text || element.hint || element.tag}
-                  className="absolute rounded-sm border border-primary/70 bg-primary/15 hover:border-primary hover:bg-primary/30"
-                  style={{
-                    left: `${(element.box.x / pick.viewport.width) * 100}%`,
-                    top: `${(element.box.y / pick.viewport.height) * 100}%`,
-                    width: `${(element.box.width / pick.viewport.width) * 100}%`,
-                    height: `${(element.box.height / pick.viewport.height) * 100}%`,
-                  }}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onMouseUp={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    insertElementReference(element);
-                  }}
-                />
-              ) : null,
-            )
-          : null}
-        {pick ? (
-          <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
-            点选元素填入输入框 · Esc 取消
-          </p>
-        ) : null}
+        <ResponsiveBrowserViewport
+          active={responsiveMode}
+          desktopZoomFactor={1}
+          isComposed
+          viewportSize={responsiveSize}
+          zoom={zoom}
+          onViewportSizeChange={setResponsiveSize}
+        >
+          {state.status === "live" ? (
+            <div className="relative h-full w-full">
+              {/* MJPEG 流（multipart/x-mixed-replace） */}
+              <img
+                ref={imgRef}
+                src={state.src}
+                alt="浏览器画面"
+                draggable={false}
+                onError={handleFrameError}
+                className="absolute top-0 left-0 h-full w-full select-none"
+              />
+              {pick
+                ? pick.elements.map((element, index) =>
+                    element.box ? (
+                      <button
+                        key={`${element.tag}-${index}`}
+                        type="button"
+                        aria-label={`拾取 ${element.tag}`}
+                        title={element.text || element.hint || element.tag}
+                        className="absolute rounded-sm border border-primary/70 bg-primary/15 hover:border-primary hover:bg-primary/30"
+                        style={{
+                          left: `${(element.box.x / pick.viewport.width) * 100}%`,
+                          top: `${(element.box.y / pick.viewport.height) * 100}%`,
+                          width: `${(element.box.width / pick.viewport.width) * 100}%`,
+                          height: `${(element.box.height / pick.viewport.height) * 100}%`,
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onMouseUp={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          insertElementReference(element);
+                        }}
+                      />
+                    ) : null,
+                  )
+                : null}
+              {pick ? (
+                <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
+                  点选元素填入输入框 · Esc 取消
+                </p>
+              ) : null}
+            </div>
+          ) : state.status === "idle" ? (
+            <BrowserEmptyState
+              browserState={browserState}
+              formatMessage={formatMessage}
+              isGuestStarting={false}
+            />
+          ) : state.status === "connecting" ? (
+            <p className="p-2 text-xs text-foreground-subtle">
+              正在打开内嵌浏览器…
+            </p>
+          ) : (
+            <div className="p-2 text-xs">
+              <p className="text-destructive">{state.message}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setReloadToken((token) => token + 1)}
+                className="mt-1"
+              >
+                重新加载
+              </Button>
+            </div>
+          )}
+        </ResponsiveBrowserViewport>
       </div>
       <textarea
         ref={sinkRef}
