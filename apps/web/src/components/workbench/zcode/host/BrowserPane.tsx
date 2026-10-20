@@ -1,27 +1,47 @@
 import { Button } from "@zui/components/ui/button.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@zui/components/ui/dropdown-menu.js";
 import { Input } from "@zui/components/ui/input.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import {
   ArrowLeft,
   ArrowRight,
-  Crosshair,
-  HistoryIcon,
+  Ellipsis,
+  ExternalLink,
+  Globe,
+  MousePointerSquareDashed,
+  PictureInPicture2,
   RotateCw,
   SquareTerminal,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
 
 /**
  * 内嵌浏览器面板（G1/Q3-Q5，KenFutWork 宿主件）：旧 panel-browser-view/live 的
- * CDP MJPEG 形态在 ZCode 右栏页签的重实现。
+ * CDP MJPEG 形态在 ZCode 右栏页签的重实现，**工具栏与自由尺寸行照旧版排布**：
+ * 第一行 后退/前进/刷新/地址/自由尺寸开关/选择网页元素加入聊天/⋯菜单（在外部
+ * 浏览器中打开、打开调试工具）；自由尺寸打开后第二行居中放 分辨率输入 + 窗口比例。
  *
  * 数据面（cookie 会话）：/api/browser/cdp/{status,connect,view,input,console}，
  * 画面流 GET /api/browser/cdp/stream?ticket=…（票据在 query，img 不带登录头）。
- * 交互按视口 CSS 坐标回填（显示盒线性映射）；键盘走 1px 透明 textarea（输入法合成可达）。
- * 面板内历史栈（跨源 iframe 读不到页面自己的 history）；视口预设是真视口（非缩放伪装）。
- * Q5 元素拾取：/api/browser/snapshot 取带真实盒模型的元素列表 → 视口叠框点选 →
+ * 画面按**真实视口尺寸**排版再等比缩放（transform: scale）——比例永远不变形；
+ * 自由尺寸关着时视口=面板可用区（scale 恒 1），打开后视口=输入的分辨率。
+ * 交互按视口 CSS 坐标回填；键盘走 1px 透明 textarea（输入法合成可达）。
+ * 面板内历史栈（跨源 iframe 读不到页面自己的 history）。
+ * Q5 元素拾取：/api/browser/snapshot 取带真实盒模型的元素列表 → 画面上叠框点选 →
  * 坐标引用经 requestComposerTextInsert 填进 composer（草稿态生效，与插件提及同语义）。
  */
 
@@ -70,15 +90,24 @@ interface CdpInputEvent {
   text?: string;
 }
 
-const VIEWPORT_PRESETS: ReadonlyArray<{
-  label: string;
-  width: number;
-  height: number;
-}> = [
-  { label: "1280 × 720", width: 1280, height: 720 },
-  { label: "1024 × 768", width: 1024, height: 768 },
-  { label: "375 × 812", width: 375, height: 812 },
-];
+type PaneState =
+  | { status: "idle" }
+  | { status: "connecting" }
+  | { status: "live"; src: string }
+  | { status: "error"; message: string };
+
+/** 缩放预设（旧版口径：适应窗口 / 50% / 75% / 100%）。`scale: null` = 适应面板。 */
+const ZOOM_PRESETS = [
+  { id: "fit", label: "适应窗口", scale: null },
+  { id: "half", label: "50%", scale: 0.5 },
+  { id: "three-quarter", label: "75%", scale: 0.75 },
+  { id: "full", label: "100%", scale: 1 },
+] as const;
+
+type ZoomPresetId = (typeof ZOOM_PRESETS)[number]["id"];
+
+/** view 重开的去抖间隔：拖面板宽/拖自由尺寸时避免每帧重开 MJPEG 流。 */
+const VIEW_REOPEN_DEBOUNCE_MS = 180;
 
 /** 修饰键位掩码（CDP）：Alt=1 / Ctrl=2 / Meta=4 / Shift=8。 */
 function modifiersOf(event: {
@@ -130,6 +159,40 @@ function toViewportPoint(
   };
 }
 
+/** 视口尺寸的夹取（自由尺寸的两个输入框与拖拽把手共用）。 */
+function clampViewport(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/** 本地/内网地址判定（含带端口写法）：这些默认走 http。 */
+export function looksLocal(value: string): boolean {
+  const host = value.split("/")[0]?.split(":")[0]?.toLowerCase() ?? "";
+  if (host === "localhost" || host.endsWith(".local")) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return (
+      host.startsWith("127.") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    );
+  }
+  return false;
+}
+
+/**
+ * 地址栏归一化（旧版口径）：裸主机名默认 https；本地/内网地址（localhost/
+ * 127.0.0.1/*.local/私有网段/带端口）默认 http——这些基本没有证书，
+ * 默认 https 只会白等一次失败。
+ */
+export function normalizeUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  const scheme = looksLocal(trimmed) ? "http" : "https";
+  return `${scheme}://${trimmed}`;
+}
+
 export function BrowserPane({
   initialUrl,
   workspacePath,
@@ -140,25 +203,23 @@ export function BrowserPane({
   workspacePath?: string;
   workspaceIdentity?: string;
 }) {
-  const [urlInput, setUrlInput] = useState(initialUrl ?? "");
-  const [activeUrl, setActiveUrl] = useState(initialUrl ?? "");
+  const [url, setUrl] = useState(initialUrl ?? "");
+  const [draft, setDraft] = useState(initialUrl ?? "");
   /** 面板内历史栈（页面跨源，读不到它自己的 history）。 */
   const [history, setHistory] = useState<string[]>(
     initialUrl ? [initialUrl] : [],
   );
   const [historyIndex, setHistoryIndex] = useState(initialUrl ? 0 : -1);
-  const [frameSize, setFrameSize] = useState<(typeof VIEWPORT_PRESETS)[number]>(
-    VIEWPORT_PRESETS[0] ?? { label: "1280 × 720", width: 1280, height: 720 },
-  );
   const [reloadToken, setReloadToken] = useState(0);
-  // 无初始地址时不进 connecting——open() 会因 !activeUrl 直接返回，
+  /** 自由尺寸开关（旧版口径：点一下打开、再点一下取消；行内容居中）。 */
+  const [freeSizeOn, setFreeSizeOn] = useState(false);
+  const [freeSize, setFreeSize] = useState({ width: 1280, height: 720 });
+  const [zoom, setZoom] = useState<ZoomPresetId>("fit");
+  // 无初始地址时不进 connecting——open() 会因 !url 直接返回，
   // 停在「正在打开」就成了永不结束的假加载；idle 是可用的开始态。
-  const [state, setState] = useState<
-    | { status: "idle" }
-    | { status: "connecting" }
-    | { status: "live"; src: string }
-    | { status: "error"; message: string }
-  >(initialUrl ? { status: "connecting" } : { status: "idle" });
+  const [state, setState] = useState<PaneState>(
+    initialUrl ? { status: "connecting" } : { status: "idle" },
+  );
   const [viewport, setViewport] = useState<CdpViewport>({
     width: 0,
     height: 0,
@@ -171,7 +232,7 @@ export function BrowserPane({
   } | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
-  const viewerRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const sinkRef = useRef<HTMLTextAreaElement>(null);
   const draggingRef = useRef(false);
   const lastHoverRef = useRef(0);
@@ -181,12 +242,50 @@ export function BrowserPane({
   viewportRef.current = viewport;
   const openRef = useRef<() => Promise<void>>(async () => {});
 
+  /** 面板里这块预览区有多大（自由尺寸关着时视口 = 它，scale 恒 1 不变形）。 */
+  const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const measure = () => {
+      const el = frameRef.current;
+      if (!el) return;
+      setPaneSize((current) =>
+        current.width === el.clientWidth && current.height === el.clientHeight
+          ? current
+          : { width: el.clientWidth, height: el.clientHeight },
+      );
+    };
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(frameRef.current ?? document.body);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [url]);
+
+  const viewportWidth = freeSizeOn ? freeSize.width : paneSize.width;
+  const viewportHeight = freeSizeOn ? freeSize.height : paneSize.height;
+  const fitScale =
+    viewportWidth > 0 && viewportHeight > 0
+      ? Math.min(
+          1,
+          paneSize.width / viewportWidth,
+          paneSize.height / viewportHeight,
+        )
+      : 1;
+  const zoomPreset = ZOOM_PRESETS.find((p) => p.id === zoom);
+  const scale = zoomPreset?.scale ?? fitScale;
+
   useEffect(() => {
     retriesRef.current = 0;
-  }, [activeUrl, frameSize, reloadToken]);
+  }, [url, viewportWidth, viewportHeight, reloadToken]);
 
   const open = useCallback(async () => {
-    if (!activeUrl || frameSize.width <= 0) return;
+    if (!url || viewportWidth <= 0 || viewportHeight <= 0) return;
     const forceReload = lastReloadRef.current !== reloadToken;
     lastReloadRef.current = reloadToken;
     setState({ status: "connecting" });
@@ -219,9 +318,9 @@ export function BrowserPane({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          url: activeUrl,
-          width: frameSize.width,
-          height: frameSize.height,
+          url,
+          width: Math.round(viewportWidth),
+          height: Math.round(viewportHeight),
           ...(forceReload ? { reload: true } : {}),
         }),
       });
@@ -236,12 +335,15 @@ export function BrowserPane({
         message: error instanceof Error ? error.message : "画面打开失败。",
       });
     }
-  }, [activeUrl, frameSize, reloadToken]);
+  }, [url, viewportWidth, viewportHeight, reloadToken]);
   openRef.current = open;
 
+  // 地址/尺寸/刷新变化 → 去抖后重开画面流（拖自由尺寸时每帧只保留最后一击）。
   useEffect(() => {
-    void open();
-  }, [open]);
+    if (!url) return;
+    const timer = window.setTimeout(() => void open(), VIEW_REOPEN_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [url, open]);
 
   const handleFrameError = useCallback(() => {
     if (retriesRef.current >= 2) {
@@ -267,9 +369,7 @@ export function BrowserPane({
 
   const pointFrom = useCallback(
     (event: { clientX: number; clientY: number }) => {
-      const rect =
-        imgRef.current?.getBoundingClientRect() ??
-        viewerRef.current?.getBoundingClientRect();
+      const rect = imgRef.current?.getBoundingClientRect();
       if (!rect) return null;
       return toViewportPoint(rect, event, viewportRef.current);
     },
@@ -339,11 +439,10 @@ export function BrowserPane({
   );
 
   useEffect(() => {
-    const host = viewerRef.current;
+    const host = frameRef.current;
     if (!host) return;
     const onWheel = (event: WheelEvent) => {
       if (pick) return;
-      event.preventDefault();
       const point = pointFrom(event);
       if (!point) return;
       const factor = event.deltaMode === 1 ? 16 : 1;
@@ -396,18 +495,15 @@ export function BrowserPane({
   /** 地址栏提交：压栈并导航。 */
   const navigate = useCallback(
     (raw: string) => {
-      const next = raw.trim();
-      if (!next) return;
-      const normalized = /^[a-z][a-z0-9+.-]*:\/\//i.test(next)
-        ? next
-        : `https://${next}`;
+      const normalized = normalizeUrl(raw);
+      if (!normalized) return;
       setHistory((current) => [
         ...current.slice(0, historyIndex + 1),
         normalized,
       ]);
       setHistoryIndex((current) => current + 1);
-      setActiveUrl(normalized);
-      setUrlInput(normalized);
+      setUrl(normalized);
+      setDraft(normalized);
     },
     [historyIndex],
   );
@@ -418,28 +514,53 @@ export function BrowserPane({
       const target = history[nextIndex];
       if (target === undefined) return;
       setHistoryIndex(nextIndex);
-      setActiveUrl(target);
-      setUrlInput(target);
+      setUrl(target);
+      setDraft(target);
     },
     [history, historyIndex],
   );
 
+  /**
+   * 打开调试工具（旧版口径）：Web 形态注入页面内控制台（Eruda 悬浮窗，
+   * 可拖可关）。受控浏览器没连就先连上再注入——点一下就该能用，不摆假开关。
+   */
   const injectConsole = useCallback(async () => {
-    if (!activeUrl) {
-      toast("先打开一个页面再注入调试控制台。");
-      return;
-    }
+    const target = url || normalizeUrl(draft) || "about:blank";
     try {
+      const status = await surfaceJson<{ cdp: CdpStatus }>(
+        "/api/browser/cdp/status",
+      );
+      if (status.cdp.status !== "connected") {
+        const connected = await surfaceJson<{ cdp: CdpStatus }>(
+          "/api/browser/cdp/connect",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ headless: true }),
+          },
+        );
+        if (connected.cdp.status !== "connected") {
+          throw new Error(
+            connected.cdp.status === "error"
+              ? (connected.cdp.message ?? "浏览器启动失败。")
+              : "浏览器启动失败。",
+          );
+        }
+      }
       await surfaceJson("/api/browser/cdp/console", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: activeUrl }),
+        body: JSON.stringify({ url: target }),
       });
-      toast("调试控制台已注入页面");
+      toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
     } catch (error) {
-      toast(error instanceof Error ? error.message : "注入失败。");
+      toast(error instanceof Error ? error.message : "打开调试工具失败。");
     }
-  }, [activeUrl]);
+  }, [draft, url]);
+
+  const openInSystemBrowser = useCallback(() => {
+    if (url) window.open(url, "_blank", "noopener");
+  }, [url]);
 
   /** Q5：进入/退出拾取。进入时拉一次带盒模型的元素快照。 */
   const togglePicking = useCallback(async () => {
@@ -447,7 +568,7 @@ export function BrowserPane({
       setPick(null);
       return;
     }
-    if (!activeUrl) {
+    if (!url) {
       toast("先打开一个页面再拾取元素。");
       return;
     }
@@ -455,7 +576,7 @@ export function BrowserPane({
       const result = await surfaceJson<PickSnapshot>("/api/browser/snapshot", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: activeUrl }),
+        body: JSON.stringify({ url }),
       });
       setPick({
         elements: result.snapshot.elements,
@@ -464,7 +585,7 @@ export function BrowserPane({
     } catch (error) {
       toast(error instanceof Error ? error.message : "读取页面元素失败。");
     }
-  }, [activeUrl, pick]);
+  }, [pick, url]);
 
   /** Q5：点选元素 → 生成坐标引用 → 填进 composer（草稿态；与插件提及同语义）。 */
   const insertElementReference = useCallback(
@@ -478,7 +599,7 @@ export function BrowserPane({
         ` ｜ 定位提示：${element.hint.trim() || "无"}`,
         ` ｜ 中心坐标：${centerX},${centerY}`,
         ` ｜ 视口：${pick.viewport.width}×${pick.viewport.height}`,
-        ` ｜ 来自：${activeUrl}`,
+        ` ｜ 来自：${url}`,
       ].join("");
       if (workspacePath) {
         useZCodeSessionStore
@@ -494,7 +615,7 @@ export function BrowserPane({
       }
       setPick(null);
     },
-    [activeUrl, pick, workspaceIdentity, workspacePath],
+    [pick, url, workspaceIdentity, workspacePath],
   );
 
   // 拾取中按 Esc 退出（与「再点一次工具栏按钮」等价）。
@@ -509,171 +630,304 @@ export function BrowserPane({
 
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
-  const scalePercent = useMemo(
-    () => Math.round(viewport.scale > 0 ? viewport.scale * 100 : 100),
-    [viewport.scale],
-  );
+  const navButtonClass =
+    "shrink-0 p-1 text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground disabled:opacity-40";
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col bg-background"
+      className="flex h-full min-h-0 flex-col gap-2"
       data-testid="browser-pane"
     >
-      <div className="flex items-center gap-1 border-b px-1.5 py-1">
-        <Button
+      {/* 第一行：导航 + 地址栏 + 自由尺寸 + 元素拾取 + ⋯ 菜单（旧版排布） */}
+      <form
+        className="flex items-center gap-1 px-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          navigate(draft);
+        }}
+      >
+        <button
           type="button"
-          variant="ghost"
-          size="icon-sm"
           aria-label="后退"
           disabled={!canBack}
+          title="后退"
           onClick={() => goHistory(-1)}
+          className={navButtonClass}
         >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <Button
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </button>
+        <button
           type="button"
-          variant="ghost"
-          size="icon-sm"
           aria-label="前进"
           disabled={!canForward}
+          title="前进"
           onClick={() => goHistory(1)}
+          className={navButtonClass}
         >
-          <ArrowRight className="size-4" />
-        </Button>
-        <Button
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+        <button
           type="button"
-          variant="ghost"
-          size="icon-sm"
           aria-label="刷新"
+          disabled={!url}
+          title="重新加载当前页面"
           onClick={() => setReloadToken((token) => token + 1)}
+          className={navButtonClass}
         >
-          <RotateCw className="size-4" />
-        </Button>
+          <RotateCw className="h-3.5 w-3.5" />
+        </button>
         <Input
-          aria-label="地址栏"
-          value={urlInput}
-          onChange={(event) => setUrlInput(event.target.value)}
+          aria-label="地址"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") navigate(urlInput);
+            if (event.key === "Enter") {
+              event.preventDefault();
+              navigate(draft);
+            }
           }}
-          className="h-7 flex-1 text-xs"
-          placeholder="输入地址"
+          placeholder="输入网址后回车"
+          className="h-7 min-w-0 flex-1 rounded-none border-transparent bg-hover/40 px-2 text-xs focus-visible:bg-transparent"
         />
-        <Button
+        {/* 自由尺寸开关：点一下打开、再点一下取消（旧版口径） */}
+        <button
           type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="调试控制台"
-          onClick={() => void injectConsole()}
+          aria-label={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
+          aria-pressed={freeSizeOn}
+          title={freeSizeOn ? "退出自由尺寸" : "自由尺寸"}
+          onClick={() => setFreeSizeOn((current) => !current)}
+          className={`shrink-0 p-1 transition-colors hover:bg-hover ${
+            freeSizeOn
+              ? "bg-hover text-foreground"
+              : "text-foreground-subtle hover:text-foreground"
+          }`}
+          data-active={freeSizeOn}
         >
-          <SquareTerminal className="size-4" />
-        </Button>
-        <Button
+          <PictureInPicture2 className="h-3.5 w-3.5" />
+        </button>
+        <button
           type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="拾取元素"
-          aria-pressed={pick !== null}
-          className={pick ? "bg-hover" : undefined}
+          aria-label="选择网页元素加入聊天"
+          disabled={!url}
+          title="选择页面元素加入对话"
           onClick={() => void togglePicking()}
+          className={`${navButtonClass} ${pick ? "bg-hover text-foreground" : ""}`}
         >
-          <Crosshair className="size-4" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-1.5 border-b px-2 py-1 text-xs">
-        {VIEWPORT_PRESETS.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            className={`rounded px-1.5 py-0.5 transition-colors hover:bg-hover ${
-              preset === frameSize
-                ? "bg-hover font-medium"
-                : "text-foreground-subtle"
-            }`}
-            onClick={() => setFrameSize(preset)}
-          >
-            {preset.label}
-          </button>
-        ))}
-        {state.status === "live" ? (
-          <span className="ml-auto inline-flex items-center gap-1 text-foreground-subtle">
-            <HistoryIcon className="size-3" />
-            {scalePercent}%
-          </span>
-        ) : null}
-      </div>
-      <div
-        ref={viewerRef}
-        role="group"
-        aria-label="内嵌浏览器画面"
-        className={`relative min-h-0 flex-1 overflow-hidden${pick ? " cursor-crosshair" : ""}`}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={() => {
-          draggingRef.current = false;
-        }}
-        onContextMenu={(event) => event.preventDefault()}
-      >
-        {state.status === "live" ? (
-          // MJPEG 流（multipart/x-mixed-replace）
-          <img
-            ref={imgRef}
-            src={state.src}
-            alt="浏览器画面"
-            draggable={false}
-            onError={handleFrameError}
-            className="absolute top-0 left-0 h-full w-full select-none"
-          />
-        ) : state.status === "idle" ? (
-          <p className="p-2 text-xs text-foreground-subtle">输入地址开始浏览</p>
-        ) : state.status === "connecting" ? (
-          <p className="p-2 text-xs text-foreground-subtle">
-            正在打开内嵌浏览器…
-          </p>
-        ) : (
-          <div className="p-2 text-xs">
-            <p className="text-destructive">{state.message}</p>
-            <button
+          <MousePointerSquareDashed className="h-3.5 w-3.5" />
+        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
               type="button"
-              onClick={() => setReloadToken((token) => token + 1)}
-              className="mt-1 rounded border px-1.5 py-0.5 hover:bg-hover"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="浏览器菜单"
+              title="更多"
+              className="shrink-0 rounded-none"
             >
-              重新加载
-            </button>
+              <Ellipsis className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-52">
+            <DropdownMenuItem
+              disabled={!url}
+              onSelect={() => openInSystemBrowser()}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>在默认浏览器中打开</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void injectConsole()}>
+              <SquareTerminal className="h-3.5 w-3.5" />
+              <span>打开调试工具</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </form>
+
+      {/* 自由尺寸打开后只放两样（旧版口径），整组水平居中 */}
+      {freeSizeOn ? (
+        <div className="flex items-center justify-center gap-2 px-1 py-0.5 text-[11px]">
+          <ViewportSizeInput
+            ariaLabel="视口宽度"
+            value={freeSize.width}
+            min={320}
+            max={3840}
+            onCommit={(width) =>
+              setFreeSize((current) => ({ ...current, width }))
+            }
+          />
+          <span aria-hidden className="text-foreground-subtle">
+            ×
+          </span>
+          <ViewportSizeInput
+            ariaLabel="视口高度"
+            value={freeSize.height}
+            min={240}
+            max={2160}
+            onCommit={(height) =>
+              setFreeSize((current) => ({ ...current, height }))
+            }
+          />
+          <Select
+            value={zoom}
+            onValueChange={(next) => {
+              if (typeof next === "string") setZoom(next as ZoomPresetId);
+            }}
+          >
+            <SelectTrigger
+              aria-label="窗口比例"
+              title="窗口比例"
+              className="min-w-24 shrink-0 rounded-none border-transparent bg-transparent px-1.5 py-0.5 text-[11px] font-medium"
+              data-testid="browser-zoom-select"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="min-w-28">
+              {ZOOM_PRESETS.map((preset) => (
+                <SelectItem key={preset.id} value={preset.id}>
+                  {preset.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+
+      {url ? (
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={frameRef}
+            className={`absolute inset-0 overflow-auto border bg-background${pick ? " cursor-crosshair" : ""}`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              draggingRef.current = false;
+            }}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            {/* 画面按真实视口尺寸排版再等比缩放——比例永远不变形 */}
+            <div
+              data-role="live-browser-frame"
+              className="absolute top-0 left-0"
+              style={{
+                width: viewportWidth > 0 ? `${viewportWidth}px` : "100%",
+                height: viewportHeight > 0 ? `${viewportHeight}px` : "100%",
+                transform: `scale(${scale})`,
+                transformOrigin: "top left",
+              }}
+            >
+              {state.status === "live" ? (
+                // MJPEG 流（multipart/x-mixed-replace）
+                <div className="relative h-full w-full">
+                  <img
+                    ref={imgRef}
+                    src={state.src}
+                    alt="浏览器画面"
+                    draggable={false}
+                    onError={handleFrameError}
+                    className="absolute top-0 left-0 h-full w-full select-none"
+                  />
+                  {pick
+                    ? pick.elements.map((element, index) =>
+                        element.box ? (
+                          <button
+                            key={`${element.tag}-${index}`}
+                            type="button"
+                            aria-label={`拾取 ${element.tag}`}
+                            title={element.text || element.hint || element.tag}
+                            className="absolute rounded-sm border border-primary/70 bg-primary/15 hover:border-primary hover:bg-primary/30"
+                            style={{
+                              left: `${(element.box.x / pick.viewport.width) * 100}%`,
+                              top: `${(element.box.y / pick.viewport.height) * 100}%`,
+                              width: `${(element.box.width / pick.viewport.width) * 100}%`,
+                              height: `${(element.box.height / pick.viewport.height) * 100}%`,
+                            }}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onMouseUp={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              insertElementReference(element);
+                            }}
+                          />
+                        ) : null,
+                      )
+                    : null}
+                  {pick ? (
+                    <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
+                      点选元素填入输入框 · Esc 取消
+                    </p>
+                  ) : null}
+                </div>
+              ) : state.status === "connecting" ? (
+                <p className="p-2 text-xs text-foreground-subtle">
+                  正在打开内嵌浏览器…
+                </p>
+              ) : state.status === "idle" ? null : (
+                <div className="p-2 text-xs">
+                  <p className="text-destructive">{state.message}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReloadToken((token) => token + 1)}
+                    className="mt-1"
+                  >
+                    重新加载
+                  </Button>
+                </div>
+              )}
+            </div>
+            {freeSizeOn ? (
+              <button
+                type="button"
+                aria-label="拖动调整尺寸"
+                title="拖动调整尺寸"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startY = event.clientY;
+                  const start = freeSize;
+                  const onMove = (moveEvent: MouseEvent) => {
+                    setFreeSize({
+                      width: clampViewport(
+                        start.width + (moveEvent.clientX - startX),
+                        320,
+                        3840,
+                      ),
+                      height: clampViewport(
+                        start.height + (moveEvent.clientY - startY),
+                        240,
+                        2160,
+                      ),
+                    });
+                  };
+                  const onUp = () => {
+                    window.removeEventListener("mousemove", onMove);
+                    window.removeEventListener("mouseup", onUp);
+                  };
+                  window.addEventListener("mousemove", onMove);
+                  window.addEventListener("mouseup", onUp);
+                }}
+                style={{
+                  left: `${viewportWidth * scale - 10}px`,
+                  top: `${viewportHeight * scale - 10}px`,
+                }}
+                className="absolute h-3 w-3 cursor-nwse-resize border border-foreground/40 bg-background"
+                data-testid="browser-free-size-handle"
+              />
+            ) : null}
           </div>
-        )}
-        {pick
-          ? pick.elements.map((element, index) =>
-              element.box ? (
-                <button
-                  key={`${element.tag}-${index}`}
-                  type="button"
-                  aria-label={`拾取 ${element.tag}`}
-                  title={element.text || element.hint || element.tag}
-                  className="absolute rounded-sm border border-primary/70 bg-primary/15 hover:border-primary hover:bg-primary/30"
-                  style={{
-                    left: `${(element.box.x / pick.viewport.width) * 100}%`,
-                    top: `${(element.box.y / pick.viewport.height) * 100}%`,
-                    width: `${(element.box.width / pick.viewport.width) * 100}%`,
-                    height: `${(element.box.height / pick.viewport.height) * 100}%`,
-                  }}
-                  onMouseDown={(event) => event.stopPropagation()}
-                  onMouseUp={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    insertElementReference(element);
-                  }}
-                />
-              ) : null,
-            )
-          : null}
-        {pick ? (
-          <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
-            点选元素填入输入框 · Esc 取消
-          </p>
-        ) : null}
-      </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-foreground-subtle">
+          <Globe className="size-10 opacity-30" />
+          <p className="text-xs">还没有打开页面</p>
+          {state.status === "idle" && !initialUrl ? (
+            <p className="text-[11px]">输入地址开始浏览</p>
+          ) : null}
+        </div>
+      )}
       <textarea
         ref={sinkRef}
         aria-label="浏览器键盘输入"
@@ -685,5 +939,58 @@ export function BrowserPane({
         style={{ left: 1, top: 1 }}
       />
     </div>
+  );
+}
+
+/**
+ * 自由尺寸的数字输入（旧版做法）：打字期间只在「解析出来且落在范围内」时提交，
+ * 落焦时再夹一次并规范化文本（边打字边夹取会把「9」错夹成 320）。
+ */
+function ViewportSizeInput({
+  ariaLabel,
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  ariaLabel: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+  return (
+    <input
+      aria-label={ariaLabel}
+      type="number"
+      min={min}
+      max={max}
+      value={text}
+      onChange={(event) => {
+        const next = event.target.value;
+        setText(next);
+        const parsed = Number(next);
+        if (
+          next.trim() !== "" &&
+          Number.isFinite(parsed) &&
+          parsed >= min &&
+          parsed <= max
+        ) {
+          onCommit(Math.round(parsed));
+        }
+      }}
+      onBlur={() => {
+        const parsed = Number(text);
+        const clamped = clampViewport(parsed, min, max);
+        setText(String(clamped));
+        onCommit(clamped);
+      }}
+      data-testid={`browser-free-size-${ariaLabel === "视口宽度" ? "width" : "height"}`}
+      className="w-16 border bg-transparent px-1 py-0.5 font-mono text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-ring"
+    />
   );
 }

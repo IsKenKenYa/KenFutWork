@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as notifications from "@zui/components/ui/toast.js";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
 const requestComposerTextInsert = vi.fn();
@@ -29,7 +29,12 @@ const { BrowserPane } = await import(
   "../src/components/workbench/zcode/host/BrowserPane.js"
 );
 
-const user = userEvent.setup();
+// userEvent 实例带指针/键盘内部状态，跨用例复用会让后续 click 失真；
+// 每个用例前重建（用例体内直接引用本绑定，无需逐用例改写）。
+let user = userEvent.setup();
+beforeEach(() => {
+  user = userEvent.setup();
+});
 
 afterEach(async () => {
   cleanup();
@@ -44,6 +49,18 @@ afterEach(async () => {
   requestComposerTextInsert.mockReset();
 });
 
+/** Radix 下拉在跨用例后 pointer 路径不稳定；键盘 Enter 开菜单是同一交互。 */
+function openBrowserMenu(): void {
+  const trigger = screen.getByRole("button", { name: "浏览器菜单" });
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "Enter", code: "Enter", bubbles: true });
+}
+
+/** jsdom 无布局（面板量出来是 0×0），开自由尺寸让视口取输入值。 */
+async function enableFreeSize(): Promise<void> {
+  await user.click(screen.getByRole("button", { name: "自由尺寸" }));
+}
+
 function connectedApis() {
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     // 信封与服务端一致：`{ cdp: {...} }`（见 apps/server/src/features/browser/plugin.ts）。
@@ -51,9 +68,13 @@ function connectedApis() {
       return { cdp: { status: "connected", currentUrl: "" } };
     }
     if (path === "/api/browser/cdp/view") {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        width: number;
+        height: number;
+      };
       return {
-        ticket: "ticket-1",
-        viewport: { width: 1280, height: 720, scale: 1 },
+        ticket: `ticket-${body.width}x${body.height}`,
+        viewport: { width: body.width, height: body.height, scale: 1 },
       };
     }
     if (path === "/api/browser/cdp/input") {
@@ -66,22 +87,26 @@ function connectedApis() {
   });
 }
 
-test("无初始地址：进开始态不再假加载、零请求；输入地址后正常开流", async () => {
+test("无初始地址：空态不再假加载、零请求；输入地址后按自由尺寸视口开流", async () => {
   connectedApis();
   render(<BrowserPane />);
-  // 旧实现此处停在「正在打开内嵌浏览器…」且永不返回（open 因 !activeUrl 静默退出）
-  expect(await screen.findByText("输入地址开始浏览")).toBeTruthy();
+  expect(await screen.findByText("还没有打开页面")).toBeTruthy();
+  expect(screen.getByText("输入地址开始浏览")).toBeTruthy();
   expect(screen.queryByText("正在打开内嵌浏览器…")).toBeNull();
+  // 关键回归：不再发起任何数据面请求（旧实现此处卡在 connecting 且永不返回）
   expect(surfaceJson).not.toHaveBeenCalled();
 
-  const address = screen.getByLabelText("地址栏");
+  // jsdom 无布局：开自由尺寸后视口取输入值（1280×720）
+  await enableFreeSize();
+  expect(screen.getByTestId("browser-free-size-width")).toBeTruthy();
+  const address = screen.getByLabelText("地址");
   await user.click(address);
   await user.type(address, "example.com");
   await user.keyboard("{Enter}");
   const img = await screen.findByAltText("浏览器画面");
   await waitFor(() =>
     expect(img.getAttribute("src")).toBe(
-      "/api/browser/cdp/stream?ticket=ticket-1",
+      "/api/browser/cdp/stream?ticket=ticket-1280x720",
     ),
   );
   expect(surfaceJson).toHaveBeenCalledWith(
@@ -97,60 +122,25 @@ test("无初始地址：进开始态不再假加载、零请求；输入地址�
   );
 });
 
-test("连接→开流→MJPEG 画面渲染；地址栏导航走 view；历史栈前进后退", async () => {
+test("本地地址默认 http、外网默认 https（旧版归一化口径）", async () => {
   connectedApis();
   render(<BrowserPane initialUrl="https://example.com" />);
-  const img = await screen.findByAltText("浏览器画面");
-  await waitFor(() =>
-    expect(img.getAttribute("src")).toBe(
-      "/api/browser/cdp/stream?ticket=ticket-1",
-    ),
-  );
-  expect(surfaceJson).toHaveBeenCalledWith(
-    "/api/browser/cdp/view",
-    expect.objectContaining({
-      method: "POST",
-      body: JSON.stringify({
-        url: "https://example.com",
-        width: 1280,
-        height: 720,
-      }),
-    }),
-  );
-
-  // 未连时自动 connect（headless，面板即窗口）
-  // （本用例 status 直接 connected，另测未连路径）
-
-  // 地址栏导航：补协议、压栈
-  const address = screen.getByLabelText("地址栏");
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+  const address = screen.getByLabelText("地址");
   await user.clear(address);
-  await user.type(address, "another.example.org");
+  await user.type(address, "localhost:3300");
   await user.keyboard("{Enter}");
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/browser/cdp/view",
       expect.objectContaining({
         body: JSON.stringify({
-          url: "https://another.example.org",
+          url: "http://localhost:3300",
           width: 1280,
           height: 720,
         }),
       }),
-    ),
-  );
-
-  // 历史栈：后退回第一页
-  await user.click(screen.getByRole("button", { name: "后退" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("地址栏").getAttribute("value")).toBe(
-      "https://example.com",
-    ),
-  );
-  // 后退后前进恢复
-  await user.click(screen.getByRole("button", { name: "前进" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("地址栏").getAttribute("value")).toBe(
-      "https://another.example.org",
     ),
   );
 });
@@ -172,6 +162,7 @@ test("未连接时自动以无头模式连一次再开流", async () => {
     return {};
   });
   render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/browser/cdp/connect",
@@ -184,55 +175,176 @@ test("未连接时自动以无头模式连一次再开流", async () => {
   await screen.findByAltText("浏览器画面");
 });
 
-test("连接失败显示可读原因与重载入口；调试控制台按钮调 console 注入", async () => {
+test("地址栏导航压栈；历史栈后退/前进", async () => {
+  connectedApis();
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+
+  const address = screen.getByLabelText("地址");
+  await user.clear(address);
+  await user.type(address, "another.example.org");
+  await user.keyboard("{Enter}");
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/view",
+      expect.objectContaining({
+        body: JSON.stringify({
+          url: "https://another.example.org",
+          width: 1280,
+          height: 720,
+        }),
+      }),
+    ),
+  );
+
+  await user.click(screen.getByRole("button", { name: "后退" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("地址").getAttribute("value")).toBe(
+      "https://example.com",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "前进" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("地址").getAttribute("value")).toBe(
+      "https://another.example.org",
+    ),
+  );
+});
+
+test("连接失败显示可读原因与重载入口", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/browser/cdp/status") {
-      return {
-        cdp: {
-          status: "error",
-          message: "端口未开",
-        },
-      };
+      return { cdp: { status: "error", message: "端口未开" } };
     }
     if (path === "/api/browser/cdp/connect") {
       return { cdp: { status: "error", message: "浏览器没起来" } };
+    }
+    return {};
+  });
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
+  await waitFor(() => expect(screen.getByText("浏览器没起来")).toBeTruthy());
+  expect(screen.getByRole("button", { name: "重新加载" })).toBeTruthy();
+});
+
+test("⋯菜单：在默认浏览器中打开当前页；打开调试工具先连 CDP 再注入", async () => {
+  connectedApis();
+  const openExternal = vi.fn();
+  const originalOpen = window.open;
+  window.open = openExternal as unknown as typeof window.open;
+  try {
+    render(<BrowserPane initialUrl="https://example.com" />);
+    await enableFreeSize();
+    await screen.findByAltText("浏览器画面");
+
+    openBrowserMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "在默认浏览器中打开" }),
+    );
+    expect(openExternal).toHaveBeenCalledWith(
+      "https://example.com",
+      "_blank",
+      "noopener",
+    );
+
+    openBrowserMenu();
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "打开调试工具" }),
+    );
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+      }),
+    );
+  } finally {
+    window.open = originalOpen;
+  }
+});
+
+test("调试工具在受控浏览器未连时先连再注入（点一下就该能用）", async () => {
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "disconnected" } };
+    }
+    if (path === "/api/browser/cdp/connect") {
+      return { cdp: { status: "connected" } };
     }
     if (path === "/api/browser/cdp/console") {
       return {};
     }
     return {};
   });
-  render(<BrowserPane initialUrl="https://example.com" />);
-  await waitFor(() => expect(screen.getByText("浏览器没起来")).toBeTruthy());
-  expect(screen.getByRole("button", { name: "重新加载" })).toBeTruthy();
-
-  await user.click(screen.getByRole("button", { name: "调试控制台" }));
+  render(<BrowserPane />);
+  openBrowserMenu();
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "打开调试工具" }),
+  );
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/connect",
+      expect.objectContaining({ method: "POST" }),
+    ),
+  );
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: "https://example.com" }),
+      body: JSON.stringify({ url: "about:blank" }),
     }),
   );
 });
 
-test("视口预设切换改变 view 的 width/height（真视口，非缩放伪装）", async () => {
+test("自由尺寸：改宽提交按新视口重开；拖拽把手改宽高；缩放档是纯显示层", async () => {
   connectedApis();
   render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
   await screen.findByAltText("浏览器画面");
-  await user.click(screen.getByRole("button", { name: "375 × 812" }));
+
+  // 改宽 900（打字期间合法值即时提交）
+  const width = screen.getByTestId("browser-free-size-width");
+  await user.clear(width);
+  await user.type(width, "900");
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/browser/cdp/view",
       expect.objectContaining({
         body: JSON.stringify({
           url: "https://example.com",
-          width: 375,
-          height: 812,
+          width: 900,
+          height: 720,
         }),
       }),
     ),
   );
+
+  // 拖拽把手：+80 / +60 → 980×780
+  surfaceJson.mockClear();
+  const handle = screen.getByTestId("browser-free-size-handle");
+  fireEvent.mouseDown(handle, { clientX: 100, clientY: 100 });
+  fireEvent.mouseMove(window, { clientX: 180, clientY: 160 });
+  fireEvent.mouseUp(window);
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/view",
+      expect.objectContaining({
+        body: JSON.stringify({
+          url: "https://example.com",
+          width: 980,
+          height: 780,
+        }),
+      }),
+    ),
+  );
+
+  // 缩放档存在且不影响数据面（只改显示 scale）
+  surfaceJson.mockClear();
+  expect(screen.getByTestId("browser-zoom-select")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "退出自由尺寸" }));
+  expect(screen.queryByTestId("browser-zoom-select")).toBeNull();
+  expect(surfaceJson).not.toHaveBeenCalled();
 });
 
 test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填进 composer", async () => {
@@ -281,20 +393,21 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
       workspaceIdentity="ws-1"
     />,
   );
+  await enableFreeSize();
   await screen.findByAltText("浏览器画面");
 
-  await user.click(screen.getByRole("button", { name: "拾取元素" }));
+  await user.click(
+    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+  );
   const box = await screen.findByRole("button", { name: "拾取 button" });
   // 视口 1280×720 下盒 {100,50,200,40} → 百分比定位
   expect(box.getAttribute("style")).toContain("left: 7.8125%");
   expect(box.getAttribute("style")).toContain("top: 6.944444444444445%");
   expect(box.getAttribute("style")).toContain("width: 15.625%");
   expect(box.getAttribute("style")).toContain("height: 5.555555555555555%");
-  // 无几何元素不叠框（只进不了列表热点）
   expect(screen.queryByRole("button", { name: "拾取 a" })).toBeNull();
 
-  // jsdom 无布局（矩形全零），userEvent 的坐标命中会落到 (0,0) 的 img 上；
-  // 叠框按钮用 fireEvent 直派 click（与真实浏览器点选同一处理器）。
+  // jsdom 无布局（矩形全零），叠框按钮用 fireEvent 直派 click（同一处理器）。
   fireEvent.click(box);
   await waitFor(() =>
     expect(requestComposerTextInsert).toHaveBeenCalledWith(
@@ -303,13 +416,12 @@ test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填�
       "ws-1",
     ),
   );
-  // 点选后退出拾取态
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "拾取 button" })).toBeNull(),
   );
 });
 
-test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () => {
+test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", async () => {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path === "/api/browser/snapshot") {
       return {
@@ -336,9 +448,12 @@ test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () =>
     return {};
   });
   render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
   await screen.findByAltText("浏览器画面");
 
-  await user.click(screen.getByRole("button", { name: "拾取元素" }));
+  await user.click(
+    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+  );
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/browser/snapshot",
@@ -351,12 +466,18 @@ test("拾取中 Esc 退出；调试控制台注入带上当前 url", async () =>
     expect(screen.queryByText("点选元素填入输入框 · Esc 取消")).toBeNull(),
   );
 
-  await user.click(screen.getByRole("button", { name: "调试控制台" }));
+  await user.click(screen.getByRole("button", { name: "刷新" }));
   await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith("/api/browser/cdp/console", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: "https://example.com" }),
-    }),
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/view",
+      expect.objectContaining({
+        body: JSON.stringify({
+          url: "https://example.com",
+          width: 1280,
+          height: 720,
+          reload: true,
+        }),
+      }),
+    ),
   );
 });
