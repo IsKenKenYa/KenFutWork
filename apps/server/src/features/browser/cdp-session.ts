@@ -19,7 +19,6 @@ import {
   launchBrowserWithDebugPort,
   pressKey,
   readDom,
-  readPickables,
   readViewport,
   setViewportOverride,
   startScreencast,
@@ -43,6 +42,14 @@ import {
   parseDebugConsoleProbe,
 } from "./debug-console.js";
 import { sendDevToolsKey } from "./devtools-keys.js";
+import {
+  ELEMENT_PICKER_READ_SCRIPT,
+  ELEMENT_PICKER_START_SCRIPT,
+  ELEMENT_PICKER_STOP_SCRIPT,
+  type ElementPickerReadResult,
+  parseElementPickerRead,
+  throwPickerStartError,
+} from "./element-picker.js";
 import {
   capBody,
   createNetworkBuffer,
@@ -114,6 +121,16 @@ export interface CdpBrowserSession {
   /** 截当前视口为 PNG（base64 直出，不落 blob——面板「截图到对话」直接组 File）。 */
   screenshotData(): Promise<{ base64: string; width: number; height: number }>;
   /**
+   * 进入**页面内元素选择模式**（DevTools 拾取器同款）：高亮跟鼠标在页面里实时走，
+   * 坐标永远精确、所有元素可选。`mousedown`（capture+preventDefault）把点中的元素
+   * 存进 `window.__kfwPickedElement` 并自动收起——页面不会真的被点下去。
+   */
+  startElementPicker(): Promise<void>;
+  /** 取走点选结果（读后即清）。页面还在选择模式时 `active` 为 true。 */
+  readPickedElement(): Promise<ElementPickerReadResult>;
+  /** 退出选择模式并清状态（幂等）。 */
+  stopElementPicker(): Promise<void>;
+  /**
    * 在**受控浏览器**里打开完整开发者工具，并取消停靠成**独立窗口**（浮动、可移动）。
    *
    * 做法与取舍见 `devtools-keys` 头注：真 DevTools 只有浏览器自己开得出来（CDP 开出来的
@@ -141,22 +158,6 @@ export interface CdpBrowserSession {
     title: string;
     text: string;
     elements: Array<{ tag: string; text: string; hint: string }>;
-  }>;
-  /**
-   * 可拾取元素（带真实几何，见 cdp-client 的 readPickables）+ 一张当前视口截图。
-   * 截图落 blob 后给签名 URL；blob 不可用或截图失败时只少 `screenshotUrl`，几何照给。
-   */
-  pickables(): Promise<{
-    url: string;
-    title: string;
-    viewport: { width: number; height: number };
-    elements: Array<{
-      tag: string;
-      text: string;
-      hint: string;
-      box: { x: number; y: number; width: number; height: number } | null;
-    }>;
-    screenshotUrl?: string;
   }>;
   screenshot(): Promise<{
     screenshotUrl: string;
@@ -510,7 +511,7 @@ export function createCdpBrowserSession(deps: {
     return sessionId;
   };
 
-  /** 截一张当前视口并落到 blob（`screenshot()` 与 `pickables()` 共用）。 */
+  /** 截一张当前视口并落到 blob（`screenshot()` 用）。 */
   const captureAndUpload = async (
     cdp: CdpClient,
     id: string,
@@ -767,6 +768,42 @@ export function createCdpBrowserSession(deps: {
         height: portrait.height,
       };
     },
+    async startElementPicker() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression: ELEMENT_PICKER_START_SCRIPT,
+          returnByValue: false,
+        },
+        id,
+      )) as {
+        exceptionDetails?: {
+          text?: string;
+          exception?: { description?: string };
+        };
+      };
+      if (evaluated.exceptionDetails) {
+        throwPickerStartError(evaluated.exceptionDetails);
+      }
+    },
+    async readPickedElement() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        { expression: ELEMENT_PICKER_READ_SCRIPT, returnByValue: true },
+        id,
+      )) as { result?: { value?: unknown } };
+      return parseElementPickerRead(evaluated.result?.value);
+    },
+    async stopElementPicker() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      await cdp.send(
+        "Runtime.evaluate",
+        { expression: ELEMENT_PICKER_STOP_SCRIPT, returnByValue: false },
+        id,
+      );
+    },
     async openDevToolsWindow(options = {}) {
       const { client: cdp, sessionId: id } = requireConnected();
       if (state.status === "connected" && state.headless) {
@@ -906,17 +943,6 @@ export function createCdpBrowserSession(deps: {
     async snapshot() {
       const { client: cdp, sessionId: id } = requireConnected();
       return readDom(cdp, id);
-    },
-    async pickables() {
-      const { client: cdp, sessionId: id } = requireConnected();
-      const page = await readPickables(cdp, id);
-      // 截图与几何用同一套视口坐标（readPickables 已把页面滚到顶）：
-      // 截图的宽高直接取 CDP 的视口尺寸，不靠 portrait 缓存，避免两者错位
-      const shot = await captureAndUpload(cdp, id).catch(() => null);
-      return {
-        ...page,
-        ...(shot ? { screenshotUrl: shot.screenshotUrl } : {}),
-      };
     },
     async screenshot() {
       const { client: cdp, sessionId: id } = requireConnected();

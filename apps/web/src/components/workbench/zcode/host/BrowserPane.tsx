@@ -37,13 +37,14 @@ import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
  * 第一行 后退/前进/刷新/地址/自由尺寸开关/选择网页元素加入聊天/⋯菜单（在外部
  * 浏览器中打开、打开调试工具）；自由尺寸打开后第二行居中放 分辨率输入 + 窗口比例。
  *
- * 数据面（cookie 会话）：/api/browser/cdp/{status,connect,view,input,console}，
+ * 数据面（cookie 会话）：/api/browser/cdp/{status,connect,view,input,console,picker}，
  * 画面流 GET /api/browser/cdp/stream?ticket=…（票据在 query，img 不带登录头）。
  * 画面按**真实视口尺寸**排版再等比缩放（transform: scale）——比例永远不变形；
  * 自由尺寸关着时视口=面板可用区（scale 恒 1），打开后视口=输入的分辨率。
  * 交互按视口 CSS 坐标回填；键盘走 1px 透明 textarea（输入法合成可达）。
  * 面板内历史栈（跨源 iframe 读不到页面自己的 history）。
- * Q5 元素拾取：/api/browser/snapshot 取带真实盒模型的元素列表 → 画面上叠框点选 →
+ * Q5 元素拾取：/api/browser/cdp/picker 往页面注入选择器脚本（DevTools 拾取器同款，
+ * 高亮在页面里跟鼠标走）→ 面板转发一次「按下→抬起」→ read 取回元素 →
  * 坐标引用经 requestComposerTextInsert 填进 composer（草稿态生效，与插件提及同语义）。
  */
 
@@ -59,22 +60,14 @@ interface CdpViewport {
   scale: number;
 }
 
-/** 拾取候选元素（服务端 readPickables：DOM.getBoxModel 真实盒模型，视口坐标）。 */
-interface PickableElement {
+/** 页面内选择器点选回来的元素（elementFromPoint 实时取，坐标精确、全元素可选）。 */
+interface PickedElementWire {
   tag: string;
   text: string;
   hint: string;
-  box: { x: number; y: number; width: number; height: number } | null;
-}
-
-interface PickSnapshot {
-  snapshot: {
-    url: string;
-    title: string;
-    viewport: { width: number; height: number };
-    elements: PickableElement[];
-  };
-  source: "cdp" | "static";
+  box: { x: number; y: number; width: number; height: number };
+  viewport: { width: number; height: number };
+  page: string;
 }
 
 interface CdpInputEvent {
@@ -227,13 +220,6 @@ export function BrowserPane({
     height: 0,
     scale: 1,
   });
-  /** Q5 拾取态：元素盒（视口坐标）+ 拾取视口尺寸；null=未在拾取。 */
-  const [pick, setPick] = useState<{
-    elements: PickableElement[];
-    viewport: { width: number; height: number };
-  } | null>(null);
-  /** 悬停高亮的元素下标（悬浮切换、点击添加的用户口径）。 */
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -385,15 +371,89 @@ export function BrowserPane({
     [],
   );
 
+  /**
+   * Q5：点选元素 → 生成坐标引用 → 填进 composer。缩略形态（用户口径）：composer 里
+   * 显示为可删的 browser 元素 chip（虚线鼠标图标 + `<a> Learn more`），发给模型的正文
+   * 是 chip 的 markdown——label 是元素、target 是 browser-element:// 链接，坐标/视口/
+   * 来源/定位提示都在 query 里，agent 可直接取 x/y 用 browser_act 点它。
+   */
+  const insertElementReference = useCallback(
+    (element: PickedElementWire) => {
+      const centerX = Math.round(element.box.x + element.box.width / 2);
+      const centerY = Math.round(element.box.y + element.box.height / 2);
+      const displayLabel = `<${element.tag}>${element.text.trim() ? ` ${element.text.trim()}` : ""}`;
+      const params = new URLSearchParams({
+        x: String(centerX),
+        y: String(centerY),
+        w: String(element.viewport.width),
+        h: String(element.viewport.height),
+        from: element.page || url,
+      });
+      const hint = element.hint.trim();
+      if (hint) params.set("hint", hint);
+      const target = `browser-element://pick?${params.toString()}`;
+      const markdown = `[${displayLabel.replace(/]/g, "\\]")}](${target})`;
+      if (workspacePath) {
+        useZCodeSessionStore
+          .getState()
+          .requestComposerTextInsert(
+            workspacePath,
+            markdown,
+            workspaceIdentity,
+            {
+              id: `browser-element:${Date.now()}`,
+              category: "browser",
+              label: markdown,
+              value: target,
+              markdown,
+            },
+          );
+        toast("元素引用已填入输入框");
+      } else {
+        toast("当前工作区不可用，引用未填入");
+      }
+    },
+    [url, workspaceIdentity, workspacePath],
+  );
+
+  /** 拾取点选：页面在 mousedown 时已把元素存好；取回并填进 composer。 */
+  const readPickedAndInsert = useCallback(async () => {
+    try {
+      const result = await surfaceJson<{
+        picked: PickedElementWire | null;
+        active: boolean;
+        error: string | null;
+      }>("/api/browser/cdp/picker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "read" }),
+      });
+      if (result.error) {
+        toast(result.error);
+        return;
+      }
+      if (!result.picked) {
+        // 点在了选择器自己的图层或空白处：保持选择模式，用户重试
+        return;
+      }
+      insertElementReference(result.picked);
+      setPicking(false);
+    } catch {
+      // 读取失败保守起见退出选择模式，避免留在无提示的中间态
+      setPicking(false);
+    }
+  }, [insertElementReference]);
+
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (pick) return;
       sinkRef.current?.focus();
       const point = pointFrom(event);
       if (!point) return;
       const pressed =
         event.button === 2 ? "right" : event.button === 1 ? "middle" : "left";
-      draggingRef.current = pressed === "left";
+      // 拾取中同样要转发按下——页面内选择器正是在 mousedown 时记录元素并拦截
+      // 这次点击（页面自身不会被点下去）；只是不算拖拽，保持悬停节流。
+      draggingRef.current = pressed === "left" && !pickingRef.current;
       send({
         type: "mouse",
         action: "pressed",
@@ -409,9 +469,22 @@ export function BrowserPane({
 
   const handleMouseUp = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (pick) return;
       const point = pointFrom(event);
       draggingRef.current = false;
+      // 拾取中：这次「按下→抬起」就是点选，页面已把元素存好，取回并填进 composer。
+      if (pickingRef.current) {
+        if (!point) return;
+        send({
+          type: "mouse",
+          action: "released",
+          x: point.x,
+          y: point.y,
+          button: "left",
+          buttons: 0,
+        });
+        void readPickedAndInsert();
+        return;
+      }
       if (!point) return;
       send({
         type: "mouse",
@@ -423,14 +496,15 @@ export function BrowserPane({
         modifiers: modifiersOf(event),
       });
     },
-    [pointFrom, send],
+    [pointFrom, readPickedAndInsert, send],
   );
 
   const handleMouseMove = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
-      if (pick) return;
       const now = Date.now();
-      if (!draggingRef.current && now - lastHoverRef.current < 120) return;
+      // 拾取中节流降到 60ms：页面内高亮要跟手（非拾取 120ms 足够）
+      const throttle = pickingRef.current ? 60 : 120;
+      if (!draggingRef.current && now - lastHoverRef.current < throttle) return;
       lastHoverRef.current = now;
       const point = pointFrom(event);
       if (!point) return;
@@ -451,7 +525,6 @@ export function BrowserPane({
     const host = frameRef.current;
     if (!host) return;
     const onWheel = (event: WheelEvent) => {
-      if (pick) return;
       const point = pointFrom(event);
       if (!point) return;
       const factor = event.deltaMode === 1 ? 16 : 1;
@@ -465,7 +538,7 @@ export function BrowserPane({
     };
     host.addEventListener("wheel", onWheel, { passive: false });
     return () => host.removeEventListener("wheel", onWheel);
-  }, [pick, pointFrom, send]);
+  }, [pointFrom, send]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -572,10 +645,27 @@ export function BrowserPane({
   }, [url]);
 
   /** Q5：进入/退出拾取。进入时先收起调试控制台悬浮窗（别挡视线），再拉元素快照。 */
+  /**
+   * 元素选择模式（DevTools 拾取器同款，参考 Edge「将元素添加到对话」）：进入时给页面
+   * 注入跟随鼠标的选择器脚本——高亮在**页面里**实时画（elementFromPoint），坐标永远
+   * 精确、所有元素可选；旧「快照+面板叠框」因错位与元素不全废弃。
+   */
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
+  pickingRef.current = picking;
+
+  const stopPicking = useCallback(() => {
+    setPicking(false);
+    surfaceJson("/api/browser/cdp/picker", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+    }).catch(() => {});
+  }, []);
+
   const togglePicking = useCallback(async () => {
-    if (pick) {
-      setPick(null);
-      setHoveredIndex(null);
+    if (pickingRef.current) {
+      stopPicking();
       return;
     }
     if (!url) {
@@ -589,19 +679,16 @@ export function BrowserPane({
       body: JSON.stringify({ action: "close" }),
     }).catch(() => {});
     try {
-      const result = await surfaceJson<PickSnapshot>("/api/browser/snapshot", {
+      await surfaceJson("/api/browser/cdp/picker", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ action: "start" }),
       });
-      setPick({
-        elements: result.snapshot.elements,
-        viewport: result.snapshot.viewport,
-      });
+      setPicking(true);
     } catch (error) {
-      toast(error instanceof Error ? error.message : "读取页面元素失败。");
+      toast(error instanceof Error ? error.message : "进入元素选择失败。");
     }
-  }, [pick, url]);
+  }, [stopPicking, url]);
 
   /** 截图到对话：截当前视口（base64）组 PNG File，走附件事件进当前 composer。 */
   const screenshotToChat = useCallback(async () => {
@@ -645,66 +732,15 @@ export function BrowserPane({
     }
   }, [state.status, workspaceIdentity, workspacePath]);
 
-  /**
-   * Q5：点选元素 → 生成坐标引用 → 填进 composer。缩略形态（用户口径）：composer 里
-   * 显示为可删的 browser 元素 chip（虚线鼠标图标 + `<a> Learn more`），发给模型的正文
-   * 是 chip 的 markdown——label 是元素、target 是 browser-element:// 链接，坐标/视口/
-   * 来源/定位提示都在 query 里，agent 可直接取 x/y 用 browser_act 点它。
-   */
-  const insertElementReference = useCallback(
-    (element: PickableElement) => {
-      if (!element.box || !pick) return;
-      const centerX = Math.round(element.box.x + element.box.width / 2);
-      const centerY = Math.round(element.box.y + element.box.height / 2);
-      const displayLabel = `<${element.tag}>${element.text.trim() ? ` ${element.text.trim()}` : ""}`;
-      const params = new URLSearchParams({
-        x: String(centerX),
-        y: String(centerY),
-        w: String(pick.viewport.width),
-        h: String(pick.viewport.height),
-        from: url,
-      });
-      const hint = element.hint.trim();
-      if (hint) params.set("hint", hint);
-      const target = `browser-element://pick?${params.toString()}`;
-      const markdown = `[${displayLabel.replace(/]/g, "\\]")}](${target})`;
-      if (workspacePath) {
-        useZCodeSessionStore
-          .getState()
-          .requestComposerTextInsert(
-            workspacePath,
-            markdown,
-            workspaceIdentity,
-            {
-              id: `browser-element:${Date.now()}`,
-              category: "browser",
-              label: markdown,
-              value: target,
-              markdown,
-            },
-          );
-        toast("元素引用已填入输入框");
-      } else {
-        toast("当前工作区不可用，引用未填入");
-      }
-      setPick(null);
-      setHoveredIndex(null);
-    },
-    [pick, url, workspaceIdentity, workspacePath],
-  );
-
-  // 拾取中按 Esc 退出（与「再点一次工具栏按钮」等价）。
+  // 拾取中按 Esc 退出（页面内 Esc 也会自行收起，这里是面板侧兜底）。
   useEffect(() => {
-    if (!pick) return;
+    if (!picking) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setPick(null);
-        setHoveredIndex(null);
-      }
+      if (event.key === "Escape") stopPicking();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pick]);
+  }, [picking, stopPicking]);
 
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
@@ -789,7 +825,7 @@ export function BrowserPane({
           disabled={!url}
           title="选择页面元素加入对话"
           onClick={() => void togglePicking()}
-          className={`${navButtonClass} ${pick ? "bg-hover text-foreground" : ""}`}
+          className={`${navButtonClass} ${picking ? "bg-hover text-foreground" : ""}`}
         >
           <MousePointerSquareDashed className="h-3.5 w-3.5" />
         </button>
@@ -882,7 +918,9 @@ export function BrowserPane({
         <div className="relative min-h-0 flex-1">
           <div
             ref={frameRef}
-            className={`absolute inset-0 overflow-auto bg-background-alt/50${pick ? " cursor-crosshair" : ""}`}
+            role="group"
+            aria-label="内嵌浏览器画面"
+            className={`absolute inset-0 overflow-auto bg-background-alt/50${picking ? " cursor-crosshair" : ""}`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -907,7 +945,8 @@ export function BrowserPane({
               }}
             >
               {state.status === "live" ? (
-                // MJPEG 流（multipart/x-mixed-replace）
+                // MJPEG 流（multipart/x-mixed-replace）。拾取高亮由页面内脚本画
+                // （DevTools 式 elementFromPoint 跟随鼠标），面板不再叠框。
                 <div className="relative h-full w-full">
                   <img
                     ref={imgRef}
@@ -917,52 +956,6 @@ export function BrowserPane({
                     onError={handleFrameError}
                     className="absolute top-0 left-0 h-full w-full select-none"
                   />
-                  {pick
-                    ? pick.elements.map((element, index) =>
-                        element.box ? (
-                          <button
-                            key={`${element.tag}-${index}`}
-                            type="button"
-                            aria-label={`拾取 ${element.tag}`}
-                            title={element.text || element.hint || element.tag}
-                            className={`absolute rounded-sm border-2 transition-colors ${
-                              hoveredIndex === index
-                                ? "z-10 border-primary bg-primary/45 shadow-[0_0_0_2px_rgb(59_130_246/0.35)]"
-                                : "border-primary/60 bg-primary/15 hover:border-primary hover:bg-primary/30"
-                            }`}
-                            style={{
-                              left: `${(element.box.x / pick.viewport.width) * 100}%`,
-                              top: `${(element.box.y / pick.viewport.height) * 100}%`,
-                              width: `${(element.box.width / pick.viewport.width) * 100}%`,
-                              height: `${(element.box.height / pick.viewport.height) * 100}%`,
-                            }}
-                            onMouseEnter={() => setHoveredIndex(index)}
-                            onMouseLeave={() =>
-                              setHoveredIndex((current) =>
-                                current === index ? null : current,
-                              )
-                            }
-                            onMouseDown={(event) => event.stopPropagation()}
-                            onMouseUp={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              insertElementReference(element);
-                            }}
-                          >
-                            {hoveredIndex === index ? (
-                              <span className="pointer-events-none absolute -top-6 left-0 max-w-48 truncate rounded bg-primary px-1.5 py-0.5 text-[10px] leading-4 text-primary-foreground">
-                                {`<${element.tag}> ${element.text.trim() || element.hint.trim() || ""}`}
-                              </span>
-                            ) : null}
-                          </button>
-                        ) : null,
-                      )
-                    : null}
-                  {pick ? (
-                    <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-background/80 p-1 text-center text-xs text-foreground-subtle">
-                      悬停切换元素 · 点击加入对话 · Esc 取消
-                    </p>
-                  ) : null}
                 </div>
               ) : state.status === "connecting" ? (
                 <p className="p-2 text-xs text-foreground-subtle">

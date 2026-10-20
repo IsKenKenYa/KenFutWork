@@ -354,238 +354,9 @@ test("自由尺寸：改宽提交按新视口重开；拖拽把手改宽高；�
   expect(surfaceJson).not.toHaveBeenCalled();
 });
 
-test("拾取元素：snapshot 拉盒模型→叠框→点选把坐标引用填进 composer", async () => {
-  connectedApis();
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/browser/snapshot") {
-      expect(init?.method).toBe("POST");
-      expect(JSON.parse(String(init?.body))).toEqual({
-        url: "https://example.com",
-      });
-      return {
-        snapshot: {
-          url: "https://example.com",
-          title: "示例",
-          viewport: { width: 1280, height: 720 },
-          elements: [
-            {
-              tag: "button",
-              text: "提交订单",
-              hint: "立即购买",
-              box: { x: 100, y: 50, width: 200, height: 40 },
-            },
-            { tag: "a", text: "无几何", hint: "", box: null },
-          ],
-        },
-        source: "cdp",
-      };
-    }
-    if (path === "/api/browser/cdp/status") {
-      return {
-        cdp: { status: "connected", currentUrl: "https://example.com" },
-      };
-    }
-    if (path === "/api/browser/cdp/view") {
-      return {
-        ticket: "ticket-1",
-        viewport: { width: 1280, height: 720, scale: 1 },
-      };
-    }
-    return {};
-  });
-  render(
-    <BrowserPane
-      initialUrl="https://example.com"
-      workspacePath="D:/Desktop/test"
-      workspaceIdentity="ws-1"
-    />,
-  );
-  await enableFreeSize();
-  await screen.findByAltText("浏览器画面");
-
-  await user.click(
-    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
-  );
-  const box = await screen.findByRole("button", { name: "拾取 button" });
-  // 视口 1280×720 下盒 {100,50,200,40} → 百分比定位
-  expect(box.getAttribute("style")).toContain("left: 7.8125%");
-  expect(box.getAttribute("style")).toContain("top: 6.944444444444445%");
-  expect(box.getAttribute("style")).toContain("width: 15.625%");
-  expect(box.getAttribute("style")).toContain("height: 5.555555555555555%");
-  expect(screen.queryByRole("button", { name: "拾取 a" })).toBeNull();
-
-  // jsdom 无布局（矩形全零），叠框按钮用 fireEvent 直派 click（同一处理器）。
-  fireEvent.click(box);
-  // 缩略形态：插入的是 browser 元素 chip 的 markdown（坐标/视口/来源进 target query）
-  await waitFor(() =>
-    expect(requestComposerTextInsert).toHaveBeenCalledWith(
-      "D:/Desktop/test",
-      expect.stringContaining(
-        "[<button> 提交订单](browser-element://pick?x=200&y=70",
-      ),
-      "ws-1",
-      expect.objectContaining({
-        category: "browser",
-        value: expect.stringContaining("from="),
-        markdown: expect.stringContaining("browser-element://pick?x=200"),
-      }),
-    ),
-  );
-  await waitFor(() =>
-    expect(screen.queryByRole("button", { name: "拾取 button" })).toBeNull(),
-  );
-});
-
-test("拾取中 Esc 退出；刷新按钮触发重开（带 reload 标记）", async () => {
-  surfaceJson.mockImplementation(async (path: string) => {
-    if (path === "/api/browser/snapshot") {
-      return {
-        snapshot: {
-          url: "https://example.com",
-          title: "示例",
-          viewport: { width: 1280, height: 720 },
-          elements: [],
-        },
-        source: "cdp",
-      };
-    }
-    if (path === "/api/browser/cdp/status") {
-      return {
-        cdp: { status: "connected", currentUrl: "https://example.com" },
-      };
-    }
-    if (path === "/api/browser/cdp/view") {
-      return {
-        ticket: "ticket-1",
-        viewport: { width: 1280, height: 720, scale: 1 },
-      };
-    }
-    return {};
-  });
-  render(<BrowserPane initialUrl="https://example.com" />);
-  await enableFreeSize();
-  await screen.findByAltText("浏览器画面");
-
-  await user.click(
-    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
-  );
-  await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/snapshot",
-      expect.objectContaining({ method: "POST" }),
-    ),
-  );
-  expect(
-    screen.getByText("悬停切换元素 · 点击加入对话 · Esc 取消"),
-  ).toBeTruthy();
-  await user.keyboard("{Escape}");
-  await waitFor(() =>
-    expect(
-      screen.queryByText("悬停切换元素 · 点击加入对话 · Esc 取消"),
-    ).toBeNull(),
-  );
-
-  await user.click(screen.getByRole("button", { name: "刷新" }));
-  await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/cdp/view",
-      expect.objectContaining({
-        body: JSON.stringify({
-          url: "https://example.com",
-          width: 1280,
-          height: 720,
-          reload: true,
-        }),
-      }),
-    ),
-  );
-});
-
-test("拾取悬浮切换：悬停元素亮起并显示标签，点击加入的正是悬停的那个", async () => {
-  connectedApis();
-  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
-    if (path === "/api/browser/snapshot") {
-      return {
-        snapshot: {
-          url: "https://example.com",
-          title: "示例",
-          viewport: { width: 1280, height: 720 },
-          elements: [
-            {
-              tag: "a",
-              text: "链接一",
-              hint: "a.one",
-              box: { x: 0, y: 0, width: 100, height: 20 },
-            },
-            {
-              tag: "button",
-              text: "按钮二",
-              hint: "button.two",
-              box: { x: 0, y: 40, width: 100, height: 20 },
-            },
-          ],
-        },
-        source: "cdp",
-      };
-    }
-    if (path === "/api/browser/cdp/status") {
-      return { cdp: { status: "connected" } };
-    }
-    if (path === "/api/browser/cdp/view") {
-      return {
-        ticket: "ticket-1",
-        viewport: { width: 1280, height: 720, scale: 1 },
-      };
-    }
-    return {};
-  });
-  render(
-    <BrowserPane
-      initialUrl="https://example.com"
-      workspacePath="D:/Desktop/test"
-      workspaceIdentity="ws-1"
-    />,
-  );
-  await enableFreeSize();
-  await screen.findByAltText("浏览器画面");
-
-  await user.click(
-    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
-  );
-  const first = await screen.findByRole("button", { name: "拾取 a" });
-  const second = screen.getByRole("button", { name: "拾取 button" });
-  // 默认无悬停标签
-  expect(screen.queryByText("<a> 链接一")).toBeNull();
-  // 悬停第二个：亮起 + 标签出现；点击加入的正是它
-  fireEvent.mouseEnter(second);
-  expect(await screen.findByText("<button> 按钮二")).toBeTruthy();
-  expect(second.getAttribute("class")).toContain("bg-primary/45");
-  expect(first.getAttribute("class")).not.toContain("bg-primary/45");
-  fireEvent.click(second);
-  await waitFor(() =>
-    expect(requestComposerTextInsert).toHaveBeenCalledWith(
-      "D:/Desktop/test",
-      expect.stringContaining("[<button> 按钮二](browser-element://pick?"),
-      "ws-1",
-      expect.objectContaining({ category: "browser" }),
-    ),
-  );
-});
-
 test("进入拾取自动收起调试控制台悬浮窗", async () => {
   connectedApis();
   surfaceJson.mockImplementation(async (path: string) => {
-    if (path === "/api/browser/snapshot") {
-      return {
-        snapshot: {
-          url: "https://example.com",
-          title: "示例",
-          viewport: { width: 1280, height: 720 },
-          elements: [],
-        },
-        source: "cdp",
-      };
-    }
     if (path === "/api/browser/cdp/status") {
       return { cdp: { status: "connected" } };
     }
@@ -659,6 +430,153 @@ test("截图到对话：菜单项截当前视口并派发 PNG 附件事件", asy
         workspacePath: "D:/Desktop/test",
         file: expect.any(File),
       }),
+    ),
+  );
+});
+
+test("元素选择器：进入注入脚本+收控制台；点选读取结果填 chip；Esc 退出发 stop", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/browser/cdp/picker") {
+      const action = JSON.parse(String(init?.body)).action as string;
+      if (action === "start") return { ok: true };
+      if (action === "stop") return { ok: true };
+      return {
+        picked: {
+          tag: "a",
+          text: "Learn more",
+          hint: "a.pick-me",
+          box: { x: 40, y: 60, width: 120, height: 20 },
+          viewport: { width: 1280, height: 720 },
+          page: "https://example.com/",
+        },
+        active: false,
+        error: null,
+      };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "connected" } };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(
+    <BrowserPane
+      initialUrl="https://example.com"
+      workspacePath="D:/Desktop/test"
+      workspaceIdentity="ws-1"
+    />,
+  );
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+
+  await user.click(
+    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+  );
+  // 进入：先收控制台再注入选择器
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/console",
+      expect.objectContaining({ body: JSON.stringify({ action: "close" }) }),
+    ),
+  );
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/picker",
+      expect.objectContaining({ body: JSON.stringify({ action: "start" }) }),
+    ),
+  );
+
+  // 画面上「按下→抬起」（面板转发 CDP 输入；页面脚本已在 mousedown 存好元素）
+  const stage = screen.getByRole("group", { name: "内嵌浏览器画面" });
+  fireEvent.mouseDown(stage, { clientX: 100, clientY: 70, button: 0 });
+  // 回归锁：拾取中「按下」也必须转发——页面内选择器正是靠 mousedown 记录元素，
+  // 吞掉按下（旧 bug）页面永远收不到点选，read 恒为空
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/input",
+      expect.objectContaining({
+        body: JSON.stringify({
+          type: "mouse",
+          action: "pressed",
+          x: 100,
+          y: 70,
+          button: "left",
+          buttons: 1,
+          modifiers: 0,
+        }),
+      }),
+    ),
+  );
+  fireEvent.mouseUp(stage, { clientX: 100, clientY: 70, button: 0 });
+  await waitFor(() =>
+    expect(requestComposerTextInsert).toHaveBeenCalledWith(
+      "D:/Desktop/test",
+      expect.stringContaining(
+        "[<a> Learn more](browser-element://pick?x=100&y=70",
+      ),
+      "ws-1",
+      expect.objectContaining({ category: "browser" }),
+    ),
+  );
+});
+
+test("元素选择器：点空白/图层（picked 为空）保持选择模式", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path === "/api/browser/cdp/picker") {
+      const action = JSON.parse(String(init?.body)).action as string;
+      if (action === "start") return { ok: true };
+      if (action === "stop") return { ok: true };
+      return { picked: null, active: true, error: null };
+    }
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "connected" } };
+    }
+    if (path === "/api/browser/cdp/view") {
+      return {
+        ticket: "ticket-1",
+        viewport: { width: 1280, height: 720, scale: 1 },
+      };
+    }
+    return {};
+  });
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+
+  await user.click(
+    screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+  );
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/picker",
+      expect.objectContaining({ body: JSON.stringify({ action: "start" }) }),
+    ),
+  );
+  const stage = screen.getByRole("group", { name: "内嵌浏览器画面" });
+  fireEvent.mouseDown(stage, { clientX: 50, clientY: 50, button: 0 });
+  fireEvent.mouseUp(stage, { clientX: 50, clientY: 50, button: 0 });
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/picker",
+      expect.objectContaining({ body: JSON.stringify({ action: "read" }) }),
+    ),
+  );
+  // 没选中任何东西：不发引用、保持选择模式
+  expect(requestComposerTextInsert).not.toHaveBeenCalled();
+
+  // Esc 退出发 stop
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/picker",
+      expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
     ),
   );
 });
