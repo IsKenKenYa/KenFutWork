@@ -153,6 +153,7 @@ import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
 import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
+import { SidebarNavButton } from "./host/SidebarNavButton.js";
 import { useSharedProjectTabs } from "./host/SharedProjectNavigation.js";
 import {
   HostSidebarRail,
@@ -1427,63 +1428,90 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     ],
   );
 
+  // 侧栏入口的唯一定义：展开态是整行「图标 + 标签」，收起态（rail）只剩图标。
   // 共用导航（各模式都保留）：插件市场 / 技能 / MCP 服务器 / 插件侧栏面板。
-  // 定义为元素复用——Code 模式排在「新建任务/搜索」之后，design/flow 模式经
-  // HostModeSidebarContent 的 shared 槽继续渲染（用户口径：共用的东西要保留）。
-  const sharedNavigation = (
+  // Code 模式排在「新建任务/搜索」之后，design/flow 模式经 HostModeSidebarContent
+  // 的 shared 槽继续渲染（用户口径：共用的东西要保留）。
+  const handleCreateTaskFromSidebar = useCallback(() => {
+    if (workspaceReadOnly) {
+      return;
+    }
+    if (taskViewMode === "grouped") {
+      if (createGroupedTaskDraftAction) {
+        createGroupedTaskDraftAction();
+        return;
+      }
+      onCreateTask({ groupedDraftPlacement: { type: "top" } });
+      return;
+    }
+    onCreateTask({ createSource: "project" });
+  }, [
+    createGroupedTaskDraftAction,
+    onCreateTask,
+    taskViewMode,
+    workspaceReadOnly,
+  ]);
+  const sharedNavigation = (collapsed: boolean) => (
     <>
-      <Button
-        variant="ghost"
+      <SidebarNavButton
+        collapsed={collapsed}
+        icon={<Blocks className="size-4" />}
+        label={intl.formatMessage({ id: "workspace.openPluginsSettings" })}
         onClick={handleOpenPluginStoreMain}
-        data-icon="inline-start"
-        data-testid="plugin-store-sidebar-open"
-        size="lg"
-        aria-pressed={pluginStoreActive}
-        className={cn(
-          "w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground",
-          pluginStoreActive && "bg-selected text-foreground",
-        )}
-      >
-        <Blocks className="size-4" />
-        {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
-      </Button>
+        active={pluginStoreActive}
+        testId="plugin-store-sidebar-open"
+      />
       {platform?.skillsSettingsCapabilities?.databaseRecords ? (
-        <Button
-          variant="ghost"
-          size="lg"
-          className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
+        <SidebarNavButton
+          collapsed={collapsed}
+          icon={<WandSparkles className="size-4" />}
+          label={intl.formatMessage({ id: "settings.skills.title" })}
           onClick={() => {
             setPendingSettingsSectionIntent("skill", {
               pluginScopeKey: "user",
             });
             openSettingsTab();
           }}
-        >
-          <WandSparkles className="size-4" />
-          {intl.formatMessage({ id: "settings.skills.title" })}
-        </Button>
+        />
       ) : null}
       {platform?.mcpSettingsCapabilities?.databaseRecords ? (
-        <Button
-          variant="ghost"
-          size="lg"
-          className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
+        <SidebarNavButton
+          collapsed={collapsed}
+          icon={<Cable className="size-4" />}
+          label={intl.formatMessage({ id: "settings.mcpTitle" })}
           onClick={() => {
             setPendingSettingsSectionIntent("mcp", {
               pluginScopeKey: "user",
             });
             openSettingsTab();
           }}
-        >
-          <Cable className="size-4" />
-          {intl.formatMessage({ id: "settings.mcpTitle" })}
-        </Button>
+        />
       ) : null}
-      <PluginSidebarNavigation />
+      <PluginSidebarNavigation {...(collapsed ? { collapsed: true } : {})} />
+    </>
+  );
+  /** rail 的入口列：与展开态共用同一份定义（新建任务 / 搜索 / 共用导航）。 */
+  const railNavigation = (
+    <>
+      <SidebarNavButton
+        collapsed
+        icon={<MessageCirclePlus className="size-4" />}
+        label={intl.formatMessage({ id: "sidebar.newTask" })}
+        hint={workspaceReadOnlyReason ?? undefined}
+        disabled={Boolean(workspaceReadOnlyReason)}
+        onClick={handleCreateTaskFromSidebar}
+      />
+      <SidebarNavButton
+        collapsed
+        icon={<Search className="size-4" />}
+        label={intl.formatMessage({ id: "commandCenter.open" })}
+        onClick={onOpenCommandCenter}
+      />
+      {sharedNavigation(true)}
     </>
   );
 
-  // 收起态（浏览器/内嵌形态）：48px 图标栏——黑标 + 展开按钮 + 模式图标，
+  // 收起态（浏览器/内嵌形态）：48px 图标栏——黑标 + 展开按钮 + 模式图标 + 入口列，
   // 不收缩到什么都没有（用户口径：像之前一样留 rail；桌面 chrome 形态
   // 由顶部浮层承担，仍走整体隐藏）。
   const railMode =
@@ -1494,7 +1522,10 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         data-testid={TID_SIDEBAR}
         className="flex h-full flex-col overflow-hidden"
       >
-        <HostSidebarRail onExpand={() => onToggleSidebar?.()} />
+        <HostSidebarRail
+          onExpand={() => onToggleSidebar?.()}
+          actions={railNavigation}
+        />
       </aside>
     );
   }
@@ -1531,7 +1562,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       <HostModeSidebarContent
         shared={
           <div className="flex flex-col gap-1 px-2 pt-2">
-            {sharedNavigation}
+            {sharedNavigation(false)}
           </div>
         }
       >
@@ -1552,37 +1583,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               <WorkspaceNewTaskTooltip disabledReason={workspaceReadOnlyReason}>
                 <NewTaskButtonGroup
                   disabled={workspaceReadOnly}
-                  onCreateTask={() => {
-                    if (workspaceReadOnly) {
-                      return;
-                    }
-                    if (taskViewMode === "grouped") {
-                      if (createGroupedTaskDraftAction) {
-                        createGroupedTaskDraftAction();
-                        return;
-                      }
-                      onCreateTask({ groupedDraftPlacement: { type: "top" } });
-                      return;
-                    }
-                    onCreateTask({ createSource: "project" });
-                  }}
+                  onCreateTask={handleCreateTaskFromSidebar}
                 />
               </WorkspaceNewTaskTooltip>
-              <Button
-                variant="ghost"
+              <SidebarNavButton
+                icon={<Search className="size-4" />}
+                label={intl.formatMessage({ id: "commandCenter.open" })}
+                trailing={commandCenterShortcutLabel}
                 onClick={onOpenCommandCenter}
-                data-icon="inline-start"
-                size="lg"
-                className="w-full justify-start gap-2 text-foreground hover:bg-surface-hover hover:text-foreground"
-              >
-                <Search className="size-4" />
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {intl.formatMessage({ id: "commandCenter.open" })}
-                </span>
-                <span className="ml-auto shrink-0 text-ui-xs font-normal text-foreground-subtlest">
-                  {commandCenterShortcutLabel}
-                </span>
-              </Button>
+              />
             </div>
 
             <div className="relative flex min-h-0 flex-1 flex-col">

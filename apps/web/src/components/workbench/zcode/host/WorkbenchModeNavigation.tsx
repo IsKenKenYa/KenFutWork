@@ -158,22 +158,30 @@ const FALLBACK_SNAPSHOT = {
 
 /**
  * 收起态图标栏（用户口径：收起不要收缩到什么都没有，像之前一样留一条 rail）：
- * 黑标 + 展开按钮 + 模式图标（复用 WorkbenchModeNavigation 的 collapsed 形态）。
+ * 黑标 + 展开按钮 + 模式图标 + `actions` 槽（新建任务·搜索·插件市场·技能·MCP·插件面板）。
+ * rail 曾经只有前三个图标，侧栏一收这些入口就整个消失（2026-10-19 用户口径），
+ * 所以入口由调用方按展开态同一份定义喂进来。
  * 挂在壳侧栏 48px 宽的收起轨道里；桌面 chrome 形态不启用（那边有顶部浮层按钮）。
  */
-export function HostSidebarRail({ onExpand }: { onExpand: () => void }) {
+export function HostSidebarRail({
+  onExpand,
+  actions,
+}: {
+  onExpand: () => void;
+  actions?: React.ReactNode;
+}) {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   const snapshot = useSyncExternalStore(
     navigation?.subscribe ?? NOOP_SUBSCRIBE,
     navigation?.getSnapshot ?? (() => FALLBACK_SNAPSHOT),
   );
   return (
-    <div className="flex h-full w-full flex-col items-center gap-1 py-2">
+    <div className="flex h-full min-h-0 w-full flex-col items-center gap-1 py-2">
       {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
       <img
         src={logoSrc}
         alt="KenFutWork"
-        className="my-1 h-5 w-auto brightness-0"
+        className="my-1 h-5 w-auto shrink-0 brightness-0"
         draggable={false}
       />
       <button
@@ -181,17 +189,29 @@ export function HostSidebarRail({ onExpand }: { onExpand: () => void }) {
         aria-label="展开侧栏"
         title="展开侧栏"
         onClick={onExpand}
-        className="rounded-md p-2 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+        className="shrink-0 rounded-md p-2 text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
       >
         <PanelLeftOpen className="h-4 w-4" />
       </button>
-      <div className="my-1 w-5 border-t" />
+      <div className="my-1 w-5 shrink-0 border-t" />
       {navigation ? (
-        <WorkbenchModeNavigation
-          {...snapshot}
-          onModeChange={navigation.open}
-          collapsed
-        />
+        <div className="shrink-0">
+          <WorkbenchModeNavigation
+            {...snapshot}
+            onModeChange={navigation.open}
+            collapsed
+          />
+        </div>
+      ) : null}
+      {actions ? (
+        <>
+          {/* 与上面那条分界线同款（w-5 居中短线）；此前这条铺满 48px 轨道宽，
+              两条线一长一短，视觉上像两个不同层级的分隔。 */}
+          <div className="my-1 w-5 shrink-0 border-t" />
+          <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-1 overflow-y-auto pb-1">
+            {actions}
+          </div>
+        </>
       ) : null}
     </div>
   );

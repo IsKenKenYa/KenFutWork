@@ -86,7 +86,10 @@ export function DesktopTopOverlay({
   const newTaskTitle = intl.formatMessage({ id: "sidebar.newTask" });
   const taskBackTitle = intl.formatMessage({ id: "taskNav.back" });
   const taskForwardTitle = intl.formatMessage({ id: "taskNav.forward" });
-  const isNewTaskButtonVisible = showNewTaskButton ?? !isSidebarVisible;
+  // 顶部浮层是桌面 chrome 的部件。web/内嵌形态下侧栏（收起时是 rail）自己带
+  // 新建任务入口，浮层再画一颗会压在品牌行的 logo 上（用户 2026-10-19 实测反馈）。
+  const isNewTaskButtonVisible =
+    Boolean(isDesktop) && (showNewTaskButton ?? !isSidebarVisible);
   const macTopOverlayPaddingStyle =
     isMacDesktop &&
     !isMacFullscreen &&
