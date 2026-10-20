@@ -32,6 +32,8 @@ export function HostOpenDesignSettingsSection() {
   const [embedSecret, setEmbedSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionStatus, setProvisionStatus] = useState<string | null>(null);
 
   const applyView = useCallback((view: OpenDesignHostConfigResponse) => {
     setConfig(view);
@@ -77,6 +79,26 @@ export function HostOpenDesignSettingsSection() {
       .finally(() => setSaving(false));
   };
 
+  /**
+   * 显式触发上游引导：选 agent、写入本仓 BYOK 模型。
+   * 不自动跑——这一步会把 API Key 交给 OpenDesign daemon，由用户按一下才发生。
+   */
+  const provision = () => {
+    setProvisioning(true);
+    setProvisionStatus(null);
+    surfaceJson<{ done: boolean; agentId: string | null; reason: string | null }>(
+      "/api/open-design/host/provision",
+      { method: "POST" },
+    )
+      .then((result) =>
+        setProvisionStatus(result.done ? "已配置" : (result.reason ?? "未完成")),
+      )
+      .catch((provisionError: unknown) =>
+        setProvisionStatus(readableError(provisionError, "配置失败")),
+      )
+      .finally(() => setProvisioning(false));
+  };
+
   const status =
     error ??
     (config === null
@@ -112,6 +134,29 @@ export function HostOpenDesignSettingsSection() {
               onChange={(event) => setEmbedSecret(event.target.value)}
               placeholder="与 OD_API_TOKEN 同值"
             />
+          }
+        />
+        <SettingsRow
+          label="设计引擎"
+          control={
+            <div className="flex items-center gap-2">
+              {provisionStatus ? (
+                <span data-testid="od-provision-status">
+                  {provisionStatus}
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={
+                  config === null || provisioning || !config?.frontendUrl
+                }
+                onClick={provision}
+              >
+                配置
+              </Button>
+            </div>
           }
         />
         <SettingsRow

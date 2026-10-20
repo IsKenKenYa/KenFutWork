@@ -13,6 +13,7 @@ import type { LocalActor } from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { OpenDesignCompanionSnapshot } from "../features/open-design/companion.js";
 import { readOpenDesignLastProject } from "../features/open-design/last-project.js";
+import { provisionOpenDesign } from "../features/open-design/provision.js";
 import {
   readOpenDesignFileConfig,
   resolveOpenDesignConfigView,
@@ -242,4 +243,51 @@ export async function registerOpenDesignHostRoutes(
       );
     },
   );
+
+  /**
+   * 「配置设计引擎」：把本仓 BYOK 实例供给到**已运行**的上游（选 agent、写入模型）。
+   *
+   * 与伴随容器的自动引导同一套 `provisionOpenDesign`，区别是**由用户显式触发**：
+   * 外部自管的 daemon 不该被我们偷偷写配置，尤其这一步会把 API Key 交给它。
+   * 上游没完成引导（`agentId: null`）时，项目页只会停在「模型与提供商」，
+   * 出不来画布——这个按钮就是解那个门槛的最小动作。
+   */
+  app.post("/api/open-design/host/provision", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    if (!options.providers || !options.localInstance)
+      return error(
+        reply,
+        503,
+        "service_unavailable",
+        "OpenDesign 凭证缝未接线（providers / localInstance 缺失）。",
+      );
+    if (!options.frontendUrl?.trim())
+      return error(
+        reply,
+        400,
+        "open_design_not_configured",
+        "未配置 OpenDesign 前端地址。",
+      );
+    const localInstance = options.localInstance;
+    const resolved = await resolveOpenDesignCredentialEntries({
+      providers: options.providers,
+      serviceActor: () => localInstance.serviceActor(),
+    });
+    if (!resolved.ok)
+      return error(
+        reply,
+        resolved.status,
+        resolved.status === 404
+          ? "open_design_not_configured"
+          : "open_design_credential_unavailable",
+        resolved.message,
+      );
+    const result = await provisionOpenDesign({
+      baseUrl: options.frontendUrl,
+      fetchImpl: options.fetchImpl ?? fetch,
+      entries: resolved.entries,
+    });
+    return reply.send(result);
+  });
 }
