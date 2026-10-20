@@ -15,6 +15,7 @@ import {
 } from "./companion.js";
 import { resolveOpenDesignCredentialEntries } from "./credentials.js";
 import { provisionOpenDesign } from "./provision.js";
+import { createOpenDesignTools } from "./tools.js";
 
 /**
  * 伴随容器 compose 资源（`open-design/`）：与 dify 同一条规则——**源码态**上溯 5 级到
@@ -71,7 +72,7 @@ export function createOpenDesignHostPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "open-design-host",
-    inject: ["localAccess", "localInstance", "modelProviders"],
+    inject: ["localAccess", "localInstance", "modelProviders", "tools"],
     apply() {
       if (!deps.frontendUrl?.trim()) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
@@ -88,6 +89,13 @@ export function createOpenDesignHostPlugin(deps: {
       }
     },
     mounted(ctx) {
+      // 对话能力（只读面）：地址来自宿主配置，故由 feature 注册而不是插件 bundle。
+      for (const tool of createOpenDesignTools({
+        frontendUrl: deps.frontendUrl,
+        fetchImpl: deps.fetchImpl,
+      })) {
+        ctx.get("tools").register(tool);
+      }
       const companion = createOpenDesignCompanionController({
         composeFile: deps.composeFile ?? resolveOpenDesignComposeFile(),
         ...(deps.secret?.trim() ? { apiToken: deps.secret.trim() } : {}),
