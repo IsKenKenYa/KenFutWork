@@ -564,4 +564,72 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
     });
     expect(tooBig.statusCode).toBe(413);
   });
+  it("版本历史：映射上游字段并过滤无 id 条目；正文按上限透出", async () => {
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/files/index.html/versions/v-1": () =>
+          jsonResponse({
+            version: {
+              id: "v-1",
+              label: "Version 1",
+              version: 1,
+              createdAt: 1792477257537,
+            },
+            content: "<html>old</html>",
+          }),
+        "/files/index.html/versions": () =>
+          jsonResponse({
+            versions: [
+              {
+                id: "v-1",
+                label: "Version 1",
+                version: 1,
+                createdAt: 1792477257537,
+                size: 848,
+                current: true,
+              },
+              { label: "no id" },
+            ],
+          }),
+      }),
+    });
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/versions?projectId=p-1&file=index.html",
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().versions).toEqual([
+      {
+        id: "v-1",
+        label: "Version 1",
+        version: 1,
+        createdAt: 1792477257537,
+        size: 848,
+        current: true,
+      },
+    ]);
+
+    const content = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/version-content?projectId=p-1&file=index.html&versionId=v-1",
+    });
+    expect(content.statusCode).toBe(200);
+    expect(content.json()).toEqual({
+      version: {
+        id: "v-1",
+        label: "Version 1",
+        version: 1,
+        createdAt: 1792477257537,
+      },
+      text: "<html>old</html>",
+    });
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/version-content?projectId=p-1&file=index.html",
+    });
+    expect(missing.statusCode).toBe(400);
+  });
 });
+

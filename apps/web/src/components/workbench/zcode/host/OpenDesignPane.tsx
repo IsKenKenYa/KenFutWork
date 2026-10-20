@@ -1,19 +1,5 @@
-import {
-  Camera,
-  Download,
-  ExternalLink,
-  Link2,
-  RefreshCw,
-} from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@zui/components/ui/button.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu.js";
 import { dispatchOpenDesignCanvasAddToChat } from "@zui/lib/openDesignCanvasChat.js";
 import type { OpenDesignSidePaneMetadata } from "@zui/lib/workspaceSidePane.js";
 import {
@@ -22,19 +8,21 @@ import {
 } from "@zui/root/RootStartupLoading.js";
 import { rasterizeDesignHtml } from "./openDesignCapture.js";
 import { useOpenDesignEntry } from "./openDesignHost.js";
+import {
+  OpenDesignToolbar,
+  type OpenDesignVersionSummary,
+  type OpenDesignViewMode,
+  type OpenDesignViewport,
+} from "./OpenDesignToolbar.js";
 import { surfaceJson } from "./surfaceApi.js";
 
 /**
  * OpenDesign 画布面板（一块画布一个标签，与浏览器面板同位互斥）。
  *
- * 嵌的是上游**预览路由**（`/api/projects/:id/preview/<token>/<file>`，纯文件、无应用外壳）：
- * 上游没有 canvas-only 路由，早先「2 倍宽裁掉聊天栏」的折衷随本改造退役。项目名映射到
- * 侧栏标签标题（`onMeta` 回写），工具栏是本仓口径的：刷新 / 截图到对话 / 导出图片 /
- * 复制链接 / 在 OpenDesign 打开 / 缩放。上游应用级能力（分享弹窗、评论、代码视图、
- * 设备框）不在推理范围内，走「在 OpenDesign 打开」的完整工作区。
- *
- * 我们的工具栏按钮一律走宿主路由（`/api/open-design/host/*`）；浏览器直连 daemon
- * 会撞 CORS（预检 403），预览 iframe 是唯一的直连例外（只读公开地址）。
+ * 嵌上游**预览路由**（`/api/projects/:id/preview/<token>/<file>`，纯文件、无应用外壳）。
+ * 工具栏逐项对应上游 FileViewer（见台账 §二百〇四）：刷新 / 预览·代码 / 设备视口 /
+ * 截图到对话 / 交给对话 / 历史记录 / 导出（PNG、HTML）/ 分享（复制本机链接）/ 缩放。
+ * 上游画布评论、标注、可视化编辑依赖它自己的应用内运行时，纯预览嵌入不承载。
  */
 export function OpenDesignPane({
   tabId,
@@ -69,9 +57,21 @@ export function OpenDesignPane({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [viewMode, setViewMode] = useState<OpenDesignViewMode>("preview");
+  const [viewport, setViewport] = useState<OpenDesignViewport>("desktop");
   const [zoom, setZoom] = useState<number>(100);
   const [frameKey, setFrameKey] = useState(0);
   const [frameLoaded, setFrameLoaded] = useState(false);
+  const [currentText, setCurrentText] = useState<string | null>(null);
+  const [versions, setVersions] = useState<OpenDesignVersionSummary[] | null>(
+    null,
+  );
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [activeVersion, setActiveVersion] = useState<{
+    id: string;
+    label: string;
+    text: string;
+  } | null>(null);
   const frameWrapRef = useRef<HTMLDivElement | null>(null);
   const reportedRef = useRef("");
   /**
@@ -137,10 +137,29 @@ export function OpenDesignPane({
     };
   }, [projectId, reportMeta]);
 
+  const loadCurrentText = useCallback(async (): Promise<string | null> => {
+    if (!canvas?.entryFile) return null;
+    try {
+      const data = await surfaceJson<{ text: string }>(
+        `/api/open-design/host/file-text?projectId=${encodeURIComponent(canvas.projectId)}&file=${encodeURIComponent(canvas.entryFile)}`,
+      );
+      setCurrentText(data.text);
+      return data.text;
+    } catch (loadError) {
+      setNotice(
+        loadError instanceof Error ? loadError.message : "读取设计文件失败。",
+      );
+      return null;
+    }
+  }, [canvas]);
+
   const loadCanvas = useCallback(
     async (id: string): Promise<string | null> => {
       setPhase("loading");
       setError(null);
+      setActiveVersion(null);
+      setCurrentText(null);
+      setVersions(null);
       try {
         const data = await surfaceJson<{
           project: { projectId: string; name: string };
@@ -200,6 +219,13 @@ export function OpenDesignPane({
     };
   }, [boundProjectId, entryAvailable, loadCanvas, loadPreview]);
 
+  // 代码视图需要正文：只在切过去时按需取一次。
+  useEffect(() => {
+    if (viewMode !== "code" || activeVersion || currentText !== null) return;
+    if (!canvas?.entryFile) return;
+    void loadCurrentText();
+  }, [activeVersion, canvas?.entryFile, currentText, loadCurrentText, viewMode]);
+
   const refresh = useCallback(async () => {
     if (!boundProjectId) return;
     setBusy(true);
@@ -236,15 +262,20 @@ export function OpenDesignPane({
     }
   }, [reportMeta]);
 
-  /** 截图输入 = 设计文件文本 + 画布可视尺寸（光栅化在浏览器里做）。 */
-  const capturePng = useCallback(async (): Promise<string | null> => {
+  /** 截图/导出/交接的输入：历史版本优先，否则当前文件正文。 */
+  const resolveActiveHtml = useCallback(async (): Promise<string | null> => {
+    if (activeVersion?.text) return activeVersion.text;
+    if (currentText !== null) return currentText;
     if (!canvas?.entryFile) {
       setNotice("画布还没有内容");
       return null;
     }
-    const text = await surfaceJson<{ text: string }>(
-      `/api/open-design/host/file-text?projectId=${encodeURIComponent(canvas.projectId)}&file=${encodeURIComponent(canvas.entryFile)}`,
-    );
+    return loadCurrentText();
+  }, [activeVersion, canvas?.entryFile, currentText, loadCurrentText]);
+
+  const capturePng = useCallback(async (): Promise<string | null> => {
+    const html = await resolveActiveHtml();
+    if (!html) return null;
     const box = frameWrapRef.current;
     const width = Math.max(
       CAPTURE_MIN_SIDE,
@@ -254,18 +285,16 @@ export function OpenDesignPane({
       CAPTURE_MIN_SIDE,
       Math.round(box?.clientHeight ?? CAPTURE_FALLBACK_SIZE.height),
     );
-    return rasterizeDesignHtml(text.text, width, height);
-  }, [canvas]);
+    return rasterizeDesignHtml(html, width, height);
+  }, [resolveActiveHtml]);
 
-  const addToChat = useCallback(async () => {
+  const screenshotToChat = useCallback(async () => {
     setBusy(true);
     setNotice(null);
     try {
       const dataUrl = await capturePng();
       if (!dataUrl) return;
-      const blob = await (await fetch(dataUrl)).blob();
-      const name = `${(canvas?.name ?? "画布").replace(UNSAFE_FILENAME_CHARS, "-")}.png`;
-      const file = new File([blob], name, { type: "image/png" });
+      const file = await dataUrlToFile(dataUrl, canvas?.name ?? "画布");
       const delivered = dispatchOpenDesignCanvasAddToChat({
         projectId: canvas?.projectId ?? boundProjectId ?? "",
         title: canvas?.name ?? null,
@@ -289,6 +318,31 @@ export function OpenDesignPane({
     workspacePath,
   ]);
 
+  /** 交给对话（上游 Handoff 的本地化）：把设计文件本身作为附件送进 composer。 */
+  const handoffToChat = useCallback(async () => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const html = await resolveActiveHtml();
+      if (!html || !canvas?.entryFile) return;
+      const file = new File([html], canvas.entryFile, { type: "text/html" });
+      const delivered = dispatchOpenDesignCanvasAddToChat({
+        projectId: canvas.projectId,
+        title: canvas.name,
+        file,
+        workspacePath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      });
+      if (!delivered) setNotice("先点一下对话输入框");
+    } catch (handoffError) {
+      setNotice(
+        handoffError instanceof Error ? handoffError.message : "交接失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [canvas, resolveActiveHtml, workspaceIdentity, workspacePath]);
+
   const exportPng = useCallback(async () => {
     setBusy(true);
     setNotice(null);
@@ -308,7 +362,29 @@ export function OpenDesignPane({
     }
   }, [canvas, capturePng]);
 
-  const copyLink = useCallback(async () => {
+  const exportHtml = useCallback(async () => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const html = await resolveActiveHtml();
+      if (!html || !canvas?.entryFile) return;
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = canvas.entryFile.replace(UNSAFE_FILENAME_CHARS, "-");
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (exportError) {
+      setNotice(
+        exportError instanceof Error ? exportError.message : "导出失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [canvas, resolveActiveHtml]);
+
+  const share = useCallback(async () => {
     if (!entryAvailable || !boundProjectId) return;
     setNotice(null);
     try {
@@ -321,14 +397,74 @@ export function OpenDesignPane({
     }
   }, [boundProjectId, entry, entryAvailable]);
 
-  const openInOpenDesign = useCallback(() => {
-    if (!entryAvailable || !boundProjectId) return;
-    window.open(
-      `${entry.frontendUrl.replace(/\/$/u, "")}/projects/${boundProjectId}`,
-      "_blank",
-      "noopener",
-    );
-  }, [boundProjectId, entry, entryAvailable]);
+  const loadVersions = useCallback(async () => {
+    if (!canvas?.entryFile || versionsLoading) return;
+    setVersionsLoading(true);
+    try {
+      const data = await surfaceJson<{ versions: OpenDesignVersionSummary[] }>(
+        `/api/open-design/host/versions?projectId=${encodeURIComponent(canvas.projectId)}&file=${encodeURIComponent(canvas.entryFile)}`,
+      );
+      setVersions(data.versions);
+    } catch (loadError) {
+      setNotice(
+        loadError instanceof Error ? loadError.message : "读取历史版本失败。",
+      );
+      setVersions([]);
+    } finally {
+      setVersionsLoading(false);
+    }
+  }, [canvas, versionsLoading]);
+
+  const selectVersion = useCallback(
+    async (versionId: string | null) => {
+      if (!versionId) {
+        setActiveVersion(null);
+        return;
+      }
+      if (!canvas?.entryFile) return;
+      setBusy(true);
+      setNotice(null);
+      try {
+        const data = await surfaceJson<{
+          version: { id: string; label: string; version: number };
+          text: string;
+        }>(
+          `/api/open-design/host/version-content?projectId=${encodeURIComponent(canvas.projectId)}&file=${encodeURIComponent(canvas.entryFile)}&versionId=${encodeURIComponent(versionId)}`,
+        );
+        setActiveVersion({
+          id: data.version.id,
+          label: `V${data.version.version}`,
+          text: data.text,
+        });
+        setFrameLoaded(false);
+        setPhase("ready");
+      } catch (loadError) {
+        setNotice(
+          loadError instanceof Error ? loadError.message : "读取历史版本失败。",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [canvas],
+  );
+
+  // 版本列表随画布就绪即取（本机 daemon，一次小请求）：菜单打开不再夹带请求，
+  // 避免展开瞬间的 state 更新干扰菜单自身的焦点/开合。
+  useEffect(() => {
+    if (phase !== "ready" || !canvas?.entryFile || versions !== null) return;
+    void loadVersions();
+  }, [canvas?.entryFile, loadVersions, phase, versions]);
+
+  const frameSize =
+    viewport === "tablet"
+      ? { width: 820, height: 1180 }
+      : viewport === "mobile"
+        ? { width: 390, height: 844 }
+        : null;
+  const scale = zoom / 100;
+  const captureReady = phase === "ready" && Boolean(canvas?.entryFile);
+  const showCanvas = phase === "ready" && Boolean(canvas?.entryFile);
 
   if (entry === null) {
     return (
@@ -353,73 +489,31 @@ export function OpenDesignPane({
     );
   }
 
-  const scale = zoom / 100;
-  const captureReady = phase === "ready" && Boolean(canvas?.entryFile);
-
   return (
     <div
       data-testid="open-design-pane"
       className="flex h-full w-full flex-col bg-background"
     >
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-border px-1.5 py-1">
-        <ToolbarIconButton
-          label="刷新"
-          disabled={busy || !canvas}
-          onClick={() => void refresh()}
-        >
-          <RefreshCw className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="截图到对话"
-          disabled={busy || !captureReady}
-          onClick={() => void addToChat()}
-        >
-          <Camera className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="导出图片"
-          disabled={busy || !captureReady}
-          onClick={() => void exportPng()}
-        >
-          <Download className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="复制链接"
-          disabled={!boundProjectId}
-          onClick={() => void copyLink()}
-        >
-          <Link2 className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="在 OpenDesign 打开"
-          disabled={!boundProjectId}
-          onClick={openInOpenDesign}
-        >
-          <ExternalLink className="size-3" />
-        </ToolbarIconButton>
-        <div className="ml-auto">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-foreground-subtle"
-                aria-label="缩放"
-              >
-                {zoom}%
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {ZOOM_LEVELS.map((level) => (
-                <DropdownMenuItem key={level} onSelect={() => setZoom(level)}>
-                  {level}%
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+      <OpenDesignToolbar
+        busy={busy}
+        hasCanvas={captureReady}
+        viewMode={viewMode}
+        onViewMode={setViewMode}
+        viewport={viewport}
+        onViewport={setViewport}
+        zoom={zoom}
+        onZoom={setZoom}
+        versions={versions}
+        versionsLoading={versionsLoading}
+        activeVersionId={activeVersion?.id ?? null}
+        onSelectVersion={(id) => void selectVersion(id)}
+        onRefresh={() => void refresh()}
+        onScreenshot={() => void screenshotToChat()}
+        onHandoff={() => void handoffToChat()}
+        onExportPng={() => void exportPng()}
+        onExportHtml={() => void exportHtml()}
+        onShare={() => void share()}
+      />
       {readiness?.reachable && !readiness.agentAvailable ? (
         <div
           role="status"
@@ -438,31 +532,74 @@ export function OpenDesignPane({
           {notice}
         </div>
       ) : null}
+      {activeVersion ? (
+        <div
+          role="status"
+          data-testid="open-design-version-banner"
+          className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-ui-caption text-foreground-subtle"
+        >
+          <span>正在查看历史版本 {activeVersion.label}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => void selectVersion(null)}
+          >
+            回到当前
+          </Button>
+        </div>
+      ) : null}
       <div
         ref={frameWrapRef}
-        className="relative min-h-0 flex-1 overflow-hidden"
+        className="relative min-h-0 flex-1 overflow-auto"
       >
-        {phase === "ready" && preview && canvas?.entryFile ? (
-          <>
-            <iframe
-              key={frameKey}
-              src={`${entry.frontendUrl.replace(/\/$/u, "")}${preview.url}`}
-              title="OpenDesign"
-              sandbox={preview.iframeSandbox}
+        {showCanvas && viewMode === "code" ? (
+          <pre
+            data-testid="open-design-source"
+            className="m-0 h-full overflow-auto whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs text-foreground"
+          >
+            {activeVersion?.text ?? currentText ?? "读取中…"}
+          </pre>
+        ) : null}
+        {showCanvas && viewMode === "preview" ? (
+          <div
+            className={
+              frameSize
+                ? "flex min-h-full w-full items-start justify-center bg-surface p-4"
+                : "h-full w-full"
+            }
+          >
+            <div
+              data-testid="open-design-frame-shell"
+              className="relative shrink-0 overflow-hidden bg-white"
               style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: `${100 / scale}%`,
-                height: `${100 / scale}%`,
-                transform: `scale(${scale})`,
-                transformOrigin: "top left",
+                ...(frameSize
+                  ? { width: frameSize.width, height: frameSize.height }
+                  : { width: "100%", height: "100%" }),
+                ...(frameSize ? { maxWidth: "100%" } : {}),
+                ...(scale !== 1 ? { zoom: scale } : {}),
               }}
-              className={`border-0 bg-white transition-opacity duration-300 ${
-                frameLoaded ? "opacity-100" : "opacity-0"
-              }`}
-              onLoad={() => setFrameLoaded(true)}
-            />
+            >
+              <iframe
+                key={activeVersion ? `version:${activeVersion.id}` : frameKey}
+                {...(activeVersion
+                  ? {
+                      srcDoc: activeVersion.text,
+                      sandbox: "allow-scripts",
+                    }
+                  : {
+                      src: `${entry.frontendUrl.replace(/\/$/u, "")}${preview?.url ?? ""}`,
+                      sandbox: preview?.iframeSandbox ?? "allow-scripts",
+                    })}
+                title="OpenDesign"
+                data-od-version={activeVersion?.id ?? undefined}
+                style={{ width: "100%", height: "100%" }}
+                className={`border-0 bg-white transition-opacity duration-300 ${
+                  frameLoaded ? "opacity-100" : "opacity-0"
+                }`}
+                onLoad={() => setFrameLoaded(true)}
+              />
+            </div>
             {!frameLoaded ? (
               <div
                 role="status"
@@ -472,7 +609,7 @@ export function OpenDesignPane({
                 <ZCodeStartupSpinner />
               </div>
             ) : null}
-          </>
+          </div>
         ) : null}
         {phase === "empty" ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-xs text-foreground-subtle">
@@ -512,9 +649,6 @@ export function OpenDesignPane({
   );
 }
 
-/** 工具栏缩放档位（与上游 100% 同口径，只做预览缩放，不改设计本身）。 */
-const ZOOM_LEVELS = [50, 75, 100, 125, 150] as const;
-
 /** 容器还没量到尺寸时的截图兜底（面板刚挂载就点截图）。 */
 const CAPTURE_FALLBACK_SIZE = { width: 960, height: 640 } as const;
 const CAPTURE_MIN_SIDE = 240;
@@ -522,30 +656,9 @@ const CAPTURE_MIN_SIDE = 240;
 /** 文件名里不能出现的字符（不同文件系统共同禁集，粗收敛即可）。 */
 const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 
-function ToolbarIconButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <ControlHintTooltip title={label} side="bottom">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        aria-label={label}
-        disabled={disabled}
-        onClick={onClick}
-        className="text-foreground-subtle hover:text-foreground"
-      >
-        {children}
-      </Button>
-    </ControlHintTooltip>
-  );
+async function dataUrlToFile(dataUrl: string, name: string): Promise<File> {
+  const blob = await (await fetch(dataUrl)).blob();
+  return new File([blob], `${name.replace(UNSAFE_FILENAME_CHARS, "-")}.png`, {
+    type: "image/png",
+  });
 }

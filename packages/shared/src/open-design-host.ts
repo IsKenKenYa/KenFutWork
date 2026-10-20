@@ -167,6 +167,39 @@ export type OpenDesignHostPreviewUrlResponse = z.infer<
   typeof openDesignHostPreviewUrlResponseSchema
 >;
 
+/** 版本历史列表：上游每个文件的历史版本元数据（只读）。 */
+export const openDesignHostVersionsResponseSchema = z.object({
+  versions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string(),
+        version: z.number().int(),
+        createdAt: z.number(),
+        size: z.number(),
+        current: z.boolean(),
+      }),
+    )
+    .max(200),
+});
+export type OpenDesignHostVersionsResponse = z.infer<
+  typeof openDesignHostVersionsResponseSchema
+>;
+
+/** 历史版本的正文（只读预览；与设计文本同口径的大小上限）。 */
+export const openDesignHostVersionContentResponseSchema = z.object({
+  version: z.object({
+    id: z.string().min(1),
+    label: z.string(),
+    version: z.number().int(),
+    createdAt: z.number(),
+  }),
+  text: z.string(),
+});
+export type OpenDesignHostVersionContentResponse = z.infer<
+  typeof openDesignHostVersionContentResponseSchema
+>;
+
 /** 设计文件文本（截图光栅化输入；只读，宿主侧有大小上限）。 */
 export const openDesignHostFileTextResponseSchema = z.object({
   name: z.string().min(1),

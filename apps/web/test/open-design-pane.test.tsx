@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 const { TooltipProvider } = await import(
@@ -38,7 +39,20 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
     if (path.includes("last-project")) return { project: lastProjectRef.current };
     if (path.includes("/host/canvas/")) return canvasRef.current;
     if (path.includes("preview-url")) return previewRef.current;
-    if (path.includes("file-text")) return { name: "index.html", text: "<html></html>" };
+    if (path.includes("file-text")) return { name: "index.html", text: "<html><body>当前设计</body></html>" };
+    if (path.includes("version-content")) {
+      return {
+        version: { id: "v-1", label: "Version 1", version: 1, createdAt: 1792477257537 },
+        text: '<html><body data-version="1">旧版设计</body></html>',
+      };
+    }
+    if (path.includes("/host/versions")) {
+      return {
+        versions: [
+          { id: "v-1", label: "Version 1", version: 1, createdAt: 1792477257537, size: 848, current: true },
+        ],
+      };
+    }
     if (path.includes("/host/canvas")) return createdRef.current;
     throw new Error(`unexpected path ${path}`);
   },
@@ -155,21 +169,94 @@ test("画布没有入口文件：说清楚「还没有内容」，不挂空 ifra
   expect(screen.queryByTitle("OpenDesign")).toBeNull();
 });
 
-test("工具栏按钮齐备（截图到对话是画布专用适配）", async () => {
+test("工具栏逐项对应上游：刷新/预览/代码/设备/截图/交给对话/历史/导出/分享/缩放", async () => {
   availableEntry();
   canvasWithFile();
   mount({ projectId: "p-1" });
   await screen.findByTitle("OpenDesign");
   for (const label of [
     "刷新",
+    "预览",
+    "代码",
+    "设备",
     "截图到对话",
-    "导出图片",
-    "复制链接",
-    "在 OpenDesign 打开",
+    "交给对话",
+    "历史记录",
+    "导出",
+    "分享",
     "缩放",
   ]) {
     expect(screen.getByRole("button", { name: label })).toBeTruthy();
   }
+  // 用户口径：不要「在 OpenDesign 打开」这个逃生口。
+  expect(screen.queryByRole("button", { name: "在 OpenDesign 打开" })).toBeNull();
+});
+
+async function openMenu(user: ReturnType<typeof userEvent.setup>, label: string) {
+  const trigger = screen.getByRole("button", { name: label });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("menu");
+}
+
+test("代码视图：切到代码读设计正文（上游「代码」视图）", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  fireEvent.click(screen.getByRole("button", { name: "代码" }));
+  const source = await screen.findByTestId("open-design-source");
+  await waitFor(() => expect(source.textContent).toContain("当前设计"));
+});
+
+test("设备视口：切到手机把画布框收到 390×844（上游 Desktop/Tablet/Mobile）", async () => {
+  availableEntry();
+  canvasWithFile();
+  const user = userEvent.setup();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  await openMenu(user, "设备");
+  await user.click(await screen.findByText("手机"));
+  await waitFor(() => {
+    const shell = screen.getByTestId("open-design-frame-shell");
+    expect(shell.style.width).toBe("390px");
+    expect(shell.style.height).toBe("844px");
+  });
+  // Radix 模态菜单关闭是动画收尾；等它彻底卸载，避免下一用例的点击被残留层吞掉。
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+});
+
+test("历史记录：选中一个版本后显示历史横幅与对应正文", async () => {
+  availableEntry();
+  canvasWithFile();
+  const user = userEvent.setup();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  await openMenu(user, "历史记录");
+  await user.click(await screen.findByText(/V1 · /));
+  const banner = await screen.findByTestId("open-design-version-banner");
+  expect(banner.textContent).toContain("正在查看历史版本 V1");
+  const frame = screen.getByTitle("OpenDesign");
+  expect(frame.getAttribute("data-od-version")).toBe("v-1");
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "回到当前" }));
+  await waitFor(() => {
+    expect(screen.queryByTestId("open-design-version-banner")).toBeNull();
+  });
+});
+
+test("交给对话：把设计文件当附件发给聚焦的 composer；没有时提示先点输入框", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  fireEvent.click(screen.getByRole("button", { name: "交给对话" }));
+  await waitFor(() => {
+    expect(screen.getByTestId("open-design-notice").textContent).toContain(
+      "先点一下对话输入框",
+    );
+  });
+  expect(fetched.some((path) => path.includes("file-text"))).toBe(true);
 });
 
 test("上游没有可用设计引擎时，面板说明原因而不是让人对着空白画布猜", async () => {

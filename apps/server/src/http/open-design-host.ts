@@ -8,6 +8,8 @@ import {
   openDesignHostCredentialsResponseSchema,
   openDesignHostFileTextResponseSchema,
   openDesignHostPreviewUrlResponseSchema,
+  openDesignHostVersionContentResponseSchema,
+  openDesignHostVersionsResponseSchema,
   openDesignHostStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
@@ -382,6 +384,105 @@ export async function registerOpenDesignHostRoutes(
         url: resolved.url,
         iframeSandbox: resolved.iframeSandbox,
         opaqueOrigin: resolved.opaqueOrigin,
+      }),
+    );
+  });
+
+  // 版本历史（列表 + 单个版本正文）：面板的「历史记录」数据面。
+  app.get("/api/open-design/host/versions", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const query = request.query as { projectId?: string; file?: string };
+    const projectId = query.projectId?.trim();
+    const file = query.file?.trim();
+    if (!projectId || !file)
+      return error(reply, 400, "application_error", "缺少画布 id 或文件名。");
+    const listed = await daemonJson<{
+      versions?: Array<{
+        id?: string;
+        label?: string;
+        version?: number;
+        createdAt?: number;
+        size?: number;
+        current?: boolean;
+      }>;
+    }>(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(file)}/versions`,
+    );
+    if (!listed.ok)
+      return error(reply, listed.status, "service_unavailable", listed.message);
+    const versions = (listed.value.versions ?? [])
+      .filter((version) => typeof version.id === "string" && version.id)
+      .map((version) => ({
+        id: version.id as string,
+        label: version.label ?? `Version ${version.version ?? ""}`,
+        version: version.version ?? 0,
+        createdAt: version.createdAt ?? 0,
+        size: version.size ?? 0,
+        current: version.current === true,
+      }));
+    return reply.send(
+      openDesignHostVersionsResponseSchema.parse({ versions }),
+    );
+  });
+
+  app.get("/api/open-design/host/version-content", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const query = request.query as {
+      projectId?: string;
+      file?: string;
+      versionId?: string;
+    };
+    const projectId = query.projectId?.trim();
+    const file = query.file?.trim();
+    const versionId = query.versionId?.trim();
+    if (!projectId || !file || !versionId)
+      return error(
+        reply,
+        400,
+        "application_error",
+        "缺少画布 id、文件名或版本 id。",
+      );
+    const version = await daemonJson<{
+      version?: {
+        id?: string;
+        label?: string;
+        version?: number;
+        createdAt?: number;
+      };
+      content?: string;
+    }>(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(file)}/versions/${encodeURIComponent(versionId)}`,
+    );
+    if (!version.ok)
+      return error(reply, version.status, "service_unavailable", version.message);
+    if (typeof version.value.content !== "string") {
+      return error(reply, 503, "service_unavailable", "上游没有返回版本正文。");
+    }
+    if (version.value.content.length > OPEN_DESIGN_DESIGN_TEXT_MAX_LENGTH) {
+      return error(
+        reply,
+        413,
+        "application_error",
+        "版本文件过大，暂不支持预览。",
+      );
+    }
+    return reply.send(
+      openDesignHostVersionContentResponseSchema.parse({
+        version: {
+          id: version.value.version?.id ?? versionId,
+          label: version.value.version?.label ?? versionId,
+          version: version.value.version?.version ?? 0,
+          createdAt: version.value.version?.createdAt ?? 0,
+        },
+        text: version.value.content,
       }),
     );
   });
