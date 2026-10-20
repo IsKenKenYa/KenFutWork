@@ -340,18 +340,6 @@ export function BrowserPane({
     return () => window.clearTimeout(timer);
   }, [url, open]);
 
-  const handleFrameError = useCallback(() => {
-    if (retriesRef.current >= 2) {
-      setState({
-        status: "error",
-        message: "画面已断开（浏览器可能被关闭）。",
-      });
-      return;
-    }
-    retriesRef.current += 1;
-    void openRef.current();
-  }, []);
-
   const send = useCallback((event: CdpInputEvent) => {
     surfaceJson("/api/browser/cdp/input", {
       method: "POST",
@@ -370,6 +358,52 @@ export function BrowserPane({
     },
     [],
   );
+
+  /**
+   * 元素选择模式（DevTools 拾取器同款，参考 Edge「将元素添加到对话」）：进入时给页面
+   * 注入跟随鼠标的选择器脚本——高亮在**页面里**实时画（elementFromPoint），坐标永远
+   * 精确、所有元素可选；旧「快照+面板叠框」因错位与元素不全废弃。
+   *
+   * 退出必须**两侧一起收**（面板状态 + 页面里注入的选择器）：只清面板会留「僵尸选择器」
+   * ——高亮照常跟鼠标走，点击却被页面拦截且永远没人来 read，元素进不了对话（真机踩过）。
+   */
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
+  pickingRef.current = picking;
+
+  const stopPicking = useCallback(() => {
+    setPicking(false);
+    surfaceJson("/api/browser/cdp/picker", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+    }).catch(() => {});
+  }, []);
+
+  // 卸载（切内容标签 / HMR 重挂载）也要收掉页面选择器，否则留给下一棒一个僵尸。
+  useEffect(() => {
+    return () => {
+      surfaceJson("/api/browser/cdp/picker", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      }).catch(() => {});
+    };
+  }, []);
+
+  const handleFrameError = useCallback(() => {
+    if (retriesRef.current >= 2) {
+      setState({
+        status: "error",
+        message: "画面已断开（浏览器可能被关闭）。",
+      });
+      return;
+    }
+    // 画面断线重连后页面状态未知（服务可能重启过）：在拾取就先收掉，别赌选择器还活着
+    if (pickingRef.current) stopPicking();
+    retriesRef.current += 1;
+    void openRef.current();
+  }, [stopPicking]);
 
   /**
    * Q5：点选元素 → 生成坐标引用 → 填进 composer。缩略形态（用户口径）：composer 里
@@ -439,10 +473,10 @@ export function BrowserPane({
       insertElementReference(result.picked);
       setPicking(false);
     } catch {
-      // 读取失败保守起见退出选择模式，避免留在无提示的中间态
-      setPicking(false);
+      // 读取失败（服务重启窗口/网络抖动）：两侧一起收，别留僵尸选择器
+      stopPicking();
     }
-  }, [insertElementReference]);
+  }, [insertElementReference, stopPicking]);
 
   const handleMouseDown = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -643,25 +677,6 @@ export function BrowserPane({
   const openInSystemBrowser = useCallback(() => {
     if (url) window.open(url, "_blank", "noopener");
   }, [url]);
-
-  /** Q5：进入/退出拾取。进入时先收起调试控制台悬浮窗（别挡视线），再拉元素快照。 */
-  /**
-   * 元素选择模式（DevTools 拾取器同款，参考 Edge「将元素添加到对话」）：进入时给页面
-   * 注入跟随鼠标的选择器脚本——高亮在**页面里**实时画（elementFromPoint），坐标永远
-   * 精确、所有元素可选；旧「快照+面板叠框」因错位与元素不全废弃。
-   */
-  const [picking, setPicking] = useState(false);
-  const pickingRef = useRef(false);
-  pickingRef.current = picking;
-
-  const stopPicking = useCallback(() => {
-    setPicking(false);
-    surfaceJson("/api/browser/cdp/picker", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "stop" }),
-    }).catch(() => {});
-  }, []);
 
   const togglePicking = useCallback(async () => {
     if (pickingRef.current) {

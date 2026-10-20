@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as notifications from "@zui/components/ui/toast.js";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
 const requestComposerTextInsert = vi.fn();
@@ -579,4 +579,110 @@ test("元素选择器：点空白/图层（picked 为空）保持选择模式", 
       expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
     ),
   );
+});
+
+/**
+ * 「僵尸选择器」回归锁：页面里注入的选择器必须与面板拾取态同生共死——
+ * 只清面板状态不收页面选择器时，高亮照常跟鼠标走、点击被页面拦截，
+ * 但没人来 read，元素永远进不了对话（真机用户实测踩过）。
+ */
+describe("元素选择器：退出必须两侧一起收（防僵尸选择器）", () => {
+  function pickerApis(options?: { readFails?: boolean }) {
+    surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/api/browser/cdp/picker") {
+        const action = JSON.parse(String(init?.body)).action as string;
+        if (action === "start") return { ok: true };
+        if (action === "stop") return { ok: true };
+        if (options?.readFails) throw new Error("服务重启中");
+        return {
+          picked: {
+            tag: "a",
+            text: "Learn more",
+            hint: "a.pick-me",
+            box: { x: 40, y: 60, width: 120, height: 20 },
+            viewport: { width: 1280, height: 720 },
+            page: "https://example.com/",
+          },
+          active: true,
+          error: null,
+        };
+      }
+      if (path === "/api/browser/cdp/status") {
+        return { cdp: { status: "connected" } };
+      }
+      if (path === "/api/browser/cdp/view") {
+        return {
+          ticket: "ticket-1",
+          viewport: { width: 1280, height: 720, scale: 1 },
+        };
+      }
+      return {};
+    });
+  }
+
+  async function enterPicking() {
+    render(<BrowserPane initialUrl="https://example.com" />);
+    await enableFreeSize();
+    await screen.findByAltText("浏览器画面");
+    await user.click(
+      screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+    );
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "start" }) }),
+      ),
+    );
+  }
+
+  test("read 失败（服务重启窗口）：发 stop 收页面选择器，并退出拾取", async () => {
+    pickerApis({ readFails: true });
+    await enterPicking();
+    const stage = screen.getByRole("group", { name: "内嵌浏览器画面" });
+    fireEvent.mouseDown(stage, { clientX: 100, clientY: 70, button: 0 });
+    fireEvent.mouseUp(stage, { clientX: 100, clientY: 70, button: 0 });
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
+      ),
+    );
+    // 已退出拾取：再点按钮走的是重新 start（而不是 stop）
+    surfaceJson.mockClear();
+    pickerApis();
+    await user.click(
+      screen.getByRole("button", { name: "选择网页元素加入聊天" }),
+    );
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "start" }) }),
+      ),
+    );
+    expect(requestComposerTextInsert).not.toHaveBeenCalled();
+  });
+
+  test("画面断线重连：在拾取先收掉（不赌页面选择器还活着）", async () => {
+    pickerApis();
+    await enterPicking();
+    fireEvent.error(screen.getByAltText("浏览器画面"));
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
+      ),
+    );
+  });
+
+  test("卸载面板（切内容标签/HMR）：发 stop 收页面选择器", async () => {
+    pickerApis();
+    await enterPicking();
+    cleanup();
+    await waitFor(() =>
+      expect(surfaceJson).toHaveBeenCalledWith(
+        "/api/browser/cdp/picker",
+        expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
+      ),
+    );
+  });
 });
