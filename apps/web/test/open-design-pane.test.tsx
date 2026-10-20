@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -55,7 +62,11 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
     if (path === "/api/open-design/host/file")
       return { file: { name: "logo.png", kind: "image" }, version: null };
     if (path.includes("preview-url")) return previewRef.current;
-    if (path.includes("file-text")) return { name: "index.html", text: "<html><body>当前设计</body></html>" };
+    if (path.includes("file-text"))
+      return {
+        name: "index.html",
+        text: '<html><body><div id="app"><h1 class="t">当前设计</h1></div></body></html>',
+      };
     if (path.includes("version-content")) {
       return {
         version: { id: "v-1", label: "Version 1", version: 1, createdAt: 1792477257537 },
@@ -124,14 +135,21 @@ function canvasWithFile(projectId = "p-1", name = "订单页") {
   };
 }
 
-test("绑定画布：预览 iframe 用上游公开地址 + 下发 sandbox，画布名回写标签", async () => {
+test("绑定画布：正文注入 <base> 与桥脚本后以 srcdoc 渲染，sandbox 保持不透明 origin", async () => {
   availableEntry();
   canvasWithFile();
   const { onMeta } = mount({ projectId: "p-1" });
-  const frame = await screen.findByTitle("OpenDesign");
-  expect(frame.getAttribute("src")).toBe(
-    `${ORIGIN}/api/projects/p-1/preview/tok/index.html`,
-  );
+  // 正文是异步取的：iframe 先以空文档挂上，拿到正文后换 key 重挂。
+  await waitFor(() => {
+    const doc = screen.getByTitle("OpenDesign").getAttribute("srcdoc") ?? "";
+    expect(doc).toContain(
+      `<base data-kfw-od="base" href="${ORIGIN}/api/projects/p-1/preview/tok/">`,
+    );
+    expect(doc).toContain('data-kfw-od="bridge"');
+    expect(doc).toContain("当前设计");
+  });
+  const frame = screen.getByTitle("OpenDesign");
+  // 关键安全边界：给了 allow-same-origin 就等于让设计代码拿到本仓 origin。
   expect(frame.getAttribute("sandbox")).toBe("allow-scripts allow-forms");
   await waitFor(() => {
     expect(onMeta).toHaveBeenCalledWith("open-design:p-1", { title: "订单页" });
@@ -371,4 +389,95 @@ test("「+」→「打开画布」：当前标签换绑到那块画布并重读"
   await waitFor(() => {
     expect(fetched).toContain("/api/open-design/host/canvas/p-2");
   });
+});
+
+/** 模拟桥回传一次命中（父页只认来自当前这个 frame 且 source 匹配的消息）。 */
+function emitBridgeHit(frame: HTMLIFrameElement, hit: unknown) {
+  const event = new MessageEvent("message", {
+    source: frame.contentWindow,
+    data: { source: "kfw-od", type: "hit", id: -1, hit },
+  });
+  window.dispatchEvent(event);
+}
+
+const HIT = {
+  path: "#app > h1",
+  tag: "h1",
+  text: "当前设计",
+  html: '<h1 class="t">当前设计</h1>',
+  rect: { x: 10, y: 20, w: 120, h: 30 },
+  color: "rgb(17, 17, 17)",
+  backgroundColor: "rgba(0, 0, 0, 0)",
+};
+
+test("编辑：桥回传命中后出检视器，保存把改动应用到源文本并经宿主写回", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await waitFor(() => {
+    expect(
+      (screen.getByTitle("OpenDesign").getAttribute("srcdoc") ?? "").length,
+    ).toBeGreaterThan(0);
+  });
+  const frame = screen.getByTitle("OpenDesign") as HTMLIFrameElement;
+
+  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+  expect(
+    screen.getByRole("button", { name: "编辑" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+
+  emitBridgeHit(frame, HIT);
+  const inspector = await screen.findByTestId("open-design-edit-inspector");
+  expect(inspector.textContent).toContain("选中元素的 HTML");
+
+  const editor = within(inspector).getByRole("textbox", { name: "文本颜色" });
+  fireEvent.change(editor, { target: { value: "#ff0000" } });
+  fireEvent.click(within(inspector).getByRole("button", { name: "保存" }));
+
+  await waitFor(() => {
+    const call = posted.find(
+      (item) => item.path === "/api/open-design/host/file",
+    );
+    expect(call).toBeTruthy();
+    const content = String(call?.body.content ?? "");
+    expect(content).toContain('style="color: rgb(255, 0, 0);"');
+    expect(content).toContain("当前设计");
+    // 注入件不得被烤回文件
+    expect(content).not.toContain("data-kfw-od");
+    expect(call?.body.versionLabel).toBe("手动编辑");
+  });
+  // 保存后正文即真相：srcdoc 立刻反映新颜色，检视器收起
+  await waitFor(() => {
+    const doc = screen.getByTitle("OpenDesign").getAttribute("srcdoc") ?? "";
+    expect(doc).toContain("rgb(255, 0, 0)");
+  });
+  expect(
+    screen.queryByTestId("open-design-edit-inspector"),
+  ).toBeNull();
+});
+
+test("编辑：路径在正文里已经找不到时如实说明，不写回", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await waitFor(() => {
+    expect(
+      (screen.getByTitle("OpenDesign").getAttribute("srcdoc") ?? "").length,
+    ).toBeGreaterThan(0);
+  });
+  const frame = screen.getByTitle("OpenDesign") as HTMLIFrameElement;
+  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+  emitBridgeHit(frame, { ...HIT, path: "#gone > h1" });
+  const inspector = await screen.findByTestId("open-design-edit-inspector");
+  // 没有改动时保存是灰的（不算脏）；改个颜色才让保存真的走到「路径已失效」这条分支。
+  fireEvent.change(within(inspector).getByRole("textbox", { name: "文本颜色" }), {
+    target: { value: "#00ff00" },
+  });
+  fireEvent.click(within(inspector).getByRole("button", { name: "保存" }));
+
+  const notice = await screen.findByTestId("open-design-notice");
+  expect(notice.textContent).toContain("改动没有保存");
+  expect(
+    posted.some((item) => item.path === "/api/open-design/host/file"),
+  ).toBe(false);
 });

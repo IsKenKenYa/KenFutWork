@@ -10,6 +10,7 @@ import type { ExecutionModeService } from "../features/agent-modes/execution-mod
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
+import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { CanvasAssetLocations } from "../features/canvas/asset-locations.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
@@ -92,6 +93,8 @@ export interface ServiceMap {
   canvas: CanvasService;
   canvasAssets: CanvasAssetLocations;
   chat: ChatService;
+  /** 画布评论与标注（本仓自持的设计评审数据面） */
+  designReview: DesignReviewService;
   /**
    * Code 模式的 git 分支视图（工作目录=项目）：列分支 / 切分支。
    * 目录经 `resolveSandboxDir` 解析（与 agent 后端同一处），归属校验在服务内。

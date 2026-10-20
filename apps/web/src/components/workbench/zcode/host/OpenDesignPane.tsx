@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@zui/components/ui/button.js";
 import { dispatchOpenDesignCanvasAddToChat } from "@zui/lib/openDesignCanvasChat.js";
 import type { OpenDesignSidePaneMetadata } from "@zui/lib/workspaceSidePane.js";
@@ -7,10 +7,21 @@ import {
   ZCodeStartupSpinner,
 } from "@zui/root/RootStartupLoading.js";
 import { rasterizeDesignHtml } from "./openDesignCapture.js";
+import {
+  OpenDesignEditInspector,
+  type OpenDesignEditDraft,
+} from "./OpenDesignEditInspector.js";
+import {
+  buildCanvasDocument,
+  type OpenDesignHit,
+} from "./openDesignRuntime.js";
+import { applyElementEdit } from "./openDesignSourceEdit.js";
+import { useOpenDesignBridge } from "./useOpenDesignBridge.js";
 import { useOpenDesignEntry } from "./openDesignHost.js";
 import {
   OpenDesignToolbar,
   type OpenDesignCanvasSummary,
+  type OpenDesignTool,
   type OpenDesignVersionSummary,
   type OpenDesignViewMode,
   type OpenDesignViewport,
@@ -80,6 +91,7 @@ export function OpenDesignPane({
     text: string;
   } | null>(null);
   const frameWrapRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
   const reportedRef = useRef("");
   /**
    * 上游就绪状态：没有可用 agent CLI 时，生成永远出不来。
@@ -89,6 +101,46 @@ export function OpenDesignPane({
     reachable: boolean;
     agentAvailable: boolean;
   } | null>(null);
+  /** 画布上的工作模式（评论/标注/编辑互斥）与编辑模式选中的元素。 */
+  const [tool, setTool] = useState<OpenDesignTool>("none");
+  const [picked, setPicked] = useState<OpenDesignHit | null>(null);
+
+  /**
+   * 渲染文档：正文 + `<base>`（相对资源落回上游预览目录）+ 桥脚本。
+   * DOMParser 一遍不便宜，只在正文或基准地址真的换了时重算。
+   */
+  const activeText = activeVersion?.text ?? currentText;
+  const assetBaseUrl =
+    preview && entryAvailable
+      ? `${entry.frontendUrl.replace(/\/$/u, "")}${preview.url}`.replace(
+          /[^/]*$/u,
+          "",
+        )
+      : null;
+  const documentHtml = useMemo(() => {
+    if (!activeText || !assetBaseUrl) return null;
+    return buildCanvasDocument(activeText, assetBaseUrl);
+  }, [activeText, assetBaseUrl]);
+  const documentKey = `${activeVersion?.id ?? "current"}:${frameKey}:${
+    canvas?.entryFile ?? ""
+  }:${documentHtml ? "doc" : "pending"}`;
+
+  const onPickHit = useCallback((hit: OpenDesignHit) => {
+    setPicked(hit);
+    setTool("none");
+  }, []);
+  const { ready: bridgeReady, setPicking } = useOpenDesignBridge({
+    frameRef,
+    documentKey,
+    trackedPaths: [],
+    onPickHit,
+  });
+
+  // 桥的重渲染会把它自己的 picking 态清掉，因此换文档后也要按当前模式重发一次。
+  useEffect(() => {
+    if (!bridgeReady) return;
+    setPicking(tool === "edit");
+  }, [bridgeReady, documentKey, setPicking, tool]);
 
   const reportMeta = useCallback(
     (metadata: OpenDesignSidePaneMetadata) => {
@@ -226,12 +278,13 @@ export function OpenDesignPane({
     };
   }, [boundProjectId, entryAvailable, loadCanvas, loadPreview]);
 
-  // 代码视图需要正文：只在切过去时按需取一次。
+  // 正文是画布的唯一真相：预览（注入后 srcdoc）、代码视图、截图/导出、编辑保存
+  // 全都吃这一份，因此画布就绪就取一次，不再按视图惰性加载。
   useEffect(() => {
-    if (viewMode !== "code" || activeVersion || currentText !== null) return;
+    if (activeVersion || currentText !== null) return;
     if (!canvas?.entryFile) return;
     void loadCurrentText();
-  }, [activeVersion, canvas?.entryFile, currentText, loadCurrentText, viewMode]);
+  }, [activeVersion, canvas?.entryFile, currentText, loadCurrentText]);
 
   const refresh = useCallback(async () => {
     if (!boundProjectId) return;
@@ -339,6 +392,51 @@ export function OpenDesignPane({
       }
     },
     [boundProjectId, createCanvas, refresh],
+  );
+
+  /** 保存可视化编辑：改动落到源文本，再由源文本重挂文档。 */
+  const saveEdit = useCallback(
+    async (draft: OpenDesignEditDraft) => {
+      if (!picked || !canvas?.entryFile || currentText === null) return;
+      const style: { backgroundColor?: string; color?: string } = {};
+      if (draft.color) style.color = draft.color;
+      if (draft.backgroundColor) style.backgroundColor = draft.backgroundColor;
+      const next = applyElementEdit(currentText, {
+        path: picked.path,
+        ...(draft.html === picked.html ? {} : { html: draft.html }),
+        ...(Object.keys(style).length > 0 ? { style } : {}),
+      });
+      if (next === null) {
+        setNotice("这个元素已经不在当前正文里，改动没有保存。");
+        return;
+      }
+      setBusy(true);
+      setNotice(null);
+      try {
+        await surfaceJson("/api/open-design/host/file", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: canvas.projectId,
+            name: canvas.entryFile,
+            content: next,
+            versionLabel: "手动编辑",
+          }),
+        });
+        // 正文是真相：改完只换正文并重挂文档，历史版本由上游记一条 manual。
+        setCurrentText(next);
+        setPicked(null);
+        setFrameKey((key) => key + 1);
+        setNotice("已保存");
+      } catch (saveError) {
+        setNotice(
+          saveError instanceof Error ? saveError.message : "保存失败。",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [canvas, currentText, picked],
   );
 
   /** 截图/导出/交接的输入：历史版本优先，否则当前文件正文。 */
@@ -582,6 +680,11 @@ export function OpenDesignPane({
         onViewport={setViewport}
         zoom={zoom}
         onZoom={setZoom}
+        tool={tool}
+        onTool={(next) => {
+          setTool(next);
+          if (next !== "edit") setPicked(null);
+        }}
         openableCanvases={openableCanvases}
         onCreateCanvas={() => void createCanvas()}
         onOpenCanvas={openCanvas}
@@ -665,16 +768,10 @@ export function OpenDesignPane({
               }}
             >
               <iframe
-                key={activeVersion ? `version:${activeVersion.id}` : frameKey}
-                {...(activeVersion
-                  ? {
-                      srcDoc: activeVersion.text,
-                      sandbox: "allow-scripts",
-                    }
-                  : {
-                      src: `${entry.frontendUrl.replace(/\/$/u, "")}${preview?.url ?? ""}`,
-                      sandbox: preview?.iframeSandbox ?? "allow-scripts",
-                    })}
+                key={documentKey}
+                ref={frameRef}
+                srcDoc={documentHtml ?? ""}
+                sandbox="allow-scripts allow-forms"
                 title="OpenDesign"
                 data-od-version={activeVersion?.id ?? undefined}
                 style={{ width: "100%", height: "100%" }}
@@ -694,6 +791,15 @@ export function OpenDesignPane({
               </div>
             ) : null}
           </div>
+        ) : null}
+        {picked && viewMode === "preview" && !activeVersion ? (
+          <OpenDesignEditInspector
+            key={picked.path}
+            hit={picked}
+            busy={busy}
+            onCancel={() => setPicked(null)}
+            onSave={(draft) => void saveEdit(draft)}
+          />
         ) : null}
         {phase === "empty" ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-xs text-foreground-subtle">

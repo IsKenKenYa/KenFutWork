@@ -86,6 +86,11 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     folder: "模型",
     description: "对话/图像/视频模型清单与动态模型目录。",
   },
+  "design-review": {
+    folder: "设计评审",
+    description:
+      "画布上的评论锚点与标注笔迹，本仓自持（作用域 = 实例 + 画布 project + 设计文件）。",
+  },
   "open-design": {
     folder: "OpenDesign 集成",
     description:

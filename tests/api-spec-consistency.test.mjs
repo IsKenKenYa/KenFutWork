@@ -20,6 +20,7 @@ const CLOSED_TAGS = [
   "canvases",
   "chat",
   "code",
+  "design-review",
   "execution-modes",
   "flow",
   "fonts",

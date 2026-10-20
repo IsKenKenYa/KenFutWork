@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Share2,
   Smartphone,
+  SquarePen,
   Tablet,
   Upload,
 } from "lucide-react";
@@ -38,6 +39,9 @@ import {
  */
 export type OpenDesignViewMode = "preview" | "code";
 export type OpenDesignViewport = "desktop" | "tablet" | "mobile";
+
+/** 画布上的工作模式：互斥，同一时刻只有一种指针语义。 */
+export type OpenDesignTool = "none" | "comment" | "annotate" | "edit";
 
 /** 「+」里「打开画布」的一条：宿主代理的上游 project 概要。 */
 export interface OpenDesignCanvasSummary {
@@ -77,6 +81,8 @@ export function OpenDesignToolbar({
   onViewport,
   zoom,
   onZoom,
+  tool,
+  onTool,
   openableCanvases,
   onCreateCanvas,
   onOpenCanvas,
@@ -101,6 +107,9 @@ export function OpenDesignToolbar({
   onViewport: (viewport: OpenDesignViewport) => void;
   zoom: number;
   onZoom: (zoom: number) => void;
+  /** 当前工作模式（评论/标注/编辑互斥）；再点一次退出。 */
+  tool: OpenDesignTool;
+  onTool: (tool: OpenDesignTool) => void;
   /** 「+」的「打开画布」清单（宿主代理的上游 project；空数组 = 只有「新建」）。 */
   openableCanvases: OpenDesignCanvasSummary[];
   onCreateCanvas: () => void;
@@ -238,6 +247,14 @@ export function OpenDesignToolbar({
       </DropdownMenu>
 
       <div className="ml-auto flex flex-wrap items-center gap-0.5">
+        <ToolbarToggleIconButton
+          label="编辑"
+          active={tool === "edit"}
+          disabled={busy || !hasCanvas || viewMode === "code"}
+          onClick={() => onTool(tool === "edit" ? "none" : "edit")}
+        >
+          <SquarePen className="size-3" />
+        </ToolbarToggleIconButton>
         <ToolbarIconButton
           label="截图到对话"
           disabled={busy || !hasCanvas}
@@ -410,6 +427,40 @@ function ToolbarIconButton({
         disabled={disabled}
         onClick={onClick}
         className="text-foreground-subtle hover:text-foreground"
+      >
+        {children}
+      </Button>
+    </ControlHintTooltip>
+  );
+}
+
+/** 工作模式按钮：按下态用 secondary + aria-pressed，一眼看出当前指针语义。 */
+function ToolbarToggleIconButton({
+  label,
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <ControlHintTooltip title={label} side="bottom">
+      <Button
+        type="button"
+        variant={active ? "secondary" : "ghost"}
+        size="icon-sm"
+        aria-label={label}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+        className={
+          active ? "text-foreground" : "text-foreground-subtle hover:text-foreground"
+        }
       >
         {children}
       </Button>

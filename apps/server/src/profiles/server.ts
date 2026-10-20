@@ -7,6 +7,7 @@ import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
+import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCadPlugin } from "../features/cad/plugin.js";
 import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
@@ -191,6 +192,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCanvasPlugin(),
     createCanvasToolsPlugin(),
     createCanvasPublicationRelayPlugin(),
+    designReviewPlugin,
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
