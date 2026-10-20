@@ -30,6 +30,8 @@ export function createOpenDesignTools(input: {
   frontendUrl?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
   timeoutMs?: number | undefined;
+  /** 建项目成功后记一笔「最近项目」，右侧面板据此打开对应画布。 */
+  onProjectCreated?: (project: { projectId: string; name: string }) => void;
 }): ToolDefinition[] {
   const baseUrl = input.frontendUrl?.trim().replace(/\/$/u, "") ?? "";
   if (!baseUrl) return [];
@@ -182,14 +184,21 @@ export function createOpenDesignTools(input: {
         const projectId = data?.project?.id ?? id;
         if (!projectId)
           throw new Error("创建 OpenDesign 项目失败：上游未返回项目 id");
+        const projectName = data?.project?.name ?? name;
+        // 记录失败不能反过来把「已建成的项目」判成失败：只影响右侧能否自动定位。
+        try {
+          input.onProjectCreated?.({ projectId, name: projectName });
+        } catch {
+          // ignore
+        }
         return {
           content: [
             {
               type: "text",
-              text: `已创建 OpenDesign 项目「${data?.project?.name ?? name}」（${projectId}）。`,
+              text: `已创建 OpenDesign 项目「${projectName}」（${projectId}）。`,
             },
           ],
-          structuredContent: { projectId, name: data?.project?.name ?? name },
+          structuredContent: { projectId, name: projectName },
         };
       },
     },

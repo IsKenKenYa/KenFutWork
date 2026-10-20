@@ -15,6 +15,7 @@ import {
 } from "./companion.js";
 import { resolveOpenDesignCredentialEntries } from "./credentials.js";
 import { provisionOpenDesign } from "./provision.js";
+import { writeOpenDesignLastProject } from "./last-project.js";
 import { createOpenDesignTools } from "./tools.js";
 
 /**
@@ -89,10 +90,16 @@ export function createOpenDesignHostPlugin(deps: {
       }
     },
     mounted(ctx) {
-      // 对话能力（只读面）：地址来自宿主配置，故由 feature 注册而不是插件 bundle。
+      const dataDir = resolveDesktopDataDir({
+        env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+      });
+      // 对话能力：只读面 + 建项目。地址来自宿主配置，故由 feature 注册而不是插件 bundle。
       for (const tool of createOpenDesignTools({
         frontendUrl: deps.frontendUrl,
         fetchImpl: deps.fetchImpl,
+        // 建成的项目记到单槽位，右侧面板据此打开对应画布，而不是停在上游首页。
+        onProjectCreated: (project) =>
+          writeOpenDesignLastProject({ dataDir, project }),
       })) {
         ctx.get("tools").register(tool);
       }
@@ -110,9 +117,7 @@ export function createOpenDesignHostPlugin(deps: {
         localInstance: ctx.get("localInstance"),
         companion: () => companion.snapshot(),
         // 桌面承载配置读写（设置页写入口，§205）：数据目录口径同 flow 引擎记录
-        dataDir: resolveDesktopDataDir({
-          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
-        }),
+        dataDir,
       });
       const mode = resolveOpenDesignCarrierMode(deps.frontendUrl);
       if (mode === "managed") {

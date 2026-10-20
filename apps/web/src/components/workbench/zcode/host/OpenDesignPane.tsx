@@ -7,6 +7,7 @@ import {
 import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOpenDesignEntry } from "./openDesignHost.js";
+import { surfaceJson } from "./surfaceApi.js";
 
 /**
  * OpenDesign 面板（Code 模式右侧栏的联动画布，与浏览器面板同位互斥）。
@@ -29,6 +30,31 @@ export function OpenDesignPane() {
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [handshake, setHandshake] = useState<"pending" | "ok">("pending");
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  /**
+   * 最近由对话创建的 OpenDesign 项目：有就打开它的项目画布，没有才停在上游首页。
+   * 这样「对话里用了 OpenDesign 能力 → 右侧打开对应画布」不需要会话级绑定；
+   * 等绑定落点定下来，再把这个单槽位升级成 sessionId → projectId。
+   */
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectResolved, setProjectResolved] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void surfaceJson<{ project?: { projectId?: string } }>(
+      "/api/open-design/last-project",
+    )
+      .then((data) => {
+        if (!cancelled) setProjectId(data?.project?.projectId ?? null);
+      })
+      .catch(() => {
+        // 未配置数据目录或接口不可用：退回首页，不挡画布本身。
+      })
+      .finally(() => {
+        if (!cancelled) setProjectResolved(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const allowedOrigin = entry?.available
     ? new URL(entry.frontendUrl).origin
@@ -69,7 +95,7 @@ export function OpenDesignPane() {
     };
   }, [entry, allowedOrigin, frameLoaded, post]);
 
-  if (entry === null) {
+  if (entry === null || !projectResolved) {
     return (
       <div
         data-testid="open-design-pane"
@@ -102,7 +128,11 @@ export function OpenDesignPane() {
     >
       <iframe
         ref={frameRef}
-        src={entry.frontendUrl}
+        src={
+          projectId
+            ? `${entry.frontendUrl.replace(/\/$/u, "")}/projects/${encodeURIComponent(projectId)}`
+            : entry.frontendUrl
+        }
         title="OpenDesign"
         className={`h-full w-full border-0 transition-opacity duration-300 ${
           frameLoaded ? "opacity-100" : "opacity-0"

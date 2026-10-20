@@ -12,6 +12,7 @@ import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalActor } from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { OpenDesignCompanionSnapshot } from "../features/open-design/companion.js";
+import { readOpenDesignLastProject } from "../features/open-design/last-project.js";
 import {
   readOpenDesignFileConfig,
   resolveOpenDesignConfigView,
@@ -97,6 +98,12 @@ export async function registerOpenDesignHostRoutes(
 
   if (options.dataDir) {
     const dataDir = options.dataDir;
+    // 右侧面板读「最近创建的项目」，据此把 iframe 定位到 /projects/<id>。
+    app.get("/api/open-design/last-project", async (request, reply) => {
+      if (!(await options.localAccess.authenticate(request)))
+        return unauthorized(reply, "本机接入凭据缺失或无效。");
+      return reply.send({ project: readOpenDesignLastProject({ dataDir }) });
+    });
     // 桌面承载配置读写（§205 闭环）：本机接入门；文件值重启后经 Tauri 注入生效。
     app.get("/api/open-design/host/config", async (request, reply) => {
       if (!(await options.localAccess.authenticate(request)))
