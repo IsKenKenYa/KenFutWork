@@ -112,63 +112,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-test("进入Design未选中画布时默认打开主画布，不新建", async () => {
-  const opened = vi.fn();
-  window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
-  render(<CanvasDocumentView {...blank()} />);
-  await waitFor(() =>
-    expect(opened.mock.calls[0]?.[0].detail).toEqual({
-      projectId,
-      documentId: canvasId,
-      title: "画布 A",
-    }),
-  );
-  expect(opened).toHaveBeenCalledOnce();
-  expect(
-    mocks.json.mock.calls.some(([, options]) => options?.method === "POST"),
-  ).toBe(false);
-  window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
-});
-
-test("空项目自动新建一个画布并打开（Design 默认内容必须是能编辑的画布）", async () => {
-  mocks.json.mockImplementation(async (_path, init) =>
-    init?.method === "POST" ? canvas() : { canvases: [] },
-  );
-  const opened = vi.fn();
-  window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
-  render(<CanvasDocumentView {...blank()} />);
-  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
-  expect(
-    mocks.json.mock.calls.some(([, options]) => options?.method === "POST"),
-  ).toBe(true);
-  expect(opened.mock.calls[0]?.[0].detail).toEqual({
-    projectId,
-    documentId: canvasId,
-    title: "画布 A",
-  });
-  // 自动建成功后由宿主把标签指向新画布；本单元只断言「建 + 请求打开」这两步，
-  // 空态是否消失取决于宿主回填 documentId，不在此用例职责内。
-  window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
-});
-
-test("自动新建只试一次，失败后不反复打 POST", async () => {
-  mocks.json.mockImplementation(async (_path, init) => {
-    if (init?.method === "POST") throw new Error("创建失败");
-    return { canvases: [] };
-  });
-  render(<CanvasDocumentView {...blank()} />);
-  await listed();
-  await waitFor(() =>
-    expect(
-      mocks.json.mock.calls.filter(([, options]) => options?.method === "POST"),
-    ).toHaveLength(1),
-  );
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  expect(
-    mocks.json.mock.calls.filter(([, options]) => options?.method === "POST"),
-  ).toHaveLength(1);
-});
-
 test("画布列表在途时不闪空态：项目有画布就全程不出现「还没有画布」", async () => {
   let release: () => void = () => {};
   mocks.json.mockImplementation(
@@ -187,20 +130,6 @@ test("画布列表在途时不闪空态：项目有画布就全程不出现「�
   release();
   await waitFor(() => expect(mocks.json).toHaveBeenCalledOnce());
   expect(flashed()).toBe(false);
-});
-
-test("每次解除选中只默认打开一次，重新指向后再次解除可再来", async () => {
-  const opened = vi.fn();
-  window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
-  const view = render(<CanvasDocumentView {...blank()} />);
-  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
-  view.rerender(<CanvasDocumentView {...props()} />);
-  await waitFor(() => expect(opened).toHaveBeenCalledOnce());
-  view.rerender(<CanvasDocumentView {...blank()} isVisible={false} />);
-  expect(opened).toHaveBeenCalledTimes(1);
-  view.rerender(<CanvasDocumentView {...blank()} />);
-  await waitFor(() => expect(opened).toHaveBeenCalledTimes(2));
-  window.removeEventListener(OPEN_DOCUMENT_EVENT, opened);
 });
 
 test("画布隐藏后保持iframe及选区/品牌，隐藏交互不抢共享会话", async () => {
@@ -392,10 +321,8 @@ test("创建重试复用幂等请求，迟到创建结果不抢显式选择的�
   const opened = vi.fn();
   window.addEventListener(OPEN_DOCUMENT_EVENT, opened);
   const view = render(<CanvasDocumentView {...blank()} />);
-  // 空项目的第一次创建由进 Design 自动发起，失败后要露出可读报错
-  await waitFor(() => expect(attempts).toBe(1));
+  fireEvent.click(await view.findByRole("button", { name: "新建画布" }));
   await view.findByRole("alert");
-  // 用户再点「新建画布」必须复用同一条幂等请求，不另起 requestId
   fireEvent.click(view.getByRole("button", { name: "新建画布" }));
   await waitFor(() => expect(attempts).toBe(2));
   const bodies = mocks.json.mock.calls

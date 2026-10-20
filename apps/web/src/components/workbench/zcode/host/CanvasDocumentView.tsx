@@ -290,29 +290,10 @@ function useCanvasDocumentActions(
     [list, run, tab.projectId],
   );
   /**
-   * 进入 Design 且当前标签没有指向具体画布时，默认打开项目自己的画布（主画布优先）；
-   * 项目里一个画布都没有就自动新建一个再打开——Design 的默认内容必须是能编辑的画布，
-   * 不摆「还没有画布 + 新建画布」这种要用户再点一下才成立的入口（用户 2026-10-20 口径）。
-   * 每次「未选中」只试一次：删除最后一个画布后重新解除会再武装一次。
+   * 「该打开哪个画布」由宿主在开标签之前敲定（见 `ensureDesignCanvasEntry`）。
+   * 这里不再自行请求：视图一旦在标签已存在时再 requestCanvasDocumentOpen，
+   * 宿主会按 documentId 另开一个标签，于是并排出现空白的「画布」和真正的画布。
    */
-  const autoOpened = useRef<string | null>(null);
-  useEffect(() => {
-    if (tab.documentId) {
-      autoOpened.current = null;
-      return;
-    }
-    if (!isVisible || loaded !== tab.projectId) return;
-    if (autoOpened.current === tab.projectId) return;
-    autoOpened.current = tab.projectId;
-    const target = canvases.find((item) => item.isPrimary) ?? canvases[0];
-    if (target)
-      requestCanvasDocumentOpen({
-        projectId: tab.projectId,
-        documentId: target.id,
-        title: target.name,
-      });
-    else void create();
-  }, [canvases, create, isVisible, loaded, tab.documentId, tab.projectId]);
   const remove = useCallback(
     () =>
       run(async () => {

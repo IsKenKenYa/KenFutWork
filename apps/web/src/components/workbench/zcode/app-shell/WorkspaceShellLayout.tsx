@@ -33,7 +33,7 @@ import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
-import { CANVAS_DOCUMENT_DELETED_EVENT, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
+import { CANVAS_DOCUMENT_DELETED_EVENT, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@zui/lib/assistantPreviewCards.js";
@@ -1695,8 +1695,33 @@ export const WorkspaceShellLayout = memo(
       }
       if (lastDesignEntryRef.current === entryKey || hasPendingDocumentWorkspaceRestore(sidePaneState, workspaceKey)) return;
       lastDesignEntryRef.current = entryKey;
-      handleOpenDocument({ ...resolveDesignDocumentEntry(sidePaneState,
-        { projectId: documentProjectId, workspaceKey }, lastDocumentTabByWorkspaceRef.current.get(workspaceKey)), restoreExisting: true });
+      const entry = resolveDesignDocumentEntry(sidePaneState,
+        { projectId: documentProjectId, workspaceKey }, lastDocumentTabByWorkspaceRef.current.get(workspaceKey));
+      if (entry.documentId) {
+        handleOpenDocument({ ...entry, restoreExisting: true });
+        return;
+      }
+      // 没有可指向的画布文档：先在宿主侧敲定真实画布（主画布优先，没有就建一个），
+      // 再开标签。反过来先开一个没有 documentId 的空标签，画布视图再去请求真实画布，
+      // 结果是两个标签并排——空白的「画布」+ 真正的画布（2026-10-20 用户截图）。
+      const projectIdForEntry = documentProjectId;
+      void ensureDesignCanvasEntry(projectIdForEntry)
+        .then((canvas) => {
+          // 期间可能又切了工作区/项目，过期结果不再开标签
+          if (lastDesignEntryRef.current !== entryKey) return;
+          handleOpenDocument({
+            resourceType: "canvas",
+            projectId: projectIdForEntry,
+            documentId: canvas.documentId,
+            title: canvas.title,
+          });
+        })
+        .catch(() => {
+          if (lastDesignEntryRef.current !== entryKey) return;
+          // 建不出来就退回空标签，让画布视图露出可读的空态与手动新建入口
+          lastDesignEntryRef.current = null;
+          handleOpenDocument({ ...entry, restoreExisting: true });
+        });
     }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleOpenDocument, sidePaneState]);
     useEffect(() => {
       const open = (event: Event) => {
@@ -1897,14 +1922,19 @@ export const WorkspaceShellLayout = memo(
               ) /* 修复 macOS 顶部窗口控制按钮被 header 遮挡无法点击的问题 */
             }
             <ResizablePanelGroup
-              layoutId="workspace-body-layout"
+              // v2：布局走 useDefaultLayout 持久化到 localStorage，存下来的旧
+              // 36/64 会盖掉新的 1:2 默认口径——换 key 让新默认对老用户生效。
+              layoutId="workspace-body-layout-v2"
               panelIds={WORKSPACE_BODY_PANEL_IDS}
               className="min-h-0 flex-1"
             >
               <ResizablePanel
                 id="conversation-column"
-                minSize="35%"
-                defaultSize={isSidePaneVisible ? "36%" : undefined}
+                // 下限必须低于 1:2 的对话侧（33.33%），否则内容面永远拿不到 2/3：
+                // 原来 minSize 35% + defaultSize 36% 与内容面 66.67% 相加超过 100%，
+                // 库直接把对话夹在下限、内容面吃剩下的 64~65%，1:2 落不到屏上。
+                minSize="25%"
+                defaultSize={isSidePaneVisible ? "33.33%" : undefined}
               >
                 <ResizablePanelGroup
                   orientation="vertical"
