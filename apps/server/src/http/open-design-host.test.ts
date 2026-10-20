@@ -322,3 +322,246 @@ describe("GET/PUT /api/open-design/host/config", () => {
     ).toBe(404);
   });
 });
+
+/**
+ * 画布数据面（宿主代理）：面板不直连 daemon，读写都走这几条。
+ * 契约：新建同时维护「最近画布」槽位；入口文件选取上游 artifactManifest 优先。
+ */
+function canvasFixture(
+  options: {
+    authorized?: boolean;
+    frontendUrl?: string | undefined;
+    dataDir?: string | undefined;
+    fetchImpl?: typeof fetch;
+  } = {},
+) {
+  const app = Fastify();
+  void registerOpenDesignHostRoutes(app, {
+    localAccess: {
+      authenticate: async () => (options.authorized === false ? null : actor),
+    },
+    ...(options.frontendUrl === undefined
+      ? {}
+      : { frontendUrl: options.frontendUrl }),
+    ...(options.dataDir === undefined ? {} : { dataDir: options.dataDir }),
+    ...(options.fetchImpl === undefined
+      ? {}
+      : { fetchImpl: options.fetchImpl }),
+  });
+  return app;
+}
+
+const jsonResponse = (value: unknown, status = 200) =>
+  new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+function daemonFetch(
+  routes: Record<string, () => Response | Promise<Response>>,
+): typeof fetch {
+  return (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    for (const [suffix, handler] of Object.entries(routes)) {
+      if (url.endsWith(suffix)) return handler();
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+}
+
+describe("画布数据面（/api/open-design/host/canvas 族）", () => {
+  it("未授权 401；未配前端地址 400 open_design_not_configured", async () => {
+    const denied = canvasFixture({ authorized: false, frontendUrl: "http://x" });
+    expect(
+      (
+        await denied.inject({
+          method: "GET",
+          url: "/api/open-design/host/canvas/p-1",
+        })
+      ).statusCode,
+    ).toBe(401);
+
+    const unconfigured = canvasFixture({ frontendUrl: undefined });
+    const missing = await unconfigured.inject({
+      method: "GET",
+      url: "/api/open-design/host/canvas/p-1",
+    });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error.code).toBe("open_design_not_configured");
+  });
+
+  it("新建画布：透传默认名、回 projectId，并写「最近画布」槽位", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-canvas-"));
+    const calls: Array<{ url: string; body: string | null }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), body: (init?.body as string) ?? null });
+      return jsonResponse({ project: { name: "未命名画布" } });
+    }) as typeof fetch;
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456/",
+      dataDir,
+      fetchImpl,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/canvas",
+      payload: {},
+    });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.project.projectId).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(body.project.name).toBe("未命名画布");
+    expect(body.entryFile).toBeNull();
+    expect(calls[0]?.url).toBe("http://127.0.0.1:7456/api/projects");
+    expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({
+      name: "未命名画布",
+    });
+    const slot = JSON.parse(
+      readFileSync(
+        join(dataDir, "config", "open-design-last-project.json"),
+        "utf8",
+      ),
+    );
+    expect(slot.projectId).toBe(body.project.projectId);
+  });
+
+  it("读画布：入口文件按 artifactManifest 优先，退第一个 html，再退 null", async () => {
+    const withManifest = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/api/projects/p-1": () =>
+          jsonResponse({ project: { id: "p-1", name: "订单页" } }),
+        "/api/projects/p-1/files": () =>
+          jsonResponse({
+            files: [
+              { name: "notes.md", kind: "markdown" },
+              {
+                name: "home.html",
+                kind: "html",
+                artifactManifest: { entry: "home.html" },
+              },
+              { name: "other.html", kind: "html" },
+            ],
+          }),
+      }),
+    });
+    const declared = await withManifest.inject({
+      method: "GET",
+      url: "/api/open-design/host/canvas/p-1",
+    });
+    expect(declared.statusCode).toBe(200);
+    expect(declared.json()).toMatchObject({
+      project: { projectId: "p-1", name: "订单页" },
+      entryFile: "home.html",
+    });
+
+    const fallback = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/api/projects/p-2": () =>
+          jsonResponse({ project: { id: "p-2", name: "空" } }),
+        "/api/projects/p-2/files": () =>
+          jsonResponse({ files: [{ name: "仅记.md", kind: "markdown" }] }),
+      }),
+    });
+    const none = await fallback.inject({
+      method: "GET",
+      url: "/api/open-design/host/canvas/p-2",
+    });
+    expect(none.json().entryFile).toBeNull();
+  });
+
+  it("上游 404 → 404；上游不可达 → 503（都带可读消息）", async () => {
+    const notFound = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({}),
+    });
+    const missing = await notFound.inject({
+      method: "GET",
+      url: "/api/open-design/host/canvas/p-gone",
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const unreachable = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async () => {
+        throw new Error("connect ECONNREFUSED");
+      }) as typeof fetch,
+    });
+    const down = await unreachable.inject({
+      method: "GET",
+      url: "/api/open-design/host/canvas/p-1",
+    });
+    expect(down.statusCode).toBe(503);
+    expect(down.json().error.message).toContain("不可达");
+  });
+
+  it("预览地址：原样透出 url 与 sandbox；缺参数 400", async () => {
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/preview-url?file=index.html": () =>
+          jsonResponse({
+            url: "/api/projects/p-1/preview/tok/index.html",
+            iframeSandbox: "allow-scripts allow-forms",
+            opaqueOrigin: true,
+          }),
+      }),
+    });
+    const ok = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/preview-url?projectId=p-1&file=index.html",
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({
+      url: "/api/projects/p-1/preview/tok/index.html",
+      iframeSandbox: "allow-scripts allow-forms",
+      opaqueOrigin: true,
+    });
+
+    const bad = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/preview-url?projectId=p-1",
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it("设计文本：取回 HTML；超过上限 413（截图输入有大小护栏）", async () => {
+    const routes = {
+      "/preview-url?file=index.html": () =>
+        jsonResponse({ url: "/api/projects/p-1/preview/tok/index.html" }),
+      "/preview/tok/index.html": () =>
+        new Response("<html>hi</html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+    };
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch(routes),
+    });
+    const text = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/file-text?projectId=p-1&file=index.html",
+    });
+    expect(text.statusCode).toBe(200);
+    expect(text.json()).toEqual({ name: "index.html", text: "<html>hi</html>" });
+
+    const huge = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        ...routes,
+        "/preview/tok/index.html": () =>
+          new Response("a".repeat(2 * 1024 * 1024 + 1), {
+            status: 200,
+            headers: { "content-type": "text/html" },
+          }),
+      }),
+    });
+    const tooBig = await huge.inject({
+      method: "GET",
+      url: "/api/open-design/host/file-text?projectId=p-1&file=index.html",
+    });
+    expect(tooBig.statusCode).toBe(413);
+  });
+});

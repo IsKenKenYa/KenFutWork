@@ -114,76 +114,73 @@ export type OpenDesignHostConfigUpdate = z.infer<
 >;
 
 /* ------------------------------------------------------------------ *
- * `od/v1` 嵌入协议（O2：iframe 双向链接的最小档）
+ * 画布数据面（宿主代理；面板不直连 daemon）
  *
- * 方向约定（与 `ff-embed/v1` 同思路，只做握手，不做身份/凭证）：
- * - 宿主 → 面板：`od/hello`（探测）与 `od/hello-ack`（握手应答）；
- * - 面板 → 宿主：`od/hello`（应答握手）。
- * 深链 `od/navigate` 曾按 O2 最小档实现，2026-10-15 随用户口径移除
- * （面板自动连接、打开、编辑画布本身即可；上游协议支持见 nexu-io/open-design#8776）。
- *
- * 安全口径（《OpenDesign 集成规划》§8 风险 5）：**origin 白名单 + 入站消息 schema 校验**。
- * 只收配置里那个前端 origin 发来的消息，schema 之外或类型不明的消息一律丢弃——
- * 不收「也许能用的宽进宽出」。
+ * 面板 iframe 只吃 daemon 的**公开预览地址**（`/api/projects/:id/preview/<token>/<file>`，
+ * 纯文件、无应用外壳）。其余读写——新建画布、读项目与文件、解析预览地址、取设计文本——
+ * 一律经宿主路由：浏览器直连 daemon 会撞 CORS（预检 403），且宿主是唯一能顺带维护
+ * 「最近画布」槽位（agent 上下文）的地方。
  * ------------------------------------------------------------------ */
 
+/** 新建画布请求：缺省名由宿主给（「未命名画布」）。 */
+export const openDesignHostCreateCanvasRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateCanvasRequest = z.infer<
+  typeof openDesignHostCreateCanvasRequestSchema
+>;
+
+/**
+ * 画布（= 上游一个 project）概要：面板拿它当标签标题与预览目标。
+ * `entryFile` 是画布要展示的文件（上游 artifactManifest.entry 优先，退第一个 html）。
+ */
+export const openDesignHostCanvasResponseSchema = z.object({
+  project: z.object({
+    projectId: z.string().min(1),
+    name: z.string(),
+  }),
+  entryFile: z.string().nullable(),
+  files: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        kind: z.string(),
+      }),
+    )
+    .max(500),
+});
+export type OpenDesignHostCanvasResponse = z.infer<
+  typeof openDesignHostCanvasResponseSchema
+>;
+
+/**
+ * 预览地址（`GET /api/open-design/host/preview-url`）：原样透出上游三件事——
+ * 相对 URL（宿主 origin 拼接后进 iframe src）、iframe sandbox 取值、是否不透明 origin。
+ * `expiresAt` 由上游给；过期应重取而不是继续吃 403。
+ */
+export const openDesignHostPreviewUrlResponseSchema = z.object({
+  url: z.string().min(1),
+  iframeSandbox: z.string(),
+  opaqueOrigin: z.boolean(),
+});
+export type OpenDesignHostPreviewUrlResponse = z.infer<
+  typeof openDesignHostPreviewUrlResponseSchema
+>;
+
+/** 设计文件文本（截图光栅化输入；只读，宿主侧有大小上限）。 */
+export const openDesignHostFileTextResponseSchema = z.object({
+  name: z.string().min(1),
+  text: z.string(),
+});
+export type OpenDesignHostFileTextResponse = z.infer<
+  typeof openDesignHostFileTextResponseSchema
+>;
+
+/**
+ * 宿主适配层协议版本：凭证缝（`POST /api/open-design/host/credentials`）的版本协商口径。
+ * （原 `od/v1` iframe 握手随面板改嵌上游预览路由而移除——那条消息协议上游从未实现。）
+ */
 export const OPEN_DESIGN_EMBED_PROTOCOL_VERSION = "v1";
-
-/** 面板 → 宿主的入站消息。schema 之外一律视为噪声丢弃。 */
-export const openDesignInboundMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("od/hello"),
-    version: z.string().min(1).max(16),
-  }),
-]);
-export type OpenDesignInboundMessage = z.infer<
-  typeof openDesignInboundMessageSchema
->;
-
-/** 宿主 → 面板的出站消息。 */
-export const openDesignOutboundMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("od/hello"),
-    version: z.string().min(1).max(16),
-  }),
-  z.object({
-    type: z.literal("od/hello-ack"),
-    version: z.string().min(1).max(16),
-  }),
-]);
-export type OpenDesignOutboundMessage = z.infer<
-  typeof openDesignOutboundMessageSchema
->;
-
-export function buildOpenDesignHello(): OpenDesignOutboundMessage {
-  return { type: "od/hello", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
-}
-
-export function buildOpenDesignHelloAck(): OpenDesignOutboundMessage {
-  return { type: "od/hello-ack", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
-}
-
-/**
- * 入站消息的**来源**必须是配置里的前端 origin（origin 白名单）。
- * 事件 origin 与配置不一致即返回 null——跨源伪造直接丢，不做宽容处理。
- */
-export function isAllowedOpenDesignOrigin(
-  eventOrigin: string,
-  allowedOrigin: string,
-): boolean {
-  return eventOrigin.length > 0 && eventOrigin === allowedOrigin;
-}
-
-/**
- * 入站消息的**内容**校验：过 schema 才认，其余（含类型不明的宽对象）一律 null。
- * 与 origin 白名单是两道独立的闸，缺一不可。
- */
-export function parseOpenDesignInbound(
-  raw: unknown,
-): OpenDesignInboundMessage | null {
-  const parsed = openDesignInboundMessageSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
-}
 
 /* ------------------------------------------------------------------ *
  * 凭证下发（O3 / `OD-4`：BYOK 接入）
