@@ -9,7 +9,8 @@ import {
  * read 脚本的**求值契约**（真机踩过的坑用测试锁死）：
  * `Runtime.evaluate` 只取最后一条语句的值——脚本若以「清空赋值」收尾，返回值是 null，
  * 调用方恒回「未点选」兜底（页面里选择器明明活着）。这里在 Node vm 里按页面的全局
- * 形状执行脚本本体，钉住三件事：返回 JSON 串、读后即清、取到元素即收选择器。
+ * 形状执行脚本本体，钉住：返回 JSON 串、读后即清、连续拾取（取到元素也不收选择器，
+ * 退出只走 Esc / stop）。
  */
 function runReadScript(page: { picked: unknown; pickerAlive: boolean }): {
   value: unknown;
@@ -30,7 +31,7 @@ function runReadScript(page: { picked: unknown; pickerAlive: boolean }): {
 }
 
 describe("ELEMENT_PICKER_READ_SCRIPT（read 的求值契约）", () => {
-  it("取到元素：返回 JSON 串（不是 null），读后即清，并收掉选择器", () => {
+  it("取到元素：返回 JSON 串（不是 null），读后即清，选择器保持激活（连续拾取）", () => {
     const element = { tag: "a", text: "Learn more" };
     const { value, stopCalled } = runReadScript({
       picked: element,
@@ -43,7 +44,7 @@ describe("ELEMENT_PICKER_READ_SCRIPT（read 的求值契约）", () => {
     };
     expect(parsed.picked).toEqual(element);
     expect(parsed.active).toBe(true);
-    expect(stopCalled).toBe(true);
+    expect(stopCalled).toBe(false);
   });
 
   it("没取到（点空白）：同样返回 JSON 串，但保持选择模式（不收选择器）", () => {

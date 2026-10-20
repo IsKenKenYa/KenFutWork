@@ -406,16 +406,21 @@ export function BrowserPane({
   }, [stopPicking]);
 
   /**
-   * Q5：点选元素 → 生成坐标引用 → 填进 composer。缩略形态（用户口径）：composer 里
-   * 显示为可删的 browser 元素 chip（虚线鼠标图标 + `<a> Learn more`），发给模型的正文
-   * 是 chip 的 markdown——label 是元素、target 是 browser-element:// 链接，坐标/视口/
-   * 来源/定位提示都在 query 里，agent 可直接取 x/y 用 browser_act 点它。
+   * Q5：点选元素 → 生成坐标引用 → 填进 composer，**拾取不退出，可连续添加多个**。
+   * chip 缩略形态（用户口径）：只显示标签名（`<a>`），悬浮 title 显示完整标签
+   * （`<a> Learn more`）；发给模型的正文仍是完整 markdown——label 带元素文字、
+   * target 是 browser-element:// 链接，坐标/视口/来源/定位提示都在 query 里，
+   * agent 可直接取 x/y 用 browser_act 点它。走 prepend-if-missing：保留编辑器
+   * 已有内容（含上一个 chip），新 chip 前插。
    */
   const insertElementReference = useCallback(
     (element: PickedElementWire) => {
       const centerX = Math.round(element.box.x + element.box.width / 2);
       const centerY = Math.round(element.box.y + element.box.height / 2);
-      const displayLabel = `<${element.tag}>${element.text.trim() ? ` ${element.text.trim()}` : ""}`;
+      const tagLabel = `<${element.tag}>`;
+      const fullLabel = element.text.trim()
+        ? `${tagLabel} ${element.text.trim()}`
+        : tagLabel;
       const params = new URLSearchParams({
         x: String(centerX),
         y: String(centerY),
@@ -426,23 +431,23 @@ export function BrowserPane({
       const hint = element.hint.trim();
       if (hint) params.set("hint", hint);
       const target = `browser-element://pick?${params.toString()}`;
-      const markdown = `[${displayLabel.replace(/]/g, "\\]")}](${target})`;
+      const markdown = `[${fullLabel.replace(/]/g, "\\]")}](${target})`;
       if (workspacePath) {
-        useZCodeSessionStore
-          .getState()
-          .requestComposerTextInsert(
-            workspacePath,
+        useZCodeSessionStore.getState().requestComposerTextInsert(
+          workspacePath,
+          markdown,
+          workspaceIdentity,
+          {
+            id: `browser-element:${Date.now()}`,
+            category: "browser",
+            label: tagLabel,
+            value: target,
             markdown,
-            workspaceIdentity,
-            {
-              id: `browser-element:${Date.now()}`,
-              category: "browser",
-              label: markdown,
-              value: target,
-              markdown,
-            },
-          );
-        toast("元素引用已填入输入框");
+            description: fullLabel,
+          },
+          "prepend-if-missing",
+        );
+        toast(`已添加 ${tagLabel}`);
       } else {
         toast("当前工作区不可用，引用未填入");
       }
@@ -450,7 +455,7 @@ export function BrowserPane({
     [url, workspaceIdentity, workspacePath],
   );
 
-  /** 拾取点选：页面在 mousedown 时已把元素存好；取回并填进 composer。 */
+  /** 拾取点选：页面在 mousedown 时已把元素存好；取回填 chip 后**不退出**（连续添加）。 */
   const readPickedAndInsert = useCallback(async () => {
     try {
       const result = await surfaceJson<{
@@ -470,8 +475,8 @@ export function BrowserPane({
         // 点在了选择器自己的图层或空白处：保持选择模式，用户重试
         return;
       }
+      // 连续拾取：填完不退出，页面选择器仍激活；Esc / 再点工具栏按钮才退出
       insertElementReference(result.picked);
-      setPicking(false);
     } catch {
       // 读取失败（服务重启窗口/网络抖动）：两侧一起收，别留僵尸选择器
       stopPicking();
@@ -753,8 +758,10 @@ export function BrowserPane({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") stopPicking();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    // capture：拾取点选后焦点常被 composer 抢走（插入即 requestFocus），
+    // Lexical 可能吞掉 Esc 的冒泡；捕获阶段 window 先拿到，退出不依赖焦点在哪。
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [picking, stopPicking]);
 
   const canBack = historyIndex > 0;

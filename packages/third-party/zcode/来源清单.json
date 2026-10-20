@@ -8121,9 +8121,10 @@
       "source": "references/zcode/packages/ui/src/mentions/nodes/PromptMentionNode.ts",
       "target": "apps/web/src/components/workbench/zcode/mentions/nodes/PromptMentionNode.ts",
       "sha256": "2002076be94ac9ea16c885c38c15bab3477683ad6324249ca452bd98869b0ebc",
-      "copiedSha256": "4f9f6c65038517bc3cdfdd74e821c4bb5fca76fe3bd3357042cf19642b520001",
+      "copiedSha256": "a21257a6ad1d389cb07139e1dba1409126f7ede282831cc1e3a4471561932733",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork 宿主偏差：browser 档 chip createDOM/updateDOM 按 description 设 title（拾取元素 chip 只显示标签名，悬浮显示完整标签）"
       ]
     },
     {

@@ -14,10 +14,10 @@ import { CdpError } from "./cdp-client.js";
  * - `mousemove`（capture）：`elementFromPoint` → 画高亮框 + 标签（tag#id.class + 尺寸）；
  * - `mousedown`（capture，preventDefault + stopPropagation）：记录元素到
  *   `window.__kfwPickedElement` 并收起高亮——页面不会真的被点下去；
- * - 点选后同一次手势的 `mouseup`/`click`（capture）一并拦截再收尾：浏览器会为
- *   「按下→抬起」合成 click，不拦的话点选 `<a>` 会把页面导航走；
- * - `Escape`：自行收起。
- * 面板在转发一次「按下→抬起」之后来 `/api/browser/cdp/picker` action=read 把结果取走。
+ * - 点选后同一次手势的 `mouseup`/`click`（capture）一并拦截：浏览器会为「按下→抬起」
+ *   合成 click，不拦的话点选 `<a>` 会把页面导航走；拦截完**复位继续拾取**（用户口径：
+ *   连续添加多个元素），只有 `Escape` 或面板的 stop 才退出；
+ * - 面板在每次「按下→抬起」之后来 `/api/browser/cdp/picker` action=read 把结果取走。
  */
 
 /** 进入选择模式：幂等（重复进入先卸旧的再装新的）。 */
@@ -131,7 +131,8 @@ export const ELEMENT_PICKER_START_SCRIPT = `
     }
 
     // 点选后同一次手势还有 mouseup 与合成的 click：一并拦截，别让「选一下」
-    // 变成页面上的真实点击（点链接导航走、点按钮提交表单都是这个坑）。
+    // 变成页面上的真实点击（点链接导航走、点按钮提交表单都是这个坑）。拦截完复位——
+    // 连续拾取模式下选择器不卸载，下一次 hover 继续跟手。
     function onUp(event) {
       if (!picked) return;
       event.preventDefault();
@@ -142,7 +143,7 @@ export const ELEMENT_PICKER_START_SCRIPT = `
       if (!picked) return;
       event.preventDefault();
       event.stopPropagation();
-      teardown();
+      picked = false;
     }
 
     function onKey(event) {
@@ -169,20 +170,16 @@ export const ELEMENT_PICKER_START_SCRIPT = `
  * 赋值清空的话，返回值是清空赋值的 `null`，调用方永远读到「未点选」的兜底
  * （真机实测踩过：页面里选择器活着，read 恒回 picked:null）。
  *
- * 取到元素就顺手把选择器收掉：click 合成的时机不该决定会话是否结束——面板拿到
- * 元素即退出拾取，页面侧同步收尾；没取到（点空白）则保持选择模式。
+ * 连续拾取：取到元素**不收选择器**（用户口径「可以添加多个」），面板靠 Esc / stop
+ * 退出；`active` 如实反映页面选择器是否还在。
  */
 export const ELEMENT_PICKER_READ_SCRIPT = `(() => {
-  var picked = window.__kfwPickedElement || null;
   var snapshot = JSON.stringify({
-    picked: picked,
+    picked: window.__kfwPickedElement || null,
     active: Boolean(window.__kfwPicker),
     error: window.__kfwPickerError || null
   });
   window.__kfwPickedElement = null;
-  if (picked && window.__kfwPicker && typeof window.__kfwPicker.stop === "function") {
-    window.__kfwPicker.stop();
-  }
   return snapshot;
 })();`;
 

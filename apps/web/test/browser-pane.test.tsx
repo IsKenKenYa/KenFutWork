@@ -521,7 +521,34 @@ test("元素选择器：进入注入脚本+收控制台；点选读取结果填 
         "[<a> Learn more](browser-element://pick?x=100&y=70",
       ),
       "ws-1",
-      expect.objectContaining({ category: "browser" }),
+      expect.objectContaining({
+        category: "browser",
+        // chip 只显示标签名；完整标签进悬浮 title（description）；发送正文保持完整 markdown
+        label: "<a>",
+        description: "<a> Learn more",
+      }),
+      "prepend-if-missing",
+    ),
+  );
+  // 连续添加：填完不退出——第二次点选再插一条，期间不发 stop
+  surfaceJson.mockClear();
+  requestComposerTextInsert.mockClear();
+  fireEvent.mouseDown(stage, { clientX: 140, clientY: 90, button: 0 });
+  fireEvent.mouseUp(stage, { clientX: 140, clientY: 90, button: 0 });
+  await waitFor(() =>
+    expect(requestComposerTextInsert).toHaveBeenCalledTimes(1),
+  );
+  expect(surfaceJson).not.toHaveBeenCalledWith(
+    "/api/browser/cdp/picker",
+    expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
+  );
+
+  // Esc 退出拾取（连续添加的出口）
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/browser/cdp/picker",
+      expect.objectContaining({ body: JSON.stringify({ action: "stop" }) }),
     ),
   );
 });

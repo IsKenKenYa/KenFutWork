@@ -12,12 +12,19 @@ import {
   PROMPT_MENTION_BASE_CLASS_NAME,
 } from "@zui/mentions/mentionChip.js";
 import { normalizePromptMentionDisplayLabel } from "@zui/mentions/promptMentionLabel.js";
-import type { MentionCategory, MentionItemData } from "@zui/mentions/mentionTypes.js";
+import type {
+  MentionCategory,
+  MentionItemData,
+} from "@zui/mentions/mentionTypes.js";
 import { decoratePromptMention } from "@zui/mentions/nodes/promptMentionDecoration.js";
 export * from "@zui/mentions/nodes/mentionIconDom.js";
 
 function displayLabel(payload: PromptMentionPayload): string {
-  const label = normalizePromptMentionDisplayLabel(payload.category, payload.label, payload.value);
+  const label = normalizePromptMentionDisplayLabel(
+    payload.category,
+    payload.label,
+    payload.value,
+  );
   return payload.category === "files"
     ? resolveFileDisplayDescriptor(
         payload.data?.path ?? payload.data?.relativePath ?? payload.value,
@@ -73,7 +80,9 @@ export class PromptMentionNode extends TextNode {
     );
   }
 
-  static importJSON(serializedNode: SerializedPromptMentionNode): PromptMentionNode {
+  static importJSON(
+    serializedNode: SerializedPromptMentionNode,
+  ): PromptMentionNode {
     const node = $createPromptMentionNode({
       id: serializedNode.mentionId,
       category: serializedNode.category,
@@ -107,22 +116,40 @@ export class PromptMentionNode extends TextNode {
     dom.setAttribute("data-mention-category", this.__category);
     dom.setAttribute("data-mention-id", this.__mentionId);
     dom.setAttribute("spellcheck", "false");
+    // KenFutWork 宿主档（Q5）：拾取元素 chip 只显示标签名，悬浮显示完整标签。
+    if (this.__category === "browser" && this.__description) {
+      dom.setAttribute("title", this.__description);
+    }
     // 根因：TextNode 的 firstChild 链必须通向展示文字，不能被图标截断。
     // 保留 super 创建的文本 DOM，图标只作为不参与选区的 CSS 装饰。
     decoratePromptMention(dom, this.__category, this.__value, this.__data);
     return dom;
   }
 
-  updateDOM(prevNode: PromptMentionNode, dom: HTMLElement, config: EditorConfig): boolean {
+  updateDOM(
+    prevNode: PromptMentionNode,
+    dom: HTMLElement,
+    config: EditorConfig,
+  ): boolean {
     const shouldUpdate = super.updateDOM(prevNode as this, dom, config);
     if (prevNode.__category !== this.__category) {
-      const variantClassName = getPromptMentionVariantClassName(this.__category);
+      const variantClassName = getPromptMentionVariantClassName(
+        this.__category,
+      );
       dom.className = `prompt-mention ${PROMPT_MENTION_BASE_CLASS_NAME} ${variantClassName}`;
       dom.setAttribute("data-mention-category", this.__category);
     }
 
     if (prevNode.__mentionId !== this.__mentionId) {
       dom.setAttribute("data-mention-id", this.__mentionId);
+    }
+
+    if (prevNode.__description !== this.__description) {
+      if (this.__category === "browser" && this.__description) {
+        dom.setAttribute("title", this.__description);
+      } else {
+        dom.removeAttribute("title");
+      }
     }
 
     if (
@@ -185,7 +212,9 @@ export class PromptMentionNode extends TextNode {
   }
 }
 
-export function $createPromptMentionNode(payload: PromptMentionPayload): PromptMentionNode {
+export function $createPromptMentionNode(
+  payload: PromptMentionPayload,
+): PromptMentionNode {
   const node = new PromptMentionNode(payload);
   node.setMode("token");
   return $applyNodeReplacement(node);
