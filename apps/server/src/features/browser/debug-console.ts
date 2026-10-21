@@ -490,6 +490,41 @@ const FLOAT_SCRIPT = `
 })();`;
 
 /**
+ * 已经注入过时的**还原尾巴**（点「打开调试工具」第二次及以后走这里）。
+ *
+ * 关键：**不重跑源码**。Eruda 是 UMD 包，源码每跑一次 `window.eruda` 就被换成新对象
+ * （工厂每次返回新字面量，`_isInit` 复位为 false），START_TAIL 于是再次 `init()`——
+ * 页面上多出第二个默认形态的 Eruda（全屏、z-index 9999999、盖住画面），且
+ * `applyFloat` 里的 `eruda.show()` 指到新对象，旧容器的正文再也显示不出来
+ * （真机：× 关闭后再点「打开调试工具」只剩一个空白框）。所以整段脚本先判
+ * `__kfwFloating`：已注入过就只做还原，源码一行不跑。
+ *
+ * 容器在影子根里（Eruda 默认 `useShadowDom`）：`document.querySelector` 穿不过去，
+ * 逐个影子根找；找到就放回 display，再让 eruda 与悬浮窗改造各自复位。
+ */
+const REOPEN_TAIL = `
+  var again = null;
+  var directContainer = document.querySelector(".eruda-container");
+  if (directContainer) {
+    again = directContainer;
+  } else {
+    var hosts = document.querySelectorAll("*");
+    for (var hi = 0; hi < hosts.length; hi += 1) {
+      if (!hosts[hi].shadowRoot) continue;
+      var inShadow = hosts[hi].shadowRoot.querySelector(".eruda-container");
+      if (inShadow) { again = inShadow; break; }
+    }
+  }
+  if (again) again.style.removeProperty("display");
+  // 旧版本注入过自绘光标：节点拔掉（残留节点不再绘制，监听随页面刷新才彻底清）
+  var staleCursor = document.querySelectorAll(".kfw-cursor");
+  for (var ci = 0; ci < staleCursor.length; ci += 1) {
+    staleCursor[ci].parentNode && staleCursor[ci].parentNode.removeChild(staleCursor[ci]);
+  }
+  if (window.eruda) window.eruda.show();
+  if (window.__kfwConsoleRestore) window.__kfwConsoleRestore();`;
+
+/**
  * 把源码包成**可注入的一整段**（源码 + 启动尾巴），并在源码运行期间**藏起 AMD / CJS 的全局**。
  *
  * 为什么必须藏：Eruda 是 UMD 包——页面上只要有 `define`（AMD 加载器）或 `module` / `exports`，
@@ -499,9 +534,17 @@ const FLOAT_SCRIPT = `
  * 别把人家的 AMD 加载器弄坏。
  *
  * 外层用 `.call(window)`：UMD 拿 `this` 当全局对象，包一层之后 `this` 必须仍是 window。
+ *
+ * **重复注入只还原不重跑**（见 REOPEN_TAIL）：`__kfwFloating` 已置位就直接走还原尾巴，
+ * 源码与启动尾巴一行不执行——否则重跑会换掉 `window.eruda` 并再造一个全屏默认容器。
  */
 export function buildInjectableScript(source: string): string {
   return `;(function () {
+  // 已经注入过：只做还原，**不重跑源码**（重跑的后果见 REOPEN_TAIL 注释）
+  if (window.__kfwFloating) {
+${REOPEN_TAIL}
+    return;
+  }
   var hadModule = Object.prototype.hasOwnProperty.call(window, "module");
   var hadExports = Object.prototype.hasOwnProperty.call(window, "exports");
   var hadDefine = Object.prototype.hasOwnProperty.call(window, "define");

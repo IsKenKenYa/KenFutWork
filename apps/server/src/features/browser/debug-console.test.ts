@@ -234,4 +234,23 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 尾部还接了「悬浮窗改造」（可拖动 / 可关闭）
     expect(script).toContain("__kfwFloating");
   });
+
+  it("二次注入只还原不重跑源码：__kfwFloating 早退分支在源码之前", () => {
+    // 真机事故：重跑 eruda 源码会把 window.eruda 换成新对象（_isInit 复位），
+    // START_TAIL 于是再次 init——页面上多出第二个默认形态的全屏 Eruda，且
+    // applyFloat 的 eruda.show() 指到新对象，旧容器正文再也显示不出来
+    // （× 关闭后再点「打开调试工具」只剩一个空白框）。整段脚本必须先判
+    // __kfwFloating 并 return，源码一行都不执行。
+    const script = buildInjectableScript("SOURCE_MARK");
+    const guard = script.indexOf("if (window.__kfwFloating)");
+    const source = script.indexOf("SOURCE_MARK");
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(guard).toBeLessThan(source);
+    // 早退分支必须 return，否则会继续跑源码
+    const guardBlock = script.slice(guard, source);
+    expect(guardBlock).toContain("return;");
+    // 还原尾巴：放回容器 display + 让 eruda 与悬浮窗改造各自复位
+    expect(guardBlock).toContain('removeProperty("display")');
+    expect(guardBlock).toContain("__kfwConsoleRestore");
+  });
 });
