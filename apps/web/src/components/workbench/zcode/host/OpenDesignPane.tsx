@@ -74,6 +74,7 @@ export function OpenDesignPane({
     projectId: string;
     name: string;
     entryFile: string | null;
+    designSystemId: string | null;
   } | null>(null);
   const [preview, setPreview] = useState<{
     url: string;
@@ -441,13 +442,14 @@ export function OpenDesignPane({
       setVersions(null);
       try {
         const data = await surfaceJson<{
-          project: { projectId: string; name: string };
+          project: { projectId: string; name: string; designSystemId?: string | null };
           entryFile: string | null;
         }>(`/api/open-design/host/canvas/${encodeURIComponent(id)}`);
         setCanvas({
           projectId: data.project.projectId,
           name: data.project.name,
           entryFile: data.entryFile,
+          designSystemId: data.project.designSystemId ?? null,
         });
         reportMeta({ title: data.project.name });
         setPhase(data.entryFile ? "loading" : "no-file");
@@ -722,6 +724,7 @@ export function OpenDesignPane({
           body: JSON.stringify({ projectId: target, designSystemId }),
         });
         setDesignSystems(null);
+        await refresh();
         setNotice(`已应用设计体系 ${title}`);
       } catch (bindError) {
         setNotice(
@@ -1164,6 +1167,14 @@ export function OpenDesignPane({
         onSyncContext={() => void syncContextToEngine()}
         onSaveToWorkspace={() => void saveToWorkspace()}
         saveToWorkspaceBusy={saveToWorkspaceBusy}
+        activeDesignSystemTitle={
+          canvas?.designSystemId
+            ? (designSystems?.state === "ready"
+                ? designSystems.items.find((item) => item.id === canvas.designSystemId)?.title
+                : null) ?? canvas.designSystemId
+            : null
+        }
+        onOpenDesignSystems={() => void openDesignSystemPicker()}
         versions={versions}
         versionsLoading={versionsLoading}
         activeVersionId={activeVersion?.id ?? null}

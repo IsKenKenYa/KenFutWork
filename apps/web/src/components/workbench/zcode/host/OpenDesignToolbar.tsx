@@ -22,6 +22,7 @@ import {
   History,
   MessageSquarePlus,
   Monitor,
+  Palette,
   PanelRight,
   PenTool,
   Plus,
@@ -99,6 +100,8 @@ export function OpenDesignToolbar({
   onSyncContext,
   onSaveToWorkspace,
   saveToWorkspaceBusy,
+  activeDesignSystemTitle,
+  onOpenDesignSystems,
   versions,
   versionsLoading,
   activeVersionId,
@@ -142,6 +145,8 @@ export function OpenDesignToolbar({
   onSyncContext: () => void;
   onSaveToWorkspace: () => void;
   saveToWorkspaceBusy: boolean;
+  activeDesignSystemTitle: string | null;
+  onOpenDesignSystems: () => void;
   versions: OpenDesignVersionSummary[] | null;
   versionsLoading: boolean;
   activeVersionId: string | null;
@@ -324,6 +329,13 @@ export function OpenDesignToolbar({
         >
           <SquarePen className="size-3" />
         </ToolbarToggleIconButton>
+        <ToolbarIconButton
+          label={activeDesignSystemTitle ? `设计体系：${activeDesignSystemTitle}` : "设计体系"}
+          disabled={busy || !hasCanvas}
+          onClick={onOpenDesignSystems}
+        >
+          <Palette className="size-3" />
+        </ToolbarIconButton>
         <ToolbarIconButton
           label="同步到引擎"
           disabled={busy || !hasCanvas}

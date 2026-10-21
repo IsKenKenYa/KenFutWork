@@ -138,6 +138,8 @@ export const openDesignHostCanvasResponseSchema = z.object({
   project: z.object({
     projectId: z.string().min(1),
     name: z.string(),
+    /** 绑定的设计体系（上游 project.designSystemId；未绑定为 null）。 */
+    designSystemId: z.string().nullable().optional(),
   }),
   entryFile: z.string().nullable(),
   files: z

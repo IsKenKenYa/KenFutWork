@@ -768,3 +768,24 @@ test("保存到工作目录：按钮 → /host/save-to-workspace 带 projectId �
     expect(typeof saved?.body.workspacePath).toBe("string");
   });
 });
+
+test("工具栏设计体系：已绑定时显示体系名，点开选择器换绑后回读", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: {
+      projectId: "p-1",
+      name: "订单页",
+      designSystemId: "agentic",
+    },
+    entryFile: "index.html",
+    files: [{ name: "index.html", kind: "html" }],
+  };
+  await mountReadyCanvas();
+  // 先打开一次选择器让清单就绪（工具栏标题会显示已绑定体系名）
+  fireEvent.click(screen.getByRole("button", { name: /设计体系/ }));
+  const row = await screen.findByText("Agentic");
+  fireEvent.click(row);
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/design-systems/bind");
+  });
+});

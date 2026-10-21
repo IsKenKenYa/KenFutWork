@@ -299,16 +299,23 @@ export async function registerOpenDesignHostRoutes(
   ): Promise<
     | {
         ok: true;
-        project: { projectId: string; name: string };
+        project: {
+          projectId: string;
+          name: string;
+          designSystemId: string | null;
+        };
         files: DaemonProjectFile[];
       }
     | { ok: false; status: number; message: string }
   > => {
     const [project, files] = await Promise.all([
-      daemonJson<{ project?: { id?: string; name?: string } }>(
-        base,
-        `/api/projects/${encodeURIComponent(projectId)}`,
-      ),
+      daemonJson<{
+        project?: {
+          id?: string;
+          name?: string;
+          designSystemId?: string | null;
+        };
+      }>(base, `/api/projects/${encodeURIComponent(projectId)}`),
       daemonJson<{ files?: DaemonProjectFile[] }>(
         base,
         `/api/projects/${encodeURIComponent(projectId)}/files`,
@@ -321,6 +328,10 @@ export async function registerOpenDesignHostRoutes(
       project: {
         projectId,
         name: project.value.project?.name ?? "未命名画布",
+        designSystemId:
+          typeof project.value.project?.designSystemId === "string"
+            ? project.value.project.designSystemId
+            : null,
       },
       files: files.value.files ?? [],
     };
