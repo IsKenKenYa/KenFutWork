@@ -1,6 +1,17 @@
+import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { Button } from "@zui/components/ui/button.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@zui/components/ui/dropdown-menu.js";
 import {
   Camera,
   Check,
+  CloudUpload,
   Code2,
   Download,
   Eye,
@@ -21,16 +32,6 @@ import {
   Upload,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
-import { Button } from "@zui/components/ui/button.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu.js";
 
 /**
  * 画布工具栏（本仓口径，替代上游 FileViewer 那两行 chrome）。
@@ -94,6 +95,7 @@ export function OpenDesignToolbar({
   onOpenCanvas,
   onUploadAsset,
   onOpenBrowserTab,
+  onSyncContext,
   versions,
   versionsLoading,
   activeVersionId,
@@ -127,6 +129,8 @@ export function OpenDesignToolbar({
   /** 选中文件即上传到当前画布（没有画布时先新建一块再传）。 */
   onUploadAsset: (file: File) => void;
   onOpenBrowserTab: () => void;
+  /** 同步评审上下文到设计引擎（document.md 受管段）。 */
+  onSyncContext: () => void;
   versions: OpenDesignVersionSummary[] | null;
   versionsLoading: boolean;
   activeVersionId: string | null;
@@ -175,7 +179,10 @@ export function OpenDesignToolbar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-52">
-          <DropdownMenuItem data-open-design-add="canvas" onSelect={onCreateCanvas}>
+          <DropdownMenuItem
+            data-open-design-add="canvas"
+            onSelect={onCreateCanvas}
+          >
             <PenTool className="size-3.5" />
             <span className="flex-1">新建画布</span>
           </DropdownMenuItem>
@@ -186,7 +193,10 @@ export function OpenDesignToolbar({
             <Upload className="size-3.5" />
             <span className="flex-1">上传资源</span>
           </DropdownMenuItem>
-          <DropdownMenuItem data-open-design-add="browser" onSelect={onOpenBrowserTab}>
+          <DropdownMenuItem
+            data-open-design-add="browser"
+            onSelect={onOpenBrowserTab}
+          >
             <Globe className="size-3.5" />
             <span className="flex-1">新建浏览器</span>
           </DropdownMenuItem>
@@ -194,15 +204,17 @@ export function OpenDesignToolbar({
             <>
               <DropdownMenuSeparator />
               <DropdownMenuLabel>打开画布</DropdownMenuLabel>
-              {openableCanvases.slice(0, OPENABLE_CANVAS_LIMIT).map((canvas) => (
-                <DropdownMenuItem
-                  key={canvas.projectId}
-                  data-open-design-open={canvas.projectId}
-                  onSelect={() => onOpenCanvas(canvas.projectId)}
-                >
-                  <span className="flex-1 truncate">{canvas.name}</span>
-                </DropdownMenuItem>
-              ))}
+              {openableCanvases
+                .slice(0, OPENABLE_CANVAS_LIMIT)
+                .map((canvas) => (
+                  <DropdownMenuItem
+                    key={canvas.projectId}
+                    data-open-design-open={canvas.projectId}
+                    onSelect={() => onOpenCanvas(canvas.projectId)}
+                  >
+                    <span className="flex-1 truncate">{canvas.name}</span>
+                  </DropdownMenuItem>
+                ))}
             </>
           ) : null}
         </DropdownMenuContent>
@@ -247,7 +259,10 @@ export function OpenDesignToolbar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
           {VIEWPORTS.map((item) => (
-            <DropdownMenuItem key={item.id} onSelect={() => onViewport(item.id)}>
+            <DropdownMenuItem
+              key={item.id}
+              onSelect={() => onViewport(item.id)}
+            >
               <item.icon className="size-3.5" />
               <span className="flex-1">{item.label}</span>
               {viewport === item.id ? <Check className="size-3.5" /> : null}
@@ -292,6 +307,13 @@ export function OpenDesignToolbar({
         >
           <SquarePen className="size-3" />
         </ToolbarToggleIconButton>
+        <ToolbarIconButton
+          label="同步到引擎"
+          disabled={busy || !hasCanvas}
+          onClick={onSyncContext}
+        >
+          <CloudUpload className="size-3" />
+        </ToolbarIconButton>
         <ToolbarIconButton
           label="截图到对话"
           disabled={busy || !hasCanvas}
@@ -362,14 +384,12 @@ export function OpenDesignToolbar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={onExportPng}>PNG 图片</DropdownMenuItem>
-            <DropdownMenuItem onSelect={onExportHtml}>HTML 文件</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onExportHtml}>
+              HTML 文件
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <ToolbarIconButton
-          label="分享"
-          disabled={!hasCanvas}
-          onClick={onShare}
-        >
+        <ToolbarIconButton label="分享" disabled={!hasCanvas} onClick={onShare}>
           <Share2 className="size-3" />
         </ToolbarIconButton>
         <DropdownMenu modal={false}>
@@ -409,11 +429,14 @@ const uploadInputRef: { current: HTMLInputElement | null } = { current: null };
 function formatVersionTime(timestamp: number): string {
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "—";
   const date = new Date(timestamp);
-  return `${date.toLocaleDateString("zh-CN")} ${date.toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  })}`;
+  return `${date.toLocaleDateString("zh-CN")} ${date.toLocaleTimeString(
+    "zh-CN",
+    {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    },
+  )}`;
 }
 
 function ViewModeButton({
@@ -504,7 +527,9 @@ function ToolbarToggleIconButton({
         disabled={disabled}
         onClick={onClick}
         className={
-          active ? "text-foreground" : "text-foreground-subtle hover:text-foreground"
+          active
+            ? "text-foreground"
+            : "text-foreground-subtle hover:text-foreground"
         }
       >
         {children}

@@ -1,13 +1,13 @@
 import {
-  designReviewAnnotationSchema,
-  designReviewCommentSchema,
-  designReviewListResponseSchema,
   type DesignReviewAnnotation,
   type DesignReviewAnnotationCreate,
   type DesignReviewComment,
   type DesignReviewCommentCreate,
   type DesignReviewCommentUpdate,
   type DesignReviewListResponse,
+  designReviewAnnotationSchema,
+  designReviewCommentSchema,
+  designReviewListResponseSchema,
 } from "@kenfutwork/shared";
 import type { LocalActor } from "../local-instance/types.js";
 import type {
@@ -38,7 +38,18 @@ export interface DesignReviewService {
   ): Promise<DesignReviewComment>;
   deleteAnnotation(actor: LocalActor, id: string): Promise<boolean>;
   deleteComment(actor: LocalActor, id: string): Promise<boolean>;
-  list(actor: LocalActor, scope: DesignReviewScope): Promise<DesignReviewListResponse>;
+  list(
+    actor: LocalActor,
+    scope: DesignReviewScope,
+  ): Promise<DesignReviewListResponse>;
+  /** 项目级列举（跨文件）：「同步到引擎」聚合 document.md 评审段用。 */
+  listByProject(
+    actor: LocalActor,
+    projectId: string,
+  ): Promise<{
+    comments: DesignReviewComment[];
+    annotations: DesignReviewAnnotation[];
+  }>;
   updateComment(
     actor: LocalActor,
     id: string,
@@ -95,6 +106,16 @@ export function createDesignReviewService(options: {
         comments: comments.map(toComment),
         annotations: annotations.map(toAnnotation),
       });
+    },
+    async listByProject(actor, projectId) {
+      const [comments, annotations] = await Promise.all([
+        repository.listCommentsByProject(actor.instanceId, projectId),
+        repository.listAnnotationsByProject(actor.instanceId, projectId),
+      ]);
+      return {
+        comments: comments.map(toComment),
+        annotations: annotations.map(toAnnotation),
+      };
     },
 
     async addComment(actor, input) {

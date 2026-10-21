@@ -1,35 +1,39 @@
+import { randomUUID } from "node:crypto";
 import {
   applicationErrorResponseSchema,
+  OPEN_DESIGN_HOST_TEXT_MAX_LENGTH,
+  OPEN_DESIGN_SYNC_SECTION_REVIEW,
+  OPEN_DESIGN_SYNC_SECTION_SPEC,
+  openDesignHostBindDesignSystemRequestSchema,
   openDesignHostCanvasResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
   openDesignHostCreateCanvasRequestSchema,
+  openDesignHostCreateDocumentRequestSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
+  openDesignHostDesignSystemsResponseSchema,
   openDesignHostFileTextResponseSchema,
   openDesignHostLastProjectResponseSchema,
   openDesignHostPreviewUrlResponseSchema,
   openDesignHostProjectsResponseSchema,
   openDesignHostProvisionResponseSchema,
-  openDesignHostWriteFileRequestSchema,
-  openDesignHostWriteFileResponseSchema,
+  openDesignHostStatusResponseSchema,
+  openDesignHostSyncContextRequestSchema,
+  openDesignHostSyncContextResponseSchema,
   openDesignHostVersionContentResponseSchema,
   openDesignHostVersionsResponseSchema,
-  openDesignHostStatusResponseSchema,
-  OPEN_DESIGN_HOST_TEXT_MAX_LENGTH,
+  openDesignHostWriteFileRequestSchema,
+  openDesignHostWriteFileResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { randomUUID } from "node:crypto";
+import { renderAnnotationsPng } from "../features/design-review/annotation-png.js";
+import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalActor } from "../features/local-instance/types.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type { OpenDesignCompanionSnapshot } from "../features/open-design/companion.js";
-import {
-  readOpenDesignLastProject,
-  writeOpenDesignLastProject,
-} from "../features/open-design/last-project.js";
-import { provisionOpenDesign } from "../features/open-design/provision.js";
 import {
   readOpenDesignFileConfig,
   resolveOpenDesignConfigView,
@@ -43,6 +47,11 @@ import {
   OPEN_DESIGN_PROBE_TIMEOUT_MS,
   resolveOpenDesignHostStatus,
 } from "../features/open-design/host-status.js";
+import {
+  readOpenDesignLastProject,
+  writeOpenDesignLastProject,
+} from "../features/open-design/last-project.js";
+import { provisionOpenDesign } from "../features/open-design/provision.js";
 import { authorizeOpenDesignGateway } from "./open-design-gateway-auth.js";
 
 /**
@@ -112,6 +121,8 @@ export async function registerOpenDesignHostRoutes(
     companion?: (() => OpenDesignCompanionSnapshot) | undefined;
     /** 桌面数据目录（config 读写缝；缺省 = 不注册 config 路由，如远端自托管）。 */
     dataDir?: string | undefined;
+    /** 评论/标注服务（「同步到引擎」聚合；缺省 = context 路由不注册）。 */
+    designReview?: Pick<DesignReviewService, "listByProject"> | undefined;
   },
 ): Promise<void> {
   const error = (
@@ -256,7 +267,11 @@ export async function registerOpenDesignHostRoutes(
     base: string,
     projectId: string,
   ): Promise<
-    | { ok: true; project: { projectId: string; name: string }; files: DaemonProjectFile[] }
+    | {
+        ok: true;
+        project: { projectId: string; name: string };
+        files: DaemonProjectFile[];
+      }
     | { ok: false; status: number; message: string }
   > => {
     const [project, files] = await Promise.all([
@@ -332,7 +347,12 @@ export async function registerOpenDesignHostRoutes(
       },
     );
     if (!created.ok)
-      return error(reply, created.status, "service_unavailable", created.message);
+      return error(
+        reply,
+        created.status,
+        "service_unavailable",
+        created.message,
+      );
     const project = {
       projectId,
       name: created.value.project?.name ?? name,
@@ -353,6 +373,333 @@ export async function registerOpenDesignHostRoutes(
   });
 
   /**
+   * 新建文档画布（空态「新建文档」）：建项目 + 写入 document.md 起始稿
+   * （spec/review 两个受管段骨架）。引擎以 document.md 为 spec 入口——
+   * 这条路让「先写文档、再让引擎出设计」成立。
+   */
+  app.post("/api/open-design/host/document", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostCreateDocumentRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "新建文档请求格式不正确。");
+    const projectId = randomUUID();
+    const name = parsed.data.name ?? "未命名文档";
+    const created = await daemonJson<{ project?: { name?: string } }>(
+      base,
+      "/api/projects",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: projectId, name }),
+      },
+    );
+    if (!created.ok)
+      return error(
+        reply,
+        created.status,
+        "service_unavailable",
+        created.message,
+      );
+    const project = {
+      projectId,
+      name: created.value.project?.name ?? name,
+    };
+    const starter = [
+      `# ${project.name}`,
+      "",
+      "<!-- kfw-sync:spec:start -->",
+      "在这里写给设计引擎的要求（或用「同步到引擎」把评审带进来）。",
+      "<!-- kfw-sync:spec:end -->",
+      "",
+      "<!-- kfw-sync:review:start -->",
+      "<!-- kfw-sync:review:end -->",
+      "",
+    ].join("\n");
+    const written = await daemonJson(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "document.md",
+          content: starter,
+          versionSource: "manual",
+          versionLabel: "新建文档",
+        }),
+      },
+    );
+    if (!written.ok)
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        `项目建好了，但文档没写进去：${written.message}`,
+      );
+    if (options.dataDir)
+      writeOpenDesignLastProject({ dataDir: options.dataDir, project });
+    return reply.send(
+      openDesignHostCanvasResponseSchema.parse({
+        project,
+        entryFile: null,
+        files: [],
+      }),
+    );
+  });
+
+  /**
+   * 「同步到引擎」（我们 → 引擎）：把本仓的评论与标注聚合进项目 document.md 的
+   * 受管段（成对 `<!-- kfw-sync:… -->` 标记，整段替换、段外内容一律不动），
+   * 标注笔迹渲染成 PNG 落 `review/` 并在受管段里引用。可选 specMarkdown 整段
+   * 替换 spec 受管段（对话侧计划文档走这条）。
+   */
+  app.post("/api/open-design/host/context", async (request, reply) => {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor) return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostSyncContextRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "同步请求格式不正确。");
+    const { projectId, specMarkdown } = parsed.data;
+    if (!options.designReview)
+      return error(reply, 503, "application_error", "评审数据面未接线。");
+    const review = await options.designReview.listByProject(actor, projectId);
+
+    // 1) 标注 → PNG（review/annotations-<ts>.png）
+    const annotationFiles: string[] = [];
+    if (review.annotations.length > 0) {
+      const png = renderAnnotationsPng(review.annotations);
+      const name = `review/annotations-${Date.now()}.png`;
+      const uploaded = await daemonJson(
+        base,
+        `/api/projects/${encodeURIComponent(projectId)}/files`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name,
+            content: png.toString("base64"),
+            encoding: "base64",
+          }),
+        },
+      );
+      if (!uploaded.ok)
+        return error(
+          reply,
+          uploaded.status,
+          "service_unavailable",
+          `标注图没写进画布：${uploaded.message}`,
+        );
+      annotationFiles.push(name);
+    }
+
+    // 2) 组评审段
+    const sections: Array<"spec" | "review"> = [];
+    const reviewLines: string[] = [];
+    if (review.comments.length > 0) {
+      reviewLines.push("### 评审意见");
+      for (const [index, comment] of review.comments.entries()) {
+        const status = comment.status === "resolved" ? "已解决" : "待处理";
+        const excerpt = comment.anchor.excerpt
+          ? `（页面元素：${comment.anchor.excerpt.slice(0, 60)}）`
+          : "";
+        reviewLines.push(
+          `${index + 1}. [${comment.file}] ${status} — ${comment.body}${excerpt}`,
+        );
+      }
+    }
+    if (annotationFiles.length > 0) {
+      reviewLines.push("### 标注");
+      for (const name of annotationFiles) {
+        reviewLines.push(`![标注](${name})`);
+      }
+    }
+
+    // 3) 读现有 document.md → 受管段替换 → 写回（没有则新建）
+    const fetchImpl = options.fetchImpl ?? fetch;
+    let existing = "";
+    const resolved = await resolvePreviewUrl(base, projectId, "document.md");
+    if (resolved.ok) {
+      const response = await fetchImpl(`${base}${resolved.url}`, {
+        signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
+      }).catch(() => null);
+      if (response?.ok) existing = await response.text();
+    }
+    const mergeManaged = (
+      document: string,
+      sectionId: string,
+      content: string,
+    ): string => {
+      const start = `<!-- ${sectionId}:start -->`;
+      const end = `<!-- ${sectionId}:end -->`;
+      const block = `${start}\n${content}\n${end}`;
+      const startIndex = document.indexOf(start);
+      const endIndex = document.indexOf(end);
+      if (startIndex >= 0 && endIndex > startIndex) {
+        return (
+          document.slice(0, startIndex) +
+          block +
+          document.slice(endIndex + end.length)
+        );
+      }
+      return `${document.trimEnd()}\n\n${block}\n`;
+    };
+    let document = existing;
+    if (typeof specMarkdown === "string") {
+      document = mergeManaged(
+        document,
+        OPEN_DESIGN_SYNC_SECTION_SPEC,
+        specMarkdown,
+      );
+      sections.push("spec");
+    }
+    if (reviewLines.length > 0) {
+      document = mergeManaged(
+        document,
+        OPEN_DESIGN_SYNC_SECTION_REVIEW,
+        reviewLines.join("\n"),
+      );
+      sections.push("review");
+    }
+    if (sections.length === 0)
+      return error(
+        reply,
+        400,
+        "application_error",
+        "没有可同步的内容（没有评论与标注，也没带计划文档）。",
+      );
+    const written = await daemonJson(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/files`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "document.md",
+          content: document,
+          versionSource: "manual",
+          versionLabel: "同步评审",
+        }),
+      },
+    );
+    if (!written.ok)
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        `document.md 没写进画布：${written.message}`,
+      );
+    return reply.send(
+      openDesignHostSyncContextResponseSchema.parse({
+        document: { name: "document.md" },
+        sections,
+        comments: review.comments.length,
+        annotations: review.annotations.length,
+        annotationFiles,
+      }),
+    );
+  });
+
+  /** 设计体系清单（上游 /api/design-systems 的宿主代理；空态「新建设计体系」）。 */
+  app.get("/api/open-design/host/design-systems", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const listed = await daemonJson<{
+      designSystems?: Array<{
+        id?: unknown;
+        title?: unknown;
+        category?: unknown;
+        summary?: unknown;
+        swatches?: unknown;
+      }>;
+    }>(base, "/api/design-systems");
+    if (!listed.ok)
+      return error(reply, listed.status, "service_unavailable", listed.message);
+    const designSystems = (listed.value.designSystems ?? [])
+      .filter(
+        (
+          item,
+        ): item is {
+          id: string;
+          title?: unknown;
+          category?: unknown;
+          summary?: unknown;
+          swatches?: unknown;
+        } => typeof item.id === "string" && item.id.length > 0,
+      )
+      .map((item) => ({
+        id: item.id,
+        title:
+          typeof item.title === "string" && item.title ? item.title : item.id,
+        category:
+          typeof item.category === "string" && item.category
+            ? item.category
+            : null,
+        summary:
+          typeof item.summary === "string" && item.summary
+            ? item.summary
+            : null,
+        swatches: Array.isArray(item.swatches)
+          ? item.swatches.filter(
+              (swatch): swatch is string => typeof swatch === "string",
+            )
+          : [],
+      }));
+    return reply.send(
+      openDesignHostDesignSystemsResponseSchema.parse({ designSystems }),
+    );
+  });
+
+  /** 绑定/切换画布的设计体系（代理上游 PATCH /api/projects/:id）。 */
+  app.post(
+    "/api/open-design/host/design-systems/bind",
+    async (request, reply) => {
+      if (!(await options.localAccess.authenticate(request)))
+        return unauthorized(reply, "本机接入凭据缺失或无效。");
+      const base = canvasBaseUrl(reply);
+      if (!base) return reply;
+      const parsed = openDesignHostBindDesignSystemRequestSchema.safeParse(
+        request.body ?? {},
+      );
+      if (!parsed.success)
+        return error(
+          reply,
+          400,
+          "application_error",
+          "绑定设计体系请求格式不正确。",
+        );
+      const { projectId, designSystemId } = parsed.data;
+      const patched = await daemonJson(
+        base,
+        `/api/projects/${encodeURIComponent(projectId)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ designSystemId }),
+        },
+      );
+      if (!patched.ok)
+        return error(
+          reply,
+          patched.status,
+          "service_unavailable",
+          `设计体系没绑上：${patched.message}`,
+        );
+      return reply.send({ ok: true });
+    },
+  );
+
+  /**
    * 画布列表（面板「+」的「打开画布」项）：上游 project 概要按更新时间倒序。
    * 上游返回 `projects`，字段名是 `id`/`name`/`updatedAt`——宿主侧收口成自己的契约，
    * 面板不跟着上游改名。
@@ -368,8 +715,11 @@ export async function registerOpenDesignHostRoutes(
     if (!listed.ok)
       return error(reply, listed.status, "service_unavailable", listed.message);
     const projects = (listed.value.projects ?? [])
-      .filter((project): project is { id: string; name?: string; updatedAt?: number } =>
-        typeof project.id === "string" && project.id.length > 0,
+      .filter(
+        (
+          project,
+        ): project is { id: string; name?: string; updatedAt?: number } =>
+          typeof project.id === "string" && project.id.length > 0,
       )
       .map((project) => ({
         projectId: project.id,
@@ -387,7 +737,9 @@ export async function registerOpenDesignHostRoutes(
       return unauthorized(reply, "本机接入凭据缺失或无效。");
     const base = canvasBaseUrl(reply);
     if (!base) return reply;
-    const projectId = (request.params as { projectId?: string }).projectId?.trim();
+    const projectId = (
+      request.params as { projectId?: string }
+    ).projectId?.trim();
     if (!projectId)
       return error(reply, 400, "application_error", "缺少画布 id。");
     const canvas = await readCanvas(base, projectId);
@@ -419,7 +771,12 @@ export async function registerOpenDesignHostRoutes(
       return error(reply, 400, "application_error", "缺少画布 id 或文件名。");
     const resolved = await resolvePreviewUrl(base, projectId, file);
     if (!resolved.ok)
-      return error(reply, resolved.status, "service_unavailable", resolved.message);
+      return error(
+        reply,
+        resolved.status,
+        "service_unavailable",
+        resolved.message,
+      );
     return reply.send(
       openDesignHostPreviewUrlResponseSchema.parse({
         url: resolved.url,
@@ -465,9 +822,7 @@ export async function registerOpenDesignHostRoutes(
         size: version.size ?? 0,
         current: version.current === true,
       }));
-    return reply.send(
-      openDesignHostVersionsResponseSchema.parse({ versions }),
-    );
+    return reply.send(openDesignHostVersionsResponseSchema.parse({ versions }));
   });
 
   app.get("/api/open-design/host/version-content", async (request, reply) => {
@@ -503,7 +858,12 @@ export async function registerOpenDesignHostRoutes(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(file)}/versions/${encodeURIComponent(versionId)}`,
     );
     if (!version.ok)
-      return error(reply, version.status, "service_unavailable", version.message);
+      return error(
+        reply,
+        version.status,
+        "service_unavailable",
+        version.message,
+      );
     if (typeof version.value.content !== "string") {
       return error(reply, 503, "service_unavailable", "上游没有返回版本正文。");
     }
@@ -541,7 +901,12 @@ export async function registerOpenDesignHostRoutes(
       return error(reply, 400, "application_error", "缺少画布 id 或文件名。");
     const resolved = await resolvePreviewUrl(base, projectId, file);
     if (!resolved.ok)
-      return error(reply, resolved.status, "service_unavailable", resolved.message);
+      return error(
+        reply,
+        resolved.status,
+        "service_unavailable",
+        resolved.message,
+      );
     const fetchImpl = options.fetchImpl ?? fetch;
     try {
       const response = await fetchImpl(`${base}${resolved.url}`, {
@@ -568,7 +933,12 @@ export async function registerOpenDesignHostRoutes(
         openDesignHostFileTextResponseSchema.parse({ name: file, text }),
       );
     } catch {
-      return error(reply, 503, "service_unavailable", "OpenDesign 服务不可达。");
+      return error(
+        reply,
+        503,
+        "service_unavailable",
+        "OpenDesign 服务不可达。",
+      );
     }
   });
 
@@ -589,8 +959,17 @@ export async function registerOpenDesignHostRoutes(
     if (!parsed.success)
       return error(reply, 400, "application_error", "写入文件请求格式不正确。");
     const { projectId, name, content, encoding, versionLabel } = parsed.data;
-    if (name.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(name) || name.split(/[\\/]/u).includes("..")) {
-      return error(reply, 400, "application_error", "文件名不能带绝对路径或上级目录。");
+    if (
+      name.startsWith("/") ||
+      /^[a-zA-Z]:[\\/]/u.test(name) ||
+      name.split(/[\\/]/u).includes("..")
+    ) {
+      return error(
+        reply,
+        400,
+        "application_error",
+        "文件名不能带绝对路径或上级目录。",
+      );
     }
     const isHtml = isHtmlDesignFile(name);
     const written = await daemonJson<{
@@ -608,7 +987,12 @@ export async function registerOpenDesignHostRoutes(
       }),
     });
     if (!written.ok)
-      return error(reply, written.status, "service_unavailable", written.message);
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        written.message,
+      );
     const version = written.value.version;
     return reply.send(
       openDesignHostWriteFileResponseSchema.parse({

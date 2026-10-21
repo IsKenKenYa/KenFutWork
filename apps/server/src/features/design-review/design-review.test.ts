@@ -49,18 +49,24 @@ const annotationRow: DesignReviewAnnotationRow = {
   updated_at: 1792477257600,
 };
 
-type RepositorySpies = Record<keyof DesignReviewRepository, ReturnType<typeof vi.fn>>;
+type RepositorySpies = Record<
+  keyof DesignReviewRepository,
+  ReturnType<typeof vi.fn>
+>;
 
 /** 假 repository：`service` 拿契约形状，`spies` 拿调用记录（两套类型各管各的）。 */
-function fakeRepository(
-  overrides: Partial<RepositorySpies> = {},
-): { service: DesignReviewRepository; spies: RepositorySpies } {
+function fakeRepository(overrides: Partial<RepositorySpies> = {}): {
+  service: DesignReviewRepository;
+  spies: RepositorySpies;
+} {
   const spies: RepositorySpies = {
     listComments: vi.fn(async () => [commentRow]),
     insertComment: vi.fn(async () => commentRow),
     updateComment: vi.fn(async () => commentRow),
     deleteComment: vi.fn(async () => 1),
     listAnnotations: vi.fn(async () => [annotationRow]),
+    listCommentsByProject: vi.fn(async () => [commentRow]),
+    listAnnotationsByProject: vi.fn(async () => [annotationRow]),
     insertAnnotation: vi.fn(async () => annotationRow),
     deleteAnnotation: vi.fn(async () => 1),
     ...overrides,
@@ -142,12 +148,16 @@ describe("design-review service", () => {
 
   it("未知状态与未知 kind 落到可读的默认档，数值列从 numeric 字符串转出来", async () => {
     const { service: repository } = fakeRepository({
-      listComments: vi.fn(async () => [
-        { ...commentRow, status: "archived" },
-      ] as DesignReviewCommentRow[]),
-      listAnnotations: vi.fn(async () => [
-        { ...annotationRow, kind: "arrow", stroke_width: 4.5 },
-      ] as DesignReviewAnnotationRow[]),
+      listComments: vi.fn(
+        async () =>
+          [{ ...commentRow, status: "archived" }] as DesignReviewCommentRow[],
+      ),
+      listAnnotations: vi.fn(
+        async () =>
+          [
+            { ...annotationRow, kind: "arrow", stroke_width: 4.5 },
+          ] as DesignReviewAnnotationRow[],
+      ),
     });
     const service = createDesignReviewService({ repository });
     const result = await service.list(actor, {
@@ -161,9 +171,12 @@ describe("design-review service", () => {
 
   it("锚点矩形形状不对时立即失败，不把残缺对象透给面板", async () => {
     const { service: repository } = fakeRepository({
-      listComments: vi.fn(async () => [
-        { ...commentRow, anchor_rect: "not-a-rect" },
-      ] as DesignReviewCommentRow[]),
+      listComments: vi.fn(
+        async () =>
+          [
+            { ...commentRow, anchor_rect: "not-a-rect" },
+          ] as DesignReviewCommentRow[],
+      ),
     });
     const service = createDesignReviewService({ repository });
     await expect(
@@ -183,5 +196,34 @@ describe("design-review service", () => {
     ).resolves.toBeNull();
     await expect(service.deleteComment(actor, "gone")).resolves.toBe(false);
     await expect(service.deleteAnnotation(actor, "gone")).resolves.toBe(false);
+  });
+});
+
+describe("annotation-png", () => {
+  it("渲染出的 PNG 带合法签名与 IHDR 尺寸", async () => {
+    const { renderAnnotationsPng } = await import("./annotation-png.js");
+    const png = renderAnnotationsPng([
+      {
+        id: "a1",
+        projectId: "p",
+        file: "index.html",
+        kind: "rect",
+        color: "#1a73e8",
+        strokeWidth: 2,
+        points: [
+          [0.1, 0.1],
+          [0.8, 0.6],
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    expect(
+      png
+        .subarray(0, 8)
+        .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    ).toBe(true);
+    expect(png.readUInt32BE(16)).toBe(1600);
+    expect(png.readUInt32BE(20)).toBe(1000);
   });
 });

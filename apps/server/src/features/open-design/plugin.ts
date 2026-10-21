@@ -14,11 +14,11 @@ import {
   resolveOpenDesignCarrierMode,
 } from "./companion.js";
 import { resolveOpenDesignCredentialEntries } from "./credentials.js";
-import { provisionOpenDesign } from "./provision.js";
 import {
   readOpenDesignLastProject,
   writeOpenDesignLastProject,
 } from "./last-project.js";
+import { provisionOpenDesign } from "./provision.js";
 import { createOpenDesignTools } from "./tools.js";
 
 /**
@@ -76,7 +76,14 @@ export function createOpenDesignHostPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "open-design-host",
-    inject: ["localAccess", "localInstance", "modelProviders", "tools", "systemPrompt"],
+    inject: [
+      "localAccess",
+      "localInstance",
+      "modelProviders",
+      "tools",
+      "systemPrompt",
+      "designReview",
+    ],
     apply() {
       if (!deps.frontendUrl?.trim()) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
@@ -141,6 +148,8 @@ export function createOpenDesignHostPlugin(deps: {
         companion: () => companion.snapshot(),
         // 桌面承载配置读写（设置页写入口，§205）：数据目录口径同 flow 引擎记录
         dataDir,
+        // 「同步到引擎」聚合 document.md 评审段（PR-1）
+        designReview: ctx.get("designReview"),
       });
       const mode = resolveOpenDesignCarrierMode(deps.frontendUrl);
       if (mode === "managed") {

@@ -52,7 +52,11 @@ test("一块画布一个标签：同项目复用，不同项目各开一个", ()
   expect(first.tabs).toHaveLength(1);
   expect(first.tabs[0]?.type).toBe("open-design");
   expect(first.activeTabId).toBe("open-design:p-1");
-  expect(first.tabs[0]?.projectId).toBe("p-1");
+  expect(
+    first.tabs[0] && "projectId" in first.tabs[0]
+      ? first.tabs[0].projectId
+      : undefined,
+  ).toBe("p-1");
 
   const again = openOpenDesignSidePane(first, { projectId: "p-1" });
   expect(again.tabs).toHaveLength(1);
@@ -65,14 +69,23 @@ test("一块画布一个标签：同项目复用，不同项目各开一个", ()
 test("未绑定的旧标签照旧可开（面板自行解析最近画布），画布名按标签回写", () => {
   const opened = openOpenDesignSidePane(null);
   expect(opened.tabs[0]?.id).toBe("open-design");
-  expect(opened.tabs[0]?.projectId).toBeNull();
+  expect(
+    opened.tabs[0] && "projectId" in opened.tabs[0]
+      ? opened.tabs[0].projectId
+      : undefined,
+  ).toBeNull();
 
   const titled = updateOpenDesignSidePaneTab(opened, "open-design", {
     projectId: "p-9",
     title: "登录页",
   });
-  expect(getActiveSidePaneTab(titled)?.title).toBe("登录页");
-  expect(getActiveSidePaneTab(titled)?.projectId).toBe("p-9");
+  const titledActive = getActiveSidePaneTab(titled);
+  expect(titledActive && "title" in titledActive ? titledActive.title : undefined).toBe(
+    "登录页",
+  );
+  expect(
+    titledActive && "projectId" in titledActive ? titledActive.projectId : undefined,
+  ).toBe("p-9");
   // 打偏的 tab id 不产生新状态（引用不变）。
   expect(
     updateOpenDesignSidePaneTab(opened, "open-design:missing", { title: "x" }),

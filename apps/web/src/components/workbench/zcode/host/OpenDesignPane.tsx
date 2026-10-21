@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DesignReviewAnnotation,
   DesignReviewComment,
@@ -10,33 +9,35 @@ import {
   ZCodeStartupLogoBadge,
   ZCodeStartupSpinner,
 } from "@zui/root/RootStartupLoading.js";
-import { rasterizeDesignHtml } from "./openDesignCapture.js";
+import { FileText, Globe, Palette, PenTool, Plus, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   OpenDesignCommentComposer,
   OpenDesignCommentSidebar,
 } from "./OpenDesignCommentSidebar.js";
 import {
-  OpenDesignEditInspector,
   type OpenDesignEditDraft,
+  OpenDesignEditInspector,
 } from "./OpenDesignEditInspector.js";
 import { OpenDesignMarkup } from "./OpenDesignMarkup.js";
+import {
+  type OpenDesignCanvasSummary,
+  type OpenDesignTool,
+  OpenDesignToolbar,
+  type OpenDesignVersionSummary,
+  type OpenDesignViewMode,
+  type OpenDesignViewport,
+} from "./OpenDesignToolbar.js";
+import { rasterizeDesignHtml } from "./openDesignCapture.js";
+import { useOpenDesignEntry } from "./openDesignHost.js";
 import type { FrameMetrics, OverlayBox } from "./openDesignMarkupGeometry.js";
 import {
   buildCanvasDocument,
   type OpenDesignHit,
 } from "./openDesignRuntime.js";
 import { applyElementEdit } from "./openDesignSourceEdit.js";
-import { useOpenDesignBridge } from "./useOpenDesignBridge.js";
-import { useOpenDesignEntry } from "./openDesignHost.js";
-import {
-  OpenDesignToolbar,
-  type OpenDesignCanvasSummary,
-  type OpenDesignTool,
-  type OpenDesignVersionSummary,
-  type OpenDesignViewMode,
-  type OpenDesignViewport,
-} from "./OpenDesignToolbar.js";
 import { surfaceJson } from "./surfaceApi.js";
+import { useOpenDesignBridge } from "./useOpenDesignBridge.js";
 
 /**
  * OpenDesign 画布面板（一块画布一个标签，与浏览器面板同位互斥）。
@@ -66,7 +67,9 @@ export function OpenDesignPane({
 }) {
   const entry = useOpenDesignEntry();
   const entryAvailable = entry?.available === true;
-  const [boundProjectId, setBoundProjectId] = useState<string | null>(projectId);
+  const [boundProjectId, setBoundProjectId] = useState<string | null>(
+    projectId,
+  );
   const [canvas, setCanvas] = useState<{
     projectId: string;
     name: string;
@@ -257,9 +260,7 @@ export function OpenDesignPane({
         setSidebarOpen(true);
       } catch (createError) {
         setNotice(
-          createError instanceof Error
-            ? createError.message
-            : "评论失败。",
+          createError instanceof Error ? createError.message : "评论失败。",
         );
       } finally {
         setBusy(false);
@@ -344,27 +345,22 @@ export function OpenDesignPane({
     [canvas],
   );
 
-  const removeAnnotation = useCallback(
-    async (id: string) => {
-      try {
-        await surfaceJson(
-          `/api/design-review/annotations/${encodeURIComponent(id)}`,
-          { method: "DELETE" },
-        );
-        setReview((current) => ({
-          ...current,
-          annotations: current.annotations.filter((item) => item.id !== id),
-        }));
-      } catch (eraseError) {
-        setNotice(
-          eraseError instanceof Error
-            ? eraseError.message
-            : "删除标注失败。",
-        );
-      }
-    },
-    [],
-  );
+  const removeAnnotation = useCallback(async (id: string) => {
+    try {
+      await surfaceJson(
+        `/api/design-review/annotations/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      );
+      setReview((current) => ({
+        ...current,
+        annotations: current.annotations.filter((item) => item.id !== id),
+      }));
+    } catch (eraseError) {
+      setNotice(
+        eraseError instanceof Error ? eraseError.message : "删除标注失败。",
+      );
+    }
+  }, []);
 
   const reportMeta = useCallback(
     (metadata: OpenDesignSidePaneMetadata) => {
@@ -539,7 +535,9 @@ export function OpenDesignPane({
       });
       setOpenableCanvases((current) => [
         { projectId: created.project.projectId, name: created.project.name },
-        ...current.filter((item) => item.projectId !== created.project.projectId),
+        ...current.filter(
+          (item) => item.projectId !== created.project.projectId,
+        ),
       ]);
       return created.project.projectId;
     } catch (createError) {
@@ -582,6 +580,131 @@ export function OpenDesignPane({
   );
 
   /** 上传资源：二进制走 base64 经宿主写进画布目录；没有画布就先建一块。 */
+  /** 新建文档画布（空态「新建文档」）：建项目+写 document.md 起始稿，开同一块标签。 */
+  const createDocument = useCallback(async (): Promise<string | null> => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const created = await surfaceJson<{
+        project: { projectId: string; name: string };
+      }>("/api/open-design/host/document", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      setCanvas(null);
+      setPreview(null);
+      setBoundProjectId(created.project.projectId);
+      reportMeta({
+        projectId: created.project.projectId,
+        title: created.project.name,
+      });
+      setOpenableCanvases((current) => [
+        { projectId: created.project.projectId, name: created.project.name },
+        ...current.filter(
+          (item) => item.projectId !== created.project.projectId,
+        ),
+      ]);
+      return created.project.projectId;
+    } catch (createError) {
+      setNotice(
+        createError instanceof Error ? createError.message : "新建文档失败。",
+      );
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }, [reportMeta]);
+
+  /** 同步到引擎：把本仓评论与标注聚进 daemon 项目的 document.md 受管段。 */
+  const syncContextToEngine = useCallback(async () => {
+    if (!boundProjectId) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const result = await surfaceJson<{
+        comments: number;
+        annotations: number;
+      }>("/api/open-design/host/context", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId: boundProjectId }),
+      });
+      setNotice(
+        `已同步 ${result.comments} 条评论、${result.annotations} 条标注`,
+      );
+    } catch (syncError) {
+      setNotice(
+        syncError instanceof Error ? syncError.message : "同步到引擎失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [boundProjectId]);
+
+  /**
+   * 设计体系选择（空态「新建设计体系」）：没有画布时先建一块再绑定；
+   * 选中的体系经宿主代理 PATCH 到 daemon 项目的 designSystemId。
+   */
+  const emptyUploadInputRef = useRef<HTMLInputElement>(null);
+  const [designSystems, setDesignSystems] = useState<
+    | { state: "loading" }
+    | {
+        state: "ready";
+        items: Array<{
+          id: string;
+          title: string;
+          category: string | null;
+          swatches: string[];
+        }>;
+      }
+    | { state: "error"; message: string }
+    | null
+  >(null);
+  const openDesignSystemPicker = useCallback(async () => {
+    setDesignSystems({ state: "loading" });
+    try {
+      const listed = await surfaceJson<{
+        designSystems: Array<{
+          id: string;
+          title: string;
+          category: string | null;
+          swatches: string[];
+        }>;
+      }>("/api/open-design/host/design-systems");
+      setDesignSystems({ state: "ready", items: listed.designSystems });
+    } catch (listError) {
+      setDesignSystems({
+        state: "error",
+        message:
+          listError instanceof Error ? listError.message : "读取设计体系失败。",
+      });
+    }
+  }, []);
+  const bindDesignSystem = useCallback(
+    async (designSystemId: string, title: string) => {
+      setBusy(true);
+      try {
+        const target = boundProjectId ?? (await createCanvas());
+        if (!target) return;
+        await surfaceJson("/api/open-design/host/design-systems/bind", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ projectId: target, designSystemId }),
+        });
+        setDesignSystems(null);
+        setNotice(`已应用设计体系 ${title}`);
+      } catch (bindError) {
+        setNotice(
+          bindError instanceof Error ? bindError.message : "绑定失败。",
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [boundProjectId, createCanvas],
+  );
+
   const uploadAsset = useCallback(
     async (file: File) => {
       if (file.size > UPLOAD_MAX_BYTES) {
@@ -711,13 +834,7 @@ export function OpenDesignPane({
     } finally {
       setBusy(false);
     }
-  }, [
-    boundProjectId,
-    canvas,
-    capturePng,
-    workspaceIdentity,
-    workspacePath,
-  ]);
+  }, [boundProjectId, canvas, capturePng, workspaceIdentity, workspacePath]);
 
   /** 交给对话（上游 Handoff 的本地化）：把设计文件本身作为附件送进 composer。 */
   const handoffToChat = useCallback(async () => {
@@ -920,6 +1037,7 @@ export function OpenDesignPane({
         onOpenCanvas={openCanvas}
         onUploadAsset={(file) => void uploadAsset(file)}
         onOpenBrowserTab={onOpenBrowserTab}
+        onSyncContext={() => void syncContextToEngine()}
         versions={versions}
         versionsLoading={versionsLoading}
         activeVersionId={activeVersion?.id ?? null}
@@ -966,10 +1084,7 @@ export function OpenDesignPane({
           </Button>
         </div>
       ) : null}
-      <div
-        ref={frameWrapRef}
-        className="relative min-h-0 flex-1 overflow-auto"
-      >
+      <div ref={frameWrapRef} className="relative min-h-0 flex-1 overflow-auto">
         {showCanvas && viewMode === "code" ? (
           <pre
             data-testid="open-design-source"
@@ -1075,17 +1190,138 @@ export function OpenDesignPane({
           />
         ) : null}
         {phase === "empty" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-xs text-foreground-subtle">
-            <span>还没有画布</span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => void createCanvas()}
-            >
-              新建画布
-            </Button>
+          <div
+            data-open-design-empty=""
+            className="flex h-full flex-col items-center justify-center gap-5 text-foreground-subtle"
+          >
+            <PenTool className="size-9 opacity-30" />
+            <p className="text-sm">生成的设计会出现在这里</p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                data-open-design-empty-action="canvas"
+                onClick={() => void createCanvas()}
+              >
+                <Plus className="size-3.5" />
+                新建画布
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                data-open-design-empty-action="document"
+                onClick={() => void createDocument()}
+              >
+                <FileText className="size-3.5" />
+                新建文档
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                data-open-design-empty-action="upload"
+                onClick={() => emptyUploadInputRef.current?.click()}
+              >
+                <Upload className="size-3.5" />
+                上传资源
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                data-open-design-empty-action="browser"
+                onClick={onOpenBrowserTab}
+              >
+                <Globe className="size-3.5" />
+                新建浏览器
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                data-open-design-empty-action="design-system"
+                onClick={() => void openDesignSystemPicker()}
+              >
+                <Palette className="size-3.5" />
+                新建设计体系
+              </Button>
+            </div>
+            <input
+              ref={emptyUploadInputRef}
+              type="file"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void uploadAsset(file);
+              }}
+            />
+          </div>
+        ) : null}
+        {designSystems ? (
+          <div className="absolute inset-0 z-30 flex flex-col bg-background p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-medium">选择设计体系</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDesignSystems(null)}
+              >
+                取消
+              </Button>
+            </div>
+            {designSystems.state === "loading" ? (
+              <p className="text-xs">正在读取…</p>
+            ) : designSystems.state === "error" ? (
+              <p className="text-xs text-destructive">
+                {designSystems.message}
+              </p>
+            ) : (
+              <div
+                className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto"
+                data-open-design-system-list=""
+              >
+                {designSystems.items.map((system) => (
+                  <button
+                    key={system.id}
+                    type="button"
+                    data-open-design-system={system.id}
+                    className="flex items-center gap-3 rounded-md border px-3 py-2 text-left hover:bg-hover"
+                    onClick={() =>
+                      void bindDesignSystem(system.id, system.title)
+                    }
+                  >
+                    <span className="flex shrink-0 gap-1">
+                      {system.swatches.slice(0, 5).map((swatch) => (
+                        <span
+                          key={swatch}
+                          className="size-3 rounded-full border border-border"
+                          style={{ background: swatch }}
+                        />
+                      ))}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs">
+                        {system.title}
+                      </span>
+                      {system.category ? (
+                        <span className="block truncate text-[10px] text-foreground-subtle">
+                          {system.category}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : null}
         {phase === "no-file" ? (

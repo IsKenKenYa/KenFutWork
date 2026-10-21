@@ -33,13 +33,18 @@ describe("open-design 覆盖层坐标", () => {
   });
 
   test("往返一致：归一化再换回来落在原像素", () => {
-    for (const [x, y] of [
+    for (const [x = 0, y = 0] of [
       [40, 20],
       [440, 170],
       [839.5, 619.25],
     ]) {
-      const [nx, ny] = overlayToNormalized({ x, y }, box, metrics);
-      const back = normalizedToOverlay(nx, ny, box, metrics);
+      const normalized = overlayToNormalized({ x, y }, box, metrics);
+      const back = normalizedToOverlay(
+        normalized[0] ?? Number.NaN,
+        normalized[1] ?? Number.NaN,
+        box,
+        metrics,
+      );
       expect(back.px).toBeCloseTo(x, 5);
       expect(back.py).toBeCloseTo(y, 5);
     }

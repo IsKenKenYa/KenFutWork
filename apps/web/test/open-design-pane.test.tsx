@@ -78,9 +78,11 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
       });
     }
     if (path.includes("readiness")) return readinessRef.current;
-    if (path.includes("last-project")) return { project: lastProjectRef.current };
+    if (path.includes("last-project"))
+      return { project: lastProjectRef.current };
     if (path.includes("/host/canvas/")) return canvasRef.current;
-    if (path.includes("/host/projects")) return { projects: projectsRef.current };
+    if (path.includes("/host/projects"))
+      return { projects: projectsRef.current };
     if (path.startsWith("/api/design-review?")) return reviewRef.current;
     if (path === "/api/design-review/comments")
       return { comment: savedCommentRef.current };
@@ -98,18 +100,58 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
       };
     if (path.includes("version-content")) {
       return {
-        version: { id: "v-1", label: "Version 1", version: 1, createdAt: 1792477257537 },
+        version: {
+          id: "v-1",
+          label: "Version 1",
+          version: 1,
+          createdAt: 1792477257537,
+        },
         text: '<html><body data-version="1">旧版设计</body></html>',
       };
     }
     if (path.includes("/host/versions")) {
       return {
         versions: [
-          { id: "v-1", label: "Version 1", version: 1, createdAt: 1792477257537, size: 848, current: true },
+          {
+            id: "v-1",
+            label: "Version 1",
+            version: 1,
+            createdAt: 1792477257537,
+            size: 848,
+            current: true,
+          },
         ],
       };
     }
     if (path.includes("/host/canvas")) return createdRef.current;
+    if (path === "/api/open-design/host/document")
+      return {
+        project: { projectId: "p-doc", name: "未命名文档" },
+        entryFile: null,
+        files: [],
+      };
+    if (path === "/api/open-design/host/context")
+      return {
+        document: { name: "document.md" },
+        sections: ["review"],
+        comments: 2,
+        annotations: 1,
+        annotationFiles: ["review/annotations-1.png"],
+      };
+    if (path === "/api/open-design/host/design-systems")
+      return {
+        designSystems: [
+          {
+            id: "agentic",
+            title: "Agentic",
+            category: "Themed",
+            summary: null,
+            swatches: ["#fff", "#111"],
+          },
+        ],
+      };
+    if (path === "/api/open-design/host/design-systems/bind")
+      return { ok: true };
     throw new Error(`unexpected path ${path}`);
   },
 }));
@@ -143,9 +185,7 @@ function mount(options: { projectId: string | null }) {
     <TooltipProvider>
       <OpenDesignPane
         tabId={
-          options.projectId
-            ? `open-design:${options.projectId}`
-            : "open-design"
+          options.projectId ? `open-design:${options.projectId}` : "open-design"
         }
         projectId={options.projectId}
         onMeta={onMeta}
@@ -215,7 +255,17 @@ test("没有画布：空态给「新建画布」，点它走宿主代理新建�
     files: [],
   };
   const { onMeta } = mount({ projectId: null });
-  expect(await screen.findByText("还没有画布")).toBeTruthy();
+  // 空态对齐上游：标题 + 五个入口
+  expect(await screen.findByText("生成的设计会出现在这里")).toBeTruthy();
+  for (const label of [
+    "新建画布",
+    "新建文档",
+    "上传资源",
+    "新建浏览器",
+    "新建设计体系",
+  ]) {
+    expect(screen.getByRole("button", { name: label })).toBeTruthy();
+  }
   fireEvent.click(screen.getByRole("button", { name: "新建画布" }));
   await waitFor(() => {
     expect(fetched).toContain("/api/open-design/host/canvas");
@@ -260,10 +310,15 @@ test("工具栏逐项对应上游：刷新/预览/代码/设备/截图/交给对
     expect(screen.getByRole("button", { name: label })).toBeTruthy();
   }
   // 用户口径：不要「在 OpenDesign 打开」这个逃生口。
-  expect(screen.queryByRole("button", { name: "在 OpenDesign 打开" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "在 OpenDesign 打开" }),
+  ).toBeNull();
 });
 
-async function openMenu(user: ReturnType<typeof userEvent.setup>, label: string) {
+async function openMenu(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+) {
   const trigger = screen.getByRole("button", { name: label });
   trigger.focus();
   await user.keyboard("{Enter}");
@@ -336,9 +391,9 @@ test("上游没有可用设计引擎时，面板说明原因而不是让人对�
   readinessRef.current = { reachable: true, agentAvailable: false };
   mount({ projectId: "p-1" });
   await screen.findByTitle("OpenDesign");
-  expect(
-    screen.getByTestId("open-design-readiness").textContent,
-  ).toContain("没有可用的设计引擎");
+  expect(screen.getByTestId("open-design-readiness").textContent).toContain(
+    "没有可用的设计引擎",
+  );
 });
 
 test("入口未就绪：直接说明原因，不摆空壳", async () => {
@@ -357,16 +412,14 @@ test("「+」选择器：新建画布 / 上传资源 / 新建浏览器 / 打开�
   await screen.findByTitle("OpenDesign");
 
   await openMenu(user, "新建");
-  expect(
-    await screen.findByTestId("open-design-upload-input"),
-  ).toBeTruthy();
+  expect(await screen.findByTestId("open-design-upload-input")).toBeTruthy();
   const items = await screen.findAllByRole("menuitem");
   expect(items.map((item) => item.textContent)).toEqual(
     expect.arrayContaining(["新建画布", "上传资源", "新建浏览器", "登录页"]),
   );
 
-  const browserItem = items.find((item) =>
-    item.dataset.openDesignAdd === "browser",
+  const browserItem = items.find(
+    (item) => item.dataset.openDesignAdd === "browser",
   );
   expect(browserItem).toBeTruthy();
   fireEvent.click(browserItem as HTMLElement);
@@ -389,7 +442,9 @@ test("「+」→「上传资源」：文件按 base64 经宿主写进当前画�
       "/api/open-design/host/file",
     );
   });
-  const call = posted.find((item) => item.path === "/api/open-design/host/file");
+  const call = posted.find(
+    (item) => item.path === "/api/open-design/host/file",
+  );
   expect(call?.body).toEqual({
     projectId: "p-1",
     name: "logo.png",
@@ -408,9 +463,9 @@ test("「+」→「打开画布」：当前标签换绑到那块画布并重读"
   await screen.findByTitle("OpenDesign");
 
   await openMenu(user, "新建");
-  const openItem = (
-    await screen.findAllByRole("menuitem")
-  ).find((node) => node.dataset.openDesignOpen === "p-2");
+  const openItem = (await screen.findAllByRole("menuitem")).find(
+    (node) => node.dataset.openDesignOpen === "p-2",
+  );
   expect(openItem).toBeTruthy();
   fireEvent.click(openItem as HTMLElement);
 
@@ -485,9 +540,7 @@ test("编辑：桥回传命中后出检视器，保存把改动应用到源文�
     const doc = screen.getByTitle("OpenDesign").getAttribute("srcdoc") ?? "";
     expect(doc).toContain("rgb(255, 0, 0)");
   });
-  expect(
-    screen.queryByTestId("open-design-edit-inspector"),
-  ).toBeNull();
+  expect(screen.queryByTestId("open-design-edit-inspector")).toBeNull();
 });
 
 test("编辑：路径在正文里已经找不到时如实说明，不写回", async () => {
@@ -504,9 +557,12 @@ test("编辑：路径在正文里已经找不到时如实说明，不写回", as
   emitBridgeHit(frame, { ...HIT, path: "#gone > h1" });
   const inspector = await screen.findByTestId("open-design-edit-inspector");
   // 没有改动时保存是灰的（不算脏）；改个颜色才让保存真的走到「路径已失效」这条分支。
-  fireEvent.change(within(inspector).getByRole("textbox", { name: "文本颜色" }), {
-    target: { value: "#00ff00" },
-  });
+  fireEvent.change(
+    within(inspector).getByRole("textbox", { name: "文本颜色" }),
+    {
+      target: { value: "#00ff00" },
+    },
+  );
   fireEvent.click(within(inspector).getByRole("button", { name: "保存" }));
 
   const notice = await screen.findByTestId("open-design-notice");
@@ -574,9 +630,7 @@ test("评论：点选元素→落笔卡片→提交后图钉出现并自动开�
       },
     });
   });
-  expect(
-    await screen.findByTestId("open-design-comment-sidebar"),
-  ).toBeTruthy();
+  expect(await screen.findByTestId("open-design-comment-sidebar")).toBeTruthy();
   expect(
     document.querySelector('[data-design-comment-pin="c-1"]'),
   ).toBeTruthy();
@@ -600,21 +654,70 @@ test("评论侧栏：计数只算未解决，能重开与删除", async () => {
   expect(sidebar.textContent).toContain("评论 1");
   expect(sidebar.textContent).toContain("标题太浅");
   // 已解决的不出图钉
-  expect(
-    document.querySelectorAll("[data-design-comment-pin]").length,
-  ).toBe(1);
+  expect(document.querySelectorAll("[data-design-comment-pin]").length).toBe(1);
 
-  fireEvent.click(within(sidebar).getAllByRole("button", { name: "解决" })[0]);
+  fireEvent.click(within(sidebar).getAllByRole("button", { name: "解决" })[0]!);
   await waitFor(() => {
     expect(
       posted.some((item) => item.path === "/api/design-review/comments/c-1"),
     ).toBe(true);
   });
 
-  fireEvent.click(within(sidebar).getAllByRole("button", { name: "删除评论" })[0]);
+  fireEvent.click(
+    within(sidebar).getAllByRole("button", { name: "删除评论" })[0]!,
+  );
   await waitFor(() => {
-    expect(
-      document.querySelectorAll("[data-design-comment-pin]").length,
-    ).toBe(0);
+    expect(document.querySelectorAll("[data-design-comment-pin]").length).toBe(
+      0,
+    );
+  });
+});
+test("空态「新建文档」走 /host/document；「新建设计体系」拉清单并绑定", async () => {
+  availableEntry();
+  lastProjectRef.current = null;
+  canvasRef.current = {
+    project: { projectId: "p-doc", name: "未命名文档" },
+    entryFile: null,
+    files: [],
+  };
+  const { onMeta } = mount({ projectId: null });
+
+  fireEvent.click(await screen.findByRole("button", { name: "新建文档" }));
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/document");
+  });
+  await waitFor(() => {
+    expect(onMeta).toHaveBeenCalledWith("open-design", {
+      projectId: "p-doc",
+      title: "未命名文档",
+    });
+  });
+});
+
+test("「同步到引擎」把评审聚进 document.md（按钮 → /host/context）", async () => {
+  await mountReadyCanvas();
+  fireEvent.click(screen.getByRole("button", { name: "同步到引擎" }));
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/context");
+  });
+});
+
+test("设计体系选择器：拉清单、按色板行选择后经 /bind 绑定", async () => {
+  availableEntry();
+  lastProjectRef.current = null;
+  canvasRef.current = {
+    project: { projectId: "p-ds", name: "未命名画布" },
+    entryFile: null,
+    files: [],
+  };
+  mount({ projectId: null });
+  fireEvent.click(await screen.findByRole("button", { name: "新建设计体系" }));
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/design-systems");
+  });
+  const row = await screen.findByText("Agentic");
+  fireEvent.click(row);
+  await waitFor(() => {
+    expect(fetched).toContain("/api/open-design/host/design-systems/bind");
   });
 });

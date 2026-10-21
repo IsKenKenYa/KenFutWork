@@ -7531,6 +7531,229 @@
         }
       }
     },
+    "/api/open-design/host/document": {
+      "post": {
+        "operationId": "postOpenDesignHostDocument",
+        "summary": "新建 OpenDesign 文档画布",
+        "description": "建项目并写入 document.md 起始稿（含 spec/review 两个受管段骨架）；引擎以 document.md 为 spec 入口。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCreateDocumentRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCanvasResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/context": {
+      "post": {
+        "operationId": "postOpenDesignHostContext",
+        "summary": "同步评审上下文到设计引擎",
+        "description": "把本仓评论与标注聚合进项目 document.md 的受管段（成对 kfw-sync 标记整段替换，段外不动），标注渲染成 PNG 落 review/；可选 specMarkdown 替换 spec 受管段。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostSyncContextRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostSyncContextResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/design-systems": {
+      "get": {
+        "operationId": "getOpenDesignHostDesignSystems",
+        "summary": "列出 OpenDesign 设计体系",
+        "description": "宿主代理上游 /api/design-systems：内置体系概要（标题/分类/简介/色板）。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostDesignSystemsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/design-systems/bind": {
+      "post": {
+        "operationId": "postOpenDesignHostDesignSystemsBind",
+        "summary": "绑定画布的设计体系",
+        "description": "代理上游 PATCH /api/projects/:id 的 designSystemId——为画布选择/切换设计体系。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostBindDesignSystemRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/open-design/host/readiness": {
       "get": {
         "operationId": "getOpenDesignHostReadiness",
@@ -22388,6 +22611,25 @@
         ],
         "additionalProperties": false
       },
+      "openDesignHostBindDesignSystemRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "designSystemId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "projectId",
+          "designSystemId"
+        ]
+      },
       "openDesignHostCanvasResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -22521,6 +22763,17 @@
           }
         }
       },
+      "openDesignHostCreateDocumentRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        }
+      },
       "openDesignHostCredentialsRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -22593,6 +22846,61 @@
         "required": [
           "protocolVersion",
           "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostDesignSystemsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "designSystems": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "summary": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "swatches": {
+                  "maxItems": 24,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "category",
+                "summary",
+                "swatches"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "designSystems"
         ],
         "additionalProperties": false
       },
@@ -22783,6 +23091,79 @@
           "enabled",
           "frontendUrl",
           "reasons"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostSyncContextRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "specMarkdown": {
+            "type": "string",
+            "maxLength": 2097152
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "openDesignHostSyncContextResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "sections": {
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "spec",
+                "review"
+              ]
+            }
+          },
+          "comments": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "annotations": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "annotationFiles": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "document",
+          "sections",
+          "comments",
+          "annotations",
+          "annotationFiles"
         ],
         "additionalProperties": false
       },

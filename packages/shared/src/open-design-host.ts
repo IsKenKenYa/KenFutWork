@@ -357,3 +357,75 @@ export type OpenDesignHostCredentialEntry = z.infer<
 export type OpenDesignHostCredentialsResponse = z.infer<
   typeof openDesignHostCredentialsResponseSchema
 >;
+
+/* ------------------------------------------------------------------
+ * 「我们 → 引擎」上下文同步（PR-1）：引擎读上下文的官方入口是项目内的
+ * document.md（spec/工作文档）。同步把本仓的评论与标注聚合进 document.md 的
+ * 受管段（成对注释标记包裹，整段替换、段外内容不动），标注笔迹另渲染成
+ * PNG 落项目 review/ 目录并在受管段里引用——引擎生成时即“看得见”评审。
+ * ------------------------------------------------------------------ */
+
+/** 受管段标记：document.md 里归宿主管的区块边界（出现即归管，格式稳定不演进）。 */
+export const OPEN_DESIGN_SYNC_SECTION_SPEC = "kfw-sync:spec" as const;
+export const OPEN_DESIGN_SYNC_SECTION_REVIEW = "kfw-sync:review" as const;
+
+export const openDesignHostSyncContextRequestSchema = z.object({
+  projectId: z.string().min(1),
+  /** 可选计划/规格文档（MD 正文）；有则整体替换 spec 受管段。 */
+  specMarkdown: z.string().max(OPEN_DESIGN_HOST_TEXT_MAX_LENGTH).optional(),
+});
+export type OpenDesignHostSyncContextRequest = z.infer<
+  typeof openDesignHostSyncContextRequestSchema
+>;
+
+export const openDesignHostSyncContextResponseSchema = z.object({
+  document: z.object({ name: z.string().min(1) }),
+  /** 本次写入的受管段（spec / review），缺项表示该段本次未写。 */
+  sections: z.array(z.enum(["spec", "review"])).max(2),
+  comments: z.number().int().min(0),
+  annotations: z.number().int().min(0),
+  /** 标注渲染出的 PNG 文件（相对项目根，如 review/annotations-….png）。 */
+  annotationFiles: z.array(z.string().min(1)).max(64),
+});
+export type OpenDesignHostSyncContextResponse = z.infer<
+  typeof openDesignHostSyncContextResponseSchema
+>;
+
+/**
+ * 新建文档画布（空态「新建文档」）：建项目并写入 document.md 起始稿
+ * （含 spec/review 两个受管段骨架）。响应同画布概要——面板据此开标签。
+ */
+export const openDesignHostCreateDocumentRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateDocumentRequest = z.infer<
+  typeof openDesignHostCreateDocumentRequestSchema
+>;
+
+/** 设计体系概要（上游 /api/design-systems 的宿主代理面）。 */
+export const openDesignHostDesignSystemSummarySchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  category: z.string().nullable(),
+  summary: z.string().nullable(),
+  swatches: z.array(z.string().min(1)).max(24),
+});
+export type OpenDesignHostDesignSystemSummary = z.infer<
+  typeof openDesignHostDesignSystemSummarySchema
+>;
+
+export const openDesignHostDesignSystemsResponseSchema = z.object({
+  designSystems: z.array(openDesignHostDesignSystemSummarySchema).max(500),
+});
+export type OpenDesignHostDesignSystemsResponse = z.infer<
+  typeof openDesignHostDesignSystemsResponseSchema
+>;
+
+/** 绑定/切换画布的设计体系（代理上游 PATCH /api/projects/:id 的 designSystemId）。 */
+export const openDesignHostBindDesignSystemRequestSchema = z.object({
+  projectId: z.string().min(1),
+  designSystemId: z.string().min(1).max(120),
+});
+export type OpenDesignHostBindDesignSystemRequest = z.infer<
+  typeof openDesignHostBindDesignSystemRequestSchema
+>;

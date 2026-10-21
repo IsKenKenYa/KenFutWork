@@ -85,6 +85,14 @@ export interface DesignReviewRepository {
     projectId: string,
     file: string,
   ): Promise<DesignReviewCommentRow[]>;
+  listAnnotationsByProject(
+    instanceId: string,
+    projectId: string,
+  ): Promise<DesignReviewAnnotationRow[]>;
+  listCommentsByProject(
+    instanceId: string,
+    projectId: string,
+  ): Promise<DesignReviewCommentRow[]>;
   updateComment(
     instanceId: string,
     id: string,
@@ -111,24 +119,50 @@ export function createDesignReviewRepository(
       );
     },
 
+    async listCommentsByProject(instanceId, projectId) {
+      return persistence.forInstance(instanceId).query<DesignReviewCommentRow>(
+        `select ${COMMENT_COLUMNS}
+           from public.design_review_comments
+          where instance_id = :instance
+            and project_id = $1
+          order by file_name asc, created_at asc`,
+        [projectId],
+      );
+    },
+
+    async listAnnotationsByProject(instanceId, projectId) {
+      return persistence
+        .forInstance(instanceId)
+        .query<DesignReviewAnnotationRow>(
+          `select ${ANNOTATION_COLUMNS}
+           from public.design_review_annotations
+          where instance_id = :instance
+            and project_id = $1
+          order by file_name asc, created_at asc`,
+          [projectId],
+        );
+    },
+
     async insertComment(instanceId, input) {
       const id = randomUUID();
-      return persistence.forInstance(instanceId).queryOne<DesignReviewCommentRow>(
-        `insert into public.design_review_comments
+      return persistence
+        .forInstance(instanceId)
+        .queryOne<DesignReviewCommentRow>(
+          `insert into public.design_review_comments
            (instance_id, id, project_id, file_name, body,
             anchor_path, anchor_rect, anchor_excerpt)
          values (:instance, $1, $2, $3, $4, $5, $6::jsonb, $7)
          returning ${COMMENT_COLUMNS}`,
-        [
-          id,
-          input.projectId,
-          input.file,
-          input.body,
-          input.anchor.path,
-          JSON.stringify(input.anchor.rect),
-          input.anchor.excerpt,
-        ],
-      );
+          [
+            id,
+            input.projectId,
+            input.file,
+            input.body,
+            input.anchor.path,
+            JSON.stringify(input.anchor.rect),
+            input.anchor.excerpt,
+          ],
+        );
     },
 
     async updateComment(instanceId, id, patch) {
