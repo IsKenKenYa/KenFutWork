@@ -1545,7 +1545,11 @@ test("contribution, CLA, and commercial-license documents are wired", async () =
   const eula = await readText("EULA.md");
   assert.match(eula, /社区版/);
   assert.match(eula, /商业版/);
-  assert.match(eula, /2026-10-20/);
+  assert.match(eula, /版本：2026-10-21/);
+  assert.match(eula, /不会为了仅在商业版提供/);
+
+  const commercial = await readText("COMMERCIAL-LICENSING.md");
+  assert.match(commercial, /社区版承诺/);
 
   const cla = await readText("CLA.md");
   assert.match(cla, /1\.8 \*\*关联方\*\*/);
@@ -1555,6 +1559,11 @@ test("contribution, CLA, and commercial-license documents are wired", async () =
   assert.match(cla, /13\.1\.1 \*\*个人信息处理告知\*\*/);
   assert.match(cla, /15\. 项目方签署与授权/);
   assert.match(cla, /future73807 授权 IsKenKenYa/);
+  assert.match(cla, /8\.5 \*\*社区版永久开源承诺\*\*/);
+  assert.match(cla, /未披露的第三方作品不视为本协议项下的贡献/);
+  assert.match(cla, /你无义务为贡献提供支持/);
+  assert.match(cla, /附件 B-1：授权员工/);
+  assert.match(cla, /issue、讨论、邮件列表/);
 
   const privacy = await readText("PRIVACY.md");
   assert.match(privacy, /## 13\. 贡献者 CLA 签署记录/);
