@@ -20,7 +20,7 @@ const lastProjectRef = {
 const readinessRef = { current: { reachable: true, agentAvailable: true } };
 const canvasRef = {
   current: null as null | {
-    project: { projectId: string; name: string };
+    project: { projectId: string; name: string; designSystemId?: string | null };
     entryFile: string | null;
     files: Array<{ name: string; kind: string }>;
   },
