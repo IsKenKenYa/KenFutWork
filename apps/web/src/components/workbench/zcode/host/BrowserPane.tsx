@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  CloudUpload,
   Ellipsis,
   ExternalLink,
   Globe,
@@ -740,6 +741,38 @@ export function BrowserPane({
     }
   }, [stopPicking, url]);
 
+  /** 同步到画布（PR-4）：当前页面截图 + URL 进 OpenDesign 项目的 document.md。 */
+  const syncPageToCanvas = useCallback(async () => {
+    if (!url) {
+      toast("先打开一个页面再同步。");
+      return;
+    }
+    try {
+      const shot = await surfaceJson<{ base64: string }>(
+        "/api/browser/cdp/screenshot",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      ).catch(() => null);
+      const synced = await surfaceJson<{
+        project: { projectId: string; name: string };
+        screenshotFile: string | null;
+      }>("/api/open-design/host/browser-page", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          url,
+          ...(shot?.base64 ? { screenshotBase64: shot.base64 } : {}),
+        }),
+      });
+      toast(`已同步到画布「${synced.project.name}」`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "同步到画布失败。");
+    }
+  }, [url]);
+
   /** 截图到对话：截当前视口（base64）组 PNG File，走附件事件进当前 composer。 */
   const screenshotToChat = useCallback(async () => {
     if (state.status !== "live") {
@@ -901,6 +934,14 @@ export function BrowserPane({
             >
               <Camera className="h-3.5 w-3.5" />
               <span>截图到对话</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!url}
+              data-browser-sync-canvas=""
+              onSelect={() => void syncPageToCanvas()}
+            >
+              <CloudUpload className="h-3.5 w-3.5" />
+              <span>同步到画布</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!url}

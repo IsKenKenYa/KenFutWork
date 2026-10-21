@@ -10,14 +10,15 @@ import { join, resolve } from "node:path";
 import {
   applicationErrorResponseSchema,
   OPEN_DESIGN_HOST_TEXT_MAX_LENGTH,
+  OPEN_DESIGN_SYNC_SECTION_BROWSER,
   OPEN_DESIGN_SYNC_SECTION_REVIEW,
   OPEN_DESIGN_SYNC_SECTION_SPEC,
   openDesignDeployProviderSchema,
   openDesignHostBindDesignSystemRequestSchema,
+  openDesignHostBrowserPageRequestSchema,
+  openDesignHostBrowserPageResponseSchema,
   openDesignHostCanvasResponseSchema,
   openDesignHostCloudflareZonesResponseSchema,
-  openDesignHostSaveToWorkspaceRequestSchema,
-  openDesignHostSaveToWorkspaceResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
   openDesignHostCreateCanvasRequestSchema,
@@ -35,6 +36,8 @@ import {
   openDesignHostPreviewUrlResponseSchema,
   openDesignHostProjectsResponseSchema,
   openDesignHostProvisionResponseSchema,
+  openDesignHostSaveToWorkspaceRequestSchema,
+  openDesignHostSaveToWorkspaceResponseSchema,
   openDesignHostStatusResponseSchema,
   openDesignHostSyncContextRequestSchema,
   openDesignHostSyncContextResponseSchema,
@@ -744,72 +747,214 @@ export async function registerOpenDesignHostRoutes(
    * 保存到工作目录（引擎 → 我们）：把画布文件写进当前 Task 的工作目录，
    * 与「同步到引擎」凑成双向。文件名做越界清洗，写入走临时文件+rename 原子替换。
    */
-  app.post("/api/open-design/host/save-to-workspace", async (request, reply) => {
+  app.post(
+    "/api/open-design/host/save-to-workspace",
+    async (request, reply) => {
+      if (!(await options.localAccess.authenticate(request)))
+        return unauthorized(reply, "本机接入凭据缺失或无效。");
+      const base = canvasBaseUrl(reply);
+      if (!base) return reply;
+      const parsed = openDesignHostSaveToWorkspaceRequestSchema.safeParse(
+        request.body ?? {},
+      );
+      if (!parsed.success)
+        return error(reply, 400, "application_error", "保存请求格式不正确。");
+      const { projectId, workspacePath } = parsed.data;
+      const workspace = resolve(workspacePath);
+      if (!existsSync(workspace) || !statSync(workspace).isDirectory())
+        return error(reply, 400, "application_error", "工作目录不存在。");
+      let file = parsed.data.file;
+      if (!file) {
+        const listing = await daemonJson<{ files?: DaemonProjectFile[] }>(
+          base,
+          `/api/projects/${encodeURIComponent(projectId)}/files`,
+        );
+        if (listing.ok) {
+          file = (listing.value.files ?? []).find((item) =>
+            /\.html?$/iu.test(item.name ?? ""),
+          )?.name;
+        }
+      }
+      if (!file)
+        return error(
+          reply,
+          404,
+          "service_unavailable",
+          "这块画布还没有可保存的文件。",
+        );
+      const leaf = file.split(/[\\/]/u).pop() ?? "";
+      if (!leaf || leaf.startsWith(".") || /[<>:"|?*]/u.test(leaf))
+        return error(reply, 400, "application_error", "文件名不合法。");
+      const resolved = await resolvePreviewUrl(base, projectId, file);
+      if (!resolved.ok)
+        return error(
+          reply,
+          resolved.status,
+          "service_unavailable",
+          resolved.message,
+        );
+      const fetchImpl = options.fetchImpl ?? fetch;
+      const response = await fetchImpl(`${base}${resolved.url}`, {
+        signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
+      }).catch(() => null);
+      if (!response?.ok)
+        return error(
+          reply,
+          response?.status ?? 503,
+          "service_unavailable",
+          `读取设计文件失败（HTTP ${response?.status ?? "网络错误"}）。`,
+        );
+      const text = await response.text();
+      if (text.length > OPEN_DESIGN_HOST_TEXT_MAX_LENGTH)
+        return error(
+          reply,
+          413,
+          "application_error",
+          "设计文件过大，暂不支持保存。",
+        );
+      const target = join(workspace, leaf);
+      const temporary = `${target}.${randomUUID()}.tmp`;
+      try {
+        writeFileSync(temporary, text, "utf8");
+        renameSync(temporary, target);
+      } catch (writeError) {
+        rmSync(temporary, { force: true });
+        return error(
+          reply,
+          500,
+          "application_error",
+          `写入工作目录失败：${writeError instanceof Error ? writeError.message : "未知错误"}`,
+        );
+      }
+      return reply.send(
+        openDesignHostSaveToWorkspaceResponseSchema.parse({
+          path: target,
+          bytes: Buffer.byteLength(text),
+        }),
+      );
+    },
+  );
+
+  /**
+   * 浏览器页面同步到画布（PR-4）：截图 PNG 落项目 browser/ 目录，URL 与截图引用
+   * 追加进 document.md 的 browser 受管段（引擎生成时能“看到”浏览的页面）。
+   * 落到「最近画布」槽位对应的项目——先打开/新建一块画布再用。
+   */
+  app.post("/api/open-design/host/browser-page", async (request, reply) => {
     if (!(await options.localAccess.authenticate(request)))
       return unauthorized(reply, "本机接入凭据缺失或无效。");
     const base = canvasBaseUrl(reply);
     if (!base) return reply;
-    const parsed = openDesignHostSaveToWorkspaceRequestSchema.safeParse(
+    if (!options.dataDir)
+      return error(
+        reply,
+        400,
+        "application_error",
+        "未配置数据目录，无法定位画布。",
+      );
+    const project = readOpenDesignLastProject({ dataDir: options.dataDir });
+    if (!project)
+      return error(
+        reply,
+        400,
+        "application_error",
+        "先打开一块画布再同步页面。",
+      );
+    const parsed = openDesignHostBrowserPageRequestSchema.safeParse(
       request.body ?? {},
     );
     if (!parsed.success)
-      return error(reply, 400, "application_error", "保存请求格式不正确。");
-    const { projectId, workspacePath } = parsed.data;
-    const workspace = resolve(workspacePath);
-    if (!existsSync(workspace) || !statSync(workspace).isDirectory())
-      return error(reply, 400, "application_error", "工作目录不存在。");
-    let file = parsed.data.file;
-    if (!file) {
-      const listing = await daemonJson<{ files?: DaemonProjectFile[] }>(
+      return error(reply, 400, "application_error", "同步页面请求格式不正确。");
+    const { url, screenshotBase64, title } = parsed.data;
+
+    let screenshotFile: string | null = null;
+    if (screenshotBase64) {
+      const name = `browser/page-${Date.now()}.png`;
+      const uploaded = await daemonJson(
         base,
-        `/api/projects/${encodeURIComponent(projectId)}/files`,
+        `/api/projects/${encodeURIComponent(project.projectId)}/files`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name,
+            content: screenshotBase64,
+            encoding: "base64",
+          }),
+        },
       );
-      if (listing.ok) {
-        file = (listing.value.files ?? []).find((item) =>
-          /\.html?$/iu.test(item.name ?? ""),
-        )?.name;
-      }
+      if (!uploaded.ok)
+        return error(
+          reply,
+          uploaded.status,
+          "service_unavailable",
+          `截图没写进画布：${uploaded.message}`,
+        );
+      screenshotFile = name;
     }
-    if (!file)
-      return error(reply, 404, "service_unavailable", "这块画布还没有可保存的文件。");
-    const leaf = file.split(/[\\/]/u).pop() ?? "";
-    if (!leaf || leaf.startsWith(".") || /[<>:"|?*]/u.test(leaf))
-      return error(reply, 400, "application_error", "文件名不合法。");
-    const resolved = await resolvePreviewUrl(base, projectId, file);
-    if (!resolved.ok)
-      return error(reply, resolved.status, "service_unavailable", resolved.message);
+
+    // document.md 的 browser 受管段：新条目置顶，最多保留 10 条。
     const fetchImpl = options.fetchImpl ?? fetch;
-    const response = await fetchImpl(`${base}${resolved.url}`, {
-      signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
-    }).catch(() => null);
-    if (!response?.ok)
-      return error(
-        reply,
-        response?.status ?? 503,
-        "service_unavailable",
-        `读取设计文件失败（HTTP ${response?.status ?? "网络错误"}）。`,
-      );
-    const text = await response.text();
-    if (text.length > OPEN_DESIGN_HOST_TEXT_MAX_LENGTH)
-      return error(reply, 413, "application_error", "设计文件过大，暂不支持保存。");
-    const target = join(workspace, leaf);
-    const temporary = `${target}.${randomUUID()}.tmp`;
-    try {
-      writeFileSync(temporary, text, "utf8");
-      renameSync(temporary, target);
-    } catch (writeError) {
-      rmSync(temporary, { force: true });
-      return error(
-        reply,
-        500,
-        "application_error",
-        `写入工作目录失败：${writeError instanceof Error ? writeError.message : "未知错误"}`,
-      );
+    let existing = "";
+    const resolved = await resolvePreviewUrl(
+      base,
+      project.projectId,
+      "document.md",
+    );
+    if (resolved.ok) {
+      const response = await fetchImpl(`${base}${resolved.url}`, {
+        signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
+      }).catch(() => null);
+      if (response?.ok) existing = await response.text();
     }
+    const entry = `- [${title?.trim() || url}](${url})${
+      screenshotFile ? ` — ![页面截图](${screenshotFile})` : ""
+    }`;
+    const start = `<!-- ${OPEN_DESIGN_SYNC_SECTION_BROWSER}:start -->`;
+    const end = `<!-- ${OPEN_DESIGN_SYNC_SECTION_BROWSER}:end -->`;
+    const previousLines = (() => {
+      const startIndex = existing.indexOf(start);
+      const endIndex = existing.indexOf(end);
+      if (startIndex < 0 || endIndex <= startIndex) return [];
+      return existing
+        .slice(startIndex + start.length, endIndex)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("- "));
+    })();
+    const lines = [entry, ...previousLines].slice(0, 10);
+    const block = `${start}\n浏览过的页面\n${lines.join("\n")}\n${end}`;
+    const startIndex = existing.indexOf(start);
+    const endIndex = existing.indexOf(end);
+    const document =
+      startIndex >= 0 && endIndex > startIndex
+        ? `${existing.slice(0, startIndex)}${block}${existing.slice(endIndex + end.length)}`
+        : `${existing.trimEnd()}\n\n${block}\n`;
+    const written = await daemonJson(
+      base,
+      `/api/projects/${encodeURIComponent(project.projectId)}/files`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "document.md",
+          content: document,
+          versionSource: "manual",
+          versionLabel: "同步浏览器页面",
+        }),
+      },
+    );
+    if (!written.ok)
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        `document.md 没写进画布：${written.message}`,
+      );
     return reply.send(
-      openDesignHostSaveToWorkspaceResponseSchema.parse({
-        path: target,
-        bytes: Buffer.byteLength(text),
+      openDesignHostBrowserPageResponseSchema.parse({
+        project: { projectId: project.projectId, name: project.name },
+        screenshotFile,
       }),
     );
   });

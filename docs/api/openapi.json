@@ -7651,6 +7651,66 @@
         }
       }
     },
+    "/api/open-design/host/browser-page": {
+      "post": {
+        "operationId": "postOpenDesignHostBrowserPage",
+        "summary": "把浏览器页面同步到画布",
+        "description": "右栏浏览器「同步到画布」：截图 PNG 落项目 browser/ 目录，URL 与截图引用追加进 document.md 的 browser 受管段（新条目置顶、最多 10 条），引擎生成时可读。落到最近画布槽位。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostBrowserPageRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostBrowserPageResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/open-design/host/save-to-workspace": {
       "post": {
         "operationId": "postOpenDesignHostSaveToWorkspace",
@@ -22958,6 +23018,62 @@
           "designSystemId"
         ]
       },
+      "openDesignHostBrowserPageRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "screenshotBase64": {
+            "type": "string",
+            "maxLength": 24000000
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "openDesignHostBrowserPageResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "projectId",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "screenshotFile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project",
+          "screenshotFile"
+        ],
+        "additionalProperties": false
+      },
       "openDesignHostCanvasResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -22971,6 +23087,12 @@
               },
               "name": {
                 "type": "string"
+              },
+              "designSystemId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [

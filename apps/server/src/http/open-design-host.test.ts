@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1050,7 +1056,9 @@ describe("静态分享部署代理（Cloudflare Pages / Vercel）", () => {
       fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.endsWith("/api/projects/p-1/files")) {
-          return jsonResponse({ files: [{ name: "index.html", kind: "html" }] });
+          return jsonResponse({
+            files: [{ name: "index.html", kind: "html" }],
+          });
         }
         if (
           url.endsWith("/api/projects/p-1/deploy") &&
@@ -1119,10 +1127,14 @@ describe("保存到工作目录（引擎 → 我们）", () => {
       fetchImpl: (async (input: RequestInfo | URL) => {
         const url = String(input);
         if (url.endsWith("/api/projects/p-1/files")) {
-          return jsonResponse({ files: [{ name: "index.html", kind: "html" }] });
+          return jsonResponse({
+            files: [{ name: "index.html", kind: "html" }],
+          });
         }
-        if (url.includes("/preview-url")) return jsonResponse({ url: "/preview/t/index.html" });
-        if (url.endsWith("/preview/t/index.html")) return new Response("<html>design</html>");
+        if (url.includes("/preview-url"))
+          return jsonResponse({ url: "/preview/t/index.html" });
+        if (url.endsWith("/preview/t/index.html"))
+          return new Response("<html>design</html>");
         return jsonResponse({});
       }) as typeof fetch,
     });
@@ -1144,5 +1156,78 @@ describe("保存到工作目录（引擎 → 我们）", () => {
     expect(missingDir.statusCode).toBe(400);
     expect(missingDir.json().error.message).toContain("工作目录");
     await app.close();
+  });
+});
+
+describe("浏览器页面同步到画布（PR-4）", () => {
+  it("截图落 browser/ + document.md 受管段置顶；无画布槽位可读报错", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-bp-"));
+    // 先写最近画布槽位
+    const slotDir = join(dataDir, "config");
+    mkdirSync(slotDir, { recursive: true });
+    writeFileSync(
+      join(slotDir, "open-design-last-project.json"),
+      JSON.stringify({
+        projectId: "p-9",
+        name: "订单页",
+        updatedAt: "2026-10-21T00:00:00.000Z",
+      }),
+    );
+    const writes: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      dataDir,
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/preview-url"))
+          return jsonResponse({ url: "/preview/t/document.md" });
+        if (url.endsWith("/preview/t/document.md"))
+          return new Response(
+            "# 设计\n\n<!-- kfw-sync:browser:start -->\n浏览过的页面\n- [旧页](https://old.example)\n<!-- kfw-sync:browser:end -->\n",
+          );
+        if (init?.method === "POST" && url.endsWith("/files")) {
+          writes.push({
+            url,
+            body: JSON.parse(String(init.body)) as Record<string, unknown>,
+          });
+          return jsonResponse({ file: { name: "x", kind: "file" } });
+        }
+        return jsonResponse({});
+      }) as typeof fetch,
+    });
+    const synced = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/browser-page",
+      payload: {
+        url: "https://new.example",
+        screenshotBase64: "AAAA",
+        title: "新页",
+      },
+    });
+    expect(synced.statusCode).toBe(200);
+    const body = synced.json() as { screenshotFile: string | null };
+    expect(body.screenshotFile).toMatch(/^browser\/page-\d+\.png$/);
+    expect(writes).toHaveLength(2);
+    const doc = writes[1]!.body as { content: string };
+    expect(doc.content).toContain("https://new.example");
+    expect(doc.content).toContain("https://old.example"); // 旧条目保留
+    expect(doc.content.indexOf("new.example")).toBeLessThan(
+      doc.content.indexOf("old.example"),
+    ); // 置顶
+    await app.close();
+
+    const noSlot = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      dataDir: mkdtempSync(join(tmpdir(), "kfw-od-bp2-")),
+      fetchImpl: daemonFetch({}),
+    });
+    const rejected = await noSlot.inject({
+      method: "POST",
+      url: "/api/open-design/host/browser-page",
+      payload: { url: "https://x.example" },
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error.message).toContain("画布");
+    await noSlot.close();
   });
 });

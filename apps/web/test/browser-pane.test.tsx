@@ -810,3 +810,34 @@ describe("元素选择器：退出必须两侧一起收（防僵尸选择器）"
     );
   });
 });
+
+test("⋯菜单「同步到画布」：截图 + URL 打到 /api/open-design/host/browser-page", async () => {
+  connectedApis();
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path === "/api/browser/cdp/screenshot")
+      return { base64: "AAAA", width: 1280, height: 720 };
+    if (path === "/api/open-design/host/browser-page")
+      return {
+        project: { projectId: "p-1", name: "订单页" },
+        screenshotFile: "browser/page-1.png",
+      };
+    if (path === "/api/browser/cdp/status")
+      return { cdp: { status: "connected" } };
+    if (path === "/api/browser/cdp/view")
+      return { ticket: "t", viewport: { width: 1280, height: 720, scale: 1 } };
+    return {};
+  });
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
+  await screen.findByAltText("浏览器画面");
+  openBrowserMenu();
+  fireEvent.click(await screen.findByRole("menuitem", { name: "同步到画布" }));
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/open-design/host/browser-page",
+      expect.objectContaining({
+        body: expect.stringContaining('"url":"https://example.com"'),
+      }),
+    ),
+  );
+});

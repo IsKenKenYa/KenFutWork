@@ -370,6 +370,8 @@ export type OpenDesignHostCredentialsResponse = z.infer<
 /** 受管段标记：document.md 里归宿主管的区块边界（出现即归管，格式稳定不演进）。 */
 export const OPEN_DESIGN_SYNC_SECTION_SPEC = "kfw-sync:spec" as const;
 export const OPEN_DESIGN_SYNC_SECTION_REVIEW = "kfw-sync:review" as const;
+/** 浏览器页面同步段（PR-4）：URL + 截图引用追加进 document.md。 */
+export const OPEN_DESIGN_SYNC_SECTION_BROWSER = "kfw-sync:browser" as const;
 
 export const openDesignHostSyncContextRequestSchema = z.object({
   projectId: z.string().min(1),
@@ -543,4 +545,29 @@ export const openDesignHostSaveToWorkspaceResponseSchema = z.object({
 });
 export type OpenDesignHostSaveToWorkspaceResponse = z.infer<
   typeof openDesignHostSaveToWorkspaceResponseSchema
+>;
+
+
+/* ------------------------------------------------------------------
+ * 浏览器页面同步到画布（PR-4）：右栏 CDP 浏览器「同步到画布」——截图 PNG 落
+ * 项目的 browser/ 目录，URL 与截图引用追加进 document.md 的 browser 受管段，
+ * 引擎生成时能“看到”我们浏览的页面。
+ * ------------------------------------------------------------------ */
+
+export const openDesignHostBrowserPageRequestSchema = z.object({
+  url: z.string().min(1).max(2048),
+  /** 视口截图（PNG base64；缺省只记 URL）。 */
+  screenshotBase64: z.string().max(24_000_000).optional(),
+  title: z.string().max(240).optional(),
+});
+export type OpenDesignHostBrowserPageRequest = z.infer<
+  typeof openDesignHostBrowserPageRequestSchema
+>;
+
+export const openDesignHostBrowserPageResponseSchema = z.object({
+  project: z.object({ projectId: z.string().min(1), name: z.string() }),
+  screenshotFile: z.string().nullable(),
+});
+export type OpenDesignHostBrowserPageResponse = z.infer<
+  typeof openDesignHostBrowserPageResponseSchema
 >;
