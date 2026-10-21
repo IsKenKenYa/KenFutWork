@@ -131,6 +131,11 @@ export interface CdpBrowserSession {
   /** 退出选择模式并清状态（幂等）。 */
   stopElementPicker(): Promise<void>;
   /**
+   * 页面主线程探针：`Runtime.evaluate("1")`，1.5 秒没回来即判定页面无响应。
+   * 注入脚本/网页自身卡死时，面板据此显示「画面已卡住」而不是整块面板像死了。
+   */
+  ping(): Promise<boolean>;
+  /**
    * 在**受控浏览器**里打开完整开发者工具，并取消停靠成**独立窗口**（浮动、可移动）。
    *
    * 做法与取舍见 `devtools-keys` 头注：真 DevTools 只有浏览器自己开得出来（CDP 开出来的
@@ -803,6 +808,24 @@ export function createCdpBrowserSession(deps: {
         { expression: ELEMENT_PICKER_STOP_SCRIPT, returnByValue: false },
         id,
       );
+    },
+    async ping() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      try {
+        const evaluated = await Promise.race([
+          cdp.send(
+            "Runtime.evaluate",
+            { expression: "1", returnByValue: true },
+            id,
+          ),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("page ping timeout")), 1500);
+          }),
+        ]);
+        return Boolean(evaluated);
+      } catch {
+        return false;
+      }
     },
     async openDevToolsWindow(options = {}) {
       const { client: cdp, sessionId: id } = requireConnected();

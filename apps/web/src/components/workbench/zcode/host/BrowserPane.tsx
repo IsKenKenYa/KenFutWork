@@ -221,6 +221,8 @@ export function BrowserPane({
     height: 0,
     scale: 1,
   });
+  /** 页面无响应（服务端探针判定主线程卡住）：显示可重载提示条，不再是死面板。 */
+  const [pageStalled, setPageStalled] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const sinkRef = useRef<HTMLTextAreaElement>(null);
@@ -390,6 +392,35 @@ export function BrowserPane({
       }).catch(() => {});
     };
   }, []);
+
+  // 页面响应看门狗：live 时每 4s 问一次服务端探针；页面卡住就把状态亮到界面上。
+  useEffect(() => {
+    if (state.status !== "live") {
+      setPageStalled(false);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const result = await surfaceJson<{
+          cdp: { status: string; responsive?: boolean };
+        }>("/api/browser/cdp/status");
+        if (!cancelled) {
+          setPageStalled(
+            result.cdp.status === "connected" && result.cdp.responsive === false,
+          );
+        }
+      } catch {
+        // 探针请求失败不当作页面卡死（网络抖动不等于页面死）
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [state.status]);
 
   const handleFrameError = useCallback(() => {
     if (retriesRef.current >= 2) {
@@ -931,7 +962,7 @@ export function BrowserPane({
               onSelect={() => void syncPageToCanvas()}
             >
               <CloudUpload className="h-3.5 w-3.5" />
-              <span>同步到画布</span>
+              <span>同步到 OpenDesign</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={!url}
@@ -1027,6 +1058,21 @@ export function BrowserPane({
                 transformOrigin: "top left",
               }}
             >
+              {pageStalled ? (
+                <div
+                  data-testid="browser-page-stalled"
+                  className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 bg-amber-500/90 px-2 py-1 text-xs text-white"
+                >
+                  <span>画面已卡住</span>
+                  <button
+                    type="button"
+                    onClick={() => setReloadToken((token) => token + 1)}
+                    className="rounded border border-white/70 px-1.5 py-0.5 hover:bg-white/20"
+                  >
+                    重新加载
+                  </button>
+                </div>
+              ) : null}
               {state.status === "live" ? (
                 // MJPEG 流（multipart/x-mixed-replace）。拾取高亮由页面内脚本画
                 // （DevTools 式 elementFromPoint 跟随鼠标），面板不再叠框。

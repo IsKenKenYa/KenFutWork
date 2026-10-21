@@ -72,6 +72,7 @@ const START_TAIL = `
  */
 const FLOAT_SCRIPT = `
 ;(function () {
+  try {
   // 重新打开：从任何状态（关闭/悬浮球/分屏卡片）回到悬浮窗（幂等，不叠监听）
   if (window.__kfwFloating) {
     var again = document.querySelector(".eruda-container");
@@ -473,6 +474,11 @@ const FLOAT_SCRIPT = `
   });
   applyFloat();
   window.__kfwFloating = true;
+  } catch (error) {
+    window.__kfwDebugConsoleError = String(
+      (error && (error.stack || error.message)) || error
+    );
+  }
 })();`;
 
 /**

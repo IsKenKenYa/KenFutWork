@@ -831,7 +831,7 @@ test("⋯菜单「同步到画布」：截图 + URL 打到 /api/open-design/host
   await enableFreeSize();
   await screen.findByAltText("浏览器画面");
   openBrowserMenu();
-  fireEvent.click(await screen.findByRole("menuitem", { name: "同步到画布" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "同步到 OpenDesign" }));
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/open-design/host/browser-page",
@@ -839,5 +839,28 @@ test("⋯菜单「同步到画布」：截图 + URL 打到 /api/open-design/host
         body: expect.stringContaining('"url":"https://example.com"'),
       }),
     ),
+  );
+});
+
+test("页面无响应探针：status.responsive=false 时出「画面已卡住」提示，恢复后消失", async () => {
+  let responsive = false;
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path === "/api/browser/cdp/status") {
+      return { cdp: { status: "connected", responsive } };
+    }
+    if (path === "/api/browser/cdp/view")
+      return { ticket: "t", viewport: { width: 1280, height: 720, scale: 1 } };
+    if (path === "/api/browser/cdp/input") return {};
+    return {};
+  });
+  render(<BrowserPane initialUrl="https://example.com" />);
+  await enableFreeSize();
+  // 进入 live 后立即探针一次：页面无响应 → 提示条出现
+  expect(await screen.findByTestId("browser-page-stalled")).toBeTruthy();
+  // 探针恢复 → 下一轮轮询（4s）后提示条消失
+  responsive = true;
+  await waitFor(
+    () => expect(screen.queryByTestId("browser-page-stalled")).toBeNull(),
+    { timeout: 6000 },
   );
 });
