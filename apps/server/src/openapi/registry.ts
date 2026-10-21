@@ -139,6 +139,8 @@ import {
   openDesignHostBindDesignSystemRequestSchema,
   openDesignHostCanvasResponseSchema,
   openDesignHostCloudflareZonesResponseSchema,
+  openDesignHostSaveToWorkspaceRequestSchema,
+  openDesignHostSaveToWorkspaceResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
   openDesignHostCreateCanvasRequestSchema,
@@ -1692,6 +1694,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "同步评审上下文到设计引擎",
     description:
       "把本仓评论与标注聚合进项目 document.md 的受管段（成对 kfw-sync 标记整段替换，段外不动），标注渲染成 PNG 落 review/；可选 specMarkdown 替换 spec 受管段。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/save-to-workspace",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostSaveToWorkspaceRequestSchema,
+    responseSchema: openDesignHostSaveToWorkspaceResponseSchema,
+    summary: "把画布文件保存到工作目录",
+    description:
+      "读取画布文件（缺省入口 HTML）并写入当前 Task 工作目录（绝对路径校验、文件名清洗、临时文件原子替换）。与「同步到引擎」凑成双向。本机接入验证。",
   },
   {
     method: "get",

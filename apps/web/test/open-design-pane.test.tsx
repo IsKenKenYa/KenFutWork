@@ -756,3 +756,15 @@ test("分享 = 静态部署菜单：发布到 CF/Vercel 走 /host/deploy，配�
     });
   });
 });
+
+test("保存到工作目录：按钮 → /host/save-to-workspace 带 projectId 与工作区路径", async () => {
+  await mountReadyCanvas();
+  fireEvent.click(screen.getByRole("button", { name: "保存到工作目录" }));
+  await waitFor(() => {
+    const saved = posted.find(
+      (item) => item.path === "/api/open-design/host/save-to-workspace",
+    );
+    expect(saved?.body.projectId).toBe("p-1");
+    expect(typeof saved?.body.workspacePath).toBe("string");
+  });
+});

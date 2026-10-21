@@ -1110,3 +1110,39 @@ describe("静态分享部署代理（Cloudflare Pages / Vercel）", () => {
     await failing.close();
   });
 });
+
+describe("保存到工作目录（引擎 → 我们）", () => {
+  it("读画布入口文件写入工作目录；文件名清洗；目录不存在可读报错", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "kfw-od-ws-"));
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/projects/p-1/files")) {
+          return jsonResponse({ files: [{ name: "index.html", kind: "html" }] });
+        }
+        if (url.includes("/preview-url")) return jsonResponse({ url: "/preview/t/index.html" });
+        if (url.endsWith("/preview/t/index.html")) return new Response("<html>design</html>");
+        return jsonResponse({});
+      }) as typeof fetch,
+    });
+    const saved = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/save-to-workspace",
+      payload: { projectId: "p-1", workspacePath: workspace },
+    });
+    expect(saved.statusCode).toBe(200);
+    const body = saved.json() as { path: string; bytes: number };
+    expect(body.path).toBe(join(workspace, "index.html"));
+    expect(readFileSync(body.path, "utf8")).toBe("<html>design</html>");
+
+    const missingDir = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/save-to-workspace",
+      payload: { projectId: "p-1", workspacePath: join(workspace, "nope") },
+    });
+    expect(missingDir.statusCode).toBe(400);
+    expect(missingDir.json().error.message).toContain("工作目录");
+    await app.close();
+  });
+});

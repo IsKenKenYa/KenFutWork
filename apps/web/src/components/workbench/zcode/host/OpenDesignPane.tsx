@@ -616,6 +616,35 @@ export function OpenDesignPane({
     }
   }, [reportMeta]);
 
+  /** 保存到工作目录（引擎 → 我们）：画布文件写进当前 Task 工作目录。 */
+  const [saveToWorkspaceBusy, setSaveToWorkspaceBusy] = useState(false);
+  const saveToWorkspace = useCallback(async () => {
+    if (!boundProjectId || !workspacePath) return;
+    setSaveToWorkspaceBusy(true);
+    setNotice(null);
+    try {
+      const saved = await surfaceJson<{ path: string; bytes: number }>(
+        "/api/open-design/host/save-to-workspace",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: boundProjectId,
+            workspacePath,
+            ...(canvas?.entryFile ? { file: canvas.entryFile } : {}),
+          }),
+        },
+      );
+      setNotice(`已保存：${saved.path}`);
+    } catch (saveError) {
+      setNotice(
+        saveError instanceof Error ? saveError.message : "保存到工作目录失败。",
+      );
+    } finally {
+      setSaveToWorkspaceBusy(false);
+    }
+  }, [boundProjectId, canvas?.entryFile, workspacePath]);
+
   /** 同步到引擎：把本仓评论与标注聚进 daemon 项目的 document.md 受管段。 */
   const syncContextToEngine = useCallback(async () => {
     if (!boundProjectId) return;
@@ -1133,6 +1162,8 @@ export function OpenDesignPane({
         onUploadAsset={(file) => void uploadAsset(file)}
         onOpenBrowserTab={onOpenBrowserTab}
         onSyncContext={() => void syncContextToEngine()}
+        onSaveToWorkspace={() => void saveToWorkspace()}
+        saveToWorkspaceBusy={saveToWorkspaceBusy}
         versions={versions}
         versionsLoading={versionsLoading}
         activeVersionId={activeVersion?.id ?? null}

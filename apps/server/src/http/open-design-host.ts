@@ -1,5 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
+  existsSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { join, resolve } from "node:path";
+import {
   applicationErrorResponseSchema,
   OPEN_DESIGN_HOST_TEXT_MAX_LENGTH,
   OPEN_DESIGN_SYNC_SECTION_REVIEW,
@@ -8,6 +16,8 @@ import {
   openDesignHostBindDesignSystemRequestSchema,
   openDesignHostCanvasResponseSchema,
   openDesignHostCloudflareZonesResponseSchema,
+  openDesignHostSaveToWorkspaceRequestSchema,
+  openDesignHostSaveToWorkspaceResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
   openDesignHostCreateCanvasRequestSchema,
@@ -718,6 +728,80 @@ export async function registerOpenDesignHostRoutes(
       return reply.send({ ok: true });
     },
   );
+
+  /**
+   * 保存到工作目录（引擎 → 我们）：把画布文件写进当前 Task 的工作目录，
+   * 与「同步到引擎」凑成双向。文件名做越界清洗，写入走临时文件+rename 原子替换。
+   */
+  app.post("/api/open-design/host/save-to-workspace", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostSaveToWorkspaceRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "保存请求格式不正确。");
+    const { projectId, workspacePath } = parsed.data;
+    const workspace = resolve(workspacePath);
+    if (!existsSync(workspace) || !statSync(workspace).isDirectory())
+      return error(reply, 400, "application_error", "工作目录不存在。");
+    let file = parsed.data.file;
+    if (!file) {
+      const listing = await daemonJson<{ files?: DaemonProjectFile[] }>(
+        base,
+        `/api/projects/${encodeURIComponent(projectId)}/files`,
+      );
+      if (listing.ok) {
+        file = (listing.value.files ?? []).find((item) =>
+          /\.html?$/iu.test(item.name ?? ""),
+        )?.name;
+      }
+    }
+    if (!file)
+      return error(reply, 404, "service_unavailable", "这块画布还没有可保存的文件。");
+    const leaf = file.split(/[\\/]/u).pop() ?? "";
+    if (!leaf || leaf.startsWith(".") || /[<>:"|?*]/u.test(leaf))
+      return error(reply, 400, "application_error", "文件名不合法。");
+    const resolved = await resolvePreviewUrl(base, projectId, file);
+    if (!resolved.ok)
+      return error(reply, resolved.status, "service_unavailable", resolved.message);
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const response = await fetchImpl(`${base}${resolved.url}`, {
+      signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
+    }).catch(() => null);
+    if (!response?.ok)
+      return error(
+        reply,
+        response?.status ?? 503,
+        "service_unavailable",
+        `读取设计文件失败（HTTP ${response?.status ?? "网络错误"}）。`,
+      );
+    const text = await response.text();
+    if (text.length > OPEN_DESIGN_HOST_TEXT_MAX_LENGTH)
+      return error(reply, 413, "application_error", "设计文件过大，暂不支持保存。");
+    const target = join(workspace, leaf);
+    const temporary = `${target}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporary, text, "utf8");
+      renameSync(temporary, target);
+    } catch (writeError) {
+      rmSync(temporary, { force: true });
+      return error(
+        reply,
+        500,
+        "application_error",
+        `写入工作目录失败：${writeError instanceof Error ? writeError.message : "未知错误"}`,
+      );
+    }
+    return reply.send(
+      openDesignHostSaveToWorkspaceResponseSchema.parse({
+        path: target,
+        bytes: Buffer.byteLength(text),
+      }),
+    );
+  });
 
   // ── 静态分享：代理上游部署面（Cloudflare Pages / Vercel，自带 token）──────
   const readDeployConfigView = (

@@ -518,3 +518,27 @@ export const openDesignHostCloudflareZonesResponseSchema = z.object({
 export type OpenDesignHostCloudflareZonesResponse = z.infer<
   typeof openDesignHostCloudflareZonesResponseSchema
 >;
+
+/* ------------------------------------------------------------------
+ * 保存到工作目录（引擎 → 我们）：把画布文件（缺省入口 HTML）写进当前 Task 的
+ * 工作目录——上游产物反向落到本仓文件树，与「同步到引擎」凑成双向。
+ * ------------------------------------------------------------------ */
+
+export const openDesignHostSaveToWorkspaceRequestSchema = z.object({
+  projectId: z.string().min(1),
+  /** 要保存的文件（缺省取画布入口文件）。 */
+  file: z.string().min(1).max(240).optional(),
+  /** 当前 Task 工作目录（绝对路径；服务端做越界与存在性校验）。 */
+  workspacePath: z.string().min(1).max(1024),
+});
+export type OpenDesignHostSaveToWorkspaceRequest = z.infer<
+  typeof openDesignHostSaveToWorkspaceRequestSchema
+>;
+
+export const openDesignHostSaveToWorkspaceResponseSchema = z.object({
+  path: z.string().min(1),
+  bytes: z.number().int().min(0),
+});
+export type OpenDesignHostSaveToWorkspaceResponse = z.infer<
+  typeof openDesignHostSaveToWorkspaceResponseSchema
+>;

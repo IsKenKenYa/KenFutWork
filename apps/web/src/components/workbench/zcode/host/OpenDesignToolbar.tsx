@@ -15,6 +15,7 @@ import {
   Code2,
   Download,
   Eye,
+  FolderDown,
   FolderInput,
   Globe,
   Highlighter,
@@ -96,6 +97,8 @@ export function OpenDesignToolbar({
   onUploadAsset,
   onOpenBrowserTab,
   onSyncContext,
+  onSaveToWorkspace,
+  saveToWorkspaceBusy,
   versions,
   versionsLoading,
   activeVersionId,
@@ -137,6 +140,8 @@ export function OpenDesignToolbar({
   onOpenBrowserTab: () => void;
   /** 同步评审上下文到设计引擎（document.md 受管段）。 */
   onSyncContext: () => void;
+  onSaveToWorkspace: () => void;
+  saveToWorkspaceBusy: boolean;
   versions: OpenDesignVersionSummary[] | null;
   versionsLoading: boolean;
   activeVersionId: string | null;
@@ -325,6 +330,13 @@ export function OpenDesignToolbar({
           onClick={onSyncContext}
         >
           <CloudUpload className="size-3" />
+        </ToolbarIconButton>
+        <ToolbarIconButton
+          label="保存到工作目录"
+          disabled={busy || saveToWorkspaceBusy || !hasCanvas}
+          onClick={onSaveToWorkspace}
+        >
+          <FolderDown className="size-3" />
         </ToolbarIconButton>
         <ToolbarIconButton
           label="截图到对话"
