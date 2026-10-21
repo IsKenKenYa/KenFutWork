@@ -152,7 +152,7 @@ const FLOAT_SCRIPT = `
     ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 7px;" +
     "background:transparent;box-shadow:none}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
-    "background:transparent;box-shadow:none;" +
+    "background:#fff;box-shadow:0 -2px 8px rgba(0,0,0,.12);" +
     "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
     "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
@@ -164,7 +164,7 @@ const FLOAT_SCRIPT = `
     "backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);" +
     "display:none;align-items:center;justify-content:center;opacity:.9;" +
     "box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:grab;" +
-    "transition:transform .18s ease,left .18s ease,opacity .16s ease}" +
+    "transition:transform .12s ease,opacity .1s ease}" +
     ".kfw-ball:hover{opacity:1}" +
     ".kfw-ball svg{display:block}" +
     ".kfw-ball-left{transform:translateX(-55%)}" +
@@ -282,7 +282,7 @@ const FLOAT_SCRIPT = `
       "kfw-ball " + (side === "left" ? "kfw-ball-left" : "kfw-ball-right");
     ball.style.top = Math.round(top) + "px";
     ball.style.left =
-      side === "left" ? "0px" : Math.round(window.innerWidth - 16) + "px";
+      side === "left" ? "0px" : Math.round(window.innerWidth - 36) + "px";
     ball.style.display = "flex";
     container.style.setProperty("display", "none", "important");
     syncBtnbar();
@@ -362,7 +362,7 @@ const FLOAT_SCRIPT = `
     ball.classList.remove("kfw-ball-drag");
     ball.classList.add(side === "left" ? "kfw-ball-left" : "kfw-ball-right");
     ball.style.left =
-      side === "left" ? "0px" : Math.round(window.innerWidth - 16) + "px";
+      side === "left" ? "0px" : Math.round(window.innerWidth - 36) + "px";
     syncBtnbar();
   }
   window.addEventListener("mouseup", snapBall);
