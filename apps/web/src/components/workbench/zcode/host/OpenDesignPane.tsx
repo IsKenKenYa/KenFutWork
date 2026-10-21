@@ -902,18 +902,113 @@ export function OpenDesignPane({
     }
   }, [canvas, resolveActiveHtml]);
 
-  const share = useCallback(async () => {
-    if (!entryAvailable || !boundProjectId) return;
-    setNotice(null);
+  /**
+   * 分享 = 静态部署（用户口径：像原来的分享一样，不复制面板 localhost 链接）：
+   * 代理上游部署面把入口 HTML 发布到 Cloudflare Pages / Vercel（用户自带 token）。
+   * 菜单里另给「配置托管商」与「打开已发布页面」。
+   */
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [shareConfigProvider, setShareConfigProvider] = useState<
+    "cloudflare-pages" | "vercel-self" | null
+  >(null);
+  const [shareConfig, setShareConfig] = useState<{
+    token: string;
+    accountId: string;
+    teamSlug: string;
+  }>({ token: "", accountId: "", teamSlug: "" });
+  const [lastDeploymentUrl, setLastDeploymentUrl] = useState<string | null>(
+    null,
+  );
+  const [shareBusy, setShareBusy] = useState(false);
+
+  const deployTo = useCallback(
+    async (providerId: "cloudflare-pages" | "vercel-self") => {
+      if (!boundProjectId) return;
+      setShareBusy(true);
+      setShareMenuOpen(false);
+      setNotice(null);
+      try {
+        const deployed = await surfaceJson<{
+          url: string;
+          providerId: string;
+        }>("/api/open-design/host/deploy", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: boundProjectId,
+            providerId,
+            ...(canvas?.entryFile ? { file: canvas.entryFile } : {}),
+          }),
+        });
+        setLastDeploymentUrl(deployed.url);
+        try {
+          await navigator.clipboard.writeText(deployed.url);
+          setNotice(`已发布并复制链接：${deployed.url}`);
+        } catch {
+          setNotice(`已发布：${deployed.url}`);
+        }
+      } catch (deployError) {
+        setNotice(
+          deployError instanceof Error ? deployError.message : "发布失败。",
+        );
+      } finally {
+        setShareBusy(false);
+      }
+    },
+    [boundProjectId, canvas?.entryFile],
+  );
+
+  const openShareConfig = useCallback(
+    async (providerId: "cloudflare-pages" | "vercel-self") => {
+      setShareMenuOpen(false);
+      setShareConfigProvider(providerId);
+      setShareConfig({ token: "", accountId: "", teamSlug: "" });
+      try {
+        const current = await surfaceJson<{
+          tokenMask: string;
+          accountId?: string;
+          teamSlug?: string;
+        }>(
+          `/api/open-design/host/deploy/config?providerId=${encodeURIComponent(providerId)}`,
+        );
+        setShareConfig({
+          token: current.tokenMask,
+          accountId: current.accountId ?? "",
+          teamSlug: current.teamSlug ?? "",
+        });
+      } catch {
+        // 读不到配置就留空表单，保存时按服务端报错指路
+      }
+    },
+    [],
+  );
+
+  const saveShareConfig = useCallback(async () => {
+    if (!shareConfigProvider) return;
+    setShareBusy(true);
     try {
-      await navigator.clipboard.writeText(
-        `${entry.frontendUrl.replace(/\/$/u, "")}/projects/${boundProjectId}`,
+      await surfaceJson("/api/open-design/host/deploy/config", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          providerId: shareConfigProvider,
+          token: shareConfig.token,
+          ...(shareConfig.accountId
+            ? { accountId: shareConfig.accountId }
+            : {}),
+          ...(shareConfig.teamSlug ? { teamSlug: shareConfig.teamSlug } : {}),
+        }),
+      });
+      setShareConfigProvider(null);
+      setNotice("托管商配置已保存");
+    } catch (saveError) {
+      setNotice(
+        saveError instanceof Error ? saveError.message : "保存配置失败。",
       );
-      setNotice("已复制链接");
-    } catch {
-      setNotice("复制失败");
+    } finally {
+      setShareBusy(false);
     }
-  }, [boundProjectId, entry, entryAvailable]);
+  }, [shareConfig, shareConfigProvider]);
 
   const loadVersions = useCallback(async () => {
     if (!canvas?.entryFile || versionsLoading) return;
@@ -1047,7 +1142,16 @@ export function OpenDesignPane({
         onHandoff={() => void handoffToChat()}
         onExportPng={() => void exportPng()}
         onExportHtml={() => void exportHtml()}
-        onShare={() => void share()}
+        onShare={() => setShareMenuOpen((open) => !open)}
+        shareBusy={shareBusy}
+        shareMenuOpen={shareMenuOpen}
+        lastDeploymentUrl={lastDeploymentUrl}
+        onDeploy={(providerId) => void deployTo(providerId)}
+        onShareConfig={openShareConfig}
+        onOpenDeployment={() => {
+          if (lastDeploymentUrl)
+            window.open(lastDeploymentUrl, "_blank", "noopener");
+        }}
       />
       {readiness?.reachable && !readiness.agentAvailable ? (
         <div
@@ -1263,6 +1367,87 @@ export function OpenDesignPane({
                 if (file) void uploadAsset(file);
               }}
             />
+          </div>
+        ) : null}
+        {shareConfigProvider ? (
+          <div
+            className="absolute inset-0 z-30 flex flex-col gap-3 bg-background p-4"
+            data-open-design-share-config-panel=""
+          >
+            <span className="text-sm font-medium">
+              {shareConfigProvider === "cloudflare-pages"
+                ? "配置 Cloudflare Pages"
+                : "配置 Vercel"}
+            </span>
+            <label className="flex flex-col gap-1 text-xs">
+              {shareConfigProvider === "cloudflare-pages"
+                ? "API Token"
+                : "Vercel Token"}
+              <input
+                type="password"
+                data-testid="open-design-share-token"
+                value={shareConfig.token}
+                onChange={(event) =>
+                  setShareConfig((current) => ({
+                    ...current,
+                    token: event.target.value,
+                  }))
+                }
+                className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                placeholder="粘贴 token"
+              />
+            </label>
+            {shareConfigProvider === "cloudflare-pages" ? (
+              <label className="flex flex-col gap-1 text-xs">
+                Account ID
+                <input
+                  data-testid="open-design-share-account"
+                  value={shareConfig.accountId}
+                  onChange={(event) =>
+                    setShareConfig((current) => ({
+                      ...current,
+                      accountId: event.target.value,
+                    }))
+                  }
+                  className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                  placeholder="Cloudflare 账号 ID"
+                />
+              </label>
+            ) : (
+              <label className="flex flex-col gap-1 text-xs">
+                Team Slug（可选）
+                <input
+                  data-testid="open-design-share-team"
+                  value={shareConfig.teamSlug}
+                  onChange={(event) =>
+                    setShareConfig((current) => ({
+                      ...current,
+                      teamSlug: event.target.value,
+                    }))
+                  }
+                  className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                />
+              </label>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={shareBusy}
+                data-testid="open-design-share-save"
+                onClick={() => void saveShareConfig()}
+              >
+                保存
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setShareConfigProvider(null)}
+              >
+                取消
+              </Button>
+            </div>
           </div>
         ) : null}
         {designSystems ? (

@@ -721,3 +721,38 @@ test("设计体系选择器：拉清单、按色板行选择后经 /bind 绑定"
     expect(fetched).toContain("/api/open-design/host/design-systems/bind");
   });
 });
+
+test("分享 = 静态部署菜单：发布到 CF/Vercel 走 /host/deploy，配置走 PUT /host/deploy/config", async () => {
+  await mountReadyCanvas();
+  // Radix 下拉在 jsdom 用键盘开（pointer 路径不稳，仓库既有先例）
+  const openShareMenu = () => {
+    const trigger = screen.getByRole("button", { name: "分享" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter", code: "Enter", bubbles: true });
+  };
+  openShareMenu();
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "发布到 Cloudflare Pages" }),
+  );
+  await waitFor(() => {
+    const deploy = posted.find(
+      (item) => item.path === "/api/open-design/host/deploy",
+    );
+    expect(deploy?.body.providerId).toBe("cloudflare-pages");
+  });
+  // 打开「配置 Vercel」并保存
+  openShareMenu();
+  fireEvent.click(await screen.findByRole("menuitem", { name: "配置 Vercel" }));
+  const tokenInput = await screen.findByTestId("open-design-share-token");
+  fireEvent.change(tokenInput, { target: { value: "vercel-token-1" } });
+  fireEvent.click(screen.getByTestId("open-design-share-save"));
+  await waitFor(() => {
+    const saved = posted.find(
+      (item) => item.path === "/api/open-design/host/deploy/config",
+    );
+    expect(saved?.body).toMatchObject({
+      providerId: "vercel-self",
+      token: "vercel-token-1",
+    });
+  });
+});

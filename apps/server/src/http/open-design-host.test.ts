@@ -404,7 +404,10 @@ function daemonFetch(
 
 describe("画布数据面（/api/open-design/host/canvas 族）", () => {
   it("未授权 401；未配前端地址 400 open_design_not_configured", async () => {
-    const denied = canvasFixture({ authorized: false, frontendUrl: "http://x" });
+    const denied = canvasFixture({
+      authorized: false,
+      frontendUrl: "http://x",
+    });
     expect(
       (
         await denied.inject({
@@ -578,7 +581,10 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
       url: "/api/open-design/host/file-text?projectId=p-1&file=index.html",
     });
     expect(text.statusCode).toBe(200);
-    expect(text.json()).toEqual({ name: "index.html", text: "<html>hi</html>" });
+    expect(text.json()).toEqual({
+      name: "index.html",
+      text: "<html>hi</html>",
+    });
 
     const huge = canvasFixture({
       frontendUrl: "http://127.0.0.1:7456",
@@ -701,7 +707,10 @@ describe("GET /api/open-design/host/projects", () => {
     });
     expect(
       (
-        await denied.inject({ method: "GET", url: "/api/open-design/host/projects" })
+        await denied.inject({
+          method: "GET",
+          url: "/api/open-design/host/projects",
+        })
       ).statusCode,
     ).toBe(401);
   });
@@ -718,7 +727,10 @@ describe("POST /api/open-design/host/file", () => {
       });
       return jsonResponse(reply);
     }) as typeof fetch;
-    return { calls, app: canvasFixture({ frontendUrl: "http://127.0.0.1:7456", fetchImpl }) };
+    return {
+      calls,
+      app: canvasFixture({ frontendUrl: "http://127.0.0.1:7456", fetchImpl }),
+    };
   }
 
   it("HTML 写入代记 manual 版本，并透出上游版本", async () => {
@@ -751,7 +763,9 @@ describe("POST /api/open-design/host/file", () => {
   });
 
   it("二进制资源走 base64 且不记版本", async () => {
-    const { calls, app } = writeFetch({ file: { name: "logo.png", kind: "image" } });
+    const { calls, app } = writeFetch({
+      file: { name: "logo.png", kind: "image" },
+    });
     const response = await app.inject({
       method: "POST",
       url: "/api/open-design/host/file",
@@ -773,7 +787,11 @@ describe("POST /api/open-design/host/file", () => {
 
   it("拒绝上级目录与绝对路径；上游 404 透出可读原因", async () => {
     const traversal = writeFetch({ file: { name: "x", kind: "file" } });
-    for (const name of ["../escape.html", "/etc/passwd", "C:\\Windows\\x.html"]) {
+    for (const name of [
+      "../escape.html",
+      "/etc/passwd",
+      "C:\\Windows\\x.html",
+    ]) {
       const response = await traversal.app.inject({
         method: "POST",
         url: "/api/open-design/host/file",
@@ -798,7 +816,6 @@ describe("POST /api/open-design/host/file", () => {
   });
 });
 
-
 describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () => {
   it("新建文档：建项目+写 document.md 起始稿（含受管段骨架），进最近画布", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-doc-"));
@@ -808,14 +825,19 @@ describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () =
       dataDir,
       fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >;
         if (init?.method === "POST" && url.endsWith("/api/projects")) {
           writes.push({ url, body });
           return jsonResponse({ project: { name: "未命名文档" } });
         }
         if (init?.method === "POST" && url.endsWith("/files")) {
           writes.push({ url, body });
-          return jsonResponse({ file: { name: "document.md", kind: "markdown" } });
+          return jsonResponse({
+            file: { name: "document.md", kind: "markdown" },
+          });
         }
         return jsonResponse({});
       }) as typeof fetch,
@@ -832,7 +854,14 @@ describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () =
     expect(docWrite.name).toBe("document.md");
     expect(docWrite.content).toContain("<!-- kfw-sync:spec:start -->");
     expect(docWrite.content).toContain("<!-- kfw-sync:review:end -->");
-    expect(JSON.parse(readFileSync(join(dataDir, "config", "open-design-last-project.json"), "utf8")).projectId).toBe(created.project.projectId);
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(dataDir, "config", "open-design-last-project.json"),
+          "utf8",
+        ),
+      ).projectId,
+    ).toBe(created.project.projectId);
     await app.close();
   });
 
@@ -843,10 +872,15 @@ describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () =
       frontendUrl: "http://127.0.0.1:7456",
       fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.includes("/preview-url")) return jsonResponse({ url: "/preview/token/document.md" });
-        if (url.endsWith("/preview/token/document.md")) return new Response(existingDoc);
+        if (url.includes("/preview-url"))
+          return jsonResponse({ url: "/preview/token/document.md" });
+        if (url.endsWith("/preview/token/document.md"))
+          return new Response(existingDoc);
         if (init?.method === "POST" && url.endsWith("/files")) {
-          writes.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+          writes.push({
+            url,
+            body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+          });
           return jsonResponse({ file: { name: "x", kind: "file" } });
         }
         return jsonResponse({});
@@ -936,15 +970,22 @@ describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () =
           });
         }
         if (init?.method === "PATCH") {
-          patches.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+          patches.push({
+            url,
+            body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+          });
           return jsonResponse({ project: {} });
         }
         return jsonResponse({});
       }) as typeof fetch,
     });
-    const listed = await app.inject({ method: "GET", url: "/api/open-design/host/design-systems" });
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/design-systems",
+    });
     expect(listed.statusCode).toBe(200);
-    const systems = (listed.json() as { designSystems: Array<{ id: string }> }).designSystems;
+    const systems = (listed.json() as { designSystems: Array<{ id: string }> })
+      .designSystems;
     expect(systems.map((s) => s.id)).toEqual(["agentic"]);
 
     const bound = await app.inject({
@@ -955,5 +996,117 @@ describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () =
     expect(bound.statusCode).toBe(200);
     expect(patches[0]!.body.designSystemId).toBe("agentic");
     await app.close();
+  });
+});
+
+describe("静态分享部署代理（Cloudflare Pages / Vercel）", () => {
+  it("配置读：token 只回显掩码；配置写：代理 PUT 上游字段", async () => {
+    const puts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.includes("/api/deploy/config") && init?.method !== "PUT") {
+          return jsonResponse({
+            configured: true,
+            tokenMask: "****abcd",
+            accountId: "acc-1",
+          });
+        }
+        if (init?.method === "PUT" && url.includes("/api/deploy/config")) {
+          puts.push({
+            url,
+            body: JSON.parse(String(init.body)) as Record<string, unknown>,
+          });
+          return jsonResponse({ configured: true, tokenMask: "****abcd" });
+        }
+        return jsonResponse({});
+      }) as typeof fetch,
+    });
+    const read = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/deploy/config?providerId=cloudflare-pages",
+    });
+    expect(read.statusCode).toBe(200);
+    expect((read.json() as { tokenMask: string }).tokenMask).toBe("****abcd");
+
+    const written = await app.inject({
+      method: "PUT",
+      url: "/api/open-design/host/deploy/config",
+      payload: { providerId: "vercel-self", token: "tok-1" },
+    });
+    expect(written.statusCode).toBe(200);
+    expect(puts[0]!.body).toMatchObject({
+      providerId: "vercel-self",
+      token: "tok-1",
+    });
+    await app.close();
+  });
+
+  it("发布：缺省取入口 HTML 代理 deploy；失败如实回可读原因", async () => {
+    const deployCalls: Array<Record<string, unknown>> = [];
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/api/projects/p-1/files")) {
+          return jsonResponse({ files: [{ name: "index.html", kind: "html" }] });
+        }
+        if (
+          url.endsWith("/api/projects/p-1/deploy") &&
+          init?.method === "POST"
+        ) {
+          deployCalls.push(
+            JSON.parse(String(init.body)) as Record<string, unknown>,
+          );
+          return jsonResponse({
+            id: "d-1",
+            fileName: "index.html",
+            providerId: "cloudflare-pages",
+            url: "https://abc.pages.dev/",
+            target: "production",
+            status: "ready",
+            createdAt: 1,
+            updatedAt: 1,
+          });
+        }
+        return jsonResponse({});
+      }) as typeof fetch,
+    });
+    const deployed = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/deploy",
+      payload: { projectId: "p-1", providerId: "cloudflare-pages" },
+    });
+    expect(deployed.statusCode).toBe(200);
+    expect(deployCalls[0]).toMatchObject({
+      fileName: "index.html",
+      providerId: "cloudflare-pages",
+    });
+    expect((deployed.json() as { url: string }).url).toBe(
+      "https://abc.pages.dev/",
+    );
+
+    const failing = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/api/projects/p-1/files": () =>
+          jsonResponse({ files: [{ name: "a.html" }] }),
+        "/deploy": () =>
+          jsonResponse(
+            { error: { message: "Cloudflare API token is required." } },
+            400,
+          ),
+      }),
+    });
+    const failed = await failing.inject({
+      method: "POST",
+      url: "/api/open-design/host/deploy",
+      payload: { projectId: "p-1", providerId: "cloudflare-pages" },
+    });
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json().error.message).toContain("token");
+    await app.close();
+    await failing.close();
   });
 });

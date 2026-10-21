@@ -106,6 +106,12 @@ export function OpenDesignToolbar({
   onExportPng,
   onExportHtml,
   onShare,
+  shareBusy,
+  shareMenuOpen,
+  lastDeploymentUrl,
+  onDeploy,
+  onShareConfig,
+  onOpenDeployment,
 }: {
   busy: boolean;
   hasCanvas: boolean;
@@ -141,6 +147,12 @@ export function OpenDesignToolbar({
   onExportPng: () => void;
   onExportHtml: () => void;
   onShare: () => void;
+  shareBusy: boolean;
+  shareMenuOpen: boolean;
+  lastDeploymentUrl: string | null;
+  onDeploy: (providerId: "cloudflare-pages" | "vercel-self") => void;
+  onShareConfig: (providerId: "cloudflare-pages" | "vercel-self") => void;
+  onOpenDeployment: () => void;
 }) {
   const activeViewport = VIEWPORTS.find((item) => item.id === viewport);
   const ViewportIcon = activeViewport?.icon ?? Monitor;
@@ -389,9 +401,58 @@ export function OpenDesignToolbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <ToolbarIconButton label="分享" disabled={!hasCanvas} onClick={onShare}>
-          <Share2 className="size-3" />
-        </ToolbarIconButton>
+        <DropdownMenu modal={false} open={shareMenuOpen} onOpenChange={onShare}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="text-foreground-subtle hover:text-foreground"
+              aria-label="分享"
+              title="分享"
+              disabled={busy || !hasCanvas}
+            >
+              <Share2 className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuItem
+              data-open-design-share="cloudflare"
+              disabled={shareBusy}
+              onSelect={() => onDeploy("cloudflare-pages")}
+            >
+              发布到 Cloudflare Pages
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-share="vercel"
+              disabled={shareBusy}
+              onSelect={() => onDeploy("vercel-self")}
+            >
+              发布到 Vercel
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              data-open-design-share-config="cloudflare"
+              onSelect={() => onShareConfig("cloudflare-pages")}
+            >
+              配置 Cloudflare
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-share-config="vercel"
+              onSelect={() => onShareConfig("vercel-self")}
+            >
+              配置 Vercel
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              data-open-design-share-open=""
+              disabled={!lastDeploymentUrl}
+              onSelect={onOpenDeployment}
+            >
+              打开已发布页面
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button

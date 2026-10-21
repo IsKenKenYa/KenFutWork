@@ -429,3 +429,92 @@ export const openDesignHostBindDesignSystemRequestSchema = z.object({
 export type OpenDesignHostBindDesignSystemRequest = z.infer<
   typeof openDesignHostBindDesignSystemRequestSchema
 >;
+
+/* ------------------------------------------------------------------
+ * 静态分享 = 上游部署面（Cloudflare Pages / Vercel，用户自带 token 的静态部署）。
+ * 用户口径：分享要像原来的分享功能一样**静态部署**（发布在线链接 / 自托管），
+ * 不是复制面板的 localhost 链接。宿主只做代理与契约收口——真正的上传与域名
+ * 由 daemon 的 deploy 路由执行（`/api/deploy/config`、`/api/projects/:id/deploy`）。
+ * ------------------------------------------------------------------ */
+
+export const openDesignDeployProviderSchema = z.enum([
+  "cloudflare-pages",
+  "vercel-self",
+]);
+export type OpenDesignDeployProvider = z.infer<
+  typeof openDesignDeployProviderSchema
+>;
+
+/** 托管商配置（GET/PUT 共用；token 只回显掩码，写入时掩码原样回传=保留原值）。 */
+export const openDesignHostDeployConfigSchema = z.object({
+  providerId: openDesignDeployProviderSchema,
+  configured: z.boolean(),
+  tokenMask: z.string(),
+  teamId: z.string().optional(),
+  teamSlug: z.string().optional(),
+  accountId: z.string().optional(),
+  target: z.string().optional(),
+});
+export type OpenDesignHostDeployConfig = z.infer<
+  typeof openDesignHostDeployConfigSchema
+>;
+
+export const openDesignHostDeployConfigUpdateSchema = z.object({
+  providerId: openDesignDeployProviderSchema,
+  /** 新 token（掩码原样回传表示沿用已保存值）。 */
+  token: z.string().max(512).optional(),
+  accountId: z.string().max(120).optional(),
+  teamId: z.string().max(120).optional(),
+  teamSlug: z.string().max(120).optional(),
+});
+export type OpenDesignHostDeployConfigUpdate = z.infer<
+  typeof openDesignHostDeployConfigUpdateSchema
+>;
+
+export const openDesignHostDeployRequestSchema = z.object({
+  projectId: z.string().min(1),
+  /** 要发布的文件（缺省取画布入口文件）。 */
+  file: z.string().min(1).max(240).optional(),
+  providerId: openDesignDeployProviderSchema,
+});
+export type OpenDesignHostDeployRequest = z.infer<
+  typeof openDesignHostDeployRequestSchema
+>;
+
+/** 一条部署记录（上游 publicDeployment 的收口面）。 */
+export const openDesignHostDeploymentSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  fileName: z.string().min(1),
+  providerId: z.string().min(1),
+  url: z.string().min(1),
+  target: z.string().nullable(),
+  status: z.string().nullable(),
+  createdAt: z.number().int().nullable(),
+  updatedAt: z.number().int().nullable(),
+});
+export type OpenDesignHostDeployment = z.infer<
+  typeof openDesignHostDeploymentSchema
+>;
+
+export const openDesignHostDeploymentsResponseSchema = z.object({
+  deployments: z.array(openDesignHostDeploymentSchema).max(200),
+});
+export type OpenDesignHostDeploymentsResponse = z.infer<
+  typeof openDesignHostDeploymentsResponseSchema
+>;
+
+/** Cloudflare 域名区清单（发布到自定义域时选）。 */
+export const openDesignHostCloudflareZonesResponseSchema = z.object({
+  zones: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+      }),
+    )
+    .max(500),
+});
+export type OpenDesignHostCloudflareZonesResponse = z.infer<
+  typeof openDesignHostCloudflareZonesResponseSchema
+>;

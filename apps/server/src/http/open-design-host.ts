@@ -4,14 +4,21 @@ import {
   OPEN_DESIGN_HOST_TEXT_MAX_LENGTH,
   OPEN_DESIGN_SYNC_SECTION_REVIEW,
   OPEN_DESIGN_SYNC_SECTION_SPEC,
+  openDesignDeployProviderSchema,
   openDesignHostBindDesignSystemRequestSchema,
   openDesignHostCanvasResponseSchema,
+  openDesignHostCloudflareZonesResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
   openDesignHostCreateCanvasRequestSchema,
   openDesignHostCreateDocumentRequestSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
+  openDesignHostDeployConfigSchema,
+  openDesignHostDeployConfigUpdateSchema,
+  openDesignHostDeploymentSchema,
+  openDesignHostDeploymentsResponseSchema,
+  openDesignHostDeployRequestSchema,
   openDesignHostDesignSystemsResponseSchema,
   openDesignHostFileTextResponseSchema,
   openDesignHostLastProjectResponseSchema,
@@ -248,13 +255,26 @@ export async function registerOpenDesignHostRoutes(
         signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
       });
       if (!response.ok) {
+        // 上游错误体带可读原因（如「Cloudflare API token is required.」）时透出给用户；
+        // 拿不到再退回通用文案——报错要能指路，不能只有状态码。
+        const detail = await response
+          .clone()
+          .json()
+          .then((body: unknown) => {
+            const message = (body as { error?: { message?: unknown } } | null)
+              ?.error?.message;
+            return typeof message === "string" && message.trim()
+              ? message.trim()
+              : "";
+          })
+          .catch(() => "");
         return {
           ok: false,
           status: response.status === 404 ? 404 : 503,
           message:
             response.status === 404
               ? "上游没有这块画布。"
-              : `OpenDesign 返回 HTTP ${response.status}。`,
+              : detail || `OpenDesign 返回 HTTP ${response.status}。`,
         };
       }
       return { ok: true, value: (await response.json()) as T };
@@ -698,6 +718,195 @@ export async function registerOpenDesignHostRoutes(
       return reply.send({ ok: true });
     },
   );
+
+  // ── 静态分享：代理上游部署面（Cloudflare Pages / Vercel，自带 token）──────
+  const readDeployConfigView = (
+    providerId: string,
+    value: Record<string, unknown>,
+  ) =>
+    openDesignHostDeployConfigSchema.parse({
+      providerId,
+      configured: value.configured === true,
+      tokenMask: typeof value.tokenMask === "string" ? value.tokenMask : "",
+      teamId: typeof value.teamId === "string" ? value.teamId : "",
+      teamSlug: typeof value.teamSlug === "string" ? value.teamSlug : "",
+      accountId: typeof value.accountId === "string" ? value.accountId : "",
+      target: typeof value.target === "string" ? value.target : "",
+    });
+
+  app.get("/api/open-design/host/deploy/config", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const query = request.query as { providerId?: string };
+    const providerId = openDesignDeployProviderSchema.safeParse(
+      query.providerId ?? "cloudflare-pages",
+    );
+    if (!providerId.success)
+      return error(reply, 400, "application_error", "不支持的托管商。");
+    const config = await daemonJson<Record<string, unknown>>(
+      base,
+      `/api/deploy/config?providerId=${encodeURIComponent(providerId.data)}`,
+    );
+    if (!config.ok)
+      return error(reply, config.status, "service_unavailable", config.message);
+    return reply.send(readDeployConfigView(providerId.data, config.value));
+  });
+
+  app.put("/api/open-design/host/deploy/config", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostDeployConfigUpdateSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "托管商配置格式不正确。");
+    const written = await daemonJson<Record<string, unknown>>(
+      base,
+      "/api/deploy/config",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(parsed.data),
+      },
+    );
+    if (!written.ok)
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        `托管商配置没保存：${written.message}`,
+      );
+    return reply.send(
+      readDeployConfigView(parsed.data.providerId, written.value),
+    );
+  });
+
+  app.get("/api/open-design/host/deploy/zones", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const listed = await daemonJson<{
+      zones?: Array<{ id?: unknown; name?: unknown }>;
+    }>(base, "/api/deploy/cloudflare-pages/zones");
+    if (!listed.ok)
+      return error(reply, listed.status, "service_unavailable", listed.message);
+    const zones = (listed.value.zones ?? [])
+      .filter(
+        (zone): zone is { id: string; name: string } =>
+          typeof zone.id === "string" &&
+          zone.id.length > 0 &&
+          typeof zone.name === "string",
+      )
+      .map((zone) => ({ id: zone.id, name: zone.name }));
+    return reply.send(
+      openDesignHostCloudflareZonesResponseSchema.parse({ zones }),
+    );
+  });
+
+  /**
+   * 发布当前画布（静态部署）：代理上游 POST /api/projects/:id/deploy。
+   * 缺省取入口 HTML；真正上传、域名与回执由上游执行（用户自带 token）。
+   */
+  app.post("/api/open-design/host/deploy", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostDeployRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "发布请求格式不正确。");
+    const { projectId, providerId } = parsed.data;
+    let file = parsed.data.file;
+    if (!file) {
+      // 入口文件在 files 子资源里，不在项目详情上（与画布概览读取同源）
+      const listing = await daemonJson<{ files?: DaemonProjectFile[] }>(
+        base,
+        `/api/projects/${encodeURIComponent(projectId)}/files`,
+      );
+      if (listing.ok) {
+        file = (listing.value.files ?? []).find((item) =>
+          /\.html?$/iu.test(item.name ?? ""),
+        )?.name;
+      }
+    }
+    if (!file)
+      return error(
+        reply,
+        404,
+        "service_unavailable",
+        "这块画布还没有可分享的文件。",
+      );
+    const deployed = await daemonJson<Record<string, unknown>>(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/deploy`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName: file, providerId }),
+      },
+    );
+    if (!deployed.ok)
+      return error(
+        reply,
+        deployed.status,
+        "service_unavailable",
+        `发布失败：${deployed.message}`,
+      );
+    const value = deployed.value;
+    return reply.send(
+      openDesignHostDeploymentSchema.parse({
+        id: String(value.id ?? ""),
+        projectId,
+        fileName: String(value.fileName ?? file),
+        providerId,
+        url: String(value.url ?? ""),
+        target: typeof value.target === "string" ? value.target : null,
+        status: typeof value.status === "string" ? value.status : null,
+        createdAt: typeof value.createdAt === "number" ? value.createdAt : null,
+        updatedAt: typeof value.updatedAt === "number" ? value.updatedAt : null,
+      }),
+    );
+  });
+
+  app.get("/api/open-design/host/deployments", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const projectId = (
+      request.query as { projectId?: string }
+    ).projectId?.trim();
+    if (!projectId)
+      return error(reply, 400, "application_error", "缺少画布 id。");
+    const listed = await daemonJson<{
+      deployments?: Array<Record<string, unknown>>;
+    }>(base, `/api/projects/${encodeURIComponent(projectId)}/deployments`);
+    if (!listed.ok)
+      return error(reply, listed.status, "service_unavailable", listed.message);
+    const deployments = (listed.value.deployments ?? []).map((item) =>
+      openDesignHostDeploymentSchema.parse({
+        id: String(item.id ?? ""),
+        projectId,
+        fileName: String(item.fileName ?? ""),
+        providerId: String(item.providerId ?? ""),
+        url: String(item.url ?? ""),
+        target: typeof item.target === "string" ? item.target : null,
+        status: typeof item.status === "string" ? item.status : null,
+        createdAt: typeof item.createdAt === "number" ? item.createdAt : null,
+        updatedAt: typeof item.updatedAt === "number" ? item.updatedAt : null,
+      }),
+    );
+    return reply.send(
+      openDesignHostDeploymentsResponseSchema.parse({ deployments }),
+    );
+  });
 
   /**
    * 画布列表（面板「+」的「打开画布」项）：上游 project 概要按更新时间倒序。
