@@ -179,21 +179,27 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 三按钮在**窗外的小号直角梯形**容器里（直角在右边：右竖左斜），body 级 fixed；
     // 悬浮球态也外挂同一条按钮（syncBtnbar 的 ball 分支）
     expect(script).toContain("kfw-btnbar");
-    expect(script).toContain("document.body.appendChild(btnbar)");
+    // 按钮条挂 documentElement：与页面顶部导航同 z-index 时以更晚绘制顺序压过它
+    expect(script).toContain("document.documentElement.appendChild(btnbar)");
     expect(script).toContain(
       "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)",
     );
     expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
-    expect(script).toContain("rect.top - barH - 2");
+    // 贴边零间距（用户口径：右对齐面板最右侧、不要间距）
+    expect(script).toContain("rect.right - barW");
+    expect(script).toContain("rect.top - barH");
     // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
     expect(script).toContain('if (uiState === "ball") applyFloat();');
     expect(script).toContain('if (uiState === "max") applyFloat();');
     // 自家 UI 标 data-kfw-ui：元素拾取器见标记即跳过（选择模式下按钮必须可点）
     expect(script).toContain('setAttribute("data-kfw-ui"');
     // 自绘光标已移除（悬在宿主浮层下方 + CDP 往返延迟 + 关闭控制台后残留——
-    // 真机三条症状压过 resize 光标的收益）：系统光标回到默认表现。
-    expect(script).not.toContain("kfw-cursor");
+    // 真机三条症状压过 resize 光标的收益）：系统光标回到默认表现；
+    // 早退分支仍会清理旧版本遗留的 .kfw-cursor 节点。
+    expect(script).not.toContain("CURSOR_SVGS");
+    expect(script).not.toContain("console-cursor");
+    expect(script).toContain(".kfw-cursor");
     // 悬浮球：更浅的半透白 + 拖动自由跟手松手吸附
     expect(script).toContain("rgba(255,255,255,.6)");
     expect(script).toContain("kfw-ball-drag");

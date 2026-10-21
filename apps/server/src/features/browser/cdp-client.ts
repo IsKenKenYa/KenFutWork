@@ -766,6 +766,39 @@ export async function readViewport(
   client: CdpClient,
   sessionId: string,
 ): Promise<{ width: number; height: number; scale: number }> {
+  /**
+   * 交互坐标口径 = `innerWidth/innerHeight`（含滚动条宽度），与画面流和
+   * `Input.dispatchMouseEvent` 同一坐标空间。不能用 layout metrics 的
+   * `clientWidth`：它扣掉滚动条（百度页实测 909 vs 926），面板按 909/926 缩放
+   * 会把点击整体左移最多 17px——小控件（18px 的控制台按钮）被点空，
+   * 看起来像「按钮没反应/页面卡死」（真机取证：点击落到按钮条容器而非按钮）。
+   */
+  const evaluated = (await client.send(
+    "Runtime.evaluate",
+    {
+      expression:
+        "JSON.stringify({ w: window.innerWidth, h: window.innerHeight })",
+      returnByValue: true,
+    },
+    sessionId,
+  )) as { result?: { value?: unknown } };
+  let width = 0;
+  let height = 0;
+  if (typeof evaluated.result?.value === "string") {
+    try {
+      const parsed = JSON.parse(evaluated.result.value) as {
+        w?: number;
+        h?: number;
+      };
+      width = Math.round(Number(parsed.w) || 0);
+      height = Math.round(Number(parsed.h) || 0);
+    } catch {
+      // 读不到就退 layout metrics（下面兜底）
+    }
+  }
+  if (width > 0 && height > 0) {
+    return { width, height, scale: 1 };
+  }
   const metrics = (await client.send(
     "Page.getLayoutMetrics",
     {},

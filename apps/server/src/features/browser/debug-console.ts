@@ -76,6 +76,12 @@ const FLOAT_SCRIPT = `
   if (window.__kfwFloating) {
     var again = document.querySelector(".eruda-container");
     if (again) again.style.removeProperty("display");
+    // 旧版本注入过自绘光标：节点拔掉（其监听若仍挂着只会写已摘除节点，无绘制开销）。
+    // 旧监听彻底清掉需要刷新页面；这里保证不再出现双光标/额外布局读取。
+    var staleCursor = document.querySelectorAll(".kfw-cursor");
+    for (var ci = 0; ci < staleCursor.length; ci += 1) {
+      staleCursor[ci].parentNode && staleCursor[ci].parentNode.removeChild(staleCursor[ci]);
+    }
     if (window.eruda) window.eruda.show();
     if (window.__kfwConsoleRestore) window.__kfwConsoleRestore();
     return;
@@ -140,8 +146,12 @@ const FLOAT_SCRIPT = `
   headStyle.textContent =
     // 三按钮的**小号直角梯形**容器（直角在右边：右边竖直、左上收斜边），
     // 完全在窗外，跟随宿主（悬浮面板/分屏卡片的右上角，或悬浮球上方）
+    // 梯形只做**背景层**（伪元素）：clip-path 放在容器上会把最左按钮的左上角裁掉，
+    // 点击从被裁区域穿透到页面（真机：点到百度顶部导航，看起来像「按钮没反应+页面卡死」）。
     ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 7px;" +
-    "background:rgba(255,255,255,.92);box-shadow:0 -2px 8px rgba(0,0,0,.15);" +
+    "background:transparent;box-shadow:none}" +
+    ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
+    "background:rgba(255,255,255,.72);box-shadow:0 -2px 8px rgba(0,0,0,.12);" +
     "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
     "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
@@ -182,7 +192,7 @@ const FLOAT_SCRIPT = `
   btnbar.appendChild(minBtn);
   btnbar.appendChild(maxBtn);
   btnbar.appendChild(closeBtn);
-  document.body.appendChild(btnbar);
+  document.documentElement.appendChild(btnbar);
 
   // 按钮条跟随宿主：面板/卡片态贴容器**右上角外**；悬浮球态贴在**球上方**。
   // rAF 合帧 + 尺寸缓存：拖动/缩放的高频 mousemove 里不再每次强制回流。
@@ -204,8 +214,8 @@ const FLOAT_SCRIPT = `
         var ballTop = parseFloat(ball.style.top) || 60;
         btnbar.style.display = "flex";
         btnbar.style.left = Math.max(
-          2,
-          Math.round(sideL ? 4 : window.innerWidth - barW - 4),
+          0,
+          Math.round(sideL ? 0 : window.innerWidth - barW),
         ) + "px";
         btnbar.style.top = Math.max(2, Math.round(ballTop - barH - 4)) + "px";
         return;
@@ -220,8 +230,9 @@ const FLOAT_SCRIPT = `
         return;
       }
       btnbar.style.display = "flex";
-      btnbar.style.left = Math.max(2, Math.round(rect.right - barW - 6)) + "px";
-      btnbar.style.top = Math.max(2, Math.round(rect.top - barH - 2)) + "px";
+      // 用户口径：右对齐悬浮面板最右侧、不要间距（贴 rect.right，纵向贴面板顶）
+      btnbar.style.left = Math.max(0, Math.round(rect.right - barW)) + "px";
+      btnbar.style.top = Math.max(0, Math.round(rect.top - barH)) + "px";
     });
   }
   window.addEventListener("resize", function () {
