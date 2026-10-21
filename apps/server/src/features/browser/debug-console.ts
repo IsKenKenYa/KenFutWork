@@ -149,10 +149,10 @@ const FLOAT_SCRIPT = `
     // 完全在窗外，跟随宿主（悬浮面板/分屏卡片的右上角，或悬浮球上方）
     // 梯形只做**背景层**（伪元素）：clip-path 放在容器上会把最左按钮的左上角裁掉，
     // 点击从被裁区域穿透到页面（真机：点到百度顶部导航，看起来像「按钮没反应+页面卡死」）。
-    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 7px;" +
+    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 7px;" +
     "background:transparent;box-shadow:none}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
-    "background:rgba(255,255,255,.72);box-shadow:0 -2px 8px rgba(0,0,0,.12);" +
+    "background:transparent;box-shadow:none;" +
     "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
     "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
@@ -211,14 +211,8 @@ const FLOAT_SCRIPT = `
         barH = btnbar.offsetHeight || 24;
       }
       if (uiState === "ball") {
-        var sideL = ball.classList.contains("kfw-ball-left");
-        var ballTop = parseFloat(ball.style.top) || 60;
-        btnbar.style.display = "flex";
-        btnbar.style.left = Math.max(
-          0,
-          Math.round(sideL ? 0 : window.innerWidth - barW),
-        ) + "px";
-        btnbar.style.top = Math.max(2, Math.round(ballTop - barH - 4)) + "px";
+        // 用户口径：变成悬浮球时就不要那三个按钮（点球即还原）。
+        btnbar.style.display = "none";
         return;
       }
       var rect = container.getBoundingClientRect();
@@ -251,7 +245,7 @@ const FLOAT_SCRIPT = `
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="m7 11 2-2-2-2"></path><path d="M11 13h4"></path>' +
     '<rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>';
-  document.body.appendChild(ball);
+  document.documentElement.appendChild(ball);
 
   function applyFloat() {
     uiState = "float";
@@ -314,7 +308,6 @@ const FLOAT_SCRIPT = `
     container.style.setProperty("display", "none", "important");
     ball.style.display = "none";
     btnbar.style.display = "none";
-    if (window.__kfwFloatingClose) window.__kfwFloatingClose();
   };
 
   // 悬浮球：点击还原悬浮面板（球消失），**拖动自由跟手**，松手吸附最近边半藏
@@ -347,7 +340,13 @@ const FLOAT_SCRIPT = `
     ball.style.top = Math.round(top) + "px";
     syncBtnbar();
   });
-  window.addEventListener("mouseup", function () {
+  /**
+   * 结束球拖拽（松手或指针离开页面都走这里）。
+   *
+   * 关键：拖到面板工具栏/窗口外松手时，页面收不到 mouseup——不在这里收尾，
+   * ballDrag 永远挂着，之后球会一直追着鼠标跑（真机表现为「拖着拖着消失」）。
+   */
+  function snapBall() {
     if (!ballDrag) return;
     var moved = ballDrag.moved;
     ballDrag = null;
@@ -365,6 +364,15 @@ const FLOAT_SCRIPT = `
     ball.style.left =
       side === "left" ? "0px" : Math.round(window.innerWidth - 16) + "px";
     syncBtnbar();
+  }
+  window.addEventListener("mouseup", snapBall);
+  // 指针移出页面（宿主工具栏/窗口外）没有任何 mouseup：按松手收尾，同时清掉
+  // 控制台窗口拖动/缩放状态（否则窗口也会继续追着鼠标）。
+  window.addEventListener("mouseout", function (event) {
+    if (event.relatedTarget) return;
+    snapBall();
+    dragging = null;
+    resizing = null;
   });
   window.__kfwConsoleRestore = applyFloat;
 

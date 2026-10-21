@@ -227,6 +227,8 @@ export function BrowserPane({
   const frameRef = useRef<HTMLDivElement>(null);
   const sinkRef = useRef<HTMLTextAreaElement>(null);
   const draggingRef = useRef(false);
+  /** 最近一次转发给页面的视口坐标（鼠标离开画面时补发 released 用）。 */
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const lastHoverRef = useRef(0);
   const retriesRef = useRef(0);
   const lastReloadRef = useRef(reloadToken);
@@ -584,6 +586,7 @@ export function BrowserPane({
       lastHoverRef.current = now;
       const point = pointFrom(event);
       if (!point) return;
+      lastPointRef.current = point;
       send({
         type: "mouse",
         action: "moved",
@@ -1039,7 +1042,23 @@ export function BrowserPane({
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={() => {
-              draggingRef.current = false;
+              // 指针离开画面（拖到宿主工具栏/窗口外）时页面收不到 mouseup：
+              // 补发一次 released，否则控制台窗口/悬浮球会一直追着鼠标
+              // 移动（真机表现为「拖着拖着消失/乱跑」）。
+              if (draggingRef.current) {
+                const last = lastPointRef.current;
+                draggingRef.current = false;
+                if (last) {
+                  send({
+                    type: "mouse",
+                    action: "released",
+                    x: last.x,
+                    y: last.y,
+                    button: "left",
+                    buttons: 0,
+                  });
+                }
+              }
             }}
             onContextMenu={(event) => event.preventDefault()}
           >
