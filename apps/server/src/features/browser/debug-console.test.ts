@@ -191,11 +191,9 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain('if (uiState === "max") applyFloat();');
     // 自家 UI 标 data-kfw-ui：元素拾取器见标记即跳过（选择模式下按钮必须可点）
     expect(script).toContain('setAttribute("data-kfw-ui"');
-    // 自绘光标：截图流不含系统光标，画面里画跟手光标；拾取器在场时让位
-    expect(script).toContain("kfw-cursor");
-    expect(script).toContain('data-kfw-ui", "console-cursor');
-    expect(script).toContain("window.__kfwPicker");
-    expect(script).toContain("nwse");
+    // 自绘光标已移除（悬在宿主浮层下方 + CDP 往返延迟 + 关闭控制台后残留——
+    // 真机三条症状压过 resize 光标的收益）：系统光标回到默认表现。
+    expect(script).not.toContain("kfw-cursor");
     // 悬浮球：更浅的半透白 + 拖动自由跟手松手吸附
     expect(script).toContain("rgba(255,255,255,.6)");
     expect(script).toContain("kfw-ball-drag");

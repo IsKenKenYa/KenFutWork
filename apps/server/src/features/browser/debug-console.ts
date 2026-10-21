@@ -160,11 +160,7 @@ const FLOAT_SCRIPT = `
     ".kfw-ball-right{transform:translateX(55%)}" +
     ".kfw-ball-left:hover{transform:translateX(-6%)}" +
     ".kfw-ball-right:hover{transform:translateX(6%)}" +
-    ".kfw-ball-drag{transform:none!important;transition:none!important;opacity:1;cursor:grabbing}" +
-    // 自绘光标：远程画面的截图流不含系统光标（CSS cursor 传不过来），
-    // 控制台在场时画一个跟手光标；拾取器在场时让位（本地十字光标接管）
-    ".kfw-cursor{position:fixed;z-index:2147483646;pointer-events:none;display:none;" +
-    "filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}";
+    ".kfw-ball-drag{transform:none!important;transition:none!important;opacity:1;cursor:grabbing}";
   document.head.appendChild(headStyle);
 
   function mkBtn(glyph, tip, label) {
@@ -244,66 +240,6 @@ const FLOAT_SCRIPT = `
     '<path d="m7 11 2-2-2-2"></path><path d="M11 13h4"></path>' +
     '<rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>';
   document.body.appendChild(ball);
-
-  // ── 自绘光标（画面流里跟手；拾取器在场时让位） ──
-  var cursorEl = document.createElement("div");
-  cursorEl.className = "kfw-cursor";
-  cursorEl.setAttribute("data-kfw-ui", "console-cursor");
-  var CURSOR_SVGS = {
-    default:
-      '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M3 2l6 15 2.2-5.8L17 9z" fill="#222" stroke="#fff" stroke-width="1.2"/></svg>',
-    ns:
-      '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M10 3v14M6.5 6.5 10 3l3.5 3.5M6.5 13.5 10 17l3.5-3.5" fill="none" stroke="#222" stroke-width="1.8" stroke-linecap="round"/></svg>',
-    nwse:
-      '<svg width="20" height="20" viewBox="0 0 20 20"><path d="M4 4l12 12M4 8.5V4h4.5M16 11.5V16h-4.5" fill="none" stroke="#222" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    grab:
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#222" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
-  };
-  var cursorShape = "";
-  function setCursorShape(shape) {
-    if (shape === cursorShape) return;
-    cursorShape = shape;
-    cursorEl.innerHTML = CURSOR_SVGS[shape] || CURSOR_SVGS.default;
-  }
-  setCursorShape("default");
-  document.body.appendChild(cursorEl);
-  window.addEventListener(
-    "mousemove",
-    function (event) {
-      // 拾取器在场：让位（面板本地十字光标接管），自己收起
-      if (window.__kfwPicker) {
-        cursorEl.style.display = "none";
-        return;
-      }
-      cursorEl.style.display = "block";
-      cursorEl.style.left = event.clientX + "px";
-      cursorEl.style.top = event.clientY + "px";
-      var x = event.clientX;
-      var y = event.clientY;
-      var shape = "default";
-      var ballRect = ball.getBoundingClientRect();
-      if (
-        ball.style.display !== "none" &&
-        x >= ballRect.left - 2 &&
-        x <= ballRect.right + 2 &&
-        y >= ballRect.top - 2 &&
-        y <= ballRect.bottom + 2
-      ) {
-        shape = "grab";
-      } else if (container.style.display !== "none") {
-        var r = container.getBoundingClientRect();
-        var inside =
-          x >= r.left - 2 && x <= r.right + 2 && y >= r.top - 2 && y <= r.bottom + 2;
-        if (inside && uiState === "float") {
-          if (x >= r.right - 22 && y >= r.bottom - 22) shape = "nwse";
-        } else if (uiState === "max" && y >= r.top - 8 && y <= r.top + 10) {
-          shape = "ns";
-        }
-      }
-      setCursorShape(shape);
-    },
-    true,
-  );
 
   function applyFloat() {
     uiState = "float";
