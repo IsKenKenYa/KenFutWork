@@ -15,6 +15,8 @@ import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGenerationTargets } from "../generation/file-targets.js";
 import { createJobService } from "../jobs/job-service.js";
 import { createJobRepository } from "../jobs/repository.js";
+import { createModelProviderService } from "../model-providers/model-provider-service.js";
+import { createModelProviderRepository } from "../model-providers/repository.js";
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
 import type { PersistenceService } from "../persistence/types.js";
 import { createInProcessQueue } from "../queue/providers/in-process.js";
@@ -122,6 +124,251 @@ async function createRegistryHttp(
 }
 
 const pgTest = it.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1");
+
+async function createConnectionHttp(
+  db: Awaited<ReturnType<typeof createTaskWorkDatabase>>,
+  connectionFields: string,
+  secrets: { [key: string]: string },
+  persistence: PersistenceService = db.persistence,
+) {
+  const http = await createRegistryHttp(db, persistence);
+  const providers = createModelProviderService({
+    localInstance: db.localInstance,
+    repository: createModelProviderRepository(db.persistence),
+  });
+  const provider = await providers.createInstance(db.actor, {
+    name: "媒体连接",
+    protocol: "openai-compatible",
+    apiKey: "chat-only-key",
+    models: [{ id: "native-chat", name: "聊天", capability: "chat" }],
+  });
+  const file = source.replace(
+    'origins: ["https://media.example.com"],',
+    `origins: ["https://media.example.com"], connectionFields: ${connectionFields},`,
+  );
+  const preview = await http.preview(file);
+  const installed = await http.install(preview);
+  expect(installed.statusCode, installed.body).toBe(201);
+  const url = `/api/media-drivers/registry-example/connections/${provider.id}`;
+  const headers = { authorization: `Bearer ${db.desktopToken}` };
+  const payload = {
+    installationId: preview.installationId,
+    expectedGeneration: 1,
+    expectedRevision: 1,
+    expectedConnectionRevision: 0,
+    values: {},
+    secrets,
+    credentialOrigins: ["https://media.example.com"],
+  };
+  return {
+    ...http,
+    providers,
+    provider,
+    preview,
+    payload,
+    save: (changes: object = {}) =>
+      http.app.inject({
+        method: "PUT",
+        url,
+        headers,
+        payload: { ...payload, ...changes },
+      }),
+    read: () => http.app.inject({ method: "GET", url, headers }),
+    credentials: (authorized = true) =>
+      http.app.inject({
+        method: "GET",
+        url: `${url}/credentials`,
+        ...(authorized ? { headers } : {}),
+      }),
+  };
+}
+
+pgTest("自定义连接保存普通字段和秘密字段，普通读取不包含凭据", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createConnectionHttp(
+    db,
+    `[
+      { key: "region", label: "地区", default: "cn" },
+      { key: "toString", label: "名称", default: "自定义名称" },
+      { key: "apiKey", label: "API Key", secret: true, required: true }
+    ]`,
+    { apiKey: "media-secret-only" },
+  );
+  try {
+    const saved = await http.save();
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect(saved.json().connection).toMatchObject({
+      providerId: http.provider.id,
+      installationId: http.preview.installationId,
+      revision: 1,
+      values: { region: "cn", toString: "自定义名称" },
+      secretKeys: ["apiKey"],
+      credentialOrigins: ["https://media.example.com"],
+    });
+    expect(saved.body).not.toContain("media-secret-only");
+    const read = await http.read();
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().connection).toEqual(saved.json().connection);
+    expect(read.body).not.toContain("media-secret-only");
+    const credentials = await http.credentials();
+    expect(credentials.statusCode, credentials.body).toBe(200);
+    expect(credentials.json()).toEqual({
+      secrets: { apiKey: "media-secret-only" },
+    });
+    expect(credentials.headers["cache-control"]).toBe("no-store");
+    expect((await http.credentials(false)).statusCode).toBe(401);
+    expect(
+      await http.providers.readCredential(db.actor, http.provider.id),
+    ).toBe("chat-only-key");
+    expect(
+      await http
+        .service()
+        .connection(db.actor, "registry-example", http.provider.id),
+    ).toEqual(read.json());
+  } finally {
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest("连接校验、并发重放、版本保留和卸载清理", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createConnectionHttp(
+    db,
+    `[
+      { key: "region", label: "地区", default: "cn" },
+      { key: "token", label: "Token", secret: true }
+    ]`,
+    { token: "original-connection-key" },
+  );
+  try {
+    for (const changed of [
+      { values: { token: "wrong-place" } },
+      { values: { extra: "unknown" } },
+      { secrets: { region: "wrong-place" } },
+      { credentialOrigins: ["https://unapproved.example.com"] },
+    ])
+      expect((await http.save(changed)).statusCode).toBe(400);
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () => http.save()),
+    );
+    expect(responses.map((response) => response.statusCode)).toEqual(
+      Array(8).fill(200),
+    );
+    expect(
+      responses.filter((response) => !response.json().replayed),
+    ).toHaveLength(1);
+    const first = responses[0]?.json().connection;
+    if (!first) throw new Error("连接没有返回保存结果");
+    expect(
+      new Set(responses.map((response) => response.json().connection.id)).size,
+    ).toBe(1);
+    const conflict = await http.save({ secrets: { token: "changed-key" } });
+    expect(conflict.statusCode, conflict.body).toBe(409);
+    const updated = await http.save({
+      expectedConnectionRevision: 1,
+      values: { region: "us" },
+      secrets: {},
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+    expect(updated.json().connection).toMatchObject({
+      revision: 2,
+      values: { region: "us" },
+      secretKeys: ["token"],
+    });
+    expect((await http.credentials()).json()).toEqual({
+      secrets: { token: "original-connection-key" },
+    });
+    const cleared = await http.save({
+      expectedConnectionRevision: 2,
+      secrets: { token: null },
+    });
+    expect(cleared.statusCode, cleared.body).toBe(200);
+    expect(cleared.json().connection).toMatchObject({
+      revision: 3,
+      values: { region: "us" },
+      secretKeys: [],
+    });
+    expect((await http.credentials()).json()).toEqual({ secrets: {} });
+    expect((await http.save()).json()).toEqual({
+      connection: first,
+      replayed: true,
+    });
+    const removed = await http.remove({
+      installationId: http.preview.installationId,
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    });
+    expect(removed.statusCode, removed.body).toBe(200);
+    expect((await http.save()).statusCode).toBe(410);
+    expect((await http.read()).json()).toEqual({ connection: null });
+    await expect(
+      readFile(
+        join(
+          db.directory,
+          "credentials",
+          "media-drivers",
+          first.id,
+          "fields.json",
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest.each([false, true])(
+  "连接事务回包丢失后恢复凭据（回滚=%s）",
+  async (rollback) => {
+    const db = await createTaskWorkDatabase();
+    const proxy = await createCommitResponseLossProxy(db.connectionString);
+    const persistence = createPostgresPersistence({
+      databaseUrl: proxy.connectionString,
+    });
+    const http = await createConnectionHttp(
+      db,
+      '[{ key: "token", label: "Token", secret: true, required: true }]',
+      { token: "cold-media-secret" },
+      persistence,
+    );
+    try {
+      proxy.arm(http.provider.id, {
+        mediaInstall: true,
+        blackoutAfterCommit: !rollback,
+        rollbackBeforeCommit: rollback,
+      });
+      const uncertain = await http.save();
+      expect(uncertain.statusCode).toBe(500);
+      expect(proxy.evidence().injected).toMatchObject({
+        commitConfirmed: !rollback,
+        replySuppressed: true,
+      });
+      expect(proxy.evidence().observerError).toBeUndefined();
+      proxy.restore();
+      await http.service().recover();
+      const replay = await http.save();
+      expect(replay.statusCode, replay.body).toBe(200);
+      expect(replay.json().replayed).toBe(!rollback);
+      expect(
+        await http
+          .service()
+          .connectionCredentials(
+            db.actor,
+            "registry-example",
+            http.provider.id,
+          ),
+      ).toEqual({ secrets: { token: "cold-media-secret" } });
+    } finally {
+      proxy.restore();
+      await http.app.close();
+      await persistence.close();
+      await proxy.close();
+      await db.close();
+    }
+  },
+);
 
 pgTest("确认访问地址后安装，公开版本接口读取原始文件", async () => {
   const db = await createTaskWorkDatabase();

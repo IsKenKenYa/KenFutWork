@@ -476,6 +476,7 @@ export function createMediaDriverRepository(persistence: PersistenceService) {
     });
 
   return {
+    withDriver,
     async installation(
       instanceId: string,
       driverId: string,

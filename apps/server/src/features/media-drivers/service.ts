@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  type MediaDriverConnection,
+  type MediaDriverConnectionSave,
   type MediaDriverEnabledRequest,
   type MediaDriverInstallRequest,
   type MediaDriverInstallResponse,
@@ -16,6 +18,7 @@ import type {
 import type { SettingsService } from "../settings/settings-service.js";
 import { createMediaDriverArtifacts } from "./artifacts.js";
 import { describeMediaDriverChanges } from "./changes.js";
+import { createMediaDriverConnections } from "./connections.js";
 import { MediaDriverRegistryError } from "./errors.js";
 import { previewMediaDriverSource } from "./preview.js";
 import type { MediaDriverRepository } from "./repository.js";
@@ -25,6 +28,22 @@ export type MediaDriverFile = Awaited<
 >;
 
 export interface MediaDriverService {
+  connection(
+    actor: LocalActor,
+    driverId: string,
+    providerId: string,
+  ): Promise<{ connection: MediaDriverConnection | null }>;
+  saveConnection(
+    actor: LocalActor,
+    driverId: string,
+    providerId: string,
+    input: MediaDriverConnectionSave,
+  ): Promise<{ connection: MediaDriverConnection; replayed: boolean }>;
+  connectionCredentials(
+    actor: LocalActor,
+    driverId: string,
+    providerId: string,
+  ): Promise<{ secrets: { [key: string]: string } }>;
   preview(actor: LocalActor, source: string): Promise<MediaDriverFile>;
   install(
     actor: LocalActor,
@@ -62,6 +81,7 @@ export function createMediaDriverService(deps: {
   settings: SettingsService;
   repository: MediaDriverRepository;
 }): MediaDriverService {
+  const connections = createMediaDriverConnections(deps.repository);
   const preview = async (actor: LocalActor, source: string) => {
     const { instanceId } = await deps.localInstance.resolve(actor);
     const settings = await deps.settings.getInstanceSettings(actor, instanceId);
@@ -188,6 +208,7 @@ export function createMediaDriverService(deps: {
 
   async function recover() {
     const context = await deps.localInstance.getContext();
+    await connections.recover(context.instanceId, context.dataDir);
     const artifacts = createMediaDriverArtifacts(context.dataDir);
     for (const artifact of await artifacts.pending()) {
       await deps.repository.recoverArtifact(
@@ -203,6 +224,34 @@ export function createMediaDriverService(deps: {
   }
 
   return {
+    async connection(actor, driverId, providerId) {
+      const context = await deps.localInstance.resolve(actor);
+      return connections.read(context.instanceId, driverId, providerId);
+    },
+    async saveConnection(actor, driverId, providerId, input) {
+      const release = deps.localInstance.beginAdmission();
+      try {
+        const context = await deps.localInstance.resolve(actor);
+        return await connections.save(
+          context.instanceId,
+          context.dataDir,
+          driverId,
+          providerId,
+          input,
+        );
+      } finally {
+        release();
+      }
+    },
+    async connectionCredentials(actor, driverId, providerId) {
+      const context = await deps.localInstance.resolve(actor);
+      return connections.credentials(
+        context.instanceId,
+        context.dataDir,
+        driverId,
+        providerId,
+      );
+    },
     preview,
     install: (actor, input) => saveVersion(actor, input),
     update: (actor, driverId, input) => saveVersion(actor, input, driverId),

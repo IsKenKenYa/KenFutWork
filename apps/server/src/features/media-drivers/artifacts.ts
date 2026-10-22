@@ -1,14 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-} from "node:fs/promises";
+import { lstat, readdir, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type MediaDriverVersion,
@@ -19,6 +10,7 @@ import {
   isMediaDriverStorageFailure,
   MediaDriverRegistryError,
 } from "./errors.js";
+import { privateDirectory, writePrivateFile } from "./private-files.js";
 
 const journalSchema = z
   .object({
@@ -41,33 +33,9 @@ function storageError(): never {
   );
 }
 
-async function writeNewFile(path: string, contents: string) {
-  const file = await open(path, "wx", 0o600);
-  try {
-    await file.writeFile(contents, "utf8");
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-}
-
 export function createMediaDriverArtifacts(dataDir: string) {
-  async function directory(parts: string[], create: boolean) {
-    let current = await realpath(dataDir);
-    for (const part of ["media-drivers", ...parts]) {
-      current = join(current, part);
-      if (create) {
-        try {
-          await mkdir(current, { mode: 0o700 });
-        } catch (error) {
-          if ((error as { code?: string })?.code !== "EEXIST") throw error;
-        }
-      }
-      const state = await lstat(current);
-      if (!state.isDirectory() || state.isSymbolicLink()) storageError();
-    }
-    return current;
-  }
+  const directory = (parts: string[], create: boolean) =>
+    privateDirectory(dataDir, ["media-drivers", ...parts], create);
 
   async function finish(artifact: MediaDriverArtifact) {
     let pending: string;
@@ -135,7 +103,7 @@ export function createMediaDriverArtifacts(dataDir: string) {
     const journal = `${artifact.versionId}.json`;
     // 同一版本的卸载重试由驱动锁保护，可清理前一次尚未发布的临时记录。
     await rm(join(staging, journal), { force: true });
-    await writeNewFile(join(staging, journal), JSON.stringify(artifact));
+    await writePrivateFile(join(staging, journal), JSON.stringify(artifact));
     await rename(join(staging, journal), join(pending, journal));
     signal.throwIfAborted();
   }
@@ -159,9 +127,12 @@ export function createMediaDriverArtifacts(dataDir: string) {
         true,
       );
       signal.throwIfAborted();
-      await writeNewFile(join(folder, "source.ts"), contents.source);
+      await writePrivateFile(join(folder, "source.ts"), contents.source);
       signal.throwIfAborted();
-      await writeNewFile(join(folder, "compiled.mjs"), contents.compiledCode);
+      await writePrivateFile(
+        join(folder, "compiled.mjs"),
+        contents.compiledCode,
+      );
       signal.throwIfAborted();
     },
     async pending(): Promise<MediaDriverArtifact[]> {

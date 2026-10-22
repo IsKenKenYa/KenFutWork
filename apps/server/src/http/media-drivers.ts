@@ -1,6 +1,11 @@
 import {
   AGENT_GOVERNANCE_LIMITS,
   applicationErrorResponseSchema,
+  mediaDriverConnectionParamsSchema,
+  mediaDriverConnectionResponseSchema,
+  mediaDriverConnectionSaveResponseSchema,
+  mediaDriverConnectionSaveSchema,
+  mediaDriverCredentialsResponseSchema,
   mediaDriverEnabledRequestSchema,
   mediaDriverIdParamsSchema,
   mediaDriverInstallRequestSchema,
@@ -41,6 +46,7 @@ export async function registerMediaDriverRoutes(
       ) => Promise<unknown>,
     ) =>
     async (request: FastifyRequest, reply: FastifyReply) => {
+      reply.header("cache-control", "no-store");
       const actor = await deps.localAccess.authenticate(request);
       if (!actor)
         return reply.code(401).send({
@@ -162,6 +168,48 @@ export async function registerMediaDriverRoutes(
       );
       return mediaDriverSourceResponseSchema.parse(
         await deps.mediaDrivers.source(actor, driverId, versionId),
+      );
+    }),
+  );
+  app.get(
+    "/api/media-drivers/:driverId/connections/:providerId",
+    guarded(200, async (actor, request) => {
+      const { driverId, providerId } = mediaDriverConnectionParamsSchema.parse(
+        request.params,
+      );
+      return mediaDriverConnectionResponseSchema.parse(
+        await deps.mediaDrivers.connection(actor, driverId, providerId),
+      );
+    }),
+  );
+  app.put(
+    "/api/media-drivers/:driverId/connections/:providerId",
+    guarded(200, async (actor, request) => {
+      const { driverId, providerId } = mediaDriverConnectionParamsSchema.parse(
+        request.params,
+      );
+      return mediaDriverConnectionSaveResponseSchema.parse(
+        await deps.mediaDrivers.saveConnection(
+          actor,
+          driverId,
+          providerId,
+          mediaDriverConnectionSaveSchema.parse(request.body),
+        ),
+      );
+    }),
+  );
+  app.get(
+    "/api/media-drivers/:driverId/connections/:providerId/credentials",
+    guarded(200, async (actor, request) => {
+      const { driverId, providerId } = mediaDriverConnectionParamsSchema.parse(
+        request.params,
+      );
+      return mediaDriverCredentialsResponseSchema.parse(
+        await deps.mediaDrivers.connectionCredentials(
+          actor,
+          driverId,
+          providerId,
+        ),
       );
     }),
   );

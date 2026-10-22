@@ -288,6 +288,51 @@ export const mediaDriverVersionParamsSchema = mediaDriverIdParamsSchema.extend({
   versionId: z.uuid(),
 });
 
+export const mediaDriverConnectionParamsSchema =
+  mediaDriverIdParamsSchema.extend({
+    providerId: z.uuid(),
+  });
+export const mediaDriverConnectionSaveSchema =
+  mediaDriverRevisionRequestSchema.extend({
+    expectedConnectionRevision: z.number().int().nonnegative().safe(),
+    values: z.record(fieldKey, z.string()).default({}),
+    secrets: z.record(fieldKey, z.string().nullable()).default({}),
+    credentialOrigins: z.array(mediaDriverOriginSchema).min(1),
+  });
+export const mediaDriverConnectionSchema = z
+  .object({
+    id: z.uuid(),
+    providerId: z.uuid(),
+    installationId: z.uuid(),
+    driverVersionId: z.uuid(),
+    revision: z.number().int().positive().safe(),
+    values: z.record(fieldKey, z.string()),
+    secretKeys: z.array(fieldKey),
+    credentialOrigins: z.array(mediaDriverOriginSchema),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+export const mediaDriverConnectionResponseSchema = z
+  .object({
+    connection: mediaDriverConnectionSchema.nullable(),
+  })
+  .strict();
+export const mediaDriverConnectionSaveResponseSchema = z
+  .object({
+    connection: mediaDriverConnectionSchema,
+    replayed: z.boolean(),
+  })
+  .strict();
+export const mediaDriverCredentialsResponseSchema = z
+  .object({
+    secrets: z.record(fieldKey, z.string()),
+  })
+  .strict();
+export type MediaDriverConnection = z.infer<typeof mediaDriverConnectionSchema>;
+export type MediaDriverConnectionSave = z.infer<
+  typeof mediaDriverConnectionSaveSchema
+>;
+
 /** 素材仅传宿主签发的引用，脚本不能把本机路径当作素材读取。 */
 export const mediaDriverMaterialSchema = z
   .object({

@@ -131,6 +131,10 @@ import {
   marketplaceInstallRequestSchema,
   mcpServerCreateRequestSchema,
   mcpServerUpdateRequestSchema,
+  mediaDriverConnectionResponseSchema,
+  mediaDriverConnectionSaveResponseSchema,
+  mediaDriverConnectionSaveSchema,
+  mediaDriverCredentialsResponseSchema,
   mediaDriverEnabledRequestSchema,
   mediaDriverInstallRequestSchema,
   mediaDriverInstallResponseSchema,
@@ -2475,6 +2479,40 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "读取媒体供应商文件",
     description:
       "核对应用数据目录中的文件摘要后返回原始 TypeScript 文件。需要本机接入授权。",
+  },
+  {
+    method: "get",
+    path: "/api/media-drivers/:driverId/connections/:providerId",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: mediaDriverConnectionResponseSchema,
+    summary: "读取媒体连接配置",
+    description:
+      "读取已有供应商实例的媒体连接修订、普通字段和已配置秘密字段名称，不返回秘密值。",
+  },
+  {
+    method: "put",
+    path: "/api/media-drivers/:driverId/connections/:providerId",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: mediaDriverConnectionSaveSchema,
+    responseSchema: mediaDriverConnectionSaveResponseSchema,
+    summary: "保存媒体连接配置",
+    description:
+      "核对安装代际、文件修订及连接预期修订后保存不可变连接版本。普通字段和秘密字段分开保存，凭据地址限于安装已确认地址；相同请求重放原回执，同键不同参数返回409。",
+  },
+  {
+    method: "get",
+    path: "/api/media-drivers/:driverId/connections/:providerId/credentials",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: mediaDriverCredentialsResponseSchema,
+    summary: "读取媒体连接凭据",
+    description:
+      "授权模型设置按需读取当前媒体连接的秘密字段，响应禁止缓存；普通配置和目录不返回秘密值。",
   },
   {
     method: "get",
