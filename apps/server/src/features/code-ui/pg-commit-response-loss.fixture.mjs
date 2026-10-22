@@ -100,7 +100,9 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       if (
         mediaInstall &&
         commandId &&
-        /\binsert into public\.media_driver_operations\b/u.test(text) &&
+        /\binsert into public\.media_driver_(?:operations|removals)\b/u.test(
+          text,
+        ) &&
         parameters.some((value) => value === commandId)
       )
         transaction.mediaInstall = true;

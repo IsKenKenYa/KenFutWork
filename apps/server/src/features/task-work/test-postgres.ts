@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
   resolvePgBinDir,
+  runCapture,
   startEmbeddedPostgres,
 } from "../../desktop/postgres.js";
 
@@ -35,13 +36,26 @@ export async function createTemporaryPostgres() {
     }
   }
   const binDir = join(copied, "bin");
-  const handle = await startEmbeddedPostgres({
-    binDir,
-    dataDir: join(directory, "cluster"),
-    logFile: join(directory, "postgres.log"),
-    passwordFile: join(directory, "password"),
-    database: "task_work_test",
-  });
+  const handle = await startEmbeddedPostgres(
+    {
+      binDir,
+      dataDir: join(directory, "cluster"),
+      logFile: join(directory, "postgres.log"),
+      passwordFile: join(directory, "password"),
+      database: "task_work_test",
+    },
+    {
+      async run(command, args) {
+        const invocation = [...args];
+        const optionsIndex = invocation.indexOf("-o");
+        // 隔离回归通过回环 TCP 连接，不在系统临时目录创建 Unix socket。
+        if (optionsIndex >= 0 && invocation.includes("start"))
+          invocation[optionsIndex + 1] += " -c unix_socket_directories=";
+        if ((await runCapture(command, invocation)) === undefined)
+          throw new Error("隔离 PostgreSQL 命令失败，请检查测试日志");
+      },
+    },
+  );
   return {
     directory,
     binDir,

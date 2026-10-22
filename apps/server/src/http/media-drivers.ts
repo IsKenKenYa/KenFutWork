@@ -1,10 +1,14 @@
 import {
   AGENT_GOVERNANCE_LIMITS,
+  applicationErrorResponseSchema,
+  mediaDriverEnabledRequestSchema,
   mediaDriverIdParamsSchema,
   mediaDriverInstallRequestSchema,
   mediaDriverInstallResponseSchema,
   mediaDriverPreviewRequestSchema,
   mediaDriverPreviewResponseSchema,
+  mediaDriverRemoveResponseSchema,
+  mediaDriverRevisionRequestSchema,
   mediaDriverSourceResponseSchema,
   mediaDriverUpdateRequestSchema,
   mediaDriverVersionListResponseSchema,
@@ -13,7 +17,10 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { LocalActor } from "../features/local-instance/types.js";
-import { MediaDriverRegistryError } from "../features/media-drivers/errors.js";
+import {
+  isMediaDriverStorageFailure,
+  MediaDriverRegistryError,
+} from "../features/media-drivers/errors.js";
 import { MediaDriverFileError } from "../features/media-drivers/preview.js";
 import type { MediaDriverService } from "../features/media-drivers/service.js";
 import { isZodError } from "./zod-error.js";
@@ -46,13 +53,29 @@ export async function registerMediaDriverRoutes(
           error instanceof MediaDriverFileError ||
           error instanceof MediaDriverRegistryError
         )
-          return reply
-            .code(error.statusCode)
-            .send({ error: { code: error.code, message: error.message } });
+          return reply.code(error.statusCode).send(
+            applicationErrorResponseSchema.parse({
+              error: { code: error.code, message: error.message },
+            }),
+          );
         if (isZodError(error))
-          return reply.code(400).send({
-            error: { code: "invalid_request", message: "请检查供应商请求字段" },
-          });
+          return reply.code(400).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "invalid_request",
+                message: "请检查供应商请求字段",
+              },
+            }),
+          );
+        if (isMediaDriverStorageFailure(error))
+          return reply.code(503).send(
+            applicationErrorResponseSchema.parse({
+              error: {
+                code: "media_driver_storage_error",
+                message: "供应商文件处理失败，请检查应用数据目录",
+              },
+            }),
+          );
         throw error;
       }
     };
@@ -101,6 +124,32 @@ export async function registerMediaDriverRoutes(
           actor,
           driverId,
           mediaDriverUpdateRequestSchema.parse(request.body),
+        ),
+      );
+    }),
+  );
+  app.patch(
+    "/api/media-drivers/:driverId",
+    guarded(200, async (actor, request) => {
+      const { driverId } = mediaDriverIdParamsSchema.parse(request.params);
+      return mediaDriverInstallResponseSchema.parse(
+        await deps.mediaDrivers.setEnabled(
+          actor,
+          driverId,
+          mediaDriverEnabledRequestSchema.parse(request.body),
+        ),
+      );
+    }),
+  );
+  app.delete(
+    "/api/media-drivers/:driverId",
+    guarded(200, async (actor, request) => {
+      const { driverId } = mediaDriverIdParamsSchema.parse(request.params);
+      return mediaDriverRemoveResponseSchema.parse(
+        await deps.mediaDrivers.remove(
+          actor,
+          driverId,
+          mediaDriverRevisionRequestSchema.parse(request.body),
         ),
       );
     }),

@@ -11236,6 +11236,146 @@
         }
       }
     },
+    "/api/media-drivers/{driverId}": {
+      "patch": {
+        "operationId": "patchMediaDriversByDriverId",
+        "summary": "启用或停用媒体供应商文件",
+        "description": "核对安装内部ID、代际和修订后更改启用状态。停用保留旧版本及在途任务，相同请求重放原回执。",
+        "tags": [
+          "provider-instances"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "driverId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mediaDriverEnabledRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mediaDriverInstallResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMediaDriversByDriverId",
+        "summary": "卸载媒体供应商文件",
+        "description": "没有在途生成或取消处理时卸载。删除安装、版本及操作信息，仅保留内部ID、代际和时间以拒绝迟到请求；重复卸载返回原回执。",
+        "tags": [
+          "provider-instances"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "driverId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mediaDriverRevisionRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mediaDriverRemoveResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/media-drivers/{driverId}/versions/{versionId}/source": {
       "get": {
         "operationId": "getMediaDriversByDriverIdVersionsByVersionIdSource",
@@ -13614,6 +13754,14 @@
                   "marketplace_install_failed",
                   "concurrency_limit",
                   "generation_failed",
+                  "media_driver_invalid_file",
+                  "media_driver_conflict",
+                  "media_driver_removed",
+                  "media_driver_not_found",
+                  "media_driver_storage_error",
+                  "media_driver_preview_stale",
+                  "media_driver_permissions",
+                  "media_driver_in_use",
                   "invalid_request",
                   "plugin_not_found",
                   "plugin_asset_not_found",
@@ -16793,6 +16941,14 @@
                       "marketplace_install_failed",
                       "concurrency_limit",
                       "generation_failed",
+                      "media_driver_invalid_file",
+                      "media_driver_conflict",
+                      "media_driver_removed",
+                      "media_driver_not_found",
+                      "media_driver_storage_error",
+                      "media_driver_preview_stale",
+                      "media_driver_permissions",
+                      "media_driver_in_use",
                       "invalid_request",
                       "plugin_not_found",
                       "plugin_asset_not_found",
@@ -21311,10 +21467,46 @@
           }
         }
       },
+      "mediaDriverEnabledRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "installationId",
+          "expectedGeneration",
+          "expectedRevision",
+          "enabled"
+        ],
+        "additionalProperties": false
+      },
       "mediaDriverInstallRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
           "source": {
             "type": "string",
             "minLength": 1
@@ -21346,6 +21538,7 @@
           }
         },
         "required": [
+          "installationId",
           "source",
           "sourceDigest",
           "compiledDigest",
@@ -21366,6 +21559,11 @@
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9-]{0,127}$"
               },
+              "installationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "generation": {
                 "type": "integer",
                 "exclusiveMinimum": 0,
@@ -21383,6 +21581,11 @@
                 "type": "object",
                 "properties": {
                   "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "installationId": {
                     "type": "string",
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -21742,6 +21945,7 @@
                 },
                 "required": [
                   "id",
+                  "installationId",
                   "generation",
                   "revision",
                   "sourceDigest",
@@ -21757,6 +21961,7 @@
             },
             "required": [
               "id",
+              "installationId",
               "generation",
               "revision",
               "enabled",
@@ -22137,6 +22342,11 @@
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9-]{0,127}$"
               },
+              "installationId": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
               "generation": {
                 "type": "integer",
                 "minimum": 0,
@@ -22161,6 +22371,7 @@
             },
             "required": [
               "id",
+              "installationId",
               "generation",
               "revision",
               "state",
@@ -22225,6 +22436,64 @@
         ],
         "additionalProperties": false
       },
+      "mediaDriverRemoveResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "generation": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "removedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "installationId",
+          "generation",
+          "removedAt",
+          "replayed"
+        ],
+        "additionalProperties": false
+      },
+      "mediaDriverRevisionRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "expectedGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "installationId",
+          "expectedGeneration",
+          "expectedRevision"
+        ],
+        "additionalProperties": false
+      },
       "mediaDriverSourceResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -22247,6 +22516,11 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "installationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
           "source": {
             "type": "string",
             "minLength": 1
@@ -22279,6 +22553,7 @@
           }
         },
         "required": [
+          "installationId",
           "source",
           "sourceDigest",
           "compiledDigest",
@@ -22298,6 +22573,11 @@
               "type": "object",
               "properties": {
                 "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "installationId": {
                   "type": "string",
                   "format": "uuid",
                   "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
@@ -22657,6 +22937,7 @@
               },
               "required": [
                 "id",
+                "installationId",
                 "generation",
                 "revision",
                 "sourceDigest",

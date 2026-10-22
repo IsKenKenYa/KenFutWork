@@ -172,6 +172,7 @@ export const mediaDriverPreviewRequestSchema = z
 export const mediaDriverInstallationSchema = z
   .object({
     id: mediaDriverManifestSchema.shape.id,
+    installationId: z.uuid(),
     generation: z.number().int().nonnegative().safe(),
     revision: z.number().int().nonnegative().safe(),
     state: z.enum(["new", "installed", "removed"]),
@@ -204,6 +205,7 @@ export const mediaDriverPreviewResponseSchema = z
 export const mediaDriverVersionSchema = z
   .object({
     id: z.uuid(),
+    installationId: z.uuid(),
     generation: z.number().int().positive().safe(),
     revision: z.number().int().positive().safe(),
     sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -218,6 +220,7 @@ export const mediaDriverVersionSchema = z
 export const installedMediaDriverSchema = z
   .object({
     id: mediaDriverManifestSchema.shape.id,
+    installationId: z.uuid(),
     generation: z.number().int().positive().safe(),
     revision: z.number().int().positive().safe(),
     enabled: z.boolean(),
@@ -226,6 +229,7 @@ export const installedMediaDriverSchema = z
   .strict();
 export const mediaDriverInstallRequestSchema = z
   .object({
+    installationId: z.uuid(),
     source: z.string().min(1),
     sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
     compiledDigest: z.string().regex(/^[a-f0-9]{64}$/),
@@ -245,6 +249,25 @@ export const mediaDriverUpdateRequestSchema =
     expectedGeneration: z.number().int().positive().safe(),
     expectedRevision: z.number().int().positive().safe(),
   });
+export const mediaDriverRevisionRequestSchema = z
+  .object({
+    installationId: z.uuid(),
+    expectedGeneration: z.number().int().positive().safe(),
+    expectedRevision: z.number().int().positive().safe(),
+  })
+  .strict();
+export const mediaDriverEnabledRequestSchema =
+  mediaDriverRevisionRequestSchema.extend({
+    enabled: z.boolean(),
+  });
+export const mediaDriverRemoveResponseSchema = z
+  .object({
+    installationId: z.uuid(),
+    generation: z.number().int().positive().safe(),
+    removedAt: z.iso.datetime(),
+    replayed: z.boolean(),
+  })
+  .strict();
 export const mediaDriverVersionListResponseSchema = z
   .object({
     versions: z.array(mediaDriverVersionSchema),
@@ -347,6 +370,15 @@ export type MediaDriverInstallResponse = z.infer<
 >;
 export type MediaDriverUpdateRequest = z.infer<
   typeof mediaDriverUpdateRequestSchema
+>;
+export type MediaDriverRevisionRequest = z.infer<
+  typeof mediaDriverRevisionRequestSchema
+>;
+export type MediaDriverEnabledRequest = z.infer<
+  typeof mediaDriverEnabledRequestSchema
+>;
+export type MediaDriverRemoveResponse = z.infer<
+  typeof mediaDriverRemoveResponseSchema
 >;
 export type MediaDriverParameter = z.infer<typeof mediaDriverParameterSchema>;
 export type MediaDriverMethod = z.infer<typeof mediaDriverMethodSchema>;

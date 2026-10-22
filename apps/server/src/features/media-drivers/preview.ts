@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { parse } from "@babel/parser";
 import { type Node, traverseFast } from "@babel/types";
 import {
+  type ApplicationErrorCode,
   type MediaDriverMethod,
   mediaDriverManifestSchema,
   mediaDriverMethodSchema,
@@ -11,7 +12,7 @@ import { transform } from "esbuild";
 
 export class MediaDriverFileError extends Error {
   readonly statusCode = 400;
-  readonly code = "media_driver_invalid_file";
+  readonly code = "media_driver_invalid_file" satisfies ApplicationErrorCode;
 }
 
 function invalid(message: string): never {

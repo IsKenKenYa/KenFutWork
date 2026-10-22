@@ -1,13 +1,23 @@
+import { randomUUID } from "node:crypto";
 import { watch } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { mediaDriverPreviewResponseSchema } from "@kenfutwork/shared";
+import {
+  applicationErrorResponseSchema,
+  mediaDriverPreviewResponseSchema,
+} from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { expect, it } from "vitest";
 import { registerMediaDriverRoutes } from "../../http/media-drivers.js";
 import { createCommitResponseLossProxy } from "../code-ui/pg-commit-response-loss.fixture.mjs";
+import { createScopeRepository } from "../execution/scope-repository.js";
+import { createExecutionScopes } from "../execution/scope-service.js";
+import { createGenerationTargets } from "../generation/file-targets.js";
+import { createJobService } from "../jobs/job-service.js";
+import { createJobRepository } from "../jobs/repository.js";
 import { createPostgresPersistence } from "../persistence/providers/postgres.js";
 import type { PersistenceService } from "../persistence/types.js";
+import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -60,6 +70,7 @@ async function createRegistryHttp(
       const preview = mediaDriverPreviewResponseSchema.parse(result.json());
       return {
         source: text,
+        installationId: result.json().installation?.installationId,
         sourceDigest: preview.sourceDigest,
         compiledDigest: preview.compiledDigest,
         expectedGeneration: 0,
@@ -78,6 +89,20 @@ async function createRegistryHttp(
       app.inject({
         method: "POST",
         url: "/api/media-drivers/registry-example/versions",
+        headers,
+        payload,
+      }),
+    setEnabled: (payload: Record<string, unknown>) =>
+      app.inject({
+        method: "PATCH",
+        url: "/api/media-drivers/registry-example",
+        headers,
+        payload,
+      }),
+    remove: (payload: Record<string, unknown>) =>
+      app.inject({
+        method: "DELETE",
+        url: "/api/media-drivers/registry-example",
         headers,
         payload,
       }),
@@ -389,6 +414,263 @@ pgTest("更新提交回包丢失后冷恢复保留两个版本", async () => {
     await http.app.close();
     await persistence.close();
     await proxy.close();
+    await db.close();
+  }
+});
+
+pgTest("停用卸载后旧请求不能重新安装，新预览使用新内部ID", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createRegistryHttp(db);
+  try {
+    const install = await http.preview();
+    expect(
+      await db.persistence.queryOne("show unix_socket_directories"),
+    ).toEqual({ unix_socket_directories: "" });
+    expect(install.installationId).toEqual(expect.any(String));
+    const created = await http.install(install);
+    expect(created.statusCode, created.body).toBe(201);
+    const identity = {
+      installationId: install.installationId,
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    };
+    const disabled = await http.setEnabled({ ...identity, enabled: false });
+    expect(disabled.statusCode, disabled.body).toBe(200);
+    expect(disabled.json().driver.enabled).toBe(false);
+    expect(disabled.json().driver.revision).toBe(2);
+    const disabledReplay = await http.setEnabled({
+      ...identity,
+      enabled: false,
+    });
+    expect(disabledReplay.json().replayed).toBe(true);
+    expect(
+      (await http.setEnabled({ ...identity, enabled: true })).statusCode,
+    ).toBe(409);
+    const removals = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        http.remove({ ...identity, expectedRevision: 2 }),
+      ),
+    );
+    expect(removals.map((response) => response.statusCode)).toEqual([
+      200, 200, 200, 200,
+    ]);
+    expect(
+      removals.filter((response) => !response.json().replayed),
+    ).toHaveLength(1);
+    const removed = removals.find((response) => !response.json().replayed);
+    if (!removed) throw new Error("卸载未返回唯一回执");
+    expect(removed.statusCode, removed.body).toBe(200);
+    expect(removed.json()).toMatchObject({
+      installationId: install.installationId,
+      generation: 2,
+      replayed: false,
+    });
+    const replay = await http.remove({ ...identity, expectedRevision: 2 });
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json()).toEqual({ ...removed.json(), replayed: true });
+    await expect(
+      readFile(
+        join(
+          db.directory,
+          "media-drivers",
+          "versions",
+          "registry-example",
+          created.json().driver.currentVersion.id,
+          "source.ts",
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    const lateInstall = await http.install(install);
+    expect(lateInstall.statusCode).toBe(410);
+    expect(applicationErrorResponseSchema.parse(lateInstall.json())).toEqual(
+      lateInstall.json(),
+    );
+    expect(
+      (await http.setEnabled({ ...identity, enabled: true })).statusCode,
+    ).toBe(410);
+    const fresh = await http.preview();
+    expect(fresh.installationId).not.toBe(install.installationId);
+    expect((await http.install(fresh)).statusCode).toBe(201);
+    const lateUpdate = await http.update({ ...install, ...identity });
+    expect(lateUpdate.statusCode).toBe(410);
+    const oldFile = await http.source(created.json().driver.currentVersion.id);
+    expect(oldFile.statusCode).toBe(404);
+    const columns = await db.persistence.query<{ column_name: string }>(
+      "select column_name from information_schema.columns where table_schema='public' and table_name='media_driver_removals' order by ordinal_position",
+    );
+    expect(columns.map((column) => column.column_name)).toEqual([
+      "instance_id",
+      "installation_id",
+      "generation",
+      "removed_at",
+    ]);
+  } finally {
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest("在途任务和待处理取消阻止卸载，停用仍保留原文件", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createRegistryHttp(db);
+  const queue = createInProcessQueue();
+  const jobs = createJobService({
+    queue,
+    localInstance: db.localInstance,
+    repository: createJobRepository(db.persistence),
+    generationTargets: createGenerationTargets({
+      persistence: db.persistence,
+      executionScopes: createExecutionScopes({
+        repository: createScopeRepository(db.persistence),
+        localInstance: db.localInstance,
+      }),
+    }),
+  });
+  try {
+    const payload = await http.preview();
+    const installed = await http.install(payload);
+    const identity = {
+      installationId: payload.installationId,
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    };
+    const job = await jobs.createJob(db.actor, {
+      jobType: "image_generation",
+      payload: {
+        prompt: "队列任务",
+        _media_driver: { installationId: payload.installationId },
+      },
+    });
+    const busy = await http.remove(identity);
+    expect(busy.statusCode, busy.body).toBe(409);
+    expect(busy.json().error.code).toBe("media_driver_in_use");
+    const disabled = await http.setEnabled({ ...identity, enabled: false });
+    expect(disabled.statusCode, disabled.body).toBe(200);
+    expect(
+      (await http.source(installed.json().driver.currentVersion.id)).statusCode,
+    ).toBe(200);
+    await jobs.cancelJob(db.actor, job.id);
+    const cancelling = await http.remove({ ...identity, expectedRevision: 2 });
+    expect(cancelling.statusCode).toBe(409);
+    const token = randomUUID();
+    expect(await jobs.claimJob(job.id, token, 120)).toMatchObject({
+      id: job.id,
+      status: "canceled",
+    });
+    await jobs.saveCancellation(
+      job.id,
+      { state: "local_only", attempts: 1 },
+      0,
+      token,
+    );
+    const removed = await http.remove({ ...identity, expectedRevision: 2 });
+    expect(removed.statusCode, removed.body).toBe(200);
+  } finally {
+    await queue.shutdown();
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest.each([false, true])("卸载回包恢复（回滚=%s）", async (rollback) => {
+  const db = await createTaskWorkDatabase();
+  const proxy = await createCommitResponseLossProxy(db.connectionString);
+  const persistence = createPostgresPersistence({
+    databaseUrl: proxy.connectionString,
+  });
+  const http = await createRegistryHttp(db, persistence);
+  try {
+    const payload = await http.preview();
+    const installed = await http.install(payload);
+    const versionId = installed.json().driver.currentVersion.id;
+    const path = join(
+      db.directory,
+      "media-drivers",
+      "versions",
+      "registry-example",
+      versionId,
+      "source.ts",
+    );
+    const identity = {
+      installationId: payload.installationId,
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    };
+    proxy.arm(payload.installationId, {
+      mediaInstall: true,
+      blackoutAfterCommit: !rollback,
+      rollbackBeforeCommit: rollback,
+    });
+    const uncertain = await http.remove(identity);
+    expect(uncertain.statusCode).toBe(500);
+    expect(proxy.evidence().injected).toMatchObject({
+      commitConfirmed: !rollback,
+      replySuppressed: true,
+    });
+    expect(proxy.evidence().observerError).toBeUndefined();
+    expect(await readFile(path, "utf8")).toBe(source);
+    proxy.restore();
+    await http.service().recover();
+    const saved = await http.source(versionId);
+    if (rollback) {
+      expect(saved.statusCode, saved.body).toBe(200);
+      expect(saved.json().source).toBe(source);
+    } else {
+      expect(saved.statusCode).toBe(404);
+      await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    const replay = await http.remove(identity);
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json().replayed).toBe(!rollback);
+    expect((await http.install(payload)).statusCode).toBe(410);
+  } finally {
+    proxy.restore();
+    await http.app.close();
+    await persistence.close();
+    await proxy.close();
+    await db.close();
+  }
+});
+
+const filesystemPgTest = it.skipIf(
+  process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1" ||
+    process.platform === "win32" ||
+    process.getuid?.() === 0,
+);
+filesystemPgTest("卸载清理失败给出中文提示，恢复后重放原回执", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createRegistryHttp(db);
+  const parent = join(
+    db.directory,
+    "media-drivers",
+    "versions",
+    "registry-example",
+  );
+  let restricted = false;
+  try {
+    const payload = await http.preview();
+    await http.install(payload);
+    const identity = {
+      installationId: payload.installationId,
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    };
+    await chmod(parent, 0o500);
+    restricted = true;
+    const failed = await http.remove(identity);
+    expect(failed.statusCode, failed.body).toBe(503);
+    expect(failed.json().error.code).toBe("media_driver_storage_error");
+    expect(failed.body).not.toContain(db.directory);
+    await chmod(parent, 0o700);
+    restricted = false;
+    await http.service().recover();
+    const replay = await http.remove(identity);
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json().replayed).toBe(true);
+    expect((await http.install(payload)).statusCode).toBe(410);
+  } finally {
+    if (restricted) await chmod(parent, 0o700);
+    await http.app.close();
     await db.close();
   }
 });

@@ -15,7 +15,10 @@ import {
   mediaDriverManifestSchema,
 } from "@kenfutwork/shared";
 import { z } from "zod";
-import { MediaDriverRegistryError } from "./errors.js";
+import {
+  isMediaDriverStorageFailure,
+  MediaDriverRegistryError,
+} from "./errors.js";
 
 const journalSchema = z
   .object({
@@ -119,19 +122,28 @@ export function createMediaDriverArtifacts(dataDir: string) {
         storageError();
       return contents;
     } catch (error) {
-      if (
-        ["ENOENT", "EACCES", "EPERM", "ELOOP", "ENOTDIR"].includes(
-          (error as NodeJS.ErrnoException).code ?? "",
-        )
-      )
-        storageError();
+      if (isMediaDriverStorageFailure(error)) storageError();
       throw error;
     }
+  }
+
+  async function plan(artifact: MediaDriverArtifact, signal: AbortSignal) {
+    journalSchema.parse(artifact);
+    signal.throwIfAborted();
+    const pending = await directory(["pending"], true);
+    const staging = await directory(["staging"], true);
+    const journal = `${artifact.versionId}.json`;
+    // 同一版本的卸载重试由驱动锁保护，可清理前一次尚未发布的临时记录。
+    await rm(join(staging, journal), { force: true });
+    await writeNewFile(join(staging, journal), JSON.stringify(artifact));
+    await rename(join(staging, journal), join(pending, journal));
+    signal.throwIfAborted();
   }
 
   return {
     finish,
     discard,
+    plan,
     readSource: (driverId: string, version: MediaDriverVersion) =>
       readChecked(driverId, version, "source"),
     readCompiled: (driverId: string, version: MediaDriverVersion) =>
@@ -141,14 +153,7 @@ export function createMediaDriverArtifacts(dataDir: string) {
       contents: { source: string; compiledCode: string },
       signal: AbortSignal,
     ) {
-      journalSchema.parse(artifact);
-      signal.throwIfAborted();
-      const pending = await directory(["pending"], true);
-      const staging = await directory(["staging"], true);
-      const journal = `${artifact.versionId}.json`;
-      await writeNewFile(join(staging, journal), JSON.stringify(artifact));
-      await rename(join(staging, journal), join(pending, journal));
-      signal.throwIfAborted();
+      await plan(artifact, signal);
       const folder = await directory(
         ["versions", artifact.driverId, artifact.versionId],
         true,

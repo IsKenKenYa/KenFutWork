@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  type MediaDriverEnabledRequest,
   type MediaDriverInstallRequest,
   type MediaDriverInstallResponse,
+  type MediaDriverRemoveResponse,
+  type MediaDriverRevisionRequest,
   type MediaDriverUpdateRequest,
   type MediaDriverVersion,
   mediaDriverVersionSchema,
@@ -32,6 +35,16 @@ export interface MediaDriverService {
     driverId: string,
     input: MediaDriverUpdateRequest,
   ): Promise<MediaDriverInstallResponse>;
+  setEnabled(
+    actor: LocalActor,
+    driverId: string,
+    input: MediaDriverEnabledRequest,
+  ): Promise<MediaDriverInstallResponse>;
+  remove(
+    actor: LocalActor,
+    driverId: string,
+    input: MediaDriverRevisionRequest,
+  ): Promise<MediaDriverRemoveResponse>;
   versions(
     actor: LocalActor,
     driverId: string,
@@ -112,6 +125,7 @@ export function createMediaDriverService(deps: {
       const origins = confirmPreview(file, input);
       const version = mediaDriverVersionSchema.parse({
         id: randomUUID(),
+        installationId: input.installationId,
         generation:
           input.expectedRevision === 0
             ? input.expectedGeneration + 1
@@ -149,6 +163,7 @@ export function createMediaDriverService(deps: {
       const result = await persist(
         {
           instanceId: context.instanceId,
+          installationId: input.installationId,
           driverId: file.manifest.id,
           expectedGeneration: input.expectedGeneration,
           expectedRevision: input.expectedRevision,
@@ -171,10 +186,64 @@ export function createMediaDriverService(deps: {
     }
   }
 
+  async function recover() {
+    const context = await deps.localInstance.getContext();
+    const artifacts = createMediaDriverArtifacts(context.dataDir);
+    for (const artifact of await artifacts.pending()) {
+      await deps.repository.recoverArtifact(
+        context.instanceId,
+        artifact.driverId,
+        artifact.versionId,
+        async (referenced) => {
+          if (referenced) await artifacts.finish(artifact);
+          else await artifacts.discard(artifact);
+        },
+      );
+    }
+  }
+
   return {
     preview,
     install: (actor, input) => saveVersion(actor, input),
     update: (actor, driverId, input) => saveVersion(actor, input, driverId),
+    async setEnabled(actor, driverId, input) {
+      const release = deps.localInstance.beginAdmission();
+      try {
+        const context = await deps.localInstance.resolve(actor);
+        return await deps.repository.setEnabled({
+          ...input,
+          instanceId: context.instanceId,
+          driverId,
+          fingerprint: createHash("sha256")
+            .update(JSON.stringify({ enabled: input.enabled }))
+            .digest("hex"),
+        });
+      } finally {
+        release();
+      }
+    },
+    async remove(actor, driverId, input) {
+      const release = deps.localInstance.beginAdmission();
+      try {
+        const context = await deps.localInstance.resolve(actor);
+        const artifacts = createMediaDriverArtifacts(context.dataDir);
+        const result = await deps.repository.remove(
+          { ...input, instanceId: context.instanceId, driverId },
+          async (versions, signal) => {
+            for (const version of versions) {
+              await artifacts.plan(
+                { format: 1, driverId, versionId: version.id },
+                signal,
+              );
+            }
+          },
+        );
+        await recover();
+        return result;
+      } finally {
+        release();
+      }
+    },
     async versions(actor, driverId) {
       const context = await requireInstalled(actor, driverId);
       return {
@@ -202,21 +271,7 @@ export function createMediaDriverService(deps: {
         sourceDigest: version.sourceDigest,
       };
     },
-    async recover() {
-      const context = await deps.localInstance.getContext();
-      const artifacts = createMediaDriverArtifacts(context.dataDir);
-      for (const artifact of await artifacts.pending()) {
-        await deps.repository.recoverArtifact(
-          context.instanceId,
-          artifact.driverId,
-          artifact.versionId,
-          async (referenced) => {
-            if (referenced) await artifacts.finish(artifact);
-            else await artifacts.discard(artifact);
-          },
-        );
-      }
-    },
+    recover,
   };
 }
 function confirmPreview(
