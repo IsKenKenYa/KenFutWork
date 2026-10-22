@@ -188,6 +188,16 @@ export const mediaDriverPreviewResponseSchema = z
     maxBytes: z.number().int().positive(),
     validation: z.literal("format_only"),
     installation: mediaDriverInstallationSchema.optional(),
+    changes: z
+      .object({
+        addedModels: z.array(z.string()),
+        removedModels: z.array(z.string()),
+        changedModels: z.array(z.string()),
+        addedOrigins: z.array(mediaDriverOriginSchema),
+        removedOrigins: z.array(mediaDriverOriginSchema),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -230,6 +240,11 @@ export const mediaDriverInstallResponseSchema = z
     replayed: z.boolean(),
   })
   .strict();
+export const mediaDriverUpdateRequestSchema =
+  mediaDriverInstallRequestSchema.extend({
+    expectedGeneration: z.number().int().positive().safe(),
+    expectedRevision: z.number().int().positive().safe(),
+  });
 export const mediaDriverVersionListResponseSchema = z
   .object({
     versions: z.array(mediaDriverVersionSchema),
@@ -329,6 +344,9 @@ export type MediaDriverInstallRequest = z.infer<
 >;
 export type MediaDriverInstallResponse = z.infer<
   typeof mediaDriverInstallResponseSchema
+>;
+export type MediaDriverUpdateRequest = z.infer<
+  typeof mediaDriverUpdateRequestSchema
 >;
 export type MediaDriverParameter = z.infer<typeof mediaDriverParameterSchema>;
 export type MediaDriverMethod = z.infer<typeof mediaDriverMethodSchema>;

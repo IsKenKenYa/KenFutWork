@@ -11165,6 +11165,75 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "postMediaDriversByDriverIdVersions",
+        "summary": "更新媒体供应商文件",
+        "description": "确认变更预览及访问地址后保存新版本，核对当前代际和修订。相同请求返回原回执；旧文件继续保留，供应商实例的用户配置不随文件覆盖。",
+        "tags": [
+          "provider-instances"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "driverId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mediaDriverUpdateRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mediaDriverInstallResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/media-drivers/{driverId}/versions/{versionId}/source": {
@@ -22098,6 +22167,51 @@
               "enabled"
             ],
             "additionalProperties": false
+          },
+          "changes": {
+            "type": "object",
+            "properties": {
+              "addedModels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "removedModels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "changedModels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "addedOrigins": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "removedOrigins": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              }
+            },
+            "required": [
+              "addedModels",
+              "removedModels",
+              "changedModels",
+              "addedOrigins",
+              "removedOrigins"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -22126,6 +22240,51 @@
         "required": [
           "source",
           "sourceDigest"
+        ],
+        "additionalProperties": false
+      },
+      "mediaDriverUpdateRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "compiledDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "expectedGeneration": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "approvedOrigins": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "sourceDigest",
+          "compiledDigest",
+          "expectedGeneration",
+          "expectedRevision",
+          "approvedOrigins"
         ],
         "additionalProperties": false
       },

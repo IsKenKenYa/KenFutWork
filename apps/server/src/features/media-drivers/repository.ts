@@ -85,6 +85,7 @@ type InstallInput = {
   instanceId: string;
   driverId: string;
   expectedGeneration: number;
+  expectedRevision: number;
   fingerprint: string;
   version: MediaDriverVersion;
 };
@@ -105,27 +106,8 @@ async function findInstallReceipt(
         410,
       );
   }
-  const prior = await scoped.queryOne<{
-    fingerprint: string;
-    receipt: unknown;
-  }>(
-    `select fingerprint,receipt from public.media_driver_operations
-     where instance_id=:instance and driver_id=$1 and generation=$2
-       and expected_revision=0 and kind='install'`,
-    [input.driverId, input.expectedGeneration],
-  );
-  if (prior) {
-    if (prior.fingerprint !== input.fingerprint)
-      throw new MediaDriverRegistryError(
-        "media_driver_conflict",
-        "同一次安装的文件或权限已改变，请重新预览",
-        409,
-      );
-    return {
-      ...mediaDriverInstallResponseSchema.parse(prior.receipt),
-      replayed: true,
-    };
-  }
+  const prior = await findOperation(scoped, input, "install");
+  if (prior) return prior;
   if (row && !row.deleted_at)
     throw new MediaDriverRegistryError(
       "media_driver_conflict",
@@ -138,6 +120,35 @@ async function findInstallReceipt(
       "安装代际已改变，请重新预览文件",
       410,
     );
+  return null;
+}
+
+async function findOperation(
+  scoped: InstanceSqlClient,
+  input: InstallInput,
+  kind: "install" | "update",
+) {
+  const prior = await scoped.queryOne<{
+    fingerprint: string;
+    receipt: unknown;
+  }>(
+    `select fingerprint,receipt from public.media_driver_operations
+     where instance_id=:instance and driver_id=$1 and generation=$2
+       and expected_revision=$3 and kind=$4`,
+    [input.driverId, input.expectedGeneration, input.expectedRevision, kind],
+  );
+  if (prior) {
+    if (prior.fingerprint !== input.fingerprint)
+      throw new MediaDriverRegistryError(
+        "media_driver_conflict",
+        "本次操作的文件或权限已改变，请重新预览",
+        409,
+      );
+    return {
+      ...mediaDriverInstallResponseSchema.parse(prior.receipt),
+      replayed: true,
+    };
+  }
   return null;
 }
 
@@ -161,12 +172,21 @@ async function installVersion(
     [input.driverId, input.version.generation, input.version.id],
   );
   await insertVersion(scoped, input.driverId, input.version);
+  return saveOperation(scoped, input, "install", true);
+}
+
+async function saveOperation(
+  scoped: InstanceSqlClient,
+  input: InstallInput,
+  kind: "install" | "update",
+  enabled: boolean,
+) {
   const receipt: MediaDriverInstallResponse = {
     driver: {
       id: input.driverId,
       generation: input.version.generation,
-      revision: 1,
-      enabled: true,
+      revision: input.version.revision,
+      enabled,
       currentVersion: input.version,
     },
     replayed: false,
@@ -174,15 +194,65 @@ async function installVersion(
   await scoped.execute(
     `insert into public.media_driver_operations
        (instance_id,driver_id,generation,expected_revision,kind,fingerprint,receipt)
-     values (:instance,$1,$2,0,'install',$3,$4::jsonb)`,
+     values (:instance,$1,$2,$3,$4,$5,$6::jsonb)`,
     [
       input.driverId,
       input.expectedGeneration,
+      input.expectedRevision,
+      kind,
       input.fingerprint,
       JSON.stringify(receipt),
     ],
   );
   return receipt;
+}
+
+async function updateVersion(
+  scoped: InstanceSqlClient,
+  signal: AbortSignal,
+  input: InstallInput,
+  prepare: (signal: AbortSignal) => Promise<void>,
+): Promise<MediaDriverInstallResponse> {
+  const row = await findRegistry(scoped, input.driverId);
+  if (
+    !row ||
+    row.deleted_at ||
+    Number(row.generation) !== input.expectedGeneration
+  )
+    throw new MediaDriverRegistryError(
+      "media_driver_removed",
+      "安装代际已改变，请重新预览文件",
+      410,
+    );
+  const prior = await findOperation(scoped, input, "update");
+  if (prior) return prior;
+  if (Number(row.revision) !== input.expectedRevision)
+    throw new MediaDriverRegistryError(
+      "media_driver_conflict",
+      "版本已改变，请重新预览文件",
+      409,
+    );
+  await prepare(signal);
+  signal.throwIfAborted();
+  await insertVersion(scoped, input.driverId, input.version);
+  const count = await scoped.execute(
+    `update public.media_driver_registry set current_version=$2,revision=$3
+     where instance_id=:instance and driver_id=$1 and generation=$4 and revision=$5 and deleted_at is null`,
+    [
+      input.driverId,
+      input.version.id,
+      input.version.revision,
+      input.expectedGeneration,
+      input.expectedRevision,
+    ],
+  );
+  if (count !== 1)
+    throw new MediaDriverRegistryError(
+      "media_driver_conflict",
+      "版本已改变，请重新预览文件",
+      409,
+    );
+  return saveOperation(scoped, input, "update", row.enabled);
 }
 
 export function createMediaDriverRepository(persistence: PersistenceService) {
@@ -227,6 +297,14 @@ export function createMediaDriverRepository(persistence: PersistenceService) {
     ): Promise<MediaDriverInstallResponse> {
       return withDriver(input.instanceId, input.driverId, (scoped, signal) =>
         installVersion(scoped, signal, input, prepare),
+      );
+    },
+    async update(
+      input: InstallInput,
+      prepare: (signal: AbortSignal) => Promise<void>,
+    ): Promise<MediaDriverInstallResponse> {
+      return withDriver(input.instanceId, input.driverId, (scoped, signal) =>
+        updateVersion(scoped, signal, input, prepare),
       );
     },
     async versions(instanceId: string, driverId: string) {

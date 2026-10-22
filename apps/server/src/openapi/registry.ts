@@ -136,6 +136,7 @@ import {
   mediaDriverPreviewRequestSchema,
   mediaDriverPreviewResponseSchema,
   mediaDriverSourceResponseSchema,
+  mediaDriverUpdateRequestSchema,
   mediaDriverVersionListResponseSchema,
   messageCreateResponseSchema,
   messageListResponseSchema,
@@ -2424,6 +2425,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "查询媒体供应商版本",
     description:
       "返回当前实例已安装供应商的不可变版本、模型声明和已确认访问地址。",
+  },
+  {
+    method: "post",
+    path: "/api/media-drivers/:driverId/versions",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 201,
+    requestSchema: mediaDriverUpdateRequestSchema,
+    responseSchema: mediaDriverInstallResponseSchema,
+    summary: "更新媒体供应商文件",
+    description:
+      "确认变更预览及访问地址后保存新版本，核对当前代际和修订。相同请求返回原回执；旧文件继续保留，供应商实例的用户配置不随文件覆盖。",
   },
   {
     method: "get",

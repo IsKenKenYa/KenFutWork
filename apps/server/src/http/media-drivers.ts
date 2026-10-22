@@ -6,6 +6,7 @@ import {
   mediaDriverPreviewRequestSchema,
   mediaDriverPreviewResponseSchema,
   mediaDriverSourceResponseSchema,
+  mediaDriverUpdateRequestSchema,
   mediaDriverVersionListResponseSchema,
   mediaDriverVersionParamsSchema,
 } from "@kenfutwork/shared";
@@ -87,6 +88,20 @@ export async function registerMediaDriverRoutes(
       const { driverId } = mediaDriverIdParamsSchema.parse(request.params);
       return mediaDriverVersionListResponseSchema.parse(
         await deps.mediaDrivers.versions(actor, driverId),
+      );
+    }),
+  );
+  app.post(
+    "/api/media-drivers/:driverId/versions",
+    fileOptions,
+    guarded(201, async (actor, request) => {
+      const { driverId } = mediaDriverIdParamsSchema.parse(request.params);
+      return mediaDriverInstallResponseSchema.parse(
+        await deps.mediaDrivers.update(
+          actor,
+          driverId,
+          mediaDriverUpdateRequestSchema.parse(request.body),
+        ),
       );
     }),
   );

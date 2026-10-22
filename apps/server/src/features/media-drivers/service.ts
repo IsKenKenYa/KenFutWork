@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   type MediaDriverInstallRequest,
   type MediaDriverInstallResponse,
+  type MediaDriverUpdateRequest,
   type MediaDriverVersion,
   mediaDriverVersionSchema,
 } from "@kenfutwork/shared";
@@ -11,6 +12,7 @@ import type {
 } from "../local-instance/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
 import { createMediaDriverArtifacts } from "./artifacts.js";
+import { describeMediaDriverChanges } from "./changes.js";
 import { MediaDriverRegistryError } from "./errors.js";
 import { previewMediaDriverSource } from "./preview.js";
 import type { MediaDriverRepository } from "./repository.js";
@@ -24,6 +26,11 @@ export interface MediaDriverService {
   install(
     actor: LocalActor,
     input: MediaDriverInstallRequest,
+  ): Promise<MediaDriverInstallResponse>;
+  update(
+    actor: LocalActor,
+    driverId: string,
+    input: MediaDriverUpdateRequest,
   ): Promise<MediaDriverInstallResponse>;
   versions(
     actor: LocalActor,
@@ -48,12 +55,25 @@ export function createMediaDriverService(deps: {
     const file = await previewMediaDriverSource(source, {
       maxBytes: settings.mediaDriverMaxSourceBytes,
     });
+    const installation = await deps.repository.installation(
+      instanceId,
+      file.manifest.id,
+    );
+    const previous =
+      installation.state === "installed"
+        ? (await deps.repository.versions(instanceId, file.manifest.id))[0]
+        : undefined;
     return {
       ...file,
-      installation: await deps.repository.installation(
-        instanceId,
-        file.manifest.id,
-      ),
+      installation,
+      ...(previous
+        ? {
+            changes: describeMediaDriverChanges(
+              previous.manifest,
+              file.manifest,
+            ),
+          }
+        : {}),
     };
   };
 
@@ -74,16 +94,29 @@ export function createMediaDriverService(deps: {
     return context;
   };
 
-  async function install(actor: LocalActor, input: MediaDriverInstallRequest) {
+  async function saveVersion(
+    actor: LocalActor,
+    input: MediaDriverInstallRequest | MediaDriverUpdateRequest,
+    driverId?: string,
+  ) {
     const release = deps.localInstance.beginAdmission();
     try {
       const context = await deps.localInstance.resolve(actor);
       const file = await preview(actor, input.source);
+      if (driverId !== undefined && file.manifest.id !== driverId)
+        throw new MediaDriverRegistryError(
+          "media_driver_preview_stale",
+          "供应商标识不一致，请选择对应文件",
+          409,
+        );
       const origins = confirmPreview(file, input);
       const version = mediaDriverVersionSchema.parse({
         id: randomUUID(),
-        generation: input.expectedGeneration + 1,
-        revision: 1,
+        generation:
+          input.expectedRevision === 0
+            ? input.expectedGeneration + 1
+            : input.expectedGeneration,
+        revision: input.expectedRevision + 1,
         sourceDigest: file.sourceDigest,
         compiledDigest: file.compiledDigest,
         sourceBytes: file.sourceBytes,
@@ -109,11 +142,16 @@ export function createMediaDriverService(deps: {
         .digest("hex");
       let prepared = false;
       // 提交回包丢失时仍可能已保存版本；恢复在同一驱动锁内核对后清理文件。
-      const result = await deps.repository.install(
+      const persist =
+        input.expectedRevision === 0
+          ? deps.repository.install
+          : deps.repository.update;
+      const result = await persist(
         {
           instanceId: context.instanceId,
           driverId: file.manifest.id,
           expectedGeneration: input.expectedGeneration,
+          expectedRevision: input.expectedRevision,
           fingerprint,
           version,
         },
@@ -135,7 +173,8 @@ export function createMediaDriverService(deps: {
 
   return {
     preview,
-    install,
+    install: (actor, input) => saveVersion(actor, input),
+    update: (actor, driverId, input) => saveVersion(actor, input, driverId),
     async versions(actor, driverId) {
       const context = await requireInstalled(actor, driverId);
       return {
@@ -182,7 +221,7 @@ export function createMediaDriverService(deps: {
 }
 function confirmPreview(
   file: MediaDriverFile,
-  input: MediaDriverInstallRequest,
+  input: MediaDriverInstallRequest | MediaDriverUpdateRequest,
 ) {
   if (
     file.sourceDigest !== input.sourceDigest ||

@@ -74,6 +74,13 @@ async function createRegistryHttp(
         headers,
         payload,
       }),
+    update: (payload: Record<string, unknown>) =>
+      app.inject({
+        method: "POST",
+        url: "/api/media-drivers/registry-example/versions",
+        headers,
+        payload,
+      }),
     versions: () =>
       app.inject({
         method: "GET",
@@ -234,6 +241,149 @@ pgTest("提交回包丢失后恢复原文件并重放同一版本", async () => 
     expect(
       versions.json().versions.map((item: { id: string }) => item.id),
     ).toEqual([versionId]);
+  } finally {
+    proxy.restore();
+    await http.app.close();
+    await persistence.close();
+    await proxy.close();
+    await db.close();
+  }
+});
+
+pgTest("更新预览列出模型变化，更新后仍可读取旧文件", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createRegistryHttp(db);
+  try {
+    const installed = await http.install(await http.preview());
+    const previous = installed.json().driver;
+    const changed = source.replace("native-picture", "new-picture");
+    const preview = await http.app.inject({
+      method: "POST",
+      url: "/api/media-drivers/preview",
+      headers: { authorization: `Bearer ${db.desktopToken}` },
+      payload: { source: changed },
+    });
+    expect(preview.statusCode, preview.body).toBe(200);
+    expect(preview.json().changes).toMatchObject({
+      addedModels: ["new-picture"],
+      removedModels: ["native-picture"],
+      changedModels: [],
+    });
+    const payload = {
+      ...(await http.preview(changed)),
+      expectedGeneration: previous.generation,
+      expectedRevision: previous.revision,
+    };
+    const updated = await http.update(payload);
+    expect(updated.statusCode, updated.body).toBe(201);
+    expect(updated.json().driver.revision).toBe(2);
+    expect(updated.json().driver.generation).toBe(1);
+    const oldFile = await http.source(previous.currentVersion.id);
+    expect(oldFile.json().source).toBe(source);
+    const newFile = await http.source(updated.json().driver.currentVersion.id);
+    expect(newFile.json().source).toBe(changed);
+    const replay = await http.update(payload);
+    expect(replay.statusCode, replay.body).toBe(201);
+    expect(replay.json().replayed).toBe(true);
+    expect(replay.json().driver).toEqual(updated.json().driver);
+    const conflict = await http.update({
+      ...(await http.preview(`${changed}\n// 修改`)),
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    });
+    expect(conflict.statusCode).toBe(409);
+  } finally {
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest("并发更新只保存一个新版本，重复请求复用原回执", async () => {
+  const db = await createTaskWorkDatabase();
+  const http = await createRegistryHttp(db);
+  try {
+    await http.install(await http.preview());
+    const candidates = await Promise.all([
+      http.preview(source.replace("native-picture", "first-picture")),
+      http.preview(source.replace("native-picture", "second-picture")),
+    ]);
+    const payloads = candidates.map((candidate) => ({
+      ...candidate,
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    }));
+    const responses = await Promise.all(payloads.map(http.update));
+    expect(responses.map((response) => response.statusCode).sort()).toEqual([
+      201, 409,
+    ]);
+    const winnerIndex = responses.findIndex(
+      (response) => response.statusCode === 201,
+    );
+    const receipt = responses[winnerIndex]?.json();
+    const winner = payloads[winnerIndex];
+    if (!winner || !receipt) throw new Error("更新未返回唯一成功回执");
+    const replays = await Promise.all(
+      Array.from({ length: 8 }, () => http.update(winner)),
+    );
+    expect(
+      replays.every(
+        (response) =>
+          response.statusCode === 201 && response.json().replayed === true,
+      ),
+    ).toBe(true);
+    const versions = await http.versions();
+    expect(
+      versions
+        .json()
+        .versions.map((version: { revision: number }) => version.revision),
+    ).toEqual([2, 1]);
+    expect(versions.json().versions[0].id).toBe(
+      receipt.driver.currentVersion.id,
+    );
+  } finally {
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest("更新提交回包丢失后冷恢复保留两个版本", async () => {
+  const db = await createTaskWorkDatabase();
+  const proxy = await createCommitResponseLossProxy(db.connectionString);
+  const persistence = createPostgresPersistence({
+    databaseUrl: proxy.connectionString,
+  });
+  const http = await createRegistryHttp(db, persistence);
+  try {
+    const previous = await http.install(await http.preview());
+    const changed = source.replace("native-picture", "updated-picture");
+    const payload = {
+      ...(await http.preview(changed)),
+      expectedGeneration: 1,
+      expectedRevision: 1,
+    };
+    proxy.arm("registry-example", {
+      mediaInstall: true,
+      blackoutAfterCommit: true,
+    });
+    const uncertain = await http.update(payload);
+    expect(uncertain.statusCode).toBe(500);
+    expect(proxy.evidence().injected).toMatchObject({
+      commitConfirmed: true,
+      replySuppressed: true,
+    });
+    expect(proxy.evidence().observerError).toBeUndefined();
+    proxy.restore();
+    await http.service().recover();
+    const replay = await http.update(payload);
+    expect(replay.statusCode, replay.body).toBe(201);
+    expect(replay.json().replayed).toBe(true);
+    const current = await http.source(replay.json().driver.currentVersion.id);
+    expect(current.json().source).toBe(changed);
+    const original = await http.source(
+      previous.json().driver.currentVersion.id,
+    );
+    expect(original.json().source).toBe(source);
+    expect((await http.versions()).json().versions).toHaveLength(2);
   } finally {
     proxy.restore();
     await http.app.close();
