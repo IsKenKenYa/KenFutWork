@@ -7,6 +7,7 @@ export * from "./code-goal-control-contracts.js";
 export * from "./code-ui-contracts.js";
 export * from "./code-ui-host-bridge.js";
 export * from "./contracts.js";
+export * from "./design-review.js";
 export * from "./errors.js";
 export * from "./events.js";
 export * from "./execution-contracts.js";

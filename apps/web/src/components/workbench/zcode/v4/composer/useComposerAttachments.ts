@@ -12,6 +12,11 @@ import { useServices } from "@zui/hooks/useServices.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { ChatComposerPasteEvent } from "@zui/LexicalChatInput.js";
 import {
+  BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT,
+  buildBrowserScreenshotWorkspaceKey,
+  isBrowserScreenshotAddToChatEvent,
+} from "@zui/lib/browserScreenshotChat.js";
+import {
   type ChatComposerAttachment,
   createChatComposerAttachment,
   createChatComposerPathAttachment,
@@ -26,6 +31,11 @@ import {
   shouldCreateClipboardTextAttachment,
   shouldPreferSpreadsheetClipboardText,
 } from "@zui/lib/chatAttachments.js";
+import {
+  buildOpenDesignCanvasWorkspaceKey,
+  isOpenDesignCanvasAddToChatEvent,
+  OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT,
+} from "@zui/lib/openDesignCanvasChat.js";
 import {
   buildWhiteboardWorkspaceKey,
   createWhiteboardPngFile,
@@ -1039,6 +1049,66 @@ export function useComposerAttachments(
       window.removeEventListener(WHITEBOARD_ADD_TO_CHAT_EVENT, handle);
   }, [
     addWhiteboardToChat,
+    listenAddToChatEvents,
+    workspaceIdentity,
+    workspacePath,
+  ]);
+
+  useEffect(() => {
+    // 画布截图进对话：与白板同款早退 + 工作区匹配——只进同工作区、且聚焦的那个 composer。
+    if (!listenAddToChatEvents || typeof window === "undefined") return;
+    const handle = (event: Event) => {
+      if (!isOpenDesignCanvasAddToChatEvent(event)) return;
+      if (
+        buildOpenDesignCanvasWorkspaceKey(event.detail) !==
+        buildOpenDesignCanvasWorkspaceKey({ workspacePath, workspaceIdentity })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        addAttachmentFiles([event.detail.file]);
+      } catch (error) {
+        setAttachmentError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
+    window.addEventListener(OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT, handle);
+    return () =>
+      window.removeEventListener(OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT, handle);
+  }, [
+    addAttachmentFiles,
+    listenAddToChatEvents,
+    workspaceIdentity,
+    workspacePath,
+  ]);
+
+  useEffect(() => {
+    // 浏览器截图进对话：与画布截图同一条路（右栏浏览器面板「截图到对话」）。
+    if (!listenAddToChatEvents || typeof window === "undefined") return;
+    const handle = (event: Event) => {
+      if (!isBrowserScreenshotAddToChatEvent(event)) return;
+      if (
+        buildBrowserScreenshotWorkspaceKey(event.detail) !==
+        buildBrowserScreenshotWorkspaceKey({ workspacePath, workspaceIdentity })
+      ) {
+        return;
+      }
+      event.preventDefault();
+      try {
+        addAttachmentFiles([event.detail.file]);
+      } catch (error) {
+        setAttachmentError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    };
+    window.addEventListener(BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT, handle);
+    return () =>
+      window.removeEventListener(BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT, handle);
+  }, [
+    addAttachmentFiles,
     listenAddToChatEvents,
     workspaceIdentity,
     workspacePath,

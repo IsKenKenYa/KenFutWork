@@ -19,7 +19,6 @@ import {
   launchBrowserWithDebugPort,
   pressKey,
   readDom,
-  readPickables,
   readViewport,
   setViewportOverride,
   startScreencast,
@@ -43,6 +42,14 @@ import {
   parseDebugConsoleProbe,
 } from "./debug-console.js";
 import { sendDevToolsKey } from "./devtools-keys.js";
+import {
+  ELEMENT_PICKER_READ_SCRIPT,
+  ELEMENT_PICKER_START_SCRIPT,
+  ELEMENT_PICKER_STOP_SCRIPT,
+  type ElementPickerReadResult,
+  parseElementPickerRead,
+  throwPickerStartError,
+} from "./element-picker.js";
 import {
   capBody,
   createNetworkBuffer,
@@ -107,6 +114,28 @@ export interface CdpBrowserSession {
   /** 调试控制台脚本源码（桌面形态 eval 进子 webview 用同一份）。 */
   debugConsoleScript(): Promise<string>;
   /**
+   * **收起**页面内调试控制台（Eruda 悬浮窗）。拾取元素等面板交互需要干净的页面，
+   * 悬浮窗挡视线；只 hide 不销毁，用户可从「打开调试工具」再唤出。
+   */
+  hideDebugConsole(): Promise<void>;
+  /** 截当前视口为 PNG（base64 直出，不落 blob——面板「截图到对话」直接组 File）。 */
+  screenshotData(): Promise<{ base64: string; width: number; height: number }>;
+  /**
+   * 进入**页面内元素选择模式**（DevTools 拾取器同款）：高亮跟鼠标在页面里实时走，
+   * 坐标永远精确、所有元素可选。`mousedown`（capture+preventDefault）把点中的元素
+   * 存进 `window.__kfwPickedElement` 并自动收起——页面不会真的被点下去。
+   */
+  startElementPicker(): Promise<void>;
+  /** 取走点选结果（读后即清）。页面还在选择模式时 `active` 为 true。 */
+  readPickedElement(): Promise<ElementPickerReadResult>;
+  /** 退出选择模式并清状态（幂等）。 */
+  stopElementPicker(): Promise<void>;
+  /**
+   * 页面主线程探针：`Runtime.evaluate("1")`，1.5 秒没回来即判定页面无响应。
+   * 注入脚本/网页自身卡死时，面板据此显示「画面已卡住」而不是整块面板像死了。
+   */
+  ping(): Promise<boolean>;
+  /**
    * 在**受控浏览器**里打开完整开发者工具，并取消停靠成**独立窗口**（浮动、可移动）。
    *
    * 做法与取舍见 `devtools-keys` 头注：真 DevTools 只有浏览器自己开得出来（CDP 开出来的
@@ -134,22 +163,6 @@ export interface CdpBrowserSession {
     title: string;
     text: string;
     elements: Array<{ tag: string; text: string; hint: string }>;
-  }>;
-  /**
-   * 可拾取元素（带真实几何，见 cdp-client 的 readPickables）+ 一张当前视口截图。
-   * 截图落 blob 后给签名 URL；blob 不可用或截图失败时只少 `screenshotUrl`，几何照给。
-   */
-  pickables(): Promise<{
-    url: string;
-    title: string;
-    viewport: { width: number; height: number };
-    elements: Array<{
-      tag: string;
-      text: string;
-      hint: string;
-      box: { x: number; y: number; width: number; height: number } | null;
-    }>;
-    screenshotUrl?: string;
   }>;
   screenshot(): Promise<{
     screenshotUrl: string;
@@ -503,7 +516,7 @@ export function createCdpBrowserSession(deps: {
     return sessionId;
   };
 
-  /** 截一张当前视口并落到 blob（`screenshot()` 与 `pickables()` 共用）。 */
+  /** 截一张当前视口并落到 blob（`screenshot()` 用）。 */
   const captureAndUpload = async (
     cdp: CdpClient,
     id: string,
@@ -740,6 +753,80 @@ export function createCdpBrowserSession(deps: {
     async debugConsoleScript() {
       return debugConsole.script();
     },
+    async hideDebugConsole() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression: "window.eruda ? (window.eruda.hide(), true) : false",
+          returnByValue: true,
+        },
+        id,
+      );
+    },
+    async screenshotData() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const bytes = await captureScreenshot(cdp, id);
+      return {
+        base64: Buffer.from(bytes).toString("base64"),
+        width: portrait.width,
+        height: portrait.height,
+      };
+    },
+    async startElementPicker() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        {
+          expression: ELEMENT_PICKER_START_SCRIPT,
+          returnByValue: false,
+        },
+        id,
+      )) as {
+        exceptionDetails?: {
+          text?: string;
+          exception?: { description?: string };
+        };
+      };
+      if (evaluated.exceptionDetails) {
+        throwPickerStartError(evaluated.exceptionDetails);
+      }
+    },
+    async readPickedElement() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      const evaluated = (await cdp.send(
+        "Runtime.evaluate",
+        { expression: ELEMENT_PICKER_READ_SCRIPT, returnByValue: true },
+        id,
+      )) as { result?: { value?: unknown } };
+      return parseElementPickerRead(evaluated.result?.value);
+    },
+    async stopElementPicker() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      await cdp.send(
+        "Runtime.evaluate",
+        { expression: ELEMENT_PICKER_STOP_SCRIPT, returnByValue: false },
+        id,
+      );
+    },
+    async ping() {
+      const { client: cdp, sessionId: id } = requireConnected();
+      try {
+        const evaluated = await Promise.race([
+          cdp.send(
+            "Runtime.evaluate",
+            { expression: "1", returnByValue: true },
+            id,
+          ),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("page ping timeout")), 1500);
+          }),
+        ]);
+        return Boolean(evaluated);
+      } catch {
+        return false;
+      }
+    },
     async openDevToolsWindow(options = {}) {
       const { client: cdp, sessionId: id } = requireConnected();
       if (state.status === "connected" && state.headless) {
@@ -880,17 +967,6 @@ export function createCdpBrowserSession(deps: {
       const { client: cdp, sessionId: id } = requireConnected();
       return readDom(cdp, id);
     },
-    async pickables() {
-      const { client: cdp, sessionId: id } = requireConnected();
-      const page = await readPickables(cdp, id);
-      // 截图与几何用同一套视口坐标（readPickables 已把页面滚到顶）：
-      // 截图的宽高直接取 CDP 的视口尺寸，不靠 portrait 缓存，避免两者错位
-      const shot = await captureAndUpload(cdp, id).catch(() => null);
-      return {
-        ...page,
-        ...(shot ? { screenshotUrl: shot.screenshotUrl } : {}),
-      };
-    },
     async screenshot() {
       const { client: cdp, sessionId: id } = requireConnected();
       return captureAndUpload(cdp, id);
@@ -971,7 +1047,7 @@ export function createCdpBrowserSession(deps: {
        * 一直白屏（`img.naturalWidth=0`），页面下一次变化才出画面。先补一张静止帧，
        * 面板开流就有画面，也顺手把「这一页现在长什么样」定住。
        */
-      void captureScreenshotJpeg(cdp, id, options.quality ?? 70)
+      void captureScreenshotJpeg(cdp, id, options.quality ?? 55)
         .then(async (jpeg) => {
           await Promise.resolve(onFrame(jpeg)).catch(() => undefined);
         })

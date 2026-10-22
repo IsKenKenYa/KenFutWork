@@ -236,6 +236,7 @@ export function App({
     handleOpenDocument,
     handleOpenDeveloperTools,
     handleOpenOpenDesign,
+    handleOpenDesignMetaChange,
     handleOpenTerminalTab,
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
@@ -1288,6 +1289,7 @@ export function App({
         handleOpenDocument={handleOpenDocument}
         handleOpenDeveloperTools={handleOpenDeveloperTools}
         handleOpenOpenDesign={handleOpenOpenDesign}
+        handleOpenDesignMetaChange={handleOpenDesignMetaChange}
         handleOpenTerminalTab={handleOpenTerminalTabIfWritable}
         handleToggleGit={handleToggleGitIfWritable}
         handleToggleSidePane={handleToggleSidePane}

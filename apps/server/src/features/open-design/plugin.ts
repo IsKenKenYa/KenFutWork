@@ -14,7 +14,12 @@ import {
   resolveOpenDesignCarrierMode,
 } from "./companion.js";
 import { resolveOpenDesignCredentialEntries } from "./credentials.js";
+import {
+  readOpenDesignLastProject,
+  writeOpenDesignLastProject,
+} from "./last-project.js";
 import { provisionOpenDesign } from "./provision.js";
+import { createOpenDesignTools } from "./tools.js";
 
 /**
  * 伴随容器 compose 资源（`open-design/`）：与 dify 同一条规则——**源码态**上溯 5 级到
@@ -71,7 +76,14 @@ export function createOpenDesignHostPlugin(deps: {
 }): PluginDefinition {
   return {
     name: "open-design-host",
-    inject: ["localAccess", "localInstance", "modelProviders"],
+    inject: [
+      "localAccess",
+      "localInstance",
+      "modelProviders",
+      "tools",
+      "systemPrompt",
+      "designReview",
+    ],
     apply() {
       if (!deps.frontendUrl?.trim()) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
@@ -88,6 +100,39 @@ export function createOpenDesignHostPlugin(deps: {
       }
     },
     mounted(ctx) {
+      const dataDir = resolveDesktopDataDir({
+        env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+      });
+      // 对话能力：只读面 + 建项目。地址来自宿主配置，故由 feature 注册而不是插件 bundle。
+      for (const tool of createOpenDesignTools({
+        frontendUrl: deps.frontendUrl,
+        fetchImpl: deps.fetchImpl,
+        // 建成的项目记到单槽位，右侧面板据此打开对应画布，而不是停在上游首页。
+        onProjectCreated: (project) =>
+          writeOpenDesignLastProject({ dataDir, project }),
+      })) {
+        ctx.get("tools").register(tool);
+      }
+      /**
+       * 反向联动：右侧画布打开（存在当前 OpenDesign 项目）时，让对话知道这块
+       * 画布是什么、能用哪些工具——这就是「打开画布 → 会话自动启用 OpenDesign
+       * 能力」。没有项目或未配置地址时不出现该段（不摆空能力）。
+       */
+      ctx.get("systemPrompt").register({
+        name: "open-design-canvas",
+        order: 300,
+        scope: "code",
+        resolve: () => {
+          if (!deps.frontendUrl?.trim()) return null;
+          const project = readOpenDesignLastProject({ dataDir });
+          if (!project) return null;
+          return [
+            "## OpenDesign 画布",
+            `右侧面板当前打开的是 OpenDesign 项目「${project.name}」（${project.projectId}）。`,
+            "改这块画布前先用 open_design_project_files 看现有文件；要另起项目用 open_design_create_project。",
+          ].join("\n");
+        },
+      });
       const companion = createOpenDesignCompanionController({
         composeFile: deps.composeFile ?? resolveOpenDesignComposeFile(),
         ...(deps.secret?.trim() ? { apiToken: deps.secret.trim() } : {}),
@@ -102,9 +147,9 @@ export function createOpenDesignHostPlugin(deps: {
         localInstance: ctx.get("localInstance"),
         companion: () => companion.snapshot(),
         // 桌面承载配置读写（设置页写入口，§205）：数据目录口径同 flow 引擎记录
-        dataDir: resolveDesktopDataDir({
-          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
-        }),
+        dataDir,
+        // 「同步到引擎」聚合 document.md 评审段（PR-1）
+        designReview: ctx.get("designReview"),
       });
       const mode = resolveOpenDesignCarrierMode(deps.frontendUrl);
       if (mode === "managed") {

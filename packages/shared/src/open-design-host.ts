@@ -114,76 +114,194 @@ export type OpenDesignHostConfigUpdate = z.infer<
 >;
 
 /* ------------------------------------------------------------------ *
- * `od/v1` 嵌入协议（O2：iframe 双向链接的最小档）
+ * 画布数据面（宿主代理；面板不直连 daemon）
  *
- * 方向约定（与 `ff-embed/v1` 同思路，只做握手，不做身份/凭证）：
- * - 宿主 → 面板：`od/hello`（探测）与 `od/hello-ack`（握手应答）；
- * - 面板 → 宿主：`od/hello`（应答握手）。
- * 深链 `od/navigate` 曾按 O2 最小档实现，2026-10-15 随用户口径移除
- * （面板自动连接、打开、编辑画布本身即可；上游协议支持见 nexu-io/open-design#8776）。
- *
- * 安全口径（《OpenDesign 集成规划》§8 风险 5）：**origin 白名单 + 入站消息 schema 校验**。
- * 只收配置里那个前端 origin 发来的消息，schema 之外或类型不明的消息一律丢弃——
- * 不收「也许能用的宽进宽出」。
+ * 面板 iframe 只吃 daemon 的**公开预览地址**（`/api/projects/:id/preview/<token>/<file>`，
+ * 纯文件、无应用外壳）。其余读写——新建画布、读项目与文件、解析预览地址、取设计文本——
+ * 一律经宿主路由：浏览器直连 daemon 会撞 CORS（预检 403），且宿主是唯一能顺带维护
+ * 「最近画布」槽位（agent 上下文）的地方。
  * ------------------------------------------------------------------ */
 
+/** 新建画布请求：缺省名由宿主给（「未命名画布」）。 */
+export const openDesignHostCreateCanvasRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateCanvasRequest = z.infer<
+  typeof openDesignHostCreateCanvasRequestSchema
+>;
+
+/**
+ * 画布（= 上游一个 project）概要：面板拿它当标签标题与预览目标。
+ * `entryFile` 是画布要展示的文件（上游 artifactManifest.entry 优先，退第一个 html）。
+ */
+export const openDesignHostCanvasResponseSchema = z.object({
+  project: z.object({
+    projectId: z.string().min(1),
+    name: z.string(),
+    /** 绑定的设计体系（上游 project.designSystemId；未绑定为 null）。 */
+    designSystemId: z.string().nullable().optional(),
+  }),
+  entryFile: z.string().nullable(),
+  files: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        kind: z.string(),
+      }),
+    )
+    .max(500),
+});
+export type OpenDesignHostCanvasResponse = z.infer<
+  typeof openDesignHostCanvasResponseSchema
+>;
+
+/**
+ * 预览地址（`GET /api/open-design/host/preview-url`）：原样透出上游三件事——
+ * 相对 URL（宿主 origin 拼接后进 iframe src）、iframe sandbox 取值、是否不透明 origin。
+ * `expiresAt` 由上游给；过期应重取而不是继续吃 403。
+ */
+export const openDesignHostPreviewUrlResponseSchema = z.object({
+  url: z.string().min(1),
+  iframeSandbox: z.string(),
+  opaqueOrigin: z.boolean(),
+});
+export type OpenDesignHostPreviewUrlResponse = z.infer<
+  typeof openDesignHostPreviewUrlResponseSchema
+>;
+
+/** 版本历史列表：上游每个文件的历史版本元数据（只读）。 */
+export const openDesignHostVersionsResponseSchema = z.object({
+  versions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string(),
+        version: z.number().int(),
+        createdAt: z.number(),
+        size: z.number(),
+        current: z.boolean(),
+      }),
+    )
+    .max(200),
+});
+export type OpenDesignHostVersionsResponse = z.infer<
+  typeof openDesignHostVersionsResponseSchema
+>;
+
+/** 历史版本的正文（只读预览；与设计文本同口径的大小上限）。 */
+export const openDesignHostVersionContentResponseSchema = z.object({
+  version: z.object({
+    id: z.string().min(1),
+    label: z.string(),
+    version: z.number().int(),
+    createdAt: z.number(),
+  }),
+  text: z.string(),
+});
+export type OpenDesignHostVersionContentResponse = z.infer<
+  typeof openDesignHostVersionContentResponseSchema
+>;
+
+/** 设计文件文本（截图光栅化输入；只读，宿主侧有大小上限）。 */
+export const openDesignHostFileTextResponseSchema = z.object({
+  name: z.string().min(1),
+  text: z.string(),
+});
+export type OpenDesignHostFileTextResponse = z.infer<
+  typeof openDesignHostFileTextResponseSchema
+>;
+
+/** 设计文件正文大小上限（读写同一口径；超限如实报错，不静默截断）。 */
+export const OPEN_DESIGN_HOST_TEXT_MAX_LENGTH = 2 * 1024 * 1024;
+
+/**
+ * 引擎就绪探针：上游可达 ≠ 能出画布。没有可用 agent CLI 时面板要说清是哪一层。
+ */
+export const openDesignHostReadinessResponseSchema = z.object({
+  reachable: z.boolean(),
+  agentAvailable: z.boolean(),
+  agentId: z.string().nullable(),
+  onboardingCompleted: z.boolean(),
+});
+export type OpenDesignHostReadinessResponse = z.infer<
+  typeof openDesignHostReadinessResponseSchema
+>;
+
+/** 「最近画布」槽位（桌面数据目录里的一个文件）；一个都没有时为 null。 */
+export const openDesignHostLastProjectResponseSchema = z.object({
+  project: z
+    .object({
+      projectId: z.string().min(1),
+      name: z.string(),
+    })
+    .nullable(),
+});
+export type OpenDesignHostLastProjectResponse = z.infer<
+  typeof openDesignHostLastProjectResponseSchema
+>;
+
+/** 显式「配置设计引擎」的结果：done=false 时 reason 说明卡在哪。 */
+export const openDesignHostProvisionResponseSchema = z.object({
+  done: z.boolean(),
+  agentId: z.string().nullable(),
+  reason: z.string().nullish(),
+});
+export type OpenDesignHostProvisionResponse = z.infer<
+  typeof openDesignHostProvisionResponseSchema
+>;
+
+/** 画布列表（面板「+」的「打开画布」项）：上游 project 概要，按更新时间倒序。 */
+export const openDesignHostProjectsResponseSchema = z.object({
+  projects: z
+    .array(
+      z.object({
+        projectId: z.string().min(1),
+        name: z.string(),
+        updatedAt: z.number(),
+      }),
+    )
+    .max(200),
+});
+export type OpenDesignHostProjectsResponse = z.infer<
+  typeof openDesignHostProjectsResponseSchema
+>;
+
+/**
+ * 写入画布文件（可视化编辑保存、上传资源）。
+ *
+ * HTML 写入由宿主代上游记一个 `manual` 版本——编辑历史与生成历史进同一条
+ * 「历史记录」，不分两套账。`encoding: "base64"` 给二进制资源（图片）。
+ */
+export const openDesignHostWriteFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+  content: z.string().max(OPEN_DESIGN_HOST_TEXT_MAX_LENGTH),
+  encoding: z.enum(["utf8", "base64"]).optional(),
+  versionLabel: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostWriteFileRequest = z.infer<
+  typeof openDesignHostWriteFileRequestSchema
+>;
+
+export const openDesignHostWriteFileResponseSchema = z.object({
+  file: z.object({ name: z.string().min(1), kind: z.string() }),
+  version: z
+    .object({
+      id: z.string().min(1),
+      version: z.number().int(),
+      label: z.string(),
+    })
+    .nullable(),
+});
+export type OpenDesignHostWriteFileResponse = z.infer<
+  typeof openDesignHostWriteFileResponseSchema
+>;
+
+/**
+ * 宿主适配层协议版本：凭证缝（`POST /api/open-design/host/credentials`）的版本协商口径。
+ * （原 `od/v1` iframe 握手随面板改嵌上游预览路由而移除——那条消息协议上游从未实现。）
+ */
 export const OPEN_DESIGN_EMBED_PROTOCOL_VERSION = "v1";
-
-/** 面板 → 宿主的入站消息。schema 之外一律视为噪声丢弃。 */
-export const openDesignInboundMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("od/hello"),
-    version: z.string().min(1).max(16),
-  }),
-]);
-export type OpenDesignInboundMessage = z.infer<
-  typeof openDesignInboundMessageSchema
->;
-
-/** 宿主 → 面板的出站消息。 */
-export const openDesignOutboundMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("od/hello"),
-    version: z.string().min(1).max(16),
-  }),
-  z.object({
-    type: z.literal("od/hello-ack"),
-    version: z.string().min(1).max(16),
-  }),
-]);
-export type OpenDesignOutboundMessage = z.infer<
-  typeof openDesignOutboundMessageSchema
->;
-
-export function buildOpenDesignHello(): OpenDesignOutboundMessage {
-  return { type: "od/hello", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
-}
-
-export function buildOpenDesignHelloAck(): OpenDesignOutboundMessage {
-  return { type: "od/hello-ack", version: OPEN_DESIGN_EMBED_PROTOCOL_VERSION };
-}
-
-/**
- * 入站消息的**来源**必须是配置里的前端 origin（origin 白名单）。
- * 事件 origin 与配置不一致即返回 null——跨源伪造直接丢，不做宽容处理。
- */
-export function isAllowedOpenDesignOrigin(
-  eventOrigin: string,
-  allowedOrigin: string,
-): boolean {
-  return eventOrigin.length > 0 && eventOrigin === allowedOrigin;
-}
-
-/**
- * 入站消息的**内容**校验：过 schema 才认，其余（含类型不明的宽对象）一律 null。
- * 与 origin 白名单是两道独立的闸，缺一不可。
- */
-export function parseOpenDesignInbound(
-  raw: unknown,
-): OpenDesignInboundMessage | null {
-  const parsed = openDesignInboundMessageSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
-}
 
 /* ------------------------------------------------------------------ *
  * 凭证下发（O3 / `OD-4`：BYOK 接入）
@@ -240,4 +358,215 @@ export type OpenDesignHostCredentialEntry = z.infer<
 >;
 export type OpenDesignHostCredentialsResponse = z.infer<
   typeof openDesignHostCredentialsResponseSchema
+>;
+
+/* ------------------------------------------------------------------
+ * 「我们 → 引擎」上下文同步（PR-1）：引擎读上下文的官方入口是项目内的
+ * document.md（spec/工作文档）。同步把本仓的评论与标注聚合进 document.md 的
+ * 受管段（成对注释标记包裹，整段替换、段外内容不动），标注笔迹另渲染成
+ * PNG 落项目 review/ 目录并在受管段里引用——引擎生成时即“看得见”评审。
+ * ------------------------------------------------------------------ */
+
+/** 受管段标记：document.md 里归宿主管的区块边界（出现即归管，格式稳定不演进）。 */
+export const OPEN_DESIGN_SYNC_SECTION_SPEC = "kfw-sync:spec" as const;
+export const OPEN_DESIGN_SYNC_SECTION_REVIEW = "kfw-sync:review" as const;
+/** 浏览器页面同步段（PR-4）：URL + 截图引用追加进 document.md。 */
+export const OPEN_DESIGN_SYNC_SECTION_BROWSER = "kfw-sync:browser" as const;
+
+export const openDesignHostSyncContextRequestSchema = z.object({
+  projectId: z.string().min(1),
+  /** 可选计划/规格文档（MD 正文）；有则整体替换 spec 受管段。 */
+  specMarkdown: z.string().max(OPEN_DESIGN_HOST_TEXT_MAX_LENGTH).optional(),
+});
+export type OpenDesignHostSyncContextRequest = z.infer<
+  typeof openDesignHostSyncContextRequestSchema
+>;
+
+export const openDesignHostSyncContextResponseSchema = z.object({
+  document: z.object({ name: z.string().min(1) }),
+  /** 本次写入的受管段（spec / review），缺项表示该段本次未写。 */
+  sections: z.array(z.enum(["spec", "review"])).max(2),
+  comments: z.number().int().min(0),
+  annotations: z.number().int().min(0),
+  /** 标注渲染出的 PNG 文件（相对项目根，如 review/annotations-….png）。 */
+  annotationFiles: z.array(z.string().min(1)).max(64),
+});
+export type OpenDesignHostSyncContextResponse = z.infer<
+  typeof openDesignHostSyncContextResponseSchema
+>;
+
+/**
+ * 新建文档画布（空态「新建文档」）：建项目并写入 document.md 起始稿
+ * （含 spec/review 两个受管段骨架）。响应同画布概要——面板据此开标签。
+ */
+export const openDesignHostCreateDocumentRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateDocumentRequest = z.infer<
+  typeof openDesignHostCreateDocumentRequestSchema
+>;
+
+/** 设计体系概要（上游 /api/design-systems 的宿主代理面）。 */
+export const openDesignHostDesignSystemSummarySchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  category: z.string().nullable(),
+  summary: z.string().nullable(),
+  swatches: z.array(z.string().min(1)).max(24),
+});
+export type OpenDesignHostDesignSystemSummary = z.infer<
+  typeof openDesignHostDesignSystemSummarySchema
+>;
+
+export const openDesignHostDesignSystemsResponseSchema = z.object({
+  designSystems: z.array(openDesignHostDesignSystemSummarySchema).max(500),
+});
+export type OpenDesignHostDesignSystemsResponse = z.infer<
+  typeof openDesignHostDesignSystemsResponseSchema
+>;
+
+/** 绑定/切换画布的设计体系（代理上游 PATCH /api/projects/:id 的 designSystemId）。 */
+export const openDesignHostBindDesignSystemRequestSchema = z.object({
+  projectId: z.string().min(1),
+  designSystemId: z.string().min(1).max(120),
+});
+export type OpenDesignHostBindDesignSystemRequest = z.infer<
+  typeof openDesignHostBindDesignSystemRequestSchema
+>;
+
+/* ------------------------------------------------------------------
+ * 静态分享 = 上游部署面（Cloudflare Pages / Vercel，用户自带 token 的静态部署）。
+ * 用户口径：分享要像原来的分享功能一样**静态部署**（发布在线链接 / 自托管），
+ * 不是复制面板的 localhost 链接。宿主只做代理与契约收口——真正的上传与域名
+ * 由 daemon 的 deploy 路由执行（`/api/deploy/config`、`/api/projects/:id/deploy`）。
+ * ------------------------------------------------------------------ */
+
+export const openDesignDeployProviderSchema = z.enum([
+  "cloudflare-pages",
+  "vercel-self",
+]);
+export type OpenDesignDeployProvider = z.infer<
+  typeof openDesignDeployProviderSchema
+>;
+
+/** 托管商配置（GET/PUT 共用；token 只回显掩码，写入时掩码原样回传=保留原值）。 */
+export const openDesignHostDeployConfigSchema = z.object({
+  providerId: openDesignDeployProviderSchema,
+  configured: z.boolean(),
+  tokenMask: z.string(),
+  teamId: z.string().optional(),
+  teamSlug: z.string().optional(),
+  accountId: z.string().optional(),
+  target: z.string().optional(),
+});
+export type OpenDesignHostDeployConfig = z.infer<
+  typeof openDesignHostDeployConfigSchema
+>;
+
+export const openDesignHostDeployConfigUpdateSchema = z.object({
+  providerId: openDesignDeployProviderSchema,
+  /** 新 token（掩码原样回传表示沿用已保存值）。 */
+  token: z.string().max(512).optional(),
+  accountId: z.string().max(120).optional(),
+  teamId: z.string().max(120).optional(),
+  teamSlug: z.string().max(120).optional(),
+});
+export type OpenDesignHostDeployConfigUpdate = z.infer<
+  typeof openDesignHostDeployConfigUpdateSchema
+>;
+
+export const openDesignHostDeployRequestSchema = z.object({
+  projectId: z.string().min(1),
+  /** 要发布的文件（缺省取画布入口文件）。 */
+  file: z.string().min(1).max(240).optional(),
+  providerId: openDesignDeployProviderSchema,
+});
+export type OpenDesignHostDeployRequest = z.infer<
+  typeof openDesignHostDeployRequestSchema
+>;
+
+/** 一条部署记录（上游 publicDeployment 的收口面）。 */
+export const openDesignHostDeploymentSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  fileName: z.string().min(1),
+  providerId: z.string().min(1),
+  url: z.string().min(1),
+  target: z.string().nullable(),
+  status: z.string().nullable(),
+  createdAt: z.number().int().nullable(),
+  updatedAt: z.number().int().nullable(),
+});
+export type OpenDesignHostDeployment = z.infer<
+  typeof openDesignHostDeploymentSchema
+>;
+
+export const openDesignHostDeploymentsResponseSchema = z.object({
+  deployments: z.array(openDesignHostDeploymentSchema).max(200),
+});
+export type OpenDesignHostDeploymentsResponse = z.infer<
+  typeof openDesignHostDeploymentsResponseSchema
+>;
+
+/** Cloudflare 域名区清单（发布到自定义域时选）。 */
+export const openDesignHostCloudflareZonesResponseSchema = z.object({
+  zones: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1),
+      }),
+    )
+    .max(500),
+});
+export type OpenDesignHostCloudflareZonesResponse = z.infer<
+  typeof openDesignHostCloudflareZonesResponseSchema
+>;
+
+/* ------------------------------------------------------------------
+ * 保存到工作目录（引擎 → 我们）：把画布文件（缺省入口 HTML）写进当前 Task 的
+ * 工作目录——上游产物反向落到本仓文件树，与「同步到引擎」凑成双向。
+ * ------------------------------------------------------------------ */
+
+export const openDesignHostSaveToWorkspaceRequestSchema = z.object({
+  projectId: z.string().min(1),
+  /** 要保存的文件（缺省取画布入口文件）。 */
+  file: z.string().min(1).max(240).optional(),
+  /** 当前 Task 工作目录（绝对路径；服务端做越界与存在性校验）。 */
+  workspacePath: z.string().min(1).max(1024),
+});
+export type OpenDesignHostSaveToWorkspaceRequest = z.infer<
+  typeof openDesignHostSaveToWorkspaceRequestSchema
+>;
+
+export const openDesignHostSaveToWorkspaceResponseSchema = z.object({
+  path: z.string().min(1),
+  bytes: z.number().int().min(0),
+});
+export type OpenDesignHostSaveToWorkspaceResponse = z.infer<
+  typeof openDesignHostSaveToWorkspaceResponseSchema
+>;
+
+/* ------------------------------------------------------------------
+ * 浏览器页面同步到画布（PR-4）：右栏 CDP 浏览器「同步到画布」——截图 PNG 落
+ * 项目的 browser/ 目录，URL 与截图引用追加进 document.md 的 browser 受管段，
+ * 引擎生成时能“看到”我们浏览的页面。
+ * ------------------------------------------------------------------ */
+
+export const openDesignHostBrowserPageRequestSchema = z.object({
+  url: z.string().min(1).max(2048),
+  /** 视口截图（PNG base64；缺省只记 URL）。 */
+  screenshotBase64: z.string().max(24_000_000).optional(),
+  title: z.string().max(240).optional(),
+});
+export type OpenDesignHostBrowserPageRequest = z.infer<
+  typeof openDesignHostBrowserPageRequestSchema
+>;
+
+export const openDesignHostBrowserPageResponseSchema = z.object({
+  project: z.object({ projectId: z.string().min(1), name: z.string() }),
+  screenshotFile: z.string().nullable(),
+});
+export type OpenDesignHostBrowserPageResponse = z.infer<
+  typeof openDesignHostBrowserPageResponseSchema
 >;

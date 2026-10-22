@@ -8,7 +8,6 @@ import type { LocalAccessVerifier } from "../local-access/types.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createCdpBrowserSession } from "./cdp-session.js";
 import {
-  BrowserFetchError,
   type BrowserService,
   createBrowserService,
   fetchPageSnapshot,
@@ -22,13 +21,11 @@ import {
 } from "./view-stream.js";
 
 /**
- * browser 插件（R3-4 / R5-4）：静态快照 + **CDP 浏览器通道**。
+ * browser 插件（R3-4 / R5-4）：**CDP 浏览器通道**。
  *
- * 三条消费路径：
- * - **人（静态/CDP）**：`POST /api/browser/snapshot` —— 右栏「选择网页元素加入聊天」；
- *   CDP 连着时回来的是**真实渲染页 + 盒模型几何 + 视口截图**（右栏浮层据此叠框点选），
- *   没连时才回落静态抓取的 HTML 元素列表；
- * - **人（CDP）**：`/api/browser/cdp/*` —— 设置页的「连接到 Chrome / 断开 / 状态」；
+ * 两条消费路径：
+ * - **人（面板）**：`/api/browser/cdp/*` —— 右栏浏览器面板的画面流 / 输入 / 调试控制台 /
+ *   截图到对话 / 页面内元素选择器（picker）；
  * - **agent**：`browser_open`（静态读页，受「允许 AI 控制浏览器」门控）+ 连接后的
  *   `browser_navigate` / `browser_snapshot` / `browser_screenshot` / `browser_act`
  *   （真实渲染后 DOM、截图、点击输入；「自动截图」打开时这些工具会自动附图）。
@@ -484,80 +481,17 @@ export function registerBrowserRoutes(
     (await options.localAccess.authenticate(request)) ??
     sendUnauthorized(reply);
 
-  app.post("/api/browser/snapshot", async (request, reply) => {
-    const user = await authenticate(request, reply);
-    if (!user) return;
-    const url = (request.body as { url?: unknown } | undefined)?.url;
-    if (typeof url !== "string" || !url.trim()) {
-      return reply.code(400).send({
-        error: { code: "invalid_request", message: "缺少 url。" },
-      });
-    }
-    // CDP 已连接时优先用它（真实渲染后 DOM + **真实盒模型**，跨源/登录态都能拿到，
-    // 浮层因此能在截图上叠框点选）；否则回落静态快照
-    if (options.browser.cdp.isConnected()) {
-      try {
-        /**
-         * 受控浏览器**已经在这一页**就只读、不导航：面板里显示的就是这一页，
-         * 重来一次 `Page.navigate` 会整页重载（滚动位置与面板里的调试控制台一起没了）。
-         */
-        const status = options.browser.cdp.status();
-        const current = status.status === "connected" ? status.currentUrl : "";
-        const dom = samePageUrl(current, url)
-          ? await options.browser.cdp.snapshot()
-          : await options.browser.cdp.navigate(url);
-        const picked = await options.browser.cdp.pickables();
-        return reply.code(200).send({
-          snapshot: {
-            url: dom.url,
-            title: dom.title,
-            text: dom.text,
-            viewport: picked.viewport,
-            // 元素取带几何的那一份（含 box）；静态那路的元素没有 box
-            elements: picked.elements,
-          },
-          ...(picked.screenshotUrl
-            ? { screenshotUrl: picked.screenshotUrl }
-            : {}),
-          source: "cdp",
-        });
-      } catch (error) {
-        // 回落静态抓取：CDP 偶发失败（页面忙/权限）时，静态快照仍能给点东西。
-        // 但原因必须留痕——否则界面只显示「静态」而无从判断 CDP 为什么没接上。
-        console.warn(
-          "[browser] CDP 拾取失败，回落静态抓取：",
-          error instanceof Error ? error.message : error,
-        );
-      }
-    }
-    try {
-      const snapshot = await options.browser.snapshot(url);
-      return reply.code(200).send({ snapshot, source: "static" });
-    } catch (error) {
-      if (error instanceof BrowserFetchError) {
-        return reply
-          .code(
-            error.code === "invalid_url" || error.code === "blocked_host"
-              ? 400
-              : 502,
-          )
-          .send({ error: { code: error.code, message: error.message } });
-      }
-      return reply.code(502).send({
-        error: {
-          code: "fetch_failed",
-          message: error instanceof Error ? error.message : "抓取失败。",
-        },
-      });
-    }
-  });
-
   // ── CDP 通道（R5-4「连接到 Chrome」/「自动截图」）──
 
   app.get("/api/browser/cdp/status", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
-    return reply.code(200).send({ cdp: options.browser.cdp.status() });
+    const cdp = options.browser.cdp;
+    const status = cdp.status();
+    // 页面主线程探针：注入脚本/网页自身卡死时面板据此提示「画面已卡住」，
+    // 不让整块面板看起来像死了（探针本身 1.5s 超时，失败只影响这个字段）。
+    const responsive = status.status === "connected" ? await cdp.ping() : false;
+    return reply.code(200).send({ cdp: { ...status, responsive } });
   });
 
   app.post("/api/browser/cdp/connect", async (request, reply) => {
@@ -789,7 +723,27 @@ export function registerBrowserRoutes(
   app.post("/api/browser/cdp/console", async (request, reply) => {
     const user = await authenticate(request, reply);
     if (!user) return;
-    const url = (request.body as { url?: unknown } | undefined)?.url;
+    const body = request.body as
+      | { url?: unknown; action?: unknown }
+      | undefined;
+    const url = body?.url;
+    // 收起悬浮控制台（拾取等面板交互前清场）：只 hide 不销毁，可再唤出。
+    if (body?.action === "close") {
+      try {
+        await options.browser.cdp.hideDebugConsole();
+        return reply
+          .code(200)
+          .send({ url: typeof url === "string" ? url : "" });
+      } catch (error) {
+        return reply.code(502).send({
+          error: {
+            code: "cdp_console_failed",
+            message:
+              error instanceof Error ? error.message : "收起调试控制台失败。",
+          },
+        });
+      }
+    }
     if (typeof url !== "string" || !url.trim()) {
       return reply.code(400).send({
         error: { code: "invalid_request", message: "缺少 url。" },
@@ -804,6 +758,63 @@ export function registerBrowserRoutes(
           code: "cdp_console_failed",
           message:
             error instanceof Error ? error.message : "注入调试控制台失败。",
+        },
+      });
+    }
+  });
+
+  /** 截当前视口（base64 直出）——面板「截图到对话」组 File 用，不落 blob。 */
+  app.post("/api/browser/cdp/screenshot", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    try {
+      const shot = await options.browser.cdp.screenshotData();
+      return reply.code(200).send(shot);
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "cdp_screenshot_failed",
+          message: error instanceof Error ? error.message : "截图失败。",
+        },
+      });
+    }
+  });
+
+  /**
+   * 页面内元素选择器（DevTools 拾取器同款）：start 注入跟随鼠标的高亮脚本，
+   * read 取走点选结果（读后即清），stop 退出。高亮在页面里画——坐标永远精确、
+   * 所有元素可选（旧快照叠框方案错位 + 元素不全，已废弃）。
+   */
+  app.post("/api/browser/cdp/picker", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    const action = (request.body as { action?: unknown } | undefined)?.action;
+    try {
+      if (action === "start") {
+        await options.browser.cdp.startElementPicker();
+        return reply.code(200).send({ ok: true });
+      }
+      if (action === "read") {
+        return reply
+          .code(200)
+          .send(await options.browser.cdp.readPickedElement());
+      }
+      if (action === "stop") {
+        await options.browser.cdp.stopElementPicker();
+        return reply.code(200).send({ ok: true });
+      }
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "action 只能是 start/read/stop。",
+        },
+      });
+    } catch (error) {
+      return reply.code(502).send({
+        error: {
+          code: "cdp_picker_failed",
+          message:
+            error instanceof Error ? error.message : "元素选择器操作失败。",
         },
       });
     }

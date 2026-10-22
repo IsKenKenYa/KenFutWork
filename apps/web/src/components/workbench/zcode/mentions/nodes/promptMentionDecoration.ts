@@ -5,19 +5,23 @@ import {
   resolveFileDisplayDescriptor,
 } from "@zui/lib/fileDisplay.js";
 import { resolvePluginIconSource } from "@zui/lib/pluginIconSource.js";
-import type { MentionCategory, MentionItemData } from "@zui/mentions/mentionTypes.js";
+import type {
+  MentionCategory,
+  MentionItemData,
+} from "@zui/mentions/mentionTypes.js";
 import {
+  BROWSER_MENTION_ICON_NODE,
   COMMAND_MENTION_ICON_NODE,
   COMPACT_COMMAND_MENTION_ICON_NODE,
   createMentionSvgIcon,
   GOAL_COMMAND_MENTION_ICON_NODE,
+  type MentionLucideIconNode,
   PLUGIN_MENTION_ICON_NODE,
   SESSION_MENTION_ICON_NODE,
   SKILL_MENTION_ICON_NODE,
   SUBAGENT_MENTION_ICON_NODE,
   WHITEBOARD_MENTION_ICON_NODE,
   WORKFLOW_COMMAND_MENTION_ICON_NODE,
-  type MentionLucideIconNode,
 } from "@zui/mentions/nodes/mentionIconDom.js";
 
 const pendingImages = new WeakMap<HTMLElement, HTMLImageElement>();
@@ -72,11 +76,19 @@ export function decoratePromptMention(
     return;
   }
   if (category === "files") {
-    const descriptor = resolveFileDisplayDescriptor(data?.path ?? data?.relativePath ?? value);
-    const url = data?.kind === "directory" ? FOLDER_FILE_ICON_SRC : descriptor.fileIconSrc;
+    const descriptor = resolveFileDisplayDescriptor(
+      data?.path ?? data?.relativePath ?? value,
+    );
+    const url =
+      data?.kind === "directory"
+        ? FOLDER_FILE_ICON_SRC
+        : descriptor.fileIconSrc;
     setImage(dom, url, () =>
       setImage(dom, DOCUMENT_FILE_ICON_SRC, () => {
-        dom.style.setProperty("--mention-image", cssUrl(INLINE_FALLBACK_FILE_ICON_SRC));
+        dom.style.setProperty(
+          "--mention-image",
+          cssUrl(INLINE_FALLBACK_FILE_ICON_SRC),
+        );
       }),
     );
     return;
@@ -91,12 +103,14 @@ export function decoratePromptMention(
           ? SESSION_MENTION_ICON_NODE
           : category === "whiteboards"
             ? WHITEBOARD_MENTION_ICON_NODE
-            : command === "goal"
-              ? GOAL_COMMAND_MENTION_ICON_NODE
-              : command === "workflow"
-                ? WORKFLOW_COMMAND_MENTION_ICON_NODE
-                : command === "compact"
-                  ? COMPACT_COMMAND_MENTION_ICON_NODE
-                  : COMMAND_MENTION_ICON_NODE;
+            : category === "browser"
+              ? BROWSER_MENTION_ICON_NODE
+              : command === "goal"
+                ? GOAL_COMMAND_MENTION_ICON_NODE
+                : command === "workflow"
+                  ? WORKFLOW_COMMAND_MENTION_ICON_NODE
+                  : command === "compact"
+                    ? COMPACT_COMMAND_MENTION_ICON_NODE
+                    : COMMAND_MENTION_ICON_NODE;
   setMask(dom, icon);
 }

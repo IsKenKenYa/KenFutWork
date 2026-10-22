@@ -85,11 +85,11 @@ export interface DocumentSidePaneTab extends Omit<OpenDocumentSidePaneRequest, "
 }
 
 /**
- * OpenDesign 面板 tab：Code 模式右侧栏的常驻视图（与浏览器面板同位互斥）。
+ * OpenDesign 面板 tab：Code 模式右侧栏的联动画布，**一块画布一个标签**。
  *
- * 面板内容是宿主 iframe（`OpenDesignPane`），tab 自身不带身份——探活与地址由壳内的
- * `host/openDesignHost.ts`（`useOpenDesignEntry`）解析，入口显隐由启动卡按插件安装态门控。
- * 用稳定 id 做**单例**（同 git）：工作区级的联动画布，重复打开即激活同一个。
+ * 标签标题 = 画布名（上游项目名，未解析时退回类型名）；`projectId` 为空表示
+ * 还没绑定画布（旧状态 / 首次打开），面板会退回「最近画布」或让用户新建。
+ * 面板内容是宿主 iframe（`OpenDesignPane`）；入口显隐由启动卡按插件安装态门控。
  */
 export interface OpenDesignSidePaneTab {
   id: string;
@@ -97,7 +97,15 @@ export interface OpenDesignSidePaneTab {
   ownerTaskId?: string | null;
   workspaceKey?: string | null;
   openedAt?: number;
+  /** 上游项目 id；null = 未绑定。 */
+  projectId: string | null;
+  /** 画布名（标签标题）；null = 未解析。 */
+  title?: string | null;
 }
+
+export type OpenDesignSidePaneMetadata = Partial<
+  Pick<OpenDesignSidePaneTab, "projectId" | "title">
+>;
 
 export interface ModelTrajectorySidePaneTab {
   id: string;
@@ -1653,19 +1661,26 @@ export function openDocumentSidePane(
   });
 }
 
-function createOpenDesignSidePaneTab(): OpenDesignSidePaneTab {
-  // 单例：稳定 id 让 activateSidePaneTab 原地复用（重复打开即激活，不叠出第二个面）。
+function createOpenDesignSidePaneTab(options?: {
+  projectId?: string | null;
+  title?: string | null;
+}): OpenDesignSidePaneTab {
+  const projectId = options?.projectId ?? null;
   return {
-    id: "open-design",
+    // 一块画布一个 tab：同项目复用同一个 id（重复打开即激活，不叠出第二个面）。
+    id: projectId ? `open-design:${projectId}` : "open-design",
     type: "open-design",
     openedAt: Date.now(),
+    projectId,
+    title: options?.title ?? null,
   };
 }
 
 export function openOpenDesignSidePane(
   current: WorkspaceSidePaneState | null,
+  options?: { projectId?: string | null; title?: string | null },
 ): WorkspaceSidePaneState {
-  return activateSidePaneTab(current, createOpenDesignSidePaneTab());
+  return activateSidePaneTab(current, createOpenDesignSidePaneTab(options));
 }
 
 export function openModelTrajectorySidePane(
@@ -2194,6 +2209,28 @@ export function updateBrowserSidePaneTab(
         tabs: nextTabs,
       }
     : current;
+}
+
+/** 画布名/绑定回写（面板解析出项目名或最近画布后按 tab id 写回，同浏览器标题口径）。 */
+export function updateOpenDesignSidePaneTab(
+  current: WorkspaceSidePaneState | null,
+  tabId: string,
+  patch: OpenDesignSidePaneMetadata,
+): WorkspaceSidePaneState | null {
+  if (!current) {
+    return current;
+  }
+
+  let didUpdate = false;
+  const nextTabs = current.tabs.map((tab) => {
+    if (tab.id !== tabId || tab.type !== "open-design") {
+      return tab;
+    }
+    didUpdate = true;
+    return { ...tab, ...patch };
+  });
+
+  return didUpdate ? { ...current, tabs: nextTabs } : current;
 }
 
 /** 按 workspace/session/browser generation/tab 完整匹配运行态，避免 stale run 串写。 */

@@ -130,14 +130,16 @@ describe("可注入脚本：UMD 分支修正", () => {
     Reflect.deleteProperty(window, "define");
   });
 
-  it("悬浮窗改造：样式进 Eruda 自己的 root（影子根里页面样式进不去）+ 拖动 + 关闭", () => {
+  it("三态窗口改造：实底悬浮 + 悬浮球 + 贴底最大化 + 边线拖高", () => {
     const script = buildInjectableScript("var x = 1;");
     expect(script).toContain("getRootNode");
     expect(script).toContain(".eruda-container{position:fixed");
     // 正文面板拉满：Eruda 自己留的顶部空档在悬窗形态下是**透明死区**（用户圈过）
     expect(script).toContain(
-      ".eruda-dev-tools{top:0!important;height:100%!important}",
+      ".eruda-dev-tools{top:0!important;height:100%!important;pointer-events:auto!important}",
     );
+    // 实底：容器显式上底色——透明面板被用户圈过（页面内容透出来像坏掉）
+    expect(script).toContain("background:#fff!important");
     expect(script).toContain('setProperty("left"');
     expect(script).toContain("eruda.hide()");
     expect(script).toContain("__kfwFloating = true");
@@ -148,8 +150,61 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("nwse-resize");
     // 关闭要连**容器**一起收（光 eruda.hide() 会留个空框：我们的样式钉死了宽高）
     expect(script).toContain('setProperty("display", "none", "important")');
-    // 重新打开要放回来（幂等分支里）
+    // 重新打开要放回来（幂等分支里），并从任何状态回到悬浮窗
     expect(script).toContain('removeProperty("display")');
+    expect(script).toContain("__kfwConsoleRestore");
+    // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
+    expect(script).toContain("kfw-ball-left");
+    expect(script).toContain("kfw-ball-right");
+    // 灵敏度/形态口径（用户 2026-10-20）：贴边半藏 55%、悬停近全露；球 36px、
+    // 更浅的中性半透白、拖动自由跟手松手吸附
+    expect(script).toContain("translateX(-55%)");
+    expect(script).toContain("translateX(-6%)");
+    expect(script).toContain("width:36px");
+    expect(script).toContain("rgba(255,255,255,.6)");
+    expect(script).not.toContain("rgba(255,255,255,.82)");
+    expect(script).toContain("opacity:.9");
+    // 悬浮球图标与「打开调试工具」菜单同款（lucide square-terminal 的三段路径）
+    expect(script).toContain('<path d="m7 11 2-2-2-2"></path>');
+    expect(script).toContain('<path d="M11 13h4"></path>');
+    // 最大化 = 分屏卡片（贴底全宽、**上边无圆角**），上边线 ns-resize（上下箭头）
+    // 拖高度（--kfw-mh）；拖标签栏 = 拿走（按当前几何转悬浮）
+    expect(script).toContain("kfw-max");
+    expect(script).toContain("border-radius:0!important");
+    expect(script).toContain("ns-resize");
+    expect(script).toContain("--kfw-mh");
+    expect(script).toContain("top:-7px;height:14px");
+    // 一个页面只开一个：已初始化只 show 不再 init
+    expect(script).toContain("window.eruda._isInit");
+    // 三按钮在**窗外的小号直角梯形**容器里（直角在右边：右竖左斜），body 级 fixed；
+    // 悬浮球态也外挂同一条按钮（syncBtnbar 的 ball 分支）
+    expect(script).toContain("kfw-btnbar");
+    // 按钮条挂 documentElement：与页面顶部导航同 z-index 时以更晚绘制顺序压过它
+    expect(script).toContain("document.documentElement.appendChild(btnbar)");
+    expect(script).toContain(
+      "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)",
+    );
+    expect(script).toContain('uiState === "ball"');
+    expect(script).toContain("function syncBtnbar");
+    // 贴边零间距（用户口径：右对齐面板最右侧、不要间距）
+    expect(script).toContain("rect.right - barW");
+    expect(script).toContain("rect.top - barH");
+    // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
+    expect(script).toContain('if (uiState === "ball") applyFloat();');
+    expect(script).toContain('if (uiState === "max") applyFloat();');
+    // 自家 UI 标 data-kfw-ui：元素拾取器见标记即跳过（选择模式下按钮必须可点）
+    expect(script).toContain('setAttribute("data-kfw-ui"');
+    // 自绘光标已移除（悬在宿主浮层下方 + CDP 往返延迟 + 关闭控制台后残留——
+    // 真机三条症状压过 resize 光标的收益）：系统光标回到默认表现；
+    // 早退分支仍会清理旧版本遗留的 .kfw-cursor 节点。
+    expect(script).not.toContain("CURSOR_SVGS");
+    expect(script).not.toContain("console-cursor");
+    expect(script).toContain(".kfw-cursor");
+    // 悬浮球：更浅的半透白 + 拖动自由跟手松手吸附
+    expect(script).toContain("rgba(255,255,255,.6)");
+    expect(script).toContain("kfw-ball-drag");
+    expect(script).toContain("最小化为悬浮球");
+    expect(script).toContain("分屏停靠");
   });
 
   it("源码抛错也要把 define 还回去（不能把人家的加载器弄坏）", () => {
@@ -178,5 +233,24 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("}).call(window);");
     // 尾部还接了「悬浮窗改造」（可拖动 / 可关闭）
     expect(script).toContain("__kfwFloating");
+  });
+
+  it("二次注入只还原不重跑源码：__kfwFloating 早退分支在源码之前", () => {
+    // 真机事故：重跑 eruda 源码会把 window.eruda 换成新对象（_isInit 复位），
+    // START_TAIL 于是再次 init——页面上多出第二个默认形态的全屏 Eruda，且
+    // applyFloat 的 eruda.show() 指到新对象，旧容器正文再也显示不出来
+    // （× 关闭后再点「打开调试工具」只剩一个空白框）。整段脚本必须先判
+    // __kfwFloating 并 return，源码一行都不执行。
+    const script = buildInjectableScript("SOURCE_MARK");
+    const guard = script.indexOf("if (window.__kfwFloating)");
+    const source = script.indexOf("SOURCE_MARK");
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(guard).toBeLessThan(source);
+    // 早退分支必须 return，否则会继续跑源码
+    const guardBlock = script.slice(guard, source);
+    expect(guardBlock).toContain("return;");
+    // 还原尾巴：放回容器 display + 让 eruda 与悬浮窗改造各自复位
+    expect(guardBlock).toContain('removeProperty("display")');
+    expect(guardBlock).toContain("__kfwConsoleRestore");
   });
 });

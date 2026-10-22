@@ -4,11 +4,8 @@ import { createStartupPersistenceFixture } from "../../test-startup-persistence.
 import { createMemoryTaskWorkManager } from "../task-work/test-store.js";
 
 /**
- * `POST /api/browser/snapshot` 的两条路（右栏「选择网页元素加入聊天」的接口）。
- *
- * CDP 连着时回来的是**真实渲染页 + 盒模型几何 + 视口截图**（浮层据此叠框点选），
- * 没连（或 CDP 读页失败）时回落静态抓取。这条形状是客户端浮层的输入契约，
- * 改这里必须同步改 `panel-browser-view.tsx`。
+ * browser 插件的面板数据面：画面流（`/view` `/stream` `/input`）、调试控制台、
+ * 截图到对话、页面内元素选择器（`/picker`）。agent 工具面见 browser-tools 相关测试。
  */
 
 async function buildBrowserApp(browser: Record<string, unknown>) {
@@ -78,188 +75,6 @@ async function openBrowserFrameReader(
   if (!reader) throw new Error("浏览器画面流没有读取通道。");
   return reader;
 }
-
-describe("POST /api/browser/snapshot", () => {
-  it("CDP 连着：回来真实渲染页 + 盒模型几何 + 视口 + 截图，source=cdp", async () => {
-    const { app, headers } = await buildBrowserApp({
-      cdp: {
-        isConnected: () => true,
-        // 受控浏览器停在别处：这一页要真的导航过去
-        status: () => ({ status: "connected", currentUrl: "about:blank" }),
-        navigate: async () => ({
-          url: "https://example.com/",
-          title: "Example",
-          text: "正文",
-          elements: [{ tag: "a", text: "静态", hint: "a" }],
-        }),
-        pickables: async () => ({
-          url: "https://example.com/",
-          title: "Example",
-          viewport: { width: 1280, height: 720 },
-          elements: [
-            {
-              tag: "button",
-              text: "立即开始",
-              hint: "button#start",
-              box: { x: 100, y: 40, width: 120, height: 30 },
-            },
-          ],
-          screenshotUrl: "https://blob.test/browser/1.png",
-        }),
-      },
-      snapshot: async () => {
-        throw new Error("CDP 可用时不该走静态抓取");
-      },
-    });
-    try {
-      const response = await app.inject({
-        headers,
-        method: "POST",
-        url: "/api/browser/snapshot",
-        payload: { url: "https://example.com" },
-      });
-      expect(response.statusCode).toBe(200);
-      const body = response.json() as {
-        source: string;
-        screenshotUrl?: string;
-        snapshot: {
-          title: string;
-          viewport?: { width: number; height: number };
-          elements: Array<{ hint: string; box?: unknown }>;
-        };
-      };
-      expect(body.source).toBe("cdp");
-      expect(body.screenshotUrl).toBe("https://blob.test/browser/1.png");
-      expect(body.snapshot.viewport).toEqual({ width: 1280, height: 720 });
-      // 元素取带几何的那一份（静态那路的元素没有 box）
-      expect(body.snapshot.elements).toEqual([
-        {
-          tag: "button",
-          text: "立即开始",
-          hint: "button#start",
-          box: { x: 100, y: 40, width: 120, height: 30 },
-        },
-      ]);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("CDP 读页失败：回落静态抓取，source=static（不给半截几何）", async () => {
-    const { app, headers } = await buildBrowserApp({
-      cdp: {
-        isConnected: () => true,
-        navigate: async () => {
-          throw new Error("页面忙");
-        },
-      },
-      snapshot: async () => ({
-        url: "https://example.com/",
-        title: "Example",
-        text: "正文",
-        elements: [{ tag: "a", text: "Learn more", hint: "a" }],
-      }),
-    });
-    try {
-      const response = await app.inject({
-        headers,
-        method: "POST",
-        url: "/api/browser/snapshot",
-        payload: { url: "https://example.com" },
-      });
-      expect(response.statusCode).toBe(200);
-      const body = response.json() as {
-        source: string;
-        screenshotUrl?: string;
-        snapshot: { elements: Array<{ tag: string }>; viewport?: unknown };
-      };
-      expect(body.source).toBe("static");
-      expect(body.screenshotUrl).toBeUndefined();
-      expect(body.snapshot.viewport).toBeUndefined();
-      expect(body.snapshot.elements).toEqual([
-        { tag: "a", text: "Learn more", hint: "a" },
-      ]);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("CDP 没连：直接走静态抓取（不用等 CDP 超时）", async () => {
-    let cdpCalled = false;
-    const { app, headers } = await buildBrowserApp({
-      cdp: {
-        isConnected: () => false,
-        navigate: async () => {
-          cdpCalled = true;
-          return { url: "", title: "", text: "", elements: [] };
-        },
-      },
-      snapshot: async () => ({
-        url: "https://example.com/",
-        title: "Example",
-        text: "正文",
-        elements: [],
-      }),
-    });
-    try {
-      const response = await app.inject({
-        headers,
-        method: "POST",
-        url: "/api/browser/snapshot",
-        payload: { url: "https://example.com" },
-      });
-      expect(response.json().source).toBe("static");
-      expect(cdpCalled).toBe(false);
-    } finally {
-      await app.close();
-    }
-  });
-
-  it("受控浏览器已经在这一页：只读、不重复导航（面板里的一切不该被刷掉）", async () => {
-    let navigated = false;
-    const { app, headers } = await buildBrowserApp({
-      cdp: {
-        isConnected: () => true,
-        status: () => ({
-          status: "connected",
-          currentUrl: "https://example.com/",
-        }),
-        navigate: async () => {
-          navigated = true;
-          return { url: "", title: "", text: "", elements: [] };
-        },
-        snapshot: async () => ({
-          url: "https://example.com/",
-          title: "Example",
-          text: "正文",
-          elements: [],
-        }),
-        pickables: async () => ({
-          url: "https://example.com/",
-          title: "Example",
-          viewport: { width: 800, height: 600 },
-          elements: [],
-        }),
-      },
-      snapshot: async () => {
-        throw new Error("CDP 可用时不该走静态抓取");
-      },
-    });
-    try {
-      const response = await app.inject({
-        headers,
-        method: "POST",
-        url: "/api/browser/snapshot",
-        payload: { url: "https://example.com" },
-      });
-      expect(response.statusCode).toBe(200);
-      expect(navigated).toBe(false);
-      expect(response.json().source).toBe("cdp");
-    } finally {
-      await app.close();
-    }
-  });
-});
 
 /**
  * 右栏面板的画面流（`/api/browser/cdp/view` + `/stream` + `/input`）。
@@ -719,6 +534,147 @@ describe("面板画面流接口", () => {
         second?.cancel().catch(() => {}),
       ]);
       await host.app.close();
+    }
+  });
+});
+
+describe("POST /api/browser/cdp/console 与 screenshot（面板拾取/截图配套）", () => {
+  it("action=close 只收起悬浮控制台，不导航不重新注入", async () => {
+    const hideDebugConsole = vi.fn(async () => {});
+    const injectDebugConsole = vi.fn(async () => ({
+      url: "https://example.com",
+    }));
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com",
+        }),
+        hideDebugConsole,
+        injectDebugConsole,
+      },
+    });
+    try {
+      const response = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/console",
+        payload: { action: "close" },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(hideDebugConsole).toHaveBeenCalledTimes(1);
+      expect(injectDebugConsole).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("screenshot 直出 base64（面板组 File 用，不落 blob）", async () => {
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com",
+        }),
+        screenshotData: async () => ({
+          base64: Buffer.from("png-bytes").toString("base64"),
+          width: 1280,
+          height: 720,
+        }),
+      },
+    });
+    try {
+      const response = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/screenshot",
+        payload: {},
+      });
+      expect(response.statusCode).toBe(200);
+      const body = response.json() as {
+        base64: string;
+        width: number;
+        height: number;
+      };
+      expect(Buffer.from(body.base64, "base64").toString()).toBe("png-bytes");
+      expect(body.width).toBe(1280);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("POST /api/browser/cdp/picker（页面内元素选择器）", () => {
+  it("start 注入脚本；read 取走点选结果；stop 退出；非法 action 报 400", async () => {
+    const startElementPicker = vi.fn(async () => {});
+    const readPickedElement = vi.fn(async () => ({
+      picked: {
+        tag: "a",
+        text: "Learn more",
+        hint: "a.pick-me",
+        box: { x: 40, y: 60, width: 120, height: 20 },
+        viewport: { width: 1280, height: 720 },
+        page: "https://example.com/",
+      },
+      active: false,
+      error: null,
+    }));
+    const stopElementPicker = vi.fn(async () => {});
+    const { app, headers } = await buildBrowserApp({
+      cdp: {
+        isConnected: () => true,
+        status: () => ({
+          status: "connected",
+          currentUrl: "https://example.com",
+        }),
+        startElementPicker,
+        readPickedElement,
+        stopElementPicker,
+      },
+    });
+    try {
+      const started = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/picker",
+        payload: { action: "start" },
+      });
+      expect(started.statusCode).toBe(200);
+      expect(startElementPicker).toHaveBeenCalledTimes(1);
+
+      const read = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/picker",
+        payload: { action: "read" },
+      });
+      expect(read.statusCode).toBe(200);
+      const body = read.json() as {
+        picked: { tag: string; hint: string } | null;
+      };
+      expect(body.picked?.tag).toBe("a");
+      expect(body.picked?.hint).toBe("a.pick-me");
+
+      const stopped = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/picker",
+        payload: { action: "stop" },
+      });
+      expect(stopped.statusCode).toBe(200);
+      expect(stopElementPicker).toHaveBeenCalledTimes(1);
+
+      const invalid = await app.inject({
+        headers,
+        method: "POST",
+        url: "/api/browser/cdp/picker",
+        payload: { action: "nope" },
+      });
+      expect(invalid.statusCode).toBe(400);
+    } finally {
+      await app.close();
     }
   });
 });

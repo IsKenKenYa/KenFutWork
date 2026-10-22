@@ -541,10 +541,10 @@ export function getSidePaneTabTitle(
     return tab.title;
   }
 
-  // open-design 无 title/source 字段：必须在此分派，否则会 fallthrough 到底部
-  // `tab.source.title` 读 undefined 触发 React 崩溃（browser-use 踩过同一个坑）。
+  // open-design 标签标题 = 画布名（未解析时退回类型名）。必须在此分派，否则会
+  // fallthrough 到底部 `tab.source.title` 读 undefined 触发 React 崩溃（browser-use 踩过同一个坑）。
   if (tab.type === "open-design") {
-    return formatMessage({ id: "sidePane.openDesign" });
+    return tab.title?.trim() || formatMessage({ id: "sidePane.openDesign" });
   }
 
   if (tab.type === "model-trajectory") {

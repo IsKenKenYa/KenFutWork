@@ -20,6 +20,7 @@ import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
+import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,
@@ -92,6 +93,8 @@ export interface ServiceMap {
   canvas: CanvasService;
   canvasAssets: CanvasAssetLocations;
   chat: ChatService;
+  /** 画布评论与标注（本仓自持的设计评审数据面） */
+  designReview: DesignReviewService;
   /**
    * Code 模式的 git 分支视图（工作目录=项目）：列分支 / 切分支。
    * 目录经 `resolveSandboxDir` 解析（与 agent 后端同一处），归属校验在服务内。

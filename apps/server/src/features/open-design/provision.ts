@@ -69,13 +69,23 @@ export function buildOpenDesignProvisionPlan(input: {
     if (!mapping) continue;
     if (!available.has(mapping.agentId)) continue;
     if (!entry.apiKey) continue;
-    const env: Record<string, string> = { [mapping.apiKeyEnv]: entry.apiKey };
+    // 合并而不是整体替换：`CODEX_BIN`/`CODEX_HOME` 这类由操作者预置的 CLI 环境
+    // 不属于本供给流程，整对象覆盖会在每次宿主重启时把它抹掉（实测踩过）。
+    const currentAgentCliEnv = isRecord(input.current.agentCliEnv)
+      ? input.current.agentCliEnv
+      : {};
+    const existingEnv = isRecord(currentAgentCliEnv[mapping.agentId])
+      ? (currentAgentCliEnv[mapping.agentId] as Record<string, unknown>)
+      : {};
+    const env: Record<string, string> = {
+      ...(existingEnv as Record<string, string>),
+      [mapping.apiKeyEnv]: entry.apiKey,
+    };
     if (entry.apiBase) env[mapping.baseUrlEnv] = entry.apiBase;
-    const agentCliEnv = {
-      ...(isRecord(input.current.agentCliEnv) ? input.current.agentCliEnv : {}),
+    patch.agentCliEnv = {
+      ...currentAgentCliEnv,
       [mapping.agentId]: env,
     };
-    patch.agentCliEnv = agentCliEnv;
     patch.agentId = mapping.agentId;
     return { patch, agentId: mapping.agentId, reason: null };
   }

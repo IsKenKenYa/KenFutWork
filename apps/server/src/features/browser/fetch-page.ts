@@ -1,10 +1,10 @@
 /**
- * 受控网页抓取与元素提取（R3-4「选择网页元素加入聊天」+ R5-4「允许 AI 控制浏览器」共用）。
+ * 静态网页抓取与元素提取（`browser_open` 工具的执行面，R5-4「允许 AI 控制浏览器」）。
  *
- * **为什么是服务端抓取而不是读 iframe 的 DOM**：右栏浏览器是跨源 iframe，读不到 DOM；
+ * **为什么是服务端抓取而不是读 iframe 的 DOM**：目标页面与工作台跨源，读不到 DOM；
  * 只有 CDP / 浏览器扩展能拿到渲染后的 DOM。这一版做的是**静态快照**：
  * 服务端把页面 HTML 抓回来，提取纯文本与可交互元素（链接/按钮/输入/图片/标题）。
- * 边界如实写在界面上：脚本渲染出来的内容、登录态页面、提交后的表单都看不到。
+ * 边界如实写在工具描述里：脚本渲染出来的内容、登录态页面、提交后的表单都看不到。
  *
  * 安全口径（这是唯一一处「服务端替用户访问任意 URL」的地方，故逐条写死）：
  * - 只允许 http/https；
@@ -48,7 +48,8 @@ export interface PageSnapshot {
 
 /**
  * 浏览器能力的 **Service Definition**（能力缝三元组：定义 + 提供者 + 消费方）。
- * 消费方有两处：右栏面板的快照端点（人）与 `browser_open` 工具（agent）。
+ * 静态抓取的消费方是 search 插件的网页通道（经 ctx 借同一份限流与拦截）；
+ * `browser_open` 工具直接用 `fetchPageSnapshot`；面板数据面走 `cdp` 会话。
  */
 export interface BrowserService {
   /** 静态快照（无需浏览器）：抓 HTML 提元素。 */
@@ -56,7 +57,7 @@ export interface BrowserService {
     url: string,
     options?: { elementLimit?: number },
   ): Promise<PageSnapshot>;
-  /** CDP 会话（「连接到 Chrome」/「自动截图」的执行面；未连接时各方法抛可读错误）。 */
+  /** CDP 会话（「连接到 Chrome」/「自动截图」/ 元素选择器的执行面；未连接时各方法抛可读错误）。 */
   cdp: import("./cdp-session.js").CdpBrowserSession;
 }
 

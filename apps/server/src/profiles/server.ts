@@ -26,6 +26,7 @@ import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
+import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
@@ -191,6 +192,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCanvasPlugin(),
     createCanvasToolsPlugin(),
     createCanvasPublicationRelayPlugin(),
+    designReviewPlugin,
     createCodeGitPlugin(),
     // 检查点（影子 git）在 agent-runs 之前装配：后者的轮次钩子经 tryGet 消费它
     createCheckpointsPlugin(),
