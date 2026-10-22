@@ -196,9 +196,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # 与 .nvmrc 同一个钉住版本：`node:24-bookworm` 是浮动 tag，实测解析到 24.21.0，
-      # 而仓库锁的是 24.11.1——测试环境与 SEA 宿主/桌面捆绑的 Node 不是同一份，
+      # 而仓库锁的是 24.22.1——测试环境与 SEA 宿主/桌面捆绑的 Node 不是同一份，
       # 「CI 绿了」就不能作为发布运行时的证据。由 check-actions 的 A7 对账 .nvmrc。
-      image: node:24.11.1-bookworm
+      image: node:24.22.1-bookworm
       # --init：容器 PID 1 换成 tini 这类会 reap 的 init。沙箱的停止确认要「命名空间内
       # 进程数归零」，而 job 容器的 PID 1 不会收养并回收孤儿僵尸，杀完最后一层后僵尸
       # 永远挂在 /proc 里，实测报 stop_unconfirmed（范围里仍有进程）。

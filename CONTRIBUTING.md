@@ -43,7 +43,7 @@ KenFutWork 是 BYOK AI 工作台，社区版以 GPL-3.0-only 发布。感谢你�
 
 ## 5. 开发环境与命令
 
-- Node 24.11.1、pnpm 10.26.2；根 `.env.local` 模板见 `.env.example`。
+- Node 24.22.1、pnpm 10.26.2；根 `.env.local` 模板见 `.env.example`。
 - `pnpm install`
 - `pnpm dev`（web 3000 / server 3001 / worker）
 - `pnpm --filter @kenfutwork/server dev:server`

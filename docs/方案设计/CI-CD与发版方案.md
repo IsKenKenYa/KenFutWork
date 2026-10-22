@@ -34,7 +34,7 @@
 
 | 项 | 落点 | 口径 |
 | --- | --- | --- |
-| Node 版本 | 根 `.nvmrc`（24.11.1）+ `engines.node`；`package-win.mjs` 的 `assertNodeMatchesPin()` | SEA 宿主是 `process.execPath`，构建机的 node 就是随包服务端的运行版本。`--sentinel-fuse` 那个字符串是 Node 源码里的**固定常量**（本机实测 node 22.20.0 与 24.11.1 同值），别把它当版本指纹 |
+| Node 版本 | 根 `.nvmrc`（24.22.1）+ `engines.node`；`package-win.mjs` 的 `assertNodeMatchesPin()` | SEA 宿主是 `process.execPath`，构建机的 node 就是随包服务端的运行版本。`--sentinel-fuse` 那个字符串是 Node 源码里的**固定常量**（本机实测 node 22.20.0 与 24.11.1 同值），别把它当版本指纹 |
 | 随包运行时 | `runtime-lock.json` + `scripts/runtime-lock.mjs`；`fetch-runtimes.mjs --write-lock` | python/uv/jdk/git 原本解析「最新发布」→ 同一 commit 隔天出包内容可以不同。lock 有的条目严格对账（**下载前**比资产名、下载后比哈希），没有的沿用解析。升级运行时是显式动作：重跑 `--write-lock` 并提交 |
 | 版本号 | `pnpm version:bump <x.y.z>` 一处改四处（`tauri.conf.json` 权威 + `Cargo.toml` + `Cargo.lock` + `desktop/package.json`），`tests/workspace.test.mjs` 对账 | 历史上 0.1.1→0.1.3 每轮手改四处；漏改的代价是安装包元数据与产物互不相认 |
 | 出包读数 | `collect-bundle.mjs` 产根 `dist-manifest.json` | 记 version/commit/ref/构建宿主 node/`rustc`/tauri-cli/runtime 版本/**签名状态**/逐 Mach-O 封印计数/DMG 用了哪档布局引擎/产物 sha256 |
