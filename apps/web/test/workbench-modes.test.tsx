@@ -428,7 +428,7 @@ it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", 
 
 it("旧模型入口打开同一管理文档并定位模型设置，重复打开不创建第二个页面", async () => {
   installFixture();
-  render(host());
+  await renderCodeFrame();
   const manager = (await screen.findByTitle(
     "管理设置",
     {},
