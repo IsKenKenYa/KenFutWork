@@ -1,9 +1,11 @@
 import { afterEach, expect, it } from "vitest";
 import { createInstanceSkillsByInstanceLoader } from "../../agent/workspace-skills.js";
 import { renderSkillsSection } from "../agent-runs/prompt-sections.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiSkillsHost } from "../skills/code-ui-host.js";
 import { createSkillCatalogService } from "../skills/skill-catalog-service.js";
 import { createInstanceSkillResourceReader } from "../skills/skill-resource-service.js";
+import { CodeUiConnections } from "./connections.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import { createPluginManagementFixture } from "./plugins.test-fixture.js";
 
@@ -11,6 +13,25 @@ const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
   for (const release of cleanup.splice(0)) await release();
 });
+
+function createHostRpcContext(actor: LocalActor) {
+  const connections = new CodeUiConnections();
+  const carrier = connections.open(
+    actor.instanceId,
+    actor.instanceId,
+    async () => {},
+    () => {},
+    false,
+    true,
+    actor.accessClientId,
+  );
+  cleanup.push(carrier.dispose);
+  return connections.context(
+    actor.instanceId,
+    carrier.hello.connectionId,
+    actor.accessClientId,
+  );
+}
 
 it("同名技能用包内资源身份精确读取，Code限定包不进入Design且跨实例不可读", async () => {
   const f = await createPluginManagementFixture();
@@ -74,6 +95,7 @@ it("同名技能用包内资源身份精确读取，Code限定包不进入Design
 it("原技能RPC显示安装包中的只读定义，运行目录按真实模式读取正文与附属资源，停用不卸载", async () => {
   const f = await createPluginManagementFixture();
   cleanup.push(f.dispose);
+  const context = createHostRpcContext(f.actor);
   const { localInstance } = createCodeUiTestInstance(
     f.instanceId,
     null,
@@ -104,7 +126,7 @@ it("原技能RPC显示安装包中的只读定义，运行目录按真实模式�
   });
   const listing = host["skills.list"];
   if (!listing) throw new Error("技能RPC未注册");
-  const result = await listing.call(f.actor, [{}]);
+  const result = await listing.call(f.actor, [{}], context);
   expect(result).toMatchObject({
     skills: [
       expect.objectContaining({
@@ -154,7 +176,7 @@ it("原技能RPC显示安装包中的只读定义，运行目录按真实模式�
   await f.registry.setEnabled(installed.installed.id, false);
   expect(await load(f.instanceId)).toEqual([]);
   expect(frozen[0]?.content).toBe(body);
-  expect(await listing.call(f.actor, [{}])).toMatchObject({
+  expect(await listing.call(f.actor, [{}], context)).toMatchObject({
     skills: [expect.objectContaining({ enabled: false })],
   });
   expect((await catalog.listSkills(f.instanceId, "code"))[0]?.enabled).toBe(
@@ -165,7 +187,7 @@ it("原技能RPC显示安装包中的只读定义，运行目录按真实模式�
     await resources.read(f.instanceId, ref, "SKILL.md", "design"),
   ).toBeUndefined();
   await f.registry.uninstall(installed.installed.id);
-  expect(await listing.call(f.actor, [{}])).toMatchObject({
+  expect(await listing.call(f.actor, [{}], context)).toMatchObject({
     skills: [],
   });
 });

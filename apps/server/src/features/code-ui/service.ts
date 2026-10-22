@@ -1462,12 +1462,14 @@ export class CodeUiService {
     send: (event: CodeUiEvent) => Promise<void>,
     close: () => void,
   ) {
+    this.assertConnectionHostOpen();
     await this.initialize();
     const workspace = await this.deps.localInstance.resolve(user);
     const settings = await this.deps.settings.getInstanceSettings(
       user,
       workspace.instanceId,
     );
+    this.assertConnectionHostOpen();
     const connection = this.connections.open(
       workspace.instanceId,
       user.instanceId,
@@ -1481,8 +1483,8 @@ export class CodeUiService {
       ...connection,
       reconnectDelayMs: settings.codeUiReconnectDelayMs,
       dispose: async () => {
-        connection.dispose();
         await this.closeResources([
+          connection.dispose(),
           this.controllers
             .get(connection.hello.connectionId)
             ?.host.dispose()
@@ -1511,24 +1513,21 @@ export class CodeUiService {
 
   async closeConnections() {
     this.closing = true;
-    try {
-      await this.closeResources(
-        [...this.controllers.values()]
-          .map((controller) => controller.host.dispose())
-          .concat(
-            [
-              this.deps.terminals?.close("Code通知宿主关闭"),
-              this.attachments?.close(),
-              this.watchers.close(),
-            ].filter(
-              (resource): resource is Promise<void> => resource !== undefined,
-            ),
-          ),
-      );
-      this.controllers.clear();
-    } finally {
-      this.connections.closeAll();
-    }
+    await this.closeResources([
+      this.connections.closeAll(),
+      ...[...this.controllers.values()].map((controller) =>
+        controller.host.dispose(),
+      ),
+      this.deps.terminals?.close("Code通知宿主关闭"),
+      this.attachments?.close(),
+      this.watchers.close(),
+    ]);
+    this.controllers.clear();
+  }
+
+  private assertConnectionHostOpen() {
+    if (this.closing)
+      throw new CodeUiRepositoryError("not_found", "Code通知宿主已关闭。");
   }
 
   private async closeResources(
@@ -1662,21 +1661,27 @@ export class CodeUiService {
     args: unknown[],
     connectionId?: string,
   ) {
+    this.assertConnectionHostOpen();
     const contributed = this.deps.hostRpcHandler?.(service, method);
     // 空字符串是客户端「尚未绑定连接」的载具口径，与未传等价；
     // 否则重连窗口的 connection-less 读取会被所有权守卫误报成连接丢失。
     const bound = connectionId ? connectionId : undefined;
     if (bound !== undefined || contributed) {
       const owner = await this.deps.localInstance.resolve(user);
+      if (contributed) {
+        const context = this.connections.context(
+          owner.instanceId,
+          bound,
+          user.accessClientId,
+        );
+        return { result: await contributed.call(context.actor, args, context) };
+      }
       this.connections.require(
         owner.instanceId,
         bound,
         false,
         user.accessClientId,
       );
-    }
-    if (contributed) {
-      return { result: await contributed.call(user, args) };
     }
     if (service === "zcode-session" && method === "setGoalBudget") {
       const value = args[0];

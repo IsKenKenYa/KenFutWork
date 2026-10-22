@@ -3,6 +3,10 @@ import {
   type CodeUiEvent,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
+import type {
+  CodeUiHostRpcCleanup,
+  CodeUiHostRpcContext,
+} from "./host-rpc-handler.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 type Snapshot =
@@ -54,11 +58,15 @@ interface Connection {
   close: () => void;
   subscriptions: Map<string, Subscription>;
   receivesNotifications: boolean;
+  abort: AbortController;
+  cleanups: Set<CodeUiHostRpcCleanup>;
+  disposal?: Promise<void>;
 }
 
 /** 连接只持有 owned 订阅；断线释放租约，权威会话与 Agent 运行独立存活。 */
 export class CodeUiConnections {
   private readonly connections = new Map<string, Connection>();
+  private readonly disposals = new Set<Promise<void>>();
 
   open(
     owner: string,
@@ -89,7 +97,7 @@ export class CodeUiConnections {
         independentPlanState: true,
       },
     });
-    this.connections.set(hello.connectionId, {
+    const connection: Connection = {
       owner,
       accessClientId,
       hello,
@@ -98,16 +106,80 @@ export class CodeUiConnections {
       close,
       subscriptions: new Map(),
       receivesNotifications,
-    });
+      abort: new AbortController(),
+      cleanups: new Set(),
+    };
+    this.connections.set(hello.connectionId, connection);
     return {
       hello,
-      dispose: () => this.connections.delete(hello.connectionId),
+      dispose: () => this.dispose(connection),
     };
   }
 
-  closeAll() {
-    for (const connection of this.connections.values()) connection.close();
-    this.connections.clear();
+  async closeAll() {
+    const connections = [...this.connections.values()];
+    for (const connection of connections) this.dispose(connection);
+    const transports = connections.map(async (connection) => {
+      connection.close();
+    });
+    await this.waitForDisposals([...this.disposals, ...transports]);
+  }
+
+  context(
+    owner: string,
+    id: string | undefined,
+    accessClientId: string | null,
+  ): CodeUiHostRpcContext {
+    const connection = this.require(owner, id, false, accessClientId);
+    const connectionId = connection.hello.connectionId;
+    return Object.freeze({
+      actor: Object.freeze({
+        instanceId: connection.owner,
+        accessClientId: connection.accessClientId,
+      }),
+      connectionId,
+      signal: connection.abort.signal,
+      requireInitialized: () => {
+        this.require(owner, connectionId, true, accessClientId);
+      },
+      onClose: (cleanup: CodeUiHostRpcCleanup) => {
+        this.require(owner, connectionId, false, accessClientId);
+        connection.cleanups.add(cleanup);
+        return () => {
+          connection.cleanups.delete(cleanup);
+        };
+      },
+    });
+  }
+
+  private dispose(connection: Connection): Promise<void> {
+    if (connection.disposal) return connection.disposal;
+    this.connections.delete(connection.hello.connectionId);
+    connection.disposal = Promise.resolve().then(async () => {
+      const cleanups = [...connection.cleanups];
+      connection.cleanups.clear();
+      await this.waitForDisposals(
+        cleanups.map(async (cleanup) => {
+          await cleanup();
+        }),
+      );
+    });
+    const disposal = connection.disposal;
+    this.disposals.add(disposal);
+    void disposal.then(
+      () => this.disposals.delete(disposal),
+      () => this.disposals.delete(disposal),
+    );
+    connection.abort.abort();
+    return disposal;
+  }
+
+  private async waitForDisposals(disposals: Promise<void>[]): Promise<void> {
+    const failures = (await Promise.allSettled(disposals)).flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length)
+      throw new AggregateError(failures, "Code连接资源尚未全部确认关闭。");
   }
 
   async send(owner: string, connectionId: string, event: CodeUiEvent) {

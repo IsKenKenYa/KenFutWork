@@ -13,6 +13,185 @@ const topicKinds = [
   "workspace-config",
 ] as const;
 
+it("连接关闭立即取消贡献工作并等待登记的异步清理", async () => {
+  const connections = new CodeUiConnections();
+  const owner = randomUUID();
+  const accessClientId = randomUUID();
+  const carrier = connections.open(
+    owner,
+    owner,
+    async () => {},
+    () => {},
+    false,
+    true,
+    accessClientId,
+  );
+  const context = connections.context(
+    owner,
+    carrier.hello.connectionId,
+    accessClientId,
+  );
+  let releaseCleanup = () => {};
+  const cleanupReady = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  let cleanupFinished = false;
+  context.onClose(async () => {
+    await cleanupReady;
+    cleanupFinished = true;
+  });
+  let closed = false;
+  const closing = carrier.dispose().then(() => {
+    closed = true;
+  });
+  expect(context.signal.aborted).toBe(true);
+  expect(() =>
+    connections.require(owner, carrier.hello.connectionId, false),
+  ).toThrow("Code 连接已关闭");
+  await Promise.resolve();
+  expect(closed).toBe(false);
+  expect(cleanupFinished).toBe(false);
+  releaseCleanup();
+  await closing;
+  expect(cleanupFinished).toBe(true);
+  expect(closed).toBe(true);
+});
+
+it("贡献上下文保留只读实例与客户端身份并按当前握手状态校验", async () => {
+  const connections = new CodeUiConnections();
+  const owner = randomUUID();
+  const accessClientId = randomUUID();
+  const carrier = connections.open(
+    owner,
+    owner,
+    async () => {},
+    () => {},
+    false,
+    true,
+    accessClientId,
+  );
+  const context = connections.context(
+    owner,
+    carrier.hello.connectionId,
+    accessClientId,
+  );
+  expect(context.actor).toEqual({ instanceId: owner, accessClientId });
+  expect(Object.isFrozen(context)).toBe(true);
+  expect(Object.isFrozen(context.actor)).toBe(true);
+  expect(context).not.toHaveProperty("taskId");
+  expect(() =>
+    connections.context(randomUUID(), context.connectionId, accessClientId),
+  ).toThrow("Code 连接已关闭");
+  expect(() =>
+    connections.context(owner, context.connectionId, randomUUID()),
+  ).toThrow("Code 连接已关闭");
+  expect(() => context.requireInitialized()).toThrow("尚未完成原协议握手");
+  connections.initialize(owner, context.connectionId, {
+    kind: "clientHello",
+    protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
+    clientId: randomUUID(),
+    appVersion: "test",
+    clientKind: "web",
+  });
+  expect(() => context.requireInitialized()).not.toThrow();
+  await carrier.dispose();
+  expect(() => context.requireInitialized()).toThrow("Code 连接已关闭");
+  expect(() => context.onClose(async () => {})).toThrow("Code 连接已关闭");
+});
+
+it("关闭全部连接会等待此前已释放连接的在途清理", async () => {
+  const connections = new CodeUiConnections();
+  const owner = randomUUID();
+  const carrier = connections.open(
+    owner,
+    owner,
+    async () => {},
+    () => {},
+  );
+  let releaseCleanup = () => {};
+  const cleanupReady = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  connections
+    .context(owner, carrier.hello.connectionId, null)
+    .onClose(async () => {
+      await cleanupReady;
+    });
+  const disposed = carrier.dispose();
+  let allClosed = false;
+  const closing = connections.closeAll().then(() => {
+    allClosed = true;
+  });
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(allClosed).toBe(false);
+  } finally {
+    releaseCleanup();
+    await Promise.all([disposed, closing]);
+  }
+  expect(allClosed).toBe(true);
+});
+
+it("传输关闭回调抛错后仍关闭其他连接并等待清理且保留全部错误", async () => {
+  const connections = new CodeUiConnections();
+  const owner = randomUUID();
+  const closeFailure = new Error("传输关闭失败");
+  const cleanupFailure = new Error("资源清理失败");
+  connections.open(
+    owner,
+    owner,
+    async () => {},
+    () => {
+      throw closeFailure;
+    },
+  );
+  let secondTransportClosed = false;
+  const second = connections.open(
+    owner,
+    owner,
+    async () => {},
+    () => {
+      secondTransportClosed = true;
+    },
+  );
+  let releaseCleanup = () => {};
+  const cleanupReady = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  connections
+    .context(owner, second.hello.connectionId, null)
+    .onClose(async () => {
+      await cleanupReady;
+      throw cleanupFailure;
+    });
+  let finished = false;
+  let failure: unknown;
+  const closing = connections.closeAll().then(
+    () => {
+      finished = true;
+    },
+    (error: unknown) => {
+      finished = true;
+      failure = error;
+    },
+  );
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(secondTransportClosed).toBe(true);
+    expect(finished).toBe(false);
+  } finally {
+    releaseCleanup();
+    await closing;
+  }
+  expect(failure).toBeInstanceOf(AggregateError);
+  expect(failure).toMatchObject({
+    errors: expect.arrayContaining([
+      closeFailure,
+      expect.objectContaining({ errors: [cleanupFailure] }),
+    ]),
+  });
+});
+
 it("文档通知只发送给同实例活动通知连接；不要求Task订阅或V4握手", async () => {
   const connections = new CodeUiConnections();
   const owner = randomUUID();
