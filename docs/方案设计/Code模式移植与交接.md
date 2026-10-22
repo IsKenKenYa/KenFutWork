@@ -1,9 +1,179 @@
 # Code 模式 ZCode 移植与交接
 
 > 角色：**方案稿 + 执行手册 + 施工回执 + 临时交接**（四合一，按「为什么这么做 → 怎么施工 → 已做了什么 → 现在接到哪」的顺序成章）。
-> 唯一源码基线：ZCode 3.14.3 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；逐文件来源、校验和与宿主适配偏差由 [`packages/third-party/zcode/来源清单.json`](../../packages/third-party/zcode/来源清单.json) 单处持有。
+> 当前已移植源码基线：ZCode 3.14.3 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；逐文件来源、校验和与宿主适配记录由 [`packages/third-party/zcode/来源清单.json`](../../packages/third-party/zcode/来源清单.json) 单处持有。3.16.2 的升级分析与计划见下一章；计划不代表运行代码已升级。
 > Code 的工作域、工具与权限契约见 [《Code工作域与工具内核实施规格》](./Code工作域与工具内核实施规格.md)；服务 key 与扩展点仍由 [《改造计划》](./改造计划.md) 持有；落轮次与回执记 [《日志》](../日志.md)。
-> 当前口径：下文施工与交接正文按当时检查点保留，其中「实施中」「active」「待验」、独立 Design 壳及旧身份/凭据描述不作为当前状态。Code/Design 的共享会话、持久 Task、内容标签及 2026-10-16 本轮完成状态，以《Code工作域与工具内核实施规格》「Code/Design 统一实施」和《日志》「Code/Design 统一工作台本轮最终验收（2026-10-16）」为准；本篇历史回执不覆盖现行产品不变量。
+> 当前口径：下方 3.14.3 施工与交接正文按当时检查点保留，其中「实施中」「active」「待验」、独立 Design 壳及旧身份/凭据描述不作为当前状态。Code/Design 的共享会话、持久 Task、内容标签及 2026-10-16 本轮完成状态，以《Code工作域与工具内核实施规格》「Code/Design 统一实施」和《日志》「Code/Design 统一工作台本轮最终验收（2026-10-16）」为准；本篇历史回执不覆盖现行产品不变量。
+
+## ZCode 3.16.2 界面升级分析与计划（2026-10-22）
+
+> **角色：升级方案稿。** 本轮完成源码差异与现有消费者核查，运行代码尚未修改。用户已确认采用原 ZCode 项目编辑器和多目录浏览交互，连接 KFW 现有服务；已有 Task 的目录授权独立保存。用户同时确认 Plugin UI／Gen UI 纳入完整计划，并分别验收。
+
+### 1. 比较依据与完成条件
+
+比较使用三个固定对象：原移植基线 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`（3.14.3）、KFW `da07da8a`、上游 `3c5b227649371507ddc4eb46ac5133afe6db1cab`（3.16.2）。新版位于用户提供的 `/Users/shigaoyu/Develop/ReferenceRepo/ZCode`。3.15.1 的 `aac4755666d09fdcd70272fcf063c077a639015f` 用于识别此前已经出现的变化，不作为 KFW 已完成升级的证据。
+
+判断单位为真实功能及其调用路径。新版新增文件、字节不同、旧文件被删除，都不能单独证明 KFW 缺少功能。每一批记录原始源码、当前适配、新版原件、实际消费方、验证结果与需要删除的旧引用。原始源码哈希和适配后哈希分别维护；不以更新清单掩盖不明变化。
+
+升级完成需要同时满足：
+
+- 使用新版原组件和实际装配，项目编辑、输入框、内容标签、消息展示、插件管理均连接真实服务。
+- 项目、模型、插件安装、工具发现、Task、权限、运行与媒体仍由现有 KFW 服务管理；没有第二份业务存储或 Agent 执行循环。
+- 既有 Canvas、Flow、OpenDesign、浏览器、子会话、审批、Goal 和恢复操作通过相应回归；同一操作只有一个有效入口和消费者。
+- 新来源可独立核对，每批 HEAD 可以构建；最终通过串行包测试、类型、lint、构建、实际本机交互和已改变接口的真实服务验收。
+
+### 2. 差异与复用清单
+
+| 功能 | 上游 3.16.2 的实际变化 | KFW 当前实现与升级处理 |
+| --- | --- | --- |
+| 项目与目录 | `WorkspaceSidebar` 转为 `ProjectSidebar`；独立 Project ID、多目录编辑和按项目导航 | 已有服务端 Project、主目录、附加读写目录及 Task。采用原 `ProjectEditor`／`ProjectSidebar`，由适配器连接这些服务，替换旧目录入口。[U1][K1] |
+| 项目名称 | 编辑名称并持久保存，保持项目 ID | 已有项目名称 PATCH，当前项目菜单没有编辑操作；连接原输入框，保持物理目录与 Task 归属。[U1][K1] |
+| 历史归档 | 设置页增加按项目分组、默认收起、搜索及批量操作 | 已有归档、置顶和任务操作；升级组织方式和列表，不建立第二套归档数据。[U2][K1] |
+| 会话分组服务 | 原分组方法改为独立 `ITaskGroupService`，项目目录 Provider 统一消费 | 已有任务列表和界面分组组织，但新版独立服务与完整持久化尚未接通。复用现有 Task 身份和设置；补齐分组保存、移动、移出及通知，不能用项目归属代替手动分组。[U15] |
+| 模型与思考 | `ComposerModelMenu` 将模型、连接与思考滑杆整合到同一弹层 | 已有模型选择、思考档位、供应商实例及发送配置固定。更新原菜单，消费当前候选；审批模型保持独立，不导入套餐连接服务。[U3][K2] |
+| 权限与 Plan | 独立菜单继续存在，新增 Guarded 展示，隐藏 Edit 选择但能显示历史 Edit | KFW 的 build／edit／yolo、独立 Plan 和模型审批均已连接。按当前实际执行语义显示；不因上游颜色或名称变化增删执行模式。[U4][K2] |
+| 文件面板 | 新 `FileManagerPane` 将目录树与文件预览放到独立、多标签内容面板 | 已有文件、Canvas、浏览器、OpenDesign 标签。采用新版文件面板并保留当前内容宿主；每个文件目标携带真实项目或 Task 身份。[U5][K3] |
+| 图片预览 | 文件图片增加复制、下载、添加到聊天；Markdown 图片另有自己的预览入口 | 已有附件预览、媒体消息和画布／OpenDesign 送入素材。更新原图片操作，统一进入现有可信附件处理，保留上传完成和新草稿保护。[U6][K3] |
+| 分享弹层与资源预览 | 原分享改为顶栏弹层，新增预检、进度、工作流和资源展示 | KFW 已有组件和代理，但服务端没有会话分享处理方，按当前派发逻辑会返回 501；本轮未发送实际 HTTP 请求。分享组件可以复用；公开发布入口需按真实能力隐藏。上游 OAuth 公网发布服务属于独立功能，不随 UI 更新引入。OpenDesign 静态发布是另一项已有能力。[U7][K7] |
+| 插件商店 | 同页管理、按服务实例隔离状态、侧面板商店及安装后打开插件界面 | 已有官方 bundle、本机包、来源安装、启停、卸载和独立管理文档。更新原商店，继续使用同一注册表；市场源和通用配置的现有缺口单独处理。[U8][K4] |
+| Plugin UI | MCP Apps 工具卡片、侧面板、后台页面、上下文及后续消息 | 现有静态插件面板只覆盖部分承载能力。补齐 bridge、资源、沙箱通信、会话作用域和生命周期后再接原卡片，完整范围见第 4 节。[U9][K4] |
+| Gen UI | 完成消息中的 visualize 指令显示交互页面，支持状态、主题与后续消息 | 补齐原 `IGenUiService` 对应的页面、状态、文件与上下文消费者；复用 Task 文件权限、消息服务和沙箱宿主，不增加另一套聊天或生成循环。[U10][K3] |
+| 工具搜索 | 新增 auto／local／off 设置和上游延迟工具机制，默认 off | KFW 已有真实 `ToolSearch`、延迟 schema 激活和执行权限检查。继续使用现有实现；不能用新版默认 off 静默关闭当前能力，也不能展示无执行支持的 native 选择。[U11][K5] |
+| 消息与工具展示 | 长命令展开、MCP 进度、独立 `ToolPresentation`、Plugin UI／Gen UI 展示 | 复用当前完整输出、真实 diff、媒体 renderer 和父子会话。只有真实进度事件才显示进度；新 renderer 不替换既有贡献入口。[U9][U10][K3] |
+| 内容完整视图 | 新内容面板完整视图及浮动输入区 | 可采用原布局控制，但 Canvas 保持挂载，同一时刻只有聚焦输入框接收素材与快捷键；切换视图不重建 Task 或改变权限。[U12][K3] |
+| 远程设备、手机登录、团队套餐 | 新页面依赖官方账户、远程 Host、relay 和套餐服务 | 按现行本机产品范围保持能力显隐，不随 UI 更新接入另一套账户、计费或远程执行服务。[U13][K6] |
+| Windows 未读提醒 | renderer 加 Electron 原生 overlay／托盘逻辑 | 界面状态可更新，原生提醒需要 Tauri 对应实现与 Windows 验证；不能宣称更新 React 文件即可完成。[U14] |
+
+源码中存在但本次未发现实际挂载的 `TaskSearchDialog`、`TodoPanel`、`MessageChangeSummaryPanel`、`ChatModeSwitchControl`，不自动加入产品入口。现有搜索仍有 `CommandCenterDialog` 消费，不因文件名称相似再建立一个搜索弹窗。
+
+### 3. 项目编辑与多目录的具体适配
+
+新版原 UI → KFW `projectService` 适配 → 现有项目 API／数据库；创建会话 → 现有持久 Task／executionScopes。`IProjectService` 是新版 UI 需要的接口，不能借此引入上游 `project-storage`／SQLite。
+
+| 操作 | 处理方式 |
+| --- | --- |
+| 创建项目、多选目录 | 原编辑器保存一个项目。选定主目录写 `work_dir`，其余目录写 `additional_directories`；每个附加目录提供现有只读／可写选择。确认前保持草稿。 |
+| 编辑名称 | 更新原项目 ID 的名称；刷新侧栏及标签显示，保持文件夹名称、会话与目录身份。 |
+| 编辑已有项目目录 | 普通编辑保持主目录固定，附加目录修改影响新建 Task。目录缺失的恢复继续使用已有专门流程；不连接为任意替换旧 Task 主目录。 |
+| 同目录、重复选择、符号链接 | 沿现有真实路径校验与目录冲突选择。用户选择复用或独立创建；不按路径自动合并项目。 |
+| 旧 Task 更新权限 | 使用现有 Task scope 操作明确修改，保留授权版本、并发检查与旧执行资源关闭；项目保存不自动为旧 Task 增加权限。 |
+| 打开历史会话与查看文件 | 继续解析真实 Task 目录；项目前置查看使用项目只读范围，不能从当前 UI 选中路径推导 Agent 权限。 |
+| 分组、归档与工作方式 | 新侧栏读取当前项目 ID 与任务分组；保存现有手动分组、归档与置顶。Code／Design 列表按已启用工作方式显示，Flow 按插件可用状态显示。 |
+
+项目多目录细节与固定源码证据见[《ZCode 3.16.2 多文件夹项目源码分析》](../调研/ZCode-3.16.2多文件夹项目源码分析.md)。本章不另建一份项目数据规格。
+
+### 4. Plugin UI／Gen UI 完整接入要求
+
+**共用实现**：现有插件注册表的 `listUiEntries()`、`readAsset()`、插件入口、安装启用态、LocalActor、Task 文件读取和内容标签继续使用。沙箱页面的创建、消息通道、可见性与关闭清理共用一个宿主实现；两类页面分别提供其业务接口。
+
+**Plugin UI** 需要完整处理 MCP Apps 资源与模板读取、资源订阅、工具 `_meta`、`McpAppInstance` 身份及代际、模型上下文、sampling、App-Provided Tools、实时增量和后续消息。工具卡片、用户主动打开的侧面板与后台页面使用原页面复用逻辑。安装／启用／项目范围改变后重新核查，不让旧页面继续使用被撤销能力。
+
+**Gen UI** 同时包含生成端与展示端。为当前 Task 准备持久输出目录并建立目录授权，成功后才由现有系统提示扩展点提供目录和生成指导；生成指导通过现有 Skills／官方插件能力提供，不建立第二套技能目录。模型生成 HTML 文件后，在已完成消息中提供原格式引用，再由原卡片读取和显示。还需要原 `IGenUiService` 对应的状态读写、模型上下文、页面引用投影、受 Task 授权的 HTML 读取、页面资源与生命周期。流式参数未完成时不执行指令。原卡片使用现有主题与原调节控件；后续消息由当前会话控制入口发送，不能直接启动另一套执行过程。[U17]
+
+**共同验证边界**：页面使用沙箱和 MessagePort；原 Electron `ownerWebContentsId` 在宿主边界映射为 KFW 可信窗口及页面身份，不接受 renderer 自报身份。校验页面实例、消息来源、当前 Task／项目与可见性。资源读取沿当前授权，不把本机接入凭据写进工具参数、普通事件或生成 HTML。页面发起的工具、模型和写入操作经过现有审批、Plan、角色及目录限制；页面内按钮不代表任意执行授权。关闭、取消、切换项目、停用插件后清理订阅，忽略迟到响应。用户交互或后续消息确认沿实际操作逐项核查。
+
+现有静态插件面板继续通过同一注册表工作；完整 MCP Apps 和 Gen UI 需各自真实验证，不能用静态面板能打开作为完成证据。新增服务定义、提供方和消费者在所属 feature 内共同提交，不在 `app.ts`／`worker.ts` 增加手工分发。
+
+### 5. 分批实施与提交顺序
+
+各批次按依赖推进，每批同时提交原组件、需要的接口、实际适配、测试和来源记录。存在跨文件依赖时，以可编译的完整调用路径为批次范围，不按目录机械分割。下面是完整目标的依赖顺序，全部批次验收后才算升级完成。
+
+| 批次 | 文件／职责 | 交付与验证 |
+| --- | --- | --- |
+| 0：来源与基准 | `scripts/zcode-provenance.mjs`、`vendor-zcode.mjs`、来源清单、仓库来源测试 | 支持分批记录真实上游提交；保留本机参考目录与并行修改。增加来源变化、目标变化、缺源、错误提交及新旧混合来源的真实 Git 对象测试。此批只改变校验，不改变产品。 |
+| 1：新版 UI 所需接口 | `packages/zcode-shared`／`zcode-services` 的浏览器接口、V4、`host/upstream/remoteServiceAccess.ts`、当前 feature RPC | 复制当前批实际依赖的上游类型与纯客户端实现，接已有文件／模型方法并处理新增 accessor 成员。项目和分组完整接口随第 3 批共同引入。新增方法必须同时有真实提供方；未启用功能保持现有能力显隐。原 UI 仍可工作，类型和构建通过。 |
+| 2：输入框与通用展示 | 原 `ComposerModelMenu`、模型控件、图片预览、长命令／进度与共享展示组件 | 使用已有模型、附件、完整工具输出、媒体和审批服务。验证模型与思考选择、发送期间新草稿、Plan、权限、剪贴板／下载失败及 Unicode／长输出。 |
+| 3：项目侧栏与归档 | 原 `project-sidebar/*`、`ProjectDirectoryProvider`、项目编辑器、项目／分组接口与提供方、必要前向迁移、现有设置服务 | 同批连接同一项目多目录与改名、独立分组持久化／置顶／归档、同目录选择、历史 Task 与跨工作方式导航。切换根装配时删除被取代的旧侧栏和目录入口引用；通过真实项目 API 与临时 PG 验证。 |
+| 4：文件面板与统一内容标签 | 原 `FileManagerPane`、`workspaceSidePane`、`AnimatedSidePanePanel`、`DocumentPane` 及宿主适配 | 多目录多标签、文件身份、浏览器／OpenDesign／子会话与完整视图共同工作。保留 Canvas 持续挂载、视口／选区与当前文件；发送、审批、Goal 和恢复不切换内容。 |
+| 5：插件管理与 Plugin UI | 原商店管理、`plugin-ui/*`、现有 plugins／MCP feature、新 bridge 与共用沙箱宿主 | 使用同一安装注册表、管理文档和作用域；补齐第 4 节 MCP Apps 能力后连接原工具卡片和侧面板。验收安装停用、资源更新、真实 MCP App 通信及撤销后的迟到事件。 |
+| 6：Gen UI 与分享能力显隐 | 原 `gen-ui/*`、Task 输出目录与生成指导、提示扩展、正文引用、共用沙箱、页面状态／Task 文件／会话消费者；分享能力检查 | 完成模型生成文件→完成消息引用→原页面显示，以及交互、状态与后续消息；未连接发布服务时不显示可点击的公开分享入口。验证生成目录失败、引用识别、刷新恢复、文件权限、交互来源和重复操作，不重建聊天服务。 |
+| 7：完整装配与清理 | App／Root／SettingsPage、构建别名、公共资源、来源清单与文档 | 检查未采用的新入口、已取代文件与所有引用；移除因本轮替换产生的无用实现。复核样式、主题、焦点和原生平台适配；完成全量检查及本机交互。 |
+
+批次 2 中的叶子更新与批次 3 的项目组织可以分别准备，实际写入共享 App／Root／SessionPane／样式／语言文件时串行集成。禁止同时运行多个测试或构建实例。
+
+### 6. 来源、构建与数据处理
+
+- 当前 `verifyZcodeInventory` 以全局 `revision` 校验原始来源。分批升级需要在记录上允许可选 `sourceRevision`，默认使用全局值；清单登记已用提交及对应 package 版本，按提交分组校验版本和原始字节，`copiedSha256` 继续验证当前适配文件。现有 `syncSource` 是 KFW 历史同步记录，不用它冒充上游提交。
+- 全局版本仅在所声明范围完成统一复核后更新；仍使用旧来源的文件保留明确来源。删除来源记录必须同时证明对应文件及消费者已退役，或登记其真实新路径。
+- 不删除来源清单后重跑复制脚本；该分支会清理目标目录。也不把新版目录当旧 `--source-root` 镜像校验。参考仓的工作分支、暂存指针和用户目录保持独立；所需 Git 对象由来源准备流程获取。
+- `@zcode/client` 在 KFW 已由宿主实现接管；Vite／类型／测试别名和 `host/upstream` 适配必须共同核对。`@zcode/services` 只引入 UI 实际依赖，禁止整包带入上游 Node 装配、SQLite、CLI 或账户服务。
+- 新 accessor 的必选成员逐项处理：`sourceServerWorkspaceService` 的本机身份解析映射到现有 Task／项目登记，远程操作继续按能力控制；`highspeedCardService` 的 SessionPane 直接调用必须加真实能力守卫；`outputStyleService` 本轮未发现实际 UI 消费，不因此创建新的持久化与提示风格功能。没有提供方的能力在宿主接口中明确可选并在消费前检查，不用固定空列表或成功结果满足类型。[U18]
+- 新版 V4 包含 `runtimeInitialization`、`historyFirst`、`retryInitialization`、`sourceCommandId` 等变化。每项同时检查产生端、HTTP／SSE、解析、状态合并和原 UI 消费；当前宿主没有实现的能力不宣告支持。创建和发送中的附加目录、页面来源、模型及执行材料都须由服务端验证，不直接信任 renderer 新增字段。[U16]
+- Plugin UI 的资源变化、实例关闭和页面工具调用属于 live-only delta，包含页面作用域和代际。冷历史不能重放这些执行请求；重连重新登记页面。只进入页面的 `_meta`、`privateContent` 和平台身份不得混入模型上下文；可进入模型的 `modelContent` 标记为不可信内容。[U16]
+- 项目、Task、供应商、插件、技能、命令和钩子继续使用当前存储。若新版确实需要新增持久字段，按现有前向迁移规则提供首次执行、二次无变化及历史校验；不修改历史 SQL，不删除现有开发数据。
+- 新依赖与资产先查许可、来源和注册表可用性，仅登记实际引入部分。法律文件修改遵守现有共同所有者批准规则；不整体覆盖本项目 notices 或变更公开许可。
+
+### 7. 验证矩阵与完整命令
+
+| 行为 | 必须证明的结果 |
+| --- | --- |
+| 新建／编辑项目 | 多选保存一个项目；取消、关闭和迟到选择均不写入；重复及符号链接路径归一化；名称修改保持 ID。 |
+| 项目与 Task | 项目修改后，新 Task 使用新设置，旧 Task 保留原授权；明确撤销后旧请求不能执行；目录失效提供处理方法。 |
+| 输入框 | 新菜单只显示可用模型；思考选择有效；点击发送时的配置保持原值，等待期间的新正文／附件／选择不被清除。 |
+| 权限／Plan／Goal | 独立 Plan、审批模型和完全访问保持真实语义；计划状态与只读角色不能借新按钮扩大权限；停止和重试仍指向真实执行与修订。 |
+| 内容标签 | 同名文件、多目录、连续打开／关闭／重开使用正确身份；Canvas、OpenDesign 和浏览器保留状态；后台文档不接收输入。 |
+| 插件管理 | 无项目管理、官方／本机来源、安装与启用区分、未知响应只读核查、并发编辑与删除后迟到请求均正确。 |
+| Plugin UI／Gen UI | 各自使用真实资源和消息通道；Gen UI 验证 Agent 生成文件、完成引用和原页面显示；刷新恢复、多个页面、重复交互、取消／关闭、权限撤销、卸载及迟到响应都有行为验证。 |
+| 媒体与子会话 | 生成结果保持原片读取与原消息归属；复制／下载失败可恢复；子会话继续复用 SessionPane 和真实订阅。 |
+
+实施时先运行对应批次的真实组件／服务回归，再按以下顺序运行；本轮分析只运行文档和来源核查，不把以下命令记为已通过：
+
+```bash
+node scripts/vendor-zcode.mjs
+pnpm test:workspace
+pnpm exec turbo run test --concurrency=1
+pnpm typecheck
+pnpm lint
+pnpm build
+```
+
+项目与宿主改变后，单独开启已有真实临时 PG 测试：
+
+```bash
+TMPDIR="$PWD/.scratch" KENFUTWORK_CRUD_TEST_PG=1 pnpm --filter @kenfutwork/server exec vitest run src/features/projects/projects.integration.test.ts --maxWorkers=1
+TMPDIR="$PWD/.scratch" RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/host.integration.test.ts --maxWorkers=1
+TMPDIR="$PWD/.scratch" RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/web exec vitest run test/code-approval-session-public.integration.test.tsx test/code-queue-session-public.integration.test.tsx test/code-file-rewind-session-public.integration.test.tsx --maxWorkers=1
+```
+
+原有相关回归包括 `shared-project-navigation`、`code-directory-choice-race`、`code-directory-recovery`、`code-model-defaults`、`code-attachment-composer`、`animated-side-pane-panel-model`、`code-plugin-store`、`code-plugin-source-install`、`code-goal-control`、`open-design-pane` 等；实施时按实际改变的公开行为补充用例，不重复测试内部函数形状，不使用伪造结果证明完成。
+
+HTTP 接口变化时同步 shared、中文 OpenAPI registry、`pnpm api:spec` 与 Apifox AI 分支；WS／流字段变化更新各自协议文档。原生目录多选、剪贴板、下载和布局还需 `pnpm desktop` 的实际交互验证，使用 DOM／可访问性与行为结果；未执行 Windows 的原生功能不得计为已验。真实模型沿当前供应商设置读取，不写入固定实例 ID、Key 或另建模型配置。
+
+### 8. 当前证据与状态
+
+已完成固定源码比较、现有消费者检查、来源零漂移检查和本计划。用户确认的项目原件复用与 Plugin UI／Gen UI 范围已写入。未修改运行代码、来源清单、子模块指针或用户暂存内容；未启动新版 GUI，未安装依赖，未运行全包测试或真实模型。
+
+本轮源码比较材料保存在已忽略的 `.scratch/ZCode界面升级/`；可交接的结论和计划由本章持有。后续按各批实际提交和验证结果更新本章状态及《日志》，未完成的批次保持未完成。
+
+### 9. 源码依据
+
+上游链接均固定到 3.16.2 的提交；以下 KFW 路径基于本轮 `da07da8a`，行号是核查位置，不代替后续实时读取。
+
+- **[U1] 项目**：[侧栏导出](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/WorkspaceSidebar.tsx#L1-L3)、[ProjectEditor](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ProjectEditor.tsx#L173-L361)。
+- **[U2] 归档**：[ArchiveManagement](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ArchiveManagement.tsx#L31-L50)、[默认收起](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ArchiveGroupCard.tsx#L45-L109)。
+- **[U3] 模型**：[ComposerModelMenu](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/chat-input-toolbar/ComposerModelMenu.tsx#L102-L195)、[原工具栏消费](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/v4/composer/V4ComposerToolbar.tsx#L1304-L1378)。
+- **[U4] 权限**：[V4ComposerModeControls](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/v4/composer/V4ComposerModeControls.tsx#L43-L103)。
+- **[U5] 文件**：[FileManagerTarget](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/lib/workspaceSidePane.ts#L50-L77)、[真实渲染](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx#L1294-L1337)。
+- **[U6] 图片**：[原预览操作](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/previewPaneImageContent.tsx#L54-L154)。
+- **[U7] 分享**：[ConversationSharePopover](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/conversation-share-interaction/ConversationSharePopover.tsx#L17-L78)。
+- **[U8] 商店**：[PluginStorePage](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/settings/PluginStorePage.tsx#L72-L136)。
+- **[U9] Plugin UI**：[真实能力检查](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/plugin-ui/adapters/usePluginUiHost.ts#L18-L60)、[会话能力提供方](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/plugin-ui/adapters/PluginUiProviders.tsx#L32-L68)。
+- **[U10] Gen UI**：[正文消费](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/v4/ConversationRowView.tsx#L1699-L1718)、[服务及沙箱检查](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/hooks/useGenUi.ts#L13-L43)。
+- **[U11] 工具搜索**：[设置入口](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/settingsPageHelpers.tsx#L522-L557)。
+- **[U12] 内容完整视图**：[控制器消费](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/app-shell/WorkspaceShellLayout.tsx#L558-L581)。
+- **[U13] 远程功能**：[设置能力条件](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/SettingsPage.tsx#L1944-L1975)、[手机入口](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/web/src/main.tsx#L396-L445)。
+- **[U14] 未读提醒**：[原生实现](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/desktop/src/main/desktopWindowLifecycle.ts#L331-L399)。
+- **[U15] 分组与项目目录服务**：[task-groups/contract.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/task-groups/contract.ts#L4-L50)、[window-project-directory/contract.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/window-project-directory/contract.ts#L7-L27)。当前 KFW 已处理的任务列表方法见 [service.ts](../../apps/server/src/features/code-ui/service.ts) 第 1998–2012 行。
+- **[U16] V4 与页面元信息**：[snapshot.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-protocol-v4/snapshot.ts#L476-L492)、[transport.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-protocol-v4/transport.ts#L341-L353)、[live-only delta](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-protocol-v4/delta.ts#L122-L154)、[Gen UI 状态格式](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/gen-ui/contract.ts#L30-L62)。
+- **[U17] Gen UI 生成端**：[提示段](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/context/sections/desktop.ts#L4-L19)、[输出目录准备](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/runtime/helpers/gen-ui-output.ts#L4-L20)。
+- **[U18] 必选服务与窗口身份**：[accessor.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/accessor.ts#L92-L120)、[页面沙箱接口](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/mcp-apps/contract.ts#L183-L198)。
+- **[K1] 项目与 Task**：[project-service.ts](../../apps/server/src/features/projects/project-service.ts) 第 190–222、373–405 行；[service.ts](../../apps/server/src/features/code-ui/service.ts) 第 5025–5078、5099–5108 行；[SharedProjectNavigation.tsx](../../apps/web/src/components/workbench/zcode/host/SharedProjectNavigation.tsx) 第 55–73、190–211 行。
+- **[K2] 模型与审批**：[V4ComposerToolbar.tsx](../../apps/web/src/components/workbench/zcode/v4/composer/V4ComposerToolbar.tsx) 第 1025–1091 行；[composerSubmissionConfig.ts](../../apps/web/src/components/workbench/zcode/v4/composer/composerSubmissionConfig.ts) 第 14–45 行；[V4ComposerModeControls.tsx](../../apps/web/src/components/workbench/zcode/v4/composer/V4ComposerModeControls.tsx) 第 171–251 行；[ModelDefaultsSection.tsx](../../apps/web/src/components/workbench/zcode/host/ModelDefaultsSection.tsx) 第 47–95、154–208 行。
+- **[K3] 文档与媒体**：[DocumentPane.tsx](../../apps/web/src/components/workbench/zcode/host/DocumentPane.tsx) 第 41–64 行；[AnimatedSidePanePanel.tsx](../../apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx) 第 1112–1346 行；[GeneratedMediaRenderer.tsx](../../apps/web/src/components/workbench/zcode/host/GeneratedMediaRenderer.tsx) 第 139–195 行；[useComposerAttachments.ts](../../apps/web/src/components/workbench/zcode/v4/composer/useComposerAttachments.ts) 第 1031–1084 行。
+- **[K4] 插件**：[managementDocument.tsx](../../apps/web/src/components/workbench/zcode/host/managementDocument.tsx) 第 139–167 行；[plugins.ts](../../apps/server/src/features/code-ui/plugins.ts) 第 215–300 行；[platform.ts](../../apps/web/src/components/workbench/zcode/host/platform.ts) 第 86–122 行；[PluginSidebarNavigation.tsx](../../apps/web/src/components/workbench/zcode/host/PluginSidebarNavigation.tsx) 第 22–78 行。
+- **[K5] ToolSearch**：[catalogue.ts](../../apps/server/src/features/tool-catalog/catalogue.ts) 第 55–165、168–232 行；每次发现和执行重新检查当前权限、定义与代际。
+- **[K6] 现有宿主与校验**：[main.tsx](../../apps/web/src/components/workbench/zcode/host/main.tsx) 第 166–197 行；[platform.ts](../../apps/web/src/components/workbench/zcode/host/platform.ts) 第 59–99 行；[zcode-provenance.mjs](../../scripts/zcode-provenance.mjs) 第 131–180 行；[vite.config.mjs](../../apps/web/src/components/workbench/zcode/vite.config.mjs) 的别名装配。
+- **[K7] 分享尚未接入**：[service.ts](../../apps/server/src/features/code-ui/service.ts) 第 1995 行最终返回未处理；[code-ui.ts](../../apps/server/src/http/code-ui.ts) 第 418–424 行返回 501。上游发布提供方使用独立公网与 OAuth 服务，见 [node.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/node.ts#L2613-L2635)。
 
 ---
 
