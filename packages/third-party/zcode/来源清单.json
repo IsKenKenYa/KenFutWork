@@ -606,9 +606,10 @@
       "source": "references/zcode/packages/ui/src/PreviewPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/PreviewPane.tsx",
       "sha256": "c8cec96768dcbe3499792ec3ce656e4af1b0676f5df1438fad7e31120677889e",
-      "copiedSha256": "d128252e52eb7af7889d2bc6042f79bf63585b58e56dbebcc42c65f36c69dbb0",
+      "copiedSha256": "d68bb02b60c98c93ef6307dfa9631773bde54f2540e5e3aaea155c24a10123d6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的图片文件身份和 SVG 原字节读取接线；KFW 文件及 watcher 使用打开时固定的 Task／Project 来源，图片素材读取沿同一来源。保留其余当前适配及原始基线。"
       ]
     },
     {
@@ -3370,8 +3371,9 @@
     {
       "source": "references/zcode/packages/ui/src/components/ai-elements/image-preview-dialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ai-elements/image-preview-dialog.tsx",
-      "sha256": "47d4ecdefc84d39f2deda93119ce400b36224276bb6c7dab6a914868914ac8de",
-      "copiedSha256": "cf1053390d359213f265bf2c363db00e229f0a3a7490758df1001eee0b5205d5",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "1f25a198c49c3b2d6e4a72fb16efba3e621beeb51e00e808ca9cff65be39d546",
+      "copiedSha256": "e2536e22fe5dc074631a81e114dd161886a521bdd3295a82b9a3d8c492d7acb8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -4941,8 +4943,9 @@
       "source": "references/zcode/packages/ui/src/hooks/useAppPanels.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useAppPanels.ts",
       "sha256": "543b38d5f9e7f6f962001613986b4292d9ecb5db4f3da95305f654c853fb69cd",
-      "copiedSha256": "b7f6e6a56bc630fde3af12e02d7bceb2bebe397597ad0b9baee7319dee124856",
+      "copiedSha256": "4427aa2dc5bbe5022abc97a8c49aa278d190a7e218341eb11ad4e817dfbfe1ee",
       "adaptations": [
+        "KFW 打开及批量打开文件时固定 Task／Project 来源，后续切换会话不改写已打开文件身份。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "Code/Design统一实施：文档标签按项目隔离，显式打开/关闭及删除后的迟到事件处理。",
         "2026-10-14 OpenDesign 集成（O0+O2）：新增 handleOpenOpenDesign 与 handleOpenOpenDesignPath（深链：把指定文件交给面板 od/navigate）。",
@@ -5830,7 +5833,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "df9ba4aaa265155a6281869da5c1077547d5142d53d0703b93d0db9513a611b3",
+      "copiedSha256": "31d92c93ed7a6256ee449a61239f9e1dcdd6e9d23902c5eac5d3905e34b6e4c5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5851,14 +5854,14 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
         "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
         "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。",
-        "采用同一上游提交的四项合并模型菜单文案。"
+        "采用同一上游提交的六项图片操作及四项合并模型菜单文案。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "9a985a8d352c59eda1069e1d849c2a2d79acb6d5b1a0b957a08546c59fae8690",
+      "copiedSha256": "9366eb20c31507de9140f5a84a28045bec74377a9ee35547ac395df64733996d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5879,7 +5882,7 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
         "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
         "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。",
-        "采用同一上游提交的四项合并模型菜单文案。"
+        "采用同一上游提交的六项图片操作及四项合并模型菜单文案。"
       ]
     },
     {
@@ -6186,9 +6189,10 @@
       "source": "references/zcode/packages/ui/src/lib/codeViewerWorkspaceScope.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/codeViewerWorkspaceScope.ts",
       "sha256": "1325053ff79a80990c87054c7e3a6ef9e6e0fde2cccf64ab1ca6e659044a9aec",
-      "copiedSha256": "1325053ff79a80990c87054c7e3a6ef9e6e0fde2cccf64ab1ca6e659044a9aec",
+      "copiedSha256": "50dc6afe57887801af9937112be93442855edb89361028d5665139f5581c9b47",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KFW 内容来源携带现有 CodeUiViewerScope，目录与授权身份分别保存。"
       ]
     },
     {
@@ -7945,8 +7949,9 @@
       "source": "references/zcode/packages/ui/src/lib/workspaceSidePane.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/workspaceSidePane.ts",
       "sha256": "b411b074341a798639a30cebaa3dc600edd728027a9afa51cc74c3d6839d135d",
-      "copiedSha256": "a81f4d52c05ff095c786a27dfaa01cbdf98a65ce6787bce462350588a0638fa7",
+      "copiedSha256": "22e90a654faae8f2cd21d84fb17e32cae6489fef3fff4ae7f9ac551df4ac9063",
       "adaptations": [
+        "KFW 文件标签的身份包含固定 Task／Project，保留相同路径但不同授权来源的独立标签。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "Code/Design统一实施：原内容标签扩展为项目文档，原浏览器和文件标签继续消费同一内容槽。",
         "2026-10-14 OpenDesign 集成（O0+O2）：新增 open-design 侧栏 tab 类型、单例 opener 与深链目标 navigatePath（随 tab 走，同 browser 的 initialUrl 口径），并列入 workspace-global tab。",
@@ -8629,18 +8634,21 @@
       "source": "references/zcode/packages/ui/src/previewPaneContent.tsx",
       "target": "apps/web/src/components/workbench/zcode/previewPaneContent.tsx",
       "sha256": "a2eb5a9de21219b1726cd4f9306dbe0735331ab100247cf78be79277e1ae7f9f",
-      "copiedSha256": "30ec1ac59297b58815a144475f75675045eba7c11b33f26bb2900e06a220a000",
+      "copiedSha256": "e6cc0936c6ef885f35908c9c67ffbb6e7b59ebc35e9a1159fd3c6c5ecb78433b",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的图片及 SVG 预览文件身份与原片下载参数；KFW 同时传入当前可见输入框身份并复用真实附件预传。保留其余当前适配及原始基线。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/previewPaneImageContent.tsx",
       "target": "apps/web/src/components/workbench/zcode/previewPaneImageContent.tsx",
-      "sha256": "a0215b3c903ab47ad209bf1cf592a6480b6ab526a9ef251b5ccb06f50863ec3e",
-      "copiedSha256": "a0215b3c903ab47ad209bf1cf592a6480b6ab526a9ef251b5ccb06f50863ec3e",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "fdcd6052a7ecf712c445c877dacf6c958a3d201a5cf94045fe8cf2f6487bca2a",
+      "copiedSha256": "b9fc76ef4812579c40e90e8043b76bb4446d8d92a156d57b62eee85166c387a0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KFW 添加图片消费固定来源原字节及原附件预算和预传；绑定可见输入框与页面生命周期，关闭或更换目标后拒绝迟到读取。SVG 保留实际 MIME。"
       ]
     },
     {
@@ -11988,7 +11996,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "a8e941bcb659896c62493b3907a24503b0092f615fe7ae63ff025300645a4381",
+      "copiedSha256": "5180c28347f981942dd377d38e8051833eb5b630517d7163cd77f3024ab57bbd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -11997,7 +12005,8 @@
         "Task权限与审批接线：会话使用真实Task基础权限和独立规划，审批模型由既有模型设置独立选择。",
         "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
         "2026-10-22统一Agent工作流程：原盾牌菜单直接修改当前Composer的独立Plan与基础权限；发送瞬间冻结原Submission的模型、思考、权限、规划和工作内容，附件、语音、Goal及Canvas接线保持原路径。",
-        "文件加入输入框：disabled 时解除原文件事件监听，恢复可编辑后重新登记，保留原草稿。"
+        "文件加入输入框：disabled 时解除原文件事件监听，恢复可编辑后重新登记，保留原草稿。",
+        "图片素材事件分别传递可见会话与实际附件 Task；新草稿使用原预热 Task 上传。"
       ]
     },
     {
@@ -12313,8 +12322,9 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "9fed143d3380d292fac555200698c3ddf1820903f2e878c2094b41f00bf393fc",
+      "copiedSha256": "5fe697eccb9b25d610e530076232420c33c54aa29920fc79120d2fc9c5175b31",
       "adaptations": [
+        "KFW 会话打开文件及自动展示 PPTX 时固定真实根 Task 来源。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -12827,8 +12837,9 @@
       "source": "references/zcode/packages/ui/src/v4/composer/useComposerAttachments.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/useComposerAttachments.ts",
       "sha256": "6d490d5f91461c5ce8e79748fd79eacbab7f71309b5666c456bfe7f535eea8bf",
-      "copiedSha256": "1cc47a223bb9afb47e2ff788e6f0282e2825555c858e578a81285775457b088a",
+      "copiedSha256": "601bf9c1ac4b31ba54719d6c9519c111e16a167c81b8e1551194db81c577b5b8",
       "adaptations": [
+        "KFW 原图片预览事件先由可编辑输入框认领，再沿实际附件 Task 读取预算、采集和预传；新草稿与附件 Task 身份分别处理，禁用、失焦或切换后取消在途请求。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "2026-10-20 KenFutWork 宿主偏差：增浏览器截图进对话事件分支（BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT，与画布截图同路；右栏浏览器面板「截图到对话」）",

@@ -4,6 +4,13 @@ const enUS: Record<string, string> = {
   "chat.toolbar.combined.models": "Models",
   "chat.toolbar.combined.effort": "Effort",
   "chat.toolbar.combined.selectModel": "Select model",
+  "preview.image.copy": "Copy image",
+  "preview.image.actions": "Image actions",
+  "preview.image.added": "Added to chat",
+  "preview.image.addFailed":
+    "Could not add the image. Open an editable chat in this workspace first.",
+  "preview.image.copied": "Image copied",
+  "preview.image.copyFailed": "Could not copy image. Check clipboard access and try again.",
   "startPlan.recommendation.subagentDescription":
     "Your Start Plan has quota available for {model}. Switch this subagent’s model to the Start Plan?",
   "startPlan.recommendation.preferenceSaveFailed":

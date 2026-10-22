@@ -1,5 +1,17 @@
+import { DndContext } from "@dnd-kit/core";
+import {
+  horizontalListSortingStrategy,
+  SortableContext,
+} from "@dnd-kit/sortable";
+import { SortableSidePaneTabTrigger } from "@zui/app-shell/SidePaneTabTrigger.js";
+import { Tabs, TabsList } from "@zui/components/ui/tabs.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import type { CodeViewerSidePaneTab } from "@zui/lib/workspaceSidePane.js";
+import { PreviewPane } from "@zui/PreviewPane.js";
 import { SessionPane } from "@zui/v4/SessionPane.js";
 import { V4PaneConversationProvider } from "@zui/v4/V4ConversationContext.js";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient.js";
 import { setSurfaceApiBase } from "../../src/components/workbench/zcode/host/surfaceApi.js";
@@ -15,13 +27,21 @@ declare global {
       projectId: string;
       sessionId: string;
       clientId: string;
+      newDraft?: boolean;
+      initialPreview?: {
+        type?: "file" | "image";
+        path: string;
+        title: string;
+        mediaType: string;
+      };
     };
     __codePublicSessionDispose?: () => void;
   }
 }
 
-const bootstrap = window.__codePublicSessionBootstrap;
-if (!bootstrap) throw new Error("原组件浏览器缺少实际会话配置");
+const providedBootstrap = window.__codePublicSessionBootstrap;
+if (!providedBootstrap) throw new Error("原组件浏览器缺少实际会话配置");
+const bootstrap = providedBootstrap;
 delete window.__codePublicSessionBootstrap;
 localStorage.setItem("zcode-v4-client-id:v1", bootstrap.clientId);
 setSurfaceApiBase(window.location.origin);
@@ -47,10 +67,11 @@ window.addEventListener("pagehide", dispose, { once: true });
 try {
   await client.connect();
   await client.openWorkspace(bootstrap.workspacePath, bootstrap.projectId);
-  client.setViewerContextResolver(() => ({
-    kind: "task",
-    taskId: bootstrap.sessionId,
-  }));
+  client.setViewerContextResolver(() =>
+    bootstrap.newDraft
+      ? { kind: "project", projectId: bootstrap.projectId }
+      : { kind: "task", taskId: bootstrap.sessionId },
+  );
   releaseServices = bindCodeWorkspaceServices(client);
   const Providers = await loadCodePublicHostProviders();
   const scope = {
@@ -60,15 +81,109 @@ try {
       bootstrap.workspacePath,
     ]),
   };
+  function PublicSessionSurface() {
+    const { intl } = useZCodeIntl();
+    const publicSessionId = bootstrap.newDraft ? null : bootstrap.sessionId;
+    const [preview, setPreview] = useState<CodeViewerSource | null>(() =>
+      bootstrap.initialPreview
+        ? {
+            ...bootstrap.initialPreview,
+            type: bootstrap.initialPreview.type ?? "image",
+            ...scope,
+            viewerScope: { kind: "task", taskId: bootstrap.sessionId },
+          }
+        : null,
+    );
+    const session = (
+      <SessionPane
+        paneId="actual-model-menu-pane"
+        sessionId={publicSessionId}
+        {...(publicSessionId ? { rootSessionId: publicSessionId } : {})}
+        {...scope}
+      />
+    );
+    if (!bootstrap.initialPreview) return session;
+    const previewTab: CodeViewerSidePaneTab | null = preview
+      ? {
+          id: "public-preview-tab",
+          type: "code-viewer",
+          source: preview,
+          sourceKey: preview.path ?? null,
+          ownerTaskId: publicSessionId,
+          workspaceKey: scope.workspaceIdentity,
+        }
+      : null;
+    return (
+      <main style={{ display: "flex", height: "100%", minHeight: 0 }}>
+        <section style={{ width: "52%", minWidth: 0 }}>{session}</section>
+        <section
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          {preview && previewTab ? (
+            <>
+              <Tabs value={previewTab.id}>
+                <DndContext>
+                  <SortableContext
+                    items={[previewTab.id]}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    <TabsList>
+                      <SortableSidePaneTabTrigger
+                        tab={previewTab}
+                        title={preview.title}
+                        closeTabLabel={intl.formatMessage(
+                          { id: "sidePane.closeTab" },
+                          { title: preview.title },
+                        )}
+                        closeTabMenuLabel={intl.formatMessage({
+                          id: "sidePane.closeCurrentTab",
+                        })}
+                        closeOtherTabsLabel={intl.formatMessage({
+                          id: "sidePane.closeOtherTabs",
+                        })}
+                        closeAllTabsLabel={intl.formatMessage({
+                          id: "sidePane.closeAllTabs",
+                        })}
+                        diffBadgeLabel={intl.formatMessage({
+                          id: "diff.title",
+                        })}
+                        isActive
+                        onActivateTab={() => setPreview(preview)}
+                        onCloseTab={() => setPreview(null)}
+                        onCloseOtherTabs={() => setPreview(preview)}
+                        onCloseAllTabs={() => setPreview(null)}
+                        canCloseOtherTabs={false}
+                      />
+                    </TabsList>
+                  </SortableContext>
+                </DndContext>
+              </Tabs>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <PreviewPane
+                  source={preview}
+                  workspacePath={bootstrap.workspacePath}
+                  markdownSelectionTarget={{
+                    sessionId: publicSessionId,
+                    workspaceKey: scope.workspaceIdentity,
+                  }}
+                  onClose={() => setPreview(null)}
+                />
+              </div>
+            </>
+          ) : null}
+        </section>
+      </main>
+    );
+  }
   root.render(
     <Providers client={client}>
       <V4PaneConversationProvider scope={scope}>
-        <SessionPane
-          paneId="actual-model-menu-pane"
-          sessionId={bootstrap.sessionId}
-          rootSessionId={bootstrap.sessionId}
-          {...scope}
-        />
+        <PublicSessionSurface />
       </V4PaneConversationProvider>
     </Providers>,
   );

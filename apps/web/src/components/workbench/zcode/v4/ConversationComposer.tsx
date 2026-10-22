@@ -657,6 +657,7 @@ function ConversationComposerImpl({
     remoteSessionId,
     scopeId: draftScopeId,
     attachmentSessionId,
+    composerSessionId: sessionId ?? null,
     attachmentPut,
     attachmentBudget,
     onRuntimeRestart,

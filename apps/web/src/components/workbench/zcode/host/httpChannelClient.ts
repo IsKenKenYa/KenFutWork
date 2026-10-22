@@ -7,6 +7,7 @@ import {
   canvasDocumentUpdatedMessageSchema,
   clampCodeUiReconnectDelayMs,
   codeGoalControlStateSchema,
+  codeUiViewerScopeSchema,
   codeUiWorkspaceSchema,
   isPluginIconResourceReference,
   type ProjectDirectoryRelinkSnapshot,
@@ -21,6 +22,8 @@ import {
   ProxyChannel,
 } from "@zcode/rpc";
 import {
+  IFileService,
+  IFileWatcherService,
   type IServiceAccessor,
   IWindowControllerService,
 } from "@zcode/services";
@@ -30,6 +33,7 @@ import {
   clientHelloSchema,
   windowHostControllerTaskFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
+import { registerCodeFileViewerClient } from "./fileViewerServices.js";
 import {
   chooseDirectoryProject,
   confirmDirectoryRelink,
@@ -227,6 +231,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         },
       }),
     };
+    registerCodeFileViewerClient(this);
   }
 
   registerWorkspaces(workspaces: CodeUiWorkspace[]) {
@@ -300,6 +305,28 @@ export class CodeHttpChannelClient implements IChannelClient {
   private workPreset: () => "code" | "design" = () => "code";
   setViewerContextResolver(resolve: (() => CodeUiViewerScope | null) | null) {
     this.viewerContext = resolve;
+  }
+  fileServicesForViewer(
+    source: CodeUiViewerScope,
+  ): Pick<IServiceAccessor, "fileService" | "fileWatcherService"> {
+    const viewerScope = Object.freeze(codeUiViewerScopeSchema.parse(source));
+    const channelFor = (channelName: string): IChannel => {
+      const channel = this.getChannel<IChannel>(channelName);
+      const service = servicesByChannel[channelName] ?? channelName;
+      return {
+        call: <TResult>(method: string, args?: unknown) =>
+          this.callChannel<TResult>(service, method, args, viewerScope),
+        listen: channel.listen,
+      };
+    };
+    return {
+      fileService: ProxyChannel.toService<IFileService>(
+        channelFor(IFileService.channelName),
+      ),
+      fileWatcherService: ProxyChannel.toService<IFileWatcherService>(
+        channelFor(IFileWatcherService.channelName),
+      ),
+    };
   }
   async openWorkspace(
     path: string,
@@ -861,7 +888,12 @@ export class CodeHttpChannelClient implements IChannelClient {
     return [updated, ...values.slice(1)];
   }
 
-  private injectViewer(service: string, method: string, values: unknown[]) {
+  private injectViewer(
+    service: string,
+    method: string,
+    values: unknown[],
+    fixedViewer?: CodeUiViewerScope,
+  ) {
     if (service === ServiceChannels.Terminal && method === "create") {
       const scope = this.viewerContext?.();
       if (scope?.kind !== "task")
@@ -877,17 +909,21 @@ export class CodeHttpChannelClient implements IChannelClient {
       (service === ServiceChannels.FileWatcher && method === "watch");
     if (!viewerRequest) return values;
     const first = values[0] as Record<string, unknown> | undefined;
-    if (first?.humanPurpose === "directory-picker") return values;
-    const viewerScope = this.viewerContext?.();
+    if (!fixedViewer && first?.humanPurpose === "directory-picker")
+      return values;
+    const viewerScope = fixedViewer ?? this.viewerContext?.();
     if (!viewerScope)
       throw new Error("请先选择 Code 项目或 Task 后使用工作区能力。");
-    return [{ ...first, viewerScope }, ...values.slice(1)];
+    const request: Record<string, unknown> = { ...first, viewerScope };
+    if (fixedViewer) delete request.humanPurpose;
+    return [request, ...values.slice(1)];
   }
 
   private async callChannel<TResult>(
     service: string,
     method: string,
     args?: unknown,
+    fixedViewer?: CodeUiViewerScope,
   ): Promise<TResult> {
     let values = args ?? [];
     if (Array.isArray(values))
@@ -895,6 +931,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         service,
         method,
         this.rewriteHostArguments(service, method, values),
+        fixedViewer,
       );
     await this.connect();
     if (

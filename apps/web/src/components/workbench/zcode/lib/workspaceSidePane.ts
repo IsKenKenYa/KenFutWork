@@ -987,7 +987,13 @@ function getCodeViewerTabSourceKey(source: CodeViewerSource): string | null {
   const workspaceScope = source.workspaceIdentity?.trim()
     ? source.workspaceIdentity.trim()
     : (source.workspacePath ?? "");
-  const scopedKeyPrefix = workspaceScope ? `${workspaceScope}:` : "";
+  const viewerId = source.viewerScope?.kind === "task"
+    ? source.viewerScope.taskId
+    : source.viewerScope?.projectId;
+  const viewerScopeKey = source.viewerScope
+    ? `${source.viewerScope.kind}:${viewerId}:`
+    : "";
+  const scopedKeyPrefix = `${workspaceScope ? `${workspaceScope}:` : ""}${viewerScopeKey}`;
   // 文件树把 PPTX 表示为通用 `file` source，引用反向打开则使用带导航意图的
   // `pptx` source。旧 key 直接包含 source.type，导致同一 workspace 路径被拆成两个 tab。
   // source type 只是入口表示，不是文件身份；这里只归一 PPTX，避免扩大其它预览类型的语义。

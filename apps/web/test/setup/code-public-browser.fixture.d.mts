@@ -7,6 +7,8 @@ export interface OriginalSessionBrowser {
   cdp: CdpClient;
   target: CdpSessionTarget;
   pageErrors: unknown[];
+  sessionCreateAcks: readonly unknown[];
+  requests: readonly unknown[];
   evaluate<T = unknown>(expression: string): Promise<T>;
   close(): Promise<void>;
 }
@@ -19,4 +21,11 @@ export function openOriginalSessionBrowser(options: {
   projectId: string;
   sessionId: string;
   clientId: string;
+  newDraft?: boolean;
+  initialPreview?: {
+    type?: "file" | "image";
+    path: string;
+    title: string;
+    mediaType: string;
+  };
 }): Promise<OriginalSessionBrowser>;

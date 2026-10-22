@@ -4,6 +4,12 @@ const zhCN: Record<string, string> = {
   "chat.toolbar.combined.models": "模型",
   "chat.toolbar.combined.effort": "思考强度",
   "chat.toolbar.combined.selectModel": "选择模型",
+  "preview.image.copy": "复制图片",
+  "preview.image.actions": "图片操作",
+  "preview.image.added": "已添加到聊天",
+  "preview.image.addFailed": "添加失败，请先打开此工作区的可编辑聊天。",
+  "preview.image.copied": "图片已复制",
+  "preview.image.copyFailed": "复制图片失败，请检查剪贴板权限后重试。",
   "startPlan.recommendation.subagentDescription":
     "你的体验套餐中，{model} 仍有可用额度，是否将此子智能体的模型切换到体验套餐？",
   "startPlan.recommendation.preferenceSaveFailed": "未能保存“不再提示”，本次仍按你的选择继续。",

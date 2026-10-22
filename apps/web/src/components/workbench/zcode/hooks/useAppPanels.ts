@@ -87,6 +87,7 @@ import { useWhiteboardStore } from "@zui/store/whiteboardStore.js";
 import { useModelTrajectoryOpenBridge } from "@zui/hooks/useModelTrajectoryOpenBridge.js";
 import { surfaceJson } from "@zui/host/surfaceApi.js";
 import { useServices } from "@zui/hooks/useServices.js";
+import { freezeCodeViewerSource } from "@zui/host/fileViewerServices.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { clearSelectionSideChat } from "@zui/lib/selectionSideChatRuntime.js";
 import { clearConversationSelectionReferenceScope } from "@zui/lib/conversationSelectionReference.js";
@@ -182,7 +183,8 @@ export function useAppPanels(options: {
   } = options;
   const supportsEmbeddedBrowser = explicitSupportsEmbeddedBrowser ?? Boolean(isDesktop);
   const activeWorkspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
-  const { zcodeAgentService, zcodeSessionService } = useServices();
+  const services = useServices();
+  const { zcodeAgentService, zcodeSessionService } = services;
   const isOfficeMode = useIsOfficeMode();
   const sidePaneMemoryKey = useMemo(
     () =>
@@ -220,6 +222,18 @@ export function useAppPanels(options: {
   const lastActiveSubagentTabByRootRef = useRef<Map<string, string>>(new Map());
   const sidePaneOwnerIdRef = useRef(sidePaneOwnerId);
   sidePaneOwnerIdRef.current = sidePaneOwnerId;
+  const codeViewerOriginRef = useRef({
+    workspacePath: workspaceAbsPath,
+    workspaceIdentity,
+    workspaceRemoteSessionId,
+    taskId: activeTaskId,
+  });
+  codeViewerOriginRef.current = {
+    workspacePath: workspaceAbsPath,
+    workspaceIdentity,
+    workspaceRemoteSessionId,
+    taskId: activeTaskId,
+  };
   const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
   activeWorkspaceKeyRef.current = activeWorkspaceKey;
   const projectIdRef = useRef(projectId);
@@ -375,9 +389,14 @@ export function useAppPanels(options: {
 
   const handleOpenCodeViewer = useCallback(
     (source: CodeViewerSource) => {
+      const fixedSource = freezeCodeViewerSource(
+        services,
+        source,
+        codeViewerOriginRef.current,
+      );
       revealSidePaneForCurrentOwner();
       commitOpenedSidePaneState((current) => {
-        const next = openCodeViewerSidePane(current, source, sidePaneOwnerIdRef.current);
+        const next = openCodeViewerSidePane(current, fixedSource, sidePaneOwnerIdRef.current);
         const activeTab = getActiveSidePaneTab(next);
         const activePath =
           activeTab?.type === "code-viewer" ? (activeTab.source.path ?? "none") : "none";
@@ -387,22 +406,25 @@ export function useAppPanels(options: {
         return next;
       });
     },
-    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath],
+    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, services, workspaceAbsPath],
   );
 
   const handleOpenCodeViewers = useCallback(
     (sources: readonly CodeViewerSource[]) => {
       if (sources.length === 0) return;
+      const fixedSources = sources.map((source) =>
+        freezeCodeViewerSource(services, source, codeViewerOriginRef.current),
+      );
       revealSidePaneForCurrentOwner();
       commitOpenedSidePaneState((current) => {
-        const next = openCodeViewerSidePanes(current, sources, sidePaneOwnerIdRef.current, 0);
+        const next = openCodeViewerSidePanes(current, fixedSources, sidePaneOwnerIdRef.current, 0);
         logger.info(
           `[App] 批量打开右侧预览 workspace=${workspaceAbsPath} sources=${sources.length} tabs=${next.tabs.length}`,
         );
         return next;
       });
     },
-    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, workspaceAbsPath],
+    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, services, workspaceAbsPath],
   );
 
   const handleOpenBrowserUrl = useCallback(

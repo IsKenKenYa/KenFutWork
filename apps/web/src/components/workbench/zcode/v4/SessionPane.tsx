@@ -44,6 +44,7 @@ import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { usePlanIdentitySnapshot } from "@zui/hooks/usePlanIdentitySnapshot.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useServices } from "@zui/hooks/useServices.js";
+import { freezeCodeViewerSource } from "@zui/host/fileViewerServices.js";
 import { useSettings } from "@zui/hooks/useSettingService.js";
 import { useSlashCommands } from "@zui/hooks/useSlashCommands.js";
 import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
@@ -539,7 +540,7 @@ export function SessionPane({
   onOpenGitReview,
   onOpenBrowserUrl,
   onOpenAutomationsMain: requestedOnOpenAutomationsMain,
-  onOpenCodeViewer,
+  onOpenCodeViewer: requestedOnOpenCodeViewer,
   onAutoOpenAssistantPptx,
   onOpenFileLink,
   onOpenSubagentSession,
@@ -576,9 +577,22 @@ export function SessionPane({
   const onOpenAutomationsMain = platform?.supportsAutomations === false
     ? undefined
     : requestedOnOpenAutomationsMain;
+  const services = useServices();
   const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService, zcodeAgentService,
-  } =
-    useServices();
+  } = services;
+  const onOpenCodeViewer = useMemo(
+    () => requestedOnOpenCodeViewer
+      ? (source: CodeViewerSource) => requestedOnOpenCodeViewer(
+          freezeCodeViewerSource(services, source, {
+            workspacePath,
+            workspaceIdentity,
+            workspaceRemoteSessionId: remoteSessionId,
+            taskId: rootSessionId ?? sessionId ?? null,
+          }),
+        )
+      : undefined,
+    [remoteSessionId, requestedOnOpenCodeViewer, rootSessionId, services, sessionId, workspaceIdentity, workspacePath],
+  );
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const baseWorkspaceServices = useBaseWorkspaceServices();
@@ -1120,9 +1134,19 @@ export function SessionPane({
       if (!onAutoOpenAssistantPptx || request.sources.length === 0) return;
       if (autoOpenedAssistantPptxKeysRef.current.has(request.key)) return;
       autoOpenedAssistantPptxKeysRef.current.add(request.key);
-      onAutoOpenAssistantPptx(request);
+      onAutoOpenAssistantPptx({
+        ...request,
+        sources: request.sources.map((source) =>
+          freezeCodeViewerSource(services, source, {
+            workspacePath,
+            workspaceIdentity,
+            workspaceRemoteSessionId: remoteSessionId,
+            taskId: rootSessionId ?? sessionId ?? null,
+          }),
+        ),
+      });
     },
-    [onAutoOpenAssistantPptx],
+    [onAutoOpenAssistantPptx, remoteSessionId, rootSessionId, services, sessionId, workspaceIdentity, workspacePath],
   );
   const composerDraftStateRef = useRef({ hasContent: false, busy: false });
   const [queueEditOperation, setQueueEditOperation] = useState<{
