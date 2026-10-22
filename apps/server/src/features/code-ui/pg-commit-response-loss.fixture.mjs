@@ -5,6 +5,7 @@ const freshTransaction = () => ({
   chatRoot: false,
   codeRoot: false,
   forkAck: false,
+  mediaInstall: false,
 });
 
 function cstring(bytes, at = 0) {
@@ -52,6 +53,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let commandId;
   let blackoutAfterCommit = false;
   let rollbackBeforeCommit = false;
+  let mediaInstall = false;
   let unavailable = false;
   let closed = false;
   let injected;
@@ -86,8 +88,8 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       const text = sql.toLowerCase().replace(/\s+/gu, " ").trim();
       if (
         unavailable &&
-        /public\.code_ui_commands/u.test(text) &&
-        /for update/u.test(text)
+        ((/public\.code_ui_commands/u.test(text) && /for update/u.test(text)) ||
+          (mediaInstall && /public\.media_driver_/u.test(text)))
       ) {
         injected.readbackSuppressed = true;
         frontend.destroy();
@@ -95,6 +97,13 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         return;
       }
       if (/^begin(?:\s|;|$)/u.test(text)) transaction = freshTransaction();
+      if (
+        mediaInstall &&
+        commandId &&
+        /\binsert into public\.media_driver_operations\b/u.test(text) &&
+        parameters.some((value) => value === commandId)
+      )
+        transaction.mediaInstall = true;
       if (/\binsert into public\.chat_sessions\b/u.test(text)) {
         transaction.chatRoot = true;
         transaction.targetTaskId = parameters[0];
@@ -126,9 +135,10 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         /^commit(?:\s|;|$)/u.test(text) &&
         commandId &&
         !injected &&
-        transaction.chatRoot &&
-        transaction.codeRoot &&
-        transaction.forkAck
+        ((transaction.chatRoot &&
+          transaction.codeRoot &&
+          transaction.forkAck) ||
+          transaction.mediaInstall)
       ) {
         if (rollbackBeforeCommit) {
           injected = {
@@ -283,6 +293,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       commandId = expectedCommandId;
       blackoutAfterCommit = options.blackoutAfterCommit === true;
       rollbackBeforeCommit = options.rollbackBeforeCommit === true;
+      mediaInstall = options.mediaInstall === true;
     },
     restore() {
       unavailable = false;

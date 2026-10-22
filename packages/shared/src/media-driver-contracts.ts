@@ -119,7 +119,8 @@ export const mediaDriverOriginSchema = z
 export const mediaDriverManifestSchema = z
   .object({
     apiVersion: z.literal(1),
-    id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+    // v1 标识同时用于文件目录和数据库索引，格式长度须在两端一致。
+    id: z.string().regex(/^[a-z][a-z0-9-]{0,127}$/),
     version: z.string().min(1),
     name: z.string().min(1),
     origins: z.array(mediaDriverOriginSchema).min(1),
@@ -167,6 +168,16 @@ export const mediaDriverMethodSchema = z.enum([
 export const mediaDriverPreviewRequestSchema = z
   .object({ source: z.string().min(1) })
   .strict();
+
+export const mediaDriverInstallationSchema = z
+  .object({
+    id: mediaDriverManifestSchema.shape.id,
+    generation: z.number().int().nonnegative().safe(),
+    revision: z.number().int().nonnegative().safe(),
+    state: z.enum(["new", "installed", "removed"]),
+    enabled: z.boolean(),
+  })
+  .strict();
 export const mediaDriverPreviewResponseSchema = z
   .object({
     manifest: mediaDriverManifestSchema,
@@ -176,8 +187,68 @@ export const mediaDriverPreviewResponseSchema = z
     sourceBytes: z.number().int().positive(),
     maxBytes: z.number().int().positive(),
     validation: z.literal("format_only"),
+    installation: mediaDriverInstallationSchema.optional(),
   })
   .strict();
+
+export const mediaDriverVersionSchema = z
+  .object({
+    id: z.uuid(),
+    generation: z.number().int().positive().safe(),
+    revision: z.number().int().positive().safe(),
+    sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    compiledDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceBytes: z.number().int().positive().safe(),
+    manifest: mediaDriverManifestSchema,
+    methods: z.array(mediaDriverMethodSchema),
+    approvedOrigins: z.array(mediaDriverOriginSchema).min(1),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+export const installedMediaDriverSchema = z
+  .object({
+    id: mediaDriverManifestSchema.shape.id,
+    generation: z.number().int().positive().safe(),
+    revision: z.number().int().positive().safe(),
+    enabled: z.boolean(),
+    currentVersion: mediaDriverVersionSchema,
+  })
+  .strict();
+export const mediaDriverInstallRequestSchema = z
+  .object({
+    source: z.string().min(1),
+    sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    compiledDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    expectedGeneration: z.number().int().nonnegative().safe(),
+    expectedRevision: z.literal(0),
+    approvedOrigins: z.array(mediaDriverOriginSchema).min(1),
+  })
+  .strict();
+export const mediaDriverInstallResponseSchema = z
+  .object({
+    driver: installedMediaDriverSchema,
+    replayed: z.boolean(),
+  })
+  .strict();
+export const mediaDriverVersionListResponseSchema = z
+  .object({
+    versions: z.array(mediaDriverVersionSchema),
+  })
+  .strict();
+export const mediaDriverSourceResponseSchema = z
+  .object({
+    source: z.string(),
+    sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export const mediaDriverIdParamsSchema = z
+  .object({
+    driverId: mediaDriverManifestSchema.shape.id,
+  })
+  .strict();
+export const mediaDriverVersionParamsSchema = mediaDriverIdParamsSchema.extend({
+  versionId: z.uuid(),
+});
 
 /** 素材仅传宿主签发的引用，脚本不能把本机路径当作素材读取。 */
 export const mediaDriverMaterialSchema = z
@@ -248,6 +319,17 @@ export const mediaDriverQueryResultSchema = z.discriminatedUnion("state", [
 ]);
 
 export type MediaDriverManifest = z.infer<typeof mediaDriverManifestSchema>;
+export type MediaDriverVersion = z.infer<typeof mediaDriverVersionSchema>;
+export type InstalledMediaDriver = z.infer<typeof installedMediaDriverSchema>;
+export type MediaDriverInstallation = z.infer<
+  typeof mediaDriverInstallationSchema
+>;
+export type MediaDriverInstallRequest = z.infer<
+  typeof mediaDriverInstallRequestSchema
+>;
+export type MediaDriverInstallResponse = z.infer<
+  typeof mediaDriverInstallResponseSchema
+>;
 export type MediaDriverParameter = z.infer<typeof mediaDriverParameterSchema>;
 export type MediaDriverMethod = z.infer<typeof mediaDriverMethodSchema>;
 export type MediaDriverPreview = z.infer<

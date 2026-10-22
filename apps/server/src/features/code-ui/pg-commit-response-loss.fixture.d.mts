@@ -8,7 +8,7 @@ export interface CommitLossEvidence {
 }
 export function createCommitResponseLossProxy(connectionString: string): Promise<{
   connectionString: string;
-  arm(commandId: string, options?: { blackoutAfterCommit?: boolean; rollbackBeforeCommit?: boolean }): void;
+  arm(commandId: string, options?: { blackoutAfterCommit?: boolean; rollbackBeforeCommit?: boolean; mediaInstall?: boolean }): void;
   restore(): void;
   waitForInjected(): Promise<CommitLossEvidence>;
   evidence(): { injected?: CommitLossEvidence; observerError?: string };

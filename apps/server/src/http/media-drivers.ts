@@ -1,10 +1,18 @@
 import {
   AGENT_GOVERNANCE_LIMITS,
+  mediaDriverIdParamsSchema,
+  mediaDriverInstallRequestSchema,
+  mediaDriverInstallResponseSchema,
   mediaDriverPreviewRequestSchema,
   mediaDriverPreviewResponseSchema,
+  mediaDriverSourceResponseSchema,
+  mediaDriverVersionListResponseSchema,
+  mediaDriverVersionParamsSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
+import { MediaDriverRegistryError } from "../features/media-drivers/errors.js";
 import { MediaDriverFileError } from "../features/media-drivers/preview.js";
 import type { MediaDriverService } from "../features/media-drivers/service.js";
 import { isZodError } from "./zod-error.js";
@@ -16,37 +24,81 @@ export async function registerMediaDriverRoutes(
     mediaDrivers: MediaDriverService;
   },
 ) {
-  app.post(
-    "/api/media-drivers/preview",
-    {
-      // JSON 转义最多将每字节编码为六字符；文件预算仍由运行期设置检查。
-      bodyLimit: AGENT_GOVERNANCE_LIMITS.mediaDriverMaxSourceBytes.max * 6,
-    },
-    async (request, reply) => {
+  const guarded =
+    (
+      status: number,
+      operation: (
+        actor: LocalActor,
+        request: FastifyRequest,
+      ) => Promise<unknown>,
+    ) =>
+    async (request: FastifyRequest, reply: FastifyReply) => {
       const actor = await deps.localAccess.authenticate(request);
       if (!actor)
         return reply.code(401).send({
           error: { code: "unauthorized", message: "请重新连接本机实例" },
         });
       try {
-        const input = mediaDriverPreviewRequestSchema.parse(request.body);
-        const { compiledCode: _compiledCode, ...preview } =
-          await deps.mediaDrivers.preview(actor, input.source);
-        return reply.send(mediaDriverPreviewResponseSchema.parse(preview));
+        return reply.code(status).send(await operation(actor, request));
       } catch (error) {
-        if (error instanceof MediaDriverFileError)
+        if (
+          error instanceof MediaDriverFileError ||
+          error instanceof MediaDriverRegistryError
+        )
           return reply
             .code(error.statusCode)
             .send({ error: { code: error.code, message: error.message } });
         if (isZodError(error))
           return reply.code(400).send({
-            error: {
-              code: "invalid_request",
-              message: "请填写完整供应商代码",
-            },
+            error: { code: "invalid_request", message: "请检查供应商请求字段" },
           });
         throw error;
       }
-    },
+    };
+  // JSON 转义最多将每字节编码为六字符；文件预算仍由运行期设置检查。
+  const fileOptions = {
+    bodyLimit: AGENT_GOVERNANCE_LIMITS.mediaDriverMaxSourceBytes.max * 6,
+  };
+  app.post(
+    "/api/media-drivers/preview",
+    fileOptions,
+    guarded(200, async (actor, request) => {
+      const input = mediaDriverPreviewRequestSchema.parse(request.body);
+      const { compiledCode: _compiledCode, ...preview } =
+        await deps.mediaDrivers.preview(actor, input.source);
+      return mediaDriverPreviewResponseSchema.parse(preview);
+    }),
+  );
+  app.post(
+    "/api/media-drivers",
+    fileOptions,
+    guarded(201, async (actor, request) =>
+      mediaDriverInstallResponseSchema.parse(
+        await deps.mediaDrivers.install(
+          actor,
+          mediaDriverInstallRequestSchema.parse(request.body),
+        ),
+      ),
+    ),
+  );
+  app.get(
+    "/api/media-drivers/:driverId/versions",
+    guarded(200, async (actor, request) => {
+      const { driverId } = mediaDriverIdParamsSchema.parse(request.params);
+      return mediaDriverVersionListResponseSchema.parse(
+        await deps.mediaDrivers.versions(actor, driverId),
+      );
+    }),
+  );
+  app.get(
+    "/api/media-drivers/:driverId/versions/:versionId/source",
+    guarded(200, async (actor, request) => {
+      const { driverId, versionId } = mediaDriverVersionParamsSchema.parse(
+        request.params,
+      );
+      return mediaDriverSourceResponseSchema.parse(
+        await deps.mediaDrivers.source(actor, driverId, versionId),
+      );
+    }),
   );
 }

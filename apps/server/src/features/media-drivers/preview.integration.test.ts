@@ -4,6 +4,7 @@ import { registerMediaDriverRoutes } from "../../http/media-drivers.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { createMediaDriverRepository } from "./repository.js";
 import { createMediaDriverService } from "./service.js";
 
 it.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
@@ -19,6 +20,7 @@ it.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       const mediaDrivers = createMediaDriverService({
         localInstance: db.localInstance,
         settings,
+        repository: createMediaDriverRepository(db.persistence),
       });
       await registerMediaDriverRoutes(app, {
         localAccess: db.localAccess,

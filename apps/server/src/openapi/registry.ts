@@ -131,8 +131,12 @@ import {
   marketplaceInstallRequestSchema,
   mcpServerCreateRequestSchema,
   mcpServerUpdateRequestSchema,
+  mediaDriverInstallRequestSchema,
+  mediaDriverInstallResponseSchema,
   mediaDriverPreviewRequestSchema,
   mediaDriverPreviewResponseSchema,
+  mediaDriverSourceResponseSchema,
+  mediaDriverVersionListResponseSchema,
   messageCreateResponseSchema,
   messageListResponseSchema,
   modelCatalogResponseSchema,
@@ -2398,6 +2402,40 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
       "解析并编译自包含 TypeScript 文件，返回模型、参数、连接字段、访问地址及文件摘要。此检查不执行供应商代码，也不验证真实生成接口。",
   },
   // ---- provider-instances.ts（BYOK 供应商实例；apiKey存于本地明文凭据文件，授权设置可读取）----
+  {
+    method: "post",
+    path: "/api/media-drivers",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 201,
+    requestSchema: mediaDriverInstallRequestSchema,
+    responseSchema: mediaDriverInstallResponseSchema,
+    summary: "安装媒体供应商文件",
+    description:
+      "确认文件摘要和访问地址后保存不可变版本。同一代际和相同参数重复安装返回原版本，参数改变返回冲突。安装不执行供应商方法。",
+  },
+  {
+    method: "get",
+    path: "/api/media-drivers/:driverId/versions",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: mediaDriverVersionListResponseSchema,
+    summary: "查询媒体供应商版本",
+    description:
+      "返回当前实例已安装供应商的不可变版本、模型声明和已确认访问地址。",
+  },
+  {
+    method: "get",
+    path: "/api/media-drivers/:driverId/versions/:versionId/source",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: mediaDriverSourceResponseSchema,
+    summary: "读取媒体供应商文件",
+    description:
+      "核对应用数据目录中的文件摘要后返回原始 TypeScript 文件。需要本机接入授权。",
+  },
   {
     method: "get",
     path: "/api/provider-instances",
