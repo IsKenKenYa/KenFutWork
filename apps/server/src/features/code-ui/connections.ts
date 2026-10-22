@@ -125,6 +125,24 @@ export class CodeUiConnections {
     await this.waitForDisposals([...this.disposals, ...transports]);
   }
 
+  retireTaskSubscriptions(
+    owner: string,
+    taskIds: readonly string[],
+    sourceProjectId: string,
+  ): void {
+    const topics = new Set(taskIds.map(protocol.conversationTopic));
+    for (const connection of this.connections.values()) {
+      if (connection.owner !== owner) continue;
+      for (const [id, subscription] of connection.subscriptions) {
+        if (
+          subscription.projectId === sourceProjectId &&
+          topics.has(subscription.topic)
+        )
+          connection.subscriptions.delete(id);
+      }
+    }
+  }
+
   context(
     owner: string,
     id: string | undefined,

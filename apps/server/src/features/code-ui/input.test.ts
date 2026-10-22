@@ -442,8 +442,25 @@ async function fixture(
     clientKind: "web",
     appVersion: "test",
   });
-  const send = (payload: unknown, commandId = randomUUID()) =>
-    rpc("sendConversationCommandV4", {
+  const commandObservations = new Map<
+    string,
+    Promise<protocol.ConversationTaskControl>
+  >();
+  const taskControlForCommand = (commandId: string) => {
+    let observation = commandObservations.get(commandId);
+    if (!observation) {
+      observation = service.getSnapshot(actor, taskId).then((snapshot) => {
+        if (!snapshot.taskControl)
+          throw new Error("输入测试没有公开 Task 观察值");
+        return Object.freeze(structuredClone(snapshot.taskControl));
+      });
+      commandObservations.set(commandId, observation);
+    }
+    return observation;
+  };
+  const send = async (payload: unknown, commandId = randomUUID()) => {
+    const taskControl = await taskControlForCommand(commandId);
+    return rpc("sendConversationCommandV4", {
       workspacePath: directory,
       envelope: {
         clientId,
@@ -451,16 +468,19 @@ async function fixture(
         sessionId: taskId,
         type: "sendText",
         payload,
+        taskControl: structuredClone(taskControl),
         issuedAt: Date.now(),
       },
     });
-  const command = (
+  };
+  const command = async (
     type: protocol.CommandType,
     payload: unknown,
     baseRevision: number,
     commandId = randomUUID(),
-  ) =>
-    rpc("sendConversationCommandV4", {
+  ) => {
+    const taskControl = await taskControlForCommand(commandId);
+    return rpc("sendConversationCommandV4", {
       workspacePath: directory,
       envelope: {
         clientId,
@@ -468,10 +488,12 @@ async function fixture(
         sessionId: taskId,
         type,
         payload,
+        taskControl: structuredClone(taskControl),
         baseRevision,
         issuedAt: Date.now(),
       },
     });
+  };
   async function upload(
     bytes: Buffer,
     mime = "text/plain",
@@ -516,6 +538,7 @@ async function fixture(
     waitRuns,
     finishRun,
     command,
+    taskControlForCommand,
     directory,
     connectionId: connection.hello.connectionId,
     events,
@@ -1540,6 +1563,7 @@ it("真实HTTP在已保存输入后丢失响应仍启动该轮，同命令重试
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
   const commandId = randomUUID();
   const payload = { text: "响应丢失", modelSelection: host.selection };
+  const taskControl = await host.taskControlForCommand(commandId);
   await expect(
     fetch(`${address}/api/code-ui/rpc`, {
       method: "POST",
@@ -1557,6 +1581,7 @@ it("真实HTTP在已保存输入后丢失响应仍启动该轮，同命令重试
               sessionId: host.taskId,
               type: "sendText",
               payload,
+              taskControl: structuredClone(taskControl),
               issuedAt: Date.now(),
             },
           },

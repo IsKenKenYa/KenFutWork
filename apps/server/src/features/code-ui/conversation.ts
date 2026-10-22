@@ -371,6 +371,7 @@ export function createCodeUiConversation(input: {
   sessionId: string;
   workspacePath: string;
   config: z.input<typeof protocol.sessionConfigStateSchema>;
+  taskControl?: protocol.ConversationTaskControl;
   goals?: GoalService;
   clock?: () => number;
   state?: CodeUiConversationState;
@@ -1610,7 +1611,10 @@ export function createCodeUiConversation(input: {
     },
     getSnapshot(sessionId = input.sessionId): Snapshot {
       return protocol.conversationSnapshotSchema.parse(
-        structuredClone(requireSnapshot(sessionId)),
+        structuredClone({
+          ...requireSnapshot(sessionId),
+          ...(input.taskControl ? { taskControl: input.taskControl } : {}),
+        }),
       );
     },
   };

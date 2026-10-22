@@ -20,6 +20,7 @@ import {
 import type {
   AttachmentRef,
   ConversationSnapshot,
+  ConversationTaskControl,
   SessionConfigState,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -186,6 +187,8 @@ const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading",
 };
 
 export interface ConversationComposerSendOptions {
+  /** 点击发送时的 Task 控制事实，等待附件和配置期间保持原值。 */
+  taskControl?: ConversationTaskControl | null;
   /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
   submission?: ComposerSubmissionConfig | null;
   heldQueueDisposition?: "clearQueueAndSend" | "keepQueueAndSend";
@@ -1205,6 +1208,9 @@ function ConversationComposerImpl({
       const submittedDraft = snapshotDraftOfEditor();
       let cleanupRevision = contentRevisionRef.current;
       const submission = createSubmissionFromComposer?.() ?? null;
+      const taskControl = snapshotRef.current?.taskControl
+        ? { ...snapshotRef.current.taskControl }
+        : null;
       const submittedAttachmentIds = attachmentsApi.attachments.map((item) => item.id,
       );
       if (
@@ -1392,6 +1398,7 @@ function ConversationComposerImpl({
         }
         const sendResult = await onSendText(promptText, {
           submission,
+          taskControl,
           telemetrySeed,
           ...(requestedDelivery ? { requestedDelivery } : {}),
           ...(heldQueueDisposition ? { heldQueueDisposition } : {}),

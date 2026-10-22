@@ -6,6 +6,9 @@ const freshTransaction = () => ({
   codeRoot: false,
   forkAck: false,
   mediaInstall: false,
+  taskProjectMovePrepare: false,
+  firstInputState: false,
+  firstInputAck: false,
 });
 
 function cstring(bytes, at = 0) {
@@ -54,6 +57,9 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let blackoutAfterCommit = false;
   let rollbackBeforeCommit = false;
   let mediaInstall = false;
+  let taskProjectMovePrepare = false;
+  let createFirstInput = false;
+  let loseCreationReadbackOnce = false;
   let unavailable = false;
   let closed = false;
   let injected;
@@ -98,6 +104,19 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       }
       if (/^begin(?:\s|;|$)/u.test(text)) transaction = freshTransaction();
       if (
+        loseCreationReadbackOnce &&
+        injected?.createFirstInput &&
+        text.startsWith(
+          "select parameter_fingerprint, ack, status, session_id from public.code_ui_commands",
+        )
+      ) {
+        loseCreationReadbackOnce = false;
+        injected.readbackSuppressed = true;
+        frontend.destroy();
+        backend.destroy();
+        return;
+      }
+      if (
         mediaInstall &&
         commandId &&
         /\binsert into public\.media_driver_(?:operations|removals|connections)\b/u.test(
@@ -106,6 +125,23 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         parameters.some((value) => value === commandId)
       )
         transaction.mediaInstall = true;
+      if (
+        taskProjectMovePrepare &&
+        commandId &&
+        /^insert into public\.code_ui_task_project_moves\b/u.test(text) &&
+        text.includes("'preparing'") &&
+        parameters.length === 7 &&
+        JSON.stringify([
+          parameters[6],
+          parameters[0],
+          parameters[1],
+          parameters[2],
+          Number(parameters[3]),
+        ]) === commandId
+      ) {
+        transaction.taskProjectMovePrepare = true;
+        transaction.targetTaskId = parameters[0];
+      }
       if (/\binsert into public\.chat_sessions\b/u.test(text)) {
         transaction.chatRoot = true;
         transaction.targetTaskId = parameters[0];
@@ -113,6 +149,42 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       }
       if (/\binsert into public\.code_ui_sessions\b/u.test(text))
         transaction.codeRoot = true;
+      if (
+        createFirstInput &&
+        commandId &&
+        transaction.codeRoot &&
+        /^update public\.code_ui_sessions set state\s*=/u.test(text) &&
+        parameters[0] === transaction.targetTaskId &&
+        typeof parameters[1] === "string"
+      ) {
+        const state = JSON.parse(parameters[1]);
+        transaction.firstInputState =
+          state.inputs?.some(
+            (input) =>
+              input.intent?.sourceCommandId === commandId &&
+              input.intent?.kind === "sendText" &&
+              input.intent?.delivery?.admitted === "startNow" &&
+              input.runId === parameters[2] &&
+              input.status === "active",
+          ) === true;
+      }
+      if (
+        createFirstInput &&
+        commandId &&
+        /^insert into public\.code_ui_commands\b/u.test(text) &&
+        parameters[1] === commandId &&
+        parameters[2] === transaction.targetTaskId &&
+        typeof parameters[4] === "string"
+      ) {
+        const ack = JSON.parse(parameters[4]);
+        transaction.firstInputAck =
+          ack.commandId === commandId &&
+          ack.status === "accepted" &&
+          ack.result?.type === "createSession" &&
+          ack.result.sessionId === transaction.targetTaskId &&
+          ack.result.input?.delivery === "startNow" &&
+          ack.result.input.inputId === commandId;
+      }
       if (
         commandId &&
         /^update public\.code_ui_commands set ack\s*=/u.test(text) &&
@@ -140,7 +212,12 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         ((transaction.chatRoot &&
           transaction.codeRoot &&
           transaction.forkAck) ||
-          transaction.mediaInstall)
+          transaction.mediaInstall ||
+          transaction.taskProjectMovePrepare ||
+          (transaction.chatRoot &&
+            transaction.codeRoot &&
+            transaction.firstInputState &&
+            transaction.firstInputAck))
       ) {
         if (rollbackBeforeCommit) {
           injected = {
@@ -223,6 +300,18 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
             commitConfirmed: true,
             replySuppressed: true,
             commandId,
+            ...(transaction.taskProjectMovePrepare
+              ? {
+                  taskProjectMovePrepare: true,
+                  targetTaskId: transaction.targetTaskId,
+                }
+              : {}),
+            ...(transaction.firstInputState && transaction.firstInputAck
+              ? {
+                  createFirstInput: true,
+                  targetTaskId: transaction.targetTaskId,
+                }
+              : {}),
           };
           commandId = undefined;
           heldFrames = [];
@@ -291,11 +380,14 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
     connectionString: proxied.toString(),
     arm(expectedCommandId, options = {}) {
       if (closed || commandId || injected || !expectedCommandId)
-        throw new Error("故障候选只允许针对一个新 fork 命令注入一次。");
+        throw new Error("故障候选只允许针对一个新操作注入一次。");
       commandId = expectedCommandId;
       blackoutAfterCommit = options.blackoutAfterCommit === true;
       rollbackBeforeCommit = options.rollbackBeforeCommit === true;
       mediaInstall = options.mediaInstall === true;
+      taskProjectMovePrepare = options.taskProjectMovePrepare === true;
+      createFirstInput = options.createFirstInput === true;
+      loseCreationReadbackOnce = options.loseCreationReadbackOnce === true;
     },
     restore() {
       unavailable = false;

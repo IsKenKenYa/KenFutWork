@@ -241,6 +241,7 @@ async function closeOwnedBrowser(child, cdp) {
 async function observeSessionCreation(cdp, target, pageErrors) {
   const requests = new Set();
   const requestFacts = new Map();
+  const moduleRequests = new Map();
   const pending = new Set();
   const acks = [];
   const failures = [];
@@ -249,12 +250,18 @@ async function observeSessionCreation(cdp, target, pageErrors) {
     (params, sessionId) => {
       if (sessionId !== target.sessionId || !params.request) return;
       const path = new URL(params.request.url).pathname;
-      if (!path.startsWith("/api/")) return;
       const fact = {
         path,
         httpMethod: params.request.method,
         state: "pending",
       };
+      if (path.startsWith("/code-ui/") && params.type === "Script") {
+        moduleRequests.set(params.requestId, fact);
+        if (path === "/code-ui/Root.tsx")
+          requestFacts.set(params.requestId, fact);
+        return;
+      }
+      if (!path.startsWith("/api/")) return;
       requestFacts.set(params.requestId, fact);
       if (typeof params.request.postData !== "string") return;
       const payload = JSON.parse(params.request.postData);
@@ -268,10 +275,28 @@ async function observeSessionCreation(cdp, target, pageErrors) {
         requests.add(params.requestId);
     },
   );
+  const releaseStatus = cdp.on(
+    "Network.responseReceived",
+    (params, sessionId) => {
+      if (sessionId !== target.sessionId) return;
+      const fact =
+        requestFacts.get(params.requestId) ??
+        moduleRequests.get(params.requestId);
+      if (!fact || !params.response) return;
+      fact.status = params.response.status;
+      fact.mimeType = params.response.mimeType;
+      if (params.response.status >= 400) {
+        requestFacts.set(params.requestId, fact);
+        pageErrors.push({ ...fact });
+      }
+    },
+  );
   const releaseResponses = cdp.on(
     "Network.loadingFinished",
     (params, sessionId) => {
-      const fact = requestFacts.get(params.requestId);
+      const fact =
+        requestFacts.get(params.requestId) ??
+        moduleRequests.get(params.requestId);
       if (sessionId === target.sessionId && fact) fact.state = "finished";
       if (sessionId !== target.sessionId || !requests.has(params.requestId))
         return;
@@ -305,11 +330,19 @@ async function observeSessionCreation(cdp, target, pageErrors) {
   const releaseFailures = cdp.on(
     "Network.loadingFailed",
     (params, sessionId) => {
-      const fact = requestFacts.get(params.requestId);
+      const fact =
+        requestFacts.get(params.requestId) ??
+        moduleRequests.get(params.requestId);
       if (sessionId === target.sessionId && fact) {
         fact.state = "failed";
         fact.error = params.errorText;
-        pageErrors.push({ ...fact, canceled: params.canceled });
+        requestFacts.set(params.requestId, fact);
+        pageErrors.push({
+          ...fact,
+          canceled: params.canceled,
+          blockedReason: params.blockedReason,
+          corsError: params.corsErrorStatus,
+        });
       }
     },
   );
@@ -319,6 +352,7 @@ async function observeSessionCreation(cdp, target, pageErrors) {
     requests: requestFacts,
     async close() {
       releaseRequests();
+      releaseStatus();
       releaseResponses();
       releaseFailures();
       await Promise.all(pending);
@@ -444,12 +478,14 @@ export async function openOriginalSessionBrowser(options) {
             sessionId: options.sessionId,
             clientId: options.clientId,
             newDraft: options.newDraft ?? false,
+            workspaceShell: options.workspaceShell ?? false,
             initialPreview: options.initialPreview,
           },
         )},configurable:true});`,
       },
       target.sessionId,
     );
+    await options.beforeNavigate?.({ cdp, target });
     await cdp.send("Page.navigate", { url: development.url }, target.sessionId);
     await waitForOriginalSessionSurface(
       cdp,

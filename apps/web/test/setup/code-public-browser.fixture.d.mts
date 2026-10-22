@@ -22,6 +22,10 @@ export function openOriginalSessionBrowser(options: {
   sessionId: string;
   clientId: string;
   newDraft?: boolean;
+  workspaceShell?: boolean;
+  beforeNavigate?: (
+    page: Pick<OriginalSessionBrowser, "cdp" | "target">,
+  ) => Promise<void>;
   initialPreview?: {
     type?: "file" | "image";
     path: string;

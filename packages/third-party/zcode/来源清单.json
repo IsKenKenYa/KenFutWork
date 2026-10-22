@@ -11996,7 +11996,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "5180c28347f981942dd377d38e8051833eb5b630517d7163cd77f3024ab57bbd",
+      "copiedSha256": "cbcc4c2062c35308cf860cd82c6ebb2a8c809e29437fa451cb9e0571da5909f9",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -12006,7 +12006,8 @@
         "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
         "2026-10-22统一Agent工作流程：原盾牌菜单直接修改当前Composer的独立Plan与基础权限；发送瞬间冻结原Submission的模型、思考、权限、规划和工作内容，附件、语音、Goal及Canvas接线保持原路径。",
         "文件加入输入框：disabled 时解除原文件事件监听，恢复可编辑后重新登记，保留原草稿。",
-        "图片素材事件分别传递可见会话与实际附件 Task；新草稿使用原预热 Task 上传。"
+        "图片素材事件分别传递可见会话与实际附件 Task；新草稿使用原预热 Task 上传。",
+        "KFW Task 控制观察值在点击发送时复制，附件和配置等待期间保持本次请求与新正文各自的状态。"
       ]
     },
     {
@@ -12322,9 +12323,10 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "5fe697eccb9b25d610e530076232420c33c54aa29920fc79120d2fc9c5175b31",
+      "copiedSha256": "414d835168651c439953744861cc4f05e2a647af55a1e665b8a1988020e9cb75",
       "adaptations": [
         "KFW 会话打开文件及自动展示 PPTX 时固定真实根 Task 来源。",
+        "KFW Task 控制命令从当前公开快照固定项目与分支观察值；发送沿原点击值经过配置屏障，预热首发可使用创建回执的初始事实。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -12561,9 +12563,10 @@
       "source": "references/zcode/packages/ui/src/v4/commandFactory.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/commandFactory.ts",
       "sha256": "fda84fe2a3883e336055eb7dfd7f9176068d658a1a52c01635cd37e326753263",
-      "copiedSha256": "fda84fe2a3883e336055eb7dfd7f9176068d658a1a52c01635cd37e326753263",
+      "copiedSha256": "083b1d42014fdd51e4b4174934f2978a4a0a8c5bc645ac95d1ad96b99860c07e",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KFW Task 控制观察值复制进入原命令信封，工厂不查询当前项目或 Task。"
       ]
     },
     {
@@ -12887,11 +12890,12 @@
       "source": "references/zcode/packages/ui/src/v4/composer/useDraftSessionPrewarm.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/useDraftSessionPrewarm.ts",
       "sha256": "5f64cde15b97632f7e775f217cdaa5f9485a92a34f7f71fceecd13e0b558774c",
-      "copiedSha256": "ec74ee78801a2615a21c368f153e55abb88ca7fe404666bb3a9f8b559c212ed5",
+      "copiedSha256": "046aef0fe2c6c823657d82dc3f98bc76d8ed828f0096fe657e297cf68ea96435",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主协议：拒绝空 createSession sessionId，并捕获已校验的非空身份",
-        "Code/Design统一实施：原预热路径捕获并深复制平台工作上下文，Design-only项目不误用Code；ACK前界面切换不变已发送身份。"
+        "Code/Design统一实施：原预热路径捕获并深复制平台工作上下文，Design-only项目不误用Code；ACK前界面切换不变已发送身份。",
+        "KFW 预热绑定保留创建 ACK 的初始 Task 控制事实，首个订阅快照到达前也可沿原首发提交。"
       ]
     },
     {
@@ -15413,9 +15417,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/command.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/command.ts",
       "sha256": "9597a0499a7dd82de9580a9e7c69d2e3ff1ce2655c87154e73dd2c8d05d76223",
-      "copiedSha256": "96502748d4b04e0a213e7d02852b0f573ed12ddfaafd962ec4b2005e0132eb26",
+      "copiedSha256": "70d9d38c80db591258326ad0d1c3032cdd4ae64bac01223e083bb49ba200ef5a",
       "adaptations": [
-        "Code/Design统一实施：原命令可携冻结工作上下文，Goal与输入沿原命令幂等域。"
+        "Code/Design统一实施：原命令可携冻结工作上下文，Goal与输入沿原命令幂等域。",
+        "KFW Task 控制观察值：命令信封原样携带可选 taskControl，解析阶段不生成或改写观察值；创建结果可返回持久生成的初始观察值。"
       ]
     },
     {
@@ -15429,8 +15434,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/core.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/core.ts",
       "sha256": "97750a7bab0a7580c1d27c8e0155981786fdbfa07373d46c77829f25eb407a39",
-      "copiedSha256": "97750a7bab0a7580c1d27c8e0155981786fdbfa07373d46c77829f25eb407a39",
-      "adaptations": []
+      "copiedSha256": "37a187584f232a6c0ffdc2f04ed2a5457a695679f9a961d673a91c56be114691",
+      "adaptations": [
+        "KFW Task 控制观察值：声明当前项目与正整数分支代际的共享定义，真实根记录提供该事实。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/create-workflow-display.ts",
@@ -15450,8 +15457,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/delta.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/delta.ts",
       "sha256": "ed53628651aee77e0c14e263d3bdc6ec4392eb0d5ebebb2cf17793dbb33dc92b",
-      "copiedSha256": "ed53628651aee77e0c14e263d3bdc6ec4392eb0d5ebebb2cf17793dbb33dc92b",
-      "adaptations": []
+      "copiedSha256": "5eff26b7a5c03c4c2055be9ca5bbcef43c685ff3aaa73eede1463fe98a475f9e",
+      "adaptations": [
+        "KFW Task 控制观察值：StatePatch 使用同一可选 taskControl 定义并保持键级整体替换。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/fork.ts",
@@ -15531,8 +15540,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/snapshot.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/snapshot.ts",
       "sha256": "6d2c0a0f23e1d2037f5f0c642bd3ad1888b6df38f5bc55029adefa401fc4fcff",
-      "copiedSha256": "6d2c0a0f23e1d2037f5f0c642bd3ad1888b6df38f5bc55029adefa401fc4fcff",
-      "adaptations": []
+      "copiedSha256": "7f089a6377d9de312f3ee383646de6cb50c2530ee39f063e8ea1094391b2bb57",
+      "adaptations": [
+        "KFW Task 控制观察值：公开快照携带真实根 Task 当前项目和分支代际，旧上游快照仍可解析。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/submission.ts",

@@ -11,7 +11,7 @@ import {
   zcodePermissionResponseSchema,
   zcodeSessionContextCacheUsageSchema,
 } from "../zcode-protocol-legacy-types.js";
-import { timestampSchema } from "./core.js";
+import { conversationTaskControlSchema, timestampSchema } from "./core.js";
 import { conversationRowSchema } from "./rows.js";
 import { toolCallDisplaySchema } from "./toolDisplay.js";
 
@@ -471,6 +471,7 @@ export const conversationSnapshotSchema = z.object({
   protocolVersion: z.literal(1),
   sessionId: z.string(),
   logEpoch: z.string(),
+  taskControl: conversationTaskControlSchema.optional(),
   // 快照对齐水位（= 所在帧 toSeq；从内存投影原子取值）。
   seq: z.number(),
   revision: z.number(),

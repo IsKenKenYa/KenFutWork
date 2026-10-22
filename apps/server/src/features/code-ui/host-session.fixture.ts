@@ -50,13 +50,46 @@ async function bindSession(
     "accepted",
   );
   const sessionId = created.body.result.result.sessionId as string;
-  const command = (
+  const commandObservations = new Map<
+    string,
+    Promise<protocol.ConversationTaskControl | undefined>
+  >();
+  const command = async (
     type: string,
     payload: unknown,
     commandId: string = randomUUID(),
-    guard?: { baseRevision: number; baseLogEpoch: string },
-  ) =>
-    stream.rpc("sendConversationCommandV4", [
+    guard?: Partial<
+      Pick<
+        protocol.CommandEnvelope,
+        "baseRevision" | "baseLogEpoch" | "taskControl"
+      >
+    >,
+  ) => {
+    const suppliedGuard = structuredClone(guard);
+    let observation = commandObservations.get(commandId);
+    if (!observation) {
+      observation = Object.hasOwn(suppliedGuard ?? {}, "taskControl")
+        ? Promise.resolve(
+            suppliedGuard?.taskControl
+              ? Object.freeze(structuredClone(suppliedGuard.taskControl))
+              : undefined,
+          )
+        : client
+            .request(`/api/code-ui/sessions/${sessionId}`)
+            .then((result) => {
+              if (result.status === 404) return undefined;
+              expect(result.status, JSON.stringify(result.body)).toBe(200);
+              const current = protocol.conversationSnapshotSchema.parse(
+                result.body.snapshot,
+              );
+              if (!current.taskControl)
+                throw new Error("命令测试没有公开 Task 观察值");
+              return Object.freeze(structuredClone(current.taskControl));
+            });
+      commandObservations.set(commandId, observation);
+    }
+    const taskControl = await observation;
+    return stream.rpc("sendConversationCommandV4", [
       {
         workspacePath,
         projectId,
@@ -66,11 +99,13 @@ async function bindSession(
           sessionId,
           type,
           payload,
+          taskControl: structuredClone(taskControl),
           issuedAt: Date.now(),
-          ...guard,
+          ...suppliedGuard,
         },
       },
     ]);
+  };
   const snapshot = async () => {
     const result = await client.request(`/api/code-ui/sessions/${sessionId}`);
     expect(result.status).toBe(200);

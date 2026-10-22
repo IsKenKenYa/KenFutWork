@@ -28,6 +28,7 @@ declare global {
       sessionId: string;
       clientId: string;
       newDraft?: boolean;
+      workspaceShell?: boolean;
       initialPreview?: {
         type?: "file" | "image";
         path: string;
@@ -180,13 +181,51 @@ try {
       </main>
     );
   }
-  root.render(
-    <Providers client={client}>
-      <V4PaneConversationProvider scope={scope}>
-        <PublicSessionSurface />
-      </V4PaneConversationProvider>
-    </Providers>,
-  );
+  if (bootstrap.workspaceShell) {
+    const [{ Root }, { ZCodeIntlProvider }, platform, context] =
+      await Promise.all([
+        import("@zui/Root.js"),
+        import("@zui/i18n/IntlProvider.js"),
+        import("../../src/components/workbench/zcode/host/platform.js"),
+        import(
+          "../../src/components/workbench/zcode/host/workspaceServiceController.js"
+        ),
+      ]);
+    root.render(
+      <ZCodeIntlProvider
+        initialLocale="zh-CN"
+        settingService={client.services.settingService}
+        broadcastService={client.services.broadcastService}
+      >
+        <Root
+          services={client.services}
+          platform={platform.createCodePlatform(client)}
+          directoryServices={client.directoryServices()}
+          onWorkspaceContextChange={context.createCodeWorkspaceContextResolver(
+            client,
+          )}
+          initialUserInfo={null}
+          initialWorkspaceAbsPath={bootstrap.workspacePath}
+          initialWorkspaceIdentity={client.workspaces.identityFor(
+            bootstrap.projectId,
+            bootstrap.workspacePath,
+          )}
+          initialTaskId={bootstrap.sessionId}
+          restoreSession={false}
+          allowRemoteWorkspace={false}
+          supportsEmbeddedBrowser={false}
+        />
+      </ZCodeIntlProvider>,
+    );
+  } else {
+    root.render(
+      <Providers client={client}>
+        <V4PaneConversationProvider scope={scope}>
+          <PublicSessionSurface />
+        </V4PaneConversationProvider>
+      </Providers>,
+    );
+  }
   document.documentElement.dataset.codePublicSessionState = "ready";
 } catch (error) {
   document.documentElement.dataset.codePublicSessionState = "error";

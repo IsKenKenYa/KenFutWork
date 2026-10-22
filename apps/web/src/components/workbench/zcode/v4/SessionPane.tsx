@@ -28,6 +28,7 @@ import type {
   CommandType,
   ConversationRowTarget,
   ConversationSnapshot,
+  ConversationTaskControl,
   SessionErrorInfo,
   SessionModelTransition,
   V4ConversationFileChangesResult,
@@ -1479,6 +1480,10 @@ export function SessionPane({
       telemetrySeed?: ConversationPromptTelemetrySeed,
       onEnvelopeCreated?: (envelope: CommandEnvelope) => void,
       sessionCreateSource?: SessionCreateSource,
+      taskControl: ConversationTaskControl | null | undefined =
+        targetSessionId === snapshotRef.current?.sessionId
+          ? snapshotRef.current.taskControl
+          : undefined,
     ): Promise<CommandAck> => {
       const submission = submissionConfigFromCommand(type, payload);
       const acceptRecent = submission
@@ -1493,6 +1498,7 @@ export function SessionPane({
         type,
         sessionId: targetSessionId,
         payload: payload as never,
+        ...(taskControl ? { taskControl } : {}),
         ...(baseRevision === undefined ? {} : { baseRevision }),
         ...(baseLogEpoch ? { baseLogEpoch } : {}),
       });
@@ -2638,6 +2644,7 @@ export function SessionPane({
     ) => {
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
+        if (args[2] !== null) args[8] ??= options?.taskControl;
         const ack = await dispatchCommand(...args);
         // 在原 accepted 边界写回推荐选择，早于新 Session 的草稿转移；失败不改用户意图。
         if (ack.status === "accepted" && submissionConfigFromCommand(args[0], args[1]))
@@ -2868,6 +2875,9 @@ export function SessionPane({
               undefined,
               undefined,
               options?.telemetrySeed,
+              undefined,
+              undefined,
+              prewarm.taskControl ?? null,
             );
             if (ack.status === "accepted") {
               prewarm.promote();
@@ -3043,6 +3053,9 @@ export function SessionPane({
         .getWorkspaceState(workspacePath, workspaceIdentity).draftCreateSource;
       const submissionOptions = {
         ...options,
+        taskControl: options?.taskControl === undefined
+          ? snapshotRef.current?.taskControl ? { ...snapshotRef.current.taskControl } : null
+          : options.taskControl,
         submission:
           options?.submission === undefined ? createSubmissionFromComposer() : options.submission,
       };

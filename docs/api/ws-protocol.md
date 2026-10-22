@@ -135,6 +135,12 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 同一命令和相同内容重放返回原回执；同一命令更改内容返回冲突，不重复执行。基础权限为 `build`／`edit`／`yolo`，独立 Plan 在其上收窄执行范围；规划退出须经原人工批准流程，模型批准不能扩大角色或目录权限。原输入框直接使用当前规划草稿，普通文本沿 `sendText` 处理，明确目标命令沿 `sendGoalCommand` 处理。Goal 的创建、替换和恢复核验真实目标身份及修订，暂停后普通消息不自动恢复目标。
 
+原会话快照通过 `taskControl: { projectId, branchGeneration }` 提供当前根 Task 的项目与分支事实。根会话和子会话使用同一根 Task 事实，HTTP 与 SSE 使用同一提供方；它与消息 `revision`、文件授权版本分别持有。KFW 的 `sendText` 和 `stop` 在操作时复制该值，附件准备、配置等待和请求传输均保留原值。缺少时回执为 `rejected/proto.missingTaskControl`，项目或分支已改变时为 `stale/proto.staleTaskControl`。根记录事务先处理原命令回执重放，再核对新操作的观察值；同一命令键改变观察值返回 409。
+
+创建回执的 `result.taskControl` 来自同一事务内实际插入的根记录，并随回执保存。预热 Task 的首个订阅快照尚未到达时，原首发也使用该初始值；重放创建回执返回原值，不能据此推断当前分支。协议字段为可选，以保留原 ZCode 协议解析范围；上述缺字段拒绝由 KFW 接纳服务执行。其它 Task 控制入口及移动后的历史读取仍按升级计划逐项验证。
+
+`createSession.firstInput` 与新 Task、原生线程、活动输入及创建回执在同一事务保存，回执的 `result.input` 返回 `startNow` 与原命令 ID。首条输入冻结模型、思考、规划、基础权限、工作内容及真实 Task 授权版本；模型执行在 HTTP 回执后通过原发布入口开始。同一实例、`clientId` 与 `commandId` 为创建业务键，首次参数指纹随回执保存；并发或顺序重放返回同一 Task，同键改参数返回 409，删除后迟到创建返回 404。COMMIT 回包丢失后的读取结果沿同一创建身份判断派发责任，不能让重复请求启动第二次执行。首条输入的附件继续要求先在真实 Task 上传。
+
 外部 HTTP `/api/agent/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。
 
 `agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。素材、模型、权限与工作内容均由共享 Task 接纳并核验，外部请求不能覆盖已冻结的运行事实。

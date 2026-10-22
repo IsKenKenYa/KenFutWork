@@ -112,9 +112,16 @@ import {
   type CodeUiHostGitRpc,
   createCodeUiHostGitRpc,
 } from "./host-git-rpc.js";
-import type { CodeUiHostRpcHandler } from "./host-rpc-handler.js";
+import {
+  CodeUiHostRpcError,
+  type CodeUiHostRpcHandler,
+} from "./host-rpc-handler.js";
 import type { CodeUiHostTargetRequest } from "./host-service-rpc.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
+import {
+  prepareCodeInputExecution,
+  prepareCodeInputRecord,
+} from "./input-preparation.js";
 import { compileCodeUiModelExecution } from "./model-execution-options.js";
 import { createCodeUiOutputHistory } from "./output-history.js";
 import {
@@ -130,7 +137,12 @@ import {
   CODE_QUEUE_COMMANDS,
   codeInputRouting,
 } from "./queue-control.js";
-import { type CodeUiRepository, CodeUiRepositoryError } from "./repository.js";
+import {
+  type CodeUiRepository,
+  CodeUiRepositoryError,
+  type CodeUiSessionRecord,
+  codeUiTaskControlRejection,
+} from "./repository.js";
 import { listCodeSessionSubagents } from "./subagent-directory.js";
 import { codeUiTaskMeta } from "./task-index.js";
 import type {
@@ -272,6 +284,7 @@ export function codeUiCommandFingerprint(
         sessionId: envelope.sessionId,
         type: envelope.type,
         payload: envelope.payload,
+        ...(envelope.taskControl ? { taskControl: envelope.taskControl } : {}),
         ...(goalControl ? { goalControl } : {}),
       }),
     )
@@ -675,6 +688,10 @@ export class CodeUiService {
     request?: RunCreateRequest,
   ) {
     const scope = scopeHandle.describe();
+    const taskControl = {
+      projectId: scope.projectId,
+      branchGeneration: scopeHandle.branchGeneration,
+    };
     const loaded = await this.loadConversation(actor, scope.taskId);
     if (request?.attachments?.length || request?.mentions?.length)
       throw new CodeUiRepositoryError(
@@ -727,6 +744,7 @@ export class CodeUiService {
       clientId: actor.accessClientId ?? "host.agent-runs",
       commandId: inputCommandId,
       sessionId: scope.taskId,
+      taskControl,
       type: "sendText",
       payload: {
         text,
@@ -800,6 +818,10 @@ export class CodeUiService {
       clientId: actor.accessClientId ?? "host.agent-runs",
       commandId: `cancel:${runId}`,
       sessionId: queued ? root.id : owner!.sessionId,
+      taskControl: {
+        projectId: root.project_id,
+        branchGeneration: Number(root.branch_generation),
+      },
       type: queued ? "deleteQueueItem" : "stop",
       payload: queued
         ? { queueItemId: queued.intent.queueItemId }
@@ -1304,13 +1326,17 @@ export class CodeUiService {
       loaded.host.getSnapshot().control.phase === "running"
     )
       return false;
+    const taskControl = {
+      projectId: loaded.root.project_id,
+      branchGeneration: Number(loaded.root.branch_generation),
+    };
     const scopeHandle = await this.deps.executionScopes.openTask(actor, taskId);
     const context: TaskWorkContext = {
       actor,
       scope: scopeHandle.describe(),
       agentId: scopeHandle.agentId,
       runId: "continuation-admission",
-      branchGeneration: Number(loaded.root.branch_generation),
+      branchGeneration: taskControl.branchGeneration,
     };
     const pending = (await this.deps.taskWork.list(context)).filter(
       (record) =>
@@ -1362,6 +1388,7 @@ export class CodeUiService {
       clientId: "host.task-work",
       commandId,
       sessionId: taskId,
+      taskControl,
       type: "sendText",
       payload: { text },
       issuedAt: Date.now(),
@@ -1424,6 +1451,7 @@ export class CodeUiService {
       },
     );
     if (ack.status === "duplicate") return true;
+    if (ack.status !== "accepted") return false;
     await this.refreshTaskProjection(
       instanceId,
       loaded.project.path,
@@ -1548,6 +1576,60 @@ export class CodeUiService {
 
   closeTaskWatchers(instanceId: string, taskId: string): Promise<void> {
     return this.watchers.closeTask(instanceId, taskId);
+  }
+
+  async refreshMovedTask(
+    actor: LocalActor,
+    event: {
+      instanceId: string;
+      taskId: string;
+      sourceProjectId: string;
+      targetProjectId: string;
+      workspacePath: string;
+      sessionIds: readonly string[];
+    },
+  ): Promise<void> {
+    if (actor.instanceId !== event.instanceId)
+      throw new CodeUiRepositoryError("not_found", "移动结果不属于当前实例。");
+    this.connections.retireTaskSubscriptions(
+      event.instanceId,
+      event.sessionIds,
+      event.sourceProjectId,
+    );
+    this.taskActors.delete(JSON.stringify([event.instanceId, event.taskId]));
+    const notifications = await Promise.allSettled([
+      ...[...this.controllers.values()]
+        .filter((controller) => controller.instanceId === event.instanceId)
+        .map((controller) => controller.host.refresh()),
+      this.connections.refresh(
+        event.instanceId,
+        event.workspacePath,
+        event.sourceProjectId,
+      ),
+      this.connections.refresh(
+        event.instanceId,
+        event.workspacePath,
+        event.targetProjectId,
+      ),
+      this.connections.notifyEvent(event.instanceId, {
+        event: "service",
+        service: "broadcast",
+        name: "onMessage",
+        data: { channel: "state:projects", payload: {} },
+      }),
+    ]);
+    const failures = notifications.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length) {
+      const error = new CodeUiHostRpcError(
+        "project.task-moved-refresh-required",
+        "项目已移动，请刷新列表。",
+        503,
+      );
+      error.cause = new AggregateError(failures, "任务已移动，项目通知失败。");
+      throw error;
+    }
   }
 
   private async refreshTaskProjection(
@@ -1702,6 +1784,10 @@ export class CodeUiService {
         clientId: `host.budget:${user.accessClientId ?? "script"}`,
         commandId: input.commandId,
         sessionId: input.taskId,
+        taskControl: {
+          projectId: loaded.root.project_id,
+          branchGeneration: Number(loaded.root.branch_generation),
+        },
         type: "sendText",
         payload: { revision: input.revision, tokenBudget: input.tokenBudget },
         issuedAt: Date.now(),
@@ -2465,7 +2551,7 @@ export class CodeUiService {
           );
       }
       if (parsed.envelope.type === "createSession")
-        return { result: await this.createSession(user, parsed.envelope) };
+        return this.prepareSessionCreation(user, parsed.envelope);
       if (parsed.envelope.sessionId) {
         const historical = await this.loadConversation(
           user,
@@ -2702,6 +2788,10 @@ export class CodeUiService {
       clientId: "host.goal",
       commandId,
       sessionId: taskId,
+      taskControl: {
+        projectId: loaded.root.project_id,
+        branchGeneration: Number(loaded.root.branch_generation),
+      },
       type: "sendText",
       payload: { text },
       issuedAt: Date.now(),
@@ -3382,6 +3472,20 @@ export class CodeUiService {
       goalControl,
     );
     if (replay) return { result: replay, publish: publishOnce(async () => {}) };
+    if (codeUiTaskControlRejection(loaded.root, envelope)) {
+      const ack = await this.deps.repository.applyCommand(
+        loaded.instanceId,
+        envelope,
+        codeUiCommandFingerprint(envelope, goalControl),
+        () => {
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "会话已改变，请重新发送。",
+          );
+        },
+      );
+      return { result: ack, publish: publishOnce(async () => {}) };
+    }
     try {
       return await this.admitPreparedText(
         user,
@@ -3541,34 +3645,11 @@ export class CodeUiService {
         const active = root.state?.inputs?.find(
           (input) => input.runId === previous && input.status === "active",
         );
-        // 在接纳边界用原resolver固定别名语义；不能先用current补flag再解释raw plan。
-        const currentExecution = resolveExecutionState({
-          mode: current.config.mode,
-          ...(current.config.planEnabled !== undefined
-            ? { planEnabled: current.config.planEnabled }
-            : {}),
-        });
-        const execution = resolveExecutionState(
-          {
-            ...(payload.mode !== undefined
-              ? {
-                  mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
-                    { mode: payload.mode },
-                  ).mode,
-                }
-              : {}),
-            ...(payload.planEnabled !== undefined
-              ? { planEnabled: payload.planEnabled }
-              : {}),
-          },
-          currentExecution,
+        const { execution, requestedSandboxMode } = prepareCodeInputExecution(
+          current.config,
+          payload,
+          compact,
         );
-        const requestedSandboxMode =
-          !compact && payload.mode !== undefined && payload.mode !== "plan"
-            ? execution.mode === "yolo"
-              ? ("danger-full-access" as const)
-              : ("workspace-write" as const)
-            : undefined;
         const requestedGuide =
           !compact &&
           busy &&
@@ -3618,55 +3699,18 @@ export class CodeUiService {
             };
           settlements = held.settlements;
         }
-        const intent: protocol.ConversationInputIntent = {
-          sourceCommandId: envelope.commandId,
-          queueItemId: randomUUID(),
-          clientId: envelope.clientId,
+        const record = prepareCodeInputRecord({
+          command: envelope,
+          payload,
           kind: compact ? "compact" : "sendText",
-          text: payload.text,
           attachments: codeInputs.map((input) => input.attachment),
-          modelSelection: selection,
-          mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse({
-            mode: execution.mode,
-          }).mode,
-          planEnabled: execution.planEnabled,
+          selection,
+          execution,
           workContext,
-          delivery: {
-            requested: payload.requestedDelivery ?? "auto",
-            admitted: delivery,
-          },
-          order: {
-            admissionSeq:
-              (root.state?.inputs?.at(-1)?.intent.order.admissionSeq ?? 0) + 1,
-            ...(delivery === "queue"
-              ? { queuePosition: current.queue.items.length }
-              : {}),
-          },
-          steer: {
-            state: guide
-              ? "steering"
-              : payload.requestedDelivery === "guide"
-                ? "fellBack"
-                : "notRequested",
-            ...(payload.requestedDelivery === "guide" && !guide
-              ? { reasonCode: "guard.steeringUnavailable" }
-              : {}),
-          },
-          dispatch: {
-            state: preempt
-              ? "reserved"
-              : delivery === "queue" || delivery === "guide"
-                ? "queued"
-                : "admitted",
-            ...(preempt ? { reservationId: runId } : {}),
-          },
-          admittedAt: Date.now(),
-        };
-        const record: CodeAdmittedInput = {
-          ...(!guide && requestedSandboxMode
-            ? { pendingScopeSelection: requestedSandboxMode }
-            : {}),
-          intent,
+          delivery,
+          admissionSeq:
+            (root.state?.inputs?.at(-1)?.intent.order.admissionSeq ?? 0) + 1,
+          queuePosition: current.queue.items.length,
           runId: guide ? previous! : runId,
           modelInvocation,
           ...(frozenContributions
@@ -3674,23 +3718,21 @@ export class CodeUiService {
                 frozenContributions: guide
                   ? (contributionsForRun(root.state!, previous!) ??
                     frozenContributions)
-                  : structuredClone(frozenContributions),
+                  : frozenContributions,
               }
             : {}),
           scopeGeneration: Number(root.scope_generation),
           branchGeneration: Number(root.branch_generation),
-          status: preempt
-            ? "reserved"
-            : delivery === "queue" || delivery === "guide"
-              ? "queued"
-              : "active",
+          ...(requestedSandboxMode ? { requestedSandboxMode } : {}),
           ...(preempt
             ? {
-                autoDrainAtAdmission: current.queue.autoDrain,
-                previousRunId: previous!,
+                preempt: {
+                  autoDrain: current.queue.autoDrain,
+                  previousRunId: previous!,
+                },
               }
             : {}),
-        };
+        });
         if (envelope.type === "sendGoalCommand") {
           this.requireGoalFence(host.getGoal(), goalControl);
           if (busy || delivery !== "startNow")
@@ -4893,6 +4935,20 @@ export class CodeUiService {
     user: LocalActor,
     envelope: protocol.CommandEnvelope,
   ): Promise<protocol.CommandAck> {
+    const prepared = await this.prepareSessionCreation(user, envelope);
+    if (prepared.publish)
+      void prepared
+        .publish()
+        .catch((error: unknown) =>
+          console.warn("[code-ui] 创建首条输入派发失败：", error),
+        );
+    return prepared.result;
+  }
+
+  private async prepareSessionCreation(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ): Promise<{ result: protocol.CommandAck; publish?: () => Promise<void> }> {
     const release = this.deps.localInstance.beginAdmission();
     try {
       return await this.createAdmittedSession(user, envelope);
@@ -4904,7 +4960,7 @@ export class CodeUiService {
   private async createAdmittedSession(
     user: LocalActor,
     envelope: protocol.CommandEnvelope,
-  ): Promise<protocol.CommandAck> {
+  ): Promise<{ result: protocol.CommandAck; publish?: () => Promise<void> }> {
     await this.initialize();
     const payload = protocol.commandPayloadSchemas.createSession.parse(
       envelope.payload,
@@ -4923,18 +4979,28 @@ export class CodeUiService {
         command,
       );
     const replay = await readReceipt();
-    if (replay) return replay;
+    if (replay) return { result: replay };
+    let creation: Parameters<CodeUiRepository["createRoot"]>[1] | undefined;
     try {
-      return await this.prepareCreatedSession(
+      creation = await this.prepareCreatedSession(
         user,
         payload,
         project,
         workspace.instanceId,
         command,
       );
+      return await this.commitCreatedSession(
+        user,
+        project,
+        workspace.instanceId,
+        creation,
+      );
     } catch (error) {
       const raced = await readReceipt();
-      if (raced) return raced;
+      if (raced)
+        return creation
+          ? this.resolveCreatedSessionReceipt(user, creation, raced)
+          : { result: raced };
       throw error;
     }
   }
@@ -4945,15 +5011,76 @@ export class CodeUiService {
     project: CodeUiWorkspace,
     instanceId: string,
     command: { clientId: string; commandId: string; fingerprint: string },
-  ): Promise<protocol.CommandAck> {
+  ): Promise<Parameters<CodeUiRepository["createRoot"]>[1]> {
+    const firstInput = payload.firstInput
+      ? protocol.commandPayloadSchemas.sendText.parse({
+          ...payload.firstInput,
+          requestedDelivery: "startNow",
+          workContext: payload.firstInput.workContext ?? payload.workContext,
+        })
+      : undefined;
+    if (
+      firstInput &&
+      !firstInput.text.trim() &&
+      !firstInput.attachments?.length
+    )
+      throw new CodeUiRepositoryError("command_conflict", "消息不能为空");
+    if (firstInput?.attachments?.length)
+      throw new CodeAttachmentError(
+        "fault.attachment.notAuthorized",
+        "请先在会话中上传附件再发送。",
+        404,
+      );
     const workContext = await this.prepareWorkContext(
       user,
       project.projectId,
-      payload.workContext ?? payload.firstInput?.workContext,
+      firstInput?.workContext ?? payload.workContext,
     );
-    const views = await this.modelViews(user, payload.config?.modelSelection);
-    const selection =
-      payload.config?.modelSelection ?? views.selection.preferredSelection;
+    const requestedSelection =
+      firstInput?.modelSelection ?? payload.config?.modelSelection;
+    const views = await this.modelViews(user, requestedSelection);
+    const selection = requestedSelection ?? views.selection.preferredSelection;
+    const prepared = firstInput
+      ? await this.prepareInputModel(user, selection)
+      : undefined;
+    const frozenContributions = firstInput
+      ? this.deps.captureContributions?.(workContext.preset)
+      : undefined;
+    const creation = await this.prepareCreatedTask(
+      user,
+      payload,
+      project,
+      instanceId,
+      workContext,
+      selection,
+    );
+    return {
+      ...creation,
+      command,
+      ...(firstInput && prepared
+        ? {
+            initializeInput: (root: CodeUiSessionRecord) =>
+              this.initializeCreatedInput(
+                root,
+                command,
+                firstInput,
+                prepared,
+                workContext,
+                frozenContributions,
+              ),
+          }
+        : {}),
+    };
+  }
+
+  private async prepareCreatedTask(
+    user: LocalActor,
+    payload: protocol.CommandPayloadMap["createSession"],
+    project: CodeUiWorkspace,
+    instanceId: string,
+    workContext: protocol.ConversationWorkContext,
+    selection: protocol.SessionConfigState["modelSelection"],
+  ) {
     const sessionId = randomUUID();
     const record = await this.deps.projects.getProject(user, project.projectId);
     const additionalDirectories = record.additional_directories ?? [];
@@ -4988,7 +5115,7 @@ export class CodeUiService {
         planEnabled: execution.planEnabled,
       },
     });
-    return this.deps.repository.createRoot(instanceId, {
+    return {
       sessionId,
       projectId: project.projectId,
       scope: {
@@ -5006,8 +5133,170 @@ export class CodeUiService {
       createdByClientId: user.accessClientId,
       threadId: this.deps.threads.createThreadId(),
       state: host.exportState(),
-      command,
+    };
+  }
+
+  private initializeCreatedInput(
+    root: CodeUiSessionRecord,
+    command: { clientId: string; commandId: string },
+    payload: Pick<
+      protocol.CommandPayloadMap["sendText"],
+      "text" | "requestedDelivery" | "mode" | "planEnabled"
+    >,
+    prepared: CodePreparedModel,
+    workContext: protocol.ConversationWorkContext,
+    frozenContributions?: ToolContributionSnapshot,
+  ) {
+    const snapshot = root.state?.snapshots.find(
+      (entry) => entry.sessionId === root.id,
+    );
+    if (!snapshot || !root.state || !root.root_directory)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "新 Task 根快照或目录不存在。",
+      );
+    const config = snapshot.config;
+    const initial = createCodeUiConversation({
+      goals: this.goals,
+      sessionId: root.id,
+      workspacePath: root.root_directory,
+      config,
+      state: root.state,
     });
+    const { execution, requestedSandboxMode } = prepareCodeInputExecution(
+      config,
+      payload,
+    );
+    const input = prepareCodeInputRecord({
+      command,
+      payload,
+      kind: "sendText",
+      attachments: [],
+      selection: prepared.selection,
+      execution,
+      workContext,
+      modelInvocation: prepared.modelInvocation,
+      ...(frozenContributions ? { frozenContributions } : {}),
+      runId: randomUUID(),
+      scopeGeneration: Number(root.scope_generation),
+      branchGeneration: Number(root.branch_generation),
+      delivery: "startNow",
+      admissionSeq: 1,
+      queuePosition: 0,
+      ...(requestedSandboxMode ? { requestedSandboxMode } : {}),
+    });
+    initial.admitInput(input, this.inputOwner);
+    initial.startInput(input);
+    return {
+      state: initial.exportState(),
+      activeRunId: input.runId,
+      inputId: command.commandId,
+    };
+  }
+
+  private async commitCreatedSession(
+    user: LocalActor,
+    project: CodeUiWorkspace,
+    instanceId: string,
+    creation: Parameters<CodeUiRepository["createRoot"]>[1],
+  ): Promise<{ result: protocol.CommandAck; publish?: () => Promise<void> }> {
+    const { command } = creation;
+    let ack: protocol.CommandAck;
+    try {
+      ack = await this.deps.repository.createRoot(instanceId, creation);
+    } catch (error) {
+      const persisted = await this.deps.repository.readCreationCommand(
+        instanceId,
+        project.projectId,
+        command,
+      );
+      if (!persisted) throw error;
+      ack = persisted;
+    }
+    return this.resolveCreatedSessionReceipt(user, creation, ack);
+  }
+
+  private resolveCreatedSessionReceipt(
+    user: LocalActor,
+    creation: Parameters<CodeUiRepository["createRoot"]>[1],
+    ack: protocol.CommandAck,
+  ): { result: protocol.CommandAck; publish?: () => Promise<void> } {
+    const { command, sessionId } = creation;
+    // 不确定提交仅由本次确实创建的 Task 保留派发权；并发失败者和普通重放不能派发。
+    const ownsFirstInput =
+      creation.initializeInput &&
+      (ack.status === "accepted" || ack.status === "duplicate") &&
+      !ack.reasonCode &&
+      ack.result?.type === "createSession" &&
+      ack.result.sessionId === sessionId;
+    return {
+      result:
+        ownsFirstInput && ack.status === "duplicate"
+          ? { ...ack, status: "accepted" }
+          : ack,
+      ...(ownsFirstInput
+        ? {
+            publish: publishOnce(() =>
+              this.publishCreatedInput(user, sessionId, command),
+            ),
+          }
+        : {}),
+    };
+  }
+
+  private async publishCreatedInput(
+    user: LocalActor,
+    taskId: string,
+    command: { clientId: string; commandId: string },
+  ): Promise<void> {
+    let loaded: Awaited<ReturnType<CodeUiService["loadConversation"]>>;
+    try {
+      loaded = await this.loadConversation(user, taskId);
+    } catch (error) {
+      if (error instanceof CodeUiRepositoryError && error.code === "not_found")
+        return;
+      throw error;
+    }
+    const record = loaded.root;
+    const input = record.state?.inputs?.find(
+      (entry) =>
+        entry.intent.clientId === command.clientId &&
+        entry.intent.sourceCommandId === command.commandId,
+    );
+    if (
+      !input ||
+      input.status !== "active" ||
+      record.active_run_id !== input.runId ||
+      record.archived ||
+      record.execution_state !== "ready"
+    )
+      return;
+    const selection = input.intent.modelSelection;
+    if (!selection)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "首条输入缺少模型选择。",
+      );
+    const thread = await this.deps.threads.resolveOwnedSessionThread(
+      user,
+      taskId,
+    );
+    await this.refreshTaskProjection(
+      loaded.instanceId,
+      loaded.project.path,
+      loaded.project.projectId,
+    );
+    await this.notifyTask(user, loaded.project, taskId, "task_created");
+    await this.runTurn(
+      user,
+      loaded.project,
+      taskId,
+      thread.threadId,
+      input.runId,
+      input.intent.text,
+      `${selection.providerId}:${selection.modelId}`,
+      input.modelInvocation,
+    );
   }
 
   async loadConversation(user: LocalActor, sessionId: string) {
@@ -5114,6 +5403,10 @@ export class CodeUiService {
       workspacePath: project.path,
       config: snapshot.config,
       state: root.state,
+      taskControl: {
+        projectId: root.project_id,
+        branchGeneration: Number(root.branch_generation),
+      },
     });
     return { instanceId: workspace.instanceId, project, entry, root, host };
   }
