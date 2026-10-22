@@ -26,8 +26,8 @@
 
 ## 执行与权限
 
-- **Sandbox（沙箱）** — OS 级执行囚禁。三档：`read-only` / `workspace-write`（默认，可写根 = 项目文件夹）/ `danger-full-access`（显式使用执行机器当前OS账户的文件与网络权限，不等于root提权）。只拦「能不能」，不拦「问不问」。主后端为 **srt**（`@anthropic-ai/sandbox-runtime`，三平台 + 网络域名白名单），经自建 Sandbox 缝隔离、可换后端；fail-closed（无 runner 绝不裸奔）+ enforcement 等级报告。
-- **Approval Gate（审批门）** — 应用层逐操作同意：文件编辑 / 危险命令 / 未白名单网络的确认弹窗 + 一次性行内提权。
+- **Sandbox（沙箱）** — 操作系统级执行隔离，按 `read-only`、`workspace-write`、`danger-full-access` 表达执行范围；完全访问使用当前 OS 账户的权限，不等于 root 提权。当前 Unix 使用 SRT，Windows 使用原生受限执行；通过 ProcessSandbox 接口报告实际能力，无可用执行器时拒绝执行。平台网络支持与产品接入分别核验。
+- **Approval Gate（审批门）** — 应用层逐操作授权，绑定真实 Task、操作参数与授权版本，按策略交人工或审批模型处理；最终执行仍受沙箱和当前权限约束。具体行为由 Code 工作域规格持有。
 - **Approval Reviewer（审批模型）** — 用户独立选择的 BYOK 审批模型，与当前对话模型分别保存。模型建议由原审批门及最终权限检查消费；失败、不明或缺少完整操作事实时交还人工，退出规划仍须人工明确批准。
 - **Planning State（规划状态）** — Code Task 的独立 `planEnabled` 开关；开启时在基础权限与物理工作域上收窄为只读调查/规划，不改写基础权限或 Task 目录。输入框使用当前草稿状态，发送时与模型和基础权限一起冻结。
 - **Planning Epoch（规划代际）** — Task 根锁中按持久规划开关变化推进的版本；批准请求绑定该版本，避免迟到批准退出另一轮规划。与消息 revision、scopeGeneration、branchGeneration 分开。
@@ -57,7 +57,7 @@
 
 ## 架构
 
-- **Kernel（内核）** — 服务端插件组合内核（`kernel/`）：`definePlugin` + `composePlugins`。服务认领靠 apply 返回值，依赖靠 inject 类型注入（无服务定位符）；拓扑/环检测/逆序回卷复用 Fastify avvio 引擎。
+- **Kernel（内核）** — 服务端插件组合内核（`kernel/`），以 `PluginDefinition` 与 `composePlugins` 组合服务和贡献。当前按 profile 顺序执行 `apply`／`mounted`，使用 `ctx.get` 解析服务；`inject` 检查声明的服务是否存在，正常关闭逆序等待资源释放。接口与目标机制见《改造计划》§4，当前生命周期限制见《GPT6Astra/插件架构检查》。
 - **Plugin（插件）** — 服务型（name 即 ctx key，认领至多一个服务）或挂载型（贡献路由/基础设施，name 用 `<域>:<名>`）。
 - **Profile（装配清单）** — 插件组合清单：`server` / `worker` / `desktop` / `test`，引用同一批插件定义。
 

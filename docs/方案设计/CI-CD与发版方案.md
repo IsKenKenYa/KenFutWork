@@ -91,9 +91,9 @@ CI 侧的两个必修点：`bundle_dmg.sh --skip-jenkins`（脚本自述「跳�
 | --- | --- | --- |
 | debug | Actions 产物（retention 30 天，公开仓库直接下载） | 本轮落地 |
 | rc | `v<版本>-rc.<时间戳>` 的 draft Release（prerelease） | 本轮落地 |
-| 正式 | `v<版本>` + 签名 + 公证 + CHANGELOG + 源码归档 | **未落地**：`release.yml` 待写，且依赖 SignPath 批准（档 1） |
+| 正式 | `v<版本>` + 签名 + 公证 + CHANGELOG + 源码归档 | **流水线已有，正式发布条件待验**：当前 [release.yml](../../.github/workflows/release.yml) 校验 tag 与版本并复用双平台打包，产出 rc 通道 draft；签名、公证、源码归档及正式安装体验仍按实际产物核验 |
 
-后续待办（按性价比）：① `release.yml` 与 `version:bump` 串起来的 tag 流程；② **升级冒烟**——拿上一版的数据目录装新版跑首启迁移（本仓数据目录归用户、迁移只许前向，这是真实发版风险，现无任何自动化覆盖）；③ win lane 跑 `scripts/验收打包桌面端.mjs`（CDP 有头断言，托管 runner 上是否可行待实测）；④ SignPath 申请；⑤ 公开仓库免费项里还没用的：Pages 发文档站、GHCR 公共 server 镜像（匿名拉取不计流）、`FUNDING.yml`；⑥ 全仓 Biome 欠债与 `image-proxy` 的 SSRF 修复。
+后续验证（2026-10-22 更新）：① 从版本修改、tag 校验到双平台 draft 的完整产物流程；② 使用停机备份的数据目录验证新版首启迁移和再次启动，数据库测试与安装包升级分别记录；③ Windows 安装、原生依赖与桌面操作；④ 签名服务、macOS 公证、CHANGELOG 和源码归档的发布条件。当前源码中的流水线不证明这些条件已完成。安全修复状态见[安全告警核验](../调研/GitHub安全告警核验与修复.md)，不使用本节旧待办推断漏洞仍然存在；文档站、公共镜像和资助入口作为独立建议，不属于正式包验收。
 
 ## 八、验证命令
 
