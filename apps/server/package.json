@@ -58,7 +58,7 @@
     "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "ws": "^8.22.0"
   },
   "scripts": {
@@ -83,8 +83,8 @@
     "@embedded-postgres/linux-arm64": "17.10.0-beta.17",
     "@embedded-postgres/linux-x64": "17.10.0-beta.17",
     "@embedded-postgres/windows-x64": "17.10.0-beta.17",
-    "@img/sharp-darwin-arm64": "0.35.4",
-    "@img/sharp-win32-x64": "0.35.4",
+    "@img/sharp-darwin-arm64": "0.35.5",
+    "@img/sharp-win32-x64": "0.35.5",
     "sherpa-onnx-darwin-arm64": "^1.13.8",
     "sherpa-onnx-darwin-x64": "^1.13.8",
     "sherpa-onnx-linux-arm64": "^1.13.8",
