@@ -1441,6 +1441,133 @@ test("ZCode baseline upgrades are driven by inventory metadata and real source/t
   ]);
 });
 
+test("ZCode staged upgrades verify each file against its declared upstream commit", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  Object.assign(f.inventory.records[0], {
+    sourceRevision: revision,
+    sha256: f.hash("new upstream source\n"),
+  });
+  await f.save();
+  await writeFile(
+    path.join(f.donor, "src/example.ts"),
+    "parallel upstream research\n",
+  );
+  const status = await f.git("status", "--porcelain");
+  const refs = await f.git("show-ref");
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  assert.equal(await f.git("status", "--porcelain"), status);
+  assert.equal(await f.git("show-ref"), refs);
+});
+
+test("ZCode provenance rejects malformed or unregistered per-file revisions", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  for (const sourceRevision of [null, "HEAD", "f".repeat(40)]) {
+    f.inventory.records[0].sourceRevision = sourceRevision;
+    await f.save();
+    assert.throws(
+      () => verifyZcodeInventory({ root: f.root }),
+      /来源提交无效或未登记/,
+    );
+  }
+});
+
+test("ZCode provenance rejects invalid revision registries and conflicting baseline versions", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  for (const revisions of [
+    null,
+    [],
+    { HEAD: "2.0.0" },
+    { [f.inventory.revision]: "different-version" },
+    { [f.inventory.revision]: "" },
+  ]) {
+    f.inventory.revisions = revisions;
+    await f.save();
+    assert.throws(
+      () => verifyZcodeInventory({ root: f.root }),
+      /提交版本登记无效/,
+    );
+  }
+});
+
+test("ZCode mixed revisions require Git objects instead of one working-tree mirror", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root, sourceRoot: f.root }),
+    /混合来源.*Git/,
+  );
+});
+
+test("ZCode staged sources retain independent version, original and copied-byte checks", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "wrong-version" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单版本/);
+  f.inventory.revisions[revision] = "2.0.0";
+  f.inventory.records[0].source = "references/zcode/src/missing.ts";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["清单基线来源不符"] },
+  ]);
+  f.inventory.records[0].source = "references/zcode/src/example.ts";
+  await f.save();
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "unregistered edit\n",
+  );
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["副本字节漂移"] },
+  ]);
+  const missing = "f".repeat(40);
+  f.inventory.records[0].sourceRevision = missing;
+  f.inventory.revisions[missing] = "3.0.0";
+  await f.save();
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root }),
+    /--prepare-source/,
+  );
+});
+
+test("ZCode staged CI prepares every declared commit without moving reference refs", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  await writeFile(path.join(f.donor, "package.json"), '{"version":"3.0.0"}');
+  await f.git("add", "package.json");
+  await f.git("commit", "-qm", "later upstream fixture");
+  const origin = `${f.donor}-origin`;
+  await execFileAsync("git", ["clone", "-q", "--bare", f.donor, origin]);
+  await rm(f.donor, { recursive: true });
+  await execFileAsync("git", [
+    "clone",
+    "-q",
+    "--depth=1",
+    pathToFileURL(origin).href,
+    f.donor,
+  ]);
+  const head = await f.git("rev-parse", "HEAD");
+  const refs = await f.git("show-ref");
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, prepare: true }).drift,
+    [],
+  );
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("show-ref"), refs);
+  assert.equal(await f.git("status", "--porcelain"), "");
+});
+
 test("ZCode shallow CI preparation fetches baseline objects without moving any existing refs", async (t) => {
   const f = await zcodeProvenanceFixture(t);
   const origin = `${f.donor}-origin`;
