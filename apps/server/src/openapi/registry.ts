@@ -2508,7 +2508,8 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     requestSchema: providerInstanceUpdateRequestSchema,
     responseSchema: providerInstanceResponseSchema,
     summary: "更新供应商实例",
-    description: "更新供应商实例配置；apiKey 缺省即不改，传入即覆盖。",
+    description:
+      "更新供应商实例配置；apiKey 缺省即不改，传入即覆盖。同值普通配置不推进修订；expectedRevision 不匹配时返回 409 和 instance_revision_conflict，即使提交内容与当前配置相同也须重新读取后再保存。实例已删除时返回 404 和 instance_not_found，不会重新创建。",
   },
   {
     method: "get",

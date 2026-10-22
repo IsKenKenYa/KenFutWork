@@ -17,7 +17,7 @@ export type ProviderInstanceRecord = {
   compat: Record<string, unknown> | null;
   headers: Record<string, string> | null;
   enabled: boolean;
-  /** 配置修订号（bigint 经 pg 返回字符串）：任何实例更新自增，跨修订防护用。 */
+  /** 配置修订号（bigint 经 pg 返回字符串）：配置实际变化时递增，跨修订防护用。 */
   config_revision: string;
   probe_result: Record<string, unknown> | null;
   probed_at: string | null;
@@ -81,13 +81,20 @@ function buildPatch(
   patch: ProviderInstancePatch,
   idParam: unknown,
   expectedRevision?: number,
-): { assignments: string[]; values: unknown[]; revisionFilter: string } | null {
+): {
+  assignments: string[];
+  differences: string[];
+  values: unknown[];
+  revisionFilter: string;
+} | null {
   const assignments: string[] = [];
+  const differences: string[] = [];
   const values: unknown[] = [idParam];
 
   const push = (column: string, value: unknown, cast = "") => {
     values.push(value);
     assignments.push(`${column} = $${values.length}${cast}`);
+    differences.push(`${column} is distinct from $${values.length}${cast}`);
   };
 
   if (patch.name !== undefined) push("name", patch.name);
@@ -98,6 +105,7 @@ function buildPatch(
   }
   if (patch.credential_changed) {
     assignments.push("credential_revision = credential_revision + 1");
+    differences.push("true");
   }
   if (patch.models !== undefined) {
     push("models", JSON.stringify(patch.models), "::jsonb");
@@ -118,6 +126,7 @@ function buildPatch(
   if (expectedRevision !== undefined) values.push(expectedRevision);
   return {
     assignments,
+    differences,
     values,
     revisionFilter:
       expectedRevision === undefined
@@ -192,8 +201,18 @@ export function createModelProviderRepository(
     updateInstance(instanceId, providerId, patch, expectedRevision) {
       const built = buildPatch(patch, providerId, expectedRevision);
       if (!built) return Promise.resolve(null);
-      return writeInstance(instanceId, (scoped) =>
-        scoped.queryOne<ProviderInstanceRecord>(
+      return writeInstance(instanceId, async (scoped) => {
+        const unchanged = await scoped.queryOne<ProviderInstanceRecord>(
+          `select ${INSTANCE_COLUMNS}
+             from public.provider_instances
+            where instance_id = :instance and id = $1
+                  ${built.revisionFilter}
+                  and not (${built.differences.join(" or ")})
+              for update`,
+          built.values,
+        );
+        if (unchanged) return unchanged;
+        return scoped.queryOne<ProviderInstanceRecord>(
           `update public.provider_instances
               set config_revision = config_revision + 1,
                   ${built.assignments.join(", ")}
@@ -202,8 +221,8 @@ export function createModelProviderRepository(
         returning ${INSTANCE_COLUMNS}`,
           // 实例谓词的绑定值追加至末位，SET/CAS 参数编号保持原有顺序。
           built.values,
-        ),
-      );
+        );
+      });
     },
 
     setProbeResult(instanceId, providerId, result) {
