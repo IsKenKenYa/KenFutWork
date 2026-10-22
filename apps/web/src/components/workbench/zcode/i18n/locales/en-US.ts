@@ -4931,6 +4931,8 @@ const enUS: Record<string, string> = {
   "chat.toolCall.changesGroup.tool.other": "{count} tools",
   "chat.toolCall.execute.terminal": "Terminal",
   "chat.toolCall.execute.noOutput": "No output.",
+  "chat.toolCall.execute.expandCommand": "Show full command",
+  "chat.toolCall.execute.collapseCommand": "Collapse",
   "chat.toolCall.executeGroup.command.one": "{count} command",
   "chat.toolCall.executeGroup.command.other": "{count} commands",
   "chat.toolCall.executeGroup.failed": "{count} failed",

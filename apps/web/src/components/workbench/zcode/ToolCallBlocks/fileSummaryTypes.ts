@@ -203,6 +203,7 @@ export interface WorkflowDraftPosition {
 
 export interface ToolCallBlockRenderContext {
   isOfficeMode?: boolean;
+  isPermissionPreview?: boolean;
   toolCallNode: TaskChatToolCallTreeNode;
   workspacePath: string;
   /**

@@ -4628,6 +4628,8 @@ const zhCN: Record<string, string> = {
   "chat.toolCall.changesGroup.tool.other": "{count} 个工具",
   "chat.toolCall.execute.terminal": "终端",
   "chat.toolCall.execute.noOutput": "没有输出。",
+  "chat.toolCall.execute.expandCommand": "展开命令",
+  "chat.toolCall.execute.collapseCommand": "收起",
   "chat.toolCall.executeGroup.command.one": "{count} 个命令",
   "chat.toolCall.executeGroup.command.other": "{count} 个命令",
   "chat.toolCall.executeGroup.failed": "{count} 个失败",

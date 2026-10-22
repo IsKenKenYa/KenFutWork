@@ -1,6 +1,9 @@
 {
   "revision": "29628c9acdb81b703bbd4080c207a0e7ce5e276e",
   "version": "3.14.3",
+  "revisions": {
+    "3c5b227649371507ddc4eb46ac5133afe6db1cab": "3.16.2"
+  },
   "license": "Apache-2.0",
   "records": [
     {
@@ -541,9 +544,10 @@
       "source": "references/zcode/packages/ui/src/PermissionDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/PermissionDialog.tsx",
       "sha256": "402da6e509554a0dffda982eb2c2d20809629ee98fcd47677029b9bb5e6f37e9",
-      "copiedSha256": "574f6f3bd22b9edc83416ccf8a982bba643fc11be827efea241837e01e6fc2b4",
+      "copiedSha256": "e4aa658e80c5b3488d5163e04f31ccef697fbc2b1e167a91d855a459970a8a0a",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的审批预览标记消费；保留其余当前适配及原始基线。"
       ]
     },
     {
@@ -820,10 +824,11 @@
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/fileSummaryTypes.ts",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/fileSummaryTypes.ts",
       "sha256": "f41ddd84e4437d3d1f1fd7eac7ff73b8ad9b9b7c0e29100e720cbd0159f98690",
-      "copiedSha256": "ab834414aa941c6b48a2d11cdbfd851a6648e65ba431c108ba13cbb83ecb6249",
+      "copiedSha256": "777a1f7bab47f7b9f80e41f20e1fe5a0064118dfcb02e463160926fefa5b432e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "文件摘要增加optional truncated以呈现有界补丁预览事实"
+        "文件摘要增加optional truncated以呈现有界补丁预览事实",
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的 isPermissionPreview 字段；保留既有摘要适配及原始基线。"
       ]
     },
     {
@@ -1109,10 +1114,21 @@
       ]
     },
     {
+      "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/ExecuteCommand.tsx",
+      "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/ExecuteCommand.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "4c28465a201e6ca588d84032bfb0ae94d90c0a74d48979a6c0c4bfa8f471fee7",
+      "copiedSha256": "777cdb721d71968c842e5d87a028ba468730ba19cd337c7209a1e3def67f2e76",
+      "adaptations": [
+        "@/ 导入机械映射为 @zui/；原长命令组件及真实几何判定保持上游字节。"
+      ]
+    },
+    {
       "source": "references/zcode/packages/ui/src/ToolCallBlocks/renderers/execute.tsx",
       "target": "apps/web/src/components/workbench/zcode/ToolCallBlocks/renderers/execute.tsx",
-      "sha256": "9b6ef1e3b544395284c7e0a493f961732dcc79225cc1509030b5ace014b58d29",
-      "copiedSha256": "b6f4e64ff0858351a47b198284f131d8d16808240ebdf863d87577eb749d01ae",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "83655b053f2efbd3fe17be4002829757e10e4a0c01b0dcd2b06965321943cad1",
+      "copiedSha256": "353b83ac8f5c9b45d1996c45c0900542f462c8f22ddf6644f1d88514d8fb9283",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -5759,7 +5775,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "2c4d424d43f465848f3a8ee3f7b3bd0788e840172cc512b73091792042acb368",
+      "copiedSha256": "8e6038b375d845ce6d07a77587b2900663d3060636730e9e678f91841570f9cd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5778,14 +5794,15 @@
         "2026-10-14 OpenDesign 集成（O0+O2）：补 sidePane.openDesign 与 sidePane.openDesignCurrentFile 词条。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
-        "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）"
+        "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "347c7f0e382f9847eb2096cff19b737bb0a183a602ef38d60c393d1c35c5b101",
+      "copiedSha256": "8254e9921062a065affbc8da886dc87f3b8a7e4f36fdacc5a0d25231e5722a34",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5804,7 +5821,8 @@
         "2026-10-14 OpenDesign 集成（O0+O2）：补 sidePane.openDesign 与 sidePane.openDesignCurrentFile 词条。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
-        "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）"
+        "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。"
       ]
     },
     {
