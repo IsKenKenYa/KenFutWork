@@ -4994,9 +4994,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useCuaComposerEntry.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useCuaComposerEntry.ts",
       "sha256": "8668d4c41074a95ecc59d0685e2316acce354bdcb1557f53a58ac5dd1bf363cf",
-      "copiedSha256": "89791808c4dd9507a8cca3a5e82f30bdfab44587aa29a126e392267526fe0c3a",
+      "copiedSha256": "7941808c8d5ee250b25bced4546d999efda8b392eaa995e1acc7ffc44c8c3188",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KFW Computer Use 入口与设置共用真实实例插件库存名称解析，切换中及失败状态绑定真实安装 ID；保留混合宿主执行能力。"
       ]
     },
     {
@@ -9459,9 +9460,10 @@
       "source": "references/zcode/packages/ui/src/settings/ComputerUseSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ComputerUseSection.tsx",
       "sha256": "aeb1f9f941e60b5dd27b91e1ad51a0c5821bf1a13ad1b28467ae8f529c030604",
-      "copiedSha256": "f07199209d6e91eebc0de51425f2b468154454448adda1578a12008785f152e8",
+      "copiedSha256": "7c7cf1f69d2cfcf233c4c033bb4833e552e06f3c547d8f99e32aabae4438bba4",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KFW Computer Use 设置与输入入口共用真实实例插件库存名称解析，启停写入使用真实安装 ID；保留混合宿主执行能力。"
       ]
     },
     {

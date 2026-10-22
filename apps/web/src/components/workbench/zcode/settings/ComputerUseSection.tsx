@@ -8,12 +8,9 @@
 // 各查一次，不再定时轮询；状态存在共享缓存里，与输入框常驻入口读同一份。
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSettings } from "@zui/hooks/useSettingService.js";
+import { resolveComputerUsePlugin } from "@zui/host/cuaSharedAdapter.js";
 import type { CuaOsSupport, CuaPermissionKind, RemoteTarget } from "@zcode/shared";
-import {
-  DesktopCommandIds,
-  isRemoteWorkspaceIdentity,
-  ZCODE_CUA_OFFICIAL_PLUGIN_ID,
-} from "@zcode/shared";
+import { DesktopCommandIds, isRemoteWorkspaceIdentity } from "@zcode/shared";
 import { isCuaPermissionStatusAvailable, type CuaPermissionRestartOptions } from "@zcode/services";
 import { Button } from "@zui/components/ui/button.js";
 import { toast } from "@zui/components/ui/toast.js";
@@ -127,9 +124,9 @@ export function ComputerUseSection({
   const setPluginEnabled = usePluginManagementStore((state) => state.setEnabled);
   const initializePlugins = usePluginManagementStore((state) => state.initialize);
   const togglingPluginId = usePluginManagementStore((state) => state.togglingPluginId);
-  const cuaPlugin = plugins.find((plugin) => plugin.id === ZCODE_CUA_OFFICIAL_PLUGIN_ID);
+  const cuaPlugin = resolveComputerUsePlugin(plugins);
   const cuaEnabled = cuaPlugin?.enabled ?? false;
-  const cuaToggling = togglingPluginId === ZCODE_CUA_OFFICIAL_PLUGIN_ID;
+  const cuaToggling = Boolean(cuaPlugin && togglingPluginId === cuaPlugin.id);
 
   const initRef = useRef(false);
   useEffect(() => {
@@ -326,12 +323,12 @@ export function ComputerUseSection({
 
   const onTogglePlugin = useCallback(
     async (next: boolean) => {
-      if (!pluginManagementService) return;
+      if (!pluginManagementService || !cuaPlugin) return;
       const operationGeneration = ++pluginToggleGenerationRef.current;
       const operationContextKey = pluginToggleContextKey;
       // 切换 zcode-cua 插件 = 同步其 MCP server + skill 一起启用/禁用。
       const completed = await runAfterSuccessfulPluginEnabledChange({
-        submit: () => setPluginEnabled(ZCODE_CUA_OFFICIAL_PLUGIN_ID, next, pluginManagementService),
+        submit: () => setPluginEnabled(cuaPlugin.id, next, pluginManagementService),
         isCurrent: () =>
           mountedRef.current &&
           pluginToggleGenerationRef.current === operationGeneration &&
@@ -355,6 +352,7 @@ export function ComputerUseSection({
       }
     },
     [
+      cuaPlugin,
       path,
       pluginManagementService,
       pluginToggleContextKey,
