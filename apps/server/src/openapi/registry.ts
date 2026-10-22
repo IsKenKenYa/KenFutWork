@@ -131,6 +131,8 @@ import {
   marketplaceInstallRequestSchema,
   mcpServerCreateRequestSchema,
   mcpServerUpdateRequestSchema,
+  mediaDriverPreviewRequestSchema,
+  mediaDriverPreviewResponseSchema,
   messageCreateResponseSchema,
   messageListResponseSchema,
   modelCatalogResponseSchema,
@@ -2382,6 +2384,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "上传项目缩略图",
     description:
       "以 multipart 表单上传项目缩略图文件（上限 2MB），缺省 MIME 按 image/webp 处理并保存。",
+  },
+  {
+    method: "post",
+    path: "/api/media-drivers/preview",
+    tag: "provider-instances",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: mediaDriverPreviewRequestSchema,
+    responseSchema: mediaDriverPreviewResponseSchema,
+    summary: "预览媒体供应商文件",
+    description:
+      "解析并编译自包含 TypeScript 文件，返回模型、参数、连接字段、访问地址及文件摘要。此检查不执行供应商代码，也不验证真实生成接口。",
   },
   // ---- provider-instances.ts（BYOK 供应商实例；apiKey存于本地明文凭据文件，授权设置可读取）----
   {

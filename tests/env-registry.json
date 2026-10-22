@@ -1126,6 +1126,13 @@
       "status": "active",
       "note": "PDF模型读取页数预算；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
     },
+    "KENFUTWORK_MEDIA_DRIVER_MAX_SOURCE_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "媒体供应商源码文件字节预算；默认及区间由governance.ts统一提供"
+    },
     "KENFUTWORK_CODE_PDF_RENDER_SCALE": {
       "surface": "server",
       "readers": ["packages/shared/src/governance.ts"],

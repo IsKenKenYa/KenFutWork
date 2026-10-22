@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@babel/parser": "^7.29.0",
+    "@babel/types": "^7.29.0",
     "@ai-sdk/bytedance": "^2.0.68",
     "@ai-sdk/openai-compatible": "^3.0.75",
     "@ai-sdk/provider": "^4.0.31",
@@ -35,6 +37,7 @@
     "deepagents": "^1.14.0",
     "diff": "8.0.4",
     "embedded-postgres": "17.10.0-beta.17",
+    "esbuild": "^0.28.2",
     "fastify": "^5.12.7",
     "google-auth-library": "^11.1.0",
     "jose": "^6.2.13",

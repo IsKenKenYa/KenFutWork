@@ -10986,6 +10986,66 @@
         }
       }
     },
+    "/api/media-drivers/preview": {
+      "post": {
+        "operationId": "postMediaDriversPreview",
+        "summary": "预览媒体供应商文件",
+        "description": "解析并编译自包含 TypeScript 文件，返回模型、参数、连接字段、访问地址及文件摘要。此检查不执行供应商代码，也不验证真实生成接口。",
+        "tags": [
+          "provider-instances"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/mediaDriverPreviewRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mediaDriverPreviewResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/provider-instances": {
       "get": {
         "operationId": "getProviderInstances",
@@ -18914,6 +18974,12 @@
                 "minimum": 1024,
                 "maximum": 67108864
               },
+              "mediaDriverMaxSourceBytes": {
+                "default": 1048576,
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 67108864
+              },
               "codePdfMaxPages": {
                 "default": 10,
                 "type": "integer",
@@ -19122,6 +19188,7 @@
               "codeSearchMaxResults",
               "codeSearchMaxBytes",
               "codePatchMaxBytes",
+              "mediaDriverMaxSourceBytes",
               "codePdfMaxPages",
               "codePdfRenderScale",
               "codeAttachmentMaxBytes",
@@ -19535,6 +19602,11 @@
             "maximum": 67108864
           },
           "codePatchMaxBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 67108864
+          },
+          "mediaDriverMaxSourceBytes": {
             "type": "integer",
             "minimum": 1024,
             "maximum": 67108864
@@ -20978,6 +21050,374 @@
             "type": "boolean"
           }
         }
+      },
+      "mediaDriverPreviewRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "additionalProperties": false
+      },
+      "mediaDriverPreviewResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "properties": {
+              "apiVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "origins": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "connectionFields": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "secret": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "default": false,
+                      "type": "boolean"
+                    },
+                    "default": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "label",
+                    "secret",
+                    "required"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "models": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "capability": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "video"
+                      ]
+                    },
+                    "execution": {
+                      "type": "string",
+                      "enum": [
+                        "sync",
+                        "async"
+                      ]
+                    },
+                    "imageGeneration": {
+                      "type": "object",
+                      "properties": {
+                        "aspectRatios": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "qualities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "sizes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[1-9]\\d*x[1-9]\\d*$"
+                          }
+                        },
+                        "outputFormats": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "png",
+                              "jpg",
+                              "webp"
+                            ]
+                          }
+                        },
+                        "maxOutputs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "modes": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "generate",
+                              "edit",
+                              "upscale",
+                              "remix",
+                              "merge"
+                            ]
+                          }
+                        },
+                        "requirePrompt": {
+                          "type": "boolean"
+                        },
+                        "maxInputImages": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "videoGeneration": {
+                      "type": "object",
+                      "properties": {
+                        "durations": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "aspectRatios": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "resolutions": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "firstLastFrame": {
+                          "type": "boolean"
+                        },
+                        "referenceImages": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "negativePrompt": {
+                          "type": "boolean"
+                        },
+                        "audio": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "parameters": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "string",
+                              "number",
+                              "boolean",
+                              "select",
+                              "string-list"
+                            ]
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "default": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "min": {
+                            "type": "number"
+                          },
+                          "max": {
+                            "type": "number"
+                          },
+                          "options": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "type"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "capability",
+                    "execution",
+                    "parameters"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "apiVersion",
+              "id",
+              "version",
+              "name",
+              "origins",
+              "connectionFields",
+              "models"
+            ],
+            "additionalProperties": false
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "prepareInputs",
+                "submit",
+                "query",
+                "cancel"
+              ]
+            }
+          },
+          "sourceDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "compiledDigest": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "sourceBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "maxBytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "validation": {
+            "type": "string",
+            "const": "format_only"
+          }
+        },
+        "required": [
+          "manifest",
+          "methods",
+          "sourceDigest",
+          "compiledDigest",
+          "sourceBytes",
+          "maxBytes",
+          "validation"
+        ],
+        "additionalProperties": false
       },
       "messageCreateResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

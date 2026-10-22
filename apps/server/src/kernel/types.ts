@@ -40,6 +40,7 @@ import type {
   LocalActor,
   LocalInstanceService,
 } from "../features/local-instance/types.js";
+import type { MediaDriverService } from "../features/media-drivers/service.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type {
@@ -144,6 +145,8 @@ export interface ServiceMap {
   queue: QueueClient;
   /** 用户供应商实例管理（CRUD + 凭证解析，BYOK） */
   modelProviders: ModelProviderService;
+  /** 可安装媒体供应商文件的预览、版本与执行服务。 */
+  mediaDrivers: MediaDriverService;
   /** 模型目录（从用户供应商实例推导） */
   modelCatalog: ModelCatalogService;
   /** 用量计量服务（DEC-6） */

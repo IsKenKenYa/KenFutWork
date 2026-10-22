@@ -132,6 +132,12 @@ importers:
       '@anthropic-ai/sandbox-runtime':
         specifier: 0.0.78
         version: 0.0.78(patch_hash=56d4efa47ad6f73e3e9c4ef9081c24d6075b92b3dfcdaa81a614a1affef99bd9)
+      '@babel/parser':
+        specifier: ^7.29.0
+        version: 7.29.8
+      '@babel/types':
+        specifier: ^7.29.0
+        version: 7.29.8
       '@computer-use/node-mac-permissions':
         specifier: ^2.2.2
         version: 2.2.2
@@ -213,6 +219,9 @@ importers:
       embedded-postgres:
         specifier: 17.10.0-beta.17
         version: 17.10.0-beta.17
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       fastify:
         specifier: ^5.12.7
         version: 5.12.7

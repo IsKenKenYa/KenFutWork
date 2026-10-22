@@ -42,6 +42,10 @@ import {
 import { createInstanceRoutesPlugin } from "../features/local-instance/http-plugin.js";
 import { createLocalInstancePlugin } from "../features/local-instance/plugin.js";
 import { createMcpPlugin } from "../features/mcp/plugin.js";
+import {
+  createMediaDriverRoutesPlugin,
+  createMediaDriversPlugin,
+} from "../features/media-drivers/plugin.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import {
   createModelProviderRoutesPlugin,
@@ -192,6 +196,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createChatPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
+    createMediaDriversPlugin(),
+    createMediaDriverRoutesPlugin(),
     createExecutionScopesPlugin(),
     createProcessSandboxPlugin(),
     createCodeTerminalPlugin(),

@@ -50,6 +50,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   codeSearchMaxResults: 1_000,
   codeSearchMaxBytes: 1_048_576,
   codePatchMaxBytes: 1_048_576,
+  /** 导入媒体供应商 TypeScript 文件的字节预算。 */
+  mediaDriverMaxSourceBytes: 1_048_576,
   codePdfMaxPages: 10,
   codePdfRenderScale: 1,
   /** Code 附件：宿主协商分块预算，已提交私有内容随 Task 生命周期保留。 */
@@ -111,6 +113,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "codeSearchMaxResults",
   "codeSearchMaxBytes",
   "codePatchMaxBytes",
+  "mediaDriverMaxSourceBytes",
   "processMaxOutputBytes",
   "processPreviewMaxChars",
   "processYieldMs",
@@ -160,6 +163,7 @@ export type AgentGovernanceOverrides = {
   codeSearchMaxResults?: number | undefined;
   codeSearchMaxBytes?: number | undefined;
   codePatchMaxBytes?: number | undefined;
+  mediaDriverMaxSourceBytes?: number | undefined;
   codePdfMaxPages?: number | undefined;
   codePdfRenderScale?: number | undefined;
   codeAttachmentMaxBytes?: number | undefined;
@@ -259,6 +263,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   codeSearchMaxResults: { min: 1, max: 100_000 },
   codeSearchMaxBytes: { min: 1_024, max: 67_108_864 },
   codePatchMaxBytes: { min: 1_024, max: 67_108_864 },
+  mediaDriverMaxSourceBytes: { min: 1_024, max: 67_108_864 },
   codePdfMaxPages: { min: 1, max: 1_000 },
   codePdfRenderScale: { min: 0.25, max: 4 },
   // 私有附件驻内存 staging 最多 1GiB；单块还受固定 1MiB wire frame 物理护栏约束。
@@ -373,6 +378,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     codeSearchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_SEARCH_MAX_BYTES),
     codePatchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_PATCH_MAX_BYTES),
+    mediaDriverMaxSourceBytes: parseStrictInt(
+      source.KENFUTWORK_MEDIA_DRIVER_MAX_SOURCE_BYTES,
+    ),
     codePdfMaxPages: parseStrictInt(source.KENFUTWORK_CODE_PDF_MAX_PAGES),
     codePdfRenderScale:
       source.KENFUTWORK_CODE_PDF_RENDER_SCALE?.trim() &&

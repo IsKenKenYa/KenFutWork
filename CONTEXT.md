@@ -45,6 +45,7 @@
 - **Provider Instance（供应商实例）** — 本地实例中由用户配置的 BYOK 供应商，包含协议、服务地址、供应商凭据引用及模型清单。_Avoid_: 官方账户、接入客户端。
 - **Protocol（线协议）** — 供应商实例的底层协议适配器类型（openai-compatible / anthropic / gemini / 图视频协议），封闭集合。
 - **Model Catalog（模型目录）** — 从供应商实例能力推导的可选模型清单；未来远端模型须保留其来源与授权范围。
+- **Media Driver（媒体驱动）** — 用户安装的供应商文件，声明图片／视频模型、参数、访问地址及单次调用方法；版本固定到 Job，查询时间、恢复、取消和产物保存由共享引擎管理。
 - **Provider Credential（供应商凭据）** — 用户向模型供应商证明调用资格的 Key 或其它秘密值；不代表 KenFutWork 账户或本地接入权。
 - **CLI Provider（CLI 供应商）** — v2 方向：把外部 AI CLI（Claude Code / Codex / Gemini CLI 等）注册为一等 agent 能力的适配层。v1 仅为命令级黑盒执行（沙箱内跑 CLI、取回输出）。
 

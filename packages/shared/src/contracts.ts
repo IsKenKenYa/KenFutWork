@@ -320,6 +320,7 @@ export const instanceSettingsSchema = z.object({
   codeSearchMaxResults: governanceSetting("codeSearchMaxResults"),
   codeSearchMaxBytes: governanceSetting("codeSearchMaxBytes"),
   codePatchMaxBytes: governanceSetting("codePatchMaxBytes"),
+  mediaDriverMaxSourceBytes: governanceSetting("mediaDriverMaxSourceBytes"),
   codePdfMaxPages: governanceSetting("codePdfMaxPages"),
   codePdfRenderScale: governanceSetting("codePdfRenderScale"),
   codeAttachmentMaxBytes: governanceSetting("codeAttachmentMaxBytes"),
