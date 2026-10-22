@@ -11988,7 +11988,7 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "b26b61e51be0d2cb9e3f853d5b6833cb425e9000990a1595fa910587699b6243",
+      "copiedSha256": "a8e941bcb659896c62493b3907a24503b0092f615fe7ae63ff025300645a4381",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -11996,7 +11996,8 @@
         "语音补全接线：从 snapshot.rows 提取指代消解上下文（recentMessagesFromSnapshot，只取真实用户输入与已完成正文）喂给「想」段；回复从 streaming 转为 complete 时调 speakReply 播报（历史行不重念）。验证见 code-voice.test（播报开关/上下文注入）与 voice-wiring-guard，哈希随本次改动更新。",
         "Task权限与审批接线：会话使用真实Task基础权限和独立规划，审批模型由既有模型设置独立选择。",
         "Code/Design统一实施：共享输入区提供通用上下文贡献header，保留原输入与提交交互。",
-        "2026-10-22统一Agent工作流程：原盾牌菜单直接修改当前Composer的独立Plan与基础权限；发送瞬间冻结原Submission的模型、思考、权限、规划和工作内容，附件、语音、Goal及Canvas接线保持原路径。"
+        "2026-10-22统一Agent工作流程：原盾牌菜单直接修改当前Composer的独立Plan与基础权限；发送瞬间冻结原Submission的模型、思考、权限、规划和工作内容，附件、语音、Goal及Canvas接线保持原路径。",
+        "文件加入输入框：disabled 时解除原文件事件监听，恢复可编辑后重新登记，保留原草稿。"
       ]
     },
     {
