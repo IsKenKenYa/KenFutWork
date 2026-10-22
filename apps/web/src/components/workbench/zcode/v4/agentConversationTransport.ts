@@ -359,7 +359,7 @@ export function createAgentConversationTransport(
         throw error;
       }
     },
-    async sendCommand(envelope: CommandEnvelope, executionMode?: import("@kenfutwork/shared").CodeUiCommandCompanion["executionMode"]): Promise<CommandAck> {
+    async sendCommand(envelope: CommandEnvelope): Promise<CommandAck> {
       const hello = await ensureHandshake();
       const payload = envelope.payload as {
         planEnabled?: boolean;
@@ -373,7 +373,7 @@ export function createAgentConversationTransport(
       ) {
         throw new Error("proto.independentPlanUnsupported");
       }
-      const request = { ...workspace, envelope, ...(executionMode ? { executionMode } : {}) };
+      const request = { ...workspace, envelope };
       return sendWithConversationDelayE2E(() =>
         agentService.sendConversationCommandV4(request),
       );

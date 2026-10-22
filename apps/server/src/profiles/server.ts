@@ -3,7 +3,6 @@ import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
 import type { AgentRuntimeProvider } from "../agent/provider-contract.js";
 import type { ServerEnv } from "../config/env.js";
 import { isDesktopRuntime } from "../desktop/runtime.js";
-import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
@@ -129,13 +128,6 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     capabilities: ["tools"],
   },
   {
-    name: "agent-modes",
-    title: "执行模式",
-    category: "Agent 能力",
-    description: "会话级 Code / Design · 多档执行模式",
-    capabilities: [],
-  },
-  {
     name: "search",
     title: "联网搜索",
     category: "工具与集成",
@@ -221,7 +213,6 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createUsagePlugin(),
     createPermissionsPlugin({ events: deps.events }),
     createApprovalReviewPlugin(),
-    createAgentModesPlugin(),
     createCodeToolsPlugin(),
     createCodeUiAgentEventsPlugin(),
     // Computer Use（CU 插件重活层）：工具面按安装态门控，非 darwin 显式 unavailable
@@ -264,7 +255,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createAgentRunsPlugin({
       connectionManager: deps.connectionManager,
       events: deps.events,
-      // DEC-1 事件缝：pre-step 改写权交给事件监听器（执行模式指令注入等）
+      // pre-step改写权交给指导事件监听器。
       emitPreStep: (payload) => deps.events.emitPreStep(payload),
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
       ...(deps.runtimeProvider

@@ -32,7 +32,6 @@ type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
 type Config = protocol.SessionConfigState;
 type ExecutionStart = {
-  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   runId: string;
   commandId: string;
   modelSelection?: NonNullable<Config["modelSelection"]>;
@@ -71,9 +70,6 @@ export type CodeUiCompletedTurnView = Pick<
 };
 
 export interface CodeUiConversationState {
-  runExecutionModes?: Array<
-    [string, import("@kenfutwork/shared").ExecutionMode]
-  >;
   runApprovalCeilings?: Array<[string, CodeApprovalMode]>;
   initialWorkContext?: protocol.ConversationWorkContext;
   runWorkContexts?: Array<[string, protocol.ConversationWorkContext]>;
@@ -397,7 +393,6 @@ export function createCodeUiConversation(input: {
   const runContributions = new Map(
     structuredClone(input.state?.runContributions ?? []),
   );
-  const runExecutionModes = new Map(input.state?.runExecutionModes ?? []);
   const runApprovalCeilings = new Map(input.state?.runApprovalCeilings ?? []);
   const runOutcomes = new Map(input.state?.runOutcomes ?? []);
   const hostShutdownRuns = new Set(input.state?.hostShutdownRuns ?? []);
@@ -482,8 +477,6 @@ export function createCodeUiConversation(input: {
       mode: turn.mode ?? root.config.mode,
     }).mode;
     runApprovalCeilings.set(turn.runId, mode === "plan" ? "build" : mode);
-    if (turn.executionMode)
-      runExecutionModes.set(turn.runId, turn.executionMode);
     runWorkContexts.set(
       turn.runId,
       freezeWorkContext(turn.workContext ?? initialWorkContext),
@@ -569,7 +562,6 @@ export function createCodeUiConversation(input: {
         initialWorkContext,
         runWorkContexts: [...runWorkContexts],
         runContributions: [...runContributions],
-        runExecutionModes: [...runExecutionModes],
         runApprovalCeilings: [...runApprovalCeilings],
         runOutcomes: [...runOutcomes],
         ...(hostShutdownRuns.size
@@ -837,9 +829,6 @@ export function createCodeUiConversation(input: {
           runContributions: [...runContributions].filter(
             ([id]) => id === event.runId,
           ),
-          runExecutionModes: [...runExecutionModes].filter(
-            ([id]) => id === event.runId,
-          ),
           runApprovalCeilings: [...runApprovalCeilings].filter(
             ([id]) => id === event.runId,
           ),
@@ -874,7 +863,6 @@ export function createCodeUiConversation(input: {
           text: child.meta.title ?? "子任务",
           workContext,
           frozenContributions,
-          executionMode: runExecutionModes.get(event.runId),
         });
       host.recordEvent(event);
       const state = host.exportState();
@@ -882,8 +870,6 @@ export function createCodeUiConversation(input: {
         runWorkContexts.set(id, context);
       for (const [id, contribution] of state.runContributions ?? [])
         runContributions.set(id, contribution);
-      for (const [id, mode] of state.runExecutionModes ?? [])
-        runExecutionModes.set(id, mode);
       for (const [id, ceiling] of state.runApprovalCeilings ?? [])
         runApprovalCeilings.set(id, ceiling);
       for (const [id, outcome] of state.runOutcomes ?? [])
@@ -1005,7 +991,6 @@ export function createCodeUiConversation(input: {
     },
     startInput(record: CodeAdmittedInput) {
       const execution = {
-        executionMode: record.executionMode,
         runId: record.runId,
         commandId: record.intent.sourceCommandId,
         modelSelection: record.intent.modelSelection!,
@@ -1041,7 +1026,6 @@ export function createCodeUiConversation(input: {
         });
     },
     startTurn(turn: {
-      executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
       runId: string;
       commandId: string;
       text: string;

@@ -416,6 +416,8 @@ type RuntimeRunStatus =
   | "running";
 
 type RuntimeRunRecord = RunCreateRequest & {
+  /** 持久目标属主确认的运行来源，普通请求不能提供。 */
+  goalId?: string;
   workContext?: protocol.ConversationWorkContext | undefined;
   frozenContributions?: ToolContributionSnapshot;
   acceptedCancellation?: Promise<void>;
@@ -529,7 +531,7 @@ type CreateAgentRuntimeOptions = {
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
   tools?: ToolRegistry;
   contextHistoryArchives?: ContextHistoryArchiveBindings;
-  /** 内核系统提示段注册表：run 起始期组装系统提示（模式段/品牌/skills/规则与插件）。 */
+  /** 内核系统提示段注册表：run 起始期组装品牌、skills、规则与插件指导。 */
   systemPromptRegistry?: SystemPromptRegistry;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
   emitTurnStopping?: (payload: { runId: string }) => Promise<void>;
@@ -544,12 +546,12 @@ type CreateAgentRuntimeOptions = {
     },
   ) => Promise<{ input: unknown }>;
   /**
-   * 执行策略工具门：Task使用接纳快照，独立规划态仍由原Task审批链裁决。
+   * Task使用逐调用审批；非Task按可信目标身份选择权限场景。
    */
   toolGateFor?: (
     threadId: string,
-    executionMode?: import("@kenfutwork/shared").ExecutionMode,
     scoped?: boolean,
+    goalId?: string,
   ) => ToolGate | undefined;
   /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
@@ -591,7 +593,6 @@ function copyRunInput(input: RunCreateRequest): RunCreateRequest {
     ...(input.mentions ? { mentions: input.mentions } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.preset ? { preset: input.preset } : {}),
-    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
   };
 }
 
@@ -700,7 +701,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     return run.acceptedCancellation;
   };
 
-  // DEC-1 pre-step：把改写权交给事件监听器（执行模式 plan 引导等），无监听器原样返回
+  // pre-step将指导改写交给事件监听器，无监听器时原样返回。
   const applyPreStep = async (
     input: string,
     run: RuntimeRunRecord,
@@ -713,7 +714,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input,
       runId: run.runId,
       preset: resolvePresetForRun(run),
-      ...(run.executionMode ? { executionMode: run.executionMode } : {}),
       ...(run.threadId ? { threadId: run.threadId } : {}),
       ...(run.sessionId ? { sessionId: run.sessionId } : {}),
       ...(scope ? { instanceId: scope.instanceId, taskId: scope.taskId } : {}),
@@ -803,6 +803,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         /** 已鉴权的原输入身份；retry须回指原client/sourceCommand，不能用新runId代替。 */
         inputIdentity?: { clientId: string; sourceCommandId: string };
         inputOrigin?: "userInput" | "backgroundResult" | "controlOperation";
+        /** 仅由持久目标属主确认，不从公开Run请求读取。 */
+        goalId?: string;
         operation?: { kind: "compact" };
         /** 持久命令已铸造的运行身份；恢复/去重不得再次生成另一轮 run。 */
         runId?: string;
@@ -894,6 +896,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ? { sandboxScopeId: runOptions.sandboxScopeId }
           : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
+        ...(runOptions?.goalId ? { goalId: runOptions.goalId } : {}),
         ...(runOptions?.eventSink ? { eventSink: runOptions.eventSink } : {}),
         ...(runOptions?.delegationDepth !== undefined
           ? { delegationDepth: runOptions.delegationDepth }
@@ -1698,14 +1701,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const preset = resolvePresetForRun(run);
 
-          // Task工具门消费Run快照；没有Task的旧调用继续使用线程策略。
+          // Task权限由作用域和逐调用审批持有；非Task按可信目标身份取权限场景。
           const toolGate =
             run.threadId && options.toolGateFor
-              ? options.toolGateFor(
-                  run.threadId,
-                  run.executionMode,
-                  !!run.scopeHandle,
-                )
+              ? options.toolGateFor(run.threadId, !!run.scopeHandle, run.goalId)
               : undefined;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
           // （只有它拿得到 runId/时间戳/abort 控制器）
@@ -2044,7 +2043,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           });
           toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
-            ...(run.executionMode ? { executionMode: run.executionMode } : {}),
+            ...(run.goalId ? { goalId: run.goalId } : {}),
             ...(run.frozenContributions
               ? {
                   frozenContributions: structuredClone(run.frozenContributions),
@@ -2363,7 +2362,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(kernelToolDefinitions.length > 0
               ? { kernelTools: kernelToolDefinitions }
               : {}),
-            // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
+            // 工具权限检查覆盖内置与桥接工具。
             ...(toolGate ? { toolGate } : {}),
             ...(toolGateHooks ? { toolGateHooks } : {}),
             // 子代理派发缝（DEC-14/15/16）：注册表并发上限来自治理设置

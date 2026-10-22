@@ -16,7 +16,6 @@
 | --- | --- | --- |
 | `agent.run` | `runCreateRequestSchema`（同 `POST /api/agent/runs`） | 启动一次智能体运行 |
 | `agent.cancel` | `{ runId, taskId? }`（Design 必填 Task） | 取消进行中的运行 |
-| `task.resume` | `{ taskId, lastSeq }` | Design 持久 Task 的断线续传 |
 | `canvas.resume` | `{ canvasId, lastSeq }` | 断线续传：从 `lastSeq` 起重放画布事件流 |
 | `terminal.start` | `{ taskId, sessionId, cols, rows, cwd?, shell? }` | 显式Task目录与授权中的真实PTY终端，断线等待管理范围退出 |
 | `terminal.input` | `{ sessionId, data }` | 向终端会话写入输入 |
@@ -64,9 +63,9 @@ Window Controller 读面已接原 `listTaskList`、`subscribeControllerV4`、`re
 
 供应商 Settings RPC 的保存装配收口到 `model-providers`，仍沿原 `providerSettingsService`／`modelSelectionService` 消费，不新增服务 key。设置 view 保留所有真实供应商及模型定义；聊天选择仅投影可执行聊天候选，生成／Flow 不进入聊天选择。原 `createPersonalProvider`／稀疏 `savePersonalProviderOverlay`、删除和供应商排序仍可用；共同字段保存不能将生成／Flow 的协议切成聊天缺省协议。实例创建是 unsafe 操作，宿主不自动重发，响应未知时先刷新列表核对。
 
-宿主扩展 `saveManagedModel({ providerId, expectedRevision, originalModelId?, model })`：缺省 originalModelId 表示新增，重复 ID 拒绝；显式 originalModelId 表示编辑，原模型已删除返回 404，修订过期返回 409。`saveManagedProvider({ providerId, patch })` 强制 patch.expectedRevision，其余字段沿共享供应商更新契约保存；原启停、删除和排序操作也消费同一原生模型集合。`getModelDefaults`／`saveModelDefaults` 读取、校验并持久化实例 chat／image／video 策略，无需 Project 或 Task。
+宿主扩展 `saveManagedModel({ providerId, expectedRevision, originalModelId?, model })`：缺省 originalModelId 表示新增，重复 ID 拒绝；显式 originalModelId 表示编辑，原模型已删除返回 404，修订过期返回 409。`saveManagedProvider({ providerId, patch })` 强制 patch.expectedRevision，其余字段沿共享供应商更新定义保存；原启停、删除和排序操作也消费同一原生模型集合。`getModelDefaults`／`saveModelDefaults` 读取、校验并持久化实例 chat／approval／image／video 默认模型，审批与对话选择分别保存，无需 Project 或 Task。
 
-授权设置的 `getView` 可读取本机 Key，用于查看和复制；普通 native 定义、REST 目录、通知与运行读面仅携带 hasCredential／credentialConfigured，不携带秘密值。省略 Key／headers 保留，显式 null 清除 Key，headers={} 清空。保存成功返回权威 view 并广播非敏感 view；原 Hook 同时提交应答 view，通知丢失也可更新列表。草稿修订与供应商 CAS 保留；旧开发数据不转换。默认执行策略、统一设置文档及 Design 消费迁移仍在后续切片，当前管理接口不表示完整统一目标已完成。
+授权设置的 `getView` 可读取本机 Key，用于查看和复制；普通 native 定义、REST 目录、通知与运行读面仅携带 hasCredential／credentialConfigured，不携带秘密值。省略 Key／headers 保留，显式 null 清除 Key，headers={} 清空。保存成功返回权威 view 并广播非敏感 view；原 Hook 同时提交应答 view，通知丢失也可更新列表。草稿修订与供应商 CAS 保留，当前对话模型与审批模型分别由同一供应商服务解析。
 
 模型编辑器已接 `resolveModelConfig`、`addPersonalModel` 与 `savePersonalModelDraft`：复用固定原推荐规则及 ModelConfigRules 的精确/手动合成，规则原件由 modelProviders 域持有。精确配置与模式标记保存于同一模型成员，标准运行容量从它推导；新增成员与配置同事务，原添加语义默认启用，新成员保留原模型 ID。草稿保存把改名、原成员位置与配置同事务提交，`basedOnRevision` 对整个 workspace Registry 作 CAS；所有配置写入口先锁工作区修订再锁实例。同修订并发只有一次提交，跨供应商配置变化同样使旧草稿返回 409；重复成员返回 409，已删除供应商/成员返回 404，不部分写入。恢复智能规则复用原结构空判定，删除个人精确配置，刷新沿用原推荐；同值重复保存不增修订，手动空配置仍按原规则拒绝。原 setPersonalModelEnabled 在事务内只修改最新 enabled，保留精确配置与手动/智能模式；Settings 保留停用成员，Selection 移除执行候选，同值保存不增修订。deletePersonalModel 同事务移除成员及精确规则，未知成员 404；删除后迟到的保存/启用请求拒绝，不能重新创建成员。独立改名/排序与指定模型连通性测试仍待接通。
 
@@ -132,13 +131,15 @@ Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读�
 
 Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画布引用、选区、生成偏好在 `workContext` 内随输入接纳冻结。Task 持有固定文件目录与授权代际，画布引用不能签发目录授权。Goal、审批、取消、队列及重连使用同一会话协议；后续 Goal Run 重新捕获当时能力，已接纳输入保留自己的能力快照。
 
-`sendConversationCommandV4` 的 RPC 参数可在 `envelope` 同级携带第一方宿主 `executionMode`，唯一载体契约是 `packages/shared/src/code-ui-contracts.ts` 的 `codeUiCommandCompanionSchema`／`CodeUiCommandCompanion`。它与下文的 `goalControl` 都属于宿主 companion，不向原 V4 envelope、payload、SSE 帧或 WS `agent.run` 增加字段。Code、Design 共用原传输、可替换代理与服务客户端；本次点击的可见选择独立于另一标签页随后写入的会话偏好，接纳后持久冻结到原输入与 Run。
+`sendConversationCommandV4` 使用原 V4 `envelope`，RPC 参数同时提供工作目录及项目身份；Goal 命令可使用下文的独立 `goalControl`。模型、思考、基础权限、`planEnabled` 与 `workContext` 使用原命令载荷，在点击发送和服务端接纳时分别冻结。RPC 参数、envelope 与各命令载荷均严格校验字段；Code、Design 共用原传输、可替换代理与服务客户端。
 
-同一命令和策略重放返回原回执；同命令改策略返回冲突，不借旧回执重跑。未提供 companion 时读取会话偏好，读取失败给出可读拒绝；已停用的 `loop` 不能接纳。`plan` 只开启独立规划收窄，不改基础文件／命令审批权限；`solo` 在共享工具门硬禁工具。目标入口仍派发原 `sendGoalCommand`，既有未验收 Goal 的普通补充沿原 `sendText`，不创建第二条目标运行链路。
+同一命令和相同内容重放返回原回执；同一命令更改内容返回冲突，不重复执行。基础权限为 `build`／`edit`／`yolo`，独立 Plan 在其上收窄执行范围；规划退出须经原人工批准流程，模型批准不能扩大角色或目录权限。原输入框直接使用当前规划草稿，普通文本沿 `sendText` 处理，明确目标命令沿 `sendGoalCommand` 处理。Goal 的创建、替换和恢复核验真实目标身份及修订，暂停后普通消息不自动恢复目标。
 
-外部 HTTP `/api/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。旧 `task.resume` 返回 `shared_conversation_required`，不保留第二套 Design 事件回放或独立 Goal/审批端点。
+外部 HTTP `/api/agent/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。
 
-`agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。旧素材参数与非 Agent 的外部执行模式明确拒绝，素材及策略由共享会话接纳。
+`agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。素材、模型、权限与工作内容均由共享 Task 接纳并核验，外部请求不能覆盖已冻结的运行事实。
+
+服务升级后，中断输入需要明确重新提交，相关 Goal 保持暂停并等待明确恢复；模型、目录和权限上限继续使用原授权事实。完整升级规则见[实施规格 §2.7](../方案设计/Code工作域与工具内核实施规格.md)，检查回执与未完成验收见[日志](../日志.md)。
 
 ## 文档资源变更
 
@@ -148,9 +149,9 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 ## 第一方 Code Goal 控制扩展
 
-`sendConversationCommandV4` 的原 V4 envelope 保持字节来源契约；第一方 RPC 参数同级可携 `goalControl: { expectedGoal: {goalId, revision} | null, resumeModelSelection? }`。订阅 Task 时独立 `onGoalControlState` 通知返回该 Task 的真实已观察目标身份与修订。宿主适配器未观察状态时拒绝发送 Goal 控制；替换请求在 Task 根锁内核验旧目标，不能替旧客户端自动读取新目标补 fence。同命令重连保留最初观察值，缓存按 Task 区分；服务端既有命令幂等域不变。
+`sendConversationCommandV4` 的 envelope 结构沿用原 V4，第一方 RPC 参数同级可携 `goalControl: { expectedGoal: {goalId, revision} | null, resumeModelSelection? }`，接口定义位于 `packages/shared/src/code-ui-contracts.ts`。订阅 Task 时独立 `onGoalControlState` 通知返回该 Task 已观察的目标身份与修订。宿主适配器未观察状态时拒绝发送 Goal 控制；替换请求在 Task 根锁内核验原目标，客户端未观察新目标时不能自动补用新状态。同命令重连保留最初观察值，缓存按 Task 区分；服务端既有命令幂等域不变。
 
-Goal 续跑与默认恢复消费持久的无密钥模型调用快照并核验供应商修订。显式重新选择由第一方参数 `goalControl.resumeModelSelection` 精确编译，不把失效选择换成默认模型。原 UI 恢复使用冻结值，本轮没有新增恢复模型 picker；供应商修订变化会给出可读拒绝。
+Goal 续跑与默认恢复消费持久的无密钥模型调用快照并核验供应商修订。显式重新选择由第一方参数 `goalControl.resumeModelSelection` 精确编译，不把失效选择换成默认模型。原 UI 恢复使用冻结值；供应商修订变化会给出可读拒绝。
 
 
 ## Flow 事件代际与续传

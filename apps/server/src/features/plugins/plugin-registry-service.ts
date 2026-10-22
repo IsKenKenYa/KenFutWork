@@ -290,7 +290,6 @@ export const SYSTEM_PLUGIN_NAMES = new Set([
   "model-providers",
   "agent-runs",
   "permissions",
-  "agent-modes",
   "canvas",
 ]);
 

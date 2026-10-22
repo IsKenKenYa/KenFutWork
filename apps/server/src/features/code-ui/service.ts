@@ -10,9 +10,7 @@ import {
   type CodeUiWorkspace,
   canvasDocumentUpdatedMessageSchema,
   codeGoalControlSchema,
-  codeUiCommandCompanionSchema,
   codeUiControllerTaskListQuerySchema,
-  type ExecutionMode,
   zcodeUiProtocol as protocol,
   type RunCreateRequest,
   resolveContextWindow,
@@ -24,6 +22,7 @@ import {
   zcodeSessionSubagentsParamsSchema,
   zcodeWorkspacePresentationSchema,
 } from "@zcode/shared";
+import { z } from "zod";
 import type { AgentRunService } from "../../agent/runtime.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
@@ -33,10 +32,6 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
-import {
-  type ExecutionModeService,
-  RetiredExecutionModeError,
-} from "../agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
 import type { BlobStore } from "../blob/types.js";
 import type { ThreadService } from "../chat/thread-service.js";
@@ -177,8 +172,6 @@ export interface CodeUiServiceDeps {
   plugins?: PluginRegistryService;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
-  /** 六档执行模式（G2/Q7）：缺席时 Code run 按默认 agent 模式执行，不阻塞。 */
-  agentModes?: ExecutionModeService;
   userInputs?: CodeUserInputService;
   terminals?: CodeTerminalService;
   /**
@@ -212,25 +205,17 @@ type CodePreparedModel = {
   selection: NonNullable<protocol.SessionConfigState["modelSelection"]>;
   modelInvocation: ModelInvocationSnapshot;
 };
-/**
- * 接纳输入前读取持久策略；存储故障不能把旧缓存当成本次选择。
- */
-export async function resolveCodeExecutionMode(
-  agentModes: ExecutionModeService | undefined,
-  threadId: string,
-  instanceId: string,
-): Promise<ExecutionMode | undefined> {
-  if (!agentModes) return undefined;
-  try {
-    return await agentModes.hydrate(threadId, { instanceId });
-  } catch (error) {
-    if (error instanceof RetiredExecutionModeError) throw error;
-    throw new CodeUiRepositoryError(
-      "command_conflict",
-      "无法读取工作方式，请稍后重试。",
-    );
-  }
-}
+const conversationCommandArgsSchema = z.tuple([
+  z
+    .object({
+      workspacePath: z.string().min(1),
+      workspaceIdentity: z.string().min(1).optional(),
+      projectId: z.uuid().optional(),
+      envelope: protocol.commandEnvelopeSchema.strict(),
+      goalControl: codeGoalControlSchema.optional(),
+    })
+    .strict(),
+]);
 
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -280,7 +265,6 @@ function publishOnce(operation: () => Promise<void>): () => Promise<void> {
 export function codeUiCommandFingerprint(
   envelope: protocol.CommandEnvelope,
   goalControl?: CodeGoalControl,
-  executionMode?: ExecutionMode,
 ): string {
   return createHash("sha256")
     .update(
@@ -289,7 +273,6 @@ export function codeUiCommandFingerprint(
         type: envelope.type,
         payload: envelope.payload,
         ...(goalControl ? { goalControl } : {}),
-        ...(executionMode ? { executionMode } : {}),
       }),
     )
     .digest("hex");
@@ -446,8 +429,6 @@ export class CodeUiService {
       inputOwner: this.inputOwner,
       load: (actor, sessionId) => this.loadConversation(actor, sessionId),
       model: (actor, selection) => this.prepareInputModel(actor, selection),
-      executionMode: (actor, threadId) =>
-        resolveCodeExecutionMode(deps.agentModes, threadId, actor.instanceId),
       inputs: async (actor, sessionId, attachments) => {
         if (!attachments.length) return [];
         if (!this.attachments)
@@ -477,8 +458,7 @@ export class CodeUiService {
           record.modelInvocation,
           inputs,
         ),
-      fingerprint: (envelope, executionMode) =>
-        codeUiCommandFingerprint(envelope, undefined, executionMode),
+      fingerprint: (envelope) => codeUiCommandFingerprint(envelope),
     });
     this.workspaceConfig = createCodeUiWorkspaceConfigHost({
       connections: this.connections,
@@ -700,11 +680,6 @@ export class CodeUiService {
       throw new CodeUiRepositoryError(
         "command_conflict",
         "请通过会话附件或资源引用发送素材，旧素材参数已停用。",
-      );
-    if (request?.executionMode && request.executionMode !== "agent")
-      throw new CodeUiRepositoryError(
-        "command_conflict",
-        "请在共享会话中切换执行方式后发送。",
       );
     if (
       (request?.taskId && request.taskId !== scope.taskId) ||
@@ -1372,14 +1347,6 @@ export class CodeUiService {
       actor,
       taskId,
     );
-    const executionMode =
-      goal && goal.status !== "complete"
-        ? "goal"
-        : ((await resolveCodeExecutionMode(
-            this.deps.agentModes,
-            thread.threadId,
-            instanceId,
-          )) ?? "agent");
     const commandId = `task-work:${createHash("sha256")
       .update(
         `${context.branchGeneration}/${pending
@@ -1430,7 +1397,6 @@ export class CodeUiService {
             ? freezeWorkContext(root.state?.goalModel?.workContext)
             : latestWorkContext(root.state!);
         host.startTurn({
-          executionMode,
           runId,
           commandId,
           text,
@@ -2465,25 +2431,23 @@ export class CodeUiService {
       };
     }
     if (method === "sendConversationCommandV4") {
-      const input = args[0] as {
-        envelope?: unknown;
-        workspacePath: string;
-        goalControl?: unknown;
-      };
-      const parsed = protocol.parseCommandEnvelope(input.envelope);
+      const [input] = conversationCommandArgsSchema.parse(args);
+      const revokeSchema =
+        protocol.commandPayloadSchemas.revokeWorkspaceHookTrust;
+      const payloadSchema =
+        input.envelope.type === "revokeWorkspaceHookTrust"
+          ? z.union([
+              revokeSchema.options[0].strict(),
+              revokeSchema.options[1].strict(),
+            ])
+          : protocol.commandPayloadSchemas[input.envelope.type].strict();
+      const payload = payloadSchema.parse(input.envelope.payload);
+      const parsed = protocol.parseCommandEnvelope({
+        ...input.envelope,
+        payload,
+      });
       if (!parsed.ok) throw parsed.error;
-      const goalControl =
-        input.goalControl === undefined
-          ? undefined
-          : codeGoalControlSchema.parse(input.goalControl);
-      const requestedMode = codeUiCommandCompanionSchema.parse(
-        args[0],
-      ).executionMode;
-      if (requestedMode === "loop")
-        throw new CodeUiRepositoryError(
-          "command_conflict",
-          "循环模式已停用，请重新选择执行策略。",
-        );
+      const goalControl = input.goalControl;
       if (connectionId) {
         const bound = this.connections.require(
           workspace.instanceId,
@@ -2530,18 +2494,12 @@ export class CodeUiService {
           input.workspacePath,
           parsed.envelope,
           goalControl,
-          requestedMode,
         );
       if (
         parsed.envelope.type === "editUserQuery" ||
         parsed.envelope.type === "retryTurn"
       )
-        return this.historyEdit.command(
-          user,
-          target,
-          parsed.envelope,
-          requestedMode,
-        );
+        return this.historyEdit.command(user, target, parsed.envelope);
       if (parsed.envelope.type === "forkAssistant")
         return this.historyFork.command(user, target, parsed.envelope);
       if (parsed.envelope.type === "applyFileRewind")
@@ -3370,17 +3328,10 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
-    requestedMode?: ExecutionMode,
   ) {
     const release = this.deps.localInstance.beginAdmission();
     try {
-      return await this.admitText(
-        user,
-        workspacePath,
-        envelope,
-        goalControl,
-        requestedMode,
-      );
+      return await this.admitText(user, workspacePath, envelope, goalControl);
     } finally {
       release();
     }
@@ -3411,7 +3362,6 @@ export class CodeUiService {
     workspacePath: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
-    requestedMode?: ExecutionMode,
   ) {
     if (!envelope.sessionId)
       throw new CodeUiRepositoryError("not_found", "发送命令缺少会话");
@@ -3425,7 +3375,6 @@ export class CodeUiService {
       loaded.instanceId,
       envelope,
       goalControl,
-      requestedMode,
     );
     if (replay) return { result: replay, publish: publishOnce(async () => {}) };
     try {
@@ -3435,7 +3384,6 @@ export class CodeUiService {
         envelope,
         loaded,
         goalControl,
-        requestedMode,
       );
     } catch (error) {
       // A concurrent copy may commit while this copy prepares resources. Return
@@ -3444,7 +3392,6 @@ export class CodeUiService {
         loaded.instanceId,
         envelope,
         goalControl,
-        requestedMode,
       );
       if (raced) return { result: raced, publish: publishOnce(async () => {}) };
       throw error;
@@ -3455,7 +3402,6 @@ export class CodeUiService {
     instanceId: string,
     envelope: protocol.CommandEnvelope,
     goalControl?: CodeGoalControl,
-    requestedMode?: ExecutionMode,
   ) {
     const queried = await this.deps.repository.queryCommands(
       instanceId,
@@ -3467,7 +3413,7 @@ export class CodeUiService {
     return this.deps.repository.applyCommand(
       instanceId,
       envelope,
-      codeUiCommandFingerprint(envelope, goalControl, requestedMode),
+      codeUiCommandFingerprint(envelope, goalControl),
       () => {
         throw new CodeUiRepositoryError(
           "command_conflict",
@@ -3483,7 +3429,6 @@ export class CodeUiService {
     envelope: protocol.CommandEnvelope,
     loaded: Awaited<ReturnType<CodeUiService["loadConversation"]>>,
     goalControl?: CodeGoalControl,
-    requestedMode?: ExecutionMode,
   ) {
     const compact = envelope.type === "compact";
     if (compact) protocol.commandPayloadSchemas.compact.parse(envelope.payload);
@@ -3526,20 +3471,12 @@ export class CodeUiService {
       user,
       loaded.root.id,
     );
-    const executionMode =
-      requestedMode ??
-      (await resolveCodeExecutionMode(
-        this.deps.agentModes,
-        thread.threadId,
-        loaded.instanceId,
-      )) ??
-      "agent";
     const runId = randomUUID();
     const ack = await this.deps.repository.applyCommand(
       loaded.instanceId,
       envelope,
       // 运行身份来自本次事务；忙时立即发送先只认领，停止确认后才投影新一轮。
-      codeUiCommandFingerprint(envelope, goalControl, requestedMode),
+      codeUiCommandFingerprint(envelope, goalControl),
       (root) => {
         const host = createCodeUiConversation({
           goals: this.goals,
@@ -3615,11 +3552,9 @@ export class CodeUiService {
                   ).mode,
                 }
               : {}),
-            ...(executionMode === "plan"
-              ? { planEnabled: true }
-              : payload.planEnabled !== undefined
-                ? { planEnabled: payload.planEnabled }
-                : {}),
+            ...(payload.planEnabled !== undefined
+              ? { planEnabled: payload.planEnabled }
+              : {}),
           },
           currentExecution,
         );
@@ -3640,8 +3575,8 @@ export class CodeUiService {
           !!previous &&
           active?.intent.kind === "sendText" &&
           (!this.deps.captureContributions || !!active.frozenContributions) &&
-          active.executionMode === executionMode &&
           active.intent.mode === execution.mode &&
+          active.intent.planEnabled === execution.planEnabled &&
           (requestedSandboxMode === undefined ||
             root.sandbox_mode === requestedSandboxMode) &&
           canonical(workContextForRun(root.state!, previous!)) ===
@@ -3723,7 +3658,6 @@ export class CodeUiService {
           admittedAt: Date.now(),
         };
         const record: CodeAdmittedInput = {
-          executionMode,
           ...(!guide && requestedSandboxMode
             ? { pendingScopeSelection: requestedSandboxMode }
             : {}),
@@ -4276,17 +4210,6 @@ export class CodeUiService {
         branchGeneration: Number(current.branch_generation),
         context: workContext,
       });
-      const executionMode =
-        current.state!.inputs?.find(
-          (entry) =>
-            entry.runId === runId && entry.intent.delivery.admitted !== "guide",
-        )?.executionMode ??
-        current.state!.runExecutionModes?.find(([id]) => id === runId)?.[1];
-      if (!executionMode)
-        throw new CodeUiRepositoryError(
-          "command_conflict",
-          "这条输入缺少发送时的工作方式，请重新发送。",
-        );
       const approvalCeiling =
         current.state!.inputs?.find(
           (entry) =>
@@ -4335,12 +4258,16 @@ export class CodeUiService {
                 : {}),
               prompt: text,
               model,
-              ...(executionMode ? { executionMode } : {}),
             },
             {
               runId,
               threadId,
               scopeHandle,
+              ...(root.state?.goalRecord?.runs?.some(
+                (member) => member.runId === runId,
+              )
+                ? { goalId: root.state.goalRecord.goalId }
+                : {}),
               workContext,
               ...(frozenContributions ? { frozenContributions } : {}),
               actor: user,

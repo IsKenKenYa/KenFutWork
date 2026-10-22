@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * 能力层共享契约（《改造计划》§5）：工具注册表条目、执行模式、权限档位、
+ * 能力层共享契约（《改造计划》§5）：工具注册表条目、权限档位、
  * agent-run 事件、用量记录。kernel 侧类型在 apps/server/src/kernel/types.ts，
  * 本文件是跨端（前端可见）的 zod 单一事实源。
  */
@@ -24,18 +24,6 @@ export const toolListResponseSchema = z.object({
   tools: z.array(toolDescriptorSchema),
 });
 export type ToolListResponse = z.infer<typeof toolListResponseSchema>;
-
-// --- 执行模式（DEC-3：agent/plan/goal/loop/solo + creative 创造引导） ---
-
-export const executionModeSchema = z.enum([
-  "agent",
-  "plan",
-  "goal",
-  "loop",
-  "solo",
-  "creative",
-]);
-export type ExecutionMode = z.infer<typeof executionModeSchema>;
 
 // --- 权限档位（DEC-4：code 模式默认 default 档；R5-3 补第 4 档「自定义配置」） ---
 
@@ -90,10 +78,6 @@ export function anyPermissionRuleMatches(
 export const permissionScenarioSchema = z.enum(["interactive", "automation"]);
 export type PermissionScenario = z.infer<typeof permissionScenarioSchema>;
 
-/** 哪些执行模式算「自动化任务」（判据只有这一处，服务端与界面共用）。 */
-export function isAutomationExecutionMode(mode: string): boolean {
-  return mode === "goal" || mode === "loop";
-}
 export type PermissionTier = z.infer<typeof permissionTierSchema>;
 
 export const toolPreExecuteDecisionSchema = z.enum(["allow", "deny"]);

@@ -136,8 +136,6 @@ import { usePptxElementReferences } from "@zui/v4/composer/usePptxElementReferen
 import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupModifier.js";
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
-// 原模式菜单与发送瞬间冻结共用唯一宿主策略owner。
-import { useExecutionModeController } from "@zui/host/ExecutionModeChip.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
@@ -188,7 +186,6 @@ const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading",
 };
 
 export interface ConversationComposerSendOptions {
-  executionMode?: import("@kenfutwork/shared").ExecutionMode;
   /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
   submission?: ComposerSubmissionConfig | null;
   heldQueueDisposition?: "clearQueueAndSend" | "keepQueueAndSend";
@@ -582,12 +579,6 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
-  const executionModeController = useExecutionModeController({
-    sessionId,
-    planEnabled: draftConfig?.planEnabled ?? snapshot?.config.planEnabled,
-    onSwitchMode,
-  });
-  const executionMode = executionModeController.mode;
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -1213,7 +1204,6 @@ function ConversationComposerImpl({
       const submittedDraft = snapshotDraftOfEditor();
       let cleanupRevision = contentRevisionRef.current;
       const submission = createSubmissionFromComposer?.() ?? null;
-      const submittedExecutionMode = executionMode;
       const submittedAttachmentIds = attachmentsApi.attachments.map((item) => item.id,
       );
       if (
@@ -1400,7 +1390,6 @@ function ConversationComposerImpl({
           editorClearedOptimistically = true;
         }
         const sendResult = await onSendText(promptText, {
-          ...(submittedExecutionMode ? { executionMode: submittedExecutionMode } : {}),
           submission,
           telemetrySeed,
           ...(requestedDelivery ? { requestedDelivery } : {}),
@@ -1505,7 +1494,6 @@ function ConversationComposerImpl({
       conversationTelemetry,
       draftConfig,
       createSubmissionFromComposer,
-      executionMode,
       submissionReady,
       getCodeCommentContexts,
       telemetryDraftConfig,
@@ -2313,8 +2301,7 @@ function ConversationComposerImpl({
           disabled={disabled}
           activeConfigPicker={activeConfigPicker}
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
-          onSwitchMode={executionModeController.switchCollaborationMode}
-          executionModeController={executionModeController}
+          onSwitchMode={onSwitchMode}
         />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
@@ -2344,10 +2331,7 @@ function ConversationComposerImpl({
       provider,
       remoteSessionId,
       runningSubagentCount,
-      executionModeController,
-      sessionId,
       snapshot?.backgroundWorks,
-      snapshot?.config.planEnabled,
       workspaceIdentity,
       workspacePath,
     ],

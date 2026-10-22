@@ -52,14 +52,12 @@ export function createCodeChildHarness(deps: {
             }
           : {}),
         prompt: instructions,
-        ...(request.executionMode
-          ? { executionMode: request.executionMode }
-          : {}),
         model: request.model,
       },
       {
         runId,
         threadId: child.threadId,
+        ...(request.goalId ? { goalId: request.goalId } : {}),
         scopeHandle: scope,
         ...(request.workContext
           ? { workContext: structuredClone(request.workContext) }

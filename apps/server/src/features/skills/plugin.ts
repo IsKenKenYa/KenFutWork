@@ -139,7 +139,7 @@ export function createSkillsPlugin(): PluginDefinition {
         },
       };
 
-      // 创造模式的收尾动作：把技能包发布到当前实例技能库（工厂在 create-skill-tool.ts）
+      // 把技能包发布到当前实例技能库（工厂在 create-skill-tool.ts）。
       const createSkillTool: ToolDefinition = createCreateSkillTool({
         repository: skillsRepository,
         localInstance: ctx.get("localInstance"),

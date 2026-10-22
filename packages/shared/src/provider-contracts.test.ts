@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   agentRunEventNameSchema,
-  executionModeSchema,
   permissionTierSchema,
   usageRecordSchema,
 } from "./capability-contracts.js";
@@ -255,14 +254,7 @@ describe("provider-contracts 自定义请求头（§4.8，R6-1）", () => {
 });
 
 describe("capability-contracts（能力层共享契约）", () => {
-  it("执行模式与权限档位词汇表按 DEC-3/DEC-4 封闭", () => {
-    expect(executionModeSchema.safeParse("agent").success).toBe(true);
-    expect(executionModeSchema.safeParse("plan").success).toBe(true);
-    expect(executionModeSchema.safeParse("goal").success).toBe(true);
-    expect(executionModeSchema.safeParse("loop").success).toBe(true);
-    expect(executionModeSchema.safeParse("solo").success).toBe(true);
-    expect(executionModeSchema.safeParse("creative").success).toBe(true);
-    expect(executionModeSchema.safeParse("auto").success).toBe(false);
+  it("权限档位词汇表保持封闭", () => {
     expect(permissionTierSchema.safeParse("default").success).toBe(true);
     expect(permissionTierSchema.safeParse("full-access").success).toBe(true);
     expect(permissionTierSchema.safeParse("unlimited").success).toBe(false);

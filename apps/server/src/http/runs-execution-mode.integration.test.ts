@@ -8,7 +8,7 @@ import { heldModel } from "../features/code-ui/model-stream.fixture.js";
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "HTTP Code/Design统一准入 integration",
   () => {
-    it("真实HTTP/PG输入进原V4同Task队列；Code/Design沿同一宿主，旧模式和素材参数不启动模型", async () => {
+    it("真实HTTP/PG输入共用Task队列并拒绝额外字段和不支持的素材参数", async () => {
       const fixture = await createCodeUiHttpFixture();
       const model = await heldModel();
       let host:
@@ -60,7 +60,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           inputId: randomUUID(),
           executionMode: "plan",
         });
-        expect(legacyMode.status).toBe(409);
+        expect(legacyMode.status).toBe(400);
         const legacyAttachment = await fixture.client.request(
           "/api/agent/runs",
           {

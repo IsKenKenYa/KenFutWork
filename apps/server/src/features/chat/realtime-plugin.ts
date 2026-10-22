@@ -9,7 +9,6 @@ export function createRealtimePlugin(): PluginDefinition {
     inject: [
       "ws",
       "agentRuns",
-      "agentModes",
       "agentRunMetadata",
       "localAccess",
       "chat",
@@ -34,7 +33,6 @@ export function createRealtimePlugin(): PluginDefinition {
         await registerWsRoute(instance, {
           flowProjectControl: ctx.get("flowProjectControl"),
           agentRuns: ctx.get("agentRuns"),
-          agentModes: ctx.get("agentModes"),
           agentRunMetadataService: ctx.get("agentRunMetadata"),
           localAccess: ctx.get("localAccess"),
           chatService: ctx.get("chat"),

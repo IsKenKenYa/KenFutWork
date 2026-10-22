@@ -367,7 +367,7 @@ export type PluginInstallBuiltinRequest = z.infer<
 >;
 
 /**
- * 从**沙箱工作目录**安装插件 bundle（创造模式产物的人工入口）。
+ * 从已授权工作目录安装插件 bundle。
  *
  * `canvasId` 决定沙箱目录（与技能/agent 同一处解析）；`path` 是相对沙箱根的
  * bundle 目录（其 package.json 需声明 kenfutwork.bundle / dsh.bundle；旧名

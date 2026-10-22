@@ -252,6 +252,20 @@
           "isArchived": false,
           "fetchedAt": "2026-10-15T15:04:36.182Z",
           "lastKnownStatus": "MERGED"
+        },
+        "8764283": {
+          "projectId": 8892388,
+          "branchId": 8764283,
+          "name": "ai/20261022-from-main-unified-agent",
+          "branchKind": "ai",
+          "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
+          "isAiBranch": true,
+          "isAiWritableBranch": true,
+          "automationLifecycleStatus": "ACTIVE",
+          "isArchived": false,
+          "fetchedAt": "2026-10-22T13:05:04.125Z",
+          "lastKnownStatus": "ACTIVE"
         }
       },
       "lastGuardError": {

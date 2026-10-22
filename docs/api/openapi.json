@@ -48,11 +48,6 @@
       "x-apifox-folder": "代码模式"
     },
     {
-      "name": "execution-modes",
-      "description": "线程级执行模式（五档）的查询与切换。",
-      "x-apifox-folder": "执行模式"
-    },
-    {
       "name": "flow",
       "description": "Flow宿主状态与未来连接边界；本期未接通的身份交换明确不可用。",
       "x-apifox-folder": "Flow 集成"
@@ -2338,7 +2333,7 @@
       "post": {
         "operationId": "postCodeUiRpc",
         "summary": "调用 Code 原界面宿主接口",
-        "description": "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。executionMode 与 goalControl 是原 envelope 同级的宿主字段，经共享契约验证并纳入幂等指纹，原 V4 envelope 不增加字段。Key仅在授权设置内可查看复制；MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
+        "description": "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
         "tags": [
           "code"
         ],
@@ -5896,190 +5891,6 @@
             }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "成功"
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/execution-modes": {
-      "get": {
-        "operationId": "getExecutionModes",
-        "summary": "列出执行模式",
-        "description": "返回五档执行模式词汇表，形如 { modes: [...] }。",
-        "tags": [
-          "execution-modes"
-        ],
-        "security": [
-          {
-            "localCookie": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功"
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/execution-modes/{threadId}": {
-      "get": {
-        "operationId": "getExecutionModesByThreadId",
-        "summary": "查询线程激活模式",
-        "description": "返回线程当前激活的执行模式；缓存未命中时回读持久化值。历史 loop 模式返回 409 并要求重新选择。",
-        "tags": [
-          "execution-modes"
-        ],
-        "security": [
-          {
-            "localCookie": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "threadId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "路径参数"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/executionModeSchema"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未认证或令牌无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "putExecutionModesByThreadId",
-        "summary": "切换线程执行模式",
-        "description": "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法或选择已停用的 loop 返回 400。",
-        "tags": [
-          "execution-modes"
-        ],
-        "security": [
-          {
-            "localCookie": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "threadId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            },
-            "description": "路径参数"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$schema": "https://json-schema.org/draft/2020-12/schema",
-                "type": "object",
-                "properties": {
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "agent",
-                      "plan",
-                      "goal",
-                      "loop",
-                      "solo",
-                      "creative"
-                    ],
-                    "description": "要激活的执行模式"
-                  }
-                },
-                "required": [
-                  "mode"
-                ]
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "成功"
@@ -17644,18 +17455,6 @@
           "available"
         ],
         "additionalProperties": false
-      },
-      "executionModeSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "string",
-        "enum": [
-          "agent",
-          "plan",
-          "goal",
-          "loop",
-          "solo",
-          "creative"
-        ]
       },
       "flowEngineInstallStatusSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -29683,24 +29482,14 @@
               "design",
               "code"
             ]
-          },
-          "executionMode": {
-            "type": "string",
-            "enum": [
-              "agent",
-              "plan",
-              "goal",
-              "loop",
-              "solo",
-              "creative"
-            ]
           }
         },
         "required": [
           "sessionId",
           "conversationId",
           "prompt"
-        ]
+        ],
+        "additionalProperties": false
       },
       "runCreateResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

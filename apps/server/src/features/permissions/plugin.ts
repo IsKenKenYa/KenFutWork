@@ -12,7 +12,7 @@ import { createPermissionSettingsStore } from "./tier-store.js";
  * - 订阅 tool-pre-execute 事件做拦截（deny 等 审批），这是策略缝的消费点；
  * - Kernel 工具在 `tool-pre-execute` 中按 payload 路径处理：有 `permissionInvocation` 时调用
  *   `service.admit`，否则按工具名与属主声明的效果调用 `service.evaluate`。
- * - DeepAgents 原生工具不经过此事件，由 `agent/tool-gate.ts` 的 permission verdict 控制。
+ * - DeepAgents 原生工具不经过此事件，由 agent-runs 的工具权限检查控制。
  */
 export function createPermissionsPlugin(_deps: {
   events?: KernelEvents;
@@ -34,6 +34,7 @@ export function createPermissionsPlugin(_deps: {
           ? await service.admit(payload.permissionInvocation)
           : service.evaluate({
               toolName: payload.toolName,
+              scenario: payload.goalId ? "automation" : "interactive",
               ...(payload.threadId ? { threadId: payload.threadId } : {}),
               // 属主声明的效果随事件带来：插件写工具靠它进默认档审批（名表不认识它们）。
               ...(payload.access ? { access: payload.access } : {}),

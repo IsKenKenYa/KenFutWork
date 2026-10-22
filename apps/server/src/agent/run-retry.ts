@@ -80,7 +80,7 @@ export function decideRunRetry(input: {
    *
    * 事故背景：早期实现只在 `run.failed` 上记失败原因，于是「成功收场但没跑
    * 工具」的轮次里 `failureMessage` 仍是 undefined，而 `isRetryableRunFailure(undefined)`
-   * 按「可重试」处理——**每轮纯对话都被重跑满 10 次**（实测：solo 与画布助手一次消息
+   * 按「可重试」处理——**每轮纯对话都被重跑满 10 次**（实测：普通问答与画布助手一次消息
    * 产出 10 个 run、10 倍 token，而用户看到的回复第一次就已经成功了）；用户取消同理，
    * 重试会把刚取消的轮次顶回去。
    */

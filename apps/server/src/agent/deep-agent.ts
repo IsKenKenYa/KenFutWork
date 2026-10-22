@@ -96,12 +96,12 @@ export type KenFutWorkAgent = Pick<
 };
 
 /**
- * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
+ * 工具权限检查：拦截 deepagents 内置工具
  * （write_file/edit_file/execute/task 等）与桥接工具的全部调用。
  */
 export type ToolGate = (
   toolName: string,
-  /** 子代理派发细节（DEC-17）：plan 档按目标定义只读性放行 task/task_background。 */
+  /** 子代理派发时提供目标定义的只读属性。 */
   detail?: { subagentReadOnly?: boolean },
 ) => { allowed: true } | { allowed: false; reason: string };
 
@@ -336,7 +336,7 @@ export type KenFutWorkAgentFactory = (options: {
     observe(proof: NativeToolProof): Promise<void>;
   };
   contextHistoryArchives?: ContextHistoryArchiveBindings;
-  /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
+  /** 工具权限检查，覆盖内置工具与桥接工具。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
@@ -394,7 +394,7 @@ export function createKenFutWorkDeepAgent(options: {
     observe(proof: NativeToolProof): Promise<void>;
   };
   contextHistoryArchives?: ContextHistoryArchiveBindings;
-  /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
+  /** 工具权限检查，覆盖内置工具与桥接工具。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
@@ -572,8 +572,7 @@ export function createKenFutWorkDeepAgent(options: {
       registry,
       definitions: resolveSubagentDefinitions(preset),
       childRunner,
-      // plan 档派发门（DEC-17）：按目标定义只读性判定——复用同一把工具门，
-      // solo/plan 的拒绝理由与普通工具一致
+      // 子代理派发与普通工具使用同一权限检查，并提供定义的只读属性。
       ...(toolGateForDispatch
         ? {
             dispatchGate: (def: SubagentDefinition) =>
@@ -732,13 +731,11 @@ export function createKenFutWorkDeepAgent(options: {
     // 固定装配满足不了后台化与目录治理，自建缝声明/装配/消费三元组齐备。
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
-    // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，
-    // 执行模式的 plan 只读白名单里的 write_todos 也形同虚设。这里显式挂上：
+    // 非 Codex 模型默认没有这个工具，此处挂载后为目标进度面板提供数据。
     // 工具是整表替换语义（langchain todoListMiddleware），前端据工具事件推导进度。
     // 该中间件自带 state 泛型（todos 通道），与 deepagents 的宽松 middleware 签名不同型，
     // 按 deepagents 内部同样的做法擦除一次类型。
-    // 未知工具兜底恒挂；模型响应守卫挂最外层（收敛非法形状）；执行模式工具门在
-    // 标准中间件之后应用，覆盖全部工具调用
+    // 未知工具处理和模型响应检查保持挂载；权限检查覆盖全部工具调用。
     ...(options.toolGate
       ? {
           middleware: [

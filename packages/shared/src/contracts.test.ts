@@ -12,6 +12,30 @@ import {
 } from "./index.js";
 
 describe("@kenfutwork/shared contracts", () => {
+  it("普通运行直接接纳用户输入与工作方式", () => {
+    const input = {
+      sessionId: "session-unified",
+      conversationId: "conversation-unified",
+      prompt: "读取项目说明并完成任务",
+      preset: "code",
+    };
+    expect(runCreateRequestSchema.parse(input)).toEqual(input);
+  });
+
+  it.each(["agent", "plan", "solo", "goal", "creative", "loop"])(
+    "运行请求拒绝已删除的执行方式字段 %s",
+    (executionMode) => {
+      expect(
+        runCreateRequestSchema.safeParse({
+          sessionId: "session-unified",
+          conversationId: "conversation-unified",
+          prompt: "读取项目说明并完成任务",
+          executionMode,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it("项目可显式启用 Code/Design，画布作为可选文档而非项目身份", () => {
     const project = {
       id: "project-shared",
@@ -87,24 +111,6 @@ describe("@kenfutwork/shared contracts", () => {
         conversationId: "conv-1",
         prompt: "Hello",
         preset: "both",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("accepts optional executionMode (DEC-3) and rejects unknown values", () => {
-    const parsed = runCreateRequestSchema.parse({
-      sessionId: "session-1",
-      conversationId: "conv-1",
-      prompt: "Hello",
-      executionMode: "creative",
-    });
-    expect(parsed.executionMode).toBe("creative");
-    expect(
-      runCreateRequestSchema.safeParse({
-        sessionId: "session-1",
-        conversationId: "conv-1",
-        prompt: "Hello",
-        executionMode: "auto",
       }).success,
     ).toBe(false);
   });

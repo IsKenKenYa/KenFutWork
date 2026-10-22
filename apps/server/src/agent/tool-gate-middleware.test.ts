@@ -16,7 +16,7 @@ describe("工具门中间件的旁路钩子", () => {
           ? { allowed: true as const }
           : {
               allowed: false as const,
-              reason: "solo 对话模式：工具调用已禁用。",
+              reason: "当前权限不允许该工具调用。",
             },
       hooks,
     );

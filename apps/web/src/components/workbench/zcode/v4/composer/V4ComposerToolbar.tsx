@@ -78,7 +78,6 @@ import {
 } from "@zui/lib/codingPlanFunnelTelemetry.js";
 import { useShortcutCommandLabel } from "@zui/shortcuts/useShortcutBindings.js";
 import { logger } from "@zui/logger.js";
-import type { ExecutionModeController } from "@zui/host/ExecutionModeChip.js";
 import { useCodingPlanUpgradeDialog } from "@zui/settings/CodingPlanUpgradeDialogProvider.js";
 import { useCodingPlanEntitlements } from "@zui/settings/model-provider-section/useCodingPlanEntitlements.js";
 import { decodeCustomModelValue, encodeCustomModelValue } from "@zui/lib/zcodeCustomModelValue.js";
@@ -354,7 +353,6 @@ export interface V4ComposerToolbarProps {
   /** 选中思考深度；modelContext 固定本次用户操作的目标模型。 */
   onSelectThought: (thought: string, modelContext: { provider: string; model: string }) => void;
   onSwitchMode: (mode: string) => void;
-  executionModeController?: ExecutionModeController;
   /** prepare/configOptions 失败时，custom provider 选择走 workspace recovery 链。 */
   onRecoverCustomModelSelection?: (
     value: string,

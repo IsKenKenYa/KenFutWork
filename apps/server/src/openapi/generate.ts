@@ -53,10 +53,6 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     description:
       "Code 模式工作目录能力：git（状态/暂存/提交/工作树/分支）、文件浏览、终端、检查点与索引。",
   },
-  "execution-modes": {
-    folder: "执行模式",
-    description: "线程级执行模式（五档）的查询与切换。",
-  },
   flow: {
     folder: "Flow 集成",
     description: "Flow宿主状态与未来连接边界；本期未接通的身份交换明确不可用。",

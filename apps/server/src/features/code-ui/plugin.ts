@@ -47,7 +47,6 @@ export function createCodeUiPlugin(): PluginDefinition {
       "executionScopes",
       "taskWork",
       "permissions",
-      "agentModes",
       "codeTerminal",
       "blob",
       "processSandbox",
@@ -90,7 +89,6 @@ export function createCodeUiPlugin(): PluginDefinition {
           executionScopes: ctx.get("executionScopes"),
           taskWork: ctx.get("taskWork"),
           permissions: ctx.get("permissions"),
-          agentModes: ctx.get("agentModes"),
           terminals: ctx.get("codeTerminal"),
           processSandbox: ctx.get("processSandbox"),
           // G3/Q8：run 终态自动提交缝（code-git 域内收口开关与失败静默）。

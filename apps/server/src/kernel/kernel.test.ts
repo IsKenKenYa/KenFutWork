@@ -623,27 +623,25 @@ describe("ctx.capabilities 注册表", () => {
       plugin("caps-probe", {
         onApply(ctx) {
           const caps: CapabilityRegistry = ctx.get("capabilities");
-          caps.register("execution-mode", {
-            id: "agent",
-            value: { label: "自主循环" },
+          caps.register("subagent", {
+            id: "local",
+            value: { label: "本机子代理" },
           });
-          caps.register("execution-mode", {
-            id: "plan",
-            value: { label: "规划待批准" },
+          caps.register("subagent", {
+            id: "remote",
+            value: { label: "远程子代理" },
           });
-          expect(caps.list<{ label: string }>("execution-mode")).toHaveLength(
-            2,
+          expect(caps.list<{ label: string }>("subagent")).toHaveLength(2);
+          expect(caps.get<{ label: string }>("subagent", "remote")?.label).toBe(
+            "远程子代理",
           );
-          expect(
-            caps.get<{ label: string }>("execution-mode", "plan")?.label,
-          ).toBe("规划待批准");
           expect(caps.list("ghost")).toEqual([]);
-          expect(() => caps.require("execution-mode", "missing")).toThrow(
+          expect(() => caps.require("subagent", "missing")).toThrow(
             /贡献者 missing 未注册/,
           );
           expect(() =>
-            caps.register("execution-mode", { id: "agent", value: {} }),
-          ).toThrow(/贡献者 agent 重复注册/);
+            caps.register("subagent", { id: "local", value: {} }),
+          ).toThrow(/贡献者 local 重复注册/);
         },
       }),
     ]);

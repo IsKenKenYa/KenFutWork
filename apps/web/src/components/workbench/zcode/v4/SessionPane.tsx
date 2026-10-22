@@ -1455,7 +1455,6 @@ export function SessionPane({
       telemetrySeed?: ConversationPromptTelemetrySeed,
       onEnvelopeCreated?: (envelope: CommandEnvelope) => void,
       sessionCreateSource?: SessionCreateSource,
-      executionMode?: Parameters<typeof sendCommand>[1],
     ): Promise<CommandAck> => {
       const submission = submissionConfigFromCommand(type, payload);
       const acceptRecent = submission
@@ -1513,7 +1512,7 @@ export function SessionPane({
             targetSessionId,
           );
         }
-        ack = executionMode ? await sendCommand(envelope, executionMode) : await sendCommand(envelope);
+        ack = await sendCommand(envelope);
         if (telemetrySeed?.localTtft && ack.reasonCode === "guard.heldQueueConfirmationStale")
           getLocalTtftObserver()?.confirmationRetry(telemetrySeed.localTtft);
         else if (telemetrySeed?.localTtft)
@@ -2533,7 +2532,6 @@ export function SessionPane({
       expectedHeldQueueItemIds?: readonly string[],
       submission?: ComposerSubmissionConfig,
       onAccepted?: (messageId: string) => void,
-      executionMode?: Parameters<typeof sendCommand>[1],
     ): Promise<boolean | "confirmationRequired"> => {
       let type: CommandType | null = null;
       let payload: Record<string, unknown> = {};
@@ -2583,8 +2581,6 @@ export function SessionPane({
         payload,
         targetSessionId,
         withBaseRevision ? baseRevision : undefined,
-        undefined, undefined, undefined, undefined,
-        type === "sendGoalCommand" || type === "compact" ? executionMode : undefined,
       );
       if (ack.status === "accepted") onAccepted?.(ack.commandId);
       if (ack.reasonCode === "guard.heldQueueConfirmationStale") {
@@ -2618,7 +2614,6 @@ export function SessionPane({
     ) => {
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
-        args[8] = options?.executionMode;
         const ack = await dispatchCommand(...args);
         // 在原 accepted 边界写回推荐选择，早于新 Session 的草稿转移；失败不改用户意图。
         if (ack.status === "accepted" && submissionConfigFromCommand(args[0], args[1]))
@@ -2634,13 +2629,7 @@ export function SessionPane({
       const contextAttachmentCount = options?.contextAttachmentCount ?? 0;
       let slashCommand = parseV4VisibleSlashCommand(text, readyAttachments, {
         contextAttachmentCount,
-        executionMode: options?.executionMode,
-        goalStatus: snapshotRef.current?.goal?.status,
       });
-      if (slashCommand?.kind === "unsupportedGoal" && slashCommand.action === "attachments") {
-        toast("目标仅支持文本");
-        return "blocked" as const;
-      }
 
       // `/plan` 首版只消费纯文本。必须在 provider readiness 和任何 command admission 之前
       // 拒绝附件/context，否则原始 `/plan ...` 会退化成普通 prompt，既绕过产品边界又清空草稿。
@@ -2743,8 +2732,6 @@ export function SessionPane({
           heldQueueDisposition,
           expectedHeldQueueItemIds,
           submission,
-          undefined,
-          options?.executionMode,
         );
         if (consumed === "confirmationRequired") return consumed;
         if (consumed) {
@@ -2836,7 +2823,6 @@ export function SessionPane({
           expectedHeldQueueItemIds,
           submission,
           (messageId) => reportDraftCreated(newSessionId, createSourceAtSend, messageId),
-          options?.executionMode,
         );
         return;
       }

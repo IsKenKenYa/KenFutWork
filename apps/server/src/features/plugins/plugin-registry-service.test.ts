@@ -929,12 +929,15 @@ describe("plugin-registry：门禁拦截", () => {
     });
   });
 
-  it("系统插件不可卸载", async () => {
-    const { service } = makeService();
-    await expect(service.uninstall("canvas")).rejects.toMatchObject({
-      code: "system_plugin",
-    });
-  });
+  it.each(["model-providers", "agent-runs", "permissions", "canvas"])(
+    "系统插件 %s 不可卸载",
+    async (name) => {
+      const { service } = makeService();
+      await expect(service.uninstall(name)).rejects.toMatchObject({
+        code: "system_plugin",
+      });
+    },
+  );
 });
 
 describe("plugin-registry：导出", () => {

@@ -184,7 +184,7 @@ export async function registerPluginRoutes(
   });
 
   // GET /api/plugins/sandbox-bundles?canvasId=… — 列出工作目录里的插件 bundle 候选
-  // （「从工作目录安装」用：agent/创造模式在工作目录里写出来的 bundle 在这里被发现）
+  // 「从工作目录安装」从 Agent 的授权目录发现插件 bundle。
   app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
     "/api/plugins/sandbox-bundles",
     async (request, reply) => {

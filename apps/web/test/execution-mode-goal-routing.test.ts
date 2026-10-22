@@ -1,46 +1,41 @@
 import { expect, test } from "vitest";
 import { parseV4VisibleSlashCommand } from "../src/components/workbench/zcode/v4/slashCommands.js";
 
-test("目标工作方式的普通输入产生原生Goal命令，保留目标文本", () => {
-  expect(
-    parseV4VisibleSlashCommand("完成项目说明\n核对实际文件", [], {
-      executionMode: "goal",
-    }),
-  ).toEqual({
-    kind: "sendGoalCommand",
-    objective: "完成项目说明\n核对实际文件",
-    displayText: "完成项目说明\n核对实际文件",
-  });
-  expect(
-    parseV4VisibleSlashCommand("普通输入", [], { executionMode: "agent" }),
-  ).toBeNull();
-  expect(
-    parseV4VisibleSlashCommand("/compact", [], { executionMode: "goal" }),
-  ).toMatchObject({ kind: "compact" });
-  expect(
-    parseV4VisibleSlashCommand("使用附件完成目标", [{}], {
-      executionMode: "goal",
-    }),
-  ).toMatchObject({ kind: "unsupportedGoal", action: "attachments" });
-});
-
-test.each(["active", "paused", "verifying", "notSatisfied", "failed"] as const)(
-  "目标处于%s时，已选目标方式的新文本仍引导原Goal，不再新建",
-  (goalStatus) => {
+test.each(["完成项目说明\n核对实际文件", "补充原目标要求", "新的目标", ""])(
+  "普通输入%s保持消息语义",
+  (text) => {
+    expect(parseV4VisibleSlashCommand(text)).toBeNull();
+    expect(parseV4VisibleSlashCommand(text, [{}])).toBeNull();
     expect(
-      parseV4VisibleSlashCommand("补充原目标要求", [], {
-        executionMode: "goal",
-        goalStatus,
-      }),
+      parseV4VisibleSlashCommand(text, [], { contextAttachmentCount: 1 }),
     ).toBeNull();
   },
 );
 
-test("已验收的目标允许下次文本创建新Goal", () => {
+test.each(["/goal", "/target"])(
+  "明确%s命令创建Goal并保留目标文本",
+  (command) => {
+    expect(
+      parseV4VisibleSlashCommand(`${command} 完成项目说明\n核对实际文件`),
+    ).toEqual({
+      kind: "sendGoalCommand",
+      objective: "完成项目说明\n核对实际文件",
+      displayText: `${command} 完成项目说明\n核对实际文件`,
+    });
+  },
+);
+
+test("Goal恢复和压缩保留各自命令，附件与输入上下文继续按原边界处理", () => {
+  expect(parseV4VisibleSlashCommand("/goal resume")).toMatchObject({
+    kind: "resumeGoal",
+  });
+  expect(parseV4VisibleSlashCommand("/compact")).toMatchObject({
+    kind: "compact",
+  });
+  expect(parseV4VisibleSlashCommand("/goal 新的目标", [{}])).toBeNull();
   expect(
-    parseV4VisibleSlashCommand("新的目标", [], {
-      executionMode: "goal",
-      goalStatus: "verified",
+    parseV4VisibleSlashCommand("/goal 新的目标", [], {
+      contextAttachmentCount: 1,
     }),
-  ).toMatchObject({ kind: "sendGoalCommand", objective: "新的目标" });
+  ).toBeNull();
 });

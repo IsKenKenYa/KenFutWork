@@ -8,7 +8,7 @@ import { scopedPackageFiles } from "../execution/scoped-package-files.js";
 import { parseSkillManifest } from "./skill-import-service.js";
 
 /**
- * 沙箱工作目录里的技能包读取（「从工作目录导入」+ 创造模式的产物）。
+ * 沙箱工作目录里的技能包读取，供「从工作目录导入」使用。
  *
  * 技能包的判定：**目录里有 `SKILL.md`**（大小写不敏感），同目录/子目录的其它文件作为
  * 附带文件（scripts/ references/ assets/ 等）。所有路径都相对**沙箱根**——调用方拿到的

@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
-import { executionModeSchema } from "./capability-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceBoolSetting, governanceSetting } from "./governance.js";
 import { modelDefaultsSchema } from "./model-policy.js";
@@ -72,33 +71,31 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
-export const runCreateRequestSchema = z.object({
-  sessionId: sessionIdSchema,
-  conversationId: conversationIdSchema,
-  /** Code 的持久 Task/Project 声明；服务端核对归属，不从 Canvas 推导工作目录。 */
-  projectId: projectIdSchema.optional(),
-  taskId: sessionIdSchema.optional(),
-  prompt: z.string(),
-  inputId: identifierSchema.optional(),
-  scopeGeneration: z.number().int().nonnegative().safe().optional(),
-  branchGeneration: z.number().int().positive().safe().optional(),
-  workContext: conversationWorkContextSchema.optional(),
-  canvasId: canvasIdSchema.optional(),
-  attachments: z.array(imageAttachmentSchema).optional(),
-  imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
-  videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
-  mentions: z.array(messageMentionSchema).optional(),
-  model: z.string().optional(),
-  /**
-   * 本次输入请求的工作方式；由统一Task宿主核验项目启用列表并冻结到Run。
-   * 画布是资源引用，preset不改变Task固定目录、文件授权或当前Run。
-   */
-  preset: z.enum(["design", "code"]).optional(),
-  /**
-   * 旧传输策略字段；共享宿主只接受agent，其余方式通过原会话控制切换。
-   */
-  executionMode: executionModeSchema.optional(),
-});
+export const runCreateRequestSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    conversationId: conversationIdSchema,
+    /** Code 的持久 Task/Project 声明；服务端核对归属，不从 Canvas 推导工作目录。 */
+    projectId: projectIdSchema.optional(),
+    taskId: sessionIdSchema.optional(),
+    prompt: z.string(),
+    inputId: identifierSchema.optional(),
+    scopeGeneration: z.number().int().nonnegative().safe().optional(),
+    branchGeneration: z.number().int().positive().safe().optional(),
+    workContext: conversationWorkContextSchema.optional(),
+    canvasId: canvasIdSchema.optional(),
+    attachments: z.array(imageAttachmentSchema).optional(),
+    imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
+    videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
+    mentions: z.array(messageMentionSchema).optional(),
+    model: z.string().optional(),
+    /**
+     * 本次输入请求的工作方式；由统一Task宿主核验项目启用列表并冻结到Run。
+     * 画布是资源引用，preset不改变Task固定目录、文件授权或当前Run。
+     */
+    preset: z.enum(["design", "code"]).optional(),
+  })
+  .strict();
 
 export const runCreateResponseSchema = z.object({
   runId: runIdSchema,

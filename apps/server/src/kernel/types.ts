@@ -6,7 +6,6 @@ import type { AgentBackendFactory } from "../agent/backends/index.js";
 import type { AgentPersistenceService } from "../agent/persistence/index.js";
 import type { AgentRunService } from "../agent/runtime.js";
 import type { ServerEnv } from "../config/env.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
@@ -164,15 +163,13 @@ export interface ServiceMap {
   generationTargets: GenerationTargets;
   /** 既有后台生成队列循环及关闭状态。 */
   jobLoop: JobLoopService;
-  /** 执行模式缝（DEC-3：v1 agent + plan） */
-  agentModes: ExecutionModeService;
   /** agent 链路 run 用量累积器（turn-stopping 结算） */
   runUsage: RunUsageAccumulator;
-  /** 能力贡献者注册表（非工具能力：子代理 provider、执行模式等） */
+  /** 能力贡献者注册表（非工具能力，如子代理 provider）。 */
   capabilities: CapabilityRegistry;
   /** 统一工具注册表（schema + 作用域 + guarded 执行） */
   tools: ToolRegistry;
-  /** 系统提示段注册表（模式段/品牌段/skills/规则与插件段，挂载即出现） */
+  /** 系统提示段注册表（品牌、skills、规则与插件指导）。 */
   systemPrompt: SystemPromptRegistry;
   /** 浏览器能力缝（R3-4/R5-4）：受控网页抓取与元素提取（人用快照端点、agent 用 browser_open） */
   browser: BrowserService;
@@ -215,7 +212,6 @@ export type DepsOf<_K extends ServiceKey> = {
 export type AgentRunEvent = "pre-step" | "tool-pre-execute" | "turn-stopping";
 
 export interface PreStepPayload {
-  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   input: unknown;
   runId: string | undefined;
   threadId?: string | undefined;
@@ -227,13 +223,14 @@ export interface PreStepPayload {
 }
 
 export interface ToolPreExecutePayload {
-  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
+  /** 仅由可信运行宿主传递的持久目标身份。 */
+  goalId?: string | undefined;
   permissionInvocation?: PermissionInvocation | undefined;
   args: Record<string, unknown>;
   decision: "allow" | "deny";
   denyReason?: string | undefined;
   runId: string | undefined;
-  /** 会话线程（执行模式等按线程拦截的监听器据此取策略）。 */
+  /** 会话线程，权限监听器据此取得对应配置。 */
   threadId?: string | undefined;
   toolName: string;
   /**
@@ -375,7 +372,8 @@ export interface ToolExecutionContext {
         | null
       >)
     | undefined;
-  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
+  /** 仅由可信运行宿主传递的持久目标身份。 */
+  goalId?: string | undefined;
   frozenContributions?: ToolContributionSnapshot | undefined;
   /** Frozen input resource references; filesystem permissions remain in scopeHandle. */
   workContext?:
@@ -425,7 +423,7 @@ export interface ToolExecutionContext {
   toolCallId?: string | undefined;
   scopeHandle?: ExecutionScopeHandle | undefined;
   signal?: AbortSignal | undefined;
-  /** 会话线程：tool-pre-execute 监听器（执行模式拦截）据此定位线程策略。 */
+  /** 会话线程，tool-pre-execute监听器据此定位权限配置。 */
   threadId?: string | undefined;
   instanceId?: string | undefined;
   /**
@@ -573,7 +571,7 @@ export interface CapabilityRegistration<T = unknown> {
 
 /**
  * 能力贡献者注册表（`ctx.capabilities`）：开放贡献、封闭 key 的承载点。
- * 子代理 provider、执行模式等在此注册；同一 capability 可多 provider。
+ * 子代理 provider等在此注册；同一capability可有多个provider。
  */
 export interface CapabilityRegistry {
   register<T>(

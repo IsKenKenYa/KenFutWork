@@ -86,7 +86,6 @@ import {
   designReviewDeleteResponseSchema,
   designReviewListResponseSchema,
   directoryPickerStatusSchema,
-  executionModeSchema,
   flowEngineInstallStatusSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
@@ -683,7 +682,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: codeUiRpcResponseSchema,
     summary: "调用 Code 原界面宿主接口",
     description:
-      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。executionMode 与 goalControl 是原 envelope 同级的宿主字段，经共享契约验证并纳入幂等指纹，原 V4 envelope 不增加字段。Key仅在授权设置内可查看复制；MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
+      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
   },
   {
     method: "get",
@@ -1335,40 +1334,6 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "搜索代码索引",
     description:
       "在索引内即时搜索并返回命中与构建时间。索引开关未开返回 409 index_disabled，无索引返回 409 index_not_built，索引过大返回 413 index_too_large。",
-  },
-  // ---- execution-modes.ts（执行模式）----
-  {
-    method: "get",
-    path: "/api/execution-modes",
-    tag: "execution-modes",
-    auth: "local",
-    successStatus: 200,
-    summary: "列出执行模式",
-    description: "返回五档执行模式词汇表，形如 { modes: [...] }。",
-  },
-  {
-    method: "get",
-    path: "/api/execution-modes/:threadId",
-    tag: "execution-modes",
-    auth: "local",
-    successStatus: 200,
-    responseSchema: executionModeSchema,
-    summary: "查询线程激活模式",
-    description:
-      "返回线程当前激活的执行模式；缓存未命中时回读持久化值。历史 loop 模式返回 409 并要求重新选择。",
-  },
-  {
-    method: "put",
-    path: "/api/execution-modes/:threadId",
-    tag: "execution-modes",
-    auth: "local",
-    successStatus: 200,
-    requestSchema: z.object({
-      mode: executionModeSchema.describe("要激活的执行模式"),
-    }),
-    summary: "切换线程执行模式",
-    description:
-      "激活并写穿持久化线程执行模式，返回 { mode }。会话不属当前实例返回 404；请求非法或选择已停用的 loop 返回 400。",
   },
   // ---- flow-host.ts（flow 集成宿主缝；credentials/billing/events 用共享密钥而非用户令牌）----
   {

@@ -10,7 +10,7 @@ import { createPluginStorage } from "./plugin-storage.js";
  * 3) 缺实例/插件 id/键、值非字符串时 fail loud（静默兜底会写错作用域）。
  *
  * 真实 SQL 行为（表结构、冲突更新、删除行数）由真机验收覆盖；这里用记录型 persistence
- * 断言语句形状与参数（与 `execution-mode-store.test.ts` 同一范式）。
+ * 断言实际调用的语句与参数。
  */
 
 interface Call {
