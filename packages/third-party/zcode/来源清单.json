@@ -360,9 +360,10 @@
       "source": "references/zcode/packages/ui/src/LexicalChatInput.tsx",
       "target": "apps/web/src/components/workbench/zcode/LexicalChatInput.tsx",
       "sha256": "61d12ac6cfa638d8236ae1561daf50c45e24dcd019ffb174421b893d68224c74",
-      "copiedSha256": "0b13e3e27432c200b0b1d02887209ed8d84619b748cf6f031d8d5a62d3c718df",
+      "copiedSha256": "03a9a1506be0117d114e4ae90882ec7c4c4bc88da71bd8c69c734d25a415e8c6",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-22 安全适配：共用素材模块中不含重叠匹配的插件标签正则，保留原有序列化格式。"
       ]
     },
     {
@@ -5882,9 +5883,10 @@
       "source": "references/zcode/packages/ui/src/lib/assistantFileReferences.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/assistantFileReferences.ts",
       "sha256": "26a503a0352b1adfac00b02289402a2c3e40c1050bc682a7259501fef19bd64e",
-      "copiedSha256": "92a27aa69588ab02f48c454457fafee4607038769494d3418a045a9e56c365fc",
+      "copiedSha256": "b3281c48f76d53a9e6aae7731ff41a1d657febd619f9e0ce19bbedf6385a9bce",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-22 安全适配：预览链接共用线性结尾标点清理，保留文件路径与标点范围。"
       ]
     },
     {
@@ -5909,9 +5911,10 @@
       "source": "references/zcode/packages/ui/src/lib/assistantPreviewCards.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/assistantPreviewCards.ts",
       "sha256": "05c22867e97fa58a612e94b2cd2ad8098004e3ed897beefe613abf74be78d181",
-      "copiedSha256": "5139f271c9b2efbd0235b49081812b708da00271f58a16b2082dedc0e50dc5cf",
+      "copiedSha256": "9f7fd17e3e88184ad8ecc9af78bf37ef0020428f5fcfa1230660ebe10972d07d",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-22 安全适配：网址预览复用文件链接的标点清理，移除指数级重复匹配。"
       ]
     },
     {
@@ -8104,9 +8107,10 @@
       "source": "references/zcode/packages/ui/src/mentions/mentionMarkdown.ts",
       "target": "apps/web/src/components/workbench/zcode/mentions/mentionMarkdown.ts",
       "sha256": "11a885492bb78c29323bbe9440d9a32e305c557b678bb3fc607ffcb25b21373c",
-      "copiedSha256": "11a885492bb78c29323bbe9440d9a32e305c557b678bb3fc607ffcb25b21373c",
+      "copiedSha256": "22c4920d1af67c838892e357e223be9a730321bdb117dbd25bbb679f32edad15",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-22 安全适配：素材目标与插件标签的普通字符分支不再重复消费反斜杠，保留转义格式。"
       ]
     },
     {
@@ -8174,9 +8178,10 @@
       "source": "references/zcode/packages/ui/src/mentions/promptMentionLabel.ts",
       "target": "apps/web/src/components/workbench/zcode/mentions/promptMentionLabel.ts",
       "sha256": "bc0a78a4cc3f667ccc577146ab705da0631c6a4d643491791d599da4309701ec",
-      "copiedSha256": "3ae05251813ce34dc9eb2e81184c3f795b90e9bf79e3a8f7769bb2659a3ac7f0",
+      "copiedSha256": "866de2cec9041398997aed636f4d6826dfa4621b51f41f35f759f97854e057aa",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-10-22 安全适配：素材标签解析中的普通字符分支排除反斜杠，保留显示与转义。"
       ]
     },
     {

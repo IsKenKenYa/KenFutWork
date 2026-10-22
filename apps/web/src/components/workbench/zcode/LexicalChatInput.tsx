@@ -15,6 +15,7 @@
  * 3. mention 面板用 enableMentionPanel 控制；slash command 始终读取 CLI workspace catalog。
  */
 import { $getPromptMarkdown } from "@zui/mentions/promptSerialization.js";
+import { INLINE_PLUGIN_MENTION_PATTERN } from "@zui/mentions/mentionMarkdown.js";
 import { PromptClipboardPlugin } from "@zui/mentions/PromptClipboardPlugin.js";
 import {
   resolveComposerKeyAction,
@@ -205,9 +206,6 @@ function replaceEditorText(editor: LexicalEditor, text: string) {
     { tag: PROGRAMMATIC_UPDATE_TAG },
   );
 }
-
-const INLINE_PLUGIN_MENTION_PATTERN =
-  /\[@((?:\\.|[^\]])+)\]\(plugin:\/\/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)\)/g;
 
 function replaceEditorTextWithPluginMentions(editor: LexicalEditor, text: string) {
   editor.update(
