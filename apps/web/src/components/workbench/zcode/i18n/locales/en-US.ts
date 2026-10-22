@@ -1,5 +1,9 @@
 /** English translations */
 const enUS: Record<string, string> = {
+  "chat.toolbar.combined.provider": "Provider",
+  "chat.toolbar.combined.models": "Models",
+  "chat.toolbar.combined.effort": "Effort",
+  "chat.toolbar.combined.selectModel": "Select model",
   "startPlan.recommendation.subagentDescription":
     "Your Start Plan has quota available for {model}. Switch this subagent’s model to the Start Plan?",
   "startPlan.recommendation.preferenceSaveFailed":

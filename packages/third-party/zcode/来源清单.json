@@ -7,6 +7,57 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/ControlShortcutBadge.tsx",
+      "target": "apps/web/src/components/workbench/zcode/ControlShortcutBadge.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "dab583790b038d26fd2bb083e945fbabe7ddeca1613a6298844e0f3652a26842",
+      "copiedSha256": "e56ccb1e6651cc72f0fd938cbc482c39e172b0d828d8633e03a6354359e7ba1c",
+      "adaptations": ["@/ 导入机械映射为 @zui/；原思考菜单快捷键标记的实际消费者同步接入。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/chat-input-toolbar/ComposerModelMenu.tsx",
+      "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/ComposerModelMenu.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c69dc363e9a1e2d8d5ca4a7bf8a55652441fe17fc864ed20419c0e1ed31a4ba5",
+      "copiedSha256": "9e9587202723fb546537bd9ad1a529d8421f5622911a11239cf8ebbd7f73f1f2",
+      "adaptations": [
+        "@/ 导入机械映射为 @zui/；连接原模型、供应商及思考菜单。",
+        "原 lib/composerPlanGroups.ts 的连接类型随消费者内聚；同提交该原件 SHA-256 为 22162eef2aed3291caa83a7037115ea372658dbb9770df7172fcc99204e0a101。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/chat-input-toolbar/ComposerProviderMenu.tsx",
+      "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/ComposerProviderMenu.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "0e5dd600751fe3ccb902b756fc7bffefbeaaa7f7e822470c4f938ff8399a2660",
+      "copiedSha256": "e7dba2711b689628bed52488ee536bd588105d9fa13dfc18195130c452aeb31e",
+      "adaptations": ["@/ 导入机械映射为 @zui/；由现有 BYOK 模型目录提供供应商候选。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/chat-input-toolbar/ComposerEffortHeading.tsx",
+      "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/ComposerEffortHeading.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "260bf923ea462b5bdfbc6e7c5584d699e863567e296bf0aef8443bce2a6ec76f",
+      "copiedSha256": "dd2165812112b96d116405ad970489b3e427ccfbdabc22935bd26ebd065b3f59",
+      "adaptations": ["@/ 导入机械映射为 @zui/。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/chat-input-toolbar/ComposerTriggerTransition.tsx",
+      "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/ComposerTriggerTransition.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "76b0b16e1231fda7f3e8ab0727d3f7d2262c4a9900a464250fbed13aeb4a79be",
+      "copiedSha256": "76b0b16e1231fda7f3e8ab0727d3f7d2262c4a9900a464250fbed13aeb4a79be",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/ui/src/chat-input-toolbar/composer-thought-slider.css",
+      "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/composer-thought-slider.css",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "ff326ccc1acf1a113d508a595b2cd322a59be47d20fb59f9370c4b522086e598",
+      "copiedSha256": "ff326ccc1acf1a113d508a595b2cd322a59be47d20fb59f9370c4b522086e598",
+      "adaptations": []
+    },
+    {
       "source": "references/zcode/packages/ui/src/AlertDialogHost.tsx",
       "target": "apps/web/src/components/workbench/zcode/AlertDialogHost.tsx",
       "sha256": "6393e18f26250a7d95679f9a0d4347948a1aed2ff397f41e0039551a3748fe7f",
@@ -372,8 +423,9 @@
     {
       "source": "references/zcode/packages/ui/src/ModelConfigSelect.tsx",
       "target": "apps/web/src/components/workbench/zcode/ModelConfigSelect.tsx",
-      "sha256": "79557fc002b05d9540617ae0b586cf20ffda40725b6ce95e947972bbbe750282",
-      "copiedSha256": "29918606a084996cb79328a36808f76b52d5a53e286bc12654d337bb267cf8d9",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "d6e370414b7d7e13317315d710ee73a6bdc5b1fac42fc412463de21b83326629",
+      "copiedSha256": "ca573e843e6978a4b052ba6e19d38727bfdc0de36e68277dad50465753ef84b5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -3109,9 +3161,10 @@
       "source": "references/zcode/packages/ui/src/chat-input-toolbar/thoughtLevelOptions.ts",
       "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/thoughtLevelOptions.ts",
       "sha256": "b1d5a502c866eab54e0a7b845a221576686089d2b91c4e23de7061b9a294d764",
-      "copiedSha256": "f7c73ecc817830a9ed6127ade910f59c11c8a17cb1c1079dc12409b2bb8097ea",
+      "copiedSha256": "9010e2269408b9e1e227decf25de7a96bd5886154196da1929c5ca6db7812ec5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "采用 3.16.2 固定提交 3c5b227649371507ddc4eb46ac5133afe6db1cab 的 isNoThoughtLevel 参数类型；保留当前档位文案消费者。"
       ]
     },
     {
@@ -3831,8 +3884,9 @@
     {
       "source": "references/zcode/packages/ui/src/components/ui/dropdown-menu.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ui/dropdown-menu.tsx",
-      "sha256": "34c5b79489756aa3467ec26d2b44587f3d47eafcb2cb16402686aac15e4debdb",
-      "copiedSha256": "34c5b79489756aa3467ec26d2b44587f3d47eafcb2cb16402686aac15e4debdb",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "61fb51b98cf76207dfe5e86e6baf6e2d5ef0f77698377b2c332066a4b9e2da60",
+      "copiedSha256": "61fb51b98cf76207dfe5e86e6baf6e2d5ef0f77698377b2c332066a4b9e2da60",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -5776,7 +5830,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "8e6038b375d845ce6d07a77587b2900663d3060636730e9e678f91841570f9cd",
+      "copiedSha256": "df9ba4aaa265155a6281869da5c1077547d5142d53d0703b93d0db9513a611b3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5796,14 +5850,15 @@
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
         "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
-        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。"
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。",
+        "采用同一上游提交的四项合并模型菜单文案。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "8254e9921062a065affbc8da886dc87f3b8a7e4f36fdacc5a0d25231e5722a34",
+      "copiedSha256": "9a985a8d352c59eda1069e1d849c2a2d79acb6d5b1a0b957a08546c59fae8690",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5823,7 +5878,8 @@
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
         "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
-        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。"
+        "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。",
+        "采用同一上游提交的四项合并模型菜单文案。"
       ]
     },
     {
@@ -6628,8 +6684,9 @@
     {
       "source": "references/zcode/packages/ui/src/lib/modelSelectionGroups.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/modelSelectionGroups.ts",
-      "sha256": "7939c2c4273ef345b943683511872ba3db1f530bc4d37dbebe091932ea305d43",
-      "copiedSha256": "92a6dd77e5267b7b23b2b4d93796220db80ab63c2195da0901525c500f1dc9e6",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "9ae6dfb4852f27166c11b2512fc97d611d81b8f7959525e4b5fea7ef636263c7",
+      "copiedSha256": "8b34cd799b28c82d242f9312e4c91e4f1fad78f77f3172051cb05cbff7e41103",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -12566,10 +12623,11 @@
       "source": "references/zcode/packages/ui/src/v4/composer/V4ComposerToolbar.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/V4ComposerToolbar.tsx",
       "sha256": "fb0e3863fd51487d43e8201c19407b16ead3d53731d5eac7a1697412cfacacbf",
-      "copiedSha256": "09fb3ee3839b8d9236d64280ac740d48f0f27af2c8e17137a4756b61be3b4bc0",
+      "copiedSha256": "1e1670a8e8711c14b79ac4f9ab55966fe01f1bc440be4d98ad5277b176fba17e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "2026-10-22统一Agent工具条：模型与思考控件继续消费目标Host目录；原菜单类型直接使用Composer草稿中的基础权限和独立规划。"
+        "2026-10-22统一Agent工具条：模型与思考控件继续消费目标Host目录；原菜单类型直接使用Composer草稿中的基础权限和独立规划。",
+        "采用 3.16.2 固定提交 3c5b227649371507ddc4eb46ac5133afe6db1cab 的合并模型及思考菜单调用；保留 KFW 当前 Ctrl+T、Plan、基础权限和发送时固定选择。"
       ]
     },
     {

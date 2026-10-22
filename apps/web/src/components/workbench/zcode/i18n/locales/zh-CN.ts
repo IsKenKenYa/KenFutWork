@@ -1,5 +1,9 @@
 /** 中文翻译 */
 const zhCN: Record<string, string> = {
+  "chat.toolbar.combined.provider": "供应商",
+  "chat.toolbar.combined.models": "模型",
+  "chat.toolbar.combined.effort": "思考强度",
+  "chat.toolbar.combined.selectModel": "选择模型",
   "startPlan.recommendation.subagentDescription":
     "你的体验套餐中，{model} 仍有可用额度，是否将此子智能体的模型切换到体验套餐？",
   "startPlan.recommendation.preferenceSaveFailed": "未能保存“不再提示”，本次仍按你的选择继续。",
