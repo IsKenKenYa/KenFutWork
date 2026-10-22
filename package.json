@@ -17,7 +17,7 @@
     "test:docs": "node scripts/check-docs.mjs",
     "test:env": "node scripts/check-env.mjs",
     "test:actions": "node scripts/check-actions.mjs",
-    "test:workspace": "node --test tests/workspace.test.mjs tests/api-spec-consistency.test.mjs",
+    "test:workspace": "node --test tests/workspace.test.mjs tests/api-spec-consistency.test.mjs tests/dependency-security.test.mjs",
     "api:spec": "pnpm --filter @kenfutwork/server api:spec",
     "test:packages": "turbo run test",
     "test": "pnpm run test:workspace && pnpm run test:packages",
@@ -45,7 +45,10 @@
     "patchedDependencies": {
       "langchain@1.5.11": "patches/langchain@1.5.11.patch",
       "@modelcontextprotocol/sdk@1.32.1": "patches/@modelcontextprotocol__sdk@1.32.1.patch",
-      "@anthropic-ai/sandbox-runtime@0.0.78": "patches/@anthropic-ai__sandbox-runtime@0.0.78.patch"
+      "@anthropic-ai/sandbox-runtime@0.0.78": "patches/@anthropic-ai__sandbox-runtime@0.0.78.patch",
+      "file-type@16.5.4": "patches/file-type@16.5.4.patch",
+      "image-size@0.7.5": "patches/image-size@0.7.5.patch",
+      "node-forge@1.4.0": "patches/node-forge@1.4.0.patch"
     },
     "overrides": {
       "@modelcontextprotocol/sdk@<1.32.1": "1.32.1",

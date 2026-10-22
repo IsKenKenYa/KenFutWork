@@ -32,9 +32,18 @@ patchedDependencies:
   '@modelcontextprotocol/sdk@1.32.1':
     hash: 55bb8db15123d4ace5e17f6b711ad92dc9a2f159f353d6003b3bf11e014a0321
     path: patches/@modelcontextprotocol__sdk@1.32.1.patch
+  file-type@16.5.4:
+    hash: a52f27078c8a23d326d238539f88ccb9d6ed308f785a41be8b0ffb280e554b28
+    path: patches/file-type@16.5.4.patch
+  image-size@0.7.5:
+    hash: e3bed0e4e28d991312269dc30df277f1cd147309a58326a6249be91d84dedb44
+    path: patches/image-size@0.7.5.patch
   langchain@1.5.11:
     hash: 03f0d1e2212cdca4bc1935a5fbebd7981bc58e5519ca0918b5da939aa06accc9
     path: patches/langchain@1.5.11.patch
+  node-forge@1.4.0:
+    hash: b6876574a5de19521a766856b293aeae2689848c5d8dab03f93040be0a64b8b4
+    path: patches/node-forge@1.4.0.patch
 
 importers:
 
@@ -8544,7 +8553,7 @@ snapshots:
     dependencies:
       '@pondwader/socks5-server': 1.0.10
       commander: 12.1.0
-      node-forge: 1.4.0
+      node-forge: 1.4.0(patch_hash=b6876574a5de19521a766856b293aeae2689848c5d8dab03f93040be0a64b8b4)
       zod: 3.25.76
 
   '@anthropic-ai/sdk@0.129.0(zod@4.6.5)':
@@ -9421,7 +9430,7 @@ snapshots:
       any-base: 1.1.0
       buffer: 5.7.1
       exif-parser: 0.1.12
-      file-type: 16.5.4
+      file-type: 16.5.4(patch_hash=a52f27078c8a23d326d238539f88ccb9d6ed308f785a41be8b0ffb280e554b28)
       isomorphic-fetch: 3.0.0
       pixelmatch: 4.0.2
       tinycolor2: 1.6.0
@@ -12053,7 +12062,7 @@ snapshots:
       execa: 1.0.0
       fs-temp: 1.2.1
       fs-xattr: 0.3.1
-      image-size: 0.7.5
+      image-size: 0.7.5(patch_hash=e3bed0e4e28d991312269dc30df277f1cd147309a58326a6249be91d84dedb44)
       is-my-json-valid: 2.20.6
       minimist: 1.2.8
       parse-color: 1.0.0
@@ -13036,7 +13045,7 @@ snapshots:
     dependencies:
       is-unicode-supported: 2.1.0
 
-  file-type@16.5.4:
+  file-type@16.5.4(patch_hash=a52f27078c8a23d326d238539f88ccb9d6ed308f785a41be8b0ffb280e554b28):
     dependencies:
       readable-web-to-node-stream: 3.0.4
       strtok3: 6.3.0
@@ -13455,7 +13464,7 @@ snapshots:
     dependencies:
       '@types/node': 16.9.1
 
-  image-size@0.7.5: {}
+  image-size@0.7.5(patch_hash=e3bed0e4e28d991312269dc30df277f1cd147309a58326a6249be91d84dedb44): {}
 
   immediate@3.0.6: {}
 
@@ -14615,7 +14624,7 @@ snapshots:
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
 
-  node-forge@1.4.0: {}
+  node-forge@1.4.0(patch_hash=b6876574a5de19521a766856b293aeae2689848c5d8dab03f93040be0a64b8b4): {}
 
   node-gyp@13.0.2:
     dependencies:

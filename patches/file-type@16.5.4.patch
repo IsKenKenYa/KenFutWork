@@ -1,0 +1,15 @@
+diff --git a/core.js b/core.js
+index d653e66a4056c27cca777d4e25222acae3b2ec85..60953cadd017b5e0a728d772e29139d4b5294a70 100644
+--- a/core.js
++++ b/core.js
+@@ -1076,6 +1076,10 @@ async function _fromTokenizer(tokenizer) {
+ 		while (tokenizer.position + 24 < tokenizer.fileInfo.size) {
+ 			const header = await readHeader();
+ 			let payload = header.size - 24;
++			// ASF 子对象长度包含 24 字节头；非法长度不能让读取位置后退。
++			if (payload < 0) {
++				throw new Error('Invalid ASF sub-header size');
++			}
+ 			if (_check(header.id, [0x91, 0x07, 0xDC, 0xB7, 0xB7, 0xA9, 0xCF, 0x11, 0x8E, 0xE6, 0x00, 0xC0, 0x0C, 0x20, 0x53, 0x65])) {
+ 				// Sync on Stream-Properties-Object (B7DC0791-A9B7-11CF-8EE6-00C00C205365)
+ 				const typeId = Buffer.alloc(16);
