@@ -5872,8 +5872,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "818166002a9380ed2475e74136f00d55c45d90f6b2e4c4f6f4eaeda4eeeeba97",
+      "copiedSha256": "b5440eb06bb09f209108e5f29d6171d2c3bc7938ec4fb7296f681c5990b60809",
       "adaptations": [
+        "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的原项目编辑词条及 KFW 目录权限、归档标签；说明按现有 Task 独立授权表达，其余文案保留。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5901,8 +5902,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "47e0bfc481712e9a6db555b184b89b6bcff0ddbeb34d1669bd20845c8341f3c2",
+      "copiedSha256": "8142bab7e9dd5259967371818b5b79ae160330f00c6af0dd377b3795e34c9cf9",
       "adaptations": [
+        "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的原项目编辑词条及 KFW 目录权限、归档标签；说明按现有 Task 独立授权表达，其余文案保留。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -9566,10 +9568,11 @@
       "source": "references/zcode/packages/ui/src/settings/ComputerUseSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ComputerUseSection.tsx",
       "sha256": "aeb1f9f941e60b5dd27b91e1ad51a0c5821bf1a13ad1b28467ae8f529c030604",
-      "copiedSha256": "7c7cf1f69d2cfcf233c4c033bb4833e552e06f3c547d8f99e32aabae4438bba4",
+      "copiedSha256": "08048d2f72d04a8526714af6301a2fd2ccbf3363459e06b85292a0ac778998be",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KFW Computer Use 设置与输入入口共用真实实例插件库存名称解析，启停写入使用真实安装 ID；保留混合宿主执行能力。"
+        "KFW Computer Use 设置与输入入口共用真实实例插件库存名称解析，启停写入使用真实安装 ID；保留混合宿主执行能力。",
+        "登记 0e72bee1 中已逐段核对的宿主适配：展示混合执行器返回的可选自动化权限状态，补充授权应用列表提示；自动化设置按钮经可信 Tauri 命令定向打开系统隐私设置。"
       ]
     },
     {
