@@ -7,6 +7,7 @@ import {
   type ProviderProtocol,
 } from "@kenfutwork/shared";
 import {
+  type ApiKeyAccessConfigObject,
   type ModelConfigObject,
   type ModelInputFormatConfigInput,
   ProviderApiConfig,
@@ -53,6 +54,15 @@ export function codeUiNativeProtocol(
   if (apiType === "anthropic-messages") return "anthropic";
   return "openai-compatible";
 }
+export function codeUiProviderAccessConfig(
+  instance: ProviderInstanceResponse,
+): Pick<ApiKeyAccessConfigObject, "type" | "apiKeyManagementUrl"> {
+  const { apiKeyManagementUrl } = codeUiProviderMetadata(instance);
+  return {
+    type: "api-key",
+    ...(apiKeyManagementUrl === undefined ? {} : { apiKeyManagementUrl }),
+  };
+}
 export function codeUiPublicProviderConfig(
   instance: ProviderInstanceResponse,
 ): ProviderConfigObject {
@@ -62,7 +72,7 @@ export function codeUiPublicProviderConfig(
   return {
     group: metadata.group ?? "standard-personal",
     ...(metadata.logo ? { logo: metadata.logo } : {}),
-    access: { type: "api-key" },
+    access: codeUiProviderAccessConfig(instance),
     api: {
       type: codeUiApiType(instance),
       baseUrl: instance.baseUrl ?? defaultBaseUrls[instance.protocol],

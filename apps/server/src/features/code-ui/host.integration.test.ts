@@ -962,10 +962,24 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       );
     try {
       const created = await rpc("createPersonalProvider", [
-        { providerName: `写入 ${randomUUID()}` },
+        {
+          providerName: `写入 ${randomUUID()}`,
+          initialConfig: {
+            access: {
+              type: "api-key",
+              apiKeyManagementUrl: "https://example.invalid/initial-keys",
+            },
+          },
+        },
       ]);
       expect(created.status).toBe(200);
       providerId = created.body.result.providerId;
+      expect(
+        selected(created.body.result.view)?.effectiveConfig.access,
+      ).toEqual({
+        type: "api-key",
+        apiKeyManagementUrl: "https://example.invalid/initial-keys",
+      });
       const saved = await rpc("savePersonalProviderOverlay", [
         providerId,
         {
@@ -1042,6 +1056,45 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         headerKeys: ["X-Private"],
         baseUrl: "https://example.invalid/v2",
       });
+      const beforeClear = selected(updated.body.result);
+      const clearUrl = {
+        access: { type: "api-key", apiKeyManagementUrl: null },
+      };
+      const clearedUrl = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        clearUrl,
+        { expectedRevision: beforeClear?.configRevision },
+      ]);
+      expect(clearedUrl.status, JSON.stringify(clearedUrl.body)).toBe(200);
+      const withoutUrl = selected(clearedUrl.body.result);
+      expect(withoutUrl?.credentialConfigured).toBe(true);
+      expect(withoutUrl?.effectiveConfig.access).toEqual({
+        type: "api-key",
+        apiKey: "integration-credential-private",
+      });
+      const repeated = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        clearUrl,
+        { expectedRevision: withoutUrl?.configRevision },
+      ]);
+      expect(repeated.status, JSON.stringify(repeated.body)).toBe(200);
+      expect(repeated.body.result).toEqual(clearedUrl.body.result);
+      const stale = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        clearUrl,
+        { expectedRevision: beforeClear?.configRevision },
+      ]);
+      expect(stale.status).toBe(409);
+      const restoredUrl = await rpc("savePersonalProviderOverlay", [
+        providerId,
+        {
+          access: {
+            type: "api-key",
+            apiKeyManagementUrl: "https://example.invalid/keys",
+          },
+        },
+      ]);
+      expect(restoredUrl.status, JSON.stringify(restoredUrl.body)).toBe(200);
       const cleared = await rpc("savePersonalProviderOverlay", [
         providerId,
         { access: { type: "api-key", apiKey: null }, api: { headers: null } },
@@ -1051,6 +1104,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         credentialConfigured: false,
         executable: false,
         effectiveConfig: {
+          access: { apiKeyManagementUrl: "https://example.invalid/keys" },
           api: {
             type: "openai-responses",
             baseUrl: "https://example.invalid/v2",
@@ -1077,6 +1131,70 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       providerId = "";
     } finally {
       if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
+  it("原生成供应商设置读取管理链接，完整清除访问配置保留生成协议和模型", async () => {
+    let providerId = "";
+    try {
+      const created = await request("/api/provider-instances", {
+        name: `图片连接 ${randomUUID()}`,
+        protocol: "google-image",
+        baseUrl: "https://example.invalid/images",
+        apiKey: "integration-image-credential-no-network",
+        models: [{ id: "image-model", name: "图片", capability: "image" }],
+        compat: {
+          codeUi: { apiKeyManagementUrl: "https://example.invalid/image-keys" },
+        },
+      });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
+      providerId = created.body.id;
+      const loaded = await request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method: "getView",
+        args: [],
+      });
+      expect(loaded.status, JSON.stringify(loaded.body)).toBe(200);
+      expect(
+        loaded.body.result.providers.find(
+          (item: { providerId: string }) => item.providerId === providerId,
+        ),
+      ).toMatchObject({
+        credentialConfigured: true,
+        effectiveConfig: {
+          access: { apiKeyManagementUrl: "https://example.invalid/image-keys" },
+        },
+      });
+      const cleared = await request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method: "savePersonalProviderOverlay",
+        args: [providerId, { access: null }],
+      });
+      expect(cleared.status, JSON.stringify(cleared.body)).toBe(200);
+      const provider = cleared.body.result.providers.find(
+        (item: { providerId: string }) => item.providerId === providerId,
+      );
+      expect(provider.credentialConfigured).toBe(false);
+      expect(provider.effectiveConfig.access).toEqual({ type: "api-key" });
+      const instances = await request("/api/provider-instances");
+      expect(instances.status).toBe(200);
+      expect(
+        instances.body.instances.find(
+          (item: { id: string }) => item.id === providerId,
+        ),
+      ).toMatchObject({
+        protocol: "google-image",
+        hasCredential: false,
+        models: created.body.models,
+      });
+    } finally {
+      if (providerId) {
+        const deleted = await request(
+          `/api/provider-instances/${providerId}`,
+          undefined,
+          "DELETE",
+        );
+        expect(deleted.status).toBe(204);
+      }
     }
   });
   it("原设置保留停用模型与供应商候选，执行目录遵守各级开关，同值保存不推进修订", async () => {

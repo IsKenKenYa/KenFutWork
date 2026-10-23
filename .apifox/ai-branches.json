@@ -308,6 +308,20 @@
           "isArchived": false,
           "fetchedAt": "2026-10-23T01:38:54.702Z",
           "lastKnownStatus": "ACTIVE"
+        },
+        "8767356": {
+          "projectId": 8892388,
+          "branchId": 8767356,
+          "name": "ai/20261023-from-main-provider-management-url",
+          "branchKind": "ai",
+          "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
+          "isAiBranch": true,
+          "isAiWritableBranch": true,
+          "automationLifecycleStatus": "ACTIVE",
+          "isArchived": false,
+          "fetchedAt": "2026-10-23T02:44:43.508Z",
+          "lastKnownStatus": "ACTIVE"
         }
       },
       "lastGuardError": {

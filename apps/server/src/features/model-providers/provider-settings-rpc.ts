@@ -325,6 +325,9 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
             : {}),
         codeUi: {
           ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(config.access?.apiKeyManagementUrl
+            ? { apiKeyManagementUrl: config.access.apiKeyManagementUrl }
+            : {}),
           ...(config.group ? { group: config.group } : {}),
           ...(config.logo ? { logo: config.logo } : {}),
           ...(config.modelOrder ? { modelOrder: [...config.modelOrder] } : {}),
@@ -369,6 +372,10 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
       },
     };
     const chatProtocol = isCodeChatProtocol(instance.protocol);
+    if (config.access === null || config.access?.apiKeyManagementUrl === null)
+      delete compat.codeUi.apiKeyManagementUrl;
+    else if (config.access?.apiKeyManagementUrl !== undefined)
+      compat.codeUi.apiKeyManagementUrl = config.access.apiKeyManagementUrl;
     if (chatProtocol) {
       if (config.api?.type === "openai-responses") compat.chatApi = "responses";
       else if (config.api?.type === "openai-chat-completions")

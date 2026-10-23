@@ -696,7 +696,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: codeUiRpcResponseSchema,
     summary: "调用 Code 原界面宿主接口",
     description:
-      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。sendText 和 stop 信封须携带点击时的 taskControl，缺少时回执为 rejected/proto.missingTaskControl，项目或分支已改变时为 stale/proto.staleTaskControl；相同原请求重放返回保存的回执，同键改观察值返回409。创建 ACK.result.taskControl 返回实际插入行的初始值。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
+      "按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。sendText 和 stop 信封须携带点击时的 taskControl，缺少时回执为 rejected/proto.missingTaskControl，项目或分支已改变时为 stale/proto.staleTaskControl；相同原请求重放返回保存的回执，同键改观察值返回409。创建 ACK.result.taskControl 返回实际插入行的初始值。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；供应商稀疏保存中 access.apiKeyManagementUrl 省略保留，字符串更新，null 只清除链接，access:null 同时清除链接和 Key；聊天与生成设置共用该记录。MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。",
   },
   {
     method: "get",
@@ -2535,7 +2535,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: providerInstanceResponseSchema,
     summary: "创建供应商实例",
     description:
-      "创建供应商实例；GRSAI、APIMart等原生媒体协议由对应驱动接入共享Job，模型能力随实例声明。apiKey存于本地明文凭据文件，授权设置可读取；非法头名/保留头/CRLF 等校验失败返回400。",
+      "创建供应商实例；GRSAI、APIMart等原生媒体协议由对应驱动接入共享Job，模型能力随实例声明。apiKey存于本地明文凭据文件，授权设置可读取；compat.codeUi.apiKeyManagementUrl 保存非秘密的管理链接。非法头名/保留头/CRLF 等校验失败返回400。",
   },
   {
     method: "patch",

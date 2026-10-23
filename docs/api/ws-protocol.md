@@ -67,6 +67,8 @@ Window Controller 读面已接原 `listTaskList`、`subscribeControllerV4`、`re
 
 授权设置的 `getView` 可读取本机 Key，用于查看和复制；普通 native 定义、REST 目录、通知与运行读面仅携带 hasCredential／credentialConfigured，不携带秘密值。省略 Key／headers 保留，显式 null 清除 Key，headers={} 清空。保存成功返回权威 view 并广播非敏感 view；原 Hook 同时提交应答 view，通知丢失也可更新列表。草稿修订与供应商 CAS 保留，当前对话模型与审批模型分别由同一供应商服务解析。
 
+原供应商的 `access.apiKeyManagementUrl` 由同一实例的 `compat.codeUi.apiKeyManagementUrl` 持久保存，聊天与生成／Flow 设置共同读取。原创建接口接受初始链接；稀疏保存时省略保留、字符串更新、明确 `null` 只清除链接，`access:null` 同时清除链接与 Key。清除 Key 不影响链接。链接属于公开元数据，凭据仍经原私有接口持有；同值保存保持修订，过期修订继续返回 409。
+
 模型编辑器已接 `resolveModelConfig`、`addPersonalModel` 与 `savePersonalModelDraft`：复用固定原推荐规则及 ModelConfigRules 的精确/手动合成，规则原件由 modelProviders 域持有。精确配置与模式标记保存于同一模型成员，标准运行容量从它推导；新增成员与配置同事务，原添加语义默认启用，新成员保留原模型 ID。草稿保存把改名、原成员位置与配置同事务提交，`basedOnRevision` 对整个 workspace Registry 作 CAS；所有配置写入口先锁工作区修订再锁实例。同修订并发只有一次提交，跨供应商配置变化同样使旧草稿返回 409；重复成员返回 409，已删除供应商/成员返回 404，不部分写入。恢复智能规则复用原结构空判定，删除个人精确配置，刷新沿用原推荐；同值重复保存不增修订，手动空配置仍按原规则拒绝。原 setPersonalModelEnabled 在事务内只修改最新 enabled，保留精确配置与手动/智能模式；Settings 保留停用成员，Selection 移除执行候选，同值保存不增修订。deletePersonalModel 同事务移除成员及精确规则，未知成员 404；删除后迟到的保存/启用请求拒绝，不能重新创建成员。独立改名/排序与指定模型连通性测试仍待接通。
 
 重连间隔由 shared/governance.ts 持有默认值与护栏，按 workspace_settings 的 code_ui_reconnect_delay_ms ?? env ?? DEFAULTS 解析。现有 PUT /api/workspace/settings 接 codeUiReconnectDelayMs；读取持久真值，非法范围拒绝。新增列仅由前向迁移 20261003035733_code_ui_reconnect_setting.sql 引入，缺省 NULL 不覆盖 env。OpenAPI 将 /api/code-ui/events 正确标为 text/event-stream；逐条事件定义仍见共享原协议。HTTP 快照按原 conversationSnapshotSchema / conversationRowSchema / toolCallRowSchema 的实例引用生成复用组件，不裁剪字段、不改语义。

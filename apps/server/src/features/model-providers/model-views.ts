@@ -19,6 +19,7 @@ import {
   serializeRegistryModelConfig,
 } from "@zcode/provider";
 import {
+  codeUiProviderAccessConfig,
   codeUiProviderIssues,
   codeUiProviderMetadata,
   codeUiPublicProviderConfig,
@@ -261,7 +262,7 @@ function nonChatProviderConfig(
 ): ProviderConfigObject {
   return {
     group: "standard-personal",
-    access: { type: "api-key" },
+    access: codeUiProviderAccessConfig(instance),
     api: { ...(instance.baseUrl ? { baseUrl: instance.baseUrl } : {}) },
     personalModelIds: instance.models.map((model) => model.id),
     visibility: instance.enabled ? "visible" : "hidden",
