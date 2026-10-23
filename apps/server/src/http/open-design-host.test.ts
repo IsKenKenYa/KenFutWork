@@ -660,7 +660,7 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
     const content = String(writes[0]?.content ?? "");
     expect(content).toContain("<!doctype html>");
     expect(content).toContain("<main></main>");
-    expect(content).toContain("<title>未命名设计</title>");
+    expect(content).toContain("<title>未命名设计-2</title>");
     expect(writes[0]).toMatchObject({
       versionSource: "manual",
       versionLabel: "新建设计稿",
@@ -1207,6 +1207,136 @@ describe("POST /api/open-design/host/file-rename", () => {
       method: "POST",
       url: "/api/open-design/host/file-rename",
       payload: { projectId: "p-1", name: "a.md", newName: "x.png" },
+    });
+    expect(binary.statusCode).toBe(400);
+  });
+
+  it("重命名 HTML：<title> 同步为新资源名（标签页与资源页名字一致）", async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/projects/p-1"))
+        return jsonResponse({ project: { id: "p-1", name: "项目" } });
+      if (url.endsWith("/api/projects/p-1/files") && method === "GET")
+        return jsonResponse({
+          files: [{ name: "未命名设计.html", kind: "html" }],
+        });
+      if (url.includes("preview-url?file="))
+        return jsonResponse({
+          url: "/preview/未命名设计.html",
+          iframeSandbox: "allow-scripts",
+        });
+      if (url.includes("/preview/未命名设计.html"))
+        return new Response(
+          "<!doctype html><html><head><title>未命名</title></head><body></body></html>",
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      if (method === "POST" && url.endsWith("/api/projects/p-1/files")) {
+        writes.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return jsonResponse({ file: { name: "首页.html", kind: "html" } });
+      }
+      if (method === "DELETE") return jsonResponse({ ok: true });
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-rename",
+      payload: {
+        projectId: "p-1",
+        name: "未命名设计.html",
+        newName: "首页.html",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    const content = String(writes[0]?.content ?? "");
+    expect(content).toContain("<title>首页</title>");
+    expect(content).not.toContain("<title>未命名</title>");
+  });
+});
+
+describe("POST /api/open-design/host/file-copy 与 file-delete", () => {
+  function fixture(files: Array<{ name: string }>) {
+    const writes: Array<Record<string, unknown>> = [];
+    const deletes: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/projects/p-1"))
+        return jsonResponse({ project: { id: "p-1", name: "项目" } });
+      if (url.endsWith("/api/projects/p-1/files") && method === "GET")
+        return jsonResponse({ files });
+      if (url.includes("preview-url?file="))
+        return jsonResponse({
+          url: "/preview/src",
+          iframeSandbox: "allow-scripts",
+        });
+      if (url.endsWith("/preview/src"))
+        return new Response("# 源文档\n\n正文", {
+          status: 200,
+          headers: { "content-type": "text/markdown" },
+        });
+      if (method === "POST" && url.endsWith("/api/projects/p-1/files")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        writes.push(body);
+        return jsonResponse({ file: { name: body.name, kind: "document" } });
+      }
+      if (method === "DELETE") {
+        deletes.push(decodeURIComponent(url.split("/files/")[1] ?? ""));
+        return jsonResponse({ ok: true });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    return { app: canvasFixture({ frontendUrl: "http://127.0.0.1:7456", fetchImpl }), writes, deletes };
+  }
+
+  it("复制：读源正文写「-副本」；重名自动加序号；非文本 400", async () => {
+    const first = fixture([{ name: "a.md" }, { name: "a-副本.md" }]);
+    const copied = await first.app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-copy",
+      payload: { projectId: "p-1", name: "a.md" },
+    });
+    expect(copied.statusCode).toBe(200);
+    expect(copied.json().file.name).toBe("a-副本-2.md");
+    expect(first.writes[0]).toMatchObject({
+      name: "a-副本-2.md",
+      content: "# 源文档\n\n正文",
+    });
+    const binary = await first.app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-copy",
+      payload: { projectId: "p-1", name: "a.png" },
+    });
+    expect(binary.statusCode).toBe(400);
+  });
+
+  it("删除：删上游文件；不存在 404、非文本 400", async () => {
+    const { app, deletes } = fixture([{ name: "a.md" }]);
+    const removed = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-delete",
+      payload: { projectId: "p-1", name: "a.md" },
+    });
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().deleted).toBe("a.md");
+    expect(deletes).toEqual(["a.md"]);
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-delete",
+      payload: { projectId: "p-1", name: "gone.md" },
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const binary = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-delete",
+      payload: { projectId: "p-1", name: "logo.png" },
     });
     expect(binary.statusCode).toBe(400);
   });

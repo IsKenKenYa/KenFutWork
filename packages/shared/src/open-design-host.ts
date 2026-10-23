@@ -338,6 +338,38 @@ export type OpenDesignHostRenameFileResponse = z.infer<
   typeof openDesignHostRenameFileResponseSchema
 >;
 
+/** 复制设计/文档文件（读源正文 → 以「-副本」新名写入；仅文本设计/文档）。 */
+export const openDesignHostCopyFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+});
+export type OpenDesignHostCopyFileRequest = z.infer<
+  typeof openDesignHostCopyFileRequestSchema
+>;
+
+export const openDesignHostCopyFileResponseSchema = z.object({
+  file: z.object({ name: z.string().min(1), kind: z.string() }),
+});
+export type OpenDesignHostCopyFileResponse = z.infer<
+  typeof openDesignHostCopyFileResponseSchema
+>;
+
+/** 删除设计/文档文件（仅文本设计/文档，宿主直接删上游文件）。 */
+export const openDesignHostDeleteFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+});
+export type OpenDesignHostDeleteFileRequest = z.infer<
+  typeof openDesignHostDeleteFileRequestSchema
+>;
+
+export const openDesignHostDeleteFileResponseSchema = z.object({
+  deleted: z.string().min(1),
+});
+export type OpenDesignHostDeleteFileResponse = z.infer<
+  typeof openDesignHostDeleteFileResponseSchema
+>;
+
 /**
  * 宿主适配层协议版本：凭证缝（`POST /api/open-design/host/credentials`）的版本协商口径。
  * （原 `od/v1` iframe 握手随面板改嵌上游预览路由而移除——那条消息协议上游从未实现。）

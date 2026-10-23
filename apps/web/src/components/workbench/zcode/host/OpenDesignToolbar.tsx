@@ -26,6 +26,7 @@ import {
   Monitor,
   Palette,
   PanelRight,
+  Pencil,
   PenTool,
   Plus,
   Presentation,
@@ -138,6 +139,7 @@ export function OpenDesignToolbar({
   onOpenDeployment,
   onCopyDeployedLink,
   markdownMode = false,
+  onRename,
 }: {
   busy: boolean;
   hasCanvas: boolean;
@@ -200,6 +202,8 @@ export function OpenDesignToolbar({
   onCopyDeployedLink: () => void;
   /** Markdown 资源只保留返回、新建与预览/代码，画布类控件全部收起。 */
   markdownMode?: boolean;
+  /** 文档顶部「重命名」入口（与资源页三点菜单同一套弹窗流程）。 */
+  onRename?: () => void;
 }) {
   const activeViewport = VIEWPORTS.find((item) => item.id === viewport);
   const ViewportIcon = activeViewport?.icon ?? Monitor;
@@ -312,6 +316,11 @@ export function OpenDesignToolbar({
           <Code2 className="size-3" />
         </ViewModeButton>
       </div>
+      {markdownMode && onRename ? (
+        <ToolbarIconButton label="重命名" onClick={() => onRename()}>
+          <Pencil className="size-3" />
+        </ToolbarIconButton>
+      ) : null}
       {markdownMode ? null : (
         <>
           <DropdownMenu modal={false}>

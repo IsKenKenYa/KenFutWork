@@ -8968,7 +8968,7 @@
       "post": {
         "operationId": "postOpenDesignHostFileRename",
         "summary": "重命名设计或文档",
-        "description": "读旧文件正文 → 以新名写回 → 删除旧文件；只允许 .html/.htm/.md，新旧名都拒绝路径；重名返回 409，旧文件删除失败会回滚新文件。本机接入验证。",
+        "description": "读旧文件正文 → 以新名写回 → 删除旧文件；只允许 .html/.htm/.md，新旧名都拒绝路径；重名返回 409，旧文件删除失败会回滚新文件。HTML 会把 <title> 同步为新资源名。本机接入验证。",
         "tags": [
           "open-design"
         ],
@@ -8997,6 +8997,126 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/openDesignHostRenameFileResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/file-copy": {
+      "post": {
+        "operationId": "postOpenDesignHostFileCopy",
+        "summary": "复制设计或文档",
+        "description": "读源文件正文 → 以「-副本」新名写入（重名自动加序号）；只允许 .html/.htm/.md，文件名拒绝路径。HTML 副本的 <title> 同步为新资源名。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCopyFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCopyFileResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/file-delete": {
+      "post": {
+        "operationId": "postOpenDesignHostFileDelete",
+        "summary": "删除设计或文档",
+        "description": "直接删除上游项目里的文本文件；只允许 .html/.htm/.md，文件名拒绝路径，文件不存在返回 404。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostDeleteFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostDeleteFileResponseSchema"
                 }
               }
             }
@@ -23754,6 +23874,52 @@
           }
         }
       },
+      "openDesignHostCopyFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ]
+      },
+      "openDesignHostCopyFileResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
       "openDesignHostCreateCanvasRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -23940,6 +24106,39 @@
         "required": [
           "protocolVersion",
           "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostDeleteFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ]
+      },
+      "openDesignHostDeleteFileResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "deleted"
         ],
         "additionalProperties": false
       },

@@ -21,6 +21,8 @@ import {
   openDesignHostCloudflareZonesResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
+  openDesignHostCopyFileRequestSchema,
+  openDesignHostCopyFileResponseSchema,
   openDesignHostCreateCanvasRequestSchema,
   openDesignHostCreateDesignDocumentRequestSchema,
   openDesignHostCreateDesignDocumentResponseSchema,
@@ -36,6 +38,8 @@ import {
   openDesignHostDeployRequestSchema,
   openDesignHostDesignSystemExtractionResponseSchema,
   openDesignHostDesignSystemsResponseSchema,
+  openDesignHostDeleteFileRequestSchema,
+  openDesignHostDeleteFileResponseSchema,
   openDesignHostFileTextResponseSchema,
   openDesignHostLastProjectResponseSchema,
   openDesignHostPreviewUrlResponseSchema,
@@ -164,6 +168,31 @@ function uniqueProjectFileName(
   for (let index = 2; names.has(fileName); index += 1)
     fileName = `${baseName}-${index}.${extension}`;
   return { baseName, fileName };
+}
+
+function escapeHtmlText(text: string): string {
+  return text
+    .replace(/&/gu, "&amp;")
+    .replace(/</gu, "&lt;")
+    .replace(/>/gu, "&gt;");
+}
+
+/**
+ * HTML 设计稿的 `<title>` 与资源名对齐（用户口径：title 对应标签页和资源页名字）。
+ * 有 title 就整段替换，没有就插到 `<head>` 后；无 head 的老页面原样返回。
+ */
+function syncHtmlTitle(content: string, fileName: string): string {
+  const title = escapeHtmlText(fileName.replace(/\.html?$/iu, ""));
+  if (/<title\b[^>]*>[\s\S]*?<\/title>/iu.test(content)) {
+    return content.replace(
+      /(<title\b[^>]*>)[\s\S]*?(<\/title>)/iu,
+      (_match, open: string, close: string) => `${open}${title}${close}`,
+    );
+  }
+  return content.replace(
+    /(<head\b[^>]*>)/iu,
+    (_match, open: string) => `${open}\n    <title>${title}</title>`,
+  );
 }
 
 /** 上游 project + 文件表 → 面板契约（资源页/标签标题共用）。 */
@@ -765,16 +794,13 @@ export async function registerOpenDesignHostRoutes(
     const canvas = await readCanvas(base, projectId);
     if (!canvas.ok)
       return error(reply, canvas.status, "service_unavailable", canvas.message);
-    const { baseName, fileName } = uniqueProjectFileName(
+    const { fileName } = uniqueProjectFileName(
       canvas.files,
       parsed.data.name,
       "html",
       "未命名设计",
     );
-    const title = baseName
-      .replace(/&/gu, "&amp;")
-      .replace(/</gu, "&lt;")
-      .replace(/>/gu, "&gt;");
+    const title = escapeHtmlText(fileName.replace(/\.html?$/iu, ""));
     const content = [
       "<!doctype html>",
       '<html lang="zh-CN">',
@@ -2093,6 +2119,8 @@ export async function registerOpenDesignHostRoutes(
       return error(reply, 503, "service_unavailable", "读取原文件失败。");
     }
     const isHtml = isHtmlDesignFile(newName);
+    // 用户口径：HTML 的 <title> 必须对应标签页与资源页名字——重命名时一并改正文。
+    if (isHtml) content = syncHtmlTitle(content, newName);
     const written = await daemonJson<{
       file?: { name?: string; kind?: string };
     }>(base, `/api/projects/${encodeURIComponent(projectId)}/files`, {
@@ -2137,6 +2165,135 @@ export async function registerOpenDesignHostRoutes(
           kind: written.value.file?.kind ?? (isHtml ? "html" : "document"),
         },
       }),
+    );
+  });
+
+  /** 复制设计/文档：读源正文 → 以「-副本」新名写入（仅文本设计/文档）。 */
+  app.post("/api/open-design/host/file-copy", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostCopyFileRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "复制文件请求格式不正确。");
+    const { projectId, name } = parsed.data;
+    if (!isSafeTextDesignFileName(name))
+      return error(
+        reply,
+        400,
+        "application_error",
+        "只能复制设计或文档文件，且文件名不能带路径。",
+      );
+    const canvas = await readCanvas(base, projectId);
+    if (!canvas.ok)
+      return error(reply, canvas.status, "service_unavailable", canvas.message);
+    if (!canvas.files.some((file) => file.name === name))
+      return error(reply, 404, "service_unavailable", "要复制的文件不存在。");
+    const resolved = await resolvePreviewUrl(base, projectId, name);
+    if (!resolved.ok)
+      return error(
+        reply,
+        resolved.status,
+        "service_unavailable",
+        resolved.message,
+      );
+    const fetchImpl = options.fetchImpl ?? fetch;
+    let content: string;
+    try {
+      const response = await fetchImpl(`${base}${resolved.url}`, {
+        signal: AbortSignal.timeout(OPEN_DESIGN_CANVAS_TIMEOUT_MS),
+      });
+      if (!response.ok)
+        return error(
+          reply,
+          response.status === 404 ? 404 : 503,
+          "service_unavailable",
+          `读取原文件失败（HTTP ${response.status}）。`,
+        );
+      content = await response.text();
+    } catch {
+      return error(reply, 503, "service_unavailable", "读取原文件失败。");
+    }
+    const extensionMatch = /\.(html?|md)$/iu.exec(name);
+    const extension = (extensionMatch?.[1] ?? "html").toLowerCase();
+    const baseName = name.replace(/\.(html?|md)$/iu, "");
+    const names = new Set(
+      canvas.files.flatMap((file) => (file.name ? [file.name] : [])),
+    );
+    let copyName = `${baseName}-副本.${extension}`;
+    for (let index = 2; names.has(copyName); index += 1)
+      copyName = `${baseName}-副本-${index}.${extension}`;
+    const isHtml = isHtmlDesignFile(copyName);
+    const copiedContent = isHtml ? syncHtmlTitle(content, copyName) : content;
+    const written = await daemonJson<{
+      file?: { name?: string; kind?: string };
+    }>(base, `/api/projects/${encodeURIComponent(projectId)}/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: copyName,
+        content: copiedContent,
+        ...(isHtml ? { versionSource: "manual", versionLabel: "复制" } : {}),
+      }),
+    });
+    if (!written.ok)
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        `副本没写进去：${written.message}`,
+      );
+    return reply.send(
+      openDesignHostCopyFileResponseSchema.parse({
+        file: {
+          name: written.value.file?.name ?? copyName,
+          kind: written.value.file?.kind ?? (isHtml ? "html" : "document"),
+        },
+      }),
+    );
+  });
+
+  /** 删除设计/文档：直接删上游项目里的文本文件。 */
+  app.post("/api/open-design/host/file-delete", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostDeleteFileRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "删除文件请求格式不正确。");
+    const { projectId, name } = parsed.data;
+    if (!isSafeTextDesignFileName(name))
+      return error(
+        reply,
+        400,
+        "application_error",
+        "只能删除设计或文档文件，且文件名不能带路径。",
+      );
+    const canvas = await readCanvas(base, projectId);
+    if (!canvas.ok)
+      return error(reply, canvas.status, "service_unavailable", canvas.message);
+    if (!canvas.files.some((file) => file.name === name))
+      return error(reply, 404, "service_unavailable", "要删除的文件不存在。");
+    const deleted = await daemonJson(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    );
+    if (!deleted.ok)
+      return error(
+        reply,
+        deleted.status,
+        "service_unavailable",
+        `文件没删掉：${deleted.message}`,
+      );
+    return reply.send(
+      openDesignHostDeleteFileResponseSchema.parse({ deleted: name }),
     );
   });
 

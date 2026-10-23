@@ -7,7 +7,23 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import * as notifications from "@zui/components/ui/toast.js";
 import { afterEach, expect, test, vi } from "vitest";
+
+const toast = vi.spyOn(notifications, "toast");
+
+/** 用户口径：OpenDesign 提示走页面顶部 toast——断言 toast 文案而不是常驻状态条。 */
+function toastMessages(): string[] {
+  return toast.mock.calls.map((call) => String(call[0]));
+}
+
+async function expectToast(text: string) {
+  await waitFor(() => {
+    expect(toastMessages().some((message) => message.includes(text))).toBe(
+      true,
+    );
+  });
+}
 
 const { TooltipProvider } = await import(
   "../src/components/workbench/zcode/components/ui/tooltip.js"
@@ -127,6 +143,10 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
       return { file: { name: "logo.png", kind: "image" }, version: null };
     if (path === "/api/open-design/host/file-rename")
       return { file: { name: "renamed", kind: "file" } };
+    if (path === "/api/open-design/host/file-copy")
+      return { file: { name: "notes-副本.md", kind: "document" } };
+    if (path === "/api/open-design/host/file-delete")
+      return { deleted: "notes.md" };
     if (path.includes("preview-url")) return previewRef.current;
     if (path.includes("file-text")) {
       if (path.includes(".md"))
@@ -242,6 +262,10 @@ const ORIGIN = "http://127.0.0.1:7456";
 
 afterEach(() => {
   cleanup();
+  // toast 自建根不属于 Testing Library：按公开句柄关闭真实通知及其计时器。
+  for (const result of toast.mock.results) {
+    if (result.type === "return") notifications.dismissToast(result.value);
+  }
   annotationSeq = 0;
   entryRef.current = null;
   lastProjectRef.current = null;
@@ -475,6 +499,17 @@ async function openMenu(
   await screen.findByRole("menu");
 }
 
+/** 资源卡三点菜单（重命名/复制/删除）。 */
+async function openFileActions(title: string) {
+  const user = userEvent.setup();
+  const trigger = await screen.findByRole("button", {
+    name: `更多操作 ${title}`,
+  });
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("menu");
+}
+
 test("代码视图：切到代码读设计正文（上游「代码」视图）", async () => {
   availableEntry();
   canvasWithFile();
@@ -512,9 +547,7 @@ test("代码视图支持编辑并保存", async () => {
       versionLabel: "编辑代码",
     });
   });
-  expect(
-    (await screen.findByTestId("open-design-notice")).textContent,
-  ).toContain("已保存");
+  await expectToast("已保存");
 });
 
 test("设备视口：切到手机把画布框收到 390×844（上游 Desktop/Tablet/Mobile）", async () => {
@@ -573,9 +606,7 @@ test("历史版本可恢复：POST /host/version-restore 后回到当前正文",
   await waitFor(() => {
     expect(screen.queryByTestId("open-design-version-banner")).toBeNull();
   });
-  expect(
-    (await screen.findByTestId("open-design-notice")).textContent,
-  ).toContain("已恢复 V1");
+  await expectToast("已恢复 V1");
 });
 
 test("交给对话：把设计文件当附件发给聚焦的 composer；没有时提示先点输入框", async () => {
@@ -584,11 +615,7 @@ test("交给对话：把设计文件当附件发给聚焦的 composer；没有�
   mount({ projectId: "p-1" });
   await screen.findByTitle("OpenDesign");
   fireEvent.click(screen.getByRole("button", { name: "交给对话" }));
-  await waitFor(() => {
-    expect(screen.getByTestId("open-design-notice").textContent).toContain(
-      "先点一下对话输入框",
-    );
-  });
+  await expectToast("先点一下对话输入框");
   expect(fetched.some((path) => path.includes("file-text"))).toBe(true);
 });
 
@@ -729,8 +756,7 @@ test("「+」→「上传资源」：文件按 base64 经宿主写进当前画�
     content: "AQID",
     encoding: "base64",
   });
-  const notice = await screen.findByTestId("open-design-notice");
-  expect(notice.textContent).toContain("已上传 logo.png");
+  await expectToast("已上传 logo.png");
 });
 
 /** 模拟桥回传一次命中（父页只认来自当前这个 frame 且 source 匹配的消息）。 */
@@ -828,8 +854,7 @@ test("编辑：路径在正文里已经找不到时如实说明，不写回", as
   );
   fireEvent.click(within(inspector).getByRole("button", { name: "保存" }));
 
-  const notice = await screen.findByTestId("open-design-notice");
-  expect(notice.textContent).toContain("改动没有保存");
+  await expectToast("改动没有保存");
   expect(
     posted.some((item) => item.path === "/api/open-design/host/file"),
   ).toBe(false);
@@ -1074,9 +1099,7 @@ test("Markdown 编辑保存写回 /host/file 并更新标题", async () => {
       title: "新标题",
     });
   });
-  expect(
-    (await screen.findByTestId("open-design-notice")).textContent,
-  ).toContain("已保存");
+  await expectToast("已保存");
 });
 
 test("Markdown 代码页支持分栏：左源码右渲染", async () => {
@@ -1104,7 +1127,8 @@ test("文档支持重命名：宿主改名后卡片与提示更新", async () =>
     files: [{ name: "notes.md", kind: "document" }],
   };
   mount({ projectId: "p-1" });
-  fireEvent.click(await screen.findByRole("button", { name: "重命名 notes" }));
+  await openFileActions("notes");
+  fireEvent.click(await screen.findByRole("menuitem", { name: "重命名" }));
   fireEvent.change(await screen.findByLabelText("文件名称"), {
     target: { value: "方案说明.md" },
   });
@@ -1120,9 +1144,7 @@ test("文档支持重命名：宿主改名后卡片与提示更新", async () =>
     });
   });
   expect(await screen.findByRole("button", { name: "方案说明" })).toBeTruthy();
-  expect(
-    (await screen.findByTestId("open-design-notice")).textContent,
-  ).toContain("已重命名 方案说明.md");
+  await expectToast("已重命名 方案说明.md");
 });
 
 test("设计文件支持重命名：卡片显示新名称", async () => {
@@ -1133,7 +1155,8 @@ test("设计文件支持重命名：卡片显示新名称", async () => {
     files: [{ name: "index.html", kind: "html" }],
   };
   mount({ projectId: "p-1" });
-  fireEvent.click(await screen.findByRole("button", { name: "重命名 设计" }));
+  await openFileActions("设计");
+  fireEvent.click(await screen.findByRole("menuitem", { name: "重命名" }));
   fireEvent.change(await screen.findByLabelText("文件名称"), {
     target: { value: "首页.html" },
   });
@@ -1145,6 +1168,77 @@ test("设计文件支持重命名：卡片显示新名称", async () => {
     ).toMatchObject({ newName: "首页.html" });
   });
   expect(await screen.findByRole("button", { name: "首页" })).toBeTruthy();
+});
+
+test("资源三点菜单：复制生成「-副本」卡片并提示", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "测试项目" },
+    entryFile: null,
+    files: [{ name: "notes.md", kind: "document" }],
+  };
+  mount({ projectId: "p-1" });
+  await openFileActions("notes");
+  fireEvent.click(await screen.findByRole("menuitem", { name: "复制" }));
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/file-copy")
+        ?.body,
+    ).toEqual({ projectId: "p-1", name: "notes.md" });
+  });
+  expect(await screen.findByRole("button", { name: "notes-副本" })).toBeTruthy();
+  await expectToast("已复制 notes-副本.md");
+});
+
+test("资源三点菜单：删除要过确认弹窗，确认后卡片消失", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "测试项目" },
+    entryFile: null,
+    files: [
+      { name: "notes.md", kind: "document" },
+      { name: "index.html", kind: "html" },
+    ],
+  };
+  mount({ projectId: "p-1" });
+  await openFileActions("notes");
+  fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/notes\.md/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/file-delete")
+        ?.body,
+    ).toEqual({ projectId: "p-1", name: "notes.md" });
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole("button", { name: "notes" })).toBeNull();
+  });
+  await expectToast("已删除 notes.md");
+});
+
+test("文档顶部有重命名入口：弹窗预填当前文件名并可改名", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "测试项目" },
+    entryFile: null,
+    files: [{ name: "notes.md", kind: "document" }],
+  };
+  mount({ projectId: "p-1" });
+  fireEvent.click(await screen.findByRole("button", { name: "notes" }));
+  await screen.findByTestId("open-design-markdown");
+  fireEvent.click(screen.getByRole("button", { name: "重命名" }));
+  const input = (await screen.findByLabelText("文件名称")) as HTMLInputElement;
+  expect(input.value).toBe("notes.md");
+  fireEvent.change(input, { target: { value: "方案.md" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/file-rename")
+        ?.body,
+    ).toEqual({ projectId: "p-1", name: "notes.md", newName: "方案.md" });
+  });
 });
 
 test("打开 Markdown 资源走渲染视图，不是上游纯文本 iframe", async () => {
@@ -1263,9 +1357,7 @@ test("新建设计体系：网站/DESIGN.md 走上游提取，ready 后绑定", 
     },
     { timeout: 4000 },
   );
-  expect(
-    (await screen.findByTestId("open-design-notice")).textContent,
-  ).toContain("新体系");
+  await expectToast("新体系");
 });
 
 test("新建设计体系：上游提取失败时给可改道的提示，不绑定", async () => {

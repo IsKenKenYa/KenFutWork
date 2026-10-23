@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
+import { toast } from "@zui/components/ui/toast.js";
 import { requestCanvasDocumentOpen } from "@zui/host/conversationWorkContext.js";
 import { dispatchOpenDesignCanvasAddToChat } from "@zui/lib/openDesignCanvasChat.js";
 import type { OpenDesignSidePaneMetadata } from "@zui/lib/workspaceSidePane.js";
@@ -18,12 +19,15 @@ import {
 } from "@zui/root/RootStartupLoading.js";
 import {
   ArrowLeft,
+  Copy,
   FileText,
   Globe,
+  MoreHorizontal,
   Palette,
   Pencil,
   PenTool,
   Plus,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -37,6 +41,10 @@ import {
   OpenDesignEditInspector,
 } from "./OpenDesignEditInspector.js";
 import { OpenDesignMarkup } from "./OpenDesignMarkup.js";
+import {
+  OpenDesignDeleteDialog,
+  OpenDesignRenameDialog,
+} from "./openDesignFileDialogs.js";
 import {
   FigmaMark,
   type OpenDesignTool,
@@ -70,6 +78,11 @@ function resourceTitle(name: string): string {
     return /^document[-_]/iu.test(base) ? "文档" : base.replace(/\.md$/iu, "");
   if (/^index\.html?$/iu.test(base)) return "设计";
   return base.replace(/\.(?:html?|png|jpe?g|svg|webp|json|txt)$/iu, "");
+}
+
+/** 用户口径：OpenDesign 的提示一律走页面顶部 toast（3s 自动消失），不摆常驻状态条。 */
+function notify(message: string | null) {
+  if (message) toast(message, { dedupeKey: message });
 }
 
 /**
@@ -123,7 +136,6 @@ export function OpenDesignPane({
     "loading" | "ready" | "empty" | "no-file" | "error"
   >("loading");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [viewMode, setViewMode] = useState<OpenDesignViewMode>("preview");
   const [viewport, setViewport] = useState<OpenDesignViewport>("desktop");
@@ -144,7 +156,9 @@ export function OpenDesignPane({
     draft: string;
   } | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
-  const renameInputRef = useRef<HTMLInputElement>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [copyingFile, setCopyingFile] = useState<string | null>(null);
   const [versions, setVersions] = useState<OpenDesignVersionSummary[] | null>(
     null,
   );
@@ -294,7 +308,7 @@ export function OpenDesignPane({
     async (body: string) => {
       if (!pendingComment || !canvas?.entryFile || !docSize) return;
       setBusy(true);
-      setNotice(null);
+      notify(null);
       try {
         const data = await surfaceJson<{ comment: DesignReviewComment }>(
           "/api/design-review/comments",
@@ -326,7 +340,7 @@ export function OpenDesignPane({
         setPendingComment(null);
         setSidebarOpen(true);
       } catch (createError) {
-        setNotice(
+        notify(
           createError instanceof Error ? createError.message : "评论失败。",
         );
       } finally {
@@ -355,7 +369,7 @@ export function OpenDesignPane({
           ),
         }));
       } catch (patchError) {
-        setNotice(
+        notify(
           patchError instanceof Error ? patchError.message : "改动评论失败。",
         );
       } finally {
@@ -409,7 +423,7 @@ export function OpenDesignPane({
           annotations: [...current.annotations, data.annotation],
         }));
       } catch (drawError) {
-        setNotice(
+        notify(
           drawError instanceof Error ? drawError.message : "保存标注失败。",
         );
       }
@@ -428,7 +442,7 @@ export function OpenDesignPane({
         annotations: current.annotations.filter((item) => item.id !== id),
       }));
     } catch (eraseError) {
-      setNotice(
+      notify(
         eraseError instanceof Error ? eraseError.message : "删除标注失败。",
       );
     }
@@ -622,7 +636,7 @@ export function OpenDesignPane({
       }
       return data.text;
     } catch (loadError) {
-      setNotice(
+      notify(
         loadError instanceof Error ? loadError.message : "读取设计文件失败。",
       );
       return null;
@@ -640,7 +654,7 @@ export function OpenDesignPane({
   const refresh = useCallback(async () => {
     if (!boundProjectId) return;
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const data = await surfaceJson<{
         project: {
@@ -665,7 +679,7 @@ export function OpenDesignPane({
       if (canvas?.entryFile)
         await loadPreview(boundProjectId, canvas.entryFile);
     } catch (refreshError) {
-      setNotice(
+      notify(
         refreshError instanceof Error ? refreshError.message : "刷新资源失败。",
       );
     } finally {
@@ -678,7 +692,7 @@ export function OpenDesignPane({
     async (file: string) => {
       if (!boundProjectId) return;
       setBusy(true);
-      setNotice(null);
+      notify(null);
       setActiveVersion(null);
       setCurrentText(null);
       setVersions(null);
@@ -700,7 +714,7 @@ export function OpenDesignPane({
     async (source: string) => {
       if (!boundProjectId || !canvas?.entryFile) return;
       setMarkdownSaving(true);
-      setNotice(null);
+      notify(null);
       try {
         await surfaceJson("/api/open-design/host/file", {
           method: "POST",
@@ -718,9 +732,9 @@ export function OpenDesignPane({
         setMarkdownDirty(false);
         const title = markdownTitle(source);
         if (title) reportMeta({ title });
-        setNotice("已保存");
+        notify("已保存");
       } catch (saveError) {
-        setNotice(
+        notify(
           saveError instanceof Error ? saveError.message : "保存文档失败。",
         );
         throw saveError;
@@ -743,7 +757,7 @@ export function OpenDesignPane({
   const saveSource = useCallback(async () => {
     if (!boundProjectId || !canvas?.entryFile || sourceDraft === null) return;
     setSourceSaving(true);
-    setNotice(null);
+    notify(null);
     try {
       await surfaceJson("/api/open-design/host/file", {
         method: "POST",
@@ -759,9 +773,9 @@ export function OpenDesignPane({
       setCurrentText(sourceDraft);
       setSourceDirty(false);
       setFrameKey((key) => key + 1);
-      setNotice("已保存");
+      notify("已保存");
     } catch (saveError) {
-      setNotice(
+      notify(
         saveError instanceof Error ? saveError.message : "保存代码失败。",
       );
     } finally {
@@ -778,7 +792,7 @@ export function OpenDesignPane({
       return;
     }
     setRenameBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       await surfaceJson("/api/open-design/host/file-rename", {
         method: "POST",
@@ -804,9 +818,9 @@ export function OpenDesignPane({
         // 文档标题仍取正文第一个一级标题；设计文件的标签跟文件名。
         if (!/\.md$/iu.test(next)) reportMeta({ title: resourceTitle(next) });
       }
-      setNotice(`已重命名 ${next}`);
+      notify(`已重命名 ${next}`);
     } catch (renameError) {
-      setNotice(
+      notify(
         renameError instanceof Error ? renameError.message : "重命名失败。",
       );
     } finally {
@@ -838,11 +852,59 @@ export function OpenDesignPane({
     reportMeta({ title: canvas?.name || "未命名设计" });
   }, [canvas?.name, reportMeta]);
 
+  /** 复制设计/文档：新名「-副本」由宿主去重生成。 */
+  const copyFile = useCallback(
+    async (name: string) => {
+      if (!boundProjectId) return;
+      setCopyingFile(name);
+      try {
+        const copied = await surfaceJson<{
+          file: { name: string; kind: string };
+        }>("/api/open-design/host/file-copy", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ projectId: boundProjectId, name }),
+        });
+        setFiles((current) => [...current, copied.file]);
+        notify(`已复制 ${copied.file.name}`);
+      } catch (copyError) {
+        notify(copyError instanceof Error ? copyError.message : "复制失败。");
+      } finally {
+        setCopyingFile(null);
+      }
+    },
+    [boundProjectId],
+  );
+
+  /** 删除设计/文档：删掉当前打开的资源时退回资源页。 */
+  const deleteFile = useCallback(async () => {
+    if (!boundProjectId || !deletingFile) return;
+    setDeleteBusy(true);
+    try {
+      await surfaceJson("/api/open-design/host/file-delete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId: boundProjectId, name: deletingFile }),
+      });
+      const removed = deletingFile;
+      setFiles((current) =>
+        current.filter((file) => file.name !== removed),
+      );
+      setDeletingFile(null);
+      if (canvas?.entryFile === removed) backToResources();
+      notify(`已删除 ${removed}`);
+    } catch (deleteError) {
+      notify(deleteError instanceof Error ? deleteError.message : "删除失败。");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }, [boundProjectId, deletingFile, canvas?.entryFile, backToResources]);
+
   /** 新建草图 = 当前项目的 Design 画布（不是上游 sketch 文件）。 */
   const createSketch = useCallback(async () => {
     if (!workspaceProjectId) return;
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const created = await surfaceJson<{
         canvas: { id: string; name: string };
@@ -861,7 +923,7 @@ export function OpenDesignPane({
         title: created.canvas.name,
       });
     } catch (createError) {
-      setNotice(
+      notify(
         createError instanceof Error ? createError.message : "新建草图失败。",
       );
     } finally {
@@ -873,7 +935,7 @@ export function OpenDesignPane({
   const createDocument = useCallback(async () => {
     if (!boundProjectId) return;
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const created = await surfaceJson<{
         file: { name: string; kind: string };
@@ -889,7 +951,7 @@ export function OpenDesignPane({
       await openFile(created.file.name);
       setViewMode("code");
     } catch (createError) {
-      setNotice(
+      notify(
         createError instanceof Error ? createError.message : "新建文档失败。",
       );
     } finally {
@@ -901,7 +963,7 @@ export function OpenDesignPane({
   const createDesignFile = useCallback(async () => {
     if (!boundProjectId) return;
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const created = await surfaceJson<{
         file: { name: string; kind: string };
@@ -917,7 +979,7 @@ export function OpenDesignPane({
       await openFile(created.file.name);
       setViewMode("code");
     } catch (createError) {
-      setNotice(
+      notify(
         createError instanceof Error ? createError.message : "新建设计稿失败。",
       );
     } finally {
@@ -930,7 +992,7 @@ export function OpenDesignPane({
   const saveToWorkspace = useCallback(async () => {
     if (!boundProjectId || !workspacePath) return;
     setSaveToWorkspaceBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const saved = await surfaceJson<{ path: string; bytes: number }>(
         "/api/open-design/host/save-to-workspace",
@@ -944,9 +1006,9 @@ export function OpenDesignPane({
           }),
         },
       );
-      setNotice(`已保存：${saved.path}`);
+      notify(`已保存：${saved.path}`);
     } catch (saveError) {
-      setNotice(
+      notify(
         saveError instanceof Error ? saveError.message : "保存到工作目录失败。",
       );
     } finally {
@@ -958,7 +1020,7 @@ export function OpenDesignPane({
   const syncContextToEngine = useCallback(async () => {
     if (!boundProjectId) return;
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const result = await surfaceJson<{
         comments: number;
@@ -968,11 +1030,11 @@ export function OpenDesignPane({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ projectId: boundProjectId }),
       });
-      setNotice(
+      notify(
         `已同步 ${result.comments} 条评论、${result.annotations} 条标注`,
       );
     } catch (syncError) {
-      setNotice(
+      notify(
         syncError instanceof Error ? syncError.message : "同步到引擎失败。",
       );
     } finally {
@@ -1061,9 +1123,9 @@ export function OpenDesignPane({
         setDesignSystemTitleHint({ id: designSystemId, title });
         setDesignSystems(null);
         await refresh();
-        setNotice(`已应用设计体系 ${title}`);
+        notify(`已应用设计体系 ${title}`);
       } catch (bindError) {
-        setNotice(
+        notify(
           bindError instanceof Error ? bindError.message : "绑定失败。",
         );
       } finally {
@@ -1115,7 +1177,7 @@ export function OpenDesignPane({
       .filter(Boolean)
       .join("\n\n");
     setBusy(true);
-    setNotice(null);
+    notify(null);
     setDesignSystemCreating(true);
     setDesignCreateError(null);
     setDesignCreateStatus("正在读取来源…");
@@ -1189,7 +1251,7 @@ export function OpenDesignPane({
       setDesignDescription("");
       setDesignMarkdown("");
       await refresh();
-      setNotice(`已新建设计体系 ${extraction.title ?? "设计体系"}`);
+      notify(`已新建设计体系 ${extraction.title ?? "设计体系"}`);
     } catch (createError) {
       setDesignCreateError(
         createError instanceof Error
@@ -1214,11 +1276,11 @@ export function OpenDesignPane({
   const uploadAsset = useCallback(
     async (file: File) => {
       if (file.size > UPLOAD_MAX_BYTES) {
-        setNotice("文件超过 1.5 MB，请换小一点的资源。");
+        notify("文件超过 1.5 MB，请换小一点的资源。");
         return;
       }
       setBusy(true);
-      setNotice(null);
+      notify(null);
       try {
         if (!boundProjectId) return;
         const content = await fileToBase64(file);
@@ -1234,9 +1296,9 @@ export function OpenDesignPane({
         });
         // 先刷新再报成功：refresh 会清 notice，反过来写会让提示刚出现就被抹掉。
         await refresh();
-        setNotice(`已上传 ${file.name}`);
+        notify(`已上传 ${file.name}`);
       } catch (uploadError) {
-        setNotice(
+        notify(
           uploadError instanceof Error ? uploadError.message : "上传失败。",
         );
       } finally {
@@ -1274,11 +1336,11 @@ export function OpenDesignPane({
         ...(Object.keys(style).length > 0 ? { style } : {}),
       });
       if (next === null) {
-        setNotice("这个元素已经不在当前正文里，改动没有保存。");
+        notify("这个元素已经不在当前正文里，改动没有保存。");
         return;
       }
       setBusy(true);
-      setNotice(null);
+      notify(null);
       try {
         await surfaceJson("/api/open-design/host/file", {
           method: "POST",
@@ -1294,9 +1356,9 @@ export function OpenDesignPane({
         setCurrentText(next);
         setPicked(null);
         setFrameKey((key) => key + 1);
-        setNotice("已保存");
+        notify("已保存");
       } catch (saveError) {
-        setNotice(
+        notify(
           saveError instanceof Error ? saveError.message : "保存失败。",
         );
       } finally {
@@ -1311,7 +1373,7 @@ export function OpenDesignPane({
     if (activeVersion?.text) return activeVersion.text;
     if (currentText !== null) return currentText;
     if (!canvas?.entryFile) {
-      setNotice("画布还没有内容");
+      notify("画布还没有内容");
       return null;
     }
     return loadCurrentText();
@@ -1334,7 +1396,7 @@ export function OpenDesignPane({
 
   const screenshotToChat = useCallback(async () => {
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const dataUrl = await capturePng();
       if (!dataUrl) return;
@@ -1346,9 +1408,9 @@ export function OpenDesignPane({
         workspacePath,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
       });
-      if (!delivered) setNotice("先点一下对话输入框");
+      if (!delivered) notify("先点一下对话输入框");
     } catch (captureError) {
-      setNotice(
+      notify(
         captureError instanceof Error ? captureError.message : "截图失败。",
       );
     } finally {
@@ -1359,7 +1421,7 @@ export function OpenDesignPane({
   /** 交给对话（上游 Handoff 的本地化）：把设计文件本身作为附件送进 composer。 */
   const handoffToChat = useCallback(async () => {
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const html = await resolveActiveHtml();
       if (!html || !canvas?.entryFile) return;
@@ -1371,9 +1433,9 @@ export function OpenDesignPane({
         workspacePath,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
       });
-      if (!delivered) setNotice("先点一下对话输入框");
+      if (!delivered) notify("先点一下对话输入框");
     } catch (handoffError) {
-      setNotice(
+      notify(
         handoffError instanceof Error ? handoffError.message : "交接失败。",
       );
     } finally {
@@ -1383,7 +1445,7 @@ export function OpenDesignPane({
 
   const exportPng = useCallback(async () => {
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const dataUrl = await capturePng();
       if (!dataUrl) return;
@@ -1392,7 +1454,7 @@ export function OpenDesignPane({
       anchor.download = `${(canvas?.name ?? "画布").replace(UNSAFE_FILENAME_CHARS, "-")}.png`;
       anchor.click();
     } catch (captureError) {
-      setNotice(
+      notify(
         captureError instanceof Error ? captureError.message : "导出失败。",
       );
     } finally {
@@ -1402,7 +1464,7 @@ export function OpenDesignPane({
 
   const exportHtml = useCallback(async () => {
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const html = await resolveActiveHtml();
       if (!html || !canvas?.entryFile) return;
@@ -1414,7 +1476,7 @@ export function OpenDesignPane({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (exportError) {
-      setNotice(
+      notify(
         exportError instanceof Error ? exportError.message : "导出失败。",
       );
     } finally {
@@ -1425,7 +1487,7 @@ export function OpenDesignPane({
   const exportZip = useCallback(async () => {
     if (!boundProjectId) return;
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const response = await surfaceRequest(
         `/api/open-design/host/archive?projectId=${encodeURIComponent(boundProjectId)}`,
@@ -1438,7 +1500,7 @@ export function OpenDesignPane({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (zipError) {
-      setNotice(
+      notify(
         zipError instanceof Error ? zipError.message : "导出 ZIP 失败。",
       );
     } finally {
@@ -1458,7 +1520,7 @@ export function OpenDesignPane({
 
   const exportPdf = useCallback(async () => {
     setBusy(true);
-    setNotice(null);
+    notify(null);
     try {
       const html = await buildPrintableHtml();
       if (!html) return;
@@ -1477,7 +1539,7 @@ export function OpenDesignPane({
       frame.contentWindow?.print();
       setTimeout(() => frame.remove(), 1500);
     } catch (pdfError) {
-      setNotice(
+      notify(
         pdfError instanceof Error ? pdfError.message : "导出 PDF 失败。",
       );
     } finally {
@@ -1491,7 +1553,7 @@ export function OpenDesignPane({
         ? `${entry.frontendUrl.replace(/\/$/u, "")}${preview.url}`
         : null;
     if (!src) {
-      setNotice("先打开一个设计文件再演示。");
+      notify("先打开一个设计文件再演示。");
       return;
     }
     // 用上游预览地址开新窗口：跨源隔离，不把设计脚本带进本仓 origin。
@@ -1521,9 +1583,9 @@ export function OpenDesignPane({
     if (!lastDeploymentUrl) return;
     try {
       await navigator.clipboard.writeText(lastDeploymentUrl);
-      setNotice("已复制发布链接");
+      notify("已复制发布链接");
     } catch {
-      setNotice("复制失败，请检查剪贴板权限。");
+      notify("复制失败，请检查剪贴板权限。");
     }
   }, [lastDeploymentUrl]);
 
@@ -1532,7 +1594,7 @@ export function OpenDesignPane({
       if (!boundProjectId) return;
       setShareBusy(true);
       setShareMenuOpen(false);
-      setNotice(null);
+      notify(null);
       try {
         const deployed = await surfaceJson<{
           url: string;
@@ -1549,12 +1611,12 @@ export function OpenDesignPane({
         setLastDeploymentUrl(deployed.url);
         try {
           await navigator.clipboard.writeText(deployed.url);
-          setNotice(`已发布并复制链接：${deployed.url}`);
+          notify(`已发布并复制链接：${deployed.url}`);
         } catch {
-          setNotice(`已发布：${deployed.url}`);
+          notify(`已发布：${deployed.url}`);
         }
       } catch (deployError) {
-        setNotice(
+        notify(
           deployError instanceof Error ? deployError.message : "发布失败。",
         );
       } finally {
@@ -1606,9 +1668,9 @@ export function OpenDesignPane({
         }),
       });
       setShareConfigProvider(null);
-      setNotice("托管商配置已保存");
+      notify("托管商配置已保存");
     } catch (saveError) {
-      setNotice(
+      notify(
         saveError instanceof Error ? saveError.message : "保存配置失败。",
       );
     } finally {
@@ -1630,7 +1692,7 @@ export function OpenDesignPane({
       );
       setVersions(data.versions);
     } catch (loadError) {
-      setNotice(
+      notify(
         loadError instanceof Error ? loadError.message : "读取历史版本失败。",
       );
       setVersions([]);
@@ -1647,7 +1709,7 @@ export function OpenDesignPane({
       }
       if (!canvas?.entryFile) return;
       setBusy(true);
-      setNotice(null);
+      notify(null);
       try {
         const data = await surfaceJson<{
           version: { id: string; label: string; version: number };
@@ -1663,7 +1725,7 @@ export function OpenDesignPane({
         setFrameLoaded(false);
         setPhase("ready");
       } catch (loadError) {
-        setNotice(
+        notify(
           loadError instanceof Error ? loadError.message : "读取历史版本失败。",
         );
       } finally {
@@ -1676,7 +1738,7 @@ export function OpenDesignPane({
   const restoreActiveVersion = useCallback(async () => {
     if (!activeVersion || !canvas?.entryFile) return;
     setRestoringVersion(true);
-    setNotice(null);
+    notify(null);
     try {
       await surfaceJson("/api/open-design/host/version-restore", {
         method: "POST",
@@ -1693,9 +1755,9 @@ export function OpenDesignPane({
       setFrameLoaded(false);
       setFrameKey((key) => key + 1);
       await loadVersions();
-      setNotice(`已恢复 ${activeVersion.label}`);
+      notify(`已恢复 ${activeVersion.label}`);
     } catch (restoreError) {
-      setNotice(
+      notify(
         restoreError instanceof Error ? restoreError.message : "恢复版本失败。",
       );
     } finally {
@@ -1791,9 +1853,6 @@ export function OpenDesignPane({
     markdownSaving,
     saveMarkdownSource,
   ]);
-  useEffect(() => {
-    if (renamingFile) renameInputRef.current?.focus();
-  }, [renamingFile]);
   const captureReady =
     phase === "ready" &&
     Boolean(canvas?.entryFile) &&
@@ -1806,54 +1865,6 @@ export function OpenDesignPane({
   );
   const isRenameableFile = (name: string) => /\.(?:html?|md)$/iu.test(name);
   const renderFileCard = (file: { name: string; kind: string }) => {
-    if (renamingFile?.name === file.name) {
-      return (
-        <div
-          key={file.name}
-          className="flex min-w-0 items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1"
-        >
-          <input
-            ref={renameInputRef}
-            aria-label="文件名称"
-            value={renamingFile.draft}
-            disabled={renameBusy}
-            onChange={(event) =>
-              setRenamingFile({ name: file.name, draft: event.target.value })
-            }
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.nativeEvent.isComposing &&
-                !renameBusy
-              ) {
-                event.preventDefault();
-                void renameFile();
-              } else if (event.key === "Escape") {
-                setRenamingFile(null);
-              }
-            }}
-            className="min-w-0 flex-1 bg-transparent text-ui-base outline-none"
-          />
-          <Button
-            type="button"
-            size="xs"
-            disabled={renameBusy || !renamingFile.draft.trim()}
-            onClick={() => void renameFile()}
-          >
-            {renameBusy ? "保存中…" : "保存"}
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            disabled={renameBusy}
-            onClick={() => setRenamingFile(null)}
-          >
-            取消
-          </Button>
-        </div>
-      );
-    }
     return (
       <div
         key={file.name}
@@ -1869,17 +1880,46 @@ export function OpenDesignPane({
           <span className="min-w-0 truncate">{resourceTitle(file.name)}</span>
         </button>
         {isRenameableFile(file.name) ? (
-          <button
-            type="button"
-            aria-label={`重命名 ${resourceTitle(file.name)}`}
-            title="重命名"
-            className="mr-1 shrink-0 rounded p-1 text-foreground-subtle hover:bg-background hover:text-foreground"
-            onClick={() =>
-              setRenamingFile({ name: file.name, draft: file.name })
-            }
-          >
-            <Pencil className="size-3" />
-          </button>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`更多操作 ${resourceTitle(file.name)}`}
+                title="更多"
+                className="mr-1 shrink-0 text-foreground-subtle hover:text-foreground"
+              >
+                <MoreHorizontal className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              <DropdownMenuItem
+                data-open-design-file-action="rename"
+                onSelect={() =>
+                  setRenamingFile({ name: file.name, draft: file.name })
+                }
+              >
+                <Pencil className="size-3.5" />
+                <span className="flex-1">重命名</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-open-design-file-action="copy"
+                disabled={copyingFile === file.name}
+                onSelect={() => void copyFile(file.name)}
+              >
+                <Copy className="size-3.5" />
+                <span className="flex-1">复制</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-open-design-file-action="delete"
+                onSelect={() => setDeletingFile(file.name)}
+              >
+                <Trash2 className="size-3.5" />
+                <span className="flex-1">删除</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : null}
       </div>
     );
@@ -1960,6 +2000,13 @@ export function OpenDesignPane({
           onCreateDocument={() => void createDocument()}
           onCreateDesignFile={() => void createDesignFile()}
           markdownMode={isMarkdownEntry}
+          onRename={() => {
+            if (canvas?.entryFile)
+              setRenamingFile({
+                name: canvas.entryFile,
+                draft: canvas.entryFile,
+              });
+          }}
           onUploadAsset={(file) => void uploadAsset(file)}
           onOpenBrowserTab={onOpenBrowserTab}
           onSyncContext={() => void syncContextToEngine()}
@@ -2012,15 +2059,6 @@ export function OpenDesignPane({
           className="shrink-0 border-b border-border px-3 py-2 text-ui-caption text-foreground-subtle"
         >
           没有可用的设计引擎
-        </div>
-      ) : null}
-      {notice ? (
-        <div
-          role="status"
-          data-testid="open-design-notice"
-          className="shrink-0 border-b border-border px-3 py-1 text-ui-caption text-foreground-subtle"
-        >
-          {notice}
         </div>
       ) : null}
       {activeVersion ? (
@@ -2781,6 +2819,27 @@ export function OpenDesignPane({
           </div>
         ) : null}
       </div>
+      <OpenDesignRenameDialog
+        target={renamingFile}
+        busy={renameBusy}
+        onChange={(draft) =>
+          setRenamingFile((current) =>
+            current ? { ...current, draft } : current,
+          )
+        }
+        onCancel={() => {
+          if (!renameBusy) setRenamingFile(null);
+        }}
+        onSubmit={() => void renameFile()}
+      />
+      <OpenDesignDeleteDialog
+        target={deletingFile}
+        busy={deleteBusy}
+        onCancel={() => {
+          if (!deleteBusy) setDeletingFile(null);
+        }}
+        onConfirm={() => void deleteFile()}
+      />
     </div>
   );
 }
