@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect } from "react";
+import { BrandKitPage } from "./brand-kit/brand-kit-page";
 
 /**
  * 品牌套件管理浮窗：90% 宽、85% 高，覆盖在画布之上。
  *
- * 里面直接嵌 `/brand-kit` 这条既有路由（同源 iframe）——那套界面有自己的侧栏与编辑器、
- * 十几个文件，做成弹窗组件要拆一遍且容易漏；iframe 方案一行不动就复用了同一份实现，
- * 路由也仍然可以直接访问。用户此前的不满在于「点管理会把整页换掉（跳走）」与
- * 「页里有返回工作台按钮」——前者由本浮窗解决，后者已从侧栏移除。
+ * 直接渲染 `/brand-kit` 那条路由背后的同一套页面（`embedded` 模式），不再套一层
+ * iframe：iframe 会把页头、`100dvh` 与整页留白一起搬进窄浮窗，出现「品牌套件」
+ * 标题重复、内容挤成一列的事故；路由本身仍可独立访问。
  */
 export function BrandKitModal({
   open,
@@ -64,11 +64,7 @@ export function BrandKitModal({
             </svg>
           </button>
         </div>
-        <iframe
-          src="/brand-kit"
-          title="品牌套件管理"
-          className="min-h-0 w-full flex-1 border-0"
-        />
+        <BrandKitPage embedded />
       </div>
     </div>
   );

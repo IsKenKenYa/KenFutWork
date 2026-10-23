@@ -5,7 +5,7 @@ import type {
   BrandKitAssetType,
   BrandKitDetail,
 } from "@kenfutwork/shared";
-import { Copy, Ellipsis, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Ellipsis, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -18,6 +18,8 @@ import { LogoSection } from "./logo-section";
 
 interface BrandKitEditorProps {
   kit: BrandKitDetail;
+  /** 浮窗内嵌时收窄留白，避免整页版式挤在窄容器里。 */
+  embedded?: boolean;
   onUpdateKit: (data: {
     name?: string;
     guidance_text?: string | null;
@@ -48,6 +50,7 @@ function filterAssets(
 
 export function BrandKitEditor({
   kit,
+  embedded = false,
   onUpdateKit,
   onDeleteKit,
   onAddAsset,
@@ -135,12 +138,23 @@ export function BrandKitEditor({
   return (
     <div className="flex flex-1 flex-col min-w-0">
       {/* Header */}
-      <header className="flex min-h-[64px] shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6 md:h-[96px] md:flex-nowrap md:py-0">
+      <header
+        className={cn(
+          "flex shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4",
+          embedded
+            ? "h-14 py-0"
+            : "min-h-[64px] py-3 sm:px-6 md:h-[96px] md:flex-nowrap md:py-0",
+        )}
+      >
         <InlineInput
           value={kit.name}
           onCommit={handleNameCommit}
           placeholder="套件名称"
-          inputClassName="text-2xl font-semibold text-foreground"
+          className="min-w-0 flex-1"
+          inputClassName={cn(
+            "font-semibold text-foreground",
+            embedded ? "text-lg" : "text-2xl",
+          )}
         />
 
         <div className="flex items-center gap-3 shrink-0 ml-4">
@@ -175,18 +189,15 @@ export function BrandKitEditor({
       </header>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6 md:px-[80px] xl:px-[160px]">
-        <div className="flex flex-col gap-8 max-w-[960px] mx-auto">
-          {/* Extract from URL — disabled Phase 1 */}
-          <button
-            type="button"
-            disabled
-            className="inline-flex items-center gap-2 self-start rounded-xl border border-dashed px-4 py-2.5 text-sm text-muted-foreground opacity-50 cursor-not-allowed"
-          >
-            <Sparkles className="h-4 w-4" />
-            Extract from URL
-          </button>
-
+      <div
+        className={cn(
+          "flex-1 overflow-y-auto px-4 py-4",
+          embedded
+            ? "sm:px-4 sm:py-4"
+            : "sm:px-6 sm:py-6 md:px-[80px] xl:px-[160px]",
+        )}
+      >
+        <div className="mx-auto flex max-w-[960px] flex-col gap-8">
           <GuidanceSection
             value={kit.guidance_text}
             onSave={handleGuidanceSave}
