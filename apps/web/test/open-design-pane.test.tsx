@@ -967,6 +967,38 @@ test("打开 Markdown 资源走渲染视图，不是上游纯文本 iframe", asy
   });
 });
 
+test("Markdown 预览支持块级就地编辑并保存", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "测试项目" },
+    entryFile: null,
+    files: [{ name: "notes.md", kind: "document" }],
+  };
+  mount({ projectId: "p-1" });
+  fireEvent.click(await screen.findByRole("button", { name: "notes" }));
+  await screen.findByTestId("open-design-markdown");
+
+  // 第一块是标题，第二块才是正文段落。
+  const editButtons = screen.getAllByRole("button", { name: "编辑此块" });
+  fireEvent.click(editButtons[1] as HTMLElement);
+  const textarea = await screen.findByLabelText("Markdown 块源码");
+  expect((textarea as HTMLTextAreaElement).value).toBe("这里是正文");
+  fireEvent.change(textarea, { target: { value: "改过的正文" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/file")?.body,
+    ).toMatchObject({
+      projectId: "p-1",
+      name: "notes.md",
+      content: "# 未命名文档\n\n改过的正文",
+    });
+  });
+  expect(await screen.findByText("改过的正文")).toBeTruthy();
+  expect(screen.queryByLabelText("Markdown 块源码")).toBeNull();
+});
+
 test("「同步到引擎」把评审聚进 document.md（按钮 → /host/context）", async () => {
   await mountReadyCanvas();
   fireEvent.click(screen.getByRole("button", { name: "同步到引擎" }));

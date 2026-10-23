@@ -2,7 +2,6 @@ import type {
   DesignReviewAnnotation,
   DesignReviewComment,
 } from "@kenfutwork/shared";
-import { MessageResponse } from "@zui/components/ai-elements/message.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
   DropdownMenu,
@@ -48,6 +47,7 @@ import {
 } from "./OpenDesignToolbar.js";
 import { rasterizeDesignHtml } from "./openDesignCapture.js";
 import { useOpenDesignEntry } from "./openDesignHost.js";
+import { OpenDesignMarkdownPreview } from "./openDesignMarkdownPreview.js";
 import type { OverlayBox } from "./openDesignMarkupGeometry.js";
 import {
   buildCanvasDocument,
@@ -682,35 +682,49 @@ export function OpenDesignPane({
   );
 
   /** 代码视图保存 Markdown：写回同一文件，正文与标签标题一起更新。 */
+  const saveMarkdownSource = useCallback(
+    async (source: string) => {
+      if (!boundProjectId || !canvas?.entryFile) return;
+      setMarkdownSaving(true);
+      setNotice(null);
+      try {
+        await surfaceJson("/api/open-design/host/file", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: boundProjectId,
+            name: canvas.entryFile,
+            content: source,
+            encoding: "utf8",
+            versionLabel: "编辑文档",
+          }),
+        });
+        setCurrentText(source);
+        setMarkdownDraft(source);
+        setMarkdownDirty(false);
+        const title = markdownTitle(source);
+        if (title) reportMeta({ title });
+        setNotice("已保存");
+      } catch (saveError) {
+        setNotice(
+          saveError instanceof Error ? saveError.message : "保存文档失败。",
+        );
+        throw saveError;
+      } finally {
+        setMarkdownSaving(false);
+      }
+    },
+    [boundProjectId, canvas?.entryFile, reportMeta],
+  );
+
   const saveMarkdown = useCallback(async () => {
-    if (!boundProjectId || !canvas?.entryFile || markdownDraft === null) return;
-    setMarkdownSaving(true);
-    setNotice(null);
+    if (markdownDraft === null) return;
     try {
-      await surfaceJson("/api/open-design/host/file", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          projectId: boundProjectId,
-          name: canvas.entryFile,
-          content: markdownDraft,
-          encoding: "utf8",
-          versionLabel: "编辑文档",
-        }),
-      });
-      setCurrentText(markdownDraft);
-      setMarkdownDirty(false);
-      const title = markdownTitle(markdownDraft);
-      if (title) reportMeta({ title });
-      setNotice("已保存");
-    } catch (saveError) {
-      setNotice(
-        saveError instanceof Error ? saveError.message : "保存文档失败。",
-      );
-    } finally {
-      setMarkdownSaving(false);
+      await saveMarkdownSource(markdownDraft);
+    } catch {
+      // 错误提示由 saveMarkdownSource 写入状态栏。
     }
-  }, [boundProjectId, canvas?.entryFile, markdownDraft, reportMeta]);
+  }, [markdownDraft, saveMarkdownSource]);
 
   /** 重命名设计/文档：只改文件名，正文由宿主读写。 */
   const renameFile = useCallback(async () => {
@@ -1830,23 +1844,17 @@ export function OpenDesignPane({
           </pre>
         ) : null}
         {showCanvas && viewMode === "preview" && isMarkdownEntry ? (
-          <div
-            data-testid="open-design-markdown"
-            className="h-full min-h-0 overflow-y-auto bg-background px-4 py-4"
-          >
-            {currentText === null ? (
-              <div className="flex h-full items-center justify-center">
-                <ZCodeStartupSpinner />
-              </div>
-            ) : (
-              <MessageResponse
-                className="mx-auto w-full min-w-0 max-w-4xl break-words text-foreground"
-                theme="system"
-              >
-                {currentText}
-              </MessageResponse>
-            )}
-          </div>
+          currentText === null ? (
+            <div className="flex h-full items-center justify-center">
+              <ZCodeStartupSpinner />
+            </div>
+          ) : (
+            <OpenDesignMarkdownPreview
+              source={currentText}
+              saving={markdownSaving}
+              onSave={saveMarkdownSource}
+            />
+          )
         ) : null}
         {showCanvas &&
         viewMode === "preview" &&
