@@ -228,9 +228,18 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain('placeBall(');
     expect(script).toContain("? \"left\" : \"right\"");
     expect(script).toContain("viewportHeight() - 44");
+    // 球热区外扩（用户口径 2026-10-24「悬浮球切换回去卡卡的」根因）：半藏 55%
+    // 后可点月牙仅 16px，点了落空＝「没反应/卡」；::after 外扩 10px 透明热区
+    expect(script).toContain(".kfw-ball::after{content:'';position:absolute;inset:-10px}");
     // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
     expect(script).toContain('if (uiState === "ball") applyFloat();');
     expect(script).toContain('if (uiState === "max") applyFloat();');
+    // 分屏卡片贴底全宽（用户口径 2026-10-24「最大化按钮点击行为不对」根因）：
+    // 拖动落下的行内 left/top!important 压过 .kfw-max 的 !important，不清掉
+    // 卡片被钉在旧悬浮位置；悬浮位置用 lastFloatPos 记忆，回悬浮回原地。
+    expect(script).toContain("lastFloatPos");
+    expect(script).toContain('removeProperty("left")');
+    expect(script).toContain('removeProperty("top")');
     // 自家 UI 标 data-kfw-ui：元素拾取器见标记即跳过（选择模式下按钮必须可点）
     expect(script).toContain('setAttribute("data-kfw-ui"');
     // 自绘光标已移除（悬在宿主浮层下方 + CDP 往返延迟 + 关闭控制台后残留——

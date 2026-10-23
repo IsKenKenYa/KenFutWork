@@ -176,6 +176,9 @@ const FLOAT_SCRIPT = `
     "box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:grab;" +
     "transition:transform .12s ease,opacity .1s ease}" +
     ".kfw-ball:hover{opacity:1}" +
+    // 贴边半藏 55% 后可点月牙只有 16px 宽（真机「点球没反应/切换卡」的根因）：
+    // 透明外扩 10px 热区，半藏态可点宽度 26px，hover 滑出也更容易触发。
+    ".kfw-ball::after{content:'';position:absolute;inset:-10px}" +
     ".kfw-ball svg{display:block}" +
     ".kfw-ball-left{transform:translateX(-55%)}" +
     ".kfw-ball-right{transform:translateX(55%)}" +
@@ -269,6 +272,11 @@ const FLOAT_SCRIPT = `
     '<rect width="18" height="18" x="3" y="3" rx="2"></rect></svg>';
   document.documentElement.appendChild(ball);
 
+  // 悬浮位置记忆：切分屏时行内 left/top 被清掉（否则压住 .kfw-max 的贴底全宽
+  // 定位——真机点 □ 面板钉在旧悬浮位置＝「按钮行为不对」），回悬浮时从这里恢复，
+  // 面板回原地而不是跳回默认 (24,44)。
+  var lastFloatPos = null;
+
   function applyFloat() {
     uiState = "float";
     container.style.removeProperty("display");
@@ -280,6 +288,10 @@ const FLOAT_SCRIPT = `
     container.classList.remove("kfw-max");
     ball.style.display = "none";
     maxBtn.title = "分屏停靠";
+    if (lastFloatPos) {
+      container.style.setProperty("left", lastFloatPos.left + "px", "important");
+      container.style.setProperty("top", lastFloatPos.top + "px", "important");
+    }
     syncBtnbar();
   }
   function applyMax() {
@@ -289,6 +301,12 @@ const FLOAT_SCRIPT = `
       Math.max(180, Math.min(rect.height, window.innerHeight * 0.8), window.innerHeight * 0.45),
     );
     container.style.setProperty("--kfw-mh", height + "px");
+    // 先记住悬浮位置，再清行内 left/top：行内 !important 压过 .kfw-max 的
+    // 贴底全宽 !important（两者同优先级时行内胜出），不清掉分屏卡片就被钉在
+    // 旧悬浮位置——不贴底、不全宽。
+    lastFloatPos = { left: Math.round(rect.left), top: Math.round(rect.top) };
+    container.style.removeProperty("left");
+    container.style.removeProperty("top");
     container.classList.add("kfw-max");
     container.classList.remove("kfw-float");
     container.style.removeProperty("display");
@@ -483,14 +501,19 @@ const FLOAT_SCRIPT = `
   function startPanelDrag(event) {
     var box = container.getBoundingClientRect();
     if (uiState === "max") {
-      // 拿走：以当前几何转悬浮（宽高冻结成变量，边距取现值）
+      // 拿走：以当前几何转悬浮（宽高冻结成变量），**原地**转——行内 left/top
+      // 写回当前卡片位置（applyMax 清过行内定位，不写回会跳默认/记忆位置）
       container.style.setProperty("--kfw-w", Math.round(box.width) + "px");
       container.style.setProperty("--kfw-h", Math.round(box.height) + "px");
+      lastFloatPos = { left: Math.round(box.left), top: Math.round(box.top) };
+      container.style.setProperty("left", lastFloatPos.left + "px", "important");
+      container.style.setProperty("top", lastFloatPos.top + "px", "important");
       container.classList.remove("kfw-max");
       container.classList.add("kfw-float");
       uiState = "float";
       maxBtn.title = "分屏停靠";
       syncBtnbar();
+      box = container.getBoundingClientRect();
     }
     dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
     event.preventDefault();
