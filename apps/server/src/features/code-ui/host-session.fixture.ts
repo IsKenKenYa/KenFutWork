@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { ModelSelection } from "@zcode/provider";
 import { modelSelectionSchema } from "@zcode/shared";
@@ -10,6 +12,26 @@ import { z } from "zod";
 import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { CodeUiTestClient } from "./host-client.fixture.js";
+
+const runFile = promisify(execFile);
+
+async function initializeTaskRepository(directory: string) {
+  const options = { cwd: directory };
+  await runFile("git", ["init", "--quiet", "--initial-branch=main"], options);
+  for (const [name, value] of Object.entries({
+    "user.name": "KFW Test",
+    "user.email": "tests@kenfutwork.invalid",
+    "commit.gpgsign": "false",
+  }))
+    await runFile("git", ["config", "--local", name, value], options);
+  const { stdout } = await runFile(
+    "git",
+    ["rev-parse", "--show-toplevel"],
+    options,
+  );
+  if ((await realpath(stdout.trim())) !== (await realpath(directory)))
+    throw new Error("临时 Task 的 Git 仓库必须属于自己的工作目录。");
+}
 
 type InitialConfig = Pick<
   NonNullable<protocol.CommandPayloadMap["createSession"]["config"]>,
@@ -156,6 +178,7 @@ export async function createCodeSessionFixture(
     }
   };
   try {
+    await initializeTaskRepository(dir);
     const hello = await stream.rpc("initializeConversationV4", [
       {
         kind: "clientHello",
