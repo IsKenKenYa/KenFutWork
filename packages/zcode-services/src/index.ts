@@ -25,6 +25,13 @@ export {
 
 // Accessor
 export type { IServiceAccessor } from "./accessor.js";
+export { IProjectService } from "./project/contract.js";
+export type {
+  ProjectRoot,
+  ProjectRootAccess,
+  SaveProjectInput,
+  VirtualProject,
+} from "./project/contract.js";
 export {
   ConversationShareServiceError,
   createUnsupportedConversationShareService,

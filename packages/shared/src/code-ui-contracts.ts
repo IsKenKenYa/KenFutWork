@@ -6,6 +6,12 @@ import {
   workspaceConfigTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
+import {
+  codeProjectEditorDeleteArgsSchema,
+  codeProjectEditorReadDirectorySchema,
+  codeProjectEditorReadProjectsSchema,
+  codeProjectEditorSaveSchema,
+} from "./code-project-editor.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
 import { canvasDocumentUpdatedMessageSchema } from "./ws-protocol.js";
@@ -72,13 +78,44 @@ export const codeUiWorkspaceListSchema = z.object({
   workspaces: z.array(codeUiWorkspaceSchema),
 });
 
-export const codeUiRpcRequestSchema = z.object({
+const codeUiRpcEnvelopeSchema = z.object({
   service: z.string().min(1),
   method: z.string().min(1),
   args: z.array(z.unknown()),
   connectionId: z.string().optional(),
 });
 export const codeUiRpcResponseSchema = z.object({ result: z.unknown() });
+
+/** 原项目编辑器的已接通调用；通用 RPC 继续承载其他 feature 的贡献。 */
+export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
+  "method",
+  [
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("readProjects"),
+      args: z.tuple([codeProjectEditorReadProjectsSchema.nullish()]),
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("readDirectory"),
+      args: z.tuple([codeProjectEditorReadDirectorySchema.nullish()]),
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("saveProject"),
+      args: z.tuple([codeProjectEditorSaveSchema]),
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("deleteProject"),
+      args: codeProjectEditorDeleteArgsSchema,
+    }),
+  ],
+);
+export const codeUiRpcRequestSchema = z.union([
+  codeProjectEditorRpcRequestSchema,
+  codeUiRpcEnvelopeSchema,
+]);
 
 /** 原 Window Controller 查询入参；服务定义与结果类型仍直接引用固定原契约。 */
 export const codeUiControllerTaskListQuerySchema = z

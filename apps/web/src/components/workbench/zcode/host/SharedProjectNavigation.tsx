@@ -33,9 +33,11 @@ type ProjectHost = Pick<
   | "openWorkspace"
   | "refreshWorkspaces"
   | "currentWorkPreset"
+  | "services"
 >;
 interface NavigationContext {
   projects: CodeUiWorkspace[];
+  refreshProjects: () => Promise<void>;
   openProject: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>;
   createProject: (preset: Preset) => Promise<void>;
   registerTabs: (tabs: TabStore | null) => void;
@@ -303,11 +305,50 @@ export function SharedProjectNavigationProvider({
     [client],
   );
   useEffect(() => {
-    const release = client.workspaces.subscribe(() =>
-      setProjects(client.workspaces.projectCatalog()),
-    );
+    const release = client.workspaces.subscribe(() => {
+      const nextProjects = client.workspaces.projectCatalog();
+      setProjects(nextProjects);
+      const names = new Map(
+        nextProjects.map((project) => [project.projectId, project.name]),
+      );
+      tabsRef.current?.setState((state) => {
+        let changed = false;
+        const nextTabs = state.tabs.map((tab) => {
+          if (!isWorkspaceTab(tab)) return tab;
+          const projectId = parseLocalWorkspaceIdentity(
+            tab.workspaceIdentity ?? "",
+            tab.workspacePath,
+          )?.projectId;
+          const name = projectId ? names.get(projectId) : undefined;
+          if (!name || name === tab.label) return tab;
+          changed = true;
+          return { ...tab, label: name };
+        });
+        return changed ? { tabs: nextTabs } : state;
+      });
+    });
     return () => {
       release();
+    };
+  }, [client]);
+  useEffect(() => {
+    let active = true;
+    const subscription = client.services.broadcastService.onMessage(
+      ({ channel }) => {
+        if (channel !== "state:projects") return;
+        void client.refreshWorkspaces().catch((cause: unknown) => {
+          if (active)
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : "项目读取失败 请重新连接工作台",
+            );
+        });
+      },
+    );
+    return () => {
+      active = false;
+      subscription.dispose();
     };
   }, [client]);
   useProjectModeAdmission(
@@ -361,6 +402,9 @@ export function SharedProjectNavigationProvider({
     openProject,
     setError,
   );
+  const refreshProjects = useCallback(async () => {
+    await client.refreshWorkspaces();
+  }, [client]);
   const createProject = async (preset: Preset) => {
     const result = await surfaceJson<{ project: { id: string } }>(
       "/api/projects",
@@ -429,6 +473,7 @@ export function SharedProjectNavigationProvider({
     <Context.Provider
       value={{
         projects,
+        refreshProjects,
         openProject,
         createProject,
         registerTabs,
@@ -439,6 +484,10 @@ export function SharedProjectNavigationProvider({
       {children}
     </Context.Provider>
   );
+}
+
+export function useSharedProjectRefresh() {
+  return useContext(Context)?.refreshProjects ?? null;
 }
 
 export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {

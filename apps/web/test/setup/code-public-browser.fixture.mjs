@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { localAccessTicketResponseSchema } from "@kenfutwork/shared";
 import {
   connectCdpClient,
   findBrowserExecutable,
@@ -21,6 +22,25 @@ const browserEntry = fileURLToPath(
 );
 const requireZcode = createRequire(join(zcodeRoot, "package.json"));
 const browserPath = "/code-ui/__public-session.html";
+
+async function issueBrowserTicket(options) {
+  const response = await fetch(
+    new URL("/api/local-access/tickets", options.backendBaseUrl),
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${options.accessToken}`,
+        origin: options.backendOrigin,
+        "content-type": "application/json",
+        connection: "close",
+      },
+      body: "{}",
+    },
+  );
+  if (response.status !== 201)
+    throw new Error(`原组件浏览器签发连接票据失败：HTTP ${response.status}`);
+  return localAccessTicketResponseSchema.parse(await response.json()).ticket;
+}
 
 async function createBrowserDirectory() {
   const scratch = join(repositoryRoot, ".scratch");
@@ -54,48 +74,45 @@ async function waitForOwnedDebugPort(profileDir, child) {
 }
 
 function originalSessionEntryPlugin() {
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>原 SessionPane 公开验证</title><style>html,body,#root{width:100%;height:100%;margin:0}</style></head><body><div id="root"></div><script type="module" src="/@fs${browserEntry}"></script></body></html>`;
   return {
     name: "code-public-original-session",
-    configureServer(server) {
-      server.middlewares.use((request, response, next) => {
-        const pathname = request.url?.split("?", 1)[0];
-        if (pathname !== browserPath && pathname !== "/__public-session.html")
-          return next();
-        const html = `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>原 SessionPane 公开验证</title><style>html,body,#root{width:100%;height:100%;margin:0}</style></head><body><div id="root"></div><script type="module" src="/@fs${browserEntry}"></script></body></html>`;
-        void server
-          .transformIndexHtml(browserPath, html)
-          .then((transformed) => {
-            response.statusCode = 200;
-            response.setHeader("content-type", "text/html; charset=utf-8");
-            response.end(transformed);
-          }, next);
-      });
+    apply: "build",
+    enforce: "pre",
+    transformIndexHtml: { order: "pre", handler: () => html },
+    resolveId(source) {
+      if (source === `/@fs${browserEntry}`) return browserEntry;
     },
   };
 }
 
 async function startOriginalSessionServer(options, directory) {
   const vite = await import(requireZcode.resolve("vite"));
-  const server = await vite.createServer({
+  const outDir = join(directory, "production");
+  await vite.build({
     configFile: join(zcodeRoot, "vite.config.mjs"),
     root: zcodeRoot,
-    cacheDir: join(directory, "vite-cache"),
     clearScreen: false,
     logLevel: "warn",
     plugins: [originalSessionEntryPlugin()],
-    optimizeDeps: {
-      // 本例通过中间件提供 HTML，依赖扫描使用实际原组件入口。
-      entries: [browserEntry],
-      // 原动态图标保持 ESM 按需加载；与 barrel 共同优化会生成上千个初始请求。
-      include: ["lucide-react"],
-      exclude: ["lucide-react/dynamic.mjs"],
+    build: {
+      outDir,
+      emptyOutDir: true,
+      write: true,
+      watch: null,
+      rolldownOptions: { input: join(zcodeRoot, "index.html") },
     },
-    server: {
+  });
+  const server = await vite.preview({
+    configFile: join(zcodeRoot, "vite.config.mjs"),
+    root: zcodeRoot,
+    clearScreen: false,
+    logLevel: "warn",
+    build: { outDir },
+    preview: {
       host: "127.0.0.1",
       port: 0,
       strictPort: true,
-      hmr: false,
-      fs: { allow: [repositoryRoot] },
       proxy: {
         "/api": {
           target: options.backendBaseUrl,
@@ -111,11 +128,13 @@ async function startOriginalSessionServer(options, directory) {
     },
   });
   try {
-    await server.listen();
     const address = server.httpServer?.address();
     if (!address || typeof address === "string")
       throw new Error("原组件服务未取得监听地址");
-    return { server, url: `http://127.0.0.1:${address.port}${browserPath}` };
+    return {
+      server,
+      url: `http://127.0.0.1:${address.port}${browserPath}`,
+    };
   } catch (error) {
     await server.close();
     throw error;
@@ -152,19 +171,11 @@ async function waitForOriginalSessionSurface(
       cdp,
       target.sessionId,
       `({
-        path: window.location.pathname,
-        readyState: document.readyState,
-        state: document.documentElement.dataset.codePublicSessionState,
+        state: document.documentElement?.dataset.codePublicSessionState,
         composer: Boolean(document.querySelector('[role="textbox"][contenteditable="true"]')),
         modelReady: Boolean(document.querySelector('[data-testid="chat-model-select-trigger"]:enabled')),
         preview: Boolean(document.querySelector('[data-testid="preview-pane"]')),
-        root: Boolean(document.getElementById('root')),
-        scripts: Array.from(document.scripts, script => script.src ? new URL(script.src).pathname : 'inline'),
-        resources: performance.getEntriesByType('resource').slice(-12).map(entry => ({
-          path: new URL(entry.name).pathname,
-          status: entry.responseStatus,
-          duration: Math.round(entry.duration),
-        })),
+        text: document.body?.innerText.slice(0, 2000),
         alert: document.querySelector('[role="alert"]')?.textContent.slice(0, 600),
       })`,
     );
@@ -181,27 +192,6 @@ async function waitForOriginalSessionSurface(
   throw new Error(
     `原组件页面未就绪：${JSON.stringify({ state, pageErrors, requests: [...requests.values()] })}`,
   );
-}
-
-async function waitForViteCacheWrites(server) {
-  for (const environment of Object.values(server.environments)) {
-    await environment.waitForRequestsIdle();
-    const optimizer = environment.depsOptimizer;
-    if (!optimizer) continue;
-    await optimizer.scanProcessing;
-    const awaited = new Set();
-    for (;;) {
-      const processing = new Set(
-        optimizer.metadata.depInfoList
-          .map((dependency) => dependency.processing)
-          .filter((promise) => promise && !awaited.has(promise)),
-      );
-      if (processing.size === 0) break;
-      // Vite 在缓存提交后完成这些 Promise；取消优化器并不等待原生构建写入结束。
-      await Promise.all(processing);
-      for (const promise of processing) awaited.add(promise);
-    }
-  }
 }
 
 async function waitForBrowserExit(child) {
@@ -241,7 +231,6 @@ async function closeOwnedBrowser(child, cdp) {
 async function observeSessionCreation(cdp, target, pageErrors) {
   const requests = new Set();
   const requestFacts = new Map();
-  const moduleRequests = new Map();
   const pending = new Set();
   const acks = [];
   const failures = [];
@@ -250,18 +239,13 @@ async function observeSessionCreation(cdp, target, pageErrors) {
     (params, sessionId) => {
       if (sessionId !== target.sessionId || !params.request) return;
       const path = new URL(params.request.url).pathname;
+      if (!path.startsWith("/api/")) return;
       const fact = {
+        requestId: params.requestId,
         path,
         httpMethod: params.request.method,
         state: "pending",
       };
-      if (path.startsWith("/code-ui/") && params.type === "Script") {
-        moduleRequests.set(params.requestId, fact);
-        if (path === "/code-ui/Root.tsx")
-          requestFacts.set(params.requestId, fact);
-        return;
-      }
-      if (!path.startsWith("/api/")) return;
       requestFacts.set(params.requestId, fact);
       if (typeof params.request.postData !== "string") return;
       const payload = JSON.parse(params.request.postData);
@@ -279,12 +263,9 @@ async function observeSessionCreation(cdp, target, pageErrors) {
     "Network.responseReceived",
     (params, sessionId) => {
       if (sessionId !== target.sessionId) return;
-      const fact =
-        requestFacts.get(params.requestId) ??
-        moduleRequests.get(params.requestId);
+      const fact = requestFacts.get(params.requestId);
       if (!fact || !params.response) return;
       fact.status = params.response.status;
-      fact.mimeType = params.response.mimeType;
       if (params.response.status >= 400) {
         requestFacts.set(params.requestId, fact);
         pageErrors.push({ ...fact });
@@ -294,10 +275,10 @@ async function observeSessionCreation(cdp, target, pageErrors) {
   const releaseResponses = cdp.on(
     "Network.loadingFinished",
     (params, sessionId) => {
-      const fact =
-        requestFacts.get(params.requestId) ??
-        moduleRequests.get(params.requestId);
-      if (sessionId === target.sessionId && fact) fact.state = "finished";
+      const fact = requestFacts.get(params.requestId);
+      if (sessionId === target.sessionId && fact) {
+        fact.state = "finished";
+      }
       if (sessionId !== target.sessionId || !requests.has(params.requestId))
         return;
       const operation = cdp
@@ -330,9 +311,7 @@ async function observeSessionCreation(cdp, target, pageErrors) {
   const releaseFailures = cdp.on(
     "Network.loadingFailed",
     (params, sessionId) => {
-      const fact =
-        requestFacts.get(params.requestId) ??
-        moduleRequests.get(params.requestId);
+      const fact = requestFacts.get(params.requestId);
       if (sessionId === target.sessionId && fact) {
         fact.state = "failed";
         fact.error = params.errorText;
@@ -393,7 +372,6 @@ export async function openOriginalSessionBrowser(options) {
         async () => {
           if (child && child.exitCode === null && child.signalCode === null)
             throw new Error(`独占浏览器尚未退出，请保留 ${directory}`);
-          if (server) await waitForViteCacheWrites(server);
         },
         () => server?.close(),
         () => {
@@ -467,12 +445,13 @@ export async function openOriginalSessionBrowser(options) {
     };
     await cdp.send("Log.enable", {}, target.sessionId);
     sessionCreation = await observeSessionCreation(cdp, target, pageErrors);
+    const connectionTicket = await issueBrowserTicket(options);
     await cdp.send(
       "Page.addScriptToEvaluateOnNewDocument",
       {
         source: `Object.defineProperty(window,"__codePublicSessionBootstrap",{value:${JSON.stringify(
           {
-            accessToken: options.accessToken,
+            connectionTicket,
             workspacePath: options.workspacePath,
             projectId: options.projectId,
             sessionId: options.sessionId,

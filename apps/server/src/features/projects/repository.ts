@@ -94,6 +94,12 @@ export class ProjectDirectoryConflictError extends Error {
   }
 }
 
+export class ProjectClosingConflictError extends Error {
+  constructor() {
+    super("项目正在归档，请等待关闭完成。");
+  }
+}
+
 /** 创建与恢复关联必须争用同一把目录锁；目录已由服务层归一化。 */
 export function projectDirectoryLockKey(instanceId: string, path: string) {
   return JSON.stringify([instanceId, path]);
@@ -171,19 +177,38 @@ export function createProjectRepository(
       );
     },
     async beginCloseProject(instanceId, projectId) {
-      await persistence.forInstance(instanceId).execute(
-        `update public.code_ui_sessions set execution_state = 'revoking',
-                scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
-          where instance_id = :instance and project_id = $1 and deleted_at is null`,
-        [projectId],
-      );
+      await persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        const closed = await sql.execute(
+          `update public.projects set archive_state='closing'
+            where instance_id=:instance and id=$1 and archived_at is null
+              and archive_state in ('open','failed')`,
+          [projectId],
+        );
+        if (closed === 0) throw new ProjectClosingConflictError();
+        await sql.execute(
+          `update public.code_ui_sessions set execution_state = 'revoking',
+                  scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
+            where instance_id = :instance and project_id = $1 and deleted_at is null`,
+          [projectId],
+        );
+      });
     },
     async failCloseProject(instanceId, projectId) {
-      await persistence.forInstance(instanceId).execute(
-        `update public.code_ui_sessions set execution_state = 'failed'
-          where instance_id = :instance and project_id = $1 and execution_state = 'revoking'`,
-        [projectId],
-      );
+      await persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        await sql.execute(
+          `update public.projects set archive_state='failed'
+            where instance_id=:instance and id=$1 and archived_at is null
+              and archive_state='closing'`,
+          [projectId],
+        );
+        await sql.execute(
+          `update public.code_ui_sessions set execution_state = 'failed'
+            where instance_id = :instance and project_id = $1 and execution_state = 'revoking'`,
+          [projectId],
+        );
+      });
     },
     async listActive(instanceId, kind = "design") {
       return persistence.forInstance(instanceId).query<ProjectListRow>(

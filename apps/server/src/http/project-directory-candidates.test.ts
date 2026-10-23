@@ -83,7 +83,7 @@ async function fixture(
 }
 
 describe("同目录项目候选的HTTP边界", () => {
-  it("静态查询路由保留同目录不同项目与启用方式，只投影公开选择信息", async () => {
+  it("静态查询路由保留原始路径、同目录不同项目与启用方式，只投影公开选择信息", async () => {
     const f = await fixture();
     const response = await f.app.inject({
       method: "GET",
@@ -110,7 +110,7 @@ describe("同目录项目候选的HTTP边界", () => {
     });
     expect(f.directoryProjects).toHaveBeenCalledExactlyOnceWith(
       actor,
-      directory,
+      "  /项目资源/有 空格  ",
     );
     expect(f.createProject).not.toHaveBeenCalled();
     expect(f.updateProject).not.toHaveBeenCalled();

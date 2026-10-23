@@ -55,7 +55,10 @@ export const projectCreateRequestSchema = z.object({
 });
 
 export const projectDirectoryQuerySchema = z.object({
-  path: z.string().trim().min(1),
+  path: z
+    .string()
+    .min(1)
+    .refine((path) => path.trim().length > 0),
 });
 export const projectDirectoryCandidatesSchema = z.object({
   projects: z.array(

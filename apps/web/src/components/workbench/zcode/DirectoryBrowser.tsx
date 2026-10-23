@@ -7,6 +7,11 @@ import { Input } from "./components/ui/input.js";
 import { useZCodeIntl } from "./i18n/IntlProvider.js";
 import { logger } from "./logger.js";
 
+export interface DirectoryBrowserServices {
+  systemService: { info(): Promise<{ homedir: string }> };
+  fileService: Pick<IServiceAccessor["fileService"], "readdir">;
+}
+
 function createDirectoryBrowserReadParams(
   path: string,
   showHiddenDirectories: boolean,
@@ -51,12 +56,16 @@ export function DirectoryBrowser({
   onCancel,
   onPathChange,
   embedded = false,
+  showSelectionActions = false,
+  selectLabel,
 }: {
-  services: IServiceAccessor;
+  services: DirectoryBrowserServices;
   onSelect: (path: string) => void | Promise<void>;
   onCancel: () => void;
   onPathChange?: (path: string) => void;
   embedded?: boolean;
+  showSelectionActions?: boolean;
+  selectLabel?: string;
 }) {
   const [currentPath, setCurrentPath] = useState("");
   const [inputPath, setInputPath] = useState("");
@@ -71,16 +80,24 @@ export function DirectoryBrowser({
 
   // 初始化：获取 homedir 作为起始路径
   useEffect(() => {
+    let disposed = false;
+    const homeRequestId = requestGuardRef.current.begin();
     services.systemService
       .info()
       .then((info) => {
-        navigateTo(info.homedir);
+        if (!disposed && requestGuardRef.current.isCurrent(homeRequestId))
+          void navigateTo(info.homedir);
       })
       .catch((err) => {
+        if (disposed || !requestGuardRef.current.isCurrent(homeRequestId)) return;
         logger.error("[DirectoryBrowser] 获取系统信息失败:", err);
         setError(intl.formatMessage({ id: "directoryBrowser.errorSystem" }));
         setLoading(false);
       });
+    return () => {
+      disposed = true;
+      requestGuardRef.current.begin();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -104,7 +121,10 @@ export function DirectoryBrowser({
       setInputPath(path);
       onPathChange?.(path);
       // 滚动到顶部
-      listRef.current?.scrollTo(0, 0);
+      if (listRef.current) {
+        listRef.current.scrollTop = 0;
+        listRef.current.scrollLeft = 0;
+      }
     } catch (err) {
       if (!requestGuardRef.current.isCurrent(requestId)) {
         return;
@@ -128,8 +148,7 @@ export function DirectoryBrowser({
 
   const handleInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = inputPath.trim();
-    if (trimmed) navigateTo(trimmed);
+    if (inputPath.trim()) navigateTo(inputPath);
   };
 
   const handleToggleHiddenDirectories = () => {
@@ -143,8 +162,8 @@ export function DirectoryBrowser({
   };
 
   const handleSelectCurrentPath = async () => {
-    const selectedPath = currentPath.trim();
-    if (!selectedPath || loading) {
+    const selectedPath = currentPath;
+    if (!selectedPath.trim() || loading) {
       return;
     }
 
@@ -261,9 +280,37 @@ export function DirectoryBrowser({
     </div>
   );
 
-  if (embedded) {
-    return browserContent;
-  }
+  const selectionActions = (
+    <div className="mt-3 flex shrink-0 justify-end gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        size="lg"
+        className="h-10 min-w-0 px-5 text-ui-base"
+        onClick={onCancel}
+      >
+        {intl.formatMessage({ id: "common.cancel" })}
+      </Button>
+      <Button
+        type="button"
+        size="lg"
+        className="h-10 min-w-0 px-5 text-ui-base"
+        disabled={!currentPath.trim() || loading}
+        data-testid="directory-browser-confirm"
+        onClick={handleSelectCurrentPath}
+      >
+        {selectLabel ?? intl.formatMessage({ id: "directoryBrowser.selectDir" })}
+      </Button>
+    </div>
+  );
+
+  if (embedded)
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {browserContent}
+        {showSelectionActions ? selectionActions : null}
+      </div>
+    );
 
   return (
     <div
@@ -273,29 +320,7 @@ export function DirectoryBrowser({
     >
       <div className="flex h-[min(36rem,calc(100vh-4rem))] w-[min(44rem,calc(100vw-2rem))] flex-col rounded-xl border border-border bg-popover p-4 shadow-xl">
         {browserContent}
-        {/* 非嵌入模式之前只能继续进入子目录，没有确认当前目录的路径。
-            Web 目录浏览器作为独立选择器使用时因此永远拿不到 onSelect 结果。
-            这里把确认动作收口到弹窗 footer，选择当前浏览路径并交回上层。 */}
-        <div className="mt-3 flex shrink-0 justify-end gap-2">
-          <Button
-            type="button"
-            variant="secondary"
-            size="lg"
-            className="h-10 min-w-0 px-5 text-ui-base"
-            onClick={onCancel}
-          >
-            {intl.formatMessage({ id: "common.cancel" })}
-          </Button>
-          <Button
-            type="button"
-            size="lg"
-            className="h-10 min-w-0 px-5 text-ui-base"
-            disabled={!currentPath.trim() || loading}
-            onClick={handleSelectCurrentPath}
-          >
-            {intl.formatMessage({ id: "directoryBrowser.selectDir" })}
-          </Button>
-        </div>
+        {selectionActions}
       </div>
     </div>
   );

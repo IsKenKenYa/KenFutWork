@@ -3,15 +3,20 @@ import {
   horizontalListSortingStrategy,
   SortableContext,
 } from "@dnd-kit/sortable";
+import {
+  instanceResponseSchema,
+  localAccessConnectResponseSchema,
+} from "@kenfutwork/shared";
 import { SortableSidePaneTabTrigger } from "@zui/app-shell/SidePaneTabTrigger.js";
 import { Tabs, TabsList } from "@zui/components/ui/tabs.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import type { CodeViewerSidePaneTab } from "@zui/lib/workspaceSidePane.js";
 import { PreviewPane } from "@zui/PreviewPane.js";
+import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import { SessionPane } from "@zui/v4/SessionPane.js";
 import { V4PaneConversationProvider } from "@zui/v4/V4ConversationContext.js";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient.js";
 import { setSurfaceApiBase } from "../../src/components/workbench/zcode/host/surfaceApi.js";
@@ -22,7 +27,7 @@ import "@zui/styles.css";
 declare global {
   interface Window {
     __codePublicSessionBootstrap?: {
-      accessToken: string;
+      connectionTicket: string;
       workspacePath: string;
       projectId: string;
       sessionId: string;
@@ -46,27 +51,59 @@ const bootstrap = providedBootstrap;
 delete window.__codePublicSessionBootstrap;
 localStorage.setItem("zcode-v4-client-id:v1", bootstrap.clientId);
 setSurfaceApiBase(window.location.origin);
-const client = new CodeHttpChannelClient({
-  apiBase: window.location.origin,
-  accessToken: bootstrap.accessToken,
-});
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("原组件浏览器缺少页面容器");
 const root = createRoot(rootElement);
 let releaseServices: (() => void) | undefined;
+let releaseClient: (() => void) | undefined;
 let disposed = false;
 const dispose = () => {
   if (disposed) return;
   disposed = true;
+  document.documentElement.dataset.codePublicSessionDisposed = "true";
   root.unmount();
   releaseServices?.();
-  client.dispose();
+  releaseClient?.();
 };
 window.__codePublicSessionDispose = dispose;
 window.addEventListener("pagehide", dispose, { once: true });
 
 try {
+  const connectedResponse = await fetch("/api/local-access/connect", {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ticket: bootstrap.connectionTicket,
+      label: "Code UI 原组件浏览器",
+    }),
+  });
+  if (connectedResponse.status !== 200)
+    throw new Error(
+      `原组件浏览器兑换连接票据失败：HTTP ${connectedResponse.status}`,
+    );
+  const connected = localAccessConnectResponseSchema.parse(
+    await connectedResponse.json(),
+  );
+  if (connected.client.kind !== "browser")
+    throw new Error("原组件浏览器未取得实际浏览器接入身份。");
+  const instanceResponse = await fetch("/api/instance", {
+    credentials: "include",
+  });
+  if (instanceResponse.status !== 200)
+    throw new Error(
+      `原组件浏览器读取本机实例失败：HTTP ${instanceResponse.status}`,
+    );
+  const instance = instanceResponseSchema.parse(await instanceResponse.json());
+  if (instance.instanceId !== connected.instanceId)
+    throw new Error("原组件浏览器接入身份与本机实例不一致。");
+  const client = new CodeHttpChannelClient({ apiBase: window.location.origin });
+  releaseClient = () => client.dispose();
   await client.connect();
+  const hello = bootstrap.workspaceShell
+    ? await ensureAgentV4ConnectionHandshake(client.services.zcodeAgentService)
+    : undefined;
+  if (bootstrap.workspaceShell) await client.refreshWorkspaces();
   await client.openWorkspace(bootstrap.workspacePath, bootstrap.projectId);
   client.setViewerContextResolver(() =>
     bootstrap.newDraft
@@ -75,12 +112,14 @@ try {
   );
   releaseServices = bindCodeWorkspaceServices(client);
   const Providers = await loadCodePublicHostProviders();
+  const workspaceIdentity = client.workspaces.identityFor(
+    bootstrap.projectId,
+    bootstrap.workspacePath,
+  );
+  if (!workspaceIdentity) throw new Error("原组件浏览器缺少实际项目身份。");
   const scope = {
     workspacePath: bootstrap.workspacePath,
-    workspaceIdentity: JSON.stringify([
-      bootstrap.projectId,
-      bootstrap.workspacePath,
-    ]),
+    workspaceIdentity,
   };
   function PublicSessionSurface() {
     const { intl } = useZCodeIntl();
@@ -182,41 +221,61 @@ try {
     );
   }
   if (bootstrap.workspaceShell) {
-    const [{ Root }, { ZCodeIntlProvider }, platform, context] =
-      await Promise.all([
-        import("@zui/Root.js"),
-        import("@zui/i18n/IntlProvider.js"),
-        import("../../src/components/workbench/zcode/host/platform.js"),
-        import(
-          "../../src/components/workbench/zcode/host/workspaceServiceController.js"
-        ),
-      ]);
-    root.render(
-      <ZCodeIntlProvider
-        initialLocale="zh-CN"
-        settingService={client.services.settingService}
-        broadcastService={client.services.broadcastService}
-      >
-        <Root
-          services={client.services}
-          platform={platform.createCodePlatform(client)}
-          directoryServices={client.directoryServices()}
-          onWorkspaceContextChange={context.createCodeWorkspaceContextResolver(
-            client,
-          )}
-          initialUserInfo={null}
-          initialWorkspaceAbsPath={bootstrap.workspacePath}
-          initialWorkspaceIdentity={client.workspaces.identityFor(
-            bootstrap.projectId,
-            bootstrap.workspacePath,
-          )}
-          initialTaskId={bootstrap.sessionId}
-          restoreSession={false}
-          allowRemoteWorkspace={false}
-          supportsEmbeddedBrowser={false}
-        />
-      </ZCodeIntlProvider>,
-    );
+    if (!hello) throw new Error("原组件浏览器缺少真实握手回执。");
+    const clientMode = hello.clientMode;
+    const [
+      { Root },
+      { ZCodeIntlProvider },
+      platform,
+      context,
+      { SharedProjectNavigationProvider },
+    ] = await Promise.all([
+      import("@zui/Root.js"),
+      import("@zui/i18n/IntlProvider.js"),
+      import("../../src/components/workbench/zcode/host/platform.js"),
+      import(
+        "../../src/components/workbench/zcode/host/workspaceServiceController.js"
+      ),
+      import(
+        "../../src/components/workbench/zcode/host/SharedProjectNavigation.js"
+      ),
+    ]);
+    const codePlatform = platform.createCodePlatform(client);
+    const directoryServices = client.directoryServices();
+    const onWorkspaceContextChange =
+      context.createCodeWorkspaceContextResolver(client);
+    function OriginalWorkspaceSurface() {
+      const services = useSyncExternalStore(
+        client.subscribeServices,
+        () => client.services,
+      );
+      return (
+        <ZCodeIntlProvider
+          initialLocale="zh-CN"
+          settingService={services.settingService}
+          broadcastService={services.broadcastService}
+        >
+          <SharedProjectNavigationProvider client={client}>
+            <Root
+              services={services}
+              platform={codePlatform}
+              directoryServices={directoryServices}
+              onWorkspaceContextChange={onWorkspaceContextChange}
+              workbenchGroupClientMode={clientMode}
+              initialUserInfo={null}
+              initialWorkspaceAbsPath={bootstrap.workspacePath}
+              initialWorkspaceIdentity={scope.workspaceIdentity}
+              initialTaskId={bootstrap.sessionId}
+              restoreSession={false}
+              allowRemoteWorkspace={false}
+              supportsEmbeddedBrowser={false}
+              preferDirectoryBrowser
+            />
+          </SharedProjectNavigationProvider>
+        </ZCodeIntlProvider>
+      );
+    }
+    root.render(<OriginalWorkspaceSurface />);
   } else {
     root.render(
       <Providers client={client}>

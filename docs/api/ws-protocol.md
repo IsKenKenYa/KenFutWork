@@ -153,6 +153,18 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 服务升级后，中断输入需要明确重新提交，相关 Goal 保持暂停并等待明确恢复；模型、目录和权限上限继续使用原授权事实。完整升级规则见[实施规格 §2.7](../方案设计/Code工作域与工具内核实施规格.md)，检查回执与未完成验收见[日志](../日志.md)。
 
+## 原项目编辑器
+
+原 `ProjectEditor` 经已初始化的连接调用 `project.readProjects`、`project.readDirectory`、`project.saveProject` 与 `project.deleteProject`。提供方沿 `code-ui-host-rpc` 贡献，实例和接入身份由连接持有；本机目录浏览是明确的人类目录选择，不借用当前 Task 授权。
+
+保存包含项目 `id`、有序 `roots`、固定 `primaryRoot`、`rootPermissions` 及非负 32 位 `expectedRevision`。根目录按真实路径归一化，重复和符号链接别名合并，路径中的空格保持。新增附加目录按明确的只读或可写选择保存；项目修改只影响新 Task，已有 Task 的目录和授权版本保持。
+
+实例、项目及观察修订组成保存业务键，规范化的名称、目录及权限形成意图指纹。同键同意图返回原回执，意图变化或修订过期返回 409；同值保存不推进修订，也不占用该修订的修改回执。回执与项目变更在同一事务保存，目录后来移除不影响已提交意图的重放。归档或删除后的迟到保存返回 404，不能恢复项目。
+
+保存和归档后沿原 `broadcast.onMessage` 发布 `channel: "state:projects"`、`payload: { projectId }`。窗口重新读取真实项目列表，更新项目名称，不切换 Task、会话或内容标签。通知只提示重读，不能替代项目身份或目录授权。
+
+连接取消后，保存事务继续检查取消信号，宿主等待在途调用退出；旧连接调用和取消后的回执返回可读的 404。关闭中的项目拒绝编辑和新 Task 创建，归档等待原 Task 资源实际关闭。已提交的保存仍由原业务键读取，不自动重放有副作用的请求。
+
 ## 文档资源变更
 
 独立 `canvas.document.updated` 帧包含 `projectId`、`canvasId`、`deleted` 及可选真实 SHA-256 `revision`。它由文件变更和后台发布经 PostgreSQL 通知传递到实例 WS 与原宿主 SSE，不伪造 Agent Run 事件。宿主 SSE 的 `canvasDocumentUpdated` 通知投影为文档更新/删除事件，空文档列表也能收到更新。

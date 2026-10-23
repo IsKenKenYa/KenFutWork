@@ -49,6 +49,7 @@ import {
 } from "@zui/components/ui/dropdown-menu.js";
 import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
+import { useOptionalBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import type { RemoteConnectionLogEntry } from "@zui/hooks/useRemoteConnectionLogs.js";
 import { useWorkspaceTaskLists } from "@zui/hooks/useWorkspaceTaskLists.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
@@ -152,9 +153,13 @@ import {
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
+import { ProjectEditorAdapter } from "./host/ProjectEditorAdapter.js";
 import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
 import { SidebarNavButton } from "./host/SidebarNavButton.js";
-import { useSharedProjectTabs } from "./host/SharedProjectNavigation.js";
+import {
+  useSharedProjectRefresh,
+  useSharedProjectTabs,
+} from "./host/SharedProjectNavigation.js";
 import {
   HostSidebarRail,
   HostWorkbenchModeNavigation,
@@ -433,6 +438,21 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
 
   const allWorkspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
   const workspaceTabs = useSharedProjectTabs(allWorkspaceTabs);
+  const projectService = useOptionalBaseWorkspaceServices()?.projectService;
+  const refreshProjects = useSharedProjectRefresh();
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const closeProjectEditor = useCallback(() => setEditingProjectId(null), []);
+  const handleEditProject = useCallback(
+    (tab: WorkspaceTabState) => {
+      const identity = parseLocalWorkspaceIdentity(
+        tab.workspaceIdentity ?? "",
+        tab.workspacePath,
+      );
+      if (identity && projectService && refreshProjects)
+        setEditingProjectId(identity.projectId);
+    },
+    [projectService, refreshProjects],
+  );
   const { conversationWorkspaceTabs, projectWorkspaceTabs } = useMemo(
     () => partitionWorkspaceTabsByPurpose(workspaceTabs),
     [workspaceTabs],
@@ -1825,6 +1845,17 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                                 )}
                                                 activateTab={activateTab}
                                                 closeTab={closeTab}
+                                                onEditProject={
+                                                  projectService &&
+                                                  refreshProjects &&
+                                                  parseLocalWorkspaceIdentity(
+                                                    tab.workspaceIdentity ??
+                                                      "",
+                                                    tab.workspacePath,
+                                                  )
+                                                    ? handleEditProject
+                                                    : undefined
+                                                }
                                                 toggleWorkspaceExpanded={
                                                   toggleWorkspaceExpanded
                                                 }
@@ -2000,6 +2031,16 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           </div>
         </div>
       </HostModeSidebarContent>
+
+      {editingProjectId && projectService && refreshProjects ? (
+        <ProjectEditorAdapter
+          key={editingProjectId}
+          projectId={editingProjectId}
+          service={projectService}
+          refreshProjects={refreshProjects}
+          onClose={closeProjectEditor}
+        />
+      ) : null}
 
       {/* 底部用户/设置/主题：壳的常驻 chrome——放模式内容槽之外，
           design/flow 模式下侧栏换内容但它不跟着换（挪出原列，文件树打开时

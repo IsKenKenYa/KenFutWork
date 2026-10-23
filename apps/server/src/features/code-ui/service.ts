@@ -1578,6 +1578,21 @@ export class CodeUiService {
     return this.watchers.closeTask(instanceId, taskId);
   }
 
+  async refreshProjects(actor: LocalActor, projectId: string): Promise<void> {
+    const owner = await this.deps.localInstance.resolve(actor);
+    await Promise.all([
+      ...[...this.controllers.values()]
+        .filter((controller) => controller.instanceId === owner.instanceId)
+        .map((controller) => controller.host.refresh()),
+      this.connections.notifyEvent(owner.instanceId, {
+        event: "service",
+        service: "broadcast",
+        name: "onMessage",
+        data: { channel: "state:projects", payload: { projectId } },
+      }),
+    ]);
+  }
+
   async refreshMovedTask(
     actor: LocalActor,
     event: {

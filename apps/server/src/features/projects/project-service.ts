@@ -19,7 +19,10 @@ import type {
   ProjectRepository,
   ProjectUpdatePatch,
 } from "./repository.js";
-import { ProjectDirectoryConflictError } from "./repository.js";
+import {
+  ProjectClosingConflictError,
+  ProjectDirectoryConflictError,
+} from "./repository.js";
 import {
   normalizeAdditionalDirectories,
   resolveProjectWorkDirectory,
@@ -119,16 +122,27 @@ export function createProjectService(options: {
           PROJECT_NOT_FOUND_MESSAGE,
           404,
         );
-      if (project.kind !== "flow") {
-        if (!options.beforeArchiveCodeProject)
+      const beforeArchive = options.beforeArchiveCodeProject;
+      if (project.kind !== "flow" && !beforeArchive)
+        throw new ProjectServiceError(
+          "project_delete_failed",
+          "Code 执行资源关闭器不可用，项目未归档。",
+          503,
+        );
+      try {
+        await repository.beginCloseProject(context.instanceId, projectId);
+      } catch (error) {
+        if (error instanceof ProjectClosingConflictError)
           throw new ProjectServiceError(
             "project_delete_failed",
-            "Code 执行资源关闭器不可用，项目未归档。",
-            503,
+            error.message,
+            409,
           );
-        await repository.beginCloseProject(context.instanceId, projectId);
+        throw error;
+      }
+      if (project.kind !== "flow" && beforeArchive) {
         try {
-          await options.beforeArchiveCodeProject(actor, projectId);
+          await beforeArchive(actor, projectId);
         } catch (error) {
           await repository.failCloseProject(context.instanceId, projectId);
           throw new ProjectServiceError(
@@ -143,7 +157,8 @@ export function createProjectService(options: {
 
       const archived = await repository
         .archive(context.instanceId, projectId)
-        .catch(() => {
+        .catch(async () => {
+          await repository.failCloseProject(context.instanceId, projectId);
           throw new ProjectServiceError(
             "project_delete_failed",
             PROJECT_DELETE_FAILED_MESSAGE,

@@ -64,6 +64,7 @@ import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.j
 import { createProjectFilesPlugin } from "../features/project-files/plugin.js";
 import { createProjectDirectoryRelinkPlugin } from "../features/projects/directory-relink-plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
+import { createProjectEditorPlugin } from "../features/projects/project-editor-plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import {
@@ -274,6 +275,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
     createCodeUiPlugin(),
+    createProjectEditorPlugin(),
     createTaskProjectMovePlugin(),
     createRealtimePlugin(),
   ];

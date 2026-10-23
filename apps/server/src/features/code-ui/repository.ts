@@ -780,7 +780,8 @@ export function createCodeUiRepository(
           }
         >(
           `select id,additional_directories from public.projects
-           where instance_id = :instance and id = $1 and $2 = any(enabled_modes) and archived_at is null
+           where instance_id = :instance and id = $1 and $2 = any(enabled_modes)
+             and archived_at is null and archive_state = 'open'
            for update`,
           [
             input.projectId,

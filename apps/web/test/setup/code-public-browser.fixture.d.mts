@@ -16,6 +16,7 @@ export interface OriginalSessionBrowser {
 export function openOriginalSessionBrowser(options: {
   backendBaseUrl: string;
   backendOrigin: string;
+  /** 仅供 Node 侧签发浏览器的一次性连接票据。 */
   accessToken: string;
   workspacePath: string;
   projectId: string;
