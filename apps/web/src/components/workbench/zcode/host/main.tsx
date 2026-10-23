@@ -188,7 +188,7 @@ function CodeHost({
                           if (mode === "office")
                             workbenchNavigation?.open("design");
                         }}
-                        preferDirectoryBrowser
+                        preferDirectoryBrowser={!platform.selectDirectories}
                         restoreSession
                         allowRemoteWorkspace={false}
                         // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），

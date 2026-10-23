@@ -34,6 +34,25 @@ export function createCodePlatform(
   return {
     ...createWebPlatform(),
     ...createMacDesktopChrome(),
+    ...(desktop
+      ? {
+          selectDirectory: async () => {
+            const selected = await desktop("select_directory");
+            if (selected === null || typeof selected === "string")
+              return selected;
+            throw new Error("系统未返回有效目录，请重新选择。");
+          },
+          selectDirectories: async () => {
+            const selected = await desktop("select_directories");
+            if (
+              Array.isArray(selected) &&
+              selected.every((path) => typeof path === "string")
+            )
+              return selected;
+            throw new Error("系统未返回有效目录，请重新选择。");
+          },
+        }
+      : {}),
     ...(options.workbenchNavigation
       ? {
           workbenchNavigation: options.workbenchNavigation,

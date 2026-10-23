@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { DirectoryBrowser } from "@zui/DirectoryBrowser.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { getPathLeaf } from "@zui/lib/path.js";
 import { logger } from "@zui/logger.js";
@@ -78,6 +79,7 @@ export function ProjectEditor({
     }
 )) {
   const { intl } = useZCodeIntl();
+  const platform = useOptionalPlatform();
   const msg = (id: string) => intl.formatMessage({ id: `project.${id}` });
   const [name, setName] = useState(project?.name ?? "");
   const [nameEdited, setNameEdited] = useState(false);
@@ -138,6 +140,11 @@ export function ProjectEditor({
     setBrowsing(false);
   };
   const browse = () => {
+    const select = platform?.selectDirectories?.bind(platform);
+    if (select) {
+      void startFlight((flight) => selectDirectories(flight, select));
+      return;
+    }
     epoch.current++;
     setBrowsing(true);
   };
@@ -150,6 +157,26 @@ export function ProjectEditor({
     saveFlight.current = flight;
     flight.settled = operation(flight);
     return flight.settled;
+  };
+  const selectDirectories = async (
+    flight: EditorFlight,
+    select: () => Promise<string[]>,
+  ) => {
+    const request = ++epoch.current;
+    const canCommit = () => current(request) && !flight.controller.signal.aborted;
+    setBusy(true);
+    setError(null);
+    try {
+      const selected = await select();
+      logger.debug("[ProjectEditor] native directory selection", { count: selected.length });
+      if (canCommit() && selected.length) addRoots(selected);
+    } catch (cause) {
+      logger.warn("[ProjectEditor] native directory selection failed", cause);
+      if (canCommit()) setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      if (saveFlight.current === flight) saveFlight.current = null;
+      if (alive.current) setBusy(false);
+    }
   };
   const close = async () => {
     if (closing.current) return;

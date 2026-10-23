@@ -99,8 +99,8 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectEditor.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "92ce18a330dd23d39884b488c2ae468640f97feed55316cb496b804ccf9fe8b9",
-      "copiedSha256": "6c871adadd6253ea67e6561c115712850043b49a68fbb9ff46d0fd325aa21a78",
-      "adaptations": ["@/ 导入映射为 @zui/；装配原本机创建与编辑表单、控件、草稿及 saveFlight/epoch/alive 生命周期，创建使用真实目录浏览、主目录选择和原信任确认。", "保留已有主目录，附加目录须明确选择只读或可写；编辑携带真实 Project ID 和观察修订，创建携带稳定 creationId 并缓存已创建结果，归档复用原项目服务。", "使用原 suspended 与 isCurrent 处理 tab/Task/草稿变化，创建只刷新项目列表，迟到结果不切换 Task 或内容标签。", "创建前经宿主确认同目录复用或独立创建；关闭和挂起取消候选读取及信任确认，关闭等待在途保存或归档结束。"]
+      "copiedSha256": "47da4ea08573798b74396e28ff0e5c7f0b911323703a694c0365b413ee72f504",
+      "adaptations": ["@/ 导入映射为 @zui/；装配原本机创建与编辑表单、控件、草稿及 saveFlight/epoch/alive 生命周期，创建使用真实目录浏览、主目录选择和原信任确认。", "保留已有主目录，附加目录须明确选择只读或可写；编辑携带真实 Project ID 和观察修订，创建携带稳定 creationId 并缓存已创建结果，归档复用原项目服务。", "使用原 suspended 与 isCurrent 处理 tab/Task/草稿变化，创建只刷新项目列表，迟到结果不切换 Task 或内容标签。", "创建前经宿主确认同目录复用或独立创建；关闭和挂起取消候选读取及信任确认，关闭等待在途保存或归档结束。", "原本机多目录分流接入平台 selectDirectories，Web 保持原 DirectoryBrowser；原生选择共用本次在途操作和取消代际，迟到结果不修改草稿，关闭等待系统选择结束。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/useProjectDirectoryServices.ts",
@@ -14962,8 +14962,9 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "478e63e5c040c6f9d033e0c074534eab1bc56c228f6d2d2b47f7bce05461702b",
+      "copiedSha256": "305e2a6729d9e14359063b22ccc12b1a1e6aeba334c8587da4b4d1a49b97a33d",
       "adaptations": [
+        "保留当前接口基线，新增多目录声明逐字取自 3.16.2 固定提交 3c5b227649371507ddc4eb46ac5133afe6db1cab 的同名源文件；本机提供原生选择，Web 不声明多选。",
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
         "宿主接口：新增可选引导记录、设置导入与运行偏好支持态，缺省原语义",

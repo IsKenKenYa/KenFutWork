@@ -8,6 +8,7 @@ pub mod browser_embed;
 pub mod data_location;
 pub mod desktop_access;
 pub mod desktop_system;
+pub mod directory_picker;
 pub mod server_handle;
 
 pub use server_handle::{
@@ -447,6 +448,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         // Tauri的invoke_handler会覆盖前一个；全部命令在唯一入口装配。
         .invoke_handler(tauri::generate_handler![
             ping,
@@ -456,6 +458,8 @@ pub fn run() {
             desktop_system::cua_permission_owner,
             desktop_system::open_cua_permission_settings,
             desktop_system::request_cua_screen_recording_access,
+            directory_picker::select_directory,
+            directory_picker::select_directories,
             data_location::open_in_browser,
             data_location::open_data_directory,
             data_location::move_data_directory,
