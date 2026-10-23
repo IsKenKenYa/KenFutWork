@@ -205,6 +205,53 @@
         display: flex;
         gap: 6px;
       }
+      /* === 接入引导（未配置/修改配置态）=== */
+      a {
+        color: var(--accent);
+      }
+      .guide > .intro {
+        margin: 0 0 8px;
+      }
+      .guide .step {
+        margin: 6px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+      }
+      .guide .step summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        font-weight: 600;
+      }
+      .guide .step-body {
+        padding: 0 10px 8px;
+      }
+      .guide .step-text {
+        margin: 4px 0;
+        font-size: 12px;
+      }
+      .command {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 6px 0;
+      }
+      .command pre {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        padding: 6px 8px;
+        font: 11px/1.5 ui-monospace, Consolas, monospace;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .command button {
+        flex: none;
+      }
       footer {
         margin-top: 12px;
       }

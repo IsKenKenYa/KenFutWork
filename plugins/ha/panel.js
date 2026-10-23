@@ -24,6 +24,8 @@ const state = {
   total: 0,
   truncated: false,
   mode: "polling",
+  /** 米家/华为实体计数（服务端按注册表 platform 识别）；null = 识别不了，不显示 */
+  ecosystems: null,
   busy: false,
   pollTimer: null,
 };
@@ -107,7 +109,101 @@ function api(path, options) {
 
 // === 未配置 / 修改配置 ===
 
-function renderConfigForm(message) {
+/** 引导步骤只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
+let guidePromise = null;
+function loadGuideSteps() {
+  if (guidePromise) return guidePromise;
+  guidePromise = api("guide")
+    .then((payload) => (Array.isArray(payload.steps) ? payload.steps : []))
+    .catch(() => {
+      guidePromise = null;
+      return [];
+    });
+  return guidePromise;
+}
+
+function copyText(text, button) {
+  const done = () => {
+    button.textContent = "已复制";
+    setTimeout(() => {
+      if (button.isConnected) button.textContent = "复制";
+    }, 1200);
+  };
+  // 剪贴板 API 可能被 iframe 权限策略挡住：挡住就退回隐藏 textarea 选中复制
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard
+      .writeText(text)
+      .then(done)
+      .catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    document.execCommand("copy");
+    done();
+  } catch {
+    /* 复制失败不打断：命令文本本来就完整可见，可手动选中 */
+  }
+  area.remove();
+}
+
+function commandRow(item) {
+  const row = el("div", "command");
+  row.appendChild(el("pre", null, item.text));
+  const copy = el("button", null, "复制");
+  copy.type = "button";
+  copy.addEventListener("click", () => copyText(item.text, copy));
+  row.appendChild(copy);
+  return row;
+}
+
+/**
+ * 接入引导卡：部署 HA → 装 HACS → 接米家（默认展开）→ 接华为（默认展开）→ 建令牌。
+ * 步骤数据来自服务端 `guide` 路由（`lib/setup-guide.js` 一处属主，测试锁死仓库链接）。
+ */
+function buildGuideCard(steps) {
+  const card = el("div", "card guide");
+  const intro = el("p", "hint intro");
+  intro.textContent = "经 Home Assistant 接入米家与华为设备";
+  card.appendChild(intro);
+  steps.forEach((step, index) => {
+    const details = el("details", "step");
+    details.open = step.open === true;
+    details.appendChild(el("summary", null, `${index + 1}. ${step.title}`));
+    const box = el("div", "step-body");
+    for (const item of step.items ?? []) {
+      if (item.kind === "command") {
+        box.appendChild(commandRow(item));
+        continue;
+      }
+      if (item.kind === "link") {
+        const line = el("p", "step-text");
+        const link = el("a", null, item.label);
+        link.href = item.url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        line.appendChild(link);
+        box.appendChild(line);
+        continue;
+      }
+      box.appendChild(el("p", "step-text", item.text));
+    }
+    details.appendChild(box);
+    card.appendChild(details);
+  });
+  return card;
+}
+
+function renderConfigForm(message, guideFirst = true) {
   stopPolling();
   setHeaderButtons(false);
   setState("未配置");
@@ -159,6 +255,14 @@ function renderConfigForm(message) {
   card.appendChild(actions);
   if (message) card.appendChild(el("p", "error", message));
   els.body.appendChild(card);
+  // 引导卡与表单同一页：首用引导在上（照着做），「修改配置」时表单在上（直接改）。
+  // 异步插入前先确认表单还在页上（期间可能已连上并切到实体网格）
+  loadGuideSteps().then((steps) => {
+    if (steps.length === 0 || !els.body.contains(card)) return;
+    const guideCard = buildGuideCard(steps);
+    if (guideFirst) els.body.insertBefore(guideCard, card);
+    else els.body.appendChild(guideCard);
+  });
 }
 
 // === 实体网格 ===
@@ -384,8 +488,13 @@ function renderEntities() {
   );
   const version = state.version ? `HA ${state.version}` : "智能家居";
   const mode = state.mode === "realtime" ? "实时" : "轮询";
+  // 生态计数来自实体注册表的来源集成（服务端识别）；识别不了（null）就不显示，不猜
+  const eco =
+    state.ecosystems === null
+      ? ""
+      : ` · 米家 ${state.ecosystems.mijia} · 华为 ${state.ecosystems.huawei}`;
   setState(
-    `${version} · ${mode} · ${state.total} 实体${state.truncated ? `（只显示前 ${shown} 条）` : ""}`,
+    `${version} · ${mode} · ${state.total} 实体${state.truncated ? `（只显示前 ${shown} 条）` : ""}${eco}`,
   );
 
   if (shown === 0) {
@@ -432,6 +541,7 @@ function loadEntities() {
       state.total = payload.total || 0;
       state.truncated = payload.truncated === true;
       state.mode = payload.mode || "polling";
+      state.ecosystems = payload.ecosystems ?? null;
       // 成功这一拍才清瞬时消息：与重渲染同一任务，不出现「页面矮一截」的中间帧
       setNote("", false);
       renderEntities();
@@ -463,7 +573,8 @@ els.retest.addEventListener("click", () => {
 
 els.edit.addEventListener("click", () => {
   setNote("", false);
-  renderConfigForm();
+  // 修改配置：表单优先，引导收在下方（首用相反）
+  renderConfigForm(undefined, false);
 });
 
 els.disconnect.addEventListener("click", () => {

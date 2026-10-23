@@ -455,6 +455,33 @@ export function buildEntityView(states, registries = {}) {
 }
 
 /**
+ * 生态识别（面板展示层的统计，不进控制面）：按实体注册表的 `platform`（来源集成域名）
+ * 计数——米家 = `xiaomi` 前缀的集成（`xiaomi_home` 官方 / `xiaomi_miot` 社区 /
+ * `xiaomi_miio` / `xiaomi_ble`），华为 = `huawei_smarthome`。
+ *
+ * 识别不了就返回 `null`（面板不显示该段）：WS 未就绪没有注册表、或新版 HA 改了注册表
+ * 形状（条目全都没有 `platform` 字段）时，**不**把「识别不出」当成「未接入」显示。
+ */
+export function buildEcosystemSummary(registries) {
+  const entries = Array.isArray(registries?.entities)
+    ? registries.entities
+    : [];
+  if (entries.length === 0) return null;
+  let known = 0;
+  let mijia = 0;
+  let huawei = 0;
+  for (const entry of entries) {
+    const platform = typeof entry?.platform === "string" ? entry.platform : "";
+    if (!platform) continue;
+    known += 1;
+    if (platform.startsWith("xiaomi")) mijia += 1;
+    else if (platform === "huawei_smarthome") huawei += 1;
+  }
+  if (known === 0) return null;
+  return { mijia, huawei };
+}
+
+/**
  * 控件当前读数（控制前后用它对比「到底变了没有」）：开关取布尔、滑杆/下拉取数值，
  * 按钮与查不到的控件退回实体状态原文。
  */
