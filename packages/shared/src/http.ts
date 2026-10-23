@@ -588,6 +588,13 @@ export const applicationErrorCodeSchema = z.enum([
   "scope_revoking",
   "scope_unavailable",
   "task_not_found",
+  // 原宿主分组保存及其请求、连接和提交失败的公共错误。
+  "invalid_code_ui_request",
+  "code_ui_not_found",
+  "code_ui_error",
+  "task_group_revision_conflict",
+  "task_group_not_found",
+  "task_groups_not_initialized",
   "design_goal_conflict",
   "design_input_conflict",
   "design_restore_conflict",

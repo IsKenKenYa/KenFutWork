@@ -1579,6 +1579,16 @@ export class CodeUiService {
     return this.watchers.closeTask(instanceId, taskId);
   }
 
+  async refreshTaskGroups(actor: LocalActor): Promise<void> {
+    const owner = await this.deps.localInstance.resolve(actor);
+    await this.connections.notifyEvent(owner.instanceId, {
+      event: "service",
+      service: "broadcast",
+      name: "onMessage",
+      data: { channel: "state:task-groups", payload: {} },
+    });
+  }
+
   async refreshProjects(actor: LocalActor, projectId: string): Promise<void> {
     const owner = await this.deps.localInstance.resolve(actor);
     await Promise.all([

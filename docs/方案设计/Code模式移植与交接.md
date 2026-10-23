@@ -186,6 +186,8 @@ Plugin UI／MCP Apps、Gen UI 的完整生成与页面服务、内容标签及 C
 
 ### 9. 源码依据
 
+分组创建与编辑已通过 `task-groups.save` 连接同一 PostgreSQL 和原 SSE 状态通知。真实回归覆盖稳定创建、改名及改色、同键并发创建、同修订编辑竞争、同值保存、规范化重放、错误输入、SQL 等待期间关闭连接，以及 COMMIT 回包丢失后的原回执读取。旧创建回放不覆盖后续编辑。原分组服务代理、操作开始时固定修订的界面、排序、取消组与首次登记仍需完整接入；本次服务验证不计为原分组界面交互完成。
+
 上游链接均固定到 3.16.2 的提交；以下 KFW 路径基于本轮 `da07da8a`，行号是核查位置，不代替后续实时读取。
 
 - **[U1] 项目**：[侧栏导出](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/WorkspaceSidebar.tsx#L1-L3)、[ProjectEditor](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ProjectEditor.tsx#L173-L361)。

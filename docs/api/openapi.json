@@ -2333,7 +2333,7 @@
       "post": {
         "operationId": "postCodeUiRpc",
         "summary": "调用 Code 原界面宿主接口",
-        "description": "task-groups.read 通过已初始化的可信本机连接读取分组，不接收位置参数。分组、成员、根节点顺序及独立组织修订来自同一 PostgreSQL 只读快照；成员关联稳定 Task Owner，workspaceKey 根据当前项目与 Task 固定目录投影，不能据此增加目录授权。读取不登记 Task、不推进修订或启动 Agent；多余参数返回400。归档保留成员，Task软删除及物理删除清除成员和顺序，后续读取不恢复已删除Task。按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。sendText 和 stop 信封须携带点击时的 taskControl，缺少时回执为 rejected/proto.missingTaskControl，项目或分支已改变时为 stale/proto.staleTaskControl；相同原请求重放返回保存的回执，同键改观察值返回409。创建 ACK.result.taskControl 返回实际插入行的初始值。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；供应商稀疏保存中 access.apiKeyManagementUrl 省略保留，字符串更新，null 只清除链接，access:null 同时清除链接和 Key；聊天与生成设置共用该记录。MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。原项目编辑使用 project.readTree、readProjects、readDirectory、saveProject 和 deleteProject。readTree在本机同一只读repeatable-read事务返回项目与持久根Task；includeDeleted:true同时读取已归档项目并以deleted:true标识，普通读取排除这些项目及所属Task。项目保留修订与目录读写权限，Task目录来自创建时固定的工作域，workspaceIdentity由当前Project身份与Task固定目录组成，置顶与归档读取持久事实。Task的taskControl返回当前项目及分支观察值；显式includeDeletedTasks:true返回删除Task的不透明taskId、projectId与hostId，目录与正文继续按删除规则清除。读取不修改授权、不启动Agent；远端Host、未知字段、错误类型及多余参数返回400。编辑携带稳定项目身份、目录读写权限和非负32位 expectedRevision；同一实例、项目及观察修订组成保存键，相同意图重放返回原回执，不同意图返回409，同值保存不推进修订。创建省略id，携带表单生成的稳定creationId、kind(code/design)和目录权限；同一实例与creationId组成创建键，参数指纹冲突返回409，项目与回执在同一事务保存，重放不新增Task或Canvas。归档或删除后的创建回执只保留业务键并返回404。已有主目录保持固定，项目修改仅影响之后创建的Task；已有Task授权保持。归档和连接关闭后拒绝迟到保存，连接取消返回404。原归档管理经已初始化连接调用 zcode-task.archiveTask、unarchiveTask 和 deleteArchivedTask。参数固定taskId、workspacePath、workspaceIdentity及点击时taskControl；实例、Task、项目、观察分支和目标归档值组成稳定归档业务键，规范化参数形成指纹，异参返回409。归档等待原运行、后台工作、文件操作与进程关闭后发表；恢复保留固定目录与权限，推进授权和分支代际，保留Goal及计量且不自动恢复执行。顺序和并发重放返回持久回执；准备事务已提交但回包丢失时，同键复验准备状态和代际后继续关闭，不重新推进权限。条件删除只删除观察值仍匹配且当前仍归档的Task；已恢复、已删除或不存在返回false，不能删除新活动Task。Task删除沿原事务清除命令参数指纹与回执，迟到归档或恢复返回404，实例物理删除时级联清除。宿主贡献等待在途调用退出，连接取消后拒绝尚未接纳的操作。",
+        "description": "task-groups.read 通过已初始化的可信本机连接读取分组，不接收位置参数。分组、成员、根节点顺序及独立组织修订来自同一 PostgreSQL 只读快照；成员关联稳定 Task Owner，workspaceKey 根据当前项目与 Task 固定目录投影，不能据此增加目录授权。读取不登记 Task、不推进修订或启动 Agent；多余参数返回400。归档保留成员，Task软删除及物理删除清除成员和顺序，后续读取不恢复已删除Task。task-groups.save 创建时携带表单固定的creationId和expectedRevision，编辑时携带分组id和expectedRevision，名称和颜色按稀疏字段保存。实例与creationId组成创建键；实例、分组id与观察修订组成编辑键，规范化参数指纹、分组及回执在同一事务提交。同键相同意图返回原回执，不覆盖后续编辑；异参或观察修订过期返回409，非法字段和多余参数返回400。当前修订的同值编辑不推进组织修订或占用修改回执。新组置于根节点顶部，编辑保留排序和成员；分组删除后回执清除名称、结果及参数指纹，迟到保存返回404，实例删除级联清理。保存后原SSE广播state:task-groups供已初始化连接重新读取，不创建Task、Canvas或Run。按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。sendText 和 stop 信封须携带点击时的 taskControl，缺少时回执为 rejected/proto.missingTaskControl，项目或分支已改变时为 stale/proto.staleTaskControl；相同原请求重放返回保存的回执，同键改观察值返回409。创建 ACK.result.taskControl 返回实际插入行的初始值。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；供应商稀疏保存中 access.apiKeyManagementUrl 省略保留，字符串更新，null 只清除链接，access:null 同时清除链接和 Key；聊天与生成设置共用该记录。MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。原项目编辑使用 project.readTree、readProjects、readDirectory、saveProject 和 deleteProject。readTree在本机同一只读repeatable-read事务返回项目与持久根Task；includeDeleted:true同时读取已归档项目并以deleted:true标识，普通读取排除这些项目及所属Task。项目保留修订与目录读写权限，Task目录来自创建时固定的工作域，workspaceIdentity由当前Project身份与Task固定目录组成，置顶与归档读取持久事实。Task的taskControl返回当前项目及分支观察值；显式includeDeletedTasks:true返回删除Task的不透明taskId、projectId与hostId，目录与正文继续按删除规则清除。读取不修改授权、不启动Agent；远端Host、未知字段、错误类型及多余参数返回400。编辑携带稳定项目身份、目录读写权限和非负32位 expectedRevision；同一实例、项目及观察修订组成保存键，相同意图重放返回原回执，不同意图返回409，同值保存不推进修订。创建省略id，携带表单生成的稳定creationId、kind(code/design)和目录权限；同一实例与creationId组成创建键，参数指纹冲突返回409，项目与回执在同一事务保存，重放不新增Task或Canvas。归档或删除后的创建回执只保留业务键并返回404。已有主目录保持固定，项目修改仅影响之后创建的Task；已有Task授权保持。归档和连接关闭后拒绝迟到保存，连接取消返回404。原归档管理经已初始化连接调用 zcode-task.archiveTask、unarchiveTask 和 deleteArchivedTask。参数固定taskId、workspacePath、workspaceIdentity及点击时taskControl；实例、Task、项目、观察分支和目标归档值组成稳定归档业务键，规范化参数形成指纹，异参返回409。归档等待原运行、后台工作、文件操作与进程关闭后发表；恢复保留固定目录与权限，推进授权和分支代际，保留Goal及计量且不自动恢复执行。顺序和并发重放返回持久回执；准备事务已提交但回包丢失时，同键复验准备状态和代际后继续关闭，不重新推进权限。条件删除只删除观察值仍匹配且当前仍归档的Task；已恢复、已删除或不存在返回false，不能删除新活动Task。Task删除沿原事务清除命令参数指纹与回执，迟到归档或恢复返回404，实例物理删除时级联清除。宿主贡献等待在途调用退出，连接取消后拒绝尚未接纳的操作。",
         "tags": [
           "code"
         ],
@@ -14012,6 +14012,12 @@
                   "scope_revoking",
                   "scope_unavailable",
                   "task_not_found",
+                  "invalid_code_ui_request",
+                  "code_ui_not_found",
+                  "code_ui_error",
+                  "task_group_revision_conflict",
+                  "task_group_not_found",
+                  "task_groups_not_initialized",
                   "design_goal_conflict",
                   "design_input_conflict",
                   "design_restore_conflict",
@@ -17274,6 +17280,113 @@
             "properties": {
               "service": {
                 "type": "string",
+                "const": "task-groups"
+              },
+              "method": {
+                "type": "string",
+                "const": "save"
+              },
+              "args": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "creationId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "color": {
+                            "type": "string",
+                            "enum": [
+                              "gray",
+                              "red",
+                              "orange",
+                              "yellow",
+                              "green",
+                              "blue",
+                              "purple"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "creationId",
+                          "expectedRevision"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "color": {
+                            "type": "string",
+                            "enum": [
+                              "gray",
+                              "red",
+                              "orange",
+                              "yellow",
+                              "green",
+                              "blue",
+                              "purple"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "expectedRevision"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                ],
+                "items": false,
+                "minItems": 1,
+                "maxItems": 1
+              },
+              "connectionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "method",
+              "args"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string",
                 "const": "zcode-task"
               },
               "method": {
@@ -17757,6 +17870,56 @@
           {
             "type": "object",
             "properties": {
+              "result": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "color": {
+                    "type": "string",
+                    "enum": [
+                      "gray",
+                      "red",
+                      "orange",
+                      "yellow",
+                      "green",
+                      "blue",
+                      "purple"
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "color",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
               "result": {}
             },
             "required": [
@@ -18035,6 +18198,12 @@
                       "scope_revoking",
                       "scope_unavailable",
                       "task_not_found",
+                      "invalid_code_ui_request",
+                      "code_ui_not_found",
+                      "code_ui_error",
+                      "task_group_revision_conflict",
+                      "task_group_not_found",
+                      "task_groups_not_initialized",
                       "design_goal_conflict",
                       "design_input_conflict",
                       "design_restore_conflict",

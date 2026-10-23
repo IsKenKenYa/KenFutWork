@@ -48,6 +48,20 @@ export const codeTaskGroupStructureSchema = z
   .strict();
 
 export const codeTaskGroupReadArgsSchema = z.tuple([]);
+const groupRevisionSchema = z.number().int().nonnegative().safe();
+const groupSaveFields = {
+  expectedRevision: groupRevisionSchema,
+  title: z.string().trim().min(1).max(200).optional(),
+  color: codeTaskGroupColorSchema.optional(),
+};
+export const codeTaskGroupSaveSchema = z.union([
+  z.object({ creationId: z.uuid(), ...groupSaveFields }).strict(),
+  z.object({ id: z.uuid(), ...groupSaveFields }).strict(),
+]);
+export const codeTaskGroupSaveArgsSchema = z.tuple([codeTaskGroupSaveSchema]);
+export const codeTaskGroupSaveResponseSchema = z
+  .object({ result: codeTaskGroupSchema })
+  .strict();
 export const codeTaskGroupReadResponseSchema = z
   .object({
     result: codeTaskGroupStructureSchema,
@@ -56,3 +70,5 @@ export const codeTaskGroupReadResponseSchema = z
 export type CodeTaskGroupStructure = z.infer<
   typeof codeTaskGroupStructureSchema
 >;
+export type CodeTaskGroup = z.infer<typeof codeTaskGroupSchema>;
+export type CodeTaskGroupSave = z.infer<typeof codeTaskGroupSaveSchema>;

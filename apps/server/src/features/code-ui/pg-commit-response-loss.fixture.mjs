@@ -15,6 +15,8 @@ const freshTransaction = () => ({
   taskArchivePrepare: false,
   taskArchiveTaskUpdated: false,
   taskArchiveCompletion: false,
+  taskGroupInsert: false,
+  taskGroupSave: false,
 });
 
 function cstring(bytes, at = 0) {
@@ -68,6 +70,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let projectCreation = false;
   let taskArchivePrepare = false;
   let taskArchiveCompletion = false;
+  let taskGroupSave = false;
   let loseCreationReadbackOnce = false;
   let unavailable = false;
   let closed = false;
@@ -231,6 +234,29 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           result.taskId === transaction.targetTaskId;
       }
       if (
+        taskGroupSave &&
+        commandId &&
+        /^insert into public\.code_task_groups\b/u.test(text) &&
+        parameters.length === 4 &&
+        typeof parameters[0] === "string"
+      ) {
+        transaction.taskGroupInsert = true;
+        transaction.targetGroupId = parameters[0];
+      }
+      if (
+        taskGroupSave &&
+        commandId &&
+        transaction.taskGroupInsert &&
+        /^insert into public\.code_task_group_save_receipts\b/u.test(text) &&
+        parameters.length === 5 &&
+        parameters[0] === JSON.stringify(["create", commandId.toLowerCase()]) &&
+        parameters[1] === transaction.targetGroupId &&
+        typeof parameters[3] === "string"
+      ) {
+        const result = JSON.parse(parameters[3]);
+        transaction.taskGroupSave = result.id === transaction.targetGroupId;
+      }
+      if (
         projectCreation &&
         commandId &&
         /^insert into public\.projects\b/u.test(text) &&
@@ -324,6 +350,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.projectCreation ||
           transaction.taskArchivePrepare ||
           transaction.taskArchiveCompletion ||
+          transaction.taskGroupSave ||
           (transaction.chatRoot &&
             transaction.codeRoot &&
             transaction.firstInputState &&
@@ -436,6 +463,13 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
                   targetArchived: transaction.targetArchived,
                 }
               : {}),
+            ...(transaction.taskGroupSave
+              ? {
+                  taskGroupSave: true,
+                  creationId: commandId,
+                  targetGroupId: transaction.targetGroupId,
+                }
+              : {}),
             ...(transaction.firstInputState && transaction.firstInputAck
               ? {
                   createFirstInput: true,
@@ -520,6 +554,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       projectCreation = options.projectCreation === true;
       taskArchivePrepare = options.taskArchivePrepare === true;
       taskArchiveCompletion = options.taskArchiveCompletion === true;
+      taskGroupSave = options.taskGroupSave === true;
       loseCreationReadbackOnce = options.loseCreationReadbackOnce === true;
     },
     restore() {

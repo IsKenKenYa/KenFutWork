@@ -17,6 +17,8 @@ import {
 import {
   codeTaskGroupReadArgsSchema,
   codeTaskGroupReadResponseSchema,
+  codeTaskGroupSaveArgsSchema,
+  codeTaskGroupSaveResponseSchema,
 } from "./code-task-groups.js";
 import { codeTaskOrganizationArgsSchema } from "./code-task-organization.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
@@ -94,6 +96,7 @@ const codeUiRpcEnvelopeSchema = z.object({
 export const codeUiRpcResponseSchema = z.union([
   codeProjectTreeRpcResponseSchema,
   codeTaskGroupReadResponseSchema,
+  codeTaskGroupSaveResponseSchema,
   z.object({ result: z.unknown() }),
 ]);
 
@@ -134,6 +137,11 @@ export const codeUiRpcRequestSchema = z.union([
     service: z.literal("task-groups"),
     method: z.literal("read"),
     args: codeTaskGroupReadArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("save"),
+    args: codeTaskGroupSaveArgsSchema,
   }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("zcode-task"),

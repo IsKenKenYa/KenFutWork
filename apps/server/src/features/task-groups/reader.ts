@@ -9,15 +9,8 @@ import type {
   LocalInstanceService,
 } from "../local-instance/types.js";
 import type { PersistenceService, SqlRow } from "../persistence/types.js";
+import { projectTaskGroup, type TaskGroupRow } from "./group-record.js";
 
-type GroupRow = SqlRow & {
-  id: string;
-  title: string;
-  color: string;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-};
 type MemberRow = SqlRow & {
   group_id: string | null;
   task_id: string;
@@ -36,7 +29,7 @@ function workspaceKey(task: MemberRow) {
 
 function projectStructure(
   revision: string | number,
-  groups: GroupRow[],
+  groups: TaskGroupRow[],
   tasks: MemberRow[],
 ) {
   const order: CodeTaskGroupStructure["order"] = [
@@ -61,13 +54,7 @@ function projectStructure(
   );
   return codeTaskGroupStructureSchema.parse({
     revision: Number(revision),
-    groups: groups.map((group) => ({
-      id: group.id,
-      title: group.title,
-      color: group.color,
-      createdAt: new Date(group.created_at).getTime(),
-      updatedAt: new Date(group.updated_at).getTime(),
-    })),
+    groups: groups.map(projectTaskGroup),
     members: tasks.flatMap((task) =>
       task.group_id
         ? [
@@ -110,7 +97,7 @@ export function createTaskGroupReader(deps: {
             503,
           );
         signal.throwIfAborted();
-        const groups = await sql.query<GroupRow>(
+        const groups = await sql.query<TaskGroupRow>(
           `select id,title,color,sort_order,created_at,updated_at
             from public.code_task_groups where instance_id=:instance order by created_at,id`,
         );
