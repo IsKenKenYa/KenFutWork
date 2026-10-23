@@ -10,6 +10,7 @@ export interface CommitLossEvidence {
   taskArchiveCompletion?: true;
   targetArchived?: boolean;
   taskGroupSave?: true;
+  taskGroupUngroup?: true;
   targetGroupId?: string;
   createFirstInput?: true;
   projectCreation?: true;
@@ -30,6 +31,7 @@ export function createCommitResponseLossProxy(
       taskArchivePrepare?: boolean;
       taskArchiveCompletion?: boolean;
       taskGroupSave?: boolean;
+      taskGroupUngroup?: boolean;
       createFirstInput?: boolean;
       projectCreation?: boolean;
       loseCreationReadbackOnce?: boolean;

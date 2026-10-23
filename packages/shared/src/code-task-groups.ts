@@ -59,6 +59,12 @@ export const codeTaskGroupSaveSchema = z.union([
   z.object({ id: z.uuid(), ...groupSaveFields }).strict(),
 ]);
 export const codeTaskGroupSaveArgsSchema = z.tuple([codeTaskGroupSaveSchema]);
+export const codeTaskGroupUngroupSchema = z
+  .object({ id: z.uuid(), expectedRevision: groupRevisionSchema })
+  .strict();
+export const codeTaskGroupUngroupArgsSchema = z.tuple([
+  codeTaskGroupUngroupSchema,
+]);
 export const codeTaskGroupSaveResponseSchema = z
   .object({ result: codeTaskGroupSchema })
   .strict();
@@ -72,3 +78,4 @@ export type CodeTaskGroupStructure = z.infer<
 >;
 export type CodeTaskGroup = z.infer<typeof codeTaskGroupSchema>;
 export type CodeTaskGroupSave = z.infer<typeof codeTaskGroupSaveSchema>;
+export type CodeTaskGroupUngroup = z.infer<typeof codeTaskGroupUngroupSchema>;

@@ -9,7 +9,11 @@ import type {
   LocalInstanceService,
 } from "../local-instance/types.js";
 import type { PersistenceService, SqlRow } from "../persistence/types.js";
-import { projectTaskGroup, type TaskGroupRow } from "./group-record.js";
+import {
+  compareTaskGroupRootNodes,
+  projectTaskGroup,
+  type TaskGroupRow,
+} from "./group-record.js";
 
 type MemberRow = SqlRow & {
   group_id: string | null;
@@ -46,12 +50,7 @@ function projectStructure(
         sortOrder: task.sort_order,
       })),
   ];
-  order.sort(
-    (a, b) =>
-      a.sortOrder - b.sortOrder ||
-      a.type.localeCompare(b.type) ||
-      a.key.localeCompare(b.key),
-  );
+  order.sort(compareTaskGroupRootNodes);
   return codeTaskGroupStructureSchema.parse({
     revision: Number(revision),
     groups: groups.map(projectTaskGroup),
