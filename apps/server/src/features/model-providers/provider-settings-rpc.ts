@@ -58,7 +58,10 @@ export interface CodeUiProviderSettingsRpcDeps {
     | "updateInstance"
     | "deleteInstance"
   >;
-  modelCatalog: Pick<ModelCatalogService, "listCatalog">;
+  modelCatalog: Pick<
+    ModelCatalogService,
+    "listCatalog" | "describeInstanceModels"
+  >;
   settings: Pick<
     SettingsService,
     "getInstanceSettings" | "updateInstanceSettings"
@@ -92,6 +95,8 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
   private readonly models: ReturnType<typeof createProviderModelMutations>;
   constructor(private readonly deps: CodeUiProviderSettingsRpcDeps) {
     this.models = createProviderModelMutations({
+      describeModels: (instances) =>
+        this.deps.modelCatalog.describeInstanceModels(instances),
       load: (actor, id) => this.load(actor, id),
       save: (actor, instance, patch) => this.save(actor, instance, patch),
       revision: async (actor) =>

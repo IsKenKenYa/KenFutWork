@@ -1,8 +1,13 @@
 import type {
+  ModelCatalogEntry,
+  ProviderInstanceModel,
   ProviderInstanceResponse,
   ProviderInstanceUpdateRequest,
 } from "@kenfutwork/shared";
 import {
+  clearManualModelConfig,
+  isStructurallyEmpty,
+  ModelConfig,
   type ModelConfigObject,
   manualModelConfigSchema,
   parseModelConfig,
@@ -12,12 +17,19 @@ import { z } from "zod";
 import { CodeUiRepositoryError } from "../code-ui/repository.js";
 import type { LocalActor } from "../local-instance/types.js";
 import {
+  nativeModelDeclarations,
+  resolveCodeUiModelConfig,
+} from "./model-views.js";
+import {
   codeUiNativeModel,
   codeUiProviderMetadata,
   isCodeChatProtocol,
 } from "./provider-settings-rpc-config.js";
 
 export interface ProviderModelMutationContext {
+  describeModels(
+    instances: readonly ProviderInstanceResponse[],
+  ): ModelCatalogEntry[];
   load(
     actor: LocalActor,
     providerId: string,
@@ -55,9 +67,45 @@ function validateConfig(
 ): ModelConfigObject {
   const parsed = parseModelConfig(value).toJSON();
   if (!recommended) manualModelConfigSchema.parse(parsed);
-  return parsed;
+  return isStructurallyEmpty(parsed) ? {} : parsed;
+}
+
+/** 替换精确配置时重新计算原生属性；Text/Audio 与启停等独立声明继续保留。 */
+function projectConfiguredModel(
+  context: ProviderModelMutationContext,
+  instance: ProviderInstanceResponse,
+  current: ProviderInstanceModel,
+  nextId: string,
+  config: ModelConfigObject,
+  recommended: boolean,
+) {
+  const system = clearManualModelConfig(
+    nativeModelDeclarations(current).toJSON(),
+  );
+  const source = { ...current, id: nextId };
+  for (const key of [
+    "contextWindow",
+    "maxOutputTokens",
+    "reasoningEfforts",
+    "vision",
+    "inputModalities",
+    "structuredOutput",
+    "nativeWebSearch",
+    "systemMessage",
+  ] as const)
+    delete source[key];
+  const [entry] = context.describeModels([{ ...instance, models: [source] }]);
+  if (!entry) throw new Error("模型目录缺少待保存的模型。");
+  const { effective } = resolveCodeUiModelConfig(instance, entry, {
+    config: ModelConfig.fromData(system)
+      .overlay(ModelConfig.fromData(config))
+      .toJSON(),
+    useRecommendedConfig: recommended,
+  });
+  return codeUiNativeModel(nextId, effective.toJSON(), current);
 }
 function replaceModel(
+  context: ProviderModelMutationContext,
   instance: ProviderInstanceResponse,
   modelId: string,
   nextId: string,
@@ -80,7 +128,16 @@ function replaceModel(
   delete models[modelId];
   return {
     models: instance.models.map((entry) =>
-      entry.id === modelId ? codeUiNativeModel(nextId, config, current) : entry,
+      entry.id === modelId
+        ? projectConfiguredModel(
+            context,
+            instance,
+            current,
+            nextId,
+            config,
+            recommended,
+          )
+        : entry,
     ),
     compat: {
       ...instance.compat,
@@ -135,6 +192,7 @@ async function saveDraft(
     actor,
     instance,
     replaceModel(
+      context,
       instance,
       params.originalModelId,
       params.nextModelId,
@@ -162,7 +220,17 @@ async function addModel(
   const config = validateConfig(value, recommended ?? true);
   const metadata = codeUiProviderMetadata(instance);
   await context.save(actor, instance, {
-    models: [...instance.models, codeUiNativeModel(modelId, config)],
+    models: [
+      ...instance.models,
+      projectConfiguredModel(
+        context,
+        instance,
+        codeUiNativeModel(modelId, {}),
+        modelId,
+        config,
+        recommended ?? true,
+      ),
+    ],
     compat: {
       ...instance.compat,
       codeUi: {
@@ -187,6 +255,7 @@ async function renameModel(
     actor,
     instance,
     replaceModel(
+      context,
       instance,
       modelId,
       nextId,

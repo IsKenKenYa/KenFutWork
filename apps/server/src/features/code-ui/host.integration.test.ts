@@ -14,7 +14,9 @@ import {
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
 import {
+  clearManualModelConfig,
   extractManualModelConfig,
+  ModelConfig,
   type ProviderSettingsView,
 } from "@zcode/provider";
 import { describe, expect, it } from "vitest";
@@ -706,6 +708,159 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       ]);
       expect(manual.status).toBe(400);
       expect((await rpc("getView")).body.result).toEqual(restored.body.result);
+    } finally {
+      if (providerId) await rpc("deletePersonalProvider", [providerId]);
+    }
+  });
+  it("原模型恢复推荐保留停用、系统输入能力和原生扩展，清除手动能力与思考映射", async () => {
+    const rpc = (method: string, args: unknown[] = []) =>
+      request("/api/code-ui/rpc", {
+        service: "providerSettingsService",
+        method,
+        args,
+      });
+    let providerId = "";
+    const readModel = (view: ProviderSettingsView) => {
+      const provider = view.providers.find(
+        (item) => item.providerId === providerId,
+      );
+      if (!provider) throw new Error("恢复推荐的供应商不存在。");
+      const model = provider.models[0];
+      if (!model) throw new Error("恢复推荐的模型不存在。");
+      return model;
+    };
+    try {
+      const created = await rpc("createPersonalProvider", [
+        { providerName: `恢复能力 ${randomUUID()}` },
+      ]);
+      providerId = created.body.result.providerId;
+      const defaults = await rpc("resolveModelConfig", [
+        { providerId, modelId: "custom-restore-inputs" },
+      ]);
+      expect(defaults.status, JSON.stringify(defaults.body)).toBe(200);
+      const defaultMap: unknown =
+        defaults.body.result.effectiveConfig?.optionSpecs?.reasoningLevel?.map;
+      if (typeof defaultMap !== "string" || !defaultMap.trim())
+        throw new Error("恢复推荐的默认思考映射不存在。");
+      const customReasoningMap = '{"reasoning_effort": reasoningLevel}';
+      const customConfig = ModelConfig.fromData({
+        enabled: false,
+        properties: {
+          contextWindow: 260000,
+          inputFormat: {
+            supportsText: false,
+            supportsImage: true,
+            supportsVideo: true,
+            supportsAudio: true,
+            supportsPdf: true,
+          },
+        },
+        optionSpecs: {
+          maxOutputTokens: { max: 9000 },
+          reasoningLevel: {
+            values: ["low", "high"],
+            map: customReasoningMap,
+          },
+        },
+      }).toJSON();
+      const added = await rpc("addPersonalModel", [
+        providerId,
+        "custom-restore-inputs",
+        customConfig,
+      ]);
+      expect(added.status, JSON.stringify(added.body)).toBe(200);
+      expect(readModel(added.body.result).personalExactConfig).toEqual(
+        customConfig,
+      );
+      const original = await request("/api/provider-instances");
+      expect(original.status, JSON.stringify(original.body)).toBe(200);
+      const nativeProvider = original.body.instances.find(
+        (item: { id: string }) => item.id === providerId,
+      );
+      const nativeModel = {
+        ...nativeProvider.models[0],
+        name: "保留的模型名称",
+        extraBody: { temperature: 0.25 },
+      };
+      const extended = await request(
+        `/api/provider-instances/${providerId}`,
+        { models: [nativeModel] },
+        "PATCH",
+      );
+      expect(extended.status, JSON.stringify(extended.body)).toBe(200);
+      const current = await rpc("refresh");
+      expect(current.status, JSON.stringify(current.body)).toBe(200);
+      expect(readModel(current.body.result).personalExactConfig).toEqual(
+        customConfig,
+      );
+      const personalConfig = readModel(current.body.result).personalExactConfig;
+      if (!personalConfig) throw new Error("恢复推荐的个人配置不存在。");
+      const input = {
+        providerId,
+        originalModelId: "custom-restore-inputs",
+        nextModelId: "custom-restore-inputs",
+        personalConfig: clearManualModelConfig(personalConfig),
+        useRecommendedConfig: true,
+        basedOnRevision: current.body.result.revision,
+      };
+      const restored = await rpc("savePersonalModelDraft", [input]);
+      expect(restored.status, JSON.stringify(restored.body)).toBe(200);
+      expect(readModel(restored.body.result).personalExactConfig).toEqual({
+        enabled: false,
+        properties: {
+          inputFormat: { supportsText: false, supportsAudio: true },
+        },
+      });
+      expect(readModel(restored.body.result)).toMatchObject({
+        enabled: false,
+        useRecommendedConfig: true,
+        effectiveConfig: {
+          enabled: false,
+          properties: {
+            contextWindow: 200000,
+            inputFormat: {
+              supportsText: false,
+              supportsImage: false,
+              supportsVideo: false,
+              supportsAudio: true,
+              supportsPdf: false,
+            },
+          },
+          optionSpecs: {
+            maxOutputTokens: { max: 32000 },
+            reasoningLevel: { values: ["disabled", "enabled"] },
+          },
+        },
+      });
+      const restoredMap = readModel(restored.body.result).effectiveConfig
+        .optionSpecs?.reasoningLevel?.map;
+      expect(restoredMap).toBe(defaultMap);
+      expect(restoredMap).not.toBe(customReasoningMap);
+      expect((await rpc("refresh")).body.result).toEqual(restored.body.result);
+      const nativeRead = await request("/api/provider-instances");
+      expect(nativeRead.status, JSON.stringify(nativeRead.body)).toBe(200);
+      expect(
+        nativeRead.body.instances.find(
+          (item: { id: string }) => item.id === providerId,
+        ).models,
+      ).toEqual([
+        {
+          ...nativeModel,
+          contextWindow: 200000,
+          maxOutputTokens: 32000,
+          vision: false,
+          inputModalities: ["audio"],
+          reasoningEfforts: ["disabled", "enabled"],
+        },
+      ]);
+      const repeated = await rpc("savePersonalModelDraft", [
+        { ...input, basedOnRevision: restored.body.result.revision },
+      ]);
+      expect(repeated.status, JSON.stringify(repeated.body)).toBe(200);
+      expect(repeated.body.result).toEqual(restored.body.result);
+      expect((await request("/api/provider-instances")).body).toEqual(
+        nativeRead.body,
+      );
     } finally {
       if (providerId) await rpc("deletePersonalProvider", [providerId]);
     }

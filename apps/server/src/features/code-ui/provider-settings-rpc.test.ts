@@ -8,6 +8,7 @@ import {
 } from "@kenfutwork/shared";
 import { expect, it, vi } from "vitest";
 import type { LocalActor } from "../local-instance/types.js";
+import { describeInstanceModels } from "../model-providers/model-catalog-service.js";
 import {
   type CodeUiProviderSettingsRpcDeps,
   createCodeUiProviderSettingsRpc,
@@ -111,7 +112,7 @@ function fixture() {
         },
       ],
     },
-    modelCatalog: { listCatalog: async () => [] },
+    modelCatalog: { listCatalog: async () => [], describeInstanceModels },
     settings: {
       getInstanceSettings: async () =>
         instanceSettingsSchema.parse({ defaultModel: "test" }),

@@ -7,6 +7,7 @@ import {
   clearManualModelConfig,
   completeNewModelSelection,
   createRegistryModelConfig,
+  isStructurallyEmpty,
   ModelConfig,
   type ModelConfigObject,
   type ModelSelection,
@@ -164,7 +165,9 @@ function resolveGeminiReasoning(
 }
 
 /** Explicit native declarations take precedence when another client changes the same instance. */
-function nativeModelDeclarations(model: ProviderInstanceModel): ModelConfig {
+export function nativeModelDeclarations(
+  model: ProviderInstanceModel,
+): ModelConfig {
   const modalities = model.inputModalities;
   const image =
     model.vision ?? (modalities ? modalities.includes("image") : undefined);
@@ -226,7 +229,9 @@ function modelView(
     builtin: false as const,
     kind: "candidate" as const,
     effectiveBuiltinConfig: inherited.toJSON(),
-    ...(personal ? { personalExactConfig: personal.config } : {}),
+    ...(personal && !isStructurallyEmpty(personal.config)
+      ? { personalExactConfig: personal.config }
+      : {}),
     useRecommendedConfig: personal?.useRecommendedConfig ?? true,
     effectiveConfig: complete.ok
       ? serializeRegistryModelConfig(complete.config)
