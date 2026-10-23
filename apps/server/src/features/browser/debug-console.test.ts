@@ -158,8 +158,8 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 悬浮球贴内容区右缘（clientWidth 扣掉滚动条），不被右侧滚动条盖住
     expect(script).toContain("document.documentElement.clientWidth");
     expect(script).toContain("kfw-ball-inset");
-    // 梯形「只长一点点」：左边多探出 14px（原为 7px，没收口到 min-width）
-    expect(script).toContain("padding:2px 0 2px 14px");
+    // 梯形横向 120%（用户 2026-10-23）：58px 按钮排 + 28px 左探出 = 86px
+    expect(script).toContain("padding:2px 0 2px 28px");
     expect(script).not.toContain("min-width:112px");
     // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
