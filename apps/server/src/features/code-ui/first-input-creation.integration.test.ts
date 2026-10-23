@@ -157,6 +157,27 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             issuedAt: Date.now(),
           },
         };
+        const empty = await stream.rpc("sendConversationCommandV4", [
+          {
+            ...request,
+            envelope: {
+              ...request.envelope,
+              commandId: randomUUID(),
+              payload: {
+                ...request.envelope.payload,
+                firstInput: {
+                  ...request.envelope.payload.firstInput,
+                  text: " \n",
+                },
+              },
+            },
+          },
+        ]);
+        expect(empty.status, JSON.stringify(empty.body)).toBe(409);
+        expect(
+          await readProjectTaskIds(stream, project.id, project.workDir),
+        ).toEqual([]);
+        expect(model.requests).toHaveLength(0);
         const concurrent = await Promise.all([
           stream.rpc("sendConversationCommandV4", [request]),
           stream.rpc("sendConversationCommandV4", [request]),
