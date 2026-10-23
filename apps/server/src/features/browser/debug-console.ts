@@ -154,13 +154,20 @@ const FLOAT_SCRIPT = `
     // 斜边**陡**（用户口径 2026-10-23「斜边梯度陡一点」）：polygon 起点 38%→14%，
     // 水平跨度 33px→12px——38% 时斜坡正好从最左按钮「–」的左上角穿过，背景在按钮角上
     // 缺一块（用户看到的「按钮面板错位」就是它）；14% 后斜坡完全落在按钮左侧留白里。
+    // 轮廓（2026-10-24 用户口径「哪有按钮」）：纯白底在白色页面上连底带边一起隐形，
+    // 用户实际要的是看得见的按钮。底色/字色不动，只把轮廓加深——box-shadow 会被
+    // clip-path 裁掉，梯形外沿（含斜边）的描边用四向 drop-shadow 叠加（跟随裁剪形状），
+    // 按钮格边框同步加深。
     ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 28px;" +
     "background:transparent;box-shadow:none}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
-    "background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15);" +
+    "background:#fff;" +
+    "filter:drop-shadow(0 1px 0 rgba(0,0,0,.45)) drop-shadow(0 -1px 0 rgba(0,0,0,.45)) " +
+    "drop-shadow(1px 0 0 rgba(0,0,0,.45)) drop-shadow(-1px 0 0 rgba(0,0,0,.45)) " +
+    "drop-shadow(0 3px 8px rgba(0,0,0,.25));" +
     "clip-path:polygon(14% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
-    "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
+    "border:1px solid rgba(0,0,0,.5);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
     ".kfw-btn:hover{background:#eee}" +
     // 悬浮球：浅色半透白 + 毛玻璃、36px、贴边半藏 55%、悬停近全露；
     // 拖动时脱离贴边自由跟手（kfw-ball-drag），松手吸附最近边

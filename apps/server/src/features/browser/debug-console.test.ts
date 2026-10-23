@@ -209,6 +209,12 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("color:#333");
     expect(script).not.toContain("background:#2b3038");
     expect(script).not.toContain("color:#f4f6f8");
+    // 轮廓可见（用户口径 2026-10-24「哪有按钮」）：纯白底在白色页面隐形——
+    // 底色/字色不动，梯形外沿用四向 drop-shadow 描边（box-shadow 会被 clip-path
+    // 裁掉，drop-shadow 跟随裁剪形状、斜边也有轮廓），按钮格边框加深
+    expect(script).toContain("filter:drop-shadow(0 1px 0 rgba(0,0,0,.45))");
+    expect(script).toContain("border:1px solid rgba(0,0,0,.5)");
+    expect(script).not.toContain("box-shadow:0 2px 8px rgba(0,0,0,.15)");
     // 最小化的球落在按钮条正下方（视口右缘顶部）：视线不用动，点一下球即还原
     expect(script).toContain('placeBall("right")');
     expect(script).toContain('ball.style.top = "28px"');
