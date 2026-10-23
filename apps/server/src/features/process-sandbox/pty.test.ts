@@ -280,7 +280,7 @@ test
     const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-pty-jobs-")));
     cleanups.push(() => rm(root, { recursive: true, force: true }));
     const marker = join(root, "heartbeat.json");
-    const program = join(root, "background-job.js");
+    const program = join(root, "background-job.cjs");
     await writeFile(
       program,
       `const fs=require("node:fs");process.on("SIGHUP",()=>{});process.on("SIGTERM",()=>{});const procStat=process.platform==="linux"?fs.readFileSync("/proc/self/stat","utf8"):null;const stat=procStat?procStat.split(") ")[1].split(" "):null;let count=0;setInterval(()=>fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,procPid:procStat?Number(procStat.split(" ")[0]):null,groupId:stat?Number(stat[2]):null,count:++count})),20);process.stdout.write("JOB_READY\\n")`,
