@@ -147,29 +147,26 @@ const FLOAT_SCRIPT = `
 
   var headStyle = document.createElement("style");
   headStyle.textContent =
-    // 三按钮的**小号直角梯形**容器（直角在右边：右边竖直、左上收斜边），
-    // 完全在窗外，恒定贴视口右上角。
+    // 三按钮的**直角梯形**容器（直角在右边：右边竖直、左上收斜边），贴面板右上角外，
+    // 空白处可**拖动整个面板**（把手语义，见 btnbar mousedown）。
     // 梯形只做**背景层**（伪元素）：clip-path 放在容器上会把最左按钮的左上角裁掉，
     // 点击从被裁区域穿透到页面（真机：点到百度顶部导航，看起来像「按钮没反应+页面卡死」）。
-    // 配色保持**白底深字**（用户口径 2026-10-23「不要改颜色」：深色版试用后否决）。
-    // 斜边**陡**（用户口径 2026-10-23「斜边梯度陡一点」）：polygon 起点 38%→14%，
-    // 水平跨度 33px→12px——38% 时斜坡正好从最左按钮「–」的左上角穿过，背景在按钮角上
-    // 缺一块（用户看到的「按钮面板错位」就是它）；14% 后斜坡完全落在按钮左侧留白里。
-    // 轮廓（2026-10-24 用户口径「哪有按钮」）：纯白底在白色页面上连底带边一起隐形，
-    // 用户实际要的是看得见的按钮。底色/字色不动，只把轮廓加深——box-shadow 会被
-    // clip-path 裁掉，梯形外沿（含斜边）的描边用四向 drop-shadow 叠加（跟随裁剪形状），
-    // 按钮格边框同步加深。
-    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 28px;" +
-    "background:transparent;box-shadow:none}" +
+    // 配色**白底深字**（用户口径 2026-10-23「不要改颜色」；2026-10-24 复核：按钮已回
+    // 面板上，面板本身就是视觉锚点，黑色描边（四向 drop-shadow）不再需要，只留软投影。
+    // 斜边**陡**（用户口径 2026-10-23「斜边梯度陡一点」）：polygon 起点 14%，
+    // 斜坡完全落在按钮左侧留白里（38% 时斜坡从最左按钮左上角穿过＝「面板错位」）。
+    // 按钮**加大**（用户口径 2026-10-24「按钮太小了」）：18→24px、字 15px；
+    // hover 反馈**加深**（同轮「悬浮效果有延迟」——画面流本身有数十 ms 延迟不可消除，
+    // 反馈对比度拉满让效果一出来就可见）：#eee→#d9d9d9。
+    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:3px 0 3px 30px;" +
+    "background:transparent;box-shadow:none;cursor:grab}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
     "background:#fff;" +
-    "filter:drop-shadow(0 1px 0 rgba(0,0,0,.45)) drop-shadow(0 -1px 0 rgba(0,0,0,.45)) " +
-    "drop-shadow(1px 0 0 rgba(0,0,0,.45)) drop-shadow(-1px 0 0 rgba(0,0,0,.45)) " +
-    "drop-shadow(0 3px 8px rgba(0,0,0,.25));" +
+    "filter:drop-shadow(0 2px 6px rgba(0,0,0,.22));" +
     "clip-path:polygon(14% 0,100% 0,100% 100%,0 100%)}" +
-    ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
-    "border:1px solid rgba(0,0,0,.5);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
-    ".kfw-btn:hover{background:#eee}" +
+    ".kfw-btn{width:24px;height:24px;line-height:22px;font-size:15px;font-family:system-ui,sans-serif;" +
+    "border:1px solid rgba(0,0,0,.2);border-radius:4px;background:#fff;color:#333;cursor:pointer;padding:0}" +
+    ".kfw-btn:hover{background:#d9d9d9}" +
     // 悬浮球：浅色半透白 + 毛玻璃、36px、贴边半藏 55%、悬停近全露；
     // 拖动时脱离贴边自由跟手（kfw-ball-drag），松手吸附最近边
     ".kfw-ball{position:fixed;z-index:2147483647;width:36px;height:36px;border-radius:50%;" +
@@ -200,7 +197,7 @@ const FLOAT_SCRIPT = `
   }
   var btnbar = document.createElement("div");
   btnbar.className = "kfw-btnbar";
-  btnbar.title = "调试控制台";
+  btnbar.title = "按住拖动调试控制台";
   btnbar.setAttribute("data-kfw-ui", "console-buttons");
   var minBtn = mkBtn("–", "最小化为悬浮球", "最小化调试控制台");
   var maxBtn = mkBtn("□", "分屏停靠", "最大化调试控制台");
@@ -228,7 +225,7 @@ const FLOAT_SCRIPT = `
     return document.documentElement.clientHeight || window.innerHeight;
   }
   var barW = 0;
-  var barH = 24;
+  var barH = 30;
   var syncPending = false;
   function syncBtnbar() {
     if (syncPending) return;
@@ -482,6 +479,22 @@ const FLOAT_SCRIPT = `
   // 拖动（面板/卡片两态通用）：只认顶部那一条（标签栏），按钮/角柄/边线不触发；
   // 下面的正文照常交互。卡片态拖标签栏 = **拿走**：按当前几何转悬浮面板。
   var dragging = null;
+  // 开始拖动面板（标签栏与梯形按钮条把手共用）：卡片态先「拿走」转悬浮再拖。
+  function startPanelDrag(event) {
+    var box = container.getBoundingClientRect();
+    if (uiState === "max") {
+      // 拿走：以当前几何转悬浮（宽高冻结成变量，边距取现值）
+      container.style.setProperty("--kfw-w", Math.round(box.width) + "px");
+      container.style.setProperty("--kfw-h", Math.round(box.height) + "px");
+      container.classList.remove("kfw-max");
+      container.classList.add("kfw-float");
+      uiState = "float";
+      maxBtn.title = "分屏停靠";
+      syncBtnbar();
+    }
+    dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
+    event.preventDefault();
+  }
   container.addEventListener(
     "mousedown",
     function (event) {
@@ -495,26 +508,17 @@ const FLOAT_SCRIPT = `
       var box = container.getBoundingClientRect();
       // 48px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶），热区略放宽
       if (event.clientY - box.top > 48) return;
-      if (uiState === "max") {
-        // 拿走：以当前几何转悬浮（宽高冻结成变量，边距取现值）
-        container.style.setProperty(
-          "--kfw-w",
-          Math.round(box.width) + "px",
-        );
-        container.style.setProperty(
-          "--kfw-h",
-          Math.round(box.height) + "px",
-        );
-        container.classList.remove("kfw-max");
-        container.classList.add("kfw-float");
-        uiState = "float";
-        maxBtn.title = "分屏停靠";
-      }
-      dragging = { x: event.clientX, y: event.clientY, left: box.left, top: box.top };
-      event.preventDefault();
+      startPanelDrag(event);
     },
     true,
   );
+  // 梯形按钮条的空白处＝面板把手（用户口径 2026-10-24「按住直角梯形面板也可以
+  // 拖动整个面板」）：按钮本身不触发（点击语义），其余区域按住即拖。
+  btnbar.addEventListener("mousedown", function (event) {
+    var t = event.target;
+    if (t && t.closest && t.closest(".kfw-btn")) return;
+    startPanelDrag(event);
+  });
   window.addEventListener("mousemove", function (event) {
     if (!dragging) return;
     var left = Math.max(0, dragging.left + (event.clientX - dragging.x));

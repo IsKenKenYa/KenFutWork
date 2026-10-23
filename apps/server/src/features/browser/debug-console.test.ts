@@ -158,9 +158,16 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 悬浮球贴内容区右缘（clientWidth 扣掉滚动条），不被右侧滚动条盖住
     expect(script).toContain("document.documentElement.clientWidth");
     expect(script).toContain("kfw-ball-inset");
-    // 梯形横向 120%（用户 2026-10-23）：58px 按钮排 + 28px 左探出 = 86px
-    expect(script).toContain("padding:2px 0 2px 28px");
+    // 按钮加大（用户 2026-10-24「按钮太小了」）：24px 按钮 + 30px 左探出（梯形把手）
+    expect(script).toContain("padding:3px 0 3px 30px");
+    expect(script).toContain("width:24px;height:24px");
+    expect(script).not.toContain("width:18px");
     expect(script).not.toContain("min-width:112px");
+    // 梯形空白处＝面板拖动把手（用户 2026-10-24「按住直角梯形面板也可以拖动」）：
+    // 与标签栏共用 startPanelDrag，卡片态按住先拿走转悬浮
+    expect(script).toContain("function startPanelDrag");
+    expect(script).toContain('btnbar.addEventListener("mousedown"');
+    expect(script).toContain('t.closest(".kfw-btn")')
     // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
     expect(script).toContain("kfw-ball-right");
@@ -209,12 +216,13 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("color:#333");
     expect(script).not.toContain("background:#2b3038");
     expect(script).not.toContain("color:#f4f6f8");
-    // 轮廓可见（用户口径 2026-10-24「哪有按钮」）：纯白底在白色页面隐形——
-    // 底色/字色不动，梯形外沿用四向 drop-shadow 描边（box-shadow 会被 clip-path
-    // 裁掉，drop-shadow 跟随裁剪形状、斜边也有轮廓），按钮格边框加深
-    expect(script).toContain("filter:drop-shadow(0 1px 0 rgba(0,0,0,.45))");
-    expect(script).toContain("border:1px solid rgba(0,0,0,.5)");
-    expect(script).not.toContain("box-shadow:0 2px 8px rgba(0,0,0,.15)");
+    // 无黑色描边（用户口径 2026-10-24「不要黑色描边」：按钮回归面板上，面板自身
+    // 是视觉锚点）——只留一条软投影，按钮格浅边框，hover 反馈加深（画面流有数十 ms
+    // 延迟不可消除，对比度拉满让效果一出来就可见）
+    expect(script).toContain("filter:drop-shadow(0 2px 6px rgba(0,0,0,.22))");
+    expect(script).toContain("border:1px solid rgba(0,0,0,.2)");
+    expect(script).toContain(".kfw-btn:hover{background:#d9d9d9}");
+    expect(script).not.toContain("drop-shadow(0 1px 0 rgba(0,0,0,.45))");
     // 最小化的球停靠在面板所在半边、面板顶缘高度（按钮跟面板走后球也跟面板走）：
     // 视线不用动，点一下球即还原
     expect(script).toContain('placeBall(');
