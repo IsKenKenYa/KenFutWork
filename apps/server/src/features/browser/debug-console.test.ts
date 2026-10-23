@@ -189,9 +189,13 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("kfw-btnbar");
     // 按钮条挂 documentElement：与页面顶部导航同 z-index 时以更晚绘制顺序压过它
     expect(script).toContain("document.documentElement.appendChild(btnbar)");
+    // 斜边**陡**（用户口径 2026-10-23「斜边梯度陡一点」）：38% 起坡水平跨 33px，
+    // 正好从最左按钮「–」的左上角穿过——背景在按钮角上缺一块（用户看到的
+    // 「按钮面板错位」就是它）。14% 后斜坡完全落在按钮左侧留白里。
     expect(script).toContain(
-      "clip-path:polygon(38% 0,100% 0,100% 100%,0 100%)",
+      "clip-path:polygon(14% 0,100% 0,100% 100%,0 100%)",
     );
+    expect(script).not.toContain("polygon(38%");
     expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
     // 按钮条恒定贴视口右上角（用户口径 2026-10-23「三按钮多点点就卡死」）：
@@ -200,11 +204,11 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("viewportWidth() - barW");
     expect(script).not.toContain("rect.right - barW");
     expect(script).not.toContain("rect.top - barH");
-    // 深色底白字（用户口径 2026-10-23「按钮没了」）：白底在浅色页面上隐形
-    // （实测按钮区 74% 纯白、仅 26 个深色字形像素，画面流 JPEG 压缩后肉眼不可辨）
-    expect(script).toContain("background:#2b3038");
-    expect(script).toContain("color:#f4f6f8");
-    expect(script).not.toContain("background:#fff;color:#333");
+    // 白底深字（用户口径 2026-10-23「不要改颜色」：深色版试用后否决，回原配色）
+    expect(script).toContain("background:#fff");
+    expect(script).toContain("color:#333");
+    expect(script).not.toContain("background:#2b3038");
+    expect(script).not.toContain("color:#f4f6f8");
     // 最小化的球落在按钮条正下方（视口右缘顶部）：视线不用动，点一下球即还原
     expect(script).toContain('placeBall("right")');
     expect(script).toContain('ball.style.top = "28px"');
