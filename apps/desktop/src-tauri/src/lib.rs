@@ -455,6 +455,7 @@ pub fn run() {
             desktop_system::open_external,
             desktop_system::cua_permission_owner,
             desktop_system::open_cua_permission_settings,
+            desktop_system::request_cua_screen_recording_access,
             data_location::open_in_browser,
             data_location::open_data_directory,
             data_location::move_data_directory,

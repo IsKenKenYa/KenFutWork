@@ -2,6 +2,10 @@ import { z } from "zod";
 import type { CodeUiHostRpcHandler } from "../code-ui/host-rpc-handler.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { ComputerUseExecutor } from "./executor.js";
+import {
+  buildPermissionStatus,
+  resolveGrantOwner,
+} from "./permission-status.js";
 import type { CuGateVerdict } from "./tools.js";
 
 /** 原权限service消费本机preflight，设置页不触发截图或输入。 */
@@ -31,21 +35,16 @@ export function createMacosPermissionStatusRpc(deps: {
         signal: AbortSignal.timeout(timeoutMs),
         timeoutMs,
       });
-      const state = (value: string) =>
-        value === "granted" || value === "denied" ? value : "unknown";
-      return {
-        available: true,
-        platform: "darwin",
-        grantOwner: null,
-        // AX和事件注入共用辅助功能面板，任一未获准都不能控制桌面。
-        accessibility: state(
-          status.accessibility === "granted" && status.postEvents === "denied"
-            ? "denied"
-            : status.accessibility,
-        ),
-        screenRecording: state(status.screen),
-        reason: status.hint,
-      };
+      // 授权主体取自当前进程所在的应用包：设置页要告诉用户勾选哪个应用，
+      // 前端缓存也要求它是字符串（null 会让整条缓存判失效）。
+      return buildPermissionStatus({
+        accessibility: status.accessibility,
+        screen: status.screen,
+        postEvents: status.postEvents,
+        automation: status.automation,
+        hint: status.hint,
+        owner: resolveGrantOwner(process.execPath),
+      });
     },
   };
 }

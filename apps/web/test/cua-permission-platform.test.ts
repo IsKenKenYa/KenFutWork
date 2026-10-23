@@ -79,7 +79,7 @@ it("普通focus不能冒充系统设置返回，取消会解除监听", async ()
 it("按权限依次进入系统设置，返回只声明流程完成并要求刷新真实状态", async () => {
   const panes: string[] = [];
   const onboarding = createCuaPermissionOnboarding(async (command, args) => {
-    expect(command).toBe("open_cua_permission_settings");
+    if (command !== "open_cua_permission_settings") return false;
     panes.push(String(args?.permission));
     window.dispatchEvent(new Event("blur"));
     window.dispatchEvent(new Event("focus"));
@@ -96,6 +96,56 @@ it("按权限依次进入系统设置，返回只声明流程完成并要求刷�
     restartHelperAfterReturn: false,
   });
   expect(result).not.toHaveProperty("permissionStatus");
+});
+
+it("屏幕录制先请求系统原生授权，被拒后才打开设置面板", async () => {
+  const commands: string[] = [];
+  const onboarding = createCuaPermissionOnboarding(async (command, args) => {
+    commands.push(
+      command === "open_cua_permission_settings"
+        ? `${command}:${String(args?.permission)}`
+        : command,
+    );
+    if (command === "request_cua_screen_recording_access") return false;
+    if (command === "open_cua_permission_settings") {
+      window.dispatchEvent(new Event("blur"));
+      window.dispatchEvent(new Event("focus"));
+    }
+    return null;
+  });
+  const result = await onboarding.openCuaPermissionOnboarding({
+    operationId: "screen-1",
+    requiredPermissions: ["screen_recording"],
+  });
+  expect(commands).toEqual([
+    "request_cua_screen_recording_access",
+    "open_cua_permission_settings:screen_recording",
+  ]);
+  expect(result).toEqual({
+    success: true,
+    sessionId: "screen-1",
+    returnedFromSettings: true,
+    restartHelperAfterReturn: false,
+  });
+});
+
+it("系统原生授权已通过时不再打开设置面板", async () => {
+  const commands: string[] = [];
+  const onboarding = createCuaPermissionOnboarding(async (command) => {
+    commands.push(command);
+    return command === "request_cua_screen_recording_access" ? true : null;
+  });
+  const result = await onboarding.openCuaPermissionOnboarding({
+    operationId: "screen-2",
+    requiredPermissions: ["screen_recording"],
+  });
+  expect(commands).toEqual(["request_cua_screen_recording_access"]);
+  expect(result).toEqual({
+    success: true,
+    sessionId: "screen-2",
+    returnedFromSettings: true,
+    restartHelperAfterReturn: false,
+  });
 });
 
 it("关闭权限页取消精确操作，设置打开失败不能报告成功", async () => {

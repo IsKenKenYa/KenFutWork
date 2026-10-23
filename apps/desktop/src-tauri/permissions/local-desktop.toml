@@ -8,6 +8,7 @@ commands.allow = [
   "open_external",
   "cua_permission_owner",
   "open_cua_permission_settings",
+  "request_cua_screen_recording_access",
   "open_in_browser",
   "open_data_directory",
   "move_data_directory",

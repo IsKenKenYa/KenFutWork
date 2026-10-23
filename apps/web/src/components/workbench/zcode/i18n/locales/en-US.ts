@@ -6826,6 +6826,10 @@ const enUS: Record<string, string> = {
   "cuaPermission.perm.accessibility.purpose": "Read/drive UI elements + synthesize input",
   "cuaPermission.perm.screenRecording": "Screen Recording",
   "cuaPermission.perm.screenRecording.purpose": "Capture the screen",
+  "cuaPermission.perm.automation": "Automation",
+  "cuaPermission.perm.automation.purpose": "Bridge system events",
+  "cuaPermission.openAutomation": "Open Automation Settings",
+  "cuaPermission.grant.listHint": "Check or drag KenFutWork.app into the list",
   "cuaPermission.osFloorTitle":
     "Computer Use requires macOS {minimum} or later (currently around macOS {current})",
   "cuaPermission.osFloorDescription":

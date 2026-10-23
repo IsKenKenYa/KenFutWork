@@ -15,7 +15,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
-import { readPngWithinBudget } from "./budget.js";
+import { isBlackFrame, readPngWithinBudget } from "./budget.js";
 import type {
   ComputerUseExecutor,
   CuAccessStatus,
@@ -31,6 +31,7 @@ import type {
 } from "./executor.js";
 import { CU_AX_DEFAULT_LIMITS } from "./executor.js";
 import {
+  buildAutomationProbeScript,
   buildDescribeElementScript,
   buildElementActionScript,
   buildElementIdentityScript,
@@ -40,12 +41,15 @@ import {
   buildPostEventAccessScript,
   buildResolveWindowScript,
   buildWindowBoundsScript,
+  buildWindowStackScript,
+  classifyAutomationProbe,
   jxaObservationToParts,
   runJxa,
 } from "./jxa.js";
 import { withMacosClipboardText } from "./macos-clipboard.js";
 import { macosMouse } from "./macos-mouse.js";
 import { nativeInput } from "./native-input.js";
+import { type CuWindowStackRow, pickOccludingWindow } from "./occlusion.js";
 import type { CuTarget, ParsedAppRef } from "./target.js";
 
 const execFileAsync = promisify(execFile);
@@ -136,6 +140,23 @@ interface WindowBoundsResult {
   app?: import("./ax-tree.js").AxAppRef;
   binding?: string;
   bounds?: [number, number, number, number] | null;
+}
+
+/** 绑定串（pid/launchedAt/windowId/axTitle）里只取截图判定需要的两项。 */
+function parseBindingWindow(binding?: string): {
+  pid?: number;
+  windowId?: number;
+} {
+  if (!binding) return {};
+  try {
+    const raw = JSON.parse(binding) as { pid?: unknown; windowId?: unknown };
+    return {
+      ...(typeof raw.pid === "number" ? { pid: raw.pid } : {}),
+      ...(typeof raw.windowId === "number" ? { windowId: raw.windowId } : {}),
+    };
+  } catch {
+    return {};
+  }
 }
 
 async function windowBounds(
@@ -320,18 +341,33 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
         context,
       );
       const postEvents = post.postEventAccess ? "granted" : "denied";
+      // 自动化权限：JXA 观察/输入走 System Events 的 AppleEvent，与前两项是独立 TCC 面。
+      let automation: CuAccessStatus["automation"] = "not_determined";
+      try {
+        const probe = await jxaJson<{ ok: boolean; reason?: string | null }>(
+          buildAutomationProbeScript(),
+          timeoutMs,
+          context,
+        );
+        automation = classifyAutomationProbe(probe);
+      } catch (error) {
+        if ((error as { code?: string }).code === "cancelled") throw error;
+        // 探测失败不改变其余结论：保持 not_determined，交给 hint 提示手工确认。
+      }
       const missing = [
         accessibility !== "granted" ? "辅助功能（AX 读取与动作）" : null,
         screen !== "granted" ? "屏幕录制（截屏）" : null,
         postEvents !== "granted" ? "输入事件（实际发事件进程）" : null,
+        automation !== "granted" ? "自动化（System Events 桥接）" : null,
       ].filter(Boolean);
       return {
         accessibility,
         screen,
         postEvents,
+        automation,
         hint:
           missing.length > 0
-            ? `缺少权限：${missing.join("、")}。请在系统设置 → 隐私与安全性中手动批准运行KenFutWork的应用；桌面端可在「电脑控制」设置中查看授权路径，然后返回重试。`
+            ? `缺少权限：${missing.join("、")}。请在系统设置 → 隐私与安全性中手动批准运行KenFutWork的应用（「自动化」一项在“自动化”或首次弹窗中批准 System Events）；桌面端可在「电脑控制」设置中查看授权路径，然后返回重试。`
             : "权限查询通过；请用实际观察和输入效果确认桌面能力。",
       };
     },
@@ -423,6 +459,35 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
             actionSent: false,
           });
         const binding = metadata.binding;
+        // 截前遮挡判定：screencapture 取的是屏幕矩形，被盖住就会截到别人的界面。
+        if (!appRef.displayId) {
+          const bound = parseBindingWindow(binding);
+          const pid = bound.pid ?? metadata.app?.pid;
+          const windowId = bound.windowId;
+          if (typeof pid === "number" && typeof windowId === "number") {
+            const stack = await jxaJson<CuWindowStackRow[]>(
+              buildWindowStackScript(),
+              timeoutMs,
+              context,
+            );
+            const verdict = pickOccludingWindow(stack, {
+              pid,
+              windowId,
+              bounds,
+            });
+            if (verdict.occluded) {
+              const who = verdict.blocker
+                ? `「${verdict.blocker.name ?? "未命名窗口"}」（pid=${verdict.blocker.pid}）`
+                : "目标窗口不在当前屏幕（可能已最小化或位于其它桌面）";
+              throw Object.assign(
+                new Error(
+                  `截图区域被遮挡：${who}。屏幕矩形截图会把遮挡内容当成目标界面，故拒绝返回不可信像素；请先激活目标窗口，或让用户移开遮挡窗口后重试。`,
+                ),
+                { code: "occluded", actionSent: false },
+              );
+            }
+          }
+        }
         const file = join(directory, "frame.png");
         await execFileAsync(
           "/usr/sbin/screencapture",
@@ -456,7 +521,8 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
           base64: buffer.toString("base64"),
           bounds,
           ...(binding ? { binding } : {}),
-          blackFrame: false,
+          // pngjs 解码结果恒为 RGBA：步长必须按 4 取，否则采样错位会误判。
+          blackFrame: isBlackFrame(image.data, 4),
         };
       } catch (error) {
         return actionError(error, false);

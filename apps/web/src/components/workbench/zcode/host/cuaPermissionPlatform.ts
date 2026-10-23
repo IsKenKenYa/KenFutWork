@@ -106,6 +106,20 @@ export async function prepareCuaSettingsReturn(
   return { returned };
 }
 
+/** 直接打开某个权限面板：供自动化这类不参与「必需项」流程的权限使用。 */
+export async function openCuaPermissionPane(
+  permission: "accessibility" | "screen_recording" | "automation",
+): Promise<boolean> {
+  const invoke = localCuaDesktopInvoke();
+  if (!invoke) return false;
+  try {
+    await invoke("open_cua_permission_settings", { permission });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function createCuaPermissionOnboarding(
   invoke: NonNullable<ReturnType<typeof localCuaDesktopInvoke>>,
 ) {
@@ -124,6 +138,15 @@ export function createCuaPermissionOnboarding(
       try {
         for (const permission of required) {
           controller.signal.throwIfAborted();
+          // 屏幕录制可以交给系统原生授权框：用户点一次「允许」即完成，不需要去设置页找开关。
+          // 命令缺失或用户拒绝时返回 false，继续走打开设置面板的老路。
+          if (permission === "screen_recording") {
+            const granted = await invoke(
+              "request_cua_screen_recording_access",
+            ).catch(() => false);
+            controller.signal.throwIfAborted();
+            if (granted === true) continue;
+          }
           const { returned } = await prepareCuaSettingsReturn(
             window,
             controller.signal,

@@ -6506,6 +6506,10 @@ const zhCN: Record<string, string> = {
   "cuaPermission.perm.accessibility.purpose": "读取/驱动 UI 元素 + 合成键鼠输入",
   "cuaPermission.perm.screenRecording": "屏幕录制 (Screen Recording)",
   "cuaPermission.perm.screenRecording.purpose": "截屏",
+  "cuaPermission.perm.automation": "自动化 (Automation)",
+  "cuaPermission.perm.automation.purpose": "桥接系统事件",
+  "cuaPermission.openAutomation": "打开自动化设置",
+  "cuaPermission.grant.listHint": "在列表里勾选或拖入 KenFutWork.app",
   "cuaPermission.osFloorTitle":
     "电脑控制功能需要 macOS {minimum} 或更高版本（当前约为 macOS {current}）",
   "cuaPermission.osFloorDescription": "请先升级系统后再使用。授权设置在低版本系统上无法完成。",

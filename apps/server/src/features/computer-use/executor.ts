@@ -115,6 +115,8 @@ export interface CuAccessStatus {
   accessibility: "granted" | "denied" | "not_determined";
   screen: "granted" | "denied" | "not_determined";
   postEvents?: "granted" | "denied" | "not_determined";
+  /** 自动化（AppleEvent → System Events）：JXA 观察/输入路径的必要授权。 */
+  automation?: "granted" | "denied" | "not_determined";
   hint: string;
 }
 

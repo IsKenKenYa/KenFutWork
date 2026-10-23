@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSettings } from "@zui/hooks/useSettingService.js";
 import { resolveComputerUsePlugin } from "@zui/host/cuaSharedAdapter.js";
+import { openCuaPermissionPane } from "@zui/host/cuaPermissionPlatform.js";
 import type { CuaOsSupport, CuaPermissionKind, RemoteTarget } from "@zcode/shared";
 import { DesktopCommandIds, isRemoteWorkspaceIdentity } from "@zcode/shared";
 import { isCuaPermissionStatusAvailable, type CuaPermissionRestartOptions } from "@zcode/services";
@@ -522,23 +523,29 @@ export function ComputerUseSection({
   const renderGrantDetail = (kind: CuaPermissionKind, labelId: string): ReactNode => {
     if (typeof platform.openCuaPermissionOnboarding !== "function") return null;
     return (
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        className="text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300"
-        aria-label={intl.formatMessage({ id: labelId })}
-        title={intl.formatMessage({ id: labelId })}
-        disabled={!settled}
-        onClick={() => void openPermissionSettings(kind)}
-      >
-        <ExternalLink className="size-4" aria-hidden="true" />
-        <span className="hidden sm:inline">
-          {intl.formatMessage({
-            id: settled ? labelId : "cuaPermission.status.verifying",
-          })}
+      <div className="flex flex-col items-start gap-1.5">
+        {/* 设置页只列出应用路径还不够：用户需要知道要把哪个应用放进列表。 */}
+        <span className="text-xs text-foreground-subtlest">
+          {intl.formatMessage({ id: "cuaPermission.grant.listHint" })}
         </span>
-      </Button>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300"
+          aria-label={intl.formatMessage({ id: labelId })}
+          title={intl.formatMessage({ id: labelId })}
+          disabled={!settled}
+          onClick={() => void openPermissionSettings(kind)}
+        >
+          <ExternalLink className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">
+            {intl.formatMessage({
+              id: settled ? labelId : "cuaPermission.status.verifying",
+            })}
+          </span>
+        </Button>
+      </div>
     );
   };
 
@@ -606,6 +613,14 @@ export function ComputerUseSection({
   // 两项权限的状态视图（圆点 tone + 文案），与圆点同源，避免文案/颜色不同步。
   const acc = statusView(availableStatus?.accessibility);
   const screenPerm = statusView(availableStatus?.screenRecording);
+  // 自动化是独立的一项：JXA 观察与输入经 System Events 桥接时必需。
+  // 后端未返回该字段（旧版本或外部后端）时不渲染这一行，避免展示无法核实的开关。
+  type StatusWithAutomation = NonNullable<typeof availableStatus> & {
+    automation?: "granted" | "denied" | "unknown";
+  };
+  const automationState = (availableStatus as StatusWithAutomation | null)
+    ?.automation;
+  const automationPerm = statusView(automationState);
 
   // 输入框常驻入口的显隐。隐藏开关用 useSettings().update 写入
   // （直连 settingService 只落盘不刷新共享 snapshot，输入框按钮读不到新值）。
@@ -808,6 +823,43 @@ export function ComputerUseSection({
                       )
                 }
               />
+              {automationState === undefined ? null : (
+                <SettingsRow
+                  controlLayout="wide"
+                  label={intl.formatMessage({
+                    id: "cuaPermission.perm.automation",
+                  })}
+                  description={intl.formatMessage({
+                    id: "cuaPermission.perm.automation.purpose",
+                  })}
+                  control={
+                    <SettingsBadge>
+                      <span className="inline-flex items-center gap-1.5">
+                        <StatusDot tone={automationPerm.tone} />
+                        {automationPerm.text}
+                      </span>
+                    </SettingsBadge>
+                  }
+                  detail={
+                    automationState === "granted" ? undefined : (
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="sm"
+                        className="text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300"
+                        onClick={() => void openCuaPermissionPane("automation")}
+                      >
+                        <ExternalLink className="size-4" aria-hidden="true" />
+                        <span className="hidden sm:inline">
+                          {intl.formatMessage({
+                            id: "cuaPermission.openAutomation",
+                          })}
+                        </span>
+                      </Button>
+                    )
+                  }
+                />
+              )}
             </SettingsGroupCard>
           ) : null}
         </>

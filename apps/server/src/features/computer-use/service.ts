@@ -95,6 +95,8 @@ const SUGGESTED_ACTIONS: Record<string, string> = {
   permission_denied:
     "在系统设置里为本应用授予「辅助功能」与「屏幕录制」权限后重试。",
   controller_busy: "让用户停止当前持有桌面控制权的会话后再试。",
+  occluded:
+    "目标窗口被遮挡或不在当前屏幕：先调用 mcp__computer-use__focus_window 激活，或让用户移开遮挡窗口后重新截图。",
   unavailable: "确认运行平台与执行器装配（里程碑 1 仅支持 macOS）。",
   action_limit: "本轮动作数已达上限，让用户确认后续再继续。",
   session_expired: "控制会话超时，让用户重新发起。",
@@ -517,15 +519,28 @@ export function createComputerUseService(options: {
           (operation) => executor.accessStatus(operation),
           context,
         );
+        const pending =
+          status.accessibility !== "granted" ||
+          status.screen !== "granted" ||
+          status.automation === "denied";
         return okResult(
-          `辅助功能：${status.accessibility}；屏幕录制：${status.screen}。${status.hint}`,
+          `辅助功能：${status.accessibility}；屏幕录制：${status.screen}${
+            status.automation ? `；自动化：${status.automation}` : ""
+          }。${status.hint}${
+            pending
+              ? " 仍有权限未授予：若用户正在系统设置里操作，请在 2–3 秒后再次调用 request_access，不要结束回合。"
+              : ""
+          }`,
           {
             permissionStatus: {
               accessibility: status.accessibility,
               screen: status.screen,
               ...(status.postEvents ? { postEvents: status.postEvents } : {}),
+              ...(status.automation ? { automation: status.automation } : {}),
+              pending,
             },
             hint: status.hint,
+            pending,
           },
         );
       } catch (error) {
@@ -643,27 +658,35 @@ export function createComputerUseService(options: {
         let extraContent: CuContentBlock[] = [];
         let suffix = "";
         if (input.includeScreenshot) {
-          const raster = await withTimeout(
-            "screenshot",
-            async (operation) =>
-              fitRasterPreview(
-                await executor.capture(appRef, operation),
-                governance().screenshotMaxBytes,
-              ),
-            context,
-            undefined,
-            false,
-            latest.binding,
-          );
-          if (raster.blackFrame) {
-            suffix =
-              "（警告：截屏为全黑——本应用可能缺少「屏幕录制」权限；树观察不受影响。）";
-          } else {
-            latest.raster = raster;
-            const attached = attachRaster(raster, structured);
-            structured = attached.structured;
-            extraContent = attached.content;
-            suffix = attached.text;
+          try {
+            const raster = await withTimeout(
+              "screenshot",
+              async (operation) =>
+                fitRasterPreview(
+                  await executor.capture(appRef, operation),
+                  governance().screenshotMaxBytes,
+                ),
+              context,
+              undefined,
+              false,
+              latest.binding,
+            );
+            if (raster.blackFrame) {
+              suffix =
+                "（警告：截屏为全黑——本应用可能缺少「屏幕录制」权限；树观察不受影响。）";
+            } else {
+              latest.raster = raster;
+              const attached = attachRaster(raster, structured);
+              structured = attached.structured;
+              extraContent = attached.content;
+              suffix = attached.text;
+            }
+          } catch (error) {
+            const code = (error as { code?: string }).code;
+            // 观察以文本为主通路：像素不可信时降级为「只给树」，不让整轮观察失败。
+            if (code !== "occluded" && code !== "image_budget_exceeded")
+              throw error;
+            suffix = `（${error instanceof Error ? error.message : String(error)}；本次仅返回无障碍树。）`;
           }
         }
         return okResult(

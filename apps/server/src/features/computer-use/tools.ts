@@ -232,7 +232,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}request_access`,
       access: "read",
       description:
-        "检查 Computer Use 权限（辅助功能/屏幕录制）状态并返回引导。首次使用桌面控制前先调用它；permissionStatus 为 denied 时按提示去系统设置授权。",
+        "检查 Computer Use 权限（辅助功能/屏幕录制/自动化）状态并返回引导。首次使用桌面控制前先调用它；permissionStatus 为 denied 时按提示去系统设置授权；pending 为 true 表示仍有未授予项，稍后再次调用（不要结束回合）。",
       scope: "code",
       parameters: { type: "object", properties: {} },
       execute: async (_args, execCtx) =>
