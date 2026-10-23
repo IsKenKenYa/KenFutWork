@@ -61,6 +61,7 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { strToU8, zipSync } from "fflate";
 import { renderAnnotationsPng } from "../features/design-review/annotation-png.js";
 import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
@@ -96,6 +97,10 @@ import { authorizeOpenDesignGateway } from "./open-design-gateway-auth.js";
  * 不是 agent 治理数值），不进 `packages/shared/src/governance.ts`。
  */
 const OPEN_DESIGN_CANVAS_TIMEOUT_MS = 5_000;
+
+/** 项目 ZIP 导出的本地护栏：防止把超大资源一次性读进内存。 */
+const OPEN_DESIGN_ARCHIVE_MAX_BYTES = 200 * 1024 * 1024;
+const OPEN_DESIGN_ARCHIVE_FETCH_TIMEOUT_MS = 30_000;
 
 /**
  * 设计文本上限（读写同一口径，属主在 `@kenfutwork/shared`）：超限的页面不做
@@ -879,6 +884,19 @@ export async function registerOpenDesignHostRoutes(
     }
     if (annotationFiles.length > 0) {
       reviewLines.push("### 标注");
+      for (const annotation of review.annotations) {
+        if (annotation.kind !== "text" && annotation.kind !== "mark") continue;
+        const point = annotation.points[0];
+        const position = point
+          ? `（${Math.round(point[0] * 100)}%, ${Math.round(point[1] * 100)}%）`
+          : "";
+        const label = annotation.kind === "text" ? "文本" : "标记";
+        reviewLines.push(
+          `- [${annotation.file}] ${label}${position}：${annotation.text ?? ""}`,
+        );
+      }
+    }
+    if (annotationFiles.length > 0) {
       for (const name of annotationFiles) {
         reviewLines.push(`![标注](${name})`);
       }
@@ -1830,6 +1848,71 @@ export async function registerOpenDesignHostRoutes(
     return reply.send(
       openDesignHostRestoreVersionResponseSchema.parse({ ok: true }),
     );
+  });
+
+  /** 把项目文件整体打成 ZIP（导出 = 项目资源，不是单个入口文件）。 */
+  app.get("/api/open-design/host/archive", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const query = request.query as { projectId?: string };
+    const projectId = query.projectId?.trim();
+    if (!projectId)
+      return error(reply, 400, "application_error", "缺少画布 id。");
+    const canvas = await readCanvas(base, projectId);
+    if (!canvas.ok)
+      return error(reply, canvas.status, "service_unavailable", canvas.message);
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const entries: Record<string, Uint8Array> = {};
+    const skipped: string[] = [];
+    let totalBytes = 0;
+    for (const file of canvas.files) {
+      if (!file.name) continue;
+      const resolved = await resolvePreviewUrl(base, projectId, file.name);
+      if (!resolved.ok) {
+        skipped.push(`${file.name}（${resolved.message}）`);
+        continue;
+      }
+      try {
+        const response = await fetchImpl(`${base}${resolved.url}`, {
+          signal: AbortSignal.timeout(OPEN_DESIGN_ARCHIVE_FETCH_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+          skipped.push(`${file.name}（HTTP ${response.status}）`);
+          continue;
+        }
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        totalBytes += bytes.byteLength;
+        if (totalBytes > OPEN_DESIGN_ARCHIVE_MAX_BYTES) {
+          return error(
+            reply,
+            413,
+            "application_error",
+            "项目资源超过 200 MB，暂不支持整体导出。",
+          );
+        }
+        entries[file.name] = bytes;
+      } catch {
+        skipped.push(`${file.name}（读取失败）`);
+      }
+    }
+    if (Object.keys(entries).length === 0) {
+      return error(reply, 404, "application_error", "项目里没有可导出的文件。");
+    }
+    if (skipped.length > 0) {
+      entries["导出说明.txt"] = strToU8(
+        `以下文件没有打进压缩包：\n${skipped.map((item) => `- ${item}`).join("\n")}\n`,
+      );
+    }
+    const zipped = zipSync(entries, { level: 6 });
+    const fileName = `${canvas.project.name.replace(/[\\/:*?"<>|]/gu, "-").trim() || "设计项目"}.zip`;
+    reply.header("content-type", "application/zip");
+    reply.header(
+      "content-disposition",
+      `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    );
+    return reply.send(Buffer.from(zipped));
   });
 
   // 设计文本：截图/导出在浏览器里做光栅化，输入是这份自包含 HTML。

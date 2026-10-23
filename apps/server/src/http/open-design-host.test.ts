@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import Fastify from "fastify";
+import { unzipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import type { LocalInstanceService } from "../features/local-instance/types.js";
 import type { ResolvedInstanceCredentials } from "../features/model-providers/model-provider-service.js";
@@ -821,6 +822,49 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
     });
     expect(tooBig.statusCode).toBe(413);
   });
+
+  it("项目 ZIP：打包全部可读文件，读取失败的文件写进导出说明", async () => {
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({
+        "/api/projects/p-1": () =>
+          jsonResponse({ project: { id: "p-1", name: "测试项目" } }),
+        "/api/projects/p-1/files": () =>
+          jsonResponse({
+            files: [
+              { name: "index.html", kind: "html" },
+              { name: "assets/a.txt", kind: "file" },
+              { name: "missing.txt", kind: "file" },
+            ],
+          }),
+        "/preview-url?file=index.html": () =>
+          jsonResponse({ url: "/preview/index.html" }),
+        "/preview-url?file=assets%2Fa.txt": () =>
+          jsonResponse({ url: "/preview/a.txt" }),
+        "/preview-url?file=missing.txt": () =>
+          jsonResponse({ url: "/preview/missing.txt" }),
+        "/preview/index.html": () => new Response("<html>hi</html>"),
+        "/preview/a.txt": () => new Response("hello"),
+      }),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/archive?projectId=p-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(String(response.headers["content-type"])).toContain(
+      "application/zip",
+    );
+    const files = unzipSync(new Uint8Array(response.rawPayload));
+    expect(new TextDecoder().decode(files["index.html"])).toBe(
+      "<html>hi</html>",
+    );
+    expect(new TextDecoder().decode(files["assets/a.txt"])).toBe("hello");
+    expect(new TextDecoder().decode(files["导出说明.txt"])).toContain(
+      "missing.txt",
+    );
+  });
+
   it("版本历史：映射上游字段并过滤无 id 条目；正文按上限透出", async () => {
     const app = canvasFixture({
       frontendUrl: "http://127.0.0.1:7456",

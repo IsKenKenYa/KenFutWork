@@ -79,7 +79,11 @@ function toAnnotation(row: DesignReviewAnnotationRow): DesignReviewAnnotation {
     id: row.id,
     projectId: row.project_id,
     file: row.file_name,
-    kind: row.kind === "rect" ? "rect" : "pen",
+    kind:
+      row.kind === "rect" || row.kind === "text" || row.kind === "mark"
+        ? row.kind
+        : "pen",
+    text: row.text ?? null,
     color: row.color,
     strokeWidth: Number(row.stroke_width),
     points: row.points,
@@ -149,6 +153,7 @@ export function createDesignReviewService(options: {
         color: input.color,
         strokeWidth: input.strokeWidth,
         points: input.points,
+        text: input.text ?? null,
       });
       if (!row) throw new Error("标注写入没有返回行。");
       return toAnnotation(row);

@@ -21,6 +21,7 @@ import {
   Highlighter,
   History,
   House,
+  MapPin,
   MessageSquarePlus,
   Monitor,
   Palette,
@@ -34,6 +35,7 @@ import {
   SquareDashed,
   SquarePen,
   Tablet,
+  Type,
   Upload,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -125,6 +127,7 @@ export function OpenDesignToolbar({
   onExportPng,
   onExportHtml,
   onExportPdf,
+  onExportZip,
   onPresent,
   onShare,
   shareBusy,
@@ -148,8 +151,8 @@ export function OpenDesignToolbar({
   tool: OpenDesignTool;
   onTool: (tool: OpenDesignTool) => void;
   /** 标注画笔形态：自由笔迹或拖框。 */
-  annotationKind: "pen" | "rect";
-  onAnnotationKind: (kind: "pen" | "rect") => void;
+  annotationKind: "pen" | "rect" | "text" | "mark";
+  onAnnotationKind: (kind: "pen" | "rect" | "text" | "mark") => void;
   /** 未解决评论数（与画布上的图钉数一致）；侧栏按钮上的读数。 */
   commentCount: number;
   sidebarOpen: boolean;
@@ -185,6 +188,7 @@ export function OpenDesignToolbar({
   onExportPng: () => void;
   onExportHtml: () => void;
   onExportPdf: () => void;
+  onExportZip: () => void;
   onPresent: () => void;
   onShare: () => void;
   shareBusy: boolean;
@@ -392,6 +396,36 @@ export function OpenDesignToolbar({
               <SquareDashed className="size-3" />
             </ToolbarToggleIconButton>
             <ToolbarToggleIconButton
+              label="文本"
+              active={tool === "annotate" && annotationKind === "text"}
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={() => {
+                onAnnotationKind("text");
+                onTool(
+                  tool === "annotate" && annotationKind === "text"
+                    ? "none"
+                    : "annotate",
+                );
+              }}
+            >
+              <Type className="size-3" />
+            </ToolbarToggleIconButton>
+            <ToolbarToggleIconButton
+              label="标记"
+              active={tool === "annotate" && annotationKind === "mark"}
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={() => {
+                onAnnotationKind("mark");
+                onTool(
+                  tool === "annotate" && annotationKind === "mark"
+                    ? "none"
+                    : "annotate",
+                );
+              }}
+            >
+              <MapPin className="size-3" />
+            </ToolbarToggleIconButton>
+            <ToolbarToggleIconButton
               label="编辑"
               active={tool === "edit"}
               disabled={busy || !hasCanvas || viewMode === "code"}
@@ -504,6 +538,9 @@ export function OpenDesignToolbar({
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={onExportPdf}>
                   PDF 文件
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onExportZip}>
+                  ZIP 项目包
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={onExportHtml}>
                   HTML 文件

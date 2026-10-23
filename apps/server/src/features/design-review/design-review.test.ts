@@ -39,6 +39,7 @@ const annotationRow: DesignReviewAnnotationRow = {
   project_id: "p-1",
   file_name: "index.html",
   kind: "pen",
+  text: null,
   color: "#ef4444",
   stroke_width: "3",
   points: [
@@ -115,6 +116,7 @@ describe("design-review service", () => {
           projectId: "p-1",
           file: "index.html",
           kind: "pen",
+          text: null,
           color: "#ef4444",
           strokeWidth: 3,
           points: [

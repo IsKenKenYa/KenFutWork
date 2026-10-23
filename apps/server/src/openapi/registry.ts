@@ -1956,6 +1956,20 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description: "截图/导出/编辑的输入。超过 2MiB 返回 413，不做静默截断。",
   },
   {
+    method: "get",
+    path: "/api/open-design/host/archive",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    querySchema: z.object({
+      projectId: z.string().describe("画布 id"),
+    }),
+    binaryResponse: "application/zip",
+    summary: "导出 OpenDesign 项目资源 ZIP",
+    description:
+      "读取上游项目文件表，逐个取回文件并打成 ZIP；读取失败的文件会在包内「导出说明.txt」列出。超过 200 MB 返回 413。本机接入验证。",
+  },
+  {
     method: "post",
     path: "/api/open-design/host/file",
     tag: "open-design",

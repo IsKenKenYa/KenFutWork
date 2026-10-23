@@ -54,7 +54,7 @@ import {
   type OpenDesignHit,
 } from "./openDesignRuntime.js";
 import { applyElementEdit } from "./openDesignSourceEdit.js";
-import { surfaceJson } from "./surfaceApi.js";
+import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 import { useOpenDesignBridge } from "./useOpenDesignBridge.js";
 
 /** 文档标题取第一个一级标题；没有就回退文件名。 */
@@ -176,7 +176,9 @@ export function OpenDesignPane({
   } | null>(null);
   /** 画布上的工作模式（评论/标注/编辑互斥）与拾取到的元素。 */
   const [tool, setTool] = useState<OpenDesignTool>("none");
-  const [annotationKind, setAnnotationKind] = useState<"pen" | "rect">("pen");
+  const [annotationKind, setAnnotationKind] = useState<
+    "pen" | "rect" | "text" | "mark"
+  >("pen");
   const [picked, setPicked] = useState<OpenDesignHit | null>(null);
   const [pendingComment, setPendingComment] = useState<OpenDesignHit | null>(
     null,
@@ -380,7 +382,11 @@ export function OpenDesignPane({
   }, []);
 
   const createAnnotation = useCallback(
-    async (draft: { kind: "pen" | "rect"; points: [number, number][] }) => {
+    async (draft: {
+      kind: "pen" | "rect" | "text" | "mark";
+      points: [number, number][];
+      text?: string;
+    }) => {
       if (!canvas?.entryFile) return;
       try {
         const data = await surfaceJson<{
@@ -392,6 +398,7 @@ export function OpenDesignPane({
             projectId: canvas.projectId,
             file: canvas.entryFile,
             kind: draft.kind,
+            ...(draft.text ? { text: draft.text } : {}),
             color: ANNOTATION_COLOR,
             strokeWidth: 3,
             points: draft.points,
@@ -1415,6 +1422,30 @@ export function OpenDesignPane({
     }
   }, [canvas, resolveActiveHtml]);
 
+  const exportZip = useCallback(async () => {
+    if (!boundProjectId) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await surfaceRequest(
+        `/api/open-design/host/archive?projectId=${encodeURIComponent(boundProjectId)}`,
+      );
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${(canvas?.name ?? "设计项目").replace(UNSAFE_FILENAME_CHARS, "-")}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (zipError) {
+      setNotice(
+        zipError instanceof Error ? zipError.message : "导出 ZIP 失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [boundProjectId, canvas?.name]);
+
   const buildPrintableHtml = useCallback(async () => {
     const html = await resolveActiveHtml();
     if (!html) return null;
@@ -1959,6 +1990,7 @@ export function OpenDesignPane({
           onExportPng={() => void exportPng()}
           onExportHtml={() => void exportHtml()}
           onExportPdf={() => void exportPdf()}
+          onExportZip={() => void exportZip()}
           onPresent={presentHtml}
           onShare={() => setShareMenuOpen((open) => !open)}
           shareBusy={shareBusy}

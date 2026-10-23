@@ -8842,6 +8842,68 @@
         }
       }
     },
+    "/api/open-design/host/archive": {
+      "get": {
+        "operationId": "getOpenDesignHostArchive",
+        "summary": "导出 OpenDesign 项目资源 ZIP",
+        "description": "读取上游项目文件表，逐个取回文件并打成 ZIP；读取失败的文件会在包内「导出说明.txt」列出。超过 200 MB 返回 413。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "画布 id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/open-design/host/file": {
       "post": {
         "operationId": "postOpenDesignHostFile",
@@ -17530,7 +17592,20 @@
             "type": "string",
             "enum": [
               "pen",
-              "rect"
+              "rect",
+              "text",
+              "mark"
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "color": {
@@ -17595,7 +17670,20 @@
                 "type": "string",
                 "enum": [
                   "pen",
-                  "rect"
+                  "rect",
+                  "text",
+                  "mark"
+                ]
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               },
               "color": {
@@ -17984,7 +18072,20 @@
                   "type": "string",
                   "enum": [
                     "pen",
-                    "rect"
+                    "rect",
+                    "text",
+                    "mark"
+                  ]
+                },
+                "text": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
                 },
                 "color": {

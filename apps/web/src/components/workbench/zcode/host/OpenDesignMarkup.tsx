@@ -2,7 +2,7 @@ import type {
   DesignReviewAnnotation,
   DesignReviewComment,
 } from "@kenfutwork/shared";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type FrameMetrics,
   frameRectToOverlay,
@@ -14,7 +14,8 @@ import {
 /** 一条新标注落笔后的最小信息（作用域由面板补齐）。 */
 export interface OpenDesignDraftAnnotation {
   points: [number, number][];
-  kind: "pen" | "rect";
+  kind: "pen" | "rect" | "text" | "mark";
+  text?: string;
 }
 
 /**
@@ -45,7 +46,7 @@ export function OpenDesignMarkup({
   metrics: FrameMetrics;
   /** 标注态才吃鼠标事件。 */
   drawing: boolean;
-  annotationKind?: "pen" | "rect";
+  annotationKind?: "pen" | "rect" | "text" | "mark";
   color: string;
   onPickComment: (commentId: string) => void;
   onCreateAnnotation: (draft: OpenDesignDraftAnnotation) => void;
@@ -54,6 +55,19 @@ export function OpenDesignMarkup({
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [stroke, setStroke] = useState<[number, number][] | null>(null);
+  const [textAt, setTextAt] = useState<{
+    x: number;
+    y: number;
+    px: number;
+    py: number;
+  } | null>(null);
+  const [textValue, setTextValue] = useState("");
+
+  useEffect(() => {
+    if (drawing) return;
+    setTextAt(null);
+    setTextValue("");
+  }, [drawing]);
 
   function pointOf(event: React.PointerEvent): [number, number] {
     const rect = svgRef.current?.getBoundingClientRect();
@@ -81,6 +95,23 @@ export function OpenDesignMarkup({
         onPointerDown={
           drawing
             ? (event) => {
+                if (annotationKind === "text") {
+                  const point = pointOf(event);
+                  const overlay = normalizedToOverlay(
+                    point[0],
+                    point[1],
+                    box,
+                    metrics,
+                  );
+                  setTextAt({
+                    x: point[0],
+                    y: point[1],
+                    px: overlay.px,
+                    py: overlay.py,
+                  });
+                  setTextValue("");
+                  return;
+                }
                 event.currentTarget.setPointerCapture?.(event.pointerId);
                 setStroke([pointOf(event)]);
               }
@@ -105,6 +136,18 @@ export function OpenDesignMarkup({
             ? () => {
                 const points = stroke ?? [];
                 setStroke(null);
+                if (annotationKind === "mark") {
+                  if (points.length >= 1) {
+                    onCreateAnnotation({
+                      kind: "mark",
+                      points: [
+                        points[0] as [number, number],
+                        points[0] as [number, number],
+                      ],
+                    });
+                  }
+                  return;
+                }
                 if (annotationKind === "rect") {
                   if (points.length >= 2) {
                     onCreateAnnotation({
@@ -123,13 +166,20 @@ export function OpenDesignMarkup({
             : undefined
         }
       >
-        {annotations.map((annotation) => (
+        {annotations.map((annotation, index) => (
           <AnnotationShape
             key={annotation.id}
             annotation={annotation}
             box={box}
             metrics={metrics}
             erasable={drawing}
+            markIndex={
+              annotation.kind === "mark"
+                ? annotations
+                    .slice(0, index + 1)
+                    .filter((item) => item.kind === "mark").length
+                : 0
+            }
             onDelete={onDeleteAnnotation}
           />
         ))}
@@ -175,6 +225,77 @@ export function OpenDesignMarkup({
           )
         ) : null}
       </svg>
+      {textAt ? (
+        <div
+          className="pointer-events-auto absolute z-20 flex w-56 flex-col gap-1 rounded-md border border-border bg-background p-2 shadow-lg"
+          style={{ left: textAt.px, top: textAt.py }}
+          data-testid="open-design-text-annotation"
+        >
+          <textarea
+            autoFocus
+            aria-label="标注文本"
+            value={textValue}
+            rows={2}
+            maxLength={500}
+            onChange={(event) => setTextValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                const text = textValue.trim();
+                if (text) {
+                  onCreateAnnotation({
+                    kind: "text",
+                    text,
+                    points: [
+                      [textAt.x, textAt.y],
+                      [textAt.x, textAt.y],
+                    ],
+                  });
+                  setTextAt(null);
+                  setTextValue("");
+                }
+              } else if (event.key === "Escape") {
+                setTextAt(null);
+                setTextValue("");
+              }
+            }}
+            className="w-full resize-none rounded border border-border bg-surface p-1.5 text-ui-caption outline-none"
+          />
+          <div className="flex justify-end gap-1">
+            <button
+              type="button"
+              className="rounded px-2 py-1 text-ui-caption text-foreground-subtle hover:bg-hover"
+              onClick={() => {
+                setTextAt(null);
+                setTextValue("");
+              }}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded bg-primary px-2 py-1 text-ui-caption text-primary-foreground disabled:opacity-50"
+              disabled={!textValue.trim()}
+              onClick={() => {
+                const text = textValue.trim();
+                if (!text) return;
+                onCreateAnnotation({
+                  kind: "text",
+                  text,
+                  points: [
+                    [textAt.x, textAt.y],
+                    [textAt.x, textAt.y],
+                  ],
+                });
+                setTextAt(null);
+                setTextValue("");
+              }}
+            >
+              添加
+            </button>
+          </div>
+        </div>
+      ) : null}
       {comments
         .filter((comment) => comment.status === "open")
         .map((comment, index) => {
@@ -209,12 +330,14 @@ function AnnotationShape({
   box,
   metrics,
   erasable,
+  markIndex,
   onDelete,
 }: {
   annotation: DesignReviewAnnotation;
   box: OverlayBox;
   metrics: FrameMetrics;
   erasable: boolean;
+  markIndex: number;
   onDelete: (id: string) => void;
 }) {
   const pts = annotation.points.map(([x, y]) =>
@@ -232,6 +355,76 @@ function AnnotationShape({
         style: { cursor: "pointer" as const },
       }
     : {};
+  if (annotation.kind === "mark" && pts.length >= 1) {
+    const point = pts[0] as { px: number; py: number };
+    return (
+      <g>
+        <circle
+          cx={point.px}
+          cy={point.py}
+          r={10}
+          fill={annotation.color}
+          stroke="#fff"
+          strokeWidth={2}
+        />
+        <text
+          x={point.px}
+          y={point.py}
+          fill="#fff"
+          fontSize={11}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontWeight={600}
+        >
+          {markIndex}
+        </text>
+        <circle
+          cx={point.px}
+          cy={point.py}
+          r={12}
+          fill="transparent"
+          pointerEvents={erasable ? "all" : "none"}
+          style={{ cursor: erasable ? "pointer" : undefined }}
+          onPointerDown={erasable ? eraser.onPointerDown : undefined}
+        />
+      </g>
+    );
+  }
+  if (annotation.kind === "text" && pts.length >= 1) {
+    const point = pts[0] as { px: number; py: number };
+    const lines = (annotation.text ?? "").split(/\r?\n/u);
+    return (
+      <g>
+        <text
+          x={point.px}
+          y={point.py}
+          fill={annotation.color}
+          fontSize={14}
+          fontFamily="system-ui, sans-serif"
+          style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 4 }}
+        >
+          {lines.map((line, index) => (
+            <tspan key={index} x={point.px} dy={index === 0 ? 0 : 16}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+        <rect
+          x={point.px - 2}
+          y={point.py - 14}
+          width={Math.max(
+            60,
+            Math.max(...lines.map((line) => line.length)) * 8,
+          )}
+          height={Math.max(20, lines.length * 16)}
+          fill="transparent"
+          pointerEvents={erasable ? "all" : "none"}
+          style={{ cursor: erasable ? "pointer" : undefined }}
+          onPointerDown={erasable ? eraser.onPointerDown : undefined}
+        />
+      </g>
+    );
+  }
   if (annotation.kind === "rect" && pts.length >= 2) {
     const first = pts[0] as { px: number; py: number };
     const last = pts[pts.length - 1] as { px: number; py: number };

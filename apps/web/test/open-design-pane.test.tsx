@@ -69,6 +69,7 @@ const savedCommentRef = {
     updatedAt: 1792477257537,
   },
 };
+let annotationSeq = 0;
 const fetched: string[] = [];
 const posted: Array<{ path: string; body: Record<string, unknown> }> = [];
 
@@ -108,7 +109,7 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
     if (path.startsWith("/api/design-review/annotations"))
       return {
         annotation: {
-          id: "a-1",
+          id: `a-${++annotationSeq}`,
           projectId: "p-1",
           file: "index.html",
           kind: "rect",
@@ -241,6 +242,7 @@ const ORIGIN = "http://127.0.0.1:7456";
 
 afterEach(() => {
   cleanup();
+  annotationSeq = 0;
   entryRef.current = null;
   lastProjectRef.current = null;
   readinessRef.current = { reachable: true, agentAvailable: true };
@@ -892,6 +894,50 @@ test("框选：拖出矩形并按 rect 保存标注", async () => {
     expect(call?.body.kind).toBe("rect");
     const points = call?.body.points;
     expect(Array.isArray(points) ? points.length : -1).toBe(2);
+  });
+});
+
+test("文本/标记：文本输入落库，标记单击落库", async () => {
+  const { frame } = await mountReadyCanvas();
+  emitBridgeRects(frame, { "#app > h1": { x: 10, y: 20, w: 100, h: 30 } });
+  fireEvent.click(screen.getByRole("button", { name: "文本" }));
+  const svg = (await screen.findByTestId("open-design-markup")).querySelector(
+    "svg",
+  );
+  fireEvent.pointerDown(svg as SVGSVGElement, {
+    pointerId: 1,
+    clientX: 60,
+    clientY: 80,
+  });
+  const input = await screen.findByLabelText("标注文本");
+  fireEvent.change(input, { target: { value: "这里要改" } });
+  fireEvent.click(screen.getByRole("button", { name: "添加" }));
+  await waitFor(() => {
+    const call = posted.find(
+      (item) => item.path === "/api/design-review/annotations",
+    );
+    expect(call?.body.kind).toBe("text");
+    expect(call?.body.text).toBe("这里要改");
+  });
+  fireEvent.click(screen.getByRole("button", { name: "标记" }));
+  fireEvent.pointerDown(svg as SVGSVGElement, {
+    pointerId: 2,
+    clientX: 90,
+    clientY: 90,
+  });
+  fireEvent.pointerUp(svg as SVGSVGElement, {
+    pointerId: 2,
+    clientX: 90,
+    clientY: 90,
+  });
+  await waitFor(() => {
+    expect(
+      posted.filter((item) => item.path === "/api/design-review/annotations"),
+    ).toHaveLength(2);
+    expect(
+      posted.filter((item) => item.path === "/api/design-review/annotations")[1]
+        ?.body.kind,
+    ).toBe("mark");
   });
 });
 
