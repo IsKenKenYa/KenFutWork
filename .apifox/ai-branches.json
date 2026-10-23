@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-10-22T16:36:34.635Z",
+  "updatedAt": "2026-10-23T01:38:54.702Z",
   "projects": {
     "8892388": {
       "branches": {
@@ -293,6 +293,20 @@
           "automationLifecycleStatus": "ACTIVE",
           "isArchived": false,
           "fetchedAt": "2026-10-22T16:36:34.634Z",
+          "lastKnownStatus": "ACTIVE"
+        },
+        "8766843": {
+          "projectId": 8892388,
+          "branchId": 8766843,
+          "name": "ai/20261023-from-main-code-task-control",
+          "branchKind": "ai",
+          "branchType": "SPRINT",
+          "sourceBranchId": 8691397,
+          "isAiBranch": true,
+          "isAiWritableBranch": true,
+          "automationLifecycleStatus": "ACTIVE",
+          "isArchived": false,
+          "fetchedAt": "2026-10-23T01:38:54.702Z",
           "lastKnownStatus": "ACTIVE"
         }
       },
@@ -675,6 +689,13 @@
       "branchId": 8765515,
       "sourceBranchId": 8691397,
       "createdAt": "2026-10-22T16:36:34.635Z"
+    },
+    {
+      "type": "branch_recorded",
+      "projectId": 8892388,
+      "branchId": 8766843,
+      "sourceBranchId": 8691397,
+      "createdAt": "2026-10-23T01:38:54.702Z"
     }
   ]
 }
