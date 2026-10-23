@@ -22,6 +22,9 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@kenfutwork/desktop#build": {
+      "dependsOn": ["^build", "@kenfutwork/web#build"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
