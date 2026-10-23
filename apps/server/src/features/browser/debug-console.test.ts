@@ -185,7 +185,7 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 一个页面只开一个：已初始化只 show 不再 init
     expect(script).toContain("window.eruda._isInit");
     // 三按钮在**窗外的小号直角梯形**容器里（直角在右边：右竖左斜），body 级 fixed；
-    // 悬浮球态也外挂同一条按钮（syncBtnbar 的 ball 分支）
+    // 球态/关闭态按钮条隐藏（syncBtnbar 的 ball 分支与 closeBtn）
     expect(script).toContain("kfw-btnbar");
     // 按钮条挂 documentElement：与页面顶部导航同 z-index 时以更晚绘制顺序压过它
     expect(script).toContain("document.documentElement.appendChild(btnbar)");
@@ -194,9 +194,15 @@ describe("可注入脚本：UMD 分支修正", () => {
     );
     expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
-    // 贴边零间距（用户口径：右对齐面板最右侧、不要间距）
-    expect(script).toContain("rect.right - barW");
-    expect(script).toContain("rect.top - barH");
+    // 按钮条恒定贴视口右上角（用户口径 2026-10-23「三按钮多点点就卡死」）：
+    // 跟随容器时 max 态按钮条跳到页底（实测横跳 480px 纵跳 460px），固定位置连点
+    // 只有第 1 击命中、后续全落到页面内容上。恒定定位后连点永远命中同一位置。
+    expect(script).toContain("viewportWidth() - barW");
+    expect(script).not.toContain("rect.right - barW");
+    expect(script).not.toContain("rect.top - barH");
+    // 最小化的球落在按钮条正下方（视口右缘顶部）：视线不用动，点一下球即还原
+    expect(script).toContain('placeBall("right")');
+    expect(script).toContain('ball.style.top = "28px"');
     // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
     expect(script).toContain('if (uiState === "ball") applyFloat();');
     expect(script).toContain('if (uiState === "max") applyFloat();');

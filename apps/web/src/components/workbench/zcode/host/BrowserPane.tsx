@@ -727,7 +727,7 @@ export function BrowserPane({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: target }),
       });
-      toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
+      toast("调试控制台已打开");
     } catch (error) {
       toast(error instanceof Error ? error.message : "打开调试工具失败。");
     } finally {
