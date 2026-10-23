@@ -12323,10 +12323,11 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "414d835168651c439953744861cc4f05e2a647af55a1e665b8a1988020e9cb75",
+      "copiedSha256": "3c91c268098803a365e419443f3eb62314e970ff48f0b963796c47dd3693f0f3",
       "adaptations": [
         "KFW 会话打开文件及自动展示 PPTX 时固定真实根 Task 来源。",
         "KFW Task 控制命令从当前公开快照固定项目与分支观察值；发送沿原点击值经过配置屏障，预热首发可使用创建回执的初始事实。",
+        "原配置 CAS 仅针对 proto.staleRevision 重试；项目或分支观察值过期时直接保留拒绝回执，不重发旧配置。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",

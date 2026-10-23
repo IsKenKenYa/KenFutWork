@@ -3456,7 +3456,7 @@ export function SessionPane({
           const ack = await dispatchCommand(type, payload, targetSessionId, baseRevision,
           );
           lastAck = ack;
-          if (ack.status === "stale") {
+          if (ack.status === "stale" && ack.reasonCode === "proto.staleRevision") {
             baseRevision = ack.revisionAtDecision;
             continue;
           }
