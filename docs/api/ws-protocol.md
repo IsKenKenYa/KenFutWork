@@ -193,6 +193,12 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 登记与创建归属不修改 Task 正文、目录、权限或 Goal，也不启动 Run。结构变化后通过原 `state:task-groups` 通知重新读取；连接关闭取消尚未接纳的操作，宿主等待在途 SQL 退出。COMMIT 回包丢失保留同一规范意图，重放读取原回执，不重复整理。
 
+`task-groups.move` 接收严格的 `{ node, sourceGroupId, groupId, expectedRevision, anchor? }`，成功返回 `{ result: null }`。节点为 `{ type: "group", groupId }` 或 `{ type: "task", task }`；Task 使用上述完整本机引用。目标 `groupId: null` 表示根层，无锚点进入目标层顶部；`anchor: { node, side: "before" | "after" }` 固定动作时的相邻节点。分组仅能在根层排序，组内锚点只能为 Task。
+
+实例、节点类型、规范化节点身份及动作开始时的组织修订组成稳定业务键，全部规范化输入形成 SHA-256 参数指纹。真实 Task 行按身份加锁后取得组织行锁，先读取回执，再核验修订、当前来源、目标与锚点；缺失、已删除或归档 Task 的新移动返回 404，旧目录、来源或位置变化返回 409。同键相同意图重放不覆盖后续人工整理，异参返回 409；非法形状或额外参数返回 400。未登记的真实 Task 可直接进入目标层，并标记为人工整理。
+
+成员、源层与目标层的完整顺序、一次组织修订及移动回执共同提交；归档隐藏成员保持其相对次序。移动节点、来源组、目标组或锚点删除时，回执清除参数指纹和全部关联身份，只保留实例、节点类型、不透明节点身份、原修订及删除状态，迟到请求返回 404；实例物理删除级联清除。连接关闭取消尚未接纳的事务，宿主等待在途 SQL 退出；COMMIT 回包丢失继续使用原意图读取已提交结果。成功沿原 SSE 通知重新读取。该操作只改变分组和排序，不改变 Task 项目归属、目录、权限、正文或 Goal，不启动 Run；Task 跨项目移动使用单独服务。
+
 ## 原项目树与归档管理
 
 原归档页面通过同一目录 owner 调用 `project.readTree`。`includeDeleted: true` 显式包含已归档项目并以 `deleted: true` 标识；普通读取排除这些项目及所属 Task。项目与根 Task 在同一 PostgreSQL 只读快照投影，Task 使用创建时固定目录及当前 Project 身份，不从已打开标签推导归属。`includeDeletedTasks: true` 返回最小删除事实，仅包含不透明 `taskId`、`projectId` 和 `hostId`。归档读取不恢复目录授权或运行。

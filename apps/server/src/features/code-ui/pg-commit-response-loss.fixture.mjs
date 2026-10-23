@@ -20,6 +20,7 @@ const freshTransaction = () => ({
   taskGroupDelete: false,
   taskGroupUngroup: false,
   taskGroupPlacement: false,
+  taskGroupMove: false,
 });
 
 function cstring(bytes, at = 0) {
@@ -76,6 +77,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let taskGroupSave = false;
   let taskGroupUngroup = false;
   let taskGroupPlacement = false;
+  let taskGroupMove = false;
   let loseCreationReadbackOnce = false;
   let unavailable = false;
   let closed = false;
@@ -316,6 +318,25 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         transaction.targetTaskId = parameters[1];
       }
       if (
+        taskGroupMove &&
+        commandId &&
+        /^insert into public\.code_task_group_move_receipts\b/u.test(text) &&
+        parameters.length === 9 &&
+        (parameters[0] === "group" || parameters[0] === "task") &&
+        typeof parameters[1] === "string" &&
+        typeof parameters[3] === "string" &&
+        /^[a-f0-9]{64}$/u.test(parameters[3]) &&
+        JSON.stringify([
+          parameters[0],
+          parameters[1],
+          Number(parameters[2]),
+        ]) === commandId
+      ) {
+        transaction.taskGroupMove = true;
+        transaction.moveNodeType = parameters[0];
+        transaction.moveNodeId = parameters[1];
+      }
+      if (
         projectCreation &&
         commandId &&
         /^insert into public\.projects\b/u.test(text) &&
@@ -412,6 +433,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.taskGroupSave ||
           transaction.taskGroupUngroup ||
           transaction.taskGroupPlacement ||
+          transaction.taskGroupMove ||
           (transaction.chatRoot &&
             transaction.codeRoot &&
             transaction.firstInputState &&
@@ -543,6 +565,13 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
                   targetTaskId: transaction.targetTaskId,
                 }
               : {}),
+            ...(transaction.taskGroupMove
+              ? {
+                  taskGroupMove: true,
+                  nodeType: transaction.moveNodeType,
+                  nodeId: transaction.moveNodeId,
+                }
+              : {}),
             ...(transaction.firstInputState && transaction.firstInputAck
               ? {
                   createFirstInput: true,
@@ -630,6 +659,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       taskGroupSave = options.taskGroupSave === true;
       taskGroupUngroup = options.taskGroupUngroup === true;
       taskGroupPlacement = options.taskGroupPlacement === true;
+      taskGroupMove = options.taskGroupMove === true;
       loseCreationReadbackOnce = options.loseCreationReadbackOnce === true;
     },
     restore() {

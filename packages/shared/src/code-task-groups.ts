@@ -101,6 +101,36 @@ export const codeTaskGroupAdmissionSchema = z
 export const codeTaskGroupAdmissionArgsSchema = z.tuple([
   codeTaskGroupAdmissionSchema,
 ]);
+export const codeTaskGroupNodeSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("group"), groupId: z.uuid() }).strict(),
+  z
+    .object({ type: z.literal("task"), task: codeTaskGroupTaskRefSchema })
+    .strict(),
+]);
+export const codeTaskGroupMoveSchema = z
+  .object({
+    node: codeTaskGroupNodeSchema,
+    sourceGroupId: z.uuid().nullable(),
+    groupId: z.uuid().nullable(),
+    expectedRevision: groupRevisionSchema,
+    anchor: z
+      .object({
+        node: codeTaskGroupNodeSchema,
+        side: z.enum(["before", "after"]),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (input) => input.node.type !== "group" || input.groupId === null,
+    "分组只能在根层移动。",
+  )
+  .refine(
+    (input) => input.anchor?.node.type !== "group" || input.groupId === null,
+    "组内锚点须为Task。",
+  );
+export const codeTaskGroupMoveArgsSchema = z.tuple([codeTaskGroupMoveSchema]);
 export const codeTaskGroupSaveResponseSchema = z
   .object({ result: codeTaskGroupSchema })
   .strict();
@@ -119,3 +149,5 @@ export type CodeTaskGroupTaskRef = z.infer<typeof codeTaskGroupTaskRefSchema>;
 export type CodeTaskGroupAdmission = z.infer<
   typeof codeTaskGroupAdmissionSchema
 >;
+export type CodeTaskGroupNode = z.infer<typeof codeTaskGroupNodeSchema>;
+export type CodeTaskGroupMove = z.infer<typeof codeTaskGroupMoveSchema>;

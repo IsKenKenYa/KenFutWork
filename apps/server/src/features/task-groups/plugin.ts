@@ -1,5 +1,6 @@
 import {
   codeTaskGroupAdmissionArgsSchema,
+  codeTaskGroupMoveArgsSchema,
   codeTaskGroupReadArgsSchema,
   codeTaskGroupSaveArgsSchema,
   codeTaskGroupUngroupArgsSchema,
@@ -11,6 +12,7 @@ import {
   runCodeUiHostRpc,
 } from "../code-ui/host-rpc-handler.js";
 import { createTaskGroupAdmission } from "./admission.js";
+import { createTaskGroupMover } from "./mover.js";
 import { createTaskGroupReader } from "./reader.js";
 import { createTaskGroupUngrouper } from "./ungroup.js";
 import { createTaskGroupWriter } from "./writer.js";
@@ -29,6 +31,7 @@ export function createTaskGroupsPlugin(): PluginDefinition {
       const writer = createTaskGroupWriter(dependencies);
       const ungrouper = createTaskGroupUngrouper(dependencies);
       const admission = createTaskGroupAdmission(dependencies);
+      const mover = createTaskGroupMover(dependencies);
       const methods: Record<string, CodeUiHostRpcHandler["call"]> = {
         async read(actor, args, context) {
           codeTaskGroupReadArgsSchema.parse(args);
@@ -50,6 +53,12 @@ export function createTaskGroupsPlugin(): PluginDefinition {
           const [input] = codeTaskGroupAdmissionArgsSchema.parse(args);
           const changed = await admission.admit(actor, input, context.signal);
           if (changed) await ctx.get("codeUi").refreshTaskGroups(actor);
+          return null;
+        },
+        async move(actor, args, context) {
+          const [input] = codeTaskGroupMoveArgsSchema.parse(args);
+          await mover.move(actor, input, context.signal);
+          await ctx.get("codeUi").refreshTaskGroups(actor);
           return null;
         },
       };

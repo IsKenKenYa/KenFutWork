@@ -1,8 +1,4 @@
-import type {
-  CodeTaskGroupAdmission,
-  CodeTaskGroupTaskRef,
-} from "@kenfutwork/shared";
-import { canonicalLocalWorkspaceIdentity } from "@zcode/shared";
+import type { CodeTaskGroupAdmission } from "@kenfutwork/shared";
 import { CodeUiHostRpcError } from "../code-ui/host-rpc-handler.js";
 import type {
   LocalActor,
@@ -17,6 +13,12 @@ import {
   applyTaskGroupPlacement,
   prepareTaskGroupPlacement,
 } from "./placement.js";
+import {
+  lockTaskGroupTasks,
+  type TaskGroupTaskRecord,
+  taskGroupTaskReferences,
+  verifyTaskGroupTaskReferences,
+} from "./references.js";
 
 export interface TaskGroupAdmission {
   admit(
@@ -26,73 +28,9 @@ export interface TaskGroupAdmission {
   ): Promise<boolean>;
 }
 
-type TaskRow = SqlRow & {
-  id: string;
-  project_id: string;
-  root_directory: string;
-};
-
-function taskReferences(tasks: CodeTaskGroupTaskRef[]) {
-  const references = new Map<string, CodeTaskGroupTaskRef>();
-  for (const task of tasks) {
-    const id = task.taskId.toLowerCase();
-    const previous = references.get(id);
-    if (
-      previous &&
-      (previous.workspacePath !== task.workspacePath ||
-        previous.workspaceIdentity !== task.workspaceIdentity)
-    )
-      throw new CodeUiHostRpcError(
-        "invalid_code_ui_request",
-        "任务目录信息不一致，请刷新任务列表。",
-        400,
-      );
-    references.set(id, { ...task, taskId: id });
-  }
-  return references;
-}
-
-async function lockTasks(
-  sql: InstanceSqlClient,
-  references: Map<string, CodeTaskGroupTaskRef>,
-  signal: AbortSignal,
-) {
-  const tasks = await sql.query<TaskRow>(
-    `select s.id,s.project_id,s.root_directory
-      from public.execution_task_owners o
-      join public.code_ui_sessions s on s.instance_id=o.instance_id and s.id=o.code_task_id
-      where o.instance_id=:instance and o.task_kind='code' and o.task_id=any($1::uuid[])
-        and s.parent_session_id is null and s.deleted_at is null and s.root_directory is not null
-      order by s.id for update of s`,
-    [[...references.keys()]],
-  );
-  signal.throwIfAborted();
-  return tasks;
-}
-
-function verifyTaskReferences(
-  tasks: TaskRow[],
-  references: ReadonlyMap<string, CodeTaskGroupTaskRef>,
-) {
-  for (const task of tasks) {
-    const reference = references.get(task.id);
-    if (
-      !reference ||
-      reference.workspacePath !== task.root_directory ||
-      reference.workspaceIdentity !==
-        canonicalLocalWorkspaceIdentity(task.project_id, task.root_directory)
-    )
-      throw new CodeUiHostRpcError(
-        "task_group_revision_conflict",
-        "任务目录已改变，请刷新任务列表。",
-        409,
-      );
-  }
-}
-
 async function admitNewTasks(
   sql: InstanceSqlClient,
-  tasks: TaskRow[],
+  tasks: TaskGroupTaskRecord[],
   signal: AbortSignal,
 ) {
   const taskIds = tasks.map((task) => task.id);
@@ -141,13 +79,13 @@ export function createTaskGroupAdmission(deps: {
     async admit(actor, input, signal) {
       signal.throwIfAborted();
       const owner = await deps.localInstance.resolve(actor);
-      const references = taskReferences(input.tasks);
+      const references = taskGroupTaskReferences(input.tasks);
       signal.throwIfAborted();
       if (!references.size) return false;
       return deps.persistence.transaction(async (tx) => {
         const sql = tx.forInstance(owner.instanceId);
         // Task 行按稳定身份取得锁；删除触发器沿同一 Task、state、members 次序执行。
-        const tasks = await lockTasks(sql, references, signal);
+        const tasks = await lockTaskGroupTasks(sql, references, signal);
         const state = await sql.queryOne(
           "select revision from public.code_task_group_state where instance_id=:instance for update",
         );
@@ -171,7 +109,7 @@ export function createTaskGroupAdmission(deps: {
           signal.throwIfAborted();
           return false;
         }
-        verifyTaskReferences(tasks, references);
+        verifyTaskGroupTaskReferences(tasks, references);
         const admitted = await admitNewTasks(sql, tasks, signal);
         const placed = placement
           ? await applyTaskGroupPlacement(sql, placement.intent, signal)
