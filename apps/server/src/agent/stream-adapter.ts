@@ -296,6 +296,15 @@ export async function* adaptDeepAgentStream(
                 modelCallId: observed.usage.modelCallId,
                 inputTokens: observed.usage.inputTokens,
                 outputTokens: observed.usage.outputTokens,
+                ...(observed.usage.owner?.contextWindowTokens == null
+                  ? {}
+                  : {
+                      contextWindowTokens:
+                        observed.usage.owner.contextWindowTokens,
+                    }),
+                ...(observed.usage.owner?.maxOutputTokens == null
+                  ? {}
+                  : { maxOutputTokens: observed.usage.owner.maxOutputTokens }),
                 ...(observed.usage.cachedInputTokens === undefined
                   ? {}
                   : { cachedInputTokens: observed.usage.cachedInputTokens }),

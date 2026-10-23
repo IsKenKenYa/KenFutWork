@@ -1588,7 +1588,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (
             resolvedModel &&
             typeof resolvedModel !== "string" &&
-            run.usageMeta
+            run.usageMeta &&
+            resolvedModel.metadata?.[MODEL_USAGE_OWNER_METADATA] === undefined
           ) {
             resolvedModel.metadata = {
               ...resolvedModel.metadata,
@@ -1901,7 +1902,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             resolvedModel && typeof resolvedModel !== "string"
               ? nativeEffectiveOutputTokens(resolvedModel)
               : declaredMaxOutput;
-          const contextWindow = resolveContextWindow(declaredWindow, specifier);
+          const contextWindow =
+            run.modelInvocation?.contextWindow !== undefined
+              ? run.modelInvocation.contextWindow
+              : resolveContextWindow(declaredWindow, specifier);
           const contextBudget = {
             inputTokenLimit: resolveInputTokenLimit({
               contextWindow,
@@ -1958,7 +1962,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     entry.provider.instanceId === selection.instanceId &&
                     entry.id === selection.model,
                 );
-              if (selected)
+              if (selected && !run.modelInvocation)
                 modelCapabilities = resolveModelInputCapabilities(
                   selected.model,
                   selected.hints,
@@ -2261,10 +2265,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 const entry = entries?.find(
                   (candidate) => toInstanceSpecifier(candidate) === specifier,
                 );
-                const nextContextWindow = resolveContextWindow(
-                  entry?.model.contextWindow,
-                  specifier,
-                );
+                const nextContextWindow =
+                  invocation.contextWindow !== undefined
+                    ? invocation.contextWindow
+                    : resolveContextWindow(
+                        entry?.model.contextWindow,
+                        specifier,
+                      );
                 contextBudget.inputTokenLimit = resolveInputTokenLimit({
                   contextWindow: nextContextWindow,
                   maxOutputTokens: execution.effectiveOutputTokens,

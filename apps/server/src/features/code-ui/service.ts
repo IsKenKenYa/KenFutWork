@@ -4048,7 +4048,7 @@ export class CodeUiService {
   }
 
   /**
-   * run.usage 事件的模型窗口元数据缓存（G6 圆环数据链）。
+   * 旧运行缺少冻结容量时使用的模型窗口元数据缓存。
    * 只服务展示层读数：60s TTL 内允许目录变更后短暂滞后（局部常量，不进治理表——
    * 不影响执行路径，仅决定圆环分母多久跟上用户改实例配置）。
    */
@@ -4347,7 +4347,8 @@ export class CodeUiService {
                   user,
                   project,
                   sessionId,
-                  event.type === "run.usage"
+                  event.type === "run.usage" &&
+                    modelInvocation?.contextWindow === undefined
                     ? await this.enrichRunUsageWindow(event, user, model)
                     : event,
                   ++ordinal,

@@ -7,6 +7,8 @@ const ownerSchema = z.object({
   model: z.string().min(1),
   providerInstanceId: z.string().min(1).optional(),
   configRevision: z.number().int().nonnegative().optional(),
+  contextWindowTokens: z.number().int().positive().nullable().optional(),
+  maxOutputTokens: z.number().int().positive().nullable().optional(),
 });
 export type ModelUsageOwner = z.infer<typeof ownerSchema>;
 export interface ModelCallUsage extends RunUsageTotals {

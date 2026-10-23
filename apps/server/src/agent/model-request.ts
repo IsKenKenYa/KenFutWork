@@ -238,10 +238,13 @@ export function createRunModelRequestPort(options: {
       return {
         ...execution,
         inputTokenLimit: resolveInputTokenLimit({
-          contextWindow: resolveContextWindow(
-            entry?.model.contextWindow,
-            invocation.modelId,
-          ),
+          contextWindow:
+            invocation.contextWindow !== undefined
+              ? invocation.contextWindow
+              : resolveContextWindow(
+                  entry?.model.contextWindow,
+                  invocation.modelId,
+                ),
           maxOutputTokens: execution.effectiveOutputTokens,
         }),
       };
@@ -272,6 +275,12 @@ export function createRunModelRequestPort(options: {
         outputTokens: usage.outputTokens,
         runInputTokens: totals.inputTokens,
         runOutputTokens: totals.outputTokens,
+        ...(owner.contextWindowTokens == null
+          ? {}
+          : { contextWindowTokens: owner.contextWindowTokens }),
+        ...(owner.maxOutputTokens == null
+          ? {}
+          : { maxOutputTokens: owner.maxOutputTokens }),
         ...(usage.cachedInputTokens === undefined
           ? {}
           : { cachedInputTokens: usage.cachedInputTokens }),
