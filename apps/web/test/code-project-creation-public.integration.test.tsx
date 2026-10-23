@@ -434,15 +434,21 @@ async function chooseProjectRoot(page: OriginalSessionBrowser, root: string) {
   await clickOn(page.cdp, page.target.sessionId, {
     selector: '[data-testid="virtual-project-browse"]',
   });
-  await vi.waitFor(async () =>
-    expect(
-      await page.evaluate(`(() => {
-        const input = document.querySelector(${JSON.stringify(pathSelector)});
-        const confirm = document.querySelector(${JSON.stringify(confirmSelector)});
-        return Boolean(input?.value && confirm && !confirm.disabled);
-      })()`),
-      JSON.stringify(page.pageErrors),
-    ).toBe(true),
+  // 真实目录读取可能超过默认的一秒轮询期限；仍等待原页面完成读取。
+  await vi.waitFor(
+    async () =>
+      expect(
+        await page.evaluate(`(() => {
+          const input = document.querySelector(${JSON.stringify(pathSelector)});
+          const confirm = document.querySelector(${JSON.stringify(confirmSelector)});
+          return Boolean(input?.value && confirm && !confirm.disabled);
+        })()`),
+        JSON.stringify({
+          pageErrors: page.pageErrors,
+          requests: page.requests,
+        }),
+      ).toBe(true),
+    { timeout: 30_000 },
   );
   await clickOn(page.cdp, page.target.sessionId, { selector: pathSelector });
   await selectAll(page);
@@ -1024,7 +1030,14 @@ async function expectArchivedChoiceRejected(
       choiceClosed: true,
       folderTrust: false,
     });
-    expect(state.alerts).toEqual([expect.stringMatching(/项目.*重新选择/u)]);
+    expect(
+      state.alerts,
+      JSON.stringify({
+        state,
+        pageErrors: page.pageErrors,
+        requests: page.requests,
+      }),
+    ).toEqual([expect.stringMatching(/项目.*重新选择/u)]);
   });
 }
 

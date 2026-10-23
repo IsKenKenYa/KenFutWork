@@ -7,20 +7,76 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ArchiveManagement.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ArchiveManagement.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c174dbd7bad5d8c2d5a9681871a37e266aa9422f47286b64e0c4c9e6260184b2",
+      "copiedSha256": "54f42ac1252f06e93bd00ddc22fa6618ef8d0d065901c1d780f3e959b62a0125",
+      "adaptations": ["@/ 导入映射为 @zui/；保留原搜索、排序、项目筛选、分组及批量操作，连接本机持久目录 owner。", "本期只消费本机实例，名称保留项目归档标记，不连接远端 Host 名称注册表。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ArchiveGroupCard.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ArchiveGroupCard.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "a8c6b02eeeee79ae65829980033ed30065022d9d6e9e30aafcc62dccea9f41d2",
+      "copiedSha256": "84d6e7d257c9f4162cd81d9ff86e0444af5eb108f797f8443b48a49ff57f74e1",
+      "adaptations": ["仅将 @/ 导入映射为 @zui/；保留原默认收起、分页、单条与分组操作。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/archive-view.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/archive-view.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "245f1e11cf55d9e1b763aadd87cfee698b3e1fe9966a3336b887fe660a0bfa3c",
+      "copiedSha256": "f3012550616c4cb6f453f072aec7fb7e404fddf1ba163c079172ed09db1823c3",
+      "adaptations": ["仅将 @/ 导入映射为 @zui/；按 Host 与稳定 Project ID 分组，同目录项目继续隔离。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/contract.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/contract.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "6db545b4762bf53c713e311394179bc40e29d20ad11c6b1d23cfb2bdb1981341",
+      "copiedSha256": "6160b41c3bff1a163d2bc057ecac2de55a64b76637926cef99073809a3b66778",
+      "adaptations": ["导出本批原归档组件及真实目录 owner 已消费的浏览器项目类型；完整侧栏与远端接口随实际消费者继续移植。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectDirectoryProvider.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectDirectoryProvider.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "81ba0cc18822c79e036cfe312762e93c35a0919a2224961bffc0e4fe80f68868",
+      "copiedSha256": "03e7ff8fd8d5cfd75b9574b1180d425cde52c2c17ce2a95005a1982f2093c393",
+      "adaptations": ["@/ 导入映射为 @zui/；采用原 Context、嵌入面复用与单一目录 owner，当前挂载归档管理。", "本批 owner 只提供已连接的本机项目树及读取生命周期；分组、项目排序和原生未读提示按完整侧栏依赖继续连接，不制造远端或分组服务。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useProjectTree.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectTree.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "036834eb6620a04e80a5dd6326c57d92237504a302ad81db990d6326225e1637",
+      "copiedSha256": "b3f91b922035402238bb4239bc17025393912c6941c19a9f1771a8aa0455e1cb",
+      "adaptations": ["@/ 导入映射为 @zui/；采用原串行读取、dirty 合并、取消代际、焦点重读和真实 broadcast/Controller 订阅，读取本机 readTree 的归档项目及 Task 删除事实。", "当前归档消费者保留 KFW 的 Project 与 Task 固定目录身份；完整侧栏的远端、创建提交、分组与精确活动投影随后续实际装配连接。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useArchiveManagement.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useArchiveManagement.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "f2c751df32bca9ce414f2e6d1b40470863071454f66b36d580f2dc045b0e3d6c",
+      "copiedSha256": "cec54fa8f651f3cbeba0548fe13da8553a5cbb8671529228367a32e53de1211a",
+      "adaptations": ["@/ 导入映射为 @zui/；保留原确认时固定身份集合、互斥操作、逐项结果与目录重读。", "本机操作携带项目树的可信 Task 观察值，经真实 zcode-task 贡献调用；删除使用仍归档条件，已恢复或已删除返回跳过。", "复用当前确认框接口，卸载后停止尚未发出的批次操作，不发布迟到界面状态；已接纳操作由宿主等待清理。"]
+    },
+    {
       "source": "references/zcode/packages/services/src/project/contract.ts",
       "target": "packages/zcode-services/src/project/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "1bfa496b747335ef4a01a5bbe32e5977d320c6edc70b524fc24c31602a48d243",
-      "copiedSha256": "3448f89b4ddcfd9269ba7a721cc59f3b34d446ef6abe53f2c3343093402918e1",
-      "adaptations": ["连接实际提供的本机项目读取、目录读取、创建、编辑和归档；创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。"]
+      "copiedSha256": "410a92f9ff2265a9d56a46b38857b58cbcfbe438fb54c9685e7d15cbd9fa7bde",
+      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。"]
     },
     {
       "source": "references/zcode/packages/services/src/project-storage/contract.ts",
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "000e5a107e7e117e530dd27a2be02ed9b4823c633e2adfcbb7909e6d73b555ed",
-      "adaptations": ["采用原项目、目录及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。"]
+      "copiedSha256": "19d6ba29a6e629bcc7f299655a7db7a27b74d81bc0d93a64f29a9312118e5be9",
+      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
@@ -727,8 +783,9 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "a9afcd2dd2eaaba821092517a477950ee1f558a68043f85ca611f050762011fa",
+      "copiedSha256": "9c699552a150e3668c11961f1362f5111783632f3393798a07e32abbf8047598",
       "adaptations": [
+        "接入固定 3.16.2 的原 ArchiveManagement，沿真实设置分区消费本机持久归档项目与 Task；当前 SettingsPage 原件基线保持。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
         "能力显隐：未接引导记录时隐藏原引导入口和查询，缺省原行为",
@@ -5890,8 +5947,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "85a2c386eab8953a66a29a0c38d9a4ce9d9fd8e125d9325dddaa5ca676350134",
+      "copiedSha256": "d33815de079a84fb25cef5754d661beb7db7ae80746d312a9a925a30793d8f34",
       "adaptations": [
+        "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
         "补新版原项目创建、主目录选择与文件夹信任确认词条，说明当前项目及新 Task 的目录默认权限。",
         "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的原项目编辑词条及 KFW 目录权限、归档标签；说明按现有 Task 独立授权表达，其余文案保留。",
@@ -5921,8 +5979,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "8c6ae36d3ee2437efb3edd26f5c1f46c86d088306aab91c595ed3f66abb52031",
+      "copiedSha256": "ae59a41d0c89d8789185c4678fb68ac5c89feb68ae9c15d5a08e499ae7de0f30",
       "adaptations": [
+        "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
         "补新版原项目创建、主目录选择与文件夹信任确认词条，说明当前项目及新 Task 的目录默认权限。",
         "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的原项目编辑词条及 KFW 目录权限、归档标签；说明按现有 Task 独立授权表达，其余文案保留。",
@@ -7274,8 +7333,9 @@
       "source": "references/zcode/packages/ui/src/lib/settingsNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/settingsNavigation.ts",
       "sha256": "18fffab343c541b6c6170a081070eadca70edc63ee238d66a11e087b47716800",
-      "copiedSha256": "15fa4efd222fc89d1db585aaa43ad2c867dfde771cc85ddbf62b6999c48f621d",
+      "copiedSha256": "d0b403061b3618198648ebaedbc779fa27f47c88b15a81e1f602f3bf6e2696c9",
       "adaptations": [
+        "添加原 archives 设置导航与持久导航意图解析，继续使用同一设置页。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "分区导航：新增 about 分区 id 供宿主关于页接线（T16）",
         "KenFutWork 宿主偏差：SettingsSectionId 增 permissions",
@@ -11212,8 +11272,9 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "bc21fe89ba8bb998b2eede1d207ff8cde97bc1df289c3d2d901a918fbfd0fa1c",
+      "copiedSha256": "c128b87de0196fded38e96c078a128a204470f69edac90b56f5f3e3b3cfcdd19",
       "adaptations": [
+        "添加固定 3.16.2 原归档管理分区，连接实际原组件及持久项目树。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -16099,8 +16160,8 @@
       "source": "references/zcode/packages/services/src/index.ts",
       "target": "packages/zcode-services/src/index.ts",
       "sha256": "b6c905865dfa0f63bd83134ec26629ff417eff1bf472683acbac4bacb8293caf",
-      "copiedSha256": "f9747ac02a9dac6693c65ac8808c2014daf431605574ca521bdca0eadea94152",
-      "adaptations": ["导出本机项目创建与编辑所需的原浏览器 descriptor 和实际提供的创建/编辑联合输入类型。"]
+      "copiedSha256": "7e0222e9c6b7debb5049a4cc97ee7c6479321e7741e4a1eea9cf189e825b941a",
+      "adaptations": ["导出本机项目创建与编辑所需的原浏览器 descriptor、创建/编辑联合输入，以及真实归档消费者使用的 ProjectTask/ProjectTree 类型。"]
     },
     {
       "source": "references/zcode/packages/services/src/logger/serviceLogger.ts",
@@ -16264,8 +16325,8 @@
       "source": "references/zcode/packages/services/src/session/zcodeTaskService.ts",
       "target": "packages/zcode-services/src/session/zcodeTaskService.ts",
       "sha256": "7552f9faa1419dd5516c199472e66010c6e74a8accdb21efa9abe73415777c18",
-      "copiedSha256": "7552f9faa1419dd5516c199472e66010c6e74a8accdb21efa9abe73415777c18",
-      "adaptations": []
+      "copiedSha256": "dcac1b1c8d071d05b0d07495b5d9a92f13cca262187b412bbf8cc021073e928b",
+      "adaptations": ["本机归档、恢复及条件删除携带可信 Task 项目与分支观察值，真实宿主按同一观察身份接纳并拒绝迟到操作。"]
     },
     {
       "source": "references/zcode/packages/services/src/setting/setting.ts",

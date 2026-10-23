@@ -20,7 +20,8 @@ import {
   FileSearch,
   Info,
   PenTool,
-  ShieldCheck
+  ShieldCheck,
+  Archive,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@zui/lib/settingsNavigation.js";
 import type { Theme } from "@zui/useTheme.js";
@@ -172,6 +173,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "usage",
     icon: BarChart3,
     titleId: "settings.usageTitle",
+    groupId: "dataAndStats",
+  },
+  {
+    id: "archives",
+    icon: Archive,
+    titleId: "archives.nav",
     groupId: "dataAndStats",
   },
   // 关于（宿主信息面板 + 检查更新入口）收在数据与统计组末尾。

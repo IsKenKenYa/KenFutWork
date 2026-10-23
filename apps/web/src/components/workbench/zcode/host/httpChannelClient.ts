@@ -826,6 +826,11 @@ export class CodeHttpChannelClient implements IChannelClient {
     method: string,
     values: unknown[],
   ) {
+    if (
+      service === ServiceChannels.ZCodeTask &&
+      ["archiveTask", "unarchiveTask", "deleteArchivedTask"].includes(method)
+    )
+      return values;
     const value = values[0];
     if (!value || typeof value !== "object" || Array.isArray(value))
       return values;

@@ -2,13 +2,14 @@ import {
   codeProjectEditorDeleteArgsSchema,
   codeProjectEditorReadDirectorySchema,
   codeProjectEditorReadProjectsSchema,
+  codeProjectEditorReadTreeArgsSchema,
   codeProjectEditorSaveSchema,
 } from "@kenfutwork/shared";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
   CODE_UI_HOST_RPC_CAPABILITY,
-  CodeUiHostRpcError,
   type CodeUiHostRpcHandler,
+  runCodeUiHostRpc,
 } from "../code-ui/host-rpc-handler.js";
 import { createProjectEditorRepository } from "./project-editor-repository.js";
 import { createProjectEditorService } from "./project-editor-service.js";
@@ -35,6 +36,10 @@ export function createProjectEditorPlugin(): PluginDefinition {
         async readProjects(actor, args) {
           codeProjectEditorReadProjectsSchema.parse(args[0] ?? {});
           return service.readProjects(actor);
+        },
+        async readTree(actor, args, context) {
+          const [input] = codeProjectEditorReadTreeArgsSchema.parse(args);
+          return service.readTree(actor, input ?? {}, context.signal);
         },
         async readDirectory(actor, args, context) {
           return service.readDirectory(
@@ -67,31 +72,9 @@ export function createProjectEditorPlugin(): PluginDefinition {
               id: `project.${method}`,
               value: {
                 async call(actor, args, context) {
-                  context.requireInitialized();
-                  context.signal.throwIfAborted();
-                  const operation = call(actor, args, context);
-                  // 错误由原 RPC 返回，关闭只等待此调用结束。
-                  const release = context.onClose(() =>
-                    operation.then(
-                      () => undefined,
-                      () => undefined,
-                    ),
+                  return runCodeUiHostRpc(context, () =>
+                    call(actor, args, context),
                   );
-                  try {
-                    const result = await operation;
-                    context.signal.throwIfAborted();
-                    return result;
-                  } catch (error) {
-                    if (context.signal.aborted)
-                      throw new CodeUiHostRpcError(
-                        "code_ui_not_found",
-                        "连接已关闭，请重新连接工作台。",
-                        404,
-                      );
-                    throw error;
-                  } finally {
-                    release();
-                  }
                 },
               },
             }),

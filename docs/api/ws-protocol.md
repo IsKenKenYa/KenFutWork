@@ -167,6 +167,18 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 连接取消后，保存事务继续检查取消信号，宿主等待在途调用退出；旧连接调用和取消后的回执返回可读的 404。关闭中的项目拒绝编辑和新 Task 创建，归档等待原 Task 资源实际关闭。已提交的保存仍由原业务键读取，不自动重放有副作用的请求。
 
+## 原项目树与归档管理
+
+原归档页面通过同一目录 owner 调用 `project.readTree`。`includeDeleted: true` 显式包含已归档项目并以 `deleted: true` 标识；普通读取排除这些项目及所属 Task。项目与根 Task 在同一 PostgreSQL 只读快照投影，Task 使用创建时固定目录及当前 Project 身份，不从已打开标签推导归属。`includeDeletedTasks: true` 返回最小删除事实，仅包含不透明 `taskId`、`projectId` 和 `hostId`。归档读取不恢复目录授权或运行。
+
+每个 Task 行的 `taskControl: { projectId, branchGeneration }` 供明确操作固定观察值。原 `archiveTask`、`unarchiveTask`、`deleteArchivedTask` 通过所属插件的宿主 RPC 贡献调用，完整参数包含 `taskId`、`workspacePath`、`workspaceIdentity` 及该观察值；客户端保留点击时的完整目标。未知字段、多余参数及缺少观察值返回 400，项目、目录或分支改变后拒绝旧操作。
+
+归档业务键由实例、Task、项目、观察分支和目标归档值生成；明确字段的规范化参数形成 SHA-256 指纹。回执使用原命令存储，顺序和并发重放读取同一结果，同键异参返回 409。归档先在事务内推进授权与分支并进入关闭状态，再等待原资源关闭器确认运行、后台工作、文件操作和进程退出，最后同事务发表归档状态与回执。准备提交回包丢失时，同键操作在业务锁内核验指纹、固定身份、原分支下一代及关闭状态，继续同一次关闭，不重复推进代际。
+
+恢复在原 Task 事务中保留固定目录、附加目录权限及沙箱范围，推进授权和分支后重新开放后续明确操作；同时更新持久 Goal 的 Task 分支与修订，原 SSE 发送新的 Goal 观察值。Goal 的正文、预算、计量、状态和历史保持，不自动发起 Run；用户通过原恢复入口携带当前 Task、Goal 观察值和 `baseRevision` 明确继续。关闭期间失败不能报告恢复完成。页面批次只处理确认时固定的身份集合，取消删除不发送删除请求；后续归档或搜索变化不能扩大确认范围。
+
+`deleteArchivedTask` 在同一 Task 业务锁内核对当前归档及观察分支，再经原资源关闭和删除服务执行；已恢复、已删除或不存在返回 `false`，界面按跳过计数。成功删除后原 Task、事件、输出和命令回执按现有规则清理；命令墓碑清除参数指纹及回执内容，归档／恢复迟到请求返回 404，实例物理删除时级联清除。归档或恢复的完成通知只触发目录重读，不切换当前 Task 或内容标签。
+
 ## 文档资源变更
 
 独立 `canvas.document.updated` 帧包含 `projectId`、`canvasId`、`deleted` 及可选真实 SHA-256 `revision`。它由文件变更和后台发布经 PostgreSQL 通知传递到实例 WS 与原宿主 SSE，不伪造 Agent Run 事件。宿主 SSE 的 `canvasDocumentUpdated` 通知投影为文档更新/删除事件，空文档列表也能收到更新。

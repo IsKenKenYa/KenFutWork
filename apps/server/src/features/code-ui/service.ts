@@ -6,6 +6,7 @@ import {
   type CanvasDocumentUpdatedMessage,
   type CodeExecutionScope,
   type CodeGoalControl,
+  type CodeTaskOrganizationTarget,
   type CodeUiEvent,
   type CodeUiWorkspace,
   canvasDocumentUpdatedMessageSchema,
@@ -1748,6 +1749,52 @@ export class CodeUiService {
       instanceId,
       root.root_directory!,
       root.project_id,
+    );
+  }
+
+  async changeTaskArchive(
+    actor: LocalActor,
+    target: CodeTaskOrganizationTarget,
+    archived: boolean,
+    signal: AbortSignal,
+  ) {
+    const owner = await this.deps.localInstance.resolve(actor);
+    const result = await this.deps.repository.taskArchives.change(
+      owner.instanceId,
+      target,
+      archived,
+      async () => {
+        if (!this.deps.beforeCloseTask)
+          throw new ExecutionScopeError(
+            "closer_unavailable",
+            "Task 执行资源关闭器不可用，不能报告已关闭。",
+            503,
+          );
+        await this.deps.beforeCloseTask(actor, target.taskId, "archive");
+        await this.attachments?.releaseTask(owner.instanceId, target.taskId);
+        forgetTaskFileState(owner.instanceId, target.taskId);
+      },
+      signal,
+    );
+    await this.refreshTaskLists(
+      owner.instanceId,
+      result.workspacePath,
+      result.projectId,
+    );
+    return result;
+  }
+
+  async deleteArchivedTask(
+    actor: LocalActor,
+    target: CodeTaskOrganizationTarget,
+    signal: AbortSignal,
+  ) {
+    const owner = await this.deps.localInstance.resolve(actor);
+    return this.deps.repository.taskArchives.deleteArchived(
+      owner.instanceId,
+      target,
+      () => this.deleteTask(actor, target.taskId),
+      signal,
     );
   }
 

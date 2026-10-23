@@ -1,9 +1,14 @@
 import {
   type AdditionalDirectory,
   type CodeProjectEditorProject,
+  type CodeProjectEditorReadTree,
+  type CodeProjectTree,
   codeProjectEditorProjectSchema,
+  codeProjectTreeSchema,
 } from "@kenfutwork/shared";
 import { CodeUiHostRpcError } from "../code-ui/host-rpc-handler.js";
+import type { CodeUiSessionRecord } from "../code-ui/repository.js";
+import { codeUiTaskMeta } from "../code-ui/task-index.js";
 import type {
   InstanceSqlClient,
   PersistenceService,
@@ -29,6 +34,11 @@ export type ProjectEditorChange = {
 
 export interface ProjectEditorRepository {
   list(instanceId: string): Promise<CodeProjectEditorProject[]>;
+  readTree(
+    instanceId: string,
+    input: CodeProjectEditorReadTree,
+    signal: AbortSignal,
+  ): Promise<CodeProjectTree>;
   save(
     instanceId: string,
     projectId: string,
@@ -49,7 +59,7 @@ export function projectEditorProject(
     | "created_at"
     | "updated_at"
     | "editor_revision"
-  >,
+  > & { archived_at?: string | null },
 ): CodeProjectEditorProject {
   return codeProjectEditorProjectSchema.parse({
     id: row.id,
@@ -69,6 +79,7 @@ export function projectEditorProject(
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
     revision: row.editor_revision,
+    ...(row.archived_at ? { deleted: true } : {}),
   });
 }
 
@@ -85,6 +96,15 @@ function changed(row: ProjectEditorRow, change: ProjectEditorChange): boolean {
 
 function conflict(message = "项目已更新，请刷新后重新保存。") {
   return new CodeUiHostRpcError("project_revision_conflict", message, 409);
+}
+
+function readProjectRows(sql: InstanceSqlClient, includeDeleted = false) {
+  return sql.query<ProjectEditorRow>(
+    `select * from public.projects
+      where instance_id=:instance and ($1::boolean or archived_at is null)
+      order by updated_at desc,id`,
+    [includeDeleted],
+  );
 }
 
 async function activeProject(sql: InstanceSqlClient, projectId: string) {
@@ -109,14 +129,66 @@ export function createProjectEditorRepository(
 ): ProjectEditorRepository {
   return {
     async list(instanceId) {
-      const projects = await persistence
-        .forInstance(instanceId)
-        .query<ProjectEditorRow>(
-          `select * from public.projects
-            where instance_id=:instance and archived_at is null
-            order by updated_at desc,id`,
-        );
+      const projects = await readProjectRows(
+        persistence.forInstance(instanceId),
+      );
       return projects.map(projectEditorProject);
+    },
+    async readTree(instanceId, input, signal) {
+      return persistence.transaction(async (tx) => {
+        signal.throwIfAborted();
+        await tx.execute(
+          "set transaction isolation level repeatable read read only",
+        );
+        const sql = tx.forInstance(instanceId);
+        const projects = await readProjectRows(
+          sql,
+          input.includeDeleted === true,
+        );
+        signal.throwIfAborted();
+        const records = await sql.query<CodeUiSessionRecord>(
+          `select s.* from public.code_ui_sessions s
+            join public.projects p on p.id=s.project_id and p.instance_id=s.instance_id
+            where s.instance_id=:instance and ($1::boolean or p.archived_at is null)
+              and s.parent_session_id is null
+            order by s.updated_at desc,s.id`,
+          [input.includeDeleted === true],
+        );
+        signal.throwIfAborted();
+        return codeProjectTreeSchema.parse({
+          projects: projects.map(projectEditorProject),
+          tasks: records.flatMap((record) => {
+            const meta = record.root_directory
+              ? codeUiTaskMeta(record, record.root_directory)
+              : null;
+            return meta
+              ? [
+                  {
+                    ...meta,
+                    hostId: "local",
+                    pinned: record.pinned,
+                    archived: record.archived,
+                    taskControl: {
+                      projectId: record.project_id,
+                      branchGeneration: Number(record.branch_generation),
+                    },
+                  },
+                ]
+              : [];
+          }),
+          ...(input.includeDeletedTasks
+            ? {
+                deletedTasks: records
+                  .filter((record) => record.deleted_at !== null)
+                  .map((record) => ({
+                    taskId: record.id,
+                    projectId: record.project_id,
+                    hostId: "local",
+                  })),
+              }
+            : {}),
+        });
+      });
     },
     async save(
       instanceId,

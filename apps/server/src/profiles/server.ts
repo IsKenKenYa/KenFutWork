@@ -23,6 +23,7 @@ import { createCodeTerminalPlugin } from "../features/code-terminal/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
+import { createTaskOrganizationPlugin } from "../features/code-ui/task-organization-plugin.js";
 import { createTaskProjectMovePlugin } from "../features/code-ui/task-project-move-plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
@@ -276,6 +277,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     }),
     createCodeUiPlugin(),
     createProjectEditorPlugin(),
+    createTaskOrganizationPlugin(),
     createTaskProjectMovePlugin(),
     createRealtimePlugin(),
   ];

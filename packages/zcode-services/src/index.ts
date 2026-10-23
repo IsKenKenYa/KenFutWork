@@ -31,6 +31,8 @@ export type {
   EditProjectInput,
   ProjectRoot,
   ProjectRootAccess,
+  ProjectTask,
+  ProjectTree,
   SaveProjectInput,
   VirtualProject,
 } from "./project/contract.js";

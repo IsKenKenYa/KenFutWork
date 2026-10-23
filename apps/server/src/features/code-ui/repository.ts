@@ -28,6 +28,7 @@ import {
 } from "./history-preparation.js";
 import type { CodeInputSettlement } from "./queue-control.js";
 import { codeUiRunHasStopIntent, codeUiRunOutcome } from "./run-outcome.js";
+import { createTaskArchiveOperations } from "./task-archive-operations.js";
 import { freezeWorkContext, workContextForRun } from "./work-context.js";
 
 export type CodeUiSessionRecord = SqlRow & {
@@ -460,6 +461,7 @@ export function createCodeUiRepository(
 ) {
   return {
     preparations: createHistoryPreparations(persistence),
+    taskArchives: createTaskArchiveOperations(persistence),
     async recoverRuntimeInputs(owner: {
       hostId: string;
       runtimeId: string;

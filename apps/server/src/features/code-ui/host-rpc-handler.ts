@@ -21,6 +21,37 @@ export interface CodeUiHostRpcHandler {
   ): Promise<unknown>;
 }
 
+/** 原宿主贡献共用连接接纳与等待关闭；错误仍交给原 HTTP 消费方处理。 */
+export async function runCodeUiHostRpc<T>(
+  context: CodeUiHostRpcContext,
+  call: () => Promise<T>,
+): Promise<T> {
+  context.requireInitialized();
+  context.signal.throwIfAborted();
+  const operation = call();
+  const release = context.onClose(() =>
+    operation.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  try {
+    const result = await operation;
+    context.signal.throwIfAborted();
+    return result;
+  } catch (error) {
+    if (context.signal.aborted)
+      throw new CodeUiHostRpcError(
+        "code_ui_not_found",
+        "连接已关闭，请重新连接工作台。",
+        404,
+      );
+    throw error;
+  } finally {
+    release();
+  }
+}
+
 /** feature贡献的原宿主方法沿同一HTTP边界报告可读错误。 */
 export class CodeUiHostRpcError extends Error {
   constructor(

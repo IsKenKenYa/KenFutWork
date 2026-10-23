@@ -1,7 +1,7 @@
 /* eslint-disable max-lines -- ZCode task wrapper service 接口集中承载 app/runtime API，拆散会让替换阶段更难追踪。 */
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
-import type { CommandPayloadMap } from "@zcode/shared/zcode-protocol-v4";
+import type { CommandPayloadMap, ConversationTaskControl } from "@zcode/shared/zcode-protocol-v4";
 import { createServiceDescriptor } from "#src/descriptors.js";
 import type {
   ZCodeImportSessionsResult,
@@ -645,6 +645,7 @@ export interface IZCodeTaskService {
     taskId: string;
     workspacePath: string;
     workspaceIdentity?: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<boolean>;
 
   /** 逐项执行归档条件删除，批次结束后统一通知列表；不清理 CLI 会话。 */
@@ -685,6 +686,7 @@ export interface IZCodeTaskService {
     taskId: string;
     workspacePath: string;
     workspaceIdentity?: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<ZCodeTaskMeta>;
 
   /** 取消归档 task，使其重新回到默认任务列表 */
@@ -692,6 +694,7 @@ export interface IZCodeTaskService {
     taskId: string;
     workspacePath: string;
     workspaceIdentity?: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<ZCodeTaskMeta>;
 
   /** 基于 source task 的会话配置新建一个空白分支，用于重新编辑某条用户输入。 */

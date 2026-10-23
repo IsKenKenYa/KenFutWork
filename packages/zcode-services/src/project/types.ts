@@ -1,3 +1,6 @@
+import type { ZCodeTaskMeta } from "@zcode/shared";
+import type { ConversationTaskControl } from "@zcode/shared/zcode-protocol-v4";
+
 export type ProjectRootAccess = "read-only" | "read-write";
 
 export interface ProjectRoot {
@@ -15,6 +18,40 @@ export interface VirtualProject {
   createdAt: number;
   updatedAt: number;
   revision: number;
+  deleted?: boolean;
+}
+
+export type ProjectTask = Pick<
+  ZCodeTaskMeta,
+  | "taskId"
+  | "traceId"
+  | "workspacePath"
+  | "workspaceIdentity"
+  | "workModes"
+  | "title"
+  | "titleOverridden"
+  | "createdAt"
+  | "updatedAt"
+  | "mode"
+  | "model"
+  | "thoughtLevel"
+  | "status"
+> & {
+  projectId: string;
+  hostId: "local";
+  pinned: boolean;
+  archived: boolean;
+  taskControl?: ConversationTaskControl;
+};
+
+export interface ProjectTree {
+  projects: VirtualProject[];
+  tasks: ProjectTask[];
+  deletedTasks?: Array<{
+    taskId: string;
+    projectId: string;
+    hostId: "local";
+  }>;
 }
 
 interface ProjectSaveFields {

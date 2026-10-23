@@ -11,6 +11,10 @@ const freshTransaction = () => ({
   firstInputAck: false,
   projectInsert: false,
   projectCreation: false,
+  taskArchiveCommand: false,
+  taskArchivePrepare: false,
+  taskArchiveTaskUpdated: false,
+  taskArchiveCompletion: false,
 });
 
 function cstring(bytes, at = 0) {
@@ -62,6 +66,8 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let taskProjectMovePrepare = false;
   let createFirstInput = false;
   let projectCreation = false;
+  let taskArchivePrepare = false;
+  let taskArchiveCompletion = false;
   let loseCreationReadbackOnce = false;
   let unavailable = false;
   let closed = false;
@@ -144,6 +150,85 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       ) {
         transaction.taskProjectMovePrepare = true;
         transaction.targetTaskId = parameters[0];
+      }
+      if (
+        taskArchivePrepare &&
+        commandId &&
+        /^insert into public\.code_ui_commands\b/u.test(text) &&
+        text.includes("'pending'") &&
+        parameters[0] === "code-ui:task-archive" &&
+        parameters[1] === commandId &&
+        typeof parameters[2] === "string"
+      ) {
+        transaction.taskArchiveCommand = true;
+        transaction.targetTaskId = parameters[2];
+      }
+      if (
+        taskArchivePrepare &&
+        transaction.taskArchiveCommand &&
+        /^update public\.code_ui_sessions set scope_generation\s*=\s*scope_generation\s*\+\s*1\b/u.test(
+          text,
+        ) &&
+        /\bexecution_state\s*=\s*\$2\b/u.test(text) &&
+        /\broot_session_id\s*=\s*\$1\b/u.test(text) &&
+        parameters[0] === transaction.targetTaskId &&
+        parameters[1] === "revoking"
+      )
+        transaction.taskArchivePrepare = true;
+      if (
+        taskArchiveCompletion &&
+        commandId &&
+        typeof parameters[0] === "string" &&
+        /^update public\.code_ui_sessions set archived\s*=\s*true,execution_state\s*=\s*'failed'/u.test(
+          text,
+        ) &&
+        /\bid\s*=\s*\$1\b/u.test(text)
+      ) {
+        transaction.taskArchiveTaskUpdated = true;
+        transaction.targetTaskId = parameters[0];
+        transaction.targetArchived = true;
+      }
+      if (
+        taskArchiveCompletion &&
+        commandId &&
+        /^update public\.code_ui_sessions set scope_generation\s*=\s*scope_generation\s*\+\s*1\b/u.test(
+          text,
+        ) &&
+        /\bbranch_generation\s*=\s*branch_generation\s*\+\s*1\b/u.test(text) &&
+        /\bexecution_state\s*=\s*\$2\b/u.test(text) &&
+        /\barchived\s*=\s*\$3\b/u.test(text) &&
+        /\broot_session_id\s*=\s*\$1\b/u.test(text) &&
+        typeof parameters[0] === "string" &&
+        parameters[1] === "ready" &&
+        parameters[2] === "false"
+      ) {
+        transaction.taskArchiveTaskUpdated = true;
+        transaction.targetTaskId = parameters[0];
+        transaction.targetArchived = false;
+      }
+      if (
+        taskArchiveCompletion &&
+        commandId &&
+        transaction.taskArchiveTaskUpdated &&
+        /^update public\.code_ui_commands set status\s*=\s*'accepted',ack\s*=\s*\$3::jsonb\b/u.test(
+          text,
+        ) &&
+        /\bclient_id\s*=\s*\$1\b/u.test(text) &&
+        /\bcommand_id\s*=\s*\$2\b/u.test(text) &&
+        text.includes("status='pending'") &&
+        parameters[0] === "code-ui:task-archive" &&
+        parameters[1] === commandId &&
+        typeof parameters[2] === "string"
+      ) {
+        const key = JSON.parse(commandId);
+        const result = JSON.parse(parameters[2]);
+        transaction.taskArchiveCompletion =
+          Array.isArray(key) &&
+          key.length === 4 &&
+          key[0] === transaction.targetTaskId &&
+          key[1] === result.projectId &&
+          key[3] === transaction.targetArchived &&
+          result.taskId === transaction.targetTaskId;
       }
       if (
         projectCreation &&
@@ -237,6 +322,8 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.mediaInstall ||
           transaction.taskProjectMovePrepare ||
           transaction.projectCreation ||
+          transaction.taskArchivePrepare ||
+          transaction.taskArchiveCompletion ||
           (transaction.chatRoot &&
             transaction.codeRoot &&
             transaction.firstInputState &&
@@ -336,6 +423,19 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
                   targetTaskId: transaction.targetTaskId,
                 }
               : {}),
+            ...(transaction.taskArchivePrepare
+              ? {
+                  taskArchivePrepare: true,
+                  targetTaskId: transaction.targetTaskId,
+                }
+              : {}),
+            ...(transaction.taskArchiveCompletion
+              ? {
+                  taskArchiveCompletion: true,
+                  targetTaskId: transaction.targetTaskId,
+                  targetArchived: transaction.targetArchived,
+                }
+              : {}),
             ...(transaction.firstInputState && transaction.firstInputAck
               ? {
                   createFirstInput: true,
@@ -418,6 +518,8 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       taskProjectMovePrepare = options.taskProjectMovePrepare === true;
       createFirstInput = options.createFirstInput === true;
       projectCreation = options.projectCreation === true;
+      taskArchivePrepare = options.taskArchivePrepare === true;
+      taskArchiveCompletion = options.taskArchiveCompletion === true;
       loseCreationReadbackOnce = options.loseCreationReadbackOnce === true;
     },
     restore() {

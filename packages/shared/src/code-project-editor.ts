@@ -1,3 +1,4 @@
+import { conversationTaskControlSchema } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
 
 const localHost = z.literal("local").optional();
@@ -22,6 +23,7 @@ export const codeProjectEditorProjectSchema = z
     createdAt: z.number().finite(),
     updatedAt: z.number().finite(),
     revision: projectRevision,
+    deleted: z.boolean().optional(),
   })
   .strict();
 
@@ -31,6 +33,62 @@ export const codeProjectEditorReadProjectsSchema = z
     includeDeleted: z.literal(false).optional(),
   })
   .strict();
+
+export const codeProjectEditorReadTreeSchema = z
+  .object({
+    hostId: localHost,
+    includeDeleted: z.boolean().optional(),
+    includeDeletedTasks: z.boolean().optional(),
+  })
+  .strict();
+
+export const codeProjectEditorReadTreeArgsSchema = z.tuple([
+  codeProjectEditorReadTreeSchema.nullish().optional(),
+]);
+
+export const codeProjectTreeTaskSchema = z
+  .object({
+    taskId: z.uuid(),
+    traceId: z.string(),
+    projectId: z.uuid(),
+    hostId: z.literal("local"),
+    workspacePath: z.string().min(1),
+    workspaceIdentity: z.string().min(1),
+    workModes: z.array(z.enum(["code", "design"])).optional(),
+    title: z.string(),
+    titleOverridden: z.boolean().optional(),
+    createdAt: z.number().finite(),
+    updatedAt: z.number().finite(),
+    mode: z.enum(["plan", "build", "yolo"]),
+    model: z.string().optional(),
+    thoughtLevel: z.string().optional(),
+    status: z.enum(["error", "running", "completed"]).optional(),
+    pinned: z.boolean(),
+    archived: z.boolean(),
+    taskControl: conversationTaskControlSchema.optional(),
+  })
+  .strict();
+
+/** 删除已清除目录；只传递仍持久保存的稳定身份。 */
+export const codeProjectTreeDeletedTaskSchema = z
+  .object({
+    taskId: z.uuid(),
+    projectId: z.uuid(),
+    hostId: z.literal("local"),
+  })
+  .strict();
+
+export const codeProjectTreeSchema = z
+  .object({
+    projects: z.array(codeProjectEditorProjectSchema),
+    tasks: z.array(codeProjectTreeTaskSchema),
+    deletedTasks: z.array(codeProjectTreeDeletedTaskSchema).optional(),
+  })
+  .strict();
+
+export const codeProjectTreeRpcResponseSchema = z.object({
+  result: codeProjectTreeSchema,
+});
 
 export const codeProjectEditorReadDirectorySchema = z
   .object({
@@ -99,6 +157,10 @@ export type CodeProjectEditorEdit = z.infer<typeof codeProjectEditorEditSchema>;
 export type CodeProjectEditorReadProjects = z.infer<
   typeof codeProjectEditorReadProjectsSchema
 >;
+export type CodeProjectEditorReadTree = z.infer<
+  typeof codeProjectEditorReadTreeSchema
+>;
+export type CodeProjectTree = z.infer<typeof codeProjectTreeSchema>;
 export type CodeProjectEditorReadDirectory = z.infer<
   typeof codeProjectEditorReadDirectorySchema
 >;

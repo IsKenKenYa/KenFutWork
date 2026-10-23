@@ -78,6 +78,7 @@ import { ComputerUseSection } from "@zui/settings/ComputerUseSection.js";
 import { HooksSection } from "@zui/settings/HooksSection.js";
 import { MemorySettingsSection } from "@zui/settings/MemorySettingsSection.js";
 import { MigrationSection } from "@zui/settings/MigrationSection.js";
+import { ArchiveManagement } from "@zui/project-sidebar/ArchiveManagement.js";
 import { ModelProviderSection } from "@zui/settings/ModelProviderSection.js";
 import { useEnterpriseCodingPlanProducts } from "@zui/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { SegmentPill } from "@zui/settings/PluginStoreListView.js";
@@ -2174,6 +2175,8 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             isDesktop={isDesktop}
                           />
+                        ) : activeSection === "archives" ? (
+                          <ArchiveManagement />
                         ) : activeSection === "usage" ? (
                           <UsageStatsSection
                             activeTab={usageActiveTab}

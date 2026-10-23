@@ -9,7 +9,9 @@ import type {
   CodeProjectEditorEdit,
   CodeProjectEditorProject,
   CodeProjectEditorReadDirectory,
+  CodeProjectEditorReadTree,
   CodeProjectEditorSave,
+  CodeProjectTree,
   ProjectCreateRequest,
 } from "@kenfutwork/shared";
 import { codeProjectEditorDirectorySchema } from "@kenfutwork/shared";
@@ -33,6 +35,11 @@ import { validateWorkDir } from "./work-dir.js";
 
 export interface ProjectEditorService {
   readProjects(actor: LocalActor): Promise<CodeProjectEditorProject[]>;
+  readTree(
+    actor: LocalActor,
+    input: CodeProjectEditorReadTree,
+    signal: AbortSignal,
+  ): Promise<CodeProjectTree>;
   readDirectory(
     actor: LocalActor,
     input: CodeProjectEditorReadDirectory,
@@ -232,6 +239,12 @@ export function createProjectEditorService(options: {
     async readProjects(actor) {
       const context = await options.localInstance.resolve(actor);
       return options.repository.list(context.instanceId);
+    },
+    async readTree(actor, input, signal) {
+      signal.throwIfAborted();
+      const context = await options.localInstance.resolve(actor);
+      signal.throwIfAborted();
+      return options.repository.readTree(context.instanceId, input, signal);
     },
     async readDirectory(actor, input, context) {
       const requested = input.path || homedir();

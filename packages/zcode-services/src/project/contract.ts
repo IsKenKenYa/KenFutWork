@@ -1,12 +1,14 @@
 import { ServiceChannels, type FileEntry } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
-import type { SaveProjectInput, VirtualProject } from "./types.js";
+import type { ProjectTree, SaveProjectInput, VirtualProject } from "./types.js";
 
 export type {
   CreateProjectInput,
   EditProjectInput,
   ProjectRoot,
   ProjectRootAccess,
+  ProjectTask,
+  ProjectTree,
   SaveProjectInput,
   VirtualProject,
 } from "./types.js";
@@ -22,6 +24,12 @@ export interface IProjectService {
     includeDeleted?: false;
     hostId?: "local";
   }): Promise<VirtualProject[]>;
+  /** 同一只读快照投影项目与持久 Task；不改变目录授权或启动 Agent。 */
+  readTree(params?: {
+    includeDeleted?: boolean;
+    includeDeletedTasks?: boolean;
+    hostId?: "local";
+  }): Promise<ProjectTree>;
   saveProject(input: SaveProjectInput): Promise<VirtualProject>;
   deleteProject(id: string, hostId?: "local"): Promise<void>;
 }

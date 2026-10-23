@@ -6,12 +6,17 @@ export interface CommitLossEvidence {
   targetTaskId?: string;
   targetThreadId?: string;
   taskProjectMovePrepare?: true;
+  taskArchivePrepare?: true;
+  taskArchiveCompletion?: true;
+  targetArchived?: boolean;
   createFirstInput?: true;
   projectCreation?: true;
   creationId?: string;
   targetProjectId?: string;
 }
-export function createCommitResponseLossProxy(connectionString: string): Promise<{
+export function createCommitResponseLossProxy(
+  connectionString: string,
+): Promise<{
   connectionString: string;
   arm(
     commandId: string,
@@ -20,6 +25,8 @@ export function createCommitResponseLossProxy(connectionString: string): Promise
       rollbackBeforeCommit?: boolean;
       mediaInstall?: boolean;
       taskProjectMovePrepare?: boolean;
+      taskArchivePrepare?: boolean;
+      taskArchiveCompletion?: boolean;
       createFirstInput?: boolean;
       projectCreation?: boolean;
       loseCreationReadbackOnce?: boolean;

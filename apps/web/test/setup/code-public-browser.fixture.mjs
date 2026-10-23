@@ -62,9 +62,12 @@ async function waitForOwnedDebugPort(profileDir, child) {
         join(profileDir, "DevToolsActivePort"),
         "utf8",
       );
-      const port = Number(activePort.split("\n", 1)[0]);
-      if (Number.isInteger(port) && port > 0 && port <= 65_535) return port;
-      throw new Error("独占浏览器提供了无效调试端口");
+      // 文件创建与内容写入分别可见；完整首行到达后才校验本例端口。
+      if (activePort.includes("\n")) {
+        const port = Number(activePort.split("\n", 1)[0]);
+        if (Number.isInteger(port) && port > 0 && port <= 65_535) return port;
+        throw new Error("独占浏览器提供了无效调试端口");
+      }
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
