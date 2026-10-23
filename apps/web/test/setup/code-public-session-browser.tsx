@@ -229,6 +229,7 @@ try {
       platform,
       context,
       { SharedProjectNavigationProvider },
+      { ProjectDirectoryChoiceProvider },
     ] = await Promise.all([
       import("@zui/Root.js"),
       import("@zui/i18n/IntlProvider.js"),
@@ -238,6 +239,9 @@ try {
       ),
       import(
         "../../src/components/workbench/zcode/host/SharedProjectNavigation.js"
+      ),
+      import(
+        "../../src/components/workbench/zcode/host/ProjectDirectoryChoice.js"
       ),
     ]);
     const codePlatform = platform.createCodePlatform(client);
@@ -255,23 +259,25 @@ try {
           settingService={services.settingService}
           broadcastService={services.broadcastService}
         >
-          <SharedProjectNavigationProvider client={client}>
-            <Root
-              services={services}
-              platform={codePlatform}
-              directoryServices={directoryServices}
-              onWorkspaceContextChange={onWorkspaceContextChange}
-              workbenchGroupClientMode={clientMode}
-              initialUserInfo={null}
-              initialWorkspaceAbsPath={bootstrap.workspacePath}
-              initialWorkspaceIdentity={scope.workspaceIdentity}
-              initialTaskId={bootstrap.sessionId}
-              restoreSession={false}
-              allowRemoteWorkspace={false}
-              supportsEmbeddedBrowser={false}
-              preferDirectoryBrowser
-            />
-          </SharedProjectNavigationProvider>
+          <ProjectDirectoryChoiceProvider>
+            <SharedProjectNavigationProvider client={client}>
+              <Root
+                services={services}
+                platform={codePlatform}
+                directoryServices={directoryServices}
+                onWorkspaceContextChange={onWorkspaceContextChange}
+                workbenchGroupClientMode={clientMode}
+                initialUserInfo={null}
+                initialWorkspaceAbsPath={bootstrap.workspacePath}
+                initialWorkspaceIdentity={scope.workspaceIdentity}
+                initialTaskId={bootstrap.sessionId}
+                restoreSession={false}
+                allowRemoteWorkspace={false}
+                supportsEmbeddedBrowser={false}
+                preferDirectoryBrowser
+              />
+            </SharedProjectNavigationProvider>
+          </ProjectDirectoryChoiceProvider>
         </ZCodeIntlProvider>
       );
     }

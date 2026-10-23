@@ -152,7 +152,10 @@ import {
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
-import { ProjectEditorAdapter } from "./host/ProjectEditorAdapter.js";
+import {
+  prepareProjectCreation,
+  ProjectEditorAdapter,
+} from "./host/ProjectEditorAdapter.js";
 import { ProjectCreation } from "./project-sidebar/ProjectCreation.js";
 import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
 import { SidebarNavButton } from "./host/SidebarNavButton.js";
@@ -453,6 +456,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       workspacePath={workspacePath}
       workspaceIdentity={workspaceIdentity}
       service={projectService}
+      onPrepareCreation={(primaryRoot, signal) =>
+        prepareProjectCreation(primaryRoot, signal)
+      }
       onSaved={refreshProjects}
       onClose={() => projectCreation?.closeProjectCreation(creation.creationId)}
     />

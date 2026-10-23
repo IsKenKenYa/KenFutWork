@@ -267,7 +267,9 @@ export class CodeHttpChannelClient implements IChannelClient {
     snapshot: ProjectDirectoryRelinkSnapshot,
     path: string,
   ) {
-    let choice = await confirmDirectoryRelink(path, snapshot.projectId);
+    let choice = await confirmDirectoryRelink(path, snapshot.projectId, {
+      signal: this.controller.signal,
+    });
     if (!choice) throw new DirectoryChoiceCancelledError();
     const submit = () =>
       this.request(
@@ -290,7 +292,9 @@ export class CodeHttpChannelClient implements IChannelClient {
         error.code !== "project_directory_conflict"
       )
         throw error;
-      choice = await confirmDirectoryRelink(path, snapshot.projectId);
+      choice = await confirmDirectoryRelink(path, snapshot.projectId, {
+        signal: this.controller.signal,
+      });
       if (!choice) throw new DirectoryChoiceCancelledError();
       result = await submit();
     }
@@ -338,7 +342,9 @@ export class CodeHttpChannelClient implements IChannelClient {
     await this.connect();
     let independent = false;
     const select = async () => {
-      const choice = await chooseDirectoryProject(path, preset);
+      const choice = await chooseDirectoryProject(path, preset, {
+        signal: this.controller.signal,
+      });
       if (!choice) throw new DirectoryChoiceCancelledError();
       if ("projectId" in choice) projectId = choice.projectId;
       else independent = "independent" in choice;

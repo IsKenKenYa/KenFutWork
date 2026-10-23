@@ -9,10 +9,27 @@ import {
   DialogTitle,
 } from "@zui/components/ui/dialog.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { ProjectEditor } from "@zui/project-sidebar/ProjectEditor.js";
+import {
+  type ProjectCreationPreparation,
+  ProjectEditor,
+} from "@zui/project-sidebar/ProjectEditor.js";
 import { useTabStoreApi } from "@zui/store/TabStoreProvider.js";
 import { isWorkspaceTab } from "@zui/store/tabStore.js";
 import { useEffect, useRef, useState } from "react";
+import { chooseProjectCreationDirectory } from "./ProjectDirectoryChoice.js";
+
+export async function prepareProjectCreation(
+  primaryRoot: string,
+  signal: AbortSignal,
+): Promise<ProjectCreationPreparation> {
+  const choice = await chooseProjectCreationDirectory(primaryRoot, { signal });
+  if (!choice || signal.aborted) return null;
+  if ("projectId" in choice) return { kind: "reuse" };
+  return {
+    kind: "create",
+    ...("independent" in choice ? { directoryChoice: "independent" } : {}),
+  };
+}
 
 export function ProjectEditorAdapter({
   projectId,

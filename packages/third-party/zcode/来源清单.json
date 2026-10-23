@@ -27,8 +27,8 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectCreation.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "60ec690b21a2de985fde0fde4459c9de5e6b92012375bcc9f18841bdb0050be8",
-      "copiedSha256": "25243f9e3d560790c46a082fb8ac7805441f9e5699cb085aa3e61a09a0672b43",
-      "adaptations": ["@/ 导入映射为 @zui/；保留原 tab、workspace、activeTaskId 和 draftFocusVersion 的创建生命周期判断，连接真实创建表单。", "创建沿 KFW 稳定 creationId 和 Project 服务，只刷新项目列表，保留当前 Task、正文草稿和内容标签；不引入上游草稿 Task 或独立存储。"]
+      "copiedSha256": "aae8f4266438c02f197ab5dd79479d5600c708c67a83b8aa1145bb73ca9215bf",
+      "adaptations": ["@/ 导入映射为 @zui/；保留原 tab、workspace、activeTaskId 和 draftFocusVersion 的创建生命周期判断，连接真实创建表单。", "创建沿 KFW 稳定 creationId 和 Project 服务，只刷新项目列表，保留当前 Task、正文草稿和内容标签；不引入上游草稿 Task 或独立存储。", "由真实侧栏传入宿主同目录选择，复用保持已有项目设置，独立创建沿原创建身份保存。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectFolderTrustDialog.tsx",
@@ -43,8 +43,8 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectEditor.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "92ce18a330dd23d39884b488c2ae468640f97feed55316cb496b804ccf9fe8b9",
-      "copiedSha256": "0837e28361ea2ef3112e58be3ba0177834dd156782aebe7fccf335f872dff296",
-      "adaptations": ["@/ 导入映射为 @zui/；装配原本机创建与编辑表单、控件、草稿及 saveFlight/epoch/alive 生命周期，创建使用真实目录浏览、主目录选择和原信任确认。", "保留已有主目录，附加目录须明确选择只读或可写；编辑携带真实 Project ID 和观察修订，创建携带稳定 creationId 并缓存已创建结果，归档复用原项目服务。", "使用原 suspended 与 isCurrent 处理 tab/Task/草稿变化，创建只刷新项目列表，迟到结果不切换 Task 或内容标签。"]
+      "copiedSha256": "6c871adadd6253ea67e6561c115712850043b49a68fbb9ff46d0fd325aa21a78",
+      "adaptations": ["@/ 导入映射为 @zui/；装配原本机创建与编辑表单、控件、草稿及 saveFlight/epoch/alive 生命周期，创建使用真实目录浏览、主目录选择和原信任确认。", "保留已有主目录，附加目录须明确选择只读或可写；编辑携带真实 Project ID 和观察修订，创建携带稳定 creationId 并缓存已创建结果，归档复用原项目服务。", "使用原 suspended 与 isCurrent 处理 tab/Task/草稿变化，创建只刷新项目列表，迟到结果不切换 Task 或内容标签。", "创建前经宿主确认同目录复用或独立创建；关闭和挂起取消候选读取及信任确认，关闭等待在途保存或归档结束。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/useProjectDirectoryServices.ts",
@@ -1801,8 +1801,9 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "4fa2182bbff35cf66ea9f2c712b9c17a33337bf220f4c173d4f5d9b88bceba78",
+      "copiedSha256": "6d9ee60ea2ab8d63e7d754c401e72712399822ce1c9aa4d68842fffd205a9da7",
       "adaptations": [
+        "原项目创建接入宿主同目录选择及目录归属复验，明确复用或独立创建后保持当前会话和内容。",
         "项目加号与宿主新建意图连接新版原 ProjectCreation，在真实 Sidebar 服务与 Tab Provider 内装配；创建只刷新项目，当前 Task、草稿和内容标签保持。",
         "按可信 Project 身份在原菜单装配新版原 ProjectEditor，保存后消费现行项目列表刷新；Task、SessionPane 和内容标签不变，旧侧栏其余部分仍使用原来源。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",

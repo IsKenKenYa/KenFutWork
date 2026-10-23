@@ -34,9 +34,26 @@ import {
 
 const FIELD_LABEL = "text-ui-sm font-medium text-foreground";
 
+export type ProjectCreationPreparation =
+  | { kind: "reuse" }
+  | { kind: "create"; directoryChoice?: "independent" }
+  | null;
+
+export type PrepareProjectCreation = (
+  primaryRoot: string,
+  signal: AbortSignal,
+) => Promise<ProjectCreationPreparation>;
+
+type EditorFlight = {
+  controller: AbortController;
+  settled: Promise<void>;
+  cancelTrust?: () => void;
+};
+
 export function ProjectEditor({
   project,
   creation,
+  onPrepareCreation,
   initialRoots = [],
   isCurrent = () => true,
   service,
@@ -53,10 +70,11 @@ export function ProjectEditor({
   suspended?: boolean;
   initialRoots?: string[];
 } & (
-  | { project: VirtualProject; creation?: never }
+  | { project: VirtualProject; creation?: never; onPrepareCreation?: never }
   | {
       project: null;
       creation: Pick<CreateProjectInput, "creationId" | "kind">;
+      onPrepareCreation: PrepareProjectCreation;
     }
 )) {
   const { intl } = useZCodeIntl();
@@ -84,28 +102,32 @@ export function ProjectEditor({
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<VirtualProject | null>(null);
   const [folderTrust, setFolderTrust] = useState<ProjectFolderTrustRequest | null>(null);
-  const saveFlight = useRef<{ cancelTrust?: () => void } | null>(null);
+  const saveFlight = useRef<EditorFlight | null>(null);
   const saveButton = useRef<HTMLButtonElement>(null);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const epoch = useRef(0);
   const alive = useRef(true);
+  const closing = useRef(false);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
       epoch.current++;
+      saveFlight.current?.controller.abort();
       saveFlight.current?.cancelTrust?.();
     };
   }, []);
   useEffect(() => {
     if (suspended) {
       epoch.current++;
+      saveFlight.current?.controller.abort();
       saveFlight.current?.cancelTrust?.();
     }
   }, [suspended]);
   const current = (request: number) =>
     alive.current &&
+    !closing.current &&
     epoch.current === request &&
     !suspendedRef.current &&
     isCurrent();
@@ -119,12 +141,29 @@ export function ProjectEditor({
     epoch.current++;
     setBrowsing(true);
   };
-  const save = async () => {
-    if (saveFlight.current || suspendedRef.current || !isCurrent()) return;
-    const flight: { cancelTrust?: () => void } = {};
+  const startFlight = (operation: (flight: EditorFlight) => Promise<void>) => {
+    if (closing.current || saveFlight.current || suspendedRef.current || !isCurrent()) return;
+    const flight: EditorFlight = {
+      controller: new AbortController(),
+      settled: Promise.resolve(),
+    };
     saveFlight.current = flight;
+    flight.settled = operation(flight);
+    return flight.settled;
+  };
+  const close = async () => {
+    if (closing.current) return;
+    closing.current = true;
+    epoch.current++;
+    const flight = saveFlight.current;
+    flight?.controller.abort();
+    flight?.cancelTrust?.();
+    await flight?.settled;
+    if (alive.current) onClose();
+  };
+  const save = async (flight: EditorFlight) => {
     const request = epoch.current;
-    const canCommit = () => current(request);
+    const canCommit = () => current(request) && !flight.controller.signal.aborted;
     setBusy(true);
     setError(null);
     try {
@@ -132,6 +171,19 @@ export function ProjectEditor({
         await onSaved(created);
         if (canCommit()) onClose();
         return;
+      }
+      let directoryChoice: CreateProjectInput["directoryChoice"];
+      if (!project) {
+        const preparation = await onPrepareCreation(
+          primary,
+          flight.controller.signal,
+        );
+        if (!preparation || !canCommit()) return;
+        if (preparation.kind === "reuse") {
+          onClose();
+          return;
+        }
+        directoryChoice = preparation.directoryChoice;
       }
       if (!project && roots.length) {
         const accepted = await new Promise<boolean>((resolve) => {
@@ -151,6 +203,7 @@ export function ProjectEditor({
         ...(project
           ? { id: project.id, expectedRevision: project.revision }
           : creation),
+        ...(directoryChoice ? { directoryChoice } : {}),
         ...(nameEdited ? { name: name.trim() } : {}),
         roots,
         ...(primary ? { primaryRoot: primary } : {}),
@@ -175,15 +228,12 @@ export function ProjectEditor({
       if (alive.current) setBusy(false);
     }
   };
-  const remove = async () => {
-    if (!project) return;
-    if (saveFlight.current || suspendedRef.current || !isCurrent()) return;
-    const flight = {};
-    saveFlight.current = flight;
+  const remove = async (flight: EditorFlight) => {
     const request = epoch.current;
     setBusy(true);
     setError(null);
     try {
+      if (!project) return;
       await service.deleteProject(project.id, project.hostId);
       if (!current(request)) return;
       await onDeleted?.();
@@ -204,9 +254,10 @@ export function ProjectEditor({
     <Dialog
       open={!suspended}
       onOpenChange={(open) => {
-        if (!open)
+        if (!open) {
           logger.debug("[ProjectEditor] close requested", { busy });
-        if (!open && !busy) onClose();
+          void close();
+        }
       }}
     >
       <DialogContent className="max-w-lg gap-5">
@@ -389,19 +440,19 @@ export function ProjectEditor({
                   variant="ghost"
                   data-testid="virtual-project-editor-delete"
                   disabled={busy}
-                  onClick={() => void remove()}
+                  onClick={() => void startFlight(remove)}
                   className="mr-auto bg-destructive-surface text-destructive-surface-foreground hover:bg-destructive-surface hover:text-destructive-surface-foreground"
                 >
                   {msg("archive")}
                 </Button>
               ) : null}
-              <Button variant="ghost" onClick={onClose} disabled={busy}>
+              <Button variant="ghost" onClick={() => void close()} disabled={busy}>
                 {msg("cancel")}
               </Button>
               <Button
                 ref={saveButton}
                 data-testid="virtual-project-save"
-                onClick={() => void save()}
+                onClick={() => void startFlight(save)}
                 disabled={busy || missingPermission || !roots.length || (nameEdited && !name.trim())}
               >
                 {project ? msg("save") : msg("create")}
@@ -413,7 +464,7 @@ export function ProjectEditor({
           <ProjectFolderTrustDialog
             request={folderTrust}
             onClosed={() => {
-              if (alive.current && !suspendedRef.current) saveButton.current?.focus();
+              if (alive.current && !closing.current && !suspendedRef.current) saveButton.current?.focus();
             }}
           />
         ) : null}

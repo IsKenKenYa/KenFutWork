@@ -2,13 +2,14 @@ import type { CreateProjectInput, IProjectService } from "@zcode/services";
 import { useOptionalTabStore, useTabStoreApi } from "@zui/store/TabStoreProvider.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { useEffect, useRef, useState } from "react";
-import { ProjectEditor } from "./ProjectEditor.js";
+import { type PrepareProjectCreation, ProjectEditor } from "./ProjectEditor.js";
 
 export function ProjectCreation({
   workspacePath,
   workspaceIdentity,
   creation,
   service,
+  onPrepareCreation,
   onClose,
   onSaved,
 }: {
@@ -16,6 +17,7 @@ export function ProjectCreation({
   workspaceIdentity?: string;
   creation: Pick<CreateProjectInput, "creationId" | "kind">;
   service: IProjectService;
+  onPrepareCreation: PrepareProjectCreation;
   onClose(): void;
   onSaved(): Promise<void>;
 }) {
@@ -60,6 +62,7 @@ export function ProjectCreation({
       project={null}
       creation={creation}
       service={service}
+      onPrepareCreation={onPrepareCreation}
       onClose={onClose}
       onSaved={async () => {
         if (isCurrent()) await onSaved();

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,16 +135,70 @@ function readCreationSurface(page: OriginalSessionBrowser) {
   })()`);
 }
 
-async function expectTaskPreserved({
-  page,
-  session,
-  model,
-  previewName,
-  draft,
-  scopeBefore,
-  sessionBefore,
-  readScope,
-}: CreationPageCheck) {
+async function readDirectoryReuseDiagnostics(page: OriginalSessionBrowser) {
+  const surface = await readCreationSurface(page);
+  const observed = await page.evaluate(`(() => {
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'), dialog => ({
+      id: dialog.id,
+      title: dialog.querySelector('[data-slot="dialog-title"]')?.textContent,
+      visible: dialog.checkVisibility(),
+      state: dialog.getAttribute('data-state'),
+      ariaHidden: dialog.getAttribute('aria-hidden'),
+      buttons: Array.from(dialog.querySelectorAll('button'), button => ({
+        text: button.textContent.trim(),
+        disabled: button.disabled,
+        visible: button.checkVisibility(),
+        testId: button.getAttribute('data-testid'),
+      })),
+    }));
+    const responseTimings = performance.getEntriesByType('resource')
+      .filter(entry => new URL(entry.name).pathname.startsWith('/api/'))
+      .map(entry => ({
+        path: new URL(entry.name).pathname,
+        startAtUnixMs: performance.timeOrigin + entry.startTime,
+        requestStartAtUnixMs: entry.requestStart > 0 ? performance.timeOrigin + entry.requestStart : null,
+        responseStartAtUnixMs: entry.responseStart > 0 ? performance.timeOrigin + entry.responseStart : null,
+        responseEndAtUnixMs: entry.responseEnd > 0 ? performance.timeOrigin + entry.responseEnd : null,
+        durationMs: entry.duration,
+        waitForResponseMs: entry.requestStart > 0 && entry.responseStart >= entry.requestStart
+          ? entry.responseStart - entry.requestStart : null,
+        responseDownloadMs: entry.responseStart > 0 && entry.responseEnd >= entry.responseStart
+          ? entry.responseEnd - entry.responseStart : null,
+        nextHopProtocol: entry.nextHopProtocol,
+      }));
+    return {
+      observedAtUnixMs: Date.now(),
+      timeOriginUnixMs: performance.timeOrigin,
+      elapsedMs: performance.now(),
+      dialogs,
+      responseTimings,
+    };
+  })()`);
+  const pending = structuredClone(
+    page.requests.filter(
+      (request) =>
+        request !== null &&
+        typeof request === "object" &&
+        "state" in request &&
+        request.state === "pending",
+    ),
+  );
+  return { surface, observed, pending, pageErrors: page.pageErrors };
+}
+
+async function expectTaskPreserved(
+  {
+    page,
+    session,
+    model,
+    previewName,
+    draft,
+    scopeBefore,
+    sessionBefore,
+    readScope,
+  }: CreationPageCheck,
+  diagnostics?: () => Promise<unknown>,
+) {
   await vi.waitFor(async () =>
     expect(
       await page.evaluate(`(() => {
@@ -161,7 +216,7 @@ async function expectTaskPreserved({
           contentTitle: tab?.querySelector('[data-side-pane-tab-title]')?.textContent,
         };
       })()`),
-      JSON.stringify(page.pageErrors),
+      JSON.stringify(diagnostics ? await diagnostics() : page.pageErrors),
     ).toEqual({
       formClosed: true,
       sameInput: true,
@@ -419,13 +474,21 @@ async function chooseProjectRoot(page: OriginalSessionBrowser, root: string) {
 }
 
 async function confirmProjectCreation(
-  { page, readProjects, projectsBefore }: CreationPageCheck,
+  context: CreationPageCheck,
   roots: string[],
 ) {
+  const { page, readProjects, projectsBefore } = context;
   expect(await readProjects()).toEqual(projectsBefore);
   await clickOn(page.cdp, page.target.sessionId, {
     selector: '[data-testid="virtual-project-save"]',
   });
+  await confirmProjectFolders(context, roots);
+}
+
+async function confirmProjectFolders(
+  { page, readProjects, projectsBefore }: CreationPageCheck,
+  roots: string[],
+) {
   await vi.waitFor(async () =>
     expect(
       await page.evaluate(`(() => {
@@ -528,6 +591,441 @@ async function expectCreatedProject(
       enabledModes: ["code"],
     }),
   ]);
+}
+
+async function expectIndependentProject(
+  {
+    session,
+    readProjects,
+    projectsBefore,
+    recordCreatedProject,
+  }: CreationPageCheck,
+  expected: {
+    name: string;
+    primaryRoot: string;
+    readOnlyRoot: string;
+    publicBefore: ReturnType<typeof projectListResponseSchema.parse>;
+  },
+) {
+  const { name, primaryRoot, readOnlyRoot, publicBefore } = expected;
+  const after = await readProjects();
+  const oldIds = new Set(projectsBefore.map((project) => project.id));
+  const created = after.filter((project) => !oldIds.has(project.id));
+  expect(after).toHaveLength(projectsBefore.length + 1);
+  expect(created).toHaveLength(1);
+  const saved = created[0];
+  if (!saved) throw new Error("真实项目列表缺少独立创建的项目。");
+  recordCreatedProject(saved.id);
+  expect(after.filter((project) => oldIds.has(project.id))).toEqual(
+    projectsBefore,
+  );
+  expect(saved).toMatchObject({ hostId: "local", name, revision: 0 });
+  expect(saved.roots).toEqual([
+    { rootPath: primaryRoot, position: 0, isPrimary: true },
+    {
+      rootPath: readOnlyRoot,
+      position: 1,
+      isPrimary: false,
+      access: "read-only",
+    },
+  ]);
+  const listed = await session.client.request("/api/projects?kind=code");
+  expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+  const projects = projectListResponseSchema.parse(listed.body).projects;
+  expect(projects).toHaveLength(publicBefore.projects.length + 1);
+  expect(projects.filter((project) => oldIds.has(project.id))).toEqual(
+    publicBefore.projects,
+  );
+  expect(projects.filter((project) => project.id === saved.id)).toEqual([
+    expect.objectContaining({
+      id: saved.id,
+      name,
+      kind: "code",
+      workDir: primaryRoot,
+      additionalDirectories: [{ path: readOnlyRoot, access: "read-only" }],
+      enabledModes: ["code"],
+    }),
+  ]);
+}
+
+async function expectProjectSaveOnce(
+  page: OriginalSessionBrowser,
+  baseline: ReadonlySet<unknown>,
+) {
+  await vi.waitFor(() => {
+    const saves = page.requests.filter(
+      (request) =>
+        !baseline.has(request) &&
+        request !== null &&
+        typeof request === "object" &&
+        "service" in request &&
+        request.service === "project" &&
+        "method" in request &&
+        request.method === "saveProject",
+    );
+    expect(saves).toEqual([
+      expect.objectContaining({
+        path: "/api/code-ui/rpc",
+        httpMethod: "POST",
+        service: "project",
+        method: "saveProject",
+        status: 200,
+        state: "finished",
+      }),
+    ]);
+  });
+}
+
+async function waitForDirectoryChoice(
+  page: OriginalSessionBrowser,
+  projectName: string,
+) {
+  const selector = await vi.waitFor(async () => {
+    const state = await page.evaluate<{
+      selector: string | null;
+      buttons: string[];
+      folderTrust: boolean;
+    }>(`(() => {
+      const title = Array.from(document.querySelectorAll('[data-slot="dialog-title"]'))
+        .find(element => element.textContent.trim() === '目录已关联项目');
+      const dialog = title?.closest('[role="dialog"]');
+      return {
+        selector: dialog?.id ? '[role="dialog"][id=' + JSON.stringify(dialog.id) + ']' : null,
+        buttons: Array.from(dialog?.querySelectorAll('button') ?? [], button => button.textContent.trim()),
+        folderTrust: Boolean(document.querySelector('[data-testid="project-folder-trust-dialog"]')),
+      };
+    })()`);
+    expect(
+      state.buttons,
+      JSON.stringify({ state, pageErrors: page.pageErrors }),
+    ).toEqual(expect.arrayContaining([projectName, "独立创建", "取消"]));
+    expect(state.folderTrust).toBe(false);
+    if (!state.selector) throw new Error("原目录项目选择框未显示。");
+    return state.selector;
+  });
+  await page.evaluate(`(async () => {
+    const dialog = document.querySelector(${JSON.stringify(selector)});
+    if (!dialog) throw new Error("原目录项目选择框已关闭。");
+    const sibling = dialog.previousElementSibling;
+    const overlay = sibling?.matches('[data-slot="dialog-overlay"]') ? sibling : null;
+    await Promise.all([
+      ...dialog.getAnimations({ subtree: true }),
+      ...(overlay?.getAnimations({ subtree: true }) ?? []),
+    ].map(animation => animation.finished));
+    await new Promise(requestAnimationFrame);
+  })()`);
+  return selector;
+}
+
+type ProjectResponseTarget = "directory-candidates" | "project.readProjects";
+
+function matchesPausedProjectResponse(
+  page: OriginalSessionBrowser,
+  request: unknown,
+  networkId: unknown,
+  target: ProjectResponseTarget,
+) {
+  if (!request || typeof request !== "object" || !("method" in request))
+    return false;
+  if (target === "directory-candidates") return request.method === "GET";
+  return page.requests.some(
+    (fact) =>
+      fact !== null &&
+      typeof fact === "object" &&
+      "requestId" in fact &&
+      "service" in fact &&
+      "method" in fact &&
+      fact.requestId === networkId &&
+      fact.service === "project" &&
+      fact.method === "readProjects",
+  );
+}
+
+async function withPausedProjectResponse(
+  page: OriginalSessionBrowser,
+  run: (response: {
+    waitForResponse(): Promise<string>;
+    release(): Promise<void>;
+  }) => Promise<void>,
+  target: ProjectResponseTarget = "directory-candidates",
+) {
+  let paused:
+    | { requestId: string; networkId: string; status: number }
+    | undefined;
+  let enabled = true;
+  const failures: unknown[] = [];
+  const continuations: Promise<unknown>[] = [];
+  const releasePaused = page.cdp.on(
+    "Fetch.requestPaused",
+    (params, sessionId) => {
+      if (
+        sessionId !== page.target.sessionId ||
+        typeof params.requestId !== "string"
+      )
+        return;
+      const matches = matchesPausedProjectResponse(
+        page,
+        params.request,
+        params.networkId,
+        target,
+      );
+      if (
+        (!paused || target === "project.readProjects") &&
+        params.responseStatusCode === 200 &&
+        typeof params.networkId === "string" &&
+        matches
+      ) {
+        paused = {
+          requestId: params.requestId,
+          networkId: params.networkId,
+          status: params.responseStatusCode,
+        };
+        return;
+      }
+      const operation = page.cdp.send(
+        "Fetch.continueResponse",
+        { requestId: params.requestId },
+        page.target.sessionId,
+      );
+      continuations.push(operation);
+      void operation.catch((error: unknown) => failures.push(error));
+    },
+  );
+  const release = async () => {
+    if (!enabled) return;
+    await page.cdp.send("Fetch.disable", {}, page.target.sessionId);
+    enabled = false;
+    await Promise.allSettled(continuations);
+  };
+  try {
+    await page.cdp.send(
+      "Fetch.enable",
+      {
+        patterns: [
+          {
+            urlPattern:
+              target === "directory-candidates"
+                ? "*/api/projects/directory-candidates*"
+                : "*/api/code-ui/rpc",
+            requestStage: "Response",
+          },
+        ],
+      },
+      page.target.sessionId,
+    );
+    await run({
+      async waitForResponse() {
+        await vi.waitFor(() => {
+          expect(failures).toEqual([]);
+          expect(paused).toMatchObject({ status: 200 });
+        });
+        if (!paused) throw new Error("未暂停原项目读取响应。");
+        return paused.networkId;
+      },
+      release,
+    });
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      await release();
+    } catch (error) {
+      failures.push(error);
+    }
+    releasePaused();
+    await Promise.allSettled(continuations);
+  }
+  if (failures.length)
+    throw new AggregateError(failures, "原项目读取响应暂停或清理失败", {
+      cause: failures[0],
+    });
+}
+
+async function expectOriginalProjects(
+  { session, readProjects, projectsBefore }: CreationPageCheck,
+  publicBefore: ReturnType<typeof projectListResponseSchema.parse>,
+) {
+  expect(await readProjects()).toEqual(projectsBefore);
+  const listed = await session.client.request("/api/projects?kind=code");
+  expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+  expect(projectListResponseSchema.parse(listed.body)).toEqual(publicBefore);
+}
+
+function expectNoProjectWrites(
+  page: OriginalSessionBrowser,
+  baseline: ReadonlySet<unknown>,
+) {
+  const observed = page.requests.filter((request) => !baseline.has(request));
+  expect(observed).not.toContainEqual(
+    expect.objectContaining({ service: "project", method: "saveProject" }),
+  );
+  expect(observed).not.toContainEqual(
+    expect.objectContaining({
+      path: expect.stringMatching(/^\/api\/projects\/[^/]+$/u),
+      httpMethod: "PATCH",
+    }),
+  );
+}
+
+async function keepNextCreationPending(
+  context: CreationPageCheck,
+  releaseOldResponse: () => Promise<void>,
+) {
+  const { page, session, projectsBefore } = context;
+  const existing = projectsBefore.find(
+    (project) => project.id === session.projectId,
+  );
+  if (!existing) throw new Error("真实项目列表缺少当前项目。");
+  await clickOn(page.cdp, page.target.sessionId, {
+    selector: '[data-testid="project-add"]',
+  });
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(
+        `Boolean(document.querySelector(${JSON.stringify(nameSelector)}))`,
+      ),
+    ).toBe(true),
+  );
+  await waitForDialogTarget(page, nameSelector);
+  const nextName = "旧候选响应之后的创建B";
+  await clickOn(page.cdp, page.target.sessionId, { selector: nameSelector });
+  await selectAll(page);
+  await typeText(page.cdp, page.target.sessionId, nextName);
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(
+        `document.querySelector(${JSON.stringify(nameSelector)})?.value`,
+      ),
+    ).toBe(nextName),
+  );
+  await chooseProjectRoot(page, session.workspacePath);
+  await clickOn(page.cdp, page.target.sessionId, {
+    selector: '[data-testid="virtual-project-save"]',
+  });
+  const choiceSelector = await waitForDirectoryChoice(page, existing.name);
+  await releaseOldResponse();
+  expect(await context.readProjects()).toEqual(projectsBefore);
+  await page.evaluate("new Promise(requestAnimationFrame)");
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(`(() => ({
+        choiceVisible: document.querySelector(${JSON.stringify(choiceSelector)})?.checkVisibility() ?? false,
+        name: document.querySelector(${JSON.stringify(nameSelector)})?.value,
+        saveDisabled: document.querySelector('[data-testid="virtual-project-save"]')?.disabled,
+        folderTrust: Boolean(document.querySelector('[data-testid="project-folder-trust-dialog"]')),
+      }))()`),
+    ).toEqual({
+      choiceVisible: true,
+      name: nextName,
+      saveDisabled: true,
+      folderTrust: false,
+    }),
+  );
+  await clickExactText(page, `${choiceSelector} button`, "取消");
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(`(() => ({
+        choiceClosed: document.querySelector(${JSON.stringify(choiceSelector)}) === null,
+        name: document.querySelector(${JSON.stringify(nameSelector)})?.value,
+        saveDisabled: document.querySelector('[data-testid="virtual-project-save"]')?.disabled,
+      }))()`),
+    ).toEqual({ choiceClosed: true, name: nextName, saveDisabled: false }),
+  );
+  await clickExactText(
+    page,
+    '[role="dialog"]:has([data-testid="virtual-project-name"]) button',
+    "Close",
+  );
+}
+
+async function withIndependentDirectoryTarget(
+  session: Host,
+  run: (target: CodeProjectEditorProject) => Promise<void>,
+) {
+  let targetId: string | undefined;
+  const failures: unknown[] = [];
+  try {
+    const created = await session.client.request("/api/code-ui/rpc", {
+      service: "project",
+      method: "saveProject",
+      args: [
+        {
+          creationId: randomUUID(),
+          kind: "code",
+          name: "选择期间待归档的同目录项目",
+          roots: [session.workspacePath],
+          primaryRoot: session.workspacePath,
+          rootPermissions: {},
+          directoryChoice: "independent",
+        },
+      ],
+    });
+    expect(created.status, JSON.stringify(created.body)).toBe(200);
+    const target = codeProjectEditorProjectSchema.parse(created.body.result);
+    targetId = target.id;
+    expect(target.id).not.toBe(session.projectId);
+    expect(target.roots).toEqual([
+      { rootPath: session.workspacePath, position: 0, isPrimary: true },
+    ]);
+    await run(target);
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    if (targetId) {
+      try {
+        const archived = await session.client.request(
+          `/api/projects/${targetId}`,
+          undefined,
+          "DELETE",
+        );
+        expect(
+          [204, 404],
+          JSON.stringify({ status: archived.status, body: archived.body }),
+        ).toContain(archived.status);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  }
+  if (failures.length)
+    throw new AggregateError(failures, "同目录候选归档验证或清理失败", {
+      cause: failures[0],
+    });
+}
+
+async function expectArchivedChoiceRejected(
+  page: OriginalSessionBrowser,
+  choiceSelector: string,
+  name: string,
+  root: string,
+) {
+  await vi.waitFor(async () => {
+    const state = await page.evaluate<Record<string, unknown>>(`(() => {
+      const name = document.querySelector(${JSON.stringify(nameSelector)});
+      const editor = name?.closest('[role="dialog"]');
+      return {
+        name: name?.value,
+        nameDisabled: name?.disabled,
+        roots: Array.from(editor?.querySelectorAll('[data-testid="virtual-project-root-name"]') ?? [], row => row.getAttribute('title')),
+        alerts: Array.from(editor?.querySelectorAll('[role="alert"]') ?? [], alert => alert.textContent),
+        saveDisabled: editor?.querySelector('[data-testid="virtual-project-save"]')?.disabled,
+        choiceClosed: document.querySelector(${JSON.stringify(choiceSelector)}) === null,
+        folderTrust: Boolean(document.querySelector('[data-testid="project-folder-trust-dialog"]')),
+      };
+    })()`);
+    expect(
+      state,
+      JSON.stringify({ state, pageErrors: page.pageErrors }),
+    ).toMatchObject({
+      name,
+      nameDisabled: false,
+      roots: [root],
+      saveDisabled: false,
+      choiceClosed: true,
+      folderTrust: false,
+    });
+    expect(state.alerts).toEqual([expect.stringMatching(/项目.*重新选择/u)]);
+  });
 }
 
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
@@ -724,6 +1222,353 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             previewName: "创建项目保存保留内容.txt",
             previewText: "保存项目保留当前内容\n",
             draft: "保存项目创建期间保留的正文草稿",
+          },
+        ),
+      180_000,
+    );
+
+    it(
+      "原创建表单明确复用同目录项目后保持项目、当前Task、草稿和内容且不写项目",
+      () =>
+        checkWithOriginalPage(
+          async (context) => {
+            const { page, session, projectsBefore, readProjects } = context;
+            const existing = projectsBefore.find(
+              (project) => project.id === session.projectId,
+            );
+            if (!existing) throw new Error("真实项目列表缺少当前项目。");
+            expect(
+              existing.roots.find((root) => root.isPrimary)?.rootPath,
+            ).toBe(session.workspacePath);
+            const requestBaseline = new Set(page.requests);
+            const listBefore = await session.client.request(
+              "/api/projects?kind=code",
+            );
+            expect(listBefore.status, JSON.stringify(listBefore.body)).toBe(
+              200,
+            );
+            const publicProjectsBefore = projectListResponseSchema.parse(
+              listBefore.body,
+            );
+            await mkdir(join(session.workspacePath, "真实可浏览子目录"), {
+              recursive: true,
+            });
+            const proposedName = "复用同目录时保留原项目名称";
+            await clickOn(page.cdp, page.target.sessionId, {
+              selector: nameSelector,
+            });
+            await selectAll(page);
+            await typeText(page.cdp, page.target.sessionId, proposedName);
+            await vi.waitFor(async () =>
+              expect(
+                await page.evaluate(
+                  `document.querySelector(${JSON.stringify(nameSelector)})?.value`,
+                ),
+              ).toBe(proposedName),
+            );
+            await chooseProjectRoot(page, session.workspacePath);
+            await clickOn(page.cdp, page.target.sessionId, {
+              selector: '[data-testid="virtual-project-save"]',
+            });
+            const choiceSelector = await waitForDirectoryChoice(
+              page,
+              existing.name,
+            );
+            await withPausedProjectResponse(
+              page,
+              async () => {
+                await clickExactText(
+                  page,
+                  `${choiceSelector} button`,
+                  existing.name,
+                );
+                await expectTaskPreserved(context, () =>
+                  readDirectoryReuseDiagnostics(page),
+                );
+              },
+              "project.readProjects",
+            );
+            expect(await readProjects()).toEqual(projectsBefore);
+            const listAfter = await session.client.request(
+              "/api/projects?kind=code",
+            );
+            expect(listAfter.status, JSON.stringify(listAfter.body)).toBe(200);
+            expect(projectListResponseSchema.parse(listAfter.body)).toEqual(
+              publicProjectsBefore,
+            );
+            const observed = page.requests.filter(
+              (request) => !requestBaseline.has(request),
+            );
+            expect(observed).toContainEqual(
+              expect.objectContaining({
+                path: "/api/projects/directory-candidates",
+                httpMethod: "GET",
+                status: 200,
+              }),
+            );
+            expect(observed).not.toContainEqual(
+              expect.objectContaining({
+                service: "project",
+                method: "saveProject",
+              }),
+            );
+            expect(observed).not.toContainEqual(
+              expect.objectContaining({
+                path: expect.stringMatching(/^\/api\/projects\/[^/]+$/u),
+                httpMethod: "PATCH",
+              }),
+            );
+          },
+          {
+            previewName: "同目录复用保留内容.txt",
+            previewText: "复用项目保留当前内容\n",
+            draft: "同目录项目复用期间保留的正文草稿",
+          },
+        ),
+      180_000,
+    );
+
+    it(
+      "原创建表单明确独立创建同目录项目后保存权限且保持原项目和当前Task内容",
+      () =>
+        checkWithOriginalPage(
+          async (context) => {
+            const { page, session, projectsBefore } = context;
+            const existing = projectsBefore.find(
+              (project) => project.id === session.projectId,
+            );
+            if (!existing) throw new Error("真实项目列表缺少当前项目。");
+            const primaryRoot = session.workspacePath;
+            expect(
+              existing.roots.find((root) => root.isPrimary)?.rootPath,
+            ).toBe(primaryRoot);
+            const requestBaseline = new Set(page.requests);
+            const listed = await session.client.request(
+              "/api/projects?kind=code",
+            );
+            expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+            const publicBefore = projectListResponseSchema.parse(listed.body);
+            const readOnlyRoot = join(primaryRoot, "同目录独立只读目录");
+            const roots = [primaryRoot, readOnlyRoot];
+            await Promise.all(
+              roots.map((root) =>
+                mkdir(join(root, "真实可浏览子目录"), { recursive: true }),
+              ),
+            );
+            const name = "明确独立同目录项目";
+            await clickOn(page.cdp, page.target.sessionId, {
+              selector: nameSelector,
+            });
+            await selectAll(page);
+            await typeText(page.cdp, page.target.sessionId, name);
+            await vi.waitFor(async () =>
+              expect(
+                await page.evaluate(
+                  `document.querySelector(${JSON.stringify(nameSelector)})?.value`,
+                ),
+              ).toBe(name),
+            );
+            for (const root of roots) await chooseProjectRoot(page, root);
+            const accessSelector = `${projectRootRow(readOnlyRoot)} [data-testid="virtual-project-root-access"]`;
+            await clickOn(page.cdp, page.target.sessionId, {
+              selector: accessSelector,
+            });
+            await clickExactText(page, '[role="option"]', "只读");
+            await vi.waitFor(async () =>
+              expect(
+                await page.evaluate(
+                  `document.querySelector(${JSON.stringify(accessSelector)})?.textContent`,
+                ),
+              ).toBe("只读"),
+            );
+            await clickOn(page.cdp, page.target.sessionId, {
+              selector: '[data-testid="virtual-project-save"]',
+            });
+            const choiceSelector = await waitForDirectoryChoice(
+              page,
+              existing.name,
+            );
+            await clickExactText(page, `${choiceSelector} button`, "独立创建");
+            await confirmProjectFolders(context, roots);
+            await expectIndependentProject(context, {
+              name,
+              primaryRoot,
+              readOnlyRoot,
+              publicBefore,
+            });
+            await expectTaskPreserved(context);
+            await expectProjectSaveOnce(page, requestBaseline);
+          },
+          {
+            previewName: "同目录独立创建保留内容.txt",
+            previewText: "独立创建项目保留当前内容\n",
+            draft: "同目录独立创建期间保留的正文草稿",
+          },
+        ),
+      180_000,
+    );
+
+    it(
+      "候选读取中关闭会取消原响应，迟到结果不影响下一次创建选择",
+      () =>
+        checkWithOriginalPage(
+          async (context) => {
+            const { page, session } = context;
+            const baseline = new Set(page.requests);
+            const listed = await session.client.request(
+              "/api/projects?kind=code",
+            );
+            expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+            const publicBefore = projectListResponseSchema.parse(listed.body);
+            await mkdir(join(session.workspacePath, "真实可浏览子目录"), {
+              recursive: true,
+            });
+            await clickOn(page.cdp, page.target.sessionId, {
+              selector: nameSelector,
+            });
+            await selectAll(page);
+            const firstName = "候选读取期间关闭的创建A";
+            await typeText(page.cdp, page.target.sessionId, firstName);
+            await vi.waitFor(async () =>
+              expect(
+                await page.evaluate(
+                  `document.querySelector(${JSON.stringify(nameSelector)})?.value`,
+                ),
+              ).toBe(firstName),
+            );
+            await chooseProjectRoot(page, session.workspacePath);
+            await withPausedProjectResponse(page, async (response) => {
+              await clickOn(page.cdp, page.target.sessionId, {
+                selector: '[data-testid="virtual-project-save"]',
+              });
+              const networkId = await response.waitForResponse();
+              await clickExactText(
+                page,
+                '[role="dialog"]:has([data-testid="virtual-project-name"]) button',
+                "Close",
+              );
+              await expectTaskPreserved(context, () =>
+                readDirectoryReuseDiagnostics(page),
+              );
+              await vi.waitFor(() => {
+                expect(page.requests).toContainEqual(
+                  expect.objectContaining({
+                    requestId: networkId,
+                    path: "/api/projects/directory-candidates",
+                    httpMethod: "GET",
+                    state: "failed",
+                    error: "net::ERR_ABORTED",
+                  }),
+                );
+                expect(page.pageErrors).toContainEqual(
+                  expect.objectContaining({
+                    requestId: networkId,
+                    canceled: true,
+                  }),
+                );
+              });
+              await expectOriginalProjects(context, publicBefore);
+              expectNoProjectWrites(page, baseline);
+              await keepNextCreationPending(context, response.release);
+              await expectTaskPreserved(context);
+              await expectOriginalProjects(context, publicBefore);
+              expectNoProjectWrites(page, baseline);
+            });
+          },
+          {
+            previewName: "候选取消与迟到结果保留内容.txt",
+            previewText: "候选读取取消保留当前内容\n",
+            draft: "候选读取取消和下一次创建期间保留的正文草稿",
+          },
+        ),
+      180_000,
+    );
+
+    it(
+      "选择期间目标项目归档后旧候选不可复用，保留表单并保持原项目和当前Task",
+      () =>
+        checkWithOriginalPage(
+          async (context) => {
+            const { page, session, readProjects } = context;
+            const listed = await session.client.request(
+              "/api/projects?kind=code",
+            );
+            expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+            const publicBefore = projectListResponseSchema.parse(listed.body);
+            await withIndependentDirectoryTarget(session, async (target) => {
+              expect(await readProjects()).toContainEqual(target);
+              const baseline = new Set(page.requests);
+              await mkdir(join(session.workspacePath, "真实可浏览子目录"), {
+                recursive: true,
+              });
+              const proposedName = "目标归档后保留的项目名称草稿";
+              await clickOn(page.cdp, page.target.sessionId, {
+                selector: nameSelector,
+              });
+              await selectAll(page);
+              await typeText(page.cdp, page.target.sessionId, proposedName);
+              await vi.waitFor(async () =>
+                expect(
+                  await page.evaluate(
+                    `document.querySelector(${JSON.stringify(nameSelector)})?.value`,
+                  ),
+                ).toBe(proposedName),
+              );
+              await chooseProjectRoot(page, session.workspacePath);
+              await clickOn(page.cdp, page.target.sessionId, {
+                selector: '[data-testid="virtual-project-save"]',
+              });
+              const choiceSelector = await waitForDirectoryChoice(
+                page,
+                target.name,
+              );
+              const archived = await session.client.request(
+                `/api/projects/${target.id}`,
+                undefined,
+                "DELETE",
+              );
+              expect(archived.status, JSON.stringify(archived.body)).toBe(204);
+              await expectOriginalProjects(context, publicBefore);
+              await clickExactText(
+                page,
+                `${choiceSelector} button`,
+                target.name,
+              );
+              await expectArchivedChoiceRejected(
+                page,
+                choiceSelector,
+                proposedName,
+                session.workspacePath,
+              );
+              const unavailable = await session.client.request(
+                `/api/projects/${target.id}`,
+              );
+              expect(unavailable.status, JSON.stringify(unavailable.body)).toBe(
+                404,
+              );
+              await clickExactText(
+                page,
+                '[role="dialog"]:has([data-testid="virtual-project-name"]) button',
+                "Close",
+              );
+              await expectTaskPreserved(context);
+              await expectOriginalProjects(context, publicBefore);
+              expectNoProjectWrites(page, baseline);
+              expect(
+                page.requests.filter((request) => !baseline.has(request)),
+              ).toContainEqual(
+                expect.objectContaining({
+                  path: "/api/projects/directory-candidates",
+                  httpMethod: "GET",
+                  status: 200,
+                }),
+              );
+            });
+          },
+          {
+            previewName: "归档候选拒绝复用保留内容.txt",
+            previewText: "目标归档保留当前内容\n",
+            draft: "项目候选归档期间保留的正文草稿",
           },
         ),
       180_000,

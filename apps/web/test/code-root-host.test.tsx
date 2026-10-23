@@ -208,7 +208,7 @@ it.each([true, false])(
         expect.stringMatching(
           /\/api\/projects\/directory-candidates\?path=%2Ffixture$/,
         ),
-        { credentials: "include" },
+        { credentials: "include", signal: expect.any(AbortSignal) },
       ]);
     const alert = useAlertDialogStore.getState().requestAlert({
       title: "原全局提示",
