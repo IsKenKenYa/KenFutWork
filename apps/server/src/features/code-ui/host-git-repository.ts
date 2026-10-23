@@ -118,17 +118,25 @@ export class CodeUiHostGitRepository {
     if (!root) throw new Error("当前Task目录不是Git仓库。");
     return this.session.resolvePath(root, "read");
   }
-  async paths(paths: string[], operation: "read" | "write") {
+  async paths(
+    paths: string[],
+    operation: "read" | "write",
+    mode: "canonical" | "repository-entry" = "canonical",
+  ) {
     const root = await this.repositoryRoot();
     const result: string[] = [];
     for (const path of paths) {
       if (!path || path.includes("\0"))
         throw new Error("Git文件路径不能为空或包含NUL。");
-      const canonical = await this.session.resolvePath(
-        isAbsolute(path) ? path : join(this.session.rootDirectory, path),
-        operation,
+      const requested = isAbsolute(path)
+        ? path
+        : join(this.session.rootDirectory, path);
+      const canonical = await this.session.resolvePath(requested, operation);
+      // ignore 查询使用仓库内链接名称，真实目标仍须通过 Task 授权。
+      const tail = relative(
+        root,
+        mode === "repository-entry" ? requested : canonical,
       );
-      const tail = relative(root, canonical);
       if (isAbsolute(tail) || tail === ".." || tail.startsWith(`..${sep}`))
         throw new Error("Git路径越出仓库根。");
       result.push(slash(tail));

@@ -94,7 +94,7 @@ async function dispatch(
     case "getIgnoredPaths": {
       const { paths } = pathsParams.parse(input);
       if (!paths.length) return [];
-      const relativePaths = await repo.paths(paths, "read");
+      const relativePaths = await repo.paths(paths, "read", "repository-entry");
       const result = await repo.run(
         ["check-ignore", "-z", "--stdin"],
         `${relativePaths.join("\0")}\0`,
