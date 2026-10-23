@@ -146,6 +146,8 @@ import {
   openDesignHostCreateCanvasRequestSchema,
   openDesignHostCreateDesignDocumentRequestSchema,
   openDesignHostCreateDesignDocumentResponseSchema,
+  openDesignHostCreateDesignFileRequestSchema,
+  openDesignHostCreateDesignFileResponseSchema,
   openDesignHostCreateDocumentRequestSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
@@ -1704,7 +1706,19 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: openDesignHostCreateDesignDocumentResponseSchema,
     summary: "在项目设计工作区新建 Markdown 文档",
     description:
-      "在已绑定的上游 project 里写一份 Markdown 文档（不新建项目）；文件名按时间戳去重。本机接入验证。",
+      "在已绑定的上游 project 里写一份 Markdown 文档（不新建项目）；文件名按序号去重。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/design-file",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostCreateDesignFileRequestSchema,
+    responseSchema: openDesignHostCreateDesignFileResponseSchema,
+    summary: "在项目设计工作区新建设计稿",
+    description:
+      "在已绑定的上游 project 里写一份空白 HTML 设计稿（不新建项目）；文件名按序号去重。本机接入验证。",
   },
   {
     method: "post",

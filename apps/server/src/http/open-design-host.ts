@@ -24,6 +24,8 @@ import {
   openDesignHostCreateCanvasRequestSchema,
   openDesignHostCreateDesignDocumentRequestSchema,
   openDesignHostCreateDesignDocumentResponseSchema,
+  openDesignHostCreateDesignFileRequestSchema,
+  openDesignHostCreateDesignFileResponseSchema,
   openDesignHostCreateDocumentRequestSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
@@ -128,6 +130,33 @@ function isSafeTextDesignFileName(name: string): boolean {
     !/^[a-zA-Z]:[\\/]/u.test(name) &&
     !name.split(/[\\/]/u).includes("..")
   );
+}
+
+/** 新建资源文件名：清洗控制字符/路径分隔符，并在项目内去重。 */
+function uniqueProjectFileName(
+  files: DaemonProjectFile[],
+  requested: string | undefined,
+  extension: "md" | "html",
+  fallback: string,
+): { baseName: string; fileName: string } {
+  const raw = (requested ?? "").trim();
+  const withoutExtension = raw.replace(
+    new RegExp(`\\.${extension}$`, "iu"),
+    "",
+  );
+  const baseName =
+    Array.from(withoutExtension)
+      .filter((char) => (char.codePointAt(0) ?? 0) >= 32)
+      .join("")
+      .replace(/[\\/:*?"<>|]/gu, "-")
+      .trim() || fallback;
+  const names = new Set(
+    files.flatMap((file) => (file.name ? [file.name] : [])),
+  );
+  let fileName = `${baseName}.${extension}`;
+  for (let index = 2; names.has(fileName); index += 1)
+    fileName = `${baseName}-${index}.${extension}`;
+  return { baseName, fileName };
 }
 
 /** 上游 project + 文件表 → 面板契约（资源页/标签标题共用）。 */
@@ -674,20 +703,12 @@ export async function registerOpenDesignHostRoutes(
     if (!canvas.ok)
       return error(reply, canvas.status, "service_unavailable", canvas.message);
     const name = parsed.data.name ?? "未命名文档";
-    const baseName =
-      Array.from(name)
-        .filter((char) => (char.codePointAt(0) ?? 0) >= 32)
-        .join("")
-        .replace(/[\\/:*?"<>|]/gu, "-")
-        .trim() || "未命名文档";
-    const names = new Set(
-      canvas.files
-        .map((file) => file.name)
-        .filter((file): file is string => Boolean(file)),
+    const { fileName } = uniqueProjectFileName(
+      canvas.files,
+      parsed.data.name,
+      "md",
+      "未命名文档",
     );
-    let fileName = `${baseName}.md`;
-    for (let index = 2; names.has(fileName); index += 1)
-      fileName = `${baseName}-${index}.md`;
     const written = await daemonJson<{
       file?: { name?: string; kind?: string };
     }>(base, `/api/projects/${encodeURIComponent(projectId)}/files`, {
@@ -712,6 +733,79 @@ export async function registerOpenDesignHostRoutes(
         file: {
           name: written.value.file?.name ?? fileName,
           kind: written.value.file?.kind ?? "document",
+        },
+      }),
+    );
+  });
+
+  /** 在已绑定的设计项目里新建 HTML 设计稿（资源页「新建设计稿」）。 */
+  app.post("/api/open-design/host/design-file", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostCreateDesignFileRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(
+        reply,
+        400,
+        "application_error",
+        "新建设计稿请求格式不正确。",
+      );
+    const projectId = parsed.data.projectId;
+    const canvas = await readCanvas(base, projectId);
+    if (!canvas.ok)
+      return error(reply, canvas.status, "service_unavailable", canvas.message);
+    const { baseName, fileName } = uniqueProjectFileName(
+      canvas.files,
+      parsed.data.name,
+      "html",
+      "未命名设计",
+    );
+    const title = baseName
+      .replace(/&/gu, "&amp;")
+      .replace(/</gu, "&lt;")
+      .replace(/>/gu, "&gt;");
+    const content = [
+      "<!doctype html>",
+      '<html lang="zh-CN">',
+      "  <head>",
+      '    <meta charset="utf-8" />',
+      '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
+      `    <title>${title}</title>`,
+      "  </head>",
+      "  <body>",
+      "    <main></main>",
+      "  </body>",
+      "</html>",
+      "",
+    ].join("\n");
+    const written = await daemonJson<{
+      file?: { name?: string; kind?: string };
+    }>(base, `/api/projects/${encodeURIComponent(projectId)}/files`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: fileName,
+        content,
+        versionSource: "manual",
+        versionLabel: "新建设计稿",
+      }),
+    });
+    if (!written.ok)
+      return error(
+        reply,
+        written.status,
+        "service_unavailable",
+        `设计稿没写进去：${written.message}`,
+      );
+    return reply.send(
+      openDesignHostCreateDesignFileResponseSchema.parse({
+        file: {
+          name: written.value.file?.name ?? fileName,
+          kind: written.value.file?.kind ?? "html",
         },
       }),
     );

@@ -39,6 +39,7 @@ import {
 } from "./OpenDesignEditInspector.js";
 import { OpenDesignMarkup } from "./OpenDesignMarkup.js";
 import {
+  FigmaMark,
   type OpenDesignTool,
   OpenDesignToolbar,
   type OpenDesignVersionSummary,
@@ -47,7 +48,7 @@ import {
 } from "./OpenDesignToolbar.js";
 import { rasterizeDesignHtml } from "./openDesignCapture.js";
 import { useOpenDesignEntry } from "./openDesignHost.js";
-import type { FrameMetrics, OverlayBox } from "./openDesignMarkupGeometry.js";
+import type { OverlayBox } from "./openDesignMarkupGeometry.js";
 import {
   buildCanvasDocument,
   type OpenDesignHit,
@@ -833,6 +834,34 @@ export function OpenDesignPane({
     } catch (createError) {
       setNotice(
         createError instanceof Error ? createError.message : "新建文档失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [boundProjectId, openFile]);
+
+  /** 新建设计稿：在当前设计项目的资源里写一份 HTML，并打开代码视图。 */
+  const createDesignFile = useCallback(async () => {
+    if (!boundProjectId) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const created = await surfaceJson<{
+        file: { name: string; kind: string };
+      }>("/api/open-design/host/design-file", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId: boundProjectId,
+          name: "未命名设计",
+        }),
+      });
+      setFiles((current) => [...current, created.file]);
+      await openFile(created.file.name);
+      setViewMode("code");
+    } catch (createError) {
+      setNotice(
+        createError instanceof Error ? createError.message : "新建设计稿失败。",
       );
     } finally {
       setBusy(false);
@@ -1684,6 +1713,8 @@ export function OpenDesignPane({
           onBackToResources={backToResources}
           onCreateSketch={() => void createSketch()}
           onCreateDocument={() => void createDocument()}
+          onCreateDesignFile={() => void createDesignFile()}
+          markdownMode={isMarkdownEntry}
           onUploadAsset={(file) => void uploadAsset(file)}
           onOpenBrowserTab={onOpenBrowserTab}
           onSyncContext={() => void syncContextToEngine()}
@@ -1967,6 +1998,10 @@ export function OpenDesignPane({
                   <DropdownMenuItem onSelect={() => void createDocument()}>
                     <FileText className="size-3.5" />
                     <span className="flex-1">新建文档</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void createDesignFile()}>
+                    <FigmaMark className="size-3.5" />
+                    <span className="flex-1">新建设计稿</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onSelect={() => emptyUploadInputRef.current?.click()}

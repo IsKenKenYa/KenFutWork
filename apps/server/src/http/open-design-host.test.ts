@@ -621,6 +621,51 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
     expect(writes[0]?.name).toBe("未命名文档.md");
   });
 
+  it("项目资源新建设计稿：写空白 HTML 并按序号去重", async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const fetchImpl = daemonFetch({
+      "/api/projects/p-1": () =>
+        jsonResponse({ project: { id: "p-1", name: "测试项目" } }),
+      "/api/projects/p-1/files": () =>
+        jsonResponse({
+          files: [{ name: "未命名设计.html", kind: "html" }],
+        }),
+    });
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (
+          String(input).endsWith("/api/projects/p-1/files") &&
+          init?.method === "POST"
+        ) {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          writes.push(body);
+          return jsonResponse({ file: { name: body.name, kind: "html" } });
+        }
+        return fetchImpl(input, init);
+      }) as typeof fetch,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/design-file",
+      payload: { projectId: "p-1" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().file).toEqual({
+      name: "未命名设计-2.html",
+      kind: "html",
+    });
+    expect(writes).toHaveLength(1);
+    const content = String(writes[0]?.content ?? "");
+    expect(content).toContain("<!doctype html>");
+    expect(content).toContain("<main></main>");
+    expect(content).toContain("<title>未命名设计</title>");
+    expect(writes[0]).toMatchObject({
+      versionSource: "manual",
+      versionLabel: "新建设计稿",
+    });
+  });
+
   it("项目资源新建文档：上游项目不存在 → 404", async () => {
     const app = canvasFixture({
       frontendUrl: "http://127.0.0.1:7456",

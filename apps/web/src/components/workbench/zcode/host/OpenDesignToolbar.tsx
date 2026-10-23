@@ -60,6 +60,20 @@ export interface OpenDesignVersionSummary {
 
 export const OPEN_DESIGN_ZOOM_LEVELS = [50, 75, 100, 125, 150, 200] as const;
 
+/** Figma 标志（lucide 新版已移除品牌图标，内联 Simple Icons 路径）。 */
+export function FigmaMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M15.852 8.981h-4.588V0h4.588c2.476 0 4.49 2.014 4.49 4.49s-2.014 4.491-4.49 4.491zM12.735 7.51h3.117c1.665 0 3.019-1.355 3.019-3.019s-1.355-3.019-3.019-3.019h-3.117V7.51zm0 1.471H8.148c-2.476 0-4.49-2.014-4.49-4.49S5.672 0 8.148 0h4.588v8.981zm-4.587-7.51c-1.665 0-3.019 1.355-3.019 3.019s1.354 3.02 3.019 3.02h3.117V1.471H8.148zm4.587 15.019H8.148c-2.476 0-4.49-2.014-4.49-4.49s2.014-4.49 4.49-4.49h4.588v8.98zM8.148 8.981c-1.665 0-3.019 1.355-3.019 3.019s1.355 3.019 3.019 3.019h3.117V8.981H8.148zM8.172 24c-2.489 0-4.514-2.024-4.514-4.514s2.024-4.514 4.514-4.514h4.588v4.514c0 2.49-2.023 4.514-4.588 4.514zm0-7.51c-1.653 0-2.996 1.344-2.996 2.996s1.343 2.996 2.996 2.996 2.996-1.344 2.996-2.996V16.49H8.172zm8.172-3.02h-2.352v-1.49h2.352c2.476 0 4.49 2.014 4.49 4.49s-2.014 4.49-4.49 4.49-4.49-2.014-4.49-4.49v-1.49h2.352v1.49c0 1.665 1.355 3.019 3.019 3.019s3.019-1.354 3.019-3.019-1.354-3.019-3.019-3.019z" />
+    </svg>
+  );
+}
+
 const VIEWPORTS: Array<{
   id: OpenDesignViewport;
   label: string;
@@ -88,6 +102,7 @@ export function OpenDesignToolbar({
   onBackToResources,
   onCreateSketch,
   onCreateDocument,
+  onCreateDesignFile,
   onUploadAsset,
   onOpenBrowserTab,
   onSyncContext,
@@ -112,6 +127,7 @@ export function OpenDesignToolbar({
   onDeploy,
   onShareConfig,
   onOpenDeployment,
+  markdownMode = false,
 }: {
   busy: boolean;
   hasCanvas: boolean;
@@ -136,6 +152,8 @@ export function OpenDesignToolbar({
   onCreateSketch: () => void;
   /** 新建 Markdown 文档，落在当前项目的设计资源里。 */
   onCreateDocument: () => void;
+  /** 新建 HTML 设计稿，落在当前项目的设计资源里。 */
+  onCreateDesignFile: () => void;
   /** 上传资源进当前项目。 */
   onUploadAsset: (file: File) => void;
   onOpenBrowserTab: () => void;
@@ -163,6 +181,8 @@ export function OpenDesignToolbar({
   onDeploy: (providerId: "cloudflare-pages" | "vercel-self") => void;
   onShareConfig: (providerId: "cloudflare-pages" | "vercel-self") => void;
   onOpenDeployment: () => void;
+  /** Markdown 资源只保留返回、新建与预览/代码，画布类控件全部收起。 */
+  markdownMode?: boolean;
 }) {
   const activeViewport = VIEWPORTS.find((item) => item.id === viewport);
   const ViewportIcon = activeViewport?.icon ?? Monitor;
@@ -221,6 +241,13 @@ export function OpenDesignToolbar({
             <span className="flex-1">新建文档</span>
           </DropdownMenuItem>
           <DropdownMenuItem
+            data-open-design-add="design-file"
+            onSelect={onCreateDesignFile}
+          >
+            <FigmaMark className="size-3.5" />
+            <span className="flex-1">新建设计稿</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
             data-open-design-add="upload"
             onSelect={() => uploadInputRef.current?.click()}
           >
@@ -243,13 +270,15 @@ export function OpenDesignToolbar({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <ToolbarIconButton
-        label="刷新"
-        disabled={busy || !hasCanvas}
-        onClick={onRefresh}
-      >
-        <RefreshCw className="size-3" />
-      </ToolbarIconButton>
+      {markdownMode ? null : (
+        <ToolbarIconButton
+          label="刷新"
+          disabled={busy || !hasCanvas}
+          onClick={onRefresh}
+        >
+          <RefreshCw className="size-3" />
+        </ToolbarIconButton>
+      )}
       <div className="flex items-center rounded-md border border-border p-0.5">
         <ViewModeButton
           label="预览"
@@ -266,247 +295,265 @@ export function OpenDesignToolbar({
           <Code2 className="size-3" />
         </ViewModeButton>
       </div>
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="gap-1 text-foreground-subtle"
-            aria-label="设备"
-            title={`设备（${activeViewport?.label ?? "桌面端"}）`}
-            disabled={busy || !hasCanvas || viewMode === "code"}
-          >
-            <ViewportIcon className="size-3" />
-            <span>{activeViewport?.label ?? "桌面端"}</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          {VIEWPORTS.map((item) => (
-            <DropdownMenuItem
-              key={item.id}
-              onSelect={() => onViewport(item.id)}
-            >
-              <item.icon className="size-3.5" />
-              <span className="flex-1">{item.label}</span>
-              {viewport === item.id ? <Check className="size-3.5" /> : null}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <div className="ml-auto flex flex-wrap items-center gap-0.5">
-        <ToolbarToggleIconButton
-          label="评论"
-          active={tool === "comment"}
-          disabled={busy || !hasCanvas || viewMode === "code"}
-          onClick={() => onTool(tool === "comment" ? "none" : "comment")}
-        >
-          <MessageSquarePlus className="size-3" />
-        </ToolbarToggleIconButton>
-        <ToolbarIconButton
-          label="评论侧栏"
-          active={sidebarOpen}
-          disabled={!hasCanvas}
-          onClick={onToggleSidebar}
-        >
-          <PanelRight className="size-3" />
-          {commentCount > 0 ? (
-            <span className="text-ui-caption leading-none">{commentCount}</span>
-          ) : null}
-        </ToolbarIconButton>
-        <ToolbarToggleIconButton
-          label="标注"
-          active={tool === "annotate"}
-          disabled={busy || !hasCanvas || viewMode === "code"}
-          onClick={() => onTool(tool === "annotate" ? "none" : "annotate")}
-        >
-          <Highlighter className="size-3" />
-        </ToolbarToggleIconButton>
-        <ToolbarToggleIconButton
-          label="编辑"
-          active={tool === "edit"}
-          disabled={busy || !hasCanvas || viewMode === "code"}
-          onClick={() => onTool(tool === "edit" ? "none" : "edit")}
-        >
-          <SquarePen className="size-3" />
-        </ToolbarToggleIconButton>
-        <ToolbarIconButton
-          label={
-            activeDesignSystemTitle
-              ? `设计体系：${activeDesignSystemTitle}`
-              : "设计体系"
-          }
-          disabled={busy}
-          onClick={onOpenDesignSystems}
-        >
-          <Palette className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="同步到引擎"
-          disabled={busy || !hasCanvas}
-          onClick={onSyncContext}
-        >
-          <CloudUpload className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="保存到工作目录"
-          disabled={busy || saveToWorkspaceBusy || !hasCanvas}
-          onClick={onSaveToWorkspace}
-        >
-          <FolderDown className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="截图到对话"
-          disabled={busy || !hasCanvas}
-          onClick={onScreenshot}
-        >
-          <Camera className="size-3" />
-        </ToolbarIconButton>
-        <ToolbarIconButton
-          label="交给对话"
-          disabled={busy || !hasCanvas}
-          onClick={onHandoff}
-        >
-          <FolderInput className="size-3" />
-        </ToolbarIconButton>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="text-foreground-subtle hover:text-foreground"
-              aria-label="历史记录"
-              title="历史记录"
-              disabled={busy || !hasCanvas}
-            >
-              <History className="size-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="max-h-72 overflow-auto">
-            <DropdownMenuItem onSelect={() => onSelectVersion(null)}>
-              <span className="flex-1">当前版本</span>
-              {activeVersionId === null ? <Check className="size-3.5" /> : null}
-            </DropdownMenuItem>
-            {versionsLoading ? (
-              <DropdownMenuItem disabled>读取中…</DropdownMenuItem>
-            ) : (versions ?? []).length === 0 ? (
-              <DropdownMenuItem disabled>没有历史版本</DropdownMenuItem>
-            ) : (
-              (versions ?? []).map((version) => (
+      {markdownMode ? null : (
+        <>
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-1 text-foreground-subtle"
+                aria-label="设备"
+                title={`设备（${activeViewport?.label ?? "桌面端"}）`}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+              >
+                <ViewportIcon className="size-3" />
+                <span>{activeViewport?.label ?? "桌面端"}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {VIEWPORTS.map((item) => (
                 <DropdownMenuItem
-                  key={version.id}
-                  onSelect={() => onSelectVersion(version.id)}
+                  key={item.id}
+                  onSelect={() => onViewport(item.id)}
                 >
-                  <span className="flex-1">
-                    V{version.version} · {formatVersionTime(version.createdAt)}
-                  </span>
-                  {activeVersionId === version.id ? (
+                  <item.icon className="size-3.5" />
+                  <span className="flex-1">{item.label}</span>
+                  {viewport === item.id ? <Check className="size-3.5" /> : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <div className="ml-auto flex flex-wrap items-center gap-0.5">
+            <ToolbarToggleIconButton
+              label="评论"
+              active={tool === "comment"}
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={() => onTool(tool === "comment" ? "none" : "comment")}
+            >
+              <MessageSquarePlus className="size-3" />
+            </ToolbarToggleIconButton>
+            <ToolbarIconButton
+              label="评论侧栏"
+              active={sidebarOpen}
+              disabled={!hasCanvas}
+              onClick={onToggleSidebar}
+            >
+              <PanelRight className="size-3" />
+              {commentCount > 0 ? (
+                <span className="text-ui-caption leading-none">
+                  {commentCount}
+                </span>
+              ) : null}
+            </ToolbarIconButton>
+            <ToolbarToggleIconButton
+              label="标注"
+              active={tool === "annotate"}
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={() => onTool(tool === "annotate" ? "none" : "annotate")}
+            >
+              <Highlighter className="size-3" />
+            </ToolbarToggleIconButton>
+            <ToolbarToggleIconButton
+              label="编辑"
+              active={tool === "edit"}
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={() => onTool(tool === "edit" ? "none" : "edit")}
+            >
+              <SquarePen className="size-3" />
+            </ToolbarToggleIconButton>
+            <ToolbarIconButton
+              label={
+                activeDesignSystemTitle
+                  ? `设计体系：${activeDesignSystemTitle}`
+                  : "设计体系"
+              }
+              disabled={busy}
+              onClick={onOpenDesignSystems}
+            >
+              <Palette className="size-3" />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              label="同步到引擎"
+              disabled={busy || !hasCanvas}
+              onClick={onSyncContext}
+            >
+              <CloudUpload className="size-3" />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              label="保存到工作目录"
+              disabled={busy || saveToWorkspaceBusy || !hasCanvas}
+              onClick={onSaveToWorkspace}
+            >
+              <FolderDown className="size-3" />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              label="截图到对话"
+              disabled={busy || !hasCanvas}
+              onClick={onScreenshot}
+            >
+              <Camera className="size-3" />
+            </ToolbarIconButton>
+            <ToolbarIconButton
+              label="交给对话"
+              disabled={busy || !hasCanvas}
+              onClick={onHandoff}
+            >
+              <FolderInput className="size-3" />
+            </ToolbarIconButton>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-foreground-subtle hover:text-foreground"
+                  aria-label="历史记录"
+                  title="历史记录"
+                  disabled={busy || !hasCanvas}
+                >
+                  <History className="size-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-72 overflow-auto"
+              >
+                <DropdownMenuItem onSelect={() => onSelectVersion(null)}>
+                  <span className="flex-1">当前版本</span>
+                  {activeVersionId === null ? (
                     <Check className="size-3.5" />
                   ) : null}
                 </DropdownMenuItem>
-              ))
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="text-foreground-subtle hover:text-foreground"
-              aria-label="导出"
-              title="导出"
-              disabled={busy || !hasCanvas}
+                {versionsLoading ? (
+                  <DropdownMenuItem disabled>读取中…</DropdownMenuItem>
+                ) : (versions ?? []).length === 0 ? (
+                  <DropdownMenuItem disabled>没有历史版本</DropdownMenuItem>
+                ) : (
+                  (versions ?? []).map((version) => (
+                    <DropdownMenuItem
+                      key={version.id}
+                      onSelect={() => onSelectVersion(version.id)}
+                    >
+                      <span className="flex-1">
+                        V{version.version} ·{" "}
+                        {formatVersionTime(version.createdAt)}
+                      </span>
+                      {activeVersionId === version.id ? (
+                        <Check className="size-3.5" />
+                      ) : null}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-foreground-subtle hover:text-foreground"
+                  aria-label="导出"
+                  title="导出"
+                  disabled={busy || !hasCanvas}
+                >
+                  <Download className="size-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onExportPng}>
+                  PNG 图片
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onExportHtml}>
+                  HTML 文件
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu
+              modal={false}
+              open={shareMenuOpen}
+              onOpenChange={onShare}
             >
-              <Download className="size-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onExportPng}>PNG 图片</DropdownMenuItem>
-            <DropdownMenuItem onSelect={onExportHtml}>
-              HTML 文件
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu modal={false} open={shareMenuOpen} onOpenChange={onShare}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="text-foreground-subtle hover:text-foreground"
-              aria-label="分享"
-              title="分享"
-              disabled={busy || !hasCanvas}
-            >
-              <Share2 className="size-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem
-              data-open-design-share="cloudflare"
-              disabled={shareBusy}
-              onSelect={() => onDeploy("cloudflare-pages")}
-            >
-              发布到 Cloudflare Pages
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              data-open-design-share="vercel"
-              disabled={shareBusy}
-              onSelect={() => onDeploy("vercel-self")}
-            >
-              发布到 Vercel
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              data-open-design-share-config="cloudflare"
-              onSelect={() => onShareConfig("cloudflare-pages")}
-            >
-              配置 Cloudflare
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              data-open-design-share-config="vercel"
-              onSelect={() => onShareConfig("vercel-self")}
-            >
-              配置 Vercel
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              data-open-design-share-open=""
-              disabled={!lastDeploymentUrl}
-              onSelect={onOpenDeployment}
-            >
-              打开已发布页面
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-foreground-subtle"
-              aria-label="缩放"
-              title="缩放"
-              disabled={!hasCanvas || viewMode === "code"}
-            >
-              {zoom}%
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {OPEN_DESIGN_ZOOM_LEVELS.map((level) => (
-              <DropdownMenuItem key={level} onSelect={() => onZoom(level)}>
-                <span className="flex-1">{level}%</span>
-                {zoom === level ? <Check className="size-3.5" /> : null}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-foreground-subtle hover:text-foreground"
+                  aria-label="分享"
+                  title="分享"
+                  disabled={busy || !hasCanvas}
+                >
+                  <Share2 className="size-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  data-open-design-share="cloudflare"
+                  disabled={shareBusy}
+                  onSelect={() => onDeploy("cloudflare-pages")}
+                >
+                  发布到 Cloudflare Pages
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-open-design-share="vercel"
+                  disabled={shareBusy}
+                  onSelect={() => onDeploy("vercel-self")}
+                >
+                  发布到 Vercel
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-open-design-share-config="cloudflare"
+                  onSelect={() => onShareConfig("cloudflare-pages")}
+                >
+                  配置 Cloudflare
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-open-design-share-config="vercel"
+                  onSelect={() => onShareConfig("vercel-self")}
+                >
+                  配置 Vercel
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  data-open-design-share-open=""
+                  disabled={!lastDeploymentUrl}
+                  onSelect={onOpenDeployment}
+                >
+                  打开已发布页面
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-foreground-subtle"
+                  aria-label="缩放"
+                  title="缩放"
+                  disabled={!hasCanvas || viewMode === "code"}
+                >
+                  {zoom}%
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {OPEN_DESIGN_ZOOM_LEVELS.map((level) => (
+                  <DropdownMenuItem key={level} onSelect={() => onZoom(level)}>
+                    <span className="flex-1">{level}%</span>
+                    {zoom === level ? <Check className="size-3.5" /> : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -466,6 +466,25 @@ export type OpenDesignHostCreateDesignDocumentResponse = z.infer<
   typeof openDesignHostCreateDesignDocumentResponseSchema
 >;
 
+/** 在已绑定的设计项目里新建 HTML 设计稿（资源页「新建设计稿」）。 */
+export const openDesignHostCreateDesignFileRequestSchema = z.object({
+  projectId: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateDesignFileRequest = z.infer<
+  typeof openDesignHostCreateDesignFileRequestSchema
+>;
+
+export const openDesignHostCreateDesignFileResponseSchema = z.object({
+  file: z.object({
+    name: z.string().min(1),
+    kind: z.string(),
+  }),
+});
+export type OpenDesignHostCreateDesignFileResponse = z.infer<
+  typeof openDesignHostCreateDesignFileResponseSchema
+>;
+
 /** 设计体系概要（上游 /api/design-systems 的宿主代理面）。 */
 export const openDesignHostDesignSystemSummarySchema = z.object({
   id: z.string().min(1),

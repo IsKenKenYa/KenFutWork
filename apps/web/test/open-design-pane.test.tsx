@@ -91,6 +91,8 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
       return { ...(canvasRef.current ?? {}), created: false };
     if (path === "/api/open-design/host/design-document")
       return { file: { name: "未命名文档.md", kind: "document" } };
+    if (path === "/api/open-design/host/design-file")
+      return { file: { name: "未命名设计.html", kind: "html" } };
     if (/^\/api\/projects\/[^/]+\/canvases$/u.test(path))
       return init?.method === "POST"
         ? { canvas: { id: "c-1", name: "未命名草图" } }
@@ -530,12 +532,15 @@ test("「+」选择器：新建草图 / 新建文档 / 上传 / 新建浏览器 
     expect.arrayContaining([
       "新建草图",
       "新建文档",
+      "新建设计稿",
       "上传",
       "新建浏览器",
       "新建设计体系",
     ]),
   );
   expect(items.some((item) => item.textContent === "打开画布")).toBe(false);
+  const designItem = items.find((item) => item.textContent === "新建设计稿");
+  expect(designItem?.querySelector("svg")).toBeTruthy();
   expect(items.some((item) => item.hasAttribute("data-open-design-open"))).toBe(
     false,
   );
@@ -546,6 +551,64 @@ test("「+」选择器：新建草图 / 新建文档 / 上传 / 新建浏览器 
   expect(browserItem).toBeTruthy();
   fireEvent.click(browserItem as HTMLElement);
   expect(onOpenBrowserTab).toHaveBeenCalledTimes(1);
+});
+
+test("「+」→「新建设计稿」：宿主写 HTML 并打开代码视图", async () => {
+  const user = userEvent.setup();
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+
+  await openMenu(user, "新建");
+  const item = (await screen.findAllByRole("menuitem")).find(
+    (menuItem) => menuItem.textContent === "新建设计稿",
+  );
+  expect(item).toBeTruthy();
+  fireEvent.click(item as HTMLElement);
+
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/design-file")
+        ?.body,
+    ).toEqual({ projectId: "p-1", name: "未命名设计" });
+  });
+  await waitFor(() => {
+    expect(screen.getByTestId("open-design-source").textContent).toContain(
+      "当前设计",
+    );
+  });
+});
+
+test("Markdown 资源只保留返回/新建/预览·代码，画布控件全部收起", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "测试项目" },
+    entryFile: "notes.md",
+    files: [{ name: "notes.md", kind: "document" }],
+  };
+  mount({ projectId: "p-1" });
+  await screen.findByTestId("open-design-markdown");
+
+  for (const name of [
+    "刷新",
+    "设备",
+    "设计体系",
+    "同步到引擎",
+    "保存到工作目录",
+    "截图到对话",
+    "交给对话",
+    "历史记录",
+    "导出",
+    "分享",
+    "缩放",
+  ]) {
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  }
+  expect(screen.getByRole("button", { name: "返回资源" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "新建" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "预览" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "代码" })).toBeTruthy();
 });
 
 test("「+」→「上传资源」：文件按 base64 经宿主写进当前画布", async () => {

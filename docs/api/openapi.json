@@ -7595,7 +7595,7 @@
       "post": {
         "operationId": "postOpenDesignHostDesignDocument",
         "summary": "在项目设计工作区新建 Markdown 文档",
-        "description": "在已绑定的上游 project 里写一份 Markdown 文档（不新建项目）；文件名按时间戳去重。本机接入验证。",
+        "description": "在已绑定的上游 project 里写一份 Markdown 文档（不新建项目）；文件名按序号去重。本机接入验证。",
         "tags": [
           "open-design"
         ],
@@ -7624,6 +7624,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/openDesignHostCreateDesignDocumentResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/design-file": {
+      "post": {
+        "operationId": "postOpenDesignHostDesignFile",
+        "summary": "在项目设计工作区新建设计稿",
+        "description": "在已绑定的上游 project 里写一份空白 HTML 设计稿（不新建项目）；文件名按序号去重。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCreateDesignFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCreateDesignFileResponseSchema"
                 }
               }
             }
@@ -23564,6 +23624,52 @@
         ]
       },
       "openDesignHostCreateDesignDocumentResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostCreateDesignFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "openDesignHostCreateDesignFileResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
