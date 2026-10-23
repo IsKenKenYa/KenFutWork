@@ -2,6 +2,7 @@ import {
   applicationErrorResponseSchema,
   designReviewAnnotationCreateSchema,
   designReviewAnnotationResponseSchema,
+  designReviewAnnotationUpdateSchema,
   designReviewCommentCreateSchema,
   designReviewCommentResponseSchema,
   designReviewCommentUpdateSchema,
@@ -131,8 +132,27 @@ export async function registerDesignReviewRoutes(
     );
   });
 
-  app.delete("/api/design-review/annotations/:id", async (request, reply) => {
+  app.patch("/api/design-review/annotations/:id", async (request, reply) => {
     const local = await actor(request);
+    if (!local) return unauthorized(reply);
+    const id = (request.params as { id?: string }).id?.trim();
+    if (!id) return badRequest(reply, "缺少标注 id。");
+    const parsed = designReviewAnnotationUpdateSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success) return badRequest(reply, "标注格式不正确。");
+    const annotation = await options.designReviewService.updateAnnotation(
+      local,
+      id,
+      parsed.data.points,
+    );
+    if (!annotation) return notFound(reply, "这条标注已经不在了。");
+    return reply.send(
+      designReviewAnnotationResponseSchema.parse({ annotation }),
+    );
+  });
+
+  app.delete("/api/design-review/annotations/:id", async (request, reply) => {    const local = await actor(request);
     if (!local) return unauthorized(reply);
     const id = (request.params as { id?: string }).id?.trim();
     if (!id) return badRequest(reply, "缺少标注 id。");

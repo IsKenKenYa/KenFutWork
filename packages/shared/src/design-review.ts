@@ -113,6 +113,20 @@ export type DesignReviewAnnotationCreate = z.infer<
   typeof designReviewAnnotationCreateSchema
 >;
 
+/**
+ * 标注编辑只放开点集：选中后整体移动/缩放会改写所有点，kind/文字/颜色随创建落定。
+ * 坐标仍是文档归一化口径（0..1），面板负责把拖拽位移换算进来。
+ */
+export const designReviewAnnotationUpdateSchema = z.object({
+  points: z
+    .array(z.tuple([z.number().finite(), z.number().finite()]))
+    .min(2)
+    .max(4000),
+});
+export type DesignReviewAnnotationUpdate = z.infer<
+  typeof designReviewAnnotationUpdateSchema
+>;
+
 export const designReviewCommentResponseSchema = z.object({
   comment: designReviewCommentSchema,
 });

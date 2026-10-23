@@ -103,6 +103,11 @@ export interface DesignReviewRepository {
       status?: string | undefined;
     },
   ): Promise<DesignReviewCommentRow | null>;
+  updateAnnotation(
+    instanceId: string,
+    id: string,
+    points: Array<[number, number]>,
+  ): Promise<DesignReviewAnnotationRow | null>;
 }
 
 export function createDesignReviewRepository(
@@ -228,6 +233,21 @@ export function createDesignReviewRepository(
             input.text,
           ],
         );
+    },
+
+    async updateAnnotation(instanceId, id, points) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<DesignReviewAnnotationRow>(
+          `update public.design_review_annotations
+              set points = $1::jsonb,
+                  updated_at = now()
+            where instance_id = :instance
+              and id = $2
+            returning ${ANNOTATION_COLUMNS}`,
+          [JSON.stringify(points), id],
+        );
+      return row ?? null;
     },
 
     async deleteAnnotation(instanceId, id) {

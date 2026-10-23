@@ -79,6 +79,7 @@ import {
   createImageJobRequestSchema,
   createVideoJobRequestSchema,
   designReviewAnnotationCreateSchema,
+  designReviewAnnotationUpdateSchema,
   designReviewAnnotationResponseSchema,
   designReviewCommentCreateSchema,
   designReviewCommentResponseSchema,
@@ -1620,6 +1621,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "保存一条画布标注",
     description:
       "笔迹点集按文档尺寸归一化（0..1）存储：同一块画布在桌面/平板/手机视口与 50%..200% 缩放之间切换后仍能对齐。",
+  },
+  {
+    method: "patch",
+    path: "/api/design-review/annotations/{id}",
+    tag: "design-review",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designReviewAnnotationUpdateSchema,
+    responseSchema: designReviewAnnotationResponseSchema,
+    summary: "移动或缩放一条画布标注",
+    description:
+      "选中标注后整体移动/缩放只改写点集（仍是文档归一化坐标）；kind、文字与颜色随创建落定，不在编辑范围。目标不存在时 404。",
   },
   {
     method: "delete",

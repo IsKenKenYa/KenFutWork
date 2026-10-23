@@ -61,7 +61,11 @@ import {
   buildCanvasDocument,
   type OpenDesignHit,
 } from "./openDesignRuntime.js";
-import { applyElementEdit } from "./openDesignSourceEdit.js";
+import {
+  applyElementEdit,
+  moveElement,
+  type OpenDesignMovePosition,
+} from "./openDesignSourceEdit.js";
 import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 import { useOpenDesignBridge } from "./useOpenDesignBridge.js";
 
@@ -250,6 +254,7 @@ export function OpenDesignPane({
     rects,
     docSize,
     setPicking,
+    hitTest,
   } = useOpenDesignBridge({
     frameRef,
     documentKey,
@@ -428,6 +433,73 @@ export function OpenDesignPane({
       }
     },
     [canvas],
+  );
+
+  /** 元素选择拖放：在源文本里换容器/改顺序，再经宿主写回并重渲染。 */
+  const moveElementTo = useCallback(
+    async (
+      path: string,
+      targetPath: string,
+      position: OpenDesignMovePosition,
+    ) => {
+      if (!boundProjectId || !canvas?.entryFile || currentText === null) {
+        return;
+      }
+      const next = moveElement(currentText, path, targetPath, position);
+      if (next === null) {
+        notify("这个元素在当前正文里找不到，没有移动。");
+        return;
+      }
+      try {
+        await surfaceJson("/api/open-design/host/file", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectId: boundProjectId,
+            name: canvas.entryFile,
+            content: next,
+            encoding: "utf8",
+            versionLabel: "移动元素",
+          }),
+        });
+        setCurrentText(next);
+        setSourceDraft(next);
+        setSourceDirty(false);
+        setFrameKey((key) => key + 1);
+        notify("已移动");
+      } catch (moveError) {
+        notify(
+          moveError instanceof Error ? moveError.message : "移动失败。",
+        );
+      }
+    },
+    [boundProjectId, canvas?.entryFile, currentText],
+  );
+
+  /** 批注选择工具：移动/缩放后写回点集（归一化坐标）。 */
+  const updateAnnotation = useCallback(
+    async (id: string, points: [number, number][]) => {
+      try {
+        const data = await surfaceJson<{
+          annotation: DesignReviewAnnotation;
+        }>(`/api/design-review/annotations/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ points }),
+        });
+        setReview((current) => ({
+          ...current,
+          annotations: current.annotations.map((item) =>
+            item.id === data.annotation.id ? data.annotation : item,
+          ),
+        }));
+      } catch (moveError) {
+        notify(
+          moveError instanceof Error ? moveError.message : "移动标注失败。",
+        );
+      }
+    },
+    [],
   );
 
   const removeAnnotation = useCallback(async (id: string) => {
@@ -1546,19 +1618,6 @@ export function OpenDesignPane({
     }
   }, [buildPrintableHtml]);
 
-  const presentHtml = useCallback(() => {
-    const src =
-      preview && entryAvailable
-        ? `${entry.frontendUrl.replace(/\/$/u, "")}${preview.url}`
-        : null;
-    if (!src) {
-      notify("先打开一个设计文件再演示。");
-      return;
-    }
-    // 用上游预览地址开新窗口：跨源隔离，不把设计脚本带进本仓 origin。
-    window.open(src, "_blank", "noopener,noreferrer");
-  }, [entry, entryAvailable, preview]);
-
   /**
    * 分享 = 静态部署（用户口径：像原来的分享一样，不复制面板 localhost 链接）：
    * 代理上游部署面把入口 HTML 发布到 Cloudflare Pages / Vercel（用户自带 token）。
@@ -1976,6 +2035,9 @@ export function OpenDesignPane({
           onCreateDocument={() => void createDocument()}
           onCreateDesignFile={() => void createDesignFile()}
           markdownMode={isMarkdownEntry}
+          fileName={
+            canvas?.entryFile ? resourceTitle(canvas.entryFile) : null
+          }
           onRename={() => {
             if (canvas?.entryFile)
               setRenamingFile({
@@ -2017,7 +2079,6 @@ export function OpenDesignPane({
           onExportHtml={() => void exportHtml()}
           onExportPdf={() => void exportPdf()}
           onExportZip={() => void exportZip()}
-          onPresent={presentHtml}
           onShare={() => setShareMenuOpen((open) => !open)}
           shareBusy={shareBusy}
           shareMenuOpen={shareMenuOpen}
@@ -2230,14 +2291,24 @@ export function OpenDesignPane({
             box={overlayBox}
             metrics={docSize}
             drawing={tool === "annotate"}
+            erasing={tool === "erase"}
+            adjusting={tool === "adjust"}
+            elementSelecting={tool === "element"}
             annotationKind={annotationKind}
             color={ANNOTATION_COLOR}
+            hitTest={hitTest}
             onPickComment={(id) => {
               setActiveCommentId(id);
               setSidebarOpen(true);
             }}
             onCreateAnnotation={(draft) => void createAnnotation(draft)}
             onDeleteAnnotation={(id) => void removeAnnotation(id)}
+            onUpdateAnnotation={(id, points) =>
+              void updateAnnotation(id, points)
+            }
+            onMoveElement={(path, targetPath, position) =>
+              void moveElementTo(path, targetPath, position)
+            }
           />
         ) : null}
         {pendingComment &&

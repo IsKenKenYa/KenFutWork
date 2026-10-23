@@ -69,6 +69,7 @@ function fakeRepository(overrides: Partial<RepositorySpies> = {}): {
     listCommentsByProject: vi.fn(async () => [commentRow]),
     listAnnotationsByProject: vi.fn(async () => [annotationRow]),
     insertAnnotation: vi.fn(async () => annotationRow),
+    updateAnnotation: vi.fn(async () => annotationRow),
     deleteAnnotation: vi.fn(async () => 1),
     ...overrides,
   };

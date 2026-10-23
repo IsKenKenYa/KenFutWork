@@ -460,13 +460,13 @@ test("工具栏逐项对应上游：刷新/预览/代码/设备/截图/交给对
     "框选",
     "文本",
     "标记",
+    "批注选择",
+    "元素选择",
     "编辑",
     "截图到对话",
     "交给对话",
     "历史记录",
-    "导出",
-    "演示",
-    "分享",
+    "导出与分享",
     "缩放",
   ]) {
     expect(screen.getByRole("button", { name: label })).toBeTruthy();
@@ -483,7 +483,7 @@ test("导出菜单含 PDF 文件", async () => {
   canvasWithFile();
   mount({ projectId: "p-1" });
   await screen.findByTitle("OpenDesign");
-  await openMenu(user, "导出");
+  await openMenu(user, "导出与分享");
   expect(
     await screen.findByRole("menuitem", { name: "PDF 文件" }),
   ).toBeTruthy();
@@ -719,8 +719,7 @@ test("Markdown 资源只保留返回/新建/预览·代码，画布控件全部�
     "截图到对话",
     "交给对话",
     "历史记录",
-    "导出",
-    "分享",
+    "导出与分享",
     "缩放",
   ]) {
     expect(screen.queryByRole("button", { name })).toBeNull();
@@ -1239,7 +1238,7 @@ test("文档顶部有重命名入口：弹窗预填当前文件名并可改名",
   mount({ projectId: "p-1" });
   fireEvent.click(await screen.findByRole("button", { name: "notes" }));
   await screen.findByTestId("open-design-markdown");
-  fireEvent.click(screen.getByRole("button", { name: "重命名" }));
+  fireEvent.click(screen.getByRole("button", { name: "重命名文件" }));
   const input = (await screen.findByLabelText("文件名称")) as HTMLInputElement;
   expect(input.value).toBe("notes.md");
   fireEvent.change(input, { target: { value: "方案.md" } });
@@ -1400,7 +1399,7 @@ test("分享 = 静态部署菜单：发布到 CF/Vercel 走 /host/deploy，配�
   await mountReadyCanvas();
   // Radix 下拉在 jsdom 用键盘开（pointer 路径不稳，仓库既有先例）
   const openShareMenu = () => {
-    const trigger = screen.getByRole("button", { name: "分享" });
+    const trigger = screen.getByRole("button", { name: "导出与分享" });
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "Enter", code: "Enter", bubbles: true });
   };

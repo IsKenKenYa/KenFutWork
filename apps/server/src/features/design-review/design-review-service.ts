@@ -55,6 +55,12 @@ export interface DesignReviewService {
     id: string,
     patch: DesignReviewCommentUpdate,
   ): Promise<DesignReviewComment | null>;
+  /** 选中标注后的整体移动/缩放：改写点集（归一化坐标）。 */
+  updateAnnotation(
+    actor: LocalActor,
+    id: string,
+    points: Array<[number, number]>,
+  ): Promise<DesignReviewAnnotation | null>;
 }
 
 function toComment(row: DesignReviewCommentRow): DesignReviewComment {
@@ -161,6 +167,15 @@ export function createDesignReviewService(options: {
 
     async deleteAnnotation(actor, id) {
       return (await repository.deleteAnnotation(actor.instanceId, id)) > 0;
+    },
+
+    async updateAnnotation(actor, id, points) {
+      const row = await repository.updateAnnotation(
+        actor.instanceId,
+        id,
+        points,
+      );
+      return row ? toAnnotation(row) : null;
     },
   };
 }

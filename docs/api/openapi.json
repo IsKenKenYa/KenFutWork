@@ -7206,6 +7206,75 @@
       }
     },
     "/api/design-review/annotations/{id}": {
+      "patch": {
+        "operationId": "patchDesignReviewAnnotations{id}",
+        "summary": "移动或缩放一条画布标注",
+        "description": "选中标注后整体移动/缩放只改写点集（仍是文档归一化坐标）；kind、文字与颜色随创建落定，不在编辑范围。目标不存在时 404。",
+        "tags": [
+          "design-review"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designReviewAnnotationUpdateSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designReviewAnnotationResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "deleteDesignReviewAnnotations{id}",
         "summary": "删除一条画布标注",
@@ -17864,6 +17933,34 @@
           "annotation"
         ],
         "additionalProperties": false
+      },
+      "designReviewAnnotationUpdateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "points": {
+            "minItems": 2,
+            "maxItems": 4000,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "required": [
+          "points"
+        ]
       },
       "designReviewCommentCreateSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
