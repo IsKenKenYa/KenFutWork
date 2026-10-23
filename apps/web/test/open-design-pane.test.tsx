@@ -446,7 +446,39 @@ test("代码视图：切到代码读设计正文（上游「代码」视图）",
   await screen.findByTitle("OpenDesign");
   fireEvent.click(screen.getByRole("button", { name: "代码" }));
   const source = await screen.findByTestId("open-design-source");
-  await waitFor(() => expect(source.textContent).toContain("当前设计"));
+  await waitFor(() =>
+    expect((source as HTMLTextAreaElement).value).toContain("当前设计"),
+  );
+});
+
+test("代码视图支持编辑并保存", async () => {
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  fireEvent.click(screen.getByRole("button", { name: "代码" }));
+  const source = (await screen.findByTestId(
+    "open-design-source",
+  )) as HTMLTextAreaElement;
+  await waitFor(() => expect(source.value).toContain("当前设计"));
+  fireEvent.change(source, {
+    target: { value: "<html><body><h1>改过的设计</h1></body></html>" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "保存" }));
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/file")?.body,
+    ).toMatchObject({
+      projectId: "p-1",
+      name: "index.html",
+      content: "<html><body><h1>改过的设计</h1></body></html>",
+      encoding: "utf8",
+      versionLabel: "编辑代码",
+    });
+  });
+  expect(
+    (await screen.findByTestId("open-design-notice")).textContent,
+  ).toContain("已保存");
 });
 
 test("设备视口：切到手机把画布框收到 390×844（上游 Desktop/Tablet/Mobile）", async () => {
@@ -574,9 +606,9 @@ test("「+」→「新建设计稿」：宿主写 HTML 并打开代码视图", a
     ).toEqual({ projectId: "p-1", name: "未命名设计" });
   });
   await waitFor(() => {
-    expect(screen.getByTestId("open-design-source").textContent).toContain(
-      "当前设计",
-    );
+    expect(
+      (screen.getByTestId("open-design-source") as HTMLTextAreaElement).value,
+    ).toContain("当前设计");
   });
 });
 

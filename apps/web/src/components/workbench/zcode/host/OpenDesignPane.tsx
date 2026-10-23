@@ -134,6 +134,10 @@ export function OpenDesignPane({
   const [markdownDraft, setMarkdownDraft] = useState<string | null>(null);
   const [markdownDirty, setMarkdownDirty] = useState(false);
   const [markdownSaving, setMarkdownSaving] = useState(false);
+  const [sourceDraft, setSourceDraft] = useState<string | null>(null);
+  const [sourceDirty, setSourceDirty] = useState(false);
+  const [sourceSaving, setSourceSaving] = useState(false);
+  const sourceFileRef = useRef<string | null>(null);
   const [renamingFile, setRenamingFile] = useState<{
     name: string;
     draft: string;
@@ -725,6 +729,35 @@ export function OpenDesignPane({
       // 错误提示由 saveMarkdownSource 写入状态栏。
     }
   }, [markdownDraft, saveMarkdownSource]);
+
+  const saveSource = useCallback(async () => {
+    if (!boundProjectId || !canvas?.entryFile || sourceDraft === null) return;
+    setSourceSaving(true);
+    setNotice(null);
+    try {
+      await surfaceJson("/api/open-design/host/file", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId: boundProjectId,
+          name: canvas.entryFile,
+          content: sourceDraft,
+          encoding: "utf8",
+          versionLabel: "编辑代码",
+        }),
+      });
+      setCurrentText(sourceDraft);
+      setSourceDirty(false);
+      setFrameKey((key) => key + 1);
+      setNotice("已保存");
+    } catch (saveError) {
+      setNotice(
+        saveError instanceof Error ? saveError.message : "保存代码失败。",
+      );
+    } finally {
+      setSourceSaving(false);
+    }
+  }, [boundProjectId, canvas?.entryFile, sourceDraft]);
 
   /** 重命名设计/文档：只改文件名，正文由宿主读写。 */
   const renameFile = useCallback(async () => {
@@ -1553,6 +1586,24 @@ export function OpenDesignPane({
   const isMarkdownEntry = Boolean(
     canvas?.entryFile && /\.md$/iu.test(canvas.entryFile),
   );
+  const isHtmlEntry = Boolean(
+    canvas?.entryFile && /\.html?$/iu.test(canvas.entryFile),
+  );
+  useEffect(() => {
+    if (!isHtmlEntry || currentText === null) {
+      setSourceDraft(null);
+      setSourceDirty(false);
+      return;
+    }
+    if (sourceFileRef.current !== canvas?.entryFile) {
+      sourceFileRef.current = canvas?.entryFile ?? null;
+      setSourceDraft(currentText);
+      setSourceDirty(false);
+      return;
+    }
+    // 编辑中的草稿不被异步回读覆盖；保存成功后 dirty 已复位。
+    if (!sourceDirty) setSourceDraft(currentText);
+  }, [canvas?.entryFile, currentText, isHtmlEntry, sourceDirty]);
   useEffect(() => {
     if (!isMarkdownEntry || currentText === null) {
       setMarkdownDraft(null);
@@ -1836,12 +1887,50 @@ export function OpenDesignPane({
             />
           </div>
         ) : showCanvas && viewMode === "code" && !directPreview ? (
-          <pre
-            data-testid="open-design-source"
-            className="m-0 h-full overflow-auto whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs text-foreground"
-          >
-            {activeVersion?.text ?? currentText ?? "读取中…"}
-          </pre>
+          activeVersion ? (
+            <pre
+              data-testid="open-design-source"
+              className="m-0 h-full overflow-auto whitespace-pre-wrap break-words bg-background p-3 font-mono text-xs text-foreground"
+            >
+              {activeVersion.text}
+            </pre>
+          ) : (
+            <div className="flex h-full flex-col">
+              <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5">
+                <span className="text-ui-caption text-foreground-subtle">
+                  代码
+                </span>
+                <Button
+                  type="button"
+                  size="xs"
+                  disabled={!sourceDirty || sourceSaving}
+                  onClick={() => void saveSource()}
+                >
+                  {sourceSaving ? "保存中…" : "保存"}
+                </Button>
+              </div>
+              <textarea
+                aria-label="代码源"
+                data-testid="open-design-source"
+                value={sourceDraft ?? ""}
+                spellCheck={false}
+                onChange={(event) => {
+                  setSourceDraft(event.target.value);
+                  setSourceDirty(true);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    (event.metaKey || event.ctrlKey) &&
+                    event.key.toLowerCase() === "s"
+                  ) {
+                    event.preventDefault();
+                    void saveSource();
+                  }
+                }}
+                className="min-h-0 flex-1 resize-none bg-background p-3 font-mono text-xs text-foreground outline-none"
+              />
+            </div>
+          )
         ) : null}
         {showCanvas && viewMode === "preview" && isMarkdownEntry ? (
           currentText === null ? (
