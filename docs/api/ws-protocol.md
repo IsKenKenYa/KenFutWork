@@ -145,6 +145,8 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 `createSession.firstInput` 与新 Task、原生线程、活动输入及创建回执在同一事务保存，回执的 `result.input` 返回 `startNow` 与原命令 ID。首条输入冻结模型、思考、规划、基础权限、工作内容及真实 Task 授权版本；模型执行在 HTTP 回执后通过原发布入口开始。同一实例、`clientId` 与 `commandId` 为创建业务键，首次参数指纹随回执保存；并发或顺序重放返回同一 Task，同键改参数返回 409，删除后迟到创建返回 404。COMMIT 回包丢失后的读取结果沿同一创建身份判断派发责任，不能让重复请求启动第二次执行。首条输入的附件继续要求先在真实 Task 上传。
 
+新 Task 的附加目录在创建事务取得项目行锁后读取，并与 Task 一起保存。项目目录修改先提交时，并发创建使用修改后的目录；已有 Task 的目录、读写权限和授权版本保持原值。创建回执重放仍返回原 Task，不重新继承项目设置。
+
 外部 HTTP `/api/agent/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。
 
 `agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。素材、模型、权限与工作内容均由共享 Task 接纳并核验，外部请求不能覆盖已冻结的运行事实。

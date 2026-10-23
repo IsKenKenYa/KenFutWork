@@ -774,9 +774,12 @@ export function createCodeUiRepository(
         );
         if (previous) return previous;
         const project = await scoped.queryOne<
-          SqlRow & { id: string; enabled_modes: Array<"code" | "design"> }
+          SqlRow & {
+            id: string;
+            additional_directories: CodeExecutionScope["additionalDirectories"];
+          }
         >(
-          `select id from public.projects
+          `select id,additional_directories from public.projects
            where instance_id = :instance and id = $1 and $2 = any(enabled_modes) and archived_at is null
            for update`,
           [
@@ -795,7 +798,13 @@ export function createCodeUiRepository(
             "Code 项目或 Task 工作域不存在",
           );
         }
-        const root = await insertRoot(scoped, input);
+        const root = await insertRoot(scoped, {
+          ...input,
+          scope: {
+            ...input.scope,
+            additionalDirectories: project.additional_directories,
+          },
+        });
         const initial = input.initializeInput?.(root);
         if (initial)
           await writeState(scoped, root, initial.state, initial.activeRunId);
