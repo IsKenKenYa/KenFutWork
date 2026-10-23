@@ -30,7 +30,9 @@ const serviceOverrides = {
   },
   // PR-1 起插件声明依赖 designReview（同步到引擎的评审段数据源）；
   // 单插件装配测试经 overrides 给桩，等价于真实 profile 里 designReviewPlugin 提供的 key。
-  designReview: { listByProject: async () => ({ comments: [], annotations: [] }) },
+  designReview: {
+    listByProject: async () => ({ comments: [], annotations: [] }),
+  },
 };
 
 const tempComposeFile = (): string => {

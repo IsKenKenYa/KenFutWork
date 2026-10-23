@@ -31,8 +31,7 @@ function parse(text: string): OpenDesignLastProject | null {
       return {
         projectId: value.projectId,
         name: value.name,
-        updatedAt:
-          typeof value.updatedAt === "string" ? value.updatedAt : "",
+        updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",
       };
     }
   } catch {

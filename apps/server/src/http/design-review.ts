@@ -9,14 +9,10 @@ import {
   designReviewListResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from "fastify";
-import type { LocalActor } from "../features/local-instance/types.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import type { LocalActor } from "../features/local-instance/types.js";
 
 /**
  * 设计评审路由（本机接入验证）。
@@ -32,9 +28,8 @@ export async function registerDesignReviewRoutes(
     designReviewService: DesignReviewService;
   },
 ): Promise<void> {
-  const actor = (
-    request: FastifyRequest,
-  ): Promise<LocalActor | null> => options.localAccess.authenticate(request);
+  const actor = (request: FastifyRequest): Promise<LocalActor | null> =>
+    options.localAccess.authenticate(request);
 
   const unauthorized = (reply: FastifyReply) =>
     reply.code(401).send(
@@ -47,22 +42,18 @@ export async function registerDesignReviewRoutes(
     );
 
   const badRequest = (reply: FastifyReply, message: string) =>
-    reply
-      .code(400)
-      .send(
-        applicationErrorResponseSchema.parse({
-          error: { code: "application_error", message },
-        }),
-      );
+    reply.code(400).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: "application_error", message },
+      }),
+    );
 
   const notFound = (reply: FastifyReply, message: string) =>
-    reply
-      .code(404)
-      .send(
-        applicationErrorResponseSchema.parse({
-          error: { code: "application_error", message },
-        }),
-      );
+    reply.code(404).send(
+      applicationErrorResponseSchema.parse({
+        error: { code: "application_error", message },
+      }),
+    );
 
   app.get("/api/design-review", async (request, reply) => {
     const local = await actor(request);
@@ -70,8 +61,7 @@ export async function registerDesignReviewRoutes(
     const query = request.query as { projectId?: string; file?: string };
     const projectId = query.projectId?.trim();
     const file = query.file?.trim();
-    if (!projectId || !file)
-      return badRequest(reply, "缺少画布 id 或文件名。");
+    if (!projectId || !file) return badRequest(reply, "缺少画布 id 或文件名。");
     return reply.send(
       designReviewListResponseSchema.parse(
         await options.designReviewService.list(local, { projectId, file }),

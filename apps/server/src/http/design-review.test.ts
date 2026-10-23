@@ -107,7 +107,11 @@ describe("/api/design-review", () => {
         projectId: "p-1",
         file: "index.html",
         body: "  ",
-        anchor: { path: "body > h1", rect: { x: 0, y: 0, w: 1, h: 1 }, excerpt: "" },
+        anchor: {
+          path: "body > h1",
+          rect: { x: 0, y: 0, w: 1, h: 1 },
+          excerpt: "",
+        },
       },
     });
     expect(noBody.statusCode).toBe(400);

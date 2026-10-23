@@ -9,11 +9,12 @@ function byName(tools: ToolDefinition[], name: string): ToolDefinition {
 }
 
 const respond = (body: unknown, status = 200) =>
-  vi.fn(async () =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { "content-type": "application/json" },
-    }),
+  vi.fn(
+    async () =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      }),
   ) as unknown as typeof fetch;
 
 describe("createOpenDesignTools", () => {
@@ -94,10 +95,7 @@ describe("createOpenDesignTools", () => {
       frontendUrl: "http://127.0.0.1:7456",
       fetchImpl,
     });
-    const result = (await byName(
-      tools,
-      "open_design_create_project",
-    ).execute!(
+    const result = (await byName(tools, "open_design_create_project").execute!(
       { name: "订单仪表盘", prompt: "做一个订单跟踪仪表盘原型" },
       {} as never,
     )) as { structuredContent: { projectId: string; name: string } };

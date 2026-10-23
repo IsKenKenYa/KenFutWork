@@ -20,9 +20,7 @@ async function dataDir() {
 }
 
 it("没有文件时返回 null（可重建的投影，不是错误）", async () => {
-  expect(
-    readOpenDesignLastProject({ dataDir: await dataDir() }),
-  ).toBeNull();
+  expect(readOpenDesignLastProject({ dataDir: await dataDir() })).toBeNull();
 });
 
 it("写入后读回项目 id / 名称 / 时间", async () => {

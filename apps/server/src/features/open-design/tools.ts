@@ -125,7 +125,8 @@ export function createOpenDesignTools(input: {
       },
       execute: async (args) => {
         const projectId = String(args?.projectId ?? "").trim();
-        if (!projectId) throw new Error("缺少 projectId：先用 open_design_projects 查。");
+        if (!projectId)
+          throw new Error("缺少 projectId：先用 open_design_projects 查。");
         const data = await requestJson<{ files?: OpenDesignFile[] }>(
           `/api/projects/${encodeURIComponent(projectId)}/files`,
           "读取 OpenDesign 项目文件",
