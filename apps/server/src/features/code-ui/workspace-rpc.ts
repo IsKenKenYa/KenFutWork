@@ -21,12 +21,34 @@ import type { CodeUiRepository } from "./repository.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 const directoryParams = z.object({
-  path: z.string().min(1),
+  path: z
+    .string()
+    .min(1)
+    .refine((path) => path.trim().length > 0),
   includeHidden: z.boolean().optional(),
   humanPurpose: z.literal("directory-picker"),
 });
 // 原 UI 最近项目历史固定展示前10项，不是 Agent 运行时限额。
 const CODE_UI_RECENT_PROJECT_LIMIT = 10;
+
+function throwDirectoryLookupError(error: unknown): never {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  )
+    throw new CodeUiRepositoryError("not_found", "目录不存在，请重新选择。");
+  throw error;
+}
+
+async function readPickerDirectory(input: string) {
+  try {
+    const path = await realpath(input);
+    return { path, children: await readdir(path, { withFileTypes: true }) };
+  } catch (error) {
+    throwDirectoryLookupError(error);
+  }
+}
 
 function normalizeRecentProjects(paths: readonly string[]): string[] {
   return [...new Set(paths)].slice(0, CODE_UI_RECENT_PROJECT_LIMIT);
@@ -324,7 +346,7 @@ export function createHumanWorkspaceRpc(options: {
   ): Promise<CodeUiWorkspace> => {
     if (!isAbsolute(inputPath))
       throw new CodeUiRepositoryError("not_found", "请选择绝对目录路径。");
-    const path = await realpath(inputPath);
+    const path = await realpath(inputPath).catch(throwDirectoryLookupError);
     if (!(await stat(path)).isDirectory())
       throw new CodeUiRepositoryError("not_found", "选中的路径不是目录。");
     const instanceId = await options.instanceId(actor);
@@ -475,10 +497,10 @@ export function createHumanWorkspaceRpc(options: {
             "not_found",
             "目录选择器只接受绝对路径。",
           );
-        const path = await realpath(params.path);
+        const { path, children } = await readPickerDirectory(params.path);
         const maxEntries = await options.maxEntries(actor);
         const entries: FileEntry[] = [];
-        for (const entry of await readdir(path, { withFileTypes: true })) {
+        for (const entry of children) {
           if (!params.includeHidden && entry.name.startsWith(".")) continue;
           const child = join(path, entry.name);
           const linked = entry.isSymbolicLink();

@@ -1,19 +1,106 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  instanceSettingsResponseSchema,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import {
   extractManualModelConfig,
   type ProviderSettingsView,
 } from "@zcode/provider";
 import { describe, expect, it } from "vitest";
 import { useCodeUiHttpFixture } from "./code-ui-http.fixture.js";
+import { nextHostServiceEvent } from "./host-client.fixture.js";
 
 const isolatedHttp = useCodeUiHttpFixture();
 const { request, openCodeStream } = isolatedHttp;
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
+type CodeStream = Awaited<ReturnType<typeof openCodeStream>>;
+
+async function initializeCodeStream(
+  streams: AbortController[],
+  clientId: string = randomUUID(),
+) {
+  const stream = await openCodeStream(streams);
+  const initialized = await stream.rpc("initializeConversationV4", [
+    {
+      kind: "clientHello",
+      protocolVersion: protocol.V4_WIRE_PROTOCOL_VERSION,
+      clientId,
+      appVersion: "host-public-integration",
+      clientKind: "web",
+    },
+  ]);
+  expect(initialized.status, JSON.stringify(initialized.body)).toBe(200);
+  return { stream, clientId };
+}
+
+async function readOwnedConversationSnapshot(
+  stream: CodeStream,
+  target: { subscriptionId: string; sessionId: string; workspacePath: string },
+) {
+  const assembler = new protocol.TopicWireFrameAssembler(
+    protocol.conversationTopicFrameSchema,
+  );
+  for (;;) {
+    const event = await stream.next();
+    if (event.event !== "onDynamicConversationFrame") continue;
+    const wire = protocol.topicWireFrameCandidateSchema.parse(event.frame);
+    if (wire.subscriptionId !== target.subscriptionId) continue;
+    expect(event.workspacePath).toBe(target.workspacePath);
+    expect(wire.topic).toBe(protocol.conversationTopic(target.sessionId));
+    for (const result of assembler.accept(wire)) {
+      if (result.kind === "fault")
+        throw new Error(`会话帧无法解析：${result.fault.reasonCode}`);
+      expect(result.deliveryKind).toBe("initial");
+      if (result.frame.payload.kind !== "snapshot")
+        throw new Error("原会话订阅没有返回初始快照。");
+      return result.frame.payload.snapshot;
+    }
+  }
+}
+
+async function nextViewNotification(
+  stream: CodeStream,
+  service: string,
+  revision: number,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      (async () => {
+        for (;;) {
+          const event = await nextHostServiceEvent(
+            stream,
+            service,
+            "onDidChange",
+          );
+          if (event.data?.revision === revision) return event;
+        }
+      })(),
+      new Promise<never>((_, reject) => {
+        // 仅为公开通知的测试期限，不改变产品治理值。
+        timer = setTimeout(
+          () => reject(new Error("未收到对应修订的原服务通知")),
+          1000,
+        );
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** 校验实际凭据字段，诊断路径/文案中的 apiKey 名称不是凭据。 */
 function expectNoPrivateConfigKeys(value: unknown) {
@@ -25,42 +112,50 @@ function expectNoPrivateConfigKeys(value: unknown) {
 }
 
 describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", () => {
-  it("原工作目录打开绑定真实 Code Project 与固定 Task 工作域，并发和目录别名不创建第二份项目", async () => {
+  it("原工作目录显式复用或独立创建，目录别名和并发选择保持真实项目及固定 Task 工作域", async () => {
     const root = await mkdtemp(join(tmpdir(), "code-ui-open-directory-"));
     const first = join(root, "甲", "同名目录");
     const second = join(root, "乙", "同名目录");
-    const open = (path: string) =>
+    const open = (
+      path: string,
+      choice?: { projectId?: string; directoryChoice?: "independent" },
+    ) =>
       request("/api/code-ui/rpc", {
         service: "workspace",
         method: "open",
-        args: [{ path }],
+        args: [{ path, ...choice }],
       });
     const ids = new Set<string>();
+    const streams: AbortController[] = [];
     let providerId = "";
     try {
       await mkdir(first, { recursive: true });
       await mkdir(second, { recursive: true });
       await symlink(first, join(root, "目录别名"));
-      const initial = await Promise.all([
-        open(first),
-        open(join(root, "目录别名")),
-        open(join(first, "..", "同名目录")),
-      ]);
-      const opened = initial[0]!;
+      const opened = await open(first);
       expect(opened.status, JSON.stringify(opened.body)).toBe(200);
       ids.add(opened.body.result.projectId);
       expect(opened.body.result).toMatchObject({
         name: "同名目录",
-        path: await import("node:fs/promises").then((fs) => fs.realpath(first)),
+        path: await realpath(first),
       });
-      for (const result of initial) {
-        expect(result.status, JSON.stringify(result.body)).toBe(200);
-        expect(result.body.result).toEqual(opened.body.result);
-      }
-      const concurrent = await Promise.all([
+      const unselected = await Promise.all([
         open(first),
         open(join(root, "目录别名")),
         open(join(first, "..", "同名目录")),
+      ]);
+      for (const result of unselected) {
+        expect(result.status, JSON.stringify(result.body)).toBe(409);
+        expect(result.body.error.code).toBe("project_directory_conflict");
+      }
+      const concurrent = await Promise.all([
+        open(first, { projectId: opened.body.result.projectId }),
+        open(join(root, "目录别名"), {
+          projectId: opened.body.result.projectId,
+        }),
+        open(join(first, "..", "同名目录"), {
+          projectId: opened.body.result.projectId,
+        }),
       ]);
       for (const result of concurrent) {
         expect(result.status).toBe(200);
@@ -83,6 +178,42 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       const restored = await request("/api/code-ui/workspaces");
       expect(restored.body.workspaces).toContainEqual(opened.body.result);
       expect(restored.body.workspaces).toContainEqual(other.body.result);
+      const independent = await open(join(root, "目录别名"), {
+        directoryChoice: "independent",
+      });
+      expect(independent.status, JSON.stringify(independent.body)).toBe(200);
+      ids.add(independent.body.result.projectId);
+      expect(independent.body.result.projectId).not.toBe(
+        opened.body.result.projectId,
+      );
+      expect(independent.body.result.path).toBe(opened.body.result.path);
+      const candidates = await request(
+        `/api/projects/directory-candidates?path=${encodeURIComponent(first)}`,
+      );
+      expect(candidates.status, JSON.stringify(candidates.body)).toBe(200);
+      expect(
+        candidates.body.projects.map((project: { id: string }) => project.id),
+      ).toEqual(
+        expect.arrayContaining([
+          opened.body.result.projectId,
+          independent.body.result.projectId,
+        ]),
+      );
+      expect(candidates.body.projects).toHaveLength(2);
+      expect((await open(first)).status).toBe(409);
+      expect(
+        (await open(first, { projectId: independent.body.result.projectId }))
+          .body.result,
+      ).toEqual(independent.body.result);
+      expect(
+        (
+          await request(
+            `/api/projects/${independent.body.result.projectId}`,
+            undefined,
+            "DELETE",
+          )
+        ).status,
+      ).toBe(204);
       const providerRpc = (method: string, args: unknown[] = []) =>
         request("/api/code-ui/rpc", {
           service: "providerSettingsService",
@@ -104,36 +235,38 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         },
       ]);
       await providerRpc("addPersonalModel", [providerId, "scope-model", {}]);
+      const { stream, clientId } = await initializeCodeStream(streams);
       const createdSessions: string[] = [];
       for (const _round of [1, 2]) {
-        const session = await request("/api/code-ui/rpc", {
-          service: "zcodeAgentService",
-          method: "sendConversationCommandV4",
-          args: [
-            {
-              workspacePath: opened.body.result.path,
-              envelope: {
-                commandId: randomUUID(),
-                clientId: randomUUID(),
-                sessionId: null,
-                type: "createSession",
-                payload: {
-                  instanceId: opened.body.result.path,
-                  config: {
-                    modelSelection: {
-                      providerId,
-                      modelId: "scope-model",
-                      options: {},
-                    },
+        const session = await stream.rpc("sendConversationCommandV4", [
+          {
+            workspacePath: opened.body.result.path,
+            projectId: opened.body.result.projectId,
+            envelope: {
+              commandId: randomUUID(),
+              clientId,
+              sessionId: null,
+              type: "createSession",
+              payload: {
+                workspaceId: opened.body.result.projectId,
+                config: {
+                  modelSelection: {
+                    providerId,
+                    modelId: "scope-model",
+                    options: {},
                   },
                 },
-                issuedAt: Date.now(),
               },
+              issuedAt: Date.now(),
             },
-          ],
-        });
+          },
+        ]);
         expect(session.status, JSON.stringify(session.body)).toBe(200);
-        createdSessions.push(session.body.result.result.sessionId);
+        const ack = protocol.commandAckSchema.parse(session.body.result);
+        expect(ack.status).toBe("accepted");
+        if (ack.result?.type !== "createSession")
+          throw new Error("工作目录创建没有返回真实 Task 身份。");
+        createdSessions.push(ack.result.sessionId);
       }
       expect(new Set(createdSessions).size).toBe(2);
       for (const sessionId of createdSessions) {
@@ -161,8 +294,23 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect((await settings("get")).body.result.recentProjects).toEqual(
         recent,
       );
-      expect((await open(join(root, "缺失"))).status).toBe(400);
-      expect((await open("relative-path")).status).toBe(400);
+      const beforeInvalid = await request("/api/projects?kind=code");
+      expect(beforeInvalid.status, JSON.stringify(beforeInvalid.body)).toBe(
+        200,
+      );
+      for (const path of [join(root, "缺失"), "relative-path"]) {
+        const rejected = await open(path);
+        expect(rejected.status, JSON.stringify(rejected.body)).toBe(404);
+        expect(rejected.body.error.code).toBe("code_ui_not_found");
+        expect(rejected.body.error.message).toMatch(/目录|路径/);
+      }
+      const afterInvalid = await request("/api/projects?kind=code");
+      expect(afterInvalid.status, JSON.stringify(afterInvalid.body)).toBe(200);
+      const projectIds = (projects: Array<{ id: string }>) =>
+        projects.map((project) => project.id).sort();
+      expect(projectIds(afterInvalid.body.projects)).toEqual(
+        projectIds(beforeInvalid.body.projects),
+      );
       expect(
         (
           await request(
@@ -172,11 +320,11 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
           )
         ).status,
       ).toBe(204);
-      const lateOpen = await open(first);
-      expect(lateOpen.status).toBe(409);
-      expect(lateOpen.body.error.message).toBe(
-        "工作目录对应的项目已归档，无法重新打开。",
-      );
+      const lateOpen = await open(first, {
+        projectId: opened.body.result.projectId,
+      });
+      expect(lateOpen.status).toBe(404);
+      expect(lateOpen.body.error.code).toBe("code_ui_not_found");
       expect(
         (
           await settings("update", [
@@ -191,6 +339,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         ),
       ).toBe(false);
     } finally {
+      for (const stream of streams) stream.abort();
       if (providerId)
         await request("/api/code-ui/rpc", {
           service: "providerSettingsService",
@@ -253,35 +402,50 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       const empty = await rpc(join(dir, "中文目录"));
       expect(empty.status).toBe(200);
       expect(empty.body.result).toEqual([]);
+      const spaced = join(dir, " 两侧空格 ");
+      await mkdir(spaced);
+      expect((await rpc(spaced)).status).toBe(200);
       for (const path of [
         join(dir, "缺失"),
         join(dir, "空文件.txt"),
+        join(dir, "空文件.txt", "子目录"),
+        join(dir, "损坏链接"),
         "relative-path",
       ]) {
         const rejected = await rpc(path);
         expect(rejected.status).toBe(404);
+        expect(rejected.body.error.code).toBe("code_ui_not_found");
         expect(rejected.body.error.message).toMatch(/目录|路径/);
       }
       expect((await rpc(" ")).status).toBe(400);
+      expect((await rpc(dir)).body.result).toContainEqual({
+        name: " 两侧空格 ",
+        path: spaced,
+        type: "directory",
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
-  it("Code 宿主 ready 使用工作区持久重连间隔，刷新保留且非法限额拒绝", async () => {
-    const original = await request("/api/workspace/settings");
+  it("Code 宿主 ready 使用实例持久重连间隔，刷新保留且非法限额拒绝", async () => {
+    const original = await request("/api/instance/settings");
     expect(original.status).toBe(200);
-    const value = original.body.settings.codeUiReconnectDelayMs;
+    const value = instanceSettingsResponseSchema.parse(original.body).settings
+      .codeUiReconnectDelayMs;
     const streams: AbortController[] = [];
     try {
       const saved = await request(
-        "/api/workspace/settings",
+        "/api/instance/settings",
         { codeUiReconnectDelayMs: 250 },
-        "PUT",
+        "PATCH",
       );
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-      expect(saved.body.settings.codeUiReconnectDelayMs).toBe(250);
       expect(
-        (await request("/api/workspace/settings")).body.settings
+        instanceSettingsResponseSchema.parse(saved.body).settings
+          .codeUiReconnectDelayMs,
+      ).toBe(250);
+      expect(
+        (await request("/api/instance/settings")).body.settings
           .codeUiReconnectDelayMs,
       ).toBe(250);
       const stream = await openCodeStream(streams);
@@ -292,22 +456,22 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect(
         (
           await request(
-            "/api/workspace/settings",
+            "/api/instance/settings",
             { codeUiReconnectDelayMs: 0 },
-            "PUT",
+            "PATCH",
           )
         ).status,
       ).toBe(400);
       expect(
-        (await request("/api/workspace/settings")).body.settings
+        (await request("/api/instance/settings")).body.settings
           .codeUiReconnectDelayMs,
       ).toBe(250);
     } finally {
       for (const controller of streams) controller.abort();
       await request(
-        "/api/workspace/settings",
-        { codeUiReconnectDelayMs: value ?? 1000 },
-        "PUT",
+        "/api/instance/settings",
+        { codeUiReconnectDelayMs: value },
+        "PATCH",
       );
     }
   });
@@ -690,7 +854,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       if (providerId) await rpc("deletePersonalProvider", [providerId]);
     }
   });
-  it("原模型编辑器解析原推荐规则并添加精确个人配置，刷新保持成员和完整配置且不产生假模型", async () => {
+  it("原模型编辑器保留明确停用与原生容量，刷新保持成员和完整配置且不产生假模型", async () => {
     const rpc = (method: string, args: unknown[] = []) =>
       request("/api/code-ui/rpc", {
         service: "providerSettingsService",
@@ -736,16 +900,22 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect(provider.models).toHaveLength(1);
       expect(provider.models[0]).toMatchObject({
         modelId: "模型-α",
-        enabled: true,
+        enabled: false,
         executable: false,
+        selectable: false,
         useRecommendedConfig: true,
         personalExactConfig: {
-          enabled: true,
+          enabled: false,
           properties: { contextWindow: 256000 },
           optionSpecs: { maxOutputTokens: { max: 8192 } },
         },
-        effectiveBuiltinConfig: { properties: { contextWindow: 200000 } },
+        effectiveBuiltinConfig: {
+          enabled: false,
+          properties: { contextWindow: 256000 },
+          optionSpecs: { maxOutputTokens: { max: 8192 } },
+        },
         effectiveConfig: {
+          enabled: false,
           properties: { contextWindow: 256000 },
           optionSpecs: { maxOutputTokens: { max: 8192 } },
         },
@@ -761,12 +931,14 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect(
         existing.body.result.effectiveConfig.optionSpecs.maxOutputTokens.max,
       ).toBe(8192);
+      expect(existing.body.result.effectiveConfig.enabled).toBe(false);
       const instances = await request("/api/provider-instances");
       const descriptor = instances.body.instances.find(
         (instance: { id: string }) => instance.id === providerId,
       ).models[0];
       expect(descriptor).toMatchObject({
         id: "模型-α",
+        enabled: false,
         contextWindow: 256000,
         maxOutputTokens: 8192,
       });
@@ -949,6 +1121,8 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         selectable: true,
       });
       const selection = await view("modelSelectionService");
+      expect(selection.status, JSON.stringify(selection.body)).toBe(200);
+      expectNoPrivateConfigKeys(selection.body.result);
       expect(
         selection.body.result.providers
           .find(
@@ -976,11 +1150,20 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       ).toMatchObject({
         enabled: false,
         executable: false,
-        effectiveConfig: { visibility: "visible" },
-        models: [{ modelId: "glm-4.5-air" }, { modelId: "glm-4.6" }],
+        effectiveConfig: { visibility: "hidden" },
+        models: [
+          { modelId: "glm-4.5-air", enabled: false, executable: false },
+          { modelId: "glm-4.6", enabled: true, executable: false },
+        ],
       });
+      const disabledSelection = await view("modelSelectionService");
       expect(
-        (await view("modelSelectionService")).body.result.providers.some(
+        disabledSelection.status,
+        JSON.stringify(disabledSelection.body),
+      ).toBe(200);
+      expectNoPrivateConfigKeys(disabledSelection.body.result);
+      expect(
+        disabledSelection.body.result.providers.some(
           (item: { providerId: string }) => item.providerId === providerId,
         ),
       ).toBe(false);
@@ -996,9 +1179,42 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect((await view()).body.result.revision).toBe(
         disabled.body.result.revision,
       );
-      expect(JSON.stringify(disabled.body.result)).not.toContain(
-        "integration-credential-no-network",
+      const reenabled = await request(
+        `/api/provider-instances/${providerId}`,
+        { enabled: true },
+        "PATCH",
       );
+      expect(reenabled.status, JSON.stringify(reenabled.body)).toBe(200);
+      const restoredSelection = await view("modelSelectionService");
+      expect(
+        restoredSelection.status,
+        JSON.stringify(restoredSelection.body),
+      ).toBe(200);
+      expectNoPrivateConfigKeys(restoredSelection.body.result);
+      expect(
+        restoredSelection.body.result.providers
+          .find(
+            (item: { providerId: string }) => item.providerId === providerId,
+          )
+          ?.models.map((model: { modelId: string }) => model.modelId),
+      ).toEqual(["glm-4.6"]);
+      const restoredSettings = await view();
+      expect(
+        restoredSettings.status,
+        JSON.stringify(restoredSettings.body),
+      ).toBe(200);
+      expect(
+        restoredSettings.body.result.providers.find(
+          (item: { providerId: string }) => item.providerId === providerId,
+        ),
+      ).toMatchObject({
+        enabled: true,
+        effectiveConfig: { visibility: "visible" },
+        models: [
+          { modelId: "glm-4.5-air", enabled: false, executable: false },
+          { modelId: "glm-4.6", enabled: true, executable: true },
+        ],
+      });
     } finally {
       if (providerId)
         await request(
@@ -1018,35 +1234,34 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         args,
       });
     try {
-      const stream = await openCodeStream(streams);
+      const { stream } = await initializeCodeStream(streams);
       const created = await rpc("createPersonalProvider", [
         { providerName: `通知草稿 ${randomUUID()}` },
       ]);
       expect(created.status).toBe(200);
       providerId = created.body.result.providerId;
-      // 仅测试通知可观察性：不改产品超时或运行治理值。
-      const notification = await Promise.race([
-        stream.next(),
-        new Promise((_, reject) => {
-          const timer = setTimeout(
-            () => reject(new Error("未收到原服务变更通知")),
-            1000,
-          );
-          timer.unref();
-        }),
-      ]);
+      const notification = await nextViewNotification(
+        stream,
+        "providerSettingsService",
+        created.body.result.view.revision,
+      );
       expect(notification).toMatchObject({
         event: "service",
         service: "providerSettingsService",
         name: "onDidChange",
         data: created.body.result.view,
       });
-      const selectable = await stream.next();
       const selection = await request("/api/code-ui/rpc", {
         service: "modelSelectionService",
         method: "getView",
         args: [],
       });
+      expect(selection.status, JSON.stringify(selection.body)).toBe(200);
+      const selectable = await nextViewNotification(
+        stream,
+        "modelSelectionService",
+        selection.body.result.revision,
+      );
       expect(selectable).toMatchObject({
         event: "service",
         service: "modelSelectionService",
@@ -1055,11 +1270,35 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       });
       expect(selectable.data.revision).toBe(created.body.result.view.revision);
       const fresh = await rpc("refresh", ["integration:no-config-change"]);
+      expect(fresh.status, JSON.stringify(fresh.body)).toBe(200);
       expect(fresh.body.result).toEqual(created.body.result.view);
+      expect(
+        (
+          await nextViewNotification(
+            stream,
+            "providerSettingsService",
+            fresh.body.result.revision,
+          )
+        ).data,
+      ).toEqual(fresh.body.result);
+      expect(
+        (
+          await nextViewNotification(
+            stream,
+            "modelSelectionService",
+            selection.body.result.revision,
+          )
+        ).data,
+      ).toEqual(selection.body.result);
       const removed = await rpc("deletePersonalProvider", [providerId]);
       expect(removed.status).toBe(200);
       providerId = "";
-      expect(await stream.next()).toMatchObject({
+      const removalNotification = await nextViewNotification(
+        stream,
+        "providerSettingsService",
+        removed.body.result.revision,
+      );
+      expect(removalNotification).toMatchObject({
         event: "service",
         service: "providerSettingsService",
         name: "onDidChange",
@@ -1332,81 +1571,89 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
         kind: "code",
         work_dir: dir,
       });
+      expect(created.status, JSON.stringify(created.body)).toBe(201);
       projectId = created.body.project.id;
-      const stream = await openCodeStream(streams);
-      const clientId = randomUUID();
-      const initialize = () => [
-        {
-          kind: "clientHello",
-          protocolVersion: 3,
-          clientId,
-          appVersion: "integration",
-          clientKind: "web",
-        },
-      ];
-      expect(
-        (await stream.rpc("initializeConversationV4", initialize())).status,
-      ).toBe(200);
+      const { stream, clientId } = await initializeCodeStream(streams);
       const command = await stream.rpc("sendConversationCommandV4", [
         {
           workspacePath: dir,
+          projectId,
           envelope: {
             commandId: randomUUID(),
             clientId,
             sessionId: null,
             type: "createSession",
-            payload: { instanceId: projectId },
+            payload: { workspaceId: projectId },
             issuedAt: Date.now(),
           },
         },
       ]);
-      const sessionId = command.body.result.result.sessionId;
+      expect(command.status, JSON.stringify(command.body)).toBe(200);
+      const createdAck = protocol.commandAckSchema.parse(command.body.result);
+      expect(createdAck.status).toBe("accepted");
+      if (createdAck.result?.type !== "createSession")
+        throw new Error("订阅测试没有取得真实 Task 身份。");
+      const sessionId = createdAck.result.sessionId;
+      const persisted = await request(`/api/code-ui/sessions/${sessionId}`);
+      expect(persisted.status, JSON.stringify(persisted.body)).toBe(200);
+      const persistedSnapshot = protocol.conversationSnapshotSchema.parse(
+        persisted.body.snapshot,
+      );
       const subscription = await stream.rpc("subscribeConversationV4", [
-        { workspacePath: dir, sessionId },
+        { workspacePath: dir, projectId, sessionId },
       ]);
       expect(subscription.status).toBe(200);
-      expect(Object.keys(subscription.body.result)).toEqual(["ack"]);
-      const frame = await stream.next();
-      expect(frame).toMatchObject({
-        event: "onDynamicConversationFrame",
+      const { ack } = protocol.v4ConversationSubscribeResultSchema.parse(
+        subscription.body.result,
+      );
+      const snapshot = await readOwnedConversationSnapshot(stream, {
+        subscriptionId: ack.subscriptionId,
+        sessionId,
         workspacePath: dir,
-        frame: {
-          deliveryKind: "initial",
-          subscriptionId: subscription.body.result.ack.subscriptionId,
-          frame: {
-            topic: `conversation/${sessionId}`,
-            payload: {
-              kind: "snapshot",
-              snapshot: { sessionId, control: { phase: "draft" } },
-            },
-          },
-        },
+      });
+      expect(snapshot).toEqual(persistedSnapshot);
+      expect(snapshot).toMatchObject({
+        sessionId,
+        control: { phase: "draft" },
       });
       stream.controller.abort();
-      const reconnected = await openCodeStream(streams);
-      await reconnected.rpc("initializeConversationV4", initialize());
+      await stream.closed;
+      const { stream: reconnected } = await initializeCodeStream(
+        streams,
+        clientId,
+      );
       const foreign = await reconnected.rpc("resyncConversationV4", [
         {
           workspacePath: dir,
-          subscriptionId: subscription.body.result.ack.subscriptionId,
+          subscriptionId: ack.subscriptionId,
           base: null,
         },
       ]);
       expect(foreign.status).toBe(404);
+      expect(foreign.body.error.code).toBe("code_ui_not_found");
       const resumed = await reconnected.rpc("subscribeConversationV4", [
         {
           workspacePath: dir,
+          projectId,
           sessionId,
           base: {
-            logEpoch: frame.frame.frame.payload.snapshot.logEpoch,
-            seq: 0,
+            logEpoch: snapshot.logEpoch,
+            seq: snapshot.seq,
           },
         },
       ]);
       expect(resumed.status).toBe(200);
-      expect((await reconnected.next()).frame.frame.payload.snapshot).toEqual(
-        frame.frame.frame.payload.snapshot,
-      );
+      const resumedAck = protocol.v4ConversationSubscribeResultSchema.parse(
+        resumed.body.result,
+      ).ack;
+      expect(resumedAck.subscriptionId).not.toBe(ack.subscriptionId);
+      expect(
+        await readOwnedConversationSnapshot(reconnected, {
+          subscriptionId: resumedAck.subscriptionId,
+          sessionId,
+          workspacePath: dir,
+        }),
+      ).toEqual(snapshot);
     } finally {
       for (const stream of streams) stream.abort();
       if (projectId)
@@ -1417,6 +1664,7 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
   it("createSession 绑定真实Code项目/Task工作域；同键重放同身份、异参冲突", async () => {
     const dir = await mkdtemp(join(tmpdir(), "ken-code-ui-host-"));
     let projectId = "";
+    const streams: AbortController[] = [];
     try {
       const created = await request("/api/projects", {
         name: `Code UI 集成验收 ${randomUUID()}`,
@@ -1426,48 +1674,65 @@ describe.skipIf(!enabled)("Code 宿主真实数据库公开接口 integration", 
       expect(created.status, JSON.stringify(created.body)).toBe(201);
       const project = created.body.project;
       projectId = project.id;
+      const { stream, clientId } = await initializeCodeStream(streams);
       const envelope = {
         commandId: randomUUID(),
-        clientId: randomUUID(),
+        clientId,
         sessionId: null,
         type: "createSession",
-        payload: { instanceId: projectId },
+        payload: { workspaceId: projectId },
         issuedAt: Date.now(),
       };
       const call = (value: unknown) =>
-        request("/api/code-ui/rpc", {
-          service: "zcodeAgentService",
-          method: "sendConversationCommandV4",
-          args: [{ workspacePath: dir, envelope: value }],
-        });
+        stream.rpc("sendConversationCommandV4", [
+          { workspacePath: dir, projectId, envelope: value },
+        ]);
       const first = await call(envelope);
-      expect(first.status).toBe(200);
-      const sessionId = first.body.result.result.sessionId;
+      expect(first.status, JSON.stringify(first.body)).toBe(200);
+      const createdAck = protocol.commandAckSchema.parse(first.body.result);
+      expect(createdAck.status).toBe("accepted");
+      if (createdAck.result?.type !== "createSession")
+        throw new Error("幂等创建测试没有取得真实 Task 身份。");
+      const sessionId = createdAck.result.sessionId;
       const second = await call(envelope);
-      expect(second.body.result).toMatchObject({
-        status: "duplicate",
-        result: { type: "createSession", sessionId },
-      });
+      expect(second.status, JSON.stringify(second.body)).toBe(200);
+      expect(protocol.commandAckSchema.parse(second.body.result)).toMatchObject(
+        {
+          status: "duplicate",
+          result: { type: "createSession", sessionId },
+        },
+      );
       expect(project).not.toHaveProperty("primaryCanvas");
       const scope = await request(`/api/code-ui/tasks/${sessionId}/scope`);
       expect(scope.status).toBe(200);
       expect(scope.body.scope).toMatchObject({
         taskId: sessionId,
         projectId,
+        rootDirectory: await realpath(dir),
         additionalDirectories: [],
       });
       expect(scope.body.scope).not.toHaveProperty("canvasId");
       const snapshot = await request(`/api/code-ui/sessions/${sessionId}`);
-      expect(snapshot.body.snapshot).toMatchObject({
+      expect(snapshot.status, JSON.stringify(snapshot.body)).toBe(200);
+      expect(
+        protocol.conversationSnapshotSchema.parse(snapshot.body.snapshot),
+      ).toMatchObject({
         sessionId,
         control: { phase: "draft" },
       });
       const conflict = await call({
         ...envelope,
-        payload: { instanceId: projectId, config: { planEnabled: true } },
+        payload: { workspaceId: projectId, config: { planEnabled: true } },
       });
       expect(conflict.status).toBe(409);
+      expect(conflict.body.error.code).toBe("code_ui_command_conflict");
+      const afterConflict = await request(`/api/code-ui/sessions/${sessionId}`);
+      expect(afterConflict.status, JSON.stringify(afterConflict.body)).toBe(
+        200,
+      );
+      expect(afterConflict.body.snapshot).toEqual(snapshot.body.snapshot);
     } finally {
+      for (const stream of streams) stream.abort();
       if (projectId)
         await request(`/api/projects/${projectId}`, undefined, "DELETE");
       await rm(dir, { recursive: true, force: true });
