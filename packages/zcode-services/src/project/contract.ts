@@ -3,6 +3,8 @@ import { createServiceDescriptor } from "../descriptors.js";
 import type { SaveProjectInput, VirtualProject } from "./types.js";
 
 export type {
+  CreateProjectInput,
+  EditProjectInput,
   ProjectRoot,
   ProjectRootAccess,
   SaveProjectInput,

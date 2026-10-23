@@ -1,5 +1,6 @@
 /** English translations */
 const enUS: Record<string, string> = {
+  "project.create": "Create project",
   "project.edit": "Edit project",
   "project.browse": "Choose folder",
   "project.description": "Manage project folders. Existing tasks keep their directories and permissions.",
@@ -7,6 +8,7 @@ const enUS: Record<string, string> = {
   "project.new": "New project",
   "project.folders": "Source folders",
   "project.primaryBadge": "Primary",
+  "project.setPrimary": "Set as primary",
   "project.removeFolder": "Remove folder",
   "project.addSourceFolder": "Add folder",
   "project.browseHint": "Choose folder access after selecting",
@@ -17,6 +19,11 @@ const enUS: Record<string, string> = {
   "project.readOnly": "Read only",
   "project.readWrite": "Read and write",
   "project.archive": "Archive project",
+  "project.trustFolderTitle": "Trust this folder?",
+  "project.trustFoldersTitle": "Trust these folders?",
+  "project.thisComputer": "This computer",
+  "project.trustFoldersDescription": "Folder access for new tasks",
+  "project.trustFoldersAndCreate": "Trust folders and create",
   "chat.toolbar.combined.provider": "Provider",
   "chat.toolbar.combined.models": "Models",
   "chat.toolbar.combined.effort": "Effort",

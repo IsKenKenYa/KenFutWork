@@ -40,6 +40,8 @@ interface NavigationContext {
   refreshProjects: () => Promise<void>;
   openProject: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>;
   createProject: (preset: Preset) => Promise<void>;
+  creation: { creationId: string; kind: Preset } | null;
+  closeProjectCreation: (creationId: string) => void;
   registerTabs: (tabs: TabStore | null) => void;
   error: string | null;
   retryDocument: (() => void) | null;
@@ -259,6 +261,12 @@ export function SharedProjectNavigationProvider({
   }, []);
   const sharingRef = useRef(new Map<string, Promise<boolean>>());
   const [error, setError] = useState<string | null>(null);
+  const [creation, setCreation] = useState<NavigationContext["creation"]>(null);
+  const closeProjectCreation = useCallback((creationId: string) => {
+    setCreation((current) =>
+      current?.creationId === creationId ? null : current,
+    );
+  }, []);
   /** 切工作方式为该项目启用新档位：不弹确认框，失败才回落成侧栏错误提示。 */
   const askShare = useCallback(
     (project: CodeUiWorkspace, preset: Preset) => {
@@ -405,21 +413,9 @@ export function SharedProjectNavigationProvider({
   const refreshProjects = useCallback(async () => {
     await client.refreshWorkspaces();
   }, [client]);
-  const createProject = async (preset: Preset) => {
-    const result = await surfaceJson<{ project: { id: string } }>(
-      "/api/projects",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "未命名项目", kind: preset }),
-      },
-    );
-    const project = (await client.refreshWorkspaces()).find(
-      (item) => item.projectId === result.project.id,
-    );
-    if (!project) throw new Error("项目未加载，请重新打开工作台。");
-    await openProject(project, preset);
-  };
+  const createProject = useCallback(async (preset: Preset) => {
+    setCreation({ creationId: crypto.randomUUID(), kind: preset });
+  }, []);
   useEffect(() => {
     const created = () => {
       void createProject(client.currentWorkPreset()).catch((failure) =>
@@ -468,7 +464,7 @@ export function SharedProjectNavigationProvider({
       window.removeEventListener("kenfutwork:focus-session", focused);
       window.removeEventListener("kenfutwork:project-deleted", deleted);
     };
-  }, [client]);
+  }, [client, createProject]);
   return (
     <Context.Provider
       value={{
@@ -476,6 +472,8 @@ export function SharedProjectNavigationProvider({
         refreshProjects,
         openProject,
         createProject,
+        creation,
+        closeProjectCreation,
         registerTabs,
         error,
         retryDocument,
@@ -488,6 +486,17 @@ export function SharedProjectNavigationProvider({
 
 export function useSharedProjectRefresh() {
   return useContext(Context)?.refreshProjects ?? null;
+}
+
+export function useSharedProjectCreation() {
+  const context = useContext(Context);
+  return context
+    ? {
+        creation: context.creation,
+        createProject: context.createProject,
+        closeProjectCreation: context.closeProjectCreation,
+      }
+    : null;
 }
 
 export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {

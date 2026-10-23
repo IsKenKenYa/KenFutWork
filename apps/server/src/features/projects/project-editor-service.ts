@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, normalize } from "node:path";
+import { basename, isAbsolute, normalize } from "node:path";
 import type {
   AdditionalDirectory,
+  CodeProjectEditorCreate,
   CodeProjectEditorDirectory,
+  CodeProjectEditorEdit,
   CodeProjectEditorProject,
   CodeProjectEditorReadDirectory,
   CodeProjectEditorSave,
+  ProjectCreateRequest,
 } from "@kenfutwork/shared";
 import { codeProjectEditorDirectorySchema } from "@kenfutwork/shared";
 import {
@@ -24,6 +27,7 @@ import type {
   ProjectEditorRepository,
   ProjectEditorRow,
 } from "./project-editor-repository.js";
+import { projectEditorProject } from "./project-editor-repository.js";
 import type { ProjectService } from "./project-service.js";
 import { validateWorkDir } from "./work-dir.js";
 
@@ -49,25 +53,16 @@ function directory(raw: string): string {
   return realpathSync(verdict.path);
 }
 
-function projectChange(
-  project: ProjectEditorRow,
-  input: CodeProjectEditorSave,
-): ProjectEditorChange {
-  if (!project.work_dir)
-    throw new CodeUiHostRpcError(
-      "invalid_work_dir",
-      "项目目录缺失，请重新关联项目。",
-      400,
-    );
-  const primary = directory(project.work_dir);
+function projectDirectories(
+  input: Pick<CodeProjectEditorEdit, "roots" | "rootPermissions">,
+  primary: string,
+  missingPrimaryMessage = "主目录不在所选目录中，请重新选择。",
+) {
   const roots = [...new Set(input.roots.map(directory))];
-  if (
-    !roots.includes(primary) ||
-    (input.primaryRoot && directory(input.primaryRoot) !== primary)
-  )
+  if (!roots.includes(primary))
     throw new CodeUiHostRpcError(
       "invalid_work_dir",
-      "项目主目录固定，请保留原主目录。",
+      missingPrimaryMessage,
       400,
     );
   const permissions = new Map<string, AdditionalDirectory["access"]>();
@@ -85,6 +80,31 @@ function projectChange(
       );
     permissions.set(root, access);
   }
+  return { roots, permissions };
+}
+
+function projectChange(
+  project: ProjectEditorRow,
+  input: CodeProjectEditorEdit,
+): ProjectEditorChange {
+  if (!project.work_dir)
+    throw new CodeUiHostRpcError(
+      "invalid_work_dir",
+      "项目目录缺失，请重新关联项目。",
+      400,
+    );
+  const primary = directory(project.work_dir);
+  if (input.primaryRoot && directory(input.primaryRoot) !== primary)
+    throw new CodeUiHostRpcError(
+      "invalid_work_dir",
+      "项目主目录固定，请保留原主目录。",
+      400,
+    );
+  const { roots, permissions } = projectDirectories(
+    input,
+    primary,
+    "项目主目录固定，请保留原主目录。",
+  );
   const previous = new Map(
     project.additional_directories.map((entry) => [entry.path, entry.access]),
   );
@@ -99,30 +119,102 @@ function projectChange(
   };
 }
 
-/** 回执比较原保存意图，不重新依赖已提交之后变化的文件系统。 */
-function projectEditFingerprint(input: CodeProjectEditorSave): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        name: input.name ?? null,
-        roots: [...new Set(input.roots.map((path) => normalize(path)))],
-        primaryRoot: input.primaryRoot ? normalize(input.primaryRoot) : null,
-        rootPermissions: Object.entries(input.rootPermissions)
-          .map(([path, access]) => [normalize(path), access])
-          .sort(([left = ""], [right = ""]) =>
-            left < right ? -1 : left > right ? 1 : 0,
-          ),
+function projectCreationInput(
+  input: CodeProjectEditorCreate,
+): ProjectCreateRequest {
+  const selected = input.primaryRoot ?? input.roots[0];
+  if (!selected)
+    throw new CodeUiHostRpcError("invalid_work_dir", "请选择主目录。", 400);
+  const primary = directory(selected);
+  const { roots, permissions } = projectDirectories(input, primary);
+  return {
+    name: input.name ?? (basename(primary) || "新项目"),
+    kind: input.kind,
+    work_dir: primary,
+    additional_directories: roots
+      .filter((path) => path !== primary)
+      .map((path) => {
+        const access = permissions.get(path);
+        if (!access)
+          throw new CodeUiHostRpcError(
+            "invalid_work_dir",
+            "请为每个附加目录选择权限。",
+            400,
+          );
+        return { path, access };
       }),
-    )
-    .digest("hex");
+    ...(input.directoryChoice
+      ? { directory_choice: input.directoryChoice }
+      : {}),
+  };
+}
+
+/** 回执比较原保存意图，不重新依赖已提交之后变化的文件系统。 */
+function projectIntent(
+  input: Pick<
+    CodeProjectEditorEdit,
+    "name" | "roots" | "primaryRoot" | "rootPermissions"
+  >,
+) {
+  return {
+    name: input.name ?? null,
+    roots: [...new Set(input.roots.map((path) => normalize(path)))],
+    primaryRoot: input.primaryRoot ? normalize(input.primaryRoot) : null,
+    rootPermissions: Object.entries(input.rootPermissions)
+      .map(([path, access]) => [normalize(path), access])
+      .sort(([left = ""], [right = ""]) =>
+        left < right ? -1 : left > right ? 1 : 0,
+      ),
+  };
+}
+
+function projectFingerprint(
+  intent: ReturnType<typeof projectIntent> & {
+    kind?: CodeProjectEditorCreate["kind"];
+    directoryChoice?: string | null;
+  },
+): string {
+  return createHash("sha256").update(JSON.stringify(intent)).digest("hex");
 }
 
 export function createProjectEditorService(options: {
   repository: ProjectEditorRepository;
   localInstance: LocalInstanceService;
-  projects: Pick<ProjectService, "archiveProject">;
+  projects: Pick<ProjectService, "archiveProject" | "createProjectOnce">;
   codeUi: Pick<CodeUiService, "hostRpc" | "refreshProjects">;
 }): ProjectEditorService {
+  async function save(
+    actor: LocalActor,
+    input: CodeProjectEditorSave,
+    signal: AbortSignal,
+  ) {
+    if ("id" in input) {
+      const context = await options.localInstance.resolve(actor);
+      return options.repository.save(
+        context.instanceId,
+        input.id,
+        input.expectedRevision,
+        projectFingerprint(projectIntent(input)),
+        signal,
+        (project) => projectChange(project, input),
+      );
+    }
+    const created = await options.projects.createProjectOnce(
+      actor,
+      {
+        creationId: input.creationId,
+        parameterFingerprint: projectFingerprint({
+          ...projectIntent(input),
+          kind: input.kind,
+          directoryChoice: input.directoryChoice ?? null,
+        }),
+        signal,
+      },
+      async () => projectCreationInput(input),
+    );
+    return projectEditorProject(created.project);
+  }
+
   async function refresh(actor: LocalActor, projectId: string) {
     try {
       await options.codeUi.refreshProjects(actor, projectId);
@@ -175,15 +267,7 @@ export function createProjectEditorService(options: {
       });
     },
     async saveProject(actor, input, signal) {
-      const context = await options.localInstance.resolve(actor);
-      const result = await options.repository.save(
-        context.instanceId,
-        input.id,
-        input.expectedRevision,
-        projectEditFingerprint(input),
-        signal,
-        (project) => projectChange(project, input),
-      );
+      const result = await save(actor, input, signal);
       await refresh(actor, result.id);
       return result;
     },

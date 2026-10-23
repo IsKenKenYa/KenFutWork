@@ -27,6 +27,8 @@ export {
 export type { IServiceAccessor } from "./accessor.js";
 export { IProjectService } from "./project/contract.js";
 export type {
+  CreateProjectInput,
+  EditProjectInput,
   ProjectRoot,
   ProjectRootAccess,
   SaveProjectInput,

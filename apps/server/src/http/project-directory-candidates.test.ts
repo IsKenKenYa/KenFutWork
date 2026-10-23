@@ -64,6 +64,7 @@ async function fixture(
   const projectService = {
     directoryProjects,
     createProject,
+    createProjectOnce: unused,
     updateProject,
     openCodeDirectory: unused,
     archiveProject: unused,

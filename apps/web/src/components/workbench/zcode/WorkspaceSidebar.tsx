@@ -123,7 +123,6 @@ import {
   Clock3,
   Cloud,
   Folder,
-  FolderOpen,
   Hash,
   ListFilter,
   Maximize2,
@@ -154,9 +153,11 @@ import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
 import { ProjectEditorAdapter } from "./host/ProjectEditorAdapter.js";
+import { ProjectCreation } from "./project-sidebar/ProjectCreation.js";
 import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
 import { SidebarNavButton } from "./host/SidebarNavButton.js";
 import {
+  useSharedProjectCreation,
   useSharedProjectRefresh,
   useSharedProjectTabs,
 } from "./host/SharedProjectNavigation.js";
@@ -272,8 +273,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   fileTreeOpenRequest,
   onCreateTask,
   onCreateConversationTask,
-  onOpenFolderFromWorkspaceMenu,
-  onOpenRemoteWorkspace,
   theme,
   onConnectRemote: _onConnectRemote,
   onSelectRemoteProject: _onSelectRemoteProject,
@@ -439,9 +438,25 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const allWorkspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
   const workspaceTabs = useSharedProjectTabs(allWorkspaceTabs);
   const projectService = useOptionalBaseWorkspaceServices()?.projectService;
+  const projectCreation = useSharedProjectCreation();
   const refreshProjects = useSharedProjectRefresh();
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const closeProjectEditor = useCallback(() => setEditingProjectId(null), []);
+  const creation = projectCreation?.creation;
+  useEffect(() => {
+    if (creation) setEditingProjectId(null);
+  }, [creation]);
+  const projectCreationDialog = creation && projectService && refreshProjects ? (
+    <ProjectCreation
+      key={creation.creationId}
+      creation={creation}
+      workspacePath={workspacePath}
+      workspaceIdentity={workspaceIdentity}
+      service={projectService}
+      onSaved={refreshProjects}
+      onClose={() => projectCreation?.closeProjectCreation(creation.creationId)}
+    />
+  ) : null;
   const handleEditProject = useCallback(
     (tab: WorkspaceTabState) => {
       const identity = parseLocalWorkspaceIdentity(
@@ -1546,6 +1561,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           onExpand={() => onToggleSidebar?.()}
           actions={railNavigation}
         />
+        {projectCreationDialog}
       </aside>
     );
   }
@@ -1730,53 +1746,33 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                   onOpenChange={handleProjectSectionOpenChange}
                                   testId={TID_PROJECT_SECTION}
                                   action={
-                                    <DropdownMenu>
+                                    projectService && projectCreation ? (
                                       <ControlHintTooltip
                                         title={intl.formatMessage({
                                           id: "workspaceSidebar.addProject",
                                         })}
                                       >
-                                        <DropdownMenuTrigger asChild>
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            className="text-foreground-subtle hover:text-foreground data-[state=open]:text-foreground"
-                                            aria-label={intl.formatMessage({
-                                              id: "workspaceSidebar.addProject",
-                                            })}
-                                            data-testid={TID_PROJECT_ADD}
-                                          >
-                                            <Plus className="size-3.5" />
-                                          </Button>
-                                        </DropdownMenuTrigger>
-                                      </ControlHintTooltip>
-                                      <DropdownMenuContent
-                                        align="end"
-                                        className="min-w-44"
-                                      >
-                                        <DropdownMenuItem
-                                          onSelect={
-                                            onOpenFolderFromWorkspaceMenu
-                                          }
-                                        >
-                                          <FolderOpen className="size-4" />
-                                          {intl.formatMessage({
-                                            id: "workspace.openFolder",
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-foreground-subtle hover:text-foreground"
+                                          aria-label={intl.formatMessage({
+                                            id: "workspaceSidebar.addProject",
                                           })}
-                                        </DropdownMenuItem>
-                                        {onOpenRemoteWorkspace ? (
-                                          <DropdownMenuItem
-                                            onSelect={onOpenRemoteWorkspace}
-                                          >
-                                            <Cloud className="size-4" />
-                                            {intl.formatMessage({
-                                              id: "remote.trigger",
-                                            })}
-                                          </DropdownMenuItem>
-                                        ) : null}
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
+                                          data-testid={TID_PROJECT_ADD}
+                                          onClick={() => {
+                                            void projectCreation.createProject(
+                                              platform?.workbenchNavigation?.getSnapshot().mode === "design"
+                                                ? "design"
+                                                : "code",
+                                            );
+                                          }}
+                                        >
+                                          <Plus className="size-3.5" />
+                                        </Button>
+                                      </ControlHintTooltip>
+                                    ) : null
                                   }
                                 >
                                   {projectWorkspaceTabs.length === 0 ? (
@@ -2041,6 +2037,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           onClose={closeProjectEditor}
         />
       ) : null}
+      {projectCreationDialog}
 
       {/* 底部用户/设置/主题：壳的常驻 chrome——放模式内容槽之外，
           design/flow 模式下侧栏换内容但它不跟着换（挪出原列，文件树打开时

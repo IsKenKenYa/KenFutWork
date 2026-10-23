@@ -56,17 +56,35 @@ export const codeProjectEditorDirectorySchema = z
   })
   .strict();
 
-export const codeProjectEditorSaveSchema = z
+const projectSaveFields = {
+  hostId: localHost,
+  name: z.string().trim().min(1).optional(),
+  roots: z.array(z.string().min(1)).min(1),
+  primaryRoot: z.string().min(1).optional(),
+  rootPermissions: z.record(z.string().min(1), directoryAccess),
+};
+
+export const codeProjectEditorEditSchema = z
   .object({
+    ...projectSaveFields,
     id: z.uuid(),
-    hostId: localHost,
-    name: z.string().trim().min(1).optional(),
-    roots: z.array(z.string().min(1)).min(1),
-    primaryRoot: z.string().min(1).optional(),
-    rootPermissions: z.record(z.string().min(1), directoryAccess),
     expectedRevision: projectRevision,
   })
   .strict();
+
+export const codeProjectEditorCreateSchema = z
+  .object({
+    ...projectSaveFields,
+    creationId: z.uuid(),
+    kind: z.enum(["code", "design"]),
+    directoryChoice: z.literal("independent").optional(),
+  })
+  .strict();
+
+export const codeProjectEditorSaveSchema = z.union([
+  codeProjectEditorEditSchema,
+  codeProjectEditorCreateSchema,
+]);
 
 export const codeProjectEditorDeleteArgsSchema = z.tuple([z.uuid(), localHost]);
 
@@ -74,6 +92,10 @@ export type CodeProjectEditorProject = z.infer<
   typeof codeProjectEditorProjectSchema
 >;
 export type CodeProjectEditorSave = z.infer<typeof codeProjectEditorSaveSchema>;
+export type CodeProjectEditorCreate = z.infer<
+  typeof codeProjectEditorCreateSchema
+>;
+export type CodeProjectEditorEdit = z.infer<typeof codeProjectEditorEditSchema>;
 export type CodeProjectEditorReadProjects = z.infer<
   typeof codeProjectEditorReadProjectsSchema
 >;

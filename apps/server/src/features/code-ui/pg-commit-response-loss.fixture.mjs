@@ -9,6 +9,8 @@ const freshTransaction = () => ({
   taskProjectMovePrepare: false,
   firstInputState: false,
   firstInputAck: false,
+  projectInsert: false,
+  projectCreation: false,
 });
 
 function cstring(bytes, at = 0) {
@@ -59,6 +61,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let mediaInstall = false;
   let taskProjectMovePrepare = false;
   let createFirstInput = false;
+  let projectCreation = false;
   let loseCreationReadbackOnce = false;
   let unavailable = false;
   let closed = false;
@@ -142,6 +145,25 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         transaction.taskProjectMovePrepare = true;
         transaction.targetTaskId = parameters[0];
       }
+      if (
+        projectCreation &&
+        commandId &&
+        /^insert into public\.projects\b/u.test(text) &&
+        typeof parameters[6] === "string"
+      ) {
+        transaction.projectInsert = true;
+        transaction.targetProjectId = parameters[6];
+      }
+      if (
+        projectCreation &&
+        commandId &&
+        transaction.projectInsert &&
+        /^insert into public\.project_creation_receipts\b/u.test(text) &&
+        parameters.length === 5 &&
+        parameters[0] === commandId &&
+        parameters[1] === transaction.targetProjectId
+      )
+        transaction.projectCreation = true;
       if (/\binsert into public\.chat_sessions\b/u.test(text)) {
         transaction.chatRoot = true;
         transaction.targetTaskId = parameters[0];
@@ -214,6 +236,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.forkAck) ||
           transaction.mediaInstall ||
           transaction.taskProjectMovePrepare ||
+          transaction.projectCreation ||
           (transaction.chatRoot &&
             transaction.codeRoot &&
             transaction.firstInputState &&
@@ -300,6 +323,13 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
             commitConfirmed: true,
             replySuppressed: true,
             commandId,
+            ...(transaction.projectCreation
+              ? {
+                  projectCreation: true,
+                  creationId: commandId,
+                  targetProjectId: transaction.targetProjectId,
+                }
+              : {}),
             ...(transaction.taskProjectMovePrepare
               ? {
                   taskProjectMovePrepare: true,
@@ -387,6 +417,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       mediaInstall = options.mediaInstall === true;
       taskProjectMovePrepare = options.taskProjectMovePrepare === true;
       createFirstInput = options.createFirstInput === true;
+      projectCreation = options.projectCreation === true;
       loseCreationReadbackOnce = options.loseCreationReadbackOnce === true;
     },
     restore() {

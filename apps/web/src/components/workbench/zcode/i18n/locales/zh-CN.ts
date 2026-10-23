@@ -1,5 +1,6 @@
 /** 中文翻译 */
 const zhCN: Record<string, string> = {
+  "project.create": "创建项目",
   "project.edit": "编辑项目",
   "project.browse": "选择文件夹",
   "project.description": "管理项目目录。已有任务保留原目录和权限。",
@@ -7,6 +8,7 @@ const zhCN: Record<string, string> = {
   "project.new": "新项目",
   "project.folders": "源文件夹",
   "project.primaryBadge": "主要",
+  "project.setPrimary": "设为主要",
   "project.removeFolder": "移除文件夹",
   "project.addSourceFolder": "添加文件夹",
   "project.browseHint": "选择目录后设置权限",
@@ -17,6 +19,11 @@ const zhCN: Record<string, string> = {
   "project.readOnly": "只读",
   "project.readWrite": "可写",
   "project.archive": "归档项目",
+  "project.trustFolderTitle": "信任此文件夹吗？",
+  "project.trustFoldersTitle": "信任这些文件夹吗？",
+  "project.thisComputer": "此电脑",
+  "project.trustFoldersDescription": "用于新任务的文件权限",
+  "project.trustFoldersAndCreate": "信任文件夹并创建",
   "chat.toolbar.combined.provider": "供应商",
   "chat.toolbar.combined.models": "模型",
   "chat.toolbar.combined.effort": "思考强度",

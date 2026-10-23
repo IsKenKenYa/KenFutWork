@@ -11,24 +11,40 @@
       "target": "packages/zcode-services/src/project/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "1bfa496b747335ef4a01a5bbe32e5977d320c6edc70b524fc24c31602a48d243",
-      "copiedSha256": "e03e26c074534a528adda59fb2839491ed181f5b9aad9d6ba71598f40f1e6497",
-      "adaptations": ["仅接本批实际提供的本机项目读取、目录读取、已有项目保存和归档；类型由独立浏览器文件持有，不引入上游 SQLite 或远程提供方。"]
+      "copiedSha256": "3448f89b4ddcfd9269ba7a721cc59f3b34d446ef6abe53f2c3343093402918e1",
+      "adaptations": ["连接实际提供的本机项目读取、目录读取、创建、编辑和归档；创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。"]
     },
     {
       "source": "references/zcode/packages/services/src/project-storage/contract.ts",
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "bf6dd09d1b1248694640916c5894245f732eec1e8f70a539ad04589a97c1839a",
-      "adaptations": ["采用原项目、目录及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；本片仅声明真实字段，增加观察修订及附加目录权限。"]
+      "copiedSha256": "000e5a107e7e117e530dd27a2be02ed9b4823c633e2adfcbb7909e6d73b555ed",
+      "adaptations": ["采用原项目、目录及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectCreation.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "60ec690b21a2de985fde0fde4459c9de5e6b92012375bcc9f18841bdb0050be8",
+      "copiedSha256": "25243f9e3d560790c46a082fb8ac7805441f9e5699cb085aa3e61a09a0672b43",
+      "adaptations": ["@/ 导入映射为 @zui/；保留原 tab、workspace、activeTaskId 和 draftFocusVersion 的创建生命周期判断，连接真实创建表单。", "创建沿 KFW 稳定 creationId 和 Project 服务，只刷新项目列表，保留当前 Task、正文草稿和内容标签；不引入上游草稿 Task 或独立存储。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectFolderTrustDialog.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectFolderTrustDialog.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "1fbc0cecd2663352b35f96ce9e9334c1ba53d816cf89477208582f9801abc181",
+      "copiedSha256": "6aadbb71b330d0d032fd7eb49da76f3d9459b1420a172e439827424f7cafd0d0",
+      "adaptations": ["@/ 导入映射为 @zui/；保留原目录清单、确认与取消、默认取消焦点及关闭焦点恢复。", "本机确认只用于当前项目与新 Task 的目录默认值，不建立全局信任记录或扩大已有 Task/Run 的权限；按本机能力移除远端和恢复分支。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectEditor.tsx",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectEditor.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "92ce18a330dd23d39884b488c2ae468640f97feed55316cb496b804ccf9fe8b9",
-      "copiedSha256": "9243ce7a299caaeca81e6daea0aa9c27fa065853d2d8d6325f7473daa9cffbf8",
-      "adaptations": ["@/ 导入映射为 @zui/；装配原已有本机项目的表单、控件、草稿及 saveFlight/epoch/alive 生命周期；本片不装配创建和远程分支。", "保留已有主目录，附加目录须明确选择只读或可写；保存携带真实 Project ID 和观察修订，归档复用原项目服务。"]
+      "copiedSha256": "0837e28361ea2ef3112e58be3ba0177834dd156782aebe7fccf335f872dff296",
+      "adaptations": ["@/ 导入映射为 @zui/；装配原本机创建与编辑表单、控件、草稿及 saveFlight/epoch/alive 生命周期，创建使用真实目录浏览、主目录选择和原信任确认。", "保留已有主目录，附加目录须明确选择只读或可写；编辑携带真实 Project ID 和观察修订，创建携带稳定 creationId 并缓存已创建结果，归档复用原项目服务。", "使用原 suspended 与 isCurrent 处理 tab/Task/草稿变化，创建只刷新项目列表，迟到结果不切换 Task 或内容标签。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/useProjectDirectoryServices.ts",
@@ -1785,8 +1801,9 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "a814a729363d16fcd7a73106526d37b6a8fa6127b96d64bb2f062212c8129a5a",
+      "copiedSha256": "4fa2182bbff35cf66ea9f2c712b9c17a33337bf220f4c173d4f5d9b88bceba78",
       "adaptations": [
+        "项目加号与宿主新建意图连接新版原 ProjectCreation，在真实 Sidebar 服务与 Tab Provider 内装配；创建只刷新项目，当前 Task、草稿和内容标签保持。",
         "按可信 Project 身份在原菜单装配新版原 ProjectEditor，保存后消费现行项目列表刷新；Task、SessionPane 和内容标签不变，旧侧栏其余部分仍使用原来源。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -5872,8 +5889,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "b5440eb06bb09f209108e5f29d6171d2c3bc7938ec4fb7296f681c5990b60809",
+      "copiedSha256": "85a2c386eab8953a66a29a0c38d9a4ce9d9fd8e125d9325dddaa5ca676350134",
       "adaptations": [
+        "补新版原项目创建、主目录选择与文件夹信任确认词条，说明当前项目及新 Task 的目录默认权限。",
         "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的原项目编辑词条及 KFW 目录权限、归档标签；说明按现有 Task 独立授权表达，其余文案保留。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
@@ -5902,8 +5920,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "8142bab7e9dd5259967371818b5b79ae160330f00c6af0dd377b3795e34c9cf9",
+      "copiedSha256": "8c6ae36d3ee2437efb3edd26f5c1f46c86d088306aab91c595ed3f66abb52031",
       "adaptations": [
+        "补新版原项目创建、主目录选择与文件夹信任确认词条，说明当前项目及新 Task 的目录默认权限。",
         "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的原项目编辑词条及 KFW 目录权限、归档标签；说明按现有 Task 独立授权表达，其余文案保留。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
@@ -16079,8 +16098,8 @@
       "source": "references/zcode/packages/services/src/index.ts",
       "target": "packages/zcode-services/src/index.ts",
       "sha256": "b6c905865dfa0f63bd83134ec26629ff417eff1bf472683acbac4bacb8293caf",
-      "copiedSha256": "05d6205d045d588b0652646f9294bbbe1d724f3e291098526594ede7019b7dbb",
-      "adaptations": ["导出本批已有项目编辑所需的原浏览器 descriptor 与实际提供的类型。"]
+      "copiedSha256": "f9747ac02a9dac6693c65ac8808c2014daf431605574ca521bdca0eadea94152",
+      "adaptations": ["导出本机项目创建与编辑所需的原浏览器 descriptor 和实际提供的创建/编辑联合输入类型。"]
     },
     {
       "source": "references/zcode/packages/services/src/logger/serviceLogger.ts",

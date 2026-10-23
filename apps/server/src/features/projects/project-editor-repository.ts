@@ -39,7 +39,18 @@ export interface ProjectEditorRepository {
   ): Promise<CodeProjectEditorProject>;
 }
 
-function projectEditorProject(row: ProjectEditorRow): CodeProjectEditorProject {
+export function projectEditorProject(
+  row: Pick<
+    ProjectEditorRow,
+    | "id"
+    | "name"
+    | "work_dir"
+    | "additional_directories"
+    | "created_at"
+    | "updated_at"
+    | "editor_revision"
+  >,
+): CodeProjectEditorProject {
   return codeProjectEditorProjectSchema.parse({
     id: row.id,
     hostId: "local",

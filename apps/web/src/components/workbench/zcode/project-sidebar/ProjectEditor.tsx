@@ -1,4 +1,5 @@
 import type {
+  CreateProjectInput,
   IProjectService,
   ProjectRootAccess,
   VirtualProject,
@@ -26,11 +27,17 @@ import { logger } from "@zui/logger.js";
 import { Folder, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useProjectDirectoryServices } from "./useProjectDirectoryServices.js";
+import {
+  ProjectFolderTrustDialog,
+  type ProjectFolderTrustRequest,
+} from "./ProjectFolderTrustDialog.js";
 
 const FIELD_LABEL = "text-ui-sm font-medium text-foreground";
 
 export function ProjectEditor({
   project,
+  creation,
+  initialRoots = [],
   isCurrent = () => true,
   service,
   onClose,
@@ -38,25 +45,35 @@ export function ProjectEditor({
   onDeleted,
   suspended = false,
 }: {
-  project: VirtualProject;
   isCurrent?(): boolean;
   service: IProjectService;
   onClose(): void;
   onSaved(project: VirtualProject): Promise<void>;
   onDeleted?(): Promise<void>;
   suspended?: boolean;
-}) {
+  initialRoots?: string[];
+} & (
+  | { project: VirtualProject; creation?: never }
+  | {
+      project: null;
+      creation: Pick<CreateProjectInput, "creationId" | "kind">;
+    }
+)) {
   const { intl } = useZCodeIntl();
   const msg = (id: string) => intl.formatMessage({ id: `project.${id}` });
-  const [name, setName] = useState(project.name);
+  const [name, setName] = useState(project?.name ?? "");
   const [nameEdited, setNameEdited] = useState(false);
-  const [roots, setRoots] = useState(project.roots.map((root) => root.rootPath));
-  const primary = project.roots.find((root) => root.isPrimary)?.rootPath ?? "";
+  const [roots, setRoots] = useState(
+    project?.roots.map((root) => root.rootPath) ?? initialRoots,
+  );
+  const [primary, setPrimary] = useState(
+    project?.roots.find((root) => root.isPrimary)?.rootPath ?? initialRoots[0] ?? "",
+  );
   const [rootPermissions, setRootPermissions] = useState<
     Record<string, ProjectRootAccess>
   >(() =>
     Object.fromEntries(
-      project.roots.flatMap((root) =>
+      (project?.roots ?? []).flatMap((root) =>
         root.access ? [[root.rootPath, root.access]] : [],
       ),
     ),
@@ -65,7 +82,10 @@ export function ProjectEditor({
   const directory = useProjectDirectoryServices(service);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const saveFlight = useRef<object | null>(null);
+  const [created, setCreated] = useState<VirtualProject | null>(null);
+  const [folderTrust, setFolderTrust] = useState<ProjectFolderTrustRequest | null>(null);
+  const saveFlight = useRef<{ cancelTrust?: () => void } | null>(null);
+  const saveButton = useRef<HTMLButtonElement>(null);
   const suspendedRef = useRef(suspended);
   suspendedRef.current = suspended;
   const epoch = useRef(0);
@@ -75,10 +95,14 @@ export function ProjectEditor({
     return () => {
       alive.current = false;
       epoch.current++;
+      saveFlight.current?.cancelTrust?.();
     };
   }, []);
   useEffect(() => {
-    if (suspended) epoch.current++;
+    if (suspended) {
+      epoch.current++;
+      saveFlight.current?.cancelTrust?.();
+    }
   }, [suspended]);
   const current = (request: number) =>
     alive.current &&
@@ -86,7 +110,9 @@ export function ProjectEditor({
     !suspendedRef.current &&
     isCurrent();
   const addRoots = (values: string[]) => {
-    setRoots([...new Set([...roots, ...values.filter(Boolean)])]);
+    const next = [...new Set([...roots, ...values.filter(Boolean)])];
+    setRoots(next);
+    if (!roots.length) setPrimary(next[0] ?? "");
     setBrowsing(false);
   };
   const browse = () => {
@@ -95,16 +121,36 @@ export function ProjectEditor({
   };
   const save = async () => {
     if (saveFlight.current || suspendedRef.current || !isCurrent()) return;
-    const flight = {};
+    const flight: { cancelTrust?: () => void } = {};
     saveFlight.current = flight;
     const request = epoch.current;
     const canCommit = () => current(request);
     setBusy(true);
     setError(null);
     try {
+      if (created) {
+        await onSaved(created);
+        if (canCommit()) onClose();
+        return;
+      }
+      if (!project && roots.length) {
+        const accepted = await new Promise<boolean>((resolve) => {
+          const finish = (value: boolean) => {
+            if (!flight.cancelTrust) return;
+            flight.cancelTrust = undefined;
+            if (alive.current) setFolderTrust(null);
+            resolve(value);
+          };
+          flight.cancelTrust = () => finish(false);
+          setFolderTrust({ roots: [...roots], resolve: finish });
+        });
+        if (!accepted || !canCommit()) return;
+      }
       const saved = await service.saveProject({
-        hostId: project.hostId,
-        id: project.id,
+        hostId: "local",
+        ...(project
+          ? { id: project.id, expectedRevision: project.revision }
+          : creation),
         ...(nameEdited ? { name: name.trim() } : {}),
         roots,
         ...(primary ? { primaryRoot: primary } : {}),
@@ -114,8 +160,10 @@ export function ProjectEditor({
             return root !== primary && access ? [[root, access]] : [];
           }),
         ),
-        expectedRevision: project.revision,
       });
+      if (!alive.current) return;
+      // 创建成功后刷新失败仍复用结果；重试不能再次创建项目。
+      if (!project) setCreated(saved);
       if (!canCommit()) return;
       await onSaved(saved);
       if (canCommit()) onClose();
@@ -128,6 +176,7 @@ export function ProjectEditor({
     }
   };
   const remove = async () => {
+    if (!project) return;
     if (saveFlight.current || suspendedRef.current || !isCurrent()) return;
     const flight = {};
     saveFlight.current = flight;
@@ -161,7 +210,7 @@ export function ProjectEditor({
       }}
     >
       <DialogContent className="max-w-lg gap-5">
-        <DialogTitle>{browsing ? msg("browse") : msg("edit")}</DialogTitle>
+        <DialogTitle>{browsing ? msg("browse") : project ? msg("edit") : msg("create")}</DialogTitle>
         <DialogDescription className="sr-only">
           {msg("description")}
         </DialogDescription>
@@ -195,7 +244,7 @@ export function ProjectEditor({
                 aria-label={msg("name")}
                 placeholder={msg("new")}
                 autoFocus
-                disabled={busy}
+                disabled={busy || Boolean(created)}
                 data-testid="virtual-project-name"
                 value={name}
                 onChange={(event) => {
@@ -205,7 +254,7 @@ export function ProjectEditor({
                 className="h-9 rounded-lg max-md:text-mobile-input-safe"
               />
             </div>
-            <fieldset disabled={busy} className="min-w-0">
+            <fieldset disabled={busy || Boolean(created)} className="min-w-0">
               <legend className={`mb-1.5 ${FIELD_LABEL}`}>
                 {msg("folders")}
               </legend>
@@ -240,6 +289,17 @@ export function ProjectEditor({
                       </span>
                     ) : (
                       <>
+                        {!project ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-foreground-subtle"
+                            data-testid="virtual-project-set-primary"
+                            onClick={() => setPrimary(root)}
+                          >
+                            {msg("setPrimary")}
+                          </Button>
+                        ) : null}
                         <Select
                           value={rootPermissions[root] ?? ""}
                           onValueChange={(access) => {
@@ -267,25 +327,29 @@ export function ProjectEditor({
                             </SelectItem>
                           </SelectContent>
                         </Select>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          className="text-foreground-subtle"
-                          data-testid="virtual-project-remove-folder"
-                          aria-label={msg("removeFolder")}
-                          onClick={() => {
-                            setRoots(roots.filter((item) => item !== root));
-                            setRootPermissions((previous) => {
-                              const next = { ...previous };
-                              delete next[root];
-                              return next;
-                            });
-                          }}
-                        >
-                          <X className="size-4" />
-                        </Button>
                       </>
                     )}
+                    {!project || root !== primary ? (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-foreground-subtle"
+                        data-testid="virtual-project-remove-folder"
+                        aria-label={msg("removeFolder")}
+                        onClick={() => {
+                          const next = roots.filter((item) => item !== root);
+                          setRoots(next);
+                          if (primary === root) setPrimary(next[0] ?? "");
+                          setRootPermissions((previous) => {
+                            const next = { ...previous };
+                            delete next[root];
+                            return next;
+                          });
+                        }}
+                      >
+                        <X className="size-4" />
+                      </Button>
+                    ) : null}
                   </div>
                 ))}
                 <button
@@ -320,7 +384,7 @@ export function ProjectEditor({
               </p>
             ) : null}
             <DialogFooter className="flex-row flex-wrap items-center justify-end">
-              {onDeleted ? (
+              {project && onDeleted ? (
                 <Button
                   variant="ghost"
                   data-testid="virtual-project-editor-delete"
@@ -335,15 +399,24 @@ export function ProjectEditor({
                 {msg("cancel")}
               </Button>
               <Button
+                ref={saveButton}
                 data-testid="virtual-project-save"
                 onClick={() => void save()}
-                disabled={busy || missingPermission}
+                disabled={busy || missingPermission || !roots.length || (nameEdited && !name.trim())}
               >
-                {msg("save")}
+                {project ? msg("save") : msg("create")}
               </Button>
             </DialogFooter>
           </>
         )}
+        {folderTrust && !suspended ? (
+          <ProjectFolderTrustDialog
+            request={folderTrust}
+            onClosed={() => {
+              if (alive.current && !suspendedRef.current) saveButton.current?.focus();
+            }}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
