@@ -65,12 +65,7 @@ export function createTaskProjectMoveService(deps: {
     input: TaskProjectMoveInput,
     fingerprint: string,
   ) {
-    const prepared = await prepareMove(
-      actor,
-      instanceId,
-      input,
-      fingerprint,
-    );
+    const prepared = await prepareMove(actor, instanceId, input, fingerprint);
     if (!prepared.committed) {
       try {
         await deps.closeTask(actor, input.task.taskId);

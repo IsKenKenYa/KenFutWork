@@ -236,12 +236,7 @@ export function createTaskProjectMoveRepository(
       return persistence.transaction(async (transaction) => {
         const sql = transaction.forInstance(instanceId);
         const record = await root(sql, input.task.taskId);
-        const previous = await preparedReceipt(
-          sql,
-          record,
-          input,
-          fingerprint,
-        );
+        const previous = await preparedReceipt(sql, record, input, fingerprint);
         if (previous) return previous;
         const sessionIds = record.state!.snapshots.map(
           (entry) => entry.sessionId,

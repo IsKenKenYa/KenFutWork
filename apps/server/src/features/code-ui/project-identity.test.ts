@@ -621,11 +621,15 @@ it("明确Human创建真实空Task不依赖模型配置，首次发送仍明确�
     root_directory: pathA,
     active_run_id: null,
   });
-  expect(loaded.host.getSnapshot()).toMatchObject({
+  const snapshot = loaded.host.getSnapshot();
+  expect(snapshot).toMatchObject({
     control: { phase: "draft" },
     config: { model: "" },
     rows: { window: [] },
   });
+  const taskControl = Object.freeze(
+    protocol.conversationTaskControlSchema.parse(snapshot.taskControl),
+  );
   await expect(
     service.transportRpc(actor, undefined, "sendConversationCommandV4", [
       {
@@ -635,6 +639,7 @@ it("明确Human创建真实空Task不依赖模型配置，首次发送仍明确�
           commandId: randomUUID(),
           sessionId,
           type: "sendText",
+          taskControl,
           payload: { text: "开始工作" },
           issuedAt: Date.now(),
         },

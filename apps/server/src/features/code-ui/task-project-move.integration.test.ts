@@ -4,8 +4,8 @@ import { join } from "node:path";
 import {
   type CodeTaskProjectMoveInput,
   codeTaskScopeResponseSchema,
-  runCancelResponseSchema,
   zcodeUiProtocol as protocol,
+  runCancelResponseSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -199,9 +199,10 @@ async function readProjectTaskIds(
     },
   ]);
   expect(subscribed.status, JSON.stringify(subscribed.body)).toBe(200);
-  const { subscriptionId } = protocol.v4SessionsIndexSubscribeResultSchema.parse(
-    subscribed.body.result,
-  ).ack;
+  const { subscriptionId } =
+    protocol.v4SessionsIndexSubscribeResultSchema.parse(
+      subscribed.body.result,
+    ).ack;
   const assembler = new protocol.TopicWireFrameAssembler(
     protocol.sessionsIndexTopicFrameSchema,
   );
@@ -333,7 +334,9 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
       expect(returned.body).toEqual({ result: null });
       const atSource = await readSnapshot();
       expect((await scope(fixture, taskId)).projectId).toBe(before.projectId);
-      expect(atSource.taskControl.projectId).toBe(initial.taskControl.projectId);
+      expect(atSource.taskControl.projectId).toBe(
+        initial.taskControl.projectId,
+      );
       expect(atSource.taskControl.branchGeneration).toBeGreaterThan(
         atTarget.taskControl.branchGeneration,
       );
@@ -406,7 +409,11 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         currentControl,
       );
       expect(
-        await readProjectTaskIds(stream, before.projectId, before.rootDirectory),
+        await readProjectTaskIds(
+          stream,
+          before.projectId,
+          before.rootDirectory,
+        ),
       ).toEqual([taskId]);
     } finally {
       await fixture.close();
@@ -474,16 +481,12 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
       expect(listed.body.result).toMatchObject({
         total: 1,
         hasMore: false,
-        items: [
-          { taskId: host.sessionId, workspacePath: host.workspacePath },
-        ],
+        items: [{ taskId: host.sessionId, workspacePath: host.workspacePath }],
       });
       const subscribed = await host.client.request("/api/code-ui/rpc", {
         service: "window-controller",
         method: "subscribeControllerV4",
-        args: [
-          { topic: "controller/tasks-index", visibility: "foreground" },
-        ],
+        args: [{ topic: "controller/tasks-index", visibility: "foreground" }],
       });
       expect(subscribed.status, JSON.stringify(subscribed.body)).toBe(200);
       const { ack } = protocol.controllerSubscribeResultSchema.parse(
@@ -650,10 +653,14 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
       const observed = protocol.conversationTaskControlSchema.parse(
         running.taskControl,
       );
-      const executionId = z.string().min(1).parse(
-        running.control.activeWorks.find((work) => work.kind === "primaryTurn")
-          ?.foregroundExecutionId,
-      );
+      const executionId = z
+        .string()
+        .min(1)
+        .parse(
+          running.control.activeWorks.find(
+            (work) => work.kind === "primaryTurn",
+          )?.foregroundExecutionId,
+        );
       const originalStop = {
         workspacePath,
         projectId,
@@ -674,11 +681,23 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         expect(model.requests[0]?.closed).toBe(false);
       };
       await assertRunning();
-      const stopped = await stream.rpc("sendConversationCommandV4", [originalStop]);
-      expectMissingTaskControlAck(stopped, originalStop.envelope.commandId, "rejected");
+      const stopped = await stream.rpc("sendConversationCommandV4", [
+        originalStop,
+      ]);
+      expectMissingTaskControlAck(
+        stopped,
+        originalStop.envelope.commandId,
+        "rejected",
+      );
       await assertRunning();
-      const replayed = await stream.rpc("sendConversationCommandV4", [originalStop]);
-      expectMissingTaskControlAck(replayed, originalStop.envelope.commandId, "duplicate");
+      const replayed = await stream.rpc("sendConversationCommandV4", [
+        originalStop,
+      ]);
+      expectMissingTaskControlAck(
+        replayed,
+        originalStop.envelope.commandId,
+        "duplicate",
+      );
       await assertRunning();
       const changed = await stream.rpc("sendConversationCommandV4", [
         {
@@ -690,7 +709,9 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         },
       ]);
       expect(changed.status, JSON.stringify(changed.body)).toBe(409);
-      expect(changed.body.error).toMatchObject({ code: "code_ui_command_conflict" });
+      expect(changed.body.error).toMatchObject({
+        code: "code_ui_command_conflict",
+      });
       await assertRunning();
     } finally {
       try {
@@ -741,10 +762,14 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
       );
       await model.firstRequest;
       const running = await waitPhase(fixture, sessionId, "running");
-      const runId = z.string().min(1).parse(
-        running.control.activeWorks.find((work) => work.kind === "primaryTurn")
-          ?.foregroundExecutionId,
-      );
+      const runId = z
+        .string()
+        .min(1)
+        .parse(
+          running.control.activeWorks.find(
+            (work) => work.kind === "primaryTurn",
+          )?.foregroundExecutionId,
+        );
       expect(model.requests).toHaveLength(1);
       expect(model.requests[0]?.closed).toBe(false);
       const canceled = await host.client.request(
@@ -757,7 +782,11 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         runId,
         status: "canceled",
       });
-      const stopped = await waitPhase(fixture, sessionId, "completedInterrupted");
+      const stopped = await waitPhase(
+        fixture,
+        sessionId,
+        "completedInterrupted",
+      );
       expect(stopped.control.activeWorks).toEqual([]);
       expect(stopped.control.canStop).toBe(false);
       await vi.waitFor(() => expect(model.requests[0]?.closed).toBe(true), {
@@ -942,7 +971,9 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         originalStop,
       ]);
       expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
-      expect(protocol.commandAckSchema.parse(stopped.body.result)).toMatchObject({
+      expect(
+        protocol.commandAckSchema.parse(stopped.body.result),
+      ).toMatchObject({
         commandId: originalStop.envelope.commandId,
         status: "stale",
         reasonCode: "proto.staleTaskControl",
@@ -985,7 +1016,10 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         expect(response.status, JSON.stringify(response.body)).toBe(200);
         expect(response.body).toEqual({ result: null });
       }
-      const replayed = await fixture.client.request("/api/code-ui/rpc", request);
+      const replayed = await fixture.client.request(
+        "/api/code-ui/rpc",
+        request,
+      );
       expect(replayed.status, JSON.stringify(replayed.body)).toBe(200);
       expect(replayed.body).toEqual({ result: null });
       expect(await scope(fixture, taskId)).toEqual({
@@ -1043,7 +1077,10 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
       });
       const conflicting = await fixture.client.request("/api/code-ui/rpc", {
         ...request,
-        args: request.args.map((input) => ({ ...input, addMissingRoot: false })),
+        args: request.args.map((input) => ({
+          ...input,
+          addMissingRoot: false,
+        })),
       });
       expect(conflicting.status, JSON.stringify(conflicting.body)).toBe(409);
       expect(conflicting.body.error).toMatchObject({
@@ -1052,7 +1089,10 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
       expect(await readMoveState(fixture, taskId, targetProjectId)).toEqual(
         committed,
       );
-      const replayed = await fixture.client.request("/api/code-ui/rpc", request);
+      const replayed = await fixture.client.request(
+        "/api/code-ui/rpc",
+        request,
+      );
       expect(replayed.status, JSON.stringify(replayed.body)).toBe(200);
       expect(replayed.body).toEqual({ result: null });
       expect(await readMoveState(fixture, taskId, targetProjectId)).toEqual(
@@ -1198,7 +1238,10 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         },
       });
       expect(proxy.evidence().observerError).toBeUndefined();
-      const replayed = await fixture.client.request("/api/code-ui/rpc", request);
+      const replayed = await fixture.client.request(
+        "/api/code-ui/rpc",
+        request,
+      );
       expect(replayed.status, JSON.stringify(replayed.body)).toBe(200);
       expect(replayed.body.result).toBeNull();
       expect(await scope(fixture, taskId)).toMatchObject({
