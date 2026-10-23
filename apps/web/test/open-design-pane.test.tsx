@@ -1102,7 +1102,7 @@ test("Markdown 编辑保存写回 /host/file 并更新标题", async () => {
   await expectToast("已保存");
 });
 
-test("Markdown 代码页支持分栏：左源码右渲染", async () => {
+test("Markdown 代码页只有源码：无分栏/自动保存，保存按钮在顶部工具栏", async () => {
   availableEntry();
   canvasRef.current = {
     project: { projectId: "p-1", name: "测试项目" },
@@ -1113,10 +1113,21 @@ test("Markdown 代码页支持分栏：左源码右渲染", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "notes" }));
   fireEvent.click(await screen.findByRole("button", { name: "代码" }));
   await screen.findByTestId("open-design-markdown-editor");
-  fireEvent.click(screen.getByRole("button", { name: "分栏" }));
-  const preview = await screen.findByTestId("open-design-markdown");
-  expect(within(preview).getByText("这里是正文")).toBeTruthy();
-  expect(screen.getByLabelText("Markdown 源码")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "分栏" })).toBeNull();
+  expect(screen.queryByText("自动保存")).toBeNull();
+  // 唯一的「保存」在顶部工具栏；没有改动时禁用。
+  const save = screen.getByRole("button", { name: "保存" });
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Markdown 源码"), {
+    target: { value: "# 改过\n\n正文" },
+  });
+  expect((save as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(save);
+  await waitFor(() => {
+    expect(
+      posted.find((call) => call.path === "/api/open-design/host/file")?.body,
+    ).toMatchObject({ name: "notes.md", content: "# 改过\n\n正文" });
+  });
 });
 
 test("文档支持重命名：宿主改名后卡片与提示更新", async () => {

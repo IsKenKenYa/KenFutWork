@@ -140,6 +140,9 @@ export function OpenDesignToolbar({
   onCopyDeployedLink,
   markdownMode = false,
   onRename,
+  markdownDirty = false,
+  markdownSaving = false,
+  onSaveMarkdown,
 }: {
   busy: boolean;
   hasCanvas: boolean;
@@ -204,6 +207,10 @@ export function OpenDesignToolbar({
   markdownMode?: boolean;
   /** 文档顶部「重命名」入口（与资源页三点菜单同一套弹窗流程）。 */
   onRename?: () => void;
+  /** 文档代码页：顶部「保存」按钮（无自动保存，只有显式保存）。 */
+  markdownDirty?: boolean;
+  markdownSaving?: boolean;
+  onSaveMarkdown?: () => void;
 }) {
   const activeViewport = VIEWPORTS.find((item) => item.id === viewport);
   const ViewportIcon = activeViewport?.icon ?? Monitor;
@@ -320,6 +327,18 @@ export function OpenDesignToolbar({
         <ToolbarIconButton label="重命名" onClick={() => onRename()}>
           <Pencil className="size-3" />
         </ToolbarIconButton>
+      ) : null}
+      {markdownMode && viewMode === "code" && onSaveMarkdown ? (
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            type="button"
+            size="sm"
+            disabled={!markdownDirty || markdownSaving}
+            onClick={onSaveMarkdown}
+          >
+            {markdownSaving ? "保存中…" : "保存"}
+          </Button>
+        </div>
       ) : null}
       {markdownMode ? null : (
         <>

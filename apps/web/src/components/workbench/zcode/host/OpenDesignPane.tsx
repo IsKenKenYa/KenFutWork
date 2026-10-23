@@ -146,7 +146,6 @@ export function OpenDesignPane({
   const [markdownDraft, setMarkdownDraft] = useState<string | null>(null);
   const [markdownDirty, setMarkdownDirty] = useState(false);
   const [markdownSaving, setMarkdownSaving] = useState(false);
-  const [markdownSplit, setMarkdownSplit] = useState(false);
   const [sourceDraft, setSourceDraft] = useState<string | null>(null);
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceSaving, setSourceSaving] = useState(false);
@@ -750,7 +749,7 @@ export function OpenDesignPane({
     try {
       await saveMarkdownSource(markdownDraft);
     } catch {
-      // 错误提示由 saveMarkdownSource 写入状态栏。
+      // 错误提示由 saveMarkdownSource 走顶部 toast。
     }
   }, [markdownDraft, saveMarkdownSource]);
 
@@ -1830,29 +1829,6 @@ export function OpenDesignPane({
     // 编辑中的草稿不被异步回读覆盖；保存成功后 dirty 已复位。
     if (!markdownDirty) setMarkdownDraft(currentText);
   }, [currentText, isMarkdownEntry, markdownDirty]);
-  // 对齐上游自动保存：停止输入 1.2s 后静默写回；保存成功后 dirty 复位，定时器清理。
-  useEffect(() => {
-    if (
-      !isMarkdownEntry ||
-      !markdownDirty ||
-      markdownDraft === null ||
-      markdownSaving
-    ) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      void saveMarkdownSource(markdownDraft).catch(() => {
-        // 错误已由 saveMarkdownSource 写入状态栏；保留 dirty 让下次输入再试。
-      });
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, [
-    isMarkdownEntry,
-    markdownDirty,
-    markdownDraft,
-    markdownSaving,
-    saveMarkdownSource,
-  ]);
   const captureReady =
     phase === "ready" &&
     Boolean(canvas?.entryFile) &&
@@ -2007,6 +1983,9 @@ export function OpenDesignPane({
                 draft: canvas.entryFile,
               });
           }}
+          markdownDirty={markdownDirty}
+          markdownSaving={markdownSaving}
+          onSaveMarkdown={() => void saveMarkdown()}
           onUploadAsset={(file) => void uploadAsset(file)}
           onOpenBrowserTab={onOpenBrowserTab}
           onSyncContext={() => void syncContextToEngine()}
@@ -2100,60 +2079,25 @@ export function OpenDesignPane({
             data-testid="open-design-markdown-editor"
             className="flex h-full flex-col"
           >
-            <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
-              <span className="text-ui-caption text-foreground-subtle">
-                Markdown
-              </span>
-              <span className="text-ui-caption text-foreground-subtle">
-                自动保存
-              </span>
-              <div className="ml-auto flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant={markdownSplit ? "secondary" : "ghost"}
-                  aria-pressed={markdownSplit}
-                  onClick={() => setMarkdownSplit((value) => !value)}
-                >
-                  分栏
-                </Button>
-                <Button
-                  type="button"
-                  size="xs"
-                  disabled={!markdownDirty || markdownSaving}
-                  onClick={() => void saveMarkdown()}
-                >
-                  {markdownSaving ? "保存中…" : "保存"}
-                </Button>
-              </div>
-            </div>
-            <div
-              className={
-                markdownSplit
-                  ? "grid min-h-0 flex-1 grid-cols-2"
-                  : "flex min-h-0 flex-1"
-              }
-            >
-              <textarea
-                aria-label="Markdown 源码"
-                value={markdownDraft ?? ""}
-                spellCheck={false}
-                onChange={(event) => {
-                  setMarkdownDraft(event.target.value);
-                  setMarkdownDirty(true);
-                }}
-                className="min-h-0 w-full flex-1 resize-none bg-background p-3 font-mono text-xs text-foreground outline-none"
-              />
-              {markdownSplit ? (
-                <div className="min-h-0 overflow-auto border-l border-border">
-                  <OpenDesignMarkdownPreview
-                    source={markdownDraft ?? currentText ?? ""}
-                    saving={markdownSaving}
-                    onSave={saveMarkdownSource}
-                  />
-                </div>
-              ) : null}
-            </div>
+            <textarea
+              aria-label="Markdown 源码"
+              value={markdownDraft ?? ""}
+              spellCheck={false}
+              onChange={(event) => {
+                setMarkdownDraft(event.target.value);
+                setMarkdownDirty(true);
+              }}
+              onKeyDown={(event) => {
+                if (
+                  (event.metaKey || event.ctrlKey) &&
+                  event.key.toLowerCase() === "s"
+                ) {
+                  event.preventDefault();
+                  void saveMarkdown();
+                }
+              }}
+              className="min-h-0 w-full flex-1 resize-none bg-background p-3 font-mono text-xs text-foreground outline-none"
+            />
           </div>
         ) : showCanvas && viewMode === "code" && !directPreview ? (
           activeVersion ? (
