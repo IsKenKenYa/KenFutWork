@@ -149,11 +149,11 @@ const FLOAT_SCRIPT = `
     // 完全在窗外，跟随宿主（悬浮面板/分屏卡片的右上角，或悬浮球上方）
     // 梯形只做**背景层**（伪元素）：clip-path 放在容器上会把最左按钮的左上角裁掉，
     // 点击从被裁区域穿透到页面（真机：点到百度顶部导航，看起来像「按钮没反应+页面卡死」）。
-    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 24px;" +
-    "min-width:112px;justify-content:flex-end;background:transparent;box-shadow:none}" +
+    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 14px;" +
+    "background:transparent;box-shadow:none}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
     "background:#fff;box-shadow:0 -2px 8px rgba(0,0,0,.12);" +
-    "clip-path:polygon(45% 0,100% 0,100% 100%,0 100%)}" +
+    "clip-path:polygon(38% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
     "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
     ".kfw-btn:hover{background:#eee}" +

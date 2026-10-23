@@ -158,7 +158,9 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 悬浮球贴内容区右缘（clientWidth 扣掉滚动条），不被右侧滚动条盖住
     expect(script).toContain("document.documentElement.clientWidth");
     expect(script).toContain("kfw-ball-inset");
-    expect(script).toContain("min-width:112px");
+    // 梯形「只长一点点」：左边多探出 14px（原为 7px，没收口到 min-width）
+    expect(script).toContain("padding:2px 0 2px 14px");
+    expect(script).not.toContain("min-width:112px");
     // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
     expect(script).toContain("kfw-ball-right");
@@ -188,7 +190,7 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 按钮条挂 documentElement：与页面顶部导航同 z-index 时以更晚绘制顺序压过它
     expect(script).toContain("document.documentElement.appendChild(btnbar)");
     expect(script).toContain(
-      "clip-path:polygon(45% 0,100% 0,100% 100%,0 100%)",
+      "clip-path:polygon(38% 0,100% 0,100% 100%,0 100%)",
     );
     expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
