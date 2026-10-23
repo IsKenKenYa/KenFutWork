@@ -7,6 +7,12 @@ export interface OpenDesignEditDraft {
   backgroundColor: string;
   color: string;
   html: string;
+  fontSize: string;
+  fontWeight: string;
+  textAlign: string;
+  padding: string;
+  margin: string;
+  borderRadius: string;
 }
 
 /**
@@ -29,8 +35,23 @@ export function OpenDesignEditInspector({
   const [html, setHtml] = useState(hit.html);
   const [color, setColor] = useState("");
   const [backgroundColor, setBackgroundColor] = useState("");
+  const [fontSize, setFontSize] = useState("");
+  const [fontWeight, setFontWeight] = useState("");
+  const [textAlign, setTextAlign] = useState("");
+  const [padding, setPadding] = useState("");
+  const [margin, setMargin] = useState("");
+  const [borderRadius, setBorderRadius] = useState("");
 
-  const dirty = html !== hit.html || color !== "" || backgroundColor !== "";
+  const dirty =
+    html !== hit.html ||
+    color !== "" ||
+    backgroundColor !== "" ||
+    fontSize !== "" ||
+    fontWeight !== "" ||
+    textAlign !== "" ||
+    padding !== "" ||
+    margin !== "" ||
+    borderRadius !== "";
 
   return (
     <div
@@ -82,6 +103,52 @@ export function OpenDesignEditInspector({
             onChange={setBackgroundColor}
           />
         </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <StyleTextField
+            label="字号"
+            value={fontSize}
+            placeholder={hit.fontSize}
+            onChange={setFontSize}
+          />
+          <StyleTextField
+            label="字重"
+            value={fontWeight}
+            placeholder={hit.fontWeight}
+            onChange={setFontWeight}
+          />
+          <label className="flex flex-col gap-1">
+            <span className="text-ui-caption text-foreground-subtle">对齐</span>
+            <select
+              aria-label="对齐"
+              value={textAlign}
+              onChange={(event) => setTextAlign(event.target.value)}
+              className="h-7 rounded-md border border-border bg-surface px-2 text-ui-caption"
+            >
+              <option value="">不变</option>
+              <option value="left">左对齐</option>
+              <option value="center">居中</option>
+              <option value="right">右对齐</option>
+            </select>
+          </label>
+          <StyleTextField
+            label="圆角"
+            value={borderRadius}
+            placeholder={hit.borderRadius}
+            onChange={setBorderRadius}
+          />
+          <StyleTextField
+            label="内边距"
+            value={padding}
+            placeholder={hit.padding}
+            onChange={setPadding}
+          />
+          <StyleTextField
+            label="外边距"
+            value={margin}
+            placeholder={hit.margin}
+            onChange={setMargin}
+          />
+        </div>
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border px-3 py-2">
         <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
@@ -96,6 +163,12 @@ export function OpenDesignEditInspector({
               html: html === hit.html ? hit.html : html,
               color,
               backgroundColor,
+              fontSize,
+              fontWeight,
+              textAlign,
+              padding,
+              margin,
+              borderRadius,
             })
           }
         >
@@ -103,6 +176,31 @@ export function OpenDesignEditInspector({
         </Button>
       </div>
     </div>
+  );
+}
+
+function StyleTextField({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-ui-caption text-foreground-subtle">{label}</span>
+      <input
+        aria-label={label}
+        value={value}
+        placeholder={placeholder || "不变"}
+        onChange={(event) => onChange(event.target.value.trim())}
+        className="h-7 rounded-md border border-border bg-surface px-2 font-mono text-ui-caption"
+      />
+    </label>
   );
 }
 

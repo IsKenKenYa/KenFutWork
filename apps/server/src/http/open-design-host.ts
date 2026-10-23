@@ -43,6 +43,8 @@ import {
   openDesignHostProvisionResponseSchema,
   openDesignHostRenameFileRequestSchema,
   openDesignHostRenameFileResponseSchema,
+  openDesignHostRestoreVersionRequestSchema,
+  openDesignHostRestoreVersionResponseSchema,
   openDesignHostSaveToWorkspaceRequestSchema,
   openDesignHostSaveToWorkspaceResponseSchema,
   openDesignHostStartDesignSystemExtractionRequestSchema,
@@ -1798,6 +1800,35 @@ export async function registerOpenDesignHostRoutes(
         },
         text: version.value.content,
       }),
+    );
+  });
+
+  /** 把历史版本恢复为当前文件（上游 restore 路由的宿主代理）。 */
+  app.post("/api/open-design/host/version-restore", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const base = canvasBaseUrl(reply);
+    if (!base) return reply;
+    const parsed = openDesignHostRestoreVersionRequestSchema.safeParse(
+      request.body ?? {},
+    );
+    if (!parsed.success)
+      return error(reply, 400, "application_error", "恢复版本请求格式不正确。");
+    const { projectId, file, versionId } = parsed.data;
+    const restored = await daemonJson(
+      base,
+      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(file)}/versions/${encodeURIComponent(versionId)}/restore`,
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+    if (!restored.ok)
+      return error(
+        reply,
+        restored.status,
+        "service_unavailable",
+        `版本没恢复：${restored.message}`,
+      );
+    return reply.send(
+      openDesignHostRestoreVersionResponseSchema.parse({ ok: true }),
     );
   });
 

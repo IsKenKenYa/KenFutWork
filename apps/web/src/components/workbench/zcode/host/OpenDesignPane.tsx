@@ -134,6 +134,7 @@ export function OpenDesignPane({
   const [markdownDraft, setMarkdownDraft] = useState<string | null>(null);
   const [markdownDirty, setMarkdownDirty] = useState(false);
   const [markdownSaving, setMarkdownSaving] = useState(false);
+  const [markdownSplit, setMarkdownSplit] = useState(false);
   const [sourceDraft, setSourceDraft] = useState<string | null>(null);
   const [sourceDirty, setSourceDirty] = useState(false);
   const [sourceSaving, setSourceSaving] = useState(false);
@@ -156,6 +157,7 @@ export function OpenDesignPane({
   /** 草图/文档等非 HTML 资源用上游预览页直出，不走 srcdoc 注入。 */
   const [directPreview, setDirectPreview] = useState(false);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [restoringVersion, setRestoringVersion] = useState(false);
   const [activeVersion, setActiveVersion] = useState<{
     id: string;
     label: string;
@@ -174,6 +176,7 @@ export function OpenDesignPane({
   } | null>(null);
   /** 画布上的工作模式（评论/标注/编辑互斥）与拾取到的元素。 */
   const [tool, setTool] = useState<OpenDesignTool>("none");
+  const [annotationKind, setAnnotationKind] = useState<"pen" | "rect">("pen");
   const [picked, setPicked] = useState<OpenDesignHit | null>(null);
   const [pendingComment, setPendingComment] = useState<OpenDesignHit | null>(
     null,
@@ -377,7 +380,7 @@ export function OpenDesignPane({
   }, []);
 
   const createAnnotation = useCallback(
-    async (draft: { kind: "pen"; points: [number, number][] }) => {
+    async (draft: { kind: "pen" | "rect"; points: [number, number][] }) => {
       if (!canvas?.entryFile) return;
       try {
         const data = await surfaceJson<{
@@ -1240,9 +1243,24 @@ export function OpenDesignPane({
   const saveEdit = useCallback(
     async (draft: OpenDesignEditDraft) => {
       if (!picked || !canvas?.entryFile || currentText === null) return;
-      const style: { backgroundColor?: string; color?: string } = {};
+      const style: {
+        backgroundColor?: string;
+        color?: string;
+        fontSize?: string;
+        fontWeight?: string;
+        textAlign?: string;
+        padding?: string;
+        margin?: string;
+        borderRadius?: string;
+      } = {};
       if (draft.color) style.color = draft.color;
       if (draft.backgroundColor) style.backgroundColor = draft.backgroundColor;
+      if (draft.fontSize) style.fontSize = draft.fontSize;
+      if (draft.fontWeight) style.fontWeight = draft.fontWeight;
+      if (draft.textAlign) style.textAlign = draft.textAlign;
+      if (draft.padding) style.padding = draft.padding;
+      if (draft.margin) style.margin = draft.margin;
+      if (draft.borderRadius) style.borderRadius = draft.borderRadius;
       const next = applyElementEdit(currentText, {
         path: picked.path,
         ...(draft.html === picked.html ? {} : { html: draft.html }),
@@ -1397,6 +1415,58 @@ export function OpenDesignPane({
     }
   }, [canvas, resolveActiveHtml]);
 
+  const buildPrintableHtml = useCallback(async () => {
+    const html = await resolveActiveHtml();
+    if (!html) return null;
+    const base = assetBaseUrl ? `<base href="${assetBaseUrl}">` : "";
+    if (/<head[^>]*>/iu.test(html)) {
+      return html.replace(/<head([^>]*)>/iu, `<head$1>${base}`);
+    }
+    return `<!doctype html><html><head>${base}</head><body>${html}</body></html>`;
+  }, [assetBaseUrl, resolveActiveHtml]);
+
+  const exportPdf = useCallback(async () => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      const html = await buildPrintableHtml();
+      if (!html) return;
+      // 打印用沙箱 iframe：不给 allow-scripts，设计里的脚本不会在本仓 origin 执行。
+      const frame = document.createElement("iframe");
+      frame.setAttribute("sandbox", "allow-same-origin");
+      frame.style.cssText =
+        "position:fixed;left:0;top:0;width:1024px;height:768px;opacity:0;pointer-events:none;z-index:-1";
+      frame.srcdoc = html;
+      await new Promise<void>((resolve) => {
+        frame.onload = () => resolve();
+        document.body.appendChild(frame);
+        setTimeout(resolve, 1500);
+      });
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      setTimeout(() => frame.remove(), 1500);
+    } catch (pdfError) {
+      setNotice(
+        pdfError instanceof Error ? pdfError.message : "导出 PDF 失败。",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [buildPrintableHtml]);
+
+  const presentHtml = useCallback(() => {
+    const src =
+      preview && entryAvailable
+        ? `${entry.frontendUrl.replace(/\/$/u, "")}${preview.url}`
+        : null;
+    if (!src) {
+      setNotice("先打开一个设计文件再演示。");
+      return;
+    }
+    // 用上游预览地址开新窗口：跨源隔离，不把设计脚本带进本仓 origin。
+    window.open(src, "_blank", "noopener,noreferrer");
+  }, [entry, entryAvailable, preview]);
+
   /**
    * 分享 = 静态部署（用户口径：像原来的分享一样，不复制面板 localhost 链接）：
    * 代理上游部署面把入口 HTML 发布到 Cloudflare Pages / Vercel（用户自带 token）。
@@ -1415,6 +1485,16 @@ export function OpenDesignPane({
     null,
   );
   const [shareBusy, setShareBusy] = useState(false);
+
+  const copyDeployedLink = useCallback(async () => {
+    if (!lastDeploymentUrl) return;
+    try {
+      await navigator.clipboard.writeText(lastDeploymentUrl);
+      setNotice("已复制发布链接");
+    } catch {
+      setNotice("复制失败，请检查剪贴板权限。");
+    }
+  }, [lastDeploymentUrl]);
 
   const deployTo = useCallback(
     async (providerId: "cloudflare-pages" | "vercel-self") => {
@@ -1562,6 +1642,50 @@ export function OpenDesignPane({
     [canvas],
   );
 
+  const restoreActiveVersion = useCallback(async () => {
+    if (!activeVersion || !canvas?.entryFile) return;
+    setRestoringVersion(true);
+    setNotice(null);
+    try {
+      await surfaceJson("/api/open-design/host/version-restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId: canvas.projectId,
+          file: canvas.entryFile,
+          versionId: activeVersion.id,
+        }),
+      });
+      setActiveVersion(null);
+      setVersions(null);
+      await loadCurrentText();
+      setFrameLoaded(false);
+      setFrameKey((key) => key + 1);
+      await loadVersions();
+      setNotice(`已恢复 ${activeVersion.label}`);
+    } catch (restoreError) {
+      setNotice(
+        restoreError instanceof Error ? restoreError.message : "恢复版本失败。",
+      );
+    } finally {
+      setRestoringVersion(false);
+    }
+  }, [activeVersion, canvas, loadCurrentText, loadVersions]);
+
+  const downloadActiveVersion = useCallback(() => {
+    if (!activeVersion || !canvas) return;
+    const extension = /\.md$/iu.test(canvas.entryFile ?? "") ? "md" : "html";
+    const blob = new Blob([activeVersion.text], {
+      type: extension === "md" ? "text/markdown" : "text/html",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${canvas.name.replace(UNSAFE_FILENAME_CHARS, "-")}-${activeVersion.label}.${extension}`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [activeVersion, canvas]);
+
   // 版本列表随画布就绪即取（本机 daemon，一次小请求）：菜单打开不再夹带请求，
   // 避免展开瞬间的 state 更新干扰菜单自身的焦点/开合。
   useEffect(() => {
@@ -1613,6 +1737,29 @@ export function OpenDesignPane({
     // 编辑中的草稿不被异步回读覆盖；保存成功后 dirty 已复位。
     if (!markdownDirty) setMarkdownDraft(currentText);
   }, [currentText, isMarkdownEntry, markdownDirty]);
+  // 对齐上游自动保存：停止输入 1.2s 后静默写回；保存成功后 dirty 复位，定时器清理。
+  useEffect(() => {
+    if (
+      !isMarkdownEntry ||
+      !markdownDirty ||
+      markdownDraft === null ||
+      markdownSaving
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      void saveMarkdownSource(markdownDraft).catch(() => {
+        // 错误已由 saveMarkdownSource 写入状态栏；保留 dirty 让下次输入再试。
+      });
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [
+    isMarkdownEntry,
+    markdownDirty,
+    markdownDraft,
+    markdownSaving,
+    saveMarkdownSource,
+  ]);
   useEffect(() => {
     if (renamingFile) renameInputRef.current?.focus();
   }, [renamingFile]);
@@ -1769,6 +1916,8 @@ export function OpenDesignPane({
             if (next !== "edit") setPicked(null);
             if (next !== "comment") setPendingComment(null);
           }}
+          annotationKind={annotationKind}
+          onAnnotationKind={setAnnotationKind}
           commentCount={
             review.comments.filter((item) => item.status === "open").length
           }
@@ -1809,6 +1958,8 @@ export function OpenDesignPane({
           onHandoff={() => void handoffToChat()}
           onExportPng={() => void exportPng()}
           onExportHtml={() => void exportHtml()}
+          onExportPdf={() => void exportPdf()}
+          onPresent={presentHtml}
           onShare={() => setShareMenuOpen((open) => !open)}
           shareBusy={shareBusy}
           shareMenuOpen={shareMenuOpen}
@@ -1819,6 +1970,7 @@ export function OpenDesignPane({
             if (lastDeploymentUrl)
               window.open(lastDeploymentUrl, "_blank", "noopener");
           }}
+          onCopyDeployedLink={() => void copyDeployedLink()}
         />
       ) : null}
       {readiness?.reachable && !readiness.agentAvailable ? (
@@ -1850,6 +2002,22 @@ export function OpenDesignPane({
             type="button"
             variant="ghost"
             size="xs"
+            onClick={downloadActiveVersion}
+          >
+            下载
+          </Button>
+          <Button
+            type="button"
+            size="xs"
+            disabled={restoringVersion}
+            onClick={() => void restoreActiveVersion()}
+          >
+            {restoringVersion ? "恢复中…" : "恢复此版本"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
             onClick={() => void selectVersion(null)}
           >
             回到当前
@@ -1862,29 +2030,60 @@ export function OpenDesignPane({
             data-testid="open-design-markdown-editor"
             className="flex h-full flex-col"
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5">
+            <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
               <span className="text-ui-caption text-foreground-subtle">
                 Markdown
               </span>
-              <Button
-                type="button"
-                size="xs"
-                disabled={!markdownDirty || markdownSaving}
-                onClick={() => void saveMarkdown()}
-              >
-                {markdownSaving ? "保存中…" : "保存"}
-              </Button>
+              <span className="text-ui-caption text-foreground-subtle">
+                自动保存
+              </span>
+              <div className="ml-auto flex items-center gap-1">
+                <Button
+                  type="button"
+                  size="xs"
+                  variant={markdownSplit ? "secondary" : "ghost"}
+                  aria-pressed={markdownSplit}
+                  onClick={() => setMarkdownSplit((value) => !value)}
+                >
+                  分栏
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  disabled={!markdownDirty || markdownSaving}
+                  onClick={() => void saveMarkdown()}
+                >
+                  {markdownSaving ? "保存中…" : "保存"}
+                </Button>
+              </div>
             </div>
-            <textarea
-              aria-label="Markdown 源码"
-              value={markdownDraft ?? ""}
-              spellCheck={false}
-              onChange={(event) => {
-                setMarkdownDraft(event.target.value);
-                setMarkdownDirty(true);
-              }}
-              className="min-h-0 flex-1 resize-none bg-background p-3 font-mono text-xs text-foreground outline-none"
-            />
+            <div
+              className={
+                markdownSplit
+                  ? "grid min-h-0 flex-1 grid-cols-2"
+                  : "flex min-h-0 flex-1"
+              }
+            >
+              <textarea
+                aria-label="Markdown 源码"
+                value={markdownDraft ?? ""}
+                spellCheck={false}
+                onChange={(event) => {
+                  setMarkdownDraft(event.target.value);
+                  setMarkdownDirty(true);
+                }}
+                className="min-h-0 w-full flex-1 resize-none bg-background p-3 font-mono text-xs text-foreground outline-none"
+              />
+              {markdownSplit ? (
+                <div className="min-h-0 overflow-auto border-l border-border">
+                  <OpenDesignMarkdownPreview
+                    source={markdownDraft ?? currentText ?? ""}
+                    saving={markdownSaving}
+                    onSave={saveMarkdownSource}
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
         ) : showCanvas && viewMode === "code" && !directPreview ? (
           activeVersion ? (
@@ -2017,6 +2216,7 @@ export function OpenDesignPane({
             box={overlayBox}
             metrics={docSize}
             drawing={tool === "annotate"}
+            annotationKind={annotationKind}
             color={ANNOTATION_COLOR}
             onPickComment={(id) => {
               setActiveCommentId(id);

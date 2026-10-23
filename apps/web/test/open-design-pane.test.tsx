@@ -106,7 +106,22 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
     if (path.startsWith("/api/design-review/comments/"))
       return { comment: { ...savedCommentRef.current, status: "resolved" } };
     if (path.startsWith("/api/design-review/annotations"))
-      return { annotation: { id: "a-1" } };
+      return {
+        annotation: {
+          id: "a-1",
+          projectId: "p-1",
+          file: "index.html",
+          kind: "rect",
+          color: "#e11d48",
+          strokeWidth: 3,
+          points: [
+            [0.1, 0.2],
+            [0.5, 0.6],
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      };
     if (path === "/api/open-design/host/file")
       return { file: { name: "logo.png", kind: "image" }, version: null };
     if (path === "/api/open-design/host/file-rename")
@@ -145,6 +160,7 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
         ],
       };
     }
+    if (path === "/api/open-design/host/version-restore") return { ok: true };
     if (path.includes("/host/canvas")) return createdRef.current;
     if (path === "/api/open-design/host/document")
       return {
@@ -414,10 +430,14 @@ test("工具栏逐项对应上游：刷新/预览/代码/设备/截图/交给对
     "预览",
     "代码",
     "设备",
+    "标注",
+    "框选",
+    "编辑",
     "截图到对话",
     "交给对话",
     "历史记录",
     "导出",
+    "演示",
     "分享",
     "缩放",
   ]) {
@@ -427,6 +447,18 @@ test("工具栏逐项对应上游：刷新/预览/代码/设备/截图/交给对
   expect(
     screen.queryByRole("button", { name: "在 OpenDesign 打开" }),
   ).toBeNull();
+});
+
+test("导出菜单含 PDF 文件", async () => {
+  const user = userEvent.setup();
+  availableEntry();
+  canvasWithFile();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  await openMenu(user, "导出");
+  expect(
+    await screen.findByRole("menuitem", { name: "PDF 文件" }),
+  ).toBeTruthy();
 });
 
 async function openMenu(
@@ -515,6 +547,31 @@ test("历史记录：选中一个版本后显示历史横幅与对应正文", as
   await waitFor(() => {
     expect(screen.queryByTestId("open-design-version-banner")).toBeNull();
   });
+});
+
+test("历史版本可恢复：POST /host/version-restore 后回到当前正文", async () => {
+  availableEntry();
+  canvasWithFile();
+  const user = userEvent.setup();
+  mount({ projectId: "p-1" });
+  await screen.findByTitle("OpenDesign");
+  await openMenu(user, "历史记录");
+  await user.click(await screen.findByText(/V1 · /));
+  await screen.findByTestId("open-design-version-banner");
+  fireEvent.click(screen.getByRole("button", { name: "恢复此版本" }));
+  await waitFor(() => {
+    expect(
+      posted.find(
+        (call) => call.path === "/api/open-design/host/version-restore",
+      )?.body,
+    ).toEqual({ projectId: "p-1", file: "index.html", versionId: "v-1" });
+  });
+  await waitFor(() => {
+    expect(screen.queryByTestId("open-design-version-banner")).toBeNull();
+  });
+  expect(
+    (await screen.findByTestId("open-design-notice")).textContent,
+  ).toContain("已恢复 V1");
 });
 
 test("交给对话：把设计文件当附件发给聚焦的 composer；没有时提示先点输入框", async () => {
@@ -689,6 +746,12 @@ const HIT = {
   rect: { x: 10, y: 20, w: 120, h: 30 },
   color: "rgb(17, 17, 17)",
   backgroundColor: "rgba(0, 0, 0, 0)",
+  fontSize: "16px",
+  fontWeight: "400",
+  textAlign: "start",
+  padding: "0px",
+  margin: "0px",
+  borderRadius: "0px",
 };
 
 test("编辑：桥回传命中后出检视器，保存把改动应用到源文本并经宿主写回", async () => {
@@ -713,6 +776,9 @@ test("编辑：桥回传命中后出检视器，保存把改动应用到源文�
 
   const editor = within(inspector).getByRole("textbox", { name: "文本颜色" });
   fireEvent.change(editor, { target: { value: "#ff0000" } });
+  fireEvent.change(within(inspector).getByLabelText("字号"), {
+    target: { value: "24px" },
+  });
   fireEvent.click(within(inspector).getByRole("button", { name: "保存" }));
 
   await waitFor(() => {
@@ -721,7 +787,8 @@ test("编辑：桥回传命中后出检视器，保存把改动应用到源文�
     );
     expect(call).toBeTruthy();
     const content = String(call?.body.content ?? "");
-    expect(content).toContain('style="color: rgb(255, 0, 0);"');
+    expect(content).toContain("color: rgb(255, 0, 0)");
+    expect(content).toContain("font-size: 24px");
     expect(content).toContain("当前设计");
     // 注入件不得被烤回文件
     expect(content).not.toContain("data-kfw-od");
@@ -794,6 +861,39 @@ async function mountReadyCanvas() {
   const frame = screen.getByTitle("OpenDesign") as HTMLIFrameElement;
   return { ...rendered, frame };
 }
+
+test("框选：拖出矩形并按 rect 保存标注", async () => {
+  const { frame } = await mountReadyCanvas();
+  emitBridgeRects(frame, { "#app > h1": { x: 10, y: 20, w: 100, h: 30 } });
+  fireEvent.click(screen.getByRole("button", { name: "框选" }));
+  const svg = (await screen.findByTestId("open-design-markup")).querySelector(
+    "svg",
+  );
+  expect(svg).toBeTruthy();
+  fireEvent.pointerDown(svg as SVGSVGElement, {
+    pointerId: 1,
+    clientX: 10,
+    clientY: 20,
+  });
+  fireEvent.pointerMove(svg as SVGSVGElement, {
+    pointerId: 1,
+    clientX: 110,
+    clientY: 80,
+  });
+  fireEvent.pointerUp(svg as SVGSVGElement, {
+    pointerId: 1,
+    clientX: 110,
+    clientY: 80,
+  });
+  await waitFor(() => {
+    const call = posted.find(
+      (item) => item.path === "/api/design-review/annotations",
+    );
+    expect(call?.body.kind).toBe("rect");
+    const points = call?.body.points;
+    expect(Array.isArray(points) ? points.length : -1).toBe(2);
+  });
+});
 
 test("评论：点选元素→落笔卡片→提交后图钉出现并自动开侧栏", async () => {
   const { frame } = await mountReadyCanvas();
@@ -929,6 +1029,23 @@ test("Markdown 编辑保存写回 /host/file 并更新标题", async () => {
   expect(
     (await screen.findByTestId("open-design-notice")).textContent,
   ).toContain("已保存");
+});
+
+test("Markdown 代码页支持分栏：左源码右渲染", async () => {
+  availableEntry();
+  canvasRef.current = {
+    project: { projectId: "p-1", name: "测试项目" },
+    entryFile: null,
+    files: [{ name: "notes.md", kind: "document" }],
+  };
+  mount({ projectId: "p-1" });
+  fireEvent.click(await screen.findByRole("button", { name: "notes" }));
+  fireEvent.click(await screen.findByRole("button", { name: "代码" }));
+  await screen.findByTestId("open-design-markdown-editor");
+  fireEvent.click(screen.getByRole("button", { name: "分栏" }));
+  const preview = await screen.findByTestId("open-design-markdown");
+  expect(within(preview).getByText("这里是正文")).toBeTruthy();
+  expect(screen.getByLabelText("Markdown 源码")).toBeTruthy();
 });
 
 test("文档支持重命名：宿主改名后卡片与提示更新", async () => {

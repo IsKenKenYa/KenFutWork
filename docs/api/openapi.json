@@ -9111,6 +9111,66 @@
         }
       }
     },
+    "/api/open-design/host/version-restore": {
+      "post": {
+        "operationId": "postOpenDesignHostVersionRestore",
+        "summary": "恢复画布历史版本",
+        "description": "代理上游 POST /api/projects/:id/files/:name/versions/:versionId/restore，把选中版本写回当前文件。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostRestoreVersionRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostRestoreVersionResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/fonts": {
       "get": {
         "operationId": "getFonts",
@@ -24369,6 +24429,45 @@
         },
         "required": [
           "file"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostRestoreVersionRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "versionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "projectId",
+          "file",
+          "versionId"
+        ]
+      },
+      "openDesignHostRestoreVersionResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
         ],
         "additionalProperties": false
       },

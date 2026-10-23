@@ -27,9 +27,11 @@ import {
   PanelRight,
   PenTool,
   Plus,
+  Presentation,
   RefreshCw,
   Share2,
   Smartphone,
+  SquareDashed,
   SquarePen,
   Tablet,
   Upload,
@@ -95,6 +97,8 @@ export function OpenDesignToolbar({
   onZoom,
   tool,
   onTool,
+  annotationKind,
+  onAnnotationKind,
   commentCount,
   sidebarOpen,
   onToggleSidebar,
@@ -120,6 +124,8 @@ export function OpenDesignToolbar({
   onHandoff,
   onExportPng,
   onExportHtml,
+  onExportPdf,
+  onPresent,
   onShare,
   shareBusy,
   shareMenuOpen,
@@ -127,6 +133,7 @@ export function OpenDesignToolbar({
   onDeploy,
   onShareConfig,
   onOpenDeployment,
+  onCopyDeployedLink,
   markdownMode = false,
 }: {
   busy: boolean;
@@ -140,6 +147,9 @@ export function OpenDesignToolbar({
   /** 当前工作模式（评论/标注/编辑互斥）；再点一次退出。 */
   tool: OpenDesignTool;
   onTool: (tool: OpenDesignTool) => void;
+  /** 标注画笔形态：自由笔迹或拖框。 */
+  annotationKind: "pen" | "rect";
+  onAnnotationKind: (kind: "pen" | "rect") => void;
   /** 未解决评论数（与画布上的图钉数一致）；侧栏按钮上的读数。 */
   commentCount: number;
   sidebarOpen: boolean;
@@ -174,6 +184,8 @@ export function OpenDesignToolbar({
   onHandoff: () => void;
   onExportPng: () => void;
   onExportHtml: () => void;
+  onExportPdf: () => void;
+  onPresent: () => void;
   onShare: () => void;
   shareBusy: boolean;
   shareMenuOpen: boolean;
@@ -181,6 +193,7 @@ export function OpenDesignToolbar({
   onDeploy: (providerId: "cloudflare-pages" | "vercel-self") => void;
   onShareConfig: (providerId: "cloudflare-pages" | "vercel-self") => void;
   onOpenDeployment: () => void;
+  onCopyDeployedLink: () => void;
   /** Markdown 资源只保留返回、新建与预览/代码，画布类控件全部收起。 */
   markdownMode?: boolean;
 }) {
@@ -350,11 +363,33 @@ export function OpenDesignToolbar({
             </ToolbarIconButton>
             <ToolbarToggleIconButton
               label="标注"
-              active={tool === "annotate"}
+              active={tool === "annotate" && annotationKind === "pen"}
               disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => onTool(tool === "annotate" ? "none" : "annotate")}
+              onClick={() => {
+                onAnnotationKind("pen");
+                onTool(
+                  tool === "annotate" && annotationKind === "pen"
+                    ? "none"
+                    : "annotate",
+                );
+              }}
             >
               <Highlighter className="size-3" />
+            </ToolbarToggleIconButton>
+            <ToolbarToggleIconButton
+              label="框选"
+              active={tool === "annotate" && annotationKind === "rect"}
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={() => {
+                onAnnotationKind("rect");
+                onTool(
+                  tool === "annotate" && annotationKind === "rect"
+                    ? "none"
+                    : "annotate",
+                );
+              }}
+            >
+              <SquareDashed className="size-3" />
             </ToolbarToggleIconButton>
             <ToolbarToggleIconButton
               label="编辑"
@@ -467,11 +502,21 @@ export function OpenDesignToolbar({
                 <DropdownMenuItem onSelect={onExportPng}>
                   PNG 图片
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onExportPdf}>
+                  PDF 文件
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={onExportHtml}>
                   HTML 文件
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <ToolbarIconButton
+              label="演示"
+              disabled={busy || !hasCanvas || viewMode === "code"}
+              onClick={onPresent}
+            >
+              <Presentation className="size-3" />
+            </ToolbarIconButton>
             <DropdownMenu
               modal={false}
               open={shareMenuOpen}
@@ -525,6 +570,13 @@ export function OpenDesignToolbar({
                   onSelect={onOpenDeployment}
                 >
                   打开已发布页面
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-open-design-share-copy=""
+                  disabled={!lastDeploymentUrl}
+                  onSelect={onCopyDeployedLink}
+                >
+                  复制已发布链接
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

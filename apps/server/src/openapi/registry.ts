@@ -166,6 +166,8 @@ import {
   openDesignHostReadinessResponseSchema,
   openDesignHostRenameFileRequestSchema,
   openDesignHostRenameFileResponseSchema,
+  openDesignHostRestoreVersionRequestSchema,
+  openDesignHostRestoreVersionResponseSchema,
   openDesignHostSaveToWorkspaceRequestSchema,
   openDesignHostSaveToWorkspaceResponseSchema,
   openDesignHostStartDesignSystemExtractionRequestSchema,
@@ -2005,6 +2007,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: openDesignHostVersionContentResponseSchema,
     summary: "读取画布历史版本正文",
     description: "单个历史版本的 HTML 正文；超过 2MiB 返回 413。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/version-restore",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostRestoreVersionRequestSchema,
+    responseSchema: openDesignHostRestoreVersionResponseSchema,
+    summary: "恢复画布历史版本",
+    description:
+      "代理上游 POST /api/projects/:id/files/:name/versions/:versionId/restore，把选中版本写回当前文件。本机接入验证。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {

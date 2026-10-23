@@ -14,7 +14,7 @@ import {
 /** 一条新标注落笔后的最小信息（作用域由面板补齐）。 */
 export interface OpenDesignDraftAnnotation {
   points: [number, number][];
-  kind: "pen";
+  kind: "pen" | "rect";
 }
 
 /**
@@ -31,6 +31,7 @@ export function OpenDesignMarkup({
   box,
   metrics,
   drawing,
+  annotationKind = "pen",
   color,
   onPickComment,
   onCreateAnnotation,
@@ -44,6 +45,7 @@ export function OpenDesignMarkup({
   metrics: FrameMetrics;
   /** 标注态才吃鼠标事件。 */
   drawing: boolean;
+  annotationKind?: "pen" | "rect";
   color: string;
   onPickComment: (commentId: string) => void;
   onCreateAnnotation: (draft: OpenDesignDraftAnnotation) => void;
@@ -79,7 +81,7 @@ export function OpenDesignMarkup({
         onPointerDown={
           drawing
             ? (event) => {
-                event.currentTarget.setPointerCapture(event.pointerId);
+                event.currentTarget.setPointerCapture?.(event.pointerId);
                 setStroke([pointOf(event)]);
               }
             : undefined
@@ -87,8 +89,13 @@ export function OpenDesignMarkup({
         onPointerMove={
           drawing
             ? (event) => {
+                const point = pointOf(event);
                 setStroke((current) =>
-                  current ? [...current, pointOf(event)] : current,
+                  current
+                    ? annotationKind === "rect"
+                      ? [current[0] as [number, number], point]
+                      : [...current, point]
+                    : current,
                 );
               }
             : undefined
@@ -98,6 +105,18 @@ export function OpenDesignMarkup({
             ? () => {
                 const points = stroke ?? [];
                 setStroke(null);
+                if (annotationKind === "rect") {
+                  if (points.length >= 2) {
+                    onCreateAnnotation({
+                      kind: "rect",
+                      points: [
+                        points[0] as [number, number],
+                        points[points.length - 1] as [number, number],
+                      ],
+                    });
+                  }
+                  return;
+                }
                 if (points.length > 1)
                   onCreateAnnotation({ kind: "pen", points });
               }
@@ -115,19 +134,45 @@ export function OpenDesignMarkup({
           />
         ))}
         {stroke && stroke.length > 1 ? (
-          <polyline
-            points={stroke
-              .map(([x, y]) => {
-                const p = normalizedToOverlay(x, y, box, metrics);
-                return `${p.px},${p.py}`;
-              })
-              .join(" ")}
-            fill="none"
-            stroke={color}
-            strokeWidth={3}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          annotationKind === "rect" ? (
+            <rect
+              {...(() => {
+                const first = normalizedToOverlay(
+                  ...(stroke[0] as [number, number]),
+                  box,
+                  metrics,
+                );
+                const last = normalizedToOverlay(
+                  ...(stroke[stroke.length - 1] as [number, number]),
+                  box,
+                  metrics,
+                );
+                return {
+                  x: Math.min(first.px, last.px),
+                  y: Math.min(first.py, last.py),
+                  width: Math.abs(last.px - first.px),
+                  height: Math.abs(last.py - first.py),
+                };
+              })()}
+              fill="none"
+              stroke={color}
+              strokeWidth={3}
+            />
+          ) : (
+            <polyline
+              points={stroke
+                .map(([x, y]) => {
+                  const p = normalizedToOverlay(x, y, box, metrics);
+                  return `${p.px},${p.py}`;
+                })
+                .join(" ")}
+              fill="none"
+              stroke={color}
+              strokeWidth={3}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )
         ) : null}
       </svg>
       {comments

@@ -887,6 +887,33 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
       url: "/api/open-design/host/version-content?projectId=p-1&file=index.html",
     });
     expect(missing.statusCode).toBe(400);
+
+    const restores: string[] = [];
+    const restoreApp = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (
+          url.endsWith(
+            "/api/projects/p-1/files/index.html/versions/v-1/restore",
+          ) &&
+          init?.method === "POST"
+        ) {
+          restores.push(url);
+          return jsonResponse({ ok: true });
+        }
+        return new Response("not found", { status: 404 });
+      }) as typeof fetch,
+    });
+    const restored = await restoreApp.inject({
+      method: "POST",
+      url: "/api/open-design/host/version-restore",
+      payload: { projectId: "p-1", file: "index.html", versionId: "v-1" },
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toEqual({ ok: true });
+    expect(restores).toHaveLength(1);
+    await restoreApp.close();
   });
 });
 

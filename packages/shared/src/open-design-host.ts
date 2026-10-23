@@ -485,6 +485,23 @@ export type OpenDesignHostCreateDesignFileResponse = z.infer<
   typeof openDesignHostCreateDesignFileResponseSchema
 >;
 
+/** 把某个历史版本恢复为当前文件（代理上游 versions/:versionId/restore）。 */
+export const openDesignHostRestoreVersionRequestSchema = z.object({
+  projectId: z.string().min(1).max(120),
+  file: z.string().min(1).max(300),
+  versionId: z.string().min(1).max(200),
+});
+export type OpenDesignHostRestoreVersionRequest = z.infer<
+  typeof openDesignHostRestoreVersionRequestSchema
+>;
+
+export const openDesignHostRestoreVersionResponseSchema = z.object({
+  ok: z.boolean(),
+});
+export type OpenDesignHostRestoreVersionResponse = z.infer<
+  typeof openDesignHostRestoreVersionResponseSchema
+>;
+
 /** 设计体系概要（上游 /api/design-systems 的宿主代理面）。 */
 export const openDesignHostDesignSystemSummarySchema = z.object({
   id: z.string().min(1),

@@ -12,7 +12,16 @@ export interface OpenDesignElementEdit {
   path: string;
   /** 替换整个元素的 outerHTML；省略则只改样式。 */
   html?: string;
-  style?: { color?: string; backgroundColor?: string };
+  style?: {
+    color?: string;
+    backgroundColor?: string;
+    fontSize?: string;
+    fontWeight?: string;
+    textAlign?: string;
+    padding?: string;
+    margin?: string;
+    borderRadius?: string;
+  };
 }
 
 function query(root: Document, path: string): Element | null {
@@ -77,6 +86,24 @@ export function applyElementEdit(
   if (edit.style?.color !== undefined) next.style.color = edit.style.color;
   if (edit.style?.backgroundColor !== undefined) {
     next.style.backgroundColor = edit.style.backgroundColor;
+  }
+  if (edit.style?.fontSize !== undefined) {
+    next.style.fontSize = edit.style.fontSize;
+  }
+  if (edit.style?.fontWeight !== undefined) {
+    next.style.fontWeight = edit.style.fontWeight;
+  }
+  if (edit.style?.textAlign !== undefined) {
+    next.style.textAlign = edit.style.textAlign;
+  }
+  if (edit.style?.padding !== undefined) {
+    next.style.padding = edit.style.padding;
+  }
+  if (edit.style?.margin !== undefined) {
+    next.style.margin = edit.style.margin;
+  }
+  if (edit.style?.borderRadius !== undefined) {
+    next.style.borderRadius = edit.style.borderRadius;
   }
   return serialize(doc);
 }
