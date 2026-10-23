@@ -22,7 +22,14 @@ export function OpenDesignMarkdownPreview({
   saving: boolean;
   onSave: (nextSource: string) => Promise<void>;
 }) {
-  const blocks = useMemo(() => parseMarkdownIntoBlocks(source), [source]);
+  const blocks = useMemo(() => {
+    // 引用式链接定义与脚注依赖全文解析；分块渲染会把定义块孤立掉。
+    // 这类文档退化成「整篇一个块」，仍可编辑，但保证渲染正确。
+    const needsWholeDocument =
+      /\[\^[^\]]+\]/u.test(source) ||
+      /(?:^|\n)\s{0,3}\[[^\]]+\]:\s+\S+/u.test(source);
+    return needsWholeDocument ? [source] : parseMarkdownIntoBlocks(source);
+  }, [source]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +65,12 @@ export function OpenDesignMarkdownPreview({
       setError(
         saveError instanceof Error ? saveError.message : "保存这个块失败。",
       );
+    }
+  };
+
+  const openExternal = (url: string) => {
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -121,7 +134,12 @@ export function OpenDesignMarkdownPreview({
                   >
                     <Pencil className="size-3" />
                   </Button>
-                  <MessageResponse theme="system">{block}</MessageResponse>
+                  <MessageResponse
+                    theme="system"
+                    onOpenExternalUrl={openExternal}
+                  >
+                    {block}
+                  </MessageResponse>
                 </>
               )}
             </div>
