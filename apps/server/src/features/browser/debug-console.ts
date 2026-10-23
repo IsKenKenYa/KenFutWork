@@ -133,12 +133,12 @@ const FLOAT_SCRIPT = `
     // 同时让可见的标签栏正好落在拖动条里。
     ".eruda-dev-tools{top:0!important;height:100%!important;pointer-events:auto!important}" +
     ".eruda-entry-btn{display:none!important}" +
-    // 分屏卡片的上边线：上下箭头光标 + 拖拽改高度（热区 14px，灵敏度优先）
-    ".kfw-edge{position:absolute;left:0;right:0;top:-7px;height:14px;cursor:ns-resize;" +
+    // 分屏卡片的上边线：上下箭头光标 + 拖拽改高度（热区 20px，灵敏度优先）
+    ".kfw-edge{position:absolute;left:0;right:0;top:-10px;height:20px;cursor:ns-resize;" +
     "z-index:2147483647;display:none}" +
     ".eruda-container.kfw-max .kfw-edge{display:block}" +
-    // 悬浮态右下角缩放手柄（热区 18px；卡片态藏起）
-    ".kfw-corner{position:absolute;right:0;bottom:0;z-index:2147483647;width:18px;height:18px;" +
+    // 悬浮态右下角缩放手柄（热区 22px；卡片态藏起）
+    ".kfw-corner{position:absolute;right:0;bottom:0;z-index:2147483647;width:22px;height:22px;" +
     "cursor:nwse-resize;background:linear-gradient(135deg,transparent 45%,#999 45%,#999 55%,transparent 55%)}" +
     ".eruda-container.kfw-max .kfw-corner{display:none}";
   (root.head || root).appendChild(style);
@@ -149,11 +149,11 @@ const FLOAT_SCRIPT = `
     // 完全在窗外，跟随宿主（悬浮面板/分屏卡片的右上角，或悬浮球上方）
     // 梯形只做**背景层**（伪元素）：clip-path 放在容器上会把最左按钮的左上角裁掉，
     // 点击从被裁区域穿透到页面（真机：点到百度顶部导航，看起来像「按钮没反应+页面卡死」）。
-    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 7px;" +
-    "background:transparent;box-shadow:none}" +
+    ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 24px;" +
+    "min-width:112px;justify-content:flex-end;background:transparent;box-shadow:none}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
     "background:#fff;box-shadow:0 -2px 8px rgba(0,0,0,.12);" +
-    "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)}" +
+    "clip-path:polygon(45% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
     "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
     ".kfw-btn:hover{background:#eee}" +
@@ -171,6 +171,8 @@ const FLOAT_SCRIPT = `
     ".kfw-ball-right{transform:translateX(55%)}" +
     ".kfw-ball-left:hover{transform:translateX(-6%)}" +
     ".kfw-ball-right:hover{transform:translateX(6%)}" +
+    // 有经典滚动条时右侧球不再半藏，整球停在内容区内（否则会被滚动条压住）
+    ".kfw-ball-inset{transform:none!important}" +
     ".kfw-ball-drag{transform:none!important;transition:none!important;opacity:1;cursor:grabbing}";
   document.head.appendChild(headStyle);
 
@@ -198,6 +200,12 @@ const FLOAT_SCRIPT = `
   // 按钮条跟随宿主：面板/卡片态贴容器**右上角外**；悬浮球态贴在**球上方**。
   // rAF 合帧 + 尺寸缓存：拖动/缩放的高频 mousemove 里不再每次强制回流。
   var uiState = "float"; // float | max | ball
+  function viewportWidth() {
+    return document.documentElement.clientWidth || window.innerWidth;
+  }
+  function viewportHeight() {
+    return document.documentElement.clientHeight || window.innerHeight;
+  }
   var barW = 0;
   var barH = 24;
   var syncPending = false;
@@ -206,20 +214,17 @@ const FLOAT_SCRIPT = `
     syncPending = true;
     requestAnimationFrame(function () {
       syncPending = false;
+      if (uiState === "ball") {
+        // 球态不需要按钮条；先退出，避免每帧量 offsetWidth 触发回流。
+        btnbar.style.display = "none";
+        return;
+      }
       if (btnbar.offsetWidth) {
         barW = btnbar.offsetWidth;
         barH = btnbar.offsetHeight || 24;
       }
-      if (uiState === "ball") {
-        // 用户口径：变成悬浮球时就不要那三个按钮（点球即还原）。
-        btnbar.style.display = "none";
-        return;
-      }
       var rect = container.getBoundingClientRect();
-      var hidden =
-        container.style.display === "none" ||
-        rect.width === 0 ||
-        getComputedStyle(container).display === "none";
+      var hidden = container.style.display === "none" || rect.width === 0;
       if (hidden) {
         btnbar.style.display = "none";
         return;
@@ -250,11 +255,14 @@ const FLOAT_SCRIPT = `
   function applyFloat() {
     uiState = "float";
     container.style.removeProperty("display");
+    // 隐藏用 visibility / pointer-events，不用 display:none：
+    // 控制台 DOM 很大，display 切换会让整棵子树重新布局，卡片↔球与关闭会卡死。
+    container.style.removeProperty("visibility");
+    container.style.removeProperty("pointer-events");
     container.classList.add("kfw-float");
     container.classList.remove("kfw-max");
     ball.style.display = "none";
     maxBtn.title = "分屏停靠";
-    if (window.eruda) window.eruda.show();
     syncBtnbar();
   }
   function applyMax() {
@@ -267,24 +275,40 @@ const FLOAT_SCRIPT = `
     container.classList.add("kfw-max");
     container.classList.remove("kfw-float");
     container.style.removeProperty("display");
+    container.style.removeProperty("visibility");
+    container.style.removeProperty("pointer-events");
     ball.style.display = "none";
     maxBtn.title = "还原悬浮面板";
-    if (window.eruda) window.eruda.show();
     syncBtnbar();
+  }
+  function pageHasVerticalScrollbar() {
+    var root = document.scrollingElement || document.documentElement;
+    return root.scrollHeight > root.clientHeight + 1;
+  }
+  function placeBall(side) {
+    // 经典滚动条会占 clientWidth；覆盖式滚动条不占宽度但会盖在内容右缘。
+    // 两种都算「有滚动条」：右侧球整颗停在内容区内，留 16px 安全边。
+    var inset = side === "right" && pageHasVerticalScrollbar();
+    ball.className =
+      "kfw-ball " +
+      (side === "left" ? "kfw-ball-left" : "kfw-ball-right") +
+      (inset ? " kfw-ball-inset" : "");
+    ball.style.left =
+      side === "left"
+        ? "0px"
+        : Math.round(viewportWidth() - (inset ? 52 : 36)) + "px";
   }
   function applyBall() {
     uiState = "ball";
     var rect = container.getBoundingClientRect();
     var side =
-      rect.left + rect.width / 2 < window.innerWidth / 2 ? "left" : "right";
-    var top = Math.max(60, Math.min(rect.top + rect.height / 2 - 18, window.innerHeight - 96));
-    ball.className =
-      "kfw-ball " + (side === "left" ? "kfw-ball-left" : "kfw-ball-right");
+      rect.left + rect.width / 2 < viewportWidth() / 2 ? "left" : "right";
+    var top = Math.max(60, Math.min(rect.top + rect.height / 2 - 18, viewportHeight() - 96));
+    placeBall(side);
     ball.style.top = Math.round(top) + "px";
-    ball.style.left =
-      side === "left" ? "0px" : Math.round(window.innerWidth - 36) + "px";
     ball.style.display = "flex";
-    container.style.setProperty("display", "none", "important");
+    container.style.setProperty("visibility", "hidden", "important");
+    container.style.setProperty("pointer-events", "none", "important");
     syncBtnbar();
   }
 
@@ -303,9 +327,10 @@ const FLOAT_SCRIPT = `
   closeBtn.onclick = function (event) {
     event.stopPropagation();
     uiState = "closed";
-    if (window.eruda) window.eruda.hide();
-    // 我们给容器钉了宽高，光 hide() 会留一个空框在页面上——整块收起；重开时再放回。
-    container.style.setProperty("display", "none", "important");
+    // 只做可视隐藏：调用 eruda.hide() 或 display:none 都会让大 DOM 重新布局，
+    // 真机上关闭按钮会卡住数秒。重开时 applyFloat 恢复 visibility。
+    container.style.setProperty("visibility", "hidden", "important");
+    container.style.setProperty("pointer-events", "none", "important");
     ball.style.display = "none";
     btnbar.style.display = "none";
   };
@@ -325,7 +350,7 @@ const FLOAT_SCRIPT = `
     if (!ballDrag) return;
     var dx = event.clientX - ballDrag.x;
     var dy = event.clientY - ballDrag.y;
-    if (!ballDrag.moved && dx * dx + dy * dy < 25) return;
+    if (!ballDrag.moved && dx * dx + dy * dy < 9) return;
     if (!ballDrag.moved) {
       ballDrag.moved = true;
       ball.classList.add("kfw-ball-drag");
@@ -333,9 +358,9 @@ const FLOAT_SCRIPT = `
     }
     var left = Math.min(
       Math.max(event.clientX - 18, 2),
-      window.innerWidth - 38,
+      viewportWidth() - 38,
     );
-    var top = Math.min(Math.max(event.clientY - 18, 60), window.innerHeight - 96);
+    var top = Math.min(Math.max(event.clientY - 18, 60), viewportHeight() - 96);
     ball.style.left = Math.round(left) + "px";
     ball.style.top = Math.round(top) + "px";
     syncBtnbar();
@@ -356,13 +381,11 @@ const FLOAT_SCRIPT = `
     }
     // 吸附最近边：左缘 left=0，右缘露出 16px，transform 负责半藏（CSS transition 吸附动画）
     var side =
-      parseFloat(ball.style.left) + 18 < window.innerWidth / 2
+      parseFloat(ball.style.left) + 18 < viewportWidth() / 2
         ? "left"
         : "right";
     ball.classList.remove("kfw-ball-drag");
-    ball.classList.add(side === "left" ? "kfw-ball-left" : "kfw-ball-right");
-    ball.style.left =
-      side === "left" ? "0px" : Math.round(window.innerWidth - 36) + "px";
+    placeBall(side);
     syncBtnbar();
   }
   window.addEventListener("mouseup", snapBall);
@@ -447,8 +470,8 @@ const FLOAT_SCRIPT = `
       )
         return;
       var box = container.getBoundingClientRect();
-      // 40px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶）
-      if (event.clientY - box.top > 40) return;
+      // 48px ≈ 可见标签栏那一条（面板拉满后它就贴着容器顶），热区略放宽
+      if (event.clientY - box.top > 48) return;
       if (uiState === "max") {
         // 拿走：以当前几何转悬浮（宽高冻结成变量，边距取现值）
         container.style.setProperty(

@@ -141,18 +141,24 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 实底：容器显式上底色——透明面板被用户圈过（页面内容透出来像坏掉）
     expect(script).toContain("background:#fff!important");
     expect(script).toContain('setProperty("left"');
-    expect(script).toContain("eruda.hide()");
     expect(script).toContain("__kfwFloating = true");
     // ✕ 的层级必须高过 Eruda 正文面板（它是 500）——低了就被盖住、点不到
     expect(script).toContain("z-index:2147483647");
     // 右下角缩放手柄：改 CSS 变量（容器宽高由 --kfw-w/--kfw-h 驱动）
     expect(script).toContain("--kfw-w");
     expect(script).toContain("nwse-resize");
-    // 关闭要连**容器**一起收（光 eruda.hide() 会留个空框：我们的样式钉死了宽高）
-    expect(script).toContain('setProperty("display", "none", "important")');
+    // 关闭/最小化用 visibility 收起：display:none 会让大 DOM 重新布局导致卡死
+    expect(script).toContain(
+      'setProperty("visibility", "hidden", "important")',
+    );
+    expect(script).not.toContain('setProperty("display", "none", "important")');
     // 重新打开要放回来（幂等分支里），并从任何状态回到悬浮窗
     expect(script).toContain('removeProperty("display")');
     expect(script).toContain("__kfwConsoleRestore");
+    // 悬浮球贴内容区右缘（clientWidth 扣掉滚动条），不被右侧滚动条盖住
+    expect(script).toContain("document.documentElement.clientWidth");
+    expect(script).toContain("kfw-ball-inset");
+    expect(script).toContain("min-width:112px");
     // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
     expect(script).toContain("kfw-ball-right");
@@ -173,7 +179,7 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("border-radius:0!important");
     expect(script).toContain("ns-resize");
     expect(script).toContain("--kfw-mh");
-    expect(script).toContain("top:-7px;height:14px");
+    expect(script).toContain("top:-10px;height:20px");
     // 一个页面只开一个：已初始化只 show 不再 init
     expect(script).toContain("window.eruda._isInit");
     // 三按钮在**窗外的小号直角梯形**容器里（直角在右边：右竖左斜），body 级 fixed；
@@ -182,7 +188,7 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 按钮条挂 documentElement：与页面顶部导航同 z-index 时以更晚绘制顺序压过它
     expect(script).toContain("document.documentElement.appendChild(btnbar)");
     expect(script).toContain(
-      "clip-path:polygon(32% 0,100% 0,100% 100%,0 100%)",
+      "clip-path:polygon(45% 0,100% 0,100% 100%,0 100%)",
     );
     expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
