@@ -65,6 +65,42 @@ export const codeTaskGroupUngroupSchema = z
 export const codeTaskGroupUngroupArgsSchema = z.tuple([
   codeTaskGroupUngroupSchema,
 ]);
+export const codeTaskGroupTaskRefSchema = z
+  .object({
+    hostId: z.literal("local"),
+    taskId: z.uuid(),
+    workspacePath: z.string().min(1),
+    workspaceIdentity: z.string().min(1),
+  })
+  .strict();
+export const codeTaskGroupAdmissionSchema = z
+  .object({
+    tasks: z.array(codeTaskGroupTaskRefSchema),
+    placement: z
+      .object({
+        task: codeTaskGroupTaskRefSchema,
+        groupId: z.uuid().nullable(),
+        creationId: z.uuid(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (input) =>
+      !input.placement ||
+      input.tasks.some(
+        (task) =>
+          task.taskId.toLowerCase() ===
+            input.placement?.task.taskId.toLowerCase() &&
+          task.workspacePath === input.placement.task.workspacePath &&
+          task.workspaceIdentity === input.placement.task.workspaceIdentity,
+      ),
+    "新建Task须在登记列表中。",
+  );
+export const codeTaskGroupAdmissionArgsSchema = z.tuple([
+  codeTaskGroupAdmissionSchema,
+]);
 export const codeTaskGroupSaveResponseSchema = z
   .object({ result: codeTaskGroupSchema })
   .strict();
@@ -79,3 +115,7 @@ export type CodeTaskGroupStructure = z.infer<
 export type CodeTaskGroup = z.infer<typeof codeTaskGroupSchema>;
 export type CodeTaskGroupSave = z.infer<typeof codeTaskGroupSaveSchema>;
 export type CodeTaskGroupUngroup = z.infer<typeof codeTaskGroupUngroupSchema>;
+export type CodeTaskGroupTaskRef = z.infer<typeof codeTaskGroupTaskRefSchema>;
+export type CodeTaskGroupAdmission = z.infer<
+  typeof codeTaskGroupAdmissionSchema
+>;

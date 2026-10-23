@@ -15,6 +15,7 @@ import {
   codeProjectTreeRpcResponseSchema,
 } from "./code-project-editor.js";
 import {
+  codeTaskGroupAdmissionArgsSchema,
   codeTaskGroupReadArgsSchema,
   codeTaskGroupReadResponseSchema,
   codeTaskGroupSaveArgsSchema,
@@ -148,6 +149,11 @@ export const codeUiRpcRequestSchema = z.union([
     service: z.literal("task-groups"),
     method: z.literal("ungroup"),
     args: codeTaskGroupUngroupArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("admit"),
+    args: codeTaskGroupAdmissionArgsSchema,
   }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("zcode-task"),
