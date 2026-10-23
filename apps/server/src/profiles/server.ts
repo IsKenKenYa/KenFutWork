@@ -74,6 +74,7 @@ import {
 } from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
 import { createSystemPlugin } from "../features/system/plugin.js";
+import { createTaskGroupsPlugin } from "../features/task-groups/plugin.js";
 import { createTaskWorkPlugin } from "../features/task-work/plugin.js";
 import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
@@ -278,6 +279,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCodeUiPlugin(),
     createProjectEditorPlugin(),
     createTaskOrganizationPlugin(),
+    createTaskGroupsPlugin(),
     createTaskProjectMovePlugin(),
     createRealtimePlugin(),
   ];

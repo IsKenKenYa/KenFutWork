@@ -5,6 +5,7 @@ export * from "./capability-contracts.js";
 export * from "./checkpoints.js";
 export * from "./code-goal-control-contracts.js";
 export * from "./code-project-editor.js";
+export * from "./code-task-groups.js";
 export * from "./code-task-organization.js";
 export * from "./code-task-project-contracts.js";
 export * from "./code-ui-contracts.js";

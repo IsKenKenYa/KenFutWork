@@ -14,6 +14,10 @@ import {
   codeProjectEditorSaveSchema,
   codeProjectTreeRpcResponseSchema,
 } from "./code-project-editor.js";
+import {
+  codeTaskGroupReadArgsSchema,
+  codeTaskGroupReadResponseSchema,
+} from "./code-task-groups.js";
 import { codeTaskOrganizationArgsSchema } from "./code-task-organization.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
@@ -89,6 +93,7 @@ const codeUiRpcEnvelopeSchema = z.object({
 });
 export const codeUiRpcResponseSchema = z.union([
   codeProjectTreeRpcResponseSchema,
+  codeTaskGroupReadResponseSchema,
   z.object({ result: z.unknown() }),
 ]);
 
@@ -125,6 +130,11 @@ export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
 );
 export const codeUiRpcRequestSchema = z.union([
   codeProjectEditorRpcRequestSchema,
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("read"),
+    args: codeTaskGroupReadArgsSchema,
+  }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("zcode-task"),
     method: z.enum(["archiveTask", "unarchiveTask", "deleteArchivedTask"]),
