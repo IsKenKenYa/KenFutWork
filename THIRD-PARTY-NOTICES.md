@@ -1,6 +1,6 @@
 # KenFutWork 第三方声明与素材归属
 
-版本：2026-10-20 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
+版本：2026-10-23 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
 
 本文件回答三个问题：哪些东西不是我们写的、它按什么许可进来、我们在分发时必须替下游做什么。许可义务**履行位置**逐条标注；上游移植目录内那份 `THIRD-PARTY-NOTICES.md` 是 ZCode 的上游产物（与上游逐字节一致），本文件不复制它的正文，只索引它。
 
@@ -78,6 +78,8 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | [xyflow/react](https://github.com/xyflow/xyflow) | MIT | 流程图/画布节点渲染；由移植包自己声明依赖（`apps/web/src/components/workbench/zcode/package.json` 的 `@xyflow/react ^12.10.1`，lock 解析 12.12.0） |
 | [embedded-postgres](https://github.com/leinelissen/aeonik-embedded-postgres) | MIT | 桌面形态内嵌 Postgres |
 | PostgreSQL 服务端 | PostgreSQL License | 数据库与内嵌实例 |
+| [Tauri 官方目录组件](https://github.com/tauri-apps/plugins-workspace/tree/6aa2854f314481a459be1189b02c65a2450789ab/plugins/dialog)：tauri-plugin-dialog 2.7.3、tauri-plugin-fs 2.5.2、tauri-plugin 2.6.3 | Apache-2.0 OR MIT，本次选择 MIT | 原生目录选择及其运行、构建依赖。版权为 2017–Present Tauri Apps Contributors、2019–2022 The Tauri Programme 及 2019–2024 Tauri Programme；许可原文保存于 `licenses/tauri-dialog-MIT.txt`，随包进入 `legal/upstream/tauri-dialog-MIT.txt`。MIT 允许商业使用，分发保留版权和许可全文。 |
+| [rfd](https://github.com/PolyMeilex/rfd/tree/a7116955d61dad7e7ebd7a2e870ab38c2abe5223) 0.16.1 | MIT | 原生文件对话框。Copyright (c) 2022 Bartłomiej Maryńczak；许可原文保存于 `licenses/rfd-MIT.txt`，随包进入 `legal/upstream/rfd-MIT.txt`。MIT 允许商业使用，分发保留版权和许可全文。 |
 | [sharp](https://github.com/lovell/sharp) / libvips | Apache-2.0 / LGPL-3.0-or-later | 服务端图片处理；商业版需履行 LGPL 或替换（见 §H） |
 | PGMQ（Postgres 扩展） | 见上游仓库（待核） | 队列；商业版默认排除，法务复核后使用（见 §H） |
 | Node.js 运行时与工具链（pnpm/Turborepo/Biome/Vitest） | MIT / Apache-2.0 等 | 构建与测试；打包进产物的部分见 G2 |
@@ -156,7 +158,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 ### G1. 随产物分发的声明文件
 
-安装包与应用数据产物须带上：`LICENSE`（GPL-3.0 全文）、`NOTICE.md`、`EULA.md`、`PRIVACY.md`、本文件、`COPYRIGHT.md`、`licenses/loomic-MIT.txt`（产物内为 `loomic-MIT.txt`），以及 A3 图标目录的 `LICENSE`、A1 上游三份文本。装配点：`apps/desktop`（Tauri bundle resources）与 `scripts/package-mac.mjs` / `scripts/package-win.mjs`。
+安装包与应用数据产物须带上：`LICENSE`（GPL-3.0 全文）、`NOTICE.md`、`EULA.md`、`PRIVACY.md`、本文件、`COPYRIGHT.md`、`licenses/loomic-MIT.txt`（产物内为 `loomic-MIT.txt`）、`licenses/tauri-dialog-MIT.txt`（产物内为 `legal/upstream/tauri-dialog-MIT.txt`）、`licenses/rfd-MIT.txt`（产物内为 `legal/upstream/rfd-MIT.txt`），以及 A3 图标目录的 `LICENSE`、A1 上游三份文本。装配点：`apps/desktop`（Tauri bundle resources）与 `scripts/package-mac.mjs` / `scripts/package-win.mjs`。
 
 ### G2. 待办（本轮如实登记，不假装已完成）
 

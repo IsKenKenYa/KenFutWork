@@ -63,6 +63,8 @@ const LEGAL_UPSTREAM = [
   ],
   ["patches/LICENSE-langchain.txt", "langchain-LICENSE.txt"],
   ["patches/LICENSE-sandbox-runtime.txt", "sandbox-runtime-LICENSE.txt"],
+  ["licenses/tauri-dialog-MIT.txt", "tauri-dialog-MIT.txt"],
+  ["licenses/rfd-MIT.txt", "rfd-MIT.txt"],
 ];
 
 function stageLegalDocuments() {
