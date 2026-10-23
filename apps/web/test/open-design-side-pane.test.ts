@@ -17,9 +17,9 @@ import {
   openDocumentSidePane,
   openOpenDesignSidePane,
   preserveDocumentSidePaneForAutomaticEvent,
-  updateOpenDesignSidePaneTab,
   resolveSidePaneScopeState,
   stampSidePaneTabsOwnership,
+  updateOpenDesignSidePaneTab,
 } from "@zui/lib/workspaceSidePane";
 import { expect, test } from "vitest";
 
@@ -48,7 +48,10 @@ test("OpenDesign 启动卡缺省不出现，显式 enable 才出现（不摆空�
 });
 
 test("一块画布一个标签：同项目复用，不同项目各开一个", () => {
-  const first = openOpenDesignSidePane(null, { projectId: "p-1", title: "登录页" });
+  const first = openOpenDesignSidePane(null, {
+    projectId: "p-1",
+    title: "登录页",
+  });
   expect(first.tabs).toHaveLength(1);
   expect(first.tabs[0]?.type).toBe("open-design");
   expect(first.activeTabId).toBe("open-design:p-1");
@@ -61,12 +64,26 @@ test("一块画布一个标签：同项目复用，不同项目各开一个", ()
   const again = openOpenDesignSidePane(first, { projectId: "p-1" });
   expect(again.tabs).toHaveLength(1);
 
-  const second = openOpenDesignSidePane(again, { projectId: "p-2", title: "订单页" });
+  const second = openOpenDesignSidePane(again, {
+    projectId: "p-2",
+    title: "订单页",
+  });
   expect(second.tabs).toHaveLength(2);
   expect(getActiveSidePaneTab(second)?.id).toBe("open-design:p-2");
 });
 
-test("未绑定的旧标签照旧可开（面板自行解析最近画布），画布名按标签回写", () => {
+test("再次打开未指定标题时保留面板回写的项目名", () => {
+  const titled = updateOpenDesignSidePaneTab(
+    openOpenDesignSidePane(null),
+    "open-design",
+    { title: "默认对话" },
+  );
+  const reopened = openOpenDesignSidePane(titled, {});
+  const tab = reopened.tabs[0];
+  expect(tab && "title" in tab ? tab.title : undefined).toBe("默认对话");
+});
+
+test("未绑定项目的新标签可开（默认按当前项目取资源页），画布名按标签回写", () => {
   const opened = openOpenDesignSidePane(null);
   expect(opened.tabs[0]?.id).toBe("open-design");
   expect(
@@ -80,11 +97,13 @@ test("未绑定的旧标签照旧可开（面板自行解析最近画布），�
     title: "登录页",
   });
   const titledActive = getActiveSidePaneTab(titled);
-  expect(titledActive && "title" in titledActive ? titledActive.title : undefined).toBe(
-    "登录页",
-  );
   expect(
-    titledActive && "projectId" in titledActive ? titledActive.projectId : undefined,
+    titledActive && "title" in titledActive ? titledActive.title : undefined,
+  ).toBe("登录页");
+  expect(
+    titledActive && "projectId" in titledActive
+      ? titledActive.projectId
+      : undefined,
   ).toBe("p-9");
   // 打偏的 tab id 不产生新状态（引用不变）。
   expect(

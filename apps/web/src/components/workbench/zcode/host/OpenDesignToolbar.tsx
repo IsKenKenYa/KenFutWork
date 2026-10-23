@@ -4,7 +4,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
@@ -15,11 +14,13 @@ import {
   Code2,
   Download,
   Eye,
+  FileText,
   FolderDown,
   FolderInput,
   Globe,
   Highlighter,
   History,
+  House,
   MessageSquarePlus,
   Monitor,
   Palette,
@@ -38,8 +39,8 @@ import type { ReactNode } from "react";
 /**
  * 画布工具栏（本仓口径，替代上游 FileViewer 那两行 chrome）。
  *
- * 上游控件逐项映射见台账 §二百〇四：「+」（新建画布 / 打开画布 / 上传资源 /
- * 新建浏览器）/ 刷新 / 预览·代码 / 设备视口 / 截图到对话 /
+ * 上游控件逐项映射见台账 §二百〇四：「+」（新建草图 / 新建文档 / 上传 /
+ * 新建浏览器 / 新建设计体系）/ 返回资源 / 刷新 / 预览·代码 / 设备视口 / 截图到对话 /
  * 交给对话（上游 Handoff 的文件夹按钮）/ 历史记录 / 导出（PNG、HTML）/ 分享 / 缩放。
  * 评论、标注、可视化编辑是本仓自己的实现，不吃上游应用内运行时。
  */
@@ -48,12 +49,6 @@ export type OpenDesignViewport = "desktop" | "tablet" | "mobile";
 
 /** 画布上的工作模式：互斥，同一时刻只有一种指针语义。 */
 export type OpenDesignTool = "none" | "comment" | "annotate" | "edit";
-
-/** 「+」里「打开画布」的一条：宿主代理的上游 project 概要。 */
-export interface OpenDesignCanvasSummary {
-  projectId: string;
-  name: string;
-}
 
 export interface OpenDesignVersionSummary {
   id: string;
@@ -64,9 +59,6 @@ export interface OpenDesignVersionSummary {
 }
 
 export const OPEN_DESIGN_ZOOM_LEVELS = [50, 75, 100, 125, 150, 200] as const;
-
-/** 「+」里最多列几块已有画布（再多的话走对话侧或刷新后找）。 */
-const OPENABLE_CANVAS_LIMIT = 8;
 
 const VIEWPORTS: Array<{
   id: OpenDesignViewport;
@@ -92,9 +84,10 @@ export function OpenDesignToolbar({
   commentCount,
   sidebarOpen,
   onToggleSidebar,
-  openableCanvases,
-  onCreateCanvas,
-  onOpenCanvas,
+  showBack,
+  onBackToResources,
+  onCreateSketch,
+  onCreateDocument,
   onUploadAsset,
   onOpenBrowserTab,
   onSyncContext,
@@ -102,6 +95,7 @@ export function OpenDesignToolbar({
   saveToWorkspaceBusy,
   activeDesignSystemTitle,
   onOpenDesignSystems,
+  onCreateDesignSystem,
   versions,
   versionsLoading,
   activeVersionId,
@@ -134,11 +128,15 @@ export function OpenDesignToolbar({
   commentCount: number;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
-  /** 「+」的「打开画布」清单（宿主代理的上游 project；空数组 = 只有「新建」）。 */
-  openableCanvases: OpenDesignCanvasSummary[];
-  onCreateCanvas: () => void;
-  onOpenCanvas: (projectId: string) => void;
-  /** 选中文件即上传到当前画布（没有画布时先新建一块再传）。 */
+  /** 当前在某个资源里：显示「返回资源」。 */
+  showBack: boolean;
+  /** 回到项目资源页（草稿/设计/文档的列表）。 */
+  onBackToResources: () => void;
+  /** 新建草图 = 当前项目的 Design 画布。 */
+  onCreateSketch: () => void;
+  /** 新建 Markdown 文档，落在当前项目的设计资源里。 */
+  onCreateDocument: () => void;
+  /** 上传资源进当前项目。 */
   onUploadAsset: (file: File) => void;
   onOpenBrowserTab: () => void;
   /** 同步评审上下文到设计引擎（document.md 受管段）。 */
@@ -147,6 +145,8 @@ export function OpenDesignToolbar({
   saveToWorkspaceBusy: boolean;
   activeDesignSystemTitle: string | null;
   onOpenDesignSystems: () => void;
+  /** 「+」里的「新建设计体系」：真正新建一份 draft 体系（不是选择已有）。 */
+  onCreateDesignSystem: () => void;
   versions: OpenDesignVersionSummary[] | null;
   versionsLoading: boolean;
   activeVersionId: string | null;
@@ -186,6 +186,11 @@ export function OpenDesignToolbar({
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-1.5 py-1">
       {uploadInput}
+      {showBack ? (
+        <ToolbarIconButton label="返回资源" onClick={onBackToResources}>
+          <House className="size-3" />
+        </ToolbarIconButton>
+      ) : null}
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
@@ -202,18 +207,25 @@ export function OpenDesignToolbar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-52">
           <DropdownMenuItem
-            data-open-design-add="canvas"
-            onSelect={onCreateCanvas}
+            data-open-design-add="sketch"
+            onSelect={onCreateSketch}
           >
             <PenTool className="size-3.5" />
-            <span className="flex-1">新建画布</span>
+            <span className="flex-1">新建草图</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-open-design-add="document"
+            onSelect={onCreateDocument}
+          >
+            <FileText className="size-3.5" />
+            <span className="flex-1">新建文档</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             data-open-design-add="upload"
             onSelect={() => uploadInputRef.current?.click()}
           >
             <Upload className="size-3.5" />
-            <span className="flex-1">上传资源</span>
+            <span className="flex-1">上传</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             data-open-design-add="browser"
@@ -222,23 +234,13 @@ export function OpenDesignToolbar({
             <Globe className="size-3.5" />
             <span className="flex-1">新建浏览器</span>
           </DropdownMenuItem>
-          {openableCanvases.length > 0 ? (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel>打开画布</DropdownMenuLabel>
-              {openableCanvases
-                .slice(0, OPENABLE_CANVAS_LIMIT)
-                .map((canvas) => (
-                  <DropdownMenuItem
-                    key={canvas.projectId}
-                    data-open-design-open={canvas.projectId}
-                    onSelect={() => onOpenCanvas(canvas.projectId)}
-                  >
-                    <span className="flex-1 truncate">{canvas.name}</span>
-                  </DropdownMenuItem>
-                ))}
-            </>
-          ) : null}
+          <DropdownMenuItem
+            data-open-design-add="design-system"
+            onSelect={onCreateDesignSystem}
+          >
+            <Palette className="size-3.5" />
+            <span className="flex-1">新建设计体系</span>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       <ToolbarIconButton
@@ -330,8 +332,12 @@ export function OpenDesignToolbar({
           <SquarePen className="size-3" />
         </ToolbarToggleIconButton>
         <ToolbarIconButton
-          label={activeDesignSystemTitle ? `设计体系：${activeDesignSystemTitle}` : "设计体系"}
-          disabled={busy || !hasCanvas}
+          label={
+            activeDesignSystemTitle
+              ? `设计体系：${activeDesignSystemTitle}`
+              : "设计体系"
+          }
+          disabled={busy}
           onClick={onOpenDesignSystems}
         >
           <Palette className="size-3" />

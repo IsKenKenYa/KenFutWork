@@ -125,6 +125,34 @@ export function createCodeRootHostFetch(
       call.method === "unsubscribeControllerV4"
     )
       return Response.json({ result: null });
+    if (call.method === "subscribeSessionsIndexV4") {
+      const scope = call.args[0] as {
+        workspaceIdentity?: string;
+        workspacePath?: string;
+      };
+      return Response.json({
+        result: {
+          ack: {
+            subscriptionId: `root-sessions-${scope.workspaceIdentity ?? scope.workspacePath}`,
+            logEpoch: "root-epoch",
+            mode: "snapshot",
+          },
+        },
+      });
+    }
+    if (call.method === "unsubscribeSessionsIndexV4")
+      return Response.json({ result: null });
+    if (call.method === "resyncSessionsIndexV4")
+      return Response.json({
+        result: {
+          ack: {
+            subscriptionId: (call.args[0] as { subscriptionId: string })
+              .subscriptionId,
+            logEpoch: "root-epoch",
+            mode: "snapshot",
+          },
+        },
+      });
     if (call.service === "file" && call.method === "resolvePath")
       return Response.json({ result: "/code" });
     if (call.service === "workspace" && call.method === "open")

@@ -432,12 +432,12 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
     expect(missing.json().error.code).toBe("open_design_not_configured");
   });
 
-  it("新建画布：透传默认名、回 projectId，并写「最近画布」槽位", async () => {
+  it("新建设计：透传默认名、回 projectId，并写「最近设计」槽位", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-canvas-"));
     const calls: Array<{ url: string; body: string | null }> = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ url: String(input), body: (init?.body as string) ?? null });
-      return jsonResponse({ project: { name: "未命名画布" } });
+      return jsonResponse({ project: { name: "未命名设计" } });
     }) as typeof fetch;
     const app = canvasFixture({
       frontendUrl: "http://127.0.0.1:7456/",
@@ -452,11 +452,11 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.project.projectId).toMatch(/^[0-9a-f-]{36}$/u);
-    expect(body.project.name).toBe("未命名画布");
+    expect(body.project.name).toBe("未命名设计");
     expect(body.entryFile).toBeNull();
     expect(calls[0]?.url).toBe("http://127.0.0.1:7456/api/projects");
     expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({
-      name: "未命名画布",
+      name: "未命名设计",
     });
     const slot = JSON.parse(
       readFileSync(
@@ -465,6 +465,173 @@ describe("画布数据面（/api/open-design/host/canvas 族）", () => {
       ),
     );
     expect(slot.projectId).toBe(body.project.projectId);
+  });
+
+  it("项目设计工作区：首开新建并绑定、二开复用、上游项目被删则重建", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-workspace-"));
+    let createdId: string | null = null;
+    let alive = true;
+    const createdNames: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/projects") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as {
+          id: string;
+          name: string;
+        };
+        createdId = body.id;
+        createdNames.push(body.name);
+        return jsonResponse({ project: { id: body.id, name: body.name } });
+      }
+      if (createdId && alive && url.endsWith(`/api/projects/${createdId}`))
+        return jsonResponse({ project: { id: createdId, name: "测试项目" } });
+      if (
+        createdId &&
+        alive &&
+        url.endsWith(`/api/projects/${createdId}/files`)
+      )
+        return jsonResponse({
+          files: [{ name: "index.html", kind: "html" }],
+        });
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      dataDir,
+      fetchImpl,
+    });
+    const payload = { workspaceKey: "proj-1", name: "测试项目" };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/workspace-project",
+      payload,
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({
+      created: true,
+      project: { name: "测试项目" },
+      entryFile: null,
+      files: [],
+    });
+    expect(createdNames).toEqual(["测试项目"]);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/workspace-project",
+      payload,
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toMatchObject({
+      created: false,
+      entryFile: "index.html",
+      files: [{ name: "index.html", kind: "html" }],
+    });
+    expect(createdNames).toHaveLength(1);
+
+    const binding = JSON.parse(
+      readFileSync(
+        join(dataDir, "config", "open-design-workspace-projects.json"),
+        "utf8",
+      ),
+    );
+    // 只存 workspaceKey 的哈希，不把目录/项目身份原样写进配置。
+    expect(JSON.stringify(binding)).not.toContain("proj-1");
+
+    alive = false;
+    const third = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/workspace-project",
+      payload,
+    });
+    expect(third.statusCode).toBe(200);
+    expect(third.json().created).toBe(true);
+    expect(createdNames).toHaveLength(2);
+  });
+
+  it("项目设计工作区：缺数据目录 → 503；缺 workspaceKey → 400", async () => {
+    const noData = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({}),
+    });
+    const missingData = await noData.inject({
+      method: "POST",
+      url: "/api/open-design/host/workspace-project",
+      payload: { workspaceKey: "proj-1" },
+    });
+    expect(missingData.statusCode).toBe(503);
+    expect(missingData.json().error.code).toBe("open_design_not_configured");
+
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-workspace-bad-"));
+    const withData = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      dataDir,
+      fetchImpl: daemonFetch({}),
+    });
+    const bad = await withData.inject({
+      method: "POST",
+      url: "/api/open-design/host/workspace-project",
+      payload: { workspaceKey: "" },
+    });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it("项目资源新建文档：写进已绑定项目并返回文件名", async () => {
+    const writes: Array<Record<string, unknown>> = [];
+    const fetchImpl = daemonFetch({
+      "/api/projects/p-1": () =>
+        jsonResponse({ project: { id: "p-1", name: "测试项目" } }),
+      "/api/projects/p-1/files": () => {
+        // 读文件表与写文件共用同一路径：按调用无法区分，交给下面包装。
+        return jsonResponse({ files: [] });
+      },
+    });
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (
+          String(input).endsWith("/api/projects/p-1/files") &&
+          init?.method === "POST"
+        ) {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          writes.push(body);
+          return jsonResponse({
+            file: { name: body.name, kind: "document" },
+          });
+        }
+        return fetchImpl(input, init);
+      }) as typeof fetch,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/design-document",
+      payload: { projectId: "p-1" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().file).toEqual({
+      name: "未命名文档.md",
+      kind: "document",
+    });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      content: "# 未命名文档\n\n",
+      versionSource: "manual",
+      versionLabel: "新建文档",
+    });
+    expect(writes[0]?.name).toBe("未命名文档.md");
+  });
+
+  it("项目资源新建文档：上游项目不存在 → 404", async () => {
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: daemonFetch({}),
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/design-document",
+      payload: { projectId: "p-gone" },
+    });
+    expect(response.statusCode).toBe(404);
   });
 
   it("读画布：入口文件按 artifactManifest 优先，退第一个 html，再退 null", async () => {
@@ -702,7 +869,7 @@ describe("GET /api/open-design/host/projects", () => {
     expect(response.json()).toEqual({
       projects: [
         { projectId: "p-new", name: "新画布", updatedAt: 300 },
-        { projectId: "p-mid", name: "未命名画布", updatedAt: 200 },
+        { projectId: "p-mid", name: "未命名设计", updatedAt: 200 },
         { projectId: "p-old", name: "旧画布", updatedAt: 100 },
       ],
     });
@@ -819,6 +986,113 @@ describe("POST /api/open-design/host/file", () => {
     });
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.message).toBe("上游没有这块画布。");
+  });
+});
+
+describe("POST /api/open-design/host/file-rename", () => {
+  it("读旧正文、写新名、删旧文件", async () => {
+    const calls: Array<{
+      method: string;
+      url: string;
+      body?: Record<string, unknown>;
+    }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/projects/p-1"))
+        return jsonResponse({ project: { id: "p-1", name: "项目" } });
+      if (url.endsWith("/api/projects/p-1/files") && method === "GET")
+        return jsonResponse({
+          files: [{ name: "notes.md", kind: "document" }],
+        });
+      if (url.endsWith("/api/projects/p-1/preview-url?file=notes.md"))
+        return jsonResponse({
+          url: "/preview/notes.md",
+          iframeSandbox: "allow-scripts",
+        });
+      if (url.endsWith("/preview/notes.md"))
+        return new Response("# 方案\n\n正文", {
+          status: 200,
+          headers: { "content-type": "text/markdown" },
+        });
+      if (method === "POST" && url.endsWith("/api/projects/p-1/files")) {
+        calls.push({
+          method,
+          url,
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return jsonResponse({
+          file: { name: "方案说明.md", kind: "document" },
+        });
+      }
+      if (method === "DELETE" && url.includes("/files/notes.md")) {
+        calls.push({ method, url });
+        return jsonResponse({ ok: true });
+      }
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-rename",
+      payload: {
+        projectId: "p-1",
+        name: "notes.md",
+        newName: "方案说明.md",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().file).toEqual({
+      name: "方案说明.md",
+      kind: "document",
+    });
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+      name: "方案说明.md",
+      content: "# 方案\n\n正文",
+    });
+    expect(
+      calls.some(
+        (call) =>
+          call.method === "DELETE" && call.url.includes("/files/notes.md"),
+      ),
+    ).toBe(true);
+  });
+
+  it("同名冲突 409；路径/非文本 400", async () => {
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/api/projects/p-1"))
+          return jsonResponse({ project: { id: "p-1", name: "项目" } });
+        if (url.endsWith("/api/projects/p-1/files"))
+          return jsonResponse({ files: [{ name: "a.md" }, { name: "b.md" }] });
+        return new Response("not found", { status: 404 });
+      }) as typeof fetch,
+    });
+    const conflict = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-rename",
+      payload: { projectId: "p-1", name: "a.md", newName: "b.md" },
+    });
+    expect(conflict.statusCode).toBe(409);
+
+    const traversal = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-rename",
+      payload: { projectId: "p-1", name: "a.md", newName: "../x.md" },
+    });
+    expect(traversal.statusCode).toBe(400);
+
+    const binary = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/file-rename",
+      payload: { projectId: "p-1", name: "a.md", newName: "x.png" },
+    });
+    expect(binary.statusCode).toBe(400);
   });
 });
 
@@ -1001,6 +1275,124 @@ describe("「同步到引擎」与文档/设计体系（PR-1 数据面）", () =
     });
     expect(bound.statusCode).toBe(200);
     expect(patches[0]!.body.designSystemId).toBe("agentic");
+    await app.close();
+  });
+
+  it("design-systems：新建设计体系走上游 /api/brands 提取并轮询状态", async () => {
+    const posts: Array<Record<string, unknown>> = [];
+    const app = canvasFixture({
+      frontendUrl: "http://127.0.0.1:7456",
+      fetchImpl: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/api/brands") && init?.method === "POST") {
+          posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return jsonResponse({
+            id: "brand-1",
+            projectId: "brand-project-1",
+            status: "extracting",
+            designSystemId: "user:draft",
+          });
+        }
+        if (url.endsWith("/api/brands/brand-1"))
+          return jsonResponse({
+            meta: {
+              id: "brand-1",
+              status: "ready",
+              designSystemId: "user:new",
+            },
+            brand: { name: "新体系" },
+          });
+        if (url.endsWith("/api/brands/brand-failed"))
+          return jsonResponse({
+            meta: {
+              id: "brand-failed",
+              status: "failed",
+              extractionTerminalError:
+                "Programmatic extraction needs user assistance.",
+              blocked: true,
+            },
+            brand: null,
+          });
+        return new Response("not found", { status: 404 });
+      }) as typeof fetch,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/design-systems",
+      payload: {
+        url: "https://example.com",
+        description: "面向设计师",
+        designMd: "# 示例",
+      },
+    });
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({
+      extraction: {
+        id: "brand-1",
+        status: "extracting",
+        designSystemId: "user:draft",
+        title: null,
+        error: null,
+      },
+    });
+    expect(posts).toEqual([
+      {
+        url: "https://example.com",
+        description: "面向设计师",
+        designMd: "# 示例",
+        locale: "zh-CN",
+      },
+    ]);
+
+    const polled = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/design-systems/extractions/brand-1",
+    });
+    expect(polled.statusCode).toBe(200);
+    expect(polled.json()).toEqual({
+      extraction: {
+        id: "brand-1",
+        status: "ready",
+        designSystemId: "user:new",
+        title: "新体系",
+        error: null,
+      },
+    });
+
+    const failed = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/design-systems/extractions/brand-failed",
+    });
+    expect(failed.statusCode).toBe(200);
+    expect(failed.json().extraction).toMatchObject({
+      status: "failed",
+      designSystemId: null,
+      error: "Programmatic extraction needs user assistance.",
+    });
+
+    const missing = await app.inject({
+      method: "GET",
+      url: "/api/open-design/host/design-systems/extractions/brand-missing",
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.message).toBe("没有这条提取任务。");
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/design-systems",
+      payload: {},
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.message).toBe("至少提供网站或 DESIGN.md。");
+
+    const badUrl = await app.inject({
+      method: "POST",
+      url: "/api/open-design/host/design-systems",
+      payload: { url: "ftp://example.com" },
+    });
+    expect(badUrl.statusCode).toBe(400);
+    expect(badUrl.json().error.message).toBe("网站链接必须是 http(s) 地址。");
+    expect(posts).toHaveLength(1);
     await app.close();
   });
 });
