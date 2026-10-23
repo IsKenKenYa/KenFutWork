@@ -86,12 +86,15 @@ export function HostOpenDesignSettingsSection() {
   const provision = () => {
     setProvisioning(true);
     setProvisionStatus(null);
-    surfaceJson<{ done: boolean; agentId: string | null; reason: string | null }>(
-      "/api/open-design/host/provision",
-      { method: "POST" },
-    )
+    surfaceJson<{
+      done: boolean;
+      agentId: string | null;
+      reason: string | null;
+    }>("/api/open-design/host/provision", { method: "POST" })
       .then((result) =>
-        setProvisionStatus(result.done ? "已配置" : (result.reason ?? "未完成")),
+        setProvisionStatus(
+          result.done ? "已配置" : (result.reason ?? "未完成"),
+        ),
       )
       .catch((provisionError: unknown) =>
         setProvisionStatus(readableError(provisionError, "配置失败")),
@@ -141,9 +144,7 @@ export function HostOpenDesignSettingsSection() {
           control={
             <div className="flex items-center gap-2">
               {provisionStatus ? (
-                <span data-testid="od-provision-status">
-                  {provisionStatus}
-                </span>
+                <span data-testid="od-provision-status">{provisionStatus}</span>
               ) : null}
               <Button
                 type="button"

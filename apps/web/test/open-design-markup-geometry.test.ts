@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
+  type FrameMetrics,
   frameRectToOverlay,
   normalizedToOverlay,
-  overlayToNormalized,
-  type FrameMetrics,
   type OverlayBox,
+  overlayToNormalized,
 } from "../src/components/workbench/zcode/host/openDesignMarkupGeometry.js";
 
 /**
@@ -58,12 +58,12 @@ describe("open-design 覆盖层坐标", () => {
 
   test("尺寸还没量到时返回原点，不炸也不 NaN", () => {
     const zero = { ...metrics, vw: 0, vh: 0 };
-    expect(Number.isNaN(overlayToNormalized({ x: 1, y: 1 }, box, zero)[0])).toBe(
-      false,
-    );
-    expect(overlayToNormalized({ x: 1, y: 1 }, { ...box, width: 0 }, metrics)).toEqual(
-      [0, 0],
-    );
+    expect(
+      Number.isNaN(overlayToNormalized({ x: 1, y: 1 }, box, zero)[0]),
+    ).toBe(false);
+    expect(
+      overlayToNormalized({ x: 1, y: 1 }, { ...box, width: 0 }, metrics),
+    ).toEqual([0, 0]);
   });
 
   test("元素矩形换算：视口坐标 × 比例 + iframe 偏移", () => {

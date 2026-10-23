@@ -38,10 +38,7 @@ export function overlayToNormalized(
   const scaleY = box.height / metrics.vh;
   const inFrameX = (point.x - box.left) / scaleX + metrics.sx;
   const inFrameY = (point.y - box.top) / scaleY + metrics.sy;
-  return [
-    clampRatio(inFrameX / metrics.w),
-    clampRatio(inFrameY / metrics.h),
-  ];
+  return [clampRatio(inFrameX / metrics.w), clampRatio(inFrameY / metrics.h)];
 }
 
 /** 文档归一化坐标 → 覆盖层像素（笔迹与图钉的落点）。 */

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   OPEN_DESIGN_BRIDGE_SOURCE,
   type OpenDesignHit,
@@ -29,7 +29,9 @@ export function useOpenDesignBridge({
   const [rects, setRects] = useState<OpenDesignRects["rects"]>({});
   const [docSize, setDocSize] = useState<OpenDesignRects["doc"] | null>(null);
   const seq = useRef(0);
-  const pending = useRef(new Map<number, (hit: OpenDesignHit | null) => void>());
+  const pending = useRef(
+    new Map<number, (hit: OpenDesignHit | null) => void>(),
+  );
   const pickHandler = useRef(onPickHit);
   pickHandler.current = onPickHit;
   const trackedKey = trackedPaths.join("\n");
@@ -52,16 +54,14 @@ export function useOpenDesignBridge({
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.source !== frameRef.current?.contentWindow) return;
-      const data = event.data as
-        | {
-            source?: string;
-            type?: string;
-            id?: number;
-            hit?: OpenDesignHit | null;
-            rects?: OpenDesignRects["rects"];
-            doc?: OpenDesignRects["doc"];
-          }
-        | null;
+      const data = event.data as {
+        source?: string;
+        type?: string;
+        id?: number;
+        hit?: OpenDesignHit | null;
+        rects?: OpenDesignRects["rects"];
+        doc?: OpenDesignRects["doc"];
+      } | null;
       if (!data || data.source !== OPEN_DESIGN_BRIDGE_SOURCE) return;
       if (data.type === "ready" || data.type === "rects") {
         setReady(true);

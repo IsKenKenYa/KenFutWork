@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
-  OPEN_DESIGN_BRIDGE_SOURCE,
   buildCanvasDocument,
+  OPEN_DESIGN_BRIDGE_SOURCE,
 } from "../src/components/workbench/zcode/host/openDesignRuntime.js";
 import {
   applyElementEdit,

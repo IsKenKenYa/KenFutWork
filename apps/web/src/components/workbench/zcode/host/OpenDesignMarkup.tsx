@@ -1,11 +1,14 @@
+import type {
+  DesignReviewAnnotation,
+  DesignReviewComment,
+} from "@kenfutwork/shared";
 import { useRef, useState } from "react";
-import type { DesignReviewAnnotation, DesignReviewComment } from "@kenfutwork/shared";
 import {
+  type FrameMetrics,
   frameRectToOverlay,
   normalizedToOverlay,
-  overlayToNormalized,
-  type FrameMetrics,
   type OverlayBox,
+  overlayToNormalized,
 } from "./openDesignMarkupGeometry.js";
 
 /** 一条新标注落笔后的最小信息（作用域由面板补齐）。 */
@@ -54,7 +57,10 @@ export function OpenDesignMarkup({
     const rect = svgRef.current?.getBoundingClientRect();
     // 覆盖层坐标系：以覆盖层自身左上角为原点（`box` 也在这个坐标系里）。
     return overlayToNormalized(
-      { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) },
+      {
+        x: event.clientX - (rect?.left ?? 0),
+        y: event.clientY - (rect?.top ?? 0),
+      },
       box,
       metrics,
     );
@@ -129,24 +135,18 @@ export function OpenDesignMarkup({
         .map((comment, index) => {
           const live = rects[comment.anchor.path];
           // 存的矩形是文档坐标；锚点失效时按当前滚动量折算回视口位置。
-          const source =
-            live ??
-            {
-              ...comment.anchor.rect,
-              x: comment.anchor.rect.x - metrics.sx,
-              y: comment.anchor.rect.y - metrics.sy,
-            };
+          const source = live ?? {
+            ...comment.anchor.rect,
+            x: comment.anchor.rect.x - metrics.sx,
+            y: comment.anchor.rect.y - metrics.sy,
+          };
           const spot = frameRectToOverlay(source, box, metrics);
           return (
             <button
               key={comment.id}
               type="button"
               data-design-comment-pin={comment.id}
-              title={
-                live
-                  ? comment.body
-                  : `${comment.body} · 锚点已失效`
-              }
+              title={live ? comment.body : `${comment.body} · 锚点已失效`}
               onClick={() => onPickComment(comment.id)}
               className="pointer-events-auto absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full rounded-bl-none bg-primary text-ui-caption font-semibold text-primary-foreground shadow-md"
               style={{ left: spot.left, top: spot.top + spot.height / 2 }}
@@ -204,7 +204,12 @@ function AnnotationShape({
           stroke={annotation.color}
           strokeWidth={annotation.strokeWidth}
         />
-        <rect {...frame} fill="none" pointerEvents={erasable ? "stroke" : "none"} {...eraser} />
+        <rect
+          {...frame}
+          fill="none"
+          pointerEvents={erasable ? "stroke" : "none"}
+          {...eraser}
+        />
       </g>
     );
   }

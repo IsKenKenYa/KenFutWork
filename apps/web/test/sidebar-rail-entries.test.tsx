@@ -1,10 +1,9 @@
-import { Blocks } from "lucide-react";
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
-
-import { HostSidebarRail } from "../src/components/workbench/zcode/host/WorkbenchModeNavigation.js";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { Blocks } from "lucide-react";
+import { afterEach, expect, test, vi } from "vitest";
 import { SidebarNavButton } from "../src/components/workbench/zcode/host/SidebarNavButton.js";
+import { HostSidebarRail } from "../src/components/workbench/zcode/host/WorkbenchModeNavigation.js";
 
 /**
  * 侧栏收起态必须还承载得住入口（用户 2026-10-19：「侧边栏按钮缺失（插件市场技能等等任务、
@@ -17,7 +16,12 @@ afterEach(cleanup);
 test("rail 形态：只剩图标，标签进 aria-label 与 title，点击照旧生效", () => {
   const onClick = vi.fn();
   const view = render(
-    <SidebarNavButton collapsed icon={icon} label="插件市场" onClick={onClick} />,
+    <SidebarNavButton
+      collapsed
+      icon={icon}
+      label="插件市场"
+      onClick={onClick}
+    />,
   );
   const button = view.getByRole("button", { name: "插件市场" });
   expect(button.textContent).toBe("");
@@ -82,8 +86,18 @@ test("rail 在展开按钮与模式之下渲染入口列，入口缺失时不留
       onExpand={onExpand}
       actions={
         <>
-          <SidebarNavButton collapsed icon={icon} label="新建任务" onClick={() => {}} />
-          <SidebarNavButton collapsed icon={icon} label="插件市场" onClick={() => {}} />
+          <SidebarNavButton
+            collapsed
+            icon={icon}
+            label="新建任务"
+            onClick={() => {}}
+          />
+          <SidebarNavButton
+            collapsed
+            icon={icon}
+            label="插件市场"
+            onClick={() => {}}
+          />
         </>
       }
     />,
@@ -114,6 +128,10 @@ test("侧栏 rail 分支承载入口列，且与展开态共用同一份定义",
   expect(source).toContain("{sharedNavigation(true)}");
   expect(source).toContain("{sharedNavigation(false)}");
   // 新建任务的动作只有一份定义（rail 与展开态共用，不各写一份闭包）
-  expect(source.match(/handleCreateTaskFromSidebar/gu)?.length).toBeGreaterThanOrEqual(3);
-  expect(source).not.toMatch(/<HostSidebarRail onExpand=\{\(\) => onExpand\?\.\(\)\} \/>/u);
+  expect(
+    source.match(/handleCreateTaskFromSidebar/gu)?.length,
+  ).toBeGreaterThanOrEqual(3);
+  expect(source).not.toMatch(
+    /<HostSidebarRail onExpand=\{\(\) => onExpand\?\.\(\)\} \/>/u,
+  );
 });

@@ -409,7 +409,8 @@ export function BrowserPane({
         }>("/api/browser/cdp/status");
         if (!cancelled) {
           setPageStalled(
-            result.cdp.status === "connected" && result.cdp.responsive === false,
+            result.cdp.status === "connected" &&
+              result.cdp.responsive === false,
           );
         }
       } catch {

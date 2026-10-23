@@ -8,7 +8,7 @@ const PREFIX = "data:image/svg+xml;charset=utf-8,";
 
 test("快照 SVG：固定尺寸、去脚本、保样式（光栅化输入是自包含 HTML）", () => {
   const url = buildDesignSnapshotSvg(
-    '<html><head><style>body{color:red}</style></head><body><script>alert(1)</script><h1>hi</h1></body></html>',
+    "<html><head><style>body{color:red}</style></head><body><script>alert(1)</script><h1>hi</h1></body></html>",
     320,
     200,
   );

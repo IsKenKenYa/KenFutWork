@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { Button } from "@zui/components/ui/button.js";
+import { useState } from "react";
 import type { OpenDesignHit } from "./openDesignRuntime.js";
 
 /** 保存出去的编辑意图：源文本上的改动由调用方落笔（面板持有正文）。 */
@@ -30,8 +30,7 @@ export function OpenDesignEditInspector({
   const [color, setColor] = useState("");
   const [backgroundColor, setBackgroundColor] = useState("");
 
-  const dirty =
-    html !== hit.html || color !== "" || backgroundColor !== "";
+  const dirty = html !== hit.html || color !== "" || backgroundColor !== "";
 
   return (
     <div
@@ -56,10 +55,14 @@ export function OpenDesignEditInspector({
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-        <label className="mb-1 block text-ui-caption text-foreground-subtle">
+        <label
+          htmlFor="open-design-edit-html"
+          className="mb-1 block text-ui-caption text-foreground-subtle"
+        >
           选中元素的 HTML
         </label>
         <textarea
+          id="open-design-edit-html"
           value={html}
           spellCheck={false}
           onChange={(event) => setHtml(event.target.value)}
@@ -151,8 +154,6 @@ function toHexColor(value: string): string {
   if (!parts) return "#000000";
   const [, r, g, b] = parts;
   return `#${[r, g, b]
-    .map((channel) =>
-      Number(channel).toString(16).padStart(2, "0").slice(0, 2),
-    )
+    .map((channel) => Number(channel).toString(16).padStart(2, "0").slice(0, 2))
     .join("")}`;
 }

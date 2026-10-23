@@ -111,7 +111,8 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
     }),
   );
   expect(screen.queryByRole("radio", { name: "Flow" })).toBeNull();
-  await act(async () =>
+  // 设计面首帧依赖宿主的异步数据面；同步 act 只 flush 这次导航更新，不等待挂载中的 Suspense。
+  act(() =>
     fireEvent(
       window,
       new MessageEvent("message", {

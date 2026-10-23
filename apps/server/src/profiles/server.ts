@@ -7,7 +7,6 @@ import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
-import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createBrowserPlugin } from "../features/browser/plugin.js";
 import { createCadPlugin } from "../features/cad/plugin.js";
 import { createCanvasAssetLocationsPlugin } from "../features/canvas/asset-locations-plugin.js";
@@ -27,6 +26,7 @@ import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
+import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";

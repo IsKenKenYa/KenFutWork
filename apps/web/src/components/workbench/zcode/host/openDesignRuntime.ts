@@ -41,11 +41,28 @@ export interface OpenDesignRects {
 /** 父子两侧之间的全部消息（双向共用一个判别联合）。 */
 export type BridgeMessage =
   | { source: typeof OPEN_DESIGN_BRIDGE_SOURCE; type: "pick"; on: boolean }
-  | { source: typeof OPEN_DESIGN_BRIDGE_SOURCE; type: "hit"; id: number; x: number; y: number }
+  | {
+      source: typeof OPEN_DESIGN_BRIDGE_SOURCE;
+      type: "hit";
+      id: number;
+      x: number;
+      y: number;
+    }
   | { source: typeof OPEN_DESIGN_BRIDGE_SOURCE; type: "track"; ids: string[] }
-  | ({ source: typeof OPEN_DESIGN_BRIDGE_SOURCE; type: "ready" } & OpenDesignRects)
-  | ({ source: typeof OPEN_DESIGN_BRIDGE_SOURCE; type: "rects" } & OpenDesignRects)
-  | ({ source: typeof OPEN_DESIGN_BRIDGE_SOURCE; type: "hit"; id: number; hit: OpenDesignHit | null });
+  | ({
+      source: typeof OPEN_DESIGN_BRIDGE_SOURCE;
+      type: "ready";
+    } & OpenDesignRects)
+  | ({
+      source: typeof OPEN_DESIGN_BRIDGE_SOURCE;
+      type: "rects";
+    } & OpenDesignRects)
+  | {
+      source: typeof OPEN_DESIGN_BRIDGE_SOURCE;
+      type: "hit";
+      id: number;
+      hit: OpenDesignHit | null;
+    };
 
 /**
  * 注入脚本正文（自包含 IIFE，不引用任何打包变量）。
@@ -156,9 +173,9 @@ const BRIDGE_SCRIPT = `(function(){
 export function buildCanvasDocument(html: string, baseUrl: string): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   // 先清掉上一轮的注入件（base 在 head、桥在 body），否则重挂一次就多一份脚本。
-  doc
-    .querySelectorAll(`[${INJECT_ATTRIBUTE}]`)
-    .forEach((node) => node.remove());
+  doc.querySelectorAll(`[${INJECT_ATTRIBUTE}]`).forEach((node) => {
+    node.remove();
+  });
   const base = doc.createElement("base");
   base.setAttribute(INJECT_ATTRIBUTE, "base");
   base.href = baseUrl;

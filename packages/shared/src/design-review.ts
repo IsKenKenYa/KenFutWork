@@ -56,7 +56,10 @@ export const designReviewAnnotationSchema = z.object({
   kind: z.enum(["pen", "rect"]),
   color: z.string().min(1).max(32),
   strokeWidth: z.number().finite().positive().max(64),
-  points: z.array(z.tuple([z.number().finite(), z.number().finite()])).min(2).max(4000),
+  points: z
+    .array(z.tuple([z.number().finite(), z.number().finite()]))
+    .min(2)
+    .max(4000),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });

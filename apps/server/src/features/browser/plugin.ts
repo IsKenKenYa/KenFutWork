@@ -490,8 +490,7 @@ export function registerBrowserRoutes(
     const status = cdp.status();
     // 页面主线程探针：注入脚本/网页自身卡死时面板据此提示「画面已卡住」，
     // 不让整块面板看起来像死了（探针本身 1.5s 超时，失败只影响这个字段）。
-    const responsive =
-      status.status === "connected" ? await cdp.ping() : false;
+    const responsive = status.status === "connected" ? await cdp.ping() : false;
     return reply.code(200).send({ cdp: { ...status, responsive } });
   });
 

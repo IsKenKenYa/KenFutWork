@@ -10,7 +10,6 @@ import type { ExecutionModeService } from "../features/agent-modes/execution-mod
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { BlobStore } from "../features/blob/types.js";
 import type { BrandKitService } from "../features/brand-kit/brand-kit-service.js";
-import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type { BrowserService } from "../features/browser/fetch-page.js";
 import type { CanvasAssetLocations } from "../features/canvas/asset-locations.js";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
@@ -21,6 +20,7 @@ import type { CodeGitService } from "../features/code-git/code-git-service.js";
 import type { CodeTerminalService } from "../features/code-terminal/types.js";
 import type { CodeUiService } from "../features/code-ui/service.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
+import type { DesignReviewService } from "../features/design-review/design-review-service.js";
 import type {
   ExecutionScopeHandle,
   ExecutionScopes,

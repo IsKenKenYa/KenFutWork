@@ -33,10 +33,7 @@ function query(root: Document, path: string): Element | null {
  * 这类载荷在插入瞬间就会发起加载甚至执行。DOMParser 的文档不加载资源、不跑脚本，
  * 只有 importNode 之后才进活文档。
  */
-function parseFragment(
-  doc: Document,
-  markup: string,
-): Element | null {
+function parseFragment(doc: Document, markup: string): Element | null {
   const inert = new DOMParser().parseFromString(markup, "text/html");
   const first = inert.body?.firstElementChild;
   return first ? (doc.importNode(first, true) as Element) : null;
@@ -47,7 +44,10 @@ function serialize(doc: Document): string {
 }
 
 /** 检视器初始读数：源文本里这个元素的 HTML。 */
-export function readElementHtml(sourceHtml: string, path: string): string | null {
+export function readElementHtml(
+  sourceHtml: string,
+  path: string,
+): string | null {
   const doc = new DOMParser().parseFromString(sourceHtml, "text/html");
   return query(doc, path)?.outerHTML ?? null;
 }

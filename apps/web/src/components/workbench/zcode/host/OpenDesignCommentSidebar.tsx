@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Check, Trash2, X } from "lucide-react";
 import type { DesignReviewComment } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
+import { Check, Trash2, X } from "lucide-react";
+import { useState } from "react";
 
 /**
  * 评论侧栏：这块画布当前文件上的评论清单。
@@ -132,7 +132,6 @@ export function OpenDesignCommentComposer({
         </p>
       ) : null}
       <textarea
-        autoFocus
         value={body}
         placeholder="评论"
         onChange={(event) => setBody(event.target.value)}

@@ -831,7 +831,9 @@ test("⋯菜单「同步到画布」：截图 + URL 打到 /api/open-design/host
   await enableFreeSize();
   await screen.findByAltText("浏览器画面");
   openBrowserMenu();
-  fireEvent.click(await screen.findByRole("menuitem", { name: "同步到 OpenDesign" }));
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name: "同步到 OpenDesign" }),
+  );
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/open-design/host/browser-page",
