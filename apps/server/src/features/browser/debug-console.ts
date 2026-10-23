@@ -147,17 +147,20 @@ const FLOAT_SCRIPT = `
   var headStyle = document.createElement("style");
   headStyle.textContent =
     // 三按钮的**小号直角梯形**容器（直角在右边：右边竖直、左上收斜边），
-    // 完全在窗外，跟随宿主（悬浮面板/分屏卡片的右上角，或悬浮球上方）
+    // 完全在窗外，恒定贴视口右上角。
     // 梯形只做**背景层**（伪元素）：clip-path 放在容器上会把最左按钮的左上角裁掉，
     // 点击从被裁区域穿透到页面（真机：点到百度顶部导航，看起来像「按钮没反应+页面卡死」）。
+    // **深色底白字**（2026-10-23 用户口径「按钮没了」）：原白底半透明在浅色页面上隐形
+    // （实测按钮区 74% 纯白、仅 26 个深色字形像素，经画面流 JPEG 压缩后肉眼不可辨），
+    // 挪到视口右上后失去悬浮窗的视觉锚点，必须自带高对比。
     ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:2px 0 2px 28px;" +
     "background:transparent;box-shadow:none}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
-    "background:#fff;box-shadow:0 -2px 8px rgba(0,0,0,.12);" +
+    "background:#2b3038;box-shadow:0 2px 10px rgba(0,0,0,.35);" +
     "clip-path:polygon(38% 0,100% 0,100% 100%,0 100%)}" +
     ".kfw-btn{width:18px;height:18px;line-height:16px;font-size:12px;font-family:system-ui,sans-serif;" +
-    "border:1px solid rgba(0,0,0,.15);border-radius:3px;background:#fff;color:#333;cursor:pointer;padding:0}" +
-    ".kfw-btn:hover{background:#eee}" +
+    "border:1px solid rgba(255,255,255,.25);border-radius:3px;background:transparent;color:#f4f6f8;cursor:pointer;padding:0}" +
+    ".kfw-btn:hover{background:rgba(255,255,255,.18)}" +
     // 悬浮球：浅色半透白 + 毛玻璃、36px、贴边半藏 55%、悬停近全露；
     // 拖动时脱离贴边自由跟手（kfw-ball-drag），松手吸附最近边
     ".kfw-ball{position:fixed;z-index:2147483647;width:36px;height:36px;border-radius:50%;" +

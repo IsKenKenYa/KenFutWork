@@ -200,6 +200,11 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("viewportWidth() - barW");
     expect(script).not.toContain("rect.right - barW");
     expect(script).not.toContain("rect.top - barH");
+    // 深色底白字（用户口径 2026-10-23「按钮没了」）：白底在浅色页面上隐形
+    // （实测按钮区 74% 纯白、仅 26 个深色字形像素，画面流 JPEG 压缩后肉眼不可辨）
+    expect(script).toContain("background:#2b3038");
+    expect(script).toContain("color:#f4f6f8");
+    expect(script).not.toContain("background:#fff;color:#333");
     // 最小化的球落在按钮条正下方（视口右缘顶部）：视线不用动，点一下球即还原
     expect(script).toContain('placeBall("right")');
     expect(script).toContain('ball.style.top = "28px"');
