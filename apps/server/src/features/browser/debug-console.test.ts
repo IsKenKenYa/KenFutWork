@@ -198,12 +198,12 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).not.toContain("polygon(38%");
     expect(script).toContain('uiState === "ball"');
     expect(script).toContain("function syncBtnbar");
-    // 按钮条恒定贴视口右上角（用户口径 2026-10-23「三按钮多点点就卡死」）：
-    // 跟随容器时 max 态按钮条跳到页底（实测横跳 480px 纵跳 460px），固定位置连点
-    // 只有第 1 击命中、后续全落到页面内容上。恒定定位后连点永远命中同一位置。
-    expect(script).toContain("viewportWidth() - barW");
-    expect(script).not.toContain("rect.right - barW");
-    expect(script).not.toContain("rect.top - barH");
+    // 按钮条跟随面板容器右上角（用户口径 2026-10-24「按钮要在悬浮面板上」）：
+    // 悬浮态贴悬浮窗右上、分屏态贴卡片右上、拖动面板时按钮实时跟随。
+    // （2026-10-23 曾因「连点卡死」改为恒定贴视口右上，用户视角＝按钮从面板上消失。）
+    expect(script).toContain("rect.right - barW");
+    expect(script).toContain("rect.top - barH");
+    expect(script).not.toContain("viewportWidth() - barW");
     // 白底深字（用户口径 2026-10-23「不要改颜色」：深色版试用后否决，回原配色）
     expect(script).toContain("background:#fff");
     expect(script).toContain("color:#333");
@@ -215,9 +215,11 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).toContain("filter:drop-shadow(0 1px 0 rgba(0,0,0,.45))");
     expect(script).toContain("border:1px solid rgba(0,0,0,.5)");
     expect(script).not.toContain("box-shadow:0 2px 8px rgba(0,0,0,.15)");
-    // 最小化的球落在按钮条正下方（视口右缘顶部）：视线不用动，点一下球即还原
-    expect(script).toContain('placeBall("right")');
-    expect(script).toContain('ball.style.top = "28px"');
+    // 最小化的球停靠在面板所在半边、面板顶缘高度（按钮跟面板走后球也跟面板走）：
+    // 视线不用动，点一下球即还原
+    expect(script).toContain('placeBall(');
+    expect(script).toContain("? \"left\" : \"right\"");
+    expect(script).toContain("viewportHeight() - 44");
     // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
     expect(script).toContain('if (uiState === "ball") applyFloat();');
     expect(script).toContain('if (uiState === "max") applyFloat();');

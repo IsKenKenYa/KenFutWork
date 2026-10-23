@@ -55,8 +55,9 @@ const START_TAIL = `
 /**
  * 把 Eruda 的容器改造成**三态窗口**（用户口径 2026-10-20）：
  * - **悬浮**（默认）：实底悬浮窗，顶部标签栏拖动移动，右下角缩放；三按钮在**窗外的
- *   梯形容器**里（body 级 fixed，完全不受容器影子根与 overflow 裁剪），**恒定贴视口
- *   右上角**（2026-10-23：跟随容器会在 max 态跳到页底，连点全落空——详见 syncBtnbar 注释）；
+ *   梯形容器**里（body 级 fixed，完全不受容器影子根与 overflow 裁剪），**跟随面板
+ *   容器右上角**（2026-10-24 用户口径「按钮要在悬浮面板上」：悬浮态贴悬浮窗右上、
+ *   分屏态贴分屏卡片右上）；
  * - **最小化**：收成**悬浮球**贴边半藏（浅色半透白+毛玻璃，图标与「打开调试工具」菜单
  *   同款 SquareTerminal），悬停滑出、点击还原、**拖动自由跟手松手吸附最近边**；
  * - **最大化**：贴页面底部的全宽遮罩，上边线 `ns-resize` 上下箭头可拖高度；拖标签栏
@@ -212,10 +213,11 @@ const FLOAT_SCRIPT = `
   // 按钮条跟随宿主：面板/卡片态贴容器**右上角外**；悬浮球态贴在**球上方**。
   // rAF 合帧 + 尺寸缓存：拖动/缩放的高频 mousemove 里不再每次强制回流。
   //
-  // **位置恒定贴视口右上角**（用户口径 2026-10-23「三按钮多点点就卡死」）：
-  // 原实现贴容器右上——max 态容器贴底，按钮条跟着跳到页面底部（实测横向跳 480px、
-  // 纵向 460px），固定位置连点只有第 1 击命中，后续全部落到页面内容上（真机表现
-  // 「点了没反应/卡死，等很久才反应过来」）。恒定后 float↔max 怎么切按钮都在同一处。
+  // **位置跟随面板容器右上角**（用户口径 2026-10-24「按钮要在悬浮面板上」）：
+  // 悬浮态贴悬浮窗右上、分屏态贴分屏卡片右上——面板在哪按钮在哪。
+  // （2026-10-23 曾按「连点卡死」改成恒定贴视口右上，用户视角按钮从面板上
+  // 消失＝「按钮没了」——连点落空的主体根因是 §225 坐标偏移与 §240 moved 合帧，
+  // 均已独立修复，跟随定位回归。）
   // 定位用 viewportWidth()（内容区宽，不含经典滚动条）：CDP 点击的 hit test 也在
   // 内容区坐标里，贴 innerWidth 会把右端压进滚动条、点击落空（§二百二十五 同款事故）。
   var uiState = "float"; // float | max | ball
@@ -249,8 +251,8 @@ const FLOAT_SCRIPT = `
         return;
       }
       btnbar.style.display = "flex";
-      btnbar.style.left = Math.max(0, Math.round(viewportWidth() - barW)) + "px";
-      btnbar.style.top = "0px";
+      btnbar.style.left = Math.max(0, Math.round(rect.right - barW)) + "px";
+      btnbar.style.top = Math.max(0, Math.round(rect.top - barH)) + "px";
     });
   }
   window.addEventListener("resize", function () {
@@ -318,11 +320,15 @@ const FLOAT_SCRIPT = `
   }
   function applyBall() {
     uiState = "ball";
-    // 球落在按钮条正下方（视口右缘顶部）：最小化后视线不用动，点一下球即还原。
-    // 原实现按容器位置选边，球常出现在远端，用户以为「按钮没了/卡死」
-    // （2026-10-23 连点卡死轮实测结论）。
-    placeBall("right");
-    ball.style.top = "28px";
+    // 球贴面板消失前的位置：停靠在面板所在半边、面板顶缘的高度——视线不用动，
+    // 点一下球即还原。（2026-10-23 曾固定右缘顶部，那是按钮恒定视口右上的配套；
+    // 按钮回面板后球跟着面板走。）
+    var rect = container.getBoundingClientRect();
+    placeBall(
+      rect.left + rect.width / 2 < viewportWidth() / 2 ? "left" : "right",
+    );
+    ball.style.top =
+      Math.max(8, Math.min(Math.round(rect.top), viewportHeight() - 44)) + "px";
     ball.style.display = "flex";
     container.style.setProperty("visibility", "hidden", "important");
     container.style.setProperty("pointer-events", "none", "important");
