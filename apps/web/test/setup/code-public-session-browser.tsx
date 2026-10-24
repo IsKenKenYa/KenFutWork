@@ -34,6 +34,7 @@ declare global {
       clientId: string;
       newDraft?: boolean;
       workspaceShell?: boolean;
+      restoreSession?: boolean;
       initialPreview?: {
         type?: "file" | "image";
         path: string;
@@ -104,12 +105,14 @@ try {
     ? await ensureAgentV4ConnectionHandshake(client.services.zcodeAgentService)
     : undefined;
   if (bootstrap.workspaceShell) await client.refreshWorkspaces();
-  await client.openWorkspace(bootstrap.workspacePath, bootstrap.projectId);
-  client.setViewerContextResolver(() =>
-    bootstrap.newDraft
-      ? { kind: "project", projectId: bootstrap.projectId }
-      : { kind: "task", taskId: bootstrap.sessionId },
-  );
+  if (!bootstrap.workspaceShell || !bootstrap.restoreSession) {
+    await client.openWorkspace(bootstrap.workspacePath, bootstrap.projectId);
+    client.setViewerContextResolver(() =>
+      bootstrap.newDraft
+        ? { kind: "project", projectId: bootstrap.projectId }
+        : { kind: "task", taskId: bootstrap.sessionId },
+    );
+  }
   releaseServices = bindCodeWorkspaceServices(client);
   const Providers = await loadCodePublicHostProviders();
   const workspaceIdentity = client.workspaces.identityFor(
@@ -268,10 +271,14 @@ try {
                 onWorkspaceContextChange={onWorkspaceContextChange}
                 workbenchGroupClientMode={clientMode}
                 initialUserInfo={null}
-                initialWorkspaceAbsPath={bootstrap.workspacePath}
-                initialWorkspaceIdentity={scope.workspaceIdentity}
-                initialTaskId={bootstrap.sessionId}
-                restoreSession={false}
+                {...(bootstrap.restoreSession
+                  ? {}
+                  : {
+                      initialWorkspaceAbsPath: bootstrap.workspacePath,
+                      initialWorkspaceIdentity: scope.workspaceIdentity,
+                      initialTaskId: bootstrap.sessionId,
+                    })}
+                restoreSession={bootstrap.restoreSession ?? false}
                 allowRemoteWorkspace={false}
                 supportsEmbeddedBrowser={false}
                 preferDirectoryBrowser

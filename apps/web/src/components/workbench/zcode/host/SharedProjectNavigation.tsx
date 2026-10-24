@@ -316,10 +316,18 @@ export function SharedProjectNavigationProvider({
     const release = client.workspaces.subscribe(() => {
       const nextProjects = client.workspaces.projectCatalog();
       setProjects(nextProjects);
+    });
+    return () => {
+      release();
+    };
+  }, [client]);
+  useEffect(() => {
+    if (!tabs) return;
+    const updateLabels = () => {
       const names = new Map(
-        nextProjects.map((project) => [project.projectId, project.name]),
+        projects.map((project) => [project.projectId, project.name]),
       );
-      tabsRef.current?.setState((state) => {
+      tabs.setState((state) => {
         let changed = false;
         const nextTabs = state.tabs.map((tab) => {
           if (!isWorkspaceTab(tab)) return tab;
@@ -334,11 +342,12 @@ export function SharedProjectNavigationProvider({
         });
         return changed ? { tabs: nextTabs } : state;
       });
-    });
-    return () => {
-      release();
     };
-  }, [client]);
+    updateLabels();
+    return tabs.subscribe((state, previous) => {
+      if (state.tabs !== previous.tabs) updateLabels();
+    });
+  }, [projects, tabs]);
   useEffect(() => {
     let active = true;
     const subscription = client.services.broadcastService.onMessage(
@@ -504,7 +513,7 @@ export function useSharedProjectCreation() {
     : null;
 }
 
-export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {
+export function useSharedProjectTabRegistration() {
   const context = useContext(Context);
   const store = useTabStoreApi();
   const registerTabs = context?.registerTabs;
@@ -512,6 +521,11 @@ export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {
     registerTabs?.(store);
     return () => registerTabs?.(null);
   }, [registerTabs, store]);
+}
+
+export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {
+  const context = useContext(Context);
+  useSharedProjectTabRegistration();
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   const mode = useSyncExternalStore(
     navigation?.subscribe ?? (() => () => {}),

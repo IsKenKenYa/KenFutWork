@@ -17,7 +17,7 @@ import {
 } from "./code-connection-gate.js";
 import type { PublicFixture } from "./code-public-session";
 
-type Fixture = PublicFixture & { directory: string };
+type Fixture = PublicFixture & { directory: string; origin: string };
 export type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 export type Model = Awaited<ReturnType<typeof heldModel>>;
 export type ProjectionResources = {

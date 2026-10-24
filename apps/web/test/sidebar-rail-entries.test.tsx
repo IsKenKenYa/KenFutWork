@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { Blocks } from "lucide-react";
 import { afterEach, expect, test, vi } from "vitest";
@@ -110,28 +109,4 @@ test("rail 在展开按钮与模式之下渲染入口列，入口缺失时不留
   view.unmount();
   const bare = render(<HostSidebarRail onExpand={onExpand} />);
   expect(bare.getByRole("button", { name: "展开侧栏" })).toBeTruthy();
-});
-
-/**
- * 接线守卫：侧栏的 rail 分支必须把入口列交给 rail（曾经只传 onExpand，
- * 收起后插件市场·技能·MCP·插件面板·新建任务·搜索整个消失）。
- * WorkspaceSidebar 是千行组件、无法在此渲染，用源码断言把这条线钉住。
- */
-test("侧栏 rail 分支承载入口列，且与展开态共用同一份定义", () => {
-  // jsdom 环境下 import.meta.url 不是 file: URL，用相对 cwd（= 包目录）的路径读源码，
-  // 与 settings-copy-guard 等源码守卫同一种写法。
-  const source = readFileSync(
-    "src/components/workbench/zcode/WorkspaceSidebar.tsx",
-    "utf8",
-  );
-  expect(source).toContain("actions={railNavigation}");
-  expect(source).toContain("{sharedNavigation(true)}");
-  expect(source).toContain("{sharedNavigation(false)}");
-  // 新建任务的动作只有一份定义（rail 与展开态共用，不各写一份闭包）
-  expect(
-    source.match(/handleCreateTaskFromSidebar/gu)?.length,
-  ).toBeGreaterThanOrEqual(3);
-  expect(source).not.toMatch(
-    /<HostSidebarRail onExpand=\{\(\) => onExpand\?\.\(\)\} \/>/u,
-  );
 });

@@ -310,6 +310,12 @@ async function taskGroupDomObservation(
         visible: Boolean(task?.checkVisibility()),
       },
       diagnostics: {
+        points: [task, document.querySelector('[data-grouped-empty-drop-zone-id]')].map(element => {
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.left + rect.width / 3, rect.top + rect.height / 2);
+          return { rect: rect.toJSON(), hit: hit?.outerHTML.slice(0, 600) };
+        }),
         groupViewPresent: Boolean(groupView),
         groupViewHidden: Boolean(groupView?.closest('[hidden], [inert], [aria-hidden="true"]')),
         tabs: Array.from(sidebar?.querySelectorAll('[role="tab"]') ?? []).map(element => ({
@@ -362,7 +368,7 @@ async function measureDragLayout(
       const target = document.querySelector('[data-grouped-empty-drop-zone-id=${JSON.stringify(groupId)}]');
       if (!source || !target) return null;
       source.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      target.closest('[data-grouped-group-item-id]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       await new Promise(requestAnimationFrame);
       const rects = [source, target].map(element => element.getBoundingClientRect());
       await new Promise(requestAnimationFrame);
@@ -379,7 +385,10 @@ async function measureDragLayout(
           sourceHit.closest('button') || !targetHit || !target.contains(targetHit)) return null;
       return { source: start, target: end, sourceGroupId };
     })()`);
-      expect(points, JSON.stringify(page.pageErrors)).not.toBeNull();
+      expect(
+        points,
+        JSON.stringify(await taskGroupDomObservation(page, taskId)),
+      ).not.toBeNull();
       return points;
     },
     { timeout: 5_000 },

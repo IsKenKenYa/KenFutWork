@@ -50,3 +50,22 @@ export async function selectAll(page: OriginalSessionBrowser) {
     );
   }
 }
+
+export async function selectSidebarView(
+  page: OriginalSessionBrowser,
+  view: "projects" | "grouped" | "timeline",
+) {
+  await clickOn(page.cdp, page.target.sessionId, {
+    selector: '[data-testid="sidebar-view-menu"]',
+  });
+  await clickOn(page.cdp, page.target.sessionId, {
+    selector: `[data-testid="sidebar-view-${view}"]`,
+  });
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(
+        `document.querySelector('[data-testid="sidebar-view-${view}"]') === null`,
+      ),
+    ).toBe(true),
+  );
+}

@@ -118,7 +118,7 @@ async function findScrollContainer(page: OriginalSessionBrowser) {
 async function returnToTaskList(page: OriginalSessionBrowser) {
   const fileTreeOpen = await page.evaluate<boolean>(`(() => {
     const panel = document.querySelector('[data-testid="workspace-file-tree-panel"]');
-    return Boolean(panel && panel.closest('[aria-hidden]')?.getAttribute('aria-hidden') === 'false');
+    return Boolean(panel?.checkVisibility());
   })()`);
   if (fileTreeOpen)
     await clickExactText(
@@ -133,7 +133,7 @@ async function returnToTaskList(page: OriginalSessionBrowser) {
     const panel = document.querySelector('[data-testid="workspace-file-tree-panel"]');
     const root = document.querySelector('[data-testid="task-grouped-view"]');
     return {
-      fileTreeClosed: !panel || panel.closest('[aria-hidden]')?.getAttribute('aria-hidden') === 'true',
+      fileTreeClosed: !panel || !panel.checkVisibility(),
       taskListAvailable: Boolean(root && !root.closest('[inert], [hidden], [aria-hidden="true"]')),
     };
   })()`),

@@ -7,6 +7,218 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectNode.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectNode.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "d1c3cfca08dacf6ad9cc713d92bf40f5b36891f66ab524cc287a0565e9aff728",
+      "copiedSha256": "744d5c15a282820040955efe9760e434ebe80bd481b2a57cb401e79c292a48e2",
+      "adaptations": [
+        "映射导入路径，保留原折叠、项目排序、拖动反馈和清理生命周期；移除没有本机提供方的远程连接与旧单目录项目分支。",
+        "任务拖入使用独立的严格解析器，完整传递拖动开始时固定的目录身份、来源项目及正文修订；旧分栏数据不能用于项目移动。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectNodeContent.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectNodeContent.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "03c52d586e35b5b26041d056ea89d9dde819b0ee7f734e8eb5ec853e973aaeed",
+      "copiedSha256": "5835ceb6188f4213b772457e323cc9cdef98d3413702887ca7646cfa6024f604",
+      "adaptations": [
+        "映射导入路径，保留原项目行、目录菜单、置顶、编辑、归档、创建与 Task 列表装配；移除远程身份卡、设备设置和连接状态展示。",
+        "移动回调接收完整的可信项目拖动数据；主目录状态沿当前本机项目类型读取，不创建远程状态或替代服务。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectSections.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectSections.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "26740a7bbee18290014f0509b43003f3a9fda3fe5b3d41efdedf1b7f944540e6",
+      "copiedSha256": "a9f05be75a1405481094b4234c3a1980eedcc1ab928f2fb69845957c36cf6fe7",
+      "adaptations": [
+        "映射导入路径，保留原项目与无项目 Task 分区、排序和新建入口；当前仅消费本机项目树，移除远程目录参数与 Host 排除分支。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectSidebarListHeader.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectSidebarListHeader.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "b8baee3045dd988d3f80093c61f135aa1f20bbdbbc2b8f3b19b2ec7bbb4da416",
+      "copiedSha256": "66df2ba63ff77ded4a3a464d0d0cde051b1c94baf44e03da175e141af290ee93",
+      "adaptations": ["仅将 @/ 导入映射为 @zui/，保留原搜索入口、三种视图菜单与分组工具栏容器。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectSidebarNavigation.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectSidebarNavigation.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "73064489657b1927bc9105f1d51079a8a186205f03666e25d99ea7a90fb55034",
+      "copiedSha256": "e5106b7fbe8f79a5862f023d645ef4cba5fd04dc501e0d546e4095fd5f38beaa",
+      "adaptations": [
+        "映射导入和当前 shared 根导出，移除手机 relay 设备导航；自动化和插件入口仅在具有真实回调时显示。",
+        "新建按钮复用原 NewTaskButtonGroup，并透传当前目录的禁用状态；共享插件入口由宿主公共导航装配，避免重复显示。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectSidebarNode.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectSidebarNode.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "9a00a89523003ace9b4764f0566de126de3ade090c6bd6003c6066642ed05204",
+      "copiedSha256": "3f5c3636bb27a8b5be9815175b73e098d26c708df85febf869132d7328e12909",
+      "adaptations": [
+        "映射导入，保留原逐项目菜单装配及 memo 比较；移除未接通的远程连接、设备和入口管理操作。",
+        "置顶携带当前项目 revision；新 Task 使用稳定 Project ID 与原 groupedDraftPlacement。移动将 sessionId 映射为 Task ID，固定来源项目、目录和 observedRevision，目录确认后仅增加 addMissingRoot，继续调用既有真实 project.moveTask。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectTaskRows.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectTaskRows.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "16cc7dbb30d02dd26a0a7a273ea04c54c6eb5672e939becfdacd8dcde212f207",
+      "copiedSha256": "9c0b4575fdecac6e68bdd8f2ce64a4cba866ee2540a0cd8a6e54708edc6338ca",
+      "adaptations": [
+        "映射导入，保留原逐行 TaskList、组织菜单、置顶区、时间线日期、分页与空态；当前本机行不解析远程 session。",
+        "查看文件将原 Task 及其完整身份交给宿主文件桥；本机 canonical identity 不再触发远程 session 条件。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/PurposeSections.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/PurposeSections.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "81bfd7b4b906370de838be83ba8ce49d904e73b93ae2ba9780a22f9aba2dc3b9",
+      "copiedSha256": "bc94a18953d36da4d1810f9cdb2f1d22ff7bcf3eb2e6ec580de289761e1e6737",
+      "adaptations": ["仅将 @/ 导入映射为 @zui/，保留原分区顺序、折叠设置、排序手势及项目和 Task 新建入口。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/SortableProjects.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/SortableProjects.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "3de8d69a901eddb47404245e1d7c21746014f832fb2423592e11d2d19ce522a4",
+      "copiedSha256": "b58908b52c53f09f2851aacf77bb7cbe173d714400a4ac191a0269bdd1f7a893",
+      "adaptations": ["仅将 @/ 导入映射为 @zui/，保留原 dnd-kit 排序上下文、传感器配置及同 Host、同置顶分区的限制。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/TaskGroupTaskMenu.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/TaskGroupTaskMenu.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "7c852eaeaa88696bb88cfed24ec34d8f89e54c5403a8cc600e04e76a482ba237",
+      "copiedSha256": "56cb297acc3e4e39b64693d5dc2d8f8867876feb2d9ff88b41b42de43af3eab0",
+      "adaptations": [
+        "映射导入，保留原移动到分组和移出分组菜单；名称使用当前持久分组标题，移除未消费的系统分组名称映射。",
+        "组织移动同时携带当前父分组和组织修订，连接现有持久分组服务；失败后保留原错误展示与重读。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/index.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/index.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "b24595dba51387f3bb2f31c4bdfb959edd8832a2c02a3ef61c617b7c050baafe",
+      "copiedSha256": "47f20810983dc7b0dc36341073a8c83833c4ee43c5c8c2a5966aaa72f03f398d",
+      "adaptations": [
+        "映射导入并保留原项目、分组、时间线、置顶、排序、工具栏和滚动容器的实际装配；项目事实来自常驻本机目录，显示按现有共享 catalog 的工作方式筛选。",
+        "移除未接通的远程目录、手机 relay、设备同步、诊断和账户套餐 hooks；创建与编辑复用现有共享创建状态、ProjectCreation、ProjectEditorAdapter 和真实目录刷新。通过既有共享项目注册保持 Tab 名称与原会话标题同步。",
+        "保留同一 Code 壳的模式导航、收起 rail、技能、MCP、插件入口及 Footer；自动化入口要求宿主明确声明能力。Design 继续提供原画布列表切换，项目身份按 canonical identity 解析。文件导航接现有宿主文件桥，切换仅隐藏导航面，不修改 SessionPane 或主区内容标签。",
+        "分组新建使用原 groupedDraftTask.placement 与 groups.parents，Global 新建显式使用顶部位置；目录不可用时同步禁用原新建控件，不引入 taskGroupId 或空项目身份。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/project-file-navigation.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/project-file-navigation.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "d336bae4e305f759534eb489cb354eb36f4219abd2346c0a44f77e3fe49242b1",
+      "copiedSha256": "5f6c793925fb6e821e25e2df6dac6723c04fc480f9ed606e68f42a32b4ce2e06",
+      "adaptations": [
+        "映射导入，保留用户所选 root 必须属于该项目的校验；移除远程连接和手机 attachment 分支。",
+        "本机文件目标携带独立浏览目录、canonical 项目身份与真实 project viewerScope，读取权限继续由既有服务检查。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/projectOrder.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/projectOrder.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "cab1272fbebf1b8de32d253ea21e756a9b30375bd06046f178858f3a06d59469",
+      "copiedSha256": "5987c163ef628b20683bf57411a6fe3a5b98e8f13d644c17fa2b9ce80f1d704c",
+      "adaptations": ["保留原顺序合并、去重和同分区移动算法；移除远程旧入口升级键映射，暂时不可见项目继续保留原位置。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/timelineDates.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/timelineDates.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "81a2dcc8b926c45e38526f4a7363dd96263d33e3473ecf5ed6cc969b7ac0f901",
+      "copiedSha256": "aadea88e500f43141b852ea5085e7fb68988eb09d84a3b4349c08a5f17baed05",
+      "adaptations": ["仅将类型导入映射为 @zui/，保留原时间线日期分段与本地化计算。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useProjectFileTree.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectFileTree.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "d9e94715d9975c6e1a672941e8ab9dc0c6a1370d1089e7f1acef69837401b988",
+      "copiedSha256": "b048680f6fed4ea034353770dd182e92762f19b3f4c73c8159cc98f372238a7c",
+      "adaptations": [
+        "映射导入，保留原文件打开请求的单次消费与请求代际；本机目录不建立远程 session，关闭文件面时取消尚未完成的打开意图。",
+        "Task 文件目标核对当前项目、canonical identity 和 taskControl，携带固定目录及 task viewerScope；由宿主桥连接现有 WorkspaceFileTree 或真实 FileManager 消费方。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useProjectPinIntent.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectPinIntent.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "2aa2b5cc9bb80a8eb467b7e33d9714f9a45afcf0d6736a1da88a6721ea5c4b6d",
+      "copiedSha256": "edc12c6923be8189384fdb3a15264bfc18f5e5a205e3a3fbe58a85491ebe40de",
+      "adaptations": ["映射导入并精简注释；保留原逐 Task 在途互斥、临时置顶展示、权威刷新及最终释放，不另建 Task 事实缓存。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useProjectSidebarPreferences.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectSidebarPreferences.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "5bade427537dddf2fda1ed1428f4180d918c849cbee6091b907643e9eaf4f894",
+      "copiedSha256": "ab9ae74f90ec8aa4ff208a7d2ca7cf0e04bd0eef4477a8d21dc0df2a0272ef7a",
+      "adaptations": [
+        "映射导入，保留原 localStorage 顺序、视图、展开设置及 storage 事件同步；移除远程入口 availability 与升级键处理。",
+        "本机项目使用真实稳定 Project ID，首次显示沿服务返回顺序，后续排序只修改控制端显示设置。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useProjectTaskActions.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectTaskActions.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "13f32f3f4f6d9a82f61290614451357964a5b76bbbd9275b7e47b30eb07d11dd",
+      "copiedSha256": "9b4ee9de8a818c862c4919741bcd913a8236f3758d94a2b4bad5090dcf98a7e8",
+      "adaptations": [
+        "映射导入，保留原改名、置顶、归档、未读操作与刷新，当前仅使用本机 Task 服务及 Controller，不创建远程连接。",
+        "操作地址复制原行的 taskControl，连接既有受控 Task 变更；归档后继续清理原会话展示状态。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useProjectTaskNavigation.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectTaskNavigation.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "ba4c75457afcf24b61c4526343774d5f8ce51bc60e96745f0cf3aac365f9a4fc",
+      "copiedSha256": "afde0f87071462f253bc07f66c27de1f8ad92a51d8f33e7e9b823424115b85ce",
+      "adaptations": [
+        "映射导入，保留原请求序列、当前 workspace、Task 与草稿焦点代际检查，导航继续交给现有 Shell 回调。",
+        "仅打开权威项目树内身份匹配的本机 Task，移除远程目录读取、连接和手机 relay workspace 切换。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/view-preference.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/view-preference.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "06b367f441a804766d318428326a903e3ee85a626dd99ff3a4bf32540c925884",
+      "copiedSha256": "17c61498e87ab5fd4a05d4a169c70487549fff59e283f9fe09e97684f15bd2c8",
+      "adaptations": ["仅将 @/ 导入映射为 @zui/，保留原新版视图设置读取及旧 organizeBy 设置的一次性兼容读取。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/view.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/view.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "81effb638672c09ce16416f24f08c796b02cf558fb3a3f9d999be93cd03ead23",
+      "copiedSha256": "5680eb2adf69b3ee0faba787e65f0a060a361ba4859852c25a88380748fbfdcb",
+      "adaptations": [
+        "映射导入，保留原 Task 活动投影、等价对象复用、列表选择、比较器、未读统计及稳定项目键。",
+        "移除远程目录合并、入口解析与设备来源辅助函数；本机项目的初始显示顺序沿真实服务返回值，人工顺序仍由原侧栏设置持有。",
+        "按完整 Task 地址匹配可信 Controller 列表，仅合并已有行的未读、交互、活动及排序时间；不覆盖项目、目录、控制观察或组织成员。"
+      ]
+    },
+    {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectComposerMenu.tsx",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectComposerMenu.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
@@ -340,10 +552,10 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "6db545b4762bf53c713e311394179bc40e29d20ad11c6b1d23cfb2bdb1981341",
-      "copiedSha256": "38763bcd04081f798c3089dea9d95baf94ea681aa6e87ad2c0b5d0273e3ad057",
+      "copiedSha256": "cce7731591ed462443cb661ff0962a85dd937c850fd9fbc2d23d14b3d9c0a7a5",
       "adaptations": [
-        "导出本批原归档组件及真实目录 owner 已消费的浏览器项目类型；完整侧栏与远端接口随实际消费者继续移植。",
-        "仅补本批原分组消费者使用的服务、展示与Task观察类型，保留已有项目编辑及归档适配。"
+        "映射导入，导出原侧栏、项目编辑、归档及分组消费者使用的本机项目、Task 与服务类型；移除未接通的远程目录和设备接口。",
+        "完整侧栏 props 连接现有 Shell 回调；文件目标同时携带独立浏览目录、真实项目或 Task viewerScope，Task 行保留 taskControl 与正文修订。"
       ]
     },
     {
@@ -351,11 +563,10 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectDirectoryProvider.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "81ba0cc18822c79e036cfe312762e93c35a0919a2224961bffc0e4fe80f68868",
-      "copiedSha256": "91492ae18150263932028b3d261d4a67a454feb2e12e42995bc466fed6d69efe",
+      "copiedSha256": "6635f44d0ec0ac90f9f40d3d482f0bc8bca7ad924cc1719e5667333ff4a94659",
       "adaptations": [
-        "@/ 导入映射为 @zui/；采用原 Context、嵌入面复用与单一目录 owner，当前挂载归档管理。",
-        "owner 提供本机项目树、独立持久分组及读取生命周期；项目排序和原生未读提示按完整侧栏依赖继续连接。",
-        "Root、侧栏和归档复用一个目录及分组owner，完整目录事实首次登记完成后才开放分组操作。"
+        "@/ 导入映射为 @zui/；采用原 Context、嵌入面复用与单一目录 owner，Root、侧栏、项目菜单和归档共享同一目录。",
+        "owner 提供本机项目树、实际项目服务、独立持久分组和原侧栏显示设置；完整目录事实首次登记完成后才开放分组操作。移除远程目录、设备名称及未接通的原生未读提示调用。"
       ]
     },
     {
@@ -363,8 +574,8 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectTree.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "036834eb6620a04e80a5dd6326c57d92237504a302ad81db990d6326225e1637",
-      "copiedSha256": "87852b47a01d649304fc940346480f885272525e3901beaad4a9167191396147",
-      "adaptations": ["@/ 导入映射为 @zui/；采用原串行读取、dirty 合并、取消代际、焦点重读和真实 broadcast/Controller 订阅，读取本机 readTree 的归档项目及 Task 删除事实。", "当前归档和分组消费者保留 KFW 的 Project 与 Task 固定目录身份；首次空目录也订阅真实任务变化，完整侧栏的远端和创建提交随实际装配连接。"]
+      "copiedSha256": "9e21c4b34e51f645c815d291c7ad45640d031c00b8129891c8ed976825ae608b",
+      "adaptations": ["@/ 导入映射为 @zui/；采用原串行读取、dirty 合并、取消代际、焦点重读和真实 broadcast/Controller 订阅，读取本机 readTree 的归档项目及 Task 删除事实。", "保留 Task 固定目录，同时观察未归档 Project 当前主根及已打开本机 Tab；本机 scope 使用 canonical Project 身份，Tab 身份集合变化触发同一读取队列，覆盖默认目录创建晚于首次目录读取的时序。", "同一读取周期消费现有 Controller 的完整 timeline 行，连接原活动显示与对象复用；Controller、服务或 Tab 身份集合变化使旧读取失效，查询失败沿原错误状态显示。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/useArchiveManagement.ts",
@@ -379,16 +590,16 @@
       "target": "packages/zcode-services/src/project/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "1bfa496b747335ef4a01a5bbe32e5977d320c6edc70b524fc24c31602a48d243",
-      "copiedSha256": "7ca5f2edfd977fda0fb91507de5a09a6de1eb787c4b927c613dc847904fee509",
-      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。", "prepareSession 连接所属 feature 的真实只读目录准备；输入使用 Project ID、本机 Host 和 Code/Design 工作方式，返回当前主目录及 canonical identity，不创建 Task。", "导出原节点所需的稀疏项目置顶输入，携带当前观察修订并复用现有保存方法。"]
+      "copiedSha256": "dfb864c0514eb7b5d8b44be7232617bd01c69a1cb7dd1e6d48fcf0cee500a3ed",
+      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。", "prepareSession 连接所属 feature 的真实只读目录准备；输入使用 Project ID、本机 Host 和 Code/Design 工作方式，返回当前主目录及 canonical identity，不创建 Task。", "导出原节点所需的稀疏项目置顶输入，携带当前观察修订并复用现有保存方法。", "声明已有真实提供方和原项目节点共同消费的 moveTask；输入包含固定 Task 地址、来源项目、目标项目、正文观察修订及目录确认选择，服务包不反向依赖 KFW shared。"]
     },
     {
       "source": "references/zcode/packages/services/src/project-storage/contract.ts",
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "264418762eb0aa2e213b1616e5f8a22a034cd71e48a18d08b79aa06fe1496049",
-      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。", "Task 读取投影保留可选正文修订，与原 Controller 的真实观察值共用同一提供方，移动输入固定读取时的版本。"]
+      "copiedSha256": "7691ec35b700de39ceb647f48ec3dd2eb3de0f602ff80803225d26e0750c5f25",
+      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。", "Task 读取投影保留可选正文修订，与原 Controller 的真实观察值共用同一提供方，移动输入固定读取时的版本。", "增加浏览器可用的 MoveProjectTaskInput，与已提供的本机移动 RPC 使用相同字段；Task 固定目录与项目默认目录继续分别持有。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
@@ -1144,10 +1355,12 @@
     {
       "source": "references/zcode/packages/ui/src/TaskActionMenuContent.tsx",
       "target": "apps/web/src/components/workbench/zcode/TaskActionMenuContent.tsx",
-      "sha256": "fcad0c1e8daa7af109f226feb38852525a3511e0ed66497acb0f92d920adb800",
-      "copiedSha256": "fcad0c1e8daa7af109f226feb38852525a3511e0ed66497acb0f92d920adb800",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c6e61428c226f29b7d12ffd162334f3e95c65f314e7df97312b9bc05b00b1e95",
+      "copiedSha256": "8b0e64a70734b766ab867f1371e0cf0ded40c649769986e1840be3cb9c7cce0c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "采用新版原任务菜单，保留归档与恢复、组织动作及原路径和反馈入口；沿 KFW 已有 Shell 控制器保留在分栏打开入口。",
+        "移除没有本机提供方的原 provider 配置文件入口，保留现有 BYOK 设置边界；精简注释，不改变原菜单分隔和禁用规则。"
       ]
     },
     {
@@ -1162,28 +1375,33 @@
     {
       "source": "references/zcode/packages/ui/src/TaskList.tsx",
       "target": "apps/web/src/components/workbench/zcode/TaskList.tsx",
-      "sha256": "49cc1c51f10af951ff747ed62896b409162d99650a987156c883388fb46d3f3b",
-      "copiedSha256": "1f55710e6799fcf5ac5975e48072acf55e99b307f6a5a150c9b64ff050204f39",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "355db0ce89d2bda9c2fd73cc0018b3c4a5b48efb93ade3974c2035a373fc9e6a",
+      "copiedSha256": "2224003d53d3b6ce3198a4bc1277d962ed0857b21181f338fa20832c132f3d59",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "完整采用新版原列表，仅映射 @/ 导入及当前 shared 根导出；原组织菜单、时间线行、归档状态、文件入口、分页和单一右键菜单均由实际侧栏消费。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/TaskListItem.tsx",
       "target": "apps/web/src/components/workbench/zcode/TaskListItem.tsx",
-      "sha256": "0c9b53b25ada246d6fef2c8f61cc7a9083b6c018146b3ba9a8c020a909567d32",
-      "copiedSha256": "b29cf0383499f37a82b184b63d6c74b57134524d071fdbe66e43f43a49263454",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "00b224f978b747a15be220eb3e0d6e332e03e8ab843b92bce4c552f2e6e3a4b6",
+      "copiedSha256": "a0659a7bd196cf766643c4bf184ec23635ebae5b380f76ac63d75e7a08032fe0",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "映射导入和当前 shared 根导出，采用新版原 Task 行、归档恢复、时间线、触摸展示及文件动作；移除未接通的远程设备归属、连接覆盖层和原 provider 配置文件入口。",
+        "保留 KFW 原分栏控制器和反馈默认不附日志的行为；文件动作携带原 Task，由 isLocalWorkspaceTarget 识别本机 canonical identity，失败通过现有提示展示。",
+        "拖动开始固定可信 taskControl 来源项目、正文修订和 Task 目录，支持项目移动与原分栏复制；Task 控制代际和正文修订参加 memo 比较，文件按钮保持原共享样式。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/TaskListItemContextMenu.tsx",
       "target": "apps/web/src/components/workbench/zcode/TaskListItemContextMenu.tsx",
-      "sha256": "896ee9cbb8bbc8b41e42eedaed328835f14295031e0fff75ea7ad8d65dff81ea",
-      "copiedSha256": "63b83c7b62c0f25c6b6524a53678c52066e95a39c4113a4db53acbba1f31f1a7",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "35a92e0fe7f6f72a2e0755a1ed8b4f6e23c433a53f6f3ee6088b29bf3440e033",
+      "copiedSha256": "29405adc977f1c23464c6b269f6f167fd14eca35089e84a476d9d884d0d80aca",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "映射导入，采用新版原组织菜单与归档恢复状态；保留 KFW 的原分栏入口和禁用结果，移除没有本机提供方的原 provider 配置文件参数。"
       ]
     },
     {
@@ -2162,23 +2380,11 @@
     {
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
-      "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "3b0211d0ef793345b3ad2840bff86bbb7094faa3b2effb1a0309b3d2dde20de2",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "e9b2e5e14d092c378e3eda9b08f7b894fa9245dd7d811538f694e1b019c7ee97",
+      "copiedSha256": "3fe2dbaff5071490db1dfe93fc842f77d0e7832c4ef30745f99010d3f055256c",
       "adaptations": [
-        "原 TaskGroupedView 文件入口固定被点 Task 的 viewerScope，目录、Git、watcher、搜索和预览沿同一身份；目标换代重新挂载文件树。",
-        "原项目创建接入宿主同目录选择及目录归属复验，明确复用或独立创建后保持当前会话和内容。",
-        "项目加号与宿主新建意图连接新版原 ProjectCreation，在真实 Sidebar 服务与 Tab Provider 内装配；创建只刷新项目，当前 Task、草稿和内容标签保持。",
-        "按可信 Project 身份在原菜单装配新版原 ProjectEditor，保存后消费现行项目列表刷新；Task、SessionPane 和内容标签不变，旧侧栏其余部分仍使用原来源。",
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
-        "宿主接口：原市场下扩展插件入口槽，沿用原Button及PluginIcon，入口数据和面板由现有库存及宿主提供",
-        "宿主入口扩展：原Button及图标直达原技能/MCP页，通过原设置导航意图固定本机作用域，不创建Task",
-        "能力显隐：恢复原自动化Button/CalendarClock导航；分组任务快捷入口仍仅在服务可用时显示",
-        "品牌／模式文案：原侧栏顶部插入既有横排模式按钮的共享展示，保留原导航与任务装配",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
-        "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。",
-        "主线：收起态 rail 承载全部侧栏入口（新建任务/搜索/插件市场/技能/MCP/插件面板）+「分组/项目」加「画布」页 + Design 收口（f992490b/61ea2cb4/e3817631）",
-        "grouped区采用3.16.2原TaskGroupedView及工具栏和吸顶portal，保留现有项目、归档、模式与共享项目登记；展示按真实可见项目ID筛选。"
+        "采用新版原 ProjectSidebar 转发入口并映射导入路径；保留既有 WorkspaceSidebarCollapsedRail 与 applyWorkspaceTriggerSelection 导出。实际列表和 KFW 宿主装配由同一 project-sidebar/index.tsx 承担。"
       ]
     },
     {
@@ -2560,7 +2766,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "8fdcf817783712b0ee15ca2beae216662fc61bed1774131406da3dbbb3ba2504",
+      "copiedSha256": "384d0b0ee3b386190168a7179415be7400f7cb17180451c32730ef2f5881f50a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2570,7 +2776,8 @@
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "主线 Design 收口与对话/内容面 1:2 默认口径（09130f21/e875ff32/e3817631）；本仓修复：design 入口 ensureDesignCanvasEntry 失败保持已尝试键，防建画布失败触发请求与渲染自激回路",
         "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。 同时保留本分支Design入口失败的已尝试键，避免自动重试回路。",
-        "草稿头部实际装配 3.16.2 原 ProjectComposerMenu，Git 和插件内容保持原顺序；显式 Project ID 交由 Root 核验目标，现有 SessionPane、Canvas、Flow 与内容标签装配保持。"
+        "草稿头部实际装配 3.16.2 原 ProjectComposerMenu，Git 和插件内容保持原顺序；显式 Project ID 交由 Root 核验目标，现有 SessionPane、Canvas、Flow 与内容标签装配保持。",
+        "新版原 ProjectSidebar 消费 Shell 当前 workspaceIdentity；本批仅增加该身份透传，保留全局旧来源原件及现有主区、SessionPane、Canvas 和 Flow 生命周期。"
       ]
     },
     {
@@ -5927,9 +6134,9 @@
       "source": "references/zcode/packages/ui/src/hooks/useTabPersistence.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useTabPersistence.ts",
       "sha256": "2a6368d9a6a92accfaec22f752eaa41d0cd7313c6d2a475e2c1cb66502ec8808",
-      "copiedSha256": "7b0be1ec2047051274fc019cd279191b3c7e442d678e387aea53a3ae29224aca",
+      "copiedSha256": "7bdea29b3340ff11d05681f462327489e3324f6d3108f55a688d76c896cc123c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；本机默认保存复用现有 workspace 会话持久化实现，保留 Project 的标准身份并按真实活动 Tab 保存焦点。"
       ]
     },
     {
@@ -6247,7 +6454,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "75882dcb518463d02406d5a16751dfd89fc48a9dbb971d1808bfceb6d85a3d54",
+      "copiedSha256": "5095a48708970f591308357a8e7a40685c5aaf1e88a049f901fc24356ea47ef6",
       "adaptations": [
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原分组默认名称和全部展开、收起词条，由原 TaskGroupedView 消费。",
         "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
@@ -6273,14 +6480,15 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
         "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
         "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。",
-        "采用同一上游提交的六项图片操作及四项合并模型菜单文案。"
+        "采用同一上游提交的六项图片操作及四项合并模型菜单文案。",
+        "补固定 3.16.2 原项目侧栏、三种视图、目录状态、分组菜单与 Task 列表的二十二项消费词条；项目删除标签按现有归档服务表达，保留其余文案及全局旧来源原件。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "fd595460aee40acdd81ecb361857c2895bce196f86d8a7cef2ca7c7fb4c43b70",
+      "copiedSha256": "cb81fb7908a091b57e4ebb63bf3d869a0ef0bc4af4149e4c96aac6c9d6378422",
       "adaptations": [
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原分组默认名称和全部展开、收起词条，由原 TaskGroupedView 消费。",
         "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
@@ -6306,7 +6514,8 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
         "主线：新增画布页文案 workspaceSidebar.organizeCanvas（61ea2cb4）",
         "采用 ZCode 3.16.2 3c5b227649371507ddc4eb46ac5133afe6db1cab 的展开和收起命令两条文案；保留其余当前适配及原始基线。",
-        "采用同一上游提交的六项图片操作及四项合并模型菜单文案。"
+        "采用同一上游提交的六项图片操作及四项合并模型菜单文案。",
+        "补固定 3.16.2 原项目侧栏、三种视图、目录状态、分组菜单与 Task 列表的二十二项消费词条；归档及失败提示按 KFW 短文案表达，保留其余文案及全局旧来源原件。"
       ]
     },
     {
@@ -7829,9 +8038,10 @@
       "source": "references/zcode/packages/ui/src/lib/taskListOrdering.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/taskListOrdering.ts",
       "sha256": "2a596e8f28d0c75e9cca2edf828ec9d9eb5d90a967c83240aa1d3c349e4ccf79",
-      "copiedSha256": "06fb51404af429eca952dcd611f240e3055c8ea273f46d4bd38c74c370139e97",
+      "copiedSha256": "f4a5da9d8955e4b22163b0c2050defff7b82245efb77971a39128e20ba78f469",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "仅导出已有 compareTaskListItemsByTime，供新版原侧栏时间线比较器实际消费；不改变比较算法或全局旧来源原件。"
       ]
     },
     {
@@ -9542,11 +9752,12 @@
       "source": "references/zcode/packages/ui/src/root/remoteWorkspaceSessionPersistence.ts",
       "target": "apps/web/src/components/workbench/zcode/root/remoteWorkspaceSessionPersistence.ts",
       "sha256": "e355ed75f1fbfdf91a05378a5395cef1703f3e3924579e7f88878155795c1b73",
-      "copiedSha256": "385cbf9eeb7b864ed6994a382e9d17e0340256f0854cef5b6a43c7149487c360",
+      "copiedSha256": "2483c575aa3e09edaa8d7a15e933342fec410cf135eadc46c4aff34895d10c9c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "本机Project与固定Task目录的qualified身份按local路由、持久化和恢复；保留原远程身份及权限校验。",
-        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。"
+        "本机Project与固定Task目录的qualified身份按local路由、精确服务绑定、持久化和恢复；保留原远程身份及权限校验。",
+        "按活动 Tab 的稳定身份查找已序列化会话位置；设置标签使用已有活动 workspace 身份，不按目录合并同目录的不同 Project。"
       ]
     },
     {
@@ -14114,9 +14325,12 @@
       "source": "references/zcode/packages/ui/src/v4/workbenchDragDrop.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/workbenchDragDrop.ts",
       "sha256": "977fab28dc8a655685e5fc23baad7f2d604a1efea37d315501573dddd3cb3d8d",
-      "copiedSha256": "9d43dc4d00fcf949a379a728713ea35d1c0df70875e48cccbce6910df36549e6",
+      "copiedSha256": "db4f52f5123baa2af08c432d4d7930b39049a7fb8ab582b844491e912a104e84",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "映射导入，保留全局旧来源原件、现有分栏拖动格式及边缘位置计算；使用 zod 严格解析可选的本机项目来源观察。",
+        "新增由原 Task 行实际消费的拖动构造函数，固定可信 taskControl 项目与正文修订；项目解析器要求完整 canonical identity、UUID 和安全修订，拒绝缺失或错配字段。旧格式继续用于分栏，不能用于真实项目移动。",
+        "保护模式的空 getData 只复用本次拖动副本并重复校验，dragend 清除该副本；不引入临时开关或另一套组织协议。",
+        "解析后仅保留实际存在的可选字段，使拖动输入与 exactOptionalPropertyTypes 定义一致。"
       ]
     },
     {

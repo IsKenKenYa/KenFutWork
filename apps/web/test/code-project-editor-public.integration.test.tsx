@@ -21,6 +21,7 @@ import {
 import {
   clickExactText,
   selectAll,
+  selectSidebarView,
 } from "./setup/code-public-browser-actions.js";
 import type { PublicFixture } from "./setup/code-public-session";
 
@@ -133,11 +134,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             JSON.stringify(page.pageErrors),
           ).toBe(session.sessionId),
         );
-        await clickExactText(
-          page,
-          '[data-testid="sidebar"] [role="tab"]',
-          "项目",
-        );
+        await selectSidebarView(page, "projects");
         await vi.waitFor(async () =>
           expect(
             await page.evaluate(
@@ -146,7 +143,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             JSON.stringify(page.pageErrors),
           ).toBe(1),
         );
-        const treeButton = `${projectSelector} [data-testid=${JSON.stringify(`workspace-file-tree-button-${session.workspacePath}`)}]`;
+        const treeButton = `${projectSelector} [data-testid="virtual-project-files"]`;
         await hoverOn(page, projectSelector);
         await vi.waitFor(async () =>
           expect(
@@ -190,9 +187,9 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         await vi.waitFor(async () =>
           expect(
             await page.evaluate(
-              'document.querySelector("[data-testid=workspace-file-tree-panel]")?.closest("[aria-hidden]")?.getAttribute("aria-hidden")',
+              'document.querySelector("[data-testid=workspace-file-tree-panel]")?.checkVisibility()',
             ),
-          ).toBe("true"),
+          ).toBe(false),
         );
         const draft = "项目改名期间保留的正文草稿";
         await clickOn(page.cdp, page.target.sessionId, {
@@ -219,7 +216,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           };
         })()`);
         await hoverOn(page, projectSelector);
-        const moreSelector = `${projectSelector} button[aria-label="更多"]`;
+        const moreSelector = `${projectSelector} [data-testid="virtual-project-menu"]`;
         await vi.waitFor(async () => {
           const state = await page.evaluate<{ count: number }>(`(() => {
             const row = document.querySelector(${JSON.stringify(projectSelector)});
@@ -247,13 +244,13 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         await vi.waitFor(async () =>
           expect(
             await page.evaluate(
-              'document.querySelectorAll("[data-testid=code-project-edit]").length',
+              'document.querySelectorAll("[data-testid=virtual-project-edit]").length',
             ),
             JSON.stringify(page.pageErrors),
           ).toBe(1),
         );
         await clickOn(page.cdp, page.target.sessionId, {
-          selector: '[data-testid="code-project-edit"]',
+          selector: '[data-testid="virtual-project-edit"]',
         });
         const nameSelector = '[data-testid="virtual-project-name"]';
         await vi.waitFor(async () =>
@@ -280,14 +277,16 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         await clickOn(page.cdp, page.target.sessionId, {
           selector: '[data-testid="virtual-project-save"]',
         });
-        await vi.waitFor(async () =>
-          expect(
-            await page.evaluate(
-              'document.querySelector("[data-testid=virtual-project-name]") === null',
-            ),
-            JSON.stringify(page.pageErrors),
-          ).toBe(true),
-        );
+        await vi.waitFor(
+          async () =>
+            expect(
+              await page.evaluate(
+                'document.querySelector("[data-testid=virtual-project-name]") === null',
+              ),
+              JSON.stringify(page.pageErrors),
+            ).toBe(true),
+          { timeout: 30_000 },
+        ); // 等待真实保存、目录刷新及原编辑表单关闭。
         const expectProjectUI = (name: string) =>
           vi.waitFor(async () => {
             const state = await page.evaluate<{

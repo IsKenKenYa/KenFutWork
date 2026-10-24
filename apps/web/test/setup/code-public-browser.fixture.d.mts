@@ -24,6 +24,7 @@ export function openOriginalSessionBrowser(options: {
   clientId: string;
   newDraft?: boolean;
   workspaceShell?: boolean;
+  restoreSession?: boolean;
   beforeNavigate?: (
     page: Pick<OriginalSessionBrowser, "cdp" | "target">,
   ) => Promise<void>;

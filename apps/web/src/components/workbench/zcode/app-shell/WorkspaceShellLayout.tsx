@@ -1793,6 +1793,7 @@ export const WorkspaceShellLayout = memo(
                   >
                     <WorkspaceSidebar
                       workspacePath={workspaceAbsPath}
+                      workspaceIdentity={workspaceIdentity}
                       workspaceRemoteSessionId={workspaceRemoteSessionId}
                       activePreviewPath={activePreviewPath}
                       onSelectTask={handleSelectTaskInChat}

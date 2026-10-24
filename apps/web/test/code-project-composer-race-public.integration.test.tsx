@@ -134,6 +134,7 @@ async function withHeldProjectPreparation(
 ) {
   const expectedIds = new Set(projectIds);
   const held = new Map<string, HeldProjectPreparation>();
+  const observedProjectIds = new Set<string>();
   const originalBodies = new Map<string, string>();
   const released = new Set<string>();
   const failures: unknown[] = [];
@@ -160,6 +161,7 @@ async function withHeldProjectPreparation(
         const { projectId } = codeProjectPrepareSessionArgsSchema.parse(
           rpc.args,
         )[0];
+        observedProjectIds.add(projectId);
         if (expectedIds.has(projectId) && !held.has(projectId)) {
           held.set(projectId, {
             requestId: params.requestId,
@@ -186,13 +188,29 @@ async function withHeldProjectPreparation(
     );
     await work({
       async waitForPrepared(projectId) {
-        const response = await vi.waitFor(() => {
-          expect(failures).toEqual([]);
-          const found = held.get(projectId);
-          expect(found).toMatchObject({ status: 200 });
-          if (!found) throw new Error("原项目准备响应尚未到达。");
-          return found;
-        });
+        const response = await vi.waitFor(
+          async () => {
+            expect(failures).toEqual([]);
+            const found = held.get(projectId);
+            expect(
+              found,
+              JSON.stringify({
+                projectId,
+                heldProjectIds: [...held.keys()],
+                observedProjectIds: [...observedProjectIds],
+                requests: requestFacts(page).filter(
+                  (request) =>
+                    request.service === "project" &&
+                    request.method === "prepareSession",
+                ),
+                draft: found ? undefined : await readDraftView(page),
+              }),
+            ).toMatchObject({ status: 200 });
+            if (!found) throw new Error("原项目准备响应尚未到达。");
+            return found;
+          },
+          { timeout: 30_000 },
+        ); // 等待真实准备响应到达浏览器拦截点。
         const originalBody = await readResponseBody(
           page,
           "Fetch.getResponseBody",
@@ -615,6 +633,15 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
                   page,
                   `[role="menu"] [data-project-id=${JSON.stringify(selected.project.id)}]`,
                 );
+                await vi.waitFor(
+                  async () =>
+                    expect(
+                      await page.evaluate(
+                        "document.querySelector('[data-testid=\"composer-project-menu\"]') === null",
+                      ),
+                    ).toBe(true),
+                  { timeout: 30_000 },
+                ); // 原菜单关闭完成后，下一次选择才重新打开菜单。
                 expect(
                   await pending.waitForPrepared(selected.project.id),
                 ).toEqual({

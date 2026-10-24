@@ -19,7 +19,10 @@ import {
   type OriginalSessionBrowser,
   openOriginalSessionBrowser,
 } from "./code-public-browser.fixture.mjs";
-import { clickExactText } from "./code-public-browser-actions.js";
+import {
+  clickExactText,
+  selectSidebarView,
+} from "./code-public-browser-actions.js";
 import type { PublicFixture } from "./code-public-session.js";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
@@ -143,9 +146,9 @@ async function openTaskFile(
       JSON.stringify(page.pageErrors),
     ).toBe(host.sessionId),
   );
-  await clickExactText(page, '[data-testid="sidebar"] [role="tab"]', "项目");
+  await selectSidebarView(page, "projects");
   await hoverProjectRow(page, projectSelector);
-  const treeButton = `${projectSelector} [data-testid=${JSON.stringify(`workspace-file-tree-button-${host.workspacePath}`)}]`;
+  const treeButton = `${projectSelector} [data-testid="virtual-project-files"]`;
   await clickOn(page.cdp, page.target.sessionId, { selector: treeButton });
   const fileSelector = `[data-testid=${JSON.stringify(`workspace-file-tree-row-${path}`)}]`;
   await vi.waitFor(async () =>
@@ -174,9 +177,9 @@ async function openTaskFile(
   await vi.waitFor(async () =>
     expect(
       await page.evaluate(
-        'document.querySelector("[data-testid=workspace-file-tree-panel]")?.closest("[aria-hidden]")?.getAttribute("aria-hidden")',
+        'document.querySelector("[data-testid=workspace-file-tree-panel]")?.checkVisibility()',
       ),
-    ).toBe("true"),
+    ).toBe(false),
   );
 }
 
@@ -197,7 +200,7 @@ async function enterGroupView(page: OriginalSessionBrowser, draft: string) {
       tab: document.querySelector('[data-side-pane-tab-id][data-state="active"]'),
     };
   })()`);
-  await clickExactText(page, '[data-testid="sidebar"] [role="tab"]', "分组");
+  await selectSidebarView(page, "grouped");
 }
 
 export async function expectContentPreserved({

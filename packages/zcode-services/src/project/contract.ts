@@ -1,6 +1,7 @@
 import { ServiceChannels, type FileEntry } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 import type {
+  MoveProjectTaskInput,
   PrepareProjectSessionInput,
   PreparedProjectSession,
   ProjectTree,
@@ -11,6 +12,7 @@ import type {
 export type {
   CreateProjectInput,
   EditProjectInput,
+  MoveProjectTaskInput,
   ProjectRoot,
   ProjectRootAccess,
   PinProjectInput,
@@ -42,6 +44,7 @@ export interface IProjectService {
     hostId?: "local";
   }): Promise<ProjectTree>;
   saveProject(input: SaveProjectInput): Promise<VirtualProject>;
+  moveTask(input: MoveProjectTaskInput): Promise<void>;
   deleteProject(id: string, hostId?: "local"): Promise<void>;
 }
 

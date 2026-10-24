@@ -39,16 +39,22 @@ export function buildRemoteWorkspacePersistPatch(
   const pendingRemoteSessions = remoteSessions.filter(
     (entry) => !serializedRemoteWorkspaceKeys.has(buildWorkspaceSessionKey(entry)),
   );
-  const workspaceTabs = state.tabs.filter((tab) => tab.kind === "workspace");
-  const activeIndex = state.activeWorkspacePath
-    ? workspaceTabs.findIndex((tab) => tab.workspacePath === state.activeWorkspacePath)
-    : 0;
+  const sessions = [...serializedWorkspaceSessions, ...pendingRemoteSessions];
+  const activeTab = state.tabs.find((tab) =>
+    isWorkspaceTab(tab) && tab.id === state.activeTabId,
+  );
+  const activeWorkspaceKey = activeTab && isWorkspaceTab(activeTab)
+    ? buildWorkspaceSessionKey(activeTab)
+    : state.activeWorkspaceIdentity?.trim() || state.activeWorkspacePath;
+  const activeIndex = sessions.findIndex((entry) =>
+    buildWorkspaceSessionKey(entry) === activeWorkspaceKey,
+  );
 
   return {
     // SSH 入口被隐藏时会跳过远程 tab 恢复，tabs 里只剩本地项。
     // 如果这里只按当前 tabs 序列化，下一次写 setting.json 会把远程会话快照整体抹掉。
     // 这里把“当前已序列化项 + 未出现在 tabs 的远程快照”合并，确保入口恢复后仍可重连。
-    lastWorkspaceSession: [...serializedWorkspaceSessions, ...pendingRemoteSessions],
+    lastWorkspaceSession: sessions,
     lastActiveTabIndex: Math.max(activeIndex, 0),
   };
 }

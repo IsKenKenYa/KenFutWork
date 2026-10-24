@@ -24,6 +24,7 @@ import {
 import {
   clickExactText,
   selectAll,
+  selectSidebarView,
 } from "./setup/code-public-browser-actions.js";
 import type { PublicFixture } from "./setup/code-public-session";
 
@@ -268,7 +269,7 @@ async function openProjectFileTree(
       JSON.stringify(page.pageErrors),
     ).toBe(session.sessionId),
   );
-  await clickExactText(page, '[data-testid="sidebar"] [role="tab"]', "项目");
+  await selectSidebarView(page, "projects");
   await vi.waitFor(async () =>
     expect(
       await page.evaluate(
@@ -294,7 +295,7 @@ async function openProjectFileTree(
     { type: "mouseMoved", ...projectPoint },
     page.target.sessionId,
   );
-  const treeSelector = `${projectSelector} [data-testid=${JSON.stringify(`workspace-file-tree-button-${session.workspacePath}`)}]`;
+  const treeSelector = `${projectSelector} [data-testid="virtual-project-files"]`;
   await vi.waitFor(async () =>
     expect(
       await page.evaluate(
@@ -314,13 +315,15 @@ async function openTaskPreview(
   const projectSelector = await openProjectFileTree(page, session);
   const previewPath = join(session.workspacePath, previewName);
   const fileSelector = `[data-testid=${JSON.stringify(`workspace-file-tree-row-${previewPath}`)}]`;
-  await vi.waitFor(async () =>
-    expect(
-      await page.evaluate(
-        `document.querySelectorAll(${JSON.stringify(fileSelector)}).length`,
-      ),
-    ).toBe(1),
-  );
+  await vi.waitFor(
+    async () =>
+      expect(
+        await page.evaluate(
+          `document.querySelectorAll(${JSON.stringify(fileSelector)}).length`,
+        ),
+      ).toBe(1),
+    { timeout: 30_000 },
+  ); // 等待真实项目文件读取及原目录树显示。
   await clickOn(page.cdp, page.target.sessionId, { selector: fileSelector });
   await vi.waitFor(async () =>
     expect(
@@ -373,7 +376,7 @@ async function openCreationEditor(page: OriginalSessionBrowser) {
     };
   })()`);
   await clickOn(page.cdp, page.target.sessionId, {
-    selector: '[data-testid="project-add"]',
+    selector: '[data-testid="virtual-project-add"]',
   });
   await vi.waitFor(async () =>
     expect(
@@ -446,6 +449,17 @@ async function chooseProjectRoot(page: OriginalSessionBrowser, root: string) {
         JSON.stringify({
           pageErrors: page.pageErrors,
           requests: page.requests,
+          browser: await page.evaluate(`(() => {
+            const browser = document.querySelector(${JSON.stringify(browseSelector)});
+            const input = browser?.querySelector('input[placeholder="输入路径"]');
+            const confirm = browser?.querySelector('[data-testid="directory-browser-confirm"]');
+            return {
+              visible: browser?.checkVisibility(),
+              path: input?.value,
+              confirmDisabled: confirm?.disabled,
+              text: browser?.textContent?.slice(0, 1200),
+            };
+          })()`),
         }),
       ).toBe(true),
     { timeout: 30_000 },
@@ -883,7 +897,7 @@ async function keepNextCreationPending(
   );
   if (!existing) throw new Error("真实项目列表缺少当前项目。");
   await clickOn(page.cdp, page.target.sessionId, {
-    selector: '[data-testid="project-add"]',
+    selector: '[data-testid="virtual-project-add"]',
   });
   await vi.waitFor(async () =>
     expect(

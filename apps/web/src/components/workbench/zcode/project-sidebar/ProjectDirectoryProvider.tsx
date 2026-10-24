@@ -1,11 +1,15 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useProjectTree } from "@zui/project-sidebar/useProjectTree.js";
 import { useTaskGroups } from "@zui/project-sidebar/useTaskGroups.js";
+import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
+import { useProjectSidebarPreferences } from "@zui/project-sidebar/useProjectSidebarPreferences.js";
 
 function useDirectoryState() {
   const directory = useProjectTree();
   const groups = useTaskGroups(directory.tree, directory.loading);
-  return useMemo(() => ({ ...directory, groups }), [directory, groups]);
+  const service = useBaseWorkspaceServices().projectService;
+  const preferences = useProjectSidebarPreferences(directory.tree.projects, directory.loading);
+  return useMemo(() => ({ ...directory, groups, service, preferences }), [directory, groups, service, preferences]);
 }
 
 const Context = createContext<ReturnType<typeof useDirectoryState> | null>(null);

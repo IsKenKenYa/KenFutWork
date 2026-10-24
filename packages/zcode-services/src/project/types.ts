@@ -68,6 +68,19 @@ export interface PreparedProjectSession {
   workspaceIdentity: string;
 }
 
+export interface MoveProjectTaskInput {
+  task: {
+    taskId: string;
+    workspacePath: string;
+    workspaceIdentity?: string;
+  };
+  sourceProjectId: string;
+  projectId: string;
+  observedRevision: number;
+  hostId?: "local";
+  addMissingRoot?: boolean;
+}
+
 interface ProjectSaveFields {
   hostId?: "local";
   name?: string;

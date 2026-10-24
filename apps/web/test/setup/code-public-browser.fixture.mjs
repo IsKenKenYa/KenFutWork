@@ -461,6 +461,7 @@ export async function openOriginalSessionBrowser(options) {
             clientId: options.clientId,
             newDraft: options.newDraft ?? false,
             workspaceShell: options.workspaceShell ?? false,
+            restoreSession: options.restoreSession ?? false,
             initialPreview: options.initialPreview,
           },
         )},configurable:true});`,
