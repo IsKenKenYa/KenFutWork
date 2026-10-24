@@ -11,6 +11,7 @@ const freshTransaction = () => ({
   firstInputAck: false,
   projectInsert: false,
   projectCreation: false,
+  projectEditorSave: false,
   taskArchiveCommand: false,
   taskArchivePrepare: false,
   taskArchiveTaskUpdated: false,
@@ -72,6 +73,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let taskProjectMovePrepare = false;
   let createFirstInput = false;
   let projectCreation = false;
+  let projectEditorSave = false;
   let taskArchivePrepare = false;
   let taskArchiveCompletion = false;
   let taskGroupSave = false;
@@ -355,6 +357,38 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         parameters[1] === transaction.targetProjectId
       )
         transaction.projectCreation = true;
+      if (
+        projectEditorSave &&
+        commandId &&
+        /^insert into public\.project_editor_save_receipts\b/u.test(text) &&
+        text.includes(
+          "(instance_id,project_id,expected_revision,parameter_fingerprint,result)",
+        ) &&
+        /\bvalues \(\$5,\$1,\$2,\$3,\$4::jsonb\)/u.test(text) &&
+        parameters.length === 5 &&
+        typeof parameters[0] === "string" &&
+        Number.isSafeInteger(Number(parameters[1])) &&
+        Number(parameters[1]) >= 0 &&
+        typeof parameters[2] === "string" &&
+        /^[a-f0-9]{64}$/u.test(parameters[2]) &&
+        typeof parameters[3] === "string" &&
+        typeof parameters[4] === "string" &&
+        JSON.stringify([
+          parameters[4],
+          parameters[0],
+          Number(parameters[1]),
+        ]) === commandId
+      ) {
+        const result = JSON.parse(parameters[3]);
+        transaction.projectEditorSave =
+          result.id === parameters[0] &&
+          result.revision === Number(parameters[1]) + 1;
+        if (transaction.projectEditorSave) {
+          transaction.targetProjectId = parameters[0];
+          transaction.expectedProjectRevision = Number(parameters[1]);
+          transaction.targetProjectRevision = result.revision;
+        }
+      }
       if (/\binsert into public\.chat_sessions\b/u.test(text)) {
         transaction.chatRoot = true;
         transaction.targetTaskId = parameters[0];
@@ -428,6 +462,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.mediaInstall ||
           transaction.taskProjectMovePrepare ||
           transaction.projectCreation ||
+          transaction.projectEditorSave ||
           transaction.taskArchivePrepare ||
           transaction.taskArchiveCompletion ||
           transaction.taskGroupSave ||
@@ -525,6 +560,14 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
                   projectCreation: true,
                   creationId: commandId,
                   targetProjectId: transaction.targetProjectId,
+                }
+              : {}),
+            ...(transaction.projectEditorSave
+              ? {
+                  projectEditorSave: true,
+                  targetProjectId: transaction.targetProjectId,
+                  expectedProjectRevision: transaction.expectedProjectRevision,
+                  targetProjectRevision: transaction.targetProjectRevision,
                 }
               : {}),
             ...(transaction.taskProjectMovePrepare
@@ -654,6 +697,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       taskProjectMovePrepare = options.taskProjectMovePrepare === true;
       createFirstInput = options.createFirstInput === true;
       projectCreation = options.projectCreation === true;
+      projectEditorSave = options.projectEditorSave === true;
       taskArchivePrepare = options.taskArchivePrepare === true;
       taskArchiveCompletion = options.taskArchiveCompletion === true;
       taskGroupSave = options.taskGroupSave === true;

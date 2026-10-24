@@ -7,6 +7,7 @@ import type {
   CodeProjectEditorCreate,
   CodeProjectEditorDirectory,
   CodeProjectEditorEdit,
+  CodeProjectEditorPin,
   CodeProjectEditorProject,
   CodeProjectEditorReadDirectory,
   CodeProjectEditorReadTree,
@@ -129,6 +130,7 @@ function projectChange(
   );
   return {
     name: input.name ?? project.name,
+    pinned: project.pinned,
     additionalDirectories: roots
       .filter((path) => path !== primary)
       .map((path) => ({
@@ -188,10 +190,12 @@ function projectIntent(
 }
 
 function projectFingerprint(
-  intent: ReturnType<typeof projectIntent> & {
-    kind?: CodeProjectEditorCreate["kind"];
-    directoryChoice?: string | null;
-  },
+  intent:
+    | (ReturnType<typeof projectIntent> & {
+        kind?: CodeProjectEditorCreate["kind"];
+        directoryChoice?: string | null;
+      })
+    | Pick<CodeProjectEditorPin, "pinned">,
 ): string {
   return createHash("sha256").update(JSON.stringify(intent)).digest("hex");
 }
@@ -213,9 +217,18 @@ export function createProjectEditorService(options: {
         context.instanceId,
         input.id,
         input.expectedRevision,
-        projectFingerprint(projectIntent(input)),
+        projectFingerprint(
+          "pinned" in input ? { pinned: input.pinned } : projectIntent(input),
+        ),
         signal,
-        (project) => projectChange(project, input),
+        (project) =>
+          "pinned" in input
+            ? {
+                name: project.name,
+                additionalDirectories: project.additional_directories,
+                pinned: input.pinned,
+              }
+            : projectChange(project, input),
       );
     }
     const created = await options.projects.createProjectOnce(

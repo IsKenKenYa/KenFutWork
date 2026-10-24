@@ -379,16 +379,16 @@
       "target": "packages/zcode-services/src/project/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "1bfa496b747335ef4a01a5bbe32e5977d320c6edc70b524fc24c31602a48d243",
-      "copiedSha256": "a53baae1c4f5cc4b7cd687bdb538679a74726a6aec65fa9bc3ddb66147cebeb4",
-      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。", "prepareSession 连接所属 feature 的真实只读目录准备；输入使用 Project ID、本机 Host 和 Code/Design 工作方式，返回当前主目录及 canonical identity，不创建 Task。"]
+      "copiedSha256": "7ca5f2edfd977fda0fb91507de5a09a6de1eb787c4b927c613dc847904fee509",
+      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。", "prepareSession 连接所属 feature 的真实只读目录准备；输入使用 Project ID、本机 Host 和 Code/Design 工作方式，返回当前主目录及 canonical identity，不创建 Task。", "导出原节点所需的稀疏项目置顶输入，携带当前观察修订并复用现有保存方法。"]
     },
     {
       "source": "references/zcode/packages/services/src/project-storage/contract.ts",
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "7c9fcaa9b5860d110b6bac872ae341c84cb822e59e14caae9db585441f86a136",
-      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。"]
+      "copiedSha256": "0a92a8b88746ccd553d5a71d432bb4caf62c134615618594e81607174a06a120",
+      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
@@ -16289,11 +16289,12 @@
       "source": "references/zcode/packages/services/src/index.ts",
       "target": "packages/zcode-services/src/index.ts",
       "sha256": "b6c905865dfa0f63bd83134ec26629ff417eff1bf472683acbac4bacb8293caf",
-      "copiedSha256": "0618c71059b07e32fa7d77318c6f8089dfe8097e9e883ba06039a6be58abf675",
+      "copiedSha256": "0f075cfae60310c727d0456665ba7f2f14fb73676d92ec0b48dda3142a116734",
       "adaptations": [
         "导出本机项目创建与编辑所需的原浏览器 descriptor、创建/编辑联合输入，以及真实归档消费者使用的 ProjectTask/ProjectTree 类型。",
         "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。",
-        "导出真实项目准备接口的输入和结果类型，原菜单、Root 与宿主客户端共同消费。"
+        "导出真实项目准备接口的输入和结果类型，原菜单、Root 与宿主客户端共同消费。",
+        "导出原项目保存方法的稀疏置顶输入类型，连接 PostgreSQL 项目事实和现有 RPC。"
       ]
     },
     {

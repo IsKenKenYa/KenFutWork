@@ -18,6 +18,7 @@ export interface VirtualProject {
   createdAt: number;
   updatedAt: number;
   revision: number;
+  pinned: boolean;
   deleted?: boolean;
 }
 
@@ -85,4 +86,11 @@ export interface CreateProjectInput extends ProjectSaveFields {
   directoryChoice?: "independent";
 }
 
-export type SaveProjectInput = EditProjectInput | CreateProjectInput;
+export interface PinProjectInput {
+  id: string;
+  hostId?: "local";
+  expectedRevision: number;
+  pinned: boolean;
+}
+
+export type SaveProjectInput = EditProjectInput | CreateProjectInput | PinProjectInput;

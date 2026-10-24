@@ -487,6 +487,7 @@ export const applicationErrorCodeSchema = z.enum([
   "project_create_failed",
   "project_delete_failed",
   "project_not_found",
+  "project_revision_conflict",
   "project_prepare_unavailable",
   "project_identity_mismatch",
   "project_slug_taken",

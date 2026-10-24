@@ -13,6 +13,7 @@ export type {
   EditProjectInput,
   ProjectRoot,
   ProjectRootAccess,
+  PinProjectInput,
   ProjectTask,
   ProjectTree,
   PrepareProjectSessionInput,

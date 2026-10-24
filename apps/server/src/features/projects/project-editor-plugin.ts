@@ -3,7 +3,7 @@ import {
   codeProjectEditorReadDirectorySchema,
   codeProjectEditorReadProjectsSchema,
   codeProjectEditorReadTreeArgsSchema,
-  codeProjectEditorSaveSchema,
+  codeProjectEditorSaveArgsSchema,
   codeProjectPrepareSessionArgsSchema,
 } from "@kenfutwork/shared";
 import type { PluginDefinition } from "../../kernel/types.js";
@@ -54,11 +54,8 @@ export function createProjectEditorPlugin(): PluginDefinition {
           );
         },
         async saveProject(actor, args, context) {
-          return service.saveProject(
-            actor,
-            codeProjectEditorSaveSchema.parse(args[0]),
-            context.signal,
-          );
+          const [input] = codeProjectEditorSaveArgsSchema.parse(args);
+          return service.saveProject(actor, input, context.signal);
         },
         async deleteProject(actor, args) {
           const [projectId] = codeProjectEditorDeleteArgsSchema.parse([

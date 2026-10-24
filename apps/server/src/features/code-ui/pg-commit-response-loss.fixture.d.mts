@@ -18,8 +18,11 @@ export interface CommitLossEvidence {
   targetGroupId?: string;
   createFirstInput?: true;
   projectCreation?: true;
+  projectEditorSave?: true;
   creationId?: string;
   targetProjectId?: string;
+  expectedProjectRevision?: number;
+  targetProjectRevision?: number;
 }
 export function createCommitResponseLossProxy(
   connectionString: string,
@@ -40,6 +43,7 @@ export function createCommitResponseLossProxy(
       taskGroupMove?: boolean;
       createFirstInput?: boolean;
       projectCreation?: boolean;
+      projectEditorSave?: boolean;
       loseCreationReadbackOnce?: boolean;
     },
   ): void;

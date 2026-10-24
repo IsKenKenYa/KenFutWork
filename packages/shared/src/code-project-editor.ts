@@ -23,6 +23,7 @@ export const codeProjectEditorProjectSchema = z
     createdAt: z.number().finite(),
     updatedAt: z.number().finite(),
     revision: projectRevision,
+    pinned: z.boolean().default(false),
     deleted: z.boolean().optional(),
   })
   .strict();
@@ -163,9 +164,23 @@ export const codeProjectEditorCreateSchema = z
   })
   .strict();
 
+export const codeProjectEditorPinSchema = z
+  .object({
+    id: z.uuid(),
+    hostId: localHost,
+    expectedRevision: projectRevision,
+    pinned: z.boolean(),
+  })
+  .strict();
+
 export const codeProjectEditorSaveSchema = z.union([
   codeProjectEditorEditSchema,
   codeProjectEditorCreateSchema,
+  codeProjectEditorPinSchema,
+]);
+
+export const codeProjectEditorSaveArgsSchema = z.tuple([
+  codeProjectEditorSaveSchema,
 ]);
 
 export const codeProjectEditorDeleteArgsSchema = z.tuple([z.uuid(), localHost]);
@@ -178,6 +193,7 @@ export type CodeProjectEditorCreate = z.infer<
   typeof codeProjectEditorCreateSchema
 >;
 export type CodeProjectEditorEdit = z.infer<typeof codeProjectEditorEditSchema>;
+export type CodeProjectEditorPin = z.infer<typeof codeProjectEditorPinSchema>;
 export type CodeProjectEditorReadProjects = z.infer<
   typeof codeProjectEditorReadProjectsSchema
 >;

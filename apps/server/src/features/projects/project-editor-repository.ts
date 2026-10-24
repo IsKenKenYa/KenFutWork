@@ -23,6 +23,7 @@ export type ProjectEditorRow = SqlRow & {
   created_at: string;
   updated_at: string;
   editor_revision: number;
+  pinned: boolean;
   archived_at: string | null;
   archive_state: "open" | "closing" | "failed";
 };
@@ -30,6 +31,7 @@ export type ProjectEditorRow = SqlRow & {
 export type ProjectEditorChange = {
   name: string;
   additionalDirectories: AdditionalDirectory[];
+  pinned: boolean;
 };
 
 export interface ProjectEditorRepository {
@@ -59,7 +61,7 @@ export function projectEditorProject(
     | "created_at"
     | "updated_at"
     | "editor_revision"
-  > & { archived_at?: string | null },
+  > & { archived_at?: string | null; pinned?: boolean },
 ): CodeProjectEditorProject {
   return codeProjectEditorProjectSchema.parse({
     id: row.id,
@@ -79,6 +81,7 @@ export function projectEditorProject(
     createdAt: new Date(row.created_at).getTime(),
     updatedAt: new Date(row.updated_at).getTime(),
     revision: row.editor_revision,
+    pinned: row.pinned,
     ...(row.archived_at ? { deleted: true } : {}),
   });
 }
@@ -86,6 +89,7 @@ export function projectEditorProject(
 function changed(row: ProjectEditorRow, change: ProjectEditorChange): boolean {
   return (
     row.name !== change.name ||
+    row.pinned !== change.pinned ||
     row.additional_directories.length !== change.additionalDirectories.length ||
     row.additional_directories.some((directory, index) => {
       const next = change.additionalDirectories[index];
@@ -221,13 +225,14 @@ export function createProjectEditorRepository(
         signal.throwIfAborted();
         const updated = await sql.queryOne<ProjectEditorRow>(
           `update public.projects
-              set name=$2,additional_directories=$3::jsonb
+              set name=$2,additional_directories=$3::jsonb,pinned=$4
             where instance_id=:instance and id=$1
             returning *`,
           [
             projectId,
             change.name,
             JSON.stringify(change.additionalDirectories),
+            change.pinned,
           ],
         );
         if (!updated) throw conflict();

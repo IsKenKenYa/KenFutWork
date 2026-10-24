@@ -41,6 +41,7 @@ export type {
   PreparedProjectSession,
   CreateProjectInput,
   EditProjectInput,
+  PinProjectInput,
   ProjectRoot,
   ProjectRootAccess,
   ProjectTask,

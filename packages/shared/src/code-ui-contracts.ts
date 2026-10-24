@@ -11,7 +11,7 @@ import {
   codeProjectEditorReadDirectorySchema,
   codeProjectEditorReadProjectsSchema,
   codeProjectEditorReadTreeArgsSchema,
-  codeProjectEditorSaveSchema,
+  codeProjectEditorSaveArgsSchema,
   codeProjectPreparedSessionResponseSchema,
   codeProjectPrepareSessionArgsSchema,
   codeProjectTreeRpcResponseSchema,
@@ -133,7 +133,7 @@ export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
     codeUiRpcEnvelopeSchema.extend({
       service: z.literal("project"),
       method: z.literal("saveProject"),
-      args: z.tuple([codeProjectEditorSaveSchema]),
+      args: codeProjectEditorSaveArgsSchema,
     }),
     codeUiRpcEnvelopeSchema.extend({
       service: z.literal("project"),
