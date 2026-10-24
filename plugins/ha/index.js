@@ -6,8 +6,8 @@
  * HA 的标准 REST + WebSocket。米家靠 HA 的小米集成、华为靠 HA 的华为集成，HA 里装什么
  * 集成就覆盖什么生态，本插件与面板因此**不做厂商分支**。
  *
- * 能力面：`tools`（agent 工具）+ `routes`（面板数据面）+ `ui`（侧栏入口）
- * + `storage`（HA 地址与长期令牌）。
+ * 能力面：`tools`（agent 工具）+ `routes`（面板数据面：配置/实体/控制/接入引导）
+ * + `ui`（侧栏入口）+ `storage`（HA 地址与长期令牌）。
  *
  * 与内核的约定：
  * - 路由**默认私有**：面板是同源 iframe，本机接入态由 HttpOnly 会话 cookie 携带（DEC-20），
@@ -20,6 +20,7 @@
  */
 
 import {
+  buildEcosystemSummary,
   buildEntityView,
   controlValue,
   toServiceCall,
@@ -36,6 +37,7 @@ import {
   WS_DEVICE_REGISTRY_LIST,
   WS_ENTITY_REGISTRY_LIST,
 } from "./lib/ha-ws.js";
+import { SETUP_GUIDE_STEPS } from "./lib/setup-guide.js";
 
 export const name = "kenfutwork-ha";
 
@@ -219,14 +221,18 @@ export function apply(ctx) {
   async function loadView(instanceId) {
     const runtime = await runtimeFor(instanceId);
     if (runtime.realtime()) {
+      const registries = runtime.registries();
       return {
-        ...buildEntityView(runtime.states(), runtime.registries()),
+        ...buildEntityView(runtime.states(), registries),
+        // 生态识别只在有注册表时成立（WS 就绪）；轮询态不带这个字段，面板不显示
+        ecosystems: buildEcosystemSummary(registries),
         mode: "realtime",
       };
     }
     const states = await runtime.rest.getStates();
     return {
       ...buildEntityView(Array.isArray(states) ? states : []),
+      ecosystems: null,
       mode: "polling",
     };
   }
@@ -289,6 +295,16 @@ export function apply(ctx) {
   });
 
   ctx.routes.register({
+    path: "guide",
+    handler: async (request) => {
+      requireInstance(request.instanceId, "读取引导");
+      // 纯静态步骤数据（lib/setup-guide.js 一处属主）；面板拉取失败只是少了引导，
+      // 连接表单不受影响
+      return { status: 200, body: { steps: SETUP_GUIDE_STEPS } };
+    },
+  });
+
+  ctx.routes.register({
     path: "config",
     method: "POST",
     handler: async (request) => {
@@ -318,6 +334,9 @@ export function apply(ctx) {
           status: 200,
           body: {
             ok: true,
+            // 归一后的地址：面板内嵌 HA 原生界面的 iframe src 用它（用户手输的
+            // 原文可能缺协议或带尾斜杠）
+            baseUrl,
             version: info?.version ?? null,
             locationName: info?.location_name ?? null,
           },

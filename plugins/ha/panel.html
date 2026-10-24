@@ -205,6 +205,83 @@
         display: flex;
         gap: 6px;
       }
+      /* === 接入引导（未配置/修改配置态）=== */
+      a {
+        color: var(--accent);
+      }
+      .guide > .intro {
+        margin: 0 0 8px;
+      }
+      .guide .step {
+        margin: 6px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+      }
+      .guide .step summary {
+        cursor: pointer;
+        padding: 6px 10px;
+        font-weight: 600;
+      }
+      .guide .step-body {
+        padding: 0 10px 8px;
+      }
+      .guide .step-text {
+        margin: 4px 0;
+        font-size: 12px;
+      }
+      .command {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 6px 0;
+      }
+      .command pre {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        padding: 6px 8px;
+        font: 11px/1.5 ui-monospace, Consolas, monospace;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .command button {
+        flex: none;
+      }
+      /* === HA 原生界面（内嵌 iframe）=== */
+      .native {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .native details {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+      }
+      .native details summary {
+        cursor: pointer;
+        padding: 4px 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .native details pre {
+        margin: 0;
+        padding: 6px 10px 10px;
+        font: 11px/1.5 ui-monospace, Consolas, monospace;
+        color: var(--text);
+      }
+      .native iframe {
+        width: 100%;
+        height: calc(100vh - 124px);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+      }
       footer {
         margin-top: 12px;
       }
@@ -215,6 +292,7 @@
       <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态与操作 -->
       <span id="state" class="hint"></span>
       <span class="grow"></span>
+      <button id="toggleView" type="button" hidden></button>
       <button id="refresh" type="button" hidden>刷新</button>
       <button id="retest" type="button" hidden>重新测试</button>
       <button id="edit" type="button" hidden>修改配置</button>
