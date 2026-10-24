@@ -333,7 +333,11 @@ const FLOAT_SCRIPT = `
         ? "0px"
         : Math.round(viewportWidth() - (inset ? 52 : 36)) + "px";
   }
+  // 最小化前态记忆（用户口径 2026-10-24「悬浮球还原回去要有判断」）：
+  // 从分屏卡片最小化 → 球还原回分屏卡片；从悬浮面板最小化 → 还原回悬浮面板。
+  var preBallState = "float";
   function applyBall() {
+    preBallState = uiState === "max" ? "max" : "float";
     uiState = "ball";
     // 球贴面板消失前的位置：停靠在面板所在半边、面板顶缘的高度——视线不用动，
     // 点一下球即还原。（2026-10-23 曾固定右缘顶部，那是按钮恒定视口右上的配套；
@@ -345,15 +349,21 @@ const FLOAT_SCRIPT = `
     ball.style.top =
       Math.max(8, Math.min(Math.round(rect.top), viewportHeight() - 44)) + "px";
     ball.style.display = "flex";
+    ball.title = preBallState === "max" ? "还原分屏卡片" : "还原悬浮面板";
     container.style.setProperty("visibility", "hidden", "important");
     container.style.setProperty("pointer-events", "none", "important");
     syncBtnbar();
   }
+  /** 球还原：回最小化前的状态（分屏卡片或悬浮面板）。 */
+  function restoreFromBall() {
+    if (preBallState === "max") applyMax();
+    else applyFloat();
+  }
 
-  // 最小化：当前状态 ↔ 悬浮球 互切（球态再点 – 回悬浮面板；卡片态点 – 也去球）
+  // 最小化：当前状态 ↔ 悬浮球 互切（球态再点 – 回最小化前的状态）
   minBtn.onclick = function (event) {
     event.stopPropagation();
-    if (uiState === "ball") applyFloat();
+    if (uiState === "ball") restoreFromBall();
     else applyBall();
   };
   // 最大化：悬浮面板 ↔ 分屏卡片 互切（球态点 □ 直接进卡片）
@@ -414,7 +424,7 @@ const FLOAT_SCRIPT = `
     var moved = ballDrag.moved;
     ballDrag = null;
     if (!moved) {
-      applyFloat();
+      restoreFromBall();
       return;
     }
     // 吸附最近边：左缘 left=0，右缘露出 16px，transform 负责半藏（CSS transition 吸附动画）

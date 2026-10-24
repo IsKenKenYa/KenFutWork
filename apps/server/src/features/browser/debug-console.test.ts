@@ -233,8 +233,13 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 球热区外扩（用户口径 2026-10-24「悬浮球切换回去卡卡的」根因）：半藏 55%
     // 后可点月牙仅 16px，点了落空＝「没反应/卡」；::after 外扩 10px 透明热区
     expect(script).toContain(".kfw-ball::after{content:'';position:absolute;inset:-10px}");
-    // 切换语义：最小化＝当前状态 ↔ 悬浮球；最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
-    expect(script).toContain('if (uiState === "ball") applyFloat();');
+    // 切换语义：最小化＝当前状态 ↔ 悬浮球，**球还原回最小化前的状态**（用户口径
+    // 2026-10-24「悬浮球还原回去要有判断」：从卡片最小化回卡片、从悬浮最小化回悬浮）；
+    // 最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
+    expect(script).toContain("preBallState");
+    expect(script).toContain("function restoreFromBall");
+    expect(script).toContain("if (uiState === \"ball\") restoreFromBall();");
+    expect(script).not.toContain("if (uiState === \"ball\") applyFloat();");
     expect(script).toContain('if (uiState === "max") applyFloat();');
     // 分屏卡片贴底全宽（用户口径 2026-10-24「最大化按钮点击行为不对」根因）：
     // 拖动落下的行内 left/top!important 压过 .kfw-max 的 !important，不清掉
