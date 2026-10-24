@@ -12,6 +12,11 @@
  * - 华为：`xiasi0/ha-huawei-smarthome` **不在 HACS 默认源**，要先加「自定义仓库」；
  *   登录 = 华为账号 + 密码 + 挑战码（推送到已登录华为设备），再选家庭；设备按 `prodId`
  *   逐产品适配，无适配器 = HA 里没有该实体。
+ * - 内嵌（2026-10-24 用户拍板「要教程里一样的界面」→ 面板默认显示 HA 原生前端）：
+ *   HA 默认发 `X-Frame-Options` 挡内嵌。新版（≥ 2026.8）在「设置 → 系统 → 网络」
+ *   关闭「Send X-Frame-Options」；旧版用 configuration.yaml 的
+ *   `http.use_x_frame_options: false`（http 官方文档：该块已迁移到 UI，YAML 会触发
+ *   弃用修复提示）。
  *
  * 这是数据不是代码：改步骤内容只改本文件；面板经 `guide` 路由取这一份，测试锁死仓库
  * 链接与关键命令（装错仓库是引导最大的事故面）。
@@ -122,6 +127,31 @@ export const SETUP_GUIDE_STEPS = [
         kind: "link",
         label: "已支持设备清单",
         url: "https://github.com/xiasi0/ha-huawei-smarthome/blob/main/docs/supported-devices.md",
+      },
+    ],
+  },
+  {
+    id: "embed",
+    title: "允许面板内嵌 HA 界面",
+    open: false,
+    items: [
+      {
+        kind: "text",
+        text: "HA「设置 → 系统 → 网络」关闭「Send X-Frame-Options」",
+      },
+      {
+        kind: "text",
+        text: "旧版 HA 在 configuration.yaml 加入并重启：",
+      },
+      {
+        kind: "command",
+        label: "configuration.yaml",
+        text: "http:\n  use_x_frame_options: false",
+      },
+      {
+        kind: "link",
+        label: "HA 网络设置文档",
+        url: "https://www.home-assistant.io/integrations/http/",
       },
     ],
   },

@@ -334,6 +334,9 @@ export function apply(ctx) {
           status: 200,
           body: {
             ok: true,
+            // 归一后的地址：面板内嵌 HA 原生界面的 iframe src 用它（用户手输的
+            // 原文可能缺协议或带尾斜杠）
+            baseUrl,
             version: info?.version ?? null,
             locationName: info?.location_name ?? null,
           },

@@ -1024,7 +1024,7 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
     expect(fake.calls.length).toBeGreaterThan(0);
   });
 
-  it("地址归一在保存时就完成：存进去的是干净地址", async () => {
+  it("地址归一在保存时就完成：存进去的是干净地址，响应回同一份（原生视图 iframe 用）", async () => {
     const { service, installed, store } = await installFromRepo();
     const saved = await configureConnected(
       service,
@@ -1033,6 +1033,9 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
       "ha.test.local:8123/api/states/",
     );
     expect(saved?.status).toBe(200);
+    expect(bodyOf<{ baseUrl?: string }>(saved).baseUrl).toBe(
+      "http://ha.test.local:8123",
+    );
     const stored = JSON.parse([...store.rows.values()][0] ?? "{}") as {
       baseUrl?: string;
     };
@@ -2068,6 +2071,7 @@ describe("HA 插件：接入引导与生态识别", () => {
       "hacs",
       "xiaomi",
       "huawei",
+      "embed",
       "token",
     ]);
     for (const step of body.steps) {
@@ -2080,6 +2084,7 @@ describe("HA 插件：接入引导与生态识别", () => {
         "https://github.com/XiaoMi/ha_xiaomi_home",
         "https://github.com/xiasi0/ha-huawei-smarthome",
         "https://www.hacs.xyz/docs/use/download/download/",
+        "https://www.home-assistant.io/integrations/http/",
       ]),
     );
     const commands = items
@@ -2088,6 +2093,8 @@ describe("HA 插件：接入引导与生态识别", () => {
       .join("\n");
     expect(commands).toContain("get.hacs.xyz");
     expect(commands).toContain("ghcr.io/home-assistant/home-assistant:stable");
+    // 内嵌步（2026-10-24 拍板「要教程里一样的界面」）：旧版关 X-Frame-Options 的 yaml 在场
+    expect(commands).toContain("use_x_frame_options: false");
     // 引导终点把用户带回自己的连接表单：令牌步骤指回面板
     expect(
       items

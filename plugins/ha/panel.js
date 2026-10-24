@@ -1,9 +1,14 @@
 /**
  * 智能家居面板页（插件自带，无构建、无外部依赖）。
  *
+ * 三种视图：未配置/修改配置（接入引导 + 连接表单）、**HA 原生界面（已连接后的默认
+ * 视图，iframe 直接内嵌 HA 自己的前端——用户拍板「要教程里一样的界面」，2026-10-24）**、
+ * 精简面板（自绘实体网格，顶栏可互切）。HA 默认发 X-Frame-Options 挡内嵌，被挡时
+ * iframe 空白——原生视图自带折叠提示条给两侧的关法（见接入引导「允许面板内嵌」步）。
+ *
  * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收也不保管宿主令牌；数据面请求带
  * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里，面板写入一次后
- * 只显示「已配置」。
+ * 只显示「已配置」；内嵌的 HA 前端用 HA 自己的登录态（iframe 里登录一次即记住）。
  *
  * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`）。控件由服务端按「域 + 属性」
  * 算好（`lib/entity-model.js`），面板只渲染并回传 `{entityId, key, service, value}`——
@@ -26,6 +31,8 @@ const state = {
   mode: "polling",
   /** 米家/华为实体计数（服务端按注册表 platform 识别）；null = 识别不了，不显示 */
   ecosystems: null,
+  /** 当前视图：config（配置/引导）| native（内嵌 HA 原生界面）| grid（自绘实体网格） */
+  view: "config",
   busy: false,
   pollTimer: null,
 };
@@ -34,6 +41,7 @@ const els = {
   state: document.getElementById("state"),
   body: document.getElementById("body"),
   note: document.getElementById("note"),
+  toggleView: document.getElementById("toggleView"),
   refresh: document.getElementById("refresh"),
   retest: document.getElementById("retest"),
   edit: document.getElementById("edit"),
@@ -71,8 +79,17 @@ function showError(message) {
   setNote(message, true);
 }
 
-function setHeaderButtons(connected) {
-  els.refresh.hidden = !connected;
+/**
+ * 三种视图的顶栏按钮：
+ * - `config`：只有配置表单（未配置/修改配置），无连接态操作；
+ * - `native`：内嵌 HA 原生界面（默认）——可切「精简面板」，不需要「刷新」；
+ * - `grid`：自绘实体网格——可切回「原生界面」，要「刷新」。
+ */
+function setHeaderButtons(view) {
+  const connected = view === "native" || view === "grid";
+  els.toggleView.hidden = !connected;
+  els.toggleView.textContent = view === "native" ? "精简面板" : "原生界面";
+  els.refresh.hidden = view !== "grid";
   els.retest.hidden = !connected;
   els.edit.hidden = !connected;
   els.disconnect.hidden = !connected;
@@ -205,7 +222,8 @@ function buildGuideCard(steps) {
 
 function renderConfigForm(message, guideFirst = true) {
   stopPolling();
-  setHeaderButtons(false);
+  state.view = "config";
+  setHeaderButtons("config");
   setState("未配置");
   clear(els.body);
   const card = el("div", "card");
@@ -240,8 +258,11 @@ function renderConfigForm(message, guideFirst = true) {
       .then((payload) => {
         state.busy = false;
         state.version = payload.version ?? null;
+        if (typeof payload.baseUrl === "string" && payload.baseUrl) {
+          state.baseUrl = payload.baseUrl;
+        }
         setNote("", false);
-        loadEntities();
+        renderNative();
       })
       .catch((error) => {
         state.busy = false;
@@ -265,7 +286,39 @@ function renderConfigForm(message, guideFirst = true) {
   });
 }
 
-// === 实体网格 ===
+// === HA 原生界面（内嵌 iframe，已连接后的默认视图） ===
+
+/**
+ * 直接内嵌 HA 自己的前端（就是教程里那个界面）。HA 默认发 `X-Frame-Options` 挡内嵌，
+ * 被挡时 iframe 表现为空白——折叠提示条给出两侧的关法（新版 UI 开关 / 旧版 yaml），
+ * 不让用户面对白屏猜原因。
+ */
+function renderNative() {
+  stopPolling();
+  state.view = "native";
+  setHeaderButtons("native");
+  setState("HA 原生界面");
+  clear(els.body);
+  const wrap = el("div", "native");
+
+  const hint = el("details");
+  const summary = el("summary", null, "界面空白时点开");
+  hint.appendChild(summary);
+  const fix = el("pre", null);
+  fix.textContent =
+    "HA 设置 → 系统 → 网络 → 关闭「Send X-Frame-Options」\n旧版 configuration.yaml：\nhttp:\n  use_x_frame_options: false";
+  hint.appendChild(fix);
+  wrap.appendChild(hint);
+
+  const frame = document.createElement("iframe");
+  frame.src = state.baseUrl || "";
+  frame.title = "Home Assistant";
+  frame.referrerPolicy = "no-referrer";
+  wrap.appendChild(frame);
+  els.body.appendChild(wrap);
+}
+
+// === 实体网格（精简面板） ===
 
 function stopPolling() {
   if (state.pollTimer) {
@@ -478,7 +531,8 @@ function viewSignature(groups) {
 const rendered = { signature: null, applies: [] };
 
 function renderEntities() {
-  setHeaderButtons(true);
+  state.view = "grid";
+  setHeaderButtons("grid");
   // 刷新不动滚动位置：先记后还原（整页滚动，滚动条在 document 上）
   const scroller = document.scrollingElement ?? document.documentElement;
   const scrollTop = scroller.scrollTop;
@@ -553,12 +607,22 @@ function loadEntities() {
         renderConfigForm(error.message);
         return;
       }
-      setHeaderButtons(true);
+      setHeaderButtons(state.view === "grid" ? "grid" : "native");
       showError(error.message);
     });
 }
 
 els.refresh.addEventListener("click", () => loadEntities());
+
+els.toggleView.addEventListener("click", () => {
+  setNote("", false);
+  // 原生 ↔ 精简面板互切；切到网格时拉一轮实体（原生视图不轮询）
+  if (state.view === "native") {
+    loadEntities();
+    return;
+  }
+  renderNative();
+});
 
 els.retest.addEventListener("click", () => {
   setState("连接中…");
@@ -566,7 +630,12 @@ els.retest.addEventListener("click", () => {
     .then((payload) => {
       state.version = payload.version ?? null;
       setNote("", false);
-      loadEntities();
+      if (state.view === "grid") {
+        loadEntities();
+        return;
+      }
+      // 原生视图：测通即可，界面本身由 iframe 自己维护
+      setState("HA 原生界面");
     })
     .catch((error) => showError(error.message));
 });
@@ -597,20 +666,9 @@ function boot() {
         renderConfigForm();
         return;
       }
-      // 版本取自连接测试（一次），之后每轮只取实体
-      return api("test", { method: "POST" })
-        .then((info) => {
-          state.version = info.version ?? null;
-          return loadEntities();
-        })
-        .catch((error) => {
-          if (error.code === "not_configured" || error.status === 401) {
-            renderConfigForm(error.message);
-            return;
-          }
-          setHeaderButtons(true);
-          showError(error.message);
-        });
+      // 已配置：直接进原生界面（iframe 用 HA 自己的登录态，令牌健康度由
+      // 「重新测试」与 agent 工具按需暴露，启动期不必先打一轮 REST）
+      renderNative();
     })
     .catch((error) => showError(error.message));
 }
