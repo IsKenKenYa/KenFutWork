@@ -9,6 +9,7 @@ import {
   codeGoalControlStateSchema,
   codeProjectPreparedSessionSchema,
   codeProjectPrepareSessionArgsSchema,
+  codeProjectTreeSchema,
   codeUiViewerScopeSchema,
   codeUiWorkspaceSchema,
   isPluginIconResourceReference,
@@ -994,6 +995,13 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.pluginInventoryChanges.fire();
         notifyPluginInventoryChanged();
       }
+    }
+    if (service === ServiceChannels.Project && method === "readTree") {
+      if (this.controller.signal.aborted || connectionId !== this.connectionId)
+        throw new Error("项目读取期间连接已改变，请重新加载项目。");
+      const tree = codeProjectTreeSchema.parse(response.result);
+      for (const task of tree.tasks) this.workspaces.applyProjectTask(task);
+      return tree as TResult;
     }
     if (service === ServiceChannels.Project && method === "prepareSession") {
       const [intent] = codeProjectPrepareSessionArgsSchema.parse(values);

@@ -1,9 +1,11 @@
 import {
+  type CodeProjectTree,
   type CodeUiWorkspace,
   type ProjectDirectoryRelinkResponse,
   type ProjectDirectoryRelinkSnapshot,
   projectDirectoryRelinkResponseSchema,
 } from "@kenfutwork/shared";
+import { canonicalLocalWorkspaceIdentity } from "@zcode/shared";
 
 export function projectSupportsMode(
   project: CodeUiWorkspace,
@@ -18,6 +20,11 @@ export interface TaskWorkspaceIdentity {
   rootDirectory: string;
 }
 
+interface TaskProjectionObservation extends TaskWorkspaceIdentity {
+  branchGeneration: number;
+  conversationRevision?: number;
+}
+
 /** Project 默认与 Task 固定目录分别记录；目录更新不能改写既有 Task 的身份。 */
 export class TaskWorkspaceRegistry {
   private readonly projects = new Map<string, CodeUiWorkspace>();
@@ -28,6 +35,10 @@ export class TaskWorkspaceRegistry {
   >();
   private readonly selectedProjectByPath = new Map<string, string>();
   private readonly tasks = new Map<string, TaskWorkspaceIdentity>();
+  private readonly taskObservations = new Map<
+    string,
+    TaskProjectionObservation
+  >();
   private readonly listeners = new Set<() => void>();
   readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -93,19 +104,70 @@ export class TaskWorkspaceRegistry {
       typeof entry.workspacePath !== "string"
     )
       return;
-    const previous = this.tasks.get(entry.taskId);
+    const previous =
+      this.tasks.get(entry.taskId) ?? this.taskObservations.get(entry.taskId);
     if (
       previous &&
       (previous.projectId !== entry.projectId ||
         previous.rootDirectory !== entry.workspacePath)
     )
       throw new Error("Task 的工作目录身份发生了不合法变化。");
-    if (previous) return;
+    if (this.tasks.has(entry.taskId)) return;
     this.tasks.set(entry.taskId, {
       taskId: entry.taskId,
       projectId: entry.projectId,
       rootDirectory: entry.workspacePath,
     });
+    this.recordWorkspace(entry.projectId, entry.workspacePath);
+    this.notify();
+  }
+
+  /** 仅消费当前可信连接解析后的项目树；普通登记仍不能改变Task身份。 */
+  applyProjectTask(entry: CodeProjectTree["tasks"][number]) {
+    const control = entry.taskControl;
+    const revision = entry.conversationRevision;
+    if (!control || revision === undefined) return this.registerTask(entry);
+    if (
+      control.projectId !== entry.projectId ||
+      entry.workspaceIdentity !==
+        canonicalLocalWorkspaceIdentity(entry.projectId, entry.workspacePath)
+    )
+      throw new Error("任务项目身份不一致，请重新加载项目。");
+    const observed = this.taskObservations.get(entry.taskId);
+    if (observed && control.branchGeneration < observed.branchGeneration)
+      return;
+    const current = this.tasks.get(entry.taskId);
+    const previous = current ?? observed;
+    if (
+      previous &&
+      (previous.rootDirectory !== entry.workspacePath ||
+        (previous.projectId !== entry.projectId &&
+          (!observed || control.branchGeneration <= observed.branchGeneration)))
+    )
+      throw new Error("任务工作目录或项目观察值不一致，请重新加载。");
+    if (
+      observed &&
+      control.branchGeneration === observed.branchGeneration &&
+      observed.conversationRevision !== undefined &&
+      revision < observed.conversationRevision
+    )
+      return;
+    const identity = {
+      taskId: entry.taskId,
+      projectId: entry.projectId,
+      rootDirectory: entry.workspacePath,
+    };
+    this.taskObservations.set(entry.taskId, {
+      ...identity,
+      branchGeneration: control.branchGeneration,
+      conversationRevision: revision,
+    });
+    if (
+      current?.projectId === identity.projectId &&
+      current.rootDirectory === identity.rootDirectory
+    )
+      return;
+    this.tasks.set(entry.taskId, identity);
     this.recordWorkspace(entry.projectId, entry.workspacePath);
     this.notify();
   }
@@ -129,10 +191,10 @@ export class TaskWorkspaceRegistry {
   task(taskId: string) {
     return this.tasks.get(taskId) ?? null;
   }
-  applyDirectoryRelink(
+  private validateDirectoryRelink(
     snapshot: ProjectDirectoryRelinkSnapshot,
     value: ProjectDirectoryRelinkResponse,
-  ): () => void {
+  ) {
     const receipt = projectDirectoryRelinkResponseSchema.parse(value);
     const project = this.projects.get(snapshot.projectId);
     const expected = new Map(snapshot.tasks.map((task) => [task.taskId, task]));
@@ -147,12 +209,15 @@ export class TaskWorkspaceRegistry {
     const observed = new Set<string>();
     for (const task of receipt.tasks) {
       const previous = expected.get(task.taskId),
-        known = this.tasks.get(task.taskId);
+        known = this.tasks.get(task.taskId),
+        knownObservation = this.taskObservations.get(task.taskId);
       if (
         observed.has(task.taskId) ||
         !previous ||
         task.scopeGeneration !== previous.scopeGeneration + 1 ||
         task.branchGeneration !== previous.branchGeneration + 1 ||
+        (knownObservation &&
+          knownObservation.branchGeneration > previous.branchGeneration) ||
         (known &&
           (known.projectId !== snapshot.projectId ||
             known.rootDirectory !== snapshot.workDir))
@@ -175,6 +240,17 @@ export class TaskWorkspaceRegistry {
       )
         throw new Error("目录关联回执包含其它项目Task。");
     }
+    return { receipt, project, affected };
+  }
+
+  applyDirectoryRelink(
+    snapshot: ProjectDirectoryRelinkSnapshot,
+    value: ProjectDirectoryRelinkResponse,
+  ): () => void {
+    const { receipt, project, affected } = this.validateDirectoryRelink(
+      snapshot,
+      value,
+    );
     const old = {
       projects: new Map(this.projects),
       paths: new Map(
@@ -183,6 +259,7 @@ export class TaskWorkspaceRegistry {
       identities: new Map(this.workspaceByIdentity),
       selected: new Map(this.selectedProjectByPath),
       tasks: new Map(this.tasks),
+      observations: new Map(this.taskObservations),
     };
     const restore = () => {
       this.projects.clear();
@@ -195,9 +272,18 @@ export class TaskWorkspaceRegistry {
       for (const item of old.selected) this.selectedProjectByPath.set(...item);
       this.tasks.clear();
       for (const item of old.tasks) this.tasks.set(...item);
+      this.taskObservations.clear();
+      for (const item of old.observations) this.taskObservations.set(...item);
       this.notify();
     };
     for (const taskId of affected) this.tasks.delete(taskId);
+    for (const task of receipt.tasks)
+      this.taskObservations.set(task.taskId, {
+        taskId: task.taskId,
+        projectId: receipt.projectId,
+        rootDirectory: receipt.workDir,
+        branchGeneration: task.branchGeneration,
+      });
     const oldIdentity = JSON.stringify([snapshot.projectId, snapshot.workDir]);
     this.workspaceByIdentity.delete(oldIdentity);
     const ids = this.projectIdsByPath.get(snapshot.workDir);

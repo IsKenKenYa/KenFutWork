@@ -1,7 +1,131 @@
+import type {
+  CodeProjectTree,
+  ProjectDirectoryRelinkResponse,
+  ProjectDirectoryRelinkSnapshot,
+} from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import { TaskWorkspaceRegistry } from "../src/components/workbench/zcode/host/taskWorkspaceRegistry";
 
+const observedTaskId = "86000000-0000-4000-8000-000000000001";
+const observedProjectA = "86000000-0000-4000-8000-000000000002";
+const observedProjectB = "86000000-0000-4000-8000-000000000003";
+const relinkSnapshot: ProjectDirectoryRelinkSnapshot = {
+  projectId: observedProjectA,
+  workDir: "/A",
+  tasks: [{ taskId: observedTaskId, scopeGeneration: 4, branchGeneration: 1 }],
+};
+const relinkReceipt: ProjectDirectoryRelinkResponse = {
+  projectId: observedProjectA,
+  workDir: "/chosen",
+  affectedTaskIds: [observedTaskId],
+  tasks: [
+    {
+      taskId: observedTaskId,
+      scopeGeneration: 5,
+      branchGeneration: 2,
+      status: "ready",
+    },
+  ],
+};
+
+function projectTaskObservation(
+  projectId: string,
+  branchGeneration: number,
+  conversationRevision: number,
+): CodeProjectTree["tasks"][number] {
+  return {
+    taskId: observedTaskId,
+    traceId: observedTaskId,
+    projectId,
+    hostId: "local",
+    workspacePath: "/A",
+    workspaceIdentity: JSON.stringify([projectId, "/A"]),
+    title: "持久Task",
+    createdAt: 1,
+    updatedAt: 1,
+    mode: "build",
+    pinned: false,
+    archived: false,
+    taskControl: { projectId, branchGeneration },
+    conversationRevision,
+  };
+}
+
 describe("Project默认与Task固定目录", () => {
+  it("可信项目观察允许跨越代际，忽略旧分支并拒绝同代际的项目冲突", () => {
+    const registry = new TaskWorkspaceRegistry();
+    const first = projectTaskObservation(observedProjectA, 1, 2);
+    registry.applyProjectTask(first);
+    registry.applyProjectTask(projectTaskObservation(observedProjectB, 3, 6));
+    registry.applyProjectTask(first);
+    expect(registry.task(observedTaskId)).toEqual({
+      taskId: observedTaskId,
+      projectId: observedProjectB,
+      rootDirectory: "/A",
+    });
+    expect(() =>
+      registry.applyProjectTask(projectTaskObservation(observedProjectA, 3, 1)),
+    ).toThrow("不一致");
+    expect(() => registry.registerTask(first)).toThrow("不合法变化");
+    expect(registry.task(observedTaskId)?.projectId).toBe(observedProjectB);
+  });
+  it("明确关联目录后拒绝旧普通登记和旧项目树，恢复缓存同时恢复原观察值", () => {
+    const registry = new TaskWorkspaceRegistry();
+    registry.registerProjects([
+      {
+        projectId: observedProjectA,
+        name: "项目 A",
+        path: "/A",
+        additionalDirectories: [],
+      },
+    ]);
+    const first = projectTaskObservation(observedProjectA, 1, 2);
+    registry.applyProjectTask(first);
+    const restore = registry.applyDirectoryRelink(
+      relinkSnapshot,
+      relinkReceipt,
+    );
+    expect(() => registry.registerTask(first)).toThrow("不合法变化");
+    registry.applyProjectTask(first);
+    expect(registry.task(observedTaskId)).toBeNull();
+    registry.applyProjectTask({
+      ...projectTaskObservation(observedProjectA, 2, 3),
+      workspacePath: "/chosen",
+      workspaceIdentity: JSON.stringify([observedProjectA, "/chosen"]),
+    });
+    expect(registry.task(observedTaskId)?.rootDirectory).toBe("/chosen");
+    restore();
+    registry.applyProjectTask(first);
+    expect(registry.task(observedTaskId)?.rootDirectory).toBe("/A");
+    expect(() =>
+      registry.applyProjectTask(
+        projectTaskObservation(observedProjectB, 1, 10),
+      ),
+    ).toThrow("不一致");
+  });
+  it("较早目录回执不得降低项目树已经确认的分支，拒绝后所有缓存保持", () => {
+    const registry = new TaskWorkspaceRegistry();
+    registry.registerProjects([
+      {
+        projectId: observedProjectA,
+        name: "项目 A",
+        path: "/A",
+        additionalDirectories: [],
+      },
+    ]);
+    registry.applyProjectTask(projectTaskObservation(observedProjectA, 3, 8));
+    expect(() =>
+      registry.applyDirectoryRelink(relinkSnapshot, relinkReceipt),
+    ).toThrow("Task不一致");
+    expect(registry.task(observedTaskId)).toEqual({
+      taskId: observedTaskId,
+      projectId: observedProjectA,
+      rootDirectory: "/A",
+    });
+    expect(registry.identityFor(observedProjectA, "/chosen")).toBeNull();
+    registry.applyProjectTask(projectTaskObservation(observedProjectB, 2, 9));
+    expect(registry.task(observedTaskId)?.projectId).toBe(observedProjectA);
+  });
   it("默认A改B后旧Task仍A，创建新Task解析到B；重复注册不重绑旧Task", () => {
     const registry = new TaskWorkspaceRegistry();
     const project = {
