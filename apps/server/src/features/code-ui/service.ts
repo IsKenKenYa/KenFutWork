@@ -17,6 +17,7 @@ import {
   resolveContextWindow,
   type StreamEvent,
 } from "@kenfutwork/shared";
+import { AsyncLocalStorageProviderSingleton } from "@langchain/core/singletons";
 import {
   appSettingsSchema,
   resolveExecutionState,
@@ -316,7 +317,10 @@ export class CodeUiService {
       host: ReturnType<typeof createCodeUiWindowController>;
     }
   >();
-  private readonly taskActors = new Map<string, LocalActor>();
+  private readonly taskActors = new Map<
+    string,
+    { actor: LocalActor; scopeGeneration: number }
+  >();
   private readonly humanWorkspace: HumanWorkspaceRpc;
   private readonly providerSettings: CodeUiProviderSettingsRpc;
   private readonly attachments: CodeAttachmentsService | undefined;
@@ -1317,7 +1321,9 @@ export class CodeUiService {
   /** 空闲续跑由真正的终态触发；命令认领和前台 lease 共同拒绝重复/并发新 Run。 */
   async resumeTaskWork(instanceId: string, taskId: string): Promise<boolean> {
     if (this.closing) return false;
-    const actor = this.taskActors.get(JSON.stringify([instanceId, taskId]));
+    const actor = this.taskActors.get(
+      JSON.stringify([instanceId, taskId]),
+    )?.actor;
     if (!actor) return false;
     const loaded = await this.loadConversation(actor, taskId);
     if (
@@ -1460,17 +1466,23 @@ export class CodeUiService {
       loaded.project.projectId,
     );
     // 调度只等持久 admission；runTurn 独立消费事件，不让终态 executor 等模型完整运行。
-    void this.runTurn(
-      actor,
-      loaded.project,
-      taskId,
-      thread.threadId,
-      runId,
-      text,
-      `${selection.providerId}:${selection.modelId}`,
-      modelInvocation,
-      undefined,
-      { clientId: envelope.clientId, sourceCommandId: envelope.commandId },
+    // 后台终态来自旧工具的异步上下文；新Run不继承旧Pregel的取消信号。
+    void AsyncLocalStorageProviderSingleton.runWithConfig(
+      {},
+      () =>
+        this.runTurn(
+          actor,
+          loaded.project,
+          taskId,
+          thread.threadId,
+          runId,
+          text,
+          `${selection.providerId}:${selection.modelId}`,
+          modelInvocation,
+          undefined,
+          { clientId: envelope.clientId, sourceCommandId: envelope.commandId },
+        ),
+      true,
     ).catch((error: unknown) =>
       console.error("[task-work] 自动续跑失败：", error),
     );
@@ -1617,7 +1629,10 @@ export class CodeUiService {
       event.sourceProjectId,
       event.scopeGeneration,
     );
-    this.taskActors.delete(JSON.stringify([event.instanceId, event.taskId]));
+    const actorKey = JSON.stringify([event.instanceId, event.taskId]);
+    const binding = this.taskActors.get(actorKey);
+    if (binding && binding.scopeGeneration < event.scopeGeneration)
+      this.taskActors.delete(actorKey);
     const notifications = await Promise.allSettled([
       ...[...this.controllers.values()]
         .filter((controller) => controller.instanceId === event.instanceId)
@@ -4295,9 +4310,10 @@ export class CodeUiService {
           "not_found",
           "Code Task 已删除或不存在。",
         );
-      this.taskActors.set(
-        JSON.stringify([scopeHandle.describe().instanceId, sessionId]),
+      this.rememberTaskActor(
         user,
+        sessionId,
+        scopeHandle.describe().generation,
       );
       await this.deps.agentRunMetadata.createAcceptedRun({
         runId,
@@ -5483,11 +5499,24 @@ export class CodeUiService {
     return { instanceId: workspace.instanceId, project, entry, root, host };
   }
 
+  private rememberTaskActor(
+    actor: LocalActor,
+    taskId: string,
+    scopeGeneration: number,
+  ) {
+    const key = JSON.stringify([actor.instanceId, taskId]);
+    const previous = this.taskActors.get(key);
+    // 旧读取晚于新Run返回时，不能降低已经登记的Task授权代际。
+    if (previous && previous.scopeGeneration > scopeGeneration) return;
+    this.taskActors.set(key, { actor, scopeGeneration });
+  }
+
   async getSnapshot(user: LocalActor, sessionId: string) {
     const loaded = await this.loadConversation(user, sessionId);
-    this.taskActors.set(
-      JSON.stringify([loaded.instanceId, loaded.root.id]),
+    this.rememberTaskActor(
       user,
+      loaded.root.id,
+      Number(loaded.root.scope_generation),
     );
     const snapshot = loaded.host.getSnapshot(sessionId);
     await this.historyEdit.decorate(user, loaded, snapshot);

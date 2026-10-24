@@ -231,6 +231,8 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 连接内保存每个来源项目及会话的最大退订代际。初始读取返回后，登记租约前再次核对该记录；期间已经失效的读取返回 `409/code_ui_command_conflict`，不发表迟到初始帧。记录仅含不透明项目／会话身份与代际，连接关闭时清除；新连接重新读取当前 Task。
 
+后台接纳使用宿主记录的真实调用者及其 Task 授权代际，较早读取不能降低已登记代际；移动回执只清除该次接纳之前的调用者记录。后台工作完成后，后续 Run 使用独立 Runnable 上下文及自身取消信号，仍由原 Task、分支、权限及 Run 接纳控制。原 V4 分别投影唯一后台轮次、其唤醒输入和按 `originMeta.workId` 定位的结果摘要；模型输入沿同一工作记录消费，不按后台输入总行数推断运行次数。
+
 ## 原项目树与归档管理
 
 原归档页面通过同一目录 owner 调用 `project.readTree`。`includeDeleted: true` 显式包含已归档项目并以 `deleted: true` 标识；普通读取排除这些项目及所属 Task。项目与根 Task 在同一 PostgreSQL 只读快照投影，Task 使用创建时固定目录及当前 Project 身份，不从已打开标签推导归属。`includeDeletedTasks: true` 返回最小删除事实，仅包含不透明 `taskId`、`projectId` 和 `hostId`。归档读取不恢复目录授权或运行。
