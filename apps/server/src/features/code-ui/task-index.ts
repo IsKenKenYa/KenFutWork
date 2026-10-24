@@ -40,6 +40,11 @@ export function codeUiTaskMeta(
       workspacePath,
     ),
     projectId: record.project_id,
+    taskControl: {
+      projectId: record.project_id,
+      branchGeneration: Number(record.branch_generation),
+    },
+    conversationRevision: snapshot.revision,
     workModes: workModes.length ? workModes : ["code"],
     title: snapshot.meta.title,
     titleOverridden: snapshot.meta.titleSource === "custom",

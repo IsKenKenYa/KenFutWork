@@ -6,6 +6,7 @@
 // zcode-task-types.ts / task-realtime.ts 仍保留旧协议兼容面，共用本文件中的核心类型。
 
 import type { ZCodeBackgroundTaskControlItem } from "./background-task-controls.js";
+import type { ConversationTaskControl } from "./zcode-protocol-v4/core.js";
 import type { ToolCallDisplay } from "./zcode-protocol-v4/toolDisplay.js";
 import type {
   ZCodeContextUsageBreakdownItem,
@@ -262,6 +263,10 @@ export interface ZCodeTaskPendingInteraction {
 }
 
 export interface ZCodeTaskMeta {
+  /** 当前项目与执行分支的观察值；旧历史可以省略。 */
+  taskControl?: ConversationTaskControl;
+  /** 当前根会话正文修订；项目移动使用界面实际读取的版本。 */
+  conversationRevision?: number;
   /** Work modes used by the same durable Task; filtering never partitions its history. */
   workModes?: Array<"code" | "design">;
   /** UI taskId 与 ZCode agent sessionId 保持一致，用于列表选择、日志关联和恢复会话。 */

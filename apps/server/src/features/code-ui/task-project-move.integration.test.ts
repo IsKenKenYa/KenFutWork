@@ -256,6 +256,96 @@ async function moveTaskBackToSource(
   return readTaskSnapshot(fixture, host.sessionId);
 }
 
+async function readFreshControllerTask(
+  host: Awaited<ReturnType<typeof createCodeSessionFixture>>,
+) {
+  const subscribed = await host.client.request("/api/code-ui/rpc", {
+    service: "window-controller",
+    method: "subscribeControllerV4",
+    args: [{ topic: "controller/tasks-index", visibility: "foreground" }],
+  });
+  expect(subscribed.status, JSON.stringify(subscribed.body)).toBe(200);
+  const { ack } = protocol.controllerSubscribeResultSchema.parse(
+    subscribed.body.result,
+  );
+  for (;;) {
+    const event = await nextHostServiceEvent(
+      host.stream,
+      "window-controller",
+      "onDynamicControllerFrame",
+    );
+    const frame = protocol.windowHostControllerTaskFrameSchema.parse(
+      event.data,
+    );
+    if (frame.subscriptionId !== ack.subscriptionId) continue;
+    expect(frame.subscriptionId).toBe(ack.subscriptionId);
+    if (frame.payload.kind !== "snapshot")
+      throw new Error("原 Controller 新订阅没有返回任务目录快照。");
+    const task = frame.payload.snapshot.tasks.find(
+      (entry) => entry.address.taskId === host.sessionId,
+    );
+    if (!task) throw new Error("原 Controller 快照缺少移动后的Task。");
+    return task;
+  }
+}
+
+async function verifyControllerTaskMoveRoundTrip(
+  fixture: Fixture,
+  host: Awaited<ReturnType<typeof createCodeSessionFixture>>,
+  task: Awaited<ReturnType<typeof readFreshControllerTask>>,
+  completed: protocol.ConversationSnapshot,
+) {
+  const targetDirectory = join(fixture.directory, "Controller观察值目标");
+  await mkdir(targetDirectory);
+  const target = await host.client.request("/api/projects", {
+    name: "Controller观察值目标",
+    kind: "code",
+    work_dir: targetDirectory,
+  });
+  expect(target.status, JSON.stringify(target.body)).toBe(201);
+  const targetProjectId = z.uuid().parse(target.body.project.id);
+  let observation = task;
+  let previousSnapshot = completed;
+  for (const projectId of [targetProjectId, host.projectId]) {
+    const observedControl = protocol.conversationTaskControlSchema.parse(
+      observation.meta.taskControl,
+    );
+    const observedRevision = z
+      .number()
+      .int()
+      .nonnegative()
+      .safe()
+      .parse(observation.meta.conversationRevision);
+    await moveTaskBetweenProjects(host.client, {
+      task: {
+        taskId: observation.address.taskId,
+        workspacePath: observation.address.workspacePath,
+        workspaceIdentity: observation.address.workspaceIdentity,
+      },
+      sourceProjectId: observedControl.projectId,
+      projectId,
+      observedRevision,
+      addMissingRoot: true,
+    });
+    const current = await readTaskSnapshot(fixture, host.sessionId);
+    observation = await readFreshControllerTask(host);
+    expect(observation.address).toEqual({
+      taskId: host.sessionId,
+      workspacePath: host.workspacePath,
+      workspaceIdentity: JSON.stringify([projectId, host.workspacePath]),
+    });
+    expect(observation.meta.taskControl).toEqual(current.taskControl);
+    expect(observation.meta.taskControl).toEqual({
+      projectId,
+      branchGeneration: observedControl.branchGeneration + 1,
+    });
+    expect(observation.meta.conversationRevision).toBe(current.revision);
+    expect(current.revision).toBe(previousSnapshot.revision + 1);
+    expect(current.rows.window).toEqual(completed.rows.window);
+    previousSnapshot = current;
+  }
+}
+
 describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
   it("明确补充目标目录后移动静止 Task，保留创建时的目录和权限", async () => {
     const fixture = await createCodeUiHttpFixture();
@@ -515,6 +605,8 @@ describe.skipIf(!enabled)("Task 跨项目移动公开 RPC integration", () => {
         "conversationRevision",
         completed.revision,
       );
+      if (!task) throw new Error("原 Controller 快照缺少已有Task。");
+      await verifyControllerTaskMoveRoundTrip(fixture, host, task, completed);
       expect(model.requests).toHaveLength(1);
     } finally {
       try {

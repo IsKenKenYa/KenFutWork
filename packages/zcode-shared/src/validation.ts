@@ -22,7 +22,7 @@ import {
   zcodeProcessResourceSampleSchema,
 } from "./zcode-protocol/index.js";
 import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
-import { PROTOCOL_V4_LIMITS } from "./zcode-protocol-v4/core.js";
+import { PROTOCOL_V4_LIMITS, conversationTaskControlSchema } from "./zcode-protocol-v4/core.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
 import { sessionWorkflowActivitySchema } from "./zcode-protocol-v4/sessions-index-workflow-activity.js";
 import {
@@ -1206,6 +1206,8 @@ export const zcodeTaskMetaSchema = z.object({
   taskId: nonEmptyStringSchema,
   // KenFutWork宿主的真实Project归属；qualified identity仅作source键。
   projectId: z.uuid().optional(),
+  taskControl: conversationTaskControlSchema.optional(),
+  conversationRevision: z.number().int().nonnegative().safe().optional(),
   workModes: z.array(z.enum(["code", "design"])).optional(),
   traceId: nonEmptyStringSchema,
   title: z.string(),

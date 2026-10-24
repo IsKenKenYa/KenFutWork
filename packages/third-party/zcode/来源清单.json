@@ -387,8 +387,8 @@
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "0a92a8b88746ccd553d5a71d432bb4caf62c134615618594e81607174a06a120",
-      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。"]
+      "copiedSha256": "264418762eb0aa2e213b1616e5f8a22a034cd71e48a18d08b79aa06fe1496049",
+      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。", "Task 读取投影保留可选正文修订，与原 Controller 的真实观察值共用同一提供方，移动输入固定读取时的版本。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
@@ -15502,10 +15502,11 @@
       "source": "references/zcode/packages/shared/src/validation.ts",
       "target": "packages/zcode-shared/src/validation.ts",
       "sha256": "49d7fccf518195c1ab4eb89ee816c878bfa4e0227108e207ec3cf5a1ddb2b84c",
-      "copiedSha256": "1299cc76b35a01769bbd91fec6567bf925ff2351b54c86400522b2f4298a3504",
+      "copiedSha256": "7cbc44b59a1dec8928a3a97a9150c7acaf82486db0900e77ca21177cc591363c",
       "adaptations": [
         "Code宿主必要适配: zcodeTaskMetaSchema保留optional真实Project UUID，qualified workspaceIdentity只作source键，不解码执行权限；公开parsed Controller frame回归RED后修复",
-        "Code/Design统一实施：Task元数据校验接纳工作方式列表。"
+        "Code/Design统一实施：Task元数据校验接纳工作方式列表。",
+        "原 Controller 与 Task 列表校验保留当前项目、分支观察值及正文修订，复用 V4 core 定义；可选字段允许读取历史元信息。"
       ]
     },
     {
@@ -16086,9 +16087,10 @@
       "source": "references/zcode/packages/shared/src/zcode-task-types-core.ts",
       "target": "packages/zcode-shared/src/zcode-task-types-core.ts",
       "sha256": "e75cc0a5f7e6fcbe37acdab259fbc5a0448adcf9d69a5b1f3683b72eee5c75f0",
-      "copiedSha256": "2092d0021381feafbd3545ac7978ed4c08fbc51dfd442b47cdce59c5eeff4891",
+      "copiedSha256": "5acde7cbe9fbf086c67b4758fab9d1b00b8dc2dc7f41d4390cce4b19226afcb0",
       "adaptations": [
-        "Code/Design统一实施：统一Task元数据含实际使用过的工作方式，筛选不创建另一份聚合。"
+        "Code/Design统一实施：统一Task元数据含实际使用过的工作方式，筛选不创建另一份聚合。",
+        "Task 元信息增加可选 taskControl 与 conversationRevision，由当前持久记录及根会话投影提供，原 Controller 与移动消费者共用。"
       ]
     },
     {

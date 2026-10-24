@@ -16,7 +16,11 @@ import {
 } from "./task-project-move-types.js";
 
 export interface TaskProjectMoveService {
-  moveTask(actor: LocalActor, input: TaskProjectMoveInput): Promise<void>;
+  moveTask(
+    actor: LocalActor,
+    input: TaskProjectMoveInput,
+    signal: AbortSignal,
+  ): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -31,7 +35,12 @@ export function createTaskProjectMoveService(deps: {
   let closing = false;
   const pending = new Map<
     string,
-    { fingerprint: string; completed: Promise<void> }
+    {
+      fingerprint: string;
+      signal: AbortSignal;
+      admission: { prepared: boolean };
+      completed: Promise<void>;
+    }
   >();
 
   async function prepareMove(
@@ -39,23 +48,38 @@ export function createTaskProjectMoveService(deps: {
     instanceId: string,
     input: TaskProjectMoveInput,
     fingerprint: string,
+    signal: AbortSignal,
   ) {
-    const previous = await repository.replay(instanceId, input, fingerprint);
+    signal.throwIfAborted();
+    const previous = await repository.replay(
+      instanceId,
+      input,
+      fingerprint,
+      signal,
+    );
     if (previous) return previous;
     let opened: Awaited<ReturnType<ExecutionScopes["openTask"]>>;
     try {
       opened = await deps.executionScopes.openTask(actor, input.task.taskId);
     } catch (error) {
+      signal.throwIfAborted();
       // 其它进程可能在首次查回执之后认领了同一次移动。
-      const raced = await repository.replay(instanceId, input, fingerprint);
+      const raced = await repository.replay(
+        instanceId,
+        input,
+        fingerprint,
+        signal,
+      );
       if (raced) return raced;
       throw error;
     }
+    signal.throwIfAborted();
     return repository.prepare(
       instanceId,
       input,
       fingerprint,
       opened.describe(),
+      signal,
     );
   }
 
@@ -64,8 +88,18 @@ export function createTaskProjectMoveService(deps: {
     instanceId: string,
     input: TaskProjectMoveInput,
     fingerprint: string,
+    signal: AbortSignal,
+    admission: { prepared: boolean },
   ) {
-    const prepared = await prepareMove(actor, instanceId, input, fingerprint);
+    const prepared = await prepareMove(
+      actor,
+      instanceId,
+      input,
+      fingerprint,
+      signal,
+    );
+    admission.prepared = true;
+    // 准备事务接纳后必须完成原资源关闭及归属更新，连接关闭等待这段工作退出。
     if (!prepared.committed) {
       try {
         await deps.closeTask(actor, input.task.taskId);
@@ -95,7 +129,8 @@ export function createTaskProjectMoveService(deps: {
   }
 
   return {
-    async moveTask(actor, value) {
+    async moveTask(actor, value, signal) {
+      signal.throwIfAborted();
       if (closing) throw moveConflict("项目服务正在关闭，请重新连接后再试。");
       const input = taskProjectMoveInputSchema.parse(value);
       if (input.hostId !== undefined && input.hostId !== "local")
@@ -110,6 +145,8 @@ export function createTaskProjectMoveService(deps: {
       )
         throw moveNotFound();
       const { instanceId } = await deps.localInstance.resolve(actor);
+      signal.throwIfAborted();
+      if (closing) throw moveConflict("项目服务正在关闭，请重新连接后再试。");
       const key = JSON.stringify([
         instanceId,
         input.task.taskId,
@@ -126,14 +163,38 @@ export function createTaskProjectMoveService(deps: {
           ]),
         )
         .digest("hex");
-      const previous = pending.get(key);
-      if (previous) {
+      let previous = pending.get(key);
+      while (previous) {
         if (previous.fingerprint !== fingerprint)
           throw moveConflict("同一次移动不能提交不同参数，请重新加载任务。");
-        return previous.completed;
+        try {
+          await previous.completed;
+          return;
+        } catch (error) {
+          signal.throwIfAborted();
+          if (
+            previous.admission.prepared ||
+            !previous.signal.aborted ||
+            error !== previous.signal.reason
+          )
+            throw error;
+          // 另一连接在接纳前取消时，在线调用仍使用自己的观察值与原业务键。
+        }
+        if (pending.get(key) === previous) pending.delete(key);
+        previous = pending.get(key);
       }
-      const completed = move(actor, instanceId, input, fingerprint);
-      pending.set(key, { fingerprint, completed });
+      signal.throwIfAborted();
+      if (closing) throw moveConflict("项目服务正在关闭，请重新连接后再试。");
+      const admission = { prepared: false };
+      const completed = move(
+        actor,
+        instanceId,
+        input,
+        fingerprint,
+        signal,
+        admission,
+      );
+      pending.set(key, { fingerprint, signal, admission, completed });
       try {
         await completed;
       } finally {

@@ -91,6 +91,7 @@ export const codeProjectTreeTaskSchema = z
     pinned: z.boolean(),
     archived: z.boolean(),
     taskControl: conversationTaskControlSchema.optional(),
+    conversationRevision: z.number().int().nonnegative().safe().optional(),
   })
   .strict();
 

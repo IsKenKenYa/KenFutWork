@@ -43,6 +43,7 @@ export type ProjectTask = Pick<
   pinned: boolean;
   archived: boolean;
   taskControl?: ConversationTaskControl;
+  conversationRevision?: number;
 };
 
 export interface ProjectTree {

@@ -18,6 +18,10 @@ export const codeTaskProjectMoveInputSchema = z
   })
   .strict();
 
+export const codeTaskProjectMoveArgsSchema = z.tuple([
+  codeTaskProjectMoveInputSchema,
+]);
+
 export type CodeTaskProjectMoveInput = z.infer<
   typeof codeTaskProjectMoveInputSchema
 >;

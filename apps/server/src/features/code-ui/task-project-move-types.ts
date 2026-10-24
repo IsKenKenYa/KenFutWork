@@ -1,10 +1,12 @@
 import {
   type CodeTaskProjectMoveInput,
+  codeTaskProjectMoveArgsSchema,
   codeTaskProjectMoveInputSchema,
 } from "@kenfutwork/shared";
 import { CodeUiHostRpcError } from "./host-rpc-handler.js";
 
 export const taskProjectMoveInputSchema = codeTaskProjectMoveInputSchema;
+export const taskProjectMoveArgsSchema = codeTaskProjectMoveArgsSchema;
 export type TaskProjectMoveInput = CodeTaskProjectMoveInput;
 export interface TaskProjectMoveEvent {
   instanceId: string;

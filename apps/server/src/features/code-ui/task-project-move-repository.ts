@@ -198,8 +198,25 @@ async function preparedReceipt(
   };
 }
 
-function movedState(record: CodeUiSessionRecord): CodeUiConversationState {
+function movedState(
+  record: CodeUiSessionRecord,
+  targetProjectId: string,
+): CodeUiConversationState {
   const state = structuredClone(record.state!);
+  const historyOwners = [
+    ...(state.inheritedHistory ?? []).map((turn) => turn.owner),
+    ...(state.inheritedSessions ?? []).map((session) => session.owner),
+  ];
+  if (
+    historyOwners.some(
+      (owner) =>
+        owner.instanceId !== record.instance_id ||
+        owner.taskId !== record.id ||
+        owner.projectId !== record.project_id,
+    )
+  )
+    throw moveConflict("历史归属与任务不一致，请重新加载后移动。");
+  for (const owner of historyOwners) owner.projectId = targetProjectId;
   for (const snapshot of state.snapshots) {
     snapshot.revision += 1;
     snapshot.seq += 1;
@@ -220,11 +237,16 @@ export function createTaskProjectMoveRepository(
       instanceId: string,
       input: TaskProjectMoveInput,
       fingerprint: string,
+      signal: AbortSignal,
     ) {
       return persistence.transaction(async (transaction) => {
+        signal.throwIfAborted();
         const sql = transaction.forInstance(instanceId);
         const record = await root(sql, input.task.taskId);
-        return preparedReceipt(sql, record, input, fingerprint);
+        signal.throwIfAborted();
+        const previous = await preparedReceipt(sql, record, input, fingerprint);
+        signal.throwIfAborted();
+        return previous;
       });
     },
     prepare(
@@ -232,11 +254,15 @@ export function createTaskProjectMoveRepository(
       input: TaskProjectMoveInput,
       fingerprint: string,
       scope: CodeExecutionScope,
+      signal: AbortSignal,
     ) {
       return persistence.transaction(async (transaction) => {
+        signal.throwIfAborted();
         const sql = transaction.forInstance(instanceId);
         const record = await root(sql, input.task.taskId);
+        signal.throwIfAborted();
         const previous = await preparedReceipt(sql, record, input, fingerprint);
+        signal.throwIfAborted();
         if (previous) return previous;
         const sessionIds = record.state!.snapshots.map(
           (entry) => entry.sessionId,
@@ -250,7 +276,9 @@ export function createTaskProjectMoveRepository(
           throw moveConflict("任务授权正在改变，请确认关闭后重新加载。");
         stopped(record);
         await noPendingWork(sql, record.id);
+        signal.throwIfAborted();
         directories(await projects(sql, input), record, input);
+        signal.throwIfAborted();
         const generation = Number(record.scope_generation) + 1;
         await sql.execute(
           "update public.code_ui_sessions set execution_state='revoking',scope_generation=scope_generation+1 where instance_id=:instance and root_session_id=$1 and deleted_at is null",
@@ -263,6 +291,7 @@ export function createTaskProjectMoveRepository(
            do update set state='preparing',scope_generation=excluded.scope_generation`,
           [...moveKey(input), fingerprint, generation],
         );
+        signal.throwIfAborted();
         return {
           committed: false,
           generation,
@@ -312,7 +341,11 @@ export function createTaskProjectMoveRepository(
         await sql.execute(
           `update public.code_ui_sessions set project_id=$2,execution_state='ready',branch_generation=branch_generation+1,state=case when id=$1 then $3::jsonb else state end,revision=revision+1,updated_at=now()
            where instance_id=:instance and root_session_id=$1 and deleted_at is null`,
-          [record.id, input.projectId, jsonbSafeStringify(movedState(record))],
+          [
+            record.id,
+            input.projectId,
+            jsonbSafeStringify(movedState(record, input.projectId)),
+          ],
         );
         await sql.execute(
           "update public.code_ui_task_project_moves set state='committed' where instance_id=:instance and task_id=$1 and source_project_id=$2 and target_project_id=$3 and observed_revision=$4",

@@ -26,6 +26,7 @@ import {
   codeTaskGroupUngroupArgsSchema,
 } from "./code-task-groups.js";
 import { codeTaskOrganizationArgsSchema } from "./code-task-organization.js";
+import { codeTaskProjectMoveArgsSchema } from "./code-task-project-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
 import { canvasDocumentUpdatedMessageSchema } from "./ws-protocol.js";
@@ -144,6 +145,11 @@ export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
 );
 export const codeUiRpcRequestSchema = z.union([
   codeProjectEditorRpcRequestSchema,
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("project"),
+    method: z.literal("moveTask"),
+    args: codeTaskProjectMoveArgsSchema,
+  }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("task-groups"),
     method: z.literal("read"),

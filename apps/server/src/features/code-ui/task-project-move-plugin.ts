@@ -3,9 +3,10 @@ import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import {
   CODE_UI_HOST_RPC_CAPABILITY,
   type CodeUiHostRpcHandler,
+  runCodeUiHostRpc,
 } from "./host-rpc-handler.js";
 import { createTaskProjectMoveService } from "./task-project-move.js";
-import { taskProjectMoveInputSchema } from "./task-project-move-types.js";
+import { taskProjectMoveArgsSchema } from "./task-project-move-types.js";
 
 export function createTaskProjectMovePlugin(): PluginDefinition {
   return {
@@ -46,12 +47,11 @@ export function createTaskProjectMovePlugin(): PluginDefinition {
             id: "project.moveTask",
             value: {
               async call(actor, args, context) {
-                context.requireInitialized();
-                await service.moveTask(
-                  actor,
-                  taskProjectMoveInputSchema.parse(args[0]),
-                );
-                return null;
+                return runCodeUiHostRpc(context, async () => {
+                  const [input] = taskProjectMoveArgsSchema.parse(args);
+                  await service.moveTask(actor, input, context.signal);
+                  return null;
+                });
               },
             },
           }),
