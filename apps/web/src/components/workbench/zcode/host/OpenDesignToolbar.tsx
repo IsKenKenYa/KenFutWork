@@ -10,7 +10,6 @@ import {
 import {
   Camera,
   Check,
-  CloudUpload,
   Code2,
   Download,
   Eye,
@@ -120,7 +119,6 @@ export function OpenDesignToolbar({
   onCreateDesignFile,
   onUploadAsset,
   onOpenBrowserTab,
-  onSyncContext,
   onSaveToWorkspace,
   saveToWorkspaceBusy,
   activeDesignSystemTitle,
@@ -184,7 +182,6 @@ export function OpenDesignToolbar({
   onUploadAsset: (file: File) => void;
   onOpenBrowserTab: () => void;
   /** 同步评审上下文到设计引擎（document.md 受管段）。 */
-  onSyncContext: () => void;
   onSaveToWorkspace: () => void;
   saveToWorkspaceBusy: boolean;
   activeDesignSystemTitle: string | null;
@@ -243,13 +240,6 @@ export function OpenDesignToolbar({
   /** 名字行右侧：同步/保存/截图/交给/历史/导出与分享/缩放（用户口径：移到名字那一行）。 */
   const topActions = (
     <>
-      <ToolbarIconButton
-        label="同步到引擎"
-        disabled={busy || !hasCanvas}
-        onClick={onSyncContext}
-      >
-        <CloudUpload className="size-3" />
-      </ToolbarIconButton>
       <ToolbarIconButton
         label="保存到工作目录"
         disabled={busy || saveToWorkspaceBusy || !hasCanvas}

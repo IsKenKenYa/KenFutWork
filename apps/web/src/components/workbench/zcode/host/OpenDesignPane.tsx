@@ -1087,31 +1087,52 @@ export function OpenDesignPane({
     }
   }, [boundProjectId, canvas?.entryFile, workspacePath]);
 
-  /** 同步到引擎：把本仓评论与标注聚进 daemon 项目的 document.md 受管段。 */
+  /**
+   * 同步到引擎（自动，无手动按钮）：把本仓评论与标注聚进 daemon 项目的
+   * document.md 受管段。成功静默（高频后台动作不打扰），失败 toast 人话。
+   */
   const syncContextToEngine = useCallback(async () => {
     if (!boundProjectId) return;
-    setBusy(true);
-    notify(null);
     try {
-      const result = await surfaceJson<{
-        comments: number;
-        annotations: number;
-      }>("/api/open-design/host/context", {
+      await surfaceJson("/api/open-design/host/context", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ projectId: boundProjectId }),
       });
-      notify(
-        `已同步 ${result.comments} 条评论、${result.annotations} 条标注`,
-      );
     } catch (syncError) {
       notify(
         syncError instanceof Error ? syncError.message : "同步到引擎失败。",
       );
-    } finally {
-      setBusy(false);
     }
   }, [boundProjectId]);
+
+  /**
+   * **自动同步**（用户口径 2026-10-24「需要自动同步，而不是手动同步」）：
+   * 评论/标注一变就去抖同步进 document.md——手动按钮已移除，引擎侧上下文
+   * 始终跟面板一致。签名只含内容相关字段：选中态/活跃 id 这类 UI 状态变化
+   * 不触发。失败只 toast 不打断编辑；每次打开面板也会对齐一次（幂等写）。
+   */
+  const reviewSignature = JSON.stringify([
+    review.annotations.map((a) => [
+      a.id,
+      a.kind,
+      JSON.stringify(a.points),
+      a.color,
+    ]),
+    review.comments.map((c) => [c.id, c.body, c.status]),
+  ]);
+  const autoSyncRef = useRef(syncContextToEngine);
+  autoSyncRef.current = syncContextToEngine;
+  const autoSyncDoneRef = useRef("");
+  useEffect(() => {
+    if (!boundProjectId) return;
+    if (autoSyncDoneRef.current === reviewSignature) return;
+    const timer = window.setTimeout(() => {
+      autoSyncDoneRef.current = reviewSignature;
+      void autoSyncRef.current();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [reviewSignature, boundProjectId]);
 
   /**
    * 设计体系选择：选中的体系经宿主代理 PATCH 到 daemon 项目的 designSystemId；
@@ -2050,7 +2071,6 @@ export function OpenDesignPane({
           onSaveMarkdown={() => void saveMarkdown()}
           onUploadAsset={(file) => void uploadAsset(file)}
           onOpenBrowserTab={onOpenBrowserTab}
-          onSyncContext={() => void syncContextToEngine()}
           onSaveToWorkspace={() => void saveToWorkspace()}
           saveToWorkspaceBusy={saveToWorkspaceBusy}
           activeDesignSystemTitle={

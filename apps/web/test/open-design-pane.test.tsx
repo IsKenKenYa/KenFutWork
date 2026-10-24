@@ -714,7 +714,6 @@ test("Markdown 资源只保留返回/新建/预览·代码，画布控件全部�
     "刷新",
     "设备",
     "设计体系",
-    "同步到引擎",
     "保存到工作目录",
     "截图到对话",
     "交给对话",
@@ -1300,12 +1299,17 @@ test("Markdown 预览支持块级就地编辑并保存", async () => {
   expect(screen.queryByLabelText("Markdown 块源码")).toBeNull();
 });
 
-test("「同步到引擎」把评审聚进 document.md（按钮 → /host/context）", async () => {
+test("评审上下文自动同步进 document.md（无手动按钮，去抖后 POST /host/context）", async () => {
   await mountReadyCanvas();
-  fireEvent.click(screen.getByRole("button", { name: "同步到引擎" }));
-  await waitFor(() => {
-    expect(fetched).toContain("/api/open-design/host/context");
-  });
+  // 手动按钮已移除（用户口径：需要自动同步而不是手动同步）
+  expect(screen.queryByRole("button", { name: "同步到引擎" })).toBeNull();
+  // 面板载入评审数据后 1.5s 去抖自动同步
+  await waitFor(
+    () => {
+      expect(fetched).toContain("/api/open-design/host/context");
+    },
+    { timeout: 4000 },
+  );
 });
 
 test("设计体系选择器：拉清单、按色板行选择后经 /bind 绑定", async () => {
