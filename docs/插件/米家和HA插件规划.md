@@ -6,6 +6,7 @@
 > **拍板（2026-10-09，用户口径）**：面板/侧栏入口标题 = **「智能家居」**（§8-1）；**米家插件保留**、与 HA 插件并存不撤（§8-5）。§8-6（v1 控制面只做常用域）仍待拍板。
 > 需求来源：2026-10-09 用户口径——「我想兼容 HA，可以同时兼容米家和华为的」。
 > **进展（2026-10-18 第三轮）**：插件本体 **P1–P4 已落地**（自带 bundle `plugins/ha/`，三个提交 `601155e5` / `9dfa4b8b` / `8aad304c`，测试 49 条），台账见《日志》「HA 插件本体落地」。**真机走查未做**（本机无 HA 实例，需用户侧起 HA 并登录米家/华为账号）。§8-6 按本文件建议采纳「v1 只做常用域」；本轮另发现 §3.2 的 postMessage 令牌握手口径已过期（见该节更正）。
+> **进展（2026-10-24 第六轮）**：**真机走查已过（本机 Docker HA 2026.10.3，台账《日志》二百四十三）**——REST（ping/config/states/getState/callService）、控制读回（`input_boolean` 真翻转）、WS（auth_ok → subscribe_events → 注册表 18 条 → state_changed 增量）、面板内嵌真 Lovelace（关 XFO 后 iframe 直接渲染仪表盘，同浏览器 profile 的 `hassTokens` 同源共享、面板内无需再登录）全链路验证。**新事实**：2026.10.3 上 `http.use_x_frame_options` **yaml 已失效**（`.storage/http` 带 `yaml_migration_done: true`，只认 UI 开关「设置 → 系统 → 网络」）——引导与提示条「新版走 UI」的写法正确。仍待用户侧的只剩：米家/华为集成的账号登录（本机无账号）与真实设备的长期稳定性。
 > **进展（2026-10-24 第五轮）**：**改判——面板默认内嵌 HA 原生前端**。用户口径「我跟你说了，我要一样的」（指教程截图里 HA 自己的界面），推翻 §4.4/§5.3 的「不内嵌 HA 前端」结论：已连接后面板默认显示 HA 原生界面（iframe 内嵌 `<HA 地址>`，首次在 iframe 里登录一次 HA，之后记住）；自绘实体网格降级为顶栏可切的「精简面板」；生态计数与接入引导保留。内嵌前提是 HA 放行（新版「设置 → 系统 → 网络」关「Send X-Frame-Options」；旧版 `http.use_x_frame_options: false`，http 官方文档已迁 UI 并对 YAML 报弃用提示，2026-10-24 核实）——引导第 5 步「允许面板内嵌 HA 界面」与原生视图内的折叠提示条都写明两侧关法，未放行时 iframe 空白不假装修好。
 > **进展（2026-10-24 第四轮）**：用户口径「面板要像教程那样提供引导界面，且默认配好支持米家和华为」——已落地：① 面板未配置态自带**接入引导**（`lib/setup-guide.js` 五步：Docker 部署 HA → 装 HACS（2026.11 起商店内置）→ HACS 装 `XiaoMi/ha_xiaomi_home` 接米家 → 自定义仓库装 `xiasi0/ha-huawei-smarthome` 接华为 → 建长期令牌；米家/华为两步默认展开，命令可复制、链接可点；事实 2026-10-24 对 hacs.xyz 与两仓库官方 README 逐条复核）；② 顶栏状态行带**生态计数**「米家 N · 华为 N」（`buildEcosystemSummary` 按实体注册表 `platform` 识别：`xiaomi*` → 米家、`huawei_smarthome` → 华为；注册表缺失或形状变化时返回 null 不显示，不把「识别不出」当「未接入」）。「默认配置好」的边界如实：米家/华为的集成装在**用户的 HA 里**，插件侧无法代装，引导即插件侧的全部能做之事。测试 55 条（新增 6 条：引导路由/私有性/生态识别三分支）。
 > 与既有文档的关系：本条是《[米家插件规划](#附米家插件规划原独立文档2026-10-16-并入本章)》**路线 A** 的落地化设计（该文档推荐的 HA 路线当时因「本机无 HA、端到端验收做不了」改走了路线 B 自包含实现；本轮用户明确要兼容 HA 且要覆盖华为，故把路线 A 正式立项）。已落地的米家插件（`plugins/mihome/`）**保留不撤**，两者关系见 §4.7 与 §8。
@@ -225,9 +226,9 @@ HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 | --- | --- | --- | --- |
 | P0 | 本文档 + `docs/README.md` 文档地图登记 | ✅ 2026-10-09 | `pnpm test:docs` |
 | P1 | bundle 骨架（package.json/patch/入口/README）+ `lib/ha-rest.js`（URL 归一、错误映射）+ 单测（假 HA 的 fetch 层） | ✅ 2026-10-18（`601155e5`） | `pnpm --filter @kenfutwork/server test` |
-| P2 | 面板 + 路由（配置/连接测试/实体列表/控制）+ 存储 + 面板握手接线 | ✅ 2026-10-18（`9dfa4b8b`；面板用 DEC-20 的会话 cookie，不再需要 postMessage 递令牌，见 §3.2 更正） | 假 HA 全链路单测已过；**真机走查待用户侧 HA**（docker HA：配置 → 列实体 → 开关灯真变） |
-| P3 | WS：`subscribe_events` 增量 + 退避重连 + 降级轮询；`ha-ws.js` 的 connect 可注入 | ✅ 2026-10-18（`8aad304c`） | 单测（假 socket 驱动状态机：auth 流/断线/重连/降级）已过；真机（HA 里改灯，面板跟随）待用户侧 |
-| P4 | agent 工具 `ha_entities`/`ha_control` + 读回校验 + 未配置 fail loud | ✅ 2026-10-18（`8aad304c`） | 假 HA 单测已过；真机「让 agent 开客厅灯」并核对读回待用户侧 |
+| P2 | 面板 + 路由（配置/连接测试/实体列表/控制）+ 存储 + 面板握手接线 | ✅ 2026-10-18（`9dfa4b8b`；面板用 DEC-20 的会话 cookie，不再需要 postMessage 递令牌，见 §3.2 更正） | 假 HA 全链路单测已过；真机（Docker HA 2026.10.3）配置 → 列实体 → `input_boolean` 真翻转已过（2026-10-24，《日志》二百四十三） |
+| P3 | WS：`subscribe_events` 增量 + 退避重连 + 降级轮询；`ha-ws.js` 的 connect 可注入 | ✅ 2026-10-18（`8aad304c`） | 单测（假 socket 驱动状态机：auth 流/断线/重连/降级）已过；真机（Docker HA）握手/注册表/state_changed 增量已过（2026-10-24） |
+| P4 | agent 工具 `ha_entities`/`ha_control` + 读回校验 + 未配置 fail loud | ✅ 2026-10-18（`8aad304c`） | 假 HA 单测已过；控制读回在真 HA 已过（同 P2 路径）；「让 agent 开灯」的自然语言侧待用户日常使用 |
 | P5 | 前置缺口：桌面发布包/镜像补 `plugins/` 拷贝；MCP 自定义头（§5.1）；插件工具 `access` 声明进审批（§3.3） | ✅ 2026-10-09（先于 P1 落地，缺口修复独立于插件本体） | `pnpm package:win` 后核 `release/plugins` 存在且市场列出（真机复验见《日志》本轮遗留）；`plugin-bundled-dir.test.ts`、`mcp-service.test.ts` 的线上桩、`permission-service.test.ts` 的声明判据 |
 | P6 | 台账（《[日志](../日志.md)》）+ 面板文案复核 + 与米家插件的互斥说明（§4.7） | ✅ 2026-10-18（《日志》「HA 插件本体落地」；互斥说明落进两个 README） | `pnpm test` + `pnpm typecheck` 已过；**面板已真机看图**（Edge headless + CDP + 桩服务，抓到 `controlRow` 漏回 `row` 导致整张网格不渲染的缺陷）；真机走查仍待用户侧 HA |
 

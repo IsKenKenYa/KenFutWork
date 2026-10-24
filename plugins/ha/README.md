@@ -113,6 +113,11 @@ HA 里装了什么生态集成，这里就覆盖什么设备——米家靠 HA �
 
 ## 真机验收配方（一次性）
 
+> 2026-10-24 本机 Docker HA 2026.10.3 已按此配方走查通过（REST/WS/控制读回/内嵌真
+> Lovelace，台账《日志》二百四十三）。**注意**：该版本起 `http.use_x_frame_options`
+> 的 yaml 写法已失效（配置只在 `.storage/http`），关 X-Frame-Options 必须走
+> 「设置 → 系统 → 网络」的 UI 开关。
+
 ```bash
 docker run -d --name ha -p 8123:8123 -v ha_config:/config \
   ghcr.io/home-assistant/home-assistant:stable
