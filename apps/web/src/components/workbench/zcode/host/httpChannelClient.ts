@@ -31,7 +31,7 @@ import {
   type IServiceAccessor,
   IWindowControllerService,
 } from "@zcode/services";
-import { ServiceChannels } from "@zcode/shared";
+import { ServiceChannels, zcodeTaskMetaSchema } from "@zcode/shared";
 import {
   type ClientHello,
   clientHelloSchema,
@@ -774,7 +774,26 @@ export class CodeHttpChannelClient implements IChannelClient {
     });
   }
 
+  private registerTaskProjection(value: unknown) {
+    const task = zcodeTaskMetaSchema.parse(value);
+    if (!task.projectId || !task.workspaceIdentity) {
+      this.workspaces.registerTask(task);
+      return;
+    }
+    this.workspaces.applyProjectTask({
+      taskId: task.taskId,
+      projectId: task.projectId,
+      workspacePath: task.workspacePath,
+      workspaceIdentity: task.workspaceIdentity,
+      ...(task.taskControl ? { taskControl: task.taskControl } : {}),
+      ...(task.conversationRevision === undefined
+        ? {}
+        : { conversationRevision: task.conversationRevision }),
+    });
+  }
+
   private publishNotification(notification: Notification) {
+    if (this.controller.signal.aborted) return;
     if (notification.event === "canvasDocumentUpdated") {
       const message = canvasDocumentUpdatedMessageSchema.safeParse(
         notification.data,
@@ -799,9 +818,21 @@ export class CodeHttpChannelClient implements IChannelClient {
         if (state.success)
           this.goalStates.set(state.data.taskId, state.data.goal);
       }
-      if (data && typeof data === "object" && "taskMeta" in data)
-        this.workspaces.registerTask(data.taskMeta);
-      if (notification.service === IWindowControllerService.channelName) {
+      if (
+        notification.service === ServiceChannels.ZCodeTask &&
+        notification.name === "onDynamicWorkspaceEvent" &&
+        data &&
+        typeof data === "object" &&
+        "type" in data &&
+        data.type === "workspace_task_list_changed" &&
+        "taskMeta" in data &&
+        data.taskMeta !== undefined
+      )
+        this.registerTaskProjection(data.taskMeta);
+      if (
+        notification.service === IWindowControllerService.channelName &&
+        notification.name === "onDynamicControllerFrame"
+      ) {
         const frame = windowHostControllerTaskFrameSchema.safeParse(data);
         if (frame.success) {
           const payload = frame.data.payload;
@@ -811,7 +842,7 @@ export class CodeHttpChannelClient implements IChannelClient {
               : payload.deltas.flatMap((delta) =>
                   delta.op === "task.upserted" ? [delta.task] : [],
                 );
-          for (const row of rows) this.workspaces.registerTask(row.meta);
+          for (const row of rows) this.registerTaskProjection(row.meta);
         }
       }
     }
@@ -1037,6 +1068,8 @@ export class CodeHttpChannelClient implements IChannelClient {
       service === ServiceChannels.ZCodeTask ||
       service === IWindowControllerService.channelName
     ) {
+      if (this.controller.signal.aborted || connectionId !== this.connectionId)
+        throw new Error("任务读取期间连接已改变，请重新加载任务。");
       const value = response.result;
       const tasks =
         value &&
@@ -1047,7 +1080,13 @@ export class CodeHttpChannelClient implements IChannelClient {
           : Array.isArray(value)
             ? value
             : [value];
-      for (const task of tasks) this.workspaces.registerTask(task);
+      for (const task of tasks) {
+        const candidate =
+          task && typeof task === "object" && "meta" in task ? task.meta : task;
+        const parsed = zcodeTaskMetaSchema.safeParse(candidate);
+        if (parsed.success) this.registerTaskProjection(parsed.data);
+        else this.workspaces.registerTask(candidate);
+      }
     }
     let result = response.result;
     if (service === ServiceChannels.Skills && method === "list")

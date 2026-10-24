@@ -239,6 +239,8 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 原 HTTP 客户端解析完整项目树后，只有仍属于当前连接的响应可以更新 Task 身份投影。标准目录身份与控制项目必须一致；项目变化需要更高分支代际，允许跨越多次移动，较早分支或同分支较早正文修订不覆盖当前事实，同分支项目冲突明确报错。Task 固定目录只由既有明确重新关联流程修改，其真实分支回执限制迟到旧读取。普通元信息登记不获得改变项目或目录的能力。
 
+同一投影还接收当前可信连接的 Controller `onDynamicControllerFrame` 中已解析的 Task 行，以及 `zcode-task.onDynamicWorkspaceEvent` 的 `workspace_task_list_changed.taskMeta`。Task／Controller RPC 的完整元信息及嵌套 `meta` 先按原 schema 解析，保存实际初始控制观察；未知服务的同名字段不登记身份。移动不直接产生原 Task workspace 通知，Controller 帧负责即时移动事实，后续真实 Task 通知继续使用当前归属。连接关闭后不发布迟到通知，旧连接的 RPC 回包不修改身份缓存。`task.removed` 不据此删除稳定 Task 身份，因为移动同样会移除来源地址。
+
 每个 Task 行的 `taskControl: { projectId, branchGeneration }` 供明确操作固定观察值。原 `archiveTask`、`unarchiveTask`、`deleteArchivedTask` 通过所属插件的宿主 RPC 贡献调用，完整参数包含 `taskId`、`workspacePath`、`workspaceIdentity` 及该观察值；客户端保留点击时的完整目标。未知字段、多余参数及缺少观察值返回 400，项目、目录或分支改变后拒绝旧操作。
 
 归档业务键由实例、Task、项目、观察分支和目标归档值生成；明确字段的规范化参数形成 SHA-256 指纹。回执使用原命令存储，顺序和并发重放读取同一结果，同键异参返回 409。归档先在事务内推进授权与分支并进入关闭状态，再等待原资源关闭器确认运行、后台工作、文件操作和进程退出，最后同事务发表归档状态与回执。准备提交回包丢失时，同键操作在业务锁内核验指纹、固定身份、原分支下一代及关闭状态，继续同一次关闭，不重复推进代际。

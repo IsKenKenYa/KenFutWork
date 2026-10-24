@@ -25,6 +25,16 @@ interface TaskProjectionObservation extends TaskWorkspaceIdentity {
   conversationRevision?: number;
 }
 
+type TaskProjectionInput = Pick<
+  CodeProjectTree["tasks"][number],
+  | "taskId"
+  | "projectId"
+  | "workspacePath"
+  | "workspaceIdentity"
+  | "taskControl"
+  | "conversationRevision"
+>;
+
 /** Project 默认与 Task 固定目录分别记录；目录更新不能改写既有 Task 的身份。 */
 export class TaskWorkspaceRegistry {
   private readonly projects = new Map<string, CodeUiWorkspace>();
@@ -122,8 +132,8 @@ export class TaskWorkspaceRegistry {
     this.notify();
   }
 
-  /** 仅消费当前可信连接解析后的项目树；普通登记仍不能改变Task身份。 */
-  applyProjectTask(entry: CodeProjectTree["tasks"][number]) {
+  /** 仅消费当前可信连接解析后的Task观察；普通登记仍不能改变Task身份。 */
+  applyProjectTask(entry: TaskProjectionInput) {
     const control = entry.taskControl;
     const revision = entry.conversationRevision;
     if (!control || revision === undefined) return this.registerTask(entry);
