@@ -620,6 +620,42 @@ export function registerBrowserRoutes(
       "X-Accel-Buffering": "no",
     });
     let closed = false;
+    /**
+     * 空闲补帧：Chromium 的 multipart/x-mixed-replace 解码器要等**下一个完整 part**
+     * 到达才把上一帧提交上屏（最小复现实测：只发最后一帧时 `<img>` 一直停在旧画面，
+     * 再补写同一 part 立即更新）。画面静止（最小化/关闭/切换的最后一次重绘）之后
+     * 没有下一帧，旧画面会一直挂着——真机「点了最小化/关闭，画面几分钟不更新」
+     * 的根因。每帧写完后开一个短计时器：窗口内来了新帧就重置（运动中零额外开销），
+     * 窗口过了还没有新帧＝这就是最后一次视觉变化，补写同一 part 让它立即上屏。
+     */
+    const FRAME_COMMIT_FLUSH_MS = 120;
+    let flushTimer: NodeJS.Timeout | null = null;
+    let lastPart: Buffer | null = null;
+    const clearFlushTimer = (): void => {
+      if (flushTimer) {
+        clearTimeout(flushTimer);
+        flushTimer = null;
+      }
+    };
+    const writePart = async (part: Buffer): Promise<void> => {
+      const flushed = response.write(part);
+      // 写不动就等 drain：上游（Chrome）以 ack 做背压，这里再堆帧只会把内存堆爆
+      if (!flushed) {
+        await new Promise<void>((resolve) => response.once("drain", resolve));
+      }
+    };
+    const sendFrame = async (jpeg: Buffer): Promise<void> => {
+      if (closed) return;
+      clearFlushTimer();
+      const part = mjpegPart(jpeg);
+      lastPart = part;
+      await writePart(part);
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        if (closed || !lastPart) return;
+        void writePart(lastPart);
+      }, FRAME_COMMIT_FLUSH_MS);
+    };
     let resolveWatcher!: (stop: (() => Promise<void>) | null) => void;
     const watcherReady = new Promise<(() => Promise<void>) | null>(
       (resolve) => {
@@ -630,6 +666,7 @@ export function registerBrowserRoutes(
     const finish = (): Promise<void> => {
       if (finished) return finished;
       closed = true;
+      clearFlushTimer();
       finished = (async () => {
         const stop = await watcherReady;
         await stop?.();
@@ -671,12 +708,7 @@ export function registerBrowserRoutes(
         return reply;
       }
       const stop = await options.browser.cdp.watch(meta, async (jpeg) => {
-        if (closed) return;
-        const flushed = response.write(mjpegPart(jpeg));
-        // 写不动就等 drain：上游（Chrome）以 ack 做背压，这里再堆帧只会把内存堆爆
-        if (!flushed) {
-          await new Promise<void>((resolve) => response.once("drain", resolve));
-        }
+        await sendFrame(jpeg);
       });
       resolveWatcher(stop);
     } catch (error) {

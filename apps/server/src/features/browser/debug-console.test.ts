@@ -158,8 +158,10 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 悬浮球贴内容区右缘（clientWidth 扣掉滚动条），不被右侧滚动条盖住
     expect(script).toContain("document.documentElement.clientWidth");
     expect(script).toContain("kfw-ball-inset");
-    // 按钮加大（用户 2026-10-24「按钮太小了」）：24px 按钮 + 30px 左探出（梯形把手）
+    // 按钮加大（用户 2026-10-24「按钮太小了」）：24px 按钮 + 30px 左探出（梯形把手）；
+    // 梯形 80% 不透明（用户 2026-10-24「不透明度改成 80%，一点点透明」）
     expect(script).toContain("padding:3px 0 3px 30px");
+    expect(script).toContain("cursor:grab;opacity:.8}");
     expect(script).toContain("width:24px;height:24px");
     expect(script).not.toContain("width:18px");
     expect(script).not.toContain("min-width:112px");

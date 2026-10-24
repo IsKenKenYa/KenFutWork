@@ -159,7 +159,7 @@ const FLOAT_SCRIPT = `
     // hover 反馈**加深**（同轮「悬浮效果有延迟」——画面流本身有数十 ms 延迟不可消除，
     // 反馈对比度拉满让效果一出来就可见）：#eee→#d9d9d9。
     ".kfw-btnbar{position:fixed;z-index:2147483647;display:flex;gap:2px;padding:3px 0 3px 30px;" +
-    "background:transparent;box-shadow:none;cursor:grab}" +
+    "background:transparent;box-shadow:none;cursor:grab;opacity:.8}" +
     ".kfw-btnbar::before{content:'';position:absolute;inset:0;z-index:-1;" +
     "background:#fff;" +
     "filter:drop-shadow(0 2px 6px rgba(0,0,0,.22));" +
