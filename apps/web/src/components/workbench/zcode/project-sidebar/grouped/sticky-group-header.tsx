@@ -1,4 +1,10 @@
-import type { ZCodeGroupedTaskViewNode, ZCodeTaskGroupColor } from "@zcode/services";
+import { SidebarNativeTooltip, ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { useRef } from "react";
+import type {
+  ZCodeGroupedTaskViewNode,
+  ZCodeTaskGroupColor,
+} from "@zui/project-sidebar/grouped/types.js";
+
 import { ChevronDownIcon, ChevronRightIcon, MessageCirclePlus } from "lucide-react";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
@@ -20,15 +26,14 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { CRON_DEFAULT_GROUP_ID, OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { getTaskGroupDisplayTitle } from "@zui/workspace-grouped-tasks/group-title.js";
+import { getTaskGroupDisplayTitle } from "@zui/project-sidebar/grouped/group-title.js";
 import {
   TASK_GROUP_COLORS,
   TaskGroupColorDot,
   TaskGroupColorMark,
-} from "@zui/workspace-grouped-tasks/shared.js";
+} from "@zui/project-sidebar/grouped/shared.js";
 
 type StickyGroupNode = Extract<ZCodeGroupedTaskViewNode, { type: "group" }>;
 
@@ -40,16 +45,20 @@ export function StickyGroupHeader({
   onToggleCollapsed,
   onUpdateGroupColor,
   onUngroupGroup,
+  revision,
 }: {
   node: StickyGroupNode;
   collapsed: boolean;
   tooltipsDisabled?: boolean;
   onCreateTask: () => void;
   onToggleCollapsed: (groupId: string) => void;
-  onUpdateGroupColor: (groupId: string, color: ZCodeTaskGroupColor) => void;
-  onUngroupGroup: (groupId: string) => void;
+  onUpdateGroupColor: (groupId: string, color: ZCodeTaskGroupColor, revision: number) => void;
+  onUngroupGroup: (groupId: string, revision: number) => void;
+  revision: number;
 }) {
   const { intl } = useZCodeIntl();
+  const contextRevision = useRef(revision);
+  const colorRevision = useRef(revision);
   const taskCount = node.tasks.length;
   // 系统分组（cron / 闲时）标题按语言环境本地化展示，与 GroupItem 保持一致。
   const displayTitle = getTaskGroupDisplayTitle(node.group, {
@@ -61,8 +70,8 @@ export function StickyGroupHeader({
   const isSystemGroup =
     node.group.id === CRON_DEFAULT_GROUP_ID || node.group.id === OFF_PEAK_DEFAULT_GROUP_ID;
   const handleToggle = () => onToggleCollapsed(node.group.id);
-  const handleGroupColorChange = (color: string) => {
-    onUpdateGroupColor(node.group.id, color as ZCodeTaskGroupColor);
+  const handleGroupColorChange = (color: string, observedRevision = colorRevision.current) => {
+    onUpdateGroupColor(node.group.id, color as ZCodeTaskGroupColor, observedRevision);
   };
   const newTaskButton = (
     <Button
@@ -91,8 +100,8 @@ export function StickyGroupHeader({
   );
 
   return (
-    <div className="px-2 pb-1">
-      <ContextMenu>
+    <div className="px-2 pb-1" data-grouped-sticky-header={node.group.id}>
+      <ContextMenu onOpenChange={(open) => { if (open) contextRevision.current = revision; }}>
         <ContextMenuTrigger asChild>
           <div
             role="button"
@@ -104,6 +113,7 @@ export function StickyGroupHeader({
             )}
             onClick={handleToggle}
             onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
               if (event.key !== "Enter" && event.key !== " ") {
                 return;
               }
@@ -111,7 +121,7 @@ export function StickyGroupHeader({
               handleToggle();
             }}
           >
-            <DropdownMenu modal={false}>
+            <DropdownMenu modal={false} onOpenChange={(open) => { if (open) colorRevision.current = revision; }}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -148,12 +158,14 @@ export function StickyGroupHeader({
               </DropdownMenuContent>
             </DropdownMenu>
             <div className="flex min-w-0 flex-1 items-center gap-1">
-              <span
-                className="min-w-0 max-w-full truncate rounded-sm px-1 text-left text-foreground"
-                title={displayTitle}
-              >
-                {displayTitle}
-              </span>
+              <SidebarNativeTooltip>
+                <span
+                  className="min-w-0 max-w-full truncate rounded-sm px-1 text-left text-foreground"
+                  title={displayTitle}
+                >
+                  {displayTitle}
+                </span>
+              </SidebarNativeTooltip>
               {collapsed ? (
                 <ChevronRightIcon
                   aria-hidden="true"
@@ -187,7 +199,7 @@ export function StickyGroupHeader({
               onPointerDown={(event) => event.stopPropagation()}
             >
               {TASK_GROUP_COLORS.map((color) => (
-                <ContextMenuItem key={color} onSelect={() => handleGroupColorChange(color)}>
+                <ContextMenuItem key={color} onSelect={() => handleGroupColorChange(color, contextRevision.current)}>
                   <TaskGroupColorDot color={color} />
                   <span>{intl.formatMessage({ id: `taskGroup.color.${color}` })}</span>
                 </ContextMenuItem>
@@ -197,7 +209,7 @@ export function StickyGroupHeader({
           {isSystemGroup ? null : (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onSelect={() => onUngroupGroup(node.group.id)}>
+              <ContextMenuItem onSelect={() => onUngroupGroup(node.group.id, contextRevision.current)}>
                 {intl.formatMessage({ id: "taskGroup.ungroup" })}
               </ContextMenuItem>
             </>

@@ -1,12 +1,13 @@
+import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
 import { memo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { UniqueIdentifier } from "@dnd-kit/core";
-import type { ZCodeTaskMeta } from "@zcode/shared";
+
 import { MessageCirclePlus } from "lucide-react";
 import { cn } from "@zui/components/lib/utils.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { GroupedTaskRow } from "@zui/workspace-grouped-tasks/task-row.js";
-import type { TaskGroupMenuItem } from "@zui/workspace-grouped-tasks/shared.js";
+import { GroupedTaskRow } from "@zui/project-sidebar/grouped/task-row.js";
+import type { TaskGroupMenuItem } from "@zui/project-sidebar/grouped/shared.js";
 
 export function EmptyGroupDropZone({
   groupId,
@@ -55,6 +56,7 @@ function GroupedTaskItemComponent({
   activeWorkspacePath,
   activeWorkspaceIdentity,
   activeTaskId,
+  mobileActiveTaskKey,
   workspaceLabel,
   onSelectTask,
   onCloseTask,
@@ -76,6 +78,7 @@ function GroupedTaskItemComponent({
   activeWorkspacePath: string;
   activeWorkspaceIdentity?: string;
   activeTaskId: string | null;
+  mobileActiveTaskKey?: string | null;
   workspaceLabel: string;
   onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
   onCloseTask: (task: ZCodeTaskMeta) => void;
@@ -100,6 +103,7 @@ function GroupedTaskItemComponent({
         activeWorkspacePath={activeWorkspacePath}
         activeWorkspaceIdentity={activeWorkspaceIdentity}
         activeTaskId={activeTaskId}
+        mobileActiveTaskKey={mobileActiveTaskKey}
         workspaceLabel={workspaceLabel}
         onSelectTask={onSelectTask}
         onCloseTask={onCloseTask}

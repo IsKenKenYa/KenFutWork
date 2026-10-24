@@ -90,6 +90,7 @@ export function WorkspaceFileTree({
   workspaceName,
   workspaceIdentity,
   workspaceRemoteSessionId,
+  viewerScope,
   revealPath,
   temporaryExternalDirectory = false,
   canOpenLocalFileManager = false,
@@ -122,6 +123,7 @@ export function WorkspaceFileTree({
     workspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
+    viewerScope,
     enableWorkspaceFeatures: !temporaryExternalDirectory,
   });
   const { installedEditors } = useInstalledFileTreeEditors();
@@ -150,6 +152,7 @@ export function WorkspaceFileTree({
     workspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
+    viewerScope,
     enabled: hasFileSearchQuery,
   });
   const {
@@ -199,7 +202,7 @@ export function WorkspaceFileTree({
     setSelectedPath(null);
     setFileSearchQuery("");
     setShowChangedOnly(false);
-  }, [workspaceIdentity, workspacePath]);
+  }, [viewerScope, workspaceIdentity, workspacePath]);
 
   useEffect(() => {
     if (!treeData.gitStatusAvailable) {
@@ -551,9 +554,12 @@ export function WorkspaceFileTree({
         // 即使未来有其它入口直接调用预览，也要在父级兜底阻止打开。
         return;
       }
-      onOpenPreview?.(createCodeViewerSourceForWorkspaceFile(row.path));
+      onOpenPreview?.({
+        ...createCodeViewerSourceForWorkspaceFile(row.path),
+        ...(viewerScope ? { viewerScope } : {}),
+      });
     },
-    [handleDirectoryAction, onOpenPreview, treeData.gitStatusByPath],
+    [handleDirectoryAction, onOpenPreview, treeData.gitStatusByPath, viewerScope],
   );
   const handleRowKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: WorkspaceFileTreeRow) => {

@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- 归档视图开关沿用现有 sidebar 结构，先保持同文件收口。 */
 
+import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import {
   closestCenter,
   DndContext,
@@ -34,7 +35,7 @@ import {
   TID_WORKSPACE_LIST,
 } from "@zcode/shared";
 import type { CreateTaskRequest } from "@zui/app-shell/types.js";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import { ControlHintTooltip, SidebarTooltipProvider } from "@zui/ControlHintTooltip.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
@@ -54,10 +55,6 @@ import type { RemoteConnectionLogEntry } from "@zui/hooks/useRemoteConnectionLog
 import { useWorkspaceTaskLists } from "@zui/hooks/useWorkspaceTaskLists.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
-import {
-  persistGroupedTaskCollapsedGroupIds,
-  readGroupedTaskCollapsedGroupIds,
-} from "@zui/lib/groupedTaskExpansionPreference.js";
 import { setPendingSettingsSectionIntent } from "@zui/lib/settingsNavigation.js";
 import {
   persistSidebarPurposeSectionPreferences,
@@ -102,20 +99,17 @@ import {
 import type { Theme } from "@zui/useTheme.js";
 import { WorkspaceArchivedTasksFlatSection } from "@zui/WorkspaceArchivedTasksFlatSection.js";
 import { WorkspaceFileTree } from "@zui/WorkspaceFileTree.js";
-import { WorkspaceGroupedTasksSection } from "@zui/WorkspaceGroupedTasksSection.js";
+import { TaskGroupedView } from "@zui/project-sidebar/TaskGroupedView.js";
+import { ProjectTaskListContext } from "@zui/project-sidebar/ProjectTaskListContext.js";
+import { useProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
+import type { ProjectTask } from "@zui/project-sidebar/contract.js";
 import { WorkspacePinnedTasksSection } from "@zui/WorkspacePinnedTasksSection.js";
 import {
   resolveSidebarTaskGroupTogglePresentation,
-  type SidebarTaskGroupTogglePresentation,
 } from "@zui/WorkspaceSidebar/taskGroupTogglePresentation.js";
 import { WorkspacePurposeSection } from "@zui/WorkspaceSidebar/WorkspacePurposeSection.js";
 import { WorkspaceSidebarFooter } from "@zui/WorkspaceSidebarFooter.js";
 import { WorkspaceTimelineTasksSection } from "@zui/WorkspaceTimelineTasksSection.js";
-import {
-  areAllGroupedTaskGroupsExpanded,
-  pruneCollapsedGroupedTaskGroupIds,
-} from "@zui/workspace-grouped-tasks/shared.js";
-import { StickyGroupHeaderSlot } from "@zui/workspace-grouped-tasks/sticky-group-header-slot.js";
 import {
   Archive,
   Blocks,
@@ -140,7 +134,6 @@ import {
   type CSSProperties,
   memo,
   type ReactNode,
-  type SetStateAction,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -202,6 +195,7 @@ interface SidebarFileTreeTarget {
   workspaceName: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
+  viewerScope?: CodeUiViewerScope;
   revealPath?: string;
   temporaryExternalDirectory?: boolean;
 }
@@ -367,6 +361,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
   const platform = useOptionalPlatform();
+  const projectDirectory = useProjectDirectory();
   const supportsAutomations = platform?.supportsAutomations !== false;
   const handleTaskRowSelect = useCallback(
     (
@@ -440,6 +435,15 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
 
   const allWorkspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
   const workspaceTabs = useSharedProjectTabs(allWorkspaceTabs);
+  const groupedTasks = useMemo(() => {
+    const visibleProjects = new Set(workspaceTabs.flatMap((tab) => {
+      const project = parseLocalWorkspaceIdentity(tab.workspaceIdentity ?? "", tab.workspacePath);
+      return project ? [project.projectId] : [];
+    }));
+    return projectDirectory.tree.tasks.filter((task) => visibleProjects.has(
+      task.projectId ?? parseLocalWorkspaceIdentity(task.workspaceIdentity ?? "", task.workspacePath)?.projectId ?? "",
+    ));
+  }, [workspaceTabs, projectDirectory.tree.tasks]);
   const projectService = useOptionalBaseWorkspaceServices()?.projectService;
   const projectCreation = useSharedProjectCreation();
   const refreshProjects = useSharedProjectRefresh();
@@ -494,8 +498,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const [isFileTreeOpen, setIsFileTreeOpen] = useState(false);
   const [fileTreeTarget, setFileTreeTarget] =
     useState<SidebarFileTreeTarget | null>(null);
-  const [groupedStickyHeader, setGroupedStickyHeader] =
-    useState<ReactNode | null>(null);
+  const [groupedToolbar, setGroupedToolbar] = useState<HTMLDivElement | null>(null);
+  const [groupedStickyTarget, setGroupedStickyTarget] = useState<HTMLDivElement | null>(null);
   const [taskOrganizeBy, setTaskOrganizeBy] = useState<TaskOrganizeBy>(
     () => readSidebarTaskPreferences().organizeBy,
   );
@@ -530,17 +534,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   const [activeWorkspaceDragWidth, setActiveWorkspaceDragWidth] = useState<
     number | null
   >(null);
-  const [groupedTaskGroupIds, setGroupedTaskGroupIds] = useState<string[]>([]);
-  const [groupedTaskGroupIdsHydrated, setGroupedTaskGroupIdsHydrated] =
-    useState(false);
-  const [lastNonEmptyGroupedTaskGroupIds, setLastNonEmptyGroupedTaskGroupIds] =
-    useState<string[]>([]);
-  const [
-    groupedTaskGroupSnapshotHasGroups,
-    setGroupedTaskGroupSnapshotHasGroups,
-  ] = useState<boolean | null>(null);
-  const [collapsedGroupedTaskGroupIds, setCollapsedGroupedTaskGroupIds] =
-    useState<Set<string>>(() => readGroupedTaskCollapsedGroupIds());
   const handleProjectSectionOpenChange = useCallback(
     (projectsExpanded: boolean) => {
       setPurposeSectionPreferences((current) => {
@@ -605,80 +598,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       transform: "translateX(0px)",
       width: 0,
     });
-  const lastStableTaskGroupTogglePresentationRef =
-    useRef<SidebarTaskGroupTogglePresentation | null>(null);
-  const handleCollapsedGroupedTaskGroupIdsChange = useCallback(
-    (updater: SetStateAction<Set<string>>) => {
-      setCollapsedGroupedTaskGroupIds((currentGroupIds) => {
-        const nextGroupIds =
-          typeof updater === "function" ? updater(currentGroupIds) : updater;
-        if (nextGroupIds === currentGroupIds) {
-          return currentGroupIds;
-        }
-        // grouped 展开态是本端用户偏好，不能只保存在 React 内存里。
-        // 单组点击、批量按钮、拖拽临时收起后的恢复都必须同步到 localStorage。
-        persistGroupedTaskCollapsedGroupIds(nextGroupIds);
-        return nextGroupIds;
-      });
-    },
-    [],
-  );
-  const handleGroupedTaskGroupIdsChange = useCallback(
-    (nextGroupIds: string[]) => {
-      if (
-        nextGroupIds.length === 0 &&
-        !groupedTaskGroupIdsHydrated &&
-        groupedTaskGroupSnapshotHasGroups !== false &&
-        (lastNonEmptyGroupedTaskGroupIds.length > 0 ||
-          collapsedGroupedTaskGroupIds.size > 0)
-      ) {
-        // 从 Project 切回 Group 或重启后首进 Group 时，
-        // 子列表首帧还没加载 sqlite view，会先回传空 groupIds。
-        // 这个瞬时空快照不能当成“所有 group 已删除”，否则会把用户收起偏好
-        // prune 成空并写回 localStorage。
-        return;
-      }
-
-      setGroupedTaskGroupIdsHydrated(true);
-      setGroupedTaskGroupSnapshotHasGroups(nextGroupIds.length > 0);
-      if (nextGroupIds.length > 0) {
-        setLastNonEmptyGroupedTaskGroupIds(nextGroupIds);
-      }
-      setGroupedTaskGroupIds((currentGroupIds) =>
-        currentGroupIds.length === nextGroupIds.length &&
-        currentGroupIds.every(
-          (groupId, index) => groupId === nextGroupIds[index],
-        )
-          ? currentGroupIds
-          : nextGroupIds,
-      );
-      setCollapsedGroupedTaskGroupIds((currentGroupIds) => {
-        const nextCollapsedGroupIds = pruneCollapsedGroupedTaskGroupIds(
-          currentGroupIds,
-          nextGroupIds,
-        );
-        if (
-          nextCollapsedGroupIds.size === currentGroupIds.size &&
-          [...nextCollapsedGroupIds].every((groupId) =>
-            currentGroupIds.has(groupId),
-          )
-        ) {
-          return currentGroupIds;
-        }
-        // 刷新或重启后需要从 localStorage 恢复 grouped 展开态；
-        // view 刷新时也要清掉已删除 group 的旧收起记录，避免新 group 被旧状态误命中。
-        persistGroupedTaskCollapsedGroupIds(nextCollapsedGroupIds);
-        return nextCollapsedGroupIds;
-      });
-    },
-    [
-      groupedTaskGroupIdsHydrated,
-      groupedTaskGroupSnapshotHasGroups,
-      collapsedGroupedTaskGroupIds.size,
-      lastNonEmptyGroupedTaskGroupIds.length,
-    ],
-  );
-
   useEffect(() => {
     if (!fileTreeOpenRequest) {
       return;
@@ -732,27 +651,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       retainWorkspaceTaskVisibleLimits(current, visibleWorkspaceTaskKeys),
     );
   }, [visibleWorkspaceTaskKeys]);
-  useEffect(() => {
-    if (taskViewMode !== "grouped") {
-      setGroupedStickyHeader(null);
-    }
-  }, [taskViewMode]);
-  const [createGroupedTaskGroupAction, setCreateGroupedTaskGroupAction] =
-    useState<(() => void) | null>(null);
-  const [createGroupedTaskDraftAction, setCreateGroupedTaskDraftAction] =
-    useState<(() => void) | null>(null);
-  const handleCreateGroupActionChange = useCallback(
-    (action: (() => void) | null) => {
-      setCreateGroupedTaskGroupAction(() => action);
-    },
-    [],
-  );
-  const handleCreateDraftTaskActionChange = useCallback(
-    (action: (() => void) | null) => {
-      setCreateGroupedTaskDraftAction(() => action);
-    },
-    [],
-  );
   const shouldShowPinnedTasks =
     // grouped 主体会主动过滤 pinned task；如果同页不渲染全局置顶区，
     // 从 Header 置顶当前任务后整条 row 会无处展示，看起来像 session 被删除。
@@ -804,6 +702,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     },
     [],
   );
+  const groupedPresentation = useMemo(() => ({
+    onOpenTaskFiles: async (task: ProjectTask, remoteSessionId?: string) => {
+      const tab = workspaceTabs.find((entry) => entry.workspaceIdentity === task.workspaceIdentity);
+      handleOpenWorkspaceFileTree({
+        workspacePath: task.workspacePath,
+        workspaceName: tab?.label ?? task.workspacePath.split(/[\\/]/).filter(Boolean).at(-1) ?? task.workspacePath,
+        workspaceIdentity: task.workspaceIdentity,
+        viewerScope: { kind: "task", taskId: task.taskId },
+        ...(remoteSessionId ? { workspaceRemoteSessionId: remoteSessionId } : {}),
+      });
+    },
+  }), [handleOpenWorkspaceFileTree, workspaceTabs]);
   const workspaceScrollMaskStyle = useMemo<CSSProperties>(() => {
     const baseStyle: CSSProperties = { overflowAnchor: "none" };
     if (!showWorkspaceTopMask && !showWorkspaceBottomMask) {
@@ -994,51 +904,19 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     };
   }, [expandedWorkspacePaths, workspaceTabs.length]);
 
-  const isGroupedTaskGroupView =
-    !showArchivedTasks && taskOrganizeBy === "grouped";
-  const toggleableGroupedTaskGroupIds =
-    groupedTaskGroupIds.length > 0
-      ? groupedTaskGroupIds
-      : groupedTaskGroupSnapshotHasGroups === false
-        ? []
-        : lastNonEmptyGroupedTaskGroupIds;
-  const showOptimisticGroupedTaskGroupToggle =
-    isGroupedTaskGroupView &&
-    !groupedTaskGroupIdsHydrated &&
-    groupedTaskGroupSnapshotHasGroups !== false;
-  const showToggleAllGroupedTaskGroups =
-    isGroupedTaskGroupView &&
-    (groupedTaskGroupIds.length > 0 || showOptimisticGroupedTaskGroupToggle);
-  const canToggleAllGroupedTaskGroups =
-    isGroupedTaskGroupView && toggleableGroupedTaskGroupIds.length > 0;
-  const areAllToggleableGroupedTaskGroupsOpen = areAllGroupedTaskGroupsExpanded(
-    toggleableGroupedTaskGroupIds,
-    collapsedGroupedTaskGroupIds,
-  );
   const canToggleAllProjectTaskGroups =
     !showArchivedTasks &&
     taskOrganizeBy === "project" &&
     projectWorkspaceTabs.length > 0;
-  const showToggleAllTaskGroups =
-    canToggleAllProjectTaskGroups || showToggleAllGroupedTaskGroups;
-  const canToggleAllTaskGroups =
-    canToggleAllProjectTaskGroups || canToggleAllGroupedTaskGroups;
-  const areAllTaskGroupsExpanded =
-    taskOrganizeBy === "grouped"
-      ? areAllToggleableGroupedTaskGroupsOpen
-      : purposeSectionPreferences.projectsExpanded &&
-        areAllWorkspaceGroupsExpanded;
-  const toggleAllTaskGroupsTransitionPending =
-    showOptimisticGroupedTaskGroupToggle;
   const toggleAllTaskGroupsPresentation =
     resolveSidebarTaskGroupTogglePresentation({
       current: {
-        visible: showToggleAllTaskGroups,
-        canToggle: canToggleAllTaskGroups,
-        areAllExpanded: areAllTaskGroupsExpanded,
-        transitionPending: toggleAllTaskGroupsTransitionPending,
+        visible: canToggleAllProjectTaskGroups,
+        canToggle: canToggleAllProjectTaskGroups,
+        areAllExpanded: purposeSectionPreferences.projectsExpanded && areAllWorkspaceGroupsExpanded,
+        transitionPending: false,
       },
-      previous: lastStableTaskGroupTogglePresentationRef.current,
+      previous: null,
     });
   const activePrimaryTaskMode: PrimaryTaskMode = canvasSection
     ? "canvas"
@@ -1058,9 +936,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       logger.debug("[WorkspaceSidebar] 切换任务一级视图", {
         from: taskOrganizeBy,
         to: value,
-        groupedHydrated: groupedTaskGroupIdsHydrated,
-        groupedCount: groupedTaskGroupIds.length,
-        lastGroupedCount: lastNonEmptyGroupedTaskGroupIds.length,
       });
       if (value === "canvas") {
         setCanvasSection(true);
@@ -1068,7 +943,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       }
       setCanvasSection(false);
       if (value === "grouped") {
-        setGroupedTaskGroupIdsHydrated(false);
         setTaskOrganizeBy("grouped");
         return;
       }
@@ -1077,9 +951,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       }
     },
     [
-      groupedTaskGroupIds.length,
-      groupedTaskGroupIdsHydrated,
-      lastNonEmptyGroupedTaskGroupIds.length,
       taskOrganizeBy,
       workspaceTaskOrganizeBy,
     ],
@@ -1092,18 +963,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     setTaskOrganizeBy(value);
   }, []);
   const handleToggleAllTaskGroups = useCallback(() => {
-    if (!canToggleAllTaskGroups) {
-      return;
-    }
-    if (taskOrganizeBy === "grouped") {
-      if (toggleableGroupedTaskGroupIds.length === 0) {
-        return;
-      }
-      handleCollapsedGroupedTaskGroupIdsChange(
-        areAllToggleableGroupedTaskGroupsOpen
-          ? new Set(toggleableGroupedTaskGroupIds)
-          : new Set(),
-      );
+    if (!canToggleAllProjectTaskGroups) {
       return;
     }
     if (
@@ -1119,27 +979,13 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     expandAllWorkspaceTabs(workspacePaths);
   }, [
     areAllWorkspaceGroupsExpanded,
-    areAllToggleableGroupedTaskGroupsOpen,
-    canToggleAllTaskGroups,
+    canToggleAllProjectTaskGroups,
     collapseAllWorkspaceTabs,
     expandAllWorkspaceTabs,
-    handleCollapsedGroupedTaskGroupIdsChange,
     handleProjectSectionOpenChange,
     purposeSectionPreferences.projectsExpanded,
-    taskOrganizeBy,
-    toggleableGroupedTaskGroupIds,
     workspacePaths,
   ]);
-  useEffect(() => {
-    // Group 视图会在切换后的下一轮子组件渲染里回传 group ids。
-    // 如果切换帧直接使用未 hydrate 的模型，按钮会短暂变成 disabled/expand 图标，造成闪动。
-    // 因此在待 hydrate 期间复用上一帧展示模型；真实点击能力仍由 handleToggleAllTaskGroups 的当前状态 guard。
-    if (!toggleAllTaskGroupsTransitionPending) {
-      lastStableTaskGroupTogglePresentationRef.current =
-        toggleAllTaskGroupsPresentation;
-    }
-  }, [toggleAllTaskGroupsPresentation, toggleAllTaskGroupsTransitionPending]);
-
   useLayoutEffect(() => {
     const listNode = primaryTaskTabsListRef.current;
     if (!listNode) {
@@ -1309,32 +1155,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {taskViewMode === "grouped" ? (
-              <ControlHintTooltip
-                title={
-                  workspaceReadOnlyReason ??
-                  intl.formatMessage({ id: "taskGroup.newGroup" })
-                }
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="shrink-0 text-foreground-subtle hover:text-foreground"
-                  aria-label={intl.formatMessage({
-                    id: "taskGroup.newGroup",
-                  })}
-                  disabled={workspaceReadOnly || !createGroupedTaskGroupAction}
-                  onClick={() => {
-                    if (!workspaceReadOnly) {
-                      createGroupedTaskGroupAction?.();
-                    }
-                  }}
-                >
-                  <Hash className="size-3.5" />
-                </Button>
-              </ControlHintTooltip>
-            ) : null}
+            <div ref={setGroupedToolbar} className={taskViewMode === "grouped" ? "flex items-center gap-1" : "hidden"} />
             {showTaskViewFilter ? (
               <DropdownMenu>
                 <ControlHintTooltip
@@ -1452,7 +1273,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     [
       activePrimaryTaskMode,
       archivedTasksActionLabel,
-      createGroupedTaskGroupAction,
       handlePrimaryTaskModeChange,
       handleToggleAllTaskGroups,
       handleWorkspaceTaskViewChange,
@@ -1478,16 +1298,11 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       return;
     }
     if (taskViewMode === "grouped") {
-      if (createGroupedTaskDraftAction) {
-        createGroupedTaskDraftAction();
-        return;
-      }
       onCreateTask({ groupedDraftPlacement: { type: "top" } });
       return;
     }
     onCreateTask({ createSource: "project" });
   }, [
-    createGroupedTaskDraftAction,
     onCreateTask,
     taskViewMode,
     workspaceReadOnly,
@@ -1637,7 +1452,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             </div>
 
             <div className="relative flex min-h-0 flex-1 flex-col">
-              <StickyGroupHeaderSlot header={groupedStickyHeader} />
+              <div ref={setGroupedStickyTarget} />
               <div
                 ref={workspaceScrollRef}
                 className={
@@ -1663,7 +1478,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                     }}
                   />
                 ) : null}
-                <div className="flex min-h-0 flex-col gap-3 px-2">
+                <div className={cn("flex min-h-0 flex-col gap-3", taskViewMode !== "grouped" && "px-2")}>
                   {canvasSection ? (
                     <SidebarCanvasSection
                       projectId={activeCanvasProjectId}
@@ -1679,35 +1494,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                       onSelectTask={onSelectTask}
                     />
                   ) : taskViewMode === "grouped" ? (
-                    <WorkspaceGroupedTasksSection
-                      workspaceTabs={workspaceTabs}
-                      activeWorkspacePath={workspacePath}
-                      activeWorkspaceIdentity={workspaceIdentity}
-                      activeTaskId={activeTaskId}
-                      onSelectTask={onSelectTask}
-                      onCreateTask={onCreateTask}
-                      onOpenFileTree={(target) => {
-                        setFileTreeTarget(target);
-                        setIsFileTreeOpen(true);
-                      }}
-                      onCreateGroupActionChange={handleCreateGroupActionChange}
-                      onCreateDraftTaskActionChange={
-                        handleCreateDraftTaskActionChange
-                      }
-                      collapsedGroupIds={collapsedGroupedTaskGroupIds}
-                      onGroupedTaskGroupIdsChange={
-                        handleGroupedTaskGroupIdsChange
-                      }
-                      onCollapsedGroupIdsChange={
-                        handleCollapsedGroupedTaskGroupIdsChange
-                      }
-                      onStickyGroupHeaderChange={setGroupedStickyHeader}
-                      onOpenAutomations={
-                        supportsAutomations
-                          ? handleOpenAutomationsMain
-                          : undefined
-                      }
-                    />
+                    <ProjectTaskListContext.Provider value={groupedPresentation}>
+                      <SidebarTooltipProvider>
+                      <TaskGroupedView
+                        tasks={groupedTasks}
+                        workspacePath={workspacePath}
+                        workspaceIdentity={workspaceIdentity}
+                        onSelect={onSelectTask}
+                        refresh={projectDirectory.refresh}
+                        onCreate={(groupId) => onCreateTask({
+                          groupedDraftPlacement: groupId ? { type: "group", groupId } : { type: "top" },
+                        })}
+                        toolbarTarget={groupedToolbar}
+                        stickyTarget={groupedStickyTarget}
+                        scrollRef={workspaceScrollRef}
+                        onOpenAutomations={supportsAutomations ? handleOpenAutomationsMain : undefined}
+                      />
+                      </SidebarTooltipProvider>
+                    </ProjectTaskListContext.Provider>
                   ) : taskViewMode === "timeline" ? (
                     <WorkspaceTimelineTasksSection
                       workspaceTabs={workspaceTabs}
@@ -2002,12 +1806,19 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           >
             {fileTreeTarget ? (
               <WorkspaceFileTree
+                key={JSON.stringify([
+                  fileTreeTarget.workspacePath,
+                  fileTreeTarget.workspaceIdentity,
+                  fileTreeTarget.workspaceRemoteSessionId,
+                  fileTreeTarget.viewerScope,
+                ])}
                 workspacePath={fileTreeTarget.workspacePath}
                 workspaceName={fileTreeTarget.workspaceName}
                 workspaceIdentity={fileTreeTarget.workspaceIdentity}
                 workspaceRemoteSessionId={
                   fileTreeTarget.workspaceRemoteSessionId
                 }
+                viewerScope={fileTreeTarget.viewerScope}
                 revealPath={fileTreeTarget.revealPath}
                 temporaryExternalDirectory={
                   fileTreeTarget.temporaryExternalDirectory

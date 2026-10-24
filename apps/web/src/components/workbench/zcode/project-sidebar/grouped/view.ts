@@ -1,8 +1,11 @@
-/* eslint-disable max-lines -- grouped task 的纯 view helper 暂时集中维护 task/group 重排、菜单移动和乐观合并，后续按拖拽域继续拆分。 */
-import type { ZCodeGroupedTaskView, ZCodeGroupedTaskViewNode } from "@zcode/services";
-import type { ZCodeTaskMeta } from "@zcode/shared";
-import type { GroupedDraftTaskPlacement } from "@zui/store/zcodeSessionStoreTypes.js";
-import { taskKey } from "@zui/workspace-grouped-tasks/ids.js";
+import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+import type {
+  ZCodeGroupedTaskView,
+  ZCodeGroupedTaskViewNode,
+  GroupedDraftTaskPlacement,
+} from "@zui/project-sidebar/grouped/types.js";
+
+import { taskKey } from "@zui/project-sidebar/grouped/ids.js";
 
 function cloneView(view: ZCodeGroupedTaskView): ZCodeGroupedTaskView {
   return {

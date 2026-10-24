@@ -569,10 +569,10 @@ export function createWorkspaceSlice(set: SetFn) {
                 return current.groupedDraftTask;
               }
               if (current.activeTaskId === null && current.groupedDraftTask) {
-                // 同一个 grouped 草稿可以被不同 New task 入口重新定位。
-                // 连续点击同入口要复用临时实体，但从全局入口切到 group 入口时，创建位置必须跟随最新入口。
+                // 重新定位形成新的草稿意图，较早发送的回执不能清除后来的归属。
                 return {
                   ...current.groupedDraftTask,
+                  draftId: createGroupedDraftId(Date.now()),
                   workspacePath,
                   ...(workspaceIdentity ? { workspaceIdentity } : {}),
                   placement,

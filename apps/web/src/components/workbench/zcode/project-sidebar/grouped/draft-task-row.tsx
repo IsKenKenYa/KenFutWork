@@ -1,3 +1,4 @@
+import { SidebarNativeTooltip } from "@zui/ControlHintTooltip.js";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { X } from "lucide-react";
 import { cn } from "@zui/components/lib/utils.js";
@@ -36,6 +37,7 @@ export function GroupedDraftTaskRow({
   return (
     <div className={cn("rounded-lg py-px transition-colors")}>
       <div
+        data-testid="grouped-draft-task"
         role="button"
         tabIndex={0}
         onClick={onSelect}
@@ -48,16 +50,20 @@ export function GroupedDraftTaskRow({
             : "bg-success/10 border-primary/20 hover:bg-success/14",
         )}
       >
-        <span className="min-w-0 flex-1 truncate text-foreground-subtlest" title={title}>
-          {title}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-ui-sm text-foreground-subtle">
-          <span
-            className="max-w-24 truncate rounded-full bg-tag/50 px-1.5 py-0.5 text-ui-sm text-foreground-subtle"
-            title={workspaceLabel}
-          >
-            {workspaceLabel}
+        <SidebarNativeTooltip>
+          <span className="min-w-0 flex-1 truncate text-foreground-subtlest" title={title}>
+            {title}
           </span>
+        </SidebarNativeTooltip>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-ui-sm text-foreground-subtle">
+          <SidebarNativeTooltip>
+            <span
+              className="max-w-24 truncate rounded-full bg-tag/50 px-1.5 py-0.5 text-ui-sm text-foreground-subtle"
+              title={workspaceLabel}
+            >
+              {workspaceLabel}
+            </span>
+          </SidebarNativeTooltip>
           <span className="relative size-6 shrink-0">
             <span
               aria-hidden="true"

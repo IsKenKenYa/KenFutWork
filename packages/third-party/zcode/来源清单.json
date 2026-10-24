@@ -7,6 +7,291 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/project-sidebar/TaskGroupedView.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/TaskGroupedView.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "8a2aa22ae53de9f8b390befd88adf9386c169e99f2325b60cf648b58037c5f48",
+      "copiedSha256": "75efdfd67dcd47a20b0fc65a468bbf119e69370eb576069390af35bcbd8d22f9",
+      "adaptations": [
+        "映射导入路径，保留原分组组件、菜单、虚拟列表与实际手势。",
+        "复用 KFW groupedDraftTask 及清除方法，连接常驻目录的创建、受控改名和组织修订；菜单、拖动、选色与取消组固定观察值。创建完成核对当前作用域，连接现有 Task 操作和真实远端连接解析。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectTaskListContext.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectTaskListContext.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "5c742f11678cf5560658faa3cd80b19dc12f790137a32854679ef7ad8a7697af",
+      "copiedSha256": "50cd96f8fbbcc892ae8dea32e4b7fa5d6edfb2af7c04e411a6973b4dbab472cf",
+      "adaptations": [
+        "映射类型导入，增加改名、归档和标记未读回调，让原分组行复用现有宿主 Task 操作。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/task-mutation.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/task-mutation.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "ef600197181ea584429a8648e8df1ee045432ffa785a7c50373fa90748cedaa3",
+      "copiedSha256": "19cb3d3455c3666e3eb0bdd69ab466714ddcb00c50b358cce307c09e54bd79c9",
+      "adaptations": [
+        "映射导入，按当前 Task 服务和 Controller 路由操作，复制并传递 taskControl，保留实际 remoteSessionId；元信息由现有 Task 服务读取，不传递当前接口没有的 sourceServerId。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped-view.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped-view.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "a74e794038a989423114ca755cfdce24e7fc1423fabce0636e38720a86f81c05",
+      "copiedSha256": "79a5b66bd269c033dba2d925f87103621a1e38df44192108fa6c6de9d71d4fa6",
+      "adaptations": [
+        "映射导入路径；移除未使用的 taskGroupTitleMessageId、对应常量导入及末尾多余空行，原稳定 Task 键和分组投影算法保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped-expansion.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped-expansion.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "10505074509533b47708e706447dd9c25c66eaab70f30d8d02c8db81ea8c5091",
+      "copiedSha256": "bab1b9150e81ddd96ddabbbfe2337a8b32e8b1894ac98c1597053db206c840bb",
+      "adaptations": [
+        "仅映射导入路径；原折叠状态键、规范化、读取与保存逻辑保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/useTaskGroups.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/useTaskGroups.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "8490c4ea20667c66c9e44b58b50f9677eca24f4d0925d20645f7120ff7c93521",
+      "copiedSha256": "d6fc1aa51e2c0ce2efaa67d97806186e2259f6e596eb66ca40a11f7748d1bccf",
+      "adaptations": [
+        "映射导入，接入 KFW 组织修订；创建保存稳定 creationId、原参数和在途请求，名称草稿由常驻目录持有，以编辑身份及输入版本核对迟到结果。",
+        "明确的修订冲突结束旧创建意图，下一次用户新建才使用新身份；响应未知仍保留原意图。改名成功后保留较新输入，并从已确认标题和该次修订开始下一次明确保存。",
+        "仅登记身份完整的本机 Task，登记和重读完成后开放操作；移动与取消组携带观察修订，读取失败向实际消费方报告。",
+        "写入回执确认后独立刷新组织，读取错误保持可见，已确认的名称及修订仍供后续明确保存使用。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/colors.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/colors.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "7533eaf5ccbfaa0018f56acb2fbb24af0ca8d9047bd618f0e2cfd592cad5903c",
+      "copiedSha256": "e89e8f57bb1d19c647fea108010dd56940b9ef9b40c9c8872318f27cce061f52",
+      "adaptations": [
+        "仅映射导入路径；原分组颜色标记与色点组件保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/draft-task-row.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/draft-task-row.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "21f48b9c883a5c5cbc74249d6ac528336e36a601365914b8244bb8f52dd42805",
+      "copiedSha256": "96e9eb22a12a2a5d3e33e4d1865a31768b28dede2920bc8f364775ac8eb9da88",
+      "adaptations": [
+        "仅映射导入路径；原草稿行、键盘选择及关闭按钮保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/drag.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/drag.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "85d2f6c90262238579b5e907d54c90dc0ef2c2574be8b185620936ebbfc34bf6",
+      "copiedSha256": "a2e2f853bed60ba61cf6dfe5abdd40dfebda28894e42cab51c8df43c38d78e7b",
+      "adaptations": [
+        "仅映射导入路径；原碰撞检测、拖动预览、布局测量、吸顶判定与动画工具保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/group-drag-overlay.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/group-drag-overlay.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "78e3007b77328cb75b63942bd8df4715ff63639546208789353c88fb597a8816",
+      "copiedSha256": "0ad557c45e9b4f396a38ef154fc4b92f791f99e5c31ad95b45b92b7057d3e54d",
+      "adaptations": [
+        "仅映射导入路径；原分组拖动浮层、标题与计数展示保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/group-item.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/group-item.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "371919b887064cda6784429753ec13089f115c504ee087f4c3ee0072ffc713e8",
+      "copiedSha256": "7a45b254f032c6c4252a19ec9077c84a85137b204dbd84a7c97fea8aacf0e150",
+      "adaptations": [
+        "映射导入；名称改为目录持有的受控草稿，开始编辑固定修订，颜色和右键菜单分别保存打开时的观察值；输入框以 aria-busy 表达真实保存状态并保持可编辑，菜单关闭回调保留仍挂载输入框的当前焦点；原输入法和布局处理保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/group-title.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/group-title.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "def5b80b1f659e5a37f0cf65953e42bb3f21ef3d71363c695e5a6a42272f8d0c",
+      "copiedSha256": "def5b80b1f659e5a37f0cf65953e42bb3f21ef3d71363c695e5a6a42272f8d0c",
+      "adaptations": [
+        "与固定上游原件字节一致。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/ids.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/ids.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "05ee09deb5e41bf9dd0ddae1a89fecbd7f81aac0bbb3994694a4e35bf8cc7a2a",
+      "copiedSha256": "ca845300b05d0413054a80c3318e5af9d1f35fa32f479d7d4cbe15bc0407097a",
+      "adaptations": [
+        "仅映射导入路径；原工作目录身份与 Task ID 的组合键构造保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/model.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/model.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "3dc80ce4ec041f1e97301915562a29ca83a9da5d30851f2bbae73f3df7d2df9c",
+      "copiedSha256": "82a2f863ab36d081de7d718f58a0ee55a93b629fae855c53479d7fd19c4c750d",
+      "adaptations": [
+        "仅映射导入路径；原显示树投影及单节点来源、目标和锚点命令构造保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/shared.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/shared.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "e986f1d8e5b4a523b7d2fa82adf720e3bb879355f50af744d488342bac318ec9",
+      "copiedSha256": "0040829bcb9057e39aaf1755449b9ba91728c28673f12203d5d9b9bd2babb79b",
+      "adaptations": [
+        "仅映射导出路径；原颜色、布局、类型和显示树函数的转出保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/sticky-group-header-slot.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/sticky-group-header-slot.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c9e1b6331fb8561712f8229a079564f7e94c462a3ec994bc2fd42c4d66d42a15",
+      "copiedSha256": "b559aed4a8bcbdf71892f702666991544e4a7a6a62df3ceabc8f5e0212f78827",
+      "adaptations": [
+        "仅映射导入路径；原吸顶头显示与退出动画生命周期保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/sticky-group-header.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/sticky-group-header.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "8a6e15f1069c30ef5648dee2eabbb2fb8a42cafbaecae65c29c3b87454be8b2d",
+      "copiedSha256": "4c3b59f077fde7b7d667ede2ac297bf7d3061d49f8b4dc101ac5d3969f916984",
+      "adaptations": [
+        "映射导入；颜色与右键菜单保存打开时的组织修订，选色和取消组使用原观察值。组头键盘处理限定自身事件，内部按钮使用原生 Enter 行为。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/task-context-menu-content.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/task-context-menu-content.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "bd606a86987d80798a8cb58550884a1c4ba3b91a4f13ee7430ac50e5cb13a146",
+      "copiedSha256": "cefbbcf5cdda319364966615b537a918260761ba40ae0e295023463444b1e8e2",
+      "adaptations": [
+        "映射导入；移除没有提供方的供应商配置文件动作，仅在实际路径存在时显示会话文件与日志复制入口，原分组操作菜单保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/task-item.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/task-item.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "5146c2d11838020840b01f48affd5a6c67c943f1c90bfc4da51eb9a1f69d9d1f",
+      "copiedSha256": "167669c5eb61286d41669e16cd48b6da4165b1f7105f1d103479c382ddbb3929",
+      "adaptations": [
+        "仅映射导入路径；原空组拖放目标与 Task 行封装保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/task-row-tooltip.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/task-row-tooltip.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c37df7cd41c459746504f7c6bca54e437481cc821d51fdf928522b48e6742963",
+      "copiedSha256": "c37df7cd41c459746504f7c6bca54e437481cc821d51fdf928522b48e6742963",
+      "adaptations": [
+        "与固定上游原件字节一致。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/task-row.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/task-row.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "b515405b9d2feac8b3b8e4e065a5c97445d6330b7d7680ed9ececa45658b1686",
+      "copiedSha256": "e5762bd39922a949ec70be9732aaf50fdf1898b2a30c52162edb1695375212d7",
+      "adaptations": [
+        "映射导入并使用当前 shared 测试标识；识别本机完整目录身份，本机打开目录连接现有平台。",
+        "菜单打开时保存 Task、分组、来源组及操作回调；停止读取没有提供方的供应商配置文件，其他实际路径入口沿原读取结果显示。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/types.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/types.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "1286c5b5023e11ebe3f623b82262dfa9383dabd833d385d68bee0f57a02f07be",
+      "copiedSha256": "891ee5f7387f1d4c662d0c3405239b2484bf23dcb2e405923572005ab95b9c96",
+      "adaptations": [
+        "仅映射类型导入路径；原调色板、颜色类、布局常量与分组显示类型保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/useGroupedDrag.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/useGroupedDrag.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "689b37956498f1a8f7552b3d3f832402d4b23662791f7ab22ff32c6e3dba9b2d",
+      "copiedSha256": "a3eed40c6148e1484df0c6d011a952e1eaed3244764686b70ee6c47e78e030ad",
+      "adaptations": [
+        "映射导入并接入组织修订，手势开始保存观察值，结束提交原值并在重置时清除；原预览、取消恢复和迟到预览清理逻辑保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/view.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/view.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "56ee334ceabb5e6263ffc08d34c046a73d20df01d52a4d9241ee8345afb8543f",
+      "copiedSha256": "2f325c116fc704e2ad19fd0218265c6ea7c395671925bc8ecc1190f5198d32e7",
+      "adaptations": [
+        "仅映射导入路径；原显示树复制、移动预览、排序及草稿定位运算保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/virtualized-group-task-list.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/virtualized-group-task-list.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "2b14a124b24d0eee02040e830f8305708bd8eb9225fb549e6b32f878577b7755",
+      "copiedSha256": "8ae62eaa299d714de7bfc469f497e108bf5debed59a7036dffdd0e9696de9fb5",
+      "adaptations": [
+        "仅映射导入路径；原组内虚拟列表、测量与滚动处理保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/virtualized-scroll.ts",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/virtualized-scroll.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "6cfaf22cee40ca4e387850391a222a9b7a9775578cbbb944758df764e0ab2c66",
+      "copiedSha256": "6cfaf22cee40ca4e387850391a222a9b7a9775578cbbb944758df764e0ab2c66",
+      "adaptations": [
+        "与固定上游原件字节一致。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/grouped/virtualized-top-level-list.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/grouped/virtualized-top-level-list.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "9e10541a057b273c343091ef3d150ad984bcb0ddf3e673bf0643d9e13ed680b4",
+      "copiedSha256": "dd02b7db112b904fe665afda11c78a4f18bd9bfbaf4f7004289c9c1e1d228905",
+      "adaptations": [
+        "仅映射导入路径；原根层虚拟列表、测量与滚动处理保持。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/services/src/task-groups/contract.ts",
+      "target": "packages/zcode-services/src/task-groups/contract.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "a3c53986334ae26481dd8342fb2b9bf96783d5a57e8c27c9aec0f83b4d4bd37a",
+      "copiedSha256": "b57bbe849a20954dde905be2cc10ed5a1e79d4394094707219eed46eb1233f62",
+      "adaptations": [
+        "保留原描述符、展示类型与admit形状；结构增加组织revision，save、ungroup及move连接KFW固定观察与稳定创建身份。"
+      ]
+    },
+    {
       "source": "references/zcode/packages/ui/src/project-sidebar/ArchiveManagement.tsx",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ArchiveManagement.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
@@ -35,24 +320,31 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "6db545b4762bf53c713e311394179bc40e29d20ad11c6b1d23cfb2bdb1981341",
-      "copiedSha256": "6160b41c3bff1a163d2bc057ecac2de55a64b76637926cef99073809a3b66778",
-      "adaptations": ["导出本批原归档组件及真实目录 owner 已消费的浏览器项目类型；完整侧栏与远端接口随实际消费者继续移植。"]
+      "copiedSha256": "38763bcd04081f798c3089dea9d95baf94ea681aa6e87ad2c0b5d0273e3ad057",
+      "adaptations": [
+        "导出本批原归档组件及真实目录 owner 已消费的浏览器项目类型；完整侧栏与远端接口随实际消费者继续移植。",
+        "仅补本批原分组消费者使用的服务、展示与Task观察类型，保留已有项目编辑及归档适配。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectDirectoryProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectDirectoryProvider.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "81ba0cc18822c79e036cfe312762e93c35a0919a2224961bffc0e4fe80f68868",
-      "copiedSha256": "03e7ff8fd8d5cfd75b9574b1180d425cde52c2c17ce2a95005a1982f2093c393",
-      "adaptations": ["@/ 导入映射为 @zui/；采用原 Context、嵌入面复用与单一目录 owner，当前挂载归档管理。", "本批 owner 只提供已连接的本机项目树及读取生命周期；分组、项目排序和原生未读提示按完整侧栏依赖继续连接，不制造远端或分组服务。"]
+      "copiedSha256": "91492ae18150263932028b3d261d4a67a454feb2e12e42995bc466fed6d69efe",
+      "adaptations": [
+        "@/ 导入映射为 @zui/；采用原 Context、嵌入面复用与单一目录 owner，当前挂载归档管理。",
+        "owner 提供本机项目树、独立持久分组及读取生命周期；项目排序和原生未读提示按完整侧栏依赖继续连接。",
+        "Root、侧栏和归档复用一个目录及分组owner，完整目录事实首次登记完成后才开放分组操作。"
+      ]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/useProjectTree.ts",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectTree.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "036834eb6620a04e80a5dd6326c57d92237504a302ad81db990d6326225e1637",
-      "copiedSha256": "b3f91b922035402238bb4239bc17025393912c6941c19a9f1771a8aa0455e1cb",
-      "adaptations": ["@/ 导入映射为 @zui/；采用原串行读取、dirty 合并、取消代际、焦点重读和真实 broadcast/Controller 订阅，读取本机 readTree 的归档项目及 Task 删除事实。", "当前归档消费者保留 KFW 的 Project 与 Task 固定目录身份；完整侧栏的远端、创建提交、分组与精确活动投影随后续实际装配连接。"]
+      "copiedSha256": "87852b47a01d649304fc940346480f885272525e3901beaad4a9167191396147",
+      "adaptations": ["@/ 导入映射为 @zui/；采用原串行读取、dirty 合并、取消代际、焦点重读和真实 broadcast/Controller 订阅，读取本机 readTree 的归档项目及 Task 删除事实。", "当前归档和分组消费者保留 KFW 的 Project 与 Task 固定目录身份；首次空目录也订阅真实任务变化，完整侧栏的远端和创建提交随实际装配连接。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/useArchiveManagement.ts",
@@ -332,9 +624,10 @@
       "source": "references/zcode/packages/ui/src/ControlHintTooltip.tsx",
       "target": "apps/web/src/components/workbench/zcode/ControlHintTooltip.tsx",
       "sha256": "2da7e41f22f9eed6cda1259e403618f1f8cca5f4350665aeee8008e10a8753bd",
-      "copiedSha256": "d1ebd11ec7120d2bf434de8fec9f96ea7c286e21610601cedab286c511da404f",
+      "copiedSha256": "13927333ea7eac7a6da40e1a41efe2450f94a29c3248b58eafcd408b7c6f83b9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "从3.16.2固定原件增补SidebarTooltipProvider与SidebarNativeTooltip，保留既有快捷键与平台适配；补充原件SHA-256 ddb28f5b3338980e1907b1ac88ccfbe153c17bdd18b93fb4af6fda21d6107e2e。"
       ]
     },
     {
@@ -751,14 +1044,15 @@
       "source": "references/zcode/packages/ui/src/Root.tsx",
       "target": "apps/web/src/components/workbench/zcode/Root.tsx",
       "sha256": "2fe5a5c4a94149d424591b48f6ab04226c29550227f32db986f8bffc65166c5b",
-      "copiedSha256": "7b29a2de8a70fbe085e1e6dc4b80ef381ccf947c85e33eeadce7949429699c21",
+      "copiedSha256": "d2c96167650ea2869486b66916ec7a0240de1e1a6e01a6312cd5da6c7f4ae444",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：真实身份、mode callback与握手clientMode透传；非云OAuth/账号迁移门及未接引导/import/运行偏好门，保留原Root生命周期",
         "宿主接口：原目录选择等待真实resolvePath与Project绑定，成功才关闭，失败沿原错误区重试",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
-        "宿主接口：原设置操作由TabStore托管到独立文档，Root运行与工作区保持"
+        "宿主接口：原设置操作由TabStore托管到独立文档，Root运行与工作区保持",
+        "在原TabStore内常驻同一ProjectDirectoryProvider，原会话与内容宿主保持。"
       ]
     },
     {
@@ -1745,15 +2039,6 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/WorkspaceGroupedTasksSection.tsx",
-      "target": "apps/web/src/components/workbench/zcode/WorkspaceGroupedTasksSection.tsx",
-      "sha256": "73189664184f7366898c8023026574d48eb34df6a2eb4137b89f0d269b9d1c3e",
-      "copiedSha256": "d1a4adff658cc30682b98b017be902bf01bf2c41b3424a0352ba0e1eeb52e612",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/WorkspaceHeader.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceHeader.tsx",
       "sha256": "2b3fee1655919699078f494ecb53918a39b78de95be54240a7652f6eb82b2b0d",
@@ -1858,8 +2143,9 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "6d9ee60ea2ab8d63e7d754c401e72712399822ce1c9aa4d68842fffd205a9da7",
+      "copiedSha256": "3b0211d0ef793345b3ad2840bff86bbb7094faa3b2effb1a0309b3d2dde20de2",
       "adaptations": [
+        "原 TaskGroupedView 文件入口固定被点 Task 的 viewerScope，目录、Git、watcher、搜索和预览沿同一身份；目标换代重新挂载文件树。",
         "原项目创建接入宿主同目录选择及目录归属复验，明确复用或独立创建后保持当前会话和内容。",
         "项目加号与宿主新建意图连接新版原 ProjectCreation，在真实 Sidebar 服务与 Tab Provider 内装配；创建只刷新项目，当前 Task、草稿和内容标签保持。",
         "按可信 Project 身份在原菜单装配新版原 ProjectEditor，保存后消费现行项目列表刷新；Task、SessionPane 和内容标签不变，旧侧栏其余部分仍使用原来源。",
@@ -1871,7 +2157,8 @@
         "品牌／模式文案：原侧栏顶部插入既有横排模式按钮的共享展示，保留原导航与任务装配",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。",
-        "主线：收起态 rail 承载全部侧栏入口（新建任务/搜索/插件市场/技能/MCP/插件面板）+「分组/项目」加「画布」页 + Design 收口（f992490b/61ea2cb4/e3817631）"
+        "主线：收起态 rail 承载全部侧栏入口（新建任务/搜索/插件市场/技能/MCP/插件面板）+「分组/项目」加「画布」页 + Design 收口（f992490b/61ea2cb4/e3817631）",
+        "grouped区采用3.16.2原TaskGroupedView及工具栏和吸顶portal，保留现有项目、归档、模式与共享项目登记；展示按真实可见项目ID筛选。"
       ]
     },
     {
@@ -4218,9 +4505,10 @@
       "source": "references/zcode/packages/ui/src/components/ui/tooltip.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ui/tooltip.tsx",
       "sha256": "301dbf3a6f8b1bc496f9bdc6fbc5fe6202ed373182897f39cd1ecd19b00fdfbe",
-      "copiedSha256": "301dbf3a6f8b1bc496f9bdc6fbc5fe6202ed373182897f39cd1ecd19b00fdfbe",
+      "copiedSha256": "33a9b2ea72b426a8192c64e91d3525ee782005c0522bdb0e4a93266ef745c6ce",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "增补3.16.2原alwaysDelay上下文及该范围鼠标处理，保留现有Tooltip适配；补充原件SHA-256 b385da0f882ef4a44c101051107a670c42f7b347b86ef8ca0dba40369ed34d3b。"
       ]
     },
     {
@@ -5291,16 +5579,6 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/hooks/useGroupedTaskView.ts",
-      "target": "apps/web/src/components/workbench/zcode/hooks/useGroupedTaskView.ts",
-      "sha256": "589972fdb443b7ed1cff98c489e1976211a0ea71f38a284a7c8e5833f48f7f2c",
-      "copiedSha256": "b4fe50dba68ae2240c789d662445f58cbb76b1eda57b9ae134fe685ad7a08118",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/hooks/useInterfaceMode.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useInterfaceMode.ts",
       "sha256": "a4feaa18fe4338d4d187cfade64e2d81f4599e960ef644fc3905f7b7d19c3ea8",
@@ -5947,8 +6225,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "d33815de079a84fb25cef5754d661beb7db7ae80746d312a9a925a30793d8f34",
+      "copiedSha256": "75882dcb518463d02406d5a16751dfd89fc48a9dbb971d1808bfceb6d85a3d54",
       "adaptations": [
+        "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原分组默认名称和全部展开、收起词条，由原 TaskGroupedView 消费。",
         "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
         "补新版原项目创建、主目录选择与文件夹信任确认词条，说明当前项目及新 Task 的目录默认权限。",
         "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
@@ -5979,8 +6258,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "ae59a41d0c89d8789185c4678fb68ac5c89feb68ae9c15d5a08e499ae7de0f30",
+      "copiedSha256": "fd595460aee40acdd81ecb361857c2895bce196f86d8a7cef2ca7c7fb4c43b70",
       "adaptations": [
+        "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原分组默认名称和全部展开、收起词条，由原 TaskGroupedView 消费。",
         "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
         "补新版原项目创建、主目录选择与文件夹信任确认词条，说明当前项目及新 Task 的目录默认权限。",
         "登记 0e72bee1 中已逐段核对的 KFW 混合 Computer Use 权限引导：补充自动化权限名称、用途、系统设置入口和授权应用列表提示四项词条，由原 ComputerUseSection 实际消费。",
@@ -6131,15 +6411,6 @@
       "target": "apps/web/src/components/workbench/zcode/lib/browserEnvironment.ts",
       "sha256": "3de5167d657fb07fd8d58f3ec5f3178f1a95304832ec4de0b118d49ffea38471",
       "copiedSha256": "3de5167d657fb07fd8d58f3ec5f3178f1a95304832ec4de0b118d49ffea38471",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/lib/buildGroupedTaskViewFromSessions.ts",
-      "target": "apps/web/src/components/workbench/zcode/lib/buildGroupedTaskViewFromSessions.ts",
-      "sha256": "b722e94aecefe23b3e7f813ee3e09e7c8e44e6077e8ea12deecdf72cf93c4278",
-      "copiedSha256": "7a61540ed55dfd3ec5d81f09fd0614246607c26be4f4fb1452c034e691415a3c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -6640,15 +6911,6 @@
       "target": "apps/web/src/components/workbench/zcode/lib/gitAutoRefresh.ts",
       "sha256": "d6045b5570387910d66026e038ee5c877dd337a08f6c7254b1408a0c52ff7c2b",
       "copiedSha256": "d6045b5570387910d66026e038ee5c877dd337a08f6c7254b1408a0c52ff7c2b",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/lib/groupedTaskExpansionPreference.ts",
-      "target": "apps/web/src/components/workbench/zcode/lib/groupedTaskExpansionPreference.ts",
-      "sha256": "80be59f24bfed22be6b2bcc7a022f707bb9139b1a370055442bb8c68c37e2d2d",
-      "copiedSha256": "78f975f0e3b75e4befdfde628894d772e2dc55438c2c4f4c9a448498648e2430",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -11952,8 +12214,9 @@
       "source": "references/zcode/packages/ui/src/store/zcodeSessionStoreWorkspaceSlice.ts",
       "target": "apps/web/src/components/workbench/zcode/store/zcodeSessionStoreWorkspaceSlice.ts",
       "sha256": "93a7703c7b29c096679fc8a665feea0f53b3ca003942abde67e7d0ade6fff23b",
-      "copiedSha256": "2a6b935400f56cd4bb99fa79f4359dc438d91fde96404a7c55e02d3b67f088f5",
+      "copiedSha256": "e9c07fdceb3f802861a8050333a785bd3873843c99066db96a9f6b08fa76ae2e",
       "adaptations": [
+        "分组草稿重新定位时创建新的临时身份，早先首发回执只能清除自己的草稿归属。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -12448,8 +12711,9 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "3c91c268098803a365e419443f3eb62314e970ff48f0b963796c47dd3693f0f3",
+      "copiedSha256": "e19fca0505654fa4f6ddf4bee7a41ad0834eef234f8f50a6dcd29f35ec910eca",
       "adaptations": [
+        "采用固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原首发分组接纳：配置等待前捕获原分组草稿，accepted 后调用真实 admit；独立重试保持原 placement 与创建身份，后来草稿不被清除或导航替换。",
         "KFW 会话打开文件及自动展示 PPTX 时固定真实根 Task 来源。",
         "KFW Task 控制命令从当前公开快照固定项目与分支观察值；发送沿原点击值经过配置屏障，预热首发可使用创建回执的初始事实。",
         "原配置 CAS 仅针对 proto.staleRevision 重试；项目或分支观察值过期时直接保留拒绝回执，不重发旧配置。",
@@ -14042,8 +14306,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/WorkspaceFileTree.tsx",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/WorkspaceFileTree.tsx",
       "sha256": "53b5206b1e6218c7f6bd8ab948ad67a1f0ce2f15c6d0126cf61f683484974499",
-      "copiedSha256": "ab05808fdb44b3a19bc36c0366ddf3c77540bf62fa5d5fe2a381d6cd189c8bbc",
+      "copiedSha256": "50be51e0694891015aecbf5e8e1c1f26ec6cbe0120105523d68801c78264ff74",
       "adaptations": [
+        "被点 Task 的 viewerScope 传给目录、搜索与预览；真实浏览目录和读取身份分别持有。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -14168,8 +14433,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/types.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/types.ts",
       "sha256": "c5b4aaed9bc5abd54818cfcebb996163c145f3edc3ed41c6c21cb98433a008b1",
-      "copiedSha256": "f6e1d16ed87aca0e2c7fbc1dece05ef590f82634fd7ad651bb55e39dd39d1f22",
+      "copiedSha256": "d0ea1f14f87a7dfab9f8e98a6c40a00b93ea01273af1b963b7b279df24682e3c",
       "adaptations": [
+        "文件树目标增加现有 CodeUiViewerScope，供实际 Task 文件入口与预览消费者使用。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -14186,8 +14452,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/useWorkspaceFileSearchIndex.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/useWorkspaceFileSearchIndex.ts",
       "sha256": "600dc5356c813259ab0f21758886fdea54548770b46a06e62788c33b20ddccaa",
-      "copiedSha256": "945cd3137a97cdfab8c765da2ea43a6290acde0b83d25f0690b232e61de0d0e9",
+      "copiedSha256": "2407655b4f715812b61783cea2f511a952321c84e83e3a1e60e82a81d534f643",
       "adaptations": [
+        "搜索使用现有固定 viewerScope 文件服务，目标变化及关闭推进请求代际，拒绝迟到结果。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -14195,8 +14462,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/useWorkspaceFileTreeData.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/useWorkspaceFileTreeData.ts",
       "sha256": "faf66c845b3ef54cdca37949b9c3e1154ebbb536166ac6b550352a9360336b27",
-      "copiedSha256": "ba3c06fcdb406dc8bc19bfdb693f88ff1a7427ed73ceeb074fc473f08a97a525",
+      "copiedSha256": "553b0dc580e50aa020a9a7248fd6aecf187e19480b0f24d6327fdef8f7a0da27",
       "adaptations": [
+        "目录、Git 与 watcher 使用现有固定 viewerScope 服务；关闭推进请求代际并清理刷新计时器，旧结果不更新新目标。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -14237,181 +14505,10 @@
       ]
     },
     {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/colors.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/colors.tsx",
-      "sha256": "77c95830cfd048de8bc8d8ec3971272de0926c7d645a8d267f2dba18d38d9369",
-      "copiedSha256": "62d97b404b019b520e85426db645a45049b200e862970e481b23e88f716e2e1b",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/draft-task-row.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/draft-task-row.tsx",
-      "sha256": "4805f4842fd803618622141d66003dccc4e54a75c8850eb7bd94080560220112",
-      "copiedSha256": "47376b4fe40425dae547474ac741d037b24fc8adce49093b25d9e3fa0b4e6177",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/group-drag-overlay.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/group-drag-overlay.tsx",
-      "sha256": "f3a26b97d6934faaf6ccfe4c287c82f61b007448102e18939b13e9e8374985ee",
-      "copiedSha256": "229258bb7660a12d354386875cbbbe67aeff851cdff4b0e523bfdb95df19fbe5",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/group-item.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/group-item.tsx",
-      "sha256": "6f5e41d58a8e38a62a941969dedcce849313d644171cd9d4477712c20dc5c341",
-      "copiedSha256": "d0cb653aef27990393bb60af93eeebe44b615bdd5460efa09f08e053d8cadd89",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/group-title.ts",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/group-title.ts",
-      "sha256": "def5b80b1f659e5a37f0cf65953e42bb3f21ef3d71363c695e5a6a42272f8d0c",
-      "copiedSha256": "def5b80b1f659e5a37f0cf65953e42bb3f21ef3d71363c695e5a6a42272f8d0c",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/ids.ts",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/ids.ts",
-      "sha256": "a6b417f06f2ae8c546117048cef61393377cd81986ea457f74db90f918a70c74",
-      "copiedSha256": "a841fe1c604f65446010110b417b8981ae172b2c0b49d6328394b8c493bdb604",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/items.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/items.tsx",
-      "sha256": "8ea61f9ee7c207cda0fcf3747d3b59162c928254d2c0262e417ea1b936e7e74e",
-      "copiedSha256": "8d9bbfdcd27e54296dc1dcdca28ddad8480e65d449efe7143d92a4213359b833",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/shared.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/shared.tsx",
-      "sha256": "dd32f0f2727b6a284690f875e65b36505cef3e96c91356b20ac47276abfc400b",
-      "copiedSha256": "7ca84fb3f2c1ca7559b15a0255fdd91c73caed302da10c8ab831b987142c788b",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/sticky-group-header-slot.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/sticky-group-header-slot.tsx",
-      "sha256": "c9e1b6331fb8561712f8229a079564f7e94c462a3ec994bc2fd42c4d66d42a15",
-      "copiedSha256": "b559aed4a8bcbdf71892f702666991544e4a7a6a62df3ceabc8f5e0212f78827",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/sticky-group-header.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/sticky-group-header.tsx",
-      "sha256": "b4954e854a6bf4feeb891880cf14ab7bd2c86b83935ac7694985cbb09f51180d",
-      "copiedSha256": "00fb5fe22e7bae8124893b2b3d508e337bd1442ec4af658fc635db0e701bd604",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/task-context-menu-content.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/task-context-menu-content.tsx",
-      "sha256": "11016c504e78f5b7c4f8ff08973eb5846292a456076739d836af4c0a0366a304",
-      "copiedSha256": "cf23abe5d4139c03a3828e92d7befd2d420ecd7d49019109340e1f4ca4107cfa",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/task-item.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/task-item.tsx",
-      "sha256": "42f21db54a9e4351c2893acfae3366d4ccd12f7353a2fe32ff75249c5582731c",
-      "copiedSha256": "12da19d9c7e92d8c687a6fd27f7b569c83f36bc7301e2e907ea8beb59853bf4b",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
       "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/task-row-action-button.tsx",
       "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/task-row-action-button.tsx",
       "sha256": "0a48b969c7a73715bd9691078b6f46a227b5bbd6e2abc821d14c3ab84f6e8154",
       "copiedSha256": "32987ee6793ae62740e7f0236896e9f95d69e998f0b3b9f5739680fc2b387abd",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/task-row-tooltip.ts",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/task-row-tooltip.ts",
-      "sha256": "c37df7cd41c459746504f7c6bca54e437481cc821d51fdf928522b48e6742963",
-      "copiedSha256": "c37df7cd41c459746504f7c6bca54e437481cc821d51fdf928522b48e6742963",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/task-row.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/task-row.tsx",
-      "sha256": "98f1242de9421381a54d3e3f8a20696414c4c97e77cbf8301be10f965e10cf96",
-      "copiedSha256": "ca2faa1dd77e6561b9829ea60e5a9f62c2ec58db549b1f9da9bb3a66290cf6b3",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/types.ts",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/types.ts",
-      "sha256": "fc44991ee9621ea59b5d74c46756414fcc283cb91bed84bb50e918f09aa1080e",
-      "copiedSha256": "fc44991ee9621ea59b5d74c46756414fcc283cb91bed84bb50e918f09aa1080e",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/view.ts",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/view.ts",
-      "sha256": "b1e0de9a65e0b1123663b778c1c87bca73075cf47d142879cdc118af88f82134",
-      "copiedSha256": "63183037cc9ca97983a04e08e109797b528be8d4b93147c9ed768502f43c0d76",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/virtualized-group-task-list.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/virtualized-group-task-list.tsx",
-      "sha256": "a7a5c4ec3f31f96a501adcca0b1cfc972e3a3dd53d25686b6e37cbbf1720a507",
-      "copiedSha256": "a578f15b188a59beb6690e6fe434d919bda54fefcfbd42d99a1abf2e5fea53a5",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/virtualized-scroll.ts",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/virtualized-scroll.ts",
-      "sha256": "6cfaf22cee40ca4e387850391a222a9b7a9775578cbbb944758df764e0ab2c66",
-      "copiedSha256": "6cfaf22cee40ca4e387850391a222a9b7a9775578cbbb944758df764e0ab2c66",
-      "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
-      ]
-    },
-    {
-      "source": "references/zcode/packages/ui/src/workspace-grouped-tasks/virtualized-top-level-list.tsx",
-      "target": "apps/web/src/components/workbench/zcode/workspace-grouped-tasks/virtualized-top-level-list.tsx",
-      "sha256": "ab55caee5134cd1faa35a64c6cda8a883ac289bc3aec09a5aab11336165c54f2",
-      "copiedSha256": "910c114e7fd420db279b03baa7ee2465878b5b2ca435a8c71af8d0fe4c34419f",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -14560,8 +14657,11 @@
       "source": "references/zcode/packages/shared/src/channels.ts",
       "target": "packages/zcode-shared/src/channels.ts",
       "sha256": "519763e2dd8e4e2a2de1a2ee813e2491953741b8dca374799d2543793eb45e48",
-      "copiedSha256": "3aa5a9a68e78620766b965f33748cf6ba308d55f101e00d6b78a648733e380c0",
-      "adaptations": ["按固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的 Project channel 名接入实际消费者；其余频道维持当前来源。"]
+      "copiedSha256": "1d28ce67df7339fff433cd915a270a8facfa43c62ee0057db953efeac14054b5",
+      "adaptations": [
+        "按固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 的 Project channel 名接入实际消费者；其余频道维持当前来源。",
+        "登记3.16.2原TaskGroups频道，连接同一可信宿主RPC。"
+      ]
     },
     {
       "source": "references/zcode/packages/shared/src/clientConfig.ts",
@@ -15998,8 +16098,11 @@
       "source": "references/zcode/packages/services/src/accessor.ts",
       "target": "packages/zcode-services/src/accessor.ts",
       "sha256": "1dd4ae536fa16519b7e280924fa6bcfd20b9b8e8454fa95c906d0c04263d9031",
-      "copiedSha256": "e18b7b29d469a39e5ebc8b1c4d8c5b0e902d3603e57001592e7d921487493ad9",
-      "adaptations": ["新增可选 projectService，消费者仅在实际项目提供方存在时显示原编辑入口。"]
+      "copiedSha256": "fa09ad687b2ef22f5af97f1c5b551659e588867d39db3cda719be69b00f5a2ed",
+      "adaptations": [
+        "新增可选 projectService，消费者仅在实际项目提供方存在时显示原编辑入口。",
+        "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/bots/bots.ts",
@@ -16161,8 +16264,11 @@
       "source": "references/zcode/packages/services/src/index.ts",
       "target": "packages/zcode-services/src/index.ts",
       "sha256": "b6c905865dfa0f63bd83134ec26629ff417eff1bf472683acbac4bacb8293caf",
-      "copiedSha256": "7e0222e9c6b7debb5049a4cc97ee7c6479321e7741e4a1eea9cf189e825b941a",
-      "adaptations": ["导出本机项目创建与编辑所需的原浏览器 descriptor、创建/编辑联合输入，以及真实归档消费者使用的 ProjectTask/ProjectTree 类型。"]
+      "copiedSha256": "5601918d5abbc4a67104aabafce1e3e63312f18da0b35dcb078af6a6b893cfc8",
+      "adaptations": [
+        "导出本机项目创建与编辑所需的原浏览器 descriptor、创建/编辑联合输入，以及真实归档消费者使用的 ProjectTask/ProjectTree 类型。",
+        "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/logger/serviceLogger.ts",
@@ -16319,15 +16425,20 @@
       "source": "references/zcode/packages/services/src/session/zcodeTaskListTypes.ts",
       "target": "packages/zcode-services/src/session/zcodeTaskListTypes.ts",
       "sha256": "d1a637fef7a84002c0445777d2d426782c78337998c22580f9f8d4ec66dfbfa6",
-      "copiedSha256": "d1a637fef7a84002c0445777d2d426782c78337998c22580f9f8d4ec66dfbfa6",
-      "adaptations": []
+      "copiedSha256": "352a21b22915f0476614f9fad7169f075ddaa2b6d62c3655499eb3cc33bb34b5",
+      "adaptations": [
+        "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/session/zcodeTaskService.ts",
       "target": "packages/zcode-services/src/session/zcodeTaskService.ts",
       "sha256": "7552f9faa1419dd5516c199472e66010c6e74a8accdb21efa9abe73415777c18",
-      "copiedSha256": "dcac1b1c8d071d05b0d07495b5d9a92f13cca262187b412bbf8cc021073e928b",
-      "adaptations": ["本机归档、恢复及条件删除携带可信 Task 项目与分支观察值，真实宿主按同一观察身份接纳并拒绝迟到操作。"]
+      "copiedSha256": "a2f9accc3b76ce55d26b413998bf3969df8321d0a79444555efbae6becf5b240",
+      "adaptations": [
+        "本机归档、恢复及条件删除携带可信 Task 项目与分支观察值，真实宿主按同一观察身份接纳并拒绝迟到操作。",
+        "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。"
+      ]
     },
     {
       "source": "references/zcode/packages/services/src/setting/setting.ts",
@@ -24919,10 +25030,11 @@
       "source": "references/zcode/packages/client/src/remoteServiceAccess.ts",
       "target": "apps/web/src/components/workbench/zcode/host/upstream/remoteServiceAccess.ts",
       "sha256": "f86cb98cb51aa78f526d8b7206d0476ef4308058fbc90ffd64bfe9e6edc9f29b",
-      "copiedSha256": "7c1fc11f68643f2ba7a654062f44bcd8e5d3d2c04c0a4fe1aa23cead545a4821",
+      "copiedSha256": "5fcf1da93a64aec0c600103bb57a0b5861957dfddf9fb5645a80b1e639dabb03",
       "adaptations": [
         "沿原 ProxyChannel 创建本批实际提供的 projectService 代理。",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "通过原ProxyChannel连接实际task-groups频道与已验证宿主贡献，不维护第二份组织存储。"
       ]
     },
     {

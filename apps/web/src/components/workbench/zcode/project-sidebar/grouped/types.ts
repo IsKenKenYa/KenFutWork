@@ -1,4 +1,8 @@
-import type { ZCodeTaskGroupColor } from "@zcode/services";
+import type {
+  TaskGroup,
+  TaskGroupColor as ZCodeTaskGroupColor,
+  ProjectTask,
+} from "@zui/project-sidebar/contract.js";
 
 interface TaskGroupMenuItem {
   id: string;
@@ -59,3 +63,14 @@ export {
 };
 
 export type { TaskGroupMenuItem };
+
+// 删除前分组组件的展示契约；行集合只从当前目录投影，不恢复旧事实缓存。
+export type { ZCodeTaskGroupColor };
+export type ZCodeTaskGroup = TaskGroup;
+export type ZCodeGroupedTaskViewNode =
+  | { type: "group"; group: TaskGroup; tasks: ProjectTask[] }
+  | { type: "task"; task: ProjectTask };
+export interface ZCodeGroupedTaskView {
+  nodes: ZCodeGroupedTaskViewNode[];
+}
+export type GroupedDraftTaskPlacement = { type: "top" } | { type: "group"; groupId: string };

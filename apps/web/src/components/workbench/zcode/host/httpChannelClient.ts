@@ -24,6 +24,7 @@ import {
 import {
   IFileService,
   IFileWatcherService,
+  IGitService,
   type IServiceAccessor,
   IWindowControllerService,
 } from "@zcode/services";
@@ -312,7 +313,10 @@ export class CodeHttpChannelClient implements IChannelClient {
   }
   fileServicesForViewer(
     source: CodeUiViewerScope,
-  ): Pick<IServiceAccessor, "fileService" | "fileWatcherService"> {
+  ): Pick<
+    IServiceAccessor,
+    "fileService" | "fileWatcherService" | "gitService"
+  > {
     const viewerScope = Object.freeze(codeUiViewerScopeSchema.parse(source));
     const channelFor = (channelName: string): IChannel => {
       const channel = this.getChannel<IChannel>(channelName);
@@ -329,6 +333,9 @@ export class CodeHttpChannelClient implements IChannelClient {
       ),
       fileWatcherService: ProxyChannel.toService<IFileWatcherService>(
         channelFor(IFileWatcherService.channelName),
+      ),
+      gitService: ProxyChannel.toService<IGitService>(
+        channelFor(IGitService.channelName),
       ),
     };
   }
@@ -653,6 +660,13 @@ export class CodeHttpChannelClient implements IChannelClient {
               ),
           };
           this.servicesChanges.fire();
+          // 实例分组可能在断线期间改变；沿原失效通知重读，保留当前编辑意图。
+          this.notifications.fire({
+            event: "service",
+            service: ServiceChannels.Broadcast,
+            name: "onMessage",
+            data: { channel: "state:task-groups", payload: {} },
+          });
           for (const [key, scope] of this.workspaceSubscriptions)
             this.notifications.fire({
               event: "service",

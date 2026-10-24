@@ -1,9 +1,9 @@
 import type { BrowserStorageLike } from "@zui/lib/browserEnvironment.js";
 import { getSafeLocalStorage } from "@zui/lib/browserEnvironment.js";
 
-const GROUPED_TASK_COLLAPSED_GROUPS_STORAGE_KEY = "zcode-grouped-task-collapsed-groups";
+export const GROUPED_TASK_COLLAPSED_GROUPS_STORAGE_KEY = "zcode-grouped-task-collapsed-groups";
 
-type GroupedTaskCollapsedGroupState = Record<string, true>;
+export type GroupedTaskCollapsedGroupState = Record<string, true>;
 
 function normalizeCollapsedGroupState(value: unknown): GroupedTaskCollapsedGroupState {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -54,6 +54,6 @@ export function persistGroupedTaskCollapsedGroupIds(
       JSON.stringify(collapsedGroupIdsToState(collapsedGroupIds)),
     );
   } catch {
-    // 受限浏览器或 SSR 测试里 storage 可能不可写，折叠状态写入失败不能阻断侧栏交互。
+    // Bugfix: 受限浏览器或 SSR 测试里 storage 可能不可写，折叠状态写入失败不能阻断侧栏交互。
   }
 }

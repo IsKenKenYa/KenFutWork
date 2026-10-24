@@ -1,13 +1,15 @@
-/* eslint-disable max-lines -- group header 的颜色菜单、右键菜单、rename 焦点保护和组内 task 渲染共享同一个 group 上下文，后续再按交互域继续拆。 */
+import { SidebarNativeTooltip, ControlHintTooltip } from "@zui/ControlHintTooltip.js";
+import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+import type {
+  ZCodeGroupedTaskViewNode,
+  ZCodeTaskGroupColor,
+} from "@zui/project-sidebar/grouped/types.js";
+import type { GroupRenameDraft } from "@zui/project-sidebar/useTaskGroups.js";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import type { ZCodeGroupedTaskViewNode, ZCodeTaskGroupColor } from "@zcode/services";
-import {
-  CRON_DEFAULT_GROUP_ID,
-  OFF_PEAK_DEFAULT_GROUP_ID,
-  type ZCodeTaskMeta,
-} from "@zcode/shared";
+
+import { CRON_DEFAULT_GROUP_ID, OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
 import { ChevronDownIcon, ChevronRightIcon, MessageCirclePlus } from "lucide-react";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
@@ -29,14 +31,13 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
 import { isImeComposingKeyEvent } from "@zui/lib/imeComposition.js";
-import { EmptyGroupDropZone } from "@zui/workspace-grouped-tasks/task-item.js";
-import { GroupedDraftTaskRow } from "@zui/workspace-grouped-tasks/draft-task-row.js";
-import { getTaskGroupDisplayTitle } from "@zui/workspace-grouped-tasks/group-title.js";
-import { VirtualizedGroupedTaskList } from "@zui/workspace-grouped-tasks/virtualized-group-task-list.js";
+import { EmptyGroupDropZone } from "@zui/project-sidebar/grouped/task-item.js";
+import { GroupedDraftTaskRow } from "@zui/project-sidebar/grouped/draft-task-row.js";
+import { getTaskGroupDisplayTitle } from "@zui/project-sidebar/grouped/group-title.js";
+import { VirtualizedGroupedTaskList } from "@zui/project-sidebar/grouped/virtualized-group-task-list.js";
 import {
   TASK_GROUP_BORDER_COLOR_CLASS,
   TASK_GROUP_COLORS,
@@ -47,8 +48,8 @@ import {
   TASK_GROUP_TITLE_CLASS,
   TaskGroupColorDot,
   TaskGroupColorMark,
-} from "@zui/workspace-grouped-tasks/shared.js";
-import type { TaskGroupMenuItem } from "@zui/workspace-grouped-tasks/shared.js";
+} from "@zui/project-sidebar/grouped/shared.js";
+import type { TaskGroupMenuItem } from "@zui/project-sidebar/grouped/shared.js";
 
 export function GroupItem({
   node,
@@ -56,6 +57,7 @@ export function GroupItem({
   activeWorkspacePath,
   activeWorkspaceIdentity,
   activeTaskId,
+  mobileActiveTaskKey,
   getTaskRemoteSessionId,
   getTaskWorkspaceLabel,
   onSelectTask,
@@ -68,6 +70,11 @@ export function GroupItem({
   onSelectDraftTask,
   onCloseDraftTask,
   onRenameGroup,
+  renameState,
+  onStartRenameGroup,
+  onChangeRenameGroup,
+  onCancelRenameGroup,
+  revision,
   onUpdateGroupColor,
   onUngroupGroup,
   onMoveTaskToGroup,
@@ -88,6 +95,7 @@ export function GroupItem({
   activeWorkspacePath: string;
   activeWorkspaceIdentity?: string;
   activeTaskId: string | null;
+  mobileActiveTaskKey?: string | null;
   getTaskRemoteSessionId: (task: ZCodeTaskMeta) => string | undefined;
   getTaskWorkspaceLabel: (task: ZCodeTaskMeta) => string;
   onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
@@ -99,9 +107,14 @@ export function GroupItem({
   draftWorkspaceLabel?: string;
   onSelectDraftTask?: () => void;
   onCloseDraftTask?: () => void;
-  onRenameGroup: (groupId: string, title: string) => void;
-  onUpdateGroupColor: (groupId: string, color: ZCodeTaskGroupColor) => void;
-  onUngroupGroup: (groupId: string) => void;
+  onRenameGroup: (groupId: string) => Promise<void>;
+  renameState?: GroupRenameDraft;
+  onStartRenameGroup: (groupId: string, revision: number) => void;
+  onChangeRenameGroup: (groupId: string, title: string) => void;
+  onCancelRenameGroup: (groupId: string) => void;
+  revision: number;
+  onUpdateGroupColor: (groupId: string, color: ZCodeTaskGroupColor, revision: number) => void;
+  onUngroupGroup: (groupId: string, revision: number) => void;
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;
   onMoveTaskToTop: (task: ZCodeTaskMeta) => void;
   onStartRenameTask: (task: ZCodeTaskMeta) => void;
@@ -116,8 +129,10 @@ export function GroupItem({
   tooltipsDisabled?: boolean;
 }) {
   const { intl } = useZCodeIntl();
-  const [renaming, setRenaming] = useState(false);
-  const [renameDraft, setRenameDraft] = useState(node.group.title);
+  const renaming = Boolean(renameState);
+  const renameDraft = renameState?.title ?? node.group.title;
+  const contextRevision = useRef(revision);
+  const colorRevision = useRef(revision);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const titleMeasureButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuRenamePendingRef = useRef(false);
@@ -198,12 +213,6 @@ export function GroupItem({
   );
   useLayoutEffect(() => {
     if (!renaming) {
-      setRenameDraft(node.group.title);
-    }
-  }, [node.group.title, renaming]);
-
-  useLayoutEffect(() => {
-    if (!renaming) {
       setTitleEditorWidth(null);
       return undefined;
     }
@@ -226,22 +235,25 @@ export function GroupItem({
     }
     const animationFrame = window.requestAnimationFrame(() => {
       titleInputRef.current?.focus();
-      titleInputRef.current?.select();
+      if (titleInputRef.current?.value === node.group.title) titleInputRef.current.select();
     });
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [renaming]);
+  }, [renaming, node.group.title]);
 
-  const focusRenameInput = useCallback((options?: { select?: boolean }) => {
-    const focus = () => {
-      titleInputRef.current?.focus();
-      if (options?.select) {
-        titleInputRef.current?.select();
-      }
-    };
-    const animationFrame = window.requestAnimationFrame(focus);
-    window.setTimeout(focus, 0);
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, []);
+  const focusRenameInput = useCallback(
+    (options?: { select?: boolean }) => {
+      const focus = () => {
+        titleInputRef.current?.focus();
+        if (options?.select) {
+          if (titleInputRef.current?.value === node.group.title) titleInputRef.current.select();
+        }
+      };
+      const animationFrame = window.requestAnimationFrame(focus);
+      window.setTimeout(focus, 0);
+      return () => window.cancelAnimationFrame(animationFrame);
+    },
+    [node.group.title],
+  );
 
   const armMenuRenameFocusGuard = useCallback(() => {
     menuRenameFocusGuardRef.current = true;
@@ -266,13 +278,13 @@ export function GroupItem({
   }, []);
 
   const startRename = useCallback(() => {
-    setRenameDraft(node.group.title);
-    setRenaming(true);
-  }, [node.group.title]);
+    onStartRenameGroup(node.group.id, revision);
+  }, [node.group.id, onStartRenameGroup, revision]);
 
   const startRenameFromMenu = useCallback(() => {
+    onStartRenameGroup(node.group.id, revision);
     menuRenamePendingRef.current = true;
-  }, []);
+  }, [node.group.id, revision, onStartRenameGroup]);
 
   const consumePendingMenuRename = useCallback(() => {
     if (!menuRenamePendingRef.current) {
@@ -283,25 +295,25 @@ export function GroupItem({
       groupId: node.group.id,
     });
     armMenuRenameFocusGuard();
-    startRename();
     focusRenameInput({ select: true });
     return true;
-  }, [armMenuRenameFocusGuard, focusRenameInput, node.group.id, startRename]);
+  }, [armMenuRenameFocusGuard, focusRenameInput, node.group.id]);
 
   const handleContextMenuOpenChange = useCallback(
     (open: boolean) => {
+      if (open) contextRevision.current = revision;
       if (!open) {
         window.setTimeout(consumePendingMenuRename, 0);
       }
     },
-    [consumePendingMenuRename],
+    [consumePendingMenuRename, revision],
   );
 
   const handleContextMenuCloseAutoFocus = useCallback(
     (event: Event) => {
       // Radix context menu 关闭时会把焦点还给 trigger。
-      // Rename 需要把焦点交给新出现的 input；这里先阻止默认 focus restore，再进入编辑态。
-      if (consumePendingMenuRename()) {
+      // 名称输入仍挂载时保留当前焦点，菜单关闭动画的迟到回调也不能移回组标题。
+      if (consumePendingMenuRename() || titleInputRef.current?.isConnected) {
         event.preventDefault();
       }
     },
@@ -309,18 +321,16 @@ export function GroupItem({
   );
 
   const cancelRename = useCallback(() => {
-    setRenameDraft(node.group.title);
-    setRenaming(false);
-  }, [node.group.title]);
+    menuRenameFocusGuardRef.current = false;
+    newGroupInitialFocusGuardRef.current = false;
+    onCancelRenameGroup(node.group.id);
+  }, [node.group.id, onCancelRenameGroup]);
 
   const commitRename = useCallback(() => {
-    const nextTitle = renameDraft.trim() || node.group.title;
-    setRenaming(false);
-    if (nextTitle === node.group.title) {
-      return;
-    }
-    onRenameGroup(node.group.id, nextTitle);
-  }, [node.group.id, node.group.title, onRenameGroup, renameDraft]);
+    menuRenameFocusGuardRef.current = false;
+    newGroupInitialFocusGuardRef.current = false;
+    void onRenameGroup(node.group.id);
+  }, [node.group.id, onRenameGroup]);
 
   const handleRenameKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
@@ -338,7 +348,11 @@ export function GroupItem({
           });
           return;
         }
-        event.currentTarget.blur();
+        // 回归实测：显式 Enter 若只触发 blur，会被旧版菜单的焦点保护吞掉。
+        // 直接提交用户意图，保留保护逻辑处理菜单自动抢焦和 IME 候选确认。
+        event.preventDefault();
+        event.stopPropagation();
+        commitRename();
         return;
       }
       if (event.key === "Escape") {
@@ -348,7 +362,7 @@ export function GroupItem({
         cancelRename();
       }
     },
-    [cancelRename, node.group.id],
+    [cancelRename, commitRename, node.group.id],
   );
 
   const handleRenameBlur = useCallback(() => {
@@ -389,6 +403,7 @@ export function GroupItem({
 
   const handleColorMenuOpenChange = useCallback(
     (open: boolean) => {
+      if (open && !colorMenuOpen) colorRevision.current = revision;
       if (!open && newGroupInitialFocusGuardRef.current) {
         // 新建 group 同时要求 name input 保持焦点、color menu 自动展开。
         // Radix 在 input 回焦时会把这次初始展开判成外部焦点移动并请求关闭；
@@ -401,12 +416,12 @@ export function GroupItem({
       }
       setColorMenuOpen(open);
     },
-    [node.group.id],
+    [node.group.id, colorMenuOpen, revision],
   );
 
   const handleGroupColorChange = useCallback(
-    (color: string) => {
-      onUpdateGroupColor(node.group.id, color as ZCodeTaskGroupColor);
+    (color: string, observedRevision = colorRevision.current) => {
+      onUpdateGroupColor(node.group.id, color as ZCodeTaskGroupColor, observedRevision);
     },
     [node.group.id, onUpdateGroupColor],
   );
@@ -449,6 +464,7 @@ export function GroupItem({
     });
     armNewGroupInitialFocusGuard();
     startRename();
+    colorRevision.current = revision;
     setColorMenuOpen(true);
     focusRenameInput({ select: true });
     onNewGroupSetupStarted(node.group.id);
@@ -459,6 +475,7 @@ export function GroupItem({
     node.group.id,
     onNewGroupSetupStarted,
     startRename,
+    revision,
   ]);
 
   const newTaskButton = (
@@ -467,6 +484,7 @@ export function GroupItem({
       variant="ghost"
       size="icon-sm"
       className="shrink-0 text-foreground-subtle hover:text-foreground"
+      data-testid="task-group-new-task"
       aria-label={intl.formatMessage({ id: "taskGroup.newTask" })}
       onClick={(event) => {
         event.stopPropagation();
@@ -492,6 +510,8 @@ export function GroupItem({
       ref={setGroupItemNodeRef}
       className={TASK_GROUP_CONTAINER_CLASS}
       data-grouped-group-item-id={node.group.id}
+      data-task-group-id={node.group.id}
+      data-task-group-title={node.group.title}
       data-group-collapsed={visualCollapsed ? "true" : "false"}
     >
       <ContextMenu onOpenChange={handleContextMenuOpenChange}>
@@ -500,7 +520,10 @@ export function GroupItem({
             ref={setGroupHeaderNodeRef}
             {...groupDraggable.attributes}
             {...groupDraggable.listeners}
+            // 改名仅暂停拖拽；容器不可用会让内部输入框也继承禁用语义。
+            aria-disabled={undefined}
             data-grouped-group-header-id={node.group.id}
+            data-testid="task-group-menu"
             role="button"
             tabIndex={0}
             aria-controls={groupContentId}
@@ -522,6 +545,7 @@ export function GroupItem({
                 <button
                   type="button"
                   className="flex size-5 shrink-0 items-center justify-center rounded-full hover:bg-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-input-border-focused"
+                  data-testid="task-group-color-trigger"
                   aria-label={intl.formatMessage({ id: "taskGroup.color" })}
                   onClick={(event) => event.stopPropagation()}
                   onMouseDown={(event) => event.stopPropagation()}
@@ -545,7 +569,11 @@ export function GroupItem({
                   onValueChange={handleGroupColorChange}
                 >
                   {TASK_GROUP_COLORS.map((color) => (
-                    <DropdownMenuRadioItem key={color} value={color}>
+                    <DropdownMenuRadioItem
+                      key={color}
+                      value={color}
+                      data-testid={`task-group-color-${color}`}
+                    >
                       <TaskGroupColorDot color={color} />
                       <span>{intl.formatMessage({ id: `taskGroup.color.${color}` })}</span>
                     </DropdownMenuRadioItem>
@@ -574,19 +602,25 @@ export function GroupItem({
                     {titleEditorText}
                   </button>
                   <input
+                    data-testid="task-group-title-input"
+                    aria-busy={renameState?.pending ?? false}
                     ref={titleInputRef}
                     autoFocus
                     className="w-full min-w-0 truncate rounded-sm border-0 bg-transparent px-1 py-0 text-left text-ui-base leading-normal text-foreground outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-input-border-focused"
                     value={renameDraft}
                     onBlur={handleRenameBlur}
-                    onChange={(event) => setRenameDraft(event.target.value)}
+                    onChange={(event) => onChangeRenameGroup(node.group.id, event.target.value)}
                     onCompositionEnd={() => {
                       renameCompositionActiveRef.current = false;
                     }}
                     onCompositionStart={() => {
                       renameCompositionActiveRef.current = true;
                     }}
-                    onFocus={(event) => event.currentTarget.select()}
+                    onFocus={(event) => {
+                      // 菜单收尾的迟到回焦不能全选已输入内容，否则后续按键会覆盖名称前缀。
+                      if (event.currentTarget.value === node.group.title)
+                        event.currentTarget.select();
+                    }}
                     onKeyDown={handleRenameKeyDown}
                     onMouseDown={(event) => event.stopPropagation()}
                     onPointerDown={(event) => event.stopPropagation()}
@@ -595,14 +629,16 @@ export function GroupItem({
                   />
                 </label>
               ) : (
-                <button
-                  type="button"
-                  className={TASK_GROUP_TITLE_CLASS}
-                  title={displayTitle}
-                  aria-label={displayTitle}
-                >
-                  {displayTitle}
-                </button>
+                <SidebarNativeTooltip>
+                  <button
+                    type="button"
+                    className={TASK_GROUP_TITLE_CLASS}
+                    title={displayTitle}
+                    aria-label={displayTitle}
+                  >
+                    {displayTitle}
+                  </button>
+                </SidebarNativeTooltip>
               )}
               {visualCollapsed ? (
                 <ChevronRightIcon
@@ -629,7 +665,7 @@ export function GroupItem({
           {isSystemGroup ? null : (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onSelect={startRenameFromMenu}>
+              <ContextMenuItem data-testid="task-group-rename" onSelect={startRenameFromMenu}>
                 {intl.formatMessage({ id: "taskGroup.renameAction" })}
               </ContextMenuItem>
             </>
@@ -644,7 +680,7 @@ export function GroupItem({
               onPointerDown={(event) => event.stopPropagation()}
             >
               {TASK_GROUP_COLORS.map((color) => (
-                <ContextMenuItem key={color} onSelect={() => handleGroupColorChange(color)}>
+                <ContextMenuItem key={color} onSelect={() => handleGroupColorChange(color, contextRevision.current)}>
                   <TaskGroupColorDot color={color} />
                   <span>{intl.formatMessage({ id: `taskGroup.color.${color}` })}</span>
                 </ContextMenuItem>
@@ -654,7 +690,10 @@ export function GroupItem({
           {isSystemGroup ? null : (
             <>
               <ContextMenuSeparator />
-              <ContextMenuItem onSelect={() => onUngroupGroup(node.group.id)}>
+              <ContextMenuItem
+                data-testid="task-group-ungroup"
+                onSelect={() => onUngroupGroup(node.group.id, contextRevision.current)}
+              >
                 {intl.formatMessage({ id: "taskGroup.ungroup" })}
               </ContextMenuItem>
             </>
@@ -672,7 +711,7 @@ export function GroupItem({
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          {/* grouped task 的折叠内容不再走 Radix Collapsible。
+          {/* Bugfix: grouped task 的折叠内容不再走 Radix Collapsible。
                 Radix Presence 和高度变量会在频繁挂载时重放动画；这里用本地受控容器，
                 并在收起动画后卸载组内 task。 */}
           {shouldRenderGroupContent ? (
@@ -699,6 +738,7 @@ export function GroupItem({
                     activeWorkspacePath={activeWorkspacePath}
                     activeWorkspaceIdentity={activeWorkspaceIdentity}
                     activeTaskId={activeTaskId}
+                    mobileActiveTaskKey={mobileActiveTaskKey}
                     onSelectTask={onSelectTask}
                     onCloseTask={onCloseTask}
                     onOpenFileTree={onOpenFileTree}
@@ -726,6 +766,7 @@ export function GroupItem({
                       activeWorkspacePath={activeWorkspacePath}
                       activeWorkspaceIdentity={activeWorkspaceIdentity}
                       activeTaskId={activeTaskId}
+                      mobileActiveTaskKey={mobileActiveTaskKey}
                       onSelectTask={onSelectTask}
                       onCloseTask={onCloseTask}
                       onOpenFileTree={onOpenFileTree}

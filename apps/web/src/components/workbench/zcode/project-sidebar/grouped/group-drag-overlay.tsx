@@ -1,8 +1,9 @@
+import type { ZCodeGroupedTaskViewNode } from "@zui/project-sidebar/grouped/types.js";
 import type { CSSProperties } from "react";
-import type { ZCodeGroupedTaskViewNode } from "@zcode/services";
+
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { TaskGroupColorMark } from "@zui/workspace-grouped-tasks/colors.js";
-import { getTaskGroupDisplayTitle } from "@zui/workspace-grouped-tasks/group-title.js";
+import { TaskGroupColorMark } from "@zui/project-sidebar/grouped/colors.js";
+import { getTaskGroupDisplayTitle } from "@zui/project-sidebar/grouped/group-title.js";
 
 type GroupNode = Extract<ZCodeGroupedTaskViewNode, { type: "group" }>;
 

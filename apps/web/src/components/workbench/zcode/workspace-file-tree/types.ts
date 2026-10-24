@@ -1,3 +1,4 @@
+import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import type { EditorInfo, OpenInEditorRemoteTarget } from "@zcode/shared";
 import type { IDisposable } from "@zcode/rpc";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
@@ -8,6 +9,7 @@ export interface WorkspaceFileTreeProps {
   workspaceName?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
+  viewerScope?: CodeUiViewerScope;
   revealPath?: string;
   temporaryExternalDirectory?: boolean;
   canOpenLocalFileManager?: boolean;

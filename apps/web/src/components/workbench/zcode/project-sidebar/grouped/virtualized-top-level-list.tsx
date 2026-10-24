@@ -1,12 +1,13 @@
+import type { ZCodeGroupedTaskViewNode } from "@zui/project-sidebar/grouped/types.js";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { ZCodeGroupedTaskViewNode } from "@zcode/services";
-import { taskKey } from "@zui/workspace-grouped-tasks/ids.js";
+
+import { taskKey } from "@zui/project-sidebar/grouped/ids.js";
 import {
   isPotentialVerticalScrollContainer,
   scrollGroupedTaskVirtualizerToOffset,
-} from "@zui/workspace-grouped-tasks/virtualized-scroll.js";
+} from "@zui/project-sidebar/grouped/virtualized-scroll.js";
 
 const GROUPED_TOP_LEVEL_TASK_ROW_ESTIMATE_PX = 32;
 const GROUPED_TOP_LEVEL_GROUP_HEADER_ESTIMATE_PX = 40;

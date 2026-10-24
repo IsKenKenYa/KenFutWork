@@ -40,9 +40,11 @@ import type { IWindowControllerService } from "./window-controller/windowControl
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
 import type { IConversationShareService } from "./conversation-share/conversationShare.js";
 import type { IProjectService } from "./project/contract.js";
+import type { ITaskGroupService } from "./task-groups/contract.js";
 
 /** UI 层消费的统一服务接口 */
 export interface IServiceAccessor {
+  readonly taskGroupService?: ITaskGroupService;
   readonly projectService?: IProjectService;
   readonly fileService: IFileService;
   readonly mediaPreviewService?: IMediaPreviewService;

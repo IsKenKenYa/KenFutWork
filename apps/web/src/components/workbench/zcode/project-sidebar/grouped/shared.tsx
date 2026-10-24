@@ -1,5 +1,5 @@
-export { TaskGroupColorDot, TaskGroupColorMark } from "@zui/workspace-grouped-tasks/colors.js";
-export { taskKey } from "@zui/workspace-grouped-tasks/ids.js";
+export { TaskGroupColorDot, TaskGroupColorMark } from "@zui/project-sidebar/grouped/colors.js";
+export { taskKey } from "@zui/project-sidebar/grouped/ids.js";
 export {
   areAllGroupedTaskGroupsExpanded,
   cloneView,
@@ -17,7 +17,7 @@ export {
   removeTaskFromGroupedView,
   replaceTaskInGroupedView,
   resolveGroupedDraftTaskPlacementForTask,
-} from "@zui/workspace-grouped-tasks/view.js";
+} from "@zui/project-sidebar/grouped/view.js";
 export {
   TASK_GROUP_BORDER_COLOR_CLASS,
   TASK_GROUP_COLORS,
@@ -27,6 +27,6 @@ export {
   TASK_GROUP_HEADER_CLASS,
   TASK_GROUP_ROW_CLASS,
   TASK_GROUP_TITLE_CLASS,
-} from "@zui/workspace-grouped-tasks/types.js";
-export type { TaskGroupMenuItem } from "@zui/workspace-grouped-tasks/types.js";
-export type { GroupedTaskInsertPosition } from "@zui/workspace-grouped-tasks/view.js";
+} from "@zui/project-sidebar/grouped/types.js";
+export type { TaskGroupMenuItem } from "@zui/project-sidebar/grouped/types.js";
+export type { GroupedTaskInsertPosition } from "@zui/project-sidebar/grouped/view.js";

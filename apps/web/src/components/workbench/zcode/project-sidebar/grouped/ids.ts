@@ -1,4 +1,5 @@
-import type { ZCodeTaskMeta } from "@zcode/shared";
+import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+
 import { buildTaskWorkspaceKey } from "@zui/lib/taskQueryCache.js";
 
 function taskKey(

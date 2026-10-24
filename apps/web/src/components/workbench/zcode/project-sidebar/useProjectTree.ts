@@ -91,10 +91,10 @@ export function useProjectTree() {
   }, [tree.tasks]);
   const scopeKey = JSON.stringify(scopes);
   useEffect(() => {
-    if (!controller || !scopes.length) return;
+    if (!controller) return;
     const registry = getWindowControllerTaskListRegistry(controller);
     const release = registry.subscribe(() => void refresh());
-    void registry.list(
+    if (scopes.length) void registry.list(
       "project-directory",
       { controllerRevision: registry.getRevision(), taskListVersionSignature: scopeKey },
       { kind: "timeline", workspaceScopes: scopes, sortBy: "updated", limit: 0 },

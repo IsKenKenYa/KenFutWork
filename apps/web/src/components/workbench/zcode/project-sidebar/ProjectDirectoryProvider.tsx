@@ -1,7 +1,14 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useProjectTree } from "@zui/project-sidebar/useProjectTree.js";
+import { useTaskGroups } from "@zui/project-sidebar/useTaskGroups.js";
 
-const Context = createContext<ReturnType<typeof useProjectTree> | null>(null);
+function useDirectoryState() {
+  const directory = useProjectTree();
+  const groups = useTaskGroups(directory.tree, directory.loading);
+  return useMemo(() => ({ ...directory, groups }), [directory, groups]);
+}
+
+const Context = createContext<ReturnType<typeof useDirectoryState> | null>(null);
 
 /** 原目录 owner 在本机读取持久 Project/Task；嵌入面复用已有 owner。 */
 export function ProjectDirectoryProvider({ children }: { children: ReactNode }) {
@@ -10,7 +17,7 @@ export function ProjectDirectoryProvider({ children }: { children: ReactNode }) 
 }
 
 function DirectoryOwner({ children }: { children: ReactNode }) {
-  const directory = useProjectTree();
+  const directory = useDirectoryState();
   return <Context.Provider value={directory}>{children}</Context.Provider>;
 }
 
@@ -18,4 +25,8 @@ export function useProjectDirectory() {
   const directory = useContext(Context);
   if (!directory) throw new Error("project.directory-provider-required");
   return directory;
+}
+
+export function useOptionalProjectDirectory() {
+  return useContext(Context);
 }

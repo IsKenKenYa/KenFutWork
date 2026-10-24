@@ -15,6 +15,7 @@ import type {
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   buildCustomSupplierKey,
+  isLocalWorkspaceTarget,
   localizeConversationShareUrl,
   TID_CHAT_EMPTY,
   TID_V4_SESSION_PANE,
@@ -53,6 +54,7 @@ import { useWorkflowRunJournalSummaries } from "@zui/hooks/useWorkflowRunJournal
 import { useWorkspaceHomePath } from "@zui/hooks/useWorkspaceHomePath.js";
 import { prepareWorkspaceWithZCodeSessionService } from "@zui/hooks/useWorkspacePrepare.js";
 import { useBaseWorkspaceServices, useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
+import { useOptionalProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
 import { isProviderNotReadyError } from "@zui/lib/chatPrepareError.js";
@@ -597,6 +599,7 @@ export function SessionPane({
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const baseWorkspaceServices = useBaseWorkspaceServices();
+  const refreshTaskGroups = useOptionalProjectDirectory()?.groups.refresh;
   const configWorkspaceServices = useWorkspaceServicesResolution(workspacePath, remoteSessionId, workspaceIdentity);
   const workspaceHomePath = useWorkspaceHomePath({
     workspacePath,
@@ -1388,6 +1391,56 @@ export function SessionPane({
     },
     [platform, workspacePath, workspaceIdentity, remoteSessionId, isDesktop],
   );
+  const organizeCreatedGroupedTask = useCallback((
+    createdSessionId: string,
+    groupedDraftTask: GroupedDraftTaskState,
+    messageId?: string,
+  ) => {
+    const task = {
+      hostId: "local",
+      taskId: createdSessionId,
+      workspacePath: groupedDraftTask.workspacePath,
+      workspaceIdentity: groupedDraftTask.workspaceIdentity,
+    };
+    const placement = {
+      task,
+      groupId: groupedDraftTask.placement.type === "group"
+        ? groupedDraftTask.placement.groupId : null,
+      creationId: messageId ?? createdSessionId,
+    };
+    let flight: Promise<void> | undefined;
+    const attempt = (): Promise<void> => {
+      if (flight) return flight;
+      flight = (async () => {
+        try {
+          if (!task.workspaceIdentity || !isLocalWorkspaceTarget(task))
+            throw new Error("task-group.local-task-identity-required");
+          if (!baseWorkspaceServices.taskGroupService)
+            throw new Error("task-group.service-unavailable");
+          await baseWorkspaceServices.taskGroupService.admit({ tasks: [task], placement });
+          useZCodeSessionStore.getState().clearPromotedGroupedDraftTask(
+            task.workspacePath, task.taskId, task.workspaceIdentity,
+          );
+          // 已接受首发不等待组织重读；重读失败由目录 owner 保留错误。
+          void refreshTaskGroups?.().catch((cause) =>
+            logger.error("[task-groups] 新任务归属重读失败", cause),
+          );
+        } catch (cause) {
+          // 创建已接纳；重试只持有原 placement，不再次创建 Task 或发送消息。
+          logger.error("[task-groups] 新任务归属提交失败", cause);
+          toast(intl.formatMessage({ id: "taskGroup.updateFailed" }), {
+            variant: "warning",
+            durationMs: 0,
+            actionLabel: intl.formatMessage({ id: "common.retry" }),
+            onAction: () => void attempt(),
+            dedupeKey: `task-group:${createdSessionId}`,
+          });
+        }
+      })().finally(() => { flight = undefined; });
+      return flight;
+    };
+    void attempt();
+  }, [baseWorkspaceServices.taskGroupService, refreshTaskGroups, intl]);
   const handleDraftSessionCreated = useCallback(
     (
       createdSessionId: string,
@@ -1406,31 +1459,36 @@ export function SessionPane({
       // sessionId 直接交给同一 hook。预热 lease 还保留草稿期的 startedAt 与空 snapshot timing，
       // 因而把数小时闲置时间误记为 total/react。创建边界先标记本 pane 的首次绑定；离开后
       // 再次显式打开同一 Session 时标记会清除，恢复正常的已有 Session 打开测量。
-      newlyCreatedSessionIdRef.current = createdSessionId;
-      promoteComposerDraft(createdSessionId);
+      const ownsDraft = !groupedDraftTask || useZCodeSessionStore.getState()
+        .getWorkspaceState(groupedDraftTask.workspacePath, groupedDraftTask.workspaceIdentity)
+        .groupedDraftTask?.draftId === groupedDraftTask.draftId;
+      if (ownsDraft) {
+        newlyCreatedSessionIdRef.current = createdSessionId;
+        promoteComposerDraft(createdSessionId);
+      }
       // 只有 draft create/promote 的 accepted 边界能继承 grouped placement。
       // fork 和普通任务导航仍复用 onSessionCreated，但不会污染已有 task 的分组排序。
       if (groupedDraftTask) {
         promoteGroupedDraftTask(
-          workspacePath,
+          groupedDraftTask.workspacePath,
           createdSessionId,
           groupedDraftTask,
-          workspaceIdentity,
+          groupedDraftTask.workspaceIdentity,
         );
         logger.debug("[v4-pane] grouped draft 已显式提升", {
           createdSessionId,
           draftId: groupedDraftTask.draftId,
         });
+        organizeCreatedGroupedTask(createdSessionId, groupedDraftTask, messageId);
       }
-      onSessionCreated?.(createdSessionId);
+      if (ownsDraft) onSessionCreated?.(createdSessionId);
     },
     [
       reportDraftCreated,
       onSessionCreated,
       promoteComposerDraft,
       promoteGroupedDraftTask,
-      workspaceIdentity,
-      workspacePath,
+      organizeCreatedGroupedTask,
     ],
   );
   const { settings: sharedSettings } = useSettings();
@@ -2641,6 +2699,7 @@ export function SessionPane({
       text: string,
       options: ConversationComposerSendOptions | undefined,
       createSourceAtSend: SessionCreateSource,
+      groupedDraftTaskAtSend: GroupedDraftTaskState | null,
     ) => {
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
@@ -2687,13 +2746,6 @@ export function SessionPane({
         // 命令只负责配置 shortcut；后续必须走普通 sendText，不能进入 goal/compact command 分支。
         slashCommand = null;
       }
-      // create/send ACK 期间用户可能切换任务或创建另一份 draft。
-      // placement 必须绑定发送开始时的稳定 identity，不能在完成回调里读取当前 workspace 草稿。
-      const groupedDraftTaskAtSend =
-        sessionId === null
-          ? useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity)
-              .groupedDraftTask
-          : null;
       const selectionSideSlashCommand =
         sessionId && (appSlashCommands?.length ?? 0) > 0
           ? parseSelectionSideSlashCommand(text, readyAttachments, {
@@ -3059,11 +3111,14 @@ export function SessionPane({
         submission:
           options?.submission === undefined ? createSubmissionFromComposer() : options.submission,
       };
+      const groupedDraftTaskAtSend = sessionId === null
+        ? useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity).groupedDraftTask
+        : null;
       // followupMode 仍通过 Session CAS 同步；模型和模式已封装进 Submission，不再
       // 依赖“配置命令先到、sendText 后到”的跨命令时序。
       return configCommandBarrier.enqueue(async () => {
         try {
-          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource,
+          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource, groupedDraftTaskAtSend,
           );
         } catch (error) {
           if (sessionId === null && isProviderNotReadyError(error)) {

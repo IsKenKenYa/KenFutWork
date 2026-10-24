@@ -6,6 +6,7 @@ import { Event, type IChannel, ProxyChannel } from "@zcode/rpc";
 import type {
   IFileService,
   IFileWatcherService,
+  IGitService,
   IServiceAccessor,
 } from "@zcode/services";
 import { isLocalWorkspaceTarget } from "@zcode/shared";
@@ -22,11 +23,12 @@ const missingSourceChannel: IChannel = {
 };
 const missingSourceFileServices: Pick<
   IServiceAccessor,
-  "fileService" | "fileWatcherService"
+  "fileService" | "fileWatcherService" | "gitService"
 > = {
   fileService: ProxyChannel.toService<IFileService>(missingSourceChannel),
   fileWatcherService:
     ProxyChannel.toService<IFileWatcherService>(missingSourceChannel),
+  gitService: ProxyChannel.toService<IGitService>(missingSourceChannel),
 };
 
 export interface CodeViewerOrigin {
@@ -85,9 +87,11 @@ export function freezeCodeViewerSource(
 }
 
 export function codeFileServicesForViewer(
-  services: IServiceAccessor,
+  services: Pick<IServiceAccessor, "fileService">,
   scope: CodeUiViewerScope | undefined,
-): Pick<IServiceAccessor, "fileService" | "fileWatcherService"> | undefined {
+):
+  | Pick<IServiceAccessor, "fileService" | "fileWatcherService" | "gitService">
+  | undefined {
   const client = clientsByFiles.get(services.fileService);
   if (!client) return undefined;
   if (!scope) return missingSourceFileServices;

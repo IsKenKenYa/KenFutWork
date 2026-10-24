@@ -1,7 +1,8 @@
-import type { ZCodeTaskGroupColor } from "@zcode/services";
+import type { ZCodeTaskGroupColor } from "@zui/project-sidebar/grouped/types.js";
+
 import { Hash } from "lucide-react";
 import { cn } from "@zui/components/lib/utils.js";
-import { TASK_GROUP_COLOR_CLASS } from "@zui/workspace-grouped-tasks/types.js";
+import { TASK_GROUP_COLOR_CLASS } from "@zui/project-sidebar/grouped/types.js";
 
 function TaskGroupColorMark({ color }: { color: ZCodeTaskGroupColor }) {
   return (
