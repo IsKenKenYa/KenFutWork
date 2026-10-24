@@ -666,13 +666,14 @@ export class CodeHttpChannelClient implements IChannelClient {
               ),
           };
           this.servicesChanges.fire();
-          // 实例分组可能在断线期间改变；沿原失效通知重读，保留当前编辑意图。
-          this.notifications.fire({
-            event: "service",
-            service: ServiceChannels.Broadcast,
-            name: "onMessage",
-            data: { channel: "state:task-groups", payload: {} },
-          });
+          // 实例项目与分组可能在断线期间改变；沿原失效通知重读，保留当前编辑意图。
+          for (const channel of ["state:projects", "state:task-groups"])
+            this.notifications.fire({
+              event: "service",
+              service: ServiceChannels.Broadcast,
+              name: "onMessage",
+              data: { channel, payload: {} },
+            });
           for (const [key, scope] of this.workspaceSubscriptions)
             this.notifications.fire({
               event: "service",
