@@ -61,6 +61,11 @@ export interface WorkspaceShellZCodeState {
 }
 
 export interface CreateTaskOptions {
+  /** 显式项目选择使用稳定身份，主目录由真实宿主准备。 */
+  projectId?: string;
+  hostId?: "local";
+  /** 等待目录期间，原聊天或草稿改变后不接纳迟到导航。 */
+  isCurrent?: () => boolean;
   /** 异步预填只能提交到解析 Skill 时的同一新任务目标。 */
   expectedWorkspaceKey?: string;
   provider?: ZCodeProvider;

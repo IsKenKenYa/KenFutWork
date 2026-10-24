@@ -7,6 +7,26 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectComposerMenu.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectComposerMenu.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "d77ece4face28b1989db0f50cf64efe7ea4b43ca4d64c93a64cf8bc6b6a594bb",
+      "copiedSha256": "75f10f65d714c36cb3416fd520476c52c20e411c07dde469bc60710689e52ad1",
+      "adaptations": [
+        "映射 UI 导入和现有 shared 根导出，保留原本地菜单、项目及全部目录搜索、选择、创建、编辑和脱离入口。",
+        "移除没有本机提供方的远程连接与目录返回流程；目录候选按真实 catalog 的稳定 Project ID 和已启用工作方式筛选，当前项目使用 canonical identity。",
+        "选择连接 Root 的 prepareSession 消费，沿原 Tab、Task、草稿代际及当前模式拒绝迟到导航；分组继承现有 groupedDraftTask owner，创建和编辑继续复用已有共享管理组件。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/project-sidebar/ProjectFolderIcon.tsx",
+      "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectFolderIcon.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "bfdc9d4c7b7a6e83a9c1088472193f26ad12a94a54eb69db391035a268bec69e",
+      "copiedSha256": "bfdc9d4c7b7a6e83a9c1088472193f26ad12a94a54eb69db391035a268bec69e",
+      "adaptations": ["原件字节保真，由原项目菜单消费。"]
+    },
+    {
       "source": "references/zcode/packages/ui/src/project-sidebar/TaskGroupedView.tsx",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/TaskGroupedView.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
@@ -359,16 +379,16 @@
       "target": "packages/zcode-services/src/project/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "1bfa496b747335ef4a01a5bbe32e5977d320c6edc70b524fc24c31602a48d243",
-      "copiedSha256": "410a92f9ff2265a9d56a46b38857b58cbcfbe438fb54c9685e7d15cbd9fa7bde",
-      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。"]
+      "copiedSha256": "a53baae1c4f5cc4b7cd687bdb538679a74726a6aec65fa9bc3ddb66147cebeb4",
+      "adaptations": ["连接实际提供的本机项目树、项目读取、目录读取、创建、编辑和归档；项目树支持显式读取归档项目与最小 Task 删除身份。创建与编辑采用独立输入类型，类型由浏览器文件持有，不引入上游 SQLite 或远程提供方。", "prepareSession 连接所属 feature 的真实只读目录准备；输入使用 Project ID、本机 Host 和 Code/Design 工作方式，返回当前主目录及 canonical identity，不创建 Task。"]
     },
     {
       "source": "references/zcode/packages/services/src/project-storage/contract.ts",
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "19d6ba29a6e629bcc7f299655a7db7a27b74d81bc0d93a64f29a9312118e5be9",
-      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。"]
+      "copiedSha256": "7c9fcaa9b5860d110b6bac872ae341c84cb822e59e14caae9db585441f86a136",
+      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
@@ -2540,7 +2560,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "12b9056fb7c6450380719b0f87fc4b234b0abd1874cbfd1edd59a45739ecc76b",
+      "copiedSha256": "8fdcf817783712b0ee15ca2beae216662fc61bed1774131406da3dbbb3ba2504",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2549,7 +2569,8 @@
         "2026-10-14 OpenDesign 集成（O0+O2）：把两个 OpenDesign 开合回调接到侧栏面板。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "主线 Design 收口与对话/内容面 1:2 默认口径（09130f21/e875ff32/e3817631）；本仓修复：design 入口 ensureDesignCanvasEntry 失败保持已尝试键，防建画布失败触发请求与渲染自激回路",
-        "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。 同时保留本分支Design入口失败的已尝试键，避免自动重试回路。"
+        "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。 同时保留本分支Design入口失败的已尝试键，避免自动重试回路。",
+        "草稿头部实际装配 3.16.2 原 ProjectComposerMenu，Git 和插件内容保持原顺序；显式 Project ID 交由 Root 核验目标，现有 SessionPane、Canvas、Flow 与内容标签装配保持。"
       ]
     },
     {
@@ -2609,14 +2630,15 @@
       "source": "references/zcode/packages/ui/src/app-shell/types.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/types.ts",
       "sha256": "9ce881d8e9a5f9f684beff6971ca5d1d04bf26d84df68dc449101a5fb55fc27f",
-      "copiedSha256": "43d2438a178ec4f29ab0133cd079861b2e403de4f0f5219a7f0ee67dfb110acc",
+      "copiedSha256": "87cc866fdcf86e4675566a9e2b2e9a90eeedd778a4ae81f8551de609ebb4c6fa",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "Code/Design统一实施：原内容槽契约增加项目文档renderer与共享会话上下文。",
         "2026-10-14 OpenDesign 集成（O0+O2）：WorkspaceShellLayoutProps 新增 handleOpenOpenDesign 与 handleOpenOpenDesignPath。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
-        "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。"
+        "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。",
+        "新任务输入增加明确 Project ID、本机 Host 与原聊天有效性回调，由原项目菜单和 Root 实际消费；回调不进入宿主请求。"
       ]
     },
     {
@@ -8735,10 +8757,11 @@
       "source": "references/zcode/packages/ui/src/onboarding/OccupationOnboarding.tsx",
       "target": "apps/web/src/components/workbench/zcode/onboarding/OccupationOnboarding.tsx",
       "sha256": "af5822a69358dae6cc68e8f7ed47ec567b30503c0a0407235863b99464d29380",
-      "copiedSha256": "dd327c588b9470fc46d6aad980beb1fbd2cb61234a13c01084c3597b286b480e",
+      "copiedSha256": "7b367f56233c1f703b204ba30ab76d209389832faa5b0c373232675079169c99",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接引导记录时保留children与模式切换，隐藏未接快捷入口，原实现保留",
+        "引导可见状态同时核验已有宿主能力；本机未接引导时不消费 Escape，原项目菜单可沿真实按键关闭。",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链"
       ]
     },
@@ -9689,7 +9712,7 @@
       "source": "references/zcode/packages/ui/src/root/useRootWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
       "sha256": "3c8ebfe29150dcc21e53e17feca678aa58f93c59c5d875fe5db162cda65c79cb",
-      "copiedSha256": "9ebdf3d8ebbf5789c725ca8c716ba2fbc960363879f02203d7d7d9de304ba596",
+      "copiedSha256": "b79e0b8fb79e4cbe8a68b7d9f62771a83135b254d7f274ae3ffcb5193d11d2e2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：增加可选选择错误回调，Code 宿主交回原目录选择器；原 UI 装配不变",
@@ -9697,7 +9720,9 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "第2阶段宿主适配: 项目选择后草稿沿用新tab的qualified workspaceIdentity",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "接入原 prepareSession 显式项目准备，并移植 3c5b227649371507ddc4eb46ac5133afe6db1cab 的导航序号、Tab、Task 与草稿版本保护，结合 KFW 工作方式变化拒绝迟到结果；原路径及 Task 默认目录解析继续复用现有宿主。",
+        "当前项目准备失败由既有 warning toast 显示处理方法，失效导航的错误不打扰后来的 Task 或草稿。"
       ]
     },
     {
@@ -16264,10 +16289,11 @@
       "source": "references/zcode/packages/services/src/index.ts",
       "target": "packages/zcode-services/src/index.ts",
       "sha256": "b6c905865dfa0f63bd83134ec26629ff417eff1bf472683acbac4bacb8293caf",
-      "copiedSha256": "5601918d5abbc4a67104aabafce1e3e63312f18da0b35dcb078af6a6b893cfc8",
+      "copiedSha256": "0618c71059b07e32fa7d77318c6f8089dfe8097e9e883ba06039a6be58abf675",
       "adaptations": [
         "导出本机项目创建与编辑所需的原浏览器 descriptor、创建/编辑联合输入，以及真实归档消费者使用的 ProjectTask/ProjectTree 类型。",
-        "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。"
+        "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。",
+        "导出真实项目准备接口的输入和结果类型，原菜单、Root 与宿主客户端共同消费。"
       ]
     },
     {

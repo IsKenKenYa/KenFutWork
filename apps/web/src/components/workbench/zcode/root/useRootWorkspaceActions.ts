@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Root workspace action hook 集中编排项目、远程和 conversation 入口；合并期保持动作边界完整，后续按领域拆分。 */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DesktopCommandIds,
   type AppSettings,
@@ -11,6 +11,7 @@ import {
 import type { IServiceAccessor } from "@zcode/services";
 import type { CreateTaskRequest } from "@zui/app-shell/types.js";
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
+import { toast } from "@zui/components/ui/toast.js";
 import { reportAppTelemetryEvent } from "@zui/lib/appTelemetry.js";
 import { resolveLogoutProviderFamilyDomain } from "@zui/lib/providerFamilyDomainSettings.js";
 import { isRendererReloadNavigation } from "@zui/lib/rendererNavigation.js";
@@ -66,6 +67,58 @@ function resolveNewTaskTargetFromRequest(
     workspacePath: fallback.workspacePath,
     workspaceIdentity: fallback.workspaceIdentity ?? null,
   };
+}
+
+/** 原导航代际保护：等待目录期间，原 Tab、Task、草稿或工作方式改变即结束该意图。 */
+function captureTaskNavigation(
+  tabs: TabStore,
+  platform: IPlatformService,
+  isLatest: () => boolean,
+  request?: CreateTaskRequest,
+) {
+  const origin = tabs.getState();
+  const path = origin.activeWorkspacePath;
+  const identity = origin.activeWorkspaceIdentity ?? undefined;
+  const workspace = path
+    ? useZCodeSessionStore.getState().getWorkspaceState(path, identity)
+    : null;
+  const mode = platform.workbenchNavigation?.getSnapshot().mode;
+  return () => {
+    if (!isLatest() ||
+      (typeof request === "object" && request.isCurrent?.() === false) ||
+      tabs.getState().activeTabId !== origin.activeTabId ||
+      platform.workbenchNavigation?.getSnapshot().mode !== mode) return false;
+    if (!path) return true;
+    const current = useZCodeSessionStore.getState().getWorkspaceState(path, identity);
+    return current.activeTaskId === workspace?.activeTaskId &&
+      current.draftFocusVersion === workspace?.draftFocusVersion;
+  };
+}
+
+async function prepareTaskWorkspace(
+  services: IServiceAccessor,
+  platform: IPlatformService,
+  request: CreateTaskRequest | undefined,
+  target: NewTaskTargetResolution | null,
+): Promise<NewTaskTargetResolution> {
+  if (typeof request === "object" && request.projectId !== undefined) {
+    if (!services.projectService) throw new Error("项目服务不可用，请重新连接工作台。");
+    const prepared = await services.projectService.prepareSession({
+      projectId: request.projectId,
+      ...(request.hostId ? { hostId: request.hostId } : {}),
+    });
+    return { workspacePath: prepared.workspacePath, workspaceIdentity: prepared.workspaceIdentity };
+  }
+  if (!target) throw new Error("请选择项目后再创建任务。");
+  if (!platform.resolveNewTaskWorkspace) return target;
+  const taskId = useZCodeSessionStore.getState()
+    .getWorkspaceState(target.workspacePath, target.workspaceIdentity ?? undefined).activeTaskId;
+  const prepared = await platform.resolveNewTaskWorkspace({
+    workspacePath: target.workspacePath,
+    ...(target.workspaceIdentity ? { workspaceIdentity: target.workspaceIdentity } : {}),
+    ...(taskId ? { taskId } : {}),
+  });
+  return { workspacePath: prepared.workspacePath, workspaceIdentity: prepared.workspaceIdentity ?? null };
 }
 
 function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, request?: CreateTaskRequest) {
@@ -162,6 +215,8 @@ export function useRootWorkspaceActions({
   workbenchGroupClientMode?: ZCodeTaskClientMode;
 }) {
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null);
+  const navigationSequence = useRef(0);
+  useEffect(() => () => { navigationSequence.current++; }, []);
   const requestConfirmation = useConfirmDialog();
   const {
     handleSelectConversationWorkspace,
@@ -212,6 +267,10 @@ export function useRootWorkspaceActions({
 
   const startNewTaskFromActiveWorkspace = useCallback(
     async (source: string, request?: CreateTaskRequest) => {
+      const sequence = ++navigationSequence.current;
+      const isCurrent = captureTaskNavigation(
+        tabStoreApi, platform, () => navigationSequence.current === sequence, request,
+      );
       const state = tabStoreApi.getState();
       const {
         activeWorkspacePath: currentActiveWorkspacePath,
@@ -249,32 +308,29 @@ export function useRootWorkspaceActions({
         return;
       }
 
-      if (!newTaskTarget) {
+      if (!newTaskTarget && !(typeof request === "object" && request.projectId !== undefined)) {
         logger.error(`[Root] ${source} failed: no active workspace`);
         setWorkspaceActionError(intl.formatMessage({ id: "workspace.noActiveForNewTask" }));
         return;
       }
 
-      if (platform.resolveNewTaskWorkspace) {
-        try {
-          const taskId = useZCodeSessionStore.getState().getWorkspaceState(newTaskTarget.workspacePath, newTaskTarget.workspaceIdentity ?? undefined).activeTaskId;
-          const resolved = await platform.resolveNewTaskWorkspace({
-            workspacePath: newTaskTarget.workspacePath,
-            ...(newTaskTarget.workspaceIdentity ? { workspaceIdentity: newTaskTarget.workspaceIdentity } : {}),
-            ...(taskId ? { taskId } : {}),
-          });
-          newTaskTarget = { workspacePath: resolved.workspacePath, workspaceIdentity: resolved.workspaceIdentity ?? null };
-        } catch (error) {
-          setWorkspaceActionError(error instanceof Error ? error.message : String(error));
-          return;
+      try {
+        newTaskTarget = await prepareTaskWorkspace(services, platform, request, newTaskTarget);
+      } catch (error) {
+        if (isCurrent()) {
+          const message = error instanceof Error ? error.message : String(error);
+          setWorkspaceActionError(message);
+          toast(message, { variant: "warning" });
         }
+        return;
       }
+      if (!isCurrent()) return;
 
       // 仅禁用按钮无法覆盖桌面菜单和快捷键；启动期失效 workspace
       // 必须在动作边界再次校验，避免历史只读页被隐式切回可发送草稿态。
       if (
         isWorkspaceReadOnly(
-          state,
+          tabStoreApi.getState(),
           newTaskTarget.workspacePath,
           newTaskTarget.workspaceIdentity ?? undefined,
         )
@@ -301,7 +357,7 @@ export function useRootWorkspaceActions({
       setWorkspaceActionError(null);
       startTaskDraft(source, newTaskTarget, request);
     },
-    [addTab, intl, platform, tabStoreApi, workbenchGroupClientMode],
+    [addTab, intl, platform, services, tabStoreApi, workbenchGroupClientMode],
   );
 
   const handleLogout = useCallback(async () => {

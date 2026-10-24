@@ -5,6 +5,13 @@ import {
   projectDirectoryRelinkResponseSchema,
 } from "@kenfutwork/shared";
 
+export function projectSupportsMode(
+  project: CodeUiWorkspace,
+  preset: "code" | "design",
+) {
+  return (project.enabledModes ?? [project.kind ?? "code"]).includes(preset);
+}
+
 export interface TaskWorkspaceIdentity {
   taskId: string;
   projectId: string;

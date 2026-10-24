@@ -11,10 +11,17 @@ import type {
   CodeProjectEditorReadDirectory,
   CodeProjectEditorReadTree,
   CodeProjectEditorSave,
+  CodeProjectPreparedSession,
+  CodeProjectPrepareSession,
   CodeProjectTree,
   ProjectCreateRequest,
 } from "@kenfutwork/shared";
-import { codeProjectEditorDirectorySchema } from "@kenfutwork/shared";
+import {
+  codeProjectEditorDirectorySchema,
+  codeProjectPreparedSessionSchema,
+  codeUiWorkspaceSchema,
+} from "@kenfutwork/shared";
+import { canonicalLocalWorkspaceIdentity } from "@zcode/shared";
 import {
   type CodeUiHostRpcContext,
   CodeUiHostRpcError,
@@ -35,6 +42,11 @@ import { validateWorkDir } from "./work-dir.js";
 
 export interface ProjectEditorService {
   readProjects(actor: LocalActor): Promise<CodeProjectEditorProject[]>;
+  prepareSession(
+    actor: LocalActor,
+    input: CodeProjectPrepareSession,
+    context: CodeUiHostRpcContext,
+  ): Promise<CodeProjectPreparedSession>;
   readTree(
     actor: LocalActor,
     input: CodeProjectEditorReadTree,
@@ -188,7 +200,7 @@ export function createProjectEditorService(options: {
   repository: ProjectEditorRepository;
   localInstance: LocalInstanceService;
   projects: Pick<ProjectService, "archiveProject" | "createProjectOnce">;
-  codeUi: Pick<CodeUiService, "hostRpc" | "refreshProjects">;
+  codeUi: Pick<CodeUiService, "hostRpc" | "listWorkspaces" | "refreshProjects">;
 }): ProjectEditorService {
   async function save(
     actor: LocalActor,
@@ -239,6 +251,54 @@ export function createProjectEditorService(options: {
     async readProjects(actor) {
       const context = await options.localInstance.resolve(actor);
       return options.repository.list(context.instanceId);
+    },
+    async prepareSession(actor, input, context) {
+      context.signal.throwIfAborted();
+      const project = (await options.codeUi.listWorkspaces(actor)).find(
+        (entry) => entry.projectId === input.projectId,
+      );
+      context.signal.throwIfAborted();
+      if (!project)
+        throw new CodeUiHostRpcError(
+          "project_not_found",
+          "项目已不可用，请重新选择项目。",
+          404,
+        );
+      const result = await options.codeUi.hostRpc(
+        actor,
+        "workspace",
+        "open",
+        [
+          {
+            path: project.path,
+            projectId: input.projectId,
+            preset: input.preset,
+          },
+        ],
+        context.connectionId,
+      );
+      context.signal.throwIfAborted();
+      if (!result)
+        throw new CodeUiHostRpcError(
+          "project_prepare_unavailable",
+          "项目准备服务不可用，请重新连接工作台。",
+          503,
+        );
+      const workspace = codeUiWorkspaceSchema.parse(result.result);
+      if (workspace.projectId !== input.projectId)
+        throw new CodeUiHostRpcError(
+          "project_identity_mismatch",
+          "项目身份已改变，请重新选择项目。",
+          409,
+        );
+      return codeProjectPreparedSessionSchema.parse({
+        projectId: workspace.projectId,
+        workspacePath: workspace.path,
+        workspaceIdentity: canonicalLocalWorkspaceIdentity(
+          workspace.projectId,
+          workspace.path,
+        ),
+      });
     },
     async readTree(actor, input, signal) {
       signal.throwIfAborted();

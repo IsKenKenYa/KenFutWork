@@ -37,6 +37,8 @@ export type {
 } from "./task-groups/contract.js";
 export { IProjectService } from "./project/contract.js";
 export type {
+  PrepareProjectSessionInput,
+  PreparedProjectSession,
   CreateProjectInput,
   EditProjectInput,
   ProjectRoot,

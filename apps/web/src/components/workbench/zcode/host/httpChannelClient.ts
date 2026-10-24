@@ -7,6 +7,8 @@ import {
   canvasDocumentUpdatedMessageSchema,
   clampCodeUiReconnectDelayMs,
   codeGoalControlStateSchema,
+  codeProjectPreparedSessionSchema,
+  codeProjectPrepareSessionArgsSchema,
   codeUiViewerScopeSchema,
   codeUiWorkspaceSchema,
   isPluginIconResourceReference,
@@ -41,7 +43,10 @@ import {
   DirectoryChoiceCancelledError,
 } from "./ProjectDirectoryChoice.js";
 import { notifyPluginInventoryChanged } from "./parentBridge.js";
-import { TaskWorkspaceRegistry } from "./taskWorkspaceRegistry.js";
+import {
+  projectSupportsMode,
+  TaskWorkspaceRegistry,
+} from "./taskWorkspaceRegistry.js";
 import { RemoteServiceAccess } from "./upstream/remoteServiceAccess.js";
 
 export interface CodeHostConfig {
@@ -853,6 +858,8 @@ export class CodeHttpChannelClient implements IChannelClient {
     if (task && project && method === "subscribeConversationV4")
       this.workspaces.selectProject(task.projectId, task.rootDirectory);
     const updated = { ...first };
+    if (service === ServiceChannels.Project && method === "prepareSession")
+      updated.preset = first.preset ?? this.workPreset();
     if (task && typeof first.workspacePath === "string") {
       updated.workspacePath = task.rootDirectory;
       if (typeof first.workspaceIdentity === "string")
@@ -987,6 +994,24 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.pluginInventoryChanges.fire();
         notifyPluginInventoryChanged();
       }
+    }
+    if (service === ServiceChannels.Project && method === "prepareSession") {
+      const [intent] = codeProjectPrepareSessionArgsSchema.parse(values);
+      const prepared = codeProjectPreparedSessionSchema.parse(response.result);
+      if (prepared.projectId !== intent.projectId)
+        throw new Error("项目准备结果不一致，请重新选择项目。");
+      const project = (await this.refreshWorkspaces()).find(
+        (entry) => entry.projectId === prepared.projectId,
+      );
+      if (
+        !project ||
+        project.path !== prepared.workspacePath ||
+        this.workspaces.identityFor(project.projectId, project.path) !==
+          prepared.workspaceIdentity
+      )
+        throw new Error("项目目录已改变，请重新选择项目。");
+      if (!projectSupportsMode(project, intent.preset))
+        throw new Error("项目工作方式已改变，请重新选择项目。");
     }
     if (service === ServiceChannels.Terminal && method === "create") {
       if (this.controller.signal.aborted || connectionId !== this.connectionId)

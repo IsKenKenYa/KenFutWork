@@ -34,6 +34,30 @@ export const codeProjectEditorReadProjectsSchema = z
   })
   .strict();
 
+export const codeProjectPrepareSessionSchema = z
+  .object({
+    projectId: z.uuid(),
+    hostId: localHost,
+    preset: z.enum(["code", "design"]).default("code"),
+  })
+  .strict();
+
+export const codeProjectPrepareSessionArgsSchema = z.tuple([
+  codeProjectPrepareSessionSchema,
+]);
+
+export const codeProjectPreparedSessionSchema = z
+  .object({
+    projectId: z.uuid(),
+    workspacePath: z.string().min(1),
+    workspaceIdentity: z.string().min(1),
+  })
+  .strict();
+
+export const codeProjectPreparedSessionResponseSchema = z
+  .object({ result: codeProjectPreparedSessionSchema })
+  .strict();
+
 export const codeProjectEditorReadTreeSchema = z
   .object({
     hostId: localHost,
@@ -156,6 +180,12 @@ export type CodeProjectEditorCreate = z.infer<
 export type CodeProjectEditorEdit = z.infer<typeof codeProjectEditorEditSchema>;
 export type CodeProjectEditorReadProjects = z.infer<
   typeof codeProjectEditorReadProjectsSchema
+>;
+export type CodeProjectPrepareSession = z.infer<
+  typeof codeProjectPrepareSessionSchema
+>;
+export type CodeProjectPreparedSession = z.infer<
+  typeof codeProjectPreparedSessionSchema
 >;
 export type CodeProjectEditorReadTree = z.infer<
   typeof codeProjectEditorReadTreeSchema

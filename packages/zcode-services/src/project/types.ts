@@ -54,6 +54,18 @@ export interface ProjectTree {
   }>;
 }
 
+export interface PrepareProjectSessionInput {
+  projectId: string;
+  hostId?: "local";
+  preset?: "code" | "design";
+}
+
+export interface PreparedProjectSession {
+  projectId: string;
+  workspacePath: string;
+  workspaceIdentity: string;
+}
+
 interface ProjectSaveFields {
   hostId?: "local";
   name?: string;

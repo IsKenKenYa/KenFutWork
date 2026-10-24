@@ -1,6 +1,12 @@
 import { ServiceChannels, type FileEntry } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
-import type { ProjectTree, SaveProjectInput, VirtualProject } from "./types.js";
+import type {
+  PrepareProjectSessionInput,
+  PreparedProjectSession,
+  ProjectTree,
+  SaveProjectInput,
+  VirtualProject,
+} from "./types.js";
 
 export type {
   CreateProjectInput,
@@ -9,12 +15,16 @@ export type {
   ProjectRootAccess,
   ProjectTask,
   ProjectTree,
+  PrepareProjectSessionInput,
+  PreparedProjectSession,
   SaveProjectInput,
   VirtualProject,
 } from "./types.js";
 
 /** 当前本机宿主的权威项目服务；目录修改仅影响之后创建的 Task。 */
 export interface IProjectService {
+  /** 只准备所选项目的当前目录身份；Task 仍由原首发／预热入口创建。 */
+  prepareSession(input: PrepareProjectSessionInput): Promise<PreparedProjectSession>;
   readDirectory(params?: {
     hostId?: "local";
     path?: string;

@@ -487,6 +487,8 @@ export const applicationErrorCodeSchema = z.enum([
   "project_create_failed",
   "project_delete_failed",
   "project_not_found",
+  "project_prepare_unavailable",
+  "project_identity_mismatch",
   "project_slug_taken",
   "project_update_failed",
   "invalid_project_modes",
@@ -588,9 +590,10 @@ export const applicationErrorCodeSchema = z.enum([
   "scope_revoking",
   "scope_unavailable",
   "task_not_found",
-  // 原宿主分组保存及其请求、连接和提交失败的公共错误。
+  // 原宿主项目准备、分组和连接的公共错误。
   "invalid_code_ui_request",
   "code_ui_not_found",
+  "code_ui_command_conflict",
   "code_ui_error",
   "task_group_revision_conflict",
   "task_group_not_found",

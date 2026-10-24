@@ -24,6 +24,9 @@ import {
 import { requestCanvasDocumentOpen } from "./conversationWorkContext.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
+import { projectSupportsMode } from "./taskWorkspaceRegistry.js";
+
+export { projectSupportsMode } from "./taskWorkspaceRegistry.js";
 
 type Preset = "code" | "design";
 type ProjectHost = Pick<
@@ -55,9 +58,6 @@ const pendingAdmissions = new Set<{
 export function admitProjectMode(preset: Preset): Promise<boolean> {
   if (modeAdmission) return modeAdmission(preset);
   return new Promise((resolve) => pendingAdmissions.add({ preset, resolve }));
-}
-export function projectSupportsMode(project: CodeUiWorkspace, preset: Preset) {
-  return (project.enabledModes ?? [project.kind ?? "code"]).includes(preset);
 }
 export function filterProjectTabs(
   tabs: WorkspaceTabState[],
@@ -486,6 +486,11 @@ export function SharedProjectNavigationProvider({
 
 export function useSharedProjectRefresh() {
   return useContext(Context)?.refreshProjects ?? null;
+}
+
+/** 原项目菜单按稳定身份消费全量目录，工作方式仍取同一服务端投影。 */
+export function useSharedProjectCatalog() {
+  return useContext(Context)?.projects ?? null;
 }
 
 export function useSharedProjectCreation() {

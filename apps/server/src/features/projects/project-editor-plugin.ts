@@ -4,6 +4,7 @@ import {
   codeProjectEditorReadProjectsSchema,
   codeProjectEditorReadTreeArgsSchema,
   codeProjectEditorSaveSchema,
+  codeProjectPrepareSessionArgsSchema,
 } from "@kenfutwork/shared";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
@@ -40,6 +41,10 @@ export function createProjectEditorPlugin(): PluginDefinition {
         async readTree(actor, args, context) {
           const [input] = codeProjectEditorReadTreeArgsSchema.parse(args);
           return service.readTree(actor, input ?? {}, context.signal);
+        },
+        async prepareSession(actor, args, context) {
+          const [input] = codeProjectPrepareSessionArgsSchema.parse(args);
+          return service.prepareSession(actor, input, context);
         },
         async readDirectory(actor, args, context) {
           return service.readDirectory(

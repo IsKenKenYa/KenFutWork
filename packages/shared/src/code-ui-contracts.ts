@@ -12,6 +12,8 @@ import {
   codeProjectEditorReadProjectsSchema,
   codeProjectEditorReadTreeArgsSchema,
   codeProjectEditorSaveSchema,
+  codeProjectPreparedSessionResponseSchema,
+  codeProjectPrepareSessionArgsSchema,
   codeProjectTreeRpcResponseSchema,
 } from "./code-project-editor.js";
 import {
@@ -98,6 +100,7 @@ const codeUiRpcEnvelopeSchema = z.object({
 });
 export const codeUiRpcResponseSchema = z.union([
   codeProjectTreeRpcResponseSchema,
+  codeProjectPreparedSessionResponseSchema,
   codeTaskGroupReadResponseSchema,
   codeTaskGroupSaveResponseSchema,
   z.object({ result: z.unknown() }),
@@ -116,6 +119,11 @@ export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
       service: z.literal("project"),
       method: z.literal("readTree"),
       args: codeProjectEditorReadTreeArgsSchema,
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("prepareSession"),
+      args: codeProjectPrepareSessionArgsSchema,
     }),
     codeUiRpcEnvelopeSchema.extend({
       service: z.literal("project"),

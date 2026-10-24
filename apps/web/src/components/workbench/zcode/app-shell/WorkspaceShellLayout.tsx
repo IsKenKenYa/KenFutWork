@@ -16,7 +16,6 @@ import {
   findScreenshotSurfaceTabForRender,
   useBrowserScreenshotSurfaceRequest,
 } from "@zui/browser-use/useBrowserScreenshotSurfaceRequest.js";
-import { ChatEmptyWorkspacePreviewMenu } from "@zui/ChatEmptyState.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
@@ -52,6 +51,7 @@ import {
 import { setWorkspaceSidebarResizeActive } from "@zui/lib/workspaceSidebarResizeState.js";
 import { getActiveSelectionSideChatTab } from "@zui/lib/workspaceSidePane.js";
 import { logger } from "@zui/logger.js";
+import { ProjectComposerMenu } from "@zui/project-sidebar/ProjectComposerMenu.js";
 import { TaskFindDialog } from "@zui/quickpick/TaskFindDialog.js";
 import { AutomationsMainBreadcrumbFrame } from "@zui/settings/AutomationsMainBreadcrumbFrame.js";
 import {
@@ -123,9 +123,6 @@ const CONVERSATION_AUTO_COLLAPSE_SIDE_PANE_WIDTH_PX = 480;
 const EMPTY_RECONNECTING_REMOTE_WORKSPACE_LOGS_BY_WORKSPACE_KEY: NonNullable<
   WorkspaceShellLayoutProps["reconnectingRemoteWorkspaceLogsByWorkspaceKey"]
 > = {};
-const EMPTY_REMOTE_WORKSPACE_SESSIONS: NonNullable<
-  WorkspaceShellLayoutProps["remoteWorkspaceSessions"]
-> = [];
 const CONVERSATION_AUTO_COLLAPSE_RESIZE_IDLE_MS = 300;
 // 性能修复：ResizablePanelGroup 收到深相等的新 panelIds 数组，
 // 会跟随 chat streaming render 重算布局上下文；固定数组语义上不会随消息变化。
@@ -243,8 +240,6 @@ export const WorkspaceShellLayout = memo(
     onOpenRemoteWorkspace,
     onCreateScratchWorkspace,
     allowOpenWorkspace = true,
-    allowRemoteWorkspace = true,
-    remoteWorkspaceSessions = EMPTY_REMOTE_WORKSPACE_SESSIONS,
     workspaceAbsPath,
     workspaceRemoteSessionId,
     workspaceIdentity,
@@ -910,13 +905,11 @@ export const WorkspaceShellLayout = memo(
       workspaceMainView === "plugin-store" || canTaskNavBack;
     const handleCreateTaskInChat = useCallback(
       (request?: Parameters<typeof onCreateTask>[0]) => {
-        // workspaceReadOnlyReason 判定的是活动 workspace；当 request 显式带 targetWorkspace 时
-        // 目标另属他项目（跨项目发起已保存工作流），
-        // 活动 workspace 的只读性不适用，真正的守卫是 root 动作对 target 的 isWorkspaceReadOnly。
+        // 显式项目或 workspace 目标由 Root 重新检查目录与只读状态。
         const hasTargetWorkspace =
           typeof request === "object" &&
           request !== null &&
-          Boolean(request.targetWorkspace);
+          Boolean(request.targetWorkspace || request.projectId);
         if (!hasTargetWorkspace && workspaceReadOnlyReason) {
           return;
         }
@@ -1313,34 +1306,16 @@ export const WorkspaceShellLayout = memo(
       },
       [handleSelectTask, workspaceAbsPath, workspaceIdentity],
     );
-    // 草稿态 composer contextHeader：workspace 切换菜单 +
-    // Git 分支切换器，与旧 ChatView 空态 contextHeaderContent 同构。壳级能力
-    // （workspaceTabs / 远程连接回调）在此闭合，pane 只收 ReactNode。
-    // onSelectWorkspace 语义与旧版一致：切到目标 workspace 的新草稿。
+    // 草稿项目菜单与 Git 分支由壳装配；项目身份和目录由 Root 准备。
     const draftComposerHeader = useMemo(
       () => (
-        <>
-          <ChatEmptyWorkspacePreviewMenu
-            workspacePath={workspaceAbsPath}
-            workspaceIdentity={workspaceIdentity}
-            isWindowsDesktop={isWindowsDesktop}
-            workspaceTabs={workspaceTabs}
-            onSelectWorkspace={(workspaceTab) =>
-              handleStartDraftInWorkspaceInChat(
-                workspaceTab.workspacePath,
-                workspaceTab.workspaceIdentity,
-                workspaceTab.workspacePurpose,
-              )
-            }
-            onSelectConversationWorkspace={handleSelectConversationWorkspace}
-            onOpenFolder={onOpenFolderFromWorkspaceMenu}
-            allowOpenWorkspace={allowOpenWorkspace}
-            allowRemoteWorkspace={allowRemoteWorkspace}
-            remoteWorkspaceSessions={remoteWorkspaceSessions}
-            onConnectRemote={onConnectRemote}
-            onSelectRemoteProject={onSelectRemoteProject}
-            onCancelRemoteProject={onCancelRemoteProject}
-          />
+        <ProjectComposerMenu
+          showEditProject
+          workspacePath={workspaceAbsPath}
+          workspaceIdentity={workspaceIdentity}
+          onCreateTask={handleCreateTaskInChat}
+          onSelectConversationWorkspace={handleSelectConversationWorkspace}
+        >
           {isOfficeMode ? (
             <WorkspacePluginPreview
               onOpen={handleOpenPluginStore}
@@ -1363,30 +1338,21 @@ export const WorkspaceShellLayout = memo(
               avoidPopoverCollisions={false}
             />
           ) : null}
-        </>
+        </ProjectComposerMenu>
       ),
       [
         isOfficeMode,
         workspaceRemoteSessionId,
         handleOpenPluginStore,
         handleSelectComposerPlugin,
-        allowOpenWorkspace,
-        allowRemoteWorkspace,
         activeWorkspacePurpose,
         gitDirtyFileCount,
         gitState.summary,
         handleRefreshGit,
         handleSelectConversationWorkspace,
-        handleStartDraftInWorkspaceInChat,
-        isWindowsDesktop,
-        onCancelRemoteProject,
-        onConnectRemote,
-        onOpenFolderFromWorkspaceMenu,
-        onSelectRemoteProject,
-        remoteWorkspaceSessions,
+        handleCreateTaskInChat,
         workspaceAbsPath,
         workspaceIdentity,
-        workspaceTabs,
       ],
     );
     const handleV4SessionDeleted = useCallback(() => {
