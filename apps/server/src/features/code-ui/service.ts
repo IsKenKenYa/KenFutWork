@@ -146,6 +146,7 @@ import {
 } from "./repository.js";
 import { listCodeSessionSubagents } from "./subagent-directory.js";
 import { codeUiTaskMeta } from "./task-index.js";
+import type { TaskProjectMoveEvent } from "./task-project-move-types.js";
 import type {
   CodeUserInputService,
   UserInputEvent,
@@ -1606,14 +1607,7 @@ export class CodeUiService {
 
   async refreshMovedTask(
     actor: LocalActor,
-    event: {
-      instanceId: string;
-      taskId: string;
-      sourceProjectId: string;
-      targetProjectId: string;
-      workspacePath: string;
-      sessionIds: readonly string[];
-    },
+    event: TaskProjectMoveEvent,
   ): Promise<void> {
     if (actor.instanceId !== event.instanceId)
       throw new CodeUiRepositoryError("not_found", "移动结果不属于当前实例。");
@@ -1621,6 +1615,7 @@ export class CodeUiService {
       event.instanceId,
       event.sessionIds,
       event.sourceProjectId,
+      event.scopeGeneration,
     );
     this.taskActors.delete(JSON.stringify([event.instanceId, event.taskId]));
     const notifications = await Promise.allSettled([
@@ -2338,7 +2333,11 @@ export class CodeUiService {
             },
           });
         }
-        return { snapshot, seq: snapshot.seq };
+        return {
+          snapshot,
+          seq: snapshot.seq,
+          taskScopeGeneration: Number(loaded.root.scope_generation),
+        };
       };
       return this.connections.subscribe(workspace.instanceId, connectionId, {
         topic: params.topic,

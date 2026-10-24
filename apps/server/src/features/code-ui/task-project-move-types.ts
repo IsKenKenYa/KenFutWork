@@ -13,6 +13,7 @@ export interface TaskProjectMoveEvent {
   taskId: string;
   sourceProjectId: string;
   targetProjectId: string;
+  scopeGeneration: number;
   workspacePath: string;
   sessionIds: readonly string[];
 }

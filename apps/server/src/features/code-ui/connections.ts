@@ -37,9 +37,15 @@ interface Subscription {
   /** 捕获原调用的路由identity；null显式表示path-only，不参与权限判定。 */
   workspaceIdentity?: string | null;
   projectId?: string;
+  /** 会话租约绑定实际读取的Task授权代际，迟到移动不能释放后来的租约。 */
+  taskScopeGeneration?: number;
   ordinal: number;
   cursor: { logEpoch: string; seq: number; retiredEpochs: Set<string> };
-  read: () => Promise<{ snapshot: Snapshot; seq: number }>;
+  read: () => Promise<{
+    snapshot: Snapshot;
+    seq: number;
+    taskScopeGeneration?: number;
+  }>;
 }
 export interface CodeUiWorkspaceConfigRefreshFailure {
   connectionId: string;
@@ -57,10 +63,15 @@ interface Connection {
   send: (event: CodeUiEvent) => Promise<void>;
   close: () => void;
   subscriptions: Map<string, Subscription>;
+  retiredTaskGenerations: Map<string, number>;
   receivesNotifications: boolean;
   abort: AbortController;
   cleanups: Set<CodeUiHostRpcCleanup>;
   disposal?: Promise<void>;
+}
+
+function taskSubscriptionKey(projectId: string, topic: string) {
+  return JSON.stringify([projectId, topic]);
 }
 
 /** 连接只持有 owned 订阅；断线释放租约，权威会话与 Agent 运行独立存活。 */
@@ -105,6 +116,7 @@ export class CodeUiConnections {
       send,
       close,
       subscriptions: new Map(),
+      retiredTaskGenerations: new Map(),
       receivesNotifications,
       abort: new AbortController(),
       cleanups: new Set(),
@@ -129,13 +141,22 @@ export class CodeUiConnections {
     owner: string,
     taskIds: readonly string[],
     sourceProjectId: string,
+    scopeGeneration: number,
   ): void {
     const topics = new Set(taskIds.map(protocol.conversationTopic));
     for (const connection of this.connections.values()) {
       if (connection.owner !== owner) continue;
+      for (const topic of topics) {
+        const key = taskSubscriptionKey(sourceProjectId, topic);
+        const previous = connection.retiredTaskGenerations.get(key);
+        if (previous === undefined || previous < scopeGeneration)
+          connection.retiredTaskGenerations.set(key, scopeGeneration);
+      }
       for (const [id, subscription] of connection.subscriptions) {
         if (
           subscription.projectId === sourceProjectId &&
+          subscription.taskScopeGeneration !== undefined &&
+          subscription.taskScopeGeneration <= scopeGeneration &&
           topics.has(subscription.topic)
         )
           connection.subscriptions.delete(id);
@@ -173,6 +194,7 @@ export class CodeUiConnections {
   private dispose(connection: Connection): Promise<void> {
     if (connection.disposal) return connection.disposal;
     this.connections.delete(connection.hello.connectionId);
+    connection.retiredTaskGenerations.clear();
     connection.disposal = Promise.resolve().then(async () => {
       const cleanups = [...connection.cleanups];
       connection.cleanups.clear();
@@ -268,7 +290,10 @@ export class CodeUiConnections {
   async subscribe(
     owner: string,
     connectionId: string | undefined,
-    target: Omit<Subscription, "id" | "ordinal" | "cursor">,
+    target: Omit<
+      Subscription,
+      "id" | "ordinal" | "cursor" | "taskScopeGeneration"
+    >,
   ) {
     const connection = this.require(owner, connectionId);
     const initial = await target.read();
@@ -277,9 +302,26 @@ export class CodeUiConnections {
         "not_found",
         "Code连接在订阅准备期间已关闭。",
       );
+    const retiredGeneration = target.projectId
+      ? connection.retiredTaskGenerations.get(
+          taskSubscriptionKey(target.projectId, target.topic),
+        )
+      : undefined;
+    if (
+      retiredGeneration !== undefined &&
+      (initial.taskScopeGeneration === undefined ||
+        initial.taskScopeGeneration <= retiredGeneration)
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "任务已移动，请重新打开任务。",
+      );
     const subscription: Subscription = {
       ...target,
       id: randomUUID(),
+      ...(initial.taskScopeGeneration === undefined
+        ? {}
+        : { taskScopeGeneration: initial.taskScopeGeneration }),
       ordinal: 0,
       cursor: {
         logEpoch: initial.snapshot.logEpoch,

@@ -123,6 +123,7 @@ export function createTaskProjectMoveService(deps: {
       taskId: input.task.taskId,
       sourceProjectId: input.sourceProjectId,
       targetProjectId: input.projectId,
+      scopeGeneration: prepared.generation,
       workspacePath: prepared.workspacePath,
       sessionIds: prepared.sessionIds,
     });
