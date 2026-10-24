@@ -612,6 +612,8 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
     pinned: boolean;
+    taskControl?: ConversationTaskControl;
+    observedPinRevision?: number;
   }): Promise<ZCodeTaskMeta>;
 
   /** 更新 task 未读状态 */

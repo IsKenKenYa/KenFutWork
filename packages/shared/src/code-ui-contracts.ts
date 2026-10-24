@@ -28,9 +28,10 @@ import {
   codeTaskGroupUngroupArgsSchema,
 } from "./code-task-groups.js";
 import {
+  codeTaskControllerMutationArgsSchema,
   codeTaskOrganizationArgsSchema,
+  codeTaskPinArgsSchema,
   codeTaskUnreadArgsSchema,
-  codeTaskUnreadControllerArgsSchema,
 } from "./code-task-organization.js";
 import { codeTaskProjectMoveArgsSchema } from "./code-task-project-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
@@ -115,11 +116,21 @@ export const codeTaskUnreadRpcResponseSchema = z.object({
   result: codeTaskUnreadMetaSchema,
 });
 
+export const codeTaskPinMetaSchema = codeTaskUnreadMetaSchema.extend({
+  pinRevision: z.number().int().nonnegative().safe(),
+  pinned: z.boolean(),
+});
+
+export const codeTaskPinRpcResponseSchema = z.object({
+  result: codeTaskPinMetaSchema,
+});
+
 export const codeUiRpcResponseSchema = z.union([
   codeProjectTreeRpcResponseSchema,
   codeProjectPreparedSessionResponseSchema,
   codeTaskGroupReadResponseSchema,
   codeTaskGroupSaveResponseSchema,
+  codeTaskPinRpcResponseSchema,
   codeTaskUnreadRpcResponseSchema,
   z.object({ result: z.unknown() }),
 ]);
@@ -164,13 +175,18 @@ export const codeUiRpcRequestSchema = z.union([
   codeProjectEditorRpcRequestSchema,
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("zcode-task"),
+    method: z.literal("setTaskPinned"),
+    args: codeTaskPinArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("zcode-task"),
     method: z.literal("setTaskUnread"),
     args: codeTaskUnreadArgsSchema,
   }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("window-controller"),
     method: z.literal("mutateTask"),
-    args: codeTaskUnreadControllerArgsSchema,
+    args: codeTaskControllerMutationArgsSchema,
   }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("project"),

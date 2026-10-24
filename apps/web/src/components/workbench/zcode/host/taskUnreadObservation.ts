@@ -1,5 +1,5 @@
 import type { ZCodeTaskMeta, ZCodeTaskUnreadObservation } from "@zcode/shared";
-import { conversationTaskControlSchema } from "@zcode/shared/zcode-protocol-v4";
+import { captureTaskRevisionObservation } from "./taskOperationObservation.js";
 
 type TaskUnreadSnapshot = Pick<ZCodeTaskMeta, "taskControl" | "lastUnreadAt">;
 
@@ -7,19 +7,16 @@ type TaskUnreadSnapshot = Pick<ZCodeTaskMeta, "taskControl" | "lastUnreadAt">;
 export function captureTaskUnreadObservation(
   task: TaskUnreadSnapshot,
 ): ZCodeTaskUnreadObservation | undefined {
-  const control = conversationTaskControlSchema.safeParse(task.taskControl);
-  const lastUnreadAt = task.lastUnreadAt;
-  if (
-    !control.success ||
-    typeof lastUnreadAt !== "number" ||
-    !Number.isSafeInteger(lastUnreadAt) ||
-    lastUnreadAt < 0
-  )
-    return undefined;
-  return Object.freeze({
-    taskControl: Object.freeze(structuredClone(control.data)),
-    observedLastUnreadAt: lastUnreadAt,
-  });
+  const observation = captureTaskRevisionObservation(
+    task.taskControl,
+    task.lastUnreadAt,
+  );
+  return observation
+    ? Object.freeze({
+        taskControl: observation.taskControl,
+        observedLastUnreadAt: observation.revision,
+      })
+    : undefined;
 }
 
 export function requireTaskUnreadObservation(

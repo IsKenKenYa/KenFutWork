@@ -55,6 +55,35 @@ export const codeTaskUnreadControllerArgsSchema = z.tuple([
   codeTaskUnreadControllerInputSchema,
 ]);
 
+export const codeTaskPinObservationSchema =
+  codeTaskOrganizationTargetSchema.extend({
+    observedPinRevision: z.number().int().nonnegative().safe(),
+  });
+
+export const codeTaskPinInputSchema = codeTaskPinObservationSchema.extend({
+  pinned: z.boolean(),
+});
+
+export const codeTaskPinArgsSchema = z.tuple([codeTaskPinInputSchema]);
+
+export const codeTaskPinControllerInputSchema = z
+  .object({
+    address: codeTaskPinObservationSchema,
+    mutation: z
+      .object({ kind: z.literal("pin"), pinned: z.boolean() })
+      .strict(),
+  })
+  .strict();
+
+export const codeTaskPinControllerArgsSchema = z.tuple([
+  codeTaskPinControllerInputSchema,
+]);
+
+export const codeTaskControllerMutationArgsSchema = z.union([
+  codeTaskUnreadControllerArgsSchema,
+  codeTaskPinControllerArgsSchema,
+]);
+
 export type CodeTaskOrganizationTarget = z.infer<
   typeof codeTaskOrganizationTargetSchema
 >;
@@ -64,4 +93,11 @@ export type CodeTaskUnreadObservation = z.infer<
 export type CodeTaskUnreadInput = z.infer<typeof codeTaskUnreadInputSchema>;
 export type CodeTaskUnreadControllerInput = z.infer<
   typeof codeTaskUnreadControllerInputSchema
+>;
+export type CodeTaskPinObservation = z.infer<
+  typeof codeTaskPinObservationSchema
+>;
+export type CodeTaskPinInput = z.infer<typeof codeTaskPinInputSchema>;
+export type CodeTaskPinControllerInput = z.infer<
+  typeof codeTaskPinControllerInputSchema
 >;

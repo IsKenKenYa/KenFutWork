@@ -44,6 +44,7 @@ export type ProjectTask = Pick<
   hostId: "local";
   pinned: boolean;
   archived: boolean;
+  pinRevision: number;
   taskControl?: ConversationTaskControl;
   conversationRevision?: number;
 };

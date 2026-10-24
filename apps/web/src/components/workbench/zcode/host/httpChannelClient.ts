@@ -44,6 +44,7 @@ import {
   DirectoryChoiceCancelledError,
 } from "./ProjectDirectoryChoice.js";
 import { notifyPluginInventoryChanged } from "./parentBridge.js";
+import { captureTaskPinCall, readTaskPinResult } from "./taskPinRpc.js";
 import {
   captureTaskUnreadCall,
   readTaskUnreadResult,
@@ -889,6 +890,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         "unarchiveTask",
         "deleteArchivedTask",
         "setTaskUnread",
+        "setTaskPinned",
       ].includes(method)
     )
       return values;
@@ -999,8 +1001,9 @@ export class CodeHttpChannelClient implements IChannelClient {
     args?: unknown,
     fixedViewer?: CodeUiViewerScope,
   ): Promise<TResult> {
-    let values = args ?? [];
-    if (Array.isArray(values))
+    const pinCall = captureTaskPinCall(service, method, args ?? []);
+    let values = pinCall?.args ?? args ?? [];
+    if (!pinCall && Array.isArray(values))
       values = this.injectViewer(
         service,
         method,
@@ -1016,6 +1019,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     )
       this.clientHello = clientHelloSchema.parse((values as unknown[])[0]);
     const connectionId = this.connectionId;
+    const generation = this.generation;
     let response: { result: TResult };
     try {
       response = await this.request<{ result: TResult }>("/api/code-ui/rpc", {
@@ -1038,6 +1042,21 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.pluginInventoryChanges.fire();
         notifyPluginInventoryChanged();
       }
+    }
+    if (pinCall) {
+      const current = this.workspaces.taskObservation(pinCall.target.taskId);
+      if (
+        this.controller.signal.aborted ||
+        connectionId !== this.connectionId ||
+        generation !== this.generation ||
+        (current &&
+          (current.projectId !== pinCall.target.taskControl.projectId ||
+            current.rootDirectory !== pinCall.target.workspacePath ||
+            current.branchGeneration !==
+              pinCall.target.taskControl.branchGeneration))
+      )
+        throw new Error("任务更新期间连接已改变，请重新加载列表。");
+      return readTaskPinResult(pinCall, response.result) as TResult;
     }
     if (unreadCall) {
       if (this.controller.signal.aborted || connectionId !== this.connectionId)

@@ -182,11 +182,12 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/useProjectTaskActions.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "13f32f3f4f6d9a82f61290614451357964a5b76bbbd9275b7e47b30eb07d11dd",
-      "copiedSha256": "00935a9710d3162d4b1cd8e352671e1ba0e2efe7515341cb7be69a3fb4e31ea5",
+      "copiedSha256": "0981f751ce9ee7635af58ed8897d78dab83f127e6d6fa7d20e3fac6448aead30",
       "adaptations": [
         "映射导入，保留原改名、置顶、归档、未读操作与刷新，当前仅使用本机 Task 服务及 Controller，不创建远程连接。",
         "操作地址复制原行的 taskControl，连接既有受控 Task 变更；归档后继续清理原会话展示状态。",
-        "操作地址同时保留原行 lastUnreadAt，并在依赖变化时更新未读观察。"
+        "操作地址同时保留原行 lastUnreadAt，并在依赖变化时更新未读观察。",
+        "置顶入口保留 pinRevision，等待原显示意图前固定并克隆观察；成功或失败后重读原项目树，回执不写入当前显示。"
       ]
     },
     {
@@ -269,10 +270,11 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/task-mutation.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "ef600197181ea584429a8648e8df1ee045432ffa785a7c50373fa90748cedaa3",
-      "copiedSha256": "948fffcc03d87ad1425136098d9147bafdf0ca3a3bbd53177488c94d737f5f1b",
+      "copiedSha256": "9ee445568020b21a25d412080346371d4bbcbadf2f5ea7661b3ba91fc3e8c5ba",
       "adaptations": [
         "映射导入，按当前 Task 服务和 Controller 路由操作，复制并传递 taskControl，保留实际 remoteSessionId；元信息由现有 Task 服务读取，不传递当前接口没有的 sourceServerId。",
-        "本机已读和未读操作在调用入口固定 taskControl 与 observedLastUnreadAt，Controller 和直接 Task 服务接收同一观察。"
+        "本机已读和未读操作在调用入口固定 taskControl 与 observedLastUnreadAt，Controller 和直接 Task 服务接收同一观察。",
+        "本机 pin 操作要求原 Task 的有效 pinRevision，固定 observedPinRevision 与控制身份后传给 Controller 或直接 Task 服务。"
       ]
     },
     {
@@ -562,11 +564,12 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "6db545b4762bf53c713e311394179bc40e29d20ad11c6b1d23cfb2bdb1981341",
-      "copiedSha256": "90204aeddb92a7c75ba5fe0fe027705be1ff618a6dcb27dbd4f4352b425f4ae7",
+      "copiedSha256": "0d2625521cb7066b09836e67af6d14c716ad8b8273fd538a7b2325ba906bcd3a",
       "adaptations": [
         "映射导入，导出原侧栏、项目编辑、归档及分组消费者使用的本机项目、Task 与服务类型；移除未接通的远程目录和设备接口。",
         "完整侧栏 props 连接现有 Shell 回调；文件目标同时携带独立浏览目录、真实项目或 Task viewerScope，Task 行保留 taskControl 与正文修订。",
-        "Task 操作引用保留 lastUnreadAt；选择回调增加可选 ZCodeTaskUnreadObservation，连接原行与 Shell 的未读处理。"
+        "Task 操作引用保留 lastUnreadAt；选择回调增加可选 ZCodeTaskUnreadObservation，连接原行与 Shell 的未读处理。",
+        "ProjectTaskRef 保留 pinRevision，供原 Task 行操作固定置顶观察。"
       ]
     },
     {
@@ -609,8 +612,8 @@
       "target": "packages/zcode-services/src/project/types.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "8fa439c7716cbb74c9fd9f92dacd77dc3d2d92661b011c15fa4017f5ad761209",
-      "copiedSha256": "dac07a8f87b8abe9f0a133ddc6e58d69931f6b46ee6a059e92fe400434c4db53",
-      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。", "Task 读取投影保留可选正文修订，与原 Controller 的真实观察值共用同一提供方，移动输入固定读取时的版本。", "增加浏览器可用的 MoveProjectTaskInput，与已提供的本机移动 RPC 使用相同字段；Task 固定目录与项目默认目录继续分别持有。", "ProjectTask 同时保留 unreadAt 与 lastUnreadAt，供原侧栏捕获标记及未读观察。"]
+      "copiedSha256": "cb0ad41310f383106697a1392359b26bb420323984c03840420e5c85018f2415",
+      "adaptations": ["采用原项目、目录、项目树及保存类型的浏览器部分，移除 Node/SQLite 仓储与迁移接口；创建携带稳定 creationId、Code/Design 和同目录选择，编辑保留 Project 身份与观察修订，附加目录权限须明确选择。", "Task 保留固定目录、当前项目和观察分支；删除事实仅返回稳定 Task/Project/Host 身份，保留原删除数据清理规则。", "增加实际消费的项目准备输入与目录身份结果，Task 创建仍使用原会话接纳接口。", "项目投影增加原 pinned 字段；稀疏置顶输入保留项目身份与观察修订，不能携带目录或名称修改。", "Task 读取投影保留可选正文修订，与原 Controller 的真实观察值共用同一提供方，移动输入固定读取时的版本。", "增加浏览器可用的 MoveProjectTaskInput，与已提供的本机移动 RPC 使用相同字段；Task 固定目录与项目默认目录继续分别持有。", "ProjectTask 同时保留 unreadAt 与 lastUnreadAt，供原侧栏捕获标记及未读观察。", "ProjectTask 明确携带真实 pinRevision，与 pinned 一同提供给原项目树消费者。"]
     },
     {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectCreation.tsx",
@@ -1398,12 +1401,13 @@
       "target": "apps/web/src/components/workbench/zcode/TaskListItem.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "00b224f978b747a15be220eb3e0d6e332e03e8ab843b92bce4c552f2e6e3a4b6",
-      "copiedSha256": "45e015e37ff279eb6f42081d63e4e02c1cbd10587b5a4ae3489df4872c0b9d4b",
+      "copiedSha256": "a1b106f6023903e6083c3cddb5ec757796a1728a88737410373536e5971cde90",
       "adaptations": [
         "映射导入和当前 shared 根导出，采用新版原 Task 行、归档恢复、时间线、触摸展示及文件动作；移除未接通的远程设备归属、连接覆盖层和原 provider 配置文件入口。",
         "保留 KFW 原分栏控制器和反馈默认不附日志的行为；文件动作携带原 Task，由 isLocalWorkspaceTarget 识别本机 canonical identity，失败通过现有提示展示。",
         "拖动开始固定可信 taskControl 来源项目、正文修订和 Task 目录，支持项目移动与原分栏复制；Task 控制代际和正文修订参加 memo 比较，文件按钮保持原共享样式。",
-        "Task 行 memo 比较纳入 lastUnreadAt，使未读观察变化同步到原行操作。"
+        "Task 行 memo 比较纳入 lastUnreadAt，使未读观察变化同步到原行操作。",
+        "Task 行 memo 比较纳入 pinRevision，使置顶观察变化同步到原行操作。"
       ]
     },
     {
@@ -2301,12 +2305,13 @@
       "source": "references/zcode/packages/ui/src/WorkspaceHeaderSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceHeaderSections.tsx",
       "sha256": "3b4b33f146538d30cb36cff68ff54b0fb4c2f6c347a2c90a925fa1c735298544",
-      "copiedSha256": "33aefd2bd5124dcd8ed26fb3e158216b8dd9078ffd0c0315e091bb3d2fa7925a",
+      "copiedSha256": "a8417983f8db207726df7909a10f88289a1d9fd498df3e7c57a2f9b03aaf20d8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：H1 会话头锁定目录只读 chip（Lock 图标+目录末段，title 全路径；草稿态不显示）",
         "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。",
-        "本机标记未读在点击时从同地址项目目录或 activeTaskMeta 捕获观察，回执后只触发原列表重读。"
+        "本机标记未读在点击时从同地址项目目录或 activeTaskMeta 捕获观察，回执后只触发原列表重读。",
+        "本机置顶从同地址目录或 activeTaskMeta 固定 pinRevision 与控制观察；本机置顶和未读共用原列表权威重读，canonical 本机身份不进入远端置顶缓存，远端路径保持。"
       ]
     },
     {
@@ -6312,10 +6317,11 @@
       "source": "references/zcode/packages/ui/src/hooks/useWorkspaceActiveTaskState.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useWorkspaceActiveTaskState.ts",
       "sha256": "838cc3f683aec71067b5edc6d9e4ee1fd6b3bd18c52a740feb7862235802cfcc",
-      "copiedSha256": "a52eaee9cc31e1db167ca9f8c268fea485135c2500550808aa1018ee95aa5125",
+      "copiedSha256": "44e3d85ca126af34271ef878d532286e6f140df6184a75b4eeb591beb8b5a5ae",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "活动 Task 元信息等价比较纳入 lastUnreadAt 与 taskControl，保持头部操作读取当前观察。"
+        "活动 Task 元信息等价比较纳入 lastUnreadAt 与 taskControl，保持头部操作读取当前观察。",
+        "活动 Task 元信息等价比较纳入 pinRevision，保持头部置顶操作读取当前观察。"
       ]
     },
     {
@@ -15638,10 +15644,11 @@
       "source": "references/zcode/packages/shared/src/task-realtime-core.ts",
       "target": "packages/zcode-shared/src/task-realtime-core.ts",
       "sha256": "cba2956048f69d51cd4df6f9070fcab42cd3609f4a1faa3af96bea337910cb52",
-      "copiedSha256": "8f9848aa60410850bedb5a46c0be89e34e69d16efbed910799d3bff6bebe61db",
+      "copiedSha256": "376076a98922c9bc5d7415312be171244793394e77ff775fa845b106990f1069",
       "adaptations": [
         "Code/Design统一实施：统一Task投影保留使用过的工作方式。",
-        "实时 Task 元信息校验保留可选 lastUnreadAt，两个未读数值均限制为非负安全整数。"
+        "实时 Task 元信息校验保留可选 lastUnreadAt，两个未读数值均限制为非负安全整数。",
+        "实时 Task 元信息保留可选 pinRevision，并校验为非负安全整数。"
       ]
     },
     {
@@ -15734,12 +15741,13 @@
       "source": "references/zcode/packages/shared/src/validation.ts",
       "target": "packages/zcode-shared/src/validation.ts",
       "sha256": "49d7fccf518195c1ab4eb89ee816c878bfa4e0227108e207ec3cf5a1ddb2b84c",
-      "copiedSha256": "a43c063439583b8b71103a6d2393ae0cea2068cef4a790878492f0e8db35e78a",
+      "copiedSha256": "8c1cb348be40eb007a347b873c06f4b4a9b702b0d44b11207229f347f03ba347",
       "adaptations": [
         "Code宿主必要适配: zcodeTaskMetaSchema保留optional真实Project UUID，qualified workspaceIdentity只作source键，不解码执行权限；公开parsed Controller frame回归RED后修复",
         "Code/Design统一实施：Task元数据校验接纳工作方式列表。",
         "原 Controller 与 Task 列表校验保留当前项目、分支观察值及正文修订，复用 V4 core 定义；可选字段允许读取历史元信息。",
-        "Task 元信息校验保留可选 lastUnreadAt，两个未读数值均限制为非负安全整数。"
+        "Task 元信息校验保留可选 lastUnreadAt，两个未读数值均限制为非负安全整数。",
+        "Task 元信息保留可选 pinRevision，并校验为非负安全整数。"
       ]
     },
     {
@@ -16320,11 +16328,12 @@
       "source": "references/zcode/packages/shared/src/zcode-task-types-core.ts",
       "target": "packages/zcode-shared/src/zcode-task-types-core.ts",
       "sha256": "e75cc0a5f7e6fcbe37acdab259fbc5a0448adcf9d69a5b1f3683b72eee5c75f0",
-      "copiedSha256": "6463c197fa5fec247836ad246f6d165c005162dd8278e7101530b1751553b05d",
+      "copiedSha256": "e1c1ec96917a6905add25edf9b3fd95d2b01a01e17732197299fe188eaf703b4",
       "adaptations": [
         "Code/Design统一实施：统一Task元数据含实际使用过的工作方式，筛选不创建另一份聚合。",
         "Task 元信息增加可选 taskControl 与 conversationRevision，由当前持久记录及根会话投影提供，原 Controller 与移动消费者共用。",
-        "定义由原行、菜单和导航消费的 ZCodeTaskUnreadObservation；元信息保留清除后仍有效的可选 lastUnreadAt。"
+        "定义由原行、菜单和导航消费的 ZCodeTaskUnreadObservation；元信息保留清除后仍有效的可选 lastUnreadAt。",
+        "定义 ZCodeTaskPinObservation，固定 taskControl 与 observedPinRevision；Task 元信息保留独立于正文和权限的可选 pinRevision。"
       ]
     },
     {
@@ -16697,11 +16706,12 @@
       "source": "references/zcode/packages/services/src/session/zcodeTaskService.ts",
       "target": "packages/zcode-services/src/session/zcodeTaskService.ts",
       "sha256": "7552f9faa1419dd5516c199472e66010c6e74a8accdb21efa9abe73415777c18",
-      "copiedSha256": "0e6a18858c8f3a40cca275d6017b0a9f383f67c3655a23e2568699fb9731b021",
+      "copiedSha256": "a1d59cb37f8d3d238de3baf2fcf4facfc3e87aff199e83625ee393d2f28c8475",
       "adaptations": [
         "本机归档、恢复及条件删除携带可信 Task 项目与分支观察值，真实宿主按同一观察身份接纳并拒绝迟到操作。",
         "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。",
-        "setTaskUnread 输入接纳可选 taskControl 与 observedLastUnreadAt，连接真实宿主的本机未读操作。"
+        "setTaskUnread 输入接纳可选 taskControl 与 observedLastUnreadAt，连接真实宿主的本机未读操作。",
+        "setTaskPinned 输入接纳可选 taskControl 与 observedPinRevision，连接真实宿主的本机置顶操作。"
       ]
     },
     {
@@ -16796,9 +16806,10 @@
       "source": "references/zcode/packages/services/src/window-controller/windowController.ts",
       "target": "packages/zcode-services/src/window-controller/windowController.ts",
       "sha256": "198f5e456f633c2bc549badb32f61b3b2cc1ee106e8d14aa0f18a96d94279972",
-      "copiedSha256": "42eda88daf32594249c0da8ee4642d5af20b113406da3cbdc0f1565cc4a11912",
+      "copiedSha256": "9b86fc195fc134ed479ddfb69045d9316a185472ba294a19b7c3f2283dd57904",
       "adaptations": [
-        "mutateTask 地址接纳可选 Task 未读观察，供原侧栏将点击时的身份和标记传给可信宿主。"
+        "mutateTask 地址接纳可选 Task 未读观察，供原侧栏将点击时的身份和标记传给可信宿主。",
+        "mutateTask 地址同时接纳可选 Task 置顶观察，供原侧栏将点击时的控制身份和置顶修订传给可信宿主。"
       ]
     },
     {

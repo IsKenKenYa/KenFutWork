@@ -22,6 +22,12 @@ export interface ZCodeTaskUnreadObservation {
   observedLastUnreadAt: number;
 }
 
+/** 点击时固定的 Task 与置顶观察；独立于正文修订和未读水位。 */
+export interface ZCodeTaskPinObservation {
+  taskControl: ConversationTaskControl;
+  observedPinRevision: number;
+}
+
 /**
  * ZCode task/session 投影共享类型定义
  *
@@ -340,6 +346,8 @@ export interface ZCodeTaskMeta {
   forkedFromTaskId?: string;
   /** 最近分配的未读标记；读取清除后仍保留，供下一次明确操作固定观察。 */
   lastUnreadAt?: number;
+  /** 置顶状态的独立持久修订，不改变 Task 正文或运行权限。 */
+  pinRevision?: number;
   /** 未读任务记录最近一次标记/产生未读的时间，用于跨重启保留蓝点状态。 */
   unreadAt?: number;
   /** 持久化的任务状态，记录最后一次 prompt 的结果 */

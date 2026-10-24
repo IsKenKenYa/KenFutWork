@@ -89,6 +89,7 @@ export const codeProjectTreeTaskSchema = z
     thoughtLevel: z.string().optional(),
     status: z.enum(["error", "running", "completed"]).optional(),
     pinned: z.boolean(),
+    pinRevision: z.number().int().nonnegative().safe(),
     archived: z.boolean(),
     unreadAt: z.number().int().nonnegative().safe().optional(),
     lastUnreadAt: z.number().int().nonnegative().safe(),

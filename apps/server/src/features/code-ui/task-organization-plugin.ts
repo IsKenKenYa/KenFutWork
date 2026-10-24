@@ -1,7 +1,10 @@
 import {
+  codeTaskControllerMutationArgsSchema,
   codeTaskOrganizationArgsSchema,
+  codeTaskPinArgsSchema,
+  codeTaskPinObservationSchema,
   codeTaskUnreadArgsSchema,
-  codeTaskUnreadControllerArgsSchema,
+  codeTaskUnreadObservationSchema,
 } from "@kenfutwork/shared";
 import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import {
@@ -10,8 +13,23 @@ import {
   runCodeUiHostRpc,
 } from "./host-rpc-handler.js";
 
-function registerTaskUnreadHandlers(ctx: PluginContext) {
+function registerTaskListMutationHandlers(ctx: PluginContext) {
   const service = ctx.get("codeUi");
+  ctx.effect(() =>
+    ctx
+      .get("capabilities")
+      .register<CodeUiHostRpcHandler>(CODE_UI_HOST_RPC_CAPABILITY, {
+        id: "zcode-task.setTaskPinned",
+        value: {
+          call(actor, args, context) {
+            return runCodeUiHostRpc(context, async () => {
+              const [input] = codeTaskPinArgsSchema.parse(args);
+              return service.changeTaskPinned(actor, input, context.signal);
+            });
+          },
+        },
+      }),
+  );
   ctx.effect(() =>
     ctx
       .get("capabilities")
@@ -36,11 +54,20 @@ function registerTaskUnreadHandlers(ctx: PluginContext) {
           call(actor, args, context) {
             return runCodeUiHostRpc(context, async () => {
               const [{ address, mutation }] =
-                codeTaskUnreadControllerArgsSchema.parse(args);
+                codeTaskControllerMutationArgsSchema.parse(args);
+              if (mutation.kind === "pin")
+                return service.changeTaskPinned(
+                  actor,
+                  {
+                    ...codeTaskPinObservationSchema.parse(address),
+                    pinned: mutation.pinned,
+                  },
+                  context.signal,
+                );
               return service.changeTaskUnread(
                 actor,
                 {
-                  ...address,
+                  ...codeTaskUnreadObservationSchema.parse(address),
                   unread: mutation.kind === "mark-unread",
                   ...(mutation.kind === "mark-read" &&
                   mutation.expectedUnreadAt !== undefined
@@ -63,7 +90,7 @@ export function createTaskOrganizationPlugin(): PluginDefinition {
     apply() {},
     mounted(ctx) {
       const service = ctx.get("codeUi");
-      registerTaskUnreadHandlers(ctx);
+      registerTaskListMutationHandlers(ctx);
       for (const method of [
         "archiveTask",
         "unarchiveTask",

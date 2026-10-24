@@ -4,6 +4,7 @@ import {
   codeTaskUnreadControllerArgsSchema,
   codeTaskUnreadMetaSchema,
 } from "@kenfutwork/shared";
+import { assertTaskOperationResult } from "./taskOperationObservation.js";
 
 interface TaskUnreadCall {
   args: unknown[];
@@ -40,15 +41,6 @@ export function captureTaskUnreadCall(
 /** 回执只确认原 Task 的操作，未读显示仍由当前权威列表提供。 */
 export function readTaskUnreadResult(call: TaskUnreadCall, value: unknown) {
   const meta = codeTaskUnreadMetaSchema.parse(value);
-  const target = call.target;
-  if (
-    meta.taskId !== target.taskId ||
-    meta.workspacePath !== target.workspacePath ||
-    meta.workspaceIdentity !== target.workspaceIdentity ||
-    meta.projectId !== target.taskControl.projectId ||
-    meta.taskControl.projectId !== target.taskControl.projectId ||
-    meta.taskControl.branchGeneration !== target.taskControl.branchGeneration
-  )
-    throw new Error("任务回执已改变，请重新加载列表。");
+  assertTaskOperationResult(call.target, meta);
   return meta;
 }

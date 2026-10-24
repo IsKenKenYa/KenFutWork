@@ -1,4 +1,5 @@
-import { isLocalWorkspaceTarget, type ZCodeTaskUnreadObservation } from "@zcode/shared";
+import { isLocalWorkspaceTarget, type ZCodeTaskPinObservation, type ZCodeTaskUnreadObservation } from "@zcode/shared";
+import { requireTaskPinObservation } from "@zui/host/taskPinObservation.js";
 import { requireTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
 import type {
   ProjectTaskRef,
@@ -15,11 +16,12 @@ interface ProjectTaskPorts {
   service: IZCodeTaskService;
   controller?: IWindowControllerService;
 }
+type TaskMutationObservation = ZCodeTaskUnreadObservation | ZCodeTaskPinObservation;
 function taskAddress(
   task: ProjectTaskRef,
   remoteSessionId?: string | null,
-  observation?: ZCodeTaskUnreadObservation,
-): WindowHostTaskAddress & Partial<ZCodeTaskUnreadObservation> {
+  observation?: TaskMutationObservation,
+): WindowHostTaskAddress & Partial<ZCodeTaskUnreadObservation & ZCodeTaskPinObservation> {
   return {
     workspacePath: task.workspacePath,
     workspaceIdentity: task.workspaceIdentity,
@@ -44,9 +46,10 @@ export async function mutateProjectTask(
   mutation: ProjectTaskMutation,
   remoteSessionId?: string | null,
 ) {
-  const observation =
-    (mutation.kind === "mark-read" || mutation.kind === "mark-unread") &&
-    isLocalWorkspaceTarget({ ...task, remoteSessionId })
+  const local = isLocalWorkspaceTarget({ ...task, remoteSessionId });
+  const observation = local && mutation.kind === "pin"
+    ? requireTaskPinObservation(task)
+    : local && (mutation.kind === "mark-read" || mutation.kind === "mark-unread")
       ? requireTaskUnreadObservation(task)
       : undefined;
   const target = {

@@ -6,7 +6,14 @@ import type { CodeUiSessionRecord } from "./repository.js";
 export function codeUiTaskMeta(
   record: CodeUiSessionRecord,
   workspacePath: string,
-): (ZCodeTaskMeta & { projectId: string; lastUnreadAt: number }) | null {
+):
+  | (ZCodeTaskMeta & {
+      projectId: string;
+      lastUnreadAt: number;
+      pinRevision: number;
+      pinned: boolean;
+    })
+  | null {
   const snapshot = record.state?.snapshots.find(
     (entry) => entry.sessionId === record.id,
   );
@@ -46,6 +53,8 @@ export function codeUiTaskMeta(
     },
     conversationRevision: snapshot.revision,
     lastUnreadAt: Number(record.last_unread_at),
+    pinRevision: Number(record.pin_revision),
+    pinned: record.pinned,
     ...(record.unread_at !== null
       ? { unreadAt: Number(record.unread_at) }
       : {}),

@@ -7,6 +7,7 @@ import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { logger } from "@zui/logger.js";
+import { requireTaskPinObservation } from "@zui/host/taskPinObservation.js";
 
 /** UI 命令适配：复用原 Host 入口，成功后仅处理本窗口展示，不保存会话事实。 */
 export function useProjectTaskActions(task: ProjectTask, refresh: () => Promise<void>) {
@@ -23,8 +24,9 @@ export function useProjectTaskActions(task: ProjectTask, refresh: () => Promise<
       taskId: task.taskId,
       taskControl: task.taskControl,
       lastUnreadAt: task.lastUnreadAt,
+      pinRevision: task.pinRevision,
     }),
-    [task.workspacePath, task.workspaceIdentity, task.taskId, task.taskControl, task.lastUnreadAt],
+    [task.workspacePath, task.workspaceIdentity, task.taskId, task.taskControl, task.lastUnreadAt, task.pinRevision],
   );
   const mutate = useCallback(
     (mutation: ProjectTaskMutation) =>
@@ -49,10 +51,23 @@ export function useProjectTaskActions(task: ProjectTask, refresh: () => Promise<
   const pin = useCallback(
     async (_id: string, pinned: boolean) => {
       try {
+        const observation = requireTaskPinObservation(target);
+        const fixedTarget = {
+          ...target,
+          taskControl: observation.taskControl,
+          pinRevision: observation.observedPinRevision,
+        };
         const commit = async () => {
-          const result = await mutate({ kind: "pin", pinned });
-          await refresh();
-          return result ?? null;
+          try {
+            const result = await mutateProjectTask(
+              { service, controller },
+              fixedTarget,
+              { kind: "pin", pinned },
+            );
+            return result ?? null;
+          } finally {
+            await refresh();
+          }
         };
         if (onPin) {
           await onPin(task, pinned, commit);
@@ -64,7 +79,7 @@ export function useProjectTaskActions(task: ProjectTask, refresh: () => Promise<
         return null;
       }
     },
-    [mutate, refresh, onPin, task, report],
+    [service, controller, target, refresh, onPin, task, report],
   );
   const archive = useCallback(async () => {
     try {

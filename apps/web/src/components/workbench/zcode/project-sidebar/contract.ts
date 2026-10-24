@@ -11,7 +11,7 @@ import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import type { Theme } from "@zui/useTheme.js";
 
 export type ProjectTask = ServiceProjectTask & ZCodeTaskMeta;
-export type ProjectTaskRef = Pick<ProjectTask, "workspacePath" | "workspaceIdentity" | "taskId" | "taskControl" | "lastUnreadAt">;
+export type ProjectTaskRef = Pick<ProjectTask, "workspacePath" | "workspaceIdentity" | "taskId" | "taskControl" | "lastUnreadAt" | "pinRevision">;
 export type VirtualProject = ServiceVirtualProject & {
   primaryRootStatus?: "available" | "missing" | "unavailable";
 };

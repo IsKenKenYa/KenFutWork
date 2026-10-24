@@ -2333,7 +2333,7 @@
       "post": {
         "operationId": "postCodeUiRpc",
         "summary": "调用 Code 原界面宿主接口",
-        "description": "task-groups.read 通过已初始化的可信本机连接读取分组，不接收位置参数。分组、成员、根节点顺序及独立组织修订来自同一 PostgreSQL 只读快照；成员关联稳定 Task Owner，workspaceKey 根据当前项目与 Task 固定目录投影，不能据此增加目录授权。读取不登记 Task、不推进修订或启动 Agent；多余参数返回400。归档保留成员，Task软删除及物理删除清除成员和顺序，后续读取不恢复已删除Task。task-groups.save 创建时携带表单固定的creationId和expectedRevision，编辑时携带分组id和expectedRevision，名称和颜色按稀疏字段保存。实例与creationId组成创建键；实例、分组id与观察修订组成编辑键，规范化参数指纹、分组及回执在同一事务提交。同键相同意图返回原回执，不覆盖后续编辑；异参或观察修订过期返回409，非法字段和多余参数返回400。当前修订的同值编辑不推进组织修订或占用修改回执。新组置于根节点顶部，编辑保留排序和成员；分组删除后回执清除名称、结果及参数指纹，迟到保存返回404，实例删除级联清理。保存后原SSE广播state:task-groups供已初始化连接重新读取，不创建Task、Canvas或Run。task-groups.admit接收严格的tasks数组和可选placement，本机引用含hostId、taskId、workspacePath与workspaceIdentity；成功返回{result:null}。真实Task按身份锁定后取得组织行锁，精确核验持久目录与当前项目身份；缺失、已删除及子会话不登记。同Task冲突地址返回400，活Task旧地址返回409。新成员按真实创建时间由新到旧进入根顶部，已有成员、人工顺序及创建归属保持；空、重复、并发登记不重复推进修订。placement包含同列表的完整task引用、可空groupId及creationId，创建身份只接受真实TaskId或该Task原始首条canonical输入对应的有效已接纳命令；历史编辑和分叉继承正文不能签发创建身份，有效别名统一为TaskId。实例、固定命令命名空间和TaskId组成创建归属业务键，规范化refs及目标组生成SHA-256指纹，回执复用该Task的code_ui_commands；同意图重放保持原位置，异参409。首次归属尊重已人工整理的位置，目标组消失时放回根顶部，不恢复旧组；自然登记、归属和回执同事务，整次结构变化仅推进一次组织修订。Task删除清除相关指纹和回执，迟到placement返回404，自然登记不恢复成员，实例物理删除级联清除。关闭取消未接纳操作并等待在途SQL，结构变化后原SSE通知重新读取；不修改Task正文、目录、权限或Goal，不启动Run。task-groups.ungroup接收严格对象{id,expectedRevision}，在同一组织行锁事务内将全部持久成员按原顺序替换根层的原组节点，标记为人工整理并删除组；包含归档隐藏成员，保留其它根节点次序、Task正文、目录及权限。实例、规范化组身份与观察修订组成业务键，全部输入均属于该键，无额外参数指纹。组织变更与最小删除回执同事务提交，同键连续或并发重放成功且只推进一次修订；旧修订返回409，组不存在或不同修订的迟到取消返回404，非法字段和多余参数返回400。取消回执共用code_task_group_save_receipts，只保留实例、业务键、组身份和deleted=true；不保留名称、路径、结果或内容指纹，保留到实例物理删除并级联清除。取消后的原创建或编辑请求返回404，不恢复分组。成功通过原SSE通知重读，连接关闭取消尚未接纳的事务并等待在途SQL退出；提交回包丢失沿原键核验，不重新执行取消。task-groups.move接收严格对象{node,sourceGroupId,groupId,expectedRevision,anchor?}，成功返回{result:null}。节点为带groupId的group或带完整本机Task引用的task，目标groupId可空，anchor指定目标层节点及before/after；无anchor进入该层顶部。分组只能根层移动，不支持嵌套。Task按身份加锁后取得组织行锁，复验当前来源、目标与锚点；缺失或归档Task返回404，旧目录、过期修订、来源或锚点改变返回409。实例、节点类型、规范化稳定身份和动作观察修订组成业务键，全部规范化输入生成SHA-256参数指纹。成员、完整隐藏次序、根顺序、一次修订及回执同事务提交；新Task可直接登记为人工整理。同键重放保持后续位置，异参409。移动节点、来源组、目标组或锚点删除后，回执清除参数指纹及关联身份，仅保留业务键和删除状态，迟到请求404；保留到实例物理删除并级联清除。关闭取消未接纳事务并等待SQL退出，提交回包丢失沿原意图核验，成功通过原SSE通知重新读取；不修改Task项目、正文、目录、权限或Goal，不启动Run。按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。sendText 和 stop 信封须携带点击时的 taskControl，缺少时回执为 rejected/proto.missingTaskControl，项目或分支已改变时为 stale/proto.staleTaskControl；相同原请求重放返回保存的回执，同键改观察值返回409。创建 ACK.result.taskControl 返回实际插入行的初始值。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；供应商稀疏保存中 access.apiKeyManagementUrl 省略保留，字符串更新，null 只清除链接，access:null 同时清除链接和 Key；聊天与生成设置共用该记录。MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。project.prepareSession通过已初始化的可信本机连接准备指定项目的新草稿目录。唯一参数为严格对象：projectId必填UUID，hostId可省略且只允许local，preset为code或design，省略使用code；未知字段、缺少项目身份或多余位置参数返回400。所属projects:editor贡献先按真实Project ID读取当前目录，再通过同一connectionId调用既有workspace.open复验目录和工作方式；结果严格返回projectId、workspacePath及canonical workspaceIdentity。同目录的其他项目不能替代指定项目；读取不创建或更改项目、Task、画布或目录授权，不启动模型。项目不可用或工作方式不匹配沿原宿主返回404；连接关闭取消未接纳调用并等待在途读取退出。原项目编辑使用 project.readTree、readProjects、readDirectory、saveProject 和 deleteProject。readTree在本机同一只读repeatable-read事务返回项目与持久根Task；includeDeleted:true同时读取已归档项目并以deleted:true标识，普通读取排除这些项目及所属Task。项目保留修订与目录读写权限，Task目录来自创建时固定的工作域，workspaceIdentity由当前Project身份与Task固定目录组成，置顶与归档读取持久事实。Task的taskControl返回当前项目及分支观察值；显式includeDeletedTasks:true返回删除Task的不透明taskId、projectId与hostId，目录与正文继续按删除规则清除。读取不修改授权、不启动Agent；远端Host、未知字段、错误类型及多余参数返回400。编辑携带稳定项目身份、目录读写权限和非负32位 expectedRevision；同一实例、项目及观察修订组成保存键，相同意图重放返回原回执，不同意图返回409，同值保存不推进修订。创建省略id，携带表单生成的稳定creationId、kind(code/design)和目录权限；同一实例与creationId组成创建键，参数指纹冲突返回409，项目与回执在同一事务保存，重放不新增Task或Canvas。归档或删除后的创建回执只保留业务键并返回404。已有主目录保持固定，项目修改仅影响之后创建的Task；已有Task授权保持。归档和连接关闭后拒绝迟到保存，连接取消返回404。project.saveProject另接收严格的单元素置顶参数：{id,expectedRevision,pinned,hostId?}，pinned必须为boolean，hostId只允许local；不能混入名称、目录或创建字段，多余位置参数返回400。置顶由同一public.projects.pinned持有，项目投影返回pinned；旧保存回执缺该字段时按false解析。实例、项目和观察修订仍组成保存键，仅规范化pinned形成本次意图指纹；与编辑共用项目行锁及project_editor_save_receipts，异参返回409/project_revision_conflict。置顶和取消的真实变更只推进一次项目修订，同键连续或并发重放返回原回执，原回执不覆盖后来状态；同值不推进。项目归档、关闭或物理删除后拒绝迟到请求，不恢复项目。置顶不依赖物理目录仍存在，不修改名称、主目录、附加目录、Task授权或历史，也不启动模型；通知继续使用state:projects。project.moveTask只接受单元素元组，其中严格对象包含task(taskId、workspacePath及可选workspaceIdentity)、sourceProjectId、projectId、observedRevision及可选hostId、addMissingRoot。未知字段、缺失参数或多余位置参数返回400。实例、Task、来源项目、目标项目和观察修订组成稳定移动键，规范化目录身份和明确补目录选择形成指纹；同键重放复用持久准备或完成事实，异参409，删除后的迟到请求404。项目树和Controller任务元信息返回可选taskControl及conversationRevision，分别投影当前项目与分支、实际正文修订，历史缺少字段时仍可读取。可信连接关闭取消尚未接纳的事务，并等待在途读取和事务退出；同键在线等待者以自身连接和原观察值继续，不能继承其他连接的取消。准备事务已提交后继续完成原资源关闭与归属更新，关闭等待操作退出，原连接返回404。移动保留Task固定目录与权限，Goal不自动恢复；提交结果未知时继续核验原意图。原归档管理经已初始化连接调用 zcode-task.archiveTask、unarchiveTask 和 deleteArchivedTask。参数固定taskId、workspacePath、workspaceIdentity及点击时taskControl；实例、Task、项目、观察分支和目标归档值组成稳定归档业务键，规范化参数形成指纹，异参返回409。归档等待原运行、后台工作、文件操作与进程关闭后发表；恢复保留固定目录与权限，推进授权和分支代际，保留Goal及计量且不自动恢复执行。顺序和并发重放返回持久回执；准备事务已提交但回包丢失时，同键复验准备状态和代际后继续关闭，不重新推进权限。条件删除只删除观察值仍匹配且当前仍归档的Task；已恢复、已删除或不存在返回false，不能删除新活动Task。Task删除沿原事务清除命令参数指纹与回执，迟到归档或恢复返回404，实例物理删除时级联清除。宿主贡献等待在途调用退出，连接取消后拒绝尚未接纳的操作。zcode-task.setTaskUnread和window-controller.mutateTask的mark-read、mark-unread复用同一Task未读提供方。严格单元素参数固定taskId、workspacePath、canonical workspaceIdentity、taskControl与observedLastUnreadAt；setTaskUnread另含unread及可选expectedUnreadAt，Controller参数分为address与mutation。实例、Task、当前项目与分支、观察水位、动作组成稳定业务键，完整规范化参数形成指纹；同键重放返回原回执，异参或标未读使用旧水位返回409。读取清除按expectedUnreadAt比较，标记已变化时保留新标记并返回当前元信息。unreadAt是当前未读标记，lastUnreadAt是保留水位；新标记单调增加，读取清除不重置水位。标记和回执同事务写入原Task，关联Owner或Project锁被占用返回409，未读写入不修改运行状态、消息revision、目录授权、Run或Goal。旧项目和分支请求被拒绝，Task删除同时清除标记及命令内容，删除后迟到请求返回404。连接关闭取消尚未接纳事务并等待清理；成功沿原Controller与项目树通知重读，客户端不能用迟到回执清除后来的新标记。",
+        "description": "task-groups.read 通过已初始化的可信本机连接读取分组，不接收位置参数。分组、成员、根节点顺序及独立组织修订来自同一 PostgreSQL 只读快照；成员关联稳定 Task Owner，workspaceKey 根据当前项目与 Task 固定目录投影，不能据此增加目录授权。读取不登记 Task、不推进修订或启动 Agent；多余参数返回400。归档保留成员，Task软删除及物理删除清除成员和顺序，后续读取不恢复已删除Task。task-groups.save 创建时携带表单固定的creationId和expectedRevision，编辑时携带分组id和expectedRevision，名称和颜色按稀疏字段保存。实例与creationId组成创建键；实例、分组id与观察修订组成编辑键，规范化参数指纹、分组及回执在同一事务提交。同键相同意图返回原回执，不覆盖后续编辑；异参或观察修订过期返回409，非法字段和多余参数返回400。当前修订的同值编辑不推进组织修订或占用修改回执。新组置于根节点顶部，编辑保留排序和成员；分组删除后回执清除名称、结果及参数指纹，迟到保存返回404，实例删除级联清理。保存后原SSE广播state:task-groups供已初始化连接重新读取，不创建Task、Canvas或Run。task-groups.admit接收严格的tasks数组和可选placement，本机引用含hostId、taskId、workspacePath与workspaceIdentity；成功返回{result:null}。真实Task按身份锁定后取得组织行锁，精确核验持久目录与当前项目身份；缺失、已删除及子会话不登记。同Task冲突地址返回400，活Task旧地址返回409。新成员按真实创建时间由新到旧进入根顶部，已有成员、人工顺序及创建归属保持；空、重复、并发登记不重复推进修订。placement包含同列表的完整task引用、可空groupId及creationId，创建身份只接受真实TaskId或该Task原始首条canonical输入对应的有效已接纳命令；历史编辑和分叉继承正文不能签发创建身份，有效别名统一为TaskId。实例、固定命令命名空间和TaskId组成创建归属业务键，规范化refs及目标组生成SHA-256指纹，回执复用该Task的code_ui_commands；同意图重放保持原位置，异参409。首次归属尊重已人工整理的位置，目标组消失时放回根顶部，不恢复旧组；自然登记、归属和回执同事务，整次结构变化仅推进一次组织修订。Task删除清除相关指纹和回执，迟到placement返回404，自然登记不恢复成员，实例物理删除级联清除。关闭取消未接纳操作并等待在途SQL，结构变化后原SSE通知重新读取；不修改Task正文、目录、权限或Goal，不启动Run。task-groups.ungroup接收严格对象{id,expectedRevision}，在同一组织行锁事务内将全部持久成员按原顺序替换根层的原组节点，标记为人工整理并删除组；包含归档隐藏成员，保留其它根节点次序、Task正文、目录及权限。实例、规范化组身份与观察修订组成业务键，全部输入均属于该键，无额外参数指纹。组织变更与最小删除回执同事务提交，同键连续或并发重放成功且只推进一次修订；旧修订返回409，组不存在或不同修订的迟到取消返回404，非法字段和多余参数返回400。取消回执共用code_task_group_save_receipts，只保留实例、业务键、组身份和deleted=true；不保留名称、路径、结果或内容指纹，保留到实例物理删除并级联清除。取消后的原创建或编辑请求返回404，不恢复分组。成功通过原SSE通知重读，连接关闭取消尚未接纳的事务并等待在途SQL退出；提交回包丢失沿原键核验，不重新执行取消。task-groups.move接收严格对象{node,sourceGroupId,groupId,expectedRevision,anchor?}，成功返回{result:null}。节点为带groupId的group或带完整本机Task引用的task，目标groupId可空，anchor指定目标层节点及before/after；无anchor进入该层顶部。分组只能根层移动，不支持嵌套。Task按身份加锁后取得组织行锁，复验当前来源、目标与锚点；缺失或归档Task返回404，旧目录、过期修订、来源或锚点改变返回409。实例、节点类型、规范化稳定身份和动作观察修订组成业务键，全部规范化输入生成SHA-256参数指纹。成员、完整隐藏次序、根顺序、一次修订及回执同事务提交；新Task可直接登记为人工整理。同键重放保持后续位置，异参409。移动节点、来源组、目标组或锚点删除后，回执清除参数指纹及关联身份，仅保留业务键和删除状态，迟到请求404；保留到实例物理删除并级联清除。关闭取消未接纳事务并等待SQL退出，提交回包丢失沿原意图核验，成功通过原SSE通知重新读取；不修改Task项目、正文、目录、权限或Goal，不启动Run。按已接通的服务与方法白名单调用原 UI 的宿主能力。命令按 clientId 与 commandId 幂等；相同键不同参数冲突。sendText 和 stop 信封须携带点击时的 taskControl，缺少时回执为 rejected/proto.missingTaskControl，项目或分支已改变时为 stale/proto.staleTaskControl；相同原请求重放返回保存的回执，同键改观察值返回409。创建 ACK.result.taskControl 返回实际插入行的初始值。普通消息共用 Agent；goalControl 是原 envelope 同级的宿主字段并纳入幂等指纹，Plan、基础权限及目标分别控制。命令参数严格校验，未知字段返回400。Key仅在授权设置内可查看复制；供应商稀疏保存中 access.apiKeyManagementUrl 省略保留，字符串更新，null 只清除链接，access:null 同时清除链接和 Key；聊天与生成设置共用该记录。MCP配置与REST共用实例记录，目录省略env值，授权编辑按记录ID读取；技能管理复用实例安装库并以安装修订限制迟到写入；插件来源检查和安装复用注册表与公共契约，实例操作无需Project且不开放生命周期脚本；尚未接通的方法明确拒绝。project.prepareSession通过已初始化的可信本机连接准备指定项目的新草稿目录。唯一参数为严格对象：projectId必填UUID，hostId可省略且只允许local，preset为code或design，省略使用code；未知字段、缺少项目身份或多余位置参数返回400。所属projects:editor贡献先按真实Project ID读取当前目录，再通过同一connectionId调用既有workspace.open复验目录和工作方式；结果严格返回projectId、workspacePath及canonical workspaceIdentity。同目录的其他项目不能替代指定项目；读取不创建或更改项目、Task、画布或目录授权，不启动模型。项目不可用或工作方式不匹配沿原宿主返回404；连接关闭取消未接纳调用并等待在途读取退出。原项目编辑使用 project.readTree、readProjects、readDirectory、saveProject 和 deleteProject。readTree在本机同一只读repeatable-read事务返回项目与持久根Task；includeDeleted:true同时读取已归档项目并以deleted:true标识，普通读取排除这些项目及所属Task。项目保留修订与目录读写权限，Task目录来自创建时固定的工作域，workspaceIdentity由当前Project身份与Task固定目录组成，置顶与归档读取持久事实。Task的taskControl返回当前项目及分支观察值；显式includeDeletedTasks:true返回删除Task的不透明taskId、projectId与hostId，目录与正文继续按删除规则清除。读取不修改授权、不启动Agent；远端Host、未知字段、错误类型及多余参数返回400。编辑携带稳定项目身份、目录读写权限和非负32位 expectedRevision；同一实例、项目及观察修订组成保存键，相同意图重放返回原回执，不同意图返回409，同值保存不推进修订。创建省略id，携带表单生成的稳定creationId、kind(code/design)和目录权限；同一实例与creationId组成创建键，参数指纹冲突返回409，项目与回执在同一事务保存，重放不新增Task或Canvas。归档或删除后的创建回执只保留业务键并返回404。已有主目录保持固定，项目修改仅影响之后创建的Task；已有Task授权保持。归档和连接关闭后拒绝迟到保存，连接取消返回404。project.saveProject另接收严格的单元素置顶参数：{id,expectedRevision,pinned,hostId?}，pinned必须为boolean，hostId只允许local；不能混入名称、目录或创建字段，多余位置参数返回400。置顶由同一public.projects.pinned持有，项目投影返回pinned；旧保存回执缺该字段时按false解析。实例、项目和观察修订仍组成保存键，仅规范化pinned形成本次意图指纹；与编辑共用项目行锁及project_editor_save_receipts，异参返回409/project_revision_conflict。置顶和取消的真实变更只推进一次项目修订，同键连续或并发重放返回原回执，原回执不覆盖后来状态；同值不推进。项目归档、关闭或物理删除后拒绝迟到请求，不恢复项目。置顶不依赖物理目录仍存在，不修改名称、主目录、附加目录、Task授权或历史，也不启动模型；通知继续使用state:projects。project.moveTask只接受单元素元组，其中严格对象包含task(taskId、workspacePath及可选workspaceIdentity)、sourceProjectId、projectId、observedRevision及可选hostId、addMissingRoot。未知字段、缺失参数或多余位置参数返回400。实例、Task、来源项目、目标项目和观察修订组成稳定移动键，规范化目录身份和明确补目录选择形成指纹；同键重放复用持久准备或完成事实，异参409，删除后的迟到请求404。项目树和Controller任务元信息返回可选taskControl及conversationRevision，分别投影当前项目与分支、实际正文修订，历史缺少字段时仍可读取。可信连接关闭取消尚未接纳的事务，并等待在途读取和事务退出；同键在线等待者以自身连接和原观察值继续，不能继承其他连接的取消。准备事务已提交后继续完成原资源关闭与归属更新，关闭等待操作退出，原连接返回404。移动保留Task固定目录与权限，Goal不自动恢复；提交结果未知时继续核验原意图。原归档管理经已初始化连接调用 zcode-task.archiveTask、unarchiveTask 和 deleteArchivedTask。参数固定taskId、workspacePath、workspaceIdentity及点击时taskControl；实例、Task、项目、观察分支和目标归档值组成稳定归档业务键，规范化参数形成指纹，异参返回409。归档等待原运行、后台工作、文件操作与进程关闭后发表；恢复保留固定目录与权限，推进授权和分支代际，保留Goal及计量且不自动恢复执行。顺序和并发重放返回持久回执；准备事务已提交但回包丢失时，同键复验准备状态和代际后继续关闭，不重新推进权限。条件删除只删除观察值仍匹配且当前仍归档的Task；已恢复、已删除或不存在返回false，不能删除新活动Task。Task删除沿原事务清除命令参数指纹与回执，迟到归档或恢复返回404，实例物理删除时级联清除。宿主贡献等待在途调用退出，连接取消后拒绝尚未接纳的操作。zcode-task.setTaskUnread和window-controller.mutateTask的mark-read、mark-unread复用同一Task未读提供方。严格单元素参数固定taskId、workspacePath、canonical workspaceIdentity、taskControl与observedLastUnreadAt；setTaskUnread另含unread及可选expectedUnreadAt，Controller参数分为address与mutation。实例、Task、当前项目与分支、观察水位、动作组成稳定业务键，完整规范化参数形成指纹；同键重放返回原回执，异参或标未读使用旧水位返回409。读取清除按expectedUnreadAt比较，标记已变化时保留新标记并返回当前元信息。unreadAt是当前未读标记，lastUnreadAt是保留水位；新标记单调增加，读取清除不重置水位。标记和回执同事务写入原Task，关联Owner或Project锁被占用返回409，未读写入不修改运行状态、消息revision、目录授权、Run或Goal。旧项目和分支请求被拒绝，Task删除同时清除标记及命令内容，删除后迟到请求返回404。连接关闭取消尚未接纳事务并等待清理；成功沿原Controller与项目树通知重读，客户端不能用迟到回执清除后来的新标记。zcode-task.setTaskPinned与window-controller.mutateTask的pin分支共用原Task置顶提供方。严格单元素输入固定Task地址、taskControl、observedPinRevision及目标pinned；Controller将观察放在address，将kind:pin和pinned放在mutation。根Task的pinRevision只在pinned实际变化时推进，同值不推进；Task元信息、项目树和Controller同步投影，置顶列表读取相同持久pinned。实例、Task、当前项目与分支、观察置顶修订和目标值组成业务键，完整规范化参数指纹与置顶变更在同一事务写入原命令回执。同键顺序或并发重放返回原结果，不能覆盖后来的取消或再次置顶；不同意图或旧观察返回409/task_pin_conflict，缺字段、错误类型或额外参数返回400。置顶不修改正文、运行CAS修订、updatedAt、未读水位、目录权限、Run或Goal。共用Task身份锁及Owner/Project复验，旧项目或分支先于回执检查拒绝，删除清除观察及命令内容，迟到写入404，实例删除级联清除；关闭取消未接纳操作并等待在途SQL退出。客户端在连接等待前复制原观察，关闭、换代或已知Task代际改变后拒绝旧ACK；成功与未知写入结果均权威重读，不把旧ACK写成当前置顶状态。",
         "tags": [
           "code"
         ],
@@ -14023,6 +14023,7 @@
                   "task_group_not_found",
                   "task_groups_not_initialized",
                   "task_unread_conflict",
+                  "task_pin_conflict",
                   "design_goal_conflict",
                   "design_input_conflict",
                   "design_restore_conflict",
@@ -17345,6 +17346,90 @@
               },
               "method": {
                 "type": "string",
+                "const": "setTaskPinned"
+              },
+              "args": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "workspacePath": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "workspaceIdentity": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "taskControl": {
+                        "type": "object",
+                        "properties": {
+                          "projectId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "branchGeneration": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "projectId",
+                          "branchGeneration"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "observedPinRevision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "pinned": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "workspacePath",
+                      "workspaceIdentity",
+                      "taskControl",
+                      "observedPinRevision",
+                      "pinned"
+                    ],
+                    "additionalProperties": false
+                  }
+                ],
+                "items": false,
+                "minItems": 1,
+                "maxItems": 1
+              },
+              "connectionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "method",
+              "args"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string",
+                "const": "zcode-task"
+              },
+              "method": {
+                "type": "string",
                 "const": "setTaskUnread"
               },
               "args": {
@@ -17437,108 +17522,198 @@
                 "const": "mutateTask"
               },
               "args": {
-                "type": "array",
-                "prefixItems": [
+                "anyOf": [
                   {
-                    "type": "object",
-                    "properties": {
-                      "address": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
                         "type": "object",
                         "properties": {
-                          "taskId": {
-                            "type": "string",
-                            "format": "uuid",
-                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                          },
-                          "workspacePath": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "workspaceIdentity": {
-                            "type": "string",
-                            "minLength": 1
-                          },
-                          "taskControl": {
+                          "address": {
                             "type": "object",
                             "properties": {
-                              "projectId": {
+                              "taskId": {
                                 "type": "string",
                                 "format": "uuid",
                                 "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                               },
-                              "branchGeneration": {
-                                "type": "integer",
-                                "exclusiveMinimum": 0,
-                                "maximum": 9007199254740991
-                              }
-                            },
-                            "required": [
-                              "projectId",
-                              "branchGeneration"
-                            ],
-                            "additionalProperties": false
-                          },
-                          "observedLastUnreadAt": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 9007199254740991
-                          }
-                        },
-                        "required": [
-                          "taskId",
-                          "workspacePath",
-                          "workspaceIdentity",
-                          "taskControl",
-                          "observedLastUnreadAt"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "mutation": {
-                        "oneOf": [
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
+                              "workspacePath": {
                                 "type": "string",
-                                "const": "mark-unread"
-                              }
-                            },
-                            "required": [
-                              "kind"
-                            ],
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "properties": {
-                              "kind": {
-                                "type": "string",
-                                "const": "mark-read"
+                                "minLength": 1
                               },
-                              "expectedUnreadAt": {
+                              "workspaceIdentity": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "taskControl": {
+                                "type": "object",
+                                "properties": {
+                                  "projectId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "branchGeneration": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "projectId",
+                                  "branchGeneration"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "observedLastUnreadAt": {
                                 "type": "integer",
                                 "minimum": 0,
                                 "maximum": 9007199254740991
                               }
                             },
                             "required": [
-                              "kind"
+                              "taskId",
+                              "workspacePath",
+                              "workspaceIdentity",
+                              "taskControl",
+                              "observedLastUnreadAt"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "mutation": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "mark-unread"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "mark-read"
+                                  },
+                                  "expectedUnreadAt": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "address",
+                          "mutation"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 1,
+                    "maxItems": 1
+                  },
+                  {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "workspacePath": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "workspaceIdentity": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "taskControl": {
+                                "type": "object",
+                                "properties": {
+                                  "projectId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "branchGeneration": {
+                                    "type": "integer",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "projectId",
+                                  "branchGeneration"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "observedPinRevision": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "taskId",
+                              "workspacePath",
+                              "workspaceIdentity",
+                              "taskControl",
+                              "observedPinRevision"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "mutation": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "pin"
+                              },
+                              "pinned": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "pinned"
                             ],
                             "additionalProperties": false
                           }
-                        ]
+                        },
+                        "required": [
+                          "address",
+                          "mutation"
+                        ],
+                        "additionalProperties": false
                       }
-                    },
-                    "required": [
-                      "address",
-                      "mutation"
                     ],
-                    "additionalProperties": false
+                    "items": false,
+                    "minItems": 1,
+                    "maxItems": 1
                   }
-                ],
-                "items": false,
-                "minItems": 1,
-                "maxItems": 1
+                ]
               },
               "connectionId": {
                 "type": "string"
@@ -18439,6 +18614,11 @@
                         "pinned": {
                           "type": "boolean"
                         },
+                        "pinRevision": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
                         "archived": {
                           "type": "boolean"
                         },
@@ -18490,6 +18670,7 @@
                         "updatedAt",
                         "mode",
                         "pinned",
+                        "pinRevision",
                         "archived",
                         "lastUnreadAt"
                       ],
@@ -18890,6 +19071,498 @@
                     "maximum": 9007199254740991
                   },
                   "lastUnreadAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "pinRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "completed",
+                      "error"
+                    ]
+                  },
+                  "lastError": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "type": "string"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "traceId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "taskId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "attribution": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "provider",
+                              "runtime",
+                              "tool",
+                              "network"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "errorPhase": {
+                            "type": "string",
+                            "enum": [
+                              "prepare",
+                              "configuration",
+                              "connect",
+                              "response",
+                              "stream",
+                              "parse",
+                              "validation",
+                              "unhandled"
+                            ]
+                          },
+                          "exceptionKind": {
+                            "type": "string",
+                            "enum": [
+                              "api_call",
+                              "generic",
+                              "protocol",
+                              "provider_business",
+                              "transport",
+                              "type_error",
+                              "validation"
+                            ]
+                          },
+                          "providerId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "modelId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "providerKind": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "transport": {
+                            "type": "string",
+                            "enum": [
+                              "http",
+                              "sse",
+                              "websocket"
+                            ]
+                          },
+                          "statusCode": {
+                            "type": "integer",
+                            "minimum": 100,
+                            "maximum": 599
+                          },
+                          "providerErrorCode": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "retryable": {
+                            "type": "boolean"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "changeSummary": {
+                    "type": "object",
+                    "properties": {
+                      "fileCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "added": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "removed": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "files": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string"
+                            },
+                            "added": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "removed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "writeCount": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "lastTurnIndex": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "added",
+                            "removed",
+                            "writeCount",
+                            "lastTurnIndex"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "fileCount",
+                      "added",
+                      "removed",
+                      "files"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "target": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "sessionID": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "targetID": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "objective": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "summaryTitle": {
+                            "default": null,
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "paused",
+                              "budget_limited",
+                              "complete"
+                            ]
+                          },
+                          "tokenBudget": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tokensUsed": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "timeUsedSeconds": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "activeInputId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "activeRunStartedAtMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "activeRunLastSeenAtMs": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "time": {
+                            "type": "object",
+                            "properties": {
+                              "created": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "updated": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "created",
+                              "updated"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "sessionID",
+                          "targetID",
+                          "objective",
+                          "summaryTitle",
+                          "status",
+                          "tokenBudget",
+                          "tokensUsed",
+                          "timeUsedSeconds",
+                          "time"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "taskId",
+                  "projectId",
+                  "taskControl",
+                  "traceId",
+                  "title",
+                  "workspacePath",
+                  "createdAt",
+                  "updatedAt",
+                  "mode",
+                  "lastUnreadAt",
+                  "pinRevision",
+                  "pinned"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "object",
+                "properties": {
+                  "taskId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "taskControl": {
+                    "type": "object",
+                    "properties": {
+                      "projectId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "branchGeneration": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "projectId",
+                      "branchGeneration"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "conversationRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "workModes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "code",
+                        "design"
+                      ]
+                    }
+                  },
+                  "traceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "titleOverridden": {
+                    "type": "boolean"
+                  },
+                  "workspacePath": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "workspaceIdentity": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "workspacePurpose": {
+                    "type": "string",
+                    "enum": [
+                      "project",
+                      "conversation"
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "updatedAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "yolo",
+                      "plan",
+                      "edit",
+                      "auto",
+                      "autoEdit",
+                      "build"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "thoughtLevel": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "runtimeEpoch": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "provider": {
+                    "type": "string",
+                    "const": "glm"
+                  },
+                  "migrationSource": {
+                    "type": "string",
+                    "enum": [
+                      "claudeCode"
+                    ]
+                  },
+                  "forkedFromTaskId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cronAutomationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "offPeakTaskId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "unreadAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "lastUnreadAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "pinRevision": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
@@ -19523,6 +20196,7 @@
                       "task_group_not_found",
                       "task_groups_not_initialized",
                       "task_unread_conflict",
+                      "task_pin_conflict",
                       "design_goal_conflict",
                       "design_input_conflict",
                       "design_restore_conflict",

@@ -7,6 +7,7 @@ import {
   type CodeExecutionScope,
   type CodeGoalControl,
   type CodeTaskOrganizationTarget,
+  type CodeTaskPinInput,
   type CodeTaskUnreadInput,
   type CodeUiEvent,
   type CodeUiWorkspace,
@@ -1817,6 +1818,17 @@ export class CodeUiService {
       () => this.deleteTask(actor, target.taskId),
       signal,
     );
+  }
+
+  async changeTaskPinned(
+    actor: LocalActor,
+    input: CodeTaskPinInput,
+    signal: AbortSignal,
+  ) {
+    const owner = await this.deps.localInstance.resolve(actor);
+    const result = await this.deps.repository.taskPins.change(owner.instanceId, input, signal);
+    await this.refreshTaskLists(owner.instanceId, result.workspacePath, result.projectId);
+    return result;
   }
 
   async changeTaskUnread(

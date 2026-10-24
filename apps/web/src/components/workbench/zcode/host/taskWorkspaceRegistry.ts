@@ -201,6 +201,10 @@ export class TaskWorkspaceRegistry {
   task(taskId: string) {
     return this.tasks.get(taskId) ?? null;
   }
+  taskObservation(taskId: string) {
+    const observation = this.taskObservations.get(taskId);
+    return observation ? { ...observation } : undefined;
+  }
   private validateDirectoryRelink(
     snapshot: ProjectDirectoryRelinkSnapshot,
     value: ProjectDirectoryRelinkResponse,

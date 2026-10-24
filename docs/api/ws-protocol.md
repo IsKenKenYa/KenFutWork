@@ -263,6 +263,18 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 成功沿既有 Controller 和 Task SSE 通知刷新列表。原菜单关闭后保持其焦点规则；离开行操作状态后显示 Task 未读点，项目收起时显示所属未读提示。点击原 Task 使用该行观察值清除标记，不改变当前内容标签。
 
+## Task 置顶状态
+
+`zcode-task.setTaskPinned` 与原 Controller `mutateTask` 的 `pin` 分支经同一组织插件调用置顶提供方。严格单元素参数包含完整本机 Task 地址、`taskControl`、`observedPinRevision` 和目标 `pinned`；Controller 将地址观察与 `{ kind: "pin", pinned }` 分别传入。客户端在等待连接之前复制点击时的观察，不能从较新缓存补充版本。
+
+原根 Task 的 `pinned` 继续持有唯一置顶事实，独立 `pin_revision` 从零开始，只有实际改变 `pinned` 时推进一次。Task 元信息、项目树和 Controller 保留 `pinRevision`，置顶成员列表使用相同根记录。置顶不改正文、保存用的运行修订、活动时间、未读水位、Task 目录、权限、Run 或 Goal。
+
+服务端以实例、稳定 Task、当前项目与分支、观察修订和目标置顶值生成业务键；完整精确地址及观察参数形成 SHA-256 指纹。核对当前根 Task、稳定 Owner、项目、目录与代际后，沿同一根行锁读取原回执，再比较新操作的观察修订。变更与 `code_ui_commands` 的 accepted 回执同事务提交；同键连续或并发重放返回原结果，较早回执不覆盖后来的取消或再次置顶。同值操作不推进修订，过期新操作及同键异参返回 `409/task_pin_conflict`，未知字段或错误类型返回 400。
+
+置顶和未读共用 Task 身份、事务、回执及连接关闭检查，字段更新分别持有。Owner／Project 锁冲突返回 409；移动后旧项目和分支先于回执检查拒绝。删除沿原 Task 事务清除置顶修订及命令内容，保留既有最小删除身份，迟到写入返回 404；实例物理删除级联清除。关闭取消未接纳操作并等待在途 SQL 退出，连接或 Task 代际变化后客户端拒绝迟到 ACK。
+
+成功或未知写入结果均沿原列表重新读取当前事实，历史 ACK 不进入普通 Task 投影或置顶缓存。原行的临时显示意图只保留到调用和权威刷新结束；失败后释放并重读。当前内容标签和 SessionPane 不因置顶改变。
+
 ## 文档资源变更
 
 独立 `canvas.document.updated` 帧包含 `projectId`、`canvasId`、`deleted` 及可选真实 SHA-256 `revision`。它由文件变更和后台发布经 PostgreSQL 通知传递到实例 WS 与原宿主 SSE，不伪造 Agent Run 事件。宿主 SSE 的 `canvasDocumentUpdated` 通知投影为文档更新/删除事件，空文档列表也能收到更新。

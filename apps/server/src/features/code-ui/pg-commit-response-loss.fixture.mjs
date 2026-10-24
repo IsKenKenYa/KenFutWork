@@ -24,6 +24,8 @@ const freshTransaction = () => ({
   taskArchiveCompletion: false,
   taskUnreadMarkers: false,
   taskUnread: false,
+  taskPinUpdated: false,
+  taskPin: false,
   taskGroupInsert: false,
   taskGroupSave: false,
   taskGroupDelete: false,
@@ -85,6 +87,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let taskArchivePrepare = false;
   let taskArchiveCompletion = false;
   let taskUnread = false;
+  let taskPin = false;
   let taskGroupSave = false;
   let taskGroupUngroup = false;
   let taskGroupPlacement = false;
@@ -313,6 +316,66 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           result.lastUnreadAt === transaction.targetLastUnreadAt;
       }
       if (
+        taskPin &&
+        commandId &&
+        /^update public\.code_ui_sessions set pinned\s*=\s*\$2,pin_revision\s*=\s*pin_revision\s*\+\s*1\b/u.test(
+          text,
+        ) &&
+        /\bwhere instance_id\s*=\s*\$3 and id\s*=\s*\$1 returning \*$/u.test(
+          text,
+        ) &&
+        parameters.length === 3
+      ) {
+        const key = JSON.parse(commandId);
+        transaction.taskPinUpdated =
+          Array.isArray(key) &&
+          key.length === 6 &&
+          parameters[0] === key[1] &&
+          parameters[2] === key[0] &&
+          typeof key[2] === "string" &&
+          Number.isSafeInteger(key[3]) &&
+          key[3] >= 0 &&
+          Number.isSafeInteger(key[4]) &&
+          key[4] >= 0 &&
+          Number.isSafeInteger(key[4] + 1) &&
+          typeof key[5] === "boolean" &&
+          parameters[1] === String(key[5]);
+        if (transaction.taskPinUpdated) {
+          transaction.targetTaskId = parameters[0];
+          transaction.pinInstanceId = parameters[2];
+          transaction.targetPinned = key[5];
+          transaction.targetPinRevision = key[4] + 1;
+        }
+      }
+      if (
+        taskPin &&
+        commandId &&
+        transaction.taskPinUpdated &&
+        /^insert into public\.code_ui_commands\b/u.test(text) &&
+        text.includes(
+          "(instance_id,client_id,command_id,session_id,parameter_fingerprint,status,ack)",
+        ) &&
+        /\bvalues \(\$6,\$1,\$2,\$3,\$4,'accepted',\$5::jsonb\)/u.test(text) &&
+        parameters.length === 6 &&
+        parameters[0] === "code-ui:task-pin" &&
+        parameters[1] === commandId &&
+        parameters[2] === transaction.targetTaskId &&
+        typeof parameters[3] === "string" &&
+        /^[a-f0-9]{64}$/u.test(parameters[3]) &&
+        typeof parameters[4] === "string" &&
+        parameters[5] === transaction.pinInstanceId
+      ) {
+        const key = JSON.parse(commandId);
+        const result = JSON.parse(parameters[4]);
+        transaction.taskPin =
+          result.taskId === transaction.targetTaskId &&
+          result.projectId === key[2] &&
+          result.taskControl?.projectId === key[2] &&
+          result.taskControl?.branchGeneration === key[3] &&
+          result.pinned === transaction.targetPinned &&
+          result.pinRevision === transaction.targetPinRevision;
+      }
+      if (
         taskGroupSave &&
         commandId &&
         /^insert into public\.code_task_groups\b/u.test(text) &&
@@ -536,6 +599,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.taskArchivePrepare ||
           transaction.taskArchiveCompletion ||
           transaction.taskUnread ||
+          transaction.taskPin ||
           transaction.taskGroupSave ||
           transaction.taskGroupUngroup ||
           transaction.taskGroupPlacement ||
@@ -672,6 +736,14 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
                   targetLastUnreadAt: transaction.targetLastUnreadAt,
                 }
               : {}),
+            ...(transaction.taskPin
+              ? {
+                  taskPin: true,
+                  targetTaskId: transaction.targetTaskId,
+                  targetPinned: transaction.targetPinned,
+                  targetPinRevision: transaction.targetPinRevision,
+                }
+              : {}),
             ...(transaction.taskGroupSave
               ? {
                   taskGroupSave: true,
@@ -784,6 +856,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       taskArchivePrepare = options.taskArchivePrepare === true;
       taskArchiveCompletion = options.taskArchiveCompletion === true;
       taskUnread = options.taskUnread === true;
+      taskPin = options.taskPin === true;
       taskGroupSave = options.taskGroupSave === true;
       taskGroupUngroup = options.taskGroupUngroup === true;
       taskGroupPlacement = options.taskGroupPlacement === true;

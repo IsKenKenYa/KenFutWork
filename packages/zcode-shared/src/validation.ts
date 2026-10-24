@@ -1233,6 +1233,7 @@ export const zcodeTaskMetaSchema = z.object({
   offPeakTaskId: nonEmptyStringSchema.optional(),
   unreadAt: z.number().int().nonnegative().safe().optional(),
   lastUnreadAt: z.number().int().nonnegative().safe().optional(),
+  pinRevision: z.number().int().nonnegative().safe().optional(),
   status: zcodeTaskPersistStatusSchema.optional(),
   lastError: z
     .object({

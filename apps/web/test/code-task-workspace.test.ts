@@ -45,6 +45,7 @@ function projectTaskObservation(
     updatedAt: 1,
     mode: "build",
     pinned: false,
+    pinRevision: 0,
     archived: false,
     lastUnreadAt: 0,
     taskControl: { projectId, branchGeneration },

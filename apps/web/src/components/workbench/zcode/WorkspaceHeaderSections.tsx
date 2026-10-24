@@ -46,7 +46,7 @@ import type {
   WorkspaceHeaderState,
   WorkspaceHeaderTitleSectionProps,
 } from "@zui/WorkspaceHeaderSections/shared.js";
-import { applyTaskQueryCacheMutation } from "@zui/store/taskQueryCacheStore.js";
+import { applyTaskQueryCacheMutation, markTaskQueryCacheScopesStale } from "@zui/store/taskQueryCacheStore.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { useRemotePinnedTaskStore } from "@zui/store/remotePinnedTaskStore.js";
 import { useRemoteTimelineTaskStore } from "@zui/store/remoteTimelineTaskStore.js";
@@ -61,8 +61,10 @@ import { refreshSharedSkillStoreForWorkspace } from "@zui/lib/skillStoreRefresh.
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@zui/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@zui/store/mcpStore.js";
 import { requireTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
+import { requireTaskPinObservation } from "@zui/host/taskPinObservation.js";
+import { resolveTaskOperationSnapshot } from "@zui/host/taskOperationObservation.js";
 import { useOptionalProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
-import { buildTaskEntityKey } from "@zui/lib/taskQueryCache.js";
+import { bumpTaskListMembershipVersion } from "@zui/v4/taskListMembershipVersion.js";
 
 export type { WorkspaceHeaderState, WorkspaceHeaderTitleSectionProps };
 export {
@@ -160,10 +162,33 @@ export function WorkspaceHeaderTitleSection({
   });
   const pinnedTasks = headerPinnedTaskList.items;
   const activeTaskMeta = resolvedActiveTaskMeta ?? null;
-  const isPinned = Boolean(
-    activeTaskId && pinnedTasks.some((task) => task.taskId === activeTaskId),
-  );
   const resolvedTaskActionTaskId = activeTaskMeta?.taskId ?? activeTaskId;
+  const taskActionTarget = resolvedTaskActionTaskId
+    ? {
+        taskId: resolvedTaskActionTaskId,
+        workspacePath: workspaceAbsPath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      }
+    : null;
+  const localTaskAction = Boolean(taskActionTarget && isLocalWorkspaceTarget({
+    ...taskActionTarget,
+    remoteSessionId,
+    remoteTarget,
+  }));
+  const taskActionMeta = taskActionTarget
+    ? resolveTaskOperationSnapshot(taskActionTarget, projectDirectory?.tree.tasks ?? [], activeTaskMeta)
+    : undefined;
+  const localPinned = taskActionMeta && "pinned" in taskActionMeta
+    ? taskActionMeta.pinned
+    : undefined;
+  const isPinned = localTaskAction && typeof localPinned === "boolean"
+    ? localPinned
+    : Boolean(activeTaskId && pinnedTasks.some((task) => task.taskId === activeTaskId));
+  const refreshTaskOrganization = (target: { workspacePath: string; workspaceIdentity?: string }) => {
+    markTaskQueryCacheScopesStale([target]);
+    useZCodeSessionStore.getState().bumpTaskListVersion(target.workspacePath, target.workspaceIdentity);
+    bumpTaskListMembershipVersion();
+  };
   // 新建任务在第一次写入数据库前没有稳定 taskId。
   // 之前 Header 更多菜单虽然点击后会被回调里的空 id guard 拦住，但 UI 仍显示为可点，
   // 用户会感知成“菜单无响应”；这里只禁用依赖已落库 task 的动作，保留 workspace 级入口。
@@ -582,6 +607,23 @@ export function WorkspaceHeaderTitleSection({
                   if (!resolvedTaskActionTaskId) {
                     return;
                   }
+                  if (localTaskAction && taskActionTarget) {
+                    const target = taskActionTarget;
+                    const pinTask = async () => {
+                      if (!taskActionMeta) throw new Error("任务状态已改变，请刷新后重试。");
+                      const observation = requireTaskPinObservation(taskActionMeta);
+                      await services.zcodeTaskService.setTaskPinned({
+                        ...target,
+                        ...observation,
+                        pinned: !isPinned,
+                      });
+                    };
+                    void pinTask().then(() => refreshTaskOrganization(target)).catch(() => {
+                      refreshTaskOrganization(target);
+                      toast(intl.formatMessage({ id: "taskList.pinFailed" }));
+                    });
+                    return;
+                  }
                   const optimisticTask = activeTaskMeta ?? null;
                   if (optimisticTask) {
                     // Header 里切换 pin 以前只等 RPC 成功后更新列表缓存，
@@ -692,23 +734,17 @@ export function WorkspaceHeaderTitleSection({
                   };
                   if (isLocalWorkspaceTarget({ ...target, remoteSessionId, remoteTarget })) {
                     const markUnread = async () => {
-                      const task = projectDirectory?.tree.tasks.find((entry) =>
-                        buildTaskEntityKey(entry) === buildTaskEntityKey(target),
-                      ) ?? activeTaskMeta;
-                      if (!task || buildTaskEntityKey(task) !== buildTaskEntityKey(target))
+                      if (!taskActionMeta)
                         throw new Error("任务状态已改变，请刷新后重试。");
-                      const observation = requireTaskUnreadObservation(task);
+                      const observation = requireTaskUnreadObservation(taskActionMeta);
                       await services.zcodeTaskService.setTaskUnread({
                         ...target,
                         ...observation,
                         unread: true,
                       });
-                      useZCodeSessionStore.getState().bumpTaskListVersion(
-                        target.workspacePath,
-                        target.workspaceIdentity,
-                      );
                     };
-                    void markUnread().catch(() => {
+                    void markUnread().then(() => refreshTaskOrganization(target)).catch(() => {
+                      refreshTaskOrganization(target);
                       toast(intl.formatMessage({ id: "taskList.markAsUnreadFailed" }));
                     });
                     return;
