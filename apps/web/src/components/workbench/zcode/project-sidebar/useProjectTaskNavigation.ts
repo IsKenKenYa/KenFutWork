@@ -17,7 +17,7 @@ export function useProjectTaskNavigation(
   useLayoutEffect(() => {
     latest.current = { props, tree, activeWorkspaceIdentity };
   });
-  return useCallback((path, taskId, identity, _remoteSessionId, unreadAt) => {
+  return useCallback((path, taskId, identity, _remoteSessionId, unreadAt, unreadObservation) => {
     const request = ++sequence.current;
     const { props, tree, activeWorkspaceIdentity } = latest.current;
     const readFocus = () => props.workspacePath
@@ -35,7 +35,7 @@ export function useProjectTaskNavigation(
         (item.workspaceIdentity || item.workspacePath) === (identity || path));
       if (!task || task.hostId !== "local") throw new Error("project.task-not-found");
       if (!isCurrent()) return;
-      props.onSelectTask(path, taskId, identity, undefined, unreadAt);
+      props.onSelectTask(path, taskId, identity, undefined, unreadAt, unreadObservation);
     };
     void open().catch((error) => {
       logger.error("[project-sidebar] 打开任务失败", error);

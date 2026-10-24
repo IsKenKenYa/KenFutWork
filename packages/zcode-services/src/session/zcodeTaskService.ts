@@ -620,6 +620,8 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
     unread: boolean;
+    taskControl?: ConversationTaskControl;
+    observedLastUnreadAt?: number;
     /** 仅用于已读 compare-and-clear；缺省时保持既有无条件写入语义。 */
     expectedUnreadAt?: number;
   }): Promise<ZCodeTaskMeta>;

@@ -204,6 +204,8 @@ function buildRuntimeProbeApp(
         active_run_id: runId,
         archived: false,
         pinned: false,
+        unread_at: null,
+        last_unread_at: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         deleted_at: null,

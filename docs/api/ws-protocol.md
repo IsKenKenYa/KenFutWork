@@ -251,6 +251,18 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 `deleteArchivedTask` 在同一 Task 业务锁内核对当前归档及观察分支，再经原资源关闭和删除服务执行；已恢复、已删除或不存在返回 `false`，界面按跳过计数。成功删除后原 Task、事件、输出和命令回执按现有规则清理；命令墓碑清除参数指纹及回执内容，归档／恢复迟到请求返回 404，实例物理删除时级联清除。归档或恢复的完成通知只触发目录重读，不切换当前 Task 或内容标签。
 
+## Task 未读状态
+
+原 `zcode-task.setTaskUnread` 与 `window-controller.mutateTask` 的 `mark-read`、`mark-unread` 使用所属插件贡献的同一提供方。调用绑定已初始化的可信连接，严格单元素参数包含 `taskId`、固定 `workspacePath`、标准本机 `workspaceIdentity`、`taskControl` 和点击时的 `observedLastUnreadAt`。前者另含 `unread` 及可选 `expectedUnreadAt`；后者将地址与 `mutation` 分别传入。原项目、时间线和分组行在点击时固定观察，导航和连接等待期间不从新缓存补充观察值。
+
+项目树、Task 元信息及 Controller 行共同返回 `unreadAt` 和 `lastUnreadAt`。前者缺省表示已读；后者是持久水位，读取清除后仍保留。新标记大于先前水位，取当前时间与水位加一的较大值；并发操作在原根 Task 行锁内串行执行。未读写入不改变消息修订、Task 项目、目录、权限、Run 或 Goal。
+
+实例、稳定 Task、当前项目与分支、观察水位和动作组成业务键。精确目录身份、观察值、动作与比较标记形成规范化参数指纹；标记和回执在同一事务保存到原 Task 与命令存储。同键重放返回原结果，异参及标未读使用旧水位返回 `409/task_unread_conflict`。读取清除按 `expectedUnreadAt` 比较，未命中返回当前元信息并保留新标记。旧回执不直接覆盖当前显示，客户端沿权威列表重新读取。
+
+提供方核对同实例 Owner、当前项目、分支及固定目录。Owner 或 Project 锁冲突返回 409；项目关闭、Task 删除及移动后的旧观察不能更新标记。Task 删除清除两个标记，同时由原命令删除流程清除参数指纹及回执内容，只保留原最小删除身份；实例物理删除沿原外键级联清除。连接关闭取消尚未接纳事务并等待在途操作退出，关闭或换代后的结果不进入客户端。
+
+成功沿既有 Controller 和 Task SSE 通知刷新列表。原菜单关闭后保持其焦点规则；离开行操作状态后显示 Task 未读点，项目收起时显示所属未读提示。点击原 Task 使用该行观察值清除标记，不改变当前内容标签。
+
 ## 文档资源变更
 
 独立 `canvas.document.updated` 帧包含 `projectId`、`canvasId`、`deleted` 及可选真实 SHA-256 `revision`。它由文件变更和后台发布经 PostgreSQL 通知传递到实例 WS 与原宿主 SSE，不伪造 Agent Run 事件。宿主 SSE 的 `canvasDocumentUpdated` 通知投影为文档更新/删除事件，空文档列表也能收到更新。

@@ -7,6 +7,7 @@ import {
   type CodeExecutionScope,
   type CodeGoalControl,
   type CodeTaskOrganizationTarget,
+  type CodeTaskUnreadInput,
   type CodeUiEvent,
   type CodeUiWorkspace,
   canvasDocumentUpdatedMessageSchema,
@@ -1816,6 +1817,25 @@ export class CodeUiService {
       () => this.deleteTask(actor, target.taskId),
       signal,
     );
+  }
+
+  async changeTaskUnread(
+    actor: LocalActor,
+    input: CodeTaskUnreadInput,
+    signal: AbortSignal,
+  ) {
+    const owner = await this.deps.localInstance.resolve(actor);
+    const result = await this.deps.repository.taskUnread.change(
+      owner.instanceId,
+      input,
+      signal,
+    );
+    await this.refreshTaskLists(
+      owner.instanceId,
+      result.workspacePath,
+      result.projectId,
+    );
+    return result;
   }
 
   async hostRpc(

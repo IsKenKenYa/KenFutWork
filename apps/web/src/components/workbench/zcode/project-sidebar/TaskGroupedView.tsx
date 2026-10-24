@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import { useShallow } from "zustand/react/shallow";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { Hash, Maximize2, Minimize2 } from "lucide-react";
-import { OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
+import { isLocalWorkspaceTarget, OFF_PEAK_DEFAULT_GROUP_ID } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { TaskRenameDialog } from "@zui/TaskRenameDialog.js";
@@ -134,6 +134,7 @@ export function TaskGroupedView({
   );
   const getTaskRemoteSessionId = useCallback(
     (task: ProjectTask) => {
+      if (task.hostId === "local" && isLocalWorkspaceTarget(task)) return undefined;
       // 只解析既有 attachment；完整 identity 阻止同路径的另一远端串线。
       return (
         resolveWorkspaceRemoteSessionId({
@@ -250,13 +251,7 @@ export function TaskGroupedView({
     activeWorkspaceIdentity: workspaceIdentity,
     activeTaskId,
     mobileActiveTaskKey: presentation.mobileActiveTaskKey,
-    onSelectTask: (path: string, id: string, identity?: string) => {
-      const task = findTaskInGroupedView(
-        authoritativeView,
-        taskKey({ workspacePath: path, taskId: id, workspaceIdentity: identity }),
-      );
-      onSelect(path, id, identity, task ? getTaskRemoteSessionId(task) : undefined, task?.unreadAt);
-    },
+    onSelectTask: onSelect,
     onCloseTask: (task: ProjectTask) =>
       action(() => mutate(task, { kind: "archive", archived: true }), "taskList.archiveFailed"),
     onArchiveTask: (task: ProjectTask) =>

@@ -37,6 +37,8 @@ export type ProjectTask = Pick<
   | "model"
   | "thoughtLevel"
   | "status"
+  | "unreadAt"
+  | "lastUnreadAt"
 > & {
   projectId: string;
   hostId: "local";

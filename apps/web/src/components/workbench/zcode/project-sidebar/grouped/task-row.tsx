@@ -1,5 +1,5 @@
 import { TID_TASK_ITEM, testId } from "@zcode/shared";
-import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+import type { ProjectTask as ZCodeTaskMeta, ProjectSidebarProps } from "@zui/project-sidebar/contract.js";
 import { memo, useState, useRef } from "react";
 import type { KeyboardEvent, MouseEvent } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -37,6 +37,7 @@ import { useTaskInteractionAutoResolutionSnooze } from "@zui/hooks/useTaskIntera
 import { useOptionalTabStore } from "@zui/store/TabStoreProvider.js";
 import { isWorkspaceReadOnly } from "@zui/store/tabStore.js";
 import { TaskTitleOverflowText } from "@zui/components/TaskTitleOverflowText.js";
+import { captureTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
 
 function GroupedTaskRowComponent({
   task,
@@ -70,7 +71,7 @@ function GroupedTaskRowComponent({
   activeTaskId: string | null;
   mobileActiveTaskKey?: string | null;
   workspaceLabel: string;
-  onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
+  onSelectTask: ProjectSidebarProps["onSelectTask"];
   onCloseTask: (task: ZCodeTaskMeta) => void;
   onOpenFileTree?: (task: ZCodeTaskMeta) => void;
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;
@@ -275,7 +276,14 @@ function GroupedTaskRowComponent({
     if (!result.success) throw new Error(result.error ?? "无法打开目录");
   };
   const handleSelect = () => {
-    onSelectTask(task.workspacePath, task.taskId, task.workspaceIdentity);
+    onSelectTask(
+      task.workspacePath,
+      task.taskId,
+      task.workspaceIdentity,
+      remoteSessionId,
+      task.unreadAt,
+      captureTaskUnreadObservation(task),
+    );
   };
   const handleCloseTask = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();

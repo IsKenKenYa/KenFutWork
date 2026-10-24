@@ -9,6 +9,7 @@ import { compareProjectTaskRows } from "@zui/project-sidebar/view.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { timelineDateHeadings } from "@zui/project-sidebar/timelineDates.js";
+import { captureTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
 
 const EMPTY: ProjectTask[] = [];
 export const ProjectTaskRow = memo(function Row({
@@ -33,7 +34,14 @@ export const ProjectTaskRow = memo(function Row({
   const rows = useMemo(() => [task], [task]);
   const select = useCallback(
     () =>
-      onSelect(task.workspacePath, task.taskId, task.workspaceIdentity, undefined, task.unreadAt),
+      onSelect(
+        task.workspacePath,
+        task.taskId,
+        task.workspaceIdentity,
+        undefined,
+        task.unreadAt,
+        captureTaskUnreadObservation(task),
+      ),
     [onSelect, task],
   );
   const openFiles = useCallback(

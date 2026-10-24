@@ -16,6 +16,12 @@ import type {
 } from "./zcode-protocol-legacy-types.js";
 import type { ErrorAttribution } from "./zcode-protocol-v4/snapshot.js";
 
+/** 点击时固定的 Task 与未读观察；导航期间不从新缓存补充或升级。 */
+export interface ZCodeTaskUnreadObservation {
+  taskControl: ConversationTaskControl;
+  observedLastUnreadAt: number;
+}
+
 /**
  * ZCode task/session 投影共享类型定义
  *
@@ -332,6 +338,8 @@ export interface ZCodeTaskMeta {
   offPeakTaskId?: string;
   /** fork 产物保留来源 taskId，供 UI 做本地化标题兜底和后续追溯。 */
   forkedFromTaskId?: string;
+  /** 最近分配的未读标记；读取清除后仍保留，供下一次明确操作固定观察。 */
+  lastUnreadAt?: number;
   /** 未读任务记录最近一次标记/产生未读的时间，用于跨重启保留蓝点状态。 */
   unreadAt?: number;
   /** 持久化的任务状态，记录最后一次 prompt 的结果 */

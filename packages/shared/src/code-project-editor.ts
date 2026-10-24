@@ -90,6 +90,8 @@ export const codeProjectTreeTaskSchema = z
     status: z.enum(["error", "running", "completed"]).optional(),
     pinned: z.boolean(),
     archived: z.boolean(),
+    unreadAt: z.number().int().nonnegative().safe().optional(),
+    lastUnreadAt: z.number().int().nonnegative().safe(),
     taskControl: conversationTaskControlSchema.optional(),
     conversationRevision: z.number().int().nonnegative().safe().optional(),
   })

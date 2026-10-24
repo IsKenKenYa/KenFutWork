@@ -1,5 +1,10 @@
 /* eslint-disable max-lines -- workspace 的 task、自动化与插件市场共享浏览器式历史，集中处理才能保证前进/后退目标一致。 */
 import { useCallback } from "react";
+import { isLocalWorkspaceTarget, type ZCodeTaskUnreadObservation } from "@zcode/shared";
+import {
+  captureTaskUnreadObservation,
+  requireTaskUnreadObservation,
+} from "@zui/host/taskUnreadObservation.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import {
   canGoBack as navCanGoBack,
@@ -69,7 +74,14 @@ export function useWorkspaceTaskNavigation({
       taskId: string,
       targetWorkspaceIdentityHint?: string,
       selectedRowUnreadAt?: number,
+      selectedUnreadObservation?: ZCodeTaskUnreadObservation,
     ) => {
+      const unreadObservation = selectedUnreadObservation
+        ? captureTaskUnreadObservation({
+            taskControl: selectedUnreadObservation.taskControl,
+            lastUnreadAt: selectedUnreadObservation.observedLastUnreadAt,
+          })
+        : undefined;
       const targetWorkspaceState = useZCodeSessionStore
         .getState()
         .getWorkspaceState(targetWorkspacePath, targetWorkspaceIdentityHint);
@@ -128,22 +140,52 @@ export function useWorkspaceTaskNavigation({
       const taskEntityKey = buildTaskEntityKey(targetTask);
       const cachedTaskMeta = useTaskQueryCacheStore.getState().taskMetaByEntityKey[taskEntityKey];
       const previousUnreadAt = cachedTaskMeta?.unreadAt;
-      // 「任务」时间线由 Window Controller 直接提供行数据，不会像项目列表一样
-      // 把后台创建的 task 写入 query cache。点击事务若只查 cache，会把已显示蓝点的行误判为已读。
-      // 被点击行是本次用户实际看到的快照，优先用它的 unreadAt 做 compare-and-clear；
-      // 未传行快照的旧入口继续回退 query cache，保持兼容。
+      const isLocalWorkspace = isLocalWorkspaceTarget({
+        workspacePath: targetWorkspacePath,
+        workspaceIdentity: targetWorkspaceIdentity,
+        remoteSessionId: resolvedRemoteSessionId,
+        remoteTarget: activeTab && isWorkspaceTab(activeTab) && activeWorkspaceTabMatchesTarget
+          ? activeTab.remoteTarget
+          : undefined,
+      });
+      // 本机读取使用本次Task行的标记；远端保留原列表缓存的兼容读取。
       const expectedUnreadAt =
-        typeof selectedRowUnreadAt === "number" ? selectedRowUnreadAt : previousUnreadAt;
+        isLocalWorkspace || typeof selectedRowUnreadAt === "number"
+          ? selectedRowUnreadAt
+          : previousUnreadAt;
       const shouldClearUnread = typeof expectedUnreadAt === "number";
-      const isRemoteWorkspace = Boolean(
-        targetWorkspaceIdentity ||
-        (activeTab &&
-          isWorkspaceTab(activeTab) &&
-          activeWorkspaceTabMatchesTarget &&
-          (activeTab.remoteSessionId || activeTab.remoteTarget)),
-      );
+      const isRemoteWorkspace = !isLocalWorkspace;
 
-      if (shouldClearUnread) {
+      if (shouldClearUnread && isLocalWorkspace) {
+        const refreshUnread = () => {
+          markTaskQueryCacheScopesStale([targetTask]);
+          useZCodeSessionStore.getState().bumpTaskListVersion(
+            targetWorkspacePath,
+            targetWorkspaceIdentity,
+          );
+          bumpTaskListMembershipVersion();
+        };
+        const clearObservedUnread = async () => {
+          const observation = requireTaskUnreadObservation({
+            taskControl: unreadObservation?.taskControl,
+            lastUnreadAt: unreadObservation?.observedLastUnreadAt,
+          });
+          await baseServices.zcodeTaskService.setTaskUnread({
+            ...targetTask,
+            ...observation,
+            unread: false,
+            expectedUnreadAt,
+          });
+        };
+        // 本机读取只接纳点击时的观察，返回后通过原列表重读当前标记。
+        void clearObservedUnread().then(refreshUnread).catch((error: unknown) => {
+          refreshUnread();
+          logger.warn("[App] 清除Task未读状态失败", error);
+          toast(error instanceof Error
+            ? error.message
+            : intl.formatMessage({ id: "taskList.markAsUnreadFailed" }));
+        });
+      } else if (shouldClearUnread) {
         // unread 之前只在 useTaskRestore 的 resumeTask 后持久化清除。
         // 当用户再次点击当前 task 时，不会重新走 restore，磁盘里的 unreadAt 就会残留，
         // 表现成“已经点开看过了，但重启 app 后又回到未读”。

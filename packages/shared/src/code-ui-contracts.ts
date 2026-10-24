@@ -1,5 +1,7 @@
+import { zcodeTaskMetaSchema } from "@zcode/shared";
 import {
   conversationSnapshotSchema,
+  conversationTaskControlSchema,
   conversationTopicWireFrameSchema,
   helloMessageSchema,
   sessionsIndexTopicWireFrameSchema,
@@ -25,7 +27,11 @@ import {
   codeTaskGroupSaveResponseSchema,
   codeTaskGroupUngroupArgsSchema,
 } from "./code-task-groups.js";
-import { codeTaskOrganizationArgsSchema } from "./code-task-organization.js";
+import {
+  codeTaskOrganizationArgsSchema,
+  codeTaskUnreadArgsSchema,
+  codeTaskUnreadControllerArgsSchema,
+} from "./code-task-organization.js";
 import { codeTaskProjectMoveArgsSchema } from "./code-task-project-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
@@ -99,11 +105,22 @@ const codeUiRpcEnvelopeSchema = z.object({
   args: z.array(z.unknown()),
   connectionId: z.string().optional(),
 });
+export const codeTaskUnreadMetaSchema = zcodeTaskMetaSchema.extend({
+  projectId: z.uuid(),
+  taskControl: conversationTaskControlSchema,
+  lastUnreadAt: z.number().int().nonnegative().safe(),
+});
+
+export const codeTaskUnreadRpcResponseSchema = z.object({
+  result: codeTaskUnreadMetaSchema,
+});
+
 export const codeUiRpcResponseSchema = z.union([
   codeProjectTreeRpcResponseSchema,
   codeProjectPreparedSessionResponseSchema,
   codeTaskGroupReadResponseSchema,
   codeTaskGroupSaveResponseSchema,
+  codeTaskUnreadRpcResponseSchema,
   z.object({ result: z.unknown() }),
 ]);
 
@@ -145,6 +162,16 @@ export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
 );
 export const codeUiRpcRequestSchema = z.union([
   codeProjectEditorRpcRequestSchema,
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("zcode-task"),
+    method: z.literal("setTaskUnread"),
+    args: codeTaskUnreadArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("window-controller"),
+    method: z.literal("mutateTask"),
+    args: codeTaskUnreadControllerArgsSchema,
+  }),
   codeUiRpcEnvelopeSchema.extend({
     service: z.literal("project"),
     method: z.literal("moveTask"),

@@ -7,6 +7,7 @@ import {
   TID_WORKSPACE_MORE_BUTTON,
   TID_WORKSPACE_PATH,
   TID_WORKSPACE_TITLE,
+  isLocalWorkspaceTarget,
   type RemoteTarget,
   type ZCodeTaskMeta,
 } from "@zcode/shared";
@@ -59,6 +60,9 @@ import { invalidateDeferredDraftSessionForSkillChange } from "@zui/lib/zcodeDraf
 import { refreshSharedSkillStoreForWorkspace } from "@zui/lib/skillStoreRefresh.js";
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@zui/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@zui/store/mcpStore.js";
+import { requireTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
+import { useOptionalProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
+import { buildTaskEntityKey } from "@zui/lib/taskQueryCache.js";
 
 export type { WorkspaceHeaderState, WorkspaceHeaderTitleSectionProps };
 export {
@@ -113,6 +117,7 @@ export function WorkspaceHeaderTitleSection({
   const confirmDialog = useConfirmDialog();
   const services = useWorkspaceServices(workspaceAbsPath, remoteSessionId, workspaceIdentity);
   const baseServices = useBaseWorkspaceServices();
+  const projectDirectory = useOptionalProjectDirectory();
   const removeTaskState = useZCodeSessionStore((state) => state.removeTaskState);
   const upsertOptimisticTaskListItem = useZCodeSessionStore(
     (state) => state.upsertOptimisticTaskListItem,
@@ -678,6 +683,34 @@ export function WorkspaceHeaderTitleSection({
                 }}
                 onMarkTaskAsUnread={() => {
                   if (!resolvedTaskActionTaskId) {
+                    return;
+                  }
+                  const target = {
+                    taskId: resolvedTaskActionTaskId,
+                    workspacePath: workspaceAbsPath,
+                    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+                  };
+                  if (isLocalWorkspaceTarget({ ...target, remoteSessionId, remoteTarget })) {
+                    const markUnread = async () => {
+                      const task = projectDirectory?.tree.tasks.find((entry) =>
+                        buildTaskEntityKey(entry) === buildTaskEntityKey(target),
+                      ) ?? activeTaskMeta;
+                      if (!task || buildTaskEntityKey(task) !== buildTaskEntityKey(target))
+                        throw new Error("任务状态已改变，请刷新后重试。");
+                      const observation = requireTaskUnreadObservation(task);
+                      await services.zcodeTaskService.setTaskUnread({
+                        ...target,
+                        ...observation,
+                        unread: true,
+                      });
+                      useZCodeSessionStore.getState().bumpTaskListVersion(
+                        target.workspacePath,
+                        target.workspaceIdentity,
+                      );
+                    };
+                    void markUnread().catch(() => {
+                      toast(intl.formatMessage({ id: "taskList.markAsUnreadFailed" }));
+                    });
                     return;
                   }
                   void services.zcodeTaskService

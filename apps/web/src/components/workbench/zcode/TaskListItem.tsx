@@ -104,6 +104,7 @@ function areTaskListItemTaskFieldsEqual(left: ZCodeTaskMeta, right: ZCodeTaskMet
     left.forkedFromTaskId === right.forkedFromTaskId &&
     left.updatedAt === right.updatedAt &&
     left.unreadAt === right.unreadAt &&
+    left.lastUnreadAt === right.lastUnreadAt &&
     getTaskAutomationIdentity(left) === getTaskAutomationIdentity(right) &&
     left.status === right.status &&
     areJsonFieldsEqual(left.pendingInteraction, right.pendingInteraction) &&

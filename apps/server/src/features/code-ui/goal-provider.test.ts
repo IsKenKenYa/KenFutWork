@@ -116,6 +116,8 @@ async function fixture(
     active_run_id: "r",
     archived: false,
     pinned: false,
+    unread_at: null,
+    last_unread_at: 0,
     created_at: "",
     updated_at: "",
     deleted_at: null,

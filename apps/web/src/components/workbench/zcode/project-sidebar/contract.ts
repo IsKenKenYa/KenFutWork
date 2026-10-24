@@ -4,14 +4,14 @@ import type {
   ProjectTree as ServiceProjectTree,
   VirtualProject as ServiceVirtualProject,
 } from "@zcode/services";
-import type { Locale, UserInfo, ZCodeTaskMeta } from "@zcode/shared";
+import type { Locale, UserInfo, ZCodeTaskMeta, ZCodeTaskUnreadObservation } from "@zcode/shared";
 import type { LucideIcon } from "lucide-react";
 import type { AppProps, CreateTaskRequest } from "@zui/app-shell/types.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import type { Theme } from "@zui/useTheme.js";
 
 export type ProjectTask = ServiceProjectTask & ZCodeTaskMeta;
-export type ProjectTaskRef = Pick<ProjectTask, "workspacePath" | "workspaceIdentity" | "taskId" | "taskControl">;
+export type ProjectTaskRef = Pick<ProjectTask, "workspacePath" | "workspaceIdentity" | "taskId" | "taskControl" | "lastUnreadAt">;
 export type VirtualProject = ServiceVirtualProject & {
   primaryRootStatus?: "available" | "missing" | "unavailable";
 };
@@ -57,6 +57,7 @@ export interface ProjectSidebarProps {
     workspaceIdentity?: string,
     remoteSessionId?: string,
     expectedUnreadAt?: number,
+    unreadObservation?: ZCodeTaskUnreadObservation,
   ) => void;
   onStartDraftInWorkspace: (path: string, identity?: string) => void;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;

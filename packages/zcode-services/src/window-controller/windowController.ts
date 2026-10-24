@@ -1,6 +1,6 @@
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
-import type { ZCodeTaskMeta } from "@zcode/shared";
+import type { ZCodeTaskMeta, ZCodeTaskUnreadObservation } from "@zcode/shared";
 import type {
   ControllerResyncParams,
   ControllerResyncResult,
@@ -57,7 +57,7 @@ export interface IWindowControllerService {
   }): Promise<ZCodeArchivedTaskDeletionResult>;
   listTaskList(params: ZCodeTaskListQuery): Promise<WindowHostControllerTaskListResult>;
   mutateTask(params: {
-    address: WindowHostTaskAddress;
+    address: WindowHostTaskAddress & Partial<ZCodeTaskUnreadObservation>;
     mutation: WindowHostControllerMutation;
   }): Promise<ZCodeTaskMeta | null>;
   subscribeControllerV4(params: ControllerSubscribeParams): Promise<ControllerSubscribeResult>;

@@ -46,6 +46,7 @@ function projectTaskObservation(
     mode: "build",
     pinned: false,
     archived: false,
+    lastUnreadAt: 0,
     taskControl: { projectId, branchGeneration },
     conversationRevision,
   };

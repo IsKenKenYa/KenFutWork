@@ -29,6 +29,7 @@ import {
 import type { CodeInputSettlement } from "./queue-control.js";
 import { codeUiRunHasStopIntent, codeUiRunOutcome } from "./run-outcome.js";
 import { createTaskArchiveOperations } from "./task-archive-operations.js";
+import { createTaskUnreadOperations } from "./task-unread-operations.js";
 import { freezeWorkContext, workContextForRun } from "./work-context.js";
 
 export type CodeUiSessionRecord = SqlRow & {
@@ -50,6 +51,8 @@ export type CodeUiSessionRecord = SqlRow & {
   active_run_id: string | null;
   archived: boolean;
   pinned: boolean;
+  unread_at: number | string | null;
+  last_unread_at: number | string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -462,6 +465,7 @@ export function createCodeUiRepository(
   return {
     preparations: createHistoryPreparations(persistence),
     taskArchives: createTaskArchiveOperations(persistence),
+    taskUnread: createTaskUnreadOperations(persistence),
     async recoverRuntimeInputs(owner: {
       hostId: string;
       runtimeId: string;
@@ -1450,7 +1454,7 @@ export function createCodeUiRepository(
       await persistence.transaction(async (tx) => {
         const scoped = tx.forInstance(instanceId);
         await scoped.execute(
-          `update public.code_ui_sessions set deleted_at = now(), state = null, parent_tool_call_id = null, active_run_id = null, root_directory = null, additional_directories = null, scope_generation = scope_generation + 1, execution_state = 'failed', revision = revision + 1
+          `update public.code_ui_sessions set deleted_at = now(), state = null, parent_tool_call_id = null, active_run_id = null, root_directory = null, additional_directories = null, unread_at = null, last_unread_at = 0, scope_generation = scope_generation + 1, execution_state = 'failed', revision = revision + 1
             where instance_id = :instance and root_session_id = $1 and deleted_at is null`,
           [rootSessionId],
         );

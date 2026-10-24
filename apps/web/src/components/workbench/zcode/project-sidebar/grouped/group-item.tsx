@@ -1,5 +1,5 @@
 import { SidebarNativeTooltip, ControlHintTooltip } from "@zui/ControlHintTooltip.js";
-import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+import type { ProjectTask as ZCodeTaskMeta, ProjectSidebarProps } from "@zui/project-sidebar/contract.js";
 import type {
   ZCodeGroupedTaskViewNode,
   ZCodeTaskGroupColor,
@@ -98,7 +98,7 @@ export function GroupItem({
   mobileActiveTaskKey?: string | null;
   getTaskRemoteSessionId: (task: ZCodeTaskMeta) => string | undefined;
   getTaskWorkspaceLabel: (task: ZCodeTaskMeta) => string;
-  onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
+  onSelectTask: ProjectSidebarProps["onSelectTask"];
   onCloseTask: (task: ZCodeTaskMeta) => void;
   onOpenFileTree?: (task: ZCodeTaskMeta) => void;
   onCreateTask: () => void;

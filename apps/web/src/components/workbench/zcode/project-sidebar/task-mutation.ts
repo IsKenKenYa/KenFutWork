@@ -1,3 +1,5 @@
+import { isLocalWorkspaceTarget, type ZCodeTaskUnreadObservation } from "@zcode/shared";
+import { requireTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
 import type {
   ProjectTaskRef,
   IZCodeTaskService,
@@ -13,12 +15,17 @@ interface ProjectTaskPorts {
   service: IZCodeTaskService;
   controller?: IWindowControllerService;
 }
-function taskAddress(task: ProjectTaskRef, remoteSessionId?: string | null): WindowHostTaskAddress {
+function taskAddress(
+  task: ProjectTaskRef,
+  remoteSessionId?: string | null,
+  observation?: ZCodeTaskUnreadObservation,
+): WindowHostTaskAddress & Partial<ZCodeTaskUnreadObservation> {
   return {
     workspacePath: task.workspacePath,
     workspaceIdentity: task.workspaceIdentity,
     taskId: task.taskId,
     ...(task.taskControl ? { taskControl: structuredClone(task.taskControl) } : {}),
+    ...observation,
     ...(remoteSessionId ? { remoteSessionId } : {}),
   };
 }
@@ -37,15 +44,21 @@ export async function mutateProjectTask(
   mutation: ProjectTaskMutation,
   remoteSessionId?: string | null,
 ) {
+  const observation =
+    (mutation.kind === "mark-read" || mutation.kind === "mark-unread") &&
+    isLocalWorkspaceTarget({ ...task, remoteSessionId })
+      ? requireTaskUnreadObservation(task)
+      : undefined;
   const target = {
     workspacePath: task.workspacePath,
     workspaceIdentity: task.workspaceIdentity,
     taskId: task.taskId,
     ...(task.taskControl ? { taskControl: structuredClone(task.taskControl) } : {}),
+    ...observation,
   };
   if (ports.controller && mutation.kind !== "archive" && mutation.kind !== "delete" && mutation.kind !== "rename")
     return ports.controller.mutateTask({
-      address: taskAddress(task, remoteSessionId),
+      address: taskAddress(target, remoteSessionId, observation),
       mutation,
     });
   switch (mutation.kind) {

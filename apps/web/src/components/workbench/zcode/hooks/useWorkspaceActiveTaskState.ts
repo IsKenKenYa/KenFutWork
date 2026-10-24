@@ -54,6 +54,8 @@ function areResolvedTaskMetasEqual(left: ZCodeTaskMeta | null, right: ZCodeTaskM
     left.migrationSource === right.migrationSource &&
     left.forkedFromTaskId === right.forkedFromTaskId &&
     left.unreadAt === right.unreadAt &&
+    left.lastUnreadAt === right.lastUnreadAt &&
+    areTaskMetaJsonFieldsEqual(left.taskControl, right.taskControl) &&
     left.status === right.status &&
     areTaskMetaJsonFieldsEqual(left.lastError, right.lastError) &&
     areTaskMetaJsonFieldsEqual(left.changeSummary, right.changeSummary) &&

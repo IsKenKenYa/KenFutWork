@@ -1,4 +1,4 @@
-import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+import type { ProjectTask as ZCodeTaskMeta, ProjectSidebarProps } from "@zui/project-sidebar/contract.js";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -70,7 +70,7 @@ export function VirtualizedGroupedTaskList({
   mobileActiveTaskKey?: string | null;
   getTaskRemoteSessionId: (task: ZCodeTaskMeta) => string | undefined;
   getTaskWorkspaceLabel: (task: ZCodeTaskMeta) => string;
-  onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
+  onSelectTask: ProjectSidebarProps["onSelectTask"];
   onCloseTask: (task: ZCodeTaskMeta) => void;
   onOpenFileTree?: (task: ZCodeTaskMeta) => void;
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;

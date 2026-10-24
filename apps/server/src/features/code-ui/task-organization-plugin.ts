@@ -1,10 +1,60 @@
-import { codeTaskOrganizationArgsSchema } from "@kenfutwork/shared";
-import type { PluginDefinition } from "../../kernel/types.js";
+import {
+  codeTaskOrganizationArgsSchema,
+  codeTaskUnreadArgsSchema,
+  codeTaskUnreadControllerArgsSchema,
+} from "@kenfutwork/shared";
+import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import {
   CODE_UI_HOST_RPC_CAPABILITY,
   type CodeUiHostRpcHandler,
   runCodeUiHostRpc,
 } from "./host-rpc-handler.js";
+
+function registerTaskUnreadHandlers(ctx: PluginContext) {
+  const service = ctx.get("codeUi");
+  ctx.effect(() =>
+    ctx
+      .get("capabilities")
+      .register<CodeUiHostRpcHandler>(CODE_UI_HOST_RPC_CAPABILITY, {
+        id: "zcode-task.setTaskUnread",
+        value: {
+          call(actor, args, context) {
+            return runCodeUiHostRpc(context, async () => {
+              const [input] = codeTaskUnreadArgsSchema.parse(args);
+              return service.changeTaskUnread(actor, input, context.signal);
+            });
+          },
+        },
+      }),
+  );
+  ctx.effect(() =>
+    ctx
+      .get("capabilities")
+      .register<CodeUiHostRpcHandler>(CODE_UI_HOST_RPC_CAPABILITY, {
+        id: "window-controller.mutateTask",
+        value: {
+          call(actor, args, context) {
+            return runCodeUiHostRpc(context, async () => {
+              const [{ address, mutation }] =
+                codeTaskUnreadControllerArgsSchema.parse(args);
+              return service.changeTaskUnread(
+                actor,
+                {
+                  ...address,
+                  unread: mutation.kind === "mark-unread",
+                  ...(mutation.kind === "mark-read" &&
+                  mutation.expectedUnreadAt !== undefined
+                    ? { expectedUnreadAt: mutation.expectedUnreadAt }
+                    : {}),
+                },
+                context.signal,
+              );
+            });
+          },
+        },
+      }),
+  );
+}
 
 export function createTaskOrganizationPlugin(): PluginDefinition {
   return {
@@ -13,6 +63,7 @@ export function createTaskOrganizationPlugin(): PluginDefinition {
     apply() {},
     mounted(ctx) {
       const service = ctx.get("codeUi");
+      registerTaskUnreadHandlers(ctx);
       for (const method of [
         "archiveTask",
         "unarchiveTask",

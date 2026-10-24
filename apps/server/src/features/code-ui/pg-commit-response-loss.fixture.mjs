@@ -1,4 +1,10 @@
+import { createRequire } from "node:module";
 import net from "node:net";
+
+// 使用 pg 当前安装版本自己的协议解析器，提交证据来自真实后端消息。
+const { Parser } = createRequire(import.meta.resolve("pg"))(
+  "pg-protocol/dist/parser.js",
+);
 
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const freshTransaction = () => ({
@@ -16,6 +22,8 @@ const freshTransaction = () => ({
   taskArchivePrepare: false,
   taskArchiveTaskUpdated: false,
   taskArchiveCompletion: false,
+  taskUnreadMarkers: false,
+  taskUnread: false,
   taskGroupInsert: false,
   taskGroupSave: false,
   taskGroupDelete: false,
@@ -76,6 +84,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
   let projectEditorSave = false;
   let taskArchivePrepare = false;
   let taskArchiveCompletion = false;
+  let taskUnread = false;
   let taskGroupSave = false;
   let taskGroupUngroup = false;
   let taskGroupPlacement = false;
@@ -103,6 +112,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
     let transaction = freshTransaction();
     let withholdingCommit = false;
     let heldFrames = [];
+    const backendParser = new Parser();
     const statements = new Map();
     const portals = new Map();
     const failObserver = (error) => {
@@ -241,6 +251,66 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           key[1] === result.projectId &&
           key[3] === transaction.targetArchived &&
           result.taskId === transaction.targetTaskId;
+      }
+      if (
+        taskUnread &&
+        commandId &&
+        /^update public\.code_ui_sessions set unread_at\s*=\s*\$2,/u.test(
+          text,
+        ) &&
+        text.includes(
+          "last_unread_at=case when $2::bigint is null then last_unread_at else $2::bigint end",
+        ) &&
+        /\bwhere instance_id\s*=\s*\$3 and id\s*=\s*\$1 returning \*$/u.test(
+          text,
+        ) &&
+        parameters.length === 3
+      ) {
+        const key = JSON.parse(commandId);
+        const marker = parameters[1] === null ? null : Number(parameters[1]);
+        transaction.taskUnreadMarkers =
+          Array.isArray(key) &&
+          key.length === 6 &&
+          parameters[0] === key[1] &&
+          parameters[2] === key[0] &&
+          Number.isSafeInteger(key[4]) &&
+          key[4] >= 0 &&
+          (key[5] === true
+            ? Number.isSafeInteger(marker) && marker > key[4]
+            : key[5] === false && marker === null);
+        if (transaction.taskUnreadMarkers) {
+          transaction.targetTaskId = parameters[0];
+          transaction.unreadInstanceId = parameters[2];
+          transaction.targetUnreadAt = marker;
+          transaction.targetLastUnreadAt = marker ?? key[4];
+        }
+      }
+      if (
+        taskUnread &&
+        commandId &&
+        transaction.taskUnreadMarkers &&
+        /^insert into public\.code_ui_commands\b/u.test(text) &&
+        text.includes(
+          "(instance_id,client_id,command_id,session_id,parameter_fingerprint,status,ack)",
+        ) &&
+        /\bvalues \(\$6,\$1,\$2,\$3,\$4,'accepted',\$5::jsonb\)/u.test(text) &&
+        parameters.length === 6 &&
+        parameters[0] === "code-ui:task-unread" &&
+        parameters[1] === commandId &&
+        parameters[2] === transaction.targetTaskId &&
+        typeof parameters[3] === "string" &&
+        /^[a-f0-9]{64}$/u.test(parameters[3]) &&
+        typeof parameters[4] === "string" &&
+        parameters[5] === transaction.unreadInstanceId
+      ) {
+        const key = JSON.parse(commandId);
+        const result = JSON.parse(parameters[4]);
+        transaction.taskUnread =
+          result.taskId === transaction.targetTaskId &&
+          result.taskControl?.projectId === key[2] &&
+          result.taskControl?.branchGeneration === key[3] &&
+          (result.unreadAt ?? null) === transaction.targetUnreadAt &&
+          result.lastUnreadAt === transaction.targetLastUnreadAt;
       }
       if (
         taskGroupSave &&
@@ -465,6 +535,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           transaction.projectEditorSave ||
           transaction.taskArchivePrepare ||
           transaction.taskArchiveCompletion ||
+          transaction.taskUnread ||
           transaction.taskGroupSave ||
           transaction.taskGroupUngroup ||
           transaction.taskGroupPlacement ||
@@ -543,13 +614,17 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
         if (backBuffer.length < length + 1) return;
         const frame = backBuffer.subarray(0, length + 1);
         backBuffer = backBuffer.subarray(length + 1);
-        const tag = String.fromCharCode(frame[0]);
         if (!withholdingCommit) {
           writeFront(frame);
           continue;
         }
         heldFrames.push(frame);
-        if (tag === "C" && cstring(frame.subarray(5)).text === "COMMIT") {
+        let message;
+        backendParser.parse(frame, (parsed) => {
+          message = parsed;
+        });
+        if (!message) throw new Error("PG 观察器未取得完整后端消息。");
+        if (message.name === "commandComplete" && message.text === "COMMIT") {
           // 服务端已确认 COMMIT；这条完成帧尚未转发给 pg 客户端。
           injected = {
             commitConfirmed: true,
@@ -587,6 +662,14 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
                   taskArchiveCompletion: true,
                   targetTaskId: transaction.targetTaskId,
                   targetArchived: transaction.targetArchived,
+                }
+              : {}),
+            ...(transaction.taskUnread
+              ? {
+                  taskUnread: true,
+                  targetTaskId: transaction.targetTaskId,
+                  targetUnreadAt: transaction.targetUnreadAt,
+                  targetLastUnreadAt: transaction.targetLastUnreadAt,
                 }
               : {}),
             ...(transaction.taskGroupSave
@@ -632,7 +715,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
           backend.destroy();
           return;
         }
-        if (tag === "Z") {
+        if (message.name === "readyForQuery") {
           // 真实事务失败/ROLLBACK：不得把它计成已提交的故障证据。
           for (const held of heldFrames) writeFront(held);
           heldFrames = [];
@@ -700,6 +783,7 @@ export async function createCommitResponseLossProxy(upstreamConnectionString) {
       projectEditorSave = options.projectEditorSave === true;
       taskArchivePrepare = options.taskArchivePrepare === true;
       taskArchiveCompletion = options.taskArchiveCompletion === true;
+      taskUnread = options.taskUnread === true;
       taskGroupSave = options.taskGroupSave === true;
       taskGroupUngroup = options.taskGroupUngroup === true;
       taskGroupPlacement = options.taskGroupPlacement === true;

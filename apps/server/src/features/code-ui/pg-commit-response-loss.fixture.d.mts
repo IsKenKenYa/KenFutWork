@@ -8,6 +8,9 @@ export interface CommitLossEvidence {
   taskProjectMovePrepare?: true;
   taskArchivePrepare?: true;
   taskArchiveCompletion?: true;
+  taskUnread?: true;
+  targetUnreadAt?: number | null;
+  targetLastUnreadAt?: number;
   targetArchived?: boolean;
   taskGroupSave?: true;
   taskGroupUngroup?: true;
@@ -37,6 +40,7 @@ export function createCommitResponseLossProxy(
       taskProjectMovePrepare?: boolean;
       taskArchivePrepare?: boolean;
       taskArchiveCompletion?: boolean;
+      taskUnread?: boolean;
       taskGroupSave?: boolean;
       taskGroupUngroup?: boolean;
       taskGroupPlacement?: boolean;

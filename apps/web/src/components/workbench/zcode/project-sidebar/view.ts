@@ -28,8 +28,13 @@ export function applyProjectTaskActivities(
       const item = byKey.get(buildTaskEntityKey(task));
       if (!item) return task;
       const displayed = { ...task };
-      if (item.unreadAt === undefined) delete displayed.unreadAt;
-      else displayed.unreadAt = item.unreadAt;
+      // 相同水位以项目树为准，保留同一标记已清除的事实。
+      if (item.lastUnreadAt !== undefined &&
+        (task.lastUnreadAt === undefined || item.lastUnreadAt > task.lastUnreadAt)) {
+        displayed.lastUnreadAt = item.lastUnreadAt;
+        if (item.unreadAt === undefined) delete displayed.unreadAt;
+        else displayed.unreadAt = item.unreadAt;
+      }
       if (item.pendingInteraction === undefined) delete displayed.pendingInteraction;
       else displayed.pendingInteraction = item.pendingInteraction;
       if (!item.activity) return displayed;

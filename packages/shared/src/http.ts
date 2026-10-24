@@ -599,6 +599,7 @@ export const applicationErrorCodeSchema = z.enum([
   "task_group_revision_conflict",
   "task_group_not_found",
   "task_groups_not_initialized",
+  "task_unread_conflict",
   "design_goal_conflict",
   "design_input_conflict",
   "design_restore_conflict",

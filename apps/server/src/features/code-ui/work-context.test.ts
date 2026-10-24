@@ -42,6 +42,8 @@ function root(state: CodeUiSessionRecord["state"]): CodeUiSessionRecord {
     active_run_id: null,
     archived: false,
     pinned: false,
+    unread_at: null,
+    last_unread_at: 0,
     created_at: "2026-10-15T00:00:00Z",
     updated_at: "2026-10-15T00:00:00Z",
     deleted_at: null,

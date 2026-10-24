@@ -45,6 +45,10 @@ import {
 } from "./ProjectDirectoryChoice.js";
 import { notifyPluginInventoryChanged } from "./parentBridge.js";
 import {
+  captureTaskUnreadCall,
+  readTaskUnreadResult,
+} from "./taskUnreadRpc.js";
+import {
   projectSupportsMode,
   TaskWorkspaceRegistry,
 } from "./taskWorkspaceRegistry.js";
@@ -880,7 +884,12 @@ export class CodeHttpChannelClient implements IChannelClient {
   ) {
     if (
       service === ServiceChannels.ZCodeTask &&
-      ["archiveTask", "unarchiveTask", "deleteArchivedTask"].includes(method)
+      [
+        "archiveTask",
+        "unarchiveTask",
+        "deleteArchivedTask",
+        "setTaskUnread",
+      ].includes(method)
     )
       return values;
     const value = values[0];
@@ -998,6 +1007,8 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.rewriteHostArguments(service, method, values),
         fixedViewer,
       );
+    const unreadCall = captureTaskUnreadCall(service, method, values);
+    if (unreadCall) values = unreadCall.args;
     await this.connect();
     if (
       service === "zcodeAgentService" &&
@@ -1027,6 +1038,11 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.pluginInventoryChanges.fire();
         notifyPluginInventoryChanged();
       }
+    }
+    if (unreadCall) {
+      if (this.controller.signal.aborted || connectionId !== this.connectionId)
+        throw new Error("任务更新期间连接已改变，请重新加载列表。");
+      return readTaskUnreadResult(unreadCall, response.result) as TResult;
     }
     if (service === ServiceChannels.Project && method === "readTree") {
       if (this.controller.signal.aborted || connectionId !== this.connectionId)

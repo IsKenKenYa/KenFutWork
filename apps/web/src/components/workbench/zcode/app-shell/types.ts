@@ -8,6 +8,7 @@ import type {
   SessionCreateSource,
   ZCodeTaskRuntimeStatus,
   ZCodeTaskMeta,
+  ZCodeTaskUnreadObservation,
   GitChangeSourceId,
   DesktopWindowChromeState,
   IPlatformService,
@@ -226,6 +227,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
     taskId: string,
     targetWorkspaceIdentity?: string,
     expectedUnreadAt?: number,
+    unreadObservation?: ZCodeTaskUnreadObservation,
   ) => void;
   handleTaskNavBack: () => void;
   handleTaskNavForward: () => void;

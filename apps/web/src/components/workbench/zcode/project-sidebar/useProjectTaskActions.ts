@@ -22,8 +22,9 @@ export function useProjectTaskActions(task: ProjectTask, refresh: () => Promise<
       workspaceIdentity: task.workspaceIdentity,
       taskId: task.taskId,
       taskControl: task.taskControl,
+      lastUnreadAt: task.lastUnreadAt,
     }),
-    [task.workspacePath, task.workspaceIdentity, task.taskId, task.taskControl],
+    [task.workspacePath, task.workspaceIdentity, task.taskId, task.taskControl, task.lastUnreadAt],
   );
   const mutate = useCallback(
     (mutation: ProjectTaskMutation) =>

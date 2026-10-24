@@ -30,7 +30,7 @@ import { GitBranchSwitcher } from "@zui/GitBranchSwitcher.js";
 import { getGitDirtyFileCount } from "@zui/git-branch-switcher/display.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
-import { parseLocalWorkspaceIdentity } from "@zcode/shared";
+import { parseLocalWorkspaceIdentity, type ZCodeTaskUnreadObservation } from "@zcode/shared";
 import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
 import { CANVAS_DOCUMENT_DELETED_EVENT, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
@@ -963,6 +963,7 @@ export const WorkspaceShellLayout = memo(
         targetWorkspaceIdentity?: string,
         targetRemoteSessionId?: string,
         expectedUnreadAt?: number,
+        unreadObservation?: ZCodeTaskUnreadObservation,
       ) => {
         {
           const workspaceResult = ensureTaskNavigationWorkspace({
@@ -1014,20 +1015,13 @@ export const WorkspaceShellLayout = memo(
         }
         // 只有目标 workspace 已经激活或补开成功后才关闭 Automations，避免失败时看起来像跳转成功。
         showChatMainView();
-        if (typeof expectedUnreadAt === "number") {
-          handleSelectTask(
-            targetWorkspacePath,
-            taskId,
-            targetWorkspaceIdentity,
-            expectedUnreadAt,
-          );
-        } else {
-          handleSelectTask(
-            targetWorkspacePath,
-            taskId,
-            targetWorkspaceIdentity,
-          );
-        }
+        handleSelectTask(
+          targetWorkspacePath,
+          taskId,
+          targetWorkspaceIdentity,
+          expectedUnreadAt,
+          unreadObservation,
+        );
       },
       [
         handleSelectTask,

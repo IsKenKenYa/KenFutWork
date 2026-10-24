@@ -1,4 +1,4 @@
-import type { ProjectTask as ZCodeTaskMeta } from "@zui/project-sidebar/contract.js";
+import type { ProjectTask as ZCodeTaskMeta, ProjectSidebarProps } from "@zui/project-sidebar/contract.js";
 import { memo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { UniqueIdentifier } from "@dnd-kit/core";
@@ -80,7 +80,7 @@ function GroupedTaskItemComponent({
   activeTaskId: string | null;
   mobileActiveTaskKey?: string | null;
   workspaceLabel: string;
-  onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
+  onSelectTask: ProjectSidebarProps["onSelectTask"];
   onCloseTask: (task: ZCodeTaskMeta) => void;
   onOpenFileTree?: (task: ZCodeTaskMeta) => void;
   onMoveTaskToGroup: (task: ZCodeTaskMeta, groupId: string | null) => void;
