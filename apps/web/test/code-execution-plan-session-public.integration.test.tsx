@@ -270,8 +270,8 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           f.session.view.getByTestId("chat-mode-select-trigger"),
         );
         await user.click(
-          await f.session.view.findByRole("menuitemcheckbox", {
-            name: /^计划模式/,
+          await f.session.view.findByRole("menuitemradio", {
+            name: "计划",
           }),
         );
         await waitFor(() => expect(f.planPutStarted()).toBe(true));
@@ -307,8 +307,8 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           f.session.view.getByTestId("chat-mode-select-trigger"),
         );
         await user.click(
-          await f.session.view.findByRole("menuitemcheckbox", {
-            name: /^计划模式/,
+          await f.session.view.findByRole("menuitemradio", {
+            name: "计划",
           }),
         );
         await waitFor(() => {

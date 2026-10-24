@@ -13,10 +13,8 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
 } from "@zui/components/ui/dropdown-menu.js";
 import { Button } from "@zui/components/ui/button.js";
 import { cn } from "@zui/components/lib/utils.js";
@@ -38,7 +36,7 @@ import { ExecutionModeMenuItems } from "@zui/host/ExecutionModeChip.js";
 
 function noop(): void {}
 
-/** Plan 是独立勾选项，三种权限仍为单选；只编辑草稿，不向 Runtime 发切换命令。 */
+/** 权限三档为单选；「计划」属执行方式组（ExecutionModeMenuItems），此处不再单列勾选项。 */
 function V4ComposerModeSwitchImpl({
   provider,
   draftConfig,
@@ -67,25 +65,9 @@ function V4ComposerModeSwitchImpl({
   const selected = permissions.find((mode) => mode.id === draftConfig?.mode);
   const label = (mode: (typeof modes)[number]) =>
     getModeOptionDisplayLabel(intl, displayProvider, { value: mode.id, name: mode.name });
-  const plan = modes.find((mode) => mode.id === "plan")!;
-  const planLabel = label(plan);
-  // Plan 拆成独立勾选项后仍需保留原菜单说明，复用相同的国际化映射。
-  const planDescriptionId = getModeOptionDescriptionMessageId(displayProvider, { value: plan.id });
   const executionLabel = executionModeController?.modes?.find(
     (entry) => entry.id === executionModeController.mode,
   )?.label;
-  const selectPlan = (checked: boolean) => {
-    if (
-      checked &&
-      executionModeController?.mode &&
-      !executionModeController.saving &&
-      executionModeController.modes?.some((entry) => entry.id === "plan")
-    ) {
-      void executionModeController.select("plan");
-      return;
-    }
-    onSwitchMode(checked ? "plan" : "plan-off");
-  };
   const modeOption = useMemo<ZCodeConfigOption>(
     () => ({
       id: "mode",
@@ -168,24 +150,6 @@ function V4ComposerModeSwitchImpl({
                 ?.focus();
           }}
         >
-          <DropdownMenuCheckboxItem
-            checked={draftConfig?.planEnabled ?? false}
-            onCheckedChange={(checked) => selectPlan(checked === true)}
-            disabled={disabled}
-            data-testid={testId(TID_CHAT_MODE_SELECT_ITEM, "plan")}
-            className="min-h-13 items-start gap-3 py-2"
-          >
-            <LightbulbIcon className="mt-0.5 size-4.5 shrink-0" />
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <span>{planLabel}</span>
-              {planDescriptionId && (
-                <span className="text-ui-sm text-foreground-subtle">
-                  {intl.formatMessage({ id: planDescriptionId })}
-                </span>
-              )}
-            </span>
-          </DropdownMenuCheckboxItem>
-          <DropdownMenuSeparator />
           <DropdownMenuRadioGroup value={selected.id} onValueChange={onSwitchMode} aria-label="权限">
             {permissions.map((mode) => {
               const ModeIcon = resolveModeOptionIcon(mode.id);
