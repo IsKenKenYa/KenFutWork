@@ -12,7 +12,7 @@ Code/Design先统一为一个原ZCode会话UI、Task宿主与Harness。项目是
 - **Work = 办公 + 生产力创作**：**原生 Office（PPT / Word / Excel）编辑** + **图片编辑 + 视频编辑**。这才叫 work——不是把 Code 的对话框换个皮。用户口径：Code 虽能处理 work 类任务（生成文件、跑命令），但 Code 主区是对话 + 工作目录；Work 主区是**编辑器**，提供接近桌面 Office / Photoshop / Premiere 的原生编辑体验，**对话退为辅助、不占主区**。
 - **形态分层（关键设计判断）**：
   - **共享宿主 = 内核**：`WorkbenchMode` 加 `work`、`projectKindSchema` 加 `work`、DB CHECK 前向迁移、主区判定、模式切换器——复用统一工作台、原会话和Task，不新增独立会话壳。
-  - **编辑引擎 = 扩展包**：Office / PS / PR / LR 等具体编辑器是体量庞大的原生 Rust 应用（用户原话「6 那不得几个 G」），**不随安装包分发**，按需下载挂载。这与 flow 引擎 `FORM-11`（按需下载、双 Provider）同思路，复用 `scripts/fetch-runtimes.mjs` 的「官方校验值 + 幂等跳过 + 原子落位（不留半截）+ fail loud」范式；下载进度 / 取消 / 重试沿用 flow 引擎安装的既有 UX（`use-flow-engine-install`）。
+  - **编辑引擎 = 扩展包**：Office / PS / PR / LR 等具体编辑器是体量庞大的原生 Rust 应用（用户原话「6 那不得几个 G」），**不随安装包分发**，按需下载挂载。这与 flow 引擎 `FORM-11`（按需下载、双 Provider）同思路，复用 `scripts/fetch-runtimes.mjs` 的「官方校验值 + 幂等跳过 + 原子落位（不留半截）+ fail loud」范式；下载进度 / 取消 / 重试沿用 flow 引擎安装的既有 UX（`FlowSurface.tsx` 内部 hook `useFlowEngineInstall`，非现成模块——复用前先提取为共享 hook）。
   - **"现在先打进去" 的口径**：先在扩展包注册表登记这些编辑器的**元数据与挂载点**（名称 / 来源 / 平台 / 校验和 / 体积 / WASM 或原生 / 许可），实际二进制**按需拉取**——先接线、后下载，不阻塞模式壳落地。**这是对用户原话的一种读法**（另一种是"二进制直接打进安装包"）；2026-10-09 实测单个应用发行包 15–70MB（§3），全套才是「几个 G」量级——按需下载是不把桌面包撑爆的落法。
 
 ## 2. 待拍板决策（`WD-*` 本地编号，拍板后归并《改造计划》§6 分配 `DEC-*`）
@@ -63,7 +63,7 @@ Code/Design先统一为一个原ZCode会话UI、Task宿主与Harness。项目是
 | 2 | 主区判定 | 原工作台WorkspaceShellLayout + useAppPanels内容槽 | 扩工作方式与已安装文档renderer，保留原会话/标签协议与Task，覆盖显式切换和后台事件 | 高（历史事故高发区，必须全矩阵锁死） |
 | 3 | 项目类型 kind | `projectKindSchema` + `enabledModes` → DB CHECK → 前端按启用方式取列表 | 枚举 + 前向迁移 + `contracts.test.ts` 同改；复用项目/会话导航；默认工作方式与enabledModes控制隔离和显式共享 | 中 |
 | 4 | 编辑器内嵌 | `/canvas?id=` iframe 同源鉴权 + postMessage 通道 | `/work` 路由页 + 主区 iframe 分支；WASM 静态站点内嵌 / 原生窗口拉起 | 中（见 §5） |
-| 5 | 扩展包注册与下载 | `scripts/fetch-runtimes.mjs`（官方校验值 + 幂等 + 原子落位）；flow 引擎安装 UX（进度 / 取消，`use-flow-engine-install`） | 新增 work 编辑引擎扩展包清单（元数据 + 挂载点）；按需下载 + 卸载清理 | 中（体积 / 磁盘 / 失败面） |
+| 5 | 扩展包注册与下载 | `scripts/fetch-runtimes.mjs`（官方校验值 + 幂等 + 原子落位）；flow 引擎安装 UX（进度 / 取消，`FlowSurface.tsx` 内部 hook `useFlowEngineInstall`，复用前先提取共享） | 新增 work 编辑引擎扩展包清单（元数据 + 挂载点）；按需下载 + 卸载清理 | 中（体积 / 磁盘 / 失败面） |
 | 6 | office skill | 既有 skills 能力（模式 prompt / skills 配置） | 声明 PPTX / DOCX / XLSX 编辑 skill，随 work 模式注入 | 低 |
 | 7 | 作用域绑定 | run 必绑项目（AGENTS.md 硬约束） | Work Run复用项目的统一Task固定目录，接纳时冻结工作方式/模型/能力/资源/代际；选中文档不增加文件授权 | 中 |
 | 8 | agent 驱动编辑器（MCP / CLI） | 本仓 `features/mcp`（stdio / http 传输）+ `ctx.tools` | 编辑器官方 MCP server 接入（`WD-7`）；与 skill 生成文件两条路互不阻塞 | 中（上游早期，契约漂移） |
@@ -74,7 +74,7 @@ Code/Design先统一为一个原ZCode会话UI、Task宿主与Harness。项目是
 
 | 档 | 形态 | 适用 | 接入方式 |
 | --- | --- | --- | --- |
-| A | **WASM iframe** | web + 桌面通用 | craft 系列提供 `*-web-<ver>.zip` 静态站点，宿主静态托管后 iframe 内嵌；复用 `/canvas` 同源鉴权 + `workbench:project-created` 式 postMessage |
+| A | **WASM iframe** | web + 桌面通用 | craft 系列提供 `*-web-<ver>.zip` 静态站点，宿主静态托管后 iframe 内嵌；复用 `/canvas` 同源鉴权 + `kenfutwork:*` 前缀 postMessage 通道（如 `kenfutwork:canvas-create`；仓库无 `workbench:*` 通道） |
 | B | **原生窗口 / sidecar** | 桌面完整体验 | 扩展包含原生二进制，按需下载后由宿主拉起（本地端口 + iframe 或独立窗口）；同 flow `engineRuntime` Provider 思路（按平台 native 二进制） |
 
 - 两档共用同一「编辑器挂载点」抽象（`WorkEditorSlot`），差异落在 Provider；**禁止**在内嵌层写 `if (wasm)` 之外的业务分支渗入。
@@ -84,7 +84,7 @@ Code/Design先统一为一个原ZCode会话UI、Task宿主与Harness。项目是
 
 | 阶段 | 内容 | 验证 |
 | --- | --- | --- |
-| W0 | **共享Harness与文档契约**：工作方式、Task冻结、文档授权与内容标签回归；编辑器未接通前不展示Work入口 | 契约枚举 ↔ 库 CHECK 对账门禁；`workbench-surface.test.ts` 四模式全矩阵；类型 / 测试 / biome 全绿 |
+| W0 | **共享Harness与文档契约**：工作方式、Task冻结、文档授权与内容标签回归；编辑器未接通前不展示Work入口 | 契约枚举 ↔ 库 CHECK 对账门禁；壳层现存测试扩成四模式全矩阵（切换器 `host-workbench-mode-navigation.test.tsx`、主区 `workbench-modes.test.tsx`；历史 `workbench-surface.test.ts` 已删）；类型 / 测试 / biome 全绿 |
 | W1 | **扩展包注册表**：登记 ArtCraft 系列元数据 + 挂载点（先接线，二进制不下载）；一个只读「Work 引擎」信息页（同 flow「引擎」页） | 注册表单测；信息页真机看图 |
 | W2 | **首个编辑器按需下载 + WASM iframe 内嵌**（office 三件套任一：`gridcraft`=Excel / `wordcraft`=Word / `deckcraft`=PPT，直接对应 office 需求） | 下载 + 校验和 + 失败 / 取消路径；iframe 内嵌 + 鉴权；卸载无残留 |
 | W3 | **图片 / 视频编辑器接入**（`photocraft` / `filmcraft`）+ 原生窗口档（桌面） | 两档各自跑通；体积与磁盘代价明示；平台矩阵 |
