@@ -398,6 +398,58 @@ export class CodeHttpChannelClient implements IChannelClient {
     return result as T;
   }
 
+  /** 带调用方 signal 的 JSON 请求（长任务如语音检测需要可中止）。 */
+  async requestWithSignal<T>(
+    path: string,
+    body: unknown,
+    signal: AbortSignal,
+  ): Promise<T> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        method: body === undefined ? "GET" : "POST",
+        credentials: "include",
+        signal: AbortSignal.any([signal, this.controller.signal]),
+        headers: {
+          ...this.headers(),
+          ...(body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+    );
+    reportAccessLost(response.status);
+    const result = await response.json();
+    if (!response.ok)
+      throw new CodeHostHttpError(
+        response.status,
+        result.error?.message ?? `Code 宿主请求失败：${response.status}`,
+        result.error?.code,
+      );
+    return result as T;
+  }
+
+  /** DELETE 请求（语音模型删除等资源操作）。 */
+  async deleteRequest<T>(path: string): Promise<T> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        method: "DELETE",
+        credentials: "include",
+        signal: this.controller.signal,
+        headers: this.headers(),
+      },
+    );
+    reportAccessLost(response.status);
+    const result = await response.json();
+    if (!response.ok)
+      throw new CodeHostHttpError(
+        response.status,
+        result.error?.message ?? `Code 宿主请求失败：${response.status}`,
+        result.error?.code,
+      );
+    return result as T;
+  }
+
   private readonly pluginIcons = new Map<string, Promise<string | undefined>>();
   private readonly pluginIconUrls = new Set<string>();
   async resolvePluginIcon(resource: string): Promise<string | undefined> {

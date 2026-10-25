@@ -1,30 +1,34 @@
+import type { IPlatformService } from "@zcode/shared";
 import {
-  Monitor,
-  Moon,
-  Settings,
-  Settings2,
-  Package,
-  Bot,
-  Palette,
-  Sun,
-  BarChart3,
-  Terminal,
+  isSettingsSectionEnabled,
+  type SettingsSectionId,
+} from "@zui/lib/settingsNavigation.js";
+import type { Theme } from "@zui/useTheme.js";
+import {
   AlarmClock,
   Anchor,
-  Brain,
+  AudioLines,
+  BarChart3,
   Blocks,
-  Globe2,
+  Bot,
+  Brain,
   Cable,
-  WandSparkles,
-  Keyboard,
   FileSearch,
+  Globe2,
   Info,
+  Keyboard,
+  Monitor,
+  Moon,
+  Package,
+  Palette,
   PenTool,
-  ShieldCheck
+  type Settings,
+  Settings2,
+  ShieldCheck,
+  Sun,
+  Terminal,
+  WandSparkles,
 } from "lucide-react";
-import { isSettingsSectionEnabled, type SettingsSectionId } from "@zui/lib/settingsNavigation.js";
-import type { Theme } from "@zui/useTheme.js";
-import type { IPlatformService } from "@zcode/shared";
 
 export const THEME_MODES: Array<{
   mode: Theme;
@@ -75,6 +79,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "modelProvider",
     icon: Package,
     titleId: "settings.modelProviderTitle",
+    groupId: "basics",
+  },
+  // KenFutWork 宿主分区：语音助手（听/想/说）档位与模型管理，紧跟模型设置。
+  {
+    id: "voice",
+    icon: AudioLines,
+    titleId: "settings.voice.title",
     groupId: "basics",
   },
   {
@@ -186,12 +197,15 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
 // 兼容既有只读消费者：默认配置代表不带桌面平台能力的 Web 视图；
 // macOS/Windows/Linux 必须继续通过 createSettingsPageConfig 动态加入 Computer Use。
 export const SETTINGS_SECTIONS = BASE_SETTINGS_SECTIONS.filter(
-  (section) => section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
+  (section) =>
+    section.id !== "computerUse" && isSettingsSectionEnabled(section.id),
 );
 
-interface SettingsPageConfigOptions extends Pick<
-  IPlatformService, "supportsAutomations" | "supportsEmbeddedBrowser" | "supportsComputerUse"
-> {
+interface SettingsPageConfigOptions
+  extends Pick<
+    IPlatformService,
+    "supportsAutomations" | "supportsEmbeddedBrowser" | "supportsComputerUse"
+  > {
   isDesktop?: boolean;
   isMacDesktop?: boolean;
   isWindowsDesktop?: boolean;
@@ -207,14 +221,22 @@ export function createSettingsPageConfig({
 }: SettingsPageConfigOptions = {}) {
   const showComputerUse = isDesktop || isMacDesktop || isWindowsDesktop;
   const settingsSections = BASE_SETTINGS_SECTIONS.filter((section) => {
-    if (section.id === "automations" && supportsAutomations === false) return false;
-    if (section.id === "browser" && supportsEmbeddedBrowser === false) return false;
-    if (section.id === "computerUse" && (!showComputerUse || supportsComputerUse === false)) return false;
+    if (section.id === "automations" && supportsAutomations === false)
+      return false;
+    if (section.id === "browser" && supportsEmbeddedBrowser === false)
+      return false;
+    if (
+      section.id === "computerUse" &&
+      (!showComputerUse || supportsComputerUse === false)
+    )
+      return false;
     return isSettingsSectionEnabled(section.id);
   });
   const settingsSectionGroups = BASE_SETTINGS_SECTION_GROUPS.map((group) => ({
     ...group,
-    sections: settingsSections.filter((section) => section.groupId === group.id),
+    sections: settingsSections.filter(
+      (section) => section.groupId === group.id,
+    ),
   })).filter((group) => group.sections.length > 0);
 
   return { settingsSectionGroups, settingsSections };
@@ -225,7 +247,8 @@ export function resolveSettingsSectionForPlatform(
   visibleSections: ReadonlyArray<Pick<SettingsSectionDefinition, "id">>,
   fallbackSection: SettingsSectionId = "general",
 ): SettingsSectionId {
-  if (visibleSections.some((candidate) => candidate.id === section)) return section;
+  if (visibleSections.some((candidate) => candidate.id === section))
+    return section;
   if (visibleSections.some((candidate) => candidate.id === fallbackSection)) {
     return fallbackSection;
   }
