@@ -16,8 +16,10 @@ import { PreviewPane } from "@zui/PreviewPane.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import { SessionPane } from "@zui/v4/SessionPane.js";
 import { V4PaneConversationProvider } from "@zui/v4/V4ConversationContext.js";
+import { FileManagerPane } from "@zui/WorkspaceFileTree.js";
 import { useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
+import { fileManagerTargetForCodeViewer } from "../../src/components/workbench/zcode/host/fileViewerServices.js";
 import { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient.js";
 import { setSurfaceApiBase } from "../../src/components/workbench/zcode/host/surfaceApi.js";
 import { bindCodeWorkspaceServices } from "../../src/components/workbench/zcode/host/workspaceServices.js";
@@ -41,6 +43,7 @@ declare global {
         title: string;
         mediaType: string;
       };
+      fileManagerPreview?: boolean;
     };
     __codePublicSessionDispose?: () => void;
   }
@@ -207,15 +210,31 @@ try {
                 </DndContext>
               </Tabs>
               <div style={{ flex: 1, minHeight: 0 }}>
-                <PreviewPane
-                  source={preview}
-                  workspacePath={bootstrap.workspacePath}
-                  markdownSelectionTarget={{
-                    sessionId: publicSessionId,
-                    workspaceKey: scope.workspaceIdentity,
-                  }}
-                  onClose={() => setPreview(null)}
-                />
+                {bootstrap.fileManagerPreview ? (
+                  <FileManagerPane
+                    source={preview}
+                    target={fileManagerTargetForCodeViewer(preview)}
+                    mobileOverlay={false}
+                    canOpenLocalFileManager={false}
+                    onNavigate={setPreview}
+                    workspacePath={bootstrap.workspacePath}
+                    markdownSelectionTarget={{
+                      sessionId: publicSessionId,
+                      workspaceKey: scope.workspaceIdentity,
+                    }}
+                    onClose={() => setPreview(null)}
+                  />
+                ) : (
+                  <PreviewPane
+                    source={preview}
+                    workspacePath={bootstrap.workspacePath}
+                    markdownSelectionTarget={{
+                      sessionId: publicSessionId,
+                      workspaceKey: scope.workspaceIdentity,
+                    }}
+                    onClose={() => setPreview(null)}
+                  />
+                )}
               </div>
             </>
           ) : null}

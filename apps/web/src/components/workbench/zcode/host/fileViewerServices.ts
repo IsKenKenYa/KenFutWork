@@ -11,6 +11,12 @@ import type {
 } from "@zcode/services";
 import { isLocalWorkspaceTarget } from "@zcode/shared";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import {
+  getContainingDirectoryPath,
+  isAbsoluteFilePath,
+} from "@zui/lib/path.js";
+import type { FileManagerTarget } from "@zui/lib/workspaceSidePane.js";
+import { isWorkspaceFilePathInside } from "@zui/workspace-file-tree/model.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 
 const clientsByFiles = new WeakMap<
@@ -40,6 +46,38 @@ export interface CodeViewerOrigin {
 
 export function registerCodeFileViewerClient(client: CodeHttpChannelClient) {
   clientsByFiles.set(client.services.fileService, client);
+}
+
+/** 原文件标签只从打开时的来源取得目录；日志引用与内联内容不创建目录权限。 */
+export function fileManagerTargetForCodeViewer(
+  source: CodeViewerSource,
+): FileManagerTarget {
+  const workspacePath =
+    source.viewerScope &&
+    source.workspacePath &&
+    source.path &&
+    isAbsoluteFilePath(source.path)
+      ? source.workspacePath
+      : "";
+  const browseDirectory =
+    workspacePath &&
+    source.path &&
+    !isWorkspaceFilePathInside(workspacePath, source.path)
+      ? getContainingDirectoryPath(source.path)
+      : null;
+  return {
+    workspacePath,
+    ...(source.workspaceIdentity
+      ? { workspaceIdentity: source.workspaceIdentity }
+      : {}),
+    ...(source.workspaceRemoteSessionId
+      ? { workspaceRemoteSessionId: source.workspaceRemoteSessionId }
+      : {}),
+    ...(source.viewerScope ? { viewerScope: source.viewerScope } : {}),
+    ...(browseDirectory
+      ? { browseDirectory, temporaryExternalDirectory: true }
+      : {}),
+  };
 }
 
 /** 在打开文件时保留来源；服务端仍逐次校验该 Task 或 Project 的当前授权。 */

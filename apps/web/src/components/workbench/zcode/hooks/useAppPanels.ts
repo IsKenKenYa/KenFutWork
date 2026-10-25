@@ -19,7 +19,6 @@ import {
   closeVisibleOtherSidePaneTabs,
   closeVisibleSidePaneTabs,
   closeGitSidePane,
-  closeCodeViewerSidePane,
   openWhiteboardSidePane,
   openDocumentSidePane,
   openOpenDesignSidePane,
@@ -1392,15 +1391,6 @@ export function useAppPanels(options: {
     });
   }, [sidePaneState, workspaceAbsPath]);
 
-  const handleCloseCodeViewer = useCallback(() => {
-    logger.info(`[App] 关闭右侧面板 mode=code-viewer workspace=${workspaceAbsPath}`);
-    commitSidePaneState((current) => {
-      const next = closeCodeViewerSidePane(current);
-      syncSidePaneCollapsedWithTabs(next);
-      return next;
-    });
-  }, [commitSidePaneState, syncSidePaneCollapsedWithTabs, workspaceAbsPath]);
-
   const handleCloseGit = useCallback(() => {
     logger.info(`[App] 关闭右侧面板 mode=git workspace=${workspaceAbsPath}`);
     commitSidePaneState((current) => {
@@ -1749,7 +1739,6 @@ export function useAppPanels(options: {
     handleToggleTerminal,
     handleToggleSidebar,
     handleToggleSidePaneCollapse,
-    handleCloseCodeViewer,
     handleCloseGit,
     handleActivateSidePaneTab,
     handleReorderSidePaneTab,

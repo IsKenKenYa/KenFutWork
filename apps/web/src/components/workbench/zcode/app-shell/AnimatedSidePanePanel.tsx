@@ -15,8 +15,8 @@ import {
 } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
-import { PreviewPane } from "@zui/PreviewPane.js";
 import { FileManagerPane } from "@zui/WorkspaceFileTree.js";
+import { fileManagerTargetForCodeViewer } from "@zui/host/fileViewerServices.js";
 import { SidePaneTerminalPane } from "@zui/SidePaneTerminalPane.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { WorkspaceSidePaneToggleButton } from "@zui/WorkspaceSidePaneToggleButton.js";
@@ -311,7 +311,6 @@ export function AnimatedSidePanePanel({
   fileChangeFindNavigationRequestId,
   fileChangeFindQuery,
   onFileChangeFindMatchCountChange,
-  onCloseCodeViewer,
   onCloseGit,
   onActivateTab,
   onReorderTab,
@@ -380,7 +379,6 @@ export function AnimatedSidePanePanel({
   fileChangeFindNavigationRequestId: number;
   fileChangeFindQuery: string;
   onFileChangeFindMatchCountChange: (count: number) => void;
-  onCloseCodeViewer: () => void;
   onCloseGit: () => void;
   onActivateTab: (tabId: string) => void;
   onReorderTab: (activeTabId: string, overTabId: string) => void;
@@ -1253,9 +1251,9 @@ export function AnimatedSidePanePanel({
                               ? {}
                               : { onRevealFileInTree: onRevealGitFileInTree })}
                           />
-                        ) : tab.type === "file-manager" ? (
+                        ) : tab.type === "file-manager" || tab.type === "code-viewer" ? (
                           <FileManagerPane
-                            target={tab.target}
+                            target={tab.type === "file-manager" ? tab.target : fileManagerTargetForCodeViewer(tab.source)}
                             source={tab.source}
                             mobileOverlay={false}
                             canOpenLocalFileManager={Boolean(isDesktop)}
@@ -1265,16 +1263,6 @@ export function AnimatedSidePanePanel({
                             onOpenBrowserUrl={onOpenBrowserUrl}
                             onOpenCodeViewer={onOpenCodeViewer}
                             onNavigate={(source) => onNavigateFileManager(tab.id, source)}
-                            renderHeavyContent={isVisible && tab.id === visibleActiveTabId}
-                          />
-                        ) : tab.type === "code-viewer" ? (
-                          <PreviewPane
-                            markdownSelectionTarget={{ sessionId: activeTaskId, workspaceKey }}
-                            source={tab.source}
-                            onClose={onCloseCodeViewer}
-                            workspacePath={workspaceAbsPath}
-                            onOpenBrowserUrl={onOpenBrowserUrl}
-                            onOpenCodeViewer={onOpenCodeViewer}
                             // inactive/窄条/resize 中的 code preview 不应继续让
                             // @pierre/diffs 的千行 Shadow DOM 参与布局；这里只裁剪 body，保留 tab/source/file state。
                             renderHeavyContent={shouldRenderPreviewPaneHeavyContent({
@@ -1282,8 +1270,8 @@ export function AnimatedSidePanePanel({
                               // video/audio 原生全屏会触发 resize，resize settling
                               // 期间必须保持当前媒体节点挂载，否则浏览器会立即退出全屏。
                               isMediaPreview:
-                                tab.source.type === "media" ||
-                                (tab.source.type === "file" &&
+                                tab.source?.type === "media" ||
+                                (tab.source?.type === "file" &&
                                   inferMediaPreview(tab.source.path) !== null),
                               isResizeSettling: isWindowResizeSettling,
                               isSidePaneVisible: isVisible,

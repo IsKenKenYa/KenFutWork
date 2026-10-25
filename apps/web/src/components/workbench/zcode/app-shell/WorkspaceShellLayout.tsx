@@ -346,7 +346,6 @@ export const WorkspaceShellLayout = memo(
     handleOpenWorkflowActorSession,
     handleOpenWorkflowWorkspace,
     handleOpenWorkflowArtifact,
-    handleCloseCodeViewer,
     handleCloseGit,
     handleActivateSidePaneTab,
     handleReorderSidePaneTab,
@@ -1584,7 +1583,6 @@ export const WorkspaceShellLayout = memo(
         fileChangeFindNavigationRequestId={fileChangeFindNavigationRequestId}
         fileChangeFindQuery={fileChangeFindQuery}
         onFileChangeFindMatchCountChange={onFileChangeFindMatchCountChange}
-        onCloseCodeViewer={handleCloseCodeViewer}
         onCloseGit={handleCloseGit}
         onActivateTab={handleActivateSidePaneTab}
         onReorderTab={handleReorderSidePaneTab}
