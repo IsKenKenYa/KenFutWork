@@ -52,7 +52,7 @@ async function fixture(options: {
   authenticated?: boolean;
   editorsDir?: string;
   /** 替换 gridcraft 的锚定发布（假上游），路由级全链路不触真实网络。 */
-  pinnedOverride?: WorkEditorPinnedRelease;
+  pinnedOverride?: WorkEditorPinnedRelease | null;
 }) {
   currentEditorsDir = options.editorsDir ?? (await emptyEditorsDir());
   const app = Fastify();
@@ -65,7 +65,7 @@ async function fixture(options: {
       list: () =>
         resolveInstalledEditors({ editorsDir: currentEditorsDir }).map(
           (editor) =>
-            options.pinnedOverride && editor.id === "gridcraft"
+            options.pinnedOverride !== undefined && editor.id === "gridcraft"
               ? { ...editor, pinned: options.pinnedOverride }
               : editor,
         ),
@@ -170,14 +170,17 @@ describe("work 宿主路由", () => {
     ).toMatchObject({ version: "0.11.1" });
     expect(
       body.editors.find((editor) => editor.id === "wordcraft")?.pinned,
-    ).toBeNull();
+    ).toMatchObject({ version: "0.11.0" });
+    // 全部编辑器已锚定：不存在未锚定项（默认支持）
+    expect(body.editors.every((editor) => editor.pinned !== null)).toBe(true);
   });
 
   it("安装：未锚定 → 400 可读原因（不摆假开关）；未知编辑器 → 404", async () => {
-    const app = await fixture({});
+    // 注册表已全量锚定；400 分支用 fixture 注入 null pin（如未来新增未锚定项）保持护栏。
+    const app = await fixture({ pinnedOverride: null });
     const unpinned = await app.inject({
       method: "post",
-      path: "/api/work/host/editors/wordcraft/install",
+      path: "/api/work/host/editors/gridcraft/install",
     });
     expect(unpinned.statusCode).toBe(400);
     expect(unpinned.json().error.message).toContain("尚未锚定发布");

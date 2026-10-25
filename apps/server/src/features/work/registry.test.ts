@@ -49,10 +49,18 @@ describe("编辑器扩展包注册表", () => {
     );
   });
 
-  it("未锚定的编辑器 pinned=null（不给下载，不摆假开关）", () => {
-    const wordcraft = listWorkEditorRegistrations().find(
-      (editor) => editor.id === "wordcraft",
-    );
-    expect(wordcraft?.pinned).toBeNull();
+  it("全部 12 个编辑器均锚定：资产名/版本/URL 自洽、sha256 形状合法（默认支持，无未锚定项）", () => {
+    const editors = listWorkEditorRegistrations();
+    expect(editors).toHaveLength(12);
+    for (const editor of editors) {
+      const pinned = editor.pinned;
+      expect(pinned, `${editor.id} 未锚定`).not.toBeNull();
+      expect(pinned?.asset).toBe(`${editor.id}-web-${pinned?.version}.zip`);
+      expect(pinned?.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(pinned?.bytes).toBeGreaterThan(1_000_000);
+      expect(pinned?.url).toBe(
+        `https://github.com/storytold/${editor.id}/releases/download/v${pinned?.version}/${pinned?.asset}`,
+      );
+    }
   });
 });
