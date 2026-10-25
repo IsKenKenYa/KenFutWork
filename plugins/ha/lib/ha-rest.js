@@ -267,5 +267,63 @@ export function createHaRest(options) {
         body: data ?? {},
       });
     },
+    /**
+     * `POST /api/config/config_entries/flow`：开一个集成配置流（面板「添加集成」用）。
+     * handler 是集成的 domain（如 xiaomi_home）；集成未安装时 HA 回 404。
+     */
+    startFlow: (handler) => {
+      if (!isValidServiceName(handler)) {
+        throw new HaError(
+          `集成标识不合法（${String(handler).slice(0, 60)}）。`,
+          "bad_service",
+        );
+      }
+      return api("/config/config_entries/flow", {
+        method: "POST",
+        body: { handler },
+      });
+    },
+    /** 流程/实体 id 的形状（HA 的 flow_id 与 entry_id 都是短横线/字母数字串）。 */
+    isValidObjectId: (value) =>
+      typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value),
+    /** `GET /api/config/config_entries/flow/<flow_id>`：流程进度（external 步轮询用）。 */
+    getFlow: (flowId) => {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(flowId))) {
+        throw new HaError(
+          `流程 id 不合法（${String(flowId).slice(0, 40)}）。`,
+          "bad_service",
+        );
+      }
+      return api(`/config/config_entries/flow/${encodeURIComponent(flowId)}`);
+    },
+    /** `POST /api/config/config_entries/flow/<flow_id>`：提交当前步骤的字段。 */
+    submitFlow: (flowId, fields) => {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(flowId))) {
+        throw new HaError(
+          `流程 id 不合法（${String(flowId).slice(0, 40)}）。`,
+          "bad_service",
+        );
+      }
+      return api(`/config/config_entries/flow/${encodeURIComponent(flowId)}`, {
+        method: "POST",
+        body: fields ?? {},
+      });
+    },
+    /**
+     * `DELETE /api/config/config_entries/<entry_id>`：卸载一个集成实例（HA 源码
+     * `ConfigManagerEntryResourceView.delete`；组件文件不动，只删配置条目）。
+     */
+    deleteEntry: (entryId) => {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(String(entryId))) {
+        throw new HaError(
+          `集成条目 id 不合法（${String(entryId).slice(0, 40)}）。`,
+          "bad_service",
+        );
+      }
+      return api(
+        `/config/config_entries/${encodeURIComponent(entryId)}`,
+        { method: "DELETE" },
+      );
+    },
   };
 }

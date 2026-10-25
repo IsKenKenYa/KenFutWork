@@ -187,6 +187,7 @@ export function apply(ctx) {
 
     return {
       rest,
+      session,
       stop() {
         session.stop();
       },
@@ -370,6 +371,108 @@ export function apply(ctx) {
             locationName: info?.location_name ?? null,
           },
         };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  // === 集成管理（面板「集成管理」区）：默认小米/华为，可添加（HA 配置流）与卸载 ===
+
+  /** 面板品牌 → HA 集成 domain（组件装在用户的 HA 里，面板只管配置条目的生命周期）。 */
+  const INTEGRATION_BRANDS = {
+    xiaomi: "xiaomi_home",
+    huawei: "huawei_smarthome",
+  };
+
+  /** 集成列表走 WS 的 config_entries/get：等实时链路认证成功再发（最多 3 秒）。 */
+  async function waitForWsReady(runtime) {
+    const deadline = Date.now() + 3000;
+    while (runtime.session.phase !== "ready") {
+      if (Date.now() > deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return true;
+  }
+
+  ctx.routes.register({
+    path: "integrations",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "列集成");
+      try {
+        const runtime = await runtimeFor(instanceId);
+        const ready = await waitForWsReady(runtime);
+        if (!ready) {
+          return { status: 200, body: { integrations: [], ready: false } };
+        }
+        const entries = await runtime.session.request("config_entries/get");
+        const wanted = Object.values(INTEGRATION_BRANDS);
+        const integrations = (Array.isArray(entries) ? entries : [])
+          .filter((entry) => wanted.includes(entry.domain))
+          .map((entry) => ({
+            entryId: entry.entry_id,
+            domain: entry.domain,
+            title: entry.title,
+            state: entry.state,
+          }));
+        return { status: 200, body: { integrations, ready: true } };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "integrations/start",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "添加集成");
+      try {
+        const brand = String(request.body?.brand ?? "");
+        const handler = INTEGRATION_BRANDS[brand];
+        if (!handler) {
+          throw codedError(
+            `暂不支持这个品牌（${brand.slice(0, 20)}）：默认支持米家与华为。`,
+            "bad_service",
+          );
+        }
+        const runtime = await runtimeFor(instanceId);
+        const step = await runtime.rest.startFlow(handler);
+        return { status: 200, body: { brand, flowId: step.flow_id, step } };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "integrations/flow",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "集成流程");
+      try {
+        const flowId = request.body?.flowId;
+        const runtime = await runtimeFor(instanceId);
+        const step =
+          request.body?.fields === undefined
+            ? await runtime.rest.getFlow(flowId)
+            : await runtime.rest.submitFlow(flowId, request.body.fields);
+        return { status: 200, body: { flowId, step } };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "integrations/remove",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "卸载集成");
+      try {
+        const runtime = await runtimeFor(instanceId);
+        await runtime.rest.deleteEntry(request.body?.entryId);
+        return { status: 200, body: { ok: true } };
       } catch (error) {
         return errorResult(error);
       }

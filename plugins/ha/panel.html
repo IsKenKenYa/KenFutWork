@@ -279,6 +279,39 @@
       .brand[open] .chev {
         transform: rotate(90deg);
       }
+      /* === 集成管理（已连接态）：默认品牌卡 + 配置流对话框 === */
+      .integrations {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+      }
+      .integrations summary {
+        cursor: pointer;
+        padding: 8px 12px;
+        font-weight: 600;
+      }
+      .integrations-body {
+        padding: 4px 12px 10px;
+      }
+      .int-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 8px 0 4px;
+      }
+      .int-name {
+        flex: none;
+        font-weight: 600;
+      }
+      .int-status {
+        flex: 1;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .int-form {
+        margin: 6px 0;
+      }
       .guide .step {
         margin: 6px 0;
         border: 1px solid var(--line);
@@ -356,14 +389,9 @@
   </head>
   <body>
     <header>
-      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态与操作 -->
+      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态行：
+           连接生命周期由自动初始化接管，不再有手工按钮（2026-10-25 用户口径） -->
       <span id="state" class="hint"></span>
-      <span class="grow"></span>
-      <button id="toggleView" type="button" hidden></button>
-      <button id="refresh" type="button" hidden>刷新</button>
-      <button id="retest" type="button" hidden>重新测试</button>
-      <button id="edit" type="button" hidden>修改配置</button>
-      <button id="disconnect" type="button" hidden>断开</button>
     </header>
     <main id="body">
       <div class="card hint">正在获取配置…</div>

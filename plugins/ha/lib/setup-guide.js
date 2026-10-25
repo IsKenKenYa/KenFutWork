@@ -175,6 +175,31 @@ export const SETUP_GUIDE_STEPS = [
     ],
   },
   {
+    id: "autologin",
+    title: "HA 免登陆（自动关联本地用户）",
+    open: false,
+    items: [
+      {
+        kind: "text",
+        text: "configuration.yaml 加入并重启（面板内嵌即免登陆）：",
+      },
+      {
+        kind: "command",
+        label: "configuration.yaml",
+        text: "homeassistant:\n  auth_providers:\n    - type: trusted_networks\n      trusted_networks:\n        - 172.17.0.1\n        - 192.168.0.0/16\n      allow_bypass_login: true\n    - type: homeassistant",
+      },
+      {
+        kind: "text",
+        text: "Docker 部署的来源 IP 是网桥 172.17.0.1；首次访问会让你选一次用户",
+      },
+      {
+        kind: "link",
+        label: "可信网络认证文档",
+        url: "https://www.home-assistant.io/docs/authentication/providers/#trusted-networks",
+      },
+    ],
+  },
+  {
     id: "token",
     title: "创建长期令牌",
     open: false,
