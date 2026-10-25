@@ -135,6 +135,7 @@ import {
 } from "./owned-history.js";
 import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeUiPluginsHost } from "./plugins.js";
+import type { CodeUiProjectGitSessions } from "./project-git-session.js";
 import type { CodeInputSettlement } from "./queue-control.js";
 import {
   applyCodeQueueCommand,
@@ -199,6 +200,7 @@ export interface CodeUiServiceDeps {
   blob?: BlobStore;
   attachmentRepository?: CodeAttachmentRepository;
   processSandbox?: ProcessSandbox;
+  projectGitSessions?: CodeUiProjectGitSessions;
   beforeCloseTask?: (
     actor: LocalActor,
     taskId: string,
@@ -538,37 +540,57 @@ export class CodeUiService {
       ? createCodeUiHostGitRpc({
           resolveTarget: (actor, request) =>
             this.resolveHostTarget(actor, request),
-          openSession: async (actor, target) => {
-            if (target.viewerScope.kind !== "task")
-              throw new CodeUiRepositoryError(
-                "not_found",
-                "请先创建或选择Task再使用Git。",
+          withSession: async (actor, target, connection, read) => {
+            const settings = await deps.settings.getInstanceSettings(
+              actor,
+              target.instanceId,
+            );
+            const binary = deps.env.gitBinDir
+              ? join(
+                  deps.env.gitBinDir,
+                  process.platform === "win32" ? "git.exe" : "git",
+                )
+              : "git";
+            const available = deps.env.gitSource !== "unavailable";
+            if (target.viewerScope.kind === "project") {
+              if (!deps.projectGitSessions)
+                throw new CodeUiHostRpcError(
+                  "code_ui_method_unavailable",
+                  "项目Git读取未接通，请检查宿主配置。",
+                  503,
+                );
+              return deps.projectGitSessions.withSession(
+                {
+                  actor,
+                  target,
+                  settings,
+                  binary,
+                  available,
+                  context: this.connections.context(
+                    target.instanceId,
+                    connection.connectionId,
+                    actor.accessClientId,
+                  ),
+                },
+                read,
               );
+            }
             const scope = (
               await deps.executionScopes.openTask(
                 actor,
                 target.viewerScope.taskId,
               )
             ).derive("review", `human-git:${randomUUID()}`);
-            const settings = await deps.settings.getInstanceSettings(
-              actor,
-              target.instanceId,
-            );
-            return {
+            return read({
               rootDirectory: scope.describe().rootDirectory,
-              available: deps.env.gitSource !== "unavailable",
+              available,
               limits: settings,
               resolvePath: (path, operation) =>
                 scope.resolvePath(path, operation),
               exec: createScopedGitExec({
                 scope,
                 sandbox: deps.processSandbox!,
-                binary: deps.env.gitBinDir
-                  ? join(
-                      deps.env.gitBinDir,
-                      process.platform === "win32" ? "git.exe" : "git",
-                    )
-                  : "git",
+                binary,
                 timeoutMs: settings.executeTimeoutMs,
                 limits: {
                   maxOutputBytes: settings.processMaxOutputBytes,
@@ -577,7 +599,7 @@ export class CodeUiService {
                   killGraceMs: settings.processKillGraceMs,
                 },
               }),
-            };
+            });
           },
         })
       : undefined;

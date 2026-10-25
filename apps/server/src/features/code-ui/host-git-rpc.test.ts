@@ -93,20 +93,21 @@ async function fixture() {
         viewerScope: request.viewerScope,
       };
     },
-    openSession: async () => ({
-      rootDirectory: root,
-      available,
-      limits: instanceSettingsSchema.parse({ defaultModel: "fixture" }),
-      resolvePath: (path) =>
-        resolveReadOnlyProjectPath(
-          { rootDirectory: root, additionalDirectories: [] },
-          path,
-        ),
-      exec: (args, cwd, input) => {
-        requests.push(args);
-        return execute(args, cwd, input);
-      },
-    }),
+    withSession: async (_actor, _target, _connection, read) =>
+      read({
+        rootDirectory: root,
+        available,
+        limits: instanceSettingsSchema.parse({ defaultModel: "fixture" }),
+        resolvePath: (path) =>
+          resolveReadOnlyProjectPath(
+            { rootDirectory: root, additionalDirectories: [] },
+            path,
+          ),
+        exec: (args, cwd, input) => {
+          requests.push(args);
+          return execute(args, cwd, input);
+        },
+      }),
   });
   const connection = {
     connectionId: randomUUID(),
@@ -352,10 +353,10 @@ it("原ignore/branches/graph/worktree-info来自真实Git，越界不进入执�
     ),
   ).toBe(true);
 });
-it("Project不伪造Task，connection与workspace核对；未接通写操作明确拒绝", async () => {
+it("Project只读投影保持真实目录，connection与workspace核对；未接通写操作明确拒绝", async () => {
   const f = await fixture();
-  await expect(
-    f.rpc.call(
+  expect(
+    await f.rpc.call(
       f.actor,
       "getRepositorySummary",
       [
@@ -366,7 +367,8 @@ it("Project不伪造Task，connection与workspace核对；未接通写操作明�
       ],
       f.connection,
     ),
-  ).rejects.toThrow(/Task/);
+  ).toMatchObject({ result: { isRepository: true, branchName: "main" } });
+  f.requests.splice(0);
   await expect(
     f.rpc.call(f.actor, "getRepositorySummary", [f.params], {
       ...f.connection,

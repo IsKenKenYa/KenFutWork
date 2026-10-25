@@ -93,18 +93,7 @@ async function dispatch(
       );
     case "getIgnoredPaths": {
       const { paths } = pathsParams.parse(input);
-      if (!paths.length) return [];
-      const relativePaths = await repo.paths(paths, "read", "repository-entry");
-      const result = await repo.run(
-        ["check-ignore", "-z", "--stdin"],
-        `${relativePaths.join("\0")}\0`,
-      );
-      if (result.code !== 0 && result.code !== 1)
-        throw new Error(result.stderr || "Git ignore查询失败。");
-      const ignored = new Set(result.stdout.split("\0").filter(Boolean));
-      return paths.filter((_path, index) =>
-        ignored.has(relativePaths[index] ?? ""),
-      );
+      return repo.ignoredPaths(paths);
     }
     case "getDiff": {
       const params = targetParams
@@ -149,17 +138,18 @@ async function dispatch(
   }
 }
 
-/** Task只读Git纵切片；写操作在真实实现获批前明确拒绝，不返回假成功。 */
+/** 只读Git宿主；每次读取由所属Task或Project的真实执行范围持有。 */
 export function createCodeUiHostGitRpc(deps: {
   resolveTarget(
     actor: LocalActor,
     request: CodeUiHostTargetRequest,
   ): Promise<CodeUiHostTarget>;
-  openSession(
+  withSession(
     actor: LocalActor,
     target: CodeUiHostTarget,
-    operation: "read",
-  ): Promise<CodeUiHostGitSession>;
+    connection: CodeUiHostConnection,
+    read: (session: CodeUiHostGitSession) => Promise<unknown>,
+  ): Promise<unknown>;
 }): CodeUiHostGitRpc {
   return {
     async call(actor, method, args, connection) {
@@ -175,22 +165,23 @@ export function createCodeUiHostGitRpc(deps: {
       );
       if (target.instanceId !== connection.instanceId)
         throw new Error("Git工作区与可信连接身份不匹配。");
-      if (target.viewerScope.kind !== "task")
-        throw new Error(
-          "Git操作需要先创建或选择Code Task；当前Project尚未提供受控进程工作域。",
-        );
       if (unavailableMethods.has(method))
         throw new Error(`当前Git宿主尚不支持${method}，该能力仍未接通。`);
-      const session = await deps.openSession(actor, target, "read");
-      if (session.rootDirectory !== target.rootDirectory)
-        throw new Error("Git目标目录与可信Task固定工作目录不匹配。");
-      return {
-        result: await dispatch(
-          new CodeUiHostGitRepository(session),
-          method,
-          args[0],
-        ),
-      };
+      const result = await deps.withSession(
+        actor,
+        target,
+        connection,
+        async (session) => {
+          if (session.rootDirectory !== target.rootDirectory)
+            throw new Error("Git目标目录与可信来源不匹配。");
+          return dispatch(
+            new CodeUiHostGitRepository(session),
+            method,
+            args[0],
+          );
+        },
+      );
+      return { result };
     },
   };
 }

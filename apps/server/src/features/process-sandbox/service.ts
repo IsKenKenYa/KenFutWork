@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { executionEnvironment } from "./environment.js";
 import { HelperLifecycle } from "./helper-lifecycle.js";
 import { LiveOutputConsumer } from "./live-output.js";
+import { createProjectReadLease } from "./project-read-lease.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
 import { createProcessRestoreCoordinator } from "./restore-barrier.js";
 import {
@@ -24,6 +25,9 @@ import type {
   ProcessSandbox,
   ProcessSandboxOptions,
   ProcessSpawnRequest,
+  ProjectReadProcessLease,
+  SandboxProcessRequest,
+  SandboxProcessSnapshot,
 } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
@@ -33,13 +37,15 @@ type RpcInput = HelperRequest extends infer Request
     : never
   : never;
 
-class TaskConnection {
+class TaskConnection<
+  Snapshot extends SandboxProcessSnapshot = ManagedProcessSnapshot,
+> {
   private readonly child: ChildProcess;
   private readonly pending = new Map<
     string,
     { resolve: (value: unknown) => void; reject: (error: unknown) => void }
   >();
-  readonly snapshots = new Map<string, ManagedProcessSnapshot>();
+  readonly snapshots = new Map<string, Snapshot>();
   private closed = false;
   private readonly lifecycle: HelperLifecycle;
   private closePromise: Promise<void> | undefined;
@@ -53,7 +59,7 @@ class TaskConnection {
 
   constructor(
     private readonly options: ProcessSandboxOptions,
-    initial: ProcessSpawnRequest,
+    initial: SandboxProcessRequest,
   ) {
     const development = import.meta.url.endsWith(".ts");
     const helper =
@@ -123,8 +129,9 @@ class TaskConnection {
         ).receive(message);
         return;
       }
-      this.snapshots.set(message.snapshot.id, message.snapshot);
-      this.options.onSnapshot?.(structuredClone(message.snapshot));
+      this.snapshots.set(message.snapshot.id, message.snapshot as Snapshot);
+      if (message.snapshot.ownerTaskId !== undefined)
+        this.options.onSnapshot?.(structuredClone(message.snapshot));
       return;
     }
     const pending = this.pending.get(message.id);
@@ -174,10 +181,12 @@ class TaskConnection {
     return consumer;
   }
 
-  initialize(initial: ProcessSpawnRequest): Promise<unknown> {
+  initialize(initial: SandboxProcessRequest): Promise<unknown> {
     return this.rpc({
       method: "initialize",
-      taskId: initial.scope.taskId,
+      ...("kind" in initial.scope
+        ? { projectOwner: initial.scope }
+        : { taskId: initial.scope.taskId }),
       initial,
       options: {
         captureRoot: this.options.captureRoot,
@@ -216,6 +225,7 @@ class TaskConnection {
       await this.rpc({ method: "close", reason });
       this.lifecycle.acknowledgeClose();
       await this.finishHelperClose();
+      await this.lifecycle.finalizeProjectClose();
     })();
     return this.closePromise;
   }
@@ -266,7 +276,7 @@ interface TaskEntry {
   closePromise?: Promise<void>;
 }
 
-function validateRequest(request: ProcessSpawnRequest): void {
+function validateRequest(request: SandboxProcessRequest): void {
   if (
     request.runtimeReadRoots?.some(
       (root) => !isAbsolute(root) || root.includes("\0"),
@@ -341,6 +351,7 @@ export function createProcessSandbox(
   options: ProcessSandboxOptions,
 ): ProcessSandbox {
   const tasks = new Map<string, TaskEntry>();
+  const projectLeases = new Set<ProjectReadProcessLease>();
   const restore = createProcessRestoreCoordinator();
   const closedTasks = new Map<string, number>();
   const minimumGenerations = new Map<string, number>();
@@ -657,6 +668,32 @@ export function createProcessSandbox(
   };
 
   return {
+    async openProjectReadLease(input, leaseOptions) {
+      if (closed)
+        throw new ProcessSandboxError("process_closed", "执行宿主已关闭。");
+      const created = createProjectReadLease(input, {
+        ...(leaseOptions?.signal ? { signal: leaseOptions.signal } : {}),
+        validateRequest,
+        createConnection: (initial) =>
+          new TaskConnection<SandboxProcessSnapshot>(
+            {
+              ...options,
+              network: { allowedDomains: [], deniedDomains: [] },
+              onSnapshot: () => {},
+            },
+            initial,
+          ),
+        closed: () => projectLeases.delete(created.lease),
+      });
+      projectLeases.add(created.lease);
+      try {
+        await created.ready;
+        return created.lease;
+      } catch (error) {
+        await created.lease.close("项目读取初始化失败");
+        throw error;
+      }
+    },
     acquireRestoreBarrier: (scope, roots) => restore.acquire(scope, roots),
     // 只读请求必须先通过 helper 的同 scope OS 探针；缺失隔离能力时拒绝执行。
     readonlyExecution:
@@ -722,9 +759,10 @@ export function createProcessSandbox(
     closeTask,
     async close(reason) {
       closed = true;
-      const results = await Promise.allSettled(
-        [...tasks.keys()].map((taskId) => closeTask(taskId, reason)),
-      );
+      const results = await Promise.allSettled([
+        ...[...tasks.keys()].map((taskId) => closeTask(taskId, reason)),
+        ...[...projectLeases].map((lease) => lease.close(reason)),
+      ]);
       const failures = results.flatMap((result) =>
         result.status === "rejected" ? [result.reason] : [],
       );

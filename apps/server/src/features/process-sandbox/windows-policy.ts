@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { accountEnvironment } from "./account-command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
-import type { ProcessSpawnRequest } from "./types.js";
+import type { SandboxProcessRequest as ProcessSpawnRequest } from "./types.js";
 import type { NativeLaunch } from "./windows-broker.js";
 import { windowsCommand } from "./windows-broker.js";
 
@@ -98,7 +98,18 @@ export async function windowsLaunch(input: {
   env.TMP = input.temporaryDirectory;
   return {
     processId: input.processId,
-    taskId: scope.taskId,
+    ...("kind" in scope
+      ? {
+          projectOwner: {
+            kind: scope.kind,
+            leaseId: scope.leaseId,
+            instanceId: scope.instanceId,
+            projectId: scope.projectId,
+            connectionId: scope.connectionId,
+            revision: scope.revision,
+          },
+        }
+      : { taskId: scope.taskId }),
     generation: scope.generation,
     command: windowsCommand(input.request),
     cwd: input.cwd,

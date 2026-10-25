@@ -1,10 +1,10 @@
 import type { ProcessOwner } from "./managed-process.js";
 import type { ProcessOutputCapture } from "./output-capture.js";
 import type {
-  ManagedProcessSnapshot,
+  SandboxProcessSnapshot as ManagedProcessSnapshot,
   ProcessExit,
   ProcessOutputStream,
-  ProcessSpawnRequest,
+  SandboxProcessRequest as ProcessSpawnRequest,
 } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 import type {

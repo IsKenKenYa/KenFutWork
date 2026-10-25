@@ -155,6 +155,14 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 ## 原项目编辑器
 
+### 项目文件面板的只读 Git
+
+原 `git` 的只读方法继续使用既有 `workspacePath`、可选 `workspaceIdentity` 和 `viewerScope`；`viewerScope: { kind: "project", projectId }` 指定尚无 Task 的真实项目，参数没有新增字段。主目录和标准身份必须与当前项目一致，不能从当前选中 Task 或任意路径补充来源。
+
+提供方沿已初始化的可信连接，在独立数据库会话事务内取得项目 `FOR SHARE NOWAIT` 行锁和 `editor_revision`，将当前目录集合交给现有 ProcessSandbox 的 Project Read Lease。整个读取、Git 命令序列及进程关闭均在该事务内完成；目录编辑、重新关联和归档使用同一项目行，锁冲突返回 409。连接关闭或数据库会话丢失取消租约并等待实际进程退出，旧连接调用返回 404。项目关闭、归档、主目录改变和目录外路径同样返回 404；旧动作不能恢复项目或目录授权。
+
+租约始终只读无网，复用原 OS 探针、输出上限和退出确认，不创建 Task、Run 或 Task Work，也不发布 Task 进程快照。已授权但不属于当前仓库的附加文件不套用主仓库忽略规则，普通非 Git 目录返回空忽略列表；两种情况仍先核验全部输入路径。写入方法保持原拒绝规则。Task Git 继续沿持久 Task 工作域，项目修改不扩大已有 Task 权限。
+
 原 `ProjectEditor` 经已初始化的连接调用 `project.readProjects`、`project.readDirectory`、`project.saveProject` 与 `project.deleteProject`。提供方沿 `code-ui-host-rpc` 贡献，实例和接入身份由连接持有；本机目录浏览是明确的人类目录选择，不借用当前 Task 授权。
 
 编辑包含项目 `id`、有序 `roots`、固定 `primaryRoot`、`rootPermissions` 及非负 32 位 `expectedRevision`。根目录按真实路径归一化，重复和符号链接别名合并，路径中的空格保持。新增附加目录按明确的只读或可写选择保存；项目修改只影响新 Task，已有 Task 的目录和授权版本保持。

@@ -7,6 +7,58 @@ export interface ProcessLimits {
   killGraceMs: number;
 }
 
+export interface ProjectReadProcessScope {
+  instanceId: string;
+  projectId: string;
+  connectionId: string;
+  revision: string;
+  rootDirectory: string;
+  additionalDirectories: readonly string[];
+}
+
+export interface ProjectReadProcessLease {
+  exec(input: {
+    argv: { executable: string; args: readonly string[] };
+    cwd?: string;
+    input?: string;
+    timeoutMs?: number | null;
+    env?: Readonly<Record<string, string>>;
+  }): Promise<{
+    exit: ProcessExit;
+    stdout: string;
+    stderr: string;
+    discardedBytes: number;
+  }>;
+  close(reason: string): Promise<void>;
+}
+
+/** helper 的 Project owner 与持久 Task 身份分开；revision 由 Project 行锁持有。 */
+export interface ProjectReadSandboxScope {
+  kind: "project-read";
+  leaseId: string;
+  instanceId: string;
+  projectId: string;
+  connectionId: string;
+  revision: string;
+  rootDirectory: string;
+  additionalDirectories: readonly { path: string; access: "read-only" }[];
+  sandboxMode: "read-only";
+  /** 单个不可更新的 helper 生命周期版本，不代表 Task 或 Project 的授权修订。 */
+  generation: 1;
+  taskId?: never;
+}
+
+export type SandboxProcessScope = CodeExecutionScope | ProjectReadSandboxScope;
+export type SandboxProcessRequest = Omit<ProcessSpawnRequest, "scope"> & {
+  scope: SandboxProcessScope;
+};
+export type SandboxProcessSnapshot =
+  | ManagedProcessSnapshot
+  | (Omit<ManagedProcessSnapshot, "ownerTaskId"> & {
+      ownerTaskId?: never;
+      projectOwner: ProjectReadSandboxScope;
+    });
+
 export interface ProcessEnforcement {
   backend:
     | "srt-seatbelt"
@@ -141,6 +193,10 @@ export interface ManagedStdioProcess extends ManagedProcess {
 }
 
 export interface ProcessSandbox {
+  openProjectReadLease(
+    input: { scope: ProjectReadProcessScope; limits: ProcessLimits },
+    options?: { signal?: AbortSignal },
+  ): Promise<ProjectReadProcessLease>;
   /** 仅受验证执行路径可声明：read-only 请求先通过同 scope OS 只读探针且无网，否则拒绝启动。 */
   readonly readonlyExecution?: boolean;
   acquireRestoreBarrier(

@@ -99,7 +99,7 @@ function graphRefs(decorations: string): GitCommitGraphRef[] {
   return refs;
 }
 
-/** 原IGitService的DTO投影；exec只来自真实Task ProcessSandbox，不启动宿主shell。 */
+/** 原IGitService的DTO投影；exec来自所属Task或Project的真实ProcessSandbox。 */
 export class CodeUiHostGitRepository {
   constructor(readonly session: CodeUiHostGitSession) {}
   run(args: readonly string[], input?: string) {
@@ -115,14 +115,10 @@ export class CodeUiHostGitRepository {
   }
   async repositoryRoot() {
     const root = await this.optional(["rev-parse", "--show-toplevel"]);
-    if (!root) throw new Error("当前Task目录不是Git仓库。");
+    if (!root) throw new Error("当前目录不是Git仓库。");
     return this.session.resolvePath(root, "read");
   }
-  async paths(
-    paths: string[],
-    operation: "read" | "write",
-    mode: "canonical" | "repository-entry" = "canonical",
-  ) {
+  async paths(paths: string[], operation: "read" | "write") {
     const root = await this.repositoryRoot();
     const result: string[] = [];
     for (const path of paths) {
@@ -132,11 +128,7 @@ export class CodeUiHostGitRepository {
         ? path
         : join(this.session.rootDirectory, path);
       const canonical = await this.session.resolvePath(requested, operation);
-      // ignore 查询使用仓库内链接名称，真实目标仍须通过 Task 授权。
-      const tail = relative(
-        root,
-        mode === "repository-entry" ? requested : canonical,
-      );
+      const tail = relative(root, canonical);
       if (isAbsolute(tail) || tail === ".." || tail.startsWith(`..${sep}`))
         throw new Error("Git路径越出仓库根。");
       result.push(slash(tail));
@@ -144,6 +136,41 @@ export class CodeUiHostGitRepository {
     if (result.length > this.session.limits.codeSearchMaxResults)
       throw new Error("Git路径数量超过工作区治理上限。");
     return result;
+  }
+  async ignoredPaths(paths: string[]): Promise<string[]> {
+    if (paths.length > this.session.limits.codeSearchMaxResults)
+      throw new Error("Git路径数量超过工作区治理上限。");
+    const authorized: Array<{ original: string; absolute: string }> = [];
+    for (const path of paths) {
+      if (!path || path.includes("\0"))
+        throw new Error("Git文件路径不能为空或包含NUL。");
+      const absolute = isAbsolute(path)
+        ? path
+        : join(this.session.rootDirectory, path);
+      await this.session.resolvePath(absolute, "read");
+      authorized.push({ original: path, absolute });
+    }
+    if (!authorized.length) return [];
+    const summary = await this.summary();
+    if (!summary.isRepository) return [];
+    const entries = authorized.flatMap((entry) => {
+      // 保留仓库内链接名称；已授权但属于其它目录的文件不应用本仓库的忽略规则。
+      const tail = relative(summary.repoRoot, entry.absolute);
+      return isAbsolute(tail) || tail === ".." || tail.startsWith(`..${sep}`)
+        ? []
+        : [{ ...entry, relative: slash(tail) }];
+    });
+    if (!entries.length) return [];
+    const result = await this.run(
+      ["check-ignore", "-z", "--stdin"],
+      `${entries.map((entry) => entry.relative).join("\0")}\0`,
+    );
+    if (result.code !== 0 && result.code !== 1)
+      throw new Error(result.stderr || "Git ignore查询失败。");
+    const ignored = new Set(result.stdout.split("\0").filter(Boolean));
+    return entries
+      .filter((entry) => ignored.has(entry.relative))
+      .map((entry) => entry.original);
   }
   async summary(): Promise<GitRepositorySummary> {
     const empty: GitRepositorySummary = {

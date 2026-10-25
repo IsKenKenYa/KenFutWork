@@ -13,10 +13,10 @@ import {
 } from "./pipe-session-launch.js";
 import { PtySessionRange } from "./pty-session-range.js";
 import type {
-  ManagedProcessSnapshot,
+  SandboxProcessSnapshot as ManagedProcessSnapshot,
   ProcessExit,
   ProcessOutputStream,
-  ProcessSpawnRequest,
+  SandboxProcessRequest as ProcessSpawnRequest,
 } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 

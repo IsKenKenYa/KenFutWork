@@ -20,6 +20,7 @@ import {
   type CodeUiHostRpcHandler,
 } from "./host-rpc-handler.js";
 import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
+import { createCodeUiProjectGitSessions } from "./project-git-session.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
 import { createUserInputBroker } from "./user-input-broker.js";
@@ -91,6 +92,10 @@ export function createCodeUiPlugin(): PluginDefinition {
           permissions: ctx.get("permissions"),
           terminals: ctx.get("codeTerminal"),
           processSandbox: ctx.get("processSandbox"),
+          projectGitSessions: createCodeUiProjectGitSessions({
+            persistence: ctx.get("persistence"),
+            sandbox: ctx.get("processSandbox"),
+          }),
           // G3/Q8：run 终态自动提交缝（code-git 域内收口开关与失败静默）。
           codeGit: ctx.get("codeGit"),
           plugins: ctx.get("plugins"),

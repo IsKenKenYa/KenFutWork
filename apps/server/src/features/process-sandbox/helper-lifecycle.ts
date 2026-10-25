@@ -7,9 +7,14 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
-import type { CodeExecutionScope } from "@kenfutwork/shared";
-import { type ManagedProcessSnapshot, ProcessSandboxError } from "./types.js";
+import { rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { processOwnerKey } from "./process-identity.js";
+import {
+  type SandboxProcessScope as CodeExecutionScope,
+  type SandboxProcessSnapshot as ManagedProcessSnapshot,
+  ProcessSandboxError,
+} from "./types.js";
 
 type ExitObservation = { code: number | null; signal: string | null };
 type ErrorObservation = { name: string; message: string; code?: string };
@@ -40,7 +45,8 @@ export class HelperLifecycle {
   private readonly identity: {
     instanceId: string;
     projectId: string;
-    taskId: string;
+    taskId?: string;
+    projectOwner?: CodeExecutionScope;
     initialGeneration: number;
   };
   private helperPid: number | null = null;
@@ -48,6 +54,7 @@ export class HelperLifecycle {
   private stderrTail = "";
   private closeAcknowledgedAt: string | null = null;
   private captureError: ErrorObservation | undefined;
+  private projectCloseFinalized = false;
 
   constructor(
     captureRoot: string,
@@ -58,12 +65,12 @@ export class HelperLifecycle {
     this.identity = {
       instanceId: scope.instanceId,
       projectId: scope.projectId,
-      taskId: scope.taskId,
+      ...("kind" in scope ? { projectOwner: scope } : { taskId: scope.taskId }),
       initialGeneration: scope.generation,
     };
     this.directory = join(
       captureRoot,
-      createHash("sha256").update(scope.taskId).digest("hex"),
+      createHash("sha256").update(processOwnerKey(scope)).digest("hex"),
       "helpers",
     );
   }
@@ -78,6 +85,24 @@ export class HelperLifecycle {
   acknowledgeClose(): void {
     this.closeAcknowledgedAt = new Date().toISOString();
     if (this.events.length > 0) this.persist();
+  }
+
+  async finalizeProjectClose(): Promise<void> {
+    if (!this.identity.projectOwner) return;
+    if (
+      !this.closeAcknowledgedAt ||
+      !this.events.some((event) => event.kind === "close")
+    )
+      throw this.failure();
+    // close 是父端最后的 helper/stdio 观察；之后的迟到通知不能重建租约目录。
+    this.projectCloseFinalized = true;
+    try {
+      await rm(dirname(this.directory), { recursive: true, force: true });
+    } catch (error) {
+      this.projectCloseFinalized = false;
+      this.persist();
+      throw error;
+    }
   }
 
   observe(observation: Observation, pid?: number): void {
@@ -111,6 +136,7 @@ export class HelperLifecycle {
   }
 
   private persist(): void {
+    if (this.projectCloseFinalized) return;
     const partial = join(this.directory, `${this.diagnosticId}.partial`);
     let created = false;
     try {
