@@ -332,6 +332,33 @@ catch (e) { reason = String(e); }
 JSON.stringify({ ok, count: ok ? Number(count) : null, reason });`;
 }
 
+/**
+ * 被动权限查询里 Automation 探测的硬上限（毫秒）。
+ *
+ * 未授权时 `Application('System Events')` 会驻留在系统授权确认上，耗时远超普通
+ * 桌面动作。设置页只需要辅助功能与屏幕录制的 TCC 真值，不能被这一项拖成永久
+ * “正在验证”；超时按 not_determined 处理，其余两项照常返回。这是权限查询的
+ * 局部保护上限，不是用户可调的动作超时，故不进入治理表。
+ */
+export const AUTOMATION_PROBE_TIMEOUT_MS = 2_000;
+
+export function automationProbeTimeoutMs(actionTimeoutMs: number): number {
+  return Math.min(actionTimeoutMs, AUTOMATION_PROBE_TIMEOUT_MS);
+}
+
+export function probeAutomationAccess(
+  actionTimeoutMs: number,
+  signal?: AbortSignal,
+  maxOutputBytes?: number,
+): Promise<{ ok?: boolean; reason?: string | null }> {
+  return runJxa(
+    buildAutomationProbeScript(),
+    automationProbeTimeoutMs(actionTimeoutMs),
+    signal,
+    maxOutputBytes,
+  ) as Promise<{ ok?: boolean; reason?: string | null }>;
+}
+
 export type CuAutomationStatus = "granted" | "denied" | "not_determined";
 
 /**

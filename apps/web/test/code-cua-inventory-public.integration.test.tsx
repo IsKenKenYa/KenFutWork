@@ -30,6 +30,7 @@ async function withInstalledComputerUse(
     target: { workspacePath: string; workspaceIdentity: string };
     view: ReturnType<typeof render>;
   }) => Promise<void>,
+  options: { withoutWorkspace?: boolean } = {},
 ) {
   const fixtureLoading: Promise<{
     createCodeUiHttpFixture(options: {
@@ -101,8 +102,9 @@ async function withInstalledComputerUse(
         <computerUse.ComputerUseSection
           isDesktop
           isWindowsDesktop
-          workspacePath={projectDirectory}
-          workspaceIdentity={workspaceIdentity}
+          {...(options.withoutWorkspace
+            ? {}
+            : { workspacePath: projectDirectory, workspaceIdentity })}
         />
       </Providers>,
     );
@@ -127,6 +129,21 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           ).toBe("true"),
         );
       });
+    }, 90_000);
+
+    it("无激活工作区时仍按本机实例库存显示插件开启", async () => {
+      await withInstalledComputerUse(
+        async ({ view }) => {
+          await waitFor(() =>
+            expect(
+              view
+                .getByRole("switch", { name: "启用电脑控制" })
+                .getAttribute("aria-checked"),
+            ).toBe("true"),
+          );
+        },
+        { withoutWorkspace: true },
+      );
     }, 90_000);
 
     it("原设置关闭电脑控制后真实自带插件库存保持停用", async () => {

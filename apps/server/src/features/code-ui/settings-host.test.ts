@@ -234,6 +234,31 @@ it("公开setting宿主稀疏保存语言和显示偏好，空recent真实保留
   }
 });
 
+it("公开setting保存输入框电脑操作按钮显隐偏好并如实读回", async () => {
+  const f = await fixture();
+  try {
+    expect(await f.call("get")).toMatchObject({
+      result: { computerUseComposerEntryHidden: true },
+    });
+    await f.call("update", { computerUseComposerEntryHidden: false });
+    expect(f.readStored().computerUseComposerEntryHidden).toBe(false);
+    expect(await f.call("get")).toMatchObject({
+      result: { computerUseComposerEntryHidden: false },
+    });
+    await f.call("update", { computerUseComposerEntryHidden: true });
+    expect(f.readStored().computerUseComposerEntryHidden).toBe(true);
+    expect(await f.call("get")).toMatchObject({
+      result: { computerUseComposerEntryHidden: true },
+    });
+    expect(f.initialize).toHaveBeenCalledTimes(1);
+    expect(f.recoverRuntimeInputs).toHaveBeenCalledTimes(1);
+    expect(f.openTask).not.toHaveBeenCalled();
+  } finally {
+    await f.connection.dispose();
+    await f.service.closeConnections();
+  }
+});
+
 it("Task固定A与Project默认B的tab归属精准，Task关闭不能借同路径另一Project复活焦点", async () => {
   const f = await fixture();
   const identity = JSON.stringify([f.projectId, f.rootA]);

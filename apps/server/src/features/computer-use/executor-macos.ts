@@ -31,7 +31,6 @@ import type {
 } from "./executor.js";
 import { CU_AX_DEFAULT_LIMITS } from "./executor.js";
 import {
-  buildAutomationProbeScript,
   buildDescribeElementScript,
   buildElementActionScript,
   buildElementIdentityScript,
@@ -44,6 +43,7 @@ import {
   buildWindowStackScript,
   classifyAutomationProbe,
   jxaObservationToParts,
+  probeAutomationAccess,
   runJxa,
 } from "./jxa.js";
 import { withMacosClipboardText } from "./macos-clipboard.js";
@@ -344,10 +344,11 @@ win.actions.byName('AXRaise').perform(); JSON.stringify({ok:true});`,
       // 自动化权限：JXA 观察/输入走 System Events 的 AppleEvent，与前两项是独立 TCC 面。
       let automation: CuAccessStatus["automation"] = "not_determined";
       try {
-        const probe = await jxaJson<{ ok: boolean; reason?: string | null }>(
-          buildAutomationProbeScript(),
-          timeoutMs,
-          context,
+        // 自动化探测单独限时：未授权时 System Events 会挂住，不能拖死整次状态查询。
+        const probe = await probeAutomationAccess(
+          context?.timeoutMs ?? timeoutMs,
+          context?.signal,
+          context?.maxOutputBytes,
         );
         automation = classifyAutomationProbe(probe);
       } catch (error) {

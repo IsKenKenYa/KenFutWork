@@ -7136,9 +7136,10 @@
       "source": "references/zcode/packages/ui/src/lib/cuaPermissionStatusStore.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/cuaPermissionStatusStore.ts",
       "sha256": "2646ec96307af159ba4fdb9db70d4ba1475a1237fa980dd7ac57df976d8b2aac",
-      "copiedSha256": "2646ec96307af159ba4fdb9db70d4ba1475a1237fa980dd7ac57df976d8b2aac",
+      "copiedSha256": "0a70a553a89e086228e7174ad19a461f7fbec10f28f6884f69e2da7a49614cbd",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主权限查询连续失败后发布 settled=true，界面显示未知并恢复打开系统设置的入口"
       ]
     },
     {
@@ -10292,11 +10293,12 @@
       "source": "references/zcode/packages/ui/src/settings/ComputerUseSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ComputerUseSection.tsx",
       "sha256": "aeb1f9f941e60b5dd27b91e1ad51a0c5821bf1a13ad1b28467ae8f529c030604",
-      "copiedSha256": "08048d2f72d04a8526714af6301a2fd2ccbf3363459e06b85292a0ac778998be",
+      "copiedSha256": "3a493700a4b387b3d90abe173be2d358eb917aa68647ae069bf451656d695c9e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KFW Computer Use 设置与输入入口共用真实实例插件库存名称解析，启停写入使用真实安装 ID；保留混合宿主执行能力。",
-        "登记 0e72bee1 中已逐段核对的宿主适配：展示混合执行器返回的可选自动化权限状态，补充授权应用列表提示；自动化设置按钮经可信 Tauri 命令定向打开系统隐私设置。"
+        "登记 0e72bee1 中已逐段核对的宿主适配：展示混合执行器返回的可选自动化权限状态，补充授权应用列表提示；自动化设置按钮经可信 Tauri 命令定向打开系统隐私设置。",
+        "插件库存始终按宿主实例级读取，不绑定当前项目；库存为空时点击开关强制重读，电脑控制关闭时输入框开关显示为关。"
       ]
     },
     {
@@ -12413,10 +12415,11 @@
       "source": "references/zcode/packages/ui/src/store/pluginManagementStoreEnabled.ts",
       "target": "apps/web/src/components/workbench/zcode/store/pluginManagementStoreEnabled.ts",
       "sha256": "225e5a88bfdd65d36e87920f865d5a9b16e1f50489bf7160f8454634d5981395",
-      "copiedSha256": "c55af98bb90275d4d85a5f654027da314c893975704a048b1abc902e595b9ac9",
+      "copiedSha256": "e92ba3c57c715c1266b8d25de40fb872947436c936af8e65bf4c9ec2bb22fa68",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：空目录承接实例启停；按服务与读取代际核对结果，未知写入只读对账不重放"
+        "宿主接口：空目录承接实例启停；按服务与读取代际核对结果，未知写入只读对账不重放",
+        "上下文切换后仍释放本次请求的 toggling 忙碌态，避免设置页开关永久置灰"
       ]
     },
     {

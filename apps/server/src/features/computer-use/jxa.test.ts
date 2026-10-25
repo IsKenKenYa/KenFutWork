@@ -2,11 +2,14 @@ import { ChildProcess, execFile } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AUTOMATION_PROBE_TIMEOUT_MS,
+  automationProbeTimeoutMs,
   buildAutomationProbeScript,
   buildWindowStackScript,
   classifyAutomationProbe,
   normalizeAxNode,
   normalizeRole,
+  probeAutomationAccess,
   runJxa,
   toJxaAppSelector,
 } from "./jxa.js";
@@ -132,6 +135,25 @@ describe("classifyAutomationProbe（自动化权限归类）", () => {
     // on-screen only(1, 0)：只关心当前屏幕，判定交给 occlusion.ts
     expect(buildWindowStackScript()).toContain("CGWindowListCopyWindowInfo");
     expect(buildWindowStackScript()).toContain("(1, 0)");
+  });
+});
+
+describe("probeAutomationAccess（被动权限探测限时）", () => {
+  it("动作超时更长时仍按局部上限执行，短超时保持原值", async () => {
+    execFileMock.mockImplementation((_file, _args, options, callback) => {
+      expect(options).toMatchObject({ timeout: AUTOMATION_PROBE_TIMEOUT_MS });
+      if (typeof callback !== "function")
+        throw new Error("测试需要 execFile callback");
+      callback(null, JSON.stringify({ ok: false, reason: "(-1743)" }), "");
+      return new ChildProcess();
+    });
+
+    await expect(probeAutomationAccess(60_000)).resolves.toEqual({
+      ok: false,
+      reason: "(-1743)",
+    });
+    expect(automationProbeTimeoutMs(60_000)).toBe(AUTOMATION_PROBE_TIMEOUT_MS);
+    expect(automationProbeTimeoutMs(1_500)).toBe(1_500);
   });
 });
 

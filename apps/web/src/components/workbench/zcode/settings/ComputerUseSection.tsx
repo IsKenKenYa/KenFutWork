@@ -44,6 +44,9 @@ import {
   resolveComputerUseAvailability,
 } from "@zui/settings/computerUseAvailability.js";
 
+/** 无激活 workspace 时的稳定缓存键；本机 CUA 状态查询不依赖目录。 */
+const INSTANCE_SCOPE_WORKSPACE_KEY = "__kenfutwork_instance__";
+
 interface ComputerUseSectionProps {
   isDesktop?: boolean;
   isMacDesktop?: boolean;
@@ -70,6 +73,10 @@ export function ComputerUseSection({
   const services = useServices();
   const platform = usePlatform();
   const pluginManagementService = services.pluginManagementService;
+  // 插件库存属于本机实例；宿主支持实例级库存时始终按实例读取，
+  // 不把设置页的可用性绑在某个项目标签上。
+  const instanceScope = platform.pluginManagementCapabilities?.instanceScope === true;
+  const pluginScopePath = instanceScope ? "" : workspacePath || null;
   // cuaPermissionService 在 main 是可选字段（远端 host 无 CUA）；下方各 handler 在缺失时早退。
   const cuaPermissionService = services.cuaPermissionService;
   const isLocalWorkspace =
@@ -92,7 +99,11 @@ export function ComputerUseSection({
     workspaceIdentity,
   });
   // CUA 权限是 macOS 本机属性：仅完整 macOS 设置需要 Helper workspace 路径。
-  const path = supportsLocalMacWorkspace ? (localWorkspacePath ?? workspacePath) : null;
+  const path = supportsLocalMacWorkspace
+    ? localWorkspacePath ||
+      workspacePath ||
+      (instanceScope ? INSTANCE_SCOPE_WORKSPACE_KEY : null)
+    : null;
   // 展示只跟 settled：fresh 每次查询开始都会落回 false，跟着它渲染会让授权按钮的文案
   // 在「验证中…」与终态之间切换、宽度随之跳变。
   const { status, settled, refresh } = useCuaPermissionStatus(path ?? null, workspaceIdentity);
@@ -134,20 +145,22 @@ export function ComputerUseSection({
     if (
       initRef.current ||
       !supportsComputerUseSettings ||
-      !workspacePath ||
+      pluginScopePath === null ||
       !pluginManagementService
     )
       return;
     initRef.current = true;
     // 复用 Plugins 分区同一条初始化路径，确保 store 已加载 zcode-cua 的 enabled 态。
+    // 实例级库存不绑定项目身份；空目录由宿主按本机实例处理。
     void initializePlugins({
-      workspacePath,
-      workspaceIdentity,
+      workspacePath: pluginScopePath,
+      ...(pluginScopePath && workspaceIdentity ? { workspaceIdentity } : {}),
+      ...(!pluginScopePath ? { configScope: "user" as const } : {}),
       pluginService: pluginManagementService,
     });
   }, [
     supportsComputerUseSettings,
-    workspacePath,
+    pluginScopePath,
     workspaceIdentity,
     pluginManagementService,
     initializePlugins,
@@ -324,7 +337,25 @@ export function ComputerUseSection({
 
   const onTogglePlugin = useCallback(
     async (next: boolean) => {
-      if (!pluginManagementService || !cuaPlugin) return;
+      if (!pluginManagementService || pluginScopePath === null) return;
+      if (!cuaPlugin) {
+        // 库存为空/旧时不静默吞掉点击：强制重读一次，仍缺失再如实提示。
+        if (!usePluginManagementStore.getState().loading)
+          void initializePlugins({
+            workspacePath: pluginScopePath,
+            ...(pluginScopePath && workspaceIdentity ? { workspaceIdentity } : {}),
+            ...(!pluginScopePath ? { configScope: "user" as const } : {}),
+            pluginService: pluginManagementService,
+            forceReload: true,
+          }).then(() => {
+            if (
+              mountedRef.current &&
+              !resolveComputerUsePlugin(usePluginManagementStore.getState().plugins)
+            )
+              toast(intl.formatMessage({ id: "settings.computerUse.pluginDisabledHint" }));
+          });
+        return;
+      }
       const operationGeneration = ++pluginToggleGenerationRef.current;
       const operationContextKey = pluginToggleContextKey;
       // 切换 zcode-cua 插件 = 同步其 MCP server + skill 一起启用/禁用。
@@ -355,6 +386,9 @@ export function ComputerUseSection({
     [
       cuaPlugin,
       path,
+      pluginScopePath,
+      workspaceIdentity,
+      initializePlugins,
       pluginManagementService,
       pluginToggleContextKey,
       refresh,
@@ -729,7 +763,7 @@ export function ComputerUseSection({
                 id: "settings.computerUse.toggleLabel",
               })}
               checked={cuaEnabled}
-              disabled={cuaToggling || !workspacePath}
+              disabled={cuaToggling || pluginScopePath === null || !pluginManagementService}
               onCheckedChange={(checked) => void onTogglePlugin(checked)}
             />
           }
@@ -750,7 +784,7 @@ export function ComputerUseSection({
               aria-label={intl.formatMessage({
                 id: "settings.computerUse.composerEntry.label",
               })}
-              checked={composerEntryVisible}
+              checked={cuaEnabled && composerEntryVisible}
               disabled={composerEntrySaving || !cuaEnabled}
               onCheckedChange={(checked) => void onToggleComposerEntry(checked)}
             />
