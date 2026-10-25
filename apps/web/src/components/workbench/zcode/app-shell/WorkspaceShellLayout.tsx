@@ -70,6 +70,15 @@ import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.j
 // 保活：workspace tab 真正关闭时，按 workspaceKey 回收 side pane terminal 的常驻 PTY/xterm。
 // 对称下侧 Terminal.tsx 的 openWorkspaceKeys 回收。
 import { sidePaneTerminalSessionRegistry } from "@zui/terminal/sidePaneTerminalSessionRegistry.js";
+import {
+  SidePaneFullViewConversationHost,
+  readFloatingAnchorPreference,
+  writeFloatingAnchorPreference,
+  useSidePaneFullView,
+  type FloatingAnchor,
+  type SidePaneFullViewFloating,
+  type SidePaneFullViewHostMode,
+} from "@zui/side-pane-full-view/index.js";
 import { requestV4ComposerDraftWorkspaceTransfer } from "@zui/v4/composer/composerDraftWorkspaceTransfer.js";
 import type { ConversationDropTargetController } from "@zui/v4/composer/conversationDropTarget.js";
 import {
@@ -89,7 +98,7 @@ import {
   WorkflowRunOpenProvider,
   type WorkflowRunOpenTarget,
 } from "@zui/v4/workflowRunOpenContext.js";
-import { WorkspaceHeader } from "@zui/WorkspaceHeader.js";
+import { resolveTopOverlayLeadingPaddingClass, WorkspaceHeader } from "@zui/WorkspaceHeader.js";
 import { WorkspacePluginPreview } from "@zui/WorkspacePluginPreview.js";
 import {
   type SidebarFileTreeOpenRequest,
@@ -465,12 +474,47 @@ export const WorkspaceShellLayout = memo(
       );
     }, [openWorkspaceKeys]);
     const isSidebarPanelVisible = isSidebarVisible;
+    const sidePaneFullView = useSidePaneFullView({
+      workspacePath: workspaceAbsPath,
+      workspaceIdentity,
+      ownerId: sidePaneOwnerId,
+      isSidePaneOpen,
+      enabled: true,
+    });
+    const activeFullView =
+      workspaceMainView === "chat" || workspaceMainView === "design"
+        ? sidePaneFullView.fullView
+        : null;
+    const isFullView = activeFullView !== null;
+    const fullViewMode: SidePaneFullViewHostMode = !activeFullView
+      ? "normal"
+      : activeFullView.surface === "conversation"
+        ? "conversation"
+        : "floating";
+    const isFullViewRef = useRef(isFullView);
+    isFullViewRef.current = isFullView;
+    const [fullViewSlotElement, setFullViewSlotElement] = useState<HTMLDivElement | null>(null);
+    const [floatingAnchor, setFloatingAnchor] = useState<FloatingAnchor>(readFloatingAnchorPreference);
+    const handleFloatingAnchorChange = useCallback((anchor: FloatingAnchor) => {
+      setFloatingAnchor(anchor);
+      writeFloatingAnchorPreference(anchor);
+    }, []);
+    const handleFullViewFloatingChange = useCallback(
+      (floating: SidePaneFullViewFloating) => sidePaneFullView.setFloating(floating),
+      [sidePaneFullView],
+    );
+    const handleOpenFullViewConversation = useCallback(
+      () => sidePaneFullView.setSurface("conversation"),
+      [sidePaneFullView],
+    );
+    const fullViewConversationTitle =
+      activeTaskTitle?.trim() || intl.formatMessage({ id: "taskList.untitled" });
     const {
       panelRef: terminalPanelRef,
       panelElementRef: terminalPanelElementRef,
       isVisible: isTerminalVisible,
     } = useAnimatedResizablePanel({
-      open: isTerminalOpen,
+      open: isTerminalOpen && fullViewMode !== "floating",
       expandedSize: "30%",
       rememberExpandedSize: true,
     });
@@ -521,6 +565,7 @@ export const WorkspaceShellLayout = memo(
         null;
 
       const runAutoCollapseForWindowResize = () => {
+        if (isFullViewRef.current) return;
         const widthPx = readConversationWidthPx();
         if (widthPx === null) {
           return;
@@ -1558,6 +1603,11 @@ export const WorkspaceShellLayout = memo(
         });
       }
     }, [activeTaskId, workspaceKey]);
+    const hasUpdateStatusButton =
+      updateReadyVersion !== null ||
+      updateState?.kind === "update-available" ||
+      updateState?.kind === "download-progress" ||
+      updateState?.kind === "update-downloaded";
     const renderSidePanePanel = () => (
       <AnimatedSidePanePanel
         services={services}
@@ -1576,6 +1626,19 @@ export const WorkspaceShellLayout = memo(
         isVisible={isSidePaneVisible}
         onCloseSidePane={handleToggleSidePane}
         toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
+        fullViewToggle={{ active: isFullView, onToggle: sidePaneFullView.toggle }}
+        fullView={activeFullView ? {
+          surface: activeFullView.surface,
+          conversationTitle: fullViewConversationTitle,
+          leadingInsetClassName: resolveTopOverlayLeadingPaddingClass({
+            isSidebarVisible,
+            isMacDesktop,
+            isMacFullscreen,
+            hasUpdateReady: hasUpdateStatusButton,
+          }),
+          onSelectSurface: sidePaneFullView.setSurface,
+        } : null}
+        fullViewSlotRef={setFullViewSlotElement}
         projectId={parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId ?? null}
         sidePaneState={sidePaneState}
         recentClosedSidePaneTabs={recentClosedSidePaneTabs}
@@ -1636,11 +1699,6 @@ export const WorkspaceShellLayout = memo(
       />
     );
     const sidePanePanel = renderSidePanePanel();
-    const hasUpdateStatusButton =
-      updateReadyVersion !== null ||
-      updateState?.kind === "update-available" ||
-      updateState?.kind === "download-progress" ||
-      updateState?.kind === "update-downloaded";
     // Draft 之前维护一套独立轻量 header，导致 side pane、caption 安全区和拖拽入口
     // 与 Task Header 分叉。桌面端统一复用 WorkspaceHeader，只由 variant 裁剪 task 专属内容；
     // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
@@ -1917,7 +1975,7 @@ export const WorkspaceShellLayout = memo(
               // 36/64 会盖掉新的 1:2 默认口径——换 key 让新默认对老用户生效。
               layoutId="workspace-body-layout-v2"
               panelIds={WORKSPACE_BODY_PANEL_IDS}
-              className="min-h-0 flex-1"
+              className={cn("min-h-0 flex-1", isFullView && "relative")}
             >
               <ResizablePanel
                 id="conversation-column"
@@ -1927,6 +1985,15 @@ export const WorkspaceShellLayout = memo(
                 minSize="25%"
                 defaultSize={isSidePaneVisible ? "33.33%" : undefined}
               >
+                <SidePaneFullViewConversationHost
+                  mode={fullViewMode}
+                  floating={activeFullView?.floating ?? "collapsed"}
+                  anchor={floatingAnchor}
+                  slotElement={fullViewSlotElement}
+                  onFloatingChange={handleFullViewFloatingChange}
+                  onAnchorChange={handleFloatingAnchorChange}
+                  onOpenConversation={handleOpenFullViewConversation}
+                >
                 <ResizablePanelGroup
                   orientation="vertical"
                   layoutId="workspace-conversation-column-layout"
@@ -1958,9 +2025,10 @@ export const WorkspaceShellLayout = memo(
                             }),
                         isTerminalVisible &&
                           "rounded-b-[var(--workspace-panel-radius)] border-b",
+                        isFullView && "rounded-none border-0",
                       )}
                     >
-                      {shouldRenderWorkspaceHeader ? (
+                      {shouldRenderWorkspaceHeader && !isFullView ? (
                         <ScopedErrorBoundary
                           scope="workspace-header"
                           resetKeys={workspaceOnlyResetKeys}
@@ -2289,6 +2357,7 @@ export const WorkspaceShellLayout = memo(
                     />
                   ) : null}
                 </ResizablePanelGroup>
+                </SidePaneFullViewConversationHost>
               </ResizablePanel>
               {/* Browser Guest Host 必须与主视图路由解耦，避免 automations/plugin
                     切换时卸载 Guest；截图请求期间由上层临时展开真实面板承载可合成的 WebContents。 */}

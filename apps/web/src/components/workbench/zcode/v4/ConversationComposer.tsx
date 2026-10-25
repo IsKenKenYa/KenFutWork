@@ -55,6 +55,7 @@ import { Spinner } from "@zui/components/ui/spinner.js";
 import type { ModelSelectionState } from "@zui/hooks/useModelSelectionView.js";
 import { useOptionalServices } from "@zui/hooks/useServices.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { formatConversationWorkDuration } from "@zui/v4/conversationWorkDuration.js";
 import type { LexicalChatInputHandle } from "@zui/LexicalChatInput.js";
 import {
   type ChatComposerAttachment,
@@ -407,6 +408,9 @@ interface ConversationComposerProps {
   contextHeader?: ReactNode;
   /** 居中草稿布局（旧 shouldUseCenteredDraftChatLayout）：收窄 max-w-2xl、去 sticky。 */
   centered?: boolean;
+  /** 完整视图浮窗使用同一编辑器的单行布局。 */
+  layout?: "stacked" | "inline";
+  workingDurationMs?: number;
   /**
    * v4 bottom dock 阻塞交互 id。存在时 composer 只隐藏不卸载，保留草稿、附件与编辑器实例。
    */
@@ -527,6 +531,8 @@ function ConversationComposerImpl({
   telemetryDraftConfig,
   contextHeader,
   centered = false,
+  layout = "stacked",
+  workingDurationMs,
   blockingRequestId = null,
   disabled = false,
   autoFocusEnabled = true,
@@ -1726,13 +1732,19 @@ function ConversationComposerImpl({
 
   // 动态 placeholder（旧 chatViewPlaceholder 语义）：无历史 → newTask；
   // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue。
+  const workingDurationLabel =
+    layout === "inline" && canStop
+      ? formatConversationWorkDuration(workingDurationMs, intl, locale)
+      : null;
   const placeholder = voice?.recording
     ? "开始说话"
-    : intl.formatMessage({
+    : workingDurationLabel
+      ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: workingDurationLabel })
+      : intl.formatMessage({
         id: resolveChatPlaceholderKey({
           hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
           isTaskProcessing: canStop,
-          compactNewTask: false,
+          compactNewTask: layout === "inline",
         }),
       });
   const sendTooltipTitle = intl.formatMessage({
@@ -2449,6 +2461,7 @@ function ConversationComposerImpl({
           enableMentionPanel={true}
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}
+          layout={layout}
           className="p-0"
           onChange={handleEditorChange}
           onFocus={handleEditorFocus}

@@ -7,9 +7,16 @@ import {
 } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { clickOn } from "../../server/src/features/browser/cdp-client.js";
+import {
+  clickOn,
+  pressKey,
+  typeText,
+} from "../../server/src/features/browser/cdp-client.js";
 import { observeViewerRequests } from "./setup/code-file-viewer-public.fixture.js";
-import { clickExactText } from "./setup/code-public-browser-actions.js";
+import {
+  clickExactText,
+  selectAll,
+} from "./setup/code-public-browser-actions.js";
 import {
   readScope,
   type TaskGroupPublicPageContext,
@@ -17,6 +24,18 @@ import {
 } from "./setup/code-task-groups-public.fixture.js";
 
 const inputSelector = '[role="textbox"][contenteditable="true"]';
+
+async function clickFullViewControl(
+  { page }: TaskGroupPublicPageContext,
+  selector: string,
+) {
+  await page.evaluate(`(async () => {
+    await new Promise(requestAnimationFrame);
+    const host = document.querySelector('[data-testid="side-pane-full-view-host"]');
+    if (host) await Promise.all(host.getAnimations().map(animation => animation.finished));
+  })()`);
+  await clickOn(page.cdp, page.target.sessionId, { selector });
+}
 
 async function openTaskManager({ page, host }: TaskGroupPublicPageContext) {
   const previous = await page.evaluate<string | null>(
@@ -61,6 +80,223 @@ async function openTaskManager({ page, host }: TaskGroupPublicPageContext) {
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "原文件管理器的Root、文件、HTTP与PostgreSQL integration",
   () => {
+    it("完整视图浮动、最小化和对话标签复用同一输入框与文件面板", async () => {
+      await withTaskGroupPublicPage(
+        async (context) => {
+          const { page, host, draft } = context;
+          const fileTab = await openTaskManager(context);
+          const toggle = '[data-testid="side-pane-full-view-toggle"]';
+          const fullViewHost = '[data-testid="side-pane-full-view-host"]';
+          await vi.waitFor(async () =>
+            expect(
+              await page.evaluate(
+                `document.querySelector(${JSON.stringify(toggle)})?.checkVisibility()`,
+              ),
+              JSON.stringify(page.pageErrors),
+            ).toBe(true),
+          );
+          await page.evaluate(
+            `void (window.__fullViewFilePane = document.querySelector('[data-file-manager-pane]'))`,
+          );
+          await clickFullViewControl(context, toggle);
+          const readState = () =>
+            page.evaluate(`(() => {
+          const host = document.querySelector(${JSON.stringify(fullViewHost)});
+          const input = document.querySelector(${JSON.stringify(inputSelector)});
+          return { mode: host?.getAttribute('data-side-pane-full-view-host'),
+            floating: host?.getAttribute('data-floating'),
+            sameInput: input === window.__taskGroupPublicBefore.input,
+            sameFilePane: document.querySelector('[data-file-manager-pane]') === window.__fullViewFilePane,
+            draft: input?.textContent,
+            activeFile: document.querySelector('[data-side-pane-tab-id][data-state=active]')?.getAttribute('data-side-pane-tab-id') };
+        })()`);
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              mode: "floating",
+              floating: "collapsed",
+              sameInput: true,
+              sameFilePane: true,
+              draft,
+              activeFile: fileTab,
+            }),
+          );
+          await clickFullViewControl(context, inputSelector);
+          const expand = '[data-testid="side-pane-full-view-floating-expand"]';
+          await vi.waitFor(async () =>
+            expect(
+              await page.evaluate(
+                `document.querySelector(${JSON.stringify(expand)})?.checkVisibility()`,
+              ),
+            ).toBe(true),
+          );
+          await clickFullViewControl(context, expand);
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              floating: "expanded",
+              sameInput: true,
+              sameFilePane: true,
+              draft,
+            }),
+          );
+          await clickFullViewControl(context, expand);
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({ floating: "collapsed" }),
+          );
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-floating-minimize"]',
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              floating: "minimized",
+              sameInput: true,
+              sameFilePane: true,
+              draft,
+            }),
+          );
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-floating-bubble"]',
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({ floating: "collapsed" }),
+          );
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-conversation-tab"]',
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              mode: "conversation",
+              sameInput: true,
+              sameFilePane: true,
+              draft,
+            }),
+          );
+          await clickFullViewControl(
+            context,
+            `[data-side-pane-tab-id=${JSON.stringify(fileTab)}]`,
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              mode: "floating",
+              activeFile: fileTab,
+            }),
+          );
+          await clickFullViewControl(context, toggle);
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              mode: "normal",
+              sameInput: true,
+              sameFilePane: true,
+              draft,
+              activeFile: fileTab,
+            }),
+          );
+          expect(await readScope(host)).toEqual(context.scopeBefore);
+          expect(context.model.requests).toHaveLength(
+            context.modelRequestCountBefore,
+          );
+        },
+        { seedTaskHistory: true },
+      );
+    }, 180_000); // 原Root、布局与原会话DOM保留，真实文件、HTTP、SSE和临时PostgreSQL。
+
+    it("浮动输入发送和最小化期间接收真实运行与回答，不切换文件标签", async () => {
+      await withTaskGroupPublicPage(
+        async (context) => {
+          const { page, host, model } = context;
+          const fileTab = await openTaskManager(context);
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-toggle"]',
+          );
+          await clickFullViewControl(context, inputSelector);
+          await selectAll(page);
+          await typeText(page.cdp, page.target.sessionId, "浮动输入公开验证");
+          await pressKey(page.cdp, page.target.sessionId, "Enter");
+          await vi.waitFor(() => expect(model.requests).toHaveLength(2), {
+            timeout: 30_000,
+          });
+          const readState = () =>
+            page.evaluate(`(() => {
+          const host = document.querySelector('[data-testid="side-pane-full-view-host"]');
+          const input = document.querySelector(${JSON.stringify(inputSelector)});
+          return { mode: host?.getAttribute('data-side-pane-full-view-host'),
+            floating: host?.getAttribute('data-floating'), running: host?.getAttribute('data-running'),
+            activeFile: document.querySelector('[data-side-pane-tab-id][data-state=active]')?.getAttribute('data-side-pane-tab-id'),
+            sameInput: input === window.__taskGroupPublicBefore.input,
+            answer: document.querySelector('[data-testid="side-pane-full-view-answer-bubble"]')?.textContent ?? null };
+        })()`);
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              mode: "floating",
+              running: "true",
+              sameInput: true,
+              activeFile: fileTab,
+            }),
+          );
+          await clickFullViewControl(context, inputSelector);
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-floating-minimize"]',
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              floating: "minimized",
+              running: "true",
+              sameInput: true,
+              activeFile: fileTab,
+            }),
+          );
+          model.writeText(1, "原会话浮动回答🙂");
+          model.finish(1);
+          await vi.waitFor(
+            async () =>
+              expect(await readState()).toMatchObject({
+                floating: "minimized",
+                running: "false",
+                activeFile: fileTab,
+                answer: null,
+              }),
+            { timeout: 30_000 },
+          );
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-floating-bubble"]',
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              floating: "collapsed",
+              running: "false",
+              activeFile: fileTab,
+              answer: "正在运行 2原会话浮动回答🙂",
+            }),
+          );
+          await clickFullViewControl(
+            context,
+            '[data-testid="side-pane-full-view-answer-bubble"] button',
+          );
+          await vi.waitFor(async () =>
+            expect(await readState()).toMatchObject({
+              mode: "floating",
+              floating: "expanded",
+              sameInput: true,
+              activeFile: fileTab,
+              answer: null,
+            }),
+          );
+          const snapshot = protocol.conversationSnapshotSchema.parse(
+            await host.snapshot(),
+          );
+          expect(snapshot.control.phase).toBe("completedSuccess");
+          expect(await readScope(host)).toEqual(context.scopeBefore);
+          expect(model.requests).toHaveLength(2);
+        },
+        { seedTaskHistory: true },
+      );
+    }, 180_000); // 原输入发送、真实Harness/HTTP/SSE、最小化运行与完成回答公开行为。
+
     it("Task目录打开原FileManager标签，页内预览保留当前会话、草稿和权限", async () => {
       const verify = async (context: TaskGroupPublicPageContext) => {
         const { page, host, draft, previewTitle } = context;

@@ -154,6 +154,8 @@ import {
 } from "@zui/v4/ConversationComposer.js";
 import { ConversationDraftEmptyState } from "@zui/v4/ConversationDraftEmptyState.js";
 import { ConversationDraftSuggestedPromptsContainer } from "@zui/v4/ConversationDraftSuggestedPromptsContainer.js";
+import { useConversationPanePresentation } from "@zui/side-pane-full-view/index.js";
+import type { ConversationLatestTurnSummary } from "@zui/v4/conversationTimelineLiveTail.js";
 import {
   ConversationHeader,
   type PaneWorkspaceBadge,
@@ -1278,6 +1280,49 @@ export function SessionPane({
     snapshot?.pendingInteractions.find(
       (interaction) => interaction.payload.kind !== "workspaceHookReview",
     )?.interactionId ?? null;
+  const panePresentation = useConversationPanePresentation();
+  const isFloatingPresentation = panePresentation.presentation === "floating";
+  const isRunning = Boolean(snapshot?.control.canStop);
+  const { reportFloatingStatus } = panePresentation;
+  const floatingOwnerKey = sessionId ?? "__draft__";
+  const [floatingLatestTurn, setFloatingLatestTurn] = useState<{
+    ownerKey: string;
+    summary: ConversationLatestTurnSummary;
+  } | null>(null);
+  const handleFloatingLatestTurnSummaryChange = useCallback(
+    (summary: ConversationLatestTurnSummary) =>
+      setFloatingLatestTurn({ ownerKey: floatingOwnerKey, summary }),
+    [floatingOwnerKey],
+  );
+  const floatingLatestTurnSummary =
+    isFloatingPresentation && floatingLatestTurn?.ownerKey === floatingOwnerKey
+      ? floatingLatestTurn.summary
+      : null;
+  const floatingTurnKey = floatingLatestTurnSummary?.turnKey ?? null;
+  const floatingTurnRunning = floatingLatestTurnSummary?.running ?? false;
+  const floatingTurnAnswer = floatingLatestTurnSummary?.answer ?? null;
+  const hasFloatingLatestTurn = floatingLatestTurnSummary !== null;
+  useEffect(() => {
+    if (!focused) return;
+    reportFloatingStatus({
+      running: isRunning,
+      blockingInteractionId,
+      ownerKey: floatingOwnerKey,
+      latestTurn: hasFloatingLatestTurn
+        ? { turnKey: floatingTurnKey, running: floatingTurnRunning, answer: floatingTurnAnswer }
+        : null,
+    });
+  }, [
+    blockingInteractionId,
+    floatingOwnerKey,
+    floatingTurnAnswer,
+    floatingTurnKey,
+    floatingTurnRunning,
+    focused,
+    hasFloatingLatestTurn,
+    isRunning,
+    reportFloatingStatus,
+  ]);
   const selectionSideChatKey = sessionId
     ? buildSelectionSideChatKey(workspaceKey, sessionId)
     : null;
@@ -4610,11 +4655,15 @@ export function SessionPane({
       submissionReady={composerSubmissionReady}
       updateComposerContent={updateComposerContent}
       createSubmissionFromComposer={createSubmissionFromComposer}
-      contextHeader={<>
+      contextHeader={isFloatingPresentation ? undefined : <>
         {isDraft ? draftComposerHeader : null}
         {!readOnly ? <ComposerContextHeader workspacePath={workspacePath} {...(workspaceIdentity ? { workspaceIdentity } : {})} {...(composerDraft.workContext ? { contextOverride: composerDraft.workContext } : {})} onChangeContext={(context) => replaceComposerDraft({ ...composerDraft, workContext: context })} /> : null}
       </>}
       centered={isDraft}
+      layout={isFloatingPresentation ? "inline" : "stacked"}
+      workingDurationMs={
+        floatingTurnRunning ? floatingLatestTurnSummary?.workDurationMs : undefined
+      }
       blockingRequestId={blockingInteractionId}
       listenAddToChatEvents={focused}
       // Q5 外部插入按 host 语义放开到 Live 会话：右栏浏览器拾取的坐标引用
@@ -4790,7 +4839,7 @@ export function SessionPane({
       ) : null}
       {composerNode}
       {/* 办公模式显示主动任务推荐；编程模式保留原有小型场景入口。 */}
-      {isDraft && (!isOfficeMode || sharedSettings?.proactiveSuggestionsEnabled === true) ? (
+      {isDraft && !isFloatingPresentation && (!isOfficeMode || sharedSettings?.proactiveSuggestionsEnabled === true) ? (
         <ConversationDraftSuggestedPromptsContainer
           className={isOfficeMode ? "mt-4" : "mt-6"}
           proactive={isOfficeMode}
@@ -5028,7 +5077,18 @@ export function SessionPane({
                   </div>
                 ) : null
               }
-              centerEmptyStateWithDock={isDraft}
+              centerEmptyStateWithDock={isDraft && !isFloatingPresentation}
+              floatingComposerDock={isFloatingPresentation}
+              onComposerDockHeightChange={
+                isFloatingPresentation && focused
+                  ? panePresentation.reportComposerDockHeight
+                  : undefined
+              }
+              onLatestTurnSummaryChange={
+                isFloatingPresentation && focused
+                  ? handleFloatingLatestTurnSummaryChange
+                  : undefined
+              }
               summaryPanelLayout={statusPanelLayout}
               conversationFindQuery={!isDraft && focused ? conversationFindQuery : ""}
               conversationFindActiveIndex={!isDraft && focused ? conversationFindActiveIndex : -1}

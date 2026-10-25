@@ -7,6 +7,94 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/ConversationHost.tsx",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/ConversationHost.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "9ea155fb619338b1b7a8c0895ca2af6e0aabfe1f7eb63fb8412b4b2fe692bbd1",
+      "copiedSha256": "ce92ece9cda75c00799697c8049f7fb690bc5ba0dfff24ef22156f7e700b6b83",
+      "adaptations": [
+        "映射 UI 导入别名与现有 shared 公开出口，保留原会话持续挂载、浮动、拖动、最小化、回答气泡及状态生命周期。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/ConversationTab.tsx",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/ConversationTab.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "1e4d06618c6d3b7747c007b477bd89770c492f68d2db5d9675fa9d2cbc0104f2",
+      "copiedSha256": "7d4bd060910f7a80311f86980ce88ec3c3fbb8befef4af0a07c269170ac93832",
+      "adaptations": [
+        "映射 UI 导入别名与现有 shared 公开出口，原对话标签由内容面板装配消费。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/ToggleButton.tsx",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/ToggleButton.tsx",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "19978dd20c91068aca3ceb8339432ee479d1be6acd5e897fb8eda68168517a5a",
+      "copiedSha256": "e7970ef481ad26a7fb1d9f0f8723cbf94965e4e5ca0a21df5cd990a9cec3d95e",
+      "adaptations": [
+        "映射 UI 导入别名与现有 shared 公开出口，原按钮消费同一完整视图控制器。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/anchorPreference.ts",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/anchorPreference.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "dad463284eb25743b5cea20f71489a31c19874450648b3aa1b58d9a63cb8291f",
+      "copiedSha256": "3103c4342683e3bb89930e3028f9c1066ddb1d8246d7bbb015e011de68868cc1",
+      "adaptations": [
+        "仅映射导入别名，保留原浮动位置偏好。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/contract.ts",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/contract.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "83ddfb6372d751ae8264cf5ab2567b58193641650085ab6f5df0b0db96d73b17",
+      "copiedSha256": "83ddfb6372d751ae8264cf5ab2567b58193641650085ab6f5df0b0db96d73b17",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/conversationPanePresentation.ts",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/conversationPanePresentation.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c533c52f8dcbd3a7fdbbee2179742f0bc804da506707704232d534179e0ace34",
+      "copiedSha256": "7561da0c9a5a4114684f4b66f190c3741c93d425649fc21854310f964175838f",
+      "adaptations": [
+        "仅映射导入别名，SessionPane 与原聊天区域消费同一展示上下文。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/index.ts",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/index.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "c075d27151cd21d81cfd56e24e6f62af091ed2b813c1315b03792043d2074502",
+      "copiedSha256": "d1a3abe1f29b98eb97494eb6a8f339bedc70bfb1d8b1b3d2bbbd18dd5584e241",
+      "adaptations": [
+        "仅映射导入别名，保留原模块公开入口。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/model.ts",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/model.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "24331715e5c945b24d819212bfbd3ec17a71097318cf6598cccd3648fe2567c0",
+      "copiedSha256": "0007b008db65f9fc5eaa88abd0aba8d3e2a0b21f1162624511a97a5eb11e02e9",
+      "adaptations": [
+        "仅映射导入别名，保留原几何与回答气泡状态计算。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/side-pane-full-view/useSidePaneFullView.ts",
+      "target": "apps/web/src/components/workbench/zcode/side-pane-full-view/useSidePaneFullView.ts",
+      "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+      "sha256": "9cf2f51d3776cf05b243d7ec81f38b6ee9606ba0c854484a005a2272911e53f2",
+      "copiedSha256": "52238ee680ffad09f2c6f26b747e5cf9df1b23dd4a2314f98df11b4c275a7117",
+      "adaptations": [
+        "仅映射导入别名，按工作目录身份与原会话 owner 保存完整视图状态。"
+      ]
+    },
+    {
       "source": "references/zcode/packages/ui/src/project-sidebar/ProjectNode.tsx",
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectNode.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
@@ -2304,8 +2392,9 @@
       "source": "references/zcode/packages/ui/src/WorkspaceHeader.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceHeader.tsx",
       "sha256": "2b3fee1655919699078f494ecb53918a39b78de95be54240a7652f6eb82b2b0d",
-      "copiedSha256": "f142e19fb077ca9e93c3a79bdf061bf0df9df345b2b01322d4e525a0c7576d80",
+      "copiedSha256": "c639da0c42afd5440ac2b4a9464cf0197197635bed30b4f776d83c45078c11af",
       "adaptations": [
+        "采用固定 3.16.2 原顶栏留白函数；普通 Header 与完整视图标签共用现有窗控及侧栏留白规则。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -2537,8 +2626,9 @@
       "source": "references/zcode/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx",
       "sha256": "0c5980f1abab4d9351e25abaef00a21ad50c861f98a9d6710adeeeea10306804",
-      "copiedSha256": "415a173e3ef04163f495c0260c140e9597fa937ded842edef0102017d56fe43f",
+      "copiedSha256": "8180438943ba7a75d5e678a6f5aa525feda412dd9ab0d78478edc355171e358d",
       "adaptations": [
+        "采用固定 3.16.2 原完整视图按钮、对话标签与内容槽位；原文件、Canvas、浏览器及 OpenDesign 保持挂载，切到对话时更新实际可见状态。",
         "采用 3.16.2 原 code-viewer／file-manager 共用 FileManagerPane 的装配；目标沿打开时的真实来源构造，保留原媒体全屏与重内容生命周期。",
         "增加原 FileManager 内容分支、真实页内导航及本地化标签标题；其它内容与持续挂载规则保持。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
@@ -2797,8 +2887,9 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "9be7d261fc4d012408c10b15ebefdc82ca6e95295a3445d68795069cfac93bd4",
+      "copiedSha256": "888b62e3297023101ddff9199bd4d43df0f5e0e2b08fb608e5d5521cf854a607",
       "adaptations": [
+        "采用固定 3.16.2 原 ConversationHost 与完整视图控制器；控制器按现有 Shell 与会话 owner 挂载，支持本机 Web、Code 和 Design，Flow 保持原主区；进入退出保留原面板比例与侧栏设置。",
         "消息文件与目录动作固定点击时的 Task／Project 来源，Task 或壳改变后忽略原 stat 的迟到结果与错误，文件成功及回退分支保留原 viewerScope。",
         "删除被统一文件标签关闭流程取代的专用 CodeViewer 关闭传递，其它主区和文档挂载保持。",
         "原项目目录与 Task 文件入口进入内容标签，页内导航沿同一回调；Git 与消息目录入口在明确动作时固定当前真实读取来源。",
@@ -6500,8 +6591,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "fb62a11bfc9c006d6221f259ad24192fbe553e221f1814e9a16a041edd862307",
+      "copiedSha256": "8517226e8b70deee34f4fb20ff0a8224ab3c62d8e2a7b290549a5fb5211f2582",
       "adaptations": [
+        "加入固定 3.16.2 原完整视图十一项英文词条，由原按钮和浮动会话消费。",
         "加入 3.16.2 原 FileManager 的五项英文文案，随实际组件与标题消费者装配。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原分组默认名称和全部展开、收起词条，由原 TaskGroupedView 消费。",
         "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
@@ -6535,8 +6627,9 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "6e436eeaa7373277198fa6a070274c7d969195cd59e6707561e4397145e79535",
+      "copiedSha256": "b7b9b4f64244851d78036154f0e7ffccb217b7c7adf7eef720784db7ed7e8b48",
       "adaptations": [
+        "加入固定 3.16.2 原完整视图十一项中文词条，由原按钮和浮动会话消费。",
         "加入 3.16.2 原 FileManager 的五项中文文案，随实际组件与标题消费者装配。",
         "补固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原分组默认名称和全部展开、收起词条，由原 TaskGroupedView 消费。",
         "补固定 3.16.2 原归档管理词条，删除说明与批次结果按 KFW 短文案规则表达。",
@@ -8168,8 +8261,9 @@
       "source": "references/zcode/packages/ui/src/lib/taskSidePaneMemory.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/taskSidePaneMemory.ts",
       "sha256": "c57a20b06db3d5d41adc02ab1571a4c83b77b2b9135e4bf07ae5506e7bbdfeb5",
-      "copiedSha256": "01e87a7e7d63652e99562bac2b95716b1c8a50230ac64b6818ba5627e123867d",
+      "copiedSha256": "d58f66e3249f7f35f41d348c6edf48c3d15c55df3f32d2e0668dc6c645c78b8b",
       "adaptations": [
+        "采用固定 3.16.2 原完整视图按会话 owner 的记忆读写，保留现有工作目录身份与内容标签复用。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -9413,8 +9507,9 @@
       "source": "references/zcode/packages/ui/src/prompt-editor/ChatPromptEditor.tsx",
       "target": "apps/web/src/components/workbench/zcode/prompt-editor/ChatPromptEditor.tsx",
       "sha256": "a560c7b3711fc2b0dacd036d205313bf5fe91fb09389082110e9f118fa18d96c",
-      "copiedSha256": "6ac44e17ed945517e66b1195b4d50bb8f0cc89da2092315f05adba90c4a0cdd5",
+      "copiedSha256": "a4e75825ca9995046ae4ca876c53dcfa95230a50421b821eebdc9077e32181bb",
       "adaptations": [
+        "采用固定 3.16.2 原单行输入布局及同位置编辑器节点，切换完整视图继续使用同一 Lexical 实例。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -9422,8 +9517,9 @@
       "source": "references/zcode/packages/ui/src/prompt-editor/useComposerToolbarFit.ts",
       "target": "apps/web/src/components/workbench/zcode/prompt-editor/useComposerToolbarFit.ts",
       "sha256": "aa266ce1cf06e2e27e0c21ebfd86715893bc941a3407be500dce0f5d3749d3fb",
-      "copiedSha256": "aa266ce1cf06e2e27e0c21ebfd86715893bc941a3407be500dce0f5d3749d3fb",
+      "copiedSha256": "f55ba7ab20a0c4cf4996d09ba9d273ccc6ec51296f1bbaa215d85a29ed549d29",
       "adaptations": [
+        "采用固定 3.16.2 原浮动输入栏 iconOnly 布局测量，普通输入栏保持原规则。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -12671,8 +12767,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "cbcc4c2062c35308cf860cd82c6ebb2a8c809e29437fa451cb9e0571da5909f9",
+      "copiedSha256": "1e0af2a7b3c0110b3c2d9c802a30e0cbaf380a299888c1f459c1c81b0a164d19",
       "adaptations": [
+        "采用固定 3.16.2 原单行布局与运行时长提示，保留 KFW 语音、素材、工作内容与发送接纳。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "宿主接线：输入卡摊语音手势（onPointerDown）与状态行，转写经 inputApiRef.appendText 受控写回；完整回路在撤销窗口后走组件自身 submit——等 appendText 经 Lexical 事件回传草稿后再提交（立即提交会读到旧文本而空转，真机验收抓到并修复）。transport 由 @zui/voice/binding.js 宿主桥注入（host/main.tsx 装配），验证见 voice-wiring-guard 与 code-voice.test 及台账一百三十八补。",
@@ -12890,8 +12987,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationTimeline.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationTimeline.tsx",
       "sha256": "e6cd02d962628dfc66679ec8363482a63151117243abac816ab3154f87fcacb9",
-      "copiedSha256": "e437959451afbfd8e2a9089df91ef92de545f1a1092a503b85e24d35fdba4c85",
+      "copiedSha256": "4cf1319ba99cfb0318872101ae44bed70f99318792948e35e3afa44b0275d7d9",
       "adaptations": [
+        "采用固定 3.16.2 原浮动输入区高度测量、消息滚动裁剪与最新回合上报，状态来自同一原时间线。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -12998,8 +13096,9 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "e19fca0505654fa4f6ddf4bee7a41ad0834eef234f8f50a6dcd29f35ec910eca",
+      "copiedSha256": "bcd8463a437e96875afc377e2130cb1696053e605fb323477f622c58771815d6",
       "adaptations": [
+        "采用固定 3.16.2 原展示上下文，在同一 SessionPane 中消费浮动输入布局并上报运行、阻塞交互及原时间线回答。",
         "采用固定 3c5b227649371507ddc4eb46ac5133afe6db1cab 原首发分组接纳：配置等待前捕获原分组草稿，accepted 后调用真实 admit；独立重试保持原 placement 与创建身份，后来草稿不被清除或导航替换。",
         "KFW 会话打开文件及自动展示 PPTX 时固定真实根 Task 来源。",
         "KFW Task 控制命令从当前公开快照固定项目与分支观察值；发送沿原点击值经过配置屏障，预热首发可使用创建回执的初始事实。",
@@ -13075,8 +13174,9 @@
       "source": "references/zcode/packages/ui/src/v4/V4WorkspaceChatArea.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/V4WorkspaceChatArea.tsx",
       "sha256": "17804027af08b3c54434ed4c40c70af2361e0c5ee0c1baecf00941114ecb4718",
-      "copiedSha256": "37daf2e7453660d2671bbb9dcc37373350befa4403a79c8f48445167870a39e8",
+      "copiedSha256": "1588a7c308fd4713de56cdd496a2f467e40f169bfdf8b3de8f4c1b886a87a08b",
       "adaptations": [
+        "采用固定 3.16.2 原浮动时仅显示当前焦点 pane 的装配，其余 pane 持续挂载。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -13084,8 +13184,9 @@
       "source": "references/zcode/packages/ui/src/v4/WorkbenchPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/WorkbenchPane.tsx",
       "sha256": "b1ebed111b7775d6ab4a944ff04b705dce1a3ad4771415eece95df1f24bfab30",
-      "copiedSha256": "39d3481dc342b210cd6bad983492afe56211e279f923faeb2121dde51cd4ba72",
+      "copiedSha256": "fdc912a1215ebac8ae5c379f20238c8e4caae8900651ec9f5be5389fa8b97042",
       "adaptations": [
+        "采用固定 3.16.2 原 hidden 展示属性，浮动时隐藏其余 pane 并保留原会话实例。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -13768,8 +13869,9 @@
       "source": "references/zcode/packages/ui/src/v4/conversationTimelineLiveTail.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/conversationTimelineLiveTail.ts",
       "sha256": "2ee3be3a1265c6cc66458c60356f3669a4c0c290fac8713385b88745577eafef",
-      "copiedSha256": "6c87b1ce36d33e57ab1f9297ae9f476edeb2a3aa207fd072dcdbdb7eccc43a25",
+      "copiedSha256": "e1e18125f078606b4ae2a67860cf4f07bb1294cb81dcbefc77e71a2c64acced8",
       "adaptations": [
+        "采用固定 3.16.2 原最新回合摘要和比较函数，浮动回答与运行状态取自同一个实际 render unit。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -14398,8 +14500,9 @@
       "source": "references/zcode/packages/ui/src/v4/workbenchLayout.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/workbenchLayout.ts",
       "sha256": "89ddf479d1f662411e90f53f4caadb4298f9bf911f09dbf6d860475be51ef8e6",
-      "copiedSha256": "43264b2eb4da57da1f24d8264cb977ca828d458ebdc6e9cabc50b6285f07d2a6",
+      "copiedSha256": "3d97ae177513239f848872f2d91120e52661068d51d12391519c37c970d8673c",
       "adaptations": [
+        "采用固定 3.16.2 原完整 pane 矩形导出，普通布局和浮动当前 pane 共用同一几何值。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -15719,8 +15822,9 @@
       "source": "references/zcode/packages/shared/src/test-ids.ts",
       "target": "packages/zcode-shared/src/test-ids.ts",
       "sha256": "6f632a0c4bdea6044e9265184d00985f19afa1e0eba86d1873165795db1deb59",
-      "copiedSha256": "60b010bb13e60446eb16812fb282bdb3344a26ecf1742df647546639ecbf8fc9",
+      "copiedSha256": "ffb6915143ef78f864c5f460b6bee02346e36c66254ba22b9746efc7ad5f46d9",
       "adaptations": [
+        "加入固定 3.16.2 原完整视图测试标识，由原组件公开 DOM 与实际浏览器回归消费。",
         "KenFutWork 宿主偏差：新增 TID_WORKSPACE_LOCKED_DIRECTORY（H1 chip 测试 id）"
       ]
     },
