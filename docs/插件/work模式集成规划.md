@@ -6,7 +6,7 @@
 
 Code/Design先统一为一个原ZCode会话UI、Task宿主与Harness。项目是资源和会话容器，kind仅表示默认工作方式，enabledModes表示显式启用方式；文档、目录、会话分别创建。Work后续沿同一宿主贡献Office/媒体文档能力，不新增Agent UI或Task状态聚合。本轮不实现Office编辑器，不扩future OpenDesign或Flow编辑逻辑。本规划下文的交付阶段均仍是后续方案，不是已交付事实。
 
-> **交付状态（2026-10-25，日志 §258）**：W0（契约 `work` 进 `projectKindSchema`/导航桥 + 库 CHECK 前向迁移）与 W1（服务端 `features/work` 注册表+探针路由、产品插件 `plugins/work`、壳层四模式 + 只读「Work 引擎」信息页 + 父页双路探针）**已落地**——提交 `9fcbee3c` / `9d21608f` / `c689103c` / `9610373b`。W2（首个编辑器按需下载 + WASM iframe 内嵌）起**仍是后续方案**，编辑器二进制未下载、未落位。
+> **交付状态（2026-10-25，日志 §258/§259）**：W0（契约 `work` 进 `projectKindSchema`/导航桥 + 库 CHECK 前向迁移）、W1（服务端 `features/work` 注册表+探针路由、产品插件 `plugins/work`、壳层四模式 + 只读「Work 引擎」信息页 + 父页双路探针）与 **W2（首个编辑器 `gridcraft` v0.11.1 按需下载 + WASM 静态托管 + 主区 iframe 内嵌，真机模拟点击走通「装插件→Work 模式→下载→打开编辑器→可编辑」全链路）已落地**——提交 `9fcbee3c` / `9d21608f` / `c689103c` / `4d3eb023` / `bd9e016d`。W3（图片/视频编辑器锚定 + 原生窗口档）起**仍是后续方案**。
 
 ## 1. 背景与定位
 
