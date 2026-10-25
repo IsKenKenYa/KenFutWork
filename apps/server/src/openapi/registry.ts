@@ -240,6 +240,9 @@ import {
   voiceSettingsUpdateRequestSchema,
   voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
+  workEditorInstallStatusSchema,
+  workHostEditorsResponseSchema,
+  workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
 import type { ZodType } from "zod";
 import { z } from "zod";
@@ -1559,6 +1562,61 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "按版本保存 Flow 工作流布局",
     description:
       "网关密钥和项目绑定通过后，以expectedVersion原子保存至项目内JSON布局；null仅用于创建。正文上限4MiB，版本冲突保留外部编辑并返回409，发布前再次核验授权。",
+  },
+  // ---- work-host.ts（work 集成宿主缝：扩展包注册表与数据目录事实）----
+  {
+    method: "get",
+    path: "/api/work/host/status",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workHostStatusResponseSchema,
+    summary: "查询 work 宿主启用状态",
+    description:
+      "返回 work 宿主适配层是否启用及已登记的编辑器扩展包数量，并附未启用原因。适配层自包含（注册表+数据目录），正常恒为启用；未配置时也返回 200 + enabled=false，不摆空壳。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workHostEditorsResponseSchema,
+    summary: "查询 work 编辑器扩展包注册表",
+    description:
+      "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点、锚定发布）与各包在本机数据目录的落位事实，以及各编辑器安装状态机快照。编辑器二进制按需下载，不随安装包分发。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/editors/:editorId/install",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    summary: "下载并落位 work 编辑器扩展包",
+    description:
+      "按锚定发布下载发行包，逐项核验字节数与 sha256 后解压原子落位（幂等：已落位且校验和一致直接就绪）。未锚定发布返回 400，安装进行中返回 409（轮询状态端点）。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors/:editorId/install/status",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workEditorInstallStatusSchema,
+    summary: "查询 work 编辑器安装状态",
+    description:
+      "返回该编辑器安装状态机快照（idle/installing/ready/error + 日志尾部）。未知编辑器返回 404。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors/:editorId/*",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    binaryResponse: "application/octet-stream",
+    summary: "读取 work 编辑器静态站点文件",
+    description:
+      "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
   },
   // ---- design-review.ts（画布评论与标注；本仓自持数据面）----
   {

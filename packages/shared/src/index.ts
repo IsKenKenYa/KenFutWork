@@ -31,4 +31,5 @@ export * from "./project-file-contracts.js";
 export * from "./provider-contracts.js";
 export * from "./skill-contracts.js";
 export * from "./voice-contracts.js";
+export * from "./work-host.js";
 export * from "./ws-protocol.js";

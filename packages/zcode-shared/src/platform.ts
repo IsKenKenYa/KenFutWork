@@ -535,7 +535,7 @@ export interface HostPluginSidebarEntry {
   icon: string | null;
 }
 
-export type HostWorkbenchMode = "code" | "design" | "flow";
+export type HostWorkbenchMode = "code" | "design" | "flow" | "work";
 export interface HostWorkbenchNavigation {
   getSnapshot(): { mode: HostWorkbenchMode; availableModes: readonly HostWorkbenchMode[]; documentTarget?: { resourceType: "canvas"; documentId: string } };
   subscribe(listener: () => void): () => void;

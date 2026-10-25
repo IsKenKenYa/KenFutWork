@@ -217,7 +217,9 @@ async function fixture(
     window,
     ["code", "design"],
     (mode) =>
-      mode === "flow" ? Promise.resolve(true) : admitProjectMode(mode),
+      mode === "flow" || mode === "work"
+        ? Promise.resolve(true)
+        : admitProjectMode(mode),
   );
   harness.navigation = navigation;
   options.beforeRender?.(navigation);

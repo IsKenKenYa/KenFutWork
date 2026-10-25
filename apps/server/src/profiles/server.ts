@@ -30,6 +30,7 @@ import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
+import { createWorkHostPlugin } from "../features/work/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createGoalsPlugin } from "../features/goals/plugin.js";
@@ -252,6 +253,10 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         ? { secret: deps.env.openDesignEmbedSecret }
         : {}),
     }),
+    // Work 宿主适配层：Work 引擎信息页数据面 /api/work/host/*（入口本身由
+    // plugins/work 的安装态门控，见 features/work/plugin.ts）；适配层自包含，
+    // 编辑器扩展包按需下载（W1 只登记注册表，不下载二进制）
+    createWorkHostPlugin(),
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点
     createVoicePlugin(),

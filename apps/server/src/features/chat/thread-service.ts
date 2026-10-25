@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ProjectKind } from "@kenfutwork/shared";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -27,7 +28,8 @@ export type SessionThreadBinding = {
   /** 可视化模式的视图身份；Code 作用域只使用 projectId/sessionId。 */
   canvasId?: string;
   projectId: string;
-  mode: "design" | "code" | "flow";
+  /** 与 chat_sessions.mode 同族封闭枚举（projects.kind 同源，work 与 code 同形态）。 */
+  mode: ProjectKind;
 };
 
 export type ThreadService = {
