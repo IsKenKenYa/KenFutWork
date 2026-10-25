@@ -325,7 +325,7 @@ jobs:
           set -euo pipefail
           if [ "${{ steps.sandbox_probe.outputs.sandbox_degraded }}" = "true" ]; then
             cd apps/server
-            node ../../node_modules/vitest/vitest.mjs run --concurrency=1 \
+            node ../../node_modules/vitest/vitest.mjs run --maxWorkers=1 \
               --exclude "src/features/process-sandbox/**"
             echo "· 沙箱用例已排除（runner 降级轮），其余 server 用例照常。"
           else

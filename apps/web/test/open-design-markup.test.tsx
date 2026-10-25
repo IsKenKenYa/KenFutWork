@@ -1,6 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DesignReviewAnnotation } from "@kenfutwork/shared";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { OpenDesignMarkup } from "../src/components/workbench/zcode/host/OpenDesignMarkup.js";
 import type { OpenDesignHit } from "../src/components/workbench/zcode/host/openDesignRuntime.js";
 
@@ -26,7 +32,9 @@ const RECT_ANNOTATION: DesignReviewAnnotation = {
   updatedAt: 1,
 };
 
-function renderMarkup(overrides: Partial<Parameters<typeof OpenDesignMarkup>[0]> = {}) {
+function renderMarkup(
+  overrides: Partial<Parameters<typeof OpenDesignMarkup>[0]> = {},
+) {
   const props = {
     comments: [],
     annotations: [RECT_ANNOTATION],
@@ -125,9 +133,9 @@ describe("元素选择", () => {
       .mockResolvedValueOnce(hit("#app > h1", "h1"))
       .mockResolvedValueOnce(hit("#app > section", "section"));
     renderMarkup({ elementSelecting: true, hitTest, onMoveElement });
-    const svg = (
-      await screen.findByTestId("open-design-markup")
-    ).querySelector("svg") as SVGSVGElement;
+    const svg = (await screen.findByTestId("open-design-markup")).querySelector(
+      "svg",
+    ) as SVGSVGElement;
     fireEvent.pointerDown(svg, { pointerId: 1, clientX: 120, clientY: 90 });
     await screen.findByTestId("open-design-element-selection");
     fireEvent.pointerMove(svg, { pointerId: 1, clientX: 220, clientY: 150 });
@@ -151,9 +159,9 @@ describe("元素选择", () => {
       // 目标在 x=300 处，宽 100：落点 320 在左半 → before
       .mockResolvedValueOnce(hit("#app > p", "p", 300));
     renderMarkup({ elementSelecting: true, hitTest, onMoveElement });
-    const svg = (
-      await screen.findByTestId("open-design-markup")
-    ).querySelector("svg") as SVGSVGElement;
+    const svg = (await screen.findByTestId("open-design-markup")).querySelector(
+      "svg",
+    ) as SVGSVGElement;
     fireEvent.pointerDown(svg, { pointerId: 1, clientX: 50, clientY: 50 });
     await screen.findByTestId("open-design-element-selection");
     fireEvent.pointerMove(svg, { pointerId: 1, clientX: 320, clientY: 60 });
@@ -162,6 +170,10 @@ describe("元素选择", () => {
     );
     fireEvent.pointerUp(svg, { pointerId: 1, clientX: 320, clientY: 60 });
     await waitFor(() => expect(onMoveElement).toHaveBeenCalled());
-    expect(onMoveElement).toHaveBeenCalledWith("#app > h1", "#app > p", "before");
+    expect(onMoveElement).toHaveBeenCalledWith(
+      "#app > h1",
+      "#app > p",
+      "before",
+    );
   });
 });
