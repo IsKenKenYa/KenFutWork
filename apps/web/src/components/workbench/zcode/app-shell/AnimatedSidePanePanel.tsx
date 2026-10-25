@@ -356,6 +356,7 @@ export function AnimatedSidePanePanel({
   fullViewToggle,
   fullView = null,
   fullViewSlotRef,
+  defaultExpandedRatio = SIDE_PANE_DEFAULT_EXPANDED_RATIO,
 }: {
   services: IServiceAccessor;
   frameClassName?: string;
@@ -371,6 +372,7 @@ export function AnimatedSidePanePanel({
     onSelectSurface: (surface: SidePaneFullViewSurface) => void;
   } | null;
   fullViewSlotRef?: (element: HTMLDivElement | null) => void;
+  defaultExpandedRatio?: number;
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
   isVisible: boolean;
@@ -529,7 +531,7 @@ export function AnimatedSidePanePanel({
       return null;
     }
 
-    return Math.round(panelGroupWidthPx * SIDE_PANE_DEFAULT_EXPANDED_RATIO);
+    return Math.round(panelGroupWidthPx * defaultExpandedRatio);
   };
 
   useEffect(() => {

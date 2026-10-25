@@ -3,7 +3,12 @@
 import { TID_APP_HEADER } from "@zcode/shared";
 import { AnimatedSidePanePanel } from "@zui/app-shell/AnimatedSidePanePanel.js";
 import { AnimatedTerminalPanel } from "@zui/app-shell/AnimatedTerminalPanel.js";
-import { SIDE_PANE_DEFAULT_EXPANDED_SIZE } from "@zui/app-shell/sidePaneLayout.js";
+import {
+  DESIGN_SIDE_PANE_DEFAULT_EXPANDED_RATIO,
+  DESIGN_SIDE_PANE_DEFAULT_EXPANDED_SIZE,
+  SIDE_PANE_DEFAULT_EXPANDED_RATIO,
+  SIDE_PANE_DEFAULT_EXPANDED_SIZE,
+} from "@zui/app-shell/sidePaneLayout.js";
 import { ensureTaskNavigationWorkspace } from "@zui/app-shell/taskNavigationWorkspace.js";
 import type { WorkspaceShellLayoutProps } from "@zui/app-shell/types.js";
 import { useAnimatedResizablePanel } from "@zui/app-shell/useAnimatedResizablePanel.js";
@@ -527,7 +532,8 @@ export const WorkspaceShellLayout = memo(
       // ResizablePanel 撑开；否则自动化页会闪出空白的 tab 栏，且面板过渡期间 guest surface
       // 仍可能被 Chromium 判定为不可合成。
       open: (workspaceMainView === "chat" || workspaceMainView === "design") && isSidePaneOpen,
-      expandedSize: SIDE_PANE_DEFAULT_EXPANDED_SIZE,
+      expandedSize: workspaceMainView === "design"
+        ? DESIGN_SIDE_PANE_DEFAULT_EXPANDED_SIZE : SIDE_PANE_DEFAULT_EXPANDED_SIZE,
       rememberExpandedSize: true,
       resizeOnInitialVisibleMount: false,
     });
@@ -1639,6 +1645,8 @@ export const WorkspaceShellLayout = memo(
           onSelectSurface: sidePaneFullView.setSurface,
         } : null}
         fullViewSlotRef={setFullViewSlotElement}
+        defaultExpandedRatio={workspaceMainView === "design"
+          ? DESIGN_SIDE_PANE_DEFAULT_EXPANDED_RATIO : SIDE_PANE_DEFAULT_EXPANDED_RATIO}
         projectId={parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId ?? null}
         sidePaneState={sidePaneState}
         recentClosedSidePaneTabs={recentClosedSidePaneTabs}
@@ -1971,19 +1979,17 @@ export const WorkspaceShellLayout = memo(
               ) /* 修复 macOS 顶部窗口控制按钮被 header 遮挡无法点击的问题 */
             }
             <ResizablePanelGroup
-              // v2：布局走 useDefaultLayout 持久化到 localStorage，存下来的旧
-              // 36/64 会盖掉新的 1:2 默认口径——换 key 让新默认对老用户生效。
+              // 保留既有布局存储身份，由原组件恢复保存的宽度。
               layoutId="workspace-body-layout-v2"
               panelIds={WORKSPACE_BODY_PANEL_IDS}
               className={cn("min-h-0 flex-1", isFullView && "relative")}
             >
               <ResizablePanel
                 id="conversation-column"
-                // 下限必须低于 1:2 的对话侧（33.33%），否则内容面永远拿不到 2/3：
-                // 原来 minSize 35% + defaultSize 36% 与内容面 66.67% 相加超过 100%，
-                // 库直接把对话夹在下限、内容面吃剩下的 64~65%，1:2 落不到屏上。
                 minSize="25%"
-                defaultSize={isSidePaneVisible ? "33.33%" : undefined}
+                defaultSize={isSidePaneVisible
+                  ? workspaceMainView === "design" ? "33.33%" : "52%"
+                  : undefined}
               >
                 <SidePaneFullViewConversationHost
                   mode={fullViewMode}
