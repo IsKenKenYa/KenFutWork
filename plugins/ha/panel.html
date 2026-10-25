@@ -205,12 +205,79 @@
         display: flex;
         gap: 6px;
       }
-      /* === 接入引导（未配置/修改配置态）=== */
+      /* === 欢迎与品牌选择（未配置态，按教程里 HA 集成流程的形状）=== */
       a {
         color: var(--accent);
       }
-      .guide > .intro {
-        margin: 0 0 8px;
+      .hero {
+        text-align: center;
+        padding: 22px 14px 18px;
+      }
+      .hero img {
+        width: 52px;
+        height: 52px;
+      }
+      .hero h1 {
+        font-size: 16px;
+        margin: 8px 0 2px;
+      }
+      .hero p {
+        margin: 0;
+      }
+      .brand {
+        margin: 6px 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+      }
+      .brand summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      .brand summary::-webkit-details-marker {
+        display: none;
+      }
+      .brand-icon {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        color: #fff;
+      }
+      .brand-icon.xiaomi {
+        background: #ff6900;
+      }
+      .brand-icon.huawei {
+        background: #c7000b;
+      }
+      .brand-meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .brand-name {
+        display: block;
+        font-weight: 600;
+      }
+      .brand-sub {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .brand .chev {
+        flex: none;
+        color: var(--muted);
+        transition: transform 0.12s ease;
+      }
+      .brand[open] .chev {
+        transform: rotate(90deg);
       }
       .guide .step {
         margin: 6px 0;

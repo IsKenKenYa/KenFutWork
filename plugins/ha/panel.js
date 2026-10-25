@@ -1,10 +1,11 @@
 /**
  * 智能家居面板页（插件自带，无构建、无外部依赖）。
  *
- * 三种视图：未配置/修改配置（接入引导 + 连接表单）、**HA 原生界面（已连接后的默认
+ * 三种视图：未配置/修改配置（欢迎页 + 「选择品牌或集成」品牌卡引导 + 连接表单——
+ * 按教程里 HA 集成流程的形状，2026-10-25）、**HA 原生界面（已连接后的默认
  * 视图，iframe 直接内嵌 HA 自己的前端——用户拍板「要教程里一样的界面」，2026-10-24）**、
  * 精简面板（自绘实体网格，顶栏可互切）。HA 默认发 X-Frame-Options 挡内嵌，被挡时
- * iframe 空白——原生视图自带折叠提示条给两侧的关法（见接入引导「允许面板内嵌」步）。
+ * iframe 空白——原生视图自带折叠提示条给两侧的关法（见通用步骤「允许面板内嵌」）。
  *
  * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收也不保管宿主令牌；数据面请求带
  * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里，面板写入一次后
@@ -126,15 +127,18 @@ function api(path, options) {
 
 // === 未配置 / 修改配置 ===
 
-/** 引导步骤只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
+/** 引导数据只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
 let guidePromise = null;
-function loadGuideSteps() {
+function loadGuide() {
   if (guidePromise) return guidePromise;
   guidePromise = api("guide")
-    .then((payload) => (Array.isArray(payload.steps) ? payload.steps : []))
+    .then((payload) => ({
+      brands: Array.isArray(payload.brands) ? payload.brands : [],
+      steps: Array.isArray(payload.steps) ? payload.steps : [],
+    }))
     .catch(() => {
       guidePromise = null;
-      return [];
+      return { brands: [], steps: [] };
     });
   return guidePromise;
 }
@@ -183,49 +187,96 @@ function commandRow(item) {
   return row;
 }
 
-/**
- * 接入引导卡：部署 HA → 装 HACS → 接米家（默认展开）→ 接华为（默认展开）→ 建令牌。
- * 步骤数据来自服务端 `guide` 路由（`lib/setup-guide.js` 一处属主，测试锁死仓库链接）。
- */
-function buildGuideCard(steps) {
-  const card = el("div", "card guide");
-  const intro = el("p", "hint intro");
-  intro.textContent = "经 Home Assistant 接入米家与华为设备";
-  card.appendChild(intro);
-  steps.forEach((step, index) => {
-    const details = el("details", "step");
-    details.open = step.open === true;
-    details.appendChild(el("summary", null, `${index + 1}. ${step.title}`));
-    const box = el("div", "step-body");
-    for (const item of step.items ?? []) {
-      if (item.kind === "command") {
-        box.appendChild(commandRow(item));
-        continue;
-      }
-      if (item.kind === "link") {
-        const line = el("p", "step-text");
-        const link = el("a", null, item.label);
-        link.href = item.url;
-        link.target = "_blank";
-        link.rel = "noopener";
-        line.appendChild(link);
-        box.appendChild(line);
-        continue;
-      }
-      box.appendChild(el("p", "step-text", item.text));
+function guideItemsInto(box, items) {
+  for (const item of items ?? []) {
+    if (item.kind === "command") {
+      box.appendChild(commandRow(item));
+      continue;
     }
-    details.appendChild(box);
-    card.appendChild(details);
-  });
-  return card;
+    if (item.kind === "link") {
+      const line = el("p", "step-text");
+      const link = el("a", null, item.label);
+      link.href = item.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      line.appendChild(link);
+      box.appendChild(line);
+      continue;
+    }
+    box.appendChild(el("p", "step-text", item.text));
+  }
+}
+
+/**
+ * 品牌卡：教程里「选择品牌或集成」的一行——图标 + 名称 + 一行说明，点开是接入步骤。
+ * 数据来自服务端 `guide` 路由（`lib/setup-guide.js` 一处属主，测试锁死仓库链接）。
+ */
+function buildBrandCard(brand) {
+  const details = el("details", "brand");
+  details.open = brand.open === true;
+  const summary = el("summary");
+  summary.appendChild(
+    el("span", `brand-icon ${brand.id}`, (brand.title || "?").charAt(0)),
+  );
+  const meta = el("span", "brand-meta");
+  meta.appendChild(el("span", "brand-name", brand.title));
+  meta.appendChild(el("span", "brand-sub", brand.subtitle));
+  summary.appendChild(meta);
+  summary.appendChild(el("span", "chev", "›"));
+  details.appendChild(summary);
+  const body = el("div", "step-body");
+  guideItemsInto(body, brand.items);
+  details.appendChild(body);
+  return details;
+}
+
+function buildStepCard(step) {
+  const details = el("details", "step");
+  details.open = step.open === true;
+  details.appendChild(el("summary", null, step.title));
+  const box = el("div", "step-body");
+  guideItemsInto(box, step.items);
+  details.appendChild(box);
+  return details;
+}
+
+/**
+ * 引导区：品牌卡（米家/华为，默认展开）在上，通用步骤收在下——先选生态照着做，
+ * 再到表单连接。
+ */
+function buildGuideSection(brands, steps) {
+  const section = el("div", "guide");
+  if (brands.length > 0) {
+    section.appendChild(el("h3", "group", "选择品牌或集成"));
+    for (const brand of brands) section.appendChild(buildBrandCard(brand));
+  }
+  if (steps.length > 0) {
+    section.appendChild(el("h3", "group", "通用步骤"));
+    for (const step of steps) section.appendChild(buildStepCard(step));
+  }
+  return section;
+}
+
+/** 欢迎页：教程里 HA 首启欢迎屏的形状（用户创建在 HA 自己的初始化里，这里没有）。 */
+function buildHero() {
+  const hero = el("div", "card hero");
+  const img = document.createElement("img");
+  img.src = "icon.svg";
+  img.alt = "";
+  hero.appendChild(img);
+  hero.appendChild(el("h1", null, "欢迎使用智能家居"));
+  hero.appendChild(el("p", "hint", "接入米家与华为设备"));
+  return hero;
 }
 
 function renderConfigForm(message, guideFirst = true) {
   stopPolling();
   state.view = "config";
   setHeaderButtons("config");
-  setState("未配置");
+  setState(guideFirst ? "未配置" : "修改配置");
   clear(els.body);
+  if (guideFirst) els.body.appendChild(buildHero());
+
   const card = el("div", "card");
   const address = el("input");
   address.type = "url";
@@ -263,6 +314,14 @@ function renderConfigForm(message, guideFirst = true) {
         }
         setNote("", false);
         renderNative();
+        // 「成功 · 已发现设备」的节拍：连上后拉一轮实体，把实况灌进状态行（失败不打扰连接）
+        api("entities")
+          .then((view) =>
+            setState(
+              nativeStateText({ total: view.total ?? 0, ecosystems: view.ecosystems }),
+            ),
+          )
+          .catch(() => {});
       })
       .catch((error) => {
         state.busy = false;
@@ -276,17 +335,32 @@ function renderConfigForm(message, guideFirst = true) {
   card.appendChild(actions);
   if (message) card.appendChild(el("p", "error", message));
   els.body.appendChild(card);
-  // 引导卡与表单同一页：首用引导在上（照着做），「修改配置」时表单在上（直接改）。
-  // 异步插入前先确认表单还在页上（期间可能已连上并切到实体网格）
-  loadGuideSteps().then((steps) => {
-    if (steps.length === 0 || !els.body.contains(card)) return;
-    const guideCard = buildGuideCard(steps);
-    if (guideFirst) els.body.insertBefore(guideCard, card);
-    else els.body.appendChild(guideCard);
+  // 引导区与表单同一页：首用引导在上（照着做）、表单在最后（终点）；
+  // 「修改配置」时表单在上（直接改）。异步插入前先确认表单还在页上
+  // （期间可能已连上并切到原生界面）
+  loadGuide().then((guide) => {
+    if (!els.body.contains(card)) return;
+    const section = buildGuideSection(guide.brands, guide.steps);
+    if (section.childElementCount === 0) return;
+    if (guideFirst) els.body.insertBefore(section, card);
+    else els.body.appendChild(section);
   });
 }
 
 // === HA 原生界面（内嵌 iframe，已连接后的默认视图） ===
+
+/**
+ * 原生视图状态行：版本与（拿得到时的）实体实况——连接成功后拉一轮实体灌进来，
+ * 就是教程里「成功 · 已发现设备」那一拍。计数与精简面板同一口径，识别不了就不显示。
+ */
+function nativeStateText(counts) {
+  const version = state.version ? ` · ${state.version}` : "";
+  const total = counts ? ` · ${counts.total} 实体` : "";
+  const eco = counts?.ecosystems
+    ? ` · 米家 ${counts.ecosystems.mijia} · 华为 ${counts.ecosystems.huawei}`
+    : "";
+  return `HA 原生界面${version}${total}${eco}`;
+}
 
 /**
  * 直接内嵌 HA 自己的前端（就是教程里那个界面）。HA 默认发 `X-Frame-Options` 挡内嵌，
@@ -297,7 +371,7 @@ function renderNative() {
   stopPolling();
   state.view = "native";
   setHeaderButtons("native");
-  setState("HA 原生界面");
+  setState(nativeStateText(null));
   clear(els.body);
   const wrap = el("div", "native");
 
@@ -635,7 +709,7 @@ els.retest.addEventListener("click", () => {
         return;
       }
       // 原生视图：测通即可，界面本身由 iframe 自己维护
-      setState("HA 原生界面");
+      setState(nativeStateText(null));
     })
     .catch((error) => showError(error.message));
 });

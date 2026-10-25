@@ -2050,44 +2050,69 @@ describe("HA 插件：实时态（WS 快照 + 注册表补齐区域）", () => {
 });
 
 describe("HA 插件：接入引导与生态识别", () => {
+  interface GuideItem {
+    kind: string;
+    text?: string;
+    url?: string;
+  }
+  interface GuideBrand {
+    id: string;
+    title: string;
+    subtitle: string;
+    open: boolean;
+    items: GuideItem[];
+  }
   interface GuideStep {
     id: string;
     title: string;
     open: boolean;
-    items: Array<{ kind: string; text?: string; url?: string }>;
+    items: GuideItem[];
   }
 
-  it("guide 路由：步骤含默认展开的米家/华为，仓库链接与 HACS、Docker 命令逐字核对", async () => {
+  it("guide 路由：品牌卡米家/华为默认展开，通用步骤收起，仓库链接与 HACS、Docker 命令逐字核对", async () => {
     const { service, installed } = await installFromRepo();
     const result = await dispatch(service, installed.id, {
       path: "guide",
       instanceId: INSTANCE_ID,
     });
     expect(result?.status).toBe(200);
-    const body = bodyOf<{ steps: GuideStep[] }>(result);
-    // 默认支持的两个生态步骤在场且默认展开，其余步骤默认收起
+    const body = bodyOf<{ brands: GuideBrand[]; steps: GuideStep[] }>(result);
+    // 默认支持的两个生态 = 教程里「选择品牌或集成」的两张品牌卡，都默认展开
+    expect(body.brands.map((brand) => brand.id)).toEqual(["xiaomi", "huawei"]);
+    for (const brand of body.brands) {
+      expect(brand.open).toBe(true);
+      expect(brand.subtitle).toBeTruthy();
+    }
     expect(body.steps.map((step) => step.id)).toEqual([
       "ha",
       "hacs",
-      "xiaomi",
-      "huawei",
       "embed",
       "token",
     ]);
     for (const step of body.steps) {
-      expect(step.open).toBe(step.id === "xiaomi" || step.id === "huawei");
+      expect(step.open).toBe(false);
     }
-    const items = body.steps.flatMap((step) => step.items);
-    // 装错仓库是引导最大的事故面：链接逐字核对
-    expect(items.map((item) => item.url ?? "")).toEqual(
+    const brandItems = body.brands.flatMap((brand) => brand.items);
+    // 装错仓库是引导最大的事故面：品牌卡里的仓库链接逐字核对
+    expect(
+      brandItems.filter((item) => item.kind === "link").map((item) => item.url),
+    ).toEqual(
       expect.arrayContaining([
         "https://github.com/XiaoMi/ha_xiaomi_home",
         "https://github.com/xiasi0/ha-huawei-smarthome",
-        "https://www.hacs.xyz/docs/use/download/download/",
-        "https://www.home-assistant.io/integrations/http/",
+        "https://github.com/xiasi0/ha-huawei-smarthome/blob/main/docs/supported-devices.md",
       ]),
     );
-    const commands = items
+    // 米家 OAuth 跳转地址坑（教程第一大翻车点）写进品牌卡
+    expect(brandItems.map((item) => item.text ?? "").join("\n")).toContain(
+      "homeassistant.local",
+    );
+    // 华为登录三要素在场
+    expect(brandItems.map((item) => item.text ?? "").join("\n")).toContain(
+      "挑战码",
+    );
+    const commands = body.steps
+      .flatMap((step) => step.items)
       .filter((item) => item.kind === "command")
       .map((item) => item.text ?? "")
       .join("\n");
@@ -2097,8 +2122,8 @@ describe("HA 插件：接入引导与生态识别", () => {
     expect(commands).toContain("use_x_frame_options: false");
     // 引导终点把用户带回自己的连接表单：令牌步骤指回面板
     expect(
-      items
-        .filter((item) => item.kind === "text")
+      body.steps
+        .flatMap((step) => step.items)
         .map((item) => item.text ?? "")
         .join("\n"),
     ).toContain("长期访问令牌");

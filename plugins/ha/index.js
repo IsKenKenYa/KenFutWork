@@ -37,7 +37,10 @@ import {
   WS_DEVICE_REGISTRY_LIST,
   WS_ENTITY_REGISTRY_LIST,
 } from "./lib/ha-ws.js";
-import { SETUP_GUIDE_STEPS } from "./lib/setup-guide.js";
+import {
+  SETUP_GUIDE_BRANDS,
+  SETUP_GUIDE_STEPS,
+} from "./lib/setup-guide.js";
 
 export const name = "kenfutwork-ha";
 
@@ -298,9 +301,12 @@ export function apply(ctx) {
     path: "guide",
     handler: async (request) => {
       requireInstance(request.instanceId, "读取引导");
-      // 纯静态步骤数据（lib/setup-guide.js 一处属主）；面板拉取失败只是少了引导，
-      // 连接表单不受影响
-      return { status: 200, body: { steps: SETUP_GUIDE_STEPS } };
+      // 纯静态步骤数据（lib/setup-guide.js 一处属主）：品牌卡（米家/华为，默认展开）
+      // + 通用步骤；面板拉取失败只是少了引导，连接表单不受影响
+      return {
+        status: 200,
+        body: { brands: SETUP_GUIDE_BRANDS, steps: SETUP_GUIDE_STEPS },
+      };
     },
   });
 
