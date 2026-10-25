@@ -313,7 +313,8 @@ describe("面板画面流接口", () => {
       // 没有补帧机制时最后一帧只写一次——解码器会一直停在旧画面（真机：最小化/关闭后画面分钟级不更新）
       expect(partsOf(frameA.length)).toBe(1);
       expect(partsOf(frameB.length)).toBe(2);
-      streamReq?.destroy();
+      // 闭包内赋值 TS 收窄不到：显式断言非空（该请求在 streamOpened resolve 前必已创建）
+      streamReq!.destroy();
     } finally {
       await app.close();
     }

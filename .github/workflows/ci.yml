@@ -317,17 +317,22 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: server 测试（串行，避免内存踩踏）
-        # 降级轮（runner 不支持能力型 userns）：排除真沙箱用例文件（它们只会以
-        # ProcessSandboxError 失败），其余用例照常全跑；排除面写在这里而不是测试文件里
-        # ——本机有 bwrap 时用例必须照常执行，不能按环境变量静默跳过。
-        # 降级分支直调 vitest：turbo 的 `--` 透传会把参数喂给包 script 而不是 vitest。
+        # 降级轮（runner 不支持能力型 userns）：排除真沙箱依赖用例（它们只会以
+        # ProcessSandboxError 失败）——process-sandbox 全目录 + agent/task-work/code-ui
+        # 里直接创建真实沙箱的三个套件。排除面写在这里而不是测试文件里——本机有 bwrap
+        # 时用例必须照常执行，不能按环境变量静默跳过；被排除的套件在 summary 里如实
+        # 列名（blocked 不计通过）。降级分支直调 vitest：turbo 的 `--` 透传会把参数
+        # 喂给包 script 而不是 vitest。
         run: |
           set -euo pipefail
           if [ "${{ steps.sandbox_probe.outputs.sandbox_degraded }}" = "true" ]; then
             cd apps/server
             node ../../node_modules/vitest/vitest.mjs run --maxWorkers=1 \
-              --exclude "src/features/process-sandbox/**"
-            echo "· 沙箱用例已排除（runner 降级轮），其余 server 用例照常。"
+              --exclude "src/features/process-sandbox/**" \
+              --exclude "src/features/task-work/command-tools.test.ts" \
+              --exclude "src/features/task-work/service.test.ts" \
+              --exclude "src/features/code-ui/file-rewind.test.ts"
+            echo "· 沙箱依赖用例已排除（runner 降级轮）：process-sandbox/**、task-work/command-tools、task-work/service、code-ui/file-rewind——blocked 不计通过。"
           else
             pnpm exec turbo run test --filter=@kenfutwork/server --concurrency=1
           fi
