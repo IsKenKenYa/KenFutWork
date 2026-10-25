@@ -1,11 +1,19 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HostWorkbenchModeNavigation } from "@/components/workbench/zcode/host/WorkbenchModeNavigation";
+import {
+  HostWorkbenchModeNavigation,
+  WorkbenchModeNavigation,
+} from "@/components/workbench/zcode/host/WorkbenchModeNavigation";
+
+/** 从组件 props 提取模式联合（跟随 @zcode/shared 的 HostWorkbenchMode，不复制字面量）。 */
+type HostWorkbenchMode = React.ComponentProps<
+  typeof WorkbenchModeNavigation
+>["mode"];
 
 const hostState = vi.hoisted(() => ({
   snapshot: {
-    mode: "code" as "code" | "design" | "flow",
-    availableModes: ["code", "design", "flow"] as const,
+    mode: "code" as HostWorkbenchMode,
+    availableModes: ["code", "design", "flow"] as readonly HostWorkbenchMode[],
   },
   listeners: new Set<() => void>(),
 }));
@@ -55,5 +63,55 @@ describe("HostWorkbenchModeNavigation directory recovery", () => {
     });
     view.rerender(<HostWorkbenchModeNavigation />);
     expect(screen.queryByTestId("code-directory-recovery")).toBeNull();
+  });
+});
+
+describe("HostWorkbenchModeNavigation 四模式", () => {
+  afterEach(() => {
+    cleanup();
+    hostState.listeners.clear();
+  });
+
+  it("availableModes 含 work 时渲染第四档 Work，选中态跟随快照", () => {
+    hostState.snapshot = {
+      mode: "work",
+      availableModes: ["code", "design", "flow", "work"],
+    };
+    render(<HostWorkbenchModeNavigation />);
+    const group = screen.getByRole("radiogroup", { name: "模式切换" });
+    const radios = group.querySelectorAll<HTMLButtonElement>("[role='radio']");
+    expect(radios).toHaveLength(4);
+    expect(
+      Array.from(radios).map((radio) => radio.getAttribute("aria-checked")),
+    ).toEqual(["false", "false", "false", "true"]);
+    expect(screen.getByRole("radio", { name: "Work" })).toBeTruthy();
+  });
+
+  it("work 不可用时只有三档（入口纪律：不摆空壳入口）", () => {
+    hostState.snapshot = {
+      mode: "code",
+      availableModes: ["code", "design", "flow"],
+    };
+    render(<HostWorkbenchModeNavigation />);
+    const group = screen.getByRole("radiogroup", { name: "模式切换" });
+    expect(
+      group.querySelectorAll<HTMLButtonElement>("[role='radio']"),
+    ).toHaveLength(3);
+    expect(screen.queryByRole("radio", { name: "Work" })).toBeNull();
+  });
+
+  it("收起态同样渲染四档图标", () => {
+    render(
+      <WorkbenchModeNavigation
+        mode="code"
+        availableModes={["code", "design", "flow", "work"]}
+        onModeChange={() => {}}
+        collapsed
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "模式切换" });
+    expect(
+      group.querySelectorAll<HTMLButtonElement>("[role='radio']"),
+    ).toHaveLength(4);
   });
 });

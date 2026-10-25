@@ -108,7 +108,9 @@ async function openRoot(mode: "design" | "flow") {
     window,
     ["code", "design", "flow"],
     (preset) =>
-      preset === "flow" ? Promise.resolve(true) : admitProjectMode(preset),
+      preset === "flow" || preset === "work"
+        ? Promise.resolve(true)
+        : admitProjectMode(preset),
   );
   client.setWorkPresetResolver(() =>
     navigation.getSnapshot().mode === "design" ? "design" : "code",

@@ -106,7 +106,9 @@ const workbenchNavigation = bootstrap?.workbenchModes
       window.parent,
       bootstrap.workbenchModes,
       (mode) =>
-        mode === "flow" ? Promise.resolve(true) : admitProjectMode(mode),
+        mode === "flow" || mode === "work"
+          ? Promise.resolve(true)
+          : admitProjectMode(mode),
     )
   : undefined;
 const platform = createCodePlatform(client, {

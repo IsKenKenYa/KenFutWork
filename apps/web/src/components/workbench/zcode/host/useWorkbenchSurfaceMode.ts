@@ -9,7 +9,9 @@ const EMPTY_SNAPSHOT = {
 };
 const NOOP_SUBSCRIBE = () => () => {};
 const viewMode = (target: WorkspaceMainView) =>
-  target === "design" || target === "flow" ? target : "code";
+  target === "design" || target === "flow" || target === "work"
+    ? target
+    : "code";
 
 /**
  * 工作台模式 ↔ 主区视图的同步（融合缝）。
@@ -79,7 +81,9 @@ export function useWorkbenchSurfaceMode({
       return;
     }
     void (
-      mode === "flow" ? Promise.resolve(true) : admitProjectMode(mode)
+      mode === "flow" || mode === "work"
+        ? Promise.resolve(true)
+        : admitProjectMode(mode)
     ).then((allowed) => {
       if (version !== requestVersion.current) return;
       if (allowed) navigation.setActiveMode(mode);
