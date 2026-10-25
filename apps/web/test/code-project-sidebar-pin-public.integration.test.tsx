@@ -9,9 +9,12 @@ import {
   codeTaskPinMetaSchema,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
-import { TID_WORKSPACE_HEADER, TID_WORKSPACE_MORE_BUTTON } from "@zcode/shared";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import {
+  TID_WORKSPACE_HEADER,
+  TID_WORKSPACE_MORE_BUTTON,
+} from "../../../packages/zcode-shared/dist/index.js";
 import {
   clickOn,
   pressKey,
@@ -643,9 +646,8 @@ async function holdFirstPinResponse(
           .find((request) => request.requestId === response.networkId),
       ).toMatchObject({ state: "pending" });
       const meta = codeTaskPinMetaSchema.parse(
-        z
-          .object({ result: z.unknown() })
-          .parse(JSON.parse(originalBody)).result,
+        z.object({ result: z.unknown() }).parse(JSON.parse(originalBody))
+          .result,
       );
       return { ...response, meta };
     },

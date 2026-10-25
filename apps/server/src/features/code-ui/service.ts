@@ -1826,8 +1826,16 @@ export class CodeUiService {
     signal: AbortSignal,
   ) {
     const owner = await this.deps.localInstance.resolve(actor);
-    const result = await this.deps.repository.taskPins.change(owner.instanceId, input, signal);
-    await this.refreshTaskLists(owner.instanceId, result.workspacePath, result.projectId);
+    const result = await this.deps.repository.taskPins.change(
+      owner.instanceId,
+      input,
+      signal,
+    );
+    await this.refreshTaskLists(
+      owner.instanceId,
+      result.workspacePath,
+      result.projectId,
+    );
     return result;
   }
 

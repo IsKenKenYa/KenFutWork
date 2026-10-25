@@ -18,7 +18,7 @@ interface ProjectTaskPorts {
 }
 type TaskMutationObservation = ZCodeTaskUnreadObservation | ZCodeTaskPinObservation;
 function taskAddress(
-  task: ProjectTaskRef,
+  task: Pick<ProjectTaskRef, "workspacePath" | "workspaceIdentity" | "taskId" | "taskControl">,
   remoteSessionId?: string | null,
   observation?: TaskMutationObservation,
 ): WindowHostTaskAddress & Partial<ZCodeTaskUnreadObservation & ZCodeTaskPinObservation> {

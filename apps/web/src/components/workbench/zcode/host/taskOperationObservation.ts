@@ -1,7 +1,11 @@
-import type { CodeTaskOrganizationTarget } from "@kenfutwork/shared";
+import type {
+  CodeTaskOrganizationTarget,
+  codeTaskUnreadMetaSchema,
+} from "@kenfutwork/shared";
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import { conversationTaskControlSchema } from "@zcode/shared/zcode-protocol-v4";
 import { buildTaskEntityKey } from "@zui/lib/taskQueryCache.js";
+import type { z } from "zod";
 
 /** 操作只使用原行中的有效版本，并复制该次 Task 控制身份。 */
 export function captureTaskRevisionObservation(
@@ -40,7 +44,7 @@ export function resolveTaskOperationSnapshot(
 export function assertTaskOperationResult(
   target: CodeTaskOrganizationTarget,
   meta: Pick<
-    ZCodeTaskMeta,
+    z.infer<typeof codeTaskUnreadMetaSchema>,
     | "taskId"
     | "workspacePath"
     | "workspaceIdentity"

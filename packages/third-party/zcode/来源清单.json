@@ -270,11 +270,12 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/task-mutation.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "ef600197181ea584429a8648e8df1ee045432ffa785a7c50373fa90748cedaa3",
-      "copiedSha256": "9ee445568020b21a25d412080346371d4bbcbadf2f5ea7661b3ba91fc3e8c5ba",
+      "copiedSha256": "9b680f4d7523811df9622850a68561c249d46b464d6abd36bb69853a4dcd95be",
       "adaptations": [
         "映射导入，按当前 Task 服务和 Controller 路由操作，复制并传递 taskControl，保留实际 remoteSessionId；元信息由现有 Task 服务读取，不传递当前接口没有的 sourceServerId。",
         "本机已读和未读操作在调用入口固定 taskControl 与 observedLastUnreadAt，Controller 和直接 Task 服务接收同一观察。",
-        "本机 pin 操作要求原 Task 的有效 pinRevision，固定 observedPinRevision 与控制身份后传给 Controller 或直接 Task 服务。"
+        "本机 pin 操作要求原 Task 的有效 pinRevision，固定 observedPinRevision 与控制身份后传给 Controller 或直接 Task 服务。",
+        "发送地址类型只要求真实地址与控制身份；原 pinRevision 继续由本地捕获转换成 observedPinRevision，不作为额外 wire 字段发送。"
       ]
     },
     {
