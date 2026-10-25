@@ -437,7 +437,27 @@ export function apply(ctx) {
           );
         }
         const runtime = await runtimeFor(instanceId);
-        const step = await runtime.rest.startFlow(handler);
+        let step = await runtime.rest.startFlow(handler);
+        // 自动推进非账号决策步（用户口径「默认这两个都添加」）：
+        // - eula：小米官方集成的用户协议勾选（使用本功能即接受）
+        // - auth_config：地区/语言/回调地址（固定中国大陆 + 简体中文；回调走
+        //   homeassistant.local，本机 hosts 修复后回跳直达）
+        // OAuth 授权步必须用户本人完成，到这里停住交给面板。
+        for (let i = 0; i < 4; i += 1) {
+          if (step.type !== "form") break;
+          if (step.step_id === "eula") {
+            step = await runtime.rest.submitFlow(step.flow_id, {
+              eula: true,
+            });
+          } else if (step.step_id === "auth_config") {
+            step = await runtime.rest.submitFlow(step.flow_id, {
+              cloud_server: "cn",
+              integration_language: "zh-Hans",
+              oauth_redirect_url: "http://homeassistant.local:8123",
+              network_detect_config: false,
+            });
+          } else break;
+        }
         return { status: 200, body: { brand, flowId: step.flow_id, step } };
       } catch (error) {
         return errorResult(error);

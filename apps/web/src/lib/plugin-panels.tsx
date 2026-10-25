@@ -199,6 +199,7 @@ export function PluginPanelOverlay({
   onClose: () => void;
   active?: boolean;
 }) {
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
   if (!panel) return null;
   return (
     <Dialog
@@ -216,7 +217,7 @@ export function PluginPanelOverlay({
         className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
-        <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-12">
+        <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-24">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <PluginIcon
               icon={panel?.icon ?? null}
@@ -224,9 +225,24 @@ export function PluginPanelOverlay({
             />
             {panel?.title ?? "插件面板"}
           </DialogTitle>
+          {panel?.configurable ? (
+            <button
+              type="button"
+              className="absolute right-12 top-3 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
+              onClick={() => {
+                frameRef.current?.contentWindow?.postMessage(
+                  { type: "kenfutwork:plugin-panel-toggle-config" },
+                  "*",
+                );
+              }}
+            >
+              配置
+            </button>
+          ) : null}
         </DialogHeader>
         {panel ? (
           <iframe
+            ref={frameRef}
             title={panel.title}
             src={resolvePanelUrl(panel.url, panel.pluginId)}
             className="min-h-0 flex-1 border-0"

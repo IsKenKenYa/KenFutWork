@@ -310,7 +310,7 @@ export function createHaRest(options) {
       });
     },
     /**
-     * `DELETE /api/config/config_entries/<entry_id>`：卸载一个集成实例（HA 源码
+     * `DELETE /api/config/config_entries/entry/<entry_id>`：卸载一个集成实例（HA 源码
      * `ConfigManagerEntryResourceView.delete`；组件文件不动，只删配置条目）。
      */
     deleteEntry: (entryId) => {
@@ -321,7 +321,7 @@ export function createHaRest(options) {
         );
       }
       return api(
-        `/config/config_entries/${encodeURIComponent(entryId)}`,
+        `/config/config_entries/entry/${encodeURIComponent(entryId)}`,
         { method: "DELETE" },
       );
     },

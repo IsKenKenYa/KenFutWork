@@ -27,7 +27,8 @@
         "title": "智能家居",
         "slot": "sidebar",
         "url": "assets/panel.html",
-        "icon": "assets/icon.svg"
+        "icon": "assets/icon.svg",
+        "configurable": true
       }
     ]
   }

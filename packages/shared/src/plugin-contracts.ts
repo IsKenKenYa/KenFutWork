@@ -93,6 +93,11 @@ export const pluginUiEntrySchema = z.object({
    * 与其它菜单图标同一套语言）——请提供单色线条或纯色形状的 SVG；缺省用宿主的通用图标。
    */
   icon: z.string().nullable().default(null),
+  /**
+   * 面板有自己的配置视图：宿主面板弹层标题栏出「配置」按钮（× 左边），
+   * 点击经 postMessage（kenfutwork:plugin-panel-toggle-config）通知面板切换视图。
+   */
+  configurable: z.boolean().default(false),
 });
 export type PluginUiEntry = z.infer<typeof pluginUiEntrySchema>;
 
@@ -287,6 +292,8 @@ export const pluginMarketEntrySchema = z.object({
         slot: z.string().default("sidebar"),
         url: z.string().min(1),
         icon: z.string().nullable().default(null),
+        /** 面板有自己的配置视图：宿主标题栏出「配置」按钮（postMessage 通知面板切换）。 */
+        configurable: z.boolean().default(false),
       }),
     )
     .default([]),
@@ -301,6 +308,8 @@ export interface PluginPanelEntry {
   slot: string;
   url: string;
   icon: string | null;
+  /** 宿主标题栏「配置」按钮（面板声明 configurable 才出现）。 */
+  configurable: boolean;
 }
 
 /** 同一安装库存供各工作区消费；空作用域沿既有通用插件语义。 */

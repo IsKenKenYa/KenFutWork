@@ -3,10 +3,12 @@
  *
  * 两种视图（2026-10-25 用户口径「里面只要一个 ha 面板」）：
  * - **原生视图（默认）**：满幅 iframe 内嵌 HA 自己的前端，无任何上方套壳条；
- *   免登陆由 HA 侧 trusted_networks 提供（自动关联本地用户），头部右上角「配置」。
- * - **配置视图**（点「配置」进入，连上后按钮变「完成」）：集成管理（默认小米/华为，
- *   可添加/卸载，走 HA 配置流）+ 界面空白诊断 + 连接表单；未配置态则是欢迎页 +
- *   品牌卡引导 + 连接表单。
+ *   免登陆由 HA 侧 trusted_networks 提供（自动关联本地用户）。宿主标题栏「配置」
+ *   （面板声明 configurable，宿主经 postMessage 通知切换）。
+ * - **配置视图**（经标题栏「配置」进入）：集成区（默认小米/华为，**打开即自动发起
+ *   配置流**——未添加的品牌直接推进到 OAuth 授权步，点「打开授权页」完成授权即添加；
+ *   已添加可卸载）+ 界面空白诊断 + 连接表单；未配置态则是欢迎页 + 品牌卡引导 +
+ *   连接表单。
  *
  * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收也不保管宿主令牌；数据面请求带
  * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里。
@@ -28,7 +30,6 @@ const els = {
   state: document.getElementById("state"),
   body: document.getElementById("body"),
   note: document.getElementById("note"),
-  settings: document.getElementById("settings"),
 };
 
 function el(tag, className, text) {
@@ -292,8 +293,6 @@ function renderSetup(message) {
   const connected = Boolean(state.baseUrl);
   document.body.classList.remove("native-mode");
   setState(connected ? "已连接" : "未配置");
-  els.settings.hidden = !connected;
-  els.settings.textContent = "完成";
   clear(els.body);
 
   const card = buildConnectCard(message, connected);
@@ -301,9 +300,9 @@ function renderSetup(message) {
   els.body.appendChild(card);
 
   if (connected) {
-    // 集成管理 + 界面空白诊断只收在配置页，原生视图保持纯 HA 界面；
+    // 集成区 + 界面空白诊断只收在配置页，原生视图保持纯 HA 界面；
     // 品牌卡引导属首次接入，已连接后不再出现
-    els.body.appendChild(buildIntegrationsBar());
+    els.body.appendChild(buildIntegrationsSection());
     els.body.appendChild(buildBlankHint());
     return;
   }
@@ -328,14 +327,17 @@ const BRAND_DOMAINS = {
   huawei: "huawei_smarthome",
 };
 
-function buildIntegrationsBar() {
-  const box = el("details", "integrations");
-  box.appendChild(el("summary", null, "集成管理"));
+/**
+ * 集成区（常开）：默认小米/华为两行——未添加的**自动发起配置流**并推进到 OAuth
+ * 授权步（点「打开授权页」完成授权即添加，回跳后自动推进），已添加可卸载。
+ * 打开配置页即拉取列表并自动起流（2026-10-25 用户口径「默认这两个都添加」）。
+ */
+function buildIntegrationsSection() {
+  const box = el("div", "integrations");
+  box.appendChild(el("h3", "group", "集成"));
   const body = el("div", "integrations-body");
   box.appendChild(body);
-  box.addEventListener("toggle", () => {
-    if (box.open) loadIntegrations(body);
-  });
+  loadIntegrations(body);
   return box;
 }
 
@@ -385,24 +387,40 @@ function loadIntegrations(body) {
               });
           });
         } else {
-          status.textContent = "未添加";
-          action.textContent = "添加";
-          action.addEventListener("click", () => {
-            action.disabled = true;
-            api("integrations/start", { method: "POST", body: { brand } })
-              .then((payload) =>
-                runFlowDialog(
-                  slot,
-                  payload.flowId,
-                  payload.step,
-                  () => loadIntegrations(body),
-                ),
-              )
-              .catch((error) => {
-                action.disabled = false;
-                showError(error.message);
+          // 未添加：自动发起配置流（2026-10-25「默认这两个都添加」）——
+          // 流程在本行内推进到授权步，用户只需完成账号授权
+          status.textContent = "准备添加…";
+          action.hidden = true;
+          api("integrations/start", { method: "POST", body: { brand } })
+            .then((payload) => {
+              status.textContent = "";
+              runFlowDialog(slot, payload.flowId, payload.step, () =>
+                loadIntegrations(body),
+              );
+            })
+            .catch((error) => {
+              status.textContent = "暂不能添加";
+              action.hidden = false;
+              action.textContent = "重试";
+              action.addEventListener("click", () => {
+                action.disabled = true;
+                api("integrations/start", { method: "POST", body: { brand } })
+                  .then((payload) => {
+                    status.textContent = "";
+                    runFlowDialog(
+                      slot,
+                      payload.flowId,
+                      payload.step,
+                      () => loadIntegrations(body),
+                    );
+                  })
+                  .catch((retryError) => {
+                    action.disabled = false;
+                    showError(retryError.message);
+                  });
               });
-          });
+              if (error.code !== "not_found") showError(error.message);
+            });
         }
       }
     })
@@ -554,8 +572,6 @@ function renderNative() {
   state.view = "native";
   document.body.classList.add("native-mode");
   setState("");
-  els.settings.hidden = false;
-  els.settings.textContent = "配置";
   clear(els.body);
   const frame = document.createElement("iframe");
   frame.src = state.baseUrl || "";
@@ -566,7 +582,11 @@ function renderNative() {
 
 // === 启动与视图切换 ===
 
-els.settings.addEventListener("click", () => {
+// 宿主标题栏「配置」（面板声明 configurable，PluginPanelOverlay 渲染）经
+// postMessage 通知切换：原生 ↔ 配置 互转。
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin) return;
+  if (event.data?.type !== "kenfutwork:plugin-panel-toggle-config") return;
   setNote("", false);
   if (state.view === "native") renderSetup();
   else renderNative();

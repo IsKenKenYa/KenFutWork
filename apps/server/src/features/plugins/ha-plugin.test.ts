@@ -521,7 +521,7 @@ function fakeHomeAssistant(options: FakeHaOptions = {}) {
       return Response.json(options.flowProgress ?? { type: "progress", flow_id: flowStep[1] });
     }
     const entryDelete = pathname.match(
-      /^\/api\/config\/config_entries\/([^/]+)$/,
+      /^\/api\/config\/config_entries\/entry\/([^/]+)$/,
     );
     if (entryDelete && init?.method === "DELETE") {
       return Response.json({ entry_id: decodeURIComponent(String(entryDelete[1])) });
