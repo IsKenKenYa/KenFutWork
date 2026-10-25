@@ -19,10 +19,7 @@ import {
   type OriginalSessionBrowser,
   openOriginalSessionBrowser,
 } from "./code-public-browser.fixture.mjs";
-import {
-  clickExactText,
-  selectSidebarView,
-} from "./code-public-browser-actions.js";
+import { selectSidebarView } from "./code-public-browser-actions.js";
 import type { PublicFixture } from "./code-public-session.js";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
@@ -169,17 +166,12 @@ async function openTaskFile(
       JSON.stringify(page.pageErrors),
     ).toEqual({ title, ready: true }),
   );
-  await clickExactText(
-    page,
-    '[data-testid="workspace-file-tree-panel"] button',
-    "返回任务",
-  );
   await vi.waitFor(async () =>
     expect(
       await page.evaluate(
-        'document.querySelector("[data-testid=workspace-file-tree-panel]")?.checkVisibility()',
+        'document.querySelector("[data-testid=sidebar]")?.checkVisibility()',
       ),
-    ).toBe(false),
+    ).toBe(true),
   );
 }
 

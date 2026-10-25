@@ -16,6 +16,7 @@ import {
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
 import { PreviewPane } from "@zui/PreviewPane.js";
+import { FileManagerPane } from "@zui/WorkspaceFileTree.js";
 import { SidePaneTerminalPane } from "@zui/SidePaneTerminalPane.js";
 import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { WorkspaceSidePaneToggleButton } from "@zui/WorkspaceSidePaneToggleButton.js";
@@ -329,6 +330,7 @@ export function AnimatedSidePanePanel({
   onRevealGitFileInTree,
   onOpenBrowserUrl,
   onOpenCodeViewer,
+  onNavigateFileManager,
   onOpenFileLink,
   onOpenSubagentSession,
   onOpenWorkflowActorSession,
@@ -403,6 +405,7 @@ export function AnimatedSidePanePanel({
   onRevealGitFileInTree?: (path: string) => void;
   onOpenBrowserUrl: (url: string) => void;
   onOpenCodeViewer: (source: CodeViewerSource) => void;
+  onNavigateFileManager: (tabId: string, source: CodeViewerSource) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenBackgroundBash?: (request: OpenBackgroundBashSideTabRequest) => void;
   onOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;
@@ -927,6 +930,7 @@ export function AnimatedSidePanePanel({
         browserTitle: intl.formatMessage({ id: "browser.title" }),
         reviewTitle: intl.formatMessage({ id: "sidePane.review" }),
         codeViewerTitle: intl.formatMessage({ id: "codeViewer.title" }),
+        fileManagerTitle: intl.formatMessage({ id: "fileManager.title" }),
         treemappingTitle: intl.formatMessage({ id: "treemapping.title" }),
         whiteboardTitle: intl.formatMessage({ id: "whiteboard.title" }),
         openDesignTitle: intl.formatMessage({ id: "sidePane.openDesign" }),
@@ -1248,6 +1252,20 @@ export function AnimatedSidePanePanel({
                             {...(onRevealGitFileInTree === undefined
                               ? {}
                               : { onRevealFileInTree: onRevealGitFileInTree })}
+                          />
+                        ) : tab.type === "file-manager" ? (
+                          <FileManagerPane
+                            target={tab.target}
+                            source={tab.source}
+                            mobileOverlay={false}
+                            canOpenLocalFileManager={Boolean(isDesktop)}
+                            markdownSelectionTarget={{ sessionId: activeTaskId, workspaceKey }}
+                            onClose={() => onCloseTab(tab.id)}
+                            workspacePath={workspaceAbsPath}
+                            onOpenBrowserUrl={onOpenBrowserUrl}
+                            onOpenCodeViewer={onOpenCodeViewer}
+                            onNavigate={(source) => onNavigateFileManager(tab.id, source)}
+                            renderHeavyContent={isVisible && tab.id === visibleActiveTabId}
                           />
                         ) : tab.type === "code-viewer" ? (
                           <PreviewPane

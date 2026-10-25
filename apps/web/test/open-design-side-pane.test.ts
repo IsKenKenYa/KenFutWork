@@ -117,6 +117,7 @@ const LABELS: SidePaneTabPresentationLabels = {
   browserTitle: "浏览器",
   reviewTitle: "审查",
   codeViewerTitle: "代码",
+  fileManagerTitle: "文件",
   treemappingTitle: "文件活动",
   whiteboardTitle: "画板",
   openDesignTitle: "OpenDesign",

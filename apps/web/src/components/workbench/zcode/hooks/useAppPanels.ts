@@ -46,6 +46,9 @@ import {
   applyBrowserTabResidencyEvent,
   BROWSER_USE_OPERATION_INDICATOR_DURATION_MS,
   openCodeViewerSidePane,
+  openFileManagerSidePane,
+  navigateFileManagerSidePane,
+  type FileManagerTarget,
   openCodeViewerSidePanes,
   activateGitSidePane,
   getActiveSidePaneTab,
@@ -407,6 +410,23 @@ export function useAppPanels(options: {
       });
     },
     [commitOpenedSidePaneState, revealSidePaneForCurrentOwner, services, workspaceAbsPath],
+  );
+
+  const handleOpenFileManager = useCallback(
+    (target: FileManagerTarget) => {
+      const fixedTarget = structuredClone(target);
+      if (!fixedTarget.viewerScope) throw new Error("文件目录缺少读取来源，请重新打开。");
+      revealSidePaneForCurrentOwner();
+      commitOpenedSidePaneState((current) => openFileManagerSidePane(current, fixedTarget));
+    },
+    [commitOpenedSidePaneState, revealSidePaneForCurrentOwner],
+  );
+  const handleNavigateFileManager = useCallback(
+    (tabId: string, source: CodeViewerSource) => {
+      const fixedSource = freezeCodeViewerSource(services, source, codeViewerOriginRef.current);
+      commitSidePaneState((current) => navigateFileManagerSidePane(current, tabId, fixedSource));
+    },
+    [commitSidePaneState, services],
   );
 
   const handleOpenCodeViewers = useCallback(
@@ -1700,6 +1720,8 @@ export function useAppPanels(options: {
     setBrowserNavigationRequest,
     // 回调
     handleOpenCodeViewer,
+    handleOpenFileManager,
+    handleNavigateFileManager,
     handleOpenCodeViewers,
     handleOpenBrowserUrl,
     handleToggleBrowser,

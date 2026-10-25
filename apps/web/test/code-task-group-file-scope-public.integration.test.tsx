@@ -82,7 +82,7 @@ async function readyPoint(page: OriginalSessionBrowser, selector: string) {
       x: number;
       y: number;
     } | null>(`(async () => {
-      const element = document.querySelector(${JSON.stringify(selector)});
+      const element = Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(node => node.checkVisibility());
       if (!element || element.disabled) return null;
       element.scrollIntoView({ block: "center" });
       const panel = element.closest('[aria-hidden]');
@@ -385,8 +385,22 @@ async function verifyTaskFileScope(context: TaskGroupPublicPageContext) {
     const observation = observeViewerRequests(context.page);
     try {
       await expectCurrentTaskPreserved(context);
-      await openGroupedTaskFiles(context.page, other.taskId);
       await expectContentPreserved(context);
+      await openGroupedTaskFiles(context.page, other.taskId);
+      await expectCurrentTaskPreserved(context);
+      expect(
+        await context.page.evaluate(`(() => {
+        const before = window.__taskGroupPublicBefore;
+        const active = document.querySelector('[data-side-pane-tab-id][data-state="active"]');
+        return { previewRetained: before.preview.isConnected, tabRetained: before.tab.isConnected,
+          newTabActive: active !== before.tab, fileManager: Boolean(document.querySelector('[data-file-manager-pane]')) };
+      })()`),
+      ).toEqual({
+        previewRetained: true,
+        tabRetained: true,
+        newTabActive: true,
+        fileManager: true,
+      });
       await expectViewerRequest(observation, {
         method: "readdir",
         path: other.workspacePath,

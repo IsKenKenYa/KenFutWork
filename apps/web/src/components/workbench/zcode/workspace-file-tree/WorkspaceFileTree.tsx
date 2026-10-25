@@ -614,7 +614,7 @@ export function WorkspaceFileTree({
       className="flex h-full min-h-0 flex-col text-foreground"
       data-testid={TID_WORKSPACE_FILE_TREE_PANEL}
     >
-      <div className="px-2 pb-3 pt-3">
+      {onClose ? <div className="px-2 pb-3 pt-3">
         <Button
           type="button"
           variant="ghost"
@@ -627,7 +627,7 @@ export function WorkspaceFileTree({
             {intl.formatMessage({ id: "workspaceFileTree.backToTasks" })}
           </span>
         </Button>
-      </div>
+      </div> : null}
       <div className="flex shrink-0 items-center px-2 pb-2">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-foreground-subtlest" />

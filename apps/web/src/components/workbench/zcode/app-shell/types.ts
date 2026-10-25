@@ -268,6 +268,8 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleToggleSidePane: () => void;
   handleOpenBrowserUrl: (url: string) => void;
   handleOpenCodeViewer: (source: CodeViewerSource) => void;
+  handleOpenFileManager: (target: import("@zui/lib/workspaceSidePane.js").FileManagerTarget) => void;
+  handleNavigateFileManager: (tabId: string, source: CodeViewerSource) => void;
   handleAutoOpenAssistantPptx: (request: AssistantPreviewCardsAutoOpenRequest) => void;
   handleOpenBackgroundBash: (request: OpenBackgroundBashSideTabRequest) => void;
   handleOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;

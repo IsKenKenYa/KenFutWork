@@ -332,6 +332,8 @@ export const WorkspaceShellLayout = memo(
     handleToggleSidePane,
     handleOpenBrowserUrl,
     handleOpenCodeViewer,
+    handleOpenFileManager,
+    handleNavigateFileManager,
     handleAutoOpenAssistantPptx,
     handleOpenSubagentSession,
     handleOpenBackgroundBash,
@@ -393,6 +395,11 @@ export const WorkspaceShellLayout = memo(
       useState<SidebarFileTreeOpenRequest | null>(null);
     const [isSidebarFileTreeOpen, setIsSidebarFileTreeOpen] = useState(false);
     const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
+    const fileTreeViewerScope = useMemo(() => {
+      if (activeTaskId) return { kind: "task" as const, taskId: activeTaskId };
+      const projectId = parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId;
+      return projectId ? { kind: "project" as const, projectId } : undefined;
+    }, [activeTaskId, workspaceIdentity, workspaceAbsPath]);
     const screenshotSurfaceRequest = useBrowserScreenshotSurfaceRequest(
       sidePaneState?.tabs ?? [],
     );
@@ -1412,6 +1419,7 @@ export const WorkspaceShellLayout = memo(
                 workspaceName: target.label || getPathLeaf(target.path),
                 revealPath: target.path,
                 temporaryExternalDirectory: true,
+                viewerScope: fileTreeViewerScope,
               },
             });
             return;
@@ -1426,6 +1434,7 @@ export const WorkspaceShellLayout = memo(
             openFileTreeRequest({
               target: {
                 workspacePath: ownerWorkspace.workspacePath,
+                viewerScope: fileTreeViewerScope,
                 workspaceName: ownerWorkspace.label,
                 workspaceIdentity: ownerWorkspace.workspaceIdentity,
                 workspaceRemoteSessionId: ownerWorkspace.remoteSessionId,
@@ -1446,6 +1455,7 @@ export const WorkspaceShellLayout = memo(
               workspaceName: target.label || getPathLeaf(target.path),
               revealPath: target.path,
               temporaryExternalDirectory: true,
+              viewerScope: fileTreeViewerScope,
             },
           });
         } catch (error) {
@@ -1477,6 +1487,7 @@ export const WorkspaceShellLayout = memo(
         handleOpenCodeViewer,
         intl,
         openFileTreeRequest,
+        fileTreeViewerScope,
         services.fileService,
         workspaceReadOnlyReason,
       ],
@@ -1497,6 +1508,7 @@ export const WorkspaceShellLayout = memo(
           target: {
             workspacePath: workspaceAbsPath,
             workspaceName: projectName,
+            viewerScope: fileTreeViewerScope,
             workspaceIdentity,
             workspaceRemoteSessionId,
             revealPath: path,
@@ -1506,6 +1518,7 @@ export const WorkspaceShellLayout = memo(
       [
         openFileTreeRequest,
         projectName,
+        fileTreeViewerScope,
         workspaceAbsPath,
         workspaceIdentity,
         workspaceRemoteSessionId,
@@ -1592,6 +1605,7 @@ export const WorkspaceShellLayout = memo(
         onRevealGitFileInTree={handleRevealGitFileInTree}
         onOpenBrowserUrl={handleOpenBrowserUrl}
         onOpenCodeViewer={handleOpenCodeViewer}
+        onNavigateFileManager={handleNavigateFileManager}
         onOpenFileLink={handleOpenMarkdownFileLink}
         onOpenBackgroundBash={handleOpenBackgroundBash}
         onOpenSubagentSession={handleOpenSubagentSession}
@@ -1793,6 +1807,7 @@ export const WorkspaceShellLayout = memo(
                       onSelectTask={handleSelectTaskInChat}
                       onStartDraftInWorkspace={handleCreateProjectDraft}
                       onOpenCodeViewer={handleOpenCodeViewer}
+                      onOpenFileManager={handleOpenFileManager}
                       onOpenBrowserUrl={handleOpenBrowserUrl}
                       fileTreeOpenRequest={fileTreeOpenRequest}
                       onCreateTask={handleCreateTaskInChat}

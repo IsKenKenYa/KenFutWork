@@ -225,6 +225,8 @@ export function App({
     browserNavigationRequest,
     setBrowserNavigationRequest,
     handleOpenCodeViewer,
+    handleOpenFileManager,
+    handleNavigateFileManager,
     handleOpenCodeViewers,
     handleOpenBrowserUrl,
     handleToggleBrowser,
@@ -1308,6 +1310,8 @@ export function App({
         handleToggleSidePane={handleToggleSidePane}
         handleOpenBrowserUrl={handleOpenBrowserUrl}
         handleOpenCodeViewer={handleOpenCodeViewerIfWritable}
+        handleOpenFileManager={handleOpenFileManager}
+        handleNavigateFileManager={handleNavigateFileManager}
         handleAutoOpenAssistantPptx={handleAutoOpenAssistantPptx}
         handleOpenSubagentSession={handleOpenSubagentSession}
         handleOpenBackgroundBash={handleOpenBackgroundBash}

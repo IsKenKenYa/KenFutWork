@@ -21,6 +21,7 @@ import {
   CopyIcon,
 } from "lucide-react";
 import { nanoid } from "nanoid";
+import { createPortal } from "react-dom";
 import { Button } from "@zui/components/ui/button.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { cn } from "@zui/components/lib/utils.js";
@@ -518,6 +519,7 @@ export function PreviewPane({
   onOpenCodeViewer,
   renderHeavyContent = true,
   markdownSelectionTarget,
+  headerContainer,
 }: {
   source: CodeViewerSource | null;
   onClose: () => void;
@@ -526,6 +528,7 @@ export function PreviewPane({
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   renderHeavyContent?: boolean;
   markdownSelectionTarget?: MarkdownSelectionTarget;
+  headerContainer?: HTMLElement | null;
 }) {
   const platform = usePlatform();
   const { intl } = useZCodeIntl();
@@ -863,7 +866,7 @@ export function PreviewPane({
     return () => {
       cancelAnimationFrame(frameId);
     };
-  }, [breadcrumb]);
+  }, [breadcrumb, headerContainer]);
 
   useLayoutEffect(() => {
     const viewport = breadcrumbScrollRef.current;
@@ -930,7 +933,7 @@ export function PreviewPane({
       window.removeEventListener("resize", debouncedUpdate);
       if (rafId !== null) cancelAnimationFrame(rafId);
     };
-  }, [breadcrumb]);
+  }, [breadcrumb, headerContainer]);
 
   useEffect(() => {
     let disposed = false;
@@ -1583,15 +1586,12 @@ export function PreviewPane({
         }
       : undefined;
 
-  return (
-    <aside
-      data-testid={TID_PREVIEW_PANE}
-      className="flex h-full flex-col overflow-hidden bg-background"
-    >
+  const header = (
       <div
         className={cn(
-          "flex h-10 items-center gap-8 bg-surface/30",
-          showDocumentHeaderDivider && "border-b border-border",
+          "flex h-10 min-w-0 shrink-0 items-center gap-2",
+          !headerContainer && "bg-surface/30",
+          !headerContainer && showDocumentHeaderDivider && "border-b border-border",
         )}
       >
         <div
@@ -1788,6 +1788,14 @@ export function PreviewPane({
           </Button>
         </div>
       </div>
+  );
+
+  return (
+    <aside
+      data-testid={TID_PREVIEW_PANE}
+      className="flex h-full flex-col overflow-hidden bg-background"
+    >
+      {headerContainer ? createPortal(header, headerContainer) : header}
       <div className="min-h-0 flex-1">
         {renderHeavyContent ? (
           <PreviewPaneContent

@@ -1,6 +1,7 @@
 /* eslint-disable max-lines -- Side pane tab 状态集中维护 Browser/Git/CodeViewer/Treemapping/Whiteboard 的打开、复用、关闭和排序规则；拆分需要同步迁移现有内存恢复逻辑。 */
 import { createUuid, type BrowserTabResidencyState } from "@zcode/shared";
 import { inferMediaPreview, isPptxPreviewPath, type CodeViewerSource } from "@zui/lib/codeViewer.js";
+import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import { normalizeCodeViewerSource } from "@zui/lib/codeViewerSource.js";
 
 export interface BrowserSidePaneTab {
@@ -31,6 +32,26 @@ export interface GitSidePaneTab {
   ownerTaskId?: string | null;
   workspaceKey?: string | null;
   openedAt?: number;
+}
+
+export interface FileManagerTarget {
+  workspacePath: string;
+  workspaceName?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
+  viewerScope?: CodeUiViewerScope;
+  revealPath?: string;
+  temporaryExternalDirectory?: boolean;
+}
+
+export interface FileManagerSidePaneTab {
+  id: string;
+  type: "file-manager";
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
+  target: FileManagerTarget;
+  source: CodeViewerSource | null;
 }
 
 export interface CodeViewerSidePaneTab {
@@ -559,6 +580,7 @@ export type WorkspaceSidePaneTab =
   | BrowserSidePaneTab
   | GitSidePaneTab
   | CodeViewerSidePaneTab
+  | FileManagerSidePaneTab
   | TreemappingSidePaneTab
   | WhiteboardSidePaneTab
   | DocumentSidePaneTab
@@ -1575,6 +1597,40 @@ export function openCodeViewerSidePane(
     current,
     matchedTab ? { ...matchedTab, source: nextTab.source } : nextTab,
   );
+}
+
+export function openFileManagerSidePane(
+  current: WorkspaceSidePaneState | null,
+  target: FileManagerTarget,
+): WorkspaceSidePaneState {
+  return activateSidePaneTab(current, {
+    id: `file-manager:${createUuid()}`,
+    type: "file-manager",
+    target,
+    source: null,
+    openedAt: Date.now(),
+  });
+}
+
+export function navigateFileManagerSidePane(
+  current: WorkspaceSidePaneState | null,
+  tabId: string,
+  source: CodeViewerSource,
+): WorkspaceSidePaneState | null {
+  if (!current) return current;
+  const normalizedSource = normalizeCodeViewerSource(source);
+  return {
+    ...current,
+    // 导航只改变指定标签的内容，保持显示归属与兄弟标签。
+    tabs: current.tabs.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      if (tab.type === "file-manager") return { ...tab, source: normalizedSource };
+      if (tab.type === "code-viewer") {
+        return { ...tab, source: normalizedSource, sourceKey: getCodeViewerTabSourceKey(normalizedSource) };
+      }
+      return tab;
+    }),
+  };
 }
 
 /**
