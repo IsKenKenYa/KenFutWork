@@ -477,6 +477,40 @@ function runFlowDialog(slot, flowId, step, onDone) {
       polling = null;
     }
   };
+  /** 授权等待态：external 与 progress 都可能带授权链接（xiaomi_home 的 OAuth 步
+   * 在 HA 2026.10 是 progress_action=oauth 的 progress 步，链接在描述占位里）。
+   * 链接用 <a target=_blank>（iframe 里 window.open 易被弹窗策略拦截）。
+   * 轮询连续失败（流程过期被 HA 清掉）后提示重开配置页，不死等。 */
+  const renderOAuthWait = (current, waiting) => {
+    slot.appendChild(el("p", "int-status", waiting));
+    const url = authLinkOf(current);
+    if (url) {
+      const open = el("a", null, "打开授权页");
+      open.href = url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      open.className = "int-open";
+      slot.appendChild(open);
+    }
+    let failures = 0;
+    polling = setInterval(() => {
+      api("integrations/flow", { method: "POST", body: { flowId } })
+        .then((payload) => {
+          failures = 0;
+          if (payload.step.type !== current.type) render(payload.step);
+        })
+        .catch(() => {
+          failures += 1;
+          if (failures >= 5) {
+            stop();
+            clear(slot);
+            slot.appendChild(
+              el("p", "int-status", "授权已过期，重开配置页可重新发起。"),
+            );
+          }
+        });
+    }, 2000);
+  };
   const render = (current) => {
     stop();
     clear(slot);
@@ -492,32 +526,11 @@ function runFlowDialog(slot, flowId, step, onDone) {
       return;
     }
     if (current.type === "external") {
-      slot.appendChild(el("p", "int-status", "等待授权完成…"));
-      const url = authLinkOf(current);
-      if (url) {
-        const open = el("button", null, "打开授权页");
-        open.type = "button";
-        open.addEventListener("click", () => window.open(url, "_blank"));
-        slot.appendChild(open);
-      }
-      polling = setInterval(() => {
-        api("integrations/flow", { method: "POST", body: { flowId } })
-          .then((payload) => {
-            if (payload.step.type !== current.type) render(payload.step);
-          })
-          .catch(() => {});
-      }, 2000);
+      renderOAuthWait(current, "等待授权完成…");
       return;
     }
     if (current.type === "progress") {
-      slot.appendChild(el("p", "int-status", "进行中…"));
-      polling = setInterval(() => {
-        api("integrations/flow", { method: "POST", body: { flowId } })
-          .then((payload) => {
-            if (payload.step.type !== current.type) render(payload.step);
-          })
-          .catch(() => {});
-      }, 2000);
+      renderOAuthWait(current, "等待授权完成…");
       return;
     }
     // form：按 data_schema 渲染字段
@@ -584,8 +597,10 @@ function renderNative() {
 
 // 宿主标题栏「配置」（面板声明 configurable，PluginPanelOverlay 渲染）经
 // postMessage 通知切换：原生 ↔ 配置 互转。
+// 来源校验用「发送方必须是父窗口」：宿主页面与面板分属 3300/3301 两个源，
+// event.origin 是发送方（3300）的端口，按 location.origin 比对永远不等（真机踩过）。
 window.addEventListener("message", (event) => {
-  if (event.origin !== location.origin) return;
+  if (event.source !== window.parent) return;
   if (event.data?.type !== "kenfutwork:plugin-panel-toggle-config") return;
   setNote("", false);
   if (state.view === "native") renderSetup();
