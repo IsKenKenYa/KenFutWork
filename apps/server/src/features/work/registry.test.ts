@@ -19,7 +19,9 @@ describe("编辑器扩展包注册表", () => {
   it("注册项 id 唯一、上游指向 storytold、双许可、W1 挂载点全部 wasm-iframe", () => {
     const editors = listWorkEditorRegistrations();
     expect(editors.length).toBeGreaterThanOrEqual(10);
-    expect(new Set(editors.map((editor) => editor.id)).size).toBe(editors.length);
+    expect(new Set(editors.map((editor) => editor.id)).size).toBe(
+      editors.length,
+    );
     for (const editor of editors) {
       expect(editor.repo).toMatch(/^https:\/\/github\.com\/storytold\//);
       expect(editor.license).toBe("MIT OR Apache-2.0");

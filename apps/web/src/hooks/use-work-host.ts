@@ -1,10 +1,10 @@
 "use client";
 
 import {
+  resolveWorkEntry,
+  WORK_PLUGIN_BUNDLE_NAME,
   type WorkEntry,
   type WorkHostStatusResponse,
-  WORK_PLUGIN_BUNDLE_NAME,
-  resolveWorkEntry,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";

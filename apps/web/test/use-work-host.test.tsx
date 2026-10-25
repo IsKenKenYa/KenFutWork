@@ -80,8 +80,7 @@ describe("useWorkHostEntry", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes("/api/plugins"))
-          return Response.json({ plugins: [] });
+        if (url.includes("/api/plugins")) return Response.json({ plugins: [] });
         if (url.includes("/api/work/host/status"))
           return Response.json(READY_STATUS);
         return Response.json({});

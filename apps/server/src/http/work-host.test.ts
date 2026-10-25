@@ -4,7 +4,10 @@ import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
-import { registerWorkHostRoutes, resolveInstalledEditors } from "./work-host.js";
+import {
+  registerWorkHostRoutes,
+  resolveInstalledEditors,
+} from "./work-host.js";
 
 const actor = {
   instanceId: "11111111-1111-4111-8111-111111111111",
@@ -33,8 +36,7 @@ async function fixture(options: {
       options.authenticated === false ? null : actor,
     ),
     editors: {
-      list: () =>
-        resolveInstalledEditors({ editorsDir: options.editorsDir }),
+      list: () => resolveInstalledEditors({ editorsDir: options.editorsDir }),
     },
     dataDir: "/tmp/kenfutwork-data",
   });
@@ -58,7 +60,10 @@ describe("work 宿主路由", () => {
   });
 
   it("status：本机接入凭据缺失 → 401（unauthorized 错误形状，不裸抛）", async () => {
-    const app = await fixture({ authenticated: false, editorsDir: await emptyEditorsDir() });
+    const app = await fixture({
+      authenticated: false,
+      editorsDir: await emptyEditorsDir(),
+    });
     const response = await app.inject({
       method: "get",
       path: "/api/work/host/status",

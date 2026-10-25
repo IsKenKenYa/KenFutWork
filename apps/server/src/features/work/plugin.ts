@@ -1,7 +1,10 @@
-import { resolveDesktopDataDir } from "../../desktop/paths.js";
-import type { PluginDefinition } from "../../kernel/types.js";
-import { registerWorkHostRoutes, resolveInstalledEditors } from "../../http/work-host.js";
 import { join } from "node:path";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
+import {
+  registerWorkHostRoutes,
+  resolveInstalledEditors,
+} from "../../http/work-host.js";
+import type { PluginDefinition } from "../../kernel/types.js";
 
 /**
  * work-host 插件：Work 模式的宿主适配层（`/api/work/host/*`）。

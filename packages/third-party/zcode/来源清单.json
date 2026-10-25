@@ -2070,7 +2070,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "dd2c06d1085d783d936d07f33f07857c1ab1ea9a95738c486bf756b1694ac3fa",
+      "copiedSha256": "c71fe065688e04509ce66f939cb95453752d142370a23f136490927c9e210abd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2078,7 +2078,8 @@
         "Code/Design统一实施：共享会话左侧、文档右侧；Design仅首次显式进入设默认内容，消息和resize不抢占。",
         "2026-10-14 OpenDesign 集成（O0+O2）：把两个 OpenDesign 开合回调接到侧栏面板。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
-        "2026-10-20 画布标签化（二百〇二）：透传 onOpenDesignMetaChange，保持一块画布一个标签。"
+        "2026-10-20 画布标签化（二百〇二）：透传 onOpenDesignMetaChange，保持一块画布一个标签。",
+        "2026-10-25 Work 模式（二百四十五）：work 进 keep-alive 内嵌面（isEmbeddedSurfaceView/visitedEmbeddedSurfaces 扩 work 并挂载 HostWorkSurface）。"
       ]
     },
     {
@@ -2138,14 +2139,15 @@
       "source": "references/zcode/packages/ui/src/app-shell/types.ts",
       "target": "apps/web/src/components/workbench/zcode/app-shell/types.ts",
       "sha256": "9ce881d8e9a5f9f684beff6971ca5d1d04bf26d84df68dc449101a5fb55fc27f",
-      "copiedSha256": "43d2438a178ec4f29ab0133cd079861b2e403de4f0f5219a7f0ee67dfb110acc",
+      "copiedSha256": "52b71e59095e8c75f8680abc9aae50934062d6b33ed34a7a4aa583525108c01e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "Code/Design统一实施：原内容槽契约增加项目文档renderer与共享会话上下文。",
         "2026-10-14 OpenDesign 集成（O0+O2）：WorkspaceShellLayoutProps 新增 handleOpenOpenDesign 与 handleOpenOpenDesignPath。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
-        "2026-10-20 画布标签化（二百〇二）：WorkspaceShellLayoutProps 增加打开画布参数与元数据回写回调。"
+        "2026-10-20 画布标签化（二百〇二）：WorkspaceShellLayoutProps 增加打开画布参数与元数据回写回调。",
+        "2026-10-25 Work 模式（二百四十五）：WorkspaceMainView 增加 work。"
       ]
     },
     {
@@ -14752,7 +14754,7 @@
       "source": "references/zcode/packages/shared/src/platform.ts",
       "target": "packages/zcode-shared/src/platform.ts",
       "sha256": "68a470a9917ace6d91bcad8a881b52662a8fb9486bcaa5b501f2f56811d814a4",
-      "copiedSha256": "478e63e5c040c6f9d033e0c074534eab1bc56c228f6d2d2b47f7bce05461702b",
+      "copiedSha256": "a8f961b849f4eb0dcee9adb56c96c35ef00e3564ceadf13f5a6767a982e879bd",
       "adaptations": [
         "宿主能力接口：增加可选云账户支持标记；未声明的原宿主行为不变",
         "宿主接口：可选自动化/嵌入浏览器/CUA/远程能力声明；未声明保持原平台语义",
@@ -14770,7 +14772,8 @@
         "宿主接口：独立管理文档导航、真实实例插件作用域和实例设置模式显隐；缺省原平台行为",
         "宿主接口：可选workbenchNavigation承接同源Code／Design／可信Flow导航，原coding执行树不变",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
-        "Code/Design统一实施：平台端口贡献会话上下文与文档能力，原宿主transport保持不变。"
+        "Code/Design统一实施：平台端口贡献会话上下文与文档能力，原宿主transport保持不变。",
+        "2026-10-25 Work 模式（二百四十五）：HostWorkbenchMode 增加 work（入口仍由 work 插件探针门控）。"
       ]
     },
     {

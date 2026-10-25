@@ -1,15 +1,15 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
+  unauthenticatedErrorResponseSchema,
   type WorkEditor,
-  workEditorSchema,
   type WorkHostEditorsResponse,
-  workHostEditorsResponseSchema,
   type WorkHostStatusResponse,
+  workEditorSchema,
+  workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { unauthenticatedErrorResponseSchema } from "@kenfutwork/shared";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import { listWorkEditorRegistrations } from "../features/work/registry.js";
 
@@ -63,11 +63,10 @@ export async function registerWorkHostRoutes(
 
   app.get("/api/work/host/editors", async (request, reply) => {
     if (!(await requireLocalAccess(request, reply))) return;
-    const body: WorkHostEditorsResponse =
-      workHostEditorsResponseSchema.parse({
-        editors: options.editors.list(),
-        dataDir: options.dataDir,
-      });
+    const body: WorkHostEditorsResponse = workHostEditorsResponseSchema.parse({
+      editors: options.editors.list(),
+      dataDir: options.dataDir,
+    });
     return reply.send(body);
   });
 }

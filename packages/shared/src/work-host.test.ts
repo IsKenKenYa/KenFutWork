@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  type WorkHostStatusResponse,
   resolveWorkEntry,
+  type WorkHostStatusResponse,
   workEditorCategorySchema,
   workEditorMountSchema,
   workEditorSchema,
@@ -18,21 +18,39 @@ describe("resolveWorkEntry 入口门控", () => {
   };
 
   it("插件未安装 → 不可用，原因指向插件市场", () => {
-    expect(resolveWorkEntry({ pluginInstalled: false, pluginEnabled: false, status: up })).toEqual({
+    expect(
+      resolveWorkEntry({
+        pluginInstalled: false,
+        pluginEnabled: false,
+        status: up,
+      }),
+    ).toEqual({
       available: false,
       reason: "未安装 work 插件（插件市场可安装）。",
     });
   });
 
   it("插件已装但停用 → 不可用，原因点名停用", () => {
-    expect(resolveWorkEntry({ pluginInstalled: true, pluginEnabled: false, status: up })).toEqual({
+    expect(
+      resolveWorkEntry({
+        pluginInstalled: true,
+        pluginEnabled: false,
+        status: up,
+      }),
+    ).toEqual({
       available: false,
       reason: "Work 插件已停用。",
     });
   });
 
   it("探针请求失败（null）→ 按不可用处理，不猜「也许能用」", () => {
-    expect(resolveWorkEntry({ pluginInstalled: true, pluginEnabled: true, status: null })).toEqual({
+    expect(
+      resolveWorkEntry({
+        pluginInstalled: true,
+        pluginEnabled: true,
+        status: null,
+      }),
+    ).toEqual({
       available: false,
       reason: "无法获取 work 宿主状态（/api/work/host/status 不可达）。",
     });
@@ -56,7 +74,13 @@ describe("resolveWorkEntry 入口门控", () => {
   });
 
   it("安装 + 启用 + 探针可用 → available，不带多余字段", () => {
-    expect(resolveWorkEntry({ pluginInstalled: true, pluginEnabled: true, status: up })).toEqual({
+    expect(
+      resolveWorkEntry({
+        pluginInstalled: true,
+        pluginEnabled: true,
+        status: up,
+      }),
+    ).toEqual({
       available: true,
     });
   });
@@ -75,11 +99,13 @@ describe("编辑器扩展包契约", () => {
     });
     expect(parsed.installed).toBe(false);
     // 封闭枚举：类别与挂载点不能塞进任意字符串
-    expect(
-      workEditorCategorySchema.safeParse("filesystem").success,
-    ).toBe(false);
+    expect(workEditorCategorySchema.safeParse("filesystem").success).toBe(
+      false,
+    );
     expect(workEditorMountSchema.safeParse("teleport").success).toBe(false);
-    expect(workEditorSchema.safeParse({ ...parsed, installed: "yes" }).success).toBe(false);
+    expect(
+      workEditorSchema.safeParse({ ...parsed, installed: "yes" }).success,
+    ).toBe(false);
   });
 
   it("status/editors 响应形状按契约校验", () => {
