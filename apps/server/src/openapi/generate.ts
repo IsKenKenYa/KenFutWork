@@ -61,6 +61,10 @@ const TAG_META: Record<string, { folder: string; description: string }> = {
     folder: "Flow 集成",
     description: "Flow宿主状态与未来连接边界；本期未接通的身份交换明确不可用。",
   },
+  work: {
+    folder: "Work 集成",
+    description: "Work办公创作的宿主状态与编辑器扩展包注册表（按需下载）。",
+  },
   fonts: {
     folder: "字体",
     description: "授权本机字体检索与缓存。",

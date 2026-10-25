@@ -539,6 +539,46 @@ test("projects.kind 的库约束与共享契约枚举一致", async () => {
   );
 });
 
+// --- 会话模式契约 ↔ 库约束一致性（《work 模式集成规划》WD-1 同族约束）---
+//
+// `chat_sessions.mode` 与 projects.kind 同源（共享会话宿主按当前工作方式落 mode），
+// 库里的 mode_check 与 mode_canvas_check（work 与 code 同形态：无画布）必须与
+// projectKindSchema 同改。对账取**最后一处**定义（前向迁移的 drop/add 覆盖初值）。
+test("chat_sessions.mode 的库约束与共享契约枚举一致", async () => {
+  const contracts = await readText("packages/shared/src/contracts.ts");
+  const enumMatch = contracts.match(
+    /projectKindSchema = z\.enum\(\[([^\]]*)\]\)/,
+  );
+  assert.ok(enumMatch, "contracts.ts 里应有 projectKindSchema 的封闭枚举");
+  const contractKinds = [...enumMatch[1].matchAll(/"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+
+  let constraintKinds = null;
+  for (const dir of ["supabase/bootstrap", "supabase/migrations"]) {
+    for (const name of readdirSync(path.join(rootDir, dir)).sort()) {
+      if (!name.endsWith(".sql")) continue;
+      const sql = readFileSync(path.join(rootDir, dir, name), "utf8");
+      for (const match of sql.matchAll(
+        /add constraint chat_sessions_mode_check\s+check \(mode in \(([^)]*)\)\)/g,
+      )) {
+        constraintKinds = [...match[1].matchAll(/'([^']+)'/g)].map(
+          (literal) => literal[1],
+        );
+      }
+    }
+  }
+  assert.ok(
+    constraintKinds,
+    "应存在 chat_sessions_mode_check 的 CHECK 约束定义",
+  );
+  assert.deepEqual(
+    [...contractKinds].sort(),
+    [...constraintKinds].sort(),
+    "会话模式库约束必须与项目类型契约一致：加工作方式时两处同改",
+  );
+});
+
 // --- 供应商协议契约 ↔ 库约束一致性（《flow 集成方案》P3 凭证缝接缝 #5）---
 //
 // `provider_instances.protocol` 的封闭集合（packages/shared 的 providerProtocolSchema）与

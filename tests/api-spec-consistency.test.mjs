@@ -44,6 +44,7 @@ const CLOSED_TAGS = [
   "uploads",
   "usage",
   "voice",
+  "work",
 ];
 
 const SPEC_PATH = "docs/api/openapi.json";
