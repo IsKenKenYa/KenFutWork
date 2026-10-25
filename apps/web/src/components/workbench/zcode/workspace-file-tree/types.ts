@@ -6,6 +6,7 @@ import type { WorkspaceFileGitStatus, WorkspaceFileTreeRow } from "@zui/workspac
 
 export interface WorkspaceFileTreeProps {
   workspacePath: string;
+  browseDirectory?: string;
   workspaceName?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;

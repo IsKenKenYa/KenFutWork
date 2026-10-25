@@ -24,7 +24,7 @@ import type { PublicFixture } from "./code-public-session.js";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 type Model = Awaited<ReturnType<typeof heldModel>>;
-type HttpFixture = PublicFixture & { origin: string };
+type HttpFixture = PublicFixture & { origin: string; directory: string };
 
 export interface TaskGroupPublicPageContext {
   fixture: HttpFixture;

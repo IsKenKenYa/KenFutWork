@@ -125,8 +125,9 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/project-file-navigation.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "d336bae4e305f759534eb489cb354eb36f4219abd2346c0a44f77e3fe49242b1",
-      "copiedSha256": "5f6c793925fb6e821e25e2df6dac6723c04fc480f9ed606e68f42a32b4ce2e06",
+      "copiedSha256": "62716af54cf7ee2ea8e845614f095b664fb0eb00a0a6308815cfb011fd524215",
       "adaptations": [
+        "选择 root 仅改变浏览目录，宿主目录和标准身份从项目真实 primary root 取得，读取来源固定为原 Project。",
         "映射导入，保留用户所选 root 必须属于该项目的校验；移除远程连接和手机 attachment 分支。",
         "本机文件目标携带独立浏览目录、canonical 项目身份与真实 project viewerScope，读取权限继续由既有服务检查。"
       ]
@@ -565,8 +566,9 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/contract.ts",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "6db545b4762bf53c713e311394179bc40e29d20ad11c6b1d23cfb2bdb1981341",
-      "copiedSha256": "0d2625521cb7066b09836e67af6d14c716ad8b8273fd538a7b2325ba906bcd3a",
+      "copiedSha256": "88289b6b260465f35b9edc2d2a962ffa88cafd8668b49f292887e98b40d45063",
       "adaptations": [
+        "项目侧栏目录目标复用实际 FileManagerTarget，主目录和浏览目录由同一输入定义持有。",
         "映射导入，导出原侧栏、项目编辑、归档及分组消费者使用的本机项目、Task 与服务类型；移除未接通的远程目录和设备接口。",
         "完整侧栏 props 连接现有 Shell 回调；文件目标同时携带独立浏览目录、真实项目或 Task viewerScope，Task 行保留 taskControl 与正文修订。",
         "Task 操作引用保留 lastUnreadAt；选择回调增加可选 ZCodeTaskUnreadObservation，连接原行与 Shell 的未读处理。",
@@ -8605,8 +8607,9 @@
       "source": "references/zcode/packages/ui/src/lib/workspaceSidePane.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/workspaceSidePane.ts",
       "sha256": "b411b074341a798639a30cebaa3dc600edd728027a9afa51cc74c3d6839d135d",
-      "copiedSha256": "7b148adeed69984febbad646a291ddd82fc9df1e067a7cbd36edc797c9833eb4",
+      "copiedSha256": "a4989bd72663ccd4285716b200039e40d1bab5d62625873df4292bf055b68527",
       "adaptations": [
+        "FileManagerTarget 独立保存 browseDirectory，宿主主目录及 canonical identity 保持真实项目或 Task 身份。",
         "移植原 FileManagerTarget、file-manager 标签及打开和导航函数；补充固定 viewerScope，保留文档、浏览器和 Task 归属规则。",
         "KFW 文件标签的身份包含固定 Task／Project，保留相同路径但不同授权来源的独立标签。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
@@ -14587,8 +14590,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/WorkspaceFileTree.tsx",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/WorkspaceFileTree.tsx",
       "sha256": "53b5206b1e6218c7f6bd8ab948ad67a1f0ce2f15c6d0126cf61f683484974499",
-      "copiedSha256": "3a0b2563e434e7e6f60cc8e0115636ab19cd26684154d77e6a98cc617d301807",
+      "copiedSha256": "36a80bfe83c8a1302caf0b8816ab0c9a948fea4e9951098698eb8f614e07a459",
       "adaptations": [
+        "目录树、导航和文件操作分别消费浏览起点与宿主主目录，数据与搜索服务绑定真实宿主身份，原本地编辑器目标沿宿主目录解析。",
         "onClose 按原新版变为可选，嵌入 FileManager 时不显示侧栏返回按钮；文件、Git、搜索及 watcher 的现有提供方保持。",
         "被点 Task 的 viewerScope 传给目录、搜索与预览；真实浏览目录和读取身份分别持有。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
@@ -14625,8 +14629,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/WorkspaceFileTreeRowView.tsx",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/WorkspaceFileTreeRowView.tsx",
       "sha256": "de925ecec01be370501cb9c087f014397ee1f55975be84255ea47a93177b7d67",
-      "copiedSha256": "4e8c2c1d44431c7883de8bf4f82865887adfafe8028aea2fd53060165b4ca6fe",
+      "copiedSha256": "5bdccf9b63d2127ec42f6024ce2a2c99bb12561980bb20aaab04eadb2706e1c1",
       "adaptations": [
+        "浏览宿主主目录以外的已授权目录时，复制和素材引用保留绝对路径，避免同名文件被解释为主目录内文件。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -14715,8 +14720,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/types.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/types.ts",
       "sha256": "c5b4aaed9bc5abd54818cfcebb996163c145f3edc3ed41c6c21cb98433a008b1",
-      "copiedSha256": "31c8fded7d70824a626e26c7be2a3599005965adcccc617f43610950849558a5",
+      "copiedSha256": "5a8c589bfbe9cba4ca0d88f62e15e043e72fa308c2ccd85871c742e01bfe8d36",
       "adaptations": [
+        "目录树输入接收独立 browseDirectory，workspacePath 继续表达真实宿主主目录。",
         "原文件树 onClose 输入改为可选，连接 FileManager 内嵌消费。",
         "文件树目标增加现有 CodeUiViewerScope，供实际 Task 文件入口与预览消费者使用。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
@@ -14735,8 +14741,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/useWorkspaceFileSearchIndex.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/useWorkspaceFileSearchIndex.ts",
       "sha256": "600dc5356c813259ab0f21758886fdea54548770b46a06e62788c33b20ddccaa",
-      "copiedSha256": "2407655b4f715812b61783cea2f511a952321c84e83e3a1e60e82a81d534f643",
+      "copiedSha256": "83806ac594eef0ca3b7f345117685c8553d631e396dc7979ca00801f120c1265",
       "adaptations": [
+        "文件搜索服务按 hostWorkspacePath 绑定原宿主，索引请求使用用户选择的浏览目录，保留固定 Project 或 Task 来源。",
         "搜索使用现有固定 viewerScope 文件服务，目标变化及关闭推进请求代际，拒绝迟到结果。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -14745,8 +14752,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-tree/useWorkspaceFileTreeData.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-tree/useWorkspaceFileTreeData.ts",
       "sha256": "faf66c845b3ef54cdca37949b9c3e1154ebbb536166ac6b550352a9360336b27",
-      "copiedSha256": "553b0dc580e50aa020a9a7248fd6aecf187e19480b0f24d6327fdef8f7a0da27",
+      "copiedSha256": "23c12a2a7060b3874363226ba96f90451747e92c9d845519d2aead38b581ad70",
       "adaptations": [
+        "宿主服务和 Git 请求保持主目录身份，目录读取、展开及 watcher 使用独立浏览根；主目录变化纳入原目录请求生命周期。",
         "目录、Git 与 watcher 使用现有固定 viewerScope 服务；关闭推进请求代际并清理刷新计时器，旧结果不更新新目标。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]

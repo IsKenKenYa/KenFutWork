@@ -86,7 +86,8 @@ function getWorkspaceFileTreeDirectoryLoadDepth(
 }
 
 export function WorkspaceFileTree({
-  workspacePath,
+  workspacePath: hostWorkspacePath,
+  browseDirectory,
   workspaceName,
   workspaceIdentity,
   workspaceRemoteSessionId,
@@ -99,6 +100,7 @@ export function WorkspaceFileTree({
   onOpenBrowserUrl,
   onOpenPreview,
 }: WorkspaceFileTreeProps) {
+  const workspacePath = browseDirectory ?? hostWorkspacePath;
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -121,6 +123,7 @@ export function WorkspaceFileTree({
   }, []);
   const treeData = useWorkspaceFileTreeData({
     workspacePath,
+    hostWorkspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
     viewerScope,
@@ -129,7 +132,7 @@ export function WorkspaceFileTree({
   const { installedEditors } = useInstalledFileTreeEditors();
   const isRemoteWorkspaceFileTree = Boolean(workspaceRemoteSessionId || workspaceIdentity);
   const { remoteTarget } = useWorkspaceOpenInEditorTarget({
-    workspacePath,
+    workspacePath: hostWorkspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
   });
@@ -150,6 +153,7 @@ export function WorkspaceFileTree({
   const hasFileSearchQuery = fileSearchQuery.trim().length > 0;
   const searchIndex = useWorkspaceFileSearchIndex({
     workspacePath,
+    hostWorkspacePath,
     workspaceIdentity,
     workspaceRemoteSessionId,
     viewerScope,
@@ -753,7 +757,7 @@ export function WorkspaceFileTree({
             gitStatusLabelByStatus={gitStatusLabelByStatus}
             contextMenuLabels={fileContextMenuLabels}
             editorState={editorState}
-            workspacePath={workspacePath}
+            workspacePath={hostWorkspacePath}
             workspaceIdentity={workspaceIdentity}
             onSelect={setSelectedPath}
             onToggleDirectory={handleToggleDirectory}
@@ -778,7 +782,7 @@ export function WorkspaceFileTree({
                 : "workspaceFileTree.empty",
             })}
             workspaceTitle={workspaceTitle}
-            workspacePath={workspacePath}
+            workspacePath={hostWorkspacePath}
             workspaceIdentity={workspaceIdentity}
             selectedPath={selectedPath}
             gitStatusByPath={treeData.gitStatusByPath}

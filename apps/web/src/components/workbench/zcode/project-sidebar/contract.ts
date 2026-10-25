@@ -1,4 +1,3 @@
-import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import type {
   ProjectTask as ServiceProjectTask,
   ProjectTree as ServiceProjectTree,
@@ -8,6 +7,7 @@ import type { Locale, UserInfo, ZCodeTaskMeta, ZCodeTaskUnreadObservation } from
 import type { LucideIcon } from "lucide-react";
 import type { AppProps, CreateTaskRequest } from "@zui/app-shell/types.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import type { FileManagerTarget } from "@zui/lib/workspaceSidePane.js";
 import type { Theme } from "@zui/useTheme.js";
 
 export type ProjectTask = ServiceProjectTask & ZCodeTaskMeta;
@@ -32,14 +32,8 @@ export interface ProjectRowAction {
   destructive?: boolean;
 }
 export type ProjectSidebarView = "projects" | "grouped" | "timeline";
-export interface SidebarFileTreeTarget {
-  workspacePath: string;
+export interface SidebarFileTreeTarget extends FileManagerTarget {
   workspaceName: string;
-  workspaceIdentity?: string;
-  workspaceRemoteSessionId?: string;
-  viewerScope?: CodeUiViewerScope;
-  revealPath?: string;
-  temporaryExternalDirectory?: boolean;
 }
 export interface SidebarFileTreeOpenRequest {
   id: number;

@@ -44,9 +44,13 @@ export function useProjectSidebarFileTree(props: ProjectSidebarProps) {
         key={JSON.stringify([
           target.workspaceIdentity,
           target.workspacePath,
+          target.browseDirectory,
           target.viewerScope,
         ])}
         workspacePath={target.workspacePath}
+        {...(target.browseDirectory
+          ? { browseDirectory: target.browseDirectory }
+          : {})}
         workspaceName={target.workspaceName}
         {...(target.workspaceIdentity
           ? { workspaceIdentity: target.workspaceIdentity }

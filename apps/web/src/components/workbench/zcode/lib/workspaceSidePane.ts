@@ -36,6 +36,8 @@ export interface GitSidePaneTab {
 
 export interface FileManagerTarget {
   workspacePath: string;
+  /** 浏览起点独立于真实宿主主目录及 canonical identity。 */
+  browseDirectory?: string;
   workspaceName?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;

@@ -55,19 +55,21 @@ async function withWorkspaceFileTreeTimeout<T>(
 
 export function useWorkspaceFileTreeData({
   workspacePath,
+  hostWorkspacePath = workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
   viewerScope,
   enableWorkspaceFeatures = true,
 }: {
   workspacePath: string;
+  hostWorkspacePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
   viewerScope?: CodeUiViewerScope;
   enableWorkspaceFeatures?: boolean;
 }) {
   const { fileService, fileWatcherService, gitService } = useFileViewerServices({
-    workspacePath,
+    workspacePath: hostWorkspacePath,
     workspaceRemoteSessionId,
     workspaceIdentity,
     viewerScope,
@@ -234,7 +236,7 @@ export function useWorkspaceFileTreeData({
         if (enableWorkspaceFeatures) {
           void gitService
             .getIgnoredPaths({
-              workspacePath,
+              workspacePath: hostWorkspacePath,
               paths: entries.map((entry) => entry.path),
             })
             .then((ignoredPaths) => {
@@ -312,6 +314,7 @@ export function useWorkspaceFileTreeData({
       enableWorkspaceFeatures,
       fileService,
       gitService,
+      hostWorkspacePath,
       setDirectoryLoaded,
       setDirectoryLoading,
       workspacePath,
@@ -334,7 +337,7 @@ export function useWorkspaceFileTreeData({
       try {
         const gitStatus = await loadWorkspaceFileTreeGitStatus({
           gitService,
-          workspacePath,
+          workspacePath: hostWorkspacePath,
         });
         if (
           gitStatusRequestVersionRef.current !== requestVersion ||
@@ -361,7 +364,7 @@ export function useWorkspaceFileTreeData({
         setGitStatusByPath(new Map());
       }
     },
-    [enableWorkspaceFeatures, gitService, workspacePath],
+    [enableWorkspaceFeatures, gitService, workspacePath, hostWorkspacePath],
   );
 
   const refreshDirectoryFromWatcher = useCallback(

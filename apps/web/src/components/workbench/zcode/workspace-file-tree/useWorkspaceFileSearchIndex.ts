@@ -19,19 +19,21 @@ interface WorkspaceFileSearchIndexState {
 
 export function useWorkspaceFileSearchIndex({
   workspacePath,
+  hostWorkspacePath = workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
   viewerScope,
   enabled,
 }: {
   workspacePath: string;
+  hostWorkspacePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
   viewerScope?: CodeUiViewerScope;
   enabled: boolean;
 }): WorkspaceFileSearchIndexState {
   const { fileService } = useFileViewerServices({
-    workspacePath,
+    workspacePath: hostWorkspacePath,
     workspaceRemoteSessionId,
     workspaceIdentity,
     viewerScope,

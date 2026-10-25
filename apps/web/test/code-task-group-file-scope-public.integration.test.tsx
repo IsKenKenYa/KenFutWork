@@ -11,6 +11,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { clickOn } from "../../server/src/features/browser/cdp-client.js";
+import { observeViewerRequests } from "./setup/code-file-viewer-public.fixture.js";
 import type { OriginalSessionBrowser } from "./setup/code-public-browser.fixture.mjs";
 import {
   expectContentPreserved,
@@ -20,62 +21,12 @@ import {
 } from "./setup/code-task-groups-public.fixture.js";
 
 const inputSelector = '[role="textbox"][contenteditable="true"]';
-const rpcSchema = z.object({
-  service: z.enum(["file", "git", "file-watcher"]),
-  method: z.string(),
-  args: z.array(z.unknown()),
-});
 const viewerArgumentSchema = z.object({
   path: z.string().optional(),
   workspacePath: z.string().optional(),
   paths: z.array(z.string()).optional(),
   viewerScope: codeUiViewerScopeSchema.optional(),
 });
-type ViewerRequest = z.infer<typeof rpcSchema> & {
-  requestId: string;
-  status?: number;
-};
-
-function observeViewerRequests(page: OriginalSessionBrowser) {
-  const requests = new Map<string, ViewerRequest>();
-  const releaseRequests = page.cdp.on(
-    "Network.requestWillBeSent",
-    (params, sessionId) => {
-      if (sessionId !== page.target.sessionId) return;
-      const request = z
-        .object({ url: z.string(), postData: z.string().optional() })
-        .parse(params.request);
-      if (
-        new URL(request.url).pathname !== "/api/code-ui/rpc" ||
-        !request.postData
-      )
-        return;
-      const payload = rpcSchema.safeParse(JSON.parse(request.postData));
-      if (!payload.success) return;
-      const requestId = z.string().parse(params.requestId);
-      requests.set(requestId, { requestId, ...payload.data });
-    },
-  );
-  const releaseResponses = page.cdp.on(
-    "Network.responseReceived",
-    (params, sessionId) => {
-      if (sessionId !== page.target.sessionId) return;
-      const request = requests.get(z.string().parse(params.requestId));
-      if (request)
-        request.status = z
-          .object({ status: z.number() })
-          .parse(params.response).status;
-    },
-  );
-  return {
-    requests,
-    dispose() {
-      releaseRequests();
-      releaseResponses();
-    },
-  };
-}
-
 async function readyPoint(page: OriginalSessionBrowser, selector: string) {
   return vi.waitFor(async () => {
     const point = await page.evaluate<{
