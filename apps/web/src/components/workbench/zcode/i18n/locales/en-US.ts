@@ -181,7 +181,6 @@ const enUS: Record<string, string> = {
   "common.cancel": "Cancel",
   "common.retry": "Retry",
   "common.close": "Close",
-  "chat.plan.removeMarker": "Turn off Plan mode",
   "common.confirm": "Confirm",
   "common.more": "More",
   "common.refresh": "Refresh",
@@ -5901,7 +5900,6 @@ const enUS: Record<string, string> = {
   "chat.permission.fileChange.mixedMany": "Update {count} files",
 
   // Modes
-  "mode.plan": "Plan",
   "mode.label.glm.build": "Ask before changes",
   "mode.label.glm.edit": "Edit automatically",
   "mode.label.glm.plan": "Plan mode",

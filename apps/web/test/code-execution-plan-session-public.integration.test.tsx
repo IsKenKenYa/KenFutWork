@@ -252,9 +252,6 @@ async function assertOriginalSend(f: {
   expect.soft(input).toContain("PLAN_CLOSE_THROUGH_ORIGINAL_COMPOSER");
   expect.soft(input).not.toContain('<execution_mode name="plan">');
   expect
-    .soft(f.session.view.queryByTestId("v4-composer-plan-marker"))
-    .toBeNull();
-  expect
     .soft(f.session.view.getByTestId("chat-mode-select-trigger").textContent)
     .toContain("自主");
 }
@@ -262,7 +259,7 @@ async function assertOriginalSend(f: {
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "原SessionPane执行策略与明确关闭规划 integration",
   () => {
-    it("旧计划PUT失败不得覆盖期间实际Plan标记X关闭的规划与后续输入", async () => {
+    it("旧计划PUT失败不得覆盖期间改选自主关闭的规划与后续输入", async () => {
       await withOriginalComposer(false, async (f) => {
         const user = userEvent.setup({ document });
         f.holdPlanPut();
@@ -275,15 +272,19 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           }),
         );
         await waitFor(() => expect(f.planPutStarted()).toBe(true));
+        // 灯泡标记已删：改选自主即本地关闭规划，agent 偏好排在挂起的 plan PUT 之后
         await user.click(
-          f.session.view.getByRole("button", {
-            name: /^关闭计划模式$/,
+          f.session.view.getByTestId("chat-mode-select-trigger"),
+        );
+        await user.click(
+          await f.session.view.findByRole("menuitemradio", {
+            name: "自主",
           }),
         );
         await waitFor(() =>
           expect(
-            f.session.view.queryByTestId("v4-composer-plan-marker"),
-          ).toBeNull(),
+            f.session.view.getByTestId("chat-mode-select-trigger").textContent,
+          ).toContain("自主"),
         );
         await act(async () =>
           f.planPut.reject(new Error("旧策略偏好请求失败")),
@@ -293,14 +294,11 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             f.session.view.getByTestId("chat-mode-select-trigger").textContent,
           ).toContain("自主"),
         );
-        expect
-          .soft(f.session.view.queryByTestId("v4-composer-plan-marker"))
-          .toBeNull();
         await assertOriginalSend(f);
       });
     }, 120_000);
 
-    it("策略plan保存成功后实际Plan标记X退出策略，原发送冻结关闭规划且保留基础权限", async () => {
+    it("策略plan保存成功后改选自主退出策略，原发送冻结关闭规划且保留基础权限", async () => {
       await withOriginalComposer(false, async (f) => {
         const user = userEvent.setup({ document });
         await user.click(
@@ -328,15 +326,14 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           }),
         ).toBe(200);
         expect(persisted.body.mode).toBe("plan");
+        // 灯泡标记已删：退出策略 = 菜单里改选自主
         await user.click(
-          f.session.view.getByRole("button", {
-            name: /^关闭计划模式$/,
-          }),
+          f.session.view.getByTestId("chat-mode-select-trigger"),
         );
-        await waitFor(() =>
-          expect(
-            f.session.view.queryByTestId("v4-composer-plan-marker"),
-          ).toBeNull(),
+        await user.click(
+          await f.session.view.findByRole("menuitemradio", {
+            name: "自主",
+          }),
         );
         // Soft assertions deliberately keep the original send path running on
         // the old implementation, so its real Run config is also observed.
