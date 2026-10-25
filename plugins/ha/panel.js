@@ -1,27 +1,20 @@
 /**
  * 智能家居面板页（插件自带，无构建、无外部依赖）。
  *
- * 两种视图：未配置（欢迎页 + 「选择品牌或集成」品牌卡引导 + 连接表单——按教程里 HA
- * 集成流程的形状，2026-10-25）、**已连接 = HA 原生界面（iframe 直接内嵌 HA 自己的前端
- * ——用户拍板「要教程里一样的界面」，2026-10-24）**。已连接态头部只有状态行（版本 +
- * 实体实况，2026-10-25 用户要求去掉精简面板/重新测试/修改配置/断开四个按钮——连接
- * 生命周期由自动初始化接管，不再有手工入口），并带「集成管理」（默认小米/华为，
- * 可添加/卸载，添加走 HA 配置流：表单步渲染 + OAuth 授权链接 + 自动轮询）。
+ * 两种视图（2026-10-25 用户口径「里面只要一个 ha 面板」）：
+ * - **原生视图（默认）**：满幅 iframe 内嵌 HA 自己的前端，无任何上方套壳条；
+ *   免登陆由 HA 侧 trusted_networks 提供（自动关联本地用户），头部右上角「配置」。
+ * - **配置视图**（点「配置」进入，连上后按钮变「完成」）：集成管理（默认小米/华为，
+ *   可添加/卸载，走 HA 配置流）+ 界面空白诊断 + 连接表单；未配置态则是欢迎页 +
+ *   品牌卡引导 + 连接表单。
  *
  * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收也不保管宿主令牌；数据面请求带
- * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里。内嵌的 HA 前端
- * 用 HA 自己的登录态；免登陆（自动关联本地用户）由 HA 侧 trusted_networks 提供
- * （通用步骤里有配置）。
- *
- * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`）。控件与流程字段都由服务端或
- * HA 的 schema 驱动，面板只渲染。
+ * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里。
  *
  * 加载方式：**本文件不是 ES module**（无 import/export），由 panel.html 以经典脚本注入。
  */
 
 const BASE = location.pathname.replace(/\/assets\/[^/]*$/, "");
-/** 面板自取增量的间隔（仅喂状态行的实况计数）。 */
-const POLL_MS = 5000;
 
 const state = {
   baseUrl: "",
@@ -29,13 +22,13 @@ const state = {
   version: null,
   view: "config",
   busy: false,
-  pollTimer: null,
 };
 
 const els = {
   state: document.getElementById("state"),
   body: document.getElementById("body"),
   note: document.getElementById("note"),
+  settings: document.getElementById("settings"),
 };
 
 function el(tag, className, text) {
@@ -55,9 +48,7 @@ function setState(text) {
 
 /**
  * 页脚**瞬时消息**（错误红字/提示灰字，互斥）——单独一个 `#note` 节点。
- *
- * 轮询每轮要清一次瞬时消息，若把它和内容挤进同一容器，清空会让页面矮一截、
- * 滚动条每轮抖一次（米家面板实测过的同一现象）。
+ * 不与内容同容器：清空瞬时消息不会让页面矮一截（米家面板实测过的同一现象）。
  */
 function setNote(text, isError) {
   els.note.textContent = text || "";
@@ -98,7 +89,7 @@ function api(path, options) {
   );
 }
 
-// === 未配置：欢迎页 + 品牌卡引导 + 连接表单 ===
+// === 配置视图：欢迎页/品牌卡引导（未配置）与 集成管理/表单（已连接） ===
 
 /** 引导数据只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
 let guidePromise = null;
@@ -242,13 +233,8 @@ function buildHero() {
   return hero;
 }
 
-function renderConfigForm(message, guideFirst = true) {
-  stopPolling();
-  state.view = "config";
-  setState(guideFirst ? "未配置" : "修改配置");
-  clear(els.body);
-  if (guideFirst) els.body.appendChild(buildHero());
-
+/** 连接表单：未配置是「连接」，已连接是「保存」（重新探活并落库）。 */
+function buildConnectCard(message, connected) {
   const card = el("div", "card");
   const address = el("input");
   address.type = "url";
@@ -267,7 +253,7 @@ function renderConfigForm(message, guideFirst = true) {
   card.appendChild(field("地址", address));
   card.appendChild(field("令牌", token));
 
-  const button = el("button", null, "连接");
+  const button = el("button", null, connected ? "保存" : "连接");
   button.type = "button";
   button.addEventListener("click", () => {
     if (state.busy) return;
@@ -290,7 +276,7 @@ function renderConfigForm(message, guideFirst = true) {
       .catch((error) => {
         state.busy = false;
         button.disabled = false;
-        button.textContent = "连接";
+        button.textContent = connected ? "保存" : "连接";
         showError(error.message);
       });
   });
@@ -298,59 +284,39 @@ function renderConfigForm(message, guideFirst = true) {
   actions.appendChild(button);
   card.appendChild(actions);
   if (message) card.appendChild(el("p", "error", message));
+  return card;
+}
+
+function renderSetup(message) {
+  state.view = "config";
+  const connected = Boolean(state.baseUrl);
+  document.body.classList.remove("native-mode");
+  setState(connected ? "已连接" : "未配置");
+  els.settings.hidden = !connected;
+  els.settings.textContent = "完成";
+  clear(els.body);
+
+  const card = buildConnectCard(message, connected);
+  if (!connected) els.body.appendChild(buildHero());
   els.body.appendChild(card);
-  // 引导区与表单同一页：首用引导在上（照着做）、表单在最后（终点）；
-  // 「修改配置」时表单在上（直接改）。异步插入前先确认表单还在页上
-  // （期间可能已连上并切到原生界面）
+
+  if (connected) {
+    // 集成管理 + 界面空白诊断只收在配置页，原生视图保持纯 HA 界面；
+    // 品牌卡引导属首次接入，已连接后不再出现
+    els.body.appendChild(buildIntegrationsBar());
+    els.body.appendChild(buildBlankHint());
+    return;
+  }
+  // 未配置：引导在上（照着做）、表单在最后（终点）。异步插入前确认表单还在页上
   loadGuide().then((guide) => {
     if (!els.body.contains(card)) return;
     const section = buildGuideSection(guide.brands, guide.steps);
     if (section.childElementCount === 0) return;
-    if (guideFirst) els.body.insertBefore(section, card);
-    else els.body.appendChild(section);
+    els.body.insertBefore(section, card);
   });
 }
 
-// === 已连接：HA 原生界面（iframe）+ 集成管理 ===
-
-/**
- * 原生视图状态行：版本与（拿得到时的）实体实况——连接成功后拉一轮实体灌进来，
- * 就是教程里「成功 · 已发现设备」那一拍。计数与生态识别同一口径，识别不了就不显示。
- */
-function nativeStateText(counts) {
-  const version = state.version ? ` · ${state.version}` : "";
-  const total = counts ? ` · ${counts.total} 实体` : "";
-  const eco = counts?.ecosystems
-    ? ` · 米家 ${counts.ecosystems.mijia} · 华为 ${counts.ecosystems.huawei}`
-    : "";
-  return `HA 原生界面${version}${total}${eco}`;
-}
-
-/** 状态行实况轮询：只喂数字，不动 DOM 结构（iframe 与集成管理不受打扰）。 */
-function pollCounts() {
-  api("entities")
-    .then((view) => {
-      setState(
-        nativeStateText({ total: view.total ?? 0, ecosystems: view.ecosystems }),
-      );
-      setNote("", false);
-    })
-    .catch((error) => showError(error.message));
-}
-
-function startPolling() {
-  stopPolling();
-  state.pollTimer = setInterval(() => {
-    if (document.visibilityState === "visible") pollCounts();
-  }, POLL_MS);
-}
-
-function stopPolling() {
-  if (state.pollTimer) {
-    clearInterval(state.pollTimer);
-    state.pollTimer = null;
-  }
-}
+// === 集成管理：默认小米/华为，可添加（HA 配置流）与卸载 ===
 
 /** 面板里默认支持的两个品牌（与服务端 integrations 路由同一张表）。 */
 const BRAND_LABELS = {
@@ -362,11 +328,6 @@ const BRAND_DOMAINS = {
   huawei: "huawei_smarthome",
 };
 
-/**
- * 集成管理：两张默认品牌卡各带状态与动作——未添加「添加」（走 HA 配置流：
- * 表单步渲染 + OAuth 授权链接 + 自动轮询到完成），已添加「卸载」。
- * 列表来自 WS 的 config_entries/get（实时链路未就绪时如实标注）。
- */
 function buildIntegrationsBar() {
   const box = el("details", "integrations");
   box.appendChild(el("summary", null, "集成管理"));
@@ -432,7 +393,6 @@ function loadIntegrations(body) {
               .then((payload) =>
                 runFlowDialog(
                   slot,
-                  body,
                   payload.flowId,
                   payload.step,
                   () => loadIntegrations(body),
@@ -491,16 +451,16 @@ function flowFieldInput(field) {
  * 集成配置流对话框：按 HA 返回的步型渲染——表单（schema 驱动）、OAuth 授权链接
  * （新开页授权，hosts 修复后回跳直达）、进行中轮询、完成/中止。
  */
-function runFlowDialog(slot, listBody, flowId, step, onDone) {
+function runFlowDialog(slot, flowId, step, onDone) {
   let polling = null;
-  const stopPolling = () => {
+  const stop = () => {
     if (polling) {
       clearInterval(polling);
       polling = null;
     }
   };
   const render = (current) => {
-    stopPolling();
+    stop();
     clear(slot);
     if (current.type === "create_entry") {
       slot.appendChild(el("p", "int-status", `已添加（${current.title ?? ""}）`));
@@ -577,37 +537,40 @@ function runFlowDialog(slot, listBody, flowId, step, onDone) {
   render(step);
 }
 
-function renderNative() {
-  stopPolling();
-  state.view = "native";
-  setState(nativeStateText(null));
-  clear(els.body);
-  const wrap = el("div", "native");
-
-  wrap.appendChild(buildIntegrationsBar());
-
-  const hint = el("details");
-  const summary = el("summary", null, "界面空白时点开");
-  hint.appendChild(summary);
+/** 界面空白诊断：HA 默认挡内嵌，收在配置页（原生视图保持纯 HA 界面）。 */
+function buildBlankHint() {
+  const hint = el("details", "step");
+  hint.appendChild(el("summary", null, "界面空白时点开"));
   const fix = el("pre", null);
   fix.textContent =
     "HA 设置 → 系统 → 网络 → 关闭「Send X-Frame-Options」\n旧版 configuration.yaml：\nhttp:\n  use_x_frame_options: false";
   hint.appendChild(fix);
-  wrap.appendChild(hint);
+  return hint;
+}
 
+// === 原生视图：满幅 iframe，无任何上方套壳条 ===
+
+function renderNative() {
+  state.view = "native";
+  document.body.classList.add("native-mode");
+  setState("");
+  els.settings.hidden = false;
+  els.settings.textContent = "配置";
+  clear(els.body);
   const frame = document.createElement("iframe");
   frame.src = state.baseUrl || "";
   frame.title = "Home Assistant";
   frame.referrerPolicy = "no-referrer";
-  wrap.appendChild(frame);
-  els.body.appendChild(wrap);
-  pollCounts();
-  startPolling();
+  els.body.appendChild(frame);
 }
 
-// === 启动 ===
+// === 启动与视图切换 ===
 
-els.note?.addEventListener("click", () => setNote("", false));
+els.settings.addEventListener("click", () => {
+  setNote("", false);
+  if (state.view === "native") renderSetup();
+  else renderNative();
+});
 
 function boot() {
   setState("加载中…");
@@ -616,11 +579,11 @@ function boot() {
       state.baseUrl = payload.baseUrl || "";
       state.defaultBaseUrl = payload.defaultBaseUrl || "";
       if (!payload.configured) {
-        renderConfigForm();
+        renderSetup();
         return;
       }
       // 已配置：直接进原生界面（iframe 用 HA 自己的登录态；免登陆由 HA 侧
-      // trusted_networks 提供，见通用步骤）
+      // trusted_networks 提供，见配置页通用步骤）
       renderNative();
     })
     .catch((error) => showError(error.message));

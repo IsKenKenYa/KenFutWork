@@ -382,6 +382,22 @@
         border-radius: 10px;
         background: #fff;
       }
+      /* === 原生视图：满幅 iframe，不再有上方套壳条（2026-10-25 用户口径）=== */
+      body.native-mode {
+        padding: 0;
+        overflow: hidden;
+      }
+      body.native-mode header {
+        margin-bottom: 0;
+        padding: 5px 10px;
+      }
+      body.native-mode iframe {
+        width: 100%;
+        height: calc(100vh - 34px);
+        border: none;
+        border-radius: 0;
+        display: block;
+      }
       footer {
         margin-top: 12px;
       }
@@ -389,9 +405,11 @@
   </head>
   <body>
     <header>
-      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态行：
-           连接生命周期由自动初始化接管，不再有手工按钮（2026-10-25 用户口径） -->
+      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里只留右上角配置入口与状态：
+           默认视图 = 纯 HA 界面（2026-10-25 用户口径「里面只要一个 ha 面板」） -->
       <span id="state" class="hint"></span>
+      <span class="grow"></span>
+      <button id="settings" type="button" hidden>配置</button>
     </header>
     <main id="body">
       <div class="card hint">正在获取配置…</div>
