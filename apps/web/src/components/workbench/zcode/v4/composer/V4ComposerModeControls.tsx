@@ -129,7 +129,7 @@ function V4ComposerModeSwitchImpl({
               {executionLabel && (
                 <span
                   data-testid="execution-mode-label"
-                  className="text-ui-sm group-data-[composer-compact=true]/mode:hidden"
+                  className="text-ui-base group-data-[composer-compact=true]/mode:hidden"
                 >
                   · {executionLabel}
                 </span>

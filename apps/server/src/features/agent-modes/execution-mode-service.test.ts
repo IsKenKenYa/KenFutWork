@@ -158,13 +158,34 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
     ).toBe(false);
   });
 
-  it("solo：deny-all，任何工具（含只读与 deepagents 内置）一律拒绝", () => {
+  it("solo：严格只读——白名单与 access=read 工具放行，终端/子代理/修改一律拒绝", () => {
     const service = createExecutionModeService();
     service.activate("t-solo", "solo");
     const policy = service.resolveToolPolicy("t-solo");
-    expect(policy.kind).toBe("deny-all");
-    for (const tool of ["web_search", "read_file", "write_todos", "execute"]) {
-      const verdict = evaluateToolPolicy(policy, tool);
+    expect(policy.kind).toBe("read-only-strict");
+    // 只读工具与只读声明的 MCP/插件工具放行
+    for (const tool of ["web_search", "read_file", "write_todos", "Grep"]) {
+      expect(evaluateToolPolicy(policy, tool).allowed, tool).toBe(true);
+    }
+    expect(
+      evaluateToolPolicy(policy, "mcp__filesystem-test__search_files", {
+        toolAccess: "read",
+      }).allowed,
+    ).toBe(true);
+    // 终端/运行时与子代理派发不给（防越狱）；写/执行不给
+    for (const [tool, detail] of [
+      ["execute", undefined],
+      ["Bash", { readonlyExecution: true }],
+      ["Bash", undefined],
+      ["write_file", undefined],
+      ["subagent_task", { subagentReadOnly: true }],
+      ["mcp__weather__run", { toolAccess: "write" }],
+    ] as const) {
+      const verdict = evaluateToolPolicy(
+        policy,
+        tool,
+        detail as { subagentReadOnly?: boolean; readonlyExecution?: boolean; toolAccess?: "read" },
+      );
       expect(verdict.allowed, tool).toBe(false);
     }
   });
@@ -187,7 +208,13 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
     ]) {
       expect(evaluateToolPolicy(policy, tool).allowed, tool).toBe(true);
     }
-    // 修改/执行/子代理/MCP/生成一律拒绝
+    // 属主声明只读的 MCP 工具放行（计划模式可调研 MCP 只读面）
+    expect(
+      evaluateToolPolicy(policy, "mcp__filesystem-test__search_files", {
+        toolAccess: "read",
+      }).allowed,
+    ).toBe(true);
+    // 修改/执行/子代理/未声明只读的 MCP/生成一律拒绝
     for (const tool of [
       "write_file",
       "edit_file",
@@ -206,14 +233,31 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
         expect(verdict.reason).toContain("plan");
       }
     }
+    expect(
+      evaluateToolPolicy(policy, "mcp__weather__get", { toolAccess: "write" })
+        .allowed,
+    ).toBe(false);
   });
 
-  it("agent/goal/creative：allow-all，工具不拦截", () => {
+  it("agent 禁改 App（create_skill/install_plugin），创造/目标全放行", () => {
     const service = createExecutionModeService();
-    for (const mode of ["agent", "goal", "creative"] as const) {
+    service.activate("t-agent", "agent");
+    const agentPolicy = service.resolveToolPolicy("t-agent");
+    expect(agentPolicy.kind).toBe("allow-except-app");
+    expect(evaluateToolPolicy(agentPolicy, "write_file").allowed).toBe(true);
+    expect(evaluateToolPolicy(agentPolicy, "execute").allowed).toBe(true);
+    for (const tool of ["create_skill", "install_plugin"]) {
+      const verdict = evaluateToolPolicy(agentPolicy, tool);
+      expect(verdict.allowed, tool).toBe(false);
+      if (!verdict.allowed) {
+        expect(verdict.reason).toContain("创造");
+      }
+    }
+    for (const mode of ["goal", "creative"] as const) {
       service.activate(`t-${mode}`, mode);
       const policy = service.resolveToolPolicy(`t-${mode}`);
       expect(policy.kind, mode).toBe("allow-all");
+      expect(evaluateToolPolicy(policy, "create_skill").allowed).toBe(true);
       expect(evaluateToolPolicy(policy, "write_file").allowed).toBe(true);
       expect(evaluateToolPolicy(policy, "execute").allowed).toBe(true);
     }
@@ -331,6 +375,7 @@ describe("plan 只读子代理白名单（DEC-17：派发按定义只读性放�
     expect(
       evaluateToolPolicy(solo, "task", { subagentReadOnly: true }).allowed,
     ).toBe(false);
-    expect(evaluateToolPolicy(solo, "task_output").allowed).toBe(false);
+    // solo 无子代理可派，但 task_output 是纯读查询，不设限
+    expect(evaluateToolPolicy(solo, "task_output").allowed).toBe(true);
   });
 });

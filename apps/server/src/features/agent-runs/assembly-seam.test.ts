@@ -120,7 +120,7 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
     }
   });
 
-  it("solo 模式：工具门全禁，内核注册表 guarded 执行同步拒绝", async () => {
+  it("solo 模式：工具门严格只读（白名单放行、写/执行拒绝），内核注册表 guarded 执行同步拒绝", async () => {
     const gates: Array<ToolGate | undefined> = [];
     const agentFactory: KenFutWorkAgentFactory = (options) => {
       gates.push(options.toolGate);
@@ -152,8 +152,15 @@ describe("agent-runs × agent-modes 装配缝（pre-step 指令 + 工具门）",
       await drainRun(runs.streamRun(runId));
 
       const gate = gates[0];
-      expect(gate?.("web_search")?.allowed).toBe(false);
-      expect(gate?.("write_todos")?.allowed).toBe(false);
+      // solo 严格只读：只读白名单放行，写/执行/终端拒绝
+      expect(gate?.("web_search")).toEqual({ allowed: true });
+      expect(gate?.("write_todos")).toEqual({ allowed: true });
+      expect(gate?.("write_file")?.allowed).toBe(false);
+      expect(gate?.("execute")?.allowed).toBe(false);
+      expect(gate?.("Bash")?.allowed).toBe(false);
+      expect(gate?.("subagent_task", { subagentReadOnly: true })?.allowed).toBe(
+        false,
+      );
 
       // 内核缝：注册表工具经 guarded 执行派发（tool-pre-execute 带 threadId）
       const tools = kernel.get("tools");
@@ -287,6 +294,7 @@ it.each(["solo", "plan"] as const)(
       };
       const unregister = tools.register(definition);
       try {
+        // 写操作两档都硬拒；属主声明只读（access=read）两档都放行
         await expect(
           tools.executeDefinition(definition, {}, execution),
         ).rejects.toThrow(ToolDeniedError);
@@ -294,18 +302,13 @@ it.each(["solo", "plan"] as const)(
         const read = { ...definition, name: "Read", access: "read" as const };
         const unregisterRead = tools.register(read);
         try {
-          const result = tools.executeDefinition(
-            read,
-            {},
-            {
+          await expect(
+            tools.executeDefinition(read, {}, {
               ...execution,
               toolCallId: `${task.execution.toolCallId}-read`,
-            },
-          );
-          if (mode === "solo")
-            await expect(result).rejects.toThrow(ToolDeniedError);
-          else await expect(result).resolves.toBe("written");
-          expect(executed).toBe(mode === "solo" ? 0 : 1);
+            }),
+          ).resolves.toBe("written");
+          expect(executed).toBe(1);
         } finally {
           unregisterRead();
         }
@@ -320,58 +323,69 @@ it.each(["solo", "plan"] as const)(
   },
 );
 
-it("共享Task以Run冻结solo硬拒绝注册表只读工具，后切会话策略不追改已接纳agent", async () => {
+it("共享Task以Run冻结solo硬拒绝写入工具，后切会话策略不追改已接纳agent", async () => {
   const task = await archiveTaskFixture("code");
   const { kernel, app } = await assembleSeamKernel(() => {
     throw new Error("本例在真实Kernel执行缝验证，不运行模型");
   });
-  let reads = 0;
+  let writes = 0;
   try {
     const threadId = "frozen-task-strategy";
     await kernel.get("agentModes").activate(threadId, "agent");
     const definition = {
-      name: "Read",
-      description: "读取Task内的内容",
+      name: "Write",
+      description: "写入Task文件",
       scope: "shared" as const,
-      access: "read" as const,
+      access: "write" as const,
       parameters: {
         type: "object",
         properties: {},
         additionalProperties: false,
       },
       execute: async () => {
-        reads++;
-        return "实际读取结果";
+        writes++;
+        return "实际写入结果";
       },
     };
     const unregister = kernel.get("tools").register(definition);
     try {
+      // yolo 天花板让权限维度直接放行，模式门成为唯一拦截者（否则审批等待会挂起）
+      const execution = {
+        ...task.execution,
+        threadId,
+        codeApproval: {
+          ceiling: "yolo" as const,
+          resolve: async () => ({
+            mode: "yolo" as const,
+            scopeGeneration: task.identity.generation,
+            branchGeneration: 1,
+          }),
+        },
+      };
       await expect(
         kernel.get("tools").executeDefinition(
           definition,
           {},
           {
-            ...task.execution,
+            ...execution,
             executionMode: "solo",
-            threadId,
           },
         ),
       ).rejects.toThrow(/solo/);
-      expect(reads).toBe(0);
+      expect(writes).toBe(0);
       await kernel.get("agentModes").activate(threadId, "solo");
       await expect(
         kernel.get("tools").executeDefinition(
           definition,
           {},
           {
-            ...task.execution,
+            ...execution,
             executionMode: "agent",
-            threadId,
-            toolCallId: "frozen-agent-read",
+            toolCallId: "frozen-agent-write",
           },
         ),
-      ).resolves.toBe("实际读取结果");
-      expect(reads).toBe(1);
+      ).resolves.toBe("实际写入结果");
+      expect(writes).toBe(1);
     } finally {
       unregister();
     }

@@ -15,7 +15,7 @@ export const EXECUTION_MODE_LABELS: Record<ExecutionMode, string> = {
   solo: "对话",
   goal: "目标",
   loop: "循环",
-  creative: "技能插件",
+  creative: "创造",
 };
 
 /** 词表顺序（与服务端内置顺序一致）：下拉在词表未到之前也按它渲染。 */

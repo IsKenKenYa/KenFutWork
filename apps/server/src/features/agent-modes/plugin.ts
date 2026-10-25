@@ -54,7 +54,8 @@ export function createAgentModesPlugin(): PluginDefinition {
         return next({ ...payload, input: `${directive}\n\n${payload.input}` });
       });
 
-      // tool-pre-execute：solo 全禁、plan 只读（内核注册表路径的硬约束）
+      // tool-pre-execute：solo 严格只读、plan 只读（内核注册表路径的硬约束）。
+      // payload.access 是工具属主声明的执行效果：MCP/插件只读工具在 read-only 家族放行。
       ctx.on("tool-pre-execute", async (payload, next) => {
         // Task策略来自已接纳Run；旧非Task调用保留线程策略。
         if (
@@ -72,7 +73,9 @@ export function createAgentModesPlugin(): PluginDefinition {
                 : payload.executionMode,
             )
           : service.resolveToolPolicy(payload.threadId!);
-        const verdict = evaluateToolPolicy(policy, payload.toolName);
+        const verdict = evaluateToolPolicy(policy, payload.toolName, {
+          ...(payload.access ? { toolAccess: payload.access } : {}),
+        });
         if (verdict.allowed) {
           return next(payload);
         }

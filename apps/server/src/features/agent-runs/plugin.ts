@@ -129,6 +129,8 @@ export function createAgentRunsPlugin(
         const checkpoints = ctx.tryGet("checkpoints");
         // 执行模式工具门：solo/plan 策略归 agent-modes，运行时只拿到判定函数
         const agentModes = d.get("agentModes");
+        // 注册表按名取工具：桥接工具（MCP/插件）的属主 access 声明从这里带进模式判定
+        const toolRegistry = ctx.get("tools");
         // 权限档同门：内置工具（execute/write_file/edit_file）不经过 ctx.tools.execute，
         // tool-pre-execute 事件缝拦不到它们，必须在这里与模式判定合并（见 tool-gate.ts）。
         const permissions = ctx.tryGet("permissions");
@@ -137,7 +139,7 @@ export function createAgentRunsPlugin(
           executionMode?: import("@kenfutwork/shared").ExecutionMode,
           scoped = false,
         ): ToolGate => {
-          // Task规划由可退出的planEnabled持有；策略快照只强制纯对话禁工具。
+          // Task规划由可退出的planEnabled持有；策略快照只强制模式硬约束。
           const policy = executionMode
             ? policyForMode(
                 scoped && executionMode === "plan" ? "agent" : executionMode,
@@ -150,8 +152,13 @@ export function createAgentRunsPlugin(
             ? ("automation" as const)
             : ("interactive" as const);
           return composeToolGate({
-            modeVerdict: (toolName, detail) =>
-              evaluateToolPolicy(policy, toolName, detail),
+            modeVerdict: (toolName, detail) => {
+              const access = toolRegistry.get(toolName)?.access;
+              return evaluateToolPolicy(policy, toolName, {
+                ...detail,
+                ...(access ? { toolAccess: access } : {}),
+              });
+            },
             ...(permissions && !scoped
               ? {
                   permissionVerdict: (toolName: string) => {
