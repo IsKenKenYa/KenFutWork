@@ -4,7 +4,9 @@ import {
   resolveWorkEntry,
   type WorkHostStatusResponse,
   workEditorCategorySchema,
+  workEditorInstallStatusSchema,
   workEditorMountSchema,
+  workEditorPinnedReleaseSchema,
   workEditorSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
@@ -87,28 +89,50 @@ describe("resolveWorkEntry 入口门控", () => {
 });
 
 describe("编辑器扩展包契约", () => {
-  it("注册项形状：id/title/category/repo/license/mount/installed 全闭合", () => {
-    const parsed = workEditorSchema.parse({
-      id: "gridcraft",
-      title: "表格",
-      category: "office",
-      repo: "https://github.com/storytold/gridcraft",
-      license: "MIT OR Apache-2.0",
-      mount: "wasm-iframe",
-      installed: false,
-    });
+  const editor = {
+    id: "gridcraft",
+    title: "表格",
+    category: "office",
+    repo: "https://github.com/storytold/gridcraft",
+    license: "MIT OR Apache-2.0",
+    mount: "wasm-iframe",
+    pinned: {
+      version: "0.11.1",
+      asset: "gridcraft-web-0.11.1.zip",
+      bytes: 7571063,
+      sha256: "b".repeat(64),
+      url: "https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-web-0.11.1.zip",
+    },
+    installed: false,
+  };
+
+  it("注册项形状：元数据 + 锚定发布 + 落位事实全闭合", () => {
+    const parsed = workEditorSchema.parse(editor);
     expect(parsed.installed).toBe(false);
+    expect(parsed.pinned?.version).toBe("0.11.1");
     // 封闭枚举：类别与挂载点不能塞进任意字符串
     expect(workEditorCategorySchema.safeParse("filesystem").success).toBe(
       false,
     );
     expect(workEditorMountSchema.safeParse("teleport").success).toBe(false);
     expect(
-      workEditorSchema.safeParse({ ...parsed, installed: "yes" }).success,
+      workEditorSchema.safeParse({ ...editor, installed: "yes" }).success,
     ).toBe(false);
   });
 
-  it("status/editors 响应形状按契约校验", () => {
+  it("未锚定编辑器 pinned=null 合法；sha256 必须是 64 位十六进制", () => {
+    expect(
+      workEditorSchema.parse({ ...editor, pinned: null }).pinned,
+    ).toBeNull();
+    expect(
+      workEditorPinnedReleaseSchema.safeParse({
+        ...editor.pinned,
+        sha256: "xyz",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("status/editors 响应形状按契约校验（editors 带安装状态快照）", () => {
     expect(
       workHostStatusResponseSchema.safeParse({
         enabled: true,
@@ -127,11 +151,31 @@ describe("编辑器扩展包契约", () => {
       workHostEditorsResponseSchema.safeParse({
         editors: [],
         dataDir: "D:/data",
+        install: {},
       }).success,
     ).toBe(true);
     expect(
-      workHostEditorsResponseSchema.safeParse({ editors: [], dataDir: "" })
-        .success,
+      workHostEditorsResponseSchema.safeParse({
+        editors: [],
+        dataDir: "D:/data",
+        install: {
+          gridcraft: { state: "ready", logTail: [] },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      workHostEditorsResponseSchema.safeParse({
+        editors: [],
+        dataDir: "D:/data",
+        install: { gridcraft: { state: "paused", logTail: [] } },
+      }).success,
     ).toBe(false);
+    expect(
+      workEditorInstallStatusSchema.safeParse({
+        state: "error",
+        logTail: ["安装失败：HTTP 500"],
+        error: "HTTP 500",
+      }).success,
+    ).toBe(true);
   });
 });

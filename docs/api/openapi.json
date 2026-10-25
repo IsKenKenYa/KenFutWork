@@ -6944,7 +6944,7 @@
       "get": {
         "operationId": "getWorkHostEditors",
         "summary": "查询 work 编辑器扩展包注册表",
-        "description": "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点）与各包在本机数据目录的落位事实，以及扩展包数据目录路径。编辑器二进制按需下载，不随安装包分发。",
+        "description": "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点、锚定发布）与各包在本机数据目录的落位事实，以及各编辑器安装状态机快照。编辑器二进制按需下载，不随安装包分发。",
         "tags": [
           "work"
         ],
@@ -6963,6 +6963,183 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/workHostEditorsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors/{editorId}/install": {
+      "post": {
+        "operationId": "postWorkHostEditorsByEditorIdInstall",
+        "summary": "下载并落位 work 编辑器扩展包",
+        "description": "按锚定发布下载发行包，逐项核验字节数与 sha256 后解压原子落位（幂等：已落位且校验和一致直接就绪）。未锚定发布返回 400，安装进行中返回 409（轮询状态端点）。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "editorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors/{editorId}/install/status": {
+      "get": {
+        "operationId": "getWorkHostEditorsByEditorIdInstallStatus",
+        "summary": "查询 work 编辑器安装状态",
+        "description": "返回该编辑器安装状态机快照（idle/installing/ready/error + 日志尾部）。未知编辑器返回 404。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "editorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workEditorInstallStatusSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors/{editorId}/*": {
+      "get": {
+        "operationId": "getWorkHostEditorsByEditorIdWildcard",
+        "summary": "读取 work 编辑器静态站点文件",
+        "description": "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "editorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -32939,6 +33116,38 @@
         ],
         "additionalProperties": false
       },
+      "workEditorInstallStatusSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "installing",
+              "ready",
+              "error"
+            ]
+          },
+          "logTail": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "logTail"
+        ],
+        "additionalProperties": false
+      },
       "workHostEditorsResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -32986,6 +33195,49 @@
                     "native-window"
                   ]
                 },
+                "pinned": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        "asset": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "asset",
+                        "bytes",
+                        "sha256",
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installed": {
                   "type": "boolean"
                 }
@@ -32997,6 +33249,7 @@
                 "repo",
                 "license",
                 "mount",
+                "pinned",
                 "installed"
               ],
               "additionalProperties": false
@@ -33005,11 +33258,49 @@
           "dataDir": {
             "type": "string",
             "minLength": 1
+          },
+          "install": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "installing",
+                    "ready",
+                    "error"
+                  ]
+                },
+                "logTail": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "error": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "logTail"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
           "editors",
-          "dataDir"
+          "dataDir",
+          "install"
         ],
         "additionalProperties": false
       },

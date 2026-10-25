@@ -13,7 +13,9 @@ export type WorkEditorRegistration = Omit<WorkEditor, "installed">;
 
 const WASM_MOUNT: WorkEditorMount = "wasm-iframe";
 
-/** 登记顺序即信息页展示顺序：office 三件套在前（用户核心诉求），其余按类别跟后。 */
+/** 登记顺序即信息页展示顺序：office 三件套在前（用户核心诉求），其余按类别跟后。
+ * gridcraft 已锚定发布（v0.11.1，sha256 来自上游 SHA256SUMS.txt，2026-10-25 实测
+ * 下载核对一致）；其余编辑器 W3 起逐个锚定，未锚定的不给下载按钮。*/
 const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
   {
     id: "gridcraft",
@@ -22,6 +24,13 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/gridcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: {
+      version: "0.11.1",
+      asset: "gridcraft-web-0.11.1.zip",
+      bytes: 7571063,
+      sha256: "b9491325936457cebd874656becbe5d189fbd2039db6798d9d7f5c5e0190715e",
+      url: "https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-web-0.11.1.zip",
+    },
   },
   {
     id: "wordcraft",
@@ -30,6 +39,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/wordcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "deckcraft",
@@ -38,6 +48,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/deckcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "photocraft",
@@ -46,6 +57,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/photocraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "lightcraft",
@@ -54,6 +66,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/lightcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "vectorcraft",
@@ -62,6 +75,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/vectorcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "filmcraft",
@@ -70,6 +84,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/filmcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "effectcraft",
@@ -78,6 +93,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/effectcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "designcraft",
@@ -86,6 +102,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/designcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "pdfcraft",
@@ -94,6 +111,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/pdfcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "soundcraft",
@@ -102,6 +120,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/soundcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
   {
     id: "cadcraft",
@@ -110,6 +129,7 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     repo: "https://github.com/storytold/cadcraft",
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
+    pinned: null,
   },
 ];
 

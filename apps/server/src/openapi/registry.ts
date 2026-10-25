@@ -240,6 +240,7 @@ import {
   voiceSettingsUpdateRequestSchema,
   voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
+  workEditorInstallStatusSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
@@ -1583,7 +1584,39 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: workHostEditorsResponseSchema,
     summary: "查询 work 编辑器扩展包注册表",
     description:
-      "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点）与各包在本机数据目录的落位事实，以及扩展包数据目录路径。编辑器二进制按需下载，不随安装包分发。",
+      "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点、锚定发布）与各包在本机数据目录的落位事实，以及各编辑器安装状态机快照。编辑器二进制按需下载，不随安装包分发。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/editors/:editorId/install",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    summary: "下载并落位 work 编辑器扩展包",
+    description:
+      "按锚定发布下载发行包，逐项核验字节数与 sha256 后解压原子落位（幂等：已落位且校验和一致直接就绪）。未锚定发布返回 400，安装进行中返回 409（轮询状态端点）。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors/:editorId/install/status",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workEditorInstallStatusSchema,
+    summary: "查询 work 编辑器安装状态",
+    description:
+      "返回该编辑器安装状态机快照（idle/installing/ready/error + 日志尾部）。未知编辑器返回 404。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors/:editorId/*",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    binaryResponse: "application/octet-stream",
+    summary: "读取 work 编辑器静态站点文件",
+    description:
+      "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
   },
   // ---- design-review.ts（画布评论与标注；本仓自持数据面）----
   {

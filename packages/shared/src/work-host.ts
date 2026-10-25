@@ -32,7 +32,25 @@ export const workEditorMountSchema = z.enum(["wasm-iframe", "native-window"]);
 export type WorkEditorMount = z.infer<typeof workEditorMountSchema>;
 
 /**
- * 编辑器扩展包注册项（W1 只登记元数据与挂载点；体积与校验和随 W2 下载器补齐）。
+ * 锚定的上游发布（WD-3：扩展包锚定具体发布 + 校验和，升级走回归）。
+ * `url` 指向 GitHub release 的 `<id>-web-<version>.zip`；`sha256` 来自同发布的
+ * SHA256SUMS.txt（2026-10-25 实测核对）。
+ */
+export const workEditorPinnedReleaseSchema = z.object({
+  version: z.string().min(1).max(32),
+  /** 发行包内 web zip 资产名。 */
+  asset: z.string().min(1).max(128),
+  bytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  url: z.string().url(),
+});
+export type WorkEditorPinnedRelease = z.infer<
+  typeof workEditorPinnedReleaseSchema
+>;
+
+/**
+ * 编辑器扩展包注册项（`pinned` 非空的编辑器才提供按需下载——未锚定发布的
+ * 如实显示「未锚定」，不给下载按钮，不摆假开关）。
  * `installed` 由服务端按扩展包在数据目录的落位事实计算，注册表常量本身不含它。
  */
 export const workEditorSchema = z.object({
@@ -44,12 +62,25 @@ export const workEditorSchema = z.object({
   repo: z.string().url(),
   /** 上游 SPDX 许可证表达式（ArtCraft 系列为 MIT OR Apache-2.0 双许可）。 */
   license: z.string().min(1).max(64),
-  /** 默认挂载点（W1 全部 wasm-iframe；原生档随 W3 平台矩阵接通）。 */
+  /** 默认挂载点（W2 全部 wasm-iframe；原生档随 W3 平台矩阵接通）。 */
   mount: workEditorMountSchema,
-  /** 扩展包是否已落位本机数据目录（未接下载器前恒 false，如实回答）。 */
+  /** 锚定发布；null = 尚未锚定（不提供下载）。 */
+  pinned: workEditorPinnedReleaseSchema.nullable(),
+  /** 扩展包是否已落位本机数据目录（下载器或手动放置都算；未落位如实回答）。 */
   installed: z.boolean(),
 });
 export type WorkEditor = z.infer<typeof workEditorSchema>;
+
+/** 编辑器扩展包安装状态（同 flow 引擎安装状态机枚举；重启后归零由调用方重探）。 */
+export const workEditorInstallStatusSchema = z.object({
+  state: z.enum(["idle", "installing", "ready", "error"]),
+  logTail: z.array(z.string()),
+  error: z.string().optional(),
+  startedAt: z.string().optional(),
+});
+export type WorkEditorInstallStatus = z.infer<
+  typeof workEditorInstallStatusSchema
+>;
 
 /**
  * `GET /api/work/host/status`：宿主适配层能力探针（本机接入验证）。
@@ -67,11 +98,13 @@ export type WorkHostStatusResponse = z.infer<
   typeof workHostStatusResponseSchema
 >;
 
-/** `GET /api/work/host/editors`：Work 引擎信息页一次取全（注册表 + 数据目录）。 */
+/** `GET /api/work/host/editors`：Work 引擎信息页一次取全（注册表 + 数据目录 + 安装状态）。 */
 export const workHostEditorsResponseSchema = z.object({
   editors: z.array(workEditorSchema),
   /** 扩展包数据目录（下载落位与 LICENSE/NOTICE 随附位置；绝对路径）。 */
   dataDir: z.string().min(1),
+  /** 各编辑器安装状态机快照（key = editorId；未发起的编辑器不在表内）。 */
+  install: z.record(z.string(), workEditorInstallStatusSchema),
 });
 export type WorkHostEditorsResponse = z.infer<
   typeof workHostEditorsResponseSchema
