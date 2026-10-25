@@ -2079,7 +2079,7 @@
         "2026-10-14 OpenDesign 集成（O0+O2）：把两个 OpenDesign 开合回调接到侧栏面板。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "2026-10-20 画布标签化（二百〇二）：透传 onOpenDesignMetaChange，保持一块画布一个标签。",
-        "2026-10-25 Work 模式（二百四十五）：work 进 keep-alive 内嵌面（isEmbeddedSurfaceView/visitedEmbeddedSurfaces 扩 work 并挂载 HostWorkSurface）。"
+        "2026-10-25 Work 模式（二百五十八）：work 进 keep-alive 内嵌面（isEmbeddedSurfaceView/visitedEmbeddedSurfaces 扩 work 并挂载 HostWorkSurface）。"
       ]
     },
     {
@@ -2147,7 +2147,7 @@
         "2026-10-14 OpenDesign 集成（O0+O2）：WorkspaceShellLayoutProps 新增 handleOpenOpenDesign 与 handleOpenOpenDesignPath。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "2026-10-20 画布标签化（二百〇二）：WorkspaceShellLayoutProps 增加打开画布参数与元数据回写回调。",
-        "2026-10-25 Work 模式（二百四十五）：WorkspaceMainView 增加 work。"
+        "2026-10-25 Work 模式（二百五十八）：WorkspaceMainView 增加 work。"
       ]
     },
     {
@@ -14773,7 +14773,7 @@
         "宿主接口：可选workbenchNavigation承接同源Code／Design／可信Flow导航，原coding执行树不变",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "Code/Design统一实施：平台端口贡献会话上下文与文档能力，原宿主transport保持不变。",
-        "2026-10-25 Work 模式（二百四十五）：HostWorkbenchMode 增加 work（入口仍由 work 插件探针门控）。"
+        "2026-10-25 Work 模式（二百五十八）：HostWorkbenchMode 增加 work（入口仍由 work 插件探针门控）。"
       ]
     },
     {
