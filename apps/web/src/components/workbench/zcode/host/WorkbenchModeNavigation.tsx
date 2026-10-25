@@ -76,7 +76,7 @@ export function WorkbenchModeNavigation({
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-stretch border-y"
+        className="flex items-stretch border-y border-foreground/20"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持图标和布局
