@@ -39,6 +39,7 @@ import { parseLocalWorkspaceIdentity, type ZCodeTaskUnreadObservation } from "@z
 import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
 import { CANVAS_DOCUMENT_DELETED_EVENT, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
+import { HostWorkSurface } from "@zui/host/WorkSurface.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@zui/lib/assistantPreviewCards.js";
 import { getPathLeaf, toFileUrl } from "@zui/lib/path.js";
@@ -1710,13 +1711,14 @@ export const WorkspaceShellLayout = memo(
     // Draft 之前维护一套独立轻量 header，导致 side pane、caption 安全区和拖拽入口
     // 与 Task Header 分叉。桌面端统一复用 WorkspaceHeader，只由 variant 裁剪 task 专属内容；
     // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
-    // design/flow 内嵌面自带顶栏（项目切换 / 画布-引擎切换），不吃壳的 Task Header。
+    // design/flow/work 内嵌面自带顶栏（项目切换 / 画布-引擎切换 / Work 引擎信息页），
+    // 不吃壳的 Task Header。
     const isEmbeddedSurfaceView =
-      workspaceMainView === "flow";
-    // 内嵌面首次进入后持续挂载（hidden + inert），design/flow → code → 回来不重载画布；
+      workspaceMainView === "flow" || workspaceMainView === "work";
+    // 内嵌面首次进入后持续挂载（hidden + inert），design/flow/work → code → 回来不重载画布；
     // 对话等其余主区视图维持原有「切换即卸载」行为不变。
     const [visitedEmbeddedSurfaces, setVisitedEmbeddedSurfaces] = useState<
-      ReadonlySet<"design" | "flow">
+      ReadonlySet<"design" | "flow" | "work">
     >(() => new Set());
     useEffect(() => {
       if (!isEmbeddedSurfaceView) return;
@@ -2122,6 +2124,20 @@ export const WorkspaceShellLayout = memo(
                           >
                             <HostFlowSurface
                               active={workspaceMainView === "flow"}
+                            />
+                          </div>
+                        ) : null}
+                        {visitedEmbeddedSurfaces.has("work") ? (
+                          <div
+                            className="h-full min-h-0"
+                            data-workspace-embedded-surface="work"
+                            hidden={workspaceMainView !== "work"}
+                            inert={
+                              workspaceMainView !== "work" ? true : undefined
+                            }
+                          >
+                            <HostWorkSurface
+                              active={workspaceMainView === "work"}
                             />
                           </div>
                         ) : null}

@@ -8,6 +8,7 @@ export type SettingsSectionId =
   | "archives"
   | "browser"
   | "modelProvider"
+  | "voice"
   | "memory"
   | "permissions"
   | "plugin"
@@ -34,8 +35,10 @@ const SETTINGS_SECTION_INTENT_KEY = "zcode-settings-section-intent",
   SETTINGS_USAGE_TAB_INTENT_KEY = "zcode-settings-usage-tab-intent",
   SETTINGS_PLUGIN_TAB_INTENT_KEY = "zcode-settings-plugin-tab-intent",
   SETTINGS_PLUGIN_ORIGIN_INTENT_KEY = "zcode-settings-plugin-origin-intent",
-  SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY = "zcode-settings-plugin-scope-key-intent";
-const SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY = "zcode-settings-model-provider-id-intent";
+  SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY =
+    "zcode-settings-plugin-scope-key-intent";
+const SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY =
+  "zcode-settings-model-provider-id-intent";
 const SETTINGS_SECTION_INTENT_EVENT = "zcode:settings-section-intent",
   SETTINGS_LAST_SECTION_STORAGE_KEY = "zcode-settings-last-section";
 const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
@@ -71,6 +74,7 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "archives" ||
     value === "browser" ||
     value === "modelProvider" ||
+    value === "voice" ||
     value === "memory" ||
     value === "permissions" ||
     value === "plugin" ||
@@ -158,7 +162,9 @@ function readLastSettingsSectionPreference(
   return fallbackSection;
 }
 
-export function writeLastSettingsSectionPreference(section: SettingsSectionId): void {
+export function writeLastSettingsSectionPreference(
+  section: SettingsSectionId,
+): void {
   const resolvedSection = resolveSettingsSection(section);
   const storage = getLocalStorage();
   if (!storage) {
@@ -181,7 +187,10 @@ export function consumeInitialSettingsSection(
   // 普通打开设置页以前把 consumePendingSettingsSection 的 fallback 写死为
   // modelProvider，导致没有显式跳转意图时也总进“模型供应商”。这里先读上次停留分区，
   // 再让 quickpick / 管理模型这类一次性意图覆盖它，保留显式入口的直达语义。
-  return resolveSettingsSection(consumePendingSettingsSection(lastSection), lastSection);
+  return resolveSettingsSection(
+    consumePendingSettingsSection(lastSection),
+    lastSection,
+  );
 }
 
 export function setPendingSettingsSection(section: SettingsSectionId): void {
@@ -238,26 +247,41 @@ export function setPendingSettingsSectionIntent(
   try {
     window.sessionStorage.setItem(SETTINGS_SECTION_INTENT_KEY, section);
     if (options.pluginTab) {
-      window.sessionStorage.setItem(SETTINGS_PLUGIN_TAB_INTENT_KEY, options.pluginTab);
+      window.sessionStorage.setItem(
+        SETTINGS_PLUGIN_TAB_INTENT_KEY,
+        options.pluginTab,
+      );
     } else {
       window.sessionStorage.removeItem(SETTINGS_PLUGIN_TAB_INTENT_KEY);
     }
     if (options.pluginOrigin) {
-      window.sessionStorage.setItem(SETTINGS_PLUGIN_ORIGIN_INTENT_KEY, options.pluginOrigin);
+      window.sessionStorage.setItem(
+        SETTINGS_PLUGIN_ORIGIN_INTENT_KEY,
+        options.pluginOrigin,
+      );
     } else {
       window.sessionStorage.removeItem(SETTINGS_PLUGIN_ORIGIN_INTENT_KEY);
     }
     const normalizedPluginScopeKey = options.pluginScopeKey?.trim();
     if (normalizedPluginScopeKey) {
-      window.sessionStorage.setItem(SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY, normalizedPluginScopeKey);
+      window.sessionStorage.setItem(
+        SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY,
+        normalizedPluginScopeKey,
+      );
     } else {
       window.sessionStorage.removeItem(SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY);
     }
     if (options.usageTab) {
-      window.sessionStorage.setItem(SETTINGS_USAGE_TAB_INTENT_KEY, options.usageTab);
+      window.sessionStorage.setItem(
+        SETTINGS_USAGE_TAB_INTENT_KEY,
+        options.usageTab,
+      );
     }
     if (options.modelProviderId) {
-      window.sessionStorage.setItem(SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY, options.modelProviderId);
+      window.sessionStorage.setItem(
+        SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY,
+        options.modelProviderId,
+      );
     } else {
       window.sessionStorage.removeItem(SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY);
     }
@@ -268,16 +292,19 @@ export function setPendingSettingsSectionIntent(
   // 设置页已经打开时不会重新挂载，单纯写 sessionStorage 没有订阅者会响应。
   // 同窗口补发自定义事件，让已打开的 SettingsPage 也能即时跳到 quickpick 指定分区。
   window.dispatchEvent(
-    new CustomEvent<SettingsSectionIntentEventDetail>(SETTINGS_SECTION_INTENT_EVENT, {
-      detail: {
-        section,
-        pluginTab: options.pluginTab,
-        pluginOrigin: options.pluginOrigin,
-        pluginScopeKey: options.pluginScopeKey?.trim() || undefined,
-        usageTab: options.usageTab,
-        modelProviderId: options.modelProviderId,
+    new CustomEvent<SettingsSectionIntentEventDetail>(
+      SETTINGS_SECTION_INTENT_EVENT,
+      {
+        detail: {
+          section,
+          pluginTab: options.pluginTab,
+          pluginOrigin: options.pluginOrigin,
+          pluginScopeKey: options.pluginScopeKey?.trim() || undefined,
+          usageTab: options.usageTab,
+          modelProviderId: options.modelProviderId,
+        },
       },
-    }),
+    ),
   );
 }
 
@@ -334,21 +361,29 @@ function setPendingPluginTab(tab: SettingsPluginTabTarget): void {
   }
 }
 
-export function consumePendingSettingsPluginTab(): SettingsPluginTabTarget | undefined {
+export function consumePendingSettingsPluginTab():
+  | SettingsPluginTabTarget
+  | undefined {
   if (typeof window === "undefined") return undefined;
   try {
     const raw = window.sessionStorage.getItem(SETTINGS_PLUGIN_TAB_INTENT_KEY);
     window.sessionStorage.removeItem(SETTINGS_PLUGIN_TAB_INTENT_KEY);
-    return raw === "plugins" || raw === "mcps" || raw === "skills" ? raw : undefined;
+    return raw === "plugins" || raw === "mcps" || raw === "skills"
+      ? raw
+      : undefined;
   } catch {
     return undefined;
   }
 }
 
-export function consumePendingSettingsPluginOrigin(): SettingsPluginNavigationOrigin | undefined {
+export function consumePendingSettingsPluginOrigin():
+  | SettingsPluginNavigationOrigin
+  | undefined {
   if (typeof window === "undefined") return undefined;
   try {
-    const raw = window.sessionStorage.getItem(SETTINGS_PLUGIN_ORIGIN_INTENT_KEY);
+    const raw = window.sessionStorage.getItem(
+      SETTINGS_PLUGIN_ORIGIN_INTENT_KEY,
+    );
     return raw === "plugin-store" ? raw : undefined;
   } catch {
     return undefined;
@@ -358,7 +393,9 @@ export function consumePendingSettingsPluginOrigin(): SettingsPluginNavigationOr
 export function consumePendingSettingsPluginScopeKey(): string | undefined {
   if (typeof window === "undefined") return undefined;
   try {
-    const raw = window.sessionStorage.getItem(SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY);
+    const raw = window.sessionStorage.getItem(
+      SETTINGS_PLUGIN_SCOPE_KEY_INTENT_KEY,
+    );
     return raw?.trim() || undefined;
   } catch {
     return undefined;
@@ -383,7 +420,9 @@ export function clearPendingSettingsPluginOrigin(): void {
   }
 }
 
-export function consumePendingSettingsUsageTab(): SettingsUsageTabTarget | undefined {
+export function consumePendingSettingsUsageTab():
+  | SettingsUsageTabTarget
+  | undefined {
   if (typeof window === "undefined") {
     return undefined;
   }
@@ -408,7 +447,9 @@ export function consumePendingSettingsModelProviderTarget():
   }
 
   try {
-    const providerId = window.sessionStorage.getItem(SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY);
+    const providerId = window.sessionStorage.getItem(
+      SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY,
+    );
     window.sessionStorage.removeItem(SETTINGS_MODEL_PROVIDER_ID_INTENT_KEY);
     if (!providerId?.trim()) {
       return undefined;
@@ -444,14 +485,18 @@ export function shouldFallbackSettingsUsageTabToApp({
 }
 
 export function addPendingSettingsSectionListener(
-  listener: (section: SettingsSectionId, detail?: SettingsSectionIntentEventDetail) => void,
+  listener: (
+    section: SettingsSectionId,
+    detail?: SettingsSectionIntentEventDetail,
+  ) => void,
 ): () => void {
   if (typeof window === "undefined") {
     return () => {};
   }
 
   const handleIntent = (event: Event) => {
-    const detail = (event as CustomEvent<SettingsSectionIntentEventDetail>).detail;
+    const detail = (event as CustomEvent<SettingsSectionIntentEventDetail>)
+      .detail;
     if (detail?.section && isSettingsSectionId(detail.section)) {
       // 设置页已打开时，事件已经承载了这次跳转意图。
       // 这里同步清掉 sessionStorage，避免用户随后切到别的分区并退出后，

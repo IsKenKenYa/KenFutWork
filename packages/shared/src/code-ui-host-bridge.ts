@@ -1,12 +1,12 @@
 import { z } from "zod";
 
-/** 可用模式由既有宿主能力判定，顺序沿现有顶部按钮。 */
+/** 可用模式由既有宿主能力判定，顺序沿现有顶部按钮（work 由 work 插件探针门控）。 */
 export const workbenchModesSchema = z
   .tuple([z.literal("code"), z.literal("design")])
-  .rest(z.literal("flow"))
-  .refine((modes) => modes.length <= 3);
+  .rest(z.enum(["flow", "work"]))
+  .refine((modes) => modes.length <= 4);
 export type WorkbenchModes = z.infer<typeof workbenchModesSchema>;
-export const workbenchModeSchema = z.enum(["code", "design", "flow"]);
+export const workbenchModeSchema = z.enum(["code", "design", "flow", "work"]);
 export type WorkbenchMode = z.infer<typeof workbenchModeSchema>;
 export const workbenchNavigationSchema = z
   .object({

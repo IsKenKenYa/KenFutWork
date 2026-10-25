@@ -253,11 +253,16 @@ describe("@kenfutwork/shared contracts", () => {
     expect(
       projectCreateRequestSchema.parse({ name: "x", kind: "flow" }).kind,
     ).toBe("flow");
+    // work 项目（《work 模式集成规划》WD-1）：第四类项目（办公 / 生产力创作）
+    expect(
+      projectCreateRequestSchema.parse({ name: "x", kind: "work" }).kind,
+    ).toBe("work");
     // 封闭枚举：加类型必须两处同改（契约 + 库 CHECK），后者由 tests/workspace.test.mjs 对账
     expect(getExportedSchema("projectKindSchema").options).toEqual([
       "design",
       "code",
       "flow",
+      "work",
     ]);
     expect(
       projectCreateRequestSchema.safeParse({ name: "x", kind: "nope" }).success,

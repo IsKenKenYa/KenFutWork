@@ -2,7 +2,13 @@ import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
 import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { Code2, Palette, PanelLeftOpen, Workflow } from "lucide-react";
+import {
+  Briefcase,
+  Code2,
+  Palette,
+  PanelLeftOpen,
+  Workflow,
+} from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { ProjectDirectoryRecovery } from "./ProjectDirectoryRecovery.js";
 
@@ -23,14 +29,23 @@ export function WorkbenchModeNavigation({
 }) {
   const modeItems = availableModes.map((id) => ({
     id,
-    label: id === "code" ? "Code" : id === "design" ? "Design" : "Flow",
+    label:
+      id === "code"
+        ? "Code"
+        : id === "design"
+          ? "Design"
+          : id === "flow"
+            ? "Flow"
+            : "Work",
     icon:
       id === "code" ? (
         <Code2 className="h-4 w-4 shrink-0" />
       ) : id === "design" ? (
         <Palette className="h-4 w-4 shrink-0" />
-      ) : (
+      ) : id === "flow" ? (
         <Workflow className="h-4 w-4 shrink-0" />
+      ) : (
+        <Briefcase className="h-4 w-4 shrink-0" />
       ),
   }));
   if (collapsed)

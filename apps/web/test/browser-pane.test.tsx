@@ -327,24 +327,8 @@ test("自由尺寸：改宽提交按新视口重开；拖拽把手改宽高；�
     ),
   );
 
-  // 拖拽把手：+80 / +60 → 980×780
-  surfaceJson.mockClear();
-  const handle = screen.getByTestId("browser-free-size-handle");
-  fireEvent.mouseDown(handle, { clientX: 100, clientY: 100 });
-  fireEvent.mouseMove(window, { clientX: 180, clientY: 160 });
-  fireEvent.mouseUp(window);
-  await waitFor(() =>
-    expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/browser/cdp/view",
-      expect.objectContaining({
-        body: JSON.stringify({
-          url: "https://example.com",
-          width: 980,
-          height: 780,
-        }),
-      }),
-    ),
-  );
+  // 右下角拖拽方块已移除（用户口径），尺寸只走数值输入
+  expect(screen.queryByTestId("browser-free-size-handle")).toBeNull();
 
   // 缩放档存在且不影响数据面（只改显示 scale）
   surfaceJson.mockClear();

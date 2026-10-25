@@ -9,6 +9,7 @@ import { installDesktopTitlebarDrag } from "@zcode/ui/design-shared";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
+import { useWorkHostEntry } from "@/hooks/use-work-host";
 import { addModelSettingsOpenListener } from "@/lib/model-settings-navigation";
 import { CodeWorkbenchFrame } from "./code-workbench-frame";
 import { ManagementDocumentFrame } from "./management-document-frame";
@@ -26,13 +27,17 @@ function WorkbenchModeSurface() {
   const [requested] = useState(() => search.get("mode"));
   const [requestedCanvas] = useState(() => search.get("canvasId"));
   const { entry: flowEntry } = useFlowHostEntry();
-  const availableModes = useMemo<WorkbenchModes>(
-    () =>
-      flowEntry?.available ? ["code", "design", "flow"] : ["code", "design"],
-    [flowEntry?.available],
-  );
-  // 深链解析：flow 探针未落定前不推 flow（落定后可用才推，不可用回落 design——
-  // 与旧壳「flow 不可用时弹回 Design」同一条纪律）。
+  const { entry: workEntry } = useWorkHostEntry();
+  // 模式探针未落定（entry=null）时先只给 code/design 兜底，落定后按可用性扩展——
+  // flow 与 work 各自独立门控（入口纪律：插件未装 / 适配层未通不出现对应入口）。
+  const availableModes = useMemo<WorkbenchModes>(() => {
+    const modes: WorkbenchModes = ["code", "design"];
+    if (flowEntry?.available) modes.push("flow");
+    if (workEntry?.available) modes.push("work");
+    return modes;
+  }, [flowEntry?.available, workEntry?.available]);
+  // 深链解析：探针未落定前不推对应模式（落定后可用才推，不可用回落——
+  // 与旧壳「flow 不可用时弹回 Design」同一条纪律；work 不可用回落 code）。
   const mode = useMemo<WorkbenchMode | undefined>(() => {
     if (requested === "design") return "design";
     if (requested === "flow")
@@ -41,8 +46,14 @@ function WorkbenchModeSurface() {
         : flowEntry.available
           ? "flow"
           : "design";
+    if (requested === "work")
+      return workEntry === null
+        ? "code"
+        : workEntry.available
+          ? "work"
+          : "code";
     return requested === "code" ? "code" : undefined;
-  }, [requested, flowEntry]);
+  }, [requested, flowEntry, workEntry]);
   // 管理文档 keep-alive：首次打开后持续挂载（hidden 收起），重复打开不重载。
   const [management, setManagement] = useState<ManagementTarget | null>(null);
   const openManagement = useCallback((target: ManagementTarget) => {

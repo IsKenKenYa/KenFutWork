@@ -1,0 +1,7 @@
+# work 插件（FORM-11）：产品入口条目。
+# W1 只做入口门控（安装态决定工作台 Work 模式是否出现），不声明服务端能力；
+# W2 起在这里挂编辑器扩展包托管（按需下载 + wasm iframe / 原生窗口双档挂载）。
+- insert:
+    - id: kenfutwork-work
+      name: kenfutwork-work
+      inject: []

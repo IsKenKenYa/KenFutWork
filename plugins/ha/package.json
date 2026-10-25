@@ -1,7 +1,7 @@
 {
   "name": "kenfutwork-ha",
   "version": "1.0.0",
-  "description": "智能家居插件（Home Assistant）：填入自建 HA 的地址与长期令牌，侧栏面板看与控制实体（灯/开关/窗帘/空调等），agent 也能直接操作；配置保存在实例私有存储，服务端重启后无需重填。",
+  "description": "智能家居插件（Home Assistant）：默认支持米家与华为（HUAWEI HiLink）设备——面板直接内嵌 HA 原生界面（另附精简网格与分步接入引导），agent 也能直接操作；配置保存在实例私有存储，服务端重启后无需重填。",
   "type": "module",
   "main": "index.js",
   "files": [

@@ -80,6 +80,7 @@ import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import { createVoicePlugin } from "../features/voice/plugin.js";
+import { createWorkHostPlugin } from "../features/work/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 
@@ -253,6 +254,10 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         ? { secret: deps.env.openDesignEmbedSecret }
         : {}),
     }),
+    // Work 宿主适配层：Work 引擎信息页数据面 /api/work/host/*（入口本身由
+    // plugins/work 的安装态门控，见 features/work/plugin.ts）；适配层自包含，
+    // 编辑器扩展包按需下载（W1 只登记注册表，不下载二进制）
+    createWorkHostPlugin(),
     createBrowserPlugin(),
     // 语音助手（内建插件，默认开启）：听/说走内置 sherpa 或 BYOK 实例端点
     createVoicePlugin(),

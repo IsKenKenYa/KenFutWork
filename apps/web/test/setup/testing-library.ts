@@ -1,5 +1,22 @@
 import { configure } from "@testing-library/react";
 
+// jsdom 不实现 matchMedia；Streamdown/MessageResponse 在 system 主题下会读它。
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 /**
  * 全仓测试的异步查询预算。
  *

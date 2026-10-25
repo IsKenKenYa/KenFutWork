@@ -53,7 +53,8 @@ export const designReviewAnnotationSchema = z.object({
   id: z.string().min(1),
   projectId: z.string().min(1),
   file: z.string().min(1),
-  kind: z.enum(["pen", "rect"]),
+  kind: z.enum(["pen", "rect", "text", "mark"]),
+  text: z.string().max(500).nullable().optional(),
   color: z.string().min(1).max(32),
   strokeWidth: z.number().finite().positive().max(64),
   points: z
@@ -99,7 +100,8 @@ export type DesignReviewCommentUpdate = z.infer<
 >;
 
 export const designReviewAnnotationCreateSchema = scopeSchema.extend({
-  kind: z.enum(["pen", "rect"]),
+  kind: z.enum(["pen", "rect", "text", "mark"]),
+  text: z.string().max(500).nullable().optional(),
   color: z.string().trim().min(1).max(32),
   strokeWidth: z.number().finite().positive().max(64),
   points: z
@@ -109,6 +111,20 @@ export const designReviewAnnotationCreateSchema = scopeSchema.extend({
 });
 export type DesignReviewAnnotationCreate = z.infer<
   typeof designReviewAnnotationCreateSchema
+>;
+
+/**
+ * 标注编辑只放开点集：选中后整体移动/缩放会改写所有点，kind/文字/颜色随创建落定。
+ * 坐标仍是文档归一化口径（0..1），面板负责把拖拽位移换算进来。
+ */
+export const designReviewAnnotationUpdateSchema = z.object({
+  points: z
+    .array(z.tuple([z.number().finite(), z.number().finite()]))
+    .min(2)
+    .max(4000),
+});
+export type DesignReviewAnnotationUpdate = z.infer<
+  typeof designReviewAnnotationUpdateSchema
 >;
 
 export const designReviewCommentResponseSchema = z.object({

@@ -122,7 +122,7 @@ export type OpenDesignHostConfigUpdate = z.infer<
  * 「最近画布」槽位（agent 上下文）的地方。
  * ------------------------------------------------------------------ */
 
-/** 新建画布请求：缺省名由宿主给（「未命名画布」）。 */
+/** 新建设计请求：缺省名由宿主给（「未命名设计」）。 */
 export const openDesignHostCreateCanvasRequestSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
 });
@@ -250,7 +250,31 @@ export type OpenDesignHostProvisionResponse = z.infer<
   typeof openDesignHostProvisionResponseSchema
 >;
 
-/** 画布列表（面板「+」的「打开画布」项）：上游 project 概要，按更新时间倒序。 */
+/**
+ * 按当前 KenFutWork 项目取/建绑定设计项目。
+ *
+ * `workspaceKey` 是项目身份（workspaceIdentity 优先，退目录路径）；宿主只存哈希，
+ * 不把目录路径写进配置文件。换项目即换资源页；项目删除后再次打开会重建。
+ */
+export const openDesignHostWorkspaceProjectRequestSchema = z.object({
+  workspaceKey: z.string().trim().min(1).max(512),
+  /** 设计项目名（= 当前项目名）；缺省「未命名设计」。 */
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostWorkspaceProjectRequest = z.infer<
+  typeof openDesignHostWorkspaceProjectRequestSchema
+>;
+
+export const openDesignHostWorkspaceProjectResponseSchema =
+  openDesignHostCanvasResponseSchema.extend({
+    /** true = 本次新建并写入绑定；false = 复用已有绑定。 */
+    created: z.boolean(),
+  });
+export type OpenDesignHostWorkspaceProjectResponse = z.infer<
+  typeof openDesignHostWorkspaceProjectResponseSchema
+>;
+
+/** 项目资源列表（面板「+」的「打开画布」项）：上游 project 概要，按更新时间倒序。 */
 export const openDesignHostProjectsResponseSchema = z.object({
   projects: z
     .array(
@@ -295,6 +319,55 @@ export const openDesignHostWriteFileResponseSchema = z.object({
 });
 export type OpenDesignHostWriteFileResponse = z.infer<
   typeof openDesignHostWriteFileResponseSchema
+>;
+
+/** 重命名设计/文档文件（读旧正文 → 写新名 → 删旧文件；仅文本设计/文档）。 */
+export const openDesignHostRenameFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+  newName: z.string().min(1).max(240),
+});
+export type OpenDesignHostRenameFileRequest = z.infer<
+  typeof openDesignHostRenameFileRequestSchema
+>;
+
+export const openDesignHostRenameFileResponseSchema = z.object({
+  file: z.object({ name: z.string().min(1), kind: z.string() }),
+});
+export type OpenDesignHostRenameFileResponse = z.infer<
+  typeof openDesignHostRenameFileResponseSchema
+>;
+
+/** 复制设计/文档文件（读源正文 → 以「-副本」新名写入；仅文本设计/文档）。 */
+export const openDesignHostCopyFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+});
+export type OpenDesignHostCopyFileRequest = z.infer<
+  typeof openDesignHostCopyFileRequestSchema
+>;
+
+export const openDesignHostCopyFileResponseSchema = z.object({
+  file: z.object({ name: z.string().min(1), kind: z.string() }),
+});
+export type OpenDesignHostCopyFileResponse = z.infer<
+  typeof openDesignHostCopyFileResponseSchema
+>;
+
+/** 删除设计/文档文件（仅文本设计/文档，宿主直接删上游文件）。 */
+export const openDesignHostDeleteFileRequestSchema = z.object({
+  projectId: z.string().min(1),
+  name: z.string().min(1).max(240),
+});
+export type OpenDesignHostDeleteFileRequest = z.infer<
+  typeof openDesignHostDeleteFileRequestSchema
+>;
+
+export const openDesignHostDeleteFileResponseSchema = z.object({
+  deleted: z.string().min(1),
+});
+export type OpenDesignHostDeleteFileResponse = z.infer<
+  typeof openDesignHostDeleteFileResponseSchema
 >;
 
 /**
@@ -406,6 +479,61 @@ export type OpenDesignHostCreateDocumentRequest = z.infer<
   typeof openDesignHostCreateDocumentRequestSchema
 >;
 
+/** 在已绑定的设计项目里新建 Markdown 文档（资源页「新建文档」）。 */
+export const openDesignHostCreateDesignDocumentRequestSchema = z.object({
+  projectId: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateDesignDocumentRequest = z.infer<
+  typeof openDesignHostCreateDesignDocumentRequestSchema
+>;
+
+export const openDesignHostCreateDesignDocumentResponseSchema = z.object({
+  file: z.object({
+    name: z.string().min(1),
+    kind: z.string(),
+  }),
+});
+export type OpenDesignHostCreateDesignDocumentResponse = z.infer<
+  typeof openDesignHostCreateDesignDocumentResponseSchema
+>;
+
+/** 在已绑定的设计项目里新建 HTML 设计稿（资源页「新建设计稿」）。 */
+export const openDesignHostCreateDesignFileRequestSchema = z.object({
+  projectId: z.string().min(1).max(120),
+  name: z.string().trim().min(1).max(120).optional(),
+});
+export type OpenDesignHostCreateDesignFileRequest = z.infer<
+  typeof openDesignHostCreateDesignFileRequestSchema
+>;
+
+export const openDesignHostCreateDesignFileResponseSchema = z.object({
+  file: z.object({
+    name: z.string().min(1),
+    kind: z.string(),
+  }),
+});
+export type OpenDesignHostCreateDesignFileResponse = z.infer<
+  typeof openDesignHostCreateDesignFileResponseSchema
+>;
+
+/** 把某个历史版本恢复为当前文件（代理上游 versions/:versionId/restore）。 */
+export const openDesignHostRestoreVersionRequestSchema = z.object({
+  projectId: z.string().min(1).max(120),
+  file: z.string().min(1).max(300),
+  versionId: z.string().min(1).max(200),
+});
+export type OpenDesignHostRestoreVersionRequest = z.infer<
+  typeof openDesignHostRestoreVersionRequestSchema
+>;
+
+export const openDesignHostRestoreVersionResponseSchema = z.object({
+  ok: z.boolean(),
+});
+export type OpenDesignHostRestoreVersionResponse = z.infer<
+  typeof openDesignHostRestoreVersionResponseSchema
+>;
+
 /** 设计体系概要（上游 /api/design-systems 的宿主代理面）。 */
 export const openDesignHostDesignSystemSummarySchema = z.object({
   id: z.string().min(1),
@@ -423,6 +551,54 @@ export const openDesignHostDesignSystemsResponseSchema = z.object({
 });
 export type OpenDesignHostDesignSystemsResponse = z.infer<
   typeof openDesignHostDesignSystemsResponseSchema
+>;
+
+/**
+ * 新建设计体系（代理上游 POST /api/brands 的提取链路）。
+ *
+ * 与上游 `/design-systems/create` 同口径：从网站或 DESIGN.md 提取颜色、字体与
+ * 组件，生成一份可直接使用的已发布体系；标题由来源内容决定，不单独填名称。
+ */
+export const openDesignHostStartDesignSystemExtractionRequestSchema = z
+  .object({
+    url: z.string().trim().max(2048).optional(),
+    description: z.string().trim().max(4000).optional(),
+    designMd: z.string().max(200_000).optional(),
+  })
+  .refine((value) => Boolean(value.url?.trim() || value.designMd?.trim()), {
+    message: "至少提供网站或 DESIGN.md。",
+    path: ["url"],
+  });
+export type OpenDesignHostStartDesignSystemExtractionRequest = z.infer<
+  typeof openDesignHostStartDesignSystemExtractionRequestSchema
+>;
+
+/** 提取任务快照（上游 brand 的 meta + brand 标题）。 */
+export const openDesignHostDesignSystemExtractionSchema = z.object({
+  id: z.string().min(1),
+  status: z.string().min(1),
+  designSystemId: z.string().min(1).nullable(),
+  title: z.string().min(1).nullable(),
+  error: z.string().min(1).nullable(),
+});
+export type OpenDesignHostDesignSystemExtraction = z.infer<
+  typeof openDesignHostDesignSystemExtractionSchema
+>;
+
+export const openDesignHostStartDesignSystemExtractionResponseSchema = z.object(
+  {
+    extraction: openDesignHostDesignSystemExtractionSchema,
+  },
+);
+export type OpenDesignHostStartDesignSystemExtractionResponse = z.infer<
+  typeof openDesignHostStartDesignSystemExtractionResponseSchema
+>;
+
+export const openDesignHostDesignSystemExtractionResponseSchema = z.object({
+  extraction: openDesignHostDesignSystemExtractionSchema,
+});
+export type OpenDesignHostDesignSystemExtractionResponse = z.infer<
+  typeof openDesignHostDesignSystemExtractionResponseSchema
 >;
 
 /** 绑定/切换画布的设计体系（代理上游 PATCH /api/projects/:id 的 designSystemId）。 */

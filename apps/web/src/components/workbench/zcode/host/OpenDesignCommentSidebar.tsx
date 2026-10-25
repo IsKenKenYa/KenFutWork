@@ -1,7 +1,7 @@
 import type { DesignReviewComment } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { Check, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 /**
  * 评论侧栏：这块画布当前文件上的评论清单。
@@ -121,10 +121,6 @@ export function OpenDesignCommentComposer({
   onSubmit: (body: string) => void;
 }) {
   const [body, setBody] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
   return (
     <div
       data-testid="open-design-comment-composer"
@@ -136,7 +132,6 @@ export function OpenDesignCommentComposer({
         </p>
       ) : null}
       <textarea
-        ref={inputRef}
         value={body}
         placeholder="评论"
         onChange={(event) => setBody(event.target.value)}

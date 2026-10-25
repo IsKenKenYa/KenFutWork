@@ -17,6 +17,12 @@ const hit: OpenDesignHit = {
   rect: { x: 0, y: 0, w: 160, h: 32 },
   color: "rgb(0, 0, 0)",
   backgroundColor: "rgba(0, 0, 0, 0)",
+  fontSize: "32px",
+  fontWeight: "700",
+  textAlign: "left",
+  padding: "0px",
+  margin: "0px",
+  borderRadius: "0px",
 };
 
 test("通过标签找到HTML输入框并提交修改内容", () => {

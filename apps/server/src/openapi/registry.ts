@@ -80,6 +80,7 @@ import {
   createVideoJobRequestSchema,
   designReviewAnnotationCreateSchema,
   designReviewAnnotationResponseSchema,
+  designReviewAnnotationUpdateSchema,
   designReviewCommentCreateSchema,
   designReviewCommentResponseSchema,
   designReviewCommentUpdateSchema,
@@ -156,15 +157,24 @@ import {
   openDesignHostCloudflareZonesResponseSchema,
   openDesignHostConfigResponseSchema,
   openDesignHostConfigUpdateSchema,
+  openDesignHostCopyFileRequestSchema,
+  openDesignHostCopyFileResponseSchema,
   openDesignHostCreateCanvasRequestSchema,
+  openDesignHostCreateDesignDocumentRequestSchema,
+  openDesignHostCreateDesignDocumentResponseSchema,
+  openDesignHostCreateDesignFileRequestSchema,
+  openDesignHostCreateDesignFileResponseSchema,
   openDesignHostCreateDocumentRequestSchema,
   openDesignHostCredentialsRequestSchema,
   openDesignHostCredentialsResponseSchema,
+  openDesignHostDeleteFileRequestSchema,
+  openDesignHostDeleteFileResponseSchema,
   openDesignHostDeployConfigSchema,
   openDesignHostDeployConfigUpdateSchema,
   openDesignHostDeploymentSchema,
   openDesignHostDeploymentsResponseSchema,
   openDesignHostDeployRequestSchema,
+  openDesignHostDesignSystemExtractionResponseSchema,
   openDesignHostDesignSystemsResponseSchema,
   openDesignHostFileTextResponseSchema,
   openDesignHostLastProjectResponseSchema,
@@ -172,13 +182,21 @@ import {
   openDesignHostProjectsResponseSchema,
   openDesignHostProvisionResponseSchema,
   openDesignHostReadinessResponseSchema,
+  openDesignHostRenameFileRequestSchema,
+  openDesignHostRenameFileResponseSchema,
+  openDesignHostRestoreVersionRequestSchema,
+  openDesignHostRestoreVersionResponseSchema,
   openDesignHostSaveToWorkspaceRequestSchema,
   openDesignHostSaveToWorkspaceResponseSchema,
+  openDesignHostStartDesignSystemExtractionRequestSchema,
+  openDesignHostStartDesignSystemExtractionResponseSchema,
   openDesignHostStatusResponseSchema,
   openDesignHostSyncContextRequestSchema,
   openDesignHostSyncContextResponseSchema,
   openDesignHostVersionContentResponseSchema,
   openDesignHostVersionsResponseSchema,
+  openDesignHostWorkspaceProjectRequestSchema,
+  openDesignHostWorkspaceProjectResponseSchema,
   openDesignHostWriteFileRequestSchema,
   openDesignHostWriteFileResponseSchema,
   pickDirectoryResponseSchema,
@@ -235,6 +253,9 @@ import {
   voiceSettingsUpdateRequestSchema,
   voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
+  workEditorInstallStatusSchema,
+  workHostEditorsResponseSchema,
+  workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
 import type { ZodType } from "zod";
 import { z } from "zod";
@@ -1535,6 +1556,61 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description:
       "网关密钥和项目绑定通过后，以expectedVersion原子保存至项目内JSON布局；null仅用于创建。正文上限4MiB，版本冲突保留外部编辑并返回409，发布前再次核验授权。",
   },
+  // ---- work-host.ts（work 集成宿主缝：扩展包注册表与数据目录事实）----
+  {
+    method: "get",
+    path: "/api/work/host/status",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workHostStatusResponseSchema,
+    summary: "查询 work 宿主启用状态",
+    description:
+      "返回 work 宿主适配层是否启用及已登记的编辑器扩展包数量，并附未启用原因。适配层自包含（注册表+数据目录），正常恒为启用；未配置时也返回 200 + enabled=false，不摆空壳。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workHostEditorsResponseSchema,
+    summary: "查询 work 编辑器扩展包注册表",
+    description:
+      "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点、锚定发布）与各包在本机数据目录的落位事实，以及各编辑器安装状态机快照。编辑器二进制按需下载，不随安装包分发。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/editors/:editorId/install",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    summary: "下载并落位 work 编辑器扩展包",
+    description:
+      "按锚定发布下载发行包，逐项核验字节数与 sha256 后解压原子落位（幂等：已落位且校验和一致直接就绪）。未锚定发布返回 400，安装进行中返回 409（轮询状态端点）。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors/:editorId/install/status",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workEditorInstallStatusSchema,
+    summary: "查询 work 编辑器安装状态",
+    description:
+      "返回该编辑器安装状态机快照（idle/installing/ready/error + 日志尾部）。未知编辑器返回 404。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/editors/:editorId/*",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    binaryResponse: "application/octet-stream",
+    summary: "读取 work 编辑器静态站点文件",
+    description:
+      "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
+  },
   // ---- design-review.ts（画布评论与标注；本仓自持数据面）----
   {
     method: "get",
@@ -1596,6 +1672,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "保存一条画布标注",
     description:
       "笔迹点集按文档尺寸归一化（0..1）存储：同一块画布在桌面/平板/手机视口与 50%..200% 缩放之间切换后仍能对齐。",
+  },
+  {
+    method: "patch",
+    path: "/api/design-review/annotations/{id}",
+    tag: "design-review",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: designReviewAnnotationUpdateSchema,
+    responseSchema: designReviewAnnotationResponseSchema,
+    summary: "移动或缩放一条画布标注",
+    description:
+      "选中标注后整体移动/缩放只改写点集（仍是文档归一化坐标）；kind、文字与颜色随创建落定，不在编辑范围。目标不存在时 404。",
   },
   {
     method: "delete",
@@ -1662,9 +1750,45 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     successStatus: 200,
     requestSchema: openDesignHostCreateCanvasRequestSchema,
     responseSchema: openDesignHostCanvasResponseSchema,
-    summary: "新建 OpenDesign 画布",
+    summary: "新建 OpenDesign 设计",
     description:
-      "在上游创建一个 project（id 由宿主生成）并写进「最近画布」槽位；缺省名「未命名画布」。本机接入验证。",
+      "在上游创建一个 project（id 由宿主生成）并写进「最近画布」槽位；缺省名「未命名设计」。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/workspace-project",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostWorkspaceProjectRequestSchema,
+    responseSchema: openDesignHostWorkspaceProjectResponseSchema,
+    summary: "取或建当前项目的设计工作区",
+    description:
+      "按 workspaceKey 绑定一个上游 project：已有绑定且上游项目仍存在则复用，上游项目被删则重建；返回项目内容与资源文件表（created 标记本次是否新建）。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/design-document",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostCreateDesignDocumentRequestSchema,
+    responseSchema: openDesignHostCreateDesignDocumentResponseSchema,
+    summary: "在项目设计工作区新建 Markdown 文档",
+    description:
+      "在已绑定的上游 project 里写一份 Markdown 文档（不新建项目）；文件名按序号去重。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/design-file",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostCreateDesignFileRequestSchema,
+    responseSchema: openDesignHostCreateDesignFileResponseSchema,
+    summary: "在项目设计工作区新建设计稿",
+    description:
+      "在已绑定的上游 project 里写一份空白 HTML 设计稿（不新建项目）；文件名按序号去重。本机接入验证。",
   },
   {
     method: "post",
@@ -1783,6 +1907,29 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
   {
     method: "post",
+    path: "/api/open-design/host/design-systems",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 202,
+    requestSchema: openDesignHostStartDesignSystemExtractionRequestSchema,
+    responseSchema: openDesignHostStartDesignSystemExtractionResponseSchema,
+    summary: "从网站或 DESIGN.md 新建设计体系",
+    description:
+      "宿主代理上游 POST /api/brands：至少提供网站链接或 DESIGN.md；上游在后台提取颜色、字体与组件，成功时产出已发布体系。返回提取任务 id 供轮询。本机接入验证。",
+  },
+  {
+    method: "get",
+    path: "/api/open-design/host/design-systems/extractions/:id",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: openDesignHostDesignSystemExtractionResponseSchema,
+    summary: "读取设计体系提取进度",
+    description:
+      "宿主代理上游 GET /api/brands/:id：返回 extracting / ready / failed 等状态与 designSystemId；ready 后可绑定到当前画布。本机接入验证。",
+  },
+  {
+    method: "post",
     path: "/api/open-design/host/design-systems/bind",
     tag: "open-design",
     auth: "local",
@@ -1877,6 +2024,20 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description: "截图/导出/编辑的输入。超过 2MiB 返回 413，不做静默截断。",
   },
   {
+    method: "get",
+    path: "/api/open-design/host/archive",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    querySchema: z.object({
+      projectId: z.string().describe("画布 id"),
+    }),
+    binaryResponse: "application/zip",
+    summary: "导出 OpenDesign 项目资源 ZIP",
+    description:
+      "读取上游项目文件表，逐个取回文件并打成 ZIP；读取失败的文件会在包内「导出说明.txt」列出。超过 200 MB 返回 413。本机接入验证。",
+  },
+  {
     method: "post",
     path: "/api/open-design/host/file",
     tag: "open-design",
@@ -1887,6 +2048,42 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "写入画布文件",
     description:
       "可视化编辑保存与资源上传的落点：宿主代上游写文件，HTML 一律记一个 manual 版本（与生成历史同账），二进制资源用 base64。文件名拒绝绝对路径与上级目录。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/file-rename",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostRenameFileRequestSchema,
+    responseSchema: openDesignHostRenameFileResponseSchema,
+    summary: "重命名设计或文档",
+    description:
+      "读旧文件正文 → 以新名写回 → 删除旧文件；只允许 .html/.htm/.md，新旧名都拒绝路径；重名返回 409，旧文件删除失败会回滚新文件。HTML 会把 <title> 同步为新资源名。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/file-copy",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostCopyFileRequestSchema,
+    responseSchema: openDesignHostCopyFileResponseSchema,
+    summary: "复制设计或文档",
+    description:
+      "读源文件正文 → 以「-副本」新名写入（重名自动加序号）；只允许 .html/.htm/.md，文件名拒绝路径。HTML 副本的 <title> 同步为新资源名。本机接入验证。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/file-delete",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostDeleteFileRequestSchema,
+    responseSchema: openDesignHostDeleteFileResponseSchema,
+    summary: "删除设计或文档",
+    description:
+      "直接删除上游项目里的文本文件；只允许 .html/.htm/.md，文件名拒绝路径，文件不存在返回 404。本机接入验证。",
   },
   {
     method: "get",
@@ -1916,6 +2113,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: openDesignHostVersionContentResponseSchema,
     summary: "读取画布历史版本正文",
     description: "单个历史版本的 HTML 正文；超过 2MiB 返回 413。",
+  },
+  {
+    method: "post",
+    path: "/api/open-design/host/version-restore",
+    tag: "open-design",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: openDesignHostRestoreVersionRequestSchema,
+    responseSchema: openDesignHostRestoreVersionResponseSchema,
+    summary: "恢复画布历史版本",
+    description:
+      "代理上游 POST /api/projects/:id/files/:name/versions/:versionId/restore，把选中版本写回当前文件。本机接入验证。",
   },
   // ---- fonts.ts（字体；免鉴权）----
   {

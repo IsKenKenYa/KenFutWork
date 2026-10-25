@@ -55,6 +55,12 @@ export interface DesignReviewService {
     id: string,
     patch: DesignReviewCommentUpdate,
   ): Promise<DesignReviewComment | null>;
+  /** 选中标注后的整体移动/缩放：改写点集（归一化坐标）。 */
+  updateAnnotation(
+    actor: LocalActor,
+    id: string,
+    points: Array<[number, number]>,
+  ): Promise<DesignReviewAnnotation | null>;
 }
 
 function toComment(row: DesignReviewCommentRow): DesignReviewComment {
@@ -79,7 +85,11 @@ function toAnnotation(row: DesignReviewAnnotationRow): DesignReviewAnnotation {
     id: row.id,
     projectId: row.project_id,
     file: row.file_name,
-    kind: row.kind === "rect" ? "rect" : "pen",
+    kind:
+      row.kind === "rect" || row.kind === "text" || row.kind === "mark"
+        ? row.kind
+        : "pen",
+    text: row.text ?? null,
     color: row.color,
     strokeWidth: Number(row.stroke_width),
     points: row.points,
@@ -149,6 +159,7 @@ export function createDesignReviewService(options: {
         color: input.color,
         strokeWidth: input.strokeWidth,
         points: input.points,
+        text: input.text ?? null,
       });
       if (!row) throw new Error("标注写入没有返回行。");
       return toAnnotation(row);
@@ -156,6 +167,15 @@ export function createDesignReviewService(options: {
 
     async deleteAnnotation(actor, id) {
       return (await repository.deleteAnnotation(actor.instanceId, id)) > 0;
+    },
+
+    async updateAnnotation(actor, id, points) {
+      const row = await repository.updateAnnotation(
+        actor.instanceId,
+        id,
+        points,
+      );
+      return row ? toAnnotation(row) : null;
     },
   };
 }

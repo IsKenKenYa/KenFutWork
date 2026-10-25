@@ -35,12 +35,22 @@ function fakeClient() {
     base64Encoded?: boolean;
   } | null = { body: "" };
   /** `Page.captureScreenshot` 的返回（默认 2 字节假图，够断言帧长度）。 */
-  let screenshotResult: Record<string, unknown> = {
+  const screenshotResult: Record<string, unknown> = {
     data: Buffer.from([9, 9]).toString("base64"),
   };
+  /** mouseMoved 闸门：开时 dispatched moved 挂起等待手动放行（模拟 5s 帧回执）。 */
+  let moveGate = false;
+  const moveWaiters: Array<() => void> = [];
   const client: CdpClient = {
     async send(method, params = {}, sessionId) {
       sent.push({ method, params, ...(sessionId ? { sessionId } : {}) });
+      if (
+        moveGate &&
+        method === "Input.dispatchMouseEvent" &&
+        params.type === "mouseMoved"
+      ) {
+        await new Promise<void>((resolve) => moveWaiters.push(resolve));
+      }
       if (method === "Page.getLayoutMetrics") {
         return {
           cssVisualViewport: { clientWidth: 900, clientHeight: 600, scale: 1 },
@@ -98,6 +108,15 @@ function fakeClient() {
     },
     setState(next: "headless" | "headed") {
       headless = next === "headless";
+    },
+    /** 开/关 mouseMoved 闸门；放行时一次性放掉所有挂起（并关闸）。 */
+    setMoveGate(on: boolean) {
+      moveGate = on;
+    },
+    resolvePendingMoves() {
+      moveGate = false;
+      const waiters = moveWaiters.splice(0);
+      for (const resolve of waiters) resolve();
     },
     headless: () => headless,
     emit(method: string, params: Record<string, unknown>, sessionId?: string) {
@@ -309,6 +328,61 @@ describe("CDP 会话：面板画面流", () => {
     expect(fake.sent.at(-1)).toMatchObject({
       method: "Input.insertText",
       params: { text: "中文" },
+    });
+    await session.disconnect();
+  });
+
+  it("hover moved 合帧：在途最多一条、后来的只更新坐标，按下/抬起立即透传", async () => {
+    const fake = fakeClient();
+    const session = sessionWith(fake);
+    await session.connect();
+    fake.setMoveGate(true);
+    // 模拟渲染器不产帧：mouseMoved 回执挂起（真机 ~5s）。三条连发必须立即返回。
+    const t0 = Date.now();
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 1,
+      y: 2,
+      buttons: 0,
+    });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 3,
+      y: 4,
+      buttons: 0,
+    });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 5,
+      y: 6,
+      buttons: 0,
+    });
+    expect(Date.now() - t0).toBeLessThan(100);
+    const movesBefore = fake.sent.filter((s) => s.params.type === "mouseMoved");
+    expect(movesBefore).toHaveLength(1);
+    expect(movesBefore[0]?.params).toMatchObject({ x: 1, y: 2, buttons: 0 });
+    // 按下不吃合帧：在途 moved 不挡离散事件。
+    await session.input({
+      type: "mouse",
+      action: "pressed",
+      x: 5,
+      y: 6,
+      buttons: 1,
+    });
+    expect(fake.sent.at(-1)?.params).toMatchObject({
+      type: "mousePressed",
+      x: 5,
+      y: 6,
+    });
+    // 在途落定 → 自动冲刷最后坐标，且只补一条。
+    fake.resolvePendingMoves();
+    await vi.waitFor(() => {
+      const moves = fake.sent.filter((s) => s.params.type === "mouseMoved");
+      expect(moves).toHaveLength(2);
+      expect(moves[1]?.params).toMatchObject({ x: 5, y: 6 });
     });
     await session.disconnect();
   });

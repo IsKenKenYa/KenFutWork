@@ -26,6 +26,12 @@ export interface OpenDesignHit {
   rect: { x: number; y: number; w: number; h: number };
   color: string;
   backgroundColor: string;
+  fontSize: string;
+  fontWeight: string;
+  textAlign: string;
+  padding: string;
+  margin: string;
+  borderRadius: string;
 }
 
 export interface OpenDesignRects {
@@ -109,7 +115,9 @@ const BRIDGE_SCRIPT = `(function(){
   function describe(el){
     var cs=getComputedStyle(el), text=(el.innerText||el.textContent||"").replace(/\\s+/g," ").trim();
     return {path:cssPath(el),tag:el.tagName.toLowerCase(),text:text.slice(0,160),
-      html:el.outerHTML.slice(0,20000),rect:rectOf(el),color:cs.color,backgroundColor:cs.backgroundColor};
+      html:el.outerHTML.slice(0,20000),rect:rectOf(el),color:cs.color,backgroundColor:cs.backgroundColor,
+      fontSize:cs.fontSize,fontWeight:cs.fontWeight,textAlign:cs.textAlign,
+      padding:cs.padding,margin:cs.margin,borderRadius:cs.borderRadius};
   }
   function metrics(){
     var de=document.documentElement;

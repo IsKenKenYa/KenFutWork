@@ -138,6 +138,30 @@ export function renderAnnotationsPng(
     const pts = annotation.points.map(
       ([nx, ny]) => [nx * width, ny * height] as const,
     );
+    if (annotation.kind === "mark" && pts.length >= 1) {
+      const [mx, my] = pts[0]!;
+      stamp(pixels, width, height, mx, my, Math.max(6, radius * 2), color);
+      continue;
+    }
+    if (annotation.kind === "text" && pts.length >= 1) {
+      const [tx, ty] = pts[0]!;
+      // 没有字体光栅化：文本用一条下划线占位，正文在 document.md 里逐条列出。
+      strokeLine(
+        pixels,
+        width,
+        height,
+        tx,
+        ty,
+        Math.min(
+          width - 1,
+          tx + Math.max(60, (annotation.text ?? "").length * 8),
+        ),
+        ty,
+        Math.max(2, radius),
+        color,
+      );
+      continue;
+    }
     if (annotation.kind === "rect" && pts.length >= 2) {
       const [ax, ay] = pts[0]!;
       const [bx, by] = pts[pts.length - 1]!;

@@ -727,7 +727,7 @@ export function BrowserPane({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: target }),
       });
-      toast("调试控制台已打开（面板页面里的悬浮窗，可拖可关）");
+      toast("调试控制台已打开");
     } catch (error) {
       toast(error instanceof Error ? error.message : "打开调试工具失败。");
     } finally {
@@ -1125,45 +1125,6 @@ export function BrowserPane({
                 </div>
               )}
             </div>
-            {freeSizeOn ? (
-              <button
-                type="button"
-                aria-label="拖动调整尺寸"
-                title="拖动调整尺寸"
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  const startX = event.clientX;
-                  const startY = event.clientY;
-                  const start = freeSize;
-                  const onMove = (moveEvent: MouseEvent) => {
-                    setFreeSize({
-                      width: clampViewport(
-                        start.width + (moveEvent.clientX - startX),
-                        320,
-                        3840,
-                      ),
-                      height: clampViewport(
-                        start.height + (moveEvent.clientY - startY),
-                        240,
-                        2160,
-                      ),
-                    });
-                  };
-                  const onUp = () => {
-                    window.removeEventListener("mousemove", onMove);
-                    window.removeEventListener("mouseup", onUp);
-                  };
-                  window.addEventListener("mousemove", onMove);
-                  window.addEventListener("mouseup", onUp);
-                }}
-                style={{
-                  left: `${frameOffsetLeft + displayWidth - 10}px`,
-                  top: `${frameOffsetTop + displayHeight - 10}px`,
-                }}
-                className="absolute h-3 w-3 cursor-nwse-resize rounded-sm border border-foreground/40 bg-background"
-                data-testid="browser-free-size-handle"
-              />
-            ) : null}
           </div>
         </div>
       ) : (

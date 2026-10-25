@@ -12,7 +12,16 @@ export interface OpenDesignElementEdit {
   path: string;
   /** 替换整个元素的 outerHTML；省略则只改样式。 */
   html?: string;
-  style?: { color?: string; backgroundColor?: string };
+  style?: {
+    color?: string;
+    backgroundColor?: string;
+    fontSize?: string;
+    fontWeight?: string;
+    textAlign?: string;
+    padding?: string;
+    margin?: string;
+    borderRadius?: string;
+  };
 }
 
 function query(root: Document, path: string): Element | null {
@@ -52,6 +61,41 @@ export function readElementHtml(
   return query(doc, path)?.outerHTML ?? null;
 }
 
+/** 拖放元素的落点语义：进到容器里 / 插到目标之前 / 之后。 */
+export type OpenDesignMovePosition = "inside" | "before" | "after";
+
+/**
+ * 把元素移到新位置（换容器或调整同级顺序）。
+ *
+ * 与样式编辑同一条纪律：只在**源文本**的惰性文档里挪节点，再从源文本序列化——
+ * 不从实时 DOM 往回烤运行时状态。路径在源文本里对不上（设计脚本重排过）就返回
+ * null，由调用方如实提示。目标是自己或自己的后代会形成环，同样拒绝。
+ */
+export function moveElement(
+  sourceHtml: string,
+  path: string,
+  targetPath: string,
+  position: OpenDesignMovePosition,
+): string | null {
+  const doc = new DOMParser().parseFromString(sourceHtml, "text/html");
+  const element = query(doc, path);
+  const target = query(doc, targetPath);
+  if (!element || !target || element === target) return null;
+  if (element.contains(target)) return null;
+  if (position === "inside") {
+    if (target.tagName.toLowerCase() === "html") return null;
+    target.appendChild(element);
+  } else {
+    const parent = target.parentNode;
+    if (!parent) return null;
+    parent.insertBefore(
+      element,
+      position === "before" ? target : target.nextSibling,
+    );
+  }
+  return serialize(doc);
+}
+
 /**
  * 把编辑应用到源文本；返回 null 表示这个路径在当前正文里找不到元素
  * （版本变了，或设计里的脚本重排过结构）——调用方如实提示，不猜个位置写回去。
@@ -77,6 +121,24 @@ export function applyElementEdit(
   if (edit.style?.color !== undefined) next.style.color = edit.style.color;
   if (edit.style?.backgroundColor !== undefined) {
     next.style.backgroundColor = edit.style.backgroundColor;
+  }
+  if (edit.style?.fontSize !== undefined) {
+    next.style.fontSize = edit.style.fontSize;
+  }
+  if (edit.style?.fontWeight !== undefined) {
+    next.style.fontWeight = edit.style.fontWeight;
+  }
+  if (edit.style?.textAlign !== undefined) {
+    next.style.textAlign = edit.style.textAlign;
+  }
+  if (edit.style?.padding !== undefined) {
+    next.style.padding = edit.style.padding;
+  }
+  if (edit.style?.margin !== undefined) {
+    next.style.margin = edit.style.margin;
+  }
+  if (edit.style?.borderRadius !== undefined) {
+    next.style.borderRadius = edit.style.borderRadius;
   }
   return serialize(doc);
 }

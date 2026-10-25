@@ -42,7 +42,9 @@ async function world() {
       input: ProjectCreateRequest,
     ): Promise<ProjectSummary> => {
       const kind = input.kind ?? "code";
-      if (kind === "flow") throw new Error("fixture不创建Flow");
+      // 壳的项目目录只呈现 code/design 两档；flow/work 项目不进壳目录（work 走插件门控）。
+      if (kind !== "code" && kind !== "design")
+        throw new Error("fixture只创建code/design");
       const id = randomUUID();
       const path = input.work_dir ?? join(root, id);
       await mkdir(path, { recursive: true });

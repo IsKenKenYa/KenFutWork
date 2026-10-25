@@ -122,7 +122,8 @@ function useProjectModeAdmission(
       }
       const project = activeProject(client, tabs);
       const mode = snapshot?.mode;
-      if (!project || !mode || mode === "flow") return;
+      // flow/work 是插件贡献的独立内容面（不绑工作区标签），项目恢复不参与。
+      if (!project || !mode || mode === "flow" || mode === "work") return;
       const explicitPreset = unboundPreset;
       unboundPreset = null;
       const target = explicitPreset ?? mode;
@@ -551,7 +552,7 @@ export function SharedProjectNavigation() {
     navigation?.subscribe ?? (() => () => {}),
     () => navigation?.getSnapshot().mode ?? "code",
   );
-  if (!context || mode === "flow") return null;
+  if (!context || mode === "flow" || mode === "work") return null;
   if (!context.error && !context.retryDocument) return null;
   return (
     <div className="flex flex-col gap-1 px-3 py-1 text-xs">

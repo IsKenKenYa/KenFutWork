@@ -1,39 +1,54 @@
 /* eslint-disable max-lines -- Side pane 当前集中承载 tabs、browser/git/code-viewer 内容；完整拆分需按 pane 功能边界继续推进。 */
-import { ServiceProvider } from "@zui/hooks/useServices.js";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import type { PanelImperativeHandle } from "react-resizable-panels";
-import type { IServiceAccessor } from "@zcode/services";
+
 import {
   closestCenter,
   DndContext,
+  type DragEndEvent,
   DragOverlay,
+  type DragStartEvent,
   PointerSensor,
   useSensor,
   useSensors,
-  type DragEndEvent,
-  type DragStartEvent,
 } from "@dnd-kit/core";
-import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
-import { FileManagerPane } from "@zui/WorkspaceFileTree.js";
-import { fileManagerTargetForCodeViewer } from "@zui/host/fileViewerServices.js";
-import { SidePaneTerminalPane } from "@zui/SidePaneTerminalPane.js";
-import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
-import { WorkspaceSidePaneToggleButton } from "@zui/WorkspaceSidePaneToggleButton.js";
-import { DesktopWindowControls } from "@zui/DesktopWindowControls.js";
+import {
+  horizontalListSortingStrategy,
+  SortableContext,
+} from "@dnd-kit/sortable";
+import type { IServiceAccessor } from "@zcode/services";
+import type {
+  BrowserViewScreenshotSurfacePreparePayload,
+  GitChangeSourceId,
+} from "@zcode/shared";
+import {
+  type OpenTabLauncherItemId,
+  resolveAnimatedSidePanePanelLayout,
+  resolveOpenTabLauncherItemIds,
+  shouldOfferSelectionSideConversation,
+  shouldRenderPreviewPaneHeavyContent,
+} from "@zui/app-shell/animatedSidePanePanelModel.js";
+import { BackgroundBashOutputSidePane } from "@zui/app-shell/BackgroundBashOutputSidePane.js";
+import { PlanDetailSidePane } from "@zui/app-shell/PlanDetailSidePane.js";
+import { SelectionSideChatPane } from "@zui/app-shell/SelectionSideChatPane.js";
+import { SidePaneTabOverview } from "@zui/app-shell/SidePaneTabOverview.js";
+import {
+  getSidePaneTabTitle,
+  SidePaneTabDragOverlay,
+  SortableSidePaneTabTrigger,
+} from "@zui/app-shell/SidePaneTabTrigger.js";
+import { SubagentDirectorySidePane } from "@zui/app-shell/SubagentDirectorySidePane.js";
+import { SubagentSessionSidePane } from "@zui/app-shell/SubagentSessionSidePane.js";
+import {
+  resolveSidePaneTabsOverflow,
+  SIDE_PANE_DEFAULT_EXPANDED_RATIO,
+} from "@zui/app-shell/sidePaneLayout.js";
+import { WorkflowActorSessionSidePane } from "@zui/app-shell/WorkflowActorSessionSidePane.js";
+import { WorkflowArtifactSidePane } from "@zui/app-shell/WorkflowArtifactSidePane.js";
+import { WorkflowRunDirectorySidePane } from "@zui/app-shell/WorkflowRunDirectorySidePane.js";
+import { WorkflowRunSidePane } from "@zui/app-shell/WorkflowRunSidePane.js";
+import { WorkflowWorkspaceSidePane } from "@zui/app-shell/WorkflowWorkspaceSidePane.js";
 import { BrowserUseSidePaneContent } from "@zui/browser-use/BrowserUseSidePaneContent.js";
 import { findScreenshotSurfaceTabForRender } from "@zui/browser-use/useBrowserScreenshotSurfaceRequest.js";
-// KenFutWork 宿主件（G1/Q4）：内嵌浏览器页签内容换 CDP MJPEG 面板（Web 宿主无主进程 BrowserView；HumanBrowserView 随之不再被本文件消费）。
-import { BrowserPane } from "@zui/host/BrowserPane.js";
-import { OpenDesignPane } from "@zui/host/OpenDesignPane.js";
-import { useOpenDesignEntry } from "@zui/host/openDesignHost.js";
-import { useOpenDesignProjectWatch } from "@zui/host/useOpenDesignProjectWatch.js";
-import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
-import { GitPane } from "@zui/GitPane.js";
-import { TreemappingPane } from "@zui/TreemappingPane.js";
-import { WhiteboardPane } from "@zui/WhiteboardPane.js";
-import { ModelTrajectoryPane } from "@zui/ModelTrajectoryPane.js";
-import { DeveloperToolsPane } from "@zui/DeveloperToolsPane.js";
+import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
 import {
@@ -42,76 +57,85 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
-import { ResizableHandle, ResizablePanel } from "@zui/components/ui/resizable.js";
+import {
+  ResizableHandle,
+  ResizablePanel,
+} from "@zui/components/ui/resizable.js";
 import { Tabs, TabsContent, TabsList } from "@zui/components/ui/tabs.js";
+import { DesktopWindowControls } from "@zui/DesktopWindowControls.js";
+import { DeveloperToolsPane } from "@zui/DeveloperToolsPane.js";
+import { ScopedErrorBoundary } from "@zui/ErrorBoundary.js";
+import { GitPane } from "@zui/GitPane.js";
+import type {
+  BrowserNavigationRequest,
+  RecentClosedSidePaneTab,
+} from "@zui/hooks/useAppPanels.js";
+import { useDeveloperToolsVisibility } from "@zui/hooks/useDeveloperToolsVisibility.js";
+import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
+import { usePlatform } from "@zui/hooks/usePlatform.js";
+import { ServiceProvider } from "@zui/hooks/useServices.js";
+// KenFutWork 宿主件（G1/Q4）：内嵌浏览器页签内容换 CDP MJPEG 面板（Web 宿主无主进程 BrowserView；HumanBrowserView 随之不再被本文件消费）。
+import { BrowserPane } from "@zui/host/BrowserPane.js";
+import { DocumentSidePaneContent } from "@zui/host/DocumentPane.js";
+import { fileManagerTargetForCodeViewer } from "@zui/host/fileViewerServices.js";
+import { OpenDesignPane } from "@zui/host/OpenDesignPane.js";
+import { useOpenDesignEntry } from "@zui/host/openDesignHost.js";
+import { useOpenDesignProjectWatch } from "@zui/host/useOpenDesignProjectWatch.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import {
+  type CodeViewerSource,
+  inferMediaPreview,
+} from "@zui/lib/codeViewer.js";
+import { formatTaskRelativeTime } from "@zui/lib/taskListItemPresentation.js";
+import {
+  type BrowserSidePaneMetadata,
+  type BrowserSidePaneTab,
+  type BrowserUseSidePaneTab,
+  getVisibleSidePaneTabs,
+  type OpenBackgroundBashSideTabRequest,
+  type OpenDesignSidePaneMetadata,
+  type OpenScopedSubagentSideTabRequest,
+  type OpenScopedWorkflowActorSessionSideTabRequest,
+  type OpenScopedWorkflowArtifactSideTabRequest,
+  type OpenScopedWorkflowRunSideTabRequest,
+  type OpenScopedWorkflowWorkspaceSideTabRequest,
+  shouldMountBrowserTabGuest,
+  shouldMountSidePaneContent,
+  type WorkspaceSidePaneState,
+} from "@zui/lib/workspaceSidePane.js";
+import { logger } from "@zui/logger.js";
+import { ModelTrajectoryPane } from "@zui/ModelTrajectoryPane.js";
 import {
   SIDE_PANE_FULL_VIEW_CONVERSATION_TAB_VALUE,
   SidePaneFullViewConversationTab,
   SidePaneFullViewToggleButton,
   type SidePaneFullViewSurface,
 } from "@zui/side-pane-full-view/index.js";
-import { SidePaneTabOverview } from "@zui/app-shell/SidePaneTabOverview.js";
-import { SubagentSessionSidePane } from "@zui/app-shell/SubagentSessionSidePane.js";
-import { SubagentDirectorySidePane } from "@zui/app-shell/SubagentDirectorySidePane.js";
-import { SelectionSideChatPane } from "@zui/app-shell/SelectionSideChatPane.js";
-import { BackgroundBashOutputSidePane } from "@zui/app-shell/BackgroundBashOutputSidePane.js";
-import { PlanDetailSidePane } from "@zui/app-shell/PlanDetailSidePane.js";
-import { WorkflowRunSidePane } from "@zui/app-shell/WorkflowRunSidePane.js";
-import { WorkflowRunDirectorySidePane } from "@zui/app-shell/WorkflowRunDirectorySidePane.js";
-import { WorkflowActorSessionSidePane } from "@zui/app-shell/WorkflowActorSessionSidePane.js";
-import { WorkflowWorkspaceSidePane } from "@zui/app-shell/WorkflowWorkspaceSidePane.js";
-import { WorkflowArtifactSidePane } from "@zui/app-shell/WorkflowArtifactSidePane.js";
-import {
-  getSidePaneTabTitle,
-  SidePaneTabDragOverlay,
-  SortableSidePaneTabTrigger,
-} from "@zui/app-shell/SidePaneTabTrigger.js";
-import {
-  resolveSidePaneTabsOverflow,
-  SIDE_PANE_DEFAULT_EXPANDED_RATIO,
-} from "@zui/app-shell/sidePaneLayout.js";
-import {
-  resolveAnimatedSidePanePanelLayout,
-  resolveOpenTabLauncherItemIds,
-  shouldOfferSelectionSideConversation,
-  shouldRenderPreviewPaneHeavyContent,
-  type OpenTabLauncherItemId,
-} from "@zui/app-shell/animatedSidePanePanelModel.js";
-import type { BrowserNavigationRequest, RecentClosedSidePaneTab } from "@zui/hooks/useAppPanels.js";
-import { useDeveloperToolsVisibility } from "@zui/hooks/useDeveloperToolsVisibility.js";
-import { usePlatform } from "@zui/hooks/usePlatform.js";
-import { logger } from "@zui/logger.js";
-import { formatTaskRelativeTime } from "@zui/lib/taskListItemPresentation.js";
-import {
-  shouldMountSidePaneContent,
-  shouldMountBrowserTabGuest,
-  type BrowserSidePaneTab,
-  type BrowserUseSidePaneTab,
-  type BrowserSidePaneMetadata,
-  type OpenDesignSidePaneMetadata,
-  type OpenScopedSubagentSideTabRequest,
-  type OpenScopedWorkflowActorSessionSideTabRequest,
-  type OpenScopedWorkflowWorkspaceSideTabRequest,
-  type OpenScopedWorkflowArtifactSideTabRequest,
-  type OpenScopedWorkflowRunSideTabRequest,
-  type OpenBackgroundBashSideTabRequest,
-  type WorkspaceSidePaneState,
-} from "@zui/lib/workspaceSidePane.js";
-import { inferMediaPreview, type CodeViewerSource } from "@zui/lib/codeViewer.js";
-import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
-import { getVisibleSidePaneTabs } from "@zui/lib/workspaceSidePane.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { DocumentSidePaneContent } from "@zui/host/DocumentPane.js";
+import { SidePaneTerminalPane } from "@zui/SidePaneTerminalPane.js";
+import { TreemappingPane } from "@zui/TreemappingPane.js";
+import { WhiteboardPane } from "@zui/WhiteboardPane.js";
+import { FileManagerPane } from "@zui/WorkspaceFileTree.js";
+import { WorkspaceSidePaneToggleButton } from "@zui/WorkspaceSidePaneToggleButton.js";
 import {
   BugIcon,
   FileDiffIcon,
   GlobeIcon,
+  type LucideIcon,
   MessageSquareTextIcon,
   PenToolIcon,
   PlusIcon,
   SquareTerminalIcon,
-  type LucideIcon,
 } from "lucide-react";
+import {
+  type CSSProperties,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 
 const SIDE_PANE_CONTENT_WIDTH_LOCK_DURATION_MS = 200;
 const PREVIEW_PANE_RESIZE_SETTLE_DELAY_MS = 220;
@@ -147,14 +171,19 @@ function SuspendedBrowserSidePaneContent({
     // info 级打点：挂起换壳会先卸载 <webview>，若卸载瞬间
     // CDP 仍 attached 即打开主进程 UAF 窗口；这条日志把换壳时刻与 UnifiedBrowserView 的
     // 卸载打点对齐，用于归因 guest destroyed 的销毁者。
-    logger.info("[browser-use] tab 换挂起壳，suspend ready ack", { generation, tabId });
-    void platform.browserViewSuspendReady?.({ tabId, generation }).catch((error) => {
-      logger.debug("[browser-use] suspend ready ack 失败", {
-        error: error instanceof Error ? error.message : String(error),
-        generation,
-        tabId,
-      });
+    logger.info("[browser-use] tab 换挂起壳，suspend ready ack", {
+      generation,
+      tabId,
     });
+    void platform
+      .browserViewSuspendReady?.({ tabId, generation })
+      .catch((error) => {
+        logger.debug("[browser-use] suspend ready ack 失败", {
+          error: error instanceof Error ? error.message : String(error),
+          generation,
+          tabId,
+        });
+      });
   }, [generation, platform, tab.residency, tabId]);
 
   return (
@@ -172,7 +201,8 @@ function readViewportInlineIntersectionSize(element: HTMLElement | null) {
     return null;
   }
 
-  const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+  const viewportWidth =
+    window.innerWidth || document.documentElement.clientWidth || 0;
   if (viewportWidth <= 0) {
     return null;
   }
@@ -187,7 +217,9 @@ function useViewportInlineIntersectionSize<TElement extends HTMLElement>(
   elementRef: RefObject<TElement | null>,
   enabled: boolean,
 ) {
-  const [visibleInlineSizePx, setVisibleInlineSizePx] = useState<number | null>(null);
+  const [visibleInlineSizePx, setVisibleInlineSizePx] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined") {
@@ -228,7 +260,9 @@ function useViewportInlineIntersectionSize<TElement extends HTMLElement>(
     });
 
     const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(scheduleUpdate);
     resizeObserver?.observe(element);
 
     return () => {
@@ -386,7 +420,9 @@ export function AnimatedSidePanePanel({
   workspaceRemoteSessionId?: string;
   activeTaskId: string | null;
   sidePaneOwnerId: string | null;
-  gitState: ReturnType<typeof import("@zui/hooks/useGitRepository.js").useGitRepository>;
+  gitState: ReturnType<
+    typeof import("@zui/hooks/useGitRepository.js").useGitRepository
+  >;
   activeGitSourceId: GitChangeSourceId;
   panelRef: RefObject<PanelImperativeHandle | null>;
   panelElementRef: RefObject<HTMLDivElement | null>;
@@ -427,17 +463,26 @@ export function AnimatedSidePanePanel({
   onOpenBackgroundBash?: (request: OpenBackgroundBashSideTabRequest) => void;
   onOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;
   /** run 详情页里点 ask 节点 → 打开那个 actor 实例的 transcript tab。 */
-  onOpenWorkflowActorSession?: (request: OpenScopedWorkflowActorSessionSideTabRequest) => void;
+  onOpenWorkflowActorSession?: (
+    request: OpenScopedWorkflowActorSessionSideTabRequest,
+  ) => void;
   /** run 详情页里点脚本行 → 打开该 run 的脚本 transcript tab，落到那一站。 */
-  onOpenWorkflowWorkspace?: (request: OpenScopedWorkflowWorkspaceSideTabRequest) => void;
+  onOpenWorkflowWorkspace?: (
+    request: OpenScopedWorkflowWorkspaceSideTabRequest,
+  ) => void;
   /** run 详情页里点一张产物卡 → 打开那个产物的全尺寸查看 tab。 */
-  onOpenWorkflowArtifact?: (request: OpenScopedWorkflowArtifactSideTabRequest) => void;
+  onOpenWorkflowArtifact?: (
+    request: OpenScopedWorkflowArtifactSideTabRequest,
+  ) => void;
   /** run 目录页里点一行 → 打开那个 run 的详情页 tab（目录 → 详情是这一页存在的理由）。 */
   onOpenWorkflowRun?: (request: OpenScopedWorkflowRunSideTabRequest) => void;
   onRefreshGit: () => void;
   onBrowserNavigationRequestHandled: (requestId: string) => void;
   onBrowserUrlChange: (tabId: string, url: string) => void;
-  onBrowserPageMetadataChange: (tabId: string, metadata: BrowserSidePaneMetadata) => void;
+  onBrowserPageMetadataChange: (
+    tabId: string,
+    metadata: BrowserSidePaneMetadata,
+  ) => void;
   onSelectGitSource: (value: GitChangeSourceId) => void;
 }) {
   const { intl } = useZCodeIntl();
@@ -475,14 +520,18 @@ export function AnimatedSidePanePanel({
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const tabsScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const tabsScrollContentRef = useRef<HTMLDivElement | null>(null);
-  const [lockedContentWidthPx, setLockedContentWidthPx] = useState<number | null>(null);
+  const [lockedContentWidthPx, setLockedContentWidthPx] = useState<
+    number | null
+  >(null);
   const shouldMountContent = shouldMountSidePaneContent(isVisible, tabs);
-  const [hasRenderedSidePane, setHasRenderedSidePane] = useState(shouldMountContent);
+  const [hasRenderedSidePane, setHasRenderedSidePane] =
+    useState(shouldMountContent);
   const [isTabsOverflowing, setIsTabsOverflowing] = useState(false);
-  const [tabsScrollMaskEdges, setTabsScrollMaskEdges] = useState<TabsScrollMaskEdges>({
-    left: false,
-    right: false,
-  });
+  const [tabsScrollMaskEdges, setTabsScrollMaskEdges] =
+    useState<TabsScrollMaskEdges>({
+      left: false,
+      right: false,
+    });
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const sidePaneVisibleInlineSizePx = useViewportInlineIntersectionSize(
     panelElementRef,
@@ -493,9 +542,11 @@ export function AnimatedSidePanePanel({
   const previousIsVisibleRef = useRef(isVisible);
   const panelLayout = resolveAnimatedSidePanePanelLayout();
   const hasReviewTab = visibleTabs.some((tab) => tab.type === "git");
-  const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation({
-    activeTaskId,
-  });
+  const canOpenSelectionSideConversation = shouldOfferSelectionSideConversation(
+    {
+      activeTaskId,
+    },
+  );
   const tabDragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -525,7 +576,9 @@ export function AnimatedSidePanePanel({
   const readInitialExpandedContentWidthPx = () => {
     const panelElement = panelElementRef.current;
     const panelGroupElement = panelElement?.parentElement;
-    const panelGroupWidthPx = Math.round(panelGroupElement?.getBoundingClientRect().width ?? 0);
+    const panelGroupWidthPx = Math.round(
+      panelGroupElement?.getBoundingClientRect().width ?? 0,
+    );
 
     if (!Number.isFinite(panelGroupWidthPx) || panelGroupWidthPx <= 0) {
       return null;
@@ -559,7 +612,9 @@ export function AnimatedSidePanePanel({
       );
       // side pane 收起时内容层会跟着外层 panel 一起参与过渡，
       // 这里在收起前锁住当前像素宽度，避免内部 Tabs/Git/Browser 先重新排版后再淡出。
-      setLockedContentWidthPx(currentPanelWidthPx > 0 ? currentPanelWidthPx : null);
+      setLockedContentWidthPx(
+        currentPanelWidthPx > 0 ? currentPanelWidthPx : null,
+      );
       return;
     }
 
@@ -568,7 +623,8 @@ export function AnimatedSidePanePanel({
       // 这里用 PanelGroup 的真实像素宽度换算默认展开宽度，先给内容层一个接近最终态的锁宽；
       // 等 200ms 过渡结束后再移除固定宽度，恢复成普通自适应布局。
       setLockedContentWidthPx(
-        (currentWidthPx) => currentWidthPx ?? readInitialExpandedContentWidthPx(),
+        (currentWidthPx) =>
+          currentWidthPx ?? readInitialExpandedContentWidthPx(),
       );
       widthUnlockTimerRef.current = window.setTimeout(() => {
         setLockedContentWidthPx(null);
@@ -607,7 +663,10 @@ export function AnimatedSidePanePanel({
     }
 
     const updateOverflowState = () => {
-      const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const maxScrollLeft = Math.max(
+        0,
+        viewport.scrollWidth - viewport.clientWidth,
+      );
       const addButton = viewport.parentElement?.querySelector<HTMLElement>(
         "[data-side-pane-add-tab-trigger]",
       );
@@ -828,7 +887,10 @@ export function AnimatedSidePanePanel({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-  const openTabLauncherItemById: Record<OpenTabLauncherItemId, OpenTabLauncherItem> = {
+  const openTabLauncherItemById: Record<
+    OpenTabLauncherItemId,
+    OpenTabLauncherItem
+  > = {
     "selection-side-conversation": {
       id: "selection-side-conversation",
       label: intl.formatMessage({ id: "sidePane.selectionChat" }),
@@ -866,15 +928,19 @@ export function AnimatedSidePanePanel({
       onOpen: onOpenDeveloperTools,
     },
   };
-  const openTabLauncherItems: OpenTabLauncherItem[] = resolveOpenTabLauncherItemIds({
-    canOpenSelectionSideConversation,
-    developerToolsEnabled,
-    hasReviewTab,
-    supportsEmbeddedBrowser,
-    openDesignEnabled,
-  })
-    .filter((itemId) => !isOfficeMode || (itemId !== "terminal" && itemId !== "review"))
-    .map((itemId) => openTabLauncherItemById[itemId]);
+  const openTabLauncherItems: OpenTabLauncherItem[] =
+    resolveOpenTabLauncherItemIds({
+      canOpenSelectionSideConversation,
+      developerToolsEnabled,
+      hasReviewTab,
+      supportsEmbeddedBrowser,
+      openDesignEnabled,
+    })
+      .filter(
+        (itemId) =>
+          !isOfficeMode || (itemId !== "terminal" && itemId !== "review"),
+      )
+      .map((itemId) => openTabLauncherItemById[itemId]);
   const closeSidePaneButton =
     isVisible && onCloseSidePane ? (
       <div className="flex shrink-0 items-center gap-0.5 [app-region:no-drag]">
@@ -954,7 +1020,8 @@ export function AnimatedSidePanePanel({
           id: "sidePane.recentlyClosedTabs",
         }),
         noResults: intl.formatMessage({ id: "sidePane.noTabsFound" }),
-        closeTab: (title) => intl.formatMessage({ id: "sidePane.closeTab" }, { title }),
+        closeTab: (title) =>
+          intl.formatMessage({ id: "sidePane.closeTab" }, { title }),
         relativeTime: (timestamp) => formatTaskRelativeTime(timestamp, intl),
         browserTitle: intl.formatMessage({ id: "browser.title" }),
         reviewTitle: intl.formatMessage({ id: "sidePane.review" }),
@@ -979,10 +1046,18 @@ export function AnimatedSidePanePanel({
         }),
         planTitle: intl.formatMessage({ id: "planTool.panel.planTab" }),
         workflowRunTitle: intl.formatMessage({ id: "sidePane.workflowRun" }),
-        workflowDirectoryTitle: intl.formatMessage({ id: "sidePane.workflowDirectory" }),
-        workflowActorTitle: intl.formatMessage({ id: "sidePane.workflowActor" }),
-        workflowScriptTitle: intl.formatMessage({ id: "sidePane.workflowScript" }),
-        workflowArtifactTitle: intl.formatMessage({ id: "sidePane.workflowArtifact" }),
+        workflowDirectoryTitle: intl.formatMessage({
+          id: "sidePane.workflowDirectory",
+        }),
+        workflowActorTitle: intl.formatMessage({
+          id: "sidePane.workflowActor",
+        }),
+        workflowScriptTitle: intl.formatMessage({
+          id: "sidePane.workflowScript",
+        }),
+        workflowArtifactTitle: intl.formatMessage({
+          id: "sidePane.workflowArtifact",
+        }),
       }}
       onActivateTab={activateSidePaneTab}
       onCloseTab={onCloseTab}
@@ -1021,7 +1096,10 @@ export function AnimatedSidePanePanel({
             <div
               className={cn(
                 "h-full min-h-0",
-                visibleTabs.length === 0 && !screenshotSurfaceRequest && !fullView && "hidden",
+                visibleTabs.length === 0 &&
+                  !screenshotSurfaceRequest &&
+                  !fullView &&
+                  "hidden",
               )}
             >
               <Tabs
@@ -1094,7 +1172,10 @@ export function AnimatedSidePanePanel({
                             strategy={horizontalListSortingStrategy}
                           >
                             {visibleTabs.map((tab) => {
-                              const title = getSidePaneTabTitle(tab, intl.formatMessage);
+                              const title = getSidePaneTabTitle(
+                                tab,
+                                intl.formatMessage,
+                              );
                               return (
                                 <SortableSidePaneTabTrigger
                                   key={tab.id}
@@ -1133,7 +1214,10 @@ export function AnimatedSidePanePanel({
                         {draggingTab ? (
                           <SidePaneTabDragOverlay
                             tab={draggingTab}
-                            title={getSidePaneTabTitle(draggingTab, intl.formatMessage)}
+                            title={getSidePaneTabTitle(
+                              draggingTab,
+                              intl.formatMessage,
+                            )}
                             diffBadgeLabel={intl.formatMessage({
                               id: "diff.title",
                             })}
@@ -1164,8 +1248,10 @@ export function AnimatedSidePanePanel({
                   ) : null}
                   {tabs.map((tab) => {
                     if (tab.type === "document") {
-                      const documentVisible = isVisible &&
-                        tab.projectId === projectId && tab.workspaceKey === workspaceKey &&
+                      const documentVisible =
+                        isVisible &&
+                        tab.projectId === projectId &&
+                        tab.workspaceKey === workspaceKey &&
                         tab.id === contentActiveTabId;
                       return (
                         <DocumentSidePaneContent
@@ -1182,7 +1268,12 @@ export function AnimatedSidePanePanel({
                       (tab.type === "browser" || tab.type === "browser-use") &&
                       !shouldMountBrowserTabGuest(tab)
                     ) {
-                      return <SuspendedBrowserSidePaneContent key={tab.id} tab={tab} />;
+                      return (
+                        <SuspendedBrowserSidePaneContent
+                          key={tab.id}
+                          tab={tab}
+                        />
+                      );
                     }
                     if (tab.type === "browser-use") {
                       return (
@@ -1193,12 +1284,16 @@ export function AnimatedSidePanePanel({
                           isSelected={tab.id === contentActiveTabId}
                           isCurrentTask={tab.sessionId === sidePaneOwnerId}
                           screenshotSurfaceRequest={
-                            screenshotSurfaceTab?.id === tab.id ? screenshotSurfaceRequest : null
+                            screenshotSurfaceTab?.id === tab.id
+                              ? screenshotSurfaceRequest
+                              : null
                           }
                           // restoring guest 的完整 history 由 main 在 did-attach 后写入；
                           // renderer 同时消费 initialUrl 会抢先提交导航，使 Chromium 拒绝 restore。
                           initialUrl={
-                            tab.residency === "restoring" ? undefined : browserRestoreUrls[tab.id]
+                            tab.residency === "restoring"
+                              ? undefined
+                              : browserRestoreUrls[tab.id]
                           }
                           workspacePath={workspaceAbsPath}
                           workspaceIdentity={workspaceIdentity}
@@ -1263,7 +1358,9 @@ export function AnimatedSidePanePanel({
                             {...(onOpenWorkflowArtifact === undefined
                               ? {}
                               : { onOpenWorkflowArtifact })}
-                            {...(onOpenWorkflowRun === undefined ? {} : { onOpenWorkflowRun })}
+                            {...(onOpenWorkflowRun === undefined
+                              ? {}
+                              : { onOpenWorkflowRun })}
                             {...(onOpenWorkflowWorkspace === undefined
                               ? {}
                               : { onOpenWorkflowWorkspace })}
@@ -1337,10 +1434,16 @@ export function AnimatedSidePanePanel({
                             gitState={gitState}
                             isDesktop={isDesktop}
                             selectedSourceId={activeGitSourceId}
-                            fileChangeFindActiveIndex={fileChangeFindActiveIndex}
-                            fileChangeFindNavigationRequestId={fileChangeFindNavigationRequestId}
+                            fileChangeFindActiveIndex={
+                              fileChangeFindActiveIndex
+                            }
+                            fileChangeFindNavigationRequestId={
+                              fileChangeFindNavigationRequestId
+                            }
                             fileChangeFindQuery={fileChangeFindQuery}
-                            onFileChangeFindMatchCountChange={onFileChangeFindMatchCountChange}
+                            onFileChangeFindMatchCountChange={
+                              onFileChangeFindMatchCountChange
+                            }
                             onSelectSource={onSelectGitSource}
                             onClose={onCloseGit}
                             onRefresh={onRefreshGit}
@@ -1373,7 +1476,9 @@ export function AnimatedSidePanePanel({
                               workspacePath={workspaceAbsPath}
                               workspaceIdentity={workspaceIdentity}
                               taskId={activeTaskId}
-                              enabled={isVisible && tab.id === contentActiveTabId}
+                              enabled={
+                                isVisible && tab.id === contentActiveTabId
+                              }
                             />
                           </ServiceProvider>
                         ) : tab.type === "terminal" ? (
@@ -1382,7 +1487,9 @@ export function AnimatedSidePanePanel({
                             sessionId={tab.id}
                             workspaceKey={workspaceKey}
                             cwd={tab.cwd ?? workspaceAbsPath}
-                            isVisible={isVisible && tab.id === contentActiveTabId}
+                            isVisible={
+                              isVisible && tab.id === contentActiveTabId
+                            }
                             isWindowsDesktop={isWindowsDesktop}
                             onOpenBrowserUrl={onOpenBrowserUrl}
                           />
@@ -1390,14 +1497,27 @@ export function AnimatedSidePanePanel({
                           <OpenDesignPane
                             tabId={tab.id}
                             projectId={tab.projectId ?? null}
+                            workspaceProjectId={projectId ?? null}
+                            workspaceName={
+                              workspaceAbsPath
+                                .split(/[\\/]+/u)
+                                .filter(Boolean)
+                                .at(-1) ?? null
+                            }
                             onMeta={onOpenDesignMetaChange}
                             workspacePath={workspaceAbsPath}
                             onOpenBrowserTab={onOpenBrowserTab}
-                            {...(workspaceIdentity ? { workspaceIdentity } : {})}
+                            {...(workspaceIdentity
+                              ? { workspaceIdentity }
+                              : {})}
                           />
                         ) : (
                           <BrowserPane
-                            initialUrl={browserRestoreUrls[tab.id] ?? tab.initialUrl ?? undefined}
+                            initialUrl={
+                              browserRestoreUrls[tab.id] ??
+                              tab.initialUrl ??
+                              undefined
+                            }
                             workspacePath={workspaceAbsPath}
                             workspaceIdentity={workspaceIdentity}
                           />
@@ -1471,7 +1591,9 @@ export function AnimatedSidePanePanel({
           "!overflow-hidden transition-opacity duration-200 ease-out",
           // 截图期间 panel 仍保持 opacity=1，避免 opacity=0 让 Chromium 丢弃 guest
           // compositor surface；实际 browser surface 已 fixed 到窗口内的低透明合成层，不会露出 tab 栏。
-          isVisible || isScreenshotSurfaceActive ? "opacity-100" : "pointer-events-none opacity-0",
+          isVisible || isScreenshotSurfaceActive
+            ? "opacity-100"
+            : "pointer-events-none opacity-0",
         )}
       >
         {panelContent}

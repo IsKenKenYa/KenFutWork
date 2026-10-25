@@ -217,7 +217,9 @@ async function fixture(
     window,
     ["code", "design"],
     (mode) =>
-      mode === "flow" ? Promise.resolve(true) : admitProjectMode(mode),
+      mode === "flow" || mode === "work"
+        ? Promise.resolve(true)
+        : admitProjectMode(mode),
   );
   harness.navigation = navigation;
   options.beforeRender?.(navigation);
@@ -292,18 +294,20 @@ it("画布深链读取失败后只显式重试；provider重渲染与能力推�
   expect(f.rpc).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("button", { name: "重试画布" })).toBeNull();
 });
-it("深链跨方式显式发起自动启用目标方式，打开请求的内容页且不重放", async () => {
+it("跨方式深链直接启用目标方式并打开画布，重复推送不重放读取", async () => {
   const f = await fixture(code);
   await act(async () => sendNavigation({ mode: "design", canvasId: canvasA }));
   await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("design"));
-  expect(patches()).toHaveLength(1);
   expect(canvasReads()).toHaveLength(1);
+  expect(patches()).toHaveLength(1);
   expect(f.rpc).toHaveBeenCalledTimes(1);
+  expect(takeCanvasDocumentOpen(code.projectId)?.documentId).toBe(canvasA);
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([code.projectId, code.path]),
   );
   await act(async () => sendNavigation({}));
   expect(canvasReads()).toHaveLength(1);
+  expect(patches()).toHaveLength(1);
 });
 it("A画布读取迟到不得打开A或抢走B文档焦点", async () => {
   const f = await fixture(sharedA);
@@ -386,7 +390,8 @@ it("初始父Design模式在真实项目恢复后自动启用；启用失败留�
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([code.projectId, code.path]),
   );
-  expect(f.rpc).not.toHaveBeenCalled();
+  await act(async () => sendNavigation({ mode: "design" }));
+  expect(patches()).toHaveLength(1);
 });
 it("冷窗口恢复Design-only项目跟随项目方式，不把默认Code当成共享请求", async () => {
   const f = await fixture(design);
@@ -402,7 +407,7 @@ it.each([
   ["design", code],
   ["code", design],
 ] as const)(
-  "明确父%s模式在真实项目延迟恢复后自动启用跨方式",
+  "明确父%s模式在真实项目延迟恢复后自动启用并保持该方式",
   async (requestedMode, project) => {
     const f = await fixture(project, {
       deferRestore: true,
@@ -419,6 +424,9 @@ it.each([
       expect(f.navigation.getSnapshot().mode).toBe(requestedMode),
     );
     expect(f.rpc).not.toHaveBeenCalled();
+    expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
+      JSON.stringify([project.projectId, project.path]),
+    );
   },
 );
 it("恢复Design-only项目后显式点击Code自动启用；失败留提示，重试保留同一项目", async () => {
@@ -442,7 +450,6 @@ it("恢复Design-only项目后显式点击Code自动启用；失败留提示，�
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([design.projectId, design.path]),
   );
-  expect(f.rpc).not.toHaveBeenCalled();
 });
 it("初始Design画布深链解析期间不为恢复出的旧项目询问共享，完成后打开真实项目文档", async () => {
   let finishCanvas!: (result: unknown) => void;

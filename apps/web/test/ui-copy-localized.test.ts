@@ -27,6 +27,7 @@ const FILES = [
   join("canvas", "video-generator-panel.tsx"),
   join("brand-kit", "brand-kit-editor.tsx"),
   join("brand-kit", "brand-kit-sidebar.tsx"),
+  join("brand-kit", "asset-card.tsx"),
   join("brand-kit", "color-section.tsx"),
   join("brand-kit", "font-section.tsx"),
   join("brand-kit", "image-section.tsx"),
@@ -70,6 +71,10 @@ const FORBIDDEN = [
   'label="Upload"',
   "No brand kits yet",
   "Create Brand Kit",
+  "New Kit",
+  "Extract from URL",
+  ">Default<",
+  "aria-label={`Delete ",
   "Fit All",
   // 转录里的工具行 / 思考行（2026-09-27 真机截图时发现仍是英文）
   "<span>Thinking...</span>",

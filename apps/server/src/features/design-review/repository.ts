@@ -36,6 +36,7 @@ export type DesignReviewAnnotationRow = {
   points: unknown;
   project_id: string;
   stroke_width: string | number;
+  text: string | null;
   updated_at: number;
 };
 
@@ -44,7 +45,7 @@ const COMMENT_COLUMNS = `id, project_id, file_name, body, status,
   floor(extract(epoch from created_at) * 1000) as created_at,
   floor(extract(epoch from updated_at) * 1000) as updated_at`;
 
-const ANNOTATION_COLUMNS = `id, project_id, file_name, kind, color, stroke_width, points,
+const ANNOTATION_COLUMNS = `id, project_id, file_name, kind, color, stroke_width, points, text,
   floor(extract(epoch from created_at) * 1000) as created_at,
   floor(extract(epoch from updated_at) * 1000) as updated_at`;
 
@@ -62,6 +63,7 @@ export interface NewDesignReviewAnnotation {
   points: unknown;
   projectId: string;
   strokeWidth: number;
+  text: string | null;
 }
 
 export interface DesignReviewRepository {
@@ -101,6 +103,11 @@ export interface DesignReviewRepository {
       status?: string | undefined;
     },
   ): Promise<DesignReviewCommentRow | null>;
+  updateAnnotation(
+    instanceId: string,
+    id: string,
+    points: Array<[number, number]>,
+  ): Promise<DesignReviewAnnotationRow | null>;
 }
 
 export function createDesignReviewRepository(
@@ -212,8 +219,8 @@ export function createDesignReviewRepository(
         .queryOne<DesignReviewAnnotationRow>(
           `insert into public.design_review_annotations
              (instance_id, id, project_id, file_name, kind, color,
-              stroke_width, points)
-           values (:instance, $1, $2, $3, $4, $5, $6, $7::jsonb)
+              stroke_width, points, text)
+           values (:instance, $1, $2, $3, $4, $5, $6, $7::jsonb, $8)
            returning ${ANNOTATION_COLUMNS}`,
           [
             id,
@@ -223,8 +230,24 @@ export function createDesignReviewRepository(
             input.color,
             input.strokeWidth,
             JSON.stringify(input.points),
+            input.text,
           ],
         );
+    },
+
+    async updateAnnotation(instanceId, id, points) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<DesignReviewAnnotationRow>(
+          `update public.design_review_annotations
+              set points = $1::jsonb,
+                  updated_at = now()
+            where instance_id = :instance
+              and id = $2
+            returning ${ANNOTATION_COLUMNS}`,
+          [JSON.stringify(points), id],
+        );
+      return row ?? null;
     },
 
     async deleteAnnotation(instanceId, id) {

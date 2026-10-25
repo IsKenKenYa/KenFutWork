@@ -1,0 +1,20 @@
+{
+  "name": "kenfutwork-work",
+  "version": "0.1.0",
+  "description": "Work 办公创作模式：安装后工作台出现第四种工作方式，主区承载编辑器扩展包（Office 三件套 / 图片 / 视频等，按需下载内嵌）。编辑器二进制不随包分发，见「Work 引擎」信息页。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Work 办公创作",
+    "category": "办公"
+  }
+}

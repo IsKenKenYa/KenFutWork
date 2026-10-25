@@ -106,7 +106,7 @@ export function FontSection({
                   "flex items-center justify-center",
                   "opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer",
                 )}
-                aria-label={`Delete font ${font.display_name}`}
+                aria-label={`删除字体 ${font.display_name}`}
               >
                 <X className="h-3 w-3 text-muted-foreground" />
               </button>

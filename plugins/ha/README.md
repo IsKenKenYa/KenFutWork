@@ -13,14 +13,23 @@ HA 里装了什么生态集成，这里就覆盖什么设备——米家靠 HA �
 
 ## 用法
 
-1. 在 HA 里：「个人资料 → 安全」创建一个**长期访问令牌**。
-2. 侧栏「智能家居」→ 填 HA 地址（形如 `http://192.168.1.20:8123`）与令牌 → 点「连接」。
+1. 打开侧栏「智能家居」面板：未配置态自带**接入引导**（部署 HA → 装 HACS → 接米家 →
+   接华为 → 允许内嵌 → 建长期令牌六步，命令可复制、仓库链接可点；米家与华为两个步骤
+   默认展开）。步骤数据在 `lib/setup-guide.js`，经私有路由 `GET guide` 发给面板，测试锁死仓库链接。
+2. 在 HA 里：「个人资料 → 安全」创建一个**长期访问令牌**。
+3. 面板「连接」表单填 HA 地址（形如 `http://192.168.1.20:8123`）与令牌 → 点「连接」。
    连得上才保存；之后面板只显示「已配置」，令牌不再回显。
-3. 面板按**区域**分组列实体（区域信息来自 HA 的注册表，拿不到时退回按域分组）：
+4. 连接后默认显示 **HA 原生界面**（iframe 直接内嵌 HA 自己的前端，2026-10-24 用户拍板
+   「要教程里一样的界面」）。要在 HA 里放行内嵌：新版「设置 → 系统 → 网络」关闭
+   「Send X-Frame-Options」，旧版 `configuration.yaml` 加 `http: use_x_frame_options: false`
+   并重启；未放行时 iframe 空白，面板顶部的折叠提示条写明两侧关法。iframe 里首次要
+   登录一次 HA（之后记住）。
+5. 顶栏「精简面板」切到自绘实体网格（按**区域**分组，注册表拿不到时退回按域分组）：
    灯给开关/亮度/色温，开关给开关，窗帘给开/合/停 + 位置，空调给目标温度 + 模式，
    风扇、媒体播放器给基础项，其余品类（传感器、二进制传感器、太阳、天气……）**如实只读**。
-   离线与未知状态置灰并标「离线」，不编造设备。
-4. agent 工具：
+   离线与未知状态置灰并标「离线」，不编造设备。状态行带**生态计数**
+   （「米家 N · 华为 N」，按实体注册表的来源集成识别；WS 未就绪识别不了就不显示）。
+6. agent 工具：
    - `ha_entities`：按域/区域/关键字查实体（状态、读数、可用控件与量程）；
    - `ha_control`：按 `entityId + key + service (+ value)` 下发，返回**读回的真值**；
      设备没动时如实回「已发出，状态未变」，不报假成功。
@@ -31,7 +40,8 @@ HA 里装了什么生态集成，这里就覆盖什么设备——米家靠 HA �
 - 能力声明：`tools` + `routes` + `ui` + `storage`，零内核改动（自带 bundle 由
   `plugins/` 目录自动发现，打包脚本整目录随包拷贝）。
 - 路由（全部私有，需本机接入身份；面板用同源 iframe + HttpOnly 会话 cookie）：
-  `GET config`、`POST config`、`POST test`、`GET entities`、`POST control`、`POST disconnect`。
+  `GET config`、`POST config`、`GET guide`（接入引导步骤数据）、`POST test`、
+  `GET entities`、`POST control`、`POST disconnect`。
 - 配置（HA 地址 + 长期令牌）存 `ctx.storage`：**按实例隔离、值在本机库明文保存、HTTP 永不回显**；
   卸载由 registry purge，只「停用」则保留。见 `DEC-7`（2026-10-05 修订）后的本地凭据口径。
 - 实时性：每实例一条 HA WebSocket 会话（`subscribe_events` 的 `state_changed` 增量 +
@@ -57,8 +67,11 @@ HA 里装了什么生态集成，这里就覆盖什么设备——米家靠 HA �
    亮度控件按前者给，当前值拿不到就如实给 `null`（面板显示「—」）。若按当前属性判，
    「把关着的灯调到 30%」这条最自然的指令会被自己拒掉（`turn_on` + `brightness_pct` 正是 HA 的语义）。
    只支持 `onoff` 的灯不给亮度控件。
-5. 面板不能嵌 HA 前端：它默认发 `X-Frame-Options: SAMEORIGIN`，嵌进去还要再登录一次，
-   观感与工作台割裂（沿用规划 §4.4 的既有结论）。
+5. 内嵌 HA 前端（2026-10-24 起为默认视图）：HA 默认发 `X-Frame-Options: SAMEORIGIN`
+   挡内嵌——新版 HA（≥ 2026.8，http 配置已迁 UI）在「设置 → 系统 → 网络」关闭
+   「Send X-Frame-Options」；旧版用 `configuration.yaml` 的 `http.use_x_frame_options: false`
+   （写 YAML 会触发弃用修复提示，属官方迁移口径）。iframe 用 HA 自己的登录态（首次登录一次），
+   与本插件存的长期令牌互不相干：令牌管 REST/WS（agent 工具、精简面板），iframe 管 UI。
 6. 只想给 agent 用、不做面板：HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`），
    在本产品「MCP」面板「手动添加 → 远程端点」填 `<HA 地址>/api/mcp`，请求头一栏写
    `Authorization=Bearer <长期令牌>` 即可直连（本仓的 MCP `http` 传输已支持自定义头）。
@@ -99,6 +112,11 @@ HA 里装了什么生态集成，这里就覆盖什么设备——米家靠 HA �
 - 图标是自绘的房子+信号点，不是 Home Assistant 的商标图形。
 
 ## 真机验收配方（一次性）
+
+> 2026-10-24 本机 Docker HA 2026.10.3 已按此配方走查通过（REST/WS/控制读回/内嵌真
+> Lovelace，台账《日志》二百四十三）。**注意**：该版本起 `http.use_x_frame_options`
+> 的 yaml 写法已失效（配置只在 `.storage/http`），关 X-Frame-Options 必须走
+> 「设置 → 系统 → 网络」的 UI 开关。
 
 ```bash
 docker run -d --name ha -p 8123:8123 -v ha_config:/config \

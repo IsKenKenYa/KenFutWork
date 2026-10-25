@@ -111,13 +111,13 @@ export const canvasSummarySchema = z.object({
 });
 
 /** kind 表达项目默认工作方式；enabledModes 表达显式启用的工作方式。 */
-export const projectKindSchema = z.enum(["design", "code", "flow"]);
+export const projectKindSchema = z.enum(["design", "code", "flow", "work"]);
 export type ProjectKind = z.infer<typeof projectKindSchema>;
 
 export const projectModesSchema = z
   .array(projectKindSchema)
   .min(1)
-  .max(3)
+  .max(4)
   .refine((modes) => new Set(modes).size === modes.length, "工作方式不能重复")
   .refine(
     (modes) => !modes.includes("flow") || modes.length === 1,

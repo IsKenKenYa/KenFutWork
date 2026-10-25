@@ -5,6 +5,7 @@ import {
 } from "../src/components/workbench/zcode/host/openDesignRuntime.js";
 import {
   applyElementEdit,
+  moveElement,
   readElementHtml,
 } from "../src/components/workbench/zcode/host/openDesignSourceEdit.js";
 
@@ -77,6 +78,23 @@ describe("源文本上的元素编辑", () => {
     expect(
       applyElementEdit(SOURCE, { path: "#app > section", html: "<x/>" }),
     ).toBeNull();
+  });
+
+  test("移动元素：换容器（inside）/插到前后，并拒绝移进自己的后裔", () => {
+    const inside = moveElement(SOURCE, "#app > h1", "#app > p", "inside");
+    expect(inside).not.toBeNull();
+    expect(inside).toContain('<p>请输入<h1 class="t">登录</h1></p>');
+
+    const after = moveElement(SOURCE, "#app > h1", "#app > p", "after");
+    expect(after).not.toBeNull();
+    expect(after).toContain('<p>请输入</p><h1 class="t">登录</h1>');
+
+    const before = moveElement(SOURCE, "body > div > p", "#app > h1", "before");
+    expect(before).not.toBeNull();
+    expect(before).toContain('<p>请输入</p><h1 class="t">登录</h1>');
+
+    expect(moveElement(SOURCE, "#app", "#app > h1", "inside")).toBeNull();
+    expect(moveElement(SOURCE, "#missing", "#app", "inside")).toBeNull();
   });
 
   test("改过 id 的元素按新 id 找回；替换成纯文本视为无效编辑", () => {

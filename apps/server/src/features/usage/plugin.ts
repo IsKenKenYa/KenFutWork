@@ -1,5 +1,7 @@
 import { registerUsageRoutes } from "../../http/usage.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
+import { createCodeUiUsageHost } from "./code-ui-host.js";
 import { createUsageRepository } from "./repository.js";
 import {
   createRunUsageAccumulator,
@@ -21,6 +23,8 @@ export function createUsagePlugin(
   } = {},
 ): PluginDefinition {
   const withRoutes = deps.withRoutes ?? true;
+  // apply 期构造、mounted 期复用（同一实例；与 skills 插件同款模式）
+  let usageRepository: ReturnType<typeof createUsageRepository> | undefined;
   return {
     name: "usage",
     // 两个进程共享稳定实例归属；只有 HTTP 进程消费接入验证。
@@ -29,8 +33,9 @@ export function createUsagePlugin(
       : ["persistence", "localInstance"],
     apply(ctx) {
       const persistence = ctx.get("persistence");
+      usageRepository = createUsageRepository(persistence);
       const usageService = createUsageService({
-        repository: createUsageRepository(persistence),
+        repository: usageRepository,
         localInstance: ctx.get("localInstance"),
       });
       ctx.register("usage", () => usageService);
@@ -69,6 +74,22 @@ export function createUsagePlugin(
         localAccess: ctx.get("localAccess"),
         usage: ctx.get("usage"),
       });
+      // code-ui「使用统计」面板的数据宿主（替换此前的 501 兜底）
+      if (usageRepository) {
+        const repository = usageRepository;
+        for (const [id, value] of Object.entries(
+          createCodeUiUsageHost({
+            localInstance: ctx.get("localInstance"),
+            repository,
+          }),
+        )) {
+          ctx.effect(() =>
+            ctx
+              .get("capabilities")
+              .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+          );
+        }
+      }
     },
   };
 }

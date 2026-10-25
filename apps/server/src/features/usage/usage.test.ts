@@ -76,6 +76,8 @@ function createFakeRepository(
     insert: async () => {},
     listRecent: async () => [],
     longestSessionSeconds: async () => 0,
+    appUsageDaily: async () => [],
+    appUsageRunCount: async () => 0,
     ...overrides,
   };
 }

@@ -53,6 +53,11 @@
       "x-apifox-folder": "Flow 集成"
     },
     {
+      "name": "work",
+      "description": "Work办公创作的宿主状态与编辑器扩展包注册表（按需下载）。",
+      "x-apifox-folder": "Work 集成"
+    },
+    {
       "name": "fonts",
       "description": "授权本机字体检索与缓存。",
       "x-apifox-folder": "字体"
@@ -6696,6 +6701,283 @@
         }
       }
     },
+    "/api/work/host/status": {
+      "get": {
+        "operationId": "getWorkHostStatus",
+        "summary": "查询 work 宿主启用状态",
+        "description": "返回 work 宿主适配层是否启用及已登记的编辑器扩展包数量，并附未启用原因。适配层自包含（注册表+数据目录），正常恒为启用；未配置时也返回 200 + enabled=false，不摆空壳。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workHostStatusResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors": {
+      "get": {
+        "operationId": "getWorkHostEditors",
+        "summary": "查询 work 编辑器扩展包注册表",
+        "description": "返回 ArtCraft 系列编辑器扩展包的元数据（类别、上游仓库、许可证、挂载点、锚定发布）与各包在本机数据目录的落位事实，以及各编辑器安装状态机快照。编辑器二进制按需下载，不随安装包分发。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workHostEditorsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors/{editorId}/install": {
+      "post": {
+        "operationId": "postWorkHostEditorsByEditorIdInstall",
+        "summary": "下载并落位 work 编辑器扩展包",
+        "description": "按锚定发布下载发行包，逐项核验字节数与 sha256 后解压原子落位（幂等：已落位且校验和一致直接就绪）。未锚定发布返回 400，安装进行中返回 409（轮询状态端点）。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "editorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors/{editorId}/install/status": {
+      "get": {
+        "operationId": "getWorkHostEditorsByEditorIdInstallStatus",
+        "summary": "查询 work 编辑器安装状态",
+        "description": "返回该编辑器安装状态机快照（idle/installing/ready/error + 日志尾部）。未知编辑器返回 404。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "editorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workEditorInstallStatusSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work/host/editors/{editorId}/*": {
+      "get": {
+        "operationId": "getWorkHostEditorsByEditorIdWildcard",
+        "summary": "读取 work 编辑器静态站点文件",
+        "description": "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "editorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/design-review": {
       "get": {
         "operationId": "getDesignReview",
@@ -7017,6 +7299,75 @@
       }
     },
     "/api/design-review/annotations/{id}": {
+      "patch": {
+        "operationId": "patchDesignReviewAnnotations{id}",
+        "summary": "移动或缩放一条画布标注",
+        "description": "选中标注后整体移动/缩放只改写点集（仍是文档归一化坐标）；kind、文字与颜色随创建落定，不在编辑范围。目标不存在时 404。",
+        "tags": [
+          "design-review"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/designReviewAnnotationUpdateSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/designReviewAnnotationResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "operationId": "deleteDesignReviewAnnotations{id}",
         "summary": "删除一条画布标注",
@@ -7285,8 +7636,8 @@
     "/api/open-design/host/canvas": {
       "post": {
         "operationId": "postOpenDesignHostCanvas",
-        "summary": "新建 OpenDesign 画布",
-        "description": "在上游创建一个 project（id 由宿主生成）并写进「最近画布」槽位；缺省名「未命名画布」。本机接入验证。",
+        "summary": "新建 OpenDesign 设计",
+        "description": "在上游创建一个 project（id 由宿主生成）并写进「最近画布」槽位；缺省名「未命名设计」。本机接入验证。",
         "tags": [
           "open-design"
         ],
@@ -7315,6 +7666,186 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/openDesignHostCanvasResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/workspace-project": {
+      "post": {
+        "operationId": "postOpenDesignHostWorkspaceProject",
+        "summary": "取或建当前项目的设计工作区",
+        "description": "按 workspaceKey 绑定一个上游 project：已有绑定且上游项目仍存在则复用，上游项目被删则重建；返回项目内容与资源文件表（created 标记本次是否新建）。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostWorkspaceProjectRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostWorkspaceProjectResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/design-document": {
+      "post": {
+        "operationId": "postOpenDesignHostDesignDocument",
+        "summary": "在项目设计工作区新建 Markdown 文档",
+        "description": "在已绑定的上游 project 里写一份 Markdown 文档（不新建项目）；文件名按序号去重。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCreateDesignDocumentRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCreateDesignDocumentResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/design-file": {
+      "post": {
+        "operationId": "postOpenDesignHostDesignFile",
+        "summary": "在项目设计工作区新建设计稿",
+        "description": "在已绑定的上游 project 里写一份空白 HTML 设计稿（不新建项目）；文件名按序号去重。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCreateDesignFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCreateDesignFileResponseSchema"
                 }
               }
             }
@@ -7898,6 +8429,125 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "postOpenDesignHostDesignSystems",
+        "summary": "从网站或 DESIGN.md 新建设计体系",
+        "description": "宿主代理上游 POST /api/brands：至少提供网站链接或 DESIGN.md；上游在后台提取颜色、字体与组件，成功时产出已发布体系。返回提取任务 id 供轮询。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostStartDesignSystemExtractionRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "已受理（异步执行）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostStartDesignSystemExtractionResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/design-systems/extractions/{id}": {
+      "get": {
+        "operationId": "getOpenDesignHostDesignSystemsExtractionsById",
+        "summary": "读取设计体系提取进度",
+        "description": "宿主代理上游 GET /api/brands/:id：返回 extracting / ready / failed 等状态与 designSystemId；ready 后可绑定到当前画布。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostDesignSystemExtractionResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/open-design/host/design-systems/bind": {
@@ -8354,6 +9004,68 @@
         }
       }
     },
+    "/api/open-design/host/archive": {
+      "get": {
+        "operationId": "getOpenDesignHostArchive",
+        "summary": "导出 OpenDesign 项目资源 ZIP",
+        "description": "读取上游项目文件表，逐个取回文件并打成 ZIP；读取失败的文件会在包内「导出说明.txt」列出。超过 200 MB 返回 413。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "画布 id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/open-design/host/file": {
       "post": {
         "operationId": "postOpenDesignHostFile",
@@ -8387,6 +9099,186 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/openDesignHostWriteFileResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/file-rename": {
+      "post": {
+        "operationId": "postOpenDesignHostFileRename",
+        "summary": "重命名设计或文档",
+        "description": "读旧文件正文 → 以新名写回 → 删除旧文件；只允许 .html/.htm/.md，新旧名都拒绝路径；重名返回 409，旧文件删除失败会回滚新文件。HTML 会把 <title> 同步为新资源名。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostRenameFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostRenameFileResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/file-copy": {
+      "post": {
+        "operationId": "postOpenDesignHostFileCopy",
+        "summary": "复制设计或文档",
+        "description": "读源文件正文 → 以「-副本」新名写入（重名自动加序号）；只允许 .html/.htm/.md，文件名拒绝路径。HTML 副本的 <title> 同步为新资源名。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostCopyFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostCopyFileResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/file-delete": {
+      "post": {
+        "operationId": "postOpenDesignHostFileDelete",
+        "summary": "删除设计或文档",
+        "description": "直接删除上游项目里的文本文件；只允许 .html/.htm/.md，文件名拒绝路径，文件不存在返回 404。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostDeleteFileRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostDeleteFileResponseSchema"
                 }
               }
             }
@@ -8536,6 +9428,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/openDesignHostVersionContentResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/open-design/host/version-restore": {
+      "post": {
+        "operationId": "postOpenDesignHostVersionRestore",
+        "summary": "恢复画布历史版本",
+        "description": "代理上游 POST /api/projects/:id/files/:name/versions/:versionId/restore，把选中版本写回当前文件。本机接入验证。",
+        "tags": [
+          "open-design"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openDesignHostRestoreVersionRequestSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openDesignHostRestoreVersionResponseSchema"
                 }
               }
             }
@@ -10686,7 +11638,8 @@
               "enum": [
                 "design",
                 "code",
-                "flow"
+                "flow",
+                "work"
               ]
             }
           }
@@ -20616,7 +21569,20 @@
             "type": "string",
             "enum": [
               "pen",
-              "rect"
+              "rect",
+              "text",
+              "mark"
+            ]
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
             ]
           },
           "color": {
@@ -20681,7 +21647,20 @@
                 "type": "string",
                 "enum": [
                   "pen",
-                  "rect"
+                  "rect",
+                  "text",
+                  "mark"
+                ]
+              },
+              "text": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               },
               "color": {
@@ -20742,6 +21721,34 @@
           "annotation"
         ],
         "additionalProperties": false
+      },
+      "designReviewAnnotationUpdateSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "points": {
+            "minItems": 2,
+            "maxItems": 4000,
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "items": false,
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
+        },
+        "required": [
+          "points"
+        ]
       },
       "designReviewCommentCreateSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -21070,7 +22077,20 @@
                   "type": "string",
                   "enum": [
                     "pen",
-                    "rect"
+                    "rect",
+                    "text",
+                    "mark"
+                  ]
+                },
+                "text": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 500
+                    },
+                    {
+                      "type": "null"
+                    }
                   ]
                 },
                 "color": {
@@ -28489,6 +29509,52 @@
           }
         }
       },
+      "openDesignHostCopyFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ]
+      },
+      "openDesignHostCopyFileResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
       "openDesignHostCreateCanvasRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -28499,6 +29565,98 @@
             "maxLength": 120
           }
         }
+      },
+      "openDesignHostCreateDesignDocumentRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "openDesignHostCreateDesignDocumentResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostCreateDesignFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "projectId"
+        ]
+      },
+      "openDesignHostCreateDesignFileResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
       },
       "openDesignHostCreateDocumentRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -28583,6 +29741,39 @@
         "required": [
           "protocolVersion",
           "credentials"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostDeleteFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "name"
+        ]
+      },
+      "openDesignHostDeleteFileResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "deleted"
         ],
         "additionalProperties": false
       },
@@ -28842,6 +30033,70 @@
           "providerId"
         ]
       },
+      "openDesignHostDesignSystemExtractionResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "extraction": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "designSystemId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "designSystemId",
+              "title",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "extraction"
+        ],
+        "additionalProperties": false
+      },
       "openDesignHostDesignSystemsResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -29060,6 +30315,97 @@
         ],
         "additionalProperties": false
       },
+      "openDesignHostRenameFileRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "newName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          }
+        },
+        "required": [
+          "projectId",
+          "name",
+          "newName"
+        ]
+      },
+      "openDesignHostRenameFileResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostRestoreVersionRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "versionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "projectId",
+          "file",
+          "versionId"
+        ]
+      },
+      "openDesignHostRestoreVersionResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
       "openDesignHostSaveToWorkspaceRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -29101,6 +30447,88 @@
         "required": [
           "path",
           "bytes"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostStartDesignSystemExtractionRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "designMd": {
+            "type": "string",
+            "maxLength": 200000
+          }
+        }
+      },
+      "openDesignHostStartDesignSystemExtractionResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "extraction": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "minLength": 1
+              },
+              "designSystemId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "status",
+              "designSystemId",
+              "title",
+              "error"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "extraction"
         ],
         "additionalProperties": false
       },
@@ -29291,6 +30719,91 @@
         },
         "required": [
           "versions"
+        ],
+        "additionalProperties": false
+      },
+      "openDesignHostWorkspaceProjectRequestSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "workspaceKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "workspaceKey"
+        ]
+      },
+      "openDesignHostWorkspaceProjectResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string"
+              },
+              "designSystemId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "projectId",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "entryFile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project",
+          "entryFile",
+          "files",
+          "created"
         ],
         "additionalProperties": false
       },
@@ -30699,7 +32212,8 @@
             "enum": [
               "design",
               "code",
-              "flow"
+              "flow",
+              "work"
             ]
           },
           "work_dir": {
@@ -30817,14 +32331,15 @@
                   },
                   "enabledModes": {
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "type": "array",
                     "items": {
                       "type": "string",
                       "enum": [
                         "design",
                         "code",
-                        "flow"
+                        "flow",
+                        "work"
                       ]
                     }
                   },
@@ -30949,14 +32464,15 @@
                   },
                   "enabledModes": {
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "type": "array",
                     "items": {
                       "type": "string",
                       "enum": [
                         "design",
                         "code",
-                        "flow"
+                        "flow",
+                        "work"
                       ]
                     }
                   },
@@ -31080,14 +32596,15 @@
                   },
                   "enabledModes": {
                     "minItems": 1,
-                    "maxItems": 3,
+                    "maxItems": 4,
                     "type": "array",
                     "items": {
                       "type": "string",
                       "enum": [
                         "design",
                         "code",
-                        "flow"
+                        "flow",
+                        "work"
                       ]
                     }
                   },
@@ -31161,19 +32678,21 @@
                   "enum": [
                     "design",
                     "code",
-                    "flow"
+                    "flow",
+                    "work"
                   ]
                 },
                 "enabledModes": {
                   "minItems": 1,
-                  "maxItems": 3,
+                  "maxItems": 4,
                   "type": "array",
                   "items": {
                     "type": "string",
                     "enum": [
                       "design",
                       "code",
-                      "flow"
+                      "flow",
+                      "work"
                     ]
                   }
                 },
@@ -31822,14 +33341,15 @@
                     },
                     "enabledModes": {
                       "minItems": 1,
-                      "maxItems": 3,
+                      "maxItems": 4,
                       "type": "array",
                       "items": {
                         "type": "string",
                         "enum": [
                           "design",
                           "code",
-                          "flow"
+                          "flow",
+                          "work"
                         ]
                       }
                     },
@@ -31954,14 +33474,15 @@
                     },
                     "enabledModes": {
                       "minItems": 1,
-                      "maxItems": 3,
+                      "maxItems": 4,
                       "type": "array",
                       "items": {
                         "type": "string",
                         "enum": [
                           "design",
                           "code",
-                          "flow"
+                          "flow",
+                          "work"
                         ]
                       }
                     },
@@ -32085,14 +33606,15 @@
                     },
                     "enabledModes": {
                       "minItems": 1,
-                      "maxItems": 3,
+                      "maxItems": 4,
                       "type": "array",
                       "items": {
                         "type": "string",
                         "enum": [
                           "design",
                           "code",
-                          "flow"
+                          "flow",
+                          "work"
                         ]
                       }
                     },
@@ -32153,14 +33675,15 @@
         "properties": {
           "enabled_modes": {
             "minItems": 1,
-            "maxItems": 3,
+            "maxItems": 4,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "design",
                 "code",
-                "flow"
+                "flow",
+                "work"
               ]
             }
           },
@@ -35186,7 +36709,8 @@
                 "enum": [
                   "design",
                   "code",
-                  "flow"
+                  "flow",
+                  "work"
                 ]
               }
             },
@@ -35239,7 +36763,8 @@
                   "enum": [
                     "design",
                     "code",
-                    "flow"
+                    "flow",
+                    "work"
                   ]
                 }
               },
@@ -36853,6 +38378,220 @@
         },
         "required": [
           "text"
+        ],
+        "additionalProperties": false
+      },
+      "workEditorInstallStatusSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "installing",
+              "ready",
+              "error"
+            ]
+          },
+          "logTail": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "logTail"
+        ],
+        "additionalProperties": false
+      },
+      "workHostEditorsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "editors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "office",
+                    "image",
+                    "video",
+                    "layout",
+                    "pdf",
+                    "audio",
+                    "cad"
+                  ]
+                },
+                "repo": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "license": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "mount": {
+                  "type": "string",
+                  "enum": [
+                    "wasm-iframe",
+                    "native-window"
+                  ]
+                },
+                "pinned": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "version": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 32
+                        },
+                        "asset": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "url": {
+                          "type": "string",
+                          "format": "uri"
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "asset",
+                        "bytes",
+                        "sha256",
+                        "url"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installed": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "category",
+                "repo",
+                "license",
+                "mount",
+                "pinned",
+                "installed"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dataDir": {
+            "type": "string",
+            "minLength": 1
+          },
+          "install": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "idle",
+                    "installing",
+                    "ready",
+                    "error"
+                  ]
+                },
+                "logTail": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "error": {
+                  "type": "string"
+                },
+                "startedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "state",
+                "logTail"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "editors",
+          "dataDir",
+          "install"
+        ],
+        "additionalProperties": false
+      },
+      "workHostStatusResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "registeredEditors": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "registeredEditors",
+          "reasons"
         ],
         "additionalProperties": false
       },

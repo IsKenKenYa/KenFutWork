@@ -39,6 +39,7 @@ const annotationRow: DesignReviewAnnotationRow = {
   project_id: "p-1",
   file_name: "index.html",
   kind: "pen",
+  text: null,
   color: "#ef4444",
   stroke_width: "3",
   points: [
@@ -68,6 +69,7 @@ function fakeRepository(overrides: Partial<RepositorySpies> = {}): {
     listCommentsByProject: vi.fn(async () => [commentRow]),
     listAnnotationsByProject: vi.fn(async () => [annotationRow]),
     insertAnnotation: vi.fn(async () => annotationRow),
+    updateAnnotation: vi.fn(async () => annotationRow),
     deleteAnnotation: vi.fn(async () => 1),
     ...overrides,
   };
@@ -115,6 +117,7 @@ describe("design-review service", () => {
           projectId: "p-1",
           file: "index.html",
           kind: "pen",
+          text: null,
           color: "#ef4444",
           strokeWidth: 3,
           points: [

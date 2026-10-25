@@ -280,6 +280,21 @@ export function createCdpBrowserSession(deps: {
   let child: ChildProcess | null = null;
   let sessionId: string | null = null;
   let portrait = { width: 1280, height: 720 };
+  /**
+   * hover/拖拽 moved 合帧状态。渲染器不产帧的窗口里（受控浏览器最小化/遮挡，
+   * 或调试控制台切换几何后），一条 `mouseMoved` 的 CDP 回执要等 ~5s 的强制帧；
+   * 面板 40ms 一条的 hover 流会在管道里堆积成分钟级 backlog——真机「三按钮多点
+   * 几下卡死、等很久才反应过来」的根因。最多保留一条在途 moved，新到的只覆盖坐标；
+   * 按下/抬起不受限（离散事件不等帧，实测毫秒级）。
+   */
+  let movedInFlight = false;
+  let movedTail: {
+    x: number;
+    y: number;
+    button: "left" | "right" | "middle" | "none";
+    buttons: number;
+    modifiers?: number;
+  } | null = null;
 
   const requireConnected = (): { client: CdpClient; sessionId: string } => {
     if (!client || !sessionId) {
@@ -289,6 +304,24 @@ export function createCdpBrowserSession(deps: {
       );
     }
     return { client, sessionId };
+  };
+
+  /** 在途 moved 落定后冲刷最新坐标；断开/超时的单条失败不阻断后续输入。 */
+  const flushMoved = async (): Promise<void> => {
+    const next = movedTail;
+    movedTail = null;
+    if (!next) {
+      movedInFlight = false;
+      return;
+    }
+    movedInFlight = true;
+    try {
+      const { client: cdp, sessionId: id } = requireConnected();
+      await dispatchMouse(cdp, id, { type: "mouseMoved", ...next });
+    } catch {
+      // 合帧丢一帧 hover 无副作用；下一次 moved 会再触发冲刷。
+    }
+    void flushMoved();
   };
 
   /**
@@ -994,6 +1027,25 @@ export function createCdpBrowserSession(deps: {
     async input(event) {
       const { client: cdp, sessionId: id } = requireConnected();
       if (event.type === "mouse") {
+        if (event.action === "moved") {
+          // 合帧：只保留最新坐标；HTTP 立即返回，不等 5s 的帧回执。
+          movedTail = {
+            x: event.x,
+            y: event.y,
+            button:
+              event.button === "left" ||
+              event.button === "right" ||
+              event.button === "middle"
+                ? event.button
+                : "none",
+            buttons: typeof event.buttons === "number" ? event.buttons : 0,
+            ...(typeof event.modifiers === "number"
+              ? { modifiers: event.modifiers }
+              : {}),
+          };
+          if (!movedInFlight) void flushMoved();
+          return;
+        }
         await dispatchMouse(cdp, id, {
           type:
             event.action === "pressed"

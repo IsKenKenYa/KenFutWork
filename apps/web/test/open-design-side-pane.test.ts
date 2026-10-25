@@ -72,7 +72,18 @@ test("一块画布一个标签：同项目复用，不同项目各开一个", ()
   expect(getActiveSidePaneTab(second)?.id).toBe("open-design:p-2");
 });
 
-test("未绑定的旧标签照旧可开（面板自行解析最近画布），画布名按标签回写", () => {
+test("再次打开未指定标题时保留面板回写的项目名", () => {
+  const titled = updateOpenDesignSidePaneTab(
+    openOpenDesignSidePane(null),
+    "open-design",
+    { title: "默认对话" },
+  );
+  const reopened = openOpenDesignSidePane(titled, {});
+  const tab = reopened.tabs[0];
+  expect(tab && "title" in tab ? tab.title : undefined).toBe("默认对话");
+});
+
+test("未绑定项目的新标签可开（默认按当前项目取资源页），画布名按标签回写", () => {
   const opened = openOpenDesignSidePane(null);
   expect(opened.tabs[0]?.id).toBe("open-design");
   expect(

@@ -55,6 +55,20 @@ function fixture(
       updatedAt: 1792477257537,
     })),
     deleteAnnotation: vi.fn(async () => true),
+    updateAnnotation: vi.fn(async () => ({
+      id: "a-1",
+      projectId: "p-1",
+      file: "index.html",
+      kind: "rect" as const,
+      color: "#ef4444",
+      strokeWidth: 3,
+      points: [
+        [0.2, 0.2],
+        [0.6, 0.6],
+      ],
+      createdAt: 1792477257537,
+      updatedAt: 1792477257537,
+    })),
     ...(options.service ?? {}),
   } as DesignReviewService;
   const app = Fastify();
@@ -197,5 +211,46 @@ describe("/api/design-review", () => {
       },
     });
     expect(tooShort.statusCode).toBe(400);
+  });
+
+  it("标注移动/缩放：PATCH 点集；点数不足 400、找不到 404", async () => {
+    const { app, service } = fixture();
+    const ok = await app.inject({
+      method: "PATCH",
+      url: "/api/design-review/annotations/a-1",
+      payload: {
+        points: [
+          [0.2, 0.2],
+          [0.6, 0.6],
+        ],
+      },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(service.updateAnnotation).toHaveBeenCalledWith(actor, "a-1", [
+      [0.2, 0.2],
+      [0.6, 0.6],
+    ]);
+
+    const tooShort = await app.inject({
+      method: "PATCH",
+      url: "/api/design-review/annotations/a-1",
+      payload: { points: [[0.2, 0.2]] },
+    });
+    expect(tooShort.statusCode).toBe(400);
+
+    const missing = fixture({
+      service: { updateAnnotation: vi.fn(async () => null) },
+    });
+    const gone = await missing.app.inject({
+      method: "PATCH",
+      url: "/api/design-review/annotations/a-gone",
+      payload: {
+        points: [
+          [0.2, 0.2],
+          [0.6, 0.6],
+        ],
+      },
+    });
+    expect(gone.statusCode).toBe(404);
   });
 });

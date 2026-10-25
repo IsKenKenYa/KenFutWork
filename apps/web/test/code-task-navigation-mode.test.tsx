@@ -108,7 +108,9 @@ async function openRoot(mode: "design" | "flow") {
     window,
     ["code", "design", "flow"],
     (preset) =>
-      preset === "flow" ? Promise.resolve(true) : admitProjectMode(preset),
+      preset === "flow" || preset === "work"
+        ? Promise.resolve(true)
+        : admitProjectMode(preset),
   );
   client.setWorkPresetResolver(() =>
     navigation.getSnapshot().mode === "design" ? "design" : "code",
@@ -142,10 +144,11 @@ async function openRoot(mode: "design" | "flow") {
     </ZCodeIntlProvider>,
   );
   await screen.findByRole("radio", { name: "Code" });
-  await act(async () => {
+  // 设计面首帧依赖宿主的异步数据面；同步 act 只 flush 本次导航更新，不等待挂载中的 Suspense。
+  act(() => {
     navigation.open("design");
   });
-  await act(async () => {
+  act(() => {
     requestCanvasDocumentOpen({
       projectId: rootProjectId,
       documentId: "c7100000-0000-4000-8000-000000000001",
@@ -160,7 +163,7 @@ async function openRoot(mode: "design" | "flow") {
     return frame;
   });
   if (mode === "flow")
-    await act(async () => {
+    act(() => {
       navigation.open("flow");
     });
   await waitFor(() =>
@@ -178,7 +181,7 @@ it.each(["design", "flow"] as const)(
   async (mode) => {
     const f = await openRoot(mode);
     // 原快捷键读取真实Root的会话缓存并调用同一个handleSelectTask，覆盖ACK提升/恢复消费的Task主区接线。
-    await act(async () => {
+    act(() => {
       useZCodeSessionStore
         .getState()
         .setTaskListCache("/code", [meta(taskA), meta(taskB)], identity);

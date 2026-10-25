@@ -1,9 +1,14 @@
 /**
  * 智能家居面板页（插件自带，无构建、无外部依赖）。
  *
+ * 三种视图：未配置/修改配置（接入引导 + 连接表单）、**HA 原生界面（已连接后的默认
+ * 视图，iframe 直接内嵌 HA 自己的前端——用户拍板「要教程里一样的界面」，2026-10-24）**、
+ * 精简面板（自绘实体网格，顶栏可互切）。HA 默认发 X-Frame-Options 挡内嵌，被挡时
+ * iframe 空白——原生视图自带折叠提示条给两侧的关法（见接入引导「允许面板内嵌」步）。
+ *
  * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收也不保管宿主令牌；数据面请求带
  * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里，面板写入一次后
- * 只显示「已配置」。
+ * 只显示「已配置」；内嵌的 HA 前端用 HA 自己的登录态（iframe 里登录一次即记住）。
  *
  * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`）。控件由服务端按「域 + 属性」
  * 算好（`lib/entity-model.js`），面板只渲染并回传 `{entityId, key, service, value}`——
@@ -24,6 +29,10 @@ const state = {
   total: 0,
   truncated: false,
   mode: "polling",
+  /** 米家/华为实体计数（服务端按注册表 platform 识别）；null = 识别不了，不显示 */
+  ecosystems: null,
+  /** 当前视图：config（配置/引导）| native（内嵌 HA 原生界面）| grid（自绘实体网格） */
+  view: "config",
   busy: false,
   pollTimer: null,
 };
@@ -32,6 +41,7 @@ const els = {
   state: document.getElementById("state"),
   body: document.getElementById("body"),
   note: document.getElementById("note"),
+  toggleView: document.getElementById("toggleView"),
   refresh: document.getElementById("refresh"),
   retest: document.getElementById("retest"),
   edit: document.getElementById("edit"),
@@ -69,8 +79,17 @@ function showError(message) {
   setNote(message, true);
 }
 
-function setHeaderButtons(connected) {
-  els.refresh.hidden = !connected;
+/**
+ * 三种视图的顶栏按钮：
+ * - `config`：只有配置表单（未配置/修改配置），无连接态操作；
+ * - `native`：内嵌 HA 原生界面（默认）——可切「精简面板」，不需要「刷新」；
+ * - `grid`：自绘实体网格——可切回「原生界面」，要「刷新」。
+ */
+function setHeaderButtons(view) {
+  const connected = view === "native" || view === "grid";
+  els.toggleView.hidden = !connected;
+  els.toggleView.textContent = view === "native" ? "精简面板" : "原生界面";
+  els.refresh.hidden = view !== "grid";
   els.retest.hidden = !connected;
   els.edit.hidden = !connected;
   els.disconnect.hidden = !connected;
@@ -107,9 +126,104 @@ function api(path, options) {
 
 // === 未配置 / 修改配置 ===
 
-function renderConfigForm(message) {
+/** 引导步骤只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
+let guidePromise = null;
+function loadGuideSteps() {
+  if (guidePromise) return guidePromise;
+  guidePromise = api("guide")
+    .then((payload) => (Array.isArray(payload.steps) ? payload.steps : []))
+    .catch(() => {
+      guidePromise = null;
+      return [];
+    });
+  return guidePromise;
+}
+
+function copyText(text, button) {
+  const done = () => {
+    button.textContent = "已复制";
+    setTimeout(() => {
+      if (button.isConnected) button.textContent = "复制";
+    }, 1200);
+  };
+  // 剪贴板 API 可能被 iframe 权限策略挡住：挡住就退回隐藏 textarea 选中复制
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard
+      .writeText(text)
+      .then(done)
+      .catch(() => fallbackCopy(text, done));
+  } else {
+    fallbackCopy(text, done);
+  }
+}
+
+function fallbackCopy(text, done) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    document.execCommand("copy");
+    done();
+  } catch {
+    /* 复制失败不打断：命令文本本来就完整可见，可手动选中 */
+  }
+  area.remove();
+}
+
+function commandRow(item) {
+  const row = el("div", "command");
+  row.appendChild(el("pre", null, item.text));
+  const copy = el("button", null, "复制");
+  copy.type = "button";
+  copy.addEventListener("click", () => copyText(item.text, copy));
+  row.appendChild(copy);
+  return row;
+}
+
+/**
+ * 接入引导卡：部署 HA → 装 HACS → 接米家（默认展开）→ 接华为（默认展开）→ 建令牌。
+ * 步骤数据来自服务端 `guide` 路由（`lib/setup-guide.js` 一处属主，测试锁死仓库链接）。
+ */
+function buildGuideCard(steps) {
+  const card = el("div", "card guide");
+  const intro = el("p", "hint intro");
+  intro.textContent = "经 Home Assistant 接入米家与华为设备";
+  card.appendChild(intro);
+  steps.forEach((step, index) => {
+    const details = el("details", "step");
+    details.open = step.open === true;
+    details.appendChild(el("summary", null, `${index + 1}. ${step.title}`));
+    const box = el("div", "step-body");
+    for (const item of step.items ?? []) {
+      if (item.kind === "command") {
+        box.appendChild(commandRow(item));
+        continue;
+      }
+      if (item.kind === "link") {
+        const line = el("p", "step-text");
+        const link = el("a", null, item.label);
+        link.href = item.url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        line.appendChild(link);
+        box.appendChild(line);
+        continue;
+      }
+      box.appendChild(el("p", "step-text", item.text));
+    }
+    details.appendChild(box);
+    card.appendChild(details);
+  });
+  return card;
+}
+
+function renderConfigForm(message, guideFirst = true) {
   stopPolling();
-  setHeaderButtons(false);
+  state.view = "config";
+  setHeaderButtons("config");
   setState("未配置");
   clear(els.body);
   const card = el("div", "card");
@@ -144,8 +258,11 @@ function renderConfigForm(message) {
       .then((payload) => {
         state.busy = false;
         state.version = payload.version ?? null;
+        if (typeof payload.baseUrl === "string" && payload.baseUrl) {
+          state.baseUrl = payload.baseUrl;
+        }
         setNote("", false);
-        loadEntities();
+        renderNative();
       })
       .catch((error) => {
         state.busy = false;
@@ -159,9 +276,49 @@ function renderConfigForm(message) {
   card.appendChild(actions);
   if (message) card.appendChild(el("p", "error", message));
   els.body.appendChild(card);
+  // 引导卡与表单同一页：首用引导在上（照着做），「修改配置」时表单在上（直接改）。
+  // 异步插入前先确认表单还在页上（期间可能已连上并切到实体网格）
+  loadGuideSteps().then((steps) => {
+    if (steps.length === 0 || !els.body.contains(card)) return;
+    const guideCard = buildGuideCard(steps);
+    if (guideFirst) els.body.insertBefore(guideCard, card);
+    else els.body.appendChild(guideCard);
+  });
 }
 
-// === 实体网格 ===
+// === HA 原生界面（内嵌 iframe，已连接后的默认视图） ===
+
+/**
+ * 直接内嵌 HA 自己的前端（就是教程里那个界面）。HA 默认发 `X-Frame-Options` 挡内嵌，
+ * 被挡时 iframe 表现为空白——折叠提示条给出两侧的关法（新版 UI 开关 / 旧版 yaml），
+ * 不让用户面对白屏猜原因。
+ */
+function renderNative() {
+  stopPolling();
+  state.view = "native";
+  setHeaderButtons("native");
+  setState("HA 原生界面");
+  clear(els.body);
+  const wrap = el("div", "native");
+
+  const hint = el("details");
+  const summary = el("summary", null, "界面空白时点开");
+  hint.appendChild(summary);
+  const fix = el("pre", null);
+  fix.textContent =
+    "HA 设置 → 系统 → 网络 → 关闭「Send X-Frame-Options」\n旧版 configuration.yaml：\nhttp:\n  use_x_frame_options: false";
+  hint.appendChild(fix);
+  wrap.appendChild(hint);
+
+  const frame = document.createElement("iframe");
+  frame.src = state.baseUrl || "";
+  frame.title = "Home Assistant";
+  frame.referrerPolicy = "no-referrer";
+  wrap.appendChild(frame);
+  els.body.appendChild(wrap);
+}
+
+// === 实体网格（精简面板） ===
 
 function stopPolling() {
   if (state.pollTimer) {
@@ -374,7 +531,8 @@ function viewSignature(groups) {
 const rendered = { signature: null, applies: [] };
 
 function renderEntities() {
-  setHeaderButtons(true);
+  state.view = "grid";
+  setHeaderButtons("grid");
   // 刷新不动滚动位置：先记后还原（整页滚动，滚动条在 document 上）
   const scroller = document.scrollingElement ?? document.documentElement;
   const scrollTop = scroller.scrollTop;
@@ -384,8 +542,13 @@ function renderEntities() {
   );
   const version = state.version ? `HA ${state.version}` : "智能家居";
   const mode = state.mode === "realtime" ? "实时" : "轮询";
+  // 生态计数来自实体注册表的来源集成（服务端识别）；识别不了（null）就不显示，不猜
+  const eco =
+    state.ecosystems === null
+      ? ""
+      : ` · 米家 ${state.ecosystems.mijia} · 华为 ${state.ecosystems.huawei}`;
   setState(
-    `${version} · ${mode} · ${state.total} 实体${state.truncated ? `（只显示前 ${shown} 条）` : ""}`,
+    `${version} · ${mode} · ${state.total} 实体${state.truncated ? `（只显示前 ${shown} 条）` : ""}${eco}`,
   );
 
   if (shown === 0) {
@@ -432,6 +595,7 @@ function loadEntities() {
       state.total = payload.total || 0;
       state.truncated = payload.truncated === true;
       state.mode = payload.mode || "polling";
+      state.ecosystems = payload.ecosystems ?? null;
       // 成功这一拍才清瞬时消息：与重渲染同一任务，不出现「页面矮一截」的中间帧
       setNote("", false);
       renderEntities();
@@ -443,12 +607,22 @@ function loadEntities() {
         renderConfigForm(error.message);
         return;
       }
-      setHeaderButtons(true);
+      setHeaderButtons(state.view === "grid" ? "grid" : "native");
       showError(error.message);
     });
 }
 
 els.refresh.addEventListener("click", () => loadEntities());
+
+els.toggleView.addEventListener("click", () => {
+  setNote("", false);
+  // 原生 ↔ 精简面板互切；切到网格时拉一轮实体（原生视图不轮询）
+  if (state.view === "native") {
+    loadEntities();
+    return;
+  }
+  renderNative();
+});
 
 els.retest.addEventListener("click", () => {
   setState("连接中…");
@@ -456,14 +630,20 @@ els.retest.addEventListener("click", () => {
     .then((payload) => {
       state.version = payload.version ?? null;
       setNote("", false);
-      loadEntities();
+      if (state.view === "grid") {
+        loadEntities();
+        return;
+      }
+      // 原生视图：测通即可，界面本身由 iframe 自己维护
+      setState("HA 原生界面");
     })
     .catch((error) => showError(error.message));
 });
 
 els.edit.addEventListener("click", () => {
   setNote("", false);
-  renderConfigForm();
+  // 修改配置：表单优先，引导收在下方（首用相反）
+  renderConfigForm(undefined, false);
 });
 
 els.disconnect.addEventListener("click", () => {
@@ -486,20 +666,9 @@ function boot() {
         renderConfigForm();
         return;
       }
-      // 版本取自连接测试（一次），之后每轮只取实体
-      return api("test", { method: "POST" })
-        .then((info) => {
-          state.version = info.version ?? null;
-          return loadEntities();
-        })
-        .catch((error) => {
-          if (error.code === "not_configured" || error.status === 401) {
-            renderConfigForm(error.message);
-            return;
-          }
-          setHeaderButtons(true);
-          showError(error.message);
-        });
+      // 已配置：直接进原生界面（iframe 用 HA 自己的登录态，令牌健康度由
+      // 「重新测试」与 agent 工具按需暴露，启动期不必先打一轮 REST）
+      renderNative();
     })
     .catch((error) => showError(error.message));
 }

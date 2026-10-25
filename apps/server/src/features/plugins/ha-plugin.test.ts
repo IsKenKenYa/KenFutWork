@@ -1024,7 +1024,7 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
     expect(fake.calls.length).toBeGreaterThan(0);
   });
 
-  it("地址归一在保存时就完成：存进去的是干净地址", async () => {
+  it("地址归一在保存时就完成：存进去的是干净地址，响应回同一份（原生视图 iframe 用）", async () => {
     const { service, installed, store } = await installFromRepo();
     const saved = await configureConnected(
       service,
@@ -1033,6 +1033,9 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
       "ha.test.local:8123/api/states/",
     );
     expect(saved?.status).toBe(200);
+    expect(bodyOf<{ baseUrl?: string }>(saved).baseUrl).toBe(
+      "http://ha.test.local:8123",
+    );
     const stored = JSON.parse([...store.rows.values()][0] ?? "{}") as {
       baseUrl?: string;
     };
@@ -1768,6 +1771,7 @@ interface EntitiesPayload {
   grouping: string;
   total: number;
   truncated: boolean;
+  ecosystems: { mijia: number; huawei: number } | null;
   groups: Array<{
     name: string;
     items: Array<{
@@ -2042,6 +2046,117 @@ describe("HA 插件：实时态（WS 快照 + 注册表补齐区域）", () => {
     expect(view.mode).toBe("polling");
     expect(view.total).toBeGreaterThan(0);
     expect(view.grouping).toBe("domain");
+  });
+});
+
+describe("HA 插件：接入引导与生态识别", () => {
+  interface GuideStep {
+    id: string;
+    title: string;
+    open: boolean;
+    items: Array<{ kind: string; text?: string; url?: string }>;
+  }
+
+  it("guide 路由：步骤含默认展开的米家/华为，仓库链接与 HACS、Docker 命令逐字核对", async () => {
+    const { service, installed } = await installFromRepo();
+    const result = await dispatch(service, installed.id, {
+      path: "guide",
+      instanceId: INSTANCE_ID,
+    });
+    expect(result?.status).toBe(200);
+    const body = bodyOf<{ steps: GuideStep[] }>(result);
+    // 默认支持的两个生态步骤在场且默认展开，其余步骤默认收起
+    expect(body.steps.map((step) => step.id)).toEqual([
+      "ha",
+      "hacs",
+      "xiaomi",
+      "huawei",
+      "embed",
+      "token",
+    ]);
+    for (const step of body.steps) {
+      expect(step.open).toBe(step.id === "xiaomi" || step.id === "huawei");
+    }
+    const items = body.steps.flatMap((step) => step.items);
+    // 装错仓库是引导最大的事故面：链接逐字核对
+    expect(items.map((item) => item.url ?? "")).toEqual(
+      expect.arrayContaining([
+        "https://github.com/XiaoMi/ha_xiaomi_home",
+        "https://github.com/xiasi0/ha-huawei-smarthome",
+        "https://www.hacs.xyz/docs/use/download/download/",
+        "https://www.home-assistant.io/integrations/http/",
+      ]),
+    );
+    const commands = items
+      .filter((item) => item.kind === "command")
+      .map((item) => item.text ?? "")
+      .join("\n");
+    expect(commands).toContain("get.hacs.xyz");
+    expect(commands).toContain("ghcr.io/home-assistant/home-assistant:stable");
+    // 内嵌步（2026-10-24 拍板「要教程里一样的界面」）：旧版关 X-Frame-Options 的 yaml 在场
+    expect(commands).toContain("use_x_frame_options: false");
+    // 引导终点把用户带回自己的连接表单：令牌步骤指回面板
+    expect(
+      items
+        .filter((item) => item.kind === "text")
+        .map((item) => item.text ?? "")
+        .join("\n"),
+    ).toContain("长期访问令牌");
+  });
+
+  it("guide 路由私有：未登录 401", async () => {
+    const { service, installed } = await installFromRepo();
+    const anonymous = await dispatch(service, installed.id, {
+      path: "guide",
+      instanceId: INSTANCE_ID,
+      isAuthenticated: false,
+    });
+    expect(anonymous?.status).toBe(401);
+  });
+
+  it("生态识别：注册表 platform 计数（xiaomi_home/xiaomi_miot → 米家、huawei_smarthome → 华为）", async () => {
+    installSocketHub({
+      entities: [
+        {
+          entity_id: "light.bedroom",
+          platform: "xiaomi_home",
+          area_id: "living",
+        },
+        { entity_id: "switch.plug", platform: "xiaomi_miot" },
+        { entity_id: "sensor.temp", platform: "huawei_smarthome" },
+        { entity_id: "sun.sun" },
+      ],
+      areas: [{ area_id: "living", name: "客厅" }],
+    });
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const view = await waitRealtime(service, installed.id);
+    expect(view.mode).toBe("realtime");
+    expect(view.ecosystems).toEqual({ mijia: 2, huawei: 1 });
+  });
+
+  it("轮询态（WS 不通、无注册表）不带生态计数：识别不了就不显示", async () => {
+    installSocketHub({ refuse: true });
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const view = entitiesOf(
+      await dispatch(service, installed.id, {
+        path: "entities",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(view.mode).toBe("polling");
+    expect(view.ecosystems).toBeNull();
+  });
+
+  it("注册表条目全都没有 platform（注册表形状变了）：返回 null，不把「识别不出」当「未接入」", async () => {
+    const model = await loadPluginModule<{
+      buildEcosystemSummary: (registries: unknown) => unknown;
+    }>("lib/entity-model.js");
+    expect(
+      model.buildEcosystemSummary({ entities: [{ entity_id: "light.a" }] }),
+    ).toBeNull();
+    expect(model.buildEcosystemSummary({})).toBeNull();
   });
 });
 

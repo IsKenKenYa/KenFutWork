@@ -19,12 +19,18 @@ import {
   uploadBrandKitAsset,
 } from "../../lib/brand-kit-api";
 import { ApiAccessError } from "../../lib/server-api";
+import { cn } from "../../lib/utils";
 import { BrandKitSkeleton } from "../skeletons/brand-kit-skeleton";
 import { BrandKitEditor } from "./brand-kit-editor";
 import { BrandKitSidebar } from "./brand-kit-sidebar";
 import { EmptyState } from "./empty-state";
 
-export function BrandKitPage() {
+export function BrandKitPage({
+  embedded = false,
+}: {
+  /** 画布浮窗内嵌：由浮窗持有标题与关闭，页面只铺满容器并收紧留白。 */
+  embedded?: boolean;
+} = {}) {
   const [kits, setKits] = useState<BrandKitSummary[]>([]);
   const [selectedKit, setSelectedKit] = useState<BrandKitDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -317,11 +323,19 @@ export function BrandKitPage() {
   }
 
   return (
-    <div className="flex h-[100dvh] w-full flex-col bg-background md:flex-row">
+    <div
+      className={cn(
+        "flex w-full bg-background",
+        embedded
+          ? "min-h-0 flex-1 flex-row"
+          : "h-[100dvh] flex-col md:flex-row",
+      )}
+    >
       {/* Sidebar: full width horizontal on mobile, vertical panel on md+ */}
       <BrandKitSidebar
         kits={kits}
         selectedKitId={selectedKit?.id ?? null}
+        embedded={embedded}
         onSelectKit={handleSelectKit}
         onCreateKit={handleCreateKit}
         onDeleteKit={handleDeleteKitFromSidebar}
@@ -330,6 +344,7 @@ export function BrandKitPage() {
       {selectedKit ? (
         <BrandKitEditor
           kit={selectedKit}
+          embedded={embedded}
           onUpdateKit={handleUpdateKit}
           onDeleteKit={handleDeleteKit}
           onDuplicateKit={handleDuplicateKit}
