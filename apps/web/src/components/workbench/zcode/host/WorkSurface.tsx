@@ -1,11 +1,20 @@
 import type {
   WorkEditor,
+  WorkEditorInstallStatus,
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
-import { RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { surfaceJson } from "./surfaceApi.js";
+import { useSyncExternalStore } from "react";
+import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
+import { getSurfaceApiBase } from "./surfaceApi.js";
+import {
+  getWorkSurfaceView,
+  openWorkEditor,
+  openWorkEditors,
+  subscribeWorkSurface,
+} from "./workSurfaceState.js";
 
 /** 编辑器类别（与 shared workEditorCategorySchema 同一封闭集）。 */
 type WorkEditorCategory =
@@ -32,21 +41,28 @@ const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
   "native-window": "原生窗口",
 };
 
+/** 安装进行中轮询间隔；一次性兜底常量（非运行可调治理项），与 flow 安装轮询同口径。 */
+const INSTALL_POLL_MS = 2000;
+
 /**
- * Work 主区视图（融合进 Code 壳后的承载面，W1：只读引擎信息页）。
+ * Work 主区视图（融合进 Code 壳后的承载面）。
  *
- * 入口纪律：能进入本面 = work 插件已安装且探针可用（父页门控），所以这里
- * 不再判断安装态，只如实呈现注册表与落位事实。编辑器二进制按需下载（W2
- * 接通后此处出现安装动作），未落位如实标「未下载」，不摆假按钮。
+ * 信息页 = 注册表 + 落位事实 + 安装动作（仅锚定发布的编辑器有下载按钮）；
+ * 编辑器面 = 静态托管的 WASM 站点 iframe。切换只由显式点击驱动
+ * （workSurfaceState），主区不被会话或后台事件顶掉。
  */
 export function HostWorkSurface({ active = true }: { active?: boolean }) {
+  const view = useSyncExternalStore(
+    subscribeWorkSurface,
+    getWorkSurfaceView,
+    getWorkSurfaceView,
+  );
   const [status, setStatus] = useState<WorkHostStatusResponse | null>(null);
   const [editors, setEditors] = useState<WorkHostEditorsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
     try {
       const [nextStatus, nextEditors] = await Promise.all([
         surfaceJson<WorkHostStatusResponse>("/api/work/host/status"),
@@ -66,6 +82,71 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
     void refresh();
   }, [active, refresh]);
 
+  const installing = Object.values(editors?.install ?? {}).some(
+    (snap) => snap.state === "installing",
+  );
+  useEffect(() => {
+    if (!active || !installing) return;
+    const timer = window.setInterval(() => void refresh(), INSTALL_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [active, installing, refresh]);
+
+  if (view.kind === "editor") {
+    return (
+      <EditorFrame
+        editorId={view.editorId}
+        onBack={openWorkEditors}
+      />
+    );
+  }
+  return (
+    <EditorsInfoView
+      active={active}
+      status={status}
+      editors={editors}
+      loading={loading}
+      loadError={loadError}
+      onRefresh={() => void refresh()}
+      onOpen={openWorkEditor}
+      onInstall={async (editorId) => {
+        try {
+          await surfaceFetch(
+            `/api/work/host/editors/${encodeURIComponent(editorId)}/install`,
+            { method: "POST" },
+          );
+        } catch {
+          // 启动失败会被下一次轮询的快照如实呈现，不在这里弹错。
+        }
+        void refresh();
+      }}
+    />
+  );
+}
+
+function EditorsInfoView({
+  active,
+  status,
+  editors,
+  loading,
+  loadError,
+  onRefresh,
+  onOpen,
+  onInstall,
+}: {
+  active: boolean;
+  status: WorkHostStatusResponse | null;
+  editors: WorkHostEditorsResponse | null;
+  loading: boolean;
+  loadError: string | null;
+  onRefresh: () => void;
+  onOpen: (editorId: string) => void;
+  onInstall: (editorId: string) => Promise<void>;
+}) {
+  const installFor = (editor: WorkEditor): WorkEditorInstallStatus =>
+    editors?.install[editor.id] ?? { state: "idle", logTail: [] };
+  const installing = Object.values(editors?.install ?? {}).some(
+    (snap) => snap.state === "installing",
+  );
   return (
     <div className="h-full min-h-0 overflow-y-auto bg-background">
       <div className="flex w-full flex-col px-6 py-5">
@@ -81,8 +162,8 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
           <div className="ml-auto">
             <button
               type="button"
-              onClick={() => void refresh()}
-              disabled={loading}
+              onClick={onRefresh}
+              disabled={loading || installing}
               aria-label="刷新"
               title="刷新"
               className="flex h-7 w-7 items-center justify-center rounded-lg border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
@@ -106,40 +187,73 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
             <span className="w-24 shrink-0">编辑器</span>
             <span className="w-14 shrink-0">类别</span>
             <span className="w-16 shrink-0">挂载</span>
-            <span className="w-36 shrink-0">许可证</span>
-            <span className="flex-1">状态</span>
+            <span className="w-28 shrink-0">版本</span>
+            <span className="min-w-0 flex-1">状态</span>
           </div>
-          {(editors?.editors ?? []).map((editor, index, rows) => (
-            <div
-              key={editor.id}
-              className={`flex items-center gap-3 px-4 py-2.5 ${
-                index === rows.length - 1 ? "" : "border-b"
-              }`}
-            >
-              <span className="w-24 shrink-0 truncate" title={editor.id}>
-                {editor.title}
-              </span>
-              <span className="w-14 shrink-0 text-xs text-foreground-subtle">
-                {CATEGORY_LABEL[editor.category] ?? editor.category}
-              </span>
-              <span className="w-16 shrink-0 text-xs text-foreground-subtle">
-                {MOUNT_LABEL[editor.mount] ?? editor.mount}
-              </span>
-              <span
-                className="w-36 shrink-0 truncate font-mono text-[11px] text-foreground-subtle"
-                title={editor.license}
+          {(editors?.editors ?? []).map((editor, index, rows) => {
+            const install = installFor(editor);
+            return (
+              <div
+                key={editor.id}
+                className={`flex items-center gap-3 px-4 py-2.5 ${
+                  index === rows.length - 1 ? "" : "border-b"
+                }`}
               >
-                {editor.license}
-              </span>
-              <span className="min-w-0 flex-1 text-xs">
-                {editor.installed ? (
-                  <span className="text-emerald-600">已就绪</span>
-                ) : (
-                  <span className="text-foreground-subtle">未下载</span>
-                )}
-              </span>
-            </div>
-          ))}
+                <span className="w-24 shrink-0 truncate" title={editor.id}>
+                  {editor.title}
+                </span>
+                <span className="w-14 shrink-0 text-xs text-foreground-subtle">
+                  {CATEGORY_LABEL[editor.category] ?? editor.category}
+                </span>
+                <span className="w-16 shrink-0 text-xs text-foreground-subtle">
+                  {MOUNT_LABEL[editor.mount] ?? editor.mount}
+                </span>
+                <span className="w-28 shrink-0 font-mono text-[11px] text-foreground-subtle">
+                  {editor.pinned ? `v${editor.pinned.version}` : "—"}
+                </span>
+                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+                  {install.state === "installing" ? (
+                    <>
+                      <span className="text-foreground">
+                        {install.logTail.at(-1) ?? "安装中"}
+                      </span>
+                    </>
+                  ) : install.state === "error" ? (
+                    <>
+                      <span className="text-destructive">{install.error}</span>
+                      {editor.pinned ? (
+                        <button
+                          type="button"
+                          onClick={() => void onInstall(editor.id)}
+                          className="shrink-0 rounded-lg border px-2 py-1 text-xs transition-colors hover:border-foreground/30"
+                        >
+                          重试
+                        </button>
+                      ) : null}
+                    </>
+                  ) : editor.installed ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpen(editor.id)}
+                      className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
+                    >
+                      打开
+                    </button>
+                  ) : editor.pinned ? (
+                    <button
+                      type="button"
+                      onClick={() => void onInstall(editor.id)}
+                      className="shrink-0 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
+                    >
+                      下载
+                    </button>
+                  ) : (
+                    <span className="text-foreground-subtle">未锚定</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
           {editors && editors.editors.length === 0 ? (
             <p className="px-4 py-3 text-xs text-foreground-subtle">
               没有已登记的编辑器
@@ -164,6 +278,48 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
                 {editors.dataDir}
               </span>
             </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
+function EditorFrame({
+  editorId,
+  onBack,
+}: {
+  editorId: string;
+  onBack: () => void;
+}) {
+  const [frameLoaded, setFrameLoaded] = useState(false);
+  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          编辑器
+        </button>
+        <span className="text-sm">{editorId}</span>
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <iframe
+          src={src}
+          title={`${editorId} 编辑器`}
+          className={`h-full w-full border-0 transition-opacity duration-300 ${
+            frameLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          onLoad={() => setFrameLoaded(true)}
+        />
+        {!frameLoaded ? (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-foreground-subtle">
+            正在打开编辑器…
           </div>
         ) : null}
       </div>
