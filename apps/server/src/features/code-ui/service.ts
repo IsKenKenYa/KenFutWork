@@ -2727,6 +2727,8 @@ export class CodeUiService {
         return this.switchMode(user, input.workspacePath, parsed.envelope);
       if (parsed.envelope.type === "setFollowupMode")
         return this.setFollowupMode(user, input.workspacePath, parsed.envelope);
+      if (parsed.envelope.type === "renameSession")
+        return this.renameSession(user, input.workspacePath, parsed.envelope);
       if (parsed.envelope.type === "resolveInteraction")
         return this.resolveInteraction(
           user,
@@ -2971,6 +2973,70 @@ export class CodeUiService {
     ).catch((error: unknown) =>
       console.warn("[code-ui] Goal运行失败：", error),
     );
+  }
+
+  private async renameSession(
+    actor: LocalActor,
+    workspacePath: string,
+    envelope: protocol.CommandEnvelope,
+  ) {
+    if (!envelope.sessionId)
+      throw new CodeUiRepositoryError("not_found", "改名缺少 Task 身份。");
+    const loaded = await this.loadConversation(actor, envelope.sessionId);
+    if (loaded.entry.parent_session_id || loaded.project.path !== workspacePath)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "改名目标不属于该根 Task 与固定目录。",
+      );
+    const { title } = protocol.commandPayloadSchemas.renameSession.parse(
+      envelope.payload,
+    );
+    const ack = await this.deps.repository.applyCommand(
+      loaded.instanceId,
+      envelope,
+      codeUiCommandFingerprint(envelope),
+      (root) => {
+        if (root.execution_state === "revoking")
+          throw new CodeUiRepositoryError(
+            "command_conflict",
+            "Task 正在关闭，请稍后重试。",
+          );
+        const state = structuredClone(root.state!);
+        const snapshot = state.snapshots.find(
+          (entry) => entry.sessionId === root.id,
+        );
+        if (!snapshot)
+          throw new CodeUiRepositoryError("not_found", "Task 根快照不存在。");
+        const changed =
+          snapshot.meta.title !== title ||
+          snapshot.meta.titleSource !== "custom";
+        if (changed) {
+          snapshot.meta = { ...snapshot.meta, title, titleSource: "custom" };
+          snapshot.seq += 1;
+          snapshot.revision += 1;
+        }
+        return {
+          state: changed ? state : null,
+          activeRunId: root.active_run_id,
+          ack: {
+            commandId: envelope.commandId,
+            status: changed ? "accepted" : "noop",
+            revisionAtDecision: snapshot.revision,
+          },
+        };
+      },
+    );
+    return {
+      result: ack,
+      publish: publishOnce(async () => {
+        if (ack.status !== "accepted") return;
+        await this.refreshTaskLists(
+          loaded.instanceId,
+          loaded.project.path,
+          loaded.project.projectId,
+        );
+      }),
+    };
   }
 
   private async setFollowupMode(

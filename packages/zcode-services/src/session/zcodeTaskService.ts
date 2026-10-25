@@ -604,6 +604,7 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
     title: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<ZCodeTaskMeta>;
 
   /** 更新 task 置顶状态 */

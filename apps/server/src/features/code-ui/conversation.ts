@@ -1064,7 +1064,11 @@ export function createCodeUiConversation(input: {
         });
         projectGoalSnapshot(root, goalRecord);
       }
-      if (!root.meta.title && turn.origin !== "backgroundResult")
+      if (
+        !root.meta.title &&
+        root.meta.titleSource !== "custom" &&
+        turn.origin !== "backgroundResult"
+      )
         root.meta = {
           title: deriveSessionTitle(turn.text),
           titleSource: "generated",

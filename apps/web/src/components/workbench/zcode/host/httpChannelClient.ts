@@ -46,6 +46,11 @@ import {
 import { notifyPluginInventoryChanged } from "./parentBridge.js";
 import { captureTaskPinCall, readTaskPinResult } from "./taskPinRpc.js";
 import {
+  captureTaskRenameCall,
+  runTaskRenameCall,
+  type TaskRenameCall,
+} from "./taskRenameRpc.js";
+import {
   captureTaskUnreadCall,
   readTaskUnreadResult,
 } from "./taskUnreadRpc.js";
@@ -995,12 +1000,47 @@ export class CodeHttpChannelClient implements IChannelClient {
     return [request, ...values.slice(1)];
   }
 
+  private async renameTask(call: TaskRenameCall) {
+    const requireTarget = () => {
+      const current = this.workspaces.taskObservation(call.target.taskId);
+      if (
+        current &&
+        (current.projectId !== call.target.taskControl.projectId ||
+          current.rootDirectory !== call.target.workspacePath ||
+          current.branchGeneration !== call.target.taskControl.branchGeneration)
+      )
+        throw new Error("任务身份已改变，请重新加载列表。");
+    };
+    requireTarget();
+    await this.connect();
+    const connectionId = this.connectionId;
+    const generation = this.generation;
+    return runTaskRenameCall(call, {
+      agentService: this.services.zcodeAgentService,
+      requireCurrent: () => {
+        if (
+          this.controller.signal.aborted ||
+          connectionId !== this.connectionId ||
+          generation !== this.generation
+        )
+          throw new Error("任务更新期间连接已改变，请重新加载列表。");
+        requireTarget();
+      },
+      readMeta: (target) =>
+        this.callChannel<unknown>(ServiceChannels.ZCodeTask, "getTaskMeta", [
+          target,
+        ]),
+    });
+  }
+
   private async callChannel<TResult>(
     service: string,
     method: string,
     args?: unknown,
     fixedViewer?: CodeUiViewerScope,
   ): Promise<TResult> {
+    const renameCall = captureTaskRenameCall(service, method, args ?? []);
+    if (renameCall) return (await this.renameTask(renameCall)) as TResult;
     const pinCall = captureTaskPinCall(service, method, args ?? []);
     let values = pinCall?.args ?? args ?? [];
     if (!pinCall && Array.isArray(values))

@@ -275,6 +275,16 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 成功或未知写入结果均沿原列表重新读取当前事实，历史 ACK 不进入普通 Task 投影或置顶缓存。原行的临时显示意图只保留到调用和权威刷新结束；失败后释放并重读。当前内容标签和 SessionPane 不因置顶改变。
 
+## Task 标题
+
+原 Task 行与 Header 的 `renameTask` 在浏览器宿主边界转换为既有 V4 `renameSession`。原命令工厂在连接等待前固定 `clientId`、`commandId`、Task、标题及 `taskControl`，复用共享 workspace transport；不打开目标 SessionPane 或改变内容标签。HTTP 使用原 `sendConversationCommandV4`，没有另一套改名写入方法。
+
+服务端沿原根 Task 锁与命令回执更新 `snapshot.meta.title`、`titleSource: "custom"` 及原协议 `seq/revision`。活动时间、正文、当前 Run、Goal、目录权限及其它配置保持；不要求正文 `baseRevision`，可在模型输出期间处理。`taskControl` 缺失或过期沿既有 rejected/stale 原因拒绝新命令，固定目录与根 Task 也分别核验。
+
+幂等域仍为实例、原客户端和命令身份，完整原信封参数沿既有指纹检查。新一次明确改名使用新原命令，同一信封连续或并发重放读取原 ACK；不同参数复用该键返回 409。旧 ACK 不重写后来的标题，原命令查询和删除墓碑继续有效。已为 `custom` 的同值标题返回 `noop`；空字符串仍为自定义标题，后续 Run 不自动覆盖，界面按原空标题标签展示。
+
+上行前在原 pending 账本登记 workspace 来源及摘要，不保存标题正文。改名沿既有非重发类别，只查询原 `{sessionId, commandId}`；传输结果不明时不自动重发，也不创建替代命令。取得确定 ACK 后读取当前 Task 元信息；回执、查询或元信息返回时均核对当前连接及已知 Task 代际。Header 保留本次目标，迟到结果不关闭后来打开的改名框，本机列表沿权威读取更新。
+
 ## 文档资源变更
 
 独立 `canvas.document.updated` 帧包含 `projectId`、`canvasId`、`deleted` 及可选真实 SHA-256 `revision`。它由文件变更和后台发布经 PostgreSQL 通知传递到实例 WS 与原宿主 SSE，不伪造 Agent Run 事件。宿主 SSE 的 `canvasDocumentUpdated` 通知投影为文档更新/删除事件，空文档列表也能收到更新。

@@ -75,7 +75,8 @@ export function codeUiTaskControlRejection(
 ): protocol.CommandAck | null {
   const observed = envelope.taskControl;
   if (
-    (!observed && envelope.type !== "sendText" && envelope.type !== "stop") ||
+    (!observed &&
+      !["sendText", "stop", "renameSession"].includes(envelope.type)) ||
     (observed?.projectId === root.project_id &&
       observed.branchGeneration === Number(root.branch_generation))
   )
@@ -337,6 +338,7 @@ async function writeState(
   root: CodeUiSessionRecord,
   state: CodeUiConversationState,
   activeRunId: string | null,
+  updateActivity = true,
 ) {
   // 同一Task锁内按持久bit迁移推进epoch；普通流事件/usage不改变批准代际。
   const previousPlan =
@@ -347,11 +349,16 @@ async function writeState(
       .planEnabled === true;
   state.planningEpoch =
     (root.state?.planningEpoch ?? 0) + (previousPlan === currentPlan ? 0 : 1);
-  await scoped.execute(
-    `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
-      where instance_id = :instance and id = $1 and deleted_at is null`,
-    [root.id, jsonbSafeStringify(state), activeRunId],
-  );
+  const statement = updateActivity
+    ? `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
+      where instance_id = :instance and id = $1 and deleted_at is null`
+    : `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3
+      where instance_id = :instance and id = $1 and deleted_at is null`;
+  await scoped.execute(statement, [
+    root.id,
+    jsonbSafeStringify(state),
+    activeRunId,
+  ]);
   await writeChildSessionIndexes(scoped, root, state);
 }
 
@@ -1011,7 +1018,13 @@ export function createCodeUiRepository(
           );
         const ack = protocol.commandAckSchema.parse(decision.ack);
         if (decision.state)
-          await writeState(scoped, root, decision.state, decision.activeRunId);
+          await writeState(
+            scoped,
+            root,
+            decision.state,
+            decision.activeRunId,
+            envelope.type !== "renameSession",
+          );
         for (const settlement of decision.settlements ?? [])
           await scoped.execute(
             `update public.code_ui_commands set ack = $4::jsonb, status = 'failed'

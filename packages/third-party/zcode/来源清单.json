@@ -2306,13 +2306,14 @@
       "source": "references/zcode/packages/ui/src/WorkspaceHeaderSections.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceHeaderSections.tsx",
       "sha256": "3b4b33f146538d30cb36cff68ff54b0fb4c2f6c347a2c90a925fa1c735298544",
-      "copiedSha256": "a8417983f8db207726df7909a10f88289a1d9fd498df3e7c57a2f9b03aaf20d8",
+      "copiedSha256": "ccbbf6baa31818a9efc915e2d48c317bce02755316bd074dc8a465fa0b8beca9",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：H1 会话头锁定目录只读 chip（Lock 图标+目录末段，title 全路径；草稿态不显示）",
         "2026-10-22 合并 origin/main a9d3eab3：核对主线浏览器/OpenDesign页签、布局与素材输入适配的实际字节，更新遗漏的副本哈希；固定上游来源提交与原始哈希不变。",
         "本机标记未读在点击时从同地址项目目录或 activeTaskMeta 捕获观察，回执后只触发原列表重读。",
-        "本机置顶从同地址目录或 activeTaskMeta 固定 pinRevision 与控制观察；本机置顶和未读共用原列表权威重读，canonical 本机身份不进入远端置顶缓存，远端路径保持。"
+        "本机置顶从同地址目录或 activeTaskMeta 固定 pinRevision 与控制观察；本机置顶和未读共用原列表权威重读，canonical 本机身份不进入远端置顶缓存，远端路径保持。",
+        "本机改名在打开表单时固定真实 Task、目录及控制观察，经同一 V4 改名桥保存；迟到回执不关闭后来打开的表单，完成后重读当前项目树。"
       ]
     },
     {
@@ -6318,11 +6319,12 @@
       "source": "references/zcode/packages/ui/src/hooks/useWorkspaceActiveTaskState.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useWorkspaceActiveTaskState.ts",
       "sha256": "838cc3f683aec71067b5edc6d9e4ee1fd6b3bd18c52a740feb7862235802cfcc",
-      "copiedSha256": "44e3d85ca126af34271ef878d532286e6f140df6184a75b4eeb591beb8b5a5ae",
+      "copiedSha256": "fdbdd1cb282dedeadd98526ac4dd84af465024cf5503949ac2355d311602ad86",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "活动 Task 元信息等价比较纳入 lastUnreadAt 与 taskControl，保持头部操作读取当前观察。",
-        "活动 Task 元信息等价比较纳入 pinRevision，保持头部置顶操作读取当前观察。"
+        "活动 Task 元信息等价比较纳入 pinRevision，保持头部置顶操作读取当前观察。",
+        "本机活动 Task 与原侧栏共同消费同地址项目树的当前元信息，改名后 Header 使用同一标题事实；其它来源保留原消费者。"
       ]
     },
     {
@@ -13921,9 +13923,10 @@
       "source": "references/zcode/packages/ui/src/v4/pendingCommandReplay.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/pendingCommandReplay.ts",
       "sha256": "d7041b17350bf804164c679f8ab700a5526345ef6396879ac4a59ffba71b2d2e",
-      "copiedSha256": "d7041b17350bf804164c679f8ab700a5526345ef6396879ac4a59ffba71b2d2e",
+      "copiedSha256": "ef339816d29d91ccc14f06a6faeb13841a9090291b98c10aceee25cf1ddde0e9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "renameSession 使用原非重发摘要类别，持久 pending 不保存标题正文，未知回执只查询原命令。"
       ]
     },
     {
@@ -16707,12 +16710,13 @@
       "source": "references/zcode/packages/services/src/session/zcodeTaskService.ts",
       "target": "packages/zcode-services/src/session/zcodeTaskService.ts",
       "sha256": "7552f9faa1419dd5516c199472e66010c6e74a8accdb21efa9abe73415777c18",
-      "copiedSha256": "a1d59cb37f8d3d238de3baf2fcf4facfc3e87aff199e83625ee393d2f28c8475",
+      "copiedSha256": "2661184223fdcee5a6dd51a79d4ce31de761d467757b863bfb61c855b6795edf",
       "adaptations": [
         "本机归档、恢复及条件删除携带可信 Task 项目与分支观察值，真实宿主按同一观察身份接纳并拒绝迟到操作。",
         "导出并连接3.16.2独立task-groups接口，同时移除已无消费者的旧GroupedView方法及持久化类型；其它适配保持。",
         "setTaskUnread 输入接纳可选 taskControl 与 observedLastUnreadAt，连接真实宿主的本机未读操作。",
-        "setTaskPinned 输入接纳可选 taskControl 与 observedPinRevision，连接真实宿主的本机置顶操作。"
+        "setTaskPinned 输入接纳可选 taskControl 与 observedPinRevision，连接真实宿主的本机置顶操作。",
+        "renameTask 接纳可选 taskControl，本机宿主在等待连接前固定观察并转为既有 renameSession 命令。"
       ]
     },
     {

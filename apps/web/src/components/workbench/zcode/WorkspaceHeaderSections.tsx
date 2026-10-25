@@ -11,6 +11,10 @@ import {
   type RemoteTarget,
   type ZCodeTaskMeta,
 } from "@zcode/shared";
+import {
+  type ConversationTaskControl,
+  conversationTaskControlSchema,
+} from "@zcode/shared/zcode-protocol-v4";
 import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { cn } from "@zui/components/lib/utils.js";
@@ -81,6 +85,16 @@ function shouldShowRemoteSkillSyncAction(params: {
   return shouldShowRemoteSyncActions(params);
 }
 
+interface HeaderRenameTarget {
+  taskId: string;
+  local?: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    title: string;
+    taskControl: ConversationTaskControl;
+  };
+}
+
 export function WorkspaceHeaderTitleSection({
   variant,
   readOnlyReason,
@@ -130,7 +144,8 @@ export function WorkspaceHeaderTitleSection({
   const setTaskUnreadIndicator = useZCodeSessionStore((state) => state.setTaskUnreadIndicator);
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const [workspaceContextOpen, setWorkspaceContextOpen] = useState(false);
-  const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<HeaderRenameTarget | null>(null);
+  const renameTargetRef = useRef<HeaderRenameTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
@@ -300,12 +315,35 @@ export function WorkspaceHeaderTitleSection({
     if (!resolvedTaskActionTaskId) {
       return;
     }
-    setRenamingTaskId(resolvedTaskActionTaskId);
-    setRenameDraft(activeTaskMeta?.title ?? activeTaskTitle ?? "");
+    const target: HeaderRenameTarget = { taskId: resolvedTaskActionTaskId };
+    let title = activeTaskMeta?.title ?? activeTaskTitle ?? "";
+    if (localTaskAction && taskActionTarget) {
+      const control = conversationTaskControlSchema.safeParse(
+        taskActionMeta?.taskControl,
+      );
+      if (!taskActionMeta || !control.success) {
+        refreshTaskOrganization(taskActionTarget);
+        toast(intl.formatMessage({ id: "taskList.renameFailed" }));
+        return;
+      }
+      title = taskActionMeta.title;
+      target.local = {
+        workspacePath: taskActionTarget.workspacePath,
+        ...(taskActionTarget.workspaceIdentity
+          ? { workspaceIdentity: taskActionTarget.workspaceIdentity }
+          : {}),
+        title,
+        taskControl: Object.freeze(structuredClone(control.data)),
+      };
+    }
+    renameTargetRef.current = target;
+    setRenameTarget(target);
+    setRenameDraft(title);
   };
 
   const handleCancelRenameTask = () => {
-    setRenamingTaskId(null);
+    renameTargetRef.current = null;
+    setRenameTarget(null);
     setRenameDraft("");
   };
 
@@ -328,20 +366,44 @@ export function WorkspaceHeaderTitleSection({
   };
 
   const handleSubmitRenameTask = async () => {
-    if (!renamingTaskId) {
+    const target = renameTarget;
+    if (!target) {
       return;
     }
 
     const normalizedTitle = renameDraft.trim();
-    const currentTitle = activeTaskMeta?.title ?? activeTaskTitle ?? "";
+    const currentTitle =
+      target.local?.title ?? activeTaskMeta?.title ?? activeTaskTitle ?? "";
     if (normalizedTitle === currentTitle.trim()) {
       handleCancelRenameTask();
       return;
     }
 
+    if (target.local) {
+      const local = target.local;
+      try {
+        await baseServices.zcodeTaskService.renameTask({
+          taskId: target.taskId,
+          workspacePath: local.workspacePath,
+          ...(local.workspaceIdentity
+            ? { workspaceIdentity: local.workspaceIdentity }
+            : {}),
+          taskControl: local.taskControl,
+          title: normalizedTitle,
+        });
+        if (renameTargetRef.current === target) handleCancelRenameTask();
+      } catch {
+        if (renameTargetRef.current === target)
+          toast(intl.formatMessage({ id: "taskList.renameFailed" }));
+      } finally {
+        refreshTaskOrganization(local);
+      }
+      return;
+    }
+
     try {
       const renamedTask = await services.zcodeTaskService.renameTask({
-        taskId: renamingTaskId,
+        taskId: target.taskId,
         workspacePath: workspaceAbsPath,
         title: normalizedTitle,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -431,7 +493,7 @@ export function WorkspaceHeaderTitleSection({
       )}
     >
       <TaskRenameDialog
-        open={!isDraftNewTask && renamingTaskId !== null}
+        open={!isDraftNewTask && renameTarget !== null}
         value={renameDraft}
         inputRef={renameInputRef}
         intl={intl}

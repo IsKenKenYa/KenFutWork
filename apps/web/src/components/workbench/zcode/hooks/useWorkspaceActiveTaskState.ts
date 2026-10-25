@@ -1,5 +1,5 @@
 import { useMemo, useRef } from "react";
-import type { ZCodeProvider, ZCodeTaskMeta } from "@zcode/shared";
+import { isLocalWorkspaceTarget, type ZCodeProvider, type ZCodeTaskMeta } from "@zcode/shared";
 import { useActiveTaskSnapshotMeta } from "@zui/hooks/useActiveTaskSnapshotMeta.js";
 import { useTaskNativeSessionLogFile } from "@zui/hooks/useTaskNativeSessionLogFile.js";
 import { useTaskSessionFilePath } from "@zui/hooks/useTaskSessionFilePath.js";
@@ -12,6 +12,7 @@ import {
   useZCodeSessionStore,
 } from "@zui/store/zcodeSessionStore.js";
 import { useTaskQueryCacheStore } from "@zui/store/taskQueryCacheStore.js";
+import { useOptionalProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
 
 interface UseWorkspaceActiveTaskStateParams {
   workspaceAbsPath: string;
@@ -83,6 +84,7 @@ export function useWorkspaceActiveTaskState({
   selectedProvider,
   intl,
 }: UseWorkspaceActiveTaskStateParams) {
+  const directory = useOptionalProjectDirectory();
   const workspaceState = useZCodeSessionStore((state) =>
     selectWorkspaceZCodeState(state, workspaceAbsPath, workspaceIdentity),
   );
@@ -105,18 +107,17 @@ export function useWorkspaceActiveTaskState({
       return null;
     }
 
-    // App 以前依赖 zcodeTaskMetaMerge 同时拉普通列表和 pinned 列表，只是为了给当前激活 task
-    // 找一份 meta。这样任何列表刷新都会把整棵 App 一起带着重渲。
-    // 这里改成直接从 workspace store 读 taskListCache + optimistic meta 的合并结果；
-    // 普通任务可以同步命中，pinned / archived 再由 snapshot meta 兜底，不再要求 App 常驻订阅旧列表 hook。
-    // 重启恢复后 raw snapshot meta 可能先进入 workspace store，而 sqlite/list
-    // query cache 里保留着 titleOverridden 的手动标题。Header 必须按同一套 title authority
-    // 合并两边，否则当前 task 会看起来被还原成生成标题或首条 query。
-    return (
-      mergeTaskMetaCandidates(getTaskMeta(workspaceState, activeTaskId), activeTaskQueryMeta) ??
-      null
-    );
-  }, [activeTaskId, activeTaskQueryMeta, workspaceState]);
+    const legacy = mergeTaskMetaCandidates(getTaskMeta(workspaceState, activeTaskId), activeTaskQueryMeta);
+    const local = isLocalWorkspaceTarget({
+      workspacePath: workspaceAbsPath,
+      workspaceIdentity,
+      remoteSessionId: workspaceRemoteSessionId,
+    });
+    const key = buildTaskEntityKey({ taskId: activeTaskId, workspacePath: workspaceAbsPath, workspaceIdentity });
+    const current = local ? directory?.tree.tasks.find((task) => buildTaskEntityKey(task) === key) : undefined;
+    // 本机 Header 与原侧栏读取同一项目树事实；其它来源保留原列表与快照消费者。
+    return current ? { ...legacy, ...current } : legacy ?? null;
+  }, [activeTaskId, activeTaskQueryMeta, workspaceState, directory?.tree.tasks, workspaceAbsPath, workspaceIdentity, workspaceRemoteSessionId]);
 
   const activeTaskSnapshotMeta = useActiveTaskSnapshotMeta(
     workspaceAbsPath,
