@@ -2797,8 +2797,9 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "27cb51723601a181ab045e811ee96d111448368674ab34d9cf2246fb319b4793",
+      "copiedSha256": "9be7d261fc4d012408c10b15ebefdc82ca6e95295a3445d68795069cfac93bd4",
       "adaptations": [
+        "消息文件与目录动作固定点击时的 Task／Project 来源，Task 或壳改变后忽略原 stat 的迟到结果与错误，文件成功及回退分支保留原 viewerScope。",
         "删除被统一文件标签关闭流程取代的专用 CodeViewer 关闭传递，其它主区和文档挂载保持。",
         "原项目目录与 Task 文件入口进入内容标签，页内导航沿同一回调；Git 与消息目录入口在明确动作时固定当前真实读取来源。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",

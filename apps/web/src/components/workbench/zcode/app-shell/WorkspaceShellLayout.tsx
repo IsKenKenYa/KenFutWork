@@ -399,6 +399,15 @@ export const WorkspaceShellLayout = memo(
       const projectId = parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspaceAbsPath)?.projectId;
       return projectId ? { kind: "project" as const, projectId } : undefined;
     }, [activeTaskId, workspaceIdentity, workspaceAbsPath]);
+    const fileOpenOwnerRef = useRef<typeof fileTreeViewerScope | null>(fileTreeViewerScope);
+    fileOpenOwnerRef.current = fileTreeViewerScope;
+    useEffect(() => {
+      fileOpenOwnerRef.current = fileTreeViewerScope;
+      return () => {
+        if (fileOpenOwnerRef.current === fileTreeViewerScope)
+          fileOpenOwnerRef.current = null;
+      };
+    }, [fileTreeViewerScope]);
     const screenshotSurfaceRequest = useBrowserScreenshotSurfaceRequest(
       sidePaneState?.tabs ?? [],
     );
@@ -1380,6 +1389,8 @@ export const WorkspaceShellLayout = memo(
         if (workspaceReadOnlyReason && target.serviceScope !== "base-local") {
           return;
         }
+        const owner = fileTreeViewerScope;
+        const isCurrentOwner = () => fileOpenOwnerRef.current === owner;
         try {
           const fileService = selectWorkspacePathFileService(
             target,
@@ -1389,6 +1400,7 @@ export const WorkspaceShellLayout = memo(
           const fileStat = await fileService.stat({
             path: target.path,
           });
+          if (!isCurrentOwner()) return;
           if (fileStat.type === "file") {
             if (
               shouldOpenAssistantHtmlInBrowser({
@@ -1407,6 +1419,7 @@ export const WorkspaceShellLayout = memo(
               workspacePath: target.workspacePath,
               workspaceIdentity: target.workspaceIdentity,
               workspaceRemoteSessionId: target.workspaceRemoteSessionId,
+              viewerScope: owner,
             });
             return;
           }
@@ -1458,6 +1471,7 @@ export const WorkspaceShellLayout = memo(
             },
           });
         } catch (error) {
+          if (!isCurrentOwner()) return;
           const message =
             error instanceof Error ? error.message : String(error);
           logger.warn("[WorkspaceShell] 打开 markdown 文件链接失败", {
@@ -1474,6 +1488,7 @@ export const WorkspaceShellLayout = memo(
               workspacePath: target.workspacePath,
               workspaceIdentity: target.workspaceIdentity,
               workspaceRemoteSessionId: target.workspaceRemoteSessionId,
+              viewerScope: owner,
             });
           }
           toast(intl.formatMessage({ id: "workspaceFileTree.openFailed" }));

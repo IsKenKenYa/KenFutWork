@@ -19,6 +19,9 @@ import {
 const inputSelector = '[role="textbox"][contenteditable="true"]';
 
 async function openTaskManager({ page, host }: TaskGroupPublicPageContext) {
+  const previous = await page.evaluate<string | null>(
+    'document.querySelector("[data-side-pane-tab-id][data-state=active]")?.getAttribute("data-side-pane-tab-id") ?? null',
+  );
   const row = `[data-testid=${JSON.stringify(`task-item-${host.sessionId}`)}]`;
   const point = await vi.waitFor(async () => {
     const found = await page.evaluate<{
@@ -49,6 +52,7 @@ async function openTaskManager({ page, host }: TaskGroupPublicPageContext) {
       'document.querySelector("[data-side-pane-tab-id][data-state=active]")?.getAttribute("data-side-pane-tab-id") ?? null',
     );
     expect(id).toMatch(/^file-manager:/);
+    expect(id).not.toBe(previous);
     if (!id) throw new Error("原文件管理器标签未显示。");
     return id;
   });
@@ -127,7 +131,10 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
                 targetSchema.parse(entry.args[0]).viewerScope.kind === "task",
             );
             expect(watches).toHaveLength(2);
-            expect(watches.every((entry) => entry.status === 200)).toBe(true);
+            expect(
+              watches.map((entry) => entry.status),
+              JSON.stringify(watches),
+            ).toEqual([200, 200]);
           };
           await vi.waitFor(readyWatches, { timeout: 5_000 });
           const unwatchBefore = [...observation.requests.values()].filter(
