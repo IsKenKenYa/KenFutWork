@@ -35,7 +35,7 @@ function fakeClient() {
     base64Encoded?: boolean;
   } | null = { body: "" };
   /** `Page.captureScreenshot` 的返回（默认 2 字节假图，够断言帧长度）。 */
-  let screenshotResult: Record<string, unknown> = {
+  const screenshotResult: Record<string, unknown> = {
     data: Buffer.from([9, 9]).toString("base64"),
   };
   /** mouseMoved 闸门：开时 dispatched moved 挂起等待手动放行（模拟 5s 帧回执）。 */
@@ -339,13 +339,29 @@ describe("CDP 会话：面板画面流", () => {
     fake.setMoveGate(true);
     // 模拟渲染器不产帧：mouseMoved 回执挂起（真机 ~5s）。三条连发必须立即返回。
     const t0 = Date.now();
-    await session.input({ type: "mouse", action: "moved", x: 1, y: 2, buttons: 0 });
-    await session.input({ type: "mouse", action: "moved", x: 3, y: 4, buttons: 0 });
-    await session.input({ type: "mouse", action: "moved", x: 5, y: 6, buttons: 0 });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 1,
+      y: 2,
+      buttons: 0,
+    });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 3,
+      y: 4,
+      buttons: 0,
+    });
+    await session.input({
+      type: "mouse",
+      action: "moved",
+      x: 5,
+      y: 6,
+      buttons: 0,
+    });
     expect(Date.now() - t0).toBeLessThan(100);
-    const movesBefore = fake.sent.filter(
-      (s) => s.params.type === "mouseMoved",
-    );
+    const movesBefore = fake.sent.filter((s) => s.params.type === "mouseMoved");
     expect(movesBefore).toHaveLength(1);
     expect(movesBefore[0]?.params).toMatchObject({ x: 1, y: 2, buttons: 0 });
     // 按下不吃合帧：在途 moved 不挡离散事件。

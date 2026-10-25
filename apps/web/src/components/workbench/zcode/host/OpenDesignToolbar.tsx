@@ -12,6 +12,7 @@ import {
   Check,
   Code2,
   Download,
+  Eraser,
   Eye,
   FileText,
   FolderDown,
@@ -23,9 +24,7 @@ import {
   MapPin,
   MessageSquarePlus,
   Monitor,
-  Eraser,
   MousePointer2,
-  SquareMousePointer,
   Palette,
   PanelRight,
   Pencil,
@@ -34,6 +33,7 @@ import {
   RefreshCw,
   Smartphone,
   SquareDashed,
+  SquareMousePointer,
   SquarePen,
   Tablet,
   Type,
@@ -302,11 +302,7 @@ export function OpenDesignToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
       {/* 下载与分享合并成一个菜单（用户口径） */}
-      <DropdownMenu
-        modal={false}
-        open={shareMenuOpen}
-        onOpenChange={onShare}
-      >
+      <DropdownMenu modal={false} open={shareMenuOpen} onOpenChange={onShare}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -431,255 +427,257 @@ export function OpenDesignToolbar({
         </div>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-b border-border px-1.5 py-1">
-      {uploadInput}
-      {showBack ? (
-        <ToolbarIconButton label="返回资源" onClick={onBackToResources}>
-          <House className="size-3" />
-        </ToolbarIconButton>
-      ) : null}
-      <DropdownMenu modal={false}>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="text-foreground-subtle hover:text-foreground"
-            aria-label="新建"
-            title="新建"
-            disabled={busy}
-          >
-            <Plus className="size-3" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-52">
-          <DropdownMenuItem
-            data-open-design-add="sketch"
-            onSelect={onCreateSketch}
-          >
-            <PenTool className="size-3.5" />
-            <span className="flex-1">新建草图</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-open-design-add="document"
-            onSelect={onCreateDocument}
-          >
-            <FileText className="size-3.5" />
-            <span className="flex-1">新建文档</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-open-design-add="design-file"
-            onSelect={onCreateDesignFile}
-          >
-            <FigmaMark className="size-3.5" />
-            <span className="flex-1">新建设计稿</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-open-design-add="upload"
-            onSelect={() => uploadInputRef.current?.click()}
-          >
-            <Upload className="size-3.5" />
-            <span className="flex-1">上传</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-open-design-add="browser"
-            onSelect={onOpenBrowserTab}
-          >
-            <Globe className="size-3.5" />
-            <span className="flex-1">新建浏览器</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            data-open-design-add="design-system"
-            onSelect={onCreateDesignSystem}
-          >
-            <Palette className="size-3.5" />
-            <span className="flex-1">新建设计体系</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {markdownMode ? null : (
-        <ToolbarIconButton
-          label="刷新"
-          disabled={busy || !hasCanvas}
-          onClick={onRefresh}
-        >
-          <RefreshCw className="size-3" />
-        </ToolbarIconButton>
-      )}
-      <div className="flex items-center rounded-md border border-border p-0.5">
-        <ViewModeButton
-          label="预览"
-          active={viewMode === "preview"}
-          onClick={() => onViewMode("preview")}
-        >
-          <Eye className="size-3" />
-        </ViewModeButton>
-        <ViewModeButton
-          label="代码"
-          active={viewMode === "code"}
-          onClick={() => onViewMode("code")}
-        >
-          <Code2 className="size-3" />
-        </ViewModeButton>
-      </div>
-      {markdownMode ? null : (
-        <>
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="gap-1 text-foreground-subtle"
-                aria-label="设备"
-                title={`设备（${activeViewport?.label ?? "桌面端"}）`}
-                disabled={busy || !hasCanvas || viewMode === "code"}
-              >
-                <ViewportIcon className="size-3" />
-                <span>{activeViewport?.label ?? "桌面端"}</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {VIEWPORTS.map((item) => (
-                <DropdownMenuItem
-                  key={item.id}
-                  onSelect={() => onViewport(item.id)}
-                >
-                  <item.icon className="size-3.5" />
-                  <span className="flex-1">{item.label}</span>
-                  {viewport === item.id ? <Check className="size-3.5" /> : null}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <div className="ml-auto flex flex-wrap items-center gap-0.5">
-            <ToolbarToggleIconButton
-              label="评论"
-              active={tool === "comment"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => onTool(tool === "comment" ? "none" : "comment")}
-            >
-              <MessageSquarePlus className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarIconButton
-              label="评论侧栏"
-              active={sidebarOpen}
-              disabled={!hasCanvas}
-              onClick={onToggleSidebar}
-            >
-              <PanelRight className="size-3" />
-              {commentCount > 0 ? (
-                <span className="text-ui-caption leading-none">
-                  {commentCount}
-                </span>
-              ) : null}
-            </ToolbarIconButton>
-            <ToolbarToggleIconButton
-              label="标注"
-              active={tool === "annotate" && annotationKind === "pen"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => {
-                onAnnotationKind("pen");
-                onTool(
-                  tool === "annotate" && annotationKind === "pen"
-                    ? "none"
-                    : "annotate",
-                );
-              }}
-            >
-              <Highlighter className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="框选"
-              active={tool === "annotate" && annotationKind === "rect"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => {
-                onAnnotationKind("rect");
-                onTool(
-                  tool === "annotate" && annotationKind === "rect"
-                    ? "none"
-                    : "annotate",
-                );
-              }}
-            >
-              <SquareDashed className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="文本"
-              active={tool === "annotate" && annotationKind === "text"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => {
-                onAnnotationKind("text");
-                onTool(
-                  tool === "annotate" && annotationKind === "text"
-                    ? "none"
-                    : "annotate",
-                );
-              }}
-            >
-              <Type className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="标记"
-              active={tool === "annotate" && annotationKind === "mark"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => {
-                onAnnotationKind("mark");
-                onTool(
-                  tool === "annotate" && annotationKind === "mark"
-                    ? "none"
-                    : "annotate",
-                );
-              }}
-            >
-              <MapPin className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="批注选择"
-              active={tool === "adjust"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => onTool(tool === "adjust" ? "none" : "adjust")}
-            >
-              <MousePointer2 className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="橡皮擦"
-              active={tool === "erase"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => onTool(tool === "erase" ? "none" : "erase")}
-            >
-              <Eraser className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="元素选择"
-              active={tool === "element"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => onTool(tool === "element" ? "none" : "element")}
-            >
-              <SquareMousePointer className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarToggleIconButton
-              label="编辑"
-              active={tool === "edit"}
-              disabled={busy || !hasCanvas || viewMode === "code"}
-              onClick={() => onTool(tool === "edit" ? "none" : "edit")}
-            >
-              <SquarePen className="size-3" />
-            </ToolbarToggleIconButton>
-            <ToolbarIconButton
-              label={
-                activeDesignSystemTitle
-                  ? `设计体系：${activeDesignSystemTitle}`
-                  : "设计体系"
-              }
+        {uploadInput}
+        {showBack ? (
+          <ToolbarIconButton label="返回资源" onClick={onBackToResources}>
+            <House className="size-3" />
+          </ToolbarIconButton>
+        ) : null}
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="text-foreground-subtle hover:text-foreground"
+              aria-label="新建"
+              title="新建"
               disabled={busy}
-              onClick={onOpenDesignSystems}
             >
-              <Palette className="size-3" />
-            </ToolbarIconButton>
-          </div>
-        </>
-      )}
+              <Plus className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-52">
+            <DropdownMenuItem
+              data-open-design-add="sketch"
+              onSelect={onCreateSketch}
+            >
+              <PenTool className="size-3.5" />
+              <span className="flex-1">新建草图</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-add="document"
+              onSelect={onCreateDocument}
+            >
+              <FileText className="size-3.5" />
+              <span className="flex-1">新建文档</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-add="design-file"
+              onSelect={onCreateDesignFile}
+            >
+              <FigmaMark className="size-3.5" />
+              <span className="flex-1">新建设计稿</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-add="upload"
+              onSelect={() => uploadInputRef.current?.click()}
+            >
+              <Upload className="size-3.5" />
+              <span className="flex-1">上传</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-add="browser"
+              onSelect={onOpenBrowserTab}
+            >
+              <Globe className="size-3.5" />
+              <span className="flex-1">新建浏览器</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              data-open-design-add="design-system"
+              onSelect={onCreateDesignSystem}
+            >
+              <Palette className="size-3.5" />
+              <span className="flex-1">新建设计体系</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {markdownMode ? null : (
+          <ToolbarIconButton
+            label="刷新"
+            disabled={busy || !hasCanvas}
+            onClick={onRefresh}
+          >
+            <RefreshCw className="size-3" />
+          </ToolbarIconButton>
+        )}
+        <div className="flex items-center rounded-md border border-border p-0.5">
+          <ViewModeButton
+            label="预览"
+            active={viewMode === "preview"}
+            onClick={() => onViewMode("preview")}
+          >
+            <Eye className="size-3" />
+          </ViewModeButton>
+          <ViewModeButton
+            label="代码"
+            active={viewMode === "code"}
+            onClick={() => onViewMode("code")}
+          >
+            <Code2 className="size-3" />
+          </ViewModeButton>
+        </div>
+        {markdownMode ? null : (
+          <>
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-foreground-subtle"
+                  aria-label="设备"
+                  title={`设备（${activeViewport?.label ?? "桌面端"}）`}
+                  disabled={busy || !hasCanvas || viewMode === "code"}
+                >
+                  <ViewportIcon className="size-3" />
+                  <span>{activeViewport?.label ?? "桌面端"}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {VIEWPORTS.map((item) => (
+                  <DropdownMenuItem
+                    key={item.id}
+                    onSelect={() => onViewport(item.id)}
+                  >
+                    <item.icon className="size-3.5" />
+                    <span className="flex-1">{item.label}</span>
+                    {viewport === item.id ? (
+                      <Check className="size-3.5" />
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <div className="ml-auto flex flex-wrap items-center gap-0.5">
+              <ToolbarToggleIconButton
+                label="评论"
+                active={tool === "comment"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => onTool(tool === "comment" ? "none" : "comment")}
+              >
+                <MessageSquarePlus className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarIconButton
+                label="评论侧栏"
+                active={sidebarOpen}
+                disabled={!hasCanvas}
+                onClick={onToggleSidebar}
+              >
+                <PanelRight className="size-3" />
+                {commentCount > 0 ? (
+                  <span className="text-ui-caption leading-none">
+                    {commentCount}
+                  </span>
+                ) : null}
+              </ToolbarIconButton>
+              <ToolbarToggleIconButton
+                label="标注"
+                active={tool === "annotate" && annotationKind === "pen"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => {
+                  onAnnotationKind("pen");
+                  onTool(
+                    tool === "annotate" && annotationKind === "pen"
+                      ? "none"
+                      : "annotate",
+                  );
+                }}
+              >
+                <Highlighter className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="框选"
+                active={tool === "annotate" && annotationKind === "rect"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => {
+                  onAnnotationKind("rect");
+                  onTool(
+                    tool === "annotate" && annotationKind === "rect"
+                      ? "none"
+                      : "annotate",
+                  );
+                }}
+              >
+                <SquareDashed className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="文本"
+                active={tool === "annotate" && annotationKind === "text"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => {
+                  onAnnotationKind("text");
+                  onTool(
+                    tool === "annotate" && annotationKind === "text"
+                      ? "none"
+                      : "annotate",
+                  );
+                }}
+              >
+                <Type className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="标记"
+                active={tool === "annotate" && annotationKind === "mark"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => {
+                  onAnnotationKind("mark");
+                  onTool(
+                    tool === "annotate" && annotationKind === "mark"
+                      ? "none"
+                      : "annotate",
+                  );
+                }}
+              >
+                <MapPin className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="批注选择"
+                active={tool === "adjust"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => onTool(tool === "adjust" ? "none" : "adjust")}
+              >
+                <MousePointer2 className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="橡皮擦"
+                active={tool === "erase"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => onTool(tool === "erase" ? "none" : "erase")}
+              >
+                <Eraser className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="元素选择"
+                active={tool === "element"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => onTool(tool === "element" ? "none" : "element")}
+              >
+                <SquareMousePointer className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarToggleIconButton
+                label="编辑"
+                active={tool === "edit"}
+                disabled={busy || !hasCanvas || viewMode === "code"}
+                onClick={() => onTool(tool === "edit" ? "none" : "edit")}
+              >
+                <SquarePen className="size-3" />
+              </ToolbarToggleIconButton>
+              <ToolbarIconButton
+                label={
+                  activeDesignSystemTitle
+                    ? `设计体系：${activeDesignSystemTitle}`
+                    : "设计体系"
+                }
+                disabled={busy}
+                onClick={onOpenDesignSystems}
+              >
+                <Palette className="size-3" />
+              </ToolbarIconButton>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

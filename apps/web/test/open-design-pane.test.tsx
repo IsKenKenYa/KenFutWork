@@ -1195,7 +1195,9 @@ test("资源三点菜单：复制生成「-副本」卡片并提示", async () =
         ?.body,
     ).toEqual({ projectId: "p-1", name: "notes.md" });
   });
-  expect(await screen.findByRole("button", { name: "notes-副本" })).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "notes-副本" }),
+  ).toBeTruthy();
   await expectToast("已复制 notes-副本.md");
 });
 

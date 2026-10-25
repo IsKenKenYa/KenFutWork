@@ -51,6 +51,27 @@ export interface UsageRepository {
    * 与 chat 仓储里同一条链一致。
    */
   longestSessionSeconds(instanceId: string): Promise<number>;
+  /**
+   * 应用用量的逐日×模型聚合（code-ui「使用统计」面板的数据源）。
+   *
+   * `since = null` 表示全量（range=all）。按 UTC 天聚合——快照 schema 的
+   * `timeZone` 只影响展示，热力图消费方按 UTC 日期键对齐。
+   */
+  appUsageDaily(
+    instanceId: string,
+    since: Date | null,
+  ): Promise<
+    Array<{
+      day: string;
+      model: string;
+      inputTokens: number;
+      outputTokens: number;
+      calls: number;
+      runs: number;
+    }>
+  >;
+  /** 应用用量涉及的去重会话数（distinct run_id）——不能把逐组 runs 相加（跨天/跨模型会重）。 */
+  appUsageRunCount(instanceId: string, since: Date | null): Promise<number>;
 }
 
 type RawUsageRow = {
@@ -134,6 +155,53 @@ export function createUsageRepository(
             ? row.occurred_at.toISOString()
             : String(row.occurred_at),
       }));
+    },
+
+    async appUsageDaily(instanceId, since) {
+      const rows = await persistence.forInstance(instanceId).query<{
+        day: string;
+        model: string;
+        input_tokens: string | number;
+        output_tokens: string | number;
+        calls: string | number;
+        runs: string | number;
+      }>(
+        `select to_char(occurred_at at time zone 'UTC', 'YYYY-MM-DD') as day,
+                  model,
+                  sum(input_tokens) as input_tokens,
+                  sum(output_tokens) as output_tokens,
+                  count(*) as calls,
+                  count(distinct run_id) as runs
+             from public.usage_records
+            where instance_id = :instance
+              and ($1::timestamptz is null or occurred_at >= $1)
+            group by 1, 2
+            order by 1`,
+        [since],
+      );
+
+      return rows.map((row) => ({
+        day: row.day,
+        model: row.model,
+        inputTokens: Number(row.input_tokens) || 0,
+        outputTokens: Number(row.output_tokens) || 0,
+        calls: Number(row.calls) || 0,
+        runs: Number(row.runs) || 0,
+      }));
+    },
+
+    async appUsageRunCount(instanceId, since) {
+      const rows = await persistence
+        .forInstance(instanceId)
+        .query<{ runs: string | number }>(
+          `select count(distinct run_id) as runs
+             from public.usage_records
+            where instance_id = :instance
+              and run_id is not null
+              and ($1::timestamptz is null or occurred_at >= $1)`,
+          [since],
+        );
+      return Number(rows[0]?.runs ?? 0) || 0;
     },
   };
 }

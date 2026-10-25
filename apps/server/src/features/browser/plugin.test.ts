@@ -97,7 +97,8 @@ describe("面板画面流接口", () => {
         payload: { url: "https://example.com" },
       });
       expect(response.statusCode).toBe(409);
-      expect(String(response.json().error?.message)).toContain("受控浏览器");    } finally {
+      expect(String(response.json().error?.message)).toContain("受控浏览器");
+    } finally {
       await app.close();
     }
   });
@@ -148,7 +149,8 @@ describe("面板画面流接口", () => {
       expect(moved.statusCode).toBe(200);
       expect(navigated).toEqual(["https://example.com/other"]);
       // 没给尺寸 → 还原窗口尺寸（自由尺寸关掉时）
-      expect(resized.at(-1)).toBeNull();    } finally {
+      expect(resized.at(-1)).toBeNull();
+    } finally {
       await app.close();
     }
   });
@@ -175,7 +177,8 @@ describe("面板画面流接口", () => {
         payload: { left: 20 },
       });
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ windowId: 4242 });    } finally {
+      expect(response.json()).toMatchObject({ windowId: 4242 });
+    } finally {
       await opened.close();
     }
 
@@ -194,7 +197,8 @@ describe("面板画面流接口", () => {
         payload: {},
       });
       expect(response.statusCode).toBe(502);
-      expect(String(response.json().error?.message)).toContain("唤起");    } finally {
+      expect(String(response.json().error?.message)).toContain("唤起");
+    } finally {
       await failing.close();
     }
   });
@@ -225,7 +229,8 @@ describe("面板画面流接口", () => {
         payload: { type: "key", key: "Enter" },
       });
       expect(ok.statusCode).toBe(200);
-      expect(events).toEqual([{ type: "key", key: "Enter" }]);    } finally {
+      expect(events).toEqual([{ type: "key", key: "Enter" }]);
+    } finally {
       await app.close();
     }
   });
@@ -234,7 +239,8 @@ describe("面板画面流接口", () => {
     // 两帧长度不同，方便数 body 里各出现了几个 part
     const frameA = Buffer.from([0xff, 0xd8, 0x01]);
     const frameB = Buffer.from([0xff, 0xd8, 0x02, 0x03]);
-    let push: ((jpeg: Buffer) => Promise<void>) | null = null;    const { app, headers } = await buildBrowserApp({
+    let push: ((jpeg: Buffer) => Promise<void>) | null = null;
+    const { app, headers } = await buildBrowserApp({
       cdp: {
         isConnected: () => true,
         status: () => ({ status: "connected", currentUrl: "about:blank" }),
@@ -257,7 +263,9 @@ describe("面板画面流接口", () => {
           return async () => {};
         },
       },
-      });    await app.listen({ port: 0, host: "127.0.0.1" });    const address = app.server.address();
+    });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address();
     const port = typeof address === "object" && address ? address.port : 0;
     try {
       const minted = await app.inject({
@@ -298,13 +306,15 @@ describe("面板画面流接口", () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       const body = Buffer.concat(chunks).toString("latin1");
       const partsOf = (length: number): number =>
-        body.split("--kfwframe").filter((part) =>
-          part.includes(`Content-Length: ${length}\r\n`),
-        ).length;
+        body
+          .split("--kfwframe")
+          .filter((part) => part.includes(`Content-Length: ${length}\r\n`))
+          .length;
       // 没有补帧机制时最后一帧只写一次——解码器会一直停在旧画面（真机：最小化/关闭后画面分钟级不更新）
       expect(partsOf(frameA.length)).toBe(1);
       expect(partsOf(frameB.length)).toBe(2);
       // streamReq 在上面的回调里赋值，TS 控制流看不到：显式放宽再取
+      // （并行分支同点位曾改用 `streamReq!` 非空断言，语义等价，合并保留 null 安全写法）
       (streamReq as http.ClientRequest | null)?.destroy();
     } finally {
       await app.close();
@@ -371,7 +381,8 @@ describe("面板画面流接口", () => {
         `http://127.0.0.1:${port}/api/browser/cdp/stream?ticket=${ticket}`,
         { headers },
       );
-      expect(again.status).toBe(401);    } finally {
+      expect(again.status).toBe(401);
+    } finally {
       await app.close();
     }
   });
@@ -422,7 +433,8 @@ describe("面板画面流接口", () => {
         new Promise((resolve) => setTimeout(() => resolve(false), 3000)),
       ]);
       expect(closed).toBe(true);
-      await second.cancel().catch(() => {});    } finally {
+      await second.cancel().catch(() => {});
+    } finally {
       await app.close();
     }
   });
@@ -485,7 +497,8 @@ describe("面板画面流接口", () => {
         }),
       ]);
       expect(closed).toBe("closed");
-      expect(stopCount).toBe(1);    } finally {
+      expect(stopCount).toBe(1);
+    } finally {
       if (deadline) clearTimeout(deadline);
       await reader?.cancel().catch(() => {});
       await app.close();
@@ -537,7 +550,8 @@ describe("面板画面流接口", () => {
       await reader.cancel();
       stopReady.release();
       expect(await withinBrowserCloseWindow(closing)).toBe(true);
-      expect(stopCount).toBe(1);    } finally {
+      expect(stopCount).toBe(1);
+    } finally {
       watcherReady.release();
       stopReady.release();
       await reader?.cancel().catch(() => {});
@@ -598,7 +612,8 @@ describe("面板画面流接口", () => {
         true,
       );
       expect((await eof).done).toBe(true);
-      expect(stops).toEqual([1, 1]);    } finally {
+      expect(stops).toEqual([1, 1]);
+    } finally {
       oldStopReady.release();
       second ??= await secondOpening?.catch(() => undefined);
       await Promise.all([
@@ -636,7 +651,8 @@ describe("POST /api/browser/cdp/console 与 screenshot（面板拾取/截图配�
       });
       expect(response.statusCode).toBe(200);
       expect(hideDebugConsole).toHaveBeenCalledTimes(1);
-      expect(injectDebugConsole).not.toHaveBeenCalled();    } finally {
+      expect(injectDebugConsole).not.toHaveBeenCalled();
+    } finally {
       await app.close();
     }
   });
@@ -670,7 +686,8 @@ describe("POST /api/browser/cdp/console 与 screenshot（面板拾取/截图配�
         height: number;
       };
       expect(Buffer.from(body.base64, "base64").toString()).toBe("png-bytes");
-      expect(body.width).toBe(1280);    } finally {
+      expect(body.width).toBe(1280);
+    } finally {
       await app.close();
     }
   });
@@ -742,7 +759,8 @@ describe("POST /api/browser/cdp/picker（页面内元素选择器）", () => {
         url: "/api/browser/cdp/picker",
         payload: { action: "nope" },
       });
-      expect(invalid.statusCode).toBe(400);    } finally {
+      expect(invalid.statusCode).toBe(400);
+    } finally {
       await app.close();
     }
   });

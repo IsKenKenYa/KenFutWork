@@ -115,6 +115,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { type VoiceDataClient, VoiceSection } from "./settings/VoiceSection.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import {
   createSettingsPageConfig,
@@ -304,6 +305,7 @@ export function SettingsPage({
   onLogin,
   onLogout,
   user,
+  voiceClient,
 }: {
   isDesktop?: boolean;
   isWindowsDesktop?: boolean;
@@ -318,6 +320,8 @@ export function SettingsPage({
   onLogin?: () => void;
   onLogout?: () => void;
   user?: UserInfo | null;
+  /** KenFutWork 宿主：语音分区数据面（管理文档传入宿主 client；缺席则隐藏分区）。 */
+  voiceClient?: VoiceDataClient;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
   const openPluginStore = useCallback(
@@ -352,6 +356,23 @@ export function SettingsPage({
       platform.supportsComputerUse,
     ],
   );
+  // 语音分区依赖宿主 client 数据面：没传 client（非管理文档形态）就不出现，不摆空壳
+  const visibleSectionGroups = useMemo(
+    () =>
+      voiceClient
+        ? settingsSectionGroups
+        : settingsSectionGroups.map((group) => ({
+            ...group,
+            sections: group.sections.filter(
+              (section) => section.id !== "voice",
+            ),
+          })),
+    [settingsSectionGroups, voiceClient],
+  );
+  const visibleSections = useMemo(
+    () => visibleSectionGroups.flatMap((group) => group.sections),
+    [visibleSectionGroups],
+  );
   const isLinuxDesktop = Boolean(
     isDesktop && !isMacDesktop && !isWindowsDesktop,
   );
@@ -360,7 +381,7 @@ export function SettingsPage({
     const initialSection = consumeInitialSettingsSection("general");
     const visibleInitialSection = resolveSettingsSectionForPlatform(
       initialSection,
-      settingsSections,
+      visibleSections,
     );
     // 设置页首次挂载时也要写入当前落点。否则用户直接打开再退出，
     // 下一次仍可能因为没有偏好记录而回到旧默认入口。
@@ -689,13 +710,13 @@ export function SettingsPage({
     ) => {
       const resolvedSection = resolveSettingsSectionForPlatform(
         resolveSettingsSection(section, fallbackSection),
-        settingsSections,
+        visibleSections,
         fallbackSection,
       );
       setActiveSection(resolvedSection);
       writeLastSettingsSectionPreference(resolvedSection);
     },
-    [activeSection, settingsSections],
+    [activeSection, visibleSections],
   );
   const handleOpenCodingPlanUpgradeSettings = useCallback(
     (
@@ -1539,7 +1560,7 @@ export function SettingsPage({
     },
     [setCodePreviewSettings],
   );
-  const activeSectionMeta = settingsSections.find(
+  const activeSectionMeta = visibleSections.find(
     (section) => section.id === activeSection,
   );
   // 灰度裁决异步到达：sections 列表可能在挂载后变化（如 computerUse 区被灰度移除）。
@@ -1665,7 +1686,7 @@ export function SettingsPage({
                 className="flex-1 overflow-y-auto px-2 pb-3"
               >
                 <div className="space-y-4">
-                  {settingsSectionGroups.map((group, groupIndex) => {
+                  {visibleSectionGroups.map((group, groupIndex) => {
                     const groupLabel = intl.formatMessage({
                       id: group.titleId,
                     });
@@ -2150,6 +2171,10 @@ export function SettingsPage({
                             onCreateTask={onCreateTask}
                             onOpenPluginStore={openPluginStore}
                           />
+                        ) : activeSection === "voice" ? (
+                          voiceClient ? (
+                            <VoiceSection client={voiceClient} />
+                          ) : null
                         ) : activeSection === "mcp" ? (
                           <PluginsSection
                             key={`mcp:${settingsSectionNavigationVersion}`}

@@ -10,8 +10,8 @@ import {
   type OverlayBox,
   overlayToNormalized,
 } from "./openDesignMarkupGeometry.js";
-import type { OpenDesignMovePosition } from "./openDesignSourceEdit.js";
 import type { OpenDesignHit } from "./openDesignRuntime.js";
+import type { OpenDesignMovePosition } from "./openDesignSourceEdit.js";
 
 /** 一条新标注落笔后的最小信息（作用域由面板补齐）。 */
 export interface OpenDesignDraftAnnotation {
@@ -97,19 +97,9 @@ function movePoints(
   pointer: NormalizedPoint,
 ): NormalizedPoint[] {
   const { box } = drag;
-  const dx = clamp(
-    pointer[0] - drag.startPointer[0],
-    -box.minX,
-    1 - box.maxX,
-  );
-  const dy = clamp(
-    pointer[1] - drag.startPointer[1],
-    -box.minY,
-    1 - box.maxY,
-  );
-  return drag.original.map(
-    ([x, y]) => [x + dx, y + dy] as NormalizedPoint,
-  );
+  const dx = clamp(pointer[0] - drag.startPointer[0], -box.minX, 1 - box.maxX);
+  const dy = clamp(pointer[1] - drag.startPointer[1], -box.minY, 1 - box.maxY);
+  return drag.original.map(([x, y]) => [x + dx, y + dy] as NormalizedPoint);
 }
 
 /**
@@ -138,7 +128,11 @@ function scalePoints(
     // 不翻面、不缩成线、不越出画布：raw 始终夹在 [最小尺寸, 可用空间] / |span|。
     const minScale = MIN_SCALE_SIZE / Math.abs(span);
     const maxScale = (span > 0 ? 1 - anchor : anchor) / Math.abs(span);
-    return clamp(raw, Math.min(minScale, maxScale), Math.max(minScale, maxScale));
+    return clamp(
+      raw,
+      Math.min(minScale, maxScale),
+      Math.max(minScale, maxScale),
+    );
   };
   const sx = scaleAxis(spanX, anchorX, pointer[0]);
   const sy = scaleAxis(spanY, anchorY, pointer[1]);
@@ -229,12 +223,18 @@ export function OpenDesignMarkup({
     null,
   );
   const lastHitAt = useRef(0);
+  const textAnnotationInput = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (drawing) return;
     setTextAt(null);
     setTextValue("");
   }, [drawing]);
+
+  // 等价于 autoFocus（a11y 规则禁用属性）：弹层挂载时聚焦，让点击即输入
+  useEffect(() => {
+    if (textAt) textAnnotationInput.current?.focus();
+  }, [textAt]);
 
   useEffect(() => {
     if (!adjusting) {
@@ -264,7 +264,10 @@ export function OpenDesignMarkup({
   }
 
   /** 覆盖层指针 → iframe 视口坐标（桥的 hit 用视口 CSS px）。 */
-  function viewportPointOf(event: React.PointerEvent): { x: number; y: number } {
+  function viewportPointOf(event: React.PointerEvent): {
+    x: number;
+    y: number;
+  } {
     const rect = svgRef.current?.getBoundingClientRect();
     const scaleX = box.width / (metrics.vw || 1);
     const scaleY = box.height / (metrics.vh || 1);
@@ -313,9 +316,7 @@ export function OpenDesignMarkup({
     lastHitAt.current = now;
     const point = viewportPointOf(event);
     void hitTest(point.x, point.y).then((hit) => {
-      setElementTarget(
-        hit && hit.path !== elementSel?.path ? hit : null,
-      );
+      setElementTarget(hit && hit.path !== elementSel?.path ? hit : null);
     });
   }
 
@@ -364,7 +365,9 @@ export function OpenDesignMarkup({
 
   const selected = annotations.find((item) => item.id === selectedId) ?? null;
   const selectedPoints = selected
-    ? (drag?.id === selected.id ? drag.draft : selected.points)
+    ? drag?.id === selected.id
+      ? drag.draft
+      : selected.points
     : [];
   const selectedOverlay = selected
     ? (() => {
@@ -403,8 +406,18 @@ export function OpenDesignMarkup({
           };
         }
         const boxNorm = bboxOf(selectedPoints as NormalizedPoint[]);
-        const min = normalizedToOverlay(boxNorm.minX, boxNorm.minY, box, metrics);
-        const max = normalizedToOverlay(boxNorm.maxX, boxNorm.maxY, box, metrics);
+        const min = normalizedToOverlay(
+          boxNorm.minX,
+          boxNorm.minY,
+          box,
+          metrics,
+        );
+        const max = normalizedToOverlay(
+          boxNorm.maxX,
+          boxNorm.maxY,
+          box,
+          metrics,
+        );
         return {
           x: min.px - 4,
           y: min.py - 4,
@@ -479,14 +492,14 @@ export function OpenDesignMarkup({
                   startElementPointerDown(event);
                 }
               : adjusting
-              ? (event) => {
-                  // 空白处点击 = 取消选中；标注自身的手势已 stopPropagation。
-                  if (event.target === event.currentTarget) {
-                    setSelectedId(null);
-                    setDrag(null);
+                ? (event) => {
+                    // 空白处点击 = 取消选中；标注自身的手势已 stopPropagation。
+                    if (event.target === event.currentTarget) {
+                      setSelectedId(null);
+                      setDrag(null);
+                    }
                   }
-                }
-              : undefined
+                : undefined
         }
         onPointerMove={
           drawing
@@ -503,19 +516,24 @@ export function OpenDesignMarkup({
             : elementSelecting
               ? moveElementPointerMove
               : adjusting
-              ? (event) => {
-                  if (!drag) return;
-                  const pointer = pointOf(event);
-                  const draft =
-                    drag.mode === "scale"
-                      ? scalePoints(drag, pointer)
-                      : movePoints(drag, pointer);
-                  const moved =
-                    Math.abs(pointer[0] - drag.startPointer[0]) > 1e-4 ||
-                    Math.abs(pointer[1] - drag.startPointer[1]) > 1e-4;
-                  setDrag({ ...drag, pointer, draft, changed: drag.changed || moved });
-                }
-              : undefined
+                ? (event) => {
+                    if (!drag) return;
+                    const pointer = pointOf(event);
+                    const draft =
+                      drag.mode === "scale"
+                        ? scalePoints(drag, pointer)
+                        : movePoints(drag, pointer);
+                    const moved =
+                      Math.abs(pointer[0] - drag.startPointer[0]) > 1e-4 ||
+                      Math.abs(pointer[1] - drag.startPointer[1]) > 1e-4;
+                    setDrag({
+                      ...drag,
+                      pointer,
+                      draft,
+                      changed: drag.changed || moved,
+                    });
+                  }
+                : undefined
         }
         onPointerUp={
           drawing
@@ -552,13 +570,13 @@ export function OpenDesignMarkup({
             : elementSelecting
               ? endElementDrag
               : adjusting
-              ? () => {
-                  if (drag?.changed) {
-                    onUpdateAnnotation(drag.id, drag.draft);
+                ? () => {
+                    if (drag?.changed) {
+                      onUpdateAnnotation(drag.id, drag.draft);
+                    }
+                    setDrag(null);
                   }
-                  setDrag(null);
-                }
-              : undefined
+                : undefined
         }
         onPointerCancel={
           elementSelecting
@@ -577,9 +595,7 @@ export function OpenDesignMarkup({
           <AnnotationShape
             key={annotation.id}
             annotation={annotation}
-            points={
-              drag?.id === annotation.id ? drag.draft : annotation.points
-            }
+            points={drag?.id === annotation.id ? drag.draft : annotation.points}
             box={box}
             metrics={metrics}
             eraseMode={erasing}
@@ -592,9 +608,7 @@ export function OpenDesignMarkup({
                 : 0
             }
             onErase={onDeleteAnnotation}
-            onStartDrag={(event) =>
-              startDrag(annotation, event, "move", null)
-            }
+            onStartDrag={(event) => startDrag(annotation, event, "move", null)}
           />
         ))}
         {stroke && stroke.length > 1 ? (
@@ -721,7 +735,7 @@ export function OpenDesignMarkup({
           data-testid="open-design-text-annotation"
         >
           <textarea
-            autoFocus
+            ref={textAnnotationInput}
             aria-label="标注文本"
             value={textValue}
             rows={2}
@@ -888,7 +902,9 @@ function AnnotationShape({
           r={12}
           fill="transparent"
           pointerEvents={hitEnabled ? "all" : "none"}
-          style={hitEnabled ? { cursor: eraseMode ? "pointer" : "move" } : undefined}
+          style={
+            hitEnabled ? { cursor: eraseMode ? "pointer" : "move" } : undefined
+          }
           onPointerDown={hitEnabled ? hit.onPointerDown : undefined}
         />
       </g>
@@ -924,7 +940,9 @@ function AnnotationShape({
           height={Math.max(20, lines.length * 16)}
           fill="transparent"
           pointerEvents={hitEnabled ? "all" : "none"}
-          style={hitEnabled ? { cursor: eraseMode ? "pointer" : "move" } : undefined}
+          style={
+            hitEnabled ? { cursor: eraseMode ? "pointer" : "move" } : undefined
+          }
           onPointerDown={hitEnabled ? hit.onPointerDown : undefined}
         />
       </g>

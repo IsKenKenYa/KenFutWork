@@ -48,12 +48,11 @@ const nextConfig: NextConfig = {
   },
 };
 
-// 开发期同源代理：NEXT_PUBLIC_SERVER_BASE_URL 留空时，/api/* 经 dev server
-// 代理到本地 API（3001），避免跨域。静态导出（production build）不受影响。
-if (
-  process.env.NODE_ENV !== "production" &&
-  !process.env.NEXT_PUBLIC_SERVER_BASE_URL
-) {
+// 开发期同源代理：/api/* 一律经 dev server 代理到本地 API（3001），避免跨域。
+// 不看 NEXT_PUBLIC_SERVER_BASE_URL 是否设置——code-ui 内嵌面（surfaceApi）拿到的
+// apiBase 在部分启动时序下会回落同源（workbench 实测：菜单词表 404 静默隐藏执行方式组），
+// 同源代理永远在线才能保证 iframe 内相对路径可用。静态导出（production build）不受影响。
+if (process.env.NODE_ENV !== "production") {
   nextConfig.rewrites = async () => ({
     beforeFiles: [
       {

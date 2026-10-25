@@ -17,27 +17,32 @@ args:
   serverUrl:
     type: string
     description: 本地 API 地址
-    default: http://localhost:3301
+    default: http://localhost:3001
   webUrl:
     type: string
     description: 本地 Web 地址
-    default: http://localhost:3300
+    default: http://localhost:3000
 */
 // KenFutWork 全量功能测试工作流：拉起本地栈 → 注入 BYOK 供应商 → 准备测试资产
 // → 全页面并行走查 → 六执行模式逐项实测（含计划+自主 Python 项目、MCP、技能、联网搜索、创造）
 // → 复核高优先级发现 → 收尾总报告。
-const apiKey = String(args.apiKey ?? "");
+let apiKey = String(args.apiKey ?? "");
+if (!apiKey) {
+  // AmendWorkflow 不透传 args：密钥从 gitignored 草稿目录的独立文件兜底读取，
+  // 不写进可提交的工作流本体（目录自带 .gitignore 全忽略）
+  apiKey = (await files.read(".zcode/workflow-drafts/aiping-apikey.txt")).trim();
+}
 if (!apiKey) throw new Error("缺少必填参数 apiKey（aiping 的 API Key）");
 const workDir = String(args.workDir ?? "D:/Desktop/test");
-const serverUrl = String(args.serverUrl ?? "http://localhost:3301");
-const webUrl = String(args.webUrl ?? "http://localhost:3300");
+const serverUrl = String(args.serverUrl ?? "http://localhost:3001");
+const webUrl = String(args.webUrl ?? "http://localhost:3000");
 
-const tempDir = "C:/Users/future/AppData/Local/Temp/kenfut-test";
+const tempDir = "C:/Users/ygtqy/AppData/Local/Temp/kenfut-test";
 const tokenFile = tempDir + "/token.txt";
 const shotsDir = tempDir + "/shots";
-const pwModules = "C:/Users/future/AppData/Local/Temp/kenfut-pw/node_modules";
+const pwModules = "C:/Users/ygtqy/AppData/Local/Temp/kenfut-pw/node_modules";
 const chromeExe =
-  "C:/Users/future/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe";
+  "C:/Users/ygtqy/AppData/Local/ms-playwright/chromium-1234/chrome-win64/chrome.exe";
 const providerName = "aiping-GLM-5.3-Flash";
 const modelName = "GLM-5.3-Flash";
 const mcpName = "filesystem-test";
@@ -205,14 +210,14 @@ const BROWSER_RECIPE = [
 phase("起环境并冒烟");
 const boot = await agent("环境管理员").ask<BootstrapResult>(
   [
-    "你是环境管理员，负责把 KenFutWork 本地开发栈拉起来并冒烟。仓库在 D:/Desktop/KenFutWork（pnpm monorepo），web 端口 3300、API 端口 3301、PG 端口 5433。全程用 Bash，禁止改动仓库内任何被 git 跟踪的文件；临时文件放 " + tempDir + "/（先 mkdir -p）。",
+    "你是环境管理员，负责把 KenFutWork 本地开发栈拉起来并冒烟。仓库在 D:/Desktop/KenFutWork（pnpm monorepo），web 端口 3000、API 端口 3001（与 .env.local 一致；3300/3301 在本机 Hyper-V 保留段，bind 会 EACCES，勿用）。全程用 Bash，禁止改动仓库内任何被 git 跟踪的文件；临时文件放 " + tempDir + "/（先 mkdir -p）。",
     "步骤：",
     "1. 确保 " + workDir + " 目录存在（mkdir -p）。",
-    "2. 检查 PG：netstat -ano 里 5433 已 LISTENING 则跳过；否则 docker compose -f docker-compose.pg.yml up -d 并等 15 秒复查。两者都不行就记入 notes 继续。",
-    "3. 迁移：pnpm --filter @kenfutwork/server migrate apply（已应用会幂等跳过；失败记录 notes，不阻塞）。",
-    "4. 清理 3300/3301 残留监听：netstat -ano | grep LISTENING | grep -E ':(3300|3301)'；对占用的 pid 用 PowerShell Get-CimInstance Win32_Process 查 commandline，确认是 node/next 的 dev 进程才 taskkill //PID <pid> //T //F；不是 dev 进程就别杀，notes 里说明并继续（后续起不来会暴露）。",
-    "5. 起 API（必须与终端脱离、你退出后仍存活）：cd apps/server && nohup node --env-file=../../.env.local --import tsx ./src/server.ts > " + tempDir + "/server.log 2>&1 & 记下 $!。轮询 curl -s " + serverUrl + "/api/health（最多 90 秒）直到返回含 kenfutwork-server 的 JSON。",
-    "6. 起 web：cd apps/web && NEXT_PUBLIC_SERVER_BASE_URL=" + serverUrl + " nohup npx next dev -p 3300 > " + tempDir + "/web.log 2>&1 & 记下 $!。轮询 curl -s -o /dev/null -w %{http_code} " + webUrl + "（最多 150 秒）直到 200。",
+    "2. 检查 PG：netstat -ano 里 55433 已 LISTENING 则跳过（本机 embedded PG 既定形态，.env.local 的 DATABASE_URL 即指向它）；否则先试 docker compose -f docker-compose.pg.yml up -d，镜像拉取失败（本机代理不可达）就跑仓库 scripts/开发库临时集群.mjs 起 embedded PG（127.0.0.1:55433，用法见脚本头部）并复查。两者都不行就记入 notes 继续。",
+    "3. 迁移（pnpm 会被本机 NVM 拦截，一律 node 直调）：cd apps/server && node --env-file=../../.env.local --import tsx ./src/migrate.ts apply（已应用会幂等跳过；失败记录 notes，不阻塞）。",
+    "4. 清理 3000/3001 残留监听：netstat -ano | grep LISTENING | grep -E ':(3000|3001)'；对占用的 pid 用 PowerShell Get-CimInstance Win32_Process 查 commandline，确认是 node/next 的 dev 进程才 taskkill //PID <pid> //T //F；不是 dev 进程就别杀，notes 里说明并继续（后续起不来会暴露）。",
+    "5. 起 API（必须与终端脱离、你退出后仍存活；端口与 Origin 内联显式对齐、覆盖 .env.local，防漂移）：cd apps/server && KENFUTWORK_SERVER_PORT=" + serverUrl.split(":").pop() + " KENFUTWORK_WEB_ORIGIN=" + webUrl + " nohup node --env-file=../../.env.local --import tsx ./src/server.ts > " + tempDir + "/server.log 2>&1 & 记下 $!。轮询 curl -s " + serverUrl + "/api/health（最多 90 秒）直到返回含 kenfutwork-server 的 JSON。",
+    "6. 起 web（npx 会被 NVM 拦截，node 直调 next 二进制；端口取自 webUrl）：cd apps/web && NEXT_PUBLIC_SERVER_BASE_URL=" + serverUrl + " nohup node node_modules/next/dist/bin/next dev -p " + webUrl.split(":").pop() + " > " + tempDir + "/web.log 2>&1 & 记下 $!。轮询 curl -s -o /dev/null -w %{http_code} " + webUrl + "（最多 150 秒）直到 200。",
     "7. 令牌：cat \"$APPDATA/com.kenfutwork.desktop/data/local-access/desktop-token\"，把内容原样（去首尾空白）写入 " + tokenFile + "。令牌敏感：不要 echo、不要放进返回值。",
     "8. 认证冒烟：curl -s -X POST " + serverUrl + "/api/local-access/tickets -H \"Authorization: Bearer $(cat " + tokenFile + ")\" —— 返回含 ticket 即认证链通。",
     "返回 JSON：ok=（serverReady && webReady && 冒烟通过）；serverPid/webPid 填第 5/6 步记录的 pid；notes 写清杀过的残留进程、迁移结果、任何异常。某一步 5 分钟还过不去就把已完成的部分如实返回（ok=false 并注明卡点），不要无限等。禁止起 worker（本地形态会被守卫拒绝，属设计内）。",
