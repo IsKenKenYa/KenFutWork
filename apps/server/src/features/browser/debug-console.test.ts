@@ -169,7 +169,7 @@ describe("可注入脚本：UMD 分支修正", () => {
     // 与标签栏共用 startPanelDrag，卡片态按住先拿走转悬浮
     expect(script).toContain("function startPanelDrag");
     expect(script).toContain('btnbar.addEventListener("mousedown"');
-    expect(script).toContain('t.closest(".kfw-btn")')
+    expect(script).toContain('t.closest(".kfw-btn")');
     // 最小化 = 悬浮球贴边半藏（左右两侧），点击还原、拖动换位置
     expect(script).toContain("kfw-ball-left");
     expect(script).toContain("kfw-ball-right");
@@ -227,19 +227,21 @@ describe("可注入脚本：UMD 分支修正", () => {
     expect(script).not.toContain("drop-shadow(0 1px 0 rgba(0,0,0,.45))");
     // 最小化的球停靠在面板所在半边、面板顶缘高度（按钮跟面板走后球也跟面板走）：
     // 视线不用动，点一下球即还原
-    expect(script).toContain('placeBall(');
-    expect(script).toContain("? \"left\" : \"right\"");
+    expect(script).toContain("placeBall(");
+    expect(script).toContain('? "left" : "right"');
     expect(script).toContain("viewportHeight() - 44");
     // 球热区外扩（用户口径 2026-10-24「悬浮球切换回去卡卡的」根因）：半藏 55%
     // 后可点月牙仅 16px，点了落空＝「没反应/卡」；::after 外扩 10px 透明热区
-    expect(script).toContain(".kfw-ball::after{content:'';position:absolute;inset:-10px}");
+    expect(script).toContain(
+      ".kfw-ball::after{content:'';position:absolute;inset:-10px}",
+    );
     // 切换语义：最小化＝当前状态 ↔ 悬浮球，**球还原回最小化前的状态**（用户口径
     // 2026-10-24「悬浮球还原回去要有判断」：从卡片最小化回卡片、从悬浮最小化回悬浮）；
     // 最大化＝面板 ↔ 分屏卡片（球态 □ 直进卡片）
     expect(script).toContain("preBallState");
     expect(script).toContain("function restoreFromBall");
-    expect(script).toContain("if (uiState === \"ball\") restoreFromBall();");
-    expect(script).not.toContain("if (uiState === \"ball\") applyFloat();");
+    expect(script).toContain('if (uiState === "ball") restoreFromBall();');
+    expect(script).not.toContain('if (uiState === "ball") applyFloat();');
     expect(script).toContain('if (uiState === "max") applyFloat();');
     // 分屏卡片贴底全宽（用户口径 2026-10-24「最大化按钮点击行为不对」根因）：
     // 拖动落下的行内 left/top!important 压过 .kfw-max 的 !important，不清掉

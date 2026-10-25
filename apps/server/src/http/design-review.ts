@@ -152,7 +152,8 @@ export async function registerDesignReviewRoutes(
     );
   });
 
-  app.delete("/api/design-review/annotations/:id", async (request, reply) => {    const local = await actor(request);
+  app.delete("/api/design-review/annotations/:id", async (request, reply) => {
+    const local = await actor(request);
     if (!local) return unauthorized(reply);
     const id = (request.params as { id?: string }).id?.trim();
     if (!id) return badRequest(reply, "缺少标注 id。");

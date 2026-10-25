@@ -1291,7 +1291,11 @@ describe("POST /api/open-design/host/file-copy 与 file-delete", () => {
       }
       return new Response("not found", { status: 404 });
     }) as typeof fetch;
-    return { app: canvasFixture({ frontendUrl: "http://127.0.0.1:7456", fetchImpl }), writes, deletes };
+    return {
+      app: canvasFixture({ frontendUrl: "http://127.0.0.1:7456", fetchImpl }),
+      writes,
+      deletes,
+    };
   }
 
   it("复制：读源正文写「-副本」；重名自动加序号；非文本 400", async () => {

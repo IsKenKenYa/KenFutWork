@@ -42,10 +42,6 @@ import {
 } from "./OpenDesignEditInspector.js";
 import { OpenDesignMarkup } from "./OpenDesignMarkup.js";
 import {
-  OpenDesignDeleteDialog,
-  OpenDesignRenameDialog,
-} from "./openDesignFileDialogs.js";
-import {
   FigmaMark,
   type OpenDesignTool,
   OpenDesignToolbar,
@@ -54,6 +50,10 @@ import {
   type OpenDesignViewport,
 } from "./OpenDesignToolbar.js";
 import { rasterizeDesignHtml } from "./openDesignCapture.js";
+import {
+  OpenDesignDeleteDialog,
+  OpenDesignRenameDialog,
+} from "./openDesignFileDialogs.js";
 import { useOpenDesignEntry } from "./openDesignHost.js";
 import { OpenDesignMarkdownPreview } from "./openDesignMarkdownPreview.js";
 import type { OverlayBox } from "./openDesignMarkupGeometry.js";
@@ -468,9 +468,7 @@ export function OpenDesignPane({
         setFrameKey((key) => key + 1);
         notify("已移动");
       } catch (moveError) {
-        notify(
-          moveError instanceof Error ? moveError.message : "移动失败。",
-        );
+        notify(moveError instanceof Error ? moveError.message : "移动失败。");
       }
     },
     [boundProjectId, canvas?.entryFile, currentText],
@@ -846,9 +844,7 @@ export function OpenDesignPane({
       setFrameKey((key) => key + 1);
       notify("已保存");
     } catch (saveError) {
-      notify(
-        saveError instanceof Error ? saveError.message : "保存代码失败。",
-      );
+      notify(saveError instanceof Error ? saveError.message : "保存代码失败。");
     } finally {
       setSourceSaving(false);
     }
@@ -958,9 +954,7 @@ export function OpenDesignPane({
         body: JSON.stringify({ projectId: boundProjectId, name: deletingFile }),
       });
       const removed = deletingFile;
-      setFiles((current) =>
-        current.filter((file) => file.name !== removed),
-      );
+      setFiles((current) => current.filter((file) => file.name !== removed));
       setDeletingFile(null);
       if (canvas?.entryFile === removed) backToResources();
       notify(`已删除 ${removed}`);
@@ -1217,9 +1211,7 @@ export function OpenDesignPane({
         await refresh();
         notify(`已应用设计体系 ${title}`);
       } catch (bindError) {
-        notify(
-          bindError instanceof Error ? bindError.message : "绑定失败。",
-        );
+        notify(bindError instanceof Error ? bindError.message : "绑定失败。");
       } finally {
         setBusy(false);
       }
@@ -1450,9 +1442,7 @@ export function OpenDesignPane({
         setFrameKey((key) => key + 1);
         notify("已保存");
       } catch (saveError) {
-        notify(
-          saveError instanceof Error ? saveError.message : "保存失败。",
-        );
+        notify(saveError instanceof Error ? saveError.message : "保存失败。");
       } finally {
         setBusy(false);
       }
@@ -1568,9 +1558,7 @@ export function OpenDesignPane({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (exportError) {
-      notify(
-        exportError instanceof Error ? exportError.message : "导出失败。",
-      );
+      notify(exportError instanceof Error ? exportError.message : "导出失败。");
     } finally {
       setBusy(false);
     }
@@ -1592,9 +1580,7 @@ export function OpenDesignPane({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (zipError) {
-      notify(
-        zipError instanceof Error ? zipError.message : "导出 ZIP 失败。",
-      );
+      notify(zipError instanceof Error ? zipError.message : "导出 ZIP 失败。");
     } finally {
       setBusy(false);
     }
@@ -1631,9 +1617,7 @@ export function OpenDesignPane({
       frame.contentWindow?.print();
       setTimeout(() => frame.remove(), 1500);
     } catch (pdfError) {
-      notify(
-        pdfError instanceof Error ? pdfError.message : "导出 PDF 失败。",
-      );
+      notify(pdfError instanceof Error ? pdfError.message : "导出 PDF 失败。");
     } finally {
       setBusy(false);
     }
@@ -1749,9 +1733,7 @@ export function OpenDesignPane({
       setShareConfigProvider(null);
       notify("托管商配置已保存");
     } catch (saveError) {
-      notify(
-        saveError instanceof Error ? saveError.message : "保存配置失败。",
-      );
+      notify(saveError instanceof Error ? saveError.message : "保存配置失败。");
     } finally {
       setShareBusy(false);
     }
@@ -2056,9 +2038,7 @@ export function OpenDesignPane({
           onCreateDocument={() => void createDocument()}
           onCreateDesignFile={() => void createDesignFile()}
           markdownMode={isMarkdownEntry}
-          fileName={
-            canvas?.entryFile ? resourceTitle(canvas.entryFile) : null
-          }
+          fileName={canvas?.entryFile ? resourceTitle(canvas.entryFile) : null}
           onRename={() => {
             if (canvas?.entryFile)
               setRenamingFile({
