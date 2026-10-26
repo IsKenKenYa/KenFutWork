@@ -494,30 +494,53 @@ function flowFieldInput(field) {
 }
 
 /**
- * 集成配置流对话框：按 HA 返回的步型渲染——表单（schema 驱动）、OAuth 授权链接
- * （新开页授权，hosts 修复后回跳直达）、进行中轮询、完成/中止。
+ * 集成配置流对话框：按 HA 返回的步型渲染——表单（schema 驱动）、OAuth 授权窗口、
+ * 进行中轮询、完成/中止。
+ *
+ * OAuth 登录页（account.xiaomi.com 等）带 `X-Frame-Options: SAMEORIGIN`，浏览器
+ * 禁止把它嵌进面板 iframe（实测内嵌为空白），只能开独立窗口：用带尺寸的
+ * `window.open` 开小窗，流程完成/中止时由这里 close 掉，空的回调页不留在用户面前。
  */
 function runFlowDialog(slot, flowId, step, onDone) {
   let polling = null;
+  let authWindow = null;
+  const closeAuthWindow = () => {
+    if (authWindow && !authWindow.closed) authWindow.close();
+    authWindow = null;
+  };
   const stop = () => {
     if (polling) {
       clearInterval(polling);
       polling = null;
     }
   };
+  /** 弹窗被策略拦截时退回新标签（拿不到句柄，完成时无法自动关闭）。 */
+  const openAuthPage = (url) => {
+    const opened = window.open(
+      url,
+      "kenfutwork-ha-auth",
+      "popup=yes,width=560,height=760",
+    );
+    if (opened) return opened;
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.click();
+    return null;
+  };
   /** 授权等待态：external 与 progress 都可能带授权链接（xiaomi_home 的 OAuth 步
    * 在 HA 2026.10 是 progress_action=oauth 的 progress 步，链接在描述占位里）。
-   * 链接用 <a target=_blank>（iframe 里 window.open 易被弹窗策略拦截）。
    * 轮询连续失败（流程过期被 HA 清掉）后提示重开配置页，不死等。 */
   const renderOAuthWait = (current, waiting) => {
     slot.appendChild(el("p", "int-status", waiting));
     const url = authLinkOf(current);
     if (url) {
-      const open = el("a", null, "打开授权页");
-      open.href = url;
-      open.target = "_blank";
-      open.rel = "noopener";
-      open.className = "int-open";
+      const open = el("button", "int-open", "打开授权页");
+      open.type = "button";
+      open.addEventListener("click", () => {
+        authWindow = openAuthPage(url) ?? authWindow;
+      });
       slot.appendChild(open);
     }
     let failures = 0;
@@ -543,11 +566,13 @@ function runFlowDialog(slot, flowId, step, onDone) {
     stop();
     clear(slot);
     if (current.type === "create_entry") {
+      closeAuthWindow();
       slot.appendChild(el("p", "int-status", "已添加"));
       onDone();
       return;
     }
     if (current.type === "abort") {
+      closeAuthWindow();
       slot.appendChild(
         el("p", "error", `已中止：${current.reason ?? "未知原因"}`),
       );
