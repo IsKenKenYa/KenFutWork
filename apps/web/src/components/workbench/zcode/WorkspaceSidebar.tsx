@@ -1600,7 +1600,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 ref={workspaceScrollRef}
                 className={
                   // grouped task 拖拽预览会改变列表高度，禁用 scroll anchoring 避免浏览器自动锚定把 dnd-kit 测量放大成抖动。
-                  "flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto"
+                  // 右侧滚动条按用户口径隐藏（仍可滚）：轨道贴边会切掉行尾渐隐，视觉上像两条竖线。
+                  // 必须用 !scrollbar-hide：全局 `*{scrollbar-width:auto}` 是无层样式，普通工具类压不住。
+                  "flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto !scrollbar-hide"
                 }
                 style={workspaceScrollMaskStyle}
               >

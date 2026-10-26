@@ -3,7 +3,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   Clock,
-  CloudUpload,
   ListTree,
   LoaderIcon,
   Moon,
@@ -377,7 +376,6 @@ export const MemoTaskItem = memo(function TaskListItem({
   const shouldSuppressWorkspaceTaskMetadata = hoverActionsVisible || focusActionsVisible;
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const taskChangeSummary = getTaskChangeSummary(task);
-  const isRemoteTask = Boolean(task.workspaceIdentity?.trim());
   const archiveLabel = intl.formatMessage({
     id: isArchiveConfirming ? "common.confirm" : "taskList.archive",
   });
@@ -447,13 +445,8 @@ export const MemoTaskItem = memo(function TaskListItem({
           showTooltip
           testId={testId(TID_TASK_ARCHIVE, task.taskId)}
         >
-          {isRemoteTask ? (
-            // 本地和远端 task 混排时，统一 archive 图标无法提示操作会落在哪个 sqlite。
-            // 远端任务使用 cloud 语义图标，避免用户误把远端归档当成本地归档。
-            <CloudUpload className="h-3.5 w-3.5" />
-          ) : (
-            <Archive className="h-3.5 w-3.5" />
-          )}
+          {/* 用户口径（2026-10-26）：归档按钮统一方盒，远端任务不再用云朵图标。 */}
+          <Archive className="h-3.5 w-3.5" />
         </TaskRowActionButton>
       )}
     </div>
