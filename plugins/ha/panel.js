@@ -350,23 +350,19 @@ function buildIntegrationsSection() {
   return box;
 }
 
+/** 一行三列：左品牌（图标+名称）/ 中状态或表单 / 右动作。 */
 function integrationRow(body, brand) {
   const item = el("div", "int-item");
-  const row = el("div", "int-row");
-  row.appendChild(el("span", `brand-icon ${brand}`, BRAND_ICONS[brand] ?? "?"));
-  const meta = el("div", "int-meta");
-  meta.appendChild(el("span", "int-name", BRAND_LABELS[brand]));
-  const status = el("span", "int-status", "…");
-  meta.appendChild(status);
-  row.appendChild(meta);
-  const action = el("button");
-  action.type = "button";
-  row.appendChild(action);
-  item.appendChild(row);
-  const slot = el("div", "int-flow");
-  item.appendChild(slot);
+  const id = el("div", "int-id");
+  id.appendChild(el("span", `brand-icon ${brand}`, BRAND_ICONS[brand] ?? "?"));
+  id.appendChild(el("span", "int-name", BRAND_LABELS[brand]));
+  const main = el("div", "int-main");
+  const actions = el("div", "int-actions");
+  item.appendChild(id);
+  item.appendChild(main);
+  item.appendChild(actions);
   body.appendChild(item);
-  return { status, action, slot };
+  return { main, actions };
 }
 
 function loadIntegrations(body) {
@@ -384,10 +380,14 @@ function loadIntegrations(body) {
         const entry = (payload.integrations ?? []).find(
           (item) => item.domain === domain,
         );
-        const { status, action, slot } = integrationRow(body, brand);
+        const { main, actions } = integrationRow(body, brand);
+        const status = el("span", "int-status", "…");
+        main.appendChild(status);
         if (entry) {
           status.textContent = "已添加";
-          action.textContent = "卸载";
+          const action = el("button", null, "卸载");
+          action.type = "button";
+          actions.appendChild(action);
           action.addEventListener("click", () => {
             action.disabled = true;
             api("integrations/remove", {
@@ -404,25 +404,24 @@ function loadIntegrations(body) {
           // 未添加：自动发起配置流（2026-10-25「默认这两个都添加」）——
           // 流程在本行内推进到授权步，用户只需完成账号授权
           status.textContent = "连接中…";
-          action.hidden = true;
           api("integrations/start", { method: "POST", body: { brand } })
             .then((payload) => {
-              status.textContent = "";
-              runFlowDialog(slot, payload.flowId, payload.step, () =>
+              runFlowDialog(main, actions, payload.flowId, payload.step, () =>
                 loadIntegrations(body),
               );
             })
             .catch((error) => {
               status.textContent = "暂不能添加";
-              action.hidden = false;
-              action.textContent = "重试";
+              const action = el("button", null, "重试");
+              action.type = "button";
+              actions.appendChild(action);
               action.addEventListener("click", () => {
                 action.disabled = true;
                 api("integrations/start", { method: "POST", body: { brand } })
                   .then((payload) => {
-                    status.textContent = "";
                     runFlowDialog(
-                      slot,
+                      main,
+                      actions,
                       payload.flowId,
                       payload.step,
                       () => loadIntegrations(body),
@@ -501,7 +500,7 @@ function flowFieldInput(field) {
  * 禁止把它嵌进面板 iframe（实测内嵌为空白），只能开独立窗口：用带尺寸的
  * `window.open` 开小窗，流程完成/中止时由这里 close 掉，空的回调页不留在用户面前。
  */
-function runFlowDialog(slot, flowId, step, onDone) {
+function runFlowDialog(main, actions, flowId, step, onDone) {
   let polling = null;
   let authWindow = null;
   const closeAuthWindow = () => {
@@ -533,7 +532,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
    * 在 HA 2026.10 是 progress_action=oauth 的 progress 步，链接在描述占位里）。
    * 轮询连续失败（流程过期被 HA 清掉）后提示重开配置页，不死等。 */
   const renderOAuthWait = (current, waiting) => {
-    slot.appendChild(el("p", "int-status", waiting));
+    main.appendChild(el("p", "int-status", waiting));
     const url = authLinkOf(current);
     if (url) {
       const open = el("button", "int-open", "打开授权页");
@@ -541,7 +540,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
       open.addEventListener("click", () => {
         authWindow = openAuthPage(url) ?? authWindow;
       });
-      slot.appendChild(open);
+      actions.appendChild(open);
     }
     let failures = 0;
     polling = setInterval(() => {
@@ -554,8 +553,9 @@ function runFlowDialog(slot, flowId, step, onDone) {
           failures += 1;
           if (failures >= 5) {
             stop();
-            clear(slot);
-            slot.appendChild(
+            clear(main);
+            clear(actions);
+            main.appendChild(
               el("p", "int-status", "授权已过期，重开配置页可重新发起。"),
             );
           }
@@ -564,16 +564,17 @@ function runFlowDialog(slot, flowId, step, onDone) {
   };
   const render = (current) => {
     stop();
-    clear(slot);
+    clear(main);
+    clear(actions);
     if (current.type === "create_entry") {
       closeAuthWindow();
-      slot.appendChild(el("p", "int-status", "已添加"));
+      main.appendChild(el("p", "int-status", "已添加"));
       onDone();
       return;
     }
     if (current.type === "abort") {
       closeAuthWindow();
-      slot.appendChild(
+      main.appendChild(
         el("p", "error", `已中止：${current.reason ?? "未知原因"}`),
       );
       return;
@@ -597,7 +598,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
       line.appendChild(input);
       form.appendChild(line);
     }
-    slot.appendChild(form);
+    main.appendChild(form);
     const submit = el("button", "primary", "提交");
     submit.type = "button";
     submit.addEventListener("click", () => {
@@ -616,7 +617,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
           showError(error.message);
         });
     });
-    slot.appendChild(submit);
+    actions.appendChild(submit);
   };
   render(step);
 }

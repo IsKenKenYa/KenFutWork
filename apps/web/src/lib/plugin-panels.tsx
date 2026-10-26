@@ -241,8 +241,11 @@ export function PluginPanelOverlay({
       >
         <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-36">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
+            {/* 中文的墨迹中心比图标盒中心高约 1px（字体 ascent 偏大），
+                给图标一像素光学上移，标题字与图标才看着同一条中线 */}
             <PluginIcon
               icon={panel?.icon ?? null}
+              slotClass="h-4 w-4 -translate-y-px"
               {...(panel ? { pluginId: panel.pluginId } : {})}
             />
             {panel?.title ?? "插件面板"}
