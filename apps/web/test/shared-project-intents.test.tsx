@@ -390,8 +390,7 @@ it("初始父Design模式在真实项目恢复后自动启用；启用失败留�
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([code.projectId, code.path]),
   );
-  await act(async () => sendNavigation({ mode: "design" }));
-  expect(patches()).toHaveLength(1);
+  expect(f.rpc).not.toHaveBeenCalled();
 });
 it("冷窗口恢复Design-only项目跟随项目方式，不把默认Code当成共享请求", async () => {
   const f = await fixture(design);

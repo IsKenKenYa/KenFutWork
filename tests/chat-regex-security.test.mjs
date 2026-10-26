@@ -18,6 +18,9 @@ const { outputFiles } = await build({
   alias: {
     "@zui": `${root}apps/web/src/components/workbench/zcode`,
     "@zcode/shared": `${root}packages/zcode-shared/src/index.ts`,
+    // @zcode/shared 的 src 链引用的 workspace 包 exports 只指向不入库的 dist；
+    // 本测试先于 CI 的上游构建执行，必须与 @zcode/shared 同样按 src 解析。
+    "@zcode/model-option-map": `${root}packages/zcode-model-option-map/src/index.ts`,
   },
 });
 

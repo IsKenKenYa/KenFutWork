@@ -45,10 +45,16 @@ test("通过标签找到HTML输入框并提交修改内容", () => {
     html: "<h1>更新的标题</h1>",
     color: "",
     backgroundColor: "",
+    fontSize: "",
+    fontWeight: "",
+    textAlign: "",
+    padding: "",
+    margin: "",
+    borderRadius: "",
   });
 });
 
-test("打开评论框后输入焦点可用并提交评论内容", () => {
+test("打开评论框不抢焦点，点击输入后可提交评论内容", () => {
   let submitted: string | undefined;
   render(
     <OpenDesignCommentComposer
@@ -61,6 +67,9 @@ test("打开评论框后输入焦点可用并提交评论内容", () => {
     />,
   );
   const editor = screen.getByPlaceholderText("评论");
+  expect(document.activeElement).not.toBe(editor);
+  // jsdom 的 click 不派发焦点，用 focus() 表达用户点击输入框后的聚焦。
+  editor.focus();
   expect(document.activeElement).toBe(editor);
   fireEvent.change(editor, { target: { value: "  标题颜色加深  " } });
   fireEvent.click(screen.getByRole("button", { name: "提交" }));

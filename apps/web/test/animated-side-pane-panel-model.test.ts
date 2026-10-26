@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { SIDE_PANE_DEFAULT_EXPANDED_RATIO } from "../src/components/workbench/zcode/app-shell/sidePaneLayout";
+import {
+  DESIGN_SIDE_PANE_DEFAULT_EXPANDED_RATIO,
+  SIDE_PANE_DEFAULT_EXPANDED_RATIO,
+} from "../src/components/workbench/zcode/app-shell/sidePaneLayout";
 
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -48,10 +51,11 @@ test("侧栏收起入口只有手动开关与快捷键", () => {
   );
 });
 
-test("分栏默认口径 = 对话 1 : 内容面 2（用户 2026-10-20 口径）", () => {
-  expect(SIDE_PANE_DEFAULT_EXPANDED_RATIO).toBeCloseTo(2 / 3, 6);
-  // 内容面上限必须高于默认口径，否则 2/3 会被夹回去
+test("分栏默认口径 = 会话约一半、Design 三分之二（2026-10-25 区分口径）", () => {
+  expect(SIDE_PANE_DEFAULT_EXPANDED_RATIO).toBeCloseTo(0.48, 6);
+  expect(DESIGN_SIDE_PANE_DEFAULT_EXPANDED_RATIO).toBeCloseTo(2 / 3, 6);
+  // 内容面上限必须高于较大的 Design 口径，否则 2/3 会被夹回去
   expect(
     Number.parseFloat(/maxSize:\s*"([\d.]+)%"/u.exec(panelModel)?.[1] ?? "0"),
-  ).toBeGreaterThan(SIDE_PANE_DEFAULT_EXPANDED_RATIO * 100);
+  ).toBeGreaterThan(DESIGN_SIDE_PANE_DEFAULT_EXPANDED_RATIO * 100);
 });
