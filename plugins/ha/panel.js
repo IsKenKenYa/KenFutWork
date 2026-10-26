@@ -451,7 +451,7 @@ function authLinkOf(step) {
 
 /** HA 配置流字段名 → 中文标签（schema 常只有英文字段名；认不出的照原样显示）。 */
 const FIELD_LABELS = {
-  account: "华为账号",
+  account: "账号",
   username: "用户名",
   password: "密码",
   code: "验证码",
