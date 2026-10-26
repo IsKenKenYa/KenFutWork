@@ -396,18 +396,33 @@
         border-radius: 10px;
         background: #fff;
       }
-      /* === 原生视图：满幅 iframe，不再有上方套壳条（2026-10-25 用户口径）=== */
-      body.native-mode {
+      /* === 原生视图：标题栏之下全部是内嵌面板（2026-10-26 用户口径）===
+         高度链：html → body → main#body 都要 100%（main 的 100% 相对 body 元素，
+         body 缺高度会断链）。iframe 用绝对定位填满 header 以下——Chromium 对
+         replaced element 的 flex 拉伸不生效（实测踩过），calc 百分比也会随
+         header 实际高度漂移，故 header 高度收进变量、iframe 贴变量定位。 */
+      html:has(> body > #body.native-mode),
+      html:has(> body > #body.native-mode) > body {
+        height: 100%;
+      }
+      #body.native-mode {
+        --panel-bar-h: 28px;
+        position: relative;
+        height: 100%;
         padding: 0;
         overflow: hidden;
       }
-      body.native-mode header {
+      #body.native-mode header {
+        height: var(--panel-bar-h);
         margin-bottom: 0;
         padding: 5px 10px;
       }
-      body.native-mode iframe {
+      #body.native-mode footer {
+        display: none;
+      }
+      #body.native-mode iframe {
         width: 100%;
-        height: calc(100vh - 34px);
+        height: calc(100% - var(--panel-bar-h));
         border: none;
         border-radius: 0;
         display: block;

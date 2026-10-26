@@ -291,7 +291,7 @@ function buildConnectCard(message, connected) {
 function renderSetup(message) {
   state.view = "config";
   const connected = Boolean(state.baseUrl);
-  document.body.classList.remove("native-mode");
+  els.body.classList.remove("native-mode");
   setState(connected ? "已连接" : "未配置");
   clear(els.body);
 
@@ -583,7 +583,7 @@ function buildBlankHint() {
 
 function renderNative() {
   state.view = "native";
-  document.body.classList.add("native-mode");
+  els.body.classList.add("native-mode");
   setState("");
   clear(els.body);
   const frame = document.createElement("iframe");
