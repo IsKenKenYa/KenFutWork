@@ -378,6 +378,19 @@
         margin: 0;
         grid-template-columns: max-content minmax(0, 240px);
       }
+      /* multi_select（米家的「选择家庭」）：竖排复选列表 */
+      .choices {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .field label.choice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text);
+        white-space: normal;
+      }
       .back {
         margin: 0 0 10px;
         color: var(--muted);

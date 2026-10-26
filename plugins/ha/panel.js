@@ -461,35 +461,81 @@ const FIELD_LABELS = {
   integration_language: "语言",
   language: "语言",
   eula: "同意用户协议",
+  home_infos: "家庭",
+  area_name_rule: "区域命名",
+  advanced_options: "高级选项",
+  devices_filter: "设备过滤",
+  ctrl_mode: "控制模式",
+  action_debug: "动作调试",
+  hide_non_standard_entities: "隐藏非标准实体",
+  display_binary_mode: "二进制传感器",
+  display_devices_changed_notify: "设备变更通知",
 };
 
-/** 单个字段：boolean→勾选、select→下拉、其余→输入框（密码名猜成密码框）。 */
+/** HA 的 options 既可能是 `[[value, label], …]`、`[value, …]`，也可能是对象映射。 */
+function optionEntries(options) {
+  if (Array.isArray(options)) {
+    return options.map((option) =>
+      Array.isArray(option)
+        ? [String(option[0]), String(option[1]?.label ?? option[1] ?? option[0])]
+        : [String(option), String(option)],
+    );
+  }
+  return Object.entries(options ?? {}).map(([value, label]) => [
+    value,
+    typeof label === "string" ? label : String(label?.label ?? value),
+  ]);
+}
+
+/**
+ * 单个字段控件：返回 `{ node, read }`。
+ * boolean→勾选、select→下拉、multi_select→复选列表、其余→输入框（密码名猜成密码框）。
+ */
 function flowFieldInput(field) {
   if (field.type === "boolean") {
     const box = el("input");
     box.type = "checkbox";
     box.checked = field.default === true;
-    return box;
+    return { node: box, read: () => box.checked };
   }
   if (field.type === "select") {
     const select = el("select");
-    for (const option of field.options ?? []) {
-      const value = Array.isArray(option) ? option[0] : option;
-      const label = Array.isArray(option)
-        ? String(option[1]?.label ?? option[1] ?? option[0])
-        : String(option);
+    for (const [value, label] of optionEntries(field.options)) {
       const item = el("option");
-      item.value = String(value);
+      item.value = value;
       item.textContent = label;
       select.appendChild(item);
     }
     if (field.default !== undefined) select.value = String(field.default);
-    return select;
+    return { node: select, read: () => select.value };
+  }
+  if (field.type === "multi_select") {
+    // 米家授权后的「选择家庭」就是 multi_select（options 是 {家庭id: 名称}）
+    const box = el("div", "choices");
+    const boxes = [];
+    const defaults = Array.isArray(field.default)
+      ? field.default.map(String)
+      : [];
+    for (const [value, label] of optionEntries(field.options)) {
+      const line = el("label", "choice");
+      const item = el("input");
+      item.type = "checkbox";
+      item.value = value;
+      item.checked = defaults.includes(value);
+      line.appendChild(item);
+      line.appendChild(el("span", null, label));
+      box.appendChild(line);
+      boxes.push(item);
+    }
+    return {
+      node: box,
+      read: () => boxes.filter((item) => item.checked).map((item) => item.value),
+    };
   }
   const input = el("input");
   input.type = /pass|secret|token/i.test(field.name ?? "") ? "password" : "text";
   if (field.default !== undefined) input.value = String(field.default);
-  return input;
+  return { node: input, read: () => input.value };
 }
 
 /**
@@ -502,6 +548,7 @@ function flowFieldInput(field) {
  */
 function runFlowDialog(main, actions, flowId, step, onDone) {
   let polling = null;
+  let pollListener = null;
   let authWindow = null;
   const closeAuthWindow = () => {
     if (authWindow && !authWindow.closed) authWindow.close();
@@ -511,6 +558,11 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
     if (polling) {
       clearInterval(polling);
       polling = null;
+    }
+    if (pollListener) {
+      window.removeEventListener("focus", pollListener);
+      document.removeEventListener("visibilitychange", pollListener);
+      pollListener = null;
     }
   };
   /** 弹窗被策略拦截时退回新标签（拿不到句柄，完成时无法自动关闭）。 */
@@ -543,7 +595,8 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
       actions.appendChild(open);
     }
     let failures = 0;
-    polling = setInterval(() => {
+    const poll = () => {
+      if (!polling) return;
       api("integrations/flow", { method: "POST", body: { flowId } })
         .then((payload) => {
           failures = 0;
@@ -560,7 +613,14 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
             );
           }
         });
-    }, 2000);
+    };
+    polling = setInterval(poll, 2000);
+    // 授权窗口挡住面板时定时器会被节流；回到本页立刻再查一次
+    pollListener = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    window.addEventListener("focus", pollListener);
+    document.addEventListener("visibilitychange", pollListener);
   };
   const render = (current) => {
     stop();
@@ -593,22 +653,25 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
     for (const field of current.data_schema ?? []) {
       const line = el("div", "field");
       line.appendChild(el("label", null, FIELD_LABELS[field.name] ?? field.name));
-      const input = flowFieldInput(field);
-      inputs.set(field.name, input);
-      line.appendChild(input);
+      const control = flowFieldInput(field);
+      inputs.set(field.name, control);
+      line.appendChild(control.node);
       form.appendChild(line);
     }
     main.appendChild(form);
+    const errors = Object.values(current.errors ?? {}).filter(
+      (message) => typeof message === "string" && message.trim(),
+    );
+    if (errors.length > 0) main.appendChild(el("p", "error", errors[0]));
     const submit = el("button", "primary", "提交");
     submit.type = "button";
     submit.addEventListener("click", () => {
       submit.disabled = true;
       const fields = {};
       for (const field of current.data_schema ?? []) {
-        const input = inputs.get(field.name);
-        if (!input) continue;
-        fields[field.name] =
-          field.type === "boolean" ? input.checked : input.value;
+        const control = inputs.get(field.name);
+        if (!control) continue;
+        fields[field.name] = control.read();
       }
       api("integrations/flow", { method: "POST", body: { flowId, fields } })
         .then((payload) => render(payload.step))
