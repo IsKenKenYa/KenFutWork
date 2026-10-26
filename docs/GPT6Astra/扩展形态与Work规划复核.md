@@ -20,7 +20,7 @@
 
 ## 2. 皮肤、面板和编辑器应分别定义
 
-[Codex 桌面设置](https://learn.chatgpt.com/docs/app/settings)公开颜色、UI／代码字体及主题分享；本地参考的 [theme_picker.rs](../../references/codex/codex-rs/tui/src/theme_picker.rs)提供 CLI `/theme` 和 `.tmTheme` 预览。二者证明主题可定制；没有据此确认桌面主题能替换工作台组件。[Codex 插件文档](https://developers.openai.com/plugins/build/plugins)的 Skills／MCP／资源是另一类扩展。
+[Codex 桌面设置](https://learn.chatgpt.com/docs/app/settings)公开颜色、UI／代码字体及主题分享；本地参考的 `references/codex/codex-rs/tui/src/theme_picker.rs` 提供 CLI `/theme` 和 `.tmTheme` 预览。二者证明主题可定制；没有据此确认桌面主题能替换工作台组件。[Codex 插件文档](https://developers.openai.com/plugins/build/plugins)的 Skills／MCP／资源是另一类扩展。
 
 建议按能力定义形态，文件后缀不决定权限：
 
