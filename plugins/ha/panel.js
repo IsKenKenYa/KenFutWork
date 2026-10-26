@@ -539,21 +539,16 @@ function flowFieldInput(field) {
 }
 
 /**
- * 集成配置流对话框：按 HA 返回的步型渲染——表单（schema 驱动）、OAuth 授权窗口、
+ * 集成配置流对话框：按 HA 返回的步型渲染——表单（schema 驱动）、OAuth 授权链接、
  * 进行中轮询、完成/中止。
  *
- * OAuth 登录页（account.xiaomi.com 等）带 `X-Frame-Options: SAMEORIGIN`，浏览器
- * 禁止把它嵌进面板 iframe（实测内嵌为空白），只能开独立窗口：用带尺寸的
- * `window.open` 开小窗，流程完成/中止时由这里 close 掉，空的回调页不留在用户面前。
+ * OAuth 登录页（account.xiaomi.com 等）带 `X-Frame-Options: SAMEORIGIN`，嵌进面板
+ * iframe 只会得到空白；授权只能在**新标签页**完成（真链接、用户点击），面板靠轮询
+ * 收口，不需要用户回来手动点下一步。
  */
 function runFlowDialog(main, actions, flowId, step, onDone) {
   let polling = null;
   let pollListener = null;
-  let authWindow = null;
-  const closeAuthWindow = () => {
-    if (authWindow && !authWindow.closed) authWindow.close();
-    authWindow = null;
-  };
   const stop = () => {
     if (polling) {
       clearInterval(polling);
@@ -565,23 +560,6 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
       pollListener = null;
     }
   };
-  /** 弹窗被策略拦截时退回新标签。**不带 noopener**：HA 的授权成功页用
-   *  `window.opener=null; window.open('','_self'); window.close()` 自动关页，
-   *  而 Chrome 只允许脚本打开的窗口 close()——带上 noopener 就等于告诉浏览器
-   *  「这不是脚本开的窗」，成功页永远关不掉，用户就被困在回调页。 */
-  const openAuthPage = (url) => {
-    const opened = window.open(
-      url,
-      "kenfutwork-ha-auth",
-      "popup=yes,width=560,height=760",
-    );
-    if (opened && opened !== window) return opened;
-    const link = document.createElement("a");
-    link.href = url;
-    link.target = "_blank";
-    link.click();
-    return null;
-  };
   /** 授权等待态：external 与 progress 都可能带授权链接（xiaomi_home 的 OAuth 步
    * 在 HA 2026.10 是 progress_action=oauth 的 progress 步，链接在描述占位里）。
    * 轮询连续失败（流程过期被 HA 清掉）后提示重开配置页，不死等。 */
@@ -589,11 +567,12 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
     main.appendChild(el("p", "int-status", waiting));
     const url = authLinkOf(current);
     if (url) {
-      const open = el("button", "int-open", "打开授权页");
-      open.type = "button";
-      open.addEventListener("click", () => {
-        authWindow = openAuthPage(url) ?? authWindow;
-      });
+      // 必须是**真链接由用户点**：脚本 `window.open` 在内嵌宿主里会被拦成
+      // 「当前标签内跳转」，把 KenFutWork 整个顶掉；合成 `a.click()` 同样不算用户手势。
+      const open = el("a", "int-open", "打开授权页");
+      open.href = url;
+      open.target = "_blank";
+      open.rel = "noopener";
       actions.appendChild(open);
     }
     let failures = 0;
@@ -629,19 +608,11 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
     clear(main);
     clear(actions);
     if (current.type === "create_entry") {
-      closeAuthWindow();
-      // 授权窗口若已被浏览器并成标签且关不掉，尽力把焦点还给面板
-      try {
-        window.focus();
-      } catch {
-        /* 有的宿主忽略脚本 focus，忽略即可 */
-      }
       main.appendChild(el("p", "int-status", "已添加"));
       onDone();
       return;
     }
     if (current.type === "abort") {
-      closeAuthWindow();
       main.appendChild(
         el("p", "error", `已中止：${current.reason ?? "未知原因"}`),
       );

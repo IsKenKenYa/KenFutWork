@@ -166,7 +166,7 @@ function EditorsInfoView({
               disabled={loading || installing}
               aria-label="刷新"
               title="刷新"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
@@ -182,36 +182,38 @@ function EditorsInfoView({
           </p>
         ) : null}
 
-        <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-          <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
-            <span className="w-24 shrink-0">编辑器</span>
-            <span className="w-14 shrink-0">类别</span>
-            <span className="w-16 shrink-0">挂载</span>
-            <span className="w-28 shrink-0">版本</span>
-            <span className="min-w-0 flex-1">状态</span>
+        <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+          {/* 列宽均分（grid-cols-5）+ 单元格居中：定宽 flex 会让「状态」列吃掉剩余宽度，
+              右侧留一大片空白，看着不像表格。 */}
+          <div className="grid grid-cols-5 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+            <span className="text-center">编辑器</span>
+            <span className="text-center">类别</span>
+            <span className="text-center">挂载</span>
+            <span className="text-center">版本</span>
+            <span className="text-center">状态</span>
           </div>
           {(editors?.editors ?? []).map((editor, index, rows) => {
             const install = installFor(editor);
             return (
               <div
                 key={editor.id}
-                className={`flex items-center gap-3 px-4 py-2.5 ${
-                  index === rows.length - 1 ? "" : "border-b"
+                className={`grid grid-cols-5 items-center gap-3 px-4 py-2.5 text-center ${
+                  index === rows.length - 1 ? "" : "border-b border-border"
                 }`}
               >
-                <span className="w-24 shrink-0 truncate" title={editor.id}>
+                <span className="min-w-0 truncate" title={editor.id}>
                   {editor.title}
                 </span>
-                <span className="w-14 shrink-0 text-xs text-foreground-subtle">
+                <span className="text-xs text-foreground-subtle">
                   {CATEGORY_LABEL[editor.category] ?? editor.category}
                 </span>
-                <span className="w-16 shrink-0 text-xs text-foreground-subtle">
+                <span className="text-xs text-foreground-subtle">
                   {MOUNT_LABEL[editor.mount] ?? editor.mount}
                 </span>
-                <span className="w-28 shrink-0 font-mono text-[11px] text-foreground-subtle">
+                <span className="font-mono text-[11px] text-foreground-subtle">
                   {editor.pinned ? `v${editor.pinned.version}` : "—"}
                 </span>
-                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+                <span className="flex min-w-0 items-center justify-center gap-2 text-xs">
                   {install.state === "installing" ? (
                     <>
                       <span className="text-foreground">
@@ -225,7 +227,7 @@ function EditorsInfoView({
                         <button
                           type="button"
                           onClick={() => void onInstall(editor.id)}
-                          className="shrink-0 rounded-lg border px-2 py-1 text-xs transition-colors hover:border-foreground/30"
+                          className="shrink-0 rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:border-foreground/30"
                         >
                           重试
                         </button>
@@ -235,7 +237,7 @@ function EditorsInfoView({
                     <button
                       type="button"
                       onClick={() => onOpen(editor.id)}
-                      className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
+                      className="shrink-0 rounded-lg border border-border bg-hover px-3 py-1 text-xs text-foreground transition-colors hover:border-foreground/30"
                     >
                       打开
                     </button>
@@ -243,7 +245,7 @@ function EditorsInfoView({
                     <button
                       type="button"
                       onClick={() => void onInstall(editor.id)}
-                      className="shrink-0 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
+                      className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
                     >
                       下载
                     </button>
@@ -262,17 +264,17 @@ function EditorsInfoView({
         </div>
 
         {editors ? (
-          <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-            <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
-              <span className="w-28 shrink-0">项</span>
-              <span className="flex-1">值</span>
+          <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+            <div className="grid grid-cols-2 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+              <span className="text-center">项</span>
+              <span className="text-center">值</span>
             </div>
-            <div className="flex items-center gap-3 px-4 py-2.5">
-              <span className="w-28 shrink-0 text-foreground-subtle">
+            <div className="grid grid-cols-2 items-center gap-3 px-4 py-2.5">
+              <span className="text-center text-foreground-subtle">
                 数据目录
               </span>
               <span
-                className="min-w-0 flex-1 truncate font-mono text-xs"
+                className="min-w-0 truncate text-center font-mono text-xs"
                 title={editors.dataDir}
               >
                 {editors.dataDir}
