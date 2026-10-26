@@ -565,18 +565,20 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
       pollListener = null;
     }
   };
-  /** 弹窗被策略拦截时退回新标签（拿不到句柄，完成时无法自动关闭）。 */
+  /** 弹窗被策略拦截时退回新标签。**不带 noopener**：HA 的授权成功页用
+   *  `window.opener=null; window.open('','_self'); window.close()` 自动关页，
+   *  而 Chrome 只允许脚本打开的窗口 close()——带上 noopener 就等于告诉浏览器
+   *  「这不是脚本开的窗」，成功页永远关不掉，用户就被困在回调页。 */
   const openAuthPage = (url) => {
     const opened = window.open(
       url,
       "kenfutwork-ha-auth",
       "popup=yes,width=560,height=760",
     );
-    if (opened) return opened;
+    if (opened && opened !== window) return opened;
     const link = document.createElement("a");
     link.href = url;
     link.target = "_blank";
-    link.rel = "noopener";
     link.click();
     return null;
   };
@@ -628,6 +630,12 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
     clear(actions);
     if (current.type === "create_entry") {
       closeAuthWindow();
+      // 授权窗口若已被浏览器并成标签且关不掉，尽力把焦点还给面板
+      try {
+        window.focus();
+      } catch {
+        /* 有的宿主忽略脚本 focus，忽略即可 */
+      }
       main.appendChild(el("p", "int-status", "已添加"));
       onDone();
       return;
