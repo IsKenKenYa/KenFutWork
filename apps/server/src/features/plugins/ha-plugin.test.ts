@@ -2379,6 +2379,64 @@ describe("HA 插件：接入引导与生态识别", () => {
   });
 });
 
+describe("HA 插件：配置流自动取值", () => {
+  it("必选多选全选（选家庭=全部导入），可选过滤列表留空，select/boolean 用默认", async () => {
+    const { autoFillFields, optionValues } = await loadPluginModule<{
+      autoFillFields: (schema: unknown[]) => Record<string, unknown> | null;
+      optionValues: (options: unknown) => string[];
+    }>("lib/flow-fields.js");
+    expect(optionValues({ a: "A", b: "B" })).toEqual(["a", "b"]);
+    expect(optionValues([["x", "X"], "y"])).toEqual(["x", "y"]);
+    expect(
+      autoFillFields([
+        {
+          name: "home_infos",
+          type: "multi_select",
+          required: true,
+          options: { h1: "家1", h2: "家2" },
+        },
+        {
+          name: "room_filter_mode",
+          type: "select",
+          options: [
+            ["exclude", "排除"],
+            ["include", "包含"],
+          ],
+          default: "exclude",
+        },
+        {
+          name: "room_list",
+          type: "multi_select",
+          required: false,
+          optional: true,
+          options: { r1: "卧室" },
+        },
+        { name: "advanced_options", type: "boolean", default: false },
+      ]),
+    ).toEqual({
+      home_infos: ["h1", "h2"],
+      room_filter_mode: "exclude",
+      room_list: [],
+      advanced_options: false,
+    });
+  });
+
+  it("没有默认值的文本字段停下来（华为账号/密码只能人工填）", async () => {
+    const { autoFillFields } = await loadPluginModule<{
+      autoFillFields: (schema: unknown[]) => Record<string, unknown> | null;
+    }>("lib/flow-fields.js");
+    expect(
+      autoFillFields([
+        { name: "account", type: "text" },
+        { name: "password", type: "password" },
+      ]),
+    ).toBeNull();
+    expect(autoFillFields([{ name: "eula", type: "boolean", default: true }])).toEqual(
+      { eula: true },
+    );
+  });
+});
+
 describe("HA 插件：agent 工具", () => {
   it("未配置时 fail loud：报「去面板配置」，不假装成功", async () => {
     const { kernel } = await installFromRepo();

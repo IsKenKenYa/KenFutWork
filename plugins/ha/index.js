@@ -25,6 +25,7 @@ import {
   controlValue,
   toServiceCall,
 } from "./lib/entity-model.js";
+import { autoFillFields } from "./lib/flow-fields.js";
 import {
   createHaRest,
   HA_DEFAULT_BASE_URL,
@@ -391,6 +392,26 @@ export function apply(ctx) {
    *  条目」。复用未完成的流，既避免堆积，也让回调落到同一个 flow 上。 */
   const OPEN_FLOWS = new Map();
 
+  /**
+   * 授权完成后把「纯选项」步骤按 schema 默认值连续提交（2026-10-26 用户口径
+   * 「授权完之后自动全部导入，不要手动配置」），直到需要人工或用完次数。
+   * 步骤带校验错误时停住，避免死循环。
+   */
+  async function advanceAutoSteps(runtime, flowId, initial) {
+    let step = initial;
+    for (let i = 0; i < 6; i += 1) {
+      if (!step || step.type !== "form") break;
+      const hasError = Object.values(step.errors ?? {}).some(
+        (message) => typeof message === "string" && message.trim(),
+      );
+      if (hasError) break;
+      const fields = autoFillFields(step.data_schema);
+      if (!fields) break;
+      step = await runtime.rest.submitFlow(flowId, fields);
+    }
+    return step;
+  }
+
   /** 集成列表走 WS 的 config_entries/get：等实时链路认证成功再发（最多 3 秒）。 */
   async function waitForWsReady(runtime) {
     const deadline = Date.now() + 3000;
@@ -505,7 +526,9 @@ export function apply(ctx) {
           request.body?.fields === undefined
             ? await runtime.rest.getFlow(flowId)
             : await runtime.rest.submitFlow(flowId, request.body.fields);
-        return { status: 200, body: { flowId, step } };
+        // 轮询到授权完成后的选项步（选家庭/区域/高级项）直接按默认值走完
+        const advanced = await advanceAutoSteps(runtime, flowId, step);
+        return { status: 200, body: { flowId, step: advanced } };
       } catch (error) {
         return errorResult(error);
       }

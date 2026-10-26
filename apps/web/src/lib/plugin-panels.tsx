@@ -207,6 +207,9 @@ export function PluginPanelOverlay({
   const centeredBtn =
     "absolute top-1/2 -translate-y-1/2 inline-flex size-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-transparent text-foreground transition-colors hover:bg-muted hover:text-foreground";
   const icon = "size-4";
+  /** lucide 的 × 只占 viewBox 的 12/24（方形占 18/24）：同 size-4 时墨迹只有 8px，
+   *  看起来明显偏小。放大到 22px（墨迹 11px）+ 1.1 描边（视觉 1px），与方形墨迹 12px 配平。 */
+  const closeIcon = "size-[22px]";
   if (!panel) return null;
   return (
     <Dialog
@@ -278,7 +281,7 @@ export function PluginPanelOverlay({
             aria-label="关闭"
             title="关闭"
           >
-            <X className={icon} strokeWidth={1.5} aria-hidden="true" />
+            <X className={closeIcon} strokeWidth={1.1} aria-hidden="true" />
           </DialogClose>
         </DialogHeader>
         {panel ? (
