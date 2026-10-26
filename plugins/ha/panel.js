@@ -235,7 +235,7 @@ function buildHero() {
 }
 
 /** 连接表单：未配置是「连接」，已连接是「保存」（重新探活并落库）。 */
-function buildConnectCard(message, connected) {
+function buildConnectCard(message) {
   const card = el("div", "card");
   const address = el("input");
   address.type = "url";
@@ -254,7 +254,7 @@ function buildConnectCard(message, connected) {
   card.appendChild(field("地址", address));
   card.appendChild(field("令牌", token));
 
-  const button = el("button", null, connected ? "保存" : "连接");
+  const button = el("button", null, "连接");
   button.type = "button";
   button.addEventListener("click", () => {
     if (state.busy) return;
@@ -277,7 +277,7 @@ function buildConnectCard(message, connected) {
       .catch((error) => {
         state.busy = false;
         button.disabled = false;
-        button.textContent = connected ? "保存" : "连接";
+        button.textContent = "连接";
         showError(error.message);
       });
   });
@@ -292,21 +292,26 @@ function renderSetup(message) {
   state.view = "config";
   const connected = Boolean(state.baseUrl);
   els.body.classList.remove("native-mode");
-  setState(connected ? "已连接" : "未配置");
   clear(els.body);
 
-  const card = buildConnectCard(message, connected);
-  if (!connected) els.body.appendChild(buildHero());
-  els.body.appendChild(card);
-
   if (connected) {
-    // 集成区 + 界面空白诊断只收在配置页，原生视图保持纯 HA 界面；
-    // 品牌卡引导属首次接入，已连接后不再出现
+    // 已连接的配置页 = 返回 + 集成，就这两样（2026-10-26 用户口径：
+    // 「配置页面只要米家和华为的集成就行了，其他的地址什么的、界面空白时
+    // 点开都不要」）。首用接入路径只服务未配置态。
+    setState("");
+    const back = el("button", "back", "返回");
+    back.type = "button";
+    back.addEventListener("click", () => renderNative());
+    els.body.appendChild(back);
     els.body.appendChild(buildIntegrationsSection());
-    els.body.appendChild(buildBlankHint());
     return;
   }
-  // 未配置：引导在上（照着做）、表单在最后（终点）。异步插入前确认表单还在页上
+
+  // 未配置：欢迎页 + 品牌卡引导 + 连接表单（首次接入的唯一路径）
+  setState("未配置");
+  const card = buildConnectCard(message, false);
+  els.body.appendChild(buildHero());
+  els.body.appendChild(card);
   loadGuide().then((guide) => {
     if (!els.body.contains(card)) return;
     const section = buildGuideSection(guide.brands, guide.steps);
@@ -436,6 +441,20 @@ function authLinkOf(step) {
   return /href="([^"]+)"/.exec(raw)?.[1] ?? null;
 }
 
+/** HA 配置流字段名 → 中文标签（schema 常只有英文字段名；认不出的照原样显示）。 */
+const FIELD_LABELS = {
+  account: "华为账号",
+  username: "用户名",
+  password: "密码",
+  code: "验证码",
+  challenge_code: "挑战码",
+  cloud_server: "登录地区",
+  servers: "登录地区",
+  integration_language: "语言",
+  language: "语言",
+  eula: "同意用户协议",
+};
+
 /** 单个字段：boolean→勾选、select→下拉、其余→输入框（密码名猜成密码框）。 */
 function flowFieldInput(field) {
   if (field.type === "boolean") {
@@ -538,7 +557,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
     const inputs = new Map();
     for (const field of current.data_schema ?? []) {
       const line = el("div", "field");
-      line.appendChild(el("label", null, field.name));
+      line.appendChild(el("label", null, FIELD_LABELS[field.name] ?? field.name));
       const input = flowFieldInput(field);
       inputs.set(field.name, input);
       line.appendChild(input);
@@ -566,17 +585,6 @@ function runFlowDialog(slot, flowId, step, onDone) {
     slot.appendChild(submit);
   };
   render(step);
-}
-
-/** 界面空白诊断：HA 默认挡内嵌，收在配置页（原生视图保持纯 HA 界面）。 */
-function buildBlankHint() {
-  const hint = el("details", "step");
-  hint.appendChild(el("summary", null, "界面空白时点开"));
-  const fix = el("pre", null);
-  fix.textContent =
-    "HA 设置 → 系统 → 网络 → 关闭「Send X-Frame-Options」\n旧版 configuration.yaml：\nhttp:\n  use_x_frame_options: false";
-  hint.appendChild(fix);
-  return hint;
 }
 
 // === 原生视图：满幅 iframe，无任何上方套壳条 ===

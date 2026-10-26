@@ -214,7 +214,7 @@ export function PluginPanelOverlay({
         hidden={!active}
         inert={!active}
         aria-hidden={!active}
-        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden border-b-0 p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
         <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-24">
