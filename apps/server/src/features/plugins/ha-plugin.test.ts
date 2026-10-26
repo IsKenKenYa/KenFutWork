@@ -2334,6 +2334,40 @@ describe("HA 插件：接入引导与生态识别", () => {
     ).toBe(true);
   });
 
+  it("在途配置流复用：重复 start 返回同一个 flow，不再新起一个（HA 会 already_in_progress）", async () => {
+    installSocketHub({ configEntries: [] });
+    const { service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const starts = () =>
+      fake.calls.filter(
+        (call) =>
+          call.method === "POST" &&
+          String(call.url).endsWith("/api/config/config_entries/flow"),
+      ).length;
+
+    const first = bodyOf<{ flowId: string; step: { type: string } }>(
+      await dispatch(service, installed.id, {
+        path: "integrations/start",
+        method: "POST",
+        body: { brand: "xiaomi" },
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(starts()).toBe(1);
+    const second = bodyOf<{ flowId: string; step: { type: string } }>(
+      await dispatch(service, installed.id, {
+        path: "integrations/start",
+        method: "POST",
+        body: { brand: "xiaomi" },
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    // 同一个 flow：拿到的是在途进度（不是新开的 form 步），且没有再次 POST 开流
+    expect(second.flowId).toBe(first.flowId);
+    expect(second.step.type).not.toBe("form");
+    expect(starts()).toBe(1);
+  });
+
   it("注册表条目全都没有 platform（注册表形状变了）：返回 null，不把「识别不出」当「未接入」", async () => {
     const model = await loadPluginModule<{
       buildEcosystemSummary: (registries: unknown) => unknown;

@@ -385,6 +385,12 @@ export function apply(ctx) {
     huawei: "huawei_smarthome",
   };
 
+  /** 每个实例每个品牌只保留一个在途配置流（key: `${instanceId}:${brand}`）。
+   *  面板每次打开配置页都会调 start，而 HA 侧同一集成不允许并行流——xiaomi_home
+   *  会以 `Flow aborted: already_in_progress` 中止后来的流，表现为「授权完成却拿不到
+   *  条目」。复用未完成的流，既避免堆积，也让回调落到同一个 flow 上。 */
+  const OPEN_FLOWS = new Map();
+
   /** 集成列表走 WS 的 config_entries/get：等实时链路认证成功再发（最多 3 秒）。 */
   async function waitForWsReady(runtime) {
     const deadline = Date.now() + 3000;
@@ -437,7 +443,28 @@ export function apply(ctx) {
           );
         }
         const runtime = await runtimeFor(instanceId);
-        let step = await runtime.rest.startFlow(handler);
+        const flowKey = `${instanceId}:${brand}`;
+        let step = null;
+        const cached = OPEN_FLOWS.get(flowKey);
+        if (cached) {
+          try {
+            const current = await runtime.rest.getFlow(cached);
+            // 已完成/已中止的流不再复用（下次 start 直接开新流）
+            if (
+              current &&
+              current.type !== "create_entry" &&
+              current.type !== "abort"
+            ) {
+              step = current;
+            }
+          } catch {
+            // 流程已过期/被 HA 清掉：重新开
+          }
+        }
+        if (step) {
+          return { status: 200, body: { brand, flowId: step.flow_id, step } };
+        }
+        step = await runtime.rest.startFlow(handler);
         // 自动推进非账号决策步（用户口径「默认这两个都添加」）：
         // - eula：小米官方集成的用户协议勾选（使用本功能即接受）
         // - auth_config：地区/语言/回调地址（固定中国大陆 + 简体中文；回调走
@@ -458,6 +485,7 @@ export function apply(ctx) {
             });
           } else break;
         }
+        OPEN_FLOWS.set(flowKey, step.flow_id);
         return { status: 200, body: { brand, flowId: step.flow_id, step } };
       } catch (error) {
         return errorResult(error);
