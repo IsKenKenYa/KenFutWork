@@ -228,7 +228,7 @@ export function PluginPanelOverlay({
           {panel?.configurable ? (
             <button
               type="button"
-              className="absolute right-12 top-3 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
+              className="rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
               onClick={() => {
                 frameRef.current?.contentWindow?.postMessage(
                   { type: "kenfutwork:plugin-panel-toggle-config" },
