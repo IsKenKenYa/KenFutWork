@@ -2180,11 +2180,6 @@ const enUS: Record<string, string> = {
   "settings.themeCardDescription":
     "Use light, dark, or follow the system setting",
   "chat.empty.greeting.office": "What's on your plate today? Leave it to me.",
-  "settings.interfaceMode": "Interface mode",
-  "settings.interfaceMode.office": "Design",
-  "settings.interfaceMode.coding": "Code",
-  "settings.interfaceMode.description":
-    "Office mode focuses on summaries and results. Coding mode shows commands, output, and code changes.",
   "chat.toolCall.execute.conciseCompleted": "Ran a command",
   "chat.contextOptimization.started": "Optimizing conversation",
   "chat.contextOptimization.skipped": "No conversation optimization needed",
