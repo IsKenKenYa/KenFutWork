@@ -5,7 +5,7 @@ import {
   type PluginPanelEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
-import { Maximize2, Minimize2, PanelsTopLeft, X } from "lucide-react";
+import { PanelsTopLeft, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -201,11 +201,12 @@ export function PluginPanelOverlay({
   active?: boolean;
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  /** 标题栏 chrome 态：normal 常规 / min 收起为标题栏横条 / max 全屏。
-   *  全部按钮与标题同一条垂直中线（Radix 默认 close 是 top-2 固定像素，会错位）。 */
-  const [chrome, setChrome] = useState<"normal" | "min" | "max">("normal");
+  /** 标题栏 chrome 态：normal 常规 / max 全屏。按钮同一条垂直中线、
+   *  彼此只隔 4px（关闭 right-2 / 最大化 right-10 / 配置 right-18）。 */
+  const [chrome, setChrome] = useState<"normal" | "max">("normal");
   const centeredBtn =
-    "absolute top-1/2 -translate-y-1/2 inline-flex size-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-transparent text-foreground transition-all hover:bg-muted hover:text-foreground active:translate-y-px";
+    "absolute top-1/2 -translate-y-1/2 inline-flex size-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-transparent text-foreground transition-colors hover:bg-muted hover:text-foreground";
+  const icon = "size-4";
   if (!panel) return null;
   return (
     <Dialog
@@ -220,16 +221,25 @@ export function PluginPanelOverlay({
         hidden={!active}
         inert={!active}
         aria-hidden={!active}
+        // 默认关闭钮是 top-2 固定像素、与自绘三钮重复，关掉
+        showCloseButton={false}
+        // 只淡入淡出：默认入场带 slide-in 8px + zoom 95%，面板边缘会「跳」一下
+        style={
+          {
+            "--tw-enter-translate-y": "0px",
+            "--tw-enter-scale": "1",
+            "--tw-exit-translate-y": "0px",
+            "--tw-exit-scale": "1",
+          } as React.CSSProperties
+        }
         className={`flex flex-col gap-0 overflow-hidden border-b-0 p-0 ${
           chrome === "max"
             ? "inset-0 h-[100vh] max-h-[100vh] w-auto translate-x-0 translate-y-0 rounded-none sm:max-w-none"
-            : chrome === "min"
-              ? "h-auto max-h-[80vh] rounded-none sm:max-w-4xl"
-              : "h-[80vh] max-h-[80vh] sm:max-w-4xl"
+            : "h-[80vh] max-h-[80vh] sm:max-w-4xl"
         }`}
         aria-describedby={undefined}
       >
-        <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-48">
+        <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-36">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
             <PluginIcon
               icon={panel?.icon ?? null}
@@ -240,7 +250,7 @@ export function PluginPanelOverlay({
           {panel?.configurable ? (
             <button
               type="button"
-              className="absolute right-32 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
+              className="absolute right-18 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
               onClick={() => {
                 frameRef.current?.contentWindow?.postMessage(
                   { type: "kenfutwork:plugin-panel-toggle-config" },
@@ -253,35 +263,22 @@ export function PluginPanelOverlay({
           ) : null}
           <button
             type="button"
-            aria-label="最小化"
-            title="最小化"
-            className={`${centeredBtn} right-23`}
-            onClick={() => setChrome(chrome === "min" ? "normal" : "min")}
-          >
-            <Minimize2 aria-hidden="true" />
-          </button>
-          <button
-            type="button"
             aria-label="最大化"
-            title="最大化"
-            className={`${centeredBtn} right-14`}
+            title={chrome === "max" ? "还原" : "最大化"}
+            className={`${centeredBtn} right-10`}
             onClick={() => setChrome(chrome === "max" ? "normal" : "max")}
           >
-            {chrome === "max" ? (
-              <Minimize2 aria-hidden="true" />
-            ) : (
-              <Maximize2 aria-hidden="true" />
-            )}
+            <Square className={icon} strokeWidth={1.5} aria-hidden="true" />
           </button>
           <DialogClose
             className={`${centeredBtn} right-2`}
             aria-label="关闭"
             title="关闭"
           >
-            <X aria-hidden="true" />
+            <X className={icon} strokeWidth={1.5} aria-hidden="true" />
           </DialogClose>
         </DialogHeader>
-        {panel && chrome !== "min" ? (
+        {panel ? (
           <iframe
             ref={frameRef}
             title={panel.title}

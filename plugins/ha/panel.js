@@ -254,7 +254,7 @@ function buildConnectCard(message) {
   card.appendChild(field("地址", address));
   card.appendChild(field("令牌", token));
 
-  const button = el("button", null, "连接");
+  const button = el("button", "primary", "连接");
   button.type = "button";
   button.addEventListener("click", () => {
     if (state.busy) return;
@@ -291,7 +291,7 @@ function buildConnectCard(message) {
 function renderSetup(message) {
   state.view = "config";
   const connected = Boolean(state.baseUrl);
-  els.body.classList.remove("native-mode");
+  document.body.classList.remove("native-mode");
   clear(els.body);
 
   if (connected) {
@@ -325,7 +325,11 @@ function renderSetup(message) {
 /** 面板里默认支持的两个品牌（与服务端 integrations 路由同一张表）。 */
 const BRAND_LABELS = {
   xiaomi: "米家",
-  huawei: "华为（HUAWEI HiLink）",
+  huawei: "华为",
+};
+const BRAND_ICONS = {
+  xiaomi: "米",
+  huawei: "华",
 };
 const BRAND_DOMAINS = {
   xiaomi: "xiaomi_home",
@@ -347,16 +351,21 @@ function buildIntegrationsSection() {
 }
 
 function integrationRow(body, brand) {
+  const item = el("div", "int-item");
   const row = el("div", "int-row");
-  row.appendChild(el("span", "int-name", BRAND_LABELS[brand]));
+  row.appendChild(el("span", `brand-icon ${brand}`, BRAND_ICONS[brand] ?? "?"));
+  const meta = el("div", "int-meta");
+  meta.appendChild(el("span", "int-name", BRAND_LABELS[brand]));
   const status = el("span", "int-status", "…");
-  row.appendChild(status);
+  meta.appendChild(status);
+  row.appendChild(meta);
   const action = el("button");
   action.type = "button";
   row.appendChild(action);
-  body.appendChild(row);
+  item.appendChild(row);
   const slot = el("div", "int-flow");
-  body.appendChild(slot);
+  item.appendChild(slot);
+  body.appendChild(item);
   return { status, action, slot };
 }
 
@@ -377,7 +386,7 @@ function loadIntegrations(body) {
         );
         const { status, action, slot } = integrationRow(body, brand);
         if (entry) {
-          status.textContent = `已添加（${entry.state}）`;
+          status.textContent = "已添加";
           action.textContent = "卸载";
           action.addEventListener("click", () => {
             action.disabled = true;
@@ -394,7 +403,7 @@ function loadIntegrations(body) {
         } else {
           // 未添加：自动发起配置流（2026-10-25「默认这两个都添加」）——
           // 流程在本行内推进到授权步，用户只需完成账号授权
-          status.textContent = "准备添加…";
+          status.textContent = "连接中…";
           action.hidden = true;
           api("integrations/start", { method: "POST", body: { brand } })
             .then((payload) => {
@@ -534,7 +543,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
     stop();
     clear(slot);
     if (current.type === "create_entry") {
-      slot.appendChild(el("p", "int-status", `已添加（${current.title ?? ""}）`));
+      slot.appendChild(el("p", "int-status", "已添加"));
       onDone();
       return;
     }
@@ -564,7 +573,7 @@ function runFlowDialog(slot, flowId, step, onDone) {
       form.appendChild(line);
     }
     slot.appendChild(form);
-    const submit = el("button", null, "提交");
+    const submit = el("button", "primary", "提交");
     submit.type = "button";
     submit.addEventListener("click", () => {
       submit.disabled = true;
@@ -591,7 +600,8 @@ function runFlowDialog(slot, flowId, step, onDone) {
 
 function renderNative() {
   state.view = "native";
-  els.body.classList.add("native-mode");
+  // 类挂 <body>：native 布局要同时收掉 body 内边距与 header/footer（见 panel.html）
+  document.body.classList.add("native-mode");
   setState("");
   clear(els.body);
   const frame = document.createElement("iframe");

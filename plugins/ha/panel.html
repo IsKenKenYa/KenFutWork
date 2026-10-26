@@ -56,52 +56,75 @@
       }
       button {
         font: inherit;
+        font-size: 12px;
+        line-height: 1;
+        height: 28px;
+        padding: 0 10px;
         color: var(--text);
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 5px 10px;
         cursor: pointer;
+        white-space: nowrap;
       }
       button:hover {
         border-color: var(--accent);
+        color: var(--accent);
       }
       button:disabled {
         opacity: 0.55;
         cursor: default;
       }
+      button.primary {
+        color: #fff;
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      button.primary:hover {
+        color: #fff;
+        filter: brightness(1.06);
+      }
       .card {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 12px 14px;
+        border-radius: 12px;
+        padding: 14px 16px;
       }
-      /* 一行一个配置项：标签在左、控件在右 */
+      /* 一行一个配置项：标签在左（不换行）、控件在右（撑满剩余宽度） */
       .field {
-        display: flex;
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         margin: 8px 0;
       }
       .field label {
-        flex: none;
-        width: 44px;
         color: var(--muted);
+        white-space: nowrap;
       }
-      .field input {
-        flex: 1;
+      .field input:not([type="checkbox"]),
+      .field select {
+        width: 100%;
         min-width: 0;
+      }
+      .field input:not([type="checkbox"]) {
         font: inherit;
         color: var(--text);
         background: var(--bg);
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 5px 8px;
+        height: 30px;
+        padding: 0 10px;
+      }
+      .field input:focus-visible,
+      .field select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
       }
       .actions {
         display: flex;
         gap: 8px;
-        margin-top: 10px;
+        margin-top: 12px;
       }
       .group {
         font-size: 12px;
@@ -279,56 +302,103 @@
       .brand[open] .chev {
         transform: rotate(90deg);
       }
-      /* === 集成管理（已连接态）：默认品牌卡 + 配置流对话框 === */
+      /* === 集成管理（已连接态）：品牌行 + 行内配置流 === */
+      /* 配置/欢迎视图：内容列居中，表单在宽面板里不被拉成一条 */
+      body:not(.native-mode) > #body {
+        max-width: 600px;
+        margin: 0 auto;
+      }
       .integrations {
         border: 1px solid var(--line);
-        border-radius: 10px;
-        background: var(--bg);
+        border-radius: 12px;
+        background: var(--panel);
+        overflow: hidden;
       }
-      .integrations summary {
-        cursor: pointer;
-        padding: 8px 12px;
-        font-weight: 600;
+      .integrations .group {
+        margin: 0;
+        padding: 12px 14px 8px;
       }
       .integrations-body {
-        padding: 4px 12px 10px;
+        padding-bottom: 6px;
+      }
+      .int-item + .int-item {
+        border-top: 1px solid var(--line);
       }
       .int-row {
         display: flex;
         align-items: center;
         gap: 10px;
-        margin: 8px 0 4px;
+        padding: 10px 14px;
+      }
+      .int-row .brand-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+      .int-meta {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
       }
       .int-name {
-        flex: none;
         font-weight: 600;
       }
       .int-status {
-        flex: 1;
-        min-width: 0;
         color: var(--muted);
         font-size: 12px;
       }
+      .int-flow {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 10px;
+        padding: 0 14px 12px 52px;
+      }
+      .int-flow:empty {
+        display: none;
+      }
+      .int-flow > p {
+        margin: 0;
+      }
       .int-form {
-        margin: 6px 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .int-form .field {
+        margin: 0;
       }
       .back {
-        margin: 0 0 8px;
-        padding: 3px 10px;
+        margin: 0 0 10px;
+        color: var(--muted);
+        background: transparent;
+        border-color: transparent;
+      }
+      .back:hover {
+        color: var(--text);
+        background: var(--panel);
+        border-color: var(--line);
       }
       .int-open {
-        display: inline-block;
-        margin: 4px 0;
-        padding: 4px 10px;
-        border: 1px solid var(--line);
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--accent);
         border-radius: 8px;
-        background: var(--panel);
-        color: var(--text);
+        background: var(--accent);
+        color: #fff;
         text-decoration: none;
         font-size: 12px;
+        white-space: nowrap;
       }
       .int-open:hover {
-        border-color: var(--accent);
+        color: #fff;
+        filter: brightness(1.06);
       }
       .guide .step {
         margin: 6px 0;
@@ -401,35 +471,32 @@
         background: #fff;
       }
       /* === 原生视图：标题栏之下全部是内嵌面板（2026-10-26 用户口径）===
-         高度链：html → body → main#body 都要 100%（main 的 100% 相对 body 元素，
-         body 缺高度会断链）。iframe 用绝对定位填满 header 以下——Chromium 对
-         replaced element 的 flex 拉伸不生效（实测踩过），calc 百分比也会随
-         header 实际高度漂移，故 header 高度收进变量、iframe 贴变量定位。 */
-      html:has(> body > #body.native-mode),
-      html:has(> body > #body.native-mode) > body {
+         `native-mode` 必须挂在 <body>：header/footer 是 body 的子元素、不在 main 内，
+         只给 main 加类会漏掉 body 的 16px 内边距和空 header（面板四周的「缝隙」）。
+         高度链 html → body → main#body 逐级 100%，iframe 直接铺满 main。 */
+      html:has(> body.native-mode),
+      html:has(> body.native-mode) > body {
         height: 100%;
       }
-      #body.native-mode {
-        --panel-bar-h: 28px;
-        position: relative;
-        height: 100%;
+      body.native-mode {
         padding: 0;
         overflow: hidden;
+        scrollbar-gutter: auto;
       }
-      #body.native-mode header {
-        height: var(--panel-bar-h);
-        margin-bottom: 0;
-        padding: 5px 10px;
-      }
-      #body.native-mode footer {
+      body.native-mode > header,
+      body.native-mode > footer {
         display: none;
       }
-      #body.native-mode iframe {
-        width: 100%;
-        height: calc(100% - var(--panel-bar-h));
-        border: none;
-        border-radius: 0;
+      body.native-mode > #body {
+        height: 100%;
+        padding: 0;
+      }
+      body.native-mode > #body > iframe {
         display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 0;
       }
       footer {
         margin-top: 12px;
