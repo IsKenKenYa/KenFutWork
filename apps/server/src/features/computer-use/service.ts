@@ -372,6 +372,7 @@ export function createComputerUseService(options: {
         maxOutputBytes:
           governance().processMaxOutputBytes ??
           AGENT_GOVERNANCE_DEFAULTS.processMaxOutputBytes,
+        screenshotMaxBytes: governance().screenshotMaxBytes,
         inputDelayMs:
           governance().inputDelayMs ??
           AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,

@@ -579,7 +579,7 @@ Windows Helper 可以复用同一套 JSON-RPC 协议：
 - 协议新增 `input.click`、`input.type`、`input.key`、`input.scroll`、`input.drag`、`clipboard.read`、`clipboard.write`；按钮、按键、修饰键、滚动单位、拖拽时长均有范围校验。
 - 工具面的 `keys` 数组按一个组合键解释（`["command","a"]`、`["⌘","f"]`、`["ctrl","shift","s"]`），支持 command/cmd/meta/ctrl/control/alt/option 及 ⌘⌥⌃⇧ 别名；Helper 的 ANSI 虚拟键表覆盖字母、数字与常用标点，不再只支持功能键。
 - `MacOSInputController`：CGEvent 注入鼠标与键盘，输入前激活目标应用；无辅助功能授权时在动作发出前失败关闭；剪贴板使用 `NSPasteboard`。
-- `executor-helper.ts` 实现 `ComputerUseExecutor`：应用/窗口解析、AX 观察、截图、元素/坐标点击、文本输入、滚动、拖拽、按键、聚焦、剪贴板读写；元素坐标由最近一次观察树解析，坐标动作必须绑定当前 frameId。
+- `executor-helper.ts` 实现 `ComputerUseExecutor`：应用/窗口解析、AX 观察、截图、元素/坐标点击、文本输入、滚动、拖拽、按键、聚焦、剪贴板读写；元素坐标由最近一次观察树解析，坐标动作必须绑定当前 frameId。截图上限使用 `CuOperationContext.screenshotMaxBytes`，禁止复用进程输出预算。
 - 工具面新增 `clipboard_read`（只读）与 `clipboard_write`（计入动作预算并走审批），其余原生能力沿用既有 click/type/scroll/drag/key/focus 工具。
 - macOS 插件的原生执行器改为 `macos-helper`，不再由 Node 进程持有 TCC；Helper 缺失或启动失败时工具显式不可用，不回退 A 档。
 - 验证：`RUN_CUA_HELPER_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/computer-use/helper-manager.integration.test.ts`，真实 Helper 启动/状态/重启/应用/窗口/观察路径通过。

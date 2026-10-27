@@ -101,6 +101,8 @@ export interface CuOperationContext {
   timeoutMs?: number | undefined;
   treeLimits?: CuTreeLimits | undefined;
   maxOutputBytes?: number | undefined;
+  /** 截图内联预算（字节）；截图 action 必须用它，不能复用进程输出预算。 */
+  screenshotMaxBytes?: number | undefined;
   inputDelayMs?: number | undefined;
   raster?: CuRaster | undefined;
 }

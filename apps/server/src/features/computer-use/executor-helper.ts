@@ -339,9 +339,9 @@ export function createHelperExecutor(options: {
         const shot = await options.manager.screenshot({
           pid: target.pid,
           windowId: target.window.windowId,
-          ...(context?.maxOutputBytes === undefined
+          ...(context?.screenshotMaxBytes === undefined
             ? {}
-            : { maxBytes: context.maxOutputBytes }),
+            : { maxBytes: context.screenshotMaxBytes }),
         });
         const raster: CuRaster = {
           app: {

@@ -1,6 +1,7 @@
 import { access, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { expect, it } from "vitest";
 import { createHelperExecutor } from "./executor-helper.js";
 import { HelperRpcError } from "./helper-client.js";
@@ -9,6 +10,7 @@ import {
   createHelperPermissionRpc,
   createHelperRestartRpc,
 } from "./helper-permission-rpc.js";
+import { createComputerUseService } from "./service.js";
 
 const enabled =
   process.platform === "darwin" &&
@@ -78,6 +80,44 @@ it.skipIf(!enabled)(
         const rows = await executor.listWindows({ pid: finder.pid });
         expect(rows.every((row) => typeof row.windowId === "number")).toBe(
           true,
+        );
+        const raster = await executor.capture(
+          { pid: finder.pid },
+          {
+            signal: AbortSignal.timeout(10_000),
+            maxOutputBytes: 67_108_864,
+          },
+        );
+        expect(raster.base64.length).toBeGreaterThan(0);
+        expect(raster.width).toBeGreaterThan(0);
+
+        const service = createComputerUseService({
+          executor,
+          governance: () => ({
+            actionTimeoutMs:
+              AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs,
+            observeMaxBytes:
+              AGENT_GOVERNANCE_DEFAULTS.computerUseObserveMaxBytes,
+            screenshotMaxBytes: 262_144,
+            maxActionsPerRun:
+              AGENT_GOVERNANCE_DEFAULTS.computerUseMaxActionsPerRun,
+            sessionMaxMs: AGENT_GOVERNANCE_DEFAULTS.computerUseSessionMaxMs,
+            axMaxDepth: AGENT_GOVERNANCE_DEFAULTS.computerUseAxMaxDepth,
+            axMaxChildren: AGENT_GOVERNANCE_DEFAULTS.computerUseAxMaxChildren,
+            axTitleMaxChars:
+              AGENT_GOVERNANCE_DEFAULTS.computerUseAxTitleMaxChars,
+            axValueMaxChars:
+              AGENT_GOVERNANCE_DEFAULTS.computerUseAxValueMaxChars,
+            axMaxActions: AGENT_GOVERNANCE_DEFAULTS.computerUseAxMaxActions,
+            inputDelayMs: AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs,
+            processMaxOutputBytes:
+              AGENT_GOVERNANCE_DEFAULTS.processMaxOutputBytes,
+          }),
+        });
+        const screenshot = await service.screenshot({ pid: finder.pid });
+        expect(screenshot.content[0]).toMatchObject({ type: "text" });
+        expect((screenshot.content[0] as { text: string }).text).toContain(
+          "已截取",
         );
         try {
           const observation = await executor.observe({ pid: finder.pid });
