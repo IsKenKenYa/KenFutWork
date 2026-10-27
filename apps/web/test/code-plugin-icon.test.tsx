@@ -181,3 +181,20 @@ it("关闭宿主后迟到的资源不能创建或挂入图片引用", async () =
   expect(create).not.toHaveBeenCalled();
   expect(container.querySelector("img")).toBeNull();
 });
+
+it("无图标的插件按显示名首字出字母头像，不再清一色 Blocks", () => {
+  client = new CodeHttpChannelClient({ apiBase: "http://localhost:3001" });
+  const { container } = render(
+    <PlatformProvider platform={createCodePlatform(client)}>
+      <PluginIcon pluginId="cad" label="CAD" className="size-16" iconClassName="size-6" />
+      <PluginIcon pluginId="mihome" label="米家" className="size-8" iconClassName="size-4" />
+      <PluginIcon pluginId="noop" />
+    </PlatformProvider>,
+  );
+  const glyphs = [...container.querySelectorAll("svg text")].map(
+    (node) => node.textContent,
+  );
+  expect(glyphs).toEqual(["C", "米"]);
+  // 没有 label 时保持原兜底图标（Blocks），不猜名字。
+  expect(container.querySelectorAll("svg.lucide-blocks")).toHaveLength(1);
+});

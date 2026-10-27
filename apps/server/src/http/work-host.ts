@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import {
   applicationErrorResponseSchema,
@@ -191,8 +191,25 @@ export async function registerWorkHostRoutes(
           ? "public, max-age=31536000, immutable"
           : "no-cache",
       );
+    if (ext === ".html")
+      return reply.send(injectEditorLocaleShim(readFileSync(filePath, "utf8")));
     return reply.send(createReadStream(filePath));
   });
+}
+
+/**
+ * 上游编辑器（ArtCraft 系列）的 web 包只内嵌拉丁/emoji 字形，**没有 CJK 字体**，
+ * 却按 `navigator.language` 选中中文文案——界面于是整片方框（实测：同机 canvas 用
+ * 系统字体画中文正常，编辑器自己是 WebGPU 自绘，不读浏览器字体，宿主注入 CSS 无效）。
+ * 托管时把语言钉到 en-US：落到它自带字形能渲染的那套文案，比中文方框可读。
+ */
+const EDITOR_LOCALE_SHIM = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "en-US";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["en-US","en"];}});}catch(error){}})();</script>`;
+
+export function injectEditorLocaleShim(html: string): string {
+  const head = /<head[^>]*>/iu.exec(html);
+  if (!head) return EDITOR_LOCALE_SHIM + html;
+  const at = head.index + head[0].length;
+  return html.slice(0, at) + EDITOR_LOCALE_SHIM + html.slice(at);
 }
 
 /**

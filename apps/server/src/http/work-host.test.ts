@@ -300,7 +300,9 @@ describe("work 宿主路由", () => {
     expect(html.statusCode).toBe(200);
     expect(html.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(html.headers["x-content-type-options"]).toBe("nosniff");
-    expect(html.body).toBe("<html>ok</html>");
+    // HTML 注入语言 shim（上游自有字形只有拉丁/emoji，中文会变方框）；其余资产原样流式。
+    expect(html.body).toContain('"en-US"');
+    expect(html.body).toContain("<html>ok</html>");
 
     const wasm = await app.inject({
       method: "get",
@@ -323,7 +325,7 @@ describe("work 宿主路由", () => {
       path: "/api/work/host/editors/gridcraft/some/route",
     });
     expect(fallback.statusCode).toBe(200);
-    expect(fallback.body).toBe("<html>ok</html>");
+    expect(fallback.body).toContain("<html>ok</html>");
 
     const dot = await app.inject({
       method: "get",
