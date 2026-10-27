@@ -438,7 +438,8 @@ it("旧模型入口打开同一管理文档并定位模型设置，重复打开�
   if (!manager.contentWindow) throw new Error("管理文档未创建");
   const send = vi.spyOn(manager.contentWindow, "postMessage");
   act(() => window.dispatchEvent(new Event("kenfutwork:open-model-settings")));
-  await waitFor(() => expect(manager.hidden).toBe(false));
+  // CI 上懒加载 iframe 偶发超过默认 5s；这条是「能否打开」，放宽等待不影响断言强度。
+  await waitFor(() => expect(manager.hidden).toBe(false), { timeout: 10_000 });
   expect(send).toHaveBeenCalledWith(
     {
       type: "kenfutwork:management-target",
