@@ -85,6 +85,46 @@ if (build.includes(wasmOnly)) {
   console.log(`[zh] 已让 wasm 读取简体中文 manifest：${buildPath}`);
 }
 
+// 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
+const ZERO_PATCHES = {
+  cadcraft: [
+    [
+      "crates/fonts/build.rs",
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic;',
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || scripts.split(',
+      ').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
+    ],
+  ],
+  filmcraft: [
+    [
+      "crates/text/build.rs",
+      'if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {',
+      'if wasm && !((*family == "BIZ UDPGothic" && *style == "Regular") || scripts.split(',
+      ').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
+    ],
+  ],
+  vectorcraft: [
+    [
+      "crates/text/build.rs",
+      "if wasm && !(*family == WEB_FONT.0 && *style == WEB_FONT.1) {",
+      "if wasm && !((*family == WEB_FONT.0 && *style == WEB_FONT.1) || scripts.split(",
+      ').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
+    ],
+  ],
+};
+for (const [file, from, to] of ZERO_PATCHES[app] ?? []) {
+  const path = join(source, file);
+  const text = read(path);
+  if (!text.includes(from)) {
+    if (text.includes(to)) continue;
+    throw new Error(
+      `${app}: 补丁锚点不存在（${file}）——上游已改结构，需人工核对`,
+    );
+  }
+  writeFileSync(path, text.replace(from, to));
+  console.log(`[zh] 已放行 CJK：${path}`);
+}
+
 // 3) trunk 构建
 const cwd = join(source, crate);
 if (!existsSync(cwd)) throw new Error(`找不到 web 构建目录：${cwd}`);

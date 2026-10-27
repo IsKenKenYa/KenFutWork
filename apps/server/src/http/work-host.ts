@@ -218,15 +218,24 @@ const EDITOR_LOCALE_SHIM = `<script>(function(){try{Object.defineProperty(Naviga
  * 上游 web 包自带完整中文字形、可跟随浏览器语言的编辑器。
  * 2026-10-27 逐个实测（`navigator.language=zh-CN` 截图）：
  * - `lightcraft` 自带 `lightcraft_zh_hans.otf`，中文完整；
- * - `gridcraft` / `wordcraft` 用的是本仓自建的中文包（`scripts/build-work-editor-zh.mjs`：
- *   放开上游 web 的 CJK 白名单 + 内嵌 craft-fonts 中文字形；WordCraft 另需 `CRAFT_I18N_DIR`
- *   才有中文文案），实测菜单/面板整片中文；
- * - `vectorcraft` 只带泰文/阿拉伯文/格鲁吉亚文回退字体，中文只有零星命中，仍钉英文；
+ * - `gridcraft` / `wordcraft` / `cadcraft` / `filmcraft` 用的是本仓自建的中文包
+ *   （`scripts/build-work-editor-zh.mjs`：放开上游 web 的 CJK 白名单 + 内嵌 craft-fonts
+ *   中文字形；WordCraft 另需 `CRAFT_I18N_DIR` 才有中文文案），实测菜单/面板整片中文；
+ * - `vectorcraft` / `photocraft` 也换成了自建中文包（VectorCraft 走运行时 `fonts/<sha16>/`，
+ *   PhotoCraft 由宿主在站点 `fonts/manifest.txt` 提供字体），实测整片中文；
  * - 其余上游 web 构建无中文字形或无中文文案，必须继续钉英文。
  *
  * 注意：这些编辑器的官方安装包仍是**英文版**；重新安装会覆盖自建包，装完需重跑构建脚本。
  */
-const EDITOR_NATIVE_CJK = new Set(["lightcraft", "gridcraft", "wordcraft"]);
+const EDITOR_NATIVE_CJK = new Set([
+  "lightcraft",
+  "gridcraft",
+  "wordcraft",
+  "cadcraft",
+  "filmcraft",
+  "vectorcraft",
+  "photocraft",
+]);
 
 export function injectEditorLocaleShim(
   html: string,
