@@ -51,7 +51,14 @@ const INSTALL_POLL_MS = 2000;
  * 编辑器面 = 静态托管的 WASM 站点 iframe。切换只由显式点击驱动
  * （workSurfaceState），主区不被会话或后台事件顶掉。
  */
-export function HostWorkSurface({ active = true }: { active?: boolean }) {
+export function HostWorkSurface({
+  active = true,
+  onBack,
+}: {
+  active?: boolean;
+  /** 返回会话主区（Work 模式默认主区是共享会话，引擎页是显式打开的视图）。 */
+  onBack?: () => void;
+}) {
   const view = useSyncExternalStore(
     subscribeWorkSurface,
     getWorkSurfaceView,
@@ -107,6 +114,7 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
       loading={loading}
       loadError={loadError}
       onRefresh={() => void refresh()}
+      {...(onBack ? { onBack } : {})}
       onOpen={openWorkEditor}
       onInstall={async (editorId) => {
         try {
@@ -130,6 +138,7 @@ function EditorsInfoView({
   loading,
   loadError,
   onRefresh,
+  onBack,
   onOpen,
   onInstall,
 }: {
@@ -139,6 +148,7 @@ function EditorsInfoView({
   loading: boolean;
   loadError: string | null;
   onRefresh: () => void;
+  onBack?: () => void;
   onOpen: (editorId: string) => void;
   onInstall: (editorId: string) => Promise<void>;
 }) {
@@ -151,6 +161,17 @@ function EditorsInfoView({
     <div className="h-full min-h-0 overflow-y-auto bg-background">
       <div className="flex w-full flex-col px-6 py-5">
         <header className="flex items-center gap-3">
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="返回会话"
+              title="返回会话"
+              className="-ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          ) : null}
           <h1 className="text-lg font-semibold">Work 引擎</h1>
           <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-foreground-subtle">
             {loading && !status

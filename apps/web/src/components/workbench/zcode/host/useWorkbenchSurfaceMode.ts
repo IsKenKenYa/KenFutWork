@@ -8,18 +8,34 @@ const EMPTY_SNAPSHOT = {
   availableModes: [] as readonly never[],
 };
 const NOOP_SUBSCRIBE = () => () => {};
+/** 视图归属：design/flow/work 各自独占；chat/automations/plugin-store 属于 code 家族。 */
 const viewMode = (target: WorkspaceMainView) =>
   target === "design" || target === "flow" || target === "work"
     ? target
     : "code";
+
+/** 切到某模式时缺省落到的主区视图（work 与 code 共用同一会话主区）。 */
+const defaultView = (mode: ReturnType<typeof viewMode>): WorkspaceMainView =>
+  mode === "design" || mode === "flow" ? mode : "chat";
+
+/**
+ * 视图是否属于当前模式：code 家族的共享页面（会话/自动化/插件市场）在 code 与
+ * work 两个模式下都成立——work 的主区就是共享会话，引擎页只是它的一个显式视图。
+ */
+const viewBelongs = (
+  target: WorkspaceMainView,
+  mode: ReturnType<typeof viewMode>,
+) =>
+  viewMode(target) === mode ||
+  (viewMode(target) === "code" && (mode === "code" || mode === "work"));
 
 /**
  * 工作台模式 ↔ 主区视图的同步（融合缝）。
  *
  * 单向数据流：模式（导航存储，pills 点击 / 父窗口推送改写）→ 主区视图；
  * 视图变化后把模式回显进存储（pills 的 active 态）。两侧 effect 都做相等短路，
- * 不会形成回环。非 design/flow 视图一律回写 code——automations/plugin-store
- * 与对话视图都属于 Code 模式的壳内页面。
+ * 不会形成回环。design/flow 视图各自独占一个模式；chat/automations/plugin-store
+ * 是 code 与 work 共用的页面，出现时不改写模式。
  */
 export function useWorkbenchSurfaceMode({
   workspaceMainView,
@@ -45,13 +61,11 @@ export function useWorkbenchSurfaceMode({
     requestVersion.current++;
     const requested = requestedView.current;
     const target =
-      requested && viewMode(requested) === snapshot.mode
+      requested && viewBelongs(requested, snapshot.mode)
         ? requested
-        : snapshot.mode === "code"
-          ? viewMode(view.current) === "code"
-            ? view.current
-            : "chat"
-          : snapshot.mode;
+        : viewBelongs(view.current, snapshot.mode)
+          ? view.current
+          : defaultView(snapshot.mode);
     requestedView.current = null;
     expectedView.current = target === view.current ? null : target;
     previousView.current = target;
@@ -69,11 +83,12 @@ export function useWorkbenchSurfaceMode({
     }
     if (previousView.current === workspaceMainView) return;
     previousView.current = workspaceMainView;
+    // 共享页面（会话/自动化/插件市场）在 code 与 work 下都成立，不改写模式。
+    if (viewBelongs(workspaceMainView, snapshot.mode)) return;
     const mode = viewMode(workspaceMainView);
-    if (mode === snapshot.mode) return;
     const version = ++requestVersion.current;
     requestedView.current = workspaceMainView;
-    const retainedView = snapshot.mode === "code" ? "chat" : snapshot.mode;
+    const retainedView = defaultView(snapshot.mode);
     expectedView.current = retainedView;
     setWorkspaceMainView(retainedView);
     if (!snapshot.availableModes.includes(mode)) {
