@@ -88,7 +88,7 @@ interface ComputerUseExecutor {
 | --- | --- | --- | --- | --- |
 | A-1 | `@computer-use/nut-js`(截屏 82ms 实测 + CGEvent 注入 + node-mac-permissions 引导) | 无(降级视觉) | 服务进程;辅助功能+屏幕录制两项授权 | P1 |
 | A-2 | + JXA 桥(`osascript -l JavaScript` 读 System Events AX 树,零原生代码) | 有(秒级,够用) | 同上(同一 TCC 主体) | P1(与 A-1 同 PR 或紧随) |
-| B | 独立 helper 进程 + unix socket broker(换行 JSON RPC + token + 只读分级,照 ZCode 契约形状);AX 读取/截屏/注入/枚举全进 helper | 有(原生性能) | 独立可验签身份;拖拽授权 + inode/ctime/size 指纹 TOCTOU 门 | P2/P3(Windows 可参照其开源 host 三件套) |
+| B | 独立 Swift Helper.app + unix socket JSON-RPC;AX 读取/截屏/注入/枚举全进 helper | 有(原生性能) | 独立可验签身份;TCC 主体是 Helper;授权后只重启 Helper | 本期目标(2026-10-26 用户确认);实施规格见《ComputerUse原生Helper设计》 |
 
 **A→B 不换协议**:工具面、观察协议、事件形状全不变,executor 是纯内部缝——这正是 UI-TARS Operator 抽象(《07》§2.2)的教训。
 
@@ -131,7 +131,7 @@ interface ComputerUseExecutor {
 | **P0 协议点亮** | shared 契约(display 投影)→ `features/computer-use/` 服务缝 + 工具组(6 个 ★)注册 ctx.tools(scope code)→ 权限档/automation deny 接线 → 治理键。executor 未装配时全部显式 unavailable | 真机:工具行/操作组/权限行点亮;code preset 才可见;design run 与子代理不可见;typecheck/test 过 |
 | **P1 macOS A 档** | nut-js executor(截屏+注入+黑帧检测+权限引导)+ JXA AX 树 + lease/kill switch/actionSent + 内置技能注入 | 真机:计算器全回路(观察树→索引点击→delta 再观察→窗口截图);无 TCC 时工具报 permission_denied 并给出引导;审批档逐动作生效 |
 | **P2 观察与治理深化** | delta 观察树、元素索引寻址强化、set_value/select_text/perform_action 等语义动作、剪贴板工具、截图预算全链 | 大树应用(如浏览器/IDE)观察 ≤32KB 裁剪正确;错误码文案全点亮 |
-| **P3 目标态与多平台** | B 档 helper + broker(独立签名身份、拖拽授权、TOCTOU 指纹);Windows(UIA+SendInput);anthropic 协议实例叠挂 `tools.computer_20251124` 复用 executor;`deliveryKind: web-remote-replayable`(多端回放) | A/B 档同一工具面回归全绿;Windows 冒烟;DMG 打包线签验通过 |
+| **P3 多平台** | Windows(UIA+SendInput);anthropic 协议实例叠挂 `tools.computer_20251124` 复用 executor;`deliveryKind: web-remote-replayable`(多端回放) | 同一工具面回归全绿;Windows 冒烟;DMG 打包线签验通过 |
 
 每阶段一个 PR(行为不变→能力递增),验证命令:`pnpm --filter @kenfutwork/server test` + `pnpm typecheck` + 真机走查;契约改动全量 `pnpm test`。
 
@@ -140,7 +140,7 @@ interface ComputerUseExecutor {
 | 项 | 问题 | 本设计推荐 |
 | --- | --- | --- |
 | CU-A | 交付形态 | 内嵌能力缝 + `mcp__computer-use__` 命名(点亮已照搬 UI);第三方 CUA server 未来走 `features/mcp` 用户自配缝 |
-| CU-B | macOS 执行层 | A 档(nut-js+JXA)先行,B 档 helper 为目标态;**协议按 B 档形状定死** |
+| CU-B | macOS 执行层 | **2026-10-26 用户确认直接采用 B 档原生 Swift Helper**；A 档只保留源码与测试兜底。实施规格见《ComputerUse原生Helper设计》，协议按 Helper 的 JSON-RPC 形状确定 |
 | CU-C | 首个观察通路 | P0 协议先行;P1 落 JXA 文本树(比纯视觉多一档,零原生代码);raster 同版可用 |
 | CU-D | 审批粒度 | 逐 mutating 动作 ask 起步;P2 引入会话级授权 + lease 内免逐次(对齐 ZCode 体验) |
 | CU-E | anthropic 原生通道 | P3 叠挂,复用同一 executor;不作基座 |
