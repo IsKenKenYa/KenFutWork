@@ -222,6 +222,18 @@ function main() {
     "apps/server/src/features/computer-use/build-helper.mjs",
     join(RELEASE, "computer-use"),
   ]);
+  const packageVersion = JSON.parse(
+    readFileSync(join(ROOT, "package.json"), "utf8"),
+  ).version;
+  run("构建原生 Computer Use Helper.app", process.execPath, [
+    "apps/computer-use-helper/scripts/build-helper.mjs",
+    "--out",
+    join(RELEASE, "cua-helper"),
+    "--configuration",
+    "production",
+    "--version",
+    packageVersion,
+  ]);
 
   // 2) esbuild 打包服务端为单文件 CJS（external 口径与 Windows 一致；多一个
   //    KFW_PACKAGED_CJS define：entry-root 据此把资源根定位到 server.cjs 的父目录）

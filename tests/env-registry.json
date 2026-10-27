@@ -259,6 +259,17 @@
       "status": "active",
       "note": "桌面/服务端数据目录；壳 spawn 时注入子进程"
     },
+    "KENFUTWORK_CUA_HELPER_PATH": {
+      "surface": "server",
+      "readers": [
+        "apps/desktop/scripts/dev-macos.mjs",
+        "apps/server/src/features/computer-use/helper-location.test.ts",
+        "apps/server/src/features/computer-use/helper-location.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "桌面壳注入的 Computer Use Helper.app 绝对路径；未设置时按数据目录/随包目录解析"
+    },
     "KENFUTWORK_BLOB_DIR": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],
