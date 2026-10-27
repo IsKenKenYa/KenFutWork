@@ -32,8 +32,8 @@ function WorkbenchModeSurface() {
   // flow 与 work 各自独立门控（入口纪律：插件未装 / 适配层未通不出现对应入口）。
   const availableModes = useMemo<WorkbenchModes>(() => {
     const modes: WorkbenchModes = ["code", "design"];
-    if (flowEntry?.available) modes.push("flow");
     if (workEntry?.available) modes.push("work");
+    if (flowEntry?.available) modes.push("flow");
     return modes;
   }, [flowEntry?.available, workEntry?.available]);
   // 深链解析：探针未落定前不推对应模式（落定后可用才推，不可用回落——

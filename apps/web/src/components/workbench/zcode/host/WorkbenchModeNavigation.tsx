@@ -3,13 +3,34 @@ import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { Briefcase, Code2, Palette, PanelLeftOpen, Workflow } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { ProjectDirectoryRecovery } from "./ProjectDirectoryRecovery.js";
 
 // 与 AboutSection 同一边界：Code 宿主的 Vite PNG 导入在运行时为 URL 字符串。
 const logoSrc = appLogoUrl as unknown as string;
 
-/** 从CanvasSidebar原横排及收起按钮提取，Code／Design／Flow共用展示。 */
+/** 展示顺序（用户口径）：Code → Design → Work → Flow，与可用性无关，缺档自动跳过。 */
+const MODE_ORDER: readonly HostWorkbenchMode[] = [
+  "code",
+  "design",
+  "work",
+  "flow",
+];
+const MODE_LABELS: Record<HostWorkbenchMode, string> = {
+  code: "Code",
+  design: "Design",
+  work: "Work",
+  flow: "Flow",
+};
+// 收起态只有 48px 宽，标签放不下，仍用图标；展开态按用户口径只留文字。
+const MODE_ICONS: Record<HostWorkbenchMode, ReactNode> = {
+  code: <Code2 className="h-4 w-4 shrink-0" />,
+  design: <Palette className="h-4 w-4 shrink-0" />,
+  work: <Briefcase className="h-4 w-4 shrink-0" />,
+  flow: <Workflow className="h-4 w-4 shrink-0" />,
+};
+
+/** 从CanvasSidebar原横排及收起按钮提取，Code／Design／Work／Flow共用展示。 */
 export function WorkbenchModeNavigation({
   mode,
   availableModes,
@@ -21,27 +42,9 @@ export function WorkbenchModeNavigation({
   onModeChange: (mode: HostWorkbenchMode) => void;
   collapsed?: boolean;
 }) {
-  const modeItems = availableModes.map((id) => ({
-    id,
-    label:
-      id === "code"
-        ? "Code"
-        : id === "design"
-          ? "Design"
-          : id === "flow"
-            ? "Flow"
-            : "Work",
-    icon:
-      id === "code" ? (
-        <Code2 className="h-4 w-4 shrink-0" />
-      ) : id === "design" ? (
-        <Palette className="h-4 w-4 shrink-0" />
-      ) : id === "flow" ? (
-        <Workflow className="h-4 w-4 shrink-0" />
-      ) : (
-        <Briefcase className="h-4 w-4 shrink-0" />
-      ),
-  }));
+  const modeItems = MODE_ORDER.filter((id) => availableModes.includes(id)).map(
+    (id) => ({ id, label: MODE_LABELS[id], icon: MODE_ICONS[id] }),
+  );
   if (collapsed)
     return (
       // 收起态与展开态是同一个控件：保留 radiogroup/radio 语义，
@@ -79,7 +82,7 @@ export function WorkbenchModeNavigation({
         className="flex items-stretch border-y border-foreground/20"
       >
         {modeItems.map((item) => (
-          // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持图标和布局
+          // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持文字分档的布局
           <button
             key={item.id}
             type="button"
@@ -87,9 +90,8 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center gap-1 py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
           >
-            {item.icon}
             <span className="truncate">{item.label}</span>
           </button>
         ))}

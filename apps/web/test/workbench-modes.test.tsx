@@ -318,7 +318,7 @@ it("状态探针慢于插件探针：?mode=flow 不被中间态改写成 design�
   );
 });
 
-it("深链flow但宿主适配层未配齐时回落design（不放空壳）", async () => {
+it("深链flow但宿主适配层未配齐时仍进flow（入口只看插件安装态，主区报原因）", async () => {
   installFixture(true, false);
   navigation.query = "mode=flow";
   const { send } = await renderCodeFrame();
@@ -326,8 +326,8 @@ it("深链flow但宿主适配层未配齐时回落design（不放空壳）", asy
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "kenfutwork:workbench-navigation",
-        availableModes: ["code", "design"],
-        mode: "design",
+        availableModes: ["code", "design", "flow"],
+        mode: "flow",
       }),
       window.location.origin,
     );

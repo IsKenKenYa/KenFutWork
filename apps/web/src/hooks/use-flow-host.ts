@@ -19,9 +19,8 @@ import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
  * 不猜「也许能用」）。
  *
  * **发布纪律（真机踩过）**：两路探针必须**都落定后一次性发布**，中途不给
- * 「插件已答、状态未答」的中间态——那个中间态会被 `resolveFlowEntry` 判成
- * available=false，父页的深链兜底（workbench.tsx 的 mode 解析）会据此把
- * `?mode=flow` 回落成 design，Flow 模式一秒后被弹回 Design 画布。
+ * 「插件已答、状态未答」的中间态——那个中间态会按「适配层未就绪」渲染，
+ * 主区先闪一条原因再换成画布/入口，深链 `?mode=flow` 也会被弹一下。
  */
 export function useFlowHostEntry(enabled = true): {
   entry: FlowEntry | null;
