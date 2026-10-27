@@ -215,11 +215,14 @@ export async function registerWorkHostRoutes(
 const EDITOR_LOCALE_SHIM = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "en-US";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["en-US","en"];}});}catch(error){}})();</script>`;
 
 /**
- * 上游 web 包自带中文字形、可跟随浏览器语言的编辑器。
- * 2026-10-27 逐个实测（`navigator.language=zh-CN` 截图）：只有这两个中文正常；
- * GridCraft/WordCraft/PdfCraft 等切中文整片方框，必须继续钉英文。
+ * 上游 web 包自带完整中文字形、可跟随浏览器语言的编辑器。
+ * 2026-10-27 逐个实测（`navigator.language=zh-CN` 截图）：
+ * - `lightcraft` 带 `lightcraft_zh_hans.otf`，菜单/面板/提示整片中文正常；
+ * - `vectorcraft` 只带泰文/阿拉伯文/格鲁吉亚文回退字体，中文只有少量字命中，
+ *   菜单与面板仍是方框——不能算支持；
+ * - GridCraft/WordCraft/PdfCraft 等切中文整片方框，必须继续钉英文。
  */
-const EDITOR_NATIVE_CJK = new Set(["lightcraft", "vectorcraft"]);
+const EDITOR_NATIVE_CJK = new Set(["lightcraft"]);
 
 export function injectEditorLocaleShim(
   html: string,
