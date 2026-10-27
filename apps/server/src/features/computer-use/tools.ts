@@ -63,6 +63,12 @@ export interface CuToolDeps {
       runId: string,
       context?: CuRequestContext,
     ): Promise<CuToolResult>;
+    readClipboard(context?: CuRequestContext): Promise<CuToolResult>;
+    writeClipboard(
+      text: string,
+      runId: string,
+      context?: CuRequestContext,
+    ): Promise<CuToolResult>;
     stop(runId: string): Promise<CuToolResult>;
     listDisplays?(context?: CuRequestContext): Promise<CuToolResult>;
     perform?(
@@ -365,6 +371,34 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
             args.app,
             String(args.text ?? ""),
             args.target,
+            runIdOf(execCtx),
+            execCtx,
+          ),
+        ),
+    },
+    {
+      name: `${CU_TOOL_PREFIX}clipboard_read`,
+      access: "read",
+      description:
+        "读取系统剪贴板文本。内容可能包含用户隐私，只在任务确实需要时调用。",
+      scope: "code",
+      parameters: { type: "object", properties: {} },
+      execute: async (_args, execCtx) =>
+        guarded(deps, () => deps.service.readClipboard(execCtx)),
+    },
+    {
+      name: `${CU_TOOL_PREFIX}clipboard_write`,
+      description: "把文本写入系统剪贴板，覆盖用户原有剪贴板内容。",
+      scope: "code",
+      parameters: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+      },
+      execute: async (args, execCtx) =>
+        guarded(deps, () =>
+          deps.service.writeClipboard(
+            String(args.text ?? ""),
             runIdOf(execCtx),
             execCtx,
           ),

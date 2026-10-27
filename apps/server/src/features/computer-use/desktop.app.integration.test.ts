@@ -225,10 +225,7 @@ it.skipIf(!enabled)(
       // 只触发源码watcher，文件内容不变，应用也不重建。
       const now = new Date();
       await utimes(
-        join(
-          repo,
-          "apps/server/src/features/computer-use/permission-status-rpc.ts",
-        ),
+        join(repo, "apps/server/src/features/computer-use/service.ts"),
         now,
         now,
       );

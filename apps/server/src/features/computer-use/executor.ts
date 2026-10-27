@@ -149,6 +149,11 @@ export interface ComputerUseExecutor {
     target?: CuTarget,
     context?: CuOperationContext,
   ): Promise<CuActionResult>;
+  readClipboard?(context?: CuOperationContext): Promise<{ text: string }>;
+  writeClipboard?(
+    text: string,
+    context?: CuOperationContext,
+  ): Promise<{ written: boolean }>;
   accessStatus(context?: CuOperationContext): Promise<CuAccessStatus>;
   listDisplays?(context: CuOperationContext): Promise<CuDisplay[]>;
   perform?(

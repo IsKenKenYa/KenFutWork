@@ -176,6 +176,12 @@ export function createComputerUseService(options: {
     runId: string,
     context?: CuRequestContext,
   ): Promise<CuToolResult>;
+  readClipboard(context?: CuRequestContext): Promise<CuToolResult>;
+  writeClipboard(
+    text: string,
+    runId: string,
+    context?: CuRequestContext,
+  ): Promise<CuToolResult>;
   stop(runId: string): Promise<CuToolResult>;
   perform(
     appRef: unknown,
@@ -847,6 +853,57 @@ export function createComputerUseService(options: {
         return okResult(`${result.detail}（actionSent=${result.actionSent}）`, {
           actionSent: result.actionSent,
           ...(latest?.binding ? { app: latest.app } : {}),
+        });
+      } catch (error) {
+        return failureOf(error);
+      } finally {
+        acting = false;
+      }
+    },
+
+    async readClipboard(context?: CuRequestContext) {
+      const unavailable = ensureAvailable();
+      if (unavailable) return unavailable;
+      if (!executor.readClipboard)
+        return errorResult("unavailable", "此后端不提供剪贴板读取");
+      try {
+        const result = await withTimeout(
+          "clipboard_read",
+          (operation) => executor.readClipboard!(operation),
+          context,
+        );
+        return okResult(result.text, { text: result.text });
+      } catch (error) {
+        return failureOf(error);
+      }
+    },
+
+    async writeClipboard(
+      text: string,
+      runId: string,
+      context?: CuRequestContext,
+    ) {
+      const unavailable = ensureAvailable();
+      if (unavailable) return unavailable;
+      if (!executor.writeClipboard)
+        return errorResult("unavailable", "此后端不提供剪贴板写入");
+      if (text.length > 1_000_000)
+        return errorResult("invalid_argument", "剪贴板文本超过允许长度");
+      if (acting)
+        return errorResult("controller_busy", "另一个桌面动作尚未结束");
+      const governed = governAction(runId);
+      if (governed) return governed;
+      const limited = bumpActionCount(runId);
+      if (limited) return limited;
+      acting = true;
+      try {
+        const result = await withTimeout(
+          "clipboard_write",
+          (operation) => executor.writeClipboard!(text, operation),
+          { ...context, runId },
+        );
+        return okResult(result.written ? "已写入剪贴板" : "剪贴板写入失败", {
+          written: result.written,
         });
       } catch (error) {
         return failureOf(error);
