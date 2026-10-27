@@ -196,20 +196,36 @@ export async function registerWorkHostRoutes(
           : "no-cache",
       );
     if (ext === ".html")
-      return reply.send(injectEditorLocaleShim(readFileSync(filePath, "utf8")));
+      return reply.send(
+        injectEditorLocaleShim(readFileSync(filePath, "utf8"), editor.id),
+      );
     return reply.send(createReadStream(filePath));
   });
 }
 
 /**
- * 上游编辑器（ArtCraft 系列）的 web 包只内嵌拉丁/emoji 字形，**没有 CJK 字体**，
+ * 上游编辑器（ArtCraft 系列）多数 web 包只内嵌拉丁/emoji 字形、**没有 CJK 字体**，
  * 却按 `navigator.language` 选中中文文案——界面于是整片方框（实测：同机 canvas 用
  * 系统字体画中文正常，编辑器自己是 WebGPU 自绘，不读浏览器字体，宿主注入 CSS 无效）。
  * 托管时把语言钉到 en-US：落到它自带字形能渲染的那套文案，比中文方框可读。
+ *
+ * 例外是自带中文字形的编辑器（`EDITOR_NATIVE_CJK`）：它们跟随浏览器语言即可正常显示
+ * 中文，不钉英文——否则用户系统是中文也永远只能看英文界面。
  */
 const EDITOR_LOCALE_SHIM = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "en-US";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["en-US","en"];}});}catch(error){}})();</script>`;
 
-export function injectEditorLocaleShim(html: string): string {
+/**
+ * 上游 web 包自带中文字形、可跟随浏览器语言的编辑器。
+ * 2026-10-27 逐个实测（`navigator.language=zh-CN` 截图）：只有这两个中文正常；
+ * GridCraft/WordCraft/PdfCraft 等切中文整片方框，必须继续钉英文。
+ */
+const EDITOR_NATIVE_CJK = new Set(["lightcraft", "vectorcraft"]);
+
+export function injectEditorLocaleShim(
+  html: string,
+  editorId?: string,
+): string {
+  if (editorId && EDITOR_NATIVE_CJK.has(editorId)) return html;
   const head = /<head[^>]*>/iu.exec(html);
   if (!head) return EDITOR_LOCALE_SHIM + html;
   const at = head.index + head[0].length;

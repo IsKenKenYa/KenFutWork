@@ -314,6 +314,17 @@ describe("work 宿主路由", () => {
     expect(html.body).toContain('"en-US"');
     expect(html.body).toContain("<html>ok</html>");
 
+    // 自带中文字形的编辑器不钉英文（用户系统中文时应显示中文）。
+    const lightDir = join(editorsDir, "lightcraft");
+    await mkdir(lightDir, { recursive: true });
+    await writeFile(join(lightDir, "index.html"), "<html>ok</html>");
+    const light = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/lightcraft/index.html",
+    });
+    expect(light.statusCode).toBe(200);
+    expect(light.body).not.toContain('"en-US"');
+
     const wasm = await app.inject({
       method: "get",
       path: "/api/work/host/editors/gridcraft/app_bg.wasm",
