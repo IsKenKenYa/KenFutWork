@@ -1,10 +1,12 @@
+import { isCuaPermissionStatusAvailable } from "@zcode/services";
 import { Button } from "@zui/components/ui/button.js";
+import { useServices } from "@zui/hooks/useServices.js";
 import {
   SettingsGroupCard,
   SettingsRow,
 } from "@zui/settings/SettingsPageParts.js";
 import { ComputerUseSection as Original } from "@zui-original/settings/ComputerUseSection.js";
-import { type ComponentProps, useEffect, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useState } from "react";
 import {
   localCuaDesktopInvoke,
   nativeCuaFocusSubscription,
@@ -12,47 +14,58 @@ import {
 
 /** 原权限行/状态刷新/插件开关原样消费，补当前壳的真实授权主体。 */
 export function ComputerUseSection(props: ComponentProps<typeof Original>) {
+  const services = useServices();
+  const permissionService = services.cuaPermissionService;
   const [owner, setOwner] = useState<{
     appPath: string;
     displayName: string;
   }>();
   const [error, setError] = useState("");
+
+  const loadOwner = useCallback(async () => {
+    if (!permissionService) return;
+    const status = await permissionService.getStatus(
+      props.workspacePath || "__kenfutwork_instance__",
+      props.workspaceIdentity,
+    );
+    if (!isCuaPermissionStatusAvailable(status) || !status.grantOwner) return;
+    setOwner({
+      appPath: status.grantOwner,
+      displayName:
+        status.grantOwnerDisplayName ??
+        status.grantOwner
+          .split("/")
+          .at(-1)
+          ?.replace(/\.app$/u, "") ??
+        "Computer Use Helper",
+    });
+  }, [permissionService, props.workspaceIdentity, props.workspacePath]);
+
   useEffect(() => {
     let disposed = false;
     let release: (() => void) | undefined;
+    const refresh = () => {
+      if (!disposed) void loadOwner().catch((cause) => setError(String(cause)));
+    };
     const subscribe = nativeCuaFocusSubscription();
     if (subscribe)
       void subscribe((focused) => {
-        if (focused && !disposed) window.dispatchEvent(new Event("focus"));
+        if (focused && !disposed) refresh();
       })
         .then((unlisten) => {
           if (disposed) unlisten();
           else release = unlisten;
         })
-        .catch((error) => {
-          if (!disposed) setError(String(error));
+        .catch((cause) => {
+          if (!disposed) setError(String(cause));
         });
+    refresh();
     return () => {
       disposed = true;
       release?.();
     };
-  }, []);
-  useEffect(() => {
-    let disposed = false;
-    const invoke = localCuaDesktopInvoke();
-    if (invoke)
-      void invoke("cua_permission_owner")
-        .then((value) => {
-          if (!disposed)
-            setOwner(value as { appPath: string; displayName: string });
-        })
-        .catch((error) => {
-          if (!disposed) setError(String(error));
-        });
-    return () => {
-      disposed = true;
-    };
-  }, []);
+  }, [loadOwner]);
+
   return (
     <div className="space-y-4">
       {owner ? (
@@ -66,7 +79,7 @@ export function ComputerUseSection(props: ComponentProps<typeof Original>) {
                 onClick={() => {
                   void localCuaDesktopInvoke()?.("reveal_path", {
                     path: owner.appPath,
-                  }).catch((error) => setError(String(error)));
+                  }).catch((cause) => setError(String(cause)));
                 }}
               >
                 在访达中显示

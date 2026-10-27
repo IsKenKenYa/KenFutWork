@@ -120,8 +120,19 @@ export async function openCuaPermissionPane(
   }
 }
 
+export interface CuaPermissionPromptResult {
+  requested: boolean;
+  granted?: boolean;
+  reason?: string;
+}
+
+export type CuaPermissionPrompt = (
+  kind: "accessibility" | "screen_recording",
+) => Promise<CuaPermissionPromptResult>;
+
 export function createCuaPermissionOnboarding(
   invoke: NonNullable<ReturnType<typeof localCuaDesktopInvoke>>,
+  capabilities: { requestPermission?: CuaPermissionPrompt } = {},
 ) {
   const operations = new Map<string, AbortController>();
   return {
@@ -138,14 +149,12 @@ export function createCuaPermissionOnboarding(
       try {
         for (const permission of required) {
           controller.signal.throwIfAborted();
-          // 屏幕录制可以交给系统原生授权框：用户点一次「允许」即完成，不需要去设置页找开关。
-          // 命令缺失或用户拒绝时返回 false，继续走打开设置面板的老路。
-          if (permission === "screen_recording") {
-            const granted = await invoke(
-              "request_cua_screen_recording_access",
-            ).catch(() => false);
+          // 只有 Helper 自己弹权限框，TCC 才会把授权记到 Helper 上；主应用代弹无效。
+          // 弹框已通过时直接进入下一项，否则继续打开系统设置手动批准。
+          if (capabilities.requestPermission) {
+            const prompted = await capabilities.requestPermission(permission);
             controller.signal.throwIfAborted();
-            if (granted === true) continue;
+            if (prompted.requested && prompted.granted === true) continue;
           }
           const { returned } = await prepareCuaSettingsReturn(
             window,
@@ -162,12 +171,12 @@ export function createCuaPermissionOnboarding(
             ),
           ]);
         }
-        // 本后端每次查询拉起新的只读探针，没有需重启的持久Helper。
+        // Helper 由服务端管理，设置返回后必须重启新进程才能读到最新 TCC 状态。
         return {
           success: true,
           sessionId: id,
           returnedFromSettings: true,
-          restartHelperAfterReturn: false,
+          restartHelperAfterReturn: true,
         };
       } catch (error) {
         return controller.signal.aborted &&

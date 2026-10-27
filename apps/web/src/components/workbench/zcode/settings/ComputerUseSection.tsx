@@ -6,43 +6,61 @@
 //
 // Helper 权限状态走 useCuaPermissionStatus：事件驱动（进入页面 / 窗口重获焦点 / 显式 refresh）
 // 各查一次，不再定时轮询；状态存在共享缓存里，与输入框常驻入口读同一份。
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useSettings } from "@zui/hooks/useSettingService.js";
-import { resolveComputerUsePlugin } from "@zui/host/cuaSharedAdapter.js";
-import { openCuaPermissionPane } from "@zui/host/cuaPermissionPlatform.js";
-import type { CuaOsSupport, CuaPermissionKind, RemoteTarget } from "@zcode/shared";
+
+import {
+  type CuaPermissionRestartOptions,
+  isCuaPermissionStatusAvailable,
+} from "@zcode/services";
+import type {
+  CuaOsSupport,
+  CuaPermissionKind,
+  RemoteTarget,
+} from "@zcode/shared";
 import { DesktopCommandIds, isRemoteWorkspaceIdentity } from "@zcode/shared";
-import { isCuaPermissionStatusAvailable, type CuaPermissionRestartOptions } from "@zcode/services";
 import { Button } from "@zui/components/ui/button.js";
-import { toast } from "@zui/components/ui/toast.js";
 import { Switch } from "@zui/components/ui/switch.js";
+import { toast } from "@zui/components/ui/toast.js";
+import { useCuaPermissionStatus } from "@zui/hooks/useCuaPermissionStatus.js";
 import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { useServices } from "@zui/hooks/useServices.js";
+import { useSettings } from "@zui/hooks/useSettingService.js";
+import { openCuaPermissionPane } from "@zui/host/cuaPermissionPlatform.js";
+import { resolveComputerUsePlugin } from "@zui/host/cuaSharedAdapter.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import { useCuaPermissionStatus } from "@zui/hooks/useCuaPermissionStatus.js";
 import {
+  type CuaPermissionReturnRecoveryClaim,
+  captureCuaPermissionReturnRecovery,
   claimCuaPermissionReturnRecovery,
   completeCuaPermissionReturnRecovery,
-  captureCuaPermissionReturnRecovery,
   createCuaPermissionReturnRecoveryState,
   isCuaPermissionReturnRecoveryCurrent,
   markCuaPermissionOnboardingOpened,
   shouldRestartHelperAfterCuaPermissionReturn,
-  type CuaPermissionReturnRecoveryClaim,
 } from "@zui/lib/cuaPermissionAction.js";
-import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
-import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@zui/settings/SettingsPageParts.js";
-import { StatusDot, type StatusDotTone } from "@zui/settings/StatusDot.js";
-import { supportsLocalMacCuaPermissionOnboarding } from "@zui/lib/cuaPlatform.js";
-import { runAfterSuccessfulPluginEnabledChange } from "@zui/settings/pluginEnabledChange.js";
 import { createCuaPermissionOnboardingOperationId } from "@zui/lib/cuaPermissionOnboardingOperation.js";
-import { waitForAccessibilityNotStale } from "@zui/settings/cuaPermissionRestartVerify.js";
-import { requiredCuaPermissionsForFreshStatus } from "@zui/settings/cuaPermissionPreparation.js";
-import { ExternalLink } from "lucide-react";
+import { supportsLocalMacCuaPermissionOnboarding } from "@zui/lib/cuaPlatform.js";
 import {
   isComputerUseRemoteOrLinux,
   resolveComputerUseAvailability,
 } from "@zui/settings/computerUseAvailability.js";
+import { requiredCuaPermissionsForFreshStatus } from "@zui/settings/cuaPermissionPreparation.js";
+import { waitForAccessibilityNotStale } from "@zui/settings/cuaPermissionRestartVerify.js";
+import { runAfterSuccessfulPluginEnabledChange } from "@zui/settings/pluginEnabledChange.js";
+import {
+  SettingsBadge,
+  SettingsGroupCard,
+  SettingsRow,
+} from "@zui/settings/SettingsPageParts.js";
+import { StatusDot, type StatusDotTone } from "@zui/settings/StatusDot.js";
+import { usePluginManagementStore } from "@zui/store/pluginManagementStore.js";
+import { ExternalLink } from "lucide-react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 /** 无激活 workspace 时的稳定缓存键；本机 CUA 状态查询不依赖目录。 */
 const INSTANCE_SCOPE_WORKSPACE_KEY = "__kenfutwork_instance__";
@@ -75,21 +93,26 @@ export function ComputerUseSection({
   const pluginManagementService = services.pluginManagementService;
   // 插件库存属于本机实例；宿主支持实例级库存时始终按实例读取，
   // 不把设置页的可用性绑在某个项目标签上。
-  const instanceScope = platform.pluginManagementCapabilities?.instanceScope === true;
+  const instanceScope =
+    platform.pluginManagementCapabilities?.instanceScope === true;
   const pluginScopePath = instanceScope ? "" : workspacePath || null;
   // cuaPermissionService 在 main 是可选字段（远端 host 无 CUA）；下方各 handler 在缺失时早退。
   const cuaPermissionService = services.cuaPermissionService;
   const isLocalWorkspace =
     !remoteSessionId &&
     !remoteTarget &&
-    !(workspaceIdentity?.trim() && isRemoteWorkspaceIdentity(workspaceIdentity.trim()));
+    !(
+      workspaceIdentity?.trim() &&
+      isRemoteWorkspaceIdentity(workspaceIdentity.trim())
+    );
   // Windows 只复用插件总开关；macOS 才具备 TCC 权限、Helper 状态和附加设置能力。
   const supportsLocalMacWorkspace =
     !isWindowsDesktop &&
     (isMacDesktop ?? supportsLocalMacCuaPermissionOnboarding(platform)) &&
     isLocalWorkspace;
   const supportsLocalWindowsWorkspace = isWindowsDesktop && isLocalWorkspace;
-  const supportsComputerUseSettings = supportsLocalMacWorkspace || supportsLocalWindowsWorkspace;
+  const supportsComputerUseSettings =
+    supportsLocalMacWorkspace || supportsLocalWindowsWorkspace;
   const availability = resolveComputerUseAvailability({
     isDesktop: isDesktop || isWindowsDesktop || supportsLocalMacWorkspace,
     isMacDesktop: isMacDesktop || supportsLocalMacWorkspace,
@@ -106,15 +129,23 @@ export function ComputerUseSection({
     : null;
   // 展示只跟 settled：fresh 每次查询开始都会落回 false，跟着它渲染会让授权按钮的文案
   // 在「验证中…」与终态之间切换、宽度随之跳变。
-  const { status, settled, refresh } = useCuaPermissionStatus(path ?? null, workspaceIdentity);
-  const availableStatus = status && isCuaPermissionStatusAvailable(status) ? status : null;
+  const { status, settled, refresh } = useCuaPermissionStatus(
+    path ?? null,
+    workspaceIdentity,
+  );
+  const availableStatus =
+    status && isCuaPermissionStatusAvailable(status) ? status : null;
 
   // macOS 版本门槛：低版本系统上 Helper 被 LaunchServices -10825 拒启，表象是授权反复无响应。
   // 查询一次主进程判定（GetCuaOsSupport），低于地板时渲染提示卡并隐藏授权操作区。
   // 查询失败按无门槛处理，不阻塞设置页；useCuaPermissionStatus 轮询保留，仅隐藏交互入口。
   const [osSupport, setOsSupport] = useState<CuaOsSupport | null>(null);
   useEffect(() => {
-    if (!supportsLocalMacWorkspace || typeof platform.executeDesktopCommand !== "function") return;
+    if (
+      !supportsLocalMacWorkspace ||
+      typeof platform.executeDesktopCommand !== "function"
+    )
+      return;
     let cancelled = false;
     void platform
       .executeDesktopCommand(DesktopCommandIds.GetCuaOsSupport)
@@ -133,9 +164,15 @@ export function ComputerUseSection({
 
   // 总开关 = zcode-cua 插件启用态（读自插件管理 store；切换即同步启用/禁用插件及其 MCP + skill）。
   const plugins = usePluginManagementStore((state) => state.plugins);
-  const setPluginEnabled = usePluginManagementStore((state) => state.setEnabled);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
-  const togglingPluginId = usePluginManagementStore((state) => state.togglingPluginId);
+  const setPluginEnabled = usePluginManagementStore(
+    (state) => state.setEnabled,
+  );
+  const initializePlugins = usePluginManagementStore(
+    (state) => state.initialize,
+  );
+  const togglingPluginId = usePluginManagementStore(
+    (state) => state.togglingPluginId,
+  );
   const cuaPlugin = resolveComputerUsePlugin(plugins);
   const cuaEnabled = cuaPlugin?.enabled ?? false;
   const cuaToggling = Boolean(cuaPlugin && togglingPluginId === cuaPlugin.id);
@@ -191,7 +228,9 @@ export function ComputerUseSection({
   ].join("\u0000");
   const pluginToggleContextKeyRef = useRef(pluginToggleContextKey);
   pluginToggleContextKeyRef.current = pluginToggleContextKey;
-  const helperContextKey = [path ?? "", workspaceIdentity?.trim() ?? ""].join("\u0000");
+  const helperContextKey = [path ?? "", workspaceIdentity?.trim() ?? ""].join(
+    "\u0000",
+  );
   const helperContextKeyRef = useRef(helperContextKey);
   helperContextKeyRef.current = helperContextKey;
   const activeOnboardingOperationIdRef = useRef<string | null>(null);
@@ -231,9 +270,13 @@ export function ComputerUseSection({
       targetWorkspaceIdentity = workspaceIdentity,
       restartOptions?: CuaPermissionRestartOptions,
     ): Promise<boolean> => {
-      if (!targetPath || !services || !cuaPermissionService) return Promise.resolve(false);
+      if (!targetPath || !services || !cuaPermissionService)
+        return Promise.resolve(false);
       if (restartPromiseRef.current) return restartPromiseRef.current;
-      const targetContextKey = [targetPath, targetWorkspaceIdentity?.trim() ?? ""].join("\u0000");
+      const targetContextKey = [
+        targetPath,
+        targetWorkspaceIdentity?.trim() ?? "",
+      ].join("\u0000");
       if (helperContextKeyRef.current === targetContextKey) {
         setVerifyTimedOut(false);
       }
@@ -257,12 +300,23 @@ export function ComputerUseSection({
           }
           if (!result.ok) return false;
 
-          // Helper socket 已健康不代表 tccd 状态已经传播完成；短轮询确认 stale 是否消失。
-          const stillStale = await waitForAccessibilityNotStale(() =>
-            cuaPermissionService.getStatus(targetPath, targetWorkspaceIdentity),
-          );
+          // Helper socket 已健康不代表 tccd 状态已经传播完成；首轮带功能探针确认 AX/抓屏真的可用，
+          // 后续轮询保持只读，避免每次重试都主动抓屏。
+          let probedOnce = false;
+          const stillStale = await waitForAccessibilityNotStale(() => {
+            const options = probedOnce ? {} : { includeFunctionalProbes: true };
+            probedOnce = true;
+            return cuaPermissionService.getStatus(
+              targetPath,
+              targetWorkspaceIdentity,
+              options,
+            );
+          });
           // 授权过程中可能切换 workspace；旧操作仍完成必要副作用，但不能污染新页面的升级提示。
-          if (mountedRef.current && helperContextKeyRef.current === targetContextKey) {
+          if (
+            mountedRef.current &&
+            helperContextKeyRef.current === targetContextKey
+          ) {
             setVerifyTimedOut(stillStale);
             // 后台权限轮询必须保持只读，真实截图只能跟随显式的授权返回/重启。
             // restart single-flight 已经把同一 Helper 恢复合并为一次，这里只排一个主动探针；
@@ -304,24 +358,32 @@ export function ComputerUseSection({
       target?: { workspacePath: string; workspaceIdentity?: string },
       onboardingSessionId?: string,
     ): Promise<boolean> => {
-      const claim = expectedClaim ?? captureCuaPermissionReturnRecovery(returnRecoveryRef.current);
+      const claim =
+        expectedClaim ??
+        captureCuaPermissionReturnRecovery(returnRecoveryRef.current);
       if (!claim || !isCuaPermissionReturnRecoveryCurrent(claim.state, claim)) {
         return false;
       }
       // 授权前若已有 restart，先等它结束，再启动一个真正位于授权之后的新 Helper。
       const existing = restartPromiseRef.current;
       if (existing) await existing;
-      if (!isCuaPermissionReturnRecoveryCurrent(claim.state, claim)) return false;
+      if (!isCuaPermissionReturnRecoveryCurrent(claim.state, claim))
+        return false;
       // A 发起授权后切到 B，返回结果仍属于当前 renderer/host 的 A runtime。用点击时捕获的 identity
       // 完成必要 restart；只让后续展示刷新服从当前 props，不能因 UI generation 变化丢掉副作用。
-      const ok = await onRestart(target?.workspacePath, target?.workspaceIdentity, {
-        reason: "permission_granted",
-        ...((onboardingSessionId ?? pendingGrantSessionIdRef.current)
-          ? {
-              onboardingSessionId: onboardingSessionId ?? pendingGrantSessionIdRef.current,
-            }
-          : {}),
-      });
+      const ok = await onRestart(
+        target?.workspacePath,
+        target?.workspaceIdentity,
+        {
+          reason: "permission_granted",
+          ...((onboardingSessionId ?? pendingGrantSessionIdRef.current)
+            ? {
+                onboardingSessionId:
+                  onboardingSessionId ?? pendingGrantSessionIdRef.current,
+              }
+            : {}),
+        },
+      );
       completeCuaPermissionReturnRecovery(claim, ok);
       return ok;
     },
@@ -343,16 +405,24 @@ export function ComputerUseSection({
         if (!usePluginManagementStore.getState().loading)
           void initializePlugins({
             workspacePath: pluginScopePath,
-            ...(pluginScopePath && workspaceIdentity ? { workspaceIdentity } : {}),
+            ...(pluginScopePath && workspaceIdentity
+              ? { workspaceIdentity }
+              : {}),
             ...(!pluginScopePath ? { configScope: "user" as const } : {}),
             pluginService: pluginManagementService,
             forceReload: true,
           }).then(() => {
             if (
               mountedRef.current &&
-              !resolveComputerUsePlugin(usePluginManagementStore.getState().plugins)
+              !resolveComputerUsePlugin(
+                usePluginManagementStore.getState().plugins,
+              )
             )
-              toast(intl.formatMessage({ id: "settings.computerUse.pluginDisabledHint" }));
+              toast(
+                intl.formatMessage({
+                  id: "settings.computerUse.pluginDisabledHint",
+                }),
+              );
           });
         return;
       }
@@ -360,7 +430,8 @@ export function ComputerUseSection({
       const operationContextKey = pluginToggleContextKey;
       // 切换 zcode-cua 插件 = 同步其 MCP server + skill 一起启用/禁用。
       const completed = await runAfterSuccessfulPluginEnabledChange({
-        submit: () => setPluginEnabled(cuaPlugin.id, next, pluginManagementService),
+        submit: () =>
+          setPluginEnabled(cuaPlugin.id, next, pluginManagementService),
         isCurrent: () =>
           mountedRef.current &&
           pluginToggleGenerationRef.current === operationGeneration &&
@@ -372,7 +443,9 @@ export function ComputerUseSection({
             refresh();
           }
           if (!next) {
-            toast(intl.formatMessage({ id: "settings.computerUse.disabledToast" }));
+            toast(
+              intl.formatMessage({ id: "settings.computerUse.disabledToast" }),
+            );
           }
         },
       });
@@ -426,9 +499,13 @@ export function ComputerUseSection({
         }
         // 设置页行按钮过去直接使用 lastKnown 状态；另一窗口刚完成授权或当前刷新
         // in-flight 时仍会打开过期 pane。点击边沿重新查询 Helper，只允许当前 denied/stale 的精确项。
-        let currentStatus = await cuaPermissionService.getStatus(path, workspaceIdentity, {
-          includeFunctionalProbes: false,
-        });
+        let currentStatus = await cuaPermissionService.getStatus(
+          path,
+          workspaceIdentity,
+          {
+            includeFunctionalProbes: false,
+          },
+        );
         // 从系统设置授权返回后 App 会重启 Helper 才能读到新 TCC 授权，这段窗口内查询拿到的是
         // 不可用状态（授权完立刻点行按钮，预检查退化成「暂时无法确认」
         // 而非「已授权」）。状态不可用时短重试 2 次、间隔 2s，等 Helper 就绪后走到「已授权」
@@ -447,9 +524,13 @@ export function ComputerUseSection({
           ) {
             return;
           }
-          currentStatus = await cuaPermissionService.getStatus(path, workspaceIdentity, {
-            includeFunctionalProbes: false,
-          });
+          currentStatus = await cuaPermissionService.getStatus(
+            path,
+            workspaceIdentity,
+            {
+              includeFunctionalProbes: false,
+            },
+          );
         }
         // React concurrent commit 可能已经收到 workspace A→B 更新但 passive effect 尚未清理 A。
         // render 同步更新的 context ref 是这段窗口内唯一可靠的失效信号；让出一个 macrotask后再判，
@@ -465,7 +546,9 @@ export function ComputerUseSection({
         }
         if (
           !isCuaPermissionStatusAvailable(currentStatus) ||
-          !requiredCuaPermissionsForFreshStatus(currentStatus).includes(initialPermission)
+          !requiredCuaPermissionsForFreshStatus(currentStatus).includes(
+            initialPermission,
+          )
         ) {
           const permissionState = isCuaPermissionStatusAvailable(currentStatus)
             ? initialPermission === "accessibility"
@@ -527,7 +610,8 @@ export function ComputerUseSection({
               ? intl.formatMessage(
                   { id: "chat.cuaPermission.openFailed" },
                   {
-                    error: error instanceof Error ? error.message : String(error),
+                    error:
+                      error instanceof Error ? error.message : String(error),
                   },
                 )
               : intl.formatMessage({ id: "cuaPermission.modal.unavailable" }),
@@ -537,16 +621,29 @@ export function ComputerUseSection({
         if (permissionStatusCheckTokenRef.current === checkToken) {
           permissionStatusCheckTokenRef.current = null;
         }
-        if (operationId && activeOnboardingOperationIdRef.current === operationId) {
+        if (
+          operationId &&
+          activeOnboardingOperationIdRef.current === operationId
+        ) {
           activeOnboardingOperationIdRef.current = null;
         }
       }
     },
-    [platform, path, services, workspaceIdentity, intl, applyPendingGrant, refresh],
+    [
+      platform,
+      path,
+      services,
+      workspaceIdentity,
+      intl,
+      applyPendingGrant,
+      refresh,
+    ],
   );
 
   const onManualRestart = useCallback((): void => {
-    void (returnRecoveryRef.current.pending ? applyPendingGrant() : onRestart());
+    void (returnRecoveryRef.current.pending
+      ? applyPendingGrant()
+      : onRestart());
   }, [applyPendingGrant, onRestart]);
 
   // 自愈:accessibility 在后续任一次查询里变成 granted 时,清除"重启 ZCode"兜底(说明问题已解决)。
@@ -554,7 +651,10 @@ export function ComputerUseSection({
     if (availableStatus?.accessibility === "granted") setVerifyTimedOut(false);
   }, [availableStatus?.accessibility]);
 
-  const renderGrantDetail = (kind: CuaPermissionKind, labelId: string): ReactNode => {
+  const renderGrantDetail = (
+    kind: CuaPermissionKind,
+    labelId: string,
+  ): ReactNode => {
     if (typeof platform.openCuaPermissionOnboarding !== "function") return null;
     return (
       <div className="flex flex-col items-start gap-1.5">
@@ -634,7 +734,12 @@ export function ComputerUseSection({
           <span className="text-xs text-foreground-subtlest">
             {intl.formatMessage({ id: "cuaPermission.modal.relaunchAppHint" })}
           </span>
-          <Button type="button" variant="ghost" size="sm" onClick={() => void onRelaunchApp()}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void onRelaunchApp()}
+          >
             {intl.formatMessage({
               id: "cuaPermission.modal.relaunchAppButton",
             })}
@@ -660,14 +765,16 @@ export function ComputerUseSection({
   // （直连 settingService 只落盘不刷新共享 snapshot，输入框按钮读不到新值）。
   // 乐观更新本地开关，失败回滚并提示。
   const { settings: appSettings, update: updateAppSettings } = useSettings();
-  const [composerEntryHiddenOverride, setComposerEntryHiddenOverride] = useState<boolean | null>(
-    null,
-  );
+  const [composerEntryHiddenOverride, setComposerEntryHiddenOverride] =
+    useState<boolean | null>(null);
   const [composerEntrySaving, setComposerEntrySaving] = useState(false);
   // 默认隐藏，与 useCuaComposerEntry 同口径：只有显式存过 false 才算展示。
   // 两处必须一致，否则设置页开关的显示状态会和输入框按钮的实际显隐对不上。
-  const persistedComposerEntryHidden = appSettings?.computerUseComposerEntryHidden !== false;
-  const composerEntryVisible = !(composerEntryHiddenOverride ?? persistedComposerEntryHidden);
+  const persistedComposerEntryHidden =
+    appSettings?.computerUseComposerEntryHidden !== false;
+  const composerEntryVisible = !(
+    composerEntryHiddenOverride ?? persistedComposerEntryHidden
+  );
   useEffect(() => {
     if (composerEntryHiddenOverride === null) return;
     if (persistedComposerEntryHidden === composerEntryHiddenOverride) {
@@ -763,7 +870,11 @@ export function ComputerUseSection({
                 id: "settings.computerUse.toggleLabel",
               })}
               checked={cuaEnabled}
-              disabled={cuaToggling || pluginScopePath === null || !pluginManagementService}
+              disabled={
+                cuaToggling ||
+                pluginScopePath === null ||
+                !pluginManagementService
+              }
               onCheckedChange={(checked) => void onTogglePlugin(checked)}
             />
           }
@@ -773,7 +884,9 @@ export function ComputerUseSection({
             电脑控制关闭时按钮无论如何都不渲染（cuaComposerEntryState 的插件门），
             此时把开关置灰并改文案说明前置条件——留一个可点却看不到效果的开关会被当成坏了。 */}
         <SettingsRow
-          label={intl.formatMessage({ id: "settings.computerUse.composerEntry.label" })}
+          label={intl.formatMessage({
+            id: "settings.computerUse.composerEntry.label",
+          })}
           description={intl.formatMessage({
             id: cuaEnabled
               ? "settings.computerUse.composerEntry.description"
@@ -808,7 +921,9 @@ export function ComputerUseSection({
                   },
                 )}
               </p>
-              <p>{intl.formatMessage({ id: "cuaPermission.osFloorDescription" })}</p>
+              <p>
+                {intl.formatMessage({ id: "cuaPermission.osFloorDescription" })}
+              </p>
             </div>
           ) : null}
           {/* macOS 权限引导只保留在 Settings 内，CUA 操作与工具审批流不再自动弹权限 modal。 */}
@@ -832,7 +947,10 @@ export function ComputerUseSection({
                     ? undefined
                     : availableStatus?.accessibility === "stale"
                       ? renderRestartDetail()
-                      : renderGrantDetail("accessibility", "chat.cuaPermission.openAccessibility")
+                      : renderGrantDetail(
+                          "accessibility",
+                          "chat.cuaPermission.openAccessibility",
+                        )
                 }
               />
               <SettingsRow

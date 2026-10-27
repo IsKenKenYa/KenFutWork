@@ -18264,9 +18264,10 @@
       "source": "references/zcode/packages/ui/src/settings/ComputerUseSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ComputerUseSection.tsx",
       "sha256": "aeb1f9f941e60b5dd27b91e1ad51a0c5821bf1a13ad1b28467ae8f529c030604",
-      "copiedSha256": "3a493700a4b387b3d90abe173be2d358eb917aa68647ae069bf451656d695c9e",
+      "copiedSha256": "116bbf3422c119def03dd50cc6f8c8b40ba9ba5775080861b740e10262926cec",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "Computer Use 权限重启后的首轮状态查询带功能探针，后续轮询保持只读"
       ]
     },
     {

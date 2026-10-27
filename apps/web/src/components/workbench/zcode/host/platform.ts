@@ -84,7 +84,12 @@ export function createCodePlatform(
     supportsComputerUse: Boolean(macDesktop),
     ...(macDesktop
       ? {
-          ...createCuaPermissionOnboarding(desktop),
+          ...createCuaPermissionOnboarding(desktop, {
+            requestPermission: (kind) =>
+              client
+                .getChannel("cua-permission")
+                .call("requestPermission", [{ kind }]),
+          }),
           executeDesktopCommand: async (command: string) => {
             if (command === "getCuaOsSupport") return { kind: "supported" };
             throw new Error("当前桌面宿主未提供该操作。");
