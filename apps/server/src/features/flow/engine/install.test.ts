@@ -7,7 +7,9 @@ import {
   composeCommand,
   getEngineInstallSnapshot,
   purgeEngineStack,
+  readStackLogTail,
   readStackRuntime,
+  STACK_LOG_FILE,
   startEngineInstall,
   stopEngineStack,
   toWslPath,
@@ -272,5 +274,21 @@ describe("引擎承载目标（双 Provider）", () => {
     expect(result.error).toContain("daemon not running");
     // 失败保留记录（用户可重试；否则下次会按 host 去清 WSL2 起的栈）
     expect(readStackRuntime(target.dataDir)).toEqual({ kind: "host" });
+  });
+});
+
+describe("安装日志尾部", () => {
+  it("进程重启后按数据目录读最后 50 行", () => {
+    const dir = mkdtempSync(join(tmpdir(), "flow-log-"));
+    const lines = Array.from({ length: 60 }, (_, index) => `line-${index + 1}`);
+    writeFileSync(join(dir, STACK_LOG_FILE), lines.join("\n"));
+    const tail = readStackLogTail(dir);
+    expect(tail).toHaveLength(50);
+    expect(tail[0]).toBe("line-11");
+    expect(tail.at(-1)).toBe("line-60");
+  });
+  it("没有日志文件时返回空数组", () => {
+    const dir = mkdtempSync(join(tmpdir(), "flow-log-empty-"));
+    expect(readStackLogTail(dir)).toEqual([]);
   });
 });

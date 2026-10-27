@@ -196,12 +196,8 @@ export function createFlowProjectFiles(deps: {
         403,
       );
     const project = await deps.projects.getProject(actor, projectId);
-    if (project.kind !== "flow")
-      throw new FlowProjectFileError(
-        "flow_file_project_changed",
-        "文件绑定不属于 Flow 项目。",
-        403,
-      );
+    // 任意工作方式的项目都可绑定 Flow（用户 2026-10-27 口径）：Code/Design/Work
+    // 项目绑定后，同一项目的会话与 Flow 画布共享目录与文件连接。
     try {
       return await resolveProjectWorkDirectory({
         instanceId: actor.instanceId,

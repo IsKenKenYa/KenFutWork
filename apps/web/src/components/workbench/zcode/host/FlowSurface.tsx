@@ -166,8 +166,16 @@ function useFlowEngineInstall(): {
  */
 export function HostFlowSurface({ active = true }: { active?: boolean }) {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
-  const { selectedProjectId } = useFlowProjectsSnapshot();
-  const directory = useCanvasProjectDirectory("flow", selectedProjectId);
+  const { selectedProjectId, projects } = useFlowProjectsSnapshot();
+  const selectedProject =
+    projects.find((project) => project.id === selectedProjectId) ?? null;
+  // 只有 flow 项目走目录迁移探测（recovery）；绑到 Code/Design/Work 项目时
+  // 目录由服务端身份换票按 workDir 校验，这里不需要 relink 快照。
+  const isFlowProject = selectedProject?.kind === "flow";
+  const directory = useCanvasProjectDirectory(
+    "flow",
+    isFlowProject ? selectedProjectId : null,
+  );
   const [entry, setEntry] = useState<FlowEntry | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -186,6 +194,16 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
     };
   }, []);
 
+  const binding = directory.snapshot;
+  // flow 项目带目录迁移状态；绑到 Code/Design/Work 项目时没有 flow 迁移，
+  // 项目存在于列表即视为可绑定（网关 gate 首次绑定 generation 为 1）。
+  const directoryReady = isFlowProject
+    ? Boolean(
+        binding && !directory.error && binding.flow?.phase === "available",
+      )
+    : Boolean(selectedProject);
+  const bindingGeneration = binding?.flow?.generation ?? 1;
+
   return (
     <div className="h-full min-h-0 bg-background">
       {view === "engine" ? (
@@ -200,11 +218,11 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
       ) : entry.available &&
         entry.frontendUrl &&
         selectedProjectId &&
-        directory.snapshot?.flow?.phase === "available" ? (
+        directoryReady ? (
         <FlowCanvasEmbed
-          key={`${selectedProjectId}:${directory.snapshot.flow.generation}`}
+          key={`${selectedProjectId}:${bindingGeneration}`}
           projectId={selectedProjectId}
-          generation={directory.snapshot.flow.generation}
+          generation={bindingGeneration}
           frontendUrl={entry.frontendUrl}
           active={active}
         />
@@ -460,13 +478,14 @@ function EngineView() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stopAsk, setStopAsk] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const [launchChoice, setLaunchChoice] = useState<FlowEngineLaunch | null>(
     null,
   );
   const { state, notice, install, stop } = useFlowEngineInstall();
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (quiet: boolean) => {
+    if (!quiet) setLoading(true);
     try {
       setInfo(
         await surfaceJson<FlowHostEngineInfoResponse>(
@@ -477,15 +496,31 @@ function EngineView() {
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "读取失败");
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, []);
+  const refresh = useCallback(() => load(false), [load]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   const engineState: FlowEngineInstallState =
     state !== "idle" ? state : (info?.install.state ?? "idle");
+  // 安装中静默轮询：日志尾随和容器状态都跟着走，不闪 loading。
+  useEffect(() => {
+    if (engineState !== "installing") return;
+    const timer = window.setInterval(() => void load(true), 3000);
+    return () => window.clearInterval(timer);
+  }, [engineState, load]);
+  // 安装收尾（成功或失败）后再拉一次快照：日志尾部与容器事实停在最终状态。
+  useEffect(() => {
+    if (state === "ready" || state === "error") void load(true);
+  }, [state, load]);
+  // 失败时直接展开日志：错误原因只在日志尾部（镜像拉取失败等），不让人去翻文件。
+  useEffect(() => {
+    if (engineState === "error" && (info?.install.logTail.length ?? 0) > 0)
+      setLogOpen(true);
+  }, [engineState, info?.install.logTail.length]);
   const meta = ENGINE_STATE_META[engineState] ?? ENGINE_STATE_META.idle;
   const wslPath = info?.probe.paths.find((path) => path.id === "wsl2");
   const wslUsable = Boolean(wslPath?.available && wslPath?.distro);
@@ -494,6 +529,10 @@ function EngineView() {
     (info?.probe.recommended === "wsl2" && wslUsable
       ? { kind: "wsl2", distro: wslPath?.distro ?? "" }
       : { kind: "host" });
+  const logTail = info?.install.logTail ?? [];
+  const logFile = info
+    ? `${info.addresses.dataDir}/dify-stack-install.log`
+    : "";
 
   return (
     <div className="h-full overflow-y-auto">
@@ -522,6 +561,18 @@ function EngineView() {
               className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLogOpen((open) => !open)}
+              aria-pressed={logOpen}
+              className={`rounded-lg border border-border px-2.5 py-1 text-xs transition-colors hover:border-foreground/30 ${
+                logOpen
+                  ? "bg-selected text-foreground"
+                  : "text-foreground-subtle"
+              }`}
+            >
+              日志
             </button>
             {engineState === "installing" ? (
               <button
@@ -619,32 +670,49 @@ function EngineView() {
         {info?.install.error ? (
           <p className="mt-3 text-xs text-destructive">{info.install.error}</p>
         ) : null}
+        {logOpen ? (
+          <div className="mt-3 overflow-hidden rounded-xl border border-border">
+            <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+              <span className="shrink-0">安装日志</span>
+              <span
+                className="min-w-0 flex-1 truncate text-right font-mono text-[11px]"
+                title={logFile}
+              >
+                {logFile}
+              </span>
+            </div>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-[11px] leading-5">
+              {logTail.length > 0 ? logTail.join("\n") : "暂无日志"}
+            </pre>
+          </div>
+        ) : null}
 
         <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
-          <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
-            <span className="w-28 shrink-0">服务</span>
-            <span className="w-20 shrink-0">健康</span>
-            <span className="flex-1">端口</span>
+          {/* 列宽均分 + 居中：定宽 flex 会让「端口」列吃掉剩余宽度，右侧留一大片空白。 */}
+          <div className="grid grid-cols-3 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+            <span className="text-center">服务</span>
+            <span className="text-center">健康</span>
+            <span className="text-center">端口</span>
           </div>
           {info && info.stack.containers.length > 0 ? (
             info.stack.containers.map(
               (container: FlowEngineStackContainer, index) => (
                 <div
                   key={container.name}
-                  className={`flex items-center gap-3 px-4 py-2.5 ${
+                  className={`grid grid-cols-3 items-center gap-3 px-4 py-2.5 text-center ${
                     index === info.stack.containers.length - 1
                       ? ""
                       : "border-b border-border"
                   }`}
                 >
                   <span
-                    className="w-28 shrink-0 truncate font-mono text-xs"
+                    className="min-w-0 truncate font-mono text-xs"
                     title={container.name}
                   >
                     {container.service}
                   </span>
                   <span
-                    className={`w-20 shrink-0 text-xs ${
+                    className={`text-xs ${
                       container.health === "healthy"
                         ? "text-emerald-600"
                         : container.health
@@ -655,7 +723,7 @@ function EngineView() {
                     {container.health ?? container.state}
                   </span>
                   <span
-                    className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground-subtle"
+                    className="min-w-0 truncate font-mono text-[11px] text-foreground-subtle"
                     title={container.ports.join("  ")}
                   >
                     {container.ports.join("  ")}
@@ -664,7 +732,7 @@ function EngineView() {
               ),
             )
           ) : (
-            <p className="px-4 py-3 text-xs text-foreground-subtle">
+            <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
               {info?.stack.error ?? "没有运行中的容器"}
             </p>
           )}
@@ -672,9 +740,9 @@ function EngineView() {
 
         {info ? (
           <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
-            <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
-              <span className="w-28 shrink-0">项</span>
-              <span className="flex-1">值</span>
+            <div className="grid grid-cols-2 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+              <span className="text-center">项</span>
+              <span className="text-center">值</span>
             </div>
             {(
               [
@@ -686,15 +754,13 @@ function EngineView() {
             ).map(([label, value], index, rows) => (
               <div
                 key={label}
-                className={`flex items-center gap-3 px-4 py-2.5 ${
+                className={`grid grid-cols-2 items-center gap-3 px-4 py-2.5 text-center ${
                   index === rows.length - 1 ? "" : "border-b border-border"
                 }`}
               >
-                <span className="w-28 shrink-0 text-foreground-subtle">
-                  {label}
-                </span>
+                <span className="text-foreground-subtle">{label}</span>
                 <span
-                  className="min-w-0 flex-1 truncate font-mono text-xs"
+                  className="min-w-0 truncate font-mono text-xs"
                   title={value ?? ""}
                 >
                   {value ?? "未配置"}

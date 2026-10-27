@@ -10,6 +10,7 @@ import {
 
 const host = vi.hoisted(() => ({
   projectId: null as string | null,
+  kind: "flow" as "flow" | "code" | "design" | "work",
   snapshot: null as ProjectDirectoryRelinkSnapshot | null,
   surfaceFetch: vi.fn(),
   surfaceJson: vi.fn(),
@@ -21,7 +22,12 @@ vi.mock("@/components/workbench/zcode/host/surfaceApi.js", () => ({
   surfaceJson: host.surfaceJson,
 }));
 vi.mock("@/components/workbench/zcode/host/flowProjects.js", () => ({
-  useFlowProjectsSnapshot: () => ({ selectedProjectId: host.projectId }),
+  useFlowProjectsSnapshot: () => ({
+    selectedProjectId: host.projectId,
+    projects: host.projectId
+      ? [{ id: host.projectId, kind: host.kind, name: "项目" }]
+      : [],
+  }),
   refreshFlowProjects: host.refreshFlowProjects,
 }));
 vi.mock(
@@ -93,6 +99,7 @@ async function handshake(source: Window) {
 beforeEach(() => {
   vi.resetAllMocks();
   host.projectId = null;
+  host.kind = "flow";
   host.snapshot = null;
   setFlowSurfaceView("canvas");
   host.surfaceJson.mockResolvedValue({
@@ -220,4 +227,20 @@ describe("FlowSurface project binding consumer", () => {
       origin,
     );
   });
+});
+
+it("binds a Code project without waiting for a flow relink snapshot", async () => {
+  // 非 Flow 项目没有目录迁移状态（快照为 null 且不请求 relink），项目存在于列表即可绑定。
+  host.kind = "code";
+  host.projectId = projectA;
+  host.snapshot = null;
+  render(<HostFlowSurface />);
+  await screen.findByTitle("Flow 工作流画布");
+  await handshake(frameWindow());
+  expect(host.surfaceFetch).toHaveBeenCalledWith(
+    "/api/flow/host/identity-ticket",
+    expect.objectContaining({
+      body: JSON.stringify({ projectId: projectA }),
+    }),
+  );
 });

@@ -80,6 +80,15 @@ function readLogTail(logFile?: string): string[] {
   }
 }
 
+/**
+ * 数据目录里的安装日志尾部（进程重启后仍可读）。
+ * 安装状态快照是进程内的，`current.logFile` 只在本次进程发起过安装时才存在；
+ * 引擎页要看历史失败原因时必须按标准文件名直接读盘。
+ */
+export function readStackLogTail(dataDir: string): string[] {
+  return readLogTail(join(dataDir, STACK_LOG_FILE));
+}
+
 /** 首次安装的密钥文件（数据目录内，gitignore 覆盖；存在即复用）。 */
 export function ensureStackEnvFile(dataDir: string): string {
   mkdirSync(dataDir, { recursive: true });

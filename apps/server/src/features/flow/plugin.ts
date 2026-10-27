@@ -17,6 +17,7 @@ import {
   type EngineInstallOptions,
   getEngineInstallSnapshot,
   purgeEngineStack,
+  readStackLogTail,
   readStackRuntime,
   startEngineInstall,
   stopEngineStack,
@@ -197,13 +198,9 @@ export function createFlowHostPlugin(deps: {
         identity: {
           issue: async (actor, projectId) => {
             if (projectId) {
-              const project = await ctx
-                .get("projects")
-                .getProject(actor, projectId);
-              if (project.kind !== "flow")
-                throw Object.assign(new Error("请选择 Flow 项目。"), {
-                  statusCode: 403,
-                });
+              // 任意工作方式的项目都可绑定 Flow（用户 2026-10-27 口径）：
+              // 绑定后该项目会话即拥有同一份工作流上下文。
+              await ctx.get("projects").getProject(actor, projectId);
             }
             const settings = await ctx
               .get("settings")
@@ -294,8 +291,13 @@ export function createFlowHostPlugin(deps: {
                   })
                 : Promise.resolve({ containers: [] }),
             ]);
+            const install = getEngineInstallSnapshot();
+            // 进程重启后 current.logFile 为空：按数据目录里的标准日志名补读，
+            // 让「上次为什么失败」在引擎页仍然可见。
+            if (install.logTail.length === 0)
+              install.logTail = readStackLogTail(options.dataDir);
             return {
-              install: getEngineInstallSnapshot(),
+              install,
               probe,
               stack,
               runtime: launch,
