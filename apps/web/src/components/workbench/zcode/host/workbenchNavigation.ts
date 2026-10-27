@@ -18,7 +18,12 @@ export function createHostWorkbenchNavigation(
   let mode: HostWorkbenchMode = "code";
   try {
     const saved = window.sessionStorage.getItem("kenfutwork:workbench-mode");
-    if (saved === "code" || saved === "design" || saved === "flow" || saved === "work") {
+    if (
+      saved === "code" ||
+      saved === "design" ||
+      saved === "flow" ||
+      saved === "work"
+    ) {
       mode = availableModes.includes(saved)
         ? saved
         : saved === "flow"

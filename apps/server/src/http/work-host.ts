@@ -4,10 +4,10 @@ import {
   applicationErrorResponseSchema,
   unauthenticatedErrorResponseSchema,
   type WorkEditor,
-  workEditorSchema,
   type WorkHostEditorsResponse,
-  workHostEditorsResponseSchema,
   type WorkHostStatusResponse,
+  workEditorSchema,
+  workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -152,7 +152,11 @@ export async function registerWorkHostRoutes(
     const editor = findEditor(params.editorId);
     if (!editor) return applicationError(reply, 404, "没有这个编辑器。");
     if (!editor.installed)
-      return applicationError(reply, 404, `${editor.title}尚未落位，请先下载。`);
+      return applicationError(
+        reply,
+        404,
+        `${editor.title}尚未落位，请先下载。`,
+      );
 
     let rel: string;
     try {

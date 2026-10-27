@@ -479,9 +479,7 @@ function fakeHomeAssistant(options: FakeHaOptions = {}) {
         { entity_id: target.entity_id, state: target.state },
       ]);
     }
-    const flowStart = pathname.match(
-      /^\/api\/config\/config_entries\/flow$/,
-    );
+    const flowStart = pathname.match(/^\/api\/config\/config_entries\/flow$/);
     if (flowStart && init?.method === "POST") {
       return Response.json(
         options.flowStart ?? {
@@ -518,13 +516,17 @@ function fakeHomeAssistant(options: FakeHaOptions = {}) {
           },
         );
       }
-      return Response.json(options.flowProgress ?? { type: "progress", flow_id: flowStep[1] });
+      return Response.json(
+        options.flowProgress ?? { type: "progress", flow_id: flowStep[1] },
+      );
     }
     const entryDelete = pathname.match(
       /^\/api\/config\/config_entries\/entry\/([^/]+)$/,
     );
     if (entryDelete && init?.method === "DELETE") {
-      return Response.json({ entry_id: decodeURIComponent(String(entryDelete[1])) });
+      return Response.json({
+        entry_id: decodeURIComponent(String(entryDelete[1])),
+      });
     }
     return Response.json({ message: "not found" }, { status: 404 });
   };
@@ -2431,9 +2433,9 @@ describe("HA 插件：配置流自动取值", () => {
         { name: "password", type: "password" },
       ]),
     ).toBeNull();
-    expect(autoFillFields([{ name: "eula", type: "boolean", default: true }])).toEqual(
-      { eula: true },
-    );
+    expect(
+      autoFillFields([{ name: "eula", type: "boolean", default: true }]),
+    ).toEqual({ eula: true });
   });
 });
 

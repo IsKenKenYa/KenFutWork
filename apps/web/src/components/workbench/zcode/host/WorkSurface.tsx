@@ -5,10 +5,8 @@ import type {
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { useSyncExternalStore } from "react";
-import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
-import { getSurfaceApiBase } from "./surfaceApi.js";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
   getWorkSurfaceView,
   openWorkEditor,
@@ -99,12 +97,7 @@ export function HostWorkSurface({
   }, [active, installing, refresh]);
 
   if (view.kind === "editor") {
-    return (
-      <EditorFrame
-        editorId={view.editorId}
-        onBack={openWorkEditors}
-      />
-    );
+    return <EditorFrame editorId={view.editorId} onBack={openWorkEditors} />;
   }
   return (
     <EditorsInfoView

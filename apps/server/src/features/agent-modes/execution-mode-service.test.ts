@@ -184,7 +184,11 @@ describe("模式工具策略（evaluateToolPolicy）", () => {
       const verdict = evaluateToolPolicy(
         policy,
         tool,
-        detail as { subagentReadOnly?: boolean; readonlyExecution?: boolean; toolAccess?: "read" },
+        detail as {
+          subagentReadOnly?: boolean;
+          readonlyExecution?: boolean;
+          toolAccess?: "read";
+        },
       );
       expect(verdict.allowed, tool).toBe(false);
     }

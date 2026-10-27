@@ -2,8 +2,14 @@ import type { HostWorkbenchMode, HostWorkbenchNavigation } from "@zcode/shared";
 import appLogoUrl from "@zui/assets/kenfutwork-mark.png";
 
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { Briefcase, Code2, Palette, PanelLeftOpen, Workflow } from "lucide-react";
-import { useSyncExternalStore, type ReactNode } from "react";
+import {
+  Briefcase,
+  Code2,
+  Palette,
+  PanelLeftOpen,
+  Workflow,
+} from "lucide-react";
+import { type ReactNode, useSyncExternalStore } from "react";
 import { ProjectDirectoryRecovery } from "./ProjectDirectoryRecovery.js";
 
 // 与 AboutSection 同一边界：Code 宿主的 Vite PNG 导入在运行时为 URL 字符串。

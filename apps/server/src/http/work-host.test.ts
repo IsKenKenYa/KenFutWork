@@ -1,19 +1,29 @@
 import { createHash } from "node:crypto";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { zipSync } from "fflate";
-import Fastify, { type FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
 import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
+import Fastify, { type FastifyInstance } from "fastify";
+import { zipSync } from "fflate";
+import { afterEach, describe, expect, it } from "vitest";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
 import {
   getWorkEditorInstallSnapshot,
   startWorkEditorInstall,
 } from "../features/work/install.js";
-import { registerWorkHostRoutes, resolveInstalledEditors } from "./work-host.js";
+import {
+  registerWorkHostRoutes,
+  resolveInstalledEditors,
+} from "./work-host.js";
 
 const actor = {
   instanceId: "11111111-1111-4111-8111-111111111111",

@@ -303,10 +303,14 @@ it.each(["solo", "plan"] as const)(
         const unregisterRead = tools.register(read);
         try {
           await expect(
-            tools.executeDefinition(read, {}, {
-              ...execution,
-              toolCallId: `${task.execution.toolCallId}-read`,
-            }),
+            tools.executeDefinition(
+              read,
+              {},
+              {
+                ...execution,
+                toolCallId: `${task.execution.toolCallId}-read`,
+              },
+            ),
           ).resolves.toBe("written");
           expect(executed).toBe(1);
         } finally {

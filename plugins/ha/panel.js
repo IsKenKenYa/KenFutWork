@@ -370,9 +370,7 @@ function loadIntegrations(body) {
     .then((payload) => {
       clear(body);
       if (payload.ready === false) {
-        body.appendChild(
-          el("p", "int-status", "实时连接未就绪，稍后再试。"),
-        );
+        body.appendChild(el("p", "int-status", "实时连接未就绪，稍后再试。"));
         return;
       }
       for (const brand of Object.keys(BRAND_LABELS)) {
@@ -477,7 +475,10 @@ function optionEntries(options) {
   if (Array.isArray(options)) {
     return options.map((option) =>
       Array.isArray(option)
-        ? [String(option[0]), String(option[1]?.label ?? option[1] ?? option[0])]
+        ? [
+            String(option[0]),
+            String(option[1]?.label ?? option[1] ?? option[0]),
+          ]
         : [String(option), String(option)],
     );
   }
@@ -529,11 +530,14 @@ function flowFieldInput(field) {
     }
     return {
       node: box,
-      read: () => boxes.filter((item) => item.checked).map((item) => item.value),
+      read: () =>
+        boxes.filter((item) => item.checked).map((item) => item.value),
     };
   }
   const input = el("input");
-  input.type = /pass|secret|token/i.test(field.name ?? "") ? "password" : "text";
+  input.type = /pass|secret|token/i.test(field.name ?? "")
+    ? "password"
+    : "text";
   if (field.default !== undefined) input.value = String(field.default);
   return { node: input, read: () => input.value };
 }
@@ -631,7 +635,9 @@ function runFlowDialog(main, actions, flowId, step, onDone) {
     const inputs = new Map();
     for (const field of current.data_schema ?? []) {
       const line = el("div", "field");
-      line.appendChild(el("label", null, FIELD_LABELS[field.name] ?? field.name));
+      line.appendChild(
+        el("label", null, FIELD_LABELS[field.name] ?? field.name),
+      );
       const control = flowFieldInput(field);
       inputs.set(field.name, control);
       line.appendChild(control.node);

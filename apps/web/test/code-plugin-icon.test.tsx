@@ -186,8 +186,18 @@ it("无图标的插件按显示名首字出字母头像，不再清一色 Blocks
   client = new CodeHttpChannelClient({ apiBase: "http://localhost:3001" });
   const { container } = render(
     <PlatformProvider platform={createCodePlatform(client)}>
-      <PluginIcon pluginId="cad" label="CAD" className="size-16" iconClassName="size-6" />
-      <PluginIcon pluginId="mihome" label="米家" className="size-8" iconClassName="size-4" />
+      <PluginIcon
+        pluginId="cad"
+        label="CAD"
+        className="size-16"
+        iconClassName="size-6"
+      />
+      <PluginIcon
+        pluginId="mihome"
+        label="米家"
+        className="size-8"
+        iconClassName="size-4"
+      />
       <PluginIcon pluginId="noop" />
     </PlatformProvider>,
   );

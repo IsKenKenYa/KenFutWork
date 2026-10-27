@@ -38,10 +38,7 @@ import {
   WS_DEVICE_REGISTRY_LIST,
   WS_ENTITY_REGISTRY_LIST,
 } from "./lib/ha-ws.js";
-import {
-  SETUP_GUIDE_BRANDS,
-  SETUP_GUIDE_STEPS,
-} from "./lib/setup-guide.js";
+import { SETUP_GUIDE_BRANDS, SETUP_GUIDE_STEPS } from "./lib/setup-guide.js";
 
 export const name = "kenfutwork-ha";
 

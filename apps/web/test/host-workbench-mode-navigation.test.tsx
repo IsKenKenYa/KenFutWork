@@ -81,9 +81,12 @@ describe("HostWorkbenchModeNavigation 四模式", () => {
     const group = screen.getByRole("radiogroup", { name: "模式切换" });
     const radios = group.querySelectorAll<HTMLButtonElement>("[role='radio']");
     expect(radios).toHaveLength(4);
-    expect(
-      Array.from(radios).map((radio) => radio.textContent),
-    ).toEqual(["Code", "Design", "Work", "Flow"]);
+    expect(Array.from(radios).map((radio) => radio.textContent)).toEqual([
+      "Code",
+      "Design",
+      "Work",
+      "Flow",
+    ]);
     expect(
       Array.from(radios).map((radio) => radio.getAttribute("aria-checked")),
     ).toEqual(["false", "false", "true", "false"]);
