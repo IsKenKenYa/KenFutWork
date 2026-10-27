@@ -1,4 +1,10 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import type { WorkspaceMainView } from "@zui/app-shell/types";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,13 +25,14 @@ vi.mock("@zui/hooks/usePlatform.js", () => ({
 
 function Harness() {
   const [view, setView] = useState<WorkspaceMainView>("chat");
-  useWorkbenchSurfaceMode({
+  const mode = useWorkbenchSurfaceMode({
     workspaceMainView: view,
     setWorkspaceMainView: setView,
   });
   return (
     <>
       <output data-testid="view">{view}</output>
+      <output data-testid="mode">{mode}</output>
       <button type="button" onClick={() => setView("work")}>
         引擎
       </button>
@@ -96,5 +103,15 @@ describe("Work 模式主区", () => {
     });
     expect(view()).toBe("plugin-store");
     expect(navigation.getSnapshot().mode).toBe("work");
+  });
+
+  it("hook 回传当前模式，App 据此在 Work 模式收起右侧面板", async () => {
+    const navigation = setup();
+    expect(screen.getByTestId("mode").textContent).toBe("code");
+    await act(async () => {
+      navigation.open("work");
+    });
+    expect(navigation.getSnapshot().mode).toBe("work");
+    expect(screen.getByTestId("mode").textContent).toBe("work");
   });
 });

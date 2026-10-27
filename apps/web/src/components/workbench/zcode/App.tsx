@@ -983,10 +983,15 @@ export function App({
     openSettingsTab();
   }, [openSettingsTab, pluginStoreReturnScopeKey]);
   // 融合缝：工作台模式（pills / 父窗口推送）↔ 主区视图（design/flow 内嵌面）双向同步。
-  useWorkbenchSurfaceMode({
+  const workbenchMode = useWorkbenchSurfaceMode({
     workspaceMainView,
     setWorkspaceMainView,
   });
+  // Work 模式默认不打开右侧面板（用户 2026-10-27 口径）：切入 Work 时收起；
+  // 之后用户手动展开不拦（effect 只随模式变化触发）。
+  useEffect(() => {
+    if (workbenchMode === "work") setIsSidePaneCollapsed(true);
+  }, [workbenchMode, setIsSidePaneCollapsed]);
   const handlePrimaryNavigationBack =
     workspaceMainView === "plugin-store" ? handleManageInstalledPlugins : handleTaskNavBack;
   const canPrimaryNavigationBack = workspaceMainView === "plugin-store" || canTaskNavBack;

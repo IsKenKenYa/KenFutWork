@@ -188,7 +188,7 @@ export function CheckpointTimeline({
                 ))}
               </SelectContent>
             </Select>
-            <div className="rounded-md border p-2.5 text-ui-sm">
+            <div className="rounded-md border border-border p-2.5 text-ui-sm">
               {preview === null ? (
                 <span className="text-foreground-subtle">读取预览…</span>
               ) : (

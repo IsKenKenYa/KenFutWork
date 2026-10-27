@@ -43,7 +43,7 @@ export function useWorkbenchSurfaceMode({
 }: {
   workspaceMainView: WorkspaceMainView;
   setWorkspaceMainView: (view: WorkspaceMainView) => void;
-}): void {
+}): "code" | "design" | "flow" | "work" {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   const snapshot = useSyncExternalStore(
     navigation?.subscribe ?? NOOP_SUBSCRIBE,
@@ -111,4 +111,5 @@ export function useWorkbenchSurfaceMode({
     },
     [navigation],
   );
+  return snapshot.mode;
 }

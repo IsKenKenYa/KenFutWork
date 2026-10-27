@@ -229,7 +229,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
                   if (receipt) void refreshFlowProjects();
                 });
               }}
-              className="rounded-md border px-3 py-1.5"
+              className="rounded-md border border-border px-3 py-1.5"
             >
               {directory.snapshot.flow.phase === "idle"
                 ? "重新关联"
@@ -252,7 +252,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
           <button
             type="button"
             onClick={() => setFlowSurfaceView("engine")}
-            className="rounded-lg border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30 hover:text-foreground"
+            className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30 hover:text-foreground"
           >
             打开引擎页
           </button>
@@ -519,7 +519,7 @@ function EngineView() {
               disabled={loading}
               aria-label="刷新"
               title="刷新"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
@@ -527,7 +527,7 @@ function EngineView() {
               <button
                 type="button"
                 onClick={() => void stop({ deleteData: false })}
-                className="rounded-lg border px-3 py-1.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
+                className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
               >
                 取消安装
               </button>
@@ -540,7 +540,7 @@ function EngineView() {
                       setStopAsk(false);
                       void stop({ deleteData: false });
                     }}
-                    className="rounded-lg border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
                   >
                     停止并保留数据
                   </button>
@@ -566,7 +566,7 @@ function EngineView() {
                 <button
                   type="button"
                   onClick={() => setStopAsk(true)}
-                  className="rounded-lg border px-3 py-1.5 text-xs text-foreground transition-colors hover:border-foreground/30"
+                  className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:border-foreground/30"
                 >
                   停止引擎
                 </button>
@@ -620,8 +620,8 @@ function EngineView() {
           <p className="mt-3 text-xs text-destructive">{info.install.error}</p>
         ) : null}
 
-        <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-          <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
+        <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
             <span className="w-28 shrink-0">服务</span>
             <span className="w-20 shrink-0">健康</span>
             <span className="flex-1">端口</span>
@@ -632,7 +632,9 @@ function EngineView() {
                 <div
                   key={container.name}
                   className={`flex items-center gap-3 px-4 py-2.5 ${
-                    index === info.stack.containers.length - 1 ? "" : "border-b"
+                    index === info.stack.containers.length - 1
+                      ? ""
+                      : "border-b border-border"
                   }`}
                 >
                   <span
@@ -669,8 +671,8 @@ function EngineView() {
         </div>
 
         {info ? (
-          <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-            <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
+          <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+            <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
               <span className="w-28 shrink-0">项</span>
               <span className="flex-1">值</span>
             </div>
@@ -685,7 +687,7 @@ function EngineView() {
               <div
                 key={label}
                 className={`flex items-center gap-3 px-4 py-2.5 ${
-                  index === rows.length - 1 ? "" : "border-b"
+                  index === rows.length - 1 ? "" : "border-b border-border"
                 }`}
               >
                 <span className="w-28 shrink-0 text-foreground-subtle">

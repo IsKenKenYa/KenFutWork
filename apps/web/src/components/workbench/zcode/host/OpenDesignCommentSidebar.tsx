@@ -56,7 +56,7 @@ export function OpenDesignCommentSidebar({
               <li key={comment.id}>
                 <div
                   data-active={comment.id === activeId || undefined}
-                  className={`rounded-lg border p-2 text-ui-caption ${
+                  className={`rounded-lg border border-border p-2 text-ui-caption ${
                     comment.id === activeId
                       ? "border-primary bg-primary/5"
                       : "border-border bg-surface"
