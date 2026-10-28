@@ -141,10 +141,24 @@ const ZERO_PATCHES = {
       "if wasm && !(*family == WEB_FONT.0 && *style == WEB_FONT.1) {",
       'if wasm && !((*family == WEB_FONT.0 && *style == WEB_FONT.1) || scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
     ],
+    // WEB_FONTS 从简体中文 manifest 取 LXGW，但 Trunk 的字体拷贝钩子只读 fonts/manifest.txt：
+    // 补上同一来源，否则运行时 404（SRI 校验失败，中文缺字）。
+    [
+      "xtask/src/web_fonts.rs",
+      `    let manifest = read(&dir.join("fonts/manifest.txt"))?;
+    let rows: Vec<Vec<&str>> =
+        manifest.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|l| l.split(" | ").map(str::trim).collect()).collect();`,
+      `    let manifest = read(&dir.join("fonts/manifest.txt"))?;
+    let chinese = read(&dir.join("fonts/simplified-chinese-manifest.txt")).unwrap_or_default();
+    let mut rows: Vec<Vec<&str>> =
+        manifest.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|l| l.split(" | ").map(str::trim).collect()).collect();
+    rows.extend(chinese.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|l| l.split(" | ").map(str::trim).collect::<Vec<_>>()));`,
+      'fonts/simplified-chinese-manifest.txt")).unwrap_or_default()',
+    ],
   ],
 };
-for (const [file, from, to] of ZERO_PATCHES[app] ?? []) {
-  patchOnce(join(source, file), from, to, "已放行 CJK");
+for (const [file, from, to, already] of ZERO_PATCHES[app] ?? []) {
+  patchOnce(join(source, file), from, to, "已放行 CJK", already ?? to);
 }
 
 // 3) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft 与 FilmCraft
