@@ -304,6 +304,8 @@ export const instanceSettingsSchema = z.object({
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
   /** 模型请求无输出上限；工具与人审等待分别治理，0关闭。 */
   agentStreamIdleTimeoutMs: governanceSetting("agentStreamIdleTimeoutMs"),
+  /** 流式 delta 合批刷新间隔；决定落库事务与快照帧的推送节奏。 */
+  agentStreamFlushIntervalMs: governanceSetting("agentStreamFlushIntervalMs"),
   /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
   codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
   localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),

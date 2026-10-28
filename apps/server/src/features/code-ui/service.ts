@@ -149,6 +149,10 @@ import {
   codeUiTaskControlRejection,
 } from "./repository.js";
 import { listCodeSessionSubagents } from "./subagent-directory.js";
+import {
+  createStreamingEventFlusher,
+  type StreamingEventFlusher,
+} from "./stream-flush.js";
 import { codeUiTaskMeta } from "./task-index.js";
 import type { TaskProjectMoveEvent } from "./task-project-move-types.js";
 import type {
@@ -4418,6 +4422,7 @@ export class CodeUiService {
     backgroundInputIdentity?: { clientId: string; sourceCommandId: string },
   ) {
     let ordinal = 0;
+    let flusher: StreamingEventFlusher | null = null;
     try {
       if (this.closing)
         throw new CodeUiRepositoryError(
@@ -4429,6 +4434,17 @@ export class CodeUiService {
         user,
         sessionId,
       );
+      const settings = await this.deps.settings.getInstanceSettings(
+        user,
+        scopeHandle.describe().instanceId,
+      );
+      // 流式 delta 合批：模型 chunk 逐条进缓冲，按 agentStreamFlushIntervalMs 的
+      // 节奏落库并推帧；工具与终态事件仍逐条即时落地（flush-before）。
+      flusher = createStreamingEventFlusher({
+        flushIntervalMs: settings.agentStreamFlushIntervalMs,
+        sink: (event) =>
+          this.recordRunEvent(user, project, sessionId, event, ++ordinal),
+      });
       const current = await this.deps.repository.find(
         scopeHandle.describe().instanceId,
         sessionId,
@@ -4557,17 +4573,14 @@ export class CodeUiService {
                     }
                   : {}),
               approvalCeiling,
-              eventSink: async (event) =>
-                this.recordRunEvent(
-                  user,
-                  project,
-                  sessionId,
+              eventSink: async (event) => {
+                const normalized =
                   event.type === "run.usage" &&
-                    modelInvocation?.contextWindow === undefined
+                  modelInvocation?.contextWindow === undefined
                     ? await this.enrichRunUsageWindow(event, user, model)
-                    : event,
-                  ++ordinal,
-                ),
+                    : event;
+                await flusher!.handle(normalized);
+              },
             },
           );
         },
@@ -4592,8 +4605,12 @@ export class CodeUiService {
       for await (const _event of this.deps.agentRuns.streamRun(runId)) {
         /* 持久事件由共享 Harness eventSink 投影。 */
       }
+      // 正常终态事件已在透传前落地缓冲；这里兜底「流提前结束且无终态事件」的残留。
+      await flusher.flush();
     } catch (error) {
       this.deps.agentRuns.cancelRun(runId);
+      // 失败前必须先落地已缓冲的流式 delta，run.failed 才不会排到未写入的文本之前。
+      await flusher?.flush();
       if (error instanceof CodeUiRepositoryError && error.code === "not_found")
         return;
       await this.recordRunEvent(

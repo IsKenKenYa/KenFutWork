@@ -30,6 +30,11 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   executeTimeoutMs: 120_000,
   /** 仅计真实模型请求无事件时间；工具执行和人审等待不计，0关闭。 */
   agentStreamIdleTimeoutMs: 180_000,
+  /**
+   * 流式 delta 合批刷新间隔（毫秒）。模型 token 事件先拼进缓冲，按该节奏落库并推送
+   * 快照帧；间隔越大服务端事务与前端整帧渲染越少，过大则输出显得迟滞。
+   */
+  agentStreamFlushIntervalMs: 80,
   /** Code 宿主通知通道断线后的重连间隔（毫秒）。 */
   codeUiReconnectDelayMs: 1_000,
   /** 本机浏览器一次性连接入口有效期。 */
@@ -99,6 +104,7 @@ export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
 /** 新工作域数值落同一设置表 JSON 对象，避免每项重复增加列与存取分支。 */
 export const RUNTIME_GOVERNANCE_KEYS = [
   "agentStreamIdleTimeoutMs",
+  "agentStreamFlushIntervalMs",
   "compactKeepMessages",
   "compactFallbackKeepMessages",
   "codeUiReconnectDelayMs",
@@ -151,6 +157,7 @@ export type AgentGovernanceOverrides = {
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
   agentStreamIdleTimeoutMs?: number | undefined;
+  agentStreamFlushIntervalMs?: number | undefined;
   codeUiReconnectDelayMs?: number | undefined;
   localAccessTicketTtlMs?: number | undefined;
   localAccessSessionMaxAgeMs?: number | undefined;
@@ -251,6 +258,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
   // setTimeout的有符号32位上限；0显式关闭模型无输出计时。
   agentStreamIdleTimeoutMs: { min: 0, max: 2_147_483_647 },
+  agentStreamFlushIntervalMs: { min: 20, max: 500 },
   codeUiReconnectDelayMs: { min: 100, max: 60_000 },
   localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
   localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
@@ -358,6 +366,9 @@ export function resolveGovernanceEnvOverrides(
       );
       return value !== undefined && value >= 0 ? value : undefined;
     })(),
+    agentStreamFlushIntervalMs: parseStrictInt(
+      source.KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS,
+    ),
     codeUiReconnectDelayMs:
       /^[+-]?\d+$/u.test(
         source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS?.trim() ?? "",

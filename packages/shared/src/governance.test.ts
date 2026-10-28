@@ -55,6 +55,7 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       executeTimeoutMs: 120000,
       codeUiReconnectDelayMs: 1000,
       subagentMaxContinuations: 50,
+      agentStreamFlushIntervalMs: 80,
       // Computer Use 五项（CU 插件里程碑 1 拍板档）
       computerUseActionTimeoutMs: 10_000,
       computerUseObserveMaxBytes: 32_768,
@@ -62,6 +63,43 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       computerUseMaxActionsPerRun: 200,
       computerUseSessionMaxMs: 1_800_000,
     });
+  });
+
+  it("流式刷新间隔：默认 80ms，schema 拒绝越界，env 兜底合法解析", () => {
+    expect(
+      instanceSettingsSchema.parse({ defaultModel: "fixture" })
+        .agentStreamFlushIntervalMs,
+    ).toBe(80);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamFlushIntervalMs: 10,
+      }).success,
+    ).toBe(false);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamFlushIntervalMs: 501,
+      }).success,
+    ).toBe(false);
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS: "120",
+      }),
+    ).toEqual({ agentStreamFlushIntervalMs: 120 });
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS: "abc",
+      }),
+    ).toEqual({});
+    expect(
+      resolveGovernanceNumber("agentStreamFlushIntervalMs", null, {
+        agentStreamFlushIntervalMs: 200,
+      }),
+    ).toBe(200);
+    expect(
+      resolveGovernanceNumber("agentStreamFlushIntervalMs", null, {}),
+    ).toBe(80);
   });
 
   it("clamp 把越界值钳回护栏，非法输入落区间下限", () => {
