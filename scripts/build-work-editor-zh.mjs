@@ -27,9 +27,16 @@ import { join, resolve } from "node:path";
  * 前置：rustup target `wasm32-unknown-unknown`、`trunk`（0.22+）、`CRAFT_FONTS_DIR`
  * 指向 craft-fonts 检出（含 `fonts/lxgw-wenkai-lite/*.ttf`）。
  *
+ * 中文文案：WordCraft 的界面译文由 craft-i18n 提供，**必须**传 `--i18n`（指向 craft-i18n
+ * 检出根目录，不是它的 `locales/` 子目录）——不传则 CRAFT_I18N 为空表，界面仍然全英文
+ * （实测：漏传时菜单是 Home/New/Open，传对后是 开始/新建/打开）。
+ *
  * 用法：
  *   node scripts/build-work-editor-zh.mjs --app gridcraft \
  *     --source D:/build/gridcraft --fonts D:/build/craft-fonts --out D:/build/out
+ *   node scripts/build-work-editor-zh.mjs --app wordcraft \
+ *     --source D:/build/wordcraft --fonts D:/build/craft-fonts \
+ *     --i18n D:/build/craft-i18n --out D:/build/out
  */
 
 const args = process.argv.slice(2);
@@ -46,7 +53,12 @@ const outDir = argOf("out")
   : join(process.cwd(), "tmp", "work-editor-zh");
 if (!app || !source || !fonts)
   throw new Error(
-    "用法：--app <id> --source <上游检出> --fonts <craft-fonts 检出> [--out <目录>]",
+    "用法：--app <id> --source <上游检出> --fonts <craft-fonts 检出> [--i18n <craft-i18n 检出>] [--out <目录>]",
+  );
+// WordCraft 的界面译文只来自 craft-i18n：漏传会静默得到「中文字形 + 英文文案」的包。
+if (app === "wordcraft" && !i18nDir)
+  throw new Error(
+    "wordcraft 需要 --i18n <craft-i18n 检出根目录>：不传则 CRAFT_I18N 为空表，界面仍然全英文。",
   );
 
 const APP_CRATE = {
