@@ -1,0 +1,120 @@
+diff --git a/apps/designcraft-web/Cargo.toml b/apps/designcraft-web/Cargo.toml
+index b1131c7..51cf465 100644
+--- a/apps/designcraft-web/Cargo.toml
++++ b/apps/designcraft-web/Cargo.toml
+@@ -16,6 +16,7 @@ path = "src/main.rs"
+ 
+ [dependencies]
+ designcraft-engine = { workspace = true }
++designcraft-fonts = { workspace = true }
+ designcraft-format = { workspace = true }
+ form_urlencoded = "1.2"
+ designcraft-ui-egui = { workspace = true }
+@@ -30,4 +31,4 @@ rfd = { workspace = true }
+ wasm-bindgen = "0.2"
+ wasm-bindgen-futures = "0.4"
+ js-sys = "0.3"
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Response", "Request", "RequestInit", "Navigator"] }
+diff --git a/apps/designcraft-web/src/web.rs b/apps/designcraft-web/src/web.rs
+index fe7cca4..2801b9b 100644
+--- a/apps/designcraft-web/src/web.rs
++++ b/apps/designcraft-web/src/web.rs
+@@ -57,10 +57,59 @@ pub fn start() {
+                     }
+                     let inbox: Inbox = Inbox::default();
+                     let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
++                    // KenFutWork: 界面语言跟随浏览器（上游 web 壳不探测，中文用户永远看英文）。
++                    if app.ui.language.is_empty()
++                        && let Some(tag) = web_sys::window().and_then(|w| w.navigator().language())
++                    {
++                        let lower = tag.to_ascii_lowercase();
++                        let pick = if lower.starts_with("zh") {
++                            "zh"
++                        } else if lower.starts_with("ja") {
++                            "ja"
++                        } else if lower.starts_with("de") {
++                            "de"
++                        } else if lower.starts_with("fr") {
++                            "fr"
++                        } else if lower.starts_with("es") {
++                            "es"
++                        } else if lower.starts_with("it") {
++                            "it"
++                        } else if lower.starts_with("pt-br") {
++                            "pt-br"
++                        } else if lower.starts_with("uk") {
++                            "uk"
++                        } else if lower.starts_with("ar") {
++                            "ar"
++                        } else {
++                            ""
++                        };
++                        if !pick.is_empty() && designcraft_ui_egui::i18n::LANGUAGES.iter().any(|(c, _)| *c == pick) {
++                            app.ui.language = pick.to_string();
++                        }
++                    }
++                    // KenFutWork: 浏览器端记住界面偏好（语言/主题等）——上游 0.6.0 的 web 壳没做，
++                    // 不加这段用户在「Edit › Interface Language」里选了中文也不会生效。
++                    if let Some(saved) = read_prefs() {
++                        if let Ok(ui) = designcraft_ui_egui::UiState::from_preferences_json(saved.as_bytes()) {
++                            app.ui = ui;
++                        }
++                    }
+                     if has_query_flag(&query(), "sample") {
+                         let _ = app.run("file.newSample", serde_json::json!({}));
+                     }
+-                    Ok(Box::new(WebShell { app, inbox }))
++                    // 宿主上传的用户字体（Work 引擎页）：同源清单 → 字体库。
++                    let font_ctx = cc.egui_ctx.clone();
++                    wasm_bindgen_futures::spawn_local(async move {
++                        let count = crate::user_fonts::install(|bytes| {
++                            designcraft_fonts::FontDb::global().add_font(bytes)
++                        })
++                        .await;
++                        if count > 0 {
++                            log::info!("user fonts installed: {count}");
++                            font_ctx.request_repaint();
++                        }
++                    });
++                    Ok(Box::new(WebShell { app, inbox, last_saved: None }))
+                 }),
+             )
+             .await;
+@@ -82,10 +131,19 @@ fn query() -> String {
+ struct WebShell {
+     app: DesignApp,
+     inbox: Inbox,
++    /// 上次写入 localStorage 的偏好 JSON（避免每帧重复写）。
++    last_saved: Option<String>,
+ }
+ 
+ impl eframe::App for WebShell {
+     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
++        // KenFutWork: 偏好变化后写回 localStorage（与原生端 designcraft.ui 同一份 JSON）。
++        if let Ok(json) = serde_json::to_string(&self.app.ui) {
++            if self.last_saved.as_deref() != Some(json.as_str()) {
++                write_prefs(&json);
++                self.last_saved = Some(json);
++            }
++        }
+         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
+         for f in dropped {
+             let request = self.app.import_request("drop");
+@@ -176,3 +234,16 @@ fn download(path: &str, bytes: &[u8]) -> Result<(), String> {
+     window.set_timeout_with_callback_and_timeout_and_arguments_0(revoke.unchecked_ref(), 10_000).map_err(js)?;
+     Ok(())
+ }
++
++/// 浏览器里的偏好键（与原生端文件名同名，便于对照）。
++const PREFS_KEY: &str = "designcraft.ui";
++
++fn read_prefs() -> Option<String> {
++    web_sys::window()?.local_storage().ok()??.get_item(PREFS_KEY).ok()?
++}
++
++fn write_prefs(json: &str) {
++    let Some(window) = web_sys::window() else { return };
++    let Ok(Some(storage)) = window.local_storage() else { return };
++    let _ = storage.set_item(PREFS_KEY, json);
++}
