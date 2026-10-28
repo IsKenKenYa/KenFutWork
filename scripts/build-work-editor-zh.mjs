@@ -143,8 +143,13 @@ if (hook && existsSync(userFontsSource)) {
 const USER_FONT_PATCHES = {
   gridcraft: "work-editor/gridcraft-user-fonts.patch",
   cadcraft: "work-editor/cadcraft-user-fonts.patch",
+  pdfcraft: "work-editor/pdfcraft-user-fonts.patch",
 };
 if (USER_FONT_PATCHES[app]) {
+  // PdfCraft 的清单抓取放在 ui-egui 内（不是 web 壳），先把这个新文件放到位再打补丁。
+  if (app === "pdfcraft") {
+    cpSync(resolve(import.meta.dirname, "work-editor/pdfcraft-host-fonts.rs"), join(source, "crates/ui-egui/src/host_font_fetch.rs"));
+  }
   const patchFile = resolve(import.meta.dirname, USER_FONT_PATCHES[app]);
   try {
     execFileSync("git", ["apply", "--check", patchFile], { cwd: source, stdio: "pipe" });
