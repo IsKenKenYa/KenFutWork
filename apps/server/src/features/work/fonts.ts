@@ -65,12 +65,14 @@ export function fontFamilyName(bytes: Buffer): string | null {
   if (nameOffset < 0 || nameOffset + 6 > bytes.length) return null;
   const count = bytes.readUInt16BE(nameOffset + 2);
   const storage = nameOffset + bytes.readUInt16BE(nameOffset + 4);
-  const preferred: string[] = [];
-  const fallback: string[] = [];
+  // 名字取哪一个：字体通常带多语言家族名（简中/繁中/英文）。展示给中文用户，
+  // 按「简中 > 其他中文 > 英文 > 其它」挑，而不是碰巧第一条（那常常是 zh-TW 繁中）。
+  const candidates: Array<{ text: string; score: number }> = [];
   for (let i = 0; i < count; i += 1) {
     const entry = nameOffset + 6 + i * 12;
     if (entry + 12 > bytes.length) break;
     const platform = bytes.readUInt16BE(entry);
+    const languageId = bytes.readUInt16BE(entry + 4);
     const nameId = bytes.readUInt16BE(entry + 6);
     if (nameId !== 16 && nameId !== 1) continue;
     const length = bytes.readUInt16BE(entry + 8);
@@ -92,9 +94,36 @@ export function fontFamilyName(bytes: Buffer): string | null {
       .join("")
       .trim();
     if (!cleaned) continue;
-    (nameId === 16 ? preferred : fallback).push(cleaned);
+    // typographic family（16）比 legacy family（1）更准，给它更高权重。
+    const base = nameId === 16 ? 100 : 0;
+    candidates.push({
+      text: cleaned,
+      score: base + nameLanguageScore(languageId),
+    });
   }
-  return preferred[0] ?? fallback[0] ?? null;
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0]!.text;
+}
+
+/**
+ * 家族名的语言优先级（Windows LCID）：简体中文 > 繁体中文 > 英文 > 其它。
+ * 中文用户看到的字体名要是「霞鹜文楷」而不是「霞鶩文楷」。
+ */
+function nameLanguageScore(languageId: number): number {
+  switch (languageId) {
+    case 0x0804: // zh-CN
+    case 0x1004: // zh-SG
+      return 40;
+    case 0x0404: // zh-TW
+    case 0x0c04: // zh-HK
+    case 0x1404: // zh-MO
+      return 30;
+    case 0x0409: // en-US
+      return 20;
+    default:
+      return 10;
+  }
 }
 
 function safeStem(fileName: string): string {

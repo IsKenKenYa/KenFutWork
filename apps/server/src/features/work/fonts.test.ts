@@ -18,7 +18,7 @@ import {
  * 站点 `fonts/` 下。这里锁定三件事——家族名解析、上传幂等与校验、清单格式。
  */
 
-/** 真实结构的 sfnt 片段（只保留 name 表，来自 霞鶩文楷 輕便版 的 name 记录）。 */
+/** 真实结构的 sfnt 片段（只保留 name 表，来自 霞鹜文楷 轻便版 的 name 记录）。 */
 const REAL_FONT = readFileSync(
   join(import.meta.dirname, "__fixtures__", "test-font.ttf"),
 );
@@ -44,7 +44,13 @@ describe("用户字体库", () => {
   });
 
   it("从 sfnt 的 name 表取家族名（UTF-16BE 平台）", () => {
-    expect(fontFamilyName(REAL_FONT)).toBe("霞鶩文楷 輕便版");
+    expect(fontFamilyName(REAL_FONT)).toBe("霞鹜文楷 轻便版");
+  });
+
+  it("多语言家族名优先取简体中文（不是碰巧第一条的繁中）", () => {
+    // 该字体的 name 表顺序是 zh-TW、en-US、zh-CN、zh-HK、zh-MO：
+    // 按记录顺序取会得到「霞鶩文楷 輕便版」，必须按语言优先级拿到简体。
+    expect(fontFamilyName(REAL_FONT)).toBe("霞鹜文楷 轻便版");
   });
 
   it("非字体字节没有家族名", () => {
@@ -57,7 +63,7 @@ describe("用户字体库", () => {
     const first = await addFont({ dataDir, fileName: "我的字体.ttf", bytes });
     const again = await addFont({ dataDir, fileName: "我的字体.ttf", bytes });
     expect(first.fileName).toBe(again.fileName);
-    expect(first.family).toBe("霞鶩文楷 輕便版");
+    expect(first.family).toBe("霞鹜文楷 轻便版");
     expect(first.format).toBe("ttf");
     expect(await listFonts(dataDir)).toHaveLength(1);
     expect(readFileSync(join(workFontsDir(dataDir), first.fileName))).toEqual(
