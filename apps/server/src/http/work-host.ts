@@ -13,6 +13,15 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import {
+  addFont,
+  fontFormatOf,
+  listFonts,
+  MAX_FONT_BYTES,
+  manifestFor,
+  removeFont,
+  workFontsDir,
+} from "../features/work/fonts.js";
+import {
   getWorkEditorInstallSnapshot,
   getWorkEditorInstallSnapshots,
   startWorkEditorInstall,
@@ -130,6 +139,73 @@ export async function registerWorkHostRoutes(
     },
   );
 
+  // ---- 用户字体（Work 引擎页「字体」）----
+  // 编辑器是 WASM 自绘、读不到系统字体：用户把 ttf/otf 放进实例数据目录，宿主在
+  // 托管编辑器时映射到站点 `fonts/user/` 并生成 manifest，运行时加载字体的编辑器即可用。
+
+  app.get("/api/work/host/fonts", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    return reply.send({
+      dir: workFontsDir(options.dataDir),
+      fonts: await listFonts(options.dataDir),
+    });
+  });
+
+  app.post("/api/work/host/fonts", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    try {
+      // 全局 multipart 上限是 10MB，但中文字体常超过它：这里按字体上限放行。
+      const parts = request.parts({
+        limits: { fileSize: MAX_FONT_BYTES, files: 1, fields: 0 },
+      });
+      let fileName: string | null = null;
+      let bytes: Buffer | null = null;
+      for await (const part of parts) {
+        if (part.type !== "file") continue;
+        if (bytes)
+          return applicationError(reply, 400, "一次只能上传一个字体。");
+        fileName = part.filename ?? null;
+        bytes = await part.toBuffer();
+      }
+      if (!fileName || !bytes)
+        return applicationError(reply, 400, "请选择一个字体文件。");
+      const font = await addFont({
+        dataDir: options.dataDir,
+        fileName,
+        bytes,
+      });
+      return reply.send({
+        dir: workFontsDir(options.dataDir),
+        fonts: await listFonts(options.dataDir),
+        added: font,
+      });
+    } catch (error) {
+      return applicationError(
+        reply,
+        400,
+        error instanceof Error ? error.message : "字体上传失败。",
+      );
+    }
+  });
+
+  app.delete("/api/work/host/fonts/:fileName", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    const fileName = String((request.params as { fileName: string }).fileName);
+    try {
+      await removeFont(options.dataDir, fileName);
+    } catch (error) {
+      return applicationError(
+        reply,
+        400,
+        error instanceof Error ? error.message : "删除失败。",
+      );
+    }
+    return reply.send({
+      dir: workFontsDir(options.dataDir),
+      fonts: await listFonts(options.dataDir),
+    });
+  });
+
   // ---- 编辑器静态托管（WASM iframe 内嵌的承载面）----
 
   const MIME: Record<string, string> = {
@@ -174,6 +250,30 @@ export async function registerWorkHostRoutes(
     // 落位标记是安装器的内部事实，不对外提供。
     if (rel.split("/").some((segment) => segment.startsWith(".")))
       return applicationError(reply, 404, "没有这个文件。");
+
+    // 用户字体：站点里的 `fonts/user/<文件名>` 与 `fonts/manifest.txt` 由宿主生成，
+    // 不要求用户往每个编辑器目录里各放一份。编辑器包自带的 fonts/ 仍优先。
+    const userFonts = workFontsDir(options.dataDir);
+    if (rel.startsWith("fonts/user/")) {
+      const name = rel.slice("fonts/user/".length);
+      if (fontFormatOf(name) === null || /[/]/u.test(name))
+        return applicationError(reply, 404, "没有这个文件。");
+      const path = join(userFonts, name);
+      if (!existsSync(path))
+        return applicationError(reply, 404, "没有这个字体。");
+      const fontMime = fontFormatOf(name) === "otf" ? "font/otf" : "font/ttf";
+      return reply
+        .header("content-type", fontMime)
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "no-cache")
+        .send(createReadStream(path));
+    }
+    if (rel === "fonts/manifest.txt") {
+      return reply
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("cache-control", "no-cache")
+        .send(manifestFor(await listFonts(options.dataDir)));
+    }
 
     const root = join(options.editorsDir, editor.id) + sep;
     let filePath = join(root, rel);
@@ -235,6 +335,8 @@ const EDITOR_NATIVE_CJK = new Set([
   "filmcraft",
   "vectorcraft",
   "photocraft",
+  "designcraft",
+  "pdfcraft",
 ]);
 
 export function injectEditorLocaleShim(

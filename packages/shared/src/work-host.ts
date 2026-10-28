@@ -145,3 +145,44 @@ export function resolveWorkEntry(input: {
   }
   return { available: true };
 }
+
+/**
+ * 用户字体与界面语言（Work 引擎页的「字体与语言」）。
+ *
+ * 为什么需要：编辑器是 WASM + WebGPU 自绘，**读不到系统字体**，只能用包内嵌的或
+ * 站点同源提供的字体文件。这里让用户把自己的 ttf/otf 放进实例数据目录，宿主在
+ * 托管编辑器时把它映射到站点的 `fonts/` 下——`photocraft` / `vectorcraft` 这类
+ * 原生支持运行时字体的编辑器立刻可用；内嵌型编辑器仍需在构建期带上。
+ *
+ * 合规：上传的是**用户自己的字体**，随实例本机使用，不进仓库、不随产品分发；
+ * 宋体/微软雅黑/方正系列等商业字体的授权由用户自行保证。
+ */
+export const workFontFormatSchema = z.enum(["ttf", "otf", "ttc"]);
+export type WorkFontFormat = z.infer<typeof workFontFormatSchema>;
+
+export const workFontSchema = z.object({
+  /** 存储文件名（`<sha16>-<safe name>.<ext>`，主机内唯一、无用户可控路径）。 */
+  fileName: z.string().min(1).max(160),
+  /** 展示名：字体文件的家族名（解析失败时退化为文件名去扩展）。 */
+  family: z.string().min(1).max(120),
+  format: workFontFormatSchema,
+  bytes: z.number().int().positive(),
+});
+export type WorkFont = z.infer<typeof workFontSchema>;
+
+export const workFontsResponseSchema = z.object({
+  /** 字体目录绝对路径（界面如实展示，便于用户自己去放文件）。 */
+  dir: z.string().min(1),
+  fonts: z.array(workFontSchema),
+});
+export type WorkFontsResponse = z.infer<typeof workFontsResponseSchema>;
+
+/** 界面语言偏好：`auto` 跟随系统，其余为 BCP 47 码。 */
+export const workUiLanguageSchema = z.string().min(1).max(32);
+export type WorkUiLanguage = z.infer<typeof workUiLanguageSchema>;
+
+export const workPreferencesSchema = z.object({
+  /** `auto` 或语言码；宿主把它注入编辑器用于首次启动。 */
+  language: workUiLanguageSchema,
+});
+export type WorkPreferences = z.infer<typeof workPreferencesSchema>;

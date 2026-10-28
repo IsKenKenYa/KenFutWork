@@ -1,6 +1,7 @@
 import type {
   WorkEditor,
   WorkEditorInstallStatus,
+  WorkFontsResponse,
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
@@ -296,7 +297,143 @@ function EditorsInfoView({
             </div>
           </div>
         ) : null}
+
+        <WorkFontsSection active={active} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * 字体区：编辑器是 WASM 自绘、读不到系统字体，只能用它自带的或站点同源提供的字体。
+ * 这里把用户自己的 ttf/otf 放进实例数据目录，宿主托管编辑器时映射到 `fonts/user/`
+ * 并生成 manifest——Photocraft / VectorCraft 这类运行时加载字体的编辑器立刻可用。
+ *
+ * 边界：上传的是用户自己的字体，只在本机实例使用；商业字体（宋体/雅黑/方正系列）
+ * 的授权由用户自行保证，产品不随包分发。
+ */
+function WorkFontsSection({ active }: { active: boolean }) {
+  const [fonts, setFonts] = useState<WorkFontsResponse | null>(null);
+  const [dir, setDir] = useState<string>("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await surfaceJson<WorkFontsResponse>("/api/work/host/fonts");
+      setFonts(data);
+      setDir(data.dir);
+      setNotice(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "读取字体失败");
+    }
+  }, []);
+  useEffect(() => {
+    if (active) void load();
+  }, [active, load]);
+
+  const upload = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        const body = new FormData();
+        body.append("file", file, file.name);
+        const response = await surfaceFetch("/api/work/host/fonts", {
+          method: "POST",
+          body,
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: { message?: string };
+        };
+        if (!response.ok)
+          throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
+        await load();
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "上传失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  const remove = useCallback(
+    async (fileName: string) => {
+      setBusy(true);
+      try {
+        await surfaceFetch(
+          `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
+          { method: "DELETE" },
+        );
+        await load();
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "删除失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+      <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+        <span className="flex-1">字体</span>
+        <label className="cursor-pointer rounded-md border border-border px-2 py-0.5 text-foreground transition-colors hover:border-foreground/30">
+          上传
+          <input
+            type="file"
+            accept=".ttf,.otf,.ttc"
+            className="hidden"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void upload(file);
+            }}
+          />
+        </label>
+      </div>
+      {(fonts?.fonts ?? []).length === 0 ? (
+        <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
+          暂无字体
+        </p>
+      ) : (
+        (fonts?.fonts ?? []).map((font, index, rows) => (
+          <div
+            key={font.fileName}
+            className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 ${
+              index === rows.length - 1 ? "" : "border-b border-border"
+            }`}
+          >
+            <span className="min-w-0 truncate" title={font.fileName}>
+              {font.family}
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void remove(font.fileName)}
+              className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+            >
+              删除
+            </button>
+          </div>
+        ))
+      )}
+      {dir ? (
+        <p
+          className="truncate border-t border-border px-4 py-2 font-mono text-[11px] text-foreground-subtle"
+          title={dir}
+        >
+          {dir}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="border-t border-border px-4 py-2 text-xs text-destructive">
+          {notice}
+        </p>
+      ) : null}
     </div>
   );
 }
