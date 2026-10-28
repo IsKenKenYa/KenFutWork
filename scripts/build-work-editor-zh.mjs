@@ -127,6 +127,10 @@ const USER_FONT_HOOKS = {
     "apps/gridcraft-web/src/user_fonts.rs",
     'gridcraft_ui_egui::fonts::add_font_bytes(&format!("host-{}", bytes.len()), bytes)',
   ],
+  cadcraft: [
+    "apps/cadcraft-web/src/user_fonts.rs",
+    'if cadcraft_fonts::ttf::register_family_font(bytes).is_empty() { 0 } else { 1 }',
+  ],
 };
 const userFontsSource = resolve(import.meta.dirname, "work-editor/user_fonts.rs");
 const hook = USER_FONT_HOOKS[app];
@@ -134,16 +138,20 @@ if (hook && existsSync(userFontsSource)) {
   cpSync(userFontsSource, join(source, hook[0]));
   console.log(`[zh] 已放置用户字体加载器：${hook[0]}`);
 }
-// GridCraft 的字体目录是「扫描到的系统字体」模型，wasm 端没有字库：用随仓库的补丁加入
-// 内存字形表（`fonts::add_font_bytes`）和启动时的清单加载（`git apply` 幂等，已打则跳过）。
-if (app === "gridcraft") {
-  const patchFile = resolve(import.meta.dirname, "work-editor/gridcraft-user-fonts.patch");
+// 有些编辑器的字体目录是「扫描到的系统字体」模型，wasm 端没有字库：用随仓库的补丁加入
+// 内存字形表与启动时的清单加载（`git apply` 幂等，已打则跳过）。
+const USER_FONT_PATCHES = {
+  gridcraft: "work-editor/gridcraft-user-fonts.patch",
+  cadcraft: "work-editor/cadcraft-user-fonts.patch",
+};
+if (USER_FONT_PATCHES[app]) {
+  const patchFile = resolve(import.meta.dirname, USER_FONT_PATCHES[app]);
   try {
     execFileSync("git", ["apply", "--check", patchFile], { cwd: source, stdio: "pipe" });
     execFileSync("git", ["apply", patchFile], { cwd: source, stdio: "inherit" });
-    console.log("[zh] 已应用 GridCraft 用户字体补丁");
+    console.log(`[zh] 已应用 ${app} 用户字体补丁`);
   } catch {
-    console.log("[zh] GridCraft 用户字体补丁已应用，跳过");
+    console.log(`[zh] ${app} 用户字体补丁已应用，跳过`);
   }
 }
 
