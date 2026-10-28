@@ -40,6 +40,7 @@ const argOf = (name, fallback) => {
 const app = argOf("app");
 const source = argOf("source") ? resolve(argOf("source")) : undefined;
 const fonts = argOf("fonts") ? resolve(argOf("fonts")) : undefined;
+const i18nDir = argOf("i18n") ? resolve(argOf("i18n")) : undefined;
 const outDir = argOf("out")
   ? resolve(argOf("out"))
   : join(process.cwd(), "tmp", "work-editor-zh");
@@ -52,6 +53,14 @@ const APP_CRATE = {
   gridcraft: "apps/gridcraft-web",
   wordcraft: "apps/wordcraft-web",
   deckcraft: "apps/deckcraft-web",
+  designcraft: "apps/designcraft-web",
+  effectcraft: "apps/effectcraft-web",
+  filmcraft: "apps/filmcraft-web",
+  vectorcraft: "apps/vectorcraft-web",
+  photocraft: "apps/photocraft-web",
+  cadcraft: "apps/cadcraft-web",
+  pdfcraft: "apps/pdfcraft-web",
+  soundcraft: "apps/soundcraft-web",
 };
 const crate = APP_CRATE[app];
 if (!crate) throw new Error(`未登记该编辑器的 web 构建入口：${app}`);
@@ -59,34 +68,58 @@ if (!crate) throw new Error(`未登记该编辑器的 web 构建入口：${app}`
 const read = (path) => readFileSync(path, "utf8");
 const eol = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
 
-// 1) 放开 web 的 CJK 白名单（幂等：已含即跳过）
-const policyPath = join(source, "crates/ui-egui/src/craft_fonts_policy.rs");
-let policy = read(policyPath);
-const nl = eol(policy);
-const allowed = "pub const WEB_ALLOWED: &[(&str, &str)] = &[";
-if (!policy.includes(`("LXGW WenKai Lite", "Regular")`)) {
-  const at = policy.indexOf(allowed) + allowed.length;
-  policy = `${policy.slice(0, at)}${nl}    // KenFutWork: web 构建同样内嵌简体中文（OFL，LXGW WenKai Lite）。${nl}    ("LXGW WenKai Lite", "Regular"),${policy.slice(at)}`;
-  writeFileSync(policyPath, policy);
-  console.log(`[zh] 已放开 WEB_ALLOWED：${policyPath}`);
+/**
+ * 每个编辑器放行 web 简体中文字形的锚点不同（上游把这处逻辑放在
+ * `ui-egui/craft_fonts_policy.rs` 或 `crates/<x>/build.rs`）。三态判定：
+ * 锚点命中→改写；已含 `applied`（说明此前补过，允许与首次改写的排版不同）→跳过；
+ * 两者都没有→上游改结构，报错要人工核对。
+ */
+function patchOnce(path, from, to, label, applied = to) {
+  const text = read(path);
+  if (text.includes(from)) {
+    writeFileSync(path, text.replace(from, to));
+    console.log(`[zh] ${label}：${path}`);
+    return;
+  }
+  if (text.includes(applied)) return;
+  throw new Error(`补丁锚点不存在（${path}）——上游已改结构，需人工核对`);
 }
 
-// 2) wasm 也读简体中文 manifest（幂等）
-const buildPath = join(source, "crates/ui-egui/build.rs");
-let build = read(buildPath);
-const wasmOnly =
-  "let chinese = if wasm { Vec::new() } else { chinese_font_rows(dir, required)? };";
-if (build.includes(wasmOnly)) {
-  build = build.replace(
-    wasmOnly,
-    "let chinese = chinese_font_rows(dir, required)?;",
+// 1) ui-egui/craft_fonts_policy.rs 型（gridcraft / wordcraft）
+const policyPath = join(source, "crates/ui-egui/src/craft_fonts_policy.rs");
+if (existsSync(policyPath)) {
+  const nl = eol(read(policyPath));
+  const allowed = "pub const WEB_ALLOWED: &[(&str, &str)] = &[";
+  patchOnce(
+    policyPath,
+    allowed,
+    `${allowed}${nl}    // KenFutWork: web 构建同样内嵌简体中文（OFL，LXGW WenKai Lite）。${nl}    ("LXGW WenKai Lite", "Regular"),`,
+    "已放开 WEB_ALLOWED",
   );
-  writeFileSync(buildPath, build);
-  console.log(`[zh] 已让 wasm 读取简体中文 manifest：${buildPath}`);
+}
+
+// 2) wasm 也读简体中文 manifest（仅 gridcraft/wordcraft 把字体表建在 ui-egui）
+const buildPath = join(source, "crates/ui-egui/build.rs");
+const uiEguiChinese =
+  "let chinese = if wasm { Vec::new() } else { chinese_font_rows(dir, required)? };";
+if (existsSync(buildPath) && read(buildPath).includes(uiEguiChinese)) {
+  patchOnce(
+    buildPath,
+    uiEguiChinese,
+    "let chinese = chinese_font_rows(dir, required)?;",
+    "已让 wasm 读取简体中文 manifest",
+  );
 }
 
 // 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
 const ZERO_PATCHES = {
+  deckcraft: [
+    [
+      "crates/fonts/build.rs",
+      'if wasm && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable")) {',
+      'let chinese = scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"));\n        if wasm && !chinese && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable")) {',
+    ],
+  ],
   cadcraft: [
     [
       "crates/fonts/build.rs",
@@ -99,59 +132,46 @@ const ZERO_PATCHES = {
     [
       "crates/text/build.rs",
       'if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {',
-      'if wasm && !((*family == "BIZ UDPGothic" && *style == "Regular") || scripts.split(',
-      ').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
+      'if wasm && !((*family == "BIZ UDPGothic" && *style == "Regular") || scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
     ],
   ],
   vectorcraft: [
     [
       "crates/text/build.rs",
       "if wasm && !(*family == WEB_FONT.0 && *style == WEB_FONT.1) {",
-      "if wasm && !((*family == WEB_FONT.0 && *style == WEB_FONT.1) || scripts.split(",
-      ').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
+      'if wasm && !((*family == WEB_FONT.0 && *style == WEB_FONT.1) || scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
     ],
   ],
 };
 for (const [file, from, to] of ZERO_PATCHES[app] ?? []) {
-  const path = join(source, file);
-  const text = read(path);
-  if (!text.includes(from)) {
-    if (text.includes(to)) continue;
-    throw new Error(
-      `${app}: 补丁锚点不存在（${file}）——上游已改结构，需人工核对`,
-    );
-  }
-  writeFileSync(path, text.replace(from, to));
-  console.log(`[zh] 已放行 CJK：${path}`);
+  patchOnce(join(source, file), from, to, "已放行 CJK");
 }
 
-// 3) trunk 构建
+// 3) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft 与 FilmCraft
+//    没有 index.html，用自家的 `cargo xtask web`（wasm-bindgen 直出到 <target>/web/dist）。
+const XTASK_APPS = new Set(["effectcraft", "filmcraft"]);
 const cwd = join(source, crate);
 if (!existsSync(cwd)) throw new Error(`找不到 web 构建目录：${cwd}`);
 console.log(`[zh] 构建 ${app} …（首次编译约 6 分钟）`);
-execFileSync(
-  "trunk",
-  [
-    "build",
-    "--release",
-    "--locked",
-    "--skip-version-check",
-    "--color",
-    "never",
-  ],
-  {
-    cwd,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      CRAFT_FONTS_DIR: fonts,
-      ...(i18nDir ? { CRAFT_I18N_DIR: i18nDir } : {}),
-    },
-  },
-);
+const buildEnv = {
+  ...process.env,
+  CRAFT_FONTS_DIR: fonts,
+  ...(i18nDir ? { CRAFT_I18N_DIR: i18nDir } : {}),
+};
+if (XTASK_APPS.has(app)) {
+  execFileSync("cargo", ["xtask", "web"], { cwd: source, stdio: "inherit", env: buildEnv });
+} else {
+  execFileSync(
+    "trunk",
+    ["build", "--release", "--locked", "--skip-version-check", "--color", "never"],
+    { cwd, stdio: "inherit", env: buildEnv },
+  );
+}
 
-// 4) 收集产物（trunk 输出到 <repo>/dist/web）
-const dist = join(source, "dist/web");
+// 4) 收集产物
+const dist = XTASK_APPS.has(app)
+  ? join(source, "target", "web", "dist")
+  : join(source, "dist/web");
 if (!existsSync(dist)) throw new Error(`构建成功但没有产物目录：${dist}`);
 const target = join(outDir, app);
 rmSync(target, { recursive: true, force: true });

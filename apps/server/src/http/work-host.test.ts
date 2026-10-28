@@ -61,6 +61,7 @@ async function emptyEditorsDir(): Promise<string> {
 async function fixture(options: {
   authenticated?: boolean;
   editorsDir?: string;
+  dataDir?: string;
   /** 替换 gridcraft 的锚定发布（假上游），路由级全链路不触真实网络。 */
   pinnedOverride?: WorkEditorPinnedRelease | null;
 }) {
@@ -80,7 +81,7 @@ async function fixture(options: {
               : editor,
         ),
     },
-    dataDir: "/tmp/kenfutwork-data",
+    dataDir: options.dataDir ?? "/tmp/kenfutwork-data",
     editorsDir: currentEditorsDir,
   });
   return app;
@@ -393,6 +394,51 @@ describe("work 宿主路由", () => {
     });
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.message).toContain("尚未落位");
+  });
+
+  it("用户字体：清单接在包内清单之后，字体文件从数据目录同源提供", async () => {
+    const editorsDir = await emptyEditorsDir();
+    const dataDir = await mkdtemp(join(tmpdir(), "work-host-data-"));
+    createdDirs.push(dataDir);
+    const app = await fixture({ editorsDir, dataDir });
+    const editorDir = join(editorsDir, "photocraft");
+    await mkdir(join(editorDir, "fonts"), { recursive: true });
+    await writeFile(join(editorDir, "index.html"), "<html></html>");
+    await writeFile(
+      join(editorDir, "fonts", "manifest.txt"),
+      "Bundled Sans | Regular | fonts/bundled/B.ttf | Latn\n",
+    );
+    const userFontDir = join(dataDir, "work", "fonts");
+    await mkdir(userFontDir, { recursive: true });
+    await writeFile(join(userFontDir, "abc-upload.ttf"), Buffer.from([0, 1, 2, 3]));
+
+    const manifest = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/manifest.txt",
+    });
+    expect(manifest.statusCode).toBe(200);
+    // 包内清单不能被覆盖：PhotoCraft 靠它发现自带字形。
+    expect(manifest.body).toContain("Bundled Sans");
+    expect(manifest.body).toContain("fonts/user/abc-upload.ttf");
+
+    const served = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/user/abc-upload.ttf",
+    });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers["content-type"]).toBe("font/ttf");
+
+    // 数据目录之外的文件名一律拒绝：穿越在路径校验处 400，非字体扩展名 404。
+    const traversal = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/user/..%2Fabc-upload.ttf",
+    });
+    expect(traversal.statusCode).toBe(400);
+    const notFont = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/user/abc-upload.exe",
+    });
+    expect(notFont.statusCode).toBe(404);
   });
 
   it("editors：扩展包目录落位 → installed=true，同前缀目录不误判（原 W1 事实保留）", async () => {

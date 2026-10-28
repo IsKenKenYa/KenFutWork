@@ -269,12 +269,18 @@ export async function registerWorkHostRoutes(
         .send(createReadStream(path));
     }
     if (rel === "fonts/manifest.txt") {
+      // 编辑器包自带的 fonts/ 仍要能加载（PhotoCraft 靠这份清单发现包内字形）：
+      // 宿主生成的用户字体清单接在包内清单后面，而不是覆盖它。
+      const bundledPath = join(options.editorsDir, editor.id, "fonts", "manifest.txt");
+      const userManifest = manifestFor(await listFonts(options.dataDir));
+      const bundled = existsSync(bundledPath)
+        ? readFileSync(bundledPath, "utf8")
+        : "";
       return reply
         .header("content-type", "text/plain; charset=utf-8")
         .header("cache-control", "no-cache")
-        .send(manifestFor(await listFonts(options.dataDir)));
+        .send(`${bundled}${bundled && !bundled.endsWith("\n") ? "\n" : ""}${userManifest}`);
     }
-
     const root = join(options.editorsDir, editor.id) + sep;
     let filePath = join(root, rel);
     if (!existsSync(filePath) || !statSync(filePath).isFile()) {
