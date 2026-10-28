@@ -134,6 +134,18 @@ if (hook && existsSync(userFontsSource)) {
   cpSync(userFontsSource, join(source, hook[0]));
   console.log(`[zh] 已放置用户字体加载器：${hook[0]}`);
 }
+// GridCraft 的字体目录是「扫描到的系统字体」模型，wasm 端没有字库：用随仓库的补丁加入
+// 内存字形表（`fonts::add_font_bytes`）和启动时的清单加载（`git apply` 幂等，已打则跳过）。
+if (app === "gridcraft") {
+  const patchFile = resolve(import.meta.dirname, "work-editor/gridcraft-user-fonts.patch");
+  try {
+    execFileSync("git", ["apply", "--check", patchFile], { cwd: source, stdio: "pipe" });
+    execFileSync("git", ["apply", patchFile], { cwd: source, stdio: "inherit" });
+    console.log("[zh] 已应用 GridCraft 用户字体补丁");
+  } catch {
+    console.log("[zh] GridCraft 用户字体补丁已应用，跳过");
+  }
+}
 
 // 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
 const ZERO_PATCHES = {
