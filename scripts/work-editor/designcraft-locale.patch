@@ -17,13 +17,20 @@ index b1131c7..51cf465 100644
 -web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }
 +web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Response", "Request", "RequestInit", "Navigator"] }
 diff --git a/apps/designcraft-web/src/web.rs b/apps/designcraft-web/src/web.rs
-index fe7cca4..2801b9b 100644
+index fe7cca4..3cde02f 100644
 --- a/apps/designcraft-web/src/web.rs
 +++ b/apps/designcraft-web/src/web.rs
 @@ -57,10 +57,59 @@ pub fn start() {
                      }
                      let inbox: Inbox = Inbox::default();
                      let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
++                    // KenFutWork: 浏览器端记住界面偏好（语言/主题等）——上游 0.6.0 的 web 壳没做，
++                    // 不加这段用户在「Edit › Interface Language」里选了中文也不会生效。
++                    if let Some(saved) = read_prefs() {
++                        if let Ok(ui) = designcraft_ui_egui::UiState::from_preferences_json(saved.as_bytes()) {
++                            app.ui = ui;
++                        }
++                    }
 +                    // KenFutWork: 界面语言跟随浏览器（上游 web 壳不探测，中文用户永远看英文）。
 +                    if app.ui.language.is_empty()
 +                        && let Some(tag) = web_sys::window().and_then(|w| w.navigator().language())
@@ -52,13 +59,6 @@ index fe7cca4..2801b9b 100644
 +                        };
 +                        if !pick.is_empty() && designcraft_ui_egui::i18n::LANGUAGES.iter().any(|(c, _)| *c == pick) {
 +                            app.ui.language = pick.to_string();
-+                        }
-+                    }
-+                    // KenFutWork: 浏览器端记住界面偏好（语言/主题等）——上游 0.6.0 的 web 壳没做，
-+                    // 不加这段用户在「Edit › Interface Language」里选了中文也不会生效。
-+                    if let Some(saved) = read_prefs() {
-+                        if let Ok(ui) = designcraft_ui_egui::UiState::from_preferences_json(saved.as_bytes()) {
-+                            app.ui = ui;
 +                        }
 +                    }
                      if has_query_flag(&query(), "sample") {

@@ -1,0 +1,60 @@
+diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
+index c95da85..df987cf 100644
+--- a/crates/ui-egui/Cargo.toml
++++ b/crates/ui-egui/Cargo.toml
+@@ -42,6 +42,9 @@ base64 = "0.23"
+ flate2 = { workspace = true }
+ web-time = { workspace = true }
+ 
++[target.'cfg(target_arch = "wasm32")'.dependencies]
++web-sys = { version = "0.3", features = ["Window", "Navigator"] }
++
+ [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ # Floating panels open in their own OS windows on the desktop; the web keeps them in the page.
+ craft-ui = { workspace = true, features = ["native-windows"] }
+diff --git a/crates/ui-egui/src/i18n/system.rs b/crates/ui-egui/src/i18n/system.rs
+index 25cc9fe..e04d08c 100644
+--- a/crates/ui-egui/src/i18n/system.rs
++++ b/crates/ui-egui/src/i18n/system.rs
+@@ -2,9 +2,7 @@
+ 
+ use super::{Lang, lang_from_tag};
+ 
+-#[cfg(not(target_arch = "wasm32"))]
+ const MAX_SYSTEM_TAGS: usize = 64;
+-#[cfg(not(target_arch = "wasm32"))]
+ const MAX_SYSTEM_TAG_BYTES: usize = 128;
+ 
+ /// Resolve Auto against the current registry. Cache the OS's tags, rather than a language,
+@@ -26,7 +24,6 @@ fn resolve(tags: &[String]) -> Lang {
+     tags.iter().find_map(|tag| lang_from_tag(tag)).unwrap_or(Lang::EN)
+ }
+ 
+-#[cfg(not(target_arch = "wasm32"))]
+ fn bounded_tags(tags: impl IntoIterator<Item = String>) -> Vec<String> {
+     tags.into_iter()
+         .take(MAX_SYSTEM_TAGS)
+@@ -54,7 +51,22 @@ fn detect_system_tags() -> Vec<String> {
+ 
+ #[cfg(all(not(test), target_arch = "wasm32"))]
+ fn detect_system_tags() -> Vec<String> {
+-    Vec::new()
++    // KenFutWork: web 构建读浏览器语言（上游这里恒空串，`auto` 于是在网页端永远解析成英文）。
++    let Some(window) = web_sys::window() else {
++        return Vec::new();
++    };
++    let navigator = window.navigator();
++    let mut tags: Vec<String> = Vec::new();
++    if let Some(tag) = navigator.language() {
++        tags.push(tag);
++    }
++    let languages = navigator.languages();
++    for i in 0..languages.length() {
++        if let Some(tag) = languages.get(i).as_string() {
++            tags.push(tag);
++        }
++    }
++    bounded_tags(tags)
+ }
+ 
+ #[cfg(test)]

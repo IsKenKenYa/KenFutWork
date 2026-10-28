@@ -145,6 +145,7 @@ const USER_FONT_PATCHES = {
   cadcraft: "work-editor/cadcraft-user-fonts.patch",
   pdfcraft: "work-editor/pdfcraft-user-fonts.patch",
   designcraft: "work-editor/designcraft-locale.patch",
+  photocraft: "work-editor/photocraft-locale.patch",
 };
 if (USER_FONT_PATCHES[app]) {
   // PdfCraft 的清单抓取放在 ui-egui 内（不是 web 壳），先把这个新文件放到位再打补丁。
