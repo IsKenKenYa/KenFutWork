@@ -338,6 +338,8 @@ const EDITOR_NATIVE_CJK = new Set([
   "designcraft",
   "pdfcraft",
   "effectcraft",
+  "deckcraft",
+  "soundcraft",
 ]);
 
 export function injectEditorLocaleShim(
