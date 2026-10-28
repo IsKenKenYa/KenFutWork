@@ -111,6 +111,30 @@ if (existsSync(buildPath) && read(buildPath).includes(uiEguiChinese)) {
   );
 }
 
+// 2b) 用户字体：每个 web 壳在启动时读同源 `fonts/manifest.txt`，把宿主上传的字体交给
+//     各自的字体库。`user_fonts.rs` 是一份同构实现，各编辑器的注册点不同（见下表）。
+const USER_FONT_HOOKS = {
+  deckcraft: ["apps/deckcraft-web/src/user_fonts.rs", "deckcraft_fonts::FontDb::global().add_font(bytes)"],
+  wordcraft: [
+    "apps/wordcraft-web/src/web/user_fonts.rs",
+    'wordcraft_fonts::FontDb::global().install_font(&format!("host-font-{}", bytes.len()), &bytes).is_ok() as usize',
+  ],
+  designcraft: ["apps/designcraft-web/src/user_fonts.rs", "designcraft_fonts::FontDb::global().add_font(bytes)"],
+  effectcraft: ["apps/effectcraft-web/src/user_fonts.rs", "effectcraft_text::fonts::add_font_data(bytes).len()"],
+  filmcraft: ["apps/filmcraft-web/src/user_fonts.rs", "filmcraft_text::fonts::add_font_data(bytes).len()"],
+  vectorcraft: ["apps/vectorcraft-web/src/user_fonts.rs", "vectorcraft_text::FontDb::global().add_font(bytes)"],
+  gridcraft: [
+    "apps/gridcraft-web/src/user_fonts.rs",
+    'gridcraft_ui_egui::fonts::add_font_bytes(&format!("host-{}", bytes.len()), bytes)',
+  ],
+};
+const userFontsSource = resolve(import.meta.dirname, "work-editor/user_fonts.rs");
+const hook = USER_FONT_HOOKS[app];
+if (hook && existsSync(userFontsSource)) {
+  cpSync(userFontsSource, join(source, hook[0]));
+  console.log(`[zh] 已放置用户字体加载器：${hook[0]}`);
+}
+
 // 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
 const ZERO_PATCHES = {
   deckcraft: [
