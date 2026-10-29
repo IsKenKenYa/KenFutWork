@@ -6,6 +6,7 @@ import {
 } from "../../http/work-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { ensureBuiltinEditors } from "./builtin-editors.js";
+import { createEdaTools } from "./eda-tools.js";
 
 /**
  * work-host 插件：Work 模式的宿主适配层（`/api/work/host/*`）。
@@ -18,7 +19,7 @@ import { ensureBuiltinEditors } from "./builtin-editors.js";
 export function createWorkHostPlugin(): PluginDefinition {
   return {
     name: "work-host",
-    inject: ["localAccess"],
+    inject: ["localAccess", "tools"],
     apply() {},
     mounted(ctx) {
       // 本机数据目录（与 flow 引擎 env/日志同一数据根）；扩展包落位在
@@ -32,6 +33,27 @@ export function createWorkHostPlugin(): PluginDefinition {
       const written = ensureBuiltinEditors(editorsDir);
       if (written.length > 0) {
         console.log(`[work] 内置编辑器已落位：${written.join(", ")}`);
+      }
+      // EDA 工具：agent 与编辑器读写同一份原理图（写操作在只读沙箱下不暴露）。
+      const tools = ctx.get("tools");
+      for (const tool of createEdaTools(dataRoot)) {
+        ctx.effect(() =>
+          tools.registerDynamic({
+            id: `work.${tool.name}`,
+            scope: "shared",
+            configurationVersion: "work-eda:1",
+            resolve(run) {
+              const handle = run.scopeHandle;
+              if (handle?.role !== "main") return null;
+              if (
+                tool.access === "write" &&
+                handle.describe().sandboxMode === "read-only"
+              )
+                return null;
+              return tool;
+            },
+          }),
+        );
       }
       void registerWorkHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),

@@ -1079,9 +1079,11 @@ export function createPluginRegistryService(
       }
       // 未安装的自带 bundle：资产从内存出（市场卡片图标在安装前也要能显示）
       const bundled = bundledBundles.find((item) => item.id === pluginId);
+      // 路由剥掉了 `assets/` 前缀，而 files 的 key 是包根相对路径（含 `assets/`）。
+      const bundledKey = `assets/${normalized}`;
       if (!record) {
         if (bundled?.manifest.assets !== true) return undefined;
-        const content = bundled.files[normalized];
+        const content = bundled.files[bundledKey];
         if (
           content === undefined ||
           Buffer.byteLength(content, "utf8") > MAX_ASSET_BYTES
@@ -1121,7 +1123,7 @@ export function createPluginRegistryService(
       // 落后（新增的 assets/icon.svg 在老副本里根本不存在，市场图标于是 404）。
       // 第三方插件仍读副本——那是它自己的落位目录。
       if (record.source === "builtin" && bundled) {
-        const content = bundled.files[normalized];
+        const content = bundled.files[bundledKey];
         if (
           content !== undefined &&
           Buffer.byteLength(content, "utf8") <= MAX_ASSET_BYTES
