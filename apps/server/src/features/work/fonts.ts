@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { WorkFont, WorkFontFormat } from "@kenfutwork/shared";
 
 /**
@@ -26,6 +27,14 @@ import type { WorkFont, WorkFontFormat } from "@kenfutwork/shared";
  */
 
 const FONT_DIR = "work/fonts";
+/** 内置字体的存储名前缀：随产品分发（OFL），不随用户删除。 */
+const BUNDLED_PREFIX = "bundled-";
+/** 内置字体 → 许可全文。家族名与文件名一一对应（assets/work-fonts）。 */
+const BUNDLED_LICENSES: Record<string, string> = {
+  Inter: "OFL-Inter.txt",
+  LiberationSerif: "OFL-Liberation-Serif.txt",
+  LXGWWenKaiLite: "OFL-LXGW-WenKai-Lite.txt",
+};
 const FORMAT_BY_EXT: Record<string, WorkFontFormat> = {
   ".ttf": "ttf",
   ".otf": "otf",
@@ -36,6 +45,48 @@ export const MAX_FONT_BYTES = 24 * 1024 * 1024;
 
 export function workFontsDir(dataDir: string): string {
   return join(dataDir, ...FONT_DIR.split("/"));
+}
+
+/** 随仓库分发的开源字体（OFL-1.1）源目录。 */
+export function bundledFontsDir(): string {
+  return fileURLToPath(new URL("../../../assets/work-fonts/", import.meta.url));
+}
+
+let bundledCache: Promise<StoredFont[]> | null = null;
+
+async function readBundled(): Promise<StoredFont[]> {
+  const dir = bundledFontsDir();
+  if (!existsSync(dir)) return [];
+  const names = (await readdir(dir)).filter((name) => fontFormatOf(name) !== null);
+  const fonts = await Promise.all(
+    names.map(async (name) => {
+      const path = join(dir, name);
+      const [info, bytes] = await Promise.all([stat(path), readFile(path)]);
+      return {
+        fileName: `${BUNDLED_PREFIX}${name}`,
+        family: fontFamilyName(bytes) ?? name,
+        format: fontFormatOf(name) ?? "ttf",
+        bytes: info.size,
+        builtin: true,
+      } satisfies StoredFont;
+    }),
+  );
+  return fonts;
+}
+
+/** 随产品分发的开源字体（读一次，进程内缓存）。 */
+export function listBundledFonts(): Promise<StoredFont[]> {
+  bundledCache ??= readBundled().catch(() => []);
+  return bundledCache;
+}
+
+/** `bundled-<file>` → 仓库内字体文件的绝对路径；不是内置名或文件缺失时返回 null。 */
+export function bundledFontPath(fileName: string): string | null {
+  if (!fileName.startsWith(BUNDLED_PREFIX)) return null;
+  const name = fileName.slice(BUNDLED_PREFIX.length);
+  if (fontFormatOf(name) === null || /[\/]/u.test(name)) return null;
+  const path = join(bundledFontsDir(), name);
+  return existsSync(path) ? path : null;
 }
 
 export function fontFormatOf(fileName: string): WorkFontFormat | null {
@@ -150,19 +201,21 @@ async function describe(
     family: fontFamilyName(bytes) ?? basename(fileName, extname(fileName)),
     format,
     bytes: info.size,
+    builtin: fileName.startsWith(BUNDLED_PREFIX),
   };
 }
 
 export async function listFonts(dataDir: string): Promise<StoredFont[]> {
+  const bundled = await listBundledFonts();
   const dir = workFontsDir(dataDir);
-  if (!existsSync(dir)) return [];
+  if (!existsSync(dir)) return bundled;
   const names = await readdir(dir);
   const fonts = await Promise.all(
     names
       .filter((name) => fontFormatOf(name) !== null)
       .map((name) => describe(dataDir, name).catch(() => null)),
   );
-  return fonts.filter((font): font is StoredFont => font !== null);
+  return [...bundled, ...fonts.filter((font): font is StoredFont => font !== null)];
 }
 
 /**
@@ -194,6 +247,7 @@ export async function addFont(input: {
 }
 
 export async function removeFont(dataDir: string, fileName: string) {
+  if (fileName.startsWith(BUNDLED_PREFIX)) throw new Error("内置字体不能删除。");
   // 只允许删字体目录里的直接文件：文件名不参与路径拼接。
   const safe = fontFormatOf(fileName) !== null && !/[\\/]/u.test(fileName);
   if (!safe) throw new Error("字体名不合法。");
@@ -225,16 +279,20 @@ export function manifestFor(fonts: StoredFont[]): string {
     const scripts = /[\u4e00-\u9fff]/u.test(font.family)
       ? "Hani,Hans,Latn"
       : "Latn";
+    const stem = basename(font.fileName, extname(font.fileName))
+      .replace(/^bundled-/u, "")
+      .replace(/-\w+$/u, "");
+    const licence = font.builtin ? (BUNDLED_LICENSES[stem] ?? "") : "";
     lines.push(
       [
         font.family,
         "Regular",
         `fonts/user/${font.fileName}`,
         scripts,
-        "User-supplied",
+        font.builtin ? "OFL-1.1" : "User-supplied",
+        licence,
         "",
-        "",
-        "local",
+        font.builtin ? "bundled" : "local",
       ].join(" | "),
     );
   }

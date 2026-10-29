@@ -101,7 +101,7 @@ async function fakeUpstream(
 
 function pinnedFor(url: string, zip: Uint8Array): WorkEditorPinnedRelease {
   return {
-    version: "0.11.1",
+    version: "0.13.0",
     asset: "gridcraft-web-0.11.1.zip",
     bytes: zip.length,
     sha256: createHash("sha256").update(zip).digest("hex"),
@@ -185,7 +185,7 @@ describe("work 宿主路由", () => {
     expect(body.install).toEqual({});
     expect(
       body.editors.find((editor) => editor.id === "gridcraft")?.pinned,
-    ).toMatchObject({ version: "0.11.1" });
+    ).toMatchObject({ version: "0.13.0" });
     expect(
       body.editors.find((editor) => editor.id === "wordcraft")?.pinned,
     ).toMatchObject({ version: "0.11.0" });
@@ -276,7 +276,7 @@ describe("work 宿主路由", () => {
         "utf8",
       ),
     );
-    expect(marker.version).toBe("0.11.1");
+    expect(marker.version).toBe("0.13.0");
     const editors = await app.inject({
       method: "get",
       path: "/api/work/host/editors",
@@ -318,7 +318,7 @@ describe("work 宿主路由", () => {
       editorsDir,
       editorId: "gridcraft",
       pinned: {
-        version: "0.11.1",
+        version: "0.13.0",
         asset: "gridcraft-web-0.11.1.zip",
         bytes: 1,
         sha256: "a".repeat(64),
@@ -373,11 +373,12 @@ describe("work 宿主路由", () => {
     expect(html.statusCode).toBe(200);
     expect(html.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(html.headers["x-content-type-options"]).toBe("nosniff");
-    // gridcraft 现用自建中文包（自带中文字形），不再钉英文；其余资产原样流式。
-    expect(html.body).not.toContain('"en-US"');
+    // 托管页统一注入宿主脚本：界面语言钉 zh-CN（我们的包都内嵌简体中文字形）+ 统一启动屏。
+    expect(html.body).toContain('"zh-CN"');
+    expect(html.body).toContain("kfw-editor-boot");
     expect(html.body).toContain("<html>ok</html>");
 
-    // 自带中文字形的编辑器不钉英文（用户系统中文时应显示中文）。
+    // 自带中文字形的编辑器同样按中文探测（用户系统是英文时不再退回英文）。
     const lightDir = join(editorsDir, "lightcraft");
     await mkdir(lightDir, { recursive: true });
     await writeFile(join(lightDir, "index.html"), "<html>ok</html>");
@@ -386,7 +387,7 @@ describe("work 宿主路由", () => {
       path: "/api/work/host/editors/lightcraft/index.html",
     });
     expect(light.statusCode).toBe(200);
-    expect(light.body).not.toContain('"en-US"');
+    expect(light.body).toContain('"zh-CN"');
 
     const wasm = await app.inject({
       method: "get",

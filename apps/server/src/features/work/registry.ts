@@ -14,7 +14,7 @@ export type WorkEditorRegistration = Omit<WorkEditor, "installed">;
 const WASM_MOUNT: WorkEditorMount = "wasm-iframe";
 
 /** 登记顺序即信息页展示顺序：office 三件套在前（用户核心诉求），其余按类别跟后。
- * gridcraft 已锚定发布（v0.11.1，sha256 来自上游 SHA256SUMS.txt，2026-10-25 实测
+ * gridcraft 已锚定发布（v0.13.0，sha256 来自上游 SHA256SUMS.txt，2026-10-29 核对
  * 下载核对一致）；全部 12 个编辑器均锚定各自最新发布（2026-10-25 逐仓核对
  * SHA256SUMS.txt），未锚定项不存在——不给无锚定的假下载按钮。*/
 const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
@@ -26,12 +26,12 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     license: "MIT OR Apache-2.0",
     mount: WASM_MOUNT,
     pinned: {
-      version: "0.11.1",
-      asset: "gridcraft-web-0.11.1.zip",
-      bytes: 7571063,
+      version: "0.13.0",
+      asset: "gridcraft-web-0.13.0.zip",
+      bytes: 7974995,
       sha256:
-        "b9491325936457cebd874656becbe5d189fbd2039db6798d9d7f5c5e0190715e",
-      url: "https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-web-0.11.1.zip",
+        "e232edde1898459f13568ca7b1f3feecb4037f0cbb8f6aec86de1a3c096af5dc",
+      url: "https://github.com/storytold/gridcraft/releases/download/v0.13.0/gridcraft-web-0.13.0.zip",
     },
   },
   {

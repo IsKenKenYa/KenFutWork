@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   addFont,
+  bundledFontPath,
   fontFamilyName,
   fontFormatOf,
+  listBundledFonts,
   listFonts,
   MAX_FONT_BYTES,
   manifestFor,
@@ -65,7 +67,7 @@ describe("用户字体库", () => {
     expect(first.fileName).toBe(again.fileName);
     expect(first.family).toBe("霞鹜文楷 轻便版");
     expect(first.format).toBe("ttf");
-    expect(await listFonts(dataDir)).toHaveLength(1);
+    expect((await listFonts(dataDir)).filter((font) => !font.builtin)).toHaveLength(1);
     expect(readFileSync(join(workFontsDir(dataDir), first.fileName))).toEqual(
       bytes,
     );
@@ -84,7 +86,7 @@ describe("用户字体库", () => {
       bytes: variant(2),
     });
     expect(a.fileName).not.toBe(b.fileName);
-    expect(await listFonts(dataDir)).toHaveLength(2);
+    expect((await listFonts(dataDir)).filter((font) => !font.builtin)).toHaveLength(2);
   });
 
   it("拒绝非字体、空文件与超限文件", async () => {
@@ -102,7 +104,7 @@ describe("用户字体库", () => {
         bytes: Buffer.concat([REAL_FONT, Buffer.alloc(MAX_FONT_BYTES)]),
       }),
     ).rejects.toThrow(/上限/);
-    expect(await listFonts(dataDir)).toEqual([]);
+    expect((await listFonts(dataDir)).filter((font) => !font.builtin)).toEqual([]);
   });
 
   it("删除只能作用于字体目录里的直接文件", async () => {
@@ -113,7 +115,7 @@ describe("用户字体库", () => {
       bytes: REAL_FONT,
     });
     await removeFont(dataDir, font.fileName);
-    expect(await listFonts(dataDir)).toEqual([]);
+    expect((await listFonts(dataDir)).filter((font) => !font.builtin)).toEqual([]);
     await expect(removeFont(dataDir, "../escape.ttf")).rejects.toThrow(
       /不合法/,
     );
@@ -132,11 +134,12 @@ describe("用户字体库", () => {
       fileName: "lat.ttf",
       bytes: variant(3),
     });
-    const manifest = manifestFor(await listFonts(dataDir));
+    const manifest = manifestFor(
+      (await listFonts(dataDir)).filter((font) => !font.builtin),
+    );
     const rows = manifest
       .split("\n")
       .filter((line) => line && !line.startsWith("#"));
-    expect(rows).toHaveLength(2);
     expect(rows).toHaveLength(2);
     for (const row of rows) {
       // 八列：family | style | file | scripts | licence | licence file | sha256 | source
@@ -145,8 +148,8 @@ describe("用户字体库", () => {
     }
     // 家族名含中文（霞鹜文楷）时带 Hani/Hans；纯拉丁名只给 Latn。
     const manifestText = manifestFor([
-      { fileName: "cn.ttf", family: "思源宋体", format: "ttf", bytes: 1 },
-      { fileName: "lat.ttf", family: "Inter Copy", format: "ttf", bytes: 1 },
+      { fileName: "cn.ttf", family: "思源宋体", format: "ttf", bytes: 1, builtin: false },
+      { fileName: "lat.ttf", family: "Inter Copy", format: "ttf", bytes: 1, builtin: false },
     ]);
     expect(manifestText).toContain(
       "思源宋体 | Regular | fonts/user/cn.ttf | Hani,Hans,Latn",
@@ -154,5 +157,41 @@ describe("用户字体库", () => {
     expect(manifestText).toContain(
       "Inter Copy | Regular | fonts/user/lat.ttf | Latn",
     );
+  });
+});
+
+describe("内置开源字体（OFL）", () => {
+  it("随仓库分发的字体进字体列表，标记为 builtin 且指向仓库资产", async () => {
+    const bundled = await listBundledFonts();
+    expect(bundled.length).toBeGreaterThanOrEqual(4);
+    expect(bundled.every((font) => font.builtin)).toBe(true);
+    expect(bundled.map((font) => font.family)).toEqual(
+      expect.arrayContaining(["Inter", "Liberation Serif", "霞鹜文楷 轻便版"]),
+    );
+    for (const font of bundled) {
+      expect(font.fileName.startsWith("bundled-")).toBe(true);
+      expect(bundledFontPath(font.fileName)).toBeTruthy();
+    }
+    // 数据目录为空时也照样列出内置字体。
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-fonts-"));
+    const listed = await listFonts(dataDir);
+    expect(listed.filter((font) => font.builtin)).toHaveLength(bundled.length);
+  });
+
+  it("内置字体名不能越出资产目录，也不能被删除", async () => {
+    expect(bundledFontPath("bundled-../package.json")).toBeNull();
+    expect(bundledFontPath("Inter-Regular.ttf")).toBeNull();
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-fonts-"));
+    await expect(removeFont(dataDir, "bundled-Inter-Regular.ttf")).rejects.toThrow(
+      "内置字体不能删除",
+    );
+  });
+
+  it("清单把内置字体标成 OFL-1.1，用户字体仍标 User-supplied", async () => {
+    const manifest = manifestFor(await listBundledFonts());
+    expect(manifest).toContain("OFL-1.1");
+    expect(manifest).toContain("OFL-Inter.txt");
+    expect(manifest).toContain(" | bundled");
+    expect(manifest).not.toContain("User-supplied");
   });
 });

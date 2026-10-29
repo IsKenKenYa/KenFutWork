@@ -107,6 +107,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | --- | --- | --- |
 | Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/` 与 `apps/landing/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
 | CaveatBrush、ChakraPetch、GochiHand、K2D、Pacifico、PermanentMarker | SIL OFL 1.1 | 仅作为 `docs/视觉设计/logo/字体/` 的候选样张存在，未打进产物 |
+| Inter、Liberation Serif、霞鹜文楷 轻便版（LXGW WenKai Lite） | SIL OFL 1.1 | 随产物分发于 `apps/server/assets/work-fonts/`（Work 编辑器的内置字体库），同目录带 `OFL-*.txt` 全文；字体文件未改名、未修改字形；来源见各 `OFL-*.txt` 首行版权行 |
 | ArtierEN-2、No.019-Sounso-Quality-2、YEFONTPaws-Bold-2 | **需商业授权**（分别来自天津卓漫、上首品牌策划、深圳仪品） | 样张留在仓库**不构成授权**；未在产物中使用。逐字段落原文见 `docs/视觉设计/logo/字体/字体说明.md` |
 | `skills/canvas-design/canvas-fonts/` | **54 个字体文件，仓库内无任何许可文本** | **待核**：分发前必须逐支确认来源与许可，不能默认沿用 GPL 或 OFL |
 

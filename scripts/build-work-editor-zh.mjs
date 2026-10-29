@@ -110,7 +110,25 @@ if (existsSync(policyPath)) {
   );
 }
 
-// 2) wasm 也读简体中文 manifest（仅 gridcraft/wordcraft 把字体表建在 ui-egui）
+// 2) gridcraft 的 web 壳在「浏览器语言是中日韩」时**故意不走**该语言（上游没内嵌 CJK 字形，
+//    怕整屏方框）；本构建已内嵌简体中文字形，这条护栏只剩「中文用户永远看英文」的副作用。
+const gridCraftGuard = `                    if !matches!(
+                        browser,
+                        gridcraft_ui_egui::i18n::Language::Zh | gridcraft_ui_egui::i18n::Language::Ja | gridcraft_ui_egui::i18n::Language::Ko
+                    ) {
+                        app.ui.language = browser;
+                    }`;
+const gridCraftWeb = join(source, "apps/gridcraft-web/src/web.rs");
+if (existsSync(gridCraftWeb) && read(gridCraftWeb).includes(gridCraftGuard)) {
+  patchOnce(
+    gridCraftWeb,
+    gridCraftGuard,
+    "                    // KenFutWork: 已内嵌简体中文字形，跟随浏览器语言（含中日韩）。\n                    app.ui.language = browser;",
+    "已解除中文回退英文护栏",
+  );
+}
+
+// 3) wasm 也读简体中文 manifest（仅 gridcraft/wordcraft 把字体表建在 ui-egui）
 const buildPath = join(source, "crates/ui-egui/build.rs");
 const uiEguiChinese =
   "let chinese = if wasm { Vec::new() } else { chinese_font_rows(dir, required)? };";
@@ -224,7 +242,7 @@ for (const [file, from, to, already] of ZERO_PATCHES[app] ?? []) {
   patchOnce(join(source, file), from, to, "已放行 CJK", already ?? to);
 }
 
-// 3) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft 与 FilmCraft
+// 4) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft 与 FilmCraft
 //    没有 index.html，用自家的 `cargo xtask web`（wasm-bindgen 直出到 <target>/web/dist）。
 const XTASK_APPS = new Set(["effectcraft", "filmcraft"]);
 const cwd = join(source, crate);

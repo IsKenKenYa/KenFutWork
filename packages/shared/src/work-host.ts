@@ -169,6 +169,8 @@ export const workFontSchema = z.object({
   family: z.string().min(1).max(120),
   format: workFontFormatSchema,
   bytes: z.number().int().positive(),
+  /** 随产品分发（OFL 开源字体）；用户上传的为 false，内置字体不可删除。 */
+  builtin: z.boolean().default(false),
 });
 export type WorkFont = z.infer<typeof workFontSchema>;
 

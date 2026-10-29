@@ -18,6 +18,7 @@ import {
 } from "../features/work/builtin-editors.js";
 import {
   addFont,
+  bundledFontPath,
   fontFormatOf,
   listFonts,
   MAX_FONT_BYTES,
@@ -291,7 +292,8 @@ export async function registerWorkHostRoutes(
       const name = rel.slice("fonts/user/".length);
       if (fontFormatOf(name) === null || /[/]/u.test(name))
         return applicationError(reply, 404, "没有这个文件。");
-      const path = join(userFonts, name);
+      // 内置开源字体直接读仓库资产，不复制进数据目录。
+      const path = bundledFontPath(name) ?? join(userFonts, name);
       if (!existsSync(path))
         return applicationError(reply, 404, "没有这个字体。");
       const fontMime = fontFormatOf(name) === "otf" ? "font/otf" : "font/ttf";
@@ -336,60 +338,29 @@ export async function registerWorkHostRoutes(
       );
     if (ext === ".html")
       return reply.send(
-        injectEditorLocaleShim(readFileSync(filePath, "utf8"), editor.id),
+        injectEditorShell(readFileSync(filePath, "utf8")),
       );
     return reply.send(createReadStream(filePath));
   });
 }
 
 /**
- * 上游编辑器（ArtCraft 系列）多数 web 包只内嵌拉丁/emoji 字形、**没有 CJK 字体**，
- * 却按 `navigator.language` 选中中文文案——界面于是整片方框（实测：同机 canvas 用
- * 系统字体画中文正常，编辑器自己是 WebGPU 自绘，不读浏览器字体，宿主注入 CSS 无效）。
- * 托管时把语言钉到 en-US：落到它自带字形能渲染的那套文案，比中文方框可读。
+ * 托管编辑器页时注入的宿主脚本（只改 HTML，静态资产原样流式）：
  *
- * 例外是自带中文字形的编辑器（`EDITOR_NATIVE_CJK`）：它们跟随浏览器语言即可正常显示
- * 中文，不钉英文——否则用户系统是中文也永远只能看英文界面。
+ * - 语言：KenFutWork 的界面是中文；编辑器按 `navigator.language` 选界面语言，用户系统是
+ *   英文时它们退回英文（实测 gridcraft 的 web 壳还会主动跳过中日韩，宁可选英文）。
+ *   我们的编辑器包已内嵌简体中文字形（`scripts/build-work-editor-zh.mjs`），一律给 `zh-CN`。
+ * - 启动：各编辑器自带的 `Loading …` 文案换成统一的 KenFutWork 启动屏；编辑器就绪后淡出，
+ *   并向父页发 `kenfutwork:editor-ready`，宿主据此撤掉遮罩（否则只能等 iframe onLoad，
+ *   48MB wasm 的编辑器会在自己的英文 Loading 上停好几秒）。
  */
-const EDITOR_LOCALE_SHIM = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "en-US";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["en-US","en"];}});}catch(error){}})();</script>`;
+const EDITOR_SHELL_SCRIPT = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "zh-CN";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["zh-CN","zh"];}});}catch(error){}var BOOT="kfw-editor-boot";function ready(){var el=document.getElementById(BOOT);if(el&&!el.dataset.done){el.dataset.done="1";el.style.opacity="0";setTimeout(function(){el.remove();},220);}try{parent.postMessage({type:"kenfutwork:editor-ready"},location.origin);}catch(error){}}function boot(){if(document.getElementById(BOOT))return;var style=document.createElement("style");style.textContent="#kfw-editor-boot{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#fff;transition:opacity .2s ease}#kfw-editor-boot img{height:56px;width:auto;filter:brightness(0)}#kfw-editor-boot i{width:24px;height:24px;border:2px solid rgba(115,115,115,.3);border-top-color:rgba(60,60,60,.75);border-radius:9999px;animation:kfw-editor-spin .8s linear infinite}@keyframes kfw-editor-spin{to{transform:rotate(360deg)}}";document.head.appendChild(style);var wrap=document.createElement("div");wrap.id=BOOT;wrap.setAttribute("role","status");wrap.innerHTML='<img src="/logo-mark.png" alt=""><i></i>';document.body.appendChild(wrap);}function start(){boot();var hadLoading=!!document.querySelector('[id$="_loading"]');if(hadLoading){var observer=new MutationObserver(function(){if(!document.querySelector('[id$="_loading"]')){observer.disconnect();ready();}});observer.observe(document.body,{childList:true,subtree:true});}else{window.addEventListener("load",function(){setTimeout(ready,300);},{once:true});}window.addEventListener("TrunkApplicationStarted",ready,{once:true});setTimeout(ready,30000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",start,{once:true});}else{start();}})();</script>`;
 
-/**
- * 上游 web 包自带完整中文字形、可跟随浏览器语言的编辑器。
- * 2026-10-27 逐个实测（`navigator.language=zh-CN` 截图）：
- * - `lightcraft` 自带 `lightcraft_zh_hans.otf`，中文完整；
- * - `gridcraft` / `wordcraft` / `cadcraft` / `filmcraft` 用的是本仓自建的中文包
- *   （`scripts/build-work-editor-zh.mjs`：放开上游 web 的 CJK 白名单 + 内嵌 craft-fonts
- *   中文字形；WordCraft 另需 `CRAFT_I18N_DIR` 才有中文文案），实测菜单/面板整片中文；
- * - `vectorcraft` / `photocraft` 也换成了自建中文包（VectorCraft 走运行时 `fonts/<sha16>/`，
- *   PhotoCraft 由宿主在站点 `fonts/manifest.txt` 提供字体），实测整片中文；
- * - 其余上游 web 构建无中文字形或无中文文案，必须继续钉英文。
- *
- * 注意：这些编辑器的官方安装包仍是**英文版**；重新安装会覆盖自建包，装完需重跑构建脚本。
- */
-const EDITOR_NATIVE_CJK = new Set([
-  "lightcraft",
-  "gridcraft",
-  "wordcraft",
-  "cadcraft",
-  "filmcraft",
-  "vectorcraft",
-  "photocraft",
-  "designcraft",
-  "pdfcraft",
-  "effectcraft",
-  "deckcraft",
-  "soundcraft",
-]);
-
-export function injectEditorLocaleShim(
-  html: string,
-  editorId?: string,
-): string {
-  if (editorId && EDITOR_NATIVE_CJK.has(editorId)) return html;
+export function injectEditorShell(html: string): string {
   const head = /<head[^>]*>/iu.exec(html);
-  if (!head) return EDITOR_LOCALE_SHIM + html;
+  if (!head) return EDITOR_SHELL_SCRIPT + html;
   const at = head.index + head[0].length;
-  return html.slice(0, at) + EDITOR_LOCALE_SHIM + html.slice(at);
+  return html.slice(0, at) + EDITOR_SHELL_SCRIPT + html.slice(at);
 }
 
 /**
