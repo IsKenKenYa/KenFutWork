@@ -24,7 +24,7 @@
 | 上游 | `zcode-plugins-official/kicad` 0.6.1（作者 冯小平，https://github.com/fxp），随 ZCode 插件市场分发 |
 | 许可 | MIT；版权与许可全文见 `apps/server/assets/kicad-plugin/LICENSE`，面板打包的第三方许可见同目录 `dist/THIRD_PARTY_NOTICES.txt` |
 | 落点 | `apps/server/assets/kicad-plugin/`（原样复制 `dist/`、`LICENSE`、`README.md`） |
-| 宿主适配偏差 | ① `dist/server.mjs`：Windows 上按绝对路径找 `uv.exe`（裸名在精简 PATH 下找不到）；② `dist/py/kicad/config.py`、`kicad/paths.py`、`kicad_server.py`、`kicad_launch.py`：增加 Windows 安装目录（`C:\Program Files\KiCad\<版本>`）与 `kicad-cli.exe`/`python.exe`/`share\kicad`/`pcbnew.exe` 分支；③ 由 `apps/server/src/features/work/kicad/` 常驻 MCP 客户端、托管面板并桥接 MCP Apps 消息 |
+| 宿主适配偏差 | ① `dist/server.mjs`：Windows 上按绝对路径找 `uv.exe`（裸名在精简 PATH 下找不到）；② `dist/py/kicad/config.py`、`kicad/paths.py`、`kicad_server.py`、`kicad_launch.py`：增加 Windows 安装目录（`C:/Program Files/KiCad/<版本>`）与 `kicad-cli.exe`/`python.exe`/`share/kicad`/`pcbnew.exe` 分支；③ **去掉 `_launch()` 里 `sys.platform != "darwin"` 的硬门槛**（上游只允许 macOS 自动打开，导致 Windows/Linux 分支不可达），Linux 走 `pcbnew` + `start_new_session`；④ 由 `apps/server/src/features/work/kicad/` 常驻 MCP 客户端、托管面板并桥接 MCP Apps 消息，支持容器模式（`KENFUTWORK_KICAD_DOCKER`） |
 | KiCad 本体 | 不随包分发；使用用户本机安装的 KiCad 10（GPL-3.0-or-later，官方库 CC-BY-SA-4.0 带例外） |
 
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装

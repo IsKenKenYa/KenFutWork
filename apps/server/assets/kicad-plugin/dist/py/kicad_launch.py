@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import shlex
 import subprocess
 import time
@@ -118,6 +119,13 @@ def launch_editor(editor: Path, pcb: Path, app_dir: Path, *, report_dir: Path | 
     Takes up to appear_s + stable_s seconds (about 10 s with the defaults), a bit more when it has to wait for a crash report."""
     reports = report_dir if report_dir is not None else reports_dir()
     started = time.time()
+    if sys.platform.startswith("linux"):
+        # KenFutWork: Linux/容器里直接起 pcbnew（可配合 Xvfb 离屏），不等待退出。
+        try:
+            subprocess.Popen([str(editor), str(pcb)], cwd=str(Path(pcb).parent), start_new_session=True)
+        except OSError as e:
+            return False, f"could not start KiCad: {e}"
+        return True, f"opened in {Path(editor).name}"
     if os.name == "nt":
         # KenFutWork: Windows 上 editor 就是 pcbnew.exe；用独立进程打开，不等待退出。
         try:

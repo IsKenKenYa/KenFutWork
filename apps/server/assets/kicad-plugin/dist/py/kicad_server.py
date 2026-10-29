@@ -286,6 +286,12 @@ def _save_session(sess: dict) -> None:
 
 def _editor_app() -> Path | None:
     app = paths.app_dir()  # .../KiCad/KiCad.app 或 Windows 的 ...\KiCad\<版本>
+    if sys.platform.startswith("linux"):
+        # KenFutWork: Linux/容器里 pcbnew 在 PATH 或发行版目录，没有 .app。
+        for cand in (shutil.which("pcbnew"), "/usr/bin/pcbnew", "/usr/lib/kicad/bin/pcbnew"):
+            if cand and Path(cand).exists():
+                return Path(cand)
+        return None
     if os.name == "nt":
         exe = app / "bin" / "pcbnew.exe"
         return exe if exe.exists() else None
@@ -298,11 +304,11 @@ def _editor_app() -> Path | None:
 def _launch(pcb: Path) -> tuple[bool, str]:
     if NO_LAUNCH:
         return False, "launch disabled (KICAD_PLUGIN_NO_LAUNCH=1)"
-    if sys.platform != "darwin":
-        return False, "automatic launch is implemented for macOS only: open the file in KiCad yourself"
+    # KenFutWork: macOS / Windows / Linux 各自由 _editor_app 找可执行体，launch_editor 分平台启动；
+    # 找不到时给出安装位置，而不是无条件拒绝（上游原先是 macOS-only）。
     editor = _editor_app()
     if editor is None:
-        return False, f"KiCad PCB Editor not found next to {paths.app_dir()}"
+        return False, f"KiCad PCB Editor not found (looked in {paths.app_dir()})"
     # `open` exits 0 even when pcbnew dies right away (quarantined KiCad -> App Translocation -> dyld error): launch_editor checks that it stays up and explains why not
     return launch_editor(editor, pcb, paths.app_dir())
 
