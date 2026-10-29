@@ -13,10 +13,6 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import {
-  workEdaDocumentPath,
-  writeWorkEdaDocument,
-} from "../features/work/builtin-editors.js";
-import {
   addFont,
   bundledFontPath,
   fontFormatOf,
@@ -147,35 +143,6 @@ export async function registerWorkHostRoutes(
   // ---- 用户字体（Work 引擎页「字体」）----
   // 编辑器是 WASM 自绘、读不到系统字体：用户把 ttf/otf 放进实例数据目录，宿主在
   // 托管编辑器时映射到站点 `fonts/user/` 并生成 manifest，运行时加载字体的编辑器即可用。
-
-  // ---- EDA 文档（编辑器与 agent 共用同一份原理图）----
-  // 编辑器读它、保存写它；agent 用同一对端点改同一份文件。存在实例数据目录，
-  // 不进仓库、不随插件分发——原理图是用户的工作成果。
-  app.get("/api/work/host/eda/document", async (request, reply) => {
-    if (!(await requireLocalAccess(request, reply))) return;
-    const path = workEdaDocumentPath(options.dataDir);
-    if (!existsSync(path))
-      return reply
-        .header("content-type", "text/plain; charset=utf-8")
-        .header("cache-control", "no-cache")
-        .send("");
-    return reply
-      .header("content-type", "text/plain; charset=utf-8")
-      .header("cache-control", "no-cache")
-      .send(readFileSync(path, "utf8"));
-  });
-
-  app.post("/api/work/host/eda/document", async (request, reply) => {
-    if (!(await requireLocalAccess(request, reply))) return;
-    const body = (request.body as { text?: unknown } | null)?.text;
-    if (typeof body !== "string")
-      return applicationError(reply, 400, "原理图必须是文本。");
-    // 只接受 S-expression 根节点，别把任意内容写进文档目录。
-    if (!/^\s*\(kicad_sch\b/u.test(body))
-      return applicationError(reply, 400, "这不是 KiCad 原理图。");
-    await writeWorkEdaDocument(options.dataDir, body);
-    return reply.send({ saved: true, bytes: Buffer.byteLength(body, "utf8") });
-  });
 
   app.get("/api/work/host/fonts", async (request, reply) => {
     if (!(await requireLocalAccess(request, reply))) return;

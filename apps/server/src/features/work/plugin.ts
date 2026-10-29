@@ -6,8 +6,6 @@ import {
 } from "../../http/work-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { toKernelTool } from "../mcp/mcp-tools.js";
-import { ensureBuiltinEditors } from "./builtin-editors.js";
-import { createEdaTools } from "./eda-tools.js";
 import { registerKicadRoutes } from "./kicad/routes.js";
 import { KicadWorker } from "./kicad/worker.js";
 
@@ -31,33 +29,7 @@ export function createWorkHostPlugin(): PluginDefinition {
         env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
       });
       const editorsDir = join(dataRoot, "work", "editors");
-      // 自建的 web 编辑器（EDA）随仓库分发：启动时按内容哈希落位，和下载来的扩展包
-      // 共用同一个托管目录，`installed` 判定不分叉。
-      const written = ensureBuiltinEditors(editorsDir);
-      if (written.length > 0) {
-        console.log(`[work] 内置编辑器已落位：${written.join(", ")}`);
-      }
-      // EDA 工具：agent 与编辑器读写同一份原理图（写操作在只读沙箱下不暴露）。
       const tools = ctx.get("tools");
-      for (const tool of createEdaTools(dataRoot)) {
-        ctx.effect(() =>
-          tools.registerDynamic({
-            id: `work.${tool.name}`,
-            scope: "shared",
-            configurationVersion: "work-eda:1",
-            resolve(run) {
-              const handle = run.scopeHandle;
-              if (handle?.role !== "main") return null;
-              if (
-                tool.access === "write" &&
-                handle.describe().sandboxMode === "read-only"
-              )
-                return null;
-              return tool;
-            },
-          }),
-        );
-      }
       // KiCad：真实的 ZCode 插件（MCP 服务 + 面板）常驻一个进程，agent 与面板共用。
       const kicad = new KicadWorker(dataRoot);
       ctx.effect(() => () => {
