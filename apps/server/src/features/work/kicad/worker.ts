@@ -83,12 +83,20 @@ export class KicadWorker {
     return join(this.dataDir, "work", "kicad", "plugin-data");
   }
 
+  /** 容器模式：KiCad 官方镜像（`kicad/kicad`），既不装系统也不需要管理员权限。 */
+  dockerImage(): string | null {
+    const configured = (process.env.KENFUTWORK_KICAD_DOCKER ?? "").trim();
+    return configured || null;
+  }
+
   /**
    * KiCad 安装目录：`KENFUTWORK_KICAD_APP` 显式指定 > Windows 默认安装（按版本号倒序）
    * > 实例内的便携解包目录。与 Python 侧 `config.kicad_app_dir()` 同一口径：装完即被找到，
    * 不需要重启服务。
    */
   kicadAppDir(): string {
+    const image = this.dockerImage();
+    if (image) return image;
     const configured = (process.env.KENFUTWORK_KICAD_APP ?? "").trim();
     if (configured) return configured;
     return (
@@ -97,8 +105,9 @@ export class KicadWorker {
     );
   }
 
-  /** `kicad-cli` 是否存在（两平台各自的相对位置）。 */
+  /** `kicad-cli` 是否存在（两平台各自的相对位置；容器模式恒可用）。 */
   kicadInstalled(): boolean {
+    if (this.dockerImage()) return true;
     const root = this.kicadAppDir();
     return (
       existsSync(join(root, "bin", "kicad-cli.exe")) ||
@@ -122,18 +131,56 @@ export class KicadWorker {
     const workspace = this.workspaceDir();
     mkdirSync(workspace, { recursive: true });
     mkdirSync(this.pluginDataDir(), { recursive: true });
-    const transport = new StdioClientTransport({
-      command: process.execPath,
-      args: [join(KicadWorker.pluginRoot(), "dist", "server.mjs")],
-      cwd: workspace,
-      env: {
-        ...process.env,
-        ZCODE_WORKSPACE_ROOT: workspace,
-        ZCODE_PLUGIN_DATA: this.pluginDataDir(),
-        ...(this.kicadInstalled() ? { ZCODE_KICAD_APP: this.kicadAppDir() } : {}),
-      },
-      stderr: "pipe",
-    });
+    const image = this.dockerImage();
+    // SDK 要求 Record<string, string>：process.env 的值可能是 undefined。
+    const childEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) childEnv[key] = value;
+    }
+    const bind = (source: string, target: string): string[] => [
+      "--mount",
+      `type=bind,source=${source},target=${target}${target === "/plugin" ? ",readonly" : ""}`,
+    ];
+    const transport = new StdioClientTransport(
+      image
+        ? {
+            command: "docker",
+            args: [
+              "run",
+              "-i",
+              "--rm",
+              "--name",
+              `kfw-kicad-${process.pid}`,
+              ...bind(KicadWorker.pluginRoot(), "/plugin"),
+              ...bind(workspace, "/ws"),
+              ...bind(this.pluginDataDir(), "/data"),
+              "-e",
+              "ZCODE_WORKSPACE_ROOT=/ws",
+              "-e",
+              "ZCODE_PLUGIN_DATA=/data",
+              image,
+              "python3",
+              "/plugin/dist/py/kicad_server.py",
+            ],
+            cwd: workspace,
+            env: childEnv,
+            stderr: "pipe",
+          }
+        : {
+            command: process.execPath,
+            args: [join(KicadWorker.pluginRoot(), "dist", "server.mjs")],
+            cwd: workspace,
+            env: {
+              ...process.env,
+              ZCODE_WORKSPACE_ROOT: workspace,
+              ZCODE_PLUGIN_DATA: this.pluginDataDir(),
+              ...(this.kicadInstalled()
+                ? { ZCODE_KICAD_APP: this.kicadAppDir() }
+                : {}),
+            },
+            stderr: "pipe",
+          },
+    );
     const client = new Client(
       { name: "kenfutwork-kicad", version: "1.0.0" },
       { capabilities: {} },
@@ -194,13 +241,41 @@ export class KicadWorker {
     const result = await client.callTool({ name, arguments: args }, undefined, {
       timeout: REQUEST_TIMEOUT_MS,
     });
-    return result as unknown as Record<string, unknown>;
+    return this.remap(result) as unknown as Record<string, unknown>;
   }
 
   async readResource(uri: string): Promise<Record<string, unknown>> {
     const client = await this.connect();
     const result = await client.readResource({ uri }, { timeout: REQUEST_TIMEOUT_MS });
-    return result as unknown as Record<string, unknown>;
+    return this.remap(result) as unknown as Record<string, unknown>;
+  }
+
+  /** 容器里的 `/ws`、`/data` 映射回宿主机路径，工具结果里的路径才对用户成立。 */
+  private remap<T>(value: T): T {
+    if (!this.dockerImage()) return value;
+    const pairs: Array<[string, string]> = [
+      ["/ws", this.workspaceDir()],
+      ["/data", this.pluginDataDir()],
+    ];
+    const walk = (node: unknown): unknown => {
+      if (typeof node === "string") {
+        return pairs.reduce(
+          (text, [from, to]) => text.split(from).join(to),
+          node,
+        );
+      }
+      if (Array.isArray(node)) return node.map(walk);
+      if (node && typeof node === "object") {
+        return Object.fromEntries(
+          Object.entries(node as Record<string, unknown>).map(([key, item]) => [
+            key,
+            walk(item),
+          ]),
+        );
+      }
+      return node;
+    };
+    return walk(value) as T;
   }
 
   /** 面板与信息页用：服务是否可用、工具清单、KiCad 安装事实。 */

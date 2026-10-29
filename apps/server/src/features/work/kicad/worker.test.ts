@@ -10,9 +10,12 @@ import { KicadWorker, pickKicadInstall } from "./worker.js";
  */
 
 const previous = process.env.KENFUTWORK_KICAD_APP;
+const previousDocker = process.env.KENFUTWORK_KICAD_DOCKER;
 afterEach(() => {
   if (previous === undefined) delete process.env.KENFUTWORK_KICAD_APP;
   else process.env.KENFUTWORK_KICAD_APP = previous;
+  if (previousDocker === undefined) delete process.env.KENFUTWORK_KICAD_DOCKER;
+  else process.env.KENFUTWORK_KICAD_DOCKER = previousDocker;
 });
 
 function portableInstall(dataDir: string, exe: string): void {
@@ -52,6 +55,15 @@ describe("KiCad 安装位置", () => {
     writeFileSync(join(root, "10.0", "bin", "kicad-cli.exe"), "");
     writeFileSync(join(root, "8.0", "bin", "kicad-cli.exe"), "");
     expect(pickKicadInstall([root])).toBe(join(root, "10.0"));
+  });
+
+  it("容器模式：镜像即安装，不需要宿主任何 KiCad 文件", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-kicad-"));
+    process.env.KENFUTWORK_KICAD_DOCKER = "kicad/kicad:10.0";
+    const worker = new KicadWorker(dataDir);
+    expect(worker.dockerImage()).toBe("kicad/kicad:10.0");
+    expect(worker.kicadInstalled()).toBe(true);
+    expect(worker.kicadAppDir()).toBe("kicad/kicad:10.0");
   });
 
   it("macOS 的 .app 布局也算已安装", () => {
