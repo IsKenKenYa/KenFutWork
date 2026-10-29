@@ -131,17 +131,20 @@ describe("HostWorkSurface 信息页", () => {
     await waitFor(() => expect(screen.getByText("打开")).toBeTruthy());
     fireEvent.click(screen.getByText("打开"));
     expect(getWorkSurfaceView().kind).toBe("editor");
-    const frame = screen.getByTitle("gridcraft 编辑器") as HTMLIFrameElement;
+    // 顶栏是返回图标 + 注册表中的中文标题（编辑器面不再重复显示英文 id）。
+    const frame = screen.getByTitle("表格") as HTMLIFrameElement;
     expect(frame.src).toBe(
       "http://127.0.0.1:3001/api/work/host/editors/gridcraft/index.html",
     );
-    fireEvent.click(screen.getByText("编辑器"));
+    fireEvent.click(screen.getByLabelText("返回编辑器列表"));
     expect(getWorkSurfaceView().kind).toBe("editors");
     await waitFor(() => expect(screen.getByText("打开")).toBeTruthy());
   });
 
   it("探针失败 → 可读报错；适配层 disabled → 原因透出（fail loud）", async () => {
-    host.surfaceJson.mockImplementation(async () => {
+    host.surfaceJson.mockImplementation(async (path: string) => {
+      // 字体区也在信息页里请求；这里只让探针/注册表失败，错误提示保持唯一。
+      if (path.includes("/fonts")) return { dir: "D:/data/work/fonts", fonts: [] };
       throw new Error("HTTP 404");
     });
     render(<HostWorkSurface />);
