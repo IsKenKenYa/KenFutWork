@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   addFont,
   bundledFontPath,
+  fontHasCjkGlyphs,
   fontFamilyName,
   fontFormatOf,
   listBundledFonts,
@@ -173,6 +174,27 @@ describe("用户字体库", () => {
     );
     expect(rows[1]).toContain(
       "Inter | Bold | fonts/user/bundled-Inter-Bold.ttf",
+    );
+  });
+
+  it("汉字覆盖按 cmap 判定：拉丁名的中文字体也标 Hani", () => {
+    const wenkai = bundledFontPath("bundled-LXGWWenKaiLite-Regular.ttf");
+    const inter = bundledFontPath("bundled-Inter-Regular.ttf");
+    expect(wenkai && fontHasCjkGlyphs(readFileSync(wenkai))).toBe(true);
+    expect(inter && fontHasCjkGlyphs(readFileSync(inter))).toBe(false);
+    // 清单只看这个判定：家族名是拉丁（如 MiSans）时不再退化成 Latn。
+    const manifest = manifestFor([
+      {
+        fileName: "abc-misans.ttf",
+        family: "MiSans",
+        format: "ttf",
+        bytes: 1,
+        builtin: false,
+        cjk: true,
+      },
+    ]);
+    expect(manifest).toContain(
+      "MiSans | Regular | fonts/user/abc-misans.ttf | Hani,Hans,Latn",
     );
   });
 });
