@@ -326,6 +326,17 @@ function fixture(kind: (typeof topicKinds)[number]) {
       source = next;
     },
     source: () => ({ ...source }),
+    mutateHost: (mutate: (host: typeof task) => void) => mutate(task),
+    readCurrentSnapshot: async () => {
+      if (kind !== "conversation")
+        throw new Error("readCurrentSnapshot 仅conversation夹具支持");
+      return protocol.conversationSnapshotSchema.parse({
+        ...(await read()).snapshot,
+        logEpoch: source.logEpoch,
+        seq: source.seq,
+        revision: source.seq,
+      });
+    },
   };
 }
 
@@ -480,4 +491,79 @@ it("hello 宣告 independentPlanState：vendored 客户端只在见到该位时�
   // 回归：此前缺这一位，勾选「计划」后发送在客户端被拒（proto.independentPlanUnsupported），
   // 表现为「计划模式 → 发送失败」，取消计划立即成功。
   expect(carrier.hello.capabilities.independentPlanState).toBe(true);
+});
+
+it("conversation 订阅的流式刷新推送 deltas 帧且逐帧衔接，可由真实 apply 复原", async () => {
+  const f = fixture("conversation");
+  const subscribed = await f.subscribe();
+  await subscribed.publish();
+  expect(f.events).toHaveLength(1);
+  const initial = frame(f.events[0]);
+
+  // 两条流式 delta：快照从空窗进入一条增长中的 assistantText 行。
+  // fixture 的 read 水位来自 source，真实服务端每事件 +1，这里同步推进。
+  const runId = randomUUID();
+  const at = new Date().toISOString();
+  f.setSource({ logEpoch: f.source().logEpoch, seq: 1 });
+  f.mutateHost((host) => {
+    host.recordEvent({
+      type: "message.delta",
+      runId,
+      messageId: "m-1",
+      delta: "你好",
+      timestamp: at,
+    });
+  });
+  await f.refresh();
+  f.setSource({ logEpoch: f.source().logEpoch, seq: 2 });
+  f.mutateHost((host) => {
+    host.recordEvent({
+      type: "message.delta",
+      runId,
+      messageId: "m-1",
+      delta: "，世界",
+      timestamp: at,
+    });
+  });
+  await f.refresh();
+  expect(f.events).toHaveLength(3);
+
+  const deltasFrame = (index: number) => {
+    const event = f.events[index];
+    if (!event || !("frame" in event)) throw new Error("缺少topic frame。");
+    const wire = protocol.routedTopicWireFrameSchema.parse(event.frame);
+    if (wire.kind !== "complete") throw new Error("意外分片。");
+    if (wire.frame.payload.kind !== "deltas")
+      throw new Error(`期望deltas帧，实际 ${wire.frame.payload.kind}`);
+    return wire.frame;
+  };
+  const first = deltasFrame(1);
+  const second = deltasFrame(2);
+  expect(first.fromSeq).toBe(initial.frame.toSeq);
+  expect(second.fromSeq).toBe(first.toSeq);
+
+  // 客户端语义复检：initial snapshot 逐帧应用 deltas 必须等于当前权威读数。
+  // @kenfutwork/shared 与 @zcode/shared/zcode-protocol-v4 是同一 schema 的两份
+  // 导出，先 parse 归一到 apply 侧的包类型再应用。
+  const baseSnapshot = protocol.conversationSnapshotSchema.parse(
+    initial.snapshot,
+  );
+  const latest = await f.readCurrentSnapshot();
+  const { applyConversationDeltas } = await import(
+    "@zcode/shared/zcode-protocol-v4"
+  );
+  const applied = applyConversationDeltas(baseSnapshot, [
+    ...(first.payload.kind === "deltas" ? first.payload.deltas : []),
+    ...(second.payload.kind === "deltas" ? second.payload.deltas : []),
+    // 两包协议是同一 schema 的新旧两份导出（@kenfutwork/shared 少 workflowRun.*）；
+    // diff 只产两边共有的 5 个基础 op，运行时兼容，类型边界在此归一。
+  ] as Parameters<typeof applyConversationDeltas>[1]);
+  expect({ ...applied, seq: latest.seq }).toEqual(latest);
+
+  // epoch 换代后退化为整体 snapshot（增量不跨 epoch）。
+  f.setSource({ logEpoch: randomUUID(), seq: f.source().seq + 1 });
+  await f.refresh();
+  expect(f.events).toHaveLength(4);
+  expect(frame(f.events[3]).wire.deliveryKind).toBe("online");
+  expect(frame(f.events[3]).snapshot.logEpoch).not.toBe(initial.snapshot.logEpoch);
 });

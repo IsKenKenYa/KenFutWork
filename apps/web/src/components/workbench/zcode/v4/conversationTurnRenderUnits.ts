@@ -435,9 +435,51 @@ function normalizeRenderUnitPosition(
   };
 }
 
+/**
+ * 引用保持的深相等（structural sharing）：`next` 与 `previous` 深度相等的位置
+ * 沿用 previous 的引用，不同的分支重建。行引用由协议增量帧保证稳定（未触及的行
+ * 保持原对象），因此流式期间逐帧比较以「引用相等短路」为主，成本 O(总行数) 次
+ * 引用比较；只有真正变化的 turn 会换新引用，`ConversationTurnGroup` 的 memo
+ * 随之把重渲染收敛到 live tail。标量、数组、plain object 之外（函数/类实例）
+ * 一律按 `===` 处理。
+ */
+export function reuseDeepEqual<T>(previous: T, next: T): T {
+  if (previous === next) return previous;
+  if (Array.isArray(previous) && Array.isArray(next)) {
+    if (previous.length !== next.length) return next;
+    let identical = true;
+    const merged = next.map((item, index) => {
+      const kept = reuseDeepEqual(previous[index], item);
+      if (kept !== previous[index]) identical = false;
+      return kept;
+    });
+    return identical ? previous : (merged as unknown as T);
+  }
+  if (isPlainRecord(previous) && isPlainRecord(next)) {
+    const nextKeys = Object.keys(next);
+    if (Object.keys(previous).length !== nextKeys.length) return next;
+    let identical = true;
+    const merged: Record<string, unknown> = {};
+    for (const key of nextKeys) {
+      if (!Object.prototype.hasOwnProperty.call(previous, key)) return next;
+      const kept = reuseDeepEqual(previous[key], next[key]);
+      if (kept !== previous[key]) identical = false;
+      merged[key] = kept;
+    }
+    return identical ? previous : (merged as unknown as T);
+  }
+  return next;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function buildConversationTurnRenderUnits(
   rows: readonly ConversationRow[],
   options: BuildConversationTurnRenderUnitsOptions = {},
+  /** 上一帧产物：等值的 turn 沿用旧引用，使 turn 级 memo 在流式期间生效。 */
+  previous: readonly ConversationTurnRenderUnit[] = [],
 ): ConversationTurnRenderUnit[] {
   const units: DraftTurnRenderUnit[] = [];
   const unitByTurnId = new Map<string, DraftTurnRenderUnit>();
@@ -475,7 +517,13 @@ export function buildConversationTurnRenderUnits(
     materializeDraftUnit(unit, index, units.length, options),
   );
   const keptUnits = materializedUnits.filter(shouldKeepRenderUnit);
+  const previousByTurnId = new Map(
+    previous.map((unit) => [unit.turnId, unit] as const),
+  );
   return keptUnits.map((unit, index) =>
-    normalizeRenderUnitPosition(unit, index, keptUnits.length, options),
+    reuseDeepEqual(
+      previousByTurnId.get(unit.turnId),
+      normalizeRenderUnitPosition(unit, index, keptUnits.length, options),
+    ),
   );
 }

@@ -428,12 +428,19 @@ function ConversationTimelineImpl({
     return () => observer.disconnect();
   }, [hasHeaderSlot]);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
+  // 上一帧 render units：build 内部做引用保持的深相等，等值 turn 沿用旧引用，
+  // 流式期间只有 live tail 的 turn 换引用重渲（行引用由协议增量帧保证稳定）。
+  const previousUnitsRef = useRef<ConversationTurnRenderUnit[]>([]);
   const renderUnits = useMemo(
-    () =>
-      buildConversationTurnRenderUnits(rows, {
-        nowMs: liveNowMs,
-        sessionPhase,
-      }),
+    () => {
+      const units = buildConversationTurnRenderUnits(
+        rows,
+        { nowMs: liveNowMs, sessionPhase },
+        previousUnitsRef.current,
+      );
+      previousUnitsRef.current = units;
+      return units;
+    },
     [liveNowMs, rows, sessionPhase],
   );
   const { virtualizedUnits, liveUnit, liveUnitIndex } = useMemo(

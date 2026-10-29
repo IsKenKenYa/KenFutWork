@@ -3,10 +3,12 @@ import {
   type CodeUiEvent,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
+import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 import type {
   CodeUiHostRpcCleanup,
   CodeUiHostRpcContext,
 } from "./host-rpc-handler.js";
+import { diffConversationSnapshots } from "./snapshot-diff.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 type Snapshot =
@@ -41,6 +43,12 @@ interface Subscription {
   taskScopeGeneration?: number;
   ordinal: number;
   cursor: { logEpoch: string; seq: number; retiredEpochs: Set<string> };
+  /**
+   * 上次成功推送的装饰后视图：online 帧优先对它做增量 diff（流式热路径从
+   * 「每帧重发整个会话」变为「只发变化」）；deltas 发送成功后推进，发送失败
+   * 不推进——客户端按 fromSeq 衔接判定断档，走既有 resync 全量自愈。
+   */
+  lastPushed?: ConversationSnapshot | undefined;
   read: () => Promise<{
     snapshot: Snapshot;
     seq: number;
@@ -497,18 +505,43 @@ export class CodeUiConnections {
       !this.isCurrentSnapshot(subscription, current)
     )
       return;
+    // 并发 refresh 的交错读取：比已推送视图更旧的读作废（新读已覆盖它的事实）。
+    // 等值不拦：同 seq 的 recovery 必须照常交付，重复 online 帧由客户端水位去重。
+    if (
+      subscription.lastPushed &&
+      current.seq < subscription.lastPushed.seq
+    )
+      return;
     const definition = topicDefinitions.find((entry) =>
       subscription.topic.startsWith(entry.prefix),
     );
     if (!definition)
       throw new CodeUiRepositoryError("not_found", "未知的Code订阅主题。");
+    // 增量 diff 只对 conversation topic 定义（其余 topic 的快照结构不同）：
+    // online 且持有上次视图时优先 deltas；无法表达（epoch 换代/结构变化/零差异）
+    // 一律退化为整体快照——客户端对两种帧的语义都已内建。
+    const conversationSnapshot =
+      definition.prefix === "conversation/"
+        ? (current.snapshot as ConversationSnapshot)
+        : null;
+    const previous = subscription.lastPushed;
+    const diffResult =
+      deliveryKind === "online" &&
+      conversationSnapshot !== null &&
+      previous &&
+      previous.logEpoch === conversationSnapshot.logEpoch
+        ? diffConversationSnapshots(previous, conversationSnapshot)
+        : null;
     const frame = {
       topic: subscription.topic,
       subscriptionId: subscription.id,
-      fromSeq: 0,
+      fromSeq: previous?.seq ?? 0,
       toSeq: current.seq,
       sentAt: Date.now(),
-      payload: { kind: "snapshot" as const, snapshot: current.snapshot },
+      payload:
+        diffResult && !diffResult.fallbackToSnapshot
+          ? { kind: "deltas" as const, deltas: diffResult.deltas }
+          : { kind: "snapshot" as const, snapshot: current.snapshot },
     };
     const parsed = definition.schema.parse(frame);
     const workspaceIdentity =
@@ -539,6 +572,11 @@ export class CodeUiConnections {
       )
         return;
       await connection.send(notification(wire) as CodeUiEvent);
+    }
+    // 全部物理片发送成功才推进已推送视图；中途失败由客户端断档自愈兜底。
+    // 仅 conversation topic 维护该视图，其余 topic 保持原有行为。
+    if (conversationSnapshot !== null) {
+      subscription.lastPushed = conversationSnapshot;
     }
   }
 }
