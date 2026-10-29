@@ -7,7 +7,8 @@
   "files": [
     "index.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "assets/icon.svg"
   ],
   "license": "GPL-3.0",
   "dsh": {
@@ -19,6 +20,8 @@
     "bundle": {
       "patch": "./cordis.patch.yml"
     },
-    "title": "示例时钟"
+    "title": "示例时钟",
+    "assets": true,
+    "icon": "assets/icon.svg"
   }
 }

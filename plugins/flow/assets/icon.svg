@@ -1,0 +1,18 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Flow 工作流">
+  <!-- 自绘：三个节点 + 连线（编排 / 发布 / 运行），与智能家居图标同口径 -->
+  <path
+    d="M7.2 6.6h3.2v3.2H7.2zM13.6 14.2h3.2v3.2h-3.2zM7.2 14.2h3.2v3.2H7.2z"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M10.4 8.2h2.4a1.6 1.6 0 0 1 1.6 1.6v4.4M10.4 15.8h3.2"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+  />
+</svg>

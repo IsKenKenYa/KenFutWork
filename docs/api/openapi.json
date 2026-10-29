@@ -7105,6 +7105,98 @@
         }
       }
     },
+    "/api/work/host/eda/document": {
+      "get": {
+        "operationId": "getWorkHostEdaDocument",
+        "summary": "读取 EDA 原理图文档",
+        "description": "返回实例数据目录里的原理图文本（编辑器与 agent 共用同一份）；还没写过时返回空串。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postWorkHostEdaDocument",
+        "summary": "保存 EDA 原理图文档",
+        "description": "写入实例数据目录里的原理图（整体替换，不留半截文件）。正文不是 kicad_sch 时返回 400。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/work/host/editors/{editorId}/*": {
       "get": {
         "operationId": "getWorkHostEditorsByEditorIdWildcard",
@@ -26019,6 +26111,13 @@
                 "default": false,
                 "type": "boolean"
               },
+              "icon": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "ui": {
                 "default": [],
                 "type": "array",
@@ -26126,6 +26225,7 @@
               "enginesNode",
               "hasClientUi",
               "assets",
+              "icon",
               "ui",
               "lifecycleScripts",
               "dshBaseDependencies",
@@ -26469,6 +26569,13 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "icon": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "ui": {
                     "default": [],
                     "type": "array",
@@ -26576,6 +26683,7 @@
                   "enginesNode",
                   "hasClientUi",
                   "assets",
+                  "icon",
                   "ui",
                   "lifecycleScripts",
                   "dshBaseDependencies",
@@ -33396,7 +33504,8 @@
                     "layout",
                     "pdf",
                     "audio",
-                    "cad"
+                    "cad",
+                    "eda"
                   ]
                 },
                 "repo": {

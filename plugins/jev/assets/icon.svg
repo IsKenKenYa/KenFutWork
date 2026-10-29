@@ -1,0 +1,22 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Jev Decisions">
+  <!-- 自绘：分叉路径 + 判定点（在多个分支里给出类型化判决），与智能家居图标同口径 -->
+  <path
+    d="M5.4 19.2v-4.6a2.4 2.4 0 0 1 2.4-2.4h3.4a2.4 2.4 0 0 0 2.4-2.4V4.8"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M13.6 12.2h2.6a2.4 2.4 0 0 1 2.4 2.4v4.6"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="5.4" cy="19.2" r="1.5" fill="currentColor" />
+  <circle cx="13.6" cy="4.8" r="1.5" fill="currentColor" />
+  <circle cx="18.6" cy="19.2" r="1.5" fill="currentColor" />
+</svg>

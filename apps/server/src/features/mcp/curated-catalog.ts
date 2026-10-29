@@ -168,6 +168,22 @@ export const CURATED_MCP_SERVERS: readonly CuratedMcpServer[] = [
     homepage:
       "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
   },
+  {
+    // 社区 jev-mcp：把 Jev 的判断收成一组类型化工具。ZCode 的做法同源——它也是把
+    // jev-mcp 当 MCP server 挂给 agent，而不是自己训模型。
+    // 需要 TYPESAFE_API_KEY：Jev 是云侧判决模型，无凭据时 server 启动即失败。
+    id: "jev",
+    name: "jev",
+    title: "Jev 判决",
+    description:
+      "把 Jev 的判断接成工具：核验主张、筛查不可信内容、语义查找与重排。需要 TypeSafe API Key。",
+    command: "npx",
+    argsTemplate: ["-y", "github:jkudish/jev-mcp"],
+    params: [],
+    envKeys: ["TYPESAFE_API_KEY"],
+    requires: "node",
+    homepage: "https://github.com/jkudish/jev-mcp",
+  },
 ];
 
 /** 用参数值把模板渲染成最终 args。返回缺失的必填参数（fail loud 在调用方）。 */

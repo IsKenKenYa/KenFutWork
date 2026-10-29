@@ -70,8 +70,10 @@ const frozenReferenceCatalogs = new Map<
 
 /** 图标沿已有包资源端点读取，不把目录或凭据放进引用。 */
 function pluginListing(id: string, manifest: PluginBundleManifest) {
+  // 顶层 `kenfutwork.icon` 优先：没有 UI 面板的插件（CAD / Flow / Work…）靠它显示图标；
+  // 老清单只声明了 `ui[].icon` 的仍按面板入口取，保持向后兼容。
   const declared = manifest.assets
-    ? manifest.ui.find((entry) => entry.icon)?.icon
+    ? (manifest.icon ?? manifest.ui.find((entry) => entry.icon)?.icon)
     : undefined;
   const icon = declared
     ? createPluginIconResourceReference(id, declared)

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EDA</title>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="bar">
+        <strong class="brand">EDA</strong>
+        <button type="button" id="open" class="btn">打开</button>
+        <button type="button" id="save" class="btn">保存</button>
+        <span class="sep"></span>
+        <button type="button" id="zoom-out" class="ico" aria-label="缩小" title="缩小">−</button>
+        <button type="button" id="zoom-in" class="ico" aria-label="放大" title="放大">+</button>
+        <button type="button" id="fit" class="btn">适应</button>
+        <span class="grow"></span>
+        <span id="file" class="file">未打开文件</span>
+      </header>
+      <main class="main">
+        <aside class="side">
+          <div class="side-title">元件</div>
+          <ul id="parts" class="list"></ul>
+        </aside>
+        <div class="canvas-wrap">
+          <canvas id="canvas"></canvas>
+          <div id="empty" class="empty">
+            <p class="empty-title">没有打开的原理图</p>
+            <p class="empty-hint">打开 .kicad_sch 开始编辑</p>
+          </div>
+        </div>
+      </main>
+      <footer class="status">
+        <span id="hint">滚轮缩放 · 空格拖动 · 点选元件</span>
+        <span class="grow"></span>
+        <span id="pos">0, 0</span>
+        <span id="sel" class="sel">未选中</span>
+      </footer>
+    </div>
+    <input type="file" id="picker" accept=".kicad_sch,.kicad_pcb,.sch" hidden />
+    <script src="./app.js"></script>
+  </body>
+</html>

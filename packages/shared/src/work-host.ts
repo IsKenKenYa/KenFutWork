@@ -24,6 +24,8 @@ export const workEditorCategorySchema = z.enum([
   "pdf",
   "audio",
   "cad",
+  /** 电子设计（原理图 / PCB）：KiCad 一档，原生窗口挂载。 */
+  "eda",
 ]);
 export type WorkEditorCategory = z.infer<typeof workEditorCategorySchema>;
 

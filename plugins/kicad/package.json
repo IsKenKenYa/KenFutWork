@@ -1,0 +1,23 @@
+{
+  "name": "kenfutwork-kicad",
+  "version": "1.0.0",
+  "description": "KiCad 电路设计：装好后 Work 引擎里出现「电路」一档，点开即唤起本机已装的 KiCad（原理图 / PCB）。软件由你自装，我们不分发也不内嵌。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "assets/icon.svg"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "KiCad 电路",
+    "category": "开发者工具",
+    "assets": true,
+    "icon": "assets/icon.svg"
+  }
+}

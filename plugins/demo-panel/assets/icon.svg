@@ -1,0 +1,17 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="演示插件">
+  <!-- 自绘：窗口 + 侧栏与内容块（面板四槽位），与智能家居图标同口径 -->
+  <path
+    d="M3.6 5.2h16.8v13.6H3.6z"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M9.2 5.2v13.6M12.6 8.6h4.6M12.6 12h3.2"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+  />
+</svg>

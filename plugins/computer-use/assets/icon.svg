@@ -1,0 +1,24 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Computer Use">
+  <!-- 自绘：显示器 + 光标（观察并操控本机桌面），与智能家居图标同口径 -->
+  <path
+    d="M3.4 5.4h17.2v10.2H3.4z"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M9 19.4h6"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+  />
+  <path
+    d="m11.2 8.6 4.4 1.9-1.9.9-.9 1.9z"
+    fill="currentColor"
+    stroke="currentColor"
+    stroke-width="1.1"
+    stroke-linejoin="round"
+  />
+</svg>

@@ -5,6 +5,7 @@ import {
   resolveInstalledEditors,
 } from "../../http/work-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { ensureBuiltinEditors } from "./builtin-editors.js";
 
 /**
  * work-host 插件：Work 模式的宿主适配层（`/api/work/host/*`）。
@@ -26,6 +27,12 @@ export function createWorkHostPlugin(): PluginDefinition {
         env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
       });
       const editorsDir = join(dataRoot, "work", "editors");
+      // 自建的 web 编辑器（EDA）随仓库分发：启动时按内容哈希落位，和下载来的扩展包
+      // 共用同一个托管目录，`installed` 判定不分叉。
+      const written = ensureBuiltinEditors(editorsDir);
+      if (written.length > 0) {
+        console.log(`[work] 内置编辑器已落位：${written.join(", ")}`);
+      }
       void registerWorkHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         editors: {

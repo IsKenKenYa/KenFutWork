@@ -1,0 +1,23 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="KiCad">
+  <!-- 自绘：电路板 + 走线与焊盘（不复制 KiCad 商标的龙形标），与智能家居图标同口径 -->
+  <rect
+    x="3.4"
+    y="4.6"
+    width="17.2"
+    height="14.8"
+    rx="1.6"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+  />
+  <path
+    d="M6.6 8.4h3l2.2 3 2.6-3h3M9.6 8.4v7.2h4.8l1.4-2.4"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="6.6" cy="8.4" r="1.2" fill="currentColor" />
+  <circle cx="16.6" cy="15.6" r="1.2" fill="currentColor" />
+</svg>

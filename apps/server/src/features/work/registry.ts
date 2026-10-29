@@ -210,6 +210,17 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
       url: "https://github.com/storytold/cadcraft/releases/download/v0.12.0/cadcraft-web-0.12.0.zip",
     },
   },
+  {
+    // 自建的 web 编辑器（KiCad 没有 web 构建）：站点随仓库分发、启动时落位，
+    // 所以 `pinned` 为 null（没有要下载的上游包），`installed` 由落位事实决定。
+    id: "kicad",
+    title: "电路",
+    category: "eda",
+    repo: "https://gitlab.com/kicad/code/kicad",
+    license: "GPL-3.0-or-later",
+    mount: WASM_MOUNT,
+    pinned: null,
+  },
 ];
 
 export function listWorkEditorRegistrations(): readonly WorkEditorRegistration[] {

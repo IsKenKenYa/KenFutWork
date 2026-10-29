@@ -340,6 +340,7 @@ function manifestOrPlaceholder(
       hasClientUi: false,
       ui: [],
       assets: false,
+      icon: null,
       lifecycleScripts: [],
       dshBaseDependencies: [],
       hasNativeBuild: false,
@@ -1077,8 +1078,8 @@ export function createPluginRegistryService(
         return undefined;
       }
       // 未安装的自带 bundle：资产从内存出（市场卡片图标在安装前也要能显示）
+      const bundled = bundledBundles.find((item) => item.id === pluginId);
       if (!record) {
-        const bundled = bundledBundles.find((item) => item.id === pluginId);
         if (bundled?.manifest.assets !== true) return undefined;
         const content = bundled.files[normalized];
         if (
@@ -1096,21 +1097,40 @@ export function createPluginRegistryService(
         pluginId,
         `assets/${normalized}`,
       );
-      const declaredIcon =
+      // 内置插件以**当前源码**的清单为准：数据目录里那份是安装当时的副本，随版本升级会
+      // 落后（新加的 `assets`/`icon` 在老副本里根本没有，市场图标于是 404）。第三方
+      // 插件仍只看它自己的落位记录。
+      const effective =
+        record.source === "builtin" && bundled ? bundled.manifest : record.manifest;
+      const declaredPath = effective.icon ?? effective.ui.find((e) => e.icon)?.icon ?? "";
+      const declaredIcon = Boolean(
         requestedIcon &&
-        contentTypeOf(normalized).startsWith("image/") &&
-        record.manifest.ui.some(
-          (entry) =>
-            entry.icon &&
-            createPluginIconResourceReference(pluginId, entry.icon) ===
-              requestedIcon,
-        );
+          contentTypeOf(normalized).startsWith("image/") &&
+          declaredPath !== "" &&
+          createPluginIconResourceReference(pluginId, declaredPath) ===
+            requestedIcon,
+      );
       // 停用收回运行面板；已安装卡片的声明图标仍是只读元信息。
       if (
-        record.manifest.assets !== true ||
+        effective.assets !== true ||
         (!record.enabled && !declaredIcon)
       ) {
         return undefined;
+      }
+      // 内置插件以**当前仓库源码**为准：数据目录里那份是安装当时的副本，随版本升级会
+      // 落后（新增的 assets/icon.svg 在老副本里根本不存在，市场图标于是 404）。
+      // 第三方插件仍读副本——那是它自己的落位目录。
+      if (record.source === "builtin" && bundled) {
+        const content = bundled.files[normalized];
+        if (
+          content !== undefined &&
+          Buffer.byteLength(content, "utf8") <= MAX_ASSET_BYTES
+        ) {
+          return {
+            content: Buffer.from(content, "utf8"),
+            contentType: contentTypeOf(normalized),
+          };
+        }
       }
       const bundleDir = bundleDirOf(pluginId);
       const absolute = path.resolve(bundleDir, normalized);

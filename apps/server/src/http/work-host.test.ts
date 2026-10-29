@@ -16,6 +16,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
+import { ensureBuiltinEditors } from "../features/work/builtin-editors.js";
 import {
   getWorkEditorInstallSnapshot,
   startWorkEditorInstall,
@@ -166,12 +167,18 @@ describe("work 宿主路由", () => {
     });
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      editors: Array<{ id: string; installed: boolean; pinned: unknown }>;
+      editors: Array<{
+        id: string;
+        installed: boolean;
+        pinned: unknown;
+        mount: string;
+      }>;
       dataDir: string;
       install: Record<string, unknown>;
     };
     expect(body.dataDir).toBe("/tmp/kenfutwork-data");
     expect(body.editors.length).toBeGreaterThanOrEqual(10);
+    // 数据目录里没有落位任何包（包括自建 EDA，这里没走 ensureBuiltinEditors）。
     expect(body.editors.every((editor) => editor.installed === false)).toBe(
       true,
     );
@@ -182,12 +189,41 @@ describe("work 宿主路由", () => {
     expect(
       body.editors.find((editor) => editor.id === "wordcraft")?.pinned,
     ).toMatchObject({ version: "0.11.0" });
-    // 全部编辑器已锚定：不存在未锚定项（默认支持）
-    expect(body.editors.every((editor) => editor.pinned !== null)).toBe(true);
+    // 上游扩展包全部已锚定；自建的 EDA 站点随仓库分发，没有下载包。
+    expect(
+      body.editors
+        .filter((editor) => editor.id !== "kicad")
+        .every((editor) => editor.pinned !== null),
+    ).toBe(true);
+    expect(
+      body.editors.find((editor) => editor.id === "kicad")?.pinned,
+    ).toBeNull();
   });
 
-  it("安装：未锚定 → 400 可读原因（不摆假开关）；未知编辑器 → 404", async () => {
-    // 注册表已全量锚定；400 分支用 fixture 注入 null pin（如未来新增未锚定项）保持护栏。
+  it("内置编辑器（EDA）：落位后 installed=true，站点与示例可同源取到", async () => {
+    const editorsDir = await emptyEditorsDir();
+    const written = ensureBuiltinEditors(editorsDir);
+    expect(written).toContain("kicad");
+    // 幂等：内容没变时第二次不再写
+    expect(ensureBuiltinEditors(editorsDir)).toEqual([]);
+
+    const app = await fixture({ editorsDir });
+    const list = await app.inject({ method: "get", path: "/api/work/host/editors" });
+    const kicad = (list.json() as { editors: Array<{ id: string; installed: boolean; mount: string }> })
+      .editors.find((editor) => editor.id === "kicad");
+    expect(kicad?.installed).toBe(true);
+    expect(kicad?.mount).toBe("wasm-iframe");
+
+    const html = await app.inject({ method: "get", path: "/api/work/host/editors/kicad/index.html" });
+    expect(html.statusCode).toBe(200);
+    expect(html.headers["content-type"]).toBe("text/html; charset=utf-8");
+
+    const sample = await app.inject({ method: "get", path: "/api/work/host/editors/kicad/sample.kicad_sch" });
+    expect(sample.statusCode).toBe(200);
+    expect(sample.body).toContain("kicad_sch");
+  });
+
+  it("安装：未锚定 → 400 可读原因（不摆假开关）；未知编辑器 → 404", async () => {    // 注册表已全量锚定；400 分支用 fixture 注入 null pin（如未来新增未锚定项）保持护栏。
     const app = await fixture({ pinnedOverride: null });
     const unpinned = await app.inject({
       method: "post",

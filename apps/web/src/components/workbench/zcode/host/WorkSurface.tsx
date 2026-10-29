@@ -23,7 +23,8 @@ type WorkEditorCategory =
   | "layout"
   | "pdf"
   | "audio"
-  | "cad";
+  | "cad"
+  | "eda";
 
 const CATEGORY_LABEL: Record<WorkEditorCategory, string> = {
   office: "办公",
@@ -33,6 +34,7 @@ const CATEGORY_LABEL: Record<WorkEditorCategory, string> = {
   pdf: "PDF",
   audio: "音频",
   cad: "CAD",
+  eda: "EDA",
 };
 
 const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
@@ -450,16 +452,17 @@ function EditorFrame({
   const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
+      {/* 顶栏只留一个返回图标：编辑器自己的顶栏已经写了名字，这里再写一遍是重复。 */}
+      <div className="flex shrink-0 items-center border-b px-4 py-2">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
+          aria-label="返回编辑器列表"
+          title="返回编辑器列表"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          编辑器
+          <ArrowLeft className="h-4 w-4" />
         </button>
-        <span className="text-sm">{editorId}</span>
       </div>
       <div className="relative min-h-0 flex-1">
         <iframe

@@ -1,0 +1,19 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="示例时钟">
+  <!-- 自绘：时钟盘面 + 指针（参考插件），与智能家居图标同口径 -->
+  <circle
+    cx="12"
+    cy="12.4"
+    r="7.6"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+  />
+  <path
+    d="M12 8.4v4.2l2.8 1.7"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.7"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

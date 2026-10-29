@@ -1610,6 +1610,27 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
   {
     method: "get",
+    path: "/api/work/host/eda/document",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    binaryResponse: "text/plain; charset=utf-8",
+    summary: "读取 EDA 原理图文档",
+    description:
+      "返回实例数据目录里的原理图文本（编辑器与 agent 共用同一份）；还没写过时返回空串。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/eda/document",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    summary: "保存 EDA 原理图文档",
+    description:
+      "写入实例数据目录里的原理图（整体替换，不留半截文件）。正文不是 kicad_sch 时返回 400。",
+  },
+  {
+    method: "get",
     path: "/api/work/host/editors/:editorId/*",
     tag: "work",
     auth: "local",
