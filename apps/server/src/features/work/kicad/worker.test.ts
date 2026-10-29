@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { KicadWorker, pickKicadInstall } from "./worker.js";
+import { KicadWorker, pickKicadInstall, remapContainerPaths } from "./worker.js";
 
 /**
  * KiCad 安装位置只有两个来源：显式 `KENFUTWORK_KICAD_APP`，或实例数据目录里的便携解包目录。
@@ -64,6 +64,22 @@ describe("KiCad 安装位置", () => {
     expect(worker.dockerImage()).toBe("kicad/kicad:10.0");
     expect(worker.kicadInstalled()).toBe(true);
     expect(worker.kicadAppDir()).toBe("kicad/kicad:10.0");
+  });
+
+  it("容器结果里的 /ws、/data 映射回宿主路径（含嵌套结构）", () => {
+    const input = {
+      path: "/ws/kicad/out/board.gbr",
+      nested: ["/data/store/board", { note: "kept", size: 3 }],
+    };
+    expect(
+      remapContainerPaths(input, [
+        ["/ws", "D:\ws"],
+        ["/data", "D:\data"],
+      ]),
+    ).toEqual({
+      path: "D:\ws/kicad/out/board.gbr",
+      nested: ["D:\data/store/board", { note: "kept", size: 3 }],
+    });
   });
 
   it("macOS 的 .app 布局也算已安装", () => {

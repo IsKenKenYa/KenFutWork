@@ -32,6 +32,32 @@ const KICAD_INSTALL_HINT =
       ? "/Applications/KiCad/KiCad.app"
       : "/usr";
 
+/** 把容器内路径前缀替换成宿主路径（递归进字符串/数组/对象）。 */
+export function remapContainerPaths<T>(
+  value: T,
+  pairs: ReadonlyArray<readonly [from: string, to: string]>,
+): T {
+  const walk = (node: unknown): unknown => {
+    if (typeof node === "string") {
+      return pairs.reduce(
+        (text, [from, to]) => text.split(from).join(to),
+        node,
+      );
+    }
+    if (Array.isArray(node)) return node.map(walk);
+    if (node && typeof node === "object") {
+      return Object.fromEntries(
+        Object.entries(node as Record<string, unknown>).map(([key, item]) => [
+          key,
+          walk(item),
+        ]),
+      );
+    }
+    return node;
+  };
+  return walk(value) as T;
+}
+
 /** Windows 上 KiCad 的默认安装根（官方安装包装到 `<根>\<版本>\`）。 */
 export const WINDOWS_INSTALL_ROOTS = [
   "C:/Program Files/KiCad",
@@ -253,29 +279,10 @@ export class KicadWorker {
   /** 容器里的 `/ws`、`/data` 映射回宿主机路径，工具结果里的路径才对用户成立。 */
   private remap<T>(value: T): T {
     if (!this.dockerImage()) return value;
-    const pairs: Array<[string, string]> = [
+    return remapContainerPaths(value, [
       ["/ws", this.workspaceDir()],
       ["/data", this.pluginDataDir()],
-    ];
-    const walk = (node: unknown): unknown => {
-      if (typeof node === "string") {
-        return pairs.reduce(
-          (text, [from, to]) => text.split(from).join(to),
-          node,
-        );
-      }
-      if (Array.isArray(node)) return node.map(walk);
-      if (node && typeof node === "object") {
-        return Object.fromEntries(
-          Object.entries(node as Record<string, unknown>).map(([key, item]) => [
-            key,
-            walk(item),
-          ]),
-        );
-      }
-      return node;
-    };
-    return walk(value) as T;
+    ]);
   }
 
   /** 面板与信息页用：服务是否可用、工具清单、KiCad 安装事实。 */
