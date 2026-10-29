@@ -1078,12 +1078,18 @@ export function createPluginRegistryService(
         return undefined;
       }
       // 未安装的自带 bundle：资产从内存出（市场卡片图标在安装前也要能显示）
-      const bundled = bundledBundles.find((item) => item.id === pluginId);
-      // 路由剥掉了 `assets/` 前缀，而 files 的 key 是包根相对路径（含 `assets/`）。
-      const bundledKey = `assets/${normalized}`;
+      // 同一个插件可能以 `bundled__<name>` 或 `local__<name>` 两种前缀落位（后者是用户
+      // 自己装的那一份，内容就是仓库里这个包），所以 id 找不到时再按包名认一次。
+      const bundled =
+        bundledBundles.find((item) => item.id === pluginId) ??
+        bundledBundles.find((item) => item.name === record?.name);
+      // 路由把 URL 里的 `assets/` 段剥掉了，但文件可能就在包根（老的 ha/mihome 是
+      // `icon.svg`），也可能真在 `assets/` 下（新插件）。两处都认。
+      const bundledFile = (files: Record<string, string>) =>
+        files[`assets/${normalized}`] ?? files[normalized];
       if (!record) {
         if (bundled?.manifest.assets !== true) return undefined;
-        const content = bundled.files[bundledKey];
+        const content = bundledFile(bundled.files);
         if (
           content === undefined ||
           Buffer.byteLength(content, "utf8") > MAX_ASSET_BYTES
@@ -1123,7 +1129,7 @@ export function createPluginRegistryService(
       // 落后（新增的 assets/icon.svg 在老副本里根本不存在，市场图标于是 404）。
       // 第三方插件仍读副本——那是它自己的落位目录。
       if (record.source === "builtin" && bundled) {
-        const content = bundled.files[bundledKey];
+        const content = bundledFile(bundled.files);
         if (
           content !== undefined &&
           Buffer.byteLength(content, "utf8") <= MAX_ASSET_BYTES
