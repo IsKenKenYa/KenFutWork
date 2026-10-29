@@ -50,6 +50,7 @@ import kicad_views as kv  # noqa: E402
 from kicad_launch import launch_editor  # noqa: E402
 from kicad.store import ArtifactStore  # noqa: E402
 from kicad import examples, paths, verify  # noqa: E402
+from kicad import sexpr  # noqa: E402  (KenFutWork: 打开已有 .kicad_pcb 时读板框尺寸)
 from kicad import mcp_server as worker  # noqa: E402
 from kicad.pipeline import ORIGIN_MM  # noqa: E402
 from kicad.service import PcbService  # noqa: E402
@@ -510,6 +511,98 @@ def _sch_stamp(sch: Path) -> str:
     """Changes when the schematic or any sheet next to it is saved (sub-sheets live in the same folder)."""
     parts = [f"{f.name}:{f.stat().st_mtime_ns}:{f.stat().st_size}" for f in sorted(sch.parent.glob("*.kicad_sch"))]
     return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------- import an existing board (KenFutWork)
+_EDGE_GRAPHICS = {"gr_line", "gr_rect", "gr_arc", "gr_circle", "gr_poly", "gr_curve"}
+_EDGE_POINT_HEADS = ("start", "end", "mid", "center")
+
+
+def _edge_bounds(text: str) -> tuple[float, float] | None:
+    """Board width/height in mm from the Edge.Cuts graphics of a .kicad_pcb (None when the file has no closed outline)."""
+    try:
+        root = sexpr.parse(text)
+    except Exception:  # noqa: BLE001
+        return None
+    xs: list[float] = []
+    ys: list[float] = []
+
+    def visit(node: list) -> None:
+        head = node[0] if node and isinstance(node[0], str) else ""
+        if head in _EDGE_GRAPHICS and sexpr.value(node, "layer") == "Edge.Cuts":
+            for key in _EDGE_POINT_HEADS:
+                point = sexpr.find(node, key)
+                if point is not None:
+                    nums = sexpr.numbers(point)
+                    if len(nums) >= 2:
+                        xs.append(nums[0])
+                        ys.append(nums[1])
+            pts = sexpr.find(node, "pts")
+            if pts is not None:
+                for xy in sexpr.children(pts, "xy"):
+                    nums = sexpr.numbers(xy)
+                    if len(nums) >= 2:
+                        xs.append(nums[0])
+                        ys.append(nums[1])
+        for child in node:
+            if isinstance(child, list):
+                visit(child)
+
+    visit(root)
+    if len(xs) < 2 or len(ys) < 2:
+        return None
+    return round(max(xs) - min(xs), 3), round(max(ys) - min(ys), 3)
+
+
+def _copper_layers(text: str) -> int:
+    try:
+        layers = sexpr.find(sexpr.parse(text), "layers")
+    except Exception:  # noqa: BLE001
+        return 2
+    if not layers:
+        return 2
+    n = sum(1 for c in layers if isinstance(c, list) and len(c) > 1 and isinstance(c[1], str) and c[1].endswith(".Cu"))
+    return n or 2
+
+
+@mcp.tool(annotations={"title": "Open an existing .kicad_pcb board", "readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+def kicad_import_board(board_path: str, name: str = "") -> dict:
+    """Open an existing KiCad board file (a .kicad_pcb inside the workspace) as the board the panel shows and the agent works on. The file is copied into the
+    plugin's artifact store; the original stays untouched. Runs DRC with KiCad's own rules, so the panel gets the same verdict as a built board. Use this for a board the
+    user already has, instead of pcb_build (which designs a board from a circuit spec)."""
+    p = Path(board_path)
+    if not p.is_absolute():
+        p = (WORKSPACE / p).resolve()
+    try:
+        p.relative_to(WORKSPACE)
+    except ValueError:
+        return _err("board file must be inside the workspace")
+    if not p.is_file():
+        return _err(f"board file not found: {board_path}")
+    if p.suffix.lower() != ".kicad_pcb":
+        return _err("only .kicad_pcb files are supported")
+    text = p.read_text(encoding="utf-8", errors="replace")
+    size = _edge_bounds(text)
+    meta: dict[str, Any] = {"pcb_name": name or p.stem, "imported_from": _rel(p), "layers": _copper_layers(text)}
+    if size:
+        meta["width_mm"], meta["height_mm"] = size
+    art = store.put_file(PID, p, kind="kicad_pcb", name=p.name, meta=meta)
+    try:
+        scratch = store.scratch_dir(PID, "importdrc")
+        try:
+            drc = verify.run_drc(_stage_board(art, scratch), scratch, origin=ORIGIN_MM, max_listed=MAX_LISTED)
+        finally:
+            store.cleanup_scratch(scratch)
+    except Exception as e:  # noqa: BLE001 - the board is imported; only the verdict is missing
+        return _ok(artifact_id=art.artifact_id, name=meta["pcb_name"], width_mm=meta.get("width_mm"), height_mm=meta.get("height_mm"),
+                   drc_passed=None, note=f"board imported, DRC failed: {e}")
+    art = store.update_meta(art.artifact_id, {
+        "drc_passed": drc.passed,
+        "drc": {"errors": drc.n_errors, "warnings": drc.n_warnings, "unconnected": drc.n_unconnected, "by_type": drc.by_type},
+        "unrouted": drc.n_unconnected,
+    })
+    return _ok(artifact_id=art.artifact_id, name=meta["pcb_name"], width_mm=meta.get("width_mm"), height_mm=meta.get("height_mm"),
+               drc_passed=drc.passed, errors=drc.n_errors, warnings=drc.n_warnings, unconnected=drc.n_unconnected)
 
 
 @mcp.tool

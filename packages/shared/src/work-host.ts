@@ -68,6 +68,8 @@ export const workEditorSchema = z.object({
   mount: workEditorMountSchema,
   /** 锚定发布；null = 尚未锚定（不提供下载）。 */
   pinned: workEditorPinnedReleaseSchema.nullable(),
+  /** 随宿主分发（无下载包）的版本号；有 pinned 时以 pinned 为准。 */
+  version: z.string().min(1).max(32).nullable().default(null),
   /** 扩展包是否已落位本机数据目录（下载器或手动放置都算；未落位如实回答）。 */
   installed: z.boolean(),
 });

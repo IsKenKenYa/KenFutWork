@@ -34,7 +34,27 @@ const BUNDLED_LICENSES: Record<string, string> = {
   Inter: "OFL-Inter.txt",
   LiberationSerif: "OFL-Liberation-Serif.txt",
   LXGWWenKaiLite: "OFL-LXGW-WenKai-Lite.txt",
+  LXGWMarkerGothic: "OFL-LXGW-Marker-Gothic.txt",
+  NotoSansCJKsc: "OFL-Noto-CJK.txt",
+  NotoSerifCJKsc: "OFL-Noto-CJK.txt",
+  SmileySans: "OFL-Smiley-Sans.txt",
+  Yozai: "OFL-Yozai.txt",
+  ZhuqueFangsong: "OFL-Zhuque-Fangsong.txt",
+  MaShanZheng: "OFL-Ma-Shan-Zheng.txt",
+  ZCOOLKuaiLe: "OFL-ZCOOL-KuaiLe.txt",
+  JetBrainsMono: "OFL-JetBrains-Mono.txt",
 };
+/** 家族名不含汉字的 CJK 字体：清单要标 Hani，编辑器才会把它当 CJK 回退候选。 */
+const BUNDLED_CJK = new Set([
+  "NotoSansCJKsc",
+  "NotoSerifCJKsc",
+  "LXGWWenKaiLite",
+  "LXGWMarkerGothic",
+  "Yozai",
+  "ZhuqueFangsong",
+  "MaShanZheng",
+  "ZCOOLKuaiLe",
+]);
 const FORMAT_BY_EXT: Record<string, WorkFontFormat> = {
   ".ttf": "ttf",
   ".otf": "otf",
@@ -270,23 +290,40 @@ function hasSfntHeader(bytes: Buffer): boolean {
  * 用户字体没有可靠的 script 标注，按「界面字体」给 `Latn`；家族名含中日韩字符时补
  * `Hani/Hans`——Web 编辑器只把标了该 script 的字体当 CJK 回退候选。
  */
+function manifestStyle(fileName: string): string {
+  const stem = basename(fileName, extname(fileName)).replace(/^bundled-/u, "");
+  const match = /-(Bold|Italic|Oblique|Light|Medium|SemiBold|Black|Thin)$/u.exec(
+    stem,
+  );
+  return match?.[1] ?? "Regular";
+}
+
 export function manifestFor(fonts: StoredFont[]): string {
   const lines = [
     "# KenFutWork 用户字体（用户自行上传，仅本机实例使用）。",
     "# family | style | file | scripts | licence | licence file | sha256 | source",
   ];
+  // 用户上传了与内置同名的字体时只保留内置那份：否则编辑器字体下拉会出现重复家族。
+  const bundledFamilies = new Set(
+    fonts
+      .filter((font) => font.builtin)
+      .map((font) => font.family.toLowerCase()),
+  );
   for (const font of fonts) {
-    const scripts = /[\u4e00-\u9fff]/u.test(font.family)
-      ? "Hani,Hans,Latn"
-      : "Latn";
+    if (!font.builtin && bundledFamilies.has(font.family.toLowerCase()))
+      continue;
     const stem = basename(font.fileName, extname(font.fileName))
       .replace(/^bundled-/u, "")
       .replace(/-\w+$/u, "");
+    const scripts =
+      /[\u4e00-\u9fff]/u.test(font.family) || BUNDLED_CJK.has(stem)
+        ? "Hani,Hans,Latn"
+        : "Latn";
     const licence = font.builtin ? (BUNDLED_LICENSES[stem] ?? "") : "";
     lines.push(
       [
         font.family,
-        "Regular",
+        manifestStyle(font.fileName),
         `fonts/user/${font.fileName}`,
         scripts,
         font.builtin ? "OFL-1.1" : "User-supplied",

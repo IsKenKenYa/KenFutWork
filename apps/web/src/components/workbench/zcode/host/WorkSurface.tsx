@@ -7,7 +7,13 @@ import type {
 } from "@kenfutwork/shared";
 import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
   getWorkSurfaceView,
@@ -240,7 +246,11 @@ function EditorsInfoView({
                   {MOUNT_LABEL[editor.mount] ?? editor.mount}
                 </span>
                 <span className="font-mono text-[11px] text-foreground-subtle">
-                  {editor.pinned ? `v${editor.pinned.version}` : "—"}
+                  {editor.pinned
+                    ? `v${editor.pinned.version}`
+                    : editor.version
+                      ? `v${editor.version}`
+                      : "—"}
                 </span>
                 <span className="flex min-w-0 items-center justify-center gap-2 text-xs">
                   {install.state === "installing" ? (
@@ -372,6 +382,29 @@ function WorkFontsSection({ active }: { active: boolean }) {
     [load],
   );
 
+  // 一个家族一份记录：Inter 有 Regular/Bold 两个文件，按文件列会看起来「装了两份」。
+  const families = useMemo(() => {
+    const groups = new Map<
+      string,
+      { name: string; builtin: boolean; userFiles: string[] }
+    >();
+    for (const font of fonts?.fonts ?? []) {
+      const key = font.family.toLowerCase();
+      const group = groups.get(key);
+      if (group) {
+        if (!font.builtin) group.userFiles.push(font.fileName);
+        group.builtin ||= font.builtin;
+      } else {
+        groups.set(key, {
+          name: font.family,
+          builtin: font.builtin,
+          userFiles: font.builtin ? [] : [font.fileName],
+        });
+      }
+    }
+    return [...groups.values()];
+  }, [fonts]);
+
   const remove = useCallback(
     async (fileName: string) => {
       setBusy(true);
@@ -388,6 +421,13 @@ function WorkFontsSection({ active }: { active: boolean }) {
       }
     },
     [load],
+  );
+
+  const removeAll = useCallback(
+    async (fileNames: string[]) => {
+      for (const fileName of fileNames) await remove(fileName);
+    },
+    [remove],
   );
 
   return (
@@ -409,35 +449,36 @@ function WorkFontsSection({ active }: { active: boolean }) {
           />
         </label>
       </div>
-      {(fonts?.fonts ?? []).length === 0 ? (
+      {families.length === 0 ? (
         <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
           暂无字体
         </p>
       ) : (
-        (fonts?.fonts ?? []).map((font, index, rows) => (
+        families.map((family, index) => (
           <div
-            key={font.fileName}
+            key={family.name}
             className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 ${
-              index === rows.length - 1 ? "" : "border-b border-border"
+              index === families.length - 1 ? "" : "border-b border-border"
             }`}
           >
-            <span className="min-w-0 truncate" title={font.fileName}>
-              {font.family}
+            <span className="min-w-0 truncate">{family.name}</span>
+            <span className="flex items-center gap-2">
+              {family.builtin ? (
+                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle">
+                  内置
+                </span>
+              ) : null}
+              {family.userFiles.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void removeAll(family.userFiles)}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+                >
+                  删除
+                </button>
+              ) : null}
             </span>
-            {font.builtin ? (
-              <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle">
-                内置
-              </span>
-            ) : (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void remove(font.fileName)}
-                className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
-              >
-                删除
-              </button>
-            )}
           </div>
         ))
       )}
@@ -494,7 +535,7 @@ function EditorFrame({
   }, [frameLoaded]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <button
           type="button"
           onClick={onBack}

@@ -158,6 +158,23 @@ describe("用户字体库", () => {
       "Inter Copy | Regular | fonts/user/lat.ttf | Latn",
     );
   });
+
+  it("清单按家族去重用户副本，并按文件名标出字重", () => {
+    const rows = manifestFor([
+      { fileName: "bundled-Inter-Regular.ttf", family: "Inter", format: "ttf", bytes: 1, builtin: true },
+      { fileName: "bundled-Inter-Bold.ttf", family: "Inter", format: "ttf", bytes: 1, builtin: true },
+      { fileName: "abc-my-inter.ttf", family: "Inter", format: "ttf", bytes: 1, builtin: false },
+    ])
+      .split("\n")
+      .filter((line) => line && !line.startsWith("#"));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain(
+      "Inter | Regular | fonts/user/bundled-Inter-Regular.ttf",
+    );
+    expect(rows[1]).toContain(
+      "Inter | Bold | fonts/user/bundled-Inter-Bold.ttf",
+    );
+  });
 });
 
 describe("内置开源字体（OFL）", () => {

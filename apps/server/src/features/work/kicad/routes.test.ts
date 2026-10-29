@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { LocalAccessVerifier } from "../../local-access/types.js";
@@ -98,6 +101,169 @@ describe("KiCad 路由", () => {
     expect(response.json().error.message).toBe("KiCad 未安装");
   });
 
+  it("工具条示例：示例 spec → 校验 → 建板，返回 DRC 摘要", async () => {
+    const callTool = vi.fn(async (name: string) => {
+      if (name === "pcb_spec_example")
+        return { structuredContent: { ok: true, spec: { name: "x", parts: [] } } };
+      if (name === "pcb_check_spec")
+        return { structuredContent: { ok: true, spec_artifact_id: "a_spec" } };
+      return {
+        structuredContent: {
+          ok: true,
+          pcb_artifact_id: "a_board",
+          drc: { errors: 0, unconnected: 0 },
+        },
+      };
+    });
+    const { app } = fixture({ callTool: callTool as never });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/example",
+      payload: {},
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      artifact_id: "a_board",
+      errors: 0,
+    });
+    expect(callTool).toHaveBeenCalledWith("pcb_build", {
+      spec_artifact_id: "a_spec",
+      route: true,
+    });
+  });
+
+  it("工具条导入：坏 JSON 与缺 parts 都是 400；合法 spec 落盘后走文件校验", async () => {
+    const callTool = vi.fn(async (name: string) => {
+      if (name === "kicad_check_spec_file")
+        return { structuredContent: { ok: true, spec_artifact_id: "a_spec" } };
+      return {
+        structuredContent: { ok: true, pcb_artifact_id: "a_board", drc: {} },
+      };
+    });
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-kicad-route-"));
+    const worker = {
+      ensureStarted: vi.fn(),
+      workspaceDir: () => dataDir,
+      callTool,
+    };
+    const app = Fastify();
+    registerKicadRoutes(app, {
+      localAccess: {
+        authenticate: async () => ({ actor: {} }),
+      } as unknown as LocalAccessVerifier,
+      worker: worker as unknown as KicadWorker,
+    });
+    const bad = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/spec",
+      payload: { text: "not json" },
+    });
+    expect(bad.statusCode).toBe(400);
+    const missing = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/spec",
+      payload: { text: "{}" },
+    });
+    expect(missing.statusCode).toBe(400);
+    const ok = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/spec",
+      payload: { text: JSON.stringify({ parts: [] }), name: "my board" },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(callTool).toHaveBeenCalledWith("kicad_check_spec_file", {
+      spec_path: join(dataDir, "kicad", "board_spec.json"),
+    });
+  });
+
+  it("面板「打开文件」：.kicad_pcb 落盘后交给 kicad_import_board", async () => {
+    const callTool = vi.fn(async () => ({
+      structuredContent: {
+        ok: true,
+        artifact_id: "a_imported",
+        errors: 1,
+        unconnected: 2,
+      },
+    }));
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-kicad-open-"));
+    const app = Fastify();
+    registerKicadRoutes(app, {
+      localAccess: {
+        authenticate: async () => ({ actor: {} }),
+      } as unknown as LocalAccessVerifier,
+      worker: {
+        ensureStarted: vi.fn(),
+        workspaceDir: () => dataDir,
+        callTool,
+      } as unknown as KicadWorker,
+    });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/file",
+      payload: {
+        name: "my-board.kicad_pcb",
+        base64: Buffer.from("(kicad_pcb)").toString("base64"),
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      artifact_id: "a_imported",
+      errors: 1,
+      unconnected: 2,
+    });
+    const boardPath = join(dataDir, "kicad", "open", "my-board.kicad_pcb");
+    expect(callTool).toHaveBeenCalledWith("kicad_import_board", {
+      board_path: boardPath,
+      name: "my-board",
+    });
+    expect(readFileSync(boardPath, "utf8")).toBe("(kicad_pcb)");
+  });
+
+  it("面板「打开文件」：spec JSON 走建板，其他扩展名与坏文件名拒绝", async () => {
+    const callTool = vi.fn(async (name: string) => {
+      if (name === "kicad_check_spec_file")
+        return { structuredContent: { ok: true, spec_artifact_id: "a_spec" } };
+      return {
+        structuredContent: { ok: true, pcb_artifact_id: "a_board", drc: {} },
+      };
+    });
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-kicad-open-"));
+    const app = Fastify();
+    registerKicadRoutes(app, {
+      localAccess: {
+        authenticate: async () => ({ actor: {} }),
+      } as unknown as LocalAccessVerifier,
+      worker: {
+        ensureStarted: vi.fn(),
+        workspaceDir: () => dataDir,
+        callTool,
+      } as unknown as KicadWorker,
+    });
+    const spec = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/file",
+      payload: { name: "board.json", text: JSON.stringify({ parts: [] }) },
+    });
+    expect(spec.statusCode).toBe(200);
+    expect(callTool).toHaveBeenCalledWith("kicad_check_spec_file", {
+      spec_path: join(dataDir, "kicad", "open", "board_spec.json"),
+    });
+    const wrongType = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/file",
+      payload: { name: "board.kicad_sch", base64: "AA==" },
+    });
+    expect(wrongType.statusCode).toBe(400);
+    const badName = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/file",
+      payload: { name: "../x.kicad_pcb", base64: "AA==" },
+    });
+    expect(badName.statusCode).toBe(400);
+  });
+
   it("面板页与桥页都是同源 HTML，未登录被拦", async () => {
     const { app, localAccess } = fixture({});
     const panel = await app.inject({
@@ -113,6 +279,8 @@ describe("KiCad 路由", () => {
     });
     expect(bridge.statusCode).toBe(200);
     expect(bridge.body).toContain("ui/initialize");
+    expect(bridge.body).toContain("打开文件");
+    expect(bridge.body).toContain('locale: "zh-CN"');
     localAccess.authenticate.mockResolvedValueOnce(null);
     const denied = await app.inject({
       method: "get",

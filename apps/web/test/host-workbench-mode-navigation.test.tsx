@@ -109,6 +109,23 @@ describe("HostWorkbenchModeNavigation 四模式", () => {
     }
   });
 
+  it("展开态每档独立圆角，轨道不再画上下分界线（用户口径）", () => {
+    render(
+      <WorkbenchModeNavigation
+        mode="code"
+        availableModes={["code", "design", "work", "flow"]}
+        onModeChange={() => {}}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "模式切换" });
+    expect(group.className).not.toContain("border-y");
+    for (const radio of group.querySelectorAll<HTMLButtonElement>(
+      "[role='radio']",
+    )) {
+      expect(radio.className).toContain("rounded-lg");
+    }
+  });
+
   it("work 不可用时只有三档（入口纪律：不摆空壳入口）", () => {
     hostState.snapshot = {
       mode: "code",

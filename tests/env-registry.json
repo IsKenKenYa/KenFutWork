@@ -107,6 +107,26 @@
       "status": "active",
       "note": "兜底通用 PORT"
     },
+    "KENFUTWORK_KICAD_DOCKER": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/features/work/kicad/worker.ts",
+        "apps/server/src/features/work/kicad/worker.test.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "KiCad 容器模式镜像名（如 kicad/kicad:10.0）；设置后 MCP 服务在容器里跑，不设则用本机 KiCad"
+    },
+    "KENFUTWORK_KICAD_APP": {
+      "surface": "server",
+      "readers": [
+        "apps/server/src/features/work/kicad/worker.ts",
+        "apps/server/src/features/work/kicad/worker.test.ts"
+      ],
+      "inExamples": false,
+      "status": "active",
+      "note": "KiCad 安装目录显式覆盖（自动探测失败时用）；传给插件的 ZCODE_KICAD_APP"
+    },
     "KENFUTWORK_FLOW_EMBED_SECRET": {
       "surface": "server",
       "readers": [

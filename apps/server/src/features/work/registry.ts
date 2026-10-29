@@ -9,7 +9,10 @@ import type { WorkEditor, WorkEditorMount } from "@kenfutwork/shared";
  * 计算（`listWorkEditors`），注册表常量与运行时事实分离。
  */
 
-export type WorkEditorRegistration = Omit<WorkEditor, "installed">;
+export type WorkEditorRegistration = Omit<WorkEditor, "installed" | "version"> & {
+  /** 随宿主分发时的版本号（有 pinned 时以 pinned 为准）。 */
+  version?: string;
+};
 
 const WASM_MOUNT: WorkEditorMount = "wasm-iframe";
 
@@ -220,6 +223,8 @@ const WORK_EDITOR_REGISTRY: readonly WorkEditorRegistration[] = [
     license: "GPL-3.0-or-later",
     mount: WASM_MOUNT,
     pinned: null,
+    // ZCode 官方 KiCad 插件 0.6.1（随仓库引入），没有下载包。
+    version: "0.6.1",
   },
 ];
 

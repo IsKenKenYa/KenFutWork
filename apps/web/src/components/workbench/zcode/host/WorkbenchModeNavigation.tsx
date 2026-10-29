@@ -80,12 +80,12 @@ export function WorkbenchModeNavigation({
     );
   return (
     <div className="px-2 pt-3 pb-1">
-      {/* 用户口径：模式行上下加分界线（tab 轨道式 hairline），选中项灰底填充
-          顶满两线——一眼可辨当前模式，又不回到胶囊容器的突兀。 */}
+      {/* 用户口径：每个模式各成一枚圆角卡片（与侧栏入口同款 rounded-lg），
+          选中项灰底填充——不再用上下两条分界线把四项连成一条轨道。 */}
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-stretch border-y border-foreground/20"
+        className="flex items-stretch gap-1"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持文字分档的布局
@@ -96,7 +96,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center rounded-lg py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
           >
             <span className="truncate">{item.label}</span>
           </button>

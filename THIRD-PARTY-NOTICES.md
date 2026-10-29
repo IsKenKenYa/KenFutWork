@@ -24,7 +24,7 @@
 | 上游 | `zcode-plugins-official/kicad` 0.6.1（作者 冯小平，https://github.com/fxp），随 ZCode 插件市场分发 |
 | 许可 | MIT；版权与许可全文见 `apps/server/assets/kicad-plugin/LICENSE`，面板打包的第三方许可见同目录 `dist/THIRD_PARTY_NOTICES.txt` |
 | 落点 | `apps/server/assets/kicad-plugin/`（原样复制 `dist/`、`LICENSE`、`README.md`） |
-| 宿主适配偏差 | ① `dist/server.mjs`：Windows 上按绝对路径找 `uv.exe`（裸名在精简 PATH 下找不到）；② `dist/py/kicad/config.py`、`kicad/paths.py`、`kicad_server.py`、`kicad_launch.py`：增加 Windows 安装目录（`C:/Program Files/KiCad/<版本>`）与 `kicad-cli.exe`/`python.exe`/`share/kicad`/`pcbnew.exe` 分支；③ **去掉 `_launch()` 里 `sys.platform != "darwin"` 的硬门槛**（上游只允许 macOS 自动打开，导致 Windows/Linux 分支不可达），Linux 走 `pcbnew` + `start_new_session`；④ 由 `apps/server/src/features/work/kicad/` 常驻 MCP 客户端、托管面板并桥接 MCP Apps 消息，支持容器模式（`KENFUTWORK_KICAD_DOCKER`） |
+| 宿主适配偏差 | ① `dist/server.mjs`：Windows 上按绝对路径找 `uv.exe`（裸名在精简 PATH 下找不到）；② `dist/py/kicad/config.py`、`kicad/paths.py`、`kicad_server.py`、`kicad_launch.py`：增加 Windows 安装目录（`C:/Program Files/KiCad/<版本>`）与 `kicad-cli.exe`/`python.exe`/`share/kicad`/`pcbnew.exe` 分支；③ **去掉 `_launch()` 里 `sys.platform != "darwin"` 的硬门槛**（上游只允许 macOS 自动打开，导致 Windows/Linux 分支不可达），Linux 走 `pcbnew` + `start_new_session`；④ 由 `apps/server/src/features/work/kicad/` 常驻 MCP 客户端、托管面板并桥接 MCP Apps 消息，支持容器模式（`KENFUTWORK_KICAD_DOCKER`）；⑤ 新增 `kicad_import_board` 工具，打开用户工作区里的既有 `.kicad_pcb`（读 Edge.Cuts 求板框、跑 KiCad DRC）；⑥ `dist/panel.html` 只改视觉：板图/图层舞台的深色底改为主题底色，避免宽屏两侧大黑边 |
 | KiCad 本体 | 不随包分发；使用用户本机安装的 KiCad 10（GPL-3.0-or-later，官方库 CC-BY-SA-4.0 带例外） |
 
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装
@@ -117,7 +117,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | --- | --- | --- |
 | Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/` 与 `apps/landing/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
 | CaveatBrush、ChakraPetch、GochiHand、K2D、Pacifico、PermanentMarker | SIL OFL 1.1 | 仅作为 `docs/视觉设计/logo/字体/` 的候选样张存在，未打进产物 |
-| Inter、Liberation Serif、霞鹜文楷 轻便版（LXGW WenKai Lite） | SIL OFL 1.1 | 随产物分发于 `apps/server/assets/work-fonts/`（Work 编辑器的内置字体库），同目录带 `OFL-*.txt` 全文；字体文件未改名、未修改字形；来源见各 `OFL-*.txt` 首行版权行 |
+| Inter、Liberation Serif、霞鹜文楷 轻便版（LXGW WenKai Lite）、思源黑体/宋体（Noto Sans/Serif CJK SC）、得意黑（Smiley Sans）、悠哉字体（Yozai）、朱雀仿宋（Zhuque Fangsong）、霞鹜漫黑（LXGW Marker Gothic）、马善政（Ma Shan Zheng）、站酷快乐体（ZCOOL KuaiLe）、JetBrains Mono | SIL OFL 1.1 | 随产物分发于 `apps/server/assets/work-fonts/`（Work 编辑器的内置字体库），同目录带 `OFL-*.txt` 全文；字体文件未改名、未修改字形；来源见各 `OFL-*.txt` 首行版权行。得意黑含 Reserved Font Name（Smiley / 得意黑），按 OFL 保留名称条款原样分发。未打包小米 MiSans、OPPO Sans、阿里巴巴普惠体等「免费商用但限制再分发」的字体——用户可自行上传到本机字体库 |
 | ArtierEN-2、No.019-Sounso-Quality-2、YEFONTPaws-Bold-2 | **需商业授权**（分别来自天津卓漫、上首品牌策划、深圳仪品） | 样张留在仓库**不构成授权**；未在产物中使用。逐字段落原文见 `docs/视觉设计/logo/字体/字体说明.md` |
 | `skills/canvas-design/canvas-fonts/` | **54 个字体文件，仓库内无任何许可文本** | **待核**：分发前必须逐支确认来源与许可，不能默认沿用 GPL 或 OFL |
 
