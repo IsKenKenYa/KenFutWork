@@ -19,9 +19,17 @@ const PANEL_PAGE = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KiCad 电路板</title>
-<style>html,body{margin:0;height:100%;background:#fff}iframe{border:0;width:100%;height:100%;display:block}</style>
+<style>
+html,body{margin:0;height:100%;background:#fff;display:flex;flex-direction:column}
+#hint{display:none;flex:0 0 auto;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid #e5e1da;background:#fbfaf8;font:12px/1.4 system-ui,sans-serif;color:#6b7280}
+#hint[data-on="1"]{display:flex}
+#hint b{font-weight:600;color:#1f2328}
+#hint code{font:11px/1.4 ui-monospace,Consolas,monospace;color:#1f2328;background:#fff;border:1px solid #e5e1da;border-radius:6px;padding:2px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+iframe{border:0;width:100%;flex:1 1 auto;min-height:0;display:block;height:100%}
+</style>
 </head>
 <body>
+<div id="hint" role="status"><b>未检测到 KiCad 10</b><span>解包到</span><code id="hint-path"></code></div>
 <iframe id="panel" src="/api/work/host/kicad/panel.html" title="KiCad 电路板"></iframe>
 <script>
 (function () {
@@ -89,6 +97,16 @@ const PANEL_PAGE = `<!doctype html>
         return {};
     }
   }
+  async function hint() {
+    try {
+      var status = await fetch("/api/work/host/kicad/status").then(function (r) { return r.json(); });
+      if (!status.kicadInstalled) {
+        document.getElementById("hint-path").textContent = status.kicadApp || "";
+        document.getElementById("hint").dataset.on = "1";
+      }
+    } catch (error) {}
+  }
+  hint();
   async function prime() {
     try {
       var result = await rpc("tools/call", { name: "kicad_board_view", arguments: { side: "top" } });

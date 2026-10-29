@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -49,6 +49,26 @@ export class KicadWorker {
     return join(this.dataDir, "work", "kicad", "plugin-data");
   }
 
+  /**
+   * KiCad 安装目录：`KENFUTWORK_KICAD_APP` 显式指定 > 实例内的便携解包目录。
+   * 便携目录是「不装系统、只解包」的选项（KiCad 官方安装包可用 7-Zip 解出同一棵树）。
+   */
+  kicadAppDir(): string {
+    const configured = (process.env.KENFUTWORK_KICAD_APP ?? "").trim();
+    if (configured) return configured;
+    return join(this.dataDir, "runtime", "kicad");
+  }
+
+  /** `kicad-cli` 是否存在（两平台各自的相对位置）。 */
+  kicadInstalled(): boolean {
+    const root = this.kicadAppDir();
+    return (
+      existsSync(join(root, "bin", "kicad-cli.exe")) ||
+      existsSync(join(root, "bin", "kicad-cli")) ||
+      existsSync(join(root, "Contents", "MacOS", "kicad-cli"))
+    );
+  }
+
   private async connect(): Promise<Client> {
     if (this.closed) throw new Error("KiCad 服务已关闭。");
     if (this.client) return this.client;
@@ -72,6 +92,7 @@ export class KicadWorker {
         ...process.env,
         ZCODE_WORKSPACE_ROOT: workspace,
         ZCODE_PLUGIN_DATA: this.pluginDataDir(),
+        ...(this.kicadInstalled() ? { ZCODE_KICAD_APP: this.kicadAppDir() } : {}),
       },
       stderr: "pipe",
     });
@@ -150,6 +171,8 @@ export class KicadWorker {
     error: string | null;
     tools: string[];
     kicadVersion: string | null;
+    kicadInstalled: boolean;
+    kicadApp: string;
     workspace: string;
   }> {
     try {
@@ -163,6 +186,8 @@ export class KicadWorker {
         error: null,
         tools: this.tools.map((tool) => tool.name),
         kicadVersion: structured?.kicad_version ?? null,
+        kicadInstalled: this.kicadInstalled(),
+        kicadApp: this.kicadAppDir(),
         workspace: this.workspaceDir(),
       };
     } catch (error) {
@@ -171,6 +196,8 @@ export class KicadWorker {
         error: error instanceof Error ? error.message : String(error),
         tools: [],
         kicadVersion: null,
+        kicadInstalled: this.kicadInstalled(),
+        kicadApp: this.kicadAppDir(),
         workspace: this.workspaceDir(),
       };
     }
