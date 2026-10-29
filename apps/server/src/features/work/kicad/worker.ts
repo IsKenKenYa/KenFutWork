@@ -32,6 +32,40 @@ const KICAD_INSTALL_HINT =
       ? "/Applications/KiCad/KiCad.app"
       : "/usr";
 
+/**
+ * 宿主路径 → 容器路径：先把 `\` 统一成 `/`（上游会混用分隔符），再替换前缀。
+ * 只动字符串；非路径字符串最多被统一分隔符，无害。
+ */
+export function rewriteHostPaths<T>(
+  value: T,
+  workspaceDir: string,
+  pluginDataDir: string,
+): T {
+  const workspace = workspaceDir.replaceAll("\\", "/");
+  const data = pluginDataDir.replaceAll("\\", "/");
+  const walk = (node: unknown): unknown => {
+    if (typeof node === "string") {
+      return node
+        .replaceAll("\\", "/")
+        .split(workspace)
+        .join("/ws")
+        .split(data)
+        .join("/data");
+    }
+    if (Array.isArray(node)) return node.map(walk);
+    if (node && typeof node === "object") {
+      return Object.fromEntries(
+        Object.entries(node as Record<string, unknown>).map(([key, item]) => [
+          key,
+          walk(item),
+        ]),
+      );
+    }
+    return node;
+  };
+  return walk(value) as T;
+}
+
 /** 把容器内路径前缀替换成宿主路径（递归进字符串/数组/对象）。 */
 export function remapContainerPaths<T>(
   value: T,
@@ -184,6 +218,9 @@ export class KicadWorker {
               "ZCODE_WORKSPACE_ROOT=/ws",
               "-e",
               "ZCODE_PLUGIN_DATA=/data",
+              // 依赖装在挂载卷里（镜像不带 fastmcp）：一次装好，跨容器复用。
+              "-e",
+              "PYTHONPATH=/data/py",
               image,
               "python3",
               "/plugin/dist/py/kicad_server.py",
@@ -264,9 +301,13 @@ export class KicadWorker {
     args: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const client = await this.connect();
-    const result = await client.callTool({ name, arguments: args }, undefined, {
-      timeout: REQUEST_TIMEOUT_MS,
-    });
+    const result = await client.callTool(
+      { name, arguments: this.remapArgs(args) },
+      undefined,
+      {
+        timeout: REQUEST_TIMEOUT_MS,
+      },
+    );
     return this.remap(result) as unknown as Record<string, unknown>;
   }
 
@@ -285,7 +326,12 @@ export class KicadWorker {
     ]);
   }
 
-  /** 面板与信息页用：服务是否可用、工具清单、KiCad 安装事实。 */
+  /** 入参方向相反：agent 传的是宿主路径，容器里要的是 `/ws`、`/data`。 */
+  private remapArgs(args: Record<string, unknown>): Record<string, unknown> {
+    if (!this.dockerImage()) return args;
+    return rewriteHostPaths(args, this.workspaceDir(), this.pluginDataDir());
+  }
+
   async status(): Promise<{
     ready: boolean;
     error: string | null;

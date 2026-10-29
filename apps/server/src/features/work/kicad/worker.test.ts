@@ -2,7 +2,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { KicadWorker, pickKicadInstall, remapContainerPaths } from "./worker.js";
+import {
+  KicadWorker,
+  pickKicadInstall,
+  remapContainerPaths,
+  rewriteHostPaths,
+} from "./worker.js";
 
 /**
  * KiCad 安装位置只有两个来源：显式 `KENFUTWORK_KICAD_APP`，或实例数据目录里的便携解包目录。
@@ -79,6 +84,26 @@ describe("KiCad 安装位置", () => {
     ).toEqual({
       path: "D:\ws/kicad/out/board.gbr",
       nested: ["D:\data/store/board", { note: "kept", size: 3 }],
+    });
+  });
+
+  it("宿主路径转容器路径：混用分隔符也能命中前缀", () => {
+    const workspace = String.raw`C:\Users\u\data\work\kicad\workspace`;
+    const data = String.raw`C:\Users\u\data\work\kicad\plugin-data`;
+    expect(
+      rewriteHostPaths(
+        {
+          spec_path: String.raw`C:\Users\u\data\work\kicad\workspace\kicad\ne555_blinker_spec.json`,
+          mixed: String.raw`C:\Users\u\data\work\kicad\workspace/kicad/a.json`,
+          nested: [{ dest: String.raw`C:\Users\u\data\work\kicad\plugin-data\store\a.zip` }, "keep"],
+        },
+        workspace,
+        data,
+      ),
+    ).toEqual({
+      spec_path: "/ws/kicad/ne555_blinker_spec.json",
+      mixed: "/ws/kicad/a.json",
+      nested: [{ dest: "/data/store/a.zip" }, "keep"],
     });
   });
 
