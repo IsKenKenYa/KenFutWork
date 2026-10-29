@@ -177,8 +177,13 @@ describe("work 宿主路由", () => {
     };
     expect(body.dataDir).toBe("/tmp/kenfutwork-data");
     expect(body.editors.length).toBeGreaterThanOrEqual(10);
-    // 数据目录里没有落位任何包。
-    expect(body.editors.every((editor) => editor.installed === false)).toBe(
+    // 数据目录里没有落位任何扩展包；随宿主分发的条目（如 KiCad 面板）恒为已落位。
+    expect(
+      body.editors
+        .filter((editor) => editor.pinned !== null)
+        .every((editor) => editor.installed === false),
+    ).toBe(true);
+    expect(body.editors.find((editor) => editor.id === "kicad")?.installed).toBe(
       true,
     );
     expect(body.install).toEqual({});

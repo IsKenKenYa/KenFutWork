@@ -338,7 +338,10 @@ export function resolveInstalledEditors(input: {
   editorsDir: string;
 }): WorkEditor[] {
   return listWorkEditorRegistrations().map((registration) => {
-    const installed = existsSync(join(input.editorsDir, registration.id));
+    // 未锚定发布的条目随宿主分发（如 KiCad 面板），没有扩展包目录也视为已落位。
+    const installed =
+      registration.pinned === null ||
+      existsSync(join(input.editorsDir, registration.id));
     return workEditorSchema.parse({ ...registration, installed });
   });
 }
