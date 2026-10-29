@@ -135,7 +135,7 @@ if (existsSync(gridCraftWeb)) {
   patchOnce(
     join(source, "crates/ui-egui/src/ribbon/home.rs"),
     "    let items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();",
-    "    // KenFutWork: 字体框列出字体库里已有的全部家族（含宿主上传与内置），只列硬编码名单时用户装完字体在框里找不到。\n    let installed = crate::fonts::families();\n    let mut items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();\n    for family in &installed {\n        if items.iter().any(|(known, _)| known.eq_ignore_ascii_case(family)) {\n            continue;\n        }\n        items.push((family.as_str(), family.clone()));\n    }",
+    "    // KenFutWork: 字体库里的家族排前面（宿主上传 + 内置），再列硬编码名单；\n    // 只列硬编码名单时用户装完字体在框里找不到。\n    let installed = crate::fonts::families();\n    let mut items: Vec<(&str, String)> = Vec::new();\n    for family in &installed {\n        if FONTS.iter().any(|known| known.eq_ignore_ascii_case(family)) {\n            continue;\n        }\n        items.push((family.as_str(), family.clone()));\n    }\n    for f in FONTS {\n        items.push((*f, f.to_string()));\n    }",
     "已让字体框列出字体库全部家族",
   );
   // 老的英文构建会把 language=en 写进 localStorage，下次启动又被恢复成英文；那不是用户选择。
