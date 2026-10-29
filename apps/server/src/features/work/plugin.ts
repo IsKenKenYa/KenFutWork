@@ -5,8 +5,11 @@ import {
   resolveInstalledEditors,
 } from "../../http/work-host.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { toKernelTool } from "../mcp/mcp-tools.js";
 import { ensureBuiltinEditors } from "./builtin-editors.js";
 import { createEdaTools } from "./eda-tools.js";
+import { registerKicadRoutes } from "./kicad/routes.js";
+import { KicadWorker } from "./kicad/worker.js";
 
 /**
  * work-host 插件：Work 模式的宿主适配层（`/api/work/host/*`）。
@@ -55,6 +58,41 @@ export function createWorkHostPlugin(): PluginDefinition {
           }),
         );
       }
+      // KiCad：真实的 ZCode 插件（MCP 服务 + 面板）常驻一个进程，agent 与面板共用。
+      const kicad = new KicadWorker(dataRoot);
+      ctx.effect(() => () => {
+        void kicad.close();
+      });
+      const kicadClient = {
+        listTools: async () => ({ tools: await kicad.listTools() }),
+        callTool: async (args: {
+          name: string;
+          arguments?: Record<string, unknown>;
+        }) => kicad.callTool(args.name, args.arguments ?? {}),
+      };
+      // 懒启动：Work 页面/面板第一次访问时再拉起服务，避免每个会话都常驻一个 Python 进程。
+      kicad.onStarted((list) => {
+        for (const tool of list) {
+          const definition = toKernelTool("kicad", tool, kicadClient);
+          ctx.effect(() =>
+            tools.registerDynamic({
+              id: `mcp:instance:${definition.name}`,
+              scope: "shared",
+              configurationVersion: "work-kicad:1",
+              resolve(run) {
+                return run.scopeHandle?.role === "main" ? definition : null;
+              },
+            }),
+          );
+        }
+        console.log(
+          `[work] KiCad 工具已装载：${list.map((tool) => tool.name).join(", ")}`,
+        );
+      });
+      registerKicadRoutes(ctx.app, {
+        localAccess: ctx.get("localAccess"),
+        worker: kicad,
+      });
       void registerWorkHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
         editors: {

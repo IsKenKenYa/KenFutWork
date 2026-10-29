@@ -24,7 +24,15 @@ const SAMPLE = `(kicad_sch
 `;
 
 const dirs: string[] = [];
+const teardowns: Array<() => void> = [];
 afterEach(async () => {
+  // 插件 mounted 会起常驻 KiCad MCP 子进程（cwd 在数据目录里）：先按 effect 顺序收尾再删目录。
+  for (const teardown of teardowns.splice(0).reverse()) {
+    try {
+      teardown();
+    } catch {}
+  }
+  await new Promise((resolve) => setTimeout(resolve, 300));
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
@@ -38,7 +46,10 @@ async function mount(dataDir: string) {
   const ctx = {
     env: { desktopDataDir: dataDir },
     app,
-    effect: (fn: () => unknown) => fn(),
+    effect: (fn: () => unknown) => {
+      const dispose = fn();
+      if (typeof dispose === "function") teardowns.push(dispose as () => void);
+    },
     get: (key: string) => {
       if (key === "tools")
         return {

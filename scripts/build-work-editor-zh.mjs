@@ -88,12 +88,17 @@ const eol = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
  */
 function patchOnce(path, from, to, label, applied = to) {
   const text = read(path);
-  if (text.includes(from)) {
-    writeFileSync(path, text.replace(from, to));
+  const nl = eol(text);
+  // Windows 克隆出来的源码是 CRLF：锚点按 LF 写，匹配前统一换行，写回再按原风格还原。
+  const lf = (value) => value.replace(/\r\n/g, "\n");
+  const textLf = lf(text);
+  const fromLf = lf(from);
+  if (textLf.includes(fromLf)) {
+    writeFileSync(path, textLf.replace(fromLf, lf(to)).replace(/\n/g, nl));
     console.log(`[zh] ${label}：${path}`);
     return;
   }
-  if (text.includes(applied)) return;
+  if (textLf.includes(lf(applied))) return;
   throw new Error(`补丁锚点不存在（${path}）——上游已改结构，需人工核对`);
 }
 
@@ -119,12 +124,27 @@ const gridCraftGuard = `                    if !matches!(
                         app.ui.language = browser;
                     }`;
 const gridCraftWeb = join(source, "apps/gridcraft-web/src/web.rs");
-if (existsSync(gridCraftWeb) && read(gridCraftWeb).includes(gridCraftGuard)) {
+if (existsSync(gridCraftWeb)) {
   patchOnce(
     gridCraftWeb,
     gridCraftGuard,
     "                    // KenFutWork: 已内嵌简体中文字形，跟随浏览器语言（含中日韩）。\n                    app.ui.language = browser;",
     "已解除中文回退英文护栏",
+  );
+  // Ribbon 的字体框只列硬编码名单：宿主上传的字体注册进了字体库却选不到。
+  patchOnce(
+    join(source, "crates/ui-egui/src/ribbon/home.rs"),
+    "    let items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();",
+    "    // KenFutWork: 字体框列出字体库里已有的全部家族（含宿主上传与内置），只列硬编码名单时用户装完字体在框里找不到。\n    let installed = crate::fonts::families();\n    let mut items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();\n    for family in &installed {\n        if items.iter().any(|(known, _)| known.eq_ignore_ascii_case(family)) {\n            continue;\n        }\n        items.push((family.as_str(), family.clone()));\n    }",
+    "已让字体框列出字体库全部家族",
+  );
+  // 老的英文构建会把 language=en 写进 localStorage，下次启动又被恢复成英文；那不是用户选择。
+  // 浏览器明确是中文时以中文为准（界面里手动切换的档位本轮仍生效）。
+  patchOnce(
+    gridCraftWeb,
+    "                    crate::prefs::restore(&mut app, stored_ui.as_deref(), stored_prefs.as_deref());",
+    "                    crate::prefs::restore(&mut app, stored_ui.as_deref(), stored_prefs.as_deref());\n                    if app.ui.language == gridcraft_ui_egui::i18n::Language::En\n                        && browser == gridcraft_ui_egui::i18n::Language::Zh\n                    {\n                        app.ui.language = gridcraft_ui_egui::i18n::Language::Zh;\n                    }",
+    "已让旧英文偏好让位于中文",
   );
 }
 

@@ -17,6 +17,16 @@
 | 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
 | 商标 | Apache-2.0 第 3 条不授予商标权；ZCode、Z.ai、GLM 归各自权利人，见 [`EULA.md`](EULA.md) §6 |
 
+### A1b. ZCode KiCad 插件（MIT）
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | `zcode-plugins-official/kicad` 0.6.1（作者 冯小平，https://github.com/fxp），随 ZCode 插件市场分发 |
+| 许可 | MIT；版权与许可全文见 `apps/server/assets/kicad-plugin/LICENSE`，面板打包的第三方许可见同目录 `dist/THIRD_PARTY_NOTICES.txt` |
+| 落点 | `apps/server/assets/kicad-plugin/`（原样复制 `dist/`、`LICENSE`、`README.md`） |
+| 宿主适配偏差 | ① `dist/server.mjs`：Windows 上按绝对路径找 `uv.exe`（裸名在精简 PATH 下找不到）；② `dist/py/kicad/config.py`、`kicad/paths.py`、`kicad_server.py`、`kicad_launch.py`：增加 Windows 安装目录（`C:\Program Files\KiCad\<版本>`）与 `kicad-cli.exe`/`python.exe`/`share\kicad`/`pcbnew.exe` 分支；③ 由 `apps/server/src/features/work/kicad/` 常驻 MCP 客户端、托管面板并桥接 MCP Apps 消息 |
+| KiCad 本体 | 不随包分发；使用用户本机安装的 KiCad 10（GPL-3.0-or-later，官方库 CC-BY-SA-4.0 带例外） |
+
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装
 
 落点 `apps/web/src/components/workbench/zcode/components/ai-elements/`，共 46 个文件，分两类，**不要混为一谈**：

@@ -470,7 +470,12 @@ function EditorFrame({
 }) {
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [ready, setReady] = useState(false);
-  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
+  // KiCad 是真实上游插件（MCP 服务 + MCP Apps 面板），面板由宿主桥托管；
+  // 其余编辑器是静态站点，走扩展包目录。
+  const src =
+    editorId === "kicad"
+      ? `${getSurfaceApiBase()}/api/work/host/kicad/panel`
+      : `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
   // 编辑器页由宿主注入脚本在启动完成后发信号（见 work-host.ts 的 EDITOR_SHELL_SCRIPT）；
   // 不认这个信号就只能等 iframe onLoad，几十 MB 的 wasm 会在编辑器自己的英文 Loading 上停住。
   useEffect(() => {
