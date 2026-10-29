@@ -245,6 +245,7 @@ export function buildBundleManifest(files: BundleFiles): {
               : "sidebar",
             url: typeof item.url === "string" ? item.url : "",
             icon: typeof item.icon === "string" && item.icon ? item.icon : null,
+            configurable: item.configurable === true,
           };
         })
         .filter((item) => item.id && item.title && item.url)

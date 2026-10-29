@@ -72,7 +72,7 @@ describe("HostWorkbenchModeNavigation 四模式", () => {
     hostState.listeners.clear();
   });
 
-  it("availableModes 含 work 时渲染第四档 Work，选中态跟随快照", () => {
+  it("availableModes 含 work 时渲染第四档 Flow，选中态跟随快照", () => {
     hostState.snapshot = {
       mode: "work",
       availableModes: ["code", "design", "flow", "work"],
@@ -81,10 +81,32 @@ describe("HostWorkbenchModeNavigation 四模式", () => {
     const group = screen.getByRole("radiogroup", { name: "模式切换" });
     const radios = group.querySelectorAll<HTMLButtonElement>("[role='radio']");
     expect(radios).toHaveLength(4);
+    expect(Array.from(radios).map((radio) => radio.textContent)).toEqual([
+      "Code",
+      "Design",
+      "Work",
+      "Flow",
+    ]);
     expect(
       Array.from(radios).map((radio) => radio.getAttribute("aria-checked")),
-    ).toEqual(["false", "false", "false", "true"]);
+    ).toEqual(["false", "false", "true", "false"]);
     expect(screen.getByRole("radio", { name: "Work" })).toBeTruthy();
+  });
+
+  it("展开态只留文字分档，不放图标（用户口径）", () => {
+    render(
+      <WorkbenchModeNavigation
+        mode="code"
+        availableModes={["code", "design", "work", "flow"]}
+        onModeChange={() => {}}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: "模式切换" });
+    for (const radio of group.querySelectorAll<HTMLButtonElement>(
+      "[role='radio']",
+    )) {
+      expect(radio.querySelector("svg")).toBeNull();
+    }
   });
 
   it("work 不可用时只有三档（入口纪律：不摆空壳入口）", () => {

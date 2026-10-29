@@ -1498,6 +1498,13 @@
       "inExamples": false,
       "status": "test-gate",
       "note": "复用有本验收所属标记的临时.app安装根，保持系统TCC权限主体；每次另建数据目录，不接管既有进程"
+    },
+    "KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "实例治理的模型流式增量合批间隔（毫秒）；0 表示用默认档位，不合批下限另由治理表钳制"
     }
   },
   "legacy": {

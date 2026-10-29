@@ -284,7 +284,6 @@ const enUS: Record<string, string> = {
   "common.cancel": "Cancel",
   "common.retry": "Retry",
   "common.close": "Close",
-  "chat.plan.removeMarker": "Turn off Plan mode",
   "common.confirm": "Confirm",
   "common.more": "More",
   "common.refresh": "Refresh",
@@ -2286,11 +2285,6 @@ const enUS: Record<string, string> = {
   "settings.themeCardDescription":
     "Use light, dark, or follow the system setting",
   "chat.empty.greeting.office": "What's on your plate today? Leave it to me.",
-  "settings.interfaceMode": "Interface mode",
-  "settings.interfaceMode.office": "Design",
-  "settings.interfaceMode.coding": "Code",
-  "settings.interfaceMode.description":
-    "Office mode focuses on summaries and results. Coding mode shows commands, output, and code changes.",
   "chat.toolCall.execute.conciseCompleted": "Ran a command",
   "chat.contextOptimization.started": "Optimizing conversation",
   "chat.contextOptimization.skipped": "No conversation optimization needed",
@@ -6525,7 +6519,6 @@ const enUS: Record<string, string> = {
   "chat.permission.fileChange.mixedMany": "Update {count} files",
 
   // Modes
-  "mode.plan": "Plan",
   "mode.label.glm.build": "Ask before changes",
   "mode.label.glm.edit": "Edit automatically",
   "mode.label.glm.plan": "Plan mode",

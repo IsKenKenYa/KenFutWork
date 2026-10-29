@@ -5,10 +5,11 @@ import {
   type PluginPanelEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
-import { PanelsTopLeft } from "lucide-react";
+import { PanelsTopLeft, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -199,6 +200,16 @@ export function PluginPanelOverlay({
   onClose: () => void;
   active?: boolean;
 }) {
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  /** 标题栏 chrome 态：normal 常规 / max 全屏。按钮同一条垂直中线、
+   *  彼此只隔 4px（关闭 right-2 / 最大化 right-10 / 配置 right-18）。 */
+  const [chrome, setChrome] = useState<"normal" | "max">("normal");
+  const centeredBtn =
+    "absolute top-1/2 -translate-y-1/2 inline-flex size-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-transparent text-foreground transition-colors hover:bg-muted hover:text-foreground";
+  const icon = "size-4";
+  /** lucide 的 × 只占 viewBox 的 12/24（方形占 18/24）：同 size-4 时墨迹只有 8px，
+   *  看起来明显偏小。放大到 22px（墨迹 11px）+ 1.1 描边（视觉 1px），与方形墨迹 12px 配平。 */
+  const closeIcon = "size-[22px]";
   if (!panel) return null;
   return (
     <Dialog
@@ -213,20 +224,69 @@ export function PluginPanelOverlay({
         hidden={!active}
         inert={!active}
         aria-hidden={!active}
-        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        // 默认关闭钮是 top-2 固定像素、与自绘三钮重复，关掉
+        showCloseButton={false}
+        // 只淡入淡出：默认入场带 slide-in 8px + zoom 95%，面板边缘会「跳」一下
+        style={
+          {
+            "--tw-enter-translate-y": "0px",
+            "--tw-enter-scale": "1",
+            "--tw-exit-translate-y": "0px",
+            "--tw-exit-scale": "1",
+          } as React.CSSProperties
+        }
+        className={`flex flex-col gap-0 overflow-hidden border-b-0 p-0 ${
+          chrome === "max"
+            ? "inset-0 h-[100vh] max-h-[100vh] w-auto translate-x-0 translate-y-0 rounded-none sm:max-w-none"
+            : "h-[80vh] max-h-[80vh] sm:max-w-4xl"
+        }`}
         aria-describedby={undefined}
       >
-        <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-12">
+        <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-36">
           <DialogTitle className="flex items-center gap-2 text-base font-medium">
+            {/* 中文的墨迹中心比图标盒中心高约 1px（字体 ascent 偏大），
+                给图标一像素光学上移，标题字与图标才看着同一条中线 */}
             <PluginIcon
               icon={panel?.icon ?? null}
+              slotClass="h-4 w-4 -translate-y-px"
               {...(panel ? { pluginId: panel.pluginId } : {})}
             />
             {panel?.title ?? "插件面板"}
           </DialogTitle>
+          {panel?.configurable ? (
+            <button
+              type="button"
+              className="absolute right-18 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
+              onClick={() => {
+                frameRef.current?.contentWindow?.postMessage(
+                  { type: "kenfutwork:plugin-panel-toggle-config" },
+                  "*",
+                );
+              }}
+            >
+              配置
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-label="最大化"
+            title={chrome === "max" ? "还原" : "最大化"}
+            className={`${centeredBtn} right-10`}
+            onClick={() => setChrome(chrome === "max" ? "normal" : "max")}
+          >
+            <Square className={icon} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+          <DialogClose
+            className={`${centeredBtn} right-2`}
+            aria-label="关闭"
+            title="关闭"
+          >
+            <X className={closeIcon} strokeWidth={1.1} aria-hidden="true" />
+          </DialogClose>
         </DialogHeader>
         {panel ? (
           <iframe
+            ref={frameRef}
             title={panel.title}
             src={resolvePanelUrl(panel.url, panel.pluginId)}
             className="min-h-0 flex-1 border-0"

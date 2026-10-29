@@ -3,7 +3,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   Clock,
-  CloudUpload,
   ListTree,
   LoaderIcon,
   Moon,
@@ -385,11 +384,6 @@ export const MemoTaskItem = memo(function TaskListItem({
     !hoverEnabled || shouldSuppressWorkspaceTaskMetadata || isHoverNone;
   const taskTimeLabel = formatTaskRelativeTime(task.updatedAt, intl);
   const taskChangeSummary = getTaskChangeSummary(task);
-  const isRemoteTask = !isLocalWorkspaceTarget({
-    workspacePath: task.workspacePath,
-    workspaceIdentity: task.workspaceIdentity,
-    remoteSessionId,
-  });
   const archiveLabel = intl.formatMessage({
     id: isArchiveConfirming
       ? "common.confirm"
@@ -463,21 +457,23 @@ export const MemoTaskItem = memo(function TaskListItem({
           showTooltip
           testId={testId(TID_TASK_ARCHIVE, task.taskId)}
         >
-          {isRemoteTask ? (
-            // 本地和远端 task 混排时，统一 archive 图标无法提示操作会落在哪个 sqlite。
-            // 远端任务使用 cloud 语义图标，避免用户误把远端归档当成本地归档。
-            <CloudUpload className="h-3.5 w-3.5" />
-          ) : (
-            <Archive className="h-3.5 w-3.5" />
-          )}
+          {/* 用户口径（2026-10-26）：归档按钮统一方盒，远端任务不再用云朵图标。 */}
+          <Archive className="h-3.5 w-3.5" />
         </TaskRowActionButton>
       )}
     </div>
   ) : null;
   // 远端 task 的 session 未就绪时 resolver 会拒绝打开；渲染层同步隐藏入口，
   // 避免展示一个点击后无反馈的按钮。本地 task 不依赖已打开 tab，仍可直接按路径打开。
+  // 云朵图标已按 2026-10-26 口径统一为方盒归档；远端 session 未就绪时隐藏文件树入口。
   const canOpenFileTree =
-    Boolean(onOpenFileTree) && (!isRemoteTask || Boolean(remoteSessionId));
+    Boolean(onOpenFileTree) &&
+    (isLocalWorkspaceTarget({
+      workspacePath: task.workspacePath,
+      workspaceIdentity: task.workspaceIdentity,
+      remoteSessionId,
+    }) ||
+      Boolean(remoteSessionId));
   const fileTreeActionNode =
     canOpenFileTree &&
     !workspaceActionsDisabled &&

@@ -148,11 +148,11 @@ import {
   type CodeUiSessionRecord,
   codeUiTaskControlRejection,
 } from "./repository.js";
-import { listCodeSessionSubagents } from "./subagent-directory.js";
 import {
   createStreamingEventFlusher,
   type StreamingEventFlusher,
 } from "./stream-flush.js";
+import { listCodeSessionSubagents } from "./subagent-directory.js";
 import { codeUiTaskMeta } from "./task-index.js";
 import type { TaskProjectMoveEvent } from "./task-project-move-types.js";
 import type {

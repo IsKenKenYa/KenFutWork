@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo } from "react";
-import { LightbulbIcon, XIcon, ChevronDownIcon } from "lucide-react";
+import { LightbulbIcon, ChevronDownIcon } from "lucide-react";
 import {
   TID_CHAT_MODE_SELECT_TRIGGER,
   TID_CHAT_MODE_SELECT_ITEM,
@@ -37,7 +37,7 @@ import type { V4ComposerToolbarProps } from "@zui/v4/composer/V4ComposerToolbar.
 
 function noop(): void {}
 
-/** Plan 是独立勾选项，三种权限仍为单选；只编辑草稿，不向 Runtime 发切换命令。 */
+/** 权限三档为单选；「计划」以独立勾选项出现在同一菜单。 */
 function V4ComposerModeSwitchImpl({
   provider,
   draftConfig,
@@ -189,33 +189,6 @@ function V4ComposerModeSwitchImpl({
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      {draftConfig?.planEnabled && (
-        <span data-testid="v4-composer-plan-marker" className="flex items-center gap-1">
-          <span
-            role="separator"
-            aria-orientation="vertical"
-            className="h-3 w-px shrink-0 bg-border"
-          />
-          <ControlHintTooltip title={intl.formatMessage({ id: "chat.plan.removeMarker" })}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={disabled}
-              data-composer-collapse-priority="2"
-              onClick={() => onSwitchMode("plan-off")}
-              aria-label={intl.formatMessage({ id: "chat.plan.removeMarker" })}
-              className="group/plan h-7 gap-1 rounded-lg px-2 text-ui-base text-foreground-subtle hover:text-foreground-subtle data-[composer-compact=true]:w-7 data-[composer-compact=true]:px-0"
-            >
-              <LightbulbIcon className="size-4 group-hover/plan:hidden group-focus-visible/plan:hidden" />
-              <XIcon className="hidden size-4 group-hover/plan:block group-focus-visible/plan:block" />
-              <span className="inline group-data-[composer-compact=true]/plan:hidden">
-                {intl.formatMessage({ id: "mode.plan" })}
-              </span>
-            </Button>
-          </ControlHintTooltip>
-        </span>
-      )}
     </div>
   );
 }

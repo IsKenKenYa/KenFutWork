@@ -940,17 +940,29 @@ export function createPluginRegistryService(
           // 停用即收回入口（侧栏不该出现点不开的插件）
           ui: record.enabled
             ? [
-                ...new Map([
-                  ...record.manifest.ui.map(
-                    (entry) => [entry.id, entry] as const,
-                  ),
-                  ...contributions.ui
-                    .filter((entry) => entry.pluginId === record.id)
-                    .map(
-                      ({ pluginId: _pluginId, ...entry }) =>
-                        [entry.id, entry] as const,
-                    ),
-                ]).values(),
+                ...new Map(
+                  (
+                    [
+                      // 运行时贡献在前、清单声明在后：同一 id 以清单为准（它带 configurable）。
+                      // 两条来源统一归一 configurable，保证市场输出恒有该字段。
+                      ...contributions.ui
+                        .filter((entry) => entry.pluginId === record.id)
+                        .map(({ pluginId: _pluginId, ...entry }) => ({
+                          configurable: false,
+                          ...entry,
+                          slot: (entry.slot ?? "sidebar") as PluginUiSlot,
+                        })),
+                      ...record.manifest.ui,
+                    ] as Array<{
+                      id: string;
+                      title: string;
+                      slot: PluginUiSlot;
+                      url: string;
+                      icon: string | null;
+                      configurable: boolean;
+                    }>
+                  ).map((entry) => [entry.id, entry] as const),
+                ).values(),
               ]
             : [],
         });

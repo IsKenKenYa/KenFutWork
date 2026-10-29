@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamEvent } from "@kenfutwork/shared";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStreamingEventFlusher } from "./stream-flush.js";
 
 function delta(
@@ -57,7 +57,10 @@ describe("createStreamingEventFlusher", () => {
     expect(f.flushed).toEqual([]);
     await vi.advanceTimersByTimeAsync(80);
     expect(f.flushed).toHaveLength(1);
-    expect(f.flushed[0]).toMatchObject({ type: "message.delta", delta: "你好，世界！" });
+    expect(f.flushed[0]).toMatchObject({
+      type: "message.delta",
+      delta: "你好，世界！",
+    });
   });
 
   it("不同 key 的 delta 到来先落地旧缓冲，保持输入顺序", async () => {
@@ -100,7 +103,10 @@ describe("createStreamingEventFlusher", () => {
       timestamp: new Date().toISOString(),
     };
     await f.handle(tool);
-    expect(f.flushed).toEqual([expect.objectContaining({ delta: "第一段第二段" }), tool]);
+    expect(f.flushed).toEqual([
+      expect.objectContaining({ delta: "第一段第二段" }),
+      tool,
+    ]);
     await vi.advanceTimersByTimeAsync(80);
     expect(f.flushed).toHaveLength(2);
   });
@@ -114,7 +120,10 @@ describe("createStreamingEventFlusher", () => {
       timestamp: new Date().toISOString(),
     };
     await f.handle(terminal);
-    expect(f.flushed).toEqual([expect.objectContaining({ delta: "结论" }), terminal]);
+    expect(f.flushed).toEqual([
+      expect.objectContaining({ delta: "结论" }),
+      terminal,
+    ]);
   });
 
   it("flush 幂等：空缓冲时是 no-op，多次调用只落地一次", async () => {

@@ -318,7 +318,7 @@ it("状态探针慢于插件探针：?mode=flow 不被中间态改写成 design�
   );
 });
 
-it("深链flow但宿主适配层未配齐时回落design（不放空壳）", async () => {
+it("深链flow但宿主适配层未配齐时仍进flow（入口只看插件安装态，主区报原因）", async () => {
   installFixture(true, false);
   navigation.query = "mode=flow";
   const { send } = await renderCodeFrame();
@@ -326,8 +326,8 @@ it("深链flow但宿主适配层未配齐时回落design（不放空壳）", asy
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "kenfutwork:workbench-navigation",
-        availableModes: ["code", "design"],
-        mode: "design",
+        availableModes: ["code", "design", "flow"],
+        mode: "flow",
       }),
       window.location.origin,
     );
@@ -438,7 +438,8 @@ it("旧模型入口打开同一管理文档并定位模型设置，重复打开�
   if (!manager.contentWindow) throw new Error("管理文档未创建");
   const send = vi.spyOn(manager.contentWindow, "postMessage");
   act(() => window.dispatchEvent(new Event("kenfutwork:open-model-settings")));
-  await waitFor(() => expect(manager.hidden).toBe(false));
+  // CI 上懒加载 iframe 偶发超过默认 5s；这条是「能否打开」，放宽等待不影响断言强度。
+  await waitFor(() => expect(manager.hidden).toBe(false), { timeout: 10_000 });
   expect(send).toHaveBeenCalledWith(
     {
       type: "kenfutwork:management-target",

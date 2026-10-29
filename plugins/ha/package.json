@@ -1,7 +1,7 @@
 {
   "name": "kenfutwork-ha",
   "version": "1.0.0",
-  "description": "智能家居插件（Home Assistant）：默认支持米家与华为（HUAWEI HiLink）设备——面板直接内嵌 HA 原生界面（另附精简网格与分步接入引导），agent 也能直接操作；配置保存在实例私有存储，服务端重启后无需重填。",
+  "description": "智能家居插件（Home Assistant）：默认支持米家与华为（HUAWEI HiLink）设备——面板内嵌 HA 原生界面（免登陆、自动关联本地用户），集成管理支持小米/华为的添加与卸载，agent 也能直接操作；配置保存在实例私有存储，服务端重启后无需重填。",
   "type": "module",
   "main": "index.js",
   "files": [
@@ -27,7 +27,8 @@
         "title": "智能家居",
         "slot": "sidebar",
         "url": "assets/panel.html",
-        "icon": "assets/icon.svg"
+        "icon": "assets/icon.svg",
+        "configurable": true
       }
     ]
   }

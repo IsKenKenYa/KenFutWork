@@ -254,6 +254,8 @@ import {
   voiceSpeakRequestSchema,
   voiceTranscribeResponseSchema,
   workEditorInstallStatusSchema,
+  workFontsResponseSchema,
+  workFontsUploadResponseSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
@@ -1610,6 +1612,39 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "读取 work 编辑器静态站点文件",
     description:
       "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
+  },
+  {
+    method: "get",
+    path: "/api/work/host/fonts",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workFontsResponseSchema,
+    summary: "列出用户字体库",
+    description:
+      "返回实例数据目录 work/fonts 下的字体清单（文件名、家族名、格式、字节数）与目录绝对路径。编辑器为 WASM 自绘、读不到系统字体，托管时该目录映射到站点 fonts/ 供运行时加载。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/fonts",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    multipart: { fileField: "file" },
+    responseSchema: workFontsUploadResponseSchema,
+    summary: "上传一个用户字体",
+    description:
+      "multipart 单文件上传 ttf/otf/ttc（按字体上限放行，超出全局 10MB 限制）。成功返回新入库条目与最新清单；同名或非法文件返回 400。上传的是用户自己的字体，随实例本机使用，不进仓库、不随产品分发。",
+  },
+  {
+    method: "delete",
+    path: "/api/work/host/fonts/:fileName",
+    tag: "work",
+    auth: "local",
+    successStatus: 204,
+    summary: "删除用户字体库中的一个字体",
+    description:
+      "按存储文件名删除字体并重写 manifest；文件不存在或文件名非法返回 400。",
   },
   // ---- design-review.ts（画布评论与标注；本仓自持数据面）----
   {

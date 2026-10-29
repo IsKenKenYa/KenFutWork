@@ -1,0 +1,173 @@
+#!/usr/bin/env node
+import { execFileSync } from "node:child_process";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { join, resolve } from "node:path";
+
+/**
+ * 构建「中文 Work 编辑器」web 包（自建，因上游 web 构建不内嵌 CJK 字形）。
+ *
+ * 背景（2026-10-27 实测）：ArtCraft 系列编辑器是 WASM + WebGPU 自绘 UI，**不读浏览器/
+ * 系统字体**，只能用包里自带的字形。上游 web 构建把简体中文字体（`craft-fonts` 的
+ * LXGW WenKai Lite）**主动排除**（native-only），所以中文界面整片方框；宿主只能钉英文
+ * 规避。ZCode 的做法是自打 `default-chinese.patch` 重建 —— 本脚本做同样的事，但补丁
+ * 只有两处、可复现，不依赖任何私有分包。
+ *
+ * 两处补丁：
+ *   1) `crates/ui-egui/src/craft_fonts_policy.rs`：`WEB_ALLOWED` 加 `LXGW WenKai Lite/Regular`；
+ *   2) `crates/ui-egui/build.rs`：wasm 目标也读取 `fonts/simplified-chinese-manifest.txt`。
+ *
+ * 前置：rustup target `wasm32-unknown-unknown`、`trunk`（0.22+）、`CRAFT_FONTS_DIR`
+ * 指向 craft-fonts 检出（含 `fonts/lxgw-wenkai-lite/*.ttf`）。
+ *
+ * 用法：
+ *   node scripts/build-work-editor-zh.mjs --app gridcraft \
+ *     --source D:/build/gridcraft --fonts D:/build/craft-fonts --out D:/build/out
+ */
+
+const args = process.argv.slice(2);
+const argOf = (name, fallback) => {
+  const index = args.indexOf(`--${name}`);
+  return index >= 0 ? args[index + 1] : fallback;
+};
+const app = argOf("app");
+const source = argOf("source") ? resolve(argOf("source")) : undefined;
+const fonts = argOf("fonts") ? resolve(argOf("fonts")) : undefined;
+const outDir = argOf("out")
+  ? resolve(argOf("out"))
+  : join(process.cwd(), "tmp", "work-editor-zh");
+if (!app || !source || !fonts)
+  throw new Error(
+    "用法：--app <id> --source <上游检出> --fonts <craft-fonts 检出> [--out <目录>]",
+  );
+
+const APP_CRATE = {
+  gridcraft: "apps/gridcraft-web",
+  wordcraft: "apps/wordcraft-web",
+  deckcraft: "apps/deckcraft-web",
+};
+const crate = APP_CRATE[app];
+if (!crate) throw new Error(`未登记该编辑器的 web 构建入口：${app}`);
+
+const read = (path) => readFileSync(path, "utf8");
+const eol = (text) => (text.includes("\r\n") ? "\r\n" : "\n");
+
+// 1) 放开 web 的 CJK 白名单（幂等：已含即跳过）
+const policyPath = join(source, "crates/ui-egui/src/craft_fonts_policy.rs");
+let policy = read(policyPath);
+const nl = eol(policy);
+const allowed = "pub const WEB_ALLOWED: &[(&str, &str)] = &[";
+if (!policy.includes(`("LXGW WenKai Lite", "Regular")`)) {
+  const at = policy.indexOf(allowed) + allowed.length;
+  policy = `${policy.slice(0, at)}${nl}    // KenFutWork: web 构建同样内嵌简体中文（OFL，LXGW WenKai Lite）。${nl}    ("LXGW WenKai Lite", "Regular"),${policy.slice(at)}`;
+  writeFileSync(policyPath, policy);
+  console.log(`[zh] 已放开 WEB_ALLOWED：${policyPath}`);
+}
+
+// 2) wasm 也读简体中文 manifest（幂等）
+const buildPath = join(source, "crates/ui-egui/build.rs");
+let build = read(buildPath);
+const wasmOnly =
+  "let chinese = if wasm { Vec::new() } else { chinese_font_rows(dir, required)? };";
+if (build.includes(wasmOnly)) {
+  build = build.replace(
+    wasmOnly,
+    "let chinese = chinese_font_rows(dir, required)?;",
+  );
+  writeFileSync(buildPath, build);
+  console.log(`[zh] 已让 wasm 读取简体中文 manifest：${buildPath}`);
+}
+
+// 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
+const ZERO_PATCHES = {
+  cadcraft: [
+    [
+      "crates/fonts/build.rs",
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic;',
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || scripts.split(',
+      ').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
+    ],
+  ],
+  filmcraft: [
+    [
+      "crates/text/build.rs",
+      'if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {',
+      'if wasm && !((*family == "BIZ UDPGothic" && *style == "Regular") || scripts.split(',
+      ').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
+    ],
+  ],
+  vectorcraft: [
+    [
+      "crates/text/build.rs",
+      "if wasm && !(*family == WEB_FONT.0 && *style == WEB_FONT.1) {",
+      "if wasm && !((*family == WEB_FONT.0 && *style == WEB_FONT.1) || scripts.split(",
+      ').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
+    ],
+  ],
+};
+for (const [file, from, to] of ZERO_PATCHES[app] ?? []) {
+  const path = join(source, file);
+  const text = read(path);
+  if (!text.includes(from)) {
+    if (text.includes(to)) continue;
+    throw new Error(
+      `${app}: 补丁锚点不存在（${file}）——上游已改结构，需人工核对`,
+    );
+  }
+  writeFileSync(path, text.replace(from, to));
+  console.log(`[zh] 已放行 CJK：${path}`);
+}
+
+// 3) trunk 构建
+const cwd = join(source, crate);
+if (!existsSync(cwd)) throw new Error(`找不到 web 构建目录：${cwd}`);
+console.log(`[zh] 构建 ${app} …（首次编译约 6 分钟）`);
+execFileSync(
+  "trunk",
+  [
+    "build",
+    "--release",
+    "--locked",
+    "--skip-version-check",
+    "--color",
+    "never",
+  ],
+  {
+    cwd,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      CRAFT_FONTS_DIR: fonts,
+      ...(i18nDir ? { CRAFT_I18N_DIR: i18nDir } : {}),
+    },
+  },
+);
+
+// 4) 收集产物（trunk 输出到 <repo>/dist/web）
+const dist = join(source, "dist/web");
+if (!existsSync(dist)) throw new Error(`构建成功但没有产物目录：${dist}`);
+const target = join(outDir, app);
+rmSync(target, { recursive: true, force: true });
+mkdirSync(target, { recursive: true });
+for (const entry of readdirSync(dist)) {
+  if (entry === ".trunk-lock") continue;
+  cpSync(join(dist, entry), join(target, entry), { recursive: true });
+}
+// 自建中文包标记：安装器据此拒绝被官方英文包覆盖（见 features/work/install.ts）。
+writeFileSync(
+  join(target, ".kenfutwork-zh-build.json"),
+  `${JSON.stringify({ app, kind: "kenfutwork-zh", font: "craft-fonts", builtAt: new Date().toISOString() }, null, 2)}
+`,
+);
+const wasm = readdirSync(target).find((name) => name.endsWith("_bg.wasm"));
+if (!wasm) throw new Error("产物缺少 wasm");
+console.log(
+  `[zh] 完成：${target}（${wasm}，${(readFileSync(join(target, wasm)).length / 1048576).toFixed(1)}MB，含中文字体）`,
+);

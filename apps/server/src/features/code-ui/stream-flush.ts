@@ -7,7 +7,9 @@ export interface StreamingEventFlusher {
   flush(): Promise<void>;
 }
 
-function streamDeltaKey(event: Extract<StreamEvent, { delta: string }>): string {
+function streamDeltaKey(
+  event: Extract<StreamEvent, { delta: string }>,
+): string {
   return [
     event.type,
     event.messageId,
@@ -16,7 +18,9 @@ function streamDeltaKey(event: Extract<StreamEvent, { delta: string }>): string 
   ].join("\u0000");
 }
 
-function isStreamingDelta(event: StreamEvent): event is Extract<StreamEvent, { delta: string }> {
+function isStreamingDelta(
+  event: StreamEvent,
+): event is Extract<StreamEvent, { delta: string }> {
   return event.type === "message.delta" || event.type === "thinking.delta";
 }
 
@@ -67,7 +71,10 @@ export function createStreamingEventFlusher(input: {
           await sink(event);
           return;
         }
-        if (buffer !== null && streamDeltaKey(buffer) === streamDeltaKey(event)) {
+        if (
+          buffer !== null &&
+          streamDeltaKey(buffer) === streamDeltaKey(event)
+        ) {
           buffer.delta += event.delta;
           return;
         }

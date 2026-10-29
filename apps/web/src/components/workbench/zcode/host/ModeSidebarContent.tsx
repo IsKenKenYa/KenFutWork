@@ -1,21 +1,15 @@
-import type { ProjectSummary } from "@kenfutwork/shared";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import {
-  Cpu,
-  Layers,
-  ListChecks,
-  Palette,
-  Pencil,
-  Plus,
-  Trash2,
-  Workflow,
-} from "lucide-react";
+import { Cpu, Layers, ListChecks, Plus, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import {
-  useCanvasProjectDirectory,
-  useDirectoryPickerAvailable,
-} from "./canvasProjectDirectories.js";
+import { useState, useSyncExternalStore } from "react";
+import { useDirectoryPickerAvailable } from "./canvasProjectDirectories.js";
 import { localCuaDesktopInvoke } from "./cuaPermissionPlatform.js";
 import {
   createFlowProject,
@@ -81,89 +75,6 @@ export function HostModeSidebarContent({
   );
 }
 
-/** 项目行：点击选中；hover 出「重命名 / 删除」；重命名走行内输入（原 SidebarRow 行为）。 */
-function ProjectRow({
-  project,
-  active,
-  onOpen,
-  onRename,
-  onDelete,
-}: {
-  project: ProjectSummary;
-  active: boolean;
-  onOpen: () => void;
-  onRename: (next: string) => void;
-  onDelete: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(project.name);
-  const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (editing) {
-      setDraft(project.name);
-      requestAnimationFrame(() => {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      });
-    }
-  }, [editing, project.name]);
-  const commit = () => {
-    const next = draft.trim();
-    if (next && next !== project.name) onRename(next);
-    setEditing(false);
-  };
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        aria-label="重命名"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") commit();
-          if (event.key === "Escape") setEditing(false);
-        }}
-        className="w-full rounded-md border bg-background px-2 py-1 text-sm outline-none"
-      />
-    );
-  }
-  return (
-    <div
-      className="group/row relative flex items-center rounded-md hover:bg-surface-hover data-[active=true]:bg-selected"
-      data-active={active ? "true" : undefined}
-    >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm"
-      >
-        <Palette className="h-3.5 w-3.5 shrink-0 text-foreground-subtle" />
-        <span className="truncate">{project.name}</span>
-      </button>
-      <div className="absolute right-1 hidden items-center group-hover/row:flex">
-        <button
-          type="button"
-          aria-label={`重命名 ${project.name}`}
-          onClick={() => setEditing(true)}
-          className="rounded p-1 text-foreground-subtle hover:bg-background hover:text-foreground"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
-        <button
-          type="button"
-          aria-label={`删除 ${project.name}`}
-          onClick={onDelete}
-          className="rounded p-1 text-foreground-subtle hover:bg-background hover:text-foreground"
-        >
-          <Trash2 className="h-3 w-3" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /** Flow 模式的侧栏内容：工作流/插件/任务中心/引擎（原 CanvasSidebar flow 区同款）。 */
 function FlowNavSidebar() {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
@@ -184,19 +95,26 @@ function FlowNavSidebar() {
       aria-label="Flow 导航"
     >
       <div className="flex items-center gap-2 pb-2">
-        <select
-          aria-label="Flow 项目"
+        <Select
           value={selectedProjectId ?? ""}
-          onChange={(event) => selectFlowProject(event.target.value || null)}
-          className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1.5 text-sm"
+          onValueChange={(value) => selectFlowProject(value || null)}
         >
-          <option value="">选择项目</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            aria-label="Flow 项目"
+            variant="ghost"
+            size="default"
+            className="min-w-0 flex-1"
+          >
+            <SelectValue placeholder="选择项目" />
+          </SelectTrigger>
+          <SelectContent>
+            {projects.map((project) => (
+              <SelectItem key={project.id} value={project.id}>
+                {project.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <button
           type="button"
           aria-label="创建 Flow 项目"

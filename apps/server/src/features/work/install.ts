@@ -27,6 +27,8 @@ import { unzipSync } from "fflate";
  */
 
 const INSTALL_MARKER = ".kenfutwork-install.json";
+/** 自建中文包的标记文件（构建脚本写入）。 */
+const ZH_BUILD_MARKER = ".kenfutwork-zh-build.json";
 const LOG_TAIL_LIMIT = 20;
 
 export type WorkEditorInstallOptions = {
@@ -113,6 +115,16 @@ async function runInstall(options: WorkEditorInstallOptions): Promise<void> {
 
   await mkdir(editorsDir, { recursive: true });
   const existingSha = await readMarkerSha256(finalDir);
+  // 自建中文包（scripts/build-work-editor-zh.mjs）不得被官方英文包覆盖：
+  // 覆盖后界面会退回英文（上游 web 包无中文字形）。要更新中文包就重跑构建脚本。
+  if (existsSync(join(finalDir, ZH_BUILD_MARKER))) {
+    settle(editorId, { state: "ready" });
+    pushLog(
+      editorId,
+      "当前是自建中文包，跳过官方包覆盖（重新构建请运行 scripts/build-work-editor-zh.mjs）",
+    );
+    return;
+  }
   if (existingSha === pinned.sha256) {
     settle(editorId, { state: "ready" });
     pushLog(editorId, `已落位（v${pinned.version}），跳过下载`);

@@ -69,10 +69,9 @@ async function readDirectorySnapshot(projectId: string, kind?: DirectoryKind) {
     return null;
   if (!response.ok)
     throw new Error(body.error?.message ?? "项目目录状态无法读取。");
-  const snapshot = projectDirectoryRelinkSnapshotSchema.parse(body);
-  if (kind === "flow" && !snapshot.flow)
-    throw new Error("Flow 项目绑定缺失，请刷新项目。");
-  return snapshot;
+  // Flow 可绑定任意工作方式的项目（用户 2026-10-27 口径）：非 flow 项目没有
+  // `flow` 迁移状态但同样有可读的 workDir，按普通项目返回，不在这里判死。
+  return projectDirectoryRelinkSnapshotSchema.parse(body);
 }
 
 async function submitDirectoryRelink(

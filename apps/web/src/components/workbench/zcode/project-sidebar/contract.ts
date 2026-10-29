@@ -90,6 +90,9 @@ export interface ProjectSidebarProps {
   automationsActive?: boolean;
   onOpenPluginStore?: () => void;
   pluginStoreActive?: boolean;
+  /** Work 模式专属：打开主区的 Work 引擎信息页；其它模式由导航组件自行隐藏。 */
+  onOpenWorkEngine?: () => void;
+  workEngineActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }
 export type {

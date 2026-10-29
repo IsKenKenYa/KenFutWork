@@ -270,6 +270,32 @@ describe("work 宿主路由", () => {
     ).toBe("<html>gridcraft</html>");
   });
 
+  it("自建中文包：安装请求不覆盖（避免退回官方英文包）", async () => {
+    const editorsDir = await emptyEditorsDir();
+    await fixture({ editorsDir });
+    const editorDir = join(editorsDir, "gridcraft");
+    await mkdir(editorDir, { recursive: true });
+    await writeFile(join(editorDir, "index.html"), "<html>中文包</html>");
+    await writeFile(join(editorDir, ".kenfutwork-zh-build.json"), "{}");
+    const started = startWorkEditorInstall({
+      editorsDir,
+      editorId: "gridcraft",
+      pinned: {
+        version: "0.11.1",
+        asset: "gridcraft-web-0.11.1.zip",
+        bytes: 1,
+        sha256: "a".repeat(64),
+        url: "http://127.0.0.1:1/never.zip",
+      },
+    });
+    expect(started.started).toBe(true);
+    const snapshot = await waitForSettled("gridcraft");
+    expect(snapshot.state).toBe("ready");
+    expect(await readFile(join(editorDir, "index.html"), "utf8")).toBe(
+      "<html>中文包</html>",
+    );
+  });
+
   it("校验和不匹配 → error 状态 + 可读原因，不落位", async () => {
     const payload = zipOf({ "gridcraft-web-0.11.1/index.html": "x" });
     const url = await fakeUpstream((req, res) => {
@@ -310,7 +336,20 @@ describe("work 宿主路由", () => {
     expect(html.statusCode).toBe(200);
     expect(html.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(html.headers["x-content-type-options"]).toBe("nosniff");
-    expect(html.body).toBe("<html>ok</html>");
+    // gridcraft 现用自建中文包（自带中文字形），不再钉英文；其余资产原样流式。
+    expect(html.body).not.toContain('"en-US"');
+    expect(html.body).toContain("<html>ok</html>");
+
+    // 自带中文字形的编辑器不钉英文（用户系统中文时应显示中文）。
+    const lightDir = join(editorsDir, "lightcraft");
+    await mkdir(lightDir, { recursive: true });
+    await writeFile(join(lightDir, "index.html"), "<html>ok</html>");
+    const light = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/lightcraft/index.html",
+    });
+    expect(light.statusCode).toBe(200);
+    expect(light.body).not.toContain('"en-US"');
 
     const wasm = await app.inject({
       method: "get",
@@ -333,7 +372,7 @@ describe("work 宿主路由", () => {
       path: "/api/work/host/editors/gridcraft/some/route",
     });
     expect(fallback.statusCode).toBe(200);
-    expect(fallback.body).toBe("<html>ok</html>");
+    expect(fallback.body).toContain("<html>ok</html>");
 
     const dot = await app.inject({
       method: "get",

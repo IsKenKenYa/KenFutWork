@@ -276,7 +276,6 @@ const zhCN: Record<string, string> = {
   "common.cancel": "取消",
   "common.retry": "重试",
   "common.close": "关闭",
-  "chat.plan.removeMarker": "关闭计划模式",
   "common.confirm": "确认",
   "common.more": "更多",
   "common.refresh": "刷新",
@@ -2174,11 +2173,6 @@ const zhCN: Record<string, string> = {
   "settings.themeCardTitle": "主题",
   "settings.themeCardDescription": "使用浅色、深色，或匹配系统设置",
   "chat.empty.greeting.office": "今天有什么工作，交给我吧",
-  "settings.interfaceMode": "界面模式",
-  "settings.interfaceMode.office": "Design",
-  "settings.interfaceMode.coding": "Code",
-  "settings.interfaceMode.description":
-    "办公模式侧重操作摘要与结果；编程模式显示命令、输出和代码变更详情。",
   "chat.toolCall.execute.conciseCompleted": "已运行命令",
   "chat.contextOptimization.started": "正在优化对话",
   "chat.contextOptimization.skipped": "无需优化对话",
@@ -6280,7 +6274,6 @@ const zhCN: Record<string, string> = {
   "chat.permission.fileChange.mixedMany": "更新 {count} 个文件",
 
   // 模式
-  "mode.plan": "计划",
   "mode.label.glm.build": "变更前确认",
   "mode.label.glm.edit": "自动编辑",
   "mode.label.glm.plan": "计划模式",

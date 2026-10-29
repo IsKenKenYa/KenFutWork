@@ -12,6 +12,7 @@
         --text: #e7e9f2;
         --muted: #9aa1b5;
         --accent: #7f9cf5;
+        --on-accent: #12141c;
         --danger: #f08a8a;
       }
       @media (prefers-color-scheme: light) {
@@ -22,6 +23,7 @@
           --text: #22262f;
           --muted: #6b7280;
           --accent: #4c63b6;
+          --on-accent: #ffffff;
           --danger: #b4453f;
         }
       }
@@ -56,52 +58,75 @@
       }
       button {
         font: inherit;
+        font-size: 12px;
+        line-height: 1;
+        height: 28px;
+        padding: 0 10px;
         color: var(--text);
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 5px 10px;
         cursor: pointer;
+        white-space: nowrap;
       }
       button:hover {
         border-color: var(--accent);
+        color: var(--accent);
       }
       button:disabled {
         opacity: 0.55;
         cursor: default;
       }
+      button.primary {
+        color: var(--on-accent);
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      button.primary:hover {
+        color: var(--on-accent);
+        filter: brightness(1.06);
+      }
       .card {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 12px 14px;
+        border-radius: 12px;
+        padding: 14px 16px;
       }
-      /* 一行一个配置项：标签在左、控件在右 */
+      /* 一行一个配置项：标签在左（不换行）、控件在右（撑满剩余宽度） */
       .field {
-        display: flex;
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         margin: 8px 0;
       }
       .field label {
-        flex: none;
-        width: 44px;
         color: var(--muted);
+        white-space: nowrap;
       }
-      .field input {
-        flex: 1;
+      .field input:not([type="checkbox"]),
+      .field select {
+        width: 100%;
         min-width: 0;
+      }
+      .field input:not([type="checkbox"]) {
         font: inherit;
         color: var(--text);
         background: var(--bg);
         border: 1px solid var(--line);
         border-radius: 8px;
-        padding: 5px 8px;
+        height: 30px;
+        padding: 0 10px;
+      }
+      .field input:focus-visible,
+      .field select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
       }
       .actions {
         display: flex;
         gap: 8px;
-        margin-top: 10px;
+        margin-top: 12px;
       }
       .group {
         font-size: 12px;
@@ -205,12 +230,194 @@
         display: flex;
         gap: 6px;
       }
-      /* === 接入引导（未配置/修改配置态）=== */
+      /* === 欢迎与品牌选择（未配置态，按教程里 HA 集成流程的形状）=== */
       a {
         color: var(--accent);
       }
-      .guide > .intro {
-        margin: 0 0 8px;
+      .hero {
+        text-align: center;
+        padding: 22px 14px 18px;
+      }
+      .hero img {
+        width: 52px;
+        height: 52px;
+      }
+      .hero h1 {
+        font-size: 16px;
+        margin: 8px 0 2px;
+      }
+      .hero p {
+        margin: 0;
+      }
+      .brand {
+        margin: 6px 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--bg);
+      }
+      .brand summary {
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      .brand summary::-webkit-details-marker {
+        display: none;
+      }
+      .brand-icon {
+        flex: none;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        color: #fff;
+      }
+      .brand-icon.xiaomi {
+        background: #ff6900;
+      }
+      .brand-icon.huawei {
+        background: #c7000b;
+      }
+      .brand-meta {
+        flex: 1;
+        min-width: 0;
+      }
+      .brand-name {
+        display: block;
+        font-weight: 600;
+      }
+      .brand-sub {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .brand .chev {
+        flex: none;
+        color: var(--muted);
+        transition: transform 0.12s ease;
+      }
+      .brand[open] .chev {
+        transform: rotate(90deg);
+      }
+      /* === 集成管理（已连接态）：品牌行 + 行内配置流 === */
+      /* 配置/欢迎视图：内容列居中，表单在宽面板里不被拉成一条 */
+      body:not(.native-mode) > #body {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      .integrations {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+      .integrations .group {
+        margin: 0;
+        padding: 12px 14px 8px;
+      }
+      .integrations-body {
+        padding-bottom: 6px;
+      }
+      /* 一行三列：左 = 品牌（图标+名称），中 = 状态或表单，右 = 动作 */
+      .int-item {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr) max-content;
+        align-items: center;
+        gap: 12px 24px;
+        padding: 10px 14px;
+      }
+      .int-item + .int-item {
+        border-top: 1px solid var(--line);
+      }
+      .int-id {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .int-id .brand-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+      .int-name {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .int-main {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .int-main > p {
+        margin: 0;
+      }
+      .int-status {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .int-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .int-form {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .int-form .field {
+        margin: 0;
+        grid-template-columns: max-content minmax(0, 240px);
+      }
+      /* multi_select（米家的「选择家庭」）：竖排复选列表 */
+      .choices {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .field label.choice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text);
+        white-space: normal;
+      }
+      .back {
+        margin: 0 0 10px;
+        color: var(--muted);
+        background: transparent;
+        border-color: transparent;
+      }
+      .back:hover {
+        color: var(--text);
+        background: var(--panel);
+        border-color: var(--line);
+      }
+      .int-open {
+        display: inline-flex;
+        align-items: center;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        background: var(--accent);
+        color: var(--on-accent);
+        text-decoration: none;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .int-open:hover {
+        color: var(--on-accent);
+        filter: brightness(1.06);
       }
       .guide .step {
         margin: 6px 0;
@@ -282,6 +489,34 @@
         border-radius: 10px;
         background: #fff;
       }
+      /* === 原生视图：标题栏之下全部是内嵌面板（2026-10-26 用户口径）===
+         `native-mode` 必须挂在 <body>：header/footer 是 body 的子元素、不在 main 内，
+         只给 main 加类会漏掉 body 的 16px 内边距和空 header（面板四周的「缝隙」）。
+         高度链 html → body → main#body 逐级 100%，iframe 直接铺满 main。 */
+      html:has(> body.native-mode),
+      html:has(> body.native-mode) > body {
+        height: 100%;
+      }
+      body.native-mode {
+        padding: 0;
+        overflow: hidden;
+        scrollbar-gutter: auto;
+      }
+      body.native-mode > header,
+      body.native-mode > footer {
+        display: none;
+      }
+      body.native-mode > #body {
+        height: 100%;
+        padding: 0;
+      }
+      body.native-mode > #body > iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 0;
+      }
       footer {
         margin-top: 12px;
       }
@@ -289,14 +524,10 @@
   </head>
   <body>
     <header>
-      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称），面板里不重复出，只留状态与操作 -->
+      <!-- 标题由宿主弹窗 chrome 出（图标 + 名称 + 关闭），配置入口也在宿主标题栏
+           （面板声明 configurable，2026-10-25 用户口径「配置按钮放到关闭按钮左边」）：
+           默认视图 = 纯 HA 界面 -->
       <span id="state" class="hint"></span>
-      <span class="grow"></span>
-      <button id="toggleView" type="button" hidden></button>
-      <button id="refresh" type="button" hidden>刷新</button>
-      <button id="retest" type="button" hidden>重新测试</button>
-      <button id="edit" type="button" hidden>修改配置</button>
-      <button id="disconnect" type="button" hidden>断开</button>
     </header>
     <main id="body">
       <div class="card hint">正在获取配置…</div>
