@@ -351,7 +351,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
         };
         if (!response.ok)
           throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
-        await load();
+        await load(false);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "上传失败");
       } finally {
@@ -369,7 +369,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
           `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
           { method: "DELETE" },
         );
-        await load();
+        await load(false);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "删除失败");
       } finally {
