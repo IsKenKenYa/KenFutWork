@@ -30,6 +30,7 @@ describe("KiCad 路由", () => {
       kicadVersion: "10.0.6",
       kicadInstalled: true,
       kicadApp: "C:/Program Files/KiCad/10.0",
+      kicadInstallHint: "C:/Program Files/KiCad/10.0",
       workspace: "C:/data/work/kicad/workspace",
     };
     const { app } = fixture({ status: vi.fn(async () => status) });

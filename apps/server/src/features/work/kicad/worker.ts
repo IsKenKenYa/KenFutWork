@@ -24,10 +24,18 @@ export interface KicadToolSummary {
   title?: string;
 }
 
+/** 界面上「装到哪里」的默认位置：Windows 走官方安装包默认目录，macOS 是应用包。 */
+const KICAD_INSTALL_HINT =
+  process.platform === "win32"
+    ? "C:/Program Files/KiCad/10.0"
+    : process.platform === "darwin"
+      ? "/Applications/KiCad/KiCad.app"
+      : "/usr";
+
 /** Windows 上 KiCad 的默认安装根（官方安装包装到 `<根>\<版本>\`）。 */
 export const WINDOWS_INSTALL_ROOTS = [
-  "C:\Program Files\KiCad",
-  "C:\Program Files (x86)\KiCad",
+  "C:/Program Files/KiCad",
+  "C:/Program Files (x86)/KiCad",
 ];
 
 /** 在若干安装根里挑一个带 `bin/kicad-cli.exe` 的版本目录（版本号倒序）。 */
@@ -203,6 +211,8 @@ export class KicadWorker {
     kicadVersion: string | null;
     kicadInstalled: boolean;
     kicadApp: string;
+    /** 界面上提示用户「装到哪里」的默认位置（按平台）。 */
+    kicadInstallHint: string;
     workspace: string;
   }> {
     try {
@@ -218,6 +228,7 @@ export class KicadWorker {
         kicadVersion: structured?.kicad_version ?? null,
         kicadInstalled: this.kicadInstalled(),
         kicadApp: this.kicadAppDir(),
+        kicadInstallHint: KICAD_INSTALL_HINT,
         workspace: this.workspaceDir(),
       };
     } catch (error) {
@@ -228,6 +239,7 @@ export class KicadWorker {
         kicadVersion: null,
         kicadInstalled: this.kicadInstalled(),
         kicadApp: this.kicadAppDir(),
+        kicadInstallHint: KICAD_INSTALL_HINT,
         workspace: this.workspaceDir(),
       };
     }

@@ -109,7 +109,8 @@ iframe{border:0;width:100%;flex:1 1 auto;min-height:0;display:block;height:100%}
         else bar.dataset.on = "0";
         return;
       }
-      document.getElementById("hint-path").textContent = status.kicadApp || "";
+      document.getElementById("hint-path").textContent =
+        status.kicadInstallHint || status.kicadApp || "";
       bar.dataset.on = "1";
     } catch (error) {}
   }
