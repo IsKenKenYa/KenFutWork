@@ -39,6 +39,20 @@ test("圆环随占用渲染，读数走旧口径（两位小数百分比）", ()
   const ring = screen.getByTestId("context-usage-ring");
   expect(ring.getAttribute("title")).toContain("4.5万/100万");
   expect(ring.getAttribute("title")).toContain("4.5%");
+  // 扇形占用弧必须真实渲染：有数据时第二个 circle 携带与百分比对应的 dasharray。
+  const arcs = ring.querySelectorAll("circle");
+  expect(arcs).toHaveLength(2);
+  const dasharray = arcs[1]?.getAttribute("stroke-dasharray") ?? "";
+  const arcLength = Number(dasharray.split(" ")[0]);
+  const radius = Number(arcs[1]?.getAttribute("r"));
+  const circumference = 2 * Math.PI * radius;
+  expect(arcLength / circumference).toBeCloseTo(0.045, 3);
+});
+
+test("空环只有轨道 circle，不画假弧", () => {
+  render(<ChatContextUsage taskUsage={{ used: 0, size: 1_000_000 }} />);
+  const ring = screen.getByTestId("context-usage-ring");
+  expect(ring.querySelectorAll("circle")).toHaveLength(1);
 });
 
 test("窗口未知（size=0）不编分母，占位读数只给绝对量", () => {
