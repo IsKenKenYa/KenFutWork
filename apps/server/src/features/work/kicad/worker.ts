@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -22,6 +22,32 @@ export interface KicadToolSummary {
   description: string | undefined;
   inputSchema: Record<string, unknown> | undefined;
   title?: string;
+}
+
+/** Windows 上 KiCad 的默认安装根（官方安装包装到 `<根>\<版本>\`）。 */
+export const WINDOWS_INSTALL_ROOTS = [
+  "C:\Program Files\KiCad",
+  "C:\Program Files (x86)\KiCad",
+];
+
+/** 在若干安装根里挑一个带 `bin/kicad-cli.exe` 的版本目录（版本号倒序）。 */
+export function pickKicadInstall(roots: readonly string[]): string | null {
+  for (const root of roots) {
+    let versions: string[];
+    try {
+      versions = readdirSync(root, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    } catch {
+      continue;
+    }
+    for (const version of versions) {
+      const dir = join(root, version);
+      if (existsSync(join(dir, "bin", "kicad-cli.exe"))) return dir;
+    }
+  }
+  return null;
 }
 
 export class KicadWorker {
@@ -50,13 +76,17 @@ export class KicadWorker {
   }
 
   /**
-   * KiCad 安装目录：`KENFUTWORK_KICAD_APP` 显式指定 > 实例内的便携解包目录。
-   * 便携目录是「不装系统、只解包」的选项（KiCad 官方安装包可用 7-Zip 解出同一棵树）。
+   * KiCad 安装目录：`KENFUTWORK_KICAD_APP` 显式指定 > Windows 默认安装（按版本号倒序）
+   * > 实例内的便携解包目录。与 Python 侧 `config.kicad_app_dir()` 同一口径：装完即被找到，
+   * 不需要重启服务。
    */
   kicadAppDir(): string {
     const configured = (process.env.KENFUTWORK_KICAD_APP ?? "").trim();
     if (configured) return configured;
-    return join(this.dataDir, "runtime", "kicad");
+    return (
+      pickKicadInstall(WINDOWS_INSTALL_ROOTS) ??
+      join(this.dataDir, "runtime", "kicad")
+    );
   }
 
   /** `kicad-cli` 是否存在（两平台各自的相对位置）。 */

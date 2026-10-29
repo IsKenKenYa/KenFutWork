@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { KicadWorker } from "./worker.js";
+import { KicadWorker, pickKicadInstall } from "./worker.js";
 
 /**
  * KiCad 安装位置只有两个来源：显式 `KENFUTWORK_KICAD_APP`，或实例数据目录里的便携解包目录。
@@ -40,6 +40,18 @@ describe("KiCad 安装位置", () => {
     const worker = new KicadWorker(dataDir);
     expect(worker.kicadAppDir()).toBe(custom);
     expect(worker.kicadInstalled()).toBe(false);
+  });
+
+  it("Windows 默认安装：按版本号数字序挑最新的带 kicad-cli 的目录", () => {
+    const root = mkdtempSync(join(tmpdir(), "kfw-kicad-pf-"));
+    expect(pickKicadInstall([join(root, "missing")])).toBeNull();
+    for (const version of ["9.0", "10.0", "8.0"]) {
+      mkdirSync(join(root, version, "bin"), { recursive: true });
+    }
+    // 只有 10.0 与 8.0 带 kicad-cli：9.0 结构不全，应当跳过。
+    writeFileSync(join(root, "10.0", "bin", "kicad-cli.exe"), "");
+    writeFileSync(join(root, "8.0", "bin", "kicad-cli.exe"), "");
+    expect(pickKicadInstall([root])).toBe(join(root, "10.0"));
   });
 
   it("macOS 的 .app 布局也算已安装", () => {

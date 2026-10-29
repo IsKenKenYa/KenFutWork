@@ -25,11 +25,13 @@ html,body{margin:0;height:100%;background:#fff;display:flex;flex-direction:colum
 #hint[data-on="1"]{display:flex}
 #hint b{font-weight:600;color:#1f2328}
 #hint code{font:11px/1.4 ui-monospace,Consolas,monospace;color:#1f2328;background:#fff;border:1px solid #e5e1da;border-radius:6px;padding:2px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#hint-retry{margin-left:auto;font:12px/1 system-ui,sans-serif;color:#1f2328;background:#fff;border:1px solid #e5e1da;border-radius:6px;padding:5px 10px;cursor:pointer}
+#hint-retry:hover{border-color:#c9c4ba}
 iframe{border:0;width:100%;flex:1 1 auto;min-height:0;display:block;height:100%}
 </style>
 </head>
 <body>
-<div id="hint" role="status"><b>未检测到 KiCad 10</b><span>解包到</span><code id="hint-path"></code></div>
+<div id="hint" role="status"><b>未检测到 KiCad 10</b><span>安装到</span><code id="hint-path"></code><button id="hint-retry" type="button">重新检测</button></div>
 <iframe id="panel" src="/api/work/host/kicad/panel.html" title="KiCad 电路板"></iframe>
 <script>
 (function () {
@@ -100,13 +102,19 @@ iframe{border:0;width:100%;flex:1 1 auto;min-height:0;display:block;height:100%}
   async function hint() {
     try {
       var status = await fetch("/api/work/host/kicad/status").then(function (r) { return r.json(); });
-      if (!status.kicadInstalled) {
-        document.getElementById("hint-path").textContent = status.kicadApp || "";
-        document.getElementById("hint").dataset.on = "1";
+      var bar = document.getElementById("hint");
+      if (status.kicadInstalled) {
+        // 装好之后刷新一次：面板需要在服务重新识别到 KiCad 后重跑首屏。
+        if (bar.dataset.on === "1") window.location.reload();
+        else bar.dataset.on = "0";
+        return;
       }
+      document.getElementById("hint-path").textContent = status.kicadApp || "";
+      bar.dataset.on = "1";
     } catch (error) {}
   }
   hint();
+  document.getElementById("hint-retry").addEventListener("click", hint);
   async function prime() {
     try {
       var result = await rpc("tools/call", { name: "kicad_board_view", arguments: { side: "top" } });
