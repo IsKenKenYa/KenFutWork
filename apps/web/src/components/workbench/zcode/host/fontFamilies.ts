@@ -15,14 +15,31 @@ export type FontFamilyGroup = {
 
 const CJK = /[\u3400-\u9fff\uf900-\ufaff]/u;
 
+/**
+ * 字体文件里的家族名常是拉丁转写（Noto Sans CJK SC、Ma Shan Zheng…），对中文用户
+ * 等于乱码。这里给有正式中文名的字体配中文显示名；Inter、JetBrains Mono 这类本来就
+ * 是拉丁字体，保持原名。只影响列表展示，清单与字体内部名仍是原文。
+ */
+const DISPLAY_NAMES: Record<string, string> = {
+  "noto sans cjk sc": "思源黑体",
+  "noto serif cjk sc": "思源宋体",
+  "ma shan zheng": "马善政",
+  "zcool kuaile": "站酷快乐体",
+  misans: "小米 MiSans",
+  "biz udmincho": "BIZ UD明朝",
+};
+
 /** 「朱雀仿宋（预览测试版）」→「朱雀仿宋」；「霞鹜文楷 轻便版」→「霞鹜文楷」。 */
 export function fontDisplayName(family: string): string {
-  const stripped = family
+  const trimmed = family.trim();
+  const known = DISPLAY_NAMES[trimmed.toLowerCase()];
+  if (known) return known;
+  const stripped = trimmed
     .replace(/[（(][^）)]*[）)]/gu, " ")
     .replace(/\s*(轻便版|预览版|测试版)\s*$/u, "")
     .replace(/\s+/gu, " ")
     .trim();
-  return stripped || family.trim();
+  return stripped || trimmed;
 }
 
 /** 英文字体在前、中文字体在后，各自按名称升序；同家族多文件合并为一行。 */
