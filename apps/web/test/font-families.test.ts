@@ -16,7 +16,7 @@ function font(
 describe("字体列表展示", () => {
   it("去掉版本注释、按中文名展示、再合并同名家族", () => {
     expect(fontDisplayName("朱雀仿宋（预览测试版）")).toBe("朱雀仿宋（璇玑造字）");
-    expect(fontDisplayName("霞鹜文楷 轻便版")).toBe("霞鹜文楷（lxgw）");
+    expect(fontDisplayName("霞鹜文楷 轻便版")).toBe("霞鹜文楷");
     expect(fontDisplayName("Noto Sans CJK SC")).toBe("思源黑体（Adobe·Google）");
     expect(fontDisplayName("Noto Serif CJK SC")).toBe("思源宋体（Adobe·Google）");
     expect(fontDisplayName("Ma Shan Zheng")).toBe("马善政毛笔楷书（Google Fonts）");
@@ -38,7 +38,7 @@ describe("字体列表展示", () => {
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({
-      name: "霞鹜文楷（lxgw）",
+      name: "霞鹜文楷",
       builtin: true,
     });
     expect(groups[0]!.userFiles).toEqual(["abc-upload.ttf", "def-full.ttf"]);
@@ -62,8 +62,8 @@ describe("字体列表展示", () => {
     expect(latin).toEqual(["Inter", "Liberation Serif"]);
     expect(cjk).toEqual([
       "得意黑（oooooohmygosh）",
-      "霞鹜漫黑（lxgw）",
-      "悠哉字体（lxgw）",
+      "霞鹜漫黑",
+      "悠哉字体",
       "站酷快乐体（站酷）",
     ]);
   });

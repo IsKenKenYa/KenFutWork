@@ -115,6 +115,77 @@ if (existsSync(policyPath)) {
   );
 }
 
+// 1b) WordCraft 的字体下拉显示中文名（字体自带中文名缺失时用表补；选中仍存英文家族名）。
+const previewsRs = join(source, "crates/ui-egui/src/previews.rs");
+if (app === "wordcraft" && existsSync(previewsRs)) {
+  patchOnce(
+    previewsRs,
+    "    /// The Equation tab's pictures, packed into one texture (#1002).\n    math: MathAtlas,\n}\n\n/// Side of each square texture page the equation pictures share, in pixels.\nconst MATH_ATLAS: usize = 2048;",
+    `    /// The Equation tab's pictures, packed into one texture (#1002).
+    math: MathAtlas,
+}
+
+/// KenFutWork: 字体自带本地名缺失时的中文显示名（英文家族名 → 中文名）。
+/// 选中仍存英文家族名（见 \`english_names\` 反向表），文档换机器也能读到同一字体。
+const KFW_FONT_LABELS: &[(&str, &str)] = &[
+    ("LXGW WenKai Lite", "霞鹜文楷"),
+    ("LXGW Marker Gothic", "霞鹜漫黑"),
+    ("Smiley Sans", "得意黑"),
+    ("Smiley Sans Oblique", "得意黑"),
+    ("Yozai", "悠哉字体"),
+    ("Ma Shan Zheng", "马善政"),
+    ("ZCOOL KuaiLe", "站酷快乐体"),
+    ("Noto Sans CJK SC", "思源黑体"),
+    ("Noto Serif CJK SC", "思源宋体"),
+    ("MiSans", "小米 MiSans"),
+    ("DouyinSans", "抖音美好体"),
+    ("Sarasa Gothic SC", "更纱黑体"),
+    ("Zhuque Fangsong (technical preview)", "朱雀仿宋"),
+    ("BIZ UDMincho", "BIZ UD明朝"),
+];
+
+/// Side of each square texture page the equation pictures share, in pixels.
+const MATH_ATLAS: usize = 2048;`,
+    "文档：已加字体中文名表",
+    "const KFW_FONT_LABELS",
+  );
+  patchOnce(
+    previewsRs,
+    "            self.english_names = names.into_iter().map(|(e, l)| (l, e)).collect();\n            self.families = Some((lang, f));",
+    "            self.english_names = names.into_iter().map(|(e, l)| (l, e)).collect();\n            // KenFutWork: 字体没带中文名时补上，并把下拉项换成显示名（选中经反查表存英文名）。\n            for (family, label) in KFW_FONT_LABELS {\n                if !self.local_names.contains_key(&family.to_lowercase()) {\n                    self.local_names.insert(family.to_lowercase(), (*label).to_string());\n                    self.english_names.insert((*label).to_string(), (*family).to_string());\n                }\n            }\n            let f: Vec<String> = f.iter().map(|name| self.font_shown_now(name)).collect();\n            self.families = Some((lang, f));",
+    "文档：字体下拉换显示名",
+    "self.font_shown_now(name)",
+  );
+  patchOnce(
+    previewsRs,
+    "        self.families.as_ref().map(|(_, f)| f.clone()).unwrap_or_default()\n    }\n\n    /// The Font dialog's Asian text font list: the installed Chinese, Japanese and Korean fonts,\n    /// named as in [`Previews::families`].",
+    "        self.families.as_ref().map(|(_, f)| f.clone()).unwrap_or_default()\n    }\n\n    /// The display name for `family` from the tables built in `families` (no refresh).\n    fn font_shown_now(&self, family: &str) -> String {\n        self.local_names.get(&family.to_lowercase()).cloned().unwrap_or_else(|| family.to_string())\n    }\n\n    /// The Font dialog's Asian text font list: the installed Chinese, Japanese and Korean fonts,\n    /// named as in [`Previews::families`].",
+    "文档：已加显示名读取",
+    "fn font_shown_now(&self, family: &str)",
+  );
+  patchOnce(
+    previewsRs,
+    "        Box::new(|ui: &mut Ui, name: &str| {",
+    "        // KenFutWork: 列表项显示中文名，预览纹理仍按真实家族名绘制——否则中文名画成方框。\n        let names = self.english_names.clone();\n        Box::new(move |ui: &mut Ui, name: &str| {\n            let real = names.get(name).cloned().unwrap_or_else(|| name.to_string());",
+    "文档：字体预览按真实家族名绘制",
+    "let real = names.get(name).cloned()",
+  );
+  patchOnce(
+    previewsRs,
+    "                let mut img = font_entry_image(name, ppp);",
+    "                let mut img = font_entry_image_label(name, &real, ppp);",
+    "文档：预览纹理用真实家族名",
+    "font_entry_image_label(name, &real, ppp)",
+  );
+  patchOnce(
+    previewsRs,
+    "pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {\n    let db = wordcraft_fonts::FontDb::global();\n    let face = db\n        .preview_face(name)\n        .filter(|f| name.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))\n        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, \"Regular\"));\n    let img = wordcraft_render::render_text_line(&face, name, 13.0, 244.0, 22.0, 2.0, ppp);",
+    "pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {\n    font_entry_image_label(name, name, ppp)\n}\n\n/// KenFutWork: 用 `family` 的字体渲染 `text`——列表项显示中文名时，字形仍来自真实家族。\npub fn font_entry_image_label(text: &str, family: &str, ppp: f32) -> egui::ColorImage {\n    let db = wordcraft_fonts::FontDb::global();\n    let face = db\n        .preview_face(family)\n        .filter(|f| text.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))\n        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, \"Regular\"));\n    let img = wordcraft_render::render_text_line(&face, text, 13.0, 244.0, 22.0, 2.0, ppp);",
+    "文档：预览按显示名+真实字形绘制",
+    "pub fn font_entry_image_label(text: &str, family: &str, ppp: f32)",
+  );
+}
+
 // 2) gridcraft 的 web 壳在「浏览器语言是中日韩」时**故意不走**该语言（上游没内嵌 CJK 字形，
 //    怕整屏方框）；本构建已内嵌简体中文字形，这条护栏只剩「中文用户永远看英文」的副作用。
 const gridCraftGuard = `                    if !matches!(
@@ -150,8 +221,8 @@ if (existsSync(gridCraftWeb)) {
   );
   patchOnce(
     ribbonHome,
-    "fn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
-    "/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        \"LXGW WenKai Lite\" => \"霞鹜文楷\",\n        \"LXGW Marker Gothic\" => \"霞鹜漫黑\",\n        \"Smiley Sans\" | \"Smiley Sans Oblique\" => \"得意黑\",\n        \"Yozai\" => \"悠哉字体\",\n        \"Ma Shan Zheng\" => \"马善政\",\n        \"ZCOOL KuaiLe\" => \"站酷快乐体\",\n        \"Noto Sans CJK SC\" => \"思源黑体\",\n        \"Noto Serif CJK SC\" => \"思源宋体\",\n        \"MiSans\" => \"小米 MiSans\",\n        \"BIZ UDMincho\" => \"BIZ UD明朝\",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    "    ui.separator();\n    if ui.button(\"More Functions…\").clicked() {\n        app.open_dialog(\"insertFunction\", json!({}));\n    }\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    "    ui.separator();\n    if ui.button(\"More Functions…\").clicked() {\n        app.open_dialog(\"insertFunction\", json!({}));\n    }\n}\n\n/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        \"LXGW WenKai Lite\" => \"霞鹜文楷\",\n        \"LXGW Marker Gothic\" => \"霞鹜漫黑\",\n        \"Smiley Sans\" | \"Smiley Sans Oblique\" => \"得意黑\",\n        \"Yozai\" => \"悠哉字体\",\n        \"Ma Shan Zheng\" => \"马善政\",\n        \"ZCOOL KuaiLe\" => \"站酷快乐体\",\n        \"Noto Sans CJK SC\" => \"思源黑体\",\n        \"Noto Serif CJK SC\" => \"思源宋体\",\n        \"MiSans\" => \"小米 MiSans\",\n        \"DouyinSans\" => \"抖音美好体\",\n        \"Sarasa Gothic SC\" => \"更纱黑体\",\n        \"Zhuque Fangsong (technical preview)\" => \"朱雀仿宋\",\n        \"BIZ UDMincho\" => \"BIZ UD明朝\",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
     "已加字体中文名映射",
     "fn font_label(family: &str) -> String {",
   );
@@ -255,26 +326,33 @@ if (app === "photocraft") {
       "let langs = nav.languages();",
     );
   }
-  patchOnce(
-    join(source, "crates/ui-egui/Cargo.toml"),
-    "[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
-    "[target.'cfg(target_arch = \"wasm32\")'.dependencies]\nweb-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }\n\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
-    "已给 wasm 加 web-sys（浏览器语言）",
-    "web-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }",
-  );
-  patchOnce(
-    join(source, "crates/ui-egui/src/cjk_fonts.rs"),
-    "/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
+  // 插入锚点留在文件里，patchOnce 的已应用判据不生效：先看是否已加过，避免重复段。
+  const photoCargo = join(source, "crates/ui-egui/Cargo.toml");
+  if (!read(photoCargo).includes("web-sys = { version")) {
+    patchOnce(
+      photoCargo,
+      "[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
+      "[target.'cfg(target_arch = \"wasm32\")'.dependencies]\nweb-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }\n\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
+      "已给 wasm 加 web-sys（浏览器语言）",
+      "web-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }",
+    );
+  }
+  const photoCjk = join(source, "crates/ui-egui/src/cjk_fonts.rs");
+  if (!read(photoCjk).includes("pub fn install_ui_served_font(")) {
+    patchOnce(
+      photoCjk,
+      "/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
     "pub fn install_ui_served_font(ctx: &egui::Context, family: &str, bytes: Vec<u8>) {\n    let name = format!(\"kfw-ui-cjk:{family}\");\n    let mut data = FontData::from_owned(bytes);\n    let families = [FontFamily::Proportional, FontFamily::Monospace]\n        .into_iter()\n        .map(|family| InsertFontFamily { family, priority: FontPriority::Lowest })\n        .collect();\n    crate::theme::size_ui_font(ctx, &name, &mut data);\n    ctx.add_font(FontInsert { name, data, families });\n    ctx.request_repaint();\n}\n\n/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
     "已加界面中文字体注入",
     "pub fn install_ui_served_font(",
-  );
+    );
+  }
   const typeTool = join(source, "crates/ui-egui/src/type_tool.rs");
   if (existsSync(typeTool)) {
     patchOnce(
       typeTool,
-      "fn localized_families() -> Arc<HashMap<String, String>> {",
-      "const KFW_FONT_LABELS: &[(&str, &str)] = &[\n    (\"LXGW WenKai Lite\", \"霞鹜文楷\"),\n    (\"LXGW Marker Gothic\", \"霞鹜漫黑\"),\n    (\"Smiley Sans\", \"得意黑\"),\n    (\"Smiley Sans Oblique\", \"得意黑\"),\n    (\"Yozai\", \"悠哉字体\"),\n    (\"Ma Shan Zheng\", \"马善政毛笔楷书\"),\n    (\"ZCOOL KuaiLe\", \"站酷快乐体\"),\n    (\"Noto Sans CJK SC\", \"思源黑体\"),\n    (\"Noto Serif CJK SC\", \"思源宋体\"),\n    (\"MiSans\", \"小米 MiSans\"),\n    (\"Sarasa Gothic SC\", \"更纱黑体\"),\n];\n\nfn localized_families() -> Arc<HashMap<String, String>> {",
+      "/// The fonts' localized family names, keyed by family. Cached until the shared engine registers fonts.\nfn localized_families() -> Arc<HashMap<String, String>> {",
+      "/// The fonts' localized family names, keyed by family. Cached until the shared engine registers fonts.\n/// KenFutWork: 字体自带本地名缺失时的中文显示名（英文家族名 → 中文名）。\nconst KFW_FONT_LABELS: &[(&str, &str)] = &[\n    (\"LXGW WenKai Lite\", \"霞鹜文楷\"),\n    (\"LXGW Marker Gothic\", \"霞鹜漫黑\"),\n    (\"Smiley Sans\", \"得意黑\"),\n    (\"Smiley Sans Oblique\", \"得意黑\"),\n    (\"Yozai\", \"悠哉字体\"),\n    (\"Ma Shan Zheng\", \"马善政毛笔楷书\"),\n    (\"ZCOOL KuaiLe\", \"站酷快乐体\"),\n    (\"Noto Sans CJK SC\", \"思源黑体\"),\n    (\"Noto Serif CJK SC\", \"思源宋体\"),\n    (\"MiSans\", \"小米 MiSans\"),\n    (\"DouyinSans\", \"抖音美好体\"),\n    (\"Sarasa Gothic SC\", \"更纱黑体\"),\n    (\"Zhuque Fangsong (technical preview)\", \"朱雀仿宋\"),\n];\n\nfn localized_families() -> Arc<HashMap<String, String>> {",
       "已加字体菜单中文名表",
       "const KFW_FONT_LABELS",
     );
@@ -302,13 +380,15 @@ if (app === "photocraft") {
       "已初始化中文字体标记",
       "ui_cjk: false",
     );
-    patchOnce(
-      webRs,
-      "        served_fonts::install(&mut self.app, arrived);",
-      "        if !self.ui_cjk && let Some((family, bytes)) = arrived.iter().find(|(family, _)| family.contains(\"CJK\") || family.chars().any(|c| c as u32 >= 0x2E80)) {\n            photocraft_ui_egui::cjk_fonts::install_ui_served_font(ctx, family, bytes.clone());\n            self.ui_cjk = true;\n        }\n        served_fonts::install(&mut self.app, arrived);",
-      "已在字体送达时挂界面中文字体",
-      "install_ui_served_font(ctx, family, bytes.clone())",
-    );
+    if (!read(webRs).includes("install_ui_served_font(ctx, family, bytes.clone())")) {
+      patchOnce(
+        webRs,
+        "        served_fonts::install(&mut self.app, arrived);",
+        "        if !self.ui_cjk && let Some((family, bytes)) = arrived.iter().find(|(family, _)| family.contains(\"CJK\") || family.chars().any(|c| c as u32 >= 0x2E80)) {\n            photocraft_ui_egui::cjk_fonts::install_ui_served_font(ctx, family, bytes.clone());\n            self.ui_cjk = true;\n        }\n        served_fonts::install(&mut self.app, arrived);",
+        "已在字体送达时挂界面中文字体",
+        "install_ui_served_font(ctx, family, bytes.clone())",
+      );
+    }
   }
 }
 
@@ -322,11 +402,13 @@ if (app === "filmcraft") {
     "let chinese = scripts.split",
   );
   const themeRs = join(source, "crates/ui-egui/src/theme.rs");
-  if (existsSync(themeRs)) {
+  // 插入点在文档注释之前、注释仍留在文件里，patchOnce 的「已应用」判据不会生效；
+  // 先看是否已有 font_label，避免重跑时重复插入。
+  if (existsSync(themeRs) && !read(themeRs).includes("pub fn font_label(family: &str)")) {
     patchOnce(
       themeRs,
-      "pub fn font_families() -> Vec<FontFamily> {",
-      'pub fn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政毛笔楷书",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "Sarasa Gothic SC" => "更纱黑体",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\npub fn font_families() -> Vec<FontFamily> {',
+      "/// Every font family the theme defines (fallback fonts such as the Japanese fonts are added to each\n/// of them).\npub fn font_families() -> Vec<FontFamily> {",
+      '/// KenFutWork: 字体菜单显示中文名；选中的仍是真实家族名。\npub fn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政毛笔楷书",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "DouyinSans" => "抖音美好体",\n        "Sarasa Gothic SC" => "更纱黑体",\n        "Zhuque Fangsong (technical preview)" => "朱雀仿宋",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\n/// Every font family the theme defines (fallback fonts such as the Japanese fonts are added to each\n/// of them).\npub fn font_families() -> Vec<FontFamily> {',
       "视频：已加字体中文名表",
       "pub fn font_label(family: &str) -> String {",
     );
@@ -355,8 +437,9 @@ const KFW_FONT_LABELS: &[(&str, &str)] = &[
     ("Noto Sans CJK SC", "思源黑体"),
     ("Noto Serif CJK SC", "思源宋体"),
     ("MiSans", "小米 MiSans"),
-    ("Douyin Sans", "抖音美好体"),
+    ("DouyinSans", "抖音美好体"),
     ("Sarasa Gothic SC", "更纱黑体"),
+    ("Zhuque Fangsong (technical preview)", "朱雀仿宋"),
     ("HarmonyOS Sans SC", "鸿蒙黑体"),
     ("HarmonyOS Sans", "鸿蒙黑体"),
 ];
@@ -564,13 +647,7 @@ const ZERO_PATCHES = {
       ').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
     ],
   ],
-  filmcraft: [
-    [
-      "crates/text/build.rs",
-      'if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {',
-      'if wasm && !((*family == "BIZ UDPGothic" && *style == "Regular") || scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"))) {',
-    ],
-  ],
+  // filmcraft 的放行由 2d 段处理（同一处改成 `!chinese &&` 形式），此处不再重复。
   vectorcraft: [
     [
       "crates/text/build.rs",
