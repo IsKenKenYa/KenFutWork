@@ -179,6 +179,16 @@ if (existsSync(gridCraftWeb)) {
     );
   }
   const dialogShow = join(source, "crates/ui-egui/src/dialogs/show.rs");
+  // 网页端「另存副本」原来是自绘的文件名输入框；宿主没有文件对话框时应直接走系统选择器。
+  if (existsSync(dialogShow)) {
+    patchOnce(
+      dialogShow,
+      '                    let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();\n                    ui.text_edit_singleline(&mut path);',
+      '                    let web = app.services.pick_save.is_none() && app.services.download.is_some();\n                    let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();\n                    if !web {\n                        ui.text_edit_singleline(&mut path);\n                    }',
+      "已让网页端另存副本走系统选择器",
+      "let web = app.services.pick_save.is_none() && app.services.download.is_some();",
+    );
+  }
   if (existsSync(dialogShow)) {
     patchOnce(
       dialogShow,
