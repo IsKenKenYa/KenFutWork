@@ -84,7 +84,7 @@ export function WorkbenchModeNavigation({
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-stretch gap-1 border-y border-foreground/20"
+        className="flex items-stretch border-y border-foreground/20"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持文字分档的布局
@@ -95,7 +95,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center rounded-lg py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center rounded-md py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
           >
             <span className="truncate">{item.label}</span>
           </button>
