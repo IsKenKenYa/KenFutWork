@@ -43,6 +43,8 @@ const BUNDLED_LICENSES: Record<string, string> = {
   MaShanZheng: "OFL-Ma-Shan-Zheng.txt",
   ZCOOLKuaiLe: "OFL-ZCOOL-KuaiLe.txt",
   JetBrainsMono: "OFL-JetBrains-Mono.txt",
+  DouyinSans: "OFL-Douyin-Sans.txt",
+  SarasaGothicSC: "OFL-Sarasa-Gothic.txt",
 };
 /** 家族名不含汉字的 CJK 字体：清单要标 Hani，编辑器才会把它当 CJK 回退候选。 */
 const BUNDLED_CJK = new Set([
@@ -54,6 +56,8 @@ const BUNDLED_CJK = new Set([
   "ZhuqueFangsong",
   "MaShanZheng",
   "ZCOOLKuaiLe",
+  "DouyinSans",
+  "SarasaGothicSC",
 ]);
 const FORMAT_BY_EXT: Record<string, WorkFontFormat> = {
   ".ttf": "ttf",

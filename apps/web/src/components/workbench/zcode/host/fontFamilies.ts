@@ -21,12 +21,27 @@ const CJK = /[\u3400-\u9fff\uf900-\ufaff]/u;
  * 是拉丁字体，保持原名。只影响列表展示，清单与字体内部名仍是原文。
  */
 const DISPLAY_NAMES: Record<string, string> = {
-  "noto sans cjk sc": "思源黑体",
-  "noto serif cjk sc": "思源宋体",
-  "ma shan zheng": "马善政",
-  "zcool kuaile": "站酷快乐体",
-  misans: "小米 MiSans",
-  "biz udmincho": "BIZ UD明朝",
+  // 英文转写的字体名 → 中文名。
+  "noto sans cjk sc": "思源黑体（开源）",
+  "noto serif cjk sc": "思源宋体（开源）",
+  "ma shan zheng": "马善政毛笔楷书（开源）",
+  "zcool kuaile": "站酷快乐体（站酷）",
+  misans: "小米 MiSans（小米）",
+  "biz udmincho": "BIZ UD明朝（日文）",
+  // 列表里带出品方/许可标注（用户口径：著名的字体在名字后面标一下）。
+  "得意黑": "得意黑（开源）",
+  "马善政毛笔楷书": "马善政毛笔楷书（开源）",
+  "思源黑体": "思源黑体（开源）",
+  "思源宋体": "思源宋体（开源）",
+  "霞鹜漫黑": "霞鹜漫黑（开源）",
+  "霞鹜文楷": "霞鹜文楷（开源）",
+  "悠哉字体": "悠哉字体（开源）",
+  "站酷快乐体": "站酷快乐体（站酷）",
+  "朱雀仿宋": "朱雀仿宋（开源）",
+  "抖音美好体": "抖音美好体（开源）",
+  "更纱黑体 sc": "更纱黑体（开源）",
+  "小米 misans": "小米 MiSans（小米）",
+  "biz ud明朝": "BIZ UD明朝（日文）",
 };
 
 /** 「朱雀仿宋（预览测试版）」→「朱雀仿宋」；「霞鹜文楷 轻便版」→「霞鹜文楷」。 */
@@ -39,6 +54,9 @@ export function fontDisplayName(family: string): string {
     .replace(/\s*(轻便版|预览版|测试版)\s*$/u, "")
     .replace(/\s+/gu, " ")
     .trim();
+  // 去掉「轻便版」后要再查一次名字表，否则同一家族一半带标注、一半不带。
+  const knownAfter = DISPLAY_NAMES[stripped.toLowerCase()];
+  if (knownAfter) return knownAfter;
   return stripped || trimmed;
 }
 
