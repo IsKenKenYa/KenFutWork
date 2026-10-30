@@ -333,6 +333,156 @@ if (app === "filmcraft") {
   }
 }
 
+// 2e) 矢量（VectorCraft）：中文界面下中文字体显示中文名（选中值仍是真实家族名）。
+if (app === "vectorcraft") {
+  const fontMenu = join(source, "crates/ui-egui/src/font_menu.rs");
+  patchOnce(
+    fontMenu,
+    "use crate::VectorcraftApp;\nuse crate::theme::Tokens;\nuse crate::widgets;\n\n/// What happened in the menu this frame.",
+    `use crate::VectorcraftApp;
+use crate::theme::Tokens;
+use crate::widgets;
+
+/// KenFutWork: 中文界面下中文字体的显示名。字体值仍是真实家族名，否则文档选不中字。
+const KFW_FONT_LABELS: &[(&str, &str)] = &[
+    ("LXGW WenKai Lite", "霞鹜文楷"),
+    ("LXGW Marker Gothic", "霞鹜漫黑"),
+    ("Smiley Sans", "得意黑"),
+    ("Smiley Sans Oblique", "得意黑"),
+    ("Yozai", "悠哉字体"),
+    ("Ma Shan Zheng", "马善政毛笔楷书"),
+    ("ZCOOL KuaiLe", "站酷快乐体"),
+    ("Noto Sans CJK SC", "思源黑体"),
+    ("Noto Serif CJK SC", "思源宋体"),
+    ("MiSans", "小米 MiSans"),
+    ("Douyin Sans", "抖音美好体"),
+    ("Sarasa Gothic SC", "更纱黑体"),
+    ("HarmonyOS Sans SC", "鸿蒙黑体"),
+    ("HarmonyOS Sans", "鸿蒙黑体"),
+];
+
+/// 中文字体的中文显示名。
+pub fn font_label(family: &str) -> Option<&'static str> {
+    KFW_FONT_LABELS.iter().find(|(f, _)| f.eq_ignore_ascii_case(family)).map(|(_, label)| *label)
+}
+
+/// How the menus label \`family\`: Chinese names in a Chinese interface, else the Show Font Names
+/// in English / native name.
+pub fn shown_name(db: &vectorcraft_text::FontDb, family: &str, english: bool) -> String {
+    if crate::i18n::current().code() == "zh-hans"
+        && let Some(label) = font_label(family)
+    {
+        return label.to_string();
+    }
+    db.family_display_name(family, english)
+}
+
+/// What happened in the menu this frame.`,
+    "矢量：已加字体中文名表",
+    "pub fn shown_name(",
+  );
+  patchOnce(
+    fontMenu,
+    "type RowsKey = (String, usize, Option<FontClass>, bool, bool, Vec<String>",
+    "type RowsKey = (String, usize, Option<FontClass>, bool, bool, &'static str, Vec<String>",
+    "矢量：字体行缓存按语言失效",
+    "bool, &'static str, Vec<String>",
+  );
+  patchOnce(
+    fontMenu,
+    "        look.english_names,\n        st.expanded.clone(),",
+    "        look.english_names,\n        crate::i18n::current().code(),\n        st.expanded.clone(),",
+    "矢量：字体行缓存键加语言",
+    "crate::i18n::current().code(),\n        st.expanded.clone(),",
+  );
+  patchOnce(
+    fontMenu,
+    "            let label = db.family_display_name(f, look.english_names);",
+    "            let label = shown_name(db, f, look.english_names);",
+    "矢量：字体搜索用中文名",
+    "let label = shown_name(db, f, look.english_names);",
+  );
+  patchOnce(
+    fontMenu,
+    "                Row::Family(f) => db.family_display_name(f, look.english_names),",
+    "                Row::Family(f) => shown_name(db, f, look.english_names),",
+    "矢量：字体列表用中文名",
+    "Row::Family(f) => shown_name(db, f, look.english_names),",
+  );
+  const menusRs = join(source, "crates/ui-egui/src/menus.rs");
+  patchOnce(
+    menusRs,
+    "    static ITEMS: std::sync::Mutex<(u64, bool, Vec<Item>)> = std::sync::Mutex::new((u64::MAX, true, Vec::new()));",
+    '    static ITEMS: std::sync::Mutex<(u64, bool, &\'static str, Vec<Item>)> = std::sync::Mutex::new((u64::MAX, true, "", Vec::new()));',
+    "矢量：字体子菜单缓存加语言",
+    '&\'static str, Vec<Item>)>',
+  );
+  patchOnce(
+    menusRs,
+    "    if items.0 != generation || items.1 != english_names {\n        let list = fams\n            .iter()\n            .map(|f| {\n                let english = f.as_str();\n                let shown = db.family_display_name(english, english_names);",
+    "    let lang = crate::i18n::current().code();\n    if items.0 != generation || items.1 != english_names || items.2 != lang {\n        let list = fams\n            .iter()\n            .map(|f| {\n                let english = f.as_str();\n                let shown = crate::font_menu::shown_name(&db, english, english_names);",
+    "矢量：文字菜单字体子项用中文名",
+    "items.2 != lang",
+  );
+  patchOnce(
+    menusRs,
+    "        *items = (generation, english_names, list);",
+    "        *items = (generation, english_names, lang, list);",
+    "矢量：字体子菜单存语言",
+    "(generation, english_names, lang, list)",
+  );
+  const chromeRs = join(source, "crates/ui-egui/src/chrome.rs");
+  patchOnce(
+    chromeRs,
+    "            let discord = search && room >= ws_w + 8.0 + gap + icon + 10.0 + gap + crate::community::discord_width(ui, false);\n",
+    "",
+    "矢量：去掉顶栏 Discord 入口",
+    "let mut rui = ui.new_child(egui::UiBuilder::new().max_rect(right)",
+  );
+  patchOnce(
+    chromeRs,
+    "            if discord {\n                ui.add_space(10.0);\n                crate::community::discord_button(app, ui, false);\n            }\n",
+    "",
+    "矢量：去掉顶栏 Discord 按钮",
+    "if app.services.native_menu.is_some() {\n                let title",
+  );
+  patchOnce(
+    menusRs,
+    '            vec![c("About VectorCraft", "help.about"), c("Join Our Discord", "help.discord")],',
+    '            vec![c("About VectorCraft", "help.about")],',
+    "矢量：应用菜单去掉 Discord",
+    'vec![c("About VectorCraft", "help.about")],',
+  );
+  patchOnce(
+    menusRs,
+    '            "Help",\n            vec![\n                c("Join Our Discord", "help.discord"),\n                c("ArtCraft Website", "help.website"),',
+    '            "Help",\n            vec![\n                c("ArtCraft Website", "help.website"),',
+    "矢量：帮助菜单去掉 Discord",
+    '"Help",\n            vec![\n                c("ArtCraft Website"',
+  );
+  patchOnce(
+    join(source, "crates/ui-egui/src/community.rs"),
+    "pub fn links(app: &mut VectorcraftApp, ui: &mut Ui) {\n    discord_button(app, ui, true);\n    ui.add_space(8.0);\n    let l =",
+    "pub fn links(app: &mut VectorcraftApp, ui: &mut Ui) {\n    let l =",
+    "矢量：欢迎页去掉 Discord",
+    "pub fn links(app: &mut VectorcraftApp, ui: &mut Ui) {\n    let l =",
+  );
+  patchOnce(
+    fontMenu,
+    "        let wanted = |f: &str| {\n            let label = shown_name(db, f, look.english_names);",
+    "        let wanted = |f: &str| {\n            // 日文字体不上菜单（宿主字体库也不含日文字体）。\n            if f.eq_ignore_ascii_case(\"BIZ UDPGothic\") {\n                return false;\n            }\n            let label = shown_name(db, f, look.english_names);",
+    "矢量：字体菜单隐藏日文字体",
+    "日文字体不上菜单",
+  );
+  patchOnce(
+    menusRs,
+    "        let list = fams\n            .iter()\n            .map(|f| {\n                let english = f.as_str();",
+    "        let list = fams\n            .iter()\n            .filter(|f| !f.eq_ignore_ascii_case(\"BIZ UDPGothic\"))\n            .map(|f| {\n                let english = f.as_str();",
+    "矢量：文字菜单隐藏日文字体",
+    ".filter(|f| !f.eq_ignore_ascii_case(\"BIZ UDPGothic\"))",
+  );
+}
+
 // 3) wasm 也读简体中文 manifest（仅 gridcraft/wordcraft 把字体表建在 ui-egui）
 const buildPath = join(source, "crates/ui-egui/build.rs");
 const uiEguiChinese =
