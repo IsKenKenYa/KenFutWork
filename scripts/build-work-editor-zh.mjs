@@ -312,6 +312,27 @@ if (app === "photocraft") {
   }
 }
 
+// 2d) 视频（FilmCraft）：wasm 放行中文字形 + 字体菜单中文名（选中值仍是真实家族名）。
+if (app === "filmcraft") {
+  patchOnce(
+    join(source, "crates/text/build.rs"),
+    'if wasm && !(*family == "BIZ UDPGothic" && *style == "Regular") {',
+    '// KenFutWork: web 构建也放行中文（Hani/Hans）字形。\n        let chinese = scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"));\n        if wasm && !chinese && !(*family == "BIZ UDPGothic" && *style == "Regular") {',
+    "视频：已放行 web 中文字形",
+    "let chinese = scripts.split",
+  );
+  const themeRs = join(source, "crates/ui-egui/src/theme.rs");
+  if (existsSync(themeRs)) {
+    patchOnce(
+      themeRs,
+      "pub fn font_families() -> Vec<FontFamily> {",
+      'pub fn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政毛笔楷书",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "Sarasa Gothic SC" => "更纱黑体",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\npub fn font_families() -> Vec<FontFamily> {',
+      "视频：已加字体中文名表",
+      "pub fn font_label(family: &str) -> String {",
+    );
+  }
+}
+
 // 3) wasm 也读简体中文 manifest（仅 gridcraft/wordcraft 把字体表建在 ui-egui）
 const buildPath = join(source, "crates/ui-egui/build.rs");
 const uiEguiChinese =
