@@ -229,6 +229,89 @@ if (existsSync(gridCraftWeb)) {
   );
 }
 
+// 2c) 照片（PhotoCraft）：网页端语言检测 + 界面中文字形 + 字体菜单中文名。
+if (app === "photocraft") {
+  const systemRs = join(source, "crates/ui-egui/src/i18n/system.rs");
+  if (existsSync(systemRs)) {
+    patchOnce(
+      systemRs,
+      "#[cfg(not(target_arch = \"wasm32\"))]\nconst MAX_SYSTEM_TAGS: usize = 64;\n#[cfg(not(target_arch = \"wasm32\"))]\nconst MAX_SYSTEM_TAG_BYTES: usize = 128;",
+      "// KenFutWork: 网页端也要用同一套上限（浏览器语言列表）。\nconst MAX_SYSTEM_TAGS: usize = 64;\nconst MAX_SYSTEM_TAG_BYTES: usize = 128;",
+      "已去掉语言上限的 native-only 门",
+      "// KenFutWork: 网页端也要用同一套上限（浏览器语言列表）。",
+    );
+    patchOnce(
+      systemRs,
+      "#[cfg(not(target_arch = \"wasm32\"))]\nfn bounded_tags(",
+      "fn bounded_tags(",
+      "已让浏览器语言共用 bounded_tags",
+      "fn bounded_tags(",
+    );
+    patchOnce(
+      systemRs,
+      "#[cfg(all(not(test), target_arch = \"wasm32\"))]\nfn detect_system_tags() -> Vec<String> {\n    Vec::new()\n}",
+      "#[cfg(all(not(test), target_arch = \"wasm32\"))]\nfn detect_system_tags() -> Vec<String> {\n    // KenFutWork: 网页端没有 OS locale API，改读浏览器语言列表。\n    let mut tags = Vec::new();\n    if let Some(window) = web_sys::window() {\n        let nav = window.navigator();\n        let langs = nav.languages();\n        for i in 0..langs.length() {\n            if let Some(tag) = langs.get(i).as_string() {\n                tags.push(tag);\n            }\n        }\n        if tags.is_empty() {\n            if let Some(tag) = nav.language() {\n                tags.push(tag);\n            }\n        }\n    }\n    bounded_tags(tags)\n}",
+      "已让网页端读浏览器语言",
+      "let langs = nav.languages();",
+    );
+  }
+  patchOnce(
+    join(source, "crates/ui-egui/Cargo.toml"),
+    "[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
+    "[target.'cfg(target_arch = \"wasm32\")'.dependencies]\nweb-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }\n\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
+    "已给 wasm 加 web-sys（浏览器语言）",
+    "web-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }",
+  );
+  patchOnce(
+    join(source, "crates/ui-egui/src/cjk_fonts.rs"),
+    "/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
+    "pub fn install_ui_served_font(ctx: &egui::Context, family: &str, bytes: Vec<u8>) {\n    let name = format!(\"kfw-ui-cjk:{family}\");\n    let mut data = FontData::from_owned(bytes);\n    let families = [FontFamily::Proportional, FontFamily::Monospace]\n        .into_iter()\n        .map(|family| InsertFontFamily { family, priority: FontPriority::Lowest })\n        .collect();\n    crate::theme::size_ui_font(ctx, &name, &mut data);\n    ctx.add_font(FontInsert { name, data, families });\n    ctx.request_repaint();\n}\n\n/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
+    "已加界面中文字体注入",
+    "pub fn install_ui_served_font(",
+  );
+  const typeTool = join(source, "crates/ui-egui/src/type_tool.rs");
+  if (existsSync(typeTool)) {
+    patchOnce(
+      typeTool,
+      "fn localized_families() -> Arc<HashMap<String, String>> {",
+      "const KFW_FONT_LABELS: &[(&str, &str)] = &[\n    (\"LXGW WenKai Lite\", \"霞鹜文楷\"),\n    (\"LXGW Marker Gothic\", \"霞鹜漫黑\"),\n    (\"Smiley Sans\", \"得意黑\"),\n    (\"Smiley Sans Oblique\", \"得意黑\"),\n    (\"Yozai\", \"悠哉字体\"),\n    (\"Ma Shan Zheng\", \"马善政毛笔楷书\"),\n    (\"ZCOOL KuaiLe\", \"站酷快乐体\"),\n    (\"Noto Sans CJK SC\", \"思源黑体\"),\n    (\"Noto Serif CJK SC\", \"思源宋体\"),\n    (\"MiSans\", \"小米 MiSans\"),\n    (\"Sarasa Gothic SC\", \"更纱黑体\"),\n];\n\nfn localized_families() -> Arc<HashMap<String, String>> {",
+      "已加字体菜单中文名表",
+      "const KFW_FONT_LABELS",
+    );
+    patchOnce(
+      typeTool,
+      "    let v = Arc::new(photocraft_text::shared().lock().map(|mut e| e.fonts.localized_family_names()).unwrap_or_default());",
+      "    let mut names = photocraft_text::shared().lock().map(|mut e| e.fonts.localized_family_names()).unwrap_or_default();\n    for (family, label) in KFW_FONT_LABELS {\n        match names.get(*family) {\n            Some(existing) if existing != family => {}\n            _ => {\n                names.insert((*family).to_string(), (*label).to_string());\n            }\n        }\n    }\n    let v = Arc::new(names);",
+      "已用中文名表补字体菜单",
+      "let mut names = photocraft_text::shared().lock()",
+    );
+  }
+  const webRs = join(source, "apps/photocraft-web/src/web.rs");
+  if (existsSync(webRs)) {
+    patchOnce(
+      webRs,
+      "    served: Served,\n    database: Option<web_sys::IdbDatabase>,\n    presets: crate::preset_bridge::Bridge,\n}",
+      "    served: Served,\n    database: Option<web_sys::IdbDatabase>,\n    presets: crate::preset_bridge::Bridge,\n    /// KenFutWork: 是否已把中文字体挂到界面字体栈。\n    ui_cjk: bool,\n}",
+      "已给 WebShell 加中文字体标记",
+      "ui_cjk: bool,",
+    );
+    patchOnce(
+      webRs,
+      "Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets }))",
+      "Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets, ui_cjk: false }))",
+      "已初始化中文字体标记",
+      "ui_cjk: false",
+    );
+    patchOnce(
+      webRs,
+      "        served_fonts::install(&mut self.app, arrived);",
+      "        if !self.ui_cjk && let Some((family, bytes)) = arrived.iter().find(|(family, _)| family.contains(\"CJK\") || family.chars().any(|c| c as u32 >= 0x2E80)) {\n            photocraft_ui_egui::cjk_fonts::install_ui_served_font(ctx, family, bytes.clone());\n            self.ui_cjk = true;\n        }\n        served_fonts::install(&mut self.app, arrived);",
+      "已在字体送达时挂界面中文字体",
+      "install_ui_served_font(ctx, family, bytes.clone())",
+    );
+  }
+}
+
 // 3) wasm 也读简体中文 manifest（仅 gridcraft/wordcraft 把字体表建在 ui-egui）
 const buildPath = join(source, "crates/ui-egui/build.rs");
 const uiEguiChinese =
