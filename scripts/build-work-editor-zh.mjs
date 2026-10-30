@@ -132,12 +132,83 @@ if (existsSync(gridCraftWeb)) {
     "已解除中文回退英文护栏",
   );
   // Ribbon 的字体框只列硬编码名单：宿主上传的字体注册进了字体库却选不到。
+  // 同时把字体名换成中文显示（选中值仍是真实家族名，写进单元格才找得到字）。
+  const ribbonHome = join(source, "crates/ui-egui/src/ribbon/home.rs");
   patchOnce(
-    join(source, "crates/ui-egui/src/ribbon/home.rs"),
+    ribbonHome,
     "    let items: Vec<(&str, String)> = FONTS.iter().map(|f| (*f, f.to_string())).collect();",
-    "    // KenFutWork: 字体库里的家族排前面（宿主上传 + 内置），再列硬编码名单；\n    // 只列硬编码名单时用户装完字体在框里找不到。\n    let installed = crate::fonts::families();\n    let mut items: Vec<(&str, String)> = Vec::new();\n    for family in &installed {\n        if FONTS.iter().any(|known| known.eq_ignore_ascii_case(family)) {\n            continue;\n        }\n        items.push((family.as_str(), family.clone()));\n    }\n    for f in FONTS {\n        items.push((*f, f.to_string()));\n    }",
+    "    // KenFutWork: 字体库里的家族排前面（宿主上传 + 内置），再列硬编码名单；\n    // 只列硬编码名单时用户装完字体在框里找不到。\n    let installed = crate::fonts::families();\n    let mut items: Vec<(&str, String)> = Vec::new();\n    for family in &installed {\n        if FONTS.iter().any(|known| known.eq_ignore_ascii_case(family)) {\n            continue;\n        }\n        items.push((family.as_str(), font_label(family)));\n    }\n    for f in FONTS {\n        items.push((*f, f.to_string()));\n    }",
     "已让字体框列出字体库全部家族",
+    "        items.push((family.as_str(), font_label(family)));",
   );
+  patchOnce(
+    ribbonHome,
+    "    let resp = ui.add_sized([150.0, 24.0], egui::Button::new(egui::RichText::new(&name).font(theme::ui_font(12.5))));",
+    "    let resp = ui.add_sized([150.0, 24.0], egui::Button::new(egui::RichText::new(font_label(&name)).font(theme::ui_font(12.5))));",
+    "已让字体框显示中文名",
+    "egui::RichText::new(font_label(&name))",
+  );
+  patchOnce(
+    ribbonHome,
+    "fn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    "/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        \"LXGW WenKai Lite\" => \"霞鹜文楷\",\n        \"LXGW Marker Gothic\" => \"霞鹜漫黑\",\n        \"Smiley Sans\" | \"Smiley Sans Oblique\" => \"得意黑\",\n        \"Yozai\" => \"悠哉字体\",\n        \"Ma Shan Zheng\" => \"马善政\",\n        \"ZCOOL KuaiLe\" => \"站酷快乐体\",\n        \"Noto Sans CJK SC\" => \"思源黑体\",\n        \"Noto Serif CJK SC\" => \"思源宋体\",\n        \"MiSans\" => \"小米 MiSans\",\n        \"BIZ UDMincho\" => \"BIZ UD明朝\",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    "已加字体中文名映射",
+    "fn font_label(family: &str) -> String {",
+  );
+  // 网页端「另存为」可能只拿到没有扩展名的文件名（如 “1”）：按 Excel 默认补 .xlsx，
+  // 否则引擎直接报 unknown file format，用户看到的就是「保存坏了」。
+  const engineFile = join(source, "crates/engine/src/cmd/file.rs");
+  if (existsSync(engineFile)) {
+    patchOnce(
+      engineFile,
+      "    let d = s.doc_mut()?;\n    // The document's own file keeps the format its content had when opened;",
+      "    // KenFutWork: 没有扩展名的文件名按 .xlsx 保存，而不是报 unknown file format。\n    let path = if std::path::Path::new(&path).extension().is_none() { format!(\"{path}.xlsx\") } else { path };\n    let d = s.doc_mut()?;\n    // The document's own file keeps the format its content had when opened;",
+      "已让无扩展名的保存补 .xlsx",
+      "let path = if std::path::Path::new(&path).extension().is_none()",
+    );
+  }
+  // 弹窗正文（保存/新建）上游没走 i18n，只翻了按钮：这里补中文并接到 lang.tr。
+  const zhTable = join(source, "crates/ui-egui/src/i18n/zh.rs");
+  if (existsSync(zhTable)) {
+    patchOnce(
+      zhTable,
+      "        _ => return None,",
+      "        \"Do you want to save the changes?\" => \"是否保存更改？\",\n        \"Don't Save\" => \"不保存\",\n        \"Cancel\" => \"取消\",\n        \"OK\" => \"确定\",\n        \"Save a copy as\" => \"另存副本\",\n        \"Start a new workbook\" => \"新建工作簿\",\n        \"Open…\" => \"打开…\",\n        _ => return None,",
+      "已补中文弹窗文案",
+      '"Do you want to save the changes?" => "是否保存更改？",',
+    );
+  }
+  const dialogShow = join(source, "crates/ui-egui/src/dialogs/show.rs");
+  if (existsSync(dialogShow)) {
+    patchOnce(
+      dialogShow,
+      '                    ui.label(format!("Do you want to save the changes you made to {}?", d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")));',
+      '                    let lang = app.ui.language;\n                    ui.label(lang.tr("Do you want to save the changes?"));',
+      "已让关闭确认弹窗走中文",
+      'ui.label(lang.tr("Do you want to save the changes?"));',
+    );
+    patchOnce(
+      dialogShow,
+      '                            if ui.button(label).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {',
+      '                            if ui.button(lang.tr(label)).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {',
+      "已让关闭确认按钮走中文",
+      "if ui.button(lang.tr(label)).clicked() && app.answer_save_changes",
+    );
+    patchOnce(
+      dialogShow,
+      '                    ui.label(format!("Save a copy as .{fmt}"));',
+      '                    ui.label(format!("{} .{fmt}", app.ui.language.tr("Save a copy as")));',
+      "已让另存副本弹窗走中文",
+      'app.ui.language.tr("Save a copy as")',
+    );
+    patchOnce(
+      dialogShow,
+      '                    ui.heading("Start a new workbook");',
+      '                    ui.heading(app.ui.language.tr("Start a new workbook"));',
+      "已让新建弹窗标题走中文",
+      'app.ui.language.tr("Start a new workbook")',
+    );
+  }
   // 老的英文构建会把 language=en 写进 localStorage，下次启动又被恢复成英文；那不是用户选择。
   // 浏览器明确是中文时以中文为准（界面里手动切换的档位本轮仍生效）。
   patchOnce(
