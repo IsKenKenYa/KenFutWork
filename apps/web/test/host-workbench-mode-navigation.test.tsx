@@ -109,7 +109,7 @@ describe("HostWorkbenchModeNavigation 四模式", () => {
     }
   });
 
-  it("展开态每档独立圆角，轨道不再画上下分界线（用户口径）", () => {
+  it("展开态保留上下分界线，每档自己再是圆角卡片（用户口径）", () => {
     render(
       <WorkbenchModeNavigation
         mode="code"
@@ -118,7 +118,7 @@ describe("HostWorkbenchModeNavigation 四模式", () => {
       />,
     );
     const group = screen.getByRole("radiogroup", { name: "模式切换" });
-    expect(group.className).not.toContain("border-y");
+    expect(group.className).toContain("border-y");
     for (const radio of group.querySelectorAll<HTMLButtonElement>(
       "[role='radio']",
     )) {

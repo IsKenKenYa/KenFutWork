@@ -80,12 +80,11 @@ export function WorkbenchModeNavigation({
     );
   return (
     <div className="px-2 pt-3 pb-1">
-      {/* 用户口径：每个模式各成一枚圆角卡片（与侧栏入口同款 rounded-lg），
-          选中项灰底填充——不再用上下两条分界线把四项连成一条轨道。 */}
+      {/* 用户口径：保留模式行上下两条分界线（tab 轨道），每档自己是圆角卡片。 */}
       <div
         role="radiogroup"
         aria-label="模式切换"
-        className="flex items-stretch gap-1"
+        className="flex items-stretch gap-1 border-y border-foreground/20"
       >
         {modeItems.map((item) => (
           // biome-ignore lint/a11y/useSemanticElements: 提取现有分段radio按钮，保持文字分档的布局

@@ -15,6 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
+import { fontFamilies } from "./fontFamilies.js";
 import {
   getWorkSurfaceView,
   openWorkEditor,
@@ -382,28 +383,12 @@ function WorkFontsSection({ active }: { active: boolean }) {
     [load],
   );
 
-  // 一个家族一份记录：Inter 有 Regular/Bold 两个文件，按文件列会看起来「装了两份」。
-  const families = useMemo(() => {
-    const groups = new Map<
-      string,
-      { name: string; builtin: boolean; userFiles: string[] }
-    >();
-    for (const font of fonts?.fonts ?? []) {
-      const key = font.family.toLowerCase();
-      const group = groups.get(key);
-      if (group) {
-        if (!font.builtin) group.userFiles.push(font.fileName);
-        group.builtin ||= font.builtin;
-      } else {
-        groups.set(key, {
-          name: font.family,
-          builtin: font.builtin,
-          userFiles: font.builtin ? [] : [font.fileName],
-        });
-      }
-    }
-    return [...groups.values()];
-  }, [fonts]);
+  // 一个家族一份记录：同名的版本注释（预览测试版/轻便版）先归一化再合并，
+  // 排序规则见 fontFamilies——英文字体在前、中文在后，各自升序。
+  const families = useMemo(
+    () => fontFamilies(fonts?.fonts ?? []),
+    [fonts],
+  );
 
   const remove = useCallback(
     async (fileName: string) => {
@@ -468,7 +453,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
                   内置
                 </span>
               ) : null}
-              {family.userFiles.length > 0 ? (
+              {family.userFiles.length > 0 && !family.builtin ? (
                 <button
                   type="button"
                   disabled={busy}
