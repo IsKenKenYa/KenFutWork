@@ -29,15 +29,6 @@ describe("编辑器扩展包注册表", () => {
     }
   });
 
-  it("自建的 EDA 编辑器不提供下载：站点随仓库分发，pinned 为空", () => {
-    const builtin = listWorkEditorRegistrations().filter(
-      (editor) => editor.id === "kicad",
-    );
-    expect(builtin).toHaveLength(1);
-    expect(builtin[0]?.pinned).toBeNull();
-    expect(builtin[0]?.category).toBe("eda");
-  });
-
   it("注册表不含落位事实（installed 由数据目录检查计算，常量与事实分离）", () => {
     for (const editor of listWorkEditorRegistrations()) {
       expect(Object.hasOwn(editor, "installed")).toBe(false);

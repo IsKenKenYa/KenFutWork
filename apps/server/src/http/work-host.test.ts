@@ -177,13 +177,8 @@ describe("work 宿主路由", () => {
     };
     expect(body.dataDir).toBe("/tmp/kenfutwork-data");
     expect(body.editors.length).toBeGreaterThanOrEqual(10);
-    // 数据目录里没有落位任何扩展包；随宿主分发的条目（如 KiCad 面板）恒为已落位。
-    expect(
-      body.editors
-        .filter((editor) => editor.pinned !== null)
-        .every((editor) => editor.installed === false),
-    ).toBe(true);
-    expect(body.editors.find((editor) => editor.id === "kicad")?.installed).toBe(
+    // 数据目录里没有落位任何扩展包：全部编辑器都是未安装。
+    expect(body.editors.every((editor) => editor.installed === false)).toBe(
       true,
     );
     expect(body.install).toEqual({});
@@ -193,18 +188,12 @@ describe("work 宿主路由", () => {
     expect(
       body.editors.find((editor) => editor.id === "wordcraft")?.pinned,
     ).toMatchObject({ version: "0.11.0" });
-    // 上游扩展包全部已锚定；自建的 EDA 站点随仓库分发，没有下载包。
-    expect(
-      body.editors
-        .filter((editor) => editor.id !== "kicad")
-        .every((editor) => editor.pinned !== null),
-    ).toBe(true);
-    expect(
-      body.editors.find((editor) => editor.id === "kicad")?.pinned,
-    ).toBeNull();
+    // 上游扩展包全部已锚定。
+    expect(body.editors.every((editor) => editor.pinned !== null)).toBe(true);
   });
 
-  it("安装：未锚定 → 400 可读原因（不摆假开关）；未知编辑器 → 404", async () => {    // 注册表已全量锚定；400 分支用 fixture 注入 null pin（如未来新增未锚定项）保持护栏。
+  it("安装：未锚定 → 400 可读原因（不摆假开关）；未知编辑器 → 404", async () => {
+    // 注册表已全量锚定；400 分支用 fixture 注入 null pin（如未来新增未锚定项）保持护栏。
     const app = await fixture({ pinnedOverride: null });
     const unpinned = await app.inject({
       method: "post",
@@ -428,7 +417,10 @@ describe("work 宿主路由", () => {
     );
     const userFontDir = join(dataDir, "work", "fonts");
     await mkdir(userFontDir, { recursive: true });
-    await writeFile(join(userFontDir, "abc-upload.ttf"), Buffer.from([0, 1, 2, 3]));
+    await writeFile(
+      join(userFontDir, "abc-upload.ttf"),
+      Buffer.from([0, 1, 2, 3]),
+    );
 
     const manifest = await app.inject({
       method: "get",
