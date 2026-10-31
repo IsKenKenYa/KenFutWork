@@ -1,14 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="11.54 10.39 23.86 26.58">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <g transform="translate(12 12) scale(0.8341) translate(-23.4700 -22.9500)" stroke-linecap="round" stroke-linejoin="round">
   <!-- 米家（Mi Home）标：MI 字形的线稿版（自绘骨架，不复制官方实心商标）。
        stroke 2 / viewBox 23.86 与侧栏 lucide 图标同口径（2/24），宿主 CSS mask 按 alpha 渲染。 -->
   <g
     fill="none"
-    stroke="#000000"
-    stroke-width="2"
+    stroke="currentColor"
+    stroke-width="1.92"
     stroke-linecap="round"
     stroke-linejoin="round"
   >
     <path d="M14.59,25.6V12.4L23.47,16.5L32.35,12.4V18.2" />
     <path d="M32.35,21.5V26.5C32.35,30.6 28.9,33.5 24.2,33.5C20.6,33.5 17.5,31.8 15.8,29" />
+  </g>
+
   </g>
 </svg>
