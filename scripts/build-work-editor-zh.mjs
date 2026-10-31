@@ -392,6 +392,28 @@ if (app === "photocraft") {
   }
 }
 
+// 2c2) 动效（EffectCraft）：WebGPU 设备启动即丢的环境（本机实测）改走 WebGL2 兼容后端；
+//      GPU 预览自动退回 CPU，?webgpu 仍可强制 WebGPU。
+if (app === "effectcraft") {
+  const effectApp = join(source, "apps/effectcraft-web/src/app.rs");
+  if (existsSync(effectApp)) {
+    patchOnce(
+      effectApp,
+      "    let runner = eframe::WebRunner::new();\n    runner\n        .start(\n            canvas,\n            eframe::WebOptions::default(),",
+      "    let runner = eframe::WebRunner::new();\n    // KenFutWork: 部分环境 WebGPU 设备启动后即丢失，主界面随之关闭；\n    // web 端默认改走 WebGL2 兼容后端（GPU 预览自动退回 CPU），?webgpu 可强制 WebGPU。\n    let mut web_options = eframe::WebOptions::default();\n    if !query_flag(\"webgpu\")\n        && let eframe::egui_wgpu::WgpuSetup::CreateNew(c) = &mut web_options.wgpu_options.wgpu_setup\n    {\n        c.instance_descriptor.backends = eframe::wgpu::Backends::GL;\n    }\n    runner\n        .start(\n            canvas,\n            web_options,",
+      "动效：web 默认 WebGL2 兼容后端",
+      "WebGL2 兼容后端",
+    );
+    patchOnce(
+      effectApp,
+      'app.frames.set_remote(Some(Arc::new(frames::WebFrames::start(n, !query_flag("nogpuworkers")))));',
+      '// KenFutWork: 本机 WebGPU worker 读回超时并拖垮主上下文，默认 CPU worker；?gpuworkers 可开。\n                    app.frames.set_remote(Some(Arc::new(frames::WebFrames::start(n, query_flag("gpuworkers")))));',
+      "动效：帧 worker 默认走 CPU",
+      'query_flag("gpuworkers")',
+    );
+  }
+}
+
 // 2d) 视频（FilmCraft）：wasm 放行中文字形 + 字体菜单中文名（选中值仍是真实家族名）。
 if (app === "filmcraft") {
   patchOnce(
