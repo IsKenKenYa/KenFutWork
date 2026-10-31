@@ -29,7 +29,8 @@ const DISPLAY_NAMES: Record<string, string> = {
   misans: "小米 MiSans（小米）",
   
   // 列表里带出品方/许可标注（用户口径：著名的字体在名字后面标一下）。
-  "得意黑": "得意黑（oooooohmygosh）",
+  // 个人作者手柄（oooooohmygosh、Belleve）对中文用户是乱码，去掉；只保留看得懂的厂牌。
+  "得意黑": "得意黑",
   "马善政毛笔楷书": "马善政毛笔楷书（Google Fonts）",
   "思源黑体": "思源黑体（Adobe·Google）",
   "思源宋体": "思源宋体（Adobe·Google）",
@@ -40,7 +41,7 @@ const DISPLAY_NAMES: Record<string, string> = {
   "站酷快乐体": "站酷快乐体（站酷）",
   "朱雀仿宋": "朱雀仿宋（璇玑造字）",
   "抖音美好体": "抖音美好体（字节跳动）",
-  "更纱黑体 sc": "更纱黑体（Belleve）",
+  "更纱黑体 sc": "更纱黑体",
   "小米 misans": "小米 MiSans（小米）",
   
 };

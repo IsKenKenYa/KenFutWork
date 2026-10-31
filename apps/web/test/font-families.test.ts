@@ -24,9 +24,9 @@ describe("字体列表展示", () => {
     expect(fontDisplayName("MiSans")).toBe("小米 MiSans（小米）");
     expect(fontDisplayName("BIZ UDMincho")).toBe("BIZ UDMincho");
     // 列表标注出品方/许可类型（用户口径）。
-    expect(fontDisplayName("得意黑")).toBe("得意黑（oooooohmygosh）");
+    expect(fontDisplayName("得意黑")).toBe("得意黑");
     expect(fontDisplayName("抖音美好体")).toBe("抖音美好体（字节跳动）");
-    expect(fontDisplayName("更纱黑体 SC")).toBe("更纱黑体（Belleve）");
+    expect(fontDisplayName("更纱黑体 SC")).toBe("更纱黑体");
     // 原来的拉丁字体保持原名。
     expect(fontDisplayName("Inter")).toBe("Inter");
     expect(fontDisplayName("JetBrains Mono")).toBe("JetBrains Mono");
@@ -61,7 +61,7 @@ describe("字体列表展示", () => {
     // 站酷快乐体按中文名归入中文段。
     expect(latin).toEqual(["Inter", "Liberation Serif"]);
     expect(cjk).toEqual([
-      "得意黑（oooooohmygosh）",
+      "得意黑",
       "霞鹜漫黑",
       "悠哉字体",
       "站酷快乐体（站酷）",
