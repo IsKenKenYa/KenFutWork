@@ -117,3 +117,6 @@ apps/desktop/src-tauri/gen/
 
 # CommandCode CLI 的本地数据目录（taste 偏好等，本机私有，不入库）
 /.commandcode/
+
+# KiCad 示例电路板产物（kicad 插件工作区，本机产物不入库）
+/kicad/
