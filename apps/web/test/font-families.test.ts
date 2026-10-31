@@ -16,7 +16,7 @@ function font(
 describe("字体列表展示", () => {
   it("去掉版本注释、按中文名展示、再合并同名家族", () => {
     expect(fontDisplayName("朱雀仿宋（预览测试版）")).toBe("朱雀仿宋（璇玑造字）");
-    expect(fontDisplayName("霞鹜文楷 轻便版")).toBe("霞鹜文楷");
+    expect(fontDisplayName("霞鹜文楷 轻便版")).toBe("霞鹜文楷（落霞孤鹜）");
     expect(fontDisplayName("Noto Sans CJK SC")).toBe("思源黑体（Adobe·Google）");
     expect(fontDisplayName("Noto Serif CJK SC")).toBe("思源宋体（Adobe·Google）");
     expect(fontDisplayName("Ma Shan Zheng")).toBe("马善政毛笔楷书（Google Fonts）");
@@ -24,9 +24,9 @@ describe("字体列表展示", () => {
     expect(fontDisplayName("MiSans")).toBe("小米 MiSans（小米）");
     expect(fontDisplayName("BIZ UDMincho")).toBe("BIZ UDMincho");
     // 列表标注出品方/许可类型（用户口径）。
-    expect(fontDisplayName("得意黑")).toBe("得意黑");
+    expect(fontDisplayName("得意黑")).toBe("得意黑（锚坞）");
     expect(fontDisplayName("抖音美好体")).toBe("抖音美好体（字节跳动）");
-    expect(fontDisplayName("更纱黑体 SC")).toBe("更纱黑体");
+    expect(fontDisplayName("更纱黑体 SC")).toBe("更纱黑体（Belleve）");
     // 原来的拉丁字体保持原名。
     expect(fontDisplayName("Inter")).toBe("Inter");
     expect(fontDisplayName("JetBrains Mono")).toBe("JetBrains Mono");
@@ -38,7 +38,7 @@ describe("字体列表展示", () => {
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({
-      name: "霞鹜文楷",
+      name: "霞鹜文楷（落霞孤鹜）",
       builtin: true,
     });
     expect(groups[0]!.userFiles).toEqual(["abc-upload.ttf", "def-full.ttf"]);
@@ -61,9 +61,9 @@ describe("字体列表展示", () => {
     // 站酷快乐体按中文名归入中文段。
     expect(latin).toEqual(["Inter", "Liberation Serif"]);
     expect(cjk).toEqual([
-      "得意黑",
-      "霞鹜漫黑",
-      "悠哉字体",
+      "得意黑（锚坞）",
+      "霞鹜漫黑（落霞孤鹜）",
+      "悠哉字体（落霞孤鹜）",
       "站酷快乐体（站酷）",
     ]);
   });
