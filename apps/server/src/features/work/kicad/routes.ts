@@ -37,7 +37,7 @@ iframe{border:0;width:100%;flex:1 1 auto;min-height:0;display:block;height:100%}
 </style>
 </head>
 <body>
-<div id="bar"><label class="open" for="bar-file">打开文件</label><input id="bar-file" type="file" accept=".kicad_pcb,.json,application/json" hidden><button id="bar-example" type="button">示例板</button><span id="bar-status"></span></div>
+<div id="bar"><label class="open" for="bar-file">打开文件</label><input id="bar-file" type="file" accept=".kicad_pcb,.json,application/json" hidden><button id="bar-export" type="button">导出</button><span id="bar-status"></span></div>
 <div id="hint" role="status"><b>未检测到 KiCad 10</b><span>安装到</span><code id="hint-path"></code><button id="hint-retry" type="button">重新检测</button></div>
 <iframe id="panel" src="/api/work/host/kicad/panel.html" title="KiCad 电路板"></iframe>
 <script>
@@ -128,38 +128,39 @@ iframe{border:0;width:100%;flex:1 1 auto;min-height:0;display:block;height:100%}
     });
   }
   function setBusy(on, text) {
-    document.getElementById("bar-example").disabled = on;
-    if (text) barStatus.textContent = text;
+    document.getElementById("bar-export").disabled = on;
+    if (text !== undefined) barStatus.textContent = text;
     barStatus.dataset.bad = "0";
   }
   function report(data) {
     if (data && data.ok) {
-      barStatus.textContent = data.unconnected
-        ? "DRC " + data.errors + " 错误 · " + data.unconnected + " 未连接"
-        : "DRC " + data.errors + " 错误";
-      barStatus.dataset.bad = data.errors || data.unconnected ? "1" : "0";
+      barStatus.textContent = "";
       frame.src = "/api/work/host/kicad/panel.html?t=" + Date.now();
     } else {
       barStatus.textContent = (data && data.error) || "构建失败";
       barStatus.dataset.bad = "1";
     }
   }
-  async function build(kind, body) {
-    setBusy(true, "构建中…");
+  // 导出：下载当前板文件（kicad_pcb），与「打开文件」成对，面板其余内容保持原版。
+  document.getElementById("bar-export").addEventListener("click", async function () {
+    setBusy(true, "导出中…");
     try {
-      var response = await fetch("/api/work/host/kicad/" + kind, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body || {}),
-      });
-      report(await response.json());
+      var response = await fetch("/api/work/host/kicad/export", { method: "POST" });
+      var data = await response.json();
+      if (!data.ok) throw new Error(data.error || "导出失败");
+      var bytes = Uint8Array.from(atob(data.base64), function (c) { return c.charCodeAt(0); });
+      var blob = new Blob([bytes], { type: "application/octet-stream" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = data.name || "board.kicad_pcb";
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      setBusy(false, "");
     } catch (error) {
-      report({ ok: false, error: String(error) });
-    } finally {
-      setBusy(false);
+      setBusy(false, String((error && error.message) || error));
+      barStatus.dataset.bad = "1";
     }
-  }
-  document.getElementById("bar-example").addEventListener("click", function () { build("example", {}); });
+  });
   async function upload(body) {
     setBusy(true, "打开中…");
     try {
@@ -447,6 +448,37 @@ export function registerKicadRoutes(
         .send({ ok: false, error: "只支持 .kicad_pcb 与 spec JSON。" });
     },
   );
+
+  // 面板的「导出」：当前板以 .kicad_pcb 返回（base64），前端按附件下载。
+  app.post("/api/work/host/kicad/export", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    try {
+      const result = (await options.worker.callTool("kicad_board_file", {})) as {
+        structuredContent?: {
+          ok?: boolean;
+          name?: string;
+          base64?: string;
+          error?: string;
+        };
+      };
+      const data = result.structuredContent;
+      if (!data?.ok || !data.base64) {
+        return reply
+          .code(404)
+          .send({ ok: false, error: data?.error || "还没有电路板" });
+      }
+      return reply.send({
+        ok: true,
+        name: data.name || "board.kicad_pcb",
+        base64: data.base64,
+      });
+    } catch (error) {
+      return reply.code(502).send({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 
   app.get("/api/work/host/kicad/panel", async (request, reply) => {
     if (!(await requireLocalAccess(request, reply))) return;

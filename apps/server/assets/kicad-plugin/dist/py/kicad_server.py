@@ -443,6 +443,22 @@ def kicad_board_view(side: str = "top") -> ToolResult:
 
 
 @mcp.tool(app={"visibility": ["app"]})
+def kicad_board_file() -> ToolResult:
+    """(panel only) The newest board as a .kicad_pcb file, base64, for the host's Export button."""
+    pcb = _latest("kicad_pcb")
+    if not pcb:
+        return ToolResult(content=[TextContent(type="text", text="no board yet")], structured_content={"ok": False, "error": "还没有电路板"})
+    data = store.path(pcb.artifact_id).read_bytes()
+    name = pcb.name or "board.kicad_pcb"
+    if not name.lower().endswith(".kicad_pcb"):
+        name = f"{Path(name).stem or 'board'}.kicad_pcb"
+    return ToolResult(
+        content=[TextContent(type="text", text=name)],
+        structured_content={"ok": True, "name": name, "base64": base64.b64encode(data).decode()},
+    )
+
+
+@mcp.tool(app={"visibility": ["app"]})
 def kicad_board_image(side: str = "top") -> ToolResult:
     """(panel only) PNG of the newest board for `side`, rendering it first if needed."""
     pcb = _latest("kicad_pcb")

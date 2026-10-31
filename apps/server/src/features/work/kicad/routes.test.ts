@@ -264,6 +264,42 @@ describe("KiCad 路由", () => {
     expect(badName.statusCode).toBe(400);
   });
 
+  it("面板「导出」：当前板以 kicad_pcb 返回；无板时 404", async () => {
+    const callTool = vi.fn(async () => ({
+      content: [{ type: "text", text: "board.kicad_pcb" }],
+      structuredContent: {
+        ok: true,
+        name: "board.kicad_pcb",
+        base64: "AAEC",
+      },
+    }));
+    const { app } = fixture({ callTool: callTool as never });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/export",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      ok: true,
+      name: "board.kicad_pcb",
+      base64: "AAEC",
+    });
+    expect(callTool).toHaveBeenCalledWith("kicad_board_file", {});
+
+    const empty = fixture({
+      callTool: vi.fn(async () => ({
+        content: [{ type: "text", text: "no board yet" }],
+        structuredContent: { ok: false, error: "还没有电路板" },
+      })) as never,
+    });
+    const missing = await empty.app.inject({
+      method: "post",
+      url: "/api/work/host/kicad/export",
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error).toContain("电路板");
+  });
+
   it("面板页与桥页都是同源 HTML，未登录被拦", async () => {
     const { app, localAccess } = fixture({});
     const panel = await app.inject({
@@ -280,6 +316,8 @@ describe("KiCad 路由", () => {
     expect(bridge.statusCode).toBe(200);
     expect(bridge.body).toContain("ui/initialize");
     expect(bridge.body).toContain("打开文件");
+    expect(bridge.body).toContain("导出");
+    expect(bridge.body).not.toContain("示例板");
     expect(bridge.body).toContain('locale: "zh-CN"');
     localAccess.authenticate.mockResolvedValueOnce(null);
     const denied = await app.inject({
