@@ -342,7 +342,7 @@ if (app === "photocraft") {
     patchOnce(
       photoCjk,
       "/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
-    "pub fn install_ui_served_font(ctx: &egui::Context, family: &str, bytes: Vec<u8>) {\n    let name = format!(\"kfw-ui-cjk:{family}\");\n    let mut data = FontData::from_owned(bytes);\n    let families = [FontFamily::Proportional, FontFamily::Monospace]\n        .into_iter()\n        .map(|family| InsertFontFamily { family, priority: FontPriority::Lowest })\n        .collect();\n    crate::theme::size_ui_font(ctx, &name, &mut data);\n    ctx.add_font(FontInsert { name, data, families });\n    ctx.request_repaint();\n}\n\n/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
+    "pub fn install_ui_served_font(ctx: &egui::Context, family: &str, bytes: Vec<u8>) {\n    let name = format!(\"kfw-ui-cjk:{family}\");\n    let mut data = FontData::from_owned(bytes);\n    // 界面里还有 medium/semibold 等自定义字族；只挂 Proportional/Monospace 会让\n    // 用这些字族画的按钮（欢迎页）继续出方框——挂到当前全部字族上。\n    let families: Vec<InsertFontFamily> = ctx\n        .fonts(|f| f.families().iter().cloned().collect::<Vec<_>>())\n        .into_iter()\n        .map(|family| InsertFontFamily { family, priority: FontPriority::Lowest })\n        .collect();\n    crate::theme::size_ui_font(ctx, &name, &mut data);\n    ctx.add_font(FontInsert { name, data, families });\n    ctx.request_repaint();\n}\n\n/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
     "已加界面中文字体注入",
     "pub fn install_ui_served_font(",
     );
@@ -605,6 +605,61 @@ const hook = USER_FONT_HOOKS[app];
 if (hook && existsSync(userFontsSource)) {
   cpSync(userFontsSource, join(source, hook[0]));
   console.log(`[zh] 已放置用户字体加载器：${hook[0]}`);
+}
+// 加载器文件放进去还不够：web 壳要在启动时调用它，字体菜单才会包含宿主字体。
+if (app === "vectorcraft" && hook) {
+  // 插入锚点会留在文件里：先看标记是否已存在，避免重跑时重复声明/重复加载。
+  const vectorMain = join(source, "apps/vectorcraft-web/src/main.rs");
+  if (!read(vectorMain).includes("mod user_fonts;")) {
+    patchOnce(
+      vectorMain,
+      '#[cfg(target_arch = "wasm32")]\nmod fonts;',
+      '#[cfg(target_arch = "wasm32")]\nmod fonts;\n#[cfg(target_arch = "wasm32")]\nmod user_fonts;',
+      "矢量：已声明宿主字体加载器",
+      "mod user_fonts;",
+    );
+  }
+  const vectorWeb = join(source, "apps/vectorcraft-web/src/web.rs");
+  if (!read(vectorWeb).includes("user_fonts::install(")) {
+    patchOnce(
+      vectorWeb,
+      "        crate::fonts::load_startup_fonts().await;",
+      "        crate::fonts::load_startup_fonts().await;\n        // KenFutWork: 宿主字体清单（内置 + 用户上传）交给矢量字体库，字体菜单才与宿主一致。\n        let _ = crate::user_fonts::install(|bytes| vectorcraft_text::FontDb::global().add_font(bytes)).await;",
+      "矢量：启动时加载宿主字体",
+      "crate::user_fonts::install(|bytes|",
+    );
+  }
+}
+if (app === "filmcraft" && hook) {
+  const filmLib = join(source, "apps/filmcraft-web/src/lib.rs");
+  if (!read(filmLib).includes("pub mod user_fonts;")) {
+    patchOnce(
+      filmLib,
+      "pub mod recovery_policy;\npub mod webcodecs;",
+      "pub mod recovery_policy;\npub mod user_fonts;\npub mod webcodecs;",
+      "视频：已声明宿主字体加载器",
+      "pub mod user_fonts;",
+    );
+  }
+  if (!read(filmLib).includes("user_fonts::install(")) {
+    patchOnce(
+      filmLib,
+      "    webcodecs::probe().await;",
+      "    webcodecs::probe().await;\n    // KenFutWork: 宿主字体清单（内置 + 用户上传）交给影片字体库，字体菜单才与宿主一致。\n    let _ = user_fonts::install(|bytes| filmcraft_text::fonts::add_font_data(bytes).len()).await;",
+      "视频：启动时加载宿主字体",
+      "user_fonts::install(|bytes| filmcraft_text",
+    );
+  }
+  const filmCargo = join(source, "apps/filmcraft-web/Cargo.toml");
+  if (!read(filmCargo).includes("filmcraft-text = { workspace = true }")) {
+    patchOnce(
+      filmCargo,
+      "filmcraft-time = { workspace = true }\negui = { workspace = true }",
+      "filmcraft-time = { workspace = true }\nfilmcraft-text = { workspace = true }\negui = { workspace = true }",
+      "视频：web 壳加 filmcraft-text 依赖",
+      "filmcraft-text = { workspace = true }",
+    );
+  }
 }
 // 有些编辑器的字体目录是「扫描到的系统字体」模型，wasm 端没有字库：用随仓库的补丁加入
 // 内存字形表与启动时的清单加载（`git apply` 幂等，已打则跳过）。
