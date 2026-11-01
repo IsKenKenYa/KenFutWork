@@ -6,24 +6,25 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { Cpu, Layers, ListChecks, Plus, Workflow } from "lucide-react";
+import { Cpu, Layers, ListChecks, Pencil, Plus, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState, useSyncExternalStore } from "react";
-import { useDirectoryPickerAvailable } from "./canvasProjectDirectories.js";
+import { AllProjectsMenu } from "./AllProjectsMenu.js";
 import { localCuaDesktopInvoke } from "./cuaPermissionPlatform.js";
 import {
   createFlowProject,
+  renameProject,
   selectFlowProject,
   useFlowProjectsController,
   useFlowProjectsSnapshot,
 } from "./flowProjects.js";
 import {
-  getFlowNavigationReady,
   getFlowSurfaceView,
   navigateFlowSurface,
   setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
+import { ProjectRenameDialog } from "./ProjectRenameDialog.js";
 import { SharedProjectNavigation } from "./SharedProjectNavigation.js";
 
 const NOOP_SUBSCRIBE = () => () => {};
@@ -67,6 +68,11 @@ export function HostModeSidebarContent({
         <FlowNavSidebar />
       ) : (
         <>
+          {mode === "code" ? (
+            <div className="px-2 pt-2">
+              <AllProjectsMenu />
+            </div>
+          ) : null}
           <SharedProjectNavigation />
           {children}
         </>
@@ -78,14 +84,10 @@ export function HostModeSidebarContent({
 /** Flow 模式的侧栏内容：工作流/插件/任务中心/引擎（原 CanvasSidebar flow 区同款）。 */
 function FlowNavSidebar() {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
-  const navigationReady = useSyncExternalStore(
-    subscribeFlowSurface,
-    getFlowNavigationReady,
-  );
   useFlowProjectsController();
   const { projects, selectedProjectId, creating, notice } =
     useFlowProjectsSnapshot();
-  const pickerAvailable = useDirectoryPickerAvailable();
+  const [renameOpen, setRenameOpen] = useState(false);
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId,
   );
@@ -117,6 +119,15 @@ function FlowNavSidebar() {
         </Select>
         <button
           type="button"
+          aria-label="重命名项目"
+          disabled={!selectedProject}
+          onClick={() => setRenameOpen(true)}
+          className="rounded-md p-1 text-foreground-subtle hover:bg-surface-hover hover:text-foreground disabled:opacity-50"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
           aria-label="创建 Flow 项目"
           disabled={creating}
           onClick={() => void createFlowProject()}
@@ -126,31 +137,26 @@ function FlowNavSidebar() {
         </button>
       </div>
       <ProjectDirectoryOpen path={selectedProject?.workDir ?? null} />
-      {pickerAvailable ? (
-        <button
-          type="button"
-          disabled={creating}
-          onClick={() => void createFlowProject(true)}
-          className="rounded-md px-2 py-1.5 text-left text-xs text-foreground-subtle hover:bg-surface-hover"
-        >
-          选目录新建
-        </button>
-      ) : null}
+      <ProjectRenameDialog
+        open={renameOpen}
+        initialName={selectedProject?.name ?? ""}
+        onOpenChange={setRenameOpen}
+        onRename={(name) => renameProject(selectedProjectId ?? "", name)}
+      />
       {notice ? (
         <p role="alert" className="pb-2 text-xs text-destructive">
           {notice}
         </p>
       ) : null}
       {FLOW_NAV_ITEMS.map((item) => {
-        const disabled =
-          !selectedProjectId || (item.path !== "/" && !navigationReady);
+        const disabled = !selectedProjectId;
         return (
           <button
             key={item.path}
             type="button"
             disabled={disabled}
             onClick={() => navigateFlowSurface(item.path)}
-            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             <item.icon className="h-4 w-4 shrink-0" />
             {item.label}
@@ -162,7 +168,7 @@ function FlowNavSidebar() {
         type="button"
         data-active={view === "engine" ? "true" : undefined}
         onClick={() => setFlowSurfaceView("engine")}
-        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover data-[active=true]:bg-selected"
       >
         <Cpu className="h-4 w-4 shrink-0" />
         引擎

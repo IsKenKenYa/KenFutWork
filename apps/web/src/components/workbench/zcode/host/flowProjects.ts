@@ -1,7 +1,6 @@
 import type { ProjectSummary } from "@kenfutwork/shared";
 import { useEffect, useSyncExternalStore } from "react";
-import { pickCanvasProjectDirectory } from "./canvasProjectDirectories.js";
-import { surfaceJson } from "./surfaceApi.js";
+import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 
 /** 未选项目时自动绑定的默认工作流项目名（同一实例只建一个）。 */
 const DEFAULT_FLOW_PROJECT_NAME = "默认工作流";
@@ -36,7 +35,7 @@ let readGeneration = 0;
 /** 默认项目创建在途；refresh 与用户点「新建」可能并发。 */
 let ensuringDefault = false;
 
-async function listProjects() {
+export async function listProjects() {
   const lists = await Promise.all(
     PROJECT_KINDS.map((kind) =>
       surfaceJson<{ projects: ProjectSummary[] }>(`/api/projects?kind=${kind}`),
@@ -119,24 +118,16 @@ export function useFlowProjectsController() {
     void refreshFlowProjects();
   }, []);
 }
-export async function createFlowProject(fromDirectory = false) {
+export async function createFlowProject() {
   if (state.creating) return;
   update({ creating: true, notice: null });
   try {
-    const workDir = fromDirectory
-      ? await pickCanvasProjectDirectory()
-      : undefined;
-    if (workDir === null) return;
     const result = await surfaceJson<{ project: ProjectSummary }>(
       "/api/projects",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          kind: "flow",
-          name: "未命名工作流",
-          ...(workDir !== undefined ? { work_dir: workDir } : {}),
-        }),
+        body: JSON.stringify({ kind: "flow", name: "未命名工作流" }),
       },
     );
     if (result.project.kind !== "flow") throw new Error("项目类型不匹配。");
@@ -152,4 +143,24 @@ export async function createFlowProject(fromDirectory = false) {
   } finally {
     update({ creating: false });
   }
+}
+
+/** 只改显示名；目录、身份与启用方式不动。 */
+export async function renameProject(projectId: string, name: string) {
+  const next = name.trim();
+  if (!next) return;
+  const current = state.projects.find((project) => project.id === projectId);
+  if (current?.name === next) return;
+  await surfaceRequest(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: next }),
+  });
+  if (!current) return;
+  update({
+    notice: null,
+    projects: state.projects.map((project) =>
+      project.id === projectId ? { ...project, name: next } : project,
+    ),
+  });
 }

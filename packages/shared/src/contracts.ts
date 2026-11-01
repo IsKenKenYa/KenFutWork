@@ -157,6 +157,12 @@ export const projectSummarySchema = z
     }),
     z.object({
       ...projectSummaryFields,
+      kind: z.literal("work"),
+      workDir: z.string().min(1),
+      primaryCanvas: canvasSummarySchema.optional(),
+    }),
+    z.object({
+      ...projectSummaryFields,
       kind: z.literal("flow"),
       primaryCanvas: canvasSummarySchema,
     }),

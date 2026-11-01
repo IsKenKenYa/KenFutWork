@@ -1,5 +1,4 @@
 import {
-  directoryPickerStatusSchema,
   type PickDirectoryResponse,
   type ProjectDirectoryRelinkSnapshot,
   projectDirectoryRelinkResponseSchema,
@@ -13,25 +12,6 @@ import {
   useState,
 } from "react";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
-
-export function useDirectoryPickerAvailable() {
-  const [available, setAvailable] = useState(false);
-  useEffect(() => {
-    let current = true;
-    void surfaceJson("/api/system/directory-picker")
-      .then((body) => {
-        if (current)
-          setAvailable(directoryPickerStatusSchema.parse(body).available);
-      })
-      .catch(() => {
-        if (current) setAvailable(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, []);
-  return available;
-}
 
 export async function pickCanvasProjectDirectory(): Promise<string | null> {
   const picked = await surfaceJson<PickDirectoryResponse>(
