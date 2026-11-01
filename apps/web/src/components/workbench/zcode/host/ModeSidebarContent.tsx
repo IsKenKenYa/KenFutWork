@@ -1,14 +1,20 @@
-import type { ProjectSummary } from "@kenfutwork/shared";
 import { Input } from "@zui/components/ui/input.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { Cpu, Layers, ListChecks, Plus, Workflow } from "lucide-react";
+import { Cpu, Layers, ListChecks, Pencil, Plus, Workflow } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { AllProjectsList } from "./AllProjectsList.js";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { localCuaDesktopInvoke } from "./cuaPermissionPlatform.js";
 import {
   createFlowProject,
   renameProject,
+  selectFlowProject,
   useFlowProjectsController,
   useFlowProjectsSnapshot,
 } from "./flowProjects.js";
@@ -61,7 +67,6 @@ export function HostModeSidebarContent({
         <FlowNavSidebar />
       ) : (
         <>
-          {mode === "code" ? <AllProjectsList /> : null}
           <SharedProjectNavigation />
           {children}
         </>
@@ -79,13 +84,114 @@ function FlowNavSidebar() {
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId,
   );
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const skipBlurCommit = useRef(false);
+
+  const startRename = () => {
+    if (!selectedProject) return;
+    skipBlurCommit.current = false;
+    setDraft(selectedProject.name);
+    setRenameError(null);
+    setRenaming(true);
+  };
+
+  const cancelRename = () => {
+    skipBlurCommit.current = true;
+    setDraft(selectedProject?.name ?? "");
+    setRenameError(null);
+    setRenaming(false);
+  };
+
+  const commitRename = async () => {
+    if (skipBlurCommit.current) {
+      skipBlurCommit.current = false;
+      return;
+    }
+    if (!selectedProject || saving) return;
+    const next = draft.trim();
+    if (!next || next === selectedProject.name) {
+      setRenaming(false);
+      return;
+    }
+    setSaving(true);
+    setRenameError(null);
+    try {
+      await renameProject(selectedProject.id, next);
+      setRenaming(false);
+    } catch (failure) {
+      setRenameError(
+        failure instanceof Error ? failure.message : "项目重命名失败，请重试。",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <nav
       className="flex min-h-0 flex-1 flex-col px-2 pt-2"
       aria-label="Flow 导航"
     >
       <div className="flex items-center gap-2 pb-2">
-        <FlowProjectNameInput project={selectedProject ?? null} />
+        {renaming ? (
+          <Input
+            aria-label="项目名称"
+            value={draft}
+            autoFocus
+            disabled={saving}
+            maxLength={100}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            onBlur={() => void commitRename()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                cancelRename();
+                event.currentTarget.blur();
+                return;
+              }
+              if (event.key !== "Enter" || event.nativeEvent.isComposing)
+                return;
+              event.preventDefault();
+              event.currentTarget.blur();
+            }}
+            className="h-8 min-w-0 flex-1"
+          />
+        ) : (
+          <Select
+            value={selectedProjectId ?? ""}
+            onValueChange={(value) => selectFlowProject(value || null)}
+          >
+            <SelectTrigger
+              aria-label="Flow 项目"
+              variant="ghost"
+              size="default"
+              className="min-w-0 flex-1"
+            >
+              <SelectValue placeholder="选择项目" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {renaming ? null : (
+          <button
+            type="button"
+            aria-label="重命名项目"
+            disabled={!selectedProject}
+            onClick={startRename}
+            className="rounded-md p-1 text-foreground-subtle hover:bg-surface-hover hover:text-foreground disabled:opacity-50"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
         <button
           type="button"
           aria-label="创建 Flow 项目"
@@ -96,6 +202,11 @@ function FlowNavSidebar() {
           <Plus className="h-3.5 w-3.5" />
         </button>
       </div>
+      {renameError ? (
+        <p role="alert" className="pb-1 text-xs text-destructive">
+          {renameError}
+        </p>
+      ) : null}
       <ProjectDirectoryOpen path={selectedProject?.workDir ?? null} />
       {notice ? (
         <p role="alert" className="pb-2 text-xs text-destructive">
@@ -110,7 +221,7 @@ function FlowNavSidebar() {
             type="button"
             disabled={disabled}
             onClick={() => navigateFlowSurface(item.path)}
-            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <item.icon className="h-4 w-4 shrink-0" />
             {item.label}
@@ -122,73 +233,12 @@ function FlowNavSidebar() {
         type="button"
         data-active={view === "engine" ? "true" : undefined}
         onClick={() => setFlowSurfaceView("engine")}
-        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover data-[active=true]:bg-selected"
+        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
       >
         <Cpu className="h-4 w-4 shrink-0" />
         引擎
       </button>
     </nav>
-  );
-}
-
-/** 项目名直接当输入框：回车/失焦保存，Esc 还原；不再走重命名弹窗。 */
-function FlowProjectNameInput({ project }: { project: ProjectSummary | null }) {
-  const [draft, setDraft] = useState(project?.name ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setDraft(project?.name ?? "");
-    setError(null);
-  }, [project?.id, project?.name]);
-
-  const commit = async () => {
-    if (!project || saving) return;
-    const next = draft.trim();
-    if (!next || next === project.name) {
-      setDraft(project.name);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await renameProject(project.id, next);
-    } catch (failure) {
-      setError(
-        failure instanceof Error ? failure.message : "项目重命名失败，请重试。",
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      <Input
-        aria-label="项目名称"
-        value={draft}
-        disabled={!project || saving}
-        maxLength={100}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => void commit()}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setDraft(project?.name ?? "");
-            event.currentTarget.blur();
-            return;
-          }
-          if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-          event.preventDefault();
-          void commit();
-        }}
-        className="h-8 min-w-0"
-      />
-      {error ? (
-        <p role="alert" className="pt-1 text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
   );
 }
 

@@ -9,7 +9,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getFlowSurfaceView,
-  navigateFlowSurface,
   registerFlowNavigate,
 } from "@/components/workbench/zcode/host/flowSurfaceState";
 import { HostModeSidebarContent } from "@/components/workbench/zcode/host/ModeSidebarContent";
@@ -85,7 +84,7 @@ afterEach(() => {
   host.canvasFrameRef.current?.remove();
   host.canvasFrameRef.current = null;
 });
-describe.each(["flow"] as const)("%s sidebar directory creation", (kind) => {
+describe("flow sidebar directory creation", () => {
   function mount() {
     return render(<HostModeSidebarContent />);
   }
@@ -94,10 +93,15 @@ describe.each(["flow"] as const)("%s sidebar directory creation", (kind) => {
     mount();
     expect(screen.queryByRole("button", { name: "选目录新建" })).toBeNull();
   });
-  it("renames the selected project inline from the name input", async () => {
+  it("keeps the project dropdown until rename is clicked, then edits inline", async () => {
     host.selectedPath = "/flow-project";
     host.renameProject.mockResolvedValue(undefined);
     mount();
+    expect(screen.getByRole("combobox", { name: "Flow 项目" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "重命名项目" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重命名项目" }));
     const input = screen.getByRole("textbox", { name: "项目名称" });
     fireEvent.change(input, { target: { value: "出差报销" } });
     fireEvent.keyDown(input, { key: "Enter" });

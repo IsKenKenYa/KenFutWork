@@ -114,8 +114,6 @@ it("creates and selects the default Flow project when none exists", async () => 
       return Promise.resolve({
         project: { id: "default-flow", kind: "flow", name: "默认工作流" },
       });
-    const kind =
-      new URLSearchParams(path.split("?")[1] ?? "").get("kind") ?? "";
     return Promise.resolve({ projects: [] }); // 已有项目但都不是 flow
   });
   const store = await import("@/components/workbench/zcode/host/flowProjects");
