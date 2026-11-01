@@ -3268,12 +3268,13 @@
       "source": "references/zcode/packages/ui/src/components/PluginIcon.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/PluginIcon.tsx",
       "sha256": "4bdb6a78e9839770411c765fb6ea95691fdb2ce3d69ac52d467ba7ebfc08d604",
-      "copiedSha256": "a777ef732dbcd859eed05a4aa54cdf0c10468ccd205ff9e242068486deb2c747",
+      "copiedSha256": "76ddd01573967f28bb47838f2768ee1134a7ec6d9b74b295c267398e1458e2ea",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主资源适配：原span/img及失败回退保留，原Platform取认证图片引用；异步结果按当前资源守卫",
         "主题适配：导航可选monochrome使用已认证图片引用作为currentColor mask，读取／解码失败沿原兜底；市场头像仍用原图片",
-        "2026-10-27（二百八十六）：无图标插件退到名字首字字母头像（PluginMonogram）。"
+        "2026-10-27（二百八十六）：无图标插件退到名字首字字母头像（PluginMonogram）。",
+        "2026-11-02（二百九十七）：市场图标统一视觉基线（同尺寸/同线宽/currentColor）。"
       ]
     },
     {
@@ -21058,9 +21059,10 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationTimeline.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationTimeline.tsx",
       "sha256": "e6cd02d962628dfc66679ec8363482a63151117243abac816ab3154f87fcacb9",
-      "copiedSha256": "4cf1319ba99cfb0318872101ae44bed70f99318792948e35e3afa44b0275d7d9",
+      "copiedSha256": "d76fc1ccc64827cbb7b3a14a2136415bcc3117ac34168d10a50c260a52d4d7a3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork 宿主偏差：流式性能——renderUnits 构建传入上一帧单元，经引用保持的深相等复用未变 turn 的引用，使 turn 级 memo 在增量帧下生效"
       ]
     },
     {
@@ -21967,9 +21969,11 @@
       "source": "references/zcode/packages/ui/src/v4/conversationTurnRenderUnits.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/conversationTurnRenderUnits.ts",
       "sha256": "d8be451a12d4726888e8608e24f10ab9de65cf0803a48259d26dcb5d8ff0455d",
-      "copiedSha256": "f467635acf2e6e73ee027dd50c6fe44629676671382bdce2a4cd82e97c58028b",
+      "copiedSha256": "5febe4dd0c9f0a2a6750c9973776cea98f5fe34ba0188ab0d011f79e2e1e7a04",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "KenFutWork 宿主偏差：新增 reuseDeepEqual（引用保持的深相等）与上一帧参数，等值 turn 沿用旧引用支撑 turn 级 memo",
+        "2026-11-02：reuseDeepEqual 上一帧缺席的 turn 直接用新对象，Map.get 的 undefined 不进逐键比较（TS2322）。"
       ]
     },
     {

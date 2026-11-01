@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import {
   applyConversationDeltas,
   type ConversationDelta,
@@ -7,9 +7,9 @@ import {
   type ConversationSnapshot,
   conversationSnapshotSchema,
 } from "@zcode/shared/zcode-protocol-v4";
+import { describe, expect, it } from "vitest";
 import { createCodeUiConversation } from "./conversation.js";
 import { diffConversationSnapshots } from "./snapshot-diff.js";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 
 const SESSION_ID = randomUUID();
 
@@ -158,7 +158,9 @@ describe("diffConversationSnapshots（真实 host 快照）", () => {
       completedResult.deltas.some((delta) => delta.op === "row.upserted"),
       "工具完成必须整行替换",
     ).toBe(true);
-    expect(applyFrom(started, completedResult, completed.seq)).toEqual(completed);
+    expect(applyFrom(started, completedResult, completed.seq)).toEqual(
+      completed,
+    );
   });
 
   it("run.completed 事件（control 键变化 + 行状态迁移）应用结果一致", () => {
@@ -181,7 +183,11 @@ describe("diffConversationSnapshots（真实 host 快照）", () => {
   it("零差异退化为 snapshot，防止客户端 seq 跳号判断档", () => {
     const { host } = createStartedHost();
     const same = hostSnapshot(host, 7);
-    const result = diffConversationSnapshots(same, { ...same, seq: 8, revision: 7 });
+    const result = diffConversationSnapshots(same, {
+      ...same,
+      seq: 8,
+      revision: 7,
+    });
     expect(result.fallbackToSnapshot).toBe(true);
     expect(result.fallbackReason).toBe("zero-diff");
     expect(result.deltas).toEqual([]);
@@ -329,9 +335,9 @@ describe("diffConversationSnapshots（真实 host 快照）", () => {
 
   it("structuredValueEqual：嵌套数组与对象的深相等判定", async () => {
     const { structuredValueEqual } = await import("./snapshot-diff.js");
-    expect(structuredValueEqual({ a: [1, { b: "x" }] }, { a: [1, { b: "x" }] })).toBe(
-      true,
-    );
+    expect(
+      structuredValueEqual({ a: [1, { b: "x" }] }, { a: [1, { b: "x" }] }),
+    ).toBe(true);
     expect(structuredValueEqual({ a: [1, 2] }, { a: [1, 2, 3] })).toBe(false);
     expect(structuredValueEqual({ a: 1 }, { a: 1, b: undefined })).toBe(false);
     expect(structuredValueEqual("同", "同")).toBe(true);

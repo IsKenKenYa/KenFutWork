@@ -565,5 +565,7 @@ it("conversation 订阅的流式刷新推送 deltas 帧且逐帧衔接，可由�
   await f.refresh();
   expect(f.events).toHaveLength(4);
   expect(frame(f.events[3]).wire.deliveryKind).toBe("online");
-  expect(frame(f.events[3]).snapshot.logEpoch).not.toBe(initial.snapshot.logEpoch);
+  expect(frame(f.events[3]).snapshot.logEpoch).not.toBe(
+    initial.snapshot.logEpoch,
+  );
 });

@@ -276,6 +276,11 @@ export function buildBundleManifest(files: BundleFiles): {
       engines && typeof engines.node === "string" ? engines.node : null,
     ui: declaredUi,
     assets: serveAssets,
+    // 插件图标：与 `ui[].icon` 同口径（相对包根的静态资源路径），供没有面板的插件也能在市场里显示。
+    icon:
+      typeof kenfutworkBlock.icon === "string" && kenfutworkBlock.icon
+        ? kenfutworkBlock.icon
+        : null,
     hasClientUi:
       typeof pkg.dsh === "object" &&
       pkg.dsh !== null &&

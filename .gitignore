@@ -117,3 +117,7 @@ apps/desktop/src-tauri/gen/
 
 # CommandCode CLI 的本地数据目录（taste 偏好等，本机私有，不入库）
 /.commandcode/
+
+# Python 字节码（随仓库引入的插件目录在构建时会生成）
+__pycache__/
+*.pyc

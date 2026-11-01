@@ -389,6 +389,9 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      '@zcode/shared':
+        specifier: workspace:*
+        version: link:../../packages/zcode-shared
       '@zcode/ui':
         specifier: workspace:*
         version: link:src/components/workbench/zcode

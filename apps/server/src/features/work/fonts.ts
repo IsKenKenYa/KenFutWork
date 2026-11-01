@@ -9,6 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { WorkFont, WorkFontFormat } from "@kenfutwork/shared";
 
 /**
@@ -26,6 +27,38 @@ import type { WorkFont, WorkFontFormat } from "@kenfutwork/shared";
  */
 
 const FONT_DIR = "work/fonts";
+/** 内置字体的存储名前缀：随产品分发（OFL），不随用户删除。 */
+const BUNDLED_PREFIX = "bundled-";
+/** 内置字体 → 许可全文。家族名与文件名一一对应（assets/work-fonts）。 */
+const BUNDLED_LICENSES: Record<string, string> = {
+  Inter: "OFL-Inter.txt",
+  LiberationSerif: "OFL-Liberation-Serif.txt",
+  LXGWWenKaiLite: "OFL-LXGW-WenKai-Lite.txt",
+  LXGWMarkerGothic: "OFL-LXGW-Marker-Gothic.txt",
+  NotoSansCJKsc: "OFL-Noto-CJK.txt",
+  NotoSerifCJKsc: "OFL-Noto-CJK.txt",
+  SmileySans: "OFL-Smiley-Sans.txt",
+  Yozai: "OFL-Yozai.txt",
+  ZhuqueFangsong: "OFL-Zhuque-Fangsong.txt",
+  MaShanZheng: "OFL-Ma-Shan-Zheng.txt",
+  ZCOOLKuaiLe: "OFL-ZCOOL-KuaiLe.txt",
+  JetBrainsMono: "OFL-JetBrains-Mono.txt",
+  DouyinSans: "OFL-Douyin-Sans.txt",
+  SarasaGothicSC: "OFL-Sarasa-Gothic.txt",
+};
+/** 家族名不含汉字的 CJK 字体：清单要标 Hani，编辑器才会把它当 CJK 回退候选。 */
+const BUNDLED_CJK = new Set([
+  "NotoSansCJKsc",
+  "NotoSerifCJKsc",
+  "LXGWWenKaiLite",
+  "LXGWMarkerGothic",
+  "Yozai",
+  "ZhuqueFangsong",
+  "MaShanZheng",
+  "ZCOOLKuaiLe",
+  "DouyinSans",
+  "SarasaGothicSC",
+]);
 const FORMAT_BY_EXT: Record<string, WorkFontFormat> = {
   ".ttf": "ttf",
   ".otf": "otf",
@@ -36,6 +69,51 @@ export const MAX_FONT_BYTES = 24 * 1024 * 1024;
 
 export function workFontsDir(dataDir: string): string {
   return join(dataDir, ...FONT_DIR.split("/"));
+}
+
+/** 随仓库分发的开源字体（OFL-1.1）源目录。 */
+export function bundledFontsDir(): string {
+  return fileURLToPath(new URL("../../../assets/work-fonts/", import.meta.url));
+}
+
+let bundledCache: Promise<StoredFont[]> | null = null;
+
+async function readBundled(): Promise<StoredFont[]> {
+  const dir = bundledFontsDir();
+  if (!existsSync(dir)) return [];
+  const names = (await readdir(dir)).filter(
+    (name) => fontFormatOf(name) !== null,
+  );
+  const fonts = await Promise.all(
+    names.map(async (name) => {
+      const path = join(dir, name);
+      const [info, bytes] = await Promise.all([stat(path), readFile(path)]);
+      return {
+        fileName: `${BUNDLED_PREFIX}${name}`,
+        family: fontFamilyName(bytes) ?? name,
+        format: fontFormatOf(name) ?? "ttf",
+        bytes: info.size,
+        builtin: true,
+        cjk: fontHasCjkGlyphs(bytes),
+      } satisfies StoredFont;
+    }),
+  );
+  return fonts;
+}
+
+/** 随产品分发的开源字体（读一次，进程内缓存）。 */
+export function listBundledFonts(): Promise<StoredFont[]> {
+  bundledCache ??= readBundled().catch(() => []);
+  return bundledCache;
+}
+
+/** `bundled-<file>` → 仓库内字体文件的绝对路径；不是内置名或文件缺失时返回 null。 */
+export function bundledFontPath(fileName: string): string | null {
+  if (!fileName.startsWith(BUNDLED_PREFIX)) return null;
+  const name = fileName.slice(BUNDLED_PREFIX.length);
+  if (fontFormatOf(name) === null || /[/]/u.test(name)) return null;
+  const path = join(bundledFontsDir(), name);
+  return existsSync(path) ? path : null;
 }
 
 export function fontFormatOf(fileName: string): WorkFontFormat | null {
@@ -135,7 +213,85 @@ function safeStem(fileName: string): string {
   return stem || "font";
 }
 
-export type StoredFont = WorkFont;
+export type StoredFont = WorkFont & {
+  /** 内部判定：cmap 是否覆盖汉字码位（不进出参契约，只影响清单的 script 标注）。 */
+  cjk?: boolean;
+};
+
+/** 汉字覆盖探针：三个常用汉字，拉丁字体一个都没有，中文字体三个全有。 */
+const CJK_PROBE = [0x4e00, 0x6587, 0x5b57];
+
+function sfntTable(bytes: Buffer, tag: string): number | null {
+  const numTables = bytes.readUInt16BE(4);
+  if (numTables < 1 || numTables > 256) return null;
+  for (let i = 0; i < numTables; i += 1) {
+    const record = 12 + i * 16;
+    if (record + 16 > bytes.length) return null;
+    if (bytes.toString("latin1", record, record + 4) === tag)
+      return bytes.readUInt32BE(record + 8);
+  }
+  return null;
+}
+
+function cmapCoversFormat4(bytes: Buffer, sub: number, codepoint: number) {
+  const segCountX2 = bytes.readUInt16BE(sub + 6);
+  const ends = sub + 14;
+  const starts = ends + segCountX2 + 2;
+  for (let s = 0; s < segCountX2 / 2; s += 1) {
+    const at = starts + s * 2;
+    if (at + 2 > bytes.length || ends + s * 2 + 2 > bytes.length) return false;
+    const start = bytes.readUInt16BE(at);
+    const end = bytes.readUInt16BE(ends + s * 2);
+    if (start === 0xffff) return false;
+    if (codepoint >= start && codepoint <= end) return true;
+  }
+  return false;
+}
+
+function cmapCoversFormat12(bytes: Buffer, sub: number, codepoint: number) {
+  const groups = bytes.readUInt32BE(sub + 12);
+  for (let g = 0; g < groups; g += 1) {
+    const at = sub + 16 + g * 12;
+    if (at + 12 > bytes.length) return false;
+    if (
+      codepoint >= bytes.readUInt32BE(at) &&
+      codepoint <= bytes.readUInt32BE(at + 4)
+    )
+      return true;
+  }
+  return false;
+}
+
+/**
+ * cmap 是否覆盖汉字。家族名是拉丁的中文字体（MiSans、HarmonyOS Sans…）只能这样判：
+ * 清单不标 Hani，编辑器就不拿它排中文正文。
+ */
+export function fontHasCjkGlyphs(bytes: Buffer): boolean {
+  if (bytes.length < 12) return false;
+  const head = bytes.toString("latin1", 0, 4);
+  if (head === "ttcf") return false; // 字体集合：偏移表不在 0，按未覆盖处理
+  const cmap = sfntTable(bytes, "cmap");
+  if (cmap === null || cmap + 4 > bytes.length) return false;
+  const tableCount = bytes.readUInt16BE(cmap + 2);
+  for (let i = 0; i < tableCount; i += 1) {
+    const entry = cmap + 4 + i * 8;
+    if (entry + 8 > bytes.length) return false;
+    const platform = bytes.readUInt16BE(entry);
+    if (platform !== 0 && platform !== 3) continue; // Unicode / Windows
+    const sub = cmap + bytes.readUInt32BE(entry + 4);
+    if (sub + 2 > bytes.length) return false;
+    const format = bytes.readUInt16BE(sub);
+    const covers =
+      format === 4
+        ? (cp: number) => cmapCoversFormat4(bytes, sub, cp)
+        : format === 12
+          ? (cp: number) => cmapCoversFormat12(bytes, sub, cp)
+          : null;
+    if (covers && CJK_PROBE.every((codepoint) => covers(codepoint)))
+      return true;
+  }
+  return false;
+}
 
 async function describe(
   dataDir: string,
@@ -150,19 +306,25 @@ async function describe(
     family: fontFamilyName(bytes) ?? basename(fileName, extname(fileName)),
     format,
     bytes: info.size,
+    builtin: fileName.startsWith(BUNDLED_PREFIX),
+    cjk: fontHasCjkGlyphs(bytes),
   };
 }
 
 export async function listFonts(dataDir: string): Promise<StoredFont[]> {
+  const bundled = await listBundledFonts();
   const dir = workFontsDir(dataDir);
-  if (!existsSync(dir)) return [];
+  if (!existsSync(dir)) return bundled;
   const names = await readdir(dir);
   const fonts = await Promise.all(
     names
       .filter((name) => fontFormatOf(name) !== null)
       .map((name) => describe(dataDir, name).catch(() => null)),
   );
-  return fonts.filter((font): font is StoredFont => font !== null);
+  return [
+    ...bundled,
+    ...fonts.filter((font): font is StoredFont => font !== null),
+  ];
 }
 
 /**
@@ -194,6 +356,8 @@ export async function addFont(input: {
 }
 
 export async function removeFont(dataDir: string, fileName: string) {
+  if (fileName.startsWith(BUNDLED_PREFIX))
+    throw new Error("内置字体不能删除。");
   // 只允许删字体目录里的直接文件：文件名不参与路径拼接。
   const safe = fontFormatOf(fileName) !== null && !/[\\/]/u.test(fileName);
   if (!safe) throw new Error("字体名不合法。");
@@ -216,25 +380,45 @@ function hasSfntHeader(bytes: Buffer): boolean {
  * 用户字体没有可靠的 script 标注，按「界面字体」给 `Latn`；家族名含中日韩字符时补
  * `Hani/Hans`——Web 编辑器只把标了该 script 的字体当 CJK 回退候选。
  */
+function manifestStyle(fileName: string): string {
+  const stem = basename(fileName, extname(fileName)).replace(/^bundled-/u, "");
+  const match =
+    /-(Bold|Italic|Oblique|Light|Medium|SemiBold|Black|Thin)$/u.exec(stem);
+  return match?.[1] ?? "Regular";
+}
+
 export function manifestFor(fonts: StoredFont[]): string {
   const lines = [
     "# KenFutWork 用户字体（用户自行上传，仅本机实例使用）。",
     "# family | style | file | scripts | licence | licence file | sha256 | source",
   ];
+  // 用户上传了与内置同名的字体时只保留内置那份：否则编辑器字体下拉会出现重复家族。
+  const bundledFamilies = new Set(
+    fonts
+      .filter((font) => font.builtin)
+      .map((font) => font.family.toLowerCase()),
+  );
   for (const font of fonts) {
-    const scripts = /[\u4e00-\u9fff]/u.test(font.family)
-      ? "Hani,Hans,Latn"
-      : "Latn";
+    if (!font.builtin && bundledFamilies.has(font.family.toLowerCase()))
+      continue;
+    const stem = basename(font.fileName, extname(font.fileName))
+      .replace(/^bundled-/u, "")
+      .replace(/-\w+$/u, "");
+    const scripts =
+      font.cjk || /[\u4e00-\u9fff]/u.test(font.family) || BUNDLED_CJK.has(stem)
+        ? "Hani,Hans,Latn"
+        : "Latn";
+    const licence = font.builtin ? (BUNDLED_LICENSES[stem] ?? "") : "";
     lines.push(
       [
         font.family,
-        "Regular",
+        manifestStyle(font.fileName),
         `fonts/user/${font.fileName}`,
         scripts,
-        "User-supplied",
+        font.builtin ? "OFL-1.1" : "User-supplied",
+        licence,
         "",
-        "",
-        "local",
+        font.builtin ? "bundled" : "local",
       ].join(" | "),
     );
   }

@@ -80,8 +80,7 @@ export function WorkbenchModeNavigation({
     );
   return (
     <div className="px-2 pt-3 pb-1">
-      {/* 用户口径：模式行上下加分界线（tab 轨道式 hairline），选中项灰底填充
-          顶满两线——一眼可辨当前模式，又不回到胶囊容器的突兀。 */}
+      {/* 用户口径：保留模式行上下两条分界线（tab 轨道），每档自己是圆角卡片。 */}
       <div
         role="radiogroup"
         aria-label="模式切换"
@@ -96,7 +95,7 @@ export function WorkbenchModeNavigation({
             aria-checked={mode === item.id}
             data-active={mode === item.id}
             onClick={() => onModeChange(item.id)}
-            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+            className="flex min-h-[34px] min-w-0 flex-1 items-center justify-center rounded-md py-1.5 text-[13px] whitespace-nowrap text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
           >
             <span className="truncate">{item.label}</span>
           </button>

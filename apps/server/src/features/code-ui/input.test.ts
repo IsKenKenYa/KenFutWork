@@ -38,6 +38,8 @@ async function fixture(
     enabledModes?: Array<"code" | "design">;
     workContextProvider?: ConversationWorkContextProvider;
     captureContributions?: CodeUiServiceDeps["captureContributions"];
+    /** 让父会话进入 running（openChildSession 等要求父轮进行中的路径用）。 */
+    seedRunningTurn?: boolean;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-code-input-"));
@@ -106,6 +108,12 @@ async function fixture(
       modelSelection: selection,
     },
   });
+  if (options.seedRunningTurn)
+    conversation.startTurn({
+      runId: "seed-run",
+      commandId: randomUUID(),
+      text: "种子轮",
+    });
   const root: CodeUiSessionRecord = {
     id: taskId,
     instance_id: instanceId,
@@ -136,6 +144,7 @@ async function fixture(
     string,
     { fingerprint: string; ack: protocol.CommandAck }
   >();
+  const appendEvents: Array<{ key: string; event: unknown }> = [];
   const repository = {
     preparations: {
       recover: async () => {},
@@ -196,7 +205,8 @@ async function fixture(
       commands.set(key, { fingerprint, ack });
       return ack;
     },
-    async appendEvent(_workspace, _task, _event, apply) {
+    async appendEvent(_workspace, _task, event, apply) {
+      appendEvents.push({ key: event.key, event: event.event });
       const decision = apply(structuredClone(root));
       root.state = decision.state;
       root.active_run_id = decision.activeRunId;
@@ -545,6 +555,7 @@ async function fixture(
     directory,
     connectionId: connection.hello.connectionId,
     events,
+    appendEvents,
     root,
     scope,
     createAcceptedRun,
@@ -1740,4 +1751,54 @@ it("原sendQueuedNow按CAS认领指定项并停止旧轮，保留原输入身份
     if (host.runs.length > 1) host.finishRun(1);
     await replacing;
   }
+});
+
+it("子代理流式 delta 经合批器落地：连续 chunk 合并为一条，终态即时透传", async () => {
+  const host = await fixture({ seedRunningTurn: true });
+  const childRequest = {
+    childSessionId: randomUUID(),
+    approvalCeiling: "build",
+    actor: host.actor,
+    scope: { describe: () => host.scope },
+    model: "test",
+    parentSessionId: host.taskId,
+    parentRunId: "parent-run",
+    toolCallId: randomUUID(),
+    branchGeneration: 1,
+    delegationDepth: 0,
+    role: "worker",
+    description: "子任务",
+    ownership: [host.directory],
+    completionCriteria: "完成",
+    detached: false,
+  } as unknown as Parameters<CodeUiService["openChildSession"]>[0];
+  const child = await host.service.openChildSession(childRequest);
+  const childEvents = () =>
+    host.appendEvents.filter((entry) =>
+      String(entry.key).startsWith(
+        `child-event:${childRequest.childSessionId}/`,
+      ),
+    );
+  const at = new Date().toISOString();
+  const delta = (text: string) => ({
+    type: "message.delta" as const,
+    runId: "child-run",
+    messageId: "m-1",
+    delta: text,
+    timestamp: at,
+  });
+  await child.emit(delta("你"));
+  await child.emit(delta("好"));
+  await child.emit(delta("，世界"));
+  // 刷新间隔未到：三个 chunk 全部留在缓冲，尚未落库。
+  expect(childEvents()).toHaveLength(0);
+  // 终态事件 flush-before：缓冲 delta 拼接后先落地，再即时透传终态。
+  await child.emit({
+    type: "run.completed",
+    runId: "child-run",
+    timestamp: at,
+  });
+  expect(childEvents()).toHaveLength(2);
+  expect(childEvents()[0]?.event).toMatchObject({ delta: "你好，世界" });
+  expect(childEvents()[1]?.event).toMatchObject({ type: "run.completed" });
 });

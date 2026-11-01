@@ -7,7 +7,8 @@
   "files": [
     "index.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "assets/icon.svg"
   ],
   "license": "GPL-3.0",
   "kenfutwork": {
@@ -15,6 +16,8 @@
       "patch": "./cordis.patch.yml"
     },
     "title": "Work 办公创作",
-    "category": "办公"
+    "category": "办公",
+    "assets": true,
+    "icon": "assets/icon.svg"
   }
 }

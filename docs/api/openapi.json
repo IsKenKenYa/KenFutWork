@@ -6982,7 +6982,7 @@
       "get": {
         "operationId": "getWorkHostFonts",
         "summary": "列出用户字体库",
-        "description": "返回实例数据目录 work/fonts 下的字体清单（文件名、家族名、格式、字节数）与目录绝对路径。编辑器为 WASM 自绘、读不到系统字体，托管时该目录映射到站点 fonts/ 供运行时加载。",
+        "description": "返回字体库存放目录与本机实例已上传的字体（家族名、格式、字节数）。字体仅供本机编辑器同源加载，不进仓库、不随产品分发。",
         "tags": [
           "work"
         ],
@@ -7029,8 +7029,8 @@
       },
       "post": {
         "operationId": "postWorkHostFonts",
-        "summary": "上传一个用户字体",
-        "description": "multipart 单文件上传 ttf/otf/ttc（按字体上限放行，超出全局 10MB 限制）。成功返回新入库条目与最新清单；同名或非法文件返回 400。上传的是用户自己的字体，随实例本机使用，不进仓库、不随产品分发。",
+        "summary": "上传用户字体",
+        "description": "接收一个 ttf/otf/ttc 文件（单文件，上限 24MB），按内容哈希落位并解析家族名；文件名不参与路径。非字体或超限返回 400。",
         "tags": [
           "work"
         ],
@@ -7042,35 +7042,9 @@
             "bearerAuth": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "file"
-                ],
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/workFontsUploadResponseSchema"
-                }
-              }
-            }
+            "description": "成功"
           },
           "401": {
             "description": "未认证或令牌无效",
@@ -7098,8 +7072,8 @@
     "/api/work/host/fonts/{fileName}": {
       "delete": {
         "operationId": "deleteWorkHostFontsByFileName",
-        "summary": "删除用户字体库中的一个字体",
-        "description": "按存储文件名删除字体并重写 manifest；文件不存在或文件名非法返回 400。",
+        "summary": "删除用户字体",
+        "description": "按存储文件名删除字体并返回剩余清单。文件名含路径分隔或不在库中返回 400。",
         "tags": [
           "work"
         ],
@@ -7123,8 +7097,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "成功，无响应体"
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workFontsResponseSchema"
+                }
+              }
+            }
           },
           "401": {
             "description": "未认证或令牌无效",
@@ -38661,95 +38642,6 @@
         "required": [
           "dir",
           "fonts"
-        ],
-        "additionalProperties": false
-      },
-      "workFontsUploadResponseSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "dir": {
-            "type": "string",
-            "minLength": 1
-          },
-          "fonts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "fileName": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 160
-                },
-                "family": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 120
-                },
-                "format": {
-                  "type": "string",
-                  "enum": [
-                    "ttf",
-                    "otf",
-                    "ttc"
-                  ]
-                },
-                "bytes": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "fileName",
-                "family",
-                "format",
-                "bytes"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "added": {
-            "type": "object",
-            "properties": {
-              "fileName": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 160
-              },
-              "family": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 120
-              },
-              "format": {
-                "type": "string",
-                "enum": [
-                  "ttf",
-                  "otf",
-                  "ttc"
-                ]
-              },
-              "bytes": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "fileName",
-              "family",
-              "format",
-              "bytes"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "dir",
-          "fonts",
-          "added"
         ],
         "additionalProperties": false
       },

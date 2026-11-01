@@ -1,0 +1,105 @@
+diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
+index 8ee4e68..397dbcf 100644
+--- a/crates/ui-egui/Cargo.toml
++++ b/crates/ui-egui/Cargo.toml
+@@ -60,7 +60,7 @@ rfd = { workspace = true, features = ["file-handle-inner"] }
+ wasm-bindgen-futures = "0.4"
+ wasm-bindgen = "0.2"
+ js-sys = "0.3"
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "HtmlIFrameElement", "HtmlImageElement", "HtmlCollection", "Node", "EventTarget"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "HtmlIFrameElement", "HtmlImageElement", "HtmlCollection", "Node", "EventTarget", "Navigator", "Response", "Request", "RequestInit"] }
+ 
+ [dev-dependencies]
+ pdfcraft-xfa = { workspace = true }
+diff --git a/crates/ui-egui/src/files.rs b/crates/ui-egui/src/files.rs
+index cd54c77..ce1abad 100644
+--- a/crates/ui-egui/src/files.rs
++++ b/crates/ui-egui/src/files.rs
+@@ -28,6 +28,36 @@ pub enum FilePurpose {
+     RedactWords,
+ }
+ 
++/// 宿主上传的用户字体（Work 引擎页），web 构建从同源 `fonts/manifest.txt` 拉取并缓存。
++/// `None` 表示当前页面没有该清单（非 Work 宿主），调用方据此不显示入口。
++pub(crate) fn host_fonts(ctx: &egui::Context) -> Option<std::sync::Arc<Vec<(String, Vec<u8>)>>> {
++    #[cfg(not(target_arch = "wasm32"))]
++    {
++        let _ = ctx;
++        return None;
++    }
++    #[cfg(target_arch = "wasm32")]
++    {
++        use std::sync::{Arc, Mutex, OnceLock};
++        type Fetched = Arc<Mutex<Option<Arc<Vec<(String, Vec<u8>)>>>>>;
++        static CACHE: OnceLock<Fetched> = OnceLock::new();
++        let slot = CACHE.get_or_init(|| {
++            let slot: Fetched = Arc::new(Mutex::new(None));
++            let fill = slot.clone();
++            let ctx = ctx.clone();
++            wasm_bindgen_futures::spawn_local(async move {
++                let fonts = Arc::new(crate::host_font_fetch::fetch_host_fonts().await);
++                if let Ok(mut guard) = fill.lock() {
++                    *guard = Some(fonts);
++                }
++                ctx.request_repaint();
++            });
++            slot
++        });
++        slot.lock().ok().and_then(|g| g.clone())
++    }
++}
++
+ /// Discover installed document fonts off the GUI thread, only when the picker is opened.
+ #[cfg(not(target_arch = "wasm32"))]
+ pub(crate) fn installed_font_files(ctx: &egui::Context) -> Option<Vec<pdfcraft_engine::text_fonts::FontFile>> {
+diff --git a/crates/ui-egui/src/i18n/zh-hans.tsv b/crates/ui-egui/src/i18n/zh-hans.tsv
+index 1f30ef9..7488470 100644
+--- a/crates/ui-egui/src/i18n/zh-hans.tsv
++++ b/crates/ui-egui/src/i18n/zh-hans.tsv
+@@ -391,6 +391,8 @@
+ 	Installed fonts…	已安装字体…
+ 	Keep source fonts	保留原始字体
+ 	Load font…	加载字体…
++	No fonts uploaded in the engine page	引擎页未上传字体
++	Uploaded fonts	本机上传字体
+ 	No openly licensed document fonts found. Load a font file.	未找到采用开放许可证的字体。请加载字体文件。
+ 
+ 	Format text	设置文本格式
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index a728321..836a863 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -23,6 +23,8 @@ macro_rules! tl_ctx {
+ }
+ 
+ mod a11y_ui;
++#[cfg(target_arch = "wasm32")]
++pub(crate) mod host_font_fetch;
+ mod actions_ui;
+ mod appearance;
+ pub mod canvas;
+diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
+index 5c24862..9d9d567 100644
+--- a/crates/ui-egui/src/panels.rs
++++ b/crates/ui-egui/src/panels.rs
+@@ -366,6 +366,20 @@ fn format_section(app: &mut PdfCraftApp, ui: &mut egui::Ui, t: &Tokens) {
+         if ui.button(tl!("Load font…")).clicked() {
+             app.pick_files(crate::files::FilePurpose::TextFont { page: ed.page }, false);
+         }
++        // 宿主上传的用户字体（Work 引擎页）：同源 `fonts/manifest.txt` 拉到的不进包，
++        // 在「本机字体」一项里列出，选中即按 Load font… 的同一条路径嵌入本文档。
++        if let Some(entries) = crate::files::host_fonts(ui.ctx()) {
++            egui::ComboBox::from_id_salt("host-document-font").selected_text(tl!("Uploaded fonts")).show_ui(ui, |ui| {
++                if entries.is_empty() {
++                    ui.label(tl!("No fonts uploaded in the engine page"));
++                }
++                for (family, bytes) in entries.iter() {
++                    if ui.selectable_label(false, family).clicked() {
++                        app.use_files(crate::files::FilePurpose::TextFont { page: ed.page }, vec![(family.clone(), bytes.clone())]);
++                    }
++                }
++            });
++        }
+         #[cfg(not(target_arch = "wasm32"))]
+         egui::ComboBox::from_id_salt("installed-document-font").selected_text(tl!("Installed fonts…")).show_ui(ui, |ui| {
+             if let Some(fonts) = crate::files::installed_font_files(ui.ctx()) {

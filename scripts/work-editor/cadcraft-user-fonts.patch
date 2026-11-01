@@ -1,0 +1,130 @@
+diff --git a/apps/cadcraft-web/Cargo.toml b/apps/cadcraft-web/Cargo.toml
+index e5e86a0..d99b361 100644
+--- a/apps/cadcraft-web/Cargo.toml
++++ b/apps/cadcraft-web/Cargo.toml
+@@ -16,6 +16,7 @@ path = "src/main.rs"
+ 
+ [dependencies]
+ cadcraft-engine = { workspace = true }
++cadcraft-fonts = { workspace = true }
+ cadcraft-ui-egui = { workspace = true }
+ cadcraft-io = { workspace = true }
+ egui = { workspace = true }
+@@ -30,4 +31,5 @@ web-sys = { version = "0.3", features = ["HtmlInputElement", "FileList", "File"]
+ eframe = { workspace = true, features = ["persistence", "wgpu", "accesskit"] }
+ wasm-bindgen = "0.2"
+ wasm-bindgen-futures = "0.4"
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Location", "Navigator", "Blob", "BlobPropertyBag", "Url", "MessageEvent", "UrlSearchParams", "MediaQueryList"] }
++js-sys = "0.3"
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Location", "Navigator", "Blob", "BlobPropertyBag", "Url", "MessageEvent", "UrlSearchParams", "MediaQueryList", "Response", "Request", "RequestInit"] }
+diff --git a/apps/cadcraft-web/src/main.rs b/apps/cadcraft-web/src/main.rs
+index f69e02d..cbbbc7d 100644
+--- a/apps/cadcraft-web/src/main.rs
++++ b/apps/cadcraft-web/src/main.rs
+@@ -13,6 +13,8 @@
+ pub mod download;
+ #[cfg(target_arch = "wasm32")]
+ mod host;
++#[cfg(target_arch = "wasm32")]
++mod user_fonts;
+ 
+ #[cfg(target_arch = "wasm32")]
+ mod web {
+@@ -185,6 +187,18 @@ mod web {
+                             (bridge, crate::host::DirtyReport::default())
+                         });
+                         let reduced_motion = web_sys::window().and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok().flatten());
++                        // 宿主上传的用户字体（Work 引擎页）：同源清单 → 字体注册表。
++                        let font_ctx = cc.egui_ctx.clone();
++                        wasm_bindgen_futures::spawn_local(async move {
++                            let count = crate::user_fonts::install(|bytes| {
++                                if cadcraft_fonts::ttf::register_family_font(bytes).is_empty() { 0 } else { 1 }
++                            })
++                            .await;
++                            if count > 0 {
++                                log::info!("user fonts installed: {count}");
++                                font_ctx.request_repaint();
++                            }
++                        });
+                         Ok(Box::new(Shell(app, inbox, host, reduced_motion, None)))
+                     }),
+                 )
+diff --git a/crates/fonts/src/ttf.rs b/crates/fonts/src/ttf.rs
+index 5299890..897b4ad 100644
+--- a/crates/fonts/src/ttf.rs
++++ b/crates/fonts/src/ttf.rs
+@@ -476,6 +476,42 @@ pub fn register(name: &str, bytes: Vec<u8>) {
+     g.fallback = Fallback::default();
+ }
+ 
++/// Register a font file the page fetched (`fonts/user/…`) and return the family names it carries.
++/// The file is stored under each family name as well, so a text style that names the family
++/// (`霞鹜文楷 轻便版`) resolves without the caller knowing the stored stem.
++pub fn register_family_font(bytes: Vec<u8>) -> Vec<String> {
++    let data = Arc::new(bytes);
++    let mut families: Vec<String> = Vec::new();
++    for face in faces(&data) {
++        let Some(font) = face.font() else { continue };
++        for id in [skrifa::string::StringId::TYPOGRAPHIC_FAMILY_NAME, skrifa::string::StringId::FAMILY_NAME] {
++            if let Some(s) = font.localized_strings(id).english_or_first() {
++                let name = s.to_string();
++                if !name.is_empty() && !families.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
++                    families.push(name);
++                }
++            }
++        }
++    }
++    let mut g = lock();
++    for family in &families {
++        g.files.insert(key(family), data.clone());
++    }
++    g.resolved.clear();
++    g.fallback = Fallback::default();
++    families
++}
++
++/// The family names of fonts registered by [`register`]/[`register_family_font`], for the font
++/// menus (web builds have no system fonts to list).
++pub fn registered_families() -> Vec<String> {
++    let g = lock();
++    let mut out: Vec<String> = g.files.keys().cloned().collect();
++    out.sort();
++    out.dedup();
++    out
++}
++
+ /// Register font bytes that live for the whole process under a name; they are copied only when
+ /// the font is first used, the way the embedded craft-fonts fonts are listed.
+ #[cfg(test)]
+diff --git a/crates/ui-egui/src/mtext_editor.rs b/crates/ui-egui/src/mtext_editor.rs
+index 8258a29..d6fd3b6 100644
+--- a/crates/ui-egui/src/mtext_editor.rs
++++ b/crates/ui-egui/src/mtext_editor.rs
+@@ -18,6 +18,18 @@ const MIN_PX: f32 = 13.0;
+ const MAX_PX: f32 = 36.0;
+ /// Families the font list offers besides the one set in the text.
+ const FAMILIES: [&str; 6] = ["Arial", "Times New Roman", "Courier New", "Verdana", "Georgia", "Calibri"];
++
++/// The font menu's families: the standard six, then any font the page registered (宿主上传的
++/// 用户字体) — a web build has no system fonts to scan, so those would otherwise be invisible.
++fn font_families() -> Vec<String> {
++    let mut out: Vec<String> = FAMILIES.iter().map(ToString::to_string).collect();
++    for name in cadcraft_fonts::ttf::registered_families() {
++        if !out.iter().any(|f| f.eq_ignore_ascii_case(&name)) {
++            out.push(name);
++        }
++    }
++    out
++}
+ /// The standard colours (ACI 1..=7) of the colour menu.
+ const SWATCHES: [u16; 7] = [1, 2, 3, 4, 5, 6, 7];
+ /// Ruler snap, in text heights.
+@@ -235,7 +247,7 @@ fn toolbar(ui: &mut egui::Ui, st: &mut State, base_h: f64) {
+             .width(120.0)
+             .selected_text(shown.clone())
+             .show_ui(ui, |ui| {
+-                for fam in FAMILIES.iter().map(ToString::to_string).chain(cur.font.clone().filter(|f| !FAMILIES.contains(&f.as_str()))) {
++                for fam in font_families().into_iter().chain(cur.font.clone().filter(|f| !FAMILIES.contains(&f.as_str()) && !font_families().iter().any(|g| g.eq_ignore_ascii_case(f)))) {
+                     if ui.selectable_label(shown == fam, &fam).clicked() {
+                         change(st, |c| c.font = Some(fam.clone()));
+                         refocus = true;

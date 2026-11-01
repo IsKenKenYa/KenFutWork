@@ -5,8 +5,19 @@ import type {
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
+import {
+  ZCodeStartupLogoBadge,
+  ZCodeStartupSpinner,
+} from "@zui/root/RootStartupLoading.js";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { fontFamilies } from "./fontFamilies.js";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
   getWorkSurfaceView,
@@ -23,7 +34,8 @@ type WorkEditorCategory =
   | "layout"
   | "pdf"
   | "audio"
-  | "cad";
+  | "cad"
+  | "eda";
 
 const CATEGORY_LABEL: Record<WorkEditorCategory, string> = {
   office: "办公",
@@ -33,6 +45,7 @@ const CATEGORY_LABEL: Record<WorkEditorCategory, string> = {
   pdf: "PDF",
   audio: "音频",
   cad: "CAD",
+  eda: "EDA",
 };
 
 const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
@@ -42,6 +55,8 @@ const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
 
 /** 安装进行中轮询间隔；一次性兜底常量（非运行可调治理项），与 flow 安装轮询同口径。 */
 const INSTALL_POLL_MS = 2000;
+/** 编辑器没发就绪信号时（旧包/非 egui 站点）的兜底显示时间；一次性常量。 */
+const EDITOR_READY_FALLBACK_MS = 8000;
 
 /**
  * Work 主区视图（融合进 Code 壳后的承载面）。
@@ -98,7 +113,16 @@ export function HostWorkSurface({
   }, [active, installing, refresh]);
 
   if (view.kind === "editor") {
-    return <EditorFrame editorId={view.editorId} onBack={openWorkEditors} />;
+    const title =
+      editors?.editors.find((editor) => editor.id === view.editorId)?.title ??
+      view.editorId;
+    return (
+      <EditorFrame
+        editorId={view.editorId}
+        title={title}
+        onBack={openWorkEditors}
+      />
+    );
   }
   return (
     <EditorsInfoView
@@ -226,7 +250,11 @@ function EditorsInfoView({
                   {MOUNT_LABEL[editor.mount] ?? editor.mount}
                 </span>
                 <span className="font-mono text-[11px] text-foreground-subtle">
-                  {editor.pinned ? `v${editor.pinned.version}` : "—"}
+                  {editor.pinned
+                    ? `v${editor.pinned.version}`
+                    : editor.version
+                      ? `v${editor.version}`
+                      : "—"}
                 </span>
                 <span className="flex min-w-0 items-center justify-center gap-2 text-xs">
                   {install.state === "installing" ? (
@@ -361,6 +389,10 @@ function WorkFontsSection({ active }: { active: boolean }) {
     [load],
   );
 
+  // 一个家族一份记录：同名的版本注释（预览测试版/轻便版）先归一化再合并，
+  // 排序规则见 fontFamilies——英文字体在前、中文在后，各自升序。
+  const families = useMemo(() => fontFamilies(fonts?.fonts ?? []), [fonts]);
+
   const remove = useCallback(
     async (fileName: string) => {
       setBusy(true);
@@ -377,6 +409,13 @@ function WorkFontsSection({ active }: { active: boolean }) {
       }
     },
     [load],
+  );
+
+  const removeAll = useCallback(
+    async (fileNames: string[]) => {
+      for (const fileName of fileNames) await remove(fileName);
+    },
+    [remove],
   );
 
   return (
@@ -398,29 +437,36 @@ function WorkFontsSection({ active }: { active: boolean }) {
           />
         </label>
       </div>
-      {(fonts?.fonts ?? []).length === 0 ? (
+      {families.length === 0 ? (
         <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
           暂无字体
         </p>
       ) : (
-        (fonts?.fonts ?? []).map((font, index, rows) => (
+        families.map((family, index) => (
           <div
-            key={font.fileName}
+            key={family.name}
             className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 ${
-              index === rows.length - 1 ? "" : "border-b border-border"
+              index === families.length - 1 ? "" : "border-b border-border"
             }`}
           >
-            <span className="min-w-0 truncate" title={font.fileName}>
-              {font.family}
+            <span className="min-w-0 truncate">{family.name}</span>
+            <span className="flex items-center gap-2">
+              {family.builtin ? (
+                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle">
+                  内置
+                </span>
+              ) : null}
+              {family.userFiles.length > 0 && !family.builtin ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void removeAll(family.userFiles)}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+                >
+                  删除
+                </button>
+              ) : null}
             </span>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void remove(font.fileName)}
-              className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
-            >
-              删除
-            </button>
           </div>
         ))
       )}
@@ -444,40 +490,72 @@ function WorkFontsSection({ active }: { active: boolean }) {
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
+  title,
   onBack,
 }: {
   editorId: string;
+  title: string;
   onBack: () => void;
 }) {
   const [frameLoaded, setFrameLoaded] = useState(false);
+  const [ready, setReady] = useState(false);
   const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
+  // 编辑器页由宿主注入脚本在启动完成后发信号（见 work-host.ts 的 EDITOR_SHELL_SCRIPT）；
+  // 不认这个信号就只能等 iframe onLoad，几十 MB 的 wasm 会在编辑器自己的英文 Loading 上停住。
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (
+        (event.data as { type?: string } | null)?.type ===
+        "kenfutwork:editor-ready"
+      )
+        setReady(true);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  useEffect(() => {
+    if (!frameLoaded) return;
+    const timer = window.setTimeout(
+      () => setReady(true),
+      EDITOR_READY_FALLBACK_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [frameLoaded]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
+          aria-label="返回编辑器列表"
+          title="返回编辑器列表"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          编辑器
+          <ArrowLeft className="h-4 w-4" />
         </button>
-        <span className="text-sm">{editorId}</span>
+        <span className="truncate text-sm font-medium">{title}</span>
       </div>
       <div className="relative min-h-0 flex-1">
         <iframe
           src={src}
-          title={`${editorId} 编辑器`}
+          title={title}
           className={`h-full w-full border-0 transition-opacity duration-300 ${
-            frameLoaded ? "opacity-100" : "opacity-0"
+            ready ? "opacity-100" : "opacity-0"
           }`}
           onLoad={() => setFrameLoaded(true)}
         />
-        {!frameLoaded ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-foreground-subtle">
-            正在打开编辑器…
+        {ready ? null : (
+          <div
+            role="status"
+            aria-busy="true"
+            aria-label="正在打开编辑器"
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-background"
+          >
+            <ZCodeStartupLogoBadge />
+            <ZCodeStartupSpinner />
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

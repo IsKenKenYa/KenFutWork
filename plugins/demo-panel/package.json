@@ -7,7 +7,8 @@
   "files": [
     "index.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "assets/icon.svg"
   ],
   "license": "GPL-3.0",
   "dsh": {
@@ -46,6 +47,7 @@
         "url": "assets/panel.html?slot=settings"
       }
     ],
-    "title": "演示插件"
+    "title": "演示插件",
+    "icon": "assets/icon.svg"
   }
 }

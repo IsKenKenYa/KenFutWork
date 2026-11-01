@@ -8,8 +8,8 @@ import type {
   CodeUiHostRpcCleanup,
   CodeUiHostRpcContext,
 } from "./host-rpc-handler.js";
-import { diffConversationSnapshots } from "./snapshot-diff.js";
 import { CodeUiRepositoryError } from "./repository.js";
+import { diffConversationSnapshots } from "./snapshot-diff.js";
 
 type Snapshot =
   | protocol.ConversationSnapshot
@@ -507,10 +507,7 @@ export class CodeUiConnections {
       return;
     // 并发 refresh 的交错读取：比已推送视图更旧的读作废（新读已覆盖它的事实）。
     // 等值不拦：同 seq 的 recovery 必须照常交付，重复 online 帧由客户端水位去重。
-    if (
-      subscription.lastPushed &&
-      current.seq < subscription.lastPushed.seq
-    )
+    if (subscription.lastPushed && current.seq < subscription.lastPushed.seq)
       return;
     const definition = topicDefinitions.find((entry) =>
       subscription.topic.startsWith(entry.prefix),

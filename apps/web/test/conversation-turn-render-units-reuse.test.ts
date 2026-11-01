@@ -1,13 +1,13 @@
-import { describe, expect, it } from "vitest";
-import {
-  buildConversationTurnRenderUnits,
-  reuseDeepEqual,
-  type ConversationTurnRenderUnit,
-} from "@zui/v4/conversationTurnRenderUnits.js";
 import type {
   ConversationRow,
   ConversationSnapshot,
 } from "@zcode/shared/zcode-protocol-v4";
+import {
+  buildConversationTurnRenderUnits,
+  type ConversationTurnRenderUnit,
+  reuseDeepEqual,
+} from "@zui/v4/conversationTurnRenderUnits.js";
+import { describe, expect, it } from "vitest";
 
 type Rows = ConversationSnapshot["rows"]["window"];
 
@@ -24,6 +24,7 @@ function turnHeader(
     createdAt: 1_000,
     createdAtSeq: 0,
     kind: "turnHeader",
+    origin: "userInput",
     state: "running",
     startedAt: 1_000,
   };
@@ -68,7 +69,10 @@ describe("buildConversationTurnRenderUnits 引用复用", () => {
     const first = build(rows);
     const cloned: Rows = [turnHeader("t1"), assistantText("t1", "正文")];
     // 克隆行 rowId 递增了，把关键身份字段对齐成「深值相等、引用全新」。
-    const header = cloned[0] as Extract<ConversationRow, { kind: "turnHeader" }>;
+    const header = cloned[0] as Extract<
+      ConversationRow,
+      { kind: "turnHeader" }
+    >;
     const text = cloned[1] as Extract<
       ConversationRow,
       { kind: "assistantText" }
@@ -108,19 +112,13 @@ describe("buildConversationTurnRenderUnits 引用复用", () => {
     const textT2 = assistantText("t2", "第二轮");
     const headerT3 = turnHeader("t3");
     const first = build([headerT1, textT1, headerT2, textT2]);
-    const second = build(
-      [headerT1, textT1, headerT2, textT2, headerT3],
-      first,
-    );
+    const second = build([headerT1, textT1, headerT2, textT2, headerT3], first);
     // t1 非末位且内容未变 → 复用；t2 因 isLastTurn 从 true 变 false → 换引用；t3 新增。
     expect(second[0]).toBe(first[0]);
     expect(second[1]).not.toBe(first[1]);
     expect(second).toHaveLength(3);
     // 再次构建（位置稳定后）全部复用。
-    const third = build(
-      [headerT1, textT1, headerT2, textT2, headerT3],
-      second,
-    );
+    const third = build([headerT1, textT1, headerT2, textT2, headerT3], second);
     expect(third[0]).toBe(second[0]);
     expect(third[1]).toBe(second[1]);
     expect(third[2]).toBe(second[2]);

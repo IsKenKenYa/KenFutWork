@@ -520,10 +520,18 @@ export function buildConversationTurnRenderUnits(
   const previousByTurnId = new Map(
     previous.map((unit) => [unit.turnId, unit] as const),
   );
-  return keptUnits.map((unit, index) =>
-    reuseDeepEqual(
-      previousByTurnId.get(unit.turnId),
-      normalizeRenderUnitPosition(unit, index, keptUnits.length, options),
-    ),
-  );
+  return keptUnits.map((unit, index) => {
+    const unitNext = normalizeRenderUnitPosition(
+      unit,
+      index,
+      keptUnits.length,
+      options,
+    );
+    // 新 turn 在 previous 里没有可复用的引用，直接用新对象；
+    // Map.get 的 undefined 不能传进 reuseDeepEqual（previous !== next 会落到逐键比较）。
+    const previousUnit = previousByTurnId.get(unit.turnId);
+    return previousUnit === undefined
+      ? unitNext
+      : reuseDeepEqual(previousUnit, unitNext);
+  });
 }

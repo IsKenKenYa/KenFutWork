@@ -24,6 +24,8 @@ export const workEditorCategorySchema = z.enum([
   "pdf",
   "audio",
   "cad",
+  /** 电子设计（原理图 / PCB）：KiCad 一档，原生窗口挂载。 */
+  "eda",
 ]);
 export type WorkEditorCategory = z.infer<typeof workEditorCategorySchema>;
 
@@ -66,6 +68,8 @@ export const workEditorSchema = z.object({
   mount: workEditorMountSchema,
   /** 锚定发布；null = 尚未锚定（不提供下载）。 */
   pinned: workEditorPinnedReleaseSchema.nullable(),
+  /** 随宿主分发（无下载包）的版本号；有 pinned 时以 pinned 为准。 */
+  version: z.string().min(1).max(32).nullable().default(null),
   /** 扩展包是否已落位本机数据目录（下载器或手动放置都算；未落位如实回答）。 */
   installed: z.boolean(),
 });
@@ -167,6 +171,8 @@ export const workFontSchema = z.object({
   family: z.string().min(1).max(120),
   format: workFontFormatSchema,
   bytes: z.number().int().positive(),
+  /** 随产品分发（OFL 开源字体）；用户上传的为 false，内置字体不可删除。 */
+  builtin: z.boolean().default(false),
 });
 export type WorkFont = z.infer<typeof workFontSchema>;
 
@@ -176,14 +182,6 @@ export const workFontsResponseSchema = z.object({
   fonts: z.array(workFontSchema),
 });
 export type WorkFontsResponse = z.infer<typeof workFontsResponseSchema>;
-
-/** 上传成功响应：返回最新字体清单与新入库的那一条。 */
-export const workFontsUploadResponseSchema = workFontsResponseSchema.extend({
-  added: workFontSchema,
-});
-export type WorkFontsUploadResponse = z.infer<
-  typeof workFontsUploadResponseSchema
->;
 
 /** 界面语言偏好：`auto` 跟随系统，其余为 BCP 47 码。 */
 export const workUiLanguageSchema = z.string().min(1).max(32);

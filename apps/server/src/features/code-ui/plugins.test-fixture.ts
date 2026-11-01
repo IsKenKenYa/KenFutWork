@@ -29,8 +29,19 @@ export async function createPluginInventoryFixture(
     new URL("../../../../../plugins/example-clock/", import.meta.url),
   );
   const files: Record<string, string> = {};
-  for (const name of await readdir(packageRoot))
-    files[name] = await readFile(join(packageRoot, name), "utf8");
+  // 递归读包目录：插件可以带 `assets/`（图标、面板页面），只读包根会撞 EISDIR。
+  const collect = async (dir: string, rel: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules") continue;
+        await collect(join(dir, entry.name), child);
+      } else {
+        files[child] = await readFile(join(dir, entry.name), "utf8");
+      }
+    }
+  };
+  await collect(packageRoot, "");
   const { manifest } = buildBundleManifest(files);
   const hostNodeMajor = Number.parseInt(
     process.versions.node.split(".")[0] ?? "0",

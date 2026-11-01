@@ -33,8 +33,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export function structuredValueEqual(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (Array.isArray(left) || Array.isArray(right)) {
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-    return left.every((item, index) => structuredValueEqual(item, right[index]));
+    if (
+      !Array.isArray(left) ||
+      !Array.isArray(right) ||
+      left.length !== right.length
+    )
+      return false;
+    return left.every((item, index) =>
+      structuredValueEqual(item, right[index]),
+    );
   }
   if (isPlainObject(left) && isPlainObject(right)) {
     const leftKeys = Object.keys(left);
@@ -42,7 +49,7 @@ export function structuredValueEqual(left: unknown, right: unknown): boolean {
     if (leftKeys.length !== rightKeys.length) return false;
     return leftKeys.every(
       (key) =>
-        Object.prototype.hasOwnProperty.call(right, key) &&
+        Object.hasOwn(right, key) &&
         structuredValueEqual(left[key], right[key]),
     );
   }
@@ -72,10 +79,7 @@ function diffSameRow(
     isStreamableTextKind(current) &&
     current.text.length >= previous.text.length &&
     current.text.startsWith(previous.text) &&
-    structuredValueEqual(
-      { ...previous, text: "" },
-      { ...current, text: "" },
-    )
+    structuredValueEqual({ ...previous, text: "" }, { ...current, text: "" })
   ) {
     return {
       op: "row.delta",
