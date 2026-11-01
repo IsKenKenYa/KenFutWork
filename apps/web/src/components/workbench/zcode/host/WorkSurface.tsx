@@ -5,7 +5,10 @@ import type {
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
-import { ZCodeStartupLogoBadge, ZCodeStartupSpinner } from "@zui/root/RootStartupLoading.js";
+import {
+  ZCodeStartupLogoBadge,
+  ZCodeStartupSpinner,
+} from "@zui/root/RootStartupLoading.js";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import {
   useCallback,
@@ -14,8 +17,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import { fontFamilies } from "./fontFamilies.js";
+import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
   getWorkSurfaceView,
   openWorkEditor,
@@ -385,10 +388,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
 
   // 一个家族一份记录：同名的版本注释（预览测试版/轻便版）先归一化再合并，
   // 排序规则见 fontFamilies——英文字体在前、中文在后，各自升序。
-  const families = useMemo(
-    () => fontFamilies(fonts?.fonts ?? []),
-    [fonts],
-  );
+  const families = useMemo(() => fontFamilies(fonts?.fonts ?? []), [fonts]);
 
   const remove = useCallback(
     async (fileName: string) => {
@@ -502,7 +502,10 @@ function EditorFrame({
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      if ((event.data as { type?: string } | null)?.type === "kenfutwork:editor-ready")
+      if (
+        (event.data as { type?: string } | null)?.type ===
+        "kenfutwork:editor-ready"
+      )
         setReady(true);
     };
     window.addEventListener("message", onMessage);
@@ -510,7 +513,10 @@ function EditorFrame({
   }, []);
   useEffect(() => {
     if (!frameLoaded) return;
-    const timer = window.setTimeout(() => setReady(true), EDITOR_READY_FALLBACK_MS);
+    const timer = window.setTimeout(
+      () => setReady(true),
+      EDITOR_READY_FALLBACK_MS,
+    );
     return () => window.clearTimeout(timer);
   }, [frameLoaded]);
   return (

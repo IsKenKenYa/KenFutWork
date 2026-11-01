@@ -93,7 +93,12 @@ function pluginListing(id: string, manifest: PluginBundleManifest) {
  * 或 `local__<name>` 落位，所以 id 认不到时再按包名认一次。
  */
 function effectiveManifest(
-  record: { id: string; name: string; source: string; manifest: PluginBundleManifest },
+  record: {
+    id: string;
+    name: string;
+    source: string;
+    manifest: PluginBundleManifest;
+  },
   bundled: Inventory["bundled"],
 ): PluginBundleManifest {
   if (record.source !== "builtin") return record.manifest;

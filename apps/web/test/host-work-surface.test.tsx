@@ -144,7 +144,8 @@ describe("HostWorkSurface 信息页", () => {
   it("探针失败 → 可读报错；适配层 disabled → 原因透出（fail loud）", async () => {
     host.surfaceJson.mockImplementation(async (path: string) => {
       // 字体区也在信息页里请求；这里只让探针/注册表失败，错误提示保持唯一。
-      if (path.includes("/fonts")) return { dir: "D:/data/work/fonts", fonts: [] };
+      if (path.includes("/fonts"))
+        return { dir: "D:/data/work/fonts", fonts: [] };
       throw new Error("HTTP 404");
     });
     render(<HostWorkSurface />);

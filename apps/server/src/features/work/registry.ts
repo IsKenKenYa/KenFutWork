@@ -9,7 +9,10 @@ import type { WorkEditor, WorkEditorMount } from "@kenfutwork/shared";
  * 计算（`listWorkEditors`），注册表常量与运行时事实分离。
  */
 
-export type WorkEditorRegistration = Omit<WorkEditor, "installed" | "version"> & {
+export type WorkEditorRegistration = Omit<
+  WorkEditor,
+  "installed" | "version"
+> & {
   /** 随宿主分发时的版本号（有 pinned 时以 pinned 为准）。 */
   version?: string;
 };

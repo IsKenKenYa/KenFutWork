@@ -179,8 +179,8 @@ const MATH_ATLAS: usize = 2048;`,
   );
   patchOnce(
     previewsRs,
-    "pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {\n    let db = wordcraft_fonts::FontDb::global();\n    let face = db\n        .preview_face(name)\n        .filter(|f| name.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))\n        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, \"Regular\"));\n    let img = wordcraft_render::render_text_line(&face, name, 13.0, 244.0, 22.0, 2.0, ppp);",
-    "pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {\n    font_entry_image_label(name, name, ppp)\n}\n\n/// KenFutWork: 用 `family` 的字体渲染 `text`——列表项显示中文名时，字形仍来自真实家族。\npub fn font_entry_image_label(text: &str, family: &str, ppp: f32) -> egui::ColorImage {\n    let db = wordcraft_fonts::FontDb::global();\n    let face = db\n        .preview_face(family)\n        .filter(|f| text.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))\n        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, \"Regular\"));\n    let img = wordcraft_render::render_text_line(&face, text, 13.0, 244.0, 22.0, 2.0, ppp);",
+    'pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {\n    let db = wordcraft_fonts::FontDb::global();\n    let face = db\n        .preview_face(name)\n        .filter(|f| name.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))\n        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, "Regular"));\n    let img = wordcraft_render::render_text_line(&face, name, 13.0, 244.0, 22.0, 2.0, ppp);',
+    'pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {\n    font_entry_image_label(name, name, ppp)\n}\n\n/// KenFutWork: 用 `family` 的字体渲染 `text`——列表项显示中文名时，字形仍来自真实家族。\npub fn font_entry_image_label(text: &str, family: &str, ppp: f32) -> egui::ColorImage {\n    let db = wordcraft_fonts::FontDb::global();\n    let face = db\n        .preview_face(family)\n        .filter(|f| text.chars().filter(|c| !c.is_whitespace()).all(|c| f.covers(c)))\n        .unwrap_or_else(|| db.face(wordcraft_fonts::FALLBACK_FAMILY, "Regular"));\n    let img = wordcraft_render::render_text_line(&face, text, 13.0, 244.0, 22.0, 2.0, ppp);',
     "文档：预览按显示名+真实字形绘制",
     "pub fn font_entry_image_label(text: &str, family: &str, ppp: f32)",
   );
@@ -221,8 +221,8 @@ if (existsSync(gridCraftWeb)) {
   );
   patchOnce(
     ribbonHome,
-    "    ui.separator();\n    if ui.button(\"More Functions…\").clicked() {\n        app.open_dialog(\"insertFunction\", json!({}));\n    }\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
-    "    ui.separator();\n    if ui.button(\"More Functions…\").clicked() {\n        app.open_dialog(\"insertFunction\", json!({}));\n    }\n}\n\n/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        \"LXGW WenKai Lite\" => \"霞鹜文楷\",\n        \"LXGW Marker Gothic\" => \"霞鹜漫黑\",\n        \"Smiley Sans\" | \"Smiley Sans Oblique\" => \"得意黑\",\n        \"Yozai\" => \"悠哉字体\",\n        \"Ma Shan Zheng\" => \"马善政\",\n        \"ZCOOL KuaiLe\" => \"站酷快乐体\",\n        \"Noto Sans CJK SC\" => \"思源黑体\",\n        \"Noto Serif CJK SC\" => \"思源宋体\",\n        \"MiSans\" => \"小米 MiSans\",\n        \"DouyinSans\" => \"抖音美好体\",\n        \"Sarasa Gothic SC\" => \"更纱黑体\",\n        \"Zhuque Fangsong (technical preview)\" => \"朱雀仿宋\",\n        \"BIZ UDMincho\" => \"BIZ UD明朝\",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    '    ui.separator();\n    if ui.button("More Functions…").clicked() {\n        app.open_dialog("insertFunction", json!({}));\n    }\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
+    '    ui.separator();\n    if ui.button("More Functions…").clicked() {\n        app.open_dialog("insertFunction", json!({}));\n    }\n}\n\n/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "DouyinSans" => "抖音美好体",\n        "Sarasa Gothic SC" => "更纱黑体",\n        "Zhuque Fangsong (technical preview)" => "朱雀仿宋",\n        "BIZ UDMincho" => "BIZ UD明朝",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
     "已加字体中文名映射",
     "fn font_label(family: &str) -> String {",
   );
@@ -233,7 +233,7 @@ if (existsSync(gridCraftWeb)) {
     patchOnce(
       engineFile,
       "    let d = s.doc_mut()?;\n    // The document's own file keeps the format its content had when opened;",
-      "    // KenFutWork: 没有扩展名的文件名按 .xlsx 保存，而不是报 unknown file format。\n    let path = if std::path::Path::new(&path).extension().is_none() { format!(\"{path}.xlsx\") } else { path };\n    let d = s.doc_mut()?;\n    // The document's own file keeps the format its content had when opened;",
+      '    // KenFutWork: 没有扩展名的文件名按 .xlsx 保存，而不是报 unknown file format。\n    let path = if std::path::Path::new(&path).extension().is_none() { format!("{path}.xlsx") } else { path };\n    let d = s.doc_mut()?;\n    // The document\'s own file keeps the format its content had when opened;',
       "已让无扩展名的保存补 .xlsx",
       "let path = if std::path::Path::new(&path).extension().is_none()",
     );
@@ -244,7 +244,7 @@ if (existsSync(gridCraftWeb)) {
     patchOnce(
       zhTable,
       "        _ => return None,",
-      "        \"Do you want to save the changes?\" => \"是否保存更改？\",\n        \"Don't Save\" => \"不保存\",\n        \"Cancel\" => \"取消\",\n        \"OK\" => \"确定\",\n        \"Save a copy as\" => \"另存副本\",\n        \"Start a new workbook\" => \"新建工作簿\",\n        \"Open…\" => \"打开…\",\n        _ => return None,",
+      '        "Do you want to save the changes?" => "是否保存更改？",\n        "Don\'t Save" => "不保存",\n        "Cancel" => "取消",\n        "OK" => "确定",\n        "Save a copy as" => "另存副本",\n        "Start a new workbook" => "新建工作簿",\n        "Open…" => "打开…",\n        _ => return None,',
       "已补中文弹窗文案",
       '"Do you want to save the changes?" => "是否保存更改？",',
     );
@@ -270,8 +270,8 @@ if (existsSync(gridCraftWeb)) {
     );
     patchOnce(
       dialogShow,
-      '                            if ui.button(label).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {',
-      '                            if ui.button(lang.tr(label)).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {',
+      "                            if ui.button(label).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {",
+      "                            if ui.button(lang.tr(label)).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {",
       "已让关闭确认按钮走中文",
       "if ui.button(lang.tr(label)).clicked() && app.answer_save_changes",
     );
@@ -306,22 +306,22 @@ if (app === "photocraft") {
   if (existsSync(systemRs)) {
     patchOnce(
       systemRs,
-      "#[cfg(not(target_arch = \"wasm32\"))]\nconst MAX_SYSTEM_TAGS: usize = 64;\n#[cfg(not(target_arch = \"wasm32\"))]\nconst MAX_SYSTEM_TAG_BYTES: usize = 128;",
+      '#[cfg(not(target_arch = "wasm32"))]\nconst MAX_SYSTEM_TAGS: usize = 64;\n#[cfg(not(target_arch = "wasm32"))]\nconst MAX_SYSTEM_TAG_BYTES: usize = 128;',
       "// KenFutWork: 网页端也要用同一套上限（浏览器语言列表）。\nconst MAX_SYSTEM_TAGS: usize = 64;\nconst MAX_SYSTEM_TAG_BYTES: usize = 128;",
       "已去掉语言上限的 native-only 门",
       "// KenFutWork: 网页端也要用同一套上限（浏览器语言列表）。",
     );
     patchOnce(
       systemRs,
-      "#[cfg(not(target_arch = \"wasm32\"))]\nfn bounded_tags(",
+      '#[cfg(not(target_arch = "wasm32"))]\nfn bounded_tags(',
       "fn bounded_tags(",
       "已让浏览器语言共用 bounded_tags",
       "fn bounded_tags(",
     );
     patchOnce(
       systemRs,
-      "#[cfg(all(not(test), target_arch = \"wasm32\"))]\nfn detect_system_tags() -> Vec<String> {\n    Vec::new()\n}",
-      "#[cfg(all(not(test), target_arch = \"wasm32\"))]\nfn detect_system_tags() -> Vec<String> {\n    // KenFutWork: 网页端没有 OS locale API，改读浏览器语言列表。\n    let mut tags = Vec::new();\n    if let Some(window) = web_sys::window() {\n        let nav = window.navigator();\n        let langs = nav.languages();\n        for i in 0..langs.length() {\n            if let Some(tag) = langs.get(i).as_string() {\n                tags.push(tag);\n            }\n        }\n        if tags.is_empty() {\n            if let Some(tag) = nav.language() {\n                tags.push(tag);\n            }\n        }\n    }\n    bounded_tags(tags)\n}",
+      '#[cfg(all(not(test), target_arch = "wasm32"))]\nfn detect_system_tags() -> Vec<String> {\n    Vec::new()\n}',
+      '#[cfg(all(not(test), target_arch = "wasm32"))]\nfn detect_system_tags() -> Vec<String> {\n    // KenFutWork: 网页端没有 OS locale API，改读浏览器语言列表。\n    let mut tags = Vec::new();\n    if let Some(window) = web_sys::window() {\n        let nav = window.navigator();\n        let langs = nav.languages();\n        for i in 0..langs.length() {\n            if let Some(tag) = langs.get(i).as_string() {\n                tags.push(tag);\n            }\n        }\n        if tags.is_empty() {\n            if let Some(tag) = nav.language() {\n                tags.push(tag);\n            }\n        }\n    }\n    bounded_tags(tags)\n}',
       "已让网页端读浏览器语言",
       "let langs = nav.languages();",
     );
@@ -332,9 +332,9 @@ if (app === "photocraft") {
     patchOnce(
       photoCargo,
       "[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
-      "[target.'cfg(target_arch = \"wasm32\")'.dependencies]\nweb-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }\n\n[target.'cfg(not(target_arch = \"wasm32\"))'.dependencies]\nrayon = { workspace = true }",
+      '[target.\'cfg(target_arch = "wasm32")\'.dependencies]\nweb-sys = { version = "0.3", features = ["Window", "Navigator"] }\n\n[target.\'cfg(not(target_arch = "wasm32"))\'.dependencies]\nrayon = { workspace = true }',
       "已给 wasm 加 web-sys（浏览器语言）",
-      "web-sys = { version = \"0.3\", features = [\"Window\", \"Navigator\"] }",
+      'web-sys = { version = "0.3", features = ["Window", "Navigator"] }',
     );
   }
   const photoCjk = join(source, "crates/ui-egui/src/cjk_fonts.rs");
@@ -342,9 +342,9 @@ if (app === "photocraft") {
     patchOnce(
       photoCjk,
       "/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
-    "pub fn install_ui_served_font(ctx: &egui::Context, family: &str, bytes: Vec<u8>) {\n    let name = format!(\"kfw-ui-cjk:{family}\");\n    let mut data = FontData::from_owned(bytes);\n    // 界面里还有 medium/semibold 等自定义字族；只挂 Proportional/Monospace 会让\n    // 用这些字族画的按钮（欢迎页）继续出方框——挂到当前全部字族上。\n    let families: Vec<InsertFontFamily> = ctx\n        .fonts(|f| f.families().iter().cloned().collect::<Vec<_>>())\n        .into_iter()\n        .map(|family| InsertFontFamily { family, priority: FontPriority::Lowest })\n        .collect();\n    crate::theme::size_ui_font(ctx, &name, &mut data);\n    ctx.add_font(FontInsert { name, data, families });\n    ctx.request_repaint();\n}\n\n/// The egui plugin that watches drawn text and loads fallback fonts on demand.",
-    "已加界面中文字体注入",
-    "pub fn install_ui_served_font(",
+      'pub fn install_ui_served_font(ctx: &egui::Context, family: &str, bytes: Vec<u8>) {\n    let name = format!("kfw-ui-cjk:{family}");\n    let mut data = FontData::from_owned(bytes);\n    // 界面里还有 medium/semibold 等自定义字族；只挂 Proportional/Monospace 会让\n    // 用这些字族画的按钮（欢迎页）继续出方框——挂到当前全部字族上。\n    let families: Vec<InsertFontFamily> = ctx\n        .fonts(|f| f.families().iter().cloned().collect::<Vec<_>>())\n        .into_iter()\n        .map(|family| InsertFontFamily { family, priority: FontPriority::Lowest })\n        .collect();\n    crate::theme::size_ui_font(ctx, &name, &mut data);\n    ctx.add_font(FontInsert { name, data, families });\n    ctx.request_repaint();\n}\n\n/// The egui plugin that watches drawn text and loads fallback fonts on demand.',
+      "已加界面中文字体注入",
+      "pub fn install_ui_served_font(",
     );
   }
   const typeTool = join(source, "crates/ui-egui/src/type_tool.rs");
@@ -352,7 +352,7 @@ if (app === "photocraft") {
     patchOnce(
       typeTool,
       "/// The fonts' localized family names, keyed by family. Cached until the shared engine registers fonts.\nfn localized_families() -> Arc<HashMap<String, String>> {",
-      "/// The fonts' localized family names, keyed by family. Cached until the shared engine registers fonts.\n/// KenFutWork: 字体自带本地名缺失时的中文显示名（英文家族名 → 中文名）。\nconst KFW_FONT_LABELS: &[(&str, &str)] = &[\n    (\"LXGW WenKai Lite\", \"霞鹜文楷\"),\n    (\"LXGW Marker Gothic\", \"霞鹜漫黑\"),\n    (\"Smiley Sans\", \"得意黑\"),\n    (\"Smiley Sans Oblique\", \"得意黑\"),\n    (\"Yozai\", \"悠哉字体\"),\n    (\"Ma Shan Zheng\", \"马善政毛笔楷书\"),\n    (\"ZCOOL KuaiLe\", \"站酷快乐体\"),\n    (\"Noto Sans CJK SC\", \"思源黑体\"),\n    (\"Noto Serif CJK SC\", \"思源宋体\"),\n    (\"MiSans\", \"小米 MiSans\"),\n    (\"DouyinSans\", \"抖音美好体\"),\n    (\"Sarasa Gothic SC\", \"更纱黑体\"),\n    (\"Zhuque Fangsong (technical preview)\", \"朱雀仿宋\"),\n];\n\nfn localized_families() -> Arc<HashMap<String, String>> {",
+      '/// The fonts\' localized family names, keyed by family. Cached until the shared engine registers fonts.\n/// KenFutWork: 字体自带本地名缺失时的中文显示名（英文家族名 → 中文名）。\nconst KFW_FONT_LABELS: &[(&str, &str)] = &[\n    ("LXGW WenKai Lite", "霞鹜文楷"),\n    ("LXGW Marker Gothic", "霞鹜漫黑"),\n    ("Smiley Sans", "得意黑"),\n    ("Smiley Sans Oblique", "得意黑"),\n    ("Yozai", "悠哉字体"),\n    ("Ma Shan Zheng", "马善政毛笔楷书"),\n    ("ZCOOL KuaiLe", "站酷快乐体"),\n    ("Noto Sans CJK SC", "思源黑体"),\n    ("Noto Serif CJK SC", "思源宋体"),\n    ("MiSans", "小米 MiSans"),\n    ("DouyinSans", "抖音美好体"),\n    ("Sarasa Gothic SC", "更纱黑体"),\n    ("Zhuque Fangsong (technical preview)", "朱雀仿宋"),\n];\n\nfn localized_families() -> Arc<HashMap<String, String>> {',
       "已加字体菜单中文名表",
       "const KFW_FONT_LABELS",
     );
@@ -380,11 +380,15 @@ if (app === "photocraft") {
       "已初始化中文字体标记",
       "ui_cjk: false",
     );
-    if (!read(webRs).includes("install_ui_served_font(ctx, family, bytes.clone())")) {
+    if (
+      !read(webRs).includes(
+        "install_ui_served_font(ctx, family, bytes.clone())",
+      )
+    ) {
       patchOnce(
         webRs,
         "        served_fonts::install(&mut self.app, arrived);",
-        "        if !self.ui_cjk && let Some((family, bytes)) = arrived.iter().find(|(family, _)| family.contains(\"CJK\") || family.chars().any(|c| c as u32 >= 0x2E80)) {\n            photocraft_ui_egui::cjk_fonts::install_ui_served_font(ctx, family, bytes.clone());\n            self.ui_cjk = true;\n        }\n        served_fonts::install(&mut self.app, arrived);",
+        '        if !self.ui_cjk && let Some((family, bytes)) = arrived.iter().find(|(family, _)| family.contains("CJK") || family.chars().any(|c| c as u32 >= 0x2E80)) {\n            photocraft_ui_egui::cjk_fonts::install_ui_served_font(ctx, family, bytes.clone());\n            self.ui_cjk = true;\n        }\n        served_fonts::install(&mut self.app, arrived);',
         "已在字体送达时挂界面中文字体",
         "install_ui_served_font(ctx, family, bytes.clone())",
       );
@@ -400,7 +404,7 @@ if (app === "effectcraft") {
     patchOnce(
       effectApp,
       "    let runner = eframe::WebRunner::new();\n    runner\n        .start(\n            canvas,\n            eframe::WebOptions::default(),",
-      "    let runner = eframe::WebRunner::new();\n    // KenFutWork: 部分环境 WebGPU 设备启动后即丢失，主界面随之关闭；\n    // web 端默认改走 WebGL2 兼容后端（GPU 预览自动退回 CPU），?webgpu 可强制 WebGPU。\n    let mut web_options = eframe::WebOptions::default();\n    if !query_flag(\"webgpu\")\n        && let eframe::egui_wgpu::WgpuSetup::CreateNew(c) = &mut web_options.wgpu_options.wgpu_setup\n    {\n        c.instance_descriptor.backends = eframe::wgpu::Backends::GL;\n    }\n    runner\n        .start(\n            canvas,\n            web_options,",
+      '    let runner = eframe::WebRunner::new();\n    // KenFutWork: 部分环境 WebGPU 设备启动后即丢失，主界面随之关闭；\n    // web 端默认改走 WebGL2 兼容后端（GPU 预览自动退回 CPU），?webgpu 可强制 WebGPU。\n    let mut web_options = eframe::WebOptions::default();\n    if !query_flag("webgpu")\n        && let eframe::egui_wgpu::WgpuSetup::CreateNew(c) = &mut web_options.wgpu_options.wgpu_setup\n    {\n        c.instance_descriptor.backends = eframe::wgpu::Backends::GL;\n    }\n    runner\n        .start(\n            canvas,\n            web_options,',
       "动效：web 默认 WebGL2 兼容后端",
       "WebGL2 兼容后端",
     );
@@ -426,7 +430,10 @@ if (app === "filmcraft") {
   const themeRs = join(source, "crates/ui-egui/src/theme.rs");
   // 插入点在文档注释之前、注释仍留在文件里，patchOnce 的「已应用」判据不会生效；
   // 先看是否已有 font_label，避免重跑时重复插入。
-  if (existsSync(themeRs) && !read(themeRs).includes("pub fn font_label(family: &str)")) {
+  if (
+    existsSync(themeRs) &&
+    !read(themeRs).includes("pub fn font_label(family: &str)")
+  ) {
     patchOnce(
       themeRs,
       "/// Every font family the theme defines (fallback fonts such as the Japanese fonts are added to each\n/// of them).\npub fn font_families() -> Vec<FontFamily> {",
@@ -520,7 +527,7 @@ pub fn shown_name(db: &vectorcraft_text::FontDb, family: &str, english: bool) ->
     "    static ITEMS: std::sync::Mutex<(u64, bool, Vec<Item>)> = std::sync::Mutex::new((u64::MAX, true, Vec::new()));",
     '    static ITEMS: std::sync::Mutex<(u64, bool, &\'static str, Vec<Item>)> = std::sync::Mutex::new((u64::MAX, true, "", Vec::new()));',
     "矢量：字体子菜单缓存加语言",
-    '&\'static str, Vec<Item>)>',
+    "&'static str, Vec<Item>)>",
   );
   patchOnce(
     menusRs,
@@ -575,16 +582,16 @@ pub fn shown_name(db: &vectorcraft_text::FontDb, family: &str, english: bool) ->
   patchOnce(
     fontMenu,
     "        let wanted = |f: &str| {\n            let label = shown_name(db, f, look.english_names);",
-    "        let wanted = |f: &str| {\n            // 日文字体不上菜单（宿主字体库也不含日文字体）。\n            if f.eq_ignore_ascii_case(\"BIZ UDPGothic\") {\n                return false;\n            }\n            let label = shown_name(db, f, look.english_names);",
+    '        let wanted = |f: &str| {\n            // 日文字体不上菜单（宿主字体库也不含日文字体）。\n            if f.eq_ignore_ascii_case("BIZ UDPGothic") {\n                return false;\n            }\n            let label = shown_name(db, f, look.english_names);',
     "矢量：字体菜单隐藏日文字体",
     "日文字体不上菜单",
   );
   patchOnce(
     menusRs,
     "        let list = fams\n            .iter()\n            .map(|f| {\n                let english = f.as_str();",
-    "        let list = fams\n            .iter()\n            .filter(|f| !f.eq_ignore_ascii_case(\"BIZ UDPGothic\"))\n            .map(|f| {\n                let english = f.as_str();",
+    '        let list = fams\n            .iter()\n            .filter(|f| !f.eq_ignore_ascii_case("BIZ UDPGothic"))\n            .map(|f| {\n                let english = f.as_str();',
     "矢量：文字菜单隐藏日文字体",
-    ".filter(|f| !f.eq_ignore_ascii_case(\"BIZ UDPGothic\"))",
+    '.filter(|f| !f.eq_ignore_ascii_case("BIZ UDPGothic"))',
   );
 }
 
@@ -604,25 +611,43 @@ if (existsSync(buildPath) && read(buildPath).includes(uiEguiChinese)) {
 // 2b) 用户字体：每个 web 壳在启动时读同源 `fonts/manifest.txt`，把宿主上传的字体交给
 //     各自的字体库。`user_fonts.rs` 是一份同构实现，各编辑器的注册点不同（见下表）。
 const USER_FONT_HOOKS = {
-  deckcraft: ["apps/deckcraft-web/src/user_fonts.rs", "deckcraft_fonts::FontDb::global().add_font(bytes)"],
+  deckcraft: [
+    "apps/deckcraft-web/src/user_fonts.rs",
+    "deckcraft_fonts::FontDb::global().add_font(bytes)",
+  ],
   wordcraft: [
     "apps/wordcraft-web/src/web/user_fonts.rs",
     'wordcraft_fonts::FontDb::global().install_font(&format!("host-font-{}", bytes.len()), &bytes).is_ok() as usize',
   ],
-  designcraft: ["apps/designcraft-web/src/user_fonts.rs", "designcraft_fonts::FontDb::global().add_font(bytes)"],
-  effectcraft: ["apps/effectcraft-web/src/user_fonts.rs", "effectcraft_text::fonts::add_font_data(bytes).len()"],
-  filmcraft: ["apps/filmcraft-web/src/user_fonts.rs", "filmcraft_text::fonts::add_font_data(bytes).len()"],
-  vectorcraft: ["apps/vectorcraft-web/src/user_fonts.rs", "vectorcraft_text::FontDb::global().add_font(bytes)"],
+  designcraft: [
+    "apps/designcraft-web/src/user_fonts.rs",
+    "designcraft_fonts::FontDb::global().add_font(bytes)",
+  ],
+  effectcraft: [
+    "apps/effectcraft-web/src/user_fonts.rs",
+    "effectcraft_text::fonts::add_font_data(bytes).len()",
+  ],
+  filmcraft: [
+    "apps/filmcraft-web/src/user_fonts.rs",
+    "filmcraft_text::fonts::add_font_data(bytes).len()",
+  ],
+  vectorcraft: [
+    "apps/vectorcraft-web/src/user_fonts.rs",
+    "vectorcraft_text::FontDb::global().add_font(bytes)",
+  ],
   gridcraft: [
     "apps/gridcraft-web/src/user_fonts.rs",
     'gridcraft_ui_egui::fonts::add_font_bytes(&format!("host-{}", bytes.len()), bytes)',
   ],
   cadcraft: [
     "apps/cadcraft-web/src/user_fonts.rs",
-    'if cadcraft_fonts::ttf::register_family_font(bytes).is_empty() { 0 } else { 1 }',
+    "if cadcraft_fonts::ttf::register_family_font(bytes).is_empty() { 0 } else { 1 }",
   ],
 };
-const userFontsSource = resolve(import.meta.dirname, "work-editor/user_fonts.rs");
+const userFontsSource = resolve(
+  import.meta.dirname,
+  "work-editor/user_fonts.rs",
+);
 const hook = USER_FONT_HOOKS[app];
 if (hook && existsSync(userFontsSource)) {
   cpSync(userFontsSource, join(source, hook[0]));
@@ -695,12 +720,21 @@ const USER_FONT_PATCHES = {
 if (USER_FONT_PATCHES[app]) {
   // PdfCraft 的清单抓取放在 ui-egui 内（不是 web 壳），先把这个新文件放到位再打补丁。
   if (app === "pdfcraft") {
-    cpSync(resolve(import.meta.dirname, "work-editor/pdfcraft-host-fonts.rs"), join(source, "crates/ui-egui/src/host_font_fetch.rs"));
+    cpSync(
+      resolve(import.meta.dirname, "work-editor/pdfcraft-host-fonts.rs"),
+      join(source, "crates/ui-egui/src/host_font_fetch.rs"),
+    );
   }
   const patchFile = resolve(import.meta.dirname, USER_FONT_PATCHES[app]);
   try {
-    execFileSync("git", ["apply", "--check", patchFile], { cwd: source, stdio: "pipe" });
-    execFileSync("git", ["apply", patchFile], { cwd: source, stdio: "inherit" });
+    execFileSync("git", ["apply", "--check", patchFile], {
+      cwd: source,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["apply", patchFile], {
+      cwd: source,
+      stdio: "inherit",
+    });
     console.log(`[zh] 已应用 ${app} 用户字体补丁`);
   } catch {
     console.log(`[zh] ${app} 用户字体补丁已应用，跳过`);
@@ -763,11 +797,22 @@ const buildEnv = {
   ...(i18nDir ? { CRAFT_I18N_DIR: i18nDir } : {}),
 };
 if (XTASK_APPS.has(app)) {
-  execFileSync("cargo", ["xtask", "web"], { cwd: source, stdio: "inherit", env: buildEnv });
+  execFileSync("cargo", ["xtask", "web"], {
+    cwd: source,
+    stdio: "inherit",
+    env: buildEnv,
+  });
 } else {
   execFileSync(
     "trunk",
-    ["build", "--release", "--locked", "--skip-version-check", "--color", "never"],
+    [
+      "build",
+      "--release",
+      "--locked",
+      "--skip-version-check",
+      "--color",
+      "never",
+    ],
     { cwd, stdio: "inherit", env: buildEnv },
   );
 }

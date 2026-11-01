@@ -1,25 +1,29 @@
+import type { WorkFont } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import {
   fontDisplayName,
   fontFamilies,
 } from "@/components/workbench/zcode/host/fontFamilies";
-import type { WorkFont } from "@kenfutwork/shared";
 
-function font(
-  family: string,
-  fileName: string,
-  builtin: boolean,
-): WorkFont {
+function font(family: string, fileName: string, builtin: boolean): WorkFont {
   return { family, fileName, format: "ttf", bytes: 1, builtin };
 }
 
 describe("字体列表展示", () => {
   it("去掉版本注释、按中文名展示、再合并同名家族", () => {
-    expect(fontDisplayName("朱雀仿宋（预览测试版）")).toBe("朱雀仿宋（璇玑造字）");
+    expect(fontDisplayName("朱雀仿宋（预览测试版）")).toBe(
+      "朱雀仿宋（璇玑造字）",
+    );
     expect(fontDisplayName("霞鹜文楷 轻便版")).toBe("霞鹜文楷（落霞孤鹜）");
-    expect(fontDisplayName("Noto Sans CJK SC")).toBe("思源黑体（Adobe·Google）");
-    expect(fontDisplayName("Noto Serif CJK SC")).toBe("思源宋体（Adobe·Google）");
-    expect(fontDisplayName("Ma Shan Zheng")).toBe("马善政毛笔楷书（Google Fonts）");
+    expect(fontDisplayName("Noto Sans CJK SC")).toBe(
+      "思源黑体（Adobe·Google）",
+    );
+    expect(fontDisplayName("Noto Serif CJK SC")).toBe(
+      "思源宋体（Adobe·Google）",
+    );
+    expect(fontDisplayName("Ma Shan Zheng")).toBe(
+      "马善政毛笔楷书（Google Fonts）",
+    );
     expect(fontDisplayName("ZCOOL KuaiLe")).toBe("站酷快乐体（站酷）");
     expect(fontDisplayName("MiSans")).toBe("小米 MiSans（小米）");
     expect(fontDisplayName("BIZ UDMincho")).toBe("BIZ UDMincho");

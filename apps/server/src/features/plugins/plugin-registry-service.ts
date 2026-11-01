@@ -1109,8 +1109,11 @@ export function createPluginRegistryService(
       // 落后（新加的 `assets`/`icon` 在老副本里根本没有，市场图标于是 404）。第三方
       // 插件仍只看它自己的落位记录。
       const effective =
-        record.source === "builtin" && bundled ? bundled.manifest : record.manifest;
-      const declaredPath = effective.icon ?? effective.ui.find((e) => e.icon)?.icon ?? "";
+        record.source === "builtin" && bundled
+          ? bundled.manifest
+          : record.manifest;
+      const declaredPath =
+        effective.icon ?? effective.ui.find((e) => e.icon)?.icon ?? "";
       const declaredIcon = Boolean(
         requestedIcon &&
           contentTypeOf(normalized).startsWith("image/") &&
@@ -1119,10 +1122,7 @@ export function createPluginRegistryService(
             requestedIcon,
       );
       // 停用收回运行面板；已安装卡片的声明图标仍是只读元信息。
-      if (
-        effective.assets !== true ||
-        (!record.enabled && !declaredIcon)
-      ) {
+      if (effective.assets !== true || (!record.enabled && !declaredIcon)) {
         return undefined;
       }
       // 内置插件以**当前仓库源码**为准：数据目录里那份是安装当时的副本，随版本升级会

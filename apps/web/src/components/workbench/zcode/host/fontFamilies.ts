@@ -27,23 +27,22 @@ const DISPLAY_NAMES: Record<string, string> = {
   "ma shan zheng": "马善政毛笔楷书（Google Fonts）",
   "zcool kuaile": "站酷快乐体（站酷）",
   misans: "小米 MiSans（小米）",
-  
+
   // 列表里带出品方/许可标注（用户口径：著名的字体在名字后面标一下）。
   // 这些就是作者：有中文的写中文（lxgw=落霞孤鹜、oooooohmygosh 的工作室=锚坞），
   // Belleve 没有通用中文名，保留原名。
-  "得意黑": "得意黑（锚坞）",
-  "马善政毛笔楷书": "马善政毛笔楷书（Google Fonts）",
-  "思源黑体": "思源黑体（Adobe·Google）",
-  "思源宋体": "思源宋体（Adobe·Google）",
-  "霞鹜漫黑": "霞鹜漫黑（落霞孤鹜）",
-  "霞鹜文楷": "霞鹜文楷（落霞孤鹜）",
-  "悠哉字体": "悠哉字体（落霞孤鹜）",
-  "站酷快乐体": "站酷快乐体（站酷）",
-  "朱雀仿宋": "朱雀仿宋（璇玑造字）",
-  "抖音美好体": "抖音美好体（字节跳动）",
+  得意黑: "得意黑（锚坞）",
+  马善政毛笔楷书: "马善政毛笔楷书（Google Fonts）",
+  思源黑体: "思源黑体（Adobe·Google）",
+  思源宋体: "思源宋体（Adobe·Google）",
+  霞鹜漫黑: "霞鹜漫黑（落霞孤鹜）",
+  霞鹜文楷: "霞鹜文楷（落霞孤鹜）",
+  悠哉字体: "悠哉字体（落霞孤鹜）",
+  站酷快乐体: "站酷快乐体（站酷）",
+  朱雀仿宋: "朱雀仿宋（璇玑造字）",
+  抖音美好体: "抖音美好体（字节跳动）",
   "更纱黑体 sc": "更纱黑体（Belleve）",
   "小米 misans": "小米 MiSans（小米）",
-  
 };
 
 /** 「朱雀仿宋（预览测试版）」→「朱雀仿宋」；「霞鹜文楷 轻便版」→「霞鹜文楷」。 */
@@ -63,9 +62,7 @@ export function fontDisplayName(family: string): string {
 }
 
 /** 英文字体在前、中文字体在后，各自按名称升序；同家族多文件合并为一行。 */
-export function fontFamilies(
-  fonts: readonly WorkFont[],
-): FontFamilyGroup[] {
+export function fontFamilies(fonts: readonly WorkFont[]): FontFamilyGroup[] {
   const groups = new Map<string, FontFamilyGroup>();
   for (const font of fonts) {
     const name = fontDisplayName(font.family);

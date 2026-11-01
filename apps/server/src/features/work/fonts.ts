@@ -81,7 +81,9 @@ let bundledCache: Promise<StoredFont[]> | null = null;
 async function readBundled(): Promise<StoredFont[]> {
   const dir = bundledFontsDir();
   if (!existsSync(dir)) return [];
-  const names = (await readdir(dir)).filter((name) => fontFormatOf(name) !== null);
+  const names = (await readdir(dir)).filter(
+    (name) => fontFormatOf(name) !== null,
+  );
   const fonts = await Promise.all(
     names.map(async (name) => {
       const path = join(dir, name);
@@ -109,7 +111,7 @@ export function listBundledFonts(): Promise<StoredFont[]> {
 export function bundledFontPath(fileName: string): string | null {
   if (!fileName.startsWith(BUNDLED_PREFIX)) return null;
   const name = fileName.slice(BUNDLED_PREFIX.length);
-  if (fontFormatOf(name) === null || /[\/]/u.test(name)) return null;
+  if (fontFormatOf(name) === null || /[/]/u.test(name)) return null;
   const path = join(bundledFontsDir(), name);
   return existsSync(path) ? path : null;
 }
@@ -319,7 +321,10 @@ export async function listFonts(dataDir: string): Promise<StoredFont[]> {
       .filter((name) => fontFormatOf(name) !== null)
       .map((name) => describe(dataDir, name).catch(() => null)),
   );
-  return [...bundled, ...fonts.filter((font): font is StoredFont => font !== null)];
+  return [
+    ...bundled,
+    ...fonts.filter((font): font is StoredFont => font !== null),
+  ];
 }
 
 /**
@@ -351,7 +356,8 @@ export async function addFont(input: {
 }
 
 export async function removeFont(dataDir: string, fileName: string) {
-  if (fileName.startsWith(BUNDLED_PREFIX)) throw new Error("内置字体不能删除。");
+  if (fileName.startsWith(BUNDLED_PREFIX))
+    throw new Error("内置字体不能删除。");
   // 只允许删字体目录里的直接文件：文件名不参与路径拼接。
   const safe = fontFormatOf(fileName) !== null && !/[\\/]/u.test(fileName);
   if (!safe) throw new Error("字体名不合法。");
@@ -376,9 +382,8 @@ function hasSfntHeader(bytes: Buffer): boolean {
  */
 function manifestStyle(fileName: string): string {
   const stem = basename(fileName, extname(fileName)).replace(/^bundled-/u, "");
-  const match = /-(Bold|Italic|Oblique|Light|Medium|SemiBold|Black|Thin)$/u.exec(
-    stem,
-  );
+  const match =
+    /-(Bold|Italic|Oblique|Light|Medium|SemiBold|Black|Thin)$/u.exec(stem);
   return match?.[1] ?? "Regular";
 }
 
@@ -400,9 +405,7 @@ export function manifestFor(fonts: StoredFont[]): string {
       .replace(/^bundled-/u, "")
       .replace(/-\w+$/u, "");
     const scripts =
-      font.cjk ||
-      /[\u4e00-\u9fff]/u.test(font.family) ||
-      BUNDLED_CJK.has(stem)
+      font.cjk || /[\u4e00-\u9fff]/u.test(font.family) || BUNDLED_CJK.has(stem)
         ? "Hani,Hans,Latn"
         : "Latn";
     const licence = font.builtin ? (BUNDLED_LICENSES[stem] ?? "") : "";
