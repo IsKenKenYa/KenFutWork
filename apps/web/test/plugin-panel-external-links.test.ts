@@ -40,10 +40,14 @@ describe("插件面板外链", () => {
     const doc = frame.contentDocument;
     doc
       ?.getElementById("rel")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      ?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     doc
       ?.getElementById("self")
-      ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      ?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
     expect(open).not.toHaveBeenCalled();
   });
 });
