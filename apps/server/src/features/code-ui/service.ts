@@ -1052,10 +1052,16 @@ export class CodeUiService {
       loaded.root.project_id,
     );
     let ordinal = 0;
-    return {
-      sessionId: request.childSessionId,
-      threadId,
-      emit: async (event) => {
+    // 子代理流式事件与前台轮同构：模型每 chunk 一条 delta，逐条走
+    // appendEvent 意味着每 token 一次事务加全量快照推送。经同一合批器
+    // 合并（agentStreamFlushIntervalMs），工具与终态事件仍 flush-before 即时落库。
+    const settings = await this.deps.settings.getInstanceSettings(
+      request.actor,
+      scope.instanceId,
+    );
+    const flusher = createStreamingEventFlusher({
+      flushIntervalMs: settings.agentStreamFlushIntervalMs,
+      sink: async (event) => {
         await this.deps.repository.appendEvent(
           scope.instanceId,
           scope.taskId,
@@ -1097,7 +1103,15 @@ export class CodeUiService {
           loaded.root.project_id,
         );
       },
+    });
+    return {
+      sessionId: request.childSessionId,
+      threadId,
+      emit: (event) => flusher.handle(event),
       storeResult: async (text) => {
+        // 子运行缺终态事件直接结束（崩溃/回收）时，缓冲里可能还有未落地的
+        // delta；写结果前先排空，保证转录完整。
+        await flusher.flush();
         const settings = await this.deps.settings.getInstanceSettings(
           request.actor,
           scope.instanceId,
