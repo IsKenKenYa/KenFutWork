@@ -14,6 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { isDesktopShell } from "@/lib/desktop-embed";
+import { openExternal } from "@/lib/desktop-system";
 import { getServerBaseUrl } from "@/lib/env";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
 
@@ -191,6 +193,41 @@ export function PluginIcon({
   );
 }
 
+/**
+ * 插件面板里的 `target="_blank"` 外链（如 HA 的 OAuth 授权页）：
+ * 同源面板可直接在 iframe 文档上拦截；桌面壳没有新窗口，交给系统浏览器，
+ * Web 形态开新标签。相对链接与应用内导航不动。重复安装安全（按文档标记）。
+ */
+export function installPanelExternalLinks(
+  frame: HTMLIFrameElement,
+  open: (url: string) => void = (url) => {
+    if (isDesktopShell()) void openExternal(url);
+    else window.open(url, "_blank", "noopener");
+  },
+): void {
+  let doc: Document | null = null;
+  try {
+    doc = frame.contentDocument;
+  } catch {
+    return;
+  }
+  if (!doc || doc.documentElement.dataset.kfwExternalLinks === "1") return;
+  doc.documentElement.dataset.kfwExternalLinks = "1";
+  doc.addEventListener(
+    "click",
+    (event) => {
+      const anchor = (event.target as Element | null)?.closest?.(
+        "a",
+      ) as HTMLAnchorElement | null;
+      const href = anchor?.getAttribute("href") ?? "";
+      if (anchor?.target !== "_blank" || !/^https?:\/\//i.test(href)) return;
+      event.preventDefault();
+      open(href);
+    },
+    true,
+  );
+}
+
 export function PluginPanelOverlay({
   panel,
   onClose,
@@ -290,6 +327,7 @@ export function PluginPanelOverlay({
             title={panel.title}
             src={resolvePanelUrl(panel.url, panel.pluginId)}
             className="min-h-0 flex-1 border-0"
+            onLoad={(event) => installPanelExternalLinks(event.currentTarget)}
           />
         ) : null}
       </DialogContent>
