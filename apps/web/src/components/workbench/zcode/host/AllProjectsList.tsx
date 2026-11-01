@@ -1,15 +1,5 @@
 import type { ProjectSummary } from "@kenfutwork/shared";
-import { Button } from "@zui/components/ui/button.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@zui/components/ui/dropdown-menu.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { FolderTree } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listProjects, selectFlowProject } from "./flowProjects.js";
 import { useSharedProjectNavigation } from "./SharedProjectNavigation.js";
@@ -30,13 +20,14 @@ export function resolveProjectTarget(project: ProjectSummary) {
   };
 }
 
-/** Code 模式的「全部项目」：画布 / 编码 / 工作 / 流程都在这里可见。 */
-export function AllProjectsMenu() {
+/** Code 侧栏的项目清单：直接列出全部项目，不藏在弹层里。 */
+export function AllProjectsList() {
   const navigation = useOptionalPlatform()?.workbenchNavigation;
   const shared = useSharedProjectNavigation();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     let current = true;
     listProjects()
@@ -76,7 +67,6 @@ export function AllProjectsMenu() {
           (item) => item.projectId === project.id,
         );
         if (!workspace) {
-          // 菜单直读 /api/projects，可能比 Code 的工作区目录更新一步。
           const refreshed = await shared.refreshWorkspaces();
           workspace = refreshed.find((item) => item.projectId === project.id);
         }
@@ -94,33 +84,17 @@ export function AllProjectsMenu() {
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="default"
-          className="w-full justify-start gap-2 px-2 text-foreground"
-          aria-label="全部项目"
-        >
-          <FolderTree className="size-4 shrink-0" />
-          <span className="truncate">全部项目</span>
-          {loading ? null : (
-            <span className="ml-auto text-xs text-foreground-subtle">
-              {projects.length}
-            </span>
-          )}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-60">
-        {error ? (
-          <DropdownMenuItem disabled className="text-destructive">
-            {error}
-          </DropdownMenuItem>
-        ) : null}
-        {!error && !loading && projects.length === 0 ? (
-          <DropdownMenuItem disabled>暂无项目</DropdownMenuItem>
-        ) : null}
+    <div className="flex min-h-0 flex-col px-2 pb-2">
+      <div className="flex items-center justify-between px-1 py-1 text-xs text-foreground-subtle">
+        <span>全部项目</span>
+        {loading ? null : <span>{projects.length}</span>}
+      </div>
+      {error ? (
+        <p role="alert" className="px-1 pb-1 text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+      <div className="max-h-64 min-h-0 overflow-y-auto">
         {KIND_GROUPS.map((group) => {
           const items = projects.filter(
             (project) => project.kind === group.kind,
@@ -128,22 +102,23 @@ export function AllProjectsMenu() {
           if (items.length === 0) return null;
           return (
             <div key={group.kind}>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs text-foreground-subtle">
+              <p className="px-1 pt-2 pb-0.5 text-[11px] text-foreground-subtle">
                 {group.label}
-              </DropdownMenuLabel>
+              </p>
               {items.map((project) => (
-                <DropdownMenuItem
+                <button
                   key={project.id}
-                  onSelect={() => open(project)}
+                  type="button"
+                  onClick={() => open(project)}
+                  className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover"
                 >
                   <span className="truncate">{project.name}</span>
-                </DropdownMenuItem>
+                </button>
               ))}
             </div>
           );
         })}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </div>
+    </div>
   );
 }

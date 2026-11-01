@@ -2,9 +2,9 @@ import type { ProjectSummary } from "@kenfutwork/shared";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import {
-  AllProjectsMenu,
+  AllProjectsList,
   resolveProjectTarget,
-} from "@/components/workbench/zcode/host/AllProjectsMenu";
+} from "@/components/workbench/zcode/host/AllProjectsList";
 import "@testing-library/jest-dom/vitest";
 
 const projects: ProjectSummary[] = [
@@ -101,9 +101,14 @@ it("把四类项目落到各自的工作方式", () => {
   expect(resolveProjectTarget(projects[3]!)).toEqual({ mode: "flow" });
 });
 
-it("Code 侧栏展示全部项目的入口", async () => {
+it("Code 侧栏直接列出全部项目，不再走弹层", async () => {
   api.listProjects.mockResolvedValue(projects);
-  render(<AllProjectsMenu />);
-  expect(screen.getByRole("button", { name: "全部项目" })).toBeInTheDocument();
-  await waitFor(() => expect(api.listProjects).toHaveBeenCalled());
+  render(<AllProjectsList />);
+  expect(screen.queryByRole("button", { name: "全部项目" })).toBeNull();
+  expect(screen.getByText("全部项目")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByText("代码项目")).toBeInTheDocument();
+    expect(screen.getByText("工作项目")).toBeInTheDocument();
+    expect(screen.getByText("流程项目")).toBeInTheDocument();
+  });
 });

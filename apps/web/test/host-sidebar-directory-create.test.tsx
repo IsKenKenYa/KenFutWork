@@ -94,14 +94,13 @@ describe.each(["flow"] as const)("%s sidebar directory creation", (kind) => {
     mount();
     expect(screen.queryByRole("button", { name: "选目录新建" })).toBeNull();
   });
-  it("renames the selected project from the sidebar", async () => {
+  it("renames the selected project inline from the name input", async () => {
     host.selectedPath = "/flow-project";
     host.renameProject.mockResolvedValue(undefined);
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "重命名项目" }));
     const input = screen.getByRole("textbox", { name: "项目名称" });
     fireEvent.change(input, { target: { value: "出差报销" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() =>
       expect(host.renameProject).toHaveBeenCalledWith("project", "出差报销"),
     );
