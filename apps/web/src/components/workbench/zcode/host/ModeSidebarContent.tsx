@@ -168,7 +168,7 @@ function FlowNavSidebar() {
               aria-label="Flow 项目"
               variant="ghost"
               size="default"
-              className="min-w-0 flex-1"
+              className="min-w-0 flex-1 !pl-3"
             >
               <SelectValue placeholder="选择项目" />
             </SelectTrigger>
@@ -221,7 +221,7 @@ function FlowNavSidebar() {
             type="button"
             disabled={disabled}
             onClick={() => navigateFlowSurface(item.path)}
-            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             <item.icon className="h-4 w-4 shrink-0" />
             {item.label}
@@ -233,7 +233,7 @@ function FlowNavSidebar() {
         type="button"
         data-active={view === "engine" ? "true" : undefined}
         onClick={() => setFlowSurfaceView("engine")}
-        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground data-[active=true]:bg-selected data-[active=true]:text-foreground"
+        className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover data-[active=true]:bg-selected"
       >
         <Cpu className="h-4 w-4 shrink-0" />
         引擎
