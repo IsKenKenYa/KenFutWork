@@ -88,6 +88,7 @@ const preferenceKeys = new Set([
   "terminalFontFamily",
   "terminalInheritSystemProfile",
   "computerUseComposerEntryHidden",
+  "memoryEnabled",
 ]);
 type WorkspacePreferenceEntry = z.infer<
   typeof appSettingsSchema
