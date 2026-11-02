@@ -12,6 +12,7 @@ const host = vi.hoisted(() => ({
   projectId: null as string | null,
   kind: "flow" as "flow" | "code" | "design" | "work",
   snapshot: null as ProjectDirectoryRelinkSnapshot | null,
+  checking: false,
   surfaceFetch: vi.fn(),
   surfaceJson: vi.fn(),
   recover: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock(
   () => ({
     useCanvasProjectDirectory: () => ({
       snapshot: host.snapshot,
-      checking: false,
+      checking: host.checking,
       error: null,
       busy: false,
       recover: host.recover,
@@ -101,6 +102,7 @@ beforeEach(() => {
   host.projectId = null;
   host.kind = "flow";
   host.snapshot = null;
+  host.checking = false;
   setFlowSurfaceView("canvas");
   host.surfaceJson.mockResolvedValue({
     enabled: true,
@@ -248,6 +250,22 @@ it("binds a Code project without waiting for a flow relink snapshot", async () =
       body: JSON.stringify({ projectId: projectA }),
     }),
   );
+});
+
+it("shows the unified startup animation while the directory check is running", async () => {
+  host.projectId = projectA;
+  host.snapshot = null;
+  host.checking = true;
+  render(<HostFlowSurface />);
+  await waitFor(() => {
+    const busy = document.querySelector('[role="status"][aria-busy="true"]');
+    expect(busy).not.toBeNull();
+    expect(busy?.querySelector('[class*="animate-spin"]')).not.toBeNull();
+  });
+  const busy = document.querySelector('[role="status"][aria-busy="true"]');
+  expect(busy?.getAttribute("aria-label")).toBe("检查目录");
+  expect(busy?.textContent).toBe("");
+  expect(screen.queryByText("检查目录…")).toBeNull();
 });
 
 function engineInfoResponse(

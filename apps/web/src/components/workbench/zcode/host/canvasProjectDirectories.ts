@@ -92,6 +92,14 @@ async function submitDirectoryRelink(
   );
 }
 
+/**
+ * 读不到目录状态时的续读节奏与次数上限。
+ * 一次性局部常量：宿主表面的自愈轮询（网关/本机容器服务恢复后自己接上），
+ * 不属于 agent 治理表管的限额与工具超时。
+ */
+const DIRECTORY_RETRY_MS = 5_000;
+const DIRECTORY_RETRY_MAX = 60;
+
 function useDirectorySnapshot(
   kind: DirectoryKind,
   projectId: string | null,
@@ -106,35 +114,40 @@ function useDirectorySnapshot(
   // biome-ignore lint/correctness/useExhaustiveDependencies: successful relink must re-read the authoritative generation.
   useEffect(() => {
     let current = true;
+    let timer = 0;
     setState({
       projectId,
       snapshot: null,
       checking: Boolean(projectId),
       error: null,
     });
-    if (projectId)
-      void (async () => {
+    if (projectId) {
+      const read = async (attempt: number) => {
         try {
           const snapshot = await readDirectorySnapshot(projectId, kind);
           if (current)
             setState({ projectId, snapshot, checking: false, error: null });
         } catch (failure) {
-          if (current)
-            setState({
-              projectId,
-              snapshot: null,
-              checking: false,
-              error:
-                failure instanceof Error
-                  ? failure.message
-                  : "目录状态无法读取。",
-            });
-        } finally {
-          if (current) setState((value) => ({ ...value, checking: false }));
+          if (!current) return;
+          setState({
+            projectId,
+            snapshot: null,
+            checking: false,
+            error:
+              failure instanceof Error ? failure.message : "目录状态无法读取。",
+          });
+          if (attempt < DIRECTORY_RETRY_MAX)
+            timer = window.setTimeout(
+              () => void read(attempt + 1),
+              DIRECTORY_RETRY_MS,
+            );
         }
-      })();
+      };
+      void read(0);
+    }
     return () => {
       current = false;
+      window.clearTimeout(timer);
     };
   }, [kind, projectId, revision]);
   return { state, setState };

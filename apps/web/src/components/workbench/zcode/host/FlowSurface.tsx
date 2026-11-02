@@ -246,14 +246,24 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
       ) : entry.available && entry.frontendUrl ? (
         <div
           role="status"
-          className="flex h-full flex-col items-center justify-center gap-3 text-sm text-foreground-subtle"
+          aria-busy={directory.checking && !directory.error ? true : undefined}
+          aria-label={
+            directory.checking && !directory.error ? "检查目录" : undefined
+          }
+          className="flex h-full flex-col items-center justify-center gap-5 text-sm text-foreground-subtle"
         >
-          {directory.error ??
-            (!selectedProjectId
-              ? "选择项目"
-              : directory.checking
-                ? "检查目录…"
-                : "项目目录待恢复")}
+          {directory.checking && !directory.error ? (
+            /* 全站唯一加载动画（黑色 logo + 无底板 + 下方转圈），与启动屏同一组件 */
+            <>
+              <ZCodeStartupLogoBadge />
+              <ZCodeStartupSpinner />
+            </>
+          ) : (
+            <span>
+              {directory.error ??
+                (!selectedProjectId ? "选择项目" : "项目目录待恢复")}
+            </span>
+          )}
           {directory.snapshot?.flow &&
           directory.snapshot.flow.phase !== "available" ? (
             <button
@@ -792,9 +802,17 @@ function EngineView() {
             ? "unreachable"
             : "idle";
   // 安装中静默轮询：日志尾随和容器状态都跟着走，不闪 loading。
+  // 查询失败（Docker 未就绪）按 10s 自愈重试，容器服务回来后不用手动刷新。
+  // 一次性局部常量：页面轮询节奏，不进治理表（治理表管 agent 限额与工具超时）。
   useEffect(() => {
-    if (engineState !== "installing") return;
-    const timer = window.setInterval(() => void load(true), 3000);
+    const intervalMs =
+      engineState === "installing"
+        ? 3_000
+        : engineState === "unreachable"
+          ? 10_000
+          : null;
+    if (intervalMs === null) return;
+    const timer = window.setInterval(() => void load(true), intervalMs);
     return () => window.clearInterval(timer);
   }, [engineState, load]);
   // 安装收尾（成功或失败）后再拉一次快照：日志尾部与容器事实停在最终状态。
