@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { themePreferenceSchema } from "./contracts.js";
 
 /** 可用模式由既有宿主能力判定，顺序沿现有顶部按钮（work 由 work 插件探针门控）。 */
 export const workbenchModesSchema = z
@@ -97,6 +98,20 @@ export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
   // 壳层应用已提交到 DOM：父页据此撤下启动加载屏（`code-ready` 只是「来要身份」，界面还没出来）。
   z.object({ type: z.literal("kenfutwork:code-mounted") }),
   z.object({ type: z.literal("kenfutwork:code-access-lost") }),
+  z.object({
+    type: z.literal("kenfutwork:code-theme-change"),
+    theme: themePreferenceSchema,
+  }),
+  z.object({
+    type: z.literal("kenfutwork:work-save"),
+    saveId: z.string().min(1),
+    fileName: z.string().min(1),
+    mimeType: z.string().optional(),
+    bytes: z.custom<ArrayBuffer>(
+      (value) =>
+        Object.prototype.toString.call(value) === "[object ArrayBuffer]",
+    ),
+  }),
   z.object({ type: z.literal("kenfutwork:code-plugins-changed") }),
   z.object({ type: z.literal("kenfutwork:management-close") }),
   z.object({

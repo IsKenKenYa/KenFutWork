@@ -35,6 +35,7 @@ import {
   applyTheme,
   isTheme,
   normalizeThemePreference,
+  THEME_PREFERENCE_EVENT,
 } from "@zui/useTheme.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import {
@@ -301,7 +302,11 @@ if (window.parent !== window && bootstrap) {
     if (type !== "kenfutwork:code-theme") return;
     const theme = (event.data as { theme?: unknown }).theme;
     if (typeof theme !== "string" || !isTheme(theme)) return;
-    localStorage.setItem("zcode-theme", normalizeThemePreference(theme));
-    applyTheme(normalizeThemePreference(theme));
+    const normalized = normalizeThemePreference(theme);
+    localStorage.setItem("zcode-theme", normalized);
+    applyTheme(normalized);
+    window.dispatchEvent(
+      new CustomEvent(THEME_PREFERENCE_EVENT, { detail: normalized }),
+    );
   });
 }

@@ -19970,6 +19970,15 @@
           "settings": {
             "type": "object",
             "properties": {
+              "theme": {
+                "default": "system",
+                "type": "string",
+                "enum": [
+                  "system",
+                  "zai-light",
+                  "zai-dark"
+                ]
+              },
               "modelDefaults": {
                 "type": "object",
                 "properties": {
@@ -20579,6 +20588,7 @@
               }
             },
             "required": [
+              "theme",
               "defaultModel",
               "terminalShell",
               "codeAutoCommitEnabled",
@@ -20657,6 +20667,14 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
+          "theme": {
+            "type": "string",
+            "enum": [
+              "system",
+              "zai-light",
+              "zai-dark"
+            ]
+          },
           "modelDefaults": {
             "type": "object",
             "properties": {

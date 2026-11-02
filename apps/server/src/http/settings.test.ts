@@ -173,6 +173,32 @@ describe("GET/PATCH /api/instance/settings", () => {
     }
   });
 
+  it("主题真实保存并回读；非法档位在路由契约处拒绝", async () => {
+    const { app } = buildRouteApp();
+    try {
+      const saved = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: { theme: "zai-dark" },
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json().settings.theme).toBe("zai-dark");
+      const read = await app.inject({
+        method: "GET",
+        url: "/api/instance/settings",
+      });
+      expect(read.json().settings.theme).toBe("zai-dark");
+      const invalid = await app.inject({
+        method: "PATCH",
+        url: "/api/instance/settings",
+        payload: { theme: "midnight" },
+      });
+      expect(invalid.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("body 中的实例或账户归属不能替换真实调用上下文", async () => {
     const { app, update, writes } = buildRouteApp();
     try {

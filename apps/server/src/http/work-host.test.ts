@@ -346,6 +346,8 @@ describe("work 宿主路由", () => {
     // 托管页统一注入宿主脚本：界面语言钉 zh-CN（我们的包都内嵌简体中文字形）+ 统一启动屏。
     expect(html.body).toContain('"zh-CN"');
     expect(html.body).toContain("kfw-editor-boot");
+    expect(html.body).toContain("kenfutwork:editor-theme");
+    expect(html.body).toContain("--kfw-editor-boot-bg");
     // 所有 Craft 的 Blob 锚点统一交给宿主保存缝，非 Blob 链接仍走原生点击。
     expect(html.body).toContain("kenfutwork:editor-save");
     expect(html.body).toContain("HTMLAnchorElement.prototype.click");

@@ -8939,11 +8939,12 @@
       "source": "references/zcode/packages/ui/src/root/RootStartupLoading.tsx",
       "target": "apps/web/src/components/workbench/zcode/root/RootStartupLoading.tsx",
       "sha256": "2e13e6b3bb0ba9fc73104ae0f88f2bc74123ec378c34d832319b2e8995430721",
-      "copiedSha256": "0e209ac1d10b845ad1b35fa143a2a1ce5077ba29a40403975b5b5c76ffdd4650",
+      "copiedSha256": "6b62b3a59a41d1275fe452977c6955028402a3c14eb2c6638c11d3bfa42fd8c1",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
-        "2026-10-19 启动加载（d012cb70）：抽出 ZCodeStartupSpinner，全站只留单一转圈形态。"
+        "2026-10-19 启动加载（d012cb70）：抽出 ZCodeStartupSpinner，全站只留单一转圈形态。",
+        "2026-11-03 夜间模式：启动 logo 暗色反色，spinner 使用语义前景色。"
       ]
     },
     {
@@ -9299,9 +9300,10 @@
       "source": "references/zcode/packages/ui/src/settings/AutomationEditView.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/AutomationEditView.tsx",
       "sha256": "aae26cb06faedf39201cbe75de83d7a3dc732913d80c5bdde1adb924a208b544",
-      "copiedSha256": "21177ac7070e98ea78f9fbb9a3740e3fcbff01ee22fd70b08fe2a32fa0818fbc",
+      "copiedSha256": "a7bd8f0a762cf32a491b9580d0e8dd1ebb1f217153f1ae07c1157f630abf084c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-03 夜间模式：主保存按钮使用语义前景/背景色。"
       ]
     },
     {
@@ -9621,9 +9623,10 @@
       "source": "references/zcode/packages/ui/src/settings/OffPeakEditView.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/OffPeakEditView.tsx",
       "sha256": "980a54a4ccb3379c86ff730170705fa95eb395f2de94522315f0c32ac4e4c355",
-      "copiedSha256": "d8c711ca0a0f7d8ff44040681d0390b2f2c61cd06aa64392160637e00288eb6e",
+      "copiedSha256": "224b9bf56e3f744b1035e1d2d12d1a852e08022822587eaf07bb266c6fd4f89a",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-03 夜间模式：主保存按钮使用语义前景/背景色。"
       ]
     },
     {
@@ -11494,10 +11497,11 @@
       "source": "references/zcode/packages/ui/src/store/index.ts",
       "target": "apps/web/src/components/workbench/zcode/store/index.ts",
       "sha256": "da672aa5c8b00ae62743ce3b6dab58ed4ce642ca344acb4016fa8db5ea7959e8",
-      "copiedSha256": "ffb8cb6c346ac2d7c2125fcfb77f34a54ecc2a6601ae87204f7321f770e877ca",
+      "copiedSha256": "b473fdeef52b4b870a426b18a7a58a0b98c08877dc4d68f038b5c2ea295108a4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：宿主提供模式导航时初始恒 coding，原菜单 office 请求交给父宿主而不改变 Code 树"
+        "宿主接口：宿主提供模式导航时初始恒 coding，原菜单 office 请求交给父宿主而不改变 Code 树",
+        "2026-11-03 实例主题：本地切换上报父页；父页同步只更新事实与副作用，不回环。"
       ]
     },
     {
@@ -11906,10 +11910,11 @@
       "source": "references/zcode/packages/ui/src/useTheme.ts",
       "target": "apps/web/src/components/workbench/zcode/useTheme.ts",
       "sha256": "a286aa3596dd05140184d60318f014ff1cea6637d0fae104137701fc2dd1ce0e",
-      "copiedSha256": "cf7b49d04398fd0504860fb55af27550b2ba507cf7c9898ff097d86c8379964f",
+      "copiedSha256": "42e991d101c6c40ad1c72df9ce37c5e31731219567086253081fe681c70cd90d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "2026-11-03 实例主题：本地切换经 code-theme-change 上报父页统一持久化。"
       ]
     },
     {
@@ -24744,11 +24749,12 @@
       "source": "references/zcode/packages/web/index.html",
       "target": "apps/web/src/components/workbench/zcode/index.html",
       "sha256": "9401ec7985ad7011dcca0714d88b8a5f9b9a7167183dc944bb05ee0152408785",
-      "copiedSha256": "ffc53aa742513212b87219377e96846994fa592837e5afadcfcea4f589fe022c",
+      "copiedSha256": "09907a4d447a7f85431b850cd124fc26498268d32a37498c1b5d2b492350b40a",
       "adaptations": [
         "保留原 Web 启动主题、字体及标志；改入口、标题与语言",
         "品牌适配：favicon 与启动闪屏换 KenFutWork 标识",
-        "2026-10-19 启动加载（7c0ed025）：预渲染壳改 fixed 全屏，与入口动画同款，切换不换屏。"
+        "2026-10-19 启动加载（7c0ed025）：预渲染壳改 fixed 全屏，与入口动画同款，切换不换屏。",
+        "2026-11-03 夜间模式：启动 logo 暗色反色，spinner 按 bootstrap 主题切换对比色。"
       ]
     },
     {

@@ -10,6 +10,21 @@ import { afterEach, expect, it, vi } from "vitest";
 import { CodeWorkbenchFrame } from "../src/components/workbench/code-workbench-frame";
 import { LOCAL_ACCESS_LOST_EVENT } from "../src/lib/local-access";
 
+const themeHost = vi.hoisted(() => ({
+  setTheme: vi.fn(),
+  triggerDownload: vi.fn(),
+}));
+vi.mock("@/lib/download", () => ({
+  triggerDownload: themeHost.triggerDownload,
+}));
+vi.mock("next-themes", () => ({
+  useTheme: () => ({
+    theme: "light",
+    resolvedTheme: "light",
+    setTheme: themeHost.setTheme,
+  }),
+}));
+
 vi.mock("../src/lib/local-instance-context", () => ({
   useLocalInstance: () => ({
     instance: { instanceId: "instance", dataDir: "/data" },
@@ -22,6 +37,8 @@ afterEach(() => {
   // 否则上一条用例的组件留在 body 里，getByRole 会命中多个
   cleanup();
   vi.unstubAllGlobals();
+  themeHost.setTheme.mockReset();
+  themeHost.triggerDownload.mockReset();
   localStorage.clear();
 });
 
@@ -201,6 +218,77 @@ it("壳层挂载前由父页盖一张启动加载屏，收到本壳的 code-moun
 
   post(frame.contentWindow);
   await waitFor(() => expect(loader()).toBeNull());
+});
+
+it("Code 壳主题变更同步到父页统一持久化，拒绝其它来源", async () => {
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: "https://untrusted.example",
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-theme-change", theme: "zai-dark" },
+    }),
+  );
+  expect(themeHost.setTheme).not.toHaveBeenCalled();
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-theme-change", theme: "zai-dark" },
+    }),
+  );
+  expect(themeHost.setTheme).toHaveBeenCalledWith("dark");
+});
+
+it("Work 保存由父页统一交付，同 saveId 并发重放只落盘一次", async () => {
+  themeHost.triggerDownload.mockResolvedValue(undefined);
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const post = vi.spyOn(frame.contentWindow, "postMessage");
+  const data = {
+    type: "kenfutwork:work-save",
+    saveId: "save-1",
+    fileName: "Book1.xlsx",
+    mimeType: "application/octet-stream",
+    bytes: new TextEncoder().encode("workbook").buffer,
+  };
+  for (let index = 0; index < 2; index += 1) {
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data,
+      }),
+    );
+  }
+
+  await waitFor(() =>
+    expect(themeHost.triggerDownload).toHaveBeenCalledTimes(1),
+  );
+  const [name, blob, options] = themeHost.triggerDownload.mock.calls[0] as [
+    string,
+    Blob,
+    { browserFallback: boolean },
+  ];
+  expect(name).toBe("Book1.xlsx");
+  expect(await blob.text()).toBe("workbook");
+  expect(options).toEqual({ browserFallback: false });
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:work-save-result",
+        saveId: "save-1",
+        ok: true,
+        error: null,
+      },
+      window.location.origin,
+    ),
+  );
 });
 
 it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人（侧栏显示用户而非连接使用），仍无接入令牌", async () => {

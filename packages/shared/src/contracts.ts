@@ -210,7 +210,16 @@ export type TerminalShellId = z.infer<typeof terminalShellSchema>;
  */
 export const CODE_AUTO_COMMIT_ENABLED_DEFAULT = true;
 
+export const themePreferenceSchema = z.enum([
+  "system",
+  "zai-light",
+  "zai-dark",
+]);
+export type ThemePreference = z.infer<typeof themePreferenceSchema>;
+
 export const instanceSettingsSchema = z.object({
+  /** 实例外观；父页读取后同步到 Code 壳与启动缓存。 */
+  theme: themePreferenceSchema.default("system"),
   modelDefaults: modelDefaultsSchema.optional(),
   /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
   defaultModel: z.string(),

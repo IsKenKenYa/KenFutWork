@@ -119,21 +119,30 @@
         color: var(--zcode-bootstrap-fg, var(--color-foreground, #334155));
       }
 
-      /* 全站唯一加载动画（黑色 logo、无底板、下方转圈）。尺寸/色值与 React 接管后的
+      /* 全站唯一加载动画（随主题黑白 logo、无底板、下方转圈）。尺寸/色值与 React 接管后的
          RootStartupLoading 逐一对齐——56px 标 + 20px 间距 + 24px 圈，交接不跳位。 */
       .zcode-boot-loading__logo {
         width: 56px;
         height: auto;
+        filter: brightness(0) invert(1);
+      }
+
+      html[data-zcode-bootstrap-theme="light"] .zcode-boot-loading__logo {
         filter: brightness(0);
       }
 
       .zcode-boot-loading__spinner {
         width: 24px;
         height: 24px;
-        border: 2px solid rgba(13, 13, 13, 0.15);
-        border-top-color: rgba(13, 13, 13, 0.6);
+        border: 2px solid rgba(245, 245, 245, 0.2);
+        border-top-color: rgba(245, 245, 245, 0.75);
         border-radius: 9999px;
         animation: zcode-boot-spin 1s linear infinite;
+      }
+
+      html[data-zcode-bootstrap-theme="light"] .zcode-boot-loading__spinner {
+        border-color: rgba(13, 13, 13, 0.15);
+        border-top-color: rgba(13, 13, 13, 0.6);
       }
 
       @keyframes zcode-boot-spin {

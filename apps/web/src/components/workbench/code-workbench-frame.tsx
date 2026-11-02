@@ -10,7 +10,9 @@ import {
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingScreen } from "@/components/loading-screen";
+import { triggerDownload } from "@/lib/download";
 import { getServerBaseUrl } from "@/lib/env";
+import { toNextTheme } from "@/lib/instance-theme";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { useLocalInstance } from "@/lib/local-instance-context";
 import {
@@ -71,6 +73,7 @@ export function CodeWorkbenchFrame({
     );
   }, [panels]);
   const ready = useRef(false);
+  const workSaves = useRef(new Map<string, Promise<void>>());
   const sentMode = useRef<WorkbenchMode | undefined>(undefined);
   const sendActivity = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
@@ -122,7 +125,7 @@ export function CodeWorkbenchFrame({
    * （zai 主题口径 zai-light/zai-dark）——没有这座桥，外观切深色时 Code 工作台仍是浅色。
    * 握手响应后立即推一次（iframe 的监听器这时才就位），之后主题变化实时推。
    */
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const themeRef = useRef<"zai-dark" | "zai-light">("zai-light");
   const postTheme = useCallback((theme: "zai-dark" | "zai-light") => {
     themeRef.current = theme;
@@ -141,7 +144,32 @@ export function CodeWorkbenchFrame({
         return;
       const parsed = codeUiParentRequestSchema.safeParse(event.data);
       if (!parsed.success) return;
-      if (parsed.data.type === "kenfutwork:open-management") {
+      if (parsed.data.type === "kenfutwork:work-save") {
+        const { saveId, fileName, mimeType, bytes } = parsed.data;
+        if (workSaves.current.has(saveId)) return;
+        const delivery = (async () => {
+          let error: string | null = null;
+          try {
+            await triggerDownload(
+              fileName,
+              new Blob([bytes], {
+                type: mimeType ?? "application/octet-stream",
+              }),
+              { browserFallback: false },
+            );
+          } catch (cause) {
+            error = cause instanceof Error ? cause.message : String(cause);
+          }
+          frame.current?.contentWindow?.postMessage(
+            { type: "kenfutwork:work-save-result", saveId, ok: !error, error },
+            window.location.origin,
+          );
+        })();
+        workSaves.current.set(saveId, delivery);
+        void delivery;
+      } else if (parsed.data.type === "kenfutwork:code-theme-change") {
+        setTheme(toNextTheme(parsed.data.theme));
+      } else if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
@@ -191,6 +219,7 @@ export function CodeWorkbenchFrame({
     onOpenManagement,
     sendNavigation,
     postTheme,
+    setTheme,
   ]);
   useEffect(() => {
     const zcodeTheme = resolvedTheme === "dark" ? "zai-dark" : "zai-light";

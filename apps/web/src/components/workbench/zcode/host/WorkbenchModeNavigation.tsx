@@ -148,7 +148,7 @@ function ConnectedWorkbenchModeNavigation({
         <img
           src={logoSrc}
           alt="KenFutWork"
-          className="h-5 w-auto brightness-0"
+          className="h-5 w-auto brightness-0 dark:invert"
           draggable={false}
         />
         <span className="font-wordmark text-[20px] leading-none tracking-tight text-foreground">
@@ -197,7 +197,7 @@ export function HostSidebarRail({
       <img
         src={logoSrc}
         alt="KenFutWork"
-        className="my-1 h-5 w-auto shrink-0 brightness-0"
+        className="my-1 h-5 w-auto shrink-0 brightness-0 dark:invert"
         draggable={false}
       />
       <button

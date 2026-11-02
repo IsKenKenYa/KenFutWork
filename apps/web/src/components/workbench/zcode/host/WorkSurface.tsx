@@ -18,7 +18,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { triggerDownload } from "@/lib/download";
 import { fontFamilies } from "./fontFamilies.js";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
@@ -490,6 +489,21 @@ function isArrayBuffer(value: unknown): value is ArrayBuffer {
   return Object.prototype.toString.call(value) === "[object ArrayBuffer]";
 }
 
+function useEditorTheme(): "light" | "dark" {
+  return useSyncExternalStore(
+    (onChange) => {
+      const observer = new MutationObserver(onChange);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+      return () => observer.disconnect();
+    },
+    () => (document.documentElement.classList.contains("dark") ? "dark" : "light"),
+    () => "light",
+  );
+}
+
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
@@ -501,15 +515,24 @@ function EditorFrame({
   onBack: () => void;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const deliveries = useRef(new Map<string, Promise<void>>());
+  const saveIds = useRef(new Set<string>());
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
+  const editorTheme = useEditorTheme();
+  const initialTheme = useRef(editorTheme);
+  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}`;
 
-  // 就绪与保存都只信当前 iframe 的真实 origin/source；保存 id 在在途与完成后均幂等。
   useEffect(() => {
-    deliveries.current.clear();
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:editor-theme", theme: editorTheme },
+      new URL(src).origin,
+    );
+  }, [editorTheme, src]);
+
+  // 就绪与保存都只信当前 iframe 的真实 origin/source；父页统一交付并回传结果。
+  useEffect(() => {
+    saveIds.current.clear();
     setSaveError(null);
     const expectedOrigin = new URL(src).origin;
     const onMessage = (event: MessageEvent) => {
@@ -543,29 +566,47 @@ function EditorFrame({
         !isArrayBuffer(data.bytes)
       )
         return;
-      const saveId = data.saveId;
-      if (deliveries.current.has(saveId)) return;
+      if (saveIds.current.has(data.saveId)) return;
+      saveIds.current.add(data.saveId);
       setSaveError(null);
-      const delivery = triggerDownload(
-        data.fileName,
-        new Blob([data.bytes], {
-          type:
-            typeof data.mimeType === "string"
-              ? data.mimeType
-              : "application/octet-stream",
-        }),
-        { browserFallback: false },
-      ).catch((error: unknown) => {
-        setSaveError(
-          `保存失败：${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
-      deliveries.current.set(saveId, delivery);
-      void delivery;
+      window.parent.postMessage(
+        {
+          type: "kenfutwork:work-save",
+          saveId: data.saveId,
+          fileName: data.fileName,
+          mimeType: data.mimeType,
+          bytes: data.bytes,
+        },
+        window.location.origin,
+        [data.bytes],
+      );
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [src]);
+
+  useEffect(() => {
+    const onResult = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        ok?: boolean;
+        error?: unknown;
+      } | null;
+      if (data?.type !== "kenfutwork:work-save-result") return;
+      setSaveError(
+        data.ok
+          ? null
+          : `保存失败：${typeof data.error === "string" ? data.error : "未知错误"}`,
+      );
+    };
+    window.addEventListener("message", onResult);
+    return () => window.removeEventListener("message", onResult);
+  }, []);
 
   useEffect(() => {
     if (!frameLoaded) return;

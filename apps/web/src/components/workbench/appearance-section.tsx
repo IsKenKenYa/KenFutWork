@@ -13,8 +13,7 @@ import { SETTINGS_ROW, SETTINGS_TITLE } from "@/lib/settings-layout";
  * 三选一写 `theme`（`light` / `dark` / `system`）、把当前解析结果如实显示出来、
  * 说明哪些地方会跟着变（含画布）。
  *
- * 偏好存**本机**（next-themes 默认 localStorage，键 `theme`）：外观是设备级的——
- * 不同接入客户端想要的主题本来就可以不同，不该跟实例设置绑在一起。
+ * 偏好由 InstanceThemeSync 写入实例设置；next-themes 的本地缓存只负责首屏与即时切换。
  */
 export function AppearanceSection() {
   const { theme, setTheme } = useTheme();

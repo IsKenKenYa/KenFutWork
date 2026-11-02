@@ -1,4 +1,8 @@
-import type { ModelDefaults, TerminalShellId } from "@kenfutwork/shared";
+import type {
+  ModelDefaults,
+  TerminalShellId,
+  ThemePreference,
+} from "@kenfutwork/shared";
 
 import type { PersistenceService } from "../persistence/types.js";
 
@@ -25,6 +29,8 @@ export interface SettingsOperations {
   findAgentMaxRetries(instanceId: string): Promise<number | null>;
   /** 读终端默认 shell；无行返回 null（由服务落 `auto`）。 */
   findTerminalShell(instanceId: string): Promise<TerminalShellId | null>;
+  /** 读实例主题；无行返回 null（由服务落 `system`）。 */
+  findTheme(instanceId: string): Promise<ThemePreference | null>;
   /** 读代码库索引开关；无行返回 null（由服务落 false）。 */
   findCodeIndexEnabled(instanceId: string): Promise<boolean | null>;
   /** 读用户规则与规则条目；无行返回 null。 */
@@ -41,6 +47,7 @@ export interface SettingsOperations {
     instanceId: string,
     terminalShell: TerminalShellId,
   ): Promise<void>;
+  upsertTheme(instanceId: string, theme: ThemePreference): Promise<void>;
   upsertCodeIndexEnabled(instanceId: string, enabled: boolean): Promise<void>;
   findCodeIndexAutoNewFolder(instanceId: string): Promise<boolean | null>;
   findAutoCompactEnabled(instanceId: string): Promise<boolean | null>;
@@ -85,6 +92,7 @@ export interface SettingsOperations {
 type DefaultModelRow = { default_model: string };
 type AgentMaxRetriesRow = { agent_max_retries: number };
 type TerminalShellRow = { terminal_shell: TerminalShellId };
+type ThemeRow = { theme: ThemePreference };
 type CodeIndexEnabledRow = { code_index_enabled: boolean };
 type CodeIndexAutoNewFolderRow = { code_index_auto_new_folder: boolean };
 type AutoCompactEnabledRow = { auto_compact_enabled: boolean };
@@ -199,6 +207,24 @@ function createSettingsOperations(
             where instance_id = :instance`,
         );
       return row?.terminal_shell ?? null;
+    },
+
+    async findTheme(instanceId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<ThemeRow>(
+          "select theme from public.instance_settings where instance_id = :instance",
+        );
+      return row?.theme ?? null;
+    },
+
+    async upsertTheme(instanceId, theme) {
+      await persistence.forInstance(instanceId).execute(
+        `insert into public.instance_settings (instance_id, theme)
+         values (:instance, $1)
+         on conflict (instance_id) do update set theme = excluded.theme`,
+        [theme],
+      );
     },
 
     async findCodeIndexEnabled(instanceId) {

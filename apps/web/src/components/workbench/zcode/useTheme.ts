@@ -1,13 +1,24 @@
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type Theme = "light" | "dark" | "zai-light" | "zai-dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
 const STORAGE_KEY = "zcode-theme";
 const BROWSER_THEME_SURFACE_ATTRIBUTE = "data-zcode-browser-theme-surface";
+export const THEME_PREFERENCE_EVENT = "kenfutwork:theme-preference";
+
+export function notifyThemePreferenceChange(theme: Theme) {
+  if (typeof window === "undefined" || window.parent === window) return;
+  window.parent.postMessage(
+    { type: "kenfutwork:code-theme-change", theme },
+    window.location.origin,
+  );
+}
 
 function getSystemTheme(): ResolvedTheme {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 export function resolveTheme(theme: Theme): ResolvedTheme {
@@ -24,7 +35,10 @@ export function normalizeThemePreference(theme: Theme): Theme {
   return theme;
 }
 
-function setThemeMetaContent(name: "theme-color" | "color-scheme", content: string) {
+function setThemeMetaContent(
+  name: "theme-color" | "color-scheme",
+  content: string,
+) {
   let meta = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
   if (!meta) {
     meta = document.createElement("meta");
@@ -49,7 +63,9 @@ function syncBrowserThemeSurface(resolved: ResolvedTheme) {
   root.style.colorScheme = resolved;
   setThemeMetaContent("color-scheme", resolved);
 
-  const background = getComputedStyle(root).getPropertyValue("--color-background").trim();
+  const background = getComputedStyle(root)
+    .getPropertyValue("--color-background")
+    .trim();
   if (background) {
     setThemeMetaContent("theme-color", background);
   }
@@ -64,8 +80,14 @@ export function applyTheme(theme: Theme) {
         : "zai-light"
       : normalizeThemePreference(theme);
   document.documentElement.classList.toggle("dark", resolved === "dark");
-  document.documentElement.classList.toggle("theme-zai-light", appliedTheme === "zai-light");
-  document.documentElement.classList.toggle("theme-zai-dark", appliedTheme === "zai-dark");
+  document.documentElement.classList.toggle(
+    "theme-zai-light",
+    appliedTheme === "zai-light",
+  );
+  document.documentElement.classList.toggle(
+    "theme-zai-dark",
+    appliedTheme === "zai-dark",
+  );
   syncBrowserThemeSurface(resolved);
 }
 
@@ -91,6 +113,7 @@ export function useTheme() {
     localStorage.setItem(STORAGE_KEY, normalizedTheme);
     setThemeState(normalizedTheme);
     applyTheme(normalizedTheme);
+    notifyThemePreferenceChange(normalizedTheme);
   }, []);
 
   // 初始化 + system 模式下监听系统偏好变化

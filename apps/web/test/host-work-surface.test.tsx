@@ -15,15 +15,11 @@ import {
 const host = vi.hoisted(() => ({
   surfaceJson: vi.fn(),
   surfaceFetch: vi.fn(),
-  triggerDownload: vi.fn(),
 }));
 vi.mock("@/components/workbench/zcode/host/surfaceApi.js", () => ({
   surfaceFetch: host.surfaceFetch,
   surfaceJson: host.surfaceJson,
   getSurfaceApiBase: () => "http://127.0.0.1:3001",
-}));
-vi.mock("@/lib/download", () => ({
-  triggerDownload: host.triggerDownload,
 }));
 
 const STATUS = { enabled: true, registeredEditors: 2, reasons: [] };
@@ -55,7 +51,7 @@ afterEach(() => {
   openWorkEditors();
   host.surfaceJson.mockReset();
   host.surfaceFetch.mockReset();
-  host.triggerDownload.mockReset();
+  vi.restoreAllMocks();
 });
 
 function mockData(editors: unknown[], install = {}) {
@@ -83,6 +79,24 @@ function postEditorMessage(
       origin,
       source: frame.contentWindow,
       data,
+    }),
+  );
+}
+
+function workSaveCalls(post: ReturnType<typeof vi.spyOn>) {
+  return post.mock.calls.filter(
+    ([data]: [unknown, ...unknown[]]) =>
+      (data as { type?: string }).type === "kenfutwork:work-save",
+  );
+}
+
+function postSaveResult(saveId: string, ok: boolean, error?: string) {
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: window.parent,
+      data: { type: "kenfutwork:work-save-result", saveId, ok, error },
     }),
   );
 }
@@ -162,7 +176,7 @@ describe("HostWorkSurface 信息页", () => {
     // 顶栏是返回图标 + 注册表中的中文标题（编辑器面不再重复显示英文 id）。
     const frame = screen.getByTitle("表格") as HTMLIFrameElement;
     expect(frame.src).toBe(
-      "http://127.0.0.1:3001/api/work/host/editors/gridcraft/index.html",
+      "http://127.0.0.1:3001/api/work/host/editors/gridcraft/index.html?theme=light",
     );
     fireEvent.click(screen.getByLabelText("返回编辑器列表"));
     expect(getWorkSurfaceView().kind).toBe("editors");
@@ -192,8 +206,8 @@ describe("HostWorkSurface 信息页", () => {
 });
 
 describe("HostWorkSurface 统一保存桥", () => {
-  it("保存成功：校验 origin/source 并交付字节，同 saveId 并发与完成后重放只保存一次", async () => {
-    host.triggerDownload.mockResolvedValue(undefined);
+  it("保存成功：校验 origin/source 并交付字节，同 saveId 并发与完成后重放只转发一次", async () => {
+    const post = vi.spyOn(window.parent, "postMessage");
     const frame = await openInstalledEditor();
     const bytes = new TextEncoder().encode("workbook").buffer;
     const message = {
@@ -207,25 +221,30 @@ describe("HostWorkSurface 统一保存桥", () => {
 
     postEditorMessage(frame, message);
     postEditorMessage(frame, message);
-    await waitFor(() => expect(host.triggerDownload).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(workSaveCalls(post)).toHaveLength(1));
     postEditorMessage(frame, message);
     postEditorMessage(frame, message, "http://evil.local");
-    expect(host.triggerDownload).toHaveBeenCalledTimes(1);
+    expect(workSaveCalls(post)).toHaveLength(1);
 
-    const [name, blob, options] = host.triggerDownload.mock.calls[0] as [
+    const [request, targetOrigin, transfer] = workSaveCalls(post)[0] as [
+      Record<string, unknown>,
       string,
-      Blob,
-      { browserFallback: boolean },
+      ArrayBuffer[],
     ];
-    expect(name).toBe("Book1.xlsx");
-    expect(await blob.text()).toBe("workbook");
-    expect(options).toEqual({ browserFallback: false });
+    expect(request).toMatchObject({
+      type: "kenfutwork:work-save",
+      saveId: "save-1",
+      fileName: "Book1.xlsx",
+      bytes,
+    });
+    expect(targetOrigin).toBe(window.location.origin);
+    expect(transfer).toEqual([bytes]);
+    postSaveResult("save-1", true);
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
   it("保存失败可读：同 saveId 不重复失败，新 saveId 允许显式重试", async () => {
-    host.triggerDownload
-      .mockRejectedValueOnce(new Error("磁盘不可写"))
-      .mockResolvedValueOnce(undefined);
+    const post = vi.spyOn(window.parent, "postMessage");
     const frame = await openInstalledEditor();
     const message = {
       type: "kenfutwork:editor-save",
@@ -235,14 +254,16 @@ describe("HostWorkSurface 统一保存桥", () => {
     };
 
     postEditorMessage(frame, message);
+    postSaveResult("save-failed", false, "磁盘不可写");
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("磁盘不可写"),
     );
     postEditorMessage(frame, message);
-    expect(host.triggerDownload).toHaveBeenCalledTimes(1);
+    expect(workSaveCalls(post)).toHaveLength(1);
 
     postEditorMessage(frame, { ...message, saveId: "save-retry" });
-    await waitFor(() => expect(host.triggerDownload).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(workSaveCalls(post)).toHaveLength(2));
+    postSaveResult("save-retry", true);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
