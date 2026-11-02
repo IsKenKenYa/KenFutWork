@@ -810,8 +810,6 @@ export function SettingsPage({
     return [...names];
   }, [sharedSettings?.recentProjects, workspaceTabs]);
   const memoryEnabled = sharedSettings?.memoryEnabled === true;
-  const nativeSearchEnhancementsEnabled =
-    sharedSettings?.nativeSearchEnhancementsEnabled !== false;
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
   const modelIoFullRetentionEnabled =
@@ -1059,22 +1057,6 @@ export function SettingsPage({
       setIntegratedTerminalShell(selection);
     },
     [services.settingService],
-  );
-  const handleNativeSearchEnhancementsEnabledChange = useCallback(
-    async (enabled: boolean) => {
-      await runSettingsActionAsync({
-        featureId: "settings.search",
-        action: "toggle_native_search",
-        trigger: "switch",
-        operation: () =>
-          updateSharedSettings({ nativeSearchEnhancementsEnabled: enabled }),
-        completed: {
-          resultSource: "shared_settings",
-          stateAfter: enabled ? "enabled" : "disabled",
-        },
-      });
-    },
-    [updateSharedSettings],
   );
   const handleAskUserQuestionAutoResolutionEnabledChange = useCallback(
     async (enabled: boolean) => {
@@ -1939,9 +1921,6 @@ export function SettingsPage({
                             integratedTerminalShellOptions={
                               integratedTerminalShellOptions
                             }
-                            nativeSearchEnhancementsEnabled={
-                              nativeSearchEnhancementsEnabled
-                            }
                             httpProxy={httpProxy}
                             httpProxyNoProxy={httpProxyNoProxy}
                             httpProxyCaCertPath={httpProxyCaCertPath}
@@ -2020,9 +1999,6 @@ export function SettingsPage({
                             }
                             onIntegratedTerminalShellChange={
                               handleIntegratedTerminalShellChange
-                            }
-                            onNativeSearchEnhancementsEnabledChange={
-                              handleNativeSearchEnhancementsEnabledChange
                             }
                             onModelIoFullRetentionEnabledChange={
                               handleModelIoFullRetentionEnabledChange

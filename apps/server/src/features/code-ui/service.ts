@@ -333,6 +333,9 @@ export class CodeUiService {
     { actor: LocalActor; scopeGeneration: number }
   >();
   private readonly humanWorkspace: HumanWorkspaceRpc;
+  private readonly preferenceListeners = new Set<
+    (instanceId: string, changedKeys: readonly string[]) => void | Promise<void>
+  >();
   private readonly providerSettings: CodeUiProviderSettingsRpc;
   private readonly attachments: CodeAttachmentsService | undefined;
   private readonly watchers: ReturnType<typeof createCodeUiFileWatchers>;
@@ -675,6 +678,8 @@ export class CodeUiService {
       instanceId: async (actor) =>
         (await deps.localInstance.resolve(actor)).instanceId,
       listWorkspaces: (actor) => this.listWorkspaces(actor),
+      onPreferencesUpdated: (instanceId, changedKeys) =>
+        this.notifyPreferencesUpdated(instanceId, changedKeys),
       maxEntries: async (actor) =>
         deps.settings
           .getInstanceSettings(
@@ -715,6 +720,34 @@ export class CodeUiService {
       await this.deps.repository.recoverRuntimeInputs(this.inputOwner);
     })();
     return this.initialization;
+  }
+
+  /** 偏好保存后的消费方（任务自动归档等）；返回注销 disposer。 */
+  onPreferencesUpdated(
+    listener: (
+      instanceId: string,
+      changedKeys: readonly string[],
+    ) => void | Promise<void>,
+  ): () => void {
+    this.preferenceListeners.add(listener);
+    return () => this.preferenceListeners.delete(listener);
+  }
+
+  private async notifyPreferencesUpdated(
+    instanceId: string,
+    changedKeys: readonly string[],
+  ): Promise<void> {
+    const outcomes = await Promise.allSettled(
+      [...this.preferenceListeners].map((listener) =>
+        Promise.resolve().then(() => listener(instanceId, changedKeys)),
+      ),
+    );
+    for (const outcome of outcomes)
+      if (outcome.status === "rejected")
+        console.warn(
+          "[code-ui] 偏好已保存，消费方刷新失败：",
+          outcome.reason,
+        );
   }
 
   async admitExternalRun(

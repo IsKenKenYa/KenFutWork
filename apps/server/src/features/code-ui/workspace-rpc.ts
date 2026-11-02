@@ -89,6 +89,20 @@ const preferenceKeys = new Set([
   "terminalInheritSystemProfile",
   "computerUseComposerEntryHidden",
   "memoryEnabled",
+  "httpProxy",
+  "httpProxyNoProxy",
+  "httpProxyCaCertPath",
+  "taskAutoArchiveEnabled",
+  "taskAutoArchiveOlderThanDays",
+]);
+/**
+ * 清空即删除：界面清空代理地址/证书时传空串（RPC 会丢弃 undefined），
+ * 这几个键不参与 `appSettingsSchema.parse`（非空字符串），由偏好写入显式移除。
+ */
+const removablePreferenceKeys = new Set([
+  "httpProxy",
+  "httpProxyNoProxy",
+  "httpProxyCaCertPath",
 ]);
 type WorkspacePreferenceEntry = z.infer<
   typeof appSettingsSchema
@@ -227,6 +241,11 @@ export function createHumanWorkspaceRpc(options: {
     taskId: string,
   ) => Promise<{ projectId: string; rootDirectory: string } | null>;
   maxEntries: (actor: LocalActor) => Promise<number>;
+  /** 偏好保存后的消费通知（例如任务自动归档按新天数立刻扫描）。 */
+  onPreferencesUpdated?: (
+    instanceId: string,
+    changedKeys: readonly string[],
+  ) => void | Promise<void>;
 }): HumanWorkspaceRpc {
   const opening = new Map<string, Promise<CodeUiWorkspace>>();
   const conversationOpening = new Map<string, Promise<ConversationWorkspace>>();
@@ -575,16 +594,22 @@ export function createHumanWorkspaceRpc(options: {
             "command_conflict",
             `当前宿主尚不支持设置：${unsupported}`,
           );
+        const removeKeys = Object.keys(patch).filter(
+          (key) => removablePreferenceKeys.has(key) && patch[key] === "",
+        );
+        const effectivePatch = Object.fromEntries(
+          Object.entries(patch).filter(([key]) => !removeKeys.includes(key)),
+        );
         const parsed = appSettingsSchema.parse({
           ...appSettingsSchema.parse(
             await options.preferences.readHumanPreferences(
               await options.instanceId(actor),
             ),
           ),
-          ...patch,
+          ...effectivePatch,
         });
         const normalized = Object.fromEntries(
-          Object.keys(patch).map((key) => [
+          Object.keys(effectivePatch).map((key) => [
             key,
             parsed[key as keyof typeof parsed],
           ]),
@@ -670,6 +695,7 @@ export function createHumanWorkspaceRpc(options: {
                 return owner ? [owner.projectId] : [];
               }),
             ],
+            removeKeys,
           },
         );
         if (!saved)
@@ -677,6 +703,10 @@ export function createHumanWorkspaceRpc(options: {
             "not_found",
             "设置中的 Code 项目已归档，偏好未保存。",
           );
+        await options.onPreferencesUpdated?.(await options.instanceId(actor), [
+          ...Object.keys(effectivePatch),
+          ...removeKeys,
+        ]);
         return { result: undefined };
       }
       return null;

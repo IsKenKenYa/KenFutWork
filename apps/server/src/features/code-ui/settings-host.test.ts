@@ -220,7 +220,7 @@ it("公开setting宿主稀疏保存语言和显示偏好，空recent真实保留
     for (const patch of [
       { locale: "invalid", messageStreamShowTodos: false },
       { locale: "zh-CN", apiKey: "private-key" },
-      { locale: "zh-CN", httpProxy: "http://unsupported" },
+      { locale: "zh-CN", dataBaseDir: "/tmp/unsupported" },
     ])
       await expect(f.call("update", patch)).rejects.toThrow();
     expect(f.readStored()).toEqual(before);

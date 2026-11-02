@@ -74,8 +74,14 @@ async function world() {
   const preferencesApi = {
     readHumanPreferences: async () => preferences,
     updateHumanPreferences: vi.fn(
-      async (_workspace: string, patch: Record<string, unknown>) => {
+      async (
+        _workspace: string,
+        patch: Record<string, unknown>,
+        options?: { removeKeys?: string[] },
+      ) => {
         preferences = { ...preferences, ...patch };
+        for (const key of options?.removeKeys ?? [])
+          delete preferences[key];
         return true;
       },
     ),
@@ -462,6 +468,41 @@ describe("Human-only Code workspace RPC", () => {
     expect(await refreshed.call(actor, "setting", "get", [])).toMatchObject({
       result: { memoryEnabled: false },
     });
+  });
+  it("代理与任务自动归档偏好可保存；清空代理键会真的删除旧值", async () => {
+    const { rpc } = await world();
+    await rpc.call(actor, "setting", "update", [
+      {
+        httpProxy: "http://127.0.0.1:7890",
+        httpProxyNoProxy: "localhost, *.local",
+        httpProxyCaCertPath: "/etc/ssl/private/ca.pem",
+        taskAutoArchiveEnabled: true,
+        taskAutoArchiveOlderThanDays: 30,
+      },
+    ]);
+    expect(await rpc.call(actor, "setting", "get", [])).toMatchObject({
+      result: {
+        httpProxy: "http://127.0.0.1:7890",
+        httpProxyNoProxy: "localhost, *.local",
+        httpProxyCaCertPath: "/etc/ssl/private/ca.pem",
+        taskAutoArchiveEnabled: true,
+        taskAutoArchiveOlderThanDays: 30,
+      },
+    });
+    await rpc.call(actor, "setting", "update", [
+      {
+        httpProxy: "",
+        httpProxyNoProxy: "",
+        httpProxyCaCertPath: "",
+      },
+    ]);
+    const cleared = (await rpc.call(actor, "setting", "get", [])) as {
+      result: Record<string, unknown>;
+    };
+    expect(cleared.result).not.toHaveProperty("httpProxy");
+    expect(cleared.result).not.toHaveProperty("httpProxyNoProxy");
+    expect(cleared.result).not.toHaveProperty("httpProxyCaCertPath");
+    expect(cleared.result.taskAutoArchiveEnabled).toBe(true);
   });
   it("显式关闭全部最近目录后读取保持空列表，不因Project仍存在复活目录", async () => {
     const { rpc, root, createProject, workspaces } = await world();

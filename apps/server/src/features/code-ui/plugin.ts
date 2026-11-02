@@ -9,6 +9,8 @@ import {
 } from "../memory/consumer.js";
 import { createProjectMemoryService } from "../memory/project-memory.js";
 import { createProjectMemoryRpc } from "../memory/rpc.js";
+import { installNetworkProxy } from "../network/proxy.js";
+import { runTaskAutoArchive } from "./task-auto-archive.js";
 import {
   createGoalPrompt,
   createGoalTools,
@@ -37,6 +39,8 @@ import {
 } from "./work-context.js";
 
 export function createCodeUiPlugin(): PluginDefinition {
+  /** apply 期建立的偏好仓储；mounted 的启动期消费者共用同一实例。 */
+  let preferenceRepository: ReturnType<typeof createCodeUiRepository> | undefined;
   return {
     name: "code-ui",
     inject: [
@@ -66,6 +70,7 @@ export function createCodeUiPlugin(): PluginDefinition {
         ctx.get("persistence"),
         ctx.get("goals"),
       );
+      preferenceRepository = repository;
       /**
        * 项目长期记忆：开关存实例偏好（`memoryEnabled`），正文存应用数据目录。
        * 三个消费方（设置页目录、系统提示段、写入工具）共用同一份服务，
@@ -262,8 +267,52 @@ export function createCodeUiPlugin(): PluginDefinition {
             return ctx.get("codeUi").refreshWorkspaceConfiguration(instanceId);
         }),
       );
+      const preferencesRepository = preferenceRepository;
+      if (!preferencesRepository)
+        throw new Error("Code UI 偏好仓储未装配。");
+      const autoArchiveTasks = async () => {
+        const actor = await ctx.get("localInstance").serviceActor();
+        const preferences = await preferencesRepository.readHumanPreferences(
+          actor.instanceId,
+        );
+        const result = await runTaskAutoArchive({
+          preferences: {
+            enabled: preferences.taskAutoArchiveEnabled,
+            olderThanDays: preferences.taskAutoArchiveOlderThanDays,
+          },
+          listRoots: () =>
+            preferencesRepository.listRoots(actor.instanceId),
+          archive: (taskId) => ctx.get("codeUi").archiveTask(actor, taskId),
+        });
+        if (result.failed.length)
+          console.warn(
+            "[code-ui] 任务自动归档有未完成的项：",
+            result.failed.map((failure) => failure.taskId),
+          );
+      };
+      // 偏好变更不重启也能生效：关闭/调整天数后立刻按新值扫一次。
+      ctx.effect(() =>
+        ctx.get("codeUi").onPreferencesUpdated((_instanceId, changedKeys) => {
+          if (
+            changedKeys.includes("taskAutoArchiveEnabled") ||
+            changedKeys.includes("taskAutoArchiveOlderThanDays")
+          )
+            return autoArchiveTasks();
+        }),
+      );
       ctx.app.addHook("onReady", async () => {
+        const actor = await ctx.get("localInstance").serviceActor();
+        /**
+         * 网络出口：代理/No Proxy/自定义 CA 在启动期装配到全局 dispatcher（界面
+         * 已提示需重启）。读取偏好失败或 CA 路径非法时启动期报错，不静默忽略。
+         */
+        await installNetworkProxy({
+          preferences: await preferencesRepository.readHumanPreferences(
+            actor.instanceId,
+          ),
+        });
         await ctx.get("codeUi").initialize();
+        await autoArchiveTasks();
       });
       const permissions = ctx.get("permissions");
       const userInputs = ctx.get("codeUi").userInputs;
