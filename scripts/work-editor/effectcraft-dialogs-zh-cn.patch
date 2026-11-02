@@ -1,0 +1,97 @@
+diff --git a/crates/ui-egui/src/i18n/ui.rs b/crates/ui-egui/src/i18n/ui.rs
+index 434f2b7..babcba9 100644
+--- a/crates/ui-egui/src/i18n/ui.rs
++++ b/crates/ui-egui/src/i18n/ui.rs
+@@ -1144,6 +1144,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
+     ("Property pick whip: drag onto a property", "属性拾取器：拖到属性上"),
+     ("Protected Region", "受保护区域"),
+     ("Proxy Use: {}", "代理使用：{}"),
++    ("Push", "推送"),
+     ("Push All to Comp", "全部推送到合成"),
+     ("RGB", "RGB"),
+     ("Radius", "半径"),
+@@ -1163,6 +1164,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
+     ("Resolution/Down Sample Factor Popup", "分辨率/向下采样系数弹出菜单"),
+     ("Restore Panel Size", "恢复面板大小"),
+     ("Reverse the order", "反转顺序"),
++    ("Revert", "还原"),
+     ("Revert All", "全部还原"),
+     ("Roman Hanging Punctuation", "西文悬挂标点"),
+     ("Roving:", "游动："),
+@@ -1884,6 +1886,7 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
+     ("Property pick whip: drag onto a property", "屬性拾取線：拖到屬性上"),
+     ("Protected Region", "受保護區域"),
+     ("Proxy Use: {}", "代理使用：{}"),
++    ("Push", "推送"),
+     ("Push All to Comp", "全部推送到合成"),
+     ("RGB", "RGB"),
+     ("Radius", "半徑"),
+@@ -1903,6 +1906,7 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
+     ("Resolution/Down Sample Factor Popup", "分辨率/向下取樣係數快顯選單"),
+     ("Restore Panel Size", "恢復面板大小"),
+     ("Reverse the order", "反轉順序"),
++    ("Revert", "還原"),
+     ("Revert All", "全部還原"),
+     ("Roman Hanging Punctuation", "西文懸掛標點"),
+     ("Roving:", "游動："),
+diff --git a/crates/ui-egui/src/panels/essential.rs b/crates/ui-egui/src/panels/essential.rs
+index 2e99c7d..fa31764 100644
+--- a/crates/ui-egui/src/panels/essential.rs
++++ b/crates/ui-egui/src/panels/essential.rs
+@@ -543,12 +543,12 @@ fn instance(app: &mut EffectcraftApp, ui: &mut egui::Ui, actions: &mut Actions)
+                 }
+             }
+             if is_over {
+-                let r = ui.small_button("Revert");
++                let r = ui.small_button(tr("Revert"));
+                 app.auto.add(&format!("essential.instance.{}.revert", c.id), r.rect, "Revert");
+                 if r.clicked() {
+                     actions.push(("essential.revert".into(), json!({"layer": layer.id.0, "control": c.id})));
+                 }
+-                let r = ui.small_button("Push");
++                let r = ui.small_button(tr("Push"));
+                 app.auto.add(&format!("essential.instance.{}.push", c.id), r.rect, "Push to Comp");
+                 if r.clicked() {
+                     actions.push(("essential.pushToComp".into(), json!({"layer": layer.id.0, "control": c.id})));
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index f5a0664..9497a05 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -322,6 +322,9 @@ static INTER_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regula
+ static INTER_MEDIUM: &[u8] = include_bytes!("../../../assets/fonts/Inter-Medium.ttf");
+ static INTER_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf");
+ static JETBRAINS_MONO: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
++/// Public SIL OFL 1.1 font from the craft-fonts checkout used by the reproducible web build.
++#[cfg(target_arch = "wasm32")]
++static LXGW_WENKAI_LITE: &[u8] = include_bytes!(concat!(env!("CRAFT_FONTS_DIR"), "/fonts/lxgw-wenkai-lite/LXGWWenKaiLite-Regular.ttf"));
+ 
+ /// Install fonts (Inter, Inter Medium/SemiBold, JetBrains Mono) and egui visuals. `language` is the
+ /// resolved interface language from [`crate::i18n::language`] (`en`, `ja`, `zh-hans` or `zh-hant`),
+@@ -384,11 +387,17 @@ const SCRIPT_PROBES: &[(char, &str)] = &[
+ /// the Chinese catalogs. Both scripts are registered, so file, layer and template names in the
+ /// other one still render; then [`SCRIPT_PROBES`], then Hangul, since the Japanese and Chinese faces
+ /// may lack it (Hiragino Sans on macOS has none). The web build has no system fonts
+-/// and installs nothing.
++/// and installs only the bundled Chinese face.
+ fn install_script_fallbacks(family_fonts: &mut FontDefinitions, language: &str) -> Vec<String> {
+     #[cfg(target_arch = "wasm32")]
+     {
+-        let _ = (family_fonts, language);
++        if is_chinese(language) {
++            const NAME: &str = "lxgw-wenkai-lite";
++            family_fonts.font_data.insert(NAME.into(), Arc::new(FontData::from_static(LXGW_WENKAI_LITE)));
++            for family in family_fonts.families.values_mut() {
++                family.push(NAME.into());
++            }
++        }
+         Vec::new()
+     }
+     #[cfg(not(target_arch = "wasm32"))]
+@@ -452,7 +461,6 @@ fn han_probe(language: &str) -> char {
+ }
+ 
+ /// Whether `language` is one of the Chinese catalogs.
+-#[cfg(not(target_arch = "wasm32"))]
+ fn is_chinese(language: &str) -> bool {
+     matches!(language, "zh-hans" | "zh-hant")
+ }

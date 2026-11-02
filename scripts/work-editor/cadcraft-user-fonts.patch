@@ -1,8 +1,8 @@
 diff --git a/apps/cadcraft-web/Cargo.toml b/apps/cadcraft-web/Cargo.toml
-index e5e86a0..d99b361 100644
+index 4fb706d..6d42d52 100644
 --- a/apps/cadcraft-web/Cargo.toml
 +++ b/apps/cadcraft-web/Cargo.toml
-@@ -16,6 +16,7 @@ path = "src/main.rs"
+@@ -15,6 +15,7 @@ path = "src/main.rs"
  
  [dependencies]
  cadcraft-engine = { workspace = true }
@@ -10,15 +10,15 @@ index e5e86a0..d99b361 100644
  cadcraft-ui-egui = { workspace = true }
  cadcraft-io = { workspace = true }
  egui = { workspace = true }
-@@ -30,4 +31,5 @@ web-sys = { version = "0.3", features = ["HtmlInputElement", "FileList", "File"]
- eframe = { workspace = true, features = ["persistence", "wgpu", "accesskit"] }
+@@ -29,4 +30,5 @@ web-sys = { version = "0.3", features = ["HtmlInputElement", "FileList", "File"]
+ eframe = { workspace = true, features = ["persistence", "default_fonts", "wgpu", "accesskit"] }
  wasm-bindgen = "0.2"
  wasm-bindgen-futures = "0.4"
 -web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Location", "Navigator", "Blob", "BlobPropertyBag", "Url", "MessageEvent", "UrlSearchParams", "MediaQueryList"] }
 +js-sys = "0.3"
 +web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Location", "Navigator", "Blob", "BlobPropertyBag", "Url", "MessageEvent", "UrlSearchParams", "MediaQueryList", "Response", "Request", "RequestInit"] }
 diff --git a/apps/cadcraft-web/src/main.rs b/apps/cadcraft-web/src/main.rs
-index f69e02d..cbbbc7d 100644
+index 5b4873e..b0fada5 100644
 --- a/apps/cadcraft-web/src/main.rs
 +++ b/apps/cadcraft-web/src/main.rs
 @@ -13,6 +13,8 @@
@@ -30,27 +30,26 @@ index f69e02d..cbbbc7d 100644
  
  #[cfg(target_arch = "wasm32")]
  mod web {
-@@ -185,6 +187,18 @@ mod web {
+@@ -152,6 +154,17 @@ mod web {
                              (bridge, crate::host::DirtyReport::default())
                          });
                          let reduced_motion = web_sys::window().and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok().flatten());
 +                        // 宿主上传的用户字体（Work 引擎页）：同源清单 → 字体注册表。
 +                        let font_ctx = cc.egui_ctx.clone();
 +                        wasm_bindgen_futures::spawn_local(async move {
-+                            let count = crate::user_fonts::install(|bytes| {
-+                                if cadcraft_fonts::ttf::register_family_font(bytes).is_empty() { 0 } else { 1 }
-+                            })
-+                            .await;
++                            let count =
++                                crate::user_fonts::install(|bytes| if cadcraft_fonts::ttf::register_family_font(bytes).is_empty() { 0 } else { 1 })
++                                    .await;
 +                            if count > 0 {
 +                                log::info!("user fonts installed: {count}");
 +                                font_ctx.request_repaint();
 +                            }
 +                        });
-                         Ok(Box::new(Shell(app, inbox, host, reduced_motion, None)))
+                         Ok(Box::new(Shell(app, inbox, host, reduced_motion)))
                      }),
                  )
 diff --git a/crates/fonts/src/ttf.rs b/crates/fonts/src/ttf.rs
-index 5299890..897b4ad 100644
+index aedcbb0..572bf0b 100644
 --- a/crates/fonts/src/ttf.rs
 +++ b/crates/fonts/src/ttf.rs
 @@ -476,6 +476,42 @@ pub fn register(name: &str, bytes: Vec<u8>) {
@@ -97,7 +96,7 @@ index 5299890..897b4ad 100644
  /// the font is first used, the way the embedded craft-fonts fonts are listed.
  #[cfg(test)]
 diff --git a/crates/ui-egui/src/mtext_editor.rs b/crates/ui-egui/src/mtext_editor.rs
-index 8258a29..d6fd3b6 100644
+index 9e7db58..976a257 100644
 --- a/crates/ui-egui/src/mtext_editor.rs
 +++ b/crates/ui-egui/src/mtext_editor.rs
 @@ -18,6 +18,18 @@ const MIN_PX: f32 = 13.0;
@@ -119,12 +118,15 @@ index 8258a29..d6fd3b6 100644
  /// The standard colours (ACI 1..=7) of the colour menu.
  const SWATCHES: [u16; 7] = [1, 2, 3, 4, 5, 6, 7];
  /// Ruler snap, in text heights.
-@@ -235,7 +247,7 @@ fn toolbar(ui: &mut egui::Ui, st: &mut State, base_h: f64) {
-             .width(120.0)
-             .selected_text(shown.clone())
-             .show_ui(ui, |ui| {
--                for fam in FAMILIES.iter().map(ToString::to_string).chain(cur.font.clone().filter(|f| !FAMILIES.contains(&f.as_str()))) {
-+                for fam in font_families().into_iter().chain(cur.font.clone().filter(|f| !FAMILIES.contains(&f.as_str()) && !font_families().iter().any(|g| g.eq_ignore_ascii_case(f)))) {
-                     if ui.selectable_label(shown == fam, &fam).clicked() {
-                         change(st, |c| c.font = Some(fam.clone()));
-                         refocus = true;
+@@ -195,7 +207,10 @@ fn toolbar(ui: &mut egui::Ui, st: &mut State, base_h: f64) {
+         // Font
+         let shown = cur.font.clone().unwrap_or_else(|| st.fmt.base_font.clone());
+         egui::ComboBox::from_id_salt("mtext_font").width(120.0).selected_text(shown.clone()).show_ui(ui, |ui| {
+-            for fam in FAMILIES.iter().map(|s| s.to_string()).chain(cur.font.clone().filter(|f| !FAMILIES.contains(&f.as_str()))) {
++            for fam in font_families()
++                .into_iter()
++                .chain(cur.font.clone().filter(|f| !FAMILIES.contains(&f.as_str()) && !font_families().iter().any(|g| g.eq_ignore_ascii_case(f))))
++            {
+                 if ui.selectable_label(shown == fam, &fam).clicked() {
+                     change(st, |c| c.font = Some(fam.clone()));
+                     refocus = true;

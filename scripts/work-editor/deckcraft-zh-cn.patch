@@ -1,0 +1,2137 @@
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index 7c0f8ab..02cbab2 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -6,6 +6,7 @@ use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
+ use serde_json::{Value, json};
+ 
+ use crate::SlideApp;
++use crate::i18n::tr;
+ use crate::theme::{self, Tokens};
+ 
+ #[derive(Clone, Debug, serde::Serialize)]
+@@ -81,7 +82,7 @@ pub fn show(app: &mut SlideApp, ctx: &egui::Context) {
+     let Some(mut d) = app.dialog.take() else { return };
+     let mut open = true;
+     let mut close = false;
+-    let mut window = egui::Window::new(title(&d.id))
++    let mut window = egui::Window::new(tr(title(&d.id)))
+         .id(egui::Id::new(("dialog", d.id.clone())))
+         .collapsible(false)
+         .resizable(false)
+@@ -145,12 +146,12 @@ fn buttons(ui: &mut Ui, ok_label: &str) -> (bool, bool) {
+     ui.add_space(8.0);
+     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+         let t = Tokens::get(ui.ctx());
+-        if ui.add(egui::Button::new(egui::RichText::new(ok_label).color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0))).clicked()
++        if ui.add(egui::Button::new(egui::RichText::new(tr(ok_label)).color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0))).clicked()
+             || ui.input(|i| i.key_pressed(egui::Key::Enter))
+         {
+             ok = true;
+         }
+-        if ui.add(egui::Button::new("Cancel").min_size(vec2(72.0, 24.0))).clicked() {
++        if ui.add(egui::Button::new(tr("Cancel")).min_size(vec2(72.0, 24.0))).clicked() {
+             cancel = true;
+         }
+     });
+@@ -185,7 +186,7 @@ fn restore_preferences(app: &mut SlideApp, d: &Dialog) {
+ fn field(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str, default: &str) {
+     let mut v = d.get(key, default);
+     ui.horizontal(|ui| {
+-        ui.add_sized(vec2(120.0, 20.0), egui::Label::new(label));
++        ui.add_sized(vec2(120.0, 20.0), egui::Label::new(tr(label)));
+         ui.add(egui::TextEdit::singleline(&mut v).desired_width(180.0));
+     });
+     d.fields.insert(key.into(), v);
+@@ -205,7 +206,7 @@ fn alt_text_starts_decorative(decorative: impl IntoIterator<Item = bool>) -> boo
+ 
+ fn check(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str, default: bool) -> bool {
+     let mut v = d.get(key, if default { "1" } else { "0" }) == "1";
+-    ui.checkbox(&mut v, label);
++    ui.checkbox(&mut v, tr(label));
+     d.fields.insert(key.into(), if v { "1".into() } else { "0".into() });
+     v
+ }
+@@ -280,10 +281,10 @@ fn pick_album_picture(app: &mut SlideApp) -> Option<Value> {
+ 
+ fn album_choice(ui: &mut Ui, d: &mut Dialog, id: &str, key: &str, default: &str, choices: &[(&str, &str)]) {
+     let cur = d.get(key, default);
+-    let label = choices.iter().find(|(k, _)| *k == cur).map(|(_, l)| *l).unwrap_or(default);
++    let label = tr(choices.iter().find(|(k, _)| *k == cur).map(|(_, l)| *l).unwrap_or(default));
+     let opened = egui::ComboBox::from_id_salt(id).selected_text(label).width(220.0).show_ui(ui, |ui| {
+         for (k, l) in choices {
+-            if ui.selectable_label(cur == *k, *l).clicked() {
++            if ui.selectable_label(cur == *k, tr(*l)).clicked() {
+                 d.fields.insert(key.into(), (*k).to_string());
+             }
+         }
+@@ -360,13 +361,13 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+     ui.set_min_width(440.0);
+     egui::ScrollArea::vertical().max_height(520.0).id_salt("album_body").show(ui, |ui| {
+         ui.set_min_width(420.0);
+-        ui.label("Pictures in album");
++        ui.label(tr("Pictures in album"));
+         let items = album_items(d).unwrap_or_default();
+         let mut sel = d.get("sel", "0").parse::<usize>().unwrap_or(0);
+         // Fixed height so adding pictures does not push Create past the window.
+         egui::ScrollArea::vertical().max_height(120.0).min_scrolled_height(120.0).auto_shrink([false, false]).id_salt("album_list").show(ui, |ui| {
+             if items.is_empty() {
+-                ui.label(egui::RichText::new("No pictures yet").color(Tokens::get(ui.ctx()).text_dim));
++                ui.label(egui::RichText::new(tr("No pictures yet")).color(Tokens::get(ui.ctx()).text_dim));
+             }
+             for (i, item) in items.iter().enumerate() {
+                 if ui.selectable_label(sel == i, album_item_label(item)).clicked() {
+@@ -376,7 +377,7 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+         });
+         d.fields.insert("sel".into(), sel.to_string());
+         ui.horizontal(|ui| {
+-            if ui.button("Add Pictures…").clicked()
++            if ui.button(tr("Add Pictures…")).clicked()
+                 && let Some(item) = pick_album_picture(app)
+             {
+                 match album_items(d) {
+@@ -390,7 +391,7 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                     None => app.set_status("The picture list is invalid"),
+                 }
+             }
+-            if ui.button("New Text Box").clicked() {
++            if ui.button(tr("New Text Box")).clicked() {
+                 let text = d.get("boxText", "Text Box");
+                 let text = text.trim();
+                 if text.is_empty() {
+@@ -408,7 +409,7 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                     }
+                 }
+             }
+-            if ui.button("Remove").clicked()
++            if ui.button(tr("Remove")).clicked()
+                 && let Some(mut list) = album_items(d)
+                 && let Some(i) = d.get("sel", "0").parse::<usize>().ok()
+                 && i < list.len()
+@@ -424,36 +425,36 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+         ui.label(album_picture_status(&items, sel));
+         ui.horizontal_wrapped(|ui| {
+             ui.add_enabled_ui(picture, |ui| {
+-                if ui.button("Rotate Left").clicked() {
++                if ui.button(tr("Rotate Left")).clicked() {
+                     with_selected_picture(d, |obj| {
+                         let cur = obj.get("rot").and_then(Value::as_f64).unwrap_or(0.0);
+                         let next = ((cur - 90.0) % 360.0 + 360.0) % 360.0;
+                         obj.insert("rot".into(), json!(next));
+                     });
+                 }
+-                if ui.button("Rotate Right").clicked() {
++                if ui.button(tr("Rotate Right")).clicked() {
+                     with_selected_picture(d, |obj| {
+                         let cur = obj.get("rot").and_then(Value::as_f64).unwrap_or(0.0);
+                         let next = ((cur + 90.0) % 360.0 + 360.0) % 360.0;
+                         obj.insert("rot".into(), json!(next));
+                     });
+                 }
+-                if ui.button("More Brightness").clicked() {
++                if ui.button(tr("More Brightness")).clicked() {
+                     nudge_picture(d, "brightness", 0.1);
+                 }
+-                if ui.button("Less Brightness").clicked() {
++                if ui.button(tr("Less Brightness")).clicked() {
+                     nudge_picture(d, "brightness", -0.1);
+                 }
+-                if ui.button("More Contrast").clicked() {
++                if ui.button(tr("More Contrast")).clicked() {
+                     nudge_picture(d, "contrast", 0.1);
+                 }
+-                if ui.button("Less Contrast").clicked() {
++                if ui.button(tr("Less Contrast")).clicked() {
+                     nudge_picture(d, "contrast", -0.1);
+                 }
+             });
+         });
+         ui.add_space(4.0);
+-        ui.label("Picture layout");
++        ui.label(tr("Picture layout"));
+         album_choice(
+             ui,
+             d,
+@@ -470,7 +471,7 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 ("4title", "4 pictures with title"),
+             ],
+         );
+-        ui.label("Frame shape");
++        ui.label(tr("Frame shape"));
+         album_choice(
+             ui,
+             d,
+@@ -481,7 +482,7 @@ fn photo_album_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+         );
+         check(ui, d, "Captions under pictures", "captions", false);
+         check(ui, d, "ALL pictures black and white", "grayscale", false);
+-        ui.label("Album theme");
++        ui.label(tr("Album theme"));
+         album_choice(ui, d, "album_theme", "theme", "DeckCraft", &ALBUM_THEMES.iter().map(|n| (*n, *n)).collect::<Vec<_>>());
+     });
+     let captions = d.fields.get("captions").is_some_and(|v| v == "1");
+@@ -1120,9 +1121,9 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             let mut apply_all = false;
+             let mut apply = false;
+             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+-                apply_all = ui.button("Apply to All").clicked();
+-                apply = ui.button("Apply").clicked();
+-                if ui.button("Cancel").clicked() {
++                apply_all = ui.button(tr("Apply to All")).clicked();
++                apply = ui.button(tr("Apply")).clicked();
++                if ui.button(tr("Cancel")).clicked() {
+                     d.fields.insert("cancel".into(), "1".into());
+                 }
+             });
+@@ -1151,13 +1152,13 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             let slide_default = seed.slide.to_string();
+             let mode = d.get("mode", seed.mode);
+             ui.horizontal(|ui| {
+-                if ui.selectable_label(mode == "url", "Web Page or File").clicked() {
++                if ui.selectable_label(mode == "url", tr("Web Page or File")).clicked() {
+                     d.fields.insert("mode".into(), "url".into());
+                 }
+-                if ui.selectable_label(mode == "slide", "This Document").clicked() {
++                if ui.selectable_label(mode == "slide", tr("This Document")).clicked() {
+                     d.fields.insert("mode".into(), "slide".into());
+                 }
+-                if ui.selectable_label(mode == "email", "Email Address").clicked() {
++                if ui.selectable_label(mode == "email", tr("Email Address")).clicked() {
+                     d.fields.insert("mode".into(), "email".into());
+                 }
+             });
+@@ -1240,21 +1241,22 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                 return true;
+             }
+-            let what = if names.len() == 1 { format!("“{}”", names[0]) } else { format!("{} presentations", names.len()) };
+-            ui.label(egui::RichText::new(format!("Do you want to save the changes you made to {what}?")).strong());
+-            ui.label("Your changes will be lost if you don't save them.");
++            let what = if names.len() == 1 { format!("“{}”", names[0]) } else { format!("{} 个演示文稿", names.len()) };
++            ui.label(egui::RichText::new(format!("是否保存对 {what} 所做的更改？")).strong());
++            ui.label("不保存将丢失所做更改。");
+             ui.add_space(8.0);
+             let mut done = false;
+             ui.horizontal(|ui| {
+                 let t = Tokens::get(ui.ctx());
+-                if ui.add(egui::Button::new("Don't Save").min_size(vec2(84.0, 24.0))).clicked() {
++                if ui.add(egui::Button::new(tr("Don't Save")).min_size(vec2(84.0, 24.0))).clicked() {
+                     let _ = app.session.execute("file.recovery.discard", &json!({}));
+                     app.quit_confirmed = true;
+                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                     done = true;
+                 }
+                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+-                    let save = ui.add(egui::Button::new(egui::RichText::new("Save").color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0)));
++                    let save =
++                        ui.add(egui::Button::new(egui::RichText::new(tr("Save")).color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0)));
+                     if save.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                         if app.save_all() {
+                             app.quit_confirmed = true;
+@@ -1262,7 +1264,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                         }
+                         done = true;
+                     }
+-                    if ui.add(egui::Button::new("Cancel").min_size(vec2(72.0, 24.0))).clicked() {
++                    if ui.add(egui::Button::new(tr("Cancel")).min_size(vec2(72.0, 24.0))).clicked() {
+                         done = true;
+                     }
+                 });
+@@ -1272,18 +1274,19 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+         "close" => {
+             // File › Close and Ctrl+W on a presentation with unsaved changes.
+             let Some(name) = app.session.active().map(|d| d.title()) else { return true };
+-            ui.label(egui::RichText::new(format!("Do you want to save the changes you made to “{name}”?")).strong());
+-            ui.label("Your changes will be lost if you don't save them.");
++            ui.label(egui::RichText::new(format!("是否保存对“{name}”所做的更改？")).strong());
++            ui.label("不保存将丢失所做更改。");
+             ui.add_space(8.0);
+             let mut done = false;
+             ui.horizontal(|ui| {
+                 let t = Tokens::get(ui.ctx());
+-                if ui.add(egui::Button::new("Don't Save").min_size(vec2(84.0, 24.0))).clicked() {
++                if ui.add(egui::Button::new(tr("Don't Save")).min_size(vec2(84.0, 24.0))).clicked() {
+                     run(app, "file.close", json!({}));
+                     done = true;
+                 }
+                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+-                    let save = ui.add(egui::Button::new(egui::RichText::new("Save").color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0)));
++                    let save =
++                        ui.add(egui::Button::new(egui::RichText::new(tr("Save")).color(t.accent_text)).fill(t.accent).min_size(vec2(72.0, 24.0)));
+                     if save.clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                         app.save();
+                         // In the browser a save is a download: the presentation stays "unsaved".
+@@ -1293,7 +1296,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                         }
+                         done = true;
+                     }
+-                    if ui.add(egui::Button::new("Cancel").min_size(vec2(72.0, 24.0))).clicked() {
++                    if ui.add(egui::Button::new(tr("Cancel")).min_size(vec2(72.0, 24.0))).clicked() {
+                         done = true;
+                     }
+                 });
+@@ -1319,7 +1322,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             let tab = d.get("tab", if numbered { "numbered" } else { "bulleted" });
+             ui.horizontal(|ui| {
+                 for (k, l) in [("bulleted", "Bulleted"), ("numbered", "Numbered")] {
+-                    if ui.selectable_label(tab == k, l).clicked() {
++                    if ui.selectable_label(tab == k, tr(l)).clicked() {
+                         d.fields.insert("tab".into(), k.into());
+                     }
+                 }
+@@ -1372,19 +1375,19 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             ];
+             let color = d.get("color", "");
+             ui.horizontal(|ui| {
+-                ui.add_sized(vec2(120.0, 20.0), egui::Label::new("Color:"));
++                ui.add_sized(vec2(120.0, 20.0), egui::Label::new(tr("Color:")));
+                 egui::ComboBox::from_id_salt("bullet-color")
+-                    .selected_text(colors.iter().find(|c| c.0 == color).map_or("Automatic", |c| c.1))
++                    .selected_text(tr(colors.iter().find(|c| c.0 == color).map_or("Automatic", |c| c.1)))
+                     .show_ui(ui, |ui| {
+                         for (k, l) in colors {
+-                            if ui.selectable_label(color == k, l).clicked() {
++                            if ui.selectable_label(color == k, tr(l)).clicked() {
+                                 d.fields.insert("color".into(), k.into());
+                             }
+                         }
+                     });
+             });
+             ui.horizontal(|ui| {
+-                if ui.button("None").on_hover_text("Remove bullets and numbering").clicked() {
++                if ui.button(tr("None")).on_hover_text(tr("Remove bullets and numbering")).clicked() {
+                     d.fields.insert("none".into(), "1".into());
+                 }
+             });
+@@ -1444,7 +1447,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             };
+             ui.horizontal(|ui| {
+                 for (k, l) in [("click", "Mouse Click"), ("hover", "Mouse Over")] {
+-                    if ui.selectable_label(tab == k, l).clicked() && tab != k {
++                    if ui.selectable_label(tab == k, tr(l)).clicked() && tab != k {
+                         d.fields.clear();
+                         d.fields.insert("tab".into(), k.into());
+                     }
+@@ -1586,12 +1589,12 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             // Unticked slides are remembered by index; everything starts ticked.
+             let off = |d: &Dialog, i: usize| d.fields.get(&format!("off{i}")).is_some_and(|v| v == "1");
+             ui.horizontal(|ui| {
+-                if ui.small_button("Select All").clicked() {
++                if ui.small_button(tr("Select All")).clicked() {
+                     for (i, _) in &slides {
+                         d.fields.remove(&format!("off{i}"));
+                     }
+                 }
+-                if ui.small_button("Select None").clicked() {
++                if ui.small_button(tr("Select None")).clicked() {
+                     for (i, _) in &slides {
+                         d.fields.insert(format!("off{i}"), "1".into());
+                     }
+@@ -1894,14 +1897,14 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                     let shape = item.get("shape").cloned().unwrap_or_default();
+                     ui.horizontal(|ui| {
+                         ui.label(format!("Slide {}: “{w}”", slide.as_u64().unwrap_or(0) + 1));
+-                        if ui.small_button("Go to").clicked() {
++                        if ui.small_button(tr("Go to")).clicked() {
+                             let _ = app.run("slide.go", json!({"index": slide}));
+                             let _ = app.run("edit.select", json!({"ids": [shape]}));
+                         }
+-                        if ui.small_button("Ignore All").clicked() {
++                        if ui.small_button(tr("Ignore All")).clicked() {
+                             add_ignore = Some(w.to_string());
+                         }
+-                        if ui.small_button("Add to Dictionary").clicked()
++                        if ui.small_button(tr("Add to Dictionary")).clicked()
+                             && let Err(e) = app.session.execute("review.addToDictionary", &json!({"word": w}))
+                         {
+                             app.set_status(e.to_string());
+@@ -1917,7 +1920,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                         ui.horizontal(|ui| {
+                             ui.add_space(16.0);
+                             ui.label(egui::RichText::new("Repeated word").weak());
+-                            if ui.small_button("Delete Repeated Word").clicked() {
++                            if ui.small_button(tr("Delete Repeated Word")).clicked() {
+                                 let from = item.get("deleteFrom").and_then(Value::as_u64).unwrap_or(0) as usize;
+                                 let end = item.get("end").and_then(Value::as_u64).unwrap_or(0) as usize;
+                                 let para = item.get("para").and_then(Value::as_u64).unwrap_or(0) as usize;
+@@ -2015,7 +2018,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                             item.get("issue").and_then(Value::as_str).unwrap_or(""),
+                             item.get("name").and_then(Value::as_str).map(|n| format!(" — {n}")).unwrap_or_default()
+                         ));
+-                        if ui.small_button("Go to").clicked() {
++                        if ui.small_button(tr("Go to")).clicked() {
+                             let _ = app.run("slide.go", json!({"index": item.get("slide").cloned().unwrap_or_default()}));
+                             if let Some(id) = item.get("shape") {
+                                 let _ = app.run("edit.select", json!({"ids": [id]}));
+@@ -2063,11 +2066,11 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             for s in &shows {
+                 ui.horizontal(|ui| {
+                     ui.label(format!("{} ({} slides)", s.name, s.slides.len()));
+-                    if ui.small_button("Show").clicked() {
++                    if ui.small_button(tr("Show")).clicked() {
+                         run(app, "show.start", json!({"custom": s.name}));
+                         started = true;
+                     }
+-                    if ui.small_button("Delete").clicked() {
++                    if ui.small_button(tr("Delete")).clicked() {
+                         let _ = app.run("show.customShow", json!({"name": s.name, "delete": true}));
+                     }
+                 });
+@@ -2117,11 +2120,11 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 }
+             });
+             ui.horizontal(|ui| {
+-                if ui.button("+ Row").clicked() {
++                if ui.button(tr("+ Row")).clicked() {
+                     let n = grid.first().map(Vec::len).unwrap_or(2);
+                     grid.push(vec![String::new(); n]);
+                 }
+-                if ui.button("+ Series").clicked() {
++                if ui.button(tr("+ Series")).clicked() {
+                     for r in grid.iter_mut() {
+                         r.push(String::new());
+                     }
+@@ -2189,7 +2192,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             let tab = d.get("tab", "about");
+             ui.horizontal(|ui| {
+                 for (k, l) in [("about", "About"), ("contributors", "Contributors"), ("models", "Models")] {
+-                    if ui.selectable_label(tab == k, l).clicked() {
++                    if ui.selectable_label(tab == k, tr(l)).clicked() {
+                         d.fields.insert("tab".into(), k.into());
+                     }
+                 }
+@@ -2222,7 +2225,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 ui.add(egui::TextEdit::singleline(&mut from).desired_width(90.0));
+                 ui.label("With");
+                 ui.add(egui::TextEdit::singleline(&mut to).desired_width(130.0));
+-                if ui.add_enabled(!from.trim().is_empty(), egui::Button::new("Add")).clicked() {
++                if ui.add_enabled(!from.trim().is_empty(), egui::Button::new(tr("Add"))).clicked() {
+                     run(app, "text.autocorrect", json!({"add": [from.trim(), to]}));
+                     from.clear();
+                     to.clear();
+@@ -2238,7 +2241,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                     for (k, v) in entries.iter().filter(|(k, _)| q.is_empty() || k.to_lowercase().starts_with(&q)) {
+                         ui.label(k);
+                         ui.label(v);
+-                        if ui.small_button("Delete").clicked() {
++                        if ui.small_button(tr("Delete")).clicked() {
+                             run(app, "text.autocorrect", json!({"remove": k}));
+                         }
+                         ui.end_row();
+@@ -2283,7 +2286,7 @@ fn body(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             ui.checkbox(&mut app.session.prefs.smart_quotes, "Replace straight quotes with smart quotes");
+             ui.horizontal(|ui| {
+                 ui.checkbox(&mut app.session.prefs.autocorrect, "AutoCorrect as you type");
+-                if ui.button("AutoCorrect Options…").clicked() {
++                if ui.button(tr("AutoCorrect Options…")).clicked() {
+                     *d = Dialog::new("autocorrect");
+                 }
+             });
+@@ -3184,7 +3187,7 @@ fn paragraph_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+     }
+     let mut open_tabs = false;
+     ui.horizontal(|ui| {
+-        if ui.button("Tabs…").clicked() {
++        if ui.button(tr("Tabs…")).clicked() {
+             open_tabs = true;
+         }
+     });
+@@ -3284,7 +3287,7 @@ fn tabs_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+         for (i, (pos, align)) in stops.iter().enumerate() {
+             ui.label(format!("{pos:.2}\""));
+             ui.label(TAB_KINDS.iter().find(|k| k.0 == align).map(|k| k.1).unwrap_or("Left"));
+-            if ui.small_button("Clear").on_hover_text(format!("Clear the tab at {pos:.2}\"")).clicked() {
++            if ui.small_button(tr("Clear")).on_hover_text(format!("Clear the tab at {pos:.2}\"")).clicked() {
+                 remove = Some(i);
+             }
+             ui.end_row();
+@@ -3310,7 +3313,7 @@ fn tabs_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+         }
+     });
+     ui.horizontal(|ui| {
+-        if ui.button("Set").clicked()
++        if ui.button(tr("Set")).clicked()
+             && let Some(p) = Some(num(d, "newpos", f64::NAN)).filter(|v| v.is_finite() && *v >= 0.0 && *v <= 56.0)
+         {
+             stops.retain(|(q, _)| (q - p).abs() > 0.005);
+@@ -3318,7 +3321,7 @@ fn tabs_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+             stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+             d.fields.insert("newpos".into(), String::new());
+         }
+-        if ui.button("Clear All").clicked() {
++        if ui.button(tr("Clear All")).clicked() {
+             stops.clear();
+         }
+     });
+@@ -3365,11 +3368,11 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+     ui.add_space(6.0);
+     ui.horizontal(|ui| {
+         let has = !text.is_empty();
+-        if ui.add_enabled(has, egui::Button::new("Find Next")).clicked() || (has && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
++        if ui.add_enabled(has, egui::Button::new(tr("Find Next"))).clicked() || (has && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+             find_next = true;
+         }
+         if replace_mode {
+-            if ui.add_enabled(has, egui::Button::new("Replace")).clicked() {
++            if ui.add_enabled(has, egui::Button::new(tr("Replace"))).clicked() {
+                 let cur: Option<Value> = serde_json::from_str(&d.get("cur", "")).ok();
+                 if let Some(at) = cur {
+                     let mut p = q.clone();
+@@ -3382,7 +3385,7 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 }
+                 find_next = true;
+             }
+-            if ui.add_enabled(has, egui::Button::new("Replace All")).clicked() {
++            if ui.add_enabled(has, egui::Button::new(tr("Replace All"))).clicked() {
+                 let mut p = q.clone();
+                 p["with"] = json!(d.get("with", ""));
+                 let msg = match app.session.execute("text.replace", &p) {
+@@ -3392,10 +3395,10 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+                 d.fields.insert("status".into(), msg);
+                 d.fields.remove("cur");
+             }
+-        } else if ui.button("Replace…").clicked() {
++        } else if ui.button(tr("Replace…")).clicked() {
+             d.fields.insert("replace".into(), "1".into());
+         }
+-        if ui.button("Close").clicked() {
++        if ui.button(tr("Close")).clicked() {
+             close = true;
+         }
+     });
+diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
+new file mode 100644
+index 0000000..5a6c8af
+--- /dev/null
++++ b/crates/ui-egui/src/i18n.rs
+@@ -0,0 +1,506 @@
++//! Simplified Chinese display labels. Command ids and document values stay unchanged.
++
++pub(crate) fn tr(text: &str) -> &str {
++    match text {
++        // Ribbon tabs and contextual tabs.
++        "File" => "文件",
++        "Home" => "开始",
++        "Insert" => "插入",
++        "Draw" => "绘图",
++        "Design" => "设计",
++        "Transitions" => "切换",
++        "Animations" => "动画",
++        "Slide Show" => "幻灯片放映",
++        "Record" => "录制",
++        "Review" => "审阅",
++        "View" => "视图",
++        "Handout Master" => "讲义母版",
++        "Notes Master" => "备注母版",
++        "Slide Master" => "幻灯片母版",
++        "Shape Format" => "形状格式",
++        "Picture Format" => "图片格式",
++        "Table Design" => "表格设计",
++        "Layout" => "布局",
++        "SmartArt Design" => "SmartArt 设计",
++        "Chart Design" => "图表设计",
++        "Playback" => "播放",
++        "File (Alt+F)" => "文件 (Alt+F)",
++        "Search commands (⇧⌘P)" => "搜索命令 (⇧⌘P)",
++        "Present" => "放映",
++        "Comments" => "批注",
++        "Light/Dark appearance" => "浅色/深色外观",
++
++        // Ribbon buttons, labels and tooltips.
++        "Paste" => "粘贴",
++        "Cut" => "剪切",
++        "Copy" => "复制",
++        "Format" => "格式",
++        "New\nSlide" => "新建\n幻灯片",
++        "New Slide" => "新建幻灯片",
++        "Photo\nAlbum" => "相册",
++        "Photo Album…" => "相册…",
++        "Photo Album options" => "相册选项",
++        "New Photo Album…" => "新建相册…",
++        "Edit Photo Album…" => "编辑相册…",
++        "Section" => "节",
++        "Reset" => "重置",
++        "Increase Font Size" => "增大字号",
++        "Decrease Font Size" => "减小字号",
++        "Clear All Formatting" => "清除所有格式",
++        "Bold" => "加粗",
++        "Italic" => "斜体",
++        "Underline" => "下划线",
++        "Strikethrough" => "删除线",
++        "Superscript" => "上标",
++        "Subscript" => "下标",
++        "Character Spacing" => "字符间距",
++        "Change Case" => "更改大小写",
++        "Text Highlight Color" => "文本突出显示颜色",
++        "Font Color" => "字体颜色",
++        "Bullets" => "项目符号",
++        "Numbering" => "编号",
++        "Decrease List Level" => "降低列表级别",
++        "Increase List Level" => "提高列表级别",
++        "Line Spacing" => "行距",
++        "Columns" => "分栏",
++        "Text Direction" => "文字方向",
++        "Align Text" => "对齐文本",
++        "Convert to SmartArt" => "转换为 SmartArt",
++        "Align Left" => "左对齐",
++        "Center" => "居中",
++        "Align Right" => "右对齐",
++        "Justify" => "两端对齐",
++        "Text Box" => "文本框",
++        "Shapes" => "形状",
++        "Arrange" => "排列",
++        "Quick\nStyles" => "快速\n样式",
++        "Shape Fill" => "形状填充",
++        "Shape Outline" => "形状轮廓",
++        "Shape Effects" => "形状效果",
++        "Group" => "组合",
++        "Ungroup" => "取消组合",
++        "Regroup" => "重新组合",
++        "Rotate Right 90°" => "向右旋转 90°",
++        "Rotate Left 90°" => "向左旋转 90°",
++        "Flip Vertical" => "垂直翻转",
++        "Flip Horizontal" => "水平翻转",
++        "Distribute Horizontally" => "横向分布",
++        "Distribute Vertically" => "纵向分布",
++        "Picture" => "图片",
++        "Pictures" => "图片",
++        "Find" => "查找",
++        "Replace" => "替换",
++        "Selection\nPane" => "选择\n窗格",
++        "Design\nIdeas" => "设计\n灵感",
++        "Replace Fonts…" => "替换字体…",
++        "Table" => "表格",
++        "Screenshot" => "屏幕截图",
++        "Icons" => "图标",
++        "Chart" => "图表",
++        "SmartArt" => "SmartArt",
++        "Zoom" => "缩放",
++        "Action" => "动作",
++        "Link" => "链接",
++        "WordArt" => "WordArt",
++        "Comment" => "批注",
++        "Text\nBox" => "文本框",
++        "Header &\nFooter" => "页眉和\n页脚",
++        "Date &\nTime" => "日期和\n时间",
++        "Slide\nNumber" => "幻灯片\n编号",
++        "Equation" => "公式",
++        "Symbol" => "符号",
++        "Video" => "视频",
++        "Audio" => "音频",
++        "Select" => "选择",
++        "Eraser" => "橡皮擦",
++        "Ink to\nShape" => "墨迹转\n形状",
++        "Ink to\nText" => "墨迹转\n文本",
++        "Ink to\nMath" => "墨迹转\n公式",
++        "Browse for Themes…" => "浏览主题…",
++        "Colors" => "颜色",
++        "Fonts" => "字体",
++        "Effects" => "效果",
++        "Background\nStyles" => "背景\n样式",
++        "Slide\nSize" => "幻灯片\n大小",
++        "Format\nBackground" => "设置\n背景格式",
++        "Preview" => "预览",
++        "Effect\nOptions" => "效果\n选项",
++        "Apply\nTo All" => "应用到\n全部",
++        "Add\nAnimation" => "添加\n动画",
++        "Animation\nPane" => "动画\n窗格",
++        "Animation\nPainter" => "动画\n刷",
++        "Trigger" => "触发器",
++        "Play from\nStart" => "从头\n放映",
++        "Play from\nCurrent Slide" => "从当前\n幻灯片放映",
++        "Presenter\nView" => "演示者\n视图",
++        "Custom\nShow" => "自定义\n放映",
++        "Set Up\nSlide Show" => "设置\n幻灯片放映",
++        "Hide\nSlide" => "隐藏\n幻灯片",
++        "Rehearse\nTimings" => "排练\n计时",
++        "Cameo" => "Cameo",
++        "From\nBeginning" => "从头\n放映",
++        "From\nCurrent Slide" => "从当前\n幻灯片放映",
++        "Learn\nMore" => "了解\n更多",
++        "Spelling" => "拼写检查",
++        "Thesaurus" => "同义词库",
++        "Check\nAccessibility" => "检查\n辅助功能",
++        "Language" => "语言",
++        "Translate" => "翻译",
++        "Compare" => "比较",
++        "Accept\nAll" => "接受\n全部",
++        "End\nReview" => "结束\n审阅",
++        "New\nComment" => "新建\n批注",
++        "Delete" => "删除",
++        "Show\nComments" => "显示\n批注",
++        "Slide\nMaster" => "幻灯片\n母版",
++        "Handout\nMaster" => "讲义\n母版",
++        "Notes\nMaster" => "备注\n母版",
++        "Grid\nOptions" => "网格\n选项",
++        "Notes" => "备注",
++        "Fit to\nWindow" => "适应\n窗口",
++        "New\nWindow" => "新建\n窗口",
++        "Grayscale" => "灰度",
++        "Dark\nMode" => "深色\n模式",
++        "Edit\nShape" => "编辑\n形状",
++        "Merge\nShapes" => "合并\n形状",
++        "Shape\nStyles" => "形状\n样式",
++        "Alt\nText" => "替代\n文字",
++        "Format\nPane" => "格式\n窗格",
++        "Text Fill" => "文本填充",
++        "Text Outline" => "文本轮廓",
++        "Text Effects" => "文本效果",
++        "Bring\nForward" => "上移\n一层",
++        "Bring Forward" => "上移一层",
++        "Bring to Front" => "置于顶层",
++        "Send\nBackward" => "下移\n一层",
++        "Send Backward" => "下移一层",
++        "Send to Back" => "置于底层",
++        "Align" => "对齐",
++        "Rotate" => "旋转",
++        "Remove\nBackground" => "删除\n背景",
++        "Corrections" => "更正",
++        "Color" => "颜色",
++        "Artistic\nEffects" => "艺术\n效果",
++        "Transparency" => "透明度",
++        "Change Picture" => "更改图片",
++        "Reset Picture" => "重置图片",
++        "Compress Pictures" => "压缩图片",
++        "Crop" => "裁剪",
++        "Borders" => "边框",
++        "Shading" => "底纹",
++        "Picture Border" => "图片边框",
++        "Delete Columns" => "删除列",
++        "Delete Rows" => "删除行",
++        "Delete Table" => "删除表格",
++        "Insert\nAbove" => "在上方\n插入",
++        "Insert\nBelow" => "在下方\n插入",
++        "Insert\nLeft" => "在左侧\n插入",
++        "Insert\nRight" => "在右侧\n插入",
++        "Merge\nCells" => "合并\n单元格",
++        "Split\nCells" => "拆分\n单元格",
++        "Distribute Rows" => "平均分布行",
++        "Distribute Columns" => "平均分布列",
++        "Change\nChart Type" => "更改\n图表类型",
++        "Edit\nData" => "编辑\n数据",
++        "Text\nPane" => "文本\n窗格",
++        "Add Shape" => "添加形状",
++        "Promote" => "升级",
++        "Demote" => "降级",
++        "Insert Picture" => "插入图片",
++        "Layouts" => "版式",
++        "Convert" => "转换",
++        "Change Colors" => "更改颜色",
++        "SmartArt Styles" => "SmartArt 样式",
++        "Pause" => "暂停",
++        "Play" => "播放",
++        "Trim" => "剪裁",
++        "Volume" => "音量",
++        "Insert\nLayout" => "插入\n版式",
++        "Rename" => "重命名",
++        "Insert\nPlaceholder" => "插入\n占位符",
++        "Themes" => "主题",
++        "Close\nMaster View" => "关闭\n母版视图",
++        "Paste and Match Formatting" => "粘贴并匹配格式",
++        "Paste Special…" => "选择性粘贴…",
++        "Paste Formatting" => "粘贴格式",
++        "Duplicate Selected Slides" => "复制所选幻灯片",
++        "Slides from Outline…" => "从大纲插入幻灯片…",
++        "Add Section" => "新增节",
++        "Remove All Sections" => "删除所有节",
++        "Rescan Installed Fonts" => "重新扫描已安装字体",
++        "Bullets and Numbering…" => "项目符号和编号…",
++        "Line Spacing Options…" => "行距选项…",
++        "More Columns…" => "更多分栏…",
++        "No Glow" => "无发光",
++        "Format Shape…" => "设置形状格式…",
++        "Selection Pane…" => "选择窗格…",
++        "Insert Table…" => "插入表格…",
++        "Draw Table" => "绘制表格",
++        "Customize Colors…" => "自定义颜色…",
++        "Customize Fonts…" => "自定义字体…",
++        "Reset Slide Background" => "重置幻灯片背景",
++        "Standard (4:3)" => "标准 (4:3)",
++        "Widescreen (16:9)" => "宽屏 (16:9)",
++        "Page Setup…" => "页面设置…",
++        "On Click of… (none)" => "单击对象…（无）",
++        "Fit" => "适应",
++        "Gradient…" => "渐变…",
++        "Shadow" => "阴影",
++        "Set Transparent Color" => "设置透明色",
++        "Convert to Text" => "转换为文本",
++        "Convert to Shapes" => "转换为形状",
++        "Compress" => "压缩",
++        "Font…" => "字体…",
++        "Paragraph…" => "段落…",
++        "Action Settings…" => "动作设置…",
++        "Other Sound…" => "其他声音…",
++        "Edit Points" => "编辑顶点",
++        "Size and Position…" => "大小和位置…",
++        "Reset Style" => "重置样式",
++        "No icons match." => "无匹配图标。",
++        "Sound:" => "声音：",
++        "Duration:" => "持续时间：",
++        "On Mouse Click" => "单击鼠标时",
++        "After:" => "之后：",
++        "Start:" => "开始：",
++        "Delay:" => "延迟：",
++        "Use Timings" => "使用计时",
++        "Play Narrations" => "播放旁白",
++        "Show Media Controls" => "显示媒体控件",
++        "Ruler" => "标尺",
++        "Gridlines" => "网格线",
++        "Guides" => "参考线",
++        "Follow Path" => "跟随路径",
++        "Warp" => "弯曲",
++        "Change Shape" => "更改形状",
++        "Height:" => "高度：",
++        "Width:" => "宽度：",
++        "Width: " => "宽度：",
++        "Recolor" => "重新着色",
++        "Crop to Shape" => "裁剪为形状",
++        "Header Row" => "标题行",
++        "First Column" => "第一列",
++        "Total Row" => "汇总行",
++        "Last Column" => "最后一列",
++        "Banded Rows" => "镶边行",
++        "Banded Columns" => "镶边列",
++        "Start Automatically" => "自动开始",
++        "Play Across Slides" => "跨幻灯片播放",
++        "Loop until Stopped" => "循环播放直到停止",
++        "Hide During Show" => "放映时隐藏",
++        "Rewind after Playing" => "播放后倒回",
++        "Play Full Screen" => "全屏播放",
++        "Preserve" => "保留",
++        "Title" => "标题",
++        "Footers" => "页脚",
++        "Smooth Corners" => "平滑边角",
++        "Apply only to this picture" => "仅应用于此图片",
++        "Delete cropped areas of pictures" => "删除图片的裁剪区域",
++        "[No Sound]" => "[无声音]",
++        "[Stop Previous Sound]" => "[停止上一声音]",
++        "Very Tight" => "非常紧凑",
++        "Tight" => "紧凑",
++        "Normal" => "常规",
++        "Loose" => "宽松",
++        "Very Loose" => "非常宽松",
++        "Sentence case." => "句首字母大写。",
++        "lowercase" => "全部小写",
++        "UPPERCASE" => "全部大写",
++        "Capitalize Each Word" => "每个单词首字母大写",
++        "tOGGLE cASE" => "切换大小写",
++        "Horizontal" => "横向",
++        "Rotate all text 90°" => "文字旋转 90°",
++        "Rotate all text 270°" => "文字旋转 270°",
++        "Stacked" => "堆叠",
++        "Top" => "顶端",
++        "Middle" => "居中",
++        "Bottom" => "底端",
++        "Weight" => "粗细",
++        "Dashes" => "虚线",
++        "Arrows" => "箭头",
++        "Reflection" => "映像",
++        "Glow" => "发光",
++        "Soft Edges" => "柔化边缘",
++        "Bevel" => "棱台",
++        "Solid" => "实线",
++        "Round Dot" => "圆点",
++        "Square Dot" => "方点",
++        "Dash" => "短划线",
++        "Dash Dot" => "点划线",
++        "Long Dash" => "长划线",
++        "Long Dash Dot" => "长点划线",
++        "Arrow at end" => "末端箭头",
++        "Arrow at start" => "起始箭头",
++        "Arrows at both ends" => "双向箭头",
++        "Stealth end" => "末端楔形箭头",
++        "Oval ends" => "两端圆形箭头",
++        "No Shadow" => "无阴影",
++        "Outer" => "外部",
++        "Centered" => "居中",
++        "Inner" => "内部",
++        "Perspective" => "透视",
++        "No Reflection" => "无映像",
++        "Half" => "半尺寸",
++        "Full" => "全尺寸",
++        "No Soft Edges" => "无柔化边缘",
++        "Pen Weight" => "笔粗细",
++        "Pen Style" => "笔样式",
++        "Pen Color" => "笔颜色",
++        "Cell Margins" => "单元格边距",
++        "On Click" => "单击时",
++        "With Previous" => "与上一动画同时",
++        "After Previous" => "上一动画之后",
++        "Remove Background" => "删除背景",
++        "Remove More (looser)" => "删除更多（宽松）",
++        "Remove Less (tighter)" => "删除更少（严格）",
++        "Crop 10% each side" => "每边裁剪 10%",
++        "Crop 20% each side" => "每边裁剪 20%",
++        "Reset Crop" => "重置裁剪",
++        "Narrow" => "窄",
++        "Wide" => "宽",
++        "Add Shape After" => "在后面添加形状",
++        "Add Shape Before" => "在前面添加形状",
++        "Add Shape Above" => "在上方添加形状",
++        "Add Shape Below" => "在下方添加形状",
++        "Add Assistant" => "添加助理",
++        "Low" => "低",
++        "Medium" => "中",
++        "High" => "高",
++        "Mute" => "静音",
++        "Content" => "内容",
++        "Media" => "媒体",
++        "Union" => "联合",
++        "Combine" => "组合",
++        "Fragment" => "拆分",
++        "Intersect" => "相交",
++        "Subtract" => "剪除",
++        "Order Objects" => "对象排序",
++        "Group Objects" => "组合对象",
++        "Position Objects" => "对象位置",
++        "Transform" => "变换",
++        "Compression options" => "压缩选项",
++        "Resolution" => "分辨率",
++
++        // Dialog titles.
++        "Insert Table" => "插入表格",
++        "Slide Size" => "幻灯片大小",
++        "Size and Position" => "大小和位置",
++        "Header and Footer" => "页眉和页脚",
++        "Insert Hyperlink" => "插入超链接",
++        "Set Up Slide Show" => "设置幻灯片放映",
++        "New Comment" => "新建批注",
++        "Alt Text" => "替代文字",
++        "Slides from Outline" => "从大纲插入幻灯片",
++        "Rename Section" => "重命名节",
++        "Reuse Slides" => "重用幻灯片",
++        "Rename Layout" => "重命名版式",
++        "Paragraph" => "段落",
++        "Tabs" => "制表位",
++        "Font" => "字体",
++        "About DeckCraft" => "关于 DeckCraft",
++        "Preferences" => "首选项",
++        "AutoCorrect" => "自动更正",
++        "Grid Options" => "网格选项",
++        "Export" => "导出",
++        "Photo Album" => "相册",
++        "Replace Font" => "替换字体",
++        "Date and Time" => "日期和时间",
++        "Paste Special" => "选择性粘贴",
++        "Find and Replace" => "查找和替换",
++        "Accessibility Checker" => "辅助功能检查器",
++        "Custom Shows" => "自定义放映",
++        "Chart Data" => "图表数据",
++        "Trim Media" => "剪裁媒体",
++        "Choose a SmartArt Graphic" => "选择 SmartArt 图形",
++        "Bullets and Numbering" => "项目符号和编号",
++        "Action Settings" => "动作设置",
++        "Create New Theme Colors" => "新建主题颜色",
++        "Create New Theme Fonts" => "新建主题字体",
++
++        // Dialog buttons and fields.
++        "OK" => "确定",
++        "Cancel" => "取消",
++        "Save" => "保存",
++        "Don't Save" => "不保存",
++        "Update" => "更新",
++        "Create" => "创建",
++        "Post" => "发布",
++        "Close" => "关闭",
++        "Done" => "完成",
++        "Apply" => "应用",
++        "Apply to All" => "全部应用",
++        "Add Pictures…" => "添加图片…",
++        "New Text Box" => "新建文本框",
++        "Remove" => "删除",
++        "Rotate Left" => "向左旋转",
++        "Rotate Right" => "向右旋转",
++        "More Brightness" => "增加亮度",
++        "Less Brightness" => "降低亮度",
++        "More Contrast" => "增加对比度",
++        "Less Contrast" => "降低对比度",
++        "None" => "无",
++        "+ Row" => "+ 行",
++        "+ Series" => "+ 系列",
++        "Add" => "添加",
++        "AutoCorrect Options…" => "自动更正选项…",
++        "Tabs…" => "制表位…",
++        "Set" => "设置",
++        "Clear All" => "全部清除",
++        "Find Next" => "查找下一个",
++        "Replace All" => "全部替换",
++        "Replace…" => "替换…",
++        "Select All" => "全选",
++        "Select None" => "取消全选",
++        "Go to" => "转到",
++        "Ignore All" => "全部忽略",
++        "Add to Dictionary" => "添加到词典",
++        "Delete Repeated Word" => "删除重复字词",
++        "Show" => "显示",
++        "Clear" => "清除",
++        "Number of columns:" => "列数：",
++        "Number of rows:" => "行数：",
++        "Bulleted" => "项目符号",
++        "Numbered" => "编号",
++        "Custom character:" => "自定义字符：",
++        "Start at:" => "起始编号：",
++        "Size (% of text):" => "大小（文字百分比）：",
++        "Color:" => "颜色：",
++        "Automatic" => "自动",
++        "Text" => "文本",
++        "Accent 1" => "强调色 1",
++        "Accent 2" => "强调色 2",
++        "Accent 3" => "强调色 3",
++        "Accent 4" => "强调色 4",
++        "Accent 5" => "强调色 5",
++        "Accent 6" => "强调色 6",
++        "Remove bullets and numbering" => "删除项目符号和编号",
++        "Theme Colors" => "主题颜色",
++        "Standard Colors" => "标准颜色",
++        "More Colors… #" => "更多颜色… #",
++        "Eyedropper" => "取色器",
++        "Pictures in album" => "相册图片",
++        "No pictures yet" => "暂无图片",
++        "Picture layout" => "图片版式",
++        "Frame shape" => "相框形状",
++        "Album theme" => "相册主题",
++        "Fit to slide" => "适应幻灯片",
++        "1 picture" => "1 张图片",
++        "2 pictures" => "2 张图片",
++        "4 pictures" => "4 张图片",
++        "1 picture with title" => "1 张图片（含标题）",
++        "2 pictures with title" => "2 张图片（含标题）",
++        "4 pictures with title" => "4 张图片（含标题）",
++        "Rectangle" => "矩形",
++        "Rounded" => "圆角矩形",
++        "Simple, white" => "白色简框",
++        "Web Page or File" => "网页或文件",
++        "This Document" => "本文档",
++        "Email Address" => "电子邮件地址",
++        "Mouse Click" => "鼠标单击",
++        "Mouse Over" => "鼠标悬停",
++        "About" => "关于",
++        "Contributors" => "贡献者",
++        "Models" => "模型",
++        _ => text,
++    }
++}
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index e3f4acb..56e6c68 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -15,6 +15,7 @@ pub mod dialogs;
+ pub mod doc_window;
+ pub mod eyedropper;
+ pub mod fillui;
++mod i18n;
+ pub mod icons;
+ pub mod media;
+ pub mod menus;
+diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
+index 7f36a25..1b31d02 100644
+--- a/crates/ui-egui/src/ribbon.rs
++++ b/crates/ui-egui/src/ribbon.rs
+@@ -6,6 +6,7 @@ use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
+ use serde_json::{Value, json};
+ 
+ use crate::SlideApp;
++use crate::i18n::tr;
+ use crate::icons::{self, Icon};
+ use crate::theme::{self, Tokens};
+ use crate::widgets::{self, RIBBON_H, big_button, big_button_ex, color_split, dropdown, group, icon_toggle, rows, small_button, small_button_ex};
+@@ -76,7 +77,7 @@ pub fn title_bar(app: &mut SlideApp, ui: &mut Ui) {
+         let dirty = app.session.active().is_some_and(|d| d.is_dirty());
+         crate::qat::show(app, &mut child);
+         let title =
+-            app.session.active().map(|d| format!("{}{}", d.title(), if dirty { " — Edited" } else { "" })).unwrap_or_else(|| "DeckCraft".into());
++            app.session.active().map(|d| format!("{}{}", d.title(), if dirty { " — 已编辑" } else { "" })).unwrap_or_else(|| "DeckCraft".into());
+         ui.painter().text(rect.center(), Align2::CENTER_CENTER, title, theme::font(13.0), t.text);
+         // Right side.
+         let mut right = ui.new_child(
+@@ -89,7 +90,7 @@ pub fn title_bar(app: &mut SlideApp, ui: &mut Ui) {
+             app.palette = Some((String::new(), 0));
+         }
+         let share = right.add(
+-            egui::Button::new(egui::RichText::new("  Present  ").color(t.accent_text).font(theme::bold(13.0)))
++            egui::Button::new(egui::RichText::new(tr("Present")).color(t.accent_text).font(theme::bold(13.0)))
+                 .fill(t.accent)
+                 .corner_radius(control_h / 2.0)
+                 .min_size(vec2(84.0, control_h)),
+@@ -168,23 +169,24 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
+         let mut x = rect.min.x + 12.0;
+         let y = rect.min.y + 2.0;
+         {
+-            let w = ui.fonts_mut(|f| f.layout_no_wrap("File".to_string(), theme::font(13.0), t.text).size().x) + 18.0;
++            let w = ui.fonts_mut(|f| f.layout_no_wrap(tr("File").to_string(), theme::font(13.0), t.text).size().x) + 18.0;
+             let r = Rect::from_min_size(pos2(x, y), vec2(w, 24.0));
+             let resp = ui.interact(r, ui.id().with("tab_file"), Sense::click());
+-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "File"));
++            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr("File")));
+             if resp.hovered() {
+                 ui.painter().rect_filled(r.shrink2(vec2(2.0, 2.0)), CornerRadius::same(4), t.hover);
+             }
+-            ui.painter().text(r.center(), Align2::CENTER_CENTER, "File", theme::font(13.0), t.text);
+-            if resp.on_hover_text("File (Alt+F)").clicked() {
++            ui.painter().text(r.center(), Align2::CENTER_CENTER, tr("File"), theme::font(13.0), t.text);
++            if resp.on_hover_text(tr("File (Alt+F)")).clicked() {
+                 app.open_backstage(crate::backstage::Page::Home);
+             }
+             x += w + 2.0;
+         }
+         let all: Vec<(&str, bool)> = TABS.iter().map(|s| (*s, false)).chain(ctx_tabs.iter().map(|s| (*s, true))).collect();
+         for (name, contextual) in all {
++            let label = tr(name);
+             let font = theme::font(13.0);
+-            let w = ui.fonts_mut(|f| f.layout_no_wrap(name.to_string(), font.clone(), t.text).size().x) + 18.0;
++            let w = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x) + 18.0;
+             let r = Rect::from_min_size(pos2(x, y), vec2(w, 24.0));
+             let resp = ui.interact(r, ui.id().with(("tab", name)), Sense::click());
+             let active = app.ui.tab == name;
+@@ -193,7 +195,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
+             }
+             let col = if contextual { t.contextual } else { t.text };
+             let f = if active { theme::bold(13.0) } else { font };
+-            ui.painter().text(r.center(), Align2::CENTER_CENTER, name, f, col);
++            ui.painter().text(r.center(), Align2::CENTER_CENTER, label, f, col);
+             if active {
+                 let uw = (w - 20.0).max(16.0);
+                 ui.painter().rect_filled(Rect::from_center_size(pos2(r.center().x, r.max.y - 1.0), vec2(uw, 3.0)), CornerRadius::same(1), t.accent);
+@@ -302,6 +304,7 @@ fn toggle(app: &mut SlideApp, ui: &mut Ui, icon: Icon, label: &str, id: &str, on
+ }
+ 
+ fn tip(id: &str, label: &str) -> String {
++    let label = tr(label);
+     let sc = deckcraft_engine::find_command(id).and_then(|c| c.shortcut).or_else(|| crate::UI_COMMANDS.iter().find(|c| c.0 == id).and_then(|c| c.2));
+     match sc {
+         Some(s) => format!("{label} ({})", pretty_shortcut(s)),
+@@ -339,16 +342,16 @@ fn clipboard_group(app: &mut SlideApp, ui: &mut Ui) {
+         }
+         if let Some(a) = arrow {
+             egui::Popup::menu(&a).show(|ui| {
+-                if ui.button("Paste").clicked() {
++                if ui.button(tr("Paste")).clicked() {
+                     run(app, "edit.paste", json!({}));
+                 }
+-                if ui.button("Paste and Match Formatting").clicked() {
++                if ui.button(tr("Paste and Match Formatting")).clicked() {
+                     run(app, "edit.pasteText", json!({}));
+                 }
+-                if ui.button("Paste Special…").clicked() {
++                if ui.button(tr("Paste Special…")).clicked() {
+                     run(app, "app.pasteSpecial", json!({}));
+                 }
+-                if ui.button("Paste Formatting").clicked() {
++                if ui.button(tr("Paste Formatting")).clicked() {
+                     run(app, "format.painterApply", json!({}));
+                 }
+             });
+@@ -430,10 +433,10 @@ fn slides_group(app: &mut SlideApp, ui: &mut Ui) {
+             egui::Popup::menu(&a).width(420.0).show(|ui| {
+                 layout_menu(app, ui, "slide.new");
+                 ui.separator();
+-                if ui.button("Duplicate Selected Slides").clicked() {
++                if ui.button(tr("Duplicate Selected Slides")).clicked() {
+                     run(app, "slide.duplicate", json!({}));
+                 }
+-                if ui.button("Slides from Outline…").clicked() {
++                if ui.button(tr("Slides from Outline…")).clicked() {
+                     app.dialog = Some(crate::dialogs::Dialog::new("outline"));
+                 }
+                 let desktop = app.services.pick_open.is_some();
+@@ -452,10 +455,10 @@ fn slides_group(app: &mut SlideApp, ui: &mut Ui) {
+             small(app, ui, Icon::ResetSlide, "Reset", "slide.reset", json!({}));
+             let (r, _) = small_button_ex(ui, Icon::Section, "Section", enabled(app, "section.add"), false, true);
+             egui::Popup::menu(&r).show(|ui| {
+-                if ui.button("Add Section").clicked() {
++                if ui.button(tr("Add Section")).clicked() {
+                     run(app, "section.add", json!({}));
+                 }
+-                if ui.button("Remove All Sections").clicked() {
++                if ui.button(tr("Remove All Sections")).clicked() {
+                     run(app, "section.removeAll", json!({}));
+                 }
+             });
+@@ -503,7 +506,7 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                     }
+                     ui.separator();
+                     // Fonts installed while DeckCraft runs (e.g. into ~/.local/share/fonts).
+-                    if ui.button("Rescan Installed Fonts").clicked() {
++                    if ui.button(tr("Rescan Installed Fonts")).clicked() {
+                         run(app, "font.rescan", json!({}));
+                         ui.close();
+                     }
+@@ -534,7 +537,7 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                 let r = icon_toggle(ui, Icon::CharSpacing, "Character Spacing", en, false);
+                 egui::Popup::menu(&r).show(|ui| {
+                     for (label, pt) in [("Very Tight", -3.0), ("Tight", -1.5), ("Normal", 0.0), ("Loose", 3.0), ("Very Loose", 6.0)] {
+-                        if ui.button(label).clicked() {
++                        if ui.button(tr(label)).clicked() {
+                             run(app, "format.spacing", json!({"pt": pt}));
+                         }
+                     }
+@@ -548,7 +551,7 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                         ("Capitalize Each Word", "title"),
+                         ("tOGGLE cASE", "toggle"),
+                     ] {
+-                        if ui.button(label).clicked() {
++                        if ui.button(tr(label)).clicked() {
+                             run(app, "format.case", json!({"mode": mode}));
+                         }
+                     }
+@@ -572,7 +575,7 @@ fn font_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                         run(app, "format.color", json!({"color": cref_param(&c)}));
+                     }
+                 });
+-                if ui.add_enabled(en, egui::Button::new("Font…").min_size(vec2(52.0, 22.0))).on_hover_text("Font").clicked() {
++                if ui.add_enabled(en, egui::Button::new(tr("Font…")).min_size(vec2(52.0, 22.0))).on_hover_text("Font").clicked() {
+                     run(app, "format.fontDialog", json!({}));
+                 }
+             });
+@@ -718,7 +721,7 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                 }
+                 if let Some(a) = a {
+                     egui::Popup::menu(&a).show(|ui| {
+-                        if ui.button("None").clicked() {
++                        if ui.button(tr("None")).clicked() {
+                             run(app, "format.bullets", json!({"on": false}));
+                         }
+                         for ch in ["•", "○", "■", "□", "◆", "➢", "✓", "–", "★"] {
+@@ -727,7 +730,7 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                             }
+                         }
+                         ui.separator();
+-                        if ui.button("Bullets and Numbering…").clicked() {
++                        if ui.button(tr("Bullets and Numbering…")).clicked() {
+                             let mut dlg = crate::dialogs::Dialog::new("bullets");
+                             dlg.fields.insert("tab".into(), "bulleted".into());
+                             app.dialog = Some(dlg);
+@@ -740,7 +743,7 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                 }
+                 if let Some(a) = a {
+                     egui::Popup::menu(&a).show(|ui| {
+-                        if ui.button("None").clicked() {
++                        if ui.button(tr("None")).clicked() {
+                             run(app, "format.numbering", json!({"on": false}));
+                         }
+                         for (label, sch) in [
+@@ -752,12 +755,12 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                             ("a) b) c)", "alphaLcParenR"),
+                             ("a. b. c.", "alphaLcPeriod"),
+                         ] {
+-                            if ui.button(label).clicked() {
++                            if ui.button(tr(label)).clicked() {
+                                 run(app, "format.numbering", json!({"on": true, "scheme": sch}));
+                             }
+                         }
+                         ui.separator();
+-                        if ui.button("Bullets and Numbering…").clicked() {
++                        if ui.button(tr("Bullets and Numbering…")).clicked() {
+                             let mut dlg = crate::dialogs::Dialog::new("bullets");
+                             dlg.fields.insert("tab".into(), "numbered".into());
+                             app.dialog = Some(dlg);
+@@ -773,10 +776,10 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                             run(app, "format.lineSpacing", json!({"lines": v}));
+                         }
+                     }
+-                    if ui.button("Line Spacing Options…").clicked() {
++                    if ui.button(tr("Line Spacing Options…")).clicked() {
+                         run(app, "format.paragraphDialog", json!({}));
+                     }
+-                    if ui.button("Tabs…").clicked() {
++                    if ui.button(tr("Tabs…")).clicked() {
+                         app.dialog = Some(crate::dialogs::Dialog::new("tabs"));
+                     }
+                 });
+@@ -787,7 +790,7 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                             run(app, "format.columns", json!({"count": n, "spacing": 18}));
+                         }
+                     }
+-                    if ui.button("More Columns…").clicked() {
++                    if ui.button(tr("More Columns…")).clicked() {
+                         run(app, "format.columns", json!({}));
+                     }
+                 });
+@@ -808,7 +811,7 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                         ("Rotate all text 270°", "rotate270"),
+                         ("Stacked", "stacked"),
+                     ] {
+-                        if ui.button(l).clicked() {
++                        if ui.button(tr(l)).clicked() {
+                             run(app, "format.direction", json!({"dir": d}));
+                         }
+                     }
+@@ -816,14 +819,14 @@ fn paragraph_group(app: &mut SlideApp, ui: &mut Ui, st: &Value) {
+                 let r = icon_toggle(ui, Icon::AlignText, "Align Text", en, false);
+                 egui::Popup::menu(&r).show(|ui| {
+                     for (l, a) in [("Top", "top"), ("Middle", "middle"), ("Bottom", "bottom")] {
+-                        if ui.button(l).clicked() {
++                        if ui.button(tr(l)).clicked() {
+                             run(app, "format.anchor", json!({"anchor": a}));
+                         }
+                     }
+                 });
+                 let r = icon_toggle(ui, Icon::SmartArt, "Convert to SmartArt", enabled(app, "smartArt.fromText"), false);
+                 egui::Popup::menu(&r).show(|ui| smartart_gallery(app, ui, "smartArt.fromText", json!({}), "", "", "", None));
+-                if ui.add_enabled(en, egui::Button::new("Paragraph…").min_size(vec2(88.0, 22.0))).on_hover_text("Paragraph").clicked() {
++                if ui.add_enabled(en, egui::Button::new(tr("Paragraph…")).min_size(vec2(88.0, 22.0))).on_hover_text("Paragraph").clicked() {
+                     run(app, "format.paragraphDialog", json!({}));
+                 }
+             });
+@@ -990,7 +993,7 @@ pub fn outline_menu(app: &mut SlideApp, ui: &mut Ui, sc: &deckcraft_color::Color
+             None => run(app, "shape.line", json!({"none": true})),
+         }
+     }
+-    ui.menu_button("Weight", |ui| {
++    ui.menu_button(tr("Weight"), |ui| {
+         for w in [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0] {
+             if ui.button(format!("{w} pt")).clicked() {
+                 run(app, "shape.line", json!({"width": w}));
+@@ -998,7 +1001,7 @@ pub fn outline_menu(app: &mut SlideApp, ui: &mut Ui, sc: &deckcraft_color::Color
+             }
+         }
+     });
+-    ui.menu_button("Dashes", |ui| {
++    ui.menu_button(tr("Dashes"), |ui| {
+         for (l, d) in [
+             ("Solid", "solid"),
+             ("Round Dot", "sysDot"),
+@@ -1008,13 +1011,13 @@ pub fn outline_menu(app: &mut SlideApp, ui: &mut Ui, sc: &deckcraft_color::Color
+             ("Long Dash", "lgDash"),
+             ("Long Dash Dot", "lgDashDot"),
+         ] {
+-            if ui.button(l).clicked() {
++            if ui.button(tr(l)).clicked() {
+                 run(app, "shape.line", json!({"dash": d}));
+                 ui.close();
+             }
+         }
+     });
+-    ui.menu_button("Arrows", |ui| {
++    ui.menu_button(tr("Arrows"), |ui| {
+         for (l, h, tl) in [
+             ("None", "none", "none"),
+             ("Arrow at end", "none", "triangle"),
+@@ -1023,7 +1026,7 @@ pub fn outline_menu(app: &mut SlideApp, ui: &mut Ui, sc: &deckcraft_color::Color
+             ("Stealth end", "none", "stealth"),
+             ("Oval ends", "oval", "oval"),
+         ] {
+-            if ui.button(l).clicked() {
++            if ui.button(tr(l)).clicked() {
+                 run(app, "shape.line", json!({"head": h, "tail": tl}));
+                 ui.close();
+             }
+@@ -1032,7 +1035,7 @@ pub fn outline_menu(app: &mut SlideApp, ui: &mut Ui, sc: &deckcraft_color::Color
+ }
+ 
+ pub fn effects_menu(app: &mut SlideApp, ui: &mut Ui) {
+-    ui.menu_button("Shadow", |ui| {
++    ui.menu_button(tr("Shadow"), |ui| {
+         for (l, v) in [
+             ("No Shadow", "none"),
+             ("Outer", "outer"),
+@@ -1041,20 +1044,20 @@ pub fn effects_menu(app: &mut SlideApp, ui: &mut Ui) {
+             ("Inner", "inner"),
+             ("Perspective", "perspective"),
+         ] {
+-            if ui.button(l).clicked() {
++            if ui.button(tr(l)).clicked() {
+                 run(app, "shape.effects", json!({"shadow": v}));
+             }
+         }
+     });
+-    ui.menu_button("Reflection", |ui| {
++    ui.menu_button(tr("Reflection"), |ui| {
+         for (l, v) in [("No Reflection", "none"), ("Tight", "tight"), ("Half", "half"), ("Full", "full")] {
+-            if ui.button(l).clicked() {
++            if ui.button(tr(l)).clicked() {
+                 run(app, "shape.effects", json!({"reflection": v}));
+             }
+         }
+     });
+-    ui.menu_button("Glow", |ui| {
+-        if ui.button("No Glow").clicked() {
++    ui.menu_button(tr("Glow"), |ui| {
++        if ui.button(tr("No Glow")).clicked() {
+             run(app, "shape.effects", json!({"glow": null}));
+         }
+         for r in [5.0, 8.0, 11.0, 18.0] {
+@@ -1063,14 +1066,14 @@ pub fn effects_menu(app: &mut SlideApp, ui: &mut Ui) {
+             }
+         }
+     });
+-    ui.menu_button("Soft Edges", |ui| {
++    ui.menu_button(tr("Soft Edges"), |ui| {
+         for r in [0.0, 1.0, 2.5, 5.0, 10.0, 25.0] {
+             if ui.button(if r == 0.0 { "No Soft Edges".to_string() } else { format!("{r} pt") }).clicked() {
+                 run(app, "shape.effects", json!({"softEdges": r}));
+             }
+         }
+     });
+-    ui.menu_button("Bevel", |ui| {
++    ui.menu_button(tr("Bevel"), |ui| {
+         for b in [
+             "none",
+             "circle",
+@@ -1091,7 +1094,7 @@ pub fn effects_menu(app: &mut SlideApp, ui: &mut Ui) {
+             }
+         }
+     });
+-    if ui.button("Format Shape…").clicked() {
++    if ui.button(tr("Format Shape…")).clicked() {
+         let _ = app.run("view.pane", json!({"pane": "format", "tab": "effects"}));
+     }
+ }
+@@ -1135,7 +1138,7 @@ fn quick_styles(app: &mut SlideApp, ui: &mut Ui) {
+ }
+ 
+ pub fn arrange_menu(app: &mut SlideApp, ui: &mut Ui) {
+-    ui.label(egui::RichText::new("Order Objects").font(theme::bold(12.0)));
++    ui.label(egui::RichText::new(tr("Order Objects")).font(theme::bold(12.0)));
+     for (l, id, ic) in [
+         ("Bring to Front", "arrange.bringToFront", Icon::BringToFront),
+         ("Send to Back", "arrange.sendToBack", Icon::SendToBack),
+@@ -1145,20 +1148,20 @@ pub fn arrange_menu(app: &mut SlideApp, ui: &mut Ui) {
+         menu_item(app, ui, ic, l, id, json!({}));
+     }
+     ui.separator();
+-    ui.label(egui::RichText::new("Group Objects").font(theme::bold(12.0)));
++    ui.label(egui::RichText::new(tr("Group Objects")).font(theme::bold(12.0)));
+     menu_item(app, ui, Icon::Group, "Group", "arrange.group", json!({}));
+     menu_item(app, ui, Icon::Ungroup, "Ungroup", "arrange.ungroup", json!({}));
+     menu_item(app, ui, Icon::Group, "Regroup", "arrange.regroup", json!({}));
+     ui.separator();
+-    ui.label(egui::RichText::new("Position Objects").font(theme::bold(12.0)));
+-    ui.menu_button("Align", |ui| align_menu(app, ui));
+-    ui.menu_button("Rotate", |ui| {
++    ui.label(egui::RichText::new(tr("Position Objects")).font(theme::bold(12.0)));
++    ui.menu_button(tr("Align"), |ui| align_menu(app, ui));
++    ui.menu_button(tr("Rotate"), |ui| {
+         menu_item(app, ui, Icon::RotateRight, "Rotate Right 90°", "arrange.rotateRight", json!({}));
+         menu_item(app, ui, Icon::RotateLeft, "Rotate Left 90°", "arrange.rotateLeft", json!({}));
+         menu_item(app, ui, Icon::FlipV, "Flip Vertical", "arrange.flipVertical", json!({}));
+         menu_item(app, ui, Icon::FlipH, "Flip Horizontal", "arrange.flipHorizontal", json!({}));
+     });
+-    if ui.button("Selection Pane…").clicked() {
++    if ui.button(tr("Selection Pane…")).clicked() {
+         let _ = app.run("view.pane", json!({"pane": "selection"}));
+         ui.close();
+     }
+@@ -1256,11 +1259,11 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
+                 ui.close();
+             }
+             ui.separator();
+-            if ui.button("Insert Table…").clicked() {
++            if ui.button(tr("Insert Table…")).clicked() {
+                 app.dialog = Some(crate::dialogs::Dialog::new("table"));
+                 ui.close();
+             }
+-            if ui.button("Draw Table").clicked() {
++            if ui.button(tr("Draw Table")).clicked() {
+                 app.session.set_tool(deckcraft_engine::ToolKind::Shape { preset: deckcraft_engine::tools::DRAW_TABLE.into() });
+                 ui.close();
+             }
+@@ -1309,7 +1312,7 @@ fn insert(app: &mut SlideApp, ui: &mut Ui) {
+             }
+             ui.separator();
+             let has_sel = app.session.active().is_some_and(|s| !s.selection.shapes.is_empty());
+-            if ui.add_enabled(has_sel, egui::Button::new("Action Settings…")).clicked() {
++            if ui.add_enabled(has_sel, egui::Button::new(tr("Action Settings…"))).clicked() {
+                 app.dialog = Some(crate::dialogs::Dialog::new("action"));
+             }
+         });
+@@ -1347,7 +1350,7 @@ pub fn table_grid_picker(ui: &mut Ui) -> Option<(usize, usize)> {
+     let id = ui.id().with("tgrid");
+     let mut hover: (usize, usize) = ui.data_mut(|d| d.get_temp(id).unwrap_or((0, 0)));
+     let cell = 16.0;
+-    let label = if hover.0 > 0 { format!("{}x{} Table", hover.1, hover.0) } else { "Insert Table".into() };
++    let label = if hover.0 > 0 { format!("{}×{} 表格", hover.1, hover.0) } else { tr("Insert Table").into() };
+     ui.label(label);
+     let (rect, resp) = ui.allocate_exact_size(vec2(10.0 * (cell + 2.0), 8.0 * (cell + 2.0)), Sense::click());
+     if let Some(p) = resp.hover_pos() {
+@@ -1400,7 +1403,7 @@ fn render_filtered_icons(app: &mut SlideApp, ui: &mut Ui, icons: &[deckcraft_eng
+         }
+     });
+     if n == 0 {
+-        ui.label("No icons match.");
++        ui.label(tr("No icons match."));
+     }
+ }
+ 
+@@ -1589,7 +1592,7 @@ fn design(app: &mut SlideApp, ui: &mut Ui) {
+                 });
+             }
+             ui.separator();
+-            if ui.button("Customize Colors…").clicked() {
++            if ui.button(tr("Customize Colors…")).clicked() {
+                 run(app, "design.colors", json!({}));
+                 ui.close();
+             }
+@@ -1603,7 +1606,7 @@ fn design(app: &mut SlideApp, ui: &mut Ui) {
+                 }
+             }
+             ui.separator();
+-            if ui.button("Customize Fonts…").clicked() {
++            if ui.button(tr("Customize Fonts…")).clicked() {
+                 run(app, "design.fonts", json!({}));
+                 ui.close();
+             }
+@@ -1646,7 +1649,7 @@ fn design(app: &mut SlideApp, ui: &mut Ui) {
+                     }
+                 }
+             });
+-            if ui.button("Reset Slide Background").clicked() {
++            if ui.button(tr("Reset Slide Background")).clicked() {
+                 run(app, "design.background", json!({"reset": true}));
+             }
+         });
+@@ -1654,13 +1657,13 @@ fn design(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         let r = big_button(ui, Icon::SlideSize, "Slide\nSize", true);
+         egui::Popup::menu(&r).show(|ui| {
+-            if ui.button("Standard (4:3)").clicked() {
++            if ui.button(tr("Standard (4:3)")).clicked() {
+                 run(app, "design.slideSize", json!({"preset": "standard"}));
+             }
+-            if ui.button("Widescreen (16:9)").clicked() {
++            if ui.button(tr("Widescreen (16:9)")).clicked() {
+                 run(app, "design.slideSize", json!({"preset": "widescreen"}));
+             }
+-            if ui.button("Page Setup…").clicked() {
++            if ui.button(tr("Page Setup…")).clicked() {
+                 app.dialog = Some(crate::dialogs::Dialog::new("slideSize"));
+             }
+         });
+@@ -1749,7 +1752,7 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
+         // Sound in its own column, so the timing column keeps its three rows.
+         rows(ui, |ui| {
+             ui.horizontal(|ui| {
+-                ui.label("Sound:");
++                ui.label(tr("Sound:"));
+                 let stop = cur.as_ref().is_some_and(|t| t.stop_sound);
+                 let name = cur
+                     .as_ref()
+@@ -1758,22 +1761,22 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
+                     .unwrap_or_else(|| if stop { "[Stop Previous Sound]".into() } else { "[No Sound]".into() });
+                 egui::ComboBox::from_id_salt("transition_sound").width(140.0).selected_text(name).show_ui(ui, |ui| {
+                     let none = cur.as_ref().is_none_or(|t| t.sound.is_none() && !t.stop_sound);
+-                    if ui.selectable_label(none, "[No Sound]").clicked() {
++                    if ui.selectable_label(none, tr("[No Sound]")).clicked() {
+                         run(app, "transition.sound", json!({"none": true}));
+                     }
+-                    if ui.selectable_label(stop, "[Stop Previous Sound]").clicked() {
++                    if ui.selectable_label(stop, tr("[Stop Previous Sound]")).clicked() {
+                         run(app, "transition.sound", json!({"stopPrevious": true}));
+                     }
+                     ui.separator();
+                     for (id, label) in deckcraft_engine::sounds::BUILTIN {
+-                        if ui.button(label).clicked() {
++                        if ui.button(tr(label)).clicked() {
+                             let lp = cur.as_ref().is_some_and(|t| t.sound_loop);
+                             run(app, "transition.sound", json!({"builtin": id, "loop": lp}));
+                         }
+                     }
+                     ui.separator();
+                     let can_pick = app.services.pick_open.is_some();
+-                    let r = ui.add_enabled(can_pick, egui::Button::new("Other Sound…"));
++                    let r = ui.add_enabled(can_pick, egui::Button::new(tr("Other Sound…")));
+                     if r.clicked() {
+                         app.pick_transition_sound();
+                     }
+@@ -1789,7 +1792,7 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
+         });
+         rows(ui, |ui| {
+             ui.horizontal(|ui| {
+-                ui.label("Duration:");
++                ui.label(tr("Duration:"));
+                 let d = cur.as_ref().map(|t| t.duration_ms as f64 / 1000.0).unwrap_or(1.0);
+                 if let Some(v) = widgets::spinner(ui, "tdur", d, 0.25, "", 46.0) {
+                     run(app, "transition.timing", json!({"duration": (v.max(0.0) * 1000.0).round() as u64}));
+@@ -1797,14 +1800,14 @@ fn transitions(app: &mut SlideApp, ui: &mut Ui) {
+             });
+             ui.horizontal(|ui| {
+                 let mut click = cur.as_ref().is_none_or(|t| t.advance_on_click);
+-                if ui.checkbox(&mut click, "On Mouse Click").changed() {
++                if ui.checkbox(&mut click, tr("On Mouse Click")).changed() {
+                     run(app, "transition.timing", json!({"onClick": click}));
+                 }
+             });
+             ui.horizontal(|ui| {
+                 let after = cur.as_ref().and_then(|t| t.advance_after_ms);
+                 let mut on = after.is_some();
+-                if ui.checkbox(&mut on, "After:").changed() {
++                if ui.checkbox(&mut on, tr("After:")).changed() {
+                     run(app, "transition.timing", json!({"after": if on { json!(after.unwrap_or(0)) } else { Value::Null }}));
+                 }
+                 if let Some(v) = widgets::spinner(ui, "tafter", after.unwrap_or(0) as f64 / 1000.0, 1.0, "", 46.0) {
+@@ -2031,7 +2034,7 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
+         big(app, ui, Icon::AnimationPane, "Animation\nPane", "view.pane", json!({"pane": "animation"}));
+         let r = big_button(ui, Icon::Trigger, "Trigger", cur.is_some());
+         egui::Popup::menu(&r).show(|ui| {
+-            if ui.button("On Click of… (none)").clicked() {
++            if ui.button(tr("On Click of… (none)")).clicked() {
+                 run(app, "animation.timing", json!({"trigger": null}));
+             }
+             let shapes: Vec<(u32, String)> =
+@@ -2059,15 +2062,15 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         rows(ui, |ui| {
+             ui.horizontal(|ui| {
+-                ui.label("Start:");
++                ui.label(tr("Start:"));
+                 let s = cur.as_ref().map(|c| match c.start {
+                     deckcraft_model::AnimStart::OnClick => "On Click",
+                     deckcraft_model::AnimStart::WithPrevious => "With Previous",
+                     deckcraft_model::AnimStart::AfterPrevious => "After Previous",
+                 });
+-                dropdown(ui, "astart", s.unwrap_or(""), 112.0, cur.is_some(), |ui| {
++                dropdown(ui, "astart", tr(s.unwrap_or("")), 112.0, cur.is_some(), |ui| {
+                     for (l, v) in [("On Click", "onClick"), ("With Previous", "withPrevious"), ("After Previous", "afterPrevious")] {
+-                        if ui.button(l).clicked() {
++                        if ui.button(tr(l)).clicked() {
+                             run(app, "animation.timing", json!({"start": v}));
+                             ui.close();
+                         }
+@@ -2075,13 +2078,13 @@ fn animations(app: &mut SlideApp, ui: &mut Ui) {
+                 });
+             });
+             ui.horizontal(|ui| {
+-                ui.label("Duration:");
++                ui.label(tr("Duration:"));
+                 if let Some(v) = widgets::spinner(ui, "adur", cur.as_ref().map(|c| c.duration_ms as f64 / 1000.0).unwrap_or(0.5), 0.25, "", 46.0) {
+                     run(app, "animation.timing", json!({"duration": (v.max(0.0) * 1000.0).round() as u64}));
+                 }
+             });
+             ui.horizontal(|ui| {
+-                ui.label("Delay:");
++                ui.label(tr("Delay:"));
+                 if let Some(v) = widgets::spinner(ui, "adelay", cur.as_ref().map(|c| c.delay_ms as f64 / 1000.0).unwrap_or(0.0), 0.25, "", 46.0) {
+                     run(app, "animation.timing", json!({"delay": (v.max(0.0) * 1000.0).round() as u64}));
+                 }
+@@ -2139,15 +2142,15 @@ fn slide_show(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         rows(ui, |ui| {
+             let mut use_t = app.session.active().is_none_or(|d| d.doc.show.use_timings);
+-            if ui.checkbox(&mut use_t, "Use Timings").changed() {
++            if ui.checkbox(&mut use_t, tr("Use Timings")).changed() {
+                 run(app, "show.setup", json!({"useTimings": use_t}));
+             }
+             let mut narr = app.session.active().is_none_or(|d| !d.doc.show.without_narration);
+-            if ui.checkbox(&mut narr, "Play Narrations").changed() {
++            if ui.checkbox(&mut narr, tr("Play Narrations")).changed() {
+                 run(app, "show.setup", json!({"noNarration": !narr}));
+             }
+             let mut mc = app.session.active().is_none_or(|d| d.doc.show.show_media_controls);
+-            if ui.checkbox(&mut mc, "Show Media Controls").changed() {
++            if ui.checkbox(&mut mc, tr("Show Media Controls")).changed() {
+                 run(app, "show.setup", json!({"showMediaControls": mc}));
+             }
+         });
+@@ -2269,15 +2272,15 @@ fn view(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         rows(ui, |ui| {
+             let mut r = app.ui.ruler;
+-            if ui.checkbox(&mut r, "Ruler").changed() {
++            if ui.checkbox(&mut r, tr("Ruler")).changed() {
+                 app.ui.ruler = r;
+             }
+             let mut g = app.ui.gridlines;
+-            if ui.checkbox(&mut g, "Gridlines").changed() {
++            if ui.checkbox(&mut g, tr("Gridlines")).changed() {
+                 app.ui.gridlines = g;
+             }
+             let mut gd = app.ui.guides;
+-            if ui.checkbox(&mut gd, "Guides").changed() {
++            if ui.checkbox(&mut gd, tr("Guides")).changed() {
+                 app.ui.guides = gd;
+             }
+         });
+@@ -2302,7 +2305,7 @@ fn view(app: &mut SlideApp, ui: &mut Ui) {
+                         ui.close();
+                     }
+                 }
+-                if ui.button("Fit").clicked() {
++                if ui.button(tr("Fit")).clicked() {
+                     let _ = app.run("view.fit", json!({}));
+                     ui.close();
+                 }
+@@ -2337,8 +2340,8 @@ fn view(app: &mut SlideApp, ui: &mut Ui) {
+ /// Shape Format ▸ Text Effects ▸ Transform: No Transform, Follow Path, then the other presets.
+ fn transform_gallery(app: &mut SlideApp, ui: &mut Ui) {
+     let current = selected_warp(app);
+-    ui.label(egui::RichText::new("Transform").font(theme::bold(12.0)));
+-    ui.label("Follow Path");
++    ui.label(egui::RichText::new(tr("Transform")).font(theme::bold(12.0)));
++    ui.label(tr("Follow Path"));
+     let mut picked = false;
+     ui.horizontal_wrapped(|ui| {
+         ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+@@ -2349,7 +2352,7 @@ fn transform_gallery(app: &mut SlideApp, ui: &mut Ui) {
+             }
+         }
+     });
+-    ui.label("Warp");
++    ui.label(tr("Warp"));
+     egui::ScrollArea::vertical().max_height(220.0).id_salt("text_warp_gallery").show(ui, |ui| {
+         ui.horizontal_wrapped(|ui| {
+             ui.spacing_mut().item_spacing = vec2(2.0, 2.0);
+@@ -2446,12 +2449,12 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
+         big(app, ui, Icon::TextBox, "Text\nBox", "insert.textBox", json!({}));
+         let r = big_button(ui, Icon::EditShape, "Edit\nShape", sel);
+         egui::Popup::menu(&r).show(|ui| {
+-            ui.label("Change Shape");
++            ui.label(tr("Change Shape"));
+             if let Some(p) = shapes_gallery(ui) {
+                 run(app, "shape.change", json!({"preset": p}));
+             }
+             ui.separator();
+-            if ui.add_enabled(enabled(app, "shape.editPoints"), egui::Button::new("Edit Points")).clicked() {
++            if ui.add_enabled(enabled(app, "shape.editPoints"), egui::Button::new(tr("Edit Points"))).clicked() {
+                 run(app, "shape.editPoints", json!({"on": true}));
+                 ui.close();
+             }
+@@ -2462,7 +2465,7 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
+         let r = big_button(ui, Icon::MergeShapes, "Merge\nShapes", can_merge).on_hover_text("Merge Shapes");
+         egui::Popup::menu(&r).show(|ui| {
+             for (op, label) in deckcraft_engine::cmd::merge::OPS {
+-                if ui.button(label).clicked() {
++                if ui.button(tr(label)).clicked() {
+                     run(app, "shape.merge", json!({"op": op}));
+                     ui.close();
+                 }
+@@ -2489,7 +2492,7 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
+                             None => run(app, "shape.fill", json!({"none": true})),
+                         }
+                     }
+-                    if ui.button("Gradient…").clicked() {
++                    if ui.button(tr("Gradient…")).clicked() {
+                         let _ = app.run("view.pane", json!({"pane": "format", "tab": "fill"}));
+                         ui.close();
+                     }
+@@ -2533,7 +2536,7 @@ fn shape_format(app: &mut SlideApp, ui: &mut Ui) {
+             }
+             let r = small_button(ui, Icon::TextEffects, "Text Effects", sel, false);
+             egui::Popup::menu(&r).width(312.0).show(|ui| {
+-                if ui.button("Shadow").clicked() {
++                if ui.button(tr("Shadow")).clicked() {
+                     run(app, "format.textShadow", json!({}));
+                     ui.close();
+                 }
+@@ -2608,24 +2611,24 @@ fn size_group(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         rows(ui, |ui| {
+             let Some(x) = bx else {
+-                ui.label("Height:");
+-                ui.label("Width:");
++                ui.label(tr("Height:"));
++                ui.label(tr("Width:"));
+                 return;
+             };
+             ui.horizontal(|ui| {
+-                ui.label("Height:");
++                ui.label(tr("Height:"));
+                 if let Some(v) = widgets::spinner(ui, "sh", x.h / 72.0, 0.1, "\"", 54.0) {
+                     run(app, "shape.resize", json!({"h": v.max(0.0) * 72.0}));
+                 }
+             });
+             ui.horizontal(|ui| {
+-                ui.label("Width: ");
++                ui.label(tr("Width: "));
+                 if let Some(v) = widgets::spinner(ui, "sw", x.w / 72.0, 0.1, "\"", 54.0) {
+                     run(app, "shape.resize", json!({"w": v.max(0.0) * 72.0}));
+                 }
+             });
+         });
+-        if ui.add_enabled(bx.is_some(), egui::Button::new("Size and Position…")).clicked() {
++        if ui.add_enabled(bx.is_some(), egui::Button::new(tr("Size and Position…"))).clicked() {
+             run(app, "shape.sizePosition", json!({}));
+         }
+     });
+@@ -2636,7 +2639,7 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
+         let r = big_button(ui, Icon::RemoveBackground, "Remove\nBackground", enabled(app, "picture.removeBackground"));
+         egui::Popup::menu(&r).show(|ui| {
+             for (label, tol) in [("Remove Background", 20.0), ("Remove More (looser)", 35.0), ("Remove Less (tighter)", 10.0)] {
+-                if ui.button(label).clicked() {
++                if ui.button(tr(label)).clicked() {
+                     run(app, "picture.removeBackground", json!({"tolerance": tol}));
+                 }
+             }
+@@ -2663,7 +2666,7 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
+                 }
+             }
+             ui.separator();
+-            ui.label("Recolor");
++            ui.label(tr("Recolor"));
+             let sc = scheme(app);
+             let presets = deckcraft_engine::cmd::recolor::presets();
+             let names: Vec<String> = presets.iter().map(|(_, l)| l.clone()).collect();
+@@ -2685,14 +2688,14 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
+             ui.separator();
+             // As in PowerPoint, the pointer picks the colour in the picture itself: a colour
+             // chosen from a grid almost never matches a photo's pixels.
+-            if ui.button("Set Transparent Color").on_hover_text("Click a colour in the picture to make it transparent").clicked() {
++            if ui.button(tr("Set Transparent Color")).on_hover_text("Click a colour in the picture to make it transparent").clicked() {
+                 crate::eyedropper::request_transparent_color(ui.ctx());
+                 ui.close();
+             }
+         });
+         let r = big_button(ui, Icon::ArtisticEffects, "Artistic\nEffects", enabled(app, "picture.artisticEffect"));
+         egui::Popup::menu(&r).show(|ui| {
+-            if ui.button("None").clicked() {
++            if ui.button(tr("None")).clicked() {
+                 run(app, "picture.artisticEffect", json!({"effect": "none"}));
+             }
+             for (e, l) in deckcraft_engine::cmd::artistic::EFFECTS {
+@@ -2747,14 +2750,14 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
+                 }
+             }
+             ui.separator();
+-            ui.menu_button("Weight", |ui| {
++            ui.menu_button(tr("Weight"), |ui| {
+                 for w in [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0] {
+                     if ui.button(format!("{w} pt")).clicked() {
+                         run(app, "shape.line", json!({"width": w}));
+                     }
+                 }
+             });
+-            ui.menu_button("Dashes", |ui| {
++            ui.menu_button(tr("Dashes"), |ui| {
+                 for (l, d) in [
+                     ("Solid", "solid"),
+                     ("Round Dot", "sysDot"),
+@@ -2763,13 +2766,13 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
+                     ("Dash Dot", "dashDot"),
+                     ("Long Dash", "lgDash"),
+                 ] {
+-                    if ui.button(l).clicked() {
++                    if ui.button(tr(l)).clicked() {
+                         run(app, "shape.line", json!({"dash": d}));
+                     }
+                 }
+             });
+         });
+-        if ui.small_button("Reset Style").on_hover_text("Remove the picture style").clicked() {
++        if ui.small_button(tr("Reset Style")).on_hover_text("Remove the picture style").clicked() {
+             run(app, "picture.style", json!({"style": "none"}));
+         }
+         big(app, ui, Icon::AltText, "Alt\nText", "app.dialog", json!({"id": "altText"}));
+@@ -2778,13 +2781,13 @@ fn picture_format(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         let r = big_button(ui, Icon::Crop, "Crop", true);
+         egui::Popup::menu(&r).show(|ui| {
+-            ui.label("Crop to Shape");
++            ui.label(tr("Crop to Shape"));
+             if let Some(p) = shapes_gallery(ui) {
+                 run(app, "shape.change", json!({"preset": p}));
+             }
+             ui.separator();
+             for (l, v) in [("Crop 10% each side", 0.1), ("Crop 20% each side", 0.2), ("Reset Crop", 0.0)] {
+-                if ui.button(l).clicked() {
++                if ui.button(tr(l)).clicked() {
+                     run(app, "picture.crop", json!({"left": v, "top": v, "right": v, "bottom": v}));
+                 }
+             }
+@@ -2803,31 +2806,31 @@ fn table_design(app: &mut SlideApp, ui: &mut Ui) {
+             let flags = tbl.as_ref().map(|t| (t.first_row, t.last_row, t.band_row, t.first_col, t.last_col, t.band_col)).unwrap_or_default();
+             ui.horizontal(|ui| {
+                 let mut a = flags.0;
+-                if ui.checkbox(&mut a, "Header Row").changed() {
++                if ui.checkbox(&mut a, tr("Header Row")).changed() {
+                     run(app, "table.options", json!({"headerRow": a}));
+                 }
+                 let mut d = flags.3;
+-                if ui.checkbox(&mut d, "First Column").changed() {
++                if ui.checkbox(&mut d, tr("First Column")).changed() {
+                     run(app, "table.options", json!({"firstColumn": d}));
+                 }
+             });
+             ui.horizontal(|ui| {
+                 let mut b = flags.1;
+-                if ui.checkbox(&mut b, "Total Row").changed() {
++                if ui.checkbox(&mut b, tr("Total Row")).changed() {
+                     run(app, "table.options", json!({"totalRow": b}));
+                 }
+                 let mut e = flags.4;
+-                if ui.checkbox(&mut e, "Last Column").changed() {
++                if ui.checkbox(&mut e, tr("Last Column")).changed() {
+                     run(app, "table.options", json!({"lastColumn": e}));
+                 }
+             });
+             ui.horizontal(|ui| {
+                 let mut c = flags.2;
+-                if ui.checkbox(&mut c, "Banded Rows").changed() {
++                if ui.checkbox(&mut c, tr("Banded Rows")).changed() {
+                     run(app, "table.options", json!({"bandedRows": c}));
+                 }
+                 let mut f = flags.5;
+-                if ui.checkbox(&mut f, "Banded Columns").changed() {
++                if ui.checkbox(&mut f, tr("Banded Columns")).changed() {
+                     run(app, "table.options", json!({"bandedColumns": f}));
+                 }
+             });
+@@ -2906,7 +2909,7 @@ fn table_design(app: &mut SlideApp, ui: &mut Ui) {
+                 menu_item(app, ui, Icon::Borders, label, "table.borders", p);
+             }
+             ui.separator();
+-            ui.menu_button("Pen Weight", |ui| {
++            ui.menu_button(tr("Pen Weight"), |ui| {
+                 for w in [0.25, 0.5, 0.75, 1.0, 1.5, 2.25, 3.0, 4.5, 6.0] {
+                     let cur = app.table_pen.get("width").and_then(Value::as_f64) == Some(w);
+                     if ui.radio(cur, format!("{w} pt")).clicked() {
+@@ -2914,7 +2917,7 @@ fn table_design(app: &mut SlideApp, ui: &mut Ui) {
+                     }
+                 }
+             });
+-            ui.menu_button("Pen Style", |ui| {
++            ui.menu_button(tr("Pen Style"), |ui| {
+                 for (l, d) in [("Solid", "solid"), ("Dash", "dash"), ("Dot", "sysDot"), ("Dash Dot", "dashDot"), ("Long Dash", "lgDash")] {
+                     let cur = app.table_pen.get("dash").and_then(Value::as_str).unwrap_or("solid") == d;
+                     if ui.radio(cur, l).clicked() {
+@@ -2922,7 +2925,7 @@ fn table_design(app: &mut SlideApp, ui: &mut Ui) {
+                     }
+                 }
+             });
+-            ui.menu_button("Pen Color", |ui| {
++            ui.menu_button(tr("Pen Color"), |ui| {
+                 let sc = scheme(app);
+                 if let Some(Some(c)) = widgets::color_grid(ui, &sc, None) {
+                     app.table_pen["color"] = cref_param(&c);
+@@ -3079,13 +3082,13 @@ fn table_layout(app: &mut SlideApp, ui: &mut Ui) {
+             });
+             ui.horizontal(|ui| {
+                 for (l, a) in [("Top", "top"), ("Center", "middle"), ("Bottom", "bottom")] {
+-                    if ui.small_button(l).on_hover_text(format!("Align text to the {l} of the cell").to_lowercase()).clicked() {
++                    if ui.small_button(tr(l)).on_hover_text(format!("Align text to the {l} of the cell").to_lowercase()).clicked() {
+                         run(app, "table.cellAlign", json!({"anchor": a}));
+                     }
+                 }
+-                ui.menu_button("Cell Margins", |ui| {
++                ui.menu_button(tr("Cell Margins"), |ui| {
+                     for (l, preset) in [("Normal", "normal"), ("None", "none"), ("Narrow", "narrow"), ("Wide", "wide")] {
+-                        if ui.button(l).clicked() {
++                        if ui.button(tr(l)).clicked() {
+                             run(app, "table.cellMargins", json!({"preset": preset}));
+                             ui.close();
+                         }
+@@ -3142,7 +3145,7 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
+                     ("Add Shape Below", "below"),
+                     ("Add Assistant", "assistant"),
+                 ] {
+-                    if ui.button(label).clicked() {
++                    if ui.button(tr(label)).clicked() {
+                         let index = if n == 0 { Value::Null } else { json!(at) };
+                         run(app, "smartArt.addNode", json!({"id": gid, "index": index, "position": pos}));
+                     }
+@@ -3171,10 +3174,10 @@ fn smartart_design(app: &mut SlideApp, ui: &mut Ui) {
+         });
+         let (r, _) = small_button_ex(ui, Icon::Layout, "Convert", gid.is_some(), false, true);
+         egui::Popup::menu(&r).show(|ui| {
+-            if ui.button("Convert to Text").clicked() {
++            if ui.button(tr("Convert to Text")).clicked() {
+                 run(app, "smartArt.toText", json!({"id": gid}));
+             }
+-            if ui.button("Convert to Shapes").clicked() {
++            if ui.button(tr("Convert to Shapes")).clicked() {
+                 run(app, "smartArt.toShapes", json!({"id": gid}));
+             }
+         });
+@@ -3224,29 +3227,29 @@ fn playback(app: &mut SlideApp, ui: &mut Ui) {
+     group(ui, |ui| {
+         rows(ui, |ui| {
+             let mut auto = m.as_ref().is_some_and(|x| x.autoplay);
+-            if ui.checkbox(&mut auto, "Start Automatically").changed() {
++            if ui.checkbox(&mut auto, tr("Start Automatically")).changed() {
+                 run(app, "media.options", json!({"autoplay": auto}));
+             }
+             let mut across = m.as_ref().is_some_and(|x| x.play_across_slides);
+-            if ui.checkbox(&mut across, "Play Across Slides").changed() {
++            if ui.checkbox(&mut across, tr("Play Across Slides")).changed() {
+                 run(app, "media.options", json!({"acrossSlides": across}));
+             }
+             let mut lp = m.as_ref().is_some_and(|x| x.loop_play);
+-            if ui.checkbox(&mut lp, "Loop until Stopped").changed() {
++            if ui.checkbox(&mut lp, tr("Loop until Stopped")).changed() {
+                 run(app, "media.options", json!({"loop": lp}));
+             }
+         });
+         rows(ui, |ui| {
+             let mut hide = m.as_ref().is_some_and(|x| x.hide_while_not_playing);
+-            if ui.checkbox(&mut hide, "Hide During Show").changed() {
++            if ui.checkbox(&mut hide, tr("Hide During Show")).changed() {
+                 run(app, "media.options", json!({"hide": hide}));
+             }
+             let mut rw = m.as_ref().is_some_and(|x| x.rewind);
+-            if ui.checkbox(&mut rw, "Rewind after Playing").changed() {
++            if ui.checkbox(&mut rw, tr("Rewind after Playing")).changed() {
+                 run(app, "media.options", json!({"rewind": rw}));
+             }
+             let mut fs = m.as_ref().is_some_and(|x| x.full_screen);
+-            if ui.checkbox(&mut fs, "Play Full Screen").changed() {
++            if ui.checkbox(&mut fs, tr("Play Full Screen")).changed() {
+                 run(app, "media.options", json!({"fullScreen": fs}));
+             }
+         });
+@@ -3255,7 +3258,7 @@ fn playback(app: &mut SlideApp, ui: &mut Ui) {
+         let r = big_button(ui, Icon::Volume, "Volume", m.is_some());
+         egui::Popup::menu(&r).show(|ui| {
+             for (l, v) in [("Low", 0.25), ("Medium", 0.5), ("High", 1.0), ("Mute", 0.0)] {
+-                if ui.button(l).clicked() {
++                if ui.button(tr(l)).clicked() {
+                     run(app, "media.options", json!({"volume": v}));
+                 }
+             }
+@@ -3286,15 +3289,15 @@ fn slide_master(app: &mut SlideApp, ui: &mut Ui) {
+         rows(ui, |ui| {
+             let (preserve, title, footers) = master_checks(app);
+             let mut on = preserve;
+-            if ui.checkbox(&mut on, "Preserve").changed() {
++            if ui.checkbox(&mut on, tr("Preserve")).changed() {
+                 run(app, "master.preserve", json!({"preserve": on}));
+             }
+             let mut on = title;
+-            if ui.checkbox(&mut on, "Title").changed() {
++            if ui.checkbox(&mut on, tr("Title")).changed() {
+                 run(app, "master.placeholders", json!({"title": on}));
+             }
+             let mut on = footers;
+-            if ui.checkbox(&mut on, "Footers").changed() {
++            if ui.checkbox(&mut on, tr("Footers")).changed() {
+                 run(app, "master.placeholders", json!({"footers": on}));
+             }
+         });
+@@ -3305,7 +3308,7 @@ fn slide_master(app: &mut SlideApp, ui: &mut Ui) {
+             for (l, k) in
+                 [("Content", "content"), ("Text", "text"), ("Picture", "picture"), ("Chart", "chart"), ("Table", "table"), ("Media", "media")]
+             {
+-                if ui.button(l).clicked() {
++                if ui.button(tr(l)).clicked() {
+                     run(app, "master.insertPlaceholder", json!({"kind": k}));
+                 }
+             }
+@@ -3320,7 +3323,7 @@ fn slide_master(app: &mut SlideApp, ui: &mut Ui) {
+                 }
+             }
+             ui.separator();
+-            if ui.button("Browse for Themes…").clicked() {
++            if ui.button(tr("Browse for Themes…")).clicked() {
+                 run(app, "app.browseThemeDialog", json!({}));
+             }
+         });
+@@ -3577,7 +3580,7 @@ fn smooth_corners_row(app: &mut SlideApp, ui: &mut egui::Ui) {
+     }
+     let usable = radius.is_some() || ui.data(|d| d.get_temp::<(f64, f64)>(key)).is_some();
+     ui.horizontal(|ui| {
+-        ui.label("Smooth Corners");
++        ui.label(tr("Smooth Corners"));
+         let mut pct = state.1;
+         let resp = ui.add_enabled(usable, egui::Slider::new(&mut pct, 0.0..=100.0).suffix("%").integer());
+         let resp = if usable { resp } else { resp.on_disabled_hover_text("For rectangles and rounded rectangles") };
+@@ -3636,7 +3639,7 @@ fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
+     });
+     ui.data_mut(|d| d.insert_temp(id, (kind, picked.clone())));
+     ui.separator();
+-    if ui.add_enabled(!picked.is_empty(), egui::Button::new("Insert")).clicked() {
++    if ui.add_enabled(!picked.is_empty(), egui::Button::new(tr("Insert"))).clicked() {
+         let mut v = picked.clone();
+         v.sort_unstable();
+         let p = match kind {
+@@ -3655,11 +3658,11 @@ fn zoom_menu(app: &mut SlideApp, ui: &mut Ui) {
+ fn compress_menu(app: &mut SlideApp, ui: &mut Ui) {
+     let id = egui::Id::new("compress_pictures_opts");
+     let (mut ppi, mut only_selected, mut delete_cropped): (u32, bool, bool) = ui.data_mut(|d| d.get_temp(id).unwrap_or((220, true, true)));
+-    ui.label(egui::RichText::new("Compression options").strong());
+-    ui.checkbox(&mut only_selected, "Apply only to this picture");
+-    ui.checkbox(&mut delete_cropped, "Delete cropped areas of pictures");
++    ui.label(egui::RichText::new(tr("Compression options")).strong());
++    ui.checkbox(&mut only_selected, tr("Apply only to this picture"));
++    ui.checkbox(&mut delete_cropped, tr("Delete cropped areas of pictures"));
+     ui.separator();
+-    ui.label(egui::RichText::new("Resolution").strong());
++    ui.label(egui::RichText::new(tr("Resolution")).strong());
+     for (v, label) in [
+         (330, "HD (330 ppi): good quality for high-definition displays"),
+         (220, "Print (220 ppi): excellent quality on most printers and screens"),
+@@ -3670,7 +3673,7 @@ fn compress_menu(app: &mut SlideApp, ui: &mut Ui) {
+     }
+     ui.data_mut(|d| d.insert_temp(id, (ppi, only_selected, delete_cropped)));
+     ui.separator();
+-    if ui.button("Compress").clicked() {
++    if ui.button(tr("Compress")).clicked() {
+         let p = json!({"ppi": ppi, "deleteCropped": delete_cropped, "all": !only_selected});
+         match app.session.execute("picture.compress", &p) {
+             Ok(r) => {
+diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
+index 67549ce..4e4c8eb 100644
+--- a/crates/ui-egui/src/widgets.rs
++++ b/crates/ui-egui/src/widgets.rs
+@@ -33,6 +33,7 @@ pub fn big_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> Respon
+ 
+ /// Large button; with `split`, the label row is a separate dropdown target (returns its response).
+ pub fn big_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, split: bool, selected: bool) -> (Response, Option<Response>) {
++    let label = crate::i18n::tr(label);
+     let t = Tokens::get(ui.ctx());
+     let font = theme::font(11.0);
+     let lines: Vec<&str> = wrap_label(label);
+@@ -114,6 +115,7 @@ pub fn small_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selecte
+ }
+ 
+ pub fn small_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selected: bool, split: bool) -> (Response, Option<Response>) {
++    let label = crate::i18n::tr(label);
+     let t = Tokens::get(ui.ctx());
+     let font = theme::font(12.0);
+     let tw = if label.is_empty() { 0.0 } else { ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x) + 5.0 };
+@@ -155,6 +157,7 @@ pub fn small_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, sele
+ /// A menu choice ticked in the icon column (Align to Slide…), its text lined up with the
+ /// [`small_button`] items around it.
+ pub fn check_item(ui: &mut Ui, label: &str, enabled: bool, on: bool) -> Response {
++    let label = crate::i18n::tr(label);
+     let t = Tokens::get(ui.ctx());
+     let font = theme::font(12.0);
+     let tw = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x) + 5.0;
+@@ -173,6 +176,7 @@ pub fn check_item(ui: &mut Ui, label: &str, enabled: bool, on: bool) -> Response
+ 
+ /// A square icon toggle (B, I, U, alignment…).
+ pub fn icon_toggle(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> Response {
++    let tip = crate::i18n::tr(tip);
+     let t = Tokens::get(ui.ctx());
+     let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 22.0), if enabled { Sense::click() } else { Sense::hover() });
+     let painter = ui.painter_at(rect);
+@@ -187,6 +191,7 @@ pub fn icon_toggle(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool)
+ 
+ /// Icon with a colour bar under it and a dropdown arrow (Font Color, Highlight, Shape Fill…).
+ pub fn color_split(ui: &mut Ui, icon: Icon, tip: &str, color: Color32, enabled: bool) -> (Response, Response) {
++    let tip = crate::i18n::tr(tip);
+     let t = Tokens::get(ui.ctx());
+     let (rect, resp) = ui.allocate_exact_size(vec2(34.0, 22.0), Sense::hover());
+     let main = ui.interact(Rect::from_min_size(rect.min, vec2(23.0, 22.0)), resp.id.with("m"), if enabled { Sense::click() } else { Sense::hover() });
+@@ -292,7 +297,7 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
+     let t = Tokens::get(ui.ctx());
+     let mut out = None;
+     ui.set_min_width(220.0);
+-    ui.label(egui::RichText::new("Theme Colors").font(theme::bold(12.0)));
++    ui.label(egui::RichText::new(crate::i18n::tr("Theme Colors")).font(theme::bold(12.0)));
+     let slots = [
+         SchemeSlot::Lt1,
+         SchemeSlot::Dk1,
+@@ -354,7 +359,7 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
+         }
+     });
+     ui.add_space(4.0);
+-    ui.label(egui::RichText::new("Standard Colors").font(theme::bold(12.0)));
++    ui.label(egui::RichText::new(crate::i18n::tr("Standard Colors")).font(theme::bold(12.0)));
+     ui.horizontal(|ui| {
+         ui.spacing_mut().item_spacing.x = 3.0;
+         for (c, name) in deckcraft_color::STANDARD_COLORS {
+@@ -373,7 +378,7 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
+     let id = ui.id().with("hex");
+     let mut hex: String = ui.data_mut(|d| d.get_temp::<String>(id).unwrap_or_default());
+     ui.horizontal(|ui| {
+-        ui.label("More Colors… #");
++        ui.label(crate::i18n::tr("More Colors… #"));
+         let r = ui.add(egui::TextEdit::singleline(&mut hex).desired_width(70.0).hint_text("RRGGBB"));
+         if r.lost_focus()
+             && ui.input(|i| i.key_pressed(egui::Key::Enter))
+@@ -383,7 +388,7 @@ pub fn color_grid(ui: &mut Ui, scheme: &ColorScheme, none_label: Option<&str>) -
+         }
+     });
+     ui.data_mut(|d| d.insert_temp(id, hex));
+-    if ui.button("Eyedropper").on_hover_text("Click the slide to take the colour under the pointer").clicked() {
++    if ui.button(crate::i18n::tr("Eyedropper")).on_hover_text("Click the slide to take the colour under the pointer").clicked() {
+         crate::eyedropper::request(ui.ctx());
+         ui.close();
+     }

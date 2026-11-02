@@ -70,6 +70,7 @@ const APP_CRATE = {
   filmcraft: "apps/filmcraft-web",
   vectorcraft: "apps/vectorcraft-web",
   photocraft: "apps/photocraft-web",
+  lightcraft: "apps/lightcraft-web",
   cadcraft: "apps/cadcraft-web",
   pdfcraft: "apps/pdfcraft-web",
   soundcraft: "apps/soundcraft-web",
@@ -738,6 +739,47 @@ if (USER_FONT_PATCHES[app]) {
     console.log(`[zh] 已应用 ${app} 用户字体补丁`);
   } catch {
     console.log(`[zh] ${app} 用户字体补丁已应用，跳过`);
+  }
+}
+
+// 2d) 按钮 / 弹窗 / 页签的源码级中文补丁。WASM 画布文字不能靠宿主 DOM 注入翻译；
+//     每份补丁锚定注册表版本，首次应用与重复构建都显式校验，失配不再静默漏翻。
+const LOCALIZATION_PATCHES = {
+  gridcraft: "work-editor/gridcraft-dialogs-zh-cn.patch",
+  deckcraft: "work-editor/deckcraft-zh-cn.patch",
+  photocraft: "work-editor/photocraft-dialogs-zh-cn.patch",
+  lightcraft: "work-editor/lightcraft-dialogs-zh-cn.patch",
+  vectorcraft: "work-editor/vectorcraft-dialogs-zh-cn.patch",
+  filmcraft: "work-editor/filmcraft-dialogs-zh-cn.patch",
+  effectcraft: "work-editor/effectcraft-dialogs-zh-cn.patch",
+  soundcraft: "work-editor/soundcraft-zh-cn.patch",
+  cadcraft: "work-editor/cadcraft-dialogs-zh-cn.patch",
+};
+if (LOCALIZATION_PATCHES[app]) {
+  const patchFile = resolve(import.meta.dirname, LOCALIZATION_PATCHES[app]);
+  try {
+    execFileSync("git", ["apply", "--check", patchFile], {
+      cwd: source,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["apply", patchFile], {
+      cwd: source,
+      stdio: "inherit",
+    });
+    console.log(`[zh] 已应用 ${app} 弹窗与按钮中文补丁`);
+  } catch (error) {
+    try {
+      execFileSync("git", ["apply", "--reverse", "--check", patchFile], {
+        cwd: source,
+        stdio: "pipe",
+      });
+      console.log(`[zh] ${app} 弹窗与按钮中文补丁已应用，跳过`);
+    } catch {
+      throw new Error(
+        `[zh] ${app} 中文补丁与上游源码不匹配，请核对注册表版本后重建。`,
+        { cause: error },
+      );
+    }
   }
 }
 
