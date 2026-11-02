@@ -14,9 +14,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { triggerDownload } from "@/lib/download";
 import { fontFamilies } from "./fontFamilies.js";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
@@ -484,6 +486,10 @@ function WorkFontsSection({ active }: { active: boolean }) {
   );
 }
 
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return Object.prototype.toString.call(value) === "[object ArrayBuffer]";
+}
+
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
@@ -494,23 +500,73 @@ function EditorFrame({
   title: string;
   onBack: () => void;
 }) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const deliveries = useRef(new Map<string, Promise<void>>());
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [ready, setReady] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
-  // 编辑器页由宿主注入脚本在启动完成后发信号（见 work-host.ts 的 EDITOR_SHELL_SCRIPT）；
-  // 不认这个信号就只能等 iframe onLoad，几十 MB 的 wasm 会在编辑器自己的英文 Loading 上停住。
+
+  // 就绪与保存都只信当前 iframe 的真实 origin/source；保存 id 在在途与完成后均幂等。
   useEffect(() => {
+    deliveries.current.clear();
+    setSaveError(null);
+    const expectedOrigin = new URL(src).origin;
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
       if (
-        (event.data as { type?: string } | null)?.type ===
-        "kenfutwork:editor-ready"
+        event.origin !== expectedOrigin ||
+        event.source !== frameRef.current?.contentWindow
       )
+        return;
+      const data = event.data as {
+        type?: string;
+        saveId?: unknown;
+        fileName?: unknown;
+        mimeType?: unknown;
+        bytes?: unknown;
+        message?: unknown;
+      } | null;
+      if (data?.type === "kenfutwork:editor-ready") {
         setReady(true);
+        return;
+      }
+      if (data?.type === "kenfutwork:editor-save-error") {
+        setSaveError(
+          typeof data.message === "string" ? data.message : "读取保存内容失败",
+        );
+        return;
+      }
+      if (
+        data?.type !== "kenfutwork:editor-save" ||
+        typeof data.saveId !== "string" ||
+        typeof data.fileName !== "string" ||
+        !isArrayBuffer(data.bytes)
+      )
+        return;
+      const saveId = data.saveId;
+      if (deliveries.current.has(saveId)) return;
+      setSaveError(null);
+      const delivery = triggerDownload(
+        data.fileName,
+        new Blob([data.bytes], {
+          type:
+            typeof data.mimeType === "string"
+              ? data.mimeType
+              : "application/octet-stream",
+        }),
+        { browserFallback: false },
+      ).catch((error: unknown) => {
+        setSaveError(
+          `保存失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+      deliveries.current.set(saveId, delivery);
+      void delivery;
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [src]);
+
   useEffect(() => {
     if (!frameLoaded) return;
     const timer = window.setTimeout(
@@ -532,9 +588,15 @@ function EditorFrame({
           <ArrowLeft className="h-4 w-4" />
         </button>
         <span className="truncate text-sm font-medium">{title}</span>
+        {saveError ? (
+          <span role="alert" className="ml-auto text-xs text-destructive">
+            {saveError}
+          </span>
+        ) : null}
       </div>
       <div className="relative min-h-0 flex-1">
         <iframe
+          ref={frameRef}
           src={src}
           title={title}
           className={`h-full w-full border-0 transition-opacity duration-300 ${

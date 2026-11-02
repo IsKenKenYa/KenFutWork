@@ -7,7 +7,12 @@
 import { isDesktopShell } from "./desktop-embed";
 import { revealPath, saveFileToDownloads } from "./desktop-system";
 
-export async function triggerDownload(name: string, blob: Blob): Promise<void> {
+export async function triggerDownload(
+  name: string,
+  blob: Blob,
+  options: { browserFallback?: boolean } = {},
+): Promise<void> {
+  const browserFallback = options.browserFallback ?? true;
   if (isDesktopShell()) {
     try {
       const path = await saveFileToDownloads(name, await blob.arrayBuffer());
@@ -15,9 +20,10 @@ export async function triggerDownload(name: string, blob: Blob): Promise<void> {
         await revealPath(path);
         return;
       }
+      if (!browserFallback) throw new Error("桌面保存未返回文件路径");
     } catch (error) {
-      // 落盘失败别静默：退回浏览器锚点（Windows 的 WebView2 认 `<a download>`，
-      // 比直接失败强）；macOS 上这条路本来就失灵，错误已在控制台可见。
+      if (!browserFallback) throw error;
+      // 普通下载允许退回浏览器锚点；Work 保存显式关闭退回，失败必须可读。
       console.error("[download] 桌面落盘失败，退回浏览器下载", error);
     }
   }

@@ -15,11 +15,15 @@ import {
 const host = vi.hoisted(() => ({
   surfaceJson: vi.fn(),
   surfaceFetch: vi.fn(),
+  triggerDownload: vi.fn(),
 }));
 vi.mock("@/components/workbench/zcode/host/surfaceApi.js", () => ({
   surfaceFetch: host.surfaceFetch,
   surfaceJson: host.surfaceJson,
   getSurfaceApiBase: () => "http://127.0.0.1:3001",
+}));
+vi.mock("@/lib/download", () => ({
+  triggerDownload: host.triggerDownload,
 }));
 
 const STATUS = { enabled: true, registeredEditors: 2, reasons: [] };
@@ -51,11 +55,35 @@ afterEach(() => {
   openWorkEditors();
   host.surfaceJson.mockReset();
   host.surfaceFetch.mockReset();
+  host.triggerDownload.mockReset();
 });
 
 function mockData(editors: unknown[], install = {}) {
   host.surfaceJson.mockImplementation(async (path: string) =>
     path.includes("/status") ? STATUS : EDITORS(editors, install),
+  );
+}
+
+async function openInstalledEditor() {
+  mockData([EDITOR({ installed: true })]);
+  render(<HostWorkSurface />);
+  await waitFor(() => expect(screen.getByText("打开")).toBeTruthy());
+  fireEvent.click(screen.getByText("打开"));
+  return screen.getByTitle("表格") as HTMLIFrameElement;
+}
+
+function postEditorMessage(
+  frame: HTMLIFrameElement,
+  data: Record<string, unknown>,
+  origin = "http://127.0.0.1:3001",
+) {
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin,
+      source: frame.contentWindow,
+      data,
+    }),
   );
 }
 
@@ -160,5 +188,61 @@ describe("HostWorkSurface 信息页", () => {
     render(<HostWorkSurface />);
     await waitFor(() => expect(screen.getByText("缺什么。")).toBeTruthy());
     expect(screen.getByText("未启用")).toBeTruthy();
+  });
+});
+
+describe("HostWorkSurface 统一保存桥", () => {
+  it("保存成功：校验 origin/source 并交付字节，同 saveId 并发与完成后重放只保存一次", async () => {
+    host.triggerDownload.mockResolvedValue(undefined);
+    const frame = await openInstalledEditor();
+    const bytes = new TextEncoder().encode("workbook").buffer;
+    const message = {
+      type: "kenfutwork:editor-save",
+      saveId: "save-1",
+      fileName: "Book1.xlsx",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      bytes,
+    };
+
+    postEditorMessage(frame, message);
+    postEditorMessage(frame, message);
+    await waitFor(() => expect(host.triggerDownload).toHaveBeenCalledTimes(1));
+    postEditorMessage(frame, message);
+    postEditorMessage(frame, message, "http://evil.local");
+    expect(host.triggerDownload).toHaveBeenCalledTimes(1);
+
+    const [name, blob, options] = host.triggerDownload.mock.calls[0] as [
+      string,
+      Blob,
+      { browserFallback: boolean },
+    ];
+    expect(name).toBe("Book1.xlsx");
+    expect(await blob.text()).toBe("workbook");
+    expect(options).toEqual({ browserFallback: false });
+  });
+
+  it("保存失败可读：同 saveId 不重复失败，新 saveId 允许显式重试", async () => {
+    host.triggerDownload
+      .mockRejectedValueOnce(new Error("磁盘不可写"))
+      .mockResolvedValueOnce(undefined);
+    const frame = await openInstalledEditor();
+    const message = {
+      type: "kenfutwork:editor-save",
+      saveId: "save-failed",
+      fileName: "Book1.xlsx",
+      bytes: new ArrayBuffer(1),
+    };
+
+    postEditorMessage(frame, message);
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain("磁盘不可写"),
+    );
+    postEditorMessage(frame, message);
+    expect(host.triggerDownload).toHaveBeenCalledTimes(1);
+
+    postEditorMessage(frame, { ...message, saveId: "save-retry" });
+    await waitFor(() => expect(host.triggerDownload).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
