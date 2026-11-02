@@ -24,6 +24,7 @@ export function createCodePlatform(
   options: {
     onOpenManagement?: (target: ManagementTarget) => void;
     workbenchNavigation?: HostWorkbenchNavigation;
+    selectDirectory?: IPlatformService["selectDirectory"];
   } = {},
 ): IPlatformService {
   const desktop = localCuaDesktopInvoke();
@@ -34,6 +35,9 @@ export function createCodePlatform(
   return {
     ...createWebPlatform(),
     ...createMacDesktopChrome(),
+    ...(options.selectDirectory
+      ? { selectDirectory: options.selectDirectory }
+      : {}),
     ...(options.workbenchNavigation
       ? {
           workbenchNavigation: options.workbenchNavigation,

@@ -224,6 +224,47 @@ it.each([true, false])(
   },
 );
 
+it("桌面目录能力接通后原生路径沿用现有工作区打开逻辑", async () => {
+  const calls: Array<{ service: string; method: string; args: unknown[] }> = [];
+  installBrowserLayout();
+  vi.stubGlobal("fetch", createCodeRootHostFetch(calls, { rejectOpen: false }));
+  const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
+  clients.push(client);
+  await client.connect();
+  client.registerWorkspaces([rootWorkspace]);
+  releases.push(bindCodeWorkspaceServices(client));
+  const selectDirectory = vi.fn(async () => "/fixture");
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <Root
+        services={client.services}
+        platform={createCodePlatform(client, { selectDirectory })}
+        initialWorkspaceAbsPath="/code"
+        initialWorkspaceIdentity={JSON.stringify([rootProjectId, "/code"])}
+        restoreSession={false}
+        allowRemoteWorkspace={false}
+      />
+    </ZCodeIntlProvider>,
+  );
+  await screen.findByRole("textbox");
+
+  fireEvent.keyDown(window, { key: "o", ctrlKey: true });
+
+  await waitFor(() => expect(selectDirectory).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(
+      calls.some(
+        (call) =>
+          call.service === "workspace" &&
+          call.method === "open" &&
+          call.args[0] &&
+          (call.args[0] as { path?: string }).path === "/fixture",
+      ),
+    ).toBe(true),
+  );
+  expect(screen.queryByText("显示隐藏目录")).toBeNull();
+});
+
 function installViewerContext(
   client: CodeHttpChannelClient,
   target: { workspacePath: string | null; workspaceIdentity?: string | null },

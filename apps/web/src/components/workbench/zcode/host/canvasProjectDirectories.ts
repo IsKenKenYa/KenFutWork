@@ -11,9 +11,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { createTauriDirectoryPicker } from "./directoryPicker.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
 
 export async function pickCanvasProjectDirectory(): Promise<string | null> {
+  const nativePicker = createTauriDirectoryPicker();
+  if (nativePicker) return nativePicker();
   const picked = await surfaceJson<PickDirectoryResponse>(
     "/api/system/pick-directory",
     {

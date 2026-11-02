@@ -48,6 +48,7 @@ import {
   createMacDesktopChrome,
   installDesktopTitlebarDrag,
 } from "./desktopChrome.js";
+import { createTauriDirectoryPicker } from "./directoryPicker.js";
 import {
   type CodeHostConfig,
   CodeHttpChannelClient,
@@ -111,7 +112,9 @@ const workbenchNavigation = bootstrap?.workbenchModes
           : admitProjectMode(mode),
     )
   : undefined;
+const selectDirectory = createTauriDirectoryPicker();
 const platform = createCodePlatform(client, {
+  ...(selectDirectory ? { selectDirectory } : {}),
   ...(bootstrap?.managementAvailable
     ? { onOpenManagement: requestManagementOpen }
     : {}),
@@ -190,7 +193,7 @@ function CodeHost({
                           if (mode === "office")
                             workbenchNavigation?.open("design");
                         }}
-                        preferDirectoryBrowser
+                        preferDirectoryBrowser={!selectDirectory}
                         restoreSession
                         allowRemoteWorkspace={false}
                         // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），
