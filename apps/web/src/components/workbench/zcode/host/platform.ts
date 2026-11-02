@@ -17,6 +17,7 @@ import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
+import { logger } from "@zui/logger.js";
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
 export function createCodePlatform(
@@ -50,6 +51,30 @@ export function createCodePlatform(
             )
               return selected;
             throw new Error("系统未返回有效目录，请重新选择。");
+          },
+          /**
+           * 桌面形态的「内置浏览器数据」指服务端受控浏览器自己的 profile
+           * （`<数据目录>/browser/chrome-profile`），不是用户日常浏览器：
+           * 清理走 `/api/browser/cdp/clear-data`，断开会话后删除。
+           */
+          supportsEmbeddedBrowserDataClear: true,
+          clearEmbeddedBrowserData: async (mode: "cache" | "all") => {
+            await client.request("/api/browser/cdp/clear-data", { mode });
+            return { success: true };
+          },
+          /**
+           * 录制快捷键时让桌面壳收掉原生菜单：否则 macOS 的 Cmd+W/Cmd+Q
+           * 会在页面录制监听之前被系统菜单消费，改键永远录不到。
+           * 页面内的应用快捷键由 shortcuts 内核的录制标记短路，两处同时生效。
+           */
+          setShortcutRecordingActive: (active: boolean) => {
+            void desktop("set_shortcut_recording_active", { active }).catch(
+              (error: unknown) => {
+                logger.error("[shortcuts] 原生菜单接管失败", {
+                  error: String(error),
+                });
+              },
+            );
           },
         }
       : {}),

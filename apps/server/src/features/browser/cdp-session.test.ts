@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CdpClient } from "./cdp-client.js";
@@ -809,5 +812,58 @@ describe("CDP 会话：页面内取值（browser_eval）", () => {
 
     const result = await session.evaluateValue("void 0");
     expect(result).toEqual({ ok: true, value: null, type: "undefined" });
+  });
+});
+
+describe("CDP 会话：清理自有浏览器 profile", () => {
+  async function profileFixture() {
+    const dataDir = await mkdtemp(join(tmpdir(), "kfw-cdp-clear-"));
+    const profileDir = join(dataDir, "chrome-profile");
+    await mkdir(join(profileDir, "Default", "Cache"), { recursive: true });
+    await mkdir(join(profileDir, "Default", "Code Cache"), {
+      recursive: true,
+    });
+    await writeFile(join(profileDir, "Default", "Cookies"), "login", "utf8");
+    await writeFile(join(profileDir, "Last Version"), "1", "utf8");
+    const session = createCdpBrowserSession({
+      dataDir,
+      findExecutable: () => "C:/fake/chrome.exe",
+      launch: async () => {
+        throw new Error("清理用例不启动浏览器");
+      },
+      waitDevtools: async () => {
+        throw new Error("清理用例不连接浏览器");
+      },
+      connectClient: () => {
+        throw new Error("清理用例不连接浏览器");
+      },
+      killStaleProfile: async () => false,
+    });
+    return { dataDir, profileDir, session };
+  }
+
+  it("cache 模式只删缓存目录，登录态与版本文件保留", async () => {
+    const { dataDir, profileDir, session } = await profileFixture();
+    const result = await session.clearData("cache");
+    expect(result).toEqual({ success: true });
+    await expect(stat(join(profileDir, "Default", "Cache"))).rejects.toThrow();
+    await expect(
+      stat(join(profileDir, "Default", "Code Cache")),
+    ).rejects.toThrow();
+    await expect(
+      stat(join(profileDir, "Default", "Cookies")),
+    ).resolves.toBeTruthy();
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it("all 模式删除整个 profile，下次连接重建", async () => {
+    const { dataDir, profileDir, session } = await profileFixture();
+    const result = await session.clearData("all");
+    expect(result).toEqual({ success: true });
+    // 目录已不存在：再往里建文件再删会失败。
+    await expect(
+      rm(join(profileDir, "Default", "Cookies")),
+    ).rejects.toThrow();
+    await rm(dataDir, { recursive: true, force: true });
   });
 });
