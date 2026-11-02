@@ -489,8 +489,8 @@ const ENGINE_STATE_META: Record<
   error: { label: "安装失败", className: "bg-destructive/10 text-destructive" },
 };
 
-const INSTALL_LOG_TAIL = 500;
-const CONTAINER_LOG_TAIL = 500;
+const LOG_LINE_OPTIONS = [500, 1000, 5000, 10000] as const;
+const DEFAULT_LOG_LINES = 500;
 
 function logQuery(source: string, tail: number) {
   const params = new URLSearchParams({ source: "install", tail: String(tail) });
@@ -517,6 +517,7 @@ function downloadText(name: string, text: string) {
 function EngineLogsView() {
   const [info, setInfo] = useState<FlowHostEngineInfoResponse | null>(null);
   const [source, setSource] = useState("install");
+  const [lineLimit, setLineLimit] = useState(DEFAULT_LOG_LINES);
   const [log, setLog] = useState<FlowHostEngineLogsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [infoError, setInfoError] = useState<string | null>(null);
@@ -543,25 +544,25 @@ function EngineLogsView() {
     }
   }, []);
 
-  const loadLog = useCallback(async (sourceValue: string, quiet = false) => {
-    if (!quiet) setLoading(true);
-    try {
-      setLog(
-        await surfaceJson<FlowHostEngineLogsResponse>(
-          logQuery(
-            sourceValue,
-            sourceValue === "install" ? INSTALL_LOG_TAIL : CONTAINER_LOG_TAIL,
+  const loadLog = useCallback(
+    async (sourceValue: string, quiet = false, tail = lineLimit) => {
+      if (!quiet) setLoading(true);
+      try {
+        setLog(
+          await surfaceJson<FlowHostEngineLogsResponse>(
+            logQuery(sourceValue, tail),
           ),
-        ),
-      );
-      setError(null);
-    } catch (failure) {
-      setLog(null);
-      setError(failure instanceof Error ? failure.message : "日志读取失败。");
-    } finally {
-      if (!quiet) setLoading(false);
-    }
-  }, []);
+        );
+        setError(null);
+      } catch (failure) {
+        setLog(null);
+        setError(failure instanceof Error ? failure.message : "日志读取失败。");
+      } finally {
+        if (!quiet) setLoading(false);
+      }
+    },
+    [lineLimit],
+  );
 
   useEffect(() => {
     void loadInfo();
@@ -657,7 +658,11 @@ function EngineLogsView() {
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Select value={source} onValueChange={setSource}>
-          <SelectTrigger aria-label="日志来源" className="w-64">
+          <SelectTrigger
+            aria-label="日志来源"
+            variant="outline"
+            className="w-64"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -672,9 +677,28 @@ function EngineLogsView() {
             ))}
           </SelectContent>
         </Select>
+        <Select
+          value={String(lineLimit)}
+          onValueChange={(value) => setLineLimit(Number(value))}
+        >
+          <SelectTrigger
+            aria-label="显示行数"
+            variant="outline"
+            className="w-28"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LOG_LINE_OPTIONS.map((count) => (
+              <SelectItem key={count} value={String(count)}>
+                {count} 行
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {log?.truncated ? (
           <span className="text-xs text-foreground-subtle">
-            仅显示最后 {INSTALL_LOG_TAIL} 行
+            仅显示最后 {lineLimit} 行
           </span>
         ) : null}
         {log?.path ? (
