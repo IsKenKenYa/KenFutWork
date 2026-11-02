@@ -1,3 +1,4 @@
+import { zcodeAgentProviderSchema } from "@zcode/shared";
 import {
   conversationSnapshotSchema,
   conversationTopicWireFrameSchema,
@@ -80,6 +81,17 @@ export const codeUiRpcRequestSchema = z.object({
   connectionId: z.string().optional(),
 });
 export const codeUiRpcResponseSchema = z.object({ result: z.unknown() });
+
+/**
+ * 设置页「子智能体」读取入参（原 `ISubagentsService.list` 的 request 形态）。
+ * 结果类型不在此重定义，仍直接引用固定原契约 `AgentsListResult`。
+ */
+export const codeUiSubagentsListQuerySchema = z.object({
+  workspacePath: z.string().optional(),
+  workspaceIdentity: z.string().optional(),
+  provider: zcodeAgentProviderSchema.optional(),
+  mode: z.enum(["allRuntimeScopes", "settingsUserOnly"]).optional(),
+});
 
 /** First-party RPC companion; extract only host-owned fields, leaving the original V4 envelope unchanged. */
 export const codeUiCommandCompanionSchema = z.object({
