@@ -12,7 +12,6 @@ import {
   Blocks,
   Bot,
   Brain,
-  Cable,
   FileSearch,
   Globe2,
   Info,
@@ -26,7 +25,6 @@ import {
   ShieldCheck,
   Sun,
   Terminal,
-  WandSparkles,
 } from "lucide-react";
 
 export const THEME_MODES: Array<{
@@ -112,18 +110,7 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.plugins.title",
     groupId: "agentCapabilities",
   },
-  {
-    id: "mcp",
-    icon: Cable,
-    titleId: "settings.mcpTitle",
-    groupId: "agentCapabilities",
-  },
-  {
-    id: "skill",
-    icon: WandSparkles,
-    titleId: "settings.skills.title",
-    groupId: "agentCapabilities",
-  },
+  // 插件·MCP·技能并成同一个分区（页面内三页签），不再单列导航项。
   {
     id: "commands",
     icon: Terminal,

@@ -617,7 +617,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "ffda1c383b4bf03724d32268cd576ddc59a68c9adfdb86c21210c00dd663a8e4",
+      "copiedSha256": "56f8df1319df3268fe54b8fe825b7ffefc2bcddf7f59bbc3f3a8fbaf8bad7e53",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -630,7 +630,8 @@
         "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection",
         "KenFutWork 宿主偏差：集成终端 Shell 行在宿主无 shell 选项时隐藏（宿主未接 system.listIntegratedTerminalShells；shell 切换由终端工具栏菜单承担）",
         "2026-11-02（三百四十七）：撤掉 openDesign 分区渲染分支与宿主件引用——宿主自动配置，设置页不再要用户填地址/密钥。",
-        "KenFutWork 宿主偏差：新增 voice 分区渲染分支与 voiceClient 可见性过滤（语音助手设置接线，二百五十七）"
+        "KenFutWork 宿主偏差：新增 voice 分区渲染分支与 voiceClient 可见性过滤（语音助手设置接线，二百五十七）",
+        "2026-11-02（三百四十九）：插件·MCP·技能并成一个分区——删除 mcp/skill 两处独立渲染分支。"
       ]
     },
     {
@@ -1681,7 +1682,7 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "21a3e4782688c311ca49d66f873079a905fc12b107a3724b310647e179804641",
+      "copiedSha256": "86e1e6e616938d298e9ac98d55af67b11f79340ad094d935e7336ff6b6294d4a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -1692,7 +1693,8 @@
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。",
         "2026-10-20 收起 rail（f992490b）：侧栏入口统一为展开整行/收起图标两种形态，新建任务走同一处理。",
-        "2026-10-27（二百八十五）：Work 模式侧栏「Work 引擎」入口；二百八十一：任务列表滚动条隐藏（!scrollbar-hide）。"
+        "2026-10-27（二百八十五）：Work 模式侧栏「Work 引擎」入口；二百八十一：任务列表滚动条隐藏（!scrollbar-hide）。",
+        "2026-11-02（三百四十九）：侧栏技能/MCP 入口改发插件分区页签意图（并页后不再单列分区）。"
       ]
     },
     {
@@ -7142,13 +7144,14 @@
       "source": "references/zcode/packages/ui/src/lib/settingsNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/settingsNavigation.ts",
       "sha256": "18fffab343c541b6c6170a081070eadca70edc63ee238d66a11e087b47716800",
-      "copiedSha256": "d04c9665de6ecee07f61e4eb5e730df168756c3eaf4369d57b5287dc1974533d",
+      "copiedSha256": "c32feec3ecf8efb67b2db5b734492cee34808e07d4fbbeafd8872084a3dd7aa9",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "分区导航：新增 about 分区 id 供宿主关于页接线（T16）",
         "KenFutWork 宿主偏差：SettingsSectionId 增 permissions",
         "KenFutWork 宿主偏差：SettingsSectionId 增 openDesign（伴随容器承载配置分区）",
-        "KenFutWork 宿主偏差：SettingsSectionId 增 voice（语音设置分区导航 id 与守卫）"
+        "KenFutWork 宿主偏差：SettingsSectionId 增 voice（语音设置分区导航 id 与守卫）",
+        "2026-11-02（三百四十九）：mcp/skill 解析与历史停留位迁移到 plugin + 对应页签；setPendingSettingsPluginIntent 不再发独立分区。"
       ]
     },
     {
@@ -11077,7 +11080,7 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "a0892e1db6c55f2d86cac6375ad01fac65889260654f502010bf10e76c32df95",
+      "copiedSha256": "c07651e2a4a8f688ee200d6a42d9e264972d28f2d763992aeed4930021f65996",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
@@ -11085,7 +11088,8 @@
         "分区配置：新增 about 分区条目（信息+更新入口，T16）",
         "KenFutWork 宿主分区：新增 permissions 分区（G7/T7 旧四档=新会话默认档，Q12）",
         "2026-11-02（三百四十七）：撤掉 openDesign 分区条目——宿主自动配置伴随容器，不再要用户填地址/密钥。",
-        "KenFutWork 宿主偏差：BASE_SETTINGS_SECTIONS 增 voice 分区（AudioLines 图标、基础设置组）"
+        "KenFutWork 宿主偏差：BASE_SETTINGS_SECTIONS 增 voice 分区（AudioLines 图标、基础设置组）",
+        "2026-11-02（三百四十九）：撤掉 mcp/skill 导航条目（并页），连带不再使用的 Cable/WandSparkles 图标导入。"
       ]
     },
     {

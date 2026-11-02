@@ -10,7 +10,7 @@ import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
-import { setPendingSettingsSectionIntent } from "@zui/lib/settingsNavigation";
+import { setPendingSettingsPluginIntent } from "@zui/lib/settingsNavigation";
 import { Root } from "@zui/Root";
 import { McpSettingsSection } from "@zui/settings/McpSettingsSection";
 import { setMcpStorePlatform } from "@zui/store/mcpStore";
@@ -247,7 +247,8 @@ async function openNativeMcpEditor(
   );
   if (!scenario.noProject) {
     const settings = await screen.findByTestId(TID_TASK_SETTINGS_BUTTON);
-    setPendingSettingsSectionIntent("mcp");
+    // 插件·MCP·技能已并成一个分区：进 MCP 用页签意图，不再发独立分区 id。
+    setPendingSettingsPluginIntent("mcps");
     fireEvent.click(settings);
   }
   await screen.findByText("native-probe", { exact: true });

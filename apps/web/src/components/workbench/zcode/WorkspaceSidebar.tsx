@@ -130,8 +130,8 @@ import {
   MessageCircleCheck,
   MessageCirclePlus,
   Minimize2,
-  PanelLeftClose,
   Palette,
+  PanelLeftClose,
   Plus,
   Search,
   WandSparkles,
@@ -153,9 +153,9 @@ import {
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
+import { useSharedProjectTabs } from "./host/SharedProjectNavigation.js";
 import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
 import { SidebarNavButton } from "./host/SidebarNavButton.js";
-import { useSharedProjectTabs } from "./host/SharedProjectNavigation.js";
 import {
   HostSidebarRail,
   HostWorkbenchModeNavigation,
@@ -471,10 +471,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     workbenchNavigation?.subscribe ?? (() => () => {}),
     () => workbenchNavigation?.getSnapshot().mode ?? "code",
   );
-  const activeCanvasProjectId = parseLocalWorkspaceIdentity(
-    workspaceIdentity,
-    workspacePath,
-  )?.projectId ?? null;
+  const activeCanvasProjectId =
+    parseLocalWorkspaceIdentity(workspaceIdentity, workspacePath)?.projectId ??
+    null;
   const [taskSortBy, setTaskSortBy] = useState<TaskSortBy>(
     () => readSidebarTaskPreferences().sortBy,
   );
@@ -1473,7 +1472,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           icon={<WandSparkles className="size-4" />}
           label={intl.formatMessage({ id: "settings.skills.title" })}
           onClick={() => {
-            setPendingSettingsSectionIntent("skill", {
+            setPendingSettingsSectionIntent("plugin", {
+              pluginTab: "skills",
               pluginScopeKey: "user",
             });
             openSettingsTab();
@@ -1486,7 +1486,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
           icon={<Cable className="size-4" />}
           label={intl.formatMessage({ id: "settings.mcpTitle" })}
           onClick={() => {
-            setPendingSettingsSectionIntent("mcp", {
+            setPendingSettingsSectionIntent("plugin", {
+              pluginTab: "mcps",
               pluginScopeKey: "user",
             });
             openSettingsTab();
@@ -1646,9 +1647,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 ) : null}
                 <div className="flex min-h-0 flex-col gap-3 px-2">
                   {canvasSection ? (
-                    <SidebarCanvasSection
-                      projectId={activeCanvasProjectId}
-                    />
+                    <SidebarCanvasSection projectId={activeCanvasProjectId} />
                   ) : taskViewMode === "archived" ? (
                     <WorkspaceArchivedTasksFlatSection
                       actionsContainer={archivedActionsContainer}
