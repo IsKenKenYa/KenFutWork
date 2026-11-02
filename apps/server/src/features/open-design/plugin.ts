@@ -11,8 +11,10 @@ import type { PluginDefinition } from "../../kernel/types.js";
 import {
   type ComposeRun,
   createOpenDesignCompanionController,
+  OPEN_DESIGN_COMPANION_ORIGIN,
   resolveOpenDesignCarrierMode,
 } from "./companion.js";
+import { ensureOpenDesignAutoSecret } from "./config-store.js";
 import { resolveOpenDesignCredentialEntries } from "./credentials.js";
 import {
   readOpenDesignLastProject,
@@ -60,13 +62,13 @@ function resolveOpenDesignComposeFile(): string {
  * 的生命周期——装配即 `up -d`、kernel dispose 即 `down`（保留数据卷）。
  */
 export function createOpenDesignHostPlugin(deps: {
-  /** `KENFUTWORK_OPEN_DESIGN_FRONTEND_URL`；缺省表示未启用。 */
+  /** `KENFUTWORK_OPEN_DESIGN_FRONTEND_URL`；缺省 = 自动按伴随容器 origin 承载。 */
   frontendUrl?: string | undefined;
   /** 探活用 fetch（测试注入，避免真发网络请求）。 */
   fetchImpl?: typeof fetch | undefined;
   /**
-   * `KENFUTWORK_OPEN_DESIGN_EMBED_SECRET`；缺省 = 凭证缝未开（daemon 调
-   * `/credentials` 会拿到 503 与可读原因，而不是 silently 空响应）。
+   * `KENFUTWORK_OPEN_DESIGN_EMBED_SECRET`；缺省 = 在数据目录自动生成并复用一把
+   * （与注入容器的 `OD_API_TOKEN` 同源），不需要用户配置。
    */
   secret?: string | undefined;
   /** 伴随容器 compose 文件（缺省按源码态/打包态解析；测试注入）。 */
@@ -85,27 +87,28 @@ export function createOpenDesignHostPlugin(deps: {
       "designReview",
     ],
     apply() {
-      if (!deps.frontendUrl?.trim()) {
-        // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
-        console.log(
-          "[open-design] 未配置 OpenDesign 前端地址（KENFUTWORK_OPEN_DESIGN_FRONTEND_URL）：" +
-            "Code 模式右侧栏不出现 OpenDesign 面板（GET /api/open-design/host/status 可查原因）。",
-        );
-      }
-      if (!deps.secret?.trim()) {
-        console.log(
-          "[open-design] 未配置 OpenDesign 网关共享密钥（KENFUTWORK_OPEN_DESIGN_EMBED_SECRET）：" +
-            "BYOK 凭证下发不可用（POST /api/open-design/host/credentials 返回 503 与原因）。",
-        );
-      }
+      // 承载地址与密钥都可缺省（自动配置），判定在 mounted 里做——那里才有数据目录。
     },
     mounted(ctx) {
       const dataDir = resolveDesktopDataDir({
         env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
       });
+      /**
+       * 自动配置（用户口径 2026-11-02：设置页不再要用户填地址/密钥）：
+       * 地址缺省 = 伴随容器 origin（托管起停），密钥缺省 = 数据目录生成一把并复用，
+       * 与注入容器的 `OD_API_TOKEN` 同源。显式 env / 桌面配置文件仍然优先。
+       */
+      const frontendUrl =
+        deps.frontendUrl?.trim() || OPEN_DESIGN_COMPANION_ORIGIN;
+      const secret =
+        deps.secret?.trim() || ensureOpenDesignAutoSecret({ dataDir });
+      if (!deps.frontendUrl?.trim())
+        console.log(
+          `[open-design] 未显式配置前端地址：自动按伴随容器承载 ${frontendUrl}（密钥自动落盘数据目录）。`,
+        );
       // 对话能力：只读面 + 建项目。地址来自宿主配置，故由 feature 注册而不是插件 bundle。
       for (const tool of createOpenDesignTools({
-        frontendUrl: deps.frontendUrl,
+        frontendUrl,
         fetchImpl: deps.fetchImpl,
         // 建成的项目记到单槽位，右侧面板据此打开对应画布，而不是停在上游首页。
         onProjectCreated: (project) =>
@@ -123,7 +126,7 @@ export function createOpenDesignHostPlugin(deps: {
         order: 300,
         scope: "code",
         resolve: () => {
-          if (!deps.frontendUrl?.trim()) return null;
+          if (!frontendUrl.trim()) return null;
           const project = readOpenDesignLastProject({ dataDir });
           if (!project) return null;
           return [
@@ -135,23 +138,23 @@ export function createOpenDesignHostPlugin(deps: {
       });
       const companion = createOpenDesignCompanionController({
         composeFile: deps.composeFile ?? resolveOpenDesignComposeFile(),
-        ...(deps.secret?.trim() ? { apiToken: deps.secret.trim() } : {}),
+        apiToken: secret,
         ...(deps.composeRun ? { run: deps.composeRun } : {}),
       });
       void registerOpenDesignHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
-        frontendUrl: deps.frontendUrl,
+        frontendUrl,
         fetchImpl: deps.fetchImpl,
-        ...(deps.secret ? { secret: deps.secret } : {}),
+        secret,
         providers: ctx.get("modelProviders"),
         localInstance: ctx.get("localInstance"),
         companion: () => companion.snapshot(),
-        // 桌面承载配置读写（设置页写入口，§205）：数据目录口径同 flow 引擎记录
+        // 桌面承载配置读写（运维覆盖入口，§205）：数据目录口径同 flow 引擎记录
         dataDir,
         // 「同步到引擎」聚合 document.md 评审段（PR-1）
         designReview: ctx.get("designReview"),
       });
-      const mode = resolveOpenDesignCarrierMode(deps.frontendUrl);
+      const mode = resolveOpenDesignCarrierMode(frontendUrl);
       if (mode === "managed") {
         // 伴随容器（§9-3 拍板）：随主程序起停。up -d 非阻塞——首次拉镜像分钟级，
         // 不能让装配挂住；失败不自动重试，原因经 status 透给界面。
@@ -172,7 +175,7 @@ export function createOpenDesignHostPlugin(deps: {
                 serviceActor: () => ctx.get("localInstance").serviceActor(),
               });
               const result = await provisionOpenDesign({
-                baseUrl: deps.frontendUrl ?? "",
+                baseUrl: frontendUrl,
                 fetchImpl: deps.fetchImpl ?? fetch,
                 entries: credentials.ok ? credentials.entries : [],
                 log: (message) => console.log(message),

@@ -10,13 +10,15 @@ import { composePlugins } from "../../kernel/compose.js";
 import { createOpenDesignHostPlugin } from "./plugin.js";
 
 /** 最小 env（open-design 插件不吃治理字段；对位 kernel.test 的夹具口径）。 */
-function makeEnv(): ServerEnv {
+function makeEnv(dataDir: string): ServerEnv {
   return {
     agentBackendMode: "state",
     agentModel: "test-model",
     port: 0,
     version: "test",
     webOrigin: "http://localhost:3000",
+    // 自动配置会往数据目录落一把密钥：测试必须给独立目录，不碰本机真实目录。
+    desktopDataDir: dataDir,
   } as unknown as ServerEnv;
 }
 
@@ -34,6 +36,8 @@ const serviceOverrides = {
     listByProject: async () => ({ comments: [], annotations: [] }),
   },
 };
+
+const tempDataDir = (): string => mkdtempSync(join(tmpdir(), "kfw-od-data-"));
 
 const tempComposeFile = (): string => {
   const dir = mkdtempSync(join(tmpdir(), "kfw-od-plugin-"));
@@ -63,10 +67,12 @@ async function assemble(input: {
   frontendUrl?: string;
   secret?: string;
   calls: ComposeCall[];
+  dataDir?: string;
 }) {
   const composeFile = tempComposeFile();
+  const dataDir = input.dataDir ?? tempDataDir();
   const kernel = composePlugins(
-    makeEnv(),
+    makeEnv(dataDir),
     [
       createOpenDesignHostPlugin({
         ...(input.frontendUrl ? { frontendUrl: input.frontendUrl } : {}),
@@ -80,7 +86,7 @@ async function assemble(input: {
   );
   // 起栈是装配上的非阻塞副作用：让 promise 落定再断言命令序列
   await new Promise((resolve) => setImmediate(resolve));
-  return { kernel, composeFile };
+  return { kernel, composeFile, dataDir };
 }
 
 describe("OpenDesign 宿主插件的伴随容器装配", () => {
@@ -99,14 +105,27 @@ describe("OpenDesign 宿主插件的伴随容器装配", () => {
     expect(calls[1]?.args).toEqual(["-f", composeFile, "down"]);
   });
 
-  it("未配密钥的托管模式：仍起栈但注入空 token（画布可用，凭证缝 503）", async () => {
-    const calls: ComposeCall[] = [];
-    const { kernel } = await assemble({
+  it("托管但未配密钥：自动生成一把注入，并在同一数据目录复用", async () => {
+    const dataDir = tempDataDir();
+    const first: ComposeCall[] = [];
+    const { kernel: firstKernel } = await assemble({
       frontendUrl: "http://127.0.0.1:7456",
-      calls,
+      calls: first,
+      dataDir,
     });
-    expect(calls[0]?.env).toEqual({ OD_API_TOKEN: "" });
-    await kernel.dispose();
+    const generated = first[0]?.env?.OD_API_TOKEN ?? "";
+    expect(generated.length).toBeGreaterThan(20);
+    await firstKernel.dispose();
+
+    const second: ComposeCall[] = [];
+    const { kernel: secondKernel } = await assemble({
+      frontendUrl: "http://127.0.0.1:7456",
+      calls: second,
+      dataDir,
+    });
+    // 复用同一把：换进程重启后 daemon 的出站凭证才不会失配
+    expect(second[0]?.env).toEqual({ OD_API_TOKEN: generated });
+    await secondKernel.dispose();
   });
 
   it("外部地址：装配与 dispose 全程一个 docker 命令都不发", async () => {
@@ -120,10 +139,12 @@ describe("OpenDesign 宿主插件的伴随容器装配", () => {
     expect(calls).toEqual([]);
   });
 
-  it("未配置（none）：同样零 docker 调用（缺省绝不起栈）", async () => {
+  it("什么都没配：自动按伴随 origin 承载并起栈（不再要用户配置）", async () => {
     const calls: ComposeCall[] = [];
-    const { kernel } = await assemble({ calls });
+    const { kernel, composeFile } = await assemble({ calls });
+    expect(calls[0]?.args).toEqual(["-f", composeFile, "up", "-d"]);
+    expect((calls[0]?.env?.OD_API_TOKEN ?? "").length).toBeGreaterThan(20);
     await kernel.dispose();
-    expect(calls).toEqual([]);
+    expect(calls[1]?.args).toEqual(["-f", composeFile, "down"]);
   });
 });

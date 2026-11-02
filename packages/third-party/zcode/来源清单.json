@@ -617,7 +617,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "4fbc06588c20cd8136c9ed25f64f4ed71f23a5445e6e0ebab98f8d2ea381c675",
+      "copiedSha256": "ffda1c383b4bf03724d32268cd576ddc59a68c9adfdb86c21210c00dd663a8e4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -629,7 +629,7 @@
         "设置分区：新增 about 分区挂宿主关于信息面板（T16）",
         "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection",
         "KenFutWork 宿主偏差：集成终端 Shell 行在宿主无 shell 选项时隐藏（宿主未接 system.listIntegratedTerminalShells；shell 切换由终端工具栏菜单承担）",
-        "KenFutWork 宿主偏差：openDesign 分区渲染宿主件 HostOpenDesignSettingsSection",
+        "2026-11-02（三百四十七）：撤掉 openDesign 分区渲染分支与宿主件引用——宿主自动配置，设置页不再要用户填地址/密钥。",
         "KenFutWork 宿主偏差：新增 voice 分区渲染分支与 voiceClient 可见性过滤（语音助手设置接线，二百五十七）"
       ]
     },
@@ -11077,14 +11077,14 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "27a688ed41e034afc3e27d89808efca29ce687f09a4dce73fd12787268b7df39",
+      "copiedSha256": "a0892e1db6c55f2d86cac6375ad01fac65889260654f502010bf10e76c32df95",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "分区配置：新增 about 分区条目（信息+更新入口，T16）",
         "KenFutWork 宿主分区：新增 permissions 分区（G7/T7 旧四档=新会话默认档，Q12）",
-        "KenFutWork 宿主偏差：基础组新增 openDesign 分区条目（紧跟 browser）",
+        "2026-11-02（三百四十七）：撤掉 openDesign 分区条目——宿主自动配置伴随容器，不再要用户填地址/密钥。",
         "KenFutWork 宿主偏差：BASE_SETTINGS_SECTIONS 增 voice 分区（AudioLines 图标、基础设置组）"
       ]
     },
@@ -11299,14 +11299,15 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "a8ca49275680268ea4cd169860491ead74d74dd3a48e9264a7c14334789a636e",
+      "copiedSha256": "ef6e10dd902f25b4114e12534644e5804817519fb82b037aaaa112a12c78b4a4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "能力显隐：实例管理文档不提供工作区模式设置，由宿主导航持有模式",
         "通用分区挂宿主上下文自动压缩开关（instance_settings，T4）",
-        "2026-10-26（二百七十一）：删除界面模式设置行。"
+        "2026-10-26（二百七十一）：删除界面模式设置行。",
+        "2026-11-02（三百四十七）：删除「主动任务推荐」设置行（用户口径：该设置不要）。"
       ]
     },
     {

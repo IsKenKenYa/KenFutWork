@@ -21,7 +21,6 @@ import {
   Moon,
   Package,
   Palette,
-  PenTool,
   type Settings,
   Settings2,
   ShieldCheck,
@@ -148,13 +147,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "browser",
     icon: Globe2,
     titleId: "settings.browser.title",
-    groupId: "basics",
-  },
-  // KenFutWork 宿主分区：OpenDesign 伴随容器承载配置，紧跟「浏览器」同属外部面接入配置。
-  {
-    id: "openDesign",
-    icon: PenTool,
-    titleId: "settings.openDesign.title",
     groupId: "basics",
   },
   // 电脑控制紧跟「浏览器」：两者都是给 Agent 用的本机操控入口，
