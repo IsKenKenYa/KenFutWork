@@ -1,10 +1,11 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   cancelEngineInstall,
   composeCommand,
+  ensureStackEnvFile,
   getEngineInstallSnapshot,
   purgeEngineStack,
   readStackLogTail,
@@ -274,6 +275,70 @@ describe("引擎承载目标（双 Provider）", () => {
     expect(result.error).toContain("daemon not running");
     // 失败保留记录（用户可重试；否则下次会按 host 去清 WSL2 起的栈）
     expect(readStackRuntime(target.dataDir)).toEqual({ kind: "host" });
+  });
+});
+
+describe("Dify 初始化接入安装状态机", () => {
+  it("旧 env 保留原密钥且不独立生成网关管理员口令", () => {
+    const { dataDir } = options();
+    const file = join(dataDir, "dify-stack.env");
+    writeFileSync(
+      file,
+      "DIFY_SECRET_KEY=keep-secret\nDIFY_INIT_PASSWORD=keep-init\n",
+    );
+
+    ensureStackEnvFile(dataDir);
+    ensureStackEnvFile(dataDir);
+
+    const content = readFileSync(file, "utf8");
+    expect(content).toContain("DIFY_SECRET_KEY=keep-secret");
+    expect(content).toContain("DIFY_INIT_PASSWORD=keep-init");
+    expect(content).not.toContain("DIFY_ADMIN_EMAIL=");
+    expect(content).not.toContain("DIFY_ADMIN_PASSWORD=");
+  });
+
+  it("compose 成功后先初始化再 ready，并发安装不重复触发", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const listeners = new Map<string, (value: unknown) => unknown>();
+    const child = {
+      stdout: { on: () => undefined },
+      stderr: { on: () => undefined },
+      on: (event: string, handler: (value: unknown) => unknown) => {
+        listeners.set(event, handler);
+      },
+      kill: () => undefined,
+    };
+    const bootstrapStack = vi.fn(async () => ({
+      status: "initialized" as const,
+    }));
+    const bootstrap = {
+      consoleBase: "http://127.0.0.1:15001/console/api",
+      attempts: 1,
+      retryDelayMs: 0,
+      requestTimeoutMs: 1000,
+    };
+    const first = startEngineInstall(
+      { ...target, bootstrap: async () => bootstrap },
+      { spawn: (() => child) as never, bootstrapStack },
+    );
+    const second = startEngineInstall(
+      { ...target, bootstrap: async () => bootstrap },
+      { spawn: (() => child) as never, bootstrapStack },
+    );
+
+    expect(first.started).toBe(true);
+    expect(second.started).toBe(false);
+    expect(getEngineInstallSnapshot().state).toBe("installing");
+    await listeners.get("close")?.(0);
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("ready"),
+    );
+    expect(bootstrapStack).toHaveBeenCalledTimes(1);
+    expect(bootstrapStack).toHaveBeenCalledWith(
+      expect.objectContaining({ consoleBase: bootstrap.consoleBase }),
+      expect.anything(),
+    );
   });
 });
 

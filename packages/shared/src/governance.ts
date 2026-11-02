@@ -72,6 +72,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   sandboxProbeTimeoutMs: 5_000,
   /** Flow 网关控制面单次请求的等待预算；网关或其库卡住时宿主不能无限挂起。 */
   flowGatewayControlTimeoutMs: 10_000,
+  /** Dify 容器拉起后的初始化重试与单请求预算。 */
+  flowEngineBootstrapAttempts: 30,
+  flowEngineBootstrapRetryMs: 2_000,
+  flowEngineBootstrapRequestTimeoutMs: 10_000,
   /** Computer Use：单个桌面动作（点击/输入/截屏）超时（毫秒）。 */
   computerUseActionTimeoutMs: 10_000,
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
@@ -119,6 +123,9 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "processKillGraceMs",
   "sandboxProbeTimeoutMs",
   "flowGatewayControlTimeoutMs",
+  "flowEngineBootstrapAttempts",
+  "flowEngineBootstrapRetryMs",
+  "flowEngineBootstrapRequestTimeoutMs",
   "codePdfMaxPages",
   "codePdfRenderScale",
   "codeAttachmentMaxBytes",
@@ -181,6 +188,9 @@ export type AgentGovernanceOverrides = {
   terminalMaxSessions?: number | undefined;
   sandboxProbeTimeoutMs?: number | undefined;
   flowGatewayControlTimeoutMs?: number | undefined;
+  flowEngineBootstrapAttempts?: number | undefined;
+  flowEngineBootstrapRetryMs?: number | undefined;
+  flowEngineBootstrapRequestTimeoutMs?: number | undefined;
   subagentMaxContinuations?: number | undefined;
   computerUseActionTimeoutMs?: number | undefined;
   computerUseObserveMaxBytes?: number | undefined;
@@ -282,6 +292,9 @@ export const AGENT_GOVERNANCE_LIMITS = {
   terminalMaxSessions: { min: 1, max: 100 },
   sandboxProbeTimeoutMs: { min: 100, max: 60_000 },
   flowGatewayControlTimeoutMs: { min: 1_000, max: 120_000 },
+  flowEngineBootstrapAttempts: { min: 1, max: 120 },
+  flowEngineBootstrapRetryMs: { min: 0, max: 30_000 },
+  flowEngineBootstrapRequestTimeoutMs: { min: 1_000, max: 120_000 },
   subagentMaxContinuations: { min: 1, max: 200 },
   computerUseActionTimeoutMs: { min: 1_000, max: 120_000 },
   computerUseObserveMaxBytes: { min: 4_096, max: 262_144 },
@@ -427,6 +440,15 @@ export function resolveGovernanceEnvOverrides(
     ),
     flowGatewayControlTimeoutMs: parseStrictInt(
       source.KENFUTWORK_FLOW_GATEWAY_CONTROL_TIMEOUT_MS,
+    ),
+    flowEngineBootstrapAttempts: parseStrictInt(
+      source.KENFUTWORK_FLOW_ENGINE_BOOTSTRAP_ATTEMPTS,
+    ),
+    flowEngineBootstrapRetryMs: parseStrictInt(
+      source.KENFUTWORK_FLOW_ENGINE_BOOTSTRAP_RETRY_MS,
+    ),
+    flowEngineBootstrapRequestTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_FLOW_ENGINE_BOOTSTRAP_REQUEST_TIMEOUT_MS,
     ),
     subagentMaxContinuations: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,

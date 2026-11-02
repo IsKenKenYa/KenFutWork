@@ -258,7 +258,32 @@ export function createFlowHostPlugin(deps: {
         },
         engineInstall: {
           start: (launch) =>
-            startEngineInstall(engineInstallOptions(dataRootFor(ctx), launch)),
+            startEngineInstall({
+              ...engineInstallOptions(dataRootFor(ctx), launch),
+              bootstrap: async () => {
+                const actor = await ctx.get("localInstance").serviceActor();
+                const settings = await ctx
+                  .get("settings")
+                  .getInstanceSettings(actor, actor.instanceId);
+                return {
+                  // 与 compose 默认 DIFY_PORT=15001 同源；extraEnv 改端口时由安装调用方一并覆盖。
+                  consoleBase: "http://127.0.0.1:15001/console/api",
+                  attempts: settings.flowEngineBootstrapAttempts,
+                  retryDelayMs: settings.flowEngineBootstrapRetryMs,
+                  requestTimeoutMs:
+                    settings.flowEngineBootstrapRequestTimeoutMs,
+                  credentialEnvFiles: [
+                    join(resolveDifyDir(), "..", "flow", ".env"),
+                    join(
+                      resolveDifyDir(),
+                      "..",
+                      "flow",
+                      ".futureflow.runtime.env",
+                    ),
+                  ],
+                };
+              },
+            }),
           status: () => getEngineInstallSnapshot(),
         },
         engineStop: {

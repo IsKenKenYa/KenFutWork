@@ -20,6 +20,11 @@
  */
 
 import {
+  HA_LOOPBACK_BASE_URL,
+  initializeHomeAssistant,
+  readHaOnboarding,
+} from "./lib/auto-init.js";
+import {
   buildEcosystemSummary,
   buildEntityView,
   controlValue,
@@ -45,6 +50,8 @@ export const name = "kenfutwork-ha";
 export const inject = ["tools", "routes", "ui", "storage"];
 
 const CONFIG_KEY = "config";
+const AUTO_INIT_KEY = "auto-init";
+const AUTO_INIT_BASE_URL = HA_LOOPBACK_BASE_URL;
 /**
  * `ha_entities` 单次返回条数上限（治理数值属主是 `packages/shared/src/governance.ts`，
  * 插件 bundle 独立于 workspace、不能 import 它，故在此命名并注释）。
@@ -90,6 +97,8 @@ export function apply(ctx) {
   const configs = new Map();
   /** 实例运行态（键=实例）：WS 会话 + 实体快照 + 注册表。首次用到时才建。 */
   const runtimes = new Map();
+  /** 同一实例的自动初始化共享一个 Promise，避免并发建用户。 */
+  const autoInitializations = new Map();
 
   ctx.effect(() => () => {
     for (const runtime of runtimes.values()) runtime.stop();
@@ -133,11 +142,91 @@ export function apply(ctx) {
     const saved = { ...config, savedAt: new Date().toISOString() };
     configs.set(instanceId, saved);
     await ctx.storage.set(instanceId, CONFIG_KEY, JSON.stringify(saved));
+    await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
   }
 
   async function clearConfig(instanceId) {
     configs.delete(instanceId);
     await ctx.storage.remove(instanceId, CONFIG_KEY);
+    await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
+  }
+
+  async function readAutoInitState(instanceId) {
+    const raw = await ctx.storage.get(instanceId, AUTO_INIT_KEY);
+    if (!raw) return null;
+    try {
+      const state = JSON.parse(raw);
+      if (
+        typeof state.baseUrl !== "string" ||
+        typeof state.username !== "string" ||
+        typeof state.password !== "string" ||
+        !state.baseUrl ||
+        !state.username ||
+        !state.password
+      ) {
+        throw new Error("invalid");
+      }
+      return state;
+    } catch {
+      throw codedError(
+        "HA 自动初始化记录无效，请断开后重试。",
+        "auto_init_invalid",
+      );
+    }
+  }
+
+  async function autoInitializeConfig(instanceId) {
+    const previous = await readAutoInitState(instanceId);
+    if (previous) {
+      try {
+        return await initializeHomeAssistant(previous);
+      } catch (error) {
+        // 凭据记录损坏或 HA 已被别人重建：不反复撞认证，回到显式连接。
+        if (error?.code === "unauthorized")
+          await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
+        throw error;
+      }
+    }
+
+    let steps;
+    try {
+      steps = await readHaOnboarding({ baseUrl: AUTO_INIT_BASE_URL });
+    } catch {
+      // 本机没有可初始化的 HA：保留显式连接入口，不伪造自动成功。
+      return null;
+    }
+    if (steps.get("user") === true) return null;
+    const state = {
+      baseUrl: AUTO_INIT_BASE_URL,
+      username: "kenfutwork",
+      password: `${crypto.randomUUID()}${crypto.randomUUID()}`,
+    };
+    // 先持久化再产生远端副作用：响应丢失后仍可用同一口令恢复。
+    await ctx.storage.set(instanceId, AUTO_INIT_KEY, JSON.stringify(state));
+    return initializeHomeAssistant(state);
+  }
+
+  async function readOrInitializeConfig(instanceId) {
+    const configured = await readConfig(instanceId);
+    if (configured) return configured;
+    const existing = autoInitializations.get(instanceId);
+    if (existing) return existing;
+    const pending = (async () => {
+      try {
+        const config = await autoInitializeConfig(instanceId);
+        if (!config) return null;
+        await writeConfig(instanceId, config);
+        return config;
+      } catch (error) {
+        if (error?.code === "auto_init_invalid") throw error;
+        ctx.logger.warn("HA 自动初始化未完成：", error);
+        return null;
+      } finally {
+        autoInitializations.delete(instanceId);
+      }
+    })();
+    autoInitializations.set(instanceId, pending);
+    return pending;
   }
 
   /** 注册表三条命令：任一失败就退回「按域分组」，不摆半套假数据。 */
@@ -204,7 +293,7 @@ export function apply(ctx) {
   async function runtimeFor(instanceId) {
     const existing = runtimes.get(instanceId);
     if (existing) return existing;
-    const config = await readConfig(instanceId);
+    const config = await readOrInitializeConfig(instanceId);
     if (!config) throw notConfiguredError();
     const runtime = createRuntime(config);
     runtimes.set(instanceId, runtime);
@@ -282,7 +371,7 @@ export function apply(ctx) {
     path: "config",
     handler: async (request) => {
       const instanceId = requireInstance(request.instanceId, "读取配置");
-      const config = await readConfig(instanceId);
+      const config = await readOrInitializeConfig(instanceId);
       return {
         status: 200,
         body: {
@@ -358,7 +447,7 @@ export function apply(ctx) {
     handler: async (request) => {
       const instanceId = requireInstance(request.instanceId, "连接测试");
       try {
-        const config = await readConfig(instanceId);
+        const config = await readOrInitializeConfig(instanceId);
         if (!config) throw notConfiguredError();
         const info = await createHaRest(config).getConfig();
         return {

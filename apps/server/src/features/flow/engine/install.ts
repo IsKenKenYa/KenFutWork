@@ -10,6 +10,10 @@ import {
 import { join } from "node:path";
 
 import {
+  bootstrapDifyStackWithRetry,
+  type DifyBootstrapRetryOptions,
+} from "./bootstrap.js";
+import {
   createProcessRunCommand,
   decodeCommandText,
   type RunCommand,
@@ -93,17 +97,20 @@ export function readStackLogTail(dataDir: string): string[] {
 export function ensureStackEnvFile(dataDir: string): string {
   mkdirSync(dataDir, { recursive: true });
   const envFile = join(dataDir, STACK_ENV_FILE);
-  if (existsSync(envFile)) return envFile;
-
   const random = (bytes: number) => randomBytes(bytes).toString("base64url");
-  const content = [
-    "# Dify 无头栈环境（宿主首次安装时自动生成；删除即下次重新生成——SECRET_KEY 变更会使已有加密数据不可读）",
-    `DIFY_SECRET_KEY=${random(32)}`,
-    `DIFY_INIT_PASSWORD=${random(9)}`,
-    `DIFY_ADMIN_API_KEY=kfw-admin-${random(24)}`,
-    "",
-  ].join("\n");
-  writeFileSync(envFile, content, { mode: 0o600 });
+  if (!existsSync(envFile)) {
+    const content = [
+      "# Dify 无头栈环境（宿主首次安装时自动生成；删除即下次重新生成——SECRET_KEY 变更会使已有加密数据不可读）",
+      `DIFY_SECRET_KEY=${random(32)}`,
+      `DIFY_INIT_PASSWORD=${random(9)}`,
+      `DIFY_ADMIN_API_KEY=kfw-admin-${random(24)}`,
+      "",
+    ].join("\n");
+    writeFileSync(envFile, content, { mode: 0o600 });
+    return envFile;
+  }
+
+  // 管理员账号不由引擎独立生成：初始化时复用 Flow 网关 env，避免两边口令漂移。
   return envFile;
 }
 
@@ -116,6 +123,17 @@ export interface EngineInstallOptions {
   extraEnv?: Record<string, string>;
   /** 承载目标；缺省 host（读落盘记录由调用方完成）。 */
   launch?: EngineLaunch;
+  /** 安装进程 ready 前执行 Dify 初始化；设置由宿主按库值 ?? env ?? 默认解析。 */
+  bootstrap?: () => Promise<
+    Pick<
+      DifyBootstrapRetryOptions,
+      | "consoleBase"
+      | "attempts"
+      | "retryDelayMs"
+      | "requestTimeoutMs"
+      | "credentialEnvFiles"
+    >
+  >;
 }
 
 /** 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。 */
@@ -217,7 +235,10 @@ export function readStackRuntime(dataDir: string): EngineLaunch {
 export function startEngineInstall(
   options: EngineInstallOptions,
   /** spawn 可注入（测试断言命令构造与承载记录落盘；生产不传）。 */
-  deps: { spawn?: typeof spawn } = {},
+  deps: {
+    spawn?: typeof spawn;
+    bootstrapStack?: typeof bootstrapDifyStackWithRetry;
+  } = {},
 ): {
   started: boolean;
   snapshot: EngineInstallSnapshot;
@@ -257,6 +278,7 @@ export function startEngineInstall(
     windowsHide: true,
   });
   current.child = child;
+  const installation = current;
 
   const append = (chunk: Buffer | string): void => {
     try {
@@ -268,13 +290,36 @@ export function startEngineInstall(
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
   child.on("error", (error) => {
+    if (current !== installation) return;
     current.state = "error";
     current.error = error.message;
   });
   child.on("close", (code) => {
-    if (current.state !== "installing") return;
-    current.state = code === 0 ? "ready" : "error";
-    if (code !== 0) current.error = `docker compose 退出码 ${code}（详见日志）`;
+    void (async () => {
+      if (current !== installation || current.state !== "installing") return;
+      if (code !== 0) {
+        current.state = "error";
+        current.error = `docker compose 退出码 ${code}（详见日志）`;
+        return;
+      }
+      try {
+        if (options.bootstrap) {
+          const bootstrap = await options.bootstrap();
+          await (deps.bootstrapStack ?? bootstrapDifyStackWithRetry)(
+            { envFile, ...bootstrap },
+            {},
+          );
+        }
+        if (current === installation && current.state === "installing")
+          current.state = "ready";
+      } catch (error) {
+        if (current !== installation || current.state !== "installing") return;
+        current.state = "error";
+        current.error = `Dify 初始化失败：${
+          error instanceof Error ? error.message : String(error)
+        }`;
+      }
+    })();
   });
 
   return { started: true, snapshot: getEngineInstallSnapshot() };
