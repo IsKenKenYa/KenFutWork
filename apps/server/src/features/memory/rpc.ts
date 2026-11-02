@@ -5,7 +5,7 @@ import type { ProjectMemoryService } from "./project-memory.js";
  * 记忆服务的宿主 RPC 入口（原 `memory` 通道）。
  *
  * 只承接原设置页用到的两个只读方法；写入走 `memory_save` 工具，避免给界面
- * 开启任意写记忆的入口。错误统一包装为可读的宿主错误码。
+ * 开启任意写记忆的入口。参数校验与路径校验失败直接抛错，错误文本原样到达设置页。
  */
 export interface ProjectMemoryRpc {
   call(

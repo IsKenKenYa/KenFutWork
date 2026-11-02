@@ -1,4 +1,4 @@
-import { readdir, realpath, stat } from "node:fs/promises";
+import { access, readdir, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import {
   type CodeUiWorkspace,
@@ -614,6 +614,39 @@ export function createHumanWorkspaceRpc(options: {
             parsed[key as keyof typeof parsed],
           ]),
         );
+        if (typeof parsed.httpProxy === "string" && parsed.httpProxy) {
+          // 保存期就校验：非法地址留到下次启动才炸会让用户打不开设置页。
+          let url: URL;
+          try {
+            url = new URL(parsed.httpProxy);
+          } catch {
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "HTTP 代理地址不是合法 URL。",
+            );
+          }
+          if (url.protocol !== "http:" && url.protocol !== "https:")
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "HTTP 代理地址只支持 http/https。",
+            );
+        }
+        if (
+          typeof parsed.httpProxyCaCertPath === "string" &&
+          parsed.httpProxyCaCertPath
+        ) {
+          if (!isAbsolute(parsed.httpProxyCaCertPath))
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "自定义 CA 证书路径必须是绝对路径。",
+            );
+          await access(parsed.httpProxyCaCertPath).catch(() => {
+            throw new CodeUiRepositoryError(
+              "not_found",
+              "自定义 CA 证书文件不可读，请检查路径。",
+            );
+          });
+        }
         if ("messageStreamShowReasoning" in patch)
           normalized.messageStreamShowReasoningMigrationInitialized =
             parsed.messageStreamShowReasoningMigrationInitialized;
