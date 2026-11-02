@@ -47,6 +47,17 @@ it("MCP 与技能意图落在插件分区的对应页签", async () => {
   expect(navigation.consumePendingSettingsPluginTab()).toBe("skills");
 });
 
+it("合并后的导航名点明三件事都在这一页", async () => {
+  const { sections } = await load();
+  const zh = (await import("@zui/i18n/locales/zh-CN.js")).default as Record<
+    string,
+    string
+  >;
+  const entry = sections.find((section) => section.id === "plugin");
+  expect(entry?.titleId).toBe("settings.plugins.title");
+  expect(zh[entry?.titleId ?? ""]).toBe("插件·MCP·技能");
+});
+
 it("历史停留位迁移：上次停在 MCP，重开设置带回 MCP 页签", async () => {
   const { navigation } = await load();
   window.localStorage.setItem("zcode-settings-last-section", "mcp");

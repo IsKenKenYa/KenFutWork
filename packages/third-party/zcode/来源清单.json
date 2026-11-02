@@ -5770,7 +5770,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "74baf9adcc8e627b4d7231e34bdabe470e6602ad96a14b8de045134b44671216",
+      "copiedSha256": "a5bd505364bc001db684870828bea1d02ce157b7db7aeeb764e463ff2d58419e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5791,14 +5791,15 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
-        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。"
+        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
+        "2026-11-02（三百五十）：settings.plugins.title 改 Plugins · MCP · Skills，与中文导航同名。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "6e883cbe85ec8b3259e89f9dce6079f65fe876bc5d1a41145f7a69a890441e33",
+      "copiedSha256": "269295a3106a765b907c206e4441034a0b589bcba383ecdce0369ddbbb5ce7e8",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5819,7 +5820,8 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
-        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。"
+        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
+        "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。"
       ]
     },
     {

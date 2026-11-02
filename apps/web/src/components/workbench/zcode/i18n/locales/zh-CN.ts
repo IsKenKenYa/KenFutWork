@@ -4088,7 +4088,7 @@ const zhCN: Record<string, string> = {
   "settings.pluginManaged.badge": "Plugin",
   "settings.pluginManaged.modifyInPlugin":
     "由插件注册，修改请到对应插件中进行。",
-  "settings.plugins.title": "插件",
+  "settings.plugins.title": "插件·MCP·技能",
   "settings.plugin.scope.user": "用户",
   "settings.plugin.scope.workspaces": "工作区",
   "settings.plugin.tab.plugins": "插件",
