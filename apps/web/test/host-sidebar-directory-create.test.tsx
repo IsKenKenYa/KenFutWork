@@ -9,7 +9,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getFlowSurfaceView,
-  navigateFlowSurface,
   registerFlowNavigate,
 } from "@/components/workbench/zcode/host/flowSurfaceState";
 import { HostModeSidebarContent } from "@/components/workbench/zcode/host/ModeSidebarContent";
@@ -18,6 +17,7 @@ const host = vi.hoisted(() => ({
   surfaceJson: vi.fn(),
   createDesignProject: vi.fn(),
   createFlowProject: vi.fn(),
+  renameProject: vi.fn(),
   navigation: { mode: "flow", availableModes: ["flow"] },
   selectedPath: null as string | null,
   localCuaDesktopInvoke: vi.fn(),
@@ -57,6 +57,8 @@ vi.mock(
 );
 vi.mock("@/components/workbench/zcode/host/flowProjects.js", () => ({
   createFlowProject: host.createFlowProject,
+  listProjects: vi.fn(async () => []),
+  renameProject: host.renameProject,
   useFlowProjectsController: () => {},
   selectFlowProject: vi.fn(),
   useFlowProjectsSnapshot: () => ({
@@ -82,25 +84,30 @@ afterEach(() => {
   host.canvasFrameRef.current?.remove();
   host.canvasFrameRef.current = null;
 });
-describe.each(["flow"] as const)("%s sidebar directory creation", (kind) => {
+describe("flow sidebar directory creation", () => {
   function mount() {
     return render(<HostModeSidebarContent />);
   }
-  it("hides directory creation when the server picker is unavailable", async () => {
-    host.surfaceJson.mockResolvedValue({ available: false });
+  it("does not expose a directory-backed project creation action", () => {
+    host.selectedPath = "/flow-project";
     mount();
-    await waitFor(() =>
-      expect(host.surfaceJson).toHaveBeenCalledWith(
-        "/api/system/directory-picker",
-      ),
-    );
     expect(screen.queryByRole("button", { name: "选目录新建" })).toBeNull();
   });
-  it("exposes a real optional directory creation action only after the server probe", async () => {
-    host.surfaceJson.mockResolvedValue({ available: true });
+  it("keeps the project dropdown until rename is clicked, then edits inline", async () => {
+    host.selectedPath = "/flow-project";
+    host.renameProject.mockResolvedValue(undefined);
     mount();
-    fireEvent.click(await screen.findByRole("button", { name: "选目录新建" }));
-    expect(host.createFlowProject).toHaveBeenCalledWith(true);
+    expect(screen.getByRole("combobox", { name: "Flow 项目" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "重命名项目" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重命名项目" }));
+    const input = screen.getByRole("textbox", { name: "项目名称" });
+    fireEvent.change(input, { target: { value: "出差报销" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(host.renameProject).toHaveBeenCalledWith("project", "出差报销"),
+    );
   });
   it("opens precisely the selected directory using the existing native bridge", async () => {
     host.selectedPath = "/selected project root";
@@ -122,7 +129,7 @@ describe.each(["flow"] as const)("%s sidebar directory creation", (kind) => {
   });
 });
 
-it("gates Flow sidebar navigation by project and connected iframe readiness", () => {
+it("keeps Flow navigation usable while the iframe handshake is still pending", () => {
   host.navigation.mode = "flow";
   const view = render(<HostModeSidebarContent />);
   const workflow = screen.getByRole("button", { name: "工作流" });
@@ -135,19 +142,17 @@ it("gates Flow sidebar navigation by project and connected iframe readiness", ()
   host.selectedPath = "/flow-project";
   view.rerender(<HostModeSidebarContent />);
   expect(workflow).toBeEnabled();
-  expect(plugins).toBeDisabled();
-  expect(tasks).toBeDisabled();
+  expect(plugins).toBeEnabled();
+  expect(tasks).toBeEnabled();
 
   fireEvent.click(screen.getByRole("button", { name: "引擎" }));
   expect(getFlowSurfaceView()).toBe("engine");
   fireEvent.click(workflow);
   expect(getFlowSurfaceView()).toBe("canvas");
 
+  fireEvent.click(plugins);
   const navigate = vi.fn();
   act(() => registerFlowNavigate(navigate));
-  expect(plugins).toBeEnabled();
-  expect(tasks).toBeEnabled();
-  fireEvent.click(plugins);
   expect(navigate).toHaveBeenCalledWith("/plugins");
   act(() => registerFlowNavigate(null));
 });

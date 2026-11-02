@@ -1,14 +1,24 @@
 import type {
   WorkEditor,
   WorkEditorInstallStatus,
+  WorkFontsResponse,
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
+import {
+  ZCodeStartupLogoBadge,
+  ZCodeStartupSpinner,
+} from "@zui/root/RootStartupLoading.js";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { useSyncExternalStore } from "react";
-import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
-import { getSurfaceApiBase } from "./surfaceApi.js";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { fontFamilies } from "./fontFamilies.js";
+import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
   getWorkSurfaceView,
   openWorkEditor,
@@ -24,7 +34,8 @@ type WorkEditorCategory =
   | "layout"
   | "pdf"
   | "audio"
-  | "cad";
+  | "cad"
+  | "eda";
 
 const CATEGORY_LABEL: Record<WorkEditorCategory, string> = {
   office: "办公",
@@ -34,6 +45,7 @@ const CATEGORY_LABEL: Record<WorkEditorCategory, string> = {
   pdf: "PDF",
   audio: "音频",
   cad: "CAD",
+  eda: "EDA",
 };
 
 const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
@@ -43,6 +55,8 @@ const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
 
 /** 安装进行中轮询间隔；一次性兜底常量（非运行可调治理项），与 flow 安装轮询同口径。 */
 const INSTALL_POLL_MS = 2000;
+/** 编辑器没发就绪信号时（旧包/非 egui 站点）的兜底显示时间；一次性常量。 */
+const EDITOR_READY_FALLBACK_MS = 8000;
 
 /**
  * Work 主区视图（融合进 Code 壳后的承载面）。
@@ -51,7 +65,14 @@ const INSTALL_POLL_MS = 2000;
  * 编辑器面 = 静态托管的 WASM 站点 iframe。切换只由显式点击驱动
  * （workSurfaceState），主区不被会话或后台事件顶掉。
  */
-export function HostWorkSurface({ active = true }: { active?: boolean }) {
+export function HostWorkSurface({
+  active = true,
+  onBack,
+}: {
+  active?: boolean;
+  /** 返回会话主区（Work 模式默认主区是共享会话，引擎页是显式打开的视图）。 */
+  onBack?: () => void;
+}) {
   const view = useSyncExternalStore(
     subscribeWorkSurface,
     getWorkSurfaceView,
@@ -92,9 +113,13 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
   }, [active, installing, refresh]);
 
   if (view.kind === "editor") {
+    const title =
+      editors?.editors.find((editor) => editor.id === view.editorId)?.title ??
+      view.editorId;
     return (
       <EditorFrame
         editorId={view.editorId}
+        title={title}
         onBack={openWorkEditors}
       />
     );
@@ -107,6 +132,7 @@ export function HostWorkSurface({ active = true }: { active?: boolean }) {
       loading={loading}
       loadError={loadError}
       onRefresh={() => void refresh()}
+      {...(onBack ? { onBack } : {})}
       onOpen={openWorkEditor}
       onInstall={async (editorId) => {
         try {
@@ -130,6 +156,7 @@ function EditorsInfoView({
   loading,
   loadError,
   onRefresh,
+  onBack,
   onOpen,
   onInstall,
 }: {
@@ -139,6 +166,7 @@ function EditorsInfoView({
   loading: boolean;
   loadError: string | null;
   onRefresh: () => void;
+  onBack?: () => void;
   onOpen: (editorId: string) => void;
   onInstall: (editorId: string) => Promise<void>;
 }) {
@@ -151,6 +179,17 @@ function EditorsInfoView({
     <div className="h-full min-h-0 overflow-y-auto bg-background">
       <div className="flex w-full flex-col px-6 py-5">
         <header className="flex items-center gap-3">
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="返回会话"
+              title="返回会话"
+              className="-ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          ) : null}
           <h1 className="text-lg font-semibold">Work 引擎</h1>
           <span className="rounded-full bg-hover px-2 py-0.5 text-xs text-foreground-subtle">
             {loading && !status
@@ -166,7 +205,7 @@ function EditorsInfoView({
               disabled={loading || installing}
               aria-label="刷新"
               title="刷新"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </button>
@@ -182,36 +221,42 @@ function EditorsInfoView({
           </p>
         ) : null}
 
-        <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-          <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
-            <span className="w-24 shrink-0">编辑器</span>
-            <span className="w-14 shrink-0">类别</span>
-            <span className="w-16 shrink-0">挂载</span>
-            <span className="w-28 shrink-0">版本</span>
-            <span className="min-w-0 flex-1">状态</span>
+        <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+          {/* 列宽均分（grid-cols-5）+ 单元格居中：定宽 flex 会让「状态」列吃掉剩余宽度，
+              右侧留一大片空白，看着不像表格。 */}
+          <div className="grid grid-cols-5 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+            <span className="text-center">编辑器</span>
+            <span className="text-center">类别</span>
+            <span className="text-center">挂载</span>
+            <span className="text-center">版本</span>
+            <span className="text-center">状态</span>
           </div>
           {(editors?.editors ?? []).map((editor, index, rows) => {
             const install = installFor(editor);
             return (
               <div
                 key={editor.id}
-                className={`flex items-center gap-3 px-4 py-2.5 ${
-                  index === rows.length - 1 ? "" : "border-b"
+                className={`grid grid-cols-5 items-center gap-3 px-4 py-2.5 text-center ${
+                  index === rows.length - 1 ? "" : "border-b border-border"
                 }`}
               >
-                <span className="w-24 shrink-0 truncate" title={editor.id}>
+                <span className="min-w-0 truncate" title={editor.id}>
                   {editor.title}
                 </span>
-                <span className="w-14 shrink-0 text-xs text-foreground-subtle">
+                <span className="text-xs text-foreground-subtle">
                   {CATEGORY_LABEL[editor.category] ?? editor.category}
                 </span>
-                <span className="w-16 shrink-0 text-xs text-foreground-subtle">
+                <span className="text-xs text-foreground-subtle">
                   {MOUNT_LABEL[editor.mount] ?? editor.mount}
                 </span>
-                <span className="w-28 shrink-0 font-mono text-[11px] text-foreground-subtle">
-                  {editor.pinned ? `v${editor.pinned.version}` : "—"}
+                <span className="font-mono text-[11px] text-foreground-subtle">
+                  {editor.pinned
+                    ? `v${editor.pinned.version}`
+                    : editor.version
+                      ? `v${editor.version}`
+                      : "—"}
                 </span>
-                <span className="flex min-w-0 flex-1 items-center gap-2 text-xs">
+                <span className="flex min-w-0 items-center justify-center gap-2 text-xs">
                   {install.state === "installing" ? (
                     <>
                       <span className="text-foreground">
@@ -225,7 +270,7 @@ function EditorsInfoView({
                         <button
                           type="button"
                           onClick={() => void onInstall(editor.id)}
-                          className="shrink-0 rounded-lg border px-2 py-1 text-xs transition-colors hover:border-foreground/30"
+                          className="shrink-0 rounded-lg border border-border px-2 py-1 text-xs transition-colors hover:border-foreground/30"
                         >
                           重试
                         </button>
@@ -235,7 +280,7 @@ function EditorsInfoView({
                     <button
                       type="button"
                       onClick={() => onOpen(editor.id)}
-                      className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
+                      className="shrink-0 rounded-lg border border-border bg-hover px-3 py-1 text-xs text-foreground transition-colors hover:border-foreground/30"
                     >
                       打开
                     </button>
@@ -243,7 +288,7 @@ function EditorsInfoView({
                     <button
                       type="button"
                       onClick={() => void onInstall(editor.id)}
-                      className="shrink-0 rounded-lg border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
+                      className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
                     >
                       下载
                     </button>
@@ -262,17 +307,17 @@ function EditorsInfoView({
         </div>
 
         {editors ? (
-          <div className="mt-4 overflow-hidden rounded-xl border text-sm">
-            <div className="flex items-center gap-3 border-b px-4 py-2 text-xs text-foreground-subtle">
-              <span className="w-28 shrink-0">项</span>
-              <span className="flex-1">值</span>
+          <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+            <div className="grid grid-cols-2 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+              <span className="text-center">项</span>
+              <span className="text-center">值</span>
             </div>
-            <div className="flex items-center gap-3 px-4 py-2.5">
-              <span className="w-28 shrink-0 text-foreground-subtle">
+            <div className="grid grid-cols-2 items-center gap-3 px-4 py-2.5">
+              <span className="text-center text-foreground-subtle">
                 数据目录
               </span>
               <span
-                className="min-w-0 flex-1 truncate font-mono text-xs"
+                className="min-w-0 truncate text-center font-mono text-xs"
                 title={editors.dataDir}
               >
                 {editors.dataDir}
@@ -280,7 +325,161 @@ function EditorsInfoView({
             </div>
           </div>
         ) : null}
+
+        <WorkFontsSection active={active} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * 字体区：编辑器是 WASM 自绘、读不到系统字体，只能用它自带的或站点同源提供的字体。
+ * 这里把用户自己的 ttf/otf 放进实例数据目录，宿主托管编辑器时映射到 `fonts/user/`
+ * 并生成 manifest——Photocraft / VectorCraft 这类运行时加载字体的编辑器立刻可用。
+ *
+ * 边界：上传的是用户自己的字体，只在本机实例使用；商业字体（宋体/雅黑/方正系列）
+ * 的授权由用户自行保证，产品不随包分发。
+ */
+function WorkFontsSection({ active }: { active: boolean }) {
+  const [fonts, setFonts] = useState<WorkFontsResponse | null>(null);
+  const [dir, setDir] = useState<string>("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await surfaceJson<WorkFontsResponse>("/api/work/host/fonts");
+      setFonts(data);
+      setDir(data.dir);
+      setNotice(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "读取字体失败");
+    }
+  }, []);
+  useEffect(() => {
+    if (active) void load();
+  }, [active, load]);
+
+  const upload = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      setNotice(null);
+      try {
+        const body = new FormData();
+        body.append("file", file, file.name);
+        const response = await surfaceFetch("/api/work/host/fonts", {
+          method: "POST",
+          body,
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: { message?: string };
+        };
+        if (!response.ok)
+          throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
+        await load();
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "上传失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  // 一个家族一份记录：同名的版本注释（预览测试版/轻便版）先归一化再合并，
+  // 排序规则见 fontFamilies——英文字体在前、中文在后，各自升序。
+  const families = useMemo(() => fontFamilies(fonts?.fonts ?? []), [fonts]);
+
+  const remove = useCallback(
+    async (fileName: string) => {
+      setBusy(true);
+      try {
+        await surfaceFetch(
+          `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
+          { method: "DELETE" },
+        );
+        await load();
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "删除失败");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [load],
+  );
+
+  const removeAll = useCallback(
+    async (fileNames: string[]) => {
+      for (const fileName of fileNames) await remove(fileName);
+    },
+    [remove],
+  );
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+      <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
+        <span className="flex-1">字体</span>
+        <label className="cursor-pointer rounded-md border border-border px-2 py-0.5 text-foreground transition-colors hover:border-foreground/30">
+          上传
+          <input
+            type="file"
+            accept=".ttf,.otf,.ttc"
+            className="hidden"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void upload(file);
+            }}
+          />
+        </label>
+      </div>
+      {families.length === 0 ? (
+        <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
+          暂无字体
+        </p>
+      ) : (
+        families.map((family, index) => (
+          <div
+            key={family.name}
+            className={`grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-2.5 ${
+              index === families.length - 1 ? "" : "border-b border-border"
+            }`}
+          >
+            <span className="min-w-0 truncate">{family.name}</span>
+            <span className="flex items-center gap-2">
+              {family.builtin ? (
+                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle">
+                  内置
+                </span>
+              ) : null}
+              {family.userFiles.length > 0 && !family.builtin ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void removeAll(family.userFiles)}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+                >
+                  删除
+                </button>
+              ) : null}
+            </span>
+          </div>
+        ))
+      )}
+      {dir ? (
+        <p
+          className="truncate border-t border-border px-4 py-2 font-mono text-[11px] text-foreground-subtle"
+          title={dir}
+        >
+          {dir}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="border-t border-border px-4 py-2 text-xs text-destructive">
+          {notice}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -288,40 +487,72 @@ function EditorsInfoView({
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
+  title,
   onBack,
 }: {
   editorId: string;
+  title: string;
   onBack: () => void;
 }) {
   const [frameLoaded, setFrameLoaded] = useState(false);
+  const [ready, setReady] = useState(false);
   const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
+  // 编辑器页由宿主注入脚本在启动完成后发信号（见 work-host.ts 的 EDITOR_SHELL_SCRIPT）；
+  // 不认这个信号就只能等 iframe onLoad，几十 MB 的 wasm 会在编辑器自己的英文 Loading 上停住。
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (
+        (event.data as { type?: string } | null)?.type ===
+        "kenfutwork:editor-ready"
+      )
+        setReady(true);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  useEffect(() => {
+    if (!frameLoaded) return;
+    const timer = window.setTimeout(
+      () => setReady(true),
+      EDITOR_READY_FALLBACK_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [frameLoaded]);
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 rounded-lg border px-2 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
+          aria-label="返回编辑器列表"
+          title="返回编辑器列表"
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-foreground-subtle transition-colors hover:bg-hover hover:text-foreground"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          编辑器
+          <ArrowLeft className="h-4 w-4" />
         </button>
-        <span className="text-sm">{editorId}</span>
+        <span className="truncate text-sm font-medium">{title}</span>
       </div>
       <div className="relative min-h-0 flex-1">
         <iframe
           src={src}
-          title={`${editorId} 编辑器`}
+          title={title}
           className={`h-full w-full border-0 transition-opacity duration-300 ${
-            frameLoaded ? "opacity-100" : "opacity-0"
+            ready ? "opacity-100" : "opacity-0"
           }`}
           onLoad={() => setFrameLoaded(true)}
         />
-        {!frameLoaded ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-foreground-subtle">
-            正在打开编辑器…
+        {ready ? null : (
+          <div
+            role="status"
+            aria-busy="true"
+            aria-label="正在打开编辑器"
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-5 bg-background"
+          >
+            <ZCodeStartupLogoBadge />
+            <ZCodeStartupSpinner />
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

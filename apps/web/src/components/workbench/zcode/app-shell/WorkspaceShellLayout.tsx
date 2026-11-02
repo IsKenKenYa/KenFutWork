@@ -1877,6 +1877,8 @@ export const WorkspaceShellLayout = memo(
                       onOpenAutomations={handleOpenAutomations}
                       onOpenPluginStore={handleOpenPluginStore}
                       pluginStoreActive={workspaceMainView === "plugin-store"}
+                      onOpenWorkEngine={() => onWorkspaceMainViewChange("work")}
+                      workEngineActive={workspaceMainView === "work"}
                       onFileTreeOpenChange={setIsSidebarFileTreeOpen}
                     />
                   </WorkflowRunOpenProvider>
@@ -2075,6 +2077,7 @@ export const WorkspaceShellLayout = memo(
                           >
                             <HostWorkSurface
                               active={workspaceMainView === "work"}
+                              onBack={() => onWorkspaceMainViewChange("chat")}
                             />
                           </div>
                         ) : null}

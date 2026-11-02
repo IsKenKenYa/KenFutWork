@@ -30,7 +30,6 @@ import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
 import { createFlowHostPlugin } from "../features/flow/plugin.js";
-import { createWorkHostPlugin } from "../features/work/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createGoalsPlugin } from "../features/goals/plugin.js";
@@ -74,6 +73,7 @@ import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
 import { createUsagePlugin } from "../features/usage/plugin.js";
 import { createVoicePlugin } from "../features/voice/plugin.js";
+import { createWorkHostPlugin } from "../features/work/plugin.js";
 import type { KernelEvents, PluginDefinition } from "../kernel/types.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 

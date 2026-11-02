@@ -11,7 +11,7 @@ import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
-import { Code2, Palette } from "lucide-react";
+import { Briefcase, Code2, Palette } from "lucide-react";
 import {
   type CSSProperties,
   useEffect,
@@ -111,6 +111,14 @@ export function ConversationDraftEmptyState({
     () => workbenchNavigation?.getSnapshot().mode ?? "code",
   );
   const designHero = workbenchMode === "design";
+  // 空态命名跟随工作台模式：三个模式共用同一会话主区，标题不能一律挂 Code 名号。
+  const heroLabel =
+    workbenchMode === "design"
+      ? "Design with KenFutWork"
+      : workbenchMode === "work"
+        ? "Work with KenFutWork"
+        : "Code with KenFutWork";
+  const HeroIcon = designHero ? Palette : workbenchMode === "work" ? Briefcase : Code2;
   const [greetingDate, setGreetingDate] = useState(() => new Date());
   const [greetingFontSizePx, setGreetingFontSizePx] = useState(
     GREETING_MAX_FONT_SIZE_PX,
@@ -319,19 +327,11 @@ export function ConversationDraftEmptyState({
           ref={greetingRowRef}
           className="flex items-center justify-center gap-3"
         >
-          {designHero ? (
-            <Palette
-              className="shrink-0"
-              strokeWidth={3}
-              style={{ width: greetingIconPx, height: greetingIconPx }}
-            />
-          ) : (
-            <Code2
-              className="shrink-0"
-              strokeWidth={3}
-              style={{ width: greetingIconPx, height: greetingIconPx }}
-            />
-          )}
+          <HeroIcon
+            className="shrink-0"
+            strokeWidth={3}
+            style={{ width: greetingIconPx, height: greetingIconPx }}
+          />
           <p
             style={
               {
@@ -350,9 +350,9 @@ export function ConversationDraftEmptyState({
               style={{ fontSize: GREETING_MAX_FONT_SIZE_PX }}
               className="pointer-events-none invisible absolute whitespace-nowrap"
             >
-              {designHero ? "Design with KenFutWork" : "Code with KenFutWork"}
+              {heroLabel}
             </span>
-            {designHero ? "Design with KenFutWork" : "Code with KenFutWork"}
+            {heroLabel}
           </p>
         </div>
         <p className="text-sm text-muted-foreground/70">{greeting}</p>

@@ -1,19 +1,29 @@
 import { createHash } from "node:crypto";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { zipSync } from "fflate";
-import Fastify, { type FastifyInstance } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
 import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
+import Fastify, { type FastifyInstance } from "fastify";
+import { zipSync } from "fflate";
+import { afterEach, describe, expect, it } from "vitest";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
 import {
   getWorkEditorInstallSnapshot,
   startWorkEditorInstall,
 } from "../features/work/install.js";
-import { registerWorkHostRoutes, resolveInstalledEditors } from "./work-host.js";
+import {
+  registerWorkHostRoutes,
+  resolveInstalledEditors,
+} from "./work-host.js";
 
 const actor = {
   instanceId: "11111111-1111-4111-8111-111111111111",
@@ -51,6 +61,7 @@ async function emptyEditorsDir(): Promise<string> {
 async function fixture(options: {
   authenticated?: boolean;
   editorsDir?: string;
+  dataDir?: string;
   /** 替换 gridcraft 的锚定发布（假上游），路由级全链路不触真实网络。 */
   pinnedOverride?: WorkEditorPinnedRelease | null;
 }) {
@@ -70,7 +81,7 @@ async function fixture(options: {
               : editor,
         ),
     },
-    dataDir: "/tmp/kenfutwork-data",
+    dataDir: options.dataDir ?? "/tmp/kenfutwork-data",
     editorsDir: currentEditorsDir,
   });
   return app;
@@ -89,7 +100,7 @@ async function fakeUpstream(
 
 function pinnedFor(url: string, zip: Uint8Array): WorkEditorPinnedRelease {
   return {
-    version: "0.11.1",
+    version: "0.13.0",
     asset: "gridcraft-web-0.11.1.zip",
     bytes: zip.length,
     sha256: createHash("sha256").update(zip).digest("hex"),
@@ -155,23 +166,29 @@ describe("work 宿主路由", () => {
     });
     expect(response.statusCode).toBe(200);
     const body = response.json() as {
-      editors: Array<{ id: string; installed: boolean; pinned: unknown }>;
+      editors: Array<{
+        id: string;
+        installed: boolean;
+        pinned: unknown;
+        mount: string;
+      }>;
       dataDir: string;
       install: Record<string, unknown>;
     };
     expect(body.dataDir).toBe("/tmp/kenfutwork-data");
     expect(body.editors.length).toBeGreaterThanOrEqual(10);
+    // 数据目录里没有落位任何扩展包：全部编辑器都是未安装。
     expect(body.editors.every((editor) => editor.installed === false)).toBe(
       true,
     );
     expect(body.install).toEqual({});
     expect(
       body.editors.find((editor) => editor.id === "gridcraft")?.pinned,
-    ).toMatchObject({ version: "0.11.1" });
+    ).toMatchObject({ version: "0.13.0" });
     expect(
       body.editors.find((editor) => editor.id === "wordcraft")?.pinned,
     ).toMatchObject({ version: "0.11.0" });
-    // 全部编辑器已锚定：不存在未锚定项（默认支持）
+    // 上游扩展包全部已锚定。
     expect(body.editors.every((editor) => editor.pinned !== null)).toBe(true);
   });
 
@@ -229,7 +246,7 @@ describe("work 宿主路由", () => {
         "utf8",
       ),
     );
-    expect(marker.version).toBe("0.11.1");
+    expect(marker.version).toBe("0.13.0");
     const editors = await app.inject({
       method: "get",
       path: "/api/work/host/editors",
@@ -258,6 +275,32 @@ describe("work 宿主路由", () => {
     expect(
       await readFile(join(editorsDir, "gridcraft", "index.html"), "utf8"),
     ).toBe("<html>gridcraft</html>");
+  });
+
+  it("自建中文包：安装请求不覆盖（避免退回官方英文包）", async () => {
+    const editorsDir = await emptyEditorsDir();
+    await fixture({ editorsDir });
+    const editorDir = join(editorsDir, "gridcraft");
+    await mkdir(editorDir, { recursive: true });
+    await writeFile(join(editorDir, "index.html"), "<html>中文包</html>");
+    await writeFile(join(editorDir, ".kenfutwork-zh-build.json"), "{}");
+    const started = startWorkEditorInstall({
+      editorsDir,
+      editorId: "gridcraft",
+      pinned: {
+        version: "0.13.0",
+        asset: "gridcraft-web-0.11.1.zip",
+        bytes: 1,
+        sha256: "a".repeat(64),
+        url: "http://127.0.0.1:1/never.zip",
+      },
+    });
+    expect(started.started).toBe(true);
+    const snapshot = await waitForSettled("gridcraft");
+    expect(snapshot.state).toBe("ready");
+    expect(await readFile(join(editorDir, "index.html"), "utf8")).toBe(
+      "<html>中文包</html>",
+    );
   });
 
   it("校验和不匹配 → error 状态 + 可读原因，不落位", async () => {
@@ -300,7 +343,21 @@ describe("work 宿主路由", () => {
     expect(html.statusCode).toBe(200);
     expect(html.headers["content-type"]).toBe("text/html; charset=utf-8");
     expect(html.headers["x-content-type-options"]).toBe("nosniff");
-    expect(html.body).toBe("<html>ok</html>");
+    // 托管页统一注入宿主脚本：界面语言钉 zh-CN（我们的包都内嵌简体中文字形）+ 统一启动屏。
+    expect(html.body).toContain('"zh-CN"');
+    expect(html.body).toContain("kfw-editor-boot");
+    expect(html.body).toContain("<html>ok</html>");
+
+    // 自带中文字形的编辑器同样按中文探测（用户系统是英文时不再退回英文）。
+    const lightDir = join(editorsDir, "lightcraft");
+    await mkdir(lightDir, { recursive: true });
+    await writeFile(join(lightDir, "index.html"), "<html>ok</html>");
+    const light = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/lightcraft/index.html",
+    });
+    expect(light.statusCode).toBe(200);
+    expect(light.body).toContain('"zh-CN"');
 
     const wasm = await app.inject({
       method: "get",
@@ -323,7 +380,7 @@ describe("work 宿主路由", () => {
       path: "/api/work/host/editors/gridcraft/some/route",
     });
     expect(fallback.statusCode).toBe(200);
-    expect(fallback.body).toBe("<html>ok</html>");
+    expect(fallback.body).toContain("<html>ok</html>");
 
     const dot = await app.inject({
       method: "get",
@@ -344,6 +401,54 @@ describe("work 宿主路由", () => {
     });
     expect(missing.statusCode).toBe(404);
     expect(missing.json().error.message).toContain("尚未落位");
+  });
+
+  it("用户字体：清单接在包内清单之后，字体文件从数据目录同源提供", async () => {
+    const editorsDir = await emptyEditorsDir();
+    const dataDir = await mkdtemp(join(tmpdir(), "work-host-data-"));
+    createdDirs.push(dataDir);
+    const app = await fixture({ editorsDir, dataDir });
+    const editorDir = join(editorsDir, "photocraft");
+    await mkdir(join(editorDir, "fonts"), { recursive: true });
+    await writeFile(join(editorDir, "index.html"), "<html></html>");
+    await writeFile(
+      join(editorDir, "fonts", "manifest.txt"),
+      "Bundled Sans | Regular | fonts/bundled/B.ttf | Latn\n",
+    );
+    const userFontDir = join(dataDir, "work", "fonts");
+    await mkdir(userFontDir, { recursive: true });
+    await writeFile(
+      join(userFontDir, "abc-upload.ttf"),
+      Buffer.from([0, 1, 2, 3]),
+    );
+
+    const manifest = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/manifest.txt",
+    });
+    expect(manifest.statusCode).toBe(200);
+    // 包内清单不能被覆盖：PhotoCraft 靠它发现自带字形。
+    expect(manifest.body).toContain("Bundled Sans");
+    expect(manifest.body).toContain("fonts/user/abc-upload.ttf");
+
+    const served = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/user/abc-upload.ttf",
+    });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers["content-type"]).toBe("font/ttf");
+
+    // 数据目录之外的文件名一律拒绝：穿越在路径校验处 400，非字体扩展名 404。
+    const traversal = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/user/..%2Fabc-upload.ttf",
+    });
+    expect(traversal.statusCode).toBe(400);
+    const notFont = await app.inject({
+      method: "get",
+      path: "/api/work/host/editors/photocraft/fonts/user/abc-upload.exe",
+    });
+    expect(notFont.statusCode).toBe(404);
   });
 
   it("editors：扩展包目录落位 → installed=true，同前缀目录不误判（原 W1 事实保留）", async () => {

@@ -121,6 +121,7 @@ import {
   Cable,
   Clock3,
   Cloud,
+  Cpu,
   Folder,
   FolderOpen,
   Hash,
@@ -296,6 +297,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations,
   onOpenPluginStore,
   pluginStoreActive = false,
+  onOpenWorkEngine,
+  workEngineActive = false,
   onFileTreeOpenChange,
 }: {
   workspacePath: string;
@@ -356,6 +359,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   onOpenAutomations?: () => void;
   onOpenPluginStore?: () => void;
   pluginStoreActive?: boolean;
+  /** Work 模式主区切到「Work 引擎」信息页（会话主区之外的显式入口）。 */
+  onOpenWorkEngine?: () => void;
+  workEngineActive?: boolean;
   onFileTreeOpenChange?: (open: boolean) => void;
 }) {
   const { intl, localePreference, setLocalePreference } = useZCodeIntl();
@@ -1490,6 +1496,19 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       <PluginSidebarNavigation {...(collapsed ? { collapsed: true } : {})} />
     </>
   );
+  // Work 模式的「Work 引擎」入口：紧挨「搜索」，点开主区信息页（用户 2026-10-27 口径）；
+  // 其它模式不出现——那边没有 Work 引擎页，不摆空入口。
+  const workEngineNavigation = (collapsed: boolean) =>
+    workbenchMode === "work" && onOpenWorkEngine ? (
+      <SidebarNavButton
+        collapsed={collapsed}
+        icon={<Cpu className="size-4" />}
+        label="Work 引擎"
+        onClick={onOpenWorkEngine}
+        active={workEngineActive}
+        testId="work-engine-sidebar-open"
+      />
+    ) : null;
   /** rail 的入口列：与展开态共用同一份定义（新建任务 / 搜索 / 共用导航）。 */
   const railNavigation = (
     <>
@@ -1507,6 +1526,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
         label={intl.formatMessage({ id: "commandCenter.open" })}
         onClick={onOpenCommandCenter}
       />
+      {workEngineNavigation(true)}
       {sharedNavigation(true)}
     </>
   );
@@ -1592,6 +1612,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 trailing={commandCenterShortcutLabel}
                 onClick={onOpenCommandCenter}
               />
+              {workEngineNavigation(false)}
             </div>
 
             <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1600,7 +1621,9 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                 ref={workspaceScrollRef}
                 className={
                   // grouped task 拖拽预览会改变列表高度，禁用 scroll anchoring 避免浏览器自动锚定把 dnd-kit 测量放大成抖动。
-                  "flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto"
+                  // 右侧滚动条按用户口径隐藏（仍可滚）：轨道贴边会切掉行尾渐隐，视觉上像两条竖线。
+                  // 必须用 !scrollbar-hide：全局 `*{scrollbar-width:auto}` 是无层样式，普通工具类压不住。
+                  "flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto !scrollbar-hide"
                 }
                 style={workspaceScrollMaskStyle}
               >

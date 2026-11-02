@@ -205,7 +205,7 @@ export type ExecutionModeController = ReturnType<
   typeof useExecutionModeController
 >;
 
-/** 原模式菜单内的受控选项；策略与规划仍由Composer的唯一owner管理。 */
+/** 受控选项：执行方式全档（含「计划」）在此单选；planEnabled 仍由 controller 与 Composer 双向同步。 */
 export function ExecutionModeMenuItems({
   controller,
   disabled,
@@ -215,8 +215,6 @@ export function ExecutionModeMenuItems({
 }) {
   const { mode, modes, saving, select } = controller;
   if (!modes || modes.length === 0 || !mode) return null;
-  const options = modes.filter((entry) => entry.id !== "plan");
-  if (options.length === 0) return null;
   return (
     <>
       <DropdownMenuSeparator />
@@ -225,7 +223,7 @@ export function ExecutionModeMenuItems({
         onValueChange={select}
         aria-label="执行方式"
       >
-        {options.map((entry) => {
+        {modes.map((entry) => {
           const ModeIcon = executionModeIcons[entry.id] ?? WorkflowIcon;
           return (
             <DropdownMenuRadioItem

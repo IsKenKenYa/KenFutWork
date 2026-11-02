@@ -93,6 +93,11 @@ export const pluginUiEntrySchema = z.object({
    * 与其它菜单图标同一套语言）——请提供单色线条或纯色形状的 SVG；缺省用宿主的通用图标。
    */
   icon: z.string().nullable().default(null),
+  /**
+   * 面板有自己的配置视图：宿主面板弹层标题栏出「配置」按钮（× 左边），
+   * 点击经 postMessage（kenfutwork:plugin-panel-toggle-config）通知面板切换视图。
+   */
+  configurable: z.boolean().default(false),
 });
 export type PluginUiEntry = z.infer<typeof pluginUiEntrySchema>;
 
@@ -133,6 +138,17 @@ export const pluginBundleManifestSchema = z.object({
    * 不必自己起 HTTP 服务。
    */
   assets: z.boolean().default(false),
+  /**
+   * 插件图标（相对包根的静态资源路径，如 `assets/icon.svg`），**不需要 `ui` 入口**。
+   *
+   * 为什么单列一个字段：市场卡片、已安装条目、侧栏都要按插件身份显示同一枚图标，而
+   * 只有真带面板的插件才有 `ui`。此前只能借 `ui[].icon`，于是「有图标、没面板」的插件
+   * （CAD、Flow、Work…）在市场里只能退化成字母头像。
+   *
+   * 渲染口径与 `ui[].icon` 完全一致：宿主解析成 `/api/plugins/<id>/assets/…` 后按单色渲染
+   * （CSS mask，跟随文字色）。请提供单色线条或纯色形状的 SVG；需要 `assets: true`。
+   */
+  icon: z.string().nullable().default(null),
   /**
    * 本项目 UI 面板入口（`kenfutwork.ui`，与 bundle 同级）：按 `slot` 出现在四处之一，
    * 点开在面板里以 iframe 渲染 `url`（通常是插件自己的路由或由本项目托管的资源）。
@@ -287,6 +303,8 @@ export const pluginMarketEntrySchema = z.object({
         slot: z.string().default("sidebar"),
         url: z.string().min(1),
         icon: z.string().nullable().default(null),
+        /** 面板有自己的配置视图：宿主标题栏出「配置」按钮（postMessage 通知面板切换）。 */
+        configurable: z.boolean().default(false),
       }),
     )
     .default([]),
@@ -301,6 +319,8 @@ export interface PluginPanelEntry {
   slot: string;
   url: string;
   icon: string | null;
+  /** 宿主标题栏「配置」按钮（面板声明 configurable 才出现）。 */
+  configurable: boolean;
 }
 
 /** 同一安装库存供各工作区消费；空作用域沿既有通用插件语义。 */

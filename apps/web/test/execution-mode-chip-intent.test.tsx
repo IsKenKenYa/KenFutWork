@@ -150,9 +150,7 @@ test("Task切换后忽略旧Task迟到PUT，不改新Task策略或规划草稿",
     <ComposerProbe sessionId="a" sent={sent} onSwitchMode={onSwitchMode} />,
   );
   await user.click(await readyComposerModeTrigger());
-  await user.click(
-    await screen.findByRole("menuitemcheckbox", { name: /^计划模式/ }),
-  );
+  await user.click(await screen.findByRole("menuitemradio", { name: "计划" }));
   rerender(
     <ComposerProbe sessionId="b" sent={sent} onSwitchMode={onSwitchMode} />,
   );
@@ -256,7 +254,7 @@ test("切换Task后旧计划PUT失败不回滚新Task的规划草稿", async () 
   ]);
 });
 
-test("独立规划已开启时同一计划入口关闭规划，保留自主策略与基础权限", async () => {
+test("独立规划已开启时协作开关关闭规划，保留自主策略与基础权限", async () => {
   const user = userEvent.setup();
   pendingModeChange();
   const sent: ExecutionMode[] = [];
@@ -273,10 +271,8 @@ test("独立规划已开启时同一计划入口关闭规划，保留自主策�
       onSwitchMode={vi.fn()}
     />,
   );
-  await user.click(await readyComposerModeTrigger());
-  await user.click(
-    await screen.findByRole("menuitemcheckbox", { name: /^计划模式/ }),
-  );
+  // 灯泡标记已删：规划中关闭走协作开关（批准门/Composer 同一路径）。
+  await user.click(screen.getByRole("button", { name: "关闭规划" }));
   await user.click(screen.getByRole("button", { name: "发送" }));
   expect(sentSubmissions).toEqual([
     { executionMode: "agent", planEnabled: false },
@@ -323,7 +319,7 @@ test.each(["success", "failure"] as const)(
     );
     await user.click(await readyComposerModeTrigger());
     await user.click(
-      await screen.findByRole("menuitemcheckbox", { name: /^计划模式/ }),
+      await screen.findByRole("menuitemradio", { name: "计划" }),
     );
     await user.click(screen.getByRole("button", { name: "关闭规划" }));
     await user.click(screen.getByRole("button", { name: "开启规划" }));

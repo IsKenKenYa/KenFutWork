@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArchiveX, Cloud, CloudDownload, Folder, Smartphone, Trash2 } from "lucide-react";
+import { ArchiveX, Cloud, Folder, Smartphone, Trash2 } from "lucide-react";
 import { Button } from "@zui/components/ui/button.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
@@ -252,13 +252,8 @@ export function WorkspaceArchivedTasksFlatSection({
                         });
                     }}
                   >
-                    {/* 取消归档按钮以前本地/远端都用 ArchiveX，
-                      在混合归档列表中看不出操作目标。远端用 CloudDownload 明确会作用到远端 task。 */}
-                    {isRemoteTask ? (
-                      <CloudDownload className="size-3.5" />
-                    ) : (
-                      <ArchiveX className="size-3.5" />
-                    )}
+                    {/* 用户口径（2026-10-26）：取消归档也用方盒，远端任务不再用云朵图标。 */}
+                    <ArchiveX className="size-3.5" />
                   </Button>
                 </ControlHintTooltip>
                 <ControlHintTooltip title={deleteLabel} side="top">

@@ -70,8 +70,10 @@ const frozenReferenceCatalogs = new Map<
 
 /** 图标沿已有包资源端点读取，不把目录或凭据放进引用。 */
 function pluginListing(id: string, manifest: PluginBundleManifest) {
+  // 顶层 `kenfutwork.icon` 优先：没有 UI 面板的插件（CAD / Flow / Work…）靠它显示图标；
+  // 老清单只声明了 `ui[].icon` 的仍按面板入口取，保持向后兼容。
   const declared = manifest.assets
-    ? manifest.ui.find((entry) => entry.icon)?.icon
+    ? (manifest.icon ?? manifest.ui.find((entry) => entry.icon)?.icon)
     : undefined;
   const icon = declared
     ? createPluginIconResourceReference(id, declared)
@@ -83,9 +85,33 @@ function pluginListing(id: string, manifest: PluginBundleManifest) {
   };
 }
 
+/**
+ * 内置插件的有效清单：以仓库源码那份为准。
+ *
+ * 数据目录里的安装记录是**安装当时**的副本，随版本升级会落后（新加的 assets/icon 在
+ * 老记录里根本没有），市场卡片于是只能显示字母头像。同一个包可能以 `bundled__<name>`
+ * 或 `local__<name>` 落位，所以 id 认不到时再按包名认一次。
+ */
+function effectiveManifest(
+  record: {
+    id: string;
+    name: string;
+    source: string;
+    manifest: PluginBundleManifest;
+  },
+  bundled: Inventory["bundled"],
+): PluginBundleManifest {
+  if (record.source !== "builtin") return record.manifest;
+  const match =
+    bundled.find((item) => item.id === record.id) ??
+    bundled.find((item) => item.name === record.name);
+  return match?.manifest ?? record.manifest;
+}
+
 function installedSummary(
   { record, rootPath }: Inventory["installed"][number],
   marketplace: (id: string) => string,
+  bundled: Inventory["bundled"],
 ) {
   return zcodeInstalledPluginSummarySchema.parse({
     id: record.id,
@@ -97,7 +123,7 @@ function installedSummary(
     scope: "user",
     installPath: rootPath,
     installedAt: record.installedAt,
-    listing: pluginListing(record.id, record.manifest),
+    listing: pluginListing(record.id, effectiveManifest(record, bundled)),
   });
 }
 
@@ -245,7 +271,7 @@ function overviewResult(
       listing: pluginListing(entry.id, entry.manifest),
     })),
     installedPlugins: inventory.installed.map((entry) =>
-      installedSummary(entry, marketplace),
+      installedSummary(entry, marketplace, inventory.bundled),
     ),
     restorableBuiltins: [],
     diagnostics,
@@ -307,6 +333,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
             rootPath: join(inventory.rootPath, installed.id),
           },
           marketplaceResolver(inventory),
+          inventory.bundled,
         ),
       ],
       dependencyClosure: [],
@@ -404,6 +431,7 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
       removedPlugin: installedSummary(
         { ...entry, record: { ...entry.record, enabled: false } },
         marketplace,
+        inventory.bundled,
       ),
       diagnostics: [],
     });
@@ -441,7 +469,10 @@ export function createCodeUiPluginsHost(deps: CodeUiPluginsHostDeps) {
         const description = await deps.registry.readPackageDescription(
           record.id,
         );
-        const listing = pluginListing(record.id, record.manifest);
+        const listing = pluginListing(
+          record.id,
+          effectiveManifest(record, inventory.bundled),
+        );
         return {
           pluginId: record.id,
           name: record.name,

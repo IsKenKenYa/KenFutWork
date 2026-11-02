@@ -38,6 +38,11 @@ loadRootEnvLocal();
 
 const nextConfig: NextConfig = {
   output: "export",
+  // 开发代理下的 SSE 必须不压缩：`/api/code-ui/events` 是长连接事件流，被 gzip 后
+  // 压缩器要攒满一块才吐字节，首帧永远到不了浏览器 → Code 壳的 connect() 永不 resolve，
+  // 整个工作台卡在启动加载屏（实测：直连 3001 首帧 10ms，经 3000 代理 7s 无首帧且
+  // content-encoding=gzip）。生产是静态导出，不经这个代理，不受影响。
+  compress: false,
   typescript: {
     ignoreBuildErrors: true,
   },

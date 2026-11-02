@@ -25,6 +25,7 @@ import {
   controlValue,
   toServiceCall,
 } from "./lib/entity-model.js";
+import { autoFillFields } from "./lib/flow-fields.js";
 import {
   createHaRest,
   HA_DEFAULT_BASE_URL,
@@ -37,7 +38,7 @@ import {
   WS_DEVICE_REGISTRY_LIST,
   WS_ENTITY_REGISTRY_LIST,
 } from "./lib/ha-ws.js";
-import { SETUP_GUIDE_STEPS } from "./lib/setup-guide.js";
+import { SETUP_GUIDE_BRANDS, SETUP_GUIDE_STEPS } from "./lib/setup-guide.js";
 
 export const name = "kenfutwork-ha";
 
@@ -184,6 +185,7 @@ export function apply(ctx) {
 
     return {
       rest,
+      session,
       stop() {
         session.stop();
       },
@@ -298,9 +300,12 @@ export function apply(ctx) {
     path: "guide",
     handler: async (request) => {
       requireInstance(request.instanceId, "读取引导");
-      // 纯静态步骤数据（lib/setup-guide.js 一处属主）；面板拉取失败只是少了引导，
-      // 连接表单不受影响
-      return { status: 200, body: { steps: SETUP_GUIDE_STEPS } };
+      // 纯静态步骤数据（lib/setup-guide.js 一处属主）：品牌卡（米家/华为，默认展开）
+      // + 通用步骤；面板拉取失败只是少了引导，连接表单不受影响
+      return {
+        status: 200,
+        body: { brands: SETUP_GUIDE_BRANDS, steps: SETUP_GUIDE_STEPS },
+      };
     },
   });
 
@@ -364,6 +369,178 @@ export function apply(ctx) {
             locationName: info?.location_name ?? null,
           },
         };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  // === 集成管理（面板「集成管理」区）：默认小米/华为，可添加（HA 配置流）与卸载 ===
+
+  /** 面板品牌 → HA 集成 domain（组件装在用户的 HA 里，面板只管配置条目的生命周期）。 */
+  const INTEGRATION_BRANDS = {
+    xiaomi: "xiaomi_home",
+    huawei: "huawei_smarthome",
+  };
+
+  /** 每个实例每个品牌只保留一个在途配置流（key: `${instanceId}:${brand}`）。
+   *  面板每次打开配置页都会调 start，而 HA 侧同一集成不允许并行流——xiaomi_home
+   *  会以 `Flow aborted: already_in_progress` 中止后来的流，表现为「授权完成却拿不到
+   *  条目」。复用未完成的流，既避免堆积，也让回调落到同一个 flow 上。 */
+  const OPEN_FLOWS = new Map();
+
+  /**
+   * 授权完成后把「纯选项」步骤按 schema 默认值连续提交（2026-10-26 用户口径
+   * 「授权完之后自动全部导入，不要手动配置」），直到需要人工或用完次数。
+   * 步骤带校验错误时停住，避免死循环。
+   */
+  async function advanceAutoSteps(runtime, flowId, initial) {
+    let step = initial;
+    for (let i = 0; i < 6; i += 1) {
+      if (!step || step.type !== "form") break;
+      const hasError = Object.values(step.errors ?? {}).some(
+        (message) => typeof message === "string" && message.trim(),
+      );
+      if (hasError) break;
+      const fields = autoFillFields(step.data_schema);
+      if (!fields) break;
+      step = await runtime.rest.submitFlow(flowId, fields);
+    }
+    return step;
+  }
+
+  /** 集成列表走 WS 的 config_entries/get：等实时链路认证成功再发（最多 3 秒）。 */
+  async function waitForWsReady(runtime) {
+    const deadline = Date.now() + 3000;
+    while (runtime.session.phase !== "ready") {
+      if (Date.now() > deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return true;
+  }
+
+  ctx.routes.register({
+    path: "integrations",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "列集成");
+      try {
+        const runtime = await runtimeFor(instanceId);
+        const ready = await waitForWsReady(runtime);
+        if (!ready) {
+          return { status: 200, body: { integrations: [], ready: false } };
+        }
+        const entries = await runtime.session.request("config_entries/get");
+        const wanted = Object.values(INTEGRATION_BRANDS);
+        const integrations = (Array.isArray(entries) ? entries : [])
+          .filter((entry) => wanted.includes(entry.domain))
+          .map((entry) => ({
+            entryId: entry.entry_id,
+            domain: entry.domain,
+            title: entry.title,
+            state: entry.state,
+          }));
+        return { status: 200, body: { integrations, ready: true } };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "integrations/start",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "添加集成");
+      try {
+        const brand = String(request.body?.brand ?? "");
+        const handler = INTEGRATION_BRANDS[brand];
+        if (!handler) {
+          throw codedError(
+            `暂不支持这个品牌（${brand.slice(0, 20)}）：默认支持米家与华为。`,
+            "bad_service",
+          );
+        }
+        const runtime = await runtimeFor(instanceId);
+        const flowKey = `${instanceId}:${brand}`;
+        let step = null;
+        const cached = OPEN_FLOWS.get(flowKey);
+        if (cached) {
+          try {
+            const current = await runtime.rest.getFlow(cached);
+            // 已完成/已中止的流不再复用（下次 start 直接开新流）
+            if (
+              current &&
+              current.type !== "create_entry" &&
+              current.type !== "abort"
+            ) {
+              step = current;
+            }
+          } catch {
+            // 流程已过期/被 HA 清掉：重新开
+          }
+        }
+        if (step) {
+          return { status: 200, body: { brand, flowId: step.flow_id, step } };
+        }
+        step = await runtime.rest.startFlow(handler);
+        // 自动推进非账号决策步（用户口径「默认这两个都添加」）：
+        // - eula：小米官方集成的用户协议勾选（使用本功能即接受）
+        // - auth_config：地区/语言/回调地址（固定中国大陆 + 简体中文；回调走
+        //   homeassistant.local，本机 hosts 修复后回跳直达）
+        // OAuth 授权步必须用户本人完成，到这里停住交给面板。
+        for (let i = 0; i < 4; i += 1) {
+          if (step.type !== "form") break;
+          if (step.step_id === "eula") {
+            step = await runtime.rest.submitFlow(step.flow_id, {
+              eula: true,
+            });
+          } else if (step.step_id === "auth_config") {
+            step = await runtime.rest.submitFlow(step.flow_id, {
+              cloud_server: "cn",
+              integration_language: "zh-Hans",
+              oauth_redirect_url: "http://homeassistant.local:8123",
+              network_detect_config: false,
+            });
+          } else break;
+        }
+        OPEN_FLOWS.set(flowKey, step.flow_id);
+        return { status: 200, body: { brand, flowId: step.flow_id, step } };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "integrations/flow",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "集成流程");
+      try {
+        const flowId = request.body?.flowId;
+        const runtime = await runtimeFor(instanceId);
+        const step =
+          request.body?.fields === undefined
+            ? await runtime.rest.getFlow(flowId)
+            : await runtime.rest.submitFlow(flowId, request.body.fields);
+        // 轮询到授权完成后的选项步（选家庭/区域/高级项）直接按默认值走完
+        const advanced = await advanceAutoSteps(runtime, flowId, step);
+        return { status: 200, body: { flowId, step: advanced } };
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  });
+
+  ctx.routes.register({
+    path: "integrations/remove",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "卸载集成");
+      try {
+        const runtime = await runtimeFor(instanceId);
+        await runtime.rest.deleteEntry(request.body?.entryId);
+        return { status: 200, body: { ok: true } };
       } catch (error) {
         return errorResult(error);
       }

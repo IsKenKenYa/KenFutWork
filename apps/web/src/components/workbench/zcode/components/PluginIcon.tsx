@@ -5,10 +5,42 @@ import { Blocks } from "lucide-react";
 import { cn } from "@zui/components/lib/utils.js";
 import { resolvePluginIconSource } from "@zui/lib/pluginIconSource.js";
 
-/** Plugin 原始图标；支持官方内置图标与 HTTPS，缺失或失败时使用调用方兜底，默认回退 Blocks。 */
+/** 无图标时的字母头像：按名字首字，SVG 承载以便跟随 iconClassName 与图标同尺寸缩放。 */
+function PluginMonogram({
+  label,
+  className,
+}: {
+  label: string;
+  className?: string;
+}) {
+  const char = Array.from(label.trim())[0]?.toLocaleUpperCase() ?? "?";
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={cn("size-4", className)}
+    >
+      <text
+        x="12"
+        y="12"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="15"
+        fontWeight="600"
+        fill="currentColor"
+      >
+        {char}
+      </text>
+    </svg>
+  );
+}
+
+/** Plugin 原始图标；支持官方内置图标与 HTTPS，缺失或失败时使用调用方兜底，
+ *  再退到名字首字（市场里多数条目没有图标，清一色 Blocks 分不出来），最后 Blocks。 */
 export function PluginIcon({
   src,
   pluginId,
+  label,
   className,
   iconClassName,
   fallbackIcon,
@@ -16,6 +48,8 @@ export function PluginIcon({
 }: {
   src?: string;
   pluginId?: string;
+  /** 无图标时用于生成字母头像（插件显示名）。 */
+  label?: string;
   className?: string;
   iconClassName?: string;
   fallbackIcon?: ReactNode;
@@ -73,6 +107,8 @@ export function PluginIcon({
         </>
       ) : fallbackIcon ? (
         fallbackIcon
+      ) : label?.trim() ? (
+        <PluginMonogram label={label} className={iconClassName} />
       ) : (
         <Blocks className={cn("size-4", iconClassName)} />
       )}

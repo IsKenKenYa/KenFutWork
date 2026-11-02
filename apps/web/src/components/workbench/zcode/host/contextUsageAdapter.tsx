@@ -158,7 +158,7 @@ export function ChatContextUsage({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-72 rounded-xl border bg-popover p-3 text-xs text-popover-foreground shadow-md"
+        className="w-72 rounded-xl border border-border bg-popover p-3 text-xs text-popover-foreground shadow-md"
       >
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-medium">上下文容量</span>

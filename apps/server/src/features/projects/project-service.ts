@@ -553,6 +553,21 @@ function mapProjectSummary(options: {
       );
     return { ...base, kind: "flow", primaryCanvas };
   }
+  if (options.project.kind === "work") {
+    const workDir = options.project.work_dir;
+    if (!workDir)
+      throw new ProjectServiceError(
+        "invalid_work_dir",
+        "项目缺少主工作目录。",
+        500,
+      );
+    return {
+      ...base,
+      kind: "work",
+      workDir,
+      ...(primaryCanvas ? { primaryCanvas } : {}),
+    };
+  }
   return {
     ...base,
     kind: "design",

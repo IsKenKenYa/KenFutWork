@@ -106,9 +106,7 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
 
   // 计划：联动把 ZCode 协作档切到 plan（Q6 合并规则）
   await openModeMenu(user);
-  await user.click(
-    await screen.findByRole("menuitemcheckbox", { name: /^计划模式/ }),
-  );
+  await user.click(await screen.findByRole("menuitemradio", { name: "计划" }));
   await waitFor(() => expect(onSwitchMode).toHaveBeenCalledWith("plan"));
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 
@@ -133,7 +131,7 @@ test("原盾牌菜单：执行方式写入、唯一计划入口联动、失败�
   expect(onExecutionModeChange).toHaveBeenLastCalledWith("plan");
 });
 
-test("权限、独立计划与执行方式只有原盾牌一个入口，全权保留原橙色图标", async () => {
+test("权限与执行方式（含计划）只有原盾牌一个入口，全权保留原橙色图标", async () => {
   const user = userEvent.setup();
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     if (path === "/api/execution-modes") return MODES;
@@ -159,6 +157,7 @@ test("权限、独立计划与执行方式只有原盾牌一个入口，全权�
   const executionModes = screen.getByRole("group", { name: "执行方式" });
   for (const [label, icon] of [
     ["自主", "bot"],
+    ["计划", "lightbulb"],
     ["目标", "target"],
     ["创造", "puzzle"],
   ] as const) {
@@ -166,10 +165,7 @@ test("权限、独立计划与执行方式只有原盾牌一个入口，全权�
     expect(item.querySelector(`svg.lucide-${icon}`)).not.toBeNull();
     expect(executionModes.contains(item)).toBe(true);
   }
-  expect(
-    screen.getAllByRole("menuitemcheckbox", { name: /^计划模式/ }),
-  ).toHaveLength(1);
-  expect(screen.queryByRole("menuitemradio", { name: /^计划/ })).toBeNull();
+  expect(screen.queryByRole("menuitemcheckbox")).toBeNull();
   expect(screen.getByRole("menu").textContent).toContain("人工或审批模型");
   expect(
     permissions.contains(

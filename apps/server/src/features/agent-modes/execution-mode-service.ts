@@ -7,8 +7,8 @@ import type {
 
 /**
  * agentModes 缝（DEC-3，P6）：只管激活/切换/持久化当前模式。
- * Task消费Run接纳的策略快照：solo硬禁工具；plan的强制收窄与批准退出
- * 由独立planEnabled持有。没有Task的调用保留线程策略与plan只读白名单。
+ * Task消费Run接纳的策略快照：solo严格只读（防越狱不给终端/运行时/子代理）；plan的
+ * 强制收窄与批准退出由独立planEnabled持有。没有Task的调用保留线程策略与plan只读白名单。
  *
  * 持久化是**写穿缓存**：Map 是本进程热缓存，activate 带 scope 时写回
  * chat_sessions.execution_mode；未声明模式的 run 起跑前 hydrate 读回。
@@ -37,21 +37,21 @@ export const BUILTIN_EXECUTION_MODES: Array<{
   {
     id: "solo",
     label: "对话",
-    description: "纯对话交流，不执行工具与文件修改（工具调用会被系统拦截）。",
+    description: "纯对话与只读查询，不给终端/运行时与修改能力（防越狱）。",
     inputDirective:
-      '<execution_mode name="solo">\n本轮为纯对话模式：只进行文字交流，不调用任何工具、不修改任何文件（工具调用会被系统直接拒绝）。\n</execution_mode>',
+      '<execution_mode name="solo">\n本轮为对话模式：以文字交流为主，可使用只读工具（读文件/搜索/查技能等）了解情况；不给终端与运行时（python/node/jdk/wsl/docker 等）、不修改文件、不派子代理——相关调用会被系统直接拒绝。\n</execution_mode>',
   },
   {
     id: "goal",
     label: "目标",
-    description: "目标驱动：先明确成功标准，循环推进直至达成。",
+    description: "目标驱动：先明确成功标准，每轮校验完成度，迭代未达成项。",
     inputDirective:
-      '<execution_mode name="goal">\n本轮为目标驱动模式：先与用户明确成功标准（可验证），再围绕目标循环推进，每步说明进度与剩余差距。\n</execution_mode>',
+      '<execution_mode name="goal">\n本轮为目标驱动模式：先与用户明确成功标准（可验证），再围绕目标推进。**每一轮结束后必须对照成功标准逐项实际校验**（看产物/跑命令/读数据，不凭感觉自评）；未达成的项自动继续迭代，直到全部达成——无法达成时明确指出差距与阻塞，请用户决策。\n</execution_mode>',
   },
   {
     id: "creative",
-    label: "技能插件",
-    description: "创建技能、插件或 MCP 连接。",
+    label: "创造",
+    description: "创建技能、插件或 MCP 连接（唯一可改 App 的模式）。",
     inputDirective:
       '<execution_mode name="creative">\n本轮为创造模式，目标是产出**可安装**的插件/技能产物：\n1. 先与用户确认交付物形态（SKILL.md 技能 / 插件 bundle 目录）；\n2. 技能以 SKILL.md 开头（YAML frontmatter 含 name/description，正文为操作指引，附属文件与 SKILL.md 同目录）；\n3. 技能写好后**调用 create_skill 工具发布到当前实例**（name/description/content 必填，content 即 SKILL.md 全文），发布即启用、后续会话可用——不要只把文件留在工作目录里让用户手动导入；\n4. 插件 bundle（目录须含 package.json / cordis.patch.yml / index.js）：package.json 用**嵌套声明** `"kenfutwork": {"bundle": {"patch": "./cordis.patch.yml"}}`（或 `"dsh"` 同形；平键 `"kenfutwork.bundle"` 无效），并含 `"type":"module"` 与 `"main":"index.js"`；cordis.patch.yml 的 `- insert:` 下为**数组**（每项含 id/name/inject）；index.js 为 ESM（导出 name/inject/apply(ctx)）；写好后调用 **install_plugin** 安装；\n5. MCP server 脚本（stdio 协议，.py/.js 均可）写好后调用 **create_mcp_server** 注册（name + 相对工作目录的 path；其工具以 mcp__<name>__<tool> 进入注册表）；\n6. 安装/注册面向当前本地实例或 Task；遵守工具审批、工作目录授权和安装兼容性检查，失败时说明具体原因；\n7. 不要擅自删除或覆盖既有产物，生成前先检查目录现状。\n</execution_mode>',
   },
@@ -66,7 +66,8 @@ export class RetiredExecutionModeError extends Error {
 
 /**
  * plan 模式放行的只读工具白名单（含 deepagents 内置文件工具与内核只读工具）。
- * 白名单外一律拒绝：修改类文件工具、execute、子代理 task、MCP/生成/画布写操作。
+ * 白名单外再看属主声明的 `access`（MCP/插件只读工具经 detail.toolAccess 放行）；
+ * 其余一律拒绝：修改类文件工具、execute、子代理 task、写型 MCP/生成/画布写操作。
  */
 const READ_ONLY_TOOLS: ReadonlySet<string> = new Set([
   "Read",
@@ -165,22 +166,37 @@ export function isPlanApprovalInput(prompt: string): boolean {
   return isPlanApprovalMessage(lastLine);
 }
 
-/** 模式工具策略：solo 全禁、plan 只读，其余全放行。 */
+/** 模式工具策略：solo 严格只读、plan 只读（含只读终端/子代理）、agent 禁改 App、其余全放行。 */
 export type ToolPolicy =
   | { kind: "allow-all" }
   | { kind: "deny-all"; reason: string }
-  | { kind: "read-only"; reason: string };
+  | { kind: "read-only"; reason: string }
+  | { kind: "read-only-strict"; reason: string }
+  | { kind: "allow-except-app"; reason: string };
 
-const SOLO_DENY_REASON = "solo 对话模式：纯对话交流，工具调用已禁用。";
+const SOLO_DENY_REASON =
+  "solo 对话模式：仅只读工具可用；终端与运行时（python/node/jdk/wsl/docker 等）、文件修改、子代理派发已禁用（防越狱）。";
 const PLAN_DENY_REASON =
   "plan 计划模式：计划批准前仅允许只读工具，修改/执行/外部调用被拒绝。";
+const APP_MODIFY_DENY_REASON =
+  "agent 自主模式不能修改 App（发布技能/安装插件）；请切换到「创造」执行方式后再调用。";
+
+/** 改 App 的实例级工具（自主模式禁用，创造模式专属）。Task 作用域的 MCP 装卸不在此列。 */
+const APP_MODIFICATION_TOOLS: ReadonlySet<string> = new Set([
+  "create_skill",
+  "install_plugin",
+]);
 
 /** 按策略判定单个工具（纯函数，内核事件缝与 deep-agent 门中间件共用）。 */
 export function evaluateToolPolicy(
   policy: ToolPolicy,
   toolName: string,
-  /** 子代理派发的目标定义细节（DEC-17）：只读定义在 plan 档放行派发。 */
-  detail?: { subagentReadOnly?: boolean; readonlyExecution?: boolean },
+  /** 调用细节：只读终端（DEC-17 审批门）、子代理派发只读性（DEC-17）、属主声明的工具 access。 */
+  detail?: {
+    subagentReadOnly?: boolean;
+    readonlyExecution?: boolean;
+    toolAccess?: "read" | "write" | "execute";
+  },
 ): { allowed: true } | { allowed: false; reason: string } {
   if (policy.kind === "allow-all") {
     return { allowed: true };
@@ -188,17 +204,27 @@ export function evaluateToolPolicy(
   if (policy.kind === "deny-all") {
     return { allowed: false, reason: policy.reason };
   }
-  if (READ_ONLY_TOOLS.has(toolName)) {
+  if (policy.kind === "allow-except-app") {
+    if (APP_MODIFICATION_TOOLS.has(toolName)) {
+      return { allowed: false, reason: policy.reason };
+    }
     return { allowed: true };
   }
-  if (toolName === "Bash" && detail?.readonlyExecution === true) {
+  // read-only 家族：白名单工具放行；MCP/插件工具按属主 access 声明放行只读面
+  if (READ_ONLY_TOOLS.has(toolName) || detail?.toolAccess === "read") {
     return { allowed: true };
   }
-  if (
-    SUBAGENT_DISPATCH_TOOLS.has(toolName) &&
-    detail?.subagentReadOnly === true
-  ) {
-    return { allowed: true };
+  // plan 专属扩展：可信只读终端 + 只读子代理派发
+  if (policy.kind === "read-only") {
+    if (toolName === "Bash" && detail?.readonlyExecution === true) {
+      return { allowed: true };
+    }
+    if (
+      SUBAGENT_DISPATCH_TOOLS.has(toolName) &&
+      detail?.subagentReadOnly === true
+    ) {
+      return { allowed: true };
+    }
   }
   return { allowed: false, reason: policy.reason };
 }
@@ -206,9 +232,11 @@ export function evaluateToolPolicy(
 export function policyForMode(mode: ExecutionMode): ToolPolicy {
   switch (mode) {
     case "solo":
-      return { kind: "deny-all", reason: SOLO_DENY_REASON };
+      return { kind: "read-only-strict", reason: SOLO_DENY_REASON };
     case "plan":
       return { kind: "read-only", reason: PLAN_DENY_REASON };
+    case "agent":
+      return { kind: "allow-except-app", reason: APP_MODIFY_DENY_REASON };
     default:
       return { kind: "allow-all" };
   }

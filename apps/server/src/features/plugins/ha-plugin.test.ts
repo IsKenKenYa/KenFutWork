@@ -206,6 +206,10 @@ interface FakeHaOptions {
   states?: HaEntityState[];
   /** 服务调用「成功但设备没动」：用于验证读回校验不报假成功。 */
   serviceIsNoop?: boolean;
+  /** 集成配置流：POST /flow 的开流返回（缺省给一个 boolean 表单步）。 */
+  flowStart?: Record<string, unknown>;
+  /** 集成配置流：GET/POST /flow/<id> 的进度返回（缺省给 external 授权步）。 */
+  flowProgress?: Record<string, unknown>;
 }
 
 /** 跨域样例：灯/开关/窗帘/空调/风扇/媒体播放器/传感器/坏设备各一条。 */
@@ -475,6 +479,55 @@ function fakeHomeAssistant(options: FakeHaOptions = {}) {
         { entity_id: target.entity_id, state: target.state },
       ]);
     }
+    const flowStart = pathname.match(/^\/api\/config\/config_entries\/flow$/);
+    if (flowStart && init?.method === "POST") {
+      return Response.json(
+        options.flowStart ?? {
+          type: "form",
+          flow_id: "flow-test-1",
+          handler: "xiaomi_home",
+          step_id: "user",
+          data_schema: [
+            { name: "agree", type: "boolean", required: true, default: false },
+          ],
+        },
+      );
+    }
+    const flowStep = pathname.match(
+      /^\/api\/config\/config_entries\/flow\/([^/]+)$/,
+    );
+    if (flowStep) {
+      if ((init?.method ?? "GET") === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<
+          string,
+          unknown
+        >;
+        return Response.json(
+          options.flowProgress ?? {
+            type: "external",
+            flow_id: String(flowStep[1]),
+            step_id: "oauth",
+            description_placeholders: {
+              link_left:
+                '<a href="https://account.xiaomi.com/oauth2/authorize?x=1" target="_blank">',
+              link_right: "</a>",
+            },
+            ...(Object.keys(body).length > 0 ? { submitted: body } : {}),
+          },
+        );
+      }
+      return Response.json(
+        options.flowProgress ?? { type: "progress", flow_id: flowStep[1] },
+      );
+    }
+    const entryDelete = pathname.match(
+      /^\/api\/config\/config_entries\/entry\/([^/]+)$/,
+    );
+    if (entryDelete && init?.method === "DELETE") {
+      return Response.json({
+        entry_id: decodeURIComponent(String(entryDelete[1])),
+      });
+    }
     return Response.json({ message: "not found" }, { status: 404 });
   };
   return { fetchImpl, calls, states };
@@ -499,6 +552,12 @@ interface SocketHubOptions {
   entities?: unknown[];
   areas?: unknown[];
   devices?: unknown[];
+  /** 集成管理：WS config_entries/get 返回的配置条目（缺省空）。 */
+  configEntries?: unknown[];
+  /** 集成配置流：POST /flow 的开流返回（缺省给一个 boolean 表单步）。 */
+  flowStart?: Record<string, unknown>;
+  /** 集成配置流：GET/POST /flow/<id> 的进度返回（缺省给 external 授权步）。 */
+  flowProgress?: Record<string, unknown>;
 }
 
 interface FakeSocket {
@@ -585,6 +644,15 @@ function createSocketHub(options: SocketHubOptions = {}) {
               ? (options.areas ?? [])
               : (options.devices ?? []);
         this.emit({ id: message.id, type: "result", success: true, result });
+        return;
+      }
+      if (type === "config_entries/get") {
+        this.emit({
+          id: message.id,
+          type: "result",
+          success: true,
+          result: options.configEntries ?? [],
+        });
       }
     }
 
@@ -2050,44 +2118,70 @@ describe("HA 插件：实时态（WS 快照 + 注册表补齐区域）", () => {
 });
 
 describe("HA 插件：接入引导与生态识别", () => {
+  interface GuideItem {
+    kind: string;
+    text?: string;
+    url?: string;
+  }
+  interface GuideBrand {
+    id: string;
+    title: string;
+    subtitle: string;
+    open: boolean;
+    items: GuideItem[];
+  }
   interface GuideStep {
     id: string;
     title: string;
     open: boolean;
-    items: Array<{ kind: string; text?: string; url?: string }>;
+    items: GuideItem[];
   }
 
-  it("guide 路由：步骤含默认展开的米家/华为，仓库链接与 HACS、Docker 命令逐字核对", async () => {
+  it("guide 路由：品牌卡米家/华为默认展开，通用步骤收起，仓库链接与 HACS、Docker 命令逐字核对", async () => {
     const { service, installed } = await installFromRepo();
     const result = await dispatch(service, installed.id, {
       path: "guide",
       instanceId: INSTANCE_ID,
     });
     expect(result?.status).toBe(200);
-    const body = bodyOf<{ steps: GuideStep[] }>(result);
-    // 默认支持的两个生态步骤在场且默认展开，其余步骤默认收起
+    const body = bodyOf<{ brands: GuideBrand[]; steps: GuideStep[] }>(result);
+    // 默认支持的两个生态 = 教程里「选择品牌或集成」的两张品牌卡，都默认展开
+    expect(body.brands.map((brand) => brand.id)).toEqual(["xiaomi", "huawei"]);
+    for (const brand of body.brands) {
+      expect(brand.open).toBe(true);
+      expect(brand.subtitle).toBeTruthy();
+    }
     expect(body.steps.map((step) => step.id)).toEqual([
       "ha",
       "hacs",
-      "xiaomi",
-      "huawei",
       "embed",
+      "autologin",
       "token",
     ]);
     for (const step of body.steps) {
-      expect(step.open).toBe(step.id === "xiaomi" || step.id === "huawei");
+      expect(step.open).toBe(false);
     }
-    const items = body.steps.flatMap((step) => step.items);
-    // 装错仓库是引导最大的事故面：链接逐字核对
-    expect(items.map((item) => item.url ?? "")).toEqual(
+    const brandItems = body.brands.flatMap((brand) => brand.items);
+    // 装错仓库是引导最大的事故面：品牌卡里的仓库链接逐字核对
+    expect(
+      brandItems.filter((item) => item.kind === "link").map((item) => item.url),
+    ).toEqual(
       expect.arrayContaining([
         "https://github.com/XiaoMi/ha_xiaomi_home",
         "https://github.com/xiasi0/ha-huawei-smarthome",
-        "https://www.hacs.xyz/docs/use/download/download/",
-        "https://www.home-assistant.io/integrations/http/",
+        "https://github.com/xiasi0/ha-huawei-smarthome/blob/main/docs/supported-devices.md",
       ]),
     );
-    const commands = items
+    // 米家 OAuth 跳转地址坑（教程第一大翻车点）写进品牌卡
+    expect(brandItems.map((item) => item.text ?? "").join("\n")).toContain(
+      "homeassistant.local",
+    );
+    // 华为登录三要素在场
+    expect(brandItems.map((item) => item.text ?? "").join("\n")).toContain(
+      "挑战码",
+    );
+    const commands = body.steps
+      .flatMap((step) => step.items)
       .filter((item) => item.kind === "command")
       .map((item) => item.text ?? "")
       .join("\n");
@@ -2097,11 +2191,14 @@ describe("HA 插件：接入引导与生态识别", () => {
     expect(commands).toContain("use_x_frame_options: false");
     // 引导终点把用户带回自己的连接表单：令牌步骤指回面板
     expect(
-      items
-        .filter((item) => item.kind === "text")
+      body.steps
+        .flatMap((step) => step.items)
         .map((item) => item.text ?? "")
         .join("\n"),
     ).toContain("长期访问令牌");
+    // 免登陆步（2026-10-25 用户口径「自动关联本地用户」）：trusted_networks 在场
+    expect(commands).toContain("allow_bypass_login: true");
+    expect(commands).toContain("172.17.0.1");
   });
 
   it("guide 路由私有：未登录 401", async () => {
@@ -2149,6 +2246,130 @@ describe("HA 插件：接入引导与生态识别", () => {
     expect(view.ecosystems).toBeNull();
   });
 
+  it("集成管理：列表只含默认两生态，WS 未就绪如实标 ready=false", async () => {
+    installSocketHub({
+      configEntries: [
+        {
+          entry_id: "entry-xiaomi-1",
+          domain: "xiaomi_home",
+          title: "羊刀仙",
+          state: "loaded",
+        },
+        { entry_id: "entry-hue", domain: "hue", title: "Hue", state: "loaded" },
+      ],
+    });
+    const { service, installed } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const view = bodyOf<{
+      ready: boolean;
+      integrations: Array<{
+        entryId: string;
+        domain: string;
+        title: string;
+        state: string;
+      }>;
+    }>(
+      await dispatch(service, installed.id, {
+        path: "integrations",
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(view.ready).toBe(true);
+    // Hue 这类非默认生态被滤掉：面板只管默认两家的生命周期
+    expect(view.integrations).toEqual([
+      {
+        entryId: "entry-xiaomi-1",
+        domain: "xiaomi_home",
+        title: "羊刀仙",
+        state: "loaded",
+      },
+    ]);
+  });
+
+  it("集成管理：添加走配置流（白名单外拒绝）、external 步带授权链接、卸载打 DELETE", async () => {
+    installSocketHub({ configEntries: [] });
+    const { service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const bad = await dispatch(service, installed.id, {
+      path: "integrations/start",
+      method: "POST",
+      body: { brand: "tuya" },
+      instanceId: INSTANCE_ID,
+    });
+    expect(bad?.status).toBe(400);
+    const start = bodyOf<{ flowId: string; step: { type: string } }>(
+      await dispatch(service, installed.id, {
+        path: "integrations/start",
+        method: "POST",
+        body: { brand: "xiaomi" },
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(start.flowId).toBe("flow-test-1");
+    expect(start.step.type).toBe("form");
+    const external = bodyOf<{
+      step: { type: string; description_placeholders: Record<string, string> };
+    }>(
+      await dispatch(service, installed.id, {
+        path: "integrations/flow",
+        method: "POST",
+        body: { flowId: start.flowId, fields: { agree: true } },
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(external.step.type).toBe("external");
+    expect(external.step.description_placeholders.link_left).toContain(
+      "account.xiaomi.com",
+    );
+    const removed = await dispatch(service, installed.id, {
+      path: "integrations/remove",
+      method: "POST",
+      body: { entryId: "entry-x" },
+      instanceId: INSTANCE_ID,
+    });
+    expect(removed?.status).toBe(200);
+    expect(
+      fake.calls.some(
+        (call) =>
+          call.method === "DELETE" && String(call.url).includes("entry-x"),
+      ),
+    ).toBe(true);
+  });
+
+  it("在途配置流复用：重复 start 返回同一个 flow，不再新起一个（HA 会 already_in_progress）", async () => {
+    installSocketHub({ configEntries: [] });
+    const { service, installed, fake } = await installFromRepo();
+    await configureConnected(service, installed.id);
+    const starts = () =>
+      fake.calls.filter(
+        (call) =>
+          call.method === "POST" &&
+          String(call.url).endsWith("/api/config/config_entries/flow"),
+      ).length;
+
+    const first = bodyOf<{ flowId: string; step: { type: string } }>(
+      await dispatch(service, installed.id, {
+        path: "integrations/start",
+        method: "POST",
+        body: { brand: "xiaomi" },
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    expect(starts()).toBe(1);
+    const second = bodyOf<{ flowId: string; step: { type: string } }>(
+      await dispatch(service, installed.id, {
+        path: "integrations/start",
+        method: "POST",
+        body: { brand: "xiaomi" },
+        instanceId: INSTANCE_ID,
+      }),
+    );
+    // 同一个 flow：拿到的是在途进度（不是新开的 form 步），且没有再次 POST 开流
+    expect(second.flowId).toBe(first.flowId);
+    expect(second.step.type).not.toBe("form");
+    expect(starts()).toBe(1);
+  });
+
   it("注册表条目全都没有 platform（注册表形状变了）：返回 null，不把「识别不出」当「未接入」", async () => {
     const model = await loadPluginModule<{
       buildEcosystemSummary: (registries: unknown) => unknown;
@@ -2157,6 +2378,64 @@ describe("HA 插件：接入引导与生态识别", () => {
       model.buildEcosystemSummary({ entities: [{ entity_id: "light.a" }] }),
     ).toBeNull();
     expect(model.buildEcosystemSummary({})).toBeNull();
+  });
+});
+
+describe("HA 插件：配置流自动取值", () => {
+  it("必选多选全选（选家庭=全部导入），可选过滤列表留空，select/boolean 用默认", async () => {
+    const { autoFillFields, optionValues } = await loadPluginModule<{
+      autoFillFields: (schema: unknown[]) => Record<string, unknown> | null;
+      optionValues: (options: unknown) => string[];
+    }>("lib/flow-fields.js");
+    expect(optionValues({ a: "A", b: "B" })).toEqual(["a", "b"]);
+    expect(optionValues([["x", "X"], "y"])).toEqual(["x", "y"]);
+    expect(
+      autoFillFields([
+        {
+          name: "home_infos",
+          type: "multi_select",
+          required: true,
+          options: { h1: "家1", h2: "家2" },
+        },
+        {
+          name: "room_filter_mode",
+          type: "select",
+          options: [
+            ["exclude", "排除"],
+            ["include", "包含"],
+          ],
+          default: "exclude",
+        },
+        {
+          name: "room_list",
+          type: "multi_select",
+          required: false,
+          optional: true,
+          options: { r1: "卧室" },
+        },
+        { name: "advanced_options", type: "boolean", default: false },
+      ]),
+    ).toEqual({
+      home_infos: ["h1", "h2"],
+      room_filter_mode: "exclude",
+      room_list: [],
+      advanced_options: false,
+    });
+  });
+
+  it("没有默认值的文本字段停下来（华为账号/密码只能人工填）", async () => {
+    const { autoFillFields } = await loadPluginModule<{
+      autoFillFields: (schema: unknown[]) => Record<string, unknown> | null;
+    }>("lib/flow-fields.js");
+    expect(
+      autoFillFields([
+        { name: "account", type: "text" },
+        { name: "password", type: "password" },
+      ]),
+    ).toBeNull();
+    expect(
+      autoFillFields([{ name: "eula", type: "boolean", default: true }]),
+    ).toEqual({ eula: true });
   });
 });
 

@@ -33,7 +33,7 @@ import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useOptionalServices } from "@zui/hooks/useServices.js";
 import { ProactiveSuggestionsSetting } from "@zui/settings/ProactiveSuggestionsSetting.js";
 import { HostInstanceAutoCompactSetting } from "@zui/host/InstanceAutoCompactSetting.js";
-import { normalizeInterfaceMode, type InterfaceMode } from "@zui/lib/interfaceMode.js";
+import type { InterfaceMode } from "@zui/lib/interfaceMode.js";
 import {
   createSettingsPageConfig,
   resolveSettingsSectionForPlatform,
@@ -323,35 +323,6 @@ export function GeneralSectionContent({
       </SettingsGroupCard>
 
       <SettingsGroupCard>
-        {platform?.supportsInterfaceModeSettings !== false ? (
-        <SettingsRow
-          controlLayout="wide"
-          label={intl.formatMessage({ id: "settings.interfaceMode" })}
-          description={intl.formatMessage({ id: "settings.interfaceMode.description" })}
-          control={
-            <Select
-              value={interfaceMode}
-              onValueChange={(value) => setInterfaceMode(normalizeInterfaceMode(value))}
-            >
-              <SelectTrigger
-                size="lg"
-                className="w-full min-w-0 sm:w-64"
-                aria-label={intl.formatMessage({ id: "settings.interfaceMode" })}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="coding">
-                  {intl.formatMessage({ id: "settings.interfaceMode.coding" })}
-                </SelectItem>
-                <SelectItem value="office">
-                  {intl.formatMessage({ id: "settings.interfaceMode.office" })}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          }
-        />
-        ) : null}
         {hasServices ? <ProactiveSuggestionsSetting /> : null}
       </SettingsGroupCard>
 

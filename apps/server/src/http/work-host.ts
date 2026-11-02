@@ -1,17 +1,27 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import {
   applicationErrorResponseSchema,
   unauthenticatedErrorResponseSchema,
   type WorkEditor,
-  workEditorSchema,
   type WorkHostEditorsResponse,
-  workHostEditorsResponseSchema,
   type WorkHostStatusResponse,
+  workEditorSchema,
+  workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import {
+  addFont,
+  bundledFontPath,
+  fontFormatOf,
+  listFonts,
+  MAX_FONT_BYTES,
+  manifestFor,
+  removeFont,
+  workFontsDir,
+} from "../features/work/fonts.js";
 import {
   getWorkEditorInstallSnapshot,
   getWorkEditorInstallSnapshots,
@@ -130,6 +140,73 @@ export async function registerWorkHostRoutes(
     },
   );
 
+  // ---- 用户字体（Work 引擎页「字体」）----
+  // 编辑器是 WASM 自绘、读不到系统字体：用户把 ttf/otf 放进实例数据目录，宿主在
+  // 托管编辑器时映射到站点 `fonts/user/` 并生成 manifest，运行时加载字体的编辑器即可用。
+
+  app.get("/api/work/host/fonts", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    return reply.send({
+      dir: workFontsDir(options.dataDir),
+      fonts: await listFonts(options.dataDir),
+    });
+  });
+
+  app.post("/api/work/host/fonts", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    try {
+      // 全局 multipart 上限是 10MB，但中文字体常超过它：这里按字体上限放行。
+      const parts = request.parts({
+        limits: { fileSize: MAX_FONT_BYTES, files: 1, fields: 0 },
+      });
+      let fileName: string | null = null;
+      let bytes: Buffer | null = null;
+      for await (const part of parts) {
+        if (part.type !== "file") continue;
+        if (bytes)
+          return applicationError(reply, 400, "一次只能上传一个字体。");
+        fileName = part.filename ?? null;
+        bytes = await part.toBuffer();
+      }
+      if (!fileName || !bytes)
+        return applicationError(reply, 400, "请选择一个字体文件。");
+      const font = await addFont({
+        dataDir: options.dataDir,
+        fileName,
+        bytes,
+      });
+      return reply.send({
+        dir: workFontsDir(options.dataDir),
+        fonts: await listFonts(options.dataDir),
+        added: font,
+      });
+    } catch (error) {
+      return applicationError(
+        reply,
+        400,
+        error instanceof Error ? error.message : "字体上传失败。",
+      );
+    }
+  });
+
+  app.delete("/api/work/host/fonts/:fileName", async (request, reply) => {
+    if (!(await requireLocalAccess(request, reply))) return;
+    const fileName = String((request.params as { fileName: string }).fileName);
+    try {
+      await removeFont(options.dataDir, fileName);
+    } catch (error) {
+      return applicationError(
+        reply,
+        400,
+        error instanceof Error ? error.message : "删除失败。",
+      );
+    }
+    return reply.send({
+      dir: workFontsDir(options.dataDir),
+      fonts: await listFonts(options.dataDir),
+    });
+  });
+
   // ---- 编辑器静态托管（WASM iframe 内嵌的承载面）----
 
   const MIME: Record<string, string> = {
@@ -152,7 +229,11 @@ export async function registerWorkHostRoutes(
     const editor = findEditor(params.editorId);
     if (!editor) return applicationError(reply, 404, "没有这个编辑器。");
     if (!editor.installed)
-      return applicationError(reply, 404, `${editor.title}尚未落位，请先下载。`);
+      return applicationError(
+        reply,
+        404,
+        `${editor.title}尚未落位，请先下载。`,
+      );
 
     let rel: string;
     try {
@@ -171,6 +252,44 @@ export async function registerWorkHostRoutes(
     if (rel.split("/").some((segment) => segment.startsWith(".")))
       return applicationError(reply, 404, "没有这个文件。");
 
+    // 用户字体：站点里的 `fonts/user/<文件名>` 与 `fonts/manifest.txt` 由宿主生成，
+    // 不要求用户往每个编辑器目录里各放一份。编辑器包自带的 fonts/ 仍优先。
+    const userFonts = workFontsDir(options.dataDir);
+    if (rel.startsWith("fonts/user/")) {
+      const name = rel.slice("fonts/user/".length);
+      if (fontFormatOf(name) === null || /[/]/u.test(name))
+        return applicationError(reply, 404, "没有这个文件。");
+      // 内置开源字体直接读仓库资产，不复制进数据目录。
+      const path = bundledFontPath(name) ?? join(userFonts, name);
+      if (!existsSync(path))
+        return applicationError(reply, 404, "没有这个字体。");
+      const fontMime = fontFormatOf(name) === "otf" ? "font/otf" : "font/ttf";
+      return reply
+        .header("content-type", fontMime)
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "no-cache")
+        .send(createReadStream(path));
+    }
+    if (rel === "fonts/manifest.txt") {
+      // 编辑器包自带的 fonts/ 仍要能加载（PhotoCraft 靠这份清单发现包内字形）：
+      // 宿主生成的用户字体清单接在包内清单后面，而不是覆盖它。
+      const bundledPath = join(
+        options.editorsDir,
+        editor.id,
+        "fonts",
+        "manifest.txt",
+      );
+      const userManifest = manifestFor(await listFonts(options.dataDir));
+      const bundled = existsSync(bundledPath)
+        ? readFileSync(bundledPath, "utf8")
+        : "";
+      return reply
+        .header("content-type", "text/plain; charset=utf-8")
+        .header("cache-control", "no-cache")
+        .send(
+          `${bundled}${bundled && !bundled.endsWith("\n") ? "\n" : ""}${userManifest}`,
+        );
+    }
     const root = join(options.editorsDir, editor.id) + sep;
     let filePath = join(root, rel);
     if (!existsSync(filePath) || !statSync(filePath).isFile()) {
@@ -191,8 +310,29 @@ export async function registerWorkHostRoutes(
           ? "public, max-age=31536000, immutable"
           : "no-cache",
       );
+    if (ext === ".html")
+      return reply.send(injectEditorShell(readFileSync(filePath, "utf8")));
     return reply.send(createReadStream(filePath));
   });
+}
+
+/**
+ * 托管编辑器页时注入的宿主脚本（只改 HTML，静态资产原样流式）：
+ *
+ * - 语言：KenFutWork 的界面是中文；编辑器按 `navigator.language` 选界面语言，用户系统是
+ *   英文时它们退回英文（实测 gridcraft 的 web 壳还会主动跳过中日韩，宁可选英文）。
+ *   我们的编辑器包已内嵌简体中文字形（`scripts/build-work-editor-zh.mjs`），一律给 `zh-CN`。
+ * - 启动：各编辑器自带的 `Loading …` 文案换成统一的 KenFutWork 启动屏；编辑器就绪后淡出，
+ *   并向父页发 `kenfutwork:editor-ready`，宿主据此撤掉遮罩（否则只能等 iframe onLoad，
+ *   48MB wasm 的编辑器会在自己的英文 Loading 上停好几秒）。
+ */
+const EDITOR_SHELL_SCRIPT = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "zh-CN";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["zh-CN","zh"];}});}catch(error){}var BOOT="kfw-editor-boot";function ready(){var el=document.getElementById(BOOT);if(el&&!el.dataset.done){el.dataset.done="1";el.style.opacity="0";setTimeout(function(){el.remove();},220);}try{parent.postMessage({type:"kenfutwork:editor-ready"},location.origin);}catch(error){}}function boot(){if(document.getElementById(BOOT))return;var style=document.createElement("style");style.textContent="#kfw-editor-boot{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#fff;transition:opacity .2s ease}#kfw-editor-boot img{height:56px;width:auto;filter:brightness(0)}#kfw-editor-boot i{width:24px;height:24px;border:2px solid rgba(115,115,115,.3);border-top-color:rgba(60,60,60,.75);border-radius:9999px;animation:kfw-editor-spin .8s linear infinite}@keyframes kfw-editor-spin{to{transform:rotate(360deg)}}";document.head.appendChild(style);var wrap=document.createElement("div");wrap.id=BOOT;wrap.setAttribute("role","status");wrap.innerHTML='<img src="/logo-mark.png" alt=""><i></i>';document.body.appendChild(wrap);}function start(){boot();var hadLoading=!!document.querySelector('[id$="_loading"]');if(hadLoading){var observer=new MutationObserver(function(){if(!document.querySelector('[id$="_loading"]')){observer.disconnect();ready();}});observer.observe(document.body,{childList:true,subtree:true});}else{window.addEventListener("load",function(){setTimeout(ready,300);},{once:true});}window.addEventListener("TrunkApplicationStarted",ready,{once:true});setTimeout(ready,30000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",start,{once:true});}else{start();}})();</script>`;
+
+export function injectEditorShell(html: string): string {
+  const head = /<head[^>]*>/iu.exec(html);
+  if (!head) return EDITOR_SHELL_SCRIPT + html;
+  const at = head.index + head[0].length;
+  return html.slice(0, at) + EDITOR_SHELL_SCRIPT + html.slice(at);
 }
 
 /**

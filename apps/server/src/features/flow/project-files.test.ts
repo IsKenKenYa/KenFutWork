@@ -335,10 +335,9 @@ describe("Flow project file binding", () => {
     });
     f.changeRoot(join(f.dataDir, "project"));
     f.changeKind("design");
-    const wrongKind = await f.files
-      .issue(afterRevoke, f.projectId)
-      .catch(() => null);
-    expect(wrongKind).toBeNull();
+    // 任意工作方式的项目都可绑定 Flow（用户 2026-10-27 口径）。
+    const designBinding = await f.files.issue(afterRevoke, f.projectId);
+    expect(designBinding.projectId).toBe(f.projectId);
   });
 
   it("stores workflow JSON under the fixed managed path with revision CAS", async () => {

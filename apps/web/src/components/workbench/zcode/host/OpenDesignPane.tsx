@@ -2784,7 +2784,7 @@ export function OpenDesignPane({
                     key={system.id}
                     type="button"
                     data-open-design-system={system.id}
-                    className="flex items-center gap-3 rounded-md border px-3 py-2 text-left hover:bg-hover"
+                    className="flex items-center gap-3 rounded-md border border-border px-3 py-2 text-left hover:bg-hover"
                     onClick={() =>
                       void bindDesignSystem(system.id, system.title)
                     }

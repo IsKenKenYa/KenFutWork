@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { unzipSync } from "fflate";
 import type {
   WorkEditorInstallStatus,
   WorkEditorPinnedRelease,
 } from "@kenfutwork/shared";
+import { unzipSync } from "fflate";
 
 /**
  * 编辑器扩展包按需下载（WD-3，范式同 `scripts/fetch-runtimes.mjs` / flow 引擎安装）：
@@ -20,6 +27,8 @@ import type {
  */
 
 const INSTALL_MARKER = ".kenfutwork-install.json";
+/** 自建中文包的标记文件（构建脚本写入）。 */
+const ZH_BUILD_MARKER = ".kenfutwork-zh-build.json";
 const LOG_TAIL_LIMIT = 20;
 
 export type WorkEditorInstallOptions = {
@@ -52,17 +61,24 @@ function pushLog(editorId: string, line: string): void {
   });
 }
 
-function settle(editorId: string, patch: Partial<WorkEditorInstallStatus>): void {
-  snapshots.set(editorId, { ...getWorkEditorInstallSnapshot(editorId), ...patch });
+function settle(
+  editorId: string,
+  patch: Partial<WorkEditorInstallStatus>,
+): void {
+  snapshots.set(editorId, {
+    ...getWorkEditorInstallSnapshot(editorId),
+    ...patch,
+  });
 }
 
 /**
  * 发起安装（幂等）：同编辑器已在装 → 返回 false（路由回 409，轮询状态即可）；
  * 落位标记 sha256 与锚定一致 → 直接 ready（不重复下载）。
  */
-export function startWorkEditorInstall(
-  options: WorkEditorInstallOptions,
-): { started: boolean; snapshot: WorkEditorInstallStatus } {
+export function startWorkEditorInstall(options: WorkEditorInstallOptions): {
+  started: boolean;
+  snapshot: WorkEditorInstallStatus;
+} {
   const current = getWorkEditorInstallSnapshot(options.editorId);
   if (inflight.has(options.editorId))
     return { started: false, snapshot: current };
@@ -87,7 +103,10 @@ export function startWorkEditorInstall(
       inflight.delete(options.editorId);
     });
   inflight.set(options.editorId, task);
-  return { started: true, snapshot: getWorkEditorInstallSnapshot(options.editorId) };
+  return {
+    started: true,
+    snapshot: getWorkEditorInstallSnapshot(options.editorId),
+  };
 }
 
 async function runInstall(options: WorkEditorInstallOptions): Promise<void> {
@@ -96,6 +115,16 @@ async function runInstall(options: WorkEditorInstallOptions): Promise<void> {
 
   await mkdir(editorsDir, { recursive: true });
   const existingSha = await readMarkerSha256(finalDir);
+  // 自建中文包（scripts/build-work-editor-zh.mjs）不得被官方英文包覆盖：
+  // 覆盖后界面会退回英文（上游 web 包无中文字形）。要更新中文包就重跑构建脚本。
+  if (existsSync(join(finalDir, ZH_BUILD_MARKER))) {
+    settle(editorId, { state: "ready" });
+    pushLog(
+      editorId,
+      "当前是自建中文包，跳过官方包覆盖（重新构建请运行 scripts/build-work-editor-zh.mjs）",
+    );
+    return;
+  }
   if (existingSha === pinned.sha256) {
     settle(editorId, { state: "ready" });
     pushLog(editorId, `已落位（v${pinned.version}），跳过下载`);
@@ -121,7 +150,10 @@ async function runInstall(options: WorkEditorInstallOptions): Promise<void> {
     throw new Error("校验和不匹配：下载内容与锚定发布不一致，已丢弃。");
   pushLog(editorId, "校验和通过，解压落位中…");
 
-  const staging = join(await mkdtemp(join(tmpdir(), "work-editor-")), "payload");
+  const staging = join(
+    await mkdtemp(join(tmpdir(), "work-editor-")),
+    "payload",
+  );
   const trash = `${finalDir}.trash-${Date.now()}`;
   try {
     await extractZipPayload(body, staging);
@@ -145,7 +177,10 @@ async function runInstall(options: WorkEditorInstallOptions): Promise<void> {
 }
 
 /** zip 内单顶层目录是 craft 发行包的固定结构；剥掉后写平（index.html 在编辑器目录根）。 */
-async function extractZipPayload(zip: Buffer, targetDir: string): Promise<void> {
+async function extractZipPayload(
+  zip: Buffer,
+  targetDir: string,
+): Promise<void> {
   const entries = unzipSync(zip);
   const names = Object.keys(entries).filter(
     (name) => name.length > 0 && !name.endsWith("/"),

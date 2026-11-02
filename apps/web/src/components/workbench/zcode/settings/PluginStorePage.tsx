@@ -405,7 +405,9 @@ export function PluginStorePage({
 
   return (
     <div ref={rootRef} className="space-y-5" data-testid="plugin-store-root" data-view={view}>
-      {onBack ? <ControlHintTooltip title={intl.formatMessage({ id: "workspace.backToWorkspace" })}><Button type="button" variant="ghost" size="icon-lg" aria-label={intl.formatMessage({ id: "workspace.backToWorkspace" })} onClick={onBack}><ArrowLeft className="size-4" /></Button></ControlHintTooltip> : null}
+      {/* 返回钮左移 10px：icon-lg 的 32px 盒把 16px 箭头墨迹顶到内容列右侧 10.7px，
+          与下方头像/标题的左边缘不齐；位移后墨迹与内容列同线（命中盒仍完整）。 */}
+      {onBack ? <ControlHintTooltip title={intl.formatMessage({ id: "workspace.backToWorkspace" })}><Button type="button" variant="ghost" size="icon-lg" className="-ml-2.5" aria-label={intl.formatMessage({ id: "workspace.backToWorkspace" })} onClick={onBack}><ArrowLeft className="size-4" /></Button></ControlHintTooltip> : null}
       <SettingsBreadcrumbReporter
         items={
           view === "detail" && detailItem

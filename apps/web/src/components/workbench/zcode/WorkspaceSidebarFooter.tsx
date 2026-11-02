@@ -26,7 +26,6 @@ import {
   DropdownMenuTrigger,
 } from "@zui/components/ui/dropdown-menu.js";
 import {
-  PencilRuler,
   Globe,
   Loader2,
   LogInIcon,
@@ -42,7 +41,6 @@ import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useShortcutCommandLabel } from "@zui/shortcuts/useShortcutBindings.js";
 import { useZCodeStore } from "@zui/store/StoreProvider.js";
-import { normalizeInterfaceMode } from "@zui/lib/interfaceMode.js";
 import type { Theme } from "@zui/useTheme.js";
 import { WorkspaceWebRemoteControlTrigger } from "@zui/WorkspaceWebRemoteControlTrigger.js";
 import {
@@ -126,8 +124,6 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
   const supportsCloudAccounts = platform.supportsCloudAccounts !== false;
-  const interfaceMode = useZCodeStore((state) => state.interfaceMode);
-  const setInterfaceMode = useZCodeStore((state) => state.setInterfaceMode);
   const zoomInShortcutLabel = useShortcutCommandLabel("zoomIn");
   const zoomOutShortcutLabel = useShortcutCommandLabel("zoomOut");
   const resetZoomShortcutLabel = useShortcutCommandLabel("resetZoom");
@@ -287,25 +283,6 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
-            {!platform.workbenchNavigation ? <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <PencilRuler className="size-4" />
-                {intl.formatMessage({ id: "settings.interfaceMode" })}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-48">
-                <DropdownMenuRadioGroup
-                  value={interfaceMode}
-                  onValueChange={(value) => setInterfaceMode(normalizeInterfaceMode(value))}
-                >
-                  <DropdownMenuRadioItem value="coding">
-                    {intl.formatMessage({ id: "settings.interfaceMode.coding" })}
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="office">
-                    {intl.formatMessage({ id: "settings.interfaceMode.office" })}
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub> : null}
             {/* 快捷键设置：缩放子菜单 label 读生效表，设置页改绑后即时跟随 */}
             {/* 收口重复缩放子菜单时误留了语言之后的那份，导致菜单顺序变成
                 语言→缩放→主题；账户菜单分组顺序固定为 语言→主题→界面模式→缩放→用量→登录/登出，

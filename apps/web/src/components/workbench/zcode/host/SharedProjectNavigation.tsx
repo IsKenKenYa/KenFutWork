@@ -38,6 +38,7 @@ interface NavigationContext {
   projects: CodeUiWorkspace[];
   openProject: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>;
   createProject: (preset: Preset) => Promise<void>;
+  refreshWorkspaces: () => Promise<CodeUiWorkspace[]>;
   registerTabs: (tabs: TabStore | null) => void;
   error: string | null;
   retryDocument: (() => void) | null;
@@ -432,6 +433,7 @@ export function SharedProjectNavigationProvider({
         projects,
         openProject,
         createProject,
+        refreshWorkspaces: () => client.refreshWorkspaces(),
         registerTabs,
         error,
         retryDocument,
@@ -440,6 +442,11 @@ export function SharedProjectNavigationProvider({
       {children}
     </Context.Provider>
   );
+}
+
+/** 壳侧栏的项目切换/打开入口（全部项目菜单等宿主组件复用同一份打开逻辑）。 */
+export function useSharedProjectNavigation() {
+  return useContext(Context);
 }
 
 export function useSharedProjectTabs(tabs: WorkspaceTabState[]) {

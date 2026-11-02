@@ -63,8 +63,8 @@ export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 
 export const codeUiWorkspaceSchema = z.object({
   projectId: z.string().uuid(),
-  kind: z.enum(["code", "design"]).optional(),
-  enabledModes: z.array(z.enum(["code", "design"])).optional(),
+  kind: z.enum(["code", "design", "work"]).optional(),
+  enabledModes: z.array(z.enum(["code", "design", "work"])).optional(),
   name: z.string(),
   path: z.string().min(1),
   additionalDirectories: z.array(additionalDirectorySchema).default([]),

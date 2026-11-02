@@ -308,17 +308,25 @@ export type FlowHostEngineInfoResponse = z.infer<
  * Flow 模式入口门控（纯逻辑，接线在各端宿主 hook）。
  *
  * 入口纪律（《flow 集成方案》P2 / AGENTS.md 不变量）：flow 以插件形态交付，
- * **未安装插件或宿主适配层未配齐时不出现 Flow 入口**——不摆空壳、不放假开关。
+ * **入口是否出现只看插件安装态**——装了就该有入口；宿主适配层没配齐或引擎没起
+ * 属于运行期状态，入口照常出现，由主区如实报原因并给引擎页（用户 2026-10-27 口径：
+ * 「就算 dify 没启动也不应该 flow 都不显示」）。没装插件才不出现，不放无提示空壳。
  */
 export type FlowEntry =
-  | { available: true; frontendUrl: string }
+  | {
+      available: true;
+      /** 适配层就绪时的 flow 前端地址；未就绪为 null（主区报 reason 并引导去引擎页）。 */
+      frontendUrl: string | null;
+      /** 未就绪原因；已就绪为 null。 */
+      reason: string | null;
+    }
   | { available: false; reason: string };
 
 export function resolveFlowEntry(input: {
   /** flow 插件（`kenfutwork-flow`）是否已安装。 */
   pluginInstalled: boolean;
   pluginEnabled: boolean;
-  /** 宿主适配层状态；null = 探针请求失败（按不可用处理，不猜）。 */
+  /** 宿主适配层状态；null = 探针请求失败（按未就绪处理，不猜）。 */
   status: FlowHostStatusResponse | null;
 }): FlowEntry {
   if (!input.pluginInstalled) {
@@ -331,19 +339,25 @@ export function resolveFlowEntry(input: {
     return { available: false, reason: "Flow 插件已停用。" };
   if (!input.status) {
     return {
-      available: false,
+      available: true,
+      frontendUrl: null,
       reason: "无法获取 flow 宿主状态（/api/flow/host/status 不可达）。",
     };
   }
   if (!input.status.enabled || !input.status.frontendUrl) {
     return {
-      available: false,
+      available: true,
+      frontendUrl: null,
       reason: input.status.reasons.length
         ? `宿主适配层未配齐：${input.status.reasons.join(" ")}`
         : "宿主适配层未配齐。",
     };
   }
-  return { available: true, frontendUrl: input.status.frontendUrl };
+  return {
+    available: true,
+    frontendUrl: input.status.frontendUrl,
+    reason: null,
+  };
 }
 
 /**

@@ -1,51 +1,35 @@
 /**
  * 智能家居面板页（插件自带，无构建、无外部依赖）。
  *
- * 三种视图：未配置/修改配置（接入引导 + 连接表单）、**HA 原生界面（已连接后的默认
- * 视图，iframe 直接内嵌 HA 自己的前端——用户拍板「要教程里一样的界面」，2026-10-24）**、
- * 精简面板（自绘实体网格，顶栏可互切）。HA 默认发 X-Frame-Options 挡内嵌，被挡时
- * iframe 空白——原生视图自带折叠提示条给两侧的关法（见接入引导「允许面板内嵌」步）。
+ * 两种视图（2026-10-25 用户口径「里面只要一个 ha 面板」）：
+ * - **原生视图（默认）**：满幅 iframe 内嵌 HA 自己的前端，无任何上方套壳条；
+ *   免登陆由 HA 侧 trusted_networks 提供（自动关联本地用户）。宿主标题栏「配置」
+ *   （面板声明 configurable，宿主经 postMessage 通知切换）。
+ * - **配置视图**（经标题栏「配置」进入）：集成区（默认小米/华为，**打开即自动发起
+ *   配置流**——未添加的品牌直接推进到 OAuth 授权步，点「打开授权页」完成授权即添加；
+ *   已添加可卸载）+ 界面空白诊断 + 连接表单；未配置态则是欢迎页 + 品牌卡引导 +
+ *   连接表单。
  *
  * 本机接入由浏览器 HttpOnly cookie 持有，面板不接收也不保管宿主令牌；数据面请求带
- * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里，面板写入一次后
- * 只显示「已配置」；内嵌的 HA 前端用 HA 自己的登录态（iframe 里登录一次即记住）。
- *
- * 数据面：本插件自己的私有路由（`/api/plugins/<id>/…`）。控件由服务端按「域 + 属性」
- * 算好（`lib/entity-model.js`），面板只渲染并回传 `{entityId, key, service, value}`——
- * 量程与换算都在服务端复核，面板改不动服务契约。
+ * credentials，由服务端解析稳定实例。HA 令牌只存在服务端插件存储里。
  *
  * 加载方式：**本文件不是 ES module**（无 import/export），由 panel.html 以经典脚本注入。
  */
 
 const BASE = location.pathname.replace(/\/assets\/[^/]*$/, "");
-/** 面板自取增量的间隔（WS 断时这是唯一的新鲜度来源，如实标「轮询」）。 */
-const POLL_MS = 5000;
 
 const state = {
   baseUrl: "",
   defaultBaseUrl: "",
   version: null,
-  groups: [],
-  total: 0,
-  truncated: false,
-  mode: "polling",
-  /** 米家/华为实体计数（服务端按注册表 platform 识别）；null = 识别不了，不显示 */
-  ecosystems: null,
-  /** 当前视图：config（配置/引导）| native（内嵌 HA 原生界面）| grid（自绘实体网格） */
   view: "config",
   busy: false,
-  pollTimer: null,
 };
 
 const els = {
   state: document.getElementById("state"),
   body: document.getElementById("body"),
   note: document.getElementById("note"),
-  toggleView: document.getElementById("toggleView"),
-  refresh: document.getElementById("refresh"),
-  retest: document.getElementById("retest"),
-  edit: document.getElementById("edit"),
-  disconnect: document.getElementById("disconnect"),
 };
 
 function el(tag, className, text) {
@@ -65,9 +49,7 @@ function setState(text) {
 
 /**
  * 页脚**瞬时消息**（错误红字/提示灰字，互斥）——单独一个 `#note` 节点。
- *
- * 轮询每 5 秒要清一次瞬时消息，若把它和网格挤进同一容器，清空会让页面矮一截、
- * 滚动条每轮抖一次（米家面板实测过的同一现象）。
+ * 不与内容同容器：清空瞬时消息不会让页面矮一截（米家面板实测过的同一现象）。
  */
 function setNote(text, isError) {
   els.note.textContent = text || "";
@@ -77,22 +59,6 @@ function setNote(text, isError) {
 
 function showError(message) {
   setNote(message, true);
-}
-
-/**
- * 三种视图的顶栏按钮：
- * - `config`：只有配置表单（未配置/修改配置），无连接态操作；
- * - `native`：内嵌 HA 原生界面（默认）——可切「精简面板」，不需要「刷新」；
- * - `grid`：自绘实体网格——可切回「原生界面」，要「刷新」。
- */
-function setHeaderButtons(view) {
-  const connected = view === "native" || view === "grid";
-  els.toggleView.hidden = !connected;
-  els.toggleView.textContent = view === "native" ? "精简面板" : "原生界面";
-  els.refresh.hidden = view !== "grid";
-  els.retest.hidden = !connected;
-  els.edit.hidden = !connected;
-  els.disconnect.hidden = !connected;
 }
 
 function api(path, options) {
@@ -124,17 +90,20 @@ function api(path, options) {
   );
 }
 
-// === 未配置 / 修改配置 ===
+// === 配置视图：欢迎页/品牌卡引导（未配置）与 集成管理/表单（已连接） ===
 
-/** 引导步骤只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
+/** 引导数据只拉一次；失败不缓存（下一轮配置态重试），也绝不影响连接表单。 */
 let guidePromise = null;
-function loadGuideSteps() {
+function loadGuide() {
   if (guidePromise) return guidePromise;
   guidePromise = api("guide")
-    .then((payload) => (Array.isArray(payload.steps) ? payload.steps : []))
+    .then((payload) => ({
+      brands: Array.isArray(payload.brands) ? payload.brands : [],
+      steps: Array.isArray(payload.steps) ? payload.steps : [],
+    }))
     .catch(() => {
       guidePromise = null;
-      return [];
+      return { brands: [], steps: [] };
     });
   return guidePromise;
 }
@@ -183,49 +152,90 @@ function commandRow(item) {
   return row;
 }
 
-/**
- * 接入引导卡：部署 HA → 装 HACS → 接米家（默认展开）→ 接华为（默认展开）→ 建令牌。
- * 步骤数据来自服务端 `guide` 路由（`lib/setup-guide.js` 一处属主，测试锁死仓库链接）。
- */
-function buildGuideCard(steps) {
-  const card = el("div", "card guide");
-  const intro = el("p", "hint intro");
-  intro.textContent = "经 Home Assistant 接入米家与华为设备";
-  card.appendChild(intro);
-  steps.forEach((step, index) => {
-    const details = el("details", "step");
-    details.open = step.open === true;
-    details.appendChild(el("summary", null, `${index + 1}. ${step.title}`));
-    const box = el("div", "step-body");
-    for (const item of step.items ?? []) {
-      if (item.kind === "command") {
-        box.appendChild(commandRow(item));
-        continue;
-      }
-      if (item.kind === "link") {
-        const line = el("p", "step-text");
-        const link = el("a", null, item.label);
-        link.href = item.url;
-        link.target = "_blank";
-        link.rel = "noopener";
-        line.appendChild(link);
-        box.appendChild(line);
-        continue;
-      }
-      box.appendChild(el("p", "step-text", item.text));
+function guideItemsInto(box, items) {
+  for (const item of items ?? []) {
+    if (item.kind === "command") {
+      box.appendChild(commandRow(item));
+      continue;
     }
-    details.appendChild(box);
-    card.appendChild(details);
-  });
-  return card;
+    if (item.kind === "link") {
+      const line = el("p", "step-text");
+      const link = el("a", null, item.label);
+      link.href = item.url;
+      link.target = "_blank";
+      link.rel = "noopener";
+      line.appendChild(link);
+      box.appendChild(line);
+      continue;
+    }
+    box.appendChild(el("p", "step-text", item.text));
+  }
 }
 
-function renderConfigForm(message, guideFirst = true) {
-  stopPolling();
-  state.view = "config";
-  setHeaderButtons("config");
-  setState("未配置");
-  clear(els.body);
+/**
+ * 品牌卡：教程里「选择品牌或集成」的一行——图标 + 名称 + 一行说明，点开是接入步骤。
+ * 数据来自服务端 `guide` 路由（`lib/setup-guide.js` 一处属主，测试锁死仓库链接）。
+ */
+function buildBrandCard(brand) {
+  const details = el("details", "brand");
+  details.open = brand.open === true;
+  const summary = el("summary");
+  summary.appendChild(
+    el("span", `brand-icon ${brand.id}`, (brand.title || "?").charAt(0)),
+  );
+  const meta = el("span", "brand-meta");
+  meta.appendChild(el("span", "brand-name", brand.title));
+  meta.appendChild(el("span", "brand-sub", brand.subtitle));
+  summary.appendChild(meta);
+  summary.appendChild(el("span", "chev", "›"));
+  details.appendChild(summary);
+  const body = el("div", "step-body");
+  guideItemsInto(body, brand.items);
+  details.appendChild(body);
+  return details;
+}
+
+function buildStepCard(step) {
+  const details = el("details", "step");
+  details.open = step.open === true;
+  details.appendChild(el("summary", null, step.title));
+  const box = el("div", "step-body");
+  guideItemsInto(box, step.items);
+  details.appendChild(box);
+  return details;
+}
+
+/**
+ * 引导区：品牌卡（米家/华为，默认展开）在上，通用步骤收在下——先选生态照着做，
+ * 再到表单连接。
+ */
+function buildGuideSection(brands, steps) {
+  const section = el("div", "guide");
+  if (brands.length > 0) {
+    section.appendChild(el("h3", "group", "选择品牌或集成"));
+    for (const brand of brands) section.appendChild(buildBrandCard(brand));
+  }
+  if (steps.length > 0) {
+    section.appendChild(el("h3", "group", "通用步骤"));
+    for (const step of steps) section.appendChild(buildStepCard(step));
+  }
+  return section;
+}
+
+/** 欢迎页：教程里 HA 首启欢迎屏的形状（用户创建在 HA 自己的初始化里，这里没有）。 */
+function buildHero() {
+  const hero = el("div", "card hero");
+  const img = document.createElement("img");
+  img.src = "icon.svg";
+  img.alt = "";
+  hero.appendChild(img);
+  hero.appendChild(el("h1", null, "欢迎使用智能家居"));
+  hero.appendChild(el("p", "hint", "接入米家与华为设备"));
+  return hero;
+}
+
+/** 连接表单：未配置是「连接」，已连接是「保存」（重新探活并落库）。 */
+function buildConnectCard(message) {
   const card = el("div", "card");
   const address = el("input");
   address.type = "url";
@@ -244,7 +254,7 @@ function renderConfigForm(message, guideFirst = true) {
   card.appendChild(field("地址", address));
   card.appendChild(field("令牌", token));
 
-  const button = el("button", null, "连接");
+  const button = el("button", "primary", "连接");
   button.type = "button";
   button.addEventListener("click", () => {
     if (state.busy) return;
@@ -275,385 +285,418 @@ function renderConfigForm(message, guideFirst = true) {
   actions.appendChild(button);
   card.appendChild(actions);
   if (message) card.appendChild(el("p", "error", message));
+  return card;
+}
+
+function renderSetup(message) {
+  state.view = "config";
+  const connected = Boolean(state.baseUrl);
+  document.body.classList.remove("native-mode");
+  clear(els.body);
+
+  if (connected) {
+    // 已连接的配置页 = 返回 + 集成，就这两样（2026-10-26 用户口径：
+    // 「配置页面只要米家和华为的集成就行了，其他的地址什么的、界面空白时
+    // 点开都不要」）。首用接入路径只服务未配置态。
+    setState("");
+    const back = el("button", "back", "返回");
+    back.type = "button";
+    back.addEventListener("click", () => renderNative());
+    els.body.appendChild(back);
+    els.body.appendChild(buildIntegrationsSection());
+    return;
+  }
+
+  // 未配置：欢迎页 + 品牌卡引导 + 连接表单（首次接入的唯一路径）
+  setState("未配置");
+  const card = buildConnectCard(message, false);
+  els.body.appendChild(buildHero());
   els.body.appendChild(card);
-  // 引导卡与表单同一页：首用引导在上（照着做），「修改配置」时表单在上（直接改）。
-  // 异步插入前先确认表单还在页上（期间可能已连上并切到实体网格）
-  loadGuideSteps().then((steps) => {
-    if (steps.length === 0 || !els.body.contains(card)) return;
-    const guideCard = buildGuideCard(steps);
-    if (guideFirst) els.body.insertBefore(guideCard, card);
-    else els.body.appendChild(guideCard);
+  loadGuide().then((guide) => {
+    if (!els.body.contains(card)) return;
+    const section = buildGuideSection(guide.brands, guide.steps);
+    if (section.childElementCount === 0) return;
+    els.body.insertBefore(section, card);
   });
 }
 
-// === HA 原生界面（内嵌 iframe，已连接后的默认视图） ===
+// === 集成管理：默认小米/华为，可添加（HA 配置流）与卸载 ===
+
+/** 面板里默认支持的两个品牌（与服务端 integrations 路由同一张表）。 */
+const BRAND_LABELS = {
+  xiaomi: "米家",
+  huawei: "华为",
+};
+const BRAND_ICONS = {
+  xiaomi: "米",
+  huawei: "华",
+};
+const BRAND_DOMAINS = {
+  xiaomi: "xiaomi_home",
+  huawei: "huawei_smarthome",
+};
 
 /**
- * 直接内嵌 HA 自己的前端（就是教程里那个界面）。HA 默认发 `X-Frame-Options` 挡内嵌，
- * 被挡时 iframe 表现为空白——折叠提示条给出两侧的关法（新版 UI 开关 / 旧版 yaml），
- * 不让用户面对白屏猜原因。
+ * 集成区（常开）：默认小米/华为两行——未添加的**自动发起配置流**并推进到 OAuth
+ * 授权步（点「打开授权页」完成授权即添加，回跳后自动推进），已添加可卸载。
+ * 打开配置页即拉取列表并自动起流（2026-10-25 用户口径「默认这两个都添加」）。
  */
+function buildIntegrationsSection() {
+  const box = el("div", "integrations");
+  box.appendChild(el("h3", "group", "集成"));
+  const body = el("div", "integrations-body");
+  box.appendChild(body);
+  loadIntegrations(body);
+  return box;
+}
+
+/** 一行三列：左品牌（图标+名称）/ 中状态或表单 / 右动作。 */
+function integrationRow(body, brand) {
+  const item = el("div", "int-item");
+  const id = el("div", "int-id");
+  id.appendChild(el("span", `brand-icon ${brand}`, BRAND_ICONS[brand] ?? "?"));
+  id.appendChild(el("span", "int-name", BRAND_LABELS[brand]));
+  const main = el("div", "int-main");
+  const actions = el("div", "int-actions");
+  item.appendChild(id);
+  item.appendChild(main);
+  item.appendChild(actions);
+  body.appendChild(item);
+  return { main, actions };
+}
+
+function loadIntegrations(body) {
+  api("integrations")
+    .then((payload) => {
+      clear(body);
+      if (payload.ready === false) {
+        body.appendChild(el("p", "int-status", "实时连接未就绪，稍后再试。"));
+        return;
+      }
+      for (const brand of Object.keys(BRAND_LABELS)) {
+        const domain = BRAND_DOMAINS[brand];
+        const entry = (payload.integrations ?? []).find(
+          (item) => item.domain === domain,
+        );
+        const { main, actions } = integrationRow(body, brand);
+        const status = el("span", "int-status", "…");
+        main.appendChild(status);
+        if (entry) {
+          status.textContent = "已添加";
+          const action = el("button", null, "卸载");
+          action.type = "button";
+          actions.appendChild(action);
+          action.addEventListener("click", () => {
+            action.disabled = true;
+            api("integrations/remove", {
+              method: "POST",
+              body: { entryId: entry.entryId },
+            })
+              .then(() => loadIntegrations(body))
+              .catch((error) => {
+                action.disabled = false;
+                showError(error.message);
+              });
+          });
+        } else {
+          // 未添加：自动发起配置流（2026-10-25「默认这两个都添加」）——
+          // 流程在本行内推进到授权步，用户只需完成账号授权
+          status.textContent = "连接中…";
+          api("integrations/start", { method: "POST", body: { brand } })
+            .then((payload) => {
+              runFlowDialog(main, actions, payload.flowId, payload.step, () =>
+                loadIntegrations(body),
+              );
+            })
+            .catch((error) => {
+              status.textContent = "暂不能添加";
+              const action = el("button", null, "重试");
+              action.type = "button";
+              actions.appendChild(action);
+              action.addEventListener("click", () => {
+                action.disabled = true;
+                api("integrations/start", { method: "POST", body: { brand } })
+                  .then((payload) => {
+                    runFlowDialog(
+                      main,
+                      actions,
+                      payload.flowId,
+                      payload.step,
+                      () => loadIntegrations(body),
+                    );
+                  })
+                  .catch((retryError) => {
+                    action.disabled = false;
+                    showError(retryError.message);
+                  });
+              });
+              if (error.code !== "not_found") showError(error.message);
+            });
+        }
+      }
+    })
+    .catch((error) => {
+      clear(body);
+      body.appendChild(el("p", "int-status", error.message));
+    });
+}
+
+/** 从 external 步的描述占位里抠授权链接（HA 的占位是 `<a href="…" target="_blank">`）。 */
+function authLinkOf(step) {
+  const raw = String(step?.description_placeholders?.link_left ?? "");
+  return /href="([^"]+)"/.exec(raw)?.[1] ?? null;
+}
+
+/** HA 配置流字段名 → 中文标签（schema 常只有英文字段名；认不出的照原样显示）。 */
+const FIELD_LABELS = {
+  account: "账号",
+  username: "用户名",
+  password: "密码",
+  code: "验证码",
+  challenge_code: "挑战码",
+  cloud_server: "登录地区",
+  servers: "登录地区",
+  integration_language: "语言",
+  language: "语言",
+  eula: "同意用户协议",
+  home_infos: "家庭",
+  area_name_rule: "区域命名",
+  advanced_options: "高级选项",
+  devices_filter: "设备过滤",
+  ctrl_mode: "控制模式",
+  action_debug: "动作调试",
+  hide_non_standard_entities: "隐藏非标准实体",
+  display_binary_mode: "二进制传感器",
+  display_devices_changed_notify: "设备变更通知",
+};
+
+/** HA 的 options 既可能是 `[[value, label], …]`、`[value, …]`，也可能是对象映射。 */
+function optionEntries(options) {
+  if (Array.isArray(options)) {
+    return options.map((option) =>
+      Array.isArray(option)
+        ? [
+            String(option[0]),
+            String(option[1]?.label ?? option[1] ?? option[0]),
+          ]
+        : [String(option), String(option)],
+    );
+  }
+  return Object.entries(options ?? {}).map(([value, label]) => [
+    value,
+    typeof label === "string" ? label : String(label?.label ?? value),
+  ]);
+}
+
+/**
+ * 单个字段控件：返回 `{ node, read }`。
+ * boolean→勾选、select→下拉、multi_select→复选列表、其余→输入框（密码名猜成密码框）。
+ */
+function flowFieldInput(field) {
+  if (field.type === "boolean") {
+    const box = el("input");
+    box.type = "checkbox";
+    box.checked = field.default === true;
+    return { node: box, read: () => box.checked };
+  }
+  if (field.type === "select") {
+    const select = el("select");
+    for (const [value, label] of optionEntries(field.options)) {
+      const item = el("option");
+      item.value = value;
+      item.textContent = label;
+      select.appendChild(item);
+    }
+    if (field.default !== undefined) select.value = String(field.default);
+    return { node: select, read: () => select.value };
+  }
+  if (field.type === "multi_select") {
+    // 米家授权后的「选择家庭」就是 multi_select（options 是 {家庭id: 名称}）
+    const box = el("div", "choices");
+    const boxes = [];
+    const defaults = Array.isArray(field.default)
+      ? field.default.map(String)
+      : [];
+    for (const [value, label] of optionEntries(field.options)) {
+      const line = el("label", "choice");
+      const item = el("input");
+      item.type = "checkbox";
+      item.value = value;
+      item.checked = defaults.includes(value);
+      line.appendChild(item);
+      line.appendChild(el("span", null, label));
+      box.appendChild(line);
+      boxes.push(item);
+    }
+    return {
+      node: box,
+      read: () =>
+        boxes.filter((item) => item.checked).map((item) => item.value),
+    };
+  }
+  const input = el("input");
+  input.type = /pass|secret|token/i.test(field.name ?? "")
+    ? "password"
+    : "text";
+  if (field.default !== undefined) input.value = String(field.default);
+  return { node: input, read: () => input.value };
+}
+
+/**
+ * 集成配置流对话框：按 HA 返回的步型渲染——表单（schema 驱动）、OAuth 授权链接、
+ * 进行中轮询、完成/中止。
+ *
+ * OAuth 登录页（account.xiaomi.com 等）带 `X-Frame-Options: SAMEORIGIN`，嵌进面板
+ * iframe 只会得到空白；授权只能在**新标签页**完成（真链接、用户点击），面板靠轮询
+ * 收口，不需要用户回来手动点下一步。
+ */
+function runFlowDialog(main, actions, flowId, step, onDone) {
+  let polling = null;
+  let pollListener = null;
+  const stop = () => {
+    if (polling) {
+      clearInterval(polling);
+      polling = null;
+    }
+    if (pollListener) {
+      window.removeEventListener("focus", pollListener);
+      document.removeEventListener("visibilitychange", pollListener);
+      pollListener = null;
+    }
+  };
+  /** 授权等待态：external 与 progress 都可能带授权链接（xiaomi_home 的 OAuth 步
+   * 在 HA 2026.10 是 progress_action=oauth 的 progress 步，链接在描述占位里）。
+   * 轮询连续失败（流程过期被 HA 清掉）后提示重开配置页，不死等。 */
+  const renderOAuthWait = (current, waiting) => {
+    main.appendChild(el("p", "int-status", waiting));
+    const url = authLinkOf(current);
+    if (url) {
+      // 必须是**真链接由用户点**：脚本 `window.open` 在内嵌宿主里会被拦成
+      // 「当前标签内跳转」，把 KenFutWork 整个顶掉；合成 `a.click()` 同样不算用户手势。
+      const open = el("a", "int-open", "打开授权页");
+      open.href = url;
+      open.target = "_blank";
+      open.rel = "noopener";
+      actions.appendChild(open);
+    }
+    let failures = 0;
+    const poll = () => {
+      if (!polling) return;
+      api("integrations/flow", { method: "POST", body: { flowId } })
+        .then((payload) => {
+          failures = 0;
+          if (payload.step.type !== current.type) render(payload.step);
+        })
+        .catch(() => {
+          failures += 1;
+          if (failures >= 5) {
+            stop();
+            clear(main);
+            clear(actions);
+            main.appendChild(
+              el("p", "int-status", "授权已过期，重开配置页可重新发起。"),
+            );
+          }
+        });
+    };
+    polling = setInterval(poll, 2000);
+    // 授权窗口挡住面板时定时器会被节流；回到本页立刻再查一次
+    pollListener = () => {
+      if (document.visibilityState === "visible") poll();
+    };
+    window.addEventListener("focus", pollListener);
+    document.addEventListener("visibilitychange", pollListener);
+  };
+  const render = (current) => {
+    stop();
+    clear(main);
+    clear(actions);
+    if (current.type === "create_entry") {
+      main.appendChild(el("p", "int-status", "已添加"));
+      onDone();
+      return;
+    }
+    if (current.type === "abort") {
+      main.appendChild(
+        el("p", "error", `已中止：${current.reason ?? "未知原因"}`),
+      );
+      return;
+    }
+    if (current.type === "external") {
+      renderOAuthWait(current, "等待授权完成…");
+      return;
+    }
+    if (current.type === "progress") {
+      renderOAuthWait(current, "等待授权完成…");
+      return;
+    }
+    // form：按 data_schema 渲染字段
+    const form = el("div", "int-form");
+    const inputs = new Map();
+    for (const field of current.data_schema ?? []) {
+      const line = el("div", "field");
+      line.appendChild(
+        el("label", null, FIELD_LABELS[field.name] ?? field.name),
+      );
+      const control = flowFieldInput(field);
+      inputs.set(field.name, control);
+      line.appendChild(control.node);
+      form.appendChild(line);
+    }
+    main.appendChild(form);
+    const errors = Object.values(current.errors ?? {}).filter(
+      (message) => typeof message === "string" && message.trim(),
+    );
+    if (errors.length > 0) main.appendChild(el("p", "error", errors[0]));
+    const submit = el("button", "primary", "提交");
+    submit.type = "button";
+    submit.addEventListener("click", () => {
+      submit.disabled = true;
+      const fields = {};
+      for (const field of current.data_schema ?? []) {
+        const control = inputs.get(field.name);
+        if (!control) continue;
+        fields[field.name] = control.read();
+      }
+      api("integrations/flow", { method: "POST", body: { flowId, fields } })
+        .then((payload) => render(payload.step))
+        .catch((error) => {
+          submit.disabled = false;
+          showError(error.message);
+        });
+    });
+    actions.appendChild(submit);
+  };
+  render(step);
+}
+
+// === 原生视图：满幅 iframe，无任何上方套壳条 ===
+
 function renderNative() {
-  stopPolling();
   state.view = "native";
-  setHeaderButtons("native");
-  setState("HA 原生界面");
+  // 类挂 <body>：native 布局要同时收掉 body 内边距与 header/footer（见 panel.html）
+  document.body.classList.add("native-mode");
+  setState("");
   clear(els.body);
-  const wrap = el("div", "native");
-
-  const hint = el("details");
-  const summary = el("summary", null, "界面空白时点开");
-  hint.appendChild(summary);
-  const fix = el("pre", null);
-  fix.textContent =
-    "HA 设置 → 系统 → 网络 → 关闭「Send X-Frame-Options」\n旧版 configuration.yaml：\nhttp:\n  use_x_frame_options: false";
-  hint.appendChild(fix);
-  wrap.appendChild(hint);
-
   const frame = document.createElement("iframe");
   frame.src = state.baseUrl || "";
   frame.title = "Home Assistant";
   frame.referrerPolicy = "no-referrer";
-  wrap.appendChild(frame);
-  els.body.appendChild(wrap);
+  els.body.appendChild(frame);
 }
 
-// === 实体网格（精简面板） ===
+// === 启动与视图切换 ===
 
-function stopPolling() {
-  if (state.pollTimer) {
-    clearInterval(state.pollTimer);
-    state.pollTimer = null;
-  }
-}
-
-function startPolling() {
-  stopPolling();
-  state.pollTimer = setInterval(() => {
-    if (document.visibilityState === "visible") loadEntities();
-  }, POLL_MS);
-}
-
-/** 下发控制：成功后重取一轮，让服务端读回的真值上屏（不本地假更新）。 */
-function control(entityId, key, service, value) {
-  const body = { entityId, key, service };
-  if (value !== undefined) body.value = value;
-  api("control", { method: "POST", body })
-    .then((payload) => {
-      // 「已发出，状态未变」是读回校验的结论，必须原样透出，不报假成功
-      setNote(payload.changed ? "" : payload.message, false);
-      return loadEntities();
-    })
-    .catch((error) => showError(error.message));
-}
-
-/**
- * 一行控件：**建一次**，之后只更新数值（`apply`）。
- *
- * 网格每 5 秒刷一轮，整块重建会让滚动位置、正在拖的滑杆、展开中的下拉全部被重置
- * （沿用米家面板同一口径）。`current` 让事件处理器始终读到本轮的服务名与量程。
- */
-function controlRow(entity, node) {
-  let current = node;
-  const row = el("div", "row");
-  row.appendChild(el("span", "label", node.label));
-
-  if (node.kind === "toggle") {
-    const toggle = el("button", "switch");
-    toggle.type = "button";
-    toggle.setAttribute("role", "switch");
-    toggle.setAttribute("aria-label", node.label);
-    toggle.appendChild(el("i"));
-    const apply = (item) => {
-      const isOn = current.isOn === true;
-      toggle.setAttribute("data-on", isOn ? "1" : "0");
-      toggle.disabled = item.unavailable === true;
-      // 用 onclick 换处理器（不是 addEventListener）：每轮 apply 覆盖旧的，不累积监听
-      toggle.onclick = () =>
-        control(
-          item.entityId,
-          "power",
-          isOn ? current.offService : current.onService,
-          undefined,
-        );
-    };
-    apply(entity);
-    row.appendChild(toggle);
-    return { row, key: node.key, apply, update: (next) => (current = next) };
-  }
-
-  if (node.kind === "slider") {
-    const input = el("input");
-    input.type = "range";
-    input.min = String(node.min);
-    input.max = String(node.max);
-    input.step = String(node.step);
-    const valueEl = el("span", "value");
-    const apply = (item) => {
-      // 拖动中不打断（否则会被上一轮的旧值弹回去）；关灯后没有当前亮度，滑杆停在量程左端
-      if (document.activeElement !== input) {
-        input.value = String(current.value ?? current.min);
-      }
-      valueEl.textContent = `${current.value ?? "—"}${current.unit ? ` ${current.unit}` : ""}`;
-      input.disabled = item.unavailable === true;
-    };
-    input.addEventListener("change", () => {
-      control(
-        entity.entityId,
-        current.key,
-        current.service,
-        Number(input.value),
-      );
-    });
-    apply(entity);
-    row.appendChild(input);
-    row.appendChild(valueEl);
-    return { row, key: node.key, apply, update: (next) => (current = next) };
-  }
-
-  if (node.kind === "select") {
-    const select = el("select");
-    for (const option of node.options || []) {
-      const item = el("option");
-      item.value = String(option.value);
-      item.textContent = option.label;
-      select.appendChild(item);
-    }
-    const apply = (item) => {
-      // 下拉展开中不打断
-      if (document.activeElement !== select)
-        select.value = String(current.value);
-      select.disabled = item.unavailable === true;
-    };
-    select.addEventListener("change", () => {
-      control(entity.entityId, current.key, current.service, select.value);
-    });
-    apply(entity);
-    row.appendChild(select);
-    return { row, key: node.key, apply, update: (next) => (current = next) };
-  }
-
-  if (node.kind === "buttons") {
-    const box = el("div", "buttons");
-    for (const button of node.buttons || []) {
-      const item = el("button", null, button.label);
-      item.type = "button";
-      item.addEventListener("click", () => {
-        control(entity.entityId, button.key, button.service, undefined);
-      });
-      box.appendChild(item);
-    }
-    const apply = (item) => {
-      for (const child of Array.from(box.children)) {
-        child.disabled = item.unavailable === true;
-      }
-    };
-    apply(entity);
-    row.appendChild(box);
-    return { row, key: node.key, apply, update: () => {} };
-  }
-
-  // 只读读数（服务端把无控件的实体包成一个 `read` 控件）
-  const valueEl = el("span", "value");
-  const apply = (item) => {
-    valueEl.textContent = `${current.value ?? "—"}${current.unit ? ` ${current.unit}` : ""}`;
-    valueEl.className = item.unavailable === true ? "value off" : "value";
-  };
-  apply(entity);
-  row.appendChild(valueEl);
-  return { row, key: node.key, apply, update: (next) => (current = next) };
-}
-
-function entityCard(entity) {
-  const card = el("div", `device${entity.unavailable ? " offline" : ""}`);
-  const title = el("h2");
-  title.appendChild(el("span", null, entity.name || entity.entityId));
-  title.appendChild(el("span", "badge", entity.domain));
-  if (entity.unavailable) title.appendChild(el("span", "badge", "离线"));
-  card.appendChild(title);
-
-  // 离线的实体不重复出「状态 离线」一行：标题徽章 + 整卡置灰已经说了同一件事
-  const rows = (entity.controls ?? [])
-    .filter((node) => !(node.kind === "read" && entity.unavailable === true))
-    .map((node) => {
-      const item = controlRow(entity, node);
-      card.appendChild(item.row);
-      return item;
-    });
-  const apply = (next) => {
-    const controls = next.controls ?? [];
-    for (const item of rows) {
-      const node = controls.find((each) => each.key === item.key);
-      if (!node) continue;
-      item.update(node);
-      item.apply(next);
-    }
-  };
-  return { card, apply };
-}
-
-/**
- * 结构签名：分组、实体集、离线态与控件表（种类/量程/选项）——这些变了才值得重建 DOM；
- * 只变数值时走原地更新（廉价字符串比较，每轮一次）。
- */
-function viewSignature(groups) {
-  return groups
-    .map((group) =>
-      [
-        group.name,
-        group.items
-          .map((item) =>
-            [
-              item.entityId,
-              item.name,
-              item.unavailable ? 1 : 0,
-              (item.controls ?? [])
-                .map((node) =>
-                  [
-                    node.key,
-                    node.kind,
-                    node.label,
-                    node.min ?? "",
-                    node.max ?? "",
-                    (node.options ?? []).map((each) => each.value).join(","),
-                  ].join(":"),
-                )
-                .join("|"),
-            ].join("~"),
-          )
-          .join(";"),
-      ].join("#"),
-    )
-    .join("@");
-}
-
-/** 上一轮渲染的账：签名 + 更新器（更新器与扁平化的实体顺序对齐）。 */
-const rendered = { signature: null, applies: [] };
-
-function renderEntities() {
-  state.view = "grid";
-  setHeaderButtons("grid");
-  // 刷新不动滚动位置：先记后还原（整页滚动，滚动条在 document 上）
-  const scroller = document.scrollingElement ?? document.documentElement;
-  const scrollTop = scroller.scrollTop;
-  const shown = state.groups.reduce(
-    (sum, group) => sum + group.items.length,
-    0,
-  );
-  const version = state.version ? `HA ${state.version}` : "智能家居";
-  const mode = state.mode === "realtime" ? "实时" : "轮询";
-  // 生态计数来自实体注册表的来源集成（服务端识别）；识别不了（null）就不显示，不猜
-  const eco =
-    state.ecosystems === null
-      ? ""
-      : ` · 米家 ${state.ecosystems.mijia} · 华为 ${state.ecosystems.huawei}`;
-  setState(
-    `${version} · ${mode} · ${state.total} 实体${state.truncated ? `（只显示前 ${shown} 条）` : ""}${eco}`,
-  );
-
-  if (shown === 0) {
-    clear(els.body);
-    rendered.signature = null;
-    rendered.applies = [];
-    els.body.appendChild(el("div", "card hint", "HA 里没有实体。"));
-    return;
-  }
-
-  const signature = viewSignature(state.groups);
-  if (signature === rendered.signature) {
-    // 结构没变：只把新值灌进已有控件（滚动条、拖动中的滑杆、展开的下拉都不受影响）
-    let index = 0;
-    for (const group of state.groups) {
-      for (const item of group.items) {
-        rendered.applies[index]?.(item);
-        index += 1;
-      }
-    }
-  } else {
-    clear(els.body);
-    const applies = [];
-    for (const group of state.groups) {
-      els.body.appendChild(el("h3", "group", group.name));
-      const grid = el("div", "grid");
-      for (const item of group.items) {
-        const { card, apply } = entityCard(item);
-        applies.push(apply);
-        grid.appendChild(card);
-      }
-      els.body.appendChild(grid);
-    }
-    rendered.signature = signature;
-    rendered.applies = applies;
-  }
-  scroller.scrollTop = scrollTop;
-}
-
-function loadEntities() {
-  return api("entities")
-    .then((payload) => {
-      state.groups = payload.groups || [];
-      state.total = payload.total || 0;
-      state.truncated = payload.truncated === true;
-      state.mode = payload.mode || "polling";
-      state.ecosystems = payload.ecosystems ?? null;
-      // 成功这一拍才清瞬时消息：与重渲染同一任务，不出现「页面矮一截」的中间帧
-      setNote("", false);
-      renderEntities();
-      startPolling();
-    })
-    .catch((error) => {
-      stopPolling();
-      if (error.code === "not_configured" || error.status === 401) {
-        renderConfigForm(error.message);
-        return;
-      }
-      setHeaderButtons(state.view === "grid" ? "grid" : "native");
-      showError(error.message);
-    });
-}
-
-els.refresh.addEventListener("click", () => loadEntities());
-
-els.toggleView.addEventListener("click", () => {
+// 宿主标题栏「配置」（面板声明 configurable，PluginPanelOverlay 渲染）经
+// postMessage 通知切换：原生 ↔ 配置 互转。
+// 来源校验用「发送方必须是父窗口」：宿主页面与面板分属 3300/3301 两个源，
+// event.origin 是发送方（3300）的端口，按 location.origin 比对永远不等（真机踩过）。
+window.addEventListener("message", (event) => {
+  if (event.source !== window.parent) return;
+  if (event.data?.type !== "kenfutwork:plugin-panel-toggle-config") return;
   setNote("", false);
-  // 原生 ↔ 精简面板互切；切到网格时拉一轮实体（原生视图不轮询）
-  if (state.view === "native") {
-    loadEntities();
-    return;
-  }
-  renderNative();
-});
-
-els.retest.addEventListener("click", () => {
-  setState("连接中…");
-  api("test", { method: "POST" })
-    .then((payload) => {
-      state.version = payload.version ?? null;
-      setNote("", false);
-      if (state.view === "grid") {
-        loadEntities();
-        return;
-      }
-      // 原生视图：测通即可，界面本身由 iframe 自己维护
-      setState("HA 原生界面");
-    })
-    .catch((error) => showError(error.message));
-});
-
-els.edit.addEventListener("click", () => {
-  setNote("", false);
-  // 修改配置：表单优先，引导收在下方（首用相反）
-  renderConfigForm(undefined, false);
-});
-
-els.disconnect.addEventListener("click", () => {
-  api("disconnect", { method: "POST" })
-    .then(() => {
-      state.baseUrl = "";
-      state.version = null;
-      renderConfigForm("已清除本机保存的 HA 地址与令牌。");
-    })
-    .catch((error) => showError(error.message));
+  if (state.view === "native") renderSetup();
+  else renderNative();
 });
 
 function boot() {
@@ -663,11 +706,11 @@ function boot() {
       state.baseUrl = payload.baseUrl || "";
       state.defaultBaseUrl = payload.defaultBaseUrl || "";
       if (!payload.configured) {
-        renderConfigForm();
+        renderSetup();
         return;
       }
-      // 已配置：直接进原生界面（iframe 用 HA 自己的登录态，令牌健康度由
-      // 「重新测试」与 agent 工具按需暴露，启动期不必先打一轮 REST）
+      // 已配置：直接进原生界面（iframe 用 HA 自己的登录态；免登陆由 HA 侧
+      // trusted_networks 提供，见配置页通用步骤）
       renderNative();
     })
     .catch((error) => showError(error.message));

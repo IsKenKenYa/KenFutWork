@@ -38,7 +38,11 @@ function Harness() {
   const { entry } = useFlowHostEntry();
   return (
     <span data-testid="entry">
-      {entry === null ? "loading" : entry.available ? "available" : "blocked"}
+      {entry === null
+        ? "loading"
+        : entry.available
+          ? `available:${entry.reason ?? "-"}`
+          : `blocked:${entry.reason}`}
     </span>
   );
 }
@@ -72,11 +76,11 @@ describe("useFlowHostEntry", () => {
       await Promise.resolve();
     });
     await waitFor(() =>
-      expect(view.getByTestId("entry").textContent).toBe("available"),
+      expect(view.getByTestId("entry").textContent).toBe("available:-"),
     );
   });
 
-  it("状态未配齐（settled）→ blocked，理由透出（fail loud，不摆空壳）", async () => {
+  it("状态未配齐（settled）→ 入口仍出现，未就绪原因透出（用户口径：dify 没起也要有 Flow）", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
@@ -99,7 +103,9 @@ describe("useFlowHostEntry", () => {
 
     const view = render(<Harness />);
     await waitFor(() =>
-      expect(view.getByTestId("entry").textContent).toBe("blocked"),
+      expect(view.getByTestId("entry").textContent).toBe(
+        "available:宿主适配层未配齐：未配置 Flow 网关共享密钥。",
+      ),
     );
   });
 });

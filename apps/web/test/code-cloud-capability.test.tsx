@@ -80,7 +80,7 @@ it("BYOK 宿主的原账户菜单保留偏好和统计，隐藏云登录、套�
     </ServiceProvider>,
   );
   await userEvent.click(screen.getByRole("button", { name: "本机用户" }));
-  expect(screen.getByRole("menuitem", { name: "界面模式" })).toBeTruthy();
+  // 「界面模式」入口已按用户口径删除（日志二百七十一），不再断言
   expect(screen.getByRole("menuitem", { name: "使用统计" })).toBeTruthy();
   expect(screen.queryByRole("menuitem", { name: /套餐|登录|退出/ })).toBeNull();
   await waitFor(() =>
