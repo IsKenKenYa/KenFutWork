@@ -479,14 +479,21 @@ function FlowCanvasEmbed({
   );
 }
 
+/** `unreachable` = 查询容器清单失败（Docker 无响应等），与「未安装」不是一回事。 */
+type EngineDisplayState = FlowEngineInstallState | "unreachable";
+
 const ENGINE_STATE_META: Record<
-  FlowEngineInstallState,
+  EngineDisplayState,
   { label: string; className: string }
 > = {
   idle: { label: "未安装", className: "bg-hover text-foreground-subtle" },
   installing: { label: "安装中", className: "bg-hover text-foreground" },
   ready: { label: "已就绪", className: "bg-emerald-500/10 text-emerald-600" },
   error: { label: "安装失败", className: "bg-destructive/10 text-destructive" },
+  unreachable: {
+    label: "状态未知",
+    className: "bg-amber-500/10 text-amber-600",
+  },
 };
 
 const LOG_LINE_OPTIONS = [500, 1000, 5000, 10000] as const;
@@ -721,7 +728,7 @@ function EngineLogsView() {
           className="mt-1 text-xs text-destructive"
           title={infoError ?? info?.stack.error}
         >
-          容器清单不可用，仅能读取安装日志。
+          容器清单不可用：仅能读取安装日志
         </p>
       ) : null}
 
@@ -769,8 +776,21 @@ function EngineView() {
     void refresh();
   }, [refresh]);
 
-  const engineState: FlowEngineInstallState =
-    state !== "idle" ? state : (info?.install.state ?? "idle");
+  // 状态以运行期事实为准：本进程的安装动作 > 安装记录 > 容器清单。
+  // 服务重启后安装记录归零（`idle`），栈在跑却不能显示成「未安装」；
+  // 容器清单读不到（Docker 无响应）也不是「未安装」，单独给 `unreachable`。
+  const stackContainers = info?.stack.containers ?? [];
+  const stackError = info?.stack.error ?? null;
+  const engineState: EngineDisplayState =
+    state !== "idle"
+      ? state
+      : info?.install.state && info.install.state !== "idle"
+        ? info.install.state
+        : stackContainers.length > 0
+          ? "ready"
+          : stackError
+            ? "unreachable"
+            : "idle";
   // 安装中静默轮询：日志尾随和容器状态都跟着走，不闪 loading。
   useEffect(() => {
     if (engineState !== "installing") return;
@@ -872,7 +892,7 @@ function EngineView() {
                   停止引擎
                 </button>
               )
-            ) : (
+            ) : engineState === "unreachable" ? null : (
               <>
                 {wslUsable ? (
                   <div className="flex items-center gap-1 rounded-full bg-hover/60 p-1">
@@ -965,8 +985,13 @@ function EngineView() {
               ),
             )
           ) : (
-            <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
-              {info?.stack.error ?? "没有运行中的容器"}
+            <p
+              className="px-4 py-3 text-center text-xs text-foreground-subtle"
+              title={stackError ?? undefined}
+            >
+              {stackError
+                ? "容器清单读取失败：检查本机 Docker 后刷新"
+                : "没有运行中的容器"}
             </p>
           )}
         </div>

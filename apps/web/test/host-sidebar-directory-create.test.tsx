@@ -103,6 +103,10 @@ describe("flow sidebar directory creation", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重命名项目" }));
     const input = screen.getByRole("textbox", { name: "项目名称" });
+    // 与下拉触发器同款：不透明白底（h-7），左内边距对齐下方导航图标。
+    expect(input.className).toContain("bg-transparent");
+    expect(input.className).toContain("h-7");
+    expect(input.className).toContain("!pl-3");
     fireEvent.change(input, { target: { value: "出差报销" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() =>

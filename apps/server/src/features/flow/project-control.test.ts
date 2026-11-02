@@ -296,4 +296,34 @@ describe("Flow project control provider", () => {
     expect(requestBody(fetchMock, 0).action).toBe("complete-relink");
     expect(requestBody(fetchMock, 1).action).toBe("snapshot");
   });
+
+  it("aborts a control request that outlives the configured budget", async () => {
+    // 网关或其库卡住时，快照不能无限挂起宿主请求（Flow 画布会停在「检查目录…」）：
+    // 预算到点按失败降级，由调用方给出可读原因。
+    let seenSignal: AbortSignal | undefined;
+    const control = createFlowProjectControl({
+      gatewayUrl: "http://127.0.0.1:9087",
+      sharedSecret: "shared-secret",
+      timeoutMs: () => 20,
+      fetchImpl: vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            seenSignal = init?.signal ?? undefined;
+            if (!seenSignal) return;
+            seenSignal.addEventListener("abort", () => {
+              const failure = new Error("request timed out");
+              failure.name = "TimeoutError";
+              reject(failure);
+            });
+          }),
+      ),
+    });
+    await expect(control.snapshot(actor, projectId)).rejects.toThrow(
+      "Flow 项目控制请求超时",
+    );
+    expect(seenSignal?.aborted).toBe(true);
+    expect((seenSignal?.reason as Error | undefined)?.name).toBe(
+      "TimeoutError",
+    );
+  });
 });

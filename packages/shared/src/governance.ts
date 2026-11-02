@@ -70,6 +70,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   /** 每个人类连接同时打开的真实终端上限。 */
   terminalMaxSessions: 4,
   sandboxProbeTimeoutMs: 5_000,
+  /** Flow 网关控制面单次请求的等待预算；网关或其库卡住时宿主不能无限挂起。 */
+  flowGatewayControlTimeoutMs: 10_000,
   /** Computer Use：单个桌面动作（点击/输入/截屏）超时（毫秒）。 */
   computerUseActionTimeoutMs: 10_000,
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */
@@ -116,6 +118,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "processYieldMs",
   "processKillGraceMs",
   "sandboxProbeTimeoutMs",
+  "flowGatewayControlTimeoutMs",
   "codePdfMaxPages",
   "codePdfRenderScale",
   "codeAttachmentMaxBytes",
@@ -177,6 +180,7 @@ export type AgentGovernanceOverrides = {
   processKillGraceMs?: number | undefined;
   terminalMaxSessions?: number | undefined;
   sandboxProbeTimeoutMs?: number | undefined;
+  flowGatewayControlTimeoutMs?: number | undefined;
   subagentMaxContinuations?: number | undefined;
   computerUseActionTimeoutMs?: number | undefined;
   computerUseObserveMaxBytes?: number | undefined;
@@ -277,6 +281,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   processKillGraceMs: { min: 100, max: 30_000 },
   terminalMaxSessions: { min: 1, max: 100 },
   sandboxProbeTimeoutMs: { min: 100, max: 60_000 },
+  flowGatewayControlTimeoutMs: { min: 1_000, max: 120_000 },
   subagentMaxContinuations: { min: 1, max: 200 },
   computerUseActionTimeoutMs: { min: 1_000, max: 120_000 },
   computerUseObserveMaxBytes: { min: 4_096, max: 262_144 },
@@ -419,6 +424,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     sandboxProbeTimeoutMs: parseStrictInt(
       source.KENFUTWORK_SANDBOX_PROBE_TIMEOUT_MS,
+    ),
+    flowGatewayControlTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_FLOW_GATEWAY_CONTROL_TIMEOUT_MS,
     ),
     subagentMaxContinuations: parseStrictInt(
       source.KENFUTWORK_SUBAGENT_MAX_CONTINUATIONS,

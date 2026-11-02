@@ -20481,6 +20481,12 @@
                 "minimum": 100,
                 "maximum": 60000
               },
+              "flowGatewayControlTimeoutMs": {
+                "default": 10000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000
+              },
               "computerUseActionTimeoutMs": {
                 "default": 10000,
                 "type": "integer",
@@ -20604,6 +20610,7 @@
               "processKillGraceMs",
               "terminalMaxSessions",
               "sandboxProbeTimeoutMs",
+              "flowGatewayControlTimeoutMs",
               "computerUseActionTimeoutMs",
               "computerUseObserveMaxBytes",
               "computerUseScreenshotMaxBytes",
@@ -21088,6 +21095,11 @@
             "type": "integer",
             "minimum": 100,
             "maximum": 60000
+          },
+          "flowGatewayControlTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000
           },
           "computerUseActionTimeoutMs": {
             "type": "integer",

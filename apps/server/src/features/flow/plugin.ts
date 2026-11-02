@@ -123,6 +123,14 @@ export function createFlowHostPlugin(deps: {
           return createFlowProjectControl({
             gatewayUrl: deps.gatewayUrl,
             sharedSecret: deps.secret,
+            // 等待预算走治理表（库值 ?? env ?? 默认），不在这里写字面量。
+            timeoutMs: async () => {
+              const actor = await ctx.get("localInstance").serviceActor();
+              const settings = await ctx
+                .get("settings")
+                .getInstanceSettings(actor, actor.instanceId);
+              return settings.flowGatewayControlTimeoutMs;
+            },
           });
         const unavailable = async (): Promise<never> => {
           throw Object.assign(

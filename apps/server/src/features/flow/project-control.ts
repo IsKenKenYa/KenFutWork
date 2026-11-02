@@ -34,6 +34,12 @@ export function createFlowProjectControl(options: {
   gatewayUrl: string;
   sharedSecret: string;
   fetchImpl?: typeof fetch;
+  /**
+   * 单次控制请求的等待预算（毫秒）。网关的库卡住时，快照请求会无限挂起，
+   * 并把宿主 `GET /api/projects/:id/relink-directory` 一起拖死（Flow 画布停在「检查目录…」）；
+   * 超时后按「读不到状态」降级，界面给出可读原因。
+   */
+  timeoutMs?: () => number | Promise<number>;
 }): FlowProjectControl {
   const gateway = new URL(options.gatewayUrl);
   if (
@@ -59,6 +65,7 @@ export function createFlowProjectControl(options: {
   ) => {
     flowProjectControlProjectIdSchema.parse(projectId);
     const body = flowProjectControlRequestSchema.parse(input);
+    const timeoutMs = options.timeoutMs ? await options.timeoutMs() : undefined;
     const response = await fetchImpl(
       new URL(
         `/host/ff-embed/v1/projects/${encodeURIComponent(projectId)}/control`,
@@ -72,8 +79,15 @@ export function createFlowProjectControl(options: {
           "x-ff-embed-protocol": "v1",
         },
         body: JSON.stringify(body),
+        ...(timeoutMs === undefined
+          ? {}
+          : { signal: AbortSignal.timeout(timeoutMs) }),
       },
-    );
+    ).catch((failure: unknown) => {
+      if (failure instanceof Error && failure.name === "TimeoutError")
+        throw new Error("Flow 项目控制请求超时");
+      throw failure;
+    });
     if (!response.ok) throw new Error("Flow 项目控制请求未确认");
     const receipt = flowProjectControlReceiptSchema.parse(
       await response.json(),

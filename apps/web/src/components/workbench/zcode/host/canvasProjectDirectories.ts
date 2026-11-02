@@ -35,12 +35,21 @@ type DirectoryState = {
   error: string | null;
 };
 
+/** 宿主或网关的 5xx 可能回纯文本：解析失败不能让 SyntaxError 顶替真实报错。 */
+async function readRelinkBody(response: Response) {
+  try {
+    return (await response.json()) as { error?: { message?: string } };
+  } catch {
+    return {};
+  }
+}
+
 async function readDirectorySnapshot(projectId: string, kind?: DirectoryKind) {
   const url = `/api/projects/${encodeURIComponent(projectId)}/relink-directory`;
   if (!kind)
     return projectDirectoryRelinkSnapshotSchema.parse(await surfaceJson(url));
   const response = await surfaceFetch(url);
-  const body = await response.json();
+  const body = await readRelinkBody(response);
   if (
     kind === "design" &&
     response.status === 400 &&

@@ -157,7 +157,7 @@ function FlowNavSidebar() {
               event.preventDefault();
               event.currentTarget.blur();
             }}
-            className="h-8 min-w-0 flex-1"
+            className="h-7 min-w-0 flex-1 !pl-3 border-border bg-transparent focus-visible:bg-transparent"
           />
         ) : (
           <Select

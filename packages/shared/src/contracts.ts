@@ -348,6 +348,8 @@ export const instanceSettingsSchema = z.object({
   processKillGraceMs: governanceSetting("processKillGraceMs"),
   terminalMaxSessions: governanceSetting("terminalMaxSessions"),
   sandboxProbeTimeoutMs: governanceSetting("sandboxProbeTimeoutMs"),
+  /** Flow 网关控制面单次请求的等待预算（毫秒）。 */
+  flowGatewayControlTimeoutMs: governanceSetting("flowGatewayControlTimeoutMs"),
   /** Computer Use：单个桌面动作超时（毫秒）。 */
   computerUseActionTimeoutMs: governanceSetting("computerUseActionTimeoutMs"),
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */

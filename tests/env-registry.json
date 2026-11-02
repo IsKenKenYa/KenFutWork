@@ -137,6 +137,13 @@
       "status": "active",
       "note": "flow 前端地址（iframe src 与 postMessage origin 白名单）；本机联调各不相同，不进 .env.example"
     },
+    "KENFUTWORK_FLOW_GATEWAY_CONTROL_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Flow 网关控制面单次请求等待预算毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
     "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL": {
       "surface": "server",
       "readers": [
