@@ -93,12 +93,12 @@ async function submitDirectoryRelink(
 }
 
 /**
- * 读不到目录状态时的续读节奏与次数上限。
- * 一次性局部常量：宿主表面的自愈轮询（网关/本机容器服务恢复后自己接上），
- * 不属于 agent 治理表管的限额与工具超时。
+ * 读不到目录状态时的续读节奏与次数上限（宿主表面的自愈轮询：网关/本机服务
+ * 恢复后自己接上，不要求用户刷新）。一次性局部常量：不属于 agent 治理表管的
+ * 限额与工具超时。
  */
-const DIRECTORY_RETRY_MS = 5_000;
-const DIRECTORY_RETRY_MAX = 60;
+export const DIRECTORY_RETRY_MS = 5_000;
+export const DIRECTORY_RETRY_MAX = 60;
 
 function useDirectorySnapshot(
   kind: DirectoryKind,
