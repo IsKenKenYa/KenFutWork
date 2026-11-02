@@ -231,7 +231,7 @@ function FlowNavSidebar() {
       {/* 引擎（FORM-11 托管）：独立信息页——状态 / 承载路径 / 地址 / 栈容器事实。 */}
       <button
         type="button"
-        data-active={view === "engine" ? "true" : undefined}
+        data-active={view === "engine" || view === "logs" ? "true" : undefined}
         onClick={() => setFlowSurfaceView("engine")}
         className="flex min-h-[36px] w-full items-center gap-2.5 rounded-lg px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-surface-hover data-[active=true]:bg-selected"
       >

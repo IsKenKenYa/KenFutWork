@@ -5,7 +5,7 @@
  * FlowSurface——两者都要读写「当前子视图」并要能驱动 iframe 内的 flow 路由。
  * code-ui 是单例应用，模块级存储即真相源（与 designProjects 同一路数）。
  */
-export type FlowSurfaceView = "canvas" | "engine";
+export type FlowSurfaceView = "canvas" | "engine" | "logs";
 
 let view: FlowSurfaceView = "canvas";
 const listeners = new Set<() => void>();
@@ -26,7 +26,7 @@ export function getFlowSurfaceView(): FlowSurfaceView {
 }
 
 export function setFlowSurfaceView(next: FlowSurfaceView): void {
-  if (next === "engine") pendingPath = null;
+  if (next !== "canvas") pendingPath = null;
   if (view === next) return;
   view = next;
   for (const listener of listeners) listener();

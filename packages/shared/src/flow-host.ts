@@ -304,6 +304,39 @@ export type FlowHostEngineInfoResponse = z.infer<
   typeof flowHostEngineInfoResponseSchema
 >;
 
+/** 引擎日志来源：安装日志文件，或某一个运行中容器的 docker logs。 */
+export const flowEngineLogSourceSchema = z.enum(["install", "container"]);
+export type FlowEngineLogSource = z.infer<typeof flowEngineLogSourceSchema>;
+
+/** 引擎日志查询：`tail=0` 表示安装日志取全量；容器日志最多取 20000 行。 */
+export const flowHostEngineLogsQuerySchema = z
+  .object({
+    source: flowEngineLogSourceSchema.default("install"),
+    container: z.string().min(1).max(256).optional(),
+    tail: z.coerce.number().int().min(0).max(20000).optional(),
+  })
+  .refine((value) => value.source !== "container" || Boolean(value.container), {
+    message: "读取容器日志必须指定容器。",
+    path: ["container"],
+  });
+export type FlowHostEngineLogsQuery = z.infer<
+  typeof flowHostEngineLogsQuerySchema
+>;
+
+/** 引擎日志内容：只读文本，不解析、不改写。 */
+export const flowHostEngineLogsResponseSchema = z.object({
+  source: flowEngineLogSourceSchema,
+  title: z.string().min(1),
+  /** 安装日志文件路径；容器日志为 null。 */
+  path: z.string().nullable(),
+  lines: z.array(z.string()),
+  /** 是否只返回了文件尾部（安装日志按 tail 截断）。 */
+  truncated: z.boolean(),
+});
+export type FlowHostEngineLogsResponse = z.infer<
+  typeof flowHostEngineLogsResponseSchema
+>;
+
 /**
  * Flow 模式入口门控（纯逻辑，接线在各端宿主 hook）。
  *
