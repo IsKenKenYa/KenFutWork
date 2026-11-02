@@ -349,6 +349,9 @@ describe("work 宿主路由", () => {
     // 所有 Craft 的 Blob 锚点统一交给宿主保存缝，非 Blob 链接仍走原生点击。
     expect(html.body).toContain("kenfutwork:editor-save");
     expect(html.body).toContain("HTMLAnchorElement.prototype.click");
+    // 开发态编辑器在 3001、父页在 3000：目标必须是 referrer 的父页 origin，而非自身。
+    expect(html.body).toContain("new URL(document.referrer).origin");
+    expect(html.body).not.toContain(",location.origin");
     expect(html.body).toContain("<html>ok</html>");
 
     // 自带中文字形的编辑器同样按中文探测（用户系统是英文时不再退回英文）。
