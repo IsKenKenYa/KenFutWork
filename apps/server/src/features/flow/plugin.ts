@@ -12,6 +12,7 @@ import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import { registerFlowProjectFileRoutes } from "../../http/flow-project-files.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createProcessRunCommand } from "./engine/exec.js";
 import {
   type EngineInstallOptions,
@@ -31,6 +32,7 @@ import {
   createFlowProjectFiles,
   type FlowProjectFiles,
 } from "./project-files.js";
+import { createFlowGatewayTools } from "./tools.js";
 
 /**
  * 引擎资源目录（`dify/`，内含 `docker-compose.dify.yml` 与 `ssrf_proxy/squid.conf`）。
@@ -105,6 +107,13 @@ export function createFlowHostPlugin(deps: {
   gatewayUrl?: string | undefined;
 }): PluginDefinition {
   let flowFiles: FlowProjectFiles | undefined;
+  const identityTickets = createFlowIdentityTickets();
+  let issueIdentity:
+    | ((
+        actor: LocalActor,
+        projectId?: string,
+      ) => Promise<{ token: string; expiresAt: string }>)
+    | undefined;
   return {
     name: "flow-host",
     inject: [
@@ -116,8 +125,45 @@ export function createFlowHostPlugin(deps: {
       "projects",
       "projectFiles",
       "blob",
+      "tools",
     ],
     apply(ctx) {
+      issueIdentity = async (actor, projectId) => {
+        if (projectId) {
+          // 任意工作方式的项目都可绑定 Flow：绑定后该项目会话共享工作流上下文。
+          await ctx.get("projects").getProject(actor, projectId);
+        }
+        const settings = await ctx
+          .get("settings")
+          .getInstanceSettings(actor, actor.instanceId);
+        return identityTickets.issue({
+          instanceId: actor.instanceId,
+          accessClientId: actor.accessClientId,
+          ttlMs: settings.localAccessTicketTtlMs,
+          ...(projectId ? { projectId } : {}),
+        });
+      };
+      if (deps.gatewayUrl?.trim() && deps.secret?.trim()) {
+        for (const tool of createFlowGatewayTools({
+          gatewayUrl: deps.gatewayUrl,
+          issueHostToken: async (actor) => {
+            if (!issueIdentity) throw new Error("Flow 身份缝尚未初始化。");
+            return (await issueIdentity(actor)).token;
+          },
+          resolveLimits: async (actor) => {
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId);
+            return {
+              controlTimeoutMs: settings.flowGatewayControlTimeoutMs,
+              runTimeoutMs: settings.executeTimeoutMs,
+              maxResponseBytes: settings.processMaxOutputBytes,
+            };
+          },
+        })) {
+          ctx.effect(() => ctx.get("tools").register(tool));
+        }
+      }
       ctx.register("flowProjectControl", () => {
         if (deps.gatewayUrl && deps.secret)
           return createFlowProjectControl({
@@ -177,8 +223,6 @@ export function createFlowHostPlugin(deps: {
       });
     },
     mounted(ctx) {
-      // 本地实例身份缝（DEC-20）：一次性短时票据在内存里存哈希（同本机接入 connect 票据）。
-      const identityTickets = createFlowIdentityTickets();
       const files = createFlowProjectFiles({
         projectControl: ctx.get("flowProjectControl"),
         localInstance: ctx.get("localInstance"),
@@ -206,20 +250,8 @@ export function createFlowHostPlugin(deps: {
         // 身份缝：宿主前端换票（本机接入）→ flow 网关回验（共享密钥）→ 稳定 subject。
         identity: {
           issue: async (actor, projectId) => {
-            if (projectId) {
-              // 任意工作方式的项目都可绑定 Flow（用户 2026-10-27 口径）：
-              // 绑定后该项目会话即拥有同一份工作流上下文。
-              await ctx.get("projects").getProject(actor, projectId);
-            }
-            const settings = await ctx
-              .get("settings")
-              .getInstanceSettings(actor, actor.instanceId);
-            return identityTickets.issue({
-              instanceId: actor.instanceId,
-              accessClientId: actor.accessClientId,
-              ttlMs: settings.localAccessTicketTtlMs,
-              ...(projectId ? { projectId } : {}),
-            });
+            if (!issueIdentity) throw new Error("Flow 身份缝尚未初始化。");
+            return issueIdentity(actor, projectId);
           },
           verify: async (token) => {
             const entry = identityTickets.consume(token);
