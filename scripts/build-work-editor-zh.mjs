@@ -103,7 +103,48 @@ function patchOnce(path, from, to, label, applied = to) {
   throw new Error(`补丁锚点不存在（${path}）——上游已改结构，需人工核对`);
 }
 
-// 1) ui-egui/craft_fonts_policy.rs 型（gridcraft / wordcraft）
+// 1) 按钮 / 弹窗 / 页签的源码级中文补丁。必须先于后面的内联文案补丁应用，
+//     否则同一 catalog 被改写后，补丁上下文会失配（GridCraft 实测）。
+const LOCALIZATION_PATCHES = {
+  gridcraft: "work-editor/gridcraft-dialogs-zh-cn.patch",
+  deckcraft: "work-editor/deckcraft-zh-cn.patch",
+  photocraft: "work-editor/photocraft-dialogs-zh-cn.patch",
+  lightcraft: "work-editor/lightcraft-dialogs-zh-cn.patch",
+  vectorcraft: "work-editor/vectorcraft-dialogs-zh-cn.patch",
+  filmcraft: "work-editor/filmcraft-dialogs-zh-cn.patch",
+  effectcraft: "work-editor/effectcraft-dialogs-zh-cn.patch",
+  soundcraft: "work-editor/soundcraft-zh-cn.patch",
+  cadcraft: "work-editor/cadcraft-dialogs-zh-cn.patch",
+};
+if (LOCALIZATION_PATCHES[app]) {
+  const patchFile = resolve(import.meta.dirname, LOCALIZATION_PATCHES[app]);
+  try {
+    execFileSync("git", ["apply", "--check", patchFile], {
+      cwd: source,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["apply", patchFile], {
+      cwd: source,
+      stdio: "inherit",
+    });
+    console.log(`[zh] 已应用 ${app} 弹窗与按钮中文补丁`);
+  } catch (error) {
+    try {
+      execFileSync("git", ["apply", "--reverse", "--check", patchFile], {
+        cwd: source,
+        stdio: "pipe",
+      });
+      console.log(`[zh] ${app} 弹窗与按钮中文补丁已应用，跳过`);
+    } catch {
+      throw new Error(
+        `[zh] ${app} 中文补丁与上游源码不匹配，请核对注册表版本后重建。`,
+        { cause: error },
+      );
+    }
+  }
+}
+
+// 2) ui-egui/craft_fonts_policy.rs 型（gridcraft / wordcraft）
 const policyPath = join(source, "crates/ui-egui/src/craft_fonts_policy.rs");
 if (existsSync(policyPath)) {
   const nl = eol(read(policyPath));
@@ -222,8 +263,8 @@ if (existsSync(gridCraftWeb)) {
   );
   patchOnce(
     ribbonHome,
-    '    ui.separator();\n    if ui.button("More Functions…").clicked() {\n        app.open_dialog("insertFunction", json!({}));\n    }\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
-    '    ui.separator();\n    if ui.button("More Functions…").clicked() {\n        app.open_dialog("insertFunction", json!({}));\n    }\n}\n\n/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "DouyinSans" => "抖音美好体",\n        "Sarasa Gothic SC" => "更纱黑体",\n        "Zhuque Fangsong (technical preview)" => "朱雀仿宋",\n        "BIZ UDMincho" => "BIZ UD明朝",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
+    "fn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    '/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "DouyinSans" => "抖音美好体",\n        "Sarasa Gothic SC" => "更纱黑体",\n        "Zhuque Fangsong (technical preview)" => "朱雀仿宋",\n        "BIZ UDMincho" => "BIZ UD明朝",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
     "已加字体中文名映射",
     "fn font_label(family: &str) -> String {",
   );
@@ -544,6 +585,12 @@ pub fn shown_name(db: &vectorcraft_text::FontDb, family: &str, english: bool) ->
     "矢量：字体子菜单存语言",
     "(generation, english_names, lang, list)",
   );
+  patchOnce(
+    menusRs,
+    "    items.2.clone()",
+    "    items.3.clone()",
+    "矢量：返回语言缓存后的字体列表",
+  );
   const chromeRs = join(source, "crates/ui-egui/src/chrome.rs");
   patchOnce(
     chromeRs,
@@ -742,47 +789,6 @@ if (USER_FONT_PATCHES[app]) {
   }
 }
 
-// 2d) 按钮 / 弹窗 / 页签的源码级中文补丁。WASM 画布文字不能靠宿主 DOM 注入翻译；
-//     每份补丁锚定注册表版本，首次应用与重复构建都显式校验，失配不再静默漏翻。
-const LOCALIZATION_PATCHES = {
-  gridcraft: "work-editor/gridcraft-dialogs-zh-cn.patch",
-  deckcraft: "work-editor/deckcraft-zh-cn.patch",
-  photocraft: "work-editor/photocraft-dialogs-zh-cn.patch",
-  lightcraft: "work-editor/lightcraft-dialogs-zh-cn.patch",
-  vectorcraft: "work-editor/vectorcraft-dialogs-zh-cn.patch",
-  filmcraft: "work-editor/filmcraft-dialogs-zh-cn.patch",
-  effectcraft: "work-editor/effectcraft-dialogs-zh-cn.patch",
-  soundcraft: "work-editor/soundcraft-zh-cn.patch",
-  cadcraft: "work-editor/cadcraft-dialogs-zh-cn.patch",
-};
-if (LOCALIZATION_PATCHES[app]) {
-  const patchFile = resolve(import.meta.dirname, LOCALIZATION_PATCHES[app]);
-  try {
-    execFileSync("git", ["apply", "--check", patchFile], {
-      cwd: source,
-      stdio: "pipe",
-    });
-    execFileSync("git", ["apply", patchFile], {
-      cwd: source,
-      stdio: "inherit",
-    });
-    console.log(`[zh] 已应用 ${app} 弹窗与按钮中文补丁`);
-  } catch (error) {
-    try {
-      execFileSync("git", ["apply", "--reverse", "--check", patchFile], {
-        cwd: source,
-        stdio: "pipe",
-      });
-      console.log(`[zh] ${app} 弹窗与按钮中文补丁已应用，跳过`);
-    } catch {
-      throw new Error(
-        `[zh] ${app} 中文补丁与上游源码不匹配，请核对注册表版本后重建。`,
-        { cause: error },
-      );
-    }
-  }
-}
-
 // 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
 const ZERO_PATCHES = {
   deckcraft: [
@@ -796,8 +802,7 @@ const ZERO_PATCHES = {
     [
       "crates/fonts/build.rs",
       'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic;',
-      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || scripts.split(',
-      ').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
     ],
   ],
   // filmcraft 的放行由 2d 段处理（同一处改成 `!chinese &&` 形式），此处不再重复。
@@ -862,7 +867,9 @@ if (XTASK_APPS.has(app)) {
 // 4) 收集产物
 const dist = XTASK_APPS.has(app)
   ? join(source, "target", "web", "dist")
-  : join(source, "dist/web");
+  : app === "lightcraft"
+    ? join(source, crate, "dist")
+    : join(source, "dist/web");
 if (!existsSync(dist)) throw new Error(`构建成功但没有产物目录：${dist}`);
 const target = join(outDir, app);
 rmSync(target, { recursive: true, force: true });
