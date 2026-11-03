@@ -107,6 +107,7 @@ function patchOnce(path, from, to, label, applied = to) {
 //     否则同一 catalog 被改写后，补丁上下文会失配（GridCraft 实测）。
 const LOCALIZATION_PATCHES = {
   gridcraft: "work-editor/gridcraft-dialogs-zh-cn.patch",
+  wordcraft: "work-editor/wordcraft-zh-cn.patch",
   deckcraft: "work-editor/deckcraft-zh-cn.patch",
   photocraft: "work-editor/photocraft-dialogs-zh-cn.patch",
   lightcraft: "work-editor/lightcraft-dialogs-zh-cn.patch",
@@ -138,6 +139,39 @@ if (LOCALIZATION_PATCHES[app]) {
     } catch {
       throw new Error(
         `[zh] ${app} 中文补丁与上游源码不匹配，请核对注册表版本后重建。`,
+        { cause: error },
+      );
+    }
+  }
+}
+
+// WordCraft 的外部 craft-i18n 目录也走同一 git patch 机制，保持重建可复现。
+const CATALOG_PATCHES = {
+  wordcraft: "work-editor/wordcraft-i18n-zh-cn.patch",
+};
+if (CATALOG_PATCHES[app]) {
+  const patchFile = resolve(import.meta.dirname, CATALOG_PATCHES[app]);
+  try {
+    // 零上下文字典补丁先查已应用，避免重复插入同一行。
+    execFileSync("git", ["apply", "--reverse", "--check", "--unidiff-zero", patchFile], {
+      cwd: i18nDir,
+      stdio: "pipe",
+    });
+    console.log(`[zh] ${app} 中文目录补丁已应用，跳过`);
+  } catch {
+    try {
+      execFileSync("git", ["apply", "--check", "--unidiff-zero", patchFile], {
+        cwd: i18nDir,
+        stdio: "pipe",
+      });
+      execFileSync("git", ["apply", "--unidiff-zero", patchFile], {
+        cwd: i18nDir,
+        stdio: "inherit",
+      });
+      console.log(`[zh] 已应用 ${app} 中文目录补丁`);
+    } catch (error) {
+      throw new Error(
+        `[zh] ${app} 中文目录补丁与 craft-i18n 不匹配，请核对版本后重建。`,
         { cause: error },
       );
     }
