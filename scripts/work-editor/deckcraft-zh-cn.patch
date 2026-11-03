@@ -550,7 +550,7 @@ new file mode 100644
 index 0000000..da24df7
 --- /dev/null
 +++ b/crates/ui-egui/src/i18n.rs
-@@ -0,0 +1,525 @@
+@@ -0,0 +1,547 @@
 +//! Simplified Chinese display labels. Command ids and document values stay unchanged.
 +
 +pub(crate) fn tr(text: &str) -> &str {
@@ -581,6 +581,8 @@ index 0000000..da24df7
 +        "Search commands (⇧⌘P)" => "搜索命令 (⇧⌘P)",
 +        "Present" => "放映",
 +        "Comments" => "批注",
++        "+ New Comment" => "+ 新建批注",
++        "No comments." => "暂无批注",
 +        "Light/Dark appearance" => "浅色/深色外观",
 +
 +        // Ribbon buttons, labels and tooltips.
@@ -714,6 +716,11 @@ index 0000000..da24df7
 +        "Notes\nMaster" => "备注\n母版",
 +        "Grid\nOptions" => "网格\n选项",
 +        "Notes" => "备注",
++        "Outline\nView" => "大纲\n视图",
++        "Slide\nSorter" => "幻灯片\n浏览",
++        "Notes\nPage" => "备注\n页",
++        "Reading\nView" => "阅读\n视图",
++        "Click to add notes" => "单击添加备注",
 +        "Fit to\nWindow" => "适应\n窗口",
 +        "New\nWindow" => "新建\n窗口",
 +        "Grayscale" => "灰度",
@@ -1075,6 +1082,21 @@ index 0000000..da24df7
 +            assert_eq!(super::tr(english), chinese);
 +        }
 +    }
++
++    #[test]
++    fn notes_comments_and_view_labels_are_chinese() {
++        for (english, chinese) in [
++            ("+ New Comment", "+ 新建批注"),
++            ("No comments.", "暂无批注"),
++            ("Outline\nView", "大纲\n视图"),
++            ("Slide\nSorter", "幻灯片\n浏览"),
++            ("Notes\nPage", "备注\n页"),
++            ("Reading\nView", "阅读\n视图"),
++            ("Click to add notes", "单击添加备注"),
++        ] {
++            assert_eq!(super::tr(english), chinese);
++        }
++    }
 +}
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
 index e3f4acb..56e6c68 100644
@@ -1088,6 +1110,30 @@ index e3f4acb..56e6c68 100644
  pub mod icons;
  pub mod media;
  pub mod menus;
+diff --git a/crates/ui-egui/src/panes.rs b/crates/ui-egui/src/panes.rs
+index 17af49b..aade1a6 100644
+--- a/crates/ui-egui/src/panes.rs
++++ b/crates/ui-egui/src/panes.rs
+@@ -34,7 +34,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
+                 _ => "Pane",
+             };
+             ui.horizontal(|ui| {
+-                ui.label(egui::RichText::new(title).font(theme::bold(16.0)));
++                ui.label(egui::RichText::new(crate::i18n::tr(title)).font(theme::bold(16.0)));
+                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                     let (r, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
+                     if resp.hovered() {
+@@ -1262,4 +1262,4 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
+ fn comments(app: &mut SlideApp, ui: &mut Ui) {
+     let t = Tokens::get(ui.ctx());
+-    if ui.button("+ New Comment").clicked() {
++    if ui.button(crate::i18n::tr("+ New Comment")).clicked() {
+         app.dialog = Some(crate::dialogs::Dialog::new("comment"));
+@@ -1273,3 +1273,3 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
+     if threads.is_empty() {
+-        ui.label(egui::RichText::new("No comments.").color(t.text_dim));
++        ui.label(egui::RichText::new(crate::i18n::tr("No comments.")).color(t.text_dim));
+         return;
 diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
 index 7f36a25..1b31d02 100644
 --- a/crates/ui-egui/src/ribbon.rs
@@ -2120,6 +2166,40 @@ index 7f36a25..1b31d02 100644
          let p = json!({"ppi": ppi, "deleteCropped": delete_cropped, "all": !only_selected});
          match app.session.execute("picture.compress", &p) {
              Ok(r) => {
+diff --git a/crates/ui-egui/src/status.rs b/crates/ui-egui/src/status.rs
+index 5f922ae..9aee32f 100644
+--- a/crates/ui-egui/src/status.rs
++++ b/crates/ui-egui/src/status.rs
+@@ -147,4 +147,5 @@ fn labeled(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> egui::Response {
+ fn labeled(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> egui::Response {
++    let label = crate::i18n::tr(label);
+     let t = Tokens::get(ui.ctx());
+     let w = 22.0 + ui.fonts_mut(|f| f.layout_no_wrap(label.into(), theme::font(12.0), t.text).size().x) + 8.0;
+     let (r, resp) = ui.allocate_exact_size(vec2(w, 20.0), Sense::click());
+@@ -204,4 +204,4 @@ pub fn notes_pane(app: &mut SlideApp, ui: &mut Ui) {
+                 .auto_shrink([false, false])
+                 .show(ui, |ui| {
+                     crate::notes::editor(ui, &mut draft, &look, |e| {
+-                        e.id(id).hint_text("Click to add notes").frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(2)
++                        e.id(id).hint_text(crate::i18n::tr("Click to add notes")).frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(2)
+@@ -331,7 +332,7 @@ mod tests {
+         // inside the window (x 132); the Notes button is the leftmost of them. Its position depends
+         // on the interface font's widths, so the clicks use the position it was laid out at.
+         let right_x = size.x - 8.0 - 560.0;
+-        let notes = h.get_by_label("Notes").rect();
++        let notes = h.get_by_label("备注").rect();
+         assert!(notes.left() > right_x + 2.0, "the Notes button ({notes:?}) starts after x {right_x}");
+         let click = |h: &mut Harness<'_, SlideApp>, at: egui::Pos2| {
+             h.hover_at(at);
+@@ -364,7 +365,7 @@ mod tests {
+             SlideApp::new(Session::with_new(), Services::default()),
+         );
+         h.run_steps(3);
+-        for name in ["Fit slide to current window", "Zoom In", "Zoom Out", "Slide Show", "Reading View"] {
++        for name in ["Fit slide to current window", "Zoom In", "Zoom Out", "Slide Show", "Reading View", "备注"] {
+             h.get_by_role_and_label(Role::Button, name);
+         }
+         let pct = format!("{}%", (h.state().canvas_scale * 100.0).round());
 diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
 index 109196e..bb501af 100644
 --- a/crates/ui-egui/src/theme.rs
