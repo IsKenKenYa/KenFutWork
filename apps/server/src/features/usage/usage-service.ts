@@ -39,6 +39,22 @@ export interface UsageService {
   summarize(user: LocalActor): Promise<UsageSummaryResponse>;
   /** 用户侧使用统计（R4-2）：按天活动/连续天数/按模型，窗口 rangeDays 天。 */
   stats(user: LocalActor, rangeDays: number): Promise<UsageStatsResponse>;
+  /** 单轮 Run 的用量汇总（子代理结果归因用）；没有记账行时返回 null。 */
+  runSummary(instanceId: string, runId: string): Promise<RunUsageSummary | null>;
+  /** 会话最近一轮 Run 的用量汇总；调用方只有 childSessionId 时使用。 */
+  runSummaryBySession(
+    instanceId: string,
+    sessionId: string,
+  ): Promise<RunUsageSummary | null>;
+}
+
+/** 对外暴露的用量汇总形状：在库字段之上补上 totalTokens，便于卡片直接显示。 */
+export interface RunUsageSummary {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number | null;
+  calls: number;
 }
 
 type ModelBucket = {
@@ -300,5 +316,30 @@ export function createUsageService(options: {
         longestSessionSeconds,
       );
     },
+
+    async runSummary(instanceId, runId) {
+      const aggregate = await repository.runSummary(instanceId, runId);
+      return aggregate ? toRunUsageSummary(aggregate) : null;
+    },
+
+    async runSummaryBySession(instanceId, sessionId) {
+      const aggregate = await repository.runSummaryBySession(instanceId, sessionId);
+      return aggregate ? toRunUsageSummary(aggregate) : null;
+    },
+  };
+}
+
+function toRunUsageSummary(aggregate: {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  calls: number;
+}): RunUsageSummary {
+  return {
+    inputTokens: aggregate.inputTokens,
+    outputTokens: aggregate.outputTokens,
+    totalTokens: aggregate.inputTokens + aggregate.outputTokens,
+    costUsd: aggregate.costUsd,
+    calls: aggregate.calls,
   };
 }

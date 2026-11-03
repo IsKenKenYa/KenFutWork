@@ -8,10 +8,19 @@ import { createExecutionScopes } from "../execution/scope-service.js";
 import { createTaskWorkManager } from "../task-work/service.js";
 import { createMemoryTaskWorkStore } from "../task-work/test-store.js";
 import type { TaskWorkContext } from "../task-work/types.js";
+import type { RunUsageSummary } from "../usage/usage-service.js";
 import { createCodeSubagentTool } from "./task-tool.js";
 import type { CodeChildRequest, CodeChildResult } from "./types.js";
 
-async function fixture(preset: "code" | "design" = "code") {
+async function fixture(
+  preset: "code" | "design" = "code",
+  options: {
+    usageFor?: (
+      context: TaskWorkContext,
+      childRunId: string,
+    ) => Promise<RunUsageSummary | null>;
+  } = {},
+) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-child-tool-"));
   const scope = {
     instanceId: "00000000-0000-4000-8000-000000000001",
@@ -81,6 +90,7 @@ async function fixture(preset: "code" | "design" = "code") {
   const tool = createCodeSubagentTool({
     manager,
     limitsFor: async () => ({ maxDepth: 2, previewMaxChars: 4 }),
+    ...(options.usageFor ? { usageFor: options.usageFor } : {}),
     runChild: async (request, signal) => {
       requests.push(request);
       childSignal = signal;
@@ -196,6 +206,98 @@ it("后台Task不随父停止，重放返回同一child identity，完整输出�
       consumed: false,
     });
     expect(f.requests).toHaveLength(1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("前台Task完成后按 childRunId 归因用量，不把父 Run 的账算给子代理", async () => {
+  const lookups: Array<{ instanceId: string; childRunId: string }> = [];
+  const f = await fixture("code", {
+    usageFor: async (context, childRunId) => {
+      lookups.push({ instanceId: context.scope.instanceId, childRunId });
+      return {
+        inputTokens: 120,
+        outputTokens: 30,
+        totalTokens: 150,
+        costUsd: 0.01,
+        calls: 2,
+      };
+    },
+  });
+  try {
+    const pending = f.tool.execute(input, f.execution);
+    await f.ready;
+    f.finish({
+      status: "completed",
+      summary: "full child evidence",
+      outputRef: "/logs/full-result",
+      outputStats: { retainedBytes: 19, totalBytes: 19, discardedBytes: 0 },
+      childSessionId: "child-session",
+      childRunId: "child-run",
+    });
+    await expect(pending).resolves.toMatchObject({
+      status: "completed",
+      usage: { totalTokens: 150, costUsd: 0.01, calls: 2 },
+    });
+    expect(lookups).toEqual([
+      {
+        instanceId: f.execution.taskWorkContext?.scope.instanceId,
+        childRunId: "child-run",
+      },
+    ]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("用量查询失败只丢 usage，Task 本身仍返回完整结果", async () => {
+  const f = await fixture("code", {
+    usageFor: async () => {
+      throw new Error("usage table unavailable");
+    },
+  });
+  try {
+    const pending = f.tool.execute(input, f.execution);
+    await f.ready;
+    f.finish({
+      status: "completed",
+      summary: "full child evidence",
+      outputRef: "/logs/full-result",
+      outputStats: { retainedBytes: 19, totalBytes: 19, discardedBytes: 0 },
+      childSessionId: "child-session",
+      childRunId: "child-run",
+    });
+    const result = (await pending) as Record<string, unknown>;
+    expect(result).toMatchObject({
+      status: "completed",
+      outputPath: "/logs/full-result",
+    });
+    expect(result).not.toHaveProperty("usage");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+it("后台Task派发阶段不阻塞查用量，归因留给 TaskOutput", async () => {
+  const lookups: string[] = [];
+  const f = await fixture("code", {
+    usageFor: async (_context, childRunId) => {
+      lookups.push(childRunId);
+      return null;
+    },
+  });
+  try {
+    const dispatched = (await f.tool.execute(
+      { ...input, run_in_background: true },
+      f.execution,
+    )) as { taskId: string; childSessionId: string };
+    await f.ready;
+    expect(lookups).toEqual([]);
+    expect(dispatched).toMatchObject({
+      taskId: expect.any(String) as string,
+      childSessionId: expect.any(String) as string,
+    });
   } finally {
     await f.cleanup();
   }

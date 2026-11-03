@@ -78,6 +78,8 @@ function createFakeRepository(
     longestSessionSeconds: async () => 0,
     appUsageDaily: async () => [],
     appUsageRunCount: async () => 0,
+    runSummary: async () => null,
+    runSummaryBySession: async () => null,
     ...overrides,
   };
 }
@@ -232,6 +234,79 @@ describe("usage repository（workspace 作用域 + 驱动数值归一）", () =>
       expect(seconds).toBe(0);
     }
   });
+
+  it("单轮用量汇总按实例 + run_id 限定，聚合列归一为 number", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [
+        {
+          input_tokens: "1200",
+          output_tokens: "300",
+          cost_usd: "0.045",
+          calls: "2",
+        },
+      ],
+    }));
+
+    const summary = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).runSummary(INSTANCE_ID, "run-1");
+
+    expect(summary).toEqual({
+      inputTokens: 1200,
+      outputTokens: 300,
+      costUsd: 0.045,
+      calls: 2,
+    });
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("where instance_id = $2 and run_id = $1");
+    expect(calls[0]?.values).toEqual(["run-1", INSTANCE_ID]);
+  });
+
+  it("没有记账行时单轮汇总返回 null（不把「没调用」伪装成 0 次）", async () => {
+    const { runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [{ input_tokens: 0, output_tokens: 0, cost_usd: null, calls: "0" }],
+    }));
+
+    const summary = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).runSummary(INSTANCE_ID, "run-missing");
+
+    expect(summary).toBeNull();
+  });
+
+  it("会话用量汇总只取该会话最近创建的一轮 Run，并同时用实例谓词收窄", async () => {
+    const { calls, runner } = createRunner(() => ({
+      rowCount: 1,
+      rows: [
+        {
+          input_tokens: "80",
+          output_tokens: "20",
+          cost_usd: null,
+          calls: "1",
+        },
+      ],
+    }));
+
+    const summary = await createUsageRepository(
+      createPersistenceFromRunner(runner),
+    ).runSummaryBySession(INSTANCE_ID, "child-session-1");
+
+    expect(summary).toEqual({
+      inputTokens: 80,
+      outputTokens: 20,
+      costUsd: null,
+      calls: 1,
+    });
+    const sql = calls[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    expect(sql).toContain("join public.chat_sessions s on s.id = r.session_id");
+    expect(sql).toContain("where s.instance_id = $2 and r.session_id = $1");
+    expect(sql).toContain("order by r.created_at desc limit 1");
+    // 外层 usage 行与内层会话都必须落在同一实例
+    expect(sql).toContain("u.instance_id = $2");
+    expect(calls[0]?.values).toEqual(["child-session-1", INSTANCE_ID]);
+  });
 });
 
 describe("usage service", () => {
@@ -344,6 +419,53 @@ describe("usage service", () => {
     await expect(service.summarize(USER)).rejects.toThrow(
       /summary query failed: permission denied/,
     );
+  });
+
+  it("单轮用量在库字段之上补 totalTokens；无记账行时返回 null", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        runSummary: async (_instanceId, runId) =>
+          runId === "run-1"
+            ? { inputTokens: 120, outputTokens: 30, costUsd: 0.02, calls: 2 }
+            : null,
+      }),
+      localInstance: INSTANCE_STUB,
+    });
+
+    await expect(service.runSummary(INSTANCE_ID, "run-1")).resolves.toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+      costUsd: 0.02,
+      calls: 2,
+    });
+    await expect(
+      service.runSummary(INSTANCE_ID, "run-missing"),
+    ).resolves.toBeNull();
+  });
+
+  it("按会话查询把最近一轮的汇总原样归因（区分零成本与未上报成本）", async () => {
+    const service = createUsageService({
+      repository: createFakeRepository({
+        runSummaryBySession: async () => ({
+          inputTokens: 0,
+          outputTokens: 0,
+          costUsd: null,
+          calls: 1,
+        }),
+      }),
+      localInstance: INSTANCE_STUB,
+    });
+
+    await expect(
+      service.runSummaryBySession(INSTANCE_ID, "child-session-1"),
+    ).resolves.toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      costUsd: null,
+      calls: 1,
+    });
   });
 });
 
