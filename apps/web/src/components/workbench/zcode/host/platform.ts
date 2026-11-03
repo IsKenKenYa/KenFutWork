@@ -142,7 +142,7 @@ export function createCodePlatform(
       databaseRecords: true,
       projectScope: false,
       oauth: false,
-      httpHeaders: false,
+      httpHeaders: true,
       serverParameters: false,
       sse: false,
     },
