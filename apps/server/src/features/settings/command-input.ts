@@ -1,4 +1,5 @@
 import type { InstanceSettings } from "@kenfutwork/shared";
+import { resolveBuiltinCommandPrompt } from "../commands/builtin.js";
 import { expandCustomCommandPrompt } from "./zcode-command-expansion.js";
 
 /** 实例命令仅编译模型输入；不修改原转录或签发工具权限。 */
@@ -10,6 +11,8 @@ export function resolveConfiguredCommandPrompt(
     input.trimStart(),
   );
   if (!match) return input;
+  const builtin = resolveBuiltinCommandPrompt(match[1] ?? "", match[2] ?? "");
+  if (builtin !== null) return builtin;
   if (!commands) throw new Error("命令配置读取失败，请重试。");
   const command = commands.find(
     (entry) => entry.name.toLowerCase() === match[1]?.toLowerCase(),

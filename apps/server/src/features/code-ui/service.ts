@@ -42,6 +42,7 @@ import type { ThreadService } from "../chat/thread-service.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../code-git/code-git-service.js";
 import { createScopedGitExec } from "../code-git/scoped-git-exec.js";
+import { mergeBuiltinSlashCommands } from "../commands/builtin.js";
 import type {
   ChildSession,
   CodeChildRequest,
@@ -4970,11 +4971,13 @@ export class CodeUiService {
     );
     return {
       mode: "build",
-      slashCommands: settings.commands.map((command) => ({
-        name: command.name,
-        description: command.description,
-        source: "custom" as const,
-      })),
+      slashCommands: mergeBuiltinSlashCommands(
+        settings.commands.map((command) => ({
+          name: command.name,
+          description: command.description,
+          source: "custom" as const,
+        })),
+      ),
     };
   }
 
