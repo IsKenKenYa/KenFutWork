@@ -2009,8 +2009,14 @@ export class CodeUiService {
       "getTaskMeta",
       "deleteTask",
       "getTaskSessionFilePath",
+      "getTaskNativeSessionLogFile",
     ]);
     if (!supported.has(method)) return null;
+    if (method === "getTaskNativeSessionLogFile") {
+      // 原 ZCode Agent 把结构化日志落 ~/.zcode 下；本内核无该原生日志文件，
+      // 按契约返回空路径（provider/path 均可空），避免 UI 轮询收到 501。
+      return { result: { provider: null, path: null, exists: false } };
+    }
     if (method === "getTaskSessionFilePath") {
       // 与上游 ZCode 适配器同规则：task 快照统一为 `{taskId}.zcode-session`。
       // 本内核把会话状态存数据库、不落快照文件，故 `exists` 恒为 false（与上游一致）。

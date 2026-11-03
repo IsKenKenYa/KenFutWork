@@ -598,6 +598,17 @@ it("task 快照路径按上游规则返回，不再以未实现 501 反复失败
   });
 });
 
+it("原生会话日志路径在无原生日志的内核里返回空，不再 501", async () => {
+  const { actor, service, pathA, taskId } = await fixture();
+  const result = await service.hostRpc(
+    actor,
+    "zcode-task",
+    "getTaskNativeSessionLogFile",
+    [{ workspacePath: pathA, taskId }],
+  );
+  expect(result?.result).toEqual({ provider: null, path: null, exists: false });
+});
+
 it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留真实项目和固定目录", async () => {
   const { actor, service, pathA, taskId, secondId } = await fixture({
     enumerationUnavailable: true,
