@@ -461,7 +461,7 @@ const zhCN: Record<string, string> = {
   "carousel.previousSlide": "上一张幻灯片",
   "carousel.nextSlide": "下一张幻灯片",
   "quickPick.title": "命令面板",
-  "quickPick.description": "搜索并执行当前工作区可用的命令。",
+  "quickPick.description": "搜索命令",
   "quickPick.placeholder": "输入命令",
   "quickPick.empty": "没有找到匹配命令。",
   "quickPick.commandFailed": "命令执行失败：{error}",
@@ -2176,8 +2176,7 @@ const zhCN: Record<string, string> = {
   "settings.memory.workspaceMemory": "工作区记忆",
   "settings.memoryDescription":
     "在工作区中保存并复用长期上下文，新会话生效。开启后可能增加模型调用和 Token 成本。",
-  "settings.memory.viewer.localOnly":
-    "记忆详情仅支持在本地桌面端查看，请前往本地桌面端的“记忆”设置。",
+  "settings.memory.viewer.localOnly": "仅桌面端可用",
   "settings.memory.viewer.title": "已保存的工作区记忆",
   "settings.memory.viewer.description": "查看此设备上按工作区保存的记忆。",
   "settings.memory.viewer.projectsDescription":
@@ -4006,8 +4005,7 @@ const zhCN: Record<string, string> = {
   "settings.subagents.backToList": "返回",
   "settings.subagents.openUserAgentsFolder": "打开用户子智能体目录",
   "settings.subagents.noDescription": "暂无描述",
-  "settings.subagents.userScopeDesktopOnly":
-    "当前阶段用户级子智能体仅支持桌面端。",
+  "settings.subagents.userScopeDesktopOnly": "仅桌面端可用",
   "settings.subagents.group.user": "已安装",
   "settings.subagents.group.plugin": "插件子智能体",
   "settings.subagents.group.plugin.hint":
@@ -4129,7 +4127,7 @@ const zhCN: Record<string, string> = {
   "settings.plugin.hooks.emptyInstalledTitle": "尚未安装钩子",
   "settings.plugin.hooks.emptyInstalledDescription":
     "新建钩子，以在任务生命周期事件中运行命令。",
-  "settings.plugin.noWorkspace": "请先打开工作区以管理能力。",
+  "settings.plugin.noWorkspace": "未打开工作区",
   "settings.plugin.scopeUnavailableFallback":
     "目标工作区已关闭或断开，已回退到用户插件配置。",
   "settings.plugin.edit": "编辑",
@@ -4713,8 +4711,7 @@ const zhCN: Record<string, string> = {
   "chat.emptyResult.title": "没有可展示内容",
   "chat.emptyResult.description":
     "这个任务没有生成聊天内容，可能是在模型返回正文前被停止了。",
-  "chat.placeholder.newTask":
-    "向 KenFutWork 提问，使用 @ 添加上下文，使用 / 选择命令或能力",
+  "chat.placeholder.newTask": "输入消息",
   "chat.placeholder.newTaskMobile": "向 KenFutWork 提问…",
   "chat.placeholder.followUpAsk": "提出后续修改要求",
   "chat.placeholder.followUpQueue": "继续输入以排队后续修改",

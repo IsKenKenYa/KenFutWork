@@ -226,8 +226,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
             className="w-full min-w-0 space-y-2"
           >
             <legend className="text-ui-sm text-foreground-subtle">
-              {segment.label}：
-              {selectedLabel(settings[segment.key], models, segment.key)}
+              {segment.label}
             </legend>
             <label className="flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-ui-sm">
               <input
@@ -351,22 +350,6 @@ function isSelected(
       selection.kind === candidate.kind &&
       selection.id === candidate.id &&
       (selection.model ?? undefined) === candidate.model,
-  );
-}
-
-function selectedLabel(
-  selection: VoiceSettings[SegmentKey],
-  models: VoiceModelCandidate[],
-  segment: SegmentKey,
-): string {
-  if (!selection) {
-    return "不用";
-  }
-  return (
-    models
-      .filter((model) => model.segment === segment)
-      .find((candidate) => isSelected(selection, candidate))?.label ??
-    selection.id
   );
 }
 

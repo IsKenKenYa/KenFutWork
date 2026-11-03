@@ -5804,7 +5804,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "269295a3106a765b907c206e4441034a0b589bcba383ecdce0369ddbbb5ce7e8",
+      "copiedSha256": "6b1159e0013a15d9d7598a9d6f29a1ae11aaab4191b0d98412df3f1df989bc4e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
