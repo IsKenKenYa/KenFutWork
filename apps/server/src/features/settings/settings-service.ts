@@ -21,6 +21,7 @@ import {
   clampSubagentMaxContinuations,
   clampSubagentMaxDepth,
   coerceLlmInfiniteRetry,
+  HOOK_EVENTS,
   modelDefaultsSchema,
   RUNTIME_GOVERNANCE_KEYS,
   resolveGovernanceNumber,
@@ -152,9 +153,16 @@ function parseHooks(raw: unknown): InstanceSettings["hooks"] {
   for (const entry of raw) {
     if (typeof entry !== "object" || entry === null) continue;
     const { event, command } = entry as { event?: unknown; command?: unknown };
-    if (event !== "turn-start" && event !== "turn-end") continue;
+    if (
+      typeof event !== "string" ||
+      !(HOOK_EVENTS as readonly string[]).includes(event)
+    )
+      continue;
     if (typeof command !== "string" || !command.trim()) continue;
-    out.push({ event, command: command.trim().slice(0, 2_000) });
+    out.push({
+      event: event as InstanceSettings["hooks"][number]["event"],
+      command: command.trim().slice(0, 2_000),
+    });
     if (out.length >= 10) break;
   }
   return out;

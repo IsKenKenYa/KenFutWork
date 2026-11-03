@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toolArtifactSchema } from "./artifacts.js";
 import {
   conversationIdSchema,
+  hookEventSchema,
   messageIdSchema,
   runIdSchema,
   sessionIdSchema,
@@ -239,7 +240,7 @@ export const runCompactedEventSchema = z
 export const runHookEventSchema = z.object({
   type: z.literal("run.hook"),
   runId: runIdSchema,
-  event: z.enum(["turn-start", "turn-end"]),
+  event: hookEventSchema,
   command: z.string().min(1),
   /** 被超时杀掉时为 null。 */
   exitCode: z.number().int().nullable(),

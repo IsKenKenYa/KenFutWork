@@ -289,6 +289,31 @@ describe("buildRunTimeline", () => {
     expect(timeline.entries[0]?.detail).toBeUndefined();
   });
 
+  it("工具失败钩子按事件名标签展示", () => {
+    const timeline = buildRunTimeline({
+      run: run(),
+      events: rows({
+        type: "run.hook",
+        runId: RUN_ID,
+        event: "tool-failed",
+        command: "false",
+        exitCode: 1,
+        timedOut: false,
+        output: "boom",
+        durationMs: 2,
+        timestamp: T0,
+      }),
+      usage: null,
+    });
+
+    expect(timeline.entries[0]).toMatchObject({
+      kind: "hook",
+      title: "钩子 · 工具失败",
+      name: "tool-failed",
+      status: "error",
+    });
+  });
+
   it("后台子代理与后台命令的结算通知各归一类", () => {
     const timeline = buildRunTimeline({
       run: run(),

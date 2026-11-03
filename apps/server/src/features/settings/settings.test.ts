@@ -157,6 +157,28 @@ it("设置事实保存并回读后通知实例配置消费者，释放租约后�
   expect(facts).toHaveLength(1);
 });
 
+describe("钩子事件解析", () => {
+  it("接受工具事件，丢弃未知事件与空命令", async () => {
+    const service = createSettingsService({
+      localInstance,
+      repository: createRepositoryFake({
+        findHooks: async () =>
+          [
+            { event: "tool-start", command: " echo tool  " },
+            { event: "tool-failed", command: "false" },
+            { event: "unknown-event", command: "echo nope" },
+            { event: "tool-end", command: "   " },
+          ] as never,
+      }),
+    });
+    const settings = await service.getInstanceSettings(ACTOR, INSTANCE_ID);
+    expect(settings.hooks).toEqual([
+      { event: "tool-start", command: "echo tool" },
+      { event: "tool-failed", command: "false" },
+    ]);
+  });
+});
+
 describe("settings repository", () => {
   it("读默认模型限定实例，无行返回 null", async () => {
     const empty = createRunner();

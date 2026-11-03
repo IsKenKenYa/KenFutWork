@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   clampSubagentMaxContinuations,
+  type HookEvent,
   type ImageAttachment,
   type ImageGenerationPreference,
   type InstanceSettings,
@@ -1461,10 +1462,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let modelCapabilities = { image: false, pdf: false };
       let autoCompact: CompactionPlan | undefined;
       let manualCompactPlan: CompactionPlan | undefined;
-      /** 用户钩子（R5-2）：起点在装配前跑，终点在本轮收尾时跑；都是旁路。 */
-      let hookCommands: { start: string[]; end: string[] } = {
-        start: [],
-        end: [],
+      /** 用户钩子（R5-2）：回合起止与工具起止都跑；都是旁路。 */
+      let hookCommands: Record<HookEvent, string[]> = {
+        "turn-start": [],
+        "turn-end": [],
+        "tool-start": [],
+        "tool-end": [],
+        "tool-failed": [],
       };
       let hookShell: InstanceSettings["terminalShell"] | undefined;
       let processLimits: ProcessLimits = {
@@ -1538,6 +1542,52 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             hook && actor ? () => hook({ scope, actor, runId }) : undefined,
         });
         await persistBoundary(run, phase, facts);
+      };
+
+      /**
+       * 钩子执行器：按事件取命令，逐条跑，结果逐条发 `run.hook`。
+       *
+       * 回合结束点在收尾阶段执行，此时控制器可能已被停止；不把停止信号接进去，
+       * 否则「取消也要跑」的终点钩子会被立刻打断。工具与回合起点仍随本轮停止。
+       */
+      const runHookEvent = async function* (
+        event: HookEvent,
+      ): AsyncGenerator<StreamEvent> {
+        const commands = hookCommands[event];
+        if (commands.length === 0 || !backendResult.sandboxDir) return;
+        for (const hook of await runHooks({
+          event,
+          commands,
+          cwd: backendResult.sandboxDir,
+          timeoutMs: governanceExecuteTimeoutMs,
+          previewMaxChars: processLimits.previewMaxChars,
+          ...(run.scopeHandle
+            ? {
+                runCommand: options.processSandbox
+                  ? createScopedHookCommand({
+                      sandbox: options.processSandbox,
+                      scope: run.scopeHandle,
+                      runId,
+                      event,
+                      limits: processLimits,
+                      ...(event === "turn-end"
+                        ? {}
+                        : { signal: run.controller.signal }),
+                    })
+                  : async () => {
+                      throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
+                    },
+              }
+            : {}),
+          ...(hookShell ? { shell: hookShell } : {}),
+        })) {
+          yield {
+            type: "run.hook" as const,
+            runId,
+            ...hook,
+            timestamp: now(),
+          };
+        }
       };
 
       try {
@@ -1773,10 +1823,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 compactFallbackKeepMessages:
                   instanceSettings.compactFallbackKeepMessages,
               };
-            // 钩子也从这个对象读（同一趟）：起点钩子在装配 agent 之前跑
+            // 钩子也从这个对象读（同一趟）：按事件各取一份，回合起点在装配前跑
             hookCommands = {
-              start: hooksFor(instanceSettings?.hooks, "turn-start"),
-              end: hooksFor(instanceSettings?.hooks, "turn-end"),
+              "turn-start": hooksFor(instanceSettings?.hooks, "turn-start"),
+              "turn-end": hooksFor(instanceSettings?.hooks, "turn-end"),
+              "tool-start": hooksFor(instanceSettings?.hooks, "tool-start"),
+              "tool-end": hooksFor(instanceSettings?.hooks, "tool-end"),
+              "tool-failed": hooksFor(instanceSettings?.hooks, "tool-failed"),
             };
             hookShell = instanceSettings?.terminalShell;
             if (instanceSettings)
@@ -1828,7 +1881,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             if (run.scopeHandle.role === "main")
               leaveForeground =
                 await options.taskWork.enterForeground(taskWorkContext);
-            else hookCommands = { start: [], end: [] };
+            else {
+              // 子代理不跑用户钩子：钩子属于用户可见的回合与工具节点。
+              for (const hookEvent of Object.keys(
+                hookCommands,
+              ) as HookEvent[]) {
+                hookCommands[hookEvent] = [];
+              }
+            }
           } else {
             backgroundTaskRegistry = createBackgroundTaskRegistry({
               maxConcurrent: governanceConcurrency,
@@ -1836,39 +1896,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             backgroundTaskRegistries.set(run, backgroundTaskRegistry);
           }
 
-          if (hookCommands.start.length > 0 && backendResult.sandboxDir) {
-            for (const hook of await runHooks({
-              event: "turn-start",
-              commands: hookCommands.start,
-              cwd: backendResult.sandboxDir,
-              timeoutMs: governanceExecuteTimeoutMs,
-              previewMaxChars: processLimits.previewMaxChars,
-              ...(run.scopeHandle
-                ? {
-                    runCommand: options.processSandbox
-                      ? createScopedHookCommand({
-                          sandbox: options.processSandbox,
-                          scope: run.scopeHandle,
-                          runId,
-                          event: "turn-start",
-                          limits: processLimits,
-                          signal: run.controller.signal,
-                        })
-                      : async () => {
-                          throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
-                        },
-                  }
-                : {}),
-              ...(hookShell ? { shell: hookShell } : {}),
-            })) {
-              yield {
-                type: "run.hook" as const,
-                runId,
-                ...hook,
-                timestamp: now(),
-              };
-            }
-          }
+          yield* runHookEvent("turn-start");
 
           /**
            * 模型实例元数据一次解析，两个消费方：
@@ -2859,6 +2887,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               }
               yield event;
 
+              // 工具钩子：用户配在单个工具调用的开始、结束或失败上。
+              // 失败按权威终态分派，缺失终态的完成事件算正常结束。
+              if (event.type === "tool.started") {
+                yield* runHookEvent("tool-start");
+              } else if (event.type === "tool.completed") {
+                yield* runHookEvent(
+                  event.status === "error" ? "tool-failed" : "tool-end",
+                );
+              }
+
               if (!isTerminalEvent(event) && options.eventDelayMs) {
                 try {
                   await delay(options.eventDelayMs, undefined, {
@@ -2971,38 +3009,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
          * 放在 finally 里是为了「取消/失败也跑得到」——用户配的是「每轮结束」而不是「成功结束」。
          * 事件在此之后才发（客户端按 runId 收，不依赖终态先后）。
          */
-        if (hookCommands.end.length > 0 && backendResult.sandboxDir) {
+        if (hookCommands["turn-end"].length > 0 && backendResult.sandboxDir) {
           try {
-            for (const hook of await runHooks({
-              event: "turn-end",
-              commands: hookCommands.end,
-              cwd: backendResult.sandboxDir,
-              timeoutMs: governanceExecuteTimeoutMs,
-              previewMaxChars: processLimits.previewMaxChars,
-              ...(run.scopeHandle
-                ? {
-                    runCommand: options.processSandbox
-                      ? createScopedHookCommand({
-                          sandbox: options.processSandbox,
-                          scope: run.scopeHandle,
-                          runId,
-                          event: "turn-end",
-                          limits: processLimits,
-                        })
-                      : async () => {
-                          throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
-                        },
-                  }
-                : {}),
-              ...(hookShell ? { shell: hookShell } : {}),
-            })) {
-              yield {
-                type: "run.hook" as const,
-                runId,
-                ...hook,
-                timestamp: now(),
-              };
-            }
+            yield* runHookEvent("turn-end");
           } catch (hookError) {
             // 钩子是旁路：这里再兜一层，绝不让它把收尾流程带崩
             console.warn("[agent-runtime] turn-end hooks failed:", hookError);

@@ -28,6 +28,9 @@ const STOP_REASON_LABELS = {
 const HOOK_LABELS = {
   "turn-start": "回合开始",
   "turn-end": "回合结束",
+  "tool-start": "工具开始",
+  "tool-end": "工具结束",
+  "tool-failed": "工具失败",
 } as const;
 
 /** 工具输入里最适合做一行提示的字段（按顺序取第一个非空字符串）。 */

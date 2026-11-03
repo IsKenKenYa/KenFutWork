@@ -207,6 +207,23 @@ export type TerminalShellId = z.infer<typeof terminalShellSchema>;
  */
 export const CODE_AUTO_COMMIT_ENABLED_DEFAULT = true;
 
+/**
+ * 用户钩子的触发点。新增一项必须同步事件契约、服务端执行点、设置页与时间线标签。
+ *
+ * 触发点由宿主在回合与工具调用节点上发出，模型无法触发（钩子不进工具注册表）。
+ */
+export const HOOK_EVENTS = [
+  "turn-start",
+  "turn-end",
+  "tool-start",
+  "tool-end",
+  "tool-failed",
+] as const;
+
+export const hookEventSchema = z.enum(HOOK_EVENTS);
+
+export type HookEvent = (typeof HOOK_EVENTS)[number];
+
 export const instanceSettingsSchema = z.object({
   modelDefaults: modelDefaultsSchema.optional(),
   /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
@@ -246,8 +263,8 @@ export const instanceSettingsSchema = z.object({
   hooks: z
     .array(
       z.object({
-        /** 钩子点：本轮开始 / 本轮结束。 */
-        event: z.enum(["turn-start", "turn-end"]),
+        /** 钩子点：回合开始 / 回合结束，或单个工具调用的开始 / 结束 / 失败。 */
+        event: hookEventSchema,
         command: z.string().trim().min(1).max(2_000),
       }),
     )
