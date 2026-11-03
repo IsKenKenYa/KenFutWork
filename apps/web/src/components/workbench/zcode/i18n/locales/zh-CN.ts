@@ -2335,6 +2335,8 @@ const zhCN: Record<string, string> = {
   "settings.httpProxyCaCertPathPlaceholder":
     "例如 /Users/name/certs/root-ca.pem",
   "settings.httpProxySavedHint": "网络代理设置已保存，重启应用后生效",
+  "settings.httpProxyInvalidHint": "请填写 http 或 https 开头的代理地址",
+  "settings.httpProxyCaCertInvalidHint": "请填写本机可读的证书绝对路径",
   "settings.desktopChromiumHardwareAcceleration": "Chrome 硬件加速",
   "settings.desktopChromiumHardwareAccelerationDescription":
     "关闭后可规避部分显卡或驱动导致的白屏、闪退、渲染异常。修改后需重启应用生效。",

@@ -115,6 +115,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { saveNetworkSetting } from "../../../lib/network-settings-save.js";
 import { type VoiceDataClient, VoiceSection } from "./settings/VoiceSection.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import {
@@ -1117,23 +1118,32 @@ export function SettingsPage({
   const handleHttpProxyChange = useCallback(
     async (proxy: string) => {
       const normalizedProxy = proxy.trim();
-      await runSettingsActionAsync({
-        featureId: "settings.network",
-        action: "save_http_proxy",
-        trigger: "button",
-        operation: () =>
-          services.settingService.update({
-            // Bugfix: RPC 会丢弃 undefined；清空代理必须传空串，由服务层删除旧字段。
-            httpProxy: normalizedProxy,
+      const saved = await saveNetworkSetting({
+        save: () =>
+          runSettingsActionAsync({
+            featureId: "settings.network",
+            action: "save_http_proxy",
+            trigger: "button",
+            operation: () =>
+              services.settingService.update({
+                // Bugfix: RPC 会丢弃 undefined；清空代理必须传空串，由服务层删除旧字段。
+                httpProxy: normalizedProxy,
+              }),
+            completed: {
+              resultSource: "setting_service",
+              configured: normalizedProxy.length > 0,
+              requiresRestart: true,
+            },
           }),
-        completed: {
-          resultSource: "setting_service",
-          configured: normalizedProxy.length > 0,
-          requiresRestart: true,
+        notify: toast,
+        hints: {
+          savedHint: intl.formatMessage({ id: "settings.httpProxySavedHint" }),
+          invalidHint: intl.formatMessage({
+            id: "settings.httpProxyInvalidHint",
+          }),
         },
       });
-      setHttpProxy(normalizedProxy);
-      toast(intl.formatMessage({ id: "settings.httpProxySavedHint" }));
+      if (saved) setHttpProxy(normalizedProxy);
     },
     [services.settingService, intl],
   );
@@ -1166,23 +1176,32 @@ export function SettingsPage({
   const handleHttpProxyCaCertPathChange = useCallback(
     async (caCertPath: string) => {
       const normalizedCaCertPath = caCertPath.trim();
-      await runSettingsActionAsync({
-        featureId: "settings.network",
-        action: "save_ca_certificate",
-        trigger: "button",
-        operation: () =>
-          services.settingService.update({
-            // Bugfix: 清空自定义 CA 必须传空串，否则旧 NODE_EXTRA_CA_CERTS 路径会残留。
-            httpProxyCaCertPath: normalizedCaCertPath,
+      const saved = await saveNetworkSetting({
+        save: () =>
+          runSettingsActionAsync({
+            featureId: "settings.network",
+            action: "save_ca_certificate",
+            trigger: "button",
+            operation: () =>
+              services.settingService.update({
+                // Bugfix: 清空自定义 CA 必须传空串，否则旧 NODE_EXTRA_CA_CERTS 路径会残留。
+                httpProxyCaCertPath: normalizedCaCertPath,
+              }),
+            completed: {
+              resultSource: "setting_service",
+              configured: normalizedCaCertPath.length > 0,
+              requiresRestart: true,
+            },
           }),
-        completed: {
-          resultSource: "setting_service",
-          configured: normalizedCaCertPath.length > 0,
-          requiresRestart: true,
+        notify: toast,
+        hints: {
+          savedHint: intl.formatMessage({ id: "settings.httpProxySavedHint" }),
+          invalidHint: intl.formatMessage({
+            id: "settings.httpProxyCaCertInvalidHint",
+          }),
         },
       });
-      setHttpProxyCaCertPath(normalizedCaCertPath);
-      toast(intl.formatMessage({ id: "settings.httpProxySavedHint" }));
+      if (saved) setHttpProxyCaCertPath(normalizedCaCertPath);
     },
     [services.settingService, intl],
   );

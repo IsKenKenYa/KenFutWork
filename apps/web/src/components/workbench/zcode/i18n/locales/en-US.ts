@@ -2457,6 +2457,10 @@ const enUS: Record<string, string> = {
     "e.g. /Users/name/certs/root-ca.pem",
   "settings.httpProxySavedHint":
     "Network proxy settings saved. Restart the app to take effect.",
+  "settings.httpProxyInvalidHint":
+    "Enter a proxy address starting with http or https.",
+  "settings.httpProxyCaCertInvalidHint":
+    "Enter an absolute path to a readable certificate file.",
   "settings.desktopChromiumHardwareAcceleration":
     "Chrome hardware acceleration",
   "settings.desktopChromiumHardwareAccelerationDescription":
