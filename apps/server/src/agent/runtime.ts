@@ -2364,6 +2364,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(manualCompactPlan ? { manualCompactPlan } : {}),
             compactionRetention,
             contextBudget,
+            // 工具结果发给模型前的内联预算：与进程输出预览共用同一治理值，不另立字面量。
+            toolResultInlineMaxChars: processLimits.previewMaxChars,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(persistence ? { store: persistence.store } : {}),
             ...(kernelToolDefinitions.length > 0

@@ -56,6 +56,7 @@ import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { createToolResultPruneMiddleware } from "./tool-result-prune.js";
 import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
@@ -346,6 +347,11 @@ export type KenFutWorkAgentFactory = (options: {
    */
   autoCompact?: CompactionPlan;
   contextBudget?: AgentContextBudget;
+  /**
+   * 工具结果内联预算（字符）：发给模型的这条消息超过预算时保留头尾并写入省略标记。
+   * 值来自治理设置 `processPreviewMaxChars`；缺省不修剪。
+   */
+  toolResultInlineMaxChars?: number;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
@@ -401,6 +407,11 @@ export function createKenFutWorkDeepAgent(options: {
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
   contextBudget?: AgentContextBudget;
+  /**
+   * 工具结果内联预算（字符）：发给模型的这条消息超过预算时保留头尾并写入省略标记。
+   * 值来自治理设置 `processPreviewMaxChars`；缺省不修剪。
+   */
+  toolResultInlineMaxChars?: number;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   compactionRetention?: CompactionRetention;
@@ -752,6 +763,13 @@ export function createKenFutWorkDeepAgent(options: {
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
+            ...(options.toolResultInlineMaxChars === undefined
+              ? []
+              : [
+                  createToolResultPruneMiddleware(
+                    options.toolResultInlineMaxChars,
+                  ),
+                ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -778,6 +796,13 @@ export function createKenFutWorkDeepAgent(options: {
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
+            ...(options.toolResultInlineMaxChars === undefined
+              ? []
+              : [
+                  createToolResultPruneMiddleware(
+                    options.toolResultInlineMaxChars,
+                  ),
+                ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
