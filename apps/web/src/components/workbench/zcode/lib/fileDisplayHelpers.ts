@@ -1,5 +1,7 @@
 // 纯工具函数和常量，从 fileDisplay.tsx 提取以控制文件行数
 
+import { hasMaterialIcon } from "./materialIconNames";
+
 export const DEFAULT_FILE_ICON_NAME = "document";
 
 const ICON_COLOR_MAP: Record<string, { accent: string; background: string }> = {
@@ -168,7 +170,13 @@ export function resolveIconName(filePath: string): string {
   }
 
   const extension = leaf.slice(lastDot + 1).toLowerCase();
-  return EXTENSION_ICON_ALIASES[extension] ?? extension ?? DEFAULT_FILE_ICON_NAME;
+  const aliasedExtension = EXTENSION_ICON_ALIASES[extension];
+  if (aliasedExtension) {
+    return aliasedExtension;
+  }
+  // 扩展名直接当图标名只对 material-icons 里真实存在的名字成立（如 .rs / .xml）。
+  // .text / .kt 这类没有素材的扩展名曾拼出不存在的 <ext>.svg 造成 404，统一回退 document。
+  return hasMaterialIcon(extension) ? extension : DEFAULT_FILE_ICON_NAME;
 }
 
 export function getIconPalette(iconName: string) {

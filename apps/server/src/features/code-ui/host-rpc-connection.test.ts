@@ -6,6 +6,7 @@ import { type CodeUiEvent, instanceSettingsSchema } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { afterEach, expect, it } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
+import { createCodeUiSystemHost } from "../system/code-ui-host.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
@@ -14,7 +15,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-async function fixture() {
+async function fixture(hostRpcHandler?: CodeUiServiceDeps["hostRpcHandler"]) {
   const directory = await mkdtemp(join(tmpdir(), "kfw-host-rpc-"));
   cleanups.push(async () => {
     await (await import("node:fs/promises")).rm(directory, {
@@ -58,6 +59,7 @@ async function fixture() {
         throw new Error("host-rpc 测试不打开执行作用域");
       },
     },
+    hostRpcHandler,
     env: {},
   } as unknown as CodeUiServiceDeps);
   cleanups.push(() => service.closeConnections());
@@ -152,4 +154,55 @@ it("活连接的有效 connectionId 正常访问", async () => {
     connectionId: f.connection.hello.connectionId,
   });
   expect(response.statusCode).toBe(200);
+});
+
+it("system.listIntegratedTerminalShells 通过宿主 RPC 返回 shell 列表", async () => {
+  const host = createCodeUiSystemHost({
+    platform: "win32",
+    detectShells: () => [
+      {
+        id: "cmd",
+        label: "cmd",
+        executable: "C:\\Windows\\System32\\cmd.exe",
+      },
+      {
+        id: "git-bash",
+        label: "Git Bash",
+        executable: "C:\\Program Files\\Git\\bin\\bash.exe",
+      },
+    ],
+  });
+  const f = await fixture((service, method) => host[`${service}.${method}`]);
+  const response = await f.rpc({
+    service: "system",
+    method: "listIntegratedTerminalShells",
+    args: [],
+    connectionId: f.connection.hello.connectionId,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json().result).toEqual([
+    expect.objectContaining({
+      dialect: "cmd",
+      path: "C:\\Windows\\System32\\cmd.exe",
+    }),
+    expect.objectContaining({
+      dialect: "git-bash",
+      path: "C:\\Program Files\\Git\\bin\\bash.exe",
+    }),
+  ]);
+});
+
+it("宿主未提供的 system 方法返回可读 501，而不是伪造空结果", async () => {
+  const f = await fixture();
+  const response = await f.rpc({
+    service: "system",
+    method: "probeIntranet",
+    args: [],
+    connectionId: f.connection.hello.connectionId,
+  });
+  expect(response.statusCode).toBe(501);
+  expect(response.json().error).toEqual({
+    code: "code_ui_method_unavailable",
+    message: "Code 宿主接口 system.probeIntranet 尚未接通",
+  });
 });

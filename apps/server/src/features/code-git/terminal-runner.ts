@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 
+import type { IntegratedTerminalShellOption } from "@zcode/shared";
 import { resolveExecutable } from "../../utils/resolve-executable.js";
 
 /**
@@ -118,6 +119,38 @@ export function detectTerminalShells(): TerminalShellOption[] {
     );
     if (!executable) continue;
     options.push({ id: candidate.id, label: candidate.label, executable });
+  }
+  return options;
+}
+
+/** 该路径是否来自系统安装目录（用于区分「系统自带」与「PATH 上找到」）。 */
+function isSystemShellPath(executable: string): boolean {
+  const normalized = executable.toLowerCase().replace(/\\/g, "/");
+  return EXTRA_BIN_DIRS.some((directory) =>
+    normalized.startsWith(directory.toLowerCase().replace(/\\/g, "/")),
+  );
+}
+
+/**
+ * 设置页「集成终端 Shell」选项：与终端下拉共用同一份探测结果，只保留 Bash 工具支持的
+ * cmd / git-bash 两种方言。Windows 之外没有该选项，返回空列表。
+ */
+export function listIntegratedTerminalShellOptions(
+  available: readonly TerminalShellOption[] = detectTerminalShells(),
+): IntegratedTerminalShellOption[] {
+  const options: IntegratedTerminalShellOption[] = [];
+  for (const shell of available) {
+    if (shell.id !== "cmd" && shell.id !== "git-bash") continue;
+    options.push({
+      dialect: shell.id,
+      id: `${shell.id}:${shell.executable}`,
+      label: shell.id === "cmd" ? "CMD" : "Git Bash",
+      path: shell.executable,
+      source:
+        shell.id === "git-bash" && !isSystemShellPath(shell.executable)
+          ? "path"
+          : "system",
+    });
   }
   return options;
 }

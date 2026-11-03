@@ -1,6 +1,8 @@
 import { isDesktopRuntime } from "../../desktop/runtime.js";
 import { registerSystemRoutes } from "../../http/system.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
+import { createCodeUiSystemHost } from "./code-ui-host.js";
 import { createNativeDirectoryPicker } from "./directory-picker.js";
 
 /**
@@ -35,6 +37,15 @@ export function createSystemPlugin(): PluginDefinition {
               reason: "非桌面形态：系统文件夹对话框开不到你面前",
             },
       });
+
+      // Code 设置页读取的平台信息与集成终端 shell 清单；探测源与终端下拉同一份。
+      for (const [id, value] of Object.entries(createCodeUiSystemHost())) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
+      }
     },
   };
 }
