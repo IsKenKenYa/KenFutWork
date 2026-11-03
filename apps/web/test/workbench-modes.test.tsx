@@ -24,8 +24,20 @@ vi.mock("next/navigation", () => ({
   useRouter: () => navigation,
   useSearchParams: () => new URLSearchParams(navigation.query),
 }));
+const themeHost = vi.hoisted(() => ({
+  resolvedTheme: "light",
+  setTheme: vi.fn(),
+}));
+vi.mock("next-themes", () => ({
+  useTheme: () => ({
+    theme: themeHost.resolvedTheme,
+    resolvedTheme: themeHost.resolvedTheme,
+    setTheme: themeHost.setTheme,
+  }),
+}));
 afterEach(() => {
   cleanup();
+  themeHost.resolvedTheme = "light";
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   localStorage.clear();
@@ -397,6 +409,75 @@ it("Code可信模型管理请求打开同一独立文档，拒绝伪造和无效
   // keep-alive：关闭后管理文档常驻但隐藏（下次打开不重载）——同样是等属性，不抢状态更新。
   await waitFor(() => expect(manager.hasAttribute("hidden")).toBe(true));
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
+});
+
+it("管理文档就绪时接收父页真实主题", async () => {
+  installFixture();
+  themeHost.resolvedTheme = "dark";
+  render(host());
+  const manager = (await screen.findByTitle(
+    "管理设置",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  if (!manager.contentWindow) throw new Error("管理文档未创建");
+  const send = vi.spyOn(manager.contentWindow, "postMessage");
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: manager.contentWindow,
+      data: { type: "kenfutwork:code-ready" },
+    }),
+  );
+  expect(send).toHaveBeenCalledWith(
+    { type: "kenfutwork:code-theme", theme: "zai-dark" },
+    window.location.origin,
+  );
+});
+
+it("管理文档主题变更进入父页统一持久化并拒绝其它来源", async () => {
+  installFixture();
+  const { message } = await renderCodeFrame();
+  message({
+    type: "kenfutwork:open-management",
+    target: { page: "settings", section: "appearance" },
+  });
+  const manager = (await screen.findByTitle(
+    "管理设置",
+    {},
+    LAZY,
+  )) as HTMLIFrameElement;
+  const themeChange = {
+    type: "kenfutwork:code-theme-change",
+    theme: "zai-dark",
+  };
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: "https://untrusted.example",
+      source: manager.contentWindow,
+      data: themeChange,
+    }),
+  );
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: window,
+      data: themeChange,
+    }),
+  );
+  expect(themeHost.setTheme).not.toHaveBeenCalled();
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: manager.contentWindow,
+      data: themeChange,
+    }),
+  );
+  expect(themeHost.setTheme).toHaveBeenCalledWith("dark");
 });
 
 it("管理文档加载中或失败时宿主仍能关闭并恢复原Codeiframe", async () => {

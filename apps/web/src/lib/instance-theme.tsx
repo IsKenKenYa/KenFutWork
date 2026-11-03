@@ -28,13 +28,15 @@ export function InstanceThemeSync() {
   const [hydrationVersion, setHydrationVersion] = useState(0);
   const hydrated = useRef(false);
   const currentTheme = useRef(theme);
+  const setThemeRef = useRef(setTheme);
   const persisted = useRef<ThemePreference | null>(null);
   const writeVersion = useRef(0);
   const writeQueue = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     currentTheme.current = theme;
-  }, [theme]);
+    setThemeRef.current = setTheme;
+  }, [theme, setTheme]);
 
   useEffect(() => {
     if (!instance) return;
@@ -53,7 +55,7 @@ export function InstanceThemeSync() {
           next !== currentTheme.current
         ) {
           currentTheme.current = next;
-          setTheme(next);
+          setThemeRef.current(next);
         }
         setError(null);
       })
@@ -68,7 +70,7 @@ export function InstanceThemeSync() {
     return () => {
       cancelled = true;
     };
-  }, [instance, setTheme]);
+  }, [instance]);
 
   useEffect(() => {
     // 水合完成本身也要触发一次后续 effect（同值恢复与慢读取都不遗漏）。

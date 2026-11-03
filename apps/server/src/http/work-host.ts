@@ -326,7 +326,52 @@ export async function registerWorkHostRoutes(
  *   并向父页发 `kenfutwork:editor-ready`，宿主据此撤掉遮罩（否则只能等 iframe onLoad，
  *   48MB wasm 的编辑器会在自己的英文 Loading 上停好几秒）。
  */
-const EDITOR_THEME_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}function apply(theme){var dark=theme==="dark";document.documentElement.style.setProperty("--kfw-editor-boot-bg",dark?"#161616":"#fff");document.documentElement.style.setProperty("--kfw-editor-boot-filter",dark?"brightness(0) invert(1)":"brightness(0)");document.documentElement.style.setProperty("--kfw-editor-boot-border",dark?"rgba(245,245,245,.2)":"rgba(115,115,115,.3)");document.documentElement.style.setProperty("--kfw-editor-boot-border-top",dark?"rgba(245,245,245,.75)":"rgba(60,60,60,.75)");}apply(new URLSearchParams(location.search).get("theme"));window.addEventListener("message",function(event){if(event.origin!==TARGET_ORIGIN||event.source!==parent)return;var data=event.data;if(data&&data.type==="kenfutwork:editor-theme")apply(data.theme);});})();</script>`;
+const EDITOR_THEME_SCRIPT = `<script>(function(){
+  var TARGET_ORIGIN;
+  try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}
+  var currentTheme=new URLSearchParams(location.search).get("theme")==="dark"?"dark":"light";
+  var nativeMatchMedia=window.matchMedia?window.matchMedia.bind(window):null;
+  var queries=[];
+  function createQuery(media){
+    var listeners=[];
+    var query={
+      media:media,
+      onchange:null,
+      get matches(){return media.indexOf("dark")>=0?currentTheme==="dark":currentTheme!=="dark";},
+      addEventListener:function(type,listener){if(type==="change"&&listener&&listeners.indexOf(listener)<0)listeners.push(listener);},
+      removeEventListener:function(type,listener){var index=listeners.indexOf(listener);if(type==="change"&&index>=0)listeners.splice(index,1);},
+      addListener:function(listener){this.addEventListener("change",listener);},
+      removeListener:function(listener){this.removeEventListener("change",listener);}
+    };
+    queries.push({query:query,listeners:listeners});
+    return query;
+  }
+  window.matchMedia=function(media){
+    if(media==="(prefers-color-scheme: dark)"||media==="(prefers-color-scheme: light)")return createQuery(media);
+    return nativeMatchMedia?nativeMatchMedia(media):{matches:false,media:media};
+  };
+  function apply(theme){
+    var next=theme==="dark"?"dark":"light";
+    var changed=next!==currentTheme;
+    currentTheme=next;
+    var dark=currentTheme==="dark";
+    document.documentElement.style.setProperty("--kfw-editor-boot-bg",dark?"#161616":"#fff");
+    document.documentElement.style.setProperty("--kfw-editor-boot-filter",dark?"brightness(0) invert(1)":"brightness(0)");
+    document.documentElement.style.setProperty("--kfw-editor-boot-border",dark?"rgba(245,245,245,.2)":"rgba(115,115,115,.3)");
+    document.documentElement.style.setProperty("--kfw-editor-boot-border-top",dark?"rgba(245,245,245,.75)":"rgba(60,60,60,.75)");
+    if(!changed)return;
+    queries.forEach(function(entry){
+      var event={matches:entry.query.matches,media:entry.query.media};
+      entry.listeners.slice().forEach(function(listener){
+        if(typeof listener==="function")listener.call(entry.query,event);
+        else if(listener&&typeof listener.handleEvent==="function")listener.handleEvent(event);
+      });
+      if(typeof entry.query.onchange==="function")entry.query.onchange.call(entry.query,event);
+    });
+  }
+  apply(currentTheme);
+  window.addEventListener("message",function(event){if(event.origin!==TARGET_ORIGIN||event.source!==parent)return;var data=event.data;if(data&&data.type==="kenfutwork:editor-theme")apply(data.theme);});
+})();</script>`;
 
 const EDITOR_SHELL_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "zh-CN";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["zh-CN","zh"];}});}catch(error){}var BOOT="kfw-editor-boot";function ready(){var el=document.getElementById(BOOT);if(el&&!el.dataset.done){el.dataset.done="1";el.style.opacity="0";setTimeout(function(){el.remove();},220);}try{parent.postMessage({type:"kenfutwork:editor-ready"},TARGET_ORIGIN);}catch(error){}}function boot(){if(document.getElementById(BOOT))return;var style=document.createElement("style");style.textContent="#kfw-editor-boot{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--kfw-editor-boot-bg,#fff);transition:opacity .2s ease}#kfw-editor-boot img{height:56px;width:auto;filter:var(--kfw-editor-boot-filter,brightness(0))}#kfw-editor-boot i{width:24px;height:24px;border:2px solid var(--kfw-editor-boot-border,rgba(115,115,115,.3));border-top-color:var(--kfw-editor-boot-border-top,rgba(60,60,60,.75));border-radius:9999px;animation:kfw-editor-spin .8s linear infinite}@keyframes kfw-editor-spin{to{transform:rotate(360deg)}}";document.head.appendChild(style);var wrap=document.createElement("div");wrap.id=BOOT;wrap.setAttribute("role","status");wrap.innerHTML='<img src="/logo-mark.png" alt=""><i></i>';document.body.appendChild(wrap);}function start(){boot();var hadLoading=!!document.querySelector('[id$="_loading"]');if(hadLoading){var observer=new MutationObserver(function(){if(!document.querySelector('[id$="_loading"]')){observer.disconnect();ready();}});observer.observe(document.body,{childList:true,subtree:true});}else{window.addEventListener("load",function(){setTimeout(ready,300);},{once:true});}window.addEventListener("TrunkApplicationStarted",ready,{once:true});setTimeout(ready,30000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",start,{once:true});}else{start();}})();</script>`;
 

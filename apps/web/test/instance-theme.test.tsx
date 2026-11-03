@@ -9,13 +9,19 @@ import { InstanceThemeSync } from "../src/lib/instance-theme";
 const host = vi.hoisted(() => ({
   theme: "system",
   instance: {},
+  unstableSetTheme: false,
   setTheme: vi.fn(),
   fetchSettings: vi.fn(),
   updateSettings: vi.fn(),
 }));
 
 vi.mock("next-themes", () => ({
-  useTheme: () => ({ theme: host.theme, setTheme: host.setTheme }),
+  useTheme: () => ({
+    theme: host.theme,
+    setTheme: host.unstableSetTheme
+      ? (value: string) => host.setTheme(value)
+      : host.setTheme,
+  }),
 }));
 vi.mock("../src/lib/local-instance-context", () => ({
   useLocalInstance: () => ({ instance: host.instance }),
@@ -28,6 +34,7 @@ vi.mock("../src/lib/server-api", () => ({
 afterEach(() => {
   cleanup();
   host.theme = "system";
+  host.unstableSetTheme = false;
   host.setTheme.mockReset();
   host.fetchSettings.mockReset();
   host.updateSettings.mockReset();
@@ -70,6 +77,25 @@ describe("InstanceThemeSync", () => {
       }),
     );
     expect(host.setTheme).not.toHaveBeenCalled();
+  });
+
+  it("setTheme 引用变化不重新水合并覆盖用户选择", async () => {
+    host.unstableSetTheme = true;
+    host.fetchSettings.mockResolvedValue({ settings: { theme: "system" } });
+    host.updateSettings.mockResolvedValue({ settings: { theme: "zai-dark" } });
+    const view = render(<InstanceThemeSync />);
+    await waitFor(() => expect(host.fetchSettings).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      host.theme = "dark";
+      view.rerender(<InstanceThemeSync />);
+    });
+    await waitFor(() =>
+      expect(host.updateSettings).toHaveBeenCalledWith(null, {
+        theme: "zai-dark",
+      }),
+    );
+    expect(host.fetchSettings).toHaveBeenCalledTimes(1);
   });
 
   it("连续切换串行写入，后一档不会被先一档的迟到响应覆盖", async () => {

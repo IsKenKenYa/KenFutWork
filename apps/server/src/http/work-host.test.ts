@@ -11,6 +11,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { zipSync } from "fflate";
@@ -21,6 +22,7 @@ import {
   startWorkEditorInstall,
 } from "../features/work/install.js";
 import {
+  injectEditorShell,
   registerWorkHostRoutes,
   resolveInstalledEditors,
 } from "./work-host.js";
@@ -323,6 +325,52 @@ describe("work 宿主路由", () => {
     expect(snapshot.state).toBe("error");
     expect(snapshot.error).toContain("校验和不匹配");
     await expect(stat(join(editorsDir, "gridcraft"))).rejects.toThrow();
+  });
+
+  it("Work 主题消息驱动 eframe 系统主题并通知 change 监听者", () => {
+    const nativeQuery = { matches: false };
+    const window = {
+      matchMedia: (_query: string) => nativeQuery,
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        if (type === "message") messageListener = listener;
+      },
+    };
+    let messageListener: ((event: unknown) => void) | undefined;
+    const sandbox = {
+      window,
+      document: {
+        referrer: "http://localhost:4502/workbench",
+        documentElement: { style: { setProperty: () => {} } },
+      },
+      location: { origin: "http://localhost:4501", search: "?theme=light" },
+      parent: {},
+      URL,
+      URLSearchParams,
+    };
+    const source = injectEditorShell(
+      "<html><head></head><body></body></html>",
+    ).match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    if (!source) throw new Error("缺少 Work 主题脚本");
+    runInNewContext(source, sandbox);
+    const dark = window.matchMedia("(prefers-color-scheme: dark)") as {
+      matches: boolean;
+      addEventListener?: (
+        type: string,
+        listener: (event: { matches: boolean }) => void,
+      ) => void;
+    };
+    let changeMatches: boolean | undefined;
+    dark.addEventListener?.("change", (event) => {
+      changeMatches = event.matches;
+    });
+    expect(dark.matches).toBe(false);
+    messageListener?.({
+      origin: "http://localhost:4502",
+      source: sandbox.parent,
+      data: { type: "kenfutwork:editor-theme", theme: "dark" },
+    });
+    expect(dark.matches).toBe(true);
+    expect(changeMatches).toBe(true);
   });
 
   it("静态托管：MIME/nosniff/缓存头 + 点文件拒绝 + 路径穿越拒绝 + SPA 回落", async () => {
