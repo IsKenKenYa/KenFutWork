@@ -122,6 +122,8 @@ export function createMcpService(options: {
   const failures = new Map<string, string>();
   const pending = new Map<string, Promise<void>>();
   const initializing = new Set<Client>();
+  /** 已经自动重启过一次的条目；再次掉线只报错，避免崩溃循环。 */
+  const autoRestartBlocked = new Set<string>();
   let closed = false;
   const ensureOpen = () => {
     if (closed) throw new Error("MCP服务已关闭，禁止迟到连接或配置变更。");
@@ -164,7 +166,20 @@ export function createMcpService(options: {
       void options.onDisconnect?.(name).catch((error: unknown) => {
         console.warn(`[mcp] ${name} Task连接停止失败：`, error);
       });
-      if (!closed) failures.set(name, "MCP连接已断开，请在库存中重连。");
+      if (closed) return;
+      // 掉线自动重启一次；重启后仍掉线就停下，避免守护进程反复拉起。
+      // 走 reconcile 而不是直接 connect：重启前重读配置，用户禁用或改配置以库内为准。
+      if (autoRestartBlocked.has(name)) {
+        failures.set(name, "MCP连接断开，自动重启未恢复，请在设置里重连。");
+        return;
+      }
+      autoRestartBlocked.add(name);
+      failures.delete(name);
+      void reconcile({ name, ...spec, enabled: true }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.set(name, message);
+        console.warn(`[mcp] ${name} 自动重连失败：`, message);
+      });
     };
     initializing.add(mcpClient);
     try {
@@ -472,6 +487,7 @@ export function createMcpService(options: {
         const servers = await effectiveServers();
         for (const server of servers) {
           try {
+            autoRestartBlocked.delete(server.name);
             await reconcile(server);
           } catch (error) {
             const message =
@@ -501,6 +517,7 @@ export function createMcpService(options: {
         headers: kind === "http" ? (rawInput.headers ?? {}) : {},
       };
       const created = await options.store.create(input);
+      autoRestartBlocked.delete(created.name);
       await reconcile(created);
       // 回读公开形态（env 与 headers 的值都不下发）
       return publicServer(created);
@@ -512,6 +529,7 @@ export function createMcpService(options: {
       if (!updated) {
         return null;
       }
+      autoRestartBlocked.delete(updated.name);
       await reconcile(updated);
       return publicServer(updated);
     },
@@ -522,6 +540,7 @@ export function createMcpService(options: {
       if (!updated) {
         return null;
       }
+      autoRestartBlocked.delete(updated.name);
       await reconcile(updated);
       return publicServer(updated);
     },
@@ -532,7 +551,10 @@ export function createMcpService(options: {
         (server) => server.id === id,
       );
       const removed = await options.store.remove(id);
-      if (stored) await reconcile({ ...stored, enabled: false });
+      if (stored) {
+        autoRestartBlocked.delete(stored.name);
+        await reconcile({ ...stored, enabled: false });
+      }
       return removed;
     },
 
@@ -571,6 +593,7 @@ export function createMcpService(options: {
       if (!config) {
         return null;
       }
+      autoRestartBlocked.delete(target.name);
       await reconcile(config);
       const refreshed = (await this.listStatuses()).find(
         (status) =>
