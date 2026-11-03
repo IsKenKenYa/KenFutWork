@@ -839,9 +839,9 @@ for (const [file, from, to, already] of ZERO_PATCHES[app] ?? []) {
   patchOnce(join(source, file), from, to, "已放行 CJK", already ?? to);
 }
 
-// 4) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft 与 FilmCraft
-//    没有 index.html，用自家的 `cargo xtask web`（wasm-bindgen 直出到 <target>/web/dist）。
-const XTASK_APPS = new Set(["effectcraft", "filmcraft"]);
+// 4) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft、FilmCraft 与
+//    LightCraft 用自家的 `cargo xtask web`（LightCraft 还需要外置字体与 worker）。
+const XTASK_APPS = new Set(["effectcraft", "filmcraft", "lightcraft"]);
 const cwd = join(source, crate);
 if (!existsSync(cwd)) throw new Error(`找不到 web 构建目录：${cwd}`);
 console.log(`[zh] 构建 ${app} …（首次编译约 6 分钟）`);
@@ -872,11 +872,12 @@ if (XTASK_APPS.has(app)) {
 }
 
 // 4) 收集产物
-const dist = XTASK_APPS.has(app)
-  ? join(source, "target", "web", "dist")
-  : app === "lightcraft"
-    ? join(source, crate, "dist")
-    : join(source, "dist/web");
+const dist =
+  app === "lightcraft"
+    ? join(source, "target", "web-site")
+    : XTASK_APPS.has(app)
+      ? join(source, "target", "web", "dist")
+      : join(source, "dist/web");
 if (!existsSync(dist)) throw new Error(`构建成功但没有产物目录：${dist}`);
 const target = join(outDir, app);
 rmSync(target, { recursive: true, force: true });
@@ -893,6 +894,16 @@ writeFileSync(
 );
 const wasm = readdirSync(target).find((name) => name.endsWith("_bg.wasm"));
 if (!wasm) throw new Error("产物缺少 wasm");
+if (app === "lightcraft") {
+  for (const file of [
+    "lightcraft_zh_hans.otf",
+    "OFL-noto-sans-cjk-sc.txt",
+    "worker.js",
+  ]) {
+    if (!existsSync(join(target, file)))
+      throw new Error(`LightCraft 产物缺少 ${file}`);
+  }
+}
 const packagedCjkFont = {
   wordcraft: "noto-sans-cjk-sc",
   deckcraft: "noto-sans-cjk-sc",
