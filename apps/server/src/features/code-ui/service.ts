@@ -158,6 +158,11 @@ import {
 import { listCodeSessionSubagents } from "./subagent-directory.js";
 import { codeUiTaskMeta } from "./task-index.js";
 import type { TaskProjectMoveEvent } from "./task-project-move-types.js";
+import {
+  parseToolOutputRef,
+  readUtf8Window,
+  resolveToolOutputText,
+} from "./tool-output.js";
 import type {
   CodeUserInputService,
   UserInputEvent,
@@ -5735,6 +5740,45 @@ export class CodeUiService {
     // 旧读取晚于新Run返回时，不能降低已经登记的Task授权代际。
     if (previous && previous.scopeGeneration > scopeGeneration) return;
     this.taskActors.set(key, { actor, scopeGeneration });
+  }
+
+  /** 工具卡折叠占位只读取回；归属、固定目录与执行作用域经 loadConversation 校验。 */
+  async readToolOutput(
+    user: LocalActor,
+    sessionId: string,
+    ref: string,
+    offset: number,
+    requestedLimit?: number,
+  ) {
+    const loaded = await this.loadConversation(user, sessionId);
+    if (loaded.root.archived)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "Task 已归档，请取消归档后查看原文。",
+      );
+    const parsedRef = parseToolOutputRef(ref);
+    if (!parsedRef)
+      throw new CodeUiRepositoryError("not_found", "原文引用格式无效。");
+    const event = await this.deps.repository.readToolCompletion(
+      loaded.instanceId,
+      loaded.root.id,
+      parsedRef.runId,
+      parsedRef.toolCallId,
+    );
+    if (!event)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "该 Task 中没有这条工具输出，可能已被删除。",
+      );
+    const settings = await this.deps.settings.getInstanceSettings(
+      user,
+      loaded.instanceId,
+    );
+    const limit = Math.min(
+      requestedLimit ?? settings.toolOutputPreviewBytes,
+      settings.codeReadMaxBytes,
+    );
+    return readUtf8Window(resolveToolOutputText(event), offset, limit);
   }
 
   async getSnapshot(user: LocalActor, sessionId: string) {

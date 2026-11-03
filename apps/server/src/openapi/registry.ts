@@ -72,6 +72,8 @@ import {
   codeUiRpcRequestSchema,
   codeUiRpcResponseSchema,
   codeUiSnapshotResponseSchema,
+  codeUiToolOutputQuerySchema,
+  codeUiToolOutputResponseSchema,
   codeUiWorkspaceListSchema,
   computerUseMcpErrorResponseSchema,
   computerUseMcpEventStreamSchema,
@@ -753,6 +755,24 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "读取 Code 主或子会话原协议快照",
     description:
       "校验会话归属后返回固定 ZCode V4 ConversationSnapshot，子会话从同一权威聚合读取独立转录。taskControl 来自持久根 Task 的当前项目和分支代际，与消息 revision、目录授权版本分别持有；HTTP 和 SSE 使用同一投影提供方。",
+  },
+  {
+    method: "get",
+    path: "/api/code-ui/tool-output",
+    tag: "code",
+    auth: "local",
+    successStatus: 200,
+    querySchema: codeUiToolOutputQuerySchema.extend({
+      sessionId: z.string().uuid().describe("Task 会话 ID（必填）"),
+      ref: z
+        .string()
+        .min(1)
+        .describe("工具输出引用，形如 runId/toolCallId（必填）"),
+    }),
+    responseSchema: codeUiToolOutputResponseSchema,
+    summary: "分页读取工具输出原文",
+    description:
+      "按 Task 会话与工具调用引用只读取回被折叠的终态输出；返回本次字节窗口、总字节数与下一次 offset。会话、固定目录与执行作用域不匹配时拒绝；Task 归档或已删除时直接拒绝并说明原因。",
   },
   {
     method: "post",

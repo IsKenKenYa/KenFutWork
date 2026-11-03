@@ -900,6 +900,28 @@ export function createCodeUiRepository(
           [sessionId],
         );
     },
+    /** 折叠占位取回原文：只读、只认该根 Task 事件表里的终态工具调用。 */
+    async readToolCompletion(
+      instanceId: string,
+      rootSessionId: string,
+      runId: string,
+      toolCallId: string,
+    ): Promise<Extract<StreamEvent, { type: "tool.completed" }> | null> {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<SqlRow & { payload: unknown }>(
+          "select payload from public.code_ui_events where instance_id = :instance and root_session_id = $1 and payload->>'type' = 'tool.completed' and payload->>'runId' = $2 and payload->>'toolCallId' = $3 order by seq desc limit 1",
+          [rootSessionId, runId, toolCallId],
+        );
+      if (!row) return null;
+      const parsed = streamEventSchema.safeParse(row.payload);
+      if (!parsed.success || parsed.data.type !== "tool.completed")
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "工具输出事件不可读，不能取回原文。",
+        );
+      return parsed.data;
+    },
     async list(
       instanceId: string,
       projectId: string,

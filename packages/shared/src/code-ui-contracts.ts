@@ -269,6 +269,24 @@ export const codeUiSnapshotResponseSchema = z.object({
   snapshot: conversationSnapshotSchema,
 });
 
+/** 工具卡折叠占位取回原文：先定位所属 Task，再按字节窗口续读。 */
+export const codeUiToolOutputParamsSchema = z.object({
+  sessionId: z.string().uuid(),
+  ref: z.string().trim().min(1),
+});
+export const codeUiToolOutputQuerySchema = z.object({
+  offset: z.coerce.number().int().nonnegative().default(0),
+  limit: z.coerce.number().int().positive().optional(),
+});
+export const codeUiToolOutputResponseSchema = z.object({
+  text: z.string(),
+  totalBytes: z.number().int().nonnegative().safe(),
+  nextOffset: z.number().int().nonnegative().safe().nullable(),
+});
+export type CodeUiToolOutputResponse = z.infer<
+  typeof codeUiToolOutputResponseSchema
+>;
+
 /** HTTP 成功响应是 SSE 文本流；每条事件的原协议定义仍由 codeUiEventSchema 持有。 */
 export const codeUiEventStreamSchema = z
   .string()

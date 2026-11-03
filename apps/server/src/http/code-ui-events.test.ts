@@ -83,6 +83,7 @@ async function fixture(browser = false, realController = false) {
     closeConnections,
     listWorkspaces: unused,
     getSnapshot: unused,
+    readToolOutput: unused,
     hostRpc: unused,
     transportRpc: unused,
     modelViews: unused,

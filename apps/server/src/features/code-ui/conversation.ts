@@ -26,6 +26,7 @@ import type { OwnedHistoryOutput } from "./output-history-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import { codeUiRunHasStopIntent } from "./run-outcome.js";
+import { previewToolOutput, resolveToolOutputText } from "./tool-output.js";
 import type { UserInputEvent } from "./user-input-types.js";
 import { freezeWorkContext } from "./work-context.js";
 
@@ -225,46 +226,6 @@ function completeSnapshot(snapshot: Snapshot, at: number) {
   }
 }
 
-/** 按 UTF-8 字节裁切，按码点推进，避免切断代理对。 */
-function clipUtf8(text: string, maxBytes: number, fromEnd: boolean): string {
-  if (maxBytes <= 0) return "";
-  const chars = Array.from(text);
-  const keep: string[] = [];
-  let bytes = 0;
-  const step = fromEnd ? -1 : 1;
-  let index = fromEnd ? chars.length - 1 : 0;
-  while (index >= 0 && index < chars.length) {
-    const char = chars[index]!;
-    const size = Buffer.byteLength(char, "utf8");
-    if (bytes + size > maxBytes) break;
-    bytes += size;
-    keep.push(char);
-    index += step;
-  }
-  return fromEnd ? keep.reverse().join("") : keep.join("");
-}
-
-/**
- * 终态工具输出超过预览预算时保留头尾，并登记 truncated.ref 指向原始事件；
- * 事件本身不截断，读取路由按 ref 分页取回全文。
- */
-function previewToolOutput(
-  text: string,
-  limitBytes: number,
-  ref: string,
-): { text: string; truncated?: { totalBytes: number; ref: string } } {
-  const totalBytes = Buffer.byteLength(text, "utf8");
-  if (totalBytes <= limitBytes) return { text };
-  const marker = "\n…\n";
-  const budget = Math.max(0, limitBytes - Buffer.byteLength(marker, "utf8"));
-  const head = clipUtf8(text, Math.ceil(budget / 2), false);
-  const tail = clipUtf8(text, Math.floor(budget / 2), true);
-  return {
-    text: `${head}${marker}${tail}`,
-    truncated: { totalBytes, ref },
-  };
-}
-
 function completeTool(
   snapshot: Snapshot,
   event: Extract<StreamEvent, { type: "tool.completed" }>,
@@ -281,14 +242,7 @@ function completeTool(
     !["running", "pendingApproval"].includes(row.status)
   )
     return;
-  const text =
-    // TaskOutput的canonical页已受字节预算约束，原UI不能把模型预览冒充完整分页。
-    event.toolName === "TaskOutput" && event.output
-      ? JSON.stringify(event.output)
-      : (event.outputText ??
-        (event.output
-          ? JSON.stringify(event.output)
-          : (event.outputSummary ?? "")));
+  const text = resolveToolOutputText(event);
   const preview = previewToolOutput(
     text,
     previewBytes,

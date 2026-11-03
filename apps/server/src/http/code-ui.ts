@@ -2,6 +2,9 @@ import {
   codeUiRpcRequestSchema,
   codeUiRpcResponseSchema,
   codeUiSnapshotParamsSchema,
+  codeUiToolOutputParamsSchema,
+  codeUiToolOutputQuerySchema,
+  codeUiToolOutputResponseSchema,
   codeUiWorkspaceListSchema,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
@@ -122,6 +125,7 @@ export async function registerCodeUiRoutes(
       | "closeConnections"
       | "listWorkspaces"
       | "getSnapshot"
+      | "readToolOutput"
       | "hostRpc"
       | "transportRpc"
       | "modelViews"
@@ -336,6 +340,31 @@ export async function registerCodeUiRoutes(
     try {
       const { sessionId } = codeUiSnapshotParamsSchema.parse(request.params);
       return { snapshot: await deps.service.getSnapshot(user, sessionId) };
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+  app.get("/api/code-ui/tool-output", async (request, reply) => {
+    const user = await deps.localAccess.authenticate(request);
+    if (!user)
+      return reply.code(401).send({
+        error: {
+          code: "unauthenticated",
+          message: "请从桌面重新建立本机连接",
+        },
+      });
+    try {
+      const params = codeUiToolOutputParamsSchema.parse(request.query);
+      const query = codeUiToolOutputQuerySchema.parse(request.query);
+      return codeUiToolOutputResponseSchema.parse(
+        await deps.service.readToolOutput(
+          user,
+          params.sessionId,
+          params.ref,
+          query.offset,
+          query.limit,
+        ),
+      );
     } catch (error) {
       return sendError(reply, error);
     }

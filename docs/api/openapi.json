@@ -2539,6 +2539,100 @@
         }
       }
     },
+    "/api/code-ui/tool-output": {
+      "get": {
+        "operationId": "getCodeUiToolOutput",
+        "summary": "分页读取工具输出原文",
+        "description": "按 Task 会话与工具调用引用只读取回被折叠的终态输出；返回本次字节窗口、总字节数与下一次 offset。会话、固定目录与执行作用域不匹配时拒绝；Task 归档或已删除时直接拒绝并说明原因。",
+        "tags": [
+          "code"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Task 会话 ID（必填）"
+            }
+          },
+          {
+            "name": "ref",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "工具输出引用，形如 runId/toolCallId（必填）"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/codeUiToolOutputResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/code-ui/rpc": {
       "post": {
         "operationId": "postCodeUiRpc",
@@ -21290,6 +21384,38 @@
         ],
         "additionalProperties": false
       },
+      "codeUiToolOutputResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "totalBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "text",
+          "totalBytes",
+          "nextOffset"
+        ],
+        "additionalProperties": false
+      },
       "codeUiWorkspaceListSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -23982,6 +24108,24 @@
                 "minimum": 1024,
                 "maximum": 1073741824
               },
+              "toolResultPruneThresholdChars": {
+                "default": 8000,
+                "type": "integer",
+                "minimum": 512,
+                "maximum": 1048576
+              },
+              "toolResultPruneKeepRecent": {
+                "default": 6,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "toolOutputPreviewBytes": {
+                "default": 8192,
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 1048576
+              },
               "memoryOrphanRetentionDays": {
                 "default": 30,
                 "type": "integer",
@@ -23993,6 +24137,12 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 3650
+              },
+              "memoryMaintenanceIntervalMs": {
+                "default": 3600000,
+                "type": "integer",
+                "minimum": 60000,
+                "maximum": 86400000
               },
               "agentMaxRetries": {
                 "default": 10,
@@ -24339,8 +24489,12 @@
               "contextKeepRecentImages",
               "toolResultOffloadMaxChars",
               "toolResultOffloadMaxBytes",
+              "toolResultPruneThresholdChars",
+              "toolResultPruneKeepRecent",
+              "toolOutputPreviewBytes",
               "memoryOrphanRetentionDays",
               "memoryRecoverableWindowDays",
+              "memoryMaintenanceIntervalMs",
               "agentMaxRetries",
               "subagentMaxDepth",
               "subagentMaxConcurrency",
@@ -24704,6 +24858,21 @@
             "minimum": 1024,
             "maximum": 1073741824
           },
+          "toolResultPruneThresholdChars": {
+            "type": "integer",
+            "minimum": 512,
+            "maximum": 1048576
+          },
+          "toolResultPruneKeepRecent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "toolOutputPreviewBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 1048576
+          },
           "memoryOrphanRetentionDays": {
             "type": "integer",
             "minimum": 1,
@@ -24713,6 +24882,11 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 3650
+          },
+          "memoryMaintenanceIntervalMs": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 86400000
           },
           "agentMaxRetries": {
             "type": "integer",
@@ -42060,6 +42234,31 @@
               },
               "childSessionId": {
                 "type": "string"
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "inputTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "outputTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "cachedInputTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "inputTokens",
+                  "outputTokens"
+                ],
+                "additionalProperties": false
               },
               "backgrounded": {
                 "type": "boolean",
