@@ -2008,8 +2008,25 @@ export class CodeUiService {
       "listDeletedTaskIds",
       "getTaskMeta",
       "deleteTask",
+      "getTaskSessionFilePath",
     ]);
     if (!supported.has(method)) return null;
+    if (method === "getTaskSessionFilePath") {
+      // 与上游 ZCode 适配器同规则：task 快照统一为 `{taskId}.zcode-session`。
+      // 本内核把会话状态存数据库、不落快照文件，故 `exists` 恒为 false（与上游一致）。
+      const request = args[0] as { workspacePath?: string; taskId?: string };
+      if (!request?.workspacePath || !request.taskId)
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "读取 task 快照路径缺少工作区或 Task 身份。",
+        );
+      return {
+        result: {
+          path: `${request.workspacePath}/${request.taskId}.zcode-session`,
+          exists: false,
+        },
+      };
+    }
     const workspace = await this.deps.localInstance.resolve(user);
     const projects = await this.listWorkspaces(user);
     const target = args[0] as {

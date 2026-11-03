@@ -584,6 +584,20 @@ it("原Task元数据可按原契约解析，未选择思考档位时省略而不
   expect(meta.thoughtLevel).toBeUndefined();
 });
 
+it("task 快照路径按上游规则返回，不再以未实现 501 反复失败", async () => {
+  const { actor, service, pathA, taskId } = await fixture();
+  const result = await service.hostRpc(
+    actor,
+    "zcode-task",
+    "getTaskSessionFilePath",
+    [{ workspacePath: pathA, taskId }],
+  );
+  expect(result?.result).toEqual({
+    path: `${pathA}/${taskId}.zcode-session`,
+    exists: false,
+  });
+});
+
 it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留真实项目和固定目录", async () => {
   const { actor, service, pathA, taskId, secondId } = await fixture({
     enumerationUnavailable: true,
