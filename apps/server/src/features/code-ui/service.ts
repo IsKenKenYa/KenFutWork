@@ -1122,6 +1122,7 @@ export class CodeUiService {
               workspacePath: root.root_directory!,
               config: snapshot.config,
               state: root.state!,
+              toolOutputPreviewBytes: settings.toolOutputPreviewBytes,
             });
             host.recordChildRunEvent(
               request.childSessionId,
@@ -4202,6 +4203,7 @@ export class CodeUiService {
     sessionId: string,
     event: StreamEvent,
     ordinal: number,
+    toolOutputPreviewBytes?: number,
   ) {
     const workspace = await this.deps.localInstance.resolve(user);
     const applied = await this.deps.repository.appendEvent(
@@ -4224,6 +4226,7 @@ export class CodeUiService {
           workspacePath: project.path,
           config: rootSnapshot.config,
           state: root.state!,
+          toolOutputPreviewBytes,
         });
         host.recordEvent(event);
         const state = host.exportState();
@@ -4511,7 +4514,14 @@ export class CodeUiService {
       flusher = createStreamingEventFlusher({
         flushIntervalMs: settings.agentStreamFlushIntervalMs,
         sink: (event) =>
-          this.recordRunEvent(user, project, sessionId, event, ++ordinal),
+          this.recordRunEvent(
+            user,
+            project,
+            sessionId,
+            event,
+            ++ordinal,
+            settings.toolOutputPreviewBytes,
+          ),
       });
       const current = await this.deps.repository.find(
         scopeHandle.describe().instanceId,

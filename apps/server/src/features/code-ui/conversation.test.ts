@@ -1050,4 +1050,99 @@ describe("Code 宿主会话快照", () => {
       text: ["已有进度。"],
     });
   });
+
+  it("工具输出超预览预算保留头尾并登记 truncated.ref，事件原文不受影响", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-preview",
+      workspacePath: "/workspace/project",
+      toolOutputPreviewBytes: 1_024,
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-preview",
+      commandId: "command-preview",
+      text: "读取大文件",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-preview",
+      toolCallId: "read-big",
+      toolName: "read_file",
+      timestamp,
+    });
+    const full = `${"头".repeat(2_000)}${"尾".repeat(2_000)}`;
+    const event = {
+      type: "tool.completed" as const,
+      runId: "run-preview",
+      toolCallId: "read-big",
+      toolName: "read_file",
+      outputText: full,
+      timestamp,
+    };
+    host.recordEvent(event);
+    const row = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "toolCall");
+    if (row?.kind !== "toolCall" || !row.output) throw new Error("缺少工具行");
+    const preview = row.output.text;
+    expect(preview.startsWith("头")).toBe(true);
+    expect(preview.endsWith("尾")).toBe(true);
+    expect(preview).toContain("\n…\n");
+    expect(Buffer.byteLength(preview, "utf8")).toBeLessThanOrEqual(1_024);
+    expect(row.output.truncated).toEqual({
+      totalBytes: Buffer.byteLength(full, "utf8"),
+      ref: "run-preview/read-big",
+    });
+    // 消费方只拿到投影，原始事件文本保持完整。
+    expect(event.outputText).toBe(full);
+  });
+
+  it("工具输出未超预算时不登记截断引用，多字节字符不切断", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-short",
+      workspacePath: "/workspace/project",
+      toolOutputPreviewBytes: 1_024,
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-short",
+      commandId: "command-short",
+      text: "读取",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-short",
+      toolCallId: "read-short",
+      toolName: "read_file",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "tool.completed",
+      runId: "run-short",
+      toolCallId: "read-short",
+      toolName: "read_file",
+      outputText: "短结果".repeat(20),
+      timestamp,
+    });
+    const row = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "toolCall");
+    if (row?.kind !== "toolCall" || !row.output) throw new Error("缺少工具行");
+    expect(row.output).toEqual({ text: "短结果".repeat(20) });
+    expect(row.output).not.toHaveProperty("truncated");
+  });
 });

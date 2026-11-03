@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  AGENT_GOVERNANCE_DEFAULTS,
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
@@ -224,10 +225,51 @@ function completeSnapshot(snapshot: Snapshot, at: number) {
   }
 }
 
+/** 按 UTF-8 字节裁切，按码点推进，避免切断代理对。 */
+function clipUtf8(text: string, maxBytes: number, fromEnd: boolean): string {
+  if (maxBytes <= 0) return "";
+  const chars = Array.from(text);
+  const keep: string[] = [];
+  let bytes = 0;
+  const step = fromEnd ? -1 : 1;
+  let index = fromEnd ? chars.length - 1 : 0;
+  while (index >= 0 && index < chars.length) {
+    const char = chars[index]!;
+    const size = Buffer.byteLength(char, "utf8");
+    if (bytes + size > maxBytes) break;
+    bytes += size;
+    keep.push(char);
+    index += step;
+  }
+  return fromEnd ? keep.reverse().join("") : keep.join("");
+}
+
+/**
+ * 终态工具输出超过预览预算时保留头尾，并登记 truncated.ref 指向原始事件；
+ * 事件本身不截断，读取路由按 ref 分页取回全文。
+ */
+function previewToolOutput(
+  text: string,
+  limitBytes: number,
+  ref: string,
+): { text: string; truncated?: { totalBytes: number; ref: string } } {
+  const totalBytes = Buffer.byteLength(text, "utf8");
+  if (totalBytes <= limitBytes) return { text };
+  const marker = "\n…\n";
+  const budget = Math.max(0, limitBytes - Buffer.byteLength(marker, "utf8"));
+  const head = clipUtf8(text, Math.ceil(budget / 2), false);
+  const tail = clipUtf8(text, Math.floor(budget / 2), true);
+  return {
+    text: `${head}${marker}${tail}`,
+    truncated: { totalBytes, ref },
+  };
+}
+
 function completeTool(
   snapshot: Snapshot,
   event: Extract<StreamEvent, { type: "tool.completed" }>,
   at: number,
+  previewBytes: number,
 ) {
   const row = snapshot.rows.window.find(
     (row) =>
@@ -247,16 +289,27 @@ function completeTool(
         (event.output
           ? JSON.stringify(event.output)
           : (event.outputSummary ?? "")));
-  const output = protocol.toolOutputSchema.safeParse({
+  const preview = previewToolOutput(
     text,
+    previewBytes,
+    `${event.runId}/${event.toolCallId}`,
+  );
+  const output = protocol.toolOutputSchema.safeParse({
+    text: preview.text,
     ...(event.output?.display ? { display: event.output.display } : {}),
+    ...(preview.truncated ? { truncated: preview.truncated } : {}),
   });
   Object.assign(
     row,
     protocol.toolCallRowSchema.parse({
       ...row,
       status: event.status ?? "success",
-      output: output.success ? output.data : { text },
+      output: output.success
+        ? output.data
+        : {
+            text: preview.text,
+            ...(preview.truncated ? { truncated: preview.truncated } : {}),
+          },
       ...(event.status === "error"
         ? { error: { code: "tool_failed", message: text || "工具执行失败" } }
         : {}),
@@ -376,8 +429,13 @@ export function createCodeUiConversation(input: {
   clock?: () => number;
   state?: CodeUiConversationState;
   workContext?: protocol.ConversationWorkContext | undefined;
+  /** 终态工具输出保留头尾的字节预算；未传时按治理默认值。 */
+  toolOutputPreviewBytes?: number | undefined;
 }) {
   const clock = input.clock ?? Date.now;
+  const toolOutputPreviewBytes =
+    input.toolOutputPreviewBytes ??
+    AGENT_GOVERNANCE_DEFAULTS.toolOutputPreviewBytes;
   const snapshots = new Map<string, Snapshot>();
   const childByDispatch = new Map<string, string>();
   const closedRuns = new Set(input.state?.closedRuns ?? []);
@@ -1621,7 +1679,7 @@ export function createCodeUiConversation(input: {
           });
       }
       if (event.type === "tool.completed") {
-        completeTool(snapshot, event, at);
+        completeTool(snapshot, event, at, toolOutputPreviewBytes);
         const childId = childByDispatch.get(
           `${event.runId}/${event.toolCallId}`,
         );
