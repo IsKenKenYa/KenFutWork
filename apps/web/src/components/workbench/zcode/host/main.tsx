@@ -9,6 +9,8 @@ import {
   DocumentPaneRendererProvider,
 } from "./DocumentPane.js";
 import { generatedMediaRenderer } from "./GeneratedMediaRenderer.js";
+import { loadPluginCards } from "./pluginCards.js";
+import { pluginCardRenderer } from "./pluginCardRenderer.js";
 import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
 import {
   admitProjectMode,
@@ -18,7 +20,7 @@ import {
 const documentRenderers: readonly DocumentPaneRendererDefinition[] = [
   { resourceType: "canvas", component: CanvasDocumentView },
 ];
-const toolCallRenderers = [generatedMediaRenderer];
+const toolCallRenderers = [generatedMediaRenderer, pluginCardRenderer];
 
 import type {
   CodeUiWorkspace,
@@ -82,6 +84,8 @@ const config: CodeHostConfig = {
 const client = new CodeHttpChannelClient(config);
 // 壳内嵌面（Design/Flow 主区视图）的服务端访问缝：与 client 同一 apiBase/cookie 口径。
 setSurfaceApiBase(config.apiBase);
+// 卡片声明在渲染前读一次：工具卡按工具名匹配声明，读不到就回退到既有工具卡。
+await loadPluginCards(client);
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {

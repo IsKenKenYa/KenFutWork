@@ -16,6 +16,8 @@ export type AgentGovernanceSettings = Pick<
   | "compactFallbackKeepMessages"
   | "canvasExportMaxBytes"
   | "taskAutoArchiveScanIntervalMs"
+  | "pluginCardMaxFields"
+  | "pluginCardFieldValueMaxChars"
 >;
 type NumericKey = Exclude<keyof AgentGovernanceSettings, "llmInfiniteRetry">;
 export type AgentGovernanceInputs = Record<NumericKey, string>;
@@ -60,6 +62,14 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "taskAutoArchiveScanIntervalMs",
     label: "归档扫描间隔（毫秒）",
+  },
+  {
+    key: "pluginCardMaxFields",
+    label: "插件卡片键值行数上限",
+  },
+  {
+    key: "pluginCardFieldValueMaxChars",
+    label: "插件卡片值长度上限",
   },
 ] as const satisfies readonly {
   key: NumericKey;

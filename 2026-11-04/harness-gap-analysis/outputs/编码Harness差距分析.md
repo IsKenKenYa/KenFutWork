@@ -338,6 +338,7 @@
 | P2-2 | 用量汇总没有成本读数，全部未回传时界面会把「未统计」显示成 0 | `packages/shared/src/capability-contracts.ts`、`features/usage/usage-service.ts`、`usage.test.ts`、`apps/web/src/components/workbench/usage-stats-section.tsx`、`apps/web/test/usage-stats-section.test.tsx`、`openapi/registry.ts`、`docs/api/openapi.json` | 9 项服务端用量测试；2 项界面测试；`pnpm api:spec`；契约一致性 3 项 | `a8cdb114` |
 | 收尾 A | 任务自动归档扫描间隔写死为一小时，用户无法调整，违反运行时可调数值规则 | `packages/shared/src/governance.ts`、`packages/shared/src/contracts.ts`、`task-archive-governance.test.ts`（新建）、`features/code-ui/task-auto-archive.ts`、`features/code-ui/plugin.ts`、`apps/web/src/lib/agent-governance-settings.ts`、`.env.example` | 6 项治理测试（默认 / 库值优先 / 区间护栏 / 非法 env 忽略）；server + shared + web typecheck | `44c735d7` |
 | 收尾 B | 非法 HTTP 代理与非法证书路径被服务端拒绝后，界面没有说明哪里错、怎么改 | `apps/web/src/lib/network-settings-save.ts`（新建）、`apps/web/test/network-settings-save.test.ts`（新建）、`zcode/SettingsPage.tsx`、`zcode/i18n/locales/zh-CN.ts`、`en-US.ts` | 4 项保存包装测试；文案门禁 12 项；web 全量 1251 过 / 103 跳过 | `14419028` |
+| P2-3 | 插件能注册工具，但结果只能落在通用工具卡；插件没有可声明的展示结构 | `packages/shared/src/plugin-contracts.ts`、`governance.ts`、`contracts.ts`、`features/plugins/bundle-manifest.ts`、`plugin-cards.ts`（新建）、`plugin-registry-service.ts`、`http/plugins.ts`、`features/plugins/plugin.ts`、`apps/web/src/components/workbench/zcode/host/pluginCards.ts`（新建）、`pluginCardRenderer.tsx`（新建）、`host/main.tsx`、`apps/web/src/lib/agent-governance-settings.ts`、`.env.example` | shared 治理 8 项；server 卡片 10 项；web 5 项；插件注册表 66 项；文案与结构 28 项；`pnpm api:spec` 与契约一致性 3 项 | 本批提交 |
 
 全量服务端测试：4955 项中 4179 过、58 失败、718 跳过；失败集中在沙箱与 PTY 族（本机 macOS 27.2 SDK 的 `libproc.tbd` / `libSystem.tbd` 报 `unknown architecture`，编译 PTY 检查器失败并连带超时），与上述批次改动无文件交集，属既有环境基线。
 
@@ -355,6 +356,7 @@
 | 命令与斜杠命令 | 更差 | 接近等同 | 增加内置 `init`、`review`，与自建命令合并去重；仍缺压缩、计划等状态类命令 |
 | 记忆 | 更差 | 部分补齐 | 增加 `memory_search` 关键词召回与提示段引导；仍缺自动提炼与遗忘策略 |
 | MCP | 更好 | 更好 | 掉线后自动重启一次，连续掉线停止并给出可读原因，手动重连恢复机会 |
+| 插件与技能 | 更差 | 接近等同 | 插件可声明纯数据工具卡片（工具名、标题、键值行、状态），命中则用声明渲染、未命中回退既有工具卡；仍缺插件自带面板的统一入口与卡片值引用工具输出 |
 
 ### 10.3 三处比参照更好用的具体改动
 
@@ -378,7 +380,7 @@
 | P1-3 记忆召回 | 已做 `fec1904f` | 增加关键词召回工具与提示段引导；自动提炼需要确认队列与写入时机，未做 |
 | P2-1 MCP 健康与自动重启 | 已做 `625fb505` | 自动重启只做一次防崩溃循环；间隔沿用现有重连逻辑，未新增治理字段 |
 | P2-2 用量成本展示 | 已做 `a8cdb114` | 只在第一方设置页统计区显示；ZCode 用量面板属源码保真范围，未改 |
-| P2-3 插件声明式 UI 卡片 | 待定 | 需要先定卡片渲染位置：ZCode 壳内（要走宿主适配层）还是新增 first-party 面板；这属产品取舍 |
+| P2-3 插件声明式 UI 卡片 | 已做 `本批提交` | 卡片只允许纯数据（工具名、标题、键值行、状态），走既有 `ToolCallRendererProvider` 贡献点，未命中回退既有工具卡；正文、Markdown、HTML 与自定义样式不开放 |
 | 超大工具输出外置 | 未做 | 需要确定落盘位置、读取工具与清理策略；落到任务目录会污染用户工程，落到数据目录模型读不到，属于产品取舍 |
 | Web 侧时间线入口 | 未做 | ZCode 源码要求字节保真，入口应走宿主适配层；本轮先完成服务端能力 |
 | 真实 Postgres 集成测试 | 未做 | 本机无可用数据库；已写仓储单测锁定 SQL 前缀、参数顺序与实例谓词，集成测试需连接环境后补 |

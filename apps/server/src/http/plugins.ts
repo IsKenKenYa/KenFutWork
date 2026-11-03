@@ -29,6 +29,7 @@ import {
   listScopedPluginBundles,
 } from "../features/plugins/sandbox-plugin-bundles.js";
 import type { ProjectService } from "../features/projects/project-service.js";
+import type { SettingsService } from "../features/settings/settings-service.js";
 import { resolveInsideRoot } from "../utils/inside-root.js";
 import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
 
@@ -48,6 +49,8 @@ export interface PluginRoutesDeps {
   projects: Pick<ProjectService, "getProject">;
   executionScopes: Pick<ExecutionScopes, "openTask">;
   localInstance: LocalInstanceService;
+  /** 插件卡片键值上限来自实例设置（治理值），列表按当前值裁剪后返回。 */
+  settings: Pick<SettingsService, "getInstanceSettings">;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
   /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
@@ -127,7 +130,16 @@ export async function registerPluginRoutes(
   app.get("/api/plugins", async (request, reply) => {
     const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
-    return reply.code(200).send({ plugins: await options.registry.list() });
+    const settings = await options.settings.getInstanceSettings(
+      user,
+      user.instanceId,
+    );
+    return reply.code(200).send({
+      plugins: await options.registry.list({
+        maxFields: settings.pluginCardMaxFields,
+        maxValueCharacters: settings.pluginCardFieldValueMaxChars,
+      }),
+    });
   });
 
   // 只校验不安装：让 UI 在用户点「安装」前就能看到门禁结论

@@ -327,6 +327,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         projects: ctx.get("projects"),
         executionScopes: ctx.get("executionScopes"),
         localInstance: ctx.get("localInstance"),
+        settings: ctx.get("settings"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),

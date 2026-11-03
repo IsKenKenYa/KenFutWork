@@ -11083,7 +11083,7 @@
       "get": {
         "operationId": "getPlugins",
         "summary": "列出本机插件目录与安装状态",
-        "description": "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，scope表示Code/Design/共享作用域，ui合并清单及运行时贡献且同键运行时优先。停用仍为已安装，未安装或未启用不提供运行面板入口。",
+        "description": "返回真实系统能力、随发行包及本机安装清单；installed与enabled独立，scope表示Code/Design/共享作用域，ui合并清单及运行时贡献且同键运行时优先。停用仍为已安装，未安装或未启用不提供运行面板入口。cards是插件声明的纯数据工具卡片，只对已启用条目返回，键值行按实例设置里的治理上限裁剪。",
         "tags": [
           "plugins"
         ],
@@ -23946,6 +23946,18 @@
                 "minimum": 10000,
                 "maximum": 86400000
               },
+              "pluginCardMaxFields": {
+                "default": 8,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20
+              },
+              "pluginCardFieldValueMaxChars": {
+                "default": 120,
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 2000
+              },
               "localAccessTicketTtlMs": {
                 "default": 60000,
                 "type": "integer",
@@ -24223,6 +24235,8 @@
               "agentStreamFlushIntervalMs",
               "codeUiReconnectDelayMs",
               "taskAutoArchiveScanIntervalMs",
+              "pluginCardMaxFields",
+              "pluginCardFieldValueMaxChars",
               "localAccessTicketTtlMs",
               "localAccessSessionMaxAgeMs",
               "localDataMigrationPollMs",
@@ -24610,6 +24624,16 @@
             "type": "integer",
             "minimum": 10000,
             "maximum": 86400000
+          },
+          "pluginCardMaxFields": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20
+          },
+          "pluginCardFieldValueMaxChars": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 2000
           },
           "localAccessTicketTtlMs": {
             "type": "integer",
@@ -31591,6 +31615,74 @@
                   "additionalProperties": false
                 }
               },
+              "cards": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "tools": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "title": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "fields": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": [
+                              "string",
+                              "number"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "status": {
+                      "default": null,
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "success",
+                            "failure",
+                            "in_progress"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "tools",
+                    "title",
+                    "fields",
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              },
               "lifecycleScripts": {
                 "default": [],
                 "type": "array",
@@ -31649,6 +31741,7 @@
               "assets",
               "icon",
               "ui",
+              "cards",
               "lifecycleScripts",
               "dshBaseDependencies",
               "hasNativeBuild",
@@ -32049,6 +32142,74 @@
                       "additionalProperties": false
                     }
                   },
+                  "cards": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tools": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "fields": {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {
+                                "type": [
+                                  "string",
+                                  "number"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "status": {
+                          "default": null,
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "success",
+                                "failure",
+                                "in_progress"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "tools",
+                        "title",
+                        "fields",
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
                   "lifecycleScripts": {
                     "default": [],
                     "type": "array",
@@ -32107,6 +32268,7 @@
                   "assets",
                   "icon",
                   "ui",
+                  "cards",
                   "lifecycleScripts",
                   "dshBaseDependencies",
                   "hasNativeBuild",
@@ -32575,6 +32737,74 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "cards": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "fields": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "value": {
+                              "type": [
+                                "string",
+                                "number"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "label",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "status": {
+                        "default": null,
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "success",
+                              "failure",
+                              "in_progress"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "tools",
+                      "title",
+                      "fields",
+                      "status"
+                    ],
+                    "additionalProperties": false
+                  }
                 }
               },
               "required": [
@@ -32591,7 +32821,8 @@
                 "installed",
                 "enabled",
                 "scope",
-                "ui"
+                "ui",
+                "cards"
               ],
               "additionalProperties": false
             }

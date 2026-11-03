@@ -335,6 +335,12 @@ export const instanceSettingsSchema = z.object({
   taskAutoArchiveScanIntervalMs: governanceSetting(
     "taskAutoArchiveScanIntervalMs",
   ),
+  /** 插件声明卡片最多展示的键值行数。 */
+  pluginCardMaxFields: governanceSetting("pluginCardMaxFields"),
+  /** 插件声明卡片单个值的字符上限。 */
+  pluginCardFieldValueMaxChars: governanceSetting(
+    "pluginCardFieldValueMaxChars",
+  ),
   localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
   localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
   localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),

@@ -39,6 +39,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   codeUiReconnectDelayMs: 1_000,
   /** Task 自动归档的周期扫描间隔；只影响发现旧 Task 的时延。 */
   taskAutoArchiveScanIntervalMs: 3_600_000,
+  /** 插件声明卡片最多展示的键值行数；超出按顺序截掉。 */
+  pluginCardMaxFields: 8,
+  /** 插件声明卡片单个值的字符上限；超出截断并保留开头。 */
+  pluginCardFieldValueMaxChars: 120,
   /** 本机浏览器一次性连接入口有效期。 */
   localAccessTicketTtlMs: 60_000,
   /** 浏览器接入会话期限；不涉及官方账户登录。 */
@@ -113,6 +117,8 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "compactFallbackKeepMessages",
   "codeUiReconnectDelayMs",
   "taskAutoArchiveScanIntervalMs",
+  "pluginCardMaxFields",
+  "pluginCardFieldValueMaxChars",
   "localAccessTicketTtlMs",
   "localAccessSessionMaxAgeMs",
   "localDataMigrationPollMs",
@@ -166,6 +172,8 @@ export type AgentGovernanceOverrides = {
   agentStreamFlushIntervalMs?: number | undefined;
   codeUiReconnectDelayMs?: number | undefined;
   taskAutoArchiveScanIntervalMs?: number | undefined;
+  pluginCardMaxFields?: number | undefined;
+  pluginCardFieldValueMaxChars?: number | undefined;
   localAccessTicketTtlMs?: number | undefined;
   localAccessSessionMaxAgeMs?: number | undefined;
   localDataMigrationPollMs?: number | undefined;
@@ -269,6 +277,8 @@ export const AGENT_GOVERNANCE_LIMITS = {
   agentStreamFlushIntervalMs: { min: 20, max: 500 },
   codeUiReconnectDelayMs: { min: 100, max: 60_000 },
   taskAutoArchiveScanIntervalMs: { min: 10_000, max: 86_400_000 },
+  pluginCardMaxFields: { min: 1, max: 20 },
+  pluginCardFieldValueMaxChars: { min: 16, max: 2_000 },
   localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
   localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
   localDataMigrationPollMs: { min: 10, max: 60_000 },
@@ -388,6 +398,12 @@ export function resolveGovernanceEnvOverrides(
         : undefined,
     taskAutoArchiveScanIntervalMs: parseStrictInt(
       source.KENFUTWORK_TASK_AUTO_ARCHIVE_SCAN_INTERVAL_MS,
+    ),
+    pluginCardMaxFields: parseStrictInt(
+      source.KENFUTWORK_PLUGIN_CARD_MAX_FIELDS,
+    ),
+    pluginCardFieldValueMaxChars: parseStrictInt(
+      source.KENFUTWORK_PLUGIN_CARD_FIELD_VALUE_MAX_CHARS,
     ),
     canvasExportMaxBytes: (() => {
       const value = parseStrictInt(source.KENFUTWORK_CANVAS_EXPORT_MAX_BYTES);

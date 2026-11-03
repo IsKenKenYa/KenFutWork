@@ -29,6 +29,11 @@ import { z } from "zod";
 
 import type { ToolRegistry } from "../../kernel/types.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
+import {
+  defaultPluginCardLimits,
+  type PluginCardLimits,
+  truncatePluginCards,
+} from "./plugin-cards.js";
 import { fetchBundleFiles, type ScopedBundleSource } from "./bundle-source.js";
 import {
   CompatLoadError,
@@ -192,7 +197,7 @@ export interface PluginRegistryService {
       skills: ReturnType<typeof readBundleSkills>;
     }>
   >;
-  list(): Promise<PluginMarketEntry[]>;
+  list(limits?: PluginCardLimits): Promise<PluginMarketEntry[]>;
   /** 机器包库存读面；可安装bundle与profile feature分开，安装态仍由本registry持有。 */
   readPackageInventory(): Promise<{
     rootPath: string;
@@ -338,6 +343,7 @@ function manifestOrPlaceholder(
       enginesNode: null,
       hasClientUi: false,
       ui: [],
+      cards: [],
       assets: false,
       icon: null,
       lifecycleScripts: [],
@@ -903,7 +909,7 @@ export function createPluginRegistryService(
       const { files, manifest } = await readPackageFiles(id);
       return describeBundleFiles(files, manifest);
     },
-    async list() {
+    async list(limits = defaultPluginCardLimits()) {
       const state = await readState();
       const entries: PluginMarketEntry[] = deps.builtinCatalog.map((entry) => ({
         id: entry.name,
@@ -921,6 +927,7 @@ export function createPluginRegistryService(
         scope: null,
         // 系统插件不带 UI 入口（它们本来就有专门的界面）
         ui: [],
+        cards: [],
       }));
 
       for (const record of state.installed) {
@@ -966,6 +973,10 @@ export function createPluginRegistryService(
                 ).values(),
               ]
             : [],
+          // 停用即收回卡片（与 UI 入口同口径）
+          cards: record.enabled
+            ? truncatePluginCards(record.manifest.cards, limits)
+            : [],
         });
       }
 
@@ -988,6 +999,7 @@ export function createPluginRegistryService(
           enabled: false,
           scope: bundle.manifest.scope,
           ui: [],
+          cards: [],
         });
       }
       return entries;
