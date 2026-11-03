@@ -1,10 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import type { CodeUiSessionRecord } from "./repository.js";
-import {
-  runTaskAutoArchive,
-  startTaskAutoArchiveTimer,
-} from "./task-auto-archive.js";
+import { runTaskAutoArchive } from "./task-auto-archive.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse("2026-11-03T00:00:00.000Z");
@@ -117,56 +114,3 @@ describe("任务自动归档扫描", () => {
   });
 });
 
-describe("任务自动归档周期扫描", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("按间隔触发；上一轮未结束时跳过本次", async () => {
-    vi.useFakeTimers();
-    let finishFirst: (() => void) | undefined;
-    const scan = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finishFirst = resolve;
-        }),
-    );
-    const stop = startTaskAutoArchiveTimer({ scan, intervalMs: 60_000 });
-
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(scan).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(scan).toHaveBeenCalledTimes(1);
-
-    finishFirst?.();
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(scan).toHaveBeenCalledTimes(2);
-
-    stop();
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(scan).toHaveBeenCalledTimes(2);
-  });
-
-  it("单轮失败交给 onError，下一轮继续", async () => {
-    vi.useFakeTimers();
-    const errors: unknown[] = [];
-    const scan = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("读取偏好失败"))
-      .mockResolvedValue(undefined);
-    const stop = startTaskAutoArchiveTimer({
-      scan,
-      intervalMs: 60_000,
-      onError: (error) => errors.push(error),
-    });
-
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(errors).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(scan).toHaveBeenCalledTimes(2);
-    expect(errors).toHaveLength(1);
-
-    stop();
-  });
-});

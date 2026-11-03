@@ -19,6 +19,7 @@ export type AgentGovernanceSettings = Pick<
   | "toolResultOffloadMaxBytes"
   | "memoryOrphanRetentionDays"
   | "memoryRecoverableWindowDays"
+  | "memoryMaintenanceIntervalMs"
   | "canvasExportMaxBytes"
   | "taskAutoArchiveScanIntervalMs"
   | "pluginCardMaxFields"
@@ -79,6 +80,10 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "memoryRecoverableWindowDays",
     label: "回收区保留天数",
+  },
+  {
+    key: "memoryMaintenanceIntervalMs",
+    label: "记忆整理间隔（毫秒）",
   },
   {
     key: "canvasExportMaxBytes",

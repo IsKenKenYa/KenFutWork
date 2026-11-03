@@ -313,6 +313,8 @@ export const instanceSettingsSchema = z.object({
   memoryOrphanRetentionDays: governanceSetting("memoryOrphanRetentionDays"),
   /** 回收区保留天数，过期后才永久删除。 */
   memoryRecoverableWindowDays: governanceSetting("memoryRecoverableWindowDays"),
+  /** 记忆整理周期扫描间隔（毫秒）。 */
+  memoryMaintenanceIntervalMs: governanceSetting("memoryMaintenanceIntervalMs"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

@@ -1,3 +1,4 @@
+import { startPeriodicScan } from "../jobs/periodic-scan.js";
 import type { CodeUiSessionRecord } from "./repository.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -69,8 +70,7 @@ export async function runTaskAutoArchive(options: {
 }
 
 /**
- * 周期扫描：上一轮未结束时跳过本次触发，避免并发归档同一批 Task；
- * 单轮失败交给 `onError` 记录后继续下一轮。返回的函数停止定时器。
+ * 周期扫描按治理间隔触发，实现见 `features/jobs/periodic-scan.ts`。
  */
 export function startTaskAutoArchiveTimer(options: {
   scan: () => Promise<void>;
@@ -78,18 +78,5 @@ export function startTaskAutoArchiveTimer(options: {
   /** 来自治理设置（设置页可调），调用方必须显式传入。 */
   intervalMs: number;
 }): () => void {
-  let running = false;
-  const timer = setInterval(() => {
-    if (running) return;
-    running = true;
-    void options
-      .scan()
-      .catch((error: unknown) => options.onError?.(error))
-      .finally(() => {
-        running = false;
-      });
-  }, options.intervalMs);
-  // 后台维护定时器不阻止进程退出。
-  timer.unref?.();
-  return () => clearInterval(timer);
+  return startPeriodicScan(options);
 }

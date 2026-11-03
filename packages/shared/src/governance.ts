@@ -26,6 +26,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   memoryOrphanRetentionDays: 30,
   /** 回收区文件保留天数，过期后才永久删除。 */
   memoryRecoverableWindowDays: 30,
+  /** 记忆整理（重复合并/孤立回收/过期清理）的周期扫描间隔，单位毫秒。 */
+  memoryMaintenanceIntervalMs: 3_600_000,
   /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
@@ -130,6 +132,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "toolResultOffloadMaxBytes",
   "memoryOrphanRetentionDays",
   "memoryRecoverableWindowDays",
+  "memoryMaintenanceIntervalMs",
   "codeUiReconnectDelayMs",
   "taskAutoArchiveScanIntervalMs",
   "pluginCardMaxFields",
@@ -183,6 +186,7 @@ export type AgentGovernanceOverrides = {
   toolResultOffloadMaxBytes?: number | undefined;
   memoryOrphanRetentionDays?: number | undefined;
   memoryRecoverableWindowDays?: number | undefined;
+  memoryMaintenanceIntervalMs?: number | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
@@ -293,6 +297,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   toolResultOffloadMaxBytes: { min: 1_024, max: 1_073_741_824 },
   memoryOrphanRetentionDays: { min: 1, max: 3_650 },
   memoryRecoverableWindowDays: { min: 1, max: 3_650 },
+  memoryMaintenanceIntervalMs: { min: 60_000, max: 86_400_000 },
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
@@ -395,6 +400,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     memoryRecoverableWindowDays: parseStrictInt(
       source.KENFUTWORK_MEMORY_RECOVERABLE_WINDOW_DAYS,
+    ),
+    memoryMaintenanceIntervalMs: parseStrictInt(
+      source.KENFUTWORK_MEMORY_MAINTENANCE_INTERVAL_MS,
     ),
     localDataMigrationPollMs: parseStrictInt(
       source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,

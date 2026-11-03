@@ -8,8 +8,13 @@ import {
   createMemorySearchTool,
   createProjectMemoryPromptSection,
 } from "../memory/consumer.js";
-import { createProjectMemoryService } from "../memory/project-memory.js";
+import {
+  createProjectMemoryService,
+  type ProjectMemoryService,
+} from "../memory/project-memory.js";
+import { runMemoryMaintenanceScan } from "../memory/maintenance-scan.js";
 import { createProjectMemoryRpc } from "../memory/rpc.js";
+import { startPeriodicScan } from "../jobs/periodic-scan.js";
 import { installNetworkProxy } from "../network/proxy.js";
 import {
   runTaskAutoArchive,
@@ -45,6 +50,8 @@ import {
 export function createCodeUiPlugin(): PluginDefinition {
   /** apply 期建立的偏好仓储；mounted 的启动期消费者共用同一实例。 */
   let preferenceRepository: ReturnType<typeof createCodeUiRepository> | undefined;
+  /** apply 期建立的项目记忆服务；mounted 的周期整理共用同一实例。 */
+  let projectMemoryService: ProjectMemoryService | undefined;
   return {
     name: "code-ui",
     inject: [
@@ -93,6 +100,7 @@ export function createCodeUiPlugin(): PluginDefinition {
         canvases: ctx.get("canvas"),
         agentPersistence: ctx.get("agentPersistence"),
       });
+      projectMemoryService = projectMemory;
       ctx.register("codeUi", () => {
         const userInputs = createUserInputBroker();
         return createCodeUiService({
@@ -344,6 +352,58 @@ export function createCodeUiPlugin(): PluginDefinition {
         ctx.get("settings").onUpdated(({ changedKeys }) => {
           if (changedKeys.includes("taskAutoArchiveScanIntervalMs"))
             void restartAutoArchiveTimer();
+        }),
+      );
+      const memoryService = projectMemoryService;
+      if (!memoryService) throw new Error("项目记忆服务未装配。");
+      /** 关闭记忆的实例直接跳过，不为空目录做整理。 */
+      const maintainMemories = async () => {
+        const actor = await ctx.get("localInstance").serviceActor();
+        const result = await runMemoryMaintenanceScan({
+          actor,
+          isEnabled: (instanceId) => memoryService.isEnabled(instanceId),
+          listProjects: (currentActor, kind) =>
+            ctx.get("projects").listProjects(currentActor, kind),
+          maintain: async (projectId) => {
+            await memoryService.maintainProjectMemory(actor, { projectId });
+          },
+        });
+        if (result.failed.length)
+          console.warn("[code-ui] 项目记忆整理有未完成的项：", result.failed);
+      };
+      let stopMemoryTimer: (() => void) | undefined;
+      /** 并发重读设置时只让最后一次生效，卸载后不再起定时器。 */
+      let memoryGeneration = 0;
+      let memoryClosed = false;
+      const restartMemoryTimer = async () => {
+        const generation = ++memoryGeneration;
+        const actor = await ctx.get("localInstance").serviceActor();
+        const settings = await ctx.get("settings").getInstanceSettings(
+          actor,
+          actor.instanceId,
+        );
+        if (memoryClosed || generation !== memoryGeneration) return;
+        stopMemoryTimer?.();
+        stopMemoryTimer = startPeriodicScan({
+          scan: maintainMemories,
+          onError: (error) =>
+            console.warn("[code-ui] 项目记忆整理周期扫描失败：", error),
+          intervalMs: settings.memoryMaintenanceIntervalMs,
+        });
+      };
+      ctx.effect(() => {
+        memoryClosed = false;
+        void restartMemoryTimer();
+        return () => {
+          memoryClosed = true;
+          memoryGeneration += 1;
+          stopMemoryTimer?.();
+        };
+      });
+      ctx.effect(() =>
+        ctx.get("settings").onUpdated(({ changedKeys }) => {
+          if (changedKeys.includes("memoryMaintenanceIntervalMs"))
+            void restartMemoryTimer();
         }),
       );
       ctx.app.addHook("onReady", async () => {
