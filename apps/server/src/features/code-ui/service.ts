@@ -242,6 +242,17 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+/** 只读取会话身份：v4 客户端把 workspace address 一并带上，地址由连接身份持有。 */
+function requireReadableSessionId(value: unknown, action: string): string {
+  const sessionId =
+    value && typeof value === "object" && "sessionId" in value
+      ? (value as { sessionId?: unknown }).sessionId
+      : undefined;
+  if (typeof sessionId !== "string" || sessionId.length === 0)
+    throw new CodeUiRepositoryError("not_found", `${action}缺少会话身份。`);
+  return sessionId;
+}
+
 function requireLiveUserInput(
   root: NonNullable<Awaited<ReturnType<CodeUiRepository["find"]>>>,
   event: ApprovalEvent | UserInputEvent,
@@ -2364,15 +2375,26 @@ export class CodeUiService {
       };
     }
     if (method === "conversationWorkflowRunsV4") {
-      const parsed = protocol.v4ConversationWorkflowRunsParamsSchema.parse(
-        args[0],
-      );
+      // 客户端按服务级 address 传参（含 workspacePath 等），地址由连接身份持有；
+      // 这里只取会话身份，不能用网关层的 strict schema 直接 parse。
+      const sessionId = requireReadableSessionId(args[0], "workflow run 查询");
       // 原 ZCode 的 workflow run 枚举来自 CLI 旁路日志；本内核不产生 workflow run，
-      // 空清单就是事实。会话打开时客户端会查询该面，未接通会让界面反复收到 501。
-      await this.loadConversation(user, parsed.sessionId);
+      // 空清单就是事实。会话打开时客户端会查询该面，未接通会让界面反复失败。
+      await this.getSnapshot(user, sessionId);
       return {
         result: protocol.v4ConversationWorkflowRunsResultSchema.parse({
           runs: [],
+        }),
+      };
+    }
+    if (method === "conversationPlansV4") {
+      const sessionId = requireReadableSessionId(args[0], "计划目录查询");
+      const snapshot = await this.getSnapshot(user, sessionId);
+      return {
+        result: protocol.v4ConversationPlansResultSchema.parse({
+          plans: [],
+          atSeq: snapshot.seq,
+          atLogEpoch: snapshot.logEpoch,
         }),
       };
     }

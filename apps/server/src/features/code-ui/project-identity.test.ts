@@ -609,15 +609,39 @@ it("原生会话日志路径在无原生日志的内核里返回空，不再 501
   expect(result?.result).toEqual({ provider: null, path: null, exists: false });
 });
 
-it("workflow run 枚举在本内核返回空清单，打开会话不再 501", async () => {
-  const { actor, service, taskId } = await fixture();
+it("workflow run 枚举接受服务级 address 参数，返回空清单不再 400/501", async () => {
+  const { actor, service, taskId, pathA } = await fixture();
   const result = await service.transportRpc(
     actor,
     undefined,
     "conversationWorkflowRunsV4",
-    [{ sessionId: taskId, limit: 16 }],
+    [
+      {
+        workspacePath: pathA,
+        workspaceIdentity: "local",
+        projectId: "proj-test",
+        sessionId: taskId,
+        limit: 16,
+      },
+    ],
   );
   expect(result?.result).toEqual({ runs: [] });
+});
+
+it("计划目录在本内核返回空目录并与当前日志代对齐，不再 501", async () => {
+  const { actor, service, taskId } = await fixture();
+  const result = await service.transportRpc(
+    actor,
+    undefined,
+    "conversationPlansV4",
+    [{ sessionId: taskId }],
+  );
+  expect(result?.result).toEqual({
+    plans: [],
+    atSeq: expect.any(Number),
+    atLogEpoch: expect.any(String),
+  });
+  expect((result?.result as { atLogEpoch: string }).atLogEpoch.length).toBeGreaterThan(0);
 });
 
 it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留真实项目和固定目录", async () => {
