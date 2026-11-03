@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { saveNetworkSetting } from "../src/lib/network-settings-save.js";
+import { saveNetworkSetting } from "../src/components/workbench/zcode/network-settings-save.js";
 
 const hints = {
   savedHint: "网络代理设置已保存，重启应用后生效",

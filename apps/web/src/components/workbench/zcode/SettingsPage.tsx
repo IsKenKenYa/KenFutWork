@@ -115,7 +115,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { saveNetworkSetting } from "../../../lib/network-settings-save.js";
+import { saveNetworkSetting } from "./network-settings-save.js";
 import { type VoiceDataClient, VoiceSection } from "./settings/VoiceSection.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import {
