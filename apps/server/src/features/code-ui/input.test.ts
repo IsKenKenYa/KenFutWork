@@ -133,6 +133,13 @@ async function fixture(
     string,
     { fingerprint: string; ack: protocol.CommandAck }
   >();
+  const roots = new Map<string, CodeUiSessionRecord>([[taskId, root]]);
+  const creationReceipts = new Map<
+    string,
+    { projectId: string; fingerprint: string; ack: protocol.CommandAck }
+  >();
+  const recordFor = (sessionId?: string | null) =>
+    roots.get(sessionId ?? taskId) ?? root;
   const repository = {
     preparations: {
       recover: async () => {},
@@ -144,21 +151,75 @@ async function fixture(
     readRunFailure: async () => null,
     readHumanPreferences: async () => ({}),
     find: async (workspace: string, id: string) =>
-      workspace === instanceId && id === taskId ? structuredClone(root) : null,
-    list: async () => [structuredClone(root)],
-    listRoots: async () => [structuredClone(root)],
+      workspace === instanceId && roots.has(id)
+        ? structuredClone(roots.get(id)!)
+        : null,
+    list: async () =>
+      [...roots.values()].map((entry) => structuredClone(entry)),
+    listRoots: async () =>
+      [...roots.values()].map((entry) => structuredClone(entry)),
     listVersion: async () => Number(root.revision),
+    async readCreationCommand(_workspace: string, projectId: string, command) {
+      const receipt = creationReceipts.get(
+        JSON.stringify([command.clientId, command.commandId]),
+      );
+      if (!receipt || receipt.projectId !== projectId) return null;
+      return { ...receipt.ack, status: "duplicate" };
+    },
+    async createRoot(_workspace: string, input) {
+      const key = JSON.stringify([
+        input.command.clientId,
+        input.command.commandId,
+      ]);
+      const previous = creationReceipts.get(key);
+      if (previous) {
+        if (previous.fingerprint !== input.command.fingerprint)
+          throw new Error("command_conflict");
+        return { ...previous.ack, status: "duplicate" };
+      }
+      const ack = protocol.commandAckSchema.parse({
+        commandId: input.command.commandId,
+        status: "accepted",
+        revisionAtDecision: 0,
+        result: { type: "createSession", sessionId: input.sessionId },
+      });
+      roots.set(input.sessionId, {
+        ...structuredClone(root),
+        id: input.sessionId,
+        project_id: input.projectId,
+        root_directory: input.scope.rootDirectory,
+        additional_directories: input.scope.additionalDirectories,
+        sandbox_mode: input.scope.sandboxMode,
+        scope_generation: input.scope.generation,
+        branch_generation: 1,
+        execution_state: "ready",
+        chat_session_id: input.sessionId,
+        root_session_id: input.sessionId,
+        state: structuredClone(input.state),
+        revision: 0,
+        active_run_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      creationReceipts.set(key, {
+        projectId: input.projectId,
+        fingerprint: input.command.fingerprint,
+        ack,
+      });
+      return ack;
+    },
     async startRunIfCurrent(workspace, task, runId, expected, start) {
-      if (workspace !== instanceId || task !== taskId) return false;
-      const input = root.state?.inputs?.find((entry) => entry.runId === runId);
+      const record = workspace === instanceId ? roots.get(task) : undefined;
+      if (!record) return false;
+      const input = record.state?.inputs?.find((entry) => entry.runId === runId);
       if (
-        root.archived ||
-        root.execution_state !== "ready" ||
-        Number(root.scope_generation) !== expected.scopeGeneration ||
-        Number(root.branch_generation) !== expected.branchGeneration ||
-        root.active_run_id !== runId ||
-        root.state?.runId !== runId ||
-        root.state.closedRuns.includes(runId) ||
+        record.archived ||
+        record.execution_state !== "ready" ||
+        Number(record.scope_generation) !== expected.scopeGeneration ||
+        Number(record.branch_generation) !== expected.branchGeneration ||
+        record.active_run_id !== runId ||
+        record.state?.runId !== runId ||
+        record.state.closedRuns.includes(runId) ||
         (expected.inputRequired && !input) ||
         (input &&
           (input.status !== "active" ||
@@ -166,7 +227,7 @@ async function fixture(
             input.branchGeneration !== expected.branchGeneration))
       )
         return false;
-      start(structuredClone(root));
+      start(structuredClone(record));
       return true;
     },
     async applyCommand(_workspace, envelope, fingerprint, decide) {
@@ -177,11 +238,12 @@ async function fixture(
           throw new Error("command_conflict");
         return { ...previous.ack, status: "duplicate" };
       }
-      const decision = decide(structuredClone(root));
+      const record = recordFor(envelope.sessionId);
+      const decision = decide(structuredClone(record));
       if (decision.state) {
-        root.state = decision.state;
-        root.active_run_id = decision.activeRunId;
-        root.revision = Number(root.revision) + 1;
+        record.state = decision.state;
+        record.active_run_id = decision.activeRunId;
+        record.revision = Number(record.revision) + 1;
       }
       const ack = protocol.commandAckSchema.parse(decision.ack);
       for (const settlement of decision.settlements ?? []) {
@@ -194,10 +256,11 @@ async function fixture(
       return ack;
     },
     async appendEvent(_workspace, _task, _event, apply) {
-      const decision = apply(structuredClone(root));
-      root.state = decision.state;
-      root.active_run_id = decision.activeRunId;
-      root.revision = Number(root.revision) + 1;
+      const record = recordFor(_task);
+      const decision = apply(structuredClone(record));
+      record.state = decision.state;
+      record.active_run_id = decision.activeRunId;
+      record.revision = Number(record.revision) + 1;
       for (const settlement of decision.settlements ?? []) {
         const source = commands.get(
           JSON.stringify([settlement.clientId, settlement.commandId]),
@@ -214,11 +277,12 @@ async function fixture(
           throw new Error("command_conflict");
         return { ...previous.ack, status: "duplicate" };
       }
-      await change(structuredClone(root));
-      const decision = decide(structuredClone(root));
+      const record = recordFor(envelope.sessionId);
+      await change(structuredClone(record));
+      const decision = decide(structuredClone(record));
       if (decision.state) {
-        root.state = decision.state;
-        root.revision = Number(root.revision) + 1;
+        record.state = decision.state;
+        record.revision = Number(record.revision) + 1;
       }
       const ack = protocol.commandAckSchema.parse(decision.ack);
       commands.set(key, { fingerprint, ack });
@@ -304,6 +368,22 @@ async function fixture(
               },
             ]
           : [],
+      getProject: async () => ({
+        id: projectId,
+        kind: "code" as const,
+        enabled_modes: (options.enabledModes ?? ["code"]) as Array<
+          "code" | "design"
+        >,
+        name: "Test",
+        slug: "test",
+        description: null,
+        instance_id: instanceId,
+        brand_kit_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        work_dir: directory,
+        additional_directories: [],
+      }),
     },
     modelProviders: {
       listInstances: async () => [provider],
@@ -316,6 +396,7 @@ async function fixture(
     },
     threads: {
       resolveOwnedSessionThread: async () => ({ threadId: `thread:${taskId}` }),
+      createThreadId: () => randomUUID(),
     },
     executionScopes: { openTask: async () => ({ describe: () => scope }) },
     agentRunMetadata: {
@@ -525,6 +606,61 @@ async function fixture(
     updateRun,
   };
 }
+
+it("createSession 携带 firstInput 时首条输入直接落 userInput，刷新重读仍在", async () => {
+  const host = await fixture();
+  const commandId = randomUUID();
+  const created = (await host.rpc("sendConversationCommandV4", {
+    workspacePath: host.directory,
+    envelope: {
+      clientId: host.clientId,
+      commandId,
+      sessionId: null,
+      type: "createSession",
+      payload: {
+        workspaceId: host.scope.projectId,
+        firstInput: { text: "第一条输入" },
+      },
+      issuedAt: Date.now(),
+    },
+  })) as { result: protocol.CommandAck; publish?: () => Promise<void> };
+  expect(created.result).toMatchObject({
+    status: "accepted",
+    result: { type: "createSession" },
+  });
+  const sessionId = (created.result.result as { sessionId: string }).sessionId;
+  await created.publish?.();
+  await host.waitRuns(1);
+  const snapshot = await host.service.getSnapshot(host.actor, sessionId);
+  expect(
+    snapshot.rows.window.find((row) => row.kind === "userInput"),
+  ).toMatchObject({ text: "第一条输入", clientId: host.clientId });
+  expect(snapshot.rows.window.some((row) => row.kind === "turnHeader")).toBe(
+    true,
+  );
+  expect(host.runs).toHaveLength(1);
+  const reloaded = await host.service.getSnapshot(host.actor, sessionId);
+  expect(
+    reloaded.rows.window.find((row) => row.kind === "userInput"),
+  ).toMatchObject({ text: "第一条输入" });
+  const duplicate = (await host.rpc("sendConversationCommandV4", {
+    workspacePath: host.directory,
+    envelope: {
+      clientId: host.clientId,
+      commandId,
+      sessionId: null,
+      type: "createSession",
+      payload: {
+        workspaceId: host.scope.projectId,
+        firstInput: { text: "第一条输入" },
+      },
+      issuedAt: Date.now(),
+    },
+  })) as { result: protocol.CommandAck; publish?: () => Promise<void> };
+  await duplicate.publish?.();
+  expect(duplicate.result.status).toBe("duplicate");
+  expect(host.runs).toHaveLength(1);
+});
 
 it("纯附件输入由真实提交ref进入共同Harness并持久为原消息附件，同命令重放不会再运行", async () => {
   const host = await fixture();

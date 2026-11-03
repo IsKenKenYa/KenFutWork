@@ -2554,7 +2554,7 @@ export class CodeUiService {
           );
       }
       if (parsed.envelope.type === "createSession")
-        return { result: await this.createSession(user, parsed.envelope) };
+        return this.createSessionWithFirstInput(user, parsed.envelope);
       if (parsed.envelope.sessionId) {
         const historical = await this.loadConversation(
           user,
@@ -5057,6 +5057,56 @@ export class CodeUiService {
     } finally {
       release();
     }
+  }
+
+  /**
+   * v4 createSession：建会话与首条输入一次送达时，建完立刻按普通输入落地。
+   *
+   * 协议约定携带 `firstInput` 应直接形成 turnHeader + userInput 行（见
+   * `zcode-protocol-v4/command.ts` 的 createSession 注释）。派生命令 id 固定，
+   * 重试、进程崩溃后的重复会话命令都收敛到同一条输入，不会重复发送。
+   */
+  private async createSessionWithFirstInput(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ): Promise<{
+    result: protocol.CommandAck;
+    publish?: () => Promise<void>;
+  }> {
+    const ack = await this.createSession(user, envelope);
+    const payload = protocol.commandPayloadSchemas.createSession.parse(
+      envelope.payload,
+    );
+    const first = payload.firstInput;
+    if (!first || (!first.text.trim() && !first.attachments?.length))
+      return { result: ack };
+    if (ack.status !== "accepted" || ack.result?.type !== "createSession")
+      return { result: ack };
+    const loaded = await this.loadConversation(user, ack.result.sessionId);
+    const admitted = await this.sendText(user, loaded.project.path, {
+      clientId: envelope.clientId,
+      commandId: `${envelope.commandId}:first-input`,
+      sessionId: ack.result.sessionId,
+      type: "sendText",
+      issuedAt: envelope.issuedAt,
+      payload: {
+        text: first.text,
+        ...(first.attachments?.length
+          ? { attachments: first.attachments }
+          : {}),
+        ...(first.modelSelection
+          ? { modelSelection: first.modelSelection }
+          : {}),
+        ...(first.mode ? { mode: first.mode } : {}),
+        ...(first.planEnabled !== undefined
+          ? { planEnabled: first.planEnabled }
+          : {}),
+        ...(first.workContext ?? payload.workContext
+          ? { workContext: first.workContext ?? payload.workContext }
+          : {}),
+      },
+    });
+    return { result: ack, publish: admitted.publish };
   }
 
   private async createAdmittedSession(
