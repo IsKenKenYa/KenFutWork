@@ -6,7 +6,12 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { useStore } from "zustand";
 import { shouldExposeE2EStoreBridge } from "@zui/lib/e2eStoreBridge.js";
-import { createTabStore, type TabStore, type TabStoreState } from "./tabStore.js";
+import {
+  createTabStore,
+  type SettingsOpenTarget,
+  type TabStore,
+  type TabStoreState,
+} from "./tabStore.js";
 
 declare global {
   interface Window {
@@ -17,7 +22,13 @@ declare global {
 const TabStoreContext = createContext<TabStore | null>(null);
 const fallbackTabStore = createTabStore(null);
 
-export function TabStoreProvider({ children, onOpenSettings }: { children: ReactNode; onOpenSettings?: () => void }) {
+export function TabStoreProvider({
+  children,
+  onOpenSettings,
+}: {
+  children: ReactNode;
+  onOpenSettings?: (target?: SettingsOpenTarget) => void;
+}) {
   // 只在首次渲染时创建 store，避免 HMR 重复创建
   const storeRef = useRef<TabStore | null>(null);
   if (!storeRef.current) {

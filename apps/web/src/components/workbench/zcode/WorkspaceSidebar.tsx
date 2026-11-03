@@ -1477,7 +1477,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               pluginTab: "skills",
               pluginScopeKey: "user",
             });
-            openSettingsTab();
+            openSettingsTab({
+              page: "settings",
+              section: "plugin",
+              pluginTab: "skills",
+              pluginScopeKey: "user",
+            });
           }}
         />
       ) : null}
@@ -1491,7 +1496,12 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
               pluginTab: "mcps",
               pluginScopeKey: "user",
             });
-            openSettingsTab();
+            openSettingsTab({
+              page: "settings",
+              section: "plugin",
+              pluginTab: "mcps",
+              pluginScopeKey: "user",
+            });
           }}
         />
       ) : null}

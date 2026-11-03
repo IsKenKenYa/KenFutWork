@@ -485,7 +485,7 @@ export const TaskList = memo(function TaskList({
             type="button"
             variant="outline"
             size="sm"
-            onClick={openSettingsTab}
+            onClick={() => openSettingsTab()}
             data-testid={TID_TASK_SETTINGS_BUTTON}
             className="w-full justify-center"
           >

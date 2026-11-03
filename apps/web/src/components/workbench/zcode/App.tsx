@@ -1073,11 +1073,21 @@ export function App({
           openSettings: openSettingsTab,
           openSkillsSettings: () => {
             setPendingSettingsPluginIntent("skills");
-            openSettingsTab();
+            openSettingsTab({
+              page: "settings",
+              section: "plugin",
+              pluginTab: "skills",
+              pluginScopeKey: "user",
+            });
           },
           openMcpSettings: () => {
             setPendingSettingsPluginIntent("mcps");
-            openSettingsTab();
+            openSettingsTab({
+              page: "settings",
+              section: "plugin",
+              pluginTab: "mcps",
+              pluginScopeKey: "user",
+            });
           },
           switchTheme: handleSwitchTheme,
           openFeedback: handleOpenFeedback,

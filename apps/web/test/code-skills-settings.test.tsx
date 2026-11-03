@@ -320,13 +320,14 @@ it("原外部技能导入页明确未接入，禁止扫描、导入和假空结�
 it("原Code侧栏提供技能与MCP直达原页，入口不创建新Task", async () => {
   const { calls } = await openSkillsPage({ root: true });
   fireEvent.click(await screen.findByRole("button", { name: /^技能$/ }));
-  await screen.findByRole("heading", { name: "技能", level: 2 });
+  await screen.findByRole("heading", { name: "插件·MCP·技能", level: 2 });
   await screen.findByRole("button", { name: /native-skill/ });
   const back = screen.getAllByRole("button", { name: "返回工作区" })[0];
   if (!back) throw new Error("原返回工作区入口缺失");
   fireEvent.click(back);
   fireEvent.click(await screen.findByRole("button", { name: /^MCP 服务器$/ }));
-  await screen.findByRole("heading", { name: "MCP 服务器", level: 2 });
+  // 侧栏 MCP 入口落到 MCP 分区：空态标题只在 mcps 页签激活时渲染。
+  await screen.findByText("尚未安装 MCP 服务器");
   expect(
     calls.filter((call) =>
       ["createTask", "ensureConversationWorkspace"].includes(call.method),
