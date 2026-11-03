@@ -1,5 +1,6 @@
 import { ToolMessage } from "@langchain/core/messages";
 import type { AgentMiddleware } from "langchain";
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 /**
  * 工具结果内联修剪：模型请求前的最后一道文本预算。
@@ -102,7 +103,72 @@ function pruneMessage(message: UnknownMessage, maxChars: number): UnknownMessage
   return rebuilt as unknown as UnknownMessage;
 }
 
-export function createToolResultPruneMiddleware(maxChars: number): AgentMiddleware {
+const IMAGE_PART_TYPES = new Set(["image_url", "image", "input_image"]);
+const IMAGE_OMITTED_NOTICE =
+  "[较早的图片已省略：只向模型发送最近几张图片；需要重新查看时请再次打开或读取该图片]";
+
+function isImagePart(part: unknown): boolean {
+  return (
+    typeof part === "object" &&
+    part !== null &&
+    IMAGE_PART_TYPES.has(String((part as { type?: unknown }).type))
+  );
+}
+
+function replaceContent(
+  message: UnknownMessage,
+  content: unknown[],
+): UnknownMessage {
+  const rebuilt = Object.assign(
+    Object.create(Object.getPrototypeOf(message)) as UnknownMessage,
+    message,
+  );
+  rebuilt.content = content;
+  return rebuilt;
+}
+
+/**
+ * 旧图片卸载：从最新消息往回数，只保留最近 `keepRecentImages` 张图片；
+ * 更早的图片换成文字占位。只改发给模型的副本，界面与持久事件保留原图。
+ * 图片可能落在人类、模型或工具消息里，故对所有消息的结构化内容生效。
+ */
+export function unloadRecentImages(
+  messages: UnknownMessage[],
+  keepRecentImages: number,
+): UnknownMessage[] {
+  if (!Number.isFinite(keepRecentImages) || keepRecentImages < 0)
+    return messages;
+  let remaining = Math.max(0, Math.floor(keepRecentImages));
+  const result = [...messages];
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || !Array.isArray(message.content)) continue;
+    const parts = message.content as unknown[];
+    const next: unknown[] = [];
+    let changed = false;
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = parts[partIndex];
+      if (!isImagePart(part)) {
+        next.unshift(part);
+        continue;
+      }
+      if (remaining > 0) {
+        remaining -= 1;
+        next.unshift(part);
+      } else {
+        next.unshift({ type: "text", text: IMAGE_OMITTED_NOTICE });
+        changed = true;
+      }
+    }
+    if (changed) result[index] = replaceContent(message, next);
+  }
+  return result;
+}
+
+export function createToolResultPruneMiddleware(
+  maxChars: number,
+  keepRecentImages: number = AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages,
+): AgentMiddleware {
   return {
     name: "kenfutworkToolResultPrune",
     wrapModelCall(
@@ -112,7 +178,8 @@ export function createToolResultPruneMiddleware(maxChars: number): AgentMiddlewa
       const messages = (request as { messages?: UnknownMessage[] }).messages;
       if (!Array.isArray(messages) || messages.length === 0)
         return handler(request);
-      const prunedMessages = messages.map((message) =>
+      const imagesUnloaded = unloadRecentImages(messages, keepRecentImages);
+      const prunedMessages = imagesUnloaded.map((message) =>
         pruneMessage(message, maxChars),
       );
       return handler({ ...(request as object), messages: prunedMessages });

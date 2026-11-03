@@ -16,6 +16,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   compactKeepMessages: 20,
   /** 窗口未知时的保留目标，自动与显式维护共用。 */
   compactFallbackKeepMessages: 6,
+  /** 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。 */
+  contextKeepRecentImages: 2,
   /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
@@ -115,6 +117,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "agentStreamFlushIntervalMs",
   "compactKeepMessages",
   "compactFallbackKeepMessages",
+  "contextKeepRecentImages",
   "codeUiReconnectDelayMs",
   "taskAutoArchiveScanIntervalMs",
   "pluginCardMaxFields",
@@ -163,6 +166,7 @@ export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 export type AgentGovernanceOverrides = {
   compactKeepMessages?: number | undefined;
   compactFallbackKeepMessages?: number | undefined;
+  contextKeepRecentImages?: number | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
@@ -268,6 +272,7 @@ export const coerceLlmInfiniteRetry = (value: unknown): boolean =>
 export const AGENT_GOVERNANCE_LIMITS = {
   compactKeepMessages: { min: 1, max: 10_000 },
   compactFallbackKeepMessages: { min: 1, max: 10_000 },
+  contextKeepRecentImages: { min: 0, max: 20 },
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
@@ -355,6 +360,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     compactFallbackKeepMessages: parseStrictInt(
       source.KENFUTWORK_COMPACT_FALLBACK_KEEP_MESSAGES,
+    ),
+    contextKeepRecentImages: parseStrictInt(
+      source.KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES,
     ),
     localDataMigrationPollMs: parseStrictInt(
       source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,

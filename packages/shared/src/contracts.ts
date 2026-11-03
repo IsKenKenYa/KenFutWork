@@ -303,6 +303,8 @@ export const instanceSettingsSchema = z.object({
   compactKeepMessages: governanceSetting("compactKeepMessages"),
   /** 窗口未知时的保留目标；自动与手动维护共用，独立于自动压缩开关。 */
   compactFallbackKeepMessages: governanceSetting("compactFallbackKeepMessages"),
+  /** 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。 */
+  contextKeepRecentImages: governanceSetting("contextKeepRecentImages"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

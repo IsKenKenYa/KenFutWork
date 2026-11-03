@@ -14,6 +14,7 @@ export type AgentGovernanceSettings = Pick<
   | "subagentMaxContinuations"
   | "compactKeepMessages"
   | "compactFallbackKeepMessages"
+  | "contextKeepRecentImages"
   | "canvasExportMaxBytes"
   | "taskAutoArchiveScanIntervalMs"
   | "pluginCardMaxFields"
@@ -54,6 +55,10 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "compactFallbackKeepMessages",
     label: "压缩保留目标（窗口未知）",
+  },
+  {
+    key: "contextKeepRecentImages",
+    label: "保留最近图片张数",
   },
   {
     key: "canvasExportMaxBytes",

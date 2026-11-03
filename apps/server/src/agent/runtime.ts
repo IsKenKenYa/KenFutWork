@@ -1494,6 +1494,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** 后台任务续轮上限（DEC-15/18）：防挂死任务导致无限续轮。 */
       let governanceMaxContinuations: number =
         AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations;
+      /** 发给模型时保留的最近图片张数（DEC-18）。 */
+      let contextKeepRecentImages: number =
+        AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
       let taskWorkContext: TaskWorkContext | undefined;
@@ -1861,6 +1864,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               instanceSettings?.subagentMaxContinuations ??
                 AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
             );
+            contextKeepRecentImages =
+              instanceSettings?.contextKeepRecentImages ??
+              AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
           }
 
           // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
@@ -2394,6 +2400,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             contextBudget,
             // 工具结果发给模型前的内联预算：与进程输出预览共用同一治理值，不另立字面量。
             toolResultInlineMaxChars: processLimits.previewMaxChars,
+            // 旧图片卸载：只保留最近几张图片，更早的图片在模型请求里换成文字占位。
+            contextKeepRecentImages,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(persistence ? { store: persistence.store } : {}),
             ...(kernelToolDefinitions.length > 0

@@ -114,6 +114,100 @@ describe("工具结果内联修剪", () => {
   });
 });
 
+describe("旧图片卸载", () => {
+  function imageMessage(source: string): HumanMessage {
+    return new HumanMessage({
+      content: [
+        { type: "text", text: `查看 ${source}` },
+        { type: "image_url", image_url: { url: `data:image/png;base64,${source}` } },
+      ] as never,
+    });
+  }
+
+  it("只保留最近一张图片，较早图片换成文字占位", async () => {
+    const first = imageMessage("first");
+    const second = imageMessage("second");
+    const third = imageMessage("third");
+    const result = await runMiddleware(
+      createToolResultPruneMiddleware(1_000, 1),
+      [first, second, third],
+    );
+    const parts = result.messages as unknown as Array<{
+      content: Array<{ type: string; text?: string }>;
+    }>;
+    const firstPart = parts[0] as {
+      content: Array<{ type: string; text?: string }>;
+    };
+    const secondPart = parts[1] as {
+      content: Array<{ type: string; text?: string }>;
+    };
+    expect(firstPart.content.map((part) => part.type)).toEqual([
+      "text",
+      "text",
+    ]);
+    expect(firstPart.content[0]?.text).toBe("查看 first");
+    expect(firstPart.content[1]?.text).toContain("较早的图片已省略");
+    expect(secondPart.content.map((part) => part.type)).toEqual([
+      "text",
+      "text",
+    ]);
+    const thirdPart = result.messages[2] as unknown as {
+      content: Array<{ type: string }>;
+    };
+    expect(thirdPart.content.map((part) => part.type)).toEqual([
+      "text",
+      "image_url",
+    ]);
+    expect(result.messages[2]).toBe(third);
+  });
+
+  it("保留为零时卸载全部图片，并保留工具消息身份", async () => {
+    const tool = new ToolMessage({
+      content: [
+        { type: "text", text: "截图结果" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,x" } },
+      ] as never,
+      tool_call_id: "call-image",
+      name: "Screenshot",
+    });
+    const result = await runMiddleware(
+      createToolResultPruneMiddleware(1_000, 0),
+      [tool],
+    );
+    const unloaded = result.messages[0] as unknown as {
+      content: Array<{ type: string }>;
+      tool_call_id: string;
+      name: string;
+    };
+    expect(unloaded.content.map((part) => part.type)).toEqual([
+      "text",
+      "text",
+    ]);
+    expect(unloaded.tool_call_id).toBe("call-image");
+    expect(unloaded.name).toBe("Screenshot");
+  });
+
+  it("图片张数未超限时不改写消息", async () => {
+    const first = imageMessage("a");
+    const second = imageMessage("b");
+    const result = await runMiddleware(
+      createToolResultPruneMiddleware(1_000, 2),
+      [first, second],
+    );
+    expect(result.messages[0]).toBe(first);
+    expect(result.messages[1]).toBe(second);
+  });
+
+  it("不认识的内容块与字符串消息保持原样", async () => {
+    const human = new HumanMessage("纯文本");
+    const result = await runMiddleware(
+      createToolResultPruneMiddleware(1_000, 0),
+      [human],
+    );
+    expect(result.messages[0]).toBe(human);
+  });
+});
+
 describe("工具结果修剪中间件", () => {
   it("只修剪工具消息，人类与模型消息保持原样", async () => {
     const longText = "z".repeat(5_000);

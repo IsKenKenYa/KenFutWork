@@ -150,4 +150,20 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
 
     expect(resolveGovernanceEnvOverrides({})).toEqual({});
   });
+
+  it("旧图片卸载张数：默认值与 env 覆盖（0 有效）", () => {
+    expect(resolveGovernanceNumber("contextKeepRecentImages", null, {})).toBe(
+      2,
+    );
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES: "0",
+      }),
+    ).toEqual({ contextKeepRecentImages: 0 });
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES: "abc",
+      }),
+    ).toEqual({});
+  });
 });

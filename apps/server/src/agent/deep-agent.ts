@@ -352,6 +352,11 @@ export type KenFutWorkAgentFactory = (options: {
    * 值来自治理设置 `processPreviewMaxChars`；缺省不修剪。
    */
   toolResultInlineMaxChars?: number;
+  /**
+   * 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。
+   * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
+   */
+  contextKeepRecentImages?: number;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
@@ -412,6 +417,11 @@ export function createKenFutWorkDeepAgent(options: {
    * 值来自治理设置 `processPreviewMaxChars`；缺省不修剪。
    */
   toolResultInlineMaxChars?: number;
+  /**
+   * 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。
+   * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
+   */
+  contextKeepRecentImages?: number;
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   compactionRetention?: CompactionRetention;
@@ -768,6 +778,7 @@ export function createKenFutWorkDeepAgent(options: {
               : [
                   createToolResultPruneMiddleware(
                     options.toolResultInlineMaxChars,
+                    options.contextKeepRecentImages,
                   ),
                 ]),
             ...summarizationMiddleware,
@@ -801,6 +812,7 @@ export function createKenFutWorkDeepAgent(options: {
               : [
                   createToolResultPruneMiddleware(
                     options.toolResultInlineMaxChars,
+                    options.contextKeepRecentImages,
                   ),
                 ]),
             ...summarizationMiddleware,
