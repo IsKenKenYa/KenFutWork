@@ -23,8 +23,185 @@ index 76e7dc4..5b99756 100644
              continue;
          }
          let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;
+diff --git a/crates/ui-egui/src/align_tests.rs b/crates/ui-egui/src/align_tests.rs
+index 969ef2f..e099fbf 100644
+--- a/crates/ui-egui/src/align_tests.rs
++++ b/crates/ui-egui/src/align_tests.rs
+@@ -38,21 +38,21 @@ fn harness(select: &[usize]) -> (Harness<'static, SlideApp>, Vec<ShapeId>) {
+ }
+
+ fn pick(h: &mut Harness<'_, SlideApp>, item: &str) {
+-    h.get_by_label("Align").click();
++    h.get_by_label(crate::i18n::tr("Align")).click();
+     h.run_steps(2);
+-    h.get_by_label(item).click();
++    h.get_by_label(crate::i18n::tr(item)).click();
+     h.run_steps(2);
+ }
+
+ fn marked(h: &mut Harness<'_, SlideApp>) -> (bool, bool) {
+-    h.get_by_label("Align").click();
++    h.get_by_label(crate::i18n::tr("Align")).click();
+     h.run_steps(2);
+     let m = (
+         h.get_by_label("Align to Slide").accesskit_node().toggled() == Some(Toggled::True),
+         h.get_by_label("Align Selected Objects").accesskit_node().toggled() == Some(Toggled::True),
+     );
+     // Esc would also clear the selection: a second click on Align closes the menu.
+-    h.get_by_label("Align").click();
++    h.get_by_label(crate::i18n::tr("Align")).click();
+     h.run_steps(2);
+     m
+ }
+diff --git a/crates/ui-egui/src/backstage_tests.rs b/crates/ui-egui/src/backstage_tests.rs
+index 7b86b1a..b83966e 100644
+--- a/crates/ui-egui/src/backstage_tests.rs
++++ b/crates/ui-egui/src/backstage_tests.rs
+@@ -101,18 +101,18 @@ fn page_ids_round_trip_and_unknown_ids_are_refused() {
+ fn the_file_tab_opens_the_backstage_and_esc_or_back_returns() {
+     let mut h = harness(new_app());
+     assert!(h.query_by_label("Blank Presentation").is_none(), "the slide shows first");
+-    h.get_by_label("File").click();
++    h.get_by_label(crate::i18n::tr("File")).click();
+     h.run_steps(3);
+     assert_eq!(page(&h), Some(Page::Home));
+     assert!(h.state().backstage_open());
+     assert!(h.query_by_label("Blank Presentation").is_some(), "Home offers new presentations");
+-    assert!(h.query_by_label("File").is_none(), "the ribbon is hidden");
++    assert!(h.query_by_label(crate::i18n::tr("File")).is_none(), "the ribbon is hidden");
+     h.key_press(Key::Escape);
+     h.run_steps(3);
+     assert!(!h.state().backstage_open(), "Esc goes back to the slide");
+-    assert!(h.query_by_label("File").is_some());
++    assert!(h.query_by_label(crate::i18n::tr("File")).is_some());
+
+-    h.get_by_label("File").click();
++    h.get_by_label(crate::i18n::tr("File")).click();
+     h.run_steps(3);
+     h.get_by_label("Back").click();
+     h.run_steps(3);
+@@ -349,13 +349,13 @@ fn close_closes_and_asks_about_unsaved_changes() {
+     click_nav(&h, "Close");
+     h.run_steps(3);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("close"));
+-    h.get_by_label("Cancel").click();
++    h.get_by_label(crate::i18n::tr("Cancel")).click();
+     h.run_steps(3);
+     assert_eq!(h.state().session.documents().len(), 1);
+     assert!(h.state().backstage_open(), "Cancel leaves the File tab as it was");
+     click_nav(&h, "Close");
+     h.run_steps(3);
+-    h.get_by_label("Don't Save").click();
++    h.get_by_label(crate::i18n::tr("Don't Save")).click();
+     h.run_steps(3);
+     assert_eq!(h.state().session.documents().len(), 0);
+ }
+@@ -566,14 +566,14 @@ fn print_slides_follow_the_settings() {
+ #[test]
+ fn options_in_backstage_opens_preferences_and_cancel_closes_it() {
+     let mut h = harness(new_app());
+-    h.get_by_label("File").click();
++    h.get_by_label(crate::i18n::tr("File")).click();
+     h.run_steps(3);
+     assert!(h.state().backstage_open());
+     h.get_by_label("Options").click();
+     h.run_steps(3);
+     assert!(h.state().dialog.is_some(), "Options opens Preferences dialog");
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("preferences"));
+-    h.query_all_by_role_and_label(Role::Button, "Cancel").next().expect("Cancel button").click_accesskit();
++    h.query_all_by_role_and_label(Role::Button, crate::i18n::tr("Cancel")).next().expect("Cancel button").click_accesskit();
+     h.run_steps(3);
+     assert!(h.state().dialog.is_none(), "Cancel closes Preferences dialog");
+     assert!(h.state().backstage_open(), "Backstage remains open");
+diff --git a/crates/ui-egui/src/browsetheme_tests.rs b/crates/ui-egui/src/browsetheme_tests.rs
+index cb65ec5..9c5515d 100644
+--- a/crates/ui-egui/src/browsetheme_tests.rs
++++ b/crates/ui-egui/src/browsetheme_tests.rs
+@@ -41,7 +41,7 @@ fn browse_button_applies_the_picked_files_theme() {
+         app,
+     );
+     h.run_steps(3);
+-    h.get_by_label("Browse for Themes…").click();
++    h.get_by_label(crate::i18n::tr("Browse for Themes…")).click();
+     h.run_steps(3);
+     assert_eq!(asked.borrow().as_slice(), ["theme"]);
+     assert_eq!(h.state().session.active().unwrap().doc.masters[0].theme.fonts.major.latin, "Lato");
+diff --git a/crates/ui-egui/src/columns_dialog_tests.rs b/crates/ui-egui/src/columns_dialog_tests.rs
+index 7737031..50702e0 100644
+--- a/crates/ui-egui/src/columns_dialog_tests.rs
++++ b/crates/ui-egui/src/columns_dialog_tests.rs
+@@ -61,7 +61,7 @@ fn ok_with(h: &mut Harness<'_, SlideApp>, fields: &[(&str, &str)]) {
+     for (key, value) in fields {
+         d.fields.insert((*key).into(), (*value).into());
+     }
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status {:?}", h.state().status);
+ }
+@@ -98,9 +98,9 @@ fn more_columns_sets_the_number_and_spacing_in_one_undo() {
+     let mut h = harness();
+     h.state_mut().session.execute("format.columns", &json!({"count": 3, "spacing": 9.0})).unwrap();
+     h.run_steps(2);
+-    h.get_by_label("Columns").click();
++    h.get_by_label(crate::i18n::tr("Columns")).click();
+     h.run_steps(2);
+-    h.get_by_label("More Columns…").click();
++    h.get_by_label(crate::i18n::tr("More Columns…")).click();
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("columns"), "status {:?}", h.state().status);
+     assert_eq!(field(&h, "count").as_deref(), Some("3"));
+@@ -111,7 +111,7 @@ fn more_columns_sets_the_number_and_spacing_in_one_undo() {
+         d.fields.insert("spacing".into(), "0.5".into());
+     }
+     let n = h.state().session.active().unwrap().history.undo.len();
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status {:?}", h.state().status);
+     assert_eq!(columns_of(&h), (Some(2), Some(36.0)));
+@@ -128,7 +128,7 @@ fn ok_with_the_spacing_unchanged_keeps_the_exact_spacing() {
+     h.run_steps(2);
+     assert_eq!(field(&h, "spacing").as_deref(), Some("0.12"), "shown rounded to two places");
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("count".into(), "4".into());
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status {:?}", h.state().status);
+     assert_eq!(columns_of(&h), (Some(4), Some(9.0)));
+@@ -158,7 +158,7 @@ fn a_bad_number_keeps_the_dialog_open_and_changes_nothing() {
+             d.fields.insert("count".into(), count.into());
+             d.fields.insert("spacing".into(), spacing.into());
+         }
+-        h.get_by_label("OK").click_accesskit();
++        h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+         h.run_steps(2);
+         assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("columns"), "{count} / {spacing}");
+         assert!(field(&h, "error").is_some_and(|e| !e.is_empty()), "{count} / {spacing}");
+diff --git a/crates/ui-egui/src/datetime_tests.rs b/crates/ui-egui/src/datetime_tests.rs
+index c955aa2..5f3113b 100644
+--- a/crates/ui-egui/src/datetime_tests.rs
++++ b/crates/ui-egui/src/datetime_tests.rs
+@@ -51,7 +51,7 @@ fn insert_opens_the_dialog_and_ok_inserts_one_field() {
+     let sample = deckcraft_text::datetime::field_text("datetime2", Some("en-US"), now).unwrap();
+     h.get_by_label(&sample).click();
+     h.run_steps(1);
+-    h.get_by_label("OK").click();
++    h.get_by_label(crate::i18n::tr("OK")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     let run = date_run(&h).unwrap();
+@@ -70,7 +70,7 @@ fn cancel_closes_the_dialog_without_a_date() {
+     let mut h = harness();
+     h.get_by_label("Date & Time").click();
+     h.run_steps(2);
+-    h.get_by_label("Cancel").click();
++    h.get_by_label(crate::i18n::tr("Cancel")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     assert!(date_run(&h).is_none());
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 7c0f8ab..f5cc571 100644
+index 7c0f8ab..86a01aa 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
 @@ -6,6 +6,7 @@ use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
@@ -545,9 +722,91 @@ index 7c0f8ab..f5cc571 100644
              d.fields.remove("cur");
          } else {
              let n = d.get("next", "0").parse::<usize>().unwrap_or(0) % list.len();
+@@ -3588,7 +3591,7 @@ mod tests {
+         assert_eq!(date_fields(harness.state()), vec!["datetime4".to_string()]);
+         harness.state_mut().run("app.dialog", json!({"id": "headerFooter"})).unwrap();
+         harness.run_steps(2);
+-        harness.get_by_label("Apply").click_accesskit();
++        harness.get_by_label(crate::i18n::tr("Apply")).click_accesskit();
+         harness.run_steps(3);
+         assert_eq!(date_fields(harness.state()), vec!["datetime4".to_string()], "the dialog left the field's format alone");
+     }
+@@ -3923,7 +3926,7 @@ mod about_credits_tests {
+         h.run_steps(4);
+         assert_eq!(tab_of(&h), "about");
+         for label in ["Contributors", "Models", "About", "Models", "Contributors"] {
+-            h.get_by_label(label).click();
++            h.get_by_label(crate::i18n::tr(label)).click();
+             h.run_steps(3);
+             assert_eq!(tab_of(&h), label.to_lowercase(), "clicking {label} switches the tab");
+         }
+diff --git a/crates/ui-egui/src/drawtable_tests.rs b/crates/ui-egui/src/drawtable_tests.rs
+index dac1be1..07448de 100644
+--- a/crates/ui-egui/src/drawtable_tests.rs
++++ b/crates/ui-egui/src/drawtable_tests.rs
+@@ -43,9 +43,9 @@ fn draw_a_table_split_it_and_erase_the_border() {
+         app,
+     );
+     h.run_steps(3);
+-    h.get_by_label("Table").click();
++    h.get_by_label(crate::i18n::tr("Table")).click();
+     h.run_steps(2);
+-    h.get_by_label("Draw Table").click();
++    h.get_by_label(crate::i18n::tr("Draw Table")).click();
+     h.run_steps(2);
+     let (slide, k) = (h.state().slide_rect.unwrap(), h.state().canvas_scale);
+     let at = |x: f32, y: f32| slide.min + egui::vec2(x * k, y * k);
+diff --git a/crates/ui-egui/src/eyedropper_tests.rs b/crates/ui-egui/src/eyedropper_tests.rs
+index cc4687b..93e68e8 100644
+--- a/crates/ui-egui/src/eyedropper_tests.rs
++++ b/crates/ui-egui/src/eyedropper_tests.rs
+@@ -134,9 +134,9 @@ fn set_transparent_color_takes_the_colour_clicked_in_the_picture() {
+     h.run_steps(4);
+     // A colour menu opened earlier (Shape Fill, say) must not receive the colour.
+     note_open_menu(&h.ctx, menu());
+-    h.get_by_label("Color").click();
++    h.get_by_label(crate::i18n::tr("Color")).click();
+     h.run_steps(3);
+-    h.get_by_label("Set Transparent Color").click();
++    h.get_by_label(crate::i18n::tr("Set Transparent Color")).click();
+     h.run_steps(3);
+     assert!(h.state().eyedropper.is_some(), "the command arms the pointer");
+     let blue_half = at(&h, 450.0, 200.0);
+diff --git a/crates/ui-egui/src/font_dialog_tests.rs b/crates/ui-egui/src/font_dialog_tests.rs
+index 06ccfc0..f335d94 100644
+--- a/crates/ui-egui/src/font_dialog_tests.rs
++++ b/crates/ui-egui/src/font_dialog_tests.rs
+@@ -37,15 +37,15 @@ fn bold_of(h: &Harness<'_, SlideApp>) -> Option<bool> {
+ #[test]
+ fn font_button_applies_bold_from_the_dialog() {
+     let mut h = harness();
+-    h.get_by_label("Font…").click();
++    h.get_by_label(crate::i18n::tr("Font…")).click();
+     // The opening frame ignores the click that summoned the window; the next one is live.
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("font"));
+     // A pointer click on this checkbox does not register through kittest's per-event frames;
+     // the accessibility click does, and it is the same toggle a pointer click runs.
+-    h.get_by_label("Bold").click_accesskit();
++    h.get_by_label(crate::i18n::tr("Bold")).click_accesskit();
+     h.run_steps(1);
+-    h.get_by_label("OK").click();
++    h.get_by_label(crate::i18n::tr("OK")).click();
+     h.run_steps(1);
+     assert!(h.state().dialog.is_none(), "status {:?}", h.state().status);
+     assert_eq!(bold_of(&h), Some(true));
+@@ -58,7 +58,7 @@ fn command_t_opens_the_font_dialog_and_cancel_keeps_the_text() {
+     h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+     h.run_steps(1);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("font"), "status {:?}", h.state().status);
+-    h.get_by_label("Cancel").click();
++    h.get_by_label(crate::i18n::tr("Cancel")).click();
+     h.run_steps(1);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(bold_of(&h), None);
 diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
 new file mode 100644
-index 0000000..da24df7
+index 0000000..d28e79a
 --- /dev/null
 +++ b/crates/ui-egui/src/i18n.rs
 @@ -0,0 +1,547 @@
@@ -1098,8 +1357,86 @@ index 0000000..da24df7
 +        }
 +    }
 +}
+diff --git a/crates/ui-egui/src/icons_popup_tests.rs b/crates/ui-egui/src/icons_popup_tests.rs
+index 63b5886..414dfbd 100644
+--- a/crates/ui-egui/src/icons_popup_tests.rs
++++ b/crates/ui-egui/src/icons_popup_tests.rs
+@@ -19,7 +19,7 @@ fn clicking_inside_the_icons_popup_keeps_it_open() {
+         app,
+     );
+     h.run_steps(3);
+-    h.get_by_label("Icons").click();
++    h.get_by_label(crate::i18n::tr("Icons")).click();
+     h.run_steps(3);
+     // A category heading is plain popup content, like the search box: a click on it is a click inside.
+     let first = deckcraft_engine::icons::icons().first().expect("the icon gallery is empty");
+diff --git a/crates/ui-egui/src/inktoshape_tests.rs b/crates/ui-egui/src/inktoshape_tests.rs
+index ce7875a..c5209e1 100644
+--- a/crates/ui-egui/src/inktoshape_tests.rs
++++ b/crates/ui-egui/src/inktoshape_tests.rs
+@@ -46,7 +46,7 @@ fn pen_a_rectangle_then_ink_to_shape() {
+         h.state().session.active().unwrap().shapes().iter().any(|s| matches!(s.kind, deckcraft_model::ShapeKind::Ink { .. }))
+     };
+     assert!(has_ink(&h), "the pen drew a stroke");
+-    h.get_by_label("Ink to Shape").click();
++    h.get_by_label(&crate::i18n::tr("Ink to\nShape").replace('\n', " ")).click();
+     h.run_steps(3);
+     assert!(!has_ink(&h), "the only stroke became a shape");
+     let st = h.state().session.active().unwrap();
+diff --git a/crates/ui-egui/src/last_color_tests.rs b/crates/ui-egui/src/last_color_tests.rs
+index 511a52c..36dfcad 100644
+--- a/crates/ui-egui/src/last_color_tests.rs
++++ b/crates/ui-egui/src/last_color_tests.rs
+@@ -44,7 +44,7 @@ fn select(h: &mut Harness<'static, SlideApp>, id: ShapeId) {
+
+ /// Open the drop-down arrow of a split button, type a hex colour into "More Colors…" and press Enter.
+ fn pick_hex(h: &mut Harness<'static, SlideApp>, button: &str, hex: &str) {
+-    let r = h.get_by_label(button).rect();
++    let r = h.get_by_label(crate::i18n::tr(button)).rect();
+     let arrow = egui::pos2(r.max.x - 5.0, r.center().y);
+     h.input_mut().events.push(Event::PointerMoved(arrow));
+     h.run_steps(2);
+@@ -54,7 +54,7 @@ fn pick_hex(h: &mut Harness<'static, SlideApp>, button: &str, hex: &str) {
+     }
+     h.run_steps(2);
+     // The hex field is the text input on the "More Colors… #" label's row, to its right.
+-    let label = h.get_by_label("More Colors… #").rect();
++    let label = h.get_by_label(crate::i18n::tr("More Colors… #")).rect();
+     let field = h
+         .get_all_by_role(egui::accesskit::Role::TextInput)
+         .filter(|n| n.rect().min.x >= label.max.x - 1.0 && (n.rect().center().y - label.center().y).abs() < 6.0)
+@@ -100,7 +100,7 @@ fn fill_reapplies(tab: &str) {
+     assert_eq!(fill_rgb(&h, a).as_deref(), Some("00AA55"), "the menu pick applies to the selection");
+     select(&mut h, b);
+     assert_eq!(fill_rgb(&h, b).as_deref(), Some("FF0000"), "selecting alone changes nothing");
+-    h.get_by_label("Shape Fill").click();
++    h.get_by_label(crate::i18n::tr("Shape Fill")).click();
+     h.run_steps(3);
+     assert_eq!(fill_rgb(&h, b).as_deref(), Some("00AA55"), "the button applies the last colour, not Accent 1");
+ }
+@@ -111,7 +111,7 @@ fn outline_reapplies(tab: &str) {
+     assert_eq!(line_rgb(&h, a).as_deref(), Some("AA5500"), "the menu pick applies to the selection");
+     select(&mut h, b);
+     assert_eq!(line_rgb(&h, b).as_deref(), Some("0000FF"), "selecting alone changes nothing");
+-    h.get_by_label("Shape Outline").click();
++    h.get_by_label(crate::i18n::tr("Shape Outline")).click();
+     h.run_steps(3);
+     assert_eq!(line_rgb(&h, b).as_deref(), Some("AA5500"), "the button applies the last colour, not Text 1");
+     assert_eq!(line_width(&h, b), Some(3.0), "recolouring leaves the weight alone");
+@@ -140,9 +140,9 @@ fn shape_format_shape_outline_button_reapplies_the_last_colour() {
+ #[test]
+ fn before_any_pick_the_buttons_still_apply_accent_1_and_text_1() {
+     let (mut h, [a, _]) = harness("Home");
+-    h.get_by_label("Shape Fill").click();
++    h.get_by_label(crate::i18n::tr("Shape Fill")).click();
+     h.run_steps(3);
+-    h.get_by_label("Shape Outline").click();
++    h.get_by_label(crate::i18n::tr("Shape Outline")).click();
+     h.run_steps(3);
+     let sh = h.state().session.active().unwrap().shape(a).unwrap();
+     let slot = |f: &Option<Fill>| match f {
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index e3f4acb..56e6c68 100644
+index e3f4acb..75806d1 100644
 --- a/crates/ui-egui/src/lib.rs
 +++ b/crates/ui-egui/src/lib.rs
 @@ -15,6 +15,7 @@ pub mod dialogs;
@@ -1110,8 +1447,97 @@ index e3f4acb..56e6c68 100644
  pub mod icons;
  pub mod media;
  pub mod menus;
+@@ -2720,7 +2721,7 @@ mod tests {
+             .unwrap_or_else(|| panic!("no grid checkbox"));
+         show_grid.click_accesskit();
+         harness.run_steps(2);
+-        harness.query_all_by_role_and_label(egui::accesskit::Role::Button, "OK").next().unwrap_or_else(|| panic!("no OK button")).click_accesskit();
++        harness.query_all_by_role_and_label(egui::accesskit::Role::Button, crate::i18n::tr("OK")).next().unwrap_or_else(|| panic!("no OK button")).click_accesskit();
+         harness.run_steps(2);
+         assert!(harness.state().dialog.is_none(), "OK closes Grid Options");
+         assert!(harness.state().ui.gridlines, "OK applies the grid checkbox");
+@@ -2729,7 +2730,7 @@ mod tests {
+         harness.state_mut().run("view.gridOptions", json!({})).unwrap();
+         harness.run_steps(2);
+         harness
+-            .query_all_by_role_and_label(egui::accesskit::Role::Button, "Cancel")
++            .query_all_by_role_and_label(egui::accesskit::Role::Button, crate::i18n::tr("Cancel"))
+             .next()
+             .unwrap_or_else(|| panic!("no Cancel button"))
+             .click_accesskit();
+@@ -2778,7 +2779,7 @@ mod tests {
+
+         change(&mut harness);
+         harness
+-            .query_all_by_role_and_label(egui::accesskit::Role::Button, "Cancel")
++            .query_all_by_role_and_label(egui::accesskit::Role::Button, crate::i18n::tr("Cancel"))
+             .next()
+             .unwrap_or_else(|| panic!("no Cancel button"))
+             .click_accesskit();
+@@ -2792,7 +2793,7 @@ mod tests {
+
+         change(&mut harness);
+         harness
+-            .query_all_by_role_and_label(egui::accesskit::Role::Button, "Done")
++            .query_all_by_role_and_label(egui::accesskit::Role::Button, crate::i18n::tr("Done"))
+             .next()
+             .unwrap_or_else(|| panic!("no Done button"))
+             .click_accesskit();
+@@ -2820,7 +2821,7 @@ mod tests {
+         harness.run_steps(2);
+         assert!(harness.state().dialog.is_some());
+         harness
+-            .query_all_by_role_and_label(egui::accesskit::Role::Button, "Cancel")
++            .query_all_by_role_and_label(egui::accesskit::Role::Button, crate::i18n::tr("Cancel"))
+             .next()
+             .unwrap_or_else(|| panic!("no Cancel button in About dialog"))
+             .click_accesskit();
+@@ -2831,7 +2832,7 @@ mod tests {
+         harness.run_steps(2);
+         assert!(harness.state().dialog.is_some());
+         harness
+-            .query_all_by_role_and_label(egui::accesskit::Role::Button, "Close")
++            .query_all_by_role_and_label(egui::accesskit::Role::Button, crate::i18n::tr("Close"))
+             .next()
+             .unwrap_or_else(|| panic!("no Close button in About dialog"))
+             .click_accesskit();
+@@ -3139,7 +3140,7 @@ mod tests {
+         harness.run_steps(4);
+         harness.get_by_label("Français (France)").click();
+         harness.run_steps(2);
+-        harness.get_by_label("OK").click();
++        harness.get_by_label(crate::i18n::tr("OK")).click();
+         harness.run_steps(2);
+         assert!(harness.state().dialog.is_none());
+         let d = harness.state().session.active().unwrap();
+diff --git a/crates/ui-egui/src/master_layout_tests.rs b/crates/ui-egui/src/master_layout_tests.rs
+index d4f5efa..7a90e47 100644
+--- a/crates/ui-egui/src/master_layout_tests.rs
++++ b/crates/ui-egui/src/master_layout_tests.rs
+@@ -32,7 +32,7 @@ fn app_on_blank() -> (SlideApp, usize) {
+ }
+
+ fn click_check(h: &mut Harness<'_, SlideApp>, label: &str) {
+-    h.query_all_by_role_and_label(Role::CheckBox, label).next().unwrap_or_else(|| panic!("no {label} checkbox")).click();
++    h.query_all_by_role_and_label(Role::CheckBox, crate::i18n::tr(label)).next().unwrap_or_else(|| panic!("no {label} checkbox")).click();
+     h.run_steps(3);
+ }
+
+@@ -40,9 +40,9 @@ fn click_check(h: &mut Harness<'_, SlideApp>, label: &str) {
+ fn slide_master_preserve_title_and_footers() {
+     let (app, blank) = app_on_blank();
+     let mut h = harness(app);
+-    assert!(h.query_all_by_role_and_label(Role::CheckBox, "Preserve").next().is_some());
+-    assert!(h.query_all_by_role_and_label(Role::CheckBox, "Title").next().is_some());
+-    assert!(h.query_all_by_role_and_label(Role::CheckBox, "Footers").next().is_some());
++    assert!(h.query_all_by_role_and_label(Role::CheckBox, crate::i18n::tr("Preserve")).next().is_some());
++    assert!(h.query_all_by_role_and_label(Role::CheckBox, crate::i18n::tr("Title")).next().is_some());
++    assert!(h.query_all_by_role_and_label(Role::CheckBox, crate::i18n::tr("Footers")).next().is_some());
+     {
+         let st = h.state().session.doc().unwrap();
+         assert!(st.doc.masters[0].layouts[blank].preserve);
 diff --git a/crates/ui-egui/src/panes.rs b/crates/ui-egui/src/panes.rs
-index 17af49b..aade1a6 100644
+index 17af49b..9339f82 100644
 --- a/crates/ui-egui/src/panes.rs
 +++ b/crates/ui-egui/src/panes.rs
 @@ -34,7 +34,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
@@ -1123,17 +1549,181 @@ index 17af49b..aade1a6 100644
                  ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                      let (r, resp) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
                      if resp.hovered() {
-@@ -1262,4 +1262,4 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
+@@ -1261,7 +1261,7 @@ fn revisions(app: &mut SlideApp, ui: &mut Ui) {
+
  fn comments(app: &mut SlideApp, ui: &mut Ui) {
      let t = Tokens::get(ui.ctx());
 -    if ui.button("+ New Comment").clicked() {
 +    if ui.button(crate::i18n::tr("+ New Comment")).clicked() {
          app.dialog = Some(crate::dialogs::Dialog::new("comment"));
-@@ -1273,3 +1273,3 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
+     }
+     ui.separator();
+@@ -1271,7 +1271,7 @@ fn comments(app: &mut SlideApp, ui: &mut Ui) {
+         .map(|st| st.doc.slides.iter().enumerate().filter(|(_, sl)| !sl.comments.is_empty()).map(|(i, sl)| (i, sl.comments.clone())).collect())
+         .unwrap_or_default();
      if threads.is_empty() {
 -        ui.label(egui::RichText::new("No comments.").color(t.text_dim));
 +        ui.label(egui::RichText::new(crate::i18n::tr("No comments.")).color(t.text_dim));
          return;
+     }
+     let focus = app.ui.comment_focus;
+diff --git a/crates/ui-egui/src/paragraph_dialog_tests.rs b/crates/ui-egui/src/paragraph_dialog_tests.rs
+index fb8e796..cfaa913 100644
+--- a/crates/ui-egui/src/paragraph_dialog_tests.rs
++++ b/crates/ui-egui/src/paragraph_dialog_tests.rs
+@@ -49,11 +49,11 @@ fn tabs_of(h: &Harness<'_, SlideApp>) -> Vec<(f64, String)> {
+ #[test]
+ fn paragraph_button_aligns_text_in_one_undo() {
+     let mut h = harness();
+-    h.get_by_label("Paragraph…").click();
++    h.get_by_label(crate::i18n::tr("Paragraph…")).click();
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("paragraph"));
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("align".into(), "right".into());
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     h.run_steps(1);
+     assert!(h.state().dialog.is_none(), "status {:?}", h.state().status);
+     assert_eq!(align_of(&h).as_deref(), Some("r"));
+@@ -63,24 +63,24 @@ fn paragraph_button_aligns_text_in_one_undo() {
+ #[test]
+ fn tabs_from_paragraph_applies_a_stop_and_returns() {
+     let mut h = harness();
+-    h.get_by_label("Paragraph…").click();
++    h.get_by_label(crate::i18n::tr("Paragraph…")).click();
+     h.run_steps(2);
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("align".into(), "right".into());
+-    h.get_by_label("Tabs…").click_accesskit();
++    h.get_by_label(crate::i18n::tr("Tabs…")).click_accesskit();
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("tabs"), "status {:?}", h.state().status);
+     {
+         let d = h.state_mut().dialog.as_mut().unwrap();
+         d.fields.insert("stops".into(), "2:ctr".into());
+     }
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     // The Tabs OK frame restores Paragraph; the next frame fills its fields.
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("paragraph"), "status {:?}", h.state().status);
+     assert_eq!(h.state().dialog.as_ref().unwrap().fields.get("align").map(String::as_str), Some("right"));
+     assert_eq!(tabs_of(&h), vec![(144.0, "ctr".into())]);
+     assert_eq!(h.state().session.active().unwrap().history.undo.last().unwrap().label, "Tabs…");
+-    h.get_by_label("Cancel").click_accesskit();
++    h.get_by_label(crate::i18n::tr("Cancel")).click_accesskit();
+     h.run_steps(1);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(align_of(&h).as_deref(), Some("ctr"), "cancelling Paragraph leaves the alignment shape.insert wrote");
+diff --git a/crates/ui-egui/src/pattern_fill_tests.rs b/crates/ui-egui/src/pattern_fill_tests.rs
+index 66ad4a8..51146e4 100644
+--- a/crates/ui-egui/src/pattern_fill_tests.rs
++++ b/crates/ui-egui/src/pattern_fill_tests.rs
+@@ -52,10 +52,10 @@ fn background_pattern(h: &Harness<'_, SlideApp>) -> PatternFill {
+
+ /// Open the color menu named `button` and pick `hex` from its More Colors field.
+ fn pick_hex(h: &mut Harness<'_, SlideApp>, button: &str, hex: &str) {
+-    h.get_by_label(button).click();
++    h.get_by_label(crate::i18n::tr(button)).click();
+     h.run_steps(2);
+     // The hex field is the text input on the "More Colors… #" label's row, to its right.
+-    let label = h.get_by_label("More Colors… #").rect();
++    let label = h.get_by_label(crate::i18n::tr("More Colors… #")).rect();
+     let field = h
+         .get_all_by_role(Role::TextInput)
+         .find(|n| n.rect().min.x >= label.max.x - 1.0 && (n.rect().center().y - label.center().y).abs() < 6.0)
+diff --git a/crates/ui-egui/src/photo_album_tests.rs b/crates/ui-egui/src/photo_album_tests.rs
+index b97abe4..0962490 100644
+--- a/crates/ui-egui/src/photo_album_tests.rs
++++ b/crates/ui-egui/src/photo_album_tests.rs
+@@ -56,13 +56,13 @@ fn create_inserts_the_album_in_one_step() {
+     let mut app = SlideApp::new(Session::with_new(), services);
+     app.run("insert.photoAlbum", json!({})).expect("open");
+     let mut h = harness(app);
+-    h.get_by_label("Add Pictures…").click();
++    h.get_by_label(crate::i18n::tr("Add Pictures…")).click();
+     h.run_steps(2);
+     assert!(h.query_by_label("cat.png").is_some(), "the chosen file is listed");
+-    h.get_by_label("New Text Box").click();
++    h.get_by_label(crate::i18n::tr("New Text Box")).click();
+     h.run_steps(2);
+     assert!(h.query_by_label("Text: Text Box").is_some());
+-    h.get_by_label("Create").click();
++    h.get_by_label(crate::i18n::tr("Create")).click();
+     h.run_steps(4);
+     assert!(h.state().dialog.is_none(), "Create closes the dialog");
+     assert_eq!(slides(&h), 3);
+@@ -86,14 +86,14 @@ fn update_reflows_the_open_album() {
+     app.run("insert.photoAlbumEdit", json!({})).expect("edit");
+     let mut h = harness(app);
+     assert!(h.query_by_label("hill.png").is_some(), "the album's pictures are listed");
+-    assert!(h.query_by_label("Update").is_some());
++    assert!(h.query_by_label(crate::i18n::tr("Update")).is_some());
+     h.get_by_label("ALL pictures black and white").click();
+     h.run_steps(2);
+-    h.get_by_label("1 picture").click();
++    h.get_by_label(crate::i18n::tr("1 picture")).click();
+     h.run_steps(2);
+-    h.get_by_label("2 pictures").click();
++    h.get_by_label(crate::i18n::tr("2 pictures")).click();
+     h.run_steps(2);
+-    h.get_by_label("Update").click();
++    h.get_by_label(crate::i18n::tr("Update")).click();
+     h.run_steps(4);
+     assert!(h.state().dialog.is_none(), "Update closes the dialog");
+     assert_eq!(slides(&h), 2);
+@@ -116,7 +116,7 @@ fn create_with_nothing_keeps_the_dialog() {
+     let mut app = SlideApp::new(Session::with_new(), Services::default());
+     app.run("insert.photoAlbum", json!({})).expect("open");
+     let mut h = harness(app);
+-    h.get_by_label("Create").click();
++    h.get_by_label(crate::i18n::tr("Create")).click();
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("photoAlbum"));
+     assert_eq!(slides(&h), 1);
+diff --git a/crates/ui-egui/src/preferences_tests.rs b/crates/ui-egui/src/preferences_tests.rs
+index a0e4cba..c876aff 100644
+--- a/crates/ui-egui/src/preferences_tests.rs
++++ b/crates/ui-egui/src/preferences_tests.rs
+@@ -47,7 +47,7 @@ fn options_cancel_undoes_the_changes() {
+     h.run_steps(2);
+     assert_eq!(h.state().session.prefs.smart_guides, !was, "the change applies as it is made");
+
+-    h.query_by_label("Cancel").expect("the Cancel button is there").click();
++    h.query_by_label(crate::i18n::tr("Cancel")).expect("the Cancel button is there").click();
+     h.run_steps(2);
+     assert_eq!(h.state().session.prefs.smart_guides, was, "Cancel restores the setting");
+     assert!(h.state().dialog.is_none(), "and the dialog closes");
+@@ -80,7 +80,7 @@ fn options_cancel_undoes_every_editing_setting() {
+     );
+     assert_ne!(changed.author, before.author, "the name applies as it is typed: {:?}", changed.author);
+
+-    h.query_by_label("Cancel").expect("the Cancel button is there").click();
++    h.query_by_label(crate::i18n::tr("Cancel")).expect("the Cancel button is there").click();
+     h.run_steps(2);
+     let after = h.state().session.prefs.clone();
+     assert_eq!(after.snap_to_grid, before.snap_to_grid, "snap to grid is restored");
+diff --git a/crates/ui-egui/src/replacefonts_tests.rs b/crates/ui-egui/src/replacefonts_tests.rs
+index c42efce..897f3fc 100644
+--- a/crates/ui-egui/src/replacefonts_tests.rs
++++ b/crates/ui-egui/src/replacefonts_tests.rs
+@@ -45,7 +45,7 @@ fn run_font(h: &Harness<'_, SlideApp>) -> Option<String> {
+ #[test]
+ fn ribbon_button_opens_the_dialog_and_replaces() {
+     let mut h = harness();
+-    h.get_by_label("Replace Fonts…").click();
++    h.get_by_label(crate::i18n::tr("Replace Fonts…")).click();
+     h.run_steps(3);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("replaceFonts"));
+     // Pick the font to replace and type the new one, the way a person would.
+@@ -55,7 +55,7 @@ fn ribbon_button_opens_the_dialog_and_replaces() {
+     }
+     h.run_steps(2);
+     // The ribbon has a Replace button too (Find and Replace); the dialog's is drawn last.
+-    h.query_all_by_label("Replace").last().expect("the dialog's Replace button").click();
++    h.query_all_by_label(crate::i18n::tr("Replace")).last().expect("the dialog's Replace button").click();
+     h.run_steps(3);
+     assert_eq!(run_font(&h).as_deref(), Some("Lato"));
+     // The dialog stays open with a confirmation, like PowerPoint's.
 diff --git a/crates/ui-egui/src/ribbon.rs b/crates/ui-egui/src/ribbon.rs
 index 7f36a25..1b31d02 100644
 --- a/crates/ui-egui/src/ribbon.rs
@@ -2166,22 +2756,126 @@ index 7f36a25..1b31d02 100644
          let p = json!({"ppi": ppi, "deleteCropped": delete_cropped, "all": !only_selected});
          match app.session.execute("picture.compress", &p) {
              Ok(r) => {
+diff --git a/crates/ui-egui/src/ruler_tests.rs b/crates/ui-egui/src/ruler_tests.rs
+index dd15c2a..f83b211 100644
+--- a/crates/ui-egui/src/ruler_tests.rs
++++ b/crates/ui-egui/src/ruler_tests.rs
+@@ -142,16 +142,16 @@ fn tabs_dialog_sets_clears_and_applies_on_ok() {
+     h.run_steps(1);
+     h.get_by_label("Center").click();
+     h.run_steps(2);
+-    h.get_by_label("Set").click();
++    h.get_by_label(crate::i18n::tr("Set")).click();
+     h.run_steps(2);
+     if let Ok(img) = h.render() {
+         let _ = img.save("/tmp/tabs_dialog.png");
+     }
+     // Nothing changes until OK.
+     assert_eq!(ruler(&mut h)["tabs"].as_array().unwrap().len(), 1);
+-    h.query_all_by_label("Clear").next().expect("a Clear button per stop").click();
++    h.query_all_by_label(crate::i18n::tr("Clear")).next().expect("a Clear button per stop").click();
+     h.run_steps(2);
+-    h.get_by_label("OK").click();
++    h.get_by_label(crate::i18n::tr("OK")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     let r = ruler(&mut h);
+diff --git a/crates/ui-egui/src/size_position_tests.rs b/crates/ui-egui/src/size_position_tests.rs
+index 26baf71..8632434 100644
+--- a/crates/ui-egui/src/size_position_tests.rs
++++ b/crates/ui-egui/src/size_position_tests.rs
+@@ -32,7 +32,7 @@ fn size_button_sets_width_in_one_undo() {
+         .unwrap();
+     h.state_mut().ui.tab = "Shape Format".into();
+     h.run_steps(2);
+-    h.get_by_label("Size and Position…").click();
++    h.get_by_label(crate::i18n::tr("Size and Position…")).click();
+     h.run_steps(2);
+     let dlg = h.state().dialog.as_ref().unwrap();
+     assert_eq!(dlg.id, "sizePosition");
+@@ -41,7 +41,7 @@ fn size_button_sets_width_in_one_undo() {
+     assert_eq!(dlg.fields.get("lock").map(String::as_str), Some("0"));
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("w".into(), "4".into());
+     h.run_steps(1);
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(box_of(h.state(), id), (40.0, 50.0, 288.0, 100.0, 0.0));
+@@ -67,7 +67,7 @@ fn lock_aspect_from_the_dialog_scales_height() {
+         fields.insert("lock".into(), "1".into());
+         fields.insert("w".into(), "4".into());
+     }
+-    h.get_by_label("OK").click_accesskit();
++    h.get_by_label(crate::i18n::tr("OK")).click_accesskit();
+     h.run_steps(2);
+     assert_eq!(box_of(h.state(), id), (40.0, 50.0, 288.0, 144.0, 0.0));
+ }
+diff --git a/crates/ui-egui/src/smartart_tests.rs b/crates/ui-egui/src/smartart_tests.rs
+index 0151019..510ec38 100644
+--- a/crates/ui-egui/src/smartart_tests.rs
++++ b/crates/ui-egui/src/smartart_tests.rs
+@@ -66,7 +66,7 @@ fn home_convert_to_smartart_gallery_converts_the_text() {
+         app,
+     );
+     h.run_steps(3);
+-    h.get_by_label("Convert to SmartArt").click();
++    h.get_by_label(crate::i18n::tr("Convert to SmartArt")).click();
+     h.run_steps(3);
+     h.get_by_role_and_label(egui::accesskit::Role::Button, "Basic Block List").click();
+     h.run_steps(3);
+@@ -92,7 +92,7 @@ fn layout_gallery_shows_cached_pictures_and_previews_on_hover() {
+         app,
+     );
+     h.run_steps(3);
+-    h.get_by_label("Layouts").click();
++    h.get_by_label(crate::i18n::tr("Layouts")).click();
+     h.run_steps(3);
+     let first = h.state().textures.smartart_cached();
+     assert!(first >= deckcraft_engine::cmd::smartart::LAYOUTS.len().min(8), "gallery pictures were drawn: {first}");
+diff --git a/crates/ui-egui/src/spelling_tests.rs b/crates/ui-egui/src/spelling_tests.rs
+index e67088f..6e9ecd1 100644
+--- a/crates/ui-egui/src/spelling_tests.rs
++++ b/crates/ui-egui/src/spelling_tests.rs
+@@ -41,7 +41,7 @@ fn spelling_dialog_changes_and_ignores_words() {
+         out
+     };
+     assert!(text(&h).contains("Our plan for teh"), "{}", text(&h));
+-    h.get_by_label("Ignore All").click();
++    h.get_by_label(crate::i18n::tr("Ignore All")).click();
+     h.run_steps(3);
+     assert!(h.query_by_label_contains("No issues found").is_some());
+ }
+@@ -278,7 +278,7 @@ fn notes_menu_language_dialog_and_repeated_words() {
+     assert_eq!(crate::dialogs::selected_language(h.state()).0, "xx-NM");
+     h.get_by_label("Do not check spelling or grammar").click();
+     h.run_steps(2);
+-    h.get_by_label("OK").click();
++    h.get_by_label(crate::i18n::tr("OK")).click();
+     h.run_steps(3);
+     assert_eq!(crate::dialogs::selected_language(h.state()), ("xx-NM".to_string(), true));
+     let st = h.state().session.active().unwrap().clone();
 diff --git a/crates/ui-egui/src/status.rs b/crates/ui-egui/src/status.rs
-index 5f922ae..9aee32f 100644
+index 5f922ae..7429ef6 100644
 --- a/crates/ui-egui/src/status.rs
 +++ b/crates/ui-egui/src/status.rs
-@@ -147,4 +147,5 @@ fn labeled(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> egui::Response {
+@@ -145,6 +145,7 @@ fn shown_text(ui: &Ui, rect: Rect, id: &str, text: &str) {
+ }
+
  fn labeled(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> egui::Response {
 +    let label = crate::i18n::tr(label);
      let t = Tokens::get(ui.ctx());
      let w = 22.0 + ui.fonts_mut(|f| f.layout_no_wrap(label.into(), theme::font(12.0), t.text).size().x) + 8.0;
      let (r, resp) = ui.allocate_exact_size(vec2(w, 20.0), Sense::click());
-@@ -204,4 +204,4 @@ pub fn notes_pane(app: &mut SlideApp, ui: &mut Ui) {
+@@ -203,7 +204,7 @@ pub fn notes_pane(app: &mut SlideApp, ui: &mut Ui) {
                  .auto_shrink([false, false])
                  .show(ui, |ui| {
                      crate::notes::editor(ui, &mut draft, &look, |e| {
 -                        e.id(id).hint_text("Click to add notes").frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(2)
 +                        e.id(id).hint_text(crate::i18n::tr("Click to add notes")).frame(egui::Frame::NONE).desired_width(f32::INFINITY).desired_rows(2)
+                     })
+                 })
+                 .inner;
 @@ -331,7 +332,7 @@ mod tests {
          // inside the window (x 132); the Notes button is the leftmost of them. Its position depends
          // on the interface font's widths, so the clicks use the position it was laid out at.
@@ -2230,8 +2924,155 @@ index 109196e..bb501af 100644
 +        }
 +    }
  }
+diff --git a/crates/ui-egui/src/theme_colors_tests.rs b/crates/ui-egui/src/theme_colors_tests.rs
+index d7dba9b..8e67837 100644
+--- a/crates/ui-egui/src/theme_colors_tests.rs
++++ b/crates/ui-egui/src/theme_colors_tests.rs
+@@ -32,7 +32,7 @@ fn undo_len(h: &Harness<'_, SlideApp>) -> usize {
+ fn open_dialog(h: &mut Harness<'_, SlideApp>) {
+     h.get_by_label("Colors").click();
+     h.run_steps(2);
+-    h.get_by_label("Customize Colors…").click();
++    h.get_by_label(crate::i18n::tr("Customize Colors…")).click();
+     h.run_steps(3);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("themeColors"));
+ }
+@@ -50,12 +50,12 @@ fn customize_colors_opens_from_the_design_tab() {
+     let _ = h.get_by_label("Text/Background - Light 1 hex");
+     let _ = h.get_by_label("Followed Hyperlink hex");
+     let _ = h.get_by_label("Hyperlink hex");
+-    let _ = h.get_by_label("Save");
+-    let _ = h.get_by_label("Cancel");
+-    let save = h.get_by_label("Save").rect();
+-    let win = h.get_by_label("Create New Theme Colors").rect();
++    let _ = h.get_by_label(crate::i18n::tr("Save"));
++    let _ = h.get_by_label(crate::i18n::tr("Cancel"));
++    let save = h.get_by_label(crate::i18n::tr("Save")).rect();
++    let win = h.get_by_label(crate::i18n::tr("Create New Theme Colors")).rect();
+     assert!(win.contains(save.center()), "Save {save:?} is outside the dialog window {win:?}");
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(scheme(&h), before);
+@@ -73,7 +73,7 @@ fn save_applies_the_name_and_one_colour() {
+         d.fields.insert("schemeName".into(), "Talk".into());
+         d.fields.insert("accent1".into(), "#ABCDEF".into());
+     }
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status: {:?}", h.state().status);
+     let after = scheme(&h);
+@@ -91,7 +91,7 @@ fn a_bad_hex_keeps_the_dialog_open() {
+     let n = undo_len(&h);
+     open_dialog(&mut h);
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("accent1".into(), "zzzzzz".into());
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("themeColors"));
+     assert_eq!(scheme(&h), before);
+@@ -107,7 +107,7 @@ fn cancel_closes_without_editing() {
+     let n = undo_len(&h);
+     open_dialog(&mut h);
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("accent1".into(), "#112233".into());
+-    h.get_by_label("Cancel").click();
++    h.get_by_label(crate::i18n::tr("Cancel")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(scheme(&h), before);
+@@ -127,7 +127,7 @@ fn typing_a_hex_replaces_accent_1() {
+     h.run_steps(1);
+     let shown = h.get_by_label("Accent 1 hex").value().unwrap_or_default();
+     assert_eq!(shown, "#11AA22", "the hex field should replace its text, got {shown}");
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status: {:?}", h.state().status);
+     assert_eq!(scheme(&h).name, "DeckCraft");
+diff --git a/crates/ui-egui/src/theme_fonts_tests.rs b/crates/ui-egui/src/theme_fonts_tests.rs
+index adee8b9..7394382 100644
+--- a/crates/ui-egui/src/theme_fonts_tests.rs
++++ b/crates/ui-egui/src/theme_fonts_tests.rs
+@@ -31,7 +31,7 @@ fn undo_len(h: &Harness<'_, SlideApp>) -> usize {
+ fn open_dialog(h: &mut Harness<'_, SlideApp>) {
+     h.get_by_label("Fonts").click();
+     h.run_steps(2);
+-    h.get_by_label("Customize Fonts…").click();
++    h.get_by_label(crate::i18n::tr("Customize Fonts…")).click();
+     h.run_steps(3);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("themeFonts"));
+ }
+@@ -47,12 +47,12 @@ fn customize_fonts_opens_from_the_design_tab() {
+     assert_eq!(h.get_by_label("Body font").value().as_deref(), Some(before.minor.latin.as_str()));
+     let _ = h.get_by_label(&format!("Heading sample  {}", before.major.latin));
+     let _ = h.get_by_label(&format!("Body sample  {}", before.minor.latin));
+-    let _ = h.get_by_label("Save");
+-    let _ = h.get_by_label("Cancel");
+-    let save = h.get_by_label("Save").rect();
+-    let win = h.get_by_label("Create New Theme Fonts").rect();
++    let _ = h.get_by_label(crate::i18n::tr("Save"));
++    let _ = h.get_by_label(crate::i18n::tr("Cancel"));
++    let save = h.get_by_label(crate::i18n::tr("Save")).rect();
++    let win = h.get_by_label(crate::i18n::tr("Create New Theme Fonts")).rect();
+     assert!(win.contains(save.center()), "Save {save:?} is outside the dialog window {win:?}");
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(scheme(&h), before);
+@@ -71,7 +71,7 @@ fn save_applies_the_name_and_both_faces() {
+         d.fields.insert("major".into(), "Lato".into());
+         d.fields.insert("minor".into(), "Roboto".into());
+     }
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status: {:?}", h.state().status);
+     let after = scheme(&h);
+@@ -90,7 +90,7 @@ fn a_blank_heading_keeps_the_dialog_open() {
+     let n = undo_len(&h);
+     open_dialog(&mut h);
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("major".into(), "  ".into());
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert_eq!(h.state().dialog.as_ref().map(|d| d.id.as_str()), Some("themeFonts"));
+     assert_eq!(scheme(&h), before);
+@@ -106,7 +106,7 @@ fn cancel_closes_without_editing() {
+     let n = undo_len(&h);
+     open_dialog(&mut h);
+     h.state_mut().dialog.as_mut().unwrap().fields.insert("major".into(), "Lato".into());
+-    h.get_by_label("Cancel").click();
++    h.get_by_label(crate::i18n::tr("Cancel")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none());
+     assert_eq!(scheme(&h), before);
+@@ -126,7 +126,7 @@ fn typing_a_name_replaces_the_scheme_name() {
+     h.run_steps(1);
+     let shown = h.get_by_label("Scheme name").value().unwrap_or_default();
+     assert_eq!(shown, "Talk", "the name field should replace its text, got {shown}");
+-    h.get_by_label("Save").click();
++    h.get_by_label(crate::i18n::tr("Save")).click();
+     h.run_steps(2);
+     assert!(h.state().dialog.is_none(), "status: {:?}", h.state().status);
+     assert_eq!(scheme(&h).name, "Talk");
+diff --git a/crates/ui-egui/src/thesaurus_tests.rs b/crates/ui-egui/src/thesaurus_tests.rs
+index e52e450..aa20dbc 100644
+--- a/crates/ui-egui/src/thesaurus_tests.rs
++++ b/crates/ui-egui/src/thesaurus_tests.rs
+@@ -26,7 +26,7 @@ fn thesaurus_pane_swaps_the_word_at_the_caret() {
+         app,
+     );
+     h.run_steps(3);
+-    h.get_by_label("Thesaurus").click();
++    h.get_by_label(crate::i18n::tr("Thesaurus")).click();
+     h.run_steps(3);
+     assert_eq!(h.state().ui.pane.as_deref(), Some("thesaurus"));
+     assert_eq!(h.state().thesaurus_query, "Goal");
 diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
-index 67549ce..4e4c8eb 100644
+index 67549ce..7e1bef6 100644
 --- a/crates/ui-egui/src/widgets.rs
 +++ b/crates/ui-egui/src/widgets.rs
 @@ -33,6 +33,7 @@ pub fn big_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> Respon
@@ -2309,4 +3150,25 @@ index 67549ce..4e4c8eb 100644
 +    if ui.button(crate::i18n::tr("Eyedropper")).on_hover_text("Click the slide to take the colour under the pointer").clicked() {
          crate::eyedropper::request(ui.ctx());
          ui.close();
+     }
+@@ -556,9 +561,9 @@ mod tests {
+         });
+         harness.get_by_label("Pick").click();
+         harness.run();
+-        harness.get_by_label("Eyedropper").click();
++        harness.get_by_label(crate::i18n::tr("Eyedropper")).click();
+         harness.run();
+-        assert!(harness.query_by_label("Eyedropper").is_none(), "choosing it closes the menu");
++        assert!(harness.query_by_label(crate::i18n::tr("Eyedropper")).is_none(), "choosing it closes the menu");
+         assert!(picked.borrow().is_none(), "nothing is picked yet");
+         // The app starts the Eyedropper from this request; here the colour is taken at once.
+         assert!(harness.ctx.data_mut(|d| d.remove_temp::<bool>(egui::Id::new("deckcraft.eyedropper.request"))).unwrap_or(false));
+@@ -566,7 +571,7 @@ mod tests {
+         crate::eyedropper::store_result(&harness.ctx, menu, "00FF00");
+         harness.run();
+         assert_eq!(*picked.borrow(), Some(Some(ColorRef::rgb(Rgba::from_hex("00FF00").unwrap()))));
+-        assert!(harness.query_by_label("Eyedropper").is_none(), "the menu closes again");
++        assert!(harness.query_by_label(crate::i18n::tr("Eyedropper")).is_none(), "the menu closes again");
+         harness.run();
+         assert_eq!(picked.borrow().iter().count(), 1, "the colour is handed back once");
      }
