@@ -12580,12 +12580,13 @@
       "source": "references/zcode/packages/ui/src/v4/composer/V4ComposerModeControls.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/V4ComposerModeControls.tsx",
       "sha256": "f5289c79b4798f97a4ced83cfa44fdf148741a11ccfaada84b7806b4ec67a328",
-      "copiedSha256": "c35b1a1294d8553a665dce6ffc74d491f6134836b9e8c35c720983ab44c606c4",
+      "copiedSha256": "1851eef8f8e4c4f43b87b219c4ed6beabc6bd204bc93345a559a86e3fd305f49",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "2026-10-17统一模式入口：原盾牌菜单分组承载权限、唯一Plan勾选与宿主执行方式；全权保持原橙色图标，Plan标记X关闭复用原owner，宿主审批描述不改上游字典。",
         "2026-10-17菜单密度修正：移除新增可见分组标题，保留权限/执行方式语义分组；规划和权限项沿原布局，单行执行项使用原DropdownMenuRadioItem默认padding与行高。",
-        "2026-10-26（二百五十八/二百五十九）：计划并入执行方式组，删除独立 Plan 勾选项与标记；执行方式标签字号 text-ui-base。"
+        "2026-10-26（二百五十八/二百五十九）：计划并入执行方式组，删除独立 Plan 勾选项与标记；执行方式标签字号 text-ui-base。",
+        "2026-11-04：权限菜单补「下个任务生效」提示，说明 Run 冻结不随当前任务切换。"
       ]
     },
     {

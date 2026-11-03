@@ -179,6 +179,9 @@ function V4ComposerModeSwitchImpl({
               );
             })}
           </DropdownMenuRadioGroup>
+          <p className="px-2 pb-1 text-ui-sm text-foreground-subtle">
+            下个任务生效
+          </p>
           {executionModeController && (
             <ExecutionModeMenuItems
               controller={executionModeController}
