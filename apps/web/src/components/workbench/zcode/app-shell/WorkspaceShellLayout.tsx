@@ -1701,18 +1701,27 @@ export const WorkspaceShellLayout = memo(
       lastDesignEntryRef.current = entryKey;
       const entry = resolveDesignDocumentEntry(sidePaneState,
         { projectId: documentProjectId, workspaceKey }, lastDocumentTabByWorkspaceRef.current.get(workspaceKey));
-      if (entry.documentId) {
-        handleOpenDocument({ ...entry, restoreExisting: true });
-        return;
-      }
+      // 有旧标签也要回服务端核对画布文件：目录迁移/删除后 DB 只剩指针，
+      // 直接恢复旧标签会 409 canvas_file_missing。
       // 没有可指向的画布文档：先在宿主侧敲定真实画布（主画布优先，没有就建一个），
       // 再开标签。反过来先开一个没有 documentId 的空标签，画布视图再去请求真实画布，
       // 结果是两个标签并排——空白的「画布」+ 真正的画布（2026-10-20 用户截图）。
       const projectIdForEntry = documentProjectId;
-      void ensureDesignCanvasEntry(projectIdForEntry)
+      void ensureDesignCanvasEntry(projectIdForEntry, entry.documentId)
         .then((canvas) => {
           // 期间可能又切了工作区/项目，过期结果不再开标签
           if (lastDesignEntryRef.current !== entryKey) return;
+          if (entry.documentId && entry.documentId !== canvas.documentId) {
+            // 旧标签指向的画布文件已缺失：关掉残留标签，由可加载的画布接手。
+            const stale = documentSidePaneStateRef.current?.tabs.find(
+              (tab) =>
+                tab.type === "document" &&
+                tab.projectId === projectIdForEntry &&
+                tab.workspaceKey === workspaceKey &&
+                tab.documentId === entry.documentId,
+            );
+            if (stale) handleCloseSidePaneTab(stale.id);
+          }
           handleOpenDocument({
             resourceType: "canvas",
             projectId: projectIdForEntry,
@@ -1726,7 +1735,7 @@ export const WorkspaceShellLayout = memo(
           lastDesignEntryRef.current = null;
           handleOpenDocument({ ...entry, restoreExisting: true });
         });
-    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleOpenDocument, sidePaneState]);
+    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleCloseSidePaneTab, handleOpenDocument, sidePaneState]);
     useEffect(() => {
       const open = (event: Event) => {
         const detail = (event as CustomEvent<OpenCanvasDocumentRequest>).detail;

@@ -111,6 +111,8 @@ export const canvasSummarySchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
   isPrimary: z.boolean(),
+  /** 内容只存项目文件指针时，标记权威文件已不在磁盘上。 */
+  fileMissing: z.boolean().optional(),
 });
 
 /** kind 表达项目默认工作方式；enabledModes 表达显式启用的工作方式。 */

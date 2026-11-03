@@ -15349,6 +15349,9 @@
                 },
                 "isPrimary": {
                   "type": "boolean"
+                },
+                "fileMissing": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -27446,6 +27449,9 @@
                       },
                       "isPrimary": {
                         "type": "boolean"
+                      },
+                      "fileMissing": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -27579,6 +27585,9 @@
                       },
                       "isPrimary": {
                         "type": "boolean"
+                      },
+                      "fileMissing": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -27703,6 +27712,9 @@
                         "minLength": 1
                       },
                       "isPrimary": {
+                        "type": "boolean"
+                      },
+                      "fileMissing": {
                         "type": "boolean"
                       }
                     },
@@ -27836,6 +27848,9 @@
                         "minLength": 1
                       },
                       "isPrimary": {
+                        "type": "boolean"
+                      },
+                      "fileMissing": {
                         "type": "boolean"
                       }
                     },
@@ -28582,6 +28597,9 @@
                         },
                         "isPrimary": {
                           "type": "boolean"
+                        },
+                        "fileMissing": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -28715,6 +28733,9 @@
                         },
                         "isPrimary": {
                           "type": "boolean"
+                        },
+                        "fileMissing": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
@@ -28839,6 +28860,9 @@
                           "minLength": 1
                         },
                         "isPrimary": {
+                          "type": "boolean"
+                        },
+                        "fileMissing": {
                           "type": "boolean"
                         }
                       },
@@ -28972,6 +28996,9 @@
                           "minLength": 1
                         },
                         "isPrimary": {
+                          "type": "boolean"
+                        },
+                        "fileMissing": {
                           "type": "boolean"
                         }
                       },

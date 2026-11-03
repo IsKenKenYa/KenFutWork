@@ -91,6 +91,68 @@ describe("ensureDesignCanvasEntry", () => {
       /画布列表不可用/,
     );
   });
+
+  test("主画布文件缺失时改用仍可加载的画布", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false },
+        { id: primaryId, name: "主画布", isPrimary: true, fileMissing: true },
+      ],
+    });
+    await expect(ensureDesignCanvasEntry(projectId)).resolves.toEqual({
+      documentId: secondId,
+      title: "副画布",
+    });
+    expect(
+      mocks.json.mock.calls.some(([, init]) => init?.method === "POST"),
+    ).toBe(false);
+  });
+
+  test("旧标签的 preferredDocumentId 可加载时优先恢复它", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false },
+        { id: primaryId, name: "主画布", isPrimary: true },
+      ],
+    });
+    await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
+      { documentId: secondId, title: "副画布" },
+    );
+  });
+
+  test("preferred 文件缺失时跳过它并回落主画布", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false, fileMissing: true },
+        { id: primaryId, name: "主画布", isPrimary: true },
+      ],
+    });
+    await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
+      { documentId: primaryId, title: "主画布" },
+    );
+  });
+
+  test("所有画布文件都缺失时新建一个再返回", async () => {
+    mocks.json.mockResolvedValueOnce({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false, fileMissing: true },
+      ],
+    }).mockResolvedValueOnce({
+      canvas: {
+        id: primaryId,
+        name: "未命名画布",
+        projectId,
+        revision,
+        content: { elements: [], appState: {}, files: {} },
+      },
+    });
+    await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
+      { documentId: primaryId, title: "未命名画布" },
+    );
+    expect(
+      mocks.json.mock.calls.some(([, init]) => init?.method === "POST"),
+    ).toBe(true);
+  });
 });
 
 /**
