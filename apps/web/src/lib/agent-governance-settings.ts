@@ -15,6 +15,7 @@ export type AgentGovernanceSettings = Pick<
   | "compactKeepMessages"
   | "compactFallbackKeepMessages"
   | "canvasExportMaxBytes"
+  | "taskAutoArchiveScanIntervalMs"
 >;
 type NumericKey = Exclude<keyof AgentGovernanceSettings, "llmInfiniteRetry">;
 export type AgentGovernanceInputs = Record<NumericKey, string>;
@@ -55,6 +56,10 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "canvasExportMaxBytes",
     label: "画布导出上限（字节）",
+  },
+  {
+    key: "taskAutoArchiveScanIntervalMs",
+    label: "归档扫描间隔（毫秒）",
   },
 ] as const satisfies readonly {
   key: NumericKey;

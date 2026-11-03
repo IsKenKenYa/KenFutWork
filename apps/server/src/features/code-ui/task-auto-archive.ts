@@ -2,12 +2,6 @@ import type { CodeUiSessionRecord } from "./repository.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * 进程内周期扫描间隔：只影响发现旧 Task 的时延，不改变用户可调的归档开关与天数；
- * 按维护节奏固定为 1 小时，不进治理表（DEC-18 的可调项是用户会感知的限额）。
- */
-const AUTO_ARCHIVE_SCAN_INTERVAL_MS = 60 * 60 * 1000;
-
 export type TaskAutoArchivePreferences = {
   enabled?: unknown;
   olderThanDays?: unknown;
@@ -81,7 +75,8 @@ export async function runTaskAutoArchive(options: {
 export function startTaskAutoArchiveTimer(options: {
   scan: () => Promise<void>;
   onError?: (error: unknown) => void;
-  intervalMs?: number;
+  /** 来自治理设置（设置页可调），调用方必须显式传入。 */
+  intervalMs: number;
 }): () => void {
   let running = false;
   const timer = setInterval(() => {
@@ -93,7 +88,7 @@ export function startTaskAutoArchiveTimer(options: {
       .finally(() => {
         running = false;
       });
-  }, options.intervalMs ?? AUTO_ARCHIVE_SCAN_INTERVAL_MS);
+  }, options.intervalMs);
   // 后台维护定时器不阻止进程退出。
   timer.unref?.();
   return () => clearInterval(timer);

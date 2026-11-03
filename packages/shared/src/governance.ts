@@ -37,6 +37,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   agentStreamFlushIntervalMs: 80,
   /** Code 宿主通知通道断线后的重连间隔（毫秒）。 */
   codeUiReconnectDelayMs: 1_000,
+  /** Task 自动归档的周期扫描间隔；只影响发现旧 Task 的时延。 */
+  taskAutoArchiveScanIntervalMs: 3_600_000,
   /** 本机浏览器一次性连接入口有效期。 */
   localAccessTicketTtlMs: 60_000,
   /** 浏览器接入会话期限；不涉及官方账户登录。 */
@@ -110,6 +112,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "compactKeepMessages",
   "compactFallbackKeepMessages",
   "codeUiReconnectDelayMs",
+  "taskAutoArchiveScanIntervalMs",
   "localAccessTicketTtlMs",
   "localAccessSessionMaxAgeMs",
   "localDataMigrationPollMs",
@@ -162,6 +165,7 @@ export type AgentGovernanceOverrides = {
   agentStreamIdleTimeoutMs?: number | undefined;
   agentStreamFlushIntervalMs?: number | undefined;
   codeUiReconnectDelayMs?: number | undefined;
+  taskAutoArchiveScanIntervalMs?: number | undefined;
   localAccessTicketTtlMs?: number | undefined;
   localAccessSessionMaxAgeMs?: number | undefined;
   localDataMigrationPollMs?: number | undefined;
@@ -264,6 +268,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   agentStreamIdleTimeoutMs: { min: 0, max: 2_147_483_647 },
   agentStreamFlushIntervalMs: { min: 20, max: 500 },
   codeUiReconnectDelayMs: { min: 100, max: 60_000 },
+  taskAutoArchiveScanIntervalMs: { min: 10_000, max: 86_400_000 },
   localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
   localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
   localDataMigrationPollMs: { min: 10, max: 60_000 },
@@ -381,6 +386,9 @@ export function resolveGovernanceEnvOverrides(
       Number.isSafeInteger(Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS))
         ? Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS)
         : undefined,
+    taskAutoArchiveScanIntervalMs: parseStrictInt(
+      source.KENFUTWORK_TASK_AUTO_ARCHIVE_SCAN_INTERVAL_MS,
+    ),
     canvasExportMaxBytes: (() => {
       const value = parseStrictInt(source.KENFUTWORK_CANVAS_EXPORT_MAX_BYTES);
       return value !== undefined && value > 0 ? value : undefined;

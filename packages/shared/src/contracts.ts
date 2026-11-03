@@ -331,6 +331,10 @@ export const instanceSettingsSchema = z.object({
   agentStreamFlushIntervalMs: governanceSetting("agentStreamFlushIntervalMs"),
   /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
   codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
+  /** Task 自动归档的周期扫描间隔；只影响发现旧 Task 的时延。 */
+  taskAutoArchiveScanIntervalMs: governanceSetting(
+    "taskAutoArchiveScanIntervalMs",
+  ),
   localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
   localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
   localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),

@@ -310,11 +310,40 @@ export function createCodeUiPlugin(): PluginDefinition {
         }),
       );
       // 进程内周期扫描：长时间运行时也能按偏好把新近变旧的 Task 归档。
-      ctx.effect(() =>
-        startTaskAutoArchiveTimer({
+      // 间隔来自治理设置（设置页可调），变更后重启定时器，不必重启服务。
+      let stopAutoArchiveTimer: (() => void) | undefined;
+      /** 并发重读设置时只让最后一次生效，卸载后不再起定时器。 */
+      let autoArchiveGeneration = 0;
+      let autoArchiveClosed = false;
+      const restartAutoArchiveTimer = async () => {
+        const generation = ++autoArchiveGeneration;
+        const actor = await ctx.get("localInstance").serviceActor();
+        const settings = await ctx.get("settings").getInstanceSettings(
+          actor,
+          actor.instanceId,
+        );
+        if (autoArchiveClosed || generation !== autoArchiveGeneration) return;
+        stopAutoArchiveTimer?.();
+        stopAutoArchiveTimer = startTaskAutoArchiveTimer({
           scan: autoArchiveTasks,
           onError: (error) =>
             console.warn("[code-ui] 任务自动归档周期扫描失败：", error),
+          intervalMs: settings.taskAutoArchiveScanIntervalMs,
+        });
+      };
+      ctx.effect(() => {
+        autoArchiveClosed = false;
+        void restartAutoArchiveTimer();
+        return () => {
+          autoArchiveClosed = true;
+          autoArchiveGeneration += 1;
+          stopAutoArchiveTimer?.();
+        };
+      });
+      ctx.effect(() =>
+        ctx.get("settings").onUpdated(({ changedKeys }) => {
+          if (changedKeys.includes("taskAutoArchiveScanIntervalMs"))
+            void restartAutoArchiveTimer();
         }),
       );
       ctx.app.addHook("onReady", async () => {

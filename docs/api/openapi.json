@@ -23940,6 +23940,12 @@
                 "minimum": 100,
                 "maximum": 60000
               },
+              "taskAutoArchiveScanIntervalMs": {
+                "default": 3600000,
+                "type": "integer",
+                "minimum": 10000,
+                "maximum": 86400000
+              },
               "localAccessTicketTtlMs": {
                 "default": 60000,
                 "type": "integer",
@@ -24216,6 +24222,7 @@
               "agentStreamIdleTimeoutMs",
               "agentStreamFlushIntervalMs",
               "codeUiReconnectDelayMs",
+              "taskAutoArchiveScanIntervalMs",
               "localAccessTicketTtlMs",
               "localAccessSessionMaxAgeMs",
               "localDataMigrationPollMs",
@@ -24598,6 +24605,11 @@
             "type": "integer",
             "minimum": 100,
             "maximum": 60000
+          },
+          "taskAutoArchiveScanIntervalMs": {
+            "type": "integer",
+            "minimum": 10000,
+            "maximum": 86400000
           },
           "localAccessTicketTtlMs": {
             "type": "integer",
@@ -38206,12 +38218,24 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "costUsd": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "tokens",
               "inputTokens",
-              "outputTokens"
+              "outputTokens",
+              "costUsd"
             ],
             "additionalProperties": false
           },
