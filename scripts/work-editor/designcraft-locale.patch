@@ -1,9 +1,9 @@
 diff --git a/apps/designcraft-web/Cargo.toml b/apps/designcraft-web/Cargo.toml
-index b1131c7..51cf465 100644
+index 1667e69..2b81b2a 100644
 --- a/apps/designcraft-web/Cargo.toml
 +++ b/apps/designcraft-web/Cargo.toml
 @@ -16,6 +16,7 @@ path = "src/main.rs"
- 
+
  [dependencies]
  designcraft-engine = { workspace = true }
 +designcraft-fonts = { workspace = true }
@@ -14,24 +14,35 @@ index b1131c7..51cf465 100644
  wasm-bindgen = "0.2"
  wasm-bindgen-futures = "0.4"
  js-sys = "0.3"
--web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Response", "Request", "RequestInit", "Navigator"] }
+-web-sys = { version = "0.3", features = ["Event", "EventTarget", "Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration"] }
++web-sys = { version = "0.3", features = ["Event", "EventTarget", "Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Response", "Request", "RequestInit", "Navigator"] }
+diff --git a/apps/designcraft-web/src/main.rs b/apps/designcraft-web/src/main.rs
+index 1b28064..58da90e 100644
+--- a/apps/designcraft-web/src/main.rs
++++ b/apps/designcraft-web/src/main.rs
+@@ -21,6 +21,8 @@ mod browser_policy;
+
+ #[cfg(target_arch = "wasm32")]
+ mod web;
++#[cfg(target_arch = "wasm32")]
++mod user_fonts;
+
+ #[cfg(any(target_arch = "wasm32", test))]
+ mod graphics;
 diff --git a/apps/designcraft-web/src/web.rs b/apps/designcraft-web/src/web.rs
-index fe7cca4..3cde02f 100644
+index 27d236a..c49e88b 100644
 --- a/apps/designcraft-web/src/web.rs
 +++ b/apps/designcraft-web/src/web.rs
-@@ -57,10 +57,59 @@ pub fn start() {
+@@ -73,10 +73,57 @@ pub fn start() {
                      }
                      let inbox: Inbox = Inbox::default();
                      let mut app = DesignApp::new(Session::new(), services(inbox.clone(), cc.egui_ctx.clone()));
-+                    // KenFutWork: 浏览器端记住界面偏好（语言/主题等）——上游 0.6.0 的 web 壳没做，
-+                    // 不加这段用户在「Edit › Interface Language」里选了中文也不会生效。
++                    // KenFutWork: 恢复界面偏好；中文包在浏览器未提供受支持语言时默认简体中文。
 +                    if let Some(saved) = read_prefs() {
 +                        if let Ok(ui) = designcraft_ui_egui::UiState::from_preferences_json(saved.as_bytes()) {
 +                            app.ui = ui;
 +                        }
 +                    }
-+                    // KenFutWork: 界面语言跟随浏览器（上游 web 壳不探测，中文用户永远看英文）。
 +                    if app.ui.language.is_empty()
 +                        && let Some(tag) = web_sys::window().and_then(|w| w.navigator().language())
 +                    {
@@ -55,17 +66,17 @@ index fe7cca4..3cde02f 100644
 +                        } else if lower.starts_with("ar") {
 +                            "ar"
 +                        } else {
-+                            ""
++                            "zh"
 +                        };
-+                        if !pick.is_empty() && designcraft_ui_egui::i18n::LANGUAGES.iter().any(|(c, _)| *c == pick) {
++                        if designcraft_ui_egui::i18n::LANGUAGES.iter().any(|(c, _)| *c == pick) {
 +                            app.ui.language = pick.to_string();
 +                        }
 +                    }
                      if has_query_flag(&query(), "sample") {
                          let _ = app.run("file.newSample", serde_json::json!({}));
                      }
--                    Ok(Box::new(WebShell { app, inbox }))
-+                    // 宿主上传的用户字体（Work 引擎页）：同源清单 → 字体库。
+-                    Ok(Box::new(WebShell { app, inbox, graphics: creator_graphics }))
++                    // 宿主字体清单交给文档字体库。
 +                    let font_ctx = cc.egui_ctx.clone();
 +                    wasm_bindgen_futures::spawn_local(async move {
 +                        let count = crate::user_fonts::install(|bytes| {
@@ -77,36 +88,37 @@ index fe7cca4..3cde02f 100644
 +                            font_ctx.request_repaint();
 +                        }
 +                    });
-+                    Ok(Box::new(WebShell { app, inbox, last_saved: None }))
++                    Ok(Box::new(WebShell { app, inbox, graphics: creator_graphics, last_saved: None }))
                  }),
              )
              .await;
-@@ -82,10 +131,19 @@ fn query() -> String {
- struct WebShell {
+@@ -345,12 +392,20 @@ struct WebShell {
      app: DesignApp,
      inbox: Inbox,
-+    /// 上次写入 localStorage 的偏好 JSON（避免每帧重复写）。
+     graphics: GraphicsState,
++    /// 上次写入 localStorage 的偏好 JSON，避免每帧重复写。
 +    last_saved: Option<String>,
  }
- 
+
  impl eframe::App for WebShell {
      fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-+        // KenFutWork: 偏好变化后写回 localStorage（与原生端 designcraft.ui 同一份 JSON）。
-+        if let Ok(json) = serde_json::to_string(&self.app.ui) {
-+            if self.last_saved.as_deref() != Some(json.as_str()) {
-+                write_prefs(&json);
-+                self.last_saved = Some(json);
+         let graphics = self.graphics.clone();
+         let _ = graphics.run_if_healthy(|| {
++            if let Ok(json) = serde_json::to_string(&self.app.ui) {
++                if self.last_saved.as_deref() != Some(json.as_str()) {
++                    write_prefs(&json);
++                    self.last_saved = Some(json);
++                }
 +            }
-+        }
-         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
-         for f in dropped {
-             let request = self.app.import_request("drop");
-@@ -176,3 +234,16 @@ fn download(path: &str, bytes: &[u8]) -> Result<(), String> {
-     window.set_timeout_with_callback_and_timeout_and_arguments_0(revoke.unchecked_ref(), 10_000).map_err(js)?;
+             let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
+             for f in dropped {
+                 let request = self.app.import_request("drop");
+@@ -449,3 +504,16 @@ fn download(path: &str, bytes: &[u8]) -> Result<(), String> {
+     }
      Ok(())
  }
 +
-+/// 浏览器里的偏好键（与原生端文件名同名，便于对照）。
++/// 浏览器里的界面偏好键。
 +const PREFS_KEY: &str = "designcraft.ui";
 +
 +fn read_prefs() -> Option<String> {
@@ -118,3 +130,106 @@ index fe7cca4..3cde02f 100644
 +    let Ok(Some(storage)) = window.local_storage() else { return };
 +    let _ = storage.set_item(PREFS_KEY, json);
 +}
+diff --git a/crates/fonts/build.rs b/crates/fonts/build.rs
+index 497c41f..95d883e 100644
+--- a/crates/fonts/build.rs
++++ b/crates/fonts/build.rs
+@@ -30,15 +30,23 @@ fn main() {
+ fn craft_fonts(dir: &std::path::Path) -> Result<String, String> {
+     let manifest = dir.join("fonts/manifest.txt");
+     println!("cargo::rerun-if-changed={}", manifest.display());
+-    let text = std::fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
++    let mut text = std::fs::read_to_string(&manifest).map_err(|e| format!("{}: {e}", manifest.display()))?;
+     let wasm = std::env::var("CARGO_CFG_TARGET_ARCH").is_ok_and(|a| a == "wasm32");
++    // KenFutWork: 中文 Web 包同时读取简体中文字体清单，界面不能只剩日文字体的少量汉字。
++    if wasm {
++        let chinese = dir.join("fonts/simplified-chinese-manifest.txt");
++        println!("cargo::rerun-if-changed={}", chinese.display());
++        let chinese = std::fs::read_to_string(&chinese).map_err(|e| format!("{}: {e}", chinese.display()))?;
++        text.push_str(&chinese);
++    }
+     let mut out = String::new();
+     for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+         let f: Vec<&str> = line.split(" | ").map(str::trim).collect();
+         let [family, style, file, scripts, ..] = f.as_slice() else {
+             return Err(format!("malformed manifest line: {line}"));
+         };
+-        if wasm && !matches!((*family, *style), ("BIZ UDPGothic" | "Noto Sans Georgian", "Regular")) {
++        let chinese = scripts.split(',').any(|s| matches!(s.trim(), "Hani" | "Hans"));
++        if wasm && !chinese && !matches!((*family, *style), ("BIZ UDPGothic" | "Noto Sans Georgian", "Regular")) {
+             continue;
+         }
+         let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;
+diff --git a/crates/ui-egui/src/chrome.rs b/crates/ui-egui/src/chrome.rs
+index 5183222..f68a099 100644
+--- a/crates/ui-egui/src/chrome.rs
++++ b/crates/ui-egui/src/chrome.rs
+@@ -1283,7 +1283,7 @@ pub fn start_screen(app: &mut DesignApp, ui: &mut egui::Ui) {
+                         ui.painter().text(
+                             egui::pos2(cr.center().x, cr.max.y - 26.0),
+                             egui::Align2::CENTER_CENTER,
+-                            p.name,
++                            crate::i18n::tr(&app.ui.language, p.name),
+                             semibold(12.0),
+                             t.text_strong,
+                         );
+diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
+index 19e9d91..1a9190c 100644
+--- a/crates/ui-egui/src/i18n.rs
++++ b/crates/ui-egui/src/i18n.rs
+@@ -4219,6 +4219,27 @@ const TABLE: &[(&str, [&str; 5])] = &[
+     ("Save Preset", ["Vorgabe speichern", "Enregistrer le paramètre prédéfini", "Guardar ajuste preestablecido", "プリセットを保存", "存储预设"]),
+     ("Start #", ["Startseitennr.", "N° de début", "N.º inicial", "開始ページ番号", "起始页码"]),
+     ("Column Gutter", ["Spaltenabstand", "Gouttière", "Medianil", "列間隔", "栏间距"]),
++    ("Units", ["Einheiten", "Unités", "Unidades", "単位", "单位"]),
++    ("Orientation", ["Ausrichtung", "Orientation", "Orientación", "方向", "方向"]),
++    ("Letter", ["Letter", "Letter", "Letter", "Letter", "信纸"]),
++    ("Legal", ["Legal", "Legal", "Legal", "Legal", "法务纸"]),
++    ("Tabloid", ["Tabloid", "Tabloid", "Tabloid", "Tabloid", "小报"]),
++    ("Letter - Half", ["Letter - Half", "Letter - Half", "Letter - Half", "Letter - Half", "半页信纸"]),
++    ("Postcard", ["Postcard", "Postcard", "Postcard", "Postcard", "明信片"]),
++    ("Web 1920 × 1080", ["Web 1920 × 1080", "Web 1920 × 1080", "Web 1920 × 1080", "Web 1920 × 1080", "网页 1920 × 1080"]),
++    ("Web 1366 × 768", ["Web 1366 × 768", "Web 1366 × 768", "Web 1366 × 768", "Web 1366 × 768", "网页 1366 × 768"]),
++    ("Web 1024 × 768", ["Web 1024 × 768", "Web 1024 × 768", "Web 1024 × 768", "Web 1024 × 768", "网页 1024 × 768"]),
++    ("Mobile 1080 × 1920", ["Mobile 1080 × 1920", "Mobile 1080 × 1920", "Mobile 1080 × 1920", "Mobile 1080 × 1920", "手机 1080 × 1920"]),
++    ("Mobile 390 × 844", ["Mobile 390 × 844", "Mobile 390 × 844", "Mobile 390 × 844", "Mobile 390 × 844", "手机 390 × 844"]),
++    ("Tablet 1024 × 1366", ["Tablet 1024 × 1366", "Tablet 1024 × 1366", "Tablet 1024 × 1366", "Tablet 1024 × 1366", "平板 1024 × 1366"]),
++    ("Points", ["Points", "Points", "Points", "Points", "点"]),
++    ("Picas", ["Picas", "Picas", "Picas", "Picas", "派卡"]),
++    ("Inches", ["Inches", "Inches", "Inches", "Inches", "英寸"]),
++    ("Millimeters", ["Millimeters", "Millimeters", "Millimeters", "Millimeters", "毫米"]),
++    ("Centimeters", ["Centimeters", "Centimeters", "Centimeters", "Centimeters", "厘米"]),
++    ("Ciceros", ["Ciceros", "Ciceros", "Ciceros", "Ciceros", "西塞罗"]),
++    ("Agates", ["Agates", "Agates", "Agates", "Agates", "阿加特"]),
++    ("Pixels", ["Pixels", "Pixels", "Pixels", "Pixels", "像素"]),
+     // Layout › Numbering & Section Options
+     ("Start Section", ["Abschnittsanfang", "Début de section", "Iniciar sección", "セクション開始", "开始新章节"]),
+     (
+diff --git a/crates/ui-egui/src/i18n/fr.rs b/crates/ui-egui/src/i18n/fr.rs
+index d19a5b5..ef4a072 100644
+--- a/crates/ui-egui/src/i18n/fr.rs
++++ b/crates/ui-egui/src/i18n/fr.rs
+@@ -250,7 +250,6 @@ pub(super) const TABLE: &[(&str, &str)] = &[
+     ("Object/Transform Again", "Objet/Répéter la transformation"),
+     ("On", "Activé"),
+     ("Organization:", "Organisation :"),
+-    ("Orientation", "Orientation"),
+     ("PDF import cancelled: the originating document has closed", "Importation PDF annulée : le document d'origine a été fermé"),
+     ("PRs", "PR"),
+     ("Package", "Assemblage"),
+@@ -266,7 +265,6 @@ pub(super) const TABLE: &[(&str, &str)] = &[
+     ("Pen Tool", "Outil Plume"),
+     ("Pencil Tool", "Outil Crayon"),
+     ("Phone:", "Téléphone :"),
+-    ("Picas", "Picas"),
+     ("Pin Bar Position", "Épingler la position de la barre"),
+     ("Place with Import Options", "Importer avec les options d'importation"),
+     ("Polygon Frame Tool", "Outil Bloc polygonal"),
+@@ -390,7 +388,6 @@ pub(super) const TABLE: &[(&str, &str)] = &[
+     ("Type/Type on a Path", "Texte/Texte curviligne"),
+     ("URL:", "URL :"),
+     ("Unassigned", "Non attribué"),
+-    ("Units", "Unités"),
+     ("Unsaved Changes", "Modifications non enregistrées"),
+     ("Update Data Source", "Mettre à jour la source de données"),
+     ("Username", "Nom d'utilisateur"),
