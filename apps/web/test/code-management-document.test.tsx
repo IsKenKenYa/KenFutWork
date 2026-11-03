@@ -274,12 +274,20 @@ it("原Code侧栏的技能与MCP操作交给共用宿主文档，主工作区不
   );
   fireEvent.click(await screen.findByRole("button", { name: /^技能$/ }));
   expect(open).toHaveBeenLastCalledWith(
-    expect.objectContaining({ page: "settings", section: "skill" }),
+    expect.objectContaining({
+      page: "settings",
+      section: "plugin",
+      pluginTab: "skills",
+    }),
   );
   expect(screen.queryByTestId("settings-page")).toBeNull();
   fireEvent.click(await screen.findByRole("button", { name: /^MCP 服务器$/ }));
   expect(open).toHaveBeenLastCalledWith(
-    expect.objectContaining({ page: "settings", section: "mcp" }),
+    expect.objectContaining({
+      page: "settings",
+      section: "plugin",
+      pluginTab: "mcps",
+    }),
   );
   expect(calls.filter((c) => c.method === "createTask")).toEqual([]);
 });
