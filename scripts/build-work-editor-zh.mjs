@@ -791,6 +791,18 @@ if (USER_FONT_PATCHES[app]) {
 
 // 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
 const ZERO_PATCHES = {
+  pdfcraft: [
+    [
+      "crates/fonts/build.rs",
+      'const BARRED_FAMILIES: [&str; 5] = ["Source Han", "Source Serif", "Source Sans", "Noto Sans CJK", "Noto Serif CJK"];',
+      'const BARRED_FAMILIES: [&str; 4] = ["Source Han", "Source Serif", "Source Sans", "Noto Serif CJK"];',
+    ],
+    [
+      "crates/fonts/build.rs",
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular")',
+      'let web_face = scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans")) || (*family == "BIZ UDPGothic" && *style == "Regular")',
+    ],
+  ],
   wordcraft: [
     [
       "crates/fonts/build.rs",
@@ -907,6 +919,7 @@ if (app === "lightcraft") {
 const packagedCjkFont = {
   wordcraft: "noto-sans-cjk-sc",
   deckcraft: "noto-sans-cjk-sc",
+  pdfcraft: "noto-sans-cjk-sc",
 }[app];
 if (packagedCjkFont) {
   const family = "Noto Sans CJK SC";
