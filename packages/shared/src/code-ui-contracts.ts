@@ -1,4 +1,7 @@
-import { zcodeTaskMetaSchema } from "@zcode/shared";
+import {
+  zcodeAgentProviderSchema,
+  zcodeTaskMetaSchema,
+} from "@zcode/shared";
 import {
   conversationSnapshotSchema,
   conversationTaskControlSchema,
@@ -90,8 +93,8 @@ export * as zcodeUiProtocol from "@zcode/shared/zcode-protocol-v4";
 
 export const codeUiWorkspaceSchema = z.object({
   projectId: z.string().uuid(),
-  kind: z.enum(["code", "design"]).optional(),
-  enabledModes: z.array(z.enum(["code", "design"])).optional(),
+  kind: z.enum(["code", "design", "work"]).optional(),
+  enabledModes: z.array(z.enum(["code", "design", "work"])).optional(),
   name: z.string(),
   path: z.string().min(1),
   additionalDirectories: z.array(additionalDirectorySchema).default([]),
@@ -134,6 +137,17 @@ export const codeUiRpcResponseSchema = z.union([
   codeTaskUnreadRpcResponseSchema,
   z.object({ result: z.unknown() }),
 ]);
+
+/**
+ * 设置页「子智能体」读取入参（原 `ISubagentsService.list` 的 request 形态）。
+ * 结果类型不在此重定义，仍直接引用固定原契约 `AgentsListResult`。
+ */
+export const codeUiSubagentsListQuerySchema = z.object({
+  workspacePath: z.string().optional(),
+  workspaceIdentity: z.string().optional(),
+  provider: zcodeAgentProviderSchema.optional(),
+  mode: z.enum(["allRuntimeScopes", "settingsUserOnly"]).optional(),
+});
 
 /** 原项目编辑器的已接通调用；通用 RPC 继续承载其他 feature 的贡献。 */
 export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(

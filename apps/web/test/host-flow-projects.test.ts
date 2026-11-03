@@ -1,7 +1,10 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ surfaceJson: vi.fn() }));
+const api = vi.hoisted(() => ({
+  surfaceJson: vi.fn(),
+  surfaceRequest: vi.fn(),
+}));
 vi.mock("@/components/workbench/zcode/host/surfaceApi.js", () => api);
 function requireSurfaceJsonCall(index: number) {
   const call = api.surfaceJson.mock.calls[index];
@@ -26,27 +29,32 @@ it("creates a Flow project with the server-managed default directory", async () 
   expect(path).toBe("/api/projects");
   expect(JSON.parse(init.body)).toEqual({ kind: "flow", name: "未命名工作流" });
 });
-it("creates a Flow project with the exact explicitly selected directory", async () => {
-  api.surfaceJson
-    .mockResolvedValueOnce({ status: "picked", path: "/explicit flow" })
-    .mockResolvedValueOnce({ project: { id: "flow-project", kind: "flow" } });
-  const { createFlowProject } = await import(
-    "@/components/workbench/zcode/host/flowProjects"
-  );
-  await createFlowProject(true);
-  expect(requireSurfaceJsonCall(0)[0]).toBe("/api/system/pick-directory");
-  expect(JSON.parse(requireSurfaceJsonCall(1)[1].body).work_dir).toBe(
-    "/explicit flow",
-  );
-});
-it("does not create a Flow project when directory selection is cancelled", async () => {
-  api.surfaceJson.mockResolvedValue({ status: "cancelled" });
-  const { createFlowProject } = await import(
-    "@/components/workbench/zcode/host/flowProjects"
-  );
-  await createFlowProject(true);
-  expect(api.surfaceJson).toHaveBeenCalledTimes(1);
-  expect(requireSurfaceJsonCall(0)[0]).toBe("/api/system/pick-directory");
+it("renames a project without touching its directory or modes", async () => {
+  mockProjectLists({
+    flow: [
+      {
+        id: "flow-1",
+        kind: "flow",
+        name: "旧名字",
+        workDir: "/flow-project",
+      },
+    ],
+  });
+  api.surfaceRequest.mockResolvedValue({ ok: true });
+  const store = await import("@/components/workbench/zcode/host/flowProjects");
+  await store.refreshFlowProjects();
+  await store.renameProject("flow-1", " 出差报销 ");
+  expect(api.surfaceRequest).toHaveBeenCalledWith("/api/projects/flow-1", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "出差报销" }),
+  });
+  const hook = renderHook(() => store.useFlowProjectsSnapshot());
+  expect(hook.result.current.projects[0]).toMatchObject({
+    id: "flow-1",
+    name: "出差报销",
+    workDir: "/flow-project",
+  });
 });
 it("ignores an older project read after creating and selecting a Flow project", async () => {
   let resolveRead: ((value: { projects: unknown[] }) => void) | undefined;
@@ -106,8 +114,6 @@ it("creates and selects the default Flow project when none exists", async () => 
       return Promise.resolve({
         project: { id: "default-flow", kind: "flow", name: "默认工作流" },
       });
-    const kind =
-      new URLSearchParams(path.split("?")[1] ?? "").get("kind") ?? "";
     return Promise.resolve({ projects: [] }); // 已有项目但都不是 flow
   });
   const store = await import("@/components/workbench/zcode/host/flowProjects");

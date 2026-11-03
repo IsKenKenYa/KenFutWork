@@ -18,3 +18,8 @@
 .dark {
   --wordmark-gradient: linear-gradient(90deg, #7f96ea 0%, #9db3f7 45%, #bccfff 100%);
 }
+
+/* 新建任务行没有共享导航按钮的 1px 边框，补 1px 左内边距让图标与上方导航同列。 */
+[data-testid="task-new-button"] {
+  padding-left: 11px;
+}

@@ -12,7 +12,6 @@ import {
   Blocks,
   Bot,
   Brain,
-  Cable,
   FileSearch,
   Globe2,
   Info,
@@ -21,14 +20,12 @@ import {
   Moon,
   Package,
   Palette,
-  PenTool,
   Archive,
   type Settings,
   Settings2,
   ShieldCheck,
   Sun,
   Terminal,
-  WandSparkles,
 } from "lucide-react";
 
 export const THEME_MODES: Array<{
@@ -114,18 +111,7 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.plugins.title",
     groupId: "agentCapabilities",
   },
-  {
-    id: "mcp",
-    icon: Cable,
-    titleId: "settings.mcpTitle",
-    groupId: "agentCapabilities",
-  },
-  {
-    id: "skill",
-    icon: WandSparkles,
-    titleId: "settings.skills.title",
-    groupId: "agentCapabilities",
-  },
+  // 插件·MCP·技能并成同一个分区（页面内三页签），不再单列导航项。
   {
     id: "commands",
     icon: Terminal,
@@ -149,13 +135,6 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "browser",
     icon: Globe2,
     titleId: "settings.browser.title",
-    groupId: "basics",
-  },
-  // KenFutWork 宿主分区：OpenDesign 伴随容器承载配置，紧跟「浏览器」同属外部面接入配置。
-  {
-    id: "openDesign",
-    icon: PenTool,
-    titleId: "settings.openDesign.title",
     groupId: "basics",
   },
   // 电脑控制紧跟「浏览器」：两者都是给 Agent 用的本机操控入口，

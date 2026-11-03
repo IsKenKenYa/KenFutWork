@@ -6066,6 +6066,56 @@
         }
       }
     },
+    "/api/flow/host/engine/logs": {
+      "get": {
+        "operationId": "getFlowHostEngineLogs",
+        "summary": "读取 flow 引擎日志",
+        "description": "本机授权后读取安装日志文件或指定运行中容器的 docker logs。source=install 读数据目录的 dify-stack-install.log（tail=0 取全量）；source=container 需传 container（容器名或服务名），按安装时的承载目标在宿主或 WSL2 内执行 docker logs，最多 20000 行。",
+        "tags": [
+          "flow"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/flowHostEngineLogsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/flow/host/credentials": {
       "post": {
         "operationId": "postFlowHostCredentials",
@@ -21052,7 +21102,8 @@
                   "type": "string",
                   "enum": [
                     "code",
-                    "design"
+                    "design",
+                    "work"
                   ]
                 },
                 "enabledModes": {
@@ -21061,7 +21112,8 @@
                     "type": "string",
                     "enum": [
                       "code",
-                      "design"
+                      "design",
+                      "work"
                     ]
                   }
                 },
@@ -22619,6 +22671,46 @@
         ],
         "additionalProperties": false
       },
+      "flowHostEngineLogsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "install",
+              "container"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source",
+          "title",
+          "path",
+          "lines",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
       "flowHostEngineStopRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -23894,6 +23986,12 @@
                 "minimum": 100,
                 "maximum": 60000
               },
+              "flowGatewayControlTimeoutMs": {
+                "default": 10000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000
+              },
               "computerUseActionTimeoutMs": {
                 "default": 10000,
                 "type": "integer",
@@ -24019,6 +24117,7 @@
               "processKillGraceMs",
               "terminalMaxSessions",
               "sandboxProbeTimeoutMs",
+              "flowGatewayControlTimeoutMs",
               "computerUseActionTimeoutMs",
               "computerUseObserveMaxBytes",
               "computerUseScreenshotMaxBytes",
@@ -24513,6 +24612,11 @@
             "type": "integer",
             "minimum": 100,
             "maximum": 60000
+          },
+          "flowGatewayControlTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000
           },
           "computerUseActionTimeoutMs": {
             "type": "integer",
@@ -32718,6 +32822,132 @@
                     ]
                   },
                   "workDir": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalDirectories": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "access": {
+                          "type": "string",
+                          "enum": [
+                            "read-only",
+                            "read-write"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "access"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "thumbnailUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "instanceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "updatedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "enabledModes": {
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "design",
+                        "code",
+                        "flow",
+                        "work"
+                      ]
+                    }
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "work"
+                  },
+                  "primaryCanvas": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "isPrimary": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name",
+                      "isPrimary"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "slug",
+                  "description",
+                  "workDir",
+                  "additionalDirectories",
+                  "instanceId",
+                  "createdAt",
+                  "updatedAt",
+                  "enabledModes",
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "workDir": {
                     "anyOf": [
                       {
                         "type": "string",
@@ -33697,6 +33927,132 @@
                     "name",
                     "slug",
                     "description",
+                    "additionalDirectories",
+                    "instanceId",
+                    "createdAt",
+                    "updatedAt",
+                    "enabledModes",
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "slug": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "workDir": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "additionalDirectories": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "access": {
+                            "type": "string",
+                            "enum": [
+                              "read-only",
+                              "read-write"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "access"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "thumbnailUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "instanceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "enabledModes": {
+                      "minItems": 1,
+                      "maxItems": 4,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "design",
+                          "code",
+                          "flow",
+                          "work"
+                        ]
+                      }
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "work"
+                    },
+                    "primaryCanvas": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "isPrimary": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "isPrimary"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "description",
+                    "workDir",
                     "additionalDirectories",
                     "instanceId",
                     "createdAt",
@@ -38735,6 +39091,19 @@
                     }
                   ]
                 },
+                "version": {
+                  "default": null,
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "installed": {
                   "type": "boolean"
                 }
@@ -38747,6 +39116,7 @@
                 "license",
                 "mount",
                 "pinned",
+                "version",
                 "installed"
               ],
               "additionalProperties": false

@@ -4424,7 +4424,7 @@ const enUS: Record<string, string> = {
   "settings.pluginManaged.badge": "Plugin",
   "settings.pluginManaged.modifyInPlugin":
     "Registered by a plugin. Edit it in the plugin.",
-  "settings.plugins.title": "Plugins",
+  "settings.plugins.title": "Plugins · MCP · Skills",
   "settings.plugin.scope.user": "User",
   "settings.plugin.scope.workspaces": "Workspaces",
   "settings.plugin.tab.plugins": "Plugins",

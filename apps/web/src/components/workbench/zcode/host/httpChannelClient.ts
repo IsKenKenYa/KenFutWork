@@ -113,6 +113,24 @@ class CodeHostHttpError extends Error {
   }
 }
 
+/**
+ * 宿主 5xx 可能回纯文本（Fastify 默认体就是 `Internal Server Error`）：
+ * 解析失败不能让 SyntaxError 顶替真实报错，兜底给状态码。
+ */
+async function readHostResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    const failure = (await response.json().catch(() => ({}))) as {
+      error?: { code?: string; message?: string };
+    };
+    throw new CodeHostHttpError(
+      response.status,
+      failure.error?.message ?? `Code 宿主请求失败：${response.status}`,
+      failure.error?.code,
+    );
+  }
+  return (await response.json()) as T;
+}
+
 function reportAccessLost(status: number) {
   if (status !== 401 || window.parent === window) return;
   window.parent.postMessage(
@@ -444,14 +462,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    const result = await response.json();
-    if (!response.ok)
-      throw new CodeHostHttpError(
-        response.status,
-        result.error?.message ?? `Code 宿主请求失败：${response.status}`,
-        result.error?.code,
-      );
-    return result as T;
+    return readHostResponse<T>(response);
   }
 
   /** 带调用方 signal 的 JSON 请求（长任务如语音检测需要可中止）。 */
@@ -474,14 +485,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    const result = await response.json();
-    if (!response.ok)
-      throw new CodeHostHttpError(
-        response.status,
-        result.error?.message ?? `Code 宿主请求失败：${response.status}`,
-        result.error?.code,
-      );
-    return result as T;
+    return readHostResponse<T>(response);
   }
 
   /** DELETE 请求（语音模型删除等资源操作）。 */
@@ -496,14 +500,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    const result = await response.json();
-    if (!response.ok)
-      throw new CodeHostHttpError(
-        response.status,
-        result.error?.message ?? `Code 宿主请求失败：${response.status}`,
-        result.error?.code,
-      );
-    return result as T;
+    return readHostResponse<T>(response);
   }
 
   private readonly pluginIcons = new Map<string, Promise<string | undefined>>();

@@ -144,3 +144,54 @@ it("failed POST stays reviewable and does not mutate registry or retry the opera
     f.client.dispose();
   }
 });
+it("turns a plain-text 500 into a readable host error", async () => {
+  const client = new CodeHttpChannelClient({ apiBase: "http://local" });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response("Internal Server Error", {
+          status: 500,
+        }),
+    ),
+  );
+  try {
+    await expect(client.directoryRelinkSnapshot(randomUUID())).rejects.toThrow(
+      "Code 宿主请求失败：500",
+    );
+  } finally {
+    vi.unstubAllGlobals();
+    client.dispose();
+  }
+});
+it("retries a failed directory read and clears the sidebar banner on its own", async () => {
+  const projectId = randomUUID();
+  const client = new CodeHttpChannelClient({ apiBase: "http://local" });
+  client.workspaces.registerProjects([
+    { projectId, path: "/missing", name: "项目", additionalDirectories: [] },
+  ]);
+  const proof = vi
+    .spyOn(client, "directoryRelinkSnapshot")
+    .mockRejectedValueOnce(new Error("Code 宿主请求失败：500"))
+    .mockResolvedValue(null);
+  render(
+    <ZCodeIntlProvider initialLocale="zh-CN">
+      <TabStoreProvider>
+        <CodeDirectoryRecoveryProvider client={client}>
+          <Activate identity={JSON.stringify([projectId, "/missing"])} />
+        </CodeDirectoryRecoveryProvider>
+      </TabStoreProvider>
+    </ZCodeIntlProvider>,
+  );
+  try {
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Code 宿主请求失败：500",
+    );
+    await waitFor(() => expect(proof).toHaveBeenCalledTimes(2), {
+      timeout: 8000,
+    });
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  } finally {
+    client.dispose();
+  }
+});

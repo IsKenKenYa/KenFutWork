@@ -22,6 +22,7 @@ import {
   startEngineInstall,
   stopEngineStack,
 } from "./engine/install.js";
+import { readEngineLogs } from "./engine/logs.js";
 import { probeEnginePaths } from "./engine/probe.js";
 import { listEngineStackContainers } from "./engine/stack.js";
 import { createFlowIdentityTickets } from "./identity.js";
@@ -122,6 +123,14 @@ export function createFlowHostPlugin(deps: {
           return createFlowProjectControl({
             gatewayUrl: deps.gatewayUrl,
             sharedSecret: deps.secret,
+            // 等待预算走治理表（库值 ?? env ?? 默认），不在这里写字面量。
+            timeoutMs: async () => {
+              const actor = await ctx.get("localInstance").serviceActor();
+              const settings = await ctx
+                .get("settings")
+                .getInstanceSettings(actor, actor.instanceId);
+              return settings.flowGatewayControlTimeoutMs;
+            },
           });
         const unavailable = async (): Promise<never> => {
           throw Object.assign(
@@ -264,6 +273,22 @@ export function createFlowHostPlugin(deps: {
           },
         },
         // 引擎信息页数据面：一次取全（状态 + 承载探测 + 栈容器事实 + 地址/路径）。
+        engineLogs: {
+          read: async (input) => {
+            const dataRoot = dataRootFor(ctx);
+            const options = engineInstallOptions(dataRoot);
+            const envFile = stackEnvFile(options);
+            return readEngineLogs({
+              source: input.source,
+              ...(input.container ? { container: input.container } : {}),
+              ...(input.tail !== undefined ? { tail: input.tail } : {}),
+              composeFile: options.composeFile,
+              dataDir: options.dataDir,
+              ...(envFile ? { envFile } : {}),
+              launch: readStackRuntime(dataRoot),
+            });
+          },
+        },
         engineInfo: {
           info: async () => {
             const dataRoot = dataRootFor(ctx);

@@ -30,5 +30,19 @@ describe("Code 项目工作域契约", () => {
         enabledModes: ["design"],
       }).success,
     ).toBe(true);
+    const work = projectSummarySchema.parse({
+      ...project,
+      kind: "work",
+      enabledModes: ["work"],
+      workDir: "/home/user/work",
+    });
+    expect(work.kind).toBe("work");
+    expect(
+      projectSummarySchema.safeParse({
+        ...project,
+        kind: "work",
+        enabledModes: ["work"],
+      }).success,
+    ).toBe(false);
   });
 });

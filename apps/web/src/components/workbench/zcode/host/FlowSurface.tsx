@@ -3,6 +3,7 @@ import type {
   FlowEngineStackContainer,
   FlowEntry,
   FlowHostEngineInfoResponse,
+  FlowHostEngineLogsResponse,
   FlowHostStatusResponse,
 } from "@kenfutwork/shared";
 import {
@@ -15,11 +16,25 @@ import {
   resolveFlowEntry,
 } from "@kenfutwork/shared";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
+import {
   ZCodeStartupLogoBadge,
   ZCodeStartupSpinner,
 } from "@zui/root/RootStartupLoading.js";
 
-import { CircleCheck, Loader2, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  CircleCheck,
+  Download,
+  Loader2,
+  RefreshCw,
+  TriangleAlert,
+} from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -206,7 +221,9 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
 
   return (
     <div className="h-full min-h-0 bg-background">
-      {view === "engine" ? (
+      {view === "logs" ? (
+        <EngineLogsView />
+      ) : view === "engine" ? (
         <EngineView />
       ) : entry === null ? (
         <div
@@ -229,14 +246,24 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
       ) : entry.available && entry.frontendUrl ? (
         <div
           role="status"
-          className="flex h-full flex-col items-center justify-center gap-3 text-sm text-foreground-subtle"
+          aria-busy={directory.checking && !directory.error ? true : undefined}
+          aria-label={
+            directory.checking && !directory.error ? "检查目录" : undefined
+          }
+          className="flex h-full flex-col items-center justify-center gap-5 text-sm text-foreground-subtle"
         >
-          {directory.error ??
-            (!selectedProjectId
-              ? "选择项目"
-              : directory.checking
-                ? "检查目录…"
-                : "项目目录待恢复")}
+          {directory.checking && !directory.error ? (
+            /* 全站唯一加载动画（黑色 logo + 无底板 + 下方转圈），与启动屏同一组件 */
+            <>
+              <ZCodeStartupLogoBadge />
+              <ZCodeStartupSpinner />
+            </>
+          ) : (
+            <span>
+              {directory.error ??
+                (!selectedProjectId ? "选择项目" : "项目目录待恢复")}
+            </span>
+          )}
           {directory.snapshot?.flow &&
           directory.snapshot.flow.phase !== "available" ? (
             <button
@@ -462,15 +489,271 @@ function FlowCanvasEmbed({
   );
 }
 
+/** `unreachable` = 查询容器清单失败（Docker 无响应等），与「未安装」不是一回事。 */
+type EngineDisplayState = FlowEngineInstallState | "unreachable";
+
 const ENGINE_STATE_META: Record<
-  FlowEngineInstallState,
+  EngineDisplayState,
   { label: string; className: string }
 > = {
   idle: { label: "未安装", className: "bg-hover text-foreground-subtle" },
   installing: { label: "安装中", className: "bg-hover text-foreground" },
   ready: { label: "已就绪", className: "bg-emerald-500/10 text-emerald-600" },
   error: { label: "安装失败", className: "bg-destructive/10 text-destructive" },
+  unreachable: {
+    label: "状态未知",
+    className: "bg-amber-500/10 text-amber-600",
+  },
 };
+
+const LOG_LINE_OPTIONS = [500, 1000, 5000, 10000] as const;
+const DEFAULT_LOG_LINES = 500;
+
+function logQuery(source: string, tail: number) {
+  const params = new URLSearchParams({ source: "install", tail: String(tail) });
+  if (source.startsWith("container:")) {
+    params.set("source", "container");
+    params.set("container", source.slice("container:".length));
+  }
+  return `/api/flow/host/engine/logs?${params.toString()}`;
+}
+
+function downloadText(name: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name.replace(/[\\/:*?"<>|]+/g, "-");
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** 引擎日志独立页：安装日志与各运行中容器的 docker logs。 */
+function EngineLogsView() {
+  const [info, setInfo] = useState<FlowHostEngineInfoResponse | null>(null);
+  const [source, setSource] = useState("install");
+  const [lineLimit, setLineLimit] = useState(DEFAULT_LOG_LINES);
+  const [log, setLog] = useState<FlowHostEngineLogsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [infoError, setInfoError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const containers = info?.stack.containers ?? [];
+  const selectedContainer = source.startsWith("container:")
+    ? source.slice("container:".length)
+    : null;
+
+  const loadInfo = useCallback(async () => {
+    try {
+      setInfo(
+        await surfaceJson<FlowHostEngineInfoResponse>(
+          "/api/flow/host/engine/info",
+        ),
+      );
+      setInfoError(null);
+    } catch (failure) {
+      setInfoError(
+        failure instanceof Error ? failure.message : "引擎信息读取失败。",
+      );
+    }
+  }, []);
+
+  const loadLog = useCallback(
+    async (sourceValue: string, quiet = false, tail = lineLimit) => {
+      if (!quiet) setLoading(true);
+      try {
+        setLog(
+          await surfaceJson<FlowHostEngineLogsResponse>(
+            logQuery(sourceValue, tail),
+          ),
+        );
+        setError(null);
+      } catch (failure) {
+        setLog(null);
+        setError(failure instanceof Error ? failure.message : "日志读取失败。");
+      } finally {
+        if (!quiet) setLoading(false);
+      }
+    },
+    [lineLimit],
+  );
+
+  useEffect(() => {
+    void loadInfo();
+  }, [loadInfo]);
+  useEffect(() => {
+    setLog(null);
+    void loadLog(source);
+  }, [loadLog, source]);
+  useEffect(() => {
+    if (source !== "install" || info?.install.state !== "installing") return;
+    const timer = window.setInterval(() => {
+      void loadInfo();
+      void loadLog("install", true);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [info?.install.state, loadInfo, loadLog, source]);
+  useEffect(() => {
+    if (
+      selectedContainer &&
+      !containers.some(
+        (container) =>
+          container.name === selectedContainer ||
+          container.service === selectedContainer,
+      )
+    )
+      setSource("install");
+  }, [containers, selectedContainer]);
+
+  const exportLog = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const current = await surfaceJson<FlowHostEngineLogsResponse>(
+        logQuery(source, source === "install" ? 0 : 20_000),
+      );
+      downloadText(
+        source === "install"
+          ? "dify-stack-install.log"
+          : `${selectedContainer ?? "container"}-logs.log`,
+        current.lines.join("\n"),
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "日志导出失败，请重试。",
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col px-6 py-5">
+      <header className="flex items-center gap-3">
+        <button
+          type="button"
+          aria-label="返回引擎"
+          onClick={() => setFlowSurfaceView("engine")}
+          className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </button>
+        <h1 className="text-lg font-semibold">日志</h1>
+        {log ? (
+          <span className="min-w-0 truncate text-xs text-foreground-subtle">
+            {log.title}
+          </span>
+        ) : null}
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              void loadInfo();
+              void loadLog(source);
+            }}
+            disabled={loading}
+            aria-label="刷新日志"
+            title="刷新日志"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportLog()}
+            disabled={exporting || !log}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs text-foreground transition-colors hover:border-foreground/30 disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            导出
+          </button>
+        </div>
+      </header>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Select value={source} onValueChange={setSource}>
+          <SelectTrigger
+            aria-label="日志来源"
+            variant="outline"
+            className="w-64"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="install">安装日志</SelectItem>
+            {containers.map((container) => (
+              <SelectItem
+                key={container.name}
+                value={`container:${container.name}`}
+              >
+                {container.service} · {container.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={String(lineLimit)}
+          onValueChange={(value) => setLineLimit(Number(value))}
+        >
+          <SelectTrigger
+            aria-label="显示行数"
+            variant="outline"
+            className="w-28"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LOG_LINE_OPTIONS.map((count) => (
+              <SelectItem key={count} value={String(count)}>
+                {count} 行
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {log?.truncated ? (
+          <span className="text-xs text-foreground-subtle">
+            仅显示最后 {lineLimit} 行
+          </span>
+        ) : null}
+        {log?.path ? (
+          <span
+            className="min-w-0 truncate font-mono text-[11px] text-foreground-subtle"
+            title={log.path}
+          >
+            {log.path}
+          </span>
+        ) : null}
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-3 text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+      {(infoError ?? info?.stack.error) ? (
+        <p
+          className="mt-1 text-xs text-destructive"
+          title={infoError ?? info?.stack.error}
+        >
+          容器清单不可用：仅能读取安装日志
+        </p>
+      ) : null}
+
+      <div className="mt-3 min-h-0 flex-1 overflow-hidden rounded-xl border border-border">
+        <pre className="h-full overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-[11px] leading-5">
+          {loading && !log
+            ? "读取日志…"
+            : log && log.lines.length > 0
+              ? log.lines.join("\n")
+              : "暂无日志"}
+        </pre>
+      </div>
+    </div>
+  );
+}
 
 /** 引擎信息页（紧凑版）：状态 / 容器事实 / 地址 / 安装与停止（数据面一次取全）。 */
 function EngineView() {
@@ -478,7 +761,6 @@ function EngineView() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stopAsk, setStopAsk] = useState(false);
-  const [logOpen, setLogOpen] = useState(false);
   const [launchChoice, setLaunchChoice] = useState<FlowEngineLaunch | null>(
     null,
   );
@@ -504,23 +786,39 @@ function EngineView() {
     void refresh();
   }, [refresh]);
 
-  const engineState: FlowEngineInstallState =
-    state !== "idle" ? state : (info?.install.state ?? "idle");
+  // 状态以运行期事实为准：本进程的安装动作 > 安装记录 > 容器清单。
+  // 服务重启后安装记录归零（`idle`），栈在跑却不能显示成「未安装」；
+  // 容器清单读不到（Docker 无响应）也不是「未安装」，单独给 `unreachable`。
+  const stackContainers = info?.stack.containers ?? [];
+  const stackError = info?.stack.error ?? null;
+  const engineState: EngineDisplayState =
+    state !== "idle"
+      ? state
+      : info?.install.state && info.install.state !== "idle"
+        ? info.install.state
+        : stackContainers.length > 0
+          ? "ready"
+          : stackError
+            ? "unreachable"
+            : "idle";
   // 安装中静默轮询：日志尾随和容器状态都跟着走，不闪 loading。
+  // 查询失败（Docker 未就绪）按 10s 自愈重试，容器服务回来后不用手动刷新。
+  // 一次性局部常量：页面轮询节奏，不进治理表（治理表管 agent 限额与工具超时）。
   useEffect(() => {
-    if (engineState !== "installing") return;
-    const timer = window.setInterval(() => void load(true), 3000);
+    const intervalMs =
+      engineState === "installing"
+        ? 3_000
+        : engineState === "unreachable"
+          ? 10_000
+          : null;
+    if (intervalMs === null) return;
+    const timer = window.setInterval(() => void load(true), intervalMs);
     return () => window.clearInterval(timer);
   }, [engineState, load]);
   // 安装收尾（成功或失败）后再拉一次快照：日志尾部与容器事实停在最终状态。
   useEffect(() => {
     if (state === "ready" || state === "error") void load(true);
   }, [state, load]);
-  // 失败时直接展开日志：错误原因只在日志尾部（镜像拉取失败等），不让人去翻文件。
-  useEffect(() => {
-    if (engineState === "error" && (info?.install.logTail.length ?? 0) > 0)
-      setLogOpen(true);
-  }, [engineState, info?.install.logTail.length]);
   const meta = ENGINE_STATE_META[engineState] ?? ENGINE_STATE_META.idle;
   const wslPath = info?.probe.paths.find((path) => path.id === "wsl2");
   const wslUsable = Boolean(wslPath?.available && wslPath?.distro);
@@ -529,11 +827,6 @@ function EngineView() {
     (info?.probe.recommended === "wsl2" && wslUsable
       ? { kind: "wsl2", distro: wslPath?.distro ?? "" }
       : { kind: "host" });
-  const logTail = info?.install.logTail ?? [];
-  const logFile = info
-    ? `${info.addresses.dataDir}/dify-stack-install.log`
-    : "";
-
   return (
     <div className="h-full overflow-y-auto">
       <div className="flex w-full flex-col px-6 py-5">
@@ -564,13 +857,8 @@ function EngineView() {
             </button>
             <button
               type="button"
-              onClick={() => setLogOpen((open) => !open)}
-              aria-pressed={logOpen}
-              className={`rounded-lg border border-border px-2.5 py-1 text-xs transition-colors hover:border-foreground/30 ${
-                logOpen
-                  ? "bg-selected text-foreground"
-                  : "text-foreground-subtle"
-              }`}
+              onClick={() => setFlowSurfaceView("logs")}
+              className="rounded-lg border border-border px-2.5 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
             >
               日志
             </button>
@@ -622,7 +910,7 @@ function EngineView() {
                   停止引擎
                 </button>
               )
-            ) : (
+            ) : engineState === "unreachable" ? null : (
               <>
                 {wslUsable ? (
                   <div className="flex items-center gap-1 rounded-full bg-hover/60 p-1">
@@ -670,23 +958,6 @@ function EngineView() {
         {info?.install.error ? (
           <p className="mt-3 text-xs text-destructive">{info.install.error}</p>
         ) : null}
-        {logOpen ? (
-          <div className="mt-3 overflow-hidden rounded-xl border border-border">
-            <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
-              <span className="shrink-0">安装日志</span>
-              <span
-                className="min-w-0 flex-1 truncate text-right font-mono text-[11px]"
-                title={logFile}
-              >
-                {logFile}
-              </span>
-            </div>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all px-4 py-3 font-mono text-[11px] leading-5">
-              {logTail.length > 0 ? logTail.join("\n") : "暂无日志"}
-            </pre>
-          </div>
-        ) : null}
-
         <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
           {/* 列宽均分 + 居中：定宽 flex 会让「端口」列吃掉剩余宽度，右侧留一大片空白。 */}
           <div className="grid grid-cols-3 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
@@ -732,8 +1003,13 @@ function EngineView() {
               ),
             )
           ) : (
-            <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
-              {info?.stack.error ?? "没有运行中的容器"}
+            <p
+              className="px-4 py-3 text-center text-xs text-foreground-subtle"
+              title={stackError ?? undefined}
+            >
+              {stackError
+                ? "容器清单读取失败：检查本机 Docker 后刷新"
+                : "没有运行中的容器"}
             </p>
           )}
         </div>

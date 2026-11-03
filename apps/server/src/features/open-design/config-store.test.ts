@@ -1,9 +1,10 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, type writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  ensureOpenDesignAutoSecret,
   parseOpenDesignConfigText,
   readOpenDesignFileConfig,
   resolveOpenDesignConfigView,
@@ -87,5 +88,35 @@ describe("桌面承载配置文件（open-design.env）", () => {
         file: { frontendUrl: null, embedSecret: null },
       }),
     ).toMatchObject({ source: "none", restartRequired: false });
+  });
+
+  it("自动密钥：首次生成落盘，之后复用同一把", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "kfw-od-secret-"));
+    const writes: Array<{
+      path: string;
+      data: string;
+      mode?: number | undefined;
+    }> = [];
+    const created = ensureOpenDesignAutoSecret({
+      dataDir,
+      createImpl: () => "auto-generated-secret",
+      writeImpl: ((path, data, options) =>
+        writes.push({
+          path: String(path),
+          data: String(data),
+          mode: (options as { mode?: number })?.mode,
+        })) as typeof writeFileSync,
+    });
+    expect(created).toBe("auto-generated-secret");
+    // 明文凭据：权限必须收口 0600，路径在数据目录 config 下
+    expect(writes[0]?.mode).toBe(0o600);
+    expect(writes[0]?.path).toBe(
+      join(dataDir, "config", "open-design.embed-secret"),
+    );
+
+    const real = ensureOpenDesignAutoSecret({ dataDir });
+    const again = ensureOpenDesignAutoSecret({ dataDir });
+    expect(again).toBe(real);
+    expect(again.length).toBeGreaterThan(20);
   });
 });

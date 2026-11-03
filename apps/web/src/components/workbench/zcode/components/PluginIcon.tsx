@@ -18,7 +18,7 @@ function PluginMonogram({
     <svg
       viewBox="0 0 24 24"
       aria-hidden="true"
-      className={cn("h-2/3 w-2/3", className)}
+      className={cn("size-4", className)}
     >
       <text
         x="12"
@@ -108,9 +108,9 @@ export function PluginIcon({
       ) : fallbackIcon ? (
         fallbackIcon
       ) : label?.trim() ? (
-        <PluginMonogram label={label} />
+        <PluginMonogram label={label} className={iconClassName} />
       ) : (
-        <Blocks className="h-2/3 w-2/3" />
+        <Blocks className={cn("size-4", iconClassName)} />
       )}
     </span>
   );

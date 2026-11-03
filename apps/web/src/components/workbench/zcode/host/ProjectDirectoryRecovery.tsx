@@ -12,6 +12,10 @@ import {
   useEffect,
   useState,
 } from "react";
+import {
+  DIRECTORY_RETRY_MAX,
+  DIRECTORY_RETRY_MS,
+} from "./canvasProjectDirectories.js";
 import { applyDirectoryRelinkStores } from "./directoryRelinkStores.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { DirectoryChoiceCancelledError } from "./ProjectDirectoryChoice.js";
@@ -51,25 +55,40 @@ function useDirectoryRecovery(client: CodeHttpChannelClient) {
   } | null>(null);
   useEffect(() => {
     let current = true;
+    let timer = 0;
     setSnapshot(null);
     setError(null);
     const project = path ? client.projectForPath(path, identity) : null;
-    if (project)
-      void client
-        .directoryRelinkSnapshot(project.projectId)
-        .then((view) => {
-          if (current) setSnapshot(view);
-        })
-        .catch((failure: unknown) => {
-          if (current)
+    if (project) {
+      // 读失败按固定间隔续读：本机服务瞬时无响应（重启容器、DB 断连）后
+      // 侧栏报错会自己消失，不用用户刷新。
+      const read = (attempt: number) => {
+        client
+          .directoryRelinkSnapshot(project.projectId)
+          .then((view) => {
+            if (!current) return;
+            setSnapshot(view);
+            setError(null);
+          })
+          .catch((failure: unknown) => {
+            if (!current) return;
             setError(
               failure instanceof Error
                 ? failure.message
                 : "项目目录状态无法读取。",
             );
-        });
+            if (attempt < DIRECTORY_RETRY_MAX)
+              timer = window.setTimeout(
+                () => read(attempt + 1),
+                DIRECTORY_RETRY_MS,
+              );
+          });
+      };
+      read(0);
+    }
     return () => {
       current = false;
+      window.clearTimeout(timer);
     };
   }, [client, path, identity]);
   const applyReceipt = async (

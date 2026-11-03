@@ -75,7 +75,10 @@ function SharedSidebarNavigation({
       icon={<WandSparkles className="size-4" />}
       label={intl.formatMessage({ id: "settings.skills.title" })}
       onClick={() => {
-        setPendingSettingsSectionIntent("skill", { pluginScopeKey: "user" });
+        setPendingSettingsSectionIntent("plugin", {
+          pluginTab: "skills",
+          pluginScopeKey: "user",
+        });
         openSettings();
       }}
     /> : null}
@@ -84,7 +87,10 @@ function SharedSidebarNavigation({
       icon={<Cable className="size-4" />}
       label={intl.formatMessage({ id: "settings.mcpTitle" })}
       onClick={() => {
-        setPendingSettingsSectionIntent("mcp", { pluginScopeKey: "user" });
+        setPendingSettingsSectionIntent("plugin", {
+          pluginTab: "mcps",
+          pluginScopeKey: "user",
+        });
         openSettings();
       }}
     /> : null}

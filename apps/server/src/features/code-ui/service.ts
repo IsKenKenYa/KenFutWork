@@ -4821,6 +4821,7 @@ export class CodeUiService {
     const projects = [
       ...(await this.deps.projects.listProjects(user, "code")),
       ...(await this.deps.projects.listProjects(user, "design")),
+      ...(await this.deps.projects.listProjects(user, "work")),
     ];
     const unique = new Map(
       projects
@@ -4830,9 +4831,9 @@ export class CodeUiService {
     return [...unique.values()].map((project) => ({
       projectId: project.id,
       name: project.name,
-      kind: project.kind as "code" | "design",
+      kind: project.kind as "code" | "design" | "work",
       enabledModes: project.enabledModes?.filter(
-        (mode) => mode === "code" || mode === "design",
+        (mode) => mode === "code" || mode === "design" || mode === "work",
       ),
       path:
         project.workDir ??

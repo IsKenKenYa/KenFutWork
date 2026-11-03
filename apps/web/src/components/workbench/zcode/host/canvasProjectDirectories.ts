@@ -1,5 +1,4 @@
 import {
-  directoryPickerStatusSchema,
   type PickDirectoryResponse,
   type ProjectDirectoryRelinkSnapshot,
   projectDirectoryRelinkResponseSchema,
@@ -13,25 +12,6 @@ import {
   useState,
 } from "react";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
-
-export function useDirectoryPickerAvailable() {
-  const [available, setAvailable] = useState(false);
-  useEffect(() => {
-    let current = true;
-    void surfaceJson("/api/system/directory-picker")
-      .then((body) => {
-        if (current)
-          setAvailable(directoryPickerStatusSchema.parse(body).available);
-      })
-      .catch(() => {
-        if (current) setAvailable(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, []);
-  return available;
-}
 
 export async function pickCanvasProjectDirectory(): Promise<string | null> {
   const picked = await surfaceJson<PickDirectoryResponse>(
@@ -55,12 +35,21 @@ type DirectoryState = {
   error: string | null;
 };
 
+/** 宿主或网关的 5xx 可能回纯文本：解析失败不能让 SyntaxError 顶替真实报错。 */
+async function readRelinkBody(response: Response) {
+  try {
+    return (await response.json()) as { error?: { message?: string } };
+  } catch {
+    return {};
+  }
+}
+
 async function readDirectorySnapshot(projectId: string, kind?: DirectoryKind) {
   const url = `/api/projects/${encodeURIComponent(projectId)}/relink-directory`;
   if (!kind)
     return projectDirectoryRelinkSnapshotSchema.parse(await surfaceJson(url));
   const response = await surfaceFetch(url);
-  const body = await response.json();
+  const body = await readRelinkBody(response);
   if (
     kind === "design" &&
     response.status === 400 &&
@@ -103,6 +92,14 @@ async function submitDirectoryRelink(
   );
 }
 
+/**
+ * 读不到目录状态时的续读节奏与次数上限（宿主表面的自愈轮询：网关/本机服务
+ * 恢复后自己接上，不要求用户刷新）。一次性局部常量：不属于 agent 治理表管的
+ * 限额与工具超时。
+ */
+export const DIRECTORY_RETRY_MS = 5_000;
+export const DIRECTORY_RETRY_MAX = 60;
+
 function useDirectorySnapshot(
   kind: DirectoryKind,
   projectId: string | null,
@@ -117,35 +114,40 @@ function useDirectorySnapshot(
   // biome-ignore lint/correctness/useExhaustiveDependencies: successful relink must re-read the authoritative generation.
   useEffect(() => {
     let current = true;
+    let timer = 0;
     setState({
       projectId,
       snapshot: null,
       checking: Boolean(projectId),
       error: null,
     });
-    if (projectId)
-      void (async () => {
+    if (projectId) {
+      const read = async (attempt: number) => {
         try {
           const snapshot = await readDirectorySnapshot(projectId, kind);
           if (current)
             setState({ projectId, snapshot, checking: false, error: null });
         } catch (failure) {
-          if (current)
-            setState({
-              projectId,
-              snapshot: null,
-              checking: false,
-              error:
-                failure instanceof Error
-                  ? failure.message
-                  : "目录状态无法读取。",
-            });
-        } finally {
-          if (current) setState((value) => ({ ...value, checking: false }));
+          if (!current) return;
+          setState({
+            projectId,
+            snapshot: null,
+            checking: false,
+            error:
+              failure instanceof Error ? failure.message : "目录状态无法读取。",
+          });
+          if (attempt < DIRECTORY_RETRY_MAX)
+            timer = window.setTimeout(
+              () => void read(attempt + 1),
+              DIRECTORY_RETRY_MS,
+            );
         }
-      })();
+      };
+      void read(0);
+    }
     return () => {
       current = false;
+      window.clearTimeout(timer);
     };
   }, [kind, projectId, revision]);
   return { state, setState };

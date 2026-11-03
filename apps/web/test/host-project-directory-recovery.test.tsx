@@ -57,6 +57,69 @@ describe("new-shell project directory recovery", () => {
     );
     expect(hook.result.current.snapshot).toBeNull();
   });
+  it("re-reads a failed directory check on its own once the gateway recovers", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      api.surfaceFetch.mockImplementation(async () => {
+        calls += 1;
+        return calls === 1
+          ? {
+              status: 503,
+              json: async () => ({
+                error: { message: "Flow状态不可读取，请恢复网关连接。" },
+              }),
+            }
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                projectId,
+                workDir: "/p",
+                tasks: [],
+                flow: {
+                  generation: 1,
+                  operationId,
+                  phase: "available",
+                  previousWorkDir: "/p",
+                  nextWorkDir: null,
+                  receipt: null,
+                },
+              }),
+            };
+      });
+      const hook = renderHook(() =>
+        useCanvasProjectDirectory("flow", projectId),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(hook.result.current.error).toContain("恢复网关连接");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(hook.result.current.snapshot?.flow?.phase).toBe("available");
+      expect(hook.result.current.error).toBeNull();
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("keeps the message readable when the host answers 500 with plain text", async () => {
+    api.surfaceFetch.mockResolvedValue({
+      status: 500,
+      json: async () => {
+        throw new SyntaxError(
+          `Unexpected token 'I', "Internal S"... is not valid JSON`,
+        );
+      },
+    });
+    const hook = renderHook(() => useCanvasProjectDirectory("flow", projectId));
+    await waitFor(() =>
+      expect(hook.result.current.error).toBe("项目目录状态无法读取。"),
+    );
+    hook.unmount();
+  });
   it("continues the published Flow operation without opening another picker", async () => {
     api.surfaceFetch.mockResolvedValue({
       ok: true,

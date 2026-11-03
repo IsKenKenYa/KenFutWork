@@ -12,6 +12,7 @@ const host = vi.hoisted(() => ({
   projectId: null as string | null,
   kind: "flow" as "flow" | "code" | "design" | "work",
   snapshot: null as ProjectDirectoryRelinkSnapshot | null,
+  checking: false,
   surfaceFetch: vi.fn(),
   surfaceJson: vi.fn(),
   recover: vi.fn(),
@@ -35,7 +36,7 @@ vi.mock(
   () => ({
     useCanvasProjectDirectory: () => ({
       snapshot: host.snapshot,
-      checking: false,
+      checking: host.checking,
       error: null,
       busy: false,
       recover: host.recover,
@@ -101,6 +102,7 @@ beforeEach(() => {
   host.projectId = null;
   host.kind = "flow";
   host.snapshot = null;
+  host.checking = false;
   setFlowSurfaceView("canvas");
   host.surfaceJson.mockResolvedValue({
     enabled: true,
@@ -248,4 +250,88 @@ it("binds a Code project without waiting for a flow relink snapshot", async () =
       body: JSON.stringify({ projectId: projectA }),
     }),
   );
+});
+
+it("shows the unified startup animation while the directory check is running", async () => {
+  host.projectId = projectA;
+  host.snapshot = null;
+  host.checking = true;
+  render(<HostFlowSurface />);
+  await waitFor(() => {
+    const busy = document.querySelector('[role="status"][aria-busy="true"]');
+    expect(busy).not.toBeNull();
+    expect(busy?.querySelector('[class*="animate-spin"]')).not.toBeNull();
+  });
+  const busy = document.querySelector('[role="status"][aria-busy="true"]');
+  expect(busy?.getAttribute("aria-label")).toBe("检查目录");
+  expect(busy?.textContent).toBe("");
+  expect(screen.queryByText("检查目录…")).toBeNull();
+});
+
+function engineInfoResponse(
+  stack: { containers: unknown[]; error?: string },
+  installState: "idle" | "installing" | "ready" | "error" = "idle",
+) {
+  return {
+    install: { state: installState, logTail: [] },
+    probe: { platform: "win32", paths: [], recommended: null },
+    stack,
+    runtime: { kind: "host" },
+    addresses: {
+      frontendUrl: `${origin}/`,
+      hostIdentityUrl: "http://127.0.0.1:3001/api/flow/host/identity/verify",
+      composeFile: "D:/KenFutWork/dify/docker-compose.dify.yml",
+      dataDir: "D:/data",
+    },
+  };
+}
+
+async function mountEngineView(info: unknown) {
+  host.projectId = projectA;
+  host.kind = "flow";
+  host.snapshot = binding(projectA, 1);
+  setFlowSurfaceView("engine");
+  host.surfaceJson.mockImplementation(async (url: string) =>
+    url === "/api/flow/host/engine/info"
+      ? info
+      : { enabled: true, frontendUrl: `${origin}/`, reasons: [] },
+  );
+  render(<HostFlowSurface />);
+}
+
+it("reports a failed container query as an unknown state instead of uninstalled", async () => {
+  // Docker 无响应时 compose 查询报错：不能显示「未安装」，也不把整条命令搬进界面。
+  await mountEngineView(
+    engineInfoResponse({
+      containers: [],
+      error:
+        "docker compose ps 失败（退出码 127）：Command failed: docker compose --env-file D:/data/dify-stack.env -f D:/KenFutWork/dify/docker-compose.dify.yml --profile dify ps --format json",
+    }),
+  );
+  await screen.findByText("状态未知");
+  expect(screen.queryByText("未安装")).toBeNull();
+  expect(screen.getByText(/容器清单读取失败/).getAttribute("title")).toContain(
+    "--format json",
+  );
+  expect(screen.queryByText(/Command failed: docker compose/)).toBeNull();
+  setFlowSurfaceView("canvas");
+});
+
+it("shows an installed stack as ready after the host process restarts", async () => {
+  // 安装记录随进程归零（idle）；容器事实仍在跑，状态必须是「已就绪」。
+  await mountEngineView(
+    engineInfoResponse({
+      containers: [
+        {
+          service: "dify",
+          name: "kenfutwork-dify-dify-1",
+          state: "running",
+          health: "healthy",
+          ports: ["127.0.0.1:15001->5001/tcp"],
+        },
+      ],
+    }),
+  );
+  await screen.findByText("已就绪");
+  setFlowSurfaceView("canvas");
 });

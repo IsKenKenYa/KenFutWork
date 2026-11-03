@@ -32,7 +32,6 @@ import { useSettings } from "@zui/hooks/useSettingService.js";
 import { useUsageEntitlement } from "@zui/hooks/useUsageEntitlement.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { HostAboutSection } from "@zui/host/AboutSection.js";
-import { HostOpenDesignSettingsSection } from "@zui/host/OpenDesignSettingsSection.js";
 import { PermissionTierSection } from "@zui/host/PermissionTierControl.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
@@ -2154,24 +2153,6 @@ export function SettingsPage({
                           voiceClient ? (
                             <VoiceSection client={voiceClient} />
                           ) : null
-                        ) : activeSection === "mcp" ? (
-                          <PluginsSection
-                            key={`mcp:${settingsSectionNavigationVersion}`}
-                            mode="mcp"
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            onCreateTask={onCreateTask}
-                            onOpenPluginStore={openPluginStore}
-                          />
-                        ) : activeSection === "skill" ? (
-                          <PluginsSection
-                            key={`skill:${settingsSectionNavigationVersion}`}
-                            mode="skill"
-                            workspacePath={activeWorkspacePath}
-                            workspaceIdentity={activeWorkspaceIdentity}
-                            onCreateTask={onCreateTask}
-                            onOpenPluginStore={openPluginStore}
-                          />
                         ) : activeSection === "migration" ? (
                           <MigrationSection
                             workspacePath={activeWorkspacePath}
@@ -2251,8 +2232,6 @@ export function SettingsPage({
                           />
                         ) : activeSection === "about" ? (
                           <HostAboutSection isDesktop={Boolean(isDesktop)} />
-                        ) : activeSection === "openDesign" ? (
-                          <HostOpenDesignSettingsSection />
                         ) : activeSection === "permissions" ? (
                           <PermissionTierSection />
                         ) : null}

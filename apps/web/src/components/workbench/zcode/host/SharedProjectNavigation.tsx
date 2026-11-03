@@ -45,6 +45,7 @@ interface NavigationContext {
   createProject: (preset: Preset) => Promise<void>;
   creation: { creationId: string; kind: Preset } | null;
   closeProjectCreation: (creationId: string) => void;
+  refreshWorkspaces: () => Promise<CodeUiWorkspace[]>;
   registerTabs: (tabs: TabStore | null) => void;
   error: string | null;
   retryDocument: (() => void) | null;
@@ -484,6 +485,7 @@ export function SharedProjectNavigationProvider({
         createProject,
         creation,
         closeProjectCreation,
+        refreshWorkspaces: () => client.refreshWorkspaces(),
         registerTabs,
         error,
         retryDocument,
@@ -512,6 +514,11 @@ export function useSharedProjectCreation() {
         closeProjectCreation: context.closeProjectCreation,
       }
     : null;
+}
+
+/** 壳侧栏的项目切换/打开入口（全部项目菜单等宿主组件复用同一份打开逻辑）。 */
+export function useSharedProjectNavigation() {
+  return useContext(Context);
 }
 
 export function useSharedProjectTabRegistration() {

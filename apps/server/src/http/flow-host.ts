@@ -4,12 +4,16 @@ import {
   type FlowEngineInstallStatus,
   type FlowEngineLaunch,
   type FlowEngineStackContainer,
+  type FlowHostEngineLogsQuery,
+  type FlowHostEngineLogsResponse,
   type FlowHostEngineResponse,
   flowEngineInstallStatusSchema,
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
   flowHostEngineInfoResponseSchema,
   flowHostEngineInstallRequestSchema,
+  flowHostEngineLogsQuerySchema,
+  flowHostEngineLogsResponseSchema,
   flowHostEngineStopRequestSchema,
   flowHostEventsRequestSchema,
   flowHostEventsResponseSchema,
@@ -22,6 +26,7 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { FlowEngineLogError } from "../features/flow/engine/logs.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type {
   LocalActor,
@@ -110,6 +115,10 @@ export async function registerFlowHostRoutes(
         runtime: FlowEngineLaunch;
         addresses: { composeFile: string; dataDir: string };
       }>;
+    };
+    /** 引擎日志页：安装日志文件 + 各运行中容器的 docker logs（只读）。 */
+    engineLogs?: {
+      read(input: FlowHostEngineLogsQuery): Promise<FlowHostEngineLogsResponse>;
     };
     /** 共享密钥；缺省表示本实例未启用 flow 宿主能力。 */
     secret?: string | undefined;
@@ -321,6 +330,42 @@ export async function registerFlowHostRoutes(
         },
       }),
     );
+  });
+
+  app.get("/api/flow/host/engine/logs", async (request, reply) => {
+    if (!(await options.localAccess.authenticate(request)))
+      return unauthorized(reply, "缺少或无效的本机接入凭据。");
+    if (!options.engineLogs) {
+      return error(reply, 503, "service_unavailable", "引擎日志数据面未装配。");
+    }
+    const parsed = flowHostEngineLogsQuerySchema.safeParse(request.query ?? {});
+    if (!parsed.success) {
+      return error(reply, 400, "application_error", "日志参数不正确。");
+    }
+    try {
+      return reply.send(
+        flowHostEngineLogsResponseSchema.parse(
+          await options.engineLogs.read(parsed.data),
+        ),
+      );
+    } catch (failure) {
+      if (failure instanceof FlowEngineLogError) {
+        return error(
+          reply,
+          failure.statusCode,
+          failure.statusCode >= 500
+            ? "service_unavailable"
+            : "application_error",
+          failure.message,
+        );
+      }
+      return error(
+        reply,
+        503,
+        "service_unavailable",
+        failure instanceof Error ? failure.message : "日志读取失败。",
+      );
+    }
   });
 
   app.post(

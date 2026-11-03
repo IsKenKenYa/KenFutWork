@@ -11,8 +11,8 @@ import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
 export interface DirectoryProject {
   id: string;
   name: string;
-  kind: "code" | "design" | "flow";
-  enabledModes: Array<"code" | "design" | "flow">;
+  kind: "code" | "design" | "flow" | "work";
+  enabledModes: Array<"code" | "design" | "flow" | "work">;
   workDir: string;
 }
 type Choice =

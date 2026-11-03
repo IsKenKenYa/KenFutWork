@@ -91,6 +91,7 @@ import {
   flowHostCredentialsRequestSchema,
   flowHostCredentialsResponseSchema,
   flowHostEngineInfoResponseSchema,
+  flowHostEngineLogsResponseSchema,
   flowHostEngineStopRequestSchema,
   flowHostEventsRequestSchema,
   flowHostEventsResponseSchema,
@@ -1417,6 +1418,17 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "查询 flow 引擎信息页数据",
     description:
       "汇总安装状态、环境探测与引擎栈容器运行态（安装态为进程内快照，有运行中容器时按已就绪校正）；身份回调地址按本次请求主机名拼。数据面未装配时 503。",
+  },
+  {
+    method: "get",
+    path: "/api/flow/host/engine/logs",
+    tag: "flow",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: flowHostEngineLogsResponseSchema,
+    summary: "读取 flow 引擎日志",
+    description:
+      "本机授权后读取安装日志文件或指定运行中容器的 docker logs。source=install 读数据目录的 dify-stack-install.log（tail=0 取全量）；source=container 需传 container（容器名或服务名），按安装时的承载目标在宿主或 WSL2 内执行 docker logs，最多 20000 行。",
   },
   {
     method: "post",

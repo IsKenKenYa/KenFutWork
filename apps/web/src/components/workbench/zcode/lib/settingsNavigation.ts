@@ -108,7 +108,9 @@ export function resolveSettingsSection(
   section: SettingsSectionId,
   fallbackSection: SettingsSectionId = "general",
 ): SettingsSectionId {
-  if (section === "plugins") return "plugin";
+  // 插件·MCP·技能已并成一个分区（页面内三页签）：旧独立分区 id 一律落到「插件」。
+  if (section === "plugins" || section === "mcp" || section === "skill")
+    return "plugin";
   return isSettingsSectionEnabled(section) ? section : fallbackSection;
 }
 
@@ -144,9 +146,11 @@ function readLastSettingsSectionPreference(
       setPendingPluginTab("plugins");
       return "plugin";
     }
-    if (raw === "skills") {
-      storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "skill");
-      return "skill";
+    if (raw === "skills" || raw === "skill" || raw === "mcp") {
+      // 技能/MCP 已并入「插件」页签：迁移持久化值，并把停留页签一起带过去。
+      storage.setItem(SETTINGS_LAST_SECTION_STORAGE_KEY, "plugin");
+      setPendingPluginTab(raw === "mcp" ? "mcps" : "skills");
+      return "plugin";
     }
     // 旧版“代码预览”已并入“外观”，保留用户上次停留位置的迁移语义。
     if (raw === "codePreview") {
@@ -221,19 +225,21 @@ export function setPendingSettingsPluginIntent(
     scopeKey?: string | undefined;
   } = {},
 ): void {
-  const section =
-    tab === "mcps"
-      ? "mcp"
-      : tab === "skills"
-        ? "skill"
-        : tab === "commands"
-          ? "commands"
-          : "plugin";
-  setPendingSettingsSectionIntent(section, {
-    pluginTab: tab === "plugins" ? tab : undefined,
-    pluginOrigin: options.origin,
-    pluginScopeKey: options.scopeKey,
-  });
+  // 插件·MCP·技能同属一个分区：分区只发 plugin，靠 pluginTab 决定停在哪个页签；
+  // 命令仍是独立分区。
+  setPendingSettingsSectionIntent(
+    tab === "commands" ? "commands" : "plugin",
+    tab === "commands"
+      ? {
+          ...(options.origin ? { pluginOrigin: options.origin } : {}),
+          ...(options.scopeKey ? { pluginScopeKey: options.scopeKey } : {}),
+        }
+      : {
+          pluginTab: tab,
+          ...(options.origin ? { pluginOrigin: options.origin } : {}),
+          ...(options.scopeKey ? { pluginScopeKey: options.scopeKey } : {}),
+        },
+  );
 }
 
 export function setPendingSettingsSectionIntent(
@@ -344,9 +350,10 @@ function consumePendingSettingsSection(
       window.sessionStorage.removeItem(SETTINGS_SECTION_INTENT_KEY);
     }
 
-    if (raw === "skills") {
-      // 旧 Skills 使用复数 id；迁移到当前独立 skill 分区。
-      return "skill";
+    if (raw === "skills" || raw === "skill" || raw === "mcp") {
+      // 旧 id（含复数 skills 与已并页的 mcp/skill）：落到「插件」对应页签。
+      setPendingPluginTab(raw === "mcp" ? "mcps" : "skills");
+      return "plugin";
     }
     if (raw && isSettingsSectionId(raw)) {
       return resolveSettingsSection(raw, fallbackSection);

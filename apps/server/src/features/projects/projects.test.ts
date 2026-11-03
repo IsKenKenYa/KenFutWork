@@ -577,6 +577,34 @@ describe("project service（错误映射与行为保持不变）", () => {
     expect(projects[0]).not.toHaveProperty("primaryCanvas");
   });
 
+  it("Work 项目按自身类型与主目录映射，不混成 Design", async () => {
+    const service = buildService({
+      repository: {
+        listActive: async () => [
+          {
+            id: PROJECT_ID,
+            name: "工作项目",
+            slug: "gongzuo",
+            kind: "work",
+            enabled_modes: ["work"],
+            description: null,
+            created_at: "2026-09-13T00:00:00+00:00",
+            updated_at: "2026-09-13T00:00:00+00:00",
+            instance_id: INSTANCE_ID,
+            thumbnail_path: null,
+            work_dir: "/work-project",
+            additional_directories: [],
+          },
+        ],
+        listPrimaryCanvases: async () => [],
+      },
+    });
+
+    await expect(service.listProjects(ACTOR, "work")).resolves.toMatchObject([
+      { id: PROJECT_ID, kind: "work", workDir: "/work-project" },
+    ]);
+  });
+
   it("显式启用第二种工作方式保留同一项目，不能移除默认方式", async () => {
     const row: ProjectDetailRow = {
       id: PROJECT_ID,

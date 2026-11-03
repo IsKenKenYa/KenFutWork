@@ -33,7 +33,8 @@ describe("设置导航：未接通的 zcode 文件型分区不出现", () => {
 
     expect(sectionIds).toContain("memory");
     expect(sectionIds).toContain("plugin");
-    expect(sectionIds).toContain("mcp");
-    expect(sectionIds).toContain("skill");
+    // 主线的「插件·MCP·技能」并页：MCP 与技能不再单列导航项。
+    expect(sectionIds).not.toContain("mcp");
+    expect(sectionIds).not.toContain("skill");
   });
 });

@@ -2,19 +2,18 @@
 import type {
   IntegratedTerminalShellOption,
   IntegratedTerminalShellSelection,
+  IPlatformService,
   LocalePreference,
   ZCodeInteractionBehavior,
 } from "@zcode/shared";
 import {
   TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH,
-} from "@zcode/shared";
-import { useState, useCallback, useEffect } from "react";
-import type { IPlatformService } from "@zcode/shared";
-import {
   TID_SETTINGS_LOCALE_SELECT_ITEM,
   TID_SETTINGS_LOCALE_SELECT_TRIGGER,
   testId,
 } from "@zcode/shared";
+import { Button } from "@zui/components/ui/button.js";
+import { Input } from "@zui/components/ui/input.js";
 import {
   Select,
   SelectContent,
@@ -23,28 +22,33 @@ import {
   SelectValue,
 } from "@zui/components/ui/select.js";
 import { Switch } from "@zui/components/ui/switch.js";
-import { Input } from "@zui/components/ui/input.js";
-import { Button } from "@zui/components/ui/button.js";
-import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@zui/settings/SettingsPageParts.js";
-import { DataBaseDirControl } from "@zui/settings/DataBaseDirControl.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
-import { useOptionalServices } from "@zui/hooks/useServices.js";
-import { ProactiveSuggestionsSetting } from "@zui/settings/ProactiveSuggestionsSetting.js";
 import { HostInstanceAutoCompactSetting } from "@zui/host/InstanceAutoCompactSetting.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { InterfaceMode } from "@zui/lib/interfaceMode.js";
+import { DataBaseDirControl } from "@zui/settings/DataBaseDirControl.js";
+import {
+  SettingsBadge,
+  SettingsGroupCard,
+  SettingsRow,
+} from "@zui/settings/SettingsPageParts.js";
 import {
   createSettingsPageConfig,
   resolveSettingsSectionForPlatform,
   type SettingsSectionId,
 } from "@zui/settings/settingsPageConfig.js";
+import { useCallback, useEffect, useState } from "react";
 
 export type { Locale, LocalePreference } from "@zcode/shared";
-export { type SettingsSectionId };
-export { createSettingsPageConfig, resolveSettingsSectionForPlatform };
+export {
+  createSettingsPageConfig,
+  resolveSettingsSectionForPlatform,
+  type SettingsSectionId,
+};
 
 const TASK_AUTO_ARCHIVE_DAY_OPTIONS = [3, 7, 14, 30] as const;
-const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] = ["queue", "guide"];
+const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] =
+  ["queue", "guide"];
 
 export function GeneralSectionContent({
   localePreference,
@@ -147,7 +151,9 @@ export function GeneralSectionContent({
   onSelectDataBaseDir: () => Promise<string | null>;
   onTerminalInheritSystemProfileChange: (enabled: boolean) => Promise<void>;
   onTerminalFontFamilyChange: (fontFamily: string) => Promise<void>;
-  onIntegratedTerminalShellChange?: (selection: IntegratedTerminalShellSelection) => Promise<void>;
+  onIntegratedTerminalShellChange?: (
+    selection: IntegratedTerminalShellSelection,
+  ) => Promise<void>;
   onHttpProxyChange?: (httpProxy: string) => Promise<void>;
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
@@ -155,7 +161,9 @@ export function GeneralSectionContent({
   onTaskAutoArchiveOlderThanDaysChange: (days: number) => Promise<void>;
   onCloseToTrayOnWindowsChange: (enabled: boolean) => Promise<void>;
   onKeepAwakeWhileRunningChange?: (enabled: boolean) => Promise<void>;
-  onDesktopChromiumHardwareAccelerationChange?: (enabled: boolean) => Promise<void>;
+  onDesktopChromiumHardwareAccelerationChange?: (
+    enabled: boolean,
+  ) => Promise<void>;
   onReceivePreviewUpdatesChange: (enabled: boolean) => Promise<void>;
   onAutoDownloadAndInstallUpdatesChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowReasoningChange: (enabled: boolean) => Promise<void>;
@@ -163,26 +171,33 @@ export function GeneralSectionContent({
   onToolGroupingExploreEnabledChange: (enabled: boolean) => Promise<void>;
   onToolGroupingTerminalEnabledChange: (enabled: boolean) => Promise<void>;
   onToolGroupingChangesEnabledChange: (enabled: boolean) => Promise<void>;
-  onZCodeInteractionBehaviorChange: (behavior: ZCodeInteractionBehavior) => Promise<void>;
-  onAskUserQuestionAutoResolutionEnabledChange?: (enabled: boolean) => Promise<void>;
+  onZCodeInteractionBehaviorChange: (
+    behavior: ZCodeInteractionBehavior,
+  ) => Promise<void>;
+  onAskUserQuestionAutoResolutionEnabledChange?: (
+    enabled: boolean,
+  ) => Promise<void>;
   onModelIoFullRetentionEnabledChange?: (enabled: boolean) => Promise<void>;
   onOpenOnboardingDialog: () => void;
 }) {
   const platform = useOptionalPlatform();
   const { intl } = useZCodeIntl();
-  const hasServices = Boolean(useOptionalServices());
   // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
   // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
-  const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
+  const [localTerminalFontFamily, setLocalTerminalFontFamily] =
+    useState(terminalFontFamily);
 
   useEffect(() => {
     setLocalTerminalFontFamily(terminalFontFamily);
   }, [terminalFontFamily]);
 
   const normalizedTerminalFontFamily = localTerminalFontFamily.trim();
-  const isTerminalFontFamilyDirty = normalizedTerminalFontFamily !== terminalFontFamily;
+  const isTerminalFontFamilyDirty =
+    normalizedTerminalFontFamily !== terminalFontFamily;
   const integratedTerminalShellValue =
-    integratedTerminalShell.mode === "shell" ? integratedTerminalShell.id : "auto";
+    integratedTerminalShell.mode === "shell"
+      ? integratedTerminalShell.id
+      : "auto";
   const selectedIntegratedTerminalShellOption =
     integratedTerminalShell.mode === "shell"
       ? (integratedTerminalShellOptions.find(
@@ -195,14 +210,15 @@ export function GeneralSectionContent({
           source: "system" as const,
         })
       : undefined;
-  const visibleIntegratedTerminalShellOptions = selectedIntegratedTerminalShellOption
-    ? [
-        selectedIntegratedTerminalShellOption,
-        ...integratedTerminalShellOptions.filter(
-          (option) => option.id !== selectedIntegratedTerminalShellOption.id,
-        ),
-      ]
-    : integratedTerminalShellOptions;
+  const visibleIntegratedTerminalShellOptions =
+    selectedIntegratedTerminalShellOption
+      ? [
+          selectedIntegratedTerminalShellOption,
+          ...integratedTerminalShellOptions.filter(
+            (option) => option.id !== selectedIntegratedTerminalShellOption.id,
+          ),
+        ]
+      : integratedTerminalShellOptions;
 
   const handleTerminalFontFamilySave = useCallback(async () => {
     await onTerminalFontFamilyChange(normalizedTerminalFontFamily);
@@ -244,7 +260,8 @@ export function GeneralSectionContent({
     await onHttpProxyChange(normalizedHttpProxy);
   }, [normalizedHttpProxy, onHttpProxyChange]);
 
-  const [localHttpProxyNoProxy, setLocalHttpProxyNoProxy] = useState(httpProxyNoProxy);
+  const [localHttpProxyNoProxy, setLocalHttpProxyNoProxy] =
+    useState(httpProxyNoProxy);
 
   useEffect(() => {
     setLocalHttpProxyNoProxy(httpProxyNoProxy);
@@ -255,20 +272,23 @@ export function GeneralSectionContent({
     .map((token) => token.trim())
     .filter(Boolean)
     .join(",");
-  const isHttpProxyNoProxyDirty = normalizedHttpProxyNoProxy !== httpProxyNoProxy;
+  const isHttpProxyNoProxyDirty =
+    normalizedHttpProxyNoProxy !== httpProxyNoProxy;
 
   const handleHttpProxyNoProxySave = useCallback(async () => {
     await onHttpProxyNoProxyChange(normalizedHttpProxyNoProxy);
   }, [normalizedHttpProxyNoProxy, onHttpProxyNoProxyChange]);
 
-  const [localHttpProxyCaCertPath, setLocalHttpProxyCaCertPath] = useState(httpProxyCaCertPath);
+  const [localHttpProxyCaCertPath, setLocalHttpProxyCaCertPath] =
+    useState(httpProxyCaCertPath);
 
   useEffect(() => {
     setLocalHttpProxyCaCertPath(httpProxyCaCertPath);
   }, [httpProxyCaCertPath]);
 
   const normalizedHttpProxyCaCertPath = localHttpProxyCaCertPath.trim();
-  const isHttpProxyCaCertPathDirty = normalizedHttpProxyCaCertPath !== httpProxyCaCertPath;
+  const isHttpProxyCaCertPathDirty =
+    normalizedHttpProxyCaCertPath !== httpProxyCaCertPath;
 
   const handleHttpProxyCaCertPathSave = useCallback(async () => {
     await onHttpProxyCaCertPathChange(normalizedHttpProxyCaCertPath);
@@ -283,7 +303,9 @@ export function GeneralSectionContent({
           control={
             <Select
               value={localePreference}
-              onValueChange={(value) => setLocalePreference(value as LocalePreference)}
+              onValueChange={(value) =>
+                setLocalePreference(value as LocalePreference)
+              }
             >
               <SelectTrigger
                 size="lg"
@@ -295,7 +317,10 @@ export function GeneralSectionContent({
               <SelectContent>
                 <SelectItem
                   value="system"
-                  data-testid={testId(TID_SETTINGS_LOCALE_SELECT_ITEM, "system")}
+                  data-testid={testId(
+                    TID_SETTINGS_LOCALE_SELECT_ITEM,
+                    "system",
+                  )}
                 >
                   {intl.formatMessage({ id: "settings.locale.system" })}
                 </SelectItem>
@@ -318,13 +343,11 @@ export function GeneralSectionContent({
       </SettingsGroupCard>
 
       <SettingsGroupCard>
-        {hasServices ? <ProactiveSuggestionsSetting /> : null}
-      </SettingsGroupCard>
-
-      <SettingsGroupCard>
         <SettingsRow
           label={intl.formatMessage({ id: "settings.terminalProfile" })}
-          description={intl.formatMessage({ id: "settings.terminalProfileDescription" })}
+          description={intl.formatMessage({
+            id: "settings.terminalProfileDescription",
+          })}
           control={
             <Switch
               checked={terminalInheritSystemProfile}
@@ -336,7 +359,9 @@ export function GeneralSectionContent({
         />
         <SettingsRow
           label={intl.formatMessage({ id: "settings.terminalFontFamily" })}
-          description={intl.formatMessage({ id: "settings.terminalFontFamilyDescription" })}
+          description={intl.formatMessage({
+            id: "settings.terminalFontFamilyDescription",
+          })}
           control={
             <Button
               type="button"
@@ -368,7 +393,9 @@ export function GeneralSectionContent({
         />
         {showIntegratedTerminalShell ? (
           <SettingsRow
-            label={intl.formatMessage({ id: "settings.integratedTerminalShell" })}
+            label={intl.formatMessage({
+              id: "settings.integratedTerminalShell",
+            })}
             description={intl.formatMessage({
               id: "settings.integratedTerminalShellDescription",
             })}
@@ -379,12 +406,17 @@ export function GeneralSectionContent({
                   void handleIntegratedTerminalShellChange(value);
                 }}
               >
-                <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+                <SelectTrigger
+                  size="lg"
+                  className="w-[260px] min-w-0 justify-between"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto">
-                    {intl.formatMessage({ id: "settings.integratedTerminalShell.auto" })}
+                    {intl.formatMessage({
+                      id: "settings.integratedTerminalShell.auto",
+                    })}
                   </SelectItem>
                   {visibleIntegratedTerminalShellOptions.map((option) => (
                     <SelectItem key={option.id} value={option.id}>
@@ -401,7 +433,9 @@ export function GeneralSectionContent({
       <SettingsGroupCard>
         <SettingsRow
           label={intl.formatMessage({ id: "settings.httpProxy" })}
-          description={intl.formatMessage({ id: "settings.httpProxyDescription" })}
+          description={intl.formatMessage({
+            id: "settings.httpProxyDescription",
+          })}
           control={
             <Button
               type="button"
@@ -526,13 +560,17 @@ export function GeneralSectionContent({
               }
             />
             <SettingsRow
-              label={intl.formatMessage({ id: "settings.receivePreviewUpdates" })}
+              label={intl.formatMessage({
+                id: "settings.receivePreviewUpdates",
+              })}
               description={intl.formatMessage({
                 id: "settings.receivePreviewUpdatesDescription",
               })}
               control={
                 <Switch
-                  aria-label={intl.formatMessage({ id: "settings.receivePreviewUpdates" })}
+                  aria-label={intl.formatMessage({
+                    id: "settings.receivePreviewUpdates",
+                  })}
                   checked={receivePreviewUpdates}
                   onCheckedChange={(checked) => {
                     void onReceivePreviewUpdatesChange(checked);
@@ -567,7 +605,10 @@ export function GeneralSectionContent({
             id: "settings.notificationDescription",
           })}
           control={
-            <Switch checked={notificationEnabled} onCheckedChange={setNotificationEnabled} />
+            <Switch
+              checked={notificationEnabled}
+              onCheckedChange={setNotificationEnabled}
+            />
           }
         />
         <SettingsRow
@@ -622,7 +663,9 @@ export function GeneralSectionContent({
 
       <SettingsGroupCard>
         <SettingsRow
-          label={intl.formatMessage({ id: "settings.zcodeInteractionBehavior" })}
+          label={intl.formatMessage({
+            id: "settings.zcodeInteractionBehavior",
+          })}
           description={intl.formatMessage({
             id: "settings.zcodeInteractionBehaviorDescription",
           })}
@@ -630,10 +673,15 @@ export function GeneralSectionContent({
             <Select
               value={zcodeInteractionBehavior}
               onValueChange={(value) => {
-                void onZCodeInteractionBehaviorChange(value as ZCodeInteractionBehavior);
+                void onZCodeInteractionBehaviorChange(
+                  value as ZCodeInteractionBehavior,
+                );
               }}
             >
-              <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+              <SelectTrigger
+                size="lg"
+                className="w-[260px] min-w-0 justify-between"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -648,49 +696,61 @@ export function GeneralSectionContent({
             </Select>
           }
         />
-        {platform?.supportsAppRuntimePreferences !== false && <SettingsRow
-          label={intl.formatMessage({
-            id: "settings.askUserQuestionAutoResolution",
-          })}
-          description={intl.formatMessage({
-            id: "settings.askUserQuestionAutoResolutionDescription",
-          })}
-          control={
-            <Switch
-              aria-label={intl.formatMessage({
-                id: "settings.askUserQuestionAutoResolution",
-              })}
-              checked={askUserQuestionAutoResolutionEnabled}
-              data-testid={TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH}
-              onCheckedChange={(checked) => {
-                void onAskUserQuestionAutoResolutionEnabledChange(checked);
-              }}
-            />
-          }
-        />}
-        {platform?.supportsAppRuntimePreferences !== false && <SettingsRow
-          label={intl.formatMessage({ id: "settings.modelIoFullRetention" })}
-          description={intl.formatMessage({
-            id: "settings.modelIoFullRetentionDescription",
-          })}
-          control={
-            <Switch
-              aria-label={intl.formatMessage({ id: "settings.modelIoFullRetention" })}
-              checked={modelIoFullRetentionEnabled}
-              onCheckedChange={(checked) => {
-                void onModelIoFullRetentionEnabledChange(checked);
-              }}
-            />
-          }
-        />}
+        {platform?.supportsAppRuntimePreferences !== false && (
+          <SettingsRow
+            label={intl.formatMessage({
+              id: "settings.askUserQuestionAutoResolution",
+            })}
+            description={intl.formatMessage({
+              id: "settings.askUserQuestionAutoResolutionDescription",
+            })}
+            control={
+              <Switch
+                aria-label={intl.formatMessage({
+                  id: "settings.askUserQuestionAutoResolution",
+                })}
+                checked={askUserQuestionAutoResolutionEnabled}
+                data-testid={
+                  TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH
+                }
+                onCheckedChange={(checked) => {
+                  void onAskUserQuestionAutoResolutionEnabledChange(checked);
+                }}
+              />
+            }
+          />
+        )}
+        {platform?.supportsAppRuntimePreferences !== false && (
+          <SettingsRow
+            label={intl.formatMessage({ id: "settings.modelIoFullRetention" })}
+            description={intl.formatMessage({
+              id: "settings.modelIoFullRetentionDescription",
+            })}
+            control={
+              <Switch
+                aria-label={intl.formatMessage({
+                  id: "settings.modelIoFullRetention",
+                })}
+                checked={modelIoFullRetentionEnabled}
+                onCheckedChange={(checked) => {
+                  void onModelIoFullRetentionEnabledChange(checked);
+                }}
+              />
+            }
+          />
+        )}
         <SettingsRow
-          label={intl.formatMessage({ id: "settings.messageStreamShowReasoning" })}
+          label={intl.formatMessage({
+            id: "settings.messageStreamShowReasoning",
+          })}
           description={intl.formatMessage({
             id: "settings.messageStreamShowReasoningDescription",
           })}
           control={
             <Switch
-              aria-label={intl.formatMessage({ id: "settings.messageStreamShowReasoning" })}
+              aria-label={intl.formatMessage({
+                id: "settings.messageStreamShowReasoning",
+              })}
               checked={messageStreamShowReasoning}
               onCheckedChange={(checked) => {
                 void onMessageStreamShowReasoningChange(checked);
@@ -705,7 +765,9 @@ export function GeneralSectionContent({
           })}
           control={
             <Switch
-              aria-label={intl.formatMessage({ id: "settings.messageStreamShowTodos" })}
+              aria-label={intl.formatMessage({
+                id: "settings.messageStreamShowTodos",
+              })}
               checked={messageStreamShowTodos}
               onCheckedChange={(checked) => {
                 void onMessageStreamShowTodosChange(checked);
@@ -720,7 +782,9 @@ export function GeneralSectionContent({
           })}
           control={
             <Switch
-              aria-label={intl.formatMessage({ id: "settings.toolGroupingExplore" })}
+              aria-label={intl.formatMessage({
+                id: "settings.toolGroupingExplore",
+              })}
               checked={toolGroupingExploreEnabled}
               onCheckedChange={(checked) => {
                 void onToolGroupingExploreEnabledChange(checked);
@@ -735,7 +799,9 @@ export function GeneralSectionContent({
           })}
           control={
             <Switch
-              aria-label={intl.formatMessage({ id: "settings.toolGroupingTerminal" })}
+              aria-label={intl.formatMessage({
+                id: "settings.toolGroupingTerminal",
+              })}
               checked={toolGroupingTerminalEnabled}
               onCheckedChange={(checked) => {
                 void onToolGroupingTerminalEnabledChange(checked);
@@ -750,7 +816,9 @@ export function GeneralSectionContent({
           })}
           control={
             <Switch
-              aria-label={intl.formatMessage({ id: "settings.toolGroupingChanges" })}
+              aria-label={intl.formatMessage({
+                id: "settings.toolGroupingChanges",
+              })}
               checked={toolGroupingChangesEnabled}
               onCheckedChange={(checked) => {
                 void onToolGroupingChangesEnabledChange(checked);
@@ -788,7 +856,10 @@ export function GeneralSectionContent({
               }}
               disabled={!taskAutoArchiveEnabled}
             >
-              <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+              <SelectTrigger
+                size="lg"
+                className="w-[260px] min-w-0 justify-between"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -825,24 +896,35 @@ export function GeneralSectionContent({
         />
       </SettingsGroupCard>
 
-      {platform?.supportsUserOnboarding !== false && <SettingsGroupCard>
-        <SettingsRow
-          label={intl.formatMessage({ id: "settings.onboarding" })}
-          description={intl.formatMessage({
-            id: "settings.onboardingDescription",
-          })}
-          control={
-            <Button type="button" size="lg" variant="outline" onClick={onOpenOnboardingDialog}>
-              {intl.formatMessage({ id: "settings.onboardingOpen" })}
-            </Button>
-          }
-        />
-      </SettingsGroupCard>}
+      {platform?.supportsUserOnboarding !== false && (
+        <SettingsGroupCard>
+          <SettingsRow
+            label={intl.formatMessage({ id: "settings.onboarding" })}
+            description={intl.formatMessage({
+              id: "settings.onboardingDescription",
+            })}
+            control={
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                onClick={onOpenOnboardingDialog}
+              >
+                {intl.formatMessage({ id: "settings.onboardingOpen" })}
+              </Button>
+            }
+          />
+        </SettingsGroupCard>
+      )}
     </div>
   );
 }
 
-export function GeneralSectionHeader({ localePreference }: { localePreference: LocalePreference }) {
+export function GeneralSectionHeader({
+  localePreference,
+}: {
+  localePreference: LocalePreference;
+}) {
   const { intl } = useZCodeIntl();
 
   return (

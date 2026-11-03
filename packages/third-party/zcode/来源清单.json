@@ -676,7 +676,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "dab3585fcd2a482ec58e9b5e8811107e31ae06e79a42c1bf792b46c309901bab",
+      "copiedSha256": "a29ba2f499d4000a846ddd27d4054b2e3021c36aaa62ebd5882f5861808d01c4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -688,8 +688,9 @@
         "设置分区：新增 about 分区挂宿主关于信息面板（T16）",
         "KenFutWork 宿主偏差：permissions 分支挂宿主件 PermissionTierSection",
         "KenFutWork 宿主偏差：集成终端 Shell 行在宿主无 shell 选项时隐藏（宿主未接 system.listIntegratedTerminalShells；shell 切换由终端工具栏菜单承担）",
-        "KenFutWork 宿主偏差：openDesign 分区渲染宿主件 HostOpenDesignSettingsSection",
-        "KenFutWork 宿主偏差：新增 voice 分区渲染分支与 voiceClient 可见性过滤（语音助手设置接线，二百五十七）"
+        "2026-11-02（三百四十七）：撤掉 openDesign 分区渲染分支与宿主件引用——宿主自动配置，设置页不再要用户填地址/密钥。",
+        "KenFutWork 宿主偏差：新增 voice 分区渲染分支与 voiceClient 可见性过滤（语音助手设置接线，二百五十七）",
+        "2026-11-02（三百四十九）：插件·MCP·技能并成一个分区——删除 mcp/skill 两处独立渲染分支。"
       ]
     },
     {
@@ -1759,7 +1760,8 @@
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
         "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。",
         "2026-10-20 收起 rail（f992490b）：侧栏入口统一为展开整行/收起图标两种形态，新建任务走同一处理。",
-        "2026-10-27（二百八十五）：Work 模式侧栏「Work 引擎」入口；二百八十一：任务列表滚动条隐藏（!scrollbar-hide）。"
+        "2026-10-27（二百八十五）：Work 模式侧栏「Work 引擎」入口；二百八十一：任务列表滚动条隐藏（!scrollbar-hide）。",
+        "2026-11-02（三百四十九）：侧栏技能/MCP 入口改发插件分区页签意图（并页后不再单列分区）。"
       ]
     },
     {
@@ -5901,7 +5903,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "28d72ebe3fcd4993127a7bcbc945241b6d0acaacd684d04a400b5822da5003a6",
+      "copiedSha256": "f05081cb2b140f1f9f11e940bbcfd413684f2a8c7136242b6685259d72af8433",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5922,14 +5924,15 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 英文标签",
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
-        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。"
+        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
+        "2026-11-02（三百五十）：settings.plugins.title 改 Plugins · MCP · Skills，与中文导航同名。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "dd1eeb40c6e9bb16d1cdbf58a5c817f670ec61667f57312670a5e2ea0ac3df05",
+      "copiedSha256": "33271ebdb64ea2cc9b8312530e939f092700dfff6e2471fd2e2cac68e42dfcfd",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5950,7 +5953,8 @@
         "KenFutWork 宿主偏差：settings.openDesign.title 中文标签",
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
-        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。"
+        "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
+        "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。"
       ]
     },
     {
@@ -7268,13 +7272,14 @@
       "source": "references/zcode/packages/ui/src/lib/settingsNavigation.ts",
       "target": "apps/web/src/components/workbench/zcode/lib/settingsNavigation.ts",
       "sha256": "18fffab343c541b6c6170a081070eadca70edc63ee238d66a11e087b47716800",
-      "copiedSha256": "0f3b2ecceadcbf4add35d869f9968a5560febe4d5780d16e18d0c8c4f26248bd",
+      "copiedSha256": "9aa503dffa15a0ac59c0e44f2e5b1ceb313353d4a45f63dba704b354c6d496df",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "分区导航：新增 about 分区 id 供宿主关于页接线（T16）",
         "KenFutWork 宿主偏差：SettingsSectionId 增 permissions",
         "KenFutWork 宿主偏差：SettingsSectionId 增 openDesign（伴随容器承载配置分区）",
-        "KenFutWork 宿主偏差：SettingsSectionId 增 voice（语音设置分区导航 id 与守卫）"
+        "KenFutWork 宿主偏差：SettingsSectionId 增 voice（语音设置分区导航 id 与守卫）",
+        "2026-11-02（三百四十九）：mcp/skill 解析与历史停留位迁移到 plugin + 对应页签；setPendingSettingsPluginIntent 不再发独立分区。"
       ]
     },
     {
@@ -19898,15 +19903,16 @@
       "source": "references/zcode/packages/ui/src/settings/settingsPageConfig.ts",
       "target": "apps/web/src/components/workbench/zcode/settings/settingsPageConfig.ts",
       "sha256": "a4959cdb8d8b4736c86325f232556ea090d043ae00655469e30f0f7d823b3be0",
-      "copiedSha256": "e392783a8cf7aef0266c5984d10872bb312d042bb09974db9aef98c74018442f",
+      "copiedSha256": "6e44d6f8447b926bb8e29615678575e124e719e36957a57cc25a08c4ec436a76",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置分区数据按宿主自动化/浏览器/CUA能力过滤，原分组和组件保留",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "分区配置：新增 about 分区条目（信息+更新入口，T16）",
         "KenFutWork 宿主分区：新增 permissions 分区（G7/T7 旧四档=新会话默认档，Q12）",
-        "KenFutWork 宿主偏差：基础组新增 openDesign 分区条目（紧跟 browser）",
-        "KenFutWork 宿主偏差：BASE_SETTINGS_SECTIONS 增 voice 分区（AudioLines 图标、基础设置组）"
+        "2026-11-02（三百四十七）：撤掉 openDesign 分区条目——宿主自动配置伴随容器，不再要用户填地址/密钥。",
+        "KenFutWork 宿主偏差：BASE_SETTINGS_SECTIONS 增 voice 分区（AudioLines 图标、基础设置组）",
+        "2026-11-02（三百四十九）：撤掉 mcp/skill 导航条目（并页），连带不再使用的 Cable/WandSparkles 图标导入。"
       ]
     },
     {
@@ -20120,14 +20126,15 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "a8ca49275680268ea4cd169860491ead74d74dd3a48e9264a7c14334789a636e",
+      "copiedSha256": "ef6e10dd902f25b4114e12534644e5804817519fb82b037aaaa112a12c78b4a4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
         "能力显隐：实例管理文档不提供工作区模式设置，由宿主导航持有模式",
         "通用分区挂宿主上下文自动压缩开关（instance_settings，T4）",
-        "2026-10-26（二百七十一）：删除界面模式设置行。"
+        "2026-10-26（二百七十一）：删除界面模式设置行。",
+        "2026-11-02（三百四十七）：删除「主动任务推荐」设置行（用户口径：该设置不要）。"
       ]
     },
     {

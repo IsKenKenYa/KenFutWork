@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -98,7 +99,7 @@ export function writeOpenDesignFileConfig(input: {
 
 /**
  * GET 响应的生效判定：env（进程实际读到的）> file（重启后才会生效）> none。
- * `restartRequired`：文件值与进程生效值不一致——UI 据此提示「重启生效」。
+ * `restartRequired`：文件值与进程生效值不一致——状态行据此提示「重启生效」。
  */
 export function resolveOpenDesignConfigView(input: {
   file: OpenDesignFileConfig;
@@ -125,4 +126,40 @@ export function resolveOpenDesignConfigView(input: {
     restartRequired,
     source: envActive ? "env" : frontendUrl ? "file" : "none",
   };
+}
+
+/** 自动配置生成的成对密钥落盘位置（与 `open-design.env` 同目录、同权限口径）。 */
+export function openDesignAutoSecretPath(dataDir: string): string {
+  return join(dataDir, "config", "open-design.embed-secret");
+}
+
+/**
+ * 未显式配置密钥时自动取一把：复用已生成的，缺失才生成并落盘（0600）。
+ * 伴随容器的 `OD_API_TOKEN` 与宿主凭证缝必须同源，否则 daemon 出站调用只能拿 503。
+ */
+export function ensureOpenDesignAutoSecret(input: {
+  dataDir: string;
+  createImpl?: () => string;
+  readImpl?: typeof readFileSync;
+  writeImpl?: typeof writeFileSync;
+  mkdirImpl?: typeof mkdirSync;
+}): string {
+  const path = openDesignAutoSecretPath(input.dataDir);
+  try {
+    const existing = (input.readImpl ?? readFileSync)(path, "utf8").trim();
+    if (existing) return existing;
+  } catch {
+    // 首次没有文件 = 待生成，不是错误
+  }
+  const secret = (input.createImpl ?? defaultOpenDesignSecret)();
+  (input.mkdirImpl ?? mkdirSync)(join(input.dataDir, "config"), {
+    recursive: true,
+    mode: 0o700,
+  });
+  (input.writeImpl ?? writeFileSync)(path, `${secret}\n`, { mode: 0o600 });
+  return secret;
+}
+
+function defaultOpenDesignSecret(): string {
+  return randomBytes(24).toString("base64url");
 }
