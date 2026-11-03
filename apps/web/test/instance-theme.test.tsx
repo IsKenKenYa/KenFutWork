@@ -159,7 +159,7 @@ describe("InstanceThemeSync", () => {
     );
   });
 
-  it("暗色加载图标反色，旋转圈使用语义前景而非固定黑色", () => {
+  it("暗色加载图标换品牌色剪影，旋转圈使用语义前景而非固定黑色", () => {
     const { container } = render(
       <>
         <LoadingScreen />
@@ -167,7 +167,7 @@ describe("InstanceThemeSync", () => {
       </>,
     );
     for (const image of container.querySelectorAll("img")) {
-      expect(image.className).toContain("dark:invert");
+      expect(image.className).toContain("brand-mark");
     }
     for (const spinner of container.querySelectorAll(".animate-spin")) {
       expect(spinner.getAttribute("style")).toBeNull();

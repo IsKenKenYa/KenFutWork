@@ -17,7 +17,7 @@ export function LoadingScreen({ label }: { label?: string } = {}) {
       <img
         src="/logo-mark.png"
         alt=""
-        className="h-14 w-auto select-none brightness-0 dark:invert"
+        className="h-14 w-auto select-none brand-mark"
         draggable={false}
       />
       <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70" />

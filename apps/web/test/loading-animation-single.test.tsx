@@ -89,7 +89,8 @@ describe("全站唯一加载动画", () => {
     expect(status.getAttribute("aria-label")).toBe("连接中");
 
     const logo = container.querySelector("img");
-    expect(logo?.className).toContain("brightness-0");
+    expect(logo?.className).toContain("brand-mark");
+    expect(logo?.className).not.toContain("dark:invert");
 
     const animated = container.querySelectorAll('[class*="animate-"]');
     expect(animated).toHaveLength(1);

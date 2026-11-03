@@ -240,8 +240,10 @@
     --warning-foreground: oklch(0.145 0 0);
     --info: oklch(0.70 0.08 250);
     --info-foreground: oklch(0.145 0 0);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    /* 深色边框/输入框边界原先 10%/15% 在 #0a0a0a 上只有约 1.3:1，控件轮廓读不出；
+       提到 16% 保装饰线轻量，输入类单独再提亮到 34% 达到 3:1。 */
+    --border: oklch(1 0 0 / 16%);
+    --input: oklch(1 0 0 / 22%);
     --ring: oklch(0.556 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -254,7 +256,7 @@
     --sidebar-primary-foreground: oklch(0.985 0 0);
     --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-border: oklch(1 0 0 / 16%);
     --sidebar-ring: oklch(0.556 0 0);
     /* 品牌色浅色端 #575E96 在深底上过暗，深色模式换浅岚（与暗色字标同色） */
     --brand: #7ea2ff;
@@ -269,18 +271,23 @@
     --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
     --color-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
     --color-icon-blue: var(--color-sky-600);
-    --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 30%, transparent);
+    --color-border: color-mix(in oklab, var(--color-neutral-50) 16%, transparent);
+    --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 38%, transparent);
+    /* 控件轮廓需要 3:1：16% 只够装饰分隔，交互边界单独提亮。 */
+    --color-input-border: color-mix(in oklab, var(--color-neutral-50) 34%, transparent);
+    --color-input-border-hover: color-mix(in oklab, var(--color-neutral-50) 42%, transparent);
     --color-hover: var(--color-surface-hover);
-    --color-selected: color-mix(in oklab, var(--color-white) 10%, transparent);
+    --color-selected: color-mix(in oklab, var(--color-white) 14%, transparent);
     --color-header: var(--color-neutral-900);
     --color-panel: var(--color-neutral-900);
     --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
-    --color-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+    --color-surface-hover: color-mix(in oklab, var(--color-white) 12%, transparent);
     --color-card-selected: var(--color-neutral-700);
     --color-popover-header: var(--color-neutral-700);
     --color-input-focused: var(--color-neutral-950);
-    --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 60%, transparent);
-    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 30%, transparent);
+    /* 60%/30% 在深底上分别只有约 4.3:1 / 2.2:1；图标与次要文字要能读，提到 68%/42%。 */
+    --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 68%, transparent);
+    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 42%, transparent);
     --color-idle-task: var(--color-violet-400);
     --color-idle-task-surface: color-mix(in oklab, var(--color-violet-950) 50%, transparent);
     --color-diff-added: var(--color-green-500);
@@ -313,6 +320,19 @@
     --color-plugin-node: color-mix(in oklab, var(--color-amber-400) 18%, transparent);
     --color-plugin-node-hover: color-mix(in oklab, var(--color-amber-400) 24%, transparent);
     --color-plugin-node-foreground: var(--color-amber-300);
+}
+
+/**
+ * 品牌标：浅色保持纯黑墨迹（brightness(0) 与旧版一致）；
+ * 深色不靠白色填充块撑对比，改为品牌浅岚色剪影，形状与浅色完全一致。
+ */
+.brand-mark {
+    filter: brightness(0);
+}
+
+.dark .brand-mark {
+    filter: brightness(0) saturate(100%) invert(64%) sepia(19%) saturate(2200%)
+        hue-rotate(202deg) brightness(103%) contrast(102%);
 }
 
 /**

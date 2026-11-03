@@ -2,10 +2,10 @@
 import finderIcon from "@zui/onboarding/assets/finder.png";
 import terminalIcon from "@zui/onboarding/assets/terminal.png";
 import feishuIcon from "@zui/onboarding/assets/feishu.png";
-import documentsIcon from "@zui/assets/plugin-icons/documents.png";
-import pdfIcon from "@zui/assets/plugin-icons/pdf.png";
-import presentationsIcon from "@zui/assets/plugin-icons/presentations.png";
-import spreadsheetsIcon from "@zui/assets/plugin-icons/spreadsheets.png";
+import documentsIcon from "@zui/assets/plugin-icons/documents.svg";
+import pdfIcon from "@zui/assets/plugin-icons/pdf.svg";
+import presentationsIcon from "@zui/assets/plugin-icons/presentations.svg";
+import spreadsheetsIcon from "@zui/assets/plugin-icons/spreadsheets.svg";
 import type { DraftSuggestedPromptItem } from "@zui/v4/draftSuggestedPromptItems.js";
 
 const ASSETS = "https://cdn-zcode.z.ai/zcode/official-plugin/assets";

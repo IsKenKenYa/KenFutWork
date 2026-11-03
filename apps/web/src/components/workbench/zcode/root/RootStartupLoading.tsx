@@ -39,8 +39,8 @@ export function ZCodeStartupSpinner() {
 }
 
 /**
- * 初始化与引导共用品牌徽标：裸黑标（与侧栏品牌行同款——黑墨迹、正常背景），
- * 加载→就绪全程 logo 颜色不变化（用户口径：logo 只要黑白、加载时不变色）。
+ * 初始化与引导共用品牌徽标：与侧栏品牌行同款（浅色黑墨迹、深色品牌浅岚剪影），
+ * 加载→就绪全程 logo 颜色不变化。
  */
 export function ZCodeStartupLogoBadge() {
   return (
@@ -48,7 +48,7 @@ export function ZCodeStartupLogoBadge() {
     <img
       src={kenfutworkMarkUrl.src}
       alt="KenFutWork"
-      className="size-14 select-none brightness-0 dark:invert"
+      className="size-14 select-none brand-mark"
       draggable={false}
     />
   );

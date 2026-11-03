@@ -320,6 +320,16 @@ body {
   display: none;
 }
 
+/* 品牌标：浅色保持纯黑墨迹；深色换成品牌浅岚剪影（形状不变，不靠白块撑对比）。 */
+.brand-mark {
+  filter: brightness(0);
+}
+
+.dark .brand-mark {
+  filter: brightness(0) saturate(100%) invert(64%) sepia(19%) saturate(2200%)
+    hue-rotate(202deg) brightness(103%) contrast(102%);
+}
+
 .dark {
   --animated-gradient-text-strong: rgba(255, 255, 255, 1);
   --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
@@ -338,15 +348,16 @@ body {
   --color-accent: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
   --color-find-highlight: #713f12;
   --color-find-highlight-active: #a16207;
-  --color-border: color-mix(in oklab, var(--color-neutral-50) 10%, transparent);
-  --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 30%, transparent);
+  /* 深色下 10% 边框在 near-black 上不足 1.5:1；装饰线提到 16%，交互边界另见 input-border。 */
+  --color-border: color-mix(in oklab, var(--color-neutral-50) 16%, transparent);
+  --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 38%, transparent);
   --color-hover: var(--color-surface-hover);
-  --color-selected: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --color-selected: color-mix(in oklab, var(--color-white) 14%, transparent);
   --color-header: var(--color-neutral-900);
   --color-panel: var(--color-neutral-900);
   --color-sidebar: var(--color-neutral-950);
   --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
-  --color-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --color-surface-hover: color-mix(in oklab, var(--color-white) 12%, transparent);
   --color-card: var(--color-neutral-800);
   --color-card-selected: var(--color-neutral-700);
   --color-card-border: var(--color-border);
@@ -356,8 +367,9 @@ body {
   --color-popover-border: var(--color-border);
   --color-input: var(--color-neutral-800);
   --color-input-focused: var(--color-neutral-950);
-  --color-input-border: var(--color-border);
-  --color-input-border-hover: var(--color-border-hover);
+  /* 控件轮廓要 3:1；16% 的装饰边框不够，输入类单独提亮到 34%/42%。 */
+  --color-input-border: color-mix(in oklab, var(--color-neutral-50) 34%, transparent);
+  --color-input-border-hover: color-mix(in oklab, var(--color-neutral-50) 42%, transparent);
   --color-input-border-focused: var(--color-brand);
   --color-terminal-bg: var(--color-neutral-950);
   --color-terminal-fg: var(--color-neutral-50);
@@ -421,8 +433,9 @@ body {
   );
   --color-interaction-confirmation-foreground: var(--color-green-300);
   --color-foreground: var(--color-neutral-200);
-  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 60%, transparent);
-  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 30%, transparent);
+  /* 60%/30% 在深底上仅约 4.3:1 / 2.2:1；侧栏图标与次要文字读不清，提到 68%/42%。 */
+  --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 68%, transparent);
+  --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 42%, transparent);
   --color-foreground-inverse: var(--color-white);
   --color-success: var(--color-green-500);
   --color-success-foreground: var(--color-foreground-inverse);

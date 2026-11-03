@@ -1,9 +1,9 @@
-import documentsIconUrl from "@zui/assets/plugin-icons/documents.png";
-import imageSearchIconUrl from "@zui/assets/plugin-icons/image-search.png";
-import pdfIconUrl from "@zui/assets/plugin-icons/pdf.png";
-import pluginCreatorIconUrl from "@zui/assets/plugin-icons/plugin-creator.png";
-import presentationsIconUrl from "@zui/assets/plugin-icons/presentations.png";
-import spreadsheetsIconUrl from "@zui/assets/plugin-icons/spreadsheets.png";
+import documentsIconUrl from "@zui/assets/plugin-icons/documents.svg";
+import imageSearchIconUrl from "@zui/assets/plugin-icons/image-search.svg";
+import pdfIconUrl from "@zui/assets/plugin-icons/pdf.svg";
+import pluginCreatorIconUrl from "@zui/assets/plugin-icons/plugin-creator.svg";
+import presentationsIconUrl from "@zui/assets/plugin-icons/presentations.svg";
+import spreadsheetsIconUrl from "@zui/assets/plugin-icons/spreadsheets.svg";
 import { isTrustedImageUrl } from "@zui/lib/trustedImageUrl.js";
 import { isPluginIconResourceReference } from "@kenfutwork/shared";
 
