@@ -49,10 +49,11 @@ const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
   // 工作区搜索（.zcodeignore）设置入口先隐藏：规则文件仍生效并可手动编辑，
   // 编辑页代码保留，放开时从这里移除即可。
   "workspaceFileSearch",
-  // 原 zcode 文件型子智能体/命令/钩子设置走 commands/hooks/subagents 通道，
-  // 本宿主服务端没有这些 hostRpc 处理器（请求返回 501），也没有对应的可见设置页。
-  // 先隐藏入口，避免按下必失败；命令与钩子字段仍由运行期消费。
-  "subagents",
+  // 原 zcode 文件型命令/钩子设置走 commands/hooks 通道，本宿主服务端没有这些
+  // hostRpc 处理器（请求返回 501），也没有对应的可见设置页。先隐藏入口，
+  // 避免按下必失败；命令与钩子字段仍由运行期消费。
+  // 子智能体已接通只读清单（code-subagents 的 subagents.list），入口保留；
+  // 用户作用域写操作由服务端能力位 userScopeAvailable=false 收起。
   "commands",
   "hooks",
   // 电脑控制在宿主适配层按平台解开（见 cuaSettingsNavigationPlugin 的标记）。
