@@ -37,9 +37,21 @@ export interface ProjectMemoryWorkspaceSummary {
   files: ProjectMemoryFileSummary[];
 }
 
+/** 一次记忆搜索的结果；`truncated` 为 true 时还有命中没装进输出。 */
+export interface ProjectMemorySearchResult {
+  query: string;
+  matches: Array<{ fileName: string; title: string; snippet: string }>;
+  truncated: boolean;
+}
+
 export interface ProjectMemoryService {
   /** 记忆开关的当前事实（读实例偏好，缺省关闭）。 */
   isEnabled(instanceId: string): Promise<boolean>;
+  /** 在项目记忆里按关键词查找正文与索引，供模型召回旧结论。 */
+  searchMemories(
+    actor: LocalActor,
+    input: { projectId: string; query: string },
+  ): Promise<ProjectMemorySearchResult>;
   listProjectMemories(
     actor: LocalActor,
   ): Promise<ProjectMemoryWorkspaceSummary[]>;
@@ -498,6 +510,99 @@ export function createProjectMemoryService(options: {
       const content = await readFile(filePath, "utf8");
       const metadata = await lstat(filePath);
       return { content, updatedAt: metadata.mtimeMs };
+    },
+
+    async searchMemories(actor, input) {
+      const instance = await options.localInstance.resolve(actor);
+      if (!(await isEnabled(instance.instanceId)))
+        throw new Error("记忆功能已关闭，请先在设置里打开。");
+      if (!isValidPathSegment(input.projectId))
+        throw new Error("项目标识无效。");
+      const query = input.query.trim();
+      if (!query) throw new Error("搜索词不能为空。");
+      const terms = query
+        .toLocaleLowerCase()
+        .split(/\s+/u)
+        .filter((term) => term.length > 0);
+      const settings = await options.settings.getInstanceSettings(
+        actor,
+        instance.instanceId,
+      );
+      const memoryRoot = memoryDirectory(input.projectId);
+      const entries = await readdir(memoryRoot, { withFileTypes: true }).catch(
+        (error: unknown) => {
+          if (isNotFound(error)) return [];
+          throw error;
+        },
+      );
+      const files = entries
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            !entry.isSymbolicLink() &&
+            isMemoryFileName(entry.name),
+        )
+        .map((entry) => entry.name)
+        .sort((left, right) =>
+          left === MEMORY_INDEX_FILE_NAME
+            ? -1
+            : right === MEMORY_INDEX_FILE_NAME
+              ? 1
+              : left.localeCompare(right, "en"),
+        );
+      const titles = new Map<string, string>();
+      const indexPath = join(memoryRoot, MEMORY_INDEX_FILE_NAME);
+      const indexContent = files.includes(MEMORY_INDEX_FILE_NAME)
+        ? await readFile(indexPath, "utf8").catch((error: unknown) => {
+            if (isNotFound(error)) return "";
+            throw error;
+          })
+        : "";
+      for (const line of indexContent.split(/\r?\n/u)) {
+        const matched = /^- \[(.+)\]\(([^)]+)\)/u.exec(line.trim());
+        if (matched?.[1] && matched[2]) titles.set(matched[2], matched[1]);
+      }
+
+      const matches: ProjectMemorySearchResult["matches"] = [];
+      let used = 0;
+      let truncated = false;
+      for (const fileName of files) {
+        if (truncated) break;
+        const filePath = join(memoryRoot, fileName);
+        const metadata = await lstat(filePath).catch((error: unknown) => {
+          if (isNotFound(error)) return null;
+          throw error;
+        });
+        if (!metadata) continue;
+        if (metadata.size > settings.codeReadMaxBytes) {
+          truncated = true;
+          continue;
+        }
+        const content = await readFile(filePath, "utf8");
+        const lines = content.split(/\r?\n/u);
+        const title =
+          titles.get(fileName) ??
+          (fileName === MEMORY_INDEX_FILE_NAME
+            ? "记忆索引"
+            : fileName.replace(/\.md$/u, ""));
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const lower = trimmed.toLocaleLowerCase();
+          if (!terms.every((term) => lower.includes(term))) continue;
+          const remaining = settings.codeReadPageCharacters - used;
+          if (remaining <= 0) {
+            truncated = true;
+            break;
+          }
+          const snippet =
+            trimmed.length <= remaining ? trimmed : trimmed.slice(0, remaining);
+          if (trimmed.length > remaining) truncated = true;
+          matches.push({ fileName, title, snippet });
+          used += snippet.length;
+        }
+      }
+      return { query, matches, truncated };
     },
 
     async readIndex(instanceId, projectId) {

@@ -8,6 +8,7 @@ import type { LocalActor } from "../local-instance/types.js";
 import { createProjectMemoryService } from "./project-memory.js";
 import {
   createMemorySaveTool,
+  createMemorySearchTool,
   createProjectMemoryPromptSection,
 } from "./consumer.js";
 
@@ -255,6 +256,141 @@ describe("项目长期记忆服务", () => {
     expect(
       catalog.some((workspace) => workspace.id === otherProjectId),
     ).toBe(false);
+  });
+});
+
+describe("项目记忆召回", () => {
+  it("索引与正文都能命中，关键词大小写不敏感", async () => {
+    const { memory } = await createFixture();
+    await memory.saveMemory(actor, {
+      projectId,
+      title: "Build Command",
+      content: "使用 PNPM 构建\n构建前先跑测试",
+    });
+    const result = await memory.searchMemories(actor, {
+      projectId,
+      query: "pnpm",
+    });
+    expect(result.matches.map((match) => match.fileName)).toEqual([
+      "MEMORY.md",
+      "build-command.md",
+    ]);
+    expect(result.matches[0]?.title).toBe("记忆索引");
+    expect(result.matches[1]?.title).toBe("Build Command");
+    expect(result.truncated).toBe(false);
+  });
+
+  it("多个关键词全部命中才算匹配", async () => {
+    const { memory } = await createFixture();
+    await memory.saveMemory(actor, {
+      projectId,
+      title: "发布流程",
+      content: "发布前跑全量测试\n只跑单元测试不算发布",
+    });
+    const result = await memory.searchMemories(actor, {
+      projectId,
+      query: "发布 全量",
+    });
+    expect(result.matches.map((match) => match.snippet)).toEqual([
+      "- [发布流程](发布流程.md) — 发布前跑全量测试",
+      "发布前跑全量测试",
+    ]);
+  });
+
+  it("不跨项目：只搜当前项目目录", async () => {
+    const { memory } = await createFixture();
+    await memory.saveMemory(actor, {
+      projectId: otherProjectId,
+      title: "另一个项目",
+      content: "只有另一个项目知道的口令",
+    });
+    const result = await memory.searchMemories(actor, {
+      projectId,
+      query: "口令",
+    });
+    expect(result.matches).toEqual([]);
+  });
+
+  it("超过单次读取上限时截断并如实标记", async () => {
+    const { memory } = await createFixture({ codeReadPageCharacters: 8 });
+    await memory.saveMemory(actor, {
+      projectId,
+      title: "长记忆",
+      content: "这是一条很长的记忆内容用于确认截断行为",
+    });
+    const result = await memory.searchMemories(actor, {
+      projectId,
+      query: "很长的记忆",
+    });
+    expect(result.truncated).toBe(true);
+    const total = result.matches.reduce(
+      (sum, match) => sum + match.snippet.length,
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(8);
+    for (const match of result.matches)
+      expect(match.snippet.length).toBeLessThanOrEqual(8);
+  });
+
+  it("关闭记忆或搜索词为空时快速失败", async () => {
+    const disabled = await createFixture({ memoryEnabled: false });
+    await expect(
+      disabled.memory.searchMemories(actor, { projectId, query: "构建" }),
+    ).rejects.toThrow("记忆功能已关闭");
+    const { memory } = await createFixture();
+    await expect(
+      memory.searchMemories(actor, { projectId, query: "   " }),
+    ).rejects.toThrow("搜索词不能为空");
+  });
+
+  it("工具在未选定项目或缺少参数时拒绝，命中项目时返回结果", async () => {
+    const { memory } = await createFixture();
+    await memory.saveMemory(actor, {
+      projectId,
+      title: "画布约定",
+      content: "设计稿命名用中文",
+    });
+    const tool = createMemorySearchTool(memory);
+    await expect(
+      tool.execute(
+        { query: "" },
+        {
+          actor,
+          runId: "run-search",
+          signal: new AbortController().signal,
+          canvasId,
+          workContext: { preset: "design", canvasId },
+        } as never,
+      ),
+    ).rejects.toThrow("需要 query 参数");
+    await expect(
+      tool.execute(
+        { query: "命名" },
+        {
+          actor,
+          runId: "run-search-2",
+          signal: new AbortController().signal,
+        } as never,
+      ),
+    ).rejects.toThrow("Code Task 或 Design 画布");
+    const result = await tool.execute(
+      { query: "命名" },
+      {
+        actor,
+        runId: "run-search-3",
+        signal: new AbortController().signal,
+        canvasId,
+        workContext: { preset: "design", canvasId },
+      } as never,
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        truncated: false,
+        matches: expect.arrayContaining([
+          expect.objectContaining({ snippet: "设计稿命名用中文" }),
+        ]),
+      }),
+    );
   });
 });
 

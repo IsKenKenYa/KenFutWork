@@ -4,8 +4,9 @@ import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
-  createProjectMemoryPromptSection,
   createMemorySaveTool,
+  createMemorySearchTool,
+  createProjectMemoryPromptSection,
 } from "../memory/consumer.js";
 import { createProjectMemoryService } from "../memory/project-memory.js";
 import { createProjectMemoryRpc } from "../memory/rpc.js";
@@ -164,6 +165,7 @@ export function createCodeUiPlugin(): PluginDefinition {
         createProjectMemoryPromptSection(projectMemory),
       );
       ctx.get("tools").register(createMemorySaveTool(projectMemory));
+      ctx.get("tools").register(createMemorySearchTool(projectMemory));
       ctx.get("systemPrompt").register(
         createGoalPrompt(
           {
