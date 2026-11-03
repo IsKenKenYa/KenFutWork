@@ -65,7 +65,11 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   const parent = parentFrame.contentWindow;
   if (!parent) throw new Error("父窗口未创建");
   const post = vi.spyOn(parent, "postMessage");
-  const navigation = createHostWorkbenchNavigation(parent, ["code", "design"]);
+  const navigation = createHostWorkbenchNavigation(parent, [
+    "code",
+    "design",
+    "work",
+  ]);
   disposeNavigation = navigation.dispose;
   const host = new CodeHttpChannelClient({ apiBase: "https://host.example" });
   client = host;
@@ -98,6 +102,23 @@ it("原Code侧栏使用横排模式按钮，可信宿主能力才显示Flow；�
   expect(
     document.querySelector('[data-workspace-embedded-surface="design"]'),
   ).toBeNull();
+  const mainView = () =>
+    document
+      .querySelector("[data-workspace-main-view]")
+      ?.getAttribute("data-workspace-main-view");
+  // 壳内主区真实切换：Design 是画布文档主区，Work/Code 共用会话主区（既有决策）。
+  await waitFor(() => expect(mainView()).toBe("design"));
+  for (const mode of ["Work", "Code"]) {
+    fireEvent.click(screen.getByRole("radio", { name: mode }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("radio", { name: mode }).getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+    await waitFor(() => expect(mainView()).toBe("chat"));
+  }
+  fireEvent.click(screen.getByRole("radio", { name: "Design" }));
+  await waitFor(() => expect(mainView()).toBe("design"));
   const update = {
     type: "kenfutwork:workbench-navigation",
     availableModes: ["code", "design", "flow"],

@@ -2050,7 +2050,10 @@ export const WorkspaceShellLayout = memo(
                           />
                         </ScopedErrorBoundary>
                       ) : null}
-                      <div className="min-h-0 flex-1 overflow-hidden">
+                      <div
+                        className="min-h-0 flex-1 overflow-hidden"
+                        data-workspace-main-view={workspaceMainView}
+                      >
                         {/* 融合内嵌面（Design/Flow）：常驻挂载、按视图显隐（见 visitedEmbeddedSurfaces 注释）。 */}
                         {visitedEmbeddedSurfaces.has("flow") ? (
                           <div

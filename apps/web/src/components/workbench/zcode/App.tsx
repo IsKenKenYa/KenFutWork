@@ -844,9 +844,18 @@ export function App({
   // 仍只在「收起后仍有 rail」的形态生效：桌面 chrome 收起会连 aside 一起隐藏，
   // 模式切换器没有落点，会把用户关在 Design 里换不回来。
   const sidebarRailsWhenCollapsed = !isDesktop && !isMacDesktop && !isWindowsDesktop;
+  const designAutoCollapsedSidebarRef = useRef(false);
   useEffect(() => {
     if (workspaceMainView === "design" && sidebarRailsWhenCollapsed) {
+      designAutoCollapsedSidebarRef.current = true;
       setIsSidebarVisible(false);
+      return;
+    }
+    // 离开 Design 时把为画布让出的侧栏还回来；只恢复本次自动收起，
+    // 不覆盖用户在其他模式手动收起的选择。
+    if (workspaceMainView !== "design" && designAutoCollapsedSidebarRef.current) {
+      designAutoCollapsedSidebarRef.current = false;
+      setIsSidebarVisible(true);
     }
   }, [workspaceMainView, sidebarRailsWhenCollapsed, setIsSidebarVisible]);
   const [openAutomationId, setOpenAutomationId] = useState<string | null>(null);
