@@ -7,7 +7,7 @@ import {
 } from "@testing-library/react";
 import { TID_PROJECT_ADD } from "../../../packages/zcode-shared/dist/index.js";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
-import { SharedProjectNavigationProvider } from "@zui/host/SharedProjectNavigation.js";
+import { SharedProjectNavigationProvider } from "../src/components/workbench/zcode/host/SharedProjectNavigation";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
