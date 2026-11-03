@@ -26,6 +26,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   toolResultPruneThresholdChars: 8_000,
   /** 每次模型请求保留原文的最近工具结果条数；更早的才按阈值折叠。 */
   toolResultPruneKeepRecent: 6,
+  /** 工具卡终态输出超过该字节数时保留头尾，余下按 truncated.ref 取回。 */
+  toolOutputPreviewBytes: 8_192,
   /** 未被索引引用的记忆正文闲置超过该天数才进入回收区。 */
   memoryOrphanRetentionDays: 30,
   /** 回收区文件保留天数，过期后才永久删除。 */
@@ -136,6 +138,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "toolResultOffloadMaxBytes",
   "toolResultPruneThresholdChars",
   "toolResultPruneKeepRecent",
+  "toolOutputPreviewBytes",
   "memoryOrphanRetentionDays",
   "memoryRecoverableWindowDays",
   "memoryMaintenanceIntervalMs",
@@ -192,6 +195,7 @@ export type AgentGovernanceOverrides = {
   toolResultOffloadMaxBytes?: number | undefined;
   toolResultPruneThresholdChars?: number | undefined;
   toolResultPruneKeepRecent?: number | undefined;
+  toolOutputPreviewBytes?: number | undefined;
   memoryOrphanRetentionDays?: number | undefined;
   memoryRecoverableWindowDays?: number | undefined;
   memoryMaintenanceIntervalMs?: number | undefined;
@@ -305,6 +309,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   toolResultOffloadMaxBytes: { min: 1_024, max: 1_073_741_824 },
   toolResultPruneThresholdChars: { min: 512, max: 1_048_576 },
   toolResultPruneKeepRecent: { min: 1, max: 100 },
+  toolOutputPreviewBytes: { min: 1_024, max: 1_048_576 },
   memoryOrphanRetentionDays: { min: 1, max: 3_650 },
   memoryRecoverableWindowDays: { min: 1, max: 3_650 },
   memoryMaintenanceIntervalMs: { min: 60_000, max: 86_400_000 },
@@ -410,6 +415,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     toolResultPruneKeepRecent: parseStrictInt(
       source.KENFUTWORK_TOOL_RESULT_PRUNE_KEEP_RECENT,
+    ),
+    toolOutputPreviewBytes: parseStrictInt(
+      source.KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES,
     ),
     memoryOrphanRetentionDays: parseStrictInt(
       source.KENFUTWORK_MEMORY_ORPHAN_RETENTION_DAYS,

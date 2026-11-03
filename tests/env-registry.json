@@ -699,6 +699,13 @@
       "status": "active",
       "note": "agent 治理：工具结果预修剪时保留原文的最近条数；不改变已存记录（DEC-18）"
     },
+    "KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "工具卡终态输出保留头尾的字节上限；超出走 truncated.ref 分页取回（DEC-18）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

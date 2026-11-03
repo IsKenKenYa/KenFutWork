@@ -315,6 +315,8 @@ export const instanceSettingsSchema = z.object({
   ),
   /** 每次模型请求保留原文的最近工具结果条数。 */
   toolResultPruneKeepRecent: governanceSetting("toolResultPruneKeepRecent"),
+  /** 工具卡终态输出保留头尾的字节上限；超出部分按 truncated.ref 分页取回。 */
+  toolOutputPreviewBytes: governanceSetting("toolOutputPreviewBytes"),
   /** 未被索引引用的记忆正文闲置多少天后进入回收区。 */
   memoryOrphanRetentionDays: governanceSetting("memoryOrphanRetentionDays"),
   /** 回收区保留天数，过期后才永久删除。 */

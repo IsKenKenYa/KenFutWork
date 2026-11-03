@@ -19,6 +19,7 @@ export type AgentGovernanceSettings = Pick<
   | "toolResultOffloadMaxBytes"
   | "toolResultPruneThresholdChars"
   | "toolResultPruneKeepRecent"
+  | "toolOutputPreviewBytes"
   | "memoryOrphanRetentionDays"
   | "memoryRecoverableWindowDays"
   | "memoryMaintenanceIntervalMs"
@@ -82,6 +83,10 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "toolResultPruneKeepRecent",
     label: "保留原文的最近工具结果条数",
+  },
+  {
+    key: "toolOutputPreviewBytes",
+    label: "工具输出预览上限（字节）",
   },
   {
     key: "memoryOrphanRetentionDays",
