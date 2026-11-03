@@ -10,7 +10,10 @@ import {
 import { createProjectMemoryService } from "../memory/project-memory.js";
 import { createProjectMemoryRpc } from "../memory/rpc.js";
 import { installNetworkProxy } from "../network/proxy.js";
-import { runTaskAutoArchive } from "./task-auto-archive.js";
+import {
+  runTaskAutoArchive,
+  startTaskAutoArchiveTimer,
+} from "./task-auto-archive.js";
 import {
   createGoalPrompt,
   createGoalTools,
@@ -298,6 +301,14 @@ export function createCodeUiPlugin(): PluginDefinition {
             changedKeys.includes("taskAutoArchiveOlderThanDays")
           )
             return autoArchiveTasks();
+        }),
+      );
+      // 进程内周期扫描：长时间运行时也能按偏好把新近变旧的 Task 归档。
+      ctx.effect(() =>
+        startTaskAutoArchiveTimer({
+          scan: autoArchiveTasks,
+          onError: (error) =>
+            console.warn("[code-ui] 任务自动归档周期扫描失败：", error),
         }),
       );
       ctx.app.addHook("onReady", async () => {

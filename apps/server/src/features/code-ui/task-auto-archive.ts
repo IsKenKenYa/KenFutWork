@@ -2,6 +2,12 @@ import type { CodeUiSessionRecord } from "./repository.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * 进程内周期扫描间隔：只影响发现旧 Task 的时延，不改变用户可调的归档开关与天数；
+ * 按维护节奏固定为 1 小时，不进治理表（DEC-18 的可调项是用户会感知的限额）。
+ */
+const AUTO_ARCHIVE_SCAN_INTERVAL_MS = 60 * 60 * 1000;
+
 export type TaskAutoArchivePreferences = {
   enabled?: unknown;
   olderThanDays?: unknown;
@@ -32,8 +38,8 @@ function eligible(root: CodeUiSessionRecord, cutoff: number): boolean {
  * 任务自动归档的一次扫描：按实例偏好挑出超过天数的已关闭 Task，逐个走原归档
  * 路径（关闭执行资源、失效代际、刷新列表），不直接改 `archived` 列。
  *
- * 扫描在服务启动与偏好变更时各跑一次。进程长时间运行期间新增的旧 Task
- * 不会被计时器拉起——这里不引入额外后台定时器或新的时间常量。
+ * 扫描在服务启动、偏好变更与进程内定时器触发时各跑一次；定时器只在服务运行
+ * 期间生效，间隔见 `startTaskAutoArchiveTimer`。
  */
 export async function runTaskAutoArchive(options: {
   preferences: TaskAutoArchivePreferences;
@@ -66,4 +72,29 @@ export async function runTaskAutoArchive(options: {
     }
   }
   return { archived, failed, skipped };
+}
+
+/**
+ * 周期扫描：上一轮未结束时跳过本次触发，避免并发归档同一批 Task；
+ * 单轮失败交给 `onError` 记录后继续下一轮。返回的函数停止定时器。
+ */
+export function startTaskAutoArchiveTimer(options: {
+  scan: () => Promise<void>;
+  onError?: (error: unknown) => void;
+  intervalMs?: number;
+}): () => void {
+  let running = false;
+  const timer = setInterval(() => {
+    if (running) return;
+    running = true;
+    void options
+      .scan()
+      .catch((error: unknown) => options.onError?.(error))
+      .finally(() => {
+        running = false;
+      });
+  }, options.intervalMs ?? AUTO_ARCHIVE_SCAN_INTERVAL_MS);
+  // 后台维护定时器不阻止进程退出。
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
