@@ -524,11 +524,14 @@ function EditorFrame({
   const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}`;
 
   useEffect(() => {
+    // about:blank 仍继承宿主 origin，加载前向编辑器 origin 发消息会触发目标源警告。
+    // 等编辑器 ready 后发送当前档位；ready 前的切换也由这次 effect 合并为最新值。
+    if (!ready) return;
     frameRef.current?.contentWindow?.postMessage(
       { type: "kenfutwork:editor-theme", theme: editorTheme },
       new URL(src).origin,
     );
-  }, [editorTheme, src]);
+  }, [editorTheme, ready, src]);
 
   // 就绪与保存都只信当前 iframe 的真实 origin/source；父页统一交付并回传结果。
   useEffect(() => {

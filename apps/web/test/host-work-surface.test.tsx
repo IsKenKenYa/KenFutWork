@@ -267,3 +267,22 @@ describe("HostWorkSurface 统一保存桥", () => {
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 });
+
+describe("HostWorkSurface 主题桥", () => {
+  it("editor-ready 前不发送主题，ready 后发送当前主题", async () => {
+    const post = vi.fn();
+    vi.spyOn(HTMLIFrameElement.prototype, "contentWindow", "get")
+      .mockReturnValue({ postMessage: post } as unknown as Window);
+    const frame = await openInstalledEditor();
+
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.load(frame);
+    expect(post).not.toHaveBeenCalled();
+    postEditorMessage(frame, { type: "kenfutwork:editor-ready" });
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post).toHaveBeenCalledWith(
+      { type: "kenfutwork:editor-theme", theme: "light" },
+      "http://127.0.0.1:3001",
+    );
+  });
+});
