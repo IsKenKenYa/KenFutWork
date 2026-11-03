@@ -484,6 +484,8 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
       model: string;
       input: number;
       output: number;
+      /** 供应商回传的成本；不传表示未上报。 */
+      costUsd?: number | null;
     }>,
   ) {
     return entries.map((entry) => ({
@@ -492,7 +494,7 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
       capability: "chat" as const,
       input_tokens: entry.input,
       output_tokens: entry.output,
-      cost_usd: null,
+      cost_usd: entry.costUsd ?? null,
       occurred_at: day(entry.offsetFromToday),
     }));
   }
@@ -527,8 +529,32 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
       tokens: 1960,
       inputTokens: 1350,
       outputTokens: 610,
+      costUsd: null,
     });
     expect(stats.peakDayTokens).toBe(1560);
+  });
+
+  /** 成本只累加供应商回传的行；窗口外的花费不计入；全未回传时如实给 null。 */
+  it("花费只累计窗口内已回传的行，未回传时给 null 而不是 0", async () => {
+    const service = createStatsService(() =>
+      rowsFor([
+        { offsetFromToday: 0, model: "gpt-4.1", input: 10, output: 5, costUsd: 0.75 },
+        { offsetFromToday: -1, model: "gpt-4.1", input: 1, output: 1, costUsd: 0 },
+        { offsetFromToday: 0, model: "gpt-4.1", input: 1, output: 1 },
+        // 窗口外的成本不应计入 7 日统计
+        { offsetFromToday: -20, model: "gpt-4.1", input: 100, output: 100, costUsd: 9.5 },
+      ]),
+    );
+
+    const stats = await service.stats(USER, 7);
+    expect(stats.totals.costUsd).toBe(0.75);
+  });
+
+  it("窗口内没有任何成本回传时 totals.costUsd 为 null（不把未知成本当成零）", async () => {
+    const stats = await createStatsService(() =>
+      rowsFor([{ offsetFromToday: 0, model: "m", input: 10, output: 5 }]),
+    ).stats(USER, 7);
+    expect(stats.totals.costUsd).toBeNull();
   });
 
   it("窗口外（30 天前）的记录不计入 7 日统计", async () => {

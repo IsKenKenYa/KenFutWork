@@ -134,6 +134,8 @@ export function createUsageService(options: {
     /** 逐日 × 模型：趋势图按模型画多条线（与 daily 同窗口、按下标对齐）。 */
     const modelDaily = new Map<string, Map<string, number>>();
     const totals = { tokens: 0, inputTokens: 0, outputTokens: 0 };
+    /** 成本单独累计并记录「是否有供应商回传」：全都没回传时对外如实给 null。 */
+    const cost = { usd: 0, reported: false };
 
     // 热力图要铺满一年（参考图是一整年的格子），故另起一个窗口的逐日聚合
     const heatmapStart = addUtcDays(today, -(HEATMAP_DAYS - 1));
@@ -149,6 +151,10 @@ export function createUsageService(options: {
       totals.tokens += tokens;
       totals.inputTokens += row.input_tokens;
       totals.outputTokens += row.output_tokens;
+      if (row.cost_usd !== null) {
+        cost.usd += row.cost_usd;
+        cost.reported = true;
+      }
       dailyTotals.set(date, (dailyTotals.get(date) ?? 0) + tokens);
       const bucket = modelTotals.get(row.model) ?? {
         provider: row.provider,
@@ -210,7 +216,10 @@ export function createUsageService(options: {
 
     return {
       rangeDays,
-      totals,
+      totals: {
+        ...totals,
+        costUsd: cost.reported ? cost.usd : null,
+      },
       peakDayTokens: daily.reduce((peak, day) => Math.max(peak, day.tokens), 0),
       currentStreakDays,
       longestStreakDays,

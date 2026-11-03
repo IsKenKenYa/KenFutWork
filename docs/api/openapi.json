@@ -14873,7 +14873,7 @@
       "get": {
         "operationId": "getUsageStats",
         "summary": "查询使用统计",
-        "description": "返回用户侧使用统计。days 仅支持 7 或 30，其他值返回 400 invalid_input。",
+        "description": "返回用户侧使用统计（含窗口内供应商已回传的预估花费）。days 仅支持 7 或 30，其他值返回 400 invalid_input。",
         "tags": [
           "usage"
         ],
@@ -23815,7 +23815,10 @@
                       "type": "string",
                       "enum": [
                         "turn-start",
-                        "turn-end"
+                        "turn-end",
+                        "tool-start",
+                        "tool-end",
+                        "tool-failed"
                       ]
                     },
                     "command": {
@@ -24488,7 +24491,10 @@
                   "type": "string",
                   "enum": [
                     "turn-start",
-                    "turn-end"
+                    "turn-end",
+                    "tool-start",
+                    "tool-end",
+                    "tool-failed"
                   ]
                 },
                 "command": {

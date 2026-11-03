@@ -143,6 +143,11 @@ export const usageStatsResponseSchema = z.object({
     tokens: z.number().int().nonnegative(),
     inputTokens: z.number().int().nonnegative(),
     outputTokens: z.number().int().nonnegative(),
+    /**
+     * 窗口内记录到的花费（美元）。只有供应商回传成本时才累加；
+     * 一行成本都没有时如实为 null（「未上报」），不把未知成本伪装成 0。
+     */
+    costUsd: z.number().nonnegative().nullable(),
   }),
   /** 单日峰值 token 数。 */
   peakDayTokens: z.number().int().nonnegative(),

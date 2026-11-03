@@ -3204,7 +3204,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: usageStatsResponseSchema,
     summary: "查询使用统计",
     description:
-      "返回用户侧使用统计。days 仅支持 7 或 30，其他值返回 400 invalid_input。",
+      "返回用户侧使用统计（含窗口内供应商已回传的预估花费）。days 仅支持 7 或 30，其他值返回 400 invalid_input。",
   },
   // ---- video-models.ts（视频模型；归 models 域）----
   {
