@@ -15,6 +15,22 @@ const RUN_STATUSES = [
   "canceled",
 ] as const;
 
+/**
+ * 时间线不消费的流事件类型：模型增量、画布快照与 Task 实时状态只在会话界面使用，
+ * 在 SQL 层直接排除，避免整轮的大量帧占用查询与传输。
+ */
+const TIMELINE_IGNORED_EVENT_TYPES = [
+  "message.delta",
+  "thinking.delta",
+  "canvas.sync",
+  "flowRun.event",
+  "task.work",
+] as const;
+
+const IGNORED_EVENT_TYPES_SQL = TIMELINE_IGNORED_EVENT_TYPES.map(
+  (type) => `'${type}'`,
+).join(", ");
+
 type RawRunRow = {
   id: string;
   session_id: string;
@@ -92,6 +108,7 @@ export function createRunTimelineRepository(
             where e.instance_id = :instance
               and s.instance_id = :instance
               and starts_with(e.event_key, $1 || '/')
+              and coalesce(e.payload->>'type', '') not in (${IGNORED_EVENT_TYPES_SQL})
             order by e.seq asc`,
           [runId],
         );
@@ -126,6 +143,7 @@ export function createRunTimelineRepository(
             where e.instance_id = :instance
               and e.root_session_id = $1
               and starts_with(e.event_key, $2)
+              and coalesce(e.payload->>'type', '') not in (${IGNORED_EVENT_TYPES_SQL})
             order by e.seq asc`,
           [rootSessionId, `child-event:${childSessionId}/`],
         );
