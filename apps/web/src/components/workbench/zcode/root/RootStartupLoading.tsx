@@ -1,6 +1,10 @@
 import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import type { ReactNode } from "react";
 
+// vendor 编译走 vite/client 类型（图片导入是 URL 字符串），宿主编译按 Next 静态图片
+// 类型解析；运行时 code-ui 由 vite 打包，这里只能用 URL 字符串本身。
+const markUrl = kenfutworkMarkUrl as unknown as string;
+
 interface RootStartupLoadingProps {
   label: string;
   children?: ReactNode;
@@ -46,7 +50,7 @@ export function ZCodeStartupLogoBadge() {
   return (
     // biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败
     <img
-      src={kenfutworkMarkUrl.src}
+      src={markUrl}
       alt="KenFutWork"
       className="size-14 select-none brand-mark"
       draggable={false}

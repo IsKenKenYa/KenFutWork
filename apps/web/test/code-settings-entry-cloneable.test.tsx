@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TID_TASK_SETTINGS_BUTTON } from "@zcode/shared";
+import { TID_TASK_SETTINGS_BUTTON } from "../../../packages/zcode-shared/dist/index.js";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
@@ -65,7 +65,11 @@ it("侧栏设置入口只发纯数据：点击事件不会混进宿主 postMessa
         <ZCodeIntlProvider initialLocale="zh-CN">
           <StoreProvider broadcastService={client.services.broadcastService}>
             <TooltipProvider>
-              <TabStoreProvider onOpenSettings={platform.openSettingsDocument}>
+              <TabStoreProvider
+                onOpenSettings={(target) =>
+                  platform.openSettingsDocument?.(target)
+                }
+              >
                 <SidebarFooterHarness />
               </TabStoreProvider>
             </TooltipProvider>
