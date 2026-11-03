@@ -3794,9 +3794,10 @@
       "source": "references/zcode/packages/ui/src/components/ui/command.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ui/command.tsx",
       "sha256": "7c754bc80704163ce505d08d961a5a4b3e57107e7d53ea319483a896d448cbdb",
-      "copiedSha256": "7c754bc80704163ce505d08d961a5a4b3e57107e7d53ea319483a896d448cbdb",
+      "copiedSha256": "5e05ced618343b076a2fcc605f150e5f264912c4d21a4fa577b34f4a1d06f6a9",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-04：DialogHeader 移入 DialogContent，关闭态不再把 sr-only 标题与描述留在文档内。"
       ]
     },
     {
