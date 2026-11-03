@@ -1512,6 +1512,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let toolResultOffloadBinding:
         | { writer: ToolResultOffloadWriter; maxChars: number }
         | undefined;
+      /** 旧工具结果折叠：只改请求副本，最近若干条保留原文（DEC-18）。 */
+      let governanceToolResultPrune: {
+        thresholdChars: number;
+        keepRecentResults: number;
+      } = {
+        thresholdChars:
+          AGENT_GOVERNANCE_DEFAULTS.toolResultPruneThresholdChars,
+        keepRecentResults:
+          AGENT_GOVERNANCE_DEFAULTS.toolResultPruneKeepRecent,
+      };
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
       let taskWorkContext: TaskWorkContext | undefined;
@@ -1889,6 +1899,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               maxBytes:
                 instanceSettings?.toolResultOffloadMaxBytes ??
                 AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxBytes,
+            };
+            governanceToolResultPrune = {
+              thresholdChars:
+                instanceSettings?.toolResultPruneThresholdChars ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultPruneThresholdChars,
+              keepRecentResults:
+                instanceSettings?.toolResultPruneKeepRecent ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultPruneKeepRecent,
             };
           }
 
@@ -2437,8 +2455,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(manualCompactPlan ? { manualCompactPlan } : {}),
             compactionRetention,
             contextBudget,
-            // 工具结果发给模型前的内联预算：与进程输出预览共用同一治理值，不另立字面量。
-            toolResultInlineMaxChars: processLimits.previewMaxChars,
+            // 旧工具结果折叠：只改请求副本，最近若干条保留原文；阈值与条数来自治理设置。
+            toolResultPrune: governanceToolResultPrune,
             ...(toolResultOffloadBinding ?? {}),
             // 旧图片卸载：只保留最近几张图片，更早的图片在模型请求里换成文字占位。
             contextKeepRecentImages,

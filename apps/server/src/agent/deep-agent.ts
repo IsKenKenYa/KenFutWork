@@ -352,10 +352,13 @@ export type KenFutWorkAgentFactory = (options: {
   autoCompact?: CompactionPlan;
   contextBudget?: AgentContextBudget;
   /**
-   * 工具结果内联预算（字符）：发给模型的这条消息超过预算时保留头尾并写入省略标记。
-   * 值来自治理设置 `processPreviewMaxChars`；缺省不修剪。
+   * 旧工具结果预修剪：最近 `keepRecentResults` 条保留原文，更早且超过
+   * `thresholdChars` 的折叠成摘要占位。只改发给模型的请求副本。
    */
-  toolResultInlineMaxChars?: number;
+  toolResultPrune?: {
+    thresholdChars: number;
+    keepRecentResults: number;
+  };
   /**
    * 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。
    * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
@@ -425,10 +428,13 @@ export function createKenFutWorkDeepAgent(options: {
   autoCompact?: CompactionPlan;
   contextBudget?: AgentContextBudget;
   /**
-   * 工具结果内联预算（字符）：发给模型的这条消息超过预算时保留头尾并写入省略标记。
-   * 值来自治理设置 `processPreviewMaxChars`；缺省不修剪。
+   * 旧工具结果预修剪：最近 `keepRecentResults` 条保留原文，更早且超过
+   * `thresholdChars` 的折叠成摘要占位。只改发给模型的请求副本。
    */
-  toolResultInlineMaxChars?: number;
+  toolResultPrune?: {
+    thresholdChars: number;
+    keepRecentResults: number;
+  };
   /**
    * 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。
    * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
@@ -801,13 +807,20 @@ export function createKenFutWorkDeepAgent(options: {
                     maxChars: options.toolResultOffload.maxChars,
                   }),
                 ]),
-            ...(options.toolResultInlineMaxChars === undefined
+            ...(options.toolResultPrune === undefined
               ? []
               : [
-                  createToolResultPruneMiddleware(
-                    options.toolResultInlineMaxChars,
-                    options.contextKeepRecentImages,
-                  ),
+                  createToolResultPruneMiddleware({
+                    thresholdChars: options.toolResultPrune.thresholdChars,
+                    keepRecentResults:
+                      options.toolResultPrune.keepRecentResults,
+                    ...(options.contextKeepRecentImages === undefined
+                      ? {}
+                      : {
+                          keepRecentImages:
+                            options.contextKeepRecentImages,
+                        }),
+                  }),
                 ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
@@ -843,13 +856,20 @@ export function createKenFutWorkDeepAgent(options: {
                     maxChars: options.toolResultOffload.maxChars,
                   }),
                 ]),
-            ...(options.toolResultInlineMaxChars === undefined
+            ...(options.toolResultPrune === undefined
               ? []
               : [
-                  createToolResultPruneMiddleware(
-                    options.toolResultInlineMaxChars,
-                    options.contextKeepRecentImages,
-                  ),
+                  createToolResultPruneMiddleware({
+                    thresholdChars: options.toolResultPrune.thresholdChars,
+                    keepRecentResults:
+                      options.toolResultPrune.keepRecentResults,
+                    ...(options.contextKeepRecentImages === undefined
+                      ? {}
+                      : {
+                          keepRecentImages:
+                            options.contextKeepRecentImages,
+                        }),
+                  }),
                 ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,

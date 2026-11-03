@@ -309,6 +309,12 @@ export const instanceSettingsSchema = z.object({
   toolResultOffloadMaxChars: governanceSetting("toolResultOffloadMaxChars"),
   /** 单个外置文件最多写入的字节数。 */
   toolResultOffloadMaxBytes: governanceSetting("toolResultOffloadMaxBytes"),
+  /** 较早工具结果折叠为摘要占位的字符阈值（最近若干条不受影响）。 */
+  toolResultPruneThresholdChars: governanceSetting(
+    "toolResultPruneThresholdChars",
+  ),
+  /** 每次模型请求保留原文的最近工具结果条数。 */
+  toolResultPruneKeepRecent: governanceSetting("toolResultPruneKeepRecent"),
   /** 未被索引引用的记忆正文闲置多少天后进入回收区。 */
   memoryOrphanRetentionDays: governanceSetting("memoryOrphanRetentionDays"),
   /** 回收区保留天数，过期后才永久删除。 */

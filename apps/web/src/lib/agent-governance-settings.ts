@@ -17,6 +17,8 @@ export type AgentGovernanceSettings = Pick<
   | "contextKeepRecentImages"
   | "toolResultOffloadMaxChars"
   | "toolResultOffloadMaxBytes"
+  | "toolResultPruneThresholdChars"
+  | "toolResultPruneKeepRecent"
   | "memoryOrphanRetentionDays"
   | "memoryRecoverableWindowDays"
   | "memoryMaintenanceIntervalMs"
@@ -72,6 +74,14 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "toolResultOffloadMaxBytes",
     label: "外置文件上限（字节）",
+  },
+  {
+    key: "toolResultPruneThresholdChars",
+    label: "旧工具结果折叠阈值（字符）",
+  },
+  {
+    key: "toolResultPruneKeepRecent",
+    label: "保留原文的最近工具结果条数",
   },
   {
     key: "memoryOrphanRetentionDays",

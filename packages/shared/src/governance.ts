@@ -22,6 +22,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   toolResultOffloadMaxChars: 32_000,
   /** 单个外置文件最多写入的字节数；超出只保留前缀并在说明里标注。 */
   toolResultOffloadMaxBytes: 33_554_432,
+  /** 较早的工具结果超过该字符数时折叠成摘要占位；较新的原文保持不动。 */
+  toolResultPruneThresholdChars: 8_000,
+  /** 每次模型请求保留原文的最近工具结果条数；更早的才按阈值折叠。 */
+  toolResultPruneKeepRecent: 6,
   /** 未被索引引用的记忆正文闲置超过该天数才进入回收区。 */
   memoryOrphanRetentionDays: 30,
   /** 回收区文件保留天数，过期后才永久删除。 */
@@ -130,6 +134,8 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "contextKeepRecentImages",
   "toolResultOffloadMaxChars",
   "toolResultOffloadMaxBytes",
+  "toolResultPruneThresholdChars",
+  "toolResultPruneKeepRecent",
   "memoryOrphanRetentionDays",
   "memoryRecoverableWindowDays",
   "memoryMaintenanceIntervalMs",
@@ -184,6 +190,8 @@ export type AgentGovernanceOverrides = {
   contextKeepRecentImages?: number | undefined;
   toolResultOffloadMaxChars?: number | undefined;
   toolResultOffloadMaxBytes?: number | undefined;
+  toolResultPruneThresholdChars?: number | undefined;
+  toolResultPruneKeepRecent?: number | undefined;
   memoryOrphanRetentionDays?: number | undefined;
   memoryRecoverableWindowDays?: number | undefined;
   memoryMaintenanceIntervalMs?: number | undefined;
@@ -295,6 +303,8 @@ export const AGENT_GOVERNANCE_LIMITS = {
   contextKeepRecentImages: { min: 0, max: 20 },
   toolResultOffloadMaxChars: { min: 1_024, max: 1_048_576 },
   toolResultOffloadMaxBytes: { min: 1_024, max: 1_073_741_824 },
+  toolResultPruneThresholdChars: { min: 512, max: 1_048_576 },
+  toolResultPruneKeepRecent: { min: 1, max: 100 },
   memoryOrphanRetentionDays: { min: 1, max: 3_650 },
   memoryRecoverableWindowDays: { min: 1, max: 3_650 },
   memoryMaintenanceIntervalMs: { min: 60_000, max: 86_400_000 },
@@ -394,6 +404,12 @@ export function resolveGovernanceEnvOverrides(
     ),
     toolResultOffloadMaxBytes: parseStrictInt(
       source.KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_BYTES,
+    ),
+    toolResultPruneThresholdChars: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_PRUNE_THRESHOLD_CHARS,
+    ),
+    toolResultPruneKeepRecent: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_PRUNE_KEEP_RECENT,
     ),
     memoryOrphanRetentionDays: parseStrictInt(
       source.KENFUTWORK_MEMORY_ORPHAN_RETENTION_DAYS,

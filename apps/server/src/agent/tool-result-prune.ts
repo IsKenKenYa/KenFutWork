@@ -3,14 +3,17 @@ import type { AgentMiddleware } from "langchain";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 /**
- * 工具结果内联修剪：模型请求前的最后一道文本预算。
+ * 工具结果预修剪：模型请求前的最后一道文本预算。
  *
- * 定位：只改**发给模型的那一份消息**，不改运行事件、不改界面展示、不改持久状态。
- * 大段命令输出、整文件读取与第三方 MCP 结果在长会话里会一直占住上下文，
- * 这里按字符预算保留头尾、写入省略标记，压缩触发线因此看到更小的请求。
+ * 定位：只改**发给模型的那一份消息副本**，不改运行事件、不改界面展示、不改持久记录。
+ * 策略：最近 `keepRecentResults` 条工具结果保留原文；更早（长时间未变动）的结果超过
+ * `thresholdChars` 时折叠成摘要占位。阈值与保留条数来自治理设置
+ * `toolResultPruneThresholdChars` / `toolResultPruneKeepRecent`。
  *
- * 边界：JSON 形状的结果不做修剪（截断会破坏可解析性）；预算来自治理设置
- * `processPreviewMaxChars`（与进程输出模型预览同一预算，不另立字面量）。
+ * 原文仍可取回：占位只存在于本次请求副本，会话记录里的原文没有被改写；界面、
+ * 归档与后续读取都还能拿到完整内容。
+ *
+ * 边界：JSON 形状的结果不做折叠（截断会破坏可解析性）。
  */
 
 const NOTICE_RESERVE_CHARS = 160;
@@ -64,7 +67,7 @@ export function pruneToolResultText(
   const head = sliceHead(text, headSize);
   const tail = sliceTail(text, tailSize);
   const removedChars = text.length - head.length - tail.length;
-  const notice = `\n\n[工具输出中间部分已省略 ${removedChars} 字符，原文共 ${text.length} 字符；需要完整内容时请缩小查询范围或分页读取]\n\n`;
+  const notice = `\n\n[较早的工具结果已折叠：省略 ${removedChars} 字符，原文共 ${text.length} 字符并仍保留在会话记录里；需要完整内容时请缩小查询范围或分页读取]\n\n`;
   return { text: `${head}${notice}${tail}`, pruned: true, removedChars };
 }
 
@@ -165,10 +168,38 @@ export function unloadRecentImages(
   return result;
 }
 
+export interface ToolResultPruneOptions {
+  /** 较早工具结果超过该字符数才折叠。 */
+  thresholdChars: number;
+  /** 每次请求保留原文的最近工具结果条数。 */
+  keepRecentResults: number;
+  /** 保留最近的图片张数；缺省按治理默认值。 */
+  keepRecentImages?: number;
+}
+
+/** 找出应当保留原文的最近 `keepRecentResults` 条工具消息下标。 */
+function recentToolResultIndices(
+  messages: UnknownMessage[],
+  keepRecentResults: number,
+): Set<number> {
+  const keep = Number.isFinite(keepRecentResults)
+    ? Math.max(0, Math.floor(keepRecentResults))
+    : 0;
+  const keepIndices = new Set<number>();
+  let remaining = keep;
+  for (let index = messages.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    if (!isToolMessage(messages[index] ?? {})) continue;
+    keepIndices.add(index);
+    remaining -= 1;
+  }
+  return keepIndices;
+}
+
 export function createToolResultPruneMiddleware(
-  maxChars: number,
-  keepRecentImages: number = AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages,
+  options: ToolResultPruneOptions,
 ): AgentMiddleware {
+  const keepRecentImages =
+    options.keepRecentImages ?? AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
   return {
     name: "kenfutworkToolResultPrune",
     wrapModelCall(
@@ -179,8 +210,15 @@ export function createToolResultPruneMiddleware(
       if (!Array.isArray(messages) || messages.length === 0)
         return handler(request);
       const imagesUnloaded = unloadRecentImages(messages, keepRecentImages);
-      const prunedMessages = imagesUnloaded.map((message) =>
-        pruneMessage(message, maxChars),
+      // 最近若干条工具结果保留原文；只有更早的才按阈值折叠。
+      const keepIndices = recentToolResultIndices(
+        imagesUnloaded,
+        options.keepRecentResults,
+      );
+      const prunedMessages = imagesUnloaded.map((message, index) =>
+        keepIndices.has(index)
+          ? message
+          : pruneMessage(message, options.thresholdChars),
       );
       return handler({ ...(request as object), messages: prunedMessages });
     },
