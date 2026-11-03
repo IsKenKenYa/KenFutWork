@@ -1,4 +1,5 @@
 import { ComposerContextHeader } from "@zui/v4/composer/ComposerContext.js";
+import type { CodeUiToolOutputResponse } from "@kenfutwork/shared";
 import type {
   ConversationShareAllowedArtifact,
   ConversationShareTurnPreflightResult,
@@ -47,6 +48,7 @@ import { usePlanIdentitySnapshot } from "@zui/hooks/usePlanIdentitySnapshot.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useServices } from "@zui/hooks/useServices.js";
 import { freezeCodeViewerSource } from "@zui/host/fileViewerServices.js";
+import { surfaceJson } from "@zui/host/surfaceApi.js";
 import { useSettings } from "@zui/hooks/useSettingService.js";
 import { useSlashCommands } from "@zui/hooks/useSlashCommands.js";
 import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
@@ -2372,6 +2374,20 @@ export function SessionPane({
     [sessionId, snapshot?.config, snapshot?.sessionId],
   );
 
+  // 工具卡「查看原文」的唯一取数入口：按会话 id 与 runId/toolCallId 引用分页读取事件原文。
+  // 归档、引用缺失与权限失效由服务端拒绝，错误消息原样交给弹层显示。
+  const handleReadToolOutput = useCallback(
+    (targetSessionId: string, ref: string, offset: number) => {
+      const query = new URLSearchParams({
+        sessionId: targetSessionId,
+        ref,
+        offset: String(offset),
+      });
+      return surfaceJson<CodeUiToolOutputResponse>(`/api/code-ui/tool-output?${query}`);
+    },
+    [],
+  );
+
   const rowContext = useMemo<ConversationRowRenderContext>(
     () => ({
       workspacePath,
@@ -2384,6 +2400,7 @@ export function SessionPane({
       codePreviewSettings,
       sessionId,
       rootSessionId: rootSessionId ?? sessionId,
+      onReadToolOutput: sessionId ? handleReadToolOutput : undefined,
       chatLoadingBlockedByActiveWork,
       chatLoadingBlockedByInteraction,
       messageStreamShowReasoning,
@@ -2442,6 +2459,7 @@ export function SessionPane({
       codePreviewSettings,
       sessionId,
       rootSessionId,
+      handleReadToolOutput,
       chatLoadingBlockedByActiveWork,
       chatLoadingBlockedByInteraction,
       messageStreamShowReasoning,

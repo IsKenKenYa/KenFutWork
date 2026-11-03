@@ -106,6 +106,8 @@ export function TodoToolCallBlock(context: ToolCallBlockRenderContext) {
             onOpenCodeViewer={context.onOpenCodeViewer}
             onOpenFileLink={context.onOpenFileLink}
             onOpenBrowserUrl={context.onOpenBrowserUrl}
+            sessionId={context.sessionId}
+            onReadToolOutput={context.onReadToolOutput}
           />
           <ToolSnapshotFieldNotice
             refs={toolCall.snapshotRefs ?? []}
@@ -124,6 +126,8 @@ export function TodoToolCallBlock(context: ToolCallBlockRenderContext) {
       context.onOpenBrowserUrl,
       context.onOpenCodeViewer,
       context.onOpenFileLink,
+      context.onReadToolOutput,
+      context.sessionId,
       context.theme,
       context.workspacePath,
       handleLoadFullToolCallFields,
