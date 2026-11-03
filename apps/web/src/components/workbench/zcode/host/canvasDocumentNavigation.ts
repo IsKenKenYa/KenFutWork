@@ -42,6 +42,19 @@ export function resolveDesignDocumentEntry(
   };
 }
 
+/**
+ * 旧引用不可加载、恢复目标被替换：宿主据此关闭残留标签并提示一次。
+ * 与 ensureDesignCanvasEntry 的过滤规则同源，避免两处各判一次。
+ */
+export function designCanvasReferenceReplaced(
+  preferredDocumentId: string | undefined,
+  resolvedDocumentId: string,
+): boolean {
+  return Boolean(
+    preferredDocumentId && preferredDocumentId !== resolvedDocumentId,
+  );
+}
+
 /** Workspace memory 尚在切换时不把旧工作区的状态当作新项目空态。 */
 export function hasPendingDocumentWorkspaceRestore(
   state: WorkspaceSidePaneState | null,

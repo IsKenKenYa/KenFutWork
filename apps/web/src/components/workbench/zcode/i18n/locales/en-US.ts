@@ -1724,6 +1724,8 @@ const enUS: Record<string, string> = {
   "workspace.startFromScratch": "Start from scratch",
   "workspace.openFolder": "Open folder",
   "workspace.openPluginsSettings": "Plugin Marketplace",
+  "workspace.designCanvasFileMissing":
+    "Canvas file is missing. Opened another canvas.",
   "workspace.backToWorkspace": "Back to workspace",
   "workspace.noActiveForNewTask":
     "There is no available workspace yet. Open a workspace first.",

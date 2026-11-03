@@ -1628,6 +1628,7 @@ const zhCN: Record<string, string> = {
   "workspace.startFromScratch": "从空目录开始",
   "workspace.openFolder": "打开文件夹",
   "workspace.openPluginsSettings": "插件市场",
+  "workspace.designCanvasFileMissing": "画布文件缺失，已打开其他画布",
   "workspace.backToWorkspace": "返回工作区",
   "workspace.noActiveForNewTask":
     "当前还没有可用的工作区，请先打开一个工作区。",

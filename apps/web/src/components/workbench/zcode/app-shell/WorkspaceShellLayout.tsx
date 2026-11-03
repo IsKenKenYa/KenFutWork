@@ -33,7 +33,7 @@ import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
-import { CANVAS_DOCUMENT_DELETED_EVENT, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
+import { CANVAS_DOCUMENT_DELETED_EVENT, designCanvasReferenceReplaced, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
 import { HostWorkSurface } from "@zui/host/WorkSurface.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
@@ -1711,7 +1711,7 @@ export const WorkspaceShellLayout = memo(
         .then((canvas) => {
           // 期间可能又切了工作区/项目，过期结果不再开标签
           if (lastDesignEntryRef.current !== entryKey) return;
-          if (entry.documentId && entry.documentId !== canvas.documentId) {
+          if (designCanvasReferenceReplaced(entry.documentId, canvas.documentId)) {
             // 旧标签指向的画布文件已缺失：关掉残留标签，由可加载的画布接手。
             const stale = documentSidePaneStateRef.current?.tabs.find(
               (tab) =>
@@ -1721,6 +1721,10 @@ export const WorkspaceShellLayout = memo(
                 tab.documentId === entry.documentId,
             );
             if (stale) handleCloseSidePaneTab(stale.id);
+            // 引用被替换只提示一次：lastDesignEntryRef 已锁住本次入口。
+            toast(
+              intl.formatMessage({ id: "workspace.designCanvasFileMissing" }),
+            );
           }
           handleOpenDocument({
             resourceType: "canvas",
@@ -1735,7 +1739,7 @@ export const WorkspaceShellLayout = memo(
           lastDesignEntryRef.current = null;
           handleOpenDocument({ ...entry, restoreExisting: true });
         });
-    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleCloseSidePaneTab, handleOpenDocument, sidePaneState]);
+    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleCloseSidePaneTab, handleOpenDocument, intl, sidePaneState]);
     useEffect(() => {
       const open = (event: Event) => {
         const detail = (event as CustomEvent<OpenCanvasDocumentRequest>).detail;
