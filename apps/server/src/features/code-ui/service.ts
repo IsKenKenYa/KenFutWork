@@ -2363,6 +2363,19 @@ export class CodeUiService {
         }),
       };
     }
+    if (method === "conversationWorkflowRunsV4") {
+      const parsed = protocol.v4ConversationWorkflowRunsParamsSchema.parse(
+        args[0],
+      );
+      // 原 ZCode 的 workflow run 枚举来自 CLI 旁路日志；本内核不产生 workflow run，
+      // 空清单就是事实。会话打开时客户端会查询该面，未接通会让界面反复收到 501。
+      await this.loadConversation(user, parsed.sessionId);
+      return {
+        result: protocol.v4ConversationWorkflowRunsResultSchema.parse({
+          runs: [],
+        }),
+      };
+    }
     if (method === "backgroundBashOutputV4")
       return this.backgroundOutput.query(user, args[0]);
     if (method === "listSessionSubagents") {
