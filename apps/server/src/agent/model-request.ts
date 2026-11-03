@@ -11,6 +11,7 @@ import { countTokensApproximately } from "langchain";
 import { z } from "zod";
 import type { LocalActor } from "../features/local-instance/types.js";
 import type { ModelCatalogService } from "../features/model-providers/model-catalog-service.js";
+import { estimateModelCostUsd } from "../features/model-providers/model-cost.js";
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { resolveInputTokenLimit } from "./auto-compact.js";
@@ -253,7 +254,14 @@ export function createRunModelRequestPort(options: {
       options.assertCurrent();
       const owner = usage.owner;
       if (!owner) throw new Error("模型请求缺少可信用量归属。");
+      // 供应商没回传成本时用随包目录估算；未知模型保持缺省。
+      const costUsd = estimateModelCostUsd(
+        owner.model,
+        usage,
+        owner.provider,
+      );
       const totals = options.usage.update(options.runId, usage.modelCallId, {
+        ...(costUsd === undefined ? {} : { costUsd }),
         provider: owner.provider,
         model: owner.model,
         ...(owner.providerInstanceId

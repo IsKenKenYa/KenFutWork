@@ -52,6 +52,7 @@ import type {
   LocalInstanceService,
 } from "../features/local-instance/types.js";
 import { resolveModelInputCapabilities } from "../features/model-providers/input-capabilities.js";
+import { estimateModelCostUsd } from "../features/model-providers/model-cost.js";
 import {
   type ModelCatalogService,
   parseInstanceSpecifier,
@@ -2512,7 +2513,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? {
                   onUsage: (usage: ModelCallUsage) => {
                     const owner = usage.owner ?? run.usageMeta;
+                    // 供应商没回传成本时用随包目录估算；未知模型保持缺省。
+                    const costUsd = owner?.model
+                      ? estimateModelCostUsd(
+                          owner.model,
+                          usage,
+                          owner.provider,
+                        )
+                      : undefined;
                     return options.runUsage?.update(runId, usage.modelCallId, {
+                      ...(costUsd === undefined ? {} : { costUsd }),
                       inputTokens: usage.inputTokens,
                       outputTokens: usage.outputTokens,
                       provider: owner?.provider ?? "builtin",

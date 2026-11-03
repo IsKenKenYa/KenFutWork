@@ -583,7 +583,7 @@ export function UsageStatsSection() {
         {
           label: "预估花费",
           value: formatCost(stats.totals.costUsd),
-          hint: "供应商回传的成本",
+          hint: "供应商回传或目录估算",
         },
         {
           label: "峰值 Token 数",
