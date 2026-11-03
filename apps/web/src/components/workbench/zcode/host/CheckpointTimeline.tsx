@@ -18,6 +18,7 @@ import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { HistoryIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { RunTimelineDialog } from "./RunTimelineDialog.js";
 import { surfaceJson } from "./surfaceApi.js";
 
 /**
@@ -83,6 +84,7 @@ export function CheckpointTimeline({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [preview, setPreview] = useState<RestorePreview | null>(null);
   const [busy, setBusy] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   const taskId = useZCodeSessionStore
     .getState()
     .getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId;
@@ -143,6 +145,9 @@ export function CheckpointTimeline({
       setBusy(false);
     }
   }, [busy, onRestored, reload, selectedId, taskId]);
+
+  const selectedCheckpoint =
+    checkpoints?.find((row) => row.id === selectedId) ?? null;
 
   // 无 Task（草稿态）或无检查点时不摆入口（空壳禁则）
   if (!taskId || !checkpoints || checkpoints.length === 0) return null;
@@ -215,6 +220,14 @@ export function CheckpointTimeline({
             <Button
               type="button"
               variant="outline"
+              onClick={() => setTimelineOpen(true)}
+              disabled={selectedCheckpoint === null}
+            >
+              这一轮运行
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
               onClick={() => setOpen(false)}
               disabled={busy}
             >
@@ -230,6 +243,11 @@ export function CheckpointTimeline({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <RunTimelineDialog
+        runId={selectedCheckpoint?.runId ?? ""}
+        open={timelineOpen && selectedCheckpoint !== null}
+        onOpenChange={setTimelineOpen}
+      />
     </>
   );
 }
