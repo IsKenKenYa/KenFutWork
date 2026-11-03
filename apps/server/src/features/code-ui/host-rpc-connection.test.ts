@@ -7,6 +7,7 @@ import Fastify from "fastify";
 import { afterEach, expect, it } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import { createCodeUiSystemHost } from "../system/code-ui-host.js";
+import { createCodeUiClientConfigHost } from "./client-config-host.js";
 import {
   CLIENT_SCENES_UNAVAILABLE_CODE,
   CLIENT_SCENES_UNAVAILABLE_MESSAGE,
@@ -211,6 +212,23 @@ it("client-scenes.list 由宿主返回可读业务未支持，而不是 501", as
     code: CLIENT_SCENES_UNAVAILABLE_CODE,
     msg: CLIENT_SCENES_UNAVAILABLE_MESSAGE,
     data: [],
+  });
+});
+
+it("client-config.getSnapshot 由宿主返回空配置，而不是 501", async () => {
+  const host = createCodeUiClientConfigHost();
+  const f = await fixture((service, method) => host[`${service}.${method}`]);
+  const response = await f.rpc({
+    service: "client-config",
+    method: "getSnapshot",
+    args: [],
+    connectionId: f.connection.hello.connectionId,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json().result).toEqual({
+    code: 0,
+    msg: "",
+    data: { configs: {} },
   });
 });
 

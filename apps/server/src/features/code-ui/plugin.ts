@@ -12,6 +12,7 @@ import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
 import { createCodeAttachmentRepository } from "./attachments/repository.js";
+import { createCodeUiClientConfigHost } from "./client-config-host.js";
 import { createCodeUiClientScenesHost } from "./client-scenes-host.js";
 import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createExitPlanModeToolDefinition } from "./exit-plan.js";
@@ -224,10 +225,12 @@ export function createCodeUiPlugin(): PluginDefinition {
         id: "code-ui:guide",
         value: guideExtension,
       });
-      // 客户端场景目录由上游远端提供；本机宿主登记可读业务未支持，避免 501 触发重复重试。
-      for (const [id, value] of Object.entries(
-        createCodeUiClientScenesHost(),
-      )) {
+      // 客户端场景目录与公开客户端配置都由上游远端提供；
+      // 本机宿主登记如实结果（业务未支持 / 空配置），避免 501 触发重复重试。
+      for (const [id, value] of Object.entries({
+        ...createCodeUiClientScenesHost(),
+        ...createCodeUiClientConfigHost(),
+      })) {
         ctx.effect(() =>
           ctx
             .get("capabilities")
