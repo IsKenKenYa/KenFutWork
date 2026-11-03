@@ -8,9 +8,13 @@ import {
   MemorySettingsViewer,
   type MemoryViewerLoadingState,
 } from "@zui/settings/MemorySettingsViewer.js";
+import { MemoryTrashSection } from "@zui/settings/MemoryTrashSection.js";
 import { SettingsGroupCard, SettingsRow } from "@zui/settings/SettingsPageParts.js";
 
-type MemoryCatalogService = Pick<IMemoryService, "listProjectMemories">;
+type MemoryCatalogService = Pick<
+  IMemoryService,
+  "listProjectMemories" | "listTrashedMemories" | "restoreTrashedMemory"
+>;
 
 function normalizeWorkspaceDisplayName(value: string): string {
   const slug = value
@@ -181,25 +185,34 @@ export function MemorySettingsSection({
           {intl.formatMessage({ id: "settings.memory.viewer.localOnly" })}
         </div>
       ) : !memoryEnabled ? null : (
-        <MemorySettingsViewer
-          catalogError={catalogError}
-          catalogState={catalogState}
-          selectedWorkspace={selectedWorkspace}
-          workspaces={displayWorkspaces}
-          onRefresh={handleRefresh}
-          onScopeKeyChange={(workspaceId) =>
-            runUserAction({
-              input: {
-                featureId: "settings.memory",
-                action: "change_memory_scope",
-                trigger: "select",
-              },
-              operation: () => setSelectedWorkspaceId(workspaceId),
-              completed: { resultSource: "local_commit" },
-              failureStage: "local_commit",
-            })
-          }
-        />
+        <>
+          <MemorySettingsViewer
+            catalogError={catalogError}
+            catalogState={catalogState}
+            selectedWorkspace={selectedWorkspace}
+            workspaces={displayWorkspaces}
+            onRefresh={handleRefresh}
+            onScopeKeyChange={(workspaceId) =>
+              runUserAction({
+                input: {
+                  featureId: "settings.memory",
+                  action: "change_memory_scope",
+                  trigger: "select",
+                },
+                operation: () => setSelectedWorkspaceId(workspaceId),
+                completed: { resultSource: "local_commit" },
+                failureStage: "local_commit",
+              })
+            }
+          />
+          {selectedWorkspace ? (
+            <MemoryTrashSection
+              projectId={selectedWorkspace.id}
+              memoryService={memoryService}
+              onRestored={() => void refreshCatalog()}
+            />
+          ) : null}
+        </>
       )}
     </div>
   );

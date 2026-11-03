@@ -35,6 +35,8 @@ export interface MemoryIndexEntry {
 export interface MemoryTrashEntry {
   id: string;
   fileName: string | null;
+  /** 索引行里记录的标题；没有索引行时用文件名（去扩展名）。 */
+  title: string | null;
   reason: "duplicate" | "orphan" | "dangling-index";
   indexLine: string | null;
   trashedAt: number;
@@ -94,6 +96,13 @@ function indexHook(content: string): string {
       .map((line) => line.trim())
       .find((line) => line.length > 0) ?? "";
   return firstLine.slice(0, 120);
+}
+
+function titleFromIndexLine(indexLine: string | null): string | null {
+  if (!indexLine) return null;
+  const matched = indexLine.match(/^- \[(.*?)\]/u);
+  const title = matched?.[1]?.trim();
+  return title && title.length > 0 ? title : null;
 }
 
 async function readOptional(filePath: string): Promise<string> {
@@ -165,6 +174,10 @@ async function moveToTrash(options: {
   const entry: MemoryTrashEntry = {
     id,
     fileName: options.fileName,
+    title:
+      titleFromIndexLine(options.indexLine) ??
+      options.fileName?.replace(/\.md$/u, "") ??
+      null,
     reason: options.reason,
     indexLine: options.indexLine,
     trashedAt: options.now,
@@ -221,16 +234,25 @@ export async function listTrashEntries(
     if (meta === "") continue;
     const parsed = JSON.parse(meta) as Partial<MemoryTrashEntry>;
     if (typeof parsed.trashedAt !== "number") continue;
+    const fileName =
+      typeof parsed.fileName === "string" ? parsed.fileName : null;
+    const indexLine =
+      typeof parsed.indexLine === "string" ? parsed.indexLine : null;
     results.push({
       id: entry.name,
-      fileName: typeof parsed.fileName === "string" ? parsed.fileName : null,
+      fileName,
+      title:
+        (typeof parsed.title === "string" ? parsed.title : null) ??
+        titleFromIndexLine(indexLine) ??
+        fileName?.replace(/\.md$/u, "") ??
+        null,
       reason:
         parsed.reason === "duplicate" ||
         parsed.reason === "orphan" ||
         parsed.reason === "dangling-index"
           ? parsed.reason
           : "orphan",
-      indexLine: typeof parsed.indexLine === "string" ? parsed.indexLine : null,
+      indexLine,
       trashedAt: parsed.trashedAt,
     });
   }
@@ -405,6 +427,8 @@ export async function maintainMemoryDirectory(options: {
 export async function restoreTrashEntry(options: {
   memoryRoot: string;
   trashId: string;
+  recoverableWindowDays: number;
+  now: number;
   maxFileBytes: number;
 }): Promise<{ fileName: string | null }> {
   if (!isValidSegment(options.trashId))
@@ -417,6 +441,12 @@ export async function restoreTrashEntry(options: {
   const metaRaw = await readOptional(join(trashDirectory, "meta.json"));
   if (metaRaw === "") throw new Error("回收项不存在。");
   const meta = JSON.parse(metaRaw) as Partial<MemoryTrashEntry>;
+  // 过期回收项保留在磁盘上等待整理任务清除，但恢复入口必须拒绝，避免把已出窗口的条目悄悄放回。
+  if (
+    typeof meta.trashedAt === "number" &&
+    options.now - meta.trashedAt > options.recoverableWindowDays * DAY_MS
+  )
+    throw new Error("回收项已过可恢复窗口。");
 
   let fileName: string | null = null;
   if (typeof meta.fileName === "string" && isValidSegment(meta.fileName)) {

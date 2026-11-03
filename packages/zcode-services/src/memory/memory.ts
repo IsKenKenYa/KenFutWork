@@ -21,6 +21,17 @@ export interface ProjectMemoryWorkspaceSummary {
   files: ProjectMemoryFileSummary[];
 }
 
+export interface ProjectMemoryTrashItem {
+  trashId: string;
+  fileName: string | null;
+  /** 原始标题；没有索引行时用文件名（去扩展名）。 */
+  title: string | null;
+  reason: "duplicate" | "orphan" | "dangling-index";
+  trashedAt: number;
+  /** 已过可恢复窗口时为 false，界面据此禁用恢复并说明原因。 */
+  restorable: boolean;
+}
+
 export interface IMemoryService {
   /** 列出当前本地 profile 中可查看的 Project Memory。 */
   listProjectMemories(): Promise<ProjectMemoryWorkspaceSummary[]>;
@@ -30,6 +41,17 @@ export interface IMemoryService {
     workspaceId: string;
     fileName: string;
   }): Promise<{ content: string; updatedAt: number }>;
+
+  /** 列出一个工作区回收区里的条目；窗口内可恢复。 */
+  listTrashedMemories(params: {
+    projectId: string;
+  }): Promise<ProjectMemoryTrashItem[]>;
+
+  /** 恢复一个回收项；正文同名时服务端自动加后缀。 */
+  restoreTrashedMemory(params: {
+    projectId: string;
+    trashId: string;
+  }): Promise<{ fileName: string | null }>;
 }
 
 export const IMemoryService = createServiceDescriptor<IMemoryService>(ServiceChannels.Memory);

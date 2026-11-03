@@ -124,6 +124,29 @@ it("索引悬挂行进回收区且可在窗口内恢复", async () => {
   expect(await memory.listTrashedMemories(actor, { projectId })).toEqual([]);
 });
 
+it("回收项过窗口后仍可列出但标记不可恢复，恢复被拒绝", async () => {
+  const { memory, root, advanceDays, currentTime } = await createFixture({
+    orphanRetentionDays: 1,
+    recoverableWindowDays: 30,
+  });
+  await seed(root, { "old.md": "旧结论" }, []);
+  const stamp = new Date(currentTime() - 2 * DAY);
+  await utimes(join(root, "old.md"), stamp, stamp);
+  await memory.maintainProjectMemory(actor, { projectId });
+
+  advanceDays(31);
+  const trash = await memory.listTrashedMemories(actor, { projectId });
+  expect(trash).toHaveLength(1);
+  expect(trash[0]?.title).toBe("old");
+  expect(trash[0]?.restorable).toBe(false);
+  await expect(
+    memory.restoreTrashedMemory(actor, {
+      projectId,
+      trashId: trash[0]!.id,
+    }),
+  ).rejects.toThrow("已过可恢复窗口");
+});
+
 it("未被引用且超期的正文进回收区，未超期的保留", async () => {
   const { memory, root, currentTime } = await createFixture({
     orphanRetentionDays: 30,

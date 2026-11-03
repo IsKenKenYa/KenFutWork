@@ -51,6 +51,11 @@ export interface ProjectMemorySearchResult {
   truncated: boolean;
 }
 
+/** 设置页回收区的一行：除条目本身外给出可恢复判定，避免界面自己算窗口。 */
+export interface ProjectMemoryTrashItem extends MemoryTrashEntry {
+  restorable: boolean;
+}
+
 export interface ProjectMemoryService {
   /** 记忆开关的当前事实（读实例偏好，缺省关闭）。 */
   isEnabled(instanceId: string): Promise<boolean>;
@@ -102,11 +107,11 @@ export interface ProjectMemoryService {
     actor: LocalActor,
     input: { projectId: string },
   ): Promise<MemoryMaintenanceResult>;
-  /** 回收区里的条目；窗口内可恢复。 */
+  /** 回收区里的条目；窗口内的可恢复，过窗口的仍列出但标记不可恢复。 */
   listTrashedMemories(
     actor: LocalActor,
     input: { projectId: string },
-  ): Promise<MemoryTrashEntry[]>;
+  ): Promise<ProjectMemoryTrashItem[]>;
   /** 把回收区条目恢复到记忆目录；正文同名时自动加后缀，索引行去重追加。 */
   restoreTrashedMemory(
     actor: LocalActor,
@@ -464,7 +469,14 @@ export function createProjectMemoryService(options: {
       await requireMemoryEnabled(actor);
       if (!isValidPathSegment(input.projectId))
         throw new Error("项目标识无效。");
-      return listTrashEntries(memoryDirectory(input.projectId));
+      const limits = await readLimits(actor);
+      const entries = await listTrashEntries(memoryDirectory(input.projectId));
+      const now = clock();
+      return entries.map((entry) => ({
+        ...entry,
+        restorable:
+          now - entry.trashedAt <= limits.recoverableWindowDays * 24 * 60 * 60 * 1000,
+      }));
     },
 
     async restoreTrashedMemory(actor, input) {
@@ -475,6 +487,8 @@ export function createProjectMemoryService(options: {
       return restoreTrashEntry({
         memoryRoot: memoryDirectory(input.projectId),
         trashId: input.trashId,
+        recoverableWindowDays: limits.recoverableWindowDays,
+        now: clock(),
         maxFileBytes: limits.maxFileBytes,
       });
     },
