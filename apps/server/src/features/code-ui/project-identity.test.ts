@@ -343,7 +343,20 @@ it("原CodeUI宿主订阅真实workspace目录，固定Task根A不借项目默�
           { id: "model", currentValue: "", options: [] },
           { id: "mode", currentValue: "build" },
         ],
-        slashCommands: [],
+        slashCommands: [
+          {
+            description: "生成或更新项目说明",
+            inputHint: "/init [补充要求]",
+            name: "init",
+            source: "builtin",
+          },
+          {
+            description: "检查当前改动",
+            inputHint: "/review [关注点]",
+            name: "review",
+            source: "builtin",
+          },
+        ],
       },
     });
     await expect(
