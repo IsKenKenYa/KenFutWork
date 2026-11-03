@@ -170,6 +170,38 @@ export function createRunTimelineRepository(
         costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
       } satisfies RunTimelineUsage;
     },
+
+    async listRunsForTask(input) {
+      const rows = await persistence
+        .forInstance(input.instanceId)
+        .query<RawRunRow>(
+          `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+                  r.error_code, r.error_message, r.created_at, r.completed_at
+             from public.agent_turn_boundaries b
+             join public.agent_runs r on r.id = b.run_id
+             join public.projects p on p.id = b.project_id
+               and p.instance_id = b.instance_id
+            where b.instance_id = :instance
+              and b.project_id = $1
+              and b.task_id = $2
+              and b.task_kind = 'code'
+              and b.phase = 'pre'
+              and p.archived_at is null
+            order by r.created_at desc
+            limit $3`,
+          [input.projectId, input.taskId, input.limit],
+        );
+      return rows.map((row) => ({
+        runId: row.id,
+        status: parseStatus(row.status),
+        stopReason: row.stop_reason,
+        errorCode: row.error_code,
+        errorMessage: row.error_message,
+        startedAt: toIso(row.created_at),
+        completedAt:
+          row.completed_at === null ? null : toIso(row.completed_at),
+      }));
+    },
   };
 }
 

@@ -1,6 +1,7 @@
 import {
   applicationErrorCodeSchema,
   runTimelineResponseSchema,
+  taskRunsResponseSchema,
 } from "@kenfutwork/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
@@ -51,6 +52,7 @@ function repository(
       outputTokens: 60,
       costUsd: null,
     }),
+    listRunsForTask: async () => [],
     ...overrides,
   };
 }
@@ -137,6 +139,150 @@ describe("GET /api/agent/runs/:runId/timeline", () => {
       const response = await app.inject({
         method: "GET",
         url: `/api/agent/runs/${RUN_ID}/timeline`,
+      });
+
+      expect(response.statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+describe("GET /api/agent/tasks/:taskId/runs", () => {
+  it("按本机实例、项目与 Task 查询轮次，并过契约返回", async () => {
+    const seen: unknown[] = [];
+    const app = buildApp(
+      true,
+      repository({
+        listRunsForTask: async (input) => {
+          seen.push(input);
+          return [
+            {
+              runId: RUN_ID,
+              status: "completed",
+              stopReason: "completed",
+              errorCode: null,
+              errorMessage: null,
+              startedAt: AT,
+              completedAt: AT,
+            },
+          ];
+        },
+      }),
+    );
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/agent/tasks/task-1/runs?projectId=project-1&limit=3",
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = taskRunsResponseSchema.parse(response.json());
+      expect(seen).toEqual([
+        {
+          instanceId: RUNTIME_TEST_ACTOR.instanceId,
+          projectId: "project-1",
+          taskId: "task-1",
+          limit: 3,
+        },
+      ]);
+      expect(body).toEqual({
+        taskId: "task-1",
+        runs: [
+          {
+            runId: RUN_ID,
+            status: "completed",
+            stopReason: "completed",
+            errorCode: null,
+            errorMessage: null,
+            startedAt: AT,
+            completedAt: AT,
+          },
+        ],
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("未传 limit 时按默认上限查询", async () => {
+    const seen: unknown[] = [];
+    const app = buildApp(
+      true,
+      repository({
+        listRunsForTask: async (input) => {
+          seen.push(input);
+          return [];
+        },
+      }),
+    );
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/agent/tasks/task-1/runs?projectId=project-1",
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(seen).toEqual([
+        {
+          instanceId: RUNTIME_TEST_ACTOR.instanceId,
+          projectId: "project-1",
+          taskId: "task-1",
+          limit: 20,
+        },
+      ]);
+      expect(taskRunsResponseSchema.parse(response.json())).toEqual({
+        taskId: "task-1",
+        runs: [],
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("缺少或非法 projectId：400", async () => {
+    const app = buildApp(true);
+    try {
+      const missing = await app.inject({
+        method: "GET",
+        url: "/api/agent/tasks/task-1/runs",
+      });
+      expect(missing.statusCode).toBe(400);
+      expect((missing.json() as { error: { code: string } }).error.code).toBe(
+        "invalid_input",
+      );
+
+      const empty = await app.inject({
+        method: "GET",
+        url: "/api/agent/tasks/task-1/runs?projectId=",
+      });
+      expect(empty.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("limit 越界或非整数：400", async () => {
+    const app = buildApp(true);
+    try {
+      for (const limit of ["0", "51", "1.5", "abc"]) {
+        const response = await app.inject({
+          method: "GET",
+          url: `/api/agent/tasks/task-1/runs?projectId=project-1&limit=${limit}`,
+        });
+        expect(response.statusCode).toBe(400);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("未获本机授权：401", async () => {
+    const app = buildApp(false);
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/agent/tasks/task-1/runs?projectId=project-1",
       });
 
       expect(response.statusCode).toBe(401);

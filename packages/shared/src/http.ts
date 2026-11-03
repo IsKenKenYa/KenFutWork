@@ -6,6 +6,7 @@ import {
   canvasSummarySchema,
   chatMessageSchema,
   chatSessionSummarySchema,
+  identifierSchema,
   instanceSettingsSchema,
   modelInfoSchema,
   projectKindSchema,
@@ -510,6 +511,29 @@ export const runTimelineResponseSchema = z.object({
 export type RunTimelineEntry = z.infer<typeof runTimelineEntrySchema>;
 export type RunTimelineEntryKind = z.infer<typeof runTimelineEntryKindSchema>;
 export type RunTimelineResponse = z.infer<typeof runTimelineResponseSchema>;
+
+/**
+ * `GET /api/agent/tasks/:taskId/runs` 的响应。
+ *
+ * 用途：没有检查点的工作区也能按 Task 列出每一轮运行的终态与时间，
+ * 再从 `runId` 进入单轮时间线回看。只返回本实例、本 Task 且所属项目未归档的运行。
+ */
+export const taskRunsResponseSchema = z.object({
+  taskId: identifierSchema,
+  runs: z.array(
+    z.object({
+      runId: runIdSchema,
+      status: z.enum(["accepted", "running", "completed", "failed", "canceled"]),
+      stopReason: runStopReasonSchema.nullable(),
+      errorCode: z.string().nullable(),
+      errorMessage: z.string().nullable(),
+      startedAt: z.string().min(1),
+      completedAt: z.string().nullable(),
+    }),
+  ),
+});
+
+export type TaskRunsResponse = z.infer<typeof taskRunsResponseSchema>;
 
 export const codeGitFileResponseSchema = z.object({
   file: z.object({

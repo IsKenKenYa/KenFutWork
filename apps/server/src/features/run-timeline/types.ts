@@ -16,6 +16,13 @@ export interface RunTimelineService {
     instanceId: string;
     runId: string;
   }): Promise<{ markdown: string; filename: string }>;
+  /** 按 Task 列出轮次：没有检查点的工作区也能看到每一轮的时间与终态。 */
+  listTaskRuns(input: {
+    instanceId: string;
+    projectId: string;
+    taskId: string;
+    limit: number;
+  }): Promise<{ taskId: string; runs: TaskRunRow[] }>;
 }
 
 export type RunTimelineResult = {
@@ -74,6 +81,17 @@ export type RunTimelineRunRow = {
   completedAt: string | null;
 };
 
+/** 按 Task 列轮次读到的一行：只保留终态与时间，明细由单轮时间线端点提供。 */
+export type TaskRunRow = {
+  runId: string;
+  status: RunTimelineRunRow["status"];
+  stopReason: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
 /** 事件日志一行：`seq` 与 `created_at` 用于排序与展示，`event` 是流事件原文。 */
 export type RunTimelineEventRow = {
   seq: number;
@@ -112,6 +130,17 @@ export type RunTimelineRepository = {
     instanceId: string,
     runId: string,
   ): Promise<RunTimelineUsage | null>;
+  /**
+   * 读取该 Task 的轮次列表（按开始时间倒序）。
+   * 归属走 `agent_turn_boundaries`（写入时已按实例、项目、Task 与有效期校验），
+   * 因此只返回真实绑定过执行作用域的轮次。
+   */
+  listRunsForTask(input: {
+    instanceId: string;
+    projectId: string;
+    taskId: string;
+    limit: number;
+  }): Promise<TaskRunRow[]>;
 };
 
 export class RunTimelineError extends Error {

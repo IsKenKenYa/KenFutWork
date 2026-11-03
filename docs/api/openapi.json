@@ -777,6 +777,88 @@
         }
       }
     },
+    "/api/agent/tasks/{taskId}/runs": {
+      "get": {
+        "operationId": "getAgentTasksByTaskIdRuns",
+        "summary": "按 Task 列出运行轮次",
+        "description": "没有检查点的工作区也能按 Task 回看每一轮：按本实例、项目与 Task 归属倒序返回运行终态、停止原因、错误与起止时间，再用 runId 进入单轮时间线；所属项目已归档时返回空列表，不返回空壳。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "项目 ID（必填）"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "description": "返回轮次上限，默认 20，最多 50",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/taskRunsResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/flow/host/engine/install": {
       "post": {
         "operationId": "postFlowHostEngineInstall",
@@ -23882,6 +23964,36 @@
                 "minimum": 1,
                 "maximum": 10000
               },
+              "contextKeepRecentImages": {
+                "default": 2,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 20
+              },
+              "toolResultOffloadMaxChars": {
+                "default": 32000,
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 1048576
+              },
+              "toolResultOffloadMaxBytes": {
+                "default": 33554432,
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 1073741824
+              },
+              "memoryOrphanRetentionDays": {
+                "default": 30,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3650
+              },
+              "memoryRecoverableWindowDays": {
+                "default": 30,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3650
+              },
               "agentMaxRetries": {
                 "default": 10,
                 "type": "integer",
@@ -24224,6 +24336,11 @@
               "autoCompactEnabled",
               "compactKeepMessages",
               "compactFallbackKeepMessages",
+              "contextKeepRecentImages",
+              "toolResultOffloadMaxChars",
+              "toolResultOffloadMaxBytes",
+              "memoryOrphanRetentionDays",
+              "memoryRecoverableWindowDays",
               "agentMaxRetries",
               "subagentMaxDepth",
               "subagentMaxConcurrency",
@@ -24571,6 +24688,31 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "contextKeepRecentImages": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
+          },
+          "toolResultOffloadMaxChars": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 1048576
+          },
+          "toolResultOffloadMaxBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 1073741824
+          },
+          "memoryOrphanRetentionDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3650
+          },
+          "memoryRecoverableWindowDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3650
           },
           "agentMaxRetries": {
             "type": "integer",
@@ -38305,6 +38447,92 @@
             "maxLength": 100
           }
         }
+      },
+      "taskRunsResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "runId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "accepted",
+                    "running",
+                    "completed",
+                    "failed",
+                    "canceled"
+                  ]
+                },
+                "stopReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "completed",
+                        "output_limit",
+                        "user_cancelled",
+                        "task_stopped",
+                        "host_shutdown"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "errorCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "errorMessage": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "startedAt": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "completedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "runId",
+                "status",
+                "stopReason",
+                "errorCode",
+                "errorMessage",
+                "startedAt",
+                "completedAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "taskId",
+          "runs"
+        ],
+        "additionalProperties": false
       },
       "unauthenticatedErrorResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

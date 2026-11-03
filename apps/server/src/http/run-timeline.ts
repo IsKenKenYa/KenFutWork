@@ -1,4 +1,4 @@
-import { runIdSchema } from "@kenfutwork/shared";
+import { identifierSchema, runIdSchema } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import {
@@ -56,6 +56,31 @@ export async function registerRunTimelineRoutes(
       }
     },
   );
+
+  app.get<{
+    Params: { taskId: string };
+    Querystring: { projectId?: string; limit?: string };
+  }>("/api/agent/tasks/:taskId/runs", async (request, reply) => {
+    const user = await deps.localAccess.authenticate(request);
+    if (!user) return unauthenticated(reply);
+    const taskId = parseIdentifier(request.params.taskId, "Task id", reply);
+    if (!taskId) return;
+    const projectId = parseIdentifier(request.query.projectId, "项目 id", reply);
+    if (!projectId) return;
+    // 单页 1..50 是接口分页边界，只影响一次查询返回多少行，不进运行时治理表。
+    const limit = parseLimit(request.query.limit, reply);
+    if (limit === null) return;
+    try {
+      return await deps.timeline.listTaskRuns({
+        instanceId: user.instanceId,
+        projectId,
+        taskId,
+        limit,
+      });
+    } catch (error) {
+      return sendTimelineError(reply, error);
+    }
+  });
 }
 
 function parseRunId(value: string, reply: FastifyReply): string | null {
@@ -67,6 +92,39 @@ function parseRunId(value: string, reply: FastifyReply): string | null {
     return null;
   }
   return parsed.data;
+}
+
+function parseIdentifier(
+  value: string | undefined,
+  label: string,
+  reply: FastifyReply,
+): string | null {
+  const parsed = identifierSchema.safeParse(value);
+  if (!parsed.success) {
+    reply.code(400).send({
+      error: { code: "invalid_input", message: `${label} 不合法。` },
+    });
+    return null;
+  }
+  return parsed.data;
+}
+
+const TASK_RUNS_DEFAULT_LIMIT = 20;
+const TASK_RUNS_MAX_LIMIT = 50;
+
+function parseLimit(
+  value: string | undefined,
+  reply: FastifyReply,
+): number | null {
+  if (value === undefined) return TASK_RUNS_DEFAULT_LIMIT;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > TASK_RUNS_MAX_LIMIT) {
+    reply.code(400).send({
+      error: { code: "invalid_input", message: "limit 必须在 1 到 50 之间。" },
+    });
+    return null;
+  }
+  return parsed;
 }
 
 function unauthenticated(reply: FastifyReply) {

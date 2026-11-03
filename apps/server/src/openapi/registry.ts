@@ -13,6 +13,7 @@ import {
   agentRunLatestResponseSchema,
   agentSubagentListResponseSchema,
   runTimelineResponseSchema,
+  taskRunsResponseSchema,
   assetSignedUrlResponseSchema,
   brandKitAssetCreateRequestSchema,
   brandKitAssetResponseSchema,
@@ -393,6 +394,27 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     description:
       "以 Markdown 附件返回同一份时间线，供归档与排查；失败原因与用量原样带上，不裁剪条目。",
     binaryResponse: "text/markdown",
+  },
+  {
+    method: "get",
+    path: "/api/agent/tasks/:taskId/runs",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    summary: "按 Task 列出运行轮次",
+    description:
+      "没有检查点的工作区也能按 Task 回看每一轮：按本实例、项目与 Task 归属倒序返回运行终态、停止原因、错误与起止时间，再用 runId 进入单轮时间线；所属项目已归档时返回空列表，不返回空壳。",
+    responseSchema: taskRunsResponseSchema,
+    querySchema: z.object({
+      projectId: z.string().min(1).describe("项目 ID（必填）"),
+      limit: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe("返回轮次上限，默认 20，最多 50"),
+    }),
   },
   {
     method: "post",

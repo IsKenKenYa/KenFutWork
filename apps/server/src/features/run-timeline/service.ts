@@ -58,5 +58,10 @@ export function createRunTimelineService(deps: {
         filename: runTimelineFilename(input.runId),
       };
     },
+
+    async listTaskRuns(input) {
+      const runs = await deps.repository.listRunsForTask(input);
+      return { taskId: input.taskId, runs };
+    },
   };
 }
