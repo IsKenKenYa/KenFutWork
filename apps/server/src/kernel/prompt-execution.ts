@@ -10,6 +10,7 @@ export function promptExecutionContext(
     taskWorkContext: context.taskWorkContext,
     runId: context.runId,
     signal: context.signal,
+    ...(context.canvasId ? { canvasId: context.canvasId } : {}),
     ...(context.workContext ? { workContext: context.workContext } : {}),
   };
 }

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
@@ -15,6 +15,8 @@ import type { LocalActor } from "../local-instance/types.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import type { CodeUiRepository } from "../code-ui/repository.js";
+import type { CanvasService } from "../canvas/canvas-service.js";
+import type { AgentPersistenceService } from "../../agent/persistence/index.js";
 
 const MEMORY_INDEX_FILE_NAME = "MEMORY.md";
 const MEMORY_DIRECTORY_NAME = "memory";
@@ -57,6 +59,22 @@ export interface ProjectMemoryService {
     actor: LocalActor,
     input: { projectId: string; title: string; content: string },
   ): Promise<{ fileName: string; path: string; indexUpdated: boolean }>;
+  /**
+   * 解析本次运行的记忆归属：Code 直接用 Task 句柄的项目 id；Design 没有 Task
+   * 句柄时经画布 id 映射到所属项目。画布不存在、越权或不属于同一项目时拒绝。
+   */
+  resolveProjectId(
+    actor: LocalActor,
+    input: { projectId?: string | undefined; canvasId?: string | undefined },
+  ): Promise<string | null>;
+  /**
+   * 旧 Design 记忆通道 `/memories/`（画布级 StoreBackend）迁移到项目记忆目录。
+   * 迁移幂等：同名文件不覆盖，索引行去重，完成后写画布级标记避免每轮重复扫描。
+   */
+  migrateLegacyCanvasMemory(
+    actor: LocalActor,
+    input: { projectId: string; canvasId: string },
+  ): Promise<{ migrated: number }>;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -88,6 +106,26 @@ function isValidPathSegment(value: string): boolean {
 
 function isMemoryFileName(fileName: string): boolean {
   return fileName === MEMORY_INDEX_FILE_NAME || fileName.endsWith(".md");
+}
+
+/** 旧 StoreBackend 的 FileData 正文：v1 是行数组，v2 是字符串。 */
+function legacyText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const content = (value as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (
+    Array.isArray(content) &&
+    content.every((line) => typeof line === "string")
+  )
+    return content.join("\n");
+  return null;
+}
+
+/** 旧通道键 `/memories/notes/a.md` → 扁平文件名 `notes-a.md`。 */
+function flattenLegacyFileName(relativePath: string): string | null {
+  const flat = relativePath.split("/").join("-");
+  if (!isValidPathSegment(flat) || !flat.endsWith(".md")) return null;
+  return flat;
 }
 
 async function requirePlainFile(filePath: string): Promise<number> {
@@ -141,6 +179,10 @@ export function createProjectMemoryService(options: {
   localInstance: Pick<LocalInstanceService, "resolve">;
   preferences: Pick<CodeUiRepository, "readHumanPreferences">;
   settings: Pick<SettingsService, "getInstanceSettings">;
+  /** Design 记忆归属：画布 → 项目映射与越权校验的唯一来源。 */
+  canvases: Pick<CanvasService, "getCanvas">;
+  /** 旧 `/memories/` 通道的存储；未配置 Postgres 时是进程内 store。 */
+  agentPersistence: Pick<AgentPersistenceService, "getPersistence">;
 }): ProjectMemoryService {
   const projectsRoot = join(options.dataDir, "memories", "projects");
 
@@ -171,6 +213,183 @@ export function createProjectMemoryService(options: {
     memoryDirectory,
 
     isEnabled,
+
+    async resolveProjectId(actor, input) {
+      if (input.projectId) return input.projectId;
+      if (!input.canvasId) return null;
+      if (!isValidPathSegment(input.canvasId))
+        throw new Error("画布标识无效。");
+      const canvas = await options.canvases.getCanvas(actor, input.canvasId);
+      if (!isValidPathSegment(canvas.projectId))
+        throw new Error("画布所属项目标识无效。");
+      return canvas.projectId;
+    },
+
+    async migrateLegacyCanvasMemory(actor, input) {
+      if (
+        !isValidPathSegment(input.projectId) ||
+        !isValidPathSegment(input.canvasId)
+      )
+        throw new Error("画布或项目标识无效。");
+      // 归属校验同时拒绝已删除画布（服务按 actor 取不到记录即抛错）。
+      const canvas = await options.canvases.getCanvas(actor, input.canvasId);
+      if (canvas.projectId !== input.projectId)
+        throw new Error("画布不属于该项目的记忆。");
+      const persistence = await options.agentPersistence.getPersistence();
+      if (!persistence) return { migrated: 0 };
+
+      // 旧通道键是画布级绝对路径（`/memories/...`），namespace 与后端同一处。
+      const namespace = ["projects", input.canvasId, "memories"];
+      const items: Array<{ key: string; value: unknown }> = [];
+      const pageSize = 100;
+      for (let offset = 0; ; offset += pageSize) {
+        const page = (await persistence.store.search(namespace, {
+          limit: pageSize,
+          offset,
+        })) as Array<{ key: string; value: unknown }>;
+        if (page.length === 0) break;
+        items.push(...page);
+        if (page.length < pageSize) break;
+      }
+
+      const files: Array<{ key: string; fileName: string; content: string }> = [];
+      const legacyIndexLines: string[] = [];
+      for (const item of items) {
+        if (!item.key.startsWith("/memories/")) continue;
+        const content = legacyText(item.value);
+        if (content === null || content.trim().length === 0) continue;
+        const relativePath = item.key.slice("/memories/".length);
+        if (relativePath === MEMORY_INDEX_FILE_NAME) {
+          legacyIndexLines.push(
+            ...content
+              .split(/\r?\n/u)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0),
+          );
+          continue;
+        }
+        const fileName = flattenLegacyFileName(relativePath);
+        if (!fileName) continue;
+        files.push({ key: item.key, fileName, content });
+      }
+      if (files.length === 0 && legacyIndexLines.length === 0)
+        return { migrated: 0 };
+
+      const memoryRoot = memoryDirectory(input.projectId);
+      await mkdir(memoryRoot, { recursive: true });
+      const limits = await readLimits(actor);
+      const indexPath = join(memoryRoot, MEMORY_INDEX_FILE_NAME);
+      const existingIndex = await readFile(indexPath, "utf8").catch(
+        (error: unknown) => {
+          if (isNotFound(error)) return "";
+          throw error;
+        },
+      );
+      const knownLines = new Set(
+        existingIndex
+          .split(/\r?\n/u)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0),
+      );
+      const referencedFiles = new Set(
+        [...knownLines]
+          .map((line) => line.match(/\]\(([^)]+)\)/u)?.[1])
+          .filter((name): name is string => typeof name === "string"),
+      );
+      // 迁移记录按「旧键 + 正文」指纹去重：同一旧文件重复扫描不再生成副本，
+      // 旧通道后续新写的正文仍会被下一轮补进来。
+      const markerPath = join(memoryRoot, `.legacy-${input.canvasId}.json`);
+      const markerRaw = await readFile(markerPath, "utf8").catch(
+        (error: unknown) => {
+          if (isNotFound(error)) return "";
+          throw error;
+        },
+      );
+      const records: Array<{ fingerprint: string; fileName: string }> =
+        markerRaw === ""
+          ? []
+          : (JSON.parse(markerRaw) as Array<{
+              fingerprint: string;
+              fileName: string;
+            }>);
+      const byFingerprint = new Map(
+        records.map((record) => [record.fingerprint, record.fileName]),
+      );
+      const existingNames = new Set(
+        (await readdir(memoryRoot, { withFileTypes: true }))
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name),
+      );
+      const additions: string[] = [];
+      let migrated = 0;
+      let recordsChanged = false;
+
+      for (const file of files) {
+        const fingerprint = createHash("sha256")
+          .update(`${file.key}\u0000${file.content}`)
+          .digest("hex");
+        const base = file.fileName.replace(/\.md$/u, "");
+        let targetName = byFingerprint.get(fingerprint);
+        let mustWrite = false;
+        if (!targetName) {
+          // 不覆盖新通道已写下的同名文件；冲突时改名保留旧正文。
+          targetName = file.fileName;
+          for (let suffix = 2; ; suffix += 1) {
+            if (!existingNames.has(targetName)) break;
+            targetName =
+              suffix === 2
+                ? `${base}-legacy.md`
+                : `${base}-legacy-${suffix}.md`;
+          }
+          existingNames.add(targetName);
+          byFingerprint.set(fingerprint, targetName);
+          records.push({ fingerprint, fileName: targetName });
+          recordsChanged = true;
+          mustWrite = true;
+        } else if (!existingNames.has(targetName)) {
+          // 迁移记录在但正文被删：按记录恢复，避免旧数据静默缺失。
+          mustWrite = true;
+        }
+        if (mustWrite) {
+          await writeFile(
+            join(memoryRoot, targetName),
+            `${file.content}\n`,
+            "utf8",
+          );
+          existingNames.add(targetName);
+          migrated += 1;
+        }
+        if (!referencedFiles.has(targetName)) {
+          additions.push(
+            `- [旧记忆：${base}](${targetName}) — ${indexHook(file.content)}`,
+          );
+          referencedFiles.add(targetName);
+        }
+      }
+
+      for (const line of legacyIndexLines) {
+        if (knownLines.has(line)) continue;
+        additions.push(line);
+        knownLines.add(line);
+      }
+      if (additions.length > 0) {
+        const prefix =
+          existingIndex === "" || existingIndex.endsWith("\n")
+            ? existingIndex
+            : `${existingIndex}\n`;
+        const nextIndex = `${prefix}${additions.join("\n")}\n`;
+        // 索引超限时只保留正文文件；正文不丢，设置页仍能列出。
+        if (Buffer.byteLength(nextIndex, "utf8") <= limits.maxFileBytes)
+          await writeFile(indexPath, nextIndex, "utf8");
+      }
+      if (recordsChanged)
+        await writeFile(
+          markerPath,
+          `${JSON.stringify(records, null, 2)}\n`,
+          "utf8",
+        );
+      return { migrated };
+    },
 
     async listProjectMemories(actor) {
       const rootMetadata = await lstat(projectsRoot).catch((error: unknown) => {

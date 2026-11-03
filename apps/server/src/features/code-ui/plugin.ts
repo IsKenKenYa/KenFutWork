@@ -51,7 +51,9 @@ export function createCodeUiPlugin(): PluginDefinition {
       "localAccess",
       "localInstance",
       "persistence",
+      "agentPersistence",
       "projects",
+      "canvas",
       "modelProviders",
       "modelCatalog",
       "settings",
@@ -87,6 +89,8 @@ export function createCodeUiPlugin(): PluginDefinition {
         localInstance: ctx.get("localInstance"),
         preferences: repository,
         settings: ctx.get("settings"),
+        canvases: ctx.get("canvas"),
+        agentPersistence: ctx.get("agentPersistence"),
       });
       ctx.register("codeUi", () => {
         const userInputs = createUserInputBroker();

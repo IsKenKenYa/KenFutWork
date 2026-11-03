@@ -329,6 +329,7 @@ export type PromptExecutionContext = Pick<
   | "taskWorkContext"
   | "runId"
   | "signal"
+  | "canvasId"
   | "workContext"
 >;
 
