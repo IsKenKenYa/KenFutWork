@@ -81,7 +81,7 @@ function unauthenticated(reply: FastifyReply) {
 function sendTimelineError(reply: FastifyReply, error: unknown) {
   if (error instanceof RunTimelineError) {
     return reply.code(404).send({
-      error: { code: `run_timeline_${error.code}`, message: error.message },
+      error: { code: "run_not_found", message: error.message },
     });
   }
   return reply.code(500).send({
