@@ -119,18 +119,18 @@ const LOCALIZATION_PATCHES = {
 if (LOCALIZATION_PATCHES[app]) {
   const patchFile = resolve(import.meta.dirname, LOCALIZATION_PATCHES[app]);
   try {
-    execFileSync("git", ["apply", "--check", patchFile], {
+    execFileSync("git", ["apply", "--check", "--unidiff-zero", patchFile], {
       cwd: source,
       stdio: "pipe",
     });
-    execFileSync("git", ["apply", patchFile], {
+    execFileSync("git", ["apply", "--unidiff-zero", patchFile], {
       cwd: source,
       stdio: "inherit",
     });
     console.log(`[zh] 已应用 ${app} 弹窗与按钮中文补丁`);
   } catch (error) {
     try {
-      execFileSync("git", ["apply", "--reverse", "--check", patchFile], {
+      execFileSync("git", ["apply", "--reverse", "--check", "--unidiff-zero", patchFile], {
         cwd: source,
         stdio: "pipe",
       });
