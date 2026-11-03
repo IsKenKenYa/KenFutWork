@@ -781,7 +781,7 @@
       "get": {
         "operationId": "getAgentTasksByTaskIdRuns",
         "summary": "按 Task 列出运行轮次",
-        "description": "没有检查点的工作区也能按 Task 回看每一轮：按本实例、项目与 Task 归属倒序返回运行终态、停止原因、错误与起止时间，再用 runId 进入单轮时间线；所属项目已归档时返回空列表，不返回空壳。",
+        "description": "没有检查点的工作区也能按 Task 回看每一轮：按本实例、项目与 Task 归属倒序返回运行终态、模型、起止时间与用量汇总，再用 runId 进入单轮时间线；所属项目已归档时返回空列表，不返回空壳。",
         "tags": [
           "runs"
         ],
@@ -38465,6 +38465,12 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "model": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -38513,16 +38519,57 @@
                     "string",
                     "null"
                   ]
+                },
+                "usage": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "inputTokens": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "outputTokens": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "costUsd": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "inputTokens",
+                        "outputTokens",
+                        "costUsd"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
                 "runId",
+                "model",
                 "status",
                 "stopReason",
                 "errorCode",
                 "errorMessage",
                 "startedAt",
-                "completedAt"
+                "completedAt",
+                "usage"
               ],
               "additionalProperties": false
             }

@@ -81,15 +81,17 @@ export type RunTimelineRunRow = {
   completedAt: string | null;
 };
 
-/** 按 Task 列轮次读到的一行：只保留终态与时间，明细由单轮时间线端点提供。 */
+/** 按 Task 列轮次读到的一行：终态、模型与用量一次给齐，明细由单轮时间线端点提供。 */
 export type TaskRunRow = {
   runId: string;
+  model: string | null;
   status: RunTimelineRunRow["status"];
   stopReason: string | null;
   errorCode: string | null;
   errorMessage: string | null;
   startedAt: string;
   completedAt: string | null;
+  usage: RunTimelineUsage | null;
 };
 
 /** 事件日志一行：`seq` 与 `created_at` 用于排序与展示，`event` 是流事件原文。 */

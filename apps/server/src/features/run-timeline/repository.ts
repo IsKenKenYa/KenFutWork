@@ -61,6 +61,13 @@ type RawUsageRow = {
   calls: string | number | null;
 };
 
+type RawTaskRunRow = RawRunRow & {
+  input_tokens: string | number | null;
+  output_tokens: string | number | null;
+  cost_usd: string | number | null;
+  calls: string | number | null;
+};
+
 /**
  * 时间线聚合的数据访问（只读）。
  * - 运行归属走 `agent_runs → chat_sessions` 的 `instance_id`；
@@ -174,13 +181,24 @@ export function createRunTimelineRepository(
     async listRunsForTask(input) {
       const rows = await persistence
         .forInstance(input.instanceId)
-        .query<RawRunRow>(
+        .query<RawTaskRunRow>(
           `select r.id, r.session_id, r.model, r.status, r.stop_reason,
-                  r.error_code, r.error_message, r.created_at, r.completed_at
+                  r.error_code, r.error_message, r.created_at, r.completed_at,
+                  u.input_tokens, u.output_tokens, u.cost_usd, u.calls
              from public.agent_turn_boundaries b
              join public.agent_runs r on r.id = b.run_id
              join public.projects p on p.id = b.project_id
                and p.instance_id = b.instance_id
+             left join (
+               select run_id,
+                      coalesce(sum(input_tokens), 0) as input_tokens,
+                      coalesce(sum(output_tokens), 0) as output_tokens,
+                      sum(cost_usd) as cost_usd,
+                      count(*) as calls
+                 from public.usage_records
+                where instance_id = :instance
+                group by run_id
+             ) u on u.run_id = r.id
             where b.instance_id = :instance
               and b.project_id = $1
               and b.task_id = $2
@@ -193,6 +211,7 @@ export function createRunTimelineRepository(
         );
       return rows.map((row) => ({
         runId: row.id,
+        model: row.model,
         status: parseStatus(row.status),
         stopReason: row.stop_reason,
         errorCode: row.error_code,
@@ -200,6 +219,15 @@ export function createRunTimelineRepository(
         startedAt: toIso(row.created_at),
         completedAt:
           row.completed_at === null ? null : toIso(row.completed_at),
+        usage:
+          Number(row.calls ?? 0) === 0
+            ? null
+            : {
+                inputTokens: Number(row.input_tokens ?? 0),
+                outputTokens: Number(row.output_tokens ?? 0),
+                costUsd:
+                  row.cost_usd === null ? null : Number(row.cost_usd),
+              },
       }));
     },
   };

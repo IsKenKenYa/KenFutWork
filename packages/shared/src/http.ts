@@ -523,12 +523,23 @@ export const taskRunsResponseSchema = z.object({
   runs: z.array(
     z.object({
       runId: runIdSchema,
+      /** 该轮实际使用的模型；历史轮次可能没有记录。 */
+      model: z.string().nullable(),
       status: z.enum(["accepted", "running", "completed", "failed", "canceled"]),
       stopReason: runStopReasonSchema.nullable(),
       errorCode: z.string().nullable(),
       errorMessage: z.string().nullable(),
       startedAt: z.string().min(1),
       completedAt: z.string().nullable(),
+      /** 用量汇总；这一轮还没有落账时缺省，界面显示「未统计」而不是 0。 */
+      usage: z
+        .object({
+          inputTokens: z.number().int().nonnegative(),
+          outputTokens: z.number().int().nonnegative(),
+          /** 成本只在上游声明价格时存在。 */
+          costUsd: z.number().nonnegative().nullable(),
+        })
+        .nullable(),
     }),
   ),
 });

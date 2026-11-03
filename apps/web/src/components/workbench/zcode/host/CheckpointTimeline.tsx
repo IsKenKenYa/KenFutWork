@@ -16,6 +16,7 @@ import {
 } from "@zui/components/ui/select.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { HistoryIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { RunTimelineDialog } from "./RunTimelineDialog.js";
@@ -88,6 +89,9 @@ export function CheckpointTimeline({
   const taskId = useZCodeSessionStore
     .getState()
     .getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId;
+  const projectId =
+    parseLocalWorkspaceIdentity(workspaceIdentity ?? "", workspacePath)
+      ?.projectId ?? null;
 
   const reload = useCallback(async () => {
     if (!taskId) {
@@ -244,7 +248,9 @@ export function CheckpointTimeline({
         </DialogContent>
       </Dialog>
       <RunTimelineDialog
-        runId={selectedCheckpoint?.runId ?? ""}
+        taskId={taskId ?? ""}
+        projectId={projectId}
+        initialRunId={selectedCheckpoint?.runId ?? null}
         open={timelineOpen && selectedCheckpoint !== null}
         onOpenChange={setTimelineOpen}
       />

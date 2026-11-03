@@ -159,12 +159,14 @@ describe("GET /api/agent/tasks/:taskId/runs", () => {
           return [
             {
               runId: RUN_ID,
+              model: "glm-5.3-flash",
               status: "completed",
               stopReason: "completed",
               errorCode: null,
               errorMessage: null,
               startedAt: AT,
               completedAt: AT,
+              usage: { inputTokens: 1200, outputTokens: 340, costUsd: 0.0123 },
             },
           ];
         },
@@ -191,12 +193,14 @@ describe("GET /api/agent/tasks/:taskId/runs", () => {
         runs: [
           {
             runId: RUN_ID,
+            model: "glm-5.3-flash",
             status: "completed",
             stopReason: "completed",
             errorCode: null,
             errorMessage: null,
             startedAt: AT,
             completedAt: AT,
+            usage: { inputTokens: 1200, outputTokens: 340, costUsd: 0.0123 },
           },
         ],
       });
