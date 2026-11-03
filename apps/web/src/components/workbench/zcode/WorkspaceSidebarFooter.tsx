@@ -364,7 +364,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
               data-testid={TID_TASK_SETTINGS_BUTTON}
               aria-label={settingsButtonLabel}
               disabled={!onSettingsButtonClick}
-              onClick={onSettingsButtonClick}
+              onClick={() => onSettingsButtonClick?.()}
             >
               <Settings className="size-4" />
             </Button>
