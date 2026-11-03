@@ -46,6 +46,17 @@ function fakeClient(plugins: unknown) {
   return { request } as unknown as Parameters<typeof loadPluginCards>[0];
 }
 
+function sequencedClient(responses: Array<unknown | Error>) {
+  let index = 0;
+  const request = vi.fn(async () => {
+    const next = responses[Math.min(index, responses.length - 1)];
+    index += 1;
+    if (next instanceof Error) throw next;
+    return next;
+  });
+  return { request } as unknown as Parameters<typeof loadPluginCards>[0];
+}
+
 describe("插件声明式卡片：已启用才出现", () => {
   it("只收集已安装且已启用条目的卡片", () => {
     const enabled = collectPluginCards([marketEntry()]);
@@ -72,6 +83,39 @@ describe("插件声明式卡片：已启用才出现", () => {
     expect(pluginCardRenderer.matches(context("demo_echo"))).toBe(true);
     expect(pluginCardRenderer.matches(context("other_tool"))).toBe(false);
     expect(findPluginCard(null)).toBeNull();
+  });
+});
+
+describe("插件声明式卡片：库存变化即时生效", () => {
+  it("停用的插件启用后重读，卡片立即可用", async () => {
+    await loadPluginCards(fakeClient([marketEntry({ enabled: false })]));
+    expect(findPluginCard("demo_echo")).toBeNull();
+    await loadPluginCards(fakeClient([marketEntry()]));
+    expect(findPluginCard("demo_echo")).toEqual(CARD);
+  });
+
+  it("启用的插件停用后重读，卡片立即移除", async () => {
+    await loadPluginCards(fakeClient([marketEntry()]));
+    expect(findPluginCard("demo_echo")).toEqual(CARD);
+    await loadPluginCards(fakeClient([marketEntry({ enabled: false })]));
+    expect(findPluginCard("demo_echo")).toBeNull();
+    expect(pluginCardRenderer.matches({
+      toolCallNode: { toolCall: { toolName: "demo_echo" } },
+    } as never)).toBe(false);
+  });
+
+  it("重读失败保留旧快照并记录原因", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await loadPluginCards(fakeClient([marketEntry()]));
+    await loadPluginCards(
+      sequencedClient([new Error("网络不可达")]),
+    );
+    expect(findPluginCard("demo_echo")).toEqual(CARD);
+    expect(warn).toHaveBeenCalledWith(
+      "[code-ui] 插件卡片声明读取失败：",
+      expect.any(Error),
+    );
+    warn.mockRestore();
   });
 });
 

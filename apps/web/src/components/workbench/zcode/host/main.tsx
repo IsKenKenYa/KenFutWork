@@ -9,7 +9,11 @@ import {
   DocumentPaneRendererProvider,
 } from "./DocumentPane.js";
 import { generatedMediaRenderer } from "./GeneratedMediaRenderer.js";
-import { loadPluginCards } from "./pluginCards.js";
+import {
+  getPluginCardsVersion,
+  loadPluginCards,
+  subscribePluginCards,
+} from "./pluginCards.js";
 import { pluginCardRenderer } from "./pluginCardRenderer.js";
 import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
 import {
@@ -20,12 +24,13 @@ import {
 const documentRenderers: readonly DocumentPaneRendererDefinition[] = [
   { resourceType: "canvas", component: CanvasDocumentView },
 ];
-const toolCallRenderers = [generatedMediaRenderer, pluginCardRenderer];
+const generatedToolCallRenderers = [generatedMediaRenderer, pluginCardRenderer];
 
-import type {
-  CodeUiWorkspace,
-  InstanceContext,
-  VoiceSettings,
+import {
+  type CodeUiWorkspace,
+  type InstanceContext,
+  pluginInventoryChangedSchema,
+  type VoiceSettings,
 } from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
 import type { HelloMessage } from "@zcode/shared/zcode-protocol-v4";
@@ -43,7 +48,7 @@ import {
   CodeVoiceProvider,
   type CodeVoiceTransport,
 } from "@zui/voice/binding.js";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
@@ -86,6 +91,10 @@ const client = new CodeHttpChannelClient(config);
 setSurfaceApiBase(config.apiBase);
 // 卡片声明在渲染前读一次：工具卡按工具名匹配声明，读不到就回退到既有工具卡。
 await loadPluginCards(client);
+// 插件启用或停用后重读声明；版本号变化让已渲染的工具卡重新选择渲染器，无需重开工作台。
+client.onPluginInventoryChanged(() => {
+  void loadPluginCards(client);
+});
 const readCuaSnapshot = client.readCuaSnapshot.bind(client);
 /** 语音 transport：转写走 multipart、播报走二进制，改写/设置读走 JSON 通道（cookie 认证同 Code 宿主）。 */
 const voiceTransport: CodeVoiceTransport = {
@@ -150,6 +159,15 @@ function CodeHost({
   const services = useSyncExternalStore(
     client.subscribeServices,
     () => client.services,
+  );
+  const pluginCardsVersion = useSyncExternalStore(
+    subscribePluginCards,
+    getPluginCardsVersion,
+    getPluginCardsVersion,
+  );
+  const toolCallRenderers = useMemo(
+    () => [...generatedToolCallRenderers],
+    [pluginCardsVersion],
   );
   const workspaceIdentity = workspace
     ? client.workspaces.identityFor(workspace.projectId, workspace.path)
@@ -298,6 +316,10 @@ if (window.parent !== window && bootstrap) {
       event.origin !== window.location.origin
     )
       return;
+    if (pluginInventoryChangedSchema.safeParse(event.data).success) {
+      void loadPluginCards(client);
+      return;
+    }
     const type = (event.data as { type?: unknown } | null)?.type;
     if (type !== "kenfutwork:code-theme") return;
     const theme = (event.data as { theme?: unknown }).theme;
