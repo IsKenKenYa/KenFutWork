@@ -6,15 +6,23 @@ import type { StreamEvent } from "@kenfutwork/shared";
  * Consumer：`http/run-timeline.ts` 的界面回看与 Markdown 导出端点。
  */
 export interface RunTimelineService {
-  /** 读取一轮运行的时间线（完整条目，不截断）。 */
+  /** 按 Task 作用域读取一轮运行的时间线（完整条目，不截断）。 */
   get(input: {
     instanceId: string;
+    projectId: string;
+    taskId: string;
     runId: string;
   }): Promise<RunTimelineResult>;
-  /** 导出单轮运行的 Markdown（供归档与排查）。 */
+  /**
+   * 按 Task 作用域导出单轮运行的 Markdown。
+   * `maxBytes` 来自治理表，超长时在条目边界截断并注明继续查看方式。
+   */
   exportMarkdown(input: {
     instanceId: string;
+    projectId: string;
+    taskId: string;
     runId: string;
+    maxBytes: number;
   }): Promise<{ markdown: string; filename: string }>;
   /** 按 Task 列出轮次：没有检查点的工作区也能看到每一轮的时间与终态。 */
   listTaskRuns(input: {
@@ -107,14 +115,24 @@ export type RunTimelineChildSession = {
   parentToolCallId: string;
 };
 
+/** 按任务作用域读到的一轮：运行终态与任务/项目归档状态一次给齐。 */
+export type RunTimelineTaskRunRow = {
+  run: RunTimelineRunRow;
+  archived: boolean;
+};
+
 export type RunTimelineRepository = {
   /** 按运行 id 读取终态；不属于该实例时返回 null（不区分「不存在」与「别人的」）。 */
   loadRun(instanceId: string, runId: string): Promise<RunTimelineRunRow | null>;
+  /** 按实例、项目、Task 与运行 id 一起定位一轮；不属于该作用域时返回 null。 */
+  loadRunForTask(input: {
+    instanceId: string;
+    projectId: string;
+    taskId: string;
+    runId: string;
+  }): Promise<RunTimelineTaskRunRow | null>;
   /** 读取该轮的事件日志；无法解析的历史行跳过。 */
-  loadEvents(
-    instanceId: string,
-    runId: string,
-  ): Promise<RunTimelineEventRow[]>;
+  loadEvents(instanceId: string, runId: string): Promise<RunTimelineEventRow[]>;
   /** 读取该轮派发的子代理会话索引（只读，不重建归属）。 */
   loadChildSessions(
     instanceId: string,
@@ -146,11 +164,11 @@ export type RunTimelineRepository = {
 };
 
 export class RunTimelineError extends Error {
-  constructor(readonly code: "not_found") {
+  constructor(readonly code: "not_found" | "archived") {
     super(
-      code === "not_found"
-        ? "该轮运行不存在或不属于当前本地实例。"
-        : "运行时间线读取失败。",
+      code === "archived"
+        ? "Task 或项目已归档，取消归档后才能导出运行记录。"
+        : "该轮运行不存在或不属于当前本地实例。",
     );
   }
 }

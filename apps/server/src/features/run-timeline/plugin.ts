@@ -12,7 +12,7 @@ export function createRunTimelinePlugin(): PluginDefinition {
   let timeline: RunTimelineService | undefined;
   return {
     name: "run-timeline",
-    inject: ["localAccess", "persistence"],
+    inject: ["localAccess", "persistence", "settings"],
     apply(ctx) {
       timeline = createRunTimelineService({
         repository: createRunTimelineRepository(ctx.get("persistence")),
@@ -22,6 +22,7 @@ export function createRunTimelinePlugin(): PluginDefinition {
       if (!timeline) return;
       void registerRunTimelineRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
+        settings: ctx.get("settings"),
         timeline,
       });
     },

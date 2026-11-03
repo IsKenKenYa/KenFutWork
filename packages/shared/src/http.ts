@@ -525,7 +525,13 @@ export const taskRunsResponseSchema = z.object({
       runId: runIdSchema,
       /** 该轮实际使用的模型；历史轮次可能没有记录。 */
       model: z.string().nullable(),
-      status: z.enum(["accepted", "running", "completed", "failed", "canceled"]),
+      status: z.enum([
+        "accepted",
+        "running",
+        "completed",
+        "failed",
+        "canceled",
+      ]),
       stopReason: runStopReasonSchema.nullable(),
       errorCode: z.string().nullable(),
       errorMessage: z.string().nullable(),
@@ -627,6 +633,8 @@ export const applicationErrorCodeSchema = z.enum([
   "job_not_found",
   /** 单轮运行不存在或不属于当前本地实例（404，见运行时间线端点）。 */
   "run_not_found",
+  /** Task 或项目已归档，取消归档前不能读取或导出运行记录（409）。 */
+  "task_archived",
   "job_create_failed",
   "job_request_conflict",
   "job_query_failed",

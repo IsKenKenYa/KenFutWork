@@ -143,6 +143,49 @@ describe("renderRunTimelineMarkdown", () => {
     expect(markdown).not.toContain("[x] <y>");
   });
 
+  it("导出前隐藏凭据与密钥", () => {
+    const markdown = renderRunTimelineMarkdown(
+      timeline({
+        run: { ...timeline().run, errorMessage: "password=hunter2" },
+        entries: [
+          {
+            kind: "tool",
+            seq: 1,
+            at: STARTED,
+            title: "Bash",
+            detail:
+              "OPENAI_API_KEY=sk-live-12345678 Authorization: Bearer abcdefgh " +
+              "postgres://user:pass@host/db",
+          },
+        ],
+      }),
+    );
+
+    expect(markdown).not.toContain("sk-live-12345678");
+    expect(markdown).not.toContain("abcdefgh");
+    expect(markdown).not.toContain("user:pass");
+    expect(markdown).not.toContain("hunter2");
+    expect(markdown).toContain("已隐藏");
+  });
+
+  it("超过字节预算时在条目边界截断并注明继续查看位置", () => {
+    const entries = Array.from({ length: 30 }, (_, index) => ({
+      kind: "tool" as const,
+      seq: index + 1,
+      at: STARTED,
+      title: "Bash",
+      detail: "较长的命令输出摘要".repeat(10),
+    }));
+    const markdown = renderRunTimelineMarkdown(timeline({ entries }), {
+      maxBytes: 500,
+    });
+
+    expect(markdown).toContain("导出已截断");
+    expect(markdown).toContain("其余条目请在运行记录中查看");
+    expect(markdown).toMatch(/共 30 条/u);
+    expect(Buffer.byteLength(markdown, "utf8")).toBeLessThanOrEqual(500);
+  });
+
   it("没有条目时写明这一轮没有留下事件", () => {
     expect(renderRunTimelineMarkdown(timeline())).toContain(
       "这一轮没有留下可回看的事件。",
@@ -168,9 +211,7 @@ describe("renderRunTimelineMarkdown", () => {
   });
 
   it("导出文件名过滤路径分隔符与引号", () => {
-    expect(runTimelineFilename(RUN_ID)).toBe(
-      `run-${RUN_ID}-timeline.md`,
-    );
+    expect(runTimelineFilename(RUN_ID)).toBe(`run-${RUN_ID}-timeline.md`);
     expect(runTimelineFilename('a/b"c')).toBe("run-a_b_c-timeline.md");
     expect(runTimelineFilename("")).toBe("run-unknown-timeline.md");
   });

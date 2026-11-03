@@ -377,25 +377,31 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
   {
     method: "get",
-    path: "/api/agent/runs/:runId/timeline",
+    path: "/api/agent/tasks/:taskId/runs/:runId/timeline",
     tag: "runs",
     auth: "local",
     successStatus: 200,
-    summary: "查询单轮运行时间线",
+    summary: "按 Task 查询单轮运行时间线",
     description:
-      "按运行 id 与当前本地实例隔离，把事件日志投影成工具、子代理、压缩、钩子与重试条目，并汇总本轮用量；运行不存在或属于其他实例返回 404。",
+      "只有与实例、项目和 Task 真实绑定的轮次才能读取；把事件日志投影成工具、子代理、压缩、钩子与重试条目，并汇总本轮用量。Task 或项目已归档返回 409，轮次不属于该作用域返回 404。",
     responseSchema: runTimelineResponseSchema,
+    querySchema: z.object({
+      projectId: z.string().min(1).describe("项目 ID（必填）"),
+    }),
   },
   {
     method: "get",
-    path: "/api/agent/runs/:runId/timeline/export",
+    path: "/api/agent/tasks/:taskId/runs/:runId/timeline/export",
     tag: "runs",
     auth: "local",
     successStatus: 200,
-    summary: "导出单轮运行时间线",
+    summary: "按 Task 导出单轮运行时间线",
     description:
-      "以 Markdown 附件返回同一份时间线，供归档与排查；失败原因与用量原样带上，不裁剪条目。",
+      "只有与实例、项目和 Task 真实绑定的轮次才能导出；Task 或项目已归档返回 409，轮次不属于该作用域返回 404。以 Markdown 附件返回时间线，凭据与密钥在导出前隐藏，超过治理上限时在条目边界截断并说明已写入条数与继续查看位置。",
     binaryResponse: "text/markdown",
+    querySchema: z.object({
+      projectId: z.string().min(1).describe("项目 ID（必填）"),
+    }),
   },
   {
     method: "get",

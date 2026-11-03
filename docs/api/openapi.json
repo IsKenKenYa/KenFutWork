@@ -654,11 +654,11 @@
         }
       }
     },
-    "/api/agent/runs/{runId}/timeline": {
+    "/api/agent/tasks/{taskId}/runs/{runId}/timeline": {
       "get": {
-        "operationId": "getAgentRunsByRunIdTimeline",
-        "summary": "查询单轮运行时间线",
-        "description": "按运行 id 与当前本地实例隔离，把事件日志投影成工具、子代理、压缩、钩子与重试条目，并汇总本轮用量；运行不存在或属于其他实例返回 404。",
+        "operationId": "getAgentTasksByTaskIdRunsByRunIdTimeline",
+        "summary": "按 Task 查询单轮运行时间线",
+        "description": "只有与实例、项目和 Task 真实绑定的轮次才能读取；把事件日志投影成工具、子代理、压缩、钩子与重试条目，并汇总本轮用量。Task 或项目已归档返回 409，轮次不属于该作用域返回 404。",
         "tags": [
           "runs"
         ],
@@ -672,6 +672,15 @@
         ],
         "parameters": [
           {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          },
+          {
             "name": "runId",
             "in": "path",
             "required": true,
@@ -679,6 +688,16 @@
               "type": "string"
             },
             "description": "路径参数"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "项目 ID（必填）"
+            }
           }
         ],
         "responses": {
@@ -715,11 +734,11 @@
         }
       }
     },
-    "/api/agent/runs/{runId}/timeline/export": {
+    "/api/agent/tasks/{taskId}/runs/{runId}/timeline/export": {
       "get": {
-        "operationId": "getAgentRunsByRunIdTimelineExport",
-        "summary": "导出单轮运行时间线",
-        "description": "以 Markdown 附件返回同一份时间线，供归档与排查；失败原因与用量原样带上，不裁剪条目。",
+        "operationId": "getAgentTasksByTaskIdRunsByRunIdTimelineExport",
+        "summary": "按 Task 导出单轮运行时间线",
+        "description": "只有与实例、项目和 Task 真实绑定的轮次才能导出；Task 或项目已归档返回 409，轮次不属于该作用域返回 404。以 Markdown 附件返回时间线，凭据与密钥在导出前隐藏，超过治理上限时在条目边界截断并说明已写入条数与继续查看位置。",
         "tags": [
           "runs"
         ],
@@ -733,6 +752,15 @@
         ],
         "parameters": [
           {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          },
+          {
             "name": "runId",
             "in": "path",
             "required": true,
@@ -740,6 +768,16 @@
               "type": "string"
             },
             "description": "路径参数"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "项目 ID（必填）"
+            }
           }
         ],
         "responses": {
@@ -15407,6 +15445,7 @@
                   "asset_not_found",
                   "job_not_found",
                   "run_not_found",
+                  "task_archived",
                   "job_create_failed",
                   "job_request_conflict",
                   "job_query_failed",
@@ -21615,6 +21654,7 @@
                       "asset_not_found",
                       "job_not_found",
                       "run_not_found",
+                      "task_archived",
                       "job_create_failed",
                       "job_request_conflict",
                       "job_query_failed",

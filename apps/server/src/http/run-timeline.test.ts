@@ -1,5 +1,6 @@
 import {
   applicationErrorCodeSchema,
+  instanceSettingsSchema,
   runTimelineResponseSchema,
   taskRunsResponseSchema,
 } from "@kenfutwork/shared";
@@ -31,6 +32,7 @@ function repository(
 ): RunTimelineRepository {
   return {
     loadRun: async () => RUN_ROW,
+    loadRunForTask: async () => ({ run: RUN_ROW, archived: false }),
     loadEvents: async () => [
       {
         seq: 1,
@@ -66,12 +68,16 @@ function buildApp(
     localAccess: {
       authenticate: async () => (authenticated ? RUNTIME_TEST_ACTOR : null),
     },
+    settings: {
+      getInstanceSettings: async () =>
+        instanceSettingsSchema.parse({ defaultModel: "" }),
+    },
     timeline: createRunTimelineService({ repository: timelineRepository }),
   });
   return app;
 }
 
-describe("GET /api/agent/runs/:runId/timeline", () => {
+describe("GET /api/agent/tasks/:taskId/runs/:runId/timeline", () => {
   it("本机授权后返回过契约的时间线，并按本机实例查询", async () => {
     const seen: string[] = [];
     const app = buildApp(
@@ -86,7 +92,7 @@ describe("GET /api/agent/runs/:runId/timeline", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/api/agent/runs/${RUN_ID}/timeline`,
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline?projectId=project-1`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -115,19 +121,22 @@ describe("GET /api/agent/runs/:runId/timeline", () => {
   });
 
   it("运行不存在或属于别的实例：404 且错误码在共享枚举内", async () => {
-    const app = buildApp(true, repository({ loadRun: async () => null }));
+    const app = buildApp(
+      true,
+      repository({ loadRunForTask: async () => null }),
+    );
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/api/agent/runs/${RUN_ID}/timeline`,
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline?projectId=project-1`,
       });
 
       expect(response.statusCode).toBe(404);
       const error = response.json() as { error: { code: string } };
       expect(error.error.code).toBe("run_not_found");
-      expect(applicationErrorCodeSchema.safeParse(error.error.code).success).toBe(
-        true,
-      );
+      expect(
+        applicationErrorCodeSchema.safeParse(error.error.code).success,
+      ).toBe(true);
     } finally {
       await app.close();
     }
@@ -138,7 +147,7 @@ describe("GET /api/agent/runs/:runId/timeline", () => {
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/api/agent/runs/${RUN_ID}/timeline`,
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline?projectId=project-1`,
       });
 
       expect(response.statusCode).toBe(401);
@@ -296,13 +305,13 @@ describe("GET /api/agent/tasks/:taskId/runs", () => {
   });
 });
 
-describe("GET /api/agent/runs/:runId/timeline/export", () => {
+describe("GET /api/agent/tasks/:taskId/runs/:runId/timeline/export", () => {
   it("返回 Markdown 附件，文件名带运行 id", async () => {
     const app = buildApp(true);
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/api/agent/runs/${RUN_ID}/timeline/export`,
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline/export?projectId=project-1`,
       });
 
       expect(response.statusCode).toBe(200);
@@ -318,11 +327,14 @@ describe("GET /api/agent/runs/:runId/timeline/export", () => {
   });
 
   it("运行不存在：404 且错误码在共享枚举内", async () => {
-    const app = buildApp(true, repository({ loadRun: async () => null }));
+    const app = buildApp(
+      true,
+      repository({ loadRunForTask: async () => null }),
+    );
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/api/agent/runs/${RUN_ID}/timeline/export`,
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline/export?projectId=project-1`,
       });
 
       expect(response.statusCode).toBe(404);
@@ -336,12 +348,39 @@ describe("GET /api/agent/runs/:runId/timeline/export", () => {
     }
   });
 
+  it("Task 已归档：409，说明取消归档后才能导出", async () => {
+    const app = buildApp(
+      true,
+      repository({
+        loadRunForTask: async () => ({ run: RUN_ROW, archived: true }),
+      }),
+    );
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline/export?projectId=project-1`,
+      });
+
+      expect(response.statusCode).toBe(409);
+      const error = response.json() as {
+        error: { code: string; message: string };
+      };
+      expect(error.error.code).toBe("task_archived");
+      expect(
+        applicationErrorCodeSchema.safeParse(error.error.code).success,
+      ).toBe(true);
+      expect(error.error.message).toContain("归档");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("未获本机授权：401", async () => {
     const app = buildApp(false);
     try {
       const response = await app.inject({
         method: "GET",
-        url: `/api/agent/runs/${RUN_ID}/timeline/export`,
+        url: `/api/agent/tasks/task-1/runs/${RUN_ID}/timeline/export?projectId=project-1`,
       });
 
       expect(response.statusCode).toBe(401);

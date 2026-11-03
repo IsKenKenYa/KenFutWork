@@ -1,3 +1,9 @@
+import type {
+  RunTimelineEntry,
+  RunTimelineResponse,
+  TaskRunsResponse,
+} from "@kenfutwork/shared";
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
@@ -7,12 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@zui/components/ui/dialog.js";
-import type {
-  RunTimelineEntry,
-  RunTimelineResponse,
-  TaskRunsResponse,
-} from "@kenfutwork/shared";
-import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { HistoryIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -21,8 +21,9 @@ import { getSurfaceApiBase, surfaceJson } from "./surfaceApi.js";
 /**
  * 运行记录回看（宿主件）：先按 Task 列出历史轮次，点选某一轮再进入单轮时间线。
  *
- * 数据面：GET /api/agent/tasks/:taskId/runs 与 GET /api/agent/runs/:runId/timeline
- * （服务端两条缝都已存在）。入口挂在检查点对话框与状态面板，没有检查点也能用。
+ * 数据面：GET /api/agent/tasks/:taskId/runs、
+ * GET /api/agent/tasks/:taskId/runs/:runId/timeline 与其 Markdown 导出。
+ * 入口挂在检查点对话框与状态面板，没有检查点也能用。
  * 读取失败、空列表与超出单页上限都给可读说明，不摆空壳。
  */
 const RUN_STATUS_LABEL: Record<
@@ -122,9 +123,7 @@ export function RunTimelineDialog({
   const [limit, setLimit] = useState(RUNS_PAGE_STEP);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [payload, setPayload] = useState<RunTimelineResponse | null>(null);
-  const [timelineFailure, setTimelineFailure] = useState<string | null>(
-    null,
-  );
+  const [timelineFailure, setTimelineFailure] = useState<string | null>(null);
 
   const loadRuns = useCallback(async () => {
     if (!projectId) {
@@ -144,19 +143,26 @@ export function RunTimelineDialog({
     }
   }, [limit, projectId, taskId]);
 
-  const loadRun = useCallback(async (runId: string) => {
-    setPayload(null);
-    setTimelineFailure(null);
-    try {
-      setPayload(
-        await surfaceJson<RunTimelineResponse>(
-          `/api/agent/runs/${encodeURIComponent(runId)}/timeline`,
-        ),
-      );
-    } catch (error) {
-      setTimelineFailure(readableError(error));
-    }
-  }, []);
+  const loadRun = useCallback(
+    async (runId: string) => {
+      if (!projectId) {
+        setTimelineFailure("缺少项目信息");
+        return;
+      }
+      setPayload(null);
+      setTimelineFailure(null);
+      try {
+        setPayload(
+          await surfaceJson<RunTimelineResponse>(
+            `/api/agent/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}/timeline?projectId=${encodeURIComponent(projectId)}`,
+          ),
+        );
+      } catch (error) {
+        setTimelineFailure(readableError(error));
+      }
+    },
+    [projectId, taskId],
+  );
 
   // 关闭后回到轮次列表与首页大小，下次打开不会停在上次翻到的位置。
   useEffect(() => {
@@ -179,14 +185,17 @@ export function RunTimelineDialog({
 
   const run = payload?.run;
   const duration = run ? spanDurationMs(run.startedAt, run.completedAt) : null;
-  const canShowMore = runs !== null && runs.length >= limit && limit < RUNS_MAX_LIMIT;
+  const canShowMore =
+    runs !== null && runs.length >= limit && limit < RUNS_MAX_LIMIT;
   const reachedLimit = runs !== null && runs.length >= RUNS_MAX_LIMIT;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{selectedRunId === null ? "运行轮次" : "运行记录"}</DialogTitle>
+          <DialogTitle>
+            {selectedRunId === null ? "运行轮次" : "运行记录"}
+          </DialogTitle>
           <DialogDescription />
         </DialogHeader>
         {selectedRunId === null ? (
@@ -277,7 +286,9 @@ export function RunTimelineDialog({
         ) : (
           <div className="space-y-3">
             {timelineFailure ? (
-              <p className="text-ui-sm text-foreground-subtle">{timelineFailure}</p>
+              <p className="text-ui-sm text-foreground-subtle">
+                {timelineFailure}
+              </p>
             ) : payload === null || run === undefined ? (
               <p className="text-ui-sm text-foreground-subtle">读取记录…</p>
             ) : (
@@ -378,8 +389,9 @@ export function RunTimelineDialog({
               <Button
                 type="button"
                 onClick={() => {
+                  if (!projectId) return;
                   window.open(
-                    `${getSurfaceApiBase()}/api/agent/runs/${encodeURIComponent(selectedRunId)}/timeline/export`,
+                    `${getSurfaceApiBase()}/api/agent/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(selectedRunId)}/timeline/export?projectId=${encodeURIComponent(projectId)}`,
                     "_blank",
                     "noopener",
                   );

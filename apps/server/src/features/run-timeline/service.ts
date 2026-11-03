@@ -1,7 +1,4 @@
-import {
-  renderRunTimelineMarkdown,
-  runTimelineFilename,
-} from "./markdown.js";
+import { renderRunTimelineMarkdown, runTimelineFilename } from "./markdown.js";
 import { buildRunTimeline, mergeChildEvents } from "./timeline.js";
 import {
   RunTimelineError,
@@ -47,14 +44,22 @@ export function createRunTimelineService(deps: {
   };
 
   return {
-    get(input) {
+    async get(input) {
+      const scoped = await deps.repository.loadRunForTask(input);
+      if (!scoped) throw new RunTimelineError("not_found");
+      if (scoped.archived) throw new RunTimelineError("archived");
       return load(input.instanceId, input.runId);
     },
 
     async exportMarkdown(input) {
+      const scoped = await deps.repository.loadRunForTask(input);
+      if (!scoped) throw new RunTimelineError("not_found");
+      if (scoped.archived) throw new RunTimelineError("archived");
       const timeline = await load(input.instanceId, input.runId);
       return {
-        markdown: renderRunTimelineMarkdown(timeline),
+        markdown: renderRunTimelineMarkdown(timeline, {
+          maxBytes: input.maxBytes,
+        }),
         filename: runTimelineFilename(input.runId),
       };
     },

@@ -80,17 +80,15 @@ export function createRunTimelineRepository(
 ): RunTimelineRepository {
   return {
     async loadRun(instanceId, runId) {
-      const row = await persistence
-        .forInstance(instanceId)
-        .queryOne<RawRunRow>(
-          `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+      const row = await persistence.forInstance(instanceId).queryOne<RawRunRow>(
+        `select r.id, r.session_id, r.model, r.status, r.stop_reason,
                   r.error_code, r.error_message, r.created_at, r.completed_at
              from public.agent_runs r
              join public.chat_sessions s on s.id = r.session_id
             where r.id = $1
               and s.instance_id = :instance`,
-          [runId],
-        );
+        [runId],
+      );
       if (!row) return null;
       return {
         runId: row.id,
@@ -105,11 +103,56 @@ export function createRunTimelineRepository(
       } satisfies RunTimelineRunRow;
     },
 
+    async loadRunForTask(input) {
+      const row = await persistence.forInstance(input.instanceId).queryOne<
+        RawRunRow & {
+          task_archived: boolean;
+          task_deleted_at: string | Date | null;
+          project_archived_at: string | Date | null;
+        }
+      >(
+        `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+                  r.error_code, r.error_message, r.created_at, r.completed_at,
+                  t.archived as task_archived, t.deleted_at as task_deleted_at,
+                  p.archived_at as project_archived_at
+             from public.agent_turn_boundaries b
+             join public.agent_runs r on r.id = b.run_id
+             join public.code_ui_sessions t on t.id = b.task_id
+               and t.instance_id = b.instance_id
+             join public.projects p on p.id = b.project_id
+               and p.instance_id = b.instance_id
+            where b.instance_id = :instance
+              and b.project_id = $1
+              and b.task_id = $2
+              and b.run_id = $3
+              and b.task_kind = 'code'
+              and b.phase = 'pre'`,
+        [input.projectId, input.taskId, input.runId],
+      );
+      if (!row) return null;
+      return {
+        run: {
+          runId: row.id,
+          rootSessionId: row.session_id,
+          model: row.model,
+          status: parseStatus(row.status),
+          stopReason: row.stop_reason,
+          errorCode: row.error_code,
+          errorMessage: row.error_message,
+          startedAt: toIso(row.created_at),
+          completedAt:
+            row.completed_at === null ? null : toIso(row.completed_at),
+        },
+        archived:
+          row.task_archived ||
+          row.task_deleted_at !== null ||
+          row.project_archived_at !== null,
+      };
+    },
+
     async loadEvents(instanceId, runId) {
-      const rows = await persistence
-        .forInstance(instanceId)
-        .query<RawEventRow>(
-          `select e.seq, e.created_at, e.payload
+      const rows = await persistence.forInstance(instanceId).query<RawEventRow>(
+        `select e.seq, e.created_at, e.payload
              from public.code_ui_events e
              join public.code_ui_sessions s on s.id = e.root_session_id
             where e.instance_id = :instance
@@ -117,8 +160,8 @@ export function createRunTimelineRepository(
               and starts_with(e.event_key, $1 || '/')
               and coalesce(e.payload->>'type', '') not in (${IGNORED_EVENT_TYPES_SQL})
             order by e.seq asc`,
-          [runId],
-        );
+        [runId],
+      );
       return parseEventRows(rows);
     },
 
@@ -142,18 +185,16 @@ export function createRunTimelineRepository(
     },
 
     async loadChildEvents(instanceId, rootSessionId, childSessionId) {
-      const rows = await persistence
-        .forInstance(instanceId)
-        .query<RawEventRow>(
-          `select e.seq, e.created_at, e.payload
+      const rows = await persistence.forInstance(instanceId).query<RawEventRow>(
+        `select e.seq, e.created_at, e.payload
              from public.code_ui_events e
             where e.instance_id = :instance
               and e.root_session_id = $1
               and starts_with(e.event_key, $2)
               and coalesce(e.payload->>'type', '') not in (${IGNORED_EVENT_TYPES_SQL})
             order by e.seq asc`,
-          [rootSessionId, `child-event:${childSessionId}/`],
-        );
+        [rootSessionId, `child-event:${childSessionId}/`],
+      );
       return parseEventRows(rows);
     },
 
@@ -217,16 +258,14 @@ export function createRunTimelineRepository(
         errorCode: row.error_code,
         errorMessage: row.error_message,
         startedAt: toIso(row.created_at),
-        completedAt:
-          row.completed_at === null ? null : toIso(row.completed_at),
+        completedAt: row.completed_at === null ? null : toIso(row.completed_at),
         usage:
           Number(row.calls ?? 0) === 0
             ? null
             : {
                 inputTokens: Number(row.input_tokens ?? 0),
                 outputTokens: Number(row.output_tokens ?? 0),
-                costUsd:
-                  row.cost_usd === null ? null : Number(row.cost_usd),
+                costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
               },
       }));
     },
