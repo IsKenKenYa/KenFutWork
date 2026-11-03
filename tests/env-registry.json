@@ -610,6 +610,95 @@
       "status": "active",
       "note": "桌面MCP HTTP的SSE心跳间隔，0关闭；实例设置优先于env兜底"
     },
+    "KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.test.ts",
+        "packages/shared/src/governance.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：上下文预修剪保留原文的最近图片条数；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：工具结果外置单文件文本上限字符；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：工具结果外置单文件字节上限；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_MEMORY_ORPHAN_RETENTION_DAYS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "记忆治理：无引用记忆保留天数；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_MEMORY_RECOVERABLE_WINDOW_DAYS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "记忆治理：删除后可恢复窗口天数；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_MEMORY_MAINTENANCE_INTERVAL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "记忆治理：后台整理扫描间隔毫秒；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_TASK_AUTO_ARCHIVE_SCAN_INTERVAL_MS": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/task-archive-governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "Task 自动归档扫描间隔毫秒；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_PLUGIN_CARD_MAX_FIELDS": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/plugin-card-governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "插件卡片字段数上限；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_PLUGIN_CARD_FIELD_VALUE_MAX_CHARS": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/plugin-card-governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "插件卡片单字段值字符上限；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_TOOL_RESULT_PRUNE_THRESHOLD_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：发给模型的副本里较早工具结果的折叠阈值字符；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_TOOL_RESULT_PRUNE_KEEP_RECENT": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "agent 治理：工具结果预修剪时保留原文的最近条数；不改变已存记录（DEC-18）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],
