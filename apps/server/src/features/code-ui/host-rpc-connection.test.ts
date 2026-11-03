@@ -7,6 +7,11 @@ import Fastify from "fastify";
 import { afterEach, expect, it } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import { createCodeUiSystemHost } from "../system/code-ui-host.js";
+import {
+  CLIENT_SCENES_UNAVAILABLE_CODE,
+  CLIENT_SCENES_UNAVAILABLE_MESSAGE,
+  createCodeUiClientScenesHost,
+} from "./client-scenes-host.js";
 import { createCodeUiTestInstance } from "./host-session.fixture.js";
 import { CodeUiService, type CodeUiServiceDeps } from "./service.js";
 
@@ -190,6 +195,23 @@ it("system.listIntegratedTerminalShells 通过宿主 RPC 返回 shell 列表", a
       path: "C:\\Program Files\\Git\\bin\\bash.exe",
     }),
   ]);
+});
+
+it("client-scenes.list 由宿主返回可读业务未支持，而不是 501", async () => {
+  const host = createCodeUiClientScenesHost();
+  const f = await fixture((service, method) => host[`${service}.${method}`]);
+  const response = await f.rpc({
+    service: "client-scenes",
+    method: "list",
+    args: [],
+    connectionId: f.connection.hello.connectionId,
+  });
+  expect(response.statusCode).toBe(200);
+  expect(response.json().result).toEqual({
+    code: CLIENT_SCENES_UNAVAILABLE_CODE,
+    msg: CLIENT_SCENES_UNAVAILABLE_MESSAGE,
+    data: [],
+  });
 });
 
 it("宿主未提供的 system 方法返回可读 501，而不是伪造空结果", async () => {
