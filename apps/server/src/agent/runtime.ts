@@ -151,6 +151,10 @@ import {
 } from "./tool-denial.js";
 import { createToolExecutionReceipts } from "./tool-execution-receipts.js";
 import {
+  createToolResultOffloadWriter,
+  type ToolResultOffloadWriter,
+} from "./tool-result-offload.js";
+import {
   type AgentTurnBoundaryFacts,
   captureAgentTurnBoundaryFacts,
 } from "./turn-boundaries.js";
@@ -1497,6 +1501,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** 发给模型时保留的最近图片张数（DEC-18）。 */
       let contextKeepRecentImages: number =
         AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
+      /** 超大工具输出外置的阈值与单文件上限（DEC-18）。 */
+      let governanceToolResultOffload: {
+        maxChars: number;
+        maxBytes: number;
+      } = {
+        maxChars: AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxChars,
+        maxBytes: AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxBytes,
+      };
+      let toolResultOffloadBinding:
+        | { writer: ToolResultOffloadWriter; maxChars: number }
+        | undefined;
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
       let taskWorkContext: TaskWorkContext | undefined;
@@ -1867,6 +1882,14 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             contextKeepRecentImages =
               instanceSettings?.contextKeepRecentImages ??
               AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
+            governanceToolResultOffload = {
+              maxChars:
+                instanceSettings?.toolResultOffloadMaxChars ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxChars,
+              maxBytes:
+                instanceSettings?.toolResultOffloadMaxBytes ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxBytes,
+            };
           }
 
           // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
@@ -1884,6 +1907,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               signal: run.controller.signal,
             };
             run.branchGeneration = taskWorkContext.branchGeneration;
+            // 超大工具输出外置到本 Run 的运行目录：写盘前经执行作用域复查资格，
+            // 归档/删除撤销后迟到写入会在这里抛错，不会复活目录。
+            const offloadHandle = run.scopeHandle;
+            toolResultOffloadBinding = {
+              writer: createToolResultOffloadWriter({
+                taskId: offloadHandle.describe().taskId,
+                runId,
+                maxBytes: governanceToolResultOffload.maxBytes,
+                guard: async () => {
+                  await offloadHandle.resolvePath(".", "read");
+                },
+                resolvePath: (relativePath) =>
+                  offloadHandle.resolvePath(relativePath, "write"),
+              }),
+              maxChars: governanceToolResultOffload.maxChars,
+            };
             if (run.scopeHandle.role === "main")
               leaveForeground =
                 await options.taskWork.enterForeground(taskWorkContext);
@@ -2400,6 +2439,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             contextBudget,
             // 工具结果发给模型前的内联预算：与进程输出预览共用同一治理值，不另立字面量。
             toolResultInlineMaxChars: processLimits.previewMaxChars,
+            ...(toolResultOffloadBinding ?? {}),
             // 旧图片卸载：只保留最近几张图片，更早的图片在模型请求里换成文字占位。
             contextKeepRecentImages,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递

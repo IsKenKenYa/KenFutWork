@@ -305,6 +305,10 @@ export const instanceSettingsSchema = z.object({
   compactFallbackKeepMessages: governanceSetting("compactFallbackKeepMessages"),
   /** 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。 */
   contextKeepRecentImages: governanceSetting("contextKeepRecentImages"),
+  /** 工具结果超过该字符数时外置为工作目录文件，模型只收到一段说明。 */
+  toolResultOffloadMaxChars: governanceSetting("toolResultOffloadMaxChars"),
+  /** 单个外置文件最多写入的字节数。 */
+  toolResultOffloadMaxBytes: governanceSetting("toolResultOffloadMaxBytes"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

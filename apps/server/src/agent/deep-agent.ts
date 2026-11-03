@@ -57,6 +57,10 @@ import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import { createToolResultPruneMiddleware } from "./tool-result-prune.js";
+import {
+  createToolResultOffloadMiddleware,
+  type ToolResultOffloadWriter,
+} from "./tool-result-offload.js";
 import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
@@ -357,6 +361,14 @@ export type KenFutWorkAgentFactory = (options: {
    * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
    */
   contextKeepRecentImages?: number;
+  /**
+   * 超大工具输出外置：超过阈值的结果写入执行作用域内的运行目录，
+   * 模型只收到一段说明。阈值来自治理设置 `toolResultOffloadMaxChars`。
+   */
+  toolResultOffload?: {
+    writer: ToolResultOffloadWriter;
+    maxChars: number;
+  };
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
@@ -422,6 +434,14 @@ export function createKenFutWorkDeepAgent(options: {
    * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
    */
   contextKeepRecentImages?: number;
+  /**
+   * 超大工具输出外置：超过阈值的结果写入执行作用域内的运行目录，
+   * 模型只收到一段说明。阈值来自治理设置 `toolResultOffloadMaxChars`。
+   */
+  toolResultOffload?: {
+    writer: ToolResultOffloadWriter;
+    maxChars: number;
+  };
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   compactionRetention?: CompactionRetention;
@@ -773,6 +793,14 @@ export function createKenFutWorkDeepAgent(options: {
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
+            ...(options.toolResultOffload === undefined
+              ? []
+              : [
+                  createToolResultOffloadMiddleware({
+                    writer: options.toolResultOffload.writer,
+                    maxChars: options.toolResultOffload.maxChars,
+                  }),
+                ]),
             ...(options.toolResultInlineMaxChars === undefined
               ? []
               : [
@@ -807,6 +835,14 @@ export function createKenFutWorkDeepAgent(options: {
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
+            ...(options.toolResultOffload === undefined
+              ? []
+              : [
+                  createToolResultOffloadMiddleware({
+                    writer: options.toolResultOffload.writer,
+                    maxChars: options.toolResultOffload.maxChars,
+                  }),
+                ]),
             ...(options.toolResultInlineMaxChars === undefined
               ? []
               : [

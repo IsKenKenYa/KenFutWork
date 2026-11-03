@@ -15,6 +15,8 @@ export type AgentGovernanceSettings = Pick<
   | "compactKeepMessages"
   | "compactFallbackKeepMessages"
   | "contextKeepRecentImages"
+  | "toolResultOffloadMaxChars"
+  | "toolResultOffloadMaxBytes"
   | "canvasExportMaxBytes"
   | "taskAutoArchiveScanIntervalMs"
   | "pluginCardMaxFields"
@@ -59,6 +61,14 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "contextKeepRecentImages",
     label: "保留最近图片张数",
+  },
+  {
+    key: "toolResultOffloadMaxChars",
+    label: "工具结果外置阈值（字符）",
+  },
+  {
+    key: "toolResultOffloadMaxBytes",
+    label: "外置文件上限（字节）",
   },
   {
     key: "canvasExportMaxBytes",

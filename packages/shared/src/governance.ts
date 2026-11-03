@@ -18,6 +18,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   compactFallbackKeepMessages: 6,
   /** 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。 */
   contextKeepRecentImages: 2,
+  /** 工具结果超过该字符数时外置到工作目录文件，模型只收到一段说明。 */
+  toolResultOffloadMaxChars: 32_000,
+  /** 单个外置文件最多写入的字节数；超出只保留前缀并在说明里标注。 */
+  toolResultOffloadMaxBytes: 33_554_432,
   /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
@@ -118,6 +122,8 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "compactKeepMessages",
   "compactFallbackKeepMessages",
   "contextKeepRecentImages",
+  "toolResultOffloadMaxChars",
+  "toolResultOffloadMaxBytes",
   "codeUiReconnectDelayMs",
   "taskAutoArchiveScanIntervalMs",
   "pluginCardMaxFields",
@@ -167,6 +173,8 @@ export type AgentGovernanceOverrides = {
   compactKeepMessages?: number | undefined;
   compactFallbackKeepMessages?: number | undefined;
   contextKeepRecentImages?: number | undefined;
+  toolResultOffloadMaxChars?: number | undefined;
+  toolResultOffloadMaxBytes?: number | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
@@ -273,6 +281,8 @@ export const AGENT_GOVERNANCE_LIMITS = {
   compactKeepMessages: { min: 1, max: 10_000 },
   compactFallbackKeepMessages: { min: 1, max: 10_000 },
   contextKeepRecentImages: { min: 0, max: 20 },
+  toolResultOffloadMaxChars: { min: 1_024, max: 1_048_576 },
+  toolResultOffloadMaxBytes: { min: 1_024, max: 1_073_741_824 },
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
@@ -363,6 +373,12 @@ export function resolveGovernanceEnvOverrides(
     ),
     contextKeepRecentImages: parseStrictInt(
       source.KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES,
+    ),
+    toolResultOffloadMaxChars: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_CHARS,
+    ),
+    toolResultOffloadMaxBytes: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_BYTES,
     ),
     localDataMigrationPollMs: parseStrictInt(
       source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,

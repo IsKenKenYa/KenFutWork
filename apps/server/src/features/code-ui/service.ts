@@ -28,6 +28,7 @@ import {
 } from "@zcode/shared";
 import { z } from "zod";
 import type { AgentRunService } from "../../agent/runtime.js";
+import { removeTaskToolResultOffloads } from "../../agent/tool-result-offload.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
 import type { ServerEnv } from "../../config/env.js";
 import type {
@@ -1801,6 +1802,7 @@ export class CodeUiService {
       if (reason === "delete") {
         await this.attachments?.purgeTask(user, root.id, generation);
         await this.outputHistory.purge(user, root, generation);
+        await removeTaskToolResultOffloads(root.root_directory!, root.id);
       }
       forgetTaskFileState(workspace.instanceId, root.id);
       return { instanceId: workspace.instanceId, root };
@@ -1824,6 +1826,7 @@ export class CodeUiService {
       taskId,
       "archive",
     );
+    await removeTaskToolResultOffloads(root.root_directory!, root.id);
     await this.deps.repository.setListState(instanceId, root.id, {
       archived: true,
     });
@@ -1875,6 +1878,8 @@ export class CodeUiService {
       },
       signal,
     );
+    if (archived)
+      await removeTaskToolResultOffloads(result.workspacePath, target.taskId);
     await this.refreshTaskLists(
       owner.instanceId,
       result.workspacePath,
