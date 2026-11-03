@@ -1,11 +1,35 @@
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, win32 } from "node:path";
 import { accountEnvironment } from "./account-command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
 import type { ProcessSpawnRequest } from "./types.js";
 import type { NativeLaunch } from "./windows-broker.js";
 import { windowsCommand } from "./windows-broker.js";
+
+/**
+ * 非系统盘（如 `D:\Desktop\test`）上的 stdio 子进程要靠这组 Node 开关才能启动。
+ *
+ * Node 启动时会自脚本路径逐段 `lstat` 到卷根做 realpath，沙箱只授 SystemDrive 盘根
+ * （`C:\`），于是 `D:\` 那次纯元数据读取被拒：
+ * `EPERM: operation not permitted, lstat 'D:\'`。进程根本没起来，连接随即关闭。
+ * 授 `D:\` 只读会递归放开整盘（Windows native 越权读回归已否决），因此改为只对
+ * stdio 子进程注入 preserve-symlinks：改变的是 Node 的路径解析，不是沙箱文件授权。
+ */
+export const STDIO_NODE_OPTIONS = "--preserve-symlinks --preserve-symlinks-main";
+
+export function stdioNodeOptions(
+  paths: readonly (string | undefined)[],
+  systemRoot: string | undefined = process.env.SystemRoot,
+): string | undefined {
+  if (!systemRoot || !win32.isAbsolute(systemRoot)) return undefined;
+  const systemVolume = win32.parse(systemRoot).root.toLowerCase();
+  const crossesVolume = paths.some((path) => {
+    if (!path || !win32.isAbsolute(path)) return false;
+    return win32.parse(path).root.toLowerCase() !== systemVolume;
+  });
+  return crossesVolume ? STDIO_NODE_OPTIONS : undefined;
+}
 
 export async function windowsLaunch(input: {
   request: ProcessSpawnRequest;
@@ -89,6 +113,17 @@ export async function windowsLaunch(input: {
   // 随包运行时 bin 目录前置进 PATH：宿主机没装 python/node 也能按名字跑。
   // 与下面的 readRoots 成对——只给 readRoots 时命令名解析不到（原《未做需求》#12，已收口）。
   prependExecutionPath(env, input.runtimePathAdditions);
+  // 只有 stdio（MCP 等精确 argv 管道）需要跨卷启动；普通命令沿用原环境。
+  if (input.request.stdio === "stream") {
+    const nodeOptions = stdioNodeOptions([
+      input.cwd,
+      root,
+      process.execPath,
+      input.request.argv?.executable,
+      ...extra.map((directory) => directory.path),
+    ]);
+    if (nodeOptions) env.NODE_OPTIONS = nodeOptions;
+  }
   const home = join(input.temporaryDirectory, "home");
   env.HOME ??= home;
   env.USERPROFILE ??= home;

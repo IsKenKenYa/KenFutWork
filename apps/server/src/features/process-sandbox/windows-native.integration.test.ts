@@ -7,7 +7,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { afterEach, expect, test } from "vitest";
@@ -28,6 +28,13 @@ const limits: ProcessLimits = {
   yieldMs: 50,
   killGraceMs: 2000,
 };
+// 盘符根 realpath 只在「夹具不在系统盘」时发生；本机用
+// KENFUTWORK_WINDOWS_FIXTURE_ROOT=D:\temp-kfw 触发，C: 夹具上跳过而不是假装通过。
+const fixtureRoot = process.env.KENFUTWORK_WINDOWS_FIXTURE_ROOT;
+const nonSystemFixture =
+  fixtureRoot !== undefined &&
+  parse(fixtureRoot).root.toLowerCase() !==
+    parse(process.env.SystemRoot ?? "C:\\").root.toLowerCase();
 async function fixture() {
   // 夹具根必须落在「没有被别的容器授权过」的目录：共享 %TEMP% 上可能残留
   // 外来 AppContainer/能力 SID 的继承 ACE（本机实测 `S-1-15-3-…:(I)(OI)(CI)(IO)(F)`，
@@ -248,6 +255,41 @@ test.skipIf(!enabled)(
     expect(capture.retainedBytes).toBe(128);
     expect(capture.truncated).toBe(true);
     expect(capture.data).not.toContain("EOF_DONE");
+  },
+  60000,
+);
+
+test.skipIf(!enabled || !nonSystemFixture)(
+  "Windows非系统盘stdio进程可启动：Node不再因realpath卡在lstat 'D:\\'",
+  async () => {
+    const { root, sandbox, scope } = await fixture();
+    await writeFile(
+      join(root, "drive-root.mjs"),
+      'process.stdout.write("STDIO_OK\\n")',
+    );
+    const child = await sandbox.spawnStdio({
+      scope,
+      agentId: "mcp-main",
+      invocationId: "drive-root-stdio",
+      argv: {
+        executable: process.execPath,
+        args: [join(root, "drive-root.mjs")],
+      },
+      cwd: root,
+      background: true,
+      timeoutMs: null,
+      limits,
+    });
+    let stdout = "";
+    const unsubscribe = child.onStdout((data) => {
+      stdout += data;
+    });
+    cleanups.push(async () => unsubscribe());
+    await expect.poll(() => stdout).toContain("STDIO_OK");
+    expect(await child.waitForExit()).toMatchObject({
+      exitCode: 0,
+      rangeEmpty: true,
+    });
   },
   60000,
 );
