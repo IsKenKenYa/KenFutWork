@@ -12,6 +12,7 @@ import { sanitizeErrorForClient } from "../utils/error-sanitizer.js";
 import type { CompactionPlan } from "./auto-compact.js";
 import {
   createModelCallUsageTracker,
+  MODEL_USAGE_AGENT_METADATA,
   type ModelCallUsage,
 } from "./model-call-usage.js";
 import {
@@ -91,6 +92,13 @@ function readSubagentName(
 /** 派发调用 id（父 run 里 task/task_background 的 toolCallId），路由键。 */
 function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
   const callId = evt.metadata?.lc_agent_call_id;
+  return typeof callId === "string" && callId.length > 0 ? callId : undefined;
+}
+/** 模型调用自带的 agent 归属；缺失即视为无归属，不从派发栈补猜。 */
+function readModelUsageAgentCallId(
+  evt: LangChainStreamEvent,
+): string | undefined {
+  const callId = evt.metadata?.[MODEL_USAGE_AGENT_METADATA];
   return typeof callId === "string" && callId.length > 0 ? callId : undefined;
 }
 /**
@@ -285,10 +293,10 @@ export async function* adaptDeepAgentStream(
 
       if (evt.event === "on_chat_model_start") {
         usageTracker.start(evt);
-        const subagentCallId =
-          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
-        if (subagentCallId && evt.run_id)
-          modelCallAgentById.set(evt.run_id, subagentCallId);
+        // 只认模型调用自身的归属元数据；并发子代理事件交错到达，派发栈推断会串账。
+        const agentCallId = readModelUsageAgentCallId(evt);
+        if (agentCallId && evt.run_id)
+          modelCallAgentById.set(evt.run_id, agentCallId);
         if (!readSubagentName(evt, mainAgentName)) outputLimited = false;
       }
       if (

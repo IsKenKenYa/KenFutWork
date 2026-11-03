@@ -41,6 +41,7 @@ import {
 } from "../features/task-work/model-mailbox.js";
 import { findOwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
+import { MODEL_USAGE_AGENT_METADATA } from "./model-call-usage.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type {
   AgentContextBudget,
@@ -561,8 +562,13 @@ export function createKenFutWorkDeepAgent(options: {
           }),
         ),
       );
+      // 用量归属挂在子代理自己的模型配置上：每次模型调用都带本实例 id，
+      // 不依赖父 run 的派发栈，也不与并发子代理共享归属。
+      const childModel = resolvedModel.withConfig({
+        metadata: { [MODEL_USAGE_AGENT_METADATA]: callId },
+      }) as typeof resolvedModel;
       const child = createAgent({
-        model: resolvedModel,
+        model: childModel,
         name: definition.name,
         // 语言规则单点追加（子代理结论回填主对话，英文结论会带偏主对话语言）：
         // 定义里的 systemPrompt 是中文，但其工具面（deepagents 文件工具等）描述是英文
