@@ -91,6 +91,7 @@ export function ConversationAgentToolCallRow({
         onOpenAutomationsMain={context.onOpenAutomationsMain}
         agentSummaryAction={agentSummaryAction}
         authoritativeAgentType={subagentType}
+        agentUsage={item.subagentRow.usage}
       />
     </div>
   );

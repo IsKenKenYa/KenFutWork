@@ -258,6 +258,17 @@ export const subagentRowSchema = z.object({
   summaryText: z.string(),
   // 存在 → UI 可下钻订阅 conversation/<childSessionId>（不内嵌 child rows）。
   childSessionId: z.string().optional(),
+  /**
+   * 该子代理累计模型用量（服务端按派发 id 归因后下发）。上游没有上报时缺省，
+   * 界面显示「用量 未统计」，不拿 0 冒充。
+   */
+  usage: z
+    .object({
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+      cachedInputTokens: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
   backgrounded: z.literal(true).optional(),
   workId: z.string().optional(),
   startedAt: timestampSchema.optional(),

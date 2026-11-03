@@ -510,6 +510,64 @@ describe("Code 会话用量的公共投影与恢复", () => {
       cacheWriteTokens: 0,
     });
   });
+
+  it("子代理用量按 agentCallId 写入父会话子代理行，缺缓存字段不伪造 0", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "派发检查" });
+    host.registerChildDispatch({
+      parentSessionId: "usage-root",
+      parentRunId: "run-a",
+      toolCallId: "task-usage",
+      childSessionId: "usage-child",
+      role: "explore",
+      title: "检查子任务",
+      at: Date.parse(timestamp),
+      detached: false,
+    });
+    const subagentRow = () =>
+      host
+        .getSnapshot()
+        .rows.window.find(
+          (row) =>
+            row.kind === "subagent" &&
+            row.parentToolCallId === "run-a/task-usage",
+        );
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "sub-call-a",
+      agentCallId: "task-usage",
+      agentInputTokens: 30,
+      agentOutputTokens: 9,
+      inputTokens: 30,
+      outputTokens: 9,
+      runInputTokens: 30,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(subagentRow()).toMatchObject({
+      usage: { inputTokens: 30, outputTokens: 9 },
+    });
+    expect(subagentRow()).not.toHaveProperty("usage.cachedInputTokens");
+
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "sub-call-b",
+      agentCallId: "task-usage",
+      agentInputTokens: 50,
+      agentOutputTokens: 12,
+      agentCachedInputTokens: 8,
+      inputTokens: 50,
+      outputTokens: 12,
+      runInputTokens: 50,
+      runOutputTokens: 12,
+      timestamp,
+    });
+    expect(subagentRow()).toMatchObject({
+      usage: { inputTokens: 50, outputTokens: 12, cachedInputTokens: 8 },
+    });
+  });
 });
 
 describe("Code 宿主会话快照", () => {

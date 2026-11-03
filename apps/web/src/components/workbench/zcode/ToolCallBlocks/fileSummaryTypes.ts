@@ -243,6 +243,15 @@ export interface ToolCallBlockRenderContext {
   };
   /** v4 已配对 subagentRow 投影出的 runtime 权威类型；流式 input 尚未完整时优先使用。 */
   authoritativeAgentType?: string;
+  /**
+   * v4 已配对 subagentRow 的累计模型用量。字段都可缺省：上游没上报时卡片显示
+   * 「用量 未统计」，不拿 0 冒充。
+   */
+  agentUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+  };
   /** ExitPlanMode 计划卡片：由会话宿主绑定 parent/session scope 后打开 Side Pane。 */
   onOpenPlanDetail?: (request: Omit<OpenPlanDetailSideTabRequest, "parentSessionId">) => void;
   /**

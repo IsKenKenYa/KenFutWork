@@ -93,6 +93,27 @@ function readSubagentCallId(evt: LangChainStreamEvent): string | undefined {
   const callId = evt.metadata?.lc_agent_call_id;
   return typeof callId === "string" && callId.length > 0 ? callId : undefined;
 }
+/**
+ * 同一子代理的模型调用累计：一个子代理可能多次调用模型（工具循环），用量按
+ * 派发 id 求和；上游未上报缓存字段时缺省，不拿 0 冒充。
+ */
+function sumAgentUsage(
+  calls: Map<string, ModelCallUsage>,
+  owners: Map<string, string>,
+  agentCallId: string,
+): RunUsageTotals {
+  const totals: RunUsageTotals = { inputTokens: 0, outputTokens: 0 };
+  for (const [modelCallId, usage] of calls) {
+    if (owners.get(modelCallId) !== agentCallId) continue;
+    totals.inputTokens += usage.inputTokens;
+    totals.outputTokens += usage.outputTokens;
+    if (usage.cachedInputTokens !== undefined)
+      totals.cachedInputTokens =
+        (totals.cachedInputTokens ?? 0) + usage.cachedInputTokens;
+  }
+  return totals;
+}
+
 /** Inner tools that may be suppressed when running inside a sub-agent. */
 const INNER_SUB_AGENT_TOOLS = new Set(["generate_video"]);
 
@@ -172,6 +193,13 @@ export async function* adaptDeepAgentStream(
   /** Tracks active sub-agent parent runs so we can detect nested inner tools. */
   const activeSubAgentRuns = new Set<string>();
   const usageTracker = createModelCallUsageTracker();
+  /**
+   * 子代理用量归因（用户要求：卡片要有结论与用量）：每个模型调用在 start 时记录
+   * 它属于哪个派发（metadata 优先，派发栈兜底）；observe 时把同一派发的所有模型
+   * 调用求和后随 `run.usage` 下发。并行 fan-out 的栈归因限制与正文路由一致。
+   */
+  const modelCallUsageById = new Map<string, ModelCallUsage>();
+  const modelCallAgentById = new Map<string, string>();
   const activeModelRuns = new Set<string>();
   let outputLimited = false;
   /**
@@ -257,6 +285,10 @@ export async function* adaptDeepAgentStream(
 
       if (evt.event === "on_chat_model_start") {
         usageTracker.start(evt);
+        const subagentCallId =
+          readSubagentCallId(evt) ?? dispatchStack.at(-1)?.callId;
+        if (subagentCallId && evt.run_id)
+          modelCallAgentById.set(evt.run_id, subagentCallId);
         if (!readSubagentName(evt, mainAgentName)) outputLimited = false;
       }
       if (
@@ -289,11 +321,34 @@ export async function* adaptDeepAgentStream(
                 "[model-usage] 用量采集失败，保留本次观测并继续运行。",
               );
             }
+            modelCallUsageById.set(
+              observed.usage.modelCallId,
+              observed.usage,
+            );
+            const agentCallId = modelCallAgentById.get(
+              observed.usage.modelCallId,
+            );
+            const agentTotals = agentCallId
+              ? sumAgentUsage(modelCallUsageById, modelCallAgentById, agentCallId)
+              : undefined;
             if (observed.emit)
               yield {
                 type: "run.usage",
                 runId: options.runId,
                 modelCallId: observed.usage.modelCallId,
+                ...(agentCallId
+                  ? {
+                      agentCallId,
+                      agentInputTokens: agentTotals?.inputTokens,
+                      agentOutputTokens: agentTotals?.outputTokens,
+                      ...(agentTotals?.cachedInputTokens === undefined
+                        ? {}
+                        : {
+                            agentCachedInputTokens:
+                              agentTotals.cachedInputTokens,
+                          }),
+                    }
+                  : {}),
                 inputTokens: observed.usage.inputTokens,
                 outputTokens: observed.usage.outputTokens,
                 ...(observed.usage.owner?.contextWindowTokens == null

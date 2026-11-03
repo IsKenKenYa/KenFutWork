@@ -1300,6 +1300,28 @@ export function createCodeUiConversation(input: {
           outputTokens: event.runOutputTokens,
           ...(cached === undefined ? {} : { cachedInputTokens: cached }),
         });
+        // 子代理卡片用量：按派发 id 找到子代理行并累计写入；上游没报就保持缺省，
+        // 界面显示「未统计」而不是 0（与 run.usage schema 的可选字段一致）。
+        if (
+          event.agentCallId &&
+          event.agentInputTokens !== undefined &&
+          event.agentOutputTokens !== undefined
+        ) {
+          const subagentRow = root.rows.window.find(
+            (row) =>
+              row.kind === "subagent" &&
+              row.parentToolCallId === `${event.runId}/${event.agentCallId}`,
+          );
+          if (subagentRow?.kind === "subagent") {
+            subagentRow.usage = {
+              inputTokens: event.agentInputTokens,
+              outputTokens: event.agentOutputTokens,
+              ...(event.agentCachedInputTokens === undefined
+                ? {}
+                : { cachedInputTokens: event.agentCachedInputTokens }),
+            };
+          }
+        }
         root.usage.cumulative = {
           inputTokens: 0,
           outputTokens: 0,
