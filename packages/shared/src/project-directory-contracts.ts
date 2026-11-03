@@ -62,6 +62,8 @@ export const projectDirectoryRelinkSnapshotSchema = z
     projectId: z.uuid(),
     workDir: z.string().min(1),
     tasks: z.array(taskFence),
+    /** 权威目录已不在磁盘上；false 时没有可恢复内容，客户端不展示恢复入口。 */
+    missing: z.boolean(),
     flow: projectDirectoryFlowStateSchema.optional(),
   })
   .strict();

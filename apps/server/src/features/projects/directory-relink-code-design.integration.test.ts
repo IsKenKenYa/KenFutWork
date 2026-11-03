@@ -538,14 +538,20 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
     it("GET提供完整fences；仅missing可关联；身份与素材/布局保留，旧授权失效，Goal人工resume", async () => {
       const f = await fixture();
       try {
-        expect(
-          (await f.app.inject({ method: "GET", url: f.url })).statusCode,
-        ).toBe(400);
+        const online = await f.app.inject({ method: "GET", url: f.url });
+        expect(online.statusCode).toBe(200);
+        expect(online.json()).toMatchObject({
+          projectId: f.project.id,
+          workDir: f.oldRoot,
+          tasks: [],
+          missing: false,
+        });
         expect(f.closed).toEqual([]);
         await f.move();
         const snapshot = (
           await f.app.inject({ method: "GET", url: f.url })
         ).json();
+        expect(snapshot.missing).toBe(true);
         expect(snapshot.tasks).toEqual([
           { taskId: f.task.id, scopeGeneration: 1, branchGeneration: 1 },
         ]);

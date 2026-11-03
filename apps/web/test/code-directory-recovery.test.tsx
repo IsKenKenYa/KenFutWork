@@ -45,6 +45,7 @@ async function fixture(missing: boolean, failure = false) {
     projectId,
     workDir: "/missing",
     tasks: [{ taskId, scopeGeneration: 1, branchGeneration: 1 }],
+    missing: true,
   };
   const proof = vi
     .spyOn(client, "directoryRelinkSnapshot")

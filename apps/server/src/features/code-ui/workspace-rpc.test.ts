@@ -74,8 +74,13 @@ async function world() {
   const preferencesApi = {
     readHumanPreferences: async () => preferences,
     updateHumanPreferences: vi.fn(
-      async (_workspace: string, patch: Record<string, unknown>) => {
+      async (
+        _workspace: string,
+        patch: Record<string, unknown>,
+        options?: { removeKeys?: readonly string[] },
+      ) => {
         preferences = { ...preferences, ...patch };
+        for (const key of options?.removeKeys ?? []) delete preferences[key];
         return true;
       },
     ),
@@ -249,6 +254,44 @@ describe("Human-only Code workspace RPC", () => {
     expect(
       await createRpc().call(actor, "file", "ensureConversationWorkspace", []),
     ).toMatchObject({ result: { ...second, created: false } });
+    expect(createProject).toHaveBeenCalledTimes(2);
+  });
+  it("默认对话目录已删除时清理陈旧引用并新建，重复进入不重复报错", async () => {
+    const { rpc, createRpc, createProject, preferencesApi } = await world();
+    const first = codeUiWorkspaceSchema.parse(
+      (await rpc.call(actor, "file", "ensureConversationWorkspace", []))
+        ?.result,
+    );
+    await rm(first.path, { recursive: true, force: true });
+    const recoveredResult = (
+      await createRpc().call(
+        actor,
+        "file",
+        "ensureConversationWorkspace",
+        [],
+      )
+    )?.result;
+    const recovered = codeUiWorkspaceSchema.parse(recoveredResult);
+    expect(recoveredResult).toMatchObject({ replacedMissingDirectory: true });
+    expect(recovered.projectId).not.toBe(first.projectId);
+    expect(preferencesApi.updateHumanPreferences).toHaveBeenCalledWith(
+      "workspace",
+      {},
+      { removeKeys: ["defaultConversationProjectId"] },
+    );
+    expect(await preferencesApi.readHumanPreferences()).toMatchObject({
+      defaultConversationProjectId: recovered.projectId,
+    });
+    expect(createProject).toHaveBeenCalledTimes(2);
+    // 重复进入复用新项目：不再读旧引用、不再创建，也不再报错或重复提示。
+    const again = await createRpc().call(
+      actor,
+      "file",
+      "ensureConversationWorkspace",
+      [],
+    );
+    expect(again).toMatchObject({ result: { ...recovered, created: false } });
+    expect(again?.result).not.toHaveProperty("replacedMissingDirectory");
     expect(createProject).toHaveBeenCalledTimes(2);
   });
   it("默认引用全量保存false不能返回伪成功，拒绝后同workspace单flight可显式重试", async () => {

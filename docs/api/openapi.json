@@ -28245,6 +28245,9 @@
               "additionalProperties": false
             }
           },
+          "missing": {
+            "type": "boolean"
+          },
           "flow": {
             "type": "object",
             "properties": {
@@ -28372,7 +28375,8 @@
         "required": [
           "projectId",
           "workDir",
-          "tasks"
+          "tasks",
+          "missing"
         ],
         "additionalProperties": false
       },

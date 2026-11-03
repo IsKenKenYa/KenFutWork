@@ -291,6 +291,7 @@ export function createFlowDirectoryRelink(deps: FlowRelinkDeps) {
       projectId,
       workDir: root,
       tasks: [],
+      missing: !directoryAvailable,
       flow: flowState(operation, root, receipt, directoryAvailable),
     };
   };

@@ -53,17 +53,13 @@ async function readDirectorySnapshot(projectId: string, kind?: DirectoryKind) {
     return projectDirectoryRelinkSnapshotSchema.parse(await surfaceJson(url));
   const response = await surfaceFetch(url);
   const body = await readRelinkBody(response);
-  if (
-    kind === "design" &&
-    response.status === 400 &&
-    body.error?.message === "原项目目录仍存在，不能重新关联。"
-  )
-    return null;
   if (!response.ok)
     throw new Error(body.error?.message ?? "项目目录状态无法读取。");
   // Flow 可绑定任意工作方式的项目（用户 2026-10-27 口径）：非 flow 项目没有
   // `flow` 迁移状态但同样有可读的 workDir，按普通项目返回，不在这里判死。
-  return projectDirectoryRelinkSnapshotSchema.parse(body);
+  const snapshot = projectDirectoryRelinkSnapshotSchema.parse(body);
+  // Design 只在目录真缺失时才展示恢复入口；目录健康时服务端回 200 + missing:false。
+  return kind === "design" && !snapshot.missing ? null : snapshot;
 }
 
 async function submitDirectoryRelink(

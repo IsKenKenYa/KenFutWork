@@ -264,17 +264,12 @@ export class CodeHttpChannelClient implements IChannelClient {
     return result.workspaces;
   }
   async directoryRelinkSnapshot(projectId: string) {
-    try {
-      return projectDirectoryRelinkSnapshotSchema.parse(
-        await this.request(
-          `/api/projects/${encodeURIComponent(projectId)}/relink-directory`,
-        ),
-      );
-    } catch (error) {
-      if (error instanceof CodeHostHttpError && error.status === 400)
-        return null;
-      throw error;
-    }
+    const view = projectDirectoryRelinkSnapshotSchema.parse(
+      await this.request(
+        `/api/projects/${encodeURIComponent(projectId)}/relink-directory`,
+      ),
+    );
+    return view.missing ? view : null;
   }
   async relinkDirectory(
     snapshot: ProjectDirectoryRelinkSnapshot,

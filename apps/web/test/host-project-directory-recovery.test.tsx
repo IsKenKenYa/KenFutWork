@@ -15,6 +15,7 @@ const snapshot = {
   projectId,
   workDir: "/next",
   tasks: [],
+  missing: false,
   flow: {
     generation: 2,
     operationId,
@@ -28,11 +29,15 @@ describe("new-shell project directory recovery", () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
-  it("hides Design recovery when the server rejects a recovery snapshot", async () => {
+  it("hides Design recovery when the project directory is still online", async () => {
     api.surfaceFetch.mockResolvedValue({
-      status: 400,
+      ok: true,
+      status: 200,
       json: async () => ({
-        error: { message: "原项目目录仍存在，不能重新关联。" },
+        projectId,
+        workDir: "/p",
+        tasks: [],
+        missing: false,
       }),
     });
     const hook = renderHook(() =>
@@ -41,6 +46,20 @@ describe("new-shell project directory recovery", () => {
     await waitFor(() => expect(hook.result.current.checking).toBe(false));
     expect(hook.result.current.snapshot).toBeNull();
     expect(api.surfaceJson).not.toHaveBeenCalled();
+  });
+  it("shows Design recovery only when the directory is actually missing", async () => {
+    api.surfaceFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ projectId, workDir: "/p", tasks: [], missing: true }),
+    });
+    const hook = renderHook(() =>
+      useCanvasProjectDirectory("design", projectId),
+    );
+    await waitFor(() =>
+      expect(hook.result.current.snapshot?.missing).toBe(true),
+    );
+    expect(hook.result.current.error).toBeNull();
   });
   it("shows a failed directory check while keeping recovery hidden", async () => {
     api.surfaceFetch.mockResolvedValue({
@@ -77,6 +96,7 @@ describe("new-shell project directory recovery", () => {
                 projectId,
                 workDir: "/p",
                 tasks: [],
+                missing: false,
                 flow: {
                   generation: 1,
                   operationId,

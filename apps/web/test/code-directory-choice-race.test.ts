@@ -28,7 +28,12 @@ const workspace = {
   enabledModes: ["code"],
   additionalDirectories: [],
 };
-const snapshot = { projectId, workDir: "/missing", tasks: [] };
+const snapshot = {
+  projectId,
+  workDir: "/missing",
+  tasks: [],
+  missing: true,
+};
 const receipt = {
   projectId,
   workDir: "/shared",

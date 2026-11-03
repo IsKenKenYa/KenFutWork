@@ -30,6 +30,8 @@ export interface IFileService {
     created: boolean;
     workspacePurpose: "conversation";
     workspaceIdentity?: string;
+    /** 上一次默认对话目录已不存在，本次清掉旧引用并新建。 */
+    replacedMissingDirectory?: boolean;
   }>;
   createDefaultWorkspace(): Promise<{ path: string; workspaceIdentity?: string }>;
   createScratchWorkspace(params: { name: string }): Promise<{ path: string; workspaceIdentity?: string }>;

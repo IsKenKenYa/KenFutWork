@@ -28,24 +28,59 @@ afterEach(() => {
   useZCodeSessionStore.setState({ workspaces: {} });
   useComposerAttachmentUploadStore.setState({ scopes: {} });
 });
-it("actual 400 old-directory-still-exists response yields no recovery proof", async () => {
+it("目录仍在线时快照不再报错，也不进恢复流程", async () => {
   const client = new CodeHttpChannelClient({ apiBase: "http://local" });
+  const projectId = randomUUID();
   const fetcher = vi.fn(
     async (_url: RequestInfo | URL, _init?: RequestInit) =>
       new Response(
-        JSON.stringify({
-          error: {
-            code: "invalid_request",
-            message: "原项目目录仍存在，不能重新关联。",
-          },
-        }),
-        { status: 400, headers: { "content-type": "application/json" } },
+        JSON.stringify({ projectId, workDir: "/old", tasks: [], missing: false }),
+        { status: 200, headers: { "content-type": "application/json" } },
       ),
   );
   vi.stubGlobal("fetch", fetcher);
-  expect(await client.directoryRelinkSnapshot(randomUUID())).toBeNull();
+  expect(await client.directoryRelinkSnapshot(projectId)).toBeNull();
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "GET" });
+  client.dispose();
+});
+it("目录真缺失时返回可恢复快照", async () => {
+  const client = new CodeHttpChannelClient({ apiBase: "http://local" });
+  const projectId = randomUUID();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (_url: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({ projectId, workDir: "/old", tasks: [], missing: true }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    ),
+  );
+  expect(await client.directoryRelinkSnapshot(projectId)).toMatchObject({
+    projectId,
+    workDir: "/old",
+    missing: true,
+  });
+  client.dispose();
+});
+it("快照读取失败时如实报错，不当作无恢复内容", async () => {
+  const client = new CodeHttpChannelClient({ apiBase: "http://local" });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (_url: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            error: { code: "invalid_request", message: "旧目录无法确认缺失。" },
+          }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        ),
+    ),
+  );
+  await expect(client.directoryRelinkSnapshot(randomUUID())).rejects.toMatchObject(
+    { status: 400, message: "旧目录无法确认缺失。" },
+  );
   client.dispose();
 });
 function fixture() {
@@ -78,6 +113,7 @@ function fixture() {
     projectId,
     workDir: "/old",
     tasks: [{ taskId, scopeGeneration: 4, branchGeneration: 8 }],
+    missing: true,
   };
   const receipt = {
     projectId,

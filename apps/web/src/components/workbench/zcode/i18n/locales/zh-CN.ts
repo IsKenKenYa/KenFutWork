@@ -1067,6 +1067,7 @@ const zhCN: Record<string, string> = {
   "chat.toolbar.model.targetMissing": "暂无模型目标",
   "settings.subagents.modelLoadFailed": "模型列表加载失败。",
   "root.modelSelection.loadFailed": "模型配置加载失败。",
+  "root.conversationWorkspaceReplaced": "原对话目录已删除，已新建默认对话",
   "modelTrajectory.openSourceDirectory": "打开所在目录",
   "modelTrajectory.refresh": "刷新",
   "modelTrajectory.close": "关闭",
