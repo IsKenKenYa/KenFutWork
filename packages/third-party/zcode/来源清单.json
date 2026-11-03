@@ -16,7 +16,7 @@
       "source": "references/zcode/packages/ui/src/App.tsx",
       "target": "apps/web/src/components/workbench/zcode/App.tsx",
       "sha256": "ad78d4e881b8706bf708a5acd08aff900c66784a8a435603fd50cf1b8670a987",
-      "copiedSha256": "f19bd3bdab16d56ea8099741c16467e3c5b7b2c2ceeb6dd8243f35b38e30f6e5",
+      "copiedSha256": "f745e29d2e4594ea757b1ce329de3c703c1c0ceb66c5fb0d0fa4b26af32ad2a6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标，ZCode 归属保留于 About 与 NOTICE",
@@ -29,7 +29,8 @@
         "2026-10-14 OpenDesign 集成（O0+O2）：透传 handleOpenOpenDesign 与 handleOpenOpenDesignPath 到工作台外壳。",
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "2026-10-20 画布标签化（二百〇二）：宿主新增 handleOpenDesignMetaChange 透传，OpenDesign 标签标题回写画布名。",
-        "2026-10-27 用户口径：切入 Work 模式自动收起右侧侧边面板（默认不打开）。"
+        "2026-10-27 用户口径：切入 Work 模式自动收起右侧侧边面板（默认不打开）。",
+        "宿主修复：设置快捷入口显式传目标，避免回读共享意图误落常规"
       ]
     },
     {
@@ -683,9 +684,10 @@
       "source": "references/zcode/packages/ui/src/TaskList.tsx",
       "target": "apps/web/src/components/workbench/zcode/TaskList.tsx",
       "sha256": "49cc1c51f10af951ff747ed62896b409162d99650a987156c883388fb46d3f3b",
-      "copiedSha256": "1f55710e6799fcf5ac5975e48072acf55e99b307f6a5a150c9b64ff050204f39",
+      "copiedSha256": "0b0fbae6f815bf99744a294cbe4cb77b04ee8ac6a46552eb37ae339ee82e01f5",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主修复：设置入口回调改为无参包装，保持显式目标签名"
       ]
     },
     {
@@ -1682,7 +1684,7 @@
       "source": "references/zcode/packages/ui/src/WorkspaceSidebar.tsx",
       "target": "apps/web/src/components/workbench/zcode/WorkspaceSidebar.tsx",
       "sha256": "312065bd80ff3a74b498dde96270a9f430f86808933625b02e4a1a6cbd56bf49",
-      "copiedSha256": "86e1e6e616938d298e9ac98d55af67b11f79340ad094d935e7336ff6b6294d4a",
+      "copiedSha256": "a829bc3dbcea75758cfc7c22cb24a813791752a6cd9f2516af9b0f42fd1a01c2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -1694,7 +1696,8 @@
         "Code/Design统一实施：项目与全部会话共享导航，使用过的工作方式筛选只影响展示。",
         "2026-10-20 收起 rail（f992490b）：侧栏入口统一为展开整行/收起图标两种形态，新建任务走同一处理。",
         "2026-10-27（二百八十五）：Work 模式侧栏「Work 引擎」入口；二百八十一：任务列表滚动条隐藏（!scrollbar-hide）。",
-        "2026-11-02（三百四十九）：侧栏技能/MCP 入口改发插件分区页签意图（并页后不再单列分区）。"
+        "2026-11-02（三百四十九）：侧栏技能/MCP 入口改发插件分区页签意图（并页后不再单列分区）。",
+        "宿主修复：添加项目入口改为真实创建表单；设置入口显式传目标"
       ]
     },
     {
@@ -2077,7 +2080,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "898eb2c17ed7b8b8f4ca1fe5543a73cc31ef8f05a308ca2e057cef2320211752",
+      "copiedSha256": "5ce4aaa83be7d20ed1b8f92a8976d4a724512fdeb5a4ce631a5e97d9f06b0a3e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2087,7 +2090,8 @@
         "2026-10-15 OpenDesign 深链功能按用户口径移除（《日志》§202）：删「在 OpenDesign 中打开当前文件」菜单项、tab.navigatePath、resolveOpenDesignNavigateSource 与 od/navigate 契约——面板只保留自动连接/打开/编辑画布与 od/v1 握手。",
         "2026-10-20 画布标签化（二百〇二）：透传 onOpenDesignMetaChange，保持一块画布一个标签。",
         "2026-10-25 Work 模式（二百五十八）：work 进 keep-alive 内嵌面（isEmbeddedSurfaceView/visitedEmbeddedSurfaces 扩 work 并挂载 HostWorkSurface）。",
-        "2026-10-27（二百八十五）：Work 引擎入口回调与 HostWorkSurface 返回会话。"
+        "2026-10-27（二百八十五）：Work 引擎入口回调与 HostWorkSurface 返回会话。",
+        "宿主修复：随添加项目入口移除侧栏打开文件夹/远程菜单透传属性"
       ]
     },
     {
@@ -4932,9 +4936,10 @@
       "source": "references/zcode/packages/ui/src/hooks/useClientScenesResource.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useClientScenesResource.ts",
       "sha256": "6c5da0b05b99eda0b46bba860502378458b1fa31d6d21c6fb7b9529a134b3098",
-      "copiedSha256": "bcfa13148a49f1ed5aaffcbae50e9fba6f890e1e598062517169c5e23f9442c0",
+      "copiedSha256": "f64cfa8dd8e01c3a4caee6cbcaf7da388bdda2c7da06c7046e8f86d664982969",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "宿主接口：宿主返回业务失败后停止 focus/重连/可见性重验（本机无场景目录）"
       ]
     },
     {
@@ -11396,10 +11401,11 @@
       "source": "references/zcode/packages/ui/src/store/TabStoreProvider.tsx",
       "target": "apps/web/src/components/workbench/zcode/store/TabStoreProvider.tsx",
       "sha256": "4fa0467562e4fa4baa12e4ceb762de4e64960e3e75346826a72903d29449d764",
-      "copiedSha256": "68225b3cd6eff48913aaf0c4e817b500da95069656272aa7861abbfe6bf1cfb6",
+      "copiedSha256": "eddadddd1af87fc7dd4618a58a0ee2e322e4ed4e2690073899bb4c2a64161e5c",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：透传可选设置文档导航回调，缺省原Store行为"
+        "宿主接口：透传可选设置文档导航回调，缺省原Store行为",
+        "宿主接口：设置导航显式目标经 provider 透传"
       ]
     },
     {
@@ -11678,10 +11684,11 @@
       "source": "references/zcode/packages/ui/src/store/tabStore.ts",
       "target": "apps/web/src/components/workbench/zcode/store/tabStore.ts",
       "sha256": "d07f82e2c75c7ec9d0981b5d4aba6432ed45ff201600b5c258131a6fd609dcc2",
-      "copiedSha256": "57a493c8d660c805e028919fe2e2c446559e4245a058ff17396be281fb9ded06",
+      "copiedSha256": "aeca2d9cb1950aeb94915fed59fa3e6c5a60857a309f76e6987c52b570f4f210",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：外部设置导航不改变活动Task或workspace；未提供回调时保留原tab装配"
+        "宿主接口：外部设置导航不改变活动Task或workspace；未提供回调时保留原tab装配",
+        "宿主接口：openSettingsTab 接受显式设置目标，未提供宿主时保留原窗内设置页"
       ]
     },
     {
