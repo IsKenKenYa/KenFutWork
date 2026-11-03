@@ -356,6 +356,12 @@ it("原CodeUI宿主订阅真实workspace目录，固定Task根A不借项目默�
             name: "review",
             source: "builtin",
           },
+          {
+            description: "把结论存进项目记忆",
+            inputHint: "/memory [要点]",
+            name: "memory",
+            source: "builtin",
+          },
         ],
       },
     });

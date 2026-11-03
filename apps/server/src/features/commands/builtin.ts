@@ -39,6 +39,17 @@ const BUILTIN_COMMANDS: readonly BuiltinCommand[] = [
         args ? `关注点：${args}` : "重点看正确性、边界与回归风险。",
       ].join("\n"),
   },
+  {
+    name: "memory",
+    description: "把结论存进项目记忆",
+    inputHint: "/memory [要点]",
+    buildPrompt: (args) =>
+      [
+        "从本次对话里挑出值得跨会话保留的结论，调用一次 `memory_save` 写入项目记忆。",
+        "标题写短，正文写清结论、适用条件与证据位置；没有可保留的内容时直接说明，不要编造。",
+        args ? `用户给出的要点：${args}` : "优先保留项目约定、踩坑结论与已验证的做法。",
+      ].join("\n"),
+  },
 ];
 
 export type SlashCommandCatalogEntry = {
