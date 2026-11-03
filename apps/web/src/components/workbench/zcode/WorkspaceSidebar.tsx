@@ -123,7 +123,6 @@ import {
   Cloud,
   Cpu,
   Folder,
-  FolderOpen,
   Hash,
   ListFilter,
   Maximize2,
@@ -153,7 +152,11 @@ import {
 import { createPortal } from "react-dom";
 import { HostModeSidebarContent } from "./host/ModeSidebarContent.js";
 import { PluginSidebarNavigation } from "./host/PluginSidebarNavigation.js";
-import { useSharedProjectTabs } from "./host/SharedProjectNavigation.js";
+import { ProjectCreateDialog } from "./host/ProjectCreateDialog.js";
+import {
+  useSharedProjectNavigation,
+  useSharedProjectTabs,
+} from "./host/SharedProjectNavigation.js";
 import { SidebarCanvasSection } from "./host/SidebarCanvasSection.js";
 import { SidebarNavButton } from "./host/SidebarNavButton.js";
 import {
@@ -268,8 +271,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   fileTreeOpenRequest,
   onCreateTask,
   onCreateConversationTask,
-  onOpenFolderFromWorkspaceMenu,
-  onOpenRemoteWorkspace,
   theme,
   onConnectRemote: _onConnectRemote,
   onSelectRemoteProject: _onSelectRemoteProject,
@@ -320,8 +321,6 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
   fileTreeOpenRequest?: SidebarFileTreeOpenRequest | null;
   onCreateTask: (request?: CreateTaskRequest) => void;
   onCreateConversationTask: () => void;
-  onOpenFolderFromWorkspaceMenu: () => void;
-  onOpenRemoteWorkspace?: () => void;
   theme: Theme;
   onConnectRemote: (
     options: RemoteTarget,
@@ -439,6 +438,8 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
 
   const allWorkspaceTabs = useMemo(() => tabs.filter(isWorkspaceTab), [tabs]);
   const workspaceTabs = useSharedProjectTabs(allWorkspaceTabs);
+  const projectNavigation = useSharedProjectNavigation();
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const { conversationWorkspaceTabs, projectWorkspaceTabs } = useMemo(
     () => partitionWorkspaceTabsByPurpose(workspaceTabs),
     [workspaceTabs],
@@ -1732,53 +1733,40 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                   onOpenChange={handleProjectSectionOpenChange}
                                   testId={TID_PROJECT_SECTION}
                                   action={
-                                    <DropdownMenu>
+                                    <>
                                       <ControlHintTooltip
                                         title={intl.formatMessage({
                                           id: "workspaceSidebar.addProject",
                                         })}
                                       >
-                                        <DropdownMenuTrigger asChild>
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            className="text-foreground-subtle hover:text-foreground data-[state=open]:text-foreground"
-                                            aria-label={intl.formatMessage({
-                                              id: "workspaceSidebar.addProject",
-                                            })}
-                                            data-testid={TID_PROJECT_ADD}
-                                          >
-                                            <Plus className="size-3.5" />
-                                          </Button>
-                                        </DropdownMenuTrigger>
-                                      </ControlHintTooltip>
-                                      <DropdownMenuContent
-                                        align="end"
-                                        className="min-w-44"
-                                      >
-                                        <DropdownMenuItem
-                                          onSelect={
-                                            onOpenFolderFromWorkspaceMenu
-                                          }
-                                        >
-                                          <FolderOpen className="size-4" />
-                                          {intl.formatMessage({
-                                            id: "workspace.openFolder",
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-sm"
+                                          className="text-foreground-subtle hover:text-foreground"
+                                          aria-label={intl.formatMessage({
+                                            id: "workspaceSidebar.addProject",
                                           })}
-                                        </DropdownMenuItem>
-                                        {onOpenRemoteWorkspace ? (
-                                          <DropdownMenuItem
-                                            onSelect={onOpenRemoteWorkspace}
-                                          >
-                                            <Cloud className="size-4" />
-                                            {intl.formatMessage({
-                                              id: "remote.trigger",
-                                            })}
-                                          </DropdownMenuItem>
-                                        ) : null}
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
+                                          data-testid={TID_PROJECT_ADD}
+                                          onClick={() => {
+                                            if (projectNavigation) {
+                                              setCreateProjectOpen(true);
+                                            }
+                                          }}
+                                        >
+                                          <Plus className="size-3.5" />
+                                        </Button>
+                                      </ControlHintTooltip>
+                                      {projectNavigation ? (
+                                        <ProjectCreateDialog
+                                          open={createProjectOpen}
+                                          onOpenChange={setCreateProjectOpen}
+                                          createProject={
+                                            projectNavigation.createProject
+                                          }
+                                        />
+                                      ) : null}
+                                    </>
                                   }
                                 >
                                   {projectWorkspaceTabs.length === 0 ? (

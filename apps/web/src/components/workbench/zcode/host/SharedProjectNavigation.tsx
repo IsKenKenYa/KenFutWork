@@ -37,7 +37,7 @@ type ProjectHost = Pick<
 interface NavigationContext {
   projects: CodeUiWorkspace[];
   openProject: (project: CodeUiWorkspace, preset: Preset) => Promise<boolean>;
-  createProject: (preset: Preset) => Promise<void>;
+  createProject: (name?: string) => Promise<void>;
   refreshWorkspaces: () => Promise<CodeUiWorkspace[]>;
   registerTabs: (tabs: TabStore | null) => void;
   error: string | null;
@@ -363,13 +363,17 @@ export function SharedProjectNavigationProvider({
     openProject,
     setError,
   );
-  const createProject = async (preset: Preset) => {
+  const createProject = async (name?: string) => {
+    const preset = client.currentWorkPreset();
     const result = await surfaceJson<{ project: { id: string } }>(
       "/api/projects",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "未命名项目", kind: preset }),
+        body: JSON.stringify({
+          name: name?.trim() || "未命名项目",
+          kind: preset,
+        }),
       },
     );
     const project = (await client.refreshWorkspaces()).find(
@@ -380,7 +384,7 @@ export function SharedProjectNavigationProvider({
   };
   useEffect(() => {
     const created = () => {
-      void createProject(client.currentWorkPreset()).catch((failure) =>
+      void createProject().catch((failure) =>
         setError(
           failure instanceof Error ? failure.message : "创建项目失败，请重试。",
         ),

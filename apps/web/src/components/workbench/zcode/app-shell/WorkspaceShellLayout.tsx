@@ -241,7 +241,6 @@ export const WorkspaceShellLayout = memo(
     onResolveConversationWorkspace,
     onOpenWorkspace,
     onOpenFolderFromWorkspaceMenu,
-    onOpenRemoteWorkspace,
     onCreateScratchWorkspace,
     allowOpenWorkspace = true,
     allowRemoteWorkspace = true,
@@ -1853,10 +1852,6 @@ export const WorkspaceShellLayout = memo(
                       onCreateConversationTask={
                         onCreateConversationTask ?? handleCreateTaskInChat
                       }
-                      onOpenFolderFromWorkspaceMenu={
-                        onOpenFolderFromWorkspaceMenu
-                      }
-                      onOpenRemoteWorkspace={onOpenRemoteWorkspace}
                       theme={theme}
                       onConnectRemote={onConnectRemote}
                       onSelectRemoteProject={onSelectRemoteProject}
