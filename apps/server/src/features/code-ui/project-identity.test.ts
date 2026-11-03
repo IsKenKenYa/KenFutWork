@@ -103,7 +103,6 @@ async function fixture(
     string,
     { projectId: string; fingerprint: string; ack: protocol.CommandAck }
   >();
-  const commandAcks = new Map<string, protocol.CommandAck>();
   const createRoot = vi.fn(
     async (
       _workspace: string,
@@ -171,8 +170,24 @@ async function fixture(
     list: async (_workspace: string, id: string) =>
       roots.filter((entry) => entry.project_id === id && !entry.deleted_at),
     listVersion: async () => 1,
-    beginCloseTask: async () => 1,
-    failCloseTask: async () => {},
+    beginCloseTask: async (_workspace: string, id: string) => {
+      const record = roots.find((entry) => entry.id === id && !entry.deleted_at);
+      if (!record)
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "Task 已删除或不属于当前工作区",
+        );
+      record.execution_state = "revoking";
+      record.scope_generation = Number(record.scope_generation) + 1;
+      record.branch_generation = Number(record.branch_generation) + 1;
+      return Number(record.scope_generation);
+    },
+    failCloseTask: async (_workspace: string, id: string) => {
+      const record = roots.find(
+        (entry) => entry.id === id && entry.execution_state === "revoking",
+      );
+      if (record) record.execution_state = "failed";
+    },
     setListState: async (
       _workspace: string,
       id: string,
@@ -183,37 +198,6 @@ async function fixture(
         record.archived = value.archived;
     },
     createRoot,
-    applyScopeCommand: async (
-      instance: string,
-      request: Parameters<CodeUiRepository["applyScopeCommand"]>[1],
-      _fingerprint: string,
-      change: (root: CodeUiSessionRecord) => Promise<void>,
-      decide: (root: CodeUiSessionRecord) => {
-        state: CodeUiSessionRecord["state"];
-        ack: protocol.CommandAck;
-      },
-    ) => {
-      const key = JSON.stringify([
-        instance,
-        request.clientId,
-        request.commandId,
-      ]);
-      const previous = commandAcks.get(key);
-      if (previous)
-        return protocol.commandAckSchema.parse({
-          ...previous,
-          status: "duplicate",
-        });
-      const current = roots.find(
-        (entry) => entry.id === request.sessionId && !entry.deleted_at,
-      );
-      if (!current)
-        throw new CodeUiRepositoryError("not_found", "Task 不存在");
-      await change(current);
-      const ack = protocol.commandAckSchema.parse(decide(current).ack);
-      commandAcks.set(key, ack);
-      return ack;
-    },
     delete: async (_instance: string, rootSessionId: string) => {
       for (const entry of roots) {
         if (entry.root_session_id !== rootSessionId || entry.deleted_at) continue;
