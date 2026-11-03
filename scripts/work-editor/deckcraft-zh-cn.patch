@@ -1,14 +1,39 @@
+diff --git a/crates/fonts/build.rs b/crates/fonts/build.rs
+index 76e7dc4..5b99756 100644
+--- a/crates/fonts/build.rs
++++ b/crates/fonts/build.rs
+@@ -7,8 +7,8 @@
+ use std::fmt::Write as _;
+ use std::path::PathBuf;
+
+-/// Families DeckCraft never embeds (AGENTS.md §1: no Adobe-authored visual design).
+-const EXCLUDED_FAMILIES: &[&str] = &["Source Sans 3", "Source Serif 4", "Source Han Sans", "Source Han Serif", "Noto Sans CJK SC"];
++/// Families DeckCraft never embeds (upstream asset policy; Noto CJK is the Chinese UI exception).
++const EXCLUDED_FAMILIES: &[&str] = &["Source Sans 3", "Source Serif 4", "Source Han Sans", "Source Han Serif"];
+
+ fn main() {
+     println!("cargo::rerun-if-env-changed=CRAFT_FONTS_DIR");
+@@ -57,7 +57,8 @@ fn manifest(dir: &std::path::Path, manifest: &std::path::Path) -> Result<String,
+         if EXCLUDED_FAMILIES.contains(family) {
+             continue;
+         }
+-        if wasm && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable")) {
++        let chinese = scripts.split(',').any(|s| matches!(s.trim(), "Hani" | "Hans"));
++        if wasm && !chinese && !matches!((*family, *style), ("BIZ UDPGothic", "Regular") | ("Inter", "Regular" | "Bold" | "Variable")) {
+             continue;
+         }
+         let path = dir.join(file).canonicalize().map_err(|e| format!("{file}: {e}"))?;
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 7c0f8ab..02cbab2 100644
+index 7c0f8ab..f5cc571 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
 @@ -6,6 +6,7 @@ use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
  use serde_json::{Value, json};
- 
+
  use crate::SlideApp;
 +use crate::i18n::tr;
  use crate::theme::{self, Tokens};
- 
+
  #[derive(Clone, Debug, serde::Serialize)]
 @@ -81,7 +82,7 @@ pub fn show(app: &mut SlideApp, ctx: &egui::Context) {
      let Some(mut d) = app.dialog.take() else { return };
@@ -44,7 +69,7 @@ index 7c0f8ab..02cbab2 100644
      });
      d.fields.insert(key.into(), v);
 @@ -205,7 +206,7 @@ fn alt_text_starts_decorative(decorative: impl IntoIterator<Item = bool>) -> boo
- 
+
  fn check(ui: &mut Ui, d: &mut Dialog, label: &str, key: &str, default: bool) -> bool {
      let mut v = d.get(key, if default { "1" } else { "0" }) == "1";
 -    ui.checkbox(&mut v, label);
@@ -53,7 +78,7 @@ index 7c0f8ab..02cbab2 100644
      v
  }
 @@ -280,10 +281,10 @@ fn pick_album_picture(app: &mut SlideApp) -> Option<Value> {
- 
+
  fn album_choice(ui: &mut Ui, d: &mut Dialog, id: &str, key: &str, default: &str, choices: &[(&str, &str)]) {
      let cur = d.get(key, default);
 -    let label = choices.iter().find(|(k, _)| *k == cur).map(|(_, l)| *l).unwrap_or(default);
@@ -463,6 +488,15 @@ index 7c0f8ab..02cbab2 100644
              stops.clear();
          }
      });
+@@ -3344,7 +3347,7 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+     // "Find what:" has the keyboard when the dialog opens, so Ctrl+F and typing finds (#951).
+     let mut what = d.get("text", "");
+     ui.horizontal(|ui| {
+-        ui.add_sized(vec2(120.0, 20.0), egui::Label::new("Find what:"));
++        ui.add_sized(vec2(120.0, 20.0), egui::Label::new(tr("Find what:")));
+         let r = ui.add(egui::TextEdit::singleline(&mut what).desired_width(180.0));
+         // Enter finds the next match and leaves the keyboard here, so the search can be changed.
+         if !d.fields.contains_key("focused") || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
 @@ -3365,11 +3368,11 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
      ui.add_space(6.0);
      ui.horizontal(|ui| {
@@ -477,7 +511,7 @@ index 7c0f8ab..02cbab2 100644
                  let cur: Option<Value> = serde_json::from_str(&d.get("cur", "")).ok();
                  if let Some(at) = cur {
                      let mut p = q.clone();
-@@ -3382,7 +3385,7 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+@@ -3382,27 +3385,27 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                  }
                  find_next = true;
              }
@@ -486,7 +520,11 @@ index 7c0f8ab..02cbab2 100644
                  let mut p = q.clone();
                  p["with"] = json!(d.get("with", ""));
                  let msg = match app.session.execute("text.replace", &p) {
-@@ -3392,10 +3395,10 @@ fn find_dialog(app: &mut SlideApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+-                    Ok(v) => format!("Replaced {} occurrence(s).", v.get("replaced").and_then(Value::as_u64).unwrap_or(0)),
+-                    Err(_) => format!("DeckCraft can't find “{text}”."),
++                    Ok(v) => format!("已替换 {} 处", v.get("replaced").and_then(Value::as_u64).unwrap_or(0)),
++                    Err(_) => format!("找不到“{text}”"),
+                 };
                  d.fields.insert("status".into(), msg);
                  d.fields.remove("cur");
              }
@@ -499,12 +537,20 @@ index 7c0f8ab..02cbab2 100644
              close = true;
          }
      });
+     if find_next {
+         let list = app.session.execute("text.find", &q).ok().and_then(|v| v.as_array().cloned()).unwrap_or_default();
+         if list.is_empty() {
+-            d.fields.insert("status".into(), format!("DeckCraft can't find “{text}”."));
++            d.fields.insert("status".into(), format!("找不到“{text}”"));
+             d.fields.remove("cur");
+         } else {
+             let n = d.get("next", "0").parse::<usize>().unwrap_or(0) % list.len();
 diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
 new file mode 100644
-index 0000000..5a6c8af
+index 0000000..da24df7
 --- /dev/null
 +++ b/crates/ui-egui/src/i18n.rs
-@@ -0,0 +1,506 @@
+@@ -0,0 +1,525 @@
 +//! Simplified Chinese display labels. Command ids and document values stay unchanged.
 +
 +pub(crate) fn tr(text: &str) -> &str {
@@ -596,6 +642,10 @@ index 0000000..5a6c8af
 +        "Picture" => "图片",
 +        "Pictures" => "图片",
 +        "Find" => "查找",
++        "Find what:" => "查找内容",
++        "Replace with:" => "替换为",
++        "Match case" => "区分大小写",
++        "Find whole words only" => "全字匹配",
 +        "Replace" => "替换",
 +        "Selection\nPane" => "选择\n窗格",
 +        "Design\nIdeas" => "设计\n灵感",
@@ -1011,6 +1061,21 @@ index 0000000..5a6c8af
 +        _ => text,
 +    }
 +}
++
++#[cfg(test)]
++mod tests {
++    #[test]
++    fn find_dialog_labels_are_chinese() {
++        for (english, chinese) in [
++            ("Find what:", "查找内容"),
++            ("Replace with:", "替换为"),
++            ("Match case", "区分大小写"),
++            ("Find whole words only", "全字匹配"),
++        ] {
++            assert_eq!(super::tr(english), chinese);
++        }
++    }
++}
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
 index e3f4acb..56e6c68 100644
 --- a/crates/ui-egui/src/lib.rs
@@ -1029,7 +1094,7 @@ index 7f36a25..1b31d02 100644
 +++ b/crates/ui-egui/src/ribbon.rs
 @@ -6,6 +6,7 @@ use egui::{Align2, Color32, CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
  use serde_json::{Value, json};
- 
+
  use crate::SlideApp;
 +use crate::i18n::tr;
  use crate::icons::{self, Icon};
@@ -1094,7 +1159,7 @@ index 7f36a25..1b31d02 100644
                  ui.painter().rect_filled(Rect::from_center_size(pos2(r.center().x, r.max.y - 1.0), vec2(uw, 3.0)), CornerRadius::same(1), t.accent);
 @@ -302,6 +304,7 @@ fn toggle(app: &mut SlideApp, ui: &mut Ui, icon: Icon, label: &str, id: &str, on
  }
- 
+
  fn tip(id: &str, label: &str) -> String {
 +    let label = tr(label);
      let sc = deckcraft_engine::find_command(id).and_then(|c| c.shortcut).or_else(|| crate::UI_COMMANDS.iter().find(|c| c.0 == id).and_then(|c| c.2));
@@ -1318,7 +1383,7 @@ index 7f36a25..1b31d02 100644
              }
 @@ -1032,7 +1035,7 @@ pub fn outline_menu(app: &mut SlideApp, ui: &mut Ui, sc: &deckcraft_color::Color
  }
- 
+
  pub fn effects_menu(app: &mut SlideApp, ui: &mut Ui) {
 -    ui.menu_button("Shadow", |ui| {
 +    ui.menu_button(tr("Shadow"), |ui| {
@@ -1379,7 +1444,7 @@ index 7f36a25..1b31d02 100644
  }
 @@ -1135,7 +1138,7 @@ fn quick_styles(app: &mut SlideApp, ui: &mut Ui) {
  }
- 
+
  pub fn arrange_menu(app: &mut SlideApp, ui: &mut Ui) {
 -    ui.label(egui::RichText::new("Order Objects").font(theme::bold(12.0)));
 +    ui.label(egui::RichText::new(tr("Order Objects")).font(theme::bold(12.0)));
@@ -1452,7 +1517,7 @@ index 7f36a25..1b31d02 100644
 +        ui.label(tr("No icons match."));
      }
  }
- 
+
 @@ -1589,7 +1592,7 @@ fn design(app: &mut SlideApp, ui: &mut Ui) {
                  });
              }
@@ -2055,12 +2120,42 @@ index 7f36a25..1b31d02 100644
          let p = json!({"ppi": ppi, "deleteCropped": delete_cropped, "all": !only_selected});
          match app.session.execute("picture.compress", &p) {
              Ok(r) => {
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index 109196e..bb501af 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -189,6 +189,7 @@ pub fn font_definitions(extra: &[std::sync::Arc<deckcraft_fonts::FontFace>]) ->
+     for (i, f) in deckcraft_fonts::CRAFT_FONTS.iter().enumerate() {
+         let wanted = (f.family == "Inter" && (f.style == "Regular" || f.style == "SemiBold" || f.style == "Bold"))
+             || (f.family == "BIZ UDPGothic" && f.style == "Regular")
++            || (f.family == "Noto Sans CJK SC" && f.style == "Regular")
+             || (f.family == "Noto Sans Arabic");
+         if !wanted {
+             continue;
+@@ -300,4 +301,17 @@ mod tests {
+             assert!(ink, "{c:?} ({:04X}) draws nothing at {size} px", c as u32);
+         }
+     }
++
++    #[test]
++    fn simplified_chinese_labels_have_embedded_glyphs() {
++        let defs = super::font_definitions(&[]);
++        assert!(defs.font_data.keys().any(|name| name.contains("Noto Sans CJK SC")), "Noto CJK font data is not embedded");
++        assert!(defs.families.get(&egui::FontFamily::Proportional).is_some_and(|names| names.iter().any(|name| name.contains("Noto Sans CJK SC"))), "Noto CJK is not in the proportional fallback chain");
++        let ctx = egui::Context::default();
++        ctx.set_fonts(defs);
++        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
++        for c in "查找和替换设计切换动画录制审阅视图绘图".chars() {
++            assert!(ctx.fonts_mut(|f| f.has_glyph(&egui::FontId::proportional(13.0), c)), "missing glyph for {c}");
++        }
++    }
+ }
 diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
 index 67549ce..4e4c8eb 100644
 --- a/crates/ui-egui/src/widgets.rs
 +++ b/crates/ui-egui/src/widgets.rs
 @@ -33,6 +33,7 @@ pub fn big_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool) -> Respon
- 
+
  /// Large button; with `split`, the label row is a separate dropdown target (returns its response).
  pub fn big_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, split: bool, selected: bool) -> (Response, Option<Response>) {
 +    let label = crate::i18n::tr(label);
@@ -2069,7 +2164,7 @@ index 67549ce..4e4c8eb 100644
      let lines: Vec<&str> = wrap_label(label);
 @@ -114,6 +115,7 @@ pub fn small_button(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selecte
  }
- 
+
  pub fn small_button_ex(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selected: bool, split: bool) -> (Response, Option<Response>) {
 +    let label = crate::i18n::tr(label);
      let t = Tokens::get(ui.ctx());
@@ -2084,7 +2179,7 @@ index 67549ce..4e4c8eb 100644
      let font = theme::font(12.0);
      let tw = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), t.text).size().x) + 5.0;
 @@ -173,6 +176,7 @@ pub fn check_item(ui: &mut Ui, label: &str, enabled: bool, on: bool) -> Response
- 
+
  /// A square icon toggle (B, I, U, alignment…).
  pub fn icon_toggle(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool) -> Response {
 +    let tip = crate::i18n::tr(tip);
@@ -2092,7 +2187,7 @@ index 67549ce..4e4c8eb 100644
      let (rect, resp) = ui.allocate_exact_size(vec2(24.0, 22.0), if enabled { Sense::click() } else { Sense::hover() });
      let painter = ui.painter_at(rect);
 @@ -187,6 +191,7 @@ pub fn icon_toggle(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool, on: bool)
- 
+
  /// Icon with a colour bar under it and a dropdown arrow (Font Color, Highlight, Shape Fill…).
  pub fn color_split(ui: &mut Ui, icon: Icon, tip: &str, color: Color32, enabled: bool) -> (Response, Response) {
 +    let tip = crate::i18n::tr(tip);

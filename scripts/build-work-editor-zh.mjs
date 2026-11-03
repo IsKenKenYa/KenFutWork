@@ -893,15 +893,19 @@ writeFileSync(
 );
 const wasm = readdirSync(target).find((name) => name.endsWith("_bg.wasm"));
 if (!wasm) throw new Error("产物缺少 wasm");
-if (app === "wordcraft") {
-  // 上游 wasm 默认只内嵌 Georg 字体；缺了 Noto CJK 时界面仍能编译，但中文全是方框。
-  // 让回归在构建期直接失败，而不是等安装后靠肉眼发现。
+const packagedCjkFont = {
+  wordcraft: "noto-sans-cjk-sc",
+  deckcraft: "noto-sans-cjk-sc",
+}[app];
+if (packagedCjkFont) {
+  const family = "Noto Sans CJK SC";
+  // 缺了 Noto CJK 时界面仍能编译，但中文全是方框；让回归在构建期直接失败。
   const wasmBytes = readFileSync(join(target, wasm));
-  if (!wasmBytes.includes(Buffer.from("Noto Sans CJK SC")))
-    throw new Error("WordCraft 产物缺少 Noto Sans CJK SC 中文字形");
-  const license = join(fonts, "fonts", "noto-sans-cjk-sc", "OFL.txt");
+  if (!wasmBytes.includes(Buffer.from(family)))
+    throw new Error(`${app} 产物缺少 ${family} 中文字形`);
+  const license = join(fonts, "fonts", packagedCjkFont, "OFL.txt");
   if (!existsSync(license)) throw new Error(`缺少 Noto CJK 许可文件：${license}`);
-  cpSync(license, join(target, "OFL-noto-sans-cjk-sc.txt"));
+  cpSync(license, join(target, `OFL-${packagedCjkFont}.txt`));
 }
 console.log(
   `[zh] 完成：${target}（${wasm}，${(readFileSync(join(target, wasm)).length / 1048576).toFixed(1)}MB，含中文字体）`,
