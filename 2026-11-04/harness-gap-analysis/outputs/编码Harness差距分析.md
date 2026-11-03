@@ -339,6 +339,10 @@
 | 收尾 A | 任务自动归档扫描间隔写死为一小时，用户无法调整，违反运行时可调数值规则 | `packages/shared/src/governance.ts`、`packages/shared/src/contracts.ts`、`task-archive-governance.test.ts`（新建）、`features/code-ui/task-auto-archive.ts`、`features/code-ui/plugin.ts`、`apps/web/src/lib/agent-governance-settings.ts`、`.env.example` | 6 项治理测试（默认 / 库值优先 / 区间护栏 / 非法 env 忽略）；server + shared + web typecheck | `44c735d7` |
 | 收尾 B | 非法 HTTP 代理与非法证书路径被服务端拒绝后，界面没有说明哪里错、怎么改 | `apps/web/src/lib/network-settings-save.ts`（新建）、`apps/web/test/network-settings-save.test.ts`（新建）、`zcode/SettingsPage.tsx`、`zcode/i18n/locales/zh-CN.ts`、`en-US.ts` | 4 项保存包装测试；文案门禁 12 项；web 全量 1251 过 / 103 跳过 | `14419028` |
 | P2-3 | 插件能注册工具，但结果只能落在通用工具卡；插件没有可声明的展示结构 | `packages/shared/src/plugin-contracts.ts`、`governance.ts`、`contracts.ts`、`features/plugins/bundle-manifest.ts`、`plugin-cards.ts`（新建）、`plugin-registry-service.ts`、`http/plugins.ts`、`features/plugins/plugin.ts`、`apps/web/src/components/workbench/zcode/host/pluginCards.ts`（新建）、`pluginCardRenderer.tsx`（新建）、`host/main.tsx`、`apps/web/src/lib/agent-governance-settings.ts`、`.env.example` | shared 治理 8 项；server 卡片 10 项；web 5 项；插件注册表 66 项；文案与结构 28 项；`pnpm api:spec` 与契约一致性 3 项 | `73604843` |
+| 卡片刷新 | 中途启用或停用插件后卡片仍按启动时快照，必须重开工作台 | `packages/shared/src/code-ui-host-bridge.ts`、`apps/web/src/components/workbench/zcode/host/pluginCards.ts`、`host/main.tsx`、`components/workbench/code-workbench-frame.tsx`、`apps/web/test/plugin-cards.test.ts` | 8 项（启用 / 停用 / 读取失败保留旧快照） | `303d4342` |
+| E2E 入口 | `e2e/` 是独立项目，根上无法一条命令运行 | `package.json` | `npm --prefix e2e test -- --list` 列出 28 条用例 | `bad9b77f` |
+| 旧图片卸载 | 长会话早期截图一直留在模型请求里，图片不走文本修剪 | `agent/tool-result-prune.ts`、`tool-result-prune.test.ts`、`agent/deep-agent.ts`、`agent/runtime.ts`、`packages/shared/src/governance.ts`、`contracts.ts`、`governance.test.ts`、`apps/web/src/lib/agent-governance-settings.ts`、`.env.example` | 修剪 18 项；shared 209 项；web 全量 1263 项；server + web typecheck | `2615d531` |
+| 运行记录入口 | 服务端时间线已齐，界面没有入口 | `host/RunTimelineDialog.tsx`（新建）、`host/CheckpointTimeline.tsx`、`apps/web/test/run-timeline-dialog.test.tsx`（新建）、`apps/web/test/checkpoint-timeline.test.tsx` | 3 + 3 项；web 全量 1263 项；web typecheck | `cb5c0cbf` |
 
 全量服务端测试：4955 项中 4179 过、58 失败、718 跳过；失败集中在沙箱与 PTY 族（本机 macOS 27.2 SDK 的 `libproc.tbd` / `libSystem.tbd` 报 `unknown architecture`，编译 PTY 检查器失败并连带超时），与上述批次改动无文件交集，属既有环境基线。
 
@@ -348,10 +352,10 @@
 
 | 维度 | 实施前 | 实施后 | 说明 |
 | --- | --- | --- | --- |
-| 上下文压缩与摘要 | 更差 | 接近等同 | 有请求前工具结果修剪；仍缺超大输出外置与旧图片卸载 |
+| 上下文压缩与摘要 | 更差 | 接近等同 | 有请求前工具结果修剪与旧图片卸载（保留最近 2 张，可调 0..20）；仍缺超大输出外置 |
 | 子智能体编排与并发 | 更差 | 接近等同 | 子代理结果带按子 Run 归因的用量；时间线可看子代理内部工具 |
 | 用量与成本统计 | 缺失 | 接近等同 | 服务端按 Run / 子 Run 汇总，设置页显示预估花费，未回传时显示「未上报」；仍缺价格目录 |
-| 日志与可观测性 | 更差 | 等同 | 单轮时间线、子代理合并、Markdown 导出完成；界面入口未接 |
+| 日志与可观测性 | 更差 | 等同 | 单轮时间线、子代理合并、Markdown 导出完成；检查点对话框内可打开所选轮次的记录 |
 | 钩子 | 更差 | 接近等同 | 事件从 2 个补到 5 个（轮次开始/结束、工具开始/结束/失败），服务端与网页共用同一事件清单 |
 | 命令与斜杠命令 | 更差 | 接近等同 | 增加内置 `init`、`review`，与自建命令合并去重；仍缺压缩、计划等状态类命令 |
 | 记忆 | 更差 | 部分补齐 | 增加 `memory_search` 关键词召回与提示段引导；仍缺自动提炼与遗忘策略 |
@@ -382,7 +386,8 @@
 | P2-2 用量成本展示 | 已做 `a8cdb114` | 只在第一方设置页统计区显示；ZCode 用量面板属源码保真范围，未改 |
 | P2-3 插件声明式 UI 卡片 | 已做 `73604843` | 卡片只允许纯数据（工具名、标题、键值行、状态），走既有 `ToolCallRendererProvider` 贡献点，未命中回退既有工具卡；正文、Markdown、HTML 与自定义样式不开放 |
 | 超大工具输出外置 | 未做 | 需要确定落盘位置、读取工具与清理策略；落到任务目录会污染用户工程，落到数据目录模型读不到，属于产品取舍 |
-| Web 侧时间线入口 | 未做 | ZCode 源码要求字节保真，入口应走宿主适配层；本轮先完成服务端能力 |
+| Web 侧时间线入口 | 已做 `cb5c0cbf` | 入口挂在检查点对话框，按所选轮次打开；无检查点的工作区仍缺入口，需按 Task 列轮次的接口 |
+| 旧图片卸载 | 已做 `2615d531` | 保留张数进治理表（默认 2，0..20）；压缩后仍可能整体裁掉近期图片，未做图片摘要替身 |
 | 真实 Postgres 集成测试 | 未做 | 本机无可用数据库；已写仓储单测锁定 SQL 前缀、参数顺序与实例谓词，集成测试需连接环境后补 |
 
 ### 10.5 需要真机确认的清单
@@ -391,7 +396,7 @@
 2. 真实一轮含子代理的 Run：确认 `parent_tool_call_id` 确为 `<runId>/<toolCallId>`，并核对子代理工具条目的 `agentName` 是否等于派发时的 `subagent_type`。
 3. 长对话（数百条增量帧）下打开时间线：确认查询耗时不再随增量帧线性增长，可用 `EXPLAIN ANALYZE` 对照。
 4. 前台 `Task` 与后台 `TaskOutput` 各跑一次子代理：核对返回的 `usage` 与 `usage_records` 中对应子 Run 的汇总一致，未上报成本显示为「未上报」。
-5. ZCode 界面接入时间线入口后：确认 Markdown 下载文件名、404 提示与未授权提示都是用户能读懂的短语。
+5. ZCode 界面接入时间线入口后：确认 Markdown 下载文件名、404 提示与未授权提示都是用户能读懂的短语。（入口已接，仍需在真实 Task 上核对下载与 404 文案）
 6. macOS 27.2 与 Windows 各自跑一次全量服务端测试，确认沙箱/PTY 失败族与本次时间线批次无关的结论可复现。
 7. 真实一轮 Run 里让工具报错（例如执行不存在的命令）：确认 `tool-failed` 钩子触发，时间线条目显示「工具失败」而不是「工具结束」。
 8. 真实 MCP server（非夹具）：杀掉子进程，确认只会自动重启一次、状态显示「自动重启未恢复」后可手动重连恢复。
