@@ -17,6 +17,7 @@ const RUN_STATUSES = [
 
 type RawRunRow = {
   id: string;
+  session_id: string;
   model: string | null;
   status: unknown;
   stop_reason: string | null;
@@ -24,6 +25,11 @@ type RawRunRow = {
   error_message: string | null;
   created_at: string | Date;
   completed_at: string | Date | null;
+};
+
+type RawChildSessionRow = {
+  child_session_id: string;
+  parent_tool_call_id: string;
 };
 
 type RawEventRow = {
@@ -54,8 +60,8 @@ export function createRunTimelineRepository(
       const row = await persistence
         .forInstance(instanceId)
         .queryOne<RawRunRow>(
-          `select r.id, r.model, r.status, r.stop_reason, r.error_code,
-                  r.error_message, r.created_at, r.completed_at
+          `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+                  r.error_code, r.error_message, r.created_at, r.completed_at
              from public.agent_runs r
              join public.chat_sessions s on s.id = r.session_id
             where r.id = $1
@@ -65,6 +71,7 @@ export function createRunTimelineRepository(
       if (!row) return null;
       return {
         runId: row.id,
+        rootSessionId: row.session_id,
         model: row.model,
         status: parseStatus(row.status),
         stopReason: row.stop_reason,
@@ -88,19 +95,41 @@ export function createRunTimelineRepository(
             order by e.seq asc`,
           [runId],
         );
-      const events: RunTimelineEventRow[] = [];
-      for (const row of rows) {
-        // 历史版本写过的事件结构可能落后于当前 schema：解析失败的行跳过，
-        // 不能让一条旧记录拖垮整轮回看。
-        const parsed = streamEventSchema.safeParse(row.payload);
-        if (!parsed.success) continue;
-        events.push({
-          seq: Number(row.seq),
-          createdAt: toIso(row.created_at),
-          event: parsed.data as StreamEvent,
-        });
-      }
-      return events;
+      return parseEventRows(rows);
+    },
+
+    async loadChildSessions(instanceId, rootSessionId, runId) {
+      const rows = await persistence
+        .forInstance(instanceId)
+        .query<RawChildSessionRow>(
+          `select s.id as child_session_id, s.parent_tool_call_id
+             from public.code_ui_sessions s
+            where s.instance_id = :instance
+              and s.root_session_id = $1
+              and s.parent_tool_call_id is not null
+              and starts_with(s.parent_tool_call_id, $2)
+            order by s.id asc`,
+          [rootSessionId, `${runId}/`],
+        );
+      return rows.map((row) => ({
+        childSessionId: row.child_session_id,
+        parentToolCallId: row.parent_tool_call_id,
+      }));
+    },
+
+    async loadChildEvents(instanceId, rootSessionId, childSessionId) {
+      const rows = await persistence
+        .forInstance(instanceId)
+        .query<RawEventRow>(
+          `select e.seq, e.created_at, e.payload
+             from public.code_ui_events e
+            where e.instance_id = :instance
+              and e.root_session_id = $1
+              and starts_with(e.event_key, $2)
+            order by e.seq asc`,
+          [rootSessionId, `child-event:${childSessionId}/`],
+        );
+      return parseEventRows(rows);
     },
 
     async loadUsage(instanceId, runId) {
@@ -130,6 +159,21 @@ function parseStatus(value: unknown): RunTimelineRunRow["status"] {
   const matched = RUN_STATUSES.find((status) => status === value);
   if (!matched) throw new Error(`运行状态未知：${String(value)}`);
   return matched;
+}
+
+/** 历史事件结构可能落后于当前 schema：解析失败的行跳过，不能让一条旧记录拖垮整轮回看。 */
+function parseEventRows(rows: RawEventRow[]): RunTimelineEventRow[] {
+  const events: RunTimelineEventRow[] = [];
+  for (const row of rows) {
+    const parsed = streamEventSchema.safeParse(row.payload);
+    if (!parsed.success) continue;
+    events.push({
+      seq: Number(row.seq),
+      createdAt: toIso(row.created_at),
+      event: parsed.data as StreamEvent,
+    });
+  }
+  return events;
 }
 
 function toIso(value: string | Date): string {

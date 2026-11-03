@@ -2,7 +2,7 @@ import {
   renderRunTimelineMarkdown,
   runTimelineFilename,
 } from "./markdown.js";
-import { buildRunTimeline } from "./timeline.js";
+import { buildRunTimeline, mergeChildEvents } from "./timeline.js";
 import {
   RunTimelineError,
   type RunTimelineRepository,
@@ -20,11 +20,30 @@ export function createRunTimelineService(deps: {
   ): Promise<RunTimelineResult> => {
     const run = await deps.repository.loadRun(instanceId, runId);
     if (!run) throw new RunTimelineError("not_found");
-    const [events, usage] = await Promise.all([
+    const [events, usage, childSessions] = await Promise.all([
       deps.repository.loadEvents(instanceId, runId),
       deps.repository.loadUsage(instanceId, runId),
+      deps.repository.loadChildSessions(instanceId, run.rootSessionId, runId),
     ]);
-    return buildRunTimeline({ run, events, usage });
+    const children = await Promise.all(
+      childSessions.map(async (session) => ({
+        session,
+        events: await deps.repository.loadChildEvents(
+          instanceId,
+          run.rootSessionId,
+          session.childSessionId,
+        ),
+      })),
+    );
+    return buildRunTimeline({
+      run,
+      events: mergeChildEvents({
+        runId,
+        parentEvents: events,
+        children,
+      }),
+      usage,
+    });
   };
 
   return {

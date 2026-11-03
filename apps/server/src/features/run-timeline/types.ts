@@ -63,6 +63,8 @@ export type RunTimelineEntry = {
 /** 数据库里 `agent_runs` 一行的读取结果（时间与状态由仓储归一）。 */
 export type RunTimelineRunRow = {
   runId: string;
+  /** 该轮所属的根会话；用于缓解子代理会话的事件。 */
+  rootSessionId: string;
   model: string | null;
   status: "accepted" | "running" | "completed" | "failed" | "canceled";
   stopReason: string | null;
@@ -79,6 +81,12 @@ export type RunTimelineEventRow = {
   event: StreamEvent;
 };
 
+/** 根会话下由该轮派发的子代理会话；`parentToolCallId` 形如 `<runId>/<toolCallId>`。 */
+export type RunTimelineChildSession = {
+  childSessionId: string;
+  parentToolCallId: string;
+};
+
 export type RunTimelineRepository = {
   /** 按运行 id 读取终态；不属于该实例时返回 null（不区分「不存在」与「别人的」）。 */
   loadRun(instanceId: string, runId: string): Promise<RunTimelineRunRow | null>;
@@ -86,6 +94,18 @@ export type RunTimelineRepository = {
   loadEvents(
     instanceId: string,
     runId: string,
+  ): Promise<RunTimelineEventRow[]>;
+  /** 读取该轮派发的子代理会话索引（只读，不重建归属）。 */
+  loadChildSessions(
+    instanceId: string,
+    rootSessionId: string,
+    runId: string,
+  ): Promise<RunTimelineChildSession[]>;
+  /** 读取单个子代理会话的事件日志（键前缀 `child-event:<childSessionId>/`）。 */
+  loadChildEvents(
+    instanceId: string,
+    rootSessionId: string,
+    childSessionId: string,
   ): Promise<RunTimelineEventRow[]>;
   /** 读取该轮的用量汇总；没有落账时返回 null（不拿 0 冒充）。 */
   loadUsage(

@@ -1,5 +1,6 @@
 import type { StreamEvent } from "@kenfutwork/shared";
 import type {
+  RunTimelineChildSession,
   RunTimelineEntry,
   RunTimelineEventRow,
   RunTimelineResult,
@@ -40,6 +41,80 @@ const TOOL_INPUT_KEYS = [
   "description",
   "name",
 ] as const;
+
+/** 子代理事件里值得并入父时间线的类型：工具与上下文治理，不含子 Run 起止与增量。 */
+const CHILD_VISIBLE_EVENT_TYPES = new Set<StreamEvent["type"]>([
+  "tool.started",
+  "tool.completed",
+  "run.retrying",
+  "run.compacted",
+  "run.hook",
+]);
+
+/**
+ * 把子代理会话的事件并入父 Run 的时间线。
+ *
+ * 子代理事件另存为 `child-event:<子会话 id>/...`，不在父 Run 的 `<runId>/` 前缀下，
+ * 这里按派发关系把两者排到一起：
+ * - 只取工具与上下文治理事件，子 Run 的起止、用量与消息增量不重复出条目；
+ * - 工具事件优先使用派发输入里的 `subagent_type` 作为名称，事件自带时保持原值；
+ * - 缺 `agentCallId` 时用子会话 id 补上，避免与父 Run 的同号工具调用互相覆盖。
+ */
+export function mergeChildEvents(input: {
+  runId: string;
+  parentEvents: RunTimelineEventRow[];
+  children: Array<{
+    session: RunTimelineChildSession;
+    events: RunTimelineEventRow[];
+  }>;
+}): RunTimelineEventRow[] {
+  const dispatchLabels = new Map<string, string>();
+  for (const row of input.parentEvents) {
+    const event = row.event;
+    if (event.type !== "tool.started") continue;
+    const label = subagentLabel(event.input);
+    if (label) dispatchLabels.set(`${input.runId}/${event.toolCallId}`, label);
+  }
+
+  const merged: RunTimelineEventRow[] = [...input.parentEvents];
+  for (const child of input.children) {
+    const label = dispatchLabels.get(child.session.parentToolCallId);
+    for (const row of child.events) {
+      if (!CHILD_VISIBLE_EVENT_TYPES.has(row.event.type)) continue;
+      merged.push({
+        seq: row.seq,
+        createdAt: row.createdAt,
+        event: labelChildEvent(row.event, label, child.session.childSessionId),
+      });
+    }
+  }
+  return merged;
+}
+
+/** 派发输入里的子代理类型；缺失或空白时不猜。 */
+function subagentLabel(
+  input: Record<string, unknown> | undefined,
+): string | undefined {
+  const value = input?.["subagent_type"];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** 给子代理工具事件补名称与分组键；已有值保持原样。 */
+function labelChildEvent(
+  event: StreamEvent,
+  agentName: string | undefined,
+  childSessionId: string,
+): StreamEvent {
+  if (event.type !== "tool.started" && event.type !== "tool.completed")
+    return event;
+  return {
+    ...event,
+    ...(event.agentName === undefined && agentName !== undefined
+      ? { agentName }
+      : {}),
+    ...(event.agentCallId === undefined ? { agentCallId: childSessionId } : {}),
+  };
+}
 
 /** 构建时间线：把流事件投影成可回看的条目，并合并同一工具调用的开始与完成。 */
 export function buildRunTimeline(input: {

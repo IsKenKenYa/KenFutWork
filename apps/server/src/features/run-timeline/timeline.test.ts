@@ -1,9 +1,10 @@
 import type { StreamEvent } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
-import { buildRunTimeline } from "./timeline.js";
+import { buildRunTimeline, mergeChildEvents } from "./timeline.js";
 import type { RunTimelineEventRow, RunTimelineRunRow } from "./types.js";
 
 const RUN_ID = "run-1";
+const ROOT_SESSION_ID = "session-1";
 const T0 = "2026-11-04T00:00:00.000Z";
 
 function at(seconds: number): string {
@@ -15,6 +16,7 @@ function run(
 ): RunTimelineRunRow {
   return {
     runId: RUN_ID,
+    rootSessionId: ROOT_SESSION_ID,
     model: "model-x",
     status: "completed",
     stopReason: "completed",
@@ -465,5 +467,313 @@ describe("buildRunTimeline", () => {
       "/tmp/c",
       undefined,
     ]);
+  });
+});
+
+describe("mergeChildEvents", () => {
+  const DISPATCH = "call-task";
+
+  function dispatchStarted(input?: Record<string, unknown>): RunTimelineEventRow {
+    return {
+      seq: 1,
+      createdAt: T0,
+      event: {
+        type: "tool.started",
+        runId: RUN_ID,
+        toolCallId: DISPATCH,
+        toolName: "Task",
+        ...(input ? { input } : {}),
+        timestamp: T0,
+      },
+    };
+  }
+
+  it("子代理工具事件并入父时间线，子 Run 起止与消息增量不重复出条目", () => {
+    const merged = mergeChildEvents({
+      runId: RUN_ID,
+      parentEvents: [
+        dispatchStarted({ subagent_type: "explore" }),
+        {
+          seq: 5,
+          createdAt: at(5),
+          event: {
+            type: "tool.completed",
+            runId: RUN_ID,
+            toolCallId: DISPATCH,
+            toolName: "Task",
+            status: "success",
+            timestamp: at(5),
+          },
+        },
+      ],
+      children: [
+        {
+          session: {
+            childSessionId: "child-1",
+            parentToolCallId: `${RUN_ID}/${DISPATCH}`,
+          },
+          events: [
+            {
+              seq: 2,
+              createdAt: at(1),
+              event: {
+                type: "run.started",
+                runId: "child-run",
+                sessionId: "child-1",
+                conversationId: "child-1",
+                timestamp: at(1),
+              },
+            },
+            {
+              seq: 3,
+              createdAt: at(2),
+              event: {
+                type: "tool.started",
+                runId: "child-run",
+                toolCallId: "read-1",
+                toolName: "Read",
+                input: { file_path: "src/a.ts" },
+                timestamp: at(2),
+              },
+            },
+            {
+              seq: 4,
+              createdAt: at(3),
+              event: {
+                type: "tool.completed",
+                runId: "child-run",
+                toolCallId: "read-1",
+                toolName: "Read",
+                status: "success",
+                timestamp: at(3),
+              },
+            },
+            {
+              seq: 6,
+              createdAt: at(4),
+              event: {
+                type: "message.delta",
+                runId: "child-run",
+                messageId: "m-1",
+                delta: "…",
+                timestamp: at(4),
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(merged.map((row) => row.seq)).toEqual([1, 5, 3, 4]);
+    expect(merged[2]?.event).toMatchObject({
+      agentName: "explore",
+      agentCallId: "child-1",
+    });
+    expect(merged[3]?.event).toMatchObject({
+      agentName: "explore",
+      agentCallId: "child-1",
+    });
+  });
+
+  it("并入后按 seq 穿插排序，父派发与子代理工具各自成条", () => {
+    const parentEvents: RunTimelineEventRow[] = [
+      dispatchStarted({ subagent_type: "explore" }),
+      {
+        seq: 6,
+        createdAt: at(6),
+        event: {
+          type: "tool.started",
+          runId: RUN_ID,
+          toolCallId: "grep-1",
+          toolName: "Grep",
+          input: { pattern: "agent-runs" },
+          timestamp: at(6),
+        },
+      },
+    ];
+    const merged = mergeChildEvents({
+      runId: RUN_ID,
+      parentEvents,
+      children: [
+        {
+          session: {
+            childSessionId: "child-1",
+            parentToolCallId: `${RUN_ID}/${DISPATCH}`,
+          },
+          events: [
+            {
+              seq: 2,
+              createdAt: at(2),
+              event: {
+                type: "tool.started",
+                runId: "child-run",
+                toolCallId: "read-1",
+                toolName: "Read",
+                input: { file_path: "src/a.ts" },
+                timestamp: at(2),
+              },
+            },
+            {
+              seq: 3,
+              createdAt: at(3),
+              event: {
+                type: "tool.completed",
+                runId: "child-run",
+                toolCallId: "read-1",
+                toolName: "Read",
+                status: "success",
+                timestamp: at(3),
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const timeline = buildRunTimeline({ run: run(), events: merged, usage: null });
+
+    expect(timeline.entries.map((entry) => entry.title)).toEqual([
+      "Task",
+      "Read",
+      "Grep",
+    ]);
+    expect(timeline.entries[1]).toMatchObject({
+      agentName: "explore",
+      durationMs: 1_000,
+      detail: "src/a.ts",
+    });
+  });
+
+  it("派发关系缺失时不猜名称，事件自带的名称与分组键保持原值", () => {
+    const merged = mergeChildEvents({
+      runId: RUN_ID,
+      parentEvents: [],
+      children: [
+        {
+          session: {
+            childSessionId: "child-2",
+            parentToolCallId: `${RUN_ID}/unknown`,
+          },
+          events: [
+            {
+              seq: 1,
+              createdAt: T0,
+              event: {
+                type: "tool.started",
+                runId: "child-run",
+                toolCallId: "read-1",
+                toolName: "Read",
+                agentName: "review",
+                agentCallId: "dispatch-9",
+                timestamp: T0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.event).toMatchObject({
+      agentName: "review",
+      agentCallId: "dispatch-9",
+    });
+  });
+
+  it("派发关系缺失且事件无名称时只补分组键", () => {
+    const merged = mergeChildEvents({
+      runId: RUN_ID,
+      parentEvents: [],
+      children: [
+        {
+          session: {
+            childSessionId: "child-3",
+            parentToolCallId: `${RUN_ID}/unknown`,
+          },
+          events: [
+            {
+              seq: 1,
+              createdAt: T0,
+              event: {
+                type: "tool.started",
+                runId: "child-run",
+                toolCallId: "read-1",
+                toolName: "Read",
+                timestamp: T0,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(merged[0]?.event).toMatchObject({ agentCallId: "child-3" });
+    expect(
+      (merged[0]?.event as Extract<StreamEvent, { type: "tool.started" }>)
+        .agentName,
+    ).toBeUndefined();
+  });
+
+  it("子代理治理事件保留，失败与用量事件不重复出条目", () => {
+    const childEvent = (
+      seq: number,
+      event: StreamEvent,
+    ): RunTimelineEventRow => ({ seq, createdAt: at(seq), event });
+    const merged = mergeChildEvents({
+      runId: RUN_ID,
+      parentEvents: [dispatchStarted({ subagent_type: "worker" })],
+      children: [
+        {
+          session: {
+            childSessionId: "child-4",
+            parentToolCallId: `${RUN_ID}/${DISPATCH}`,
+          },
+          events: [
+            childEvent(2, {
+              type: "run.retrying",
+              runId: "child-run",
+              attempt: 2,
+              maxAttempts: 3,
+              reason: "上游 429",
+              timestamp: at(2),
+            }),
+            childEvent(3, {
+              type: "run.compacted",
+              runId: "child-run",
+              origin: "auto",
+              triggerTokens: 170_000,
+              keepMessages: 20,
+              timestamp: at(3),
+            }),
+            childEvent(4, {
+              type: "run.hook",
+              runId: "child-run",
+              event: "turn-end",
+              command: "echo done",
+              exitCode: 0,
+              timedOut: false,
+              output: "",
+              durationMs: 20,
+              timestamp: at(4),
+            }),
+            childEvent(5, {
+              type: "run.failed",
+              runId: "child-run",
+              error: { code: "run_failed", message: "子代理失败" },
+              timestamp: at(5),
+            }),
+            childEvent(6, {
+              type: "run.usage",
+              runId: "child-run",
+              inputTokens: 10,
+              outputTokens: 5,
+              timestamp: at(6),
+            }),
+          ],
+        },
+      ],
+    });
+
+    expect(merged.map((row) => row.seq)).toEqual([1, 2, 3, 4]);
   });
 });
