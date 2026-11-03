@@ -22,6 +22,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   toolResultOffloadMaxChars: 32_000,
   /** 单个外置文件最多写入的字节数；超出只保留前缀并在说明里标注。 */
   toolResultOffloadMaxBytes: 33_554_432,
+  /** 未被索引引用的记忆正文闲置超过该天数才进入回收区。 */
+  memoryOrphanRetentionDays: 30,
+  /** 回收区文件保留天数，过期后才永久删除。 */
+  memoryRecoverableWindowDays: 30,
   /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
@@ -124,6 +128,8 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "contextKeepRecentImages",
   "toolResultOffloadMaxChars",
   "toolResultOffloadMaxBytes",
+  "memoryOrphanRetentionDays",
+  "memoryRecoverableWindowDays",
   "codeUiReconnectDelayMs",
   "taskAutoArchiveScanIntervalMs",
   "pluginCardMaxFields",
@@ -175,6 +181,8 @@ export type AgentGovernanceOverrides = {
   contextKeepRecentImages?: number | undefined;
   toolResultOffloadMaxChars?: number | undefined;
   toolResultOffloadMaxBytes?: number | undefined;
+  memoryOrphanRetentionDays?: number | undefined;
+  memoryRecoverableWindowDays?: number | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
@@ -283,6 +291,8 @@ export const AGENT_GOVERNANCE_LIMITS = {
   contextKeepRecentImages: { min: 0, max: 20 },
   toolResultOffloadMaxChars: { min: 1_024, max: 1_048_576 },
   toolResultOffloadMaxBytes: { min: 1_024, max: 1_073_741_824 },
+  memoryOrphanRetentionDays: { min: 1, max: 3_650 },
+  memoryRecoverableWindowDays: { min: 1, max: 3_650 },
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
@@ -379,6 +389,12 @@ export function resolveGovernanceEnvOverrides(
     ),
     toolResultOffloadMaxBytes: parseStrictInt(
       source.KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_BYTES,
+    ),
+    memoryOrphanRetentionDays: parseStrictInt(
+      source.KENFUTWORK_MEMORY_ORPHAN_RETENTION_DAYS,
+    ),
+    memoryRecoverableWindowDays: parseStrictInt(
+      source.KENFUTWORK_MEMORY_RECOVERABLE_WINDOW_DAYS,
     ),
     localDataMigrationPollMs: parseStrictInt(
       source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,

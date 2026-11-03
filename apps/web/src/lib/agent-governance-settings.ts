@@ -17,6 +17,8 @@ export type AgentGovernanceSettings = Pick<
   | "contextKeepRecentImages"
   | "toolResultOffloadMaxChars"
   | "toolResultOffloadMaxBytes"
+  | "memoryOrphanRetentionDays"
+  | "memoryRecoverableWindowDays"
   | "canvasExportMaxBytes"
   | "taskAutoArchiveScanIntervalMs"
   | "pluginCardMaxFields"
@@ -69,6 +71,14 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "toolResultOffloadMaxBytes",
     label: "外置文件上限（字节）",
+  },
+  {
+    key: "memoryOrphanRetentionDays",
+    label: "记忆闲置回收天数",
+  },
+  {
+    key: "memoryRecoverableWindowDays",
+    label: "回收区保留天数",
   },
   {
     key: "canvasExportMaxBytes",

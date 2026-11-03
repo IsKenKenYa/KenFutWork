@@ -309,6 +309,10 @@ export const instanceSettingsSchema = z.object({
   toolResultOffloadMaxChars: governanceSetting("toolResultOffloadMaxChars"),
   /** 单个外置文件最多写入的字节数。 */
   toolResultOffloadMaxBytes: governanceSetting("toolResultOffloadMaxBytes"),
+  /** 未被索引引用的记忆正文闲置多少天后进入回收区。 */
+  memoryOrphanRetentionDays: governanceSetting("memoryOrphanRetentionDays"),
+  /** 回收区保留天数，过期后才永久删除。 */
+  memoryRecoverableWindowDays: governanceSetting("memoryRecoverableWindowDays"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。

@@ -17,6 +17,13 @@ import type { ProjectService } from "../projects/project-service.js";
 import type { CodeUiRepository } from "../code-ui/repository.js";
 import type { CanvasService } from "../canvas/canvas-service.js";
 import type { AgentPersistenceService } from "../../agent/persistence/index.js";
+import {
+  listTrashEntries,
+  maintainMemoryDirectory,
+  restoreTrashEntry,
+  type MemoryMaintenanceResult,
+  type MemoryTrashEntry,
+} from "./memory-maintenance.js";
 
 const MEMORY_INDEX_FILE_NAME = "MEMORY.md";
 const MEMORY_DIRECTORY_NAME = "memory";
@@ -87,6 +94,24 @@ export interface ProjectMemoryService {
     actor: LocalActor,
     input: { projectId: string; canvasId: string },
   ): Promise<{ migrated: number }>;
+  /**
+   * 整理项目记忆：合并重复正文、清理索引悬挂行、把闲置超期的孤儿正文移入回收区，
+   * 并清除超过可恢复窗口的回收项。被索引引用的条目不会自动删除。
+   */
+  maintainProjectMemory(
+    actor: LocalActor,
+    input: { projectId: string },
+  ): Promise<MemoryMaintenanceResult>;
+  /** 回收区里的条目；窗口内可恢复。 */
+  listTrashedMemories(
+    actor: LocalActor,
+    input: { projectId: string },
+  ): Promise<MemoryTrashEntry[]>;
+  /** 把回收区条目恢复到记忆目录；正文同名时自动加后缀，索引行去重追加。 */
+  restoreTrashedMemory(
+    actor: LocalActor,
+    input: { projectId: string; trashId: string },
+  ): Promise<{ fileName: string | null }>;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -195,8 +220,11 @@ export function createProjectMemoryService(options: {
   canvases: Pick<CanvasService, "getCanvas">;
   /** 旧 `/memories/` 通道的存储；未配置 Postgres 时是进程内 store。 */
   agentPersistence: Pick<AgentPersistenceService, "getPersistence">;
+  /** 整理与回收的时间源；测试注入固定时钟。 */
+  now?: () => number;
 }): ProjectMemoryService {
   const projectsRoot = join(options.dataDir, "memories", "projects");
+  const clock = options.now ?? Date.now;
 
   const memoryDirectory = (projectId: string) =>
     join(projectsRoot, projectId, MEMORY_DIRECTORY_NAME);
@@ -212,6 +240,8 @@ export function createProjectMemoryService(options: {
     );
     return {
       maxFileBytes: settings.codeReadMaxBytes,
+      orphanRetentionDays: settings.memoryOrphanRetentionDays,
+      recoverableWindowDays: settings.memoryRecoverableWindowDays,
     };
   };
 
@@ -219,6 +249,29 @@ export function createProjectMemoryService(options: {
     const preferences = await readPreferences(instanceId);
     // memoryEnabled 缺省 false：没有显式打开就不把记忆注入上下文。
     return preferences.memoryEnabled === true;
+  };
+
+  const requireMemoryEnabled = async (actor: LocalActor) => {
+    const instance = await options.localInstance.resolve(actor);
+    if (!(await isEnabled(instance.instanceId)))
+      throw new Error("记忆功能已关闭，请先在设置里打开。");
+  };
+
+  const maintainProject = async (
+    actor: LocalActor,
+    projectId: string,
+  ): Promise<MemoryMaintenanceResult> => {
+    await requireMemoryEnabled(actor);
+    if (!isValidPathSegment(projectId))
+      throw new Error("项目标识无效。");
+    const limits = await readLimits(actor);
+    return maintainMemoryDirectory({
+      memoryRoot: memoryDirectory(projectId),
+      now: clock(),
+      orphanRetentionDays: limits.orphanRetentionDays,
+      recoverableWindowDays: limits.recoverableWindowDays,
+      maxFileBytes: limits.maxFileBytes,
+    });
   };
 
   return {
@@ -401,6 +454,29 @@ export function createProjectMemoryService(options: {
           "utf8",
         );
       return { migrated };
+    },
+
+    maintainProjectMemory(actor, input) {
+      return maintainProject(actor, input.projectId);
+    },
+
+    async listTrashedMemories(actor, input) {
+      await requireMemoryEnabled(actor);
+      if (!isValidPathSegment(input.projectId))
+        throw new Error("项目标识无效。");
+      return listTrashEntries(memoryDirectory(input.projectId));
+    },
+
+    async restoreTrashedMemory(actor, input) {
+      await requireMemoryEnabled(actor);
+      if (!isValidPathSegment(input.projectId))
+        throw new Error("项目标识无效。");
+      const limits = await readLimits(actor);
+      return restoreTrashEntry({
+        memoryRoot: memoryDirectory(input.projectId),
+        trashId: input.trashId,
+        maxFileBytes: limits.maxFileBytes,
+      });
     },
 
     async listProjectMemories(actor) {
@@ -672,6 +748,8 @@ export function createProjectMemoryService(options: {
       if (Buffer.byteLength(nextIndex, "utf8") > limits.maxFileBytes)
         throw new Error("记忆索引已满，请先整理 MEMORY.md。");
       await writeFile(indexPath, nextIndex, "utf8");
+      // 提炼时机：每写入一条记忆后整理一次，合并重复正文并评估遗忘；失败不静默。
+      await maintainProject(actor, input.projectId);
       return { fileName, path: filePath, indexUpdated: true };
     },
   };
