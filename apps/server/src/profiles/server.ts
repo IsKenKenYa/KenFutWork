@@ -67,6 +67,7 @@ import { createProjectDirectoryRelinkPlugin } from "../features/projects/directo
 import { createProjectsPlugin } from "../features/projects/plugin.js";
 import { createProjectEditorPlugin } from "../features/projects/project-editor-plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
+import { createRunTimelinePlugin } from "../features/run-timeline/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import {
   createSettingsPlugin,
@@ -158,6 +159,13 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     capabilities: [],
   },
   {
+    name: "run-timeline",
+    title: "运行时间线",
+    category: "数据与统计",
+    description: "单轮运行回看 · Markdown 导出",
+    capabilities: [],
+  },
+  {
     name: "canvas",
     title: "画布（Design）",
     category: "创作与画布",
@@ -222,6 +230,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createJobLoopPlugin({ enabled: isDesktopRuntime, tag: "[desktop-worker]" }),
     createSkillsPlugin(),
     createUsagePlugin(),
+    createRunTimelinePlugin(),
     createPermissionsPlugin({ events: deps.events }),
     createApprovalReviewPlugin(),
     createCodeToolsPlugin(),

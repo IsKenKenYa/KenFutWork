@@ -435,6 +435,82 @@ export type AgentRunLatestResponse = z.infer<
   typeof agentRunLatestResponseSchema
 >;
 
+// --- 单轮运行时间线（事件日志投影 + Markdown 导出） ---
+
+/**
+ * 时间线条目类别：run（开始/结束）、tool（工具调用）、subagent（后台子代理
+ * 结算）、command（后台命令结算）、compaction（上下文压缩）、hook（回合钩子）、
+ * retry（自动重试）。
+ */
+export const runTimelineEntryKindSchema = z.enum([
+  "run",
+  "tool",
+  "subagent",
+  "command",
+  "compaction",
+  "hook",
+  "retry",
+]);
+
+/**
+ * 一条时间线条目。由服务端从 `code_ui_events` 的流事件投影而来：
+ * 同一个 `toolCallId` 的开始与完成合并成一条；消息增量与画布同步这类
+ * 高频事件不进时间线。
+ */
+export const runTimelineEntrySchema = z.object({
+  kind: runTimelineEntryKindSchema,
+  /** 事件日志里递增的序号，客户端据此排序与去重。 */
+  seq: z.number().int().positive(),
+  /** 事件时间（ISO）。 */
+  at: z.string().min(1),
+  /** 一行标题（工具名 / 子代理名 / 钩子事件名）。 */
+  title: z.string().min(1),
+  /** 权威终态；纯信息条目不填。 */
+  status: z.enum(["success", "error", "cancelled", "running"]).optional(),
+  /** 工具名或子代理名，便于客户端按名称过滤。 */
+  name: z.string().min(1).optional(),
+  /** 子代理归因名；主 agent 的调用不填。 */
+  agentName: z.string().min(1).optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  /** 服务端已截断的一行摘要。 */
+  detail: z.string().optional(),
+});
+
+/**
+ * `GET /api/agent/runs/:runId/timeline` 的响应。
+ *
+ * 用途：把一轮运行的完整过程交给界面回看与导出（工具、审批外的钩子、
+ * 压缩、重试、后台子代理结算），并按 `agent_runs` 的终态补上失败原文。
+ * 运行不存在或不属于当前本地实例时返回 404，不返回空壳。
+ */
+export const runTimelineResponseSchema = z.object({
+  run: z.object({
+    runId: runIdSchema,
+    model: z.string().nullable(),
+    status: z.enum(["accepted", "running", "completed", "failed", "canceled"]),
+    stopReason: runStopReasonSchema.nullable(),
+    errorCode: z.string().nullable(),
+    /** 面向用户的失败原因原文（服务端写的可读文案）。 */
+    errorMessage: z.string().nullable(),
+    startedAt: z.string().min(1),
+    completedAt: z.string().nullable(),
+    /** 用量汇总；这一轮还没有落账时缺省，界面显示「未统计」而不是 0。 */
+    usage: z
+      .object({
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        /** 成本只在上游声明价格时存在。 */
+        costUsd: z.number().nonnegative().nullable(),
+      })
+      .nullable(),
+  }),
+  entries: z.array(runTimelineEntrySchema),
+});
+
+export type RunTimelineEntry = z.infer<typeof runTimelineEntrySchema>;
+export type RunTimelineEntryKind = z.infer<typeof runTimelineEntryKindSchema>;
+export type RunTimelineResponse = z.infer<typeof runTimelineResponseSchema>;
+
 export const codeGitFileResponseSchema = z.object({
   file: z.object({
     path: z.string().min(1),
@@ -514,6 +590,8 @@ export const applicationErrorCodeSchema = z.enum([
   "upload_failed",
   "asset_not_found",
   "job_not_found",
+  /** 单轮运行不存在或不属于当前本地实例（404，见运行时间线端点）。 */
+  "run_not_found",
   "job_create_failed",
   "job_request_conflict",
   "job_query_failed",

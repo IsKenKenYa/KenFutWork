@@ -12,6 +12,7 @@ import {
   agentRunActivityResponseSchema,
   agentRunLatestResponseSchema,
   agentSubagentListResponseSchema,
+  runTimelineResponseSchema,
   assetSignedUrlResponseSchema,
   brandKitAssetCreateRequestSchema,
   brandKitAssetResponseSchema,
@@ -370,6 +371,28 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
       "按持久会话和当前本地实例隔离，返回运行状态、本轮停止原因、错误代码与失败文案；旧记录停止原因为空，没有可见运行时返回 null。",
     responseSchema: agentRunLatestResponseSchema,
     querySchema: z.object({ sessionId: z.string().min(1) }),
+  },
+  {
+    method: "get",
+    path: "/api/agent/runs/:runId/timeline",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    summary: "查询单轮运行时间线",
+    description:
+      "按运行 id 与当前本地实例隔离，把事件日志投影成工具、子代理、压缩、钩子与重试条目，并汇总本轮用量；运行不存在或属于其他实例返回 404。",
+    responseSchema: runTimelineResponseSchema,
+  },
+  {
+    method: "get",
+    path: "/api/agent/runs/:runId/timeline/export",
+    tag: "runs",
+    auth: "local",
+    successStatus: 200,
+    summary: "导出单轮运行时间线",
+    description:
+      "以 Markdown 附件返回同一份时间线，供归档与排查；失败原因与用量原样带上，不裁剪条目。",
+    binaryResponse: "text/markdown",
   },
   {
     method: "post",

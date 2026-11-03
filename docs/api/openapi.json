@@ -654,6 +654,129 @@
         }
       }
     },
+    "/api/agent/runs/{runId}/timeline": {
+      "get": {
+        "operationId": "getAgentRunsByRunIdTimeline",
+        "summary": "查询单轮运行时间线",
+        "description": "按运行 id 与当前本地实例隔离，把事件日志投影成工具、子代理、压缩、钩子与重试条目，并汇总本轮用量；运行不存在或属于其他实例返回 404。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runTimelineResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/runs/{runId}/timeline/export": {
+      "get": {
+        "operationId": "getAgentRunsByRunIdTimelineExport",
+        "summary": "导出单轮运行时间线",
+        "description": "以 Markdown 附件返回同一份时间线，供归档与排查；失败原因与用量原样带上，不裁剪条目。",
+        "tags": [
+          "runs"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "路径参数"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/flow/host/engine/install": {
       "post": {
         "operationId": "postFlowHostEngineInstall",
@@ -15107,6 +15230,7 @@
                   "upload_failed",
                   "asset_not_found",
                   "job_not_found",
+                  "run_not_found",
                   "job_create_failed",
                   "job_request_conflict",
                   "job_query_failed",
@@ -21282,6 +21406,7 @@
                       "upload_failed",
                       "asset_not_found",
                       "job_not_found",
+                      "run_not_found",
                       "job_create_failed",
                       "job_request_conflict",
                       "job_query_failed",
@@ -31390,6 +31515,13 @@
                 "default": false,
                 "type": "boolean"
               },
+              "icon": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "ui": {
                 "default": [],
                 "type": "array",
@@ -31497,6 +31629,7 @@
               "enginesNode",
               "hasClientUi",
               "assets",
+              "icon",
               "ui",
               "lifecycleScripts",
               "dshBaseDependencies",
@@ -31840,6 +31973,13 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "icon": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "ui": {
                     "default": [],
                     "type": "array",
@@ -31947,6 +32087,7 @@
                   "enginesNode",
                   "hasClientUi",
                   "assets",
+                  "icon",
                   "ui",
                   "lifecycleScripts",
                   "dshBaseDependencies",
@@ -37054,6 +37195,197 @@
         ],
         "additionalProperties": false
       },
+      "runTimelineResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "run": {
+            "type": "object",
+            "properties": {
+              "runId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "accepted",
+                  "running",
+                  "completed",
+                  "failed",
+                  "canceled"
+                ]
+              },
+              "stopReason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "completed",
+                      "output_limit",
+                      "user_cancelled",
+                      "task_stopped",
+                      "host_shutdown"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "errorCode": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "errorMessage": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "startedAt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "completedAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "usage": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "inputTokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "outputTokens": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "costUsd": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "inputTokens",
+                      "outputTokens",
+                      "costUsd"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "runId",
+              "model",
+              "status",
+              "stopReason",
+              "errorCode",
+              "errorMessage",
+              "startedAt",
+              "completedAt",
+              "usage"
+            ],
+            "additionalProperties": false
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "run",
+                    "tool",
+                    "subagent",
+                    "command",
+                    "compaction",
+                    "hook",
+                    "retry"
+                  ]
+                },
+                "seq": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "at": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "success",
+                    "error",
+                    "cancelled",
+                    "running"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agentName": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "seq",
+                "at",
+                "title"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "run",
+          "entries"
+        ],
+        "additionalProperties": false
+      },
       "sandboxPluginBundleListResponseSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -38983,13 +39315,18 @@
                   "type": "integer",
                   "exclusiveMinimum": 0,
                   "maximum": 9007199254740991
+                },
+                "builtin": {
+                  "default": false,
+                  "type": "boolean"
                 }
               },
               "required": [
                 "fileName",
                 "family",
                 "format",
-                "bytes"
+                "bytes",
+                "builtin"
               ],
               "additionalProperties": false
             }
@@ -39029,7 +39366,8 @@
                     "layout",
                     "pdf",
                     "audio",
-                    "cad"
+                    "cad",
+                    "eda"
                   ]
                 },
                 "repo": {
