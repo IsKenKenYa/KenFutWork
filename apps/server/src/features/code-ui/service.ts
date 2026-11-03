@@ -2626,6 +2626,8 @@ export class CodeUiService {
           parsed.envelope,
           goalControl,
         );
+      if (parsed.envelope.type === "deleteSession")
+        return this.deleteSession(user, parsed.envelope);
       if (parsed.envelope.type === "stop")
         return this.stopExecution(user, parsed.envelope);
       if (parsed.envelope.type === "cancelBackgroundWork")
@@ -3290,6 +3292,45 @@ export class CodeUiService {
         },
       }),
     );
+    return { result: ack };
+  }
+
+  /**
+   * 删除 Task：上游 v4 客户端用该命令清理草稿/回滚启动流程，也用于用户主动删除。
+   * 持久层已是墓碑式删除（deleted_at + 清空事件/输出 + 命令行标记 deleted），
+   * 删除后其它命令只会拿到 not_found，迟到请求无法复活数据。
+   */
+  private async deleteSession(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ) {
+    if (!envelope.sessionId)
+      throw new CodeUiRepositoryError("not_found", "删除缺少会话身份");
+    const loaded = await this.loadConversation(user, envelope.sessionId);
+    if (loaded.entry.id !== loaded.root.id)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "只能删除完整 Task，子会话随父 Task 一并删除。",
+      );
+    const execution = loaded.root.active_run_id;
+    const ack = await this.deps.repository.applyScopeCommand(
+      loaded.instanceId,
+      { ...envelope, sessionId: loaded.root.id },
+      codeUiCommandFingerprint(envelope),
+      async () => {
+        // 先终止在跑 Run，避免删除后仍有运行时继续写已墓碑化的会话。
+        if (execution) await this.deps.agentRuns.cancelRunAndWait(execution);
+      },
+      (root) => ({
+        state: null,
+        ack: {
+          commandId: envelope.commandId,
+          status: "accepted",
+          revisionAtDecision: Number(root.revision) + 1,
+        },
+      }),
+    );
+    await this.deps.repository.delete(loaded.instanceId, loaded.root.id);
     return { result: ack };
   }
 

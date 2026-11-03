@@ -103,6 +103,7 @@ async function fixture(
     string,
     { projectId: string; fingerprint: string; ack: protocol.CommandAck }
   >();
+  const commandAcks = new Map<string, protocol.CommandAck>();
   const createRoot = vi.fn(
     async (
       _workspace: string,
@@ -163,12 +164,12 @@ async function fixture(
     listRoots: async () => {
       if (options.enumerationUnavailable)
         throw new Error("工作区全量列表暂不可用");
-      return roots;
+      return roots.filter((entry) => !entry.deleted_at);
     },
     find: async (_workspace: string, id: string) =>
-      roots.find((entry) => entry.id === id) ?? null,
+      roots.find((entry) => entry.id === id && !entry.deleted_at) ?? null,
     list: async (_workspace: string, id: string) =>
-      roots.filter((entry) => entry.project_id === id),
+      roots.filter((entry) => entry.project_id === id && !entry.deleted_at),
     listVersion: async () => 1,
     beginCloseTask: async () => 1,
     failCloseTask: async () => {},
@@ -182,6 +183,48 @@ async function fixture(
         record.archived = value.archived;
     },
     createRoot,
+    applyScopeCommand: async (
+      instance: string,
+      request: Parameters<CodeUiRepository["applyScopeCommand"]>[1],
+      _fingerprint: string,
+      change: (root: CodeUiSessionRecord) => Promise<void>,
+      decide: (root: CodeUiSessionRecord) => {
+        state: CodeUiSessionRecord["state"];
+        ack: protocol.CommandAck;
+      },
+    ) => {
+      const key = JSON.stringify([
+        instance,
+        request.clientId,
+        request.commandId,
+      ]);
+      const previous = commandAcks.get(key);
+      if (previous)
+        return protocol.commandAckSchema.parse({
+          ...previous,
+          status: "duplicate",
+        });
+      const current = roots.find(
+        (entry) => entry.id === request.sessionId && !entry.deleted_at,
+      );
+      if (!current)
+        throw new CodeUiRepositoryError("not_found", "Task 不存在");
+      await change(current);
+      const ack = protocol.commandAckSchema.parse(decide(current).ack);
+      commandAcks.set(key, ack);
+      return ack;
+    },
+    delete: async (_instance: string, rootSessionId: string) => {
+      for (const entry of roots) {
+        if (entry.root_session_id !== rootSessionId || entry.deleted_at) continue;
+        entry.deleted_at = new Date().toISOString();
+        entry.state = null;
+        entry.active_run_id = null;
+        entry.root_directory = null;
+        entry.additional_directories = null;
+        entry.execution_state = "failed";
+      }
+    },
     readCreationCommand: async (
       instance: string,
       projectId: string,
@@ -1066,4 +1109,48 @@ it("新Task按选择Project UUID读取最新B/附加目录，同项目旧Task保
     }),
   );
   expect(root.root_directory).toBe(pathA);
+});
+
+it("deleteSession 删除 Task 后快照与迟到命令均 not_found，不复活数据", async () => {
+  const { actor, service, roots, pathA, taskId } = await fixture();
+  const envelope = protocol.commandEnvelopeSchema.parse({
+    clientId: randomUUID(),
+    commandId: randomUUID(),
+    sessionId: taskId,
+    type: "deleteSession",
+    issuedAt: Date.now(),
+    payload: {},
+  });
+  const sent = await service.transportRpc(
+    actor,
+    undefined,
+    "sendConversationCommandV4",
+    [{ workspacePath: pathA, envelope }],
+  );
+  expect(sent?.result).toMatchObject({
+    commandId: envelope.commandId,
+    status: "accepted",
+  });
+  expect(roots.find((entry) => entry.id === taskId)?.deleted_at).toBeTruthy();
+  await expect(service.getSnapshot(actor, taskId)).rejects.toMatchObject({
+    code: "not_found",
+  });
+  // 同一命令重放与新命令的迟到请求都只能拿到 not_found，墓碑会话不会被复活。
+  const late = protocol.commandEnvelopeSchema.parse({
+    clientId: randomUUID(),
+    commandId: randomUUID(),
+    sessionId: taskId,
+    type: "stop",
+    issuedAt: Date.now(),
+    payload: {},
+  });
+  for (const replay of [envelope, late]) {
+    await expect(
+      service.transportRpc(actor, undefined, "sendConversationCommandV4", [
+        { workspacePath: pathA, envelope: replay },
+      ]),
+    ).rejects.toMatchObject({ code: "not_found" });
+  }
+  expect(roots.find((entry) => entry.id === taskId)?.deleted_at).toBeTruthy();
+  expect(roots.find((entry) => entry.id === taskId)?.state).toBeNull();
 });
