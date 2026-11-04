@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ExternalLink,
   Import,
+  MoreHorizontal,
   Plus,
   Trash2,
   UploadCloud,
@@ -14,6 +15,12 @@ import {
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { Button } from "@zui/components/ui/button.js";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@zui/components/ui/dialog.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@zui/components/ui/dropdown-menu.js";
 import { Switch } from "@zui/components/ui/switch.js";
 import type {
   ZCodeProvider,
@@ -65,6 +72,30 @@ import {
   selectPluginsForScope,
   selectSkillsForScope,
 } from "@zui/settings/pluginCapabilityProjection.js";
+
+interface SkillsCommonService {
+  copyToCommon(request: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    provider?: ZCodeProvider;
+    skillId: string;
+  }): Promise<{ newPath: string }>;
+  removeFromCommon(request: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    provider?: ZCodeProvider;
+    skillId: string;
+  }): Promise<null>;
+  projectSettings(request: {
+    workspacePath?: string;
+    workspaceIdentity?: string;
+    provider?: ZCodeProvider;
+  }): Promise<{
+    projectId: string | null;
+    projectName: string | null;
+    skills: Array<{ skillId: string; enabled: boolean }>;
+  }>;
+}
 
 function getWorkspaceBasename(workspacePath: string | null): string {
   if (!workspacePath) return "";
@@ -136,7 +167,10 @@ function SkillPathDetailField({
           onClick={onOpen}
         >
           <span>{path}</span>
-          <ExternalLink className="relative top-px size-3 shrink-0" aria-hidden="true" />
+          <ExternalLink
+            className="relative top-px size-3 shrink-0"
+            aria-hidden="true"
+          />
         </Button>
       </div>
     </div>
@@ -174,19 +208,33 @@ export function SkillsSection({
 }: SkillsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const platform = usePlatform();
-  const databaseRecords = platform.skillsSettingsCapabilities?.databaseRecords === true;
+  const databaseRecords =
+    platform.skillsSettingsCapabilities?.databaseRecords === true;
   const baseServices = useBaseWorkspaceServices();
   const plugins = usePluginManagementStore((state) => state.plugins);
-  const installedPlugins = usePluginManagementStore((state) => state.installedPlugins);
-  const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
+  const installedPlugins = usePluginManagementStore(
+    (state) => state.installedPlugins,
+  );
+  const availablePlugins = usePluginManagementStore(
+    (state) => state.availablePlugins,
+  );
   const pluginListingById = useMemo(
-    () => new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
+    () =>
+      new Map(availablePlugins.map((plugin) => [plugin.id, plugin.listing])),
     [availablePlugins],
   );
-  const pluginWorkspacePath = usePluginManagementStore((state) => state.workspacePath);
-  const pluginWorkspaceIdentity = usePluginManagementStore((state) => state.workspaceIdentity);
-  const pluginConfigScope = usePluginManagementStore((state) => state.configScope);
-  const initializePlugins = usePluginManagementStore((state) => state.initialize);
+  const pluginWorkspacePath = usePluginManagementStore(
+    (state) => state.workspacePath,
+  );
+  const pluginWorkspaceIdentity = usePluginManagementStore(
+    (state) => state.workspaceIdentity,
+  );
+  const pluginConfigScope = usePluginManagementStore(
+    (state) => state.configScope,
+  );
+  const initializePlugins = usePluginManagementStore(
+    (state) => state.initialize,
+  );
   // useConfirmDialog 是纯 Zustand selector（不含 useState），放在这里不会影响 SkillsSection
   // 既有的「按 useState 调用次序」单测桩（见下方 selectedSkill 附近的注释）。
   const confirmDialog = useConfirmDialog();
@@ -209,12 +257,28 @@ export function SkillsSection({
   );
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [capability, setCapability] = useState<SkillsCapability | null>(null);
-  const [loadedSkillTargetKey, setLoadedSkillTargetKey] = useState<string | null>(null);
+  const [loadedSkillTargetKey, setLoadedSkillTargetKey] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const query = searchQuery;
-  const uninstallLabel = databaseRecords ? intl.formatMessage({ id: "settings.plugins.detail.uninstall" }) : intl.formatMessage({ id: "common.delete" });
-  const scopeUnavailable = databaseRecords && scopeFilter === "workspace" && capability?.workspaceScopeAvailable === false;
+  const uninstallLabel = databaseRecords
+    ? intl.formatMessage({ id: "settings.plugins.detail.uninstall" })
+    : intl.formatMessage({ id: "common.delete" });
+  const projectScope = databaseRecords && scopeFilter === "workspace";
+  const commonSkillsService = skillsService as unknown as SkillsCommonService;
+  const [projectSettings, setProjectSettings] = useState<{
+    projectId: string | null;
+    projectName: string | null;
+    skills: Array<{ skillId: string; enabled: boolean }>;
+  } | null>(null);
+  const [commonActionPending, setCommonActionPending] = useState(false);
+  // 解析不到真实项目时不显示项目分档；加载完成前不提前判定。
+  const scopeUnavailable =
+    projectScope &&
+    projectSettings !== null &&
+    projectSettings.projectId === null;
   const [selectedSkill, setSelectedSkill] = useState<SkillSummary | null>(null);
   useEffect(() => {
     onDetailOpenChange?.(selectedSkill !== null);
@@ -224,23 +288,42 @@ export function SkillsSection({
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const latestRequestIdRef = useRef(0);
-  const activeSkillTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
-  const latestSkillTarget = useRef({ key: activeSkillTargetKey, service: skillsService });
-  latestSkillTarget.current = { key: activeSkillTargetKey, service: skillsService };
+  const activeSkillTargetKey =
+    activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
+  const latestSkillTarget = useRef({
+    key: activeSkillTargetKey,
+    service: skillsService,
+  });
+  latestSkillTarget.current = {
+    key: activeSkillTargetKey,
+    service: skillsService,
+  };
   const pageMounted = useRef(true);
   useEffect(() => {
     pageMounted.current = true;
-    return () => { pageMounted.current = false; latestRequestIdRef.current += 1; };
+    return () => {
+      pageMounted.current = false;
+      latestRequestIdRef.current += 1;
+    };
   }, []);
-  const isCurrentTarget = useCallback(() => pageMounted.current &&
-    latestSkillTarget.current.key === activeSkillTargetKey && latestSkillTarget.current.service === skillsService,
-  [activeSkillTargetKey, skillsService]);
-  const projectionMatchesTarget =
-    databaseRecords ? loadedSkillTargetKey === activeSkillTargetKey :
-    !activeWorkspacePath || loadedSkillTargetKey === activeSkillTargetKey;
+  const isCurrentTarget = useCallback(
+    () =>
+      pageMounted.current &&
+      latestSkillTarget.current.key === activeSkillTargetKey &&
+      latestSkillTarget.current.service === skillsService,
+    [activeSkillTargetKey, skillsService],
+  );
+  const projectionMatchesTarget = databaseRecords
+    ? loadedSkillTargetKey === activeSkillTargetKey
+    : !activeWorkspacePath || loadedSkillTargetKey === activeSkillTargetKey;
 
   useEffect(() => {
-    if ((!activeWorkspacePath && !platform.pluginManagementCapabilities?.instanceScope) || !targetServiceResolution.rpcReady) return;
+    if (
+      (!activeWorkspacePath &&
+        !platform.pluginManagementCapabilities?.instanceScope) ||
+      !targetServiceResolution.rpcReady
+    )
+      return;
     void initializePlugins({
       workspacePath: activeWorkspacePath ?? "",
       workspaceIdentity: activeWorkspaceIdentity,
@@ -270,7 +353,10 @@ export function SkillsSection({
       ? remoteTarget
       : null;
   const remoteSkillSyncTargetLabel = connectedRemoteSyncTarget
-    ? formatRemoteSkillSyncTarget(connectedRemoteSyncTarget, activeWorkspacePath ?? "")
+    ? formatRemoteSkillSyncTarget(
+        connectedRemoteSyncTarget,
+        activeWorkspacePath ?? "",
+      )
     : "";
 
   const renderScopeLabel = useCallback(
@@ -290,8 +376,13 @@ export function SkillsSection({
                 {
                   name: skill.pluginName,
                   listing:
-                    (skill.pluginId ? pluginListingById.get(skill.pluginId) : undefined) ??
-                    resolveUniquePluginListingByName(availablePlugins, skill.pluginName),
+                    (skill.pluginId
+                      ? pluginListingById.get(skill.pluginId)
+                      : undefined) ??
+                    resolveUniquePluginListingByName(
+                      availablePlugins,
+                      skill.pluginName,
+                    ),
                 },
                 locale,
               )
@@ -316,27 +407,43 @@ export function SkillsSection({
       if (!activeWorkspacePath && !databaseRecords) {
         setSkills([]);
         setCapability(null);
+        setProjectSettings(null);
         setDiagnostics([]);
         setError(null);
         setLoading(false);
         setLoadedSkillTargetKey("");
         return;
       }
-      const requestTargetKey = activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
+      const requestTargetKey =
+        activeWorkspaceIdentity?.trim() || activeWorkspacePath || "";
       setLoading(showBlockingLoading);
       setError(null);
       const requestId = ++latestRequestIdRef.current;
       try {
-        const result = await skillsService.list({
-          workspacePath: activeWorkspacePath ?? undefined,
-          workspaceIdentity: activeWorkspaceIdentity,
-          provider: ZCODE_AGENT_PROVIDER,
-        });
+        const [result, projectResult] = await Promise.all([
+          skillsService.list({
+            workspacePath: activeWorkspacePath ?? undefined,
+            workspaceIdentity: activeWorkspaceIdentity,
+            provider: ZCODE_AGENT_PROVIDER,
+          }),
+          projectScope
+            ? commonSkillsService.projectSettings({
+                workspacePath: activeWorkspacePath ?? undefined,
+                workspaceIdentity: activeWorkspaceIdentity,
+                provider: ZCODE_AGENT_PROVIDER,
+              })
+            : Promise.resolve(null),
+        ]);
         if (requestId !== latestRequestIdRef.current || !isCurrentTarget()) {
           return;
         }
         setSkills(result.skills);
-        setSelectedSkill((selected) => selected ? result.skills.find((skill) => skill.id === selected.id) ?? null : null);
+        setProjectSettings(projectResult);
+        setSelectedSkill((selected) =>
+          selected
+            ? (result.skills.find((skill) => skill.id === selected.id) ?? null)
+            : null,
+        );
         setCapability(result.capability);
         setDiagnostics(result.diagnostics);
         setLoadedSkillTargetKey(requestTargetKey);
@@ -347,10 +454,22 @@ export function SkillsSection({
         }
         setLoadedSkillTargetKey(requestTargetKey);
         setLoading(false);
-        setError(loadError instanceof Error ? loadError.message : String(loadError));
+        setProjectSettings(null);
+        setError(
+          loadError instanceof Error ? loadError.message : String(loadError),
+        );
       }
     },
-    [isCurrentTarget, databaseRecords, activeWorkspaceIdentity, activeWorkspacePath, skillsService, targetServiceResolution.rpcReady],
+    [
+      isCurrentTarget,
+      databaseRecords,
+      activeWorkspaceIdentity,
+      activeWorkspacePath,
+      commonSkillsService,
+      projectScope,
+      skillsService,
+      targetServiceResolution.rpcReady,
+    ],
   );
 
   useEffect(() => {
@@ -387,26 +506,39 @@ export function SkillsSection({
         usePluginManagementStore.getState().refresh(pluginManagementService),
         refreshSharedSkillStoreForCurrentWorkspace(),
       ]).catch((cause) => {
-        if (isCurrentTarget()) setError(cause instanceof Error ? cause.message : String(cause));
+        if (isCurrentTarget())
+          setError(cause instanceof Error ? cause.message : String(cause));
       });
     });
-  }, [databaseRecords, isCurrentTarget, loadSkills, platform, pluginManagementService, refreshSharedSkillStoreForCurrentWorkspace]);
+  }, [
+    databaseRecords,
+    isCurrentTarget,
+    loadSkills,
+    platform,
+    pluginManagementService,
+    refreshSharedSkillStoreForCurrentWorkspace,
+  ]);
 
   const setEnabled = useCallback(
-    async (skillId: string, enabled: boolean) => {
+    async (
+      skill: SkillSummary,
+      enabled: boolean,
+      targetScope: "project" | "installed" = "installed",
+    ) => {
       if (!activeWorkspacePath && !databaseRecords) return;
       latestRequestIdRef.current += 1;
       // 移除三方来源后，技能状态统一写入 ZCode Agent 上下文，避免旧 provider 前缀带来分桶漂移。
-      const targetSkill = skills.find((skill) => skill.id === skillId);
       const effectiveProvider: ZCodeProvider = ZCODE_AGENT_PROVIDER;
       try {
         await skillsService.setEnabled({
           workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           provider: effectiveProvider,
-          scope: targetSkill?.scope,
-          skillId,
-          ...(targetSkill?.installationRevision ? { installationRevision: targetSkill.installationRevision } : {}),
+          scope: targetScope === "project" ? "workspace" : skill.scope,
+          skillId: skill.id,
+          ...(skill.installationRevision
+            ? { installationRevision: skill.installationRevision }
+            : {}),
           enabled,
         });
         if (!isCurrentTarget()) return;
@@ -416,13 +548,18 @@ export function SkillsSection({
           workspaceIdentity: activeWorkspaceIdentity,
           reason: "settings-skill-enabled",
         });
-        await Promise.all([loadSkills(false), refreshSharedSkillStoreForCurrentWorkspace()]);
+        await Promise.all([
+          loadSkills(false),
+          refreshSharedSkillStoreForCurrentWorkspace(),
+        ]);
       } catch (setEnabledError) {
         if (!isCurrentTarget()) return;
         if (databaseRecords) await loadSkills(false);
         if (!isCurrentTarget()) return;
         setError(
-          setEnabledError instanceof Error ? setEnabledError.message : String(setEnabledError),
+          setEnabledError instanceof Error
+            ? setEnabledError.message
+            : String(setEnabledError),
         );
       }
     },
@@ -433,7 +570,6 @@ export function SkillsSection({
       activeWorkspacePath,
       loadSkills,
       refreshSharedSkillStoreForCurrentWorkspace,
-      skills,
       skillsService,
       zcodeSessionService,
     ],
@@ -443,15 +579,22 @@ export function SkillsSection({
   // 复用应用根部已挂载的确认弹窗 store（useConfirmDialog），与子智能体删除流程保持一致。
   const handleDeleteSkill = useCallback(
     async (skill: SkillSummary) => {
-      if ((!activeWorkspacePath && !databaseRecords) || skill.scope === "plugin") {
+      if (
+        (!activeWorkspacePath && !databaseRecords) ||
+        skill.scope === "plugin"
+      ) {
         return;
       }
       const confirmed = await confirmDialog({
-        title: databaseRecords ? "卸载技能" : intl.formatMessage({ id: "settings.skills.delete.title" }),
-        description: databaseRecords ? "从本机移除" : intl.formatMessage(
-          { id: "settings.skills.delete.description" },
-          { name: skill.name },
-        ),
+        title: databaseRecords
+          ? "卸载技能"
+          : intl.formatMessage({ id: "settings.skills.delete.title" }),
+        description: databaseRecords
+          ? "从本机移除"
+          : intl.formatMessage(
+              { id: "settings.skills.delete.description" },
+              { name: skill.name },
+            ),
         confirmLabel: uninstallLabel,
       });
       if (!confirmed || !isCurrentTarget()) return;
@@ -461,7 +604,9 @@ export function SkillsSection({
           workspacePath: activeWorkspacePath ?? undefined,
           workspaceIdentity: activeWorkspaceIdentity,
           skillId: skill.id,
-          ...(skill.installationRevision ? { installationRevision: skill.installationRevision } : {}),
+          ...(skill.installationRevision
+            ? { installationRevision: skill.installationRevision }
+            : {}),
         });
         if (!isCurrentTarget()) return;
         await invalidateDeferredDraftSessionForSkillChange({
@@ -470,13 +615,22 @@ export function SkillsSection({
           workspaceIdentity: activeWorkspaceIdentity,
           reason: "settings-skill-delete",
         });
-        setSelectedSkill((selected) => selected?.id === skill.id && selected.installationRevision === skill.installationRevision ? null : selected);
+        setSelectedSkill((selected) =>
+          selected?.id === skill.id &&
+          selected.installationRevision === skill.installationRevision
+            ? null
+            : selected,
+        );
         await loadSkills(false);
       } catch (deleteError) {
         if (!isCurrentTarget()) return;
         if (databaseRecords) await loadSkills(false);
         if (!isCurrentTarget()) return;
-        setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+        setError(
+          deleteError instanceof Error
+            ? deleteError.message
+            : String(deleteError),
+        );
       }
     },
     [
@@ -493,15 +647,78 @@ export function SkillsSection({
     ],
   );
 
+  const handleCommonAction = useCallback(
+    async (skill: SkillSummary, action: "copy" | "remove") => {
+      if (skill.scope === "plugin" || commonActionPending) return;
+      setCommonActionPending(true);
+      try {
+        if (action === "copy") {
+          await commonSkillsService.copyToCommon({
+            workspacePath: activeWorkspacePath ?? undefined,
+            workspaceIdentity: activeWorkspaceIdentity,
+            provider: ZCODE_AGENT_PROVIDER,
+            skillId: skill.id,
+          });
+          toast(intl.formatMessage({ id: "settings.skills.copiedToCommon" }));
+        } else {
+          await commonSkillsService.removeFromCommon({
+            workspacePath: activeWorkspacePath ?? undefined,
+            workspaceIdentity: activeWorkspaceIdentity,
+            provider: ZCODE_AGENT_PROVIDER,
+            skillId: skill.id,
+          });
+          toast(
+            intl.formatMessage({ id: "settings.skills.removedFromCommon" }),
+          );
+        }
+      } catch (commonError) {
+        toast(
+          commonError instanceof Error
+            ? commonError.message
+            : String(commonError),
+        );
+      } finally {
+        setCommonActionPending(false);
+      }
+    },
+    [
+      activeWorkspaceIdentity,
+      activeWorkspacePath,
+      commonActionPending,
+      commonSkillsService,
+      intl,
+    ],
+  );
+
   const scopedProviderSkills = useMemo(() => {
-    const allProviderSkills = filterSkillsForProvider(skills, ZCODE_AGENT_PROVIDER);
+    const allProviderSkills = filterSkillsForProvider(
+      skills,
+      ZCODE_AGENT_PROVIDER,
+    );
+    if (projectScope) {
+      const projectEnabled = new Map(
+        (projectSettings?.skills ?? []).map((entry) => [
+          entry.skillId,
+          entry.enabled,
+        ]),
+      );
+      return allProviderSkills
+        .filter((skill) => skill.scope !== "plugin")
+        .map((skill) => ({
+          ...skill,
+          scope: "workspace" as const,
+          enabled: projectEnabled.get(skill.id) ?? skill.enabled,
+        }));
+    }
     const pluginStoreMatchesTarget =
       (pluginWorkspaceIdentity?.trim() || pluginWorkspacePath || "") ===
         (activeWorkspaceIdentity?.trim() || activeWorkspacePath || "") &&
       pluginConfigScope === scopeFilter;
     return selectSkillsForScope(
       allProviderSkills,
-      pluginStoreMatchesTarget ? selectPluginsForScope(plugins, installedPlugins, scopeFilter) : [],
+      pluginStoreMatchesTarget
+        ? selectPluginsForScope(plugins, installedPlugins, scopeFilter)
+        : [],
       scopeFilter,
       databaseRecords,
     );
@@ -514,6 +731,8 @@ export function SkillsSection({
     pluginWorkspacePath,
     pluginConfigScope,
     plugins,
+    projectScope,
+    projectSettings,
     scopeFilter,
     skills,
   ]);
@@ -526,15 +745,25 @@ export function SkillsSection({
       [...groupedSkills.local, ...groupedSkills.plugin],
       scopeFilter === "user"
         ? intl.formatMessage({ id: "settings.scope.user" })
-        : workspaceLabel || intl.formatMessage({ id: "settings.scope.workspace" }),
+        : workspaceLabel ||
+            intl.formatMessage({ id: "settings.scope.workspace" }),
     );
-  }, [groupedSkills.local, groupedSkills.plugin, intl, scopeFilter, workspaceLabel]);
-  const filteredSkillCount = groupedSkills.local.length + groupedSkills.plugin.length;
-  const hasEmptySearchResult = Boolean(query.trim()) && filteredSkillCount === 0;
+  }, [
+    groupedSkills.local,
+    groupedSkills.plugin,
+    intl,
+    scopeFilter,
+    workspaceLabel,
+  ]);
+  const filteredSkillCount =
+    groupedSkills.local.length + groupedSkills.plugin.length;
+  const hasEmptySearchResult =
+    Boolean(query.trim()) && filteredSkillCount === 0;
   const directInstalledSkillCount = scopedProviderSkills.filter(
     (skill) => skill.scope !== "plugin",
   ).length;
-  const hideInstalledGroup = Boolean(query.trim()) && groupedSkills.local.length === 0;
+  const hideInstalledGroup =
+    Boolean(query.trim()) && groupedSkills.local.length === 0;
   const pluginIconItemById = useMemo(
     () =>
       new Map(
@@ -553,10 +782,14 @@ export function SkillsSection({
       return;
     }
     const effectiveProvider: ZCodeProvider = ZCODE_AGENT_PROVIDER;
-    const skillCreator = filterSkillsForProvider(skills, effectiveProvider).find(
-      (skill) => skill.name === "skill-creator",
+    const skillCreator = filterSkillsForProvider(
+      skills,
+      effectiveProvider,
+    ).find((skill) => skill.name === "skill-creator");
+    const markdown = buildSkillMentionMarkdown(
+      "skill-creator",
+      skillCreator?.path,
     );
-    const markdown = buildSkillMentionMarkdown("skill-creator", skillCreator?.path);
 
     // v4 迁移删除旧 pendingComposerPrefill 后，这个入口仍手工操作 session
     // store，只剩返回聊天页的导航，skill-creator 文本没有进入新 Composer。统一委托
@@ -570,7 +803,9 @@ export function SkillsSection({
         label: "skill-creator",
         value: "skill-creator",
         markdown,
-        ...(skillCreator?.description ? { description: skillCreator.description } : {}),
+        ...(skillCreator?.description
+          ? { description: skillCreator.description }
+          : {}),
         ...(skillCreator
           ? {
               data: {
@@ -584,9 +819,13 @@ export function SkillsSection({
   };
 
   const detailSkill = selectedSkill
-    ? (skills.find((skill) => skill.id === selectedSkill.id) ?? selectedSkill)
+    ? (scopedProviderSkills.find((skill) => skill.id === selectedSkill.id) ??
+      skills.find((skill) => skill.id === selectedSkill.id) ??
+      selectedSkill)
     : null;
-  const selectedSkillPublishedAt = formatSkillPublishedAt(detailSkill?.metadata?.publishedAt);
+  const selectedSkillPublishedAt = formatSkillPublishedAt(
+    detailSkill?.metadata?.publishedAt,
+  );
   const openSkillFilePath = useCallback(
     async (path: string) => {
       const result = await platform.openInFileManager(path);
@@ -619,7 +858,10 @@ export function SkillsSection({
       : skill.pluginName
         ? {
             name: skill.pluginName,
-            listing: resolveUniquePluginListingByName(availablePlugins, skill.pluginName),
+            listing: resolveUniquePluginListingByName(
+              availablePlugins,
+              skill.pluginName,
+            ),
           }
         : undefined;
     return (
@@ -628,7 +870,10 @@ export function SkillsSection({
         className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-hover"
       >
         {skill.scope === "plugin" && pluginIconItem ? (
-          <PluginStoreAvatar item={pluginIconItem} className="size-9 bg-background" />
+          <PluginStoreAvatar
+            item={pluginIconItem}
+            className="size-9 bg-background"
+          />
         ) : (
           <div
             className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-background text-foreground-subtle"
@@ -650,7 +895,9 @@ export function SkillsSection({
           }}
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-ui-base font-medium text-foreground">{skill.name}</span>
+            <span className="truncate text-ui-base font-medium text-foreground">
+              {skill.name}
+            </span>
           </div>
           <div className="mt-0.5 truncate text-ui-sm text-foreground-subtle">
             {skill.description ||
@@ -665,20 +912,26 @@ export function SkillsSection({
               <Switch
                 checked={skill.enabled}
                 onCheckedChange={(checked) => {
-                  void setEnabled(skill.id, checked);
+                  void setEnabled(
+                    skill,
+                    checked,
+                    projectScope ? "project" : "installed",
+                  );
                 }}
               />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="shrink-0 text-foreground-subtle hover:bg-destructive/10 hover:text-destructive"
-                aria-label={uninstallLabel}
-                title={uninstallLabel}
-                onClick={() => void handleDeleteSkill(skill)}
-              >
-                <Trash2 className="size-3.5" aria-hidden="true" />
-              </Button>
+              {projectScope ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 text-foreground-subtle hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={uninstallLabel}
+                  title={uninstallLabel}
+                  onClick={() => void handleDeleteSkill(skill)}
+                >
+                  <Trash2 className="size-3.5" aria-hidden="true" />
+                </Button>
+              )}
             </>
           )}
         </div>
@@ -696,17 +949,30 @@ export function SkillsSection({
 
   const skillHeaderActions = (
     <SettingsResourceHeaderActions
-      onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
-      onImport={() => setImportDialogOpen(true)}
-      onNew={handleCreateSkill}
-      importDisabled={scopeUnavailable || capability?.userScopeAvailable === false}
-      newDisabled={scopeUnavailable || !activeWorkspacePath || !onCreateTask}
-      importActionId="settings.skills.import.open"
-      newActionId="settings.skills.create.open"
+      onRefresh={() =>
+        void Promise.all([
+          refresh(),
+          refreshSharedSkillStoreForCurrentWorkspace(),
+        ])
+      }
+      {...(projectScope
+        ? {}
+        : {
+            onImport: () => setImportDialogOpen(true),
+            onNew: handleCreateSkill,
+            importDisabled:
+              scopeUnavailable || capability?.userScopeAvailable === false,
+            newDisabled:
+              scopeUnavailable || !activeWorkspacePath || !onCreateTask,
+            importActionId: "settings.skills.import.open",
+            newActionId: "settings.skills.create.open",
+          })}
     />
   );
   const remoteSyncAction = connectedRemoteSyncTarget ? (
-    <ControlHintTooltip title={intl.formatMessage({ id: "settings.skills.remoteSync.open" })}>
+    <ControlHintTooltip
+      title={intl.formatMessage({ id: "settings.skills.remoteSync.open" })}
+    >
       <Button
         type="button"
         variant="outline"
@@ -744,7 +1010,9 @@ export function SkillsSection({
           }
         />
       ) : null}
-      {remoteSyncAction ? <div className="flex justify-end">{remoteSyncAction}</div> : null}
+      {remoteSyncAction ? (
+        <div className="flex justify-end">{remoteSyncAction}</div>
+      ) : null}
 
       {connectedRemoteSyncTarget ? (
         <div className="rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
@@ -777,8 +1045,13 @@ export function SkillsSection({
             ) : (
               <ChevronRight className="size-3.5 shrink-0" aria-hidden="true" />
             )}
-            <AlertTriangle className="size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-            <span className="flex-1 truncate font-medium">{diagnosticsSummary}</span>
+            <AlertTriangle
+              className="size-3.5 shrink-0 text-amber-500"
+              aria-hidden="true"
+            />
+            <span className="flex-1 truncate font-medium">
+              {diagnosticsSummary}
+            </span>
           </button>
           {diagnosticsOpen ? (
             <ul className="space-y-1 border-t border-amber-500/30 px-3 py-2">
@@ -801,7 +1074,9 @@ export function SkillsSection({
                       {renderDiagnosticCodeLabel(diagnostic.code)}
                     </span>
                     {diagnostic.skillName ? (
-                      <span className="text-foreground-subtle">· {diagnostic.skillName}</span>
+                      <span className="text-foreground-subtle">
+                        · {diagnostic.skillName}
+                      </span>
                     ) : null}
                   </div>
                   <div className="mt-0.5 break-words text-foreground-subtle">
@@ -819,13 +1094,13 @@ export function SkillsSection({
         </div>
       ) : null}
 
-      {targetServiceResolution.rpcReady && capability?.userScopeAvailable === false ? (
+      {targetServiceResolution.rpcReady &&
+      capability?.userScopeAvailable === false ? (
         <div className="rounded-lg border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.skills.userScopeDesktopOnly" })}
         </div>
       ) : null}
 
-      {scopeUnavailable ? <p role="status" className="text-ui-base text-foreground-subtle">未接入</p> : null}
       {targetServiceResolution.rpcReady && error ? (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive">
           {error}
@@ -833,10 +1108,15 @@ export function SkillsSection({
       ) : null}
 
       {!targetServiceResolution.rpcReady ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.connecting" })} />
+        <PluginLoadingState
+          label={intl.formatMessage({ id: "common.connecting" })}
+        />
       ) : loading || !projectionMatchesTarget ? (
-        <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
-      ) : error && skills.length === 0 ? null : hasEmptySearchResult ? (
+        <PluginLoadingState
+          label={intl.formatMessage({ id: "common.loading" })}
+        />
+      ) : scopeUnavailable ? null : error &&
+        skills.length === 0 ? null : hasEmptySearchResult ? (
         <PluginSearchEmptyState
           label={intl.formatMessage({
             id: "settings.plugin.skills.searchEmpty",
@@ -844,7 +1124,11 @@ export function SkillsSection({
         />
       ) : (
         <div className="space-y-6">
-          <section className={scopeUnavailable || hideInstalledGroup ? "hidden" : "space-y-4"}>
+          <section
+            className={
+              scopeUnavailable || hideInstalledGroup ? "hidden" : "space-y-4"
+            }
+          >
             <div data-skills-plugin-direct-actions="true">
               <SettingsResourceGroupHeader
                 actions={skillHeaderActions}
@@ -856,7 +1140,10 @@ export function SkillsSection({
             </div>
             {groupedSkills.local.length > 0 ? (
               renderSkillList(groupedSkills.local)
-            ) : directInstalledSkillCount === 0 && !query.trim() && !scopeUnavailable ? (
+            ) : directInstalledSkillCount === 0 &&
+              !query.trim() &&
+              !scopeUnavailable &&
+              !projectScope ? (
               <PluginInstallEmptyState
                 title={intl.formatMessage({
                   id: "settings.plugin.skills.emptyInstalledTitle",
@@ -866,7 +1153,13 @@ export function SkillsSection({
                 })}
                 actions={
                   <>
-                    <Button type="button" variant="default" size="lg" disabled={!activeWorkspacePath || !onCreateTask} onClick={handleCreateSkill}>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="lg"
+                      disabled={!activeWorkspacePath || !onCreateTask}
+                      onClick={handleCreateSkill}
+                    >
                       <Plus data-icon="inline-start" aria-hidden="true" />
                       {intl.formatMessage({
                         id: "settings.plugin.skills.newSkill",
@@ -899,8 +1192,13 @@ export function SkillsSection({
                     {
                       name: group.label,
                       listing:
-                        (group.pluginId ? pluginListingById.get(group.pluginId) : undefined) ??
-                        resolveUniquePluginListingByName(availablePlugins, group.label),
+                        (group.pluginId
+                          ? pluginListingById.get(group.pluginId)
+                          : undefined) ??
+                        resolveUniquePluginListingByName(
+                          availablePlugins,
+                          group.label,
+                        ),
                     },
                     locale,
                   )}
@@ -922,9 +1220,51 @@ export function SkillsSection({
           {detailSkill ? (
             <div className="flex min-h-0 flex-col">
               <DialogHeader className="border-b border-popover-border px-4 pt-4 pb-3">
-                <DialogTitle className="truncate pr-8 text-ui-lg">{detailSkill.name}</DialogTitle>
+                <DialogTitle className="truncate pr-8 text-ui-lg">
+                  {detailSkill.name}
+                </DialogTitle>
               </DialogHeader>
               <div className="min-h-0 space-y-4 overflow-auto px-4 py-5">
+                {detailSkill.scope === "plugin" ? null : (
+                  <div className="flex justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={commonActionPending}
+                          aria-label={intl.formatMessage({ id: "common.more" })}
+                        >
+                          <MoreHorizontal aria-hidden="true" />
+                          {intl.formatMessage({ id: "common.more" })}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          disabled={commonActionPending}
+                          onSelect={() =>
+                            void handleCommonAction(detailSkill, "copy")
+                          }
+                        >
+                          {intl.formatMessage({
+                            id: "settings.skills.copyToCommon",
+                          })}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={commonActionPending}
+                          onSelect={() =>
+                            void handleCommonAction(detailSkill, "remove")
+                          }
+                        >
+                          {intl.formatMessage({
+                            id: "settings.skills.removeFromCommon",
+                          })}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                )}
                 <div className="grid gap-1.5">
                   <div className="text-ui-base font-medium text-foreground">
                     {intl.formatMessage({
@@ -988,18 +1328,22 @@ export function SkillsSection({
                     mono
                     className="col-span-2"
                   />
-                  {detailSkill.path ? <SkillPathDetailField
-                    label={intl.formatMessage({
-                      id: "settings.skills.detail.path",
-                    })}
-                    path={detailSkill.path}
-                    openLabel={intl.formatMessage({
-                      id: "settings.skills.detail.openPath",
-                    })}
-                    onOpen={() => void openSkillFilePath(detailSkill.path)}
-                  /> : null}
+                  {detailSkill.path ? (
+                    <SkillPathDetailField
+                      label={intl.formatMessage({
+                        id: "settings.skills.detail.path",
+                      })}
+                      path={detailSkill.path}
+                      openLabel={intl.formatMessage({
+                        id: "settings.skills.detail.openPath",
+                      })}
+                      onOpen={() => void openSkillFilePath(detailSkill.path)}
+                    />
+                  ) : null}
                 </div>
-                {detailSkill.resourceRef ? <MessageResponse>{detailSkill.body}</MessageResponse> : null}
+                {detailSkill.resourceRef ? (
+                  <MessageResponse>{detailSkill.body}</MessageResponse>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -1009,7 +1353,9 @@ export function SkillsSection({
         open={importDialogOpen && targetServiceResolution.rpcReady}
         workspacePath={activeWorkspacePath}
         workspaceIdentity={activeWorkspaceIdentity}
-        settingsSyncService={targetServiceResolution.services.settingsSyncService}
+        settingsSyncService={
+          targetServiceResolution.services.settingsSyncService
+        }
         onOpenChange={setImportDialogOpen}
         onImported={async () => {
           await invalidateDeferredDraftSessionForSkillChange({
@@ -1023,7 +1369,9 @@ export function SkillsSection({
       />
       <RemoteSyncDialogs
         canSyncSkills={Boolean(
-          targetServiceResolution.rpcReady && connectedRemoteSyncTarget && activeWorkspacePath,
+          targetServiceResolution.rpcReady &&
+            connectedRemoteSyncTarget &&
+            activeWorkspacePath,
         )}
         canSyncMcp={false}
         skillOpen={remoteSkillSyncOpen && targetServiceResolution.rpcReady}
@@ -1043,7 +1391,10 @@ export function SkillsSection({
             workspaceIdentity: activeWorkspaceIdentity,
             reason: "settings-remote-skill-sync",
           });
-          await Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()]);
+          await Promise.all([
+            refresh(),
+            refreshSharedSkillStoreForCurrentWorkspace(),
+          ]);
         }}
         onMcpSynced={() => {}}
       />

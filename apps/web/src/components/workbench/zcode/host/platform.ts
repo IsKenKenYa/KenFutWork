@@ -124,7 +124,7 @@ export function createCodePlatform(
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
-    supportsExternalAgentSettingsSync: false,
+    supportsExternalAgentSettingsSync: true,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
     getApplicationIcon: (request) =>
