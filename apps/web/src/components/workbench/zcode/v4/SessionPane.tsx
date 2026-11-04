@@ -1189,6 +1189,9 @@ export function SessionPane({
   );
 
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
+  const activeTaskId = useZCodeSessionStore(
+    (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId,
+  );
   const workspaceConfigOptions = useZCodeSessionStore(
     (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).configOptions,
   );
@@ -4126,9 +4129,11 @@ export function SessionPane({
         backgroundWorks: snapshot?.backgroundWorks ?? [],
         runningSubagents: subagents.running,
         workflowRuns: snapshot?.workflowRuns?.runs ?? [],
+        hasActiveTask: Boolean(activeTaskId) && !selectionSideChat,
       }),
     [
       isOfficeMode,
+      activeTaskId,
       gitDirtyFileCount,
       gitSummary,
       gitWorktreeChangeSummary,
@@ -4958,6 +4963,7 @@ export function SessionPane({
             runningSubagents={subagents.running}
             workflowRuns={snapshot?.workflowRuns?.runs ?? []}
             endedSubagentCount={subagents.endedTotal}
+            hasActiveTask={Boolean(activeTaskId) && !selectionSideChat}
             rootSessionId={rootSessionId ?? sessionId ?? undefined}
             parentSessionId={sessionId ?? undefined}
             layoutMode={statusPanelLayout}
