@@ -30,16 +30,16 @@ const methods = new Set([
   "getIdentity",
   "refresh",
 ]);
-const unavailableMethods = new Set([
+const writeMethods = new Set([
   "switchBranch",
   "createBranchAndSwitch",
   "stagePaths",
   "unstagePaths",
   "discardPaths",
-  "generateCommitMessage",
   "commit",
   "push",
 ]);
+const unavailableMethods = new Set(["generateCommitMessage"]);
 export interface CodeUiHostGitRpc {
   call(
     actor: LocalActor,
@@ -133,12 +133,61 @@ async function dispatch(
           : null,
       };
     }
+    case "stagePaths": {
+      const { paths } = pathsParams.parse(input);
+      await repo.stagePaths(paths);
+      return {};
+    }
+    case "unstagePaths": {
+      const { paths } = pathsParams.parse(input);
+      await repo.unstagePaths(paths);
+      return {};
+    }
+    case "discardPaths": {
+      const params = pathsParams
+        .extend({ staged: z.boolean().optional() })
+        .parse(input);
+      await repo.discardPaths(params.paths, Boolean(params.staged));
+      return {};
+    }
+    case "commit": {
+      const params = targetParams
+        .extend({
+          message: z.string().min(1),
+          paths: z.array(z.string().min(1)).optional(),
+          stagedOnly: z.boolean().optional(),
+        })
+        .parse(input);
+      return repo.commit(
+        params.message,
+        params.paths ?? [],
+        Boolean(params.stagedOnly),
+      );
+    }
+    case "switchBranch": {
+      const { targetBranchName } = targetParams
+        .extend({ targetBranchName: z.string().min(1) })
+        .parse(input);
+      return repo.switchBranch(targetBranchName);
+    }
+    case "createBranchAndSwitch": {
+      const params = targetParams
+        .extend({
+          branchName: z.string().min(1),
+          startPoint: z.string().min(1).optional(),
+        })
+        .parse(input);
+      return repo.createBranchAndSwitch(params.branchName, params.startPoint);
+    }
+    case "push":
+      targetParams.parse(input);
+      return repo.push();
     default:
-      throw new Error("不支持的Git只读宿主方法。");
+      throw new Error("不支持的Git宿主方法。");
   }
 }
 
-/** 只读Git宿主；每次读取由所属Task或Project的真实执行范围持有。 */
+/** Git宿主；读取由所属Task或Project的真实执行范围持有，写操作仅在Task作用域开放。 */
 export function createCodeUiHostGitRpc(deps: {
   resolveTarget(
     actor: LocalActor,
@@ -153,7 +202,12 @@ export function createCodeUiHostGitRpc(deps: {
 }): CodeUiHostGitRpc {
   return {
     async call(actor, method, args, connection) {
-      if (!methods.has(method) && !unavailableMethods.has(method)) return null;
+      if (
+        !methods.has(method) &&
+        !writeMethods.has(method) &&
+        !unavailableMethods.has(method)
+      )
+        return null;
       if (
         !connection.connectionId ||
         connection.instanceId !== actor.instanceId
@@ -167,6 +221,8 @@ export function createCodeUiHostGitRpc(deps: {
         throw new Error("Git工作区与可信连接身份不匹配。");
       if (unavailableMethods.has(method))
         throw new Error(`当前Git宿主尚不支持${method}，该能力仍未接通。`);
+      if (writeMethods.has(method) && target.viewerScope.kind === "project")
+        throw new Error("项目文件面板仅支持读取，Git写操作请在任务中进行。");
       const result = await deps.withSession(
         actor,
         target,

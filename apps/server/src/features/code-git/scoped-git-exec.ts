@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
+import { nativeToolchainOverrides } from "../process-sandbox/environment.js";
 import type {
   ManagedProcess,
   ProcessLimits,
@@ -38,9 +39,9 @@ export function createScopedGitExec(options: {
   limits: ProcessLimits;
   timeoutMs: number | null;
 }): ExecGit {
-  return async (args, cwd, input): Promise<GitCommandResult> => {
+  return async (args, cwd, input, env): Promise<GitCommandResult> => {
     const resolved = await options.scope.resolvePath(cwd, "read");
-    const process = await options.sandbox.spawn({
+    const managed = await options.sandbox.spawn({
       scope: options.scope.describe(),
       agentId: options.scope.agentId,
       invocationId: randomUUID(),
@@ -49,24 +50,29 @@ export function createScopedGitExec(options: {
       background: false,
       limits: options.limits,
       timeoutMs: options.timeoutMs,
-      env: { GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+      env: {
+        ...nativeToolchainOverrides(process.env),
+        ...env,
+        GIT_OPTIONAL_LOCKS: "0",
+        GIT_TERMINAL_PROMPT: "0",
+      },
     });
-    if (input !== undefined) await process.writeStdin(input);
-    await process.endStdin();
-    const exit = await process.waitForExit();
+    if (input !== undefined) await managed.writeStdin(input);
+    await managed.endStdin();
+    const exit = await managed.waitForExit();
     const stdout = await collectManagedOutput(
-      process,
+      managed,
       options.limits.maxOutputBytes,
       "stdout",
     );
     const stderr = await collectManagedOutput(
-      process,
+      managed,
       options.limits.maxOutputBytes,
       "stderr",
     );
     if (!exit.rangeEmpty)
       throw new Error("Git 命令尚未确认退出，不能报告完成。");
-    if (process.snapshot().discardedBytes > 0)
+    if (managed.snapshot().discardedBytes > 0)
       throw new Error("Git 输出超过配置上限，不能解析不完整结果。");
     return {
       code: exit.exitCode ?? 1,

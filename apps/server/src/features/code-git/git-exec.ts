@@ -23,12 +23,19 @@ export function createProcessGitExec(options: {
     args: readonly string[],
     cwd: string,
     input?: string,
+    env?: Readonly<Record<string, string>>,
   ): Promise<GitCommandResult> =>
     new Promise((resolve) => {
       const child = execFile(
         options.binary,
         [...args],
-        { cwd, timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+        {
+          cwd,
+          timeout,
+          windowsHide: true,
+          maxBuffer: 4 * 1024 * 1024,
+          ...(env ? { env: { ...process.env, ...env } } : {}),
+        },
         (error, stdout, stderr) => {
           // execFile 非零退出走 error（带 code）；超时/找不到二进制也走 error
           const code =
