@@ -40,6 +40,22 @@ export function executionEnvironment(
 }
 
 /**
+ * macOS 系统编译器靠这两个变量定位 SDK。
+ * 沙箱执行环境不继承它们，宿主侧工具链进程（inspector 编译、Task helper）需要显式带上；
+ * 用户命令的执行环境仍然只用调用方传入的描述符，不会因此看到更多变量。
+ */
+export function nativeToolchainOverrides(
+  ambient: NodeJS.ProcessEnv,
+): Record<string, string> {
+  const overrides: Record<string, string> = {};
+  for (const key of ["SDKROOT", "DEVELOPER_DIR"] as const) {
+    const value = ambient[key];
+    if (value !== undefined) overrides[key] = value;
+  }
+  return overrides;
+}
+
+/**
  * 把随包运行时的 bin 目录前置进沙箱执行环境的 PATH。
  *
  * 为什么必须显式做：`executionEnvironment` 只从宿主 `process.env.PATH` 取 PATH，

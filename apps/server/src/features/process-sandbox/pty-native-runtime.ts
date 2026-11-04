@@ -4,7 +4,7 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { executionEnvironment } from "./environment.js";
+import { executionEnvironment, nativeToolchainOverrides } from "./environment.js";
 import type { ProcessLimits } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
@@ -31,7 +31,10 @@ export async function preparePtySessionInspector(
         "/usr/bin/cc",
         ["-std=c11", "-O2", source, "-lproc", "-o", binary],
         {
-          env: executionEnvironment(process.env),
+          env: executionEnvironment(
+            process.env,
+            nativeToolchainOverrides(process.env),
+          ),
           timeout: limits.killGraceMs,
           maxBuffer: limits.previewMaxChars,
         },
@@ -70,7 +73,10 @@ export async function prepareLinuxProcessInspector(
           binary,
         ],
         {
-          env: executionEnvironment(process.env),
+          env: executionEnvironment(
+            process.env,
+            nativeToolchainOverrides(process.env),
+          ),
           timeout: limits.killGraceMs,
           maxBuffer: limits.previewMaxChars,
         },

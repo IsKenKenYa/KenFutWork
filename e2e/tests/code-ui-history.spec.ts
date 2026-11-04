@@ -1,5 +1,8 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
 
 import { expect, test } from "@playwright/test";
 
@@ -15,6 +18,8 @@ import {
   userInputRow,
 } from "../support/code-ui";
 import { openWorkbench, workbenchFrame } from "../support/local-access";
+
+const exec = promisify(execFile);
 
 test.describe("Code 运行记录与工具原文", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
@@ -63,6 +68,49 @@ test.describe("Code 运行记录与工具原文", () => {
     await mkdir(project.workDir, { recursive: true });
     return { project, session };
   }
+
+  /** Git 摘要要读真实仓库的分支与改动行数：建仓提交后改一行，形成未暂存改动。 */
+  async function prepareDirtyRepo(workDir: string) {
+    const file = path.join(workDir, "notes.txt");
+    await writeFile(file, "base\n", "utf8");
+    await exec("git", ["init", "-b", "main"], { cwd: workDir });
+    await exec("git", ["config", "user.email", "e2e@kenfutwork.local"], {
+      cwd: workDir,
+    });
+    await exec("git", ["config", "user.name", "e2e"], { cwd: workDir });
+    await exec("git", ["add", "notes.txt"], { cwd: workDir });
+    await exec("git", ["commit", "-m", "e2e baseline"], { cwd: workDir });
+    await writeFile(file, "base\nchanged\n", "utf8");
+  }
+
+  test("Git 摘要：真实仓库显示当前分支与改动行数", async ({ page }) => {
+    const { project, session } = await prepareProject("e2e-git-摘要");
+    await prepareDirtyRepo(project.workDir);
+    const turnId = randomUUID();
+    await appendToolRow(session.sessionId, turnHeaderRow({ rowId: 1, turnId }));
+    await appendToolRow(
+      session.sessionId,
+      userInputRow({ rowId: 2, turnId, text: "看看 Git 摘要" }),
+    );
+    await openWorkbench(page);
+    const shell = await openTask(page, project.name, session.sessionId);
+
+    const panel = shell.locator('[data-testid="chat-summary-panel"]');
+    await expect(panel).toBeVisible({ timeout: 60_000 });
+    // 窄布局只留胶囊读数，先展开到面板再断言分支与改动行数。
+    const expandTrigger = panel.getByRole("button", { name: "展开状态" });
+    if ((await expandTrigger.count()) > 0) {
+      await expandTrigger.first().click();
+    }
+    await expect(
+      panel.getByRole("button", { name: "切换 Git 分支" }),
+    ).toContainText("main", { timeout: 60_000 });
+    const changesButton = panel
+      .locator("button:visible")
+      .filter({ hasText: "更改" });
+    await expect(changesButton).toContainText("+1");
+    await expect(changesButton).toContainText("-0");
+  });
 
   test("运行记录空态：这个 Task 还没有运行记录", async ({ page }) => {
     const { project, session } = await prepareProject("e2e-运行空态");
