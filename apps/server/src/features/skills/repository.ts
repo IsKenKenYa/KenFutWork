@@ -1,4 +1,8 @@
-import type { PersistenceService } from "../persistence/types.js";
+import { createHash } from "node:crypto";
+import type {
+  InstanceSqlClient,
+  PersistenceService,
+} from "../persistence/types.js";
 
 export type InstanceSkillRecord = {
   enabled: boolean;
@@ -35,6 +39,126 @@ export type UpsertInstallationInput = {
   instanceId: string;
 };
 
+export type OwnedSkillInsertInput = {
+  createdByClientId?: string | null | undefined;
+  author?: string | null | undefined;
+  category: string;
+  description: string;
+  iconName?: string | null | undefined;
+  license?: string | null | undefined;
+  metadata?: Record<string, unknown> | null | undefined;
+  name: string;
+  packageName?: string | null | undefined;
+  skillContent: string;
+  slug: string;
+  source?: string | undefined;
+  sourceUrl?: string | null | undefined;
+  version?: string | null | undefined;
+};
+
+export type SkillFileInsertRow = {
+  content: string;
+  filePath: string;
+  mimeType?: string | undefined;
+};
+
+/** 项目级技能启停：键为真实项目 id，不复用旧工作区身份。 */
+export type ProjectSkillRecord = {
+  enabled: boolean;
+  skillId: string;
+  updatedAt: string;
+};
+
+export interface ProjectSkillRepository {
+  /** 项目不属于本实例时为 null，界面据此不显示项目分档。 */
+  findProject(
+    instanceId: string,
+    projectId: string,
+  ): Promise<{ id: string; name: string } | null>;
+  listProjectSkills(
+    instanceId: string,
+    projectId: string,
+  ): Promise<ProjectSkillRecord[]>;
+  /** 项目或技能不属于本实例时不写入，返回 0。 */
+  upsertProjectSkill(input: {
+    instanceId: string;
+    projectId: string;
+    skillId: string;
+    enabled: boolean;
+  }): Promise<number>;
+  /** 只更新已有项目记录；项目不存在或未设置时返回 false。 */
+  setProjectSkillEnabled(
+    instanceId: string,
+    projectId: string,
+    skillId: string,
+    enabled: boolean,
+  ): Promise<boolean>;
+}
+
+export type SkillImportReceiptStatus = "imported" | "deleted";
+
+export type SkillImportReceipt = {
+  status: SkillImportReceiptStatus;
+  skillId: string | null;
+  parameterFingerprint: string | null;
+};
+
+export type SkillImportAdmission = {
+  kind: "created" | "replayed";
+  skillId: string;
+};
+
+export class SkillImportConflictError extends Error {
+  constructor() {
+    super("同一来源的技能包内容已变化，导入需要新的技能身份。");
+    this.name = "SkillImportConflictError";
+  }
+}
+
+export class SkillImportDeletedError extends Error {
+  constructor() {
+    super("该来源的技能已删除，迟到导入不会重新创建。");
+    this.name = "SkillImportDeletedError";
+  }
+}
+
+/** 来源身份摘要：规范化源根目录 + 源 slug；实例已是回执主键的一部分。 */
+export function skillImportRequestKey(
+  sourceRootPath: string,
+  sourceSlug: string,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify(["skill-import", sourceRootPath, sourceSlug]))
+    .digest("hex");
+}
+
+export interface SkillImportReceiptRepository {
+  findImportReceipt(
+    instanceId: string,
+    requestKey: string,
+  ): Promise<SkillImportReceipt | null>;
+  /** 同实例内的 slug 占用；跨实例的占用由唯一约束兜底。 */
+  findSkillBySlug(
+    instanceId: string,
+    slug: string,
+  ): Promise<{ id: string } | null>;
+  /**
+   * 单事务内按来源准入导入：
+   * - 无回执：调用 `create` 建技能并写回执；
+   * - 同来源同内容摘要：返回既有技能，标记重放；
+   * - 同来源不同摘要：冲突，不静默覆盖；
+   * - 墓碑：已删除，迟到导入不复活内容。
+   */
+  admitImport(input: {
+    instanceId: string;
+    requestKey: string;
+    parameterFingerprint: string;
+    sourceRootPath: string;
+    sourceSlug: string;
+    create: (client: InstanceSqlClient) => Promise<{ skillId: string }>;
+  }): Promise<SkillImportAdmission>;
+}
+
 export interface SkillCatalogRepository {
   /**
    * 指定 skill 的附带文件（scripts/references/assets）。
@@ -61,22 +185,7 @@ export interface SkillCatalogRepository {
    */
   insertOwned(
     instanceId: string,
-    input: {
-      createdByClientId?: string | null | undefined;
-      author?: string | null | undefined;
-      category: string;
-      description: string;
-      iconName?: string | null | undefined;
-      license?: string | null | undefined;
-      metadata?: Record<string, unknown> | null | undefined;
-      name: string;
-      packageName?: string | null | undefined;
-      skillContent: string;
-      slug: string;
-      source?: string | undefined;
-      sourceUrl?: string | null | undefined;
-      version?: string | null | undefined;
-    },
+    input: OwnedSkillInsertInput,
   ): Promise<Record<string, unknown> | null>;
   /** 改 skill：仅实例创建的行（`instance_id=实例` 写在语句里，不靠 RLS）。 */
   updateOwnedById(
@@ -152,6 +261,173 @@ export function createInstanceSkillSettingsRepository(
   };
 }
 
+export function createProjectSkillRepository(
+  persistence: PersistenceService,
+): ProjectSkillRepository {
+  return {
+    async findProject(instanceId, projectId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<{ id: string; name: string }>(
+          `select id, name
+             from public.projects
+            where id = $1
+              and instance_id = :instance`,
+          [projectId],
+        );
+      return row ?? null;
+    },
+
+    async listProjectSkills(instanceId, projectId) {
+      const rows = await persistence.forInstance(instanceId).query<{
+        enabled: boolean;
+        skill_id: string;
+        updated_at: string;
+      }>(
+        `select ps.skill_id, ps.enabled,
+                  (ps.updated_at at time zone 'UTC')::text as updated_at
+             from public.project_skills ps
+             join public.projects p
+               on p.id = ps.project_id and p.instance_id = ps.instance_id
+            where ps.instance_id = :instance and ps.project_id = $1
+            order by ps.updated_at desc, ps.skill_id asc`,
+        [projectId],
+      );
+      return rows.map((row) => ({
+        enabled: row.enabled,
+        skillId: row.skill_id,
+        updatedAt: row.updated_at,
+      }));
+    },
+
+    async upsertProjectSkill(input) {
+      return persistence.forInstance(input.instanceId).execute(
+        `insert into public.project_skills
+                (instance_id, project_id, skill_id, enabled)
+         select :instance, p.id, s.id, $3::boolean
+           from public.projects p
+           join public.skills s on s.instance_id = p.instance_id
+          where p.instance_id = :instance
+            and p.id = $1::uuid
+            and s.id = $2::uuid
+         on conflict (instance_id, project_id, skill_id)
+         do update set enabled = excluded.enabled, updated_at = now()`,
+        [input.projectId, input.skillId, input.enabled],
+      );
+    },
+
+    async setProjectSkillEnabled(instanceId, projectId, skillId, enabled) {
+      const changed = await persistence.forInstance(instanceId).execute(
+        `update public.project_skills
+            set enabled = $3::boolean, updated_at = now()
+          where instance_id = :instance
+            and project_id = $1
+            and skill_id = $2`,
+        [projectId, skillId, enabled],
+      );
+      return changed > 0;
+    },
+  };
+}
+
+export function createSkillImportReceiptRepository(
+  persistence: PersistenceService,
+): SkillImportReceiptRepository {
+  return {
+    async findImportReceipt(instanceId, requestKey) {
+      const row = await persistence.forInstance(instanceId).queryOne<{
+        parameter_fingerprint: string | null;
+        skill_id: string | null;
+        status: SkillImportReceiptStatus;
+      }>(
+        `select status, skill_id, parameter_fingerprint
+             from public.skill_import_receipts
+            where instance_id = :instance
+              and request_key = $1`,
+        [requestKey],
+      );
+      if (!row) {
+        return null;
+      }
+      return {
+        status: row.status,
+        skillId: row.skill_id,
+        parameterFingerprint: row.parameter_fingerprint,
+      };
+    },
+
+    async findSkillBySlug(instanceId, slug) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<{ id: string }>(
+          `select id
+             from public.skills
+            where instance_id = :instance
+              and slug = $1`,
+          [slug],
+        );
+      return row ?? null;
+    },
+
+    async admitImport(input) {
+      return persistence.transaction(async (tx) => {
+        const scoped = tx.forInstance(input.instanceId);
+        // 同一来源的并发导入串行化；唯一主键仍作为跨进程兜底。
+        await tx.query(
+          "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+          [
+            JSON.stringify([
+              "skill-import",
+              input.instanceId,
+              input.requestKey,
+            ]),
+          ],
+        );
+        const receipt = await scoped.queryOne<{
+          parameter_fingerprint: string | null;
+          skill_id: string | null;
+          status: SkillImportReceiptStatus;
+        }>(
+          `select status, skill_id, parameter_fingerprint
+             from public.skill_import_receipts
+            where instance_id = :instance
+              and request_key = $1`,
+          [input.requestKey],
+        );
+
+        if (receipt) {
+          if (receipt.status === "deleted") {
+            throw new SkillImportDeletedError();
+          }
+          if (receipt.parameter_fingerprint !== input.parameterFingerprint) {
+            throw new SkillImportConflictError();
+          }
+          if (!receipt.skill_id) {
+            throw new SkillImportDeletedError();
+          }
+          return { kind: "replayed", skillId: receipt.skill_id };
+        }
+
+        const created = await input.create(scoped);
+        await scoped.query(
+          `insert into public.skill_import_receipts
+                  (instance_id, request_key, status, skill_id,
+                   parameter_fingerprint, source_root_path, source_slug)
+           values (:instance, $1, 'imported', $2, $3, $4, $5)`,
+          [
+            input.requestKey,
+            created.skillId,
+            input.parameterFingerprint,
+            input.sourceRootPath,
+            input.sourceSlug,
+          ],
+        );
+        return { kind: "created", skillId: created.skillId };
+      });
+    },
+  };
+}
+
 type JoinedSkillRow = {
   enabled: boolean;
   id: string;
@@ -161,6 +437,73 @@ type JoinedSkillRow = {
   skill_content: string;
   installation_revision?: string;
 };
+
+/** 供导入事务复用：建技能与写回执在同一事务，实例谓词和列默认语义保持一致。 */
+export async function insertOwnedSkillRecord(
+  client: InstanceSqlClient,
+  input: OwnedSkillInsertInput,
+): Promise<Record<string, unknown> | null> {
+  return client.queryOne<Record<string, unknown>>(
+    `insert into public.skills
+          (name, slug, description, category, skill_content, icon_name,
+           source, instance_id, author, version, license, metadata,
+           source_url, package_name, created_by_client_id)
+   values ($1, $2, $3, $4, $5, $6, $7, :instance,
+           coalesce($8, 'system'), coalesce($9, '1.0'), $10,
+           coalesce($11::jsonb, '{}'::jsonb), $12, $13, $14)
+   returning *`,
+    [
+      input.name,
+      input.slug,
+      input.description,
+      input.category,
+      input.skillContent,
+      input.iconName ?? null,
+      input.source ?? "user",
+      input.author ?? null,
+      input.version ?? null,
+      input.license ?? null,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+      input.sourceUrl ?? null,
+      input.packageName ?? null,
+      input.createdByClientId ?? null,
+    ],
+  );
+}
+
+/** 供导入事务复用：附带文件写入与父技能实例复验同一条语句。 */
+export async function insertSkillFileRecords(
+  client: InstanceSqlClient,
+  skillId: string,
+  rows: readonly SkillFileInsertRow[],
+): Promise<number> {
+  if (rows.length === 0) {
+    return 0;
+  }
+
+  const values: unknown[] = [skillId];
+  // `$1::uuid` 是必需的：`insert … select … from (values …)` 这个形状下，
+  // Postgres 无法把目标列的 uuid 类型反推给未定型的参数，会把 $1 定成 text，
+  // 于是 `s.id = $1` 报 `operator does not exist: uuid = text`（SQLSTATE 42883）。
+  // 显式定型后 v.skill_id 也随之是 uuid，与目标列一致。
+  const tuples = rows.map((row) => {
+    values.push(row.filePath, row.content, row.mimeType ?? "text/plain");
+    const end = values.length;
+    return `($1::uuid, $${end - 2}, $${end - 1}, $${end})`;
+  });
+
+  return client.execute(
+    `insert into public.skill_files (skill_id, file_path, content, mime_type)
+     select v.*
+       from (values ${tuples.join(", ")})
+              as v(skill_id, file_path, content, mime_type)
+      where exists (
+        select 1 from public.skills s
+         where s.id = $1::uuid and s.instance_id = :instance and s.source = 'user'
+      )`,
+    values,
+  );
+}
 
 export function createSkillCatalogRepository(
   persistence: PersistenceService,
@@ -272,34 +615,7 @@ export function createSkillCatalogRepository(
     },
 
     async insertOwned(instanceId, input) {
-      return persistence
-        .forInstance(instanceId)
-        .queryOne<Record<string, unknown>>(
-          `insert into public.skills
-                (name, slug, description, category, skill_content, icon_name,
-                 source, instance_id, author, version, license, metadata,
-                 source_url, package_name, created_by_client_id)
-         values ($1, $2, $3, $4, $5, $6, $7, :instance,
-                 coalesce($8, 'system'), coalesce($9, '1.0'), $10,
-                 coalesce($11::jsonb, '{}'::jsonb), $12, $13, $14)
-         returning *`,
-          [
-            input.name,
-            input.slug,
-            input.description,
-            input.category,
-            input.skillContent,
-            input.iconName ?? null,
-            input.source ?? "user",
-            input.author ?? null,
-            input.version ?? null,
-            input.license ?? null,
-            input.metadata ? JSON.stringify(input.metadata) : null,
-            input.sourceUrl ?? null,
-            input.packageName ?? null,
-            input.createdByClientId ?? null,
-          ],
-        );
+      return insertOwnedSkillRecord(persistence.forInstance(instanceId), input);
     },
 
     async updateOwnedById(instanceId, skillId, patch) {
@@ -354,31 +670,10 @@ export function createSkillCatalogRepository(
     },
 
     async insertFilesForOwnedSkill(instanceId, skillId, rows) {
-      if (rows.length === 0) {
-        return 0;
-      }
-
-      const values: unknown[] = [skillId];
-      // `$1::uuid` 是必需的：`insert … select … from (values …)` 这个形状下，
-      // Postgres 无法把目标列的 uuid 类型反推给未定型的参数，会把 $1 定成 text，
-      // 于是 `s.id = $1` 报 `operator does not exist: uuid = text`（SQLSTATE 42883）。
-      // 显式定型后 v.skill_id 也随之是 uuid，与目标列一致。
-      const tuples = rows.map((row) => {
-        values.push(row.filePath, row.content, row.mimeType ?? "text/plain");
-        const end = values.length;
-        return `($1::uuid, $${end - 2}, $${end - 1}, $${end})`;
-      });
-
-      return persistence.forInstance(instanceId).execute(
-        `insert into public.skill_files (skill_id, file_path, content, mime_type)
-         select v.*
-           from (values ${tuples.join(", ")})
-                  as v(skill_id, file_path, content, mime_type)
-          where exists (
-            select 1 from public.skills s
-             where s.id = $1::uuid and s.instance_id = :instance and s.source = 'user'
-          )`,
-        values,
+      return insertSkillFileRecords(
+        persistence.forInstance(instanceId),
+        skillId,
+        rows,
       );
     },
 
