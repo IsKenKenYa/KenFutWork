@@ -1,13 +1,21 @@
 "use client";
 
 import type {
+  ExecutionMode,
   ManagementTarget,
   WorkbenchMode,
   WorkbenchModes,
 } from "@kenfutwork/shared";
 import { installDesktopTitlebarDrag } from "@zcode/ui/design-shared";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFlowHostEntry } from "@/hooks/use-flow-host";
 import { useWorkHostEntry } from "@/hooks/use-work-host";
 import { addModelSettingsOpenListener } from "@/lib/model-settings-navigation";
@@ -67,6 +75,26 @@ function WorkbenchModeSurface() {
     [openManagement],
   );
   const closeManagement = useCallback(() => setManagement(null), []);
+  // 设置页的「新建技能 / 创建插件」：关掉管理文档，让壳在自身活动工作区里
+  // 建草稿（任务身份、目录授权与执行方式都只走壳这一条路径）。
+  const [pendingTask, setPendingTask] = useState<{
+    id: number;
+    prompt: string;
+    executionMode: ExecutionMode;
+  } | null>(null);
+  const taskRequestId = useRef(0);
+  const createTaskFromManagement = useCallback(
+    (prompt: string, executionMode: ExecutionMode) => {
+      taskRequestId.current += 1;
+      setManagement(null);
+      setPendingTask({
+        id: taskRequestId.current,
+        prompt,
+        executionMode,
+      });
+    },
+    [],
+  );
 
   return (
     <>
@@ -74,6 +102,7 @@ function WorkbenchModeSurface() {
         availableModes={availableModes}
         {...(mode ? { mode } : {})}
         {...(requestedCanvas ? { canvasId: requestedCanvas } : {})}
+        {...(pendingTask ? { newTaskRequest: pendingTask } : {})}
         onOpenManagement={openManagement}
       />
       {/* 管理文档**预加载**：页面挂载即后台建好 iframe（hidden），点设置/插件市场
@@ -83,6 +112,7 @@ function WorkbenchModeSurface() {
         target={management ?? { page: "settings" }}
         visible={management !== null}
         onClose={closeManagement}
+        onCreateTask={createTaskFromManagement}
       />
     </>
   );

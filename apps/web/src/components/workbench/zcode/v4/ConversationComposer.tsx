@@ -223,6 +223,7 @@ interface ExternalTextInsertRequest {
   text: string;
   mention?: ComposerMentionPrefill;
   mode?: "replace" | "prepend-if-missing";
+  executionMode?: import("@kenfutwork/shared").ExecutionMode;
 }
 
 function restorePersistedComposerDraftIntoInput({
@@ -586,6 +587,7 @@ function ConversationComposerImpl({
     sessionId,
     planEnabled: draftConfig?.planEnabled ?? snapshot?.config.planEnabled,
     onSwitchMode,
+    initialMode: sessionId ? undefined : composerDraft.executionMode,
   });
   const executionMode = executionModeController.mode;
   const [configPickerState, setConfigPickerState] = useState<{
@@ -1086,6 +1088,11 @@ function ConversationComposerImpl({
       appliedExternalTextInsertRequestRef.current = nextAppliedRequestId;
       if (applied) {
         onExternalTextInsertApplied?.(externalTextInsertRequest.requestId);
+        if (externalTextInsertRequest.executionMode) {
+          executionModeController.applyDraftMode(
+            externalTextInsertRequest.executionMode,
+          );
+        }
       }
       return applied;
     };
@@ -1094,6 +1101,7 @@ function ConversationComposerImpl({
     const frame = requestAnimationFrame(applyRequest);
     return () => cancelAnimationFrame(frame);
   }, [
+    executionModeController,
     externalTextInsertRequest,
     onExternalTextInsertApplied,
     requestComposerFocus,

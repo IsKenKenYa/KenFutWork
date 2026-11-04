@@ -476,8 +476,7 @@ const enUS: Record<string, string> = {
   "pluginCreator.add": "Add",
   "pluginCreator.create": "Create plugin",
   "pluginCreator.addMarketplace": "Add plugin marketplace",
-  "pluginCreator.unavailable":
-    "Plugin Creator is unavailable. Check the connection, then enable or restore Plugin Creator in the marketplace and retry.",
+  "pluginCreator.unavailable": "The workspace is read-only, so plugins cannot be created.",
   "settings.create.action": "New",
   "settings.resourceActions.import": "Import",
   "settings.resourceActions.export": "Export",

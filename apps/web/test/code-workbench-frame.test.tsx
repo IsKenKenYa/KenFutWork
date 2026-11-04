@@ -418,6 +418,67 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
   );
 });
 
+it("管理文档创建任务在壳 ready 后按 id 推送一次，重复渲染不重复建草稿", async () => {
+  vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
+  const request = {
+    id: 1,
+    prompt: "创建一个技能：\n",
+    executionMode: "creative" as const,
+  };
+  const view = render(<CodeWorkbenchFrame newTaskRequest={request} />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  const taskPosts = () =>
+    send.mock.calls.filter(
+      ([message]) =>
+        (message as { type?: unknown }).type === "kenfutwork:host-new-task",
+    );
+  // ready 之前不推：壳内监听器尚未就位，消息会丢。
+  expect(taskPosts()).toHaveLength(0);
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-ready" },
+    }),
+  );
+  await waitFor(() => expect(taskPosts()).toHaveLength(1));
+  expect(taskPosts()[0]?.[0]).toEqual({
+    type: "kenfutwork:host-new-task",
+    prompt: "创建一个技能：\n",
+    executionMode: "creative",
+  });
+  // 同一请求（id 不变）重复渲染不重复推送。
+  view.rerender(
+    <CodeWorkbenchFrame
+      newTaskRequest={{
+        id: 1,
+        prompt: "创建一个技能：\n",
+        executionMode: "creative",
+      }}
+    />,
+  );
+  expect(taskPosts()).toHaveLength(1);
+  // 新请求按新 id 再推一次。
+  view.rerender(
+    <CodeWorkbenchFrame
+      newTaskRequest={{
+        id: 2,
+        prompt: "创建一个插件：\n",
+        executionMode: "creative",
+      }}
+    />,
+  );
+  await waitFor(() => expect(taskPosts()).toHaveLength(2));
+  expect(taskPosts()[1]?.[0]).toEqual({
+    type: "kenfutwork:host-new-task",
+    prompt: "创建一个插件：\n",
+    executionMode: "creative",
+  });
+});
+
 it("Code插件面板切换到非活动工作区时保留同一iframe，返回后恢复原面板", async () => {
   vi.stubGlobal("fetch", async () =>
     Response.json({

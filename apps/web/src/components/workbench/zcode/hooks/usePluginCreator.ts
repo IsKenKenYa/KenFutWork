@@ -1,19 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
 import type { CreateTaskRequest } from "@zui/app-shell/types.js";
-import { useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { toast } from "@zui/components/ui/toast.js";
-import { logger } from "@zui/logger.js";
-import { loadPluginCreatorPrefill } from "@zui/settings/pluginCreatorPrefill.js";
 import { isWorkspaceReadOnly } from "@zui/store/tabStore.js";
 import { useTabStore, useTabStoreApi } from "@zui/store/TabStoreProvider.js";
 import { usePaneLayoutStore } from "@zui/v4/paneLayoutStore.js";
 import { resolveWorkbenchNewTaskTarget } from "@zui/v4/workbenchNewTaskTarget.js";
 import { useWorkbenchGroupStore } from "@zui/v4/workbenchGroupStore.js";
 
+/** 创建插件：新任务以创造方式启动，由 agent 按创造指令写骨架并调用 install_plugin 安装。 */
 export function usePluginCreator(
   onCreateTask: ((request?: CreateTaskRequest) => void) | undefined,
+  fallbackWorkspace?: { workspacePath?: string | null; workspaceIdentity?: string | null },
 ) {
   const { intl } = useZCodeIntl();
   const tabStore = useTabStoreApi();
@@ -23,79 +22,44 @@ export function usePluginCreator(
   const group = useWorkbenchGroupStore((state) =>
     state.activeGroupId ? (state.groups[state.activeGroupId] ?? null) : null,
   );
-  const target = resolveWorkbenchNewTaskTarget({
-    activeWorkspacePath,
-    activeWorkspaceIdentity,
-    activeGroup: group,
-    paneLayout: paneLayout,
-  });
+  // 设置页可能在独立文档中运行，自身的 tabStore 未必有活动 workspace；
+  // 此时用设置 Scope 解析出的 workspace 兜底，避免入口永久变灰。
+  const target = useMemo(
+    () =>
+      resolveWorkbenchNewTaskTarget({
+        activeWorkspacePath,
+        activeWorkspaceIdentity,
+        activeGroup: group,
+        paneLayout,
+      }) ??
+      (fallbackWorkspace?.workspacePath
+        ? {
+            workspacePath: fallbackWorkspace.workspacePath,
+            ...(fallbackWorkspace.workspaceIdentity?.trim()
+              ? { workspaceIdentity: fallbackWorkspace.workspaceIdentity }
+              : {}),
+          }
+        : null),
+    [activeWorkspaceIdentity, activeWorkspacePath, fallbackWorkspace, group, paneLayout],
+  );
   const targetKey = target?.workspaceIdentity?.trim() || target?.workspacePath || "";
-  const resolution = useWorkspaceServicesResolution(
-    target?.workspacePath,
-    undefined,
-    target?.workspaceIdentity,
-  );
-  const scope = useMemo(
-    () => ({ active: true }),
-    [targetKey, resolution.services, resolution.remoteSessionId, resolution.rpcReady, onCreateTask],
-  );
-  useEffect(() => {
-    scope.active = true;
-    return () => {
-      scope.active = false;
-    };
-  }, [scope]);
-  const pending = useRef<object | null>(null);
-  const [busyScope, setBusyScope] = useState<object | null>(null);
-  const create = useCallback(async () => {
-    if (pending.current === scope || !target || !onCreateTask) return;
-    if (!resolution.rpcReady) {
+  const create = useCallback(() => {
+    if (!onCreateTask) return;
+    // 设置页运行在独立管理文档时没有自己的活动 workspace：新建任务的实际落点
+    // 由 Code 壳解析。此时只读校验与 expectedWorkspaceKey 都交给壳，不能把入口判灰。
+    if (
+      target &&
+      isWorkspaceReadOnly(tabStore.getState(), target.workspacePath, target.workspaceIdentity)
+    ) {
       toast(intl.formatMessage({ id: "pluginCreator.unavailable" }), { variant: "warning" });
       return;
     }
-    const isCurrent = () => {
-      const state = tabStore.getState();
-      const groups = useWorkbenchGroupStore.getState();
-      const current = resolveWorkbenchNewTaskTarget({
-        activeWorkspacePath: state.activeWorkspacePath,
-        activeWorkspaceIdentity: state.activeWorkspaceIdentity,
-        activeGroup: groups.activeGroupId ? (groups.groups[groups.activeGroupId] ?? null) : null,
-        paneLayout: usePaneLayoutStore.getState(),
-      });
-      return (
-        scope.active &&
-        (current?.workspaceIdentity?.trim() || current?.workspacePath || "") === targetKey &&
-        !isWorkspaceReadOnly(state, target.workspacePath, target.workspaceIdentity)
-      );
-    };
-    pending.current = scope;
-    setBusyScope(scope);
-    try {
-      const prefill = await loadPluginCreatorPrefill(
-        () =>
-          resolution.services.skillsService.list({
-            workspacePath: target.workspacePath,
-            workspaceIdentity: target.workspaceIdentity,
-            provider: ZCODE_AGENT_PROVIDER,
-          }),
-        isCurrent,
-      );
-      if (prefill) {
-        logger.info("[PluginCreator] 已解析创建技能", { workspaceKey: targetKey });
-        onCreateTask({ ...prefill, expectedWorkspaceKey: targetKey });
-      }
-    } catch (error) {
-      if (isCurrent()) {
-        logger.warn("[PluginCreator] 创建技能不可用", {
-          error: error instanceof Error ? error.message : String(error),
-          workspaceKey: targetKey,
-        });
-        toast(intl.formatMessage({ id: "pluginCreator.unavailable" }), { variant: "warning" });
-      }
-    } finally {
-      if (pending.current === scope) pending.current = null;
-      if (scope.active) setBusyScope(null);
-    }
-  }, [intl, onCreateTask, resolution, scope, tabStore, target, targetKey]);
-  return { create, busy: busyScope === scope, available: Boolean(target && onCreateTask) };
+    onCreateTask({
+      provider: ZCODE_AGENT_PROVIDER,
+      initialPrompt: "创建一个插件：\n",
+      executionMode: "creative",
+      ...(targetKey ? { expectedWorkspaceKey: targetKey } : {}),
+    });
+  }, [intl, onCreateTask, tabStore, target, targetKey]);
+  return { create, busy: false, available: Boolean(onCreateTask) };
 }

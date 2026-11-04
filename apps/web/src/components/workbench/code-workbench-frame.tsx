@@ -3,6 +3,8 @@
 import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
+  type ExecutionMode,
+  type HostNewTaskRequest,
   type ManagementTarget,
   type WorkbenchMode,
   type WorkbenchModes,
@@ -31,6 +33,7 @@ export function CodeWorkbenchFrame({
   onOpenManagement,
   availableModes = DEFAULT_MODES,
   canvasId,
+  newTaskRequest,
 }: {
   /** 当前工作台模式（深链解析结果）；融合后 Design/Flow 是壳内视图，由这里推给壳。 */
   mode?: WorkbenchMode;
@@ -38,6 +41,8 @@ export function CodeWorkbenchFrame({
   onOpenManagement?: (target: ManagementTarget) => void;
   availableModes?: WorkbenchModes;
   canvasId?: string;
+  /** 管理文档转来的新任务意图；id 变化时推送一次（壳负责建草稿）。 */
+  newTaskRequest?: { id: number; prompt: string; executionMode: ExecutionMode };
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // 本地实例的主人即当前用户（DEC-20 免账户）：bootstrap 带给 Code 壳，
@@ -73,6 +78,9 @@ export function CodeWorkbenchFrame({
     );
   }, [panels]);
   const ready = useRef(false);
+  // 壳内 React 是否已接住新任务事件（form/报告等入口）。ready 握手早于 Root 渲染，
+  // 推送必须等壳内监听器就位，否则消息会丢在挂载前的窗口里。
+  const [shellReady, setShellReady] = useState(false);
   const workSaves = useRef(new Map<string, Promise<void>>());
   const sentMode = useRef<WorkbenchMode | undefined>(undefined);
   const sendActivity = useCallback(() => {
@@ -120,6 +128,19 @@ export function CodeWorkbenchFrame({
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
   }, [onOpenManagement, availableModes, localInstance]);
+  // 管理文档（设置页）发起的创建任务：壳就绪后按其 id 推送一次，避免重复建草稿。
+  const sentTaskRequest = useRef(0);
+  useEffect(() => {
+    if (!shellReady || !newTaskRequest || sentTaskRequest.current === newTaskRequest.id)
+      return;
+    sentTaskRequest.current = newTaskRequest.id;
+    const message: HostNewTaskRequest = {
+      type: "kenfutwork:host-new-task",
+      prompt: newTaskRequest.prompt,
+      executionMode: newTaskRequest.executionMode,
+    };
+    frame.current?.contentWindow?.postMessage(message, window.location.origin);
+  }, [shellReady, newTaskRequest]);
   /**
    * 外观主题桥：设置 → 外观（next-themes，默认跟随系统）解析后的结果同步给 Code iframe
    * （zai 主题口径 zai-light/zai-dark）——没有这座桥，外观切深色时 Code 工作台仍是浅色。
@@ -199,6 +220,7 @@ export function CodeWorkbenchFrame({
         setShellMounted(true);
       else if (parsed.data.type === "kenfutwork:code-ready") {
         ready.current = true;
+        setShellReady(true);
         bootstrap();
         // iframe 的主题监听器这时才就位，补推当前外观主题
         postTheme(themeRef.current);

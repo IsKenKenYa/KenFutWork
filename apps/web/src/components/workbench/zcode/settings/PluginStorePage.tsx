@@ -474,6 +474,8 @@ export function PluginStorePage({
             <PluginAddMenu
               testId="plugin-store-create"
               onCreateTask={onCreateTask}
+              workspacePath={storeWorkspacePath}
+              workspaceIdentity={workspaceIdentity}
               onAddMarketplace={() => {
                 setSourceMode("marketplace");
                 setAddMarketplaceError(null);

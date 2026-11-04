@@ -26,6 +26,7 @@ import {
   type SessionCreateSource,
 } from "@zcode/shared";
 import type { ZCodeUiError } from "@zui/lib/zcodeUiError.js";
+import type { ExecutionMode } from "@kenfutwork/shared";
 import type {
   AutomationsNavigationTab,
   TaskNavigationHistory,
@@ -138,6 +139,8 @@ export interface ComposerTextInsertRequest {
   text: string;
   mention?: ComposerMentionPrefill;
   mode?: "replace" | "prepend-if-missing";
+  /** 与新任务同一次预填的执行方式；草稿态由 Composer 直接落到模式控制器。 */
+  executionMode?: ExecutionMode;
 }
 
 export interface TimelineBottomRequest {
@@ -244,6 +247,7 @@ export interface ZCodeSessionStoreState {
     workspaceIdentity?: string,
     mention?: ComposerMentionPrefill,
     mode?: "replace" | "prepend-if-missing",
+    executionMode?: ExecutionMode,
   ) => number;
   clearComposerTextInsertRequest: (
     workspacePath: string,

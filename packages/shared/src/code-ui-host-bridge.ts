@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { executionModeSchema } from "./capability-contracts.js";
 import { themePreferenceSchema } from "./contracts.js";
 
 /** 可用模式由既有宿主能力判定，顺序沿现有顶部按钮（work 由 work 插件探针门控）。 */
@@ -123,5 +124,21 @@ export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
     pluginId: z.string().min(1),
     entryId: z.string().min(1),
   }),
+  // 管理文档发起的创建任务（创建技能/插件）：父页据此转给壳并关闭管理页。
+  z.object({
+    type: z.literal("kenfutwork:management-new-task"),
+    prompt: z.string().min(1),
+    executionMode: executionModeSchema,
+  }),
 ]);
+
+/** 父页→壳：管理文档转来的新任务意图；壳据此走既有新任务草稿入口。 */
+export const hostNewTaskRequestSchema = z
+  .object({
+    type: z.literal("kenfutwork:host-new-task"),
+    prompt: z.string().min(1),
+    executionMode: executionModeSchema,
+  })
+  .strict();
+export type HostNewTaskRequest = z.infer<typeof hostNewTaskRequestSchema>;
 export type CodeUiBootstrap = z.infer<typeof codeUiBootstrapSchema>;

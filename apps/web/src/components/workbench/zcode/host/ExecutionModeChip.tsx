@@ -44,12 +44,16 @@ export function useExecutionModeController({
   sessionId,
   planEnabled,
   onSwitchMode,
+  initialMode,
 }: {
   sessionId: string | null;
   planEnabled?: boolean;
   onSwitchMode?: (mode: string) => void;
+  /** 新任务草稿的执行方式；尚无会话时作为本地意图，首个会话创建后写入该会话。 */
+  initialMode?: ExecutionMode;
 }) {
   const [storedState, setState] = useState(() => emptyState(sessionId));
+  const pendingMode = useRef<ExecutionMode | null>(null);
   const state =
     storedState.sessionId === sessionId ? storedState : emptyState(sessionId);
   if (state !== storedState) setState(state);
@@ -101,10 +105,33 @@ export function useExecutionModeController({
     planClosed.current = false;
     writes.current = Promise.resolve();
     update(emptyState(sessionId));
-    if (!sessionId) return;
+    if (!sessionId) {
+      if (!initialMode) return;
+      // 草稿态没有会话可持久化：只保留本地意图，等首个会话创建后再写入。
+      pendingMode.current = initialMode;
+      update({ mode: initialMode });
+      let alive = true;
+      void (async () => {
+        try {
+          const list = await surfaceJson<{ modes: ModeOption[] }>("/api/execution-modes");
+          if (!alive || epoch !== taskGeneration.current || currentSession.current !== sessionId)
+            return;
+          update({ modes: list.modes });
+        } catch {
+          // 端点不可用时隐藏菜单；发送仍可使用本地意图。
+        }
+      })();
+      return () => {
+        alive = false;
+        taskGeneration.current += 1;
+      };
+    }
+    const pending = pendingMode.current;
+    pendingMode.current = null;
     let alive = true;
     void (async () => {
       try {
+        if (pending) await persist(sessionId, pending).catch(() => {});
         const [list, current] = await Promise.all([
           surfaceJson<{ modes: ModeOption[] }>("/api/execution-modes"),
           surfaceJson<{ mode: ExecutionMode }>(
@@ -132,17 +159,25 @@ export function useExecutionModeController({
       alive = false;
       taskGeneration.current += 1;
     };
-  }, [sessionId, update]);
+  }, [initialMode, sessionId, update, persist]);
 
   const select = useCallback(
     async (next: string) => {
       if (currentSession.current !== sessionId) return;
       const previous = stateRef.current.mode;
-      if (!sessionId || stateRef.current.saving || !previous) return;
+      if (stateRef.current.saving || !previous) return;
       const nextMode = next as ExecutionMode;
       const previousPlanning = planning.current ?? previous === "plan";
       const nextPlanning =
         nextMode === "plan" ? true : previous === "plan" ? false : undefined;
+      if (!sessionId) {
+        // 草稿态切换只改本地意图；首个会话创建时由上面的 effect 统一写入。
+        pendingMode.current = nextMode;
+        update({ mode: nextMode });
+        if (nextPlanning !== undefined)
+          switchMode.current?.(nextPlanning ? "plan" : "plan-off");
+        return;
+      }
       const taskEpoch = taskGeneration.current;
       const intentEpoch = ++intentGeneration.current;
       const isCurrent = () =>
@@ -165,6 +200,31 @@ export function useExecutionModeController({
       }
     },
     [persist, sessionId, update],
+  );
+
+  // 外部预填（设置页创建技能/插件）在草稿态直接落意图：与手点 chip 不同，
+  // 此时 modes 可能还没加载，故同时补一次清单；已有会话仍只走 select。
+  const applyDraftMode = useCallback(
+    (next: ExecutionMode) => {
+      if (currentSession.current !== sessionId || sessionId) return;
+      if (stateRef.current.mode === next) return;
+      pendingMode.current = next;
+      update({ mode: next });
+      const epoch = taskGeneration.current;
+      void (async () => {
+        try {
+          const list = await surfaceJson<{ modes: ModeOption[] }>(
+            "/api/execution-modes",
+          );
+          if (epoch !== taskGeneration.current || currentSession.current !== sessionId)
+            return;
+          update({ modes: list.modes });
+        } catch {
+          // 端点不可用时隐藏菜单；发送仍使用本地意图。
+        }
+      })();
+    },
+    [sessionId, update],
   );
 
   const switchCollaborationMode = useCallback(
@@ -195,9 +255,10 @@ export function useExecutionModeController({
       modes: state.modes,
       saving: state.saving,
       select,
+      applyDraftMode,
       switchCollaborationMode,
     }),
-    [select, state.mode, state.modes, state.saving, switchCollaborationMode],
+    [select, applyDraftMode, state.mode, state.modes, state.saving, switchCollaborationMode],
   );
 }
 

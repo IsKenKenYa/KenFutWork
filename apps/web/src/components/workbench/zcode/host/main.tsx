@@ -20,10 +20,11 @@ const documentRenderers: readonly DocumentPaneRendererDefinition[] = [
 ];
 const toolCallRenderers = [generatedMediaRenderer];
 
-import type {
-  CodeUiWorkspace,
-  InstanceContext,
-  VoiceSettings,
+import {
+  type CodeUiWorkspace,
+  hostNewTaskRequestSchema,
+  type InstanceContext,
+  type VoiceSettings,
 } from "@kenfutwork/shared";
 import type { UserInfo } from "@zcode/shared";
 import type { HelloMessage } from "@zcode/shared/zcode-protocol-v4";
@@ -50,6 +51,7 @@ import {
   installDesktopTitlebarDrag,
 } from "./desktopChrome.js";
 import { createTauriDirectoryPicker } from "./directoryPicker.js";
+import { dispatchHostNewTask } from "./hostNewTask.js";
 import {
   type CodeHostConfig,
   CodeHttpChannelClient,
@@ -298,6 +300,14 @@ if (window.parent !== window && bootstrap) {
       event.origin !== window.location.origin
     )
       return;
+    const task = hostNewTaskRequestSchema.safeParse(event.data);
+    if (task.success) {
+      dispatchHostNewTask({
+        prompt: task.data.prompt,
+        executionMode: task.data.executionMode,
+      });
+      return;
+    }
     const type = (event.data as { type?: unknown } | null)?.type;
     if (type !== "kenfutwork:code-theme") return;
     const theme = (event.data as { theme?: unknown }).theme;

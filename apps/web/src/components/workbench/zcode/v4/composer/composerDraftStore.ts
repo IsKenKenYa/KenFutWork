@@ -9,6 +9,7 @@
 // 附件不入草稿（objectUrl/File 不可序列化，localPath 附件重启后归属难校验——
 // 与「v4 composer 不做附件草稿持久化」的裁决一致）。
 import { logger } from "@zui/logger.js";
+import { executionModeSchema, type ExecutionMode } from "@kenfutwork/shared";
 import { modelSelectionSchema, type ModelSelection } from "@zcode/shared";
 import { conversationWorkContextSchema, type ConversationWorkContext, submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ComposerMentionPrefill } from "@zui/store/zcodeSessionStoreTypes.js";
@@ -19,6 +20,8 @@ export interface V4ComposerDraft {
   mention?: ComposerMentionPrefill;
   /** 有合法 mode 表示已经初始化；没有模型仍是明确空态，不能按旧文本草稿补默认。 */
   mode?: SubmissionMode;
+  /** 新任务草稿的执行方式意图；仅由产品入口创建草稿时写入，首个会话创建后清除。 */
+  executionMode?: ExecutionMode;
   planEnabled?: boolean;
   /** 已处理的工具变更，防止重连快照再次覆盖用户选择。 */
   lastPlanTransitionId?: string;
@@ -93,6 +96,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readDraft(value: unknown): V4ComposerDraft | null {
   if (!isRecord(value) || typeof value.text !== "string") return null;
   const mode = submissionModeSchema.safeParse(value.mode);
+  const executionMode = executionModeSchema.safeParse(value.executionMode);
   const selection = modelSelectionSchema.safeParse(value.modelSelection);
   const workContext = conversationWorkContextSchema.safeParse(value.workContext);
   // 坏 options 不应连带丢掉可确定的模型身份；不读取旧 provider/model/thought 别名。
@@ -123,6 +127,7 @@ function readDraft(value: unknown): V4ComposerDraft | null {
       : {}),
     ...(hasMention ? { mention: mention as unknown as ComposerMentionPrefill } : {}),
     ...(mode.success ? { mode: mode.data === "plan" ? ("build" as const) : mode.data } : {}),
+    ...(executionMode.success ? { executionMode: executionMode.data } : {}),
     ...(typeof value.planEnabled === "boolean"
       ? { planEnabled: value.planEnabled }
       : mode.success
@@ -190,6 +195,7 @@ export function persistV4ComposerDraft(
     !draft.editorStateJson &&
     !draft.mention &&
     !draft.mode &&
+    !draft.executionMode &&
     !draft.modelSelection &&
     !draft.initializeFromNewTask
   ) {

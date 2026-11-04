@@ -3,6 +3,7 @@
 import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
+  type ExecutionMode,
   type ManagementTarget,
   managementNavigationSchema,
 } from "@kenfutwork/shared";
@@ -24,11 +25,14 @@ export function ManagementDocumentFrame({
   target,
   visible,
   onClose,
+  onCreateTask,
 }: {
   target: ManagementTarget;
   /** keep-alive 模式：false 时隐藏不卸载（避免下次打开整文档重载）。 */
   visible: boolean;
   onClose: () => void;
+  /** 管理文档发起的新任务（创建技能/插件）：交给父页转给 Code 壳。 */
+  onCreateTask?: (prompt: string, executionMode: ExecutionMode) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // 本地实例主人（DEC-20 免账户）：与 Code 壳同一份用户，管理页底部显示
@@ -74,6 +78,8 @@ export function ManagementDocumentFrame({
       } else if (parsed.data.type === "kenfutwork:code-theme-change") {
         setTheme(toNextTheme(parsed.data.theme));
       } else if (parsed.data.type === "kenfutwork:management-close") onClose();
+      else if (parsed.data.type === "kenfutwork:management-new-task")
+        onCreateTask?.(parsed.data.prompt, parsed.data.executionMode);
       else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
       else if (parsed.data.type === "kenfutwork:code-access-lost")
@@ -81,7 +87,7 @@ export function ManagementDocumentFrame({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [target, onClose, localInstance, setTheme]);
+  }, [target, onClose, localInstance, setTheme, onCreateTask]);
 
   // 与 Code 壳共用父页的实例主题；ready 握手会补发当前值，避免预加载时丢消息。
   useEffect(() => {

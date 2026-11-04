@@ -51,6 +51,7 @@ async function openSkillsPage(
     workspacePath?: string;
     deferToggle?: boolean;
     pluginSkill?: boolean;
+    onCreateTask?: (request?: unknown) => void;
   } = {},
 ) {
   installCodeRootBrowser();
@@ -202,6 +203,9 @@ async function openSkillsPage(
               ) : (
                 <SkillsSection
                   {...(workspacePath ? { workspacePath } : {})}
+                  {...(scenario.onCreateTask
+                    ? { onCreateTask: scenario.onCreateTask }
+                    : {})}
                   scopeFilter="user"
                   searchQuery=""
                 />
@@ -248,6 +252,26 @@ it("原技能页保留停用插件的只读定义与正文，不展示DB卸载/�
     expect(screen.queryByRole("heading", { name: "技能正文" })).toBeNull(),
   );
   expect(screen.queryByRole("button", { name: /native-skill/ })).toBeNull();
+});
+
+it("设置页新建技能入口以创造模式创建新任务", async () => {
+  const onCreateTask = vi.fn();
+  await openSkillsPage({ onCreateTask });
+  const button = await waitFor(() => {
+    const el = document.querySelector<HTMLButtonElement>(
+      '[data-settings-create-action="settings.skills.create.open"]',
+    );
+    expect(el).not.toBeNull();
+    expect(el?.disabled).toBe(false);
+    return el as HTMLButtonElement;
+  });
+  fireEvent.click(button);
+  expect(onCreateTask).toHaveBeenCalledWith(
+    expect.objectContaining({
+      initialPrompt: "创建一个技能：\n",
+      executionMode: "creative",
+    }),
+  );
 });
 
 it("无Project原技能页显示真实本机包，启停写回相同安装记录", async () => {

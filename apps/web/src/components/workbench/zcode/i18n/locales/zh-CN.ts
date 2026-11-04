@@ -452,8 +452,7 @@ const zhCN: Record<string, string> = {
   "pluginCreator.add": "添加",
   "pluginCreator.create": "创建插件",
   "pluginCreator.addMarketplace": "添加插件市场",
-  "pluginCreator.unavailable":
-    "插件创建器暂不可用。请检查连接，并在插件市场启用或恢复“插件创建器”后重试。",
+  "pluginCreator.unavailable": "当前工作区不可写，无法创建插件。",
   "settings.create.action": "新建",
   "settings.resourceActions.import": "导入",
   "settings.resourceActions.export": "导出",
