@@ -220,6 +220,8 @@ export const externalSkillCandidateSchema = z.object({
   imported: z.boolean(),
   /** 同一来源存在但摘要不同，导入会返回冲突 */
   changed: z.boolean(),
+  /** 该来源的技能已删除，迟到导入只会返回已删除 */
+  deleted: z.boolean(),
 });
 export type ExternalSkillCandidate = z.infer<
   typeof externalSkillCandidateSchema

@@ -505,6 +505,22 @@ export async function insertSkillFileRecords(
   );
 }
 
+/** 供导入事务复用：安装态按 (实例, 技能) 冲突即更新。 */
+export async function upsertInstanceSkillRecord(
+  client: InstanceSqlClient,
+  input: UpsertInstallationInput,
+): Promise<void> {
+  await client.query(
+    `insert into public.instance_skills
+            (instance_id, skill_id, enabled, installed_by_client_id)
+     select :instance, s.id, $2::boolean, $3::uuid from public.skills s
+     where s.id = $1::uuid and s.instance_id = :instance
+     on conflict (instance_id, skill_id)
+     do update set enabled = excluded.enabled`,
+    [input.skillId, input.enabled, input.installedByClientId],
+  );
+}
+
 export function createSkillCatalogRepository(
   persistence: PersistenceService,
 ): SkillCatalogRepository {
@@ -572,14 +588,9 @@ export function createSkillCatalogRepository(
     },
 
     async upsertInstallation(input) {
-      await persistence.forInstance(input.instanceId).query(
-        `insert into public.instance_skills
-                (instance_id, skill_id, enabled, installed_by_client_id)
-         select :instance, s.id, $2::boolean, $3::uuid from public.skills s
-         where s.id = $1::uuid and s.instance_id = :instance
-         on conflict (instance_id, skill_id)
-         do update set enabled = excluded.enabled`,
-        [input.skillId, input.enabled, input.installedByClientId],
+      await upsertInstanceSkillRecord(
+        persistence.forInstance(input.instanceId),
+        input,
       );
     },
 
