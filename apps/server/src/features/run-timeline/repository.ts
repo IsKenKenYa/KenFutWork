@@ -239,7 +239,7 @@ export function createRunTimelineRepository(
                  from public.usage_records
                 where instance_id = :instance
                 group by run_id
-             ) u on u.run_id = r.id
+             ) u on u.run_id = r.id::text
             where b.instance_id = :instance
               and b.project_id = $1
               and b.task_id = $2

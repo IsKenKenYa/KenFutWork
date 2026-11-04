@@ -265,6 +265,9 @@ describe("运行时间线仓储", () => {
     ]);
     expect(calls[0]?.sql).toContain("from public.usage_records");
     expect(calls[0]?.sql).toContain("group by run_id");
+    // usage_records.run_id 是 text，agent_runs.id 是 uuid；直接相等比较会抛
+    // `operator does not exist: text = uuid`，联接必须显式对齐类型。
+    expect(calls[0]?.sql).toContain("u.run_id = r.id::text");
     expect(calls[0]?.values).toEqual(["project-1", "task-1", 20, INSTANCE_ID]);
   });
 });

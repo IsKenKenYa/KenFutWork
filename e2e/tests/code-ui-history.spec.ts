@@ -1,8 +1,5 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { promisify } from "node:util";
+import { mkdir } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 
@@ -18,8 +15,6 @@ import {
   userInputRow,
 } from "../support/code-ui";
 import { openWorkbench, workbenchFrame } from "../support/local-access";
-
-const exec = promisify(execFile);
 
 test.describe("Code 运行记录与工具原文", () => {
   test.use({ viewport: { width: 1920, height: 1080 } });
@@ -69,27 +64,8 @@ test.describe("Code 运行记录与工具原文", () => {
     return { project, session };
   }
 
-  /** 状态面板的运行记录入口要求工作区有真实 Git 改动，这里建立干净仓库后改一行。 */
-  async function prepareDirtyRepo(workDir: string) {
-    const file = path.join(workDir, "notes.txt");
-    await writeFile(file, "base\n", "utf8");
-    await exec("git", ["init"], { cwd: workDir });
-    await exec("git", ["config", "user.email", "e2e@kenfutwork.local"], {
-      cwd: workDir,
-    });
-    await exec("git", ["config", "user.name", "e2e"], { cwd: workDir });
-    await exec("git", ["add", "notes.txt"], { cwd: workDir });
-    await exec("git", ["commit", "-m", "e2e baseline"], { cwd: workDir });
-    await writeFile(file, "base\nchanged\n", "utf8");
-  }
-
-  // 运行记录入口只在 Git 状态区出现，需要 Git 仓库摘要与变更行数。
-  // 本机 e2e 环境拿不到 Git 仓库摘要，状态面板 hasContent=false，入口不渲染；
-  // 数据面已由 RunTimelineDialog 单测与 HTTP 集成测试覆盖。
-  // 这两条留着，等本机 Git 执行链路可用后再启用。
-  test.fixme("运行记录空态：这个 Task 还没有运行记录", async ({ page }) => {
+  test("运行记录空态：这个 Task 还没有运行记录", async ({ page }) => {
     const { project, session } = await prepareProject("e2e-运行空态");
-    await prepareDirtyRepo(project.workDir);
     // 侧栏任务列表以真实会话行生成；有输入行才会列出这个 Task。
     const turnId = randomUUID();
     await appendToolRow(session.sessionId, turnHeaderRow({ rowId: 1, turnId }));
@@ -110,9 +86,8 @@ test.describe("Code 运行记录与工具原文", () => {
     await dialog.getByRole("button", { name: "关闭" }).click();
   });
 
-  test.fixme("运行记录列表可点选进入单轮，再返回列表", async ({ page }) => {
+  test("运行记录列表可点选进入单轮，再返回列表", async ({ page }) => {
     const { project, session } = await prepareProject("e2e-运行列表");
-    await prepareDirtyRepo(project.workDir);
     const turnId = randomUUID();
     await appendToolRow(session.sessionId, turnHeaderRow({ rowId: 1, turnId }));
     await appendToolRow(
