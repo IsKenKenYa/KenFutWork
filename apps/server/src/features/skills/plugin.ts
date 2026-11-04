@@ -11,11 +11,14 @@ import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import { createProjectRepository } from "../projects/repository.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { createCodeUiSkillsHost } from "./code-ui-host.js";
+import { createCodeUiSettingsSyncHost } from "./code-ui-settings-sync-host.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
 import {
   createProjectSkillRepository,
   createSkillCatalogRepository,
+  createSkillImportReceiptRepository,
   type SkillCatalogRepository,
+  type SkillImportReceiptRepository,
 } from "./repository.js";
 import {
   createSkillCatalogService,
@@ -34,6 +37,7 @@ import { createInstanceSkillResourceReader } from "./skill-resource-service.js";
 export function createSkillsPlugin(): PluginDefinition {
   // apply 期构造、mounted 期复用（同一实例）
   let skillsRepository: SkillCatalogRepository;
+  let receiptsRepository: SkillImportReceiptRepository;
   let projectSkillsRepository: ReturnType<typeof createProjectSkillRepository>;
   let projectRepository: ReturnType<typeof createProjectRepository>;
   return {
@@ -53,6 +57,9 @@ export function createSkillsPlugin(): PluginDefinition {
           ctx.get("plugins").readSkillPackages(mode),
       };
       skillsRepository = createSkillCatalogRepository(ctx.get("persistence"));
+      receiptsRepository = createSkillImportReceiptRepository(
+        ctx.get("persistence"),
+      );
       projectSkillsRepository = createProjectSkillRepository(
         ctx.get("persistence"),
       );
@@ -159,8 +166,8 @@ export function createSkillsPlugin(): PluginDefinition {
       ctx.get("tools").register(createSkillTool);
     },
     mounted(ctx) {
-      for (const [id, value] of Object.entries(
-        createCodeUiSkillsHost({
+      const hostHandlers = {
+        ...createCodeUiSkillsHost({
           localInstance: ctx.get("localInstance"),
           repository: skillsRepository,
           plugins: ctx.get("plugins"),
@@ -174,7 +181,13 @@ export function createSkillsPlugin(): PluginDefinition {
                 }
               : {}),
         }),
-      )) {
+        ...createCodeUiSettingsSyncHost({
+          localInstance: ctx.get("localInstance"),
+          catalog: skillsRepository,
+          receipts: receiptsRepository,
+        }),
+      };
+      for (const [id, value] of Object.entries(hostHandlers)) {
         ctx.effect(() =>
           ctx
             .get("capabilities")
