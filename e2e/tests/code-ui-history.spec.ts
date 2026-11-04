@@ -84,8 +84,8 @@ test.describe("Code 运行记录与工具原文", () => {
   }
 
   // 运行记录入口只在 Git 状态区出现，需要 Git 仓库摘要与变更行数。
-  // 本机 e2e 中 Git 摘要没有取到（trace 里项目目录检查返回 400，服务端原生 libproc 基线失败），
-  // 状态面板 hasContent=false，入口不渲染；数据面已由 RunTimelineDialog 单测与 HTTP 集成测试覆盖。
+  // 本机 e2e 环境拿不到 Git 仓库摘要，状态面板 hasContent=false，入口不渲染；
+  // 数据面已由 RunTimelineDialog 单测与 HTTP 集成测试覆盖。
   // 这两条留着，等本机 Git 执行链路可用后再启用。
   test.fixme("运行记录空态：这个 Task 还没有运行记录", async ({ page }) => {
     const { project, session } = await prepareProject("e2e-运行空态");

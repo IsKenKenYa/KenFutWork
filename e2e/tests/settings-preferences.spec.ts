@@ -102,8 +102,12 @@ test.describe("偏好保存往返与非法输入", () => {
     const save = row.getByRole("button", { name: "保存", exact: true });
 
     await proxyInput.fill("not-a-url");
-    const rejected = page.waitForResponse((response) =>
-      response.url().includes("/api/code-ui/rpc"),
+    // 点击保存时同页还会触发任务列表等 RPC；只等冲突响应（409），
+    // 否则会先拿到别的 200 响应，断言对象就错了。
+    const rejected = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/code-ui/rpc") &&
+        response.status() === 409,
     );
     await save.click();
     expect((await rejected).status()).toBe(409);
