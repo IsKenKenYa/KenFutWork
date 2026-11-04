@@ -169,7 +169,7 @@ test("检查点对话框可打开所选轮次的运行记录", async () => {
   await user.click(screen.getByTestId("run-row-r2"));
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/agent/runs/r2/timeline",
+      "/api/agent/tasks/task-1/runs/r2/timeline?projectId=123e4567-e89b-42d3-a456-426614174000",
       undefined,
     ),
   );

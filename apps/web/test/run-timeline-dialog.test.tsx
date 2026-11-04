@@ -83,6 +83,9 @@ function routeApi(handlers: {
   timeline?: (path: string) => RunTimelineResponse | Promise<RunTimelineResponse>;
 }) {
   surfaceJson.mockImplementation(async (path: string) => {
+    if (path.includes("/timeline")) {
+      return handlers.timeline ? handlers.timeline(path) : PAYLOAD;
+    }
     if (path.startsWith("/api/agent/tasks/")) {
       return handlers.runs ? handlers.runs() : RUNS;
     }
@@ -143,7 +146,7 @@ test("点选轮次进入单轮时间线，返回后仍在轮次列表", async ()
   await user.click(await screen.findByTestId("run-row-r2"));
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
-      "/api/agent/runs/r2/timeline",
+      "/api/agent/tasks/task-1/runs/r2/timeline?projectId=project-1",
       undefined,
     ),
   );
@@ -228,7 +231,7 @@ test("导出记录打开服务端 Markdown 下载地址", async () => {
     await screen.findByRole("button", { name: "导出记录" }),
   );
   expect(openSpy).toHaveBeenCalledWith(
-    "http://localhost:3001/api/agent/runs/r2/timeline/export",
+    "http://localhost:3001/api/agent/tasks/task-1/runs/r2/timeline/export?projectId=project-1",
     "_blank",
     "noopener",
   );
