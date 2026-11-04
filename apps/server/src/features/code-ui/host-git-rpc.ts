@@ -1,7 +1,12 @@
 import { codeUiViewerScopeSchema } from "@kenfutwork/shared";
-import type { GitWorkspaceRepositoryInfo } from "@zcode/shared";
+import type {
+  GitGenerateCommitMessageRequest,
+  GitGenerateCommitMessageResult,
+  GitWorkspaceRepositoryInfo,
+} from "@zcode/shared";
 import { z } from "zod";
 import type { LocalActor } from "../local-instance/types.js";
+import type { GenerateGitCommitMessage } from "./git-commit-message.js";
 import {
   CodeUiHostGitRepository,
   type CodeUiHostGitSession,
@@ -39,7 +44,21 @@ const writeMethods = new Set([
   "commit",
   "push",
 ]);
-const unavailableMethods = new Set(["generateCommitMessage"]);
+const generateMethods = new Set(["generateCommitMessage"]);
+const generateParams = targetParams.extend({
+  includeUnstaged: z.boolean().optional(),
+  currentSessionFilePaths: z.array(z.string()).optional(),
+  locale: z.enum(["zh-CN", "en-US"]).optional(),
+  conversationContext: z
+    .object({
+      sessionId: z.string().optional(),
+      omittedMessageCount: z.number().optional(),
+      messages: z.array(
+        z.object({ role: z.enum(["user", "assistant"]), content: z.string() }),
+      ),
+    })
+    .optional(),
+});
 export interface CodeUiHostGitRpc {
   call(
     actor: LocalActor,
@@ -52,6 +71,10 @@ async function dispatch(
   repo: CodeUiHostGitRepository,
   method: string,
   input: unknown,
+  generate?: (
+    request: GitGenerateCommitMessageRequest,
+    diffText: string,
+  ) => Promise<GitGenerateCommitMessageResult>,
 ): Promise<unknown> {
   switch (method) {
     case "getRepositorySummary":
@@ -182,6 +205,49 @@ async function dispatch(
     case "push":
       targetParams.parse(input);
       return repo.push();
+    case "generateCommitMessage": {
+      const params = generateParams.parse(input);
+      if (!generate) throw new Error("当前Git宿主尚未配置提交信息生成模型。");
+      const conversationContext = params.conversationContext
+        ? {
+            ...(params.conversationContext.sessionId === undefined
+              ? {}
+              : { sessionId: params.conversationContext.sessionId }),
+            ...(params.conversationContext.omittedMessageCount === undefined
+              ? {}
+              : {
+                  omittedMessageCount:
+                    params.conversationContext.omittedMessageCount,
+                }),
+            messages: params.conversationContext.messages,
+          }
+        : undefined;
+      const request: GitGenerateCommitMessageRequest = {
+        workspacePath: params.workspacePath,
+        ...(params.workspaceIdentity === undefined
+          ? {}
+          : { workspaceIdentity: params.workspaceIdentity }),
+        ...(params.viewerScope === undefined
+          ? {}
+          : { viewerScope: params.viewerScope }),
+        ...(params.includeUnstaged === undefined
+          ? {}
+          : { includeUnstaged: params.includeUnstaged }),
+        ...(params.currentSessionFilePaths === undefined
+          ? {}
+          : { currentSessionFilePaths: params.currentSessionFilePaths }),
+        ...(params.locale === undefined ? {} : { locale: params.locale }),
+        ...(conversationContext === undefined ? {} : { conversationContext }),
+      };
+      const diff = await repo.diffText(Boolean(request.includeUnstaged));
+      if (!diff.trim())
+        throw new Error(
+          request.includeUnstaged
+            ? "工作区没有可提交的更改。"
+            : "暂存区没有可提交的更改。",
+        );
+      return generate(request, diff);
+    }
     default:
       throw new Error("不支持的Git宿主方法。");
   }
@@ -199,13 +265,14 @@ export function createCodeUiHostGitRpc(deps: {
     connection: CodeUiHostConnection,
     read: (session: CodeUiHostGitSession) => Promise<unknown>,
   ): Promise<unknown>;
+  generateCommitMessage?: GenerateGitCommitMessage;
 }): CodeUiHostGitRpc {
   return {
     async call(actor, method, args, connection) {
       if (
         !methods.has(method) &&
         !writeMethods.has(method) &&
-        !unavailableMethods.has(method)
+        !generateMethods.has(method)
       )
         return null;
       if (
@@ -219,10 +286,11 @@ export function createCodeUiHostGitRpc(deps: {
       );
       if (target.instanceId !== connection.instanceId)
         throw new Error("Git工作区与可信连接身份不匹配。");
-      if (unavailableMethods.has(method))
-        throw new Error(`当前Git宿主尚不支持${method}，该能力仍未接通。`);
+      if (generateMethods.has(method) && !deps.generateCommitMessage)
+        throw new Error("当前Git宿主尚未配置提交信息生成模型。");
       if (writeMethods.has(method) && target.viewerScope.kind === "project")
         throw new Error("项目文件面板仅支持读取，Git写操作请在任务中进行。");
+      const generator = deps.generateCommitMessage;
       const result = await deps.withSession(
         actor,
         target,
@@ -234,6 +302,10 @@ export function createCodeUiHostGitRpc(deps: {
             new CodeUiHostGitRepository(session),
             method,
             args[0],
+            generator
+              ? (request, diffText) =>
+                  generator(actor, target.instanceId, request, diffText)
+              : undefined,
           );
         },
       );

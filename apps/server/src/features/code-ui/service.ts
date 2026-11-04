@@ -109,6 +109,7 @@ import {
 } from "./file-changes.js";
 import { createCodeUiFileHistory } from "./file-history.js";
 import { CodeUiFileIndex, codeUiViewerRpc } from "./files.js";
+import { createGitCommitMessageGenerator } from "./git-commit-message.js";
 import { claimGoalContinuation } from "./goal-admission.js";
 import { createTaskGoalHost, pauseTaskGoal, syncGoal } from "./goals.js";
 import { createCodeGuideInputs } from "./guide-input.js";
@@ -618,6 +619,10 @@ export class CodeUiService {
               }),
             });
           },
+          generateCommitMessage: createGitCommitMessageGenerator({
+            settings: deps.settings,
+            modelProviders: deps.modelProviders,
+          }),
         })
       : undefined;
     this.attachments =

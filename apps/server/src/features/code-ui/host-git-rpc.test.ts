@@ -9,21 +9,160 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
 import type { ExecGit, GitCommandResult } from "../code-git/git-client.js";
 import { resolveReadOnlyProjectPath } from "../execution/scope-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
+import { createLocalCredentialStore } from "../model-providers/local-credential-store.js";
+import { createModelProviderService } from "../model-providers/model-provider-service.js";
+import {
+  createModelProviderRepository,
+  type ProviderInstanceRecord,
+} from "../model-providers/repository.js";
+import {
+  createPersistenceFromRunner,
+  type PostgresQueryRunner,
+} from "../persistence/providers/postgres.js";
+import { createGitCommitMessageGenerator } from "./git-commit-message.js";
 import { createCodeUiHostGitRpc } from "./host-git-rpc.js";
 
 const roots: string[] = [];
+const servers: Array<import("node:http").Server> = [];
 afterEach(async () => {
+  for (const server of servers.splice(0)) {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
+
+/** 真实本机 HTTP 供应商：只为提交信息生成提供协议端点，不改变 Git 仓库行为。 */
+async function providerFixture(
+  instanceId: string,
+  options: {
+    hang?: boolean;
+    failFirst?: boolean;
+    defaultModel?: string;
+    maxRetries?: number;
+    idleTimeoutMs?: number;
+  } = {},
+) {
+  const key = "private-provider-key";
+  // 实例 id 必须是 uuid：默认模型 specifier 走 parseInstanceSpecifier 校验。
+  const providerId = randomUUID();
+  const requests: Array<{
+    path: string;
+    body: Record<string, unknown>;
+    headers: Record<string, unknown>;
+  }> = [];
+  const server = createServer(async (request, response) => {
+    let data = "";
+    for await (const chunk of request) data += chunk;
+    requests.push({
+      path: request.url ?? "",
+      body: JSON.parse(data),
+      headers: request.headers,
+    });
+    if (options.hang) return;
+    if (options.failFirst && requests.length === 1) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "上游暂时不可用" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        id: "reply",
+        object: "chat.completion",
+        created: 1,
+        model: "selected-model",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "```\nfeat(git): 接入提交信息生成\n```",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+    );
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string")
+    throw new Error("供应商夹具未获得端口。");
+  const row: ProviderInstanceRecord = {
+    id: providerId,
+    instance_id: instanceId,
+    name: "实际供应商",
+    protocol: "openai-compatible",
+    base_url: `http://127.0.0.1:${address.port}/v1`,
+    api_key_ref: "provider",
+    models: [
+      {
+        id: "selected-model",
+        name: "实际模型",
+        capability: "chat",
+      },
+    ],
+    compat: { chatApi: "completions" },
+    headers: { "x-custom": "fixture-header" },
+    enabled: true,
+    config_revision: "1",
+    probe_result: null,
+    probed_at: null,
+  };
+  const runner: PostgresQueryRunner = {
+    query: async () => ({ rowCount: 1, rows: [row] }),
+    acquire: async () => ({
+      query: async () => ({ rowCount: 1, rows: [row] }),
+      release() {},
+    }),
+    acquireSession: async () => {
+      throw new Error("提交信息夹具不建立Task宿主会话。");
+    },
+    end: async () => {},
+  };
+  const dataDir = await mkdtemp(join(tmpdir(), "kfw-commit-message-"));
+  roots.push(dataDir);
+  await createLocalCredentialStore(dataDir).set("provider", key);
+  const modelProviders = createModelProviderService({
+    repository: createModelProviderRepository(
+      createPersistenceFromRunner(runner),
+    ),
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => instanceId },
+      dataDir,
+    }),
+  });
+  const settings = {
+    getInstanceSettings: async () =>
+      instanceSettingsSchema.parse({
+        defaultModel: options.defaultModel ?? `${providerId}:selected-model`,
+        llmRequestMaxRetries: options.maxRetries ?? 1,
+        agentStreamIdleTimeoutMs: options.idleTimeoutMs ?? 5000,
+      }),
+  };
+  return {
+    instanceId,
+    providerId,
+    requests,
+    generateCommitMessage: createGitCommitMessageGenerator({
+      settings,
+      modelProviders,
+    }),
+  };
+}
 const execute: ExecGit = (args, cwd, input, env) =>
   new Promise((resolve, reject) => {
     const child = execFile(
@@ -62,7 +201,12 @@ async function resolveTaskWritePath(root: string, path: string) {
     throw new Error("路径越出任务主目录");
   return canonical;
 }
-async function fixture() {
+async function fixture(
+  options: {
+    withGenerator?: boolean;
+    provider?: Parameters<typeof providerFixture>[1];
+  } = {},
+) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-host-git-")));
   roots.push(root);
   const setup = async (args: string[]) => {
@@ -94,6 +238,9 @@ async function fixture() {
   await writeFile(join(root, "untracked-binary.dat"), Buffer.from([0, 4, 5]));
   const instanceId = randomUUID();
   const actor: LocalActor = { instanceId, accessClientId: null };
+  const provider = options.withGenerator
+    ? await providerFixture(instanceId, options.provider ?? {})
+    : undefined;
   const projectId = randomUUID();
   const taskId = randomUUID();
   const requests: Array<readonly string[]> = [];
@@ -133,6 +280,9 @@ async function fixture() {
           return execute(args, cwd, input, env);
         },
       }),
+    ...(provider
+      ? { generateCommitMessage: provider.generateCommitMessage }
+      : {}),
   });
   const connection = {
     connectionId: randomUUID(),
@@ -158,6 +308,7 @@ async function fixture() {
     call,
     raw,
     requests,
+    provider,
     setup,
     unavailable: () => {
       available = false;
@@ -429,12 +580,80 @@ it("Project只读投影保持真实目录，连接与workspace核对；项目作
   expect(f.requests).toEqual([]);
   await expect(
     f.call("generateCommitMessage", { message: "x" }),
-  ).rejects.toThrow(/尚不支持|未接通/);
+  ).rejects.toThrow("当前Git宿主尚未配置提交信息生成模型。");
   f.unavailable();
   expect(await f.call("getRepositorySummary")).toMatchObject({
     result: { isGitAvailable: false, isRepository: false },
   });
   expect(f.requests).toEqual([]);
+});
+
+it("提交信息生成用实例默认模型读取真实暂存差异，只返回一条信息", async () => {
+  const f = await fixture({ withGenerator: true });
+  const provider = f.provider;
+  if (!provider) throw new Error("夹具没有建立供应商。");
+  const result = (
+    await f.call("generateCommitMessage", {
+      locale: "zh-CN",
+      currentSessionFilePaths: ["tracked.txt"],
+    })
+  )?.result as { message: string; providerId: string; model: string };
+  expect(result).toEqual({
+    message: "feat(git): 接入提交信息生成",
+    providerId: provider.providerId,
+    model: "selected-model",
+  });
+  expect(JSON.stringify(result)).not.toContain("private-provider-key");
+  expect(provider.requests).toHaveLength(1);
+  expect(provider.requests[0]?.path).toBe("/v1/chat/completions");
+  expect(provider.requests[0]?.body).toMatchObject({
+    model: "selected-model",
+    stream: false,
+  });
+  const body = JSON.stringify(provider.requests[0]?.body);
+  expect(body).toContain("tracked.txt");
+  expect(body).toContain("staged");
+  expect(provider.requests[0]?.headers.authorization).toBe(
+    "Bearer private-provider-key",
+  );
+  expect(provider.requests[0]?.headers["x-custom"]).toBe("fixture-header");
+});
+
+it("暂存区为空不调用模型，默认模型未选也给可读原因", async () => {
+  const empty = await fixture({ withGenerator: true });
+  await empty.call("unstagePaths", { paths: ["tracked.txt"] });
+  await expect(empty.call("generateCommitMessage", {})).rejects.toThrow(
+    "暂存区没有可提交的更改。",
+  );
+  expect(empty.provider?.requests).toEqual([]);
+
+  const unset = await fixture({
+    withGenerator: true,
+    provider: { defaultModel: "" },
+  });
+  await expect(unset.call("generateCommitMessage", {})).rejects.toThrow(
+    "尚未选择默认模型，请到设置中选择后重试。",
+  );
+  expect(unset.provider?.requests).toEqual([]);
+});
+
+it("上游抖动按治理重试次数重发，超时按治理空闲上限终止", async () => {
+  const retried = await fixture({
+    withGenerator: true,
+    provider: { failFirst: true, maxRetries: 2 },
+  });
+  const result = (await retried.call("generateCommitMessage", {}))?.result as {
+    message: string;
+  };
+  expect(result.message).toBe("feat(git): 接入提交信息生成");
+  expect(retried.provider?.requests).toHaveLength(2);
+
+  const timed = await fixture({
+    withGenerator: true,
+    provider: { hang: true, idleTimeoutMs: 300 },
+  });
+  await expect(timed.call("generateCommitMessage", {})).rejects.toThrow(/超时/);
+  expect(timed.provider?.requests).toHaveLength(1);
 });
 
 it("仓库配置里的upstream名称不能变成Git选项，纯读比较不写输出文件", async () => {

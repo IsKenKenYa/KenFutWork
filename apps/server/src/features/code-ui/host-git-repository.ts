@@ -28,7 +28,10 @@ export interface CodeUiHostGitSession {
   resolvePath(path: string, operation: "read" | "write"): Promise<string>;
   limits: Pick<
     InstanceSettings,
-    "codeReadMaxBytes" | "codeSearchMaxBytes" | "codeSearchMaxResults"
+    | "codeReadMaxBytes"
+    | "codeSearchMaxBytes"
+    | "codeSearchMaxResults"
+    | "toolResultPruneThresholdChars"
   >;
 }
 function requireSuccess(result: GitCommandResult): string {
@@ -1135,6 +1138,28 @@ export class CodeUiHostGitRepository {
         Buffer.byteLength(result.stdout) > this.session.limits.codeReadMaxBytes,
     };
   }
+  /** 供提交信息生成读取的整库差异文本；体量按治理表的工具结果预算截断。 */
+  async diffText(includeUnstaged: boolean): Promise<string> {
+    const maxChars = this.session.limits.toolResultPruneThresholdChars;
+    const args = ["diff", "--no-color", "--no-ext-diff", "--no-textconv"];
+    let output: string;
+    if (includeUnstaged) {
+      try {
+        output = await this.command([...args, "HEAD"]);
+      } catch {
+        // 空仓库没有 HEAD：暂存与工作区各读一次，拼成同一份文本。
+        const staged = await this.command([...args, "--cached"]);
+        const unstaged = await this.command(args);
+        output = staged + unstaged;
+      }
+    } else {
+      output = await this.command([...args, "--cached"]);
+    }
+    if (output.length > maxChars)
+      return `${output.slice(0, maxChars)}\n（差异过长，已截断）`;
+    return output;
+  }
+
   async diff(
     path: string,
     sourceId: "staged" | "unstaged" | "branch",
