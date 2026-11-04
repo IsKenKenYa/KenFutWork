@@ -433,3 +433,33 @@ it("仓库配置里的upstream名称不能变成Git选项，纯读比较不写�
       ),
   ).toBe(true);
 });
+
+it("last-turn差异必须走会话入口，graph按skip分页且不多跑写命令", async () => {
+  const f = await fixture();
+  f.requests.splice(0);
+  await expect(
+    f.call("getDiff", { path: "tracked.txt", sourceId: "last-turn" }),
+  ).rejects.toThrow("上一轮差异必须经真实会话文件变更入口读取。");
+  expect(f.requests).toEqual([]);
+  await f.setup(["commit", "--allow-empty", "-m", "第二笔"]);
+  await f.setup(["commit", "--allow-empty", "-m", "第三笔"]);
+  const newest = (await f.call("getCommitGraph", { maxCount: 2, skip: 0 }))
+    ?.result as { commits: Array<{ subject: string }>; hasMore: boolean };
+  const older = (await f.call("getCommitGraph", { maxCount: 2, skip: 2 }))
+    ?.result as { commits: Array<{ subject: string }>; hasMore: boolean };
+  expect(newest.commits.map((commit) => commit.subject)).toEqual([
+    "第三笔",
+    "第二笔",
+  ]);
+  expect(newest.hasMore).toBe(true);
+  expect(older.commits.map((commit) => commit.subject)).toEqual(["测试基线"]);
+  expect(older.hasMore).toBe(false);
+  expect(
+    f.requests.every(
+      (args) =>
+        !["add", "restore", "clean", "commit", "push", "switch"].includes(
+          args[0] ?? "",
+        ),
+    ),
+  ).toBe(true);
+});
