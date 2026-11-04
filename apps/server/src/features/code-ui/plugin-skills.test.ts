@@ -112,6 +112,8 @@ it("原技能RPC显示安装包中的只读定义，运行目录按真实模式�
   const repository = {
     listInstanceSkills: async () => [],
     listSkillFiles: async () => [],
+    findVisibleById: async () => null,
+    listFilesForVisibleSkill: async () => [],
     setEnabled: async () => {
       throw new Error("不能修改DB安装态");
     },
@@ -123,6 +125,13 @@ it("原技能RPC显示安装包中的只读定义，运行目录按真实模式�
     localInstance,
     repository,
     plugins: f.registry,
+    projectSkills: {
+      findProject: async () => null,
+      listProjectSkills: async () => [],
+      upsertProjectSkill: async () => 0,
+      setProjectSkillEnabled: async () => false,
+    },
+    projects: { findDirectoryProjects: async () => [] },
   });
   const listing = host["skills.list"];
   if (!listing) throw new Error("技能RPC未注册");

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { registerSkillRoutes } from "../../http/skills.js";
 import { registerMarketplaceRoutes } from "../../http/skills-marketplace.js";
 import type {
@@ -7,10 +8,12 @@ import type {
 } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
+import { createProjectRepository } from "../projects/repository.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
 import { createCodeUiSkillsHost } from "./code-ui-host.js";
 import { createCreateSkillTool } from "./create-skill-tool.js";
 import {
+  createProjectSkillRepository,
   createSkillCatalogRepository,
   type SkillCatalogRepository,
 } from "./repository.js";
@@ -31,6 +34,8 @@ import { createInstanceSkillResourceReader } from "./skill-resource-service.js";
 export function createSkillsPlugin(): PluginDefinition {
   // apply 期构造、mounted 期复用（同一实例）
   let skillsRepository: SkillCatalogRepository;
+  let projectSkillsRepository: ReturnType<typeof createProjectSkillRepository>;
+  let projectRepository: ReturnType<typeof createProjectRepository>;
   return {
     name: "skills",
     inject: [
@@ -48,6 +53,10 @@ export function createSkillsPlugin(): PluginDefinition {
           ctx.get("plugins").readSkillPackages(mode),
       };
       skillsRepository = createSkillCatalogRepository(ctx.get("persistence"));
+      projectSkillsRepository = createProjectSkillRepository(
+        ctx.get("persistence"),
+      );
+      projectRepository = createProjectRepository(ctx.get("persistence"));
       const catalog: SkillCatalogService = createSkillCatalogService({
         repository: skillsRepository,
         localInstance: ctx.get("localInstance"),
@@ -155,6 +164,15 @@ export function createSkillsPlugin(): PluginDefinition {
           localInstance: ctx.get("localInstance"),
           repository: skillsRepository,
           plugins: ctx.get("plugins"),
+          projectSkills: projectSkillsRepository,
+          projects: projectRepository,
+          ...(ctx.env.skillsRoot
+            ? { commonSkillsRoot: ctx.env.skillsRoot }
+            : ctx.env.agentFilesRoot
+              ? {
+                  commonSkillsRoot: join(ctx.env.agentFilesRoot, "skills"),
+                }
+              : {}),
         }),
       )) {
         ctx.effect(() =>
