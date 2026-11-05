@@ -698,7 +698,10 @@ async function until(assertion: () => boolean, hint = "条件未成立") {
   }
 }
 
-function installPlugin(options: FakeHaOptions = {}) {
+function installPlugin(
+  options: FakeHaOptions = {},
+  serviceInstanceId?: () => Promise<string>,
+) {
   const kernel = composePlugins(makeEnv(), []);
   kernels.push(kernel);
   const fake = fakeHomeAssistant(options);
@@ -711,6 +714,7 @@ function installPlugin(options: FakeHaOptions = {}) {
     hostNodeMajor: 22,
     builtinCatalog: [],
     storage: store.storage,
+    ...(serviceInstanceId ? { serviceInstanceId } : {}),
   });
   services.push(service);
   return { kernel, service, fake, store };
@@ -1061,6 +1065,27 @@ describe("HA 插件：安装与门禁", () => {
     expect(result?.status).toBe(500);
     expect(JSON.stringify(result?.body)).toContain("缺少实例上下文");
   });
+
+  it("装上即触发：宿主以本机实例身份预热 auto-init 路由", async () => {
+    const resolved: string[] = [];
+    const harness = installPlugin({}, async () => {
+      resolved.push(INSTANCE_ID);
+      return INSTANCE_ID;
+    });
+    const { installed } = await harness.service.install({
+      url: HA_DIR,
+      allowLifecycleScripts: false,
+    });
+
+    expect(installed.id).toContain("kenfutwork-ha");
+    // 预热只发生一次，且带的是本机实例 id（插件 apply(ctx) 自己拿不到）。
+    expect(resolved).toEqual([INSTANCE_ID]);
+    // 预热真的打到 HA：假 HA 收到 /auth/login_flow 请求（本机未开免登录会失败，
+    // 但安装态不回滚，真实错误由面板 GET config 抛出）。
+    expect(
+      harness.fake.calls.some((call) => call.url.includes("/auth/login_flow")),
+    ).toBe(true);
+  });
 });
 
 describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () => {
@@ -1070,7 +1095,12 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
       path: "config",
       instanceId: INSTANCE_ID,
     });
-    expect(bodyOf<{ configured: boolean }>(empty).configured).toBe(false);
+    // 失败不兜底：假 HA 未开可信网段，自动接入以错误态抛出，不再静默报「未配置」。
+    expect(empty?.status).toBe(401);
+    expect(bodyOf<{ error: string; code: string }>(empty)).toMatchObject({
+      code: "unauthorized",
+      error: expect.stringContaining("HA 自动接入失败"),
+    });
 
     const saved = await configureConnected(service, installed.id);
     expect(saved?.status).toBe(200);
@@ -1170,7 +1200,7 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
     expect(fake.calls[0]?.authorization).toBe(`Bearer ${FAKE_TOKEN}`);
   });
 
-  it("未配置时连接测试报 not_configured；断开即清库", async () => {
+  it("未配置时连接测试抛出自动接入失败；断开即清库", async () => {
     const { service, installed, store } = await installFromRepo();
     const test = await dispatch(service, installed.id, {
       method: "POST",
@@ -1178,7 +1208,10 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
       instanceId: INSTANCE_ID,
     });
     expect(test?.status).toBe(401);
-    expect(bodyOf<{ code: string }>(test).code).toBe("not_configured");
+    expect(bodyOf<{ code: string; error: string }>(test)).toMatchObject({
+      code: "unauthorized",
+      error: expect.stringContaining("HA 自动接入失败"),
+    });
 
     await configureConnected(service, installed.id);
     expect([...store.rows.keys()].length).toBe(1);
@@ -1193,7 +1226,9 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
       path: "config",
       instanceId: INSTANCE_ID,
     });
-    expect(bodyOf<{ configured: boolean }>(after).configured).toBe(false);
+    // 断开后再次读取会重新尝试自动接入，同样以错误态抛出而非静默「未配置」。
+    expect(after?.status).toBe(401);
+    expect(bodyOf<{ code: string }>(after).code).toBe("unauthorized");
   });
 
   it("按实例隔离：A 实例的配置不会被 B 实例读到", async () => {
@@ -1203,7 +1238,9 @@ describe("HA 插件：配置 → 连接 → 断开（假 HA 全链路）", () =>
       path: "config",
       instanceId: INSTANCE_B,
     });
-    expect(bodyOf<{ configured: boolean }>(other).configured).toBe(false);
+    // B 实例未配置：自动接入在该实例上独立失败，不会读到 A 的配置。
+    expect(other?.status).toBe(401);
+    expect(bodyOf<{ code: string }>(other).code).toBe("unauthorized");
     const own = await dispatch(service, installed.id, {
       path: "config",
       instanceId: INSTANCE_A,
@@ -1628,14 +1665,17 @@ describe("HA 插件：域 + 属性 → 控件模型", () => {
 });
 
 describe("HA 插件：实体网格与控制（假 HA 全链路）", () => {
-  it("未配置时报可读错误，面板据此回到配置态", async () => {
+  it("未配置时自动接入失败以可读错误抛出，不假装成功", async () => {
     const { service, installed } = await installFromRepo();
     const result = await dispatch(service, installed.id, {
       path: "entities",
       instanceId: INSTANCE_ID,
     });
     expect(result?.status).toBe(401);
-    expect(bodyOf<{ code: string }>(result).code).toBe("not_configured");
+    expect(bodyOf<{ code: string; error: string }>(result)).toMatchObject({
+      code: "unauthorized",
+      error: expect.stringContaining("HA 自动接入失败"),
+    });
   });
 
   it("列实体：按域分组、轮询态如实标注、控件齐全", async () => {
@@ -2440,11 +2480,11 @@ describe("HA 插件：配置流自动取值", () => {
 });
 
 describe("HA 插件：agent 工具", () => {
-  it("未配置时 fail loud：报「去面板配置」，不假装成功", async () => {
+  it("未配置时 fail loud：自动接入失败原样抛出，不假装成功", async () => {
     const { kernel } = await installFromRepo();
     await expect(
       runTool(kernel, "ha_entities", {}, INSTANCE_ID),
-    ).rejects.toThrow(/尚未配置 Home Assistant/);
+    ).rejects.toThrow(/HA 自动接入失败/);
     await expect(
       runTool(
         kernel,
@@ -2452,7 +2492,7 @@ describe("HA 插件：agent 工具", () => {
         { entityId: "light.a", key: "power", service: "turn_on" },
         INSTANCE_ID,
       ),
-    ).rejects.toThrow(/尚未配置 Home Assistant/);
+    ).rejects.toThrow(/HA 自动接入失败/);
   });
 
   it("ha_entities：按域/区域/关键字过滤，超限如实标 truncated", async () => {

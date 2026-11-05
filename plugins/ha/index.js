@@ -21,6 +21,7 @@
 
 import {
   HA_LOOPBACK_BASE_URL,
+  initializeExistingHomeAssistant,
   initializeHomeAssistant,
   readHaOnboarding,
 } from "./lib/auto-init.js";
@@ -66,6 +67,8 @@ const STATUS_BY_CODE = {
   unauthorized: 401,
   not_configured: 401,
   not_found: 404,
+  trusted_network_unavailable: 503,
+  auto_init_failed: 500,
 };
 
 function codedError(message, code) {
@@ -181,29 +184,43 @@ export function apply(ctx) {
       try {
         return await initializeHomeAssistant(previous);
       } catch (error) {
-        // 凭据记录损坏或 HA 已被别人重建：不反复撞认证，回到显式连接。
+        // 凭据记录损坏或 HA 已被别人重建：清掉记录，下次重新探测；失败继续抛出。
         if (error?.code === "unauthorized")
           await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
         throw error;
       }
     }
 
-    let steps;
+    let steps = null;
     try {
       steps = await readHaOnboarding({ baseUrl: AUTO_INIT_BASE_URL });
-    } catch {
-      // 本机没有可初始化的 HA：保留显式连接入口，不伪造自动成功。
-      return null;
+    } catch (error) {
+      // onboarding 不可读（已完成初始化的 HA 常见 404）：改走可信网段分支，
+      // 由它给出成功或明确的失败原因，绝不静默回落到手动配置表单。
+      ctx.logger.info?.("HA onboarding 不可读，尝试可信网段免登录：", error);
     }
-    if (steps.get("user") === true) return null;
-    const state = {
-      baseUrl: AUTO_INIT_BASE_URL,
-      username: "kenfutwork",
-      password: `${crypto.randomUUID()}${crypto.randomUUID()}`,
-    };
-    // 先持久化再产生远端副作用：响应丢失后仍可用同一口令恢复。
-    await ctx.storage.set(instanceId, AUTO_INIT_KEY, JSON.stringify(state));
-    return initializeHomeAssistant(state);
+    if (steps && steps.get("user") !== true) {
+      const state = {
+        baseUrl: AUTO_INIT_BASE_URL,
+        username: "kenfutwork",
+        password: `${crypto.randomUUID()}${crypto.randomUUID()}`,
+      };
+      // 先持久化再产生远端副作用：响应丢失后仍可用同一口令恢复。
+      await ctx.storage.set(instanceId, AUTO_INIT_KEY, JSON.stringify(state));
+      return initializeHomeAssistant(state);
+    }
+    // 已完成 onboarding（或读不到状态）：不建号、不改号，只自动签发长期令牌。
+    try {
+      return await initializeExistingHomeAssistant({
+        baseUrl: AUTO_INIT_BASE_URL,
+      });
+    } catch (error) {
+      // 失败不兜底：保留原始错误码，补上可读的接入上下文后抛出，不伪装成「未配置」。
+      throw codedError(
+        `HA 自动接入失败：${error instanceof Error ? error.message : String(error)}`,
+        error?.code ?? "auto_init_failed",
+      );
+    }
   }
 
   async function readOrInitializeConfig(instanceId) {
@@ -214,13 +231,11 @@ export function apply(ctx) {
     const pending = (async () => {
       try {
         const config = await autoInitializeConfig(instanceId);
-        if (!config) return null;
+        if (!config) {
+          throw codedError("HA 自动初始化未返回连接配置。", "auto_init_failed");
+        }
         await writeConfig(instanceId, config);
         return config;
-      } catch (error) {
-        if (error?.code === "auto_init_invalid") throw error;
-        ctx.logger.warn("HA 自动初始化未完成：", error);
-        return null;
       } finally {
         autoInitializations.delete(instanceId);
       }
@@ -371,17 +386,42 @@ export function apply(ctx) {
     path: "config",
     handler: async (request) => {
       const instanceId = requireInstance(request.instanceId, "读取配置");
-      const config = await readOrInitializeConfig(instanceId);
-      return {
-        status: 200,
-        body: {
-          configured: Boolean(config),
-          // 令牌绝不出 HTTP；地址不是秘密（面板要能改）
-          baseUrl: config?.baseUrl ?? null,
-          defaultBaseUrl: HA_DEFAULT_BASE_URL,
-          savedAt: config?.savedAt ?? null,
-        },
-      };
+      try {
+        const config = await readOrInitializeConfig(instanceId);
+        return {
+          status: 200,
+          body: {
+            configured: Boolean(config),
+            // 令牌绝不出 HTTP；地址不是秘密（面板要能改）
+            baseUrl: config?.baseUrl ?? null,
+            defaultBaseUrl: HA_DEFAULT_BASE_URL,
+            savedAt: config?.savedAt ?? null,
+          },
+        };
+      } catch (error) {
+        // 失败不兜底：初始化链路的任何异常都以错误态返回，面板据此显示原因，
+        // 不再把它伪装成「未配置」并回落到手动填令牌的表单。
+        return errorResult(error);
+      }
+    },
+  });
+
+  /**
+   * 装上即触发：宿主在插件安装/启用成功后以本机实例身份调用一次。
+   * 插件 `apply(ctx)` 拿不到 instanceId，触发点只能由宿主补；这里与面板
+   * `GET config` 共用同一条 `readOrInitializeConfig`，失败同样以错误态返回。
+   */
+  ctx.routes.register({
+    path: "auto-init",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "自动初始化");
+      try {
+        const config = await readOrInitializeConfig(instanceId);
+        return { status: 200, body: { ok: true, baseUrl: config.baseUrl } };
+      } catch (error) {
+        return errorResult(error);
+      }
     },
   });
 
@@ -486,7 +526,7 @@ export function apply(ctx) {
   async function advanceAutoSteps(runtime, flowId, initial) {
     let step = initial;
     for (let i = 0; i < 6; i += 1) {
-      if (!step || step.type !== "form") break;
+      if (step?.type !== "form") break;
       const hasError = Object.values(step.errors ?? {}).some(
         (message) => typeof message === "string" && message.trim(),
       );

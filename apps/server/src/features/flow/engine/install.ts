@@ -93,25 +93,107 @@ export function readStackLogTail(dataDir: string): string[] {
   return readLogTail(join(dataDir, STACK_LOG_FILE));
 }
 
-/** 首次安装的密钥文件（数据目录内，gitignore 覆盖；存在即复用）。 */
+/** 栈凭据键（宿主一次生成、重启复用；不再要求用户在 flow/.env 里手填）。 */
+const STACK_ENV_KEYS = [
+  "DIFY_SECRET_KEY",
+  "DIFY_INIT_PASSWORD",
+  "DIFY_ADMIN_API_KEY",
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+  "DIFY_DB_PASSWORD",
+  "DIFY_SANDBOX_API_KEY",
+] as const;
+
+/** Flow 网关需要同源的键：init/setup 建的管理员与网关自动授权必须用同一份。 */
+const GATEWAY_SHARED_KEYS = [
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+  "DIFY_INIT_PASSWORD",
+  "DIFY_ADMIN_API_KEY",
+  "DIFY_SECRET_KEY",
+] as const;
+
+function envKeySet(content: string): Set<string> {
+  return new Set(
+    [...content.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)]
+      .map((match) => match[1])
+      .filter((key): key is string => typeof key === "string"),
+  );
+}
+
+/** 首次安装的密钥文件（数据目录内，gitignore 覆盖；存在即复用并补齐缺键）。 */
 export function ensureStackEnvFile(dataDir: string): string {
   mkdirSync(dataDir, { recursive: true });
   const envFile = join(dataDir, STACK_ENV_FILE);
   const random = (bytes: number) => randomBytes(bytes).toString("base64url");
+  const generated: Record<string, string> = {
+    DIFY_SECRET_KEY: random(32),
+    DIFY_INIT_PASSWORD: random(9),
+    DIFY_ADMIN_API_KEY: `kfw-admin-${random(24)}`,
+    DIFY_ADMIN_EMAIL: "admin@kenfutwork.local",
+    DIFY_ADMIN_PASSWORD: random(18),
+    DIFY_DB_PASSWORD: random(18),
+    DIFY_SANDBOX_API_KEY: `kfw-sandbox-${random(18)}`,
+  };
   if (!existsSync(envFile)) {
     const content = [
       "# Dify 无头栈环境（宿主首次安装时自动生成；删除即下次重新生成——SECRET_KEY 变更会使已有加密数据不可读）",
-      `DIFY_SECRET_KEY=${random(32)}`,
-      `DIFY_INIT_PASSWORD=${random(9)}`,
-      `DIFY_ADMIN_API_KEY=kfw-admin-${random(24)}`,
+      ...STACK_ENV_KEYS.map((key) => `${key}=${generated[key]}`),
       "",
     ].join("\n");
     writeFileSync(envFile, content, { mode: 0o600 });
     return envFile;
   }
 
-  // 管理员账号不由引擎独立生成：初始化时复用 Flow 网关 env，避免两边口令漂移。
+  // 旧版本 env 缺管理员账号等键：只补齐，绝不轮换已有值
+  // （SECRET_KEY 一变，Dify 里已加密的数据就不可读）。
+  const existing = readFileSync(envFile, "utf8");
+  const present = envKeySet(existing);
+  const missing = STACK_ENV_KEYS.filter((key) => !present.has(key));
+  if (missing.length === 0) return envFile;
+  const suffix = existing.endsWith("\n") ? "" : "\n";
+  const appended = [
+    "",
+    "# 宿主补齐（零手工初始化）：管理员账号与栈凭据由本机生成，重启复用同一份",
+    ...missing.map((key) => `${key}=${generated[key]}`),
+    "",
+  ].join("\n");
+  writeFileSync(envFile, `${existing}${suffix}${appended}`);
   return envFile;
+}
+
+/**
+ * 把管理员凭据同源补进 Flow 网关 env：只补缺失键，绝不覆盖用户显式配置的值。
+ * 网关 `onModuleInit` 的自动授权与 init/setup 建号必须用同一份口令。
+ */
+export function syncGatewayCredentials(
+  envFile: string,
+  gatewayEnvFiles: readonly string[],
+): void {
+  const source = readFileSync(envFile, "utf8");
+  const values = new Map(
+    [...source.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gm)].map((match) => [
+      match[1],
+      match[2],
+    ]),
+  );
+  for (const file of gatewayEnvFiles) {
+    if (!existsSync(file)) continue;
+    const original = readFileSync(file, "utf8");
+    const present = envKeySet(original);
+    const missing = GATEWAY_SHARED_KEYS.filter(
+      (key) => !present.has(key) && values.has(key),
+    );
+    if (missing.length === 0) continue;
+    const suffix = original.endsWith("\n") ? "" : "\n";
+    const appended = [
+      "",
+      "# 由宿主安装引擎时自动补齐（与 dify-stack.env 同源）",
+      ...missing.map((key) => `${key}=${values.get(key)}`),
+      "",
+    ].join("\n");
+    writeFileSync(file, `${original}${suffix}${appended}`);
+  }
 }
 
 export interface EngineInstallOptions {
@@ -123,6 +205,10 @@ export interface EngineInstallOptions {
   extraEnv?: Record<string, string>;
   /** 承载目标；缺省 host（读落盘记录由调用方完成）。 */
   launch?: EngineLaunch;
+  /** Flow 网关 env：安装时把宿主生成的管理员凭据同源补进去（只补缺失键）。 */
+  gatewayEnvFiles?: string[];
+  /** 引擎栈就绪前执行：通知 Flow 网关补一次控制面授权（装完即可用）。 */
+  onReady?: () => Promise<void>;
   /** 安装进程 ready 前执行 Dify 初始化；设置由宿主按库值 ?? env ?? 默认解析。 */
   bootstrap?: () => Promise<
     Pick<
@@ -256,6 +342,7 @@ export function startEngineInstall(
   }
 
   const envFile = ensureStackEnvFile(options.dataDir);
+  syncGatewayCredentials(envFile, options.gatewayEnvFiles ?? []);
   const logFile = join(options.dataDir, STACK_LOG_FILE);
   // 承载目标落盘：停止/查询必须用同一个目标（否则 down 找不到另一侧起的容器）
   writeStackRuntime(options.dataDir, options.launch ?? { kind: "host" });
@@ -310,6 +397,9 @@ export function startEngineInstall(
             {},
           );
         }
+        // 装完再补一次网关控制面授权：网关 onModuleInit 只有启动期 60s 窗口，
+        // 引擎是用户后来点按钮装的。补授权失败不谎报 ready，错误进安装态与日志。
+        await options.onReady?.();
         if (current === installation && current.state === "installing")
           current.state = "ready";
       } catch (error) {

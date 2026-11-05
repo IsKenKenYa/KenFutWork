@@ -57,6 +57,15 @@ function resolveDifyDir(): string {
   );
 }
 
+/**
+ * Flow 网关 env（开发态与打包态共用一条解析规则）：管理员凭据同源的落点。
+ * 安装时宿主把自动生成的凭据补进这些文件；网关自动授权与 init/setup 用同一份。
+ */
+function gatewayEnvFiles(): string[] {
+  const flowDir = join(resolveDifyDir(), "..", "flow");
+  return [join(flowDir, ".env"), join(flowDir, ".futureflow.runtime.env")];
+}
+
 /** 安装生成的密钥 env（存在才用于 compose 查询；信息页是只读路径，不创建）。 */
 function stackEnvFile(options: EngineInstallOptions): string {
   return existsSync(join(options.dataDir, "dify-stack.env"))
@@ -72,6 +81,7 @@ function engineInstallOptions(
   return {
     composeFile: join(resolveDifyDir(), "docker-compose.dify.yml"),
     dataDir: dataRoot,
+    gatewayEnvFiles: gatewayEnvFiles(),
     ...(launch ? { launch } : {}),
   };
 }
@@ -304,16 +314,37 @@ export function createFlowHostPlugin(deps: {
                   retryDelayMs: settings.flowEngineBootstrapRetryMs,
                   requestTimeoutMs:
                     settings.flowEngineBootstrapRequestTimeoutMs,
-                  credentialEnvFiles: [
-                    join(resolveDifyDir(), "..", "flow", ".env"),
-                    join(
-                      resolveDifyDir(),
-                      "..",
-                      "flow",
-                      ".futureflow.runtime.env",
-                    ),
-                  ],
+                  credentialEnvFiles: gatewayEnvFiles(),
                 };
+              },
+              // 装完补一次网关控制面授权：网关只在启动期 30×2s 窗口自动授权，
+              // 引擎是用户后来点按钮装的，窗口早过。走宿主共享密钥端点（与项目
+              // 控制同一 Guard），不直连带 AdminGuard 的 /admin/*。
+              onReady: async () => {
+                const gatewayUrl = deps.gatewayUrl?.trim();
+                const secret = deps.secret?.trim();
+                if (!gatewayUrl || !secret) {
+                  throw new Error(
+                    "Flow 网关地址或宿主控制密钥未配置，无法补控制面授权。",
+                  );
+                }
+                // 一次性局部常量：就绪通知的等待预算，不进治理表。
+                const response = await fetch(
+                  new URL("/host/ff-embed/v1/dify/reauthorize", gatewayUrl),
+                  {
+                    method: "POST",
+                    headers: {
+                      authorization: `Bearer ${secret}`,
+                      "x-ff-embed-protocol": "v1",
+                    },
+                    signal: AbortSignal.timeout(15_000),
+                  },
+                );
+                if (!response.ok) {
+                  throw new Error(
+                    `Flow 网关控制面补授权失败（HTTP ${response.status}）。`,
+                  );
+                }
               },
             }),
           status: () => getEngineInstallSnapshot(),

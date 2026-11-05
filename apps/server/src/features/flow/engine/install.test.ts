@@ -13,6 +13,7 @@ import {
   STACK_LOG_FILE,
   startEngineInstall,
   stopEngineStack,
+  syncGatewayCredentials,
   toWslPath,
   writeStackRuntime,
 } from "./install.js";
@@ -279,7 +280,7 @@ describe("引擎承载目标（双 Provider）", () => {
 });
 
 describe("Dify 初始化接入安装状态机", () => {
-  it("旧 env 保留原密钥且不独立生成网关管理员口令", () => {
+  it("旧 env 保留原密钥，宿主补齐管理员凭据且重启不轮换", () => {
     const { dataDir } = options();
     const file = join(dataDir, "dify-stack.env");
     writeFileSync(
@@ -288,13 +289,42 @@ describe("Dify 初始化接入安装状态机", () => {
     );
 
     ensureStackEnvFile(dataDir);
+    const first = readFileSync(file, "utf8");
     ensureStackEnvFile(dataDir);
+    const second = readFileSync(file, "utf8");
 
-    const content = readFileSync(file, "utf8");
-    expect(content).toContain("DIFY_SECRET_KEY=keep-secret");
-    expect(content).toContain("DIFY_INIT_PASSWORD=keep-init");
-    expect(content).not.toContain("DIFY_ADMIN_EMAIL=");
-    expect(content).not.toContain("DIFY_ADMIN_PASSWORD=");
+    expect(first).toContain("DIFY_SECRET_KEY=keep-secret");
+    expect(first).toContain("DIFY_INIT_PASSWORD=keep-init");
+    // 零手工初始化：管理员账号与栈凭据一律由宿主生成，不再要求 flow/.env 手填。
+    expect(first).toContain("DIFY_ADMIN_EMAIL=admin@kenfutwork.local");
+    expect(first).toMatch(/DIFY_ADMIN_PASSWORD=.+/);
+    expect(first).toContain("DIFY_DB_PASSWORD=");
+    expect(first).toContain("DIFY_SANDBOX_API_KEY=");
+    expect(second).toBe(first);
+  });
+
+  it("网关 env 只补缺失凭据，不覆盖用户显式配置，幂等且不碰不存在的文件", () => {
+    const { dataDir } = options();
+    const envFile = ensureStackEnvFile(dataDir);
+    const gatewayEnv = join(dataDir, "flow.env");
+    const missingEnv = join(dataDir, "not-created.env");
+    writeFileSync(
+      gatewayEnv,
+      "POSTGRES_PORT=5433\nDIFY_ADMIN_EMAIL=human@example.com\n",
+    );
+
+    syncGatewayCredentials(envFile, [gatewayEnv, missingEnv]);
+    const once = readFileSync(gatewayEnv, "utf8");
+    syncGatewayCredentials(envFile, [gatewayEnv, missingEnv]);
+    const twice = readFileSync(gatewayEnv, "utf8");
+
+    expect(once).toContain("POSTGRES_PORT=5433");
+    // 用户显式配置优先：不覆盖人工填的管理员邮箱。
+    expect(once).toContain("DIFY_ADMIN_EMAIL=human@example.com");
+    expect(once).toMatch(/DIFY_ADMIN_PASSWORD=.+/);
+    expect(once).toContain("DIFY_SECRET_KEY=");
+    expect(twice).toBe(once);
+    expect(() => readFileSync(missingEnv, "utf8")).toThrow();
   });
 
   it("compose 成功后先初始化再 ready，并发安装不重复触发", async () => {
@@ -339,6 +369,55 @@ describe("Dify 初始化接入安装状态机", () => {
       expect.objectContaining({ consoleBase: bootstrap.consoleBase }),
       expect.anything(),
     );
+  });
+
+  function readyChild() {
+    const listeners = new Map<string, (value: unknown) => unknown>();
+    const child = {
+      stdout: { on: () => undefined },
+      stderr: { on: () => undefined },
+      on: (event: string, handler: (value: unknown) => unknown) => {
+        listeners.set(event, handler);
+      },
+      kill: () => undefined,
+    };
+    return { child, close: () => listeners.get("close")?.(0) };
+  }
+
+  it("安装完成后补一次网关控制面授权，成功才置 ready", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+    const onReady = vi.fn(async () => undefined);
+
+    startEngineInstall(
+      { ...target, onReady },
+      { spawn: (() => child) as never },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("ready"),
+    );
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("补授权失败不谎报 ready，错误进安装态", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+    const onReady = vi.fn(async () => {
+      throw new Error("网关控制面补授权失败（HTTP 503）");
+    });
+
+    startEngineInstall(
+      { ...target, onReady },
+      { spawn: (() => child) as never },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("error"),
+    );
+    expect(getEngineInstallSnapshot().error).toContain("网关控制面补授权失败");
   });
 });
 

@@ -29,6 +29,9 @@ function fakeHomeAssistant() {
     tokenRecords: [] as Array<Record<string, unknown>>,
     loseUserResponseOnce: false,
     loseLongTokenOnce: false,
+    trustedNetworksEnabled: true,
+    onboardingUnavailable: false,
+    loginFlowHandlers: [] as unknown[],
     calls: [] as string[],
   };
   const fetchImpl = vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -37,9 +40,32 @@ function fakeHomeAssistant() {
     state.calls.push(`${method} ${url}`);
     const body = typeof init?.body === "string" ? init.body : "";
     if (url.endsWith("/api/onboarding") && method === "GET") {
+      // 本机 8123 实况：已完成 onboarding 的 HA 对该端点返回 404。
+      if (state.onboardingUnavailable)
+        return Response.json({ message: "not found" }, { status: 404 });
       return Response.json(
         [...state.steps].map(([step, done]) => ({ step, done })),
       );
+    }
+    if (url.endsWith("/auth/login_flow") && method === "POST") {
+      const payload = JSON.parse(body) as { handler?: unknown };
+      state.loginFlowHandlers.push(payload.handler);
+      // 让 HA 自选 handler 会返回 500（本机实测），锁死「必须显式指定」。
+      const explicit =
+        Array.isArray(payload.handler) &&
+        payload.handler.length === 2 &&
+        payload.handler[0] === "trusted_networks" &&
+        payload.handler[1] === null;
+      if (!explicit)
+        return Response.json({ message: "handler required" }, { status: 500 });
+      if (!state.trustedNetworksEnabled)
+        return Response.json({ type: "form", flow_id: "login-form" });
+      return Response.json({
+        type: "create_entry",
+        flow_id: "trusted-flow",
+        handler: ["trusted_networks", null],
+        result: "trusted-code",
+      });
     }
     if (url.endsWith("/api/onboarding/users") && method === "POST") {
       state.userWrites += 1;
@@ -195,7 +221,13 @@ function createHarness(shared: { rows: Rows; fake: FakeHa }) {
     readConfig: () =>
       config({ instanceId: INSTANCE }) as Promise<{
         status: number;
-        body: { configured: boolean; baseUrl?: string | null; token?: string };
+        body: {
+          configured?: boolean;
+          baseUrl?: string | null;
+          token?: string;
+          error?: string;
+          code?: string;
+        };
       }>,
   };
 }
@@ -242,7 +274,10 @@ describe("HA 本机自动初始化", () => {
     shared.fake.state.loseUserResponseOnce = true;
     const harness = createHarness(shared);
 
-    expect((await harness.readConfig()).body.configured).toBe(false);
+    const failed = await harness.readConfig();
+    expect(failed.status).not.toBe(200);
+    expect(failed.body.configured).toBeUndefined();
+    expect(failed.body.error).toBeTruthy();
     expect((await harness.readConfig()).body.configured).toBe(true);
 
     expect(shared.fake.state.userWrites).toBe(1);
@@ -258,7 +293,10 @@ describe("HA 本机自动初始化", () => {
     shared.fake.state.loseLongTokenOnce = true;
     const harness = createHarness(shared);
 
-    expect((await harness.readConfig()).body.configured).toBe(false);
+    const failed = await harness.readConfig();
+    expect(failed.status).not.toBe(200);
+    expect(failed.body.configured).toBeUndefined();
+    expect(failed.body.error).toBeTruthy();
     expect((await harness.readConfig()).body.configured).toBe(true);
 
     expect(shared.fake.state.userWrites).toBe(1);
@@ -281,7 +319,7 @@ describe("HA 本机自动初始化", () => {
     expect(shared.fake.state.tokenRecords).toHaveLength(1);
   });
 
-  it("已完成 onboarding 的既有 HA 不被自动改号，仍走显式连接", async () => {
+  it("已完成 onboarding 的既有 HA 经可信网段免登录自动签发令牌，不改号", async () => {
     const shared = {
       rows: new Map<string, string>(),
       fake: fakeHomeAssistant(),
@@ -290,9 +328,69 @@ describe("HA 本机自动初始化", () => {
       shared.fake.state.steps.set(step, true);
     const harness = createHarness(shared);
 
-    expect((await harness.readConfig()).body.configured).toBe(false);
+    const result = await harness.readConfig();
+    expect(result.status).toBe(200);
+    expect(result.body.configured).toBe(true);
+    expect(result.body.baseUrl).toBe("http://127.0.0.1:8123");
+    expect(result.body.token).toBeUndefined();
     expect(shared.fake.state.userWrites).toBe(0);
     expect(shared.fake.state.passwordGrants).toBe(0);
+    expect(shared.fake.state.tokenRecords).toHaveLength(1);
+    // 回归锁死：handler 必须显式指定 trusted_networks，不能让 HA 自选（实测 500）。
+    expect(shared.fake.state.loginFlowHandlers).toEqual([
+      ["trusted_networks", null],
+    ]);
+  });
+
+  it("onboarding 端点返回 404（本机 8123 实况）仍自动接入", async () => {
+    const shared = {
+      rows: new Map<string, string>(),
+      fake: fakeHomeAssistant(),
+    };
+    shared.fake.state.onboardingUnavailable = true;
+    const harness = createHarness(shared);
+
+    const result = await harness.readConfig();
+    expect(result.status).toBe(200);
+    expect(result.body.configured).toBe(true);
+    expect(shared.fake.state.userWrites).toBe(0);
+    expect(shared.fake.state.tokenRecords).toHaveLength(1);
+  });
+
+  it("未开启可信网段时以错误态抛出，不回落成「未配置」", async () => {
+    const shared = {
+      rows: new Map<string, string>(),
+      fake: fakeHomeAssistant(),
+    };
+    for (const step of shared.fake.state.steps.keys())
+      shared.fake.state.steps.set(step, true);
+    shared.fake.state.trustedNetworksEnabled = false;
+    const harness = createHarness(shared);
+
+    const failed = await harness.readConfig();
+    expect(failed.status).toBe(503);
+    expect(failed.body.configured).toBeUndefined();
+    expect(failed.body.code).toBe("trusted_network_unavailable");
+    expect(failed.body.error).toContain("可信网段");
     expect(shared.fake.state.tokenRecords).toHaveLength(0);
+  });
+
+  it("可信网段路径并发读取只签发一份令牌", async () => {
+    const shared = {
+      rows: new Map<string, string>(),
+      fake: fakeHomeAssistant(),
+    };
+    for (const step of shared.fake.state.steps.keys())
+      shared.fake.state.steps.set(step, true);
+    const harness = createHarness(shared);
+
+    const [first, second] = await Promise.all([
+      harness.readConfig(),
+      harness.readConfig(),
+    ]);
+    expect(first.body.configured).toBe(true);
+    expect(second.body.configured).toBe(true);
+    expect(shared.fake.state.loginFlowHandlers).toHaveLength(1);
+    expect(shared.fake.state.tokenRecords).toHaveLength(1);
   });
 });

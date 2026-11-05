@@ -141,6 +141,12 @@ export interface PluginRegistryDeps {
   afterStateChanged?(event: PluginStateChangedEvent): void;
   /** GitHub token（可选，提升匿名速率上限） */
   githubToken?: string;
+  /**
+   * 本机服务实例 id：插件声明 `auto-init` 私有路由时，安装成功后由宿主以该实例
+   * 身份预热一次。插件 `apply(ctx)` 拿不到实例上下文，触发点只能由宿主补
+   * （见 `specs/ha-zero-config.md`）。
+   */
+  serviceInstanceId?(): Promise<string>;
   logger?: {
     info(message: string, ...rest: unknown[]): void;
     warn(message: string, ...rest: unknown[]): void;
@@ -823,7 +829,38 @@ export function createPluginRegistryService(
       );
     }
 
+    // 装上即触发：插件声明 `auto-init` 私有路由时，宿主以本机实例身份预热一次。
+    // 预热失败不回滚安装态（插件装得上、接不接得上是两件事），但错误必须可见：
+    // 面板首次访问 `GET config` 会再次走同一条初始化链路并抛出真实原因。
+    await warmUpAutoInit(id);
+
     return { installed: record, report };
+  }
+
+  /**
+   * 可选能力探测：插件注册了 `POST auto-init` 就等于声明「装完即可自动接入」。
+   * 没有该路由的插件直接跳过，不需要改 manifest 契约。
+   */
+  async function warmUpAutoInit(pluginId: string): Promise<void> {
+    if (!deps.serviceInstanceId) return;
+    const instanceId = await deps.serviceInstanceId();
+    const result = await service.dispatchRoute({
+      pluginId,
+      method: "POST",
+      path: "auto-init",
+      query: {},
+      body: {},
+      headers: {},
+      isAuthenticated: true,
+      instanceId,
+    });
+    if (!result) return;
+    if (result.status >= 400) {
+      deps.logger?.warn(
+        `[plugins] ${pluginId} 自动初始化未完成：`,
+        result.body,
+      );
+    }
   }
 
   const readPackageFiles = async (id: string) => {

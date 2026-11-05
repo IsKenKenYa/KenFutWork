@@ -283,6 +283,12 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
           storage: createPluginStorage({
             persistence: ctx.get("persistence"),
           }),
+          // 插件 `apply(ctx)` 拿不到实例上下文：安装成功后由宿主以本机实例身份
+          // 预热声明了 `auto-init` 路由的插件（见 specs/ha-zero-config.md）。
+          async serviceInstanceId() {
+            const actor = await ctx.get("localInstance").serviceActor();
+            return actor.instanceId;
+          },
           ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
         });
         return service;
