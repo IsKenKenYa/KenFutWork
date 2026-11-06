@@ -112,8 +112,9 @@ apps/desktop/src-tauri/gen/
 .playwright-mcp/
 .zcodeignore
 
-# WorkBuddy AI 的会话/项目记忆目录（本机私有数据与日志，不入库；目录保留不删）
-/.workbuddy-ai/
+# WorkBuddy 的会话/项目记忆目录（本机私有数据与日志，不入库）
+.workbuddy-ai/*
+.workbuddy/*
 
 # CommandCode CLI 的本地数据目录（taste 偏好等，本机私有，不入库）
 /.commandcode/
@@ -121,3 +122,4 @@ apps/desktop/src-tauri/gen/
 # Python 字节码（随仓库引入的插件目录在构建时会生成）
 __pycache__/
 *.pyc
+
