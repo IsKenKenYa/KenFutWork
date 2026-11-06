@@ -327,6 +327,89 @@ describe("Dify 初始化接入安装状态机", () => {
     expect(() => readFileSync(missingEnv, "utf8")).toThrow();
   });
 
+  it("网关 env 已有旧管理员凭据时反向对齐栈 env，不覆盖网关且幂等", () => {
+    const { dataDir } = options();
+    const envFile = join(dataDir, "dify-stack.env");
+    writeFileSync(
+      envFile,
+      [
+        "DIFY_INIT_PASSWORD=stack-init",
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=stack-random-password",
+        "DIFY_SECRET_KEY=stack-secret",
+        "DIFY_ADMIN_API_KEY=stack-admin-key",
+        "",
+      ].join("\n"),
+    );
+    const gatewayEnv = join(dataDir, "flow.env");
+    writeFileSync(
+      gatewayEnv,
+      [
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=legacy-gateway-password",
+        "",
+      ].join("\n"),
+    );
+
+    syncGatewayCredentials(envFile, [gatewayEnv]);
+    const alignedStack = readFileSync(envFile, "utf8");
+    const gateway = readFileSync(gatewayEnv, "utf8");
+
+    // bootstrap 将用这份口令建管理员，网关 loginConsole 才能登录成功。
+    expect(alignedStack).toContain(
+      "DIFY_ADMIN_PASSWORD=legacy-gateway-password",
+    );
+    expect(alignedStack).not.toContain("stack-random-password");
+    // 用户显式配置优先：网关 env 一个字节都不改。
+    expect(gateway).toContain("DIFY_ADMIN_PASSWORD=legacy-gateway-password");
+    expect(gateway).not.toContain("stack-random-password");
+    // 非管理员键仍按只补缺失处理。
+    expect(gateway).toContain("DIFY_SECRET_KEY=stack-secret");
+    expect(gateway).toContain("DIFY_INIT_PASSWORD=stack-init");
+
+    syncGatewayCredentials(envFile, [gatewayEnv]);
+    expect(readFileSync(envFile, "utf8")).toBe(alignedStack);
+    expect(readFileSync(gatewayEnv, "utf8")).toBe(gateway);
+  });
+
+  it("多个网关 env 凭据冲突时按 envFilePath 优先级取值，跳过缺键文件", () => {
+    const { dataDir } = options();
+    const envFile = join(dataDir, "dify-stack.env");
+    writeFileSync(
+      envFile,
+      [
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=stack-password",
+        "",
+      ].join("\n"),
+    );
+    // 顺序与网关 envFilePath 一致：runtime 优先，且它没有管理员键。
+    const primary = join(dataDir, "runtime.env");
+    const fallback = join(dataDir, "fallback.env");
+    writeFileSync(primary, "POSTGRES_PORT=5433\n");
+    writeFileSync(
+      fallback,
+      [
+        "DIFY_ADMIN_EMAIL=admin@kenfutwork.local",
+        "DIFY_ADMIN_PASSWORD=fallback-password",
+        "",
+      ].join("\n"),
+    );
+
+    syncGatewayCredentials(envFile, [primary, fallback]);
+    expect(readFileSync(envFile, "utf8")).toContain(
+      "DIFY_ADMIN_PASSWORD=fallback-password",
+    );
+
+    // 优先文件一旦含凭据，就不能被次级文件的值覆盖。
+    writeFileSync(primary, "DIFY_ADMIN_PASSWORD=primary-password\n");
+    syncGatewayCredentials(envFile, [primary, fallback]);
+    expect(readFileSync(envFile, "utf8")).toContain(
+      "DIFY_ADMIN_PASSWORD=primary-password",
+    );
+    expect(readFileSync(envFile, "utf8")).not.toContain("fallback-password");
+  });
+
   it("compose 成功后先初始化再 ready，并发安装不重复触发", async () => {
     const target = options();
     writeFileSync(target.composeFile, "services: {}\n");

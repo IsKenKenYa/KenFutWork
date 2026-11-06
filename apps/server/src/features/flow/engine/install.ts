@@ -163,20 +163,63 @@ export function ensureStackEnvFile(dataDir: string): string {
 }
 
 /**
+ * 管理员凭据键：Dify 栈重建后 bootstrap 会用它们重新创建管理员，
+ * 必须与 Flow 网关 `loginConsole` 的登录凭据逐字同源。
+ */
+const ADMIN_CREDENTIAL_KEYS = [
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+] as const;
+
+function upsertEnvValue(content: string, key: string, value: string): string {
+  const pattern = new RegExp(`^${key}=.*$`, "m");
+  if (pattern.test(content)) return content.replace(pattern, `${key}=${value}`);
+  return `${content}${content.endsWith("\n") ? "" : "\n"}${key}=${value}\n`;
+}
+
+/**
  * 把管理员凭据同源补进 Flow 网关 env：只补缺失键，绝不覆盖用户显式配置的值。
  * 网关 `onModuleInit` 的自动授权与 init/setup 建号必须用同一份口令。
+ *
+ * 反向对齐：若网关 env 已显式配置了管理员账号/密码（例如上次安装留下的），
+ * 以它为准写回栈 env，而不是拿栈 env 随机生成的新口令去建管理员。否则 Dify
+ * 卷重建后管理员被换成新密码，网关仍持旧密码，`onReady` 补控制面授权必然
+ * 401/503（实测 `Dify Console 授权无效`）。网关 env 本身始终不被覆盖。
  */
 export function syncGatewayCredentials(
   envFile: string,
   gatewayEnvFiles: readonly string[],
 ): void {
-  const source = readFileSync(envFile, "utf8");
+  let source = readFileSync(envFile, "utf8");
   const values = new Map(
     [...source.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gm)].map((match) => [
       match[1],
       match[2],
     ]),
   );
+
+  // 按网关 envFilePath 的优先级取第一个含管理员凭据的文件；没有凭据的
+  // 文件不能提前 break，否则会漏看真正生效的那份（如 runtime env 缺键）。
+  let changed = false;
+  for (const key of ADMIN_CREDENTIAL_KEYS) {
+    let authoritative: string | null = null;
+    for (const file of gatewayEnvFiles) {
+      if (!existsSync(file)) continue;
+      const value = readFileSync(file, "utf8").match(
+        new RegExp(`^${key}=(.*)$`, "m"),
+      )?.[1];
+      if (value !== undefined) {
+        authoritative = value;
+        break;
+      }
+    }
+    if (authoritative === null || values.get(key) === authoritative) continue;
+    source = upsertEnvValue(source, key, authoritative);
+    values.set(key, authoritative);
+    changed = true;
+  }
+  if (changed) writeFileSync(envFile, source);
+
   for (const file of gatewayEnvFiles) {
     if (!existsSync(file)) continue;
     const original = readFileSync(file, "utf8");

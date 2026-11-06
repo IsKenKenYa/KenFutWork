@@ -20500,7 +20500,7 @@
                 "maximum": 120000
               },
               "flowEngineBootstrapAttempts": {
-                "default": 30,
+                "default": 90,
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 120

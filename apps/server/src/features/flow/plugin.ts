@@ -63,7 +63,11 @@ function resolveDifyDir(): string {
  */
 function gatewayEnvFiles(): string[] {
   const flowDir = join(resolveDifyDir(), "..", "flow");
-  return [join(flowDir, ".env"), join(flowDir, ".futureflow.runtime.env")];
+  // 顺序必须与 flow/gateway/src/app.module.ts 的 envFilePath 一致：
+  // `.futureflow.runtime.env` 优先于 `.env`。管理员凭据反向对齐以「网关实际
+  // 读到的那份」为准，取错文件会让 bootstrap 建号口令与 loginConsole 不一致
+  // （实测 onReady 补授权 503：Dify Console 授权无效）。
+  return [join(flowDir, ".futureflow.runtime.env"), join(flowDir, ".env")];
 }
 
 /** 安装生成的密钥 env（存在才用于 compose 查询；信息页是只读路径，不创建）。 */
