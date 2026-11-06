@@ -16,16 +16,26 @@ function normalizeThemePreference(
   return null;
 }
 
-/** 解析首帧主题：本地缓存优先，缓存缺失或 system 时跟随系统。 */
+/**
+ * 解析首帧主题：**显式选择优先于 system**。
+ *
+ * next-themes 把 `system` 也写进 `theme`，旧实现 `n(t) || n(z)` 会被这个
+ * truthy 的 "system" 短路，导致 iframe 里已存的 `zcode-theme=zai-dark` 被忽略，
+ * 刷新首帧闪白并回到跟随系统。两份缓存只要有一份是明确的 light/dark，就以它为准。
+ */
 export function resolveBootTheme(
   storedTheme: string | null,
   storedZcodeTheme: string | null,
   prefersDark: boolean,
 ): BootTheme {
+  const a = normalizeThemePreference(storedTheme);
+  const b = normalizeThemePreference(storedZcodeTheme);
   const cached =
-    normalizeThemePreference(storedTheme) ??
-    normalizeThemePreference(storedZcodeTheme) ??
-    "system";
+    a === "dark" || a === "light"
+      ? a
+      : b === "dark" || b === "light"
+        ? b
+        : "system";
   if (cached === "dark") return "dark";
   if (cached === "light") return "light";
   return prefersDark ? "dark" : "light";
@@ -44,7 +54,8 @@ const BOOT_BACKGROUND: Record<BootTheme, string> = {
 export const THEME_BOOTSTRAP_SCRIPT = `(function(){try{
 var t=localStorage.getItem("theme"),z=localStorage.getItem("zcode-theme");
 function n(x){return x==="zai-dark"?"dark":x==="zai-light"?"light":x==="dark"||x==="light"||x==="system"?x:null}
-var p=n(t)||n(z)||"system";
+var a=n(t),b=n(z);
+var p=(a==="dark"||a==="light")?a:(b==="dark"||b==="light")?b:"system";
 var dark=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);
 var r=document.documentElement;
 r.classList.toggle("dark",dark);

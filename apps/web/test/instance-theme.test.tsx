@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LoadingScreen } from "../src/components/loading-screen";
 import { RootStartupLoading } from "../src/components/workbench/zcode/root/RootStartupLoading";
 import { InstanceThemeSync } from "../src/lib/instance-theme";
+import { resolveBootTheme } from "../src/lib/theme-bootstrap";
 
 const host = vi.hoisted(() => ({
   theme: "system",
@@ -173,5 +174,39 @@ describe("InstanceThemeSync", () => {
       expect(spinner.getAttribute("style")).toBeNull();
       expect(spinner.className).toContain("border-");
     }
+  });
+});
+
+describe("首帧主题引导", () => {
+  it("两份缓存里任一显式选择都优先于 system", () => {
+    expect(resolveBootTheme("system", "zai-dark", false)).toBe("dark");
+    expect(resolveBootTheme("zai-light", "system", true)).toBe("light");
+    expect(resolveBootTheme("dark", "zai-light", false)).toBe("dark");
+  });
+
+  it("两份都是 system 时才跟随系统", () => {
+    expect(resolveBootTheme("system", "system", true)).toBe("dark");
+    expect(resolveBootTheme(null, null, false)).toBe("light");
+  });
+});
+
+describe("InstanceThemeSync 显式选择不被覆盖", () => {
+  it("本机已选 dark、实例设置仍是 system 时保持 dark 并回写", async () => {
+    localStorage.setItem("theme", "dark");
+    host.theme = "dark";
+    host.fetchSettings.mockResolvedValue({ settings: { theme: "system" } });
+    host.updateSettings.mockResolvedValue({ settings: { theme: "zai-dark" } });
+
+    render(<InstanceThemeSync />);
+    await waitFor(() => expect(host.fetchSettings).toHaveBeenCalledTimes(1));
+
+    // 旧实现会在这里 setTheme("system")，刷新后深色就丢了。
+    expect(host.setTheme).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(host.updateSettings).toHaveBeenCalledWith(null, {
+        theme: "zai-dark",
+      }),
+    );
+    expect(localStorage.getItem("zcode-theme")).toBe("zai-dark");
   });
 });

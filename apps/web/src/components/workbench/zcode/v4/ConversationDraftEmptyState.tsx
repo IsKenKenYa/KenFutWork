@@ -236,18 +236,19 @@ export function ConversationDraftEmptyState({
         aria-hidden="true"
         className={cn(
           "pointer-events-none absolute left-1/2 top-1/2 aspect-[5/4] w-[min(72vw,25rem)] -mt-10",
-          "-translate-x-1/2 -translate-y-1/2 text-foreground-subtlest",
+          "-translate-x-1/2 -translate-y-1/2",
         )}
       >
-        {/* 以 Code 原版空态样式为基底，只换标：
-            浅色 = KenFutWork 标的线稿描边（feMorphology 内缩/外扩取环，currentColor 同原 Z 线稿的浅淡口径）；
-            暗色 = 白色标（brightness-0 invert 取纯白剪影）。两套同款向下渐隐遮罩。 */}
+        {/* 用户口径：对话面板背景那「半个 K」一律用线稿，暗色也不再是白色实心剪影。
+            深浅同款一张 SVG：feMorphology 内缩/外扩取环 + feFlood(currentColor) 描边，
+            描边颜色与不透明度由 styles.css 按 .dark 切换（浅色浅墨、深色白线）。
+            向下渐隐遮罩保留，只露出上半段 K。 */}
         <svg
           aria-hidden="true"
-          data-v4-draft-logo="light"
+          data-v4-draft-logo="outline"
           className={cn(
             className,
-            "h-full w-full object-contain opacity-45",
+            "h-full w-full object-contain",
             "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
             "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
             "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
@@ -267,13 +268,13 @@ export function ConversationDraftEmptyState({
             <feMorphology
               in="SourceAlpha"
               operator="dilate"
-              radius="1.5"
+              radius="2"
               result="kfw-dil"
             />
             <feMorphology
               in="SourceAlpha"
               operator="erode"
-              radius="1.5"
+              radius="2"
               result="kfw-ero"
             />
             <feComposite
@@ -293,23 +294,6 @@ export function ConversationDraftEmptyState({
             filter={`url(#${outlineFilterId})`}
           />
         </svg>
-        {/* 暗色：白色标剪影（原暗色 Z.svg 的渐变贴图口径换成纯白，同一渐隐遮罩） */}
-        {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
-        <img
-          aria-hidden="true"
-          data-v4-draft-logo="dark"
-          src={kenfutworkMarkUrl}
-          alt=""
-          draggable={false}
-          className={cn(
-            className,
-            "h-full w-full object-contain object-bottom opacity-30 brightness-0 invert",
-            "[-webkit-mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
-            "[-webkit-mask-repeat:no-repeat] [-webkit-mask-size:100%_100%]",
-            "[mask-image:linear-gradient(to_bottom,black_0%,transparent_70%,transparent_100%)]",
-            "[mask-repeat:no-repeat] [mask-size:100%_100%]",
-          )}
-        />
       </div>
       <div
         ref={greetingContainerRef}

@@ -57,8 +57,15 @@ describe("夜间模式视觉", () => {
   it("浅色回归：缓存浅色或系统浅色保持 light", () => {
     expect(resolveBootTheme("light", null, true)).toBe("light");
     expect(resolveBootTheme(null, "zai-light", true)).toBe("light");
-    expect(resolveBootTheme("system", "zai-dark", false)).toBe("light");
+    expect(resolveBootTheme("system", "zai-light", true)).toBe("light");
     expect(THEME_BOOTSTRAP_SCRIPT).toContain("#ffffff");
+  });
+
+  it("显式选择优先于 system：next-themes 的 system 不能盖掉 iframe 的深色缓存", () => {
+    expect(resolveBootTheme("system", "zai-dark", false)).toBe("dark");
+    expect(resolveBootTheme("system", "light", true)).toBe("light");
+    expect(resolveBootTheme("system", null, true)).toBe("dark");
+    expect(resolveBootTheme("system", null, false)).toBe("light");
   });
 
   it("加载屏跟随主题背景与品牌标，不写死白底", () => {
@@ -70,5 +77,40 @@ describe("夜间模式视觉", () => {
     const logo = container.querySelector("img");
     expect(logo?.className).toContain("brand-mark");
     expect(logo?.className).not.toContain("dark:invert");
+  });
+
+  it("深色品牌标是纯白剪影，两套样式表口径一致", () => {
+    for (const rel of [
+      "app/globals.css",
+      "components/workbench/zcode/styles.css",
+    ]) {
+      const css = source(rel);
+      const darkRule = css.slice(
+        css.indexOf(".dark .brand-mark {"),
+        css.indexOf("}", css.indexOf(".dark .brand-mark {")),
+      );
+      expect(darkRule, `${rel} 深色 logo 必须纯白`).toContain(
+        "brightness(0) invert(1)",
+      );
+      expect(darkRule, `${rel} 不应给 logo 染色`).not.toContain("hue-rotate");
+      expect(css, `${rel} 彩色 logo 在深色下也要转白`).toContain(
+        ".dark .brand-mark-on-dark",
+      );
+    }
+  });
+
+  it("对话面板背景的半个 K 是线稿，不再有暗色实心剪影", () => {
+    const tsx = source(
+      "components/workbench/zcode/v4/ConversationDraftEmptyState.tsx",
+    );
+    expect(tsx).toContain('data-v4-draft-logo="outline"');
+    expect(tsx).not.toContain('data-v4-draft-logo="dark"');
+    expect(tsx).not.toContain("brightness-0 invert");
+    expect(tsx).toContain("feMorphology");
+    expect(tsx).toContain('floodColor="currentColor"');
+
+    const css = source("components/workbench/zcode/styles.css");
+    expect(css).toContain('[data-v4-draft-logo="outline"]');
+    expect(css).toContain('.dark [data-v4-draft-logo="outline"]');
   });
 });

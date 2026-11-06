@@ -35,7 +35,7 @@ export function WorkspaceSidebarCollapsedRail({
               <img
                 src={appLogoUrl}
                 alt="KenFutWork"
-                className="size-5 transition-opacity group-hover:opacity-0"
+                className="brand-mark-on-dark size-5 transition-opacity group-hover:opacity-0"
                 draggable={false}
               />
               <PanelLeftOpen className="absolute size-4 opacity-0 transition-opacity group-hover:opacity-100" />

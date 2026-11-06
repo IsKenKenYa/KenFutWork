@@ -20,7 +20,9 @@ export function LoadingScreen({ label }: { label?: string } = {}) {
         className="h-14 w-auto select-none brand-mark"
         draggable={false}
       />
-      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70" />
+      {/* logo 随主题黑白（深色纯白，见 .dark .brand-mark）；旋转圈浅色用中性前景，
+          暗色轨道压到 15% 白 + 品牌浅岚旋转弧作辨识色；尊重系统的「减少动态效果」偏好。 */}
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70 motion-reduce:animate-none dark:border-white/15 dark:border-t-brand" />
     </div>
   );
 }

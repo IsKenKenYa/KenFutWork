@@ -308,26 +308,30 @@ body {
   --color-plugin-paid-plan-badge-foreground: #4b280f;
 }
 
-/* 空态草稿标明暗互斥：跟 Code 主题类（.dark）而不是 OS 配色——
-   Tailwind 的 dark: 变体在本包跟 prefers-color-scheme 走，主题切换时不生效。 */
-[data-v4-draft-logo="dark"] {
-  display: none;
+/* 空态草稿标：深浅同款「线稿」，不再有暗色实心剪影（用户口径：背景半个 K 改线稿）。
+   跟 Code 主题类（.dark）而不是 OS 配色——Tailwind 的 dark: 变体在本包跟
+   prefers-color-scheme 走，应用内主题切换时不生效。 */
+[data-v4-draft-logo="outline"] {
+  color: var(--color-foreground-subtlest);
+  opacity: 0.45;
 }
-.dark [data-v4-draft-logo="dark"] {
-  display: block;
-}
-.dark [data-v4-draft-logo="light"] {
-  display: none;
+.dark [data-v4-draft-logo="outline"] {
+  color: rgba(255, 255, 255, 0.72);
+  opacity: 0.55;
 }
 
-/* 品牌标：浅色保持纯黑墨迹；深色换成品牌浅岚剪影（形状不变，不靠白块撑对比）。 */
+/* 品牌标：浅色纯黑墨迹、深色纯白剪影（用户口径「深色模式 logo 改成白色」）。 */
 .brand-mark {
   filter: brightness(0);
 }
 
 .dark .brand-mark {
-  filter: brightness(0) saturate(100%) invert(64%) sepia(19%) saturate(2200%)
-    hue-rotate(202deg) brightness(103%) contrast(102%);
+  filter: brightness(0) invert(1);
+}
+
+/* 侧栏 / 顶栏 / 关于页的彩色品牌标：浅色保留原标，深色统一转白。 */
+.dark .brand-mark-on-dark {
+  filter: brightness(0) invert(1);
 }
 
 .dark {

@@ -225,12 +225,15 @@
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
+    /* 主按钮原来是近纯白实底，在深底上过曝刺眼。换成品牌浅岚实底 + 深色字，
+       既保持足够对比度，也让暗色主操作有品牌识别度，不再是一块白板。 */
+    --primary: oklch(0.78 0.09 260);
+    --primary-foreground: oklch(0.145 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
     --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
+    /* 图标与次要文字：0.708 在深底上偏灰，提到 0.76 让线性图标轮廓更清楚。 */
+    --muted-foreground: oklch(0.76 0 0);
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
@@ -244,7 +247,8 @@
        提到 16% 保装饰线轻量，输入类单独再提亮到 34% 达到 3:1。 */
     --border: oklch(1 0 0 / 16%);
     --input: oklch(1 0 0 / 22%);
-    --ring: oklch(0.556 0 0);
+    /* 焦点环与 hover 也跟品牌色走，键盘导航在暗色下更容易定位。 */
+    --ring: oklch(0.72 0.1 260);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -270,7 +274,8 @@
     --animated-gradient-text-strong: rgba(255, 255, 255, 1);
     --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
     --color-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
-    --color-icon-blue: var(--color-sky-600);
+    /* sky-600 在深底上过暗，图标蓝改用 sky-400。 */
+    --color-icon-blue: var(--color-sky-400);
     --color-border: color-mix(in oklab, var(--color-neutral-50) 16%, transparent);
     --color-border-hover: color-mix(in oklab, var(--color-neutral-50) 38%, transparent);
     /* 控件轮廓需要 3:1：16% 只够装饰分隔，交互边界单独提亮。 */
@@ -287,7 +292,8 @@
     --color-input-focused: var(--color-neutral-950);
     /* 60%/30% 在深底上分别只有约 4.3:1 / 2.2:1；图标与次要文字要能读，提到 68%/42%。 */
     --color-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 68%, transparent);
-    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 42%, transparent);
+    /* 42% 在深底上约 2.2:1，暗色图标/三级文字读到但吃力；提到 55%。 */
+    --color-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 55%, transparent);
     --color-idle-task: var(--color-violet-400);
     --color-idle-task-surface: color-mix(in oklab, var(--color-violet-950) 50%, transparent);
     --color-diff-added: var(--color-green-500);
@@ -323,16 +329,24 @@
 }
 
 /**
- * 品牌标：浅色保持纯黑墨迹（brightness(0) 与旧版一致）；
- * 深色不靠白色填充块撑对比，改为品牌浅岚色剪影，形状与浅色完全一致。
+ * 品牌标：随主题黑白（用户口径「深色模式 logo 改成白色」）。
+ * 浅色 = 纯黑墨迹（brightness(0)，与旧版一致）；深色 = 纯白剪影（brightness(0) invert(1)），
+ * 形状与浅色完全一致，不做染色、不靠白底贴片撑对比。
  */
 .brand-mark {
     filter: brightness(0);
 }
 
 .dark .brand-mark {
-    filter: brightness(0) saturate(100%) invert(64%) sepia(19%) saturate(2200%)
-        hue-rotate(202deg) brightness(103%) contrast(102%);
+    filter: brightness(0) invert(1);
+}
+
+/**
+ * 侧栏 / 顶栏 / 关于页的彩色品牌标：浅色保留蓝色原标不动，
+ * 深色统一转纯白，保证全站深色模式下的 logo 口径一致。
+ */
+.dark .brand-mark-on-dark {
+    filter: brightness(0) invert(1);
 }
 
 /**
