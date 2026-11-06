@@ -49,6 +49,12 @@ const nextConfig: NextConfig = {
   // 整个工作台卡在启动加载屏（实测：直连 3001 首帧 10ms，经 3000 代理 7s 无首帧且
   // content-encoding=gzip）。生产是静态导出，不经这个代理，不受影响。
   compress: false,
+  experimental: {
+    // 「打开文件夹」在服务端弹系统对话框，请求要等人选完（服务端预算 10 分钟）。
+    // dev 代理默认几十秒就 socket hang up，浏览器只拿到 500，看起来像「点了没反应」。
+    // 桌面 / 自托管形态 UI 与服务端同源，不经这个代理，不受影响。
+    proxyTimeout: 12 * 60 * 1000,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },

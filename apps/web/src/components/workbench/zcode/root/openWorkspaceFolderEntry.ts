@@ -1,3 +1,4 @@
+import { toast } from "@zui/components/ui/toast.js";
 import { logger } from "@zui/logger.js";
 import { NativeDirectoryPickerUnavailableError } from "../host/directoryPicker.js";
 
@@ -49,5 +50,10 @@ export async function openFolderFromWorkspaceEntry({
       return;
     }
     logger.error("[openWorkspaceFolderEntry] selectDirectory threw:", err);
+    // 失败必须让用户看见：以前只写日志，点了「打开文件夹」就是没反应（本机实测
+    // dev 代理 socket hang up 回 500，界面全程零反馈）。
+    toast(
+      `打开文件夹失败：${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
