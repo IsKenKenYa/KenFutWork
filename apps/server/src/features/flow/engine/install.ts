@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+import type { FlowEnginePathId } from "@kenfutwork/shared";
 import {
   bootstrapDifyStackWithRetry,
   type DifyBootstrapRetryOptions,
@@ -358,6 +359,36 @@ export function readStackRuntime(dataDir: string): EngineLaunch {
 }
 
 /**
+ * 「装上即用」的安装决策：把判据集中一处，产品口径钉在测试里而不是散在装配里。
+ *
+ * 栈在不在取 **docker 报的运行期事实**，不看 `dify-stack.env` 存不存在：删过容器/卷的
+ * 用户库里仍留着那份 env，按 env 判会永远跳过重装（本机实测：容器 0 个、安装状态停在
+ * idle，用户只能自己去「引擎」页点按钮）。
+ * 承载是 `remote`（用户自管 Dify）或压根没探到承载时不动：前者是主动选择，
+ * 后者装了也没地方跑。
+ */
+export function planEngineAutoInstall(input: {
+  installState: EngineInstallSnapshot["state"];
+  stackContainerCount: number;
+  recommended: FlowEnginePathId | null;
+}): { action: "install" } | { action: "skip"; reason: string } {
+  if (input.installState === "installing")
+    return { action: "skip", reason: "已有安装任务在跑" };
+  if (input.stackContainerCount > 0)
+    return { action: "skip", reason: "引擎栈容器已在" };
+  if (
+    input.recommended !== "wsl2" &&
+    input.recommended !== "container"
+  ) {
+    return {
+      action: "skip",
+      reason: "本机 docker 承载不可用（自管地址或未探到承载）",
+    };
+  }
+  return { action: "install" };
+}
+
+/**
  * 启动安装（幂等）：已在安装中 → 409 由调用方处理；本函数只在 idle/error 时拉起。
  * detached spawn：node 重启不杀安装进程，但状态归零——重启后按 compose ps 重新探测（后续增量）。
  */
@@ -435,22 +466,37 @@ export function startEngineInstall(
       try {
         if (options.bootstrap) {
           const bootstrap = await options.bootstrap();
-          await (deps.bootstrapStack ?? bootstrapDifyStackWithRetry)(
-            { envFile, ...bootstrap },
-            {},
+          try {
+            await (deps.bootstrapStack ?? bootstrapDifyStackWithRetry)(
+              { envFile, ...bootstrap },
+              {},
+            );
+          } catch (error) {
+            throw new Error(
+              `Dify 初始化失败：${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
+          }
+        }
+        // 装完再补一次网关控制面授权：网关 onModuleInit 只有启动期窗口，晚装的
+        // 窗口早过。补授权失败不谎报 ready，但也不能说成「Dify 没装好」——栈其实
+        // 已经起来，缺的是网关那一段，报错必须指到网关去。
+        try {
+          await options.onReady?.();
+        } catch (error) {
+          throw new Error(
+            `引擎已装好，但 Flow 网关控制面补授权失败：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            { cause: error },
           );
         }
-        // 装完再补一次网关控制面授权：网关 onModuleInit 只有启动期 60s 窗口，
-        // 引擎是用户后来点按钮装的。补授权失败不谎报 ready，错误进安装态与日志。
-        await options.onReady?.();
         if (current === installation && current.state === "installing")
           current.state = "ready";
       } catch (error) {
         if (current !== installation || current.state !== "installing") return;
         current.state = "error";
-        current.error = `Dify 初始化失败：${
-          error instanceof Error ? error.message : String(error)
-        }`;
+        current.error = error instanceof Error ? error.message : String(error);
       }
     })();
   });

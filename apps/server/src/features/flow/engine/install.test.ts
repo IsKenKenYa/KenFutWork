@@ -7,6 +7,7 @@ import {
   composeCommand,
   ensureStackEnvFile,
   getEngineInstallSnapshot,
+  planEngineAutoInstall,
   purgeEngineStack,
   readStackLogTail,
   readStackRuntime,
@@ -502,6 +503,75 @@ describe("Dify 初始化接入安装状态机", () => {
     );
     expect(getEngineInstallSnapshot().error).toContain("网关控制面补授权失败");
   });
+
+  it("补授权失败不写成「Dify 初始化失败」：栈已起来时错误必须指到网关", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+    const bootstrapStack = vi.fn(async () => ({
+      status: "initialized" as const,
+    }));
+
+    startEngineInstall(
+      {
+        ...target,
+        bootstrap: async () => ({
+          consoleBase: "http://127.0.0.1:15001/console/api",
+          attempts: 1,
+          retryDelayMs: 1,
+          requestTimeoutMs: 1_000,
+        }),
+        onReady: async () => {
+          throw new Error("网关不可达（http://127.0.0.1:15010）：fetch failed");
+        },
+      },
+      { spawn: (() => child) as never, bootstrapStack },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("error"),
+    );
+    // 实测踩过的坑：Dify 的 /init 与 /setup 都 201 成功了，报错却顶着
+    // 「Dify 初始化失败：fetch failed」，把人引去查引擎而不是网关。
+    expect(bootstrapStack).toHaveBeenCalledTimes(1);
+    const error = getEngineInstallSnapshot().error ?? "";
+    expect(error).not.toContain("Dify 初始化失败");
+    expect(error).toContain("引擎已装好");
+    expect(error).toContain("http://127.0.0.1:15010");
+  });
+
+  it("初始化真失败时才标「Dify 初始化失败」", async () => {
+    const target = options();
+    writeFileSync(target.composeFile, "services: {}\n");
+    const { child, close } = readyChild();
+
+    startEngineInstall(
+      {
+        ...target,
+        bootstrap: async () => ({
+          consoleBase: "http://127.0.0.1:15001/console/api",
+          attempts: 1,
+          retryDelayMs: 1,
+          requestTimeoutMs: 1_000,
+        }),
+        onReady: async () => undefined,
+      },
+      {
+        spawn: (() => child) as never,
+        bootstrapStack: vi.fn(async () => {
+          throw new Error("创建管理员失败（HTTP 400）");
+        }),
+      },
+    );
+    await close();
+    await vi.waitFor(() =>
+      expect(getEngineInstallSnapshot().state).toBe("error"),
+    );
+    const error = getEngineInstallSnapshot().error ?? "";
+    expect(error).toContain("Dify 初始化失败");
+    expect(error).toContain("创建管理员失败");
+    expect(error).not.toContain("引擎已装好");
+  });
 });
 
 describe("安装日志尾部", () => {
@@ -517,5 +587,56 @@ describe("安装日志尾部", () => {
   it("没有日志文件时返回空数组", () => {
     const dir = mkdtempSync(join(tmpdir(), "flow-log-empty-"));
     expect(readStackLogTail(dir)).toEqual([]);
+  });
+});
+
+describe("引擎栈「装上即用」自动安装判据", () => {
+  it("本机承载可用且栈不在 → 自动安装（不再等用户点按钮）", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "idle",
+        stackContainerCount: 0,
+        recommended: "container",
+      }),
+    ).toEqual({ action: "install" });
+    expect(
+      planEngineAutoInstall({
+        installState: "error",
+        stackContainerCount: 0,
+        recommended: "wsl2",
+      }),
+    ).toEqual({ action: "install" });
+  });
+
+  it("已有安装任务在跑 → 不重复拉起", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "installing",
+        stackContainerCount: 0,
+        recommended: "container",
+      }).action,
+    ).toBe("skip");
+  });
+
+  it("栈容器已在（哪怕全停）→ 不动，交给停止/启动语义", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "idle",
+        stackContainerCount: 12,
+        recommended: "container",
+      }).action,
+    ).toBe("skip");
+  });
+
+  it("承载是用户自管地址或压根没探到 → 不自动装本机栈", () => {
+    for (const recommended of ["remote", null] as const) {
+      expect(
+        planEngineAutoInstall({
+          installState: "idle",
+          stackContainerCount: 0,
+          recommended,
+        }),
+      ).toMatchObject({ action: "skip" });
+    }
   });
 });
