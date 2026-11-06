@@ -1857,7 +1857,7 @@ describe("HA 插件：实体网格与控制（假 HA 全链路）", () => {
     expect(bodyOf<{ code: string }>(missing).code).toBe("not_found");
   });
 
-  it("HA 令牌被吊销：列实体回 401 原话，面板据此回配置态", async () => {
+  it("HA 令牌被吊销：先自动重签，重签不成才以 401 抛出且不指路手动令牌表单", async () => {
     const { service, installed } = await installFromRepo();
     await configureConnected(service, installed.id);
     // 换掉假 HA 认的那个令牌 = 用户在 HA 侧吊销/重建了令牌，库里这份已失效
@@ -1870,7 +1870,11 @@ describe("HA 插件：实体网格与控制（假 HA 全链路）", () => {
     });
     expect(result?.status).toBe(401);
     expect(bodyOf<{ code: string }>(result).code).toBe("unauthorized");
-    expect(bodyOf<{ error: string }>(result).error).toContain("个人资料");
+    // 过期配置会被清掉并重走自动接入（specs/ha-zero-config.md 第 4 条：失败不回落
+    // 手动表单），所以这里抛出的是自动接入的失败原因，不再是「去安全页粘令牌」。
+    const error = bodyOf<{ error: string }>(result).error;
+    expect(error).toContain("HA 自动接入失败");
+    expect(error).not.toContain("个人资料");
   });
 });
 

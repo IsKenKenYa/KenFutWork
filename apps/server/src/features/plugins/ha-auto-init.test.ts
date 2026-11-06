@@ -31,6 +31,10 @@ function fakeHomeAssistant() {
     loseLongTokenOnce: false,
     trustedNetworksEnabled: true,
     onboardingUnavailable: false,
+    /** HA 实例被删后重建：旧长期令牌全部失效，REST 一律 401。 */
+    rejectStoredToken: false,
+    /** 地址不可达（HA 正在重启 / 容器没起）。 */
+    unreachable: false,
     loginFlowHandlers: [] as unknown[],
     calls: [] as string[],
   };
@@ -38,6 +42,7 @@ function fakeHomeAssistant() {
     const url = String(input);
     const method = init?.method ?? "GET";
     state.calls.push(`${method} ${url}`);
+    if (state.unreachable) throw new TypeError("fetch failed: ECONNREFUSED");
     const body = typeof init?.body === "string" ? init.body : "";
     if (url.endsWith("/api/onboarding") && method === "GET") {
       // 本机 8123 实况：已完成 onboarding 的 HA 对该端点返回 404。
@@ -106,6 +111,14 @@ function fakeHomeAssistant() {
     if (onboardingStep && method === "POST") {
       state.steps.set(onboardingStep.step, true);
       return Response.json({ auth_code: "integration-code" });
+    }
+    if (url.endsWith("/api/") || url.endsWith("/api/config")) {
+      if (state.rejectStoredToken) {
+        return Response.json(
+          { message: "Unauthorized", error: "unauthorized" },
+          { status: 401 },
+        );
+      }
     }
     if (url.endsWith("/api/"))
       return Response.json({ message: "API running." });
@@ -303,7 +316,7 @@ describe("HA 本机自动初始化", () => {
     expect(shared.fake.state.tokenRecords).toHaveLength(1);
   });
 
-  it("重启后直接复用已存配置，不再访问 HA 或重建令牌", async () => {
+  it("重启后复用已存配置：只探活一次，不重新建号也不重签令牌", async () => {
     const shared = {
       rows: new Map<string, string>(),
       fake: fakeHomeAssistant(),
@@ -314,8 +327,52 @@ describe("HA 本机自动初始化", () => {
     const restarted = createHarness(shared);
     expect((await restarted.readConfig()).body.configured).toBe(true);
 
-    expect(shared.fake.state.calls).toHaveLength(callsBeforeRestart);
+    // 冷读必须探一次活（否则 HA 被删过重标时会卡在假「已接入」），但只此一次
+    expect(shared.fake.state.calls).toHaveLength(callsBeforeRestart + 1);
+    expect(shared.fake.state.calls.at(-1)).toBe("GET http://127.0.0.1:8123/api/config");
     expect(shared.fake.state.userWrites).toBe(1);
+    expect(shared.fake.state.tokenRecords).toHaveLength(1);
+  });
+
+  it("HA 被删后重建（旧令牌 401）：冷读清掉过期配置并重新自动接入", async () => {
+    const shared = {
+      rows: new Map<string, string>(),
+      fake: fakeHomeAssistant(),
+    };
+    await createHarness(shared).readConfig();
+    const loginFlowsBefore = shared.fake.state.calls.filter((call) =>
+      call.includes("/auth/login_flow"),
+    ).length;
+
+    // 用户在 HA 侧删掉实例重建：先前签发的长期令牌全部失效
+    shared.fake.state.rejectStoredToken = true;
+    const restarted = createHarness(shared);
+    const result = await restarted.readConfig();
+
+    expect(result.status).toBe(200);
+    expect(result.body.configured).toBe(true);
+    // 自愈必须真的重走免登录接入，而不是把过期配置当有效返回
+    expect(
+      shared.fake.state.calls.filter((call) =>
+        call.includes("/auth/login_flow"),
+      ).length,
+    ).toBeGreaterThan(loginFlowsBefore);
+    // 重签走「先替换同名旧令牌」，用户安全页里不会攒出一串 KenFutWork
+    expect(shared.fake.state.tokenRecords).toHaveLength(1);
+  });
+
+  it("HA 只是暂时不可达：保留配置，不重签令牌（避免每次重启刷安全页）", async () => {
+    const shared = {
+      rows: new Map<string, string>(),
+      fake: fakeHomeAssistant(),
+    };
+    await createHarness(shared).readConfig();
+
+    shared.fake.state.unreachable = true;
+    const restarted = createHarness(shared);
+    const result = await restarted.readConfig();
+
+    expect(result.body.configured).toBe(true);
     expect(shared.fake.state.tokenRecords).toHaveLength(1);
   });
 

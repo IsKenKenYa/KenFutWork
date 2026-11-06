@@ -102,6 +102,8 @@ export function apply(ctx) {
   const runtimes = new Map();
   /** 同一实例的自动初始化共享一个 Promise，避免并发建用户。 */
   const autoInitializations = new Map();
+  /** 本进程已校验过的实例：存储配置只在冷读时探一次，不在每次调用都打一遍 HA。 */
+  const validatedInstances = new Set();
 
   ctx.effect(() => () => {
     for (const runtime of runtimes.values()) runtime.stop();
@@ -150,6 +152,7 @@ export function apply(ctx) {
 
   async function clearConfig(instanceId) {
     configs.delete(instanceId);
+    validatedInstances.delete(instanceId);
     await ctx.storage.remove(instanceId, CONFIG_KEY);
     await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
   }
@@ -223,9 +226,35 @@ export function apply(ctx) {
     }
   }
 
+  /**
+   * 存着的连接配置是否已被 HA 拒绝。
+   *
+   * 只有「实例活着但不认这枚令牌」才算过期（HA 被删后重建、令牌被用户在「个人资料
+   * → 安全」撤销）：此时必须清掉重走自动接入，否则面板与 `GET config` 会一直报
+   * 「已接入」，用户看到的始终是上一次安装留下的假状态。
+   * 不可达与超时**不算**——那多半只是 HA 正在重启，清掉会让每次重启都多签一枚
+   * 长期令牌，把用户的安全页刷成一串 KenFutWork。
+   */
+  async function storedConfigIsStale(config) {
+    try {
+      await createHaRest(config).getConfig();
+      return false;
+    } catch (error) {
+      return error?.code === "unauthorized";
+    }
+  }
+
   async function readOrInitializeConfig(instanceId) {
     const configured = await readConfig(instanceId);
-    if (configured) return configured;
+    if (configured) {
+      if (validatedInstances.has(instanceId)) return configured;
+      if (!(await storedConfigIsStale(configured))) {
+        validatedInstances.add(instanceId);
+        return configured;
+      }
+      ctx.logger.info?.("HA 存储的令牌已被实例拒绝，重新自动接入。");
+      await clearConfig(instanceId);
+    }
     const existing = autoInitializations.get(instanceId);
     if (existing) return existing;
     const pending = (async () => {
@@ -235,6 +264,7 @@ export function apply(ctx) {
           throw codedError("HA 自动初始化未返回连接配置。", "auto_init_failed");
         }
         await writeConfig(instanceId, config);
+        validatedInstances.add(instanceId);
         return config;
       } finally {
         autoInitializations.delete(instanceId);
