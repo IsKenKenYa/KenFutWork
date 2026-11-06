@@ -50,7 +50,10 @@ import {
   createMacDesktopChrome,
   installDesktopTitlebarDrag,
 } from "./desktopChrome.js";
-import { createTauriDirectoryPicker } from "./directoryPicker.js";
+import {
+  createServerDirectoryPicker,
+  createTauriDirectoryPicker,
+} from "./directoryPicker.js";
 import { dispatchHostNewTask } from "./hostNewTask.js";
 import {
   type CodeHostConfig,
@@ -115,9 +118,13 @@ const workbenchNavigation = bootstrap?.workbenchModes
           : admitProjectMode(mode),
     )
   : undefined;
-const selectDirectory = createTauriDirectoryPicker();
+// 桌面壳优先用 Tauri 原生对话框；Web/自托管形态退到「与用户同机的服务端」
+// 弹系统文件夹对话框。两条都是原生选择器，不再默认打开一层层翻目录的自定义弹窗；
+// 只有服务端明确说 unavailable 时，openWorkspaceFolderEntry 才回落目录浏览器。
+const selectDirectory =
+  createTauriDirectoryPicker() ?? createServerDirectoryPicker();
 const platform = createCodePlatform(client, {
-  ...(selectDirectory ? { selectDirectory } : {}),
+  selectDirectory,
   ...(bootstrap?.managementAvailable
     ? { onOpenManagement: requestManagementOpen }
     : {}),
@@ -196,7 +203,7 @@ function CodeHost({
                           if (mode === "office")
                             workbenchNavigation?.open("design");
                         }}
-                        preferDirectoryBrowser={!selectDirectory}
+                        preferDirectoryBrowser={false}
                         restoreSession
                         allowRemoteWorkspace={false}
                         // G1/Q4：内嵌浏览器页签开放——内容已换宿主 CDP MJPEG 面板（BrowserPane），

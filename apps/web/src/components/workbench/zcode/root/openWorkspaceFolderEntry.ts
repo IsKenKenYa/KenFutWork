@@ -1,4 +1,5 @@
 import { logger } from "@zui/logger.js";
+import { NativeDirectoryPickerUnavailableError } from "../host/directoryPicker.js";
 
 export async function openFolderFromWorkspaceEntry({
   selectDirectory,
@@ -37,6 +38,16 @@ export async function openFolderFromWorkspaceEntry({
       logger.info("[openWorkspaceFolderEntry] user cancelled or dir is null");
     }
   } catch (err) {
+    // 系统对话框确实不可用时才退回自定义目录浏览器；用户取消、普通失败都不降级，
+    // 否则又会把用户丢回那个"很难用"的逐层翻目录弹窗。
+    if (err instanceof NativeDirectoryPickerUnavailableError) {
+      logger.info(
+        "[openWorkspaceFolderEntry] native picker unavailable, falling back to directory browser:",
+        err.message,
+      );
+      openDirectoryBrowser?.();
+      return;
+    }
     logger.error("[openWorkspaceFolderEntry] selectDirectory threw:", err);
   }
 }
