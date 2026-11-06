@@ -33,6 +33,7 @@ import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createGoalsPlugin } from "../features/goals/plugin.js";
+import { createHomeAssistantStackPlugin } from "../features/homeassistant/plugin.js";
 import { createJobLoopPlugin } from "../features/jobs/job-loop-plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
@@ -231,6 +232,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createMcpPlugin(),
     createSearchPlugin(),
     createSystemPlugin(),
+    // HA 自带实例：桌面形态启动后在本机拉起 Home Assistant 容器，
+    // 让 kenfutwork-ha 插件的自动接入有对象可接（非桌面形态 enabled 直接不装）。
+    createHomeAssistantStackPlugin(),
     createModelProvidersPlugin({
       ...(deps.overrideModelProviders
         ? { injectedModelProviders: deps.overrideModelProviders }
