@@ -38,6 +38,12 @@ loadRootEnvLocal();
 
 const nextConfig: NextConfig = {
   output: "export",
+  // Next 16 dev 默认把 127.0.0.1 视为跨源，直接拦截 /_next/*（含 HMR）资源请求。
+  // 后果极具迷惑性：SSR 的 HTML 与加载屏正常返回、curl 也能取到所有 chunk，但浏览器
+  // 拿不到客户端脚本 → 永不 hydrate → 启动加载屏常驻，且服务端看不到 /api/instance。
+  // 项目常规入口是 localhost（KENFUTWORK_WEB_ORIGIN），但开发/自动化常用 127.0.0.1，
+  // 故显式放行该 host。生产为静态导出，不经 dev server，不受影响。
+  allowedDevOrigins: ["127.0.0.1"],
   // 开发代理下的 SSE 必须不压缩：`/api/code-ui/events` 是长连接事件流，被 gzip 后
   // 压缩器要攒满一块才吐字节，首帧永远到不了浏览器 → Code 壳的 connect() 永不 resolve，
   // 整个工作台卡在启动加载屏（实测：直连 3001 首帧 10ms，经 3000 代理 7s 无首帧且
