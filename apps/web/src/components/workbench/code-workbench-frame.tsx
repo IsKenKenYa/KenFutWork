@@ -170,8 +170,9 @@ export function CodeWorkbenchFrame({
         if (workSaves.current.has(saveId)) return;
         const delivery = (async () => {
           let error: string | null = null;
+          let path: string | null = null;
           try {
-            await triggerDownload(
+            path = await triggerDownload(
               fileName,
               new Blob([bytes], {
                 type: mimeType ?? "application/octet-stream",
@@ -182,7 +183,13 @@ export function CodeWorkbenchFrame({
             error = cause instanceof Error ? cause.message : String(cause);
           }
           frame.current?.contentWindow?.postMessage(
-            { type: "kenfutwork:work-save-result", saveId, ok: !error, error },
+            {
+              type: "kenfutwork:work-save-result",
+              saveId,
+              ok: !error,
+              error,
+              path,
+            },
             window.location.origin,
           );
         })();

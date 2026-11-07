@@ -90,13 +90,18 @@ function workSaveCalls(post: ReturnType<typeof vi.spyOn>) {
   );
 }
 
-function postSaveResult(saveId: string, ok: boolean, error?: string) {
+function postSaveResult(
+  saveId: string,
+  ok: boolean,
+  error?: string,
+  path?: string | null,
+) {
   fireEvent(
     window,
     new MessageEvent("message", {
       origin: window.location.origin,
       source: window.parent,
-      data: { type: "kenfutwork:work-save-result", saveId, ok, error },
+      data: { type: "kenfutwork:work-save-result", saveId, ok, error, path },
     }),
   );
 }
@@ -239,8 +244,12 @@ describe("HostWorkSurface 统一保存桥", () => {
     });
     expect(targetOrigin).toBe(window.location.origin);
     expect(transfer).toEqual([bytes]);
-    postSaveResult("save-1", true);
+    postSaveResult("save-1", true, undefined, "D:\\Desktop\\test\\Book1.xlsx");
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    // 成功必须说清落到哪：以前只清错误态，用户点了保存没有任何反馈。
+    await waitFor(() =>
+      expect(screen.getByText(/已保存.*Book1\.xlsx/)).toBeTruthy(),
+    );
   });
 
   it("保存失败可读：同 saveId 不重复失败，新 saveId 允许显式重试", async () => {
@@ -265,6 +274,10 @@ describe("HostWorkSurface 统一保存桥", () => {
     await waitFor(() => expect(workSaveCalls(post)).toHaveLength(2));
     postSaveResult("save-retry", true);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    // 浏览器形态拿不到落盘路径，也要给一句「已保存」，不能静默。
+    await waitFor(() =>
+      expect(screen.getByText("已保存")).toBeTruthy(),
+    );
   });
 });
 

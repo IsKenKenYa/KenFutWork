@@ -519,6 +519,7 @@ function EditorFrame({
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [ready, setReady] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
   const editorTheme = useEditorTheme();
   const initialTheme = useRef(editorTheme);
   const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}`;
@@ -572,6 +573,7 @@ function EditorFrame({
       if (saveIds.current.has(data.saveId)) return;
       saveIds.current.add(data.saveId);
       setSaveError(null);
+      setSaveNote(null);
       window.parent.postMessage(
         {
           type: "kenfutwork:work-save",
@@ -599,12 +601,23 @@ function EditorFrame({
         type?: string;
         ok?: boolean;
         error?: unknown;
+        path?: unknown;
       } | null;
       if (data?.type !== "kenfutwork:work-save-result") return;
-      setSaveError(
-        data.ok
-          ? null
-          : `保存失败：${typeof data.error === "string" ? data.error : "未知错误"}`,
+      if (!data.ok) {
+        setSaveNote(null);
+        setSaveError(
+          `保存失败：${typeof data.error === "string" ? data.error : "未知错误"}`,
+        );
+        return;
+      }
+      // 成功也要说清落到哪：以前只清掉错误态，用户点了保存什么提示都没有，
+      // 体感就是「保存没反应」。
+      setSaveError(null);
+      setSaveNote(
+        typeof data.path === "string" && data.path
+          ? `已保存 ${data.path}`
+          : "已保存",
       );
     };
     window.addEventListener("message", onResult);
@@ -633,8 +646,15 @@ function EditorFrame({
         </button>
         <span className="truncate text-sm font-medium">{title}</span>
         {saveError ? (
-          <span role="alert" className="ml-auto text-xs text-destructive">
+          <span role="alert" className="ml-auto truncate text-xs text-destructive">
             {saveError}
+          </span>
+        ) : saveNote ? (
+          <span
+            role="status"
+            className="ml-auto max-w-[36rem] truncate text-xs text-foreground-subtle"
+          >
+            {saveNote}
           </span>
         ) : null}
       </div>

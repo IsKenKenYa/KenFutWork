@@ -2,6 +2,9 @@
  * 统一的「下载这个文件」入口：桌面形态落**系统下载目录**并在文件管理器里定位
  * （macOS 壳的 WKWebView 不认 `<a download>`，锚点点了毫无反应，见 `lib/desktop-system.ts`）；
  * 浏览器形态维持对象 URL + 锚点下载。所有下载按钮一律走这里，不再各自内联锚点逻辑。
+ *
+ * 返回桌面壳落盘后的绝对路径；浏览器形态拿不到路径返回 null。调用方要给用户
+ * 「存到哪了」的反馈时只有这一条来源。
  */
 
 import { isDesktopShell } from "./desktop-embed";
@@ -11,14 +14,14 @@ export async function triggerDownload(
   name: string,
   blob: Blob,
   options: { browserFallback?: boolean } = {},
-): Promise<void> {
+): Promise<string | null> {
   const browserFallback = options.browserFallback ?? true;
   if (isDesktopShell()) {
     try {
       const path = await saveFileToDownloads(name, await blob.arrayBuffer());
       if (path) {
         await revealPath(path);
-        return;
+        return path;
       }
       if (!browserFallback) throw new Error("桌面保存未返回文件路径");
     } catch (error) {
@@ -33,4 +36,5 @@ export async function triggerDownload(
   anchor.download = name;
   anchor.click();
   URL.revokeObjectURL(url);
+  return null;
 }
