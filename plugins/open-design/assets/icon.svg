@@ -1,15 +1,28 @@
 <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="OpenDesign">
-  <g transform="translate(12 12) scale(1.0353) translate(-12.5000 -11.9500)" stroke-linecap="round" stroke-linejoin="round">
-  <!-- 自绘：调色板 + 画笔（设计联动画布），与智能家居图标同口径 -->
+  <g transform="translate(12 12) scale(1.0353) translate(-12 -12)" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 自绘：钢笔尖（设计工具）。前版是调色板+两个颜料孔，缩到 16px 就成了「一张脸」；
+       菱形+大圆孔那版又读成地图钉。这版按真实笔尖比例：平头、出肩、收尖，
+       通气孔收小、开槽一直走到笔尖。 -->
   <path
-    d="M20 12a8 8 0 1 1-3.4-6.6c.6.4.4 1.2-.2 1.5-1.3.7-2.1 2-2.1 3.5 0 2.2 1.8 4 4 4 .5 0 1-.1 1.4-.3.6-.2 1.3.3 1.3.9z"
+    d="M7.6 4.6H16.4L18.2 9.6 12 19.8 5.8 9.6z"
     fill="none"
     stroke="currentColor"
     stroke-width="1.55"
-    stroke-linejoin="round"
   />
-  <circle cx="8.6" cy="9.4" r="1.1" fill="currentColor" />
-  <circle cx="12.6" cy="7.4" r="1.1" fill="currentColor" />
+  <path
+    d="M12 19.8v-6.2"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.55"
+  />
+  <circle
+    cx="12"
+    cy="11.4"
+    r="1.4"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.55"
+  />
 
   </g>
 </svg>
