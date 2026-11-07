@@ -21,8 +21,9 @@ export function LoadingScreen({ label }: { label?: string } = {}) {
         draggable={false}
       />
       {/* logo 随主题黑白（深色纯白，见 .dark .brand-mark）；旋转圈浅色用中性前景，
-          暗色轨道压到 15% 白 + 品牌浅岚旋转弧作辨识色；尊重系统的「减少动态效果」偏好。 */}
-      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70 motion-reduce:animate-none dark:border-white/15 dark:border-t-brand" />
+          暗色整圈一律取白（轨道 25% 白 + 纯白旋转弧），与 Work 编辑器启动壳同款；
+          尊重系统的「减少动态效果」偏好。 */}
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground/70 motion-reduce:animate-none dark:border-white/25 dark:border-t-white" />
     </div>
   );
 }

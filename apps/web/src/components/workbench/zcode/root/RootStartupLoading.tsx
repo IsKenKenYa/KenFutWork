@@ -38,9 +38,9 @@ export function RootStartupLoading({
 /** 加载旋转圈，全站唯一形态；与 web 层 `LoadingScreen` 同尺寸。 */
 export function ZCodeStartupSpinner() {
   return (
-    // 与 web 层 LoadingScreen 逐字同款：暗色轨道 15% 白 + 品牌浅岚旋转弧，
+    // 与 web 层 LoadingScreen 逐字同款：暗色整圈取白（轨道 25% 白 + 纯白旋转弧），
     // 加载屏→启动屏切换时颜色与尺寸都不跳。
-    <div className="h-6 w-6 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/60 motion-reduce:animate-none dark:border-white/15 dark:border-t-brand" />
+    <div className="h-6 w-6 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/60 motion-reduce:animate-none dark:border-white/25 dark:border-t-white" />
   );
 }
 
