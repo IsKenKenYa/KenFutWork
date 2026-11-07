@@ -13,10 +13,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
+import multipart from "@fastify/multipart";
 import Fastify, { type FastifyInstance } from "fastify";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
+import {
+  ProjectFileError,
+  type ProjectFileService,
+  type ProjectFileWrite,
+} from "../features/project-files/types.js";
 import {
   getWorkEditorInstallSnapshot,
   startWorkEditorInstall,
@@ -34,8 +40,33 @@ const actor = {
 const apps: FastifyInstance[] = [];
 const createdDirs: string[] = [];
 const createdServers: http.Server[] = [];
+/** 默认项目文件替身记录的发布调用（保存路由的断言面）。 */
+const publishCalls: {
+  actor: typeof actor;
+  input: ProjectFileWrite;
+  bytes: Uint8Array;
+}[] = [];
+
+function createRecordingProjectFiles(): ProjectFileService {
+  return {
+    publish: async (
+      publishActor: typeof actor,
+      input: ProjectFileWrite,
+      bytes: Uint8Array,
+    ) => {
+      publishCalls.push({ actor: publishActor, input, bytes });
+      return {
+        assetId: input.assetId,
+        bucket: "project-assets" as const,
+        objectPath: `${publishActor.instanceId}/project-files/${input.assetId}`,
+        relativePath: input.relativePath,
+      };
+    },
+  } as unknown as ProjectFileService;
+}
 
 afterEach(async () => {
+  publishCalls.length = 0;
   await Promise.all(apps.splice(0).map((app) => app.close()));
   await Promise.all(
     createdDirs
@@ -66,9 +97,12 @@ async function fixture(options: {
   dataDir?: string;
   /** 替换 gridcraft 的锚定发布（假上游），路由级全链路不触真实网络。 */
   pinnedOverride?: WorkEditorPinnedRelease | null;
+  projectFiles?: ProjectFileService;
 }) {
   currentEditorsDir = options.editorsDir ?? (await emptyEditorsDir());
   const app = Fastify();
+  // 与 app.ts 同口径：全局 multipart 上限 10MB，路由按各自护栏再放行。
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   apps.push(app);
   await registerWorkHostRoutes(app, {
     localAccess: createConsumerLocalAccessService(async () =>
@@ -85,6 +119,7 @@ async function fixture(options: {
     },
     dataDir: options.dataDir ?? "/tmp/kenfutwork-data",
     editorsDir: currentEditorsDir,
+    projectFiles: options.projectFiles ?? createRecordingProjectFiles(),
   });
   return app;
 }
@@ -526,5 +561,100 @@ describe("work 宿主路由", () => {
     expect(byId.get("gridcraft")).toBe(true);
     expect(byId.get("gridcraftx")).toBeUndefined();
     expect(byId.get("wordcraft")).toBe(false);
+  });
+
+  const workProjectId = "22222222-2222-4222-8222-222222222222";
+  const saveForm = (
+    overrides: Partial<Record<"relativePath" | "projectId" | "content", string>> = {},
+  ) => {
+    const form = new FormData();
+    form.append("projectId", overrides.projectId ?? workProjectId);
+    form.append("assetId", "33333333-3333-4333-8333-333333333333");
+    form.append("relativePath", overrides.relativePath ?? "报表/Book1.xlsx");
+    form.append("mimeType", "application/vnd.ms-excel");
+    form.append(
+      "file",
+      new Blob([overrides.content ?? "workbook-bytes"], {
+        type: "application/vnd.ms-excel",
+      }),
+      "Book1.xlsx",
+    );
+    return form;
+  };
+
+  it("save：字节按 projectId 落到项目主目录，指纹由服务端算", async () => {
+    const app = await fixture({});
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm(),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ relativePath: "报表/Book1.xlsx" });
+    expect(publishCalls).toHaveLength(1);
+    const call = publishCalls[0];
+    if (!call) throw new Error("没有发出发布调用");
+    expect(call.actor).toEqual(actor);
+    expect(call.input).toEqual({
+      target: { kind: "project", projectId: workProjectId },
+      assetId: "33333333-3333-4333-8333-333333333333",
+      relativePath: "报表/Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      writeFingerprint: createHash("sha256")
+        .update(Buffer.from("workbook-bytes"))
+        .digest("hex"),
+    });
+    expect(Buffer.from(call.bytes).toString()).toBe("workbook-bytes");
+  });
+
+  it("save：没有本机接入凭据不写盘", async () => {
+    const app = await fixture({ authenticated: false });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm(),
+    });
+    expect(response.statusCode).toBe(401);
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it("save：越出项目目录的路径要把服务原因原样说出来", async () => {
+    const app = await fixture({
+      projectFiles: {
+        publish: async () => {
+          throw new ProjectFileError(
+            "invalid_path",
+            "素材路径必须位于项目目录内，不能覆盖应用管理文件。",
+            400,
+          );
+        },
+      } as unknown as ProjectFileService,
+    });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm({ relativePath: "../outside.xlsx" }),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(
+      (response.json() as { error: { message: string } }).error.message,
+    ).toContain("必须位于项目目录内");
+  });
+
+  it("save：空内容与无效参数都如实拒绝，不落到磁盘", async () => {
+    const app = await fixture({});
+    const empty = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm({ content: "" }),
+    });
+    expect(empty.statusCode).toBe(400);
+    const invalid = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm({ projectId: "not-a-uuid" }),
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(publishCalls).toHaveLength(0);
   });
 });

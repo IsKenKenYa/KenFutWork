@@ -364,6 +364,9 @@ async function fixture() {
     useCode: () => {
       kind = "code";
     },
+    useWork: () => {
+      kind = "work";
+    },
     readOnly: () => {
       generation++;
       readonly = true;
@@ -385,6 +388,16 @@ async function fixture() {
     },
   };
 }
+it("Work 项目按项目主目录发布文档，不经 Task 工作域", async () => {
+  const f = await fixture();
+  f.useWork();
+  const receipt = await f.service.prepareWrite(f.actor, {
+    ...f.input,
+    relativePath: "报表/Book1.xlsx",
+  });
+  await f.service.namespaceProvider.upload(receipt.objectPath, bytes);
+  expect(await readFile(join(f.root, "报表/Book1.xlsx"))).toEqual(bytes);
+});
 it("prepare发布到真实项目普通路径，相同指纹幂等且不同指纹冲突", async () => {
   const f = await fixture();
   const receipt = await f.service.prepareWrite(f.actor, f.input);

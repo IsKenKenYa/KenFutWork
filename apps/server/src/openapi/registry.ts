@@ -245,6 +245,7 @@ import {
   workFontsResponseSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
+  workSaveResponseSchema,
 } from "@kenfutwork/shared";
 import type { ZodType } from "zod";
 import { z } from "zod";
@@ -1630,6 +1631,17 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "读取 work 编辑器静态站点文件",
     description:
       "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/save",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workSaveResponseSchema,
+    summary: "保存 work 文档到项目主目录",
+    description:
+      "multipart：一个 file 分片加 projectId/assetId/relativePath/mimeType 四个字段。绝对路径由服务端按项目持有，客户端只给项目内相对路径；越界或覆盖应用管理文件返回 400，内容为空或参数无效同样 400。同一 assetId 换内容会被判成冲突写入，因此每次保存新生成身份。",
   },
   {
     method: "get",

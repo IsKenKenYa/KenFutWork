@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import {
@@ -9,9 +10,15 @@ import {
   workEditorSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
+  workSaveFieldsSchema,
+  workSaveResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import {
+  ProjectFileError,
+  type ProjectFileService,
+} from "../features/project-files/types.js";
 import {
   addFont,
   bundledFontPath,
@@ -28,6 +35,7 @@ import {
   startWorkEditorInstall,
 } from "../features/work/install.js";
 import { listWorkEditorRegistrations } from "../features/work/registry.js";
+import { isZodError } from "./zod-error.js";
 
 /**
  * work 宿主适配层路由（`/api/work/host/*`）。
@@ -41,6 +49,10 @@ import { listWorkEditorRegistrations } from "../features/work/registry.js";
  * 按数据目录落位事实计算；未锚定发布的编辑器不给下载（400，不摆假开关）。
  * 静态托管按上游 HOSTING.md 要求回 `.wasm` 的 `application/wasm` 与 nosniff。
  */
+/** Work 文档单次保存的本地护栏（与 flow 项目文件上传同口径）：一次性局部常量，
+ *  不是 agent 治理数值，不进 `packages/shared/src/governance.ts`。 */
+const WORK_SAVE_MAX_BYTES = 250 * 1024 * 1024;
+
 export async function registerWorkHostRoutes(
   app: FastifyInstance,
   options: {
@@ -53,6 +65,8 @@ export async function registerWorkHostRoutes(
     dataDir: string;
     /** 扩展包落位根（= dataDir/work/editors；安装与托管共用）。 */
     editorsDir: string;
+    /** 项目文件缝：Work 文档按 projectId 落到项目主目录。 */
+    projectFiles: ProjectFileService;
   },
 ): Promise<void> {
   const unauthorized = (reply: FastifyReply, message: string) =>
@@ -139,6 +153,58 @@ export async function registerWorkHostRoutes(
       return reply.send(getWorkEditorInstallSnapshot(editorId));
     },
   );
+
+  // ---- 文档保存到项目目录（Work 面绑定的那个项目）----
+  // 路径不在客户端给：只接 projectId + 项目内相对路径，根目录由项目文件服务按
+  // 服务端持有的 work_dir 解析（`validateRelativePath` 拒绝越界与 `.kenfutwork`）。
+  // assetId 每次保存新生成——同一身份换内容会被判成冲突写入。
+
+  app.post("/api/work/host/save", async (request, reply) => {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor) return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const fields: Record<string, string> = {};
+    let bytes: Buffer | null = null;
+    try {
+      for await (const part of request.parts({
+        // 全局 multipart 上限 10MB 装不下设计/视频类文档；这里是本机落盘的本地护栏，
+        // 不是 agent 治理数值，不进 `packages/shared/src/governance.ts`。
+        limits: { files: 1, fields: 4, parts: 5, fileSize: WORK_SAVE_MAX_BYTES },
+      })) {
+        if (part.type === "file") {
+          if (part.fieldname !== "file" || bytes)
+            return applicationError(reply, 400, "一次只能保存一个文件。");
+          bytes = await part.toBuffer();
+        } else {
+          if (typeof part.value !== "string" || part.fieldname in fields)
+            return applicationError(reply, 400, "保存参数无效。");
+          fields[part.fieldname] = part.value;
+        }
+      }
+      const input = workSaveFieldsSchema.parse(fields);
+      if (!bytes?.byteLength)
+        return applicationError(reply, 400, "保存内容为空。");
+      await options.projectFiles.publish(
+        actor,
+        {
+          target: { kind: "project", projectId: input.projectId },
+          assetId: input.assetId,
+          relativePath: input.relativePath,
+          mimeType: input.mimeType,
+          writeFingerprint: createHash("sha256").update(bytes).digest("hex"),
+        },
+        bytes,
+      );
+      return workSaveResponseSchema.parse({
+        relativePath: input.relativePath,
+      });
+    } catch (error) {
+      if (error instanceof ProjectFileError)
+        return applicationError(reply, error.statusCode, error.message);
+      if (isZodError(error))
+        return applicationError(reply, 400, "保存参数无效。");
+      throw error;
+    }
+  });
 
   // ---- 用户字体（Work 引擎页「字体」）----
   // 编辑器是 WASM 自绘、读不到系统字体：用户把 ttf/otf 放进实例数据目录，宿主在

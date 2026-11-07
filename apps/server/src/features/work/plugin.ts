@@ -17,7 +17,7 @@ import type { PluginDefinition } from "../../kernel/types.js";
 export function createWorkHostPlugin(): PluginDefinition {
   return {
     name: "work-host",
-    inject: ["localAccess", "tools"],
+    inject: ["localAccess", "tools", "projectFiles"],
     apply() {},
     mounted(ctx) {
       // 本机数据目录（与 flow 引擎 env/日志同一数据根）；扩展包落位在
@@ -33,6 +33,7 @@ export function createWorkHostPlugin(): PluginDefinition {
         },
         dataDir: dataRoot,
         editorsDir,
+        projectFiles: ctx.get("projectFiles"),
       });
     },
   };

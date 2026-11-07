@@ -7217,6 +7217,56 @@
         }
       }
     },
+    "/api/work/host/save": {
+      "post": {
+        "operationId": "postWorkHostSave",
+        "summary": "保存 work 文档到项目主目录",
+        "description": "multipart：一个 file 分片加 projectId/assetId/relativePath/mimeType 四个字段。绝对路径由服务端按项目持有，客户端只给项目内相对路径；越界或覆盖应用管理文件返回 400，内容为空或参数无效同样 400。同一 assetId 换内容会被判成冲突写入，因此每次保存新生成身份。",
+        "tags": [
+          "work"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/workSaveResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/work/host/fonts": {
       "get": {
         "operationId": "getWorkHostFonts",
@@ -34024,6 +34074,20 @@
           "enabled",
           "registeredEditors",
           "reasons"
+        ],
+        "additionalProperties": false
+      },
+      "workSaveResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "relativePath": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "relativePath"
         ],
         "additionalProperties": false
       },
