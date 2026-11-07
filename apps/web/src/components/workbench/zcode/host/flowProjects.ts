@@ -1,10 +1,10 @@
 import type { ProjectSummary } from "@kenfutwork/shared";
 import { useEffect, useSyncExternalStore } from "react";
+import { listAllProjects } from "./projects.js";
 import { surfaceJson, surfaceRequest } from "./surfaceApi.js";
 
 /** 未选项目时自动绑定的默认工作流项目名（同一实例只建一个）。 */
 const DEFAULT_FLOW_PROJECT_NAME = "默认工作流";
-const PROJECT_KINDS = ["flow", "code", "design", "work"] as const;
 const EMPTY_PROJECTS: ProjectSummary[] = [];
 let state = {
   projects: EMPTY_PROJECTS,
@@ -34,22 +34,6 @@ export function selectFlowProject(projectId: string | null) {
 let readGeneration = 0;
 /** 默认项目创建在途；refresh 与用户点「新建」可能并发。 */
 let ensuringDefault = false;
-
-export async function listProjects() {
-  const lists = await Promise.all(
-    PROJECT_KINDS.map((kind) =>
-      surfaceJson<{ projects: ProjectSummary[] }>(`/api/projects?kind=${kind}`),
-    ),
-  );
-  const seen = new Set<string>();
-  return lists
-    .flatMap((list) => list.projects)
-    .filter((project) => {
-      if (seen.has(project.id)) return false;
-      seen.add(project.id);
-      return true;
-    });
-}
 
 /**
  * 未选项目时自动绑定默认工作流项目（用户 2026-10-27 口径「没绑定项目的情况下
@@ -97,7 +81,7 @@ async function ensureDefaultProject() {
 export async function refreshFlowProjects() {
   const generation = ++readGeneration;
   try {
-    const projects = await listProjects();
+    const projects = await listAllProjects();
     if (generation !== readGeneration) return;
     const selectedProjectId = projects.some(
       (project) => project.id === state.selectedProjectId,

@@ -55,9 +55,10 @@ afterEach(() => {
 });
 
 function mockData(editors: unknown[], install = {}) {
-  host.surfaceJson.mockImplementation(async (path: string) =>
-    path.includes("/status") ? STATUS : EDITORS(editors, install),
-  );
+  host.surfaceJson.mockImplementation(async (path: string) => {
+    if (path.includes("/api/projects")) return { projects: [] };
+    return path.includes("/status") ? STATUS : EDITORS(editors, install);
+  });
 }
 
 async function openInstalledEditor() {
