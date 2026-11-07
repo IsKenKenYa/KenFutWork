@@ -52,17 +52,18 @@ afterEach(() => {
   host.surfaceJson.mockReset();
   host.surfaceFetch.mockReset();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
-function mockData(editors: unknown[], install = {}) {
+function mockData(editors: unknown[], install = {}, projects: unknown[] = []) {
   host.surfaceJson.mockImplementation(async (path: string) => {
-    if (path.includes("/api/projects")) return { projects: [] };
+    if (path.includes("/api/projects")) return { projects };
     return path.includes("/status") ? STATUS : EDITORS(editors, install);
   });
 }
 
-async function openInstalledEditor() {
-  mockData([EDITOR({ installed: true })]);
+async function openInstalledEditor(projects: unknown[] = []) {
+  mockData([EDITOR({ installed: true })], {}, projects);
   render(<HostWorkSurface />);
   await waitFor(() => expect(screen.getByText("打开")).toBeTruthy());
   fireEvent.click(screen.getByText("打开"));
@@ -94,15 +95,23 @@ function workSaveCalls(post: ReturnType<typeof vi.spyOn>) {
 function postSaveResult(
   saveId: string,
   ok: boolean,
-  error?: string,
+  error?: string | null,
   path?: string | null,
+  relativePath?: string,
 ) {
   fireEvent(
     window,
     new MessageEvent("message", {
       origin: window.location.origin,
       source: window.parent,
-      data: { type: "kenfutwork:work-save-result", saveId, ok, error, path },
+      data: {
+        type: "kenfutwork:work-save-result",
+        saveId,
+        ok,
+        error,
+        path,
+        relativePath,
+      },
     }),
   );
 }
@@ -276,17 +285,18 @@ describe("HostWorkSurface 统一保存桥", () => {
     postSaveResult("save-retry", true);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     // 浏览器形态拿不到落盘路径，也要给一句「已保存」，不能静默。
-    await waitFor(() =>
-      expect(screen.getByText("已保存")).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByText("已保存")).toBeTruthy());
   });
 });
 
 describe("HostWorkSurface 主题桥", () => {
   it("editor-ready 前不发送主题，ready 后发送当前主题", async () => {
     const post = vi.fn();
-    vi.spyOn(HTMLIFrameElement.prototype, "contentWindow", "get")
-      .mockReturnValue({ postMessage: post } as unknown as Window);
+    vi.spyOn(
+      HTMLIFrameElement.prototype,
+      "contentWindow",
+      "get",
+    ).mockReturnValue({ postMessage: post } as unknown as Window);
     const frame = await openInstalledEditor();
 
     expect(post).not.toHaveBeenCalled();
@@ -297,6 +307,81 @@ describe("HostWorkSurface 主题桥", () => {
     expect(post).toHaveBeenCalledWith(
       { type: "kenfutwork:editor-theme", theme: "light" },
       "http://127.0.0.1:3001",
+    );
+  });
+});
+
+const WORK_PROJECT = {
+  id: "44444444-4444-4444-8444-444444444444",
+  kind: "work",
+  name: "书本项目",
+  workDir: "D:\\work\\books",
+  updatedAt: "2026-11-07T00:00:00Z",
+  enabledModes: ["work"],
+};
+
+describe("Work 保存落到绑定项目目录", () => {
+  // 目录绑定是模块级存储，本条必须在绑定类用例之前跑，否则拿到的是上一条的绑定。
+  it("没绑定项目时维持原来的下载目录交付，不带项目字段", async () => {
+    const post = vi.spyOn(window.parent, "postMessage");
+    const frame = await openInstalledEditor();
+    postEditorMessage(frame, {
+      type: "kenfutwork:editor-save",
+      saveId: "save-download",
+      fileName: "Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      bytes: new ArrayBuffer(8),
+    });
+    const calls = workSaveCalls(post);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).not.toHaveProperty("projectId");
+    postSaveResult("save-download", true, null, "C:\\Downloads\\Book1.xlsx");
+    await waitFor(() =>
+      expect(screen.getByText("已保存 C:\\Downloads\\Book1.xlsx")).toBeTruthy(),
+    );
+  });
+
+  it("带上项目身份与项目内相对路径", async () => {
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "55555555-5555-5555-8555-555555555555",
+    });
+    const post = vi.spyOn(window.parent, "postMessage");
+    const frame = await openInstalledEditor([WORK_PROJECT]);
+    await waitFor(() => expect(screen.getByText("书本项目")).toBeTruthy());
+    postEditorMessage(frame, {
+      type: "kenfutwork:editor-save",
+      saveId: "save-project",
+      fileName: "Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      bytes: new ArrayBuffer(8),
+    });
+    const calls = workSaveCalls(post);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[0]).toMatchObject({
+      type: "kenfutwork:work-save",
+      projectId: WORK_PROJECT.id,
+      assetId: "55555555-5555-5555-8555-555555555555",
+      relativePath: "Book1.xlsx",
+    });
+  });
+
+  it("回显说清落在项目里的哪个文件", async () => {
+    const post = vi.spyOn(window.parent, "postMessage");
+    const frame = await openInstalledEditor([WORK_PROJECT]);
+    await waitFor(() => expect(screen.getByText("书本项目")).toBeTruthy());
+    postEditorMessage(frame, {
+      type: "kenfutwork:editor-save",
+      saveId: "save-note",
+      fileName: "Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      bytes: new ArrayBuffer(8),
+    });
+    expect(workSaveCalls(post)).toHaveLength(1);
+    postSaveResult("save-note", true, null, null, "Book1.xlsx");
+    await waitFor(() =>
+      expect(
+        screen.getByText("已保存 D:\\work\\books\\Book1.xlsx"),
+      ).toBeTruthy(),
     );
   });
 });

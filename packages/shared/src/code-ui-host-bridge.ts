@@ -112,6 +112,14 @@ export const codeUiParentRequestSchema = z.discriminatedUnion("type", [
       (value) =>
         Object.prototype.toString.call(value) === "[object ArrayBuffer]",
     ),
+    /**
+     * Work 面绑定了项目目录时一起带上：三者齐备就走「落到项目主目录」，
+     * 缺任一项维持原来的「存到系统下载目录」。绝对路径由服务端按 projectId 解析，
+     * 客户端不给（`assetId` 每次保存新生成，同一身份换内容会被判成冲突写入）。
+     */
+    projectId: z.uuid().optional(),
+    assetId: z.uuid().optional(),
+    relativePath: z.string().min(1).max(512).optional(),
   }),
   z.object({ type: z.literal("kenfutwork:code-plugins-changed") }),
   z.object({ type: z.literal("kenfutwork:management-close") }),

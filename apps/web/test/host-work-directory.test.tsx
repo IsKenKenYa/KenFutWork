@@ -149,15 +149,21 @@ describe("Work 面目录绑定", () => {
     expect(createProjectBody().work_dir).toBe("D:/");
   });
 
-  it("目录已有项目时复用那一份，不再创建", async () => {
+  it("目录上的项目已启用 work 时复用那一份，不再创建", async () => {
     host.selectDirectory.mockResolvedValue("D:/work/books");
     host.surfaceJson.mockImplementation(
       async (path: string, init?: RequestInit) => {
         if (init?.method === "POST")
-          throw new Error("不该为已有项目的目录再建一份");
+          throw new Error("不该为已启用 work 的项目再建一份");
         if (path.includes("kind=code"))
           return {
-            projects: [workProject({ kind: "code", name: "书本项目" })],
+            projects: [
+              workProject({
+                kind: "code",
+                name: "书本项目",
+                enabledModes: ["code", "work"],
+              }),
+            ],
           };
         if (path.startsWith("/api/projects")) return { projects: [] };
         return path.includes("/status") ? STATUS : EDITORS;
@@ -172,6 +178,46 @@ describe("Work 面目录绑定", () => {
       "/api/projects",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("目录上是纯 Code 项目时另立一份 work 项目（Code 文件必须走 Task 工作域）", async () => {
+    host.selectDirectory.mockResolvedValue("D:/work/books");
+    host.surfaceJson.mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (init?.method === "POST")
+          return {
+            project: workProject({
+              id: "work-new",
+              name: "books",
+              workDir: "D:/work/books",
+            }),
+          };
+        if (path.includes("kind=code"))
+          return {
+            projects: [
+              workProject({
+                id: "code-1",
+                kind: "code",
+                name: "书本项目",
+                enabledModes: ["code"],
+              }),
+            ],
+          };
+        if (path.startsWith("/api/projects")) return { projects: [] };
+        return path.includes("/status") ? STATUS : EDITORS;
+      },
+    );
+    await mountSurface();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "选择工作目录" }),
+    );
+    await waitFor(() => expect(screen.getByText("books")).toBeTruthy());
+    expect(createProjectBody()).toEqual({
+      kind: "work",
+      name: "books",
+      work_dir: "D:/work/books",
+      directory_choice: "independent",
+    });
   });
 
   it("取消选择目录不改状态、不创建项目", async () => {
@@ -206,6 +252,26 @@ describe("Work 面目录绑定", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "目标目录不可写",
     );
+  });
+
+  it("已绑定的目录不会因为 work 清单为空被冲掉（切进编辑器会再刷一次）", async () => {
+    const created = workProject({ id: "work-bound", name: "书本项目" });
+    host.selectDirectory.mockResolvedValue("D:/work/books");
+    host.surfaceJson.mockImplementation(
+      async (path: string, init?: RequestInit) => {
+        if (init?.method === "POST") return { project: created };
+        if (path.startsWith("/api/projects")) return { projects: [] };
+        return path.includes("/status") ? STATUS : EDITORS;
+      },
+    );
+    vi.resetModules();
+    const store = await import(
+      "@/components/workbench/zcode/host/workProjectDirectory"
+    );
+    await store.chooseWorkDirectory(host.selectDirectory);
+    expect(store.getWorkDirectory()?.id).toBe("work-bound");
+    await store.refreshWorkDirectory();
+    expect(store.getWorkDirectory()?.id).toBe("work-bound");
   });
 
   it("宿主没有系统选择器时不放假按钮，已绑定只显示目录名", async () => {

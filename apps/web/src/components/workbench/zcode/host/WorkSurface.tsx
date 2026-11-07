@@ -23,6 +23,7 @@ import { fontFamilies } from "./fontFamilies.js";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
 import {
   chooseWorkDirectory,
+  getWorkDirectory,
   refreshWorkDirectory,
   useWorkDirectory,
 } from "./workProjectDirectory.js";
@@ -553,6 +554,21 @@ function useEditorTheme(): "light" | "dark" {
   );
 }
 
+/**
+ * 编辑器给的文件名 → 项目内相对路径：只取最后一段。绝对路径与 `..` 到服务端也会被
+ * `validateRelativePath` 拒绝，这里先不把它发出去（保存失败要能说清是哪一片的锅）。
+ */
+function documentRelativePath(fileName: string): string | null {
+  const name = fileName.split(/[\\/]/u).pop()?.trim();
+  return name && name !== "." && name !== ".." ? name : null;
+}
+
+/** 回显用的路径拼接：跟随 workDir 的分隔符风格。 */
+function displayWorkPath(workDir: string, relativePath: string): string {
+  const separator = workDir.includes("\\") ? "\\" : "/";
+  return `${workDir.replace(/[\\/]+$/u, "")}${separator}${relativePath.split("/").join(separator)}`;
+}
+
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
@@ -623,6 +639,8 @@ function EditorFrame({
       saveIds.current.add(data.saveId);
       setSaveError(null);
       setSaveNote(null);
+      const bound = getWorkDirectory();
+      const relativePath = documentRelativePath(data.fileName);
       window.parent.postMessage(
         {
           type: "kenfutwork:work-save",
@@ -630,6 +648,13 @@ function EditorFrame({
           fileName: data.fileName,
           mimeType: data.mimeType,
           bytes: data.bytes,
+          ...(bound?.workDir && relativePath
+            ? {
+                projectId: bound.id,
+                assetId: crypto.randomUUID(),
+                relativePath,
+              }
+            : {}),
         },
         window.location.origin,
         [data.bytes],
@@ -651,6 +676,7 @@ function EditorFrame({
         ok?: boolean;
         error?: unknown;
         path?: unknown;
+        relativePath?: unknown;
       } | null;
       if (data?.type !== "kenfutwork:work-save-result") return;
       if (!data.ok) {
@@ -661,12 +687,15 @@ function EditorFrame({
         return;
       }
       // 成功也要说清落到哪：以前只清掉错误态，用户点了保存什么提示都没有，
-      // 体感就是「保存没反应」。
+      // 体感就是「保存没反应」。绑了项目目录的按项目路径回显，其余仍是落盘路径。
       setSaveError(null);
+      const workDir = getWorkDirectory()?.workDir;
       setSaveNote(
-        typeof data.path === "string" && data.path
-          ? `已保存 ${data.path}`
-          : "已保存",
+        typeof data.relativePath === "string" && workDir
+          ? `已保存 ${displayWorkPath(workDir, data.relativePath)}`
+          : typeof data.path === "string" && data.path
+            ? `已保存 ${data.path}`
+            : "已保存",
       );
     };
     window.addEventListener("message", onResult);

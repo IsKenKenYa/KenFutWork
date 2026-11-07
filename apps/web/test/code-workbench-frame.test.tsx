@@ -14,8 +14,12 @@ const themeHost = vi.hoisted(() => ({
   setTheme: vi.fn(),
   triggerDownload: vi.fn(),
 }));
+const api = vi.hoisted(() => ({ saveWorkDocument: vi.fn() }));
 vi.mock("@/lib/download", () => ({
   triggerDownload: themeHost.triggerDownload,
+}));
+vi.mock("@/lib/server-api", () => ({
+  saveWorkDocument: api.saveWorkDocument,
 }));
 vi.mock("next-themes", () => ({
   useTheme: () => ({
@@ -39,6 +43,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   themeHost.setTheme.mockReset();
   themeHost.triggerDownload.mockReset();
+  api.saveWorkDocument.mockReset();
   localStorage.clear();
 });
 
@@ -289,6 +294,91 @@ it("Work 保存由父页统一交付，同 saveId 并发重放只落盘一次", 
       window.location.origin,
     ),
   );
+});
+
+it("Work 保存绑定了项目目录时落到项目里，不再走下载目录", async () => {
+  api.saveWorkDocument.mockResolvedValue({ relativePath: "Book1.xlsx" });
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const post = vi.spyOn(frame.contentWindow, "postMessage");
+  const bytes = new TextEncoder().encode("workbook").buffer;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:work-save",
+        saveId: "save-project",
+        fileName: "Book1.xlsx",
+        mimeType: "application/vnd.ms-excel",
+        bytes,
+        projectId: "44444444-4444-4444-8444-444444444444",
+        assetId: "55555555-5555-5555-8555-555555555555",
+        relativePath: "Book1.xlsx",
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(api.saveWorkDocument).toHaveBeenCalledWith(null, {
+      projectId: "44444444-4444-4444-8444-444444444444",
+      assetId: "55555555-5555-5555-8555-555555555555",
+      relativePath: "Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      bytes,
+    }),
+  );
+  expect(themeHost.triggerDownload).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "kenfutwork:work-save-result",
+        saveId: "save-project",
+        ok: true,
+        relativePath: "Book1.xlsx",
+      }),
+      window.location.origin,
+    ),
+  );
+});
+
+it("落到项目失败要说清原因，不偷偷退回下载目录", async () => {
+  api.saveWorkDocument.mockRejectedValue(
+    new Error("素材路径必须位于项目目录内"),
+  );
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const post = vi.spyOn(frame.contentWindow, "postMessage");
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:work-save",
+        saveId: "save-project-failed",
+        fileName: "Book1.xlsx",
+        mimeType: "application/vnd.ms-excel",
+        bytes: new TextEncoder().encode("workbook").buffer,
+        projectId: "44444444-4444-4444-8444-444444444444",
+        assetId: "55555555-5555-5555-8555-555555555555",
+        relativePath: "../Book1.xlsx",
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        saveId: "save-project-failed",
+        ok: false,
+        error: "素材路径必须位于项目目录内",
+      }),
+      window.location.origin,
+    ),
+  );
+  expect(themeHost.triggerDownload).not.toHaveBeenCalled();
 });
 
 it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人（侧栏显示用户而非连接使用），仍无接入令牌", async () => {

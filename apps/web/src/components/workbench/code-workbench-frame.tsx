@@ -23,6 +23,7 @@ import {
   PluginPanelOverlay,
   usePluginPanels,
 } from "@/lib/plugin-panels";
+import { saveWorkDocument } from "@/lib/server-api";
 
 const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
@@ -167,18 +168,32 @@ export function CodeWorkbenchFrame({
       if (!parsed.success) return;
       if (parsed.data.type === "kenfutwork:work-save") {
         const { saveId, fileName, mimeType, bytes } = parsed.data;
+        const { projectId, assetId, relativePath } = parsed.data;
         if (workSaves.current.has(saveId)) return;
         const delivery = (async () => {
           let error: string | null = null;
           let path: string | null = null;
+          let savedRelativePath: string | undefined;
           try {
-            path = await triggerDownload(
-              fileName,
-              new Blob([bytes], {
-                type: mimeType ?? "application/octet-stream",
-              }),
-              { browserFallback: false },
-            );
+            if (projectId && assetId && relativePath) {
+              // 绑定了项目目录：落到项目主目录，失败就说原因，不偷偷退回下载目录。
+              const saved = await saveWorkDocument(null, {
+                projectId,
+                assetId,
+                relativePath,
+                mimeType: mimeType ?? "application/octet-stream",
+                bytes,
+              });
+              savedRelativePath = saved.relativePath;
+            } else {
+              path = await triggerDownload(
+                fileName,
+                new Blob([bytes], {
+                  type: mimeType ?? "application/octet-stream",
+                }),
+                { browserFallback: false },
+              );
+            }
           } catch (cause) {
             error = cause instanceof Error ? cause.message : String(cause);
           }
@@ -189,6 +204,7 @@ export function CodeWorkbenchFrame({
               ok: !error,
               error,
               path,
+              relativePath: savedRelativePath,
             },
             window.location.origin,
           );

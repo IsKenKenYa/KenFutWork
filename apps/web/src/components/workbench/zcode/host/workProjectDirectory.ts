@@ -66,9 +66,10 @@ export async function refreshWorkDirectory(): Promise<void> {
       "/api/projects?kind=work",
     );
     if (generation !== readGeneration) return;
-    const keep = projects.find((project) => project.id === state.project?.id);
+    // 已绑定就不动：复用的可能是 Code/Design 项目，不在 kind=work 清单里，
+    // 按那份清单回落会把用户显式选的目录冲掉（切进编辑器视图时实测丢过一次）。
     update({
-      project: keep ?? newestWorkProject(projects),
+      project: state.project ?? newestWorkProject(projects),
       loading: false,
       error: null,
     });
@@ -93,7 +94,10 @@ function directoryName(path: string): string {
   );
 }
 
-async function createWorkProject(path: string): Promise<ProjectSummary> {
+async function createWorkProject(
+  path: string,
+  directoryChoice?: "independent",
+): Promise<ProjectSummary> {
   const { project } = await surfaceJson<{ project: ProjectSummary }>(
     "/api/projects",
     {
@@ -103,6 +107,7 @@ async function createWorkProject(path: string): Promise<ProjectSummary> {
         kind: "work",
         name: directoryName(path),
         work_dir: path,
+        ...(directoryChoice ? { directory_choice: directoryChoice } : {}),
       }),
     },
   );
@@ -110,8 +115,10 @@ async function createWorkProject(path: string): Promise<ProjectSummary> {
 }
 
 /**
- * 用系统文件夹选择器换工作目录；取消不改状态。目录上已有项目时**复用那一份**
- * （同目录不另起项目），没有才建 work 项目。
+ * 用系统文件夹选择器换工作目录；取消不改状态。
+ * 目录上已有项目时，只有**支持 work 的项目**才复用；Code 项目按不变量只能经
+ * Task 工作域写文件（服务端会回「Code素材必须绑定真实Task工作域」），所以在同一
+ * 目录上另立一份 work 项目（`directory_choice: independent`）——不合并、也不改原项目。
  */
 export async function chooseWorkDirectory(
   selectDirectory: () => Promise<string | null>,
@@ -125,7 +132,10 @@ export async function chooseWorkDirectory(
     const existing = (await listAllProjects()).find(
       (project) => project.workDir === path,
     );
-    const project = existing ?? (await createWorkProject(path));
+    const reusable = existing?.enabledModes.includes("work") ? existing : null;
+    const project =
+      reusable ??
+      (await createWorkProject(path, existing ? "independent" : undefined));
     ++readGeneration;
     update({ project, loading: false });
   } catch (failure) {
