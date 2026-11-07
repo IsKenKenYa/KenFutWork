@@ -1,5 +1,6 @@
 import {
   access,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -1157,5 +1158,96 @@ describe("部署形态禁止第三方插件", () => {
         url: EXAMPLE_PLUGIN,
       }),
     ).rejects.toThrow(/不允许安装第三方插件/);
+  });
+});
+
+describe("plugin-registry：同名插件只允许一份启用安装", () => {
+  /**
+   * 造历史残留：同一个 bundle 名以两个 id 各装一份。
+   * 真实成因是自带 bundle 落 `bundled__<包名>`、本地目录安装落 `local__<包名>`，
+   * 而安装只按 id 去重，于是两份同时启用 → 设置页出现两行一模一样的插件。
+   */
+  async function seedSameNameTwin(installedId: string, name: string) {
+    const stateFile = path.join(pluginsDir, "installed.json");
+    const state = JSON.parse(await readFile(stateFile, "utf8")) as {
+      installed: Array<{ id: string } & Record<string, unknown>>;
+    };
+    const original = state.installed.find((item) => item.id === installedId);
+    if (!original) throw new Error("夹具：未找到已安装记录");
+    const twinId = `bundled__${name}`;
+    const twin = {
+      ...structuredClone(original),
+      id: twinId,
+      // 双胞胎给更早的时间戳：收敛时保留本次安装的那一份
+      installedAt: "2026-01-01T00:00:00.000Z",
+    };
+    await writeFile(
+      stateFile,
+      JSON.stringify(
+        { version: 1, installed: [...state.installed, twin] },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await cp(
+      path.join(pluginsDir, installedId),
+      path.join(pluginsDir, twinId),
+      { recursive: true },
+    );
+    return twinId;
+  }
+
+  it("restore 装载前按包名收敛：只留最新一份并写回记录", async () => {
+    const { service } = makeService();
+    const { installed } = await service.install({
+      allowLifecycleScripts: false,
+      url: EXAMPLE_PLUGIN,
+    });
+    const twinId = await seedSameNameTwin(installed.id, installed.name);
+
+    const rebooted = makeService();
+    await rebooted.service.restore();
+
+    const inventory = await rebooted.service.readPackageInventory();
+    expect(inventory.installed.map((item) => item.record.id)).toEqual([
+      installed.id,
+    ]);
+    const state = JSON.parse(
+      await readFile(path.join(pluginsDir, "installed.json"), "utf8"),
+    ) as { installed: Array<{ id: string }> };
+    expect(state.installed.map((item) => item.id)).toEqual([installed.id]);
+    // 收敛不是卸载：不清私有存储，也就不会触发依赖它的引擎 purge。
+    // 启动路径只改记录，不删目录（开机不做破坏性文件操作）；快照目录由安装路径负责清。
+    expect(rebooted.fake.purged).toEqual([]);
+    expect(twinId).toBe(`bundled__${installed.name}`);
+  });
+
+  it("再次安装同名插件时替换掉旧 id，而不是并存第二份", async () => {
+    const { service } = makeService();
+    const first = await service.install({
+      allowLifecycleScripts: false,
+      url: EXAMPLE_PLUGIN,
+    });
+    const twinId = await seedSameNameTwin(first.installed.id, first.installed.name);
+
+    const { installed } = await service.install({
+      allowLifecycleScripts: false,
+      url: EXAMPLE_PLUGIN,
+    });
+
+    const inventory = await service.readPackageInventory();
+    expect(inventory.installed.map((item) => item.record.id)).toEqual([
+      installed.id,
+    ]);
+    expect(installed.id).not.toBe(twinId);
+    // 双胞胎的贡献物要撤干净：同名工具不能注册两份
+    const tools = inventory.installed.flatMap((item) =>
+      item.record.manifest.name === installed.name ? [item.record.id] : [],
+    );
+    expect(tools).toEqual([installed.id]);
+    // 双胞胎那一行必须从列表里消失（list 按 id 出行；同名自带目录另按名字标已装，属既有语义）
+    const entries = await service.list();
+    expect(entries.filter((entry) => entry.id === twinId)).toHaveLength(0);
   });
 });
