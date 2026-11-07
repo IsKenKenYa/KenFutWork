@@ -61,7 +61,13 @@ it("导航单色图标继承明暗文字色，认证资源复用且市场头像�
   );
   document.documentElement.classList.add("dark");
   expect(mask.style.backgroundColor).toBe("currentcolor");
-  expect(transport).toHaveBeenCalledTimes(1);
+  // 不变量是「宿主认证资源只取一次，两个图标共用」；线稿嗅探另有一次本地 blob 读取，
+  // 不打到宿主端点，所以按 URL 计而不是按全局 fetch 计。
+  const hostFetches = transport.mock.calls.filter(
+    (call) =>
+      String((call as unknown[])[0] ?? "").startsWith("http://localhost:3001"),
+  );
+  expect(hostFetches).toHaveLength(1);
   expect(container.querySelectorAll("img")[1]?.className).toContain(
     "object-contain",
   );
@@ -207,4 +213,45 @@ it("无图标的插件按显示名首字出字母头像，不再清一色 Blocks
   expect(glyphs).toEqual(["C", "米"]);
   // 没有 label 时保持原兜底图标（Blocks），不猜名字。
   expect(container.querySelectorAll("svg.lucide-blocks")).toHaveLength(1);
+});
+
+it("线稿图标（SVG 含 currentColor）自动走 mask，暗色下不再黑底黑字", async () => {
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = vi.fn(
+        () => "blob:http://localhost:3300/lineart",
+      );
+      static revokeObjectURL = vi.fn();
+    },
+  );
+  // 我们自带插件的 icon.svg 是自绘线稿：stroke="currentColor"
+  const transport = vi.fn(
+    async () =>
+      new Response(
+        '<svg xmlns="http://www.w3.org/2000/svg"><path stroke="currentColor"/></svg>',
+        { headers: { "content-type": "image/svg+xml" } },
+      ),
+  );
+  vi.stubGlobal("fetch", transport);
+  client = new CodeHttpChannelClient({ apiBase: "http://localhost:3001" });
+  const { container } = render(
+    <PlatformProvider platform={createCodePlatform(client)}>
+      <PluginIcon
+        pluginId="bundled__kenfutwork-ha"
+        src="/api/plugins/bundled__kenfutwork-ha/assets/icon.svg"
+      />
+    </PlatformProvider>,
+  );
+  // 调用方没传 monochrome：靠资源自身声明（currentColor）判定
+  const mask = await waitFor(() => {
+    const found = container.querySelector<HTMLElement>(
+      '[style*="mask-image"]',
+    );
+    expect(found).not.toBeNull();
+    if (!found) throw new Error("线稿图标未走 mask");
+    return found;
+  });
+  expect(mask.style.backgroundColor).toBe("currentcolor");
+  expect(container.querySelector("img")?.className).toContain("opacity-0");
 });

@@ -72,6 +72,29 @@ export function PluginIcon({
   }, [resolvedSrc, resource, platform]);
   const imageSrc = resource ? (resourceImage?.resource === resolvedSrc ? resourceImage.image : undefined) : resolvedSrc;
   const showImage = Boolean(imageSrc) && !imageFailed;
+  /**
+   * 线稿图标（SVG 里写 `currentColor`）用 `<img>` 渲染时 currentColor 退化成黑色，
+   * 暗色下与深底糊成一片（用户口径：「logo 黑的看不见了」）。这类资源改走 mask 通道，
+   * 跟随文字颜色随主题翻转。彩色品牌标不含 `currentColor`，保持原图不反相——
+   * 对整张图 dark:invert 会把 Android 绿这类品牌色打坏。
+   */
+  const [lineArtResource, setLineArtResource] = useState(false);
+  useEffect(() => {
+    let current = true;
+    setLineArtResource(false);
+    if (!resource || !imageSrc || !resolvedSrc) return;
+    if (!/\.svg(?:[?#]|$)/iu.test(resolvedSrc)) return;
+    void fetch(imageSrc)
+      .then((response) => (response.ok ? response.text() : ""))
+      .then((text) => {
+        if (current && text.includes("currentColor")) setLineArtResource(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [resource, imageSrc, resolvedSrc]);
+  const renderMonochrome = monochrome || lineArtResource;
   return (
     <span
       aria-hidden="true"
@@ -83,7 +106,7 @@ export function PluginIcon({
     >
       {showImage ? (
         <>
-        {monochrome ? <span
+        {renderMonochrome ? <span
           className={cn("size-full", iconClassName)}
           style={{
             backgroundColor: "currentColor",
@@ -101,7 +124,7 @@ export function PluginIcon({
           src={imageSrc}
           alt=""
           draggable={false}
-          className={monochrome ? "absolute size-0 opacity-0" : "h-2/3 w-2/3 object-contain"}
+          className={renderMonochrome ? "absolute size-0 opacity-0" : "h-2/3 w-2/3 object-contain"}
           onError={() => setImageFailed(true)}
         />
         </>
