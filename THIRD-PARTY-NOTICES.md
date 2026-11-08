@@ -1,6 +1,6 @@
 # KenFutWork 第三方声明与素材归属
 
-版本：2026-10-10 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
+版本：2026-11-08 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
 
 本文件回答三个问题：哪些东西不是我们写的、它按什么许可进来、我们在分发时必须替下游做什么。许可义务**履行位置**逐条标注；上游移植目录内那份 `THIRD-PARTY-NOTICES.md` 是 ZCode 的上游产物（与上游逐字节一致），本文件不复制它的正文，只索引它。
 
@@ -48,6 +48,16 @@
 ### A5. 图标库 lucide-react（ISC）
 
 npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/package.json`、`apps/landing/package.json`）。上游 [lucide-icons/lucide](https://github.com/lucide-icons/lucide)，许可 ISC。义务按 B 段随依赖清单一并履行。
+
+### A6. Jev 判决技能（MIT，经 ZCode 官方插件移植）
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | ZCode 官方插件市场（`cdn-zcode.z.ai/zcode/official-plugin/marketplace.json`）的 `jev-decisions` 0.1.0，作者 [kittimzhe](https://github.com/kittimzhe)；本机缓存 `~/.zcode/cli/plugins/cache/zcode-plugins-official/jev-decisions/0.1.0`。该插件的技能又改编自 [@jkudish/jev-mcp](https://github.com/jkudish/jev-mcp) 包内官方技能（MIT，Copyright (c) 2026 Joey Kudish） |
+| 许可 | MIT：jev-mcp 上游有 LICENSE 原文；ZCode 插件缓存**无独立 LICENSE 文件**，MIT 为其 README 明确声明（待核：向 kittimzhe 索取许可文本归档） |
+| 落点 | `plugins/jev/skills/jev-judgment/SKILL.md`（移植时仅改宿主接线：Setup 指向本项目 MCP 精选目录而非 ZCode 插件设置；工具表与策略正文保持上游原样） |
+| 义务履行 | 技能同目录 `LICENSE.txt` 带 MIT 全文与 Joey Kudish 版权行；SKILL.md 的 Attribution 段保留完整改编链；插件包其余文件（index.js / 清单 / 图标）为本项目自有，按 GPL-3.0 |
+| 运行时依赖 | MCP 精选目录 `jev` 条目钉 `@jkudish/jev-mcp@0.10.0`（npm 运行时下载，不签入仓库），与 ZCode 插件同版本；TypeSafe Jev API 为商业服务，凭据由用户自持（BYOK） |
 
 ## B. 运行时与构建期开源依赖
 

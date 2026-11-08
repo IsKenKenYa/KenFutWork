@@ -170,15 +170,17 @@ export const CURATED_MCP_SERVERS: readonly CuratedMcpServer[] = [
   },
   {
     // 社区 jev-mcp：把 Jev 的判断收成一组类型化工具。ZCode 的做法同源——它也是把
-    // jev-mcp 当 MCP server 挂给 agent，而不是自己训模型。
-    // 需要 TYPESAFE_API_KEY：Jev 是云侧判决模型，无凭据时 server 启动即失败。
+    // jev-mcp 当 MCP server 挂给 agent，而不是自己训模型。版本钉在 0.10.0（与 ZCode
+    // jev-decisions 插件一致）：随包技能 jev-judgment 的工具表按这个版本写，升级要
+    // 连同技能文本一起核对。需要 TYPESAFE_API_KEY：Jev 是云侧判决模型，无凭据时
+    // server 启动即失败。
     id: "jev",
     name: "jev",
     title: "Jev 判决",
     description:
       "把 Jev 的判断接成工具：核验主张、筛查不可信内容、语义查找与重排。需要 TypeSafe API Key。",
     command: "npx",
-    argsTemplate: ["-y", "github:jkudish/jev-mcp"],
+    argsTemplate: ["-y", "@jkudish/jev-mcp@0.10.0"],
     params: [],
     envKeys: ["TYPESAFE_API_KEY"],
     requires: "node",

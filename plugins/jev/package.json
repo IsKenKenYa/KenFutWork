@@ -1,14 +1,16 @@
 {
   "name": "kenfutwork-jev",
-  "version": "1.0.0",
-  "description": "Jev 判决插件：把社区 jev-mcp 服务挂进会话，agent 在需要多分支判断时调用类型化判决工具（核验主张、筛查内容、语义重排），而不是让大模型自由发挥。",
+  "version": "1.1.0",
+  "description": "Jev 判决插件：把社区 jev-mcp 服务挂进会话，agent 在需要多分支判断时调用类型化判决工具（核验主张、筛查内容、语义重排），而不是让大模型自由发挥。随包技能 jev-judgment 教会 agent 何时该调判决工具、而不是凭阅读直接作答。",
   "type": "module",
   "main": "index.js",
   "files": [
     "index.js",
     "cordis.patch.yml",
     "README.md",
-    "assets/icon.svg"
+    "assets/icon.svg",
+    "skills/jev-judgment/SKILL.md",
+    "skills/jev-judgment/LICENSE.txt"
   ],
   "license": "GPL-3.0",
   "kenfutwork": {

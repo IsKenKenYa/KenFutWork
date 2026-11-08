@@ -6,6 +6,10 @@
  * 的宿主侧落地——把服务登记进「MCP 服务器 → 精选目录」的一键添加项（见服务端
  * `features/mcp/curated-catalog.ts` 的 `jev` 条目），装好插件即可在设置里点一下接上。
  *
+ * 随包技能 `skills/jev-judgment/SKILL.md`（移植自 ZCode 官方插件 jev-decisions，
+ * MIT，归属见根 THIRD-PARTY-NOTICES.md A6）由 bundle 技能扫描自动发现：插件启用后
+ * 进入 agent 的可用技能清单，教会它何时调判决工具而不是凭阅读作答。
+ *
  * 为什么不在这里直接 spawn MCP 进程：MCP 连接的生命周期归宿主 MCP 服务管（要按 Task
  * 作用域隔离、要审批、要错误可见）。插件自己再起一份子进程会绕过这层边界，出现
  * 「工具在不在」取决于谁先连上的双重真相。
@@ -17,5 +21,5 @@ export const name = "kenfutwork-jev";
 export const inject = [];
 
 export function apply() {
-  // 能力全部经宿主登记：精选目录条目 + 市场卡片图标由清单声明。
+  // 能力全部经宿主登记：精选目录条目 + 市场卡片图标由清单声明，技能由 bundle 扫描发现。
 }
