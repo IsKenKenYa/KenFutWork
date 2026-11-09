@@ -28,6 +28,7 @@ const CLOSED_TAGS = [
   "health",
   "image-proxy",
   "jobs",
+  "knowledge",
   "instance",
   "local-access",
   "mcp",

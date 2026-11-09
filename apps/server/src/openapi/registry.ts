@@ -124,6 +124,13 @@ import {
   instanceSkillToggleRequestSchema,
   jobListResponseSchema,
   jobResponseSchema,
+  knowledgeAddRootRequestSchema,
+  knowledgeRemoveRootRequestSchema,
+  knowledgeRootMutationResponseSchema,
+  knowledgeRootsResponseSchema,
+  knowledgeSearchRequestSchema,
+  knowledgeSearchResponseSchema,
+  knowledgeStatusResponseSchema,
   localAccessClientCreateRequestSchema,
   localAccessClientCreateResponseSchema,
   localAccessClientListResponseSchema,
@@ -276,6 +283,64 @@ export interface OpenApiRouteEntry {
 }
 
 export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
+  {
+    method: "get",
+    path: "/api/knowledge/status",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: knowledgeStatusResponseSchema,
+    summary: "查询知识库插件状态",
+    description:
+      "返回侧边栏插件的安装/启用态、SAG CLI 可用性与平台支持度、钉死的上游版本，以及未就绪时的明确原因。未安装或 CLI 缺失时不静默降级。",
+  },
+  {
+    method: "get",
+    path: "/api/knowledge/roots",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: knowledgeRootsResponseSchema,
+    summary: "列出知识库根目录",
+    description:
+      "读取 SAG 已登记的知识库根、索引状态、文件数与索引错误；对应 sag list --json。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/roots",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: knowledgeAddRootRequestSchema,
+    responseSchema: knowledgeRootMutationResponseSchema,
+    summary: "注册知识库根目录",
+    description:
+      "显式添加一个本地目录为知识库根。新根用 --types 显式开启文档与代码扩展名（上游默认不索引代码）；原始文件不被移动或修改。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/roots/remove",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: knowledgeRemoveRootRequestSchema,
+    responseSchema: knowledgeRootMutationResponseSchema,
+    summary: "移除知识库根目录",
+    description:
+      "只清除索引登记与注册记录，保留本地原始文件；对应 sag remove --json。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/search",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: knowledgeSearchRequestSchema,
+    responseSchema: knowledgeSearchResponseSchema,
+    summary: "执行 SAG2 语义检索",
+    description:
+      "BM25 召回 + Jev 证据判定 + 查询时扩展，返回带路径与行号的原文证据；对应 sag 查询 --json。检索服务不可用时显式报错，不静默改用模型记忆。",
+  },
   {
     method: "post",
     path: "/api/canvases/:canvasId/assets/:assetId/move",

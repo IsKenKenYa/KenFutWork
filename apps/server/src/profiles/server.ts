@@ -37,6 +37,7 @@ import { createHomeAssistantStackPlugin } from "../features/homeassistant/plugin
 import { createJobLoopPlugin } from "../features/jobs/job-loop-plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
+import { createKnowledgePlugin } from "../features/knowledge/plugin.js";
 import {
   createLocalAccessPlugin,
   createLocalAccessRoutesPlugin,
@@ -270,6 +271,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       builtinCatalog: PLUGIN_CATALOG,
       ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
     }),
+    // SAG2 知识库（内建，默认挂载）：安装态由市场 bundle 决定，运行期动态门控；
+    // M1 只注册能力缝，不接运行时链路（不改产品行为），M3 在此接 pre-step preflight。
+    createKnowledgePlugin(),
     createAgentRunsPlugin({
       connectionManager: deps.connectionManager,
       events: deps.events,
