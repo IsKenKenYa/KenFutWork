@@ -330,12 +330,19 @@ export function createSagCliProvider(
         : !supported
           ? "当前平台没有 SAG CLI 原生二进制（仅 Windows x64 与 macOS Apple Silicon）。"
           : initResult && !initResult.ok
-            ? initResult.reason
+            ? // 有自动降级时，缺凭据不是「不可用」，而是「降级可用」。
+              options.autoLocalFallback === false
+              ? initResult.reason
+              : `${initResult.reason ?? "语义检索未就绪"} 当前以本地匹配档工作（不出本机，非语义检索）。`
             : (probed?.reason ?? null);
       return {
         installed: inspection.installed,
         enabled: inspection.enabled,
-        active: inspection.ok && supported && initResult?.ok !== false,
+        // 自动降级开着时，缺 Jev 凭据不影响「能用本地档检索」。
+        active:
+          inspection.ok &&
+          supported &&
+          (initResult?.ok !== false || options.autoLocalFallback !== false),
         cli,
         cliVersion: SAG_CLI_VERSION,
         reason,

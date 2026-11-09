@@ -626,6 +626,54 @@ describe("SagCliProvider（0 配置降级）", () => {
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 
+  it("缺 Jev 时 status 仍判可用，并说明以本地匹配档工作", async () => {
+    const service = createSagCliProvider({
+      runner: async (run) =>
+        run.args[0] === "config"
+          ? ok(
+              JSON.stringify({
+                url: "",
+                model: "",
+                models: [],
+                has_key: false,
+              }),
+            )
+          : ok(searchOutput),
+      tryGetPlugins: () => fakePlugins(true),
+      readJevCredential: async () => null,
+      platform: "win32",
+      arch: "x64",
+    });
+    await service.initialize().catch(() => undefined);
+    const status = await service.status();
+    expect(status.active).toBe(true);
+    expect(status.reason ?? "").toContain("本地匹配");
+  });
+
+  it("关掉降级时缺 Jev 则 status 明确不可用", async () => {
+    const service = createSagCliProvider({
+      runner: async (run) =>
+        run.args[0] === "config"
+          ? ok(
+              JSON.stringify({
+                url: "",
+                model: "",
+                models: [],
+                has_key: false,
+              }),
+            )
+          : ok(searchOutput),
+      tryGetPlugins: () => fakePlugins(true),
+      readJevCredential: async () => null,
+      platform: "win32",
+      arch: "x64",
+      autoLocalFallback: false,
+    });
+    await service.initialize().catch(() => undefined);
+    const status = await service.status();
+    expect(status.active).toBe(false);
+  });
+
   it("显式本地匹配档不标记 degraded（那是用户选的档，不是降级）", async () => {
     const { service } = harness((args) =>
       args[0] === "config" ? ok(configured) : ok(matchOutput),
