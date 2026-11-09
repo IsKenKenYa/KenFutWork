@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识库</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#1f2330; --muted:#6b7280; --line:#e5e7eb; --card:#f8f9fb; --accent:#2f3459; --danger:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181d; --fg:#e6e8ef; --muted:#9aa1ae; --line:#2a2e37; --card:#1d2027; --accent:#c7cdf0; --danger:#f97066; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:14px; background:var(--bg); color:var(--fg); font:13px/1.5 system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size:15px; margin:0; }
+  h2 { font-size:13px; margin:0 0 8px; color:var(--muted); font-weight:600; }
+  .head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
+  .dot.ok { background:#12b76a; } .dot.warn { background:#f79009; } .dot.err { background:var(--danger); }
+  .head .text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .head .text small { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+  .row { display:flex; align-items:center; gap:10px; min-height:30px; }
+  .row + .row { margin-top:6px; }
+  .row > label { flex:none; width:84px; color:var(--fg); }
+  .row > .grow { flex:1; min-width:0; }
+  input[type=text], input[type=number] { flex:1; min-width:0; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--fg); font:inherit; }
+  input[type=number] { max-width:110px; }
+  input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); }
+  button { padding:5px 12px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--fg); font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .hint { margin:8px 0 0; color:var(--muted); font-size:12px; }
+  .notice { margin:8px 0 0; padding:6px 8px; border-radius:7px; background:rgba(247,144,9,.12); color:#b54708; font-size:12px; }
+  .error { color:var(--danger); font-size:12px; margin:8px 0 0; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid var(--line); }
+  li:first-child { border-top:0; }
+  li .meta { flex:1; min-width:0; }
+  li .path { word-break:break-all; font-family:ui-monospace, Consolas, monospace; font-size:12px; }
+  li .sub { color:var(--muted); font-size:11px; }
+  li .sub.err { color:var(--danger); }
+  .result { padding:8px 0; border-top:1px solid var(--line); cursor:pointer; }
+  .result:first-child { border-top:0; }
+  .result:hover .loc { color:var(--accent); }
+  .result .loc { font-family:ui-monospace, Consolas, monospace; font-size:11px; color:var(--muted); word-break:break-all; }
+  .result .snippet { margin-top:4px; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:96px; overflow:hidden; }
+  pre.detail { margin:8px 0 0; padding:8px; background:var(--bg); border:1px solid var(--line); border-radius:7px; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:280px; overflow:auto; }
+  .empty { color:var(--muted); font-size:12px; padding:4px 0; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="dot" id="dot"></span>
+    <h1 class="text" id="status">知识库</h1>
+    <button id="refresh" title="刷新">刷新</button>
+  </div>
+
+  <section class="card">
+    <h2>自动接入</h2>
+    <div class="row"><label>自动注入</label><input type="checkbox" id="auto-inject"></div>
+    <p class="notice" id="auto-off" hidden>自动注入已关闭</p>
+    <div class="row"><label>结果条数</label><input type="number" id="max-results" min="1" max="100"></div>
+    <div class="row"><label>证据预算</label><input type="number" id="evidence-chars" min="256" max="64000" step="256"></div>
+    <div class="row"><label>本地匹配</label><input type="checkbox" id="local-match"></div>
+    <p class="hint">语义检索经 Jev；本地匹配不出本机</p>
+    <div class="row"><button class="primary" id="save-settings">保存</button><span class="hint" id="settings-note"></span></div>
+  </section>
+
+  <section class="card">
+    <h2>检索</h2>
+    <div class="row">
+      <input type="text" id="query" placeholder="问题">
+      <button id="search">检索</button>
+    </div>
+    <div id="results"></div>
+    <pre class="detail" id="detail" hidden></pre>
+  </section>
+
+  <section class="card">
+    <h2>根目录</h2>
+    <ul id="roots"><li class="empty">加载中</li></ul>
+    <div class="row">
+      <input type="text" id="new-root" placeholder="绝对路径">
+      <button id="add-root">添加</button>
+    </div>
+  </section>
+
+  <section class="card" id="reason-card" hidden>
+    <p class="error" id="reason"></p>
+  </section>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const state = { settings: null, busy: false };
+
+function text(node, value) { node.textContent = value == null ? "" : String(value); }
+
+async function api(path, options) {
+  const response = await fetch(path, {
+    credentials: "include",
+    ...(options || {}),
+    headers: { "content-type": "application/json", ...(options && options.headers) },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = data && data.error && data.error.message ? data.error.message : "请求失败（" + response.status + "）";
+    throw new Error(message);
+  }
+  return data;
+}
+
+function renderStatus(status) {
+  const dot = $("dot");
+  const label = $("status");
+  let textValue = "知识库";
+  let level = "warn";
+  if (!status.installed) { textValue = "未安装"; level = ""; }
+  else if (!status.enabled) { textValue = "已停用"; }
+  else if (status.cli === "unsupported_platform") { textValue = "平台不支持"; level = "err"; }
+  else if (status.cli === "missing") { textValue = "CLI 缺失"; level = "err"; }
+  else if (status.reason) { textValue = "未就绪"; level = "err"; }
+  else { textValue = "就绪 · v" + status.cliVersion; level = "ok"; }
+  dot.className = "dot " + level;
+  text(label, textValue);
+  const preflight = status.preflight;
+  if (preflight) {
+    const map = {
+      injected: "上一轮：已注入证据",
+      "no-evidence": "上一轮：未命中",
+      skipped: "上一轮：跳过",
+      failed: "上一轮：失败",
+    };
+    text(label, textValue + " · " + (map[preflight.outcome] || preflight.outcome));
+  }
+  const reasonCard = $("reason-card");
+  reasonCard.hidden = !status.reason;
+  text($("reason"), status.reason || "");
+}
+
+function renderRoots(payload) {
+  const list = $("roots");
+  list.replaceChildren();
+  const roots = payload.roots || [];
+  if (roots.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    text(empty, "未添加目录");
+    list.append(empty);
+    return;
+  }
+  for (const root of roots) {
+    const item = document.createElement("li");
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const path = document.createElement("div");
+    path.className = "path";
+    text(path, root.path);
+    const sub = document.createElement("div");
+    sub.className = "sub" + (root.error ? " err" : "");
+    text(sub, (root.status || "") + " · " + root.count + " 文件" + (root.error ? " · " + root.error : ""));
+    meta.append(path, sub);
+    const remove = document.createElement("button");
+    text(remove, "移除");
+    remove.addEventListener("click", () => removeRoot(root.path, remove));
+    item.append(meta, remove);
+    list.append(item);
+  }
+}
+
+function renderResults(results) {
+  const box = $("results");
+  box.replaceChildren();
+  $("detail").hidden = true;
+  if (!results || results.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    text(empty, "无结果");
+    box.append(empty);
+    return;
+  }
+  for (const item of results) {
+    const row = document.createElement("div");
+    row.className = "result";
+    const loc = document.createElement("div");
+    loc.className = "loc";
+    text(loc, item.absolutePath + ":" + item.startLine + "-" + item.endLine);
+    row.append(loc);
+    if (item.content) {
+      const snippet = document.createElement("div");
+      snippet.className = "snippet";
+      text(snippet, item.content);
+      row.append(snippet);
+    }
+    row.addEventListener("click", () => openOriginal(item));
+    box.append(row);
+  }
+}
+
+async function openOriginal(item) {
+  const detail = $("detail");
+  detail.hidden = false;
+  text(detail, "加载中");
+  try {
+    const params = new URLSearchParams({
+      path: item.absolutePath,
+      startLine: String(item.startLine),
+      endLine: String(item.endLine),
+    });
+    const payload = await api("/api/knowledge/read?" + params.toString());
+    text(detail, payload.content + (payload.truncated ? "\n（已截断）" : ""));
+  } catch (error) {
+    text(detail, error.message);
+  }
+}
+
+async function loadStatus() {
+  try {
+    renderStatus(await api("/api/knowledge/status"));
+  } catch (error) {
+    text($("status"), "状态不可读");
+    $("dot").className = "dot err";
+    $("reason-card").hidden = false;
+    text($("reason"), error.message);
+  }
+}
+
+async function loadSettings() {
+  try {
+    const settings = await api("/api/knowledge/settings");
+    state.settings = settings;
+    $("auto-inject").checked = Boolean(settings.autoInject);
+    $("auto-off").hidden = Boolean(settings.autoInject);
+    $("max-results").value = String(settings.maxResults);
+    $("evidence-chars").value = String(settings.evidenceMaxChars);
+    $("local-match").checked = Boolean(settings.localMatch);
+  } catch (error) {
+    text($("settings-note"), error.message);
+  }
+}
+
+async function loadRoots() {
+  try {
+    renderRoots(await api("/api/knowledge/roots"));
+  } catch (error) {
+    const list = $("roots");
+    list.replaceChildren();
+    const item = document.createElement("li");
+    item.className = "empty";
+    text(item, error.message);
+    list.append(item);
+  }
+}
+
+async function saveSettings() {
+  if (state.busy) return;
+  state.busy = true;
+  text($("settings-note"), "保存中");
+  try {
+    const payload = {
+      autoInject: $("auto-inject").checked,
+      maxResults: Number($("max-results").value) || undefined,
+      evidenceMaxChars: Number($("evidence-chars").value) || undefined,
+      localMatch: $("local-match").checked,
+    };
+    const settings = await api("/api/knowledge/settings", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    state.settings = settings;
+    $("auto-off").hidden = Boolean(settings.autoInject);
+    $("max-results").value = String(settings.maxResults);
+    $("evidence-chars").value = String(settings.evidenceMaxChars);
+    text($("settings-note"), "已保存");
+    await loadStatus();
+  } catch (error) {
+    text($("settings-note"), error.message);
+  } finally {
+    state.busy = false;
+  }
+}
+
+async function search() {
+  const query = $("query").value.trim();
+  if (!query) return;
+  $("search").disabled = true;
+  try {
+    const payload = await api("/api/knowledge/search", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+    renderResults(payload.results || []);
+  } catch (error) {
+    const box = $("results");
+    box.replaceChildren();
+    const item = document.createElement("div");
+    item.className = "error";
+    text(item, error.message);
+    box.append(item);
+  } finally {
+    $("search").disabled = false;
+  }
+}
+
+async function addRoot() {
+  const path = $("new-root").value.trim();
+  if (!path) return;
+  try {
+    await api("/api/knowledge/roots", { method: "POST", body: JSON.stringify({ path }) });
+    $("new-root").value = "";
+    await loadRoots();
+  } catch (error) {
+    $("reason-card").hidden = false;
+    text($("reason"), error.message);
+  }
+}
+
+async function removeRoot(path, button) {
+  button.disabled = true;
+  try {
+    await api("/api/knowledge/roots/remove", { method: "POST", body: JSON.stringify({ path }) });
+    await loadRoots();
+  } catch (error) {
+    button.disabled = false;
+    $("reason-card").hidden = false;
+    text($("reason"), error.message);
+  }
+}
+
+$("save-settings").addEventListener("click", saveSettings);
+$("search").addEventListener("click", search);
+$("query").addEventListener("keydown", (event) => { if (event.key === "Enter") search(); });
+$("add-root").addEventListener("click", addRoot);
+$("refresh").addEventListener("click", () => { void loadStatus(); void loadRoots(); });
+$("auto-inject").addEventListener("change", () => { $("auto-off").hidden = $("auto-inject").checked; });
+
+void loadStatus();
+void loadSettings();
+void loadRoots();
+setInterval(loadStatus, 8000);
+</script>
+</body>
+</html>

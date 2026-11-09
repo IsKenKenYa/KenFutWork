@@ -10,6 +10,8 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 
 import { registerKnowledgeRoutes } from "../../http/knowledge.js";
+import type { SettingsService } from "../settings/settings-service.js";
+import type { KnowledgeSettingsReader } from "./settings.js";
 import { type KnowledgeService, KnowledgeServiceError } from "./types.js";
 
 const actor = { instanceId: "instance-1", accessClientId: null };
@@ -60,11 +62,36 @@ function stub(overrides: Partial<KnowledgeService> = {}): KnowledgeService {
       ],
       truncated: false,
     }),
+    read: async (input) => ({
+      path: input.path,
+      content: "retry();",
+      truncated: false,
+    }),
+    rootsRevision: () => 1,
     ...overrides,
   } as KnowledgeService;
 }
 
-async function appWith(knowledge: KnowledgeService, authenticated = true) {
+const settings: Awaited<ReturnType<KnowledgeSettingsReader>> = {
+  autoInject: true,
+  localMatch: false,
+  maxResults: 5,
+  minHits: 1,
+  searchTimeoutMs: 30_000,
+  maxConcurrentSearches: 2,
+  evidenceMaxChars: 6_000,
+  cacheTtlMs: 300_000,
+  readMaxBytes: 1_048_576,
+};
+
+async function appWith(
+  knowledge: KnowledgeService,
+  authenticated = true,
+  extra: {
+    readSettings?: KnowledgeSettingsReader;
+    settings?: Pick<SettingsService, "updateInstanceSettings">;
+  } = {},
+) {
   const app = Fastify({ logger: false });
   await registerKnowledgeRoutes(app, {
     localAccess: {
@@ -72,6 +99,7 @@ async function appWith(knowledge: KnowledgeService, authenticated = true) {
     },
     localInstance: { resolve: async () => undefined },
     knowledge,
+    ...extra,
   });
   return app;
 }
@@ -221,6 +249,142 @@ describe("知识库根与检索路由", () => {
     });
     expect(response.statusCode).toBe(500);
     expect(response.json().error.code).toBe("application_error");
+    await app.close();
+  });
+});
+
+describe("M4：read 与 settings 路由", () => {
+  it("GET /read 按查询参数取原文并传读取预算", async () => {
+    const reads: Array<Record<string, unknown>> = [];
+    const app = await appWith(
+      stub({
+        read: async (input) => {
+          reads.push({ ...input });
+          return {
+            path: input.path,
+            content: "第二行\n第三行",
+            truncated: false,
+          };
+        },
+      }),
+      true,
+      { readSettings: async () => settings },
+    );
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/knowledge/read?path=D%3A%2Fkb%2Fa.md&startLine=2&endLine=3",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      path: "D:/kb/a.md",
+      content: "第二行\n第三行",
+      truncated: false,
+    });
+    expect(reads[0]).toMatchObject({
+      path: "D:/kb/a.md",
+      startLine: 2,
+      endLine: 3,
+      maxBytes: settings.readMaxBytes,
+    });
+    await app.close();
+  });
+
+  it("GET /read 缺少 path 返回 400", async () => {
+    const app = await appWith(stub(), true, {
+      readSettings: async () => settings,
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/knowledge/read",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("invalid_input");
+    await app.close();
+  });
+
+  it("GET /settings 返回当前实例设置；最小装配显式 503", async () => {
+    const app = await appWith(stub(), true, {
+      readSettings: async () => settings,
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/knowledge/settings",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ autoInject: true, maxResults: 5 });
+
+    const minimal = await appWith(stub());
+    const unavailable = await minimal.inject({
+      method: "GET",
+      url: "/api/knowledge/settings",
+    });
+    expect(unavailable.statusCode).toBe(503);
+    expect(unavailable.json().error.code).toBe("service_unavailable");
+    await app.close();
+    await minimal.close();
+  });
+
+  it("POST /settings 把面板字段映射成实例治理键并回读", async () => {
+    const writes: Array<{
+      instanceId: string;
+      patch: Record<string, unknown>;
+    }> = [];
+    const app = await appWith(stub(), true, {
+      readSettings: async () => settings,
+      settings: {
+        updateInstanceSettings: async (_actor, instanceId, patch) => {
+          writes.push({ instanceId, patch: patch as Record<string, unknown> });
+          return {} as never;
+        },
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/settings",
+      payload: {
+        autoInject: false,
+        localMatch: true,
+        maxResults: 9,
+        evidenceMaxChars: 4096,
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().autoInject).toBe(true); // 回读的是存储后的真值（fixture 未变）
+    expect(writes).toEqual([
+      {
+        instanceId: actor.instanceId,
+        patch: {
+          knowledgeAutoInject: false,
+          knowledgeLocalMatch: true,
+          knowledgeMaxResults: 9,
+          knowledgeEvidenceMaxChars: 4096,
+        },
+      },
+    ]);
+    await app.close();
+  });
+
+  it("POST /settings 空更新返回 400，非法类型不触达服务", async () => {
+    const app = await appWith(stub(), true, {
+      readSettings: async () => settings,
+      settings: {
+        updateInstanceSettings: async () => {
+          throw new Error("不应触达");
+        },
+      },
+    });
+    const empty = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/settings",
+      payload: {},
+    });
+    expect(empty.statusCode).toBe(400);
+    const bad = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/settings",
+      payload: { maxResults: "很多" },
+    });
+    expect(bad.statusCode).toBe(400);
     await app.close();
   });
 });

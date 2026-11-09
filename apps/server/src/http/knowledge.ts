@@ -12,22 +12,31 @@
 import {
   applicationErrorResponseSchema,
   knowledgeAddRootRequestSchema,
+  knowledgeReadQuerySchema,
+  knowledgeReadResponseSchema,
   knowledgeRemoveRootRequestSchema,
   knowledgeRootMutationResponseSchema,
   knowledgeRootsResponseSchema,
   knowledgeSearchRequestSchema,
   knowledgeSearchResponseSchema,
+  knowledgeSettingsPatchSchema,
+  knowledgeSettingsSchema,
   knowledgeStatusResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 
+import type { KnowledgeSettingsReader } from "../features/knowledge/settings.js";
 import {
   type KnowledgeService,
   KnowledgeServiceError,
 } from "../features/knowledge/types.js";
 import type { LocalActor } from "../features/local-instance/types.js";
+import {
+  type SettingsService,
+  SettingsServiceError,
+} from "../features/settings/settings-service.js";
 
 type RouteErrorCode =
   | "invalid_input"
@@ -42,6 +51,9 @@ export interface KnowledgeRouteDeps {
     resolve(actor: LocalActor): Promise<unknown>;
   };
   knowledge: KnowledgeService;
+  /** 面板设置读写；最小装配可无（此时接口返回显式不可用）。 */
+  readSettings?: KnowledgeSettingsReader;
+  settings?: Pick<SettingsService, "updateInstanceSettings">;
   /** preflight 最近一轮结果（面板状态条）；最小装配可无。 */
   preflight?: {
     lastOutcome(): {
@@ -72,6 +84,15 @@ function sendUnauthorized(reply: FastifyReply) {
 }
 
 function handleError(error: unknown, reply: FastifyReply) {
+  if (error instanceof SettingsServiceError) {
+    const status = error.statusCode;
+    return sendError(
+      reply,
+      status >= 400 && status < 500 ? "invalid_input" : "application_error",
+      error.message,
+      status,
+    );
+  }
   if (error instanceof KnowledgeServiceError) {
     const status =
       error.code === "invalid_input"
@@ -163,6 +184,104 @@ export async function registerKnowledgeRoutes(
       return reply
         .code(200)
         .send(knowledgeRootMutationResponseSchema.parse(result));
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  app.get("/api/knowledge/read", async (request, reply) => {
+    try {
+      const user = await authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const query = knowledgeReadQuerySchema.parse(request.query);
+      const settings = options.readSettings
+        ? await options.readSettings(user.instanceId)
+        : undefined;
+      const result = await options.knowledge.read({
+        path: query.path,
+        ...(query.startLine === undefined
+          ? {}
+          : { startLine: query.startLine }),
+        ...(query.endLine === undefined ? {} : { endLine: query.endLine }),
+        ...(settings ? { maxBytes: settings.readMaxBytes } : {}),
+      });
+      return reply.code(200).send(knowledgeReadResponseSchema.parse(result));
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  app.get("/api/knowledge/settings", async (request, reply) => {
+    try {
+      const user = await authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      if (!options.readSettings) {
+        return sendError(
+          reply,
+          "service_unavailable",
+          "知识库设置读取不可用（最小装配）。",
+          503,
+        );
+      }
+      const settings = await options.readSettings(user.instanceId);
+      return reply.code(200).send(knowledgeSettingsSchema.parse(settings));
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  app.post("/api/knowledge/settings", async (request, reply) => {
+    try {
+      const user = await authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      if (!options.readSettings || !options.settings) {
+        return sendError(
+          reply,
+          "service_unavailable",
+          "知识库设置写入不可用（最小装配）。",
+          503,
+        );
+      }
+      const body = knowledgeSettingsPatchSchema.parse(request.body);
+      if (Object.values(body).every((value) => value === undefined)) {
+        return sendError(
+          reply,
+          "invalid_input",
+          "至少提供一个要更新的设置字段。",
+          400,
+        );
+      }
+      await options.settings.updateInstanceSettings(user, user.instanceId, {
+        ...(body.autoInject === undefined
+          ? {}
+          : { knowledgeAutoInject: body.autoInject }),
+        ...(body.localMatch === undefined
+          ? {}
+          : { knowledgeLocalMatch: body.localMatch }),
+        ...(body.maxResults === undefined
+          ? {}
+          : { knowledgeMaxResults: body.maxResults }),
+        ...(body.minHits === undefined
+          ? {}
+          : { knowledgeMinHits: body.minHits }),
+        ...(body.searchTimeoutMs === undefined
+          ? {}
+          : { knowledgeSearchTimeoutMs: body.searchTimeoutMs }),
+        ...(body.maxConcurrentSearches === undefined
+          ? {}
+          : { knowledgeMaxConcurrentSearches: body.maxConcurrentSearches }),
+        ...(body.evidenceMaxChars === undefined
+          ? {}
+          : { knowledgeEvidenceMaxChars: body.evidenceMaxChars }),
+        ...(body.cacheTtlMs === undefined
+          ? {}
+          : { knowledgeCacheTtlMs: body.cacheTtlMs }),
+        ...(body.readMaxBytes === undefined
+          ? {}
+          : { knowledgeReadMaxBytes: body.readMaxBytes }),
+      });
+      const settings = await options.readSettings(user.instanceId);
+      return reply.code(200).send(knowledgeSettingsSchema.parse(settings));
     } catch (error) {
       return handleError(error, reply);
     }

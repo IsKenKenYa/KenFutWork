@@ -1,0 +1,33 @@
+{
+  "name": "kenfutwork-knowledge",
+  "version": "1.0.0",
+  "description": "本地知识库插件（SAG2）：侧边栏管理知识库根与检索设置，宿主每轮自动检索注入证据；原文留在用户目录，不落副本。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "assets/icon.svg",
+    "assets/panel.html"
+  ],
+  "license": "GPL-3.0",
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "知识库",
+    "category": "工具与集成",
+    "assets": true,
+    "scope": "shared",
+    "icon": "assets/icon.svg",
+    "ui": [
+      {
+        "id": "knowledge-sidebar",
+        "title": "知识库",
+        "slot": "sidebar",
+        "url": "assets/panel.html"
+      }
+    ]
+  }
+}

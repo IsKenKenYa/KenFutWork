@@ -24,7 +24,10 @@ import { createKnowledgePromptSection } from "./prompt.js";
 import { createSagCliProvider } from "./providers/sag-cli.js";
 import { createProcessSagRunner, type SagRunner } from "./sag-cli-runner.js";
 import type { PluginsServiceLike } from "./service.js";
-import { createKnowledgeSettingsReader } from "./settings.js";
+import {
+  createKnowledgeSettingsReader,
+  type KnowledgeSettingsReader,
+} from "./settings.js";
 import { createKnowledgeToolEntries } from "./tools.js";
 import { KNOWLEDGE_JEV_PROVIDER_ID } from "./types.js";
 
@@ -42,6 +45,7 @@ export function createKnowledgePlugin(
   options: KnowledgePluginOptions = {},
 ): PluginDefinition {
   let preflightController: KnowledgePreflightController | undefined;
+  let readSettingsForRoutes: KnowledgeSettingsReader | undefined;
   return {
     name: "knowledge",
     inject: ["plugins"],
@@ -104,17 +108,30 @@ export function createKnowledgePlugin(
         tools.registerDynamic(entry);
       }
       preflightController = preflight;
+      readSettingsForRoutes = readSettings;
     },
     mounted(ctx) {
       const localAccess = ctx.tryGet("localAccess");
       const localInstance = ctx.tryGet("localInstance");
       // worker / 最小装配没有本机接入与 HTTP 面，跳过路由注册。
       if (!localAccess || !localInstance) return;
+      const settings = ctx.tryGet("settings");
       void registerKnowledgeRoutes(ctx.app, {
         localAccess,
         localInstance,
         knowledge: ctx.get("knowledge"),
         ...(preflightController ? { preflight: preflightController } : {}),
+        ...(readSettingsForRoutes
+          ? { readSettings: readSettingsForRoutes }
+          : {}),
+        ...(settings
+          ? {
+              settings: {
+                updateInstanceSettings:
+                  settings.updateInstanceSettings.bind(settings),
+              },
+            }
+          : {}),
       });
     },
   };

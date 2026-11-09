@@ -59,6 +59,16 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 义务履行 | 技能同目录 `LICENSE.txt` 带 MIT 全文与 Joey Kudish 版权行；SKILL.md 的 Attribution 段保留完整改编链；插件包其余文件（index.js / 清单 / 图标）为本项目自有，按 GPL-3.0 |
 | 运行时依赖 | MCP 精选目录 `jev` 条目钉 `@jkudish/jev-mcp@0.10.0`（npm 运行时下载，不签入仓库），与 ZCode 插件同版本；TypeSafe Jev API 为商业服务，凭据由用户自持（BYOK） |
 
+### A7. SAG Wiki / SAG2 CLI（MIT，运行时调用，不复制代码）
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | [Zleap-AI/SAG-Wiki](https://github.com/Zleap-AI/SAG-Wiki)：本地文件知识库（SQLite FTS5 索引 + SAG2 检索链）；钉版本 npm 包 [`@zleap-ai/sag@0.1.8`](https://www.npmjs.com/package/@zleap-ai/sag)（tarball SHA-1 `22d9c5ae11d34f17042cce70971a3cda6c0ed454`） |
+| 许可 | MIT（上游 README 声明；仓库带 LICENSE）。本仓**只经 `sag ... --json` 的 CLI 契约调用**，不复制、不移植其源码/协议/schema |
+| 落点 | `apps/server/src/features/knowledge/`（CLI Provider 与契约探针）；`plugins/knowledge/`（安装开关与侧栏面板） |
+| 义务履行 | 本仓不随产物分发上游二进制：优先复用用户本机已装的 `sag`；未来按需下载时在下载器内保留版本与校验和，并在本表更新分发说明 |
+| 说明 | 语义检索依赖上游 Jev 服务（TypeSafe，商业服务）；凭据由用户自持（BYOK），不得把本仓凭据写回上游配置以外的位置 |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。

@@ -129,6 +129,11 @@ const platform = createCodePlatform(client, {
     ? { onOpenManagement: requestManagementOpen }
     : {}),
   ...(workbenchNavigation ? { workbenchNavigation } : {}),
+  // 侧栏插件面板按真实主区模式过滤（work 视图沿用 code 的作用域）。
+  surfaceMode: () => {
+    const mode = workbenchNavigation?.getSnapshot().mode;
+    return mode === "design" || mode === "flow" ? mode : "code";
+  },
 });
 client.setWorkPresetResolver(() =>
   workbenchNavigation?.getSnapshot().mode === "design" ? "design" : "code",

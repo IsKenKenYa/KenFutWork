@@ -52,11 +52,14 @@ export function CodeWorkbenchFrame({
   const [activePanel, setActivePanel] = useState<PluginPanelEntry | null>(null);
   // 壳层应用挂载前，由父页这一屏盖住 iframe：启动链路自始至终只有一张加载屏。
   const [shellMounted, setShellMounted] = useState(false);
+  // 侧栏插件按父页当前主区模式过滤（work 视图沿用 code 作用域；shared 恒可见）。
+  const pluginMode =
+    mode === "design" || mode === "flow" ? mode : ("code" as const);
   const {
     panels,
     refresh: refreshPanels,
     error: panelError,
-  } = usePluginPanels(null, "sidebar", "code");
+  } = usePluginPanels(null, "sidebar", pluginMode);
   // 壳层挂了或信号丢了，都不能把用户永久关在加载屏后面：到点放行，露出壳层自己的状态。
   // 15s 是一次性兜底常量（非运行可调治理项），远大于本机冷启动实测耗时。
   useEffect(() => {
@@ -132,7 +135,11 @@ export function CodeWorkbenchFrame({
   // 管理文档（设置页）发起的创建任务：壳就绪后按其 id 推送一次，避免重复建草稿。
   const sentTaskRequest = useRef(0);
   useEffect(() => {
-    if (!shellReady || !newTaskRequest || sentTaskRequest.current === newTaskRequest.id)
+    if (
+      !shellReady ||
+      !newTaskRequest ||
+      sentTaskRequest.current === newTaskRequest.id
+    )
       return;
     sentTaskRequest.current = newTaskRequest.id;
     const message: HostNewTaskRequest = {

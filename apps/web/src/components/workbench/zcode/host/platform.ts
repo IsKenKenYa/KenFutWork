@@ -30,6 +30,11 @@ export function createCodePlatform(
     onOpenManagement?: (target: ManagementTarget) => void;
     workbenchNavigation?: HostWorkbenchNavigation;
     selectDirectory?: IPlatformService["selectDirectory"];
+    /**
+     * 壳内当前主区模式（Design/Flow 是 Code 壳内的视图）：插件侧栏按真实
+     * surface 过滤，而不是把 mode 硬编码成 "code"（scope=shared 本就不受过滤）。
+     */
+    surfaceMode?: () => "code" | "design" | "flow";
   } = {},
 ): CodePlatform {
   const desktop = localCuaDesktopInvoke();
@@ -125,7 +130,7 @@ export function createCodePlatform(
             )
           ).plugins,
           "sidebar",
-          "code",
+          options.surfaceMode?.() ?? "code",
         ),
       subscribe: (handler) => {
         const subscription = client.onPluginInventoryChanged(handler);

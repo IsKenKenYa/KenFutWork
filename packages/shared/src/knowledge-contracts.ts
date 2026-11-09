@@ -96,6 +96,32 @@ export const knowledgeReadResponseSchema = z.object({
   truncated: z.boolean(),
 });
 
+/** 面板可调的检索设置（字段名去 `knowledge` 前缀，路由侧映射到实例设置键）。 */
+export const knowledgeSettingsSchema = z.object({
+  autoInject: z.boolean(),
+  localMatch: z.boolean(),
+  maxResults: z.number().int(),
+  minHits: z.number().int(),
+  searchTimeoutMs: z.number().int(),
+  maxConcurrentSearches: z.number().int(),
+  evidenceMaxChars: z.number().int(),
+  cacheTtlMs: z.number().int(),
+  readMaxBytes: z.number().int(),
+});
+
+/** 部分更新：只带要改的字段；服务端按治理护栏钳回。 */
+export const knowledgeSettingsPatchSchema = z.object({
+  autoInject: z.boolean().optional(),
+  localMatch: z.boolean().optional(),
+  maxResults: z.number().int().optional(),
+  minHits: z.number().int().optional(),
+  searchTimeoutMs: z.number().int().optional(),
+  maxConcurrentSearches: z.number().int().optional(),
+  evidenceMaxChars: z.number().int().optional(),
+  cacheTtlMs: z.number().int().optional(),
+  readMaxBytes: z.number().int().optional(),
+});
+
 export const knowledgeInitResponseSchema = z.object({
   ok: z.boolean(),
   credential: z.enum(["reused", "injected", "missing"]),
@@ -128,4 +154,8 @@ export type KnowledgeSearchResponse = z.infer<
   typeof knowledgeSearchResponseSchema
 >;
 export type KnowledgeReadResponse = z.infer<typeof knowledgeReadResponseSchema>;
+export type KnowledgeSettingsResponse = z.infer<typeof knowledgeSettingsSchema>;
+export type KnowledgeSettingsPatch = z.infer<
+  typeof knowledgeSettingsPatchSchema
+>;
 export type KnowledgeInitResponse = z.infer<typeof knowledgeInitResponseSchema>;
