@@ -639,6 +639,37 @@ describe("SagCliProvider（0 配置降级）", () => {
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 
+  it("凭据失效（401 Invalid API Key）也自动降级，并在状态如实报原因", async () => {
+    const { service } = harness((args) => {
+      if (args[0] === "config") return ok(configured);
+      if (args[0] === "list")
+        return ok(
+          JSON.stringify([
+            {
+              path: "D:/kb",
+              name: "kb",
+              status: "ready",
+              count: 1,
+              error: null,
+            },
+          ]),
+        );
+      if (args[0] === "林远")
+        return {
+          code: 1,
+          stdout: "",
+          stderr: '模型请求失败（HTTP 401）：{"message":"Invalid API Key"}',
+        };
+      return ok(matchOutput);
+    });
+    const result = await service.search({ query: "林远" });
+    expect(result.degraded).toBe("local-match");
+    expect(result.results.length).toBeGreaterThan(0);
+    const status = await service.status();
+    expect(status.active).toBe(true);
+    expect(status.reason ?? "").toContain("本地匹配");
+  });
+
   it("缺 Jev 时 status 仍判可用，并说明以本地匹配档工作", async () => {
     const service = createSagCliProvider({
       runner: async (run) =>
@@ -713,10 +744,15 @@ describe("本地匹配关键词提取", () => {
 
   it("正则模式把多词用 | 连接并转义元字符", () => {
     expect(buildLocalMatchPattern("林远是谁")).toBe("林远");
-    expect(buildLocalMatchPattern("a.b 和 c")).toContain("a.b");
+    // 元字符必须转义：`a.b` 不转义会匹配 axb（"和" 是单字，不参与切分）
+    expect(buildLocalMatchPattern("a.b 和 c")).toBe(String.raw`a\.b 和 c`);
+    expect(buildLocalMatchPattern("retry logic")).toBe("retry|logic");
   });
 
-  it("全是虚词时回退整句（不退化成空正则）", () => {
+  it("全是虚词时回退整句，但必须转义（原句当正则会假匹配）", () => {
     expect(buildLocalMatchPattern("是谁")).toBe("是谁");
+    // `.*` 不转义会匹配一切 → 假证据；转义后只匹配字面量
+    expect(buildLocalMatchPattern(".*")).toBe(String.raw`\.\*`);
+    expect(buildLocalMatchPattern("是谁(*)")).toBe(String.raw`是谁\(\*\)`);
   });
 });

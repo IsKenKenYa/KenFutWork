@@ -89,6 +89,15 @@ export interface SagCliProviderOptions {
   }>;
 }
 
+/** 把上游语义检索失败压成一句人话（面板/状态条用），不丢关键归因。 */
+export function describeSemanticFailure(message: string): string {
+  if (/401|Invalid API Key|无效的API/iu.test(message))
+    return "语义检索凭据无效，请在 jev 插件或供应商设置里检查 TypeSafe Key";
+  if (/JEV|Jev|jev/iu.test(message)) return "Jev 检索服务未就绪";
+  if (/timeout|超时/iu.test(message)) return "语义检索超时";
+  return `语义检索不可用（${(message.split("\n")[0] ?? "").slice(0, 80) || "未知原因"}）`;
+}
+
 /** CLI 缺失/下载失败的重试冷却：离线时避免每轮对话都卡在下载超时上。 */
 const CLI_RETRY_COOLDOWN_MS = 300_000;
 
@@ -200,8 +209,11 @@ export function extractLocalMatchTerms(query: string): string[] {
 /** 由关键词拼 `-E` 正则；无关键词时回退整句（尽量不退化成「永不命中」）。 */
 export function buildLocalMatchPattern(query: string): string {
   const terms = extractLocalMatchTerms(query);
-  if (terms.length === 0) return query.trim();
-  return terms
+  // 无关键词（纯虚词/空）时回退整句，但**必须转义**——原句当正则会因 `.*`、`(` 等
+  // 意外匹配一切或直接报错，宁可零命中也不能给出假证据。
+  const source = terms.length === 0 ? [query.trim()] : terms;
+  return source
+    .filter((term) => term.length > 0)
     .map((term) => term.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
     .join("|");
 }
@@ -311,6 +323,8 @@ export function createSagCliProvider(
   let credentialMissing = false;
   /** 产出现在 initResult 时的二进制：二进制变了（系统/自带/下载切换）就要重试。 */
   let initBinary: string | undefined;
+  /** 最近一次语义档失败的原因（凭据失效等）；状态接口如实透出，不假装就绪。 */
+  let semanticFailureReason: string | undefined;
 
   /**
    * 便宜地判断「检索凭据是否就绪」：只跑 `sag config`（读既有配置，不发起检索），
@@ -494,16 +508,21 @@ export function createSagCliProvider(
         ? "unsupported_platform"
         : (probed?.state ??
           (initResult?.cli === "available" ? "available" : "missing"));
+      const degradedNote = (message: string) =>
+        options.autoLocalFallback === false
+          ? message
+          : `${message} 当前以本地匹配档工作（不出本机，非语义检索）。`;
       const reason = !inspection.ok
         ? inspection.message
         : !supported
           ? "当前平台没有 SAG CLI 原生二进制（仅 Windows x64 与 macOS Apple Silicon）。"
           : initResult && !initResult.ok
-            ? // 有自动降级时，缺凭据不是「不可用」，而是「降级可用」。
-              options.autoLocalFallback === false
-              ? initResult.reason
-              : `${initResult.reason ?? "语义检索未就绪"} 当前以本地匹配档工作（不出本机，非语义检索）。`
-            : (probed?.reason ?? null);
+            ? degradedNote(initResult.reason ?? "语义检索未就绪")
+            : semanticFailureReason
+              ? // 语义档实际跑失败过（如 key 失效）：仍然「能用」，但要如实说。
+                // 只留可读要点：上游 stderr 常带长 JSON，原样透出会淹没面板。
+                degradedNote(describeSemanticFailure(semanticFailureReason))
+              : (probed?.reason ?? null);
       return {
         installed: inspection.installed,
         enabled: inspection.enabled,
@@ -613,9 +632,14 @@ export function createSagCliProvider(
           const unavailable =
             error instanceof KnowledgeServiceError &&
             error.code === "service_unavailable" &&
-            /JEV|Jev|凭据|未配置/.test(error.message);
+            // 语义档不可用都算：未配置 / 凭据失效（401 Invalid API Key）/ JEV 请求失败。
+            // 凭据失效尤其常见（换了 key、jev 条目被删），此时静默返回 0 条 = 假装检索过。
+            /JEV|Jev|jev|凭据|未配置|401|Invalid API Key|unauthor|模型请求失败/iu.test(
+              error.message,
+            );
           if (!unavailable) throw error;
           credentialMissing = true;
+          semanticFailureReason = error.message;
           return {
             ...(await doSearch({ ...input, localMatch: true })),
             degraded: "local-match",
