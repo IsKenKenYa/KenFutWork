@@ -45,6 +45,7 @@ import type {
   VoiceSettingsResponse,
   VoiceSettingsUpdateRequest,
   VoiceTranscribeResponse,
+  WorkSaveResponse,
 } from "@kenfutwork/shared";
 import {
   generationSubmissionSchema,
@@ -52,6 +53,7 @@ import {
   parseInstanceSpecifier,
   projectDirectoryRelinkResponseSchema,
   projectDirectoryRelinkSnapshotSchema,
+  workSaveResponseSchema,
 } from "@kenfutwork/shared";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
 
@@ -1449,6 +1451,38 @@ export async function pickDirectory(
   );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as PickDirectoryResponse;
+}
+
+/**
+ * Work 文档落到项目主目录：绝对路径由服务端按 projectId 解析，客户端只给项目内
+ * 相对路径；失败一律抛出服务端原因，不静默退回下载目录。
+ */
+export async function saveWorkDocument(
+  accessToken: string | null | undefined,
+  input: {
+    projectId: string;
+    assetId: string;
+    relativePath: string;
+    mimeType: string;
+    bytes: ArrayBuffer;
+  },
+): Promise<WorkSaveResponse> {
+  const formData = new FormData();
+  formData.append("projectId", input.projectId);
+  formData.append("assetId", input.assetId);
+  formData.append("relativePath", input.relativePath);
+  formData.append("mimeType", input.mimeType);
+  formData.append(
+    "file",
+    new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }),
+    input.relativePath.split("/").pop() ?? "document",
+  );
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/work/host/save`,
+    { method: "POST", headers: authHeaders(accessToken), body: formData },
+  );
+  if (!response.ok) return handleErrorResponse(response);
+  return workSaveResponseSchema.parse(await response.json());
 }
 
 // --- 子智能体（设置 →「子智能体」；清单与 agent 装配同源） ---

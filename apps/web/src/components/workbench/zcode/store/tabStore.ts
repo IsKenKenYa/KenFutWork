@@ -5,6 +5,7 @@
  * 每个窗口拥有独立的 tab store（不跨窗口广播）。
  * 标签页状态通过 settingService 持久化（见 useTabPersistence）。
  */
+import type { ManagementTarget } from "@kenfutwork/shared";
 import { create } from "zustand";
 import {
   createUuid,
@@ -22,6 +23,9 @@ import {
 import { isSameWorkspaceTab } from "@zui/store/tabWorkspaceIdentity.js";
 
 export const SETTINGS_TAB_ID = "__settings__" satisfies TabId;
+
+/** 设置入口的显式目标；只描述导航，不携带执行身份或凭据。 */
+export type SettingsOpenTarget = Extract<ManagementTarget, { page: "settings" }>;
 
 export type WorkspaceAvailability = "available" | "unavailable-local-directory";
 
@@ -119,8 +123,12 @@ export interface TabStoreState {
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   /** 仅按 workspace 子序列重排，保留设置页等非 workspace tab 的位置槽位 */
   reorderWorkspaceTabs: (fromIndex: number, toIndex: number) => void;
-  /** 打开设置标签页（窗口内唯一） */
-  openSettingsTab: () => void;
+  /**
+   * 打开设置标签页（窗口内唯一）。
+   * 带 target 时按该目标直达：父窗口宿主只转发，不再回读共享 sessionStorage 意图，
+   * 避免与另一文档的设置页并发消费同一次跳转意图（读到的可能是上次残留或“常规”兜底）。
+   */
+  openSettingsTab: (target?: SettingsOpenTarget) => void;
   /** 通过 workspace 路径激活 tab（跨窗口 focus 用），返回是否找到 */
   activateTabByPath: (path: string, options?: { workspaceIdentity?: string }) => boolean;
   /** 切换 workspace 的展开/收起态 */
@@ -246,7 +254,10 @@ interface StorageLike {
   setItem(key: string, value: string): void;
 }
 
-export function createTabStore(storage: StorageLike | null | undefined = undefined, options: { onOpenSettings?: () => void } = {}) {
+export function createTabStore(
+  storage: StorageLike | null | undefined = undefined,
+  options: { onOpenSettings?: (target?: SettingsOpenTarget) => void } = {},
+) {
   return create<TabStoreState>()((set, get) => ({
     tabs: [],
     activeTabId: null,
@@ -489,9 +500,9 @@ export function createTabStore(storage: StorageLike | null | undefined = undefin
       });
     },
 
-    openSettingsTab: () => {
+    openSettingsTab: (target) => {
       if (options.onOpenSettings) {
-        options.onOpenSettings();
+        options.onOpenSettings(target);
         return;
       }
       const existing = get().tabs.find(isSettingsTab);

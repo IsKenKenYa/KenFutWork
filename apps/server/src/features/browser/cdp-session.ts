@@ -122,7 +122,9 @@ export interface CdpBrowserSession {
    * - `all`：删除整个 profile（下次连接重建）。
    * 清理前先断开会话，避免运行中的浏览器把文件锁住。
    */
-  clearData(mode: "cache" | "all"): Promise<{ success: boolean; error?: string }>;
+  clearData(
+    mode: "cache" | "all",
+  ): Promise<{ success: boolean; error?: string }>;
   /**
    * **注入页面内调试控制台**（Eruda，现成第三方）到受控页面，并把它摆成**悬浮窗**
    * （可拖动 / 可关闭；形态改造见 debug-console 的 FLOAT_SCRIPT）。

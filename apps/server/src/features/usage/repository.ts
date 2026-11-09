@@ -81,7 +81,10 @@ export interface UsageRepository {
   /** 应用用量涉及的去重会话数（distinct run_id）——不能把逐组 runs 相加（跨天/跨模型会重）。 */
   appUsageRunCount(instanceId: string, since: Date | null): Promise<number>;
   /** 单轮 Run 的用量汇总；没有任何记账行时返回 null（与「有调用但零 token」区分）。 */
-  runSummary(instanceId: string, runId: string): Promise<RunUsageAggregate | null>;
+  runSummary(
+    instanceId: string,
+    runId: string,
+  ): Promise<RunUsageAggregate | null>;
   /** 会话最近一轮 Run 的用量汇总；子代理只持有 childSessionId 时使用。 */
   runSummaryBySession(
     instanceId: string,
@@ -106,7 +109,9 @@ type RawUsageAggregateRow = {
   calls: string | number | null;
 };
 
-function aggregateOf(row: RawUsageAggregateRow | undefined): RunUsageAggregate | null {
+function aggregateOf(
+  row: RawUsageAggregateRow | undefined,
+): RunUsageAggregate | null {
   const calls = Number(row?.calls ?? 0) || 0;
   if (calls === 0) return null;
   return {

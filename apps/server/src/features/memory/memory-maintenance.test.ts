@@ -1,8 +1,8 @@
 import {
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rm,
   utimes,
   writeFile,
@@ -47,7 +47,9 @@ async function createFixture(options?: {
   let now = options?.now ?? 1_700_000_000_000;
   const memory = createProjectMemoryService({
     dataDir,
-    projects: { listProjects: async () => [{ id: projectId, name: "记忆项目" }] } as never,
+    projects: {
+      listProjects: async () => [{ id: projectId, name: "记忆项目" }],
+    } as never,
     localInstance: {
       resolve: async (value: LocalActor) => ({ instanceId: value.instanceId }),
     } as never,
@@ -79,16 +81,19 @@ async function seed(
   await mkdir(root, { recursive: true });
   for (const [name, content] of Object.entries(files))
     await writeFile(join(root, name), `${content}\n`, "utf8");
-  await writeFile(join(root, "MEMORY.md"), `${indexLines.join("\n")}\n`, "utf8");
+  await writeFile(
+    join(root, "MEMORY.md"),
+    `${indexLines.join("\n")}\n`,
+    "utf8",
+  );
 }
 
 it("重复正文只保留被索引引用的一份并把另一份送进回收区", async () => {
   const { memory, root } = await createFixture();
-  await seed(
-    root,
-    { "a.md": "同一结论", "b.md": "同一结论" },
-    ["- [结论甲](a.md) — 同一结论", "- [结论乙](b.md) — 同一结论"],
-  );
+  await seed(root, { "a.md": "同一结论", "b.md": "同一结论" }, [
+    "- [结论甲](a.md) — 同一结论",
+    "- [结论乙](b.md) — 同一结论",
+  ]);
   const result = await memory.maintainProjectMemory(actor, { projectId });
   expect(result.merged).toBe(1);
   expect(result.trashed).toBe(1);
@@ -166,7 +171,9 @@ it("被索引引用的条目即使很旧也不会自动删除", async () => {
   const { memory, root, currentTime } = await createFixture({
     orphanRetentionDays: 1,
   });
-  await seed(root, { "kept.md": "长期结论" }, ["- [长期结论](kept.md) — 长期结论"]);
+  await seed(root, { "kept.md": "长期结论" }, [
+    "- [长期结论](kept.md) — 长期结论",
+  ]);
   const longAgo = new Date(currentTime() - 400 * DAY);
   await utimes(join(root, "kept.md"), longAgo, longAgo);
 

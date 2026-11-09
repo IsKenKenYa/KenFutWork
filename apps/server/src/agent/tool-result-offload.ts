@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
-import { randomUUID } from "node:crypto";
 import { ToolMessage } from "@langchain/core/messages";
 import type { AgentMiddleware } from "langchain";
 
@@ -90,7 +90,12 @@ export function createToolResultOffloadWriter(
   return {
     async write(toolCallId, text) {
       const name = `${sanitizeSegment(toolCallId, "tool-call")}.txt`;
-      const relativePath = posix.join(OFFLOAD_ROOT, taskSegment, runSegment, name);
+      const relativePath = posix.join(
+        OFFLOAD_ROOT,
+        taskSegment,
+        runSegment,
+        name,
+      );
       const totalBytes = Buffer.byteLength(text, "utf8");
       const stored = prefixByBytes(text, options.maxBytes);
       const storedBytes = Buffer.byteLength(stored, "utf8");

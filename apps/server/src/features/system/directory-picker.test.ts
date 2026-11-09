@@ -13,7 +13,7 @@ import {
  * 「真的弹出一个对话框」那一段只能人点，走真机验收（见《改造计划》§4.13）。
  */
 describe("原生目录对话框命令", () => {
-  it("Windows 用 powershell 的 WinForms 对话框，且切 UTF-8 与 -STA", () => {
+  it("Windows 用壳层 IFileOpenDialog 的现代文件夹框，且切 UTF-8 与 -STA", () => {
     const [command, ...rest] = nativePickerCommands("win32");
     expect(rest).toHaveLength(0);
     expect(command?.command).toBe("powershell.exe");
@@ -23,10 +23,16 @@ describe("原生目录对话框命令", () => {
     expect(script).toContain(
       "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8",
     );
-    expect(script).toContain("FolderBrowserDialog");
+    // CLSID_FileOpenDialog + IFileOpenDialog 的 IID + FOS_PICKFOLDERS
+    expect(script).toContain("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7");
+    expect(script).toContain("d57c7288-d4ad-4768-be02-9d969532d960");
+    expect(script).toContain("0x20u | 0x40u | 0x800u");
+    expect(script).toContain("0x80058000u");
     // 置顶 owner：对话框不开在浏览器窗口后面
     expect(script).toContain("TopMost = $true");
-    expect(script).toContain("ShowDialog($owner)");
+    // 回归锁：WinForms 的旧版「浏览文件夹」树形框不得回来（5.1 下 AutoUpgrade
+    // 实测不升级到现代对话框，用户要的是资源管理器那种）
+    expect(script).not.toContain("FolderBrowserDialog");
   });
 
   it("macOS 用 osascript 的 choose folder", () => {

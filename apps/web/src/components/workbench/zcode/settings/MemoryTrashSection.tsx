@@ -1,7 +1,4 @@
-import type {
-  IMemoryService,
-  ProjectMemoryTrashItem,
-} from "@zcode/services";
+import type { IMemoryService, ProjectMemoryTrashItem } from "@zcode/services";
 import { Button } from "@zui/components/ui/button.js";
 import { SettingsGroupCard } from "@zui/settings/SettingsPageParts.js";
 import { useCallback, useEffect, useState } from "react";
@@ -66,9 +63,7 @@ export function MemoryTrashSection({
         trashId: item.trashId,
       });
       setResult(
-        restored.fileName
-          ? `已恢复为 ${restored.fileName}`
-          : "索引行已恢复",
+        restored.fileName ? `已恢复为 ${restored.fileName}` : "索引行已恢复",
       );
       await load();
       onRestored?.();
@@ -111,9 +106,12 @@ export function MemoryTrashSection({
                 className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="truncate">{item.title ?? item.fileName ?? "索引行"}</p>
+                  <p className="truncate">
+                    {item.title ?? item.fileName ?? "索引行"}
+                  </p>
                   <p className="text-ui-sm text-foreground-subtle">
-                    {formatTrashedAt(item.trashedAt)} · {REASON_LABEL[item.reason]}
+                    {formatTrashedAt(item.trashedAt)} ·{" "}
+                    {REASON_LABEL[item.reason]}
                   </p>
                 </div>
                 {item.restorable ? (

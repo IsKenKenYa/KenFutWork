@@ -107,7 +107,7 @@ export function UpdateStatusDialog({
             src={macosDockIconUrl}
             alt=""
             aria-hidden="true"
-            className="pointer-events-none -ml-[5px] size-12 shrink-0 select-none shadow-none drop-shadow-none"
+            className="brand-mark-on-dark pointer-events-none -ml-[5px] size-12 shrink-0 select-none shadow-none drop-shadow-none"
             draggable={false}
           />
           <div className="min-w-0 flex-1 space-y-1.5">

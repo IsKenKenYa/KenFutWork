@@ -14,6 +14,20 @@ import {
 import type { LocalInstanceService } from "../local-instance/types.js";
 import type { McpService } from "./mcp-service.js";
 
+/**
+ * 设置页状态枚举（zcodeMcpListResultSchema）只认
+ * connecting/connected/disabled/disconnected/failed/untrusted；服务端运行态是
+ * connected/error/disabled。原样透传 `error` 会让整包解析失败，设置页拿到 400
+ * 而不是「失败 + 原因」。这里显式映射，探针失败就是 failed，成功才报 connected。
+ */
+export function toZcodeMcpStatus(row: {
+  enabled: boolean;
+  status: "connected" | "error" | "disabled";
+}): "connected" | "disabled" | "failed" {
+  if (!row.enabled || row.status === "disabled") return "disabled";
+  return row.status === "connected" ? "connected" : "failed";
+}
+
 /** 只适配原接口；同一McpService同时供HTTP、运行工具及原设置页使用。 */
 export function createCodeUiMcpHost(deps: {
   service: McpService;
@@ -180,7 +194,7 @@ export function createCodeUiMcpHost(deps: {
               .map((row) => [
                 row.name,
                 {
-                  status: row.enabled ? row.status : "disconnected",
+                  status: toZcodeMcpStatus(row),
                   transport: row.kind,
                   toolCount: row.toolCount,
                   updatedAt: observedAt,

@@ -4,32 +4,30 @@ import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import {
-  createMemorySaveTool,
-  createMemorySearchTool,
-  createProjectMemoryPromptSection,
-} from "../memory/consumer.js";
-import {
-  createProjectMemoryService,
-  type ProjectMemoryService,
-} from "../memory/project-memory.js";
-import { runMemoryMaintenanceScan } from "../memory/maintenance-scan.js";
-import { createProjectMemoryRpc } from "../memory/rpc.js";
-import { startPeriodicScan } from "../jobs/periodic-scan.js";
-import { installNetworkProxy } from "../network/proxy.js";
-import {
-  runTaskAutoArchive,
-  startTaskAutoArchiveTimer,
-} from "./task-auto-archive.js";
-import {
   createGoalPrompt,
   createGoalTools,
   GOAL_TOOL_EVIDENCE_VALIDATOR_CAPABILITY,
   type GoalToolEvidenceValidator,
 } from "../goals/consumer.js";
+import { startPeriodicScan } from "../jobs/periodic-scan.js";
+import {
+  createMemorySaveTool,
+  createMemorySearchTool,
+  createProjectMemoryPromptSection,
+} from "../memory/consumer.js";
+import { runMemoryMaintenanceScan } from "../memory/maintenance-scan.js";
+import {
+  createProjectMemoryService,
+  type ProjectMemoryService,
+} from "../memory/project-memory.js";
+import { createProjectMemoryRpc } from "../memory/rpc.js";
+import { installNetworkProxy } from "../network/proxy.js";
 import { createTaskResourceCloser } from "../task-work/close-resources.js";
 import { createApprovedPlanPromptSection } from "./approved-plan-prompt.js";
 import { createAskUserQuestionToolDefinition } from "./ask-user-question.js";
 import { createCodeAttachmentRepository } from "./attachments/repository.js";
+import { createCodeUiClientConfigHost } from "./client-config-host.js";
+import { createCodeUiClientScenesHost } from "./client-scenes-host.js";
 import { createEnterPlanModeToolDefinition } from "./enter-plan.js";
 import { createExitPlanModeToolDefinition } from "./exit-plan.js";
 import { createCodeGuideMiddleware } from "./guide-model-mailbox.js";
@@ -41,6 +39,10 @@ import { createCodeHistoryOutputPrompt } from "./output-history-prompt.js";
 import { createCodeUiProjectGitSessions } from "./project-git-session.js";
 import { createCodeUiRepository } from "./repository.js";
 import { createCodeUiService } from "./service.js";
+import {
+  runTaskAutoArchive,
+  startTaskAutoArchiveTimer,
+} from "./task-auto-archive.js";
 import { createUserInputBroker } from "./user-input-broker.js";
 import {
   CODE_UI_WORK_CONTEXT_CAPABILITY,
@@ -49,7 +51,9 @@ import {
 
 export function createCodeUiPlugin(): PluginDefinition {
   /** apply 期建立的偏好仓储；mounted 的启动期消费者共用同一实例。 */
-  let preferenceRepository: ReturnType<typeof createCodeUiRepository> | undefined;
+  let preferenceRepository:
+    | ReturnType<typeof createCodeUiRepository>
+    | undefined;
   /** apply 期建立的项目记忆服务；mounted 的周期整理共用同一实例。 */
   let projectMemoryService: ProjectMemoryService | undefined;
   return {
@@ -169,9 +173,9 @@ export function createCodeUiPlugin(): PluginDefinition {
           env: ctx.env,
         });
       });
-      ctx.get("systemPrompt").register(
-        createProjectMemoryPromptSection(projectMemory),
-      );
+      ctx
+        .get("systemPrompt")
+        .register(createProjectMemoryPromptSection(projectMemory));
       ctx.get("tools").register(createMemorySaveTool(projectMemory));
       ctx.get("tools").register(createMemorySearchTool(projectMemory));
       ctx.get("systemPrompt").register(
@@ -275,6 +279,18 @@ export function createCodeUiPlugin(): PluginDefinition {
         id: "code-ui:guide",
         value: guideExtension,
       });
+      // 客户端场景目录与公开客户端配置都由上游远端提供；
+      // 本机宿主登记如实结果（业务未支持 / 空配置），避免 501 触发重复重试。
+      for (const [id, value] of Object.entries({
+        ...createCodeUiClientScenesHost(),
+        ...createCodeUiClientConfigHost(),
+      })) {
+        ctx.effect(() =>
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
+      }
       ctx.effect(() =>
         ctx.get("settings").onUpdated(({ instanceId, changedKeys }) => {
           if (
@@ -285,8 +301,7 @@ export function createCodeUiPlugin(): PluginDefinition {
         }),
       );
       const preferencesRepository = preferenceRepository;
-      if (!preferencesRepository)
-        throw new Error("Code UI 偏好仓储未装配。");
+      if (!preferencesRepository) throw new Error("Code UI 偏好仓储未装配。");
       const autoArchiveTasks = async () => {
         const actor = await ctx.get("localInstance").serviceActor();
         const preferences = await preferencesRepository.readHumanPreferences(
@@ -297,8 +312,7 @@ export function createCodeUiPlugin(): PluginDefinition {
             enabled: preferences.taskAutoArchiveEnabled,
             olderThanDays: preferences.taskAutoArchiveOlderThanDays,
           },
-          listRoots: () =>
-            preferencesRepository.listRoots(actor.instanceId),
+          listRoots: () => preferencesRepository.listRoots(actor.instanceId),
           archive: (taskId) => ctx.get("codeUi").archiveTask(actor, taskId),
         });
         if (result.failed.length)
@@ -326,10 +340,9 @@ export function createCodeUiPlugin(): PluginDefinition {
       const restartAutoArchiveTimer = async () => {
         const generation = ++autoArchiveGeneration;
         const actor = await ctx.get("localInstance").serviceActor();
-        const settings = await ctx.get("settings").getInstanceSettings(
-          actor,
-          actor.instanceId,
-        );
+        const settings = await ctx
+          .get("settings")
+          .getInstanceSettings(actor, actor.instanceId);
         if (autoArchiveClosed || generation !== autoArchiveGeneration) return;
         stopAutoArchiveTimer?.();
         stopAutoArchiveTimer = startTaskAutoArchiveTimer({
@@ -378,10 +391,9 @@ export function createCodeUiPlugin(): PluginDefinition {
       const restartMemoryTimer = async () => {
         const generation = ++memoryGeneration;
         const actor = await ctx.get("localInstance").serviceActor();
-        const settings = await ctx.get("settings").getInstanceSettings(
-          actor,
-          actor.instanceId,
-        );
+        const settings = await ctx
+          .get("settings")
+          .getInstanceSettings(actor, actor.instanceId);
         if (memoryClosed || generation !== memoryGeneration) return;
         stopMemoryTimer?.();
         stopMemoryTimer = startPeriodicScan({

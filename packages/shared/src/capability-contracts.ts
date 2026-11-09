@@ -25,6 +25,18 @@ export const toolListResponseSchema = z.object({
 });
 export type ToolListResponse = z.infer<typeof toolListResponseSchema>;
 
+// 执行方式枚举：UI 与工具门已按 2026-10-22 统一主 Agent 退役，协议层保留
+// 供管理文档新建任务等历史 wire 字段解析（消费方不据此切换工作方式）。
+export const executionModeSchema = z.enum([
+  "agent",
+  "plan",
+  "goal",
+  "loop",
+  "solo",
+  "creative",
+]);
+export type ExecutionMode = z.infer<typeof executionModeSchema>;
+
 // --- 权限档位（DEC-4：code 模式默认 default 档；R5-3 补第 4 档「自定义配置」） ---
 
 export const permissionTierSchema = z.enum([

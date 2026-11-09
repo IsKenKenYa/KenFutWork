@@ -58,6 +58,7 @@ async function openSkillsPage(
     };
     deferToggle?: boolean;
     pluginSkill?: boolean;
+    onCreateTask?: (request?: unknown) => void;
   } = {},
 ) {
   installCodeRootBrowser();

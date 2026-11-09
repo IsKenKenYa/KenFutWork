@@ -14,7 +14,9 @@ export type TaskAutoArchiveResult = {
   skipped: number;
 };
 
-function resolveCutoffDays(preferences: TaskAutoArchivePreferences): number | null {
+function resolveCutoffDays(
+  preferences: TaskAutoArchivePreferences,
+): number | null {
   if (preferences.enabled !== true) return null;
   const days = preferences.olderThanDays;
   if (typeof days !== "number" || !Number.isInteger(days) || days <= 0)
@@ -43,8 +45,7 @@ export async function runTaskAutoArchive(options: {
   now?: () => number;
 }): Promise<TaskAutoArchiveResult> {
   const days = resolveCutoffDays(options.preferences);
-  if (days === null)
-    return { archived: [], failed: [], skipped: 0 };
+  if (days === null) return { archived: [], failed: [], skipped: 0 };
   const cutoff = (options.now ?? Date.now)() - days * DAY_MS;
   const roots = await options.listRoots();
   const archived: string[] = [];

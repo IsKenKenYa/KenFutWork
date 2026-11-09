@@ -778,7 +778,9 @@ export function SkillsSection({
     onVisibleCountChange?.(filteredSkillCount);
   }, [filteredSkillCount, onVisibleCountChange]);
   const handleCreateSkill = () => {
-    if (!activeWorkspacePath || !onCreateTask) {
+    // 技能是实例级资源，登记走 create_skill（不依赖本设置页的工作目录）；
+    // 设置页也可能运行在独立管理文档里，工作目录属于发起任务的 Code 壳。
+    if (!onCreateTask) {
       return;
     }
     const effectiveProvider: ZCodeProvider = ZCODE_AGENT_PROVIDER;
@@ -792,8 +794,9 @@ export function SkillsSection({
     );
 
     // v4 迁移删除旧 pendingComposerPrefill 后，这个入口仍手工操作 session
-    // store，只剩返回聊天页的导航，skill-creator 文本没有进入新 Composer。统一委托
+    // store，只剩返回聊天页的导航，预填文本没有进入新 Composer。统一委托
     // Root 的新任务入口，让草稿持久化、workspaceIdentity 隔离和 Composer 插入保持单一路径。
+    // 建技能属于修改实例应用，必须让新任务以创造方式启动，agent 才会调用 create_skill 登记。
     onCreateTask({
       provider: effectiveProvider,
       initialPrompt: `${markdown} `,

@@ -108,6 +108,8 @@ export const canvasSummarySchema = z.object({
   id: canvasIdSchema,
   name: z.string().min(1),
   isPrimary: z.boolean(),
+  /** 内容只存项目文件指针时，标记权威文件已不在磁盘上。 */
+  fileMissing: z.boolean().optional(),
 });
 
 /** kind 表达项目默认工作方式；enabledModes 表达显式启用的工作方式。 */
@@ -224,7 +226,16 @@ export const hookEventSchema = z.enum(HOOK_EVENTS);
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
+export const themePreferenceSchema = z.enum([
+  "system",
+  "zai-light",
+  "zai-dark",
+]);
+export type ThemePreference = z.infer<typeof themePreferenceSchema>;
+
 export const instanceSettingsSchema = z.object({
+  /** 实例外观；父页读取后同步到 Code 壳与启动缓存。 */
+  theme: themePreferenceSchema.default("system"),
   modelDefaults: modelDefaultsSchema.optional(),
   /** 未配置默认模型时为真实空值，局部设置保存不要求先选模型。 */
   defaultModel: z.string(),
@@ -397,6 +408,11 @@ export const instanceSettingsSchema = z.object({
   sandboxProbeTimeoutMs: governanceSetting("sandboxProbeTimeoutMs"),
   /** Flow 网关控制面单次请求的等待预算（毫秒）。 */
   flowGatewayControlTimeoutMs: governanceSetting("flowGatewayControlTimeoutMs"),
+  flowEngineBootstrapAttempts: governanceSetting("flowEngineBootstrapAttempts"),
+  flowEngineBootstrapRetryMs: governanceSetting("flowEngineBootstrapRetryMs"),
+  flowEngineBootstrapRequestTimeoutMs: governanceSetting(
+    "flowEngineBootstrapRequestTimeoutMs",
+  ),
   /** Computer Use：单个桌面动作超时（毫秒）。 */
   computerUseActionTimeoutMs: governanceSetting("computerUseActionTimeoutMs"),
   /** Computer Use：观察树文本预算（字节），超限按优先级裁剪。 */

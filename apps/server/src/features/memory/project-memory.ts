@@ -2,27 +2,28 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
-  readFile,
   readdir,
+  readFile,
   realpath,
   rename,
   writeFile,
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
-
-import type { SettingsService } from "../settings/settings-service.js";
-import type { LocalActor } from "../local-instance/types.js";
-import type { LocalInstanceService } from "../local-instance/types.js";
-import type { ProjectService } from "../projects/project-service.js";
-import type { CodeUiRepository } from "../code-ui/repository.js";
-import type { CanvasService } from "../canvas/canvas-service.js";
 import type { AgentPersistenceService } from "../../agent/persistence/index.js";
+import type { CanvasService } from "../canvas/canvas-service.js";
+import type { CodeUiRepository } from "../code-ui/repository.js";
+import type {
+  LocalActor,
+  LocalInstanceService,
+} from "../local-instance/types.js";
+import type { ProjectService } from "../projects/project-service.js";
+import type { SettingsService } from "../settings/settings-service.js";
 import {
   listTrashEntries,
-  maintainMemoryDirectory,
-  restoreTrashEntry,
   type MemoryMaintenanceResult,
   type MemoryTrashEntry,
+  maintainMemoryDirectory,
+  restoreTrashEntry,
 } from "./memory-maintenance.js";
 
 const MEMORY_INDEX_FILE_NAME = "MEMORY.md";
@@ -72,10 +73,7 @@ export interface ProjectMemoryService {
     input: { workspaceId: string; fileName: string },
   ): Promise<{ content: string; updatedAt: number }>;
   /** 系统提示段用的索引正文；未开启或没有索引时返回 null。 */
-  readIndex(
-    instanceId: string,
-    projectId: string,
-  ): Promise<string | null>;
+  readIndex(instanceId: string, projectId: string): Promise<string | null>;
   /** 记忆目录（系统提示段指路用）。 */
   memoryDirectory(projectId: string): string;
   /** 把一条记忆写成独立文件并在 MEMORY.md 追加一行索引。 */
@@ -267,8 +265,7 @@ export function createProjectMemoryService(options: {
     projectId: string,
   ): Promise<MemoryMaintenanceResult> => {
     await requireMemoryEnabled(actor);
-    if (!isValidPathSegment(projectId))
-      throw new Error("项目标识无效。");
+    if (!isValidPathSegment(projectId)) throw new Error("项目标识无效。");
     const limits = await readLimits(actor);
     return maintainMemoryDirectory({
       memoryRoot: memoryDirectory(projectId),
@@ -322,7 +319,8 @@ export function createProjectMemoryService(options: {
         if (page.length < pageSize) break;
       }
 
-      const files: Array<{ key: string; fileName: string; content: string }> = [];
+      const files: Array<{ key: string; fileName: string; content: string }> =
+        [];
       const legacyIndexLines: string[] = [];
       for (const item of items) {
         if (!item.key.startsWith("/memories/")) continue;
@@ -475,7 +473,8 @@ export function createProjectMemoryService(options: {
       return entries.map((entry) => ({
         ...entry,
         restorable:
-          now - entry.trashedAt <= limits.recoverableWindowDays * 24 * 60 * 60 * 1000,
+          now - entry.trashedAt <=
+          limits.recoverableWindowDays * 24 * 60 * 60 * 1000,
       }));
     },
 
@@ -511,7 +510,11 @@ export function createProjectMemoryService(options: {
       for (const entry of entries) {
         if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
         if (!isValidPathSegment(entry.name)) continue;
-        const memoryRoot = join(projectsRoot, entry.name, MEMORY_DIRECTORY_NAME);
+        const memoryRoot = join(
+          projectsRoot,
+          entry.name,
+          MEMORY_DIRECTORY_NAME,
+        );
         const memoryMetadata = await lstat(memoryRoot).catch(
           (error: unknown) => {
             if (isNotFound(error)) return null;
@@ -532,8 +535,7 @@ export function createProjectMemoryService(options: {
           files.push({
             name: file.name,
             path: filePath,
-            kind:
-              file.name === MEMORY_INDEX_FILE_NAME ? "index" : "item",
+            kind: file.name === MEMORY_INDEX_FILE_NAME ? "index" : "item",
             size: metadata.size,
             updatedAt: metadata.mtimeMs,
           });
@@ -582,9 +584,9 @@ export function createProjectMemoryService(options: {
       if (!isPlainDirectory(rootMetadata))
         throw new Error("记忆目录不是普通目录。");
       // 大小写不敏感文件系统上按名字找一遍，避免命中不同大小写的文件。
-      const matched = (
-        await readdir(memoryRoot, { withFileTypes: true })
-      ).find((entry) => entry.name === input.fileName);
+      const matched = (await readdir(memoryRoot, { withFileTypes: true })).find(
+        (entry) => entry.name === input.fileName,
+      );
       const filePath = join(memoryRoot, input.fileName);
       if (!matched) {
         await lstat(filePath).catch((error: unknown) => {
@@ -698,7 +700,10 @@ export function createProjectMemoryService(options: {
     async readIndex(instanceId, projectId) {
       if (!isValidPathSegment(projectId)) return null;
       if (!(await isEnabled(instanceId))) return null;
-      const indexPath = join(memoryDirectory(projectId), MEMORY_INDEX_FILE_NAME);
+      const indexPath = join(
+        memoryDirectory(projectId),
+        MEMORY_INDEX_FILE_NAME,
+      );
       const metadata = await lstat(indexPath).catch((error: unknown) => {
         if (isNotFound(error)) return null;
         throw error;

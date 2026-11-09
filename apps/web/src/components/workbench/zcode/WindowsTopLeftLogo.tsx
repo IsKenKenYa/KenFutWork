@@ -22,7 +22,10 @@ export function WindowsTopLeftLogo({
       <img
         src={appLogoUrl}
         alt="KenFutWork"
-        className={cn("pointer-events-none size-5 select-none", imageClassName)}
+        className={cn(
+          "brand-mark-on-dark pointer-events-none size-5 select-none",
+          imageClassName,
+        )}
         draggable={false}
       />
     </div>

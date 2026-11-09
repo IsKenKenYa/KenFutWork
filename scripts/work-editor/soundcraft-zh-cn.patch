@@ -1,0 +1,2859 @@
+diff --git a/crates/ui-egui/src/bounce.rs b/crates/ui-egui/src/bounce.rs
+index 4368b4e..eb0c04b 100644
+--- a/crates/ui-egui/src/bounce.rs
++++ b/crates/ui-egui/src/bounce.rs
+@@ -2,6 +2,7 @@
+ //! bounce can be cancelled.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold};
+ use serde_json::Value;
+
+@@ -70,10 +71,10 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
+         ui.set_width(320.0);
+         let name = job.path().file_name().unwrap_or_default().to_string_lossy();
+-        ui.label(egui::RichText::new(format!("Bouncing {name}")).font(bold(13.0)));
++        ui.label(egui::RichText::new(format!("正在并轨 {name}")).font(bold(13.0)));
+         ui.add(egui::ProgressBar::new(job.progress()));
+         ui.horizontal(|ui| {
+-            cancel |= ui.button("Cancel").clicked();
++            cancel |= ui.button(tr("Cancel")).clicked();
+             ui.label(egui::RichText::new(format!("{:.0}%", job.progress() * 100.0)).color(Tokens::current().text_dim));
+         });
+     });
+diff --git a/crates/ui-egui/src/credits.rs b/crates/ui-egui/src/credits.rs
+index bd58c36..4c056bc 100644
+--- a/crates/ui-egui/src/credits.rs
++++ b/crates/ui-egui/src/credits.rs
+@@ -5,6 +5,7 @@
+
+ use std::cmp::Ordering;
+
++use crate::i18n::tr;
+ use egui::RichText;
+
+ #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+@@ -215,30 +216,30 @@ pub fn contributors_ui(ui: &mut egui::Ui) {
+     let id = egui::Id::new("credits_view");
+     let mut v = ui.data_mut(|d| d.get_temp::<View>(id)).unwrap_or_default();
+     ui.horizontal_wrapped(|ui| {
+-        ui.label("Show");
++        ui.label(tr("Show"));
+         for m in NameMode::ALL {
+-            if ui.selectable_label(v.names == m, m.label()).clicked() {
++            if ui.selectable_label(v.names == m, tr(m.label())).clicked() {
+                 v.names = m;
+             }
+         }
+         ui.separator();
+-        ui.label("Sort");
+-        egui::ComboBox::from_id_salt("credits_sort").selected_text(v.key.label().0).show_ui(ui, |ui| {
++        ui.label(tr("Sort"));
++        egui::ComboBox::from_id_salt("credits_sort").selected_text(tr(v.key.label().0)).show_ui(ui, |ui| {
+             for k in SortKey::ALL {
+-                if ui.selectable_label(v.key == k, k.label().0).clicked() {
++                if ui.selectable_label(v.key == k, tr(k.label().0)).clicked() {
+                     v.key = k;
+                     v.ascending = k.default_ascending();
+                 }
+             }
+         });
+-        if ui.button(if v.ascending { "⏶" } else { "⏷" }).on_hover_text("Reverse the order").clicked() {
++        if ui.button(if v.ascending { "⏶" } else { "⏷" }).on_hover_text(tr("Reverse the order")).clicked() {
+             v.ascending = !v.ascending;
+         }
+         ui.separator();
+-        if ui.selectable_label(!v.table, "Grab bag").clicked() {
++        if ui.selectable_label(!v.table, tr("Grab bag")).clicked() {
+             v.table = false;
+         }
+-        if ui.selectable_label(v.table, "Table").clicked() {
++        if ui.selectable_label(v.table, tr("Table")).clicked() {
+             v.table = true;
+         }
+     });
+@@ -268,7 +269,7 @@ fn table(ui: &mut egui::Ui, list: &[&Contributor], v: &mut View) {
+     egui::Grid::new("credits_table").striped(true).num_columns(SortKey::ALL.len()).show(ui, |ui| {
+         for k in SortKey::ALL {
+             let arrow = if v.key == k { if v.ascending { " ⏶" } else { " ⏷" } } else { "" };
+-            if ui.button(RichText::new(format!("{}{arrow}", k.label().1)).strong()).on_hover_text(k.label().0).clicked() {
++            if ui.button(RichText::new(format!("{}{arrow}", tr(k.label().1))).strong()).on_hover_text(tr(k.label().0)).clicked() {
+                 if v.key == k {
+                     v.ascending = !v.ascending;
+                 } else {
+@@ -304,6 +305,7 @@ pub fn models_ui(ui: &mut egui::Ui) {
+     egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+         egui::Grid::new("credits_models").striped(true).num_columns(6).show(ui, |ui| {
+             for h in ["Company", "Model", "Version", "Commits", "% of all commits", "Lines +/−"] {
++                let h = tr(h);
+                 ui.label(RichText::new(h).strong());
+             }
+             ui.end_row();
+diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
+index d752c16..b2ffa8c 100644
+--- a/crates/ui-egui/src/dialogs.rs
++++ b/crates/ui-egui/src/dialogs.rs
+@@ -1,6 +1,7 @@
+ //! Modal dialogs opened by menu-style invocations.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold};
+ use egui::{Align2, vec2};
+ use serde_json::{Value, json};
+@@ -253,7 +254,7 @@ fn path_dialog(id: &str, home: &str, name: &str) -> Option<Dialog> {
+         _ => "",
+     };
+     let path = if importing || key == "dir" { format!("{home}/") } else { format!("{home}/{name}{ext}") };
+-    let title = format!("{} — {}", spec.menu.last().copied().unwrap_or("File"), spec.label.trim_end_matches("..."));
++    let title = format!("{} — {}", tr(spec.menu.last().copied().unwrap_or("File")), tr(spec.label.trim_end_matches("...")));
+     Some(Dialog::PathPrompt { cmd: id.into(), title, path, key: key.into() })
+ }
+
+@@ -335,7 +336,7 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+     .to_string();
+     let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+     let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+-    egui::Window::new(egui::RichText::new(&title).font(bold(13.0)))
++    egui::Window::new(egui::RichText::new(tr(&title)).font(bold(13.0)))
+         .collapsible(false)
+         .resizable(false)
+         .anchor(Align2::CENTER_CENTER, vec2(0.0, -80.0))
+@@ -344,33 +345,33 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+             match &mut d {
+                 Dialog::NewTracks { count, format, kind, timebase, name } => {
+                     ui.horizontal(|ui| {
+-                        ui.label("Create");
++                        ui.label(tr("Create"));
+                         ui.add(egui::DragValue::new(count).range(1..=128));
+-                        ui.label("new");
+-                        egui::ComboBox::from_id_salt("nt_fmt").selected_text(format.as_str()).show_ui(ui, |ui| {
++                        ui.label(tr("new"));
++                        egui::ComboBox::from_id_salt("nt_fmt").selected_text(tr(format.as_str())).show_ui(ui, |ui| {
+                             for f in soundcraft_model::ChannelFormat::ALL {
+-                                ui.selectable_value(format, f.label().to_string(), f.label());
++                                ui.selectable_value(format, f.label().to_string(), tr(f.label()));
+                             }
+                         });
+                         egui::ComboBox::from_id_salt("nt_kind")
+-                            .selected_text(soundcraft_model::TrackKind::from_id(kind).map_or("Audio Track", |k| k.label()))
++                            .selected_text(tr(soundcraft_model::TrackKind::from_id(kind).map_or("Audio Track", |k| k.label())))
+                             .show_ui(ui, |ui| {
+                                 for k in soundcraft_model::TrackKind::ALL {
+-                                    if ui.selectable_label(kind == k.id(), k.label()).clicked() {
++                                    if ui.selectable_label(kind == k.id(), tr(k.label())).clicked() {
+                                         *kind = k.id().to_string();
+                                         *name = k.default_name().to_string();
+                                     }
+                                 }
+                             });
+-                        ui.label("in");
+-                        egui::ComboBox::from_id_salt("nt_tb").selected_text(if timebase == "ticks" { "Ticks" } else { "Samples" }).show_ui(
++                        ui.label(tr("in"));
++                        egui::ComboBox::from_id_salt("nt_tb").selected_text(tr(if timebase == "ticks" { "Ticks" } else { "Samples" })).show_ui(
+                             ui,
+                             |ui| {
+-                                ui.selectable_value(timebase, "samples".to_string(), "Samples");
+-                                ui.selectable_value(timebase, "ticks".to_string(), "Ticks");
++                                ui.selectable_value(timebase, "samples".to_string(), tr("Samples"));
++                                ui.selectable_value(timebase, "ticks".to_string(), tr("Ticks"));
+                             },
+                         );
+-                        ui.label("Name:");
++                        ui.label(tr("Name:"));
+                         ui.add(egui::TextEdit::singleline(name).desired_width(140.0));
+                     });
+                     if buttons(ui, "Create", enter) {
+@@ -380,15 +381,15 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+                 Dialog::NewSession { name, sample_rate, demo } => {
+                     ui.horizontal(|ui| {
+-                        ui.label("Name");
++                        ui.label(tr("Name"));
+                         ui.text_edit_singleline(name);
+                     });
+-                    egui::ComboBox::from_label("Sample Rate").selected_text(format!("{sample_rate} Hz")).show_ui(ui, |ui| {
++                    egui::ComboBox::from_label(tr("Sample Rate")).selected_text(format!("{sample_rate} Hz")).show_ui(ui, |ui| {
+                         for r in soundcraft_time::SampleRate::COMMON {
+                             ui.selectable_value(sample_rate, r, format!("{r} Hz"));
+                         }
+                     });
+-                    crate::widgets::checkbox(ui, demo, "Start from the demo session");
++                    crate::widgets::checkbox(ui, demo, tr("Start from the demo session"));
+                     if buttons(ui, "Create", enter) {
+                         action = Some((
+                             "session.new".into(),
+@@ -398,10 +399,10 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+                 Dialog::Bounce { path, format, bit_depth, normalize } => {
+                     ui.horizontal(|ui| {
+-                        ui.label("File");
++                        ui.label(tr("File"));
+                         ui.add(egui::TextEdit::singleline(path).desired_width(420.0));
+                         if let Some(pick) = &app.services.pick_save
+-                            && ui.button("Browse…").clicked()
++                            && ui.button(tr("Browse…")).clicked()
+                             && let Some(p) = pick("file.bounce_mix", path)
+                         {
+                             *path = p;
+@@ -414,20 +415,20 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                         }
+                     });
+                     ui.horizontal(|ui| {
+-                        egui::ComboBox::from_label("Format").selected_text(format.to_uppercase()).show_ui(ui, |ui| {
++                        egui::ComboBox::from_label(tr("Format")).selected_text(format.to_uppercase()).show_ui(ui, |ui| {
+                             for f in ["wav", "aiff", "flac"] {
+                                 ui.selectable_value(format, f.to_string(), f.to_uppercase());
+                             }
+                         });
+-                        egui::ComboBox::from_label("Bit Depth").selected_text(format!("{bit_depth}-bit")).show_ui(ui, |ui| {
++                        egui::ComboBox::from_label(tr("Bit Depth")).selected_text(format!("{bit_depth}-bit")).show_ui(ui, |ui| {
+                             for b in ["16", "24", "32f"] {
+                                 ui.selectable_value(bit_depth, b.to_string(), format!("{b}-bit"));
+                             }
+                         });
+                     });
+-                    crate::widgets::checkbox(ui, normalize, "Normalize to -0.1 dBFS");
++                    crate::widgets::checkbox(ui, normalize, tr("Normalize to -0.1 dBFS"));
+                     ui.label(
+-                        egui::RichText::new("Bounces the edit selection, or the whole session when nothing is selected.")
++                        egui::RichText::new(tr("Bounces the edit selection, or the whole session when nothing is selected."))
+                             .small()
+                             .color(Tokens::current().text_dim),
+                     );
+@@ -471,21 +472,21 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                         && cmd != "session.save_as"
+                         && cmd != "session.save_copy"
+                         && key != "dir"
+-                        && ui.button("Browse…").clicked()
++                        && ui.button(tr("Browse…")).clicked()
+                         && let Some(p) = pick(cmd, &[])
+                     {
+                         *path = p;
+                     }
+                     if let Some(pick) = &app.services.pick_folder
+                         && key == "dir"
+-                        && ui.button("Browse…").clicked()
++                        && ui.button(tr("Browse…")).clicked()
+                         && let Some(p) = pick(path)
+                     {
+                         *path = p;
+                     }
+                     if let Some(pick) = &app.services.pick_save
+                         && (cmd == "session.save_as" || cmd == "session.save_copy")
+-                        && ui.button("Browse…").clicked()
++                        && ui.button(tr("Browse…")).clicked()
+                         && let Some(p) = pick(cmd, path)
+                     {
+                         *path = p;
+@@ -493,7 +494,7 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                     let file = soundcraft_engine::io::session_file(path);
+                     let replaces = soundcraft_engine::io::replaces(&app.engine, cmd, &file);
+                     if replaces {
+-                        ui.label(format!("“{}” already exists. Do you want to replace it?", file.file_name().unwrap_or_default().to_string_lossy()));
++                        ui.label(format!("“{}”已存在。是否替换？", file.file_name().unwrap_or_default().to_string_lossy()));
+                     }
+                     if buttons(ui, if replaces { "Replace" } else { "OK" }, enter && !replaces) {
+                         let mut v = json!({});
+@@ -507,7 +508,7 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                 Dialog::Number { cmd, key, value, suffix, .. } => {
+                     ui.horizontal(|ui| {
+                         ui.add(egui::DragValue::new(value).speed(0.1));
+-                        ui.label(suffix.as_str());
++                        ui.label(tr(suffix.as_str()));
+                     });
+                     if buttons(ui, "OK", enter) {
+                         let v = if key == "by_seconds" { json!({"by": {"seconds": value}}) } else { json!({key.as_str(): value}) };
+@@ -540,10 +541,10 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                     }
+                 }
+                 Dialog::StripSilence { threshold, min_ms, pre_ms, post_ms } => {
+-                    ui.add(egui::Slider::new(threshold, -96.0..=0.0).text("Threshold dB"));
+-                    ui.add(egui::Slider::new(min_ms, 0.0..=2000.0).text("Min strip duration ms"));
+-                    ui.add(egui::Slider::new(pre_ms, 0.0..=500.0).text("Clip start pad ms"));
+-                    ui.add(egui::Slider::new(post_ms, 0.0..=2000.0).text("Clip end pad ms"));
++                    ui.add(egui::Slider::new(threshold, -96.0..=0.0).text(tr("Threshold dB")));
++                    ui.add(egui::Slider::new(min_ms, 0.0..=2000.0).text(tr("Min strip duration ms")));
++                    ui.add(egui::Slider::new(pre_ms, 0.0..=500.0).text(tr("Clip start pad ms")));
++                    ui.add(egui::Slider::new(post_ms, 0.0..=2000.0).text(tr("Clip end pad ms")));
+                     if buttons(ui, "Strip", enter) {
+                         action = Some((
+                             "edit.strip_silence".into(),
+@@ -553,14 +554,14 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+                 Dialog::Group { id, name, edit, mix, members } => {
+                     ui.horizontal(|ui| {
+-                        ui.label("Name");
++                        ui.label(tr("Name"));
+                         ui.text_edit_singleline(name);
+                     });
+                     ui.horizontal(|ui| {
+-                        crate::widgets::checkbox(ui, edit, "Edit group");
+-                        crate::widgets::checkbox(ui, mix, "Mix group");
++                        crate::widgets::checkbox(ui, edit, tr("Edit group"));
++                        crate::widgets::checkbox(ui, mix, tr("Mix group"));
+                     });
+-                    ui.label("Tracks");
++                    ui.label(tr("Tracks"));
+                     egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                         for (_, n, on) in members.iter_mut() {
+                             crate::widgets::checkbox(ui, on, n.as_str());
+@@ -581,12 +582,12 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                     }
+                 }
+                 Dialog::Session { frame_rate, bit_depth } => {
+-                    egui::ComboBox::from_label("Timecode Rate").selected_text(frame_rate.as_str()).show_ui(ui, |ui| {
++                    egui::ComboBox::from_label(tr("Timecode Rate")).selected_text(frame_rate.as_str()).show_ui(ui, |ui| {
+                         for r in soundcraft_time::FrameRate::ALL {
+                             ui.selectable_value(frame_rate, r.label().to_string(), r.label());
+                         }
+                     });
+-                    egui::ComboBox::from_label("Bit Depth").selected_text(bit_depth.as_str()).show_ui(ui, |ui| {
++                    egui::ComboBox::from_label(tr("Bit Depth")).selected_text(bit_depth.as_str()).show_ui(ui, |ui| {
+                         for b in ["16", "24", "32f"] {
+                             ui.selectable_value(bit_depth, b.to_string(), b);
+                         }
+@@ -597,17 +598,17 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+                 Dialog::ScoreSetup { title, composer, bars_per_system, show_track_names } => {
+                     egui::Grid::new("score_setup").num_columns(2).spacing(vec2(10.0, 8.0)).show(ui, |ui| {
+-                        ui.label("Title");
++                        ui.label(tr("Title"));
+                         ui.text_edit_singleline(title);
+                         ui.end_row();
+-                        ui.label("Composer");
++                        ui.label(tr("Composer"));
+                         ui.text_edit_singleline(composer);
+                         ui.end_row();
+-                        ui.label("Bars per system");
++                        ui.label(tr("Bars per system"));
+                         ui.add(egui::DragValue::new(bars_per_system).range(1..=16));
+                         ui.end_row();
+                     });
+-                    crate::widgets::checkbox(ui, show_track_names, "Show track names");
++                    crate::widgets::checkbox(ui, show_track_names, tr("Show track names"));
+                     if buttons(ui, "OK", enter) {
+                         action = Some((
+                             "file.score_setup".into(),
+@@ -620,19 +621,19 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                     let revert = then.0 == "session.revert";
+                     if revert || cfg!(target_arch = "wasm32") {
+                         let (question, ok) = if revert {
+-                            (format!("Revert “{name}” to its last saved version?"), "Revert")
++                            (format!("将“{name}”还原到上次保存的版本？"), "Revert")
+                         } else {
+-                            (format!("Close “{name}” without saving?"), "Don't Save")
++                            (format!("不保存并关闭“{name}”？"), "Don't Save")
+                         };
+-                        ui.label(format!("{question} Your changes will be lost."));
++                        ui.label(format!("{question}所做更改将丢失。"));
+                         if buttons(ui, ok, false) {
+                             action = Some(then.clone());
+                         }
+                     } else {
+-                        ui.label(format!("Save changes to “{name}” before closing?"));
++                        ui.label(format!("关闭前是否保存对“{name}”所做的更改？"));
+                         ui.separator();
+                         ui.horizontal(|ui| {
+-                            if ui.button("Don't Save").clicked() {
++                            if ui.button(tr("Don't Save")).clicked() {
+                                 action = Some(then.clone());
+                             }
+                             if buttons(ui, "Save", enter) {
+@@ -705,10 +706,10 @@ fn buttons_enabled(ui: &mut egui::Ui, ok: &str, enter: bool, ready: bool) -> boo
+     let mut pressed = enter && ready;
+     ui.separator();
+     ui.horizontal(|ui| {
+-        if ui.button("Cancel").clicked() {
++        if ui.button(tr("Cancel")).clicked() {
+             ui.ctx().memory_mut(|m| m.data.insert_temp(egui::Id::new("dlg_cancel"), true));
+         }
+-        let b = egui::Button::new(egui::RichText::new(ok).strong()).fill(Tokens::current().accent);
++        let b = egui::Button::new(egui::RichText::new(tr(ok)).strong()).fill(Tokens::current().accent);
+         if ui.add_enabled(ready, b).clicked() {
+             pressed = true;
+         }
+@@ -736,7 +737,7 @@ fn audiosuite_window(app: &mut SoundApp, ctx: &egui::Context) {
+     let Some(process) = app.ui.audiosuite.clone() else { return };
+     let mut open = true;
+     let title = soundcraft_dsp::plugin_info(&process).map_or_else(|| process.replace('_', " "), |p| p.name.to_string());
+-    egui::Window::new(format!("AudioSuite · {title}")).open(&mut open).default_width(360.0).show(ctx, |ui| {
++    egui::Window::new(format!("{} · {title}", tr("AudioSuite"))).open(&mut open).default_width(360.0).show(ctx, |ui| {
+         let key = egui::Id::new(("as_params", process.clone()));
+         let mut params: std::collections::BTreeMap<String, f32> = ui.ctx().memory(|m| m.data.get_temp(key)).unwrap_or_default();
+         if let Some(info) = soundcraft_dsp::plugin_info(&process) {
+@@ -763,7 +764,7 @@ fn audiosuite_window(app: &mut SoundApp, ctx: &egui::Context) {
+                     ui.add(egui::Slider::new(v, 0.25..=4.0).text("Speed"));
+                 }
+                 _ => {
+-                    ui.label("No parameters.");
++                    ui.label(tr("No parameters."));
+                 }
+             }
+         }
+@@ -774,7 +775,7 @@ fn audiosuite_window(app: &mut SoundApp, ctx: &egui::Context) {
+             "Processes the selected clips and replaces them with rendered audio."
+         };
+         ui.label(egui::RichText::new(hint).small());
+-        if ui.button(egui::RichText::new("Render").strong()).clicked() {
++        if ui.button(egui::RichText::new(tr("Render")).strong()).clicked() {
+             let p: serde_json::Map<String, Value> = params.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
+             let _ = app.run("audiosuite.process", json!({"process": process, "params": p}));
+         }
+diff --git a/crates/ui-egui/src/docking.rs b/crates/ui-egui/src/docking.rs
+index f2668fa..d3d5633 100644
+--- a/crates/ui-egui/src/docking.rs
++++ b/crates/ui-egui/src/docking.rs
+@@ -1,6 +1,7 @@
+ //! Application panel identities and persistence around the shared docking renderer.
+ //! Document contents remain owned by their existing view implementations.
+
++use crate::i18n::tr;
+ use craft_ui::docking::{Action, DockArea, DockStyle, Layout, Location, Node, PanelLimits, Permissions, Placement, Zone};
+ use craft_ui::layout::{SplitAxis, SplitSize};
+ use serde::{Deserialize, Serialize};
+@@ -411,7 +412,7 @@ pub fn show(app: &mut crate::SoundApp, ui: &mut egui::Ui, window: crate::MainWin
+         ui,
+         &workspace.layout,
+         &style,
+-        |panel| panel.label().into(),
++        |panel| tr(panel.label()).into(),
+         permissions,
+         panel_limits,
+         |ui, panel| match panel {
+diff --git a/crates/ui-egui/src/edit_window.rs b/crates/ui-egui/src/edit_window.rs
+index 7e24a4c..d3f8552 100644
+--- a/crates/ui-egui/src/edit_window.rs
++++ b/crates/ui-egui/src/edit_window.rs
+@@ -1,6 +1,7 @@
+ //! The Edit window: toolbar, rulers, track headers and playlists.
+
+ use crate::dialogs::Dialog;
++use crate::i18n::tr;
+ use crate::spot::Spot;
+ use crate::theme::{Tokens, bold, clip_colors, regular, rgb};
+ use crate::widgets::{groove, level_pos, meter_pos, raised_key, shade};
+@@ -163,7 +164,7 @@ fn dock_tabs(app: &mut SoundApp, ui: &mut Ui) {
+         ("MEMORY LOCATIONS", app.ui.show_memory_locations, "window.memory_locations"),
+         ("UNDO HISTORY", app.ui.show_undo_history, "window.undo_history"),
+     ] {
+-        let g = ui.painter().layout_no_wrap(label.to_string(), bold(10.5), if on { Color32::WHITE } else { t.text_dim });
++        let g = ui.painter().layout_no_wrap(tr(label).to_string(), bold(10.5), if on { Color32::WHITE } else { t.text_dim });
+         let tr = Rect::from_min_size(pos2(x, r.min.y + 2.0), vec2(g.size().x + 16.0, r.height() - 4.0));
+         if on {
+             ui.painter().rect_filled(tr, 3.0, t.accent_dark);
+@@ -181,7 +182,7 @@ fn status_bar(app: &mut SoundApp, ui: &mut Ui) {
+     let r = ui.max_rect();
+     let s = app.engine.session();
+     let mut left = format!(
+-        "{} · {} Hz · {} · {} tracks · {}",
++        "{} · {} Hz · {} · {} {} · {}",
+         s.name,
+         s.sample_rate.hz(),
+         match s.bit_depth {
+@@ -190,15 +191,16 @@ fn status_bar(app: &mut SoundApp, ui: &mut Ui) {
+             soundcraft_model::BitDepthSetting::Float32 => "32-bit float",
+         },
+         s.tracks.len(),
++        tr("tracks"),
+         app.ui.status
+     );
+     soundcraft_model::truncate_chars(&mut left, 4 * soundcraft_model::MAX_NAME_CHARS);
+     ui.painter().text(pos2(r.min.x + 10.0, r.center().y), Align2::LEFT_CENTER, left, regular(11.0), t.text_dim);
+-    let undo = app.engine.undo_label().map_or(String::new(), |l| format!("Undo {l}"));
++    let undo = app.engine.undo_label().map_or(String::new(), |l| format!("{} {l}", tr("Undo")));
+     ui.painter().text(
+         pos2(r.max.x - 10.0, r.center().y),
+         Align2::RIGHT_CENTER,
+-        if app.frame_ms < 50.0 { format!("{undo}   {:.1} ms/frame", app.frame_ms) } else { undo },
++        if app.frame_ms < 50.0 { format!("{undo}   {:.1} {}", app.frame_ms, tr("ms/frame")) } else { undo },
+         regular(11.0),
+         t.text_dim,
+     );
+@@ -503,7 +505,7 @@ fn draw_rulers(app: &mut SoundApp, ui: &mut Ui, area: Rect, tl: Rect, rulers: &[
+         let lab = Rect::from_min_max(pos2(area.min.x, y0), pos2(area.min.x + HEADER_W, y0 + h));
+         y0 += h;
+         let painter = ui.painter().with_clip_rect(row);
+-        ui.painter().text(pos2(lab.max.x - 12.0, lab.center().y), Align2::RIGHT_CENTER, ruler_label(id), bold(11.0), t.ruler_text);
++        ui.painter().text(pos2(lab.max.x - 12.0, lab.center().y), Align2::RIGHT_CENTER, tr(ruler_label(id)), bold(11.0), t.ruler_text);
+         let fmt = TimeFormat::from_id(id);
+         match id.as_str() {
+             "tempo" => {
+@@ -777,7 +779,7 @@ fn column_titles(ui: &Ui, rulers: Rect, cols: &[Column]) {
+     ui.painter().vline(end - 0.5, row.y_range(), line);
+     for &(_, _, title, w) in cols {
+         ui.painter().vline(x + 0.5, row.y_range(), line);
+-        ui.painter().text(pos2(x + w / 2.0, row.center().y), Align2::CENTER_CENTER, title, bold(10.0), t.section_label);
++        ui.painter().text(pos2(x + w / 2.0, row.center().y), Align2::CENTER_CENTER, tr(title), bold(10.0), t.section_label);
+         x += w;
+     }
+ }
+@@ -786,21 +788,21 @@ fn column_titles(ui: &Ui, rulers: Rect, cols: &[Column]) {
+ fn views_button(app: &mut SoundApp, ui: &mut Ui, rulers: Rect) {
+     let r = Rect::from_min_size(rulers.min + vec2(6.0, 5.0), vec2(50.0, 18.0));
+     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
+-    let resp = crate::widgets::selector_box(&mut child, r.width(), r.height(), "Views", Tokens::current().text);
++    let resp = crate::widgets::selector_box(&mut child, r.width(), r.height(), tr("Views"), Tokens::current().text);
+     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, child.is_enabled(), "Views"));
+     let resp = resp.on_hover_text("Columns beside the track headers: inserts, sends, I/O…");
+     egui::Popup::menu(&resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+         let shown = edit_columns(app.engine.session());
+         for (id, label, _, _) in COLUMNS {
+-            if ui.add(egui::Button::new(label).selected(shown.iter().any(|c| c.0 == id))).clicked() {
++            if ui.add(egui::Button::new(tr(label)).selected(shown.iter().any(|c| c.0 == id))).clicked() {
+                 let _ = app.run(&format!("view.edit_{id}"), json!({}));
+             }
+         }
+         ui.separator();
+-        if ui.button("All").clicked() {
++        if ui.button(tr("All")).clicked() {
+             let _ = app.run("view.edit_all", json!({}));
+         }
+-        if ui.button("Minimal").clicked() {
++        if ui.button(tr("Minimal")).clicked() {
+             let _ = app.run("view.edit_minimal", json!({}));
+         }
+     });
+@@ -1089,10 +1091,10 @@ fn track_header(app: &mut SoundApp, ui: &mut Ui, track: &Track, head: Rect, sele
+         }
+         if !matches!(track.kind, TrackKind::Master | TrackKind::Vca | TrackKind::Folder) {
+             let (voice, color) = if track.inactive { ("off", t.text_dim) } else { ("dyn", t.text) };
+-            let resp = header_selector(ui, at(31.0, 57.0, 31.0, 17.0), ui.id().with(("voice", id.0)), voice, color, false);
++            let resp = header_selector(ui, at(31.0, 57.0, 31.0, 17.0), ui.id().with(("voice", id.0)), tr(voice), color, false);
+             egui::Popup::menu(&resp.on_hover_text("Voice: dyn plays the track, off makes it inactive")).show(|ui| {
+                 for (label, inactive) in [("dyn", false), ("off", true)] {
+-                    if ui.selectable_label(track.inactive == inactive, label).clicked() {
++                    if ui.selectable_label(track.inactive == inactive, tr(label)).clicked() {
+                         let _ = app.run("track.make_inactive", json!({"tracks": [id.0], "inactive": inactive}));
+                     }
+                 }
+@@ -1106,10 +1108,10 @@ fn track_header(app: &mut SoundApp, ui: &mut Ui, track: &Track, head: Rect, sele
+             soundcraft_model::AutomationMode::Latch => t.auto_latch,
+             _ => t.text_dim,
+         };
+-        let aresp = header_selector(ui, at(63.0, 57.0, 59.0, 17.0), ui.id().with(("auto_mode", id.0)), mode.label(), col, true);
++        let aresp = header_selector(ui, at(63.0, 57.0, 59.0, 17.0), ui.id().with(("auto_mode", id.0)), tr(mode.label()), col, true);
+         egui::Popup::menu(&aresp).show(|ui| {
+             for m in soundcraft_model::AutomationMode::ALL {
+-                if ui.selectable_label(m == mode, m.label()).clicked() {
++                if ui.selectable_label(m == mode, tr(m.label())).clicked() {
+                     let _ = app.run("mix.automation_mode", json!({"track": id.0, "mode": m.label()}));
+                 }
+             }
+@@ -1334,7 +1336,7 @@ fn io_column(app: &mut SoundApp, ui: &mut Ui, track: &Track, r: Rect) {
+         // The readout is black in both themes, so it takes the dark palette's green.
+         let ink = Tokens::DARK.counter_text;
+         for (y, label, value) in [(7.5, "vol", crate::widgets::db_text(m.volume_db)), (22.0, "pan", pan)] {
+-            ui.painter().text(pos2(vr.min.x + 7.0, vr.min.y + y), Align2::LEFT_CENTER, label, bold(10.0), ink);
++            ui.painter().text(pos2(vr.min.x + 7.0, vr.min.y + y), Align2::LEFT_CENTER, tr(label), bold(10.0), ink);
+             ui.painter().text(pos2(vr.max.x - 6.5, vr.min.y + y), Align2::RIGHT_CENTER, value, bold(10.0), ink);
+         }
+         ui.painter().hline(vr.min.x + 7.0..=vr.max.x - 6.0, vr.min.y + 14.5, Stroke::new(1.0, Color32::from_gray(35)));
+@@ -1375,8 +1377,8 @@ fn plugin_column(app: &mut SoundApp, ui: &mut Ui, track: &Track, col: &str, r: R
+
+ fn view_label(v: &str) -> String {
+     match AutoParam::parse(v) {
+-        Some(p) => p.label(),
+-        None => v.to_string(),
++        Some(p) => tr(&p.label()).to_string(),
++        None => tr(v).to_string(),
+     }
+ }
+
+@@ -1427,7 +1429,7 @@ pub(crate) fn track_context_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId) {
+         if selected.contains(&id) { selected.iter().map(|track| track.0).collect() } else { vec![tid] }
+     };
+     for (label, cmd) in items {
+-        if ui.button(label).clicked() {
++        if ui.button(tr(label)).clicked() {
+             if cmd == "ui.rename_track" {
+                 let name = app.engine.session().track(id).map(|t| t.name.clone()).unwrap_or_default();
+                 app.dialogs.open_rename_track(id, &name);
+@@ -1831,7 +1833,7 @@ fn draw_automation(painter: &egui::Painter, s: &Session, track: &Track, p: &Auto
+             }
+         }
+     }
+-    painter.text(pos2(lane.min.x + 6.0, lane.min.y + 9.0), Align2::LEFT_CENTER, p.label(), regular(10.0), t.text_dim);
++    painter.text(pos2(lane.min.x + 6.0, lane.min.y + 9.0), Align2::LEFT_CENTER, tr(&p.label()), regular(10.0), t.text_dim);
+ }
+
+ /// The values an automation lane spans, bottom to top.
+diff --git a/crates/ui-egui/src/extra_windows.rs b/crates/ui-egui/src/extra_windows.rs
+index df43024..ff985ab 100644
+--- a/crates/ui-egui/src/extra_windows.rs
++++ b/crates/ui-egui/src/extra_windows.rs
+@@ -2,6 +2,7 @@
+ //! object tracks' positions), UI Customization, and auto-updating the active window configuration.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold, regular};
+ use egui::{Align2, Color32, Sense, Stroke, pos2, vec2};
+ use serde_json::{Value, json};
+@@ -102,10 +103,10 @@ fn renderer(app: &mut SoundApp, ctx: &egui::Context) {
+             (tr.name.clone(), sp.x, sp.y, sp.z)
+         })
+         .collect();
+-    egui::Window::new(egui::RichText::new("Renderer").font(bold(13.0))).open(&mut open).default_size(vec2(380.0, 440.0)).resizable(true).show(
++    egui::Window::new(egui::RichText::new(tr("Renderer")).font(bold(13.0))).open(&mut open).default_size(vec2(380.0, 440.0)).resizable(true).show(
+         ctx,
+         |ui| {
+-            ui.label(egui::RichText::new(format!("Main output: {}", fmt.label())).font(regular(11.0)).color(t.text));
++            ui.label(egui::RichText::new(format!("{}：{}", tr("Main output"), fmt.label())).font(regular(11.0)).color(t.text));
+             let side = ui.available_width().min(360.0);
+             let (r, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+             let p = ui.painter_at(r);
+@@ -114,7 +115,7 @@ fn renderer(app: &mut SoundApp, ctx: &egui::Context) {
+             let rad = side * 0.40;
+             p.circle_stroke(c, rad, Stroke::new(1.0, Color32::from_rgb(60, 68, 78)));
+             p.circle_stroke(c, rad * 0.55, Stroke::new(1.0, Color32::from_rgb(44, 50, 58)));
+-            p.text(pos2(c.x, r.min.y + 8.0), Align2::CENTER_TOP, "front", regular(9.0), t.text_dim);
++            p.text(pos2(c.x, r.min.y + 8.0), Align2::CENTER_TOP, tr("front"), regular(9.0), t.text_dim);
+             for (i, sp) in fmt.speakers().iter().enumerate() {
+                 let level = peaks.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+                 let ring = if sp.is_height() { rad * 0.55 } else { rad };
+@@ -133,12 +134,12 @@ fn renderer(app: &mut SoundApp, ctx: &egui::Context) {
+             ui.add_space(4.0);
+             if objects.is_empty() {
+                 ui.label(
+-                    egui::RichText::new("No object tracks. Use the Object view in the Mix window to route tracks as objects.")
++                    egui::RichText::new(tr("No object tracks. Use the Object view in the Mix window to route tracks as objects."))
+                         .small()
+                         .color(t.text_dim),
+                 );
+             } else {
+-                ui.label(egui::RichText::new(format!("{} object track(s)", objects.len())).small().color(t.text_dim));
++                ui.label(egui::RichText::new(format!("{} {}", objects.len(), tr("object track(s)"))).small().color(t.text_dim));
+             }
+         },
+     );
+@@ -150,21 +151,21 @@ fn ui_customization(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new(egui::RichText::new("Appearance").font(bold(13.0))).open(&mut open).default_size(vec2(320.0, 180.0)).resizable(false).show(
++    egui::Window::new(egui::RichText::new(tr("Appearance")).font(bold(13.0))).open(&mut open).default_size(vec2(320.0, 180.0)).resizable(false).show(
+         ctx,
+         |ui| {
+             egui::Grid::new("ui_custom").num_columns(2).spacing(vec2(12.0, 8.0)).show(ui, |ui| {
+-                ui.label("Interface scale");
++                ui.label(tr("Interface scale"));
+                 ui.add(egui::Slider::new(&mut app.extra.ui_scale, 0.75..=1.5).step_by(0.05).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)));
+                 ui.end_row();
+-                ui.label("Reduce motion");
++                ui.label(tr("Reduce motion"));
+                 crate::widgets::checkbox(ui, &mut app.extra.reduce_motion, "");
+                 ui.end_row();
+-                ui.label("Theme");
++                ui.label(tr("Theme"));
+                 let mut chosen = None;
+-                egui::ComboBox::from_id_salt("theme_mode").selected_text(app.ui.theme.label()).show_ui(ui, |ui| {
++                egui::ComboBox::from_id_salt("theme_mode").selected_text(tr(app.ui.theme.label())).show_ui(ui, |ui| {
+                     for mode in crate::theme::ThemeMode::ALL {
+-                        if ui.selectable_label(app.ui.theme == mode, mode.label()).clicked() {
++                        if ui.selectable_label(app.ui.theme == mode, tr(mode.label())).clicked() {
+                             chosen = Some(mode);
+                         }
+                     }
+@@ -173,11 +174,11 @@ fn ui_customization(app: &mut SoundApp, ctx: &egui::Context) {
+                     let _ = app.run("ui.theme", json!({"mode": mode.id()}));
+                 }
+                 ui.end_row();
+-                ui.label("Auto-update configuration");
++                ui.label(tr("Auto-update configuration"));
+                 crate::widgets::checkbox(ui, &mut app.extra.auto_update_config, "");
+                 ui.end_row();
+             });
+-            if ui.button("Reset").clicked() {
++            if ui.button(tr("Reset")).clicked() {
+                 app.extra.ui_scale = 1.0;
+                 app.extra.reduce_motion = false;
+                 let _ = app.run("ui.theme", json!({"mode": crate::theme::ThemeMode::default().id()}));
+diff --git a/crates/ui-egui/src/fonts.rs b/crates/ui-egui/src/fonts.rs
+index ae18583..4bd8d4b 100644
+--- a/crates/ui-egui/src/fonts.rs
++++ b/crates/ui-egui/src/fonts.rs
+@@ -4,6 +4,10 @@
+ use egui::{FontData, FontDefinitions, FontFamily};
+ use std::sync::Arc;
+
++/// Public SIL OFL 1.1 font from the craft-fonts checkout used by the reproducible web build.
++#[cfg(target_arch = "wasm32")]
++static LXGW_WENKAI_LITE: &[u8] = include_bytes!(concat!(env!("CRAFT_FONTS_DIR"), "/fonts/lxgw-wenkai-lite/LXGWWenKaiLite-Regular.ttf"));
++
+ /// (path, ttc index) candidates for regular and bold UI text, by platform.
+ const REGULAR: &[(&str, u32)] = &[
+     ("/System/Library/Fonts/HelveticaNeue.ttc", 0),
+@@ -131,6 +135,14 @@ pub fn definitions() -> FontDefinitions {
+             family.push("system-hangul".into());
+         }
+     }
++    #[cfg(target_arch = "wasm32")]
++    {
++        const CJK: &str = "lxgw-wenkai-lite";
++        fonts.font_data.insert(CJK.into(), Arc::new(FontData::from_static(LXGW_WENKAI_LITE)));
++        for family in fonts.families.values_mut() {
++            family.push(CJK.into());
++        }
++    }
+     fonts
+ }
+
+diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
+new file mode 100644
+index 0000000..0f9f9ea
+--- /dev/null
++++ b/crates/ui-egui/src/i18n.rs
+@@ -0,0 +1,580 @@
++//! Simplified Chinese display labels. Command ids, menu paths and document values stay unchanged.
++
++pub(crate) fn tr(text: &str) -> &str {
++    match text {
++        // Menus.
++        "File" => "文件",
++        "Edit" => "编辑",
++        "View" => "视图",
++        "Track" => "音轨",
++        "Clip" => "片段",
++        "Event" => "事件",
++        "AudioSuite" => "音频处理",
++        "Options" => "选项",
++        "Setup" => "设置",
++        "Window" => "窗口",
++        "New..." | "New…" => "新建…",
++        "Open" => "打开",
++        "Open..." | "Open…" => "打开…",
++        "Open Recent" => "最近打开",
++        "No Recent Sessions" => "无最近会话",
++        "Clear Recent" => "清空最近记录",
++        "Session..." => "会话…",
++        "Open Session" => "打开会话",
++        "Close Session" => "关闭会话",
++        "Close Window" => "关闭窗口",
++        "Save Session" => "保存会话",
++        "Save Session As" | "Save Session As..." => "会话另存为",
++        "Save Session Copy In..." => "保存会话副本…",
++        "Save As Template..." => "另存为模板…",
++        "Revert Session to Saved..." => "还原到已存版本…",
++        "Bounce Mix..." => "并轨混音…",
++        "Import" => "导入",
++        "Export" => "导出",
++        "Import Audio" => "导入音频",
++        "Import MIDI" => "导入 MIDI",
++        "Session Data..." => "会话数据…",
++        "Audio..." => "音频…",
++        "MIDI..." => "MIDI…",
++        "Video..." => "视频…",
++        "Clip Groups..." => "片段组…",
++        "MIDI" => "MIDI",
++        "Get Info..." => "显示简介…",
++        "Score Setup..." => "乐谱设置…",
++        "Print Score..." => "打印乐谱…",
++        "Quit" => "退出",
++        "About SoundCraft" => "关于 SoundCraft",
++        "Session Info" => "会话信息",
++        "Session Audio Health" => "会话音频健康",
++        "Undo" => "撤销",
++        "Redo" => "重做",
++        "Can't Undo" => "无法撤销",
++        "Can't Redo" => "无法重做",
++        "Restore Last Selection" => "恢复上次选区",
++        "Cut" => "剪切",
++        "Copy" => "复制",
++        "Paste" => "粘贴",
++        "Clear" => "清除",
++        "Cut Special" => "特殊剪切",
++        "Copy Special" => "特殊复制",
++        "Paste Special" => "特殊粘贴",
++        "Clear Special" => "特殊清除",
++        "Clip Gain" => "片段增益",
++        "Clip Effects" => "片段效果",
++        "All Automation" => "全部自动化",
++        "Pan Automation" => "声像自动化",
++        "Plugin Automation" => "插件自动化",
++        "Select All" => "全选",
++        "Selection" => "选区",
++        "Duplicate" => "复制副本",
++        "Repeat" | "Repeat..." => "重复",
++        "Shift..." => "偏移…",
++        "Insert Silence" => "插入静音",
++        "Snap to" => "对齐到",
++        "Next" => "下一个",
++        "Previous" => "上一个",
++        "Trim" => "修剪",
++        "To Selection" => "到选区",
++        "Start to Insertion" => "起点到插入点",
++        "End to Insertion" => "终点到插入点",
++        "Separate" => "分离",
++        "At Selection" => "在选区",
++        "On Grid" => "在网格",
++        "At Transients" => "在瞬态",
++        "Heal Separation" => "合并未分离片段",
++        "Consolidate" => "合并",
++        "Mute" => "静音",
++        "Strip Silence" => "清除静音",
++        "Automation" => "自动化",
++        "Thin" => "稀疏",
++        "Thin All" => "全部稀疏",
++        "Write to Current" => "写入当前值",
++        "Write to All Enabled" => "写入全部启用项",
++        "Trim to Current" => "修剪到当前值",
++        "Glide to Current" => "滑动到当前值",
++        "Fades" => "淡化",
++        "Create..." => "创建…",
++        "Delete" => "删除",
++        "Mix Window Views" => "混音窗口视图",
++        "Edit Window Views" => "编辑窗口视图",
++        "Mic Preamps" => "话筒前级",
++        "Instruments" => "乐器",
++        "Inserts A-E" => "插入 A-E",
++        "Inserts F-J" => "插入 F-J",
++        "Sends A-E" => "发送 A-E",
++        "Sends F-J" => "发送 F-J",
++        "EQ Curve" => "EQ 曲线",
++        "Meters and Faders" => "电平表与推子",
++        "Track Color" => "音轨颜色",
++        "Comments" => "注释",
++        "All" => "全部",
++        "Minimal" => "精简",
++        "Narrow Mix" => "窄混音视图",
++        "Rulers" => "标尺",
++        "Min:Secs" => "分:秒",
++        "Timecode" => "时间码",
++        "Samples" => "采样",
++        "Tempo" => "速度",
++        "Tempo Editor" => "速度编辑器",
++        "Meter" => "拍号",
++        "Key Signature" => "调号",
++        "Chord Symbols" => "和弦标记",
++        "Markers" => "标记",
++        "Other Displays" => "其他显示",
++        "Universe" => "总览",
++        "Track List" => "音轨列表",
++        "Clip List" => "片段列表",
++        "Lower Dock" => "底部停靠区",
++        "MIDI Editor" => "MIDI 编辑器",
++        "Main Counter" => "主计数器",
++        "Transport" => "走带",
++        "Counters" => "计数器",
++        "MIDI Controls" => "MIDI 控件",
++        "Output Meters" => "输出电平表",
++        "Expanded" => "展开",
++        "Group..." => "编组…",
++        "Duplicate..." => "复制副本…",
++        "Split into Mono" => "拆分为单声道",
++        "Make Inactive" => "设为非活动",
++        "Change Track Width" => "更改音轨宽度",
++        "Mono" => "单声道",
++        "Stereo" => "立体声",
++        "Show / Hide..." => "显示/隐藏…",
++        "Freeze" => "冻结",
++        "Commit..." => "提交…",
++        "Bounce..." => "并轨…",
++        "Save Track Preset..." => "保存音轨预设…",
++        "Bypass Inserts" => "旁通插入",
++        "Mute Sends" => "静音发送",
++        "Dynamics" => "动态",
++        "Reverb" => "混响",
++        "Delay" => "延迟",
++        "Modulation" => "调制",
++        "Scroll to Track..." => "滚动到音轨…",
++        "Create Click Track" => "创建节拍音轨",
++        "Send to Back" => "置于底层",
++        "Bring to Front" => "置于顶层",
++        "Rating" => "评级",
++        "Group" => "编组",
++        "Ungroup" => "取消编组",
++        "Ungroup All" => "全部取消编组",
++        "Regroup" => "重新编组",
++        "Rename..." => "重命名…",
++        "Identify Sync Point" => "识别同步点",
++        "Remove Sync Point" => "移除同步点",
++        "New MIDI Clip" => "新建 MIDI 片段",
++        "Quantize to Grid" => "量化到网格",
++        "Bypass" => "旁通",
++        "Render" => "渲染",
++        "Time Operations" => "时间操作",
++        "Tempo Operations" => "速度操作",
++        "MIDI Operations" => "MIDI 操作",
++        "Time Operations Window" => "时间操作窗口",
++        "Tempo Operations Window" => "速度操作窗口",
++        "MIDI Operations Window" => "MIDI 操作窗口",
++        "Change Meter..." => "更改拍号…",
++        "Constant..." => "恒定…",
++        "Scale..." => "缩放…",
++        "Quantize..." => "量化…",
++        "Transpose..." => "移调…",
++        "MIDI Real-Time Properties" => "MIDI 实时属性",
++        "Beat Detective" => "节拍检测",
++        "EQ" => "均衡",
++        "Pitch Shift" => "变调",
++        "Harmonic" => "谐波",
++        "Other" => "其他",
++        "Gain" => "增益",
++        "Invert" => "反相",
++        "Normalize" => "标准化",
++        "Reverse" => "反转",
++        "Signal Generator" => "信号发生器",
++        "Loop Record" => "循环录音",
++        "Loop Playback" => "循环播放",
++        "Pre/Post-Roll" => "预卷/后卷",
++        "Edit Window Scrolling" => "编辑窗口滚动",
++        "No Scrolling" => "不滚动",
++        "After Playback" => "播放后",
++        "Page" => "翻页",
++        "Continuous" => "连续",
++        "Center Playhead" => "居中播放头",
++        "Link Timeline and Edit Selection" => "链接时间线与编辑选区",
++        "Link Track and Edit Selection" => "链接音轨与编辑选区",
++        "Insertion Follows Playback" => "插入点跟随播放",
++        "Tab to Transient" => "Tab 跳到瞬态",
++        "Automation Follows Edit" => "自动化跟随编辑",
++        "Markers Follow Edit" => "标记跟随编辑",
++        "Click" => "节拍声",
++        "Pre-Fader Metering" => "推子前电平",
++        "Solo Mode" => "独奏模式",
++        "Delay Compensation" => "延迟补偿",
++        "Hardware..." => "硬件…",
++        "Playback Engine..." => "播放引擎…",
++        "Playback Engine" => "播放引擎",
++        "I/O..." => "I/O…",
++        "I/O Setup" => "I/O 设置",
++        "Session" => "会话",
++        "Keyboard Shortcuts..." => "键盘快捷键…",
++        "Preferences..." => "偏好设置…",
++        "Appearance" => "外观",
++        "Configurations" => "配置",
++        "Window Configuration List" => "窗口配置列表",
++        "New Configuration..." | "New Configuration…" => "新建配置…",
++        "Update Active Configuration" => "更新当前配置",
++        "Auto-Update Active Configuration" => "自动更新当前配置",
++        "Arrange" => "排列",
++        "Tile" => "平铺",
++        "Tile Horizontal" => "水平平铺",
++        "Tile Vertical" => "垂直平铺",
++        "Cascade" => "层叠",
++        "Hide All Floating Windows" => "隐藏全部浮动窗口",
++        "Mix" => "混音",
++        "Mix in Separate Window" => "在独立窗口混音",
++        "Score Editor" => "乐谱编辑器",
++        "MIDI Event List" => "MIDI 事件列表",
++        "MIDI Keyboard" => "MIDI 键盘",
++        "Task Manager" => "任务管理器",
++        "New Workspace" => "新建工作区",
++        "Default" => "默认",
++        "Workspace" => "工作区",
++        "Workspaces" => "工作区",
++        "Close All Workspaces" => "关闭全部工作区",
++        "Big Counter" => "大计数器",
++        "Memory Locations" => "记忆位置",
++        "Video Universe" => "视频总览",
++        "Video" => "视频",
++        "Color Palette" => "调色板",
++        "Reset Panel Layout" => "重置面板布局",
++        "Instrument" => "乐器",
++
++        // Panels, tabs and dialogs.
++        "TRACKS" => "音轨",
++        "GROUPS" => "编组",
++        "CLIPS" => "片段",
++        "Tracks and Groups" => "音轨与编组",
++        "Clips" => "片段",
++        "UNDO HISTORY" => "撤销历史",
++        "Undo History" => "撤销历史",
++        "MIDI EDITOR" => "MIDI 编辑器",
++        "MEMORY LOCATIONS" => "记忆位置",
++        "SHUFFLE" => "重组",
++        "SPOT" => "定点",
++        "SLIP" => "滑移",
++        "GRID" => "网格",
++        "REL GRID" => "相对网格",
++        "Views" => "视图",
++        "Bars|Beats" => "小节|拍",
++        "Feet+Frames" => "英尺+帧",
++        "Key" => "调号",
++        "Chords" => "和弦",
++        "Timecode 2" => "时间码 2",
++        "Markers 2" => "标记 2",
++        "Markers 3" => "标记 3",
++        "Markers 4" => "标记 4",
++        "Markers 5" => "标记 5",
++        "Sub" => "副计数器",
++        "saved" => "已保存",
++        "modified" => "已修改",
++        "no audio engine" => "无音频引擎",
++        "silent clock" => "静音时钟",
++        "audio on" => "音频开启",
++        "Grid" => "网格",
++        "Nudge" => "微移",
++        "Count Off" => "预备拍",
++        "bars" => "小节",
++        "waveform" => "波形",
++        "notes" => "音符",
++        "regions" => "区域",
++        "blocks" => "块",
++        "clip_gain" => "片段增益",
++        "playlists" => "播放列表",
++        "volume" => "音量",
++        "vol" => "音量",
++        "pan" => "声像",
++        "mute" => "静音",
++        "dyn" => "动态",
++        "off" => "关闭",
++        "read" => "读取",
++        "write" => "写入",
++        "touch" => "触控",
++        "latch" => "锁存",
++        "INSTRUMENT" => "乐器",
++        "INSERTS A-E" => "插入 A-E",
++        "INSERTS F-J" => "插入 F-J",
++        "SENDS A-E" => "发送 A-E",
++        "SENDS F-J" => "发送 F-J",
++        "COMMENTS" => "注释",
++        "New Group…" => "新建编组…",
++        "Modify Group…" => "修改编组…",
++        "Delete Group" => "删除编组",
++        "Select Tracks in Group" => "选择编组音轨",
++        "Enable" => "启用",
++        "Disable" => "禁用",
++        "Place on New Track" => "放到新音轨",
++        "Place on Selected Track" => "放到所选音轨",
++        "Clear…" => "清除…",
++        "🔍 Find clips" => "🔍 查找片段",
++        "+ Marker" => "+ 标记",
++        "+ Selection" => "+ 选区",
++        "Name" => "名称",
++        "Name:" => "名称：",
++        "Location" => "位置",
++        "Length" => "长度",
++        "Type" => "类型",
++        "Start" => "开始",
++        "End" => "结束",
++        "Pre-roll" => "预卷",
++        "Post-roll" => "后卷",
++        "About" => "关于",
++        "Contributors" => "贡献者",
++        "Models" => "模型",
++        "New Tracks" => "新建音轨",
++        "New Session" => "新建会话",
++        "Bounce Mix" => "并轨混音",
++        "Rename Track" => "重命名音轨",
++        "Rename Clip" => "重命名片段",
++        "Rename Marker" => "重命名标记",
++        "Tempo Change (BPM)" => "速度更改 (BPM)",
++        "Spot" => "定位",
++        "Create Group" => "创建编组",
++        "Modify Group" => "修改编组",
++        "Session Setup" => "会话设置",
++        "Score Setup" => "乐谱设置",
++        "Revert to Saved" => "还原到已存版本",
++        "Unsaved Changes" => "未保存的更改",
++        "Create" => "创建",
++        "new" => "新建",
++        "in" => "采用",
++        "Ticks" => "节拍刻度",
++        "Audio Track" => "音频轨",
++        "Aux Input" => "辅助输入",
++        "Master Fader" => "主推子",
++        "MIDI Track" => "MIDI 轨",
++        "Instrument Track" => "乐器轨",
++        "VCA Master" => "VCA 主控",
++        "Routing Folder Track" => "路由文件夹轨",
++        "Video Track" => "视频轨",
++        "Sample Rate" => "采样率",
++        "Start from the demo session" => "从演示会话开始",
++        "Format" => "格式",
++        "Bit Depth" => "位深",
++        "Normalize to -0.1 dBFS" => "标准化至 -0.1 dBFS",
++        "Bounces the edit selection, or the whole session when nothing is selected." => "并轨选区，无选区时并轨整个会话。",
++        "Browse…" => "浏览…",
++        "OK" => "确定",
++        "Cancel" => "取消",
++        "Save" => "保存",
++        "Don't Save" => "不保存",
++        "Revert" => "还原",
++        "Refresh Report" => "刷新报告",
++        "Refresh devices" => "刷新设备",
++        "Apply" => "应用",
++        "Reconnect audio device" => "重连音频设备",
++        "New Bus" => "新建总线",
++        "No parameters." => "无参数",
++        "Remove" => "移除",
++        "Replace" => "替换",
++        "Bounce" => "并轨",
++        "Strip" => "清除",
++        "Threshold dB" => "阈值 dB",
++        "Min strip duration ms" => "最短清除时长 ms",
++        "Clip start pad ms" => "片段开头余量 ms",
++        "Clip end pad ms" => "片段结尾余量 ms",
++        "Edit group" => "编辑组",
++        "Mix group" => "混音组",
++        "Tracks" => "音轨",
++        "Timecode Rate" => "时间码帧率",
++        "Title" => "标题",
++        "Composer" => "作曲",
++        "Bars per system" => "每行小节数",
++        "Show track names" => "显示音轨名",
++        "Analyses the edit selection on the selected tracks." => "分析所选音轨的选区",
++        "Sensitivity" => "灵敏度",
++        "Separate clips at detected beats" => "按检测节拍分离片段",
++        "Set the session tempo from the beats" => "按节拍设置会话速度",
++        "Analyze" => "分析",
++        "Identify Beat: selection is" => "选区长度",
++        "bar(s)" => "小节",
++        "Set Tempo" => "设置速度",
++        "Curve" => "曲线",
++        "constant" => "恒定",
++        "linear" => "线性",
++        "parabolic" => "抛物线",
++        "s-curve" => "S 曲线",
++        "scale" => "缩放",
++        "stretch" => "伸缩",
++        "start bpm " => "起始 BPM ",
++        "end bpm " => "结束 BPM ",
++        "Applies across the edit selection (constant: at the insertion point; scale: factor = end / start; stretch: factor = start / end)." => "应用于选区；缩放=结束/起始；伸缩=起始/结束",
++        "Operation" => "操作",
++        "insert" => "插入",
++        "cut" => "剪切",
++        "change meter" => "更改拍号",
++        "move song start" => "移动歌曲起点",
++        "Uses the edit selection." => "应用于选区",
++        "quantize" => "量化",
++        "transpose" => "移调",
++        "change velocity" => "更改力度",
++        "flatten performance" => "扁平化演奏",
++        "restore performance" => "恢复演奏",
++        "Strength %" => "强度 %",
++        "Swing %" => "摇摆 %",
++        "Semitones" => "半音",
++        "Add" => "增加",
++        "Applies to the selected MIDI clips (or those under the selection)." => "应用于所选 MIDI 片段",
++        "Non-destructive, applied at playback to the selected MIDI tracks." => "非破坏性应用于所选 MIDI 音轨的播放",
++        "Velocity +" => "力度 +",
++        "Duration %" => "时长 %",
++        "Delay (ticks)" => "延迟（刻度）",
++        "Write to Notes" => "写入音符",
++        "Time Scale" => "时间格式",
++        "Sync Point" => "同步点",
++        "Duration" => "时长",
++        "Original Time Stamp" => "原始时间戳",
++        "Use" => "使用",
++        "Spot to where it was recorded" => "定位到录制位置",
++        "Search" => "搜索",
++        "Search commands…" => "搜索命令…",
++        "Recover Unsaved Work" => "恢复未保存的工作",
++        "Discard" => "放弃",
++        "Recover" => "恢复",
++        "Stop recording first" => "先停止录音",
++        "recently" => "最近",
++        "unsaved changes and an unfinished recording" => "未保存更改和未完成录音",
++        "unsaved changes" => "未保存更改",
++        "Renderer" => "渲染器",
++        "Main output" => "主输出",
++        "front" => "前",
++        "No object tracks. Use the Object view in the Mix window to route tracks as objects." => "无对象音轨",
++        "object track(s)" => "条对象音轨",
++        "Interface scale" => "界面缩放",
++        "Reduce motion" => "减少动态效果",
++        "Theme" => "主题",
++        "System" => "系统",
++        "Dark" => "深色",
++        "Light" => "浅色",
++        "Auto-update configuration" => "自动更新配置",
++        "Reset" => "重置",
++        "Select a MIDI clip or MIDI track." => "选择 MIDI 片段或音轨",
++        "Notation view of the MIDI clip; edit notes in the MIDI Editor or Event List." => "在 MIDI 编辑器或事件列表中编辑音符",
++        "Load Sample…" => "加载采样…",
++        "Drop an audio file on this window" => "将音频文件拖到此窗口",
++        "mono" => "单声道",
++        "stereo" => "立体声",
++        "missing" => "缺失",
++        "No sample" => "无采样",
++        "Drop an audio file here" => "将音频文件拖到此处",
++        "Show" => "显示",
++        "Sort" => "排序",
++        "Username" => "用户名",
++        "Display name" => "显示名",
++        "Real name" => "真实姓名",
++        "Name (A–Z)" => "名称（A–Z）",
++        "Merged PRs" => "合并的 PR",
++        "Commits" => "提交数",
++        "Lines added" => "新增行数",
++        "Lines deleted" => "删除行数",
++        "Line delta" => "行数变化",
++        "Binary assets added" => "新增二进制资产",
++        "Binary assets removed" => "删除二进制资产",
++        "First commit" => "首次提交",
++        "Last commit" => "最近提交",
++        "First" => "首次",
++        "Last" => "最近",
++        "Reverse the order" => "反转顺序",
++        "Grab bag" => "列表",
++        "Table" => "表格",
++        "Company" => "公司",
++        "Model" => "模型",
++        "Version" => "版本",
++        "% of all commits" => "提交占比",
++        "Lines +/−" => "行数 +/−",
++        "audio clips checked" => "个音频片段已检查",
++        "issues" => "个问题",
++        "Active audio ends at" => "活跃音频结束于",
++        "seconds" => "秒",
++        "Active audio end time is unknown (invalid session sample rate)" => "活跃音频结束时间未知",
++        "Includes alternate takes and muted clips. Refresh after editing." => "包含备用与静音片段",
++        "All audio clips have loaded media within source bounds." => "音频片段媒体均在源边界内",
++        "Checks loaded media only, not files on disk, signal levels, plugins or routing." => "仅检查已加载媒体",
++        "Write automation for the selected tracks:" => "为所选音轨写入自动化：",
++        "Enabled parameters" => "已启用参数",
++        "send level" => "发送电平",
++        "send pan" => "发送声像",
++        "send mute" => "发送静音",
++        "plugin" => "插件",
++        "Apply to selected tracks (Shift: selected clips)" => "应用到所选音轨（Shift：所选片段）",
++        "Track tint in the Edit window" => "编辑窗口轨道着色",
++        "Bouncing" => "正在并轨",
++        "No background tasks are running." => "无后台任务",
++        "Renders and AudioSuite processes run to completion before returning." => "渲染与音频处理将在完成后返回",
++        "Sample rate" => "采样率",
++        "Bit depth" => "位深",
++        "Timecode rate" => "时间码帧率",
++        "Audio files" => "音频文件",
++        "Session comments" => "会话注释",
++        "Select a MIDI clip." => "选择 MIDI 片段",
++        "Start (ticks)" => "开始（刻度）",
++        "Note" => "音符",
++        "Vel" => "力度",
++        "Click keys to step-enter notes into the selected MIDI clip at the insertion point." => "点击琴键以步进输入音符",
++        "Parent folder" => "上级目录",
++        "Double-click to import audio/MIDI at the insertion point or open a session." => "双击导入音频/MIDI 或打开会话",
++        "Audio system" => "音频系统",
++        "Output device" => "输出设备",
++        "Input device" => "输入设备",
++        "Buffer size" => "缓冲区大小",
++        "Output" => "输出",
++        "Input" => "输入",
++        "Session rate" => "会话采样率",
++        "The mix runs in 512-sample blocks; the buffer size sets the device's own latency." => "混音按 512 采样块运行",
++        "Delay compensation" => "延迟补偿",
++        "Busses" => "总线",
++        "Outputs" => "输出",
++        "Select an audio clip." => "选择音频片段",
++        "Clip effects gain (dB)" => "片段效果增益（dB）",
++        "Search plugins…" => "搜索插件…",
++        "no insert" => "无插入",
++        "Edit Parameters…" => "编辑参数…",
++        "Close Plugin Editor" => "关闭插件编辑器",
++        "Open Plugin Editor" => "打开插件编辑器",
++        "Built-in" => "内置",
++        "No matches" => "无匹配项",
++        "Scan CLAP" => "扫描 CLAP",
++        "Scan VST3" => "扫描 VST3",
++        "DESTINATION" => "目的地",
++        "Remove send" => "移除发送",
++        "Send" => "发送",
++        "Choose destination" => "选择目的地",
++        "Mute send" => "静音发送",
++        "Send pan (drag; double-click centres)" => "发送声像",
++        "Level" => "电平",
++        "Pan" => "声像",
++        "Pre-fader" => "推子前",
++        "Rename bus…" => "重命名总线…",
++        "Search buses…" => "搜索总线…",
++        "new bus..." => "新建总线…",
++        "no input" => "无输入",
++        "no output" => "无输出",
++        "Bus" => "总线",
++        "Presets ▾" => "预设 ▾",
++        "BYPASSED" => "已旁通",
++        "This plugin has no editor of its own, or it is not loaded" => "插件编辑器不可用",
++        "Load and edit sounds in the plugin's own editor." => "在插件编辑器中加载并编辑声音",
++        "An open-source digital audio workstation from the ArtCraft team." => "ArtCraft 团队的开源数字音频工作站",
++        "Dual-licensed MIT OR Apache-2.0. Made with Rust and egui." => "MIT 或 Apache-2.0 双重许可",
++        "Join us on Discord" => "加入 Discord 社区",
++        "User presets need the desktop app." => "用户预设需使用桌面应用",
++        "Click to add a MIDI clip to" => "点击以添加 MIDI 片段到",
++        "at the insertion point" => "的插入点",
++        "Select a MIDI clip (or a MIDI track) to edit its notes." => "选择 MIDI 片段或音轨以编辑音符",
++        "1/16 note" => "1/16 音符",
++        "tracks" => "条音轨",
++        "marker" => "标记",
++        "selection" => "选区",
++        "none" => "无",
++        "ms/frame" => "毫秒/帧",
++        "times" => "次",
++        "semitones" => "半音",
++        _ => text,
++    }
++}
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index 3fdd989..fcb4009 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -12,6 +12,7 @@ pub mod docking;
+ pub mod edit_window;
+ pub mod extra_windows;
+ pub mod fonts;
++pub mod i18n;
+ pub mod icons;
+ pub mod menus;
+ pub mod midi_editor;
+diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
+index 99e4b50..65ec266 100644
+--- a/crates/ui-egui/src/menus.rs
++++ b/crates/ui-egui/src/menus.rs
+@@ -1,6 +1,7 @@
+ //! The menu bar, built from the incumbent's menu catalog so every item has its place. Items
+ //! that map to a command are live; the rest are shown disabled (and listed in the parity report).
+
++use crate::i18n::tr;
+ use crate::{MainWindow, SoundApp};
+ use serde_json::{Value, json};
+ use soundcraft_engine::catalog;
+@@ -226,23 +227,23 @@ pub fn menu_bar(app: &mut SoundApp, ui: &mut egui::Ui) {
+         |ui| {
+             egui::MenuBar::new().ui(ui, |ui| {
+                 ui.menu_button("SoundCraft", |ui| {
+-                    if ui.button("About SoundCraft").clicked() {
++                    if ui.button(tr("About SoundCraft")).clicked() {
+                         app.ui.show_about = true;
+                     }
+-                    if ui.button("Session Info").clicked() {
++                    if ui.button(tr("Session Info")).clicked() {
+                         app.ui.show_session_info = true;
+                     }
+-                    if ui.button("Session Audio Health").clicked() {
++                    if ui.button(tr("Session Audio Health")).clicked() {
+                         let _ = app.run("window.audio_health", json!({"value": true}));
+                     }
+                     ui.separator();
+-                    if ui.button("Quit").clicked() {
++                    if ui.button(tr("Quit")).clicked() {
+                         let _ = crate::dialogs::run_or_ask(app, "app.quit", json!({}));
+                     }
+                 });
+                 let extra = ui_aliases();
+                 for root in tree() {
+-                    ui.menu_button(&root.label, |ui| {
++                    ui.menu_button(tr(&root.label), |ui| {
+                         for c in &root.children {
+                             menu_node(app, ui, c, &extra);
+                             if c.path == "File > Open" {
+@@ -260,7 +261,7 @@ pub fn menu_bar(app: &mut SoundApp, ui: &mut egui::Ui) {
+                             ui.separator();
+                             let mut separate = app.ui.mix_separate;
+                             if ui
+-                                .checkbox(&mut separate, "Mix in Separate Window")
++                                .checkbox(&mut separate, tr("Mix in Separate Window"))
+                                 .on_hover_text("Show Edit and Mix at once, e.g. one per monitor")
+                                 .changed()
+                             {
+@@ -274,7 +275,7 @@ pub fn menu_bar(app: &mut SoundApp, ui: &mut egui::Ui) {
+                     "{}{}  —  {}",
+                     app.engine.session().name,
+                     if app.engine.is_dirty() { " *" } else { "" },
+-                    if app.ui.window == MainWindow::Edit || app.ui.mix_separate { "Edit" } else { "Mix" }
++                    if app.ui.window == MainWindow::Edit || app.ui.mix_separate { tr("Edit") } else { tr("Mix") }
+                 );
+                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                     ui.label(egui::RichText::new(title).color(t.text_dim));
+@@ -288,10 +289,10 @@ pub fn menu_bar(app: &mut SoundApp, ui: &mut egui::Ui) {
+ fn instrument_menu(app: &mut SoundApp, ui: &mut egui::Ui) {
+     match instrument_track(app.engine.session()) {
+         Some(id) => {
+-            ui.menu_button("Instrument", |ui| crate::mix_window::instrument_menu(app, ui, id));
++            ui.menu_button(tr("Instrument"), |ui| crate::mix_window::instrument_menu(app, ui, id));
+         }
+         None => {
+-            ui.add_enabled(false, egui::Button::new("Instrument")).on_disabled_hover_text("Select an instrument track");
++            ui.add_enabled(false, egui::Button::new(tr("Instrument"))).on_disabled_hover_text("Select an instrument track");
+         }
+     }
+ }
+@@ -303,7 +304,7 @@ fn instrument_track(s: &soundcraft_model::Session) -> Option<soundcraft_model::T
+
+ fn menu_node(app: &mut SoundApp, ui: &mut egui::Ui, n: &MenuNode, extra: &[(&str, &str)]) {
+     if !n.children.is_empty() {
+-        ui.menu_button(&n.label, |ui| {
++        ui.menu_button(tr(&n.label), |ui| {
+             for c in &n.children {
+                 menu_node(app, ui, c, extra);
+             }
+@@ -313,7 +314,7 @@ fn menu_node(app: &mut SoundApp, ui: &mut egui::Ui, n: &MenuNode, extra: &[(&str
+     let id = command_for_path(&n.path, extra);
+     let (enabled, checked) = item_state(app, &n.path, id.as_deref());
+     let label = live_label(app, id.as_deref()).unwrap_or_else(|| n.label.clone());
+-    let label = if checked { format!("✔ {label}") } else { label };
++    let label = if checked { format!("✔ {}", tr(&label)) } else { tr(&label).to_string() };
+     let shortcut = id.as_deref().and_then(shortcut_for).unwrap_or("");
+     let btn = egui::Button::new(label).shortcut_text(crate::shortcuts::shortcut_label(shortcut, ui.ctx().os().is_mac()));
+     if ui.add_enabled(enabled, btn).clicked()
+@@ -454,8 +455,8 @@ pub fn shortcut_for(id: &str) -> Option<&'static str> {
+ pub fn live_label(app: &SoundApp, id: Option<&str>) -> Option<String> {
+     let e = &app.engine;
+     match id? {
+-        "edit.undo" => Some(e.undo_label().map_or_else(|| "Can't Undo".into(), |l| format!("Undo {l}"))),
+-        "edit.redo" => Some(e.redo_label().map_or_else(|| "Can't Redo".into(), |l| format!("Redo {l}"))),
++        "edit.undo" => Some(e.undo_label().map_or_else(|| tr("Can't Undo").into(), |l| format!("{} {l}", tr("Undo")))),
++        "edit.redo" => Some(e.redo_label().map_or_else(|| tr("Can't Redo").into(), |l| format!("{} {l}", tr("Redo")))),
+         _ => None,
+     }
+ }
+diff --git a/crates/ui-egui/src/midi_editor.rs b/crates/ui-egui/src/midi_editor.rs
+index 8ea1869..3ea7718 100644
+--- a/crates/ui-egui/src/midi_editor.rs
++++ b/crates/ui-egui/src/midi_editor.rs
+@@ -1,6 +1,7 @@
+ //! The MIDI Editor: a piano roll with a velocity lane, docked under the Edit window.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold, regular};
+ use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+ use serde_json::json;
+@@ -64,15 +65,15 @@ pub fn show(app: &mut SoundApp, ui: &mut Ui) {
+     ui.painter().rect_filled(full, 0.0, t.panel_bg);
+     let header = Rect::from_min_size(full.min, vec2(full.width(), 22.0));
+     ui.painter().rect_filled(header, 0.0, t.panel_bg2);
+-    ui.painter().text(pos2(header.min.x + 8.0, header.center().y), Align2::LEFT_CENTER, "MIDI EDITOR", bold(11.5), t.header_text);
++    ui.painter().text(pos2(header.min.x + 8.0, header.center().y), Align2::LEFT_CENTER, tr("MIDI EDITOR"), bold(11.5), t.header_text);
+     let Some(cid) = target_clip(app) else {
+         let track = {
+             let s = app.engine.session();
+             s.tracks.iter().find(|t| t.kind.is_midi() && s.edit.selected_tracks.contains(&t.id)).map(|t| (t.id, t.name.clone()))
+         };
+         let msg = match &track {
+-            Some((_, name)) => format!("Click to add a MIDI clip to {name} at the insertion point."),
+-            None => "Select a MIDI clip (or a MIDI track) to edit its notes.".into(),
++            Some((_, name)) => format!("{} {name} {}", tr("Click to add a MIDI clip to"), tr("at the insertion point")),
++            None => tr("Select a MIDI clip (or a MIDI track) to edit its notes.").into(),
+         };
+         ui.painter().text(full.center(), Align2::CENTER_CENTER, msg, regular(13.0), t.text_dim);
+         let body = Rect::from_min_max(pos2(full.min.x, header.max.y), full.max);
+diff --git a/crates/ui-egui/src/mix_window.rs b/crates/ui-egui/src/mix_window.rs
+index 4ee3fb8..38f8f86 100644
+--- a/crates/ui-egui/src/mix_window.rs
++++ b/crates/ui-egui/src/mix_window.rs
+@@ -1,6 +1,7 @@
+ //! The Mix window: one channel strip per track.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold, regular, rgb};
+ use crate::widgets::{
+     PannerEdit, PannerSpeaker, db_text, fader, fader_slot, groove, inset, meter, meter_scale, multi_meter, pan_knob, pan_text, raised_key,
+@@ -617,7 +618,7 @@ pub(crate) fn insert_slot(app: &mut SoundApp, ui: &mut Ui, track: &Track, slot:
+ /// An insert's menu: a search field that takes typing at once, then (until something is typed)
+ /// Bypass and removal and the plugins by category and format.
+ pub fn plugin_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, occupied: bool) {
+-    let search = MenuSearch::show(ui, egui::Id::new(("plugin-search", id.0, slot)), "Search plugins…");
++    let search = MenuSearch::show(ui, egui::Id::new(("plugin-search", id.0, slot)), tr("Search plugins…"));
+     if search.typing() {
+         if let Some(plugin) = plugin_search(ui, &search, false) {
+             pick_insert(app, ui, id, slot, &plugin);
+@@ -625,10 +626,10 @@ pub fn plugin_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, oc
+         return;
+     }
+     if occupied {
+-        if ui.button("Bypass").clicked() {
++        if ui.button(tr("Bypass")).clicked() {
+             run_pick(app, ui, "mix.insert_bypass", json!({"track": id.0, "slot": slot}));
+         }
+-        if ui.button("no insert").clicked() {
++        if ui.button(tr("no insert")).clicked() {
+             run_pick(app, ui, "mix.insert_remove", json!({"track": id.0, "slot": slot}));
+         }
+         ui.separator();
+@@ -640,7 +641,7 @@ pub fn plugin_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, oc
+         }
+     }
+     for c in cats {
+-        ui.menu_button(format!("{c:?}"), |ui| {
++        ui.menu_button(tr(&format!("{c:?}")), |ui| {
+             for p in soundcraft_dsp::plugins().iter().filter(|p| p.category == c && !p.is_instrument) {
+                 if ui.button(p.name).clicked() {
+                     pick_insert(app, ui, id, slot, p.id);
+@@ -658,7 +659,7 @@ pub fn plugin_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, oc
+ /// instruments.
+ pub fn instrument_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId) {
+     let slot = soundcraft_mix::INSTRUMENT_SLOT;
+-    let search = MenuSearch::show(ui, egui::Id::new(("instrument-search", id.0)), "Search instruments…");
++    let search = MenuSearch::show(ui, egui::Id::new(("instrument-search", id.0)), tr("Search instruments…"));
+     if search.typing() {
+         if let Some(plugin) = plugin_search(ui, &search, true) {
+             run_pick(app, ui, "mix.instrument", json!({"track": id.0, "plugin": plugin}));
+@@ -668,7 +669,7 @@ pub fn instrument_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId) {
+     let current = app.engine.session().track(id).and_then(|t| t.instrument.clone());
+     if let Some(info) = current.as_ref().and_then(|i| plugin_info(&i.plugin)) {
+         ui.label(egui::RichText::new(info.name).strong());
+-        if current.as_ref().is_some_and(|i| !soundcraft_mix::is_third_party(&i.plugin)) && ui.button("Edit Parameters…").clicked() {
++        if current.as_ref().is_some_and(|i| !soundcraft_mix::is_third_party(&i.plugin)) && ui.button(tr("Edit Parameters…")).clicked() {
+             if !app.ui.plugin_windows.contains(&(id, slot)) {
+                 app.ui.plugin_windows.push((id, slot));
+             }
+@@ -678,11 +679,11 @@ pub fn instrument_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId) {
+             && p.has_editor(id, slot)
+         {
+             if p.editor_open(id, slot) {
+-                if ui.button("Close Plugin Editor").clicked() {
++                if ui.button(tr("Close Plugin Editor")).clicked() {
+                     p.close_editor(id, slot);
+                     ui.close();
+                 }
+-            } else if ui.button("Open Plugin Editor").clicked() {
++            } else if ui.button(tr("Open Plugin Editor")).clicked() {
+                 if let Err(e) = p.open_editor(id, slot) {
+                     app.ui.status = format!("{}: {e}", info.name);
+                 }
+@@ -692,7 +693,7 @@ pub fn instrument_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId) {
+         ui.separator();
+     }
+     let mut picked = None;
+-    ui.menu_button("Built-in", |ui| {
++    ui.menu_button(tr("Built-in"), |ui| {
+         for p in soundcraft_dsp::plugins().iter().filter(|p| p.is_instrument) {
+             if ui.button(p.name).clicked() {
+                 picked = Some(p.id.to_string());
+@@ -755,15 +756,15 @@ fn plugin_search(ui: &mut Ui, search: &MenuSearch, instruments: bool) -> Option<
+         }
+     });
+     if n == 0 {
+-        ui.weak("No matches");
++        ui.weak(tr("No matches"));
+     }
+     if clap.is_none() || vst3.is_none() {
+         ui.separator();
+         ui.horizontal(|ui| {
+-            if clap.is_none() && ui.small_button("Scan CLAP").clicked() {
++            if clap.is_none() && ui.small_button(tr("Scan CLAP")).clicked() {
+                 soundcraft_clap_host::scan();
+             }
+-            if vst3.is_none() && ui.small_button("Scan VST3").clicked() {
++            if vst3.is_none() && ui.small_button(tr("Scan VST3")).clicked() {
+                 soundcraft_vst3_host::scan();
+             }
+         });
+@@ -968,15 +969,15 @@ pub(crate) fn send_slot(app: &mut SoundApp, ui: &mut Ui, track: &Track, slot: us
+         egui::Popup::menu(&route_resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+             ui.set_min_width(250.0);
+             ui.horizontal(|ui| {
+-                ui.strong(format!("Send {}", (b'A' + slot as u8) as char));
++                ui.strong(format!("{} {}", tr("Send"), (b'A' + slot as u8) as char));
+                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                     ui.label(egui::RichText::new(route_name(app, &send.target)).color(Tokens::current().counter_text));
+                 });
+             });
+-            ui.label(egui::RichText::new("DESTINATION").size(8.0).color(Tokens::current().text_dim));
++            ui.label(egui::RichText::new(tr("DESTINATION")).size(8.0).color(Tokens::current().text_dim));
+             send_route_menu(app, ui, id, slot, Some(&send.target));
+             ui.separator();
+-            if ui.button("Remove send").clicked() {
++            if ui.button(tr("Remove send")).clicked() {
+                 let _ = app.run("mix.send_remove", json!({"track": id.0, "slot": slot}));
+                 ui.close();
+             }
+@@ -984,7 +985,7 @@ pub(crate) fn send_slot(app: &mut SoundApp, ui: &mut Ui, track: &Track, slot: us
+     } else {
+         egui::Popup::menu(&route_resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+             ui.set_min_width(250.0);
+-            ui.strong(format!("Send {} · Choose destination", (b'A' + slot as u8) as char));
++            ui.strong(format!("{} {} · {}", tr("Send"), (b'A' + slot as u8) as char, tr("Choose destination")));
+             send_route_menu(app, ui, id, slot, None);
+         });
+     }
+@@ -1013,7 +1014,7 @@ fn send_window_contents(app: &mut SoundApp, ctx: &egui::Context) {
+     };
+     let t = Tokens::current();
+     let mut open = true;
+-    egui::Window::new(format!("{name} · Send {}", (b'A' + slot as u8) as char))
++    egui::Window::new(format!("{name} · {} {}", tr("Send"), (b'A' + slot as u8) as char))
+         .id(egui::Id::new("send_window"))
+         .open(&mut open)
+         .auto_sized()
+@@ -1029,12 +1030,12 @@ fn send_window_contents(app: &mut SoundApp, ctx: &egui::Context) {
+                     if text_toggle(ui, vec2(36.0, 18.0), "PRE", send.pre_fader, t.accent, "Pre-fader").clicked() {
+                         let _ = app.run("mix.send_level", json!({"track": id.0, "slot": slot, "pre_fader": !send.pre_fader}));
+                     }
+-                    if text_toggle(ui, vec2(22.0, 18.0), "M", send.mute, t.mute, "Mute send").clicked() {
++                    if text_toggle(ui, vec2(22.0, 18.0), "M", send.mute, t.mute, tr("Mute send")).clicked() {
+                         let _ = app.run("mix.send_level", json!({"track": id.0, "slot": slot, "mute": !send.mute}));
+                     }
+                 });
+                 let mut pan = send.pan;
+-                pan_knob(ui, 32.0, &mut pan, "Send pan (drag; double-click centres)");
++                pan_knob(ui, 32.0, &mut pan, tr("Send pan (drag; double-click centres)"));
+                 if (pan - send.pan).abs() > f32::EPSILON {
+                     let _ = app.engine.execute_merged(
+                         "mix.send_level",
+@@ -1069,9 +1070,9 @@ fn send_window_contents(app: &mut SoundApp, ctx: &egui::Context) {
+ /// Secondary controls live behind the amount readout, separate from the bus selector like Logic.
+ fn send_options_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, send: &soundcraft_model::SendSlot) {
+     ui.set_min_width(230.0);
+-    ui.strong(format!("Send {} · {}", (b'A' + slot as u8) as char, route_name(app, &send.target)));
++    ui.strong(format!("{} {} · {}", tr("Send"), (b'A' + slot as u8) as char, route_name(app, &send.target)));
+     let mut db = send.level_db.max(-60.0);
+-    if ui.add(egui::Slider::new(&mut db, -60.0..=12.0).text("Level").suffix(" dB")).changed() {
++    if ui.add(egui::Slider::new(&mut db, -60.0..=12.0).text(tr("Level")).suffix(" dB")).changed() {
+         let _ = app.engine.execute_merged("mix.send_level", &json!({"track": id.0, "slot": slot, "db": db}), &format!("send:{}:{slot}", id.0));
+     }
+     send_level_scale(ui, send.level_db);
+@@ -1090,23 +1091,23 @@ fn send_options_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize,
+         }
+     });
+     let mut pan = send.pan;
+-    if ui.add(egui::Slider::new(&mut pan, -1.0..=1.0).text("Pan")).changed() {
++    if ui.add(egui::Slider::new(&mut pan, -1.0..=1.0).text(tr("Pan"))).changed() {
+         let _ = app.engine.execute_merged("mix.send_level", &json!({"track": id.0, "slot": slot, "pan": pan}), &format!("send-pan:{}:{slot}", id.0));
+     }
+     ui.horizontal(|ui| {
+         let mut mute = send.mute;
+-        if crate::widgets::checkbox(ui, &mut mute, "Mute").changed() {
++        if crate::widgets::checkbox(ui, &mut mute, tr("Mute")).changed() {
+             let _ = app.run("mix.send_level", json!({"track": id.0, "slot": slot, "mute": mute}));
+         }
+         let mut pre = send.pre_fader;
+-        if crate::widgets::checkbox(ui, &mut pre, "Pre-fader").changed() {
++        if crate::widgets::checkbox(ui, &mut pre, tr("Pre-fader")).changed() {
+             let _ = app.run("mix.send_level", json!({"track": id.0, "slot": slot, "pre_fader": pre}));
+         }
+     });
+     if let Route::Bus(bus) = send.target
+         && let Some(aux) =
+             app.engine.session().tracks.iter().find(|t| t.kind == TrackKind::Aux && t.mixer.input == Route::Bus(bus)).map(|t| (t.id, t.name.clone()))
+-        && ui.button("Rename bus…").clicked()
++        && ui.button(tr("Rename bus…")).clicked()
+     {
+         app.dialogs.open_rename_track(aux.0, &aux.1);
+         ui.close();
+@@ -1234,7 +1235,7 @@ fn send_level_scale(ui: &mut Ui, db: f32) {
+
+ fn send_route_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, current: Option<&Route>) {
+     let busses = app.engine.session().busses.clone();
+-    let search = MenuSearch::show(ui, egui::Id::new(("send-bus-search", id.0, slot)), "Search buses…");
++    let search = MenuSearch::show(ui, egui::Id::new(("send-bus-search", id.0, slot)), tr("Search buses…"));
+     let visible: Vec<_> = busses.iter().filter(|bus| search.matches(&bus.name)).collect();
+     let picked = search.rows(ui, visible.len(), 260.0, |ui, i, highlighted| {
+         let current = matches!(current, Some(Route::Bus(bus_id)) if *bus_id == visible[i].id);
+@@ -1245,7 +1246,7 @@ fn send_route_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, cu
+         ui.close();
+     }
+     ui.separator();
+-    if ui.button("new bus...").clicked() {
++    if ui.button(tr("new bus...")).clicked() {
+         let mut n = busses.len() + 1;
+         while busses.iter().any(|bus| bus.name.eq_ignore_ascii_case(&format!("Bus {n}")))
+             || app.engine.session().track_by_name(&format!("Bus {n}")).is_some()
+@@ -1262,7 +1263,7 @@ fn send_route_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, slot: usize, cu
+ fn route_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, input: bool) {
+     let key = if input { "input" } else { "output" };
+     let cmd = if input { "track.input" } else { "track.output" };
+-    if ui.button(if input { "no input" } else { "no output" }).clicked() {
++    if ui.button(tr(if input { "no input" } else { "no output" })).clicked() {
+         let _ = app.run(cmd, json!({"track": id.0, key: "none"}));
+         ui.close();
+     }
+@@ -1281,14 +1282,14 @@ fn route_menu(app: &mut SoundApp, ui: &mut Ui, id: TrackId, input: bool) {
+     }
+     ui.separator();
+     let busses: Vec<String> = app.engine.session().busses.iter().map(|b| b.name.clone()).collect();
+-    ui.strong("Bus");
+-    let search = MenuSearch::show(ui, egui::Id::new(("route-bus-search", id.0, input)), "Search buses…");
++    ui.strong(tr("Bus"));
++    let search = MenuSearch::show(ui, egui::Id::new(("route-bus-search", id.0, input)), tr("Search buses…"));
+     let visible: Vec<&String> = busses.iter().filter(|b| search.matches(b)).collect();
+     if let Some(i) = search.rows(ui, visible.len(), 420.0, |ui, i, highlighted| menu_row(ui, highlighted, visible[i])) {
+         let _ = app.run(cmd, json!({"track": id.0, key: visible[i]}));
+         ui.close();
+     }
+-    if ui.button("new bus...").clicked() {
++    if ui.button(tr("new bus...")).clicked() {
+         let mut n = busses.len() + 1;
+         while busses.contains(&format!("Bus {n}")) || app.engine.session().track_by_name(&format!("Bus {n}")).is_some() {
+             n += 1;
+diff --git a/crates/ui-egui/src/ops_windows.rs b/crates/ui-egui/src/ops_windows.rs
+index beba523..bb06650 100644
+--- a/crates/ui-egui/src/ops_windows.rs
++++ b/crates/ui-egui/src/ops_windows.rs
+@@ -2,6 +2,7 @@
+ //! Operations and MIDI Real-Time Properties. Each is a small form over engine commands.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::Tokens;
+ use egui::vec2;
+ use serde_json::{Value, json};
+@@ -87,17 +88,17 @@ fn beat_detective(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Beat Detective").open(&mut open).default_size(vec2(360.0, 220.0)).show(ctx, |ui| {
+-        ui.label("Analyses the edit selection on the selected tracks.");
+-        ui.add(egui::Slider::new(&mut app.ops.beat_sensitivity, 0.0..=1.0).text("Sensitivity"));
+-        crate::widgets::checkbox(ui, &mut app.ops.beat_separate, "Separate clips at detected beats");
+-        crate::widgets::checkbox(ui, &mut app.ops.beat_set_tempo, "Set the session tempo from the beats");
++    egui::Window::new(tr("Beat Detective")).open(&mut open).default_size(vec2(360.0, 220.0)).show(ctx, |ui| {
++        ui.label(tr("Analyses the edit selection on the selected tracks."));
++        ui.add(egui::Slider::new(&mut app.ops.beat_sensitivity, 0.0..=1.0).text(tr("Sensitivity")));
++        crate::widgets::checkbox(ui, &mut app.ops.beat_separate, tr("Separate clips at detected beats"));
++        crate::widgets::checkbox(ui, &mut app.ops.beat_set_tempo, tr("Set the session tempo from the beats"));
+         ui.horizontal(|ui| {
+-            if ui.button("Analyze").clicked() {
++            if ui.button(tr("Analyze")).clicked() {
+                 let r = app.run("event.beat_detective", json!({"sensitivity": app.ops.beat_sensitivity, "separate": false, "set_tempo": false}));
+                 app.ops.beat_result = r.map_or_else(|e| e, |v| v.to_string());
+             }
+-            if ui.button(egui::RichText::new("Apply").strong()).clicked() {
++            if ui.button(egui::RichText::new(tr("Apply")).strong()).clicked() {
+                 let r = app.run(
+                     "event.beat_detective",
+                     json!({"sensitivity": app.ops.beat_sensitivity, "separate": app.ops.beat_separate, "set_tempo": app.ops.beat_set_tempo}),
+@@ -107,10 +108,10 @@ fn beat_detective(app: &mut SoundApp, ctx: &egui::Context) {
+         });
+         ui.separator();
+         ui.horizontal(|ui| {
+-            ui.label("Identify Beat: selection is");
++            ui.label(tr("Identify Beat: selection is"));
+             ui.add(egui::DragValue::new(&mut app.ops.identify_bars).range(1..=64));
+-            ui.label("bar(s)");
+-            if ui.button("Set Tempo").clicked() {
++            ui.label(tr("bar(s)"));
++            if ui.button(tr("Set Tempo")).clicked() {
+                 let r = app.run("event.identify_beat", json!({"bars": app.ops.identify_bars}));
+                 app.ops.beat_result = r.map_or_else(|e| e, |v| v.to_string());
+             }
+@@ -143,21 +144,21 @@ fn tempo_ops(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Tempo Operations").open(&mut open).default_size(vec2(360.0, 200.0)).show(ctx, |ui| {
+-        egui::ComboBox::from_label("Curve").selected_text(app.ops.tempo_curve.clone()).show_ui(ui, |ui| {
++    egui::Window::new(tr("Tempo Operations")).open(&mut open).default_size(vec2(360.0, 200.0)).show(ctx, |ui| {
++        egui::ComboBox::from_label(tr("Curve")).selected_text(tr(&app.ops.tempo_curve)).show_ui(ui, |ui| {
+             for c in ["constant", "linear", "parabolic", "s-curve", "scale", "stretch"] {
+-                ui.selectable_value(&mut app.ops.tempo_curve, c.to_string(), c);
++                ui.selectable_value(&mut app.ops.tempo_curve, c.to_string(), tr(c));
+             }
+         });
+-        ui.add(egui::DragValue::new(&mut app.ops.tempo_start).range(5.0..=999.0).prefix("start bpm "));
+-        ui.add(egui::DragValue::new(&mut app.ops.tempo_end).range(5.0..=999.0).prefix("end bpm "));
++        ui.add(egui::DragValue::new(&mut app.ops.tempo_start).range(5.0..=999.0).prefix(tr("start bpm ")));
++        ui.add(egui::DragValue::new(&mut app.ops.tempo_end).range(5.0..=999.0).prefix(tr("end bpm ")));
+         ui.label(
+             egui::RichText::new(
+-                "Applies across the edit selection (constant: at the insertion point; scale: factor = end / start; stretch: factor = start / end).",
++                tr("Applies across the edit selection (constant: at the insertion point; scale: factor = end / start; stretch: factor = start / end)."),
+             )
+             .small(),
+         );
+-        if ui.button(egui::RichText::new("Apply").strong()).clicked() {
++        if ui.button(egui::RichText::new(tr("Apply")).strong()).clicked() {
+             let (id, p) = tempo_ops_apply(&app.ops.tempo_curve, app.ops.tempo_start, app.ops.tempo_end);
+             let r = app.run(id, p);
+             result_line(ui, &r);
+@@ -171,10 +172,10 @@ fn time_ops(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Time Operations").open(&mut open).default_size(vec2(360.0, 200.0)).show(ctx, |ui| {
+-        egui::ComboBox::from_label("Operation").selected_text(app.ops.time_op.clone()).show_ui(ui, |ui| {
++    egui::Window::new(tr("Time Operations")).open(&mut open).default_size(vec2(360.0, 200.0)).show(ctx, |ui| {
++        egui::ComboBox::from_label(tr("Operation")).selected_text(tr(&app.ops.time_op)).show_ui(ui, |ui| {
+             for c in ["insert", "cut", "change meter", "move song start"] {
+-                ui.selectable_value(&mut app.ops.time_op, c.to_string(), c);
++                ui.selectable_value(&mut app.ops.time_op, c.to_string(), tr(c));
+             }
+         });
+         match app.ops.time_op.as_str() {
+@@ -193,10 +194,10 @@ fn time_ops(app: &mut SoundApp, ctx: &egui::Context) {
+                 ui.add(egui::DragValue::new(&mut app.ops.time_seconds).range(0.0..=3600.0).suffix(" s"));
+             }
+             _ => {
+-                ui.label(egui::RichText::new("Uses the edit selection.").small());
++                ui.label(egui::RichText::new(tr("Uses the edit selection.")).small());
+             }
+         }
+-        if ui.button(egui::RichText::new("Apply").strong()).clicked() {
++        if ui.button(egui::RichText::new(tr("Apply")).strong()).clicked() {
+             let at = app.engine.session().edit.selection.start;
+             let r = match app.ops.time_op.as_str() {
+                 "insert" => app.run("event.insert_time", json!({"start": at, "length": {"seconds": app.ops.time_seconds}})),
+@@ -215,32 +216,32 @@ fn midi_ops(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("MIDI Operations").open(&mut open).default_size(vec2(360.0, 220.0)).show(ctx, |ui| {
+-        egui::ComboBox::from_label("Operation").selected_text(app.ops.midi_op.clone()).show_ui(ui, |ui| {
++    egui::Window::new(tr("MIDI Operations")).open(&mut open).default_size(vec2(360.0, 220.0)).show(ctx, |ui| {
++        egui::ComboBox::from_label(tr("Operation")).selected_text(tr(&app.ops.midi_op)).show_ui(ui, |ui| {
+             for c in ["quantize", "transpose", "change velocity", "flatten performance", "restore performance"] {
+-                ui.selectable_value(&mut app.ops.midi_op, c.to_string(), c);
++                ui.selectable_value(&mut app.ops.midi_op, c.to_string(), tr(c));
+             }
+         });
+         match app.ops.midi_op.as_str() {
+             "quantize" => {
+-                egui::ComboBox::from_label("Grid").selected_text(app.ops.quant_grid.clone()).show_ui(ui, |ui| {
++                egui::ComboBox::from_label(tr("Grid")).selected_text(app.ops.quant_grid.clone()).show_ui(ui, |ui| {
+                     for g in ["1/4", "1/8", "1/8t", "1/16", "1/16t", "1/32"] {
+                         ui.selectable_value(&mut app.ops.quant_grid, g.to_string(), g);
+                     }
+                 });
+-                ui.add(egui::Slider::new(&mut app.ops.quant_strength, 0.0..=100.0).text("Strength %"));
+-                ui.add(egui::Slider::new(&mut app.ops.quant_swing, 0.0..=100.0).text("Swing %"));
++                ui.add(egui::Slider::new(&mut app.ops.quant_strength, 0.0..=100.0).text(tr("Strength %")));
++                ui.add(egui::Slider::new(&mut app.ops.quant_swing, 0.0..=100.0).text(tr("Swing %")));
+             }
+             "transpose" => {
+-                ui.add(egui::Slider::new(&mut app.ops.transpose, -48..=48).text("Semitones"));
++                ui.add(egui::Slider::new(&mut app.ops.transpose, -48..=48).text(tr("Semitones")));
+             }
+             "change velocity" => {
+-                ui.add(egui::Slider::new(&mut app.ops.velocity_add, -127..=127).text("Add"));
++                ui.add(egui::Slider::new(&mut app.ops.velocity_add, -127..=127).text(tr("Add")));
+             }
+             _ => {}
+         }
+-        ui.label(egui::RichText::new("Applies to the selected MIDI clips (or those under the selection).").small());
+-        if ui.button(egui::RichText::new("Apply").strong()).clicked() {
++        ui.label(egui::RichText::new(tr("Applies to the selected MIDI clips (or those under the selection).")).small());
++        if ui.button(egui::RichText::new(tr("Apply")).strong()).clicked() {
+             let r = match app.ops.midi_op.as_str() {
+                 "quantize" => {
+                     app.run("event.quantize", json!({"grid": app.ops.quant_grid, "strength": app.ops.quant_strength, "swing": app.ops.quant_swing}))
+@@ -261,22 +262,22 @@ fn rtp(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("MIDI Real-Time Properties").open(&mut open).default_size(vec2(340.0, 200.0)).show(ctx, |ui| {
+-        ui.label("Non-destructive, applied at playback to the selected MIDI tracks.");
++    egui::Window::new(tr("MIDI Real-Time Properties")).open(&mut open).default_size(vec2(340.0, 200.0)).show(ctx, |ui| {
++        ui.label(tr("Non-destructive, applied at playback to the selected MIDI tracks."));
+         let mut changed = false;
+-        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_velocity, -127..=127).text("Velocity +")).changed();
+-        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_transpose, -48..=48).text("Transpose")).changed();
+-        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_duration, 1.0..=400.0).text("Duration %")).changed();
+-        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_delay, -960..=960).text("Delay (ticks)")).changed();
++        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_velocity, -127..=127).text(tr("Velocity +"))).changed();
++        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_transpose, -48..=48).text(tr("Transpose"))).changed();
++        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_duration, 1.0..=400.0).text(tr("Duration %"))).changed();
++        changed |= ui.add(egui::Slider::new(&mut app.ops.rtp_delay, -960..=960).text(tr("Delay (ticks)"))).changed();
+         if changed {
+             let p = json!({"velocity": app.ops.rtp_velocity, "transpose": app.ops.rtp_transpose, "duration": app.ops.rtp_duration, "delay": app.ops.rtp_delay});
+             let _ = app.engine.execute_merged("event.midi_rtp", &p, "rtp");
+         }
+         ui.horizontal(|ui| {
+-            if ui.button("Write to Notes").clicked() {
++            if ui.button(tr("Write to Notes")).clicked() {
+                 let _ = app.run("track.write_midi_rtp", json!({}));
+             }
+-            if ui.button("Clear").clicked() {
++            if ui.button(tr("Clear")).clicked() {
+                 let _ = app.run("event.midi_rtp", json!({"clear": true}));
+                 app.ops.rtp_velocity = 0;
+                 app.ops.rtp_transpose = 0;
+diff --git a/crates/ui-egui/src/palette.rs b/crates/ui-egui/src/palette.rs
+index 916087b..f087fea 100644
+--- a/crates/ui-egui/src/palette.rs
++++ b/crates/ui-egui/src/palette.rs
+@@ -1,6 +1,7 @@
+ //! Search: a command palette over every engine and UI command (Window › Search, Cmd+Ctrl+S).
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, mono};
+ use egui::{Align2, Key, vec2};
+
+@@ -65,7 +66,7 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+     let t = Tokens::current();
+     let mut run: Option<String> = None;
+     let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
+-    egui::Window::new("Search")
++    egui::Window::new(tr("Search"))
+         .collapsible(false)
+         .resizable(false)
+         .title_bar(false)
+@@ -73,7 +74,7 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+         .fixed_size(vec2(560.0, 380.0))
+         .show(ctx, |ui| {
+             let r = ui
+-                .add(egui::TextEdit::singleline(&mut app.palette.query).hint_text("Search commands…").desired_width(f32::INFINITY).font(mono(15.0)));
++                .add(egui::TextEdit::singleline(&mut app.palette.query).hint_text(tr("Search commands…")).desired_width(f32::INFINITY).font(mono(15.0)));
+             r.request_focus();
+             let q = app.palette.query.trim().to_string();
+             let mut hits: Vec<(i32, Entry)> =
+@@ -92,8 +93,9 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+             for (i, (_, e)) in hits.iter().enumerate() {
+                 let sel = i == app.palette.selected;
+                 let resp = ui.horizontal(|ui| {
+-                    let l = ui.selectable_label(sel, &e.label);
+-                    ui.label(egui::RichText::new(&e.path).small().color(t.text_dim));
++                    let l = ui.selectable_label(sel, tr(&e.label));
++                    let path = e.path.split(" › ").map(tr).collect::<Vec<_>>().join(" › ");
++                    ui.label(egui::RichText::new(path).small().color(t.text_dim));
+                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                         let sc = crate::shortcuts::shortcut_label(&e.shortcut, ctx.os().is_mac());
+                         ui.label(egui::RichText::new(sc).font(mono(10.0)).color(t.text_dim));
+diff --git a/crates/ui-egui/src/panels.rs b/crates/ui-egui/src/panels.rs
+index a208511..6eed1ee 100644
+--- a/crates/ui-egui/src/panels.rs
++++ b/crates/ui-egui/src/panels.rs
+@@ -1,6 +1,7 @@
+ //! Side panels (Tracks, Groups, Clips) and floating windows.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold, mono, regular, rgb};
+ use egui::{Align2, Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
+ use serde_json::json;
+@@ -32,7 +33,7 @@ fn panel_header(ui: &mut Ui, title: &str) {
+     let t = Tokens::current();
+     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
+     ui.painter().rect_filled(r, 0.0, t.panel_bg2);
+-    ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, title, bold(11.5), t.header_text);
++    ui.painter().text(pos2(r.min.x + 8.0, r.center().y), Align2::LEFT_CENTER, tr(title), bold(11.5), t.header_text);
+     ui.painter().line_segment([pos2(r.min.x, r.max.y), pos2(r.max.x, r.max.y)], Stroke::new(1.0, t.border));
+ }
+
+@@ -100,7 +101,7 @@ pub fn tracks_and_groups(app: &mut SoundApp, ui: &mut Ui) {
+             let _ = app.run("edit.select_all", json!({}));
+         }
+         all.context_menu(|ui| {
+-            if ui.button("New Group…").clicked() {
++            if ui.button(tr("New Group…")).clicked() {
+                 let _ = app.dialogs.open_for_command(&app.engine, "track.group");
+                 ui.close();
+             }
+@@ -128,19 +129,19 @@ pub fn tracks_and_groups(app: &mut SoundApp, ui: &mut Ui) {
+                 let _ = app.run("edit.select", json!({"tracks": members, "exact": true}));
+             }
+             resp.context_menu(|ui| {
+-                if ui.button("Select Tracks in Group").clicked() {
++                if ui.button(tr("Select Tracks in Group")).clicked() {
+                     let _ = app.run("edit.select", json!({"tracks": members, "exact": true}));
+                     ui.close();
+                 }
+-                if ui.button(if active { "Disable" } else { "Enable" }).clicked() {
++                if ui.button(tr(if active { "Disable" } else { "Enable" })).clicked() {
+                     let _ = app.run("track.group_toggle", json!({"group": id}));
+                     ui.close();
+                 }
+-                if ui.button("Modify Group…").clicked() {
++                if ui.button(tr("Modify Group…")).clicked() {
+                     let _ = app.dialogs.open_modify_group(&app.engine, soundcraft_model::GroupId(id));
+                     ui.close();
+                 }
+-                if ui.button("Delete Group").clicked() {
++                if ui.button(tr("Delete Group")).clicked() {
+                     let _ = app.run("track.ungroup", json!({"group": id}));
+                     ui.close();
+                 }
+@@ -203,7 +204,7 @@ pub fn clip_list(app: &mut SoundApp, ui: &mut Ui) {
+     };
+     let fkey = egui::Id::new("clip_filter");
+     let mut filter: String = ui.ctx().memory(|m| m.data.get_temp(fkey)).unwrap_or_default();
+-    ui.add(egui::TextEdit::singleline(&mut filter).hint_text("🔍 Find clips").desired_width(f32::INFINITY));
++    ui.add(egui::TextEdit::singleline(&mut filter).hint_text(tr("🔍 Find clips")).desired_width(f32::INFINITY));
+     ui.ctx().memory_mut(|m| m.data.insert_temp(fkey, filter.clone()));
+     let needle = filter.to_lowercase();
+     let items: Vec<_> = items.into_iter().filter(|(_, n, _, _, _)| needle.is_empty() || n.to_lowercase().contains(&needle)).collect();
+@@ -212,20 +213,20 @@ pub fn clip_list(app: &mut SoundApp, ui: &mut Ui) {
+             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 17.0), if whole { Sense::click_and_drag() } else { Sense::click() });
+             resp.context_menu(|ui| {
+                 if whole {
+-                    if ui.button("Place on New Track").clicked() {
++                    if ui.button(tr("Place on New Track")).clicked() {
+                         let _ = app.run("clip.place_source", json!({"source": id}));
+                         ui.close();
+                     }
+                     let sel_track = app.engine.session().edit.selected_tracks.first().map(|t| t.0);
+                     if let Some(t) = sel_track
+-                        && ui.button("Place on Selected Track").clicked()
++                        && ui.button(tr("Place on Selected Track")).clicked()
+                     {
+                         let _ = app.run("clip.place_source", json!({"source": id, "track": t}));
+                         ui.close();
+                     }
+                     ui.separator();
+                 }
+-                if ui.button("Clear…").clicked() {
++                if ui.button(tr("Clear…")).clicked() {
+                     let (clips, sources) = if whole { (vec![], vec![SourceId(id)]) } else { (vec![ClipId(id)], vec![]) };
+                     app.dialogs.open_clear(&app.engine, clips, sources);
+                     ui.close();
+@@ -272,7 +273,7 @@ fn transport_window(app: &mut SoundApp, ctx: &egui::Context) {
+         return;
+     }
+     let t = Tokens::current();
+-    egui::Window::new("Transport").open(&mut open).resizable(false).default_pos(pos2(400.0, 500.0)).show(ctx, |ui| {
++    egui::Window::new(tr("Transport")).open(&mut open).resizable(false).default_pos(pos2(400.0, 500.0)).show(ctx, |ui| {
+         let flags = app.engine.session().edit.flags.clone();
+         let expanded = flags.contains("view.transport.expanded");
+         ui.horizontal(|ui| {
+@@ -316,14 +317,14 @@ fn transport_window(app: &mut SoundApp, ctx: &egui::Context) {
+         if expanded {
+             let e = s.edit.clone();
+             egui::Grid::new("tx_exp").num_columns(4).show(ui, |ui| {
+-                ui.label("Start");
++                ui.label(tr("Start"));
+                 ui.label(egui::RichText::new(fmt(e.selection.start)).font(mono(11.0)));
+-                ui.label("Pre-roll");
++                ui.label(tr("Pre-roll"));
+                 ui.label(egui::RichText::new(format!("{:.2} s", s.sample_rate.seconds(e.pre_roll))).font(mono(11.0)));
+                 ui.end_row();
+-                ui.label("End");
++                ui.label(tr("End"));
+                 ui.label(egui::RichText::new(fmt(e.selection.end)).font(mono(11.0)));
+-                ui.label("Post-roll");
++                ui.label(tr("Post-roll"));
+                 ui.label(egui::RichText::new(format!("{:.2} s", s.sample_rate.seconds(e.post_roll))).font(mono(11.0)));
+                 ui.end_row();
+             });
+@@ -360,7 +361,7 @@ fn big_counter(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Big Counter").open(&mut open).default_size(vec2(520.0, 110.0)).show(ctx, |ui| {
++    egui::Window::new(tr("Big Counter")).open(&mut open).default_size(vec2(520.0, 110.0)).show(ctx, |ui| {
+         let s = app.engine.session();
+         let txt = s.format_position(app.position(), s.edit.main_counter);
+         let r = ui.available_rect_before_wrap();
+@@ -373,10 +374,10 @@ fn big_counter(app: &mut SoundApp, ctx: &egui::Context) {
+
+ pub(crate) fn memory_locations(app: &mut SoundApp, ui: &mut Ui) {
+     ui.horizontal(|ui| {
+-        if ui.button("+ Marker").clicked() {
++        if ui.button(tr("+ Marker")).clicked() {
+             let _ = app.run("markers.add", json!({}));
+         }
+-        if ui.button("+ Selection").clicked() {
++        if ui.button(tr("+ Selection")).clicked() {
+             let _ = app.run("markers.add", json!({"kind": "selection"}));
+         }
+     });
+@@ -399,7 +400,7 @@ pub(crate) fn memory_locations(app: &mut SoundApp, ui: &mut Ui) {
+     egui::ScrollArea::vertical().show(ui, |ui| {
+         egui::Grid::new("mem_grid").striped(true).num_columns(6).show(ui, |ui| {
+             for h in ["#", "Name", "Location", "Length", "Type", ""] {
+-                ui.label(egui::RichText::new(h).strong());
++                ui.label(egui::RichText::new(tr(h)).strong());
+             }
+             ui.end_row();
+             for (n, name, loc, len, kind) in rows {
+@@ -418,7 +419,7 @@ pub(crate) fn memory_locations(app: &mut SoundApp, ui: &mut Ui) {
+                 }
+                 ui.label(egui::RichText::new(loc).font(mono(11.0)));
+                 ui.label(egui::RichText::new(len).font(mono(11.0)));
+-                ui.label(kind);
++                ui.label(tr(&kind));
+                 if ui.small_button("✕").on_hover_text("Delete").clicked() {
+                     let _ = app.run("markers.delete", json!({"number": n}));
+                 }
+@@ -471,18 +472,18 @@ fn plugin_windows(app: &mut SoundApp, ctx: &egui::Context) {
+                     if !instrument {
+                         ui.label(egui::RichText::new(&ins.preset).color(Tokens::current().text_dim));
+                         let label = if ins.bypass { "BYPASSED" } else { "Bypass" };
+-                        if ui.button(label).clicked() {
++                        if ui.button(tr(label)).clicked() {
+                             let _ = app.run("mix.insert_bypass", json!({"track": tid.0, "slot": slot}));
+                         }
+-                        ui.menu_button("Presets ▾", |ui| preset_menu(app, ui, tid, slot, info, &ins));
++                        ui.menu_button(tr("Presets ▾"), |ui| preset_menu(app, ui, tid, slot, info, &ins));
+                     }
+                     if soundcraft_mix::is_third_party(&ins.plugin) {
+                         let open = app.player.as_ref().is_some_and(|p| p.editor_open(tid, slot));
+                         let available = app.player.as_ref().is_some_and(|p| p.has_editor(tid, slot));
+                         let label = if open { "Close Plugin Editor" } else { "Open Plugin Editor" };
+-                        let resp = ui.add_enabled(available, egui::Button::new(label));
++                        let resp = ui.add_enabled(available, egui::Button::new(tr(label)));
+                         let resp =
+-                            if available { resp } else { resp.on_disabled_hover_text("This plugin has no editor of its own, or it is not loaded") };
++                            if available { resp } else { resp.on_disabled_hover_text(tr("This plugin has no editor of its own, or it is not loaded")) };
+                         if resp.clicked()
+                             && let Some(p) = &app.player
+                         {
+@@ -496,7 +497,7 @@ fn plugin_windows(app: &mut SoundApp, ctx: &egui::Context) {
+                 });
+                 if instrument && soundcraft_mix::is_third_party(&ins.plugin) {
+                     // A hosted instrument keeps its sounds and settings in its own editor.
+-                    ui.label(egui::RichText::new("Load and edit sounds in the plugin's own editor.").color(Tokens::current().text_dim));
++                    ui.label(egui::RichText::new(tr("Load and edit sounds in the plugin's own editor.")).color(Tokens::current().text_dim));
+                     return;
+                 }
+                 if instrument && ins.plugin == crate::sampler_window::SAMPLER {
+@@ -605,11 +606,11 @@ fn about(app: &mut SoundApp, ctx: &egui::Context) {
+         return;
+     }
+     let tab_id = egui::Id::new("about_tab");
+-    egui::Window::new("About SoundCraft").open(&mut open).default_size(vec2(640.0, 420.0)).collapsible(false).show(ctx, |ui| {
++    egui::Window::new(tr("About SoundCraft")).open(&mut open).default_size(vec2(640.0, 420.0)).collapsible(false).show(ctx, |ui| {
+         let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
+         ui.horizontal(|ui| {
+             for (i, l) in (0u8..).zip(["About", "Contributors", "Models"]) {
+-                if ui.selectable_label(tab == i, l).clicked() {
++                if ui.selectable_label(tab == i, tr(l)).clicked() {
+                     tab = i;
+                 }
+             }
+@@ -621,11 +622,11 @@ fn about(app: &mut SoundApp, ctx: &egui::Context) {
+             2 => crate::credits::models_ui(ui),
+             _ => {
+                 ui.label(egui::RichText::new("SoundCraft").font(bold(22.0)));
+-                ui.label(format!("Version {}", env!("CARGO_PKG_VERSION")));
+-                ui.label("An open-source digital audio workstation from the ArtCraft team.");
+-                ui.label("Dual-licensed MIT OR Apache-2.0. Made with Rust and egui.");
++                ui.label(format!("{} {}", tr("Version"), env!("CARGO_PKG_VERSION")));
++                ui.label(tr("An open-source digital audio workstation from the ArtCraft team."));
++                ui.label(tr("Dual-licensed MIT OR Apache-2.0. Made with Rust and egui."));
+                 ui.hyperlink_to("getartcraft.com/apps/soundcraft", "https://getartcraft.com/apps/soundcraft");
+-                ui.hyperlink_to("Join us on Discord", "https://discord.gg/artcraft");
++                ui.hyperlink_to(tr("Join us on Discord"), "https://discord.gg/artcraft");
+             }
+         }
+     });
+@@ -637,7 +638,7 @@ fn session_info(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Session Info").open(&mut open).default_size(vec2(480.0, 360.0)).show(ctx, |ui| {
++    egui::Window::new(tr("Session Info")).open(&mut open).default_size(vec2(480.0, 360.0)).show(ctx, |ui| {
+         let text = soundcraft_engine::inspect::session_text(&app.engine);
+         egui::ScrollArea::vertical().show(ui, |ui| {
+             ui.label(egui::RichText::new(text).font(mono(11.0)));
+@@ -665,7 +666,7 @@ fn preset_menu(
+         ui.close();
+     }
+     let Some(dir) = preset_dir(app, info.id) else {
+-        ui.label("User presets need the desktop app.");
++        ui.label(tr("User presets need the desktop app."));
+         return;
+     };
+     let mut names: Vec<String> = std::fs::read_dir(&dir)
+@@ -696,7 +697,7 @@ fn preset_menu(
+     let mut name: String = ui.ctx().memory(|m| m.data.get_temp(key)).unwrap_or_else(|| format!("{} preset", info.name));
+     ui.horizontal(|ui| {
+         ui.add(egui::TextEdit::singleline(&mut name).desired_width(140.0));
+-        if ui.button("Save").clicked() {
++        if ui.button(tr("Save")).clicked() {
+             let clean = soundcraft_engine::io::sanitize_name(&name);
+             let body = json!({"format": "soundcraft-plugin-preset", "plugin": info.id, "params": ins.params});
+             let ok = std::fs::create_dir_all(&dir).is_ok() && std::fs::write(dir.join(format!("{clean}.json")), body.to_string()).is_ok();
+diff --git a/crates/ui-egui/src/recent.rs b/crates/ui-egui/src/recent.rs
+index 12be398..d074f69 100644
+--- a/crates/ui-egui/src/recent.rs
++++ b/crates/ui-egui/src/recent.rs
+@@ -12,6 +12,7 @@
+ //! seconds while the menu is open, because a session on a network share costs a round trip.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use serde_json::json;
+ use std::path::Path;
+
+@@ -84,9 +85,9 @@ impl SoundApp {
+
+ /// The File › Open Recent submenu.
+ pub fn menu(app: &mut SoundApp, ui: &mut egui::Ui) {
+-    ui.menu_button("Open Recent", |ui| {
++    ui.menu_button(tr("Open Recent"), |ui| {
+         if app.ui.recent_sessions.is_empty() {
+-            ui.add_enabled(false, egui::Button::new("No Recent Sessions"));
++            ui.add_enabled(false, egui::Button::new(tr("No Recent Sessions")));
+             return;
+         }
+         let now = ui.ctx().input(|i| i.time);
+@@ -101,7 +102,7 @@ pub fn menu(app: &mut SoundApp, ui: &mut egui::Ui) {
+             }
+         }
+         ui.separator();
+-        if ui.button("Clear Recent").clicked() {
++        if ui.button(tr("Clear Recent")).clicked() {
+             app.ui.recent_sessions.clear();
+             app.recent_changed = true;
+             ui.close();
+diff --git a/crates/ui-egui/src/recovery.rs b/crates/ui-egui/src/recovery.rs
+index bd66e29..321054b 100644
+--- a/crates/ui-egui/src/recovery.rs
++++ b/crates/ui-egui/src/recovery.rs
+@@ -1,6 +1,7 @@
+ //! The offer to recover unsaved work an earlier run left in the autosave folder.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold};
+ use egui::{Align2, vec2};
+
+@@ -9,22 +10,22 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+     let Some(left) = app.leftovers.first().cloned() else { return };
+     let mut open = true;
+     let mut recover = None;
+-    egui::Window::new(egui::RichText::new("Recover Unsaved Work").font(bold(13.0)))
++    egui::Window::new(egui::RichText::new(tr("Recover Unsaved Work")).font(bold(13.0)))
+         .open(&mut open)
+         .collapsible(false)
+         .resizable(false)
+         .anchor(Align2::CENTER_CENTER, vec2(0.0, -80.0))
+         .show(ctx, |ui| {
+-            let age = left.saved.elapsed().map_or_else(|_| "recently".into(), |d| ago(d.as_secs()));
+-            let what = if left.recording { "unsaved changes and an unfinished recording" } else { "unsaved changes" };
+-            ui.label(format!("“{}” has {what} from an earlier run, autosaved {age}.", left.name));
++            let age = left.saved.elapsed().map_or_else(|_| tr("recently").into(), |d| ago(d.as_secs()));
++            let what = tr(if left.recording { "unsaved changes and an unfinished recording" } else { "unsaved changes" });
++            ui.label(format!("“{}”有{}，自动保存于{}。", left.name, what, age));
+             ui.separator();
+             ui.horizontal(|ui| {
+-                if ui.button("Discard").clicked() {
++                if ui.button(tr("Discard")).clicked() {
+                     recover = Some(false);
+                 }
+-                let recover_button = egui::Button::new(egui::RichText::new("Recover").strong()).fill(Tokens::current().accent);
+-                if ui.add_enabled(!app.engine.transport.recording, recover_button).on_disabled_hover_text("Stop recording first").clicked() {
++                let recover_button = egui::Button::new(egui::RichText::new(tr("Recover")).strong()).fill(Tokens::current().accent);
++                if ui.add_enabled(!app.engine.transport.recording, recover_button).on_disabled_hover_text(tr("Stop recording first")).clicked() {
+                     recover = Some(true);
+                 }
+             });
+@@ -41,10 +42,10 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+
+ fn ago(secs: u64) -> String {
+     let (n, unit) = match secs {
+-        0..60 => return "less than a minute ago".into(),
+-        60..3_600 => (secs / 60, "minute"),
+-        3_600..86_400 => (secs / 3_600, "hour"),
+-        _ => (secs / 86_400, "day"),
++        0..60 => return "不到 1 分钟前".into(),
++        60..3_600 => (secs / 60, "分钟"),
++        3_600..86_400 => (secs / 3_600, "小时"),
++        _ => (secs / 86_400, "天"),
+     };
+-    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
++    format!("{n} {unit}前")
+ }
+diff --git a/crates/ui-egui/src/sampler_window.rs b/crates/ui-egui/src/sampler_window.rs
+index b259343..296d254 100644
+--- a/crates/ui-egui/src/sampler_window.rs
++++ b/crates/ui-egui/src/sampler_window.rs
+@@ -4,6 +4,7 @@
+ //! they undo and script like any edit.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, mono, regular};
+ use egui::{Align2, Color32, CursorIcon, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+ use serde_json::json;
+@@ -161,15 +162,15 @@ pub fn sample_strip(app: &mut SoundApp, ui: &mut Ui, tid: TrackId, ins: &Insert)
+     let audio = ins.sample.and_then(|id| s.pool.get(id)).cloned();
+     ui.horizontal(|ui| {
+         let can_pick = app.services.pick_open.is_some();
+-        let load = ui.add_enabled(can_pick, egui::Button::new("Load Sample…"));
+-        let load = if can_pick { load } else { load.on_disabled_hover_text("Drop an audio file on this window") };
++        let load = ui.add_enabled(can_pick, egui::Button::new(tr("Load Sample…")));
++        let load = if can_pick { load } else { load.on_disabled_hover_text(tr("Drop an audio file on this window")) };
+         if load.clicked()
+             && let Some(pick) = &app.services.pick_open
+             && let Some(path) = pick("mix.sampler_load", AUDIO_EXTS)
+         {
+             let _ = app.run("mix.sampler_load", json!({"track": tid.0, "path": path}));
+         }
+-        if ins.sample.is_some() && ui.button("Clear").clicked() {
++        if ins.sample.is_some() && ui.button(tr("Clear")).clicked() {
+             let _ = app.run("mix.sampler_clear", json!({"track": tid.0}));
+         }
+     });
+@@ -178,14 +179,14 @@ pub fn sample_strip(app: &mut SoundApp, ui: &mut Ui, tid: TrackId, ins: &Insert)
+             let rate = a.buffer.sample_rate.max(1);
+             let secs = a.frames() as f64 / f64::from(rate);
+             let width = match a.buffer.num_channels() {
+-                1 => "mono".to_string(),
+-                2 => "stereo".to_string(),
++                1 => tr("mono").to_string(),
++                2 => tr("stereo").to_string(),
+                 n => format!("{n} ch"),
+             };
+             format!("{} · {secs:.2} s · {width} · {:.1} kHz", src.name, f64::from(rate) / 1000.0)
+         }
+-        (Some(src), None) => format!("{}: missing", src.name),
+-        _ => "No sample".to_string(),
++        (Some(src), None) => format!("{}：{}", src.name, tr("missing")),
++        _ => tr("No sample").to_string(),
+     };
+     ui.label(egui::RichText::new(info).font(mono(11.0)).color(t.text_dim));
+     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width().max(300.0), 96.0), Sense::click_and_drag());
+@@ -193,7 +194,7 @@ pub fn sample_strip(app: &mut SoundApp, ui: &mut Ui, tid: TrackId, ins: &Insert)
+     p.rect_filled(r, 4.0, t.playlist_bg);
+     p.rect_stroke(r, 4.0, Stroke::new(1.0, t.border), StrokeKind::Inside);
+     let Some(audio) = audio else {
+-        p.text(r.center(), Align2::CENTER_CENTER, "Drop an audio file here", regular(12.0), t.text_dim);
++        p.text(r.center(), Align2::CENTER_CENTER, tr("Drop an audio file here"), regular(12.0), t.text_dim);
+         return;
+     };
+     let frames = audio.frames().max(1);
+diff --git a/crates/ui-egui/src/score_editor.rs b/crates/ui-egui/src/score_editor.rs
+index 470d6ef..1be9cbc 100644
+--- a/crates/ui-egui/src/score_editor.rs
++++ b/crates/ui-egui/src/score_editor.rs
+@@ -5,6 +5,7 @@
+ //! meter map, and the clef split at middle C.
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{bold, regular};
+ use egui::{Align2, Color32, Pos2, Rect, Sense, Shape, Stroke, pos2, vec2};
+ use soundcraft_model::ClipContent;
+@@ -38,9 +39,9 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Score Editor").open(&mut open).default_size(vec2(900.0, 340.0)).show(ctx, |ui| {
++    egui::Window::new(tr("Score Editor")).open(&mut open).default_size(vec2(900.0, 340.0)).show(ctx, |ui| {
+         let Some(cid) = crate::midi_editor::target_clip(app) else {
+-            ui.label("Select a MIDI clip or MIDI track.");
++            ui.label(tr("Select a MIDI clip or MIDI track."));
+             return;
+         };
+         let s = app.engine.session();
+@@ -141,7 +142,7 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+             }
+         });
+-        ui.label(egui::RichText::new("Notation view of the MIDI clip; edit notes in the MIDI Editor or Event List.").small());
++        ui.label(egui::RichText::new(tr("Notation view of the MIDI clip; edit notes in the MIDI Editor or Event List.")).small());
+     });
+     app.ui.show_score = open;
+ }
+diff --git a/crates/ui-egui/src/spot.rs b/crates/ui-egui/src/spot.rs
+index c9b4102..5640e58 100644
+--- a/crates/ui-egui/src/spot.rs
++++ b/crates/ui-egui/src/spot.rs
+@@ -1,5 +1,6 @@
+ //! The Spot dialog: exact positions for clips in Spot mode.
+
++use crate::i18n::tr;
+ use crate::theme::mono;
+ use egui::{Id, RichText, TextEdit, Ui, vec2};
+ use serde_json::{Value, json};
+@@ -117,10 +118,10 @@ fn recorded_at(s: &Session, time_reference: u64) -> Samples {
+ pub fn fields(ui: &mut Ui, s: &Session, d: &mut Spot) {
+     let show = |at: Samples, f: TimeFormat| s.format_position(at, f);
+     egui::Grid::new("spot").num_columns(2).spacing(vec2(10.0, 6.0)).show(ui, |ui| {
+-        ui.label("Time Scale");
+-        egui::ComboBox::from_id_salt("spot_scale").selected_text(d.format.label()).show_ui(ui, |ui| {
++        ui.label(tr("Time Scale"));
++        egui::ComboBox::from_id_salt("spot_scale").selected_text(tr(d.format.label())).show_ui(ui, |ui| {
+             for f in TimeFormat::ALL {
+-                ui.selectable_value(&mut d.format, f, f.label());
++                ui.selectable_value(&mut d.format, f, tr(f.label()));
+             }
+         });
+         ui.end_row();
+@@ -128,7 +129,7 @@ pub fn fields(ui: &mut Ui, s: &Session, d: &mut Spot) {
+             if i == 1 && matches!(d.target, Target::Trim { .. }) {
+                 continue;
+             }
+-            ui.label(label);
++            ui.label(tr(label));
+             if d.editable(i) {
+                 let id = Id::new(("spot_field", i));
+                 if !ui.memory(|m| m.has_focus(id)) {
+@@ -150,14 +151,14 @@ pub fn fields(ui: &mut Ui, s: &Session, d: &mut Spot) {
+             }
+             ui.end_row();
+         }
+-        ui.label("Duration");
++        ui.label(tr("Duration"));
+         ui.label(RichText::new(format_length(d.start, d.len, d.format, s.sample_rate, &s.tempo, s.frame_rate)).font(mono(13.0)));
+         ui.end_row();
+         if let Some(at) = d.stamp {
+-            ui.label("Original Time Stamp");
++            ui.label(tr("Original Time Stamp"));
+             ui.horizontal(|ui| {
+                 ui.label(RichText::new(show(at, TimeFormat::Timecode)).font(mono(13.0)));
+-                if ui.button("Use").on_hover_text("Spot to where it was recorded").clicked() {
++                if ui.button(tr("Use")).on_hover_text(tr("Spot to where it was recorded")).clicked() {
+                     d.start = at;
+                 }
+             });
+diff --git a/crates/ui-egui/src/toolbar.rs b/crates/ui-egui/src/toolbar.rs
+index 41d83ac..4a27e66 100644
+--- a/crates/ui-egui/src/toolbar.rs
++++ b/crates/ui-egui/src/toolbar.rs
+@@ -1,5 +1,6 @@
+ //! The Edit window toolbar.
+
++use crate::i18n::tr;
+ use crate::theme::{Tokens, bold, mono, regular};
+ use crate::widgets::{icon_button, key, key_fill};
+ use crate::{SoundApp, icons};
+@@ -55,7 +56,7 @@ fn edit_modes(app: &mut SoundApp, ui: &mut Ui) {
+         (EditMode::Grid, 1, 1, "GRID", "F4"),
+     ];
+     let widest =
+-        modes.iter().map(|m| m.3).chain(["REL GRID"]).map(|l| ui.painter().layout_no_wrap(l.into(), bold(10.5), t.text).size().x).fold(0.0, f32::max);
++        modes.iter().map(|m| m.3).chain(["REL GRID"]).map(|l| ui.painter().layout_no_wrap(tr(l).into(), bold(10.5), t.text).size().x).fold(0.0, f32::max);
+     group(ui, 2.0 * widest + 44.0, 52.0, |ui, r| {
+         let inner = r.shrink(6.0);
+         let cw = inner.width() / 2.0;
+@@ -73,7 +74,7 @@ fn edit_modes(app: &mut SoundApp, ui: &mut Ui) {
+                 icons::draw(ui.painter(), Rect::from_center_size(cell.center(), vec2(15.0, 15.0)), "lock", fg);
+             } else {
+                 let txt = if m == EditMode::Grid && cur == EditMode::GridRelative { "REL GRID" } else { label };
+-                ui.painter().text(cell.center(), Align2::CENTER_CENTER, txt, bold(10.5), fg);
++                ui.painter().text(cell.center(), Align2::CENTER_CENTER, tr(txt), bold(10.5), fg);
+             }
+             resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, label));
+             if resp.clicked() {
+@@ -231,7 +232,7 @@ fn counters(app: &mut SoundApp, ui: &mut Ui) {
+     icons::draw(ui.painter(), Rect::from_center_size(pos2(main_r.max.x - 9.0, main_r.center().y), vec2(10.0, 10.0)), "triangle_down", t.text_dim);
+     egui::Popup::menu(&resp).show(|ui| {
+         for f in TimeFormat::ALL {
+-            if ui.selectable_label(main_fmt == f, f.label()).clicked() {
++            if ui.selectable_label(main_fmt == f, tr(f.label())).clicked() {
+                 let _ = app.run("view.main_counter", json!({"format": f.id()}));
+             }
+         }
+@@ -245,17 +246,17 @@ fn counters(app: &mut SoundApp, ui: &mut Ui) {
+     ];
+     for (i, (label, val)) in rows.iter().enumerate() {
+         let y = r.min.y + 10.0 + i as f32 * 13.0;
+-        ui.painter().text(pos2(r.min.x + 214.0, y), Align2::RIGHT_CENTER, *label, regular(11.0), t.counter_label);
++        ui.painter().text(pos2(r.min.x + 214.0, y), Align2::RIGHT_CENTER, tr(*label), regular(11.0), t.counter_label);
+         ui.painter().text(pos2(r.max.x - 8.0, y), Align2::RIGHT_CENTER, val, mono(11.0), t.counter_text);
+     }
+     // Sub counter row.
+     let y = r.max.y - 11.0;
+     ui.painter().line_segment([pos2(r.min.x + 6.0, r.max.y - 21.0), pos2(r.max.x - 6.0, r.max.y - 21.0)], Stroke::new(1.0, t.counter_rule));
+-    ui.painter().text(pos2(r.min.x + 10.0, y), Align2::LEFT_CENTER, "Sub", regular(11.0), t.counter_label);
++    ui.painter().text(pos2(r.min.x + 10.0, y), Align2::LEFT_CENTER, tr("Sub"), regular(11.0), t.counter_label);
+     ui.painter().text(pos2(r.min.x + 150.0, y), Align2::RIGHT_CENTER, fmt_pos(app, pos, sub_fmt), mono(11.0), t.counter_text);
+     let st = if app.engine.is_dirty() { "modified" } else { "saved" };
+     let dev = app.player.as_ref().map_or("no audio engine", |p| if p.silent { "silent clock" } else { "audio on" });
+-    ui.painter().text(pos2(r.max.x - 8.0, y), Align2::RIGHT_CENTER, format!("{st} · {dev}"), regular(10.0), t.text_dim);
++    ui.painter().text(pos2(r.max.x - 8.0, y), Align2::RIGHT_CENTER, format!("{} · {}", tr(st), tr(dev)), regular(10.0), t.text_dim);
+ }
+
+ fn grid_nudge(app: &mut SoundApp, ui: &mut Ui) {
+@@ -269,17 +270,17 @@ fn grid_nudge(app: &mut SoundApp, ui: &mut Ui) {
+     let gl = Rect::from_min_size(pos2(r.min.x + 6.0, r.min.y + 8.0), vec2(48.0, 16.0));
+     let resp = ui.interact(gl, ui.id().with("grid_lines"), Sense::click());
+     key(ui.painter(), gl, &resp, if lines { t.mode_on } else { t.counter_off });
+-    ui.painter().text(gl.center(), Align2::CENTER_CENTER, "Grid", bold(11.0), if lines { t.mode_on_text } else { t.mode_off_text });
++    ui.painter().text(gl.center(), Align2::CENTER_CENTER, tr("Grid"), bold(11.0), if lines { t.mode_on_text } else { t.mode_off_text });
+     if resp.on_hover_text("Show grid lines").clicked() {
+         let _ = app.run("view.grid_lines", json!({}));
+     }
+     let gr = Rect::from_min_max(pos2(r.min.x + 60.0, r.min.y + 6.0), pos2(r.max.x - 4.0, r.min.y + 26.0));
+-    ui.painter().text(pos2(gr.max.x - 14.0, gr.center().y), Align2::RIGHT_CENTER, grid.label(), mono(11.0), t.counter_text);
++    ui.painter().text(pos2(gr.max.x - 14.0, gr.center().y), Align2::RIGHT_CENTER, tr(&grid.label()), mono(11.0), t.counter_text);
+     let gresp = ui.interact(gr, ui.id().with("grid_value"), Sense::click());
+     value_menu(app, &gresp, "view.grid");
+-    ui.painter().text(pos2(r.min.x + 10.0, r.min.y + 44.0), Align2::LEFT_CENTER, "Nudge", regular(11.0), t.counter_label);
++    ui.painter().text(pos2(r.min.x + 10.0, r.min.y + 44.0), Align2::LEFT_CENTER, tr("Nudge"), regular(11.0), t.counter_label);
+     let nr = Rect::from_min_max(pos2(r.min.x + 60.0, r.min.y + 34.0), pos2(r.max.x - 4.0, r.min.y + 54.0));
+-    ui.painter().text(pos2(nr.max.x - 14.0, nr.center().y), Align2::RIGHT_CENTER, nudge.label(), mono(11.0), t.counter_text);
++    ui.painter().text(pos2(nr.max.x - 14.0, nr.center().y), Align2::RIGHT_CENTER, tr(&nudge.label()), mono(11.0), t.counter_text);
+     let nresp = ui.interact(nr, ui.id().with("nudge_value"), Sense::click());
+     value_menu(app, &nresp, "view.nudge");
+     for rr in [gr, nr] {
+@@ -378,14 +379,14 @@ fn tempo_meter(app: &mut SoundApp, ui: &mut Ui) {
+     let co = Rect::from_min_size(pos2(r.min.x + 6.0, r.min.y + 6.0), vec2(64.0, 15.0));
+     let resp = ui.interact(co, ui.id().with("countoff"), Sense::click());
+     key(ui.painter(), co, &resp, if countoff { t.mode_on } else { t.counter_off });
+-    ui.painter().text(co.center(), Align2::CENTER_CENTER, "Count Off", bold(10.0), if countoff { t.mode_on_text } else { t.mode_off_text });
++    ui.painter().text(co.center(), Align2::CENTER_CENTER, tr("Count Off"), bold(10.0), if countoff { t.mode_on_text } else { t.mode_off_text });
+     if resp.clicked() {
+         let _ = app.run("options.countoff", json!({}));
+     }
+-    ui.painter().text(pos2(r.max.x - 8.0, co.center().y), Align2::RIGHT_CENTER, format!("{bars} bars"), mono(11.0), t.counter_text);
+-    ui.painter().text(pos2(r.min.x + 70.0, r.min.y + 32.0), Align2::RIGHT_CENTER, "Meter", regular(11.0), t.counter_label);
++    ui.painter().text(pos2(r.max.x - 8.0, co.center().y), Align2::RIGHT_CENTER, format!("{bars} {}", tr("bars")), mono(11.0), t.counter_text);
++    ui.painter().text(pos2(r.min.x + 70.0, r.min.y + 32.0), Align2::RIGHT_CENTER, tr("Meter"), regular(11.0), t.counter_label);
+     ui.painter().text(pos2(r.max.x - 8.0, r.min.y + 32.0), Align2::RIGHT_CENTER, meter, mono(11.0), t.counter_text);
+-    ui.painter().text(pos2(r.min.x + 70.0, r.min.y + 48.0), Align2::RIGHT_CENTER, "Tempo", regular(11.0), t.counter_label);
++    ui.painter().text(pos2(r.min.x + 70.0, r.min.y + 48.0), Align2::RIGHT_CENTER, tr("Tempo"), regular(11.0), t.counter_label);
+     icons::draw(ui.painter(), Rect::from_center_size(pos2(r.min.x + 82.0, r.min.y + 48.0), vec2(13.0, 13.0)), "note", t.counter_text);
+     tempo_value(app, ui, r.max.x - 8.0, r.min.y + 48.0, bpm);
+     let clk = Rect::from_min_size(pos2(r.min.x + 6.0, r.min.y + 40.0), vec2(18.0, 18.0));
+diff --git a/crates/ui-egui/src/windows.rs b/crates/ui-egui/src/windows.rs
+index 78a9108..90352d3 100644
+--- a/crates/ui-egui/src/windows.rs
++++ b/crates/ui-egui/src/windows.rs
+@@ -1,6 +1,7 @@
+ //! Secondary floating windows (Window menu).
+
+ use crate::SoundApp;
++use crate::i18n::tr;
+ use crate::theme::{Tokens, mono, rgb};
+ use egui::{Color32, Sense, vec2};
+ use serde_json::json;
+@@ -30,22 +31,22 @@ pub fn show(app: &mut SoundApp, ctx: &egui::Context) {
+ fn audio_health(app: &mut SoundApp, ctx: &egui::Context) {
+     let mut open = app.ui.show_audio_health;
+     win(ctx, &mut open, "Session Audio Health", vec2(620.0, 360.0), |ui| {
+-        let refresh = ui.button("Refresh Report").clicked();
++        let refresh = ui.button(tr("Refresh Report")).clicked();
+         if app.audio_health_report.is_none() || refresh {
+             app.audio_health_report = Some(app.engine.execute("session.audio_health", &json!({})).map_err(|error| error.to_string()));
+         }
+         let Some(result) = &app.audio_health_report else { return };
+         match result {
+             Ok(report) => {
+-                ui.label(format!("{} audio clips checked · {} issues", report["audio_clips"], report["issue_count"]));
++                ui.label(format!("{} {} · {} {}", report["audio_clips"], tr("audio clips checked"), report["issue_count"], tr("issues")));
+                 ui.label(match report["active_audio_end_seconds"].as_f64() {
+-                    Some(seconds) => format!("Active audio ends at {seconds:.2} seconds"),
+-                    None => "Active audio end time is unknown (invalid session sample rate)".into(),
++                    Some(seconds) => format!("{} {seconds:.2} {}", tr("Active audio ends at"), tr("seconds")),
++                    None => tr("Active audio end time is unknown (invalid session sample rate)").into(),
+                 });
+-                ui.label("Includes alternate takes and muted clips. Refresh after editing.");
++                ui.label(tr("Includes alternate takes and muted clips. Refresh after editing."));
+                 ui.separator();
+                 if report["healthy"] == true {
+-                    ui.label("All audio clips have loaded media within source bounds.");
++                    ui.label(tr("All audio clips have loaded media within source bounds."));
+                 }
+                 egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                     if let Some(issues) = report["issues"].as_array() {
+@@ -68,7 +69,7 @@ fn audio_health(app: &mut SoundApp, ctx: &egui::Context) {
+                     }
+                 });
+                 ui.separator();
+-                ui.label("Checks loaded media only, not files on disk, signal levels, plugins or routing.");
++                ui.label(tr("Checks loaded media only, not files on disk, signal levels, plugins or routing."));
+             }
+             Err(error) => {
+                 ui.label(error.to_string());
+@@ -85,13 +86,13 @@ fn win(ctx: &egui::Context, open: &mut bool, title: &str, size: egui::Vec2, body
+     if !*open {
+         return;
+     }
+-    egui::Window::new(title).open(open).default_size(size).show(ctx, body);
++    egui::Window::new(tr(title)).open(open).default_size(size).show(ctx, body);
+ }
+
+ fn automation(app: &mut SoundApp, ctx: &egui::Context) {
+     let mut open = app.ui.show_automation;
+     win(ctx, &mut open, "Automation", vec2(260.0, 260.0), |ui| {
+-        ui.label("Write automation for the selected tracks:");
++        ui.label(tr("Write automation for the selected tracks:"));
+         let tracks = app.engine.session().edit.selected_tracks.clone();
+         ui.horizontal_wrapped(|ui| {
+             for m in [
+@@ -103,26 +104,26 @@ fn automation(app: &mut SoundApp, ctx: &egui::Context) {
+                 AutomationMode::Write,
+                 AutomationMode::Trim,
+             ] {
+-                if ui.button(m.label()).clicked() {
++                if ui.button(tr(m.label())).clicked() {
+                     let ids: Vec<u64> = tracks.iter().map(|t| t.0).collect();
+                     let _ = app.run("mix.automation_mode", json!({"tracks": ids, "mode": m.label()}));
+                 }
+             }
+         });
+         ui.separator();
+-        ui.label("Enabled parameters");
++        ui.label(tr("Enabled parameters"));
+         for f in ["volume", "pan", "mute", "send level", "send pan", "send mute", "plugin"] {
+             let id = format!("automation.enable.{}", f.replace(' ', "_"));
+             let mut on = !app.engine.session().edit.flag(&format!("{id}.off"));
+-            if crate::widgets::checkbox(ui, &mut on, f).changed() {
++            if crate::widgets::checkbox(ui, &mut on, tr(f)).changed() {
+                 app.engine.session_mut().edit.set_flag(&format!("{id}.off"), !on);
+             }
+         }
+         ui.separator();
+-        if ui.button("Write to Current").clicked() {
++        if ui.button(tr("Write to Current")).clicked() {
+             let _ = app.run("automation.write_to_current", json!({}));
+         }
+-        if ui.button("Thin All").clicked() {
++        if ui.button(tr("Thin All")).clicked() {
+             let _ = app.run("automation.thin_all", json!({}));
+         }
+     });
+@@ -132,7 +133,7 @@ fn automation(app: &mut SoundApp, ctx: &egui::Context) {
+ fn color_palette(app: &mut SoundApp, ctx: &egui::Context) {
+     let mut open = app.ui.show_color_palette;
+     win(ctx, &mut open, "Color Palette", vec2(300.0, 140.0), |ui| {
+-        ui.label("Apply to selected tracks (Shift: selected clips)");
++        ui.label(tr("Apply to selected tracks (Shift: selected clips)"));
+         ui.horizontal_wrapped(|ui| {
+             for (i, c) in soundcraft_model::TRACK_COLORS.iter().enumerate() {
+                 let (r, resp) = ui.allocate_exact_size(vec2(28.0, 28.0), Sense::click());
+@@ -147,7 +148,7 @@ fn color_palette(app: &mut SoundApp, ctx: &egui::Context) {
+             }
+         });
+         ui.separator();
+-        ui.add(egui::Slider::new(&mut app.ui.track_tint, 0.0..=1.0).show_value(false).text("Track tint in the Edit window"));
++        ui.add(egui::Slider::new(&mut app.ui.track_tint, 0.0..=1.0).show_value(false).text(tr("Track tint in the Edit window")));
+     });
+     app.ui.show_color_palette = open;
+ }
+@@ -185,15 +186,15 @@ fn task_manager(app: &mut SoundApp, ctx: &egui::Context) {
+     win(ctx, &mut open, "Task Manager", vec2(320.0, 120.0), |ui| {
+         match &app.bounce {
+             Some(b) => {
+-                ui.label(format!("Bouncing {} ({:.0}%)", b.path().display(), b.progress() * 100.0));
++                ui.label(format!("{} {}（{:.0}%）", tr("Bouncing"), b.path().display(), b.progress() * 100.0));
+                 ui.add(egui::ProgressBar::new(b.progress()));
+             }
+             None => {
+-                ui.label("No background tasks are running.");
++                ui.label(tr("No background tasks are running."));
+             }
+         }
+         ui.label(
+-            egui::RichText::new("Renders and AudioSuite processes run to completion before returning.").small().color(Tokens::current().text_dim),
++            egui::RichText::new(tr("Renders and AudioSuite processes run to completion before returning.")).small().color(Tokens::current().text_dim),
+         );
+     });
+     app.ui.show_task_manager = open;
+@@ -215,14 +216,14 @@ fn metadata(app: &mut SoundApp, ctx: &egui::Context) {
+                 ("Markers", s.markers.len().to_string()),
+                 ("Length", s.format_position(s.content_end(), soundcraft_time::TimeFormat::MinSecs)),
+             ] {
+-                ui.label(k);
++                ui.label(tr(k));
+                 ui.label(v);
+                 ui.end_row();
+             }
+         });
+         ui.separator();
+         let mut c = s.comments.clone();
+-        ui.label("Session comments");
++        ui.label(tr("Session comments"));
+         if ui.text_edit_multiline(&mut c).changed() {
+             app.engine.session_mut().comments = c;
+         }
+@@ -234,7 +235,7 @@ fn event_list(app: &mut SoundApp, ctx: &egui::Context) {
+     let mut open = app.ui.show_event_list;
+     win(ctx, &mut open, "MIDI Event List", vec2(420.0, 360.0), |ui| {
+         let Some(cid) = crate::midi_editor::target_clip(app) else {
+-            ui.label("Select a MIDI clip.");
++            ui.label(tr("Select a MIDI clip."));
+             return;
+         };
+         let notes = match app.engine.session().find_clip(cid).map(|(_, c)| c.content.clone()) {
+@@ -244,7 +245,7 @@ fn event_list(app: &mut SoundApp, ctx: &egui::Context) {
+         egui::ScrollArea::vertical().show(ui, |ui| {
+             egui::Grid::new("evl").num_columns(5).striped(true).show(ui, |ui| {
+                 for h in ["Start (ticks)", "Note", "Vel", "Length", ""] {
+-                    ui.label(egui::RichText::new(h).strong());
++                    ui.label(egui::RichText::new(tr(h)).strong());
+                 }
+                 ui.end_row();
+                 for (i, n) in notes.iter().enumerate() {
+@@ -311,7 +312,7 @@ fn midi_keyboard(app: &mut SoundApp, ctx: &egui::Context) {
+             let next = s.tempo.tick_to_samples(s.tempo.samples_to_ticks(at, s.sample_rate) + len, s.sample_rate);
+             let _ = app.run("transport.locate", json!({"at": next}));
+         }
+-        ui.label(egui::RichText::new("Click keys to step-enter notes into the selected MIDI clip at the insertion point.").small());
++        ui.label(egui::RichText::new(tr("Click keys to step-enter notes into the selected MIDI clip at the insertion point.")).small());
+     });
+     app.ui.show_midi_keyboard = open;
+ }
+@@ -321,10 +322,10 @@ fn workspace(app: &mut SoundApp, ctx: &egui::Context) {
+     if !open {
+         return;
+     }
+-    egui::Window::new("Workspace").open(&mut open).default_size(vec2(460.0, 420.0)).show(ctx, |ui| {
++    egui::Window::new(tr("Workspace")).open(&mut open).default_size(vec2(460.0, 420.0)).show(ctx, |ui| {
+         let dir = if app.ui.workspace_dir.is_empty() { std::env::var("HOME").unwrap_or_else(|_| ".".into()) } else { app.ui.workspace_dir.clone() };
+         ui.horizontal(|ui| {
+-            if ui.button("⬆").on_hover_text("Parent folder").clicked()
++            if ui.button("⬆").on_hover_text(tr("Parent folder")).clicked()
+                 && let Some(p) = std::path::Path::new(&dir).parent()
+             {
+                 app.ui.workspace_dir = p.to_string_lossy().into_owned();
+@@ -368,7 +369,7 @@ fn workspace(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+             }
+         });
+-        ui.label(egui::RichText::new("Double-click to import audio/MIDI at the insertion point or open a session.").small());
++        ui.label(egui::RichText::new(tr("Double-click to import audio/MIDI at the insertion point or open a session.")).small());
+     });
+     app.ui.show_workspace = open;
+ }
+@@ -376,7 +377,7 @@ fn workspace(app: &mut SoundApp, ctx: &egui::Context) {
+ fn configurations(app: &mut SoundApp, ctx: &egui::Context) {
+     let mut open = app.ui.show_configurations;
+     win(ctx, &mut open, "Window Configurations", vec2(320.0, 240.0), |ui| {
+-        if ui.button("New Configuration…").clicked() {
++        if ui.button(tr("New Configuration…")).clicked() {
+             let n = app.ui.configurations.len() + 1;
+             let mut snap = app.ui.clone();
+             snap.configurations.clear();
+@@ -471,12 +472,12 @@ pub fn playback_engine(app: &mut SoundApp, ctx: &egui::Context) {
+     win(ctx, &mut open, "Playback Engine", vec2(460.0, 360.0), |ui| {
+         let t = Tokens::current();
+         egui::Grid::new("pe").num_columns(2).spacing(vec2(12.0, 6.0)).show(ui, |ui| {
+-            ui.label("Audio system");
++            ui.label(tr("Audio system"));
+             let def = systems.iter().find(|s| s.is_default).map_or("none".to_string(), |s| s.name.clone());
+-            let shown = draft.system.clone().unwrap_or_else(|| format!("Default ({def})"));
++            let shown = draft.system.clone().unwrap_or_else(|| format!("{}（{}）", tr("Default"), def));
+             egui::ComboBox::from_id_salt("pe-system").width(300.0).selected_text(shown).show_ui(ui, |ui| {
+                 let before = draft.system.clone();
+-                ui.selectable_value(&mut draft.system, None, format!("Default ({def})"));
++                ui.selectable_value(&mut draft.system, None, format!("{}（{}）", tr("Default"), def));
+                 for s in systems.iter() {
+                     ui.selectable_value(&mut draft.system, Some(s.name.clone()), &s.name);
+                 }
+@@ -488,37 +489,37 @@ pub fn playback_engine(app: &mut SoundApp, ctx: &egui::Context) {
+             });
+             ui.end_row();
+             let sys = chosen_system(&systems, &draft);
+-            ui.label("Output device");
++            ui.label(tr("Output device"));
+             device_combo(ui, "pe-out", &mut draft.output, sys.map_or(&[][..], |s| &s.outputs));
+             ui.end_row();
+-            ui.label("Input device");
++            ui.label(tr("Input device"));
+             device_combo(ui, "pe-in", &mut draft.input, sys.map_or(&[][..], |s| &s.inputs));
+             ui.end_row();
+             let out = sys.and_then(|s| chosen_device(&s.outputs, draft.output.as_deref()));
+-            ui.label("Sample rate");
++            ui.label(tr("Sample rate"));
+             number_combo(ui, "pe-rate", &mut draft.sample_rate, out.map_or(&[][..], |d| &d.sample_rates), "Hz");
+             ui.end_row();
+-            ui.label("Buffer size");
++            ui.label(tr("Buffer size"));
+             let buffers = out.map(DeviceInfo::buffer_sizes).unwrap_or_else(|| soundcraft_playback::devices::STANDARD_BUFFERS.to_vec());
+             number_combo(ui, "pe-buffer", &mut draft.buffer_size, &buffers, "samples");
+             ui.end_row();
+         });
+         ui.add_space(4.0);
+         ui.horizontal(|ui| {
+-            if ui.button("Refresh devices").clicked() {
++            if ui.button(tr("Refresh devices")).clicked() {
+                 refresh = true;
+             }
+             let changed = draft != app.ui.audio;
+-            if ui.add_enabled(changed, egui::Button::new("Apply")).on_hover_text("Reopen the audio devices with these settings").clicked() {
++            if ui.add_enabled(changed, egui::Button::new(tr("Apply"))).on_hover_text("Reopen the audio devices with these settings").clicked() {
+                 apply = true;
+             }
+-            if changed && ui.button("Revert").clicked() {
++            if changed && ui.button(tr("Revert")).clicked() {
+                 draft = app.ui.audio.clone();
+             }
+         });
+         ui.separator();
+         egui::Grid::new("pe-state").num_columns(2).show(ui, |ui| {
+-            ui.label("Output");
++            ui.label(tr("Output"));
+             ui.label(app.player.as_ref().map_or("none".to_string(), |p| {
+                 if p.silent {
+                     "no device (silent clock)".to_string()
+@@ -528,12 +529,12 @@ pub fn playback_engine(app: &mut SoundApp, ctx: &egui::Context) {
+                 }
+             }));
+             ui.end_row();
+-            ui.label("Input");
++            ui.label(tr("Input"));
+             ui.label(app.recorder.as_ref().map_or("opened on first record or monitor".to_string(), |r| {
+                 format!("{} · {} Hz · {} ch", r.device_name, r.sample_rate, r.channels)
+             }));
+             ui.end_row();
+-            ui.label("Session rate");
++            ui.label(tr("Session rate"));
+             let sr = app.engine.session().sample_rate.hz();
+             let note = app
+                 .player
+@@ -543,12 +544,12 @@ pub fn playback_engine(app: &mut SoundApp, ctx: &egui::Context) {
+             ui.label(format!("{sr} Hz{note}"));
+             ui.end_row();
+         });
+-        ui.label(egui::RichText::new("The mix runs in 512-sample blocks; the buffer size sets the device's own latency.").small().color(t.text_dim));
++        ui.label(egui::RichText::new(tr("The mix runs in 512-sample blocks; the buffer size sets the device's own latency.")).small().color(t.text_dim));
+         let mut dc = app.engine.session().edit.delay_compensation;
+-        if crate::widgets::checkbox(ui, &mut dc, "Delay compensation").changed() {
++        if crate::widgets::checkbox(ui, &mut dc, tr("Delay compensation")).changed() {
+             let _ = app.run("options.delay_compensation", json!({"value": dc}));
+         }
+-        if ui.button("Reconnect audio device").clicked() {
++        if ui.button(tr("Reconnect audio device")).clicked() {
+             app.reconnect_audio();
+         }
+     });
+@@ -609,7 +610,7 @@ pub fn audio_device_command(app: &mut SoundApp, p: &serde_json::Value) -> Result
+ pub fn io_setup(app: &mut SoundApp, ctx: &egui::Context) {
+     let mut open = app.ui.show_io_setup;
+     win(ctx, &mut open, "I/O Setup", vec2(420.0, 300.0), |ui| {
+-        ui.label(egui::RichText::new("Busses").strong());
++        ui.label(egui::RichText::new(tr("Busses")).strong());
+         let busses: Vec<(String, String)> = app.engine.session().busses.iter().map(|b| (b.name.clone(), b.format.label().to_string())).collect();
+         egui::Grid::new("busses").num_columns(3).striped(true).show(ui, |ui| {
+             for (name, fmt) in busses {
+@@ -621,22 +622,22 @@ pub fn io_setup(app: &mut SoundApp, ctx: &egui::Context) {
+                     let _ = app.run("setup.io", json!({"action": "rename_bus", "name": name, "new_name": edit}));
+                 }
+                 ui.label(fmt);
+-                if ui.small_button("Delete").clicked() {
++                if ui.small_button(tr("Delete")).clicked() {
+                     let _ = app.run("setup.io", json!({"action": "delete_bus", "name": name}));
+                 }
+                 ui.end_row();
+             }
+         });
+-        if ui.button("New Bus").clicked() {
++        if ui.button(tr("New Bus")).clicked() {
+             let n = app.engine.session().busses.len() + 1;
+             let _ = app.run("mix.new_bus", json!({"name": format!("Bus {n}")}));
+         }
+         ui.separator();
+-        ui.label(egui::RichText::new("Outputs").strong());
++        ui.label(egui::RichText::new(tr("Outputs")).strong());
+         // Main output format: stereo, or a surround format (the mix and master faders follow).
+         let main = app.engine.session().main_format();
+         ui.horizontal(|ui| {
+-            ui.label("Main output");
++            ui.label(tr("Main output"));
+             egui::ComboBox::from_id_salt("main_output_format").selected_text(main.label()).show_ui(ui, |ui| {
+                 for f in soundcraft_model::ChannelFormat::ALL.into_iter().filter(|f| (2..=16).contains(&f.channels())) {
+                     if ui.selectable_label(f == main, f.label()).clicked() && f != main {
+@@ -665,8 +666,8 @@ pub fn shortcuts_window(app: &mut SoundApp, ctx: &egui::Context) {
+                 for (shortcut, label, menu) in engine.chain(windows) {
+                     let Some(shortcut) = shortcut else { continue };
+                     ui.label(egui::RichText::new(crate::shortcuts::shortcut_label(shortcut, mac)).font(mono(11.0)));
+-                    ui.label(label);
+-                    ui.label(egui::RichText::new(menu).small());
++                    ui.label(tr(label));
++                    ui.label(egui::RichText::new(menu.split(" › ").map(tr).collect::<Vec<_>>().join(" › ")).small());
+                     ui.end_row();
+                 }
+             });
+@@ -689,20 +690,20 @@ pub fn clip_effects(app: &mut SoundApp, ctx: &egui::Context) {
+                 .map(|c| c.id)
+         });
+         let Some(cid) = clip else {
+-            ui.label("Select an audio clip.");
++            ui.label(tr("Select an audio clip."));
+             return;
+         };
+         let name = app.engine.session().find_clip(cid).map(|(_, c)| c.name.clone()).unwrap_or_default();
+         let bypass = app.engine.session().edit.flag(&format!("clip_fx.bypass.{}", cid.0));
+         ui.horizontal(|ui| {
+             ui.label(egui::RichText::new(&name).strong());
+-            if ui.selectable_label(bypass, "Bypass").clicked() {
++            if ui.selectable_label(bypass, tr("Bypass")).clicked() {
+                 let _ = app.run("clip.effects_bypass", json!({"clips": [cid.0]}));
+             }
+-            if ui.button("Render").clicked() {
++            if ui.button(tr("Render")).clicked() {
+                 let _ = app.run("clip.effects_render", json!({"clips": [cid.0]}));
+             }
+-            if ui.button("Clear").clicked() {
++            if ui.button(tr("Clear")).clicked() {
+                 let _ = app.run("edit.clear_clip_effects", json!({"clips": [cid.0]}));
+             }
+         });
+@@ -731,7 +732,7 @@ pub fn clip_effects(app: &mut SoundApp, ctx: &egui::Context) {
+             });
+             let mut g = get(app, "gain", 0.0);
+             let before = g;
+-            ui.add(egui::Slider::new(&mut g, -36.0..=24.0).text("Clip effects gain (dB)"));
++            ui.add(egui::Slider::new(&mut g, -36.0..=24.0).text(tr("Clip effects gain (dB)")));
+             if (g - before).abs() > f32::EPSILON {
+                 let _ =
+                     app.engine.execute_merged("clip.effects_set", &json!({"clips": [cid.0], "params": {"gain": g}}), &format!("cfx:{}:gain", cid.0));

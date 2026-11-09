@@ -23,6 +23,7 @@
       "!**/target",
       "!**/gen",
       "!**/references",
+      "!**/.agents/skills",
       "!**/.kenfutwork",
       "!**/.scratch",
       "!**/release",

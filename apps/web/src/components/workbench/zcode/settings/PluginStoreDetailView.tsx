@@ -20,9 +20,9 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { PluginStoreAvatar } from "@zui/settings/PluginStoreAvatar.js";
 import { ThemeHeroVisual } from "@zui/openWorkspacePageThemeHero.js";
-import documentsIconUrl from "@zui/assets/document-skill-icons/documents@2x.png";
-import pdfIconUrl from "@zui/assets/document-skill-icons/pdf@2x.png";
-import spreadsheetsIconUrl from "@zui/assets/document-skill-icons/spreadsheets@2x.png";
+import documentsIconUrl from "@zui/assets/plugin-icons/documents.svg";
+import pdfIconUrl from "@zui/assets/plugin-icons/pdf.svg";
+import spreadsheetsIconUrl from "@zui/assets/plugin-icons/spreadsheets.svg";
 import {
   PluginStoreInstallButton,
   PluginStoreItemMenu,

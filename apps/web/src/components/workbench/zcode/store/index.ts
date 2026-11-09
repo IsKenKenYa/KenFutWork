@@ -37,7 +37,14 @@ import {
   persistTaskNotificationSoundEnabled,
 } from "@zui/lib/taskNotificationPreferences.js";
 import type { Theme } from "../useTheme.js";
-import { applyTheme, normalizeThemePreference, resolveTheme } from "../useTheme.js";
+import {
+  applyTheme,
+  isTheme,
+  normalizeThemePreference,
+  notifyThemePreferenceChange,
+  resolveTheme,
+  THEME_PREFERENCE_EVENT,
+} from "../useTheme.js";
 
 import {
   INTERFACE_MODE_STORAGE_KEY,
@@ -283,6 +290,7 @@ export function createZCodeStore(
       writeSafeLocalStorage("zcode-theme", normalizedTheme);
       syncSystemThemeListener(normalizedTheme);
       applyTheme(normalizedTheme);
+      notifyThemePreferenceChange(normalizedTheme);
 
       set({ theme: normalizedTheme });
     },
@@ -520,6 +528,17 @@ export function createZCodeStore(
     } finally {
       applyingBroadcast = false;
     }
+  });
+
+  // 父页改变实例主题时，只同步事实与本地副作用，不再向父页回发形成循环。
+  window.addEventListener(THEME_PREFERENCE_EVENT, (event) => {
+    const candidate = (event as CustomEvent<Theme>).detail;
+    if (!isTheme(candidate)) return;
+    const normalizedTheme = normalizeThemePreference(candidate);
+    writeSafeLocalStorage("zcode-theme", normalizedTheme);
+    syncSystemThemeListener(normalizedTheme);
+    applyTheme(normalizedTheme);
+    useStore.setState({ theme: normalizedTheme });
   });
 
   syncSystemThemeListener(useStore.getState().theme);

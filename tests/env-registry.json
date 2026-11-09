@@ -144,6 +144,27 @@
       "status": "active",
       "note": "Flow 网关控制面单次请求等待预算毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
     },
+    "KENFUTWORK_FLOW_ENGINE_BOOTSTRAP_ATTEMPTS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Dify 初始化重试次数；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_FLOW_ENGINE_BOOTSTRAP_RETRY_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Dify 初始化重试间隔毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
+    "KENFUTWORK_FLOW_ENGINE_BOOTSTRAP_REQUEST_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": true,
+      "status": "active",
+      "note": "Dify 初始化单请求等待预算毫秒；默认/护栏唯一属主governance.ts，优先级库值 ?? env ?? defaults"
+    },
     "KENFUTWORK_OPEN_DESIGN_FRONTEND_URL": {
       "surface": "server",
       "readers": [

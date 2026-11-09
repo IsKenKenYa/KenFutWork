@@ -42,6 +42,19 @@ export function resolveDesignDocumentEntry(
   };
 }
 
+/**
+ * 旧引用不可加载、恢复目标被替换：宿主据此关闭残留标签并提示一次。
+ * 与 ensureDesignCanvasEntry 的过滤规则同源，避免两处各判一次。
+ */
+export function designCanvasReferenceReplaced(
+  preferredDocumentId: string | undefined,
+  resolvedDocumentId: string,
+): boolean {
+  return Boolean(
+    preferredDocumentId && preferredDocumentId !== resolvedDocumentId,
+  );
+}
+
 /** Workspace memory 尚在切换时不把旧工作区的状态当作新项目空态。 */
 export function hasPendingDocumentWorkspaceRestore(
   state: WorkspaceSidePaneState | null,
@@ -63,8 +76,14 @@ export function hasPendingDocumentWorkspaceRestore(
  * 只能给出 `{title:"画布"}` 且没有 documentId，先开一个空标签、再由画布视图自己去
  * 请求真实文档，会得到第二个标签——空白的「画布」和真正的「未命名画布」并排
  * （2026-10-20 用户截图）。
+ *
+ * `preferredDocumentId` 是旧标签指向的画布；列表里标记 `fileMissing` 的不进候选，
+ * 否则恢复旧标签会直接 409（目录迁移/删除后 DB 只剩文件指针）。
  */
-export async function ensureDesignCanvasEntry(projectId: string): Promise<{
+export async function ensureDesignCanvasEntry(
+  projectId: string,
+  preferredDocumentId?: string,
+): Promise<{
   documentId: string;
   title: string;
 }> {
@@ -74,8 +93,13 @@ export async function ensureDesignCanvasEntry(projectId: string): Promise<{
     ),
   );
   if (!list.success) throw new Error("画布列表不可用，请重新打开项目");
+  const available = list.data.canvases.filter(
+    (item) => item.fileMissing !== true,
+  );
   const target =
-    list.data.canvases.find((item) => item.isPrimary) ?? list.data.canvases[0];
+    available.find((item) => item.id === preferredDocumentId) ??
+    available.find((item) => item.isPrimary) ??
+    available[0];
   if (target) return { documentId: target.id, title: target.name };
   const created = canvasGetResponseSchema.safeParse(
     await surfaceJson(

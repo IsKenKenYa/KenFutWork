@@ -35,6 +35,7 @@ import type {
 import type { GoalService } from "../features/goals/service.js";
 import type { JobLoopService } from "../features/jobs/job-loop.js";
 import type { JobService } from "../features/jobs/job-service.js";
+import type { KnowledgeService } from "../features/knowledge/types.js";
 import type { LocalAccessService } from "../features/local-access/types.js";
 import type {
   LocalActor,
@@ -181,6 +182,12 @@ export interface ServiceMap {
    * Provider（内置 sherpa 离线 / BYOK 实例端点）。非模型可调用能力，故不进 `tools`。
    */
   voice: VoiceService;
+  /**
+   * SAG2 本地知识库缝：Definition 为 KnowledgeService，当前 Provider 为
+   * DisabledProvider（M2 换 SagCliProvider），Consumer 为 M3 的 pre-step
+   * preflight 与 M4 的侧边栏面板。安装态由市场 bundle 决定，运行期动态门控。
+   */
+  knowledge: KnowledgeService;
   /**
    * flow 引擎托管缝（FORM-11）：承载目标（host / WSL2）下的引擎栈生命周期钩子；
    * 消费方 = 插件卸载路由（卸载 flow 插件时 purge 引擎、保留插件代码，见《flow插件集成规划》§9.1③）。

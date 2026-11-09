@@ -255,11 +255,7 @@ export function createRunModelRequestPort(options: {
       const owner = usage.owner;
       if (!owner) throw new Error("模型请求缺少可信用量归属。");
       // 供应商没回传成本时用随包目录估算；未知模型保持缺省。
-      const costUsd = estimateModelCostUsd(
-        owner.model,
-        usage,
-        owner.provider,
-      );
+      const costUsd = estimateModelCostUsd(owner.model, usage, owner.provider);
       const totals = options.usage.update(options.runId, usage.modelCallId, {
         ...(costUsd === undefined ? {} : { costUsd }),
         provider: owner.provider,

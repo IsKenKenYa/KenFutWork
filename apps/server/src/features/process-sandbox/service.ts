@@ -4,7 +4,10 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { isSea } from "node:sea";
 import { fileURLToPath } from "node:url";
-import { executionEnvironment, nativeToolchainOverrides } from "./environment.js";
+import {
+  executionEnvironment,
+  nativeToolchainOverrides,
+} from "./environment.js";
 import { HelperLifecycle } from "./helper-lifecycle.js";
 import { LiveOutputConsumer } from "./live-output.js";
 import { createProjectReadLease } from "./project-read-lease.js";

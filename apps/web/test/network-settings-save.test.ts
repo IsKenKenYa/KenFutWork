@@ -9,7 +9,9 @@ const hints = {
 describe("网络设置保存的失败提示", () => {
   it("服务端拒绝时提示填写规则，只提示一次并返回 false", async () => {
     const notify = vi.fn();
-    const save = vi.fn().mockRejectedValue(new Error("HTTP 代理地址不是合法 URL。"));
+    const save = vi
+      .fn()
+      .mockRejectedValue(new Error("HTTP 代理地址不是合法 URL。"));
 
     await expect(saveNetworkSetting({ save, notify, hints })).resolves.toBe(
       false,

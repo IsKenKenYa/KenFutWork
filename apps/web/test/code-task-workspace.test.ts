@@ -13,6 +13,7 @@ const relinkSnapshot: ProjectDirectoryRelinkSnapshot = {
   projectId: observedProjectA,
   workDir: "/A",
   tasks: [{ taskId: observedTaskId, scopeGeneration: 4, branchGeneration: 1 }],
+  missing: false,
 };
 const relinkReceipt: ProjectDirectoryRelinkResponse = {
   projectId: observedProjectA,

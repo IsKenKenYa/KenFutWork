@@ -152,15 +152,20 @@ export function groupSkillsByPlugin(
   skills: SkillSummary[],
   query: string,
 ): ResourceGroups<SkillSummary, SkillSummary> {
-  const seenPaths = new Set<string>();
+  const seenIdentities = new Set<string>();
   const local: SkillSummary[] = [];
   const plugin: SkillSummary[] = [];
   for (const skill of skills) {
-    const normalizedPath = skill.path.replaceAll("\\", "/").toLowerCase();
-    if (seenPaths.has(normalizedPath)) {
-      continue;
+    // DB 技能没有本机文件路径（path 为空），按 path 去重会把整库技能折叠成一条。
+    // 有路径时仍按路径去重；没有路径时退回技能 id。
+    const identity =
+      skill.path.replaceAll("\\", "/").toLowerCase() || skill.id.trim();
+    if (identity) {
+      if (seenIdentities.has(identity)) {
+        continue;
+      }
+      seenIdentities.add(identity);
     }
-    seenPaths.add(normalizedPath);
     if (!normalizedQueryMatches(query, [skill.name, skill.description, skill.pluginName])) {
       continue;
     }

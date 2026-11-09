@@ -74,6 +74,7 @@ export type InstanceSettingsPatch = Partial<
   defaultModel?: string | undefined;
   agentMaxRetries?: number | undefined;
   terminalShell?: TerminalShellId | undefined;
+  theme?: InstanceSettings["theme"] | undefined;
   codeIndexEnabled?: boolean | undefined;
   codeIndexAutoNewFolder?: boolean | undefined;
   autoCompactEnabled?: boolean | undefined;
@@ -247,6 +248,7 @@ export function createSettingsService(options: {
       storedLlmInfiniteRetry,
       storedExecuteTimeoutMs,
       storedRuntimeGovernance,
+      storedTheme,
     ] = await Promise.all([
       repository.findModelDefaults(instanceId),
       repository.findDefaultModel(instanceId),
@@ -266,6 +268,7 @@ export function createSettingsService(options: {
       repository.findLlmInfiniteRetry(instanceId),
       repository.findExecuteTimeoutMs(instanceId),
       repository.findRuntimeGovernance(instanceId),
+      repository.findTheme(instanceId),
     ]).catch(() => {
       throw new SettingsServiceError(
         "settings_read_failed",
@@ -315,6 +318,7 @@ export function createSettingsService(options: {
       ),
       defaultModel: storedModel ?? resolvedFallback ?? defaultModel,
       terminalShell: storedShell ?? "auto",
+      theme: storedTheme ?? "system",
       codeIndexEnabled: storedIndexEnabled ?? false,
       // 缺省 true：只在上面那个总开关开着时才生效，所以不会「悄悄建索引」
       codeIndexAutoNewFolder: storedIndexAutoNewFolder ?? true,

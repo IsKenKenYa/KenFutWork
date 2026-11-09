@@ -24,6 +24,7 @@ export * from "./http.js";
 export * from "./instance-contracts.js";
 export * from "./job-contracts.js";
 export * from "./json.js";
+export * from "./knowledge-contracts.js";
 export * from "./local-access-contracts.js";
 export * from "./mcp-contracts.js";
 export * from "./media-driver-contracts.js";

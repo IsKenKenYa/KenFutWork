@@ -18,6 +18,7 @@ import type {
   UserInfo,
 } from "@zcode/shared";
 import type { IFeedbackService, IServiceAccessor } from "@zcode/services";
+import type { ExecutionMode } from "@kenfutwork/shared";
 import type { BrowserNavigationRequest, RecentClosedSidePaneTab } from "@zui/hooks/useAppPanels.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
@@ -76,6 +77,8 @@ export interface CreateTaskOptions {
   initialPrompt?: string;
   /** 与 initialPrompt canonical 前缀对应的结构化 mention；仅用于编辑器展示。 */
   initialPromptMention?: ComposerMentionPrefill;
+  /** 新任务草稿的执行方式；缺省由用户后续在会话内选择。 */
+  executionMode?: ExecutionMode;
   /** 新任务落在哪个 workspace；缺省取活动 workspace。 */
   targetWorkspace?: { workspacePath: string; workspaceIdentity?: string };
 }

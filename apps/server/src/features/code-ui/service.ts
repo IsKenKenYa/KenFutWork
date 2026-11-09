@@ -28,8 +28,8 @@ import {
 } from "@zcode/shared";
 import { z } from "zod";
 import type { AgentRunService } from "../../agent/runtime.js";
-import { removeTaskToolResultOffloads } from "../../agent/tool-result-offload.js";
 import { DEFAULT_SANDBOX_ROOT } from "../../agent/sandbox-dir.js";
+import { removeTaskToolResultOffloads } from "../../agent/tool-result-offload.js";
 import type { ServerEnv } from "../../config/env.js";
 import type {
   PromptExecutionContext,
@@ -43,13 +43,13 @@ import type { ThreadService } from "../chat/thread-service.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../code-git/code-git-service.js";
 import { createScopedGitExec } from "../code-git/scoped-git-exec.js";
-import { mergeBuiltinSlashCommands } from "../commands/builtin.js";
 import type {
   ChildSession,
   CodeChildRequest,
 } from "../code-subagents/types.js";
 import type { CodeTerminalService } from "../code-terminal/types.js";
 import { codeUiTerminalRpc } from "../code-terminal/ui-rpc.js";
+import { mergeBuiltinSlashCommands } from "../commands/builtin.js";
 import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import {
   ExecutionScopeError,
@@ -63,9 +63,9 @@ import type {
   LocalActor,
   LocalInstanceService,
 } from "../local-instance/types.js";
+import type { ProjectMemoryRpc } from "../memory/rpc.js";
 import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
-import type { ProjectMemoryRpc } from "../memory/rpc.js";
 import {
   type CodeUiProviderSettingsRpc,
   createCodeUiProviderSettingsRpc,
@@ -259,6 +259,17 @@ function canonical(value: unknown): string {
       .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
       .join(",")}}`;
   return JSON.stringify(value) ?? "null";
+}
+
+/** 只读取会话身份：v4 客户端把 workspace address 一并带上，地址由连接身份持有。 */
+function requireReadableSessionId(value: unknown, action: string): string {
+  const sessionId =
+    value && typeof value === "object" && "sessionId" in value
+      ? (value as { sessionId?: unknown }).sessionId
+      : undefined;
+  if (typeof sessionId !== "string" || sessionId.length === 0)
+    throw new CodeUiRepositoryError("not_found", `${action}缺少会话身份。`);
+  return sessionId;
 }
 
 function requireLiveUserInput(
@@ -756,10 +767,7 @@ export class CodeUiService {
     );
     for (const outcome of outcomes)
       if (outcome.status === "rejected")
-        console.warn(
-          "[code-ui] 偏好已保存，消费方刷新失败：",
-          outcome.reason,
-        );
+        console.warn("[code-ui] 偏好已保存，消费方刷新失败：", outcome.reason);
   }
 
   async admitExternalRun(
@@ -2292,8 +2300,31 @@ export class CodeUiService {
       "listDeletedTaskIds",
       "getTaskMeta",
       "deleteTask",
+      "getTaskSessionFilePath",
+      "getTaskNativeSessionLogFile",
     ]);
     if (!supported.has(method)) return null;
+    if (method === "getTaskNativeSessionLogFile") {
+      // 原 ZCode Agent 把结构化日志落 ~/.zcode 下；本内核无该原生日志文件，
+      // 按契约返回空路径（provider/path 均可空），避免 UI 轮询收到 501。
+      return { result: { provider: null, path: null, exists: false } };
+    }
+    if (method === "getTaskSessionFilePath") {
+      // 与上游 ZCode 适配器同规则：task 快照统一为 `{taskId}.zcode-session`。
+      // 本内核把会话状态存数据库、不落快照文件，故 `exists` 恒为 false（与上游一致）。
+      const request = args[0] as { workspacePath?: string; taskId?: string };
+      if (!request?.workspacePath || !request.taskId)
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "读取 task 快照路径缺少工作区或 Task 身份。",
+        );
+      return {
+        result: {
+          path: `${request.workspacePath}/${request.taskId}.zcode-session`,
+          exists: false,
+        },
+      };
+    }
     const workspace = await this.deps.localInstance.resolve(user);
     const projects = await this.listWorkspaces(user);
     const target = args[0] as {
@@ -2628,6 +2659,30 @@ export class CodeUiService {
         }),
       };
     }
+    if (method === "conversationWorkflowRunsV4") {
+      // 客户端按服务级 address 传参（含 workspacePath 等），地址由连接身份持有；
+      // 这里只取会话身份，不能用网关层的 strict schema 直接 parse。
+      const sessionId = requireReadableSessionId(args[0], "workflow run 查询");
+      // 原 ZCode 的 workflow run 枚举来自 CLI 旁路日志；本内核不产生 workflow run，
+      // 空清单就是事实。会话打开时客户端会查询该面，未接通会让界面反复失败。
+      await this.getSnapshot(user, sessionId);
+      return {
+        result: protocol.v4ConversationWorkflowRunsResultSchema.parse({
+          runs: [],
+        }),
+      };
+    }
+    if (method === "conversationPlansV4") {
+      const sessionId = requireReadableSessionId(args[0], "计划目录查询");
+      const snapshot = await this.getSnapshot(user, sessionId);
+      return {
+        result: protocol.v4ConversationPlansResultSchema.parse({
+          plans: [],
+          atSeq: snapshot.seq,
+          atLogEpoch: snapshot.logEpoch,
+        }),
+      };
+    }
     if (method === "backgroundBashOutputV4")
       return this.backgroundOutput.query(user, args[0]);
     if (method === "listSessionSubagents") {
@@ -2782,7 +2837,7 @@ export class CodeUiService {
           );
       }
       if (parsed.envelope.type === "createSession")
-        return this.prepareSessionCreation(user, parsed.envelope);
+        return this.createSessionWithFirstInput(user, parsed.envelope);
       if (parsed.envelope.sessionId) {
         const historical = await this.loadConversation(
           user,
@@ -2850,6 +2905,8 @@ export class CodeUiService {
           parsed.envelope,
           goalControl,
         );
+      if (parsed.envelope.type === "deleteSession")
+        return this.deleteSession(user, parsed.envelope);
       if (parsed.envelope.type === "stop")
         return this.stopExecution(user, parsed.envelope);
       if (parsed.envelope.type === "cancelBackgroundWork")
@@ -3583,6 +3640,35 @@ export class CodeUiService {
       }),
     );
     return { result: ack };
+  }
+
+  /**
+   * 删除 Task：上游 v4 客户端用该命令清理草稿/回滚启动流程，也用于用户主动删除。
+   * 复用原 `zcode-task.deleteTask` 的关闭链（取消活动 Run、释放附件与输出历史、
+   * 失效文件缓存、刷新列表），再走持久层墓碑删除；删除后迟到命令只会拿到
+   * not_found，无法复活数据。
+   */
+  private async deleteSession(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ) {
+    if (!envelope.sessionId)
+      throw new CodeUiRepositoryError("not_found", "删除缺少会话身份");
+    const loaded = await this.loadConversation(user, envelope.sessionId);
+    if (loaded.entry.id !== loaded.root.id)
+      throw new CodeUiRepositoryError(
+        "not_found",
+        "只能删除完整 Task，子会话随父 Task 一并删除。",
+      );
+    const revisionAtDecision = Number(loaded.root.revision) + 1;
+    await this.deleteTask(user, loaded.root.id);
+    return {
+      result: protocol.commandAckSchema.parse({
+        commandId: envelope.commandId,
+        status: "accepted",
+        revisionAtDecision,
+      }),
+    };
   }
 
   private async cancelBackgroundWork(
@@ -5279,6 +5365,61 @@ export class CodeUiService {
     } finally {
       release();
     }
+  }
+
+  /**
+   * v4 createSession：建会话与首条输入一次送达时，建完立刻按普通输入落地。
+   *
+   * 协议约定携带 `firstInput` 应直接形成 turnHeader + userInput 行（见
+   * `zcode-protocol-v4/command.ts` 的 createSession 注释）。派生命令 id 固定，
+   * 重试、进程崩溃后的重复会话命令都收敛到同一条输入，不会重复发送。
+   */
+  private async createSessionWithFirstInput(
+    user: LocalActor,
+    envelope: protocol.CommandEnvelope,
+  ): Promise<{
+    result: protocol.CommandAck;
+    publish?: () => Promise<void>;
+  }> {
+    const ack = await this.createSession(user, envelope);
+    const payload = protocol.commandPayloadSchemas.createSession.parse(
+      envelope.payload,
+    );
+    const first = payload.firstInput;
+    if (!first || (!first.text.trim() && !first.attachments?.length))
+      return { result: ack };
+    if (ack.status !== "accepted" || ack.result?.type !== "createSession")
+      return { result: ack };
+    const loaded = await this.loadConversation(user, ack.result.sessionId);
+    const admitted = await this.sendText(user, loaded.project.path, {
+      clientId: envelope.clientId,
+      commandId: `${envelope.commandId}:first-input`,
+      sessionId: ack.result.sessionId,
+      // 宿主统一要求 sendText 携带 Task 代际（执行租约），派生的首条输入同样遵守。
+      taskControl: {
+        projectId: loaded.root.project_id,
+        branchGeneration: Number(loaded.root.branch_generation),
+      },
+      type: "sendText",
+      issuedAt: envelope.issuedAt,
+      payload: {
+        text: first.text,
+        ...(first.attachments?.length
+          ? { attachments: first.attachments }
+          : {}),
+        ...(first.modelSelection
+          ? { modelSelection: first.modelSelection }
+          : {}),
+        ...(first.mode ? { mode: first.mode } : {}),
+        ...(first.planEnabled !== undefined
+          ? { planEnabled: first.planEnabled }
+          : {}),
+        ...((first.workContext ?? payload.workContext)
+          ? { workContext: first.workContext ?? payload.workContext }
+          : {}),
+      },
+    });
+    return { result: ack, publish: admitted.publish };
   }
 
   private async createAdmittedSession(

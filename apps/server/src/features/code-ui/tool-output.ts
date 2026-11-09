@@ -10,9 +10,9 @@ export function resolveToolOutputText(event: ToolCompleted): string {
   return event.toolName === "TaskOutput" && event.output
     ? JSON.stringify(event.output)
     : (event.outputText ??
-      (event.output
-        ? JSON.stringify(event.output)
-        : (event.outputSummary ?? "")));
+        (event.output
+          ? JSON.stringify(event.output)
+          : (event.outputSummary ?? "")));
 }
 
 /** 按 UTF-8 字节裁切，按码点推进，避免切断代理对。 */

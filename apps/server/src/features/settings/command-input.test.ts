@@ -22,9 +22,9 @@ describe("命令输入解析", () => {
   });
 
   it("自定义命令按参数展开", () => {
-    expect(
-      resolveConfiguredCommandPrompt("/inspect 画布", commands),
-    ).toContain("检查 画布 的实现");
+    expect(resolveConfiguredCommandPrompt("/inspect 画布", commands)).toContain(
+      "检查 画布 的实现",
+    );
   });
 
   it("未知命令与非命令文本原样返回", () => {
@@ -43,8 +43,8 @@ describe("命令输入解析", () => {
   });
 
   it("内置命令不依赖自定义命令配置", () => {
-    expect(
-      resolveConfiguredCommandPrompt("/review", undefined),
-    ).toContain("未提交改动");
+    expect(resolveConfiguredCommandPrompt("/review", undefined)).toContain(
+      "未提交改动",
+    );
   });
 });

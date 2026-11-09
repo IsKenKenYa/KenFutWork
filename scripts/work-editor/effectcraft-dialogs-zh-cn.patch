@@ -1,0 +1,469 @@
+diff --git a/crates/ui-egui/src/dock_ui.rs b/crates/ui-egui/src/dock_ui.rs
+index a92d376..c8abd78 100644
+--- a/crates/ui-egui/src/dock_ui.rs
++++ b/crates/ui-egui/src/dock_ui.rs
+@@ -41,8 +41,8 @@ impl EffectcraftApp {
+         }
+         let Some(comp) = self.session.active_comp() else { return out };
+         if let Some(l) = self.session.state.selected_layers.first().and_then(|id| comp.layer(*id)) {
+-            out.push((PanelKind::EffectControls, format!("Effect Controls {}", l.name)));
+-            out.push((PanelKind::Properties, format!("Properties: {}", l.name)));
++            out.push((PanelKind::EffectControls, crate::i18n::tr_args("Effect Controls {}", &[&l.name])));
++            out.push((PanelKind::Properties, crate::i18n::tr_args("Properties: {}", &[&l.name])));
+         }
+         out
+     }
+@@ -206,7 +206,13 @@ impl EffectcraftApp {
+         let titles = self.tab_titles();
+         let decos = self.tab_decos();
+         let docs = self.tab_docs();
+-        let title = |p: PanelKind| titles.iter().find(|(k, _)| *k == p).map(|(_, s)| s.clone()).unwrap_or_else(|| p.title().to_string());
++        let title = |p: PanelKind| {
++            titles
++                .iter()
++                .find(|(k, _)| *k == p)
++                .map(|(_, s)| crate::i18n::tr(s).to_string())
++                .unwrap_or_else(|| crate::i18n::tr(p.title()).to_string())
++        };
+         let info = dock::TabInfo { title: &title, decos: &decos, docs: &docs };
+         // Where each group's tabs are (tab drags show where a tab will land between them).
+         let mut tab_rects: Vec<(String, Vec<(PanelKind, Rect)>)> = vec![];
+@@ -570,7 +576,7 @@ impl EffectcraftApp {
+             }
+         }
+         // Ghost of the dragged tab.
+-        let g = painter.layout_no_wrap(p.title().to_string(), crate::theme::Tokens::ui(12.0), Color32::WHITE);
++        let g = painter.layout_no_wrap(crate::i18n::tr(p.title()).to_string(), crate::theme::Tokens::ui(12.0), Color32::WHITE);
+         let gr = Rect::from_min_size(pos + vec2(12.0, 10.0), g.size() + vec2(16.0, 8.0));
+         painter.rect_filled(gr, 4.0, t.focus.gamma_multiply(0.85));
+         painter.galley(gr.min + vec2(8.0, 4.0), g, Color32::WHITE);
+diff --git a/crates/ui-egui/src/header.rs b/crates/ui-egui/src/header.rs
+index fb381cf..1a4084c 100644
+--- a/crates/ui-egui/src/header.rs
++++ b/crates/ui-egui/src/header.rs
+@@ -259,7 +259,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+     if mresp.clicked() {
+         widgets::open_popup(ui, egui::Id::new("ws-pop"));
+     }
+-    let names: Vec<String> = crate::dock::WORKSPACES.iter().map(|s| s.to_string()).collect();
++    let names: Vec<String> = crate::dock::WORKSPACES.iter().map(|s| tr(s).to_string()).collect();
+     if let Some(i) = widgets::popup_menu(
+         ui,
+         egui::Id::new("ws-pop"),
+@@ -274,7 +274,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+     // Small Screen, Standard.
+     let shown = ["Standard", "Small Screen", "Learn", "Review", "Default"];
+     for name in shown {
+-        let g = p.layout_no_wrap(name.to_string(), Tokens::ui(12.0), t.text);
++        let g = p.layout_no_wrap(tr(name).to_string(), Tokens::ui(12.0), t.text);
+         let w = g.size().x + 16.0;
+         let r = Rect::from_min_max(pos2(rx - w, cy - 13.0), pos2(rx, cy + 13.0));
+         if r.min.x < x + 120.0 {
+diff --git a/crates/ui-egui/src/i18n.rs b/crates/ui-egui/src/i18n.rs
+index 8b8b01b..4680179 100644
+--- a/crates/ui-egui/src/i18n.rs
++++ b/crates/ui-egui/src/i18n.rs
+@@ -73,9 +73,11 @@ fn system_language() -> &'static str {
+         static LANGUAGE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+         LANGUAGE.get_or_init(|| supported(sys_locale::get_locale().as_deref()))
+     }
+-    // No system locale in the browser build: English.
++    // KenFutWork: 中文 Web 包没有系统区域探针，默认使用简体中文；设置中仍可切换语言。
+     #[cfg(target_arch = "wasm32")]
+-    supported(None)
++    {
++        supported(Some("zh-CN"))
++    }
+ }
+
+ /// The language EffectCraft shows for a BCP 47 locale (`ja-JP` → `ja`, `zh-Hans-CN` → `zh-hans`,
+diff --git a/crates/ui-egui/src/i18n/ui.rs b/crates/ui-egui/src/i18n/ui.rs
+index 434f2b7..07ddc80 100644
+--- a/crates/ui-egui/src/i18n/ui.rs
++++ b/crates/ui-egui/src/i18n/ui.rs
+@@ -1144,6 +1144,7 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
+     ("Property pick whip: drag onto a property", "属性拾取器：拖到属性上"),
+     ("Protected Region", "受保护区域"),
+     ("Proxy Use: {}", "代理使用：{}"),
++    ("Push", "推送"),
+     ("Push All to Comp", "全部推送到合成"),
+     ("RGB", "RGB"),
+     ("Radius", "半径"),
+@@ -1163,6 +1164,65 @@ const SIMPLIFIED_CHINESE: &[(&str, &str)] = &[
+     ("Resolution/Down Sample Factor Popup", "分辨率/向下采样系数弹出菜单"),
+     ("Restore Panel Size", "恢复面板大小"),
+     ("Reverse the order", "反转顺序"),
++    ("Revert", "还原"),
++    ("3D Renderer", "3D 渲染器"),
++    ("Advanced", "高级"),
++    ("Align", "对齐"),
++    ("Basic", "基本"),
++    ("Black", "黑色"),
++    ("Brushes", "画笔"),
++    ("Character", "字符"),
++    ("Composition Settings", "合成设置"),
++    ("Content-Aware Fill", "内容识别填充"),
++    ("Create Nulls From Paths", "从路径创建空对象"),
++    ("Effect Controls", "效果控件"),
++    ("Effects & Presets", "效果和预设"),
++    ("Essential Graphics", "基本图形"),
++    ("Flowchart", "流程图"),
++    ("History", "历史记录"),
++    ("Info", "信息"),
++    ("Lumetri Scopes", "Lumetri 示波器"),
++    ("Mask Interpolation", "蒙版插值"),
++    ("Media Browser", "媒体浏览器"),
++    ("Metadata", "元数据"),
++    ("Motion Sketch", "动态草图"),
++    ("Paint", "绘画"),
++    ("Paragraph", "段落"),
++    ("Parent & Link", "父级和链接"),
++    ("Preview", "预览"),
++    ("Progress", "进度"),
++    ("Properties", "属性"),
++    ("Render Queue", "渲染队列"),
++    ("Review", "审阅"),
++    ("Script Console", "脚本控制台"),
++    ("ScriptUI Panel", "ScriptUI 面板"),
++    ("Search project", "搜索项目"),
++    ("Select an item to see its details", "选择项目以查看详细信息"),
++    ("Small Screen", "小屏幕"),
++    ("Smoother", "平滑器"),
++    ("Square Pixels", "方形像素"),
++    ("Standard", "标准"),
++    ("Timeline", "时间轴"),
++    ("Tracker", "跟踪器"),
++    ("VR Comp Editor", "VR 合成编辑器"),
++    ("Wiggler", "摇摆器"),
++    ("Composition {}", "合成 {}"),
++    ("Effect Controls {}", "效果控件 {}"),
++    ("Properties: {}", "属性：{}"),
++    ("Folder", "文件夹"),
++    ("Layer Name", "图层名称"),
++    ("Source Name", "源名称"),
++    ("Search", "搜索"),
++    ("Keys", "关键帧"),
++    ("Comment", "注释"),
++    ("Mode", "模式"),
++    ("Track Matte", "轨道遮罩"),
++    ("No Track Matte", "无轨道遮罩"),
++    ("In", "入点"),
++    ("Out", "出点"),
++    ("Duration", "持续时间"),
++    ("is {}  Base {}{}", "为 {} · 基准 {}{}"),
++    ("drop", "丢帧"),
+     ("Revert All", "全部还原"),
+     ("Roman Hanging Punctuation", "西文悬挂标点"),
+     ("Roving:", "游动："),
+@@ -1884,6 +1944,7 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
+     ("Property pick whip: drag onto a property", "屬性拾取線：拖到屬性上"),
+     ("Protected Region", "受保護區域"),
+     ("Proxy Use: {}", "代理使用：{}"),
++    ("Push", "推送"),
+     ("Push All to Comp", "全部推送到合成"),
+     ("RGB", "RGB"),
+     ("Radius", "半徑"),
+@@ -1903,6 +1964,65 @@ const TRADITIONAL_CHINESE: &[(&str, &str)] = &[
+     ("Resolution/Down Sample Factor Popup", "分辨率/向下取樣係數快顯選單"),
+     ("Restore Panel Size", "恢復面板大小"),
+     ("Reverse the order", "反轉順序"),
++    ("Revert", "還原"),
++    ("3D Renderer", "3D 算圖引擎"),
++    ("Advanced", "進階"),
++    ("Align", "對齊"),
++    ("Basic", "基本"),
++    ("Black", "黑色"),
++    ("Brushes", "筆刷"),
++    ("Character", "字元"),
++    ("Composition Settings", "合成設置"),
++    ("Content-Aware Fill", "內容感知填滿"),
++    ("Create Nulls From Paths", "從路徑建立 Null"),
++    ("Effect Controls", "效果控制項"),
++    ("Effects & Presets", "效果與預設集"),
++    ("Essential Graphics", "基本圖形"),
++    ("Flowchart", "流程圖"),
++    ("History", "歷史記錄"),
++    ("Info", "資訊"),
++    ("Lumetri Scopes", "Lumetri 示波器"),
++    ("Mask Interpolation", "遮色片插補"),
++    ("Media Browser", "媒體瀏覽器"),
++    ("Metadata", "中繼資料"),
++    ("Motion Sketch", "動態草圖"),
++    ("Paint", "繪畫"),
++    ("Paragraph", "段落"),
++    ("Parent & Link", "父級與連結"),
++    ("Preview", "預覽"),
++    ("Progress", "進度"),
++    ("Properties", "屬性"),
++    ("Render Queue", "算圖佇列"),
++    ("Review", "審閱"),
++    ("Script Console", "指令碼主控台"),
++    ("ScriptUI Panel", "ScriptUI 面板"),
++    ("Search project", "搜尋專案"),
++    ("Select an item to see its details", "選取項目以檢視詳細資料"),
++    ("Small Screen", "小螢幕"),
++    ("Smoother", "平滑器"),
++    ("Square Pixels", "方形像素"),
++    ("Standard", "標準"),
++    ("Timeline", "時間軸"),
++    ("Tracker", "追蹤器"),
++    ("VR Comp Editor", "VR 合成編輯器"),
++    ("Wiggler", "擺動器"),
++    ("Composition {}", "合成 {}"),
++    ("Effect Controls {}", "效果控制項 {}"),
++    ("Properties: {}", "屬性：{}"),
++    ("Folder", "資料夾"),
++    ("Layer Name", "圖層名稱"),
++    ("Source Name", "來源名稱"),
++    ("Search", "搜尋"),
++    ("Keys", "關鍵影格"),
++    ("Comment", "註解"),
++    ("Mode", "模式"),
++    ("Track Matte", "軌道遮罩"),
++    ("No Track Matte", "無軌道遮罩"),
++    ("In", "入點"),
++    ("Out", "出點"),
++    ("Duration", "持續時間"),
++    ("is {}  Base {}{}", "為 {} · 基準 {}{}"),
++    ("drop", "丟格"),
+     ("Revert All", "全部還原"),
+     ("Roman Hanging Punctuation", "西文懸掛標點"),
+     ("Roving:", "游動："),
+@@ -4447,6 +4567,8 @@ mod tests {
+     const CONVERTED: &[(&str, &str)] = &[
+         ("color_picker.rs", include_str!("../color_picker.rs")),
+         ("credits.rs", include_str!("../credits.rs")),
++        ("dock.rs", include_str!("../dock.rs")),
++        ("dock_ui.rs", include_str!("../dock_ui.rs")),
+         ("header.rs", include_str!("../header.rs")),
+         ("menus.rs", include_str!("../menus.rs")),
+         ("widgets.rs", include_str!("../widgets.rs")),
+diff --git a/crates/ui-egui/src/panels/comp_settings.rs b/crates/ui-egui/src/panels/comp_settings.rs
+index 2cd19df..2e45e8c 100644
+--- a/crates/ui-egui/src/panels/comp_settings.rs
++++ b/crates/ui-egui/src/panels/comp_settings.rs
+@@ -171,8 +171,8 @@ fn timecode_field(ui: &mut egui::Ui, buf: &mut Option<String>, secs: &mut f64, r
+         }
+         *buf = None;
+     }
+-    let base = format!("Base {}{}", rate.timecode_base(), if df { "drop" } else { "" });
+-    ui.label(egui::RichText::new(format!("is {shown}  {base}")).color(Color32::GRAY));
++    let base = tr_args("is {}  Base {}{}", &[&shown, &rate.timecode_base(), &if df { tr("drop") } else { "" }]);
++    ui.label(egui::RichText::new(base).color(Color32::GRAY));
+     r
+ }
+
+@@ -259,7 +259,7 @@ pub fn show(
+     ui.add_space(8.0);
+     ui.horizontal(|ui| {
+         for (tab, label, key) in [(Tab::Basic, "Basic", "basic"), (Tab::Advanced, "Advanced", "advanced"), (Tab::Renderer, "3D Renderer", "renderer")] {
+-            let r = ui.selectable_label(d.tab == tab, label);
++            let r = ui.selectable_label(d.tab == tab, tr(label));
+             auto.add(&format!("dialog.comp.tab.{key}"), r.rect, label);
+             if r.clicked() {
+                 d.tab = tab;
+@@ -279,7 +279,7 @@ pub fn show(
+                     .or_else(|| PRESETS.iter().find(|(_, w, h, par, f)| matches(d, *w, *h, *par, *f)).map(|p| p.0))
+                     .unwrap_or("Custom");
+                 ui.horizontal(|ui| {
+-                    let r = egui::ComboBox::from_id_salt("comp-preset").width(300.0).selected_text(current).show_ui(ui, |ui| {
++                    let r = egui::ComboBox::from_id_salt("comp-preset").width(300.0).selected_text(tr(current)).show_ui(ui, |ui| {
+                         // Your own presets first, then the built-in ones.
+                         for q in custom {
+                             if ui.selectable_label(q.name == current, &q.name).clicked() {
+@@ -320,7 +320,7 @@ pub fn show(
+                     let (ow, oh) = (d.width, d.height);
+                     let r = ui.add(crate::widgets::drag_value(egui::DragValue::new(&mut d.width).range(4..=30000).suffix(" px")));
+                     auto.add("dialog.comp.width", r.rect, "Width");
+-                    let lbl = format!("Lock Aspect Ratio to {}", aspect_label(ow as f64, oh as f64));
++                    let lbl = tr_args("Lock Aspect Ratio to {}", &[&aspect_label(ow as f64, oh as f64)]);
+                     let r = ui.checkbox(&mut d.lock_aspect, lbl);
+                     auto.add("dialog.comp.lockAspect", r.rect, "Lock Aspect Ratio");
+                     if d.lock_aspect && ow != d.width && ow > 0 {
+@@ -341,11 +341,11 @@ pub fn show(
+                     let cur = PIXEL_ASPECTS
+                         .iter()
+                         .find(|(_, v)| (v - d.pixel_aspect).abs() < 1e-3)
+-                        .map(|p| p.0.to_string())
++                        .map(|p| tr(p.0).to_string())
+                         .unwrap_or_else(|| format!("{:.2}", d.pixel_aspect));
+                     let r = egui::ComboBox::from_id_salt("comp-par").width(220.0).selected_text(cur).show_ui(ui, |ui| {
+                         for (name, v) in PIXEL_ASPECTS {
+-                            if ui.selectable_label((v - d.pixel_aspect).abs() < 1e-3, *name).clicked() {
++                            if ui.selectable_label((v - d.pixel_aspect).abs() < 1e-3, tr(*name)).clicked() {
+                                 d.pixel_aspect = *v;
+                             }
+                         }
+@@ -392,7 +392,7 @@ pub fn show(
+                 ui.horizontal(|ui| {
+                     let r = crate::widgets::srgb_color_button(ui, &mut d.bg);
+                     auto.add("dialog.comp.background", r.rect, "Background Color");
+-                    ui.label(color_name(d.bg));
++                    ui.label(tr(color_name(d.bg)));
+                 });
+                 ui.end_row();
+             });
+diff --git a/crates/ui-egui/src/panels/essential.rs b/crates/ui-egui/src/panels/essential.rs
+index 2e99c7d..fa31764 100644
+--- a/crates/ui-egui/src/panels/essential.rs
++++ b/crates/ui-egui/src/panels/essential.rs
+@@ -543,12 +543,12 @@ fn instance(app: &mut EffectcraftApp, ui: &mut egui::Ui, actions: &mut Actions)
+                 }
+             }
+             if is_over {
+-                let r = ui.small_button("Revert");
++                let r = ui.small_button(tr("Revert"));
+                 app.auto.add(&format!("essential.instance.{}.revert", c.id), r.rect, "Revert");
+                 if r.clicked() {
+                     actions.push(("essential.revert".into(), json!({"layer": layer.id.0, "control": c.id})));
+                 }
+-                let r = ui.small_button("Push");
++                let r = ui.small_button(tr("Push"));
+                 app.auto.add(&format!("essential.instance.{}.push", c.id), r.rect, "Push to Comp");
+                 if r.clicked() {
+                     actions.push(("essential.pushToComp".into(), json!({"layer": layer.id.0, "control": c.id})));
+diff --git a/crates/ui-egui/src/panels/mod.rs b/crates/ui-egui/src/panels/mod.rs
+index 3aa9a19..c214d78 100644
+--- a/crates/ui-egui/src/panels/mod.rs
++++ b/crates/ui-egui/src/panels/mod.rs
+@@ -278,7 +278,7 @@ pub fn panel_menu_popup(app: &mut EffectcraftApp, ui: &mut egui::Ui) {
+                     }
+                 }
+                 _ => {
+-                    ui.label(egui::RichText::new(panel.title()).weak());
++                    ui.label(egui::RichText::new(tr(panel.title())).weak());
+                 }
+             }
+         });
+diff --git a/crates/ui-egui/src/panels/project.rs b/crates/ui-egui/src/panels/project.rs
+index c4e9894..8e4895f 100644
+--- a/crates/ui-egui/src/panels/project.rs
++++ b/crates/ui-egui/src/panels/project.rs
+@@ -436,14 +436,14 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+             app.auto.add(&format!("project.details.{i}"), r, l);
+         }
+     } else {
+-        let hint = "Select an item to see its details";
++        let hint = crate::i18n::tr("Select an item to see its details");
+         let r = widgets::text_fit(&p, head.center(), Align2::CENTER_CENTER, hint, Tokens::ui(11.0), head.width() - 20.0, t.text_faint);
+         app.auto.add("project.details.hint", r, hint);
+     }
+     // Search.
+     let sr = Rect::from_min_size(pos2(rect.min.x + 8.0, head.max.y + 2.0), vec2(rect.width() - 16.0, 22.0));
+     let mut q = app.ui.project_search.clone();
+-    widgets::search_field(ui, sr, &mut q, "Search project", &t);
++    widgets::search_field(ui, sr, &mut q, crate::i18n::tr("Search project"), &t);
+     app.ui.project_search = q;
+     app.auto.add("project.search", sr, "Search");
+     // Column header: Name, Label, then the visible optional columns.
+@@ -475,7 +475,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+             continue;
+         }
+         let resp = ui.interact(hr.intersect(hdr), egui::Id::new(("proj-sort", *key)), Sense::click());
+-        hp.with_clip_rect(hr).text(pos2(*x, hdr.center().y), Align2::LEFT_CENTER, *label, Tokens::ui(11.0), if resp.hovered() { t.text } else { t.text_dim });
++        hp.with_clip_rect(hr).text(pos2(*x, hdr.center().y), Align2::LEFT_CENTER, crate::i18n::tr(*label), Tokens::ui(11.0), if resp.hovered() { t.text } else { t.text_dim });
+         if *key == "label" {
+             icons::paint(&hp, Rect::from_center_size(pos2(label_x, hdr.center().y), vec2(10.0, 10.0)), Icon::Keyframe, t.text_dim);
+         }
+@@ -765,7 +765,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+             }
+             let cp = lp.with_clip_rect(cell);
+             let txt = match *key {
+-                "type" => it.type_name().to_string(),
++                "type" => crate::i18n::tr(it.type_name()).to_string(),
+                 "size" => file_size(it).map(fmt_size).unwrap_or_default(),
+                 "duration" => it.duration().map(|d| fmt_dur(d.seconds(), it.frame_rate().map(|r| r.as_f64()).unwrap_or(30.0))).unwrap_or_default(),
+                 "fps" => it.frame_rate().map(|f| format!("{:.2}", f.as_f64())).unwrap_or_default(),
+diff --git a/crates/ui-egui/src/panels/timeline.rs b/crates/ui-egui/src/panels/timeline.rs
+index b34fbd9..1c51d23 100644
+--- a/crates/ui-egui/src/panels/timeline.rs
++++ b/crates/ui-egui/src/panels/timeline.rs
+@@ -1517,7 +1517,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+     }
+     let sr = Rect::from_min_size(pos2(tc_rect.max.x + 14.0, top + 12.0), vec2((left_w - 420.0).clamp(120.0, 220.0), 22.0));
+     let mut search = app.ui.timeline.search.clone();
+-    widgets::search_field(ui, sr, &mut search, "Search", &t);
++    widgets::search_field(ui, sr, &mut search, crate::i18n::tr("Search"), &t);
+     app.ui.timeline.search = search;
+     app.auto.add("timeline.search", sr, "Search");
+     let mut bx = rect.min.x + left_w - 10.0;
+@@ -1786,7 +1786,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+     // Column headers scroll with the outline and never spill into the time ruler.
+     let hp = p.with_clip_rect(Rect::from_min_max(ch.min, pos2(graph_x0 - 1.0, ch.max.y)));
+     let hic = |icon: Icon, x: f32| icons::paint(&hp, Rect::from_center_size(pos2(x, hy), vec2(12.0, 12.0)), icon, t.text_dim);
+-    let htext = |x: f32, s: &str| hp.text(pos2(x, hy), Align2::LEFT_CENTER, s, Tokens::ui(11.0), t.text_dim);
++    let htext = |x: f32, s: &str| hp.text(pos2(x, hy), Align2::LEFT_CENTER, crate::i18n::tr(s), Tokens::ui(11.0), t.text_dim);
+     if vis.av {
+         hic(Icon::Eye, cw.av + 10.0);
+         hic(Icon::Speaker, cw.av + 28.0);
+@@ -2218,7 +2218,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+                         crate::i18n::tr("Parent pick whip: drag onto a layer"),
+                     );
+                     let pr_rect = Rect::from_min_size(pos2(cw.parent + 20.0, cy - 9.0), vec2(94.0, 18.0));
+-                    let plabel = layer.parent.and_then(|p| comp.layer(p)).map(|l| format!("{}. {}", idx_of(l.id), l.name)).unwrap_or_else(|| "None".into());
++                    let plabel = layer.parent.and_then(|p| comp.layer(p)).map(|l| format!("{}. {}", idx_of(l.id), l.name)).unwrap_or_else(|| crate::i18n::tr("None").into());
+                     let presp = widgets::dropdown(ui, pr_rect, &plabel, &t, egui::Id::new(("parent", layer.id.0)));
+                     app.auto.add(&format!("timeline.layer.{}.parent", layer.id.0), pr_rect, "Parent");
+                     let pop = egui::Id::new(("par-pop", layer.id.0));
+@@ -2226,7 +2226,7 @@ pub fn show(app: &mut EffectcraftApp, ui: &mut egui::Ui, rect: Rect) {
+                         widgets::open_popup(ui, pop);
+                     }
+                     let mut cands: Vec<&Layer> = vec![];
+-                    let mut popts = vec!["None".to_string(), "-".to_string()];
++                    let mut popts = vec![crate::i18n::tr("None").to_string(), "-".to_string()];
+                     if widgets::popup_is_open(ui, pop) {
+                         for (i, l) in comp.layers.iter().enumerate().filter(|(_, l)| l.id != layer.id) {
+                             popts.push(format!("{}. {}", i + 1, l.name));
+diff --git a/crates/ui-egui/src/panels/viewers.rs b/crates/ui-egui/src/panels/viewers.rs
+index 8d23513..af6cdf0 100644
+--- a/crates/ui-egui/src/panels/viewers.rs
++++ b/crates/ui-egui/src/panels/viewers.rs
+@@ -297,5 +297,5 @@ pub fn on_close(app: &mut EffectcraftApp, p: PanelKind) {
+ /// The tab label of viewer `id` ("Composition Intro").
+ pub fn title(app: &EffectcraftApp, id: u32) -> Option<String> {
+     let c = comp_of(app, id)?;
+-    Some(format!("Composition {}", app.session.project.item(c)?.name))
++    Some(crate::i18n::tr_args("Composition {}", &[&app.session.project.item(c)?.name]))
+ }
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index f5a0664..9497a05 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -322,6 +322,9 @@ static INTER_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regula
+ static INTER_MEDIUM: &[u8] = include_bytes!("../../../assets/fonts/Inter-Medium.ttf");
+ static INTER_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf");
+ static JETBRAINS_MONO: &[u8] = include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf");
++/// Public SIL OFL 1.1 font from the craft-fonts checkout used by the reproducible web build.
++#[cfg(target_arch = "wasm32")]
++static LXGW_WENKAI_LITE: &[u8] = include_bytes!(concat!(env!("CRAFT_FONTS_DIR"), "/fonts/lxgw-wenkai-lite/LXGWWenKaiLite-Regular.ttf"));
+
+ /// Install fonts (Inter, Inter Medium/SemiBold, JetBrains Mono) and egui visuals. `language` is the
+ /// resolved interface language from [`crate::i18n::language`] (`en`, `ja`, `zh-hans` or `zh-hant`),
+@@ -384,11 +387,17 @@ const SCRIPT_PROBES: &[(char, &str)] = &[
+ /// the Chinese catalogs. Both scripts are registered, so file, layer and template names in the
+ /// other one still render; then [`SCRIPT_PROBES`], then Hangul, since the Japanese and Chinese faces
+ /// may lack it (Hiragino Sans on macOS has none). The web build has no system fonts
+-/// and installs nothing.
++/// and installs only the bundled Chinese face.
+ fn install_script_fallbacks(family_fonts: &mut FontDefinitions, language: &str) -> Vec<String> {
+     #[cfg(target_arch = "wasm32")]
+     {
+-        let _ = (family_fonts, language);
++        if is_chinese(language) {
++            const NAME: &str = "lxgw-wenkai-lite";
++            family_fonts.font_data.insert(NAME.into(), Arc::new(FontData::from_static(LXGW_WENKAI_LITE)));
++            for family in family_fonts.families.values_mut() {
++                family.push(NAME.into());
++            }
++        }
+         Vec::new()
+     }
+     #[cfg(not(target_arch = "wasm32"))]
+@@ -452,7 +461,6 @@ fn han_probe(language: &str) -> char {
+ }
+
+ /// Whether `language` is one of the Chinese catalogs.
+-#[cfg(not(target_arch = "wasm32"))]
+ fn is_chinese(language: &str) -> bool {
+     matches!(language, "zh-hans" | "zh-hant")
+ }

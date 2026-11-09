@@ -951,8 +951,14 @@ export function useRemoteWorkspaceHistory({
       let conversationWorkspacePath: string | undefined;
       if (ensureConversationWorkspaceOnRestore) {
         try {
-          conversationWorkspacePath = (await services.fileService.ensureConversationWorkspace())
-            .path;
+          const resolved =
+            await services.fileService.ensureConversationWorkspace();
+          // 旧默认对话目录被删除时服务端已清引用并新建，这里只提示一次。
+          if (resolved.replacedMissingDirectory)
+            toast(
+              intl.formatMessage({ id: "root.conversationWorkspaceReplaced" }),
+            );
+          conversationWorkspacePath = resolved.path;
         } catch (error) {
           // 路径创建失败不能连带吞掉真实项目恢复；后续显式新建对话仍会走原有可重试错误入口。
           logger.warn("[Root] 恢复阶段解析 conversation workspace 失败", { error });
@@ -983,6 +989,7 @@ export function useRemoteWorkspaceHistory({
       allowRemoteWorkspaceRestore,
       deferInactiveWorkspaceRestore,
       ensureConversationWorkspaceOnRestore,
+      intl,
       services.fileService,
       tabStoreApi,
       unavailableWorkspacePath,

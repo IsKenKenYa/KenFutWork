@@ -29,11 +29,6 @@ import { z } from "zod";
 
 import type { ToolRegistry } from "../../kernel/types.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
-import {
-  defaultPluginCardLimits,
-  type PluginCardLimits,
-  truncatePluginCards,
-} from "./plugin-cards.js";
 import { fetchBundleFiles, type ScopedBundleSource } from "./bundle-source.js";
 import {
   CompatLoadError,
@@ -45,6 +40,11 @@ import {
   describeBundleFiles,
   readBundleSkills,
 } from "./package-description.js";
+import {
+  defaultPluginCardLimits,
+  type PluginCardLimits,
+  truncatePluginCards,
+} from "./plugin-cards.js";
 import {
   exportPluginBundle,
   type PluginExportSpec,
@@ -146,6 +146,12 @@ export interface PluginRegistryDeps {
   afterStateChanged?(event: PluginStateChangedEvent): void;
   /** GitHub token（可选，提升匿名速率上限） */
   githubToken?: string;
+  /**
+   * 本机服务实例 id：插件声明 `auto-init` 私有路由时，安装成功后由宿主以该实例
+   * 身份预热一次。插件 `apply(ctx)` 拿不到实例上下文，触发点只能由宿主补
+   * （见 `specs/ha-zero-config.md`）。
+   */
+  serviceInstanceId?(): Promise<string>;
   logger?: {
     info(message: string, ...rest: unknown[]): void;
     warn(message: string, ...rest: unknown[]): void;
@@ -755,6 +761,17 @@ export function createPluginRegistryService(
 
     const state = await readState();
     const previous = state.installed.find((record) => record.id === id);
+    /**
+     * 同名但 id 不同的旧记录：自带 bundle 落 `bundled__<包名>`、本地目录安装落
+     * `local__<包名>`，同一份 bundle 被两种来源各装一次就会**两份同时启用**——
+     * 设置页出现两行一模一样的插件，UI 入口与贡献项也重复注册。
+     * 同名只允许一份启用安装：这次安装按包名（不按 id 前缀猜）把另一份替换掉。
+     * 替换不走卸载语义：不清插件私有存储，也不触发引擎 purge（卸载 flow 会删
+     * Dify 容器/卷/镜像，那是用户显式卸载才该有的动作，不是内部去重）。
+     */
+    const sameNameTwins = state.installed.filter(
+      (record) => record.id !== id && record.name === manifest.name,
+    );
     const record: InstalledPlugin = {
       id,
       name: manifest.name,
@@ -802,7 +819,11 @@ export function createPluginRegistryService(
       await writeState({
         version: 1,
         installed: [
-          ...state.installed.filter((item) => item.id !== id),
+          ...state.installed.filter(
+            (item) =>
+              item.id !== id &&
+              !sameNameTwins.some((twin) => twin.id === item.id),
+          ),
           record,
         ],
       });
@@ -828,7 +849,59 @@ export function createPluginRegistryService(
       );
     }
 
+    // 同名旧 id 收尾：先让新记录装载并广播，再撤销双胞胎的贡献物与快照目录。
+    for (const twin of sameNameTwins) {
+      await revokeAndUnload({
+        reason: "replace",
+        previous: twin,
+        current: record,
+      });
+      records.delete(twin.id);
+      pendingRevocations.delete(twin.id);
+      await rm(bundleDirOf(twin.id), { recursive: true, force: true }).catch(
+        (error: unknown) => {
+          log.warn("[plugins] 同名旧安装已替换，但快照目录清理失败：", error);
+        },
+      );
+      notifyStateChanged({
+        reason: "uninstall",
+        previous: twin,
+        current: null,
+      });
+    }
+
+    // 装上即触发：插件声明 `auto-init` 私有路由时，宿主以本机实例身份预热一次。
+    // 预热失败不回滚安装态（插件装得上、接不接得上是两件事），但错误必须可见：
+    // 面板首次访问 `GET config` 会再次走同一条初始化链路并抛出真实原因。
+    await warmUpAutoInit(id);
+
     return { installed: record, report };
+  }
+
+  /**
+   * 可选能力探测：插件注册了 `POST auto-init` 就等于声明「装完即可自动接入」。
+   * 没有该路由的插件直接跳过，不需要改 manifest 契约。
+   */
+  async function warmUpAutoInit(pluginId: string): Promise<void> {
+    if (!deps.serviceInstanceId) return;
+    const instanceId = await deps.serviceInstanceId();
+    const result = await service.dispatchRoute({
+      pluginId,
+      method: "POST",
+      path: "auto-init",
+      query: {},
+      body: {},
+      headers: {},
+      isAuthenticated: true,
+      instanceId,
+    });
+    if (!result) return;
+    if (result.status >= 400) {
+      deps.logger?.warn(
+        `[plugins] ${pluginId} 自动初始化未完成：`,
+        result.body,
+      );
+    }
   }
 
   const readPackageFiles = async (id: string) => {
@@ -1377,7 +1450,38 @@ export function createPluginRegistryService(
     },
     async restore() {
       const state = await readState();
+      /**
+       * 历史残留收敛：同名插件曾以 `bundled__<包名>` 与 `local__<包名>` 两个 id
+       * 各装一份（安装只按 id 去重），两份都启用 → 设置页出现重复行、贡献项重复。
+       * 装载前按包名保留 `installedAt` 最新的一份，其余只摘记录——不动插件私有
+       * 存储、不触发引擎 purge（那是显式卸载的语义）。
+       */
+      const keepIdByName = new Map<string, string>();
       for (const record of state.installed) {
+        const kept = keepIdByName.get(record.name);
+        if (!kept || Date.parse(record.installedAt) > Date.parse(kept ?? "0")) {
+          keepIdByName.set(record.name, record.id);
+        }
+      }
+      const dropped = state.installed.filter(
+        (record) => keepIdByName.get(record.name) !== record.id,
+      );
+      const installable = state.installed.filter(
+        (record) => keepIdByName.get(record.name) === record.id,
+      );
+      if (dropped.length > 0) {
+        await writeState({ version: 1, installed: installable });
+        for (const record of dropped) {
+          records.delete(record.id);
+          pendingRevocations.delete(record.id);
+        }
+        log.warn(
+          `[plugins] 同名插件重复安装，已收敛为一份：${dropped
+            .map((record) => record.id)
+            .join("、")}`,
+        );
+      }
+      for (const record of installable) {
         records.set(record.id, record);
         if (pendingRevocations.has(record.id)) {
           log.warn(`[plugins] ${record.id} 撤销未完成，请显式重新启用或卸载。`);

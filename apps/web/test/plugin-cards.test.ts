@@ -1,14 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
 import type { PluginCardDeclaration } from "@kenfutwork/shared";
+import { describe, expect, it, vi } from "vitest";
+import {
+  pluginCardRenderer,
+  pluginCardView,
+} from "../src/components/workbench/zcode/host/pluginCardRenderer.js";
 import {
   collectPluginCards,
   findPluginCard,
   loadPluginCards,
 } from "../src/components/workbench/zcode/host/pluginCards.js";
-import {
-  pluginCardRenderer,
-  pluginCardView,
-} from "../src/components/workbench/zcode/host/pluginCardRenderer.js";
 
 const CARD: PluginCardDeclaration = {
   tools: ["demo_echo"],
@@ -99,17 +99,17 @@ describe("插件声明式卡片：库存变化即时生效", () => {
     expect(findPluginCard("demo_echo")).toEqual(CARD);
     await loadPluginCards(fakeClient([marketEntry({ enabled: false })]));
     expect(findPluginCard("demo_echo")).toBeNull();
-    expect(pluginCardRenderer.matches({
-      toolCallNode: { toolCall: { toolName: "demo_echo" } },
-    } as never)).toBe(false);
+    expect(
+      pluginCardRenderer.matches({
+        toolCallNode: { toolCall: { toolName: "demo_echo" } },
+      } as never),
+    ).toBe(false);
   });
 
   it("重读失败保留旧快照并记录原因", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await loadPluginCards(fakeClient([marketEntry()]));
-    await loadPluginCards(
-      sequencedClient([new Error("网络不可达")]),
-    );
+    await loadPluginCards(sequencedClient([new Error("网络不可达")]));
     expect(findPluginCard("demo_echo")).toEqual(CARD);
     expect(warn).toHaveBeenCalledWith(
       "[code-ui] 插件卡片声明读取失败：",

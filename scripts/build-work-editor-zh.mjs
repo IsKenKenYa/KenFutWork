@@ -70,6 +70,7 @@ const APP_CRATE = {
   filmcraft: "apps/filmcraft-web",
   vectorcraft: "apps/vectorcraft-web",
   photocraft: "apps/photocraft-web",
+  lightcraft: "apps/lightcraft-web",
   cadcraft: "apps/cadcraft-web",
   pdfcraft: "apps/pdfcraft-web",
   soundcraft: "apps/soundcraft-web",
@@ -102,7 +103,90 @@ function patchOnce(path, from, to, label, applied = to) {
   throw new Error(`补丁锚点不存在（${path}）——上游已改结构，需人工核对`);
 }
 
-// 1) ui-egui/craft_fonts_policy.rs 型（gridcraft / wordcraft）
+// 1) 按钮 / 弹窗 / 页签的源码级中文补丁。必须先于后面的内联文案补丁应用，
+//     否则同一 catalog 被改写后，补丁上下文会失配（GridCraft 实测）。
+const LOCALIZATION_PATCHES = {
+  gridcraft: "work-editor/gridcraft-dialogs-zh-cn.patch",
+  wordcraft: "work-editor/wordcraft-zh-cn.patch",
+  deckcraft: "work-editor/deckcraft-zh-cn.patch",
+  photocraft: "work-editor/photocraft-dialogs-zh-cn.patch",
+  lightcraft: "work-editor/lightcraft-dialogs-zh-cn.patch",
+  vectorcraft: "work-editor/vectorcraft-dialogs-zh-cn.patch",
+  filmcraft: "work-editor/filmcraft-dialogs-zh-cn.patch",
+  effectcraft: "work-editor/effectcraft-dialogs-zh-cn.patch",
+  soundcraft: "work-editor/soundcraft-zh-cn.patch",
+  cadcraft: "work-editor/cadcraft-dialogs-zh-cn.patch",
+};
+if (LOCALIZATION_PATCHES[app]) {
+  const patchFile = resolve(import.meta.dirname, LOCALIZATION_PATCHES[app]);
+  try {
+    execFileSync("git", ["apply", "--check", "--unidiff-zero", patchFile], {
+      cwd: source,
+      stdio: "pipe",
+    });
+    execFileSync("git", ["apply", "--unidiff-zero", patchFile], {
+      cwd: source,
+      stdio: "inherit",
+    });
+    console.log(`[zh] 已应用 ${app} 弹窗与按钮中文补丁`);
+  } catch (error) {
+    try {
+      execFileSync(
+        "git",
+        ["apply", "--reverse", "--check", "--unidiff-zero", patchFile],
+        {
+          cwd: source,
+          stdio: "pipe",
+        },
+      );
+      console.log(`[zh] ${app} 弹窗与按钮中文补丁已应用，跳过`);
+    } catch {
+      throw new Error(
+        `[zh] ${app} 中文补丁与上游源码不匹配，请核对注册表版本后重建。`,
+        { cause: error },
+      );
+    }
+  }
+}
+
+// WordCraft 的外部 craft-i18n 目录也走同一 git patch 机制，保持重建可复现。
+const CATALOG_PATCHES = {
+  wordcraft: "work-editor/wordcraft-i18n-zh-cn.patch",
+};
+if (CATALOG_PATCHES[app]) {
+  const patchFile = resolve(import.meta.dirname, CATALOG_PATCHES[app]);
+  try {
+    // 零上下文字典补丁先查已应用，避免重复插入同一行。
+    execFileSync(
+      "git",
+      ["apply", "--reverse", "--check", "--unidiff-zero", patchFile],
+      {
+        cwd: i18nDir,
+        stdio: "pipe",
+      },
+    );
+    console.log(`[zh] ${app} 中文目录补丁已应用，跳过`);
+  } catch {
+    try {
+      execFileSync("git", ["apply", "--check", "--unidiff-zero", patchFile], {
+        cwd: i18nDir,
+        stdio: "pipe",
+      });
+      execFileSync("git", ["apply", "--unidiff-zero", patchFile], {
+        cwd: i18nDir,
+        stdio: "inherit",
+      });
+      console.log(`[zh] 已应用 ${app} 中文目录补丁`);
+    } catch (error) {
+      throw new Error(
+        `[zh] ${app} 中文目录补丁与 craft-i18n 不匹配，请核对版本后重建。`,
+        { cause: error },
+      );
+    }
+  }
+}
+
+// 2) ui-egui/craft_fonts_policy.rs 型（gridcraft / wordcraft）
 const policyPath = join(source, "crates/ui-egui/src/craft_fonts_policy.rs");
 if (existsSync(policyPath)) {
   const nl = eol(read(policyPath));
@@ -221,8 +305,8 @@ if (existsSync(gridCraftWeb)) {
   );
   patchOnce(
     ribbonHome,
-    '    ui.separator();\n    if ui.button("More Functions…").clicked() {\n        app.open_dialog("insertFunction", json!({}));\n    }\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
-    '    ui.separator();\n    if ui.button("More Functions…").clicked() {\n        app.open_dialog("insertFunction", json!({}));\n    }\n}\n\n/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "DouyinSans" => "抖音美好体",\n        "Sarasa Gothic SC" => "更纱黑体",\n        "Zhuque Fangsong (technical preview)" => "朱雀仿宋",\n        "BIZ UDMincho" => "BIZ UD明朝",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
+    "fn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {",
+    '/// KenFutWork: 字体下拉显示中文名；写进单元格 / 选中值仍是字体真实家族名。\nfn font_label(family: &str) -> String {\n    match family {\n        "LXGW WenKai Lite" => "霞鹜文楷",\n        "LXGW Marker Gothic" => "霞鹜漫黑",\n        "Smiley Sans" | "Smiley Sans Oblique" => "得意黑",\n        "Yozai" => "悠哉字体",\n        "Ma Shan Zheng" => "马善政",\n        "ZCOOL KuaiLe" => "站酷快乐体",\n        "Noto Sans CJK SC" => "思源黑体",\n        "Noto Serif CJK SC" => "思源宋体",\n        "MiSans" => "小米 MiSans",\n        "DouyinSans" => "抖音美好体",\n        "Sarasa Gothic SC" => "更纱黑体",\n        "Zhuque Fangsong (technical preview)" => "朱雀仿宋",\n        "BIZ UDMincho" => "BIZ UD明朝",\n        _ => return family.to_owned(),\n    }\n    .to_owned()\n}\n\nfn font_combo(app: &mut SheetApp, ui: &mut Ui, st: &Style) {',
     "已加字体中文名映射",
     "fn font_label(family: &str) -> String {",
   );
@@ -543,6 +627,12 @@ pub fn shown_name(db: &vectorcraft_text::FontDb, family: &str, english: bool) ->
     "矢量：字体子菜单存语言",
     "(generation, english_names, lang, list)",
   );
+  patchOnce(
+    menusRs,
+    "    items.2.clone()",
+    "    items.3.clone()",
+    "矢量：返回语言缓存后的字体列表",
+  );
   const chromeRs = join(source, "crates/ui-egui/src/chrome.rs");
   patchOnce(
     chromeRs,
@@ -743,6 +833,25 @@ if (USER_FONT_PATCHES[app]) {
 
 // 3) 其余编辑器的字体放行（每个上游写法不同，逐条幂等替换）
 const ZERO_PATCHES = {
+  pdfcraft: [
+    [
+      "crates/fonts/build.rs",
+      'const BARRED_FAMILIES: [&str; 5] = ["Source Han", "Source Serif", "Source Sans", "Noto Sans CJK", "Noto Serif CJK"];',
+      'const BARRED_FAMILIES: [&str; 4] = ["Source Han", "Source Serif", "Source Sans", "Noto Serif CJK"];',
+    ],
+    [
+      "crates/fonts/build.rs",
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular")',
+      'let web_face = scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans")) || (*family == "BIZ UDPGothic" && *style == "Regular")',
+    ],
+  ],
+  wordcraft: [
+    [
+      "crates/fonts/build.rs",
+      "if wasm && !scripts.split(',').any(|s| s.trim() == \"Geor\") {",
+      'let chinese = scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"));\n        if wasm && !chinese && !scripts.split(\',\').any(|s| s.trim() == "Geor") {',
+    ],
+  ],
   deckcraft: [
     [
       "crates/fonts/build.rs",
@@ -754,8 +863,7 @@ const ZERO_PATCHES = {
     [
       "crates/fonts/build.rs",
       'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic;',
-      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || scripts.split(',
-      ').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
+      'let web_face = (*family == "BIZ UDPGothic" && *style == "Regular") || arabic || scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"));',
     ],
   ],
   // filmcraft 的放行由 2d 段处理（同一处改成 `!chinese &&` 形式），此处不再重复。
@@ -785,9 +893,9 @@ for (const [file, from, to, already] of ZERO_PATCHES[app] ?? []) {
   patchOnce(join(source, file), from, to, "已放行 CJK", already ?? to);
 }
 
-// 4) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft 与 FilmCraft
-//    没有 index.html，用自家的 `cargo xtask web`（wasm-bindgen 直出到 <target>/web/dist）。
-const XTASK_APPS = new Set(["effectcraft", "filmcraft"]);
+// 4) 构建：多数编辑器用 trunk（站点产物在 <repo>/dist/web）；EffectCraft、FilmCraft 与
+//    LightCraft 用自家的 `cargo xtask web`（LightCraft 还需要外置字体与 worker）。
+const XTASK_APPS = new Set(["effectcraft", "filmcraft", "lightcraft"]);
 const cwd = join(source, crate);
 if (!existsSync(cwd)) throw new Error(`找不到 web 构建目录：${cwd}`);
 console.log(`[zh] 构建 ${app} …（首次编译约 6 分钟）`);
@@ -818,9 +926,12 @@ if (XTASK_APPS.has(app)) {
 }
 
 // 4) 收集产物
-const dist = XTASK_APPS.has(app)
-  ? join(source, "target", "web", "dist")
-  : join(source, "dist/web");
+const dist =
+  app === "lightcraft"
+    ? join(source, "target", "web-site")
+    : XTASK_APPS.has(app)
+      ? join(source, "target", "web", "dist")
+      : join(source, "dist/web");
 if (!existsSync(dist)) throw new Error(`构建成功但没有产物目录：${dist}`);
 const target = join(outDir, app);
 rmSync(target, { recursive: true, force: true });
@@ -837,6 +948,32 @@ writeFileSync(
 );
 const wasm = readdirSync(target).find((name) => name.endsWith("_bg.wasm"));
 if (!wasm) throw new Error("产物缺少 wasm");
+if (app === "lightcraft") {
+  for (const file of [
+    "lightcraft_zh_hans.otf",
+    "OFL-noto-sans-cjk-sc.txt",
+    "worker.js",
+  ]) {
+    if (!existsSync(join(target, file)))
+      throw new Error(`LightCraft 产物缺少 ${file}`);
+  }
+}
+const packagedCjkFont = {
+  wordcraft: "noto-sans-cjk-sc",
+  deckcraft: "noto-sans-cjk-sc",
+  pdfcraft: "noto-sans-cjk-sc",
+}[app];
+if (packagedCjkFont) {
+  const family = "Noto Sans CJK SC";
+  // 缺了 Noto CJK 时界面仍能编译，但中文全是方框；让回归在构建期直接失败。
+  const wasmBytes = readFileSync(join(target, wasm));
+  if (!wasmBytes.includes(Buffer.from(family)))
+    throw new Error(`${app} 产物缺少 ${family} 中文字形`);
+  const license = join(fonts, "fonts", packagedCjkFont, "OFL.txt");
+  if (!existsSync(license))
+    throw new Error(`缺少 Noto CJK 许可文件：${license}`);
+  cpSync(license, join(target, `OFL-${packagedCjkFont}.txt`));
+}
 console.log(
   `[zh] 完成：${target}（${wasm}，${(readFileSync(join(target, wasm)).length / 1048576).toFixed(1)}MB，含中文字体）`,
 );

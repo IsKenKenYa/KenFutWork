@@ -1,6 +1,10 @@
 import kenfutworkMarkUrl from "@zui/assets/kenfutwork-mark.png";
 import type { ReactNode } from "react";
 
+// vendor 编译走 vite/client 类型（图片导入是 URL 字符串），宿主编译按 Next 静态图片
+// 类型解析；运行时 code-ui 由 vite 打包，这里只能用 URL 字符串本身。
+const markUrl = kenfutworkMarkUrl as unknown as string;
+
 interface RootStartupLoadingProps {
   label: string;
   children?: ReactNode;
@@ -24,8 +28,8 @@ export function RootStartupLoading({
     >
       <ZCodeStartupLogoBadge />
       <ZCodeStartupSpinner />
-      {/* 与 web 层连接加载屏同款动画（用户口径：只留黑色 logo + 无底板 + 下方转圈；两屏完全同款
-          ——logo 位置一致，切换不跳位=不闪）。色值内联：本主题无 muted 系 token。 */}
+      {/* 与 web 层连接加载屏同款动画（用户口径：只留随主题黑白 logo + 无底板 + 下方转圈；两屏完全同款
+          ——logo 位置一致，切换不跳位=不闪）。旋转圈使用语义前景色。 */}
       {children}
     </div>
   );
@@ -34,27 +38,23 @@ export function RootStartupLoading({
 /** 加载旋转圈，全站唯一形态；与 web 层 `LoadingScreen` 同尺寸。 */
 export function ZCodeStartupSpinner() {
   return (
-    <div
-      className="h-6 w-6 animate-spin rounded-full border-2"
-      style={{
-        borderColor: "rgba(13, 13, 13, 0.15)",
-        borderTopColor: "rgba(13, 13, 13, 0.6)",
-      }}
-    />
+    // 与 web 层 LoadingScreen 逐字同款：暗色整圈取白（轨道 25% 白 + 纯白旋转弧），
+    // 加载屏→启动屏切换时颜色与尺寸都不跳。
+    <div className="h-6 w-6 animate-spin rounded-full border-2 border-foreground/15 border-t-foreground/60 motion-reduce:animate-none dark:border-white/25 dark:border-t-white" />
   );
 }
 
 /**
- * 初始化与引导共用品牌徽标：裸黑标（与侧栏品牌行同款——黑墨迹、正常背景），
- * 加载→就绪全程 logo 颜色不变化（用户口径：logo 只要黑白、加载时不变色）。
+ * 初始化与引导共用品牌徽标：与侧栏品牌行同款（浅色黑墨迹、深色纯白剪影），
+ * 加载→就绪全程 logo 颜色不变化。
  */
 export function ZCodeStartupLogoBadge() {
   return (
     // biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败
     <img
-      src={kenfutworkMarkUrl}
+      src={markUrl}
       alt="KenFutWork"
-      className="size-14 select-none brightness-0"
+      className="size-14 select-none brand-mark"
       draggable={false}
     />
   );

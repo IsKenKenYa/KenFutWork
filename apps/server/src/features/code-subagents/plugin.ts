@@ -37,10 +37,9 @@ export function createCodeSubagentsPlugin(): PluginDefinition {
             },
             usageFor: async (context, childRunId) => {
               if (!context.actor) return null;
-              return ctx.get("usage").runSummary(
-                context.scope.instanceId,
-                childRunId,
-              );
+              return ctx
+                .get("usage")
+                .runSummary(context.scope.instanceId, childRunId);
             },
             runChild: (request, signal) =>
               createCodeChildHarness({

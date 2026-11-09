@@ -5,6 +5,8 @@ import {
   contentBlockSchema,
   errorCodeValues,
   healthResponseSchema,
+  instanceSettingsSchema,
+  instanceSettingsUpdateRequestSchema,
   runCancelResponseSchema,
   runCreateRequestSchema,
   runCreateResponseSchema,
@@ -846,4 +848,20 @@ it("公共Run保留有效零代际Task，拒绝负代际、不安全整数与零
   expect(
     runCreateRequestSchema.safeParse({ ...input, branchGeneration: 0 }).success,
   ).toBe(false);
+});
+
+describe("实例主题契约", () => {
+  it("缺省跟随系统，单字段主题 PATCH 不夹带其它默认值", () => {
+    const settings = instanceSettingsSchema.parse({ defaultModel: "" });
+    expect(settings.theme).toBe("system");
+    expect(
+      instanceSettingsUpdateRequestSchema.parse({ theme: "zai-dark" }),
+    ).toEqual({
+      theme: "zai-dark",
+    });
+    expect(
+      instanceSettingsUpdateRequestSchema.safeParse({ theme: "midnight" })
+        .success,
+    ).toBe(false);
+  });
 });

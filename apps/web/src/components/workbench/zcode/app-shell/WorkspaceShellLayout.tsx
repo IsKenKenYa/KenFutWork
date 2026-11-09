@@ -37,7 +37,7 @@ import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { parseLocalWorkspaceIdentity, type ZCodeTaskUnreadObservation } from "@zcode/shared";
 import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
-import { CANVAS_DOCUMENT_DELETED_EVENT, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
+import { CANVAS_DOCUMENT_DELETED_EVENT, designCanvasReferenceReplaced, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
 import { HostWorkSurface } from "@zui/host/WorkSurface.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
@@ -252,7 +252,6 @@ export const WorkspaceShellLayout = memo(
     onResolveConversationWorkspace,
     onOpenWorkspace,
     onOpenFolderFromWorkspaceMenu,
-    onOpenRemoteWorkspace,
     onCreateScratchWorkspace,
     allowOpenWorkspace = true,
     workspaceAbsPath,
@@ -1754,18 +1753,31 @@ export const WorkspaceShellLayout = memo(
       lastDesignEntryRef.current = entryKey;
       const entry = resolveDesignDocumentEntry(sidePaneState,
         { projectId: documentProjectId, workspaceKey }, lastDocumentTabByWorkspaceRef.current.get(workspaceKey));
-      if (entry.documentId) {
-        handleOpenDocument({ ...entry, restoreExisting: true });
-        return;
-      }
+      // 有旧标签也要回服务端核对画布文件：目录迁移/删除后 DB 只剩指针，
+      // 直接恢复旧标签会 409 canvas_file_missing。
       // 没有可指向的画布文档：先在宿主侧敲定真实画布（主画布优先，没有就建一个），
       // 再开标签。反过来先开一个没有 documentId 的空标签，画布视图再去请求真实画布，
       // 结果是两个标签并排——空白的「画布」+ 真正的画布（2026-10-20 用户截图）。
       const projectIdForEntry = documentProjectId;
-      void ensureDesignCanvasEntry(projectIdForEntry)
+      void ensureDesignCanvasEntry(projectIdForEntry, entry.documentId)
         .then((canvas) => {
           // 期间可能又切了工作区/项目，过期结果不再开标签
           if (lastDesignEntryRef.current !== entryKey) return;
+          if (designCanvasReferenceReplaced(entry.documentId, canvas.documentId)) {
+            // 旧标签指向的画布文件已缺失：关掉残留标签，由可加载的画布接手。
+            const stale = documentSidePaneStateRef.current?.tabs.find(
+              (tab) =>
+                tab.type === "document" &&
+                tab.projectId === projectIdForEntry &&
+                tab.workspaceKey === workspaceKey &&
+                tab.documentId === entry.documentId,
+            );
+            if (stale) handleCloseSidePaneTab(stale.id);
+            // 引用被替换只提示一次：lastDesignEntryRef 已锁住本次入口。
+            toast(
+              intl.formatMessage({ id: "workspace.designCanvasFileMissing" }),
+            );
+          }
           handleOpenDocument({
             resourceType: "canvas",
             projectId: projectIdForEntry,
@@ -1779,7 +1791,7 @@ export const WorkspaceShellLayout = memo(
           // entryKey 保持「已尝试」：此处若把 ref 重置为 null，下一次 effect 运行
           // 会立刻重试建画布，失败又触发 effect 重跑——请求与渲染的自激回路。
         });
-    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleOpenDocument, sidePaneState]);
+    }, [workspaceMainView, isWorkspaceVisible, documentProjectId, workspaceKey, handleCloseSidePaneTab, handleOpenDocument, intl, sidePaneState]);
     useEffect(() => {
       const open = (event: Event) => {
         const detail = (event as CustomEvent<OpenCanvasDocumentRequest>).detail;
@@ -1895,10 +1907,7 @@ export const WorkspaceShellLayout = memo(
                       onCreateConversationTask={
                         onCreateConversationTask ?? handleCreateTaskInChat
                       }
-                      onOpenFolderFromWorkspaceMenu={
-                        onOpenFolderFromWorkspaceMenu
-                      }
-                      onOpenRemoteWorkspace={onOpenRemoteWorkspace}
+                      onOpenFolderFromWorkspaceMenu={onOpenFolderFromWorkspaceMenu}
                       theme={theme}
                       onConnectRemote={onConnectRemote}
                       onSelectRemoteProject={onSelectRemoteProject}
@@ -2113,7 +2122,10 @@ export const WorkspaceShellLayout = memo(
                           />
                         </ScopedErrorBoundary>
                       ) : null}
-                      <div className="min-h-0 flex-1 overflow-hidden">
+                      <div
+                        className="min-h-0 flex-1 overflow-hidden"
+                        data-workspace-main-view={workspaceMainView}
+                      >
                         {/* 融合内嵌面（Design/Flow）：常驻挂载、按视图显隐（见 visitedEmbeddedSurfaces 注释）。 */}
                         {visitedEmbeddedSurfaces.has("flow") ? (
                           <div

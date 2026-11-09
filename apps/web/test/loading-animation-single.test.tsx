@@ -82,6 +82,25 @@ describe("全站唯一加载动画", () => {
     expect(frame).toContain("<LoadingScreen />");
   });
 
+  it("暗色旋转弧取白，不用品牌色（黑底上品牌浅岚几乎看不见）", () => {
+    for (const rel of [DEFINING["web 加载屏"], DEFINING["zcode 启动屏"]]) {
+      const text = source(rel);
+      expect(text, `${rel} 暗色旋转弧应为纯白`).toContain(
+        "dark:border-t-white",
+      );
+      expect(text, `${rel} 暗色旋转弧不得用品牌色`).not.toContain(
+        "dark:border-t-brand",
+      );
+    }
+    const shell = source(DEFINING["壳预渲染 HTML"]);
+    const spinnerRule = shell.slice(
+      shell.indexOf(".zcode-boot-loading__spinner"),
+      shell.indexOf("@keyframes"),
+    );
+    expect(spinnerRule).toContain("border-top-color: rgba(245, 245, 245");
+    expect(spinnerRule).not.toContain("brand");
+  });
+
   it("渲染出的加载屏是黑色 logo + 一个旋转圈，无底板", () => {
     const { container } = render(<LoadingScreen label="连接中" />);
     const status = screen.getByRole("status");
@@ -89,7 +108,8 @@ describe("全站唯一加载动画", () => {
     expect(status.getAttribute("aria-label")).toBe("连接中");
 
     const logo = container.querySelector("img");
-    expect(logo?.className).toContain("brightness-0");
+    expect(logo?.className).toContain("brand-mark");
+    expect(logo?.className).not.toContain("dark:invert");
 
     const animated = container.querySelectorAll('[class*="animate-"]');
     expect(animated).toHaveLength(1);

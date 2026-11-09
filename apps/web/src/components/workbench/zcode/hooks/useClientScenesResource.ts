@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import type { ClientSceneConfig, IClientScenesService } from "@zcode/services";
 import { createClientScenesVisibilityRecovery } from "@zui/hooks/clientScenesVisibilityRecovery.js";
@@ -68,6 +68,9 @@ export function useClientScenesResource(
   const authorityId = getServiceAuthorityId(clientScenesService);
   const { cache } = useSWRConfig();
   const visibilityAuthority = getVisibilityAuthority(clientScenesService, cache as object);
+  // 宿主明确返回业务失败（如本机没有场景目录）后不再重新拉取：
+  // focus/重连/可见性恢复的重验会把同一条业务错误反复刷进日志。
+  const [hostDeclined, setHostDeclined] = useState(false);
   const resource = useSWR<ClientSceneConfig[], Error>(
     enabled ? [CLIENT_SCENES_RESOURCE_KEY, authorityId] : null,
     async () => {
@@ -82,21 +85,25 @@ export function useClientScenesResource(
       focusThrottleInterval: CLIENT_SCENES_DEDUPING_INTERVAL_MS,
       keepPreviousData: false,
       refreshInterval: 0,
-      revalidateOnFocus: true,
-      revalidateOnReconnect: true,
+      revalidateOnFocus: !hostDeclined,
+      revalidateOnReconnect: !hostDeclined,
       shouldRetryOnError: false,
     },
   );
 
   useEffect(() => {
-    if (!enabled) return;
+    if (isClientScenesBusinessError(resource.error)) setHostDeclined(true);
+  }, [resource.error]);
+
+  useEffect(() => {
+    if (!enabled || hostDeclined) return;
     // macOS 点击关闭只 hide BrowserWindow，renderer 与 SWR 缓存不会销毁；
     // 重新 show 时若仍在去重窗口内，内建 focus revalidate 会继续复用旧 Scene。
     // hidden -> visible 必须绕过去重窗口强制重验，同时按 Service/cache authority 合并并发消费方。
     return getClientScenesVisibilityRecovery()?.subscribe(visibilityAuthority, () => {
       void resource.mutate().catch(() => undefined);
     });
-  }, [enabled, resource.mutate, visibilityAuthority]);
+  }, [enabled, hostDeclined, resource.mutate, visibilityAuthority]);
 
   return {
     scenes: resource.data ?? EMPTY_SCENES,

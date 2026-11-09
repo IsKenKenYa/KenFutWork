@@ -102,11 +102,14 @@ function outputStats(process: ManagedProcess) {
 }
 /** 子代理用量查询失败只影响展示，不影响 TaskOutput 读取本身（计量是旁路）。 */
 async function readSubagentUsage(
-  lookup: (() => readonly { id: string; value: SubagentUsageLookup }[]) | undefined,
+  lookup:
+    | (() => readonly { id: string; value: SubagentUsageLookup }[])
+    | undefined,
   instanceId: string,
   record: TaskWorkRecord,
 ): Promise<RunUsageSummary | null> {
-  if (record.kind !== "subagent" || !record.childSessionId || !lookup) return null;
+  if (record.kind !== "subagent" || !record.childSessionId || !lookup)
+    return null;
   try {
     const provider = lookup()[0]?.value;
     return provider

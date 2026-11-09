@@ -442,6 +442,7 @@ fn application_context<R: tauri::Runtime>() -> tauri::Context<R> {
 
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         // 单实例：第二个启动实例立即退出并唤起已有窗口——否则两个壳会竞态
         // initdb 同一个内嵌集群（密码文件错位 → auth 必败，2026-09-17 实测事故）
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {

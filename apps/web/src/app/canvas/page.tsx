@@ -365,7 +365,10 @@ function CanvasPageContent() {
         setError(
           err instanceof ApiAccessError
             ? "无法打开画布，请检查本机访问权限"
-            : "画布加载失败，请重新打开",
+            : err instanceof ApiApplicationError &&
+                err.code === "canvas_file_missing"
+              ? "画布文件缺失"
+              : "画布加载失败",
         );
         setPageLoading(false);
       });

@@ -10,6 +10,25 @@ import { afterEach, expect, it, vi } from "vitest";
 import { CodeWorkbenchFrame } from "../src/components/workbench/code-workbench-frame";
 import { LOCAL_ACCESS_LOST_EVENT } from "../src/lib/local-access";
 
+const themeHost = vi.hoisted(() => ({
+  setTheme: vi.fn(),
+  triggerDownload: vi.fn(),
+}));
+const api = vi.hoisted(() => ({ saveWorkDocument: vi.fn() }));
+vi.mock("@/lib/download", () => ({
+  triggerDownload: themeHost.triggerDownload,
+}));
+vi.mock("@/lib/server-api", () => ({
+  saveWorkDocument: api.saveWorkDocument,
+}));
+vi.mock("next-themes", () => ({
+  useTheme: () => ({
+    theme: "light",
+    resolvedTheme: "light",
+    setTheme: themeHost.setTheme,
+  }),
+}));
+
 vi.mock("../src/lib/local-instance-context", () => ({
   useLocalInstance: () => ({
     instance: { instanceId: "instance", dataDir: "/data" },
@@ -22,6 +41,9 @@ afterEach(() => {
   // 否则上一条用例的组件留在 body 里，getByRole 会命中多个
   cleanup();
   vi.unstubAllGlobals();
+  themeHost.setTheme.mockReset();
+  themeHost.triggerDownload.mockReset();
+  api.saveWorkDocument.mockReset();
   localStorage.clear();
 });
 
@@ -203,6 +225,162 @@ it("壳层挂载前由父页盖一张启动加载屏，收到本壳的 code-moun
   await waitFor(() => expect(loader()).toBeNull());
 });
 
+it("Code 壳主题变更同步到父页统一持久化，拒绝其它来源", async () => {
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: "https://untrusted.example",
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-theme-change", theme: "zai-dark" },
+    }),
+  );
+  expect(themeHost.setTheme).not.toHaveBeenCalled();
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-theme-change", theme: "zai-dark" },
+    }),
+  );
+  expect(themeHost.setTheme).toHaveBeenCalledWith("dark");
+});
+
+it("Work 保存由父页统一交付，同 saveId 并发重放只落盘一次", async () => {
+  themeHost.triggerDownload.mockResolvedValue(undefined);
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const post = vi.spyOn(frame.contentWindow, "postMessage");
+  const data = {
+    type: "kenfutwork:work-save",
+    saveId: "save-1",
+    fileName: "Book1.xlsx",
+    mimeType: "application/octet-stream",
+    bytes: new TextEncoder().encode("workbook").buffer,
+  };
+  for (let index = 0; index < 2; index += 1) {
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data,
+      }),
+    );
+  }
+
+  await waitFor(() =>
+    expect(themeHost.triggerDownload).toHaveBeenCalledTimes(1),
+  );
+  const [name, blob, options] = themeHost.triggerDownload.mock.calls[0] as [
+    string,
+    Blob,
+    { browserFallback: boolean },
+  ];
+  expect(name).toBe("Book1.xlsx");
+  expect(await blob.text()).toBe("workbook");
+  expect(options).toEqual({ browserFallback: false });
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      {
+        type: "kenfutwork:work-save-result",
+        saveId: "save-1",
+        ok: true,
+        error: null,
+      },
+      window.location.origin,
+    ),
+  );
+});
+
+it("Work 保存绑定了项目目录时落到项目里，不再走下载目录", async () => {
+  api.saveWorkDocument.mockResolvedValue({ relativePath: "Book1.xlsx" });
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const post = vi.spyOn(frame.contentWindow, "postMessage");
+  const bytes = new TextEncoder().encode("workbook").buffer;
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:work-save",
+        saveId: "save-project",
+        fileName: "Book1.xlsx",
+        mimeType: "application/vnd.ms-excel",
+        bytes,
+        projectId: "44444444-4444-4444-8444-444444444444",
+        assetId: "55555555-5555-5555-8555-555555555555",
+        relativePath: "Book1.xlsx",
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(api.saveWorkDocument).toHaveBeenCalledWith(null, {
+      projectId: "44444444-4444-4444-8444-444444444444",
+      assetId: "55555555-5555-5555-8555-555555555555",
+      relativePath: "Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      bytes,
+    }),
+  );
+  expect(themeHost.triggerDownload).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "kenfutwork:work-save-result",
+        saveId: "save-project",
+        ok: true,
+        relativePath: "Book1.xlsx",
+      }),
+      window.location.origin,
+    ),
+  );
+});
+
+it("落到项目失败要说清原因，不偷偷退回下载目录", async () => {
+  api.saveWorkDocument.mockRejectedValue(
+    new Error("素材路径必须位于项目目录内"),
+  );
+  render(<CodeWorkbenchFrame />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const post = vi.spyOn(frame.contentWindow, "postMessage");
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: {
+        type: "kenfutwork:work-save",
+        saveId: "save-project-failed",
+        fileName: "Book1.xlsx",
+        mimeType: "application/vnd.ms-excel",
+        bytes: new TextEncoder().encode("workbook").buffer,
+        projectId: "44444444-4444-4444-8444-444444444444",
+        assetId: "55555555-5555-5555-8555-555555555555",
+        relativePath: "../Book1.xlsx",
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        saveId: "save-project-failed",
+        ok: false,
+        error: "素材路径必须位于项目目录内",
+      }),
+      window.location.origin,
+    ),
+  );
+  expect(themeHost.triggerDownload).not.toHaveBeenCalled();
+});
+
 it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人（侧栏显示用户而非连接使用），仍无接入令牌", async () => {
   render(<CodeWorkbenchFrame />);
   const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
@@ -328,6 +506,67 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
     },
     window.location.origin,
   );
+});
+
+it("管理文档创建任务在壳 ready 后按 id 推送一次，重复渲染不重复建草稿", async () => {
+  vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
+  const request = {
+    id: 1,
+    prompt: "创建一个技能：\n",
+    executionMode: "creative" as const,
+  };
+  const view = render(<CodeWorkbenchFrame newTaskRequest={request} />);
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  const taskPosts = () =>
+    send.mock.calls.filter(
+      ([message]) =>
+        (message as { type?: unknown }).type === "kenfutwork:host-new-task",
+    );
+  // ready 之前不推：壳内监听器尚未就位，消息会丢。
+  expect(taskPosts()).toHaveLength(0);
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-ready" },
+    }),
+  );
+  await waitFor(() => expect(taskPosts()).toHaveLength(1));
+  expect(taskPosts()[0]?.[0]).toEqual({
+    type: "kenfutwork:host-new-task",
+    prompt: "创建一个技能：\n",
+    executionMode: "creative",
+  });
+  // 同一请求（id 不变）重复渲染不重复推送。
+  view.rerender(
+    <CodeWorkbenchFrame
+      newTaskRequest={{
+        id: 1,
+        prompt: "创建一个技能：\n",
+        executionMode: "creative",
+      }}
+    />,
+  );
+  expect(taskPosts()).toHaveLength(1);
+  // 新请求按新 id 再推一次。
+  view.rerender(
+    <CodeWorkbenchFrame
+      newTaskRequest={{
+        id: 2,
+        prompt: "创建一个插件：\n",
+        executionMode: "creative",
+      }}
+    />,
+  );
+  await waitFor(() => expect(taskPosts()).toHaveLength(2));
+  expect(taskPosts()[1]?.[0]).toEqual({
+    type: "kenfutwork:host-new-task",
+    prompt: "创建一个插件：\n",
+    executionMode: "creative",
+  });
 });
 
 it("Code插件面板切换到非活动工作区时保留同一iframe，返回后恢复原面板", async () => {

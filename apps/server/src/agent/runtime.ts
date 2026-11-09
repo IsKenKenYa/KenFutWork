@@ -52,12 +52,12 @@ import type {
   LocalInstanceService,
 } from "../features/local-instance/types.js";
 import { resolveModelInputCapabilities } from "../features/model-providers/input-capabilities.js";
-import { estimateModelCostUsd } from "../features/model-providers/model-cost.js";
 import {
   type ModelCatalogService,
   parseInstanceSpecifier,
   toInstanceSpecifier,
 } from "../features/model-providers/model-catalog-service.js";
+import { estimateModelCostUsd } from "../features/model-providers/model-cost.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import type {
   ProcessLimits,
@@ -1518,10 +1518,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         thresholdChars: number;
         keepRecentResults: number;
       } = {
-        thresholdChars:
-          AGENT_GOVERNANCE_DEFAULTS.toolResultPruneThresholdChars,
-        keepRecentResults:
-          AGENT_GOVERNANCE_DEFAULTS.toolResultPruneKeepRecent,
+        thresholdChars: AGENT_GOVERNANCE_DEFAULTS.toolResultPruneThresholdChars,
+        keepRecentResults: AGENT_GOVERNANCE_DEFAULTS.toolResultPruneKeepRecent,
       };
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
@@ -2515,11 +2513,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     const owner = usage.owner ?? run.usageMeta;
                     // 供应商没回传成本时用随包目录估算；未知模型保持缺省。
                     const costUsd = owner?.model
-                      ? estimateModelCostUsd(
-                          owner.model,
-                          usage,
-                          owner.provider,
-                        )
+                      ? estimateModelCostUsd(owner.model, usage, owner.provider)
                       : undefined;
                     return options.runUsage?.update(runId, usage.modelCallId, {
                       ...(costUsd === undefined ? {} : { costUsd }),

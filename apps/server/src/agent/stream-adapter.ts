@@ -329,15 +329,16 @@ export async function* adaptDeepAgentStream(
                 "[model-usage] 用量采集失败，保留本次观测并继续运行。",
               );
             }
-            modelCallUsageById.set(
-              observed.usage.modelCallId,
-              observed.usage,
-            );
+            modelCallUsageById.set(observed.usage.modelCallId, observed.usage);
             const agentCallId = modelCallAgentById.get(
               observed.usage.modelCallId,
             );
             const agentTotals = agentCallId
-              ? sumAgentUsage(modelCallUsageById, modelCallAgentById, agentCallId)
+              ? sumAgentUsage(
+                  modelCallUsageById,
+                  modelCallAgentById,
+                  agentCallId,
+                )
               : undefined;
             if (observed.emit)
               yield {

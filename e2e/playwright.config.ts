@@ -41,7 +41,13 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [
     ["list"],
-    ["html", { outputFolder: path.join(repoRoot, ".scratch", "e2e", "report"), open: "never" }],
+    [
+      "html",
+      {
+        outputFolder: path.join(repoRoot, ".scratch", "e2e", "report"),
+        open: "never",
+      },
+    ],
   ],
   use: {
     baseURL: "http://localhost:3000",
@@ -57,8 +63,7 @@ export default defineConfig({
     {
       // 不用 dev:server 的 `node --watch`：watch 在 web 构建期间会重启服务端，
       // 造成页面接入时瞬间 ECONNREFUSED。这里按同一入口直接起服务端进程。
-      command:
-        "node --env-file=../../.env.local --import tsx ./src/server.ts",
+      command: "node --env-file=../../.env.local --import tsx ./src/server.ts",
       cwd: path.join(repoRoot, "apps", "server"),
       url: "http://127.0.0.1:3001/api/health",
       timeout: 180_000,

@@ -1,6 +1,6 @@
+import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 import { ToolMessage } from "@langchain/core/messages";
 import type { AgentMiddleware } from "langchain";
-import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 /**
  * 工具结果预修剪：模型请求前的最后一道文本预算。
@@ -80,7 +80,10 @@ function isToolMessage(message: UnknownMessage): boolean {
   );
 }
 
-function pruneMessage(message: UnknownMessage, maxChars: number): UnknownMessage {
+function pruneMessage(
+  message: UnknownMessage,
+  maxChars: number,
+): UnknownMessage {
   if (!isToolMessage(message)) return message;
   const content = message.content;
   if (typeof content !== "string") return message;
@@ -187,7 +190,11 @@ function recentToolResultIndices(
     : 0;
   const keepIndices = new Set<number>();
   let remaining = keep;
-  for (let index = messages.length - 1; index >= 0 && remaining > 0; index -= 1) {
+  for (
+    let index = messages.length - 1;
+    index >= 0 && remaining > 0;
+    index -= 1
+  ) {
     if (!isToolMessage(messages[index] ?? {})) continue;
     keepIndices.add(index);
     remaining -= 1;
@@ -199,7 +206,8 @@ export function createToolResultPruneMiddleware(
   options: ToolResultPruneOptions,
 ): AgentMiddleware {
   const keepRecentImages =
-    options.keepRecentImages ?? AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
+    options.keepRecentImages ??
+    AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
   return {
     name: "kenfutworkToolResultPrune",
     wrapModelCall(

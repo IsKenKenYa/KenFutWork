@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
-  readFile,
   readdir,
+  readFile,
   rename,
   rm,
   writeFile,
@@ -209,7 +209,10 @@ async function purgeExpiredTrash(options: {
     if (meta === "") continue;
     const parsed = JSON.parse(meta) as Partial<MemoryTrashEntry>;
     if (typeof parsed.trashedAt !== "number") continue;
-    if (options.now - parsed.trashedAt <= options.recoverableWindowDays * DAY_MS)
+    if (
+      options.now - parsed.trashedAt <=
+      options.recoverableWindowDays * DAY_MS
+    )
       continue;
     await rm(join(trashRoot, entry.name), { recursive: true, force: true });
     purged += 1;
@@ -267,10 +270,12 @@ export async function maintainMemoryDirectory(options: {
   recoverableWindowDays: number;
   maxFileBytes: number;
 }): Promise<MemoryMaintenanceResult> {
-  const rootMetadata = await lstat(options.memoryRoot).catch((error: unknown) => {
-    if (isNotFound(error)) return null;
-    throw error;
-  });
+  const rootMetadata = await lstat(options.memoryRoot).catch(
+    (error: unknown) => {
+      if (isNotFound(error)) return null;
+      throw error;
+    },
+  );
   if (!rootMetadata) {
     return { merged: 0, trashed: 0, purged: 0, indexUpdated: false };
   }
@@ -294,7 +299,8 @@ export async function maintainMemoryDirectory(options: {
   const lineByName = new Map<string, number>();
   parsed.forEach((line, index) => {
     if (!line.entry) return;
-    if (!lineByName.has(line.entry.fileName)) lineByName.set(line.entry.fileName, index);
+    if (!lineByName.has(line.entry.fileName))
+      lineByName.set(line.entry.fileName, index);
   });
 
   const byHash = new Map<string, string[]>();
@@ -413,9 +419,9 @@ export async function maintainMemoryDirectory(options: {
     .filter((raw) => raw.trim().length > 0);
   for (const entry of added)
     keptLines.push(renderMemoryIndexLine({ ...entry, raw: "" }));
-  const nextRaw =
-    keptLines.length === 0 ? "" : `${keptLines.join("\n")}\n`;
-  if (nextRaw === indexRaw) return { merged, trashed, purged, indexUpdated: false };
+  const nextRaw = keptLines.length === 0 ? "" : `${keptLines.join("\n")}\n`;
+  if (nextRaw === indexRaw)
+    return { merged, trashed, purged, indexUpdated: false };
   if (Buffer.byteLength(nextRaw, "utf8") > options.maxFileBytes)
     throw new Error("记忆索引超出上限，已停止整理。");
   const temporary = join(options.memoryRoot, `.MEMORY.md.${randomUUID()}.tmp`);
@@ -431,8 +437,7 @@ export async function restoreTrashEntry(options: {
   now: number;
   maxFileBytes: number;
 }): Promise<{ fileName: string | null }> {
-  if (!isValidSegment(options.trashId))
-    throw new Error("回收项标识无效。");
+  if (!isValidSegment(options.trashId)) throw new Error("回收项标识无效。");
   const trashDirectory = join(
     options.memoryRoot,
     TRASH_DIRECTORY_NAME,

@@ -11,16 +11,24 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
+import multipart from "@fastify/multipart";
 import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
 import { createConsumerLocalAccessService } from "../features/local-access/test-consumer-service.js";
 import {
+  ProjectFileError,
+  type ProjectFileService,
+  type ProjectFileWrite,
+} from "../features/project-files/types.js";
+import {
   getWorkEditorInstallSnapshot,
   startWorkEditorInstall,
 } from "../features/work/install.js";
 import {
+  injectEditorShell,
   registerWorkHostRoutes,
   resolveInstalledEditors,
 } from "./work-host.js";
@@ -32,8 +40,33 @@ const actor = {
 const apps: FastifyInstance[] = [];
 const createdDirs: string[] = [];
 const createdServers: http.Server[] = [];
+/** 默认项目文件替身记录的发布调用（保存路由的断言面）。 */
+const publishCalls: {
+  actor: typeof actor;
+  input: ProjectFileWrite;
+  bytes: Uint8Array;
+}[] = [];
+
+function createRecordingProjectFiles(): ProjectFileService {
+  return {
+    publish: async (
+      publishActor: typeof actor,
+      input: ProjectFileWrite,
+      bytes: Uint8Array,
+    ) => {
+      publishCalls.push({ actor: publishActor, input, bytes });
+      return {
+        assetId: input.assetId,
+        bucket: "project-assets" as const,
+        objectPath: `${publishActor.instanceId}/project-files/${input.assetId}`,
+        relativePath: input.relativePath,
+      };
+    },
+  } as unknown as ProjectFileService;
+}
 
 afterEach(async () => {
+  publishCalls.length = 0;
   await Promise.all(apps.splice(0).map((app) => app.close()));
   await Promise.all(
     createdDirs
@@ -64,9 +97,12 @@ async function fixture(options: {
   dataDir?: string;
   /** 替换 gridcraft 的锚定发布（假上游），路由级全链路不触真实网络。 */
   pinnedOverride?: WorkEditorPinnedRelease | null;
+  projectFiles?: ProjectFileService;
 }) {
   currentEditorsDir = options.editorsDir ?? (await emptyEditorsDir());
   const app = Fastify();
+  // 与 app.ts 同口径：全局 multipart 上限 10MB，路由按各自护栏再放行。
+  await app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024 } });
   apps.push(app);
   await registerWorkHostRoutes(app, {
     localAccess: createConsumerLocalAccessService(async () =>
@@ -83,6 +119,7 @@ async function fixture(options: {
     },
     dataDir: options.dataDir ?? "/tmp/kenfutwork-data",
     editorsDir: currentEditorsDir,
+    projectFiles: options.projectFiles ?? createRecordingProjectFiles(),
   });
   return app;
 }
@@ -325,6 +362,52 @@ describe("work 宿主路由", () => {
     await expect(stat(join(editorsDir, "gridcraft"))).rejects.toThrow();
   });
 
+  it("Work 主题消息驱动 eframe 系统主题并通知 change 监听者", () => {
+    const nativeQuery = { matches: false };
+    const window = {
+      matchMedia: (_query: string) => nativeQuery,
+      addEventListener: (type: string, listener: (event: unknown) => void) => {
+        if (type === "message") messageListener = listener;
+      },
+    };
+    let messageListener: ((event: unknown) => void) | undefined;
+    const sandbox = {
+      window,
+      document: {
+        referrer: "http://localhost:4502/workbench",
+        documentElement: { style: { setProperty: () => {} } },
+      },
+      location: { origin: "http://localhost:4501", search: "?theme=light" },
+      parent: {},
+      URL,
+      URLSearchParams,
+    };
+    const source = injectEditorShell(
+      "<html><head></head><body></body></html>",
+    ).match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    if (!source) throw new Error("缺少 Work 主题脚本");
+    runInNewContext(source, sandbox);
+    const dark = window.matchMedia("(prefers-color-scheme: dark)") as {
+      matches: boolean;
+      addEventListener?: (
+        type: string,
+        listener: (event: { matches: boolean }) => void,
+      ) => void;
+    };
+    let changeMatches: boolean | undefined;
+    dark.addEventListener?.("change", (event) => {
+      changeMatches = event.matches;
+    });
+    expect(dark.matches).toBe(false);
+    messageListener?.({
+      origin: "http://localhost:4502",
+      source: sandbox.parent,
+      data: { type: "kenfutwork:editor-theme", theme: "dark" },
+    });
+    expect(dark.matches).toBe(true);
+    expect(changeMatches).toBe(true);
+  });
+
   it("静态托管：MIME/nosniff/缓存头 + 点文件拒绝 + 路径穿越拒绝 + SPA 回落", async () => {
     const editorsDir = await emptyEditorsDir();
     const app = await fixture({ editorsDir });
@@ -346,6 +429,14 @@ describe("work 宿主路由", () => {
     // 托管页统一注入宿主脚本：界面语言钉 zh-CN（我们的包都内嵌简体中文字形）+ 统一启动屏。
     expect(html.body).toContain('"zh-CN"');
     expect(html.body).toContain("kfw-editor-boot");
+    expect(html.body).toContain("kenfutwork:editor-theme");
+    expect(html.body).toContain("--kfw-editor-boot-bg");
+    // 所有 Craft 的 Blob 锚点统一交给宿主保存缝，非 Blob 链接仍走原生点击。
+    expect(html.body).toContain("kenfutwork:editor-save");
+    expect(html.body).toContain("HTMLAnchorElement.prototype.click");
+    // 开发态编辑器在 3001、父页在 3000：目标必须是 referrer 的父页 origin，而非自身。
+    expect(html.body).toContain("new URL(document.referrer).origin");
+    expect(html.body).not.toContain(",location.origin");
     expect(html.body).toContain("<html>ok</html>");
 
     // 自带中文字形的编辑器同样按中文探测（用户系统是英文时不再退回英文）。
@@ -470,5 +561,102 @@ describe("work 宿主路由", () => {
     expect(byId.get("gridcraft")).toBe(true);
     expect(byId.get("gridcraftx")).toBeUndefined();
     expect(byId.get("wordcraft")).toBe(false);
+  });
+
+  const workProjectId = "22222222-2222-4222-8222-222222222222";
+  const saveForm = (
+    overrides: Partial<
+      Record<"relativePath" | "projectId" | "content", string>
+    > = {},
+  ) => {
+    const form = new FormData();
+    form.append("projectId", overrides.projectId ?? workProjectId);
+    form.append("assetId", "33333333-3333-4333-8333-333333333333");
+    form.append("relativePath", overrides.relativePath ?? "报表/Book1.xlsx");
+    form.append("mimeType", "application/vnd.ms-excel");
+    form.append(
+      "file",
+      new Blob([overrides.content ?? "workbook-bytes"], {
+        type: "application/vnd.ms-excel",
+      }),
+      "Book1.xlsx",
+    );
+    return form;
+  };
+
+  it("save：字节按 projectId 落到项目主目录，指纹由服务端算", async () => {
+    const app = await fixture({});
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm(),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ relativePath: "报表/Book1.xlsx" });
+    expect(publishCalls).toHaveLength(1);
+    const call = publishCalls[0];
+    if (!call) throw new Error("没有发出发布调用");
+    expect(call.actor).toEqual(actor);
+    expect(call.input).toEqual({
+      target: { kind: "project", projectId: workProjectId },
+      assetId: "33333333-3333-4333-8333-333333333333",
+      relativePath: "报表/Book1.xlsx",
+      mimeType: "application/vnd.ms-excel",
+      writeFingerprint: createHash("sha256")
+        .update(Buffer.from("workbook-bytes"))
+        .digest("hex"),
+    });
+    expect(Buffer.from(call.bytes).toString()).toBe("workbook-bytes");
+  });
+
+  it("save：没有本机接入凭据不写盘", async () => {
+    const app = await fixture({ authenticated: false });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm(),
+    });
+    expect(response.statusCode).toBe(401);
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it("save：越出项目目录的路径要把服务原因原样说出来", async () => {
+    const app = await fixture({
+      projectFiles: {
+        publish: async () => {
+          throw new ProjectFileError(
+            "invalid_path",
+            "素材路径必须位于项目目录内，不能覆盖应用管理文件。",
+            400,
+          );
+        },
+      } as unknown as ProjectFileService,
+    });
+    const response = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm({ relativePath: "../outside.xlsx" }),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(
+      (response.json() as { error: { message: string } }).error.message,
+    ).toContain("必须位于项目目录内");
+  });
+
+  it("save：空内容与无效参数都如实拒绝，不落到磁盘", async () => {
+    const app = await fixture({});
+    const empty = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm({ content: "" }),
+    });
+    expect(empty.statusCode).toBe(400);
+    const invalid = await app.inject({
+      method: "post",
+      url: "/api/work/host/save",
+      payload: saveForm({ projectId: "not-a-uuid" }),
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(publishCalls).toHaveLength(0);
   });
 });

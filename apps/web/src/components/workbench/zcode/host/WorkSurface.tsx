@@ -5,20 +5,28 @@ import type {
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   ZCodeStartupLogoBadge,
   ZCodeStartupSpinner,
 } from "@zui/root/RootStartupLoading.js";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, FolderOpen, RefreshCw } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { fontFamilies } from "./fontFamilies.js";
 import { getSurfaceApiBase, surfaceFetch, surfaceJson } from "./surfaceApi.js";
+import {
+  chooseWorkDirectory,
+  getWorkDirectory,
+  refreshWorkDirectory,
+  useWorkDirectory,
+} from "./workProjectDirectory.js";
 import {
   getWorkSurfaceView,
   openWorkEditor,
@@ -57,6 +65,48 @@ const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
 const INSTALL_POLL_MS = 2000;
 /** 编辑器没发就绪信号时（旧包/非 egui 站点）的兜底显示时间；一次性常量。 */
 const EDITOR_READY_FALLBACK_MS = 8000;
+
+/**
+ * Work 目录绑定控件：当前工作目录（项目名）与换目录入口。宿主没有系统选择器
+ * 能力时不放假按钮——已绑定就只显示目录名，未绑定什么都不显示（不摆空壳）。
+ */
+function WorkDirectoryControl() {
+  const selectDirectory = useOptionalPlatform()?.selectDirectory;
+  const { project, choosing, error } = useWorkDirectory();
+  useEffect(() => {
+    void refreshWorkDirectory();
+  }, []);
+  if (!selectDirectory) {
+    return project ? (
+      <span
+        title={project.workDir ?? ""}
+        className="truncate text-xs text-foreground-subtle"
+      >
+        {project.name}
+      </span>
+    ) : null;
+  }
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <button
+        type="button"
+        disabled={choosing}
+        onClick={() => void chooseWorkDirectory(selectDirectory)}
+        aria-label={project ? "更换工作目录" : "选择工作目录"}
+        title={project?.workDir ?? "工作目录"}
+        className="flex min-w-0 items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+      >
+        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{project?.name ?? "选择目录"}</span>
+      </button>
+      {error ? (
+        <span role="alert" className="truncate text-xs text-destructive">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Work 主区视图（融合进 Code 壳后的承载面）。
@@ -198,6 +248,7 @@ function EditorsInfoView({
                 ? `${status.registeredEditors} 项已登记`
                 : "未启用"}
           </span>
+          <WorkDirectoryControl />
           <div className="ml-auto">
             <button
               type="button"
@@ -487,6 +538,41 @@ function WorkFontsSection({ active }: { active: boolean }) {
   );
 }
 
+function isArrayBuffer(value: unknown): value is ArrayBuffer {
+  return Object.prototype.toString.call(value) === "[object ArrayBuffer]";
+}
+
+function useEditorTheme(): "light" | "dark" {
+  return useSyncExternalStore(
+    (onChange) => {
+      const observer = new MutationObserver(onChange);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+      return () => observer.disconnect();
+    },
+    () =>
+      document.documentElement.classList.contains("dark") ? "dark" : "light",
+    () => "light",
+  );
+}
+
+/**
+ * 编辑器给的文件名 → 项目内相对路径：只取最后一段。绝对路径与 `..` 到服务端也会被
+ * `validateRelativePath` 拒绝，这里先不把它发出去（保存失败要能说清是哪一片的锅）。
+ */
+function documentRelativePath(fileName: string): string | null {
+  const name = fileName.split(/[\\/]/u).pop()?.trim();
+  return name && name !== "." && name !== ".." ? name : null;
+}
+
+/** 回显用的路径拼接：跟随 workDir 的分隔符风格。 */
+function displayWorkPath(workDir: string, relativePath: string): string {
+  const separator = workDir.includes("\\") ? "\\" : "/";
+  return `${workDir.replace(/[\\/]+$/u, "")}${separator}${relativePath.split("/").join(separator)}`;
+}
+
 /** 编辑器面：静态托管的 WASM 站点（同源鉴权 cookie 随请求带上，无独立握手）。 */
 function EditorFrame({
   editorId,
@@ -497,23 +583,129 @@ function EditorFrame({
   title: string;
   onBack: () => void;
 }) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const saveIds = useRef(new Set<string>());
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [ready, setReady] = useState(false);
-  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html`;
-  // 编辑器页由宿主注入脚本在启动完成后发信号（见 work-host.ts 的 EDITOR_SHELL_SCRIPT）；
-  // 不认这个信号就只能等 iframe onLoad，几十 MB 的 wasm 会在编辑器自己的英文 Loading 上停住。
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
+  const editorTheme = useEditorTheme();
+  const initialTheme = useRef(editorTheme);
+  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}`;
+
   useEffect(() => {
+    // about:blank 仍继承宿主 origin，加载前向编辑器 origin 发消息会触发目标源警告。
+    // 等编辑器 ready 后发送当前档位；ready 前的切换也由这次 effect 合并为最新值。
+    if (!ready) return;
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:editor-theme", theme: editorTheme },
+      new URL(src).origin,
+    );
+  }, [editorTheme, ready, src]);
+
+  // 就绪与保存都只信当前 iframe 的真实 origin/source；父页统一交付并回传结果。
+  useEffect(() => {
+    saveIds.current.clear();
+    setSaveError(null);
+    const expectedOrigin = new URL(src).origin;
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
       if (
-        (event.data as { type?: string } | null)?.type ===
-        "kenfutwork:editor-ready"
+        event.origin !== expectedOrigin ||
+        event.source !== frameRef.current?.contentWindow
       )
+        return;
+      const data = event.data as {
+        type?: string;
+        saveId?: unknown;
+        fileName?: unknown;
+        mimeType?: unknown;
+        bytes?: unknown;
+        message?: unknown;
+      } | null;
+      if (data?.type === "kenfutwork:editor-ready") {
         setReady(true);
+        return;
+      }
+      if (data?.type === "kenfutwork:editor-save-error") {
+        setSaveError(
+          typeof data.message === "string" ? data.message : "读取保存内容失败",
+        );
+        return;
+      }
+      if (
+        data?.type !== "kenfutwork:editor-save" ||
+        typeof data.saveId !== "string" ||
+        typeof data.fileName !== "string" ||
+        !isArrayBuffer(data.bytes)
+      )
+        return;
+      if (saveIds.current.has(data.saveId)) return;
+      saveIds.current.add(data.saveId);
+      setSaveError(null);
+      setSaveNote(null);
+      const bound = getWorkDirectory();
+      const relativePath = documentRelativePath(data.fileName);
+      window.parent.postMessage(
+        {
+          type: "kenfutwork:work-save",
+          saveId: data.saveId,
+          fileName: data.fileName,
+          mimeType: data.mimeType,
+          bytes: data.bytes,
+          ...(bound?.workDir && relativePath
+            ? {
+                projectId: bound.id,
+                assetId: crypto.randomUUID(),
+                relativePath,
+              }
+            : {}),
+        },
+        window.location.origin,
+        [data.bytes],
+      );
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
+  }, [src]);
+
+  useEffect(() => {
+    const onResult = (event: MessageEvent) => {
+      if (
+        event.source !== window.parent ||
+        event.origin !== window.location.origin
+      )
+        return;
+      const data = event.data as {
+        type?: string;
+        ok?: boolean;
+        error?: unknown;
+        path?: unknown;
+        relativePath?: unknown;
+      } | null;
+      if (data?.type !== "kenfutwork:work-save-result") return;
+      if (!data.ok) {
+        setSaveNote(null);
+        setSaveError(
+          `保存失败：${typeof data.error === "string" ? data.error : "未知错误"}`,
+        );
+        return;
+      }
+      // 成功也要说清落到哪：以前只清掉错误态，用户点了保存什么提示都没有，
+      // 体感就是「保存没反应」。绑了项目目录的按项目路径回显，其余仍是落盘路径。
+      setSaveError(null);
+      const workDir = getWorkDirectory()?.workDir;
+      setSaveNote(
+        typeof data.relativePath === "string" && workDir
+          ? `已保存 ${displayWorkPath(workDir, data.relativePath)}`
+          : typeof data.path === "string" && data.path
+            ? `已保存 ${data.path}`
+            : "已保存",
+      );
+    };
+    window.addEventListener("message", onResult);
+    return () => window.removeEventListener("message", onResult);
   }, []);
+
   useEffect(() => {
     if (!frameLoaded) return;
     const timer = window.setTimeout(
@@ -535,9 +727,25 @@ function EditorFrame({
           <ArrowLeft className="h-4 w-4" />
         </button>
         <span className="truncate text-sm font-medium">{title}</span>
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          <WorkDirectoryControl />
+          {saveError ? (
+            <span role="alert" className="truncate text-xs text-destructive">
+              {saveError}
+            </span>
+          ) : saveNote ? (
+            <span
+              role="status"
+              className="max-w-[36rem] truncate text-xs text-foreground-subtle"
+            >
+              {saveNote}
+            </span>
+          ) : null}
+        </div>
       </div>
       <div className="relative min-h-0 flex-1">
         <iframe
+          ref={frameRef}
           src={src}
           title={title}
           className={`h-full w-full border-0 transition-opacity duration-300 ${

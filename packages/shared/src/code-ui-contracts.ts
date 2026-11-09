@@ -1,7 +1,4 @@
-import {
-  zcodeAgentProviderSchema,
-  zcodeTaskMetaSchema,
-} from "@zcode/shared";
+import { zcodeAgentProviderSchema, zcodeTaskMetaSchema } from "@zcode/shared";
 import {
   conversationSnapshotSchema,
   conversationTaskControlSchema,

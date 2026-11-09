@@ -9,6 +9,11 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 
+import type { FlowEnginePathId } from "@kenfutwork/shared";
+import {
+  bootstrapDifyStackWithRetry,
+  type DifyBootstrapRetryOptions,
+} from "./bootstrap.js";
 import {
   createProcessRunCommand,
   decodeCommandText,
@@ -89,22 +94,150 @@ export function readStackLogTail(dataDir: string): string[] {
   return readLogTail(join(dataDir, STACK_LOG_FILE));
 }
 
-/** 首次安装的密钥文件（数据目录内，gitignore 覆盖；存在即复用）。 */
+/** 栈凭据键（宿主一次生成、重启复用；不再要求用户在 flow/.env 里手填）。 */
+const STACK_ENV_KEYS = [
+  "DIFY_SECRET_KEY",
+  "DIFY_INIT_PASSWORD",
+  "DIFY_ADMIN_API_KEY",
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+  "DIFY_DB_PASSWORD",
+  "DIFY_SANDBOX_API_KEY",
+] as const;
+
+/** Flow 网关需要同源的键：init/setup 建的管理员与网关自动授权必须用同一份。 */
+const GATEWAY_SHARED_KEYS = [
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+  "DIFY_INIT_PASSWORD",
+  "DIFY_ADMIN_API_KEY",
+  "DIFY_SECRET_KEY",
+] as const;
+
+function envKeySet(content: string): Set<string> {
+  return new Set(
+    [...content.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)]
+      .map((match) => match[1])
+      .filter((key): key is string => typeof key === "string"),
+  );
+}
+
+/** 首次安装的密钥文件（数据目录内，gitignore 覆盖；存在即复用并补齐缺键）。 */
 export function ensureStackEnvFile(dataDir: string): string {
   mkdirSync(dataDir, { recursive: true });
   const envFile = join(dataDir, STACK_ENV_FILE);
-  if (existsSync(envFile)) return envFile;
-
   const random = (bytes: number) => randomBytes(bytes).toString("base64url");
-  const content = [
-    "# Dify 无头栈环境（宿主首次安装时自动生成；删除即下次重新生成——SECRET_KEY 变更会使已有加密数据不可读）",
-    `DIFY_SECRET_KEY=${random(32)}`,
-    `DIFY_INIT_PASSWORD=${random(9)}`,
-    `DIFY_ADMIN_API_KEY=kfw-admin-${random(24)}`,
+  const generated: Record<string, string> = {
+    DIFY_SECRET_KEY: random(32),
+    DIFY_INIT_PASSWORD: random(9),
+    DIFY_ADMIN_API_KEY: `kfw-admin-${random(24)}`,
+    DIFY_ADMIN_EMAIL: "admin@kenfutwork.local",
+    DIFY_ADMIN_PASSWORD: random(18),
+    DIFY_DB_PASSWORD: random(18),
+    DIFY_SANDBOX_API_KEY: `kfw-sandbox-${random(18)}`,
+  };
+  if (!existsSync(envFile)) {
+    const content = [
+      "# Dify 无头栈环境（宿主首次安装时自动生成；删除即下次重新生成——SECRET_KEY 变更会使已有加密数据不可读）",
+      ...STACK_ENV_KEYS.map((key) => `${key}=${generated[key]}`),
+      "",
+    ].join("\n");
+    writeFileSync(envFile, content, { mode: 0o600 });
+    return envFile;
+  }
+
+  // 旧版本 env 缺管理员账号等键：只补齐，绝不轮换已有值
+  // （SECRET_KEY 一变，Dify 里已加密的数据就不可读）。
+  const existing = readFileSync(envFile, "utf8");
+  const present = envKeySet(existing);
+  const missing = STACK_ENV_KEYS.filter((key) => !present.has(key));
+  if (missing.length === 0) return envFile;
+  const suffix = existing.endsWith("\n") ? "" : "\n";
+  const appended = [
+    "",
+    "# 宿主补齐（零手工初始化）：管理员账号与栈凭据由本机生成，重启复用同一份",
+    ...missing.map((key) => `${key}=${generated[key]}`),
     "",
   ].join("\n");
-  writeFileSync(envFile, content, { mode: 0o600 });
+  writeFileSync(envFile, `${existing}${suffix}${appended}`);
   return envFile;
+}
+
+/**
+ * 管理员凭据键：Dify 栈重建后 bootstrap 会用它们重新创建管理员，
+ * 必须与 Flow 网关 `loginConsole` 的登录凭据逐字同源。
+ */
+const ADMIN_CREDENTIAL_KEYS = [
+  "DIFY_ADMIN_EMAIL",
+  "DIFY_ADMIN_PASSWORD",
+] as const;
+
+function upsertEnvValue(content: string, key: string, value: string): string {
+  const pattern = new RegExp(`^${key}=.*$`, "m");
+  if (pattern.test(content)) return content.replace(pattern, `${key}=${value}`);
+  return `${content}${content.endsWith("\n") ? "" : "\n"}${key}=${value}\n`;
+}
+
+/**
+ * 把管理员凭据同源补进 Flow 网关 env：只补缺失键，绝不覆盖用户显式配置的值。
+ * 网关 `onModuleInit` 的自动授权与 init/setup 建号必须用同一份口令。
+ *
+ * 反向对齐：若网关 env 已显式配置了管理员账号/密码（例如上次安装留下的），
+ * 以它为准写回栈 env，而不是拿栈 env 随机生成的新口令去建管理员。否则 Dify
+ * 卷重建后管理员被换成新密码，网关仍持旧密码，`onReady` 补控制面授权必然
+ * 401/503（实测 `Dify Console 授权无效`）。网关 env 本身始终不被覆盖。
+ */
+export function syncGatewayCredentials(
+  envFile: string,
+  gatewayEnvFiles: readonly string[],
+): void {
+  let source = readFileSync(envFile, "utf8");
+  const values = new Map(
+    [...source.matchAll(/^([A-Z][A-Z0-9_]*)=(.*)$/gm)].map((match) => [
+      match[1],
+      match[2],
+    ]),
+  );
+
+  // 按网关 envFilePath 的优先级取第一个含管理员凭据的文件；没有凭据的
+  // 文件不能提前 break，否则会漏看真正生效的那份（如 runtime env 缺键）。
+  let changed = false;
+  for (const key of ADMIN_CREDENTIAL_KEYS) {
+    let authoritative: string | null = null;
+    for (const file of gatewayEnvFiles) {
+      if (!existsSync(file)) continue;
+      const value = readFileSync(file, "utf8").match(
+        new RegExp(`^${key}=(.*)$`, "m"),
+      )?.[1];
+      if (value !== undefined) {
+        authoritative = value;
+        break;
+      }
+    }
+    if (authoritative === null || values.get(key) === authoritative) continue;
+    source = upsertEnvValue(source, key, authoritative);
+    values.set(key, authoritative);
+    changed = true;
+  }
+  if (changed) writeFileSync(envFile, source);
+
+  for (const file of gatewayEnvFiles) {
+    if (!existsSync(file)) continue;
+    const original = readFileSync(file, "utf8");
+    const present = envKeySet(original);
+    const missing = GATEWAY_SHARED_KEYS.filter(
+      (key) => !present.has(key) && values.has(key),
+    );
+    if (missing.length === 0) continue;
+    const suffix = original.endsWith("\n") ? "" : "\n";
+    const appended = [
+      "",
+      "# 由宿主安装引擎时自动补齐（与 dify-stack.env 同源）",
+      ...missing.map((key) => `${key}=${values.get(key)}`),
+      "",
+    ].join("\n");
+    writeFileSync(file, `${original}${suffix}${appended}`);
+  }
 }
 
 export interface EngineInstallOptions {
@@ -116,6 +249,21 @@ export interface EngineInstallOptions {
   extraEnv?: Record<string, string>;
   /** 承载目标；缺省 host（读落盘记录由调用方完成）。 */
   launch?: EngineLaunch;
+  /** Flow 网关 env：安装时把宿主生成的管理员凭据同源补进去（只补缺失键）。 */
+  gatewayEnvFiles?: string[];
+  /** 引擎栈就绪前执行：通知 Flow 网关补一次控制面授权（装完即可用）。 */
+  onReady?: () => Promise<void>;
+  /** 安装进程 ready 前执行 Dify 初始化；设置由宿主按库值 ?? env ?? 默认解析。 */
+  bootstrap?: () => Promise<
+    Pick<
+      DifyBootstrapRetryOptions,
+      | "consoleBase"
+      | "attempts"
+      | "retryDelayMs"
+      | "requestTimeoutMs"
+      | "credentialEnvFiles"
+    >
+  >;
 }
 
 /** 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。 */
@@ -211,13 +359,43 @@ export function readStackRuntime(dataDir: string): EngineLaunch {
 }
 
 /**
+ * 「装上即用」的安装决策：把判据集中一处，产品口径钉在测试里而不是散在装配里。
+ *
+ * 栈在不在取 **docker 报的运行期事实**，不看 `dify-stack.env` 存不存在：删过容器/卷的
+ * 用户库里仍留着那份 env，按 env 判会永远跳过重装（本机实测：容器 0 个、安装状态停在
+ * idle，用户只能自己去「引擎」页点按钮）。
+ * 承载是 `remote`（用户自管 Dify）或压根没探到承载时不动：前者是主动选择，
+ * 后者装了也没地方跑。
+ */
+export function planEngineAutoInstall(input: {
+  installState: EngineInstallSnapshot["state"];
+  stackContainerCount: number;
+  recommended: FlowEnginePathId | null;
+}): { action: "install" } | { action: "skip"; reason: string } {
+  if (input.installState === "installing")
+    return { action: "skip", reason: "已有安装任务在跑" };
+  if (input.stackContainerCount > 0)
+    return { action: "skip", reason: "引擎栈容器已在" };
+  if (input.recommended !== "wsl2" && input.recommended !== "container") {
+    return {
+      action: "skip",
+      reason: "本机 docker 承载不可用（自管地址或未探到承载）",
+    };
+  }
+  return { action: "install" };
+}
+
+/**
  * 启动安装（幂等）：已在安装中 → 409 由调用方处理；本函数只在 idle/error 时拉起。
  * detached spawn：node 重启不杀安装进程，但状态归零——重启后按 compose ps 重新探测（后续增量）。
  */
 export function startEngineInstall(
   options: EngineInstallOptions,
   /** spawn 可注入（测试断言命令构造与承载记录落盘；生产不传）。 */
-  deps: { spawn?: typeof spawn } = {},
+  deps: {
+    spawn?: typeof spawn;
+    bootstrapStack?: typeof bootstrapDifyStackWithRetry;
+  } = {},
 ): {
   started: boolean;
   snapshot: EngineInstallSnapshot;
@@ -235,6 +413,7 @@ export function startEngineInstall(
   }
 
   const envFile = ensureStackEnvFile(options.dataDir);
+  syncGatewayCredentials(envFile, options.gatewayEnvFiles ?? []);
   const logFile = join(options.dataDir, STACK_LOG_FILE);
   // 承载目标落盘：停止/查询必须用同一个目标（否则 down 找不到另一侧起的容器）
   writeStackRuntime(options.dataDir, options.launch ?? { kind: "host" });
@@ -257,6 +436,7 @@ export function startEngineInstall(
     windowsHide: true,
   });
   current.child = child;
+  const installation = current;
 
   const append = (chunk: Buffer | string): void => {
     try {
@@ -268,13 +448,54 @@ export function startEngineInstall(
   child.stdout?.on("data", append);
   child.stderr?.on("data", append);
   child.on("error", (error) => {
+    if (current !== installation) return;
     current.state = "error";
     current.error = error.message;
   });
   child.on("close", (code) => {
-    if (current.state !== "installing") return;
-    current.state = code === 0 ? "ready" : "error";
-    if (code !== 0) current.error = `docker compose 退出码 ${code}（详见日志）`;
+    void (async () => {
+      if (current !== installation || current.state !== "installing") return;
+      if (code !== 0) {
+        current.state = "error";
+        current.error = `docker compose 退出码 ${code}（详见日志）`;
+        return;
+      }
+      try {
+        if (options.bootstrap) {
+          const bootstrap = await options.bootstrap();
+          try {
+            await (deps.bootstrapStack ?? bootstrapDifyStackWithRetry)(
+              { envFile, ...bootstrap },
+              {},
+            );
+          } catch (error) {
+            throw new Error(
+              `Dify 初始化失败：${error instanceof Error ? error.message : String(error)}`,
+              { cause: error },
+            );
+          }
+        }
+        // 装完再补一次网关控制面授权：网关 onModuleInit 只有启动期窗口，晚装的
+        // 窗口早过。补授权失败不谎报 ready，但也不能说成「Dify 没装好」——栈其实
+        // 已经起来，缺的是网关那一段，报错必须指到网关去。
+        try {
+          await options.onReady?.();
+        } catch (error) {
+          throw new Error(
+            `引擎已装好，但 Flow 网关控制面补授权失败：${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            { cause: error },
+          );
+        }
+        if (current === installation && current.state === "installing")
+          current.state = "ready";
+      } catch (error) {
+        if (current !== installation || current.state !== "installing") return;
+        current.state = "error";
+        current.error = error instanceof Error ? error.message : String(error);
+      }
+    })();
   });
 
   return { started: true, snapshot: getEngineInstallSnapshot() };

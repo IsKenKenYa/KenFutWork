@@ -8,6 +8,7 @@ import type {
   HostWorkbenchNavigation,
   IPlatformService,
 } from "@zcode/shared";
+import { logger } from "@zui/logger.js";
 import {
   createCuaPermissionOnboarding,
   localCuaDesktopInvoke,
@@ -17,7 +18,11 @@ import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
 import { createWebPlatform } from "./upstream/browserPlatform.js";
-import { logger } from "@zui/logger.js";
+
+/** 宿主管理入口带显式目标；`IPlatformService` 的声明保持无参兼容。 */
+export type CodePlatform = IPlatformService & {
+  openSettingsDocument?: (target?: ManagementTarget) => void;
+};
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
 export function createCodePlatform(
@@ -25,8 +30,9 @@ export function createCodePlatform(
   options: {
     onOpenManagement?: (target: ManagementTarget) => void;
     workbenchNavigation?: HostWorkbenchNavigation;
+    selectDirectory?: IPlatformService["selectDirectory"];
   } = {},
-): IPlatformService {
+): CodePlatform {
   const desktop = localCuaDesktopInvoke();
   const macDesktop =
     desktop &&
@@ -78,6 +84,9 @@ export function createCodePlatform(
           },
         }
       : {}),
+    ...(options.selectDirectory
+      ? { selectDirectory: options.selectDirectory }
+      : {}),
     ...(options.workbenchNavigation
       ? {
           workbenchNavigation: options.workbenchNavigation,
@@ -86,8 +95,11 @@ export function createCodePlatform(
       : {}),
     ...(options.onOpenManagement
       ? {
-          openSettingsDocument: () =>
-            options.onOpenManagement?.(readManagementSettingsTarget()),
+          // 入口带目标时直接转发；只有无目标的老调用才回读共享 sessionStorage 意图。
+          openSettingsDocument: (target?: ManagementTarget) =>
+            options.onOpenManagement?.(
+              target ?? readManagementSettingsTarget(),
+            ),
           openPluginStoreDocument: (target: {
             pluginId?: string;
             intent?: "add-marketplace";

@@ -166,15 +166,33 @@ async function fixture(
     listRoots: async () => {
       if (options.enumerationUnavailable)
         throw new Error("工作区全量列表暂不可用");
-      return roots;
+      return roots.filter((entry) => !entry.deleted_at);
     },
     find: async (_workspace: string, id: string) =>
-      roots.find((entry) => entry.id === id) ?? null,
+      roots.find((entry) => entry.id === id && !entry.deleted_at) ?? null,
     list: async (_workspace: string, id: string) =>
-      roots.filter((entry) => entry.project_id === id),
+      roots.filter((entry) => entry.project_id === id && !entry.deleted_at),
     listVersion: async () => 1,
-    beginCloseTask: async () => 1,
-    failCloseTask: async () => {},
+    beginCloseTask: async (_workspace: string, id: string) => {
+      const record = roots.find(
+        (entry) => entry.id === id && !entry.deleted_at,
+      );
+      if (!record)
+        throw new CodeUiRepositoryError(
+          "not_found",
+          "Task 已删除或不属于当前工作区",
+        );
+      record.execution_state = "revoking";
+      record.scope_generation = Number(record.scope_generation) + 1;
+      record.branch_generation = Number(record.branch_generation) + 1;
+      return Number(record.scope_generation);
+    },
+    failCloseTask: async (_workspace: string, id: string) => {
+      const record = roots.find(
+        (entry) => entry.id === id && entry.execution_state === "revoking",
+      );
+      if (record) record.execution_state = "failed";
+    },
     setListState: async (
       _workspace: string,
       id: string,
@@ -185,6 +203,18 @@ async function fixture(
         record.archived = value.archived;
     },
     createRoot,
+    delete: async (_instance: string, rootSessionId: string) => {
+      for (const entry of roots) {
+        if (entry.root_session_id !== rootSessionId || entry.deleted_at)
+          continue;
+        entry.deleted_at = new Date().toISOString();
+        entry.state = null;
+        entry.active_run_id = null;
+        entry.root_directory = null;
+        entry.additional_directories = null;
+        entry.execution_state = "failed";
+      }
+    },
     readCreationCommand: async (
       instance: string,
       projectId: string,
@@ -604,6 +634,68 @@ it("原Task元数据可按原契约解析，未选择思考档位时省略而不
   ]);
   const meta = zcodeTaskMetaSchema.parse(result?.result);
   expect(meta.thoughtLevel).toBeUndefined();
+});
+
+it("task 快照路径按上游规则返回，不再以未实现 501 反复失败", async () => {
+  const { actor, service, pathA, taskId } = await fixture();
+  const result = await service.hostRpc(
+    actor,
+    "zcode-task",
+    "getTaskSessionFilePath",
+    [{ workspacePath: pathA, taskId }],
+  );
+  expect(result?.result).toEqual({
+    path: `${pathA}/${taskId}.zcode-session`,
+    exists: false,
+  });
+});
+
+it("原生会话日志路径在无原生日志的内核里返回空，不再 501", async () => {
+  const { actor, service, pathA, taskId } = await fixture();
+  const result = await service.hostRpc(
+    actor,
+    "zcode-task",
+    "getTaskNativeSessionLogFile",
+    [{ workspacePath: pathA, taskId }],
+  );
+  expect(result?.result).toEqual({ provider: null, path: null, exists: false });
+});
+
+it("workflow run 枚举接受服务级 address 参数，返回空清单不再 400/501", async () => {
+  const { actor, service, taskId, pathA } = await fixture();
+  const result = await service.transportRpc(
+    actor,
+    undefined,
+    "conversationWorkflowRunsV4",
+    [
+      {
+        workspacePath: pathA,
+        workspaceIdentity: "local",
+        projectId: "proj-test",
+        sessionId: taskId,
+        limit: 16,
+      },
+    ],
+  );
+  expect(result?.result).toEqual({ runs: [] });
+});
+
+it("计划目录在本内核返回空目录并与当前日志代对齐，不再 501", async () => {
+  const { actor, service, taskId } = await fixture();
+  const result = await service.transportRpc(
+    actor,
+    undefined,
+    "conversationPlansV4",
+    [{ sessionId: taskId }],
+  );
+  expect(result?.result).toEqual({
+    plans: [],
+    atSeq: expect.any(Number),
+    atLogEpoch: expect.any(String),
+  });
+  expect(result?.result).toBeDefined();
+  const payload = result?.result as { atLogEpoch: string } | undefined;
+  expect(payload?.atLogEpoch.length).toBeGreaterThan(0);
 });
 
 it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留真实项目和固定目录", async () => {
@@ -1033,4 +1125,48 @@ it("新Task按选择Project UUID读取最新B/附加目录，同项目旧Task保
     }),
   );
   expect(root.root_directory).toBe(pathA);
+});
+
+it("deleteSession 删除 Task 后快照与迟到命令均 not_found，不复活数据", async () => {
+  const { actor, service, roots, pathA, taskId } = await fixture();
+  const envelope = protocol.commandEnvelopeSchema.parse({
+    clientId: randomUUID(),
+    commandId: randomUUID(),
+    sessionId: taskId,
+    type: "deleteSession",
+    issuedAt: Date.now(),
+    payload: {},
+  });
+  const sent = await service.transportRpc(
+    actor,
+    undefined,
+    "sendConversationCommandV4",
+    [{ workspacePath: pathA, envelope }],
+  );
+  expect(sent?.result).toMatchObject({
+    commandId: envelope.commandId,
+    status: "accepted",
+  });
+  expect(roots.find((entry) => entry.id === taskId)?.deleted_at).toBeTruthy();
+  await expect(service.getSnapshot(actor, taskId)).rejects.toMatchObject({
+    code: "not_found",
+  });
+  // 同一命令重放与新命令的迟到请求都只能拿到 not_found，墓碑会话不会被复活。
+  const late = protocol.commandEnvelopeSchema.parse({
+    clientId: randomUUID(),
+    commandId: randomUUID(),
+    sessionId: taskId,
+    type: "stop",
+    issuedAt: Date.now(),
+    payload: {},
+  });
+  for (const replay of [envelope, late]) {
+    await expect(
+      service.transportRpc(actor, undefined, "sendConversationCommandV4", [
+        { workspacePath: pathA, envelope: replay },
+      ]),
+    ).rejects.toMatchObject({ code: "not_found" });
+  }
+  expect(roots.find((entry) => entry.id === taskId)?.deleted_at).toBeTruthy();
+  expect(roots.find((entry) => entry.id === taskId)?.state).toBeNull();
 });

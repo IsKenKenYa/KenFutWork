@@ -1,8 +1,4 @@
-import {
-  AIMessage,
-  HumanMessage,
-  ToolMessage,
-} from "@langchain/core/messages";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,9 +21,9 @@ function runMiddleware(
       ) => Promise<unknown>;
     }
   ).wrapModelCall.bind(middleware);
-  return wrap({ messages }, async (request) =>
-    request,
-  ) as Promise<{ messages: ToolMessage[] }>;
+  return wrap({ messages }, async (request) => request) as Promise<{
+    messages: ToolMessage[];
+  }>;
 }
 
 function toolMessage(id: string, text: string, name = "Read"): ToolMessage {
@@ -192,10 +188,7 @@ describe("旧图片卸载", () => {
       tool_call_id: string;
       name: string;
     };
-    expect(unloaded.content.map((part) => part.type)).toEqual([
-      "text",
-      "text",
-    ]);
+    expect(unloaded.content.map((part) => part.type)).toEqual(["text", "text"]);
     expect(unloaded.tool_call_id).toBe("call-image");
     expect(unloaded.name).toBe("Screenshot");
   });

@@ -14,7 +14,12 @@ import type { CodeChildRequest, CodeChildResult } from "./types.js";
 
 /** 子代理用量查询失败只影响展示，不影响 Task 结果本身（计量是旁路）。 */
 async function readChildUsage(
-  lookup: ((context: TaskWorkContext, childRunId: string) => Promise<RunUsageSummary | null>) | undefined,
+  lookup:
+    | ((
+        context: TaskWorkContext,
+        childRunId: string,
+      ) => Promise<RunUsageSummary | null>)
+    | undefined,
   context: TaskWorkContext,
   childRunId: string | undefined,
 ): Promise<RunUsageSummary | null> {

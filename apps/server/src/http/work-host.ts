@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { join, sep } from "node:path";
 import {
@@ -9,9 +10,15 @@ import {
   workEditorSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
+  workSaveFieldsSchema,
+  workSaveResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
+import {
+  ProjectFileError,
+  type ProjectFileService,
+} from "../features/project-files/types.js";
 import {
   addFont,
   bundledFontPath,
@@ -28,6 +35,7 @@ import {
   startWorkEditorInstall,
 } from "../features/work/install.js";
 import { listWorkEditorRegistrations } from "../features/work/registry.js";
+import { isZodError } from "./zod-error.js";
 
 /**
  * work 宿主适配层路由（`/api/work/host/*`）。
@@ -41,6 +49,10 @@ import { listWorkEditorRegistrations } from "../features/work/registry.js";
  * 按数据目录落位事实计算；未锚定发布的编辑器不给下载（400，不摆假开关）。
  * 静态托管按上游 HOSTING.md 要求回 `.wasm` 的 `application/wasm` 与 nosniff。
  */
+/** Work 文档单次保存的本地护栏（与 flow 项目文件上传同口径）：一次性局部常量，
+ *  不是 agent 治理数值，不进 `packages/shared/src/governance.ts`。 */
+const WORK_SAVE_MAX_BYTES = 250 * 1024 * 1024;
+
 export async function registerWorkHostRoutes(
   app: FastifyInstance,
   options: {
@@ -53,6 +65,8 @@ export async function registerWorkHostRoutes(
     dataDir: string;
     /** 扩展包落位根（= dataDir/work/editors；安装与托管共用）。 */
     editorsDir: string;
+    /** 项目文件缝：Work 文档按 projectId 落到项目主目录。 */
+    projectFiles: ProjectFileService;
   },
 ): Promise<void> {
   const unauthorized = (reply: FastifyReply, message: string) =>
@@ -139,6 +153,63 @@ export async function registerWorkHostRoutes(
       return reply.send(getWorkEditorInstallSnapshot(editorId));
     },
   );
+
+  // ---- 文档保存到项目目录（Work 面绑定的那个项目）----
+  // 路径不在客户端给：只接 projectId + 项目内相对路径，根目录由项目文件服务按
+  // 服务端持有的 work_dir 解析（`validateRelativePath` 拒绝越界与 `.kenfutwork`）。
+  // assetId 每次保存新生成——同一身份换内容会被判成冲突写入。
+
+  app.post("/api/work/host/save", async (request, reply) => {
+    const actor = await options.localAccess.authenticate(request);
+    if (!actor) return unauthorized(reply, "本机接入凭据缺失或无效。");
+    const fields: Record<string, string> = {};
+    let bytes: Buffer | null = null;
+    try {
+      for await (const part of request.parts({
+        // 全局 multipart 上限 10MB 装不下设计/视频类文档；这里是本机落盘的本地护栏，
+        // 不是 agent 治理数值，不进 `packages/shared/src/governance.ts`。
+        limits: {
+          files: 1,
+          fields: 4,
+          parts: 5,
+          fileSize: WORK_SAVE_MAX_BYTES,
+        },
+      })) {
+        if (part.type === "file") {
+          if (part.fieldname !== "file" || bytes)
+            return applicationError(reply, 400, "一次只能保存一个文件。");
+          bytes = await part.toBuffer();
+        } else {
+          if (typeof part.value !== "string" || part.fieldname in fields)
+            return applicationError(reply, 400, "保存参数无效。");
+          fields[part.fieldname] = part.value;
+        }
+      }
+      const input = workSaveFieldsSchema.parse(fields);
+      if (!bytes?.byteLength)
+        return applicationError(reply, 400, "保存内容为空。");
+      await options.projectFiles.publish(
+        actor,
+        {
+          target: { kind: "project", projectId: input.projectId },
+          assetId: input.assetId,
+          relativePath: input.relativePath,
+          mimeType: input.mimeType,
+          writeFingerprint: createHash("sha256").update(bytes).digest("hex"),
+        },
+        bytes,
+      );
+      return workSaveResponseSchema.parse({
+        relativePath: input.relativePath,
+      });
+    } catch (error) {
+      if (error instanceof ProjectFileError)
+        return applicationError(reply, error.statusCode, error.message);
+      if (isZodError(error))
+        return applicationError(reply, 400, "保存参数无效。");
+      throw error;
+    }
+  });
 
   // ---- 用户字体（Work 引擎页「字体」）----
   // 编辑器是 WASM 自绘、读不到系统字体：用户把 ttf/otf 放进实例数据目录，宿主在
@@ -326,13 +397,78 @@ export async function registerWorkHostRoutes(
  *   并向父页发 `kenfutwork:editor-ready`，宿主据此撤掉遮罩（否则只能等 iframe onLoad，
  *   48MB wasm 的编辑器会在自己的英文 Loading 上停好几秒）。
  */
-const EDITOR_SHELL_SCRIPT = `<script>(function(){try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "zh-CN";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["zh-CN","zh"];}});}catch(error){}var BOOT="kfw-editor-boot";function ready(){var el=document.getElementById(BOOT);if(el&&!el.dataset.done){el.dataset.done="1";el.style.opacity="0";setTimeout(function(){el.remove();},220);}try{parent.postMessage({type:"kenfutwork:editor-ready"},location.origin);}catch(error){}}function boot(){if(document.getElementById(BOOT))return;var style=document.createElement("style");style.textContent="#kfw-editor-boot{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#fff;transition:opacity .2s ease}#kfw-editor-boot img{height:56px;width:auto;filter:brightness(0)}#kfw-editor-boot i{width:24px;height:24px;border:2px solid rgba(115,115,115,.3);border-top-color:rgba(60,60,60,.75);border-radius:9999px;animation:kfw-editor-spin .8s linear infinite}@keyframes kfw-editor-spin{to{transform:rotate(360deg)}}";document.head.appendChild(style);var wrap=document.createElement("div");wrap.id=BOOT;wrap.setAttribute("role","status");wrap.innerHTML='<img src="/logo-mark.png" alt=""><i></i>';document.body.appendChild(wrap);}function start(){boot();var hadLoading=!!document.querySelector('[id$="_loading"]');if(hadLoading){var observer=new MutationObserver(function(){if(!document.querySelector('[id$="_loading"]')){observer.disconnect();ready();}});observer.observe(document.body,{childList:true,subtree:true});}else{window.addEventListener("load",function(){setTimeout(ready,300);},{once:true});}window.addEventListener("TrunkApplicationStarted",ready,{once:true});setTimeout(ready,30000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",start,{once:true});}else{start();}})();</script>`;
+const EDITOR_THEME_SCRIPT = `<script>(function(){
+  var TARGET_ORIGIN;
+  try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}
+  var currentTheme=new URLSearchParams(location.search).get("theme")==="dark"?"dark":"light";
+  var nativeMatchMedia=window.matchMedia?window.matchMedia.bind(window):null;
+  var queries=[];
+  function createQuery(media){
+    var listeners=[];
+    var query={
+      media:media,
+      onchange:null,
+      get matches(){return media.indexOf("dark")>=0?currentTheme==="dark":currentTheme!=="dark";},
+      addEventListener:function(type,listener){if(type==="change"&&listener&&listeners.indexOf(listener)<0)listeners.push(listener);},
+      removeEventListener:function(type,listener){var index=listeners.indexOf(listener);if(type==="change"&&index>=0)listeners.splice(index,1);},
+      addListener:function(listener){this.addEventListener("change",listener);},
+      removeListener:function(listener){this.removeEventListener("change",listener);}
+    };
+    queries.push({query:query,listeners:listeners});
+    return query;
+  }
+  window.matchMedia=function(media){
+    if(media==="(prefers-color-scheme: dark)"||media==="(prefers-color-scheme: light)")return createQuery(media);
+    return nativeMatchMedia?nativeMatchMedia(media):{matches:false,media:media};
+  };
+  function apply(theme){
+    var next=theme==="dark"?"dark":"light";
+    var changed=next!==currentTheme;
+    currentTheme=next;
+    var dark=currentTheme==="dark";
+    document.documentElement.style.setProperty("--kfw-editor-boot-bg",dark?"#161616":"#fff");
+    document.documentElement.style.setProperty("--kfw-editor-boot-filter",dark?"brightness(0) invert(1)":"brightness(0)");
+    document.documentElement.style.setProperty("--kfw-editor-boot-border",dark?"rgba(245,245,245,.2)":"rgba(115,115,115,.3)");
+    document.documentElement.style.setProperty("--kfw-editor-boot-border-top",dark?"rgba(245,245,245,.75)":"rgba(60,60,60,.75)");
+    if(!changed)return;
+    queries.forEach(function(entry){
+      var event={matches:entry.query.matches,media:entry.query.media};
+      entry.listeners.slice().forEach(function(listener){
+        if(typeof listener==="function")listener.call(entry.query,event);
+        else if(listener&&typeof listener.handleEvent==="function")listener.handleEvent(event);
+      });
+      if(typeof entry.query.onchange==="function")entry.query.onchange.call(entry.query,event);
+    });
+  }
+  apply(currentTheme);
+  window.addEventListener("message",function(event){if(event.origin!==TARGET_ORIGIN||event.source!==parent)return;var data=event.data;if(data&&data.type==="kenfutwork:editor-theme")apply(data.theme);});
+})();</script>`;
+
+const EDITOR_SHELL_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "zh-CN";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["zh-CN","zh"];}});}catch(error){}var BOOT="kfw-editor-boot";function ready(){var el=document.getElementById(BOOT);if(el&&!el.dataset.done){el.dataset.done="1";el.style.opacity="0";setTimeout(function(){el.remove();},220);}try{parent.postMessage({type:"kenfutwork:editor-ready"},TARGET_ORIGIN);}catch(error){}}function boot(){if(document.getElementById(BOOT))return;var style=document.createElement("style");style.textContent="#kfw-editor-boot{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--kfw-editor-boot-bg,#fff);transition:opacity .2s ease}#kfw-editor-boot img{height:56px;width:auto;filter:var(--kfw-editor-boot-filter,brightness(0))}#kfw-editor-boot i{width:24px;height:24px;border:2px solid var(--kfw-editor-boot-border,rgba(115,115,115,.3));border-top-color:var(--kfw-editor-boot-border-top,rgba(60,60,60,.75));border-radius:9999px;animation:kfw-editor-spin .8s linear infinite}@keyframes kfw-editor-spin{to{transform:rotate(360deg)}}";document.head.appendChild(style);var wrap=document.createElement("div");wrap.id=BOOT;wrap.setAttribute("role","status");wrap.innerHTML='<img src="/logo-mark.png" alt=""><i></i>';document.body.appendChild(wrap);}function start(){boot();var hadLoading=!!document.querySelector('[id$="_loading"]');if(hadLoading){var observer=new MutationObserver(function(){if(!document.querySelector('[id$="_loading"]')){observer.disconnect();ready();}});observer.observe(document.body,{childList:true,subtree:true});}else{window.addEventListener("load",function(){setTimeout(ready,300);},{once:true});}window.addEventListener("TrunkApplicationStarted",ready,{once:true});setTimeout(ready,30000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",start,{once:true});}else{start();}})();</script>`;
+
+/**
+ * Craft 的共同保存出口：上游最终都会点击 Blob 锚点；在 iframe 内截住这一次点击，
+ * 把字节交给宿主统一下载缝。非 Blob 与普通链接保持原行为，不碰各应用的文档逻辑。
+ */
+const EDITOR_SAVE_BRIDGE_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}if(window.__kfwEditorSaveBridge)return;window.__kfwEditorSaveBridge=true;var nativeClick=HTMLAnchorElement.prototype.click;var sequence=0;HTMLAnchorElement.prototype.click=function(){var anchor=this;if(!anchor.download||!/^blob:/i.test(anchor.href)){return nativeClick.call(anchor);}var saveId=Date.now().toString(36)+"-"+(++sequence);fetch(anchor.href).then(function(response){if(!response.ok)throw new Error("blob read failed");return response.blob();}).then(function(blob){return blob.arrayBuffer().then(function(bytes){parent.postMessage({type:"kenfutwork:editor-save",saveId:saveId,fileName:anchor.download,mimeType:blob.type||"application/octet-stream",bytes:bytes},TARGET_ORIGIN,[bytes]);});}).catch(function(){parent.postMessage({type:"kenfutwork:editor-save-error",saveId:saveId,message:"读取保存内容失败"},TARGET_ORIGIN);});};})();</script>`;
 
 export function injectEditorShell(html: string): string {
   const head = /<head[^>]*>/iu.exec(html);
-  if (!head) return EDITOR_SHELL_SCRIPT + html;
+  if (!head)
+    return (
+      EDITOR_THEME_SCRIPT +
+      EDITOR_SHELL_SCRIPT +
+      EDITOR_SAVE_BRIDGE_SCRIPT +
+      html
+    );
   const at = head.index + head[0].length;
-  return html.slice(0, at) + EDITOR_SHELL_SCRIPT + html.slice(at);
+  return (
+    html.slice(0, at) +
+    EDITOR_THEME_SCRIPT +
+    EDITOR_SHELL_SCRIPT +
+    EDITOR_SAVE_BRIDGE_SCRIPT +
+    html.slice(at)
+  );
 }
 
 /**

@@ -6,6 +6,7 @@ vi.mock("../src/components/workbench/zcode/host/surfaceApi.js", () => ({
 }));
 
 import {
+  designCanvasReferenceReplaced,
   ensureDesignCanvasEntry,
   resolveDesignDocumentEntry,
 } from "../src/components/workbench/zcode/host/canvasDocumentNavigation.js";
@@ -91,6 +92,70 @@ describe("ensureDesignCanvasEntry", () => {
       /画布列表不可用/,
     );
   });
+
+  test("主画布文件缺失时改用仍可加载的画布", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false },
+        { id: primaryId, name: "主画布", isPrimary: true, fileMissing: true },
+      ],
+    });
+    await expect(ensureDesignCanvasEntry(projectId)).resolves.toEqual({
+      documentId: secondId,
+      title: "副画布",
+    });
+    expect(
+      mocks.json.mock.calls.some(([, init]) => init?.method === "POST"),
+    ).toBe(false);
+  });
+
+  test("旧标签的 preferredDocumentId 可加载时优先恢复它", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false },
+        { id: primaryId, name: "主画布", isPrimary: true },
+      ],
+    });
+    await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
+      { documentId: secondId, title: "副画布" },
+    );
+  });
+
+  test("preferred 文件缺失时跳过它并回落主画布", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: secondId, name: "副画布", isPrimary: false, fileMissing: true },
+        { id: primaryId, name: "主画布", isPrimary: true },
+      ],
+    });
+    await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
+      { documentId: primaryId, title: "主画布" },
+    );
+  });
+
+  test("所有画布文件都缺失时新建一个再返回", async () => {
+    mocks.json
+      .mockResolvedValueOnce({
+        canvases: [
+          { id: secondId, name: "副画布", isPrimary: false, fileMissing: true },
+        ],
+      })
+      .mockResolvedValueOnce({
+        canvas: {
+          id: primaryId,
+          name: "未命名画布",
+          projectId,
+          revision,
+          content: { elements: [], appState: {}, files: {} },
+        },
+      });
+    await expect(ensureDesignCanvasEntry(projectId, secondId)).resolves.toEqual(
+      { documentId: primaryId, title: "未命名画布" },
+    );
+    expect(
+      mocks.json.mock.calls.some(([, init]) => init?.method === "POST"),
+    ).toBe(true);
+  });
 });
 
 /**
@@ -120,5 +185,43 @@ describe("Design 入口不产生空白标签", () => {
     const canvasEntry = await ensureDesignCanvasEntry(projectId);
     expect(canvasEntry.documentId).toBeTruthy();
     expect(blank.documentId ?? canvasEntry.documentId).toBe(primaryId);
+  });
+});
+
+/**
+ * 回归锁：旧标签指向的画布文件缺失时，宿主关闭残留标签、打开可用画布，
+ * 并只提示一次（提示由入口锁 lastDesignEntryRef 保证不重复）。
+ */
+describe("Design 旧引用缺失的清理信号", () => {
+  test("旧引用被替换时返回 true，触发清理与提示", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: primaryId, name: "主画布", isPrimary: true },
+        { id: secondId, name: "已丢失", isPrimary: false, fileMissing: true },
+      ],
+    });
+    const resolved = await ensureDesignCanvasEntry(projectId, secondId);
+    expect(resolved.documentId).toBe(primaryId);
+    expect(designCanvasReferenceReplaced(secondId, resolved.documentId)).toBe(
+      true,
+    );
+  });
+
+  test("旧引用仍可加载时不提示", async () => {
+    mocks.json.mockResolvedValue({
+      canvases: [
+        { id: primaryId, name: "主画布", isPrimary: true },
+        { id: secondId, name: "旧画布", isPrimary: false },
+      ],
+    });
+    const resolved = await ensureDesignCanvasEntry(projectId, secondId);
+    expect(resolved.documentId).toBe(secondId);
+    expect(designCanvasReferenceReplaced(secondId, resolved.documentId)).toBe(
+      false,
+    );
+  });
+
+  test("首进 Design 没有旧引用时不提示", () => {
+    expect(designCanvasReferenceReplaced(undefined, primaryId)).toBe(false);
   });
 });

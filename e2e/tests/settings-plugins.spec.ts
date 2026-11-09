@@ -34,7 +34,9 @@ test.describe("插件、MCP 与技能", () => {
     await expect(
       management.getByText("尚未安装 MCP 服务器", { exact: true }),
     ).toBeVisible();
-    await management.getByRole("button", { name: "新建 MCP 服务器", exact: true }).click();
+    await management
+      .getByRole("button", { name: "新建 MCP 服务器", exact: true })
+      .click();
 
     await management.getByPlaceholder("my-mcp-server").fill("e2e-mcp");
     // `cat` 是真实可启动的常驻进程：不响应 MCP 握手会显示连接失败，
@@ -54,9 +56,7 @@ test.describe("插件、MCP 与技能", () => {
       response.url().includes("/api/code-ui/rpc"),
     );
     await management.getByRole("button", { name: "删除", exact: true }).click();
-    await management
-      .getByRole("button", { name: /确认删除/ })
-      .click();
+    await management.getByRole("button", { name: /确认删除/ }).click();
     expect((await deleteResponse).status()).toBe(200);
 
     await expect(

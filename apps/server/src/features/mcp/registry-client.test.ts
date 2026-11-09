@@ -57,6 +57,15 @@ describe("内置精选目录", () => {
     if (!fetchEntry) throw new Error("fetch 条目缺失");
     expect(buildCuratedArgs(fetchEntry, {}).args).toEqual(["mcp-server-fetch"]);
   });
+
+  it("jev 钉在与随包技能一致的 npm 版本，凭据键不丢", () => {
+    const jev = CURATED_MCP_SERVERS.find((e) => e.id === "jev");
+    if (!jev) throw new Error("jev 条目缺失");
+    // plugins/jev 的 jev-judgment 技能按 0.10.0 的工具集写；换版本要连同技能核对
+    expect(jev.argsTemplate).toEqual(["-y", "@jkudish/jev-mcp@0.10.0"]);
+    expect(jev.envKeys).toEqual(["TYPESAFE_API_KEY"]);
+    expect(jev.requires).toBe("node");
+  });
 });
 
 describe("官方注册表条目映射", () => {

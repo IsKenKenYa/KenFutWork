@@ -1,3 +1,4 @@
+import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Dialog,
@@ -16,7 +17,6 @@ import {
 } from "@zui/components/ui/select.js";
 import { toast } from "@zui/components/ui/toast.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
-import { parseLocalWorkspaceIdentity } from "@zcode/shared";
 import { HistoryIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { RunTimelineDialog } from "./RunTimelineDialog.js";

@@ -12,8 +12,6 @@ import {
   agentRunActivityResponseSchema,
   agentRunLatestResponseSchema,
   agentSubagentListResponseSchema,
-  runTimelineResponseSchema,
-  taskRunsResponseSchema,
   assetSignedUrlResponseSchema,
   brandKitAssetCreateRequestSchema,
   brandKitAssetResponseSchema,
@@ -127,6 +125,13 @@ import {
   instanceSkillToggleRequestSchema,
   jobListResponseSchema,
   jobResponseSchema,
+  knowledgeAddRootRequestSchema,
+  knowledgeRemoveRootRequestSchema,
+  knowledgeRootMutationResponseSchema,
+  knowledgeRootsResponseSchema,
+  knowledgeSearchRequestSchema,
+  knowledgeSearchResponseSchema,
+  knowledgeStatusResponseSchema,
   localAccessClientCreateRequestSchema,
   localAccessClientCreateResponseSchema,
   localAccessClientListResponseSchema,
@@ -235,6 +240,7 @@ import {
   runCancelResponseSchema,
   runCreateRequestSchema,
   runCreateResponseSchema,
+  runTimelineResponseSchema,
   sandboxPluginBundleListResponseSchema,
   sandboxPluginInstallRequestSchema,
   sandboxSkillImportRequestSchema,
@@ -246,6 +252,7 @@ import {
   skillImportRequestSchema,
   skillListResponseSchema,
   skillUpdateRequestSchema,
+  taskRunsResponseSchema,
   uploadResponseSchema,
   usageStatsResponseSchema,
   usageSummaryResponseSchema,
@@ -262,6 +269,7 @@ import {
   workFontsResponseSchema,
   workHostEditorsResponseSchema,
   workHostStatusResponseSchema,
+  workSaveResponseSchema,
 } from "@kenfutwork/shared";
 import type { ZodType } from "zod";
 import { z } from "zod";
@@ -292,6 +300,64 @@ export interface OpenApiRouteEntry {
 }
 
 export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
+  {
+    method: "get",
+    path: "/api/knowledge/status",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: knowledgeStatusResponseSchema,
+    summary: "查询知识库插件状态",
+    description:
+      "返回侧边栏插件的安装/启用态、SAG CLI 可用性与平台支持度、钉死的上游版本，以及未就绪时的明确原因。未安装或 CLI 缺失时不静默降级。",
+  },
+  {
+    method: "get",
+    path: "/api/knowledge/roots",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: knowledgeRootsResponseSchema,
+    summary: "列出知识库根目录",
+    description:
+      "读取 SAG 已登记的知识库根、索引状态、文件数与索引错误；对应 sag list --json。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/roots",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: knowledgeAddRootRequestSchema,
+    responseSchema: knowledgeRootMutationResponseSchema,
+    summary: "注册知识库根目录",
+    description:
+      "显式添加一个本地目录为知识库根。新根用 --types 显式开启文档与代码扩展名（上游默认不索引代码）；原始文件不被移动或修改。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/roots/remove",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: knowledgeRemoveRootRequestSchema,
+    responseSchema: knowledgeRootMutationResponseSchema,
+    summary: "移除知识库根目录",
+    description:
+      "只清除索引登记与注册记录，保留本地原始文件；对应 sag remove --json。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/search",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    requestSchema: knowledgeSearchRequestSchema,
+    responseSchema: knowledgeSearchResponseSchema,
+    summary: "执行 SAG2 语义检索",
+    description:
+      "BM25 召回 + Jev 证据判定 + 查询时扩展，返回带路径与行号的原文证据；对应 sag 查询 --json。检索服务不可用时显式报错，不静默改用模型记忆。",
+  },
   {
     method: "post",
     path: "/api/canvases/:canvasId/assets/:assetId/move",
@@ -1694,6 +1760,17 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "读取 work 编辑器静态站点文件",
     description:
       "按落位目录托管编辑器 WASM 静态站点（index.html 与内容寻址资产），.wasm 以 application/wasm 返回并带 nosniff。未落位返回 404；路径穿越与点文件明确拒绝。",
+  },
+  {
+    method: "post",
+    path: "/api/work/host/save",
+    tag: "work",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: workSaveResponseSchema,
+    summary: "保存 work 文档到项目主目录",
+    description:
+      "multipart：一个 file 分片加 projectId/assetId/relativePath/mimeType 四个字段。绝对路径由服务端按项目持有，客户端只给项目内相对路径；越界或覆盖应用管理文件返回 400，内容为空或参数无效同样 400。同一 assetId 换内容会被判成冲突写入，因此每次保存新生成身份。",
   },
   {
     method: "get",

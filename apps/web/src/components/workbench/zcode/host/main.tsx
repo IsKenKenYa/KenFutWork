@@ -9,13 +9,13 @@ import {
   DocumentPaneRendererProvider,
 } from "./DocumentPane.js";
 import { generatedMediaRenderer } from "./GeneratedMediaRenderer.js";
+import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
+import { pluginCardRenderer } from "./pluginCardRenderer.js";
 import {
   getPluginCardsVersion,
   loadPluginCards,
   subscribePluginCards,
 } from "./pluginCards.js";
-import { pluginCardRenderer } from "./pluginCardRenderer.js";
-import { ProjectDirectoryChoiceProvider } from "./ProjectDirectoryChoice.js";
 import {
   admitProjectMode,
   SharedProjectNavigationProvider,
@@ -28,6 +28,7 @@ const generatedToolCallRenderers = [generatedMediaRenderer, pluginCardRenderer];
 
 import {
   type CodeUiWorkspace,
+  hostNewTaskRequestSchema,
   type InstanceContext,
   pluginInventoryChangedSchema,
   type VoiceSettings,
@@ -42,6 +43,7 @@ import {
   applyTheme,
   isTheme,
   normalizeThemePreference,
+  THEME_PREFERENCE_EVENT,
 } from "@zui/useTheme.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import {
@@ -55,6 +57,11 @@ import {
   createMacDesktopChrome,
   installDesktopTitlebarDrag,
 } from "./desktopChrome.js";
+import {
+  createServerDirectoryPicker,
+  createTauriDirectoryPicker,
+} from "./directoryPicker.js";
+import { dispatchHostNewTask } from "./hostNewTask.js";
 import {
   type CodeHostConfig,
   CodeHttpChannelClient,
@@ -124,7 +131,13 @@ const workbenchNavigation = bootstrap?.workbenchModes
           : admitProjectMode(mode),
     )
   : undefined;
+// 桌面壳优先用 Tauri 原生对话框；Web/自托管形态退到「与用户同机的服务端」
+// 弹系统文件夹对话框。两条都是原生选择器，不再默认打开一层层翻目录的自定义弹窗；
+// 只有服务端明确说 unavailable 时，openWorkspaceFolderEntry 才回落目录浏览器。
+const selectDirectory =
+  createTauriDirectoryPicker() ?? createServerDirectoryPicker();
 const platform = createCodePlatform(client, {
+  selectDirectory,
   ...(bootstrap?.managementAvailable
     ? { onOpenManagement: requestManagementOpen }
     : {}),
@@ -320,11 +333,23 @@ if (window.parent !== window && bootstrap) {
       void loadPluginCards(client);
       return;
     }
+    const newTask = hostNewTaskRequestSchema.safeParse(event.data);
+    if (newTask.success) {
+      dispatchHostNewTask({
+        prompt: newTask.data.prompt,
+        executionMode: newTask.data.executionMode,
+      });
+      return;
+    }
     const type = (event.data as { type?: unknown } | null)?.type;
     if (type !== "kenfutwork:code-theme") return;
     const theme = (event.data as { theme?: unknown }).theme;
     if (typeof theme !== "string" || !isTheme(theme)) return;
-    localStorage.setItem("zcode-theme", normalizeThemePreference(theme));
-    applyTheme(normalizeThemePreference(theme));
+    const normalized = normalizeThemePreference(theme);
+    localStorage.setItem("zcode-theme", normalized);
+    applyTheme(normalized);
+    window.dispatchEvent(
+      new CustomEvent(THEME_PREFERENCE_EVENT, { detail: normalized }),
+    );
   });
 }

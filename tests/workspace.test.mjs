@@ -70,6 +70,21 @@ test("workspace includes apps and packages globs", async () => {
   assert.match(workspace, /packages\/\*/);
 });
 
+test("LightCraft 中文包走上游 xtask web-site 构建链", async () => {
+  const builder = await readText("scripts/build-work-editor-zh.mjs");
+  assert.match(builder, /XTASK_APPS = new Set\(\[[^\]]*"lightcraft"/);
+  assert.match(
+    builder,
+    /app === "lightcraft"\s*\?\s*join\(source, "target", "web-site"\)/,
+  );
+});
+
+test("PDFCraft 中文包复用 Noto CJK 嵌入与许可门禁", async () => {
+  const builder = await readText("scripts/build-work-editor-zh.mjs");
+  assert.match(builder, /pdfcraft:\s*\[\s*\[\s*"crates\/fonts\/build\.rs"/);
+  assert.match(builder, /pdfcraft:\s*"noto-sans-cjk-sc"/);
+});
+
 test("root test command wires node:test and turbo package tests", async () => {
   const manifest = await readJson("package.json");
 

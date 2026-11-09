@@ -97,9 +97,10 @@ export function createProjectFileService(deps: {
       };
     }
     const project = await deps.projects.getProject(actor, target.projectId);
+    // work 项目与 design/flow 一样按项目主目录直接落文件（没有画布、也不经 Task 工作域）。
     if (
       !project.enabled_modes.some(
-        (mode) => mode === "design" || mode === "flow",
+        (mode) => mode === "design" || mode === "flow" || mode === "work",
       )
     )
       throw new ProjectFileError(

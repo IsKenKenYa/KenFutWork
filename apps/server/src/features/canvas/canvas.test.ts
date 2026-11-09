@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -607,6 +607,34 @@ async function fileService(options: { uploadFails?: boolean } = {}) {
     hasSource: (path: string) => sourceBytes.has(path),
   };
 }
+
+it("项目文件已丢失的画布在列表标 fileMissing，避免恢复旧标签直接 409", async () => {
+  const f = await fileService();
+  f.row()!.content = {
+    storage: "project-files",
+    path: `.kenfutwork/canvases/${CANVAS_ID}.json`,
+  };
+  await expect(f.service.listCanvases(ACTOR, "project")).resolves.toEqual([
+    { id: CANVAS_ID, name: "画布", isPrimary: false, fileMissing: true },
+  ]);
+  const directory = join(f.root, ".kenfutwork", "canvases");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, `${CANVAS_ID}.json`),
+    JSON.stringify({ elements: [], appState: {}, files: {} }),
+  );
+  await expect(f.service.listCanvases(ACTOR, "project")).resolves.toEqual([
+    { id: CANVAS_ID, name: "画布", isPrimary: false, fileMissing: false },
+  ]);
+});
+
+it("旧内容未登记项目文件索引的画布不算缺失", async () => {
+  const f = await fileService();
+  f.row()!.content = { elements: [], appState: {}, files: {} };
+  await expect(f.service.listCanvases(ACTOR, "project")).resolves.toEqual([
+    { id: CANVAS_ID, name: "画布", isPrimary: false, fileMissing: false },
+  ]);
+});
 
 it("显式读取首次导入旧内容，DB仅索引，GET返回文件revision与轻量素材引用", async () => {
   const f = await fileService();

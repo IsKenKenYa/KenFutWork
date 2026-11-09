@@ -12,6 +12,10 @@ import type { IServiceAccessor } from "@zcode/services";
 import type { CreateTaskRequest } from "@zui/app-shell/types.js";
 import { useConfirmDialog } from "@zui/hooks/useConfirmDialog.js";
 import { toast } from "@zui/components/ui/toast.js";
+import {
+  type HostNewTaskDetail,
+  HOST_NEW_TASK_EVENT,
+} from "@zui/host/hostNewTask.js";
 import { reportAppTelemetryEvent } from "@zui/lib/appTelemetry.js";
 import { resolveLogoutProviderFamilyDomain } from "@zui/lib/providerFamilyDomainSettings.js";
 import { isRendererReloadNavigation } from "@zui/lib/rendererNavigation.js";
@@ -38,7 +42,7 @@ interface OpenRemoteConnectionPreference {
 }
 
 /** 新任务落点：identity 缺省一律归一化为 null，供只读校验、focus/addTab 统一消费。 */
-interface NewTaskTargetResolution {
+export interface NewTaskTargetResolution {
   workspacePath: string;
   workspaceIdentity: string | null;
 }
@@ -121,7 +125,7 @@ async function prepareTaskWorkspace(
   return { workspacePath: prepared.workspacePath, workspaceIdentity: prepared.workspaceIdentity ?? null };
 }
 
-function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, request?: CreateTaskRequest) {
+export function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, request?: CreateTaskRequest) {
   const provider = typeof request === "string" ? request : request?.provider;
   const groupedDraftPlacement =
     typeof request === "string" ? undefined : request?.groupedDraftPlacement;
@@ -131,6 +135,7 @@ function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, 
   const initialPrompt = rawInitialPrompt?.trim() ? rawInitialPrompt : undefined;
   const initialPromptMention =
     typeof request === "string" ? undefined : request?.initialPromptMention;
+  const executionMode = typeof request === "string" ? undefined : request?.executionMode;
   logger.info(`[Root] ${source}:`, newTaskTarget.workspacePath, provider ?? "default-provider");
   // Cmd/Ctrl+N 是创建新的单 panel 草稿，不是在当前 workbench
   // group / paneLayout 中继续拆一个 draft；目标 workspace 取 focused pane。
@@ -147,7 +152,7 @@ function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, 
         createSource: typeof request === "string" ? undefined : request?.createSource,
       },
     );
-  if (initialPrompt) {
+  if (initialPrompt || executionMode) {
     // insert request 被首个 composer 消费后会清空；如果随后因 pane/config
     // 切换 remount，新 composer 会从空的 __draft__ 恢复并覆盖预填。先写草稿事实源，
     // 再发即时插入请求：当前 composer 立即可见，后续 remount 也恢复同一文本。
@@ -156,10 +161,13 @@ function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, 
       newTaskTarget.workspaceIdentity ?? undefined,
       V4_DRAFT_SCOPE_ROOT,
       {
-        text: initialPrompt,
+        text: initialPrompt ?? "",
         ...(initialPromptMention ? { mention: initialPromptMention } : {}),
+        ...(executionMode ? { executionMode } : {}),
       },
     );
+  }
+  if (initialPrompt) {
     useZCodeSessionStore
       .getState()
       .requestComposerTextInsert(
@@ -167,6 +175,8 @@ function startTaskDraft(source: string, newTaskTarget: NewTaskTargetResolution, 
         initialPrompt,
         newTaskTarget.workspaceIdentity ?? undefined,
         initialPromptMention,
+        undefined,
+        executionMode,
       );
   }
 }
@@ -359,6 +369,21 @@ export function useRootWorkspaceActions({
     },
     [addTab, intl, platform, services, tabStoreApi, workbenchGroupClientMode],
   );
+
+  // 管理文档是独立 iframe，自身没有 Tab 工作区；父页把「新建技能/插件」转成
+  // 壳内事件，这里统一走与侧栏新任务相同的落点解析与草稿写入。
+  useEffect(() => {
+    const receive = (event: Event) => {
+      const detail = (event as CustomEvent<HostNewTaskDetail>).detail;
+      if (!detail?.prompt?.trim()) return;
+      void startNewTaskFromActiveWorkspace("management create task", {
+        initialPrompt: detail.prompt,
+        executionMode: detail.executionMode,
+      });
+    };
+    window.addEventListener(HOST_NEW_TASK_EVENT, receive);
+    return () => window.removeEventListener(HOST_NEW_TASK_EVENT, receive);
+  }, [startNewTaskFromActiveWorkspace]);
 
   const handleLogout = useCallback(async () => {
     let runningAgentSessionCount: number | null = null;

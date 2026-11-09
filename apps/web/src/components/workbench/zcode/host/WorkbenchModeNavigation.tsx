@@ -141,14 +141,14 @@ function ConnectedWorkbenchModeNavigation({
           间距沿用原口径（px-3.5 / py-3 / gap-2）；无黑底条、无底片徽章。
           拖拽区仍由本行承接（原 h-12 空白拖拽条已去掉）。 */}
       <div className="flex w-full items-center gap-2 px-3.5 py-3 [app-region:drag]">
-        {/* 黑标：品牌图为蓝色墨迹，brightness(0) 只留黑白；盒高 20px=字标行高，
+        {/* 品牌标：浅色黑墨迹、深色纯白剪影（brand-mark 类统一处理）；盒高 20px=字标行高，
             墨迹(盒的 71%)≈字标大写高——垂直居中即光学对齐（实测墨迹在画布中
             上下均分 148/147，无需位移补偿）。 */}
         {/* biome-ignore lint/performance/noImgElement: output: "export" 未开 images.unoptimized，next/image 会构建失败 */}
         <img
           src={logoSrc}
           alt="KenFutWork"
-          className="h-5 w-auto brightness-0"
+          className="h-5 w-auto brand-mark"
           draggable={false}
         />
         <span className="font-wordmark text-[20px] leading-none tracking-tight text-foreground">
@@ -197,7 +197,7 @@ export function HostSidebarRail({
       <img
         src={logoSrc}
         alt="KenFutWork"
-        className="my-1 h-5 w-auto shrink-0 brightness-0"
+        className="my-1 h-5 w-auto shrink-0 brand-mark"
         draggable={false}
       />
       <button

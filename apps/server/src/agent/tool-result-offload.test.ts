@@ -1,4 +1,11 @@
-import { access, mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { ToolMessage } from "@langchain/core/messages";
@@ -52,7 +59,10 @@ async function fixture(maxBytes = 1_048_576) {
     resolvePath: async (path) => {
       if (revoked) throw new Error("执行作用域已撤销");
       const absolute = resolve(rootDirectory, path);
-      if (absolute !== rootDirectory && !absolute.startsWith(`${rootDirectory}/`))
+      if (
+        absolute !== rootDirectory &&
+        !absolute.startsWith(`${rootDirectory}/`)
+      )
         throw new Error("目录未授权");
       return absolute;
     },

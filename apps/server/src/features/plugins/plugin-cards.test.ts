@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
 import type { PluginCardDeclaration } from "@kenfutwork/shared";
+import { describe, expect, it } from "vitest";
 import { buildBundleManifest } from "./bundle-manifest.js";
-import { defaultPluginCardLimits, truncatePluginCards } from "./plugin-cards.js";
+import {
+  defaultPluginCardLimits,
+  truncatePluginCards,
+} from "./plugin-cards.js";
 
 const VALID_CARD: PluginCardDeclaration = {
   tools: ["demo_echo", "plugin_tool"],
@@ -22,7 +25,8 @@ function bundleFiles(cards: unknown): Record<string, string> {
       main: "index.js",
       kenfutwork: { bundle: { patch: "./cordis.patch.yml" }, cards },
     }),
-    "cordis.patch.yml": "- insert:\n    - id: card-plugin\n      name: card-plugin\n",
+    "cordis.patch.yml":
+      "- insert:\n    - id: card-plugin\n      name: card-plugin\n",
     "index.js":
       'export const name = "card-plugin";\nexport function apply() {};\n',
   };

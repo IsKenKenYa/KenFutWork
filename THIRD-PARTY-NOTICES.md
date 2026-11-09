@@ -1,6 +1,6 @@
 # KenFutWork 第三方声明与素材归属
 
-版本：2026-10-23 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
+版本：2026-11-08 · 本文件是**仓库层**第三方归属的唯一索引（属主登记见 `docs/README.md` 治理规则 1）
 
 本文件回答三个问题：哪些东西不是我们写的、它按什么许可进来、我们在分发时必须替下游做什么。许可义务**履行位置**逐条标注；上游移植目录内那份 `THIRD-PARTY-NOTICES.md` 是 ZCode 的上游产物（与上游逐字节一致），本文件不复制它的正文，只索引它。
 
@@ -57,6 +57,16 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 许可 | MIT；全文见 [`licenses/loomic-MIT.txt`](licenses/loomic-MIT.txt) |
 | 落点 | 本仓库早期代码与基础能力；`references/loomic/` 为上游参考副本 |
 | 义务履行 | 社区版与商业版均保留 Copyright 与 MIT 全文；[`COPYRIGHT.md`](COPYRIGHT.md) 与安装包 `release/legal/loomic-MIT.txt` 承担随包声明；商业版使用前取得 Xinmin Zeng 的书面来源确认（见 `DEC-24`） |
+
+### A7. Jev 判决技能（MIT，经 ZCode 官方插件移植）
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | ZCode 官方插件市场（`cdn-zcode.z.ai/zcode/official-plugin/marketplace.json`）的 `jev-decisions` 0.1.0，作者 [kittimzhe](https://github.com/kittimzhe)；本机缓存 `~/.zcode/cli/plugins/cache/zcode-plugins-official/jev-decisions/0.1.0`。该插件的技能又改编自 [@jkudish/jev-mcp](https://github.com/jkudish/jev-mcp) 包内官方技能（MIT，Copyright (c) 2026 Joey Kudish） |
+| 许可 | MIT：jev-mcp 上游有 LICENSE 原文；ZCode 插件缓存**无独立 LICENSE 文件**，MIT 为其 README 明确声明（待核：向 kittimzhe 索取许可文本归档） |
+| 落点 | `plugins/jev/skills/jev-judgment/SKILL.md`（移植时仅改宿主接线：Setup 指向本项目 MCP 精选目录而非 ZCode 插件设置；工具表与策略正文保持上游原样） |
+| 义务履行 | 技能同目录 `LICENSE.txt` 带 MIT 全文与 Joey Kudish 版权行；SKILL.md 的 Attribution 段保留完整改编链；插件包其余文件（index.js / 清单 / 图标）为本项目自有，按 GPL-3.0 |
+| 运行时依赖 | MCP 精选目录 `jev` 条目钉 `@jkudish/jev-mcp@0.10.0`（npm 运行时下载，不签入仓库），与 ZCode 插件同版本；TypeSafe Jev API 为商业服务，凭据由用户自持（BYOK） |
 
 ## B. 运行时与构建期开源依赖
 
@@ -121,6 +131,9 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | Momo Trust Display（字标在用） | SIL Open Font License 1.1 | 合规：随产物分发于 `apps/web/public/fonts/` 与 `apps/landing/public/fonts/`，同目录带 `LICENSE.txt`（OFL 全文）；无保留字体名（Reserved Font Name） |
 | CaveatBrush、ChakraPetch、GochiHand、K2D、Pacifico、PermanentMarker | SIL OFL 1.1 | 仅作为 `docs/视觉设计/logo/字体/` 的候选样张存在，未打进产物 |
 | Inter、Liberation Serif、霞鹜文楷 轻便版（LXGW WenKai Lite）、思源黑体/宋体（Noto Sans/Serif CJK SC）、得意黑（Smiley Sans）、悠哉字体（Yozai）、朱雀仿宋（Zhuque Fangsong）、霞鹜漫黑（LXGW Marker Gothic）、马善政（Ma Shan Zheng）、站酷快乐体（ZCOOL KuaiLe）、JetBrains Mono、抖音美好体（Douyin Sans，字节跳动）、更纱黑体 SC（Sarasa Gothic，Belleve Invis） | SIL OFL 1.1 | 随产物分发于 `apps/server/assets/work-fonts/`（Work 编辑器的内置字体库），同目录带 `OFL-*.txt` 全文（清单见同目录 `README.md`，Work 引擎页列表名后标注出品方或许可类型）；字体文件未改名、未修改字形；来源见各 `OFL-*.txt` 首行版权行。得意黑含 Reserved Font Name（Smiley / 得意黑），按 OFL 保留名称条款原样分发。未打包小米 MiSans、OPPO Sans、阿里巴巴普惠体等「免费商用但许可不可转让」的字体：MiSans 协议允许把字体用作嵌入式字体（并要求在软件中特别注明使用了 MiSans），但授予是**不可转让、可撤销**的版权许可，随 GPL 产物再分发会让下游拿不到小米的授权；用户可在「字体 → 上传」放入自己从官方页下载的 MiSans 供本机实例使用（属用户资产，授权由用户持有） |
+| WordCraft 与 DeckCraft 中文自建包内嵌的 Noto Sans CJK SC Regular | SIL OFL 1.1 | 来源：`storytold/craft-fonts` 的 `fonts/noto-sans-cjk-sc/`，上游源为 `notofonts/noto-cjk@f8d1575`；版权人：The Noto Project Authors（Adobe、Google）。`scripts/build-work-editor-zh.mjs` 将字形编进 WASM，并把 `OFL-noto-sans-cjk-sc.txt` 许可全文放进各自产物目录；字体未改名、未修改字形 |
+| LightCraft 中文自建包外置的 Noto Sans CJK SC Regular | SIL OFL 1.1 | 来源与版权人同上。上游 `cargo xtask web` 将字体作为 `lightcraft_zh_hans.otf` 随站点分发，并把 `OFL-noto-sans-cjk-sc.txt` 许可全文放进产物目录；字体未修改字形 |
+| PDFCraft 中文自建包内嵌的 Noto Sans CJK SC Regular | SIL OFL 1.1 | 来源与版权人同上。`scripts/build-work-editor-zh.mjs` 将字形编进 WASM，并把 `OFL-noto-sans-cjk-sc.txt` 许可全文放进产物目录；字体未改名、未修改字形 |
 | ArtierEN-2、No.019-Sounso-Quality-2、YEFONTPaws-Bold-2 | **需商业授权**（分别来自天津卓漫、上首品牌策划、深圳仪品） | 样张留在仓库**不构成授权**；未在产物中使用。逐字段落原文见 `docs/视觉设计/logo/字体/字体说明.md` |
 | `skills/canvas-design/canvas-fonts/` | **54 个字体文件，仓库内无任何许可文本** | **待核**：分发前必须逐支确认来源与许可，不能默认沿用 GPL 或 OFL |
 

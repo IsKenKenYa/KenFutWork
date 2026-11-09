@@ -3,6 +3,8 @@
 import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
+  type ExecutionMode,
+  type HostNewTaskRequest,
   type ManagementTarget,
   type WorkbenchMode,
   type WorkbenchModes,
@@ -10,7 +12,9 @@ import {
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingScreen } from "@/components/loading-screen";
+import { triggerDownload } from "@/lib/download";
 import { getServerBaseUrl } from "@/lib/env";
+import { toNextTheme } from "@/lib/instance-theme";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { useLocalInstance } from "@/lib/local-instance-context";
 import {
@@ -19,6 +23,7 @@ import {
   PluginPanelOverlay,
   usePluginPanels,
 } from "@/lib/plugin-panels";
+import { saveWorkDocument } from "@/lib/server-api";
 
 const DEFAULT_MODES: WorkbenchModes = ["code", "design"];
 
@@ -29,6 +34,7 @@ export function CodeWorkbenchFrame({
   onOpenManagement,
   availableModes = DEFAULT_MODES,
   canvasId,
+  newTaskRequest,
 }: {
   /** 当前工作台模式（深链解析结果）；融合后 Design/Flow 是壳内视图，由这里推给壳。 */
   mode?: WorkbenchMode;
@@ -36,6 +42,8 @@ export function CodeWorkbenchFrame({
   onOpenManagement?: (target: ManagementTarget) => void;
   availableModes?: WorkbenchModes;
   canvasId?: string;
+  /** 管理文档转来的新任务意图；id 变化时推送一次（壳负责建草稿）。 */
+  newTaskRequest?: { id: number; prompt: string; executionMode: ExecutionMode };
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // 本地实例的主人即当前用户（DEC-20 免账户）：bootstrap 带给 Code 壳，
@@ -71,6 +79,10 @@ export function CodeWorkbenchFrame({
     );
   }, [panels]);
   const ready = useRef(false);
+  // 壳内 React 是否已接住新任务事件（form/报告等入口）。ready 握手早于 Root 渲染，
+  // 推送必须等壳内监听器就位，否则消息会丢在挂载前的窗口里。
+  const [shellReady, setShellReady] = useState(false);
+  const workSaves = useRef(new Map<string, Promise<void>>());
   const sentMode = useRef<WorkbenchMode | undefined>(undefined);
   const sendActivity = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
@@ -135,12 +147,29 @@ export function CodeWorkbenchFrame({
     };
     frame.current?.contentWindow?.postMessage(message, window.location.origin);
   }, [onOpenManagement, availableModes, localInstance]);
+  // 管理文档（设置页）发起的创建任务：壳就绪后按其 id 推送一次，避免重复建草稿。
+  const sentTaskRequest = useRef(0);
+  useEffect(() => {
+    if (
+      !shellReady ||
+      !newTaskRequest ||
+      sentTaskRequest.current === newTaskRequest.id
+    )
+      return;
+    sentTaskRequest.current = newTaskRequest.id;
+    const message: HostNewTaskRequest = {
+      type: "kenfutwork:host-new-task",
+      prompt: newTaskRequest.prompt,
+      executionMode: newTaskRequest.executionMode,
+    };
+    frame.current?.contentWindow?.postMessage(message, window.location.origin);
+  }, [shellReady, newTaskRequest]);
   /**
    * 外观主题桥：设置 → 外观（next-themes，默认跟随系统）解析后的结果同步给 Code iframe
    * （zai 主题口径 zai-light/zai-dark）——没有这座桥，外观切深色时 Code 工作台仍是浅色。
    * 握手响应后立即推一次（iframe 的监听器这时才就位），之后主题变化实时推。
    */
-  const { resolvedTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const themeRef = useRef<"zai-dark" | "zai-light">("zai-light");
   const postTheme = useCallback((theme: "zai-dark" | "zai-light") => {
     themeRef.current = theme;
@@ -159,7 +188,54 @@ export function CodeWorkbenchFrame({
         return;
       const parsed = codeUiParentRequestSchema.safeParse(event.data);
       if (!parsed.success) return;
-      if (parsed.data.type === "kenfutwork:open-management") {
+      if (parsed.data.type === "kenfutwork:work-save") {
+        const { saveId, fileName, mimeType, bytes } = parsed.data;
+        const { projectId, assetId, relativePath } = parsed.data;
+        if (workSaves.current.has(saveId)) return;
+        const delivery = (async () => {
+          let error: string | null = null;
+          let path: string | null = null;
+          let savedRelativePath: string | undefined;
+          try {
+            if (projectId && assetId && relativePath) {
+              // 绑定了项目目录：落到项目主目录，失败就说原因，不偷偷退回下载目录。
+              const saved = await saveWorkDocument(null, {
+                projectId,
+                assetId,
+                relativePath,
+                mimeType: mimeType ?? "application/octet-stream",
+                bytes,
+              });
+              savedRelativePath = saved.relativePath;
+            } else {
+              path = await triggerDownload(
+                fileName,
+                new Blob([bytes], {
+                  type: mimeType ?? "application/octet-stream",
+                }),
+                { browserFallback: false },
+              );
+            }
+          } catch (cause) {
+            error = cause instanceof Error ? cause.message : String(cause);
+          }
+          frame.current?.contentWindow?.postMessage(
+            {
+              type: "kenfutwork:work-save-result",
+              saveId,
+              ok: !error,
+              error,
+              path,
+              relativePath: savedRelativePath,
+            },
+            window.location.origin,
+          );
+        })();
+        workSaves.current.set(saveId, delivery);
+        void delivery;
+      } else if (parsed.data.type === "kenfutwork:code-theme-change") {
+        setTheme(toNextTheme(parsed.data.theme));
+      } else if (parsed.data.type === "kenfutwork:open-management") {
         if (active) onOpenManagement?.(parsed.data.target);
       } else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
@@ -189,6 +265,7 @@ export function CodeWorkbenchFrame({
         setShellMounted(true);
       else if (parsed.data.type === "kenfutwork:code-ready") {
         ready.current = true;
+        setShellReady(true);
         bootstrap();
         // iframe 的主题监听器这时才就位，补推当前外观主题
         postTheme(themeRef.current);
@@ -209,6 +286,7 @@ export function CodeWorkbenchFrame({
     onOpenManagement,
     sendNavigation,
     postTheme,
+    setTheme,
   ]);
   useEffect(() => {
     const zcodeTheme = resolvedTheme === "dark" ? "zai-dark" : "zai-light";

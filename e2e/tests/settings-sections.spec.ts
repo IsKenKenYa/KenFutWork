@@ -2,12 +2,12 @@ import { expect, test } from "@playwright/test";
 
 import { openWorkbench } from "../support/local-access";
 import {
-  SETTINGS_SECTIONS,
   clearMcpServers,
   expectSectionTitle,
   managementFrame,
   openSettings,
   openSettingsSection,
+  SETTINGS_SECTIONS,
   settingsRow,
 } from "../support/settings";
 
@@ -41,9 +41,7 @@ test.describe("设置页分区与控件", () => {
     ).toHaveCount(0);
   });
 
-  test("常规分区列出语言、终端、代理、通知与自动压缩控件", async ({
-    page,
-  }) => {
+  test("常规分区列出语言、终端、代理、通知与自动压缩控件", async ({ page }) => {
     const management = await openSettingsSection(page, "常规");
     await expectSectionTitle(management, "常规");
     await expect(
@@ -107,8 +105,12 @@ test.describe("设置页分区与控件", () => {
     await expectSectionTitle(management, "语音");
     const voice = management.locator('section[aria-label="语音"]');
     await expect(voice).toBeVisible();
-    await expect(voice.getByText("只转文本", { exact: true }).first()).toBeVisible();
-    await expect(voice.getByText("完整回路", { exact: true }).first()).toBeVisible();
+    await expect(
+      voice.getByText("只转文本", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      voice.getByText("完整回路", { exact: true }).first(),
+    ).toBeVisible();
     await expect(
       voice.getByRole("button", { name: "重新检测", exact: true }),
     ).toBeVisible();
@@ -173,7 +175,9 @@ test.describe("设置页分区与控件", () => {
   test("权限分区展示审批模型设置", async ({ page }) => {
     const management = await openSettingsSection(page, "权限");
     await expectSectionTitle(management, "权限");
-    await expect(management.locator('section[aria-label="审批"]')).toBeVisible();
+    await expect(
+      management.locator('section[aria-label="审批"]'),
+    ).toBeVisible();
   });
 
   test("子智能体分区只读展示内置清单", async ({ page }) => {
@@ -185,7 +189,13 @@ test.describe("设置页分区与控件", () => {
     await expect(
       management.getByText("内置子智能体", { exact: true }),
     ).toBeVisible();
-    for (const agent of ["代码调研", "代码审查", "规划拆解", "批量出图", "视频生成"]) {
+    for (const agent of [
+      "代码调研",
+      "代码审查",
+      "规划拆解",
+      "批量出图",
+      "视频生成",
+    ]) {
       await expect(
         management.getByText(agent, { exact: true }).first(),
       ).toBeVisible();
@@ -198,9 +208,15 @@ test.describe("设置页分区与控件", () => {
   test("插件·MCP·技能分区提供三个标签页与空态", async ({ page }) => {
     const management = await openSettingsSection(page, "插件·MCP·技能");
     await expectSectionTitle(management, "插件·MCP·技能");
-    await expect(management.getByRole("tab", { name: /插件/ }).first()).toBeVisible();
-    await expect(management.getByRole("tab", { name: /MCP/ }).first()).toBeVisible();
-    await expect(management.getByRole("tab", { name: /技能/ }).first()).toBeVisible();
+    await expect(
+      management.getByRole("tab", { name: /插件/ }).first(),
+    ).toBeVisible();
+    await expect(
+      management.getByRole("tab", { name: /MCP/ }).first(),
+    ).toBeVisible();
+    await expect(
+      management.getByRole("tab", { name: /技能/ }).first(),
+    ).toBeVisible();
 
     await management.getByRole("tab", { name: /插件/ }).first().click();
     await expect(

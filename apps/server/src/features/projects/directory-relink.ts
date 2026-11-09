@@ -460,15 +460,19 @@ async function readSnapshot(
       [projectId],
     );
     if (!project?.work_dir) throw conflict();
-    await missingRoot(project.work_dir);
+    const root = project.work_dir;
+    // 目录仍在线：没有可恢复内容，返回 200 + missing:false，由客户端隐藏恢复入口。
+    if (!(await rootMissing(root)))
+      return { projectId, workDir: root, tasks: [], missing: false };
     const rows = await taskRows(sql, projectId);
-    if (rows.some((row) => row.root_directory !== project.work_dir))
+    if (rows.some((row) => row.root_directory !== root))
       throw new ProjectDirectoryRelinkError(
         "历史Task目录不一致，请先显式迁移。",
       );
     return {
       projectId,
-      workDir: project.work_dir,
+      workDir: root,
+      missing: true,
       tasks: rows.map((row) => ({
         taskId: row.task_id,
         scopeGeneration: Number(row.scope_generation),

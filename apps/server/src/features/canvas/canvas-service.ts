@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type {
   CanvasContent,
   CanvasCreateRequest,
@@ -129,6 +130,22 @@ const OSS_MARKER_PREFIX = "oss://";
 const PROJECT_FILE_BUCKET = "project-assets";
 const PROJECT_FILE_ASSET_ID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u;
+
+/** list 只做存在性探测：文件或目录缺失都算缺失，不创建、不抛错。 */
+async function canvasFilePresent(
+  projectRoot: string,
+  canvasId: string,
+): Promise<boolean> {
+  try {
+    return (
+      await stat(
+        join(projectRoot, ".kenfutwork", "canvases", `${canvasId}.json`),
+      )
+    ).isFile();
+  } catch {
+    return false;
+  }
+}
 
 export function createCanvasService(options: {
   /** Canvas asset metadata and project-relative paths. */
@@ -290,14 +307,32 @@ export function createCanvasService(options: {
   });
   const service: CanvasService = {
     async listCanvases(actor, projectId, query) {
-      await localInstance.resolve(actor);
-      await projects.getProject(actor, projectId);
-      return (await repository.list(actor.instanceId, projectId, query)).map(
-        (row) => ({
-          id: row.id,
-          name: row.name,
-          isPrimary: row.is_primary ?? false,
-        }),
+      const instance = await localInstance.resolve(actor);
+      const project = await projects.getProject(actor, projectId);
+      const defaultRoot = resolve(
+        join(instance.dataDir, "sandbox"),
+        instance.instanceId,
+        projectId,
+      );
+      return Promise.all(
+        (await repository.list(actor.instanceId, projectId, query)).map(
+          async (row) => {
+            const indexed =
+              (row.content as { storage?: string } | null)?.storage ===
+              "project-files";
+            return {
+              id: row.id,
+              name: row.name,
+              isPrimary: row.is_primary ?? false,
+              fileMissing: indexed
+                ? !(await canvasFilePresent(
+                    row.root_directory || project.work_dir || defaultRoot,
+                    row.id,
+                  ))
+                : false,
+            };
+          },
+        ),
       );
     },
     async createCanvas(actor, projectId, input, beforePublish) {

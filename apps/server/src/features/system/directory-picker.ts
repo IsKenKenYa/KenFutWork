@@ -16,8 +16,9 @@ import { resolveExecutable } from "../../utils/resolve-executable.js";
  * 那种形态继续走「填本机路径」。
  *
  * 各平台命令（都是系统自带，不引依赖）：
- * - Windows：`powershell.exe` + WinForms `FolderBrowserDialog`（控制台先切 UTF-8，
- *   否则中文路径按 ANSI 代码页写管道会乱码——与终端会话同一条坑）；
+ * - Windows：`powershell.exe` + 壳层 `IFileOpenDialog`（`FOS_PICKFOLDERS`，即资源管理器
+ *   的现代「选择文件夹」对话框；控制台先切 UTF-8，否则中文路径按 ANSI 代码页写管道会乱码
+ *   ——与终端会话同一条坑）；
  * - macOS：`osascript -e 'POSIX path of (choose folder …)'`；
  * - Linux：`zenity` 优先、`kdialog` 兜底（两者都没装则如实报「不可用」）。
  */
@@ -34,29 +35,109 @@ export interface PickerCommand {
 }
 
 /**
- * Windows 的 PowerShell 脚本。
+ * Windows 的 PowerShell 脚本：走壳层 `IFileDialog` + `FOS_PICKFOLDERS`，
+ * 也就是资源管理器那套现代「选择文件夹」对话框（导航窗格 + 地址栏 + 搜索）。
+ *
+ * 为什么不用 WinForms 的 `FolderBrowserDialog`：Windows PowerShell 5.1 跑在 .NET
+ * Framework 上，它的 `AutoUpgradeEnabled` 实测**不会**升级到现代对话框（本机截图
+ * 为证：仍是旧版「浏览文件夹」树形框），而用户要的就是现代那套。
  *
  * 三处细节都不是装饰：
  * - 开头把 `[Console]::OutputEncoding` 切 UTF-8（中文路径经管道回来才不是乱码）；
- * - 用 `-STA` 跑（WinForms 的对话框要求单线程单元，否则抛错）；
+ * - 用 `-STA` 跑（壳层对话框是套间敏感的 COM，MTA 下 `Show` 直接失败）；
  * - 拿一个**透明的置顶窗体**当 owner：对话框才不会开在浏览器窗口后面
  *   （没 owner 时它可能被压住，用户以为按钮没反应）。
  */
-const WINDOWS_PICKER_SCRIPT = [
-  "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8",
-  "Add-Type -AssemblyName System.Windows.Forms",
-  "$owner = New-Object System.Windows.Forms.Form",
-  "$owner.TopMost = $true",
-  "$owner.ShowInTaskbar = $false",
-  "$owner.Opacity = 0",
-  "$owner.Show()",
-  "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog",
-  "$dialog.Description = '选择工作目录（运行服务端的那台机器）'",
-  "$dialog.ShowNewFolderButton = $true",
-  "$picked = $dialog.ShowDialog($owner)",
-  "$owner.Close()",
-  "if ($picked -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }",
-].join("; ");
+const WINDOWS_PICKER_SCRIPT = `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+$cs = @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace KenFutWork {
+  // 文件夹对话框的 COM 接口。vtable 必须逐槽对齐 IModalWindow + IFileDialog：
+  // Show 之后依次是 SetFileTypes / SetFileTypeIndex / GetFileTypeIndex / Advise /
+  // Unadvise / SetOptions / GetOptions / SetDefaultFolder / SetFolder / GetFolder /
+  // GetCurrentSelection / SetFileName / GetFileName / SetTitle / SetOkButtonLabel /
+  // SetFileNameLabel / GetResult / AddPlace / SetDefaultExtension / Close /
+  // SetClientGuid / ClearClientData / SetFilter。漏声明任何一个都会按错位的方法表
+  // 跳飞（实测漏 4 个槽时 SetTitle 落到 GetCurrentSelection 上返回 E_FAIL，
+  // SetClientGuid 落到 AddPlace 上直接 0xC0000005）。
+  // 用不到的槽按指针/整数的等价签名占位，只为把方法表撑对。
+  [ComImport, Guid("d57c7288-d4ad-4768-be02-9d969532d960"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  internal interface IFileDialogVtable {
+    [PreserveSig] int Show(IntPtr hwndOwner);
+    [PreserveSig] int SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
+    [PreserveSig] int SetFileTypeIndex(uint iFileType);
+    [PreserveSig] int GetFileTypeIndex(out uint piFileType);
+    [PreserveSig] int Advise(IntPtr pfde, out uint pdwCookie);
+    [PreserveSig] int Unadvise(uint dwCookie);
+    [PreserveSig] int SetOptions(uint fos);
+    [PreserveSig] int GetOptions(out uint pfos);
+    [PreserveSig] int SetDefaultFolder(IntPtr psi);
+    [PreserveSig] int SetFolder(IntPtr psi);
+    [PreserveSig] int GetFolder(out IntPtr ppsi);
+    [PreserveSig] int GetCurrentSelection(out IntPtr ppsi);
+    [PreserveSig] int SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    [PreserveSig] int GetFileName(out IntPtr ppszName);
+    [PreserveSig] int SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+    [PreserveSig] int SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+    [PreserveSig] int SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+    [PreserveSig] int GetResult(out IShellItem ppsi);
+    [PreserveSig] int AddPlace(IntPtr psi, int fdap);
+    [PreserveSig] int SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+    [PreserveSig] int Close(int hr);
+    [PreserveSig] int SetClientGuid(ref Guid guid);
+    [PreserveSig] int ClearClientData();
+    [PreserveSig] int SetFilter(IntPtr pFilter);
+  }
+
+  [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  internal interface IShellItem {
+    [PreserveSig] int BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+    [PreserveSig] int GetParent(out IShellItem parent);
+    [PreserveSig] int GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
+    [PreserveSig] int GetAttributes(uint mask, out uint attrs);
+    [PreserveSig] int Compare(IShellItem psi, uint hint, out int order);
+  }
+
+  public static class FolderDialog {
+    // FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST
+    const uint Options = 0x20u | 0x40u | 0x800u;
+    // SIGDN_FILESYSPATH：拿回文件系统绝对路径，而不是显示名或 PIDL。
+    const uint FileSystemPath = 0x80058000u;
+
+    public static string Pick(IntPtr owner, string title) {
+      Type t = Type.GetTypeFromCLSID(new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7"));
+      if (t == null) return null;
+      object com = Activator.CreateInstance(t);
+      try {
+        IFileDialogVtable dlg = (IFileDialogVtable)com;
+        dlg.SetOptions(Options);
+        dlg.SetTitle(title);
+        // 非 0 = 用户取消（ERROR_CANCELLED）或对话框起不来，两种都不该有输出
+        if (dlg.Show(owner) != 0) return null;
+        IShellItem item;
+        if (dlg.GetResult(out item) != 0) return null;
+        string path;
+        if (item.GetDisplayName(FileSystemPath, out path) != 0) return null;
+        return path;
+      } finally {
+        Marshal.ReleaseComObject(com);
+      }
+    }
+  }
+}
+'@
+Add-Type -TypeDefinition $cs
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.Opacity = 0
+$owner.Show()
+$picked = [KenFutWork.FolderDialog]::Pick($owner.Handle, '选择文件夹')
+$owner.Close()
+if ($picked) { [Console]::Out.Write($picked) }`;
 
 const PICKER_TITLE = "选择工作目录";
 

@@ -562,8 +562,7 @@ const enUS: Record<string, string> = {
   "pluginCreator.add": "Add",
   "pluginCreator.create": "Create plugin",
   "pluginCreator.addMarketplace": "Add plugin marketplace",
-  "pluginCreator.unavailable":
-    "Plugin Creator is unavailable. Check the connection, then enable or restore Plugin Creator in the marketplace and retry.",
+  "pluginCreator.unavailable": "The workspace is read-only, so plugins cannot be created.",
   "settings.create.action": "New",
   "settings.resourceActions.import": "Import",
   "settings.resourceActions.export": "Export",
@@ -1221,6 +1220,8 @@ const enUS: Record<string, string> = {
   "chat.toolbar.model.targetMissing": "No model target",
   "settings.subagents.modelLoadFailed": "The model list failed to load.",
   "root.modelSelection.loadFailed": "Model configuration failed to load.",
+  "root.conversationWorkspaceReplaced":
+    "Previous conversation directory was deleted. Created a new default conversation.",
   "modelTrajectory.openSourceDirectory": "Open source folder",
   "modelTrajectory.refresh": "Refresh",
   "modelTrajectory.close": "Close",
@@ -1824,6 +1825,8 @@ const enUS: Record<string, string> = {
   "workspace.startFromScratch": "Start from scratch",
   "workspace.openFolder": "Open folder",
   "workspace.openPluginsSettings": "Plugin Marketplace",
+  "workspace.designCanvasFileMissing":
+    "Canvas file is missing. Opened another canvas.",
   "workspace.backToWorkspace": "Back to workspace",
   "workspace.noActiveForNewTask":
     "There is no available workspace yet. Open a workspace first.",

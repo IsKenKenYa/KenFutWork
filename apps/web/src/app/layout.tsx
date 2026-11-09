@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import type { ReactNode } from "react";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme-bootstrap";
 import { cn } from "@/lib/utils";
 
 import { Providers } from "../components/providers";
@@ -37,6 +38,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-background font-sans antialiased">
+        {/* 首帧主题：先落主题类与底色，避免持久化深色实例刷新时闪白（见 lib/theme-bootstrap）。 */}
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: 注入的是模块内固定常量 THEME_BOOTSTRAP_SCRIPT，不含用户输入。 */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
         <Providers>{children}</Providers>
       </body>
     </html>

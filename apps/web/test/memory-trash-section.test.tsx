@@ -41,9 +41,7 @@ function createService(overrides?: {
   restore?: () => Promise<{ fileName: string | null }>;
 }) {
   return {
-    listTrashedMemories: vi.fn(
-      overrides?.list ?? (async () => TRASH),
-    ),
+    listTrashedMemories: vi.fn(overrides?.list ?? (async () => TRASH)),
     restoreTrashedMemory: vi.fn(
       overrides?.restore ?? (async () => ({ fileName: "b-restored.md" })),
     ),
@@ -58,7 +56,9 @@ it("列出时间、标题、原因与可恢复状态", async () => {
   const service = createService();
   render(<MemoryTrashSection projectId="project-1" memoryService={service} />);
 
-  await waitFor(() => expect(screen.getByTestId("memory-trash-list")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByTestId("memory-trash-list")).toBeTruthy(),
+  );
   expect(screen.getByText("结论乙")).toBeTruthy();
   expect(screen.getByText("旧结论")).toBeTruthy();
   expect(screen.getByText(/重复合并/)).toBeTruthy();
@@ -116,7 +116,9 @@ it("列表读取失败时给出原因并可重读", async () => {
 
   await waitFor(() => expect(screen.getByText("记忆功能已关闭")).toBeTruthy());
   await user.click(screen.getByRole("button", { name: "重新读取" }));
-  await waitFor(() => expect(screen.getByTestId("memory-trash-list")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByTestId("memory-trash-list")).toBeTruthy(),
+  );
 });
 
 it("不可恢复的条目没有恢复按钮", async () => {
@@ -125,7 +127,9 @@ it("不可恢复的条目没有恢复按钮", async () => {
   });
   render(<MemoryTrashSection projectId="project-1" memoryService={service} />);
 
-  await waitFor(() => expect(screen.getByTestId("memory-trash-list")).toBeTruthy());
+  await waitFor(() =>
+    expect(screen.getByTestId("memory-trash-list")).toBeTruthy(),
+  );
   expect(screen.queryByRole("button", { name: "恢复" })).toBeNull();
   expect(screen.getByText("已过可恢复窗口")).toBeTruthy();
 });

@@ -42,9 +42,7 @@ export function createProjectMemoryPromptSection(
         await memory.migrateLegacyCanvasMemory(actor, { projectId, canvasId });
       const index = await memory.readIndex(instanceId, projectId);
       const directory = memory.memoryDirectory(projectId);
-      const body = index?.trim()
-        ? index.trim()
-        : "（还没有记忆，索引为空）";
+      const body = index?.trim() ? index.trim() : "（还没有记忆，索引为空）";
       return [
         "## 项目长期记忆",
         "",
@@ -81,8 +79,7 @@ export function createMemorySearchTool(
       required: ["query"],
     },
     execute: async (args, execCtx) => {
-      if (!execCtx.actor)
-        throw new Error("memory_search 只能在运行中使用。");
+      if (!execCtx.actor) throw new Error("memory_search 只能在运行中使用。");
       const scope = execCtx.scopeHandle?.describe();
       const canvasId = execCtx.canvasId ?? execCtx.workContext?.canvasId;
       const projectId = await memory.resolveProjectId(execCtx.actor, {
@@ -123,8 +120,7 @@ export function createMemorySaveTool(
       required: ["title", "content"],
     },
     execute: async (args, execCtx) => {
-      if (!execCtx.actor)
-        throw new Error("memory_save 只能在运行中使用。");
+      if (!execCtx.actor) throw new Error("memory_save 只能在运行中使用。");
       const scope = execCtx.scopeHandle?.describe();
       const canvasId = execCtx.canvasId ?? execCtx.workContext?.canvasId;
       const projectId = await memory.resolveProjectId(execCtx.actor, {

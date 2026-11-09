@@ -67,6 +67,8 @@ function canonicalWorkspace(project: CodeUiWorkspace): CodeUiWorkspace {
 type ConversationWorkspace = CodeUiWorkspace & {
   created: boolean;
   workspacePurpose: "conversation";
+  /** 上一次默认对话目录已不存在，本次清掉旧引用并新建；供客户端给出可读提示。 */
+  replacedMissingDirectory?: boolean;
 };
 const preferenceKeys = new Set([
   "recentProjects",
@@ -272,12 +274,30 @@ export function createHumanWorkspaceRpc(options: {
         (project) =>
           project.projectId === savedId && enabledFor(project, preset),
       );
-      if (existing)
-        return {
-          ...canonicalWorkspace(existing),
-          created: false,
-          workspacePurpose: "conversation",
-        };
+      let replacedMissingDirectory = false;
+      if (existing) {
+        try {
+          return {
+            ...canonicalWorkspace(existing),
+            created: false,
+            workspacePurpose: "conversation",
+          };
+        } catch (error) {
+          // 目录已随任务清理（如用户删掉 sandbox）：清掉陈旧偏好再建默认项目，
+          // 重复进入复用新项目，不重试旧引用也不重复报错。
+          if (
+            !(error instanceof CodeUiRepositoryError) ||
+            error.code !== "not_found"
+          )
+            throw error;
+          await options.preferences.updateHumanPreferences(
+            instanceId,
+            {},
+            { removeKeys: [preferenceKey] },
+          );
+          replacedMissingDirectory = true;
+        }
+      }
       const created = await options.projects.createProject(actor, {
         kind: preset,
         name: "默认对话",
@@ -312,7 +332,12 @@ export function createHumanWorkspaceRpc(options: {
           "not_found",
           "默认对话项目已归档，工作区引用未保存。",
         );
-      return { ...project, created: true, workspacePurpose: "conversation" };
+      return {
+        ...project,
+        created: true,
+        workspacePurpose: "conversation",
+        ...(replacedMissingDirectory ? { replacedMissingDirectory: true } : {}),
+      };
     })();
     conversationOpening.set(openingKey, ensuring);
     try {

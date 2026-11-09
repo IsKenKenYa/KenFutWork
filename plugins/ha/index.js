@@ -20,6 +20,12 @@
  */
 
 import {
+  HA_LOOPBACK_BASE_URL,
+  initializeExistingHomeAssistant,
+  initializeHomeAssistant,
+  readHaOnboarding,
+} from "./lib/auto-init.js";
+import {
   buildEcosystemSummary,
   buildEntityView,
   controlValue,
@@ -45,6 +51,8 @@ export const name = "kenfutwork-ha";
 export const inject = ["tools", "routes", "ui", "storage"];
 
 const CONFIG_KEY = "config";
+const AUTO_INIT_KEY = "auto-init";
+const AUTO_INIT_BASE_URL = HA_LOOPBACK_BASE_URL;
 /**
  * `ha_entities` 单次返回条数上限（治理数值属主是 `packages/shared/src/governance.ts`，
  * 插件 bundle 独立于 workspace、不能 import 它，故在此命名并注释）。
@@ -59,6 +67,8 @@ const STATUS_BY_CODE = {
   unauthorized: 401,
   not_configured: 401,
   not_found: 404,
+  trusted_network_unavailable: 503,
+  auto_init_failed: 500,
 };
 
 function codedError(message, code) {
@@ -90,6 +100,10 @@ export function apply(ctx) {
   const configs = new Map();
   /** 实例运行态（键=实例）：WS 会话 + 实体快照 + 注册表。首次用到时才建。 */
   const runtimes = new Map();
+  /** 同一实例的自动初始化共享一个 Promise，避免并发建用户。 */
+  const autoInitializations = new Map();
+  /** 本进程已校验过的实例：存储配置只在冷读时探一次，不在每次调用都打一遍 HA。 */
+  const validatedInstances = new Set();
 
   ctx.effect(() => () => {
     for (const runtime of runtimes.values()) runtime.stop();
@@ -133,11 +147,131 @@ export function apply(ctx) {
     const saved = { ...config, savedAt: new Date().toISOString() };
     configs.set(instanceId, saved);
     await ctx.storage.set(instanceId, CONFIG_KEY, JSON.stringify(saved));
+    await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
   }
 
   async function clearConfig(instanceId) {
     configs.delete(instanceId);
+    validatedInstances.delete(instanceId);
     await ctx.storage.remove(instanceId, CONFIG_KEY);
+    await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
+  }
+
+  async function readAutoInitState(instanceId) {
+    const raw = await ctx.storage.get(instanceId, AUTO_INIT_KEY);
+    if (!raw) return null;
+    try {
+      const state = JSON.parse(raw);
+      if (
+        typeof state.baseUrl !== "string" ||
+        typeof state.username !== "string" ||
+        typeof state.password !== "string" ||
+        !state.baseUrl ||
+        !state.username ||
+        !state.password
+      ) {
+        throw new Error("invalid");
+      }
+      return state;
+    } catch {
+      throw codedError(
+        "HA 自动初始化记录无效，请断开后重试。",
+        "auto_init_invalid",
+      );
+    }
+  }
+
+  async function autoInitializeConfig(instanceId) {
+    const previous = await readAutoInitState(instanceId);
+    if (previous) {
+      try {
+        return await initializeHomeAssistant(previous);
+      } catch (error) {
+        // 凭据记录损坏或 HA 已被别人重建：清掉记录，下次重新探测；失败继续抛出。
+        if (error?.code === "unauthorized")
+          await ctx.storage.remove(instanceId, AUTO_INIT_KEY);
+        throw error;
+      }
+    }
+
+    let steps = null;
+    try {
+      steps = await readHaOnboarding({ baseUrl: AUTO_INIT_BASE_URL });
+    } catch (error) {
+      // onboarding 不可读（已完成初始化的 HA 常见 404）：改走可信网段分支，
+      // 由它给出成功或明确的失败原因，绝不静默回落到手动配置表单。
+      ctx.logger.info?.("HA onboarding 不可读，尝试可信网段免登录：", error);
+    }
+    if (steps && steps.get("user") !== true) {
+      const state = {
+        baseUrl: AUTO_INIT_BASE_URL,
+        username: "kenfutwork",
+        password: `${crypto.randomUUID()}${crypto.randomUUID()}`,
+      };
+      // 先持久化再产生远端副作用：响应丢失后仍可用同一口令恢复。
+      await ctx.storage.set(instanceId, AUTO_INIT_KEY, JSON.stringify(state));
+      return initializeHomeAssistant(state);
+    }
+    // 已完成 onboarding（或读不到状态）：不建号、不改号，只自动签发长期令牌。
+    try {
+      return await initializeExistingHomeAssistant({
+        baseUrl: AUTO_INIT_BASE_URL,
+      });
+    } catch (error) {
+      // 失败不兜底：保留原始错误码，补上可读的接入上下文后抛出，不伪装成「未配置」。
+      throw codedError(
+        `HA 自动接入失败：${error instanceof Error ? error.message : String(error)}`,
+        error?.code ?? "auto_init_failed",
+      );
+    }
+  }
+
+  /**
+   * 存着的连接配置是否已被 HA 拒绝。
+   *
+   * 只有「实例活着但不认这枚令牌」才算过期（HA 被删后重建、令牌被用户在「个人资料
+   * → 安全」撤销）：此时必须清掉重走自动接入，否则面板与 `GET config` 会一直报
+   * 「已接入」，用户看到的始终是上一次安装留下的假状态。
+   * 不可达与超时**不算**——那多半只是 HA 正在重启，清掉会让每次重启都多签一枚
+   * 长期令牌，把用户的安全页刷成一串 KenFutWork。
+   */
+  async function storedConfigIsStale(config) {
+    try {
+      await createHaRest(config).getConfig();
+      return false;
+    } catch (error) {
+      return error?.code === "unauthorized";
+    }
+  }
+
+  async function readOrInitializeConfig(instanceId) {
+    const configured = await readConfig(instanceId);
+    if (configured) {
+      if (validatedInstances.has(instanceId)) return configured;
+      if (!(await storedConfigIsStale(configured))) {
+        validatedInstances.add(instanceId);
+        return configured;
+      }
+      ctx.logger.info?.("HA 存储的令牌已被实例拒绝，重新自动接入。");
+      await clearConfig(instanceId);
+    }
+    const existing = autoInitializations.get(instanceId);
+    if (existing) return existing;
+    const pending = (async () => {
+      try {
+        const config = await autoInitializeConfig(instanceId);
+        if (!config) {
+          throw codedError("HA 自动初始化未返回连接配置。", "auto_init_failed");
+        }
+        await writeConfig(instanceId, config);
+        validatedInstances.add(instanceId);
+        return config;
+      } finally {
+        autoInitializations.delete(instanceId);
+      }
+    })();
+    autoInitializations.set(instanceId, pending);
+    return pending;
   }
 
   /** 注册表三条命令：任一失败就退回「按域分组」，不摆半套假数据。 */
@@ -204,7 +338,7 @@ export function apply(ctx) {
   async function runtimeFor(instanceId) {
     const existing = runtimes.get(instanceId);
     if (existing) return existing;
-    const config = await readConfig(instanceId);
+    const config = await readOrInitializeConfig(instanceId);
     if (!config) throw notConfiguredError();
     const runtime = createRuntime(config);
     runtimes.set(instanceId, runtime);
@@ -282,17 +416,42 @@ export function apply(ctx) {
     path: "config",
     handler: async (request) => {
       const instanceId = requireInstance(request.instanceId, "读取配置");
-      const config = await readConfig(instanceId);
-      return {
-        status: 200,
-        body: {
-          configured: Boolean(config),
-          // 令牌绝不出 HTTP；地址不是秘密（面板要能改）
-          baseUrl: config?.baseUrl ?? null,
-          defaultBaseUrl: HA_DEFAULT_BASE_URL,
-          savedAt: config?.savedAt ?? null,
-        },
-      };
+      try {
+        const config = await readOrInitializeConfig(instanceId);
+        return {
+          status: 200,
+          body: {
+            configured: Boolean(config),
+            // 令牌绝不出 HTTP；地址不是秘密（面板要能改）
+            baseUrl: config?.baseUrl ?? null,
+            defaultBaseUrl: HA_DEFAULT_BASE_URL,
+            savedAt: config?.savedAt ?? null,
+          },
+        };
+      } catch (error) {
+        // 失败不兜底：初始化链路的任何异常都以错误态返回，面板据此显示原因，
+        // 不再把它伪装成「未配置」并回落到手动填令牌的表单。
+        return errorResult(error);
+      }
+    },
+  });
+
+  /**
+   * 装上即触发：宿主在插件安装/启用成功后以本机实例身份调用一次。
+   * 插件 `apply(ctx)` 拿不到 instanceId，触发点只能由宿主补；这里与面板
+   * `GET config` 共用同一条 `readOrInitializeConfig`，失败同样以错误态返回。
+   */
+  ctx.routes.register({
+    path: "auto-init",
+    method: "POST",
+    handler: async (request) => {
+      const instanceId = requireInstance(request.instanceId, "自动初始化");
+      try {
+        const config = await readOrInitializeConfig(instanceId);
+        return { status: 200, body: { ok: true, baseUrl: config.baseUrl } };
+      } catch (error) {
+        return errorResult(error);
+      }
     },
   });
 
@@ -358,7 +517,7 @@ export function apply(ctx) {
     handler: async (request) => {
       const instanceId = requireInstance(request.instanceId, "连接测试");
       try {
-        const config = await readConfig(instanceId);
+        const config = await readOrInitializeConfig(instanceId);
         if (!config) throw notConfiguredError();
         const info = await createHaRest(config).getConfig();
         return {
@@ -397,7 +556,7 @@ export function apply(ctx) {
   async function advanceAutoSteps(runtime, flowId, initial) {
     let step = initial;
     for (let i = 0; i < 6; i += 1) {
-      if (!step || step.type !== "form") break;
+      if (step?.type !== "form") break;
       const hasError = Object.values(step.errors ?? {}).some(
         (message) => typeof message === "string" && message.trim(),
       );

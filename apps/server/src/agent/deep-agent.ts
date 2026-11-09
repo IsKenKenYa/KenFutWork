@@ -41,7 +41,6 @@ import {
 } from "../features/task-work/model-mailbox.js";
 import { findOwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
-import { MODEL_USAGE_AGENT_METADATA } from "./model-call-usage.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type {
   AgentContextBudget,
@@ -57,11 +56,7 @@ import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
-import { createToolResultPruneMiddleware } from "./tool-result-prune.js";
-import {
-  createToolResultOffloadMiddleware,
-  type ToolResultOffloadWriter,
-} from "./tool-result-offload.js";
+import { MODEL_USAGE_AGENT_METADATA } from "./model-call-usage.js";
 import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
@@ -91,6 +86,11 @@ import {
 } from "./subagent-tools.js";
 import { createTaskNotificationMiddleware } from "./task-notifications.js";
 import type { NativeToolProof } from "./tool-execution-receipts.js";
+import {
+  createToolResultOffloadMiddleware,
+  type ToolResultOffloadWriter,
+} from "./tool-result-offload.js";
+import { createToolResultPruneMiddleware } from "./tool-result-prune.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -823,8 +823,7 @@ export function createKenFutWorkDeepAgent(options: {
                     ...(options.contextKeepRecentImages === undefined
                       ? {}
                       : {
-                          keepRecentImages:
-                            options.contextKeepRecentImages,
+                          keepRecentImages: options.contextKeepRecentImages,
                         }),
                   }),
                 ]),
@@ -872,8 +871,7 @@ export function createKenFutWorkDeepAgent(options: {
                     ...(options.contextKeepRecentImages === undefined
                       ? {}
                       : {
-                          keepRecentImages:
-                            options.contextKeepRecentImages,
+                          keepRecentImages: options.contextKeepRecentImages,
                         }),
                   }),
                 ]),

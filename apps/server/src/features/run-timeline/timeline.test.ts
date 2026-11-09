@@ -11,9 +11,7 @@ function at(seconds: number): string {
   return new Date(Date.parse(T0) + seconds * 1_000).toISOString();
 }
 
-function run(
-  overrides: Partial<RunTimelineRunRow> = {},
-): RunTimelineRunRow {
+function run(overrides: Partial<RunTimelineRunRow> = {}): RunTimelineRunRow {
   return {
     runId: RUN_ID,
     rootSessionId: ROOT_SESSION_ID,
@@ -152,11 +150,7 @@ describe("buildRunTimeline", () => {
   it("重复的开始事件不会互相覆盖终态", () => {
     const timeline = buildRunTimeline({
       run: run(),
-      events: rows(
-        startedTool(),
-        startedTool(),
-        completedTool(),
-      ),
+      events: rows(startedTool(), startedTool(), completedTool()),
       usage: null,
     });
 
@@ -257,9 +251,7 @@ describe("buildRunTimeline", () => {
       kind: "compaction",
       detail: "自动压缩 · 保留最近 20 条消息 · 兜底阈值",
     });
-    expect(timeline.entries[1]?.detail).toBe(
-      "手动压缩未生效（历史不足）",
-    );
+    expect(timeline.entries[1]?.detail).toBe("手动压缩未生效（历史不足）");
   });
 
   it("钩子按退出码与超时判定状态", () => {
@@ -368,7 +360,13 @@ describe("buildRunTimeline", () => {
           timestamp: T0,
         },
         { type: "canvas.sync", runId: RUN_ID, timestamp: at(1) },
-        { type: "thinking.delta", runId: RUN_ID, messageId: "m", delta: "…", timestamp: at(2) },
+        {
+          type: "thinking.delta",
+          runId: RUN_ID,
+          messageId: "m",
+          delta: "…",
+          timestamp: at(2),
+        },
       ),
       usage: null,
     });
@@ -498,7 +496,9 @@ describe("buildRunTimeline", () => {
 describe("mergeChildEvents", () => {
   const DISPATCH = "call-task";
 
-  function dispatchStarted(input?: Record<string, unknown>): RunTimelineEventRow {
+  function dispatchStarted(
+    input?: Record<string, unknown>,
+  ): RunTimelineEventRow {
     return {
       seq: 1,
       createdAt: T0,
@@ -655,7 +655,11 @@ describe("mergeChildEvents", () => {
       ],
     });
 
-    const timeline = buildRunTimeline({ run: run(), events: merged, usage: null });
+    const timeline = buildRunTimeline({
+      run: run(),
+      events: merged,
+      usage: null,
+    });
 
     expect(timeline.entries.map((entry) => entry.title)).toEqual([
       "Task",
@@ -733,10 +737,10 @@ describe("mergeChildEvents", () => {
     });
 
     expect(merged[0]?.event).toMatchObject({ agentCallId: "child-3" });
-    expect(
-      (merged[0]?.event as Extract<StreamEvent, { type: "tool.started" }>)
-        .agentName,
-    ).toBeUndefined();
+    const started = merged[0]?.event as
+      | Extract<StreamEvent, { type: "tool.started" }>
+      | undefined;
+    expect(started?.agentName).toBeUndefined();
   });
 
   it("子代理治理事件保留，失败与用量事件不重复出条目", () => {

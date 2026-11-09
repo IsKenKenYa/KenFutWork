@@ -1,0 +1,12 @@
+diff --git a/locales/zh-hans/wordcraft.tsv b/locales/zh-hans/wordcraft.tsv
+index 9dd39a9..ccd9955 100644
+--- a/locales/zh-hans/wordcraft.tsv
++++ b/locales/zh-hans/wordcraft.tsv
+@@ -1531,0 +1532,1 @@
++	{n} results	{n} 个结果
+diff --git a/locales/zh-hant/wordcraft.tsv b/locales/zh-hant/wordcraft.tsv
+index 4875cc7..bf8adfd 100644
+--- a/locales/zh-hant/wordcraft.tsv
++++ b/locales/zh-hant/wordcraft.tsv
+@@ -1526,0 +1527,1 @@
++	{n} results	{n} 個結果

@@ -1,4 +1,5 @@
 import type { SessionCreateSource } from "@zcode/shared";
+import type { ExecutionMode } from "@kenfutwork/shared";
 /* eslint-disable max-lines -- workspace 级状态动作集中在同一 slice，先保持收口便于维护。 */
 import {
   buildNativeSupplierKey,
@@ -424,6 +425,7 @@ export function createWorkspaceSlice(set: SetFn) {
       workspaceIdentity?: string,
       mention?: ComposerMentionPrefill,
       mode?: "replace" | "prepend-if-missing",
+      executionMode?: ExecutionMode,
     ) => {
       let nextRequestId = 0;
       set((state) =>
@@ -441,6 +443,7 @@ export function createWorkspaceSlice(set: SetFn) {
                 text,
                 ...(mention ? { mention } : {}),
                 ...(mode ? { mode } : {}),
+                ...(executionMode ? { executionMode } : {}),
               },
             };
           },

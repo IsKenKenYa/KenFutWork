@@ -1,0 +1,13 @@
+diff --git a/crates/ui-egui/src/dialogs/save_options.rs b/crates/ui-egui/src/dialogs/save_options.rs
+index 9118252..bc6b4aa 100644
+--- a/crates/ui-egui/src/dialogs/save_options.rs
++++ b/crates/ui-egui/src/dialogs/save_options.rs
+@@ -99,7 +99,7 @@ fn label(o: &FormatOption) -> String {
+         "embedProfiles" => tl!("Embed ICC Profiles").into(),
+         "pdfCompatible" => tl!("Create PDF-Compatible File").into(),
+         "compress" => tl!("Use Compression").into(),
+-        _ => form::humanize(o.name),
++        _ => form::humanized(o.name),
+     }
+ }
+ 

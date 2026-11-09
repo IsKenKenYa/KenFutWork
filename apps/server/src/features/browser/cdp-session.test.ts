@@ -861,9 +861,7 @@ describe("CDP 会话：清理自有浏览器 profile", () => {
     const result = await session.clearData("all");
     expect(result).toEqual({ success: true });
     // 目录已不存在：再往里建文件再删会失败。
-    await expect(
-      rm(join(profileDir, "Default", "Cookies")),
-    ).rejects.toThrow();
+    await expect(rm(join(profileDir, "Default", "Cookies"))).rejects.toThrow();
     await rm(dataDir, { recursive: true, force: true });
   });
 });

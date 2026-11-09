@@ -15,14 +15,18 @@ export function PluginAddMenu({
   onAddMarketplace,
   onInstallSource,
   testId,
+  workspacePath,
+  workspaceIdentity,
 }: {
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onAddMarketplace: () => void;
   onInstallSource?: () => void;
   testId: string;
+  workspacePath?: string | null;
+  workspaceIdentity?: string | null;
 }) {
   const { intl } = useZCodeIntl();
-  const creator = usePluginCreator(onCreateTask);
+  const creator = usePluginCreator(onCreateTask, { workspacePath, workspaceIdentity });
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

@@ -14,7 +14,9 @@ test.describe("偏好保存往返与非法输入", () => {
 
   test("上下文自动压缩开关保存后刷新仍生效", async ({ page }) => {
     let management = await openSettingsSection(page, "常规");
-    const autoCompact = settingsRow(management, "上下文自动压缩").getByRole("switch");
+    const autoCompact = settingsRow(management, "上下文自动压缩").getByRole(
+      "switch",
+    );
     await expect(autoCompact).toBeChecked();
 
     await Promise.all([
@@ -48,7 +50,9 @@ test.describe("偏好保存往返与非法输入", () => {
 
   test("自动归档开关与天数保存后刷新仍生效", async ({ page }) => {
     let management = await openSettingsSection(page, "常规");
-    const archiveSwitch = settingsRow(management, "自动归档旧任务").getByRole("switch");
+    const archiveSwitch = settingsRow(management, "自动归档旧任务").getByRole(
+      "switch",
+    );
     const days = settingsRow(management, "归档保留时长").getByRole("combobox");
     await expect(archiveSwitch).not.toBeChecked();
     await expect(days).toBeDisabled();
@@ -71,7 +75,9 @@ test.describe("偏好保存往返与非法输入", () => {
     await expect(
       settingsRow(management, "自动归档旧任务").getByRole("switch"),
     ).toBeChecked();
-    const persistedDays = settingsRow(management, "归档保留时长").getByRole("combobox");
+    const persistedDays = settingsRow(management, "归档保留时长").getByRole(
+      "combobox",
+    );
     await expect(persistedDays).toContainText("14 天后归档");
 
     await persistedDays.click();
@@ -85,9 +91,9 @@ test.describe("偏好保存往返与非法输入", () => {
     await expect(
       settingsRow(management, "自动归档旧任务").getByRole("switch"),
     ).not.toBeChecked();
-    await expect(settingsRow(management, "归档保留时长").getByRole("combobox")).toContainText(
-      "7 天后归档",
-    );
+    await expect(
+      settingsRow(management, "归档保留时长").getByRole("combobox"),
+    ).toContainText("7 天后归档");
   });
 
   test("HTTP 代理非法地址被拒绝且不落库", async ({ page }) => {
@@ -95,10 +101,7 @@ test.describe("偏好保存往返与非法输入", () => {
     const proxyInput = management.locator(
       'input[placeholder^="留空则内置浏览器跟随系统代理"]',
     );
-    const row = settingsRow(
-      management,
-      "HTTP 代理",
-    );
+    const row = settingsRow(management, "HTTP 代理");
     const save = row.getByRole("button", { name: "保存", exact: true });
 
     await proxyInput.fill("not-a-url");
@@ -190,7 +193,9 @@ test.describe("偏好保存往返与非法输入", () => {
     await page.reload();
     const reloaded = await openSettingsSection(page, "常规");
     await expect(
-      reloaded.locator('input[placeholder^="例如 /Users/name/certs/root-ca.pem"]'),
+      reloaded.locator(
+        'input[placeholder^="例如 /Users/name/certs/root-ca.pem"]',
+      ),
     ).toHaveValue("");
   });
 });

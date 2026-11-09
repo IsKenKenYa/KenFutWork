@@ -1,0 +1,123 @@
+{
+  "_meta": {
+    "version": "0.1.8",
+    "source": "Zleap-AI/SAG-Wiki protocol/src/cli.rs + protocol/src/types.rs + cli/src/main.rs @ main",
+    "collectedAt": "2026-11-09T00:37:40.313Z",
+    "note": "已实采核验字段形状；样例值保持 serde 推导，原始输出见 SAG_DATA_DIR/sag-last-collection.json（本机产物，不入库）。",
+    "platformSupport": ["win32/x64", "darwin/arm64"],
+    "collectedBy": "probe/collect.mjs（只读命令）"
+  },
+  "list": [
+    {
+      "path": "D:/work/kenfutwork",
+      "name": "kenfutwork",
+      "status": "ready",
+      "count": 1284,
+      "error": null
+    },
+    {
+      "path": "D:/work/notes",
+      "name": "notes",
+      "status": "indexing",
+      "count": 12,
+      "error": null
+    }
+  ],
+  "check": {
+    "extensions": ["md", "txt", "ts", "tsx", "js", "json"],
+    "path": "D:/work/kenfutwork",
+    "coverage": "included",
+    "index_ready": true,
+    "enabled": true,
+    "indexed_files": 1284,
+    "roots": [
+      {
+        "path": "D:/work/kenfutwork",
+        "name": "kenfutwork",
+        "status": "ready",
+        "count": 1284,
+        "error": null
+      }
+    ]
+  },
+  "checkNotReady": {
+    "path": "D:/work/empty",
+    "coverage": "none",
+    "index_ready": false,
+    "enabled": true,
+    "indexed_files": 0,
+    "roots": []
+  },
+  "add": {
+    "path": "D:/work/kenfutwork",
+    "index_status": "ready",
+    "cli_authorized": true
+  },
+  "remove": {
+    "path": "D:/work/kenfutwork"
+  },
+  "search": {
+    "protocol_version": 2,
+    "scope": "D:/work/kenfutwork",
+    "results": [
+      {
+        "heading": "重试逻辑",
+        "path": "src/features/mcp/client.ts",
+        "absolute_path": "D:/work/kenfutwork/src/features/mcp/client.ts",
+        "start_line": 142,
+        "end_line": 158,
+        "content": "if (status === 499) { retry(); }"
+      },
+      {
+        "path": "docs/api/ws-protocol.md",
+        "absolute_path": "D:/work/kenfutwork/docs/api/ws-protocol.md",
+        "start_line": 3,
+        "end_line": 9
+      }
+    ],
+    "truncated": false
+  },
+  "match": {
+    "protocol_version": 2,
+    "scope": "D:/work/kenfutwork",
+    "results": [
+      {
+        "path": "src/features/mcp/client.ts",
+        "absolute_path": "D:/work/kenfutwork/src/features/mcp/client.ts",
+        "start_line": 142,
+        "end_line": 142,
+        "content": "if (status === 499) { retry(); }",
+        "matched_lines": [142]
+      }
+    ],
+    "files": [
+      {
+        "path": "src/features/mcp/client.ts",
+        "absolute_path": "D:/work/kenfutwork/src/features/mcp/client.ts",
+        "count": 1
+      }
+    ],
+    "matched": true,
+    "truncated": false
+  },
+  "config": {
+    "url": "https://api.302ai.cn/typesafeai/v1",
+    "model": "jev-latest",
+    "models": [],
+    "has_key": true,
+    "auth_mode": "bearer"
+  },
+  "configNoAuthMode": {
+    "url": "https://api.302ai.cn/typesafeai/v1",
+    "model": "jev-latest",
+    "models": [],
+    "has_key": false
+  },
+  "configUnset": {
+    "url": "https://api.302ai.cn/typesafeai/v1",
+    "model": "jev-latest",
+    "models": [],
+    "has_key": false,
+    "auth_mode": "bearer"
+  }
+}

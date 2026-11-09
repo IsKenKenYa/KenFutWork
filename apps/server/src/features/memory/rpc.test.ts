@@ -62,8 +62,9 @@ it("恢复转发回收项标识并原样返回结果", async () => {
 it("参数缺失时直接拒绝，不落到服务层", async () => {
   const memory = createMemory();
   const rpc = createProjectMemoryRpc(memory);
-  await expect(rpc.call(actor, "listTrashedMemories", [{ projectId: "  " }]))
-    .rejects.toThrow("记忆项目参数无效");
+  await expect(
+    rpc.call(actor, "listTrashedMemories", [{ projectId: "  " }]),
+  ).rejects.toThrow("记忆项目参数无效");
   await expect(
     rpc.call(actor, "restoreTrashedMemory", [
       { projectId: "project-1", trashId: "" },

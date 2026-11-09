@@ -29,10 +29,9 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       const toolCallId = randomUUID();
       const identity = await fixture.database.persistence.queryOne<{
         instance_id: string;
-      }>(
-        "select instance_id from public.code_ui_sessions where id=$1",
-        [host.sessionId],
-      );
+      }>("select instance_id from public.code_ui_sessions where id=$1", [
+        host.sessionId,
+      ]);
       if (!identity) throw new Error("Task 身份未持久化。");
       const outputText = "工具输出片段1234".repeat(1_400);
       const event = {

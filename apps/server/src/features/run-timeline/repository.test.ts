@@ -92,9 +92,7 @@ describe("运行时间线仓储", () => {
     expect(events[0]?.event).toMatchObject({ type: "run.started" });
     expect(events[0]?.seq).toBe(1);
     expect(calls[0]?.sql).toContain("starts_with(e.event_key, $1 || '/')");
-    expect(calls[0]?.sql).toContain(
-      "coalesce(e.payload->>'type', '') not in",
-    );
+    expect(calls[0]?.sql).toContain("coalesce(e.payload->>'type', '') not in");
     expect(calls[0]?.sql).toContain("'message.delta'");
     expect(calls[0]?.values).toEqual([RUN_ID, INSTANCE_ID]);
   });
@@ -120,9 +118,7 @@ describe("运行时间线仓储", () => {
       },
     ]);
     expect(calls[0]?.sql).toContain("s.root_session_id = $1");
-    expect(calls[0]?.sql).toContain(
-      "starts_with(s.parent_tool_call_id, $2)",
-    );
+    expect(calls[0]?.sql).toContain("starts_with(s.parent_tool_call_id, $2)");
     expect(calls[0]?.values).toEqual([
       ROOT_SESSION_ID,
       `${RUN_ID}/`,
@@ -155,9 +151,7 @@ describe("运行时间线仓储", () => {
     expect(events[0]?.seq).toBe(3);
     expect(calls[0]?.sql).toContain("e.root_session_id = $1");
     expect(calls[0]?.sql).toContain("starts_with(e.event_key, $2)");
-    expect(calls[0]?.sql).toContain(
-      "coalesce(e.payload->>'type', '') not in",
-    );
+    expect(calls[0]?.sql).toContain("coalesce(e.payload->>'type', '') not in");
     expect(calls[0]?.values).toEqual([
       ROOT_SESSION_ID,
       `child-event:${CHILD_SESSION_ID}/`,

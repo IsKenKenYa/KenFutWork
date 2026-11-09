@@ -152,6 +152,21 @@ function ManagementDocument({
                             allowOpenWorkspace={false}
                             user={user}
                             voiceClient={client}
+                            onCreateTask={(request) => {
+                              if (typeof request === "string" || !request)
+                                return;
+                              const prompt = request.initialPrompt?.trim();
+                              if (!prompt) return;
+                              window.parent.postMessage(
+                                {
+                                  type: "kenfutwork:management-new-task",
+                                  prompt,
+                                  executionMode:
+                                    request.executionMode ?? "agent",
+                                },
+                                window.location.origin,
+                              );
+                            }}
                           />
                         ) : (
                           <main className="flex h-full min-h-0 flex-1 flex-col bg-background">

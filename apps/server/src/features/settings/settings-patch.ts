@@ -54,6 +54,9 @@ function preferencesWrites({
   if (patch.terminalShell !== undefined) {
     writes.push(writer.upsertTerminalShell(instanceId, patch.terminalShell));
   }
+  if (patch.theme !== undefined) {
+    writes.push(writer.upsertTheme(instanceId, patch.theme));
+  }
   if (patch.codeIndexEnabled !== undefined) {
     writes.push(
       writer.upsertCodeIndexEnabled(instanceId, patch.codeIndexEnabled),

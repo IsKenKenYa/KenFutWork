@@ -31,7 +31,7 @@ export function KenFutWorkLogo({
       src="/logo-mark.png"
       alt={alt}
       aria-hidden={alt === ""}
-      className={`opacity-90 ${className ?? ""}`}
+      className={`brand-mark-on-dark opacity-90 ${className ?? ""}`}
       style={style}
     />
   );

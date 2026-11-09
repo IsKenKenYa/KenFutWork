@@ -12,10 +12,13 @@ import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import { registerFlowProjectFileRoutes } from "../../http/flow-project-files.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { createProcessRunCommand } from "./engine/exec.js";
 import {
   type EngineInstallOptions,
+  type EngineLaunch,
   getEngineInstallSnapshot,
+  planEngineAutoInstall,
   purgeEngineStack,
   readStackLogTail,
   readStackRuntime,
@@ -31,6 +34,7 @@ import {
   createFlowProjectFiles,
   type FlowProjectFiles,
 } from "./project-files.js";
+import { createFlowGatewayTools } from "./tools.js";
 
 /**
  * 引擎资源目录（`dify/`，内含 `docker-compose.dify.yml` 与 `ssrf_proxy/squid.conf`）。
@@ -55,11 +59,39 @@ function resolveDifyDir(): string {
   );
 }
 
+/**
+ * Flow 网关 env（开发态与打包态共用一条解析规则）：管理员凭据同源的落点。
+ * 安装时宿主把自动生成的凭据补进这些文件；网关自动授权与 init/setup 用同一份。
+ */
+function gatewayEnvFiles(): string[] {
+  const flowDir = join(resolveDifyDir(), "..", "flow");
+  // 顺序必须与 flow/gateway/src/app.module.ts 的 envFilePath 一致：
+  // `.futureflow.runtime.env` 优先于 `.env`。管理员凭据反向对齐以「网关实际
+  // 读到的那份」为准，取错文件会让 bootstrap 建号口令与 loginConsole 不一致
+  // （实测 onReady 补授权 503：Dify Console 授权无效）。
+  return [join(flowDir, ".futureflow.runtime.env"), join(flowDir, ".env")];
+}
+
 /** 安装生成的密钥 env（存在才用于 compose 查询；信息页是只读路径，不创建）。 */
 function stackEnvFile(options: EngineInstallOptions): string {
   return existsSync(join(options.dataDir, "dify-stack.env"))
     ? join(options.dataDir, "dify-stack.env")
     : "";
+}
+
+/**
+ * flow 宿主适配层是否配齐：三件套缺任何一件，Flow 模式都不会出现在工作台里
+ * （status 端点如实回答 disabled）。既是入口判据，也是「要不要为引擎栈自动下载」的闸门
+ * ——用不到的模式不该拉 8GB。
+ */
+function flowAdapterConfigured(deps: {
+  secret?: string | undefined;
+  frontendUrl?: string | undefined;
+  gatewayUrl?: string | undefined;
+}): boolean {
+  return Boolean(
+    deps.secret?.trim() && deps.frontendUrl?.trim() && deps.gatewayUrl?.trim(),
+  );
 }
 
 /** 引擎栈托管选项（compose 文件 + env/日志的数据目录；承载目标由调用方给或读落盘记录）。 */
@@ -70,6 +102,7 @@ function engineInstallOptions(
   return {
     composeFile: join(resolveDifyDir(), "docker-compose.dify.yml"),
     dataDir: dataRoot,
+    gatewayEnvFiles: gatewayEnvFiles(),
     ...(launch ? { launch } : {}),
   };
 }
@@ -105,6 +138,13 @@ export function createFlowHostPlugin(deps: {
   gatewayUrl?: string | undefined;
 }): PluginDefinition {
   let flowFiles: FlowProjectFiles | undefined;
+  const identityTickets = createFlowIdentityTickets();
+  let issueIdentity:
+    | ((
+        actor: LocalActor,
+        projectId?: string,
+      ) => Promise<{ token: string; expiresAt: string }>)
+    | undefined;
   return {
     name: "flow-host",
     inject: [
@@ -116,8 +156,45 @@ export function createFlowHostPlugin(deps: {
       "projects",
       "projectFiles",
       "blob",
+      "tools",
     ],
     apply(ctx) {
+      issueIdentity = async (actor, projectId) => {
+        if (projectId) {
+          // 任意工作方式的项目都可绑定 Flow：绑定后该项目会话共享工作流上下文。
+          await ctx.get("projects").getProject(actor, projectId);
+        }
+        const settings = await ctx
+          .get("settings")
+          .getInstanceSettings(actor, actor.instanceId);
+        return identityTickets.issue({
+          instanceId: actor.instanceId,
+          accessClientId: actor.accessClientId,
+          ttlMs: settings.localAccessTicketTtlMs,
+          ...(projectId ? { projectId } : {}),
+        });
+      };
+      if (deps.gatewayUrl?.trim() && deps.secret?.trim()) {
+        for (const tool of createFlowGatewayTools({
+          gatewayUrl: deps.gatewayUrl,
+          issueHostToken: async (actor) => {
+            if (!issueIdentity) throw new Error("Flow 身份缝尚未初始化。");
+            return (await issueIdentity(actor)).token;
+          },
+          resolveLimits: async (actor) => {
+            const settings = await ctx
+              .get("settings")
+              .getInstanceSettings(actor, actor.instanceId);
+            return {
+              controlTimeoutMs: settings.flowGatewayControlTimeoutMs,
+              runTimeoutMs: settings.executeTimeoutMs,
+              maxResponseBytes: settings.processMaxOutputBytes,
+            };
+          },
+        })) {
+          ctx.effect(() => ctx.get("tools").register(tool));
+        }
+      }
       ctx.register("flowProjectControl", () => {
         if (deps.gatewayUrl && deps.secret)
           return createFlowProjectControl({
@@ -144,11 +221,7 @@ export function createFlowHostPlugin(deps: {
           completeRelink: unavailable,
         };
       });
-      if (
-        !deps.secret?.trim() ||
-        !deps.frontendUrl?.trim() ||
-        !deps.gatewayUrl?.trim()
-      ) {
+      if (!flowAdapterConfigured(deps)) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
         console.log(
           "[flow] flow 宿主适配层未配齐（KENFUTWORK_FLOW_EMBED_SECRET / KENFUTWORK_FLOW_FRONTEND_URL / KENFUTWORK_FLOW_GATEWAY_URL）：" +
@@ -177,8 +250,6 @@ export function createFlowHostPlugin(deps: {
       });
     },
     mounted(ctx) {
-      // 本地实例身份缝（DEC-20）：一次性短时票据在内存里存哈希（同本机接入 connect 票据）。
-      const identityTickets = createFlowIdentityTickets();
       const files = createFlowProjectFiles({
         projectControl: ctx.get("flowProjectControl"),
         localInstance: ctx.get("localInstance"),
@@ -188,6 +259,103 @@ export function createFlowHostPlugin(deps: {
         blob: ctx.get("blob"),
       });
       flowFiles = files;
+      /** 承载探测：引擎信息页与「装上即用」的自动安装共用同一份判据。 */
+      const probeCarrier = () =>
+        probeEnginePaths({
+          platform: process.platform,
+          release: os.release(),
+          run: createProcessRunCommand(),
+          listInstances: async () =>
+            ctx
+              .get("modelProviders")
+              .listInstances(await ctx.get("localInstance").serviceActor()),
+        });
+      /**
+       * 一次引擎安装的输入。点按钮装的与自动装的必须走同一份 bootstrap/onReady：
+       * bootstrap 读治理表里的重试预算，onReady 补网关控制面授权。
+       */
+      const engineInstallInput = (launch?: EngineLaunch) => ({
+        ...engineInstallOptions(dataRootFor(ctx), launch),
+        bootstrap: async () => {
+          const actor = await ctx.get("localInstance").serviceActor();
+          const settings = await ctx
+            .get("settings")
+            .getInstanceSettings(actor, actor.instanceId);
+          return {
+            // 与 compose 默认 DIFY_PORT=15001 同源；extraEnv 改端口时由安装调用方一并覆盖。
+            consoleBase: "http://127.0.0.1:15001/console/api",
+            attempts: settings.flowEngineBootstrapAttempts,
+            retryDelayMs: settings.flowEngineBootstrapRetryMs,
+            requestTimeoutMs: settings.flowEngineBootstrapRequestTimeoutMs,
+            credentialEnvFiles: gatewayEnvFiles(),
+          };
+        },
+        // 装完补一次网关控制面授权：网关只在启动期窗口自动授权，晚装的窗口早过。
+        // 走宿主共享密钥端点（与项目控制同一 Guard），不直连带 AdminGuard 的 /admin/*。
+        onReady: async () => {
+          const gatewayUrl = deps.gatewayUrl?.trim();
+          const secret = deps.secret?.trim();
+          if (!gatewayUrl || !secret) {
+            throw new Error(
+              "Flow 网关地址或宿主控制密钥未配置，无法补控制面授权。",
+            );
+          }
+          // 一次性局部常量：就绪通知的等待预算，不进治理表。
+          let response: Response;
+          try {
+            response = await fetch(
+              new URL("/host/ff-embed/v1/dify/reauthorize", gatewayUrl),
+              {
+                method: "POST",
+                headers: {
+                  authorization: `Bearer ${secret}`,
+                  "x-ff-embed-protocol": "v1",
+                },
+                signal: AbortSignal.timeout(15_000),
+              },
+            );
+          } catch (error) {
+            // 裸 fetch failed 不指路；网关没起来是这段失败最常见的原因。
+            throw new Error(
+              `网关不可达（${gatewayUrl}）：${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              { cause: error },
+            );
+          }
+          if (!response.ok) {
+            throw new Error(
+              `HTTP ${response.status}（网关地址 ${gatewayUrl}）。`,
+            );
+          }
+        },
+      });
+      /**
+       * 装上即用：Flow 模式真的会出现在工作台里（适配层配齐）时，引擎栈自己装上，
+       * 不要用户去「引擎」页点安装按钮。判据见 `planEngineAutoInstall`。
+       */
+      const autoInstallEngineStack = async (): Promise<void> => {
+        const dataRoot = dataRootFor(ctx);
+        const options = engineInstallOptions(dataRoot);
+        const envFile = stackEnvFile(options);
+        const [carrier, stack] = await Promise.all([
+          probeCarrier(),
+          listEngineStackContainers(options.composeFile, {
+            ...(envFile ? { envFile } : {}),
+            launch: readStackRuntime(dataRoot),
+          }),
+        ]);
+        const plan = planEngineAutoInstall({
+          installState: getEngineInstallSnapshot().state,
+          stackContainerCount: stack.containers.length,
+          recommended: carrier.recommended,
+        });
+        if (plan.action === "skip") return;
+        console.log(
+          "[flow] 引擎栈不在且本机承载可用：自动开始安装（装上即用）。",
+        );
+        startEngineInstall(engineInstallInput());
+      };
       void registerFlowProjectFileRoutes(ctx.app, {
         files,
         secret: deps.secret,
@@ -206,20 +374,8 @@ export function createFlowHostPlugin(deps: {
         // 身份缝：宿主前端换票（本机接入）→ flow 网关回验（共享密钥）→ 稳定 subject。
         identity: {
           issue: async (actor, projectId) => {
-            if (projectId) {
-              // 任意工作方式的项目都可绑定 Flow（用户 2026-10-27 口径）：
-              // 绑定后该项目会话即拥有同一份工作流上下文。
-              await ctx.get("projects").getProject(actor, projectId);
-            }
-            const settings = await ctx
-              .get("settings")
-              .getInstanceSettings(actor, actor.instanceId);
-            return identityTickets.issue({
-              instanceId: actor.instanceId,
-              accessClientId: actor.accessClientId,
-              ttlMs: settings.localAccessTicketTtlMs,
-              ...(projectId ? { projectId } : {}),
-            });
+            if (!issueIdentity) throw new Error("Flow 身份缝尚未初始化。");
+            return issueIdentity(actor, projectId);
           },
           verify: async (token) => {
             const entry = identityTickets.consume(token);
@@ -244,21 +400,9 @@ export function createFlowHostPlugin(deps: {
           },
         },
         // 引擎探测层 + 托管（FORM-11）：探测路径，确认后拉镜像起栈，状态可轮询。
-        engine: {
-          probe: () =>
-            probeEnginePaths({
-              platform: process.platform,
-              release: os.release(),
-              run: createProcessRunCommand(),
-              listInstances: async () =>
-                ctx
-                  .get("modelProviders")
-                  .listInstances(await ctx.get("localInstance").serviceActor()),
-            }),
-        },
+        engine: { probe: probeCarrier },
         engineInstall: {
-          start: (launch) =>
-            startEngineInstall(engineInstallOptions(dataRootFor(ctx), launch)),
+          start: (launch) => startEngineInstall(engineInstallInput(launch)),
           status: () => getEngineInstallSnapshot(),
         },
         engineStop: {
@@ -298,17 +442,7 @@ export function createFlowHostPlugin(deps: {
             // 插值报错当答案）；存在则与安装同一口径查询运行期事实。
             const envFile = stackEnvFile(options);
             const [probe, stack] = await Promise.all([
-              probeEnginePaths({
-                platform: process.platform,
-                release: os.release(),
-                run: createProcessRunCommand(),
-                listInstances: async () =>
-                  ctx
-                    .get("modelProviders")
-                    .listInstances(
-                      await ctx.get("localInstance").serviceActor(),
-                    ),
-              }),
+              probeCarrier(),
               envFile
                 ? listEngineStackContainers(options.composeFile, {
                     envFile,
@@ -337,6 +471,15 @@ export function createFlowHostPlugin(deps: {
         frontendUrl: deps.frontendUrl,
         gatewayUrl: deps.gatewayUrl,
       });
+      if (flowAdapterConfigured(deps)) {
+        autoInstallEngineStack().catch((error: unknown) => {
+          // 自动安装没跑起来不能静默：状态机与引擎页日志是用户唯一的可见面。
+          console.warn(
+            "[flow] 引擎栈自动安装未启动：",
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }
     },
   };
 }

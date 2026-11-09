@@ -441,7 +441,7 @@ export function OffPeakEditView({
               data-testid={TID_OFFPEAK_EDIT_SUBMIT}
               disabled={!canSubmit}
               onClick={() => void handleSubmit()}
-              className="inline-flex h-8 items-center rounded-lg border-0 bg-white px-3 text-ui-base font-medium text-black shadow-none outline-none transition-colors hover:bg-white/90 focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-40"
+              className="inline-flex h-8 items-center rounded-lg border-0 bg-foreground px-3 text-ui-base font-medium text-background shadow-none outline-none transition-colors hover:bg-foreground/90 focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-40"
             >
               {intl.formatMessage({ id: "offPeak.edit.save" })}
             </button>

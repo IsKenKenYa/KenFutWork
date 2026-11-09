@@ -1,5 +1,5 @@
-import { createServer, type Server } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -415,10 +415,8 @@ describe("启动连接的健壮性（曾被 unhandled rejection 带走进程）"
 });
 
 describe("MCP 掉线自动重启", () => {
-  const fixture = new URL(
-    "./fixtures/mcp-restart-server.mjs",
-    import.meta.url,
-  ).pathname;
+  const fixture = new URL("./fixtures/mcp-restart-server.mjs", import.meta.url)
+    .pathname;
   const temporary: string[] = [];
 
   afterEach(async () => {

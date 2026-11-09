@@ -112,13 +112,20 @@ export const SETUP_GUIDE_STEPS = [
     title: "安装 Home Assistant",
     open: false,
     items: [
-      { kind: "text", text: "已有 HA 可跳过" },
+      {
+        kind: "text",
+        text: "桌面版已自动拉起本机实例；你已有自建 HA 就沿用你那台",
+      },
+      {
+        kind: "text",
+        text: "自托管 / Web 形态需自备 HA，例如：",
+      },
       {
         kind: "command",
         label: "Docker 部署",
         text: "docker run -d --name ha -p 8123:8123 -v ha_config:/config ghcr.io/home-assistant/home-assistant:stable",
       },
-      { kind: "text", text: "打开 http://<HA 地址>:8123 完成初始化" },
+      { kind: "text", text: "初始化由工作台自动完成（建所有者、签令牌）" },
       {
         kind: "link",
         label: "官方安装文档",

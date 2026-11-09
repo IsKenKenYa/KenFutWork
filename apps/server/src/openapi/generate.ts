@@ -24,6 +24,11 @@ const SPEC_TITLE = "KenFutWork Community API";
 // 域 → 中文目录名（x-apifox-folder，Apifox 导入时的目录树）与中文说明。
 // 封闭清单的对账裁判在 tests/api-spec-consistency.test.mjs 的 CLOSED_TAGS，两处同改。
 const TAG_META: Record<string, { folder: string; description: string }> = {
+  knowledge: {
+    folder: "SAG2 知识库",
+    description:
+      "本地文件知识库：安装态与 CLI 状态、知识库根目录增删、SAG2 多跳语义检索。上游只走 sag CLI 的 --json。",
+  },
   instance: {
     folder: "本地实例",
     description: "本机实例身份、数据位置及受控生命周期。",

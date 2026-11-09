@@ -4,7 +4,10 @@ import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { executionEnvironment, nativeToolchainOverrides } from "./environment.js";
+import {
+  executionEnvironment,
+  nativeToolchainOverrides,
+} from "./environment.js";
 import type { ProcessLimits } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 

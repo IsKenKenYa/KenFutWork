@@ -538,11 +538,29 @@ describe("usage stats（R4-2 用户侧使用统计）", () => {
   it("花费只累计窗口内已回传的行，未回传时给 null 而不是 0", async () => {
     const service = createStatsService(() =>
       rowsFor([
-        { offsetFromToday: 0, model: "gpt-4.1", input: 10, output: 5, costUsd: 0.75 },
-        { offsetFromToday: -1, model: "gpt-4.1", input: 1, output: 1, costUsd: 0 },
+        {
+          offsetFromToday: 0,
+          model: "gpt-4.1",
+          input: 10,
+          output: 5,
+          costUsd: 0.75,
+        },
+        {
+          offsetFromToday: -1,
+          model: "gpt-4.1",
+          input: 1,
+          output: 1,
+          costUsd: 0,
+        },
         { offsetFromToday: 0, model: "gpt-4.1", input: 1, output: 1 },
         // 窗口外的成本不应计入 7 日统计
-        { offsetFromToday: -20, model: "gpt-4.1", input: 100, output: 100, costUsd: 9.5 },
+        {
+          offsetFromToday: -20,
+          model: "gpt-4.1",
+          input: 100,
+          output: 100,
+          costUsd: 9.5,
+        },
       ]),
     );
 

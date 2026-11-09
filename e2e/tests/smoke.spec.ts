@@ -14,7 +14,10 @@ test.describe("本地免账户入口与工作台外壳", () => {
 
     const shell = workbenchFrame(page);
     await expect(
-      shell.locator("main p").filter({ hasText: "Code with KenFutWork" }).first(),
+      shell
+        .locator("main p")
+        .filter({ hasText: "Code with KenFutWork" })
+        .first(),
     ).toBeVisible({ timeout: 90_000 });
   });
 
@@ -27,7 +30,10 @@ test.describe("本地免账户入口与工作台外壳", () => {
     const design = modes.getByRole("radio", { name: "Design", exact: true });
     await expect(code).toBeChecked();
     await expect(
-      shell.locator("main p").filter({ hasText: "Code with KenFutWork" }).first(),
+      shell
+        .locator("main p")
+        .filter({ hasText: "Code with KenFutWork" })
+        .first(),
     ).toBeVisible();
     await expect(
       shell.locator("main p").filter({ hasText: "Design with KenFutWork" }),
@@ -36,7 +42,10 @@ test.describe("本地免账户入口与工作台外壳", () => {
     await design.click();
     await expect(design).toBeChecked();
     await expect(
-      shell.locator("main p").filter({ hasText: "Design with KenFutWork" }).first(),
+      shell
+        .locator("main p")
+        .filter({ hasText: "Design with KenFutWork" })
+        .first(),
     ).toBeVisible();
     await expect(
       shell.getByRole("button", { name: "移除画布引用" }),
@@ -45,7 +54,10 @@ test.describe("本地免账户入口与工作台外壳", () => {
     await code.click();
     await expect(code).toBeChecked();
     await expect(
-      shell.locator("main p").filter({ hasText: "Code with KenFutWork" }).first(),
+      shell
+        .locator("main p")
+        .filter({ hasText: "Code with KenFutWork" })
+        .first(),
     ).toBeVisible();
     await expect(
       shell.locator("main p").filter({ hasText: "Design with KenFutWork" }),

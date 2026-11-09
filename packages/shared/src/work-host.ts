@@ -192,3 +192,22 @@ export const workPreferencesSchema = z.object({
   language: workUiLanguageSchema,
 });
 export type WorkPreferences = z.infer<typeof workPreferencesSchema>;
+
+/**
+ * Work 文档保存的表单字段（`POST /api/work/host/save`，multipart：这四个字段 +
+ * 一个 `file` 分片）。路径由**服务端**按 projectId 解析，客户端只给项目内相对路径；
+ * `assetId` 每次保存新生成——项目文件服务把「同一身份 + 不同内容」判为冲突。
+ */
+export const workSaveFieldsSchema = z.object({
+  projectId: z.uuid(),
+  assetId: z.uuid(),
+  /** 项目目录内的相对路径（编辑器给出的文件名，宿主已去掉路径分隔符）。 */
+  relativePath: z.string().min(1).max(512),
+  mimeType: z.string().min(1).max(200),
+});
+export type WorkSaveFields = z.infer<typeof workSaveFieldsSchema>;
+
+export const workSaveResponseSchema = z.object({
+  relativePath: z.string().min(1),
+});
+export type WorkSaveResponse = z.infer<typeof workSaveResponseSchema>;

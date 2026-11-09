@@ -40,7 +40,10 @@ export interface UsageService {
   /** 用户侧使用统计（R4-2）：按天活动/连续天数/按模型，窗口 rangeDays 天。 */
   stats(user: LocalActor, rangeDays: number): Promise<UsageStatsResponse>;
   /** 单轮 Run 的用量汇总（子代理结果归因用）；没有记账行时返回 null。 */
-  runSummary(instanceId: string, runId: string): Promise<RunUsageSummary | null>;
+  runSummary(
+    instanceId: string,
+    runId: string,
+  ): Promise<RunUsageSummary | null>;
   /** 会话最近一轮 Run 的用量汇总；调用方只有 childSessionId 时使用。 */
   runSummaryBySession(
     instanceId: string,
@@ -332,7 +335,10 @@ export function createUsageService(options: {
     },
 
     async runSummaryBySession(instanceId, sessionId) {
-      const aggregate = await repository.runSummaryBySession(instanceId, sessionId);
+      const aggregate = await repository.runSummaryBySession(
+        instanceId,
+        sessionId,
+      );
       return aggregate ? toRunUsageSummary(aggregate) : null;
     },
   };

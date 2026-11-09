@@ -90,7 +90,7 @@ export function HostAboutSection({
       <img
         src={logoSrc}
         alt="KenFutWork"
-        className="mb-2 h-10 w-auto select-none"
+        className="brand-mark-on-dark mb-2 h-10 w-auto select-none"
         draggable={false}
       />
       <p className="text-base font-medium">KenFutWork</p>

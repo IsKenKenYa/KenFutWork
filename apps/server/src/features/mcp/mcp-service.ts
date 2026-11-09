@@ -175,11 +175,14 @@ export function createMcpService(options: {
       }
       autoRestartBlocked.add(name);
       failures.delete(name);
-      void reconcile({ name, ...spec, enabled: true }).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.set(name, message);
-        console.warn(`[mcp] ${name} 自动重连失败：`, message);
-      });
+      void reconcile({ name, ...spec, enabled: true }).catch(
+        (error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          failures.set(name, message);
+          console.warn(`[mcp] ${name} 自动重连失败：`, message);
+        },
+      );
     };
     initializing.add(mcpClient);
     try {

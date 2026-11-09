@@ -1,10 +1,7 @@
+import type { RunTimelineResponse, TaskRunsResponse } from "@kenfutwork/shared";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
-import type {
-  RunTimelineResponse,
-  TaskRunsResponse,
-} from "@kenfutwork/shared";
 
 const surfaceJson = vi.fn();
 
@@ -80,7 +77,9 @@ const PAYLOAD: RunTimelineResponse = {
 
 function routeApi(handlers: {
   runs?: () => TaskRunsResponse | Promise<TaskRunsResponse>;
-  timeline?: (path: string) => RunTimelineResponse | Promise<RunTimelineResponse>;
+  timeline?: (
+    path: string,
+  ) => RunTimelineResponse | Promise<RunTimelineResponse>;
 }) {
   surfaceJson.mockImplementation(async (path: string) => {
     if (path.includes("/timeline")) {
@@ -217,7 +216,9 @@ test("检查点对应轮次标出但不抢占列表", async () => {
   routeApi({});
   renderDialog({ initialRunId: "r2" });
 
-  await waitFor(() => expect(screen.getAllByText("当前检查点")).toHaveLength(1));
+  await waitFor(() =>
+    expect(screen.getAllByText("当前检查点")).toHaveLength(1),
+  );
   expect(screen.getByText("已完成")).toBeTruthy();
 });
 
@@ -227,9 +228,7 @@ test("导出记录打开服务端 Markdown 下载地址", async () => {
   renderDialog();
 
   await user.click(await screen.findByTestId("run-row-r2"));
-  await user.click(
-    await screen.findByRole("button", { name: "导出记录" }),
-  );
+  await user.click(await screen.findByRole("button", { name: "导出记录" }));
   expect(openSpy).toHaveBeenCalledWith(
     "http://localhost:3001/api/agent/tasks/task-1/runs/r2/timeline/export?projectId=project-1",
     "_blank",

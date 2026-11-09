@@ -3,11 +3,14 @@
 import {
   type CodeUiBootstrap,
   codeUiParentRequestSchema,
+  type ExecutionMode,
   type ManagementTarget,
   managementNavigationSchema,
 } from "@kenfutwork/shared";
+import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
 import { getServerBaseUrl } from "@/lib/env";
+import { toNextTheme } from "@/lib/instance-theme";
 import { LOCAL_ACCESS_LOST_EVENT } from "@/lib/local-access";
 import { useLocalInstance } from "@/lib/local-instance-context";
 import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
@@ -22,16 +25,21 @@ export function ManagementDocumentFrame({
   target,
   visible,
   onClose,
+  onCreateTask,
 }: {
   target: ManagementTarget;
   /** keep-alive 模式：false 时隐藏不卸载（避免下次打开整文档重载）。 */
   visible: boolean;
   onClose: () => void;
+  /** 管理文档发起的新任务（创建技能/插件）：交给父页转给 Code 壳。 */
+  onCreateTask?: (prompt: string, executionMode: ExecutionMode) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   // 本地实例主人（DEC-20 免账户）：与 Code 壳同一份用户，管理页底部显示
   // 「本地用户」而不是「连接使用」。
   const { instance: localInstance } = useLocalInstance();
+  const { resolvedTheme, setTheme } = useTheme();
+  const themeRef = useRef<"zai-dark" | "zai-light">("zai-light");
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       if (
@@ -63,7 +71,15 @@ export function ManagementDocumentFrame({
           bootstrap,
           window.location.origin,
         );
+        frame.current?.contentWindow?.postMessage(
+          { type: "kenfutwork:code-theme", theme: themeRef.current },
+          window.location.origin,
+        );
+      } else if (parsed.data.type === "kenfutwork:code-theme-change") {
+        setTheme(toNextTheme(parsed.data.theme));
       } else if (parsed.data.type === "kenfutwork:management-close") onClose();
+      else if (parsed.data.type === "kenfutwork:management-new-task")
+        onCreateTask?.(parsed.data.prompt, parsed.data.executionMode);
       else if (parsed.data.type === "kenfutwork:code-plugins-changed")
         window.dispatchEvent(new Event(PLUGIN_INVENTORY_CHANGED_EVENT));
       else if (parsed.data.type === "kenfutwork:code-access-lost")
@@ -71,7 +87,17 @@ export function ManagementDocumentFrame({
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [target, onClose, localInstance]);
+  }, [target, onClose, localInstance, setTheme, onCreateTask]);
+
+  // 与 Code 壳共用父页的实例主题；ready 握手会补发当前值，避免预加载时丢消息。
+  useEffect(() => {
+    const theme = resolvedTheme === "dark" ? "zai-dark" : "zai-light";
+    themeRef.current = theme;
+    frame.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:code-theme", theme },
+      window.location.origin,
+    );
+  }, [resolvedTheme]);
 
   // 打开期间目标变化（例：设置→插件市场）：推给文档内切换，不重载。
   useEffect(() => {

@@ -94,12 +94,8 @@ export async function clearMcpServers(page: Page): Promise<void> {
       return;
     }
     await rows.first().click();
-    await management
-      .getByRole("button", { name: "删除", exact: true })
-      .click();
-    await management
-      .getByRole("button", { name: /确认删除/ })
-      .click();
+    await management.getByRole("button", { name: "删除", exact: true }).click();
+    await management.getByRole("button", { name: /确认删除/ }).click();
     await management
       .getByRole("tabpanel")
       .getByRole("button", { name: "刷新", exact: true })
@@ -113,6 +109,8 @@ export async function expectSectionTitle(
   title: string,
 ): Promise<void> {
   await expect(
-    management.locator("main").getByRole("heading", { name: title, exact: true }),
+    management
+      .locator("main")
+      .getByRole("heading", { name: title, exact: true }),
   ).toBeVisible();
 }

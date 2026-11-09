@@ -695,7 +695,9 @@ window.addEventListener("message", (event) => {
   if (event.source !== window.parent) return;
   if (event.data?.type !== "kenfutwork:plugin-panel-toggle-config") return;
   setNote("", false);
+  // native ↔ 配置互转；自动接入失败态下点「配置」进入显式人工入口。
   if (state.view === "native") renderSetup();
+  else if (state.view === "failed") renderSetup();
   else renderNative();
 });
 
@@ -706,14 +708,22 @@ function boot() {
       state.baseUrl = payload.baseUrl || "";
       state.defaultBaseUrl = payload.defaultBaseUrl || "";
       if (!payload.configured) {
-        renderSetup();
+        // 服务端的初始化失败会以错误态返回（走 catch）；这里只兜住异常形状，
+        // 一律显示失败态，不回落到手动填令牌的表单。
+        state.view = "failed";
+        setState("未接入");
+        showError("HA 自动接入未返回连接配置。");
         return;
       }
       // 已配置：直接进原生界面（iframe 用 HA 自己的登录态；免登陆由 HA 侧
       // trusted_networks 提供，见配置页通用步骤）
       renderNative();
     })
-    .catch((error) => showError(error.message));
+    .catch((error) => {
+      state.view = "failed";
+      setState("自动接入失败");
+      showError(error.message);
+    });
 }
 
 boot();

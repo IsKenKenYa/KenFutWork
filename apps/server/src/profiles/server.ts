@@ -34,9 +34,11 @@ import { createFlowHostPlugin } from "../features/flow/plugin.js";
 import { createGenerationTargetsPlugin } from "../features/generation/file-targets-plugin.js";
 import { createGenerationPlugin } from "../features/generation/plugin.js";
 import { createGoalsPlugin } from "../features/goals/plugin.js";
+import { createHomeAssistantStackPlugin } from "../features/homeassistant/plugin.js";
 import { createJobLoopPlugin } from "../features/jobs/job-loop-plugin.js";
 import type { JobService } from "../features/jobs/job-service.js";
 import { createJobsPlugin } from "../features/jobs/plugin.js";
+import { createKnowledgePlugin } from "../features/knowledge/plugin.js";
 import {
   createLocalAccessPlugin,
   createLocalAccessRoutesPlugin,
@@ -241,6 +243,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createMcpPlugin(),
     createSearchPlugin(),
     createSystemPlugin(),
+    // HA 自带实例：桌面形态启动后在本机拉起 Home Assistant 容器，
+    // 让 kenfutwork-ha 插件的自动接入有对象可接（非桌面形态 enabled 直接不装）。
+    createHomeAssistantStackPlugin(),
     createModelProvidersPlugin({
       ...(deps.overrideModelProviders
         ? { injectedModelProviders: deps.overrideModelProviders }
@@ -276,6 +281,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
       builtinCatalog: PLUGIN_CATALOG,
       ...(deps.githubToken ? { githubToken: deps.githubToken } : {}),
     }),
+    // SAG2 知识库（内建，默认挂载）：安装态由市场 bundle 决定，运行期动态门控；
+    // M1 只注册能力缝，不接运行时链路（不改产品行为），M3 在此接 pre-step preflight。
+    createKnowledgePlugin(),
     createAgentRunsPlugin({
       connectionManager: deps.connectionManager,
       events: deps.events,

@@ -55,7 +55,5 @@ export function findPluginCard(
   toolName: string | null | undefined,
 ): PluginCardDeclaration | null {
   if (!toolName) return null;
-  return (
-    snapshot.find((card) => card.tools.includes(toolName)) ?? null
-  );
+  return snapshot.find((card) => card.tools.includes(toolName)) ?? null;
 }

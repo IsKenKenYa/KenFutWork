@@ -817,6 +817,8 @@ function PluginList({
                 <PluginAddMenu
                   testId="plugin-settings-add"
                   onCreateTask={onCreateTask}
+                  workspacePath={target?.workspacePath}
+                  workspaceIdentity={target?.workspaceIdentity}
                   onAddMarketplace={() => onOpenPluginStore(undefined, "add-marketplace")}
                 />
               </>

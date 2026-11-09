@@ -86,4 +86,18 @@ describe("triggerDownload（统一下载入口）", () => {
 
     expect(click).toHaveBeenCalledTimes(1);
   });
+
+  it("Work 保存关闭浏览器退回：桌面落盘失败必须抛出，不伪装已保存", async () => {
+    installTauri(async () => {
+      throw new Error("写入下载文件失败");
+    });
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    await expect(
+      triggerDownload("a.xlsx", new Blob(["x"]), { browserFallback: false }),
+    ).rejects.toThrow("写入下载文件失败");
+    expect(click).not.toHaveBeenCalled();
+  });
 });

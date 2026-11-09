@@ -5,12 +5,12 @@ import type { InstanceSettings } from "@kenfutwork/shared";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { LocalActor } from "../local-instance/types.js";
-import { createProjectMemoryService } from "./project-memory.js";
 import {
   createMemorySaveTool,
   createMemorySearchTool,
   createProjectMemoryPromptSection,
 } from "./consumer.js";
+import { createProjectMemoryService } from "./project-memory.js";
 
 const actor: LocalActor = {
   instanceId: "11111111-1111-4111-8111-111111111111",
@@ -253,9 +253,9 @@ describe("项目长期记忆服务", () => {
     });
     const catalog = await memory.listProjectMemories(actor);
     expect(catalog.map((workspace) => workspace.id)).toEqual([projectId]);
-    expect(
-      catalog.some((workspace) => workspace.id === otherProjectId),
-    ).toBe(false);
+    expect(catalog.some((workspace) => workspace.id === otherProjectId)).toBe(
+      false,
+    );
   });
 });
 
@@ -352,37 +352,28 @@ describe("项目记忆召回", () => {
     });
     const tool = createMemorySearchTool(memory);
     await expect(
-      tool.execute(
-        { query: "" },
-        {
-          actor,
-          runId: "run-search",
-          signal: new AbortController().signal,
-          canvasId,
-          workContext: { preset: "design", canvasId },
-        } as never,
-      ),
-    ).rejects.toThrow("需要 query 参数");
-    await expect(
-      tool.execute(
-        { query: "命名" },
-        {
-          actor,
-          runId: "run-search-2",
-          signal: new AbortController().signal,
-        } as never,
-      ),
-    ).rejects.toThrow("Code Task 或 Design 画布");
-    const result = await tool.execute(
-      { query: "命名" },
-      {
+      tool.execute({ query: "" }, {
         actor,
-        runId: "run-search-3",
+        runId: "run-search",
         signal: new AbortController().signal,
         canvasId,
         workContext: { preset: "design", canvasId },
-      } as never,
-    );
+      } as never),
+    ).rejects.toThrow("需要 query 参数");
+    await expect(
+      tool.execute({ query: "命名" }, {
+        actor,
+        runId: "run-search-2",
+        signal: new AbortController().signal,
+      } as never),
+    ).rejects.toThrow("Code Task 或 Design 画布");
+    const result = await tool.execute({ query: "命名" }, {
+      actor,
+      runId: "run-search-3",
+      signal: new AbortController().signal,
+      canvasId,
+      workContext: { preset: "design", canvasId },
+    } as never);
     expect(result).toEqual(
       expect.objectContaining({
         truncated: false,
@@ -450,9 +441,7 @@ describe("Design 记忆归属与旧通道迁移", () => {
     expect(
       await memory.resolveProjectId(actor, { projectId: otherProjectId }),
     ).toBe(otherProjectId);
-    expect(
-      await memory.resolveProjectId(actor, { canvasId }),
-    ).toBe(projectId);
+    expect(await memory.resolveProjectId(actor, { canvasId })).toBe(projectId);
     expect(await memory.resolveProjectId(actor, {})).toBeNull();
   });
 
@@ -460,9 +449,9 @@ describe("Design 记忆归属与旧通道迁移", () => {
     const { memory } = await createFixture({
       canvasError: new Error("画布不存在。"),
     });
-    await expect(
-      memory.resolveProjectId(actor, { canvasId }),
-    ).rejects.toThrow("画布不存在");
+    await expect(memory.resolveProjectId(actor, { canvasId })).rejects.toThrow(
+      "画布不存在",
+    );
     await expect(
       memory.migrateLegacyCanvasMemory(actor, {
         projectId,
@@ -550,8 +539,9 @@ describe("Design 记忆归属与旧通道迁移", () => {
         canvasId,
       }),
     ).toEqual({ migrated: 0 });
-    const names = (await fixture.memory.listProjectMemories(actor))[0]?.files
-      .map((file) => file.name);
+    const names = (
+      await fixture.memory.listProjectMemories(actor)
+    )[0]?.files.map((file) => file.name);
     expect(names).toEqual(["MEMORY.md", "约定.md"]);
 
     fixture.store.search = async () => [
@@ -586,14 +576,11 @@ describe("Design 记忆归属与旧通道迁移", () => {
     );
     expect(result).toMatchObject({ saved: true, fileName: "画布约定.md" });
     await expect(
-      tool.execute(
-        { title: "无归属", content: "正文" },
-        {
-          actor,
-          runId: "run-4",
-          signal: new AbortController().signal,
-        } as never,
-      ),
+      tool.execute({ title: "无归属", content: "正文" }, {
+        actor,
+        runId: "run-4",
+        signal: new AbortController().signal,
+      } as never),
     ).rejects.toThrow("Code Task 或 Design 画布");
   });
 });

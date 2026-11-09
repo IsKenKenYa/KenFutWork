@@ -3,11 +3,7 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import {
-  dataDir,
-  openWorkbench,
-  serverApi,
-} from "../support/local-access";
+import { dataDir, openWorkbench, serverApi } from "../support/local-access";
 import { openSettingsSection } from "../support/settings";
 
 const projectName = `e2e 记忆项目 ${Date.now()}`;
