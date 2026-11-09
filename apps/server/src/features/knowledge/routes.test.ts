@@ -82,6 +82,8 @@ const settings: Awaited<ReturnType<KnowledgeSettingsReader>> = {
   evidenceMaxChars: 6_000,
   cacheTtlMs: 300_000,
   readMaxBytes: 1_048_576,
+  listTimeoutMs: 120_000,
+  listRetries: 1,
 };
 
 async function appWith(

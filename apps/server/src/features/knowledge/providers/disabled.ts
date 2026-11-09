@@ -75,7 +75,7 @@ export function createDisabledKnowledgeProvider(
       };
     },
 
-    async listRoots() {
+    async listRoots(_options?: { timeoutMs?: number; retries?: number }) {
       return unavailable();
     },
     async addRoot() {

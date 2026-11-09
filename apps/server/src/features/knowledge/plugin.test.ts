@@ -76,6 +76,8 @@ function composeWith(
     [
       createKnowledgePlugin({
         platform,
+        // 单元测试不 spawn 真实 CLI：探测直接返回「系统已装」。
+        probeCli: async () => true,
         ...(runner ? { runner } : {}),
       }),
     ],
@@ -114,11 +116,20 @@ const configured = JSON.stringify({
   auth_mode: "bearer",
 });
 
-/** 只读探针替身：config 已配置 + 检索返回固定证据。 */
-const fakeRunner: SagRunner = async (run) =>
-  run.args[0] === "config"
-    ? { code: 0, stdout: configured, stderr: "" }
-    : { code: 0, stdout: searchOutput, stderr: "" };
+const rootsOutput = JSON.stringify([
+  { path: "D:/kb", name: "kb", status: "ready", count: 1, error: null },
+]);
+
+/** 只读探针替身：config 已配置 + 一个根 + 检索返回固定证据。 */
+const fakeRunner: SagRunner = async (run) => {
+  const stdout =
+    run.args[0] === "config"
+      ? configured
+      : run.args[0] === "list"
+        ? rootsOutput
+        : searchOutput;
+  return { code: 0, stdout, stderr: "" };
+};
 
 const installed: FakeEntry[] = [
   { id: KNOWLEDGE_BUNDLE_ID, name: KNOWLEDGE_BUNDLE_ID, installed: true },
@@ -139,7 +150,8 @@ describe("knowledge 插件（M1 能力缝骨架）", () => {
       installed: false,
       enabled: false,
       active: false,
-      cli: "missing",
+      // CLI 可用性与安装态独立：探针替身报告系统 CLI 可用。
+      cli: "available",
       cliVersion: "0.1.8",
     });
     expect(status.reason).toContain("未安装");

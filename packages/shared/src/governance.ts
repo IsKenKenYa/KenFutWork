@@ -119,6 +119,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   knowledgeCacheTtlMs: 300_000,
   /** SAG2 知识库：knowledge_read 单文件读取预算（字节）。 */
   knowledgeReadMaxBytes: 1_048_576,
+  /** SAG2 知识库：目录/状态命令超时（service 冷启动实测可超过 30s）。 */
+  knowledgeListTimeoutMs: 120_000,
+  /** SAG2 知识库：目录/状态命令有限重试次数（0 = 不重试）。 */
+  knowledgeListRetries: 1,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -175,6 +179,8 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "knowledgeEvidenceMaxChars",
   "knowledgeCacheTtlMs",
   "knowledgeReadMaxBytes",
+  "knowledgeListTimeoutMs",
+  "knowledgeListRetries",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 
@@ -251,6 +257,8 @@ export type AgentGovernanceOverrides = {
   knowledgeEvidenceMaxChars?: number | undefined;
   knowledgeCacheTtlMs?: number | undefined;
   knowledgeReadMaxBytes?: number | undefined;
+  knowledgeListTimeoutMs?: number | undefined;
+  knowledgeListRetries?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -362,6 +370,8 @@ export const AGENT_GOVERNANCE_LIMITS = {
   knowledgeEvidenceMaxChars: { min: 256, max: 64_000 },
   knowledgeCacheTtlMs: { min: 0, max: 3_600_000 },
   knowledgeReadMaxBytes: { min: 1_024, max: 67_108_864 },
+  knowledgeListTimeoutMs: { min: 5_000, max: 600_000 },
+  knowledgeListRetries: { min: 0, max: 5 },
 } as const;
 
 /**
@@ -563,6 +573,12 @@ export function resolveGovernanceEnvOverrides(
     ),
     knowledgeReadMaxBytes: parseStrictInt(
       source.KENFUTWORK_KNOWLEDGE_READ_MAX_BYTES,
+    ),
+    knowledgeListTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_LIST_TIMEOUT_MS,
+    ),
+    knowledgeListRetries: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_LIST_RETRIES,
     ),
   };
   return Object.fromEntries(

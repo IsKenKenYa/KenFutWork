@@ -683,6 +683,20 @@
       "status": "active",
       "note": "SAG2 知识库 knowledge_read 单文件读取预算（字节）"
     },
+    "KENFUTWORK_KNOWLEDGE_LIST_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库目录/状态命令超时（service 冷启动实测可超过 30s）"
+    },
+    "KENFUTWORK_KNOWLEDGE_LIST_RETRIES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库目录/状态命令有限重试次数（0 = 不重试）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

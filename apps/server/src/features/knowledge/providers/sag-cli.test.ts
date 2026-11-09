@@ -146,14 +146,13 @@ describe("SagCliProvider（M2）", () => {
       platform: "win32",
       arch: "x64",
     });
-    await expect(service.search({ query: "x" })).rejects.toBeInstanceOf(
-      KnowledgeServiceError,
-    );
+    await expect(
+      service.search({ query: "x", path: "D:/work/project" }),
+    ).rejects.toBeInstanceOf(KnowledgeServiceError);
     enabled = true;
-    await expect(service.search({ query: "x" })).resolves.toHaveProperty(
-      "results",
-      expect.any(Array),
-    );
+    await expect(
+      service.search({ query: "x", path: "D:/work/project" }),
+    ).resolves.toHaveProperty("results", expect.any(Array));
   });
 
   it("语义检索自动初始化并归一化证据；key 从不出现在 argv", async () => {
@@ -161,6 +160,7 @@ describe("SagCliProvider（M2）", () => {
     const result = await service.search({
       query: "重试逻辑在哪",
       maxResults: 3,
+      path: "D:/work/project",
     });
     expect(result.results[0]).toMatchObject({
       path: "src/client.ts",
@@ -188,12 +188,14 @@ describe("SagCliProvider（M2）", () => {
       }
       return ok(searchOutput);
     });
-    await expect(service.search({ query: "x" })).rejects.toMatchObject({
+    await expect(
+      service.search({ query: "x", path: "D:/work/project" }),
+    ).rejects.toMatchObject({
       code: "service_unavailable",
     });
-    await expect(service.search({ query: "x" })).resolves.toHaveProperty(
-      "scope",
-    );
+    await expect(
+      service.search({ query: "x", path: "D:/work/project" }),
+    ).resolves.toHaveProperty("scope");
     expect(configCalls).toBe(2);
   });
 
@@ -233,7 +235,9 @@ describe("SagCliProvider（M2）", () => {
         ? ok(configured)
         : { code: 2, stdout: "", stderr: "参数错误" },
     );
-    await expect(service.search({ query: "x" })).rejects.toMatchObject({
+    await expect(
+      service.search({ query: "x", path: "D:/work/project" }),
+    ).rejects.toMatchObject({
       code: "service_unavailable",
       message: expect.stringContaining("参数错误"),
     });
@@ -241,7 +245,9 @@ describe("SagCliProvider（M2）", () => {
 
   it("平台不支持时即使已安装也 fail loud", async () => {
     const { service } = harness(defaultHandler, { platform: "linux" });
-    await expect(service.search({ query: "x" })).rejects.toMatchObject({
+    await expect(
+      service.search({ query: "x", path: "D:/work/project" }),
+    ).rejects.toMatchObject({
       code: "service_unavailable",
     });
     const status = await service.status();
@@ -268,6 +274,38 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
     await service.addRoot({ path: "D:/work/project" });
     const afterExplicitAdd = await service.ensureRoot("D:/work/project");
     expect(afterExplicitAdd.action).toBe("already-indexed");
+  });
+
+  it("removeRoot 返回 \\\\?\\ 长路径前缀时墓碑仍命中普通路径（实采 bug 回归）", async () => {
+    const { service } = harness((args) => {
+      if (args[0] === "config") return ok(configured);
+      if (args[0] === "list") return ok("[]");
+      if (args[0] === "remove")
+        return ok(JSON.stringify({ path: "\\\\?\\D:\\work\\project" }));
+      if (args[0] === "check")
+        return ok(
+          JSON.stringify({
+            path: "D:/work/project",
+            coverage: "none",
+            index_ready: false,
+            enabled: true,
+            indexed_files: 0,
+            roots: [],
+          }),
+        );
+      if (args[0] === "add")
+        return ok(
+          JSON.stringify({
+            path: "D:/work/project",
+            index_status: "ready",
+            cli_authorized: true,
+          }),
+        );
+      return ok(searchOutput);
+    });
+    await service.removeRoot("D:/work/project");
+    const result = await service.ensureRoot("D:/work/project");
+    expect(result.action).toBe("rejected");
   });
 
   it("本地匹配档走 -F 位置参数并解析 MatchOutput，不要求 Jev 凭据", async () => {
@@ -304,7 +342,14 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
     });
     expect(result.results[0]?.matchedLines).toEqual([142]);
     const call = calls.find((item) => item.args[0] === "-F");
-    expect(call?.args).toEqual(["-F", "499", "D:/work/project", "--json"]);
+    // 0.1.8 帮助实测：-F/-E 需显式 -c 才返回正文。
+    expect(call?.args).toEqual([
+      "-F",
+      "499",
+      "-c",
+      "D:/work/project",
+      "--json",
+    ]);
     // 显式降级档不初始化 Jev 凭据（config 只可能来自 provider 内其他路径）
     expect(calls.some((item) => item.args[0] === "config")).toBe(false);
   });
@@ -326,7 +371,11 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
       arch: "x64",
       indexExtensions: ["md", "ts"],
     });
-    await serviceWithTimeout.search({ query: "重试", timeoutMs: 12_000 });
+    await serviceWithTimeout.search({
+      query: "重试",
+      path: "D:/work/project",
+      timeoutMs: 12_000,
+    });
     expect(receivedTimeout).toBe(12_000);
     await service.search({ query: "重试", path: "D:/work/project" });
     const search = calls.find(
@@ -412,6 +461,66 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
         code: "invalid_input",
       });
     }
+  });
+
+  it("无 path 检索：遍历全部已注册根并合并去重、截到预算", async () => {
+    const roots = ["D:/kb/one", "D:/kb/two"];
+    const searchCalls: string[] = [];
+    const { service } = harness((args) => {
+      if (args[0] === "config") return ok(configured);
+      if (args[0] === "list")
+        return ok(
+          JSON.stringify(
+            roots.map((path) => ({
+              path,
+              name: path.split("/").pop(),
+              status: "ready",
+              count: 1,
+              error: null,
+            })),
+          ),
+        );
+      const pathArg = args.includes("--path")
+        ? args[args.indexOf("--path") + 1]
+        : (args[3] ?? "");
+      searchCalls.push(String(pathArg));
+      const absolute = `${pathArg}/a.md`;
+      return ok(
+        JSON.stringify({
+          protocol_version: 2,
+          scope: pathArg,
+          results: [
+            {
+              path: "a.md",
+              absolute_path: absolute,
+              start_line: 10,
+              end_line: 13,
+              content: "x",
+            },
+            {
+              path: "a.md",
+              absolute_path: absolute,
+              start_line: 10,
+              end_line: 13,
+              content: "dup",
+            },
+          ],
+          truncated: false,
+        }),
+      );
+    });
+    const result = await service.search({ query: "负责人", maxResults: 5 });
+    expect(searchCalls).toEqual(roots);
+    // 两根各返回同一位置（不同绝对路径）→ 2 条；重复项已去重
+    expect(result.results).toHaveLength(2);
+    expect(result.scope).toContain("D:/kb/one");
+    expect(result.scope).toContain("D:/kb/two");
+  });
+
+  it("无 path 且没有已注册根：返回空结果，不报错", async () => {
+    const { service } = harness(defaultHandler); // list 返回 []
+    const result = await service.search({ query: "负责人" });
+    expect(result).toEqual({ scope: "", results: [], truncated: false });
   });
 
   it("根集合修订号随 add/remove/ensure(added) 单调递增", async () => {

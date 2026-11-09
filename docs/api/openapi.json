@@ -21160,6 +21160,18 @@
                 "type": "integer",
                 "minimum": 1024,
                 "maximum": 67108864
+              },
+              "knowledgeListTimeoutMs": {
+                "default": 120000,
+                "type": "integer",
+                "minimum": 5000,
+                "maximum": 600000
+              },
+              "knowledgeListRetries": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
               }
             },
             "required": [
@@ -21237,7 +21249,9 @@
               "knowledgeMaxConcurrentSearches",
               "knowledgeEvidenceMaxChars",
               "knowledgeCacheTtlMs",
-              "knowledgeReadMaxBytes"
+              "knowledgeReadMaxBytes",
+              "knowledgeListTimeoutMs",
+              "knowledgeListRetries"
             ],
             "additionalProperties": false
           }
@@ -21839,6 +21853,16 @@
             "type": "integer",
             "minimum": 1024,
             "maximum": 67108864
+          },
+          "knowledgeListTimeoutMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 600000
+          },
+          "knowledgeListRetries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
           }
         }
       },

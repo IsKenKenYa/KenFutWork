@@ -14,11 +14,29 @@ import { createScopeRepository } from "../execution/scope-repository.js";
 import type { PersistenceService } from "../persistence/types.js";
 import { SAG_QUERY_MAX_CHARS } from "./sag-cli-contract.js";
 import type { KnowledgeSettingsReader } from "./settings.js";
-import type {
-  KnowledgeEnsureResult,
-  KnowledgeEvidence,
-  KnowledgeService,
+import {
+  dedupeKnowledgeEvidence,
+  type KnowledgeEnsureResult,
+  type KnowledgeEvidence,
+  type KnowledgeService,
+  KnowledgeServiceError,
 } from "./types.js";
+
+/**
+ * 失败原因必须是一句人话：KnowledgeServiceError 自带可读消息；
+ * 其他异常（如 ZodError 转储）只留首行并截断，完整错误进宿主日志。
+ */
+function readableFailure(error: unknown): string {
+  if (error instanceof KnowledgeServiceError) return error.message;
+  console.warn("[knowledge] 检索链路异常：", error);
+  if (error instanceof Error && error.name === "ZodError") {
+    return "内部错误（参数校验失败，详见宿主日志）";
+  }
+  const raw = error instanceof Error ? error.message : String(error);
+  const firstLine = raw.split("\n")[0]?.trim() ?? "";
+  const text = firstLine.length > 0 ? firstLine : "内部错误";
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
 
 /**
  * 从 enriched prompt 抽用户问题：agent-modes 的 <execution_mode> 指令块与
@@ -59,21 +77,6 @@ export function knowledgeQuerySkipReason(query: string): string | null {
   if (PURE_CALCULATION.test(query)) return "纯计算";
   if (TIME_QUESTION.test(query)) return "时间查询";
   return null;
-}
-
-/** 证据去重：CLI JSON 无 offset/fileVersion，按 路径+行范围（M0 修正）。 */
-export function dedupeKnowledgeEvidence(
-  results: readonly KnowledgeEvidence[],
-): KnowledgeEvidence[] {
-  const seen = new Set<string>();
-  const out: KnowledgeEvidence[] = [];
-  for (const item of results) {
-    const key = `${item.absolutePath}:${item.startLine}:${item.endLine}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
 }
 
 function formatEvidence(item: KnowledgeEvidence, index: number): string {
@@ -303,7 +306,7 @@ export function createKnowledgePreflight(
       }
     } catch (error) {
       // KB-4：检索失败不阻断对话；显式状态块 + 放行，不假装检索过。
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = readableFailure(error);
       record("failed", reason);
       if (typeof payload.input !== "string") return next(payload);
       return next({

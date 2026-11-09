@@ -1,11 +1,13 @@
 /**
- * SAG2 知识库插件（宿主内核层，M3）。
+ * SAG2 知识库插件（宿主内核层，M5）。
  *
  * - **默认挂载**：不写 `enabled` 判定（`plugin.enabled?.(env) ?? true`，
  *   `kernel/compose.ts:58`）。真正的开关是市场 bundle 的安装态，见 `service.ts`。
  * - **能力缝三元组**：Definition = `types.ts::KnowledgeService`；
  *   Provider = `providers/sag-cli.ts`；Consumer = pre-step preflight +
- *   置顶提示段 + shared 工具 + `http/knowledge.ts` 路由（M4 加侧边栏面板）。
+ *   置顶提示段 + shared 工具 + `http/knowledge.ts` 路由 + 侧边栏面板。
+ * - **CLI 三级探测**（KB-5）：本机已装 `sag` → 数据目录自带（按需下载钉版本 +
+ *   校验和）→ 显式 missing + 离线安装指引（`cli-install.ts`）。
  * - 凭据经 `modelProviders.resolveCredentialsById()` 后台路径取，
  *   只在 `--key-stdin` 的 stdin 里出现，不进 argv / 日志 / 事件（`DEC-7`）。
  * - `apply` 只注册自己的服务，跨服务接线（HTTP 路由）放 `mounted`。
@@ -13,8 +15,10 @@
  *   `kernel/types.ts::ServiceMap` 一处。
  */
 
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerKnowledgeRoutes } from "../../http/knowledge.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { createSagCliInstaller, type SagCliResolution } from "./cli-install.js";
 import {
   createKnowledgePreflight,
   createRunRootResolver,
@@ -39,6 +43,12 @@ export interface KnowledgePluginOptions {
   /** 测试注入；生产从 `modelProviders` 后台路径取。 */
   readJevCredential?: () => Promise<string | null>;
   indexExtensions?: readonly string[];
+  /** 自带 CLI 落位根（缺省取桌面数据根）；测试传临时目录。 */
+  dataDir?: string;
+  /** 测试注入：CLI 探测（缺省 spawn `sag --build-info`）。 */
+  probeCli?: (binary: string) => Promise<boolean>;
+  /** 测试注入：tarball 下载（缺省全局 fetch）。 */
+  fetchCliTarball?: typeof fetch;
 }
 
 export function createKnowledgePlugin(
@@ -67,12 +77,56 @@ export function createKnowledgePlugin(
           }
         });
 
+      // KB-5 三级探测：runner 的二进制路径在解析后才定（getter 延迟读取）。
+      const dataDir =
+        options.dataDir ??
+        resolveDesktopDataDir({
+          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+        });
+      let sagBinary: string | undefined;
+      const installer = createSagCliInstaller({
+        dataDir,
+        ...(options.platform ? { platform: options.platform } : {}),
+        ...(options.arch ? { arch: options.arch } : {}),
+        ...(options.probeCli ? { probe: options.probeCli } : {}),
+        ...(options.fetchCliTarball
+          ? { fetchFn: options.fetchCliTarball }
+          : {}),
+      });
+      const runner =
+        options.runner ??
+        createProcessSagRunner({ binary: () => sagBinary ?? "sag" });
+      const ensureCli = async (): Promise<SagCliResolution> => {
+        const result = await installer.resolve();
+        if (result.kind === "system" || result.kind === "managed") {
+          sagBinary = result.binary;
+        }
+        return result;
+      };
+
       ctx.register("knowledge", (deps) =>
         createSagCliProvider({
-          runner: options.runner ?? createProcessSagRunner(),
+          runner,
           tryGetPlugins: () =>
             deps.get("plugins") as PluginsServiceLike | undefined,
           readJevCredential,
+          ensureCli,
+          cliStatus: async () => {
+            const inspected = await installer.inspect();
+            if (inspected.kind === "system" || inspected.kind === "managed") {
+              return { state: "available", reason: null };
+            }
+            if (inspected.kind === "unsupported_platform") {
+              return {
+                state: "unsupported_platform",
+                reason: inspected.reason,
+              };
+            }
+            return {
+              state: "missing",
+              reason: `${inspected.reason} ${inspected.guidance}`,
+            };
+          },
           ...(options.platform ? { platform: options.platform } : {}),
           ...(options.arch ? { arch: options.arch } : {}),
           ...(options.indexExtensions

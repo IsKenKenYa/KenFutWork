@@ -24,6 +24,21 @@ export interface KnowledgeEvidence {
   matchedLines?: number[];
 }
 
+/** 证据去重：CLI JSON 无 offset/fileVersion，按 路径+行范围（M0 修正）。 */
+export function dedupeKnowledgeEvidence(
+  results: readonly KnowledgeEvidence[],
+): KnowledgeEvidence[] {
+  const seen = new Set<string>();
+  const out: KnowledgeEvidence[] = [];
+  for (const item of results) {
+    const key = `${item.absolutePath}:${item.startLine}:${item.endLine}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 export type KnowledgeCliState =
   /** 本机已装可复用，或插件自带已落位。 */
   | "available"
@@ -210,7 +225,11 @@ export interface KnowledgeService {
   status(): Promise<KnowledgeStatus>;
   /** 幂等初始化：CLI 探测 + Jev 凭据注入（不含注册知识库根，见 `ensureRoot`）。 */
   initialize(): Promise<KnowledgeInitResult>;
-  listRoots(): Promise<KnowledgeRoot[]>;
+  /** 目录清单：service 冷启动可能超过默认 runner 超时，调用方可传治理后的预算。 */
+  listRoots(options?: {
+    timeoutMs?: number;
+    retries?: number;
+  }): Promise<KnowledgeRoot[]>;
   addRoot(input: KnowledgeAddRootInput): Promise<KnowledgeRootMutation>;
   removeRoot(path: string): Promise<KnowledgeRootMutation>;
   /**

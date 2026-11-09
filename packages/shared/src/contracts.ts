@@ -397,6 +397,9 @@ export const instanceSettingsSchema = z.object({
   knowledgeEvidenceMaxChars: governanceSetting("knowledgeEvidenceMaxChars"),
   knowledgeCacheTtlMs: governanceSetting("knowledgeCacheTtlMs"),
   knowledgeReadMaxBytes: governanceSetting("knowledgeReadMaxBytes"),
+  /** 目录/状态命令在 service 冷启动时可能超过默认 runner 超时。 */
+  knowledgeListTimeoutMs: governanceSetting("knowledgeListTimeoutMs"),
+  knowledgeListRetries: governanceSetting("knowledgeListRetries"),
 });
 
 export const modelInfoSchema = z.object({

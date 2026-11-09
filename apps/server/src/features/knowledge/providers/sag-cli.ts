@@ -30,16 +30,22 @@ import {
   sagSearchOutputSchema,
   toKnowledgeEvidence,
 } from "../sag-cli-contract.js";
-import type { SagCommandResult, SagRunner } from "../sag-cli-runner.js";
+import {
+  SAG_EXIT_TIMEOUT,
+  type SagCommandResult,
+  type SagRunner,
+} from "../sag-cli-runner.js";
 import {
   createBundleInspector,
   type PluginsServiceLike,
   toGateVerdict,
 } from "../service.js";
 import {
+  dedupeKnowledgeEvidence,
   KNOWLEDGE_INDEX_EXTENSIONS,
   type KnowledgeAddRootInput,
   type KnowledgeEnsureResult,
+  type KnowledgeEvidence,
   type KnowledgeInitResult,
   type KnowledgeReadInput,
   type KnowledgeReadResult,
@@ -62,7 +68,24 @@ export interface SagCliProviderOptions {
   arch?: string;
   indexExtensions?: readonly string[];
   defaultMaxResults?: number;
+  /**
+   * KB-5 三级探测：系统 CLI → 自带 CLI → 按需下载。返回 missing/unsupported 时
+   * 调用方 fail loud；成功时安装器已把二进制路径交给 runner（getter）。
+   */
+  ensureCli?: () => Promise<
+    | { kind: "system" | "managed"; binary: string }
+    | { kind: "missing"; reason: string; guidance: string }
+    | { kind: "unsupported_platform"; reason: string }
+  >;
+  /** 只读 CLI 探测（不触发下载），供状态接口展示。 */
+  cliStatus?: () => Promise<{
+    state: "available" | "missing" | "unsupported_platform";
+    reason: string | null;
+  }>;
 }
+
+/** CLI 缺失/下载失败的重试冷却：离线时避免每轮对话都卡在下载超时上。 */
+const CLI_RETRY_COOLDOWN_MS = 300_000;
 
 function decode<T>(
   result: SagCommandResult,
@@ -113,6 +136,44 @@ export function createSagCliProvider(
    */
   const userRemovedRoots = new Set<string>();
 
+  /** CLI 三级探测结果：成功永久复用；失败冷却期内直接拒绝，不反复触发下载。 */
+  let cliVerdict:
+    | {
+        at: number;
+        result:
+          | { kind: "system" | "managed"; binary: string }
+          | { kind: "missing"; reason: string; guidance: string }
+          | { kind: "unsupported_platform"; reason: string };
+      }
+    | undefined;
+
+  async function ensureCliReady(): Promise<void> {
+    if (!options.ensureCli) return;
+    const now = Date.now();
+    if (cliVerdict && cliVerdict.result.kind !== "missing") return;
+    if (
+      cliVerdict &&
+      cliVerdict.result.kind === "missing" &&
+      now - cliVerdict.at < CLI_RETRY_COOLDOWN_MS
+    ) {
+      throw new KnowledgeServiceError(
+        "service_unavailable",
+        `${cliVerdict.result.reason} ${cliVerdict.result.guidance}`,
+      );
+    }
+    const result = await options.ensureCli();
+    cliVerdict = { at: now, result };
+    if (result.kind === "unsupported_platform") {
+      throw new KnowledgeServiceError("service_unavailable", result.reason);
+    }
+    if (result.kind === "missing") {
+      throw new KnowledgeServiceError(
+        "service_unavailable",
+        `${result.reason} ${result.guidance}`,
+      );
+    }
+  }
+
   async function assertReady(requireCredential: boolean): Promise<void> {
     const inspection = await inspect();
     if (!inspection.ok) {
@@ -127,6 +188,7 @@ export function createSagCliProvider(
         "当前平台没有 SAG CLI 原生二进制（仅 Windows x64 与 macOS Apple Silicon）。",
       );
     }
+    await ensureCliReady();
     if (!requireCredential) return;
     if (!initResult?.ok) {
       initResult = await initializeKnowledge(initOptions);
@@ -139,9 +201,26 @@ export function createSagCliProvider(
     }
   }
 
-  async function listRoots(): Promise<KnowledgeRoot[]> {
+  async function listRoots(listOptions?: {
+    timeoutMs?: number;
+    retries?: number;
+  }): Promise<KnowledgeRoot[]> {
     await assertReady(false);
-    const result = await options.runner({ args: ["list", "--json"] });
+    const timeoutMs = resolveGovernanceNumber(
+      "knowledgeListTimeoutMs",
+      listOptions?.timeoutMs,
+    );
+    // 只对超时做有限重试：上游 service 冷启动可能超过一次预算，参数/执行错误不重放。
+    let attempts =
+      resolveGovernanceNumber("knowledgeListRetries", listOptions?.retries) + 1;
+    let result = await options.runner({
+      args: ["list", "--json"],
+      timeoutMs,
+    });
+    while (result.code === SAG_EXIT_TIMEOUT && attempts > 1) {
+      attempts -= 1;
+      result = await options.runner({ args: ["list", "--json"], timeoutMs });
+    }
     assertOk(result, "列出知识库根");
     const roots = decode(result, "列出知识库根", sagListOutputSchema);
     return roots.map((root) => ({ ...root, error: root.error ?? null }));
@@ -154,18 +233,19 @@ export function createSagCliProvider(
 
     async status(): Promise<KnowledgeStatus> {
       const inspection = await inspect();
+      // cliStatus 只读探测（不下载）：面板心跳不该反复触发网络。
+      const probed = supported ? await options.cliStatus?.() : undefined;
       const cli = !supported
         ? "unsupported_platform"
-        : initResult?.cli === "available"
-          ? "available"
-          : "missing";
+        : (probed?.state ??
+          (initResult?.cli === "available" ? "available" : "missing"));
       const reason = !inspection.ok
         ? inspection.message
-        : initResult && !initResult.ok
-          ? initResult.reason
-          : !supported
-            ? "当前平台没有 SAG CLI 原生二进制（仅 Windows x64 与 macOS Apple Silicon）。"
-            : null;
+        : !supported
+          ? "当前平台没有 SAG CLI 原生二进制（仅 Windows x64 与 macOS Apple Silicon）。"
+          : initResult && !initResult.ok
+            ? initResult.reason
+            : (probed?.reason ?? null);
       return {
         installed: inspection.installed,
         enabled: inspection.enabled,
@@ -255,43 +335,68 @@ export function createSagCliProvider(
         "knowledgeMaxResults",
         input.maxResults ?? options.defaultMaxResults,
       );
-      // -c 取正文（M0：只有 -c 才返回 content）；-F 形状按探针实采（位置参数）。
-      const args = input.localMatch
-        ? ["-F", query, ...(input.path ? [input.path] : []), "--json"]
-        : [
-            query,
-            "--json",
-            "-m",
-            String(maxResults),
-            "-c",
-            ...(input.path ? ["--path", input.path] : []),
-          ];
-      const result = await options.runner({
-        args,
-        ...(input.timeoutMs === undefined
-          ? {}
-          : {
-              timeoutMs: resolveGovernanceNumber(
-                "knowledgeSearchTimeoutMs",
-                input.timeoutMs,
-              ),
-            }),
-        ...(input.signal ? { signal: input.signal } : {}),
-      });
-      assertOk(result, input.localMatch ? "本地匹配" : "SAG2 语义检索");
-      if (input.localMatch) {
-        const output = decode(result, "本地匹配", sagMatchOutputSchema);
+      const timeoutMs =
+        input.timeoutMs === undefined
+          ? undefined
+          : resolveGovernanceNumber(
+              "knowledgeSearchTimeoutMs",
+              input.timeoutMs,
+            );
+      const runSearch = async (path: string | undefined) => {
+        // -c 取正文（0.1.8 帮助实测：语义默认含正文；-F/-E 需显式 -c）；
+        // -F 形状按探针实采（位置参数 + --json）。
+        const args = input.localMatch
+          ? ["-F", query, "-c", ...(path ? [path] : []), "--json"]
+          : [
+              query,
+              "--json",
+              "-m",
+              String(maxResults),
+              "-c",
+              ...(path ? ["--path", path] : []),
+            ];
+        const result = await options.runner({
+          args,
+          ...(timeoutMs === undefined ? {} : { timeoutMs }),
+          ...(input.signal ? { signal: input.signal } : {}),
+        });
+        assertOk(result, input.localMatch ? "本地匹配" : "SAG2 语义检索");
+        if (input.localMatch) {
+          const output = decode(result, "本地匹配", sagMatchOutputSchema);
+          return {
+            scope: output.scope,
+            results: output.results.map(toKnowledgeEvidence),
+            truncated: output.truncated,
+          };
+        }
+        const output = decode(result, "SAG2 语义检索", sagSearchOutputSchema);
         return {
           scope: output.scope,
           results: output.results.map(toKnowledgeEvidence),
           truncated: output.truncated,
         };
+      };
+      if (input.path) return runSearch(input.path);
+      // 无 path 时上游按进程 cwd 划定范围（实测：cwd 不在任何根下直接 exit 1）。
+      // 宿主语义是「检索知识库」，改为遍历全部已注册根并合并（调用方预算仍然生效）。
+      // 目录清单用 list 自己的冷启动预算（默认 120s），不复用检索超时。
+      const roots = await listRoots();
+      if (roots.length === 0) {
+        return { scope: "", results: [], truncated: false };
       }
-      const output = decode(result, "SAG2 语义检索", sagSearchOutputSchema);
+      const merged: KnowledgeEvidence[] = [];
+      let truncated = false;
+      for (const root of roots) {
+        const result = await runSearch(root.path);
+        merged.push(...result.results);
+        truncated ||= result.truncated;
+        if (merged.length >= maxResults) break;
+      }
+      const deduped = dedupeKnowledgeEvidence(merged);
       return {
-        scope: output.scope,
-        results: output.results.map(toKnowledgeEvidence),
-        truncated: output.truncated,
+        scope: roots.map((root) => root.path).join(";"),
+        results: deduped.slice(0, maxResults),
+        truncated: truncated || deduped.length > maxResults,
       };
     },
 

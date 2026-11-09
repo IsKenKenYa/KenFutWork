@@ -149,7 +149,17 @@ export async function registerKnowledgeRoutes(
     try {
       const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      const roots = await options.knowledge.listRoots();
+      const settings = options.readSettings
+        ? await options.readSettings(user.instanceId)
+        : undefined;
+      const roots = await options.knowledge.listRoots(
+        settings
+          ? {
+              timeoutMs: settings.listTimeoutMs,
+              retries: settings.listRetries,
+            }
+          : {},
+      );
       return reply
         .code(200)
         .send(knowledgeRootsResponseSchema.parse({ roots }));

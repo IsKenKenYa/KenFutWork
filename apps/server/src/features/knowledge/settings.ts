@@ -25,6 +25,9 @@ export interface KnowledgeRuntimeSettings {
   evidenceMaxChars: number;
   cacheTtlMs: number;
   readMaxBytes: number;
+  /** 目录/状态命令预算（service 冷启动）：路由与面板心跳消费，不进面板设置项。 */
+  listTimeoutMs: number;
+  listRetries: number;
 }
 
 export type KnowledgeSettingsReader = (
@@ -83,6 +86,8 @@ export function createKnowledgeSettingsReader(deps: {
       evidenceMaxChars: num("knowledgeEvidenceMaxChars"),
       cacheTtlMs: num("knowledgeCacheTtlMs"),
       readMaxBytes: num("knowledgeReadMaxBytes"),
+      listTimeoutMs: num("knowledgeListTimeoutMs"),
+      listRetries: num("knowledgeListRetries"),
     };
   };
 }

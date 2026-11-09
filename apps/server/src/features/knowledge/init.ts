@@ -38,7 +38,12 @@ export interface KnowledgeInitOptions {
 }
 
 function normalized(path: string): string {
-  return resolve(path)
+  // 上游 `list/remove --json` 在 Windows 上返回 `\\?\` 长路径前缀（实采），
+  // 与调用方的普通路径字符串必须按同一口径比较（墓碑/个人目录判定）。
+  const stripped = path
+    .replace(/^\\\\\?\\UNC\\/iu, "\\\\")
+    .replace(/^\\\\\?\\/u, "");
+  return resolve(stripped)
     .toLowerCase()
     .replace(/[\\/]+$/, "");
 }

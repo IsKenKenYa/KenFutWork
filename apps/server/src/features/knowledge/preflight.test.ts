@@ -4,7 +4,6 @@ import type { PreStepPayload } from "../../kernel/types.js";
 import {
   buildKnowledgeEvidenceBlock,
   createKnowledgePreflight,
-  dedupeKnowledgeEvidence,
   extractKnowledgeQuery,
   knowledgeQuerySkipReason,
 } from "./preflight.js";
@@ -15,6 +14,7 @@ import type {
   KnowledgeSearchResult,
   KnowledgeService,
 } from "./types.js";
+import { dedupeKnowledgeEvidence } from "./types.js";
 
 const defaults: KnowledgeRuntimeSettings = {
   autoInject: true,
@@ -26,6 +26,8 @@ const defaults: KnowledgeRuntimeSettings = {
   evidenceMaxChars: 6_000,
   cacheTtlMs: 300_000,
   readMaxBytes: 1_048_576,
+  listTimeoutMs: 120_000,
+  listRetries: 1,
 };
 
 const evidence = (
@@ -259,6 +261,27 @@ describe("preflight waterfall 监听器（M3）", () => {
       outcome: "failed",
       reason: "JEV 未配置",
     });
+  });
+
+  it("失败原因不把 Zod 转储塞进输入：转成一句人话（回归）", async () => {
+    const fake = fakeService();
+    const zodLike = new Error(
+      '[\n  {\n    "code": "invalid_format",\n    "path": ["instanceId"],\n    "message": "Invalid UUID"\n  }\n]',
+    );
+    zodLike.name = "ZodError";
+    fake.service.isActive = async () => {
+      throw zodLike;
+    };
+    const preflight = createKnowledgePreflight({
+      knowledge: fake.service,
+      readSettings: async () => defaults,
+      resolveRoot: async () => undefined,
+    });
+    const result = await preflight.listener(payload("问题"), async (p) => p);
+    const input = String(result.input);
+    expect(input).toContain("内部错误（参数校验失败");
+    expect(input).not.toContain("invalid_format");
+    expect(input).not.toContain("instanceId");
   });
 
   it("isActive 抛错也不阻断，next() 仍被调用（waterfall 回归）", async () => {
