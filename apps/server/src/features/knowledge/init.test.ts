@@ -14,6 +14,7 @@ import {
   type SagCommandResult,
   type SagRunner,
 } from "./sag-cli-runner.js";
+import { KNOWLEDGE_INDEX_EXTENSIONS } from "./types.js";
 
 const ok = (stdout: string): SagCommandResult => ({
   code: 0,
@@ -204,6 +205,61 @@ describe("M2 工作区根自动注册（KB-3）", () => {
     if (!add) throw new Error("缺少 add 调用");
     expect(add).toContain("--types");
     expect(add.join(",")).toContain("ts");
+  });
+
+  it("默认 --types 不含 0.1.8 实机拒绝的扩展名（回归：csv 曾致新根注册必失败）", async () => {
+    // 2026-11-09 逐项实采 `sag add --types <ext>`：以下扩展名被 CLI 以
+    // 「不支持的索引格式」拒绝（exit 1），混入默认列表会让自动注册整单失败。
+    const rejectedByCli = [
+      "csv",
+      "log",
+      "mts",
+      "cts",
+      "less",
+      "graphql",
+      "proto",
+    ];
+    for (const ext of rejectedByCli) {
+      expect(KNOWLEDGE_INDEX_EXTENSIONS).not.toContain(ext);
+    }
+
+    const calls: Array<readonly string[]> = [];
+    const options: KnowledgeInitOptions = {
+      runner: runnerFrom((args) => {
+        calls.push(args);
+        if (args[0] === "check") {
+          return ok(
+            JSON.stringify({
+              path: project,
+              coverage: "none",
+              index_ready: false,
+              enabled: true,
+              indexed_files: 0,
+              roots: [],
+            }),
+          );
+        }
+        return ok(
+          JSON.stringify({
+            path: project,
+            index_status: "ready",
+            cli_authorized: true,
+          }),
+        );
+      }),
+      readJevCredential: async () => null,
+      platform: "win32",
+      arch: "x64",
+    };
+    const result = await ensureKnowledgeRoot(options, project);
+    expect(result.action).toBe("added");
+    const add = calls.find((args) => args[0] === "add");
+    if (!add) throw new Error("缺少 add 调用");
+    const types = add[add.indexOf("--types") + 1]?.split(",") ?? [];
+    expect(types).toEqual([...KNOWLEDGE_INDEX_EXTENSIONS]);
+    for (const ext of rejectedByCli) {
+      expect(types).not.toContain(ext);
+    }
   });
 
   it("部分覆盖 / 已排除 / check 参数错误都不自动改写", async () => {

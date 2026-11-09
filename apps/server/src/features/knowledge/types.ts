@@ -59,6 +59,8 @@ export const KNOWLEDGE_JEV_PROVIDER_ID = "typesafe-jev";
  * 上游 `FileTypes::default()` 是 `code:false, config:false`（M0 §3），
  * 故新根必须用 `sag add --types` 显式列出文档 + 代码扩展名。
  * 已存在的根**不改**这个列表——`--types` 是「只索引这些」，会覆盖用户桌面端设置。
+ * 列表逐项经 0.1.8 实机 `sag add --types <ext>` 探针核验（2026-11-09）：
+ * csv/log/mts/cts/less/graphql/proto 会被 CLI 拒绝（「不支持的索引格式」），不得入列。
  */
 export const KNOWLEDGE_INDEX_EXTENSIONS: readonly string[] = [
   "md",
@@ -75,16 +77,12 @@ export const KNOWLEDGE_INDEX_EXTENSIONS: readonly string[] = [
   "ini",
   "conf",
   "xml",
-  "csv",
-  "log",
   "ts",
   "tsx",
   "js",
   "jsx",
   "mjs",
   "cjs",
-  "mts",
-  "cts",
   "py",
   "rs",
   "go",
@@ -106,9 +104,6 @@ export const KNOWLEDGE_INDEX_EXTENSIONS: readonly string[] = [
   "svelte",
   "css",
   "scss",
-  "less",
-  "graphql",
-  "proto",
 ];
 
 export interface KnowledgeRoot {
