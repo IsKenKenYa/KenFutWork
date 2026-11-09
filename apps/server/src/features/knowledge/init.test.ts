@@ -94,7 +94,8 @@ describe("M2 初始化：凭据 stdin 注入（KB-1）", () => {
 
     const inject = seen[1];
     if (!inject) throw new Error("缺少凭据注入调用");
-    expect(inject.args).toEqual(["config", "--auth", "bearer", "--key-stdin"]);
+    // 0.1.8 实机 config 无 --auth（传了会 exit 2），只能 --key-stdin。
+    expect(inject.args).toEqual(["config", "--key-stdin"]);
     expect(inject.args.join(" ")).not.toContain("jev-key-123");
     expect(inject.stdin).toBe("jev-key-123");
     expect(JSON.stringify(result)).not.toContain("jev-key-123");

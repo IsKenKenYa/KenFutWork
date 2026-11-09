@@ -273,10 +273,16 @@ export function createSagCliProvider(
       }
     | undefined;
 
-  async function ensureCliReady(): Promise<void> {
-    if (!options.ensureCli) return;
+  async function ensureCliReady(): Promise<
+    { kind: "system" | "managed"; binary: string } | undefined
+  > {
+    if (!options.ensureCli) return undefined;
     const now = Date.now();
-    if (cliVerdict && cliVerdict.result.kind !== "missing") return;
+    if (cliVerdict && cliVerdict.result.kind !== "missing") {
+      return cliVerdict.result.kind === "unsupported_platform"
+        ? undefined
+        : cliVerdict.result;
+    }
     if (
       cliVerdict &&
       cliVerdict.result.kind === "missing" &&
@@ -298,10 +304,13 @@ export function createSagCliProvider(
         `${result.reason} ${result.guidance}`,
       );
     }
+    return result;
   }
 
   /** 成功初始化后置 true；缺凭据时记住，避免每轮都先等一次语义超时。 */
   let credentialMissing = false;
+  /** 产出现在 initResult 时的二进制：二进制变了（系统/自带/下载切换）就要重试。 */
+  let initBinary: string | undefined;
 
   /**
    * 便宜地判断「检索凭据是否就绪」：只跑 `sag config`（读既有配置，不发起检索），
@@ -316,7 +325,10 @@ export function createSagCliProvider(
     // 先过安装态/平台门：未安装时绝不能碰 CLI（M2 回归用例锁死过）。
     const inspection = await inspect();
     if (!inspection.ok || !supported) return;
+    // 先解析 CLI 二进制（系统/自带/下载），否则 init 会 spawn 到不存在的 "sag"。
+    const cli = await ensureCliReady();
     initResult = await initializeKnowledge(initOptions);
+    initBinary = cli?.binary;
     credentialMissing = !initResult.ok;
   }
 
@@ -336,8 +348,16 @@ export function createSagCliProvider(
     }
     await ensureCliReady();
     if (!requireCredential) return;
+    const resolvedBinary =
+      cliVerdict?.result.kind === "system" ||
+      cliVerdict?.result.kind === "managed"
+        ? cliVerdict.result.binary
+        : undefined;
+    // 二进制换了（首次 status 前尚未解析，或用旧路径失败过）就作废旧结论重试。
+    if (initResult && initBinary !== resolvedBinary) initResult = undefined;
     if (!initResult?.ok) {
       initResult = await initializeKnowledge(initOptions);
+      initBinary = resolvedBinary;
       // 凭据可能被用户/jev 插件刚配好：失败不缓存，成功则解除降级短路。
       credentialMissing = !initResult.ok;
     }
@@ -499,7 +519,9 @@ export function createSagCliProvider(
     },
 
     async initialize() {
+      const cli = supported ? await ensureCliReady() : undefined;
       initResult = await initializeKnowledge(initOptions);
+      initBinary = cli?.binary;
       credentialMissing = !initResult.ok;
       return initResult;
     },

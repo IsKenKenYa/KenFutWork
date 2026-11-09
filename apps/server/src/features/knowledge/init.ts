@@ -4,7 +4,9 @@
  * KB-1：`sag config` 无参数在非交互环境输出脱敏 ModelConfig（上游 main.rs
  * `configure()` 全空选项直接 `return Ok(current)`）。`has_key`/`auth_mode` 已配置
  * → **复用、绝不覆盖**；未配置 → 从宿主 `modelProviders` 取唯一权威 key，
- * 经 `sag config --auth bearer --key-stdin` 的 **stdin** 注入（不进 argv、日志、事件）。
+ * 经 `sag config --key-stdin` 的 **stdin** 注入（不进 argv、日志、事件）。
+ * 注意：0.1.8 实机 `config --help` **没有 `--auth`**（与 main 分支文档不一致，见 M0 记录），
+ * 传了会直接 exit 2「unexpected argument」——因此只传 `--key-stdin`。
  *
  * KB-3：M2 核验确认服务端**没有**「不依赖 run 的全局当前工作区根」服务，
  * 因此「自动注册」从「安装时」改为「首次检索时按 run 的真实工作目录」：
@@ -178,7 +180,7 @@ export async function initializeKnowledge(
 
   const result = await options.runner({
     // `--key-stdin` 与 `--key` 互斥；不传 --url/--model 以保留用户现有值。
-    args: ["config", "--auth", "bearer", "--key-stdin"],
+    args: ["config", "--key-stdin"],
     stdin: credential.trim(),
   });
   if (result.code !== SAG_EXIT.ok) {
