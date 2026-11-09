@@ -302,12 +302,24 @@ export async function registerKnowledgeRoutes(
       const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
       const body = knowledgeSearchRequestSchema.parse(request.body);
+      // 检索档必须沿用实例设置：面板开「本地匹配」后不能仍走语义检索（真机踩到）。
+      const settings = options.readSettings
+        ? await options.readSettings(user.instanceId)
+        : undefined;
       const result = await options.knowledge.search({
         query: body.query,
         ...(body.path ? { path: body.path } : {}),
         ...(body.maxResults === undefined
-          ? {}
+          ? settings
+            ? { maxResults: settings.maxResults }
+            : {}
           : { maxResults: body.maxResults }),
+        ...(settings
+          ? {
+              timeoutMs: settings.searchTimeoutMs,
+              localMatch: settings.localMatch,
+            }
+          : {}),
       });
       return reply.code(200).send(knowledgeSearchResponseSchema.parse(result));
     } catch (error) {

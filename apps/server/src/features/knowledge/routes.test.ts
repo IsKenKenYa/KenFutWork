@@ -253,6 +253,39 @@ describe("知识库根与检索路由", () => {
     expect(response.json().error.code).toBe("application_error");
     await app.close();
   });
+
+  it("POST /search 沿用实例设置：本地匹配档/超时/条数（真机回归）", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const app = await appWith(
+      stub({
+        search: async (input) => {
+          calls.push({ ...input });
+          return { scope: "", results: [], truncated: false };
+        },
+      }),
+      true,
+      {
+        readSettings: async () => ({
+          ...settings,
+          localMatch: true,
+          maxResults: 3,
+          searchTimeoutMs: 12_000,
+        }),
+      },
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/knowledge/search",
+      payload: { query: "林远" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(calls[0]).toMatchObject({
+      localMatch: true,
+      maxResults: 3,
+      timeoutMs: 12_000,
+    });
+    await app.close();
+  });
 });
 
 describe("M4：read 与 settings 路由", () => {
