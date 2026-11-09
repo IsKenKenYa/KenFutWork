@@ -697,6 +697,20 @@
       "status": "active",
       "note": "SAG2 知识库目录/状态命令超时（service 冷启动实测可超过 30s）"
     },
+    "KENFUTWORK_KNOWLEDGE_CHECK_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库注册根前 check 的短预算（冷启动超时按未知覆盖继续 add）"
+    },
+    "KENFUTWORK_KNOWLEDGE_ADD_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库 add 首次建库预算（拉起 service 并索引）"
+    },
     "KENFUTWORK_KNOWLEDGE_LIST_RETRIES": {
       "surface": "server",
       "readers": ["packages/shared/src/governance.ts"],

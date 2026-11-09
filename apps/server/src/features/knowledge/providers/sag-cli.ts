@@ -92,6 +92,120 @@ export interface SagCliProviderOptions {
 /** CLI 缺失/下载失败的重试冷却：离线时避免每轮对话都卡在下载超时上。 */
 const CLI_RETRY_COOLDOWN_MS = 300_000;
 
+/**
+ * 本地匹配档的关键词提取（纯规则、不调模型）：`-E` 是正则匹配，直接用整句
+ * 「林远是谁」必然不命中——文档里只有「林远」。这里剔掉疑问/虚词，按空白与
+ * 常见标点切分，保留有检索价值的片段，再用 `|` 组成正则。
+ */
+const LOCAL_MATCH_STOPWORDS = new Set([
+  "是谁",
+  "什么",
+  "哪些",
+  "哪个",
+  "哪里",
+  "怎么",
+  "如何",
+  "为什么",
+  "是否",
+  "有没有",
+  "多少",
+  "请问",
+  "帮我",
+  "告诉",
+  "一下",
+  "介绍",
+  "说说",
+  "相关",
+  "关于",
+  "以及",
+  "还有",
+  "其中",
+  "的",
+  "了",
+  "吗",
+  "呢",
+  "吧",
+  "啊",
+  "呀",
+  "是",
+  "在",
+  "有",
+  "和",
+  "与",
+  "或",
+  "及",
+  "对",
+  "把",
+  "被",
+  "the",
+  "a",
+  "an",
+  "is",
+  "are",
+  "was",
+  "were",
+  "what",
+  "who",
+  "which",
+  "how",
+  "why",
+  "where",
+  "and",
+  "or",
+  "of",
+  "to",
+  "in",
+  "on",
+  "for",
+  "with",
+  "do",
+  "does",
+  "did",
+  "please",
+  "tell",
+  "me",
+]);
+
+export function extractLocalMatchTerms(query: string): string[] {
+  let normalized = query
+    .replace(/[，。！？、；：,.!?;:()[\]{}"'“”‘’]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (!normalized) return [];
+  // 中文没有空格：先按疑问/虚词把整句切开，再在片段里做尾部裁剪。
+  // 单字虚词（的/了/吗…）同样参与切分——否则「负责人的联系方式」永远切不开。
+  const splittable = [...LOCAL_MATCH_STOPWORDS]
+    .filter((word) => /^[\u4e00-\u9fff]+$/u.test(word))
+    .sort((a, b) => b.length - a.length);
+  for (const word of splittable) {
+    normalized = normalized.split(word).join(" ");
+  }
+  const terms = normalized
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0)
+    .filter((token) => !LOCAL_MATCH_STOPWORDS.has(token.toLowerCase()));
+  // 尾部残留的单个虚词（的/了/吗…）也去掉
+  const trimmed = terms.flatMap((token) => {
+    const stripped = token
+      .replace(/(是谁|是什么|有什么|在哪里|怎么样|为什么)+$/u, "")
+      .replace(/[的了吗呢吧啊呀]+$/u, "");
+    const candidates =
+      stripped && stripped !== token ? [stripped, token] : [token];
+    return candidates.filter((item) => item.length >= 2 || /[\d]/u.test(item));
+  });
+  return [...new Set(trimmed)].slice(0, 8);
+}
+
+/** 由关键词拼 `-E` 正则；无关键词时回退整句（尽量不退化成「永不命中」）。 */
+export function buildLocalMatchPattern(query: string): string {
+  const terms = extractLocalMatchTerms(query);
+  if (terms.length === 0) return query.trim();
+  return terms
+    .map((term) => term.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"))
+    .join("|");
+}
+
 function decode<T>(
   result: SagCommandResult,
   label: string,
@@ -123,6 +237,13 @@ export function createSagCliProvider(
   const supported = isSagCliPlatformSupported(options.platform, options.arch);
   const initOptions: KnowledgeInitOptions = {
     runner: options.runner,
+    // check 短预算：冷启动超时就当未知覆盖，直接 add 拉起 service。
+    checkTimeoutMs: resolveGovernanceNumber(
+      "knowledgeCheckTimeoutMs",
+      undefined,
+    ),
+    // add 首次建库要拉起 service 并索引，给足预算（与 list 冷启动同档）。
+    addTimeoutMs: resolveGovernanceNumber("knowledgeAddTimeoutMs", undefined),
     readJevCredential: options.readJevCredential,
     ...(options.platform ? { platform: options.platform } : {}),
     ...(options.arch ? { arch: options.arch } : {}),
@@ -179,6 +300,26 @@ export function createSagCliProvider(
     }
   }
 
+  /** 成功初始化后置 true；缺凭据时记住，避免每轮都先等一次语义超时。 */
+  let credentialMissing = false;
+
+  /**
+   * 便宜地判断「检索凭据是否就绪」：只跑 `sag config`（读既有配置，不发起检索），
+   * 或在未配置时读宿主凭据源。目的只是避免首轮白等一次语义超时，失败一律不算错。
+   */
+  async function probeCredentialAvailability(): Promise<void> {
+    if (initResult?.ok) return;
+    if (initResult && !initResult.ok) {
+      credentialMissing = true;
+      return;
+    }
+    // 先过安装态/平台门：未安装时绝不能碰 CLI（M2 回归用例锁死过）。
+    const inspection = await inspect();
+    if (!inspection.ok || !supported) return;
+    initResult = await initializeKnowledge(initOptions);
+    credentialMissing = !initResult.ok;
+  }
+
   async function assertReady(requireCredential: boolean): Promise<void> {
     const inspection = await inspect();
     if (!inspection.ok) {
@@ -197,6 +338,8 @@ export function createSagCliProvider(
     if (!requireCredential) return;
     if (!initResult?.ok) {
       initResult = await initializeKnowledge(initOptions);
+      // 凭据可能被用户/jev 插件刚配好：失败不缓存，成功则解除降级短路。
+      credentialMissing = !initResult.ok;
     }
     if (!initResult.ok) {
       throw new KnowledgeServiceError(
@@ -255,10 +398,16 @@ export function createSagCliProvider(
         ? undefined
         : resolveGovernanceNumber("knowledgeSearchTimeoutMs", input.timeoutMs);
     const runSearch = async (path: string | undefined) => {
-      // -c 取正文（0.1.8 帮助实测：语义默认含正文；-F/-E 需显式 -c）；
-      // -F 形状按探针实采（位置参数 + --json）。
+      // -c 取正文（0.1.8 帮助实测：语义默认含正文；-E/-F 需显式 -c）。
+      // 本地档用 -E 正则 + 关键词：-F 是整串匹配，自然语句必然零命中（真机踩到）。
       const args = input.localMatch
-        ? ["-F", query, "-c", ...(path ? [path] : []), "--json"]
+        ? [
+            "-E",
+            buildLocalMatchPattern(query),
+            "-c",
+            ...(path ? [path] : []),
+            "--json",
+          ]
         : [
             query,
             "--json",
@@ -351,6 +500,7 @@ export function createSagCliProvider(
 
     async initialize() {
       initResult = await initializeKnowledge(initOptions);
+      credentialMissing = !initResult.ok;
       return initResult;
     },
 
@@ -418,8 +568,23 @@ export function createSagCliProvider(
       // 本地匹配档是显式降级（KB-4）：纯本地、不需 Jev，故不要求凭据就绪。
       const wantLocal = input.localMatch === true;
       if (!wantLocal && options.autoLocalFallback !== false) {
-        // 0 配置优先：语义档不可用（缺 Jev 凭据/初始化失败）时自动退到 -F，
+        // 0 配置优先：语义档不可用（缺 Jev 凭据/初始化失败）时自动退到本地档，
         // 由调用方在证据块里如实标注「本地匹配，非语义检索」。
+        // 已知缺凭据时直接走本地档：避免每轮都先白等一次语义超时（真机实测 30s）。
+        if (credentialMissing) {
+          return {
+            ...(await doSearch({ ...input, localMatch: true })),
+            degraded: "local-match",
+          };
+        }
+        // 首轮也先便宜地探一次凭据（读宿主/上游配置，不发起检索），缺了就不必等超时。
+        await probeCredentialAvailability();
+        if (credentialMissing) {
+          return {
+            ...(await doSearch({ ...input, localMatch: true })),
+            degraded: "local-match",
+          };
+        }
         try {
           return { ...(await doSearch(input)), degraded: undefined };
         } catch (error) {
@@ -428,6 +593,7 @@ export function createSagCliProvider(
             error.code === "service_unavailable" &&
             /JEV|Jev|凭据|未配置/.test(error.message);
           if (!unavailable) throw error;
+          credentialMissing = true;
           return {
             ...(await doSearch({ ...input, localMatch: true })),
             degraded: "local-match",

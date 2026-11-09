@@ -403,6 +403,8 @@ export const instanceSettingsSchema = z.object({
   /** 目录/状态命令在 service 冷启动时可能超过默认 runner 超时。 */
   knowledgeListTimeoutMs: governanceSetting("knowledgeListTimeoutMs"),
   knowledgeListRetries: governanceSetting("knowledgeListRetries"),
+  knowledgeCheckTimeoutMs: governanceSetting("knowledgeCheckTimeoutMs"),
+  knowledgeAddTimeoutMs: governanceSetting("knowledgeAddTimeoutMs"),
 });
 
 export const modelInfoSchema = z.object({

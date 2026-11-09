@@ -11,6 +11,7 @@ import {
 import {
   createProcessSagRunner,
   redactSecrets,
+  SAG_EXIT_TIMEOUT,
   type SagCommandResult,
   type SagRunner,
 } from "./sag-cli-runner.js";
@@ -205,6 +206,37 @@ describe("M2 工作区根自动注册（KB-3）", () => {
     if (!add) throw new Error("缺少 add 调用");
     expect(add).toContain("--types");
     expect(add.join(",")).toContain("ts");
+  });
+
+  it("check 超时（冷启动）按未知覆盖继续 add，并透传 check 短预算（真机 30s 回归）", async () => {
+    const seenTimeouts: Array<number | undefined> = [];
+    const calls: Array<readonly string[]> = [];
+    const options: KnowledgeInitOptions = {
+      runner: async (run) => {
+        calls.push(run.args);
+        seenTimeouts.push(run.timeoutMs);
+        if (run.args[0] === "check") {
+          // 冷启动超时：无 JSON、退出码 124
+          return { code: SAG_EXIT_TIMEOUT, stdout: "", stderr: "" };
+        }
+        return ok(
+          JSON.stringify({
+            path: project,
+            index_status: "ready",
+            cli_authorized: true,
+          }),
+        );
+      },
+      readJevCredential: async () => null,
+      platform: "win32",
+      arch: "x64",
+      checkTimeoutMs: 8_000,
+      addTimeoutMs: 120_000,
+    };
+    const result = await ensureKnowledgeRoot(options, project);
+    expect(result.action).toBe("added");
+    expect(seenTimeouts[0]).toBe(8_000);
+    expect(seenTimeouts[1]).toBe(120_000);
   });
 
   it("默认 --types 不含 0.1.8 实机拒绝的扩展名（回归：csv 曾致新根注册必失败）", async () => {

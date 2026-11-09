@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 import type { SagCommandResult, SagRunner } from "../sag-cli-runner.js";
 import type { PluginsServiceLike } from "../service.js";
 import { KNOWLEDGE_BUNDLE_ID, KnowledgeServiceError } from "../types.js";
-import { createSagCliProvider } from "./sag-cli.js";
+import {
+  buildLocalMatchPattern,
+  createSagCliProvider,
+  extractLocalMatchTerms,
+} from "./sag-cli.js";
 
 interface Call {
   args: readonly string[];
@@ -181,12 +185,21 @@ describe("SagCliProvider（M2）", () => {
 
   it("初始化失败不缓存：凭据配好后下一次调用自愈", async () => {
     let configCalls = 0;
-    const { service } = harness((args) => {
-      if (args[0] === "config" && args.length === 1) {
+    const runner: SagRunner = async (run) => {
+      if (run.args[0] === "config" && run.args.length === 1) {
         configCalls += 1;
         return configCalls === 1 ? ok("引导文本") : ok(configured);
       }
       return ok(searchOutput);
+    };
+    // 本用例测「初始化失败不缓存」：关掉自动降级，否则会退到本地档而不报错。
+    const service = createSagCliProvider({
+      runner,
+      tryGetPlugins: () => fakePlugins(true),
+      readJevCredential: async () => "k",
+      platform: "win32",
+      arch: "x64",
+      autoLocalFallback: false,
     });
     await expect(
       service.search({ query: "x", path: "D:/work/project" }),
@@ -341,10 +354,10 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
       localMatch: true,
     });
     expect(result.results[0]?.matchedLines).toEqual([142]);
-    const call = calls.find((item) => item.args[0] === "-F");
-    // 0.1.8 帮助实测：-F/-E 需显式 -c 才返回正文。
+    const call = calls.find((item) => item.args[0] === "-E");
+    // 0.1.8 帮助实测：-E/-F 需显式 -c 才返回正文；本地档用 -E 正则而非整串。
     expect(call?.args).toEqual([
-      "-F",
+      "-E",
       "499",
       "-c",
       "D:/work/project",
@@ -608,8 +621,8 @@ describe("SagCliProvider（0 配置降级）", () => {
     const result = await service.search({ query: "知识库负责人" });
     expect(result.degraded).toBe("local-match");
     expect(result.results[0]?.matchedLines).toEqual([142]);
-    // 第二次调用确实是 -F
-    expect(calls.some((call) => call.args[0] === "-F")).toBe(true);
+    // 第二次调用确实是本地档（-E 正则）
+    expect(calls.some((call) => call.args[0] === "-E")).toBe(true);
   });
 
   it("关掉 autoLocalFallback 时语义失败直接抛错（不静默降级）", async () => {
@@ -684,5 +697,26 @@ describe("SagCliProvider（0 配置降级）", () => {
       localMatch: true,
     });
     expect(result.degraded).toBeUndefined();
+  });
+});
+
+describe("本地匹配关键词提取", () => {
+  it("自然问句剔掉疑问词，保留可命中片段", () => {
+    expect(extractLocalMatchTerms("林远是谁")).toContain("林远");
+    expect(extractLocalMatchTerms("请问负责人的联系方式是什么")).toContain(
+      "负责人",
+    );
+    expect(extractLocalMatchTerms("what is the retry logic")).toEqual(
+      expect.arrayContaining(["retry", "logic"]),
+    );
+  });
+
+  it("正则模式把多词用 | 连接并转义元字符", () => {
+    expect(buildLocalMatchPattern("林远是谁")).toBe("林远");
+    expect(buildLocalMatchPattern("a.b 和 c")).toContain("a.b");
+  });
+
+  it("全是虚词时回退整句（不退化成空正则）", () => {
+    expect(buildLocalMatchPattern("是谁")).toBe("是谁");
   });
 });

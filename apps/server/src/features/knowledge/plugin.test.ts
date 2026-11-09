@@ -277,3 +277,109 @@ describe("knowledge 插件（M1 能力缝骨架）", () => {
     kernel.dispose();
   });
 });
+
+describe("Jev 凭据复用链（0 配置）", () => {
+  const unconfigured = JSON.stringify({
+    url: "",
+    model: "",
+    models: [],
+    has_key: false,
+  });
+
+  function composeWithCredentialSources(input: {
+    mcpKey?: string | null;
+    providerKey?: string | null;
+    stdinSeen: string[];
+  }) {
+    const app = Fastify({ logger: false });
+    const runner: SagRunner = async (run) => {
+      if (run.stdin) input.stdinSeen.push(run.stdin);
+      if (run.args[0] === "config" && run.args.length === 1)
+        return { code: 0, stdout: unconfigured, stderr: "" };
+      if (run.args[0] === "config")
+        return { code: 0, stdout: "{}", stderr: "" };
+      return { code: 0, stdout: searchOutput, stderr: "" };
+    };
+    const kernel = composePlugins(
+      testEnv,
+      [
+        createKnowledgePlugin({
+          platform: "win32",
+          probeCli: async () => true,
+          runner,
+        }),
+      ],
+      {
+        app,
+        overrides: {
+          plugins: {
+            async list() {
+              return [
+                {
+                  id: KNOWLEDGE_BUNDLE_ID,
+                  name: KNOWLEDGE_BUNDLE_ID,
+                  installed: true,
+                  enabled: true,
+                },
+              ];
+            },
+            listUiEntries: () => [],
+          } as never,
+          capabilities: {
+            register: () => () => undefined,
+            list: () => [],
+            get: (capability: string, id: string) =>
+              capability === "mcp-env-credential" && id === "mcp:env-credential"
+                ? {
+                    readEnvValue: async () => input.mcpKey ?? null,
+                  }
+                : undefined,
+            require: () => undefined,
+          } as never,
+          modelProviders: {
+            resolveCredentialsById: async () => ({
+              apiKey: input.providerKey ?? "",
+              configRevision: "r1",
+            }),
+          } as never,
+        },
+      },
+    );
+    return {
+      app,
+      kernel,
+      service: () => kernel.get("knowledge") as KnowledgeService,
+    };
+  }
+
+  it("优先用 jev MCP 条目的 key 注入 stdin", async () => {
+    const stdinSeen: string[] = [];
+    const { app, kernel, service } = composeWithCredentialSources({
+      mcpKey: "mcp-typesafe-key",
+      providerKey: "provider-key",
+      stdinSeen,
+    });
+    await service()
+      .search({ query: "x", path: "D:/kb" })
+      .catch(() => undefined);
+    expect(stdinSeen).toContain("mcp-typesafe-key");
+    expect(stdinSeen).not.toContain("provider-key");
+    await app.close();
+    kernel.dispose();
+  });
+
+  it("MCP 没有 key 时回落到 modelProviders", async () => {
+    const stdinSeen: string[] = [];
+    const { app, kernel, service } = composeWithCredentialSources({
+      mcpKey: null,
+      providerKey: "provider-key",
+      stdinSeen,
+    });
+    await service()
+      .search({ query: "x", path: "D:/kb" })
+      .catch(() => undefined);
+    expect(stdinSeen).toContain("provider-key");
+    await app.close();
+    kernel.dispose();
+  });
+});

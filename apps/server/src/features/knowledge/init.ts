@@ -35,6 +35,10 @@ export interface KnowledgeInitOptions {
   platform?: NodeJS.Platform;
   arch?: string;
   indexExtensions?: readonly string[];
+  /** `check` 的短预算：service 冷启动会超时，超时按「未知覆盖」继续 add。 */
+  checkTimeoutMs?: number;
+  /** `add` 的预算（首次建库要拉起 service 并索引，给足）。 */
+  addTimeoutMs?: number;
 }
 
 function normalized(path: string): string {
@@ -214,20 +218,24 @@ export async function ensureKnowledgeRoot(
     };
   }
 
-  const check = await options.runner({ args: ["check", root, "--json"] });
+  // `check` 在 service 未启动时要等冷启动（实机 30s）。用较短预算：超时/失败就
+  // 当作「未知覆盖」，直接走 add——add 会拉起 service 且对已存在的根是幂等的。
+  const check = await options.runner({
+    args: ["check", root, "--json"],
+    ...(options.checkTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.checkTimeoutMs }),
+  });
   // check 未通过是 exit(1) 的正常语义，仍带 JSON 输出，不能当错误吞掉。
-  let parsed: ReturnType<typeof sagCheckOutputSchema.parse>;
+  let parsed: ReturnType<typeof sagCheckOutputSchema.parse> | undefined;
   try {
     parsed = sagCheckOutputSchema.parse(parseJsonOutput(check, "检查索引覆盖"));
-  } catch (error) {
-    return {
-      path: root,
-      action: "deferred",
-      reason: error instanceof Error ? error.message : String(error),
-    };
+  } catch {
+    parsed = undefined;
   }
+  if (check.code === SAG_EXIT_TIMEOUT) parsed = undefined;
 
-  if (parsed.coverage === "included") {
+  if (parsed?.coverage === "included") {
     return {
       path: root,
       action: "already-indexed",
@@ -236,7 +244,7 @@ export async function ensureKnowledgeRoot(
         : { reason: "目录已在索引内，但索引尚未就绪或被禁用。" }),
     };
   }
-  if (parsed.coverage === "partial" || parsed.coverage === "excluded") {
+  if (parsed?.coverage === "partial" || parsed?.coverage === "excluded") {
     return {
       path: root,
       action: "deferred",
@@ -247,6 +255,9 @@ export async function ensureKnowledgeRoot(
   const extensions = options.indexExtensions ?? KNOWLEDGE_INDEX_EXTENSIONS;
   const added = await options.runner({
     args: ["add", root, "--types", extensions.join(","), "--json"],
+    ...(options.addTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.addTimeoutMs }),
   });
   if (added.code !== SAG_EXIT.ok) {
     return {
