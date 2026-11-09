@@ -63,3 +63,25 @@ describe("本机接入总门放行判定", () => {
     ).toBe(false);
   });
 });
+
+describe("插件静态资源免鉴权（面板 iframe 直接加载）", () => {
+  it("assets 路由声明 skipLocalAccess 后被放行", () => {
+    expect(
+      isLocalAccessExempt({
+        method: "GET",
+        url: "/api/plugins/bundled__kenfutwork-knowledge/assets/panel.html",
+        routeConfig: { skipLocalAccess: true },
+      }),
+    ).toBe(true);
+  });
+
+  it("未声明的普通 /api 路由仍要求凭据", () => {
+    expect(
+      isLocalAccessExempt({
+        method: "GET",
+        url: "/api/knowledge/library",
+        routeConfig: {},
+      }),
+    ).toBe(false);
+  });
+});

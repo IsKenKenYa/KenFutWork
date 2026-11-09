@@ -345,6 +345,10 @@ export async function registerPluginRoutes(
    */
   app.get<{ Params: { pluginId: string; "*": string } }>(
     "/api/plugins/:pluginId/assets/*",
+    // 面板 iframe 直接加载本路由，不带任何鉴权头；声明 skipLocalAccess 才不会被
+    // 本机总门拦成 401（否则「面板白屏/报错」）。资源本身只读、只暴露已安装插件
+    // 清单内的静态文件，且仅 `assets: true` 时开放。
+    { config: { skipLocalAccess: true } },
     async (request, reply) => {
       const asset = await options.registry.readAsset({
         pluginId: request.params.pluginId,
