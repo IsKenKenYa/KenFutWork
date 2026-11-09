@@ -195,6 +195,12 @@ export function createKnowledgePlugin(
       // worker / 最小装配没有本机接入与 HTTP 面，跳过路由注册。
       if (!localAccess || !localInstance) return;
       const settings = ctx.tryGet("settings");
+      // 最小装配的 settings 替身可能只提供读能力：写不可用时保留读路由，
+      // 设置写入由路由返回 503，不因此让整个 mounted 抛错。
+      const updateSettings =
+        typeof settings?.updateInstanceSettings === "function"
+          ? settings.updateInstanceSettings.bind(settings)
+          : undefined;
       void registerKnowledgeRoutes(ctx.app, {
         localAccess,
         localInstance,
@@ -203,13 +209,8 @@ export function createKnowledgePlugin(
         ...(readSettingsForRoutes
           ? { readSettings: readSettingsForRoutes }
           : {}),
-        ...(settings
-          ? {
-              settings: {
-                updateInstanceSettings:
-                  settings.updateInstanceSettings.bind(settings),
-              },
-            }
+        ...(updateSettings
+          ? { settings: { updateInstanceSettings: updateSettings } }
           : {}),
       });
     },
