@@ -7,135 +7,174 @@
 <style>
   :root{
     color-scheme:light dark;
-    --bg:#fff;--fg:#1f2330;--muted:#6b7280;--line:#e5e7eb;--card:#f8f9fb;
-    --accent:#2f3459;--danger:#b42318;--ok:#12b76a;--warn:#f79009;
-    --drop:rgba(47,52,89,.04);--drop-active:rgba(47,52,89,.10);
+    --bg:#fff;--fg:#1a1d26;--muted:#8b93a5;--line:#eef0f4;--line2:#e2e6ee;
+    --card:#fafbfc;--hover:#f4f6fa;--primary:#2f6bff;--primary-soft:#eaf0ff;
+    --shadow-lift:0 6px 20px rgba(16,24,40,.10);
   }
   @media (prefers-color-scheme:dark){
-    :root{--bg:#16181d;--fg:#e6e8ef;--muted:#9aa1ae;--line:#2a2e37;--card:#1d2027;
-      --accent:#c7cdf0;--danger:#f97066;--ok:#34d399;--warn:#f79009;
-      --drop:rgba(199,205,240,.05);--drop-active:rgba(199,205,240,.13);}
+    :root{--bg:#15171c;--fg:#e9ecf2;--muted:#8b93a5;--line:#242830;--line2:#2e3340;
+      --card:#1b1e25;--hover:#20242c;--primary:#7aa2ff;--primary-soft:#1e2a44;
+      --shadow-lift:0 8px 24px rgba(0,0,0,.45);}
   }
   *{box-sizing:border-box}
-  body{margin:0;padding:14px;background:var(--bg);color:var(--fg);
-    font:13px/1.5 system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
-  h1{font-size:14px;margin:0;font-weight:650}
-  .head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
-  .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.err{background:var(--danger)}
-  .head .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .head .meta{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
-  .icon-btn{height:26px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;gap:5px;
-    border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);
-    font:inherit;font-size:12px;cursor:pointer}
-  .icon-btn:hover{background:var(--card);color:var(--fg);border-color:var(--line)}
-  .icon-btn svg{width:15px;height:15px}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:13px/1.5 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    display:flex;flex-direction:column}
 
-  .drop{border:1.5px dashed var(--line);border-radius:12px;background:var(--drop);
-    padding:22px 14px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s;
-    display:block}
-  .drop:hover,.drop.over{background:var(--drop-active);border-color:var(--accent)}
-  .drop .big{display:flex;justify-content:center;margin-bottom:6px;color:var(--muted)}
-  .drop .big svg{width:26px;height:26px}
-  .drop b{display:block;font-size:12.5px;font-weight:600;margin-bottom:2px}
-  .drop .sub{color:var(--muted);font-size:11.5px}
+  .top{display:flex;align-items:center;gap:8px;padding:12px 14px 0}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;
+    background:var(--card);color:var(--muted);font-size:11px;border:1px solid var(--line)}
+  .pill .d{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+  .pill.ok .d{background:#22c55e}.pill.warn .d{background:#f59e0b}.pill.err .d{background:#ef4444}
+  .spacer{flex:1}
+  .ghost{height:28px;padding:0 9px;display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--muted);
+    font:inherit;font-size:12px;cursor:pointer;transition:.15s}
+  .ghost:hover{background:var(--hover);color:var(--fg)}
+  .ghost svg{width:14px;height:14px}
+
+  .searchwrap{position:relative;margin:11px 14px 0}
+  .searchwrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+    width:14px;height:14px;color:var(--muted);pointer-events:none}
+  .search{width:100%;padding:8px 10px 8px 31px;border:1px solid var(--line2);border-radius:9px;
+    background:var(--card);color:var(--fg);font:inherit;font-size:12.5px}
+  .search:focus{outline:none;border-color:var(--primary);background:var(--bg)}
+  .search::placeholder{color:var(--muted)}
+
+  .cats{display:flex;gap:6px;padding:10px 14px 8px;overflow-x:auto;scrollbar-width:none}
+  .cats::-webkit-scrollbar{display:none}
+  .cat{flex:none;padding:4px 11px;border-radius:999px;border:1px solid var(--line2);
+    background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:5px;transition:.15s;white-space:nowrap}
+  .cat:hover{background:var(--hover);color:var(--fg)}
+  .cat.on{background:var(--primary-soft);border-color:transparent;color:var(--primary);font-weight:600}
+  .cat .n{font-size:11px;opacity:.75;font-variant-numeric:tabular-nums}
+
+  .drop{margin:0 14px 10px;padding:9px 12px;border:1px dashed var(--line2);border-radius:9px;
+    color:var(--muted);font-size:12px;display:flex;align-items:center;gap:8px;cursor:pointer;
+    transition:.15s;background:transparent}
+  .drop:hover,.drop.over{border-color:var(--primary);background:var(--primary-soft);color:var(--primary)}
+  .drop svg{width:15px;height:15px;flex:none}
   .drop input{display:none}
+  .drop .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  .listhead{display:flex;align-items:center;justify-content:space-between;
-    margin:8px 4px 2px;color:var(--muted);font-size:11.5px}
-  .listhead .meta{font-variant-numeric:tabular-nums}
-  .bar{display:flex;gap:8px;margin:10px 0}
-  .bar input[type=search]{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);
-    border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
-  .bar input[type=search]:focus{outline:none;border-color:var(--accent)}
+  .grid{flex:1;min-height:0;overflow-y:auto;padding:2px 14px 18px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;align-content:start}
+  .tile{border:1px solid var(--line);border-radius:11px;background:var(--card);
+    padding:12px 10px 9px;cursor:pointer;transition:.16s;display:flex;flex-direction:column;
+    align-items:center;gap:7px}
+  .tile:hover{border-color:var(--line2);background:var(--hover);box-shadow:var(--shadow-lift);transform:translateY(-1px)}
+  .tile .thumb{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .tile .thumb svg{width:19px;height:19px}
+  .tile .nm{width:100%;text-align:center;font-size:11.5px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
+  .tile .sz{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
+  .c-doc{background:#e8f0ff;color:#2f6bff}
+  .c-code{background:#e7f7ef;color:#0f9d58}
+  .c-sheet{background:#e9f7ec;color:#1a7f37}
+  .c-slide{background:#fff1e6;color:#d97706}
+  .c-image{background:#f3e9ff;color:#8b5cf6}
+  .c-other{background:#eef1f6;color:#64748b}
+  @media (prefers-color-scheme:dark){
+    .c-doc{background:#1c2a44;color:#8ab0ff}.c-code{background:#14301f;color:#4ade80}
+    .c-sheet{background:#14301f;color:#4ade80}.c-slide{background:#3a2612;color:#fbbf24}
+    .c-image{background:#2a1f42;color:#c4a5ff}.c-other{background:#232833;color:#94a3b8}
+  }
 
-  ul{list-style:none;margin:0;padding:0}
-  .file{display:flex;align-items:center;gap:9px;padding:7px 4px;border-radius:8px;cursor:pointer}
-  .file:hover{background:var(--card)}
-  .file .ficon{flex:none;width:26px;height:26px;border-radius:7px;background:var(--card);
-    display:flex;align-items:center;justify-content:center;color:var(--muted)}
-  .file .ficon svg{width:14px;height:14px}
-  .file .fbody{flex:1;min-width:0}
-  .file .fname{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .file .fmeta{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
-  .file .fa{flex:none;color:var(--muted);opacity:0;transition:opacity .12s}
-  .file:hover .fa{opacity:1}
-  .file .fa svg{width:14px;height:14px}
+  .hits{padding:0 14px 18px;overflow-y:auto;max-height:45%}
+  .hit{padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--card);
+    margin-bottom:7px;cursor:pointer}
+  .hit:hover{border-color:var(--line2);background:var(--hover)}
+  .hit .hl{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;margin-bottom:4px}
+  .hit .hl b{color:var(--fg);font-weight:600;font-size:11.5px}
+  .hit .body{font-size:12px;color:var(--fg);white-space:pre-wrap;word-break:break-word;
+    max-height:66px;overflow:hidden}
 
-  .empty{color:var(--muted);font-size:12px;text-align:center;padding:16px 0}
-  .snippet{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin:6px 0}
-  .snippet .loc{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--muted);
-    word-break:break-all;margin-bottom:3px}
-  .snippet .txt{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:88px;overflow:hidden}
+  .blank{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:9px;color:var(--muted);padding:28px 20px;text-align:center}
+  .blank svg{width:42px;height:42px;opacity:.45}
+  .blank b{font-size:12.5px;font-weight:600;color:var(--fg)}
+  .blank span{font-size:11.5px}
+  .err{margin:0 14px 10px;padding:7px 10px;border-radius:8px;background:rgba(239,68,68,.1);
+    color:#dc2626;font-size:11.5px}
+  @media (prefers-color-scheme:dark){.err{color:#fca5a5}}
 
-  details.settings{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
-  details.settings summary{cursor:pointer;color:var(--muted);font-size:11.5px;list-style:none;
-    display:flex;align-items:center;gap:6px;user-select:none}
-  details.settings summary::-webkit-details-marker{display:none}
-  details.settings summary svg{width:12px;height:12px;transition:transform .15s}
-  details.settings[open] summary svg{transform:rotate(90deg)}
-  .row{display:flex;align-items:center;gap:10px;min-height:30px;margin-top:8px}
-  .row>label{flex:none;width:78px;font-size:12px}
-  .row>input[type=number]{width:96px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;
-    background:var(--bg);color:var(--fg);font:inherit}
-  .row>input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent)}
-  .row .hint{color:var(--muted);font-size:11px}
-  .msg{margin-top:8px;font-size:11.5px;color:var(--muted)}
-  .msg.err{color:var(--danger)}
-  .notice{margin-top:8px;padding:6px 9px;border-radius:8px;background:rgba(247,144,9,.12);
-    color:#b54708;font-size:11.5px}
-  @media (prefers-color-scheme:dark){.notice{color:#f7c948}}
+  .sheet{position:fixed;inset:0;background:rgba(15,18,25,.32);display:flex;align-items:flex-end;
+    opacity:0;pointer-events:none;transition:opacity .18s;z-index:9}
+  .sheet.on{opacity:1;pointer-events:auto}
+  .sheet .panel{width:100%;max-height:82%;background:var(--bg);border-radius:14px 14px 0 0;
+    display:flex;flex-direction:column;transform:translateY(12px);transition:transform .18s;
+    box-shadow:0 -8px 30px rgba(16,24,40,.18)}
+  .sheet.on .panel{transform:translateY(0)}
+  .sheet .hd{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .sheet .hd .t{flex:1;min-width:0;font-size:12.5px;font-weight:600;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .sheet pre{margin:0;padding:13px 14px;overflow:auto;flex:1;font:12px/1.6 ui-monospace,Consolas,monospace;
+    white-space:pre-wrap;word-break:break-word}
 </style>
 </head>
 <body>
-  <div class="head">
-    <span class="dot" id="dot"></span>
-    <h1 class="title" id="status">知识库</h1>
-    <button class="icon-btn" id="refresh" title="刷新" aria-label="刷新"></button>
+  <div class="top">
+    <span class="pill" id="pill"><span class="d"></span><span id="pilltext">就绪</span></span>
+    <span class="spacer"></span>
+    <button class="ghost" id="refresh" title="刷新"></button>
   </div>
+
+  <div class="searchwrap" id="search-icon"></div>
+  <input class="search" id="q" type="search" placeholder="搜索文件或内容" autocomplete="off">
+
+  <div class="cats" id="cats"></div>
 
   <label class="drop" id="drop">
     <input type="file" id="file" multiple>
-    <span class="big" id="drop-icon"></span>
-    <b>拖文件到这里</b>
-    <span class="sub">自动建库并索引</span>
+    <span id="drop-icon"></span>
+    <span class="grow"><b style="font-weight:600;color:var(--fg)">上传文件</b>　拖到这里也行</span>
   </label>
-  <p class="notice" id="off-note" hidden>自动注入已关闭</p>
-  <p class="msg err" id="error" hidden></p>
+  <p class="err" id="err" hidden></p>
 
-  <div class="bar">
-    <input type="search" id="query" placeholder="搜索知识库">
+  <div class="grid" id="grid"></div>
+  <div class="hits" id="hits" hidden></div>
+
+  <div class="sheet" id="sheet">
+    <div class="panel">
+      <div class="hd"><span class="t" id="sheet-title"></span><button class="ghost" id="sheet-close">关闭</button></div>
+      <pre id="sheet-body"></pre>
+    </div>
   </div>
-
-  <div class="listhead"><span id="listlabel">文件</span><span class="meta" id="count"></span></div>
-  <ul id="list"></ul>
-  <div id="results"></div>
-
-  <details class="settings">
-    <summary><span id="caret"></span>设置</summary>
-    <div class="row"><label>自动注入</label><input type="checkbox" id="auto-inject"></div>
-    <div class="row"><label>结果条数</label><input type="number" id="max-results" min="1" max="100"></div>
-    <div class="row"><label>证据预算</label><input type="number" id="evidence-chars" min="256" max="64000" step="256"></div>
-    <div class="row"><label>本地匹配</label><input type="checkbox" id="local-match"><span class="hint">不出本机</span></div>
-    <div class="row"><button class="icon-btn" id="save-settings">保存</button><span class="hint" id="settings-note"></span></div>
-  </details>
 
 <script>
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const ICONS = {
-  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 18.4h8.6a3.4 3.4 0 0 0 .5-6.76 5.1 5.1 0 0 0-9.79-1.2A3.7 3.7 0 0 0 7.6 18.4Z"/><path d="M12 16.2v-3.4"/><path d="m10.4 14.2 1.6-1.6 1.6 1.6"/></svg>',
-  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
-  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>',
-  open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
-  caret: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>',
+const SVG = {
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
+  empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v7"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 8-4 4 4 4"/><path d="m15 8 4 4-4 4"/></svg>',
+  sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
+  slide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M12 17v4M8 21h8"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>',
+  other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>',
 };
-$("drop-icon").innerHTML = ICONS.cloud;
-$("refresh").innerHTML = ICONS.refresh;
-$("caret").innerHTML = ICONS.caret;
+$("refresh").innerHTML = SVG.refresh;
+$("search-icon").innerHTML = SVG.search;
+$("drop-icon").innerHTML = SVG.upload;
 
-const state = { files: [], busy: false, query: "" };
+const CATS = [
+  { key: "all", label: "全部" },
+  { key: "doc", label: "文档" },
+  { key: "code", label: "代码" },
+  { key: "sheet", label: "表格" },
+  { key: "slide", label: "演示" },
+  { key: "image", label: "图片" },
+  { key: "other", label: "其他" },
+];
+const ICON_BY_CAT = { doc: "doc", code: "code", sheet: "sheet", slide: "slide", image: "image", other: "other" };
+
+const state = { files: [], cat: "all", keyword: "", busy: false };
 
 function text(node, value) { node.textContent = value == null ? "" : String(value); }
 function humanSize(bytes) {
@@ -144,7 +183,7 @@ function humanSize(bytes) {
   return (bytes / 1024 / 1024).toFixed(1) + " MB";
 }
 function showError(message) {
-  const node = $("error");
+  const node = $("err");
   node.hidden = !message;
   text(node, message || "");
 }
@@ -158,254 +197,204 @@ async function api(path, options) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = data && data.error && data.error.message
-      ? data.error.message
-      : "请求失败（" + response.status + "）";
-    throw new Error(message);
+    throw new Error((data && data.error && data.error.message) || "请求失败（" + response.status + "）");
   }
   return data;
 }
 
 function renderStatus(status) {
-  const dot = $("dot");
-  const label = $("status");
-  let value = "知识库";
-  let level = "warn";
+  const pill = $("pill");
+  const label = $("pilltext");
+  let value = "就绪", level = "ok";
   if (!status.installed) { value = "未安装"; level = ""; }
-  else if (!status.enabled) { value = "已停用"; }
+  else if (!status.enabled) { value = "已停用"; level = ""; }
   else if (status.cli === "unsupported_platform") { value = "平台不支持"; level = "err"; }
   else if (status.cli === "missing") { value = "CLI 缺失"; level = "err"; }
-  else if (status.reason) { value = "本地匹配"; level = "ok"; }
-  else { value = "就绪"; level = "ok"; }
-  dot.className = "dot " + level;
+  else if (status.reason) { value = "本地匹配"; level = "warn"; }
+  pill.className = "pill " + level;
   text(label, value);
 }
 
-function renderFiles() {
-  const list = $("list");
-  list.replaceChildren();
-  const keyword = state.query.trim().toLowerCase();
-  const files = keyword
-    ? state.files.filter((file) => file.path.toLowerCase().includes(keyword))
-    : state.files;
-  text($("count"), state.files.length ? String(state.files.length) : "");
+function renderCats() {
+  const box = $("cats");
+  box.replaceChildren();
+  const count = (key) => key === "all"
+    ? state.files.length
+    : state.files.filter((f) => f.category === key).length;
+  for (const cat of CATS) {
+    const n = count(cat.key);
+    if (cat.key !== "all" && n === 0) continue;
+    const chip = document.createElement("button");
+    chip.className = "cat" + (state.cat === cat.key ? " on" : "");
+    text(chip, cat.label);
+    if (n > 0) {
+      const badge = document.createElement("span");
+      badge.className = "n";
+      text(badge, String(n));
+      chip.append(badge);
+    }
+    chip.addEventListener("click", () => { state.cat = cat.key; renderAll(); });
+    box.append(chip);
+  }
+}
+
+function visibleFiles() {
+  const kw = state.keyword.trim().toLowerCase();
+  return state.files.filter((file) => {
+    if (state.cat !== "all" && file.category !== state.cat) return false;
+    if (kw && !file.path.toLowerCase().includes(kw)) return false;
+    return true;
+  });
+}
+
+function renderGrid() {
+  const grid = $("grid");
+  grid.replaceChildren();
+  const files = visibleFiles();
   if (files.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "empty";
-    text(empty, state.files.length === 0 ? "还没有文件" : "没有匹配的文件");
-    list.append(empty);
+    const blank = document.createElement("div");
+    blank.className = "blank";
+    blank.innerHTML = SVG.empty;
+    const b = document.createElement("b");
+    text(b, state.files.length === 0 ? "还没有文件" : "没有匹配的文件");
+    const s = document.createElement("span");
+    text(
+      s,
+      state.files.length === 0
+        ? "上传后对话会自动带上相关内容"
+        : "换个分类或关键词试试",
+    );
+    blank.append(b, s);
+    grid.append(blank);
     return;
   }
   for (const file of files) {
-    const item = document.createElement("li");
-    item.className = "file";
-    const icon = document.createElement("span");
-    icon.className = "ficon";
-    icon.innerHTML = ICONS.file;
-    const body = document.createElement("div");
-    body.className = "fbody";
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const thumb = document.createElement("div");
+    thumb.className = "thumb c-" + (file.category || "other");
+    thumb.innerHTML = SVG[ICON_BY_CAT[file.category] || "other"];
     const name = document.createElement("div");
-    name.className = "fname";
+    name.className = "nm";
     text(name, file.path);
-    const meta = document.createElement("div");
-    meta.className = "fmeta";
-    text(meta, humanSize(file.sizeBytes));
-    body.append(name, meta);
-    const arrow = document.createElement("span");
-    arrow.className = "fa";
-    arrow.innerHTML = ICONS.open;
-    item.append(icon, body, arrow);
-    item.addEventListener("click", () => openFile(file));
-    list.append(item);
+    name.title = file.path;
+    const size = document.createElement("div");
+    size.className = "sz";
+    text(size, humanSize(file.sizeBytes));
+    tile.append(thumb, name, size);
+    tile.addEventListener("click", () => openFile(file));
+    grid.append(tile);
   }
 }
 
 async function openFile(file) {
-  const box = $("results");
-  box.replaceChildren();
-  const card = document.createElement("div");
-  card.className = "snippet";
-  const loc = document.createElement("div");
-  loc.className = "loc";
-  text(loc, file.path);
-  const body = document.createElement("div");
-  body.className = "txt";
-  text(body, "读取中");
-  card.append(loc, body);
-  box.append(card);
+  text($("sheet-title"), file.path);
+  text($("sheet-body"), "读取中…");
+  $("sheet").classList.add("on");
   try {
     const payload = await api("/api/knowledge/read?path=" + encodeURIComponent(file.absolutePath));
-    text(body, payload.content || "（空文件）");
+    text($("sheet-body"), payload.content || "（空文件）");
   } catch (error) {
-    text(body, error.message);
+    text($("sheet-body"), error.message);
   }
 }
 
 async function loadStatus() {
-  try {
-    renderStatus(await api("/api/knowledge/status"));
-  } catch (error) {
-    text($("status"), "状态不可读");
-    $("dot").className = "dot err";
-    showError(error.message);
-  }
+  try { renderStatus(await api("/api/knowledge/status")); }
+  catch { $("pill").className = "pill err"; text($("pilltext"), "不可用"); }
 }
 
 async function loadLibrary() {
   try {
     const payload = await api("/api/knowledge/library");
     state.files = payload.files || [];
-    renderFiles();
+    renderAll();
     showError("");
-  } catch (error) {
-    showError(error.message);
-  }
+  } catch (error) { showError(error.message); }
 }
 
-async function loadSettings() {
-  try {
-    const settings = await api("/api/knowledge/settings");
-    $("auto-inject").checked = Boolean(settings.autoInject);
-    $("off-note").hidden = Boolean(settings.autoInject);
-    $("max-results").value = String(settings.maxResults);
-    $("evidence-chars").value = String(settings.evidenceMaxChars);
-    $("local-match").checked = Boolean(settings.localMatch);
-  } catch (error) {
-    text($("settings-note"), error.message);
-  }
-}
+function renderAll() { renderCats(); renderGrid(); }
 
 async function upload(files) {
   if (!files || files.length === 0 || state.busy) return;
   state.busy = true;
   showError("");
-  try {
-    for (const file of files) {
-      const form = new FormData();
-      form.append("file", file, file.name);
-      try {
-        await api("/api/knowledge/library", { method: "POST", body: form });
-      } catch (error) {
-        showError(file.name + "：" + error.message);
-      }
-    }
-  } finally {
-    state.busy = false;
-    await loadLibrary();
-    await loadStatus();
+  for (const file of files) {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    try { await api("/api/knowledge/library", { method: "POST", body: form }); }
+    catch (error) { showError(file.name + "：" + error.message); }
   }
+  state.busy = false;
+  await loadLibrary();
+  await loadStatus();
 }
 
-async function search() {
-  const query = $("query").value.trim();
-  const box = $("results");
-  if (!query) { box.replaceChildren(); return; }
-  box.replaceChildren();
-  const card = document.createElement("div");
-  card.className = "snippet";
-  text(card, "检索中");
-  box.append(card);
+let searchTimer;
+async function searchContent() {
+  const query = state.keyword.trim();
+  const hits = $("hits");
+  if (!query) { hits.hidden = true; hits.replaceChildren(); return; }
   try {
     const payload = await api("/api/knowledge/search", {
       method: "POST",
       body: JSON.stringify({ query }),
     });
-    box.replaceChildren();
-    if (payload.degraded === "local-match") {
-      const note = document.createElement("div");
-      note.className = "msg";
-      text(note, "本地匹配，非语义检索");
-      box.append(note);
-    }
-    if (!payload.results || payload.results.length === 0) {
+    hits.replaceChildren();
+    hits.hidden = false;
+    const results = payload.results || [];
+    if (results.length === 0) {
       const empty = document.createElement("div");
-      empty.className = "empty";
-      text(empty, "没有结果");
-      box.append(empty);
+      empty.className = "blank";
+      text(empty, "没有找到相关内容");
+      hits.append(empty);
       return;
     }
-    for (const item of payload.results) {
+    for (const item of results) {
       const hit = document.createElement("div");
-      hit.className = "snippet";
-      const loc = document.createElement("div");
-      loc.className = "loc";
-      // 只显示文件名 + 行号：托管目录的绝对长路径对用户没有信息量。
-      const short = String(item.path || "").replace(/^.*[\/]/u, "");
-      text(loc, short + ":" + item.startLine + "-" + item.endLine);
-      const txt = document.createElement("div");
-      txt.className = "txt";
-      text(txt, item.content || "");
-      hit.append(loc, txt);
-      box.append(hit);
+      hit.className = "hit";
+      const hl = document.createElement("div");
+      hl.className = "hl";
+      const name = String(item.path || "").replace(/^.*[\\/]/u, "");
+      const strong = document.createElement("b");
+      text(strong, name);
+      hl.append(strong, document.createTextNode("　" + item.startLine + "-" + item.endLine));
+      const body = document.createElement("div");
+      body.className = "body";
+      text(body, item.content || "");
+      hit.append(hl, body);
+      hit.addEventListener("click", () => openFile({ path: name, absolutePath: item.absolutePath }));
+      hits.append(hit);
     }
-  } catch (error) {
-    box.replaceChildren();
-    showError(error.message);
-  }
-}
-
-async function saveSettings() {
-  if (state.busy) return;
-  state.busy = true;
-  text($("settings-note"), "保存中");
-  try {
-    const settings = await api("/api/knowledge/settings", {
-      method: "POST",
-      body: JSON.stringify({
-        autoInject: $("auto-inject").checked,
-        maxResults: Number($("max-results").value) || undefined,
-        evidenceMaxChars: Number($("evidence-chars").value) || undefined,
-        localMatch: $("local-match").checked,
-      }),
-    });
-    $("off-note").hidden = Boolean(settings.autoInject);
-    $("max-results").value = String(settings.maxResults);
-    $("evidence-chars").value = String(settings.evidenceMaxChars);
-    text($("settings-note"), "已保存");
-    await loadStatus();
-  } catch (error) {
-    text($("settings-note"), error.message);
-  } finally {
-    state.busy = false;
-  }
+  } catch (error) { showError(error.message); }
 }
 
 const drop = $("drop");
 ["dragenter", "dragover"].forEach((type) =>
-  drop.addEventListener(type, (event) => {
-    event.preventDefault();
-    drop.classList.add("over");
-  }),
-);
+  drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach((type) =>
-  drop.addEventListener(type, (event) => {
-    event.preventDefault();
-    drop.classList.remove("over");
-  }),
-);
-drop.addEventListener("drop", (event) => {
-  void upload(event.dataTransfer && event.dataTransfer.files);
-});
+  drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (event) => { void upload(event.dataTransfer && event.dataTransfer.files); });
 $("file").addEventListener("change", (event) => {
   void upload(event.target.files);
   event.target.value = "";
 });
 
 $("refresh").addEventListener("click", () => { void loadStatus(); void loadLibrary(); });
-$("save-settings").addEventListener("click", saveSettings);
-$("query").addEventListener("input", () => {
-  state.query = $("query").value;
-  renderFiles();
+$("sheet-close").addEventListener("click", () => $("sheet").classList.remove("on"));
+$("sheet").addEventListener("click", (event) => {
+  if (event.target === $("sheet")) $("sheet").classList.remove("on");
 });
-$("query").addEventListener("keydown", (event) => { if (event.key === "Enter") search(); });
-$("auto-inject").addEventListener("change", () => {
-  $("off-note").hidden = $("auto-inject").checked;
+$("q").addEventListener("input", () => {
+  state.keyword = $("q").value;
+  renderGrid();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { void searchContent(); }, 450);
 });
 
 void loadStatus();
-void loadSettings();
 void loadLibrary();
-setInterval(loadStatus, 8000);
+setInterval(loadStatus, 10000);
 </script>
 </body>
 </html>

@@ -267,7 +267,12 @@ export interface KnowledgeService {
    */
   library(): Promise<{
     root: string;
-    files: Array<{ path: string; absolutePath: string; sizeBytes: number }>;
+    files: Array<{
+      path: string;
+      absolutePath: string;
+      sizeBytes: number;
+      category: string;
+    }>;
   }>;
   /** 把一个文件写入托管目录，并确保该目录已注册为根（幂等）。 */
   uploadFile(input: { name: string; bytes: Buffer }): Promise<{

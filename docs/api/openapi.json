@@ -22933,12 +22933,24 @@
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "doc",
+                    "code",
+                    "sheet",
+                    "slide",
+                    "image",
+                    "other"
+                  ]
                 }
               },
               "required": [
                 "path",
                 "absolutePath",
-                "sizeBytes"
+                "sizeBytes",
+                "category"
               ],
               "additionalProperties": false
             }
@@ -23341,12 +23353,24 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "doc",
+                  "code",
+                  "sheet",
+                  "slide",
+                  "image",
+                  "other"
+                ]
               }
             },
             "required": [
               "path",
               "absolutePath",
-              "sizeBytes"
+              "sizeBytes",
+              "category"
             ],
             "additionalProperties": false
           },

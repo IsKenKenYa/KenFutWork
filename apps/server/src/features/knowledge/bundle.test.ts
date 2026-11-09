@@ -100,10 +100,12 @@ describe("plugins/knowledge bundle（M4）", () => {
     );
     expect(panel).toContain('credentials: "include"');
     expect(panel).toContain("/api/knowledge/status");
-    expect(panel).toContain("/api/knowledge/settings");
-    // 云盘式：上传与列表都走 library，不再依赖 roots 路由
+    // 云盘式：上传/列表走 library、内容检索走 search、原文走 read；
+    // 面板不再提供设置项（开箱即用），因此不出现 settings 路由。
     expect(panel).toContain("/api/knowledge/library");
+    expect(panel).toContain("/api/knowledge/search");
     expect(panel).toContain("/api/knowledge/read");
+    expect(panel).not.toContain("/api/knowledge/settings");
     expect(panel).not.toContain("/api/plugins/");
     expect(panel).not.toMatch(/https?:\/\//u);
   });

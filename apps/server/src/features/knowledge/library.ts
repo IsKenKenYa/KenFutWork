@@ -14,12 +14,91 @@
 import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 
+/** 文件分类（与跨端契约 `knowledgeFileCategorySchema` 同集合）。 */
+export type KnowledgeFileCategory =
+  | "doc"
+  | "code"
+  | "sheet"
+  | "slide"
+  | "image"
+  | "other";
+
 export interface KnowledgeLibraryFile {
   /** 相对托管目录的路径（展示用）。 */
   path: string;
   /** 绝对路径（可直接交给 knowledge_read）。 */
   absolutePath: string;
   sizeBytes: number;
+  category: KnowledgeFileCategory;
+}
+
+const CATEGORY_BY_EXT: Record<string, KnowledgeFileCategory> = {
+  doc: "doc",
+  md: "doc",
+  markdown: "doc",
+  txt: "doc",
+  rst: "doc",
+  pdf: "doc",
+  epub: "doc",
+  rtf: "doc",
+  html: "doc",
+  htm: "doc",
+  xls: "sheet",
+  xlsx: "sheet",
+  csv: "sheet",
+  ppt: "slide",
+  pptx: "slide",
+  key: "slide",
+  png: "image",
+  jpg: "image",
+  jpeg: "image",
+  gif: "image",
+  webp: "image",
+  svg: "image",
+  bmp: "image",
+  ico: "image",
+  ts: "code",
+  tsx: "code",
+  js: "code",
+  jsx: "code",
+  mjs: "code",
+  cjs: "code",
+  py: "code",
+  rs: "code",
+  go: "code",
+  java: "code",
+  kt: "code",
+  c: "code",
+  h: "code",
+  cc: "code",
+  cpp: "code",
+  hpp: "code",
+  cs: "code",
+  rb: "code",
+  php: "code",
+  sh: "code",
+  bash: "code",
+  ps1: "code",
+  sql: "code",
+  vue: "code",
+  svelte: "code",
+  css: "code",
+  scss: "code",
+  json: "code",
+  jsonc: "code",
+  yaml: "code",
+  yml: "code",
+  toml: "code",
+  ini: "code",
+  conf: "code",
+  xml: "code",
+};
+
+/** 按扩展名归类；认不出的一律 `other`（前端只做分组渲染，不重复映射）。 */
+export function categoryOfFile(name: string): KnowledgeFileCategory {
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return CATEGORY_BY_EXT[ext] ?? "other";
 }
 
 export interface KnowledgeLibraryDeps {
@@ -86,6 +165,7 @@ export function createKnowledgeLibrary(deps: KnowledgeLibraryDeps) {
         path: finalName,
         absolutePath: finalPath,
         sizeBytes: bytes.byteLength,
+        category: categoryOfFile(finalName),
       };
     },
 
@@ -107,6 +187,7 @@ export function createKnowledgeLibrary(deps: KnowledgeLibraryDeps) {
             path: entry.name,
             absolutePath,
             sizeBytes: info.size,
+            category: categoryOfFile(entry.name),
           });
         } catch {
           // 并发删除等：跳过即可

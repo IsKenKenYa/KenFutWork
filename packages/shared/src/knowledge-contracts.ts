@@ -124,11 +124,23 @@ export const knowledgeSettingsPatchSchema = z.object({
   readMaxBytes: z.number().int().optional(),
 });
 
+/** 文件分类（网盘式分组）：按扩展名归到固定几类，前端只按 key 分组渲染。 */
+export const knowledgeFileCategorySchema = z.enum([
+  "doc",
+  "code",
+  "sheet",
+  "slide",
+  "image",
+  "other",
+]);
+
 /** 托管目录（云盘式上传）里的一个文件。 */
 export const knowledgeLibraryFileSchema = z.object({
   path: z.string(),
   absolutePath: z.string(),
   sizeBytes: z.number().int().nonnegative(),
+  /** 分类 key；前端据此分组，不在前端重复扩展名映射。 */
+  category: knowledgeFileCategorySchema,
 });
 
 export const knowledgeLibraryResponseSchema = z.object({
