@@ -90,5 +90,11 @@ export function createDisabledKnowledgeProvider(
     async search() {
       return unavailable();
     },
+    async read() {
+      return unavailable();
+    },
+    rootsRevision() {
+      return 0;
+    },
   };
 }

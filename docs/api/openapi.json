@@ -20921,6 +20921,56 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 86400000
+              },
+              "knowledgeAutoInject": {
+                "default": true,
+                "type": "boolean"
+              },
+              "knowledgeLocalMatch": {
+                "default": false,
+                "type": "boolean"
+              },
+              "knowledgeMaxResults": {
+                "default": 5,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "knowledgeMinHits": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "knowledgeSearchTimeoutMs": {
+                "default": 30000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 300000
+              },
+              "knowledgeMaxConcurrentSearches": {
+                "default": 2,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8
+              },
+              "knowledgeEvidenceMaxChars": {
+                "default": 6000,
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 64000
+              },
+              "knowledgeCacheTtlMs": {
+                "default": 300000,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600000
+              },
+              "knowledgeReadMaxBytes": {
+                "default": 1048576,
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 67108864
               }
             },
             "required": [
@@ -20989,7 +21039,16 @@
               "computerUseAxValueMaxChars",
               "computerUseAxMaxActions",
               "computerUseInputDelayMs",
-              "computerUseMcpKeepAliveMs"
+              "computerUseMcpKeepAliveMs",
+              "knowledgeAutoInject",
+              "knowledgeLocalMatch",
+              "knowledgeMaxResults",
+              "knowledgeMinHits",
+              "knowledgeSearchTimeoutMs",
+              "knowledgeMaxConcurrentSearches",
+              "knowledgeEvidenceMaxChars",
+              "knowledgeCacheTtlMs",
+              "knowledgeReadMaxBytes"
             ],
             "additionalProperties": false
           }
@@ -21550,6 +21609,47 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 86400000
+          },
+          "knowledgeAutoInject": {
+            "type": "boolean"
+          },
+          "knowledgeLocalMatch": {
+            "type": "boolean"
+          },
+          "knowledgeMaxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "knowledgeMinHits": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "knowledgeSearchTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 300000
+          },
+          "knowledgeMaxConcurrentSearches": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "knowledgeEvidenceMaxChars": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 64000
+          },
+          "knowledgeCacheTtlMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600000
+          },
+          "knowledgeReadMaxBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 67108864
           }
         }
       },
@@ -22641,6 +22741,42 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "preflight": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "injected",
+                      "no-evidence",
+                      "skipped",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "at",
+                  "outcome",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
             ]
           }
         },

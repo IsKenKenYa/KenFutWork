@@ -8,10 +8,14 @@
  * - 上游 stdout 一律经 zod 契约解析；字段漂移显式报错，不静默吞掉。
  */
 
+import { open, realpath, stat } from "node:fs/promises";
+import { isAbsolute, relative, sep } from "node:path";
+import { resolveGovernanceNumber } from "@kenfutwork/shared";
 import {
   ensureKnowledgeRoot,
   initializeKnowledge,
   type KnowledgeInitOptions,
+  normalizeKnowledgeRootPath,
   parseJsonOutput,
 } from "../init.js";
 import {
@@ -21,6 +25,7 @@ import {
   SAG_QUERY_MAX_CHARS,
   sagAddOutputSchema,
   sagListOutputSchema,
+  sagMatchOutputSchema,
   sagRemoveOutputSchema,
   sagSearchOutputSchema,
   toKnowledgeEvidence,
@@ -36,6 +41,8 @@ import {
   type KnowledgeAddRootInput,
   type KnowledgeEnsureResult,
   type KnowledgeInitResult,
+  type KnowledgeReadInput,
+  type KnowledgeReadResult,
   type KnowledgeRoot,
   type KnowledgeRootMutation,
   type KnowledgeSearchInput,
@@ -98,6 +105,13 @@ export function createSagCliProvider(
 
   /** 成功的初始化结果可缓存；失败不缓存，允许凭据配好后下一次调用自愈。 */
   let initResult: KnowledgeInitResult | undefined;
+  /** 根集合修订号（KB-7 缓存键）：本插件驱动的根变更单调递增。 */
+  let rootsRevision = 0;
+  /**
+   * 用户显式移除的根（墓碑）：preflight 的自动 ensureRoot 不得重加（§8.1）；
+   * 侧边栏显式 addRoot 清除墓碑。只存规范化路径，不含文件元数据。
+   */
+  const userRemovedRoots = new Set<string>();
 
   async function assertReady(requireCredential: boolean): Promise<void> {
     const inspection = await inspect();
@@ -123,6 +137,14 @@ export function createSagCliProvider(
         initResult.reason ?? "检索服务未就绪。",
       );
     }
+  }
+
+  async function listRoots(): Promise<KnowledgeRoot[]> {
+    await assertReady(false);
+    const result = await options.runner({ args: ["list", "--json"] });
+    assertOk(result, "列出知识库根");
+    const roots = decode(result, "列出知识库根", sagListOutputSchema);
+    return roots.map((root) => ({ ...root, error: root.error ?? null }));
   }
 
   return {
@@ -159,13 +181,7 @@ export function createSagCliProvider(
       return initResult;
     },
 
-    async listRoots(): Promise<KnowledgeRoot[]> {
-      await assertReady(false);
-      const result = await options.runner({ args: ["list", "--json"] });
-      assertOk(result, "列出知识库根");
-      const roots = decode(result, "列出知识库根", sagListOutputSchema);
-      return roots.map((root) => ({ ...root, error: root.error ?? null }));
-    },
+    listRoots,
 
     async addRoot(
       input: KnowledgeAddRootInput,
@@ -183,6 +199,8 @@ export function createSagCliProvider(
       const result = await options.runner({ args });
       assertOk(result, "注册知识库根");
       const output = decode(result, "注册知识库根", sagAddOutputSchema);
+      userRemovedRoots.delete(normalizeKnowledgeRootPath(output.path));
+      rootsRevision += 1;
       return {
         path: output.path,
         indexStatus: output.index_status,
@@ -202,16 +220,30 @@ export function createSagCliProvider(
         args: ["remove", path, "--json"],
       });
       assertOk(result, "移除知识库根");
-      return decode(result, "移除知识库根", sagRemoveOutputSchema);
+      const output = decode(result, "移除知识库根", sagRemoveOutputSchema);
+      userRemovedRoots.add(normalizeKnowledgeRootPath(output.path));
+      rootsRevision += 1;
+      return output;
     },
 
     async ensureRoot(path: string): Promise<KnowledgeEnsureResult> {
       await assertReady(false);
-      return ensureKnowledgeRoot(initOptions, path);
+      if (userRemovedRoots.has(normalizeKnowledgeRootPath(path))) {
+        return {
+          path,
+          action: "rejected",
+          reason:
+            "该目录已被你从知识库移除，不自动重新注册；可在侧边栏显式添加。",
+        };
+      }
+      const result = await ensureKnowledgeRoot(initOptions, path);
+      if (result.action === "added") rootsRevision += 1;
+      return result;
     },
 
     async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult> {
-      await assertReady(true);
+      // 本地匹配档是显式降级（KB-4）：纯本地、不需 Jev，故不要求凭据就绪。
+      await assertReady(!input.localMatch);
       const query = input.query.trim();
       if (!query || query.length > SAG_QUERY_MAX_CHARS) {
         throw new KnowledgeServiceError(
@@ -219,17 +251,134 @@ export function createSagCliProvider(
           `检索问题须为 1–${SAG_QUERY_MAX_CHARS} 字符。`,
         );
       }
-      const maxResults = input.maxResults ?? options.defaultMaxResults ?? 5;
-      const args = [query, "--json", "-m", String(maxResults)];
-      if (input.path) args.push("--path", input.path);
-      const result = await options.runner({ args });
-      assertOk(result, "SAG2 语义检索");
+      const maxResults = resolveGovernanceNumber(
+        "knowledgeMaxResults",
+        input.maxResults ?? options.defaultMaxResults,
+      );
+      // -c 取正文（M0：只有 -c 才返回 content）；-F 形状按探针实采（位置参数）。
+      const args = input.localMatch
+        ? ["-F", query, ...(input.path ? [input.path] : []), "--json"]
+        : [
+            query,
+            "--json",
+            "-m",
+            String(maxResults),
+            "-c",
+            ...(input.path ? ["--path", input.path] : []),
+          ];
+      const result = await options.runner({
+        args,
+        ...(input.timeoutMs === undefined
+          ? {}
+          : {
+              timeoutMs: resolveGovernanceNumber(
+                "knowledgeSearchTimeoutMs",
+                input.timeoutMs,
+              ),
+            }),
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      assertOk(result, input.localMatch ? "本地匹配" : "SAG2 语义检索");
+      if (input.localMatch) {
+        const output = decode(result, "本地匹配", sagMatchOutputSchema);
+        return {
+          scope: output.scope,
+          results: output.results.map(toKnowledgeEvidence),
+          truncated: output.truncated,
+        };
+      }
       const output = decode(result, "SAG2 语义检索", sagSearchOutputSchema);
       return {
         scope: output.scope,
         results: output.results.map(toKnowledgeEvidence),
         truncated: output.truncated,
       };
+    },
+
+    async read(input: KnowledgeReadInput): Promise<KnowledgeReadResult> {
+      await assertReady(false);
+      const path = input.path.trim();
+      if (!path || !isAbsolute(path)) {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          "取原文的路径必须是绝对路径（用证据里的 absolutePath）。",
+        );
+      }
+      const startLine = Math.max(1, Math.floor(input.startLine ?? 1));
+      const endLine =
+        input.endLine === undefined ? undefined : Math.floor(input.endLine);
+      if (endLine !== undefined && endLine < startLine) {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          "结束行号不能小于起始行号。",
+        );
+      }
+      const roots = await listRoots();
+      let realPath: string;
+      try {
+        realPath = await realpath(path);
+      } catch {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          `文件不存在或不可读：${path}`,
+        );
+      }
+      // 符号链接不扩权：realpath 后仍须落在某个已注册根内。
+      const insideRoot = await Promise.all(
+        roots.map(async (root) => {
+          try {
+            const realRoot = await realpath(root.path);
+            const tail = relative(realRoot, realPath);
+            return (
+              tail !== "" &&
+              !isAbsolute(tail) &&
+              tail !== ".." &&
+              !tail.startsWith(`..${sep}`)
+            );
+          } catch {
+            return false;
+          }
+        }),
+      );
+      if (!insideRoot.some(Boolean)) {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          "路径不在任何已注册的知识库根内；只能取检索证据指向的原文。",
+        );
+      }
+      const maxBytes = resolveGovernanceNumber(
+        "knowledgeReadMaxBytes",
+        input.maxBytes,
+      );
+      const info = await stat(realPath);
+      if (!info.isFile()) {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          `不是普通文件：${path}`,
+        );
+      }
+      const bytes = Math.min(info.size, maxBytes);
+      const buffer = Buffer.alloc(bytes);
+      const handle = await open(realPath, "r");
+      try {
+        await handle.read(buffer, 0, bytes, 0);
+      } finally {
+        await handle.close();
+      }
+      const lines = buffer.toString("utf8").split(/\r?\n/u);
+      const slice = lines.slice(
+        startLine - 1,
+        endLine === undefined ? lines.length : endLine,
+      );
+      return {
+        path,
+        content: slice.join("\n"),
+        truncated: info.size > maxBytes,
+      };
+    },
+
+    rootsRevision() {
+      return rootsRevision;
     },
   };
 }

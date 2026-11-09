@@ -16,7 +16,7 @@ export interface SettingsOperations {
   findRuntimeGovernance(instanceId: string): Promise<unknown>;
   upsertRuntimeGovernance(
     instanceId: string,
-    patch: Record<string, number>,
+    patch: Record<string, number | boolean>,
   ): Promise<void>;
   findCodeUiReconnectDelayMs(instanceId: string): Promise<number | null>;
   upsertCodeUiReconnectDelayMs(

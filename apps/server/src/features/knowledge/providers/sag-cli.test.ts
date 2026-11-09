@@ -1,3 +1,6 @@
+import { mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { SagCommandResult, SagRunner } from "../sag-cli-runner.js";
@@ -244,5 +247,208 @@ describe("SagCliProvider（M2）", () => {
     const status = await service.status();
     expect(status.cli).toBe("unsupported_platform");
     expect(status.active).toBe(false);
+  });
+});
+
+describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
+  it("用户移除根后 ensureRoot 不自动重加；显式 addRoot 清除墓碑", async () => {
+    const { service, calls } = harness(defaultHandler);
+    await service.ensureRoot("D:/work/project");
+    await service.removeRoot("D:/work/project");
+    const rejected = await service.ensureRoot("D:/work/project");
+    expect(rejected.action).toBe("rejected");
+    expect(rejected.reason).toContain("移除");
+    // 墓碑生效后 check 不再发起（不碰 CLI）
+    const checksAfterRemove = calls.filter((call) => call.args[0] === "check");
+    await service.ensureRoot("D:/work/project");
+    expect(calls.filter((call) => call.args[0] === "check").length).toBe(
+      checksAfterRemove.length,
+    );
+
+    await service.addRoot({ path: "D:/work/project" });
+    const afterExplicitAdd = await service.ensureRoot("D:/work/project");
+    expect(afterExplicitAdd.action).toBe("already-indexed");
+  });
+
+  it("本地匹配档走 -F 位置参数并解析 MatchOutput，不要求 Jev 凭据", async () => {
+    const matchOutput = JSON.stringify({
+      protocol_version: 2,
+      scope: "D:/work/project",
+      results: [
+        {
+          path: "src/client.ts",
+          absolute_path: "D:/work/project/src/client.ts",
+          start_line: 142,
+          end_line: 142,
+          matched_lines: [142],
+          content: "if (status === 499) retry();",
+        },
+      ],
+      files: [
+        {
+          path: "src/client.ts",
+          absolute_path: "D:/work/project/src/client.ts",
+          count: 1,
+        },
+      ],
+      matched: true,
+      truncated: false,
+    });
+    const { service, calls } = harness((args) =>
+      args[0] === "config" ? ok(configured) : ok(matchOutput),
+    );
+    const result = await service.search({
+      query: "499",
+      path: "D:/work/project",
+      localMatch: true,
+    });
+    expect(result.results[0]?.matchedLines).toEqual([142]);
+    const call = calls.find((item) => item.args[0] === "-F");
+    expect(call?.args).toEqual(["-F", "499", "D:/work/project", "--json"]);
+    // 显式降级档不初始化 Jev 凭据（config 只可能来自 provider 内其他路径）
+    expect(calls.some((item) => item.args[0] === "config")).toBe(false);
+  });
+
+  it("语义检索参数含 -c 取正文、-m 默认 5、超时透传给 runner", async () => {
+    const { service, calls } = harness((args) =>
+      args[0] === "config" ? ok(configured) : ok(searchOutput),
+    );
+    let receivedTimeout: number | undefined;
+    // 重新包一层 runner 以观察 timeoutMs
+    const serviceWithTimeout = createSagCliProvider({
+      runner: async (run) => {
+        receivedTimeout = run.timeoutMs;
+        return run.args[0] === "config" ? ok(configured) : ok(searchOutput);
+      },
+      tryGetPlugins: () => fakePlugins(true),
+      readJevCredential: async () => "jev-key-123",
+      platform: "win32",
+      arch: "x64",
+      indexExtensions: ["md", "ts"],
+    });
+    await serviceWithTimeout.search({ query: "重试", timeoutMs: 12_000 });
+    expect(receivedTimeout).toBe(12_000);
+    await service.search({ query: "重试", path: "D:/work/project" });
+    const search = calls.find(
+      (call) => call.args[0] === "重试" && call.args.includes("--json"),
+    );
+    expect(search?.args).toContain("-c");
+    expect(search?.args.slice(search.args.indexOf("-m"))).toEqual(
+      expect.arrayContaining(["-m", "5"]),
+    );
+  });
+
+  it("read 在根内按行切片、越界钳回、字节预算截断", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kfw-kb-"));
+    const file = join(root, "note.md");
+    await writeFile(file, ["第一行", "第二行", "第三行", "第四行"].join("\n"));
+    const { service } = harness((args) => {
+      if (args[0] === "config") return ok(configured);
+      if (args[0] === "list")
+        return ok(
+          JSON.stringify([
+            { path: root, name: "kb", status: "ready", count: 1, error: null },
+          ]),
+        );
+      return ok(searchOutput);
+    });
+    const slice = await service.read({
+      path: file,
+      startLine: 2,
+      endLine: 3,
+    });
+    expect(slice.content).toBe("第二行\n第三行");
+    expect(slice.truncated).toBe(false);
+
+    const clamped = await service.read({
+      path: file,
+      startLine: 3,
+      endLine: 99,
+    });
+    expect(clamped.content).toBe("第三行\n第四行");
+
+    // 治理护栏下限 1KiB：用超过 1KiB 的文件验证字节预算截断
+    const big = join(root, "big.md");
+    await writeFile(big, "x".repeat(5000));
+    const truncated = await service.read({ path: big, maxBytes: 1024 });
+    expect(truncated.truncated).toBe(true);
+    expect(truncated.content.length).toBe(1024);
+  });
+
+  it("read 拒绝根外路径、相对路径与符号链接逃逸", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kfw-kb-"));
+    const outside = await mkdtemp(join(tmpdir(), "kfw-out-"));
+    const inside = join(root, "inside.md");
+    const secret = join(outside, "secret.md");
+    await writeFile(inside, "ok");
+    await writeFile(secret, "secret");
+    const { service } = harness((args) => {
+      if (args[0] === "config") return ok(configured);
+      if (args[0] === "list")
+        return ok(
+          JSON.stringify([
+            { path: root, name: "kb", status: "ready", count: 1, error: null },
+          ]),
+        );
+      return ok(searchOutput);
+    });
+    await expect(service.read({ path: secret })).rejects.toMatchObject({
+      code: "invalid_input",
+    });
+    await expect(service.read({ path: "inside.md" })).rejects.toMatchObject({
+      code: "invalid_input",
+    });
+
+    const link = join(root, "escape.md");
+    let linked = false;
+    try {
+      await symlink(secret, link, "file");
+      linked = true;
+    } catch {
+      // Windows 未开开发者模式时无符号链接权限：跳过逃逸断言。
+    }
+    if (linked) {
+      await expect(service.read({ path: link })).rejects.toMatchObject({
+        code: "invalid_input",
+      });
+    }
+  });
+
+  it("根集合修订号随 add/remove/ensure(added) 单调递增", async () => {
+    const { service } = harness((args) => {
+      if (args[0] === "config") return ok(configured);
+      if (args[0] === "list") return ok("[]");
+      if (args[0] === "check")
+        return ok(
+          JSON.stringify({
+            path: "D:/work/project",
+            coverage: "none",
+            index_ready: false,
+            enabled: true,
+            indexed_files: 0,
+            roots: [],
+          }),
+        );
+      if (args[0] === "add")
+        return ok(
+          JSON.stringify({
+            path: "D:/work/project",
+            index_status: "ready",
+            cli_authorized: true,
+          }),
+        );
+      if (args[0] === "remove")
+        return ok(JSON.stringify({ path: "D:/work/project" }));
+      return ok(searchOutput);
+    });
+    const before = service.rootsRevision();
+    await service.addRoot({ path: "D:/work/project" });
+    expect(service.rootsRevision()).toBe(before + 1);
+    await service.removeRoot("D:/work/project");
+    expect(service.rootsRevision()).toBe(before + 2);
+    const ensure = await service.ensureRoot("D:/other");
+    // D:/other 走 defaultHandler 的 check=none → add；但 add handler 返回固定路径
+    expect(ensure.action).toBe("added");
+    expect(service.rootsRevision()).toBe(before + 3);
   });
 });

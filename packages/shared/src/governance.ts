@@ -101,6 +101,24 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   computerUseInputDelayMs: 100,
   /** MCP HTTP的SSE心跳间隔；0关闭，默认与官方SDK一致。 */
   computerUseMcpKeepAliveMs: 15_000,
+  /** SAG2 知识库：每轮自动检索注入（KB-2 默认开启；关闭时侧栏常驻提示）。 */
+  knowledgeAutoInject: true,
+  /** SAG2 知识库：纯本地匹配档（-F）；显式开启才降级，默认不自动切（KB-4）。 */
+  knowledgeLocalMatch: false,
+  /** SAG2 知识库：单次检索结果条数（上游 -m，KB-7 默认 5）。 */
+  knowledgeMaxResults: 5,
+  /** SAG2 知识库：相关性门槛——命中数低于它则不注入（CLI JSON 无证据分，KB-2）。 */
+  knowledgeMinHits: 1,
+  /** SAG2 知识库：单次检索超时（毫秒；语义检索经 Jev 云侧，留足余量）。 */
+  knowledgeSearchTimeoutMs: 30_000,
+  /** SAG2 知识库：同时进行的自动检索上限（超出本轮跳过，不排队拖慢对话）。 */
+  knowledgeMaxConcurrentSearches: 2,
+  /** SAG2 知识库：每轮证据块的字符预算（超出裁剪并标记）。 */
+  knowledgeEvidenceMaxChars: 6_000,
+  /** SAG2 知识库：检索缓存有效期（毫秒，0 = 不缓存）。 */
+  knowledgeCacheTtlMs: 300_000,
+  /** SAG2 知识库：knowledge_read 单文件读取预算（字节）。 */
+  knowledgeReadMaxBytes: 1_048_576,
 } as const;
 
 export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
@@ -150,8 +168,23 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "computerUseAxMaxActions",
   "computerUseInputDelayMs",
   "computerUseMcpKeepAliveMs",
+  "knowledgeMaxResults",
+  "knowledgeMinHits",
+  "knowledgeSearchTimeoutMs",
+  "knowledgeMaxConcurrentSearches",
+  "knowledgeEvidenceMaxChars",
+  "knowledgeCacheTtlMs",
+  "knowledgeReadMaxBytes",
 ] as const;
 export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
+
+/** 布尔治理键：与数值键同落 `runtime_governance` jsonb，读侧各自钳回。 */
+export const RUNTIME_GOVERNANCE_BOOL_KEYS = [
+  "knowledgeAutoInject",
+  "knowledgeLocalMatch",
+] as const;
+export type RuntimeGovernanceBoolKey =
+  (typeof RUNTIME_GOVERNANCE_BOOL_KEYS)[number];
 
 /** 覆盖值形态（env / 调用方传参）：键可缺、值可显式 undefined（exactOptionalPropertyTypes）。 */
 export type AgentGovernanceOverrides = {
@@ -209,6 +242,15 @@ export type AgentGovernanceOverrides = {
   computerUseAxMaxActions?: number | undefined;
   computerUseInputDelayMs?: number | undefined;
   computerUseMcpKeepAliveMs?: number | undefined;
+  knowledgeAutoInject?: boolean | undefined;
+  knowledgeLocalMatch?: boolean | undefined;
+  knowledgeMaxResults?: number | undefined;
+  knowledgeMinHits?: number | undefined;
+  knowledgeSearchTimeoutMs?: number | undefined;
+  knowledgeMaxConcurrentSearches?: number | undefined;
+  knowledgeEvidenceMaxChars?: number | undefined;
+  knowledgeCacheTtlMs?: number | undefined;
+  knowledgeReadMaxBytes?: number | undefined;
 };
 
 const clampInt = (value: number, min: number, max: number): number =>
@@ -313,6 +355,13 @@ export const AGENT_GOVERNANCE_LIMITS = {
   computerUseAxMaxActions: { min: 1, max: 100_000 },
   computerUseInputDelayMs: { min: 0, max: 60_000 },
   computerUseMcpKeepAliveMs: { min: 0, max: 86_400_000 },
+  knowledgeMaxResults: { min: 1, max: 100 },
+  knowledgeMinHits: { min: 1, max: 100 },
+  knowledgeSearchTimeoutMs: { min: 1_000, max: 300_000 },
+  knowledgeMaxConcurrentSearches: { min: 1, max: 8 },
+  knowledgeEvidenceMaxChars: { min: 256, max: 64_000 },
+  knowledgeCacheTtlMs: { min: 0, max: 3_600_000 },
+  knowledgeReadMaxBytes: { min: 1_024, max: 67_108_864 },
 } as const;
 
 /**
@@ -494,6 +543,27 @@ export function resolveGovernanceEnvOverrides(
     computerUseMcpKeepAliveMs: parseStrictInt(
       source.KENFUTWORK_COMPUTER_USE_MCP_KEEP_ALIVE_MS,
     ),
+    knowledgeAutoInject: parseBool(source.KENFUTWORK_KNOWLEDGE_AUTO_INJECT),
+    knowledgeLocalMatch: parseBool(source.KENFUTWORK_KNOWLEDGE_LOCAL_MATCH),
+    knowledgeMaxResults: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_MAX_RESULTS,
+    ),
+    knowledgeMinHits: parseStrictInt(source.KENFUTWORK_KNOWLEDGE_MIN_HITS),
+    knowledgeSearchTimeoutMs: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_SEARCH_TIMEOUT_MS,
+    ),
+    knowledgeMaxConcurrentSearches: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_MAX_CONCURRENT_SEARCHES,
+    ),
+    knowledgeEvidenceMaxChars: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_EVIDENCE_MAX_CHARS,
+    ),
+    knowledgeCacheTtlMs: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_CACHE_TTL_MS,
+    ),
+    knowledgeReadMaxBytes: parseStrictInt(
+      source.KENFUTWORK_KNOWLEDGE_READ_MAX_BYTES,
+    ),
   };
   return Object.fromEntries(
     Object.entries(overrides).filter(([, v]) => v !== undefined),
@@ -515,8 +585,19 @@ export function governanceSetting<
     .default(AGENT_GOVERNANCE_DEFAULTS[key]);
 }
 
-export function governanceBoolSetting<K extends "llmInfiniteRetry">(key: K) {
+export function governanceBoolSetting<
+  K extends "llmInfiniteRetry" | RuntimeGovernanceBoolKey,
+>(key: K) {
   return z.boolean().default(AGENT_GOVERNANCE_DEFAULTS[key]);
+}
+
+/** 布尔治理读取档：库 ?? env ?? 默认（与 resolveGovernanceNumber 同一优先级）。 */
+export function resolveGovernanceBool<K extends RuntimeGovernanceBoolKey>(
+  key: K,
+  stored: boolean | null | undefined,
+  overrides: AgentGovernanceOverrides = {},
+): boolean {
+  return (stored ?? overrides[key] ?? AGENT_GOVERNANCE_DEFAULTS[key]) === true;
 }
 
 /** 运行时读取档：库 ?? env ?? 默认，只在本属主统一钳回护栏。 */

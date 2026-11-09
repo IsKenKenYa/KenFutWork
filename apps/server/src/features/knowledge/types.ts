@@ -1,9 +1,9 @@
 /**
- * SAG2 知识库能力缝的 Service Definition（M1 骨架）。
+ * SAG2 知识库能力缝的 Service Definition。
  *
  * 契约属主：《改造计划》§4.2（新增 ctx key 只登记那一处）。
- * 本轮只落地「安装态门控 + 状态」；检索/目录/凭据编排在 M2 挂到同一接口上，
- * 消费方（M3 pre-step preflight、M4 侧边栏面板）不需要改签名。
+ * M2 落地检索/目录/凭据编排；M3 补 read（证据取原文）与 rootsRevision（缓存键），
+ * 消费方（pre-step preflight、shared 工具、侧边栏面板）不需要改签名。
  */
 
 /** 市场 bundle 插件 id，与 `plugins/knowledge/package.json` 的 name 对齐。 */
@@ -148,6 +148,12 @@ export interface KnowledgeSearchInput {
   query: string;
   path?: string;
   maxResults?: number;
+  /** 单次检索超时（毫秒）；省略用 runner 默认。 */
+  timeoutMs?: number;
+  /** true = 纯本地固定串匹配（-F，KB-4 显式降级档），不需要 Jev。 */
+  localMatch?: boolean;
+  /** run 取消信号（工具路径传入；pre-step payload 不携带）。 */
+  signal?: AbortSignal;
 }
 
 export interface KnowledgeSearchResult {
@@ -160,6 +166,8 @@ export interface KnowledgeReadInput {
   path: string;
   startLine?: number;
   endLine?: number;
+  /** 单文件读取预算（字节）；调用方按实例设置传入，省略用治理默认值。 */
+  maxBytes?: number;
 }
 
 export interface KnowledgeReadResult {
@@ -212,4 +220,14 @@ export interface KnowledgeService {
    */
   ensureRoot(path: string): Promise<KnowledgeEnsureResult>;
   search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult>;
+  /**
+   * 按证据位置取原文片段。路径必须落在某个已注册根内（realpath 后判定，
+   * 符号链接不扩权）；行号 1 起，越界钳回，字节预算截断标记 truncated。
+   */
+  read(input: KnowledgeReadInput): Promise<KnowledgeReadResult>;
+  /**
+   * 根集合修订号：addRoot/removeRoot/ensureRoot(added) 成功时单调递增。
+   * preflight 缓存键的一部分（KB-7「root 集合」的进程内近似；外部变更由 TTL 兜底）。
+   */
+  rootsRevision(): number;
 }

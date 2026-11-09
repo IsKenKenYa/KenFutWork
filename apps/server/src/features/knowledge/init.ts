@@ -43,6 +43,11 @@ function normalized(path: string): string {
     .replace(/[\\/]+$/, "");
 }
 
+/** 根路径的进程内规范化（墓碑/缓存键用）：Windows 大小写不敏感，去尾分隔符。 */
+export function normalizeKnowledgeRootPath(path: string): string {
+  return normalized(path);
+}
+
 /**
  * 个人目录 / 磁盘根 / 系统目录一律拒绝自动注册（KB-3 隐私护栏）。
  * 显式由用户在侧栏添加的目录不走这个判定——拒绝只作用于「自动」路径。

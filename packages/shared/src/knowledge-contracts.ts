@@ -15,6 +15,13 @@ export const knowledgeCliStateSchema = z.enum([
   "unsupported_platform",
 ]);
 
+/** 最近一轮 preflight 的结果（面板状态条）；从未触发为 null。 */
+export const knowledgePreflightOutcomeSchema = z.object({
+  at: z.string(),
+  outcome: z.enum(["injected", "no-evidence", "skipped", "failed"]),
+  reason: z.string().nullable(),
+});
+
 export const knowledgeStatusResponseSchema = z.object({
   installed: z.boolean(),
   enabled: z.boolean(),
@@ -22,6 +29,7 @@ export const knowledgeStatusResponseSchema = z.object({
   cli: knowledgeCliStateSchema,
   cliVersion: z.string(),
   reason: z.string().nullable(),
+  preflight: knowledgePreflightOutcomeSchema.nullable().optional(),
 });
 
 export const knowledgeRootSchema = z.object({
@@ -95,6 +103,9 @@ export const knowledgeInitResponseSchema = z.object({
   reason: z.string().nullable(),
 });
 
+export type KnowledgePreflightOutcome = z.infer<
+  typeof knowledgePreflightOutcomeSchema
+>;
 export type KnowledgeStatusResponse = z.infer<
   typeof knowledgeStatusResponseSchema
 >;

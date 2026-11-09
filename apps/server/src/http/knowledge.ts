@@ -42,6 +42,14 @@ export interface KnowledgeRouteDeps {
     resolve(actor: LocalActor): Promise<unknown>;
   };
   knowledge: KnowledgeService;
+  /** preflight 最近一轮结果（面板状态条）；最小装配可无。 */
+  preflight?: {
+    lastOutcome(): {
+      at: string;
+      outcome: "injected" | "no-evidence" | "skipped" | "failed";
+      reason: string | null;
+    } | null;
+  };
 }
 
 function sendError(
@@ -105,11 +113,12 @@ export async function registerKnowledgeRoutes(
     try {
       const user = await authenticate(request);
       if (!user) return sendUnauthorized(reply);
-      return reply
-        .code(200)
-        .send(
-          knowledgeStatusResponseSchema.parse(await options.knowledge.status()),
-        );
+      return reply.code(200).send(
+        knowledgeStatusResponseSchema.parse({
+          ...(await options.knowledge.status()),
+          preflight: options.preflight?.lastOutcome() ?? null,
+        }),
+      );
     } catch (error) {
       return handleError(error, reply);
     }

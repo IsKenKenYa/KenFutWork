@@ -385,6 +385,18 @@ export const instanceSettingsSchema = z.object({
   computerUseAxMaxActions: governanceSetting("computerUseAxMaxActions"),
   computerUseInputDelayMs: governanceSetting("computerUseInputDelayMs"),
   computerUseMcpKeepAliveMs: governanceSetting("computerUseMcpKeepAliveMs"),
+  /** SAG2 知识库（KB-2/KB-4/KB-7）：默认值与护栏唯一属主是 governance.ts。 */
+  knowledgeAutoInject: governanceBoolSetting("knowledgeAutoInject"),
+  knowledgeLocalMatch: governanceBoolSetting("knowledgeLocalMatch"),
+  knowledgeMaxResults: governanceSetting("knowledgeMaxResults"),
+  knowledgeMinHits: governanceSetting("knowledgeMinHits"),
+  knowledgeSearchTimeoutMs: governanceSetting("knowledgeSearchTimeoutMs"),
+  knowledgeMaxConcurrentSearches: governanceSetting(
+    "knowledgeMaxConcurrentSearches",
+  ),
+  knowledgeEvidenceMaxChars: governanceSetting("knowledgeEvidenceMaxChars"),
+  knowledgeCacheTtlMs: governanceSetting("knowledgeCacheTtlMs"),
+  knowledgeReadMaxBytes: governanceSetting("knowledgeReadMaxBytes"),
 });
 
 export const modelInfoSchema = z.object({
