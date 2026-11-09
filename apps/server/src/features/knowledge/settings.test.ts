@@ -22,7 +22,7 @@ describe("knowledge 设置读取（DEC-18 优先级）", () => {
     expect(await read(undefined)).toMatchObject({
       autoInject: true,
       localMatch: false,
-  autoLocalFallback: true,
+      autoLocalFallback: true,
       maxResults: 5,
       minHits: 1,
       searchTimeoutMs: 30_000,

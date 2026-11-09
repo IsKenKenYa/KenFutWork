@@ -96,5 +96,11 @@ export function createDisabledKnowledgeProvider(
     rootsRevision() {
       return 0;
     },
+    async library() {
+      return unavailable();
+    },
+    async uploadFile() {
+      return unavailable();
+    },
   };
 }

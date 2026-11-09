@@ -5,105 +5,162 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>知识库</title>
 <style>
-  :root { color-scheme: light dark; --bg:#fff; --fg:#1f2330; --muted:#6b7280; --line:#e5e7eb; --card:#f8f9fb; --accent:#2f3459; --danger:#b42318; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#16181d; --fg:#e6e8ef; --muted:#9aa1ae; --line:#2a2e37; --card:#1d2027; --accent:#c7cdf0; --danger:#f97066; } }
-  * { box-sizing: border-box; }
-  body { margin:0; padding:14px; background:var(--bg); color:var(--fg); font:13px/1.5 system-ui, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  h1 { font-size:15px; margin:0; }
-  h2 { font-size:13px; margin:0 0 8px; color:var(--muted); font-weight:600; }
-  .head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
-  .dot.ok { background:#12b76a; } .dot.warn { background:#f79009; } .dot.err { background:var(--danger); }
-  .head .text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .head .text small { color:var(--muted); }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:10px; }
-  .row { display:flex; align-items:center; gap:10px; min-height:30px; }
-  .row + .row { margin-top:6px; }
-  .row > label { flex:none; width:84px; color:var(--fg); }
-  .row > .grow { flex:1; min-width:0; }
-  input[type=text], input[type=number] { flex:1; min-width:0; padding:5px 8px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--fg); font:inherit; }
-  input[type=number] { max-width:110px; }
-  input[type=checkbox] { width:16px; height:16px; accent-color:var(--accent); }
-  button { padding:5px 12px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--fg); font:inherit; cursor:pointer; }
-  button:hover { border-color:var(--accent); }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  .hint { margin:8px 0 0; color:var(--muted); font-size:12px; }
-  .notice { margin:8px 0 0; padding:6px 8px; border-radius:7px; background:rgba(247,144,9,.12); color:#b54708; font-size:12px; }
-  .error { color:var(--danger); font-size:12px; margin:8px 0 0; }
-  ul { list-style:none; margin:0; padding:0; }
-  li { display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid var(--line); }
-  li:first-child { border-top:0; }
-  li .meta { flex:1; min-width:0; }
-  li .path { word-break:break-all; font-family:ui-monospace, Consolas, monospace; font-size:12px; }
-  li .sub { color:var(--muted); font-size:11px; }
-  li .sub.err { color:var(--danger); }
-  .result { padding:8px 0; border-top:1px solid var(--line); cursor:pointer; }
-  .result:first-child { border-top:0; }
-  .result:hover .loc { color:var(--accent); }
-  .result .loc { font-family:ui-monospace, Consolas, monospace; font-size:11px; color:var(--muted); word-break:break-all; }
-  .result .snippet { margin-top:4px; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:96px; overflow:hidden; }
-  pre.detail { margin:8px 0 0; padding:8px; background:var(--bg); border:1px solid var(--line); border-radius:7px; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:280px; overflow:auto; }
-  .empty { color:var(--muted); font-size:12px; padding:4px 0; }
+  :root{
+    color-scheme:light dark;
+    --bg:#fff;--fg:#1f2330;--muted:#6b7280;--line:#e5e7eb;--card:#f8f9fb;
+    --accent:#2f3459;--danger:#b42318;--ok:#12b76a;--warn:#f79009;
+    --drop:rgba(47,52,89,.04);--drop-active:rgba(47,52,89,.10);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#16181d;--fg:#e6e8ef;--muted:#9aa1ae;--line:#2a2e37;--card:#1d2027;
+      --accent:#c7cdf0;--danger:#f97066;--ok:#34d399;--warn:#f79009;
+      --drop:rgba(199,205,240,.05);--drop-active:rgba(199,205,240,.13);}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:14px;background:var(--bg);color:var(--fg);
+    font:13px/1.5 system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  h1{font-size:14px;margin:0;font-weight:650}
+  .head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.err{background:var(--danger)}
+  .head .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .head .meta{color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+  .icon-btn{height:26px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;gap:5px;
+    border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);
+    font:inherit;font-size:12px;cursor:pointer}
+  .icon-btn:hover{background:var(--card);color:var(--fg);border-color:var(--line)}
+  .icon-btn svg{width:15px;height:15px}
+
+  .drop{border:1.5px dashed var(--line);border-radius:12px;background:var(--drop);
+    padding:22px 14px;text-align:center;cursor:pointer;transition:background .15s,border-color .15s;
+    display:block}
+  .drop:hover,.drop.over{background:var(--drop-active);border-color:var(--accent)}
+  .drop .big{display:flex;justify-content:center;margin-bottom:6px;color:var(--muted)}
+  .drop .big svg{width:26px;height:26px}
+  .drop b{display:block;font-size:12.5px;font-weight:600;margin-bottom:2px}
+  .drop .sub{color:var(--muted);font-size:11.5px}
+  .drop input{display:none}
+
+  .listhead{display:flex;align-items:center;justify-content:space-between;
+    margin:8px 4px 2px;color:var(--muted);font-size:11.5px}
+  .listhead .meta{font-variant-numeric:tabular-nums}
+  .bar{display:flex;gap:8px;margin:10px 0}
+  .bar input[type=search]{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);
+    border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
+  .bar input[type=search]:focus{outline:none;border-color:var(--accent)}
+
+  ul{list-style:none;margin:0;padding:0}
+  .file{display:flex;align-items:center;gap:9px;padding:7px 4px;border-radius:8px;cursor:pointer}
+  .file:hover{background:var(--card)}
+  .file .ficon{flex:none;width:26px;height:26px;border-radius:7px;background:var(--card);
+    display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .file .ficon svg{width:14px;height:14px}
+  .file .fbody{flex:1;min-width:0}
+  .file .fname{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .file .fmeta{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+  .file .fa{flex:none;color:var(--muted);opacity:0;transition:opacity .12s}
+  .file:hover .fa{opacity:1}
+  .file .fa svg{width:14px;height:14px}
+
+  .empty{color:var(--muted);font-size:12px;text-align:center;padding:16px 0}
+  .snippet{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin:6px 0}
+  .snippet .loc{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--muted);
+    word-break:break-all;margin-bottom:3px}
+  .snippet .txt{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:88px;overflow:hidden}
+
+  details.settings{margin-top:12px;border-top:1px solid var(--line);padding-top:8px}
+  details.settings summary{cursor:pointer;color:var(--muted);font-size:11.5px;list-style:none;
+    display:flex;align-items:center;gap:6px;user-select:none}
+  details.settings summary::-webkit-details-marker{display:none}
+  details.settings summary svg{width:12px;height:12px;transition:transform .15s}
+  details.settings[open] summary svg{transform:rotate(90deg)}
+  .row{display:flex;align-items:center;gap:10px;min-height:30px;margin-top:8px}
+  .row>label{flex:none;width:78px;font-size:12px}
+  .row>input[type=number]{width:96px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;
+    background:var(--bg);color:var(--fg);font:inherit}
+  .row>input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent)}
+  .row .hint{color:var(--muted);font-size:11px}
+  .msg{margin-top:8px;font-size:11.5px;color:var(--muted)}
+  .msg.err{color:var(--danger)}
+  .notice{margin-top:8px;padding:6px 9px;border-radius:8px;background:rgba(247,144,9,.12);
+    color:#b54708;font-size:11.5px}
+  @media (prefers-color-scheme:dark){.notice{color:#f7c948}}
 </style>
 </head>
 <body>
   <div class="head">
     <span class="dot" id="dot"></span>
-    <h1 class="text" id="status">知识库</h1>
-    <button id="refresh" title="刷新">刷新</button>
+    <h1 class="title" id="status">知识库</h1>
+    <button class="icon-btn" id="refresh" title="刷新" aria-label="刷新"></button>
   </div>
 
-  <section class="card">
-    <h2>自动接入</h2>
+  <label class="drop" id="drop">
+    <input type="file" id="file" multiple>
+    <span class="big" id="drop-icon"></span>
+    <b>拖文件到这里</b>
+    <span class="sub">自动建库并索引</span>
+  </label>
+  <p class="notice" id="off-note" hidden>自动注入已关闭</p>
+  <p class="msg err" id="error" hidden></p>
+
+  <div class="bar">
+    <input type="search" id="query" placeholder="搜索知识库">
+  </div>
+
+  <div class="listhead"><span id="listlabel">文件</span><span class="meta" id="count"></span></div>
+  <ul id="list"></ul>
+  <div id="results"></div>
+
+  <details class="settings">
+    <summary><span id="caret"></span>设置</summary>
     <div class="row"><label>自动注入</label><input type="checkbox" id="auto-inject"></div>
-    <p class="notice" id="auto-off" hidden>自动注入已关闭</p>
     <div class="row"><label>结果条数</label><input type="number" id="max-results" min="1" max="100"></div>
     <div class="row"><label>证据预算</label><input type="number" id="evidence-chars" min="256" max="64000" step="256"></div>
-    <div class="row"><label>本地匹配</label><input type="checkbox" id="local-match"></div>
-    <p class="hint">语义档上传问题与片段到 Jev；本地档不出本机</p>
-    <div class="row"><button class="primary" id="save-settings">保存</button><span class="hint" id="settings-note"></span></div>
-  </section>
-
-  <section class="card">
-    <h2>检索</h2>
-    <div class="row">
-      <input type="text" id="query" placeholder="问题">
-      <button id="search">检索</button>
-    </div>
-    <div id="results"></div>
-    <pre class="detail" id="detail" hidden></pre>
-  </section>
-
-  <section class="card">
-    <h2>根目录</h2>
-    <ul id="roots"><li class="empty">加载中</li></ul>
-    <div class="row">
-      <input type="text" id="new-root" placeholder="绝对路径">
-      <button id="add-root">添加</button>
-    </div>
-  </section>
-
-  <section class="card" id="reason-card" hidden>
-    <p class="error" id="reason"></p>
-  </section>
+    <div class="row"><label>本地匹配</label><input type="checkbox" id="local-match"><span class="hint">不出本机</span></div>
+    <div class="row"><button class="icon-btn" id="save-settings">保存</button><span class="hint" id="settings-note"></span></div>
+  </details>
 
 <script>
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = { settings: null, busy: false };
+const ICONS = {
+  cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 18.4h8.6a3.4 3.4 0 0 0 .5-6.76 5.1 5.1 0 0 0-9.79-1.2A3.7 3.7 0 0 0 7.6 18.4Z"/><path d="M12 16.2v-3.4"/><path d="m10.4 14.2 1.6-1.6 1.6 1.6"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/></svg>',
+  open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  caret: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>',
+};
+$("drop-icon").innerHTML = ICONS.cloud;
+$("refresh").innerHTML = ICONS.refresh;
+$("caret").innerHTML = ICONS.caret;
+
+const state = { files: [], busy: false, query: "" };
 
 function text(node, value) { node.textContent = value == null ? "" : String(value); }
+function humanSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1024 / 1024).toFixed(1) + " MB";
+}
+function showError(message) {
+  const node = $("error");
+  node.hidden = !message;
+  text(node, message || "");
+}
 
 async function api(path, options) {
+  const isForm = options && options.body instanceof FormData;
   const response = await fetch(path, {
     credentials: "include",
     ...(options || {}),
-    headers: { "content-type": "application/json", ...(options && options.headers) },
+    ...(isForm ? {} : { headers: { "content-type": "application/json" } }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = data && data.error && data.error.message ? data.error.message : "请求失败（" + response.status + "）";
+    const message = data && data.error && data.error.message
+      ? data.error.message
+      : "请求失败（" + response.status + "）";
     throw new Error(message);
   }
   return data;
@@ -112,110 +169,75 @@ async function api(path, options) {
 function renderStatus(status) {
   const dot = $("dot");
   const label = $("status");
-  let textValue = "知识库";
+  let value = "知识库";
   let level = "warn";
-  if (!status.installed) { textValue = "未安装"; level = ""; }
-  else if (!status.enabled) { textValue = "已停用"; }
-  else if (status.cli === "unsupported_platform") { textValue = "平台不支持"; level = "err"; }
-  else if (status.cli === "missing") { textValue = "CLI 缺失"; level = "err"; }
-  else if (status.reason) { textValue = "未就绪"; level = "err"; }
-  else { textValue = "就绪 · v" + status.cliVersion; level = "ok"; }
+  if (!status.installed) { value = "未安装"; level = ""; }
+  else if (!status.enabled) { value = "已停用"; }
+  else if (status.cli === "unsupported_platform") { value = "平台不支持"; level = "err"; }
+  else if (status.cli === "missing") { value = "CLI 缺失"; level = "err"; }
+  else if (status.reason) { value = "本地匹配"; level = "ok"; }
+  else { value = "就绪"; level = "ok"; }
   dot.className = "dot " + level;
-  text(label, textValue);
-  const preflight = status.preflight;
-  if (preflight) {
-    const map = {
-      injected: "上一轮：已注入证据",
-      "no-evidence": "上一轮：未命中",
-      skipped: "上一轮：跳过",
-      failed: "上一轮：失败",
-    };
-    text(label, textValue + " · " + (map[preflight.outcome] || preflight.outcome));
-  }
-  const reasonCard = $("reason-card");
-  reasonCard.hidden = !status.reason;
-  text($("reason"), status.reason || "");
+  text(label, value);
 }
 
-function renderRoots(payload) {
-  const list = $("roots");
+function renderFiles() {
+  const list = $("list");
   list.replaceChildren();
-  const roots = payload.roots || [];
-  if (roots.length === 0) {
+  const keyword = state.query.trim().toLowerCase();
+  const files = keyword
+    ? state.files.filter((file) => file.path.toLowerCase().includes(keyword))
+    : state.files;
+  text($("count"), state.files.length ? String(state.files.length) : "");
+  if (files.length === 0) {
     const empty = document.createElement("li");
     empty.className = "empty";
-    text(empty, "未添加目录");
+    text(empty, state.files.length === 0 ? "还没有文件" : "没有匹配的文件");
     list.append(empty);
     return;
   }
-  for (const root of roots) {
+  for (const file of files) {
     const item = document.createElement("li");
+    item.className = "file";
+    const icon = document.createElement("span");
+    icon.className = "ficon";
+    icon.innerHTML = ICONS.file;
+    const body = document.createElement("div");
+    body.className = "fbody";
+    const name = document.createElement("div");
+    name.className = "fname";
+    text(name, file.path);
     const meta = document.createElement("div");
-    meta.className = "meta";
-    const path = document.createElement("div");
-    path.className = "path";
-    text(path, root.path);
-    const sub = document.createElement("div");
-    sub.className = "sub" + (root.error ? " err" : "");
-    text(sub, (root.status || "") + " · " + root.count + " 文件" + (root.error ? " · " + root.error : ""));
-    meta.append(path, sub);
-    const remove = document.createElement("button");
-    text(remove, "移除");
-    remove.addEventListener("click", () => removeRoot(root.path, remove));
-    item.append(meta, remove);
+    meta.className = "fmeta";
+    text(meta, humanSize(file.sizeBytes));
+    body.append(name, meta);
+    const arrow = document.createElement("span");
+    arrow.className = "fa";
+    arrow.innerHTML = ICONS.open;
+    item.append(icon, body, arrow);
+    item.addEventListener("click", () => openFile(file));
     list.append(item);
   }
 }
 
-function renderResults(results, degraded) {
+async function openFile(file) {
   const box = $("results");
   box.replaceChildren();
-  $("detail").hidden = true;
-  if (degraded === "local-match") {
-    const badge = document.createElement("div");
-    badge.className = "hint";
-    text(badge, "本地匹配，非语义检索");
-    box.append(badge);
-  }
-  if (!results || results.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    text(empty, "无结果");
-    box.append(empty);
-    return;
-  }
-  for (const item of results) {
-    const row = document.createElement("div");
-    row.className = "result";
-    const loc = document.createElement("div");
-    loc.className = "loc";
-    text(loc, item.absolutePath + ":" + item.startLine + "-" + item.endLine);
-    row.append(loc);
-    if (item.content) {
-      const snippet = document.createElement("div");
-      snippet.className = "snippet";
-      text(snippet, item.content);
-      row.append(snippet);
-    }
-    row.addEventListener("click", () => openOriginal(item));
-    box.append(row);
-  }
-}
-
-async function openOriginal(item) {
-  const detail = $("detail");
-  detail.hidden = false;
-  text(detail, "加载中");
+  const card = document.createElement("div");
+  card.className = "snippet";
+  const loc = document.createElement("div");
+  loc.className = "loc";
+  text(loc, file.path);
+  const body = document.createElement("div");
+  body.className = "txt";
+  text(body, "读取中");
+  card.append(loc, body);
+  box.append(card);
   try {
-    const params = new URLSearchParams({
-      path: item.absolutePath,
-      startLine: String(item.startLine),
-      endLine: String(item.endLine),
-    });
-    const payload = await api("/api/knowledge/read?" + params.toString());
-    text(detail, payload.content + (payload.truncated ? "\n（已截断）" : ""));
+    const payload = await api("/api/knowledge/read?path=" + encodeURIComponent(file.absolutePath));
+    text(body, payload.content || "（空文件）");
   } catch (error) {
-    text(detail, error.message);
+    text(body, error.message);
   }
 }
 
@@ -225,17 +247,26 @@ async function loadStatus() {
   } catch (error) {
     text($("status"), "状态不可读");
     $("dot").className = "dot err";
-    $("reason-card").hidden = false;
-    text($("reason"), error.message);
+    showError(error.message);
+  }
+}
+
+async function loadLibrary() {
+  try {
+    const payload = await api("/api/knowledge/library");
+    state.files = payload.files || [];
+    renderFiles();
+    showError("");
+  } catch (error) {
+    showError(error.message);
   }
 }
 
 async function loadSettings() {
   try {
     const settings = await api("/api/knowledge/settings");
-    state.settings = settings;
     $("auto-inject").checked = Boolean(settings.autoInject);
-    $("auto-off").hidden = Boolean(settings.autoInject);
+    $("off-note").hidden = Boolean(settings.autoInject);
     $("max-results").value = String(settings.maxResults);
     $("evidence-chars").value = String(settings.evidenceMaxChars);
     $("local-match").checked = Boolean(settings.localMatch);
@@ -244,16 +275,72 @@ async function loadSettings() {
   }
 }
 
-async function loadRoots() {
+async function upload(files) {
+  if (!files || files.length === 0 || state.busy) return;
+  state.busy = true;
+  showError("");
   try {
-    renderRoots(await api("/api/knowledge/roots"));
+    for (const file of files) {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      try {
+        await api("/api/knowledge/library", { method: "POST", body: form });
+      } catch (error) {
+        showError(file.name + "：" + error.message);
+      }
+    }
+  } finally {
+    state.busy = false;
+    await loadLibrary();
+    await loadStatus();
+  }
+}
+
+async function search() {
+  const query = $("query").value.trim();
+  const box = $("results");
+  if (!query) { box.replaceChildren(); return; }
+  box.replaceChildren();
+  const card = document.createElement("div");
+  card.className = "snippet";
+  text(card, "检索中");
+  box.append(card);
+  try {
+    const payload = await api("/api/knowledge/search", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    });
+    box.replaceChildren();
+    if (payload.degraded === "local-match") {
+      const note = document.createElement("div");
+      note.className = "msg";
+      text(note, "本地匹配，非语义检索");
+      box.append(note);
+    }
+    if (!payload.results || payload.results.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      text(empty, "没有结果");
+      box.append(empty);
+      return;
+    }
+    for (const item of payload.results) {
+      const hit = document.createElement("div");
+      hit.className = "snippet";
+      const loc = document.createElement("div");
+      loc.className = "loc";
+      // 只显示文件名 + 行号：托管目录的绝对长路径对用户没有信息量。
+      const short = String(item.path || "").replace(/^.*[\/]/u, "");
+      text(loc, short + ":" + item.startLine + "-" + item.endLine);
+      const txt = document.createElement("div");
+      txt.className = "txt";
+      text(txt, item.content || "");
+      hit.append(loc, txt);
+      box.append(hit);
+    }
   } catch (error) {
-    const list = $("roots");
-    list.replaceChildren();
-    const item = document.createElement("li");
-    item.className = "empty";
-    text(item, error.message);
-    list.append(item);
+    box.replaceChildren();
+    showError(error.message);
   }
 }
 
@@ -262,18 +349,16 @@ async function saveSettings() {
   state.busy = true;
   text($("settings-note"), "保存中");
   try {
-    const payload = {
-      autoInject: $("auto-inject").checked,
-      maxResults: Number($("max-results").value) || undefined,
-      evidenceMaxChars: Number($("evidence-chars").value) || undefined,
-      localMatch: $("local-match").checked,
-    };
     const settings = await api("/api/knowledge/settings", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        autoInject: $("auto-inject").checked,
+        maxResults: Number($("max-results").value) || undefined,
+        evidenceMaxChars: Number($("evidence-chars").value) || undefined,
+        localMatch: $("local-match").checked,
+      }),
     });
-    state.settings = settings;
-    $("auto-off").hidden = Boolean(settings.autoInject);
+    $("off-note").hidden = Boolean(settings.autoInject);
     $("max-results").value = String(settings.maxResults);
     $("evidence-chars").value = String(settings.evidenceMaxChars);
     text($("settings-note"), "已保存");
@@ -285,63 +370,41 @@ async function saveSettings() {
   }
 }
 
-async function search() {
-  const query = $("query").value.trim();
-  if (!query) return;
-  $("search").disabled = true;
-  try {
-    const payload = await api("/api/knowledge/search", {
-      method: "POST",
-      body: JSON.stringify({ query }),
-    });
-    renderResults(payload.results || [], payload.degraded);
-  } catch (error) {
-    const box = $("results");
-    box.replaceChildren();
-    const item = document.createElement("div");
-    item.className = "error";
-    text(item, error.message);
-    box.append(item);
-  } finally {
-    $("search").disabled = false;
-  }
-}
+const drop = $("drop");
+["dragenter", "dragover"].forEach((type) =>
+  drop.addEventListener(type, (event) => {
+    event.preventDefault();
+    drop.classList.add("over");
+  }),
+);
+["dragleave", "drop"].forEach((type) =>
+  drop.addEventListener(type, (event) => {
+    event.preventDefault();
+    drop.classList.remove("over");
+  }),
+);
+drop.addEventListener("drop", (event) => {
+  void upload(event.dataTransfer && event.dataTransfer.files);
+});
+$("file").addEventListener("change", (event) => {
+  void upload(event.target.files);
+  event.target.value = "";
+});
 
-async function addRoot() {
-  const path = $("new-root").value.trim();
-  if (!path) return;
-  try {
-    await api("/api/knowledge/roots", { method: "POST", body: JSON.stringify({ path }) });
-    $("new-root").value = "";
-    await loadRoots();
-  } catch (error) {
-    $("reason-card").hidden = false;
-    text($("reason"), error.message);
-  }
-}
-
-async function removeRoot(path, button) {
-  button.disabled = true;
-  try {
-    await api("/api/knowledge/roots/remove", { method: "POST", body: JSON.stringify({ path }) });
-    await loadRoots();
-  } catch (error) {
-    button.disabled = false;
-    $("reason-card").hidden = false;
-    text($("reason"), error.message);
-  }
-}
-
+$("refresh").addEventListener("click", () => { void loadStatus(); void loadLibrary(); });
 $("save-settings").addEventListener("click", saveSettings);
-$("search").addEventListener("click", search);
+$("query").addEventListener("input", () => {
+  state.query = $("query").value;
+  renderFiles();
+});
 $("query").addEventListener("keydown", (event) => { if (event.key === "Enter") search(); });
-$("add-root").addEventListener("click", addRoot);
-$("refresh").addEventListener("click", () => { void loadStatus(); void loadRoots(); });
-$("auto-inject").addEventListener("change", () => { $("auto-off").hidden = $("auto-inject").checked; });
+$("auto-inject").addEventListener("change", () => {
+  $("off-note").hidden = $("auto-inject").checked;
+});
 
 void loadStatus();
 void loadSettings();
-void loadRoots();
+void loadLibrary();
 setInterval(loadStatus, 8000);
 </script>
 </body>

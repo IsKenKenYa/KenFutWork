@@ -102,6 +102,12 @@ function fakeService(options: FakeServiceOptions = {}) {
     rootsRevision() {
       return revision;
     },
+    async library() {
+      return { root: "", files: [] };
+    },
+    async uploadFile() {
+      throw new Error("not used");
+    },
   };
   return {
     service,

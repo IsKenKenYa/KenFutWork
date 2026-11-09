@@ -54,6 +54,12 @@ function service(active: boolean): KnowledgeService {
     rootsRevision() {
       return 0;
     },
+    async library() {
+      return { root: "", files: [] };
+    },
+    async uploadFile() {
+      throw new Error("not used");
+    },
   };
 }
 

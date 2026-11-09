@@ -18,6 +18,7 @@ import {
   normalizeKnowledgeRootPath,
   parseJsonOutput,
 } from "../init.js";
+import { createKnowledgeLibrary } from "../library.js";
 import {
   isSagCliPlatformSupported,
   SAG_CLI_VERSION,
@@ -82,6 +83,8 @@ export interface SagCliProviderOptions {
     | { kind: "missing"; reason: string; guidance: string }
     | { kind: "unsupported_platform"; reason: string }
   >;
+  /** 应用数据根：托管目录落 `<dataDir>/knowledge/library`，缺省用进程 cwd。 */
+  dataDir?: string;
   /** 只读 CLI 探测（不触发下载），供状态接口展示。 */
   cliStatus?: () => Promise<{
     state: "available" | "missing" | "unsupported_platform";
@@ -247,6 +250,11 @@ export function createSagCliProvider(
 ): KnowledgeService {
   const inspect = createBundleInspector(options.tryGetPlugins);
   const supported = isSagCliPlatformSupported(options.platform, options.arch);
+  // 「云盘式」托管目录：用户只传文件，目录自身作为唯一根注册。
+  const library = createKnowledgeLibrary({
+    dataDir: options.dataDir ?? process.cwd(),
+    maxBytes: resolveGovernanceNumber("knowledgeReadMaxBytes", undefined),
+  });
   const initOptions: KnowledgeInitOptions = {
     runner: options.runner,
     // check 短预算：冷启动超时就当未知覆盖，直接 add 拉起 service。
@@ -732,6 +740,34 @@ export function createSagCliProvider(
 
     rootsRevision() {
       return rootsRevision;
+    },
+
+    async library() {
+      const root = await library.path();
+      return { root, files: await library.list() };
+    },
+
+    async uploadFile(input) {
+      const saved = await library.save(input.name, input.bytes);
+      const root = await library.path();
+      // 托管目录作为唯一根：首次上传即注册并索引（幂等）。
+      // 注意不能用对象上的 ensureRoot（闭包里拿不到），走内部编排并保持墓碑语义。
+      await assertReady(false);
+      const tombstoned = userRemovedRoots.has(normalizeKnowledgeRootPath(root));
+      const ensured: KnowledgeEnsureResult = tombstoned
+        ? {
+            path: root,
+            action: "rejected",
+            reason: "该目录已被你移除，不自动重新注册；可在侧边栏显式添加。",
+          }
+        : await ensureKnowledgeRoot(initOptions, root);
+      if (ensured.action === "added") rootsRevision += 1;
+      return {
+        file: saved,
+        root,
+        indexed:
+          ensured.action === "added" || ensured.action === "already-indexed",
+      };
     },
   };
 }

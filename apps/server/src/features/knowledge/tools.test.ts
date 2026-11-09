@@ -82,6 +82,12 @@ function fakeKnowledge() {
     rootsRevision() {
       return 3;
     },
+    async library() {
+      return { root: "", files: [] };
+    },
+    async uploadFile() {
+      throw new Error("not used");
+    },
   };
   return { service, calls };
 }

@@ -261,4 +261,18 @@ export interface KnowledgeService {
    * preflight 缓存键的一部分（KB-7「root 集合」的进程内近似；外部变更由 TTL 兜底）。
    */
   rootsRevision(): number;
+  /**
+   * 「云盘式」托管目录：用户只传文件，目录本身作为唯一根自动注册并索引。
+   * 返回托管目录的绝对路径与其中文件清单。
+   */
+  library(): Promise<{
+    root: string;
+    files: Array<{ path: string; absolutePath: string; sizeBytes: number }>;
+  }>;
+  /** 把一个文件写入托管目录，并确保该目录已注册为根（幂等）。 */
+  uploadFile(input: { name: string; bytes: Buffer }): Promise<{
+    file: { path: string; absolutePath: string; sizeBytes: number };
+    root: string;
+    indexed: boolean;
+  }>;
 }

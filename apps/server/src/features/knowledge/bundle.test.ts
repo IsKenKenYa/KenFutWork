@@ -101,7 +101,9 @@ describe("plugins/knowledge bundle（M4）", () => {
     expect(panel).toContain('credentials: "include"');
     expect(panel).toContain("/api/knowledge/status");
     expect(panel).toContain("/api/knowledge/settings");
-    expect(panel).toContain("/api/knowledge/roots");
+    // 云盘式：上传与列表都走 library，不再依赖 roots 路由
+    expect(panel).toContain("/api/knowledge/library");
+    expect(panel).toContain("/api/knowledge/read");
     expect(panel).not.toContain("/api/plugins/");
     expect(panel).not.toMatch(/https?:\/\//u);
   });

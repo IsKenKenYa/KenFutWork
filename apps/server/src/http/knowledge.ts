@@ -12,6 +12,7 @@
 import {
   applicationErrorResponseSchema,
   knowledgeAddRootRequestSchema,
+  knowledgeLibraryResponseSchema,
   knowledgeReadQuerySchema,
   knowledgeReadResponseSchema,
   knowledgeRemoveRootRequestSchema,
@@ -22,6 +23,7 @@ import {
   knowledgeSettingsPatchSchema,
   knowledgeSettingsSchema,
   knowledgeStatusResponseSchema,
+  knowledgeUploadResponseSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -292,6 +294,49 @@ export async function registerKnowledgeRoutes(
       });
       const settings = await options.readSettings(user.instanceId);
       return reply.code(200).send(knowledgeSettingsSchema.parse(settings));
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  app.get("/api/knowledge/library", async (request, reply) => {
+    try {
+      const user = await authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      return reply
+        .code(200)
+        .send(
+          knowledgeLibraryResponseSchema.parse(
+            await options.knowledge.library(),
+          ),
+        );
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  app.post("/api/knowledge/library", async (request, reply) => {
+    try {
+      const user = await authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      // 云盘式上传：单个文件，字段名固定 file；落盘后自动注册托管目录为根。
+      let uploaded: { name: string; bytes: Buffer } | undefined;
+      for await (const part of request.parts({
+        limits: { files: 1, fields: 0, parts: 1 },
+      })) {
+        if (part.type !== "file" || part.fieldname !== "file" || uploaded) {
+          return sendError(reply, "invalid_input", "请选择一个文件。", 400);
+        }
+        uploaded = {
+          name: part.filename || "file",
+          bytes: await part.toBuffer(),
+        };
+      }
+      if (!uploaded) {
+        return sendError(reply, "invalid_input", "请选择一个文件。", 400);
+      }
+      const result = await options.knowledge.uploadFile(uploaded);
+      return reply.code(200).send(knowledgeUploadResponseSchema.parse(result));
     } catch (error) {
       return handleError(error, reply);
     }

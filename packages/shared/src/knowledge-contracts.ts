@@ -124,6 +124,26 @@ export const knowledgeSettingsPatchSchema = z.object({
   readMaxBytes: z.number().int().optional(),
 });
 
+/** 托管目录（云盘式上传）里的一个文件。 */
+export const knowledgeLibraryFileSchema = z.object({
+  path: z.string(),
+  absolutePath: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+});
+
+export const knowledgeLibraryResponseSchema = z.object({
+  /** 托管目录绝对路径（它是唯一被注册的知识库根）。 */
+  root: z.string(),
+  files: z.array(knowledgeLibraryFileSchema),
+});
+
+/** 上传结果：落盘位置 + 是否已触发注册/索引。 */
+export const knowledgeUploadResponseSchema = z.object({
+  file: knowledgeLibraryFileSchema,
+  root: z.string(),
+  indexed: z.boolean(),
+});
+
 export const knowledgeInitResponseSchema = z.object({
   ok: z.boolean(),
   credential: z.enum(["reused", "injected", "missing"]),
@@ -156,6 +176,13 @@ export type KnowledgeSearchResponse = z.infer<
   typeof knowledgeSearchResponseSchema
 >;
 export type KnowledgeReadResponse = z.infer<typeof knowledgeReadResponseSchema>;
+export type KnowledgeLibraryFile = z.infer<typeof knowledgeLibraryFileSchema>;
+export type KnowledgeLibraryResponse = z.infer<
+  typeof knowledgeLibraryResponseSchema
+>;
+export type KnowledgeUploadResponse = z.infer<
+  typeof knowledgeUploadResponseSchema
+>;
 export type KnowledgeSettingsResponse = z.infer<typeof knowledgeSettingsSchema>;
 export type KnowledgeSettingsPatch = z.infer<
   typeof knowledgeSettingsPatchSchema

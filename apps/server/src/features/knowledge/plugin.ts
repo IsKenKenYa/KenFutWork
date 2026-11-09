@@ -133,6 +133,7 @@ export function createKnowledgePlugin(
             deps.get("plugins") as PluginsServiceLike | undefined,
           readJevCredential,
           ensureCli,
+          dataDir,
           // 0 配置：语义档不可用时自动退本地匹配（治理可关）。
           autoLocalFallback:
             ctx.env.agentGovernance?.knowledgeAutoLocalFallback ?? true,

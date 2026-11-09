@@ -125,6 +125,7 @@ import {
   jobListResponseSchema,
   jobResponseSchema,
   knowledgeAddRootRequestSchema,
+  knowledgeLibraryResponseSchema,
   knowledgeReadQuerySchema,
   knowledgeReadResponseSchema,
   knowledgeRemoveRootRequestSchema,
@@ -135,6 +136,7 @@ import {
   knowledgeSettingsPatchSchema,
   knowledgeSettingsSchema,
   knowledgeStatusResponseSchema,
+  knowledgeUploadResponseSchema,
   localAccessClientCreateRequestSchema,
   localAccessClientCreateResponseSchema,
   localAccessClientListResponseSchema,
@@ -344,6 +346,29 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     summary: "执行 SAG2 语义检索",
     description:
       "BM25 召回 + Jev 证据判定 + 查询时扩展，返回带路径与行号的原文证据；对应 sag 查询 --json。检索服务不可用时显式报错，不静默改用模型记忆。",
+  },
+  {
+    method: "get",
+    path: "/api/knowledge/library",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    responseSchema: knowledgeLibraryResponseSchema,
+    summary: "列出托管知识库文件",
+    description:
+      "返回「传文件即入库」托管目录的绝对路径与文件清单；该目录本身是唯一的知识库根，用户只需上传文件。",
+  },
+  {
+    method: "post",
+    path: "/api/knowledge/library",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    multipart: { fileField: "file" },
+    responseSchema: knowledgeUploadResponseSchema,
+    summary: "上传文件到托管知识库",
+    description:
+      "以 multipart 上传单个文件：落到托管目录（重名自动加序号、不覆盖），并把该目录幂等注册为知识库根；索引由上游增量维护。",
   },
   {
     method: "get",
