@@ -167,10 +167,16 @@ function renderRoots(payload) {
   }
 }
 
-function renderResults(results) {
+function renderResults(results, degraded) {
   const box = $("results");
   box.replaceChildren();
   $("detail").hidden = true;
+  if (degraded === "local-match") {
+    const badge = document.createElement("div");
+    badge.className = "hint";
+    text(badge, "本地匹配，非语义检索");
+    box.append(badge);
+  }
   if (!results || results.length === 0) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -288,7 +294,7 @@ async function search() {
       method: "POST",
       body: JSON.stringify({ query }),
     });
-    renderResults(payload.results || []);
+    renderResults(payload.results || [], payload.degraded);
   } catch (error) {
     const box = $("results");
     box.replaceChildren();

@@ -173,6 +173,8 @@ export function createKnowledgePreflight(
   interface CacheEntry {
     at: number;
     results: KnowledgeEvidence[];
+    /** 该结果是否为本地匹配档（含自动降级），决定证据块措辞。 */
+    localMatch: boolean;
   }
   const cache = new Map<string, CacheEntry>();
   // 内存护栏：缓存/去重集合是有损进程内加速，不是限额语义，不进治理表。
@@ -245,7 +247,7 @@ export function createKnowledgePreflight(
         record("injected", null);
         return next({
           ...payload,
-          input: `${payload.input}\n\n${buildKnowledgeEvidenceBlock(cached.results, settings.evidenceMaxChars, settings.localMatch)}`,
+          input: `${payload.input}\n\n${buildKnowledgeEvidenceBlock(cached.results, settings.evidenceMaxChars, cached.localMatch)}`,
         });
       }
       // ④ 并发上限：超出本轮跳过，不排队拖慢对话。
@@ -282,9 +284,12 @@ export function createKnowledgePreflight(
           localMatch: settings.localMatch,
         });
         const deduped = dedupeKnowledgeEvidence(result.results);
+        // 实际档位：设置要求本地档，或 Provider 因缺 Jev 自动降级。
+        const usedLocalMatch =
+          settings.localMatch || result.degraded === "local-match";
         cacheSet(
           cacheKey,
-          { at: now(), results: deduped },
+          { at: now(), results: deduped, localMatch: usedLocalMatch },
           settings.cacheTtlMs,
         );
         markRun();
@@ -299,7 +304,7 @@ export function createKnowledgePreflight(
         record("injected", null);
         return next({
           ...payload,
-          input: `${payload.input}\n\n${buildKnowledgeEvidenceBlock(deduped, settings.evidenceMaxChars, settings.localMatch)}`,
+          input: `${payload.input}\n\n${buildKnowledgeEvidenceBlock(deduped, settings.evidenceMaxChars, usedLocalMatch)}`,
         });
       } finally {
         inFlight -= 1;

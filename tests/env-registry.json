@@ -634,6 +634,13 @@
       "status": "active",
       "note": "SAG2 知识库纯本地匹配档（-F），显式开启才降级（KB-4）"
     },
+    "KENFUTWORK_KNOWLEDGE_AUTO_LOCAL_FALLBACK": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库语义档不可用时自动退到 -F 本地匹配（0 配置开箱可用）"
+    },
     "KENFUTWORK_KNOWLEDGE_MAX_RESULTS": {
       "surface": "server",
       "readers": ["packages/shared/src/governance.ts"],

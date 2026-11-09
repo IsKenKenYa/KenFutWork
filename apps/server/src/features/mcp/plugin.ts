@@ -4,6 +4,10 @@ import type { PluginDefinition } from "../../kernel/types.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import { createCodeUiMcpHost } from "./code-ui-host.js";
+import {
+  createMcpEnvCredentialReader,
+  MCP_ENV_CREDENTIAL_CAPABILITY,
+} from "./env-credential.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
 import { mcpConfigurationVersion } from "./mcp-tools.js";
 import { createMcpServerStore } from "./server-store.js";
@@ -182,6 +186,20 @@ export function createMcpPlugin(): PluginDefinition {
           },
         }),
       );
+      // 只读凭据缝：知识库要复用 jev MCP 条目的 TypeSafe key 注入 `sag config`。
+      // 只按「服务器名 + env 键」取单值，不枚举整个 env、不经 HTTP 暴露（DEC-7）。
+      const startedService = service;
+      if (startedService) {
+        ctx.effect(() =>
+          ctx.get("capabilities").register(MCP_ENV_CREDENTIAL_CAPABILITY, {
+            id: "mcp:env-credential",
+            value: createMcpEnvCredentialReader({
+              readConfigurations: () =>
+                startedService.readSettingsConfigurations(),
+            }),
+          }),
+        );
+      }
       ctx.effect(() =>
         ctx
           .get("executionScopes")

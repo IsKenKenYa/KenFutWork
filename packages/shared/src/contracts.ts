@@ -388,6 +388,9 @@ export const instanceSettingsSchema = z.object({
   /** SAG2 知识库（KB-2/KB-4/KB-7）：默认值与护栏唯一属主是 governance.ts。 */
   knowledgeAutoInject: governanceBoolSetting("knowledgeAutoInject"),
   knowledgeLocalMatch: governanceBoolSetting("knowledgeLocalMatch"),
+  knowledgeAutoLocalFallback: governanceBoolSetting(
+    "knowledgeAutoLocalFallback",
+  ),
   knowledgeMaxResults: governanceSetting("knowledgeMaxResults"),
   knowledgeMinHits: governanceSetting("knowledgeMinHits"),
   knowledgeSearchTimeoutMs: governanceSetting("knowledgeSearchTimeoutMs"),

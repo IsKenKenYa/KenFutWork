@@ -18,6 +18,8 @@ import { createSettingsRepository } from "../settings/repository.js";
 export interface KnowledgeRuntimeSettings {
   autoInject: boolean;
   localMatch: boolean;
+  /** 语义档不可用时自动退到本地匹配（0 配置开箱可用）。 */
+  autoLocalFallback: boolean;
   maxResults: number;
   minHits: number;
   searchTimeoutMs: number;
@@ -76,6 +78,13 @@ export function createKnowledgeSettingsReader(deps: {
         "knowledgeLocalMatch",
         typeof values.knowledgeLocalMatch === "boolean"
           ? values.knowledgeLocalMatch
+          : undefined,
+        env,
+      ),
+      autoLocalFallback: resolveGovernanceBool(
+        "knowledgeAutoLocalFallback",
+        typeof values.knowledgeAutoLocalFallback === "boolean"
+          ? values.knowledgeAutoLocalFallback
           : undefined,
         env,
       ),

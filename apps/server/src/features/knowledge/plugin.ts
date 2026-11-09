@@ -18,6 +18,7 @@
 import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerKnowledgeRoutes } from "../../http/knowledge.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import { MCP_ENV_CREDENTIAL_CAPABILITY } from "../mcp/env-credential.js";
 import { createSagCliInstaller, type SagCliResolution } from "./cli-install.js";
 import {
   createKnowledgePreflight,
@@ -33,7 +34,11 @@ import {
   type KnowledgeSettingsReader,
 } from "./settings.js";
 import { createKnowledgeToolEntries } from "./tools.js";
-import { KNOWLEDGE_JEV_PROVIDER_ID } from "./types.js";
+import {
+  KNOWLEDGE_JEV_ENV_KEY,
+  KNOWLEDGE_JEV_MCP_SERVER_NAME,
+  KNOWLEDGE_JEV_PROVIDER_ID,
+} from "./types.js";
 
 export interface KnowledgePluginOptions {
   platform?: NodeJS.Platform;
@@ -63,9 +68,26 @@ export function createKnowledgePlugin(
       // `modelProviders` 在 serverProfile 里先于本插件装配；用 tryGet 让
       // 最小装配 / 测试也能挂载，缺实例时由状态接口给出引导，不擅自创建。
       const modelProviders = ctx.tryGet("modelProviders");
+      /**
+       * Jev 凭据来源链（0 配置优先）：
+       * ① jev 插件配套的 MCP 条目 `TYPESAFE_API_KEY`（装了 jev 插件就能直接复用）
+       * ② `modelProviders` 的 TypeSafe 实例（BYOK 设置页）
+       * 都取不到 → null，由上层决定降级或报错；绝不擅自创建实例、不覆盖既有 SAG 配置。
+       */
       const readJevCredential =
         options.readJevCredential ??
         (async () => {
+          const fromMcp = await ctx
+            .get("capabilities")
+            .get<{
+              readEnvValue(
+                serverName: string,
+                envKey: string,
+              ): Promise<string | null>;
+            }>(MCP_ENV_CREDENTIAL_CAPABILITY, "mcp:env-credential")
+            ?.readEnvValue(KNOWLEDGE_JEV_MCP_SERVER_NAME, KNOWLEDGE_JEV_ENV_KEY)
+            .catch(() => null);
+          if (fromMcp) return fromMcp;
           if (!modelProviders) return null;
           try {
             const credentials = await modelProviders.resolveCredentialsById(
@@ -111,6 +133,9 @@ export function createKnowledgePlugin(
             deps.get("plugins") as PluginsServiceLike | undefined,
           readJevCredential,
           ensureCli,
+          // 0 配置：语义档不可用时自动退本地匹配（治理可关）。
+          autoLocalFallback:
+            ctx.env.agentGovernance?.knowledgeAutoLocalFallback ?? true,
           cliStatus: async () => {
             const inspected = await installer.inspect();
             if (inspected.kind === "system" || inspected.kind === "managed") {

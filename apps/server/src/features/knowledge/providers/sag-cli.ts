@@ -69,6 +69,11 @@ export interface SagCliProviderOptions {
   indexExtensions?: readonly string[];
   defaultMaxResults?: number;
   /**
+   * 0 配置降级：语义档因缺 Jev 凭据不可用时，自动改用 `-F` 本地匹配并标记
+   * `degraded:"local-match"`。默认开；关掉则语义失败直接抛错（KB-4 严格版）。
+   */
+  autoLocalFallback?: boolean;
+  /**
    * KB-5 三级探测：系统 CLI → 自带 CLI → 按需下载。返回 missing/unsupported 时
    * 调用方 fail loud；成功时安装器已把二进制路径交给 runner（getter）。
    */
@@ -226,6 +231,87 @@ export function createSagCliProvider(
     return roots.map((root) => ({ ...root, error: root.error ?? null }));
   }
 
+  /**
+   * 真正的检索编排（不含降级决策）：校验 → 参数 → 单根或无 path 全根遍历。
+   * `localMatch` 经入参决定走语义档还是 `-F` 档。
+   */
+  async function doSearch(
+    input: KnowledgeSearchInput,
+  ): Promise<KnowledgeSearchResult> {
+    await assertReady(!input.localMatch);
+    const query = input.query.trim();
+    if (!query || query.length > SAG_QUERY_MAX_CHARS) {
+      throw new KnowledgeServiceError(
+        "invalid_input",
+        `检索问题须为 1–${SAG_QUERY_MAX_CHARS} 字符。`,
+      );
+    }
+    const maxResults = resolveGovernanceNumber(
+      "knowledgeMaxResults",
+      input.maxResults ?? options.defaultMaxResults,
+    );
+    const timeoutMs =
+      input.timeoutMs === undefined
+        ? undefined
+        : resolveGovernanceNumber("knowledgeSearchTimeoutMs", input.timeoutMs);
+    const runSearch = async (path: string | undefined) => {
+      // -c 取正文（0.1.8 帮助实测：语义默认含正文；-F/-E 需显式 -c）；
+      // -F 形状按探针实采（位置参数 + --json）。
+      const args = input.localMatch
+        ? ["-F", query, "-c", ...(path ? [path] : []), "--json"]
+        : [
+            query,
+            "--json",
+            "-m",
+            String(maxResults),
+            "-c",
+            ...(path ? ["--path", path] : []),
+          ];
+      const result = await options.runner({
+        args,
+        ...(timeoutMs === undefined ? {} : { timeoutMs }),
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      assertOk(result, input.localMatch ? "本地匹配" : "SAG2 语义检索");
+      if (input.localMatch) {
+        const output = decode(result, "本地匹配", sagMatchOutputSchema);
+        return {
+          scope: output.scope,
+          results: output.results.map(toKnowledgeEvidence),
+          truncated: output.truncated,
+        };
+      }
+      const output = decode(result, "SAG2 语义检索", sagSearchOutputSchema);
+      return {
+        scope: output.scope,
+        results: output.results.map(toKnowledgeEvidence),
+        truncated: output.truncated,
+      };
+    };
+    if (input.path) return runSearch(input.path);
+    // 无 path 时上游按进程 cwd 划定范围（实测：cwd 不在任何根下直接 exit 1）。
+    // 宿主语义是「检索知识库」，改为遍历全部已注册根并合并（调用方预算仍然生效）。
+    // 目录清单用 list 自己的冷启动预算（默认 120s），不复用检索超时。
+    const roots = await listRoots();
+    if (roots.length === 0) {
+      return { scope: "", results: [], truncated: false };
+    }
+    const merged: KnowledgeEvidence[] = [];
+    let truncated = false;
+    for (const root of roots) {
+      const result = await runSearch(root.path);
+      merged.push(...result.results);
+      truncated ||= result.truncated;
+      if (merged.length >= maxResults) break;
+    }
+    const deduped = dedupeKnowledgeEvidence(merged);
+    return {
+      scope: roots.map((root) => root.path).join(";"),
+      results: deduped.slice(0, maxResults),
+      truncated: truncated || deduped.length > maxResults,
+    };
+  }
+
   return {
     async isActive() {
       return toGateVerdict(await inspect());
@@ -323,83 +409,26 @@ export function createSagCliProvider(
 
     async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult> {
       // 本地匹配档是显式降级（KB-4）：纯本地、不需 Jev，故不要求凭据就绪。
-      await assertReady(!input.localMatch);
-      const query = input.query.trim();
-      if (!query || query.length > SAG_QUERY_MAX_CHARS) {
-        throw new KnowledgeServiceError(
-          "invalid_input",
-          `检索问题须为 1–${SAG_QUERY_MAX_CHARS} 字符。`,
-        );
-      }
-      const maxResults = resolveGovernanceNumber(
-        "knowledgeMaxResults",
-        input.maxResults ?? options.defaultMaxResults,
-      );
-      const timeoutMs =
-        input.timeoutMs === undefined
-          ? undefined
-          : resolveGovernanceNumber(
-              "knowledgeSearchTimeoutMs",
-              input.timeoutMs,
-            );
-      const runSearch = async (path: string | undefined) => {
-        // -c 取正文（0.1.8 帮助实测：语义默认含正文；-F/-E 需显式 -c）；
-        // -F 形状按探针实采（位置参数 + --json）。
-        const args = input.localMatch
-          ? ["-F", query, "-c", ...(path ? [path] : []), "--json"]
-          : [
-              query,
-              "--json",
-              "-m",
-              String(maxResults),
-              "-c",
-              ...(path ? ["--path", path] : []),
-            ];
-        const result = await options.runner({
-          args,
-          ...(timeoutMs === undefined ? {} : { timeoutMs }),
-          ...(input.signal ? { signal: input.signal } : {}),
-        });
-        assertOk(result, input.localMatch ? "本地匹配" : "SAG2 语义检索");
-        if (input.localMatch) {
-          const output = decode(result, "本地匹配", sagMatchOutputSchema);
+      const wantLocal = input.localMatch === true;
+      if (!wantLocal && options.autoLocalFallback !== false) {
+        // 0 配置优先：语义档不可用（缺 Jev 凭据/初始化失败）时自动退到 -F，
+        // 由调用方在证据块里如实标注「本地匹配，非语义检索」。
+        try {
+          return { ...(await doSearch(input)), degraded: undefined };
+        } catch (error) {
+          const unavailable =
+            error instanceof KnowledgeServiceError &&
+            error.code === "service_unavailable" &&
+            /JEV|Jev|凭据|未配置/.test(error.message);
+          if (!unavailable) throw error;
           return {
-            scope: output.scope,
-            results: output.results.map(toKnowledgeEvidence),
-            truncated: output.truncated,
+            ...(await doSearch({ ...input, localMatch: true })),
+            degraded: "local-match",
           };
         }
-        const output = decode(result, "SAG2 语义检索", sagSearchOutputSchema);
-        return {
-          scope: output.scope,
-          results: output.results.map(toKnowledgeEvidence),
-          truncated: output.truncated,
-        };
-      };
-      if (input.path) return runSearch(input.path);
-      // 无 path 时上游按进程 cwd 划定范围（实测：cwd 不在任何根下直接 exit 1）。
-      // 宿主语义是「检索知识库」，改为遍历全部已注册根并合并（调用方预算仍然生效）。
-      // 目录清单用 list 自己的冷启动预算（默认 120s），不复用检索超时。
-      const roots = await listRoots();
-      if (roots.length === 0) {
-        return { scope: "", results: [], truncated: false };
       }
-      const merged: KnowledgeEvidence[] = [];
-      let truncated = false;
-      for (const root of roots) {
-        const result = await runSearch(root.path);
-        merged.push(...result.results);
-        truncated ||= result.truncated;
-        if (merged.length >= maxResults) break;
-      }
-      const deduped = dedupeKnowledgeEvidence(merged);
-      return {
-        scope: roots.map((root) => root.path).join(";"),
-        results: deduped.slice(0, maxResults),
-        truncated: truncated || deduped.length > maxResults,
-      };
+      return doSearch(input);
     },
-
     async read(input: KnowledgeReadInput): Promise<KnowledgeReadResult> {
       await assertReady(false);
       const path = input.path.trim();

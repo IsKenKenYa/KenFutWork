@@ -82,6 +82,8 @@ export const knowledgeSearchResponseSchema = z.object({
   scope: z.string(),
   results: z.array(knowledgeEvidenceSchema),
   truncated: z.boolean(),
+  /** 降级标记：语义档不可用时自动改用 -F 本地匹配，界面/工具必须如实标注。 */
+  degraded: z.enum(["local-match"]).optional(),
 });
 
 export const knowledgeReadQuerySchema = z.object({

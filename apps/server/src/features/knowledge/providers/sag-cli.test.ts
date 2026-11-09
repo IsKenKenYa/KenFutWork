@@ -561,3 +561,80 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
     expect(service.rootsRevision()).toBe(before + 3);
   });
 });
+
+describe("SagCliProvider（0 配置降级）", () => {
+  const matchOutput = JSON.stringify({
+    protocol_version: 2,
+    scope: "D:/work/project",
+    results: [
+      {
+        path: "src/client.ts",
+        absolute_path: "D:/work/project/src/client.ts",
+        start_line: 142,
+        end_line: 142,
+        matched_lines: [142],
+        content: "if (status === 499) retry();",
+      },
+    ],
+    files: [],
+    matched: true,
+    truncated: false,
+  });
+
+  it("缺 Jev 凭据时语义档自动退到 -F，并标记 degraded", async () => {
+    const { service, calls } = harness(
+      (args) => {
+        if (args[0] === "config" && args.length === 1) return ok(configured);
+        if (args[0] === "list")
+          return ok(
+            JSON.stringify([
+              {
+                path: "D:/work/project",
+                name: "project",
+                status: "ready",
+                count: 1,
+                error: null,
+              },
+            ]),
+          );
+        // 语义检索：上游 exit 1 表示 JEV 未配置
+        if (args[0] === "知识库负责人") {
+          return { code: 1, stdout: "", stderr: "JEV 未配置" };
+        }
+        return ok(matchOutput);
+      },
+      { credential: null },
+    );
+    const result = await service.search({ query: "知识库负责人" });
+    expect(result.degraded).toBe("local-match");
+    expect(result.results[0]?.matchedLines).toEqual([142]);
+    // 第二次调用确实是 -F
+    expect(calls.some((call) => call.args[0] === "-F")).toBe(true);
+  });
+
+  it("关掉 autoLocalFallback 时语义失败直接抛错（不静默降级）", async () => {
+    const service = createSagCliProvider({
+      runner: async () => ({ code: 1, stdout: "", stderr: "JEV 未配置" }),
+      tryGetPlugins: () => fakePlugins(true),
+      readJevCredential: async () => null,
+      platform: "win32",
+      arch: "x64",
+      autoLocalFallback: false,
+    });
+    await expect(
+      service.search({ query: "知识库负责人", path: "D:/work/project" }),
+    ).rejects.toMatchObject({ code: "service_unavailable" });
+  });
+
+  it("显式本地匹配档不标记 degraded（那是用户选的档，不是降级）", async () => {
+    const { service } = harness((args) =>
+      args[0] === "config" ? ok(configured) : ok(matchOutput),
+    );
+    const result = await service.search({
+      query: "499",
+      path: "D:/work/project",
+      localMatch: true,
+    });
+    expect(result.degraded).toBeUndefined();
+  });
+});

@@ -71,6 +71,13 @@ export interface KnowledgeGateVerdict {
 export const KNOWLEDGE_JEV_PROVIDER_ID = "typesafe-jev";
 
 /**
+ * jev 判决插件配套的 MCP 条目（`features/mcp/curated-catalog.ts` 的 `jev` 条目）
+ * 与它承载凭据的 env 键。装了 jev 插件并填好 key，知识库就零配置复用同一把凭据。
+ */
+export const KNOWLEDGE_JEV_MCP_SERVER_NAME = "jev";
+export const KNOWLEDGE_JEV_ENV_KEY = "TYPESAFE_API_KEY";
+
+/**
  * 上游 `FileTypes::default()` 是 `code:false, config:false`（M0 §3），
  * 故新根必须用 `sag add --types` 显式列出文档 + 代码扩展名。
  * 已存在的根**不改**这个列表——`--types` 是「只索引这些」，会覆盖用户桌面端设置。
@@ -175,6 +182,11 @@ export interface KnowledgeSearchResult {
   scope: string;
   results: KnowledgeEvidence[];
   truncated: boolean;
+  /**
+   * 本次结果是否为降级档：`local-match` = 语义检索不可用（缺 Jev 凭据等）时
+   * 自动改用 `-F` 本地字面匹配。调用方必须如实标注，不能当成语义检索结果。
+   */
+  degraded?: "local-match" | undefined;
 }
 
 export interface KnowledgeReadInput {

@@ -21119,6 +21119,10 @@
                 "default": false,
                 "type": "boolean"
               },
+              "knowledgeAutoLocalFallback": {
+                "default": true,
+                "type": "boolean"
+              },
               "knowledgeMaxResults": {
                 "default": 5,
                 "type": "integer",
@@ -21243,6 +21247,7 @@
               "computerUseMcpKeepAliveMs",
               "knowledgeAutoInject",
               "knowledgeLocalMatch",
+              "knowledgeAutoLocalFallback",
               "knowledgeMaxResults",
               "knowledgeMinHits",
               "knowledgeSearchTimeoutMs",
@@ -21817,6 +21822,9 @@
             "type": "boolean"
           },
           "knowledgeLocalMatch": {
+            "type": "boolean"
+          },
+          "knowledgeAutoLocalFallback": {
             "type": "boolean"
           },
           "knowledgeMaxResults": {
@@ -22938,6 +22946,12 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "degraded": {
+            "type": "string",
+            "enum": [
+              "local-match"
+            ]
           }
         },
         "required": [
