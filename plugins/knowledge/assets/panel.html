@@ -186,6 +186,7 @@ const CATS = [
 ];
 
 const state = { files: [], cat: "all", keyword: "", busy: false };
+let unauthorized = false;
 
 function text(node, value) { node.textContent = value == null ? "" : String(value); }
 function humanSize(bytes) {
@@ -272,9 +273,17 @@ function renderGrid() {
     blank.className = "blank";
     blank.innerHTML = SVG.empty;
     const b = document.createElement("b");
-    text(b, state.files.length === 0 ? "还没有文件" : "没有匹配的文件");
     const s = document.createElement("span");
-    text(s, state.files.length === 0 ? "点右上角上传，或把文件拖进来" : "换个分类或关键词试试");
+    if (unauthorized) {
+      text(b, "未连接");
+      text(s, "刷新页面即可重新连接");
+    } else if (state.files.length === 0) {
+      text(b, "还没有文件");
+      text(s, "点右上角上传，或把文件拖进来");
+    } else {
+      text(b, "没有匹配的文件");
+      text(s, "换个分类或关键词试试");
+    }
     blank.append(b, s);
     grid.append(blank);
     return;
@@ -319,9 +328,18 @@ async function loadLibrary() {
   try {
     const payload = await api("/api/knowledge/library");
     state.files = payload.files || [];
+    unauthorized = false;
     renderAll();
     showError("");
-  } catch (error) { showError(error.message); }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // 会话过期是「重连」而不是「报错」：给出可操作指引，别只抛服务端原文。
+    unauthorized = /凭据|unauthor|401/iu.test(message);
+    showError(
+      unauthorized ? "连接已过期，请刷新页面重新连接" : message,
+    );
+    renderAll();
+  }
 }
 
 function renderAll() { renderNav(); renderGrid(); }
