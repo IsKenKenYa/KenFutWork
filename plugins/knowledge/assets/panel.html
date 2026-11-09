@@ -7,66 +7,65 @@
 <style>
   :root{
     color-scheme:light dark;
-    --bg:#fff;--fg:#1a1d26;--muted:#8b93a5;--line:#eef0f4;--line2:#e2e6ee;
-    --card:#fafbfc;--hover:#f4f6fa;--primary:#2f6bff;--primary-soft:#eaf0ff;
-    --shadow-lift:0 6px 20px rgba(16,24,40,.10);
+    --bg:#fff;--fg:#1b1f29;--muted:#8a92a6;--line:#eceff4;--line2:#dfe4ed;
+    --card:#fbfcfd;--hover:#f3f6fb;--sel:#eef4ff;--primary:#2f6bff;
+    --side:#fafbfd;
   }
   @media (prefers-color-scheme:dark){
-    :root{--bg:#15171c;--fg:#e9ecf2;--muted:#8b93a5;--line:#242830;--line2:#2e3340;
-      --card:#1b1e25;--hover:#20242c;--primary:#7aa2ff;--primary-soft:#1e2a44;
-      --shadow-lift:0 8px 24px rgba(0,0,0,.45);}
+    :root{--bg:#15171c;--fg:#e9ecf2;--muted:#8a92a6;--line:#242830;--line2:#2e3340;
+      --card:#1a1d24;--hover:#20242c;--sel:#1d2740;--primary:#7aa2ff;--side:#171a20;}
   }
   *{box-sizing:border-box}
-  html,body{height:100%}
-  body{margin:0;background:var(--bg);color:var(--fg);
-    font:13px/1.5 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
-    display:flex;flex-direction:column}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);display:flex;
+    font:13px/1.55 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
 
-  .top{display:flex;align-items:center;gap:8px;padding:12px 14px 0}
-  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;
-    background:var(--card);color:var(--muted);font-size:11px;border:1px solid var(--line)}
-  .pill .d{width:6px;height:6px;border-radius:50%;background:var(--muted)}
-  .pill.ok .d{background:#22c55e}.pill.warn .d{background:#f59e0b}.pill.err .d{background:#ef4444}
-  .spacer{flex:1}
-  .ghost{height:28px;padding:0 9px;display:inline-flex;align-items:center;gap:6px;
-    border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--muted);
-    font:inherit;font-size:12px;cursor:pointer;transition:.15s}
-  .ghost:hover{background:var(--hover);color:var(--fg)}
-  .ghost svg{width:14px;height:14px}
+  /* 左栏：分类树（网盘经典结构） */
+  .side{width:172px;flex:none;background:var(--side);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;padding:10px 8px}
+  .side .brand{display:flex;align-items:center;gap:7px;padding:4px 8px 12px;font-weight:650;font-size:13.5px}
+  .side .brand svg{width:17px;height:17px;color:var(--primary)}
+  .side .grp{padding:10px 8px 4px;color:var(--muted);font-size:10.5px;letter-spacing:.04em}
+  .nav{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;
+    color:var(--fg);cursor:pointer;font-size:12.5px;transition:.12s}
+  .nav:hover{background:var(--hover)}
+  .nav.on{background:var(--sel);color:var(--primary);font-weight:600}
+  .nav svg{width:15px;height:15px;flex:none;opacity:.85}
+  .nav .cnt{margin-left:auto;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+  .nav.on .cnt{color:var(--primary);opacity:.8}
+  .side .foot{margin-top:auto;padding:8px 4px 2px;border-top:1px solid var(--line)}
 
-  .searchwrap{position:relative;margin:11px 14px 0}
-  .searchwrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+  /* 右栏：工具栏 + 网格 */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .tool{display:flex;align-items:center;gap:9px;padding:11px 16px;border-bottom:1px solid var(--line)}
+  .tool .searchbox{position:relative;flex:1;min-width:0;max-width:420px}
+  .tool .searchbox svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);
     width:14px;height:14px;color:var(--muted);pointer-events:none}
-  .search{width:100%;padding:8px 10px 8px 31px;border:1px solid var(--line2);border-radius:9px;
+  .tool input{width:100%;padding:7px 10px 7px 30px;border:1px solid var(--line2);border-radius:8px;
     background:var(--card);color:var(--fg);font:inherit;font-size:12.5px}
-  .search:focus{outline:none;border-color:var(--primary);background:var(--bg)}
-  .search::placeholder{color:var(--muted)}
+  .tool input:focus{outline:none;border-color:var(--primary);background:var(--bg)}
+  .tool .sp{flex:1}
+  .btn{height:29px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--fg);
+    font:inherit;font-size:12px;cursor:pointer;transition:.14s;white-space:nowrap}
+  .btn:hover{background:var(--hover)}
+  .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn svg{width:14px;height:14px}
 
-  .cats{display:flex;gap:6px;padding:10px 14px 8px;overflow-x:auto;scrollbar-width:none}
-  .cats::-webkit-scrollbar{display:none}
-  .cat{flex:none;padding:4px 11px;border-radius:999px;border:1px solid var(--line2);
-    background:transparent;color:var(--muted);font:inherit;font-size:12px;cursor:pointer;
-    display:inline-flex;align-items:center;gap:5px;transition:.15s;white-space:nowrap}
-  .cat:hover{background:var(--hover);color:var(--fg)}
-  .cat.on{background:var(--primary-soft);border-color:transparent;color:var(--primary);font-weight:600}
-  .cat .n{font-size:11px;opacity:.75;font-variant-numeric:tabular-nums}
+  .body{flex:1;min-height:0;overflow-y:auto;padding:14px 16px 20px}
+  .sechead{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
+  .sechead b{font-size:12.5px;font-weight:600}
+  .sechead span{color:var(--muted);font-size:11px}
 
-  .drop{margin:0 14px 10px;padding:9px 12px;border:1px dashed var(--line2);border-radius:9px;
-    color:var(--muted);font-size:12px;display:flex;align-items:center;gap:8px;cursor:pointer;
-    transition:.15s;background:transparent}
-  .drop:hover,.drop.over{border-color:var(--primary);background:var(--primary-soft);color:var(--primary)}
-  .drop svg{width:15px;height:15px;flex:none}
-  .drop input{display:none}
-  .drop .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-  .grid{flex:1;min-height:0;overflow-y:auto;padding:2px 14px 18px;
-    display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px;align-content:start}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:11px}
   .tile{border:1px solid var(--line);border-radius:11px;background:var(--card);
-    padding:12px 10px 9px;cursor:pointer;transition:.16s;display:flex;flex-direction:column;
+    padding:13px 10px 10px;cursor:pointer;transition:.16s;display:flex;flex-direction:column;
     align-items:center;gap:7px}
-  .tile:hover{border-color:var(--line2);background:var(--hover);box-shadow:var(--shadow-lift);transform:translateY(-1px)}
-  .tile .thumb{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center}
-  .tile .thumb svg{width:19px;height:19px}
+  .tile:hover{border-color:var(--line2);background:var(--hover);transform:translateY(-1px);
+    box-shadow:0 6px 18px rgba(16,24,40,.08)}
+  .tile .thumb{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .tile .thumb svg{width:20px;height:20px}
   .tile .nm{width:100%;text-align:center;font-size:11.5px;line-height:1.35;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-all}
   .tile .sz{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
@@ -82,97 +81,109 @@
     .c-image{background:#2a1f42;color:#c4a5ff}.c-other{background:#232833;color:#94a3b8}
   }
 
-  .hits{padding:0 14px 18px;overflow-y:auto;max-height:45%}
-  .hit{padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--card);
-    margin-bottom:7px;cursor:pointer}
+  .hits{margin-top:16px}
+  .hit{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);
+    margin-bottom:8px;cursor:pointer;transition:.14s}
   .hit:hover{border-color:var(--line2);background:var(--hover)}
-  .hit .hl{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;margin-bottom:4px}
+  .hit .hl{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;margin-bottom:4px}
   .hit .hl b{color:var(--fg);font-weight:600;font-size:11.5px}
-  .hit .body{font-size:12px;color:var(--fg);white-space:pre-wrap;word-break:break-word;
-    max-height:66px;overflow:hidden}
+  .hit .bodytxt{font-size:12px;color:var(--fg);white-space:pre-wrap;word-break:break-word;
+    max-height:70px;overflow:hidden}
 
-  .blank{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:9px;color:var(--muted);padding:28px 20px;text-align:center}
-  .blank svg{width:42px;height:42px;opacity:.45}
+  .blank{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:9px;color:var(--muted);padding:52px 20px;text-align:center}
+  .blank svg{width:46px;height:46px;opacity:.4}
   .blank b{font-size:12.5px;font-weight:600;color:var(--fg)}
   .blank span{font-size:11.5px}
-  .err{margin:0 14px 10px;padding:7px 10px;border-radius:8px;background:rgba(239,68,68,.1);
+  .err{margin:0 0 12px;padding:7px 10px;border-radius:8px;background:rgba(239,68,68,.1);
     color:#dc2626;font-size:11.5px}
   @media (prefers-color-scheme:dark){.err{color:#fca5a5}}
 
-  .sheet{position:fixed;inset:0;background:rgba(15,18,25,.32);display:flex;align-items:flex-end;
+  /* 底部抽屉看原文 */
+  .sheet{position:fixed;inset:0;background:rgba(15,18,25,.34);display:flex;align-items:flex-end;
     opacity:0;pointer-events:none;transition:opacity .18s;z-index:9}
   .sheet.on{opacity:1;pointer-events:auto}
-  .sheet .panel{width:100%;max-height:82%;background:var(--bg);border-radius:14px 14px 0 0;
-    display:flex;flex-direction:column;transform:translateY(12px);transition:transform .18s;
-    box-shadow:0 -8px 30px rgba(16,24,40,.18)}
+  .sheet .panel{width:100%;max-height:84%;background:var(--bg);border-radius:14px 14px 0 0;
+    display:flex;flex-direction:column;transform:translateY(14px);transition:transform .18s}
   .sheet.on .panel{transform:translateY(0)}
-  .sheet .hd{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .sheet .hd{display:flex;align-items:center;gap:9px;padding:12px 16px;border-bottom:1px solid var(--line)}
   .sheet .hd .t{flex:1;min-width:0;font-size:12.5px;font-weight:600;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
-  .sheet pre{margin:0;padding:13px 14px;overflow:auto;flex:1;font:12px/1.6 ui-monospace,Consolas,monospace;
-    white-space:pre-wrap;word-break:break-word}
+  .sheet pre{margin:0;padding:14px 16px;overflow:auto;flex:1;
+    font:12px/1.65 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
 </style>
 </head>
 <body>
-  <div class="top">
-    <span class="pill" id="pill"><span class="d"></span><span id="pilltext">就绪</span></span>
-    <span class="spacer"></span>
-    <button class="ghost" id="refresh" title="刷新"></button>
+  <aside class="side">
+    <div class="brand" id="brand"></div>
+    <div class="grp">分类</div>
+    <div id="nav"></div>
+    <div class="foot">
+      <div class="nav" id="status-nav">
+        <span class="dot" id="dot"></span>
+        <span id="pilltext">就绪</span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="tool">
+      <div class="searchbox" id="search-icon"></div>
+      <input id="q" type="search" placeholder="搜索文件或内容" autocomplete="off">
+      <span class="sp"></span>
+      <button class="btn" id="refresh" title="刷新"></button>
+      <label class="btn primary" id="upload-btn">
+        <input type="file" id="file" multiple style="display:none">
+        <span id="upload-icon"></span>
+        上传
+      </label>
+    </div>
+    <div class="body" id="dropzone">
+      <p class="err" id="err" hidden></p>
+      <div class="sechead"><b id="sechead-label">全部文件</b><span id="sechead-count"></span></div>
+      <div class="grid" id="grid"></div>
+      <div id="hits"></div>
+    </div>
   </div>
-
-  <div class="searchwrap" id="search-icon"></div>
-  <input class="search" id="q" type="search" placeholder="搜索文件或内容" autocomplete="off">
-
-  <div class="cats" id="cats"></div>
-
-  <label class="drop" id="drop">
-    <input type="file" id="file" multiple>
-    <span id="drop-icon"></span>
-    <span class="grow"><b style="font-weight:600;color:var(--fg)">上传文件</b>　拖到这里也行</span>
-  </label>
-  <p class="err" id="err" hidden></p>
-
-  <div class="grid" id="grid"></div>
-  <div class="hits" id="hits" hidden></div>
 
   <div class="sheet" id="sheet">
     <div class="panel">
-      <div class="hd"><span class="t" id="sheet-title"></span><button class="ghost" id="sheet-close">关闭</button></div>
+      <div class="hd"><span class="t" id="sheet-title"></span><button class="btn" id="sheet-close">关闭</button></div>
       <pre id="sheet-body"></pre>
     </div>
   </div>
 
 <script>
 "use strict";
-
 const $ = (id) => document.getElementById(id);
 const SVG = {
+  brand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7.6 18.4h8.6a3.4 3.4 0 0 0 .5-6.76 5.1 5.1 0 0 0-9.79-1.2A3.7 3.7 0 0 0 7.6 18.4Z"/><path d="M12 16.2v-3.4"/><path d="m10.4 14.2 1.6-1.6 1.6 1.6"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
-  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
-  empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v7"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
+  all: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v7"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
   code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m9 8-4 4 4 4"/><path d="m15 8 4 4-4 4"/></svg>',
   sheet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>',
   slide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M12 17v4M8 21h8"/></svg>',
   image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>',
   other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>',
+  empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5 12 4l9 4.5v7L12 20l-9-4.5Z"/><path d="M3 8.5 12 13l9-4.5"/><path d="M12 13v7"/></svg>',
 };
-$("refresh").innerHTML = SVG.refresh;
+$("brand").innerHTML = SVG.brand + '<span>知识库</span>';
 $("search-icon").innerHTML = SVG.search;
-$("drop-icon").innerHTML = SVG.upload;
+$("refresh").innerHTML = SVG.refresh;
+$("upload-icon").innerHTML = SVG.upload;
 
 const CATS = [
-  { key: "all", label: "全部" },
-  { key: "doc", label: "文档" },
-  { key: "code", label: "代码" },
-  { key: "sheet", label: "表格" },
-  { key: "slide", label: "演示" },
-  { key: "image", label: "图片" },
-  { key: "other", label: "其他" },
+  { key: "all", label: "全部文件", icon: "all" },
+  { key: "doc", label: "文档", icon: "doc" },
+  { key: "code", label: "代码", icon: "code" },
+  { key: "sheet", label: "表格", icon: "sheet" },
+  { key: "slide", label: "演示", icon: "slide" },
+  { key: "image", label: "图片", icon: "image" },
+  { key: "other", label: "其他", icon: "other" },
 ];
-const ICON_BY_CAT = { doc: "doc", code: "code", sheet: "sheet", slide: "slide", image: "image", other: "other" };
 
 const state = { files: [], cat: "all", keyword: "", busy: false };
 
@@ -202,40 +213,42 @@ async function api(path, options) {
   return data;
 }
 
-function renderStatus(status) {
-  const pill = $("pill");
-  const label = $("pilltext");
-  let value = "就绪", level = "ok";
-  if (!status.installed) { value = "未安装"; level = ""; }
-  else if (!status.enabled) { value = "已停用"; level = ""; }
-  else if (status.cli === "unsupported_platform") { value = "平台不支持"; level = "err"; }
-  else if (status.cli === "missing") { value = "CLI 缺失"; level = "err"; }
-  else if (status.reason) { value = "本地匹配"; level = "warn"; }
-  pill.className = "pill " + level;
-  text(label, value);
+function countOf(key) {
+  return key === "all" ? state.files.length : state.files.filter((f) => f.category === key).length;
 }
 
-function renderCats() {
-  const box = $("cats");
-  box.replaceChildren();
-  const count = (key) => key === "all"
-    ? state.files.length
-    : state.files.filter((f) => f.category === key).length;
+function renderNav() {
+  const nav = $("nav");
+  nav.replaceChildren();
   for (const cat of CATS) {
-    const n = count(cat.key);
-    if (cat.key !== "all" && n === 0) continue;
-    const chip = document.createElement("button");
-    chip.className = "cat" + (state.cat === cat.key ? " on" : "");
-    text(chip, cat.label);
-    if (n > 0) {
-      const badge = document.createElement("span");
-      badge.className = "n";
-      text(badge, String(n));
-      chip.append(badge);
-    }
-    chip.addEventListener("click", () => { state.cat = cat.key; renderAll(); });
-    box.append(chip);
+    const n = countOf(cat.key);
+    if (cat.key !== "all" && n === 0 && state.cat !== cat.key) continue;
+    const item = document.createElement("div");
+    item.className = "nav" + (state.cat === cat.key ? " on" : "");
+    item.innerHTML = SVG[cat.icon] || SVG.other;
+    const label = document.createElement("span");
+    text(label, cat.label);
+    const cnt = document.createElement("span");
+    cnt.className = "cnt";
+    text(cnt, n > 0 ? String(n) : "");
+    item.append(label, cnt);
+    item.addEventListener("click", () => {
+      state.cat = cat.key;
+      renderAll();
+    });
+    nav.append(item);
   }
+}
+
+function renderStatus(status) {
+  let label = "就绪", level = "ok";
+  if (!status.installed) { label = "未安装"; level = ""; }
+  else if (!status.enabled) { label = "已停用"; level = ""; }
+  else if (status.cli === "unsupported_platform") { label = "平台不支持"; level = "err"; }
+  else if (status.cli === "missing") { label = "CLI 缺失"; level = "err"; }
+  else if (status.reason) { label = "本地匹配"; level = "warn"; }
+  text($("pilltext"), label);
+  $("dot").className = "dot " + level;
 }
 
 function visibleFiles() {
@@ -251,6 +264,9 @@ function renderGrid() {
   const grid = $("grid");
   grid.replaceChildren();
   const files = visibleFiles();
+  const catLabel = (CATS.find((c) => c.key === state.cat) || CATS[0]).label;
+  text($("sechead-label"), state.keyword.trim() ? "搜索结果" : catLabel);
+  text($("sechead-count"), files.length ? files.length + " 项" : "");
   if (files.length === 0) {
     const blank = document.createElement("div");
     blank.className = "blank";
@@ -258,12 +274,7 @@ function renderGrid() {
     const b = document.createElement("b");
     text(b, state.files.length === 0 ? "还没有文件" : "没有匹配的文件");
     const s = document.createElement("span");
-    text(
-      s,
-      state.files.length === 0
-        ? "上传后对话会自动带上相关内容"
-        : "换个分类或关键词试试",
-    );
+    text(s, state.files.length === 0 ? "点右上角上传，或把文件拖进来" : "换个分类或关键词试试");
     blank.append(b, s);
     grid.append(blank);
     return;
@@ -273,7 +284,7 @@ function renderGrid() {
     tile.className = "tile";
     const thumb = document.createElement("div");
     thumb.className = "thumb c-" + (file.category || "other");
-    thumb.innerHTML = SVG[ICON_BY_CAT[file.category] || "other"];
+    thumb.innerHTML = SVG[file.category] || SVG.other;
     const name = document.createElement("div");
     name.className = "nm";
     text(name, file.path);
@@ -301,7 +312,7 @@ async function openFile(file) {
 
 async function loadStatus() {
   try { renderStatus(await api("/api/knowledge/status")); }
-  catch { $("pill").className = "pill err"; text($("pilltext"), "不可用"); }
+  catch { text($("pilltext"), "未连接"); $("dot").className = "dot err"; }
 }
 
 async function loadLibrary() {
@@ -313,7 +324,7 @@ async function loadLibrary() {
   } catch (error) { showError(error.message); }
 }
 
-function renderAll() { renderCats(); renderGrid(); }
+function renderAll() { renderNav(); renderGrid(); }
 
 async function upload(files) {
   if (!files || files.length === 0 || state.busy) return;
@@ -334,22 +345,23 @@ let searchTimer;
 async function searchContent() {
   const query = state.keyword.trim();
   const hits = $("hits");
-  if (!query) { hits.hidden = true; hits.replaceChildren(); return; }
+  if (!query) { hits.replaceChildren(); return; }
   try {
     const payload = await api("/api/knowledge/search", {
       method: "POST",
       body: JSON.stringify({ query }),
     });
     hits.replaceChildren();
-    hits.hidden = false;
     const results = payload.results || [];
-    if (results.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "blank";
-      text(empty, "没有找到相关内容");
-      hits.append(empty);
-      return;
-    }
+    if (results.length === 0) return;
+    const head = document.createElement("div");
+    head.className = "sechead";
+    const b = document.createElement("b");
+    text(b, "内容命中");
+    const s = document.createElement("span");
+    text(s, results.length + " 项");
+    head.append(b, s);
+    hits.append(head);
     for (const item of results) {
       const hit = document.createElement("div");
       hit.className = "hit";
@@ -358,28 +370,32 @@ async function searchContent() {
       const name = String(item.path || "").replace(/^.*[\\/]/u, "");
       const strong = document.createElement("b");
       text(strong, name);
-      hl.append(strong, document.createTextNode("　" + item.startLine + "-" + item.endLine));
-      const body = document.createElement("div");
-      body.className = "body";
-      text(body, item.content || "");
-      hit.append(hl, body);
+      const meta = document.createElement("span");
+      text(meta, item.startLine + "-" + item.endLine);
+      hl.append(strong, meta);
+      const bodytxt = document.createElement("div");
+      bodytxt.className = "bodytxt";
+      text(bodytxt, item.content || "");
+      hit.append(hl, bodytxt);
       hit.addEventListener("click", () => openFile({ path: name, absolutePath: item.absolutePath }));
       hits.append(hit);
     }
   } catch (error) { showError(error.message); }
 }
 
-const drop = $("drop");
+// 拖放
+const zone = $("dropzone");
 ["dragenter", "dragover"].forEach((type) =>
-  drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.add("over"); }));
-["dragleave", "drop"].forEach((type) =>
-  drop.addEventListener(type, (event) => { event.preventDefault(); drop.classList.remove("over"); }));
-drop.addEventListener("drop", (event) => { void upload(event.dataTransfer && event.dataTransfer.files); });
+  zone.addEventListener(type, (event) => { event.preventDefault(); }));
+zone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  void upload(event.dataTransfer && event.dataTransfer.files);
+});
+
 $("file").addEventListener("change", (event) => {
   void upload(event.target.files);
   event.target.value = "";
 });
-
 $("refresh").addEventListener("click", () => { void loadStatus(); void loadLibrary(); });
 $("sheet-close").addEventListener("click", () => $("sheet").classList.remove("on"));
 $("sheet").addEventListener("click", (event) => {
@@ -394,7 +410,7 @@ $("q").addEventListener("input", () => {
 
 void loadStatus();
 void loadLibrary();
-setInterval(loadStatus, 10000);
+setInterval(loadStatus, 15000);
 </script>
 </body>
 </html>
