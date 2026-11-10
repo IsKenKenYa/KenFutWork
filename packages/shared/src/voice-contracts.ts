@@ -138,6 +138,8 @@ export const voiceDiagnoseHardwareSchema = z.object({
   platform: z.string().min(1),
   /** 探到的 GPU 描述；缺席 = 没探到（不是错误）。 */
   gpu: z.string().optional(),
+  /** 显存（字节）；GPU 探不到或无读数时缺席。 */
+  gpuMemoryBytes: z.number().int().positive().optional(),
 });
 export type VoiceDiagnoseHardware = z.infer<typeof voiceDiagnoseHardwareSchema>;
 

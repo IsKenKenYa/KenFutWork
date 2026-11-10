@@ -42,19 +42,31 @@ export async function collectHardware(): Promise<VoiceDiagnoseHardware> {
   };
 }
 
-/** GPU 尽力探测（`nvidia-smi --query-gpu=name`）：没装/没卡都只是「探不到」。 */
-async function probeGpu(): Promise<{ gpu?: string }> {
+/** GPU 尽力探测（`nvidia-smi --query-gpu=name,memory.total`）：没装/没卡都只是「探不到」。 */
+async function probeGpu(): Promise<{ gpu?: string; gpuMemoryBytes?: number }> {
   try {
     const { stdout } = await execFileAsync(
       "nvidia-smi",
-      ["--query-gpu=name", "--format=csv,noheader"],
+      [
+        "--query-gpu=name,memory.total",
+        "--format=csv,noheader,nounits",
+      ],
       { timeout: GPU_PROBE_TIMEOUT_MS },
     );
-    const names = stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    return names.length > 0 ? { gpu: names.join("、") } : {};
+    const names: string[] = [];
+    let memoryBytes = 0;
+    for (const row of stdout.split("\n")) {
+      const line = row.trim();
+      if (!line) continue;
+      const [name, memoryMiB] = line.split(",").map((part) => part.trim());
+      if (name) names.push(name);
+      const mib = Number(memoryMiB);
+      if (Number.isFinite(mib) && mib > 0) memoryBytes += mib * 1024 * 1024;
+    }
+    return {
+      ...(names.length > 0 ? { gpu: names.join("、") } : {}),
+      ...(memoryBytes > 0 ? { gpuMemoryBytes: memoryBytes } : {}),
+    };
   } catch {
     // 没装 nvidia-smi / 没卡 / 超时：都不影响功能（规划 §3.4），静默即正确
     return {};

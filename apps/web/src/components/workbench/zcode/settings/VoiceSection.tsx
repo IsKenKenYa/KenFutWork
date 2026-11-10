@@ -4,6 +4,13 @@ import type {
   VoiceSettings,
 } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@zui/components/ui/select.js";
 import { Switch } from "@zui/components/ui/switch.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -24,12 +31,6 @@ const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
   { key: "think", label: "想" },
   { key: "speak", label: "说" },
 ];
-
-const LOCATION_LABELS: Record<VoiceModelCandidate["location"], string> = {
-  cpu: "本机 CPU",
-  gpu: "本机 GPU",
-  remote: "远端",
-};
 
 export interface VoiceDataClient {
   request<T>(path: string, body?: unknown): Promise<T>;
@@ -117,48 +118,43 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
     [client],
   );
 
-  const select = useCallback(
-    (segment: SegmentKey, candidate: VoiceModelCandidate | null) =>
-      patch(
+  const recommendation = useMemo(() => recommendVoiceModels(models), [models]);
+
+  const selectByValue = useCallback(
+    (segment: SegmentKey, value: string) => {
+      if (value === "none") return patch({ [segment]: null }, segment);
+      const candidate = models.find((model) => modelValue(model) === value);
+      if (!candidate) return Promise.resolve();
+      return patch(
         {
-          [segment]: candidate
-            ? {
-                kind: candidate.kind,
-                id: candidate.id,
-                ...(candidate.model ? { model: candidate.model } : {}),
-              }
-            : null,
+          [segment]: {
+            kind: candidate.kind,
+            id: candidate.id,
+            ...(candidate.model ? { model: candidate.model } : {}),
+          },
         },
         segment,
-      ),
-    [patch],
+      );
+    },
+    [models, patch],
   );
 
-  const modelAction = useCallback(
-    async (action: "download" | "cancel" | "remove", modelId: string) => {
-      setBusy(modelId);
-      setMessage(null);
-      const id = encodeURIComponent(modelId);
-      try {
-        if (action === "download") {
-          await client.request(`/api/voice/models/${id}/download`, {});
-        } else if (action === "cancel") {
-          await client.deleteRequest(`/api/voice/models/${id}/download`);
-        } else {
-          await client.deleteRequest(`/api/voice/models/${id}`);
-        }
-        const refreshed = await client.request<{
-          models: VoiceModelCandidate[];
-        }>("/api/voice/models");
-        setModels(refreshed.models);
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : "操作失败");
-      } finally {
-        setBusy(null);
-      }
-    },
-    [client],
-  );
+  const applyAdvice = useCallback(() => {
+    const body: Record<string, unknown> = {
+      mode: advice.recommendedMode,
+      speakReplies: advice.recommendedSpeakReplies,
+    };
+    for (const segment of SEGMENTS) {
+      const pick = recommendation[segment.key];
+      if (!pick) continue;
+      body[segment.key] = {
+        kind: pick.kind,
+        id: pick.id,
+        ...(pick.model ? { model: pick.model } : {}),
+      };
+    }
+    void patch(body, "advice");
+  }, [advice, patch, recommendation]);
 
   const runDiagnose = useCallback(async () => {
     const controller = new AbortController();
@@ -193,86 +189,78 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
   return (
     <section aria-label="语音" className="w-full space-y-4">
       <div className="space-y-3">
-        {/* 模式切换：选项卡 */}
-        <fieldset className="w-full min-w-0" aria-label="模式">
-          <div className="inline-flex rounded-full border border-border bg-card p-0.5">
-            {(
-              [
-                { value: "transcribe" as const, label: "只转文本" },
-                { value: "loop" as const, label: "完整回路" },
-              ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
-            ).map((option) => (
-              <label
-                key={option.value}
-                className="cursor-pointer rounded-full px-3 py-1 text-ui-sm font-medium text-foreground-subtle transition-colors has-[:checked]:bg-selected has-[:checked]:text-foreground"
-              >
-                <input
-                  type="radio"
-                  name="voice-mode"
-                  value={option.value}
-                  checked={settings.mode === option.value}
-                  onChange={() => void patch({ mode: option.value }, "mode")}
-                  className="sr-only"
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        {/* 听 / 想 / 说 合并成一张卡片 */}
+        {/* 模式 + 听/想/说：一张卡片，全部下拉选择 */}
         <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
-          {SEGMENTS.map((segment, index) => (
+          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
+            <span className="text-ui-base text-foreground">模式</span>
+            <Select
+              value={settings.mode}
+              onValueChange={(value) =>
+                void patch({ mode: value as VoiceSettings["mode"] }, "mode")
+              }
+            >
+              <SelectTrigger size="lg" className="w-[240px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="transcribe">只转文本</SelectItem>
+                <SelectItem value="loop">完整回路</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {SEGMENTS.map((segment) => (
             <div
               key={segment.key}
-              role="radiogroup"
-              aria-label={segment.label}
-              className={index > 0 ? "border-t border-border" : ""}
+              className="flex items-center justify-between gap-4 border-b border-border px-4 py-3"
             >
-              <div className="px-4 pb-1 pt-3 text-ui-sm font-medium text-foreground-subtle">
+              <span className="text-ui-base text-foreground">
                 {segment.label}
-              </div>
-              <label className="flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-ui-base transition-colors hover:bg-hover has-[:checked]:bg-selected">
-                <input
-                  type="radio"
-                  name={`voice-${segment.key}`}
-                  value="none"
-                  checked={settings[segment.key] === null}
-                  onChange={() => void select(segment.key, null)}
-                  className="size-3.5 shrink-0 accent-primary"
-                />
-                不用
-              </label>
-              {models
-                .filter((model) => model.segment === segment.key)
-                .map((candidate) => (
-                  <CandidateRow
-                    key={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
-                    candidate={candidate}
-                    selected={isSelected(settings[segment.key], candidate)}
-                    busy={busy === candidate.id}
-                    onSelect={() => void select(segment.key, candidate)}
-                    onAction={(action) => void modelAction(action, candidate.id)}
-                  />
-                ))}
+              </span>
+              <Select
+                value={selectionValue(settings[segment.key])}
+                onValueChange={(value) => void selectByValue(segment.key, value)}
+                disabled={
+                  segment.key !== "listen" && settings.mode === "transcribe"
+                }
+              >
+                <SelectTrigger size="lg" className="w-[240px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不用</SelectItem>
+                  {models
+                    .filter((model) => model.segment === segment.key)
+                    .map((candidate) => (
+                      <SelectItem
+                        key={modelValue(candidate)}
+                        value={modelValue(candidate)}
+                        disabled={Boolean(candidate.unavailableReason)}
+                      >
+                        {candidate.label}
+                        {candidate.unavailableReason === undefined
+                          ? ` · ${candidateMeta(candidate)}`
+                          : ` · ${candidate.unavailableReason}`}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
           ))}
+          {settings.mode === "loop" ? (
+            <div className="flex items-center justify-between gap-4 px-4 py-3">
+              <span className="text-ui-base text-foreground">朗读回复</span>
+              <Switch
+                aria-label="朗读回复"
+                checked={settings.speakReplies}
+                onCheckedChange={(checked) =>
+                  void patch({ speakReplies: checked }, "speakReplies")
+                }
+              />
+            </div>
+          ) : null}
         </div>
 
-        {settings.mode === "loop" ? (
-          <div className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-ui-base">
-            <span>朗读回复</span>
-            <Switch
-              aria-label="朗读回复"
-              checked={settings.speakReplies}
-              onCheckedChange={(checked) =>
-                void patch({ speakReplies: checked }, "speakReplies")
-              }
-            />
-          </div>
-        ) : null}
-
-        {/* 性能检测 + 应用推荐合并成一张卡片 */}
+        {/* 性能检测：硬件 + 每段推荐 */}
         <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
           <div className="flex w-full items-center justify-between gap-2 px-4 py-3">
             <span className="text-ui-base font-medium text-foreground">
@@ -295,15 +283,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                 type="button"
                 size="sm"
                 disabled={busy === "advice"}
-                onClick={() =>
-                  void patch(
-                    {
-                      mode: advice.recommendedMode,
-                      speakReplies: advice.recommendedSpeakReplies,
-                    },
-                    "advice",
-                  )
-                }
+                onClick={applyAdvice}
               >
                 应用推荐
               </Button>
@@ -312,23 +292,29 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
           {report ? (
             <div className="w-full space-y-1 border-t border-border px-4 py-3 text-ui-base text-foreground-subtle">
               <p>
-                {report.hardware.cpuModel} · {report.hardware.cpuCores} 核 ·{" "}
-                {formatBytes(report.hardware.totalMemoryBytes)}
-                {report.hardware.gpu ? ` · ${report.hardware.gpu}` : ""}
+                CPU {report.hardware.cpuModel} · {report.hardware.cpuCores} 核
               </p>
-              <p>{segmentSummary(report)}</p>
               <p>
-                推荐{" "}
-                {advice.recommendedMode === "loop"
-                  ? advice.recommendedSpeakReplies
-                    ? "完整回路 + 朗读"
-                    : "完整回路"
-                  : "只转文本"}
+                GPU {report.hardware.gpu ?? "未探到"}
+                {report.hardware.gpuMemoryBytes === undefined
+                  ? ""
+                  : ` · 显存 ${formatBytes(report.hardware.gpuMemoryBytes)}`}
               </p>
+              <p>内存 {formatBytes(report.hardware.totalMemoryBytes)}</p>
+              {SEGMENTS.map((segment) => {
+                const pick = recommendation[segment.key];
+                return (
+                  <p key={segment.key}>
+                    推荐 {segment.label}{" "}
+                    {pick
+                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}）${pick.performanceNote ?? ""}`
+                      : "无可用模型"}
+                  </p>
+                );
+              })}
               {performanceWarning ? (
                 <p className="text-destructive">{performanceWarning}</p>
               ) : null}
-              {report.hardware.gpu ? <p>可接 GPU 服务</p> : null}
             </div>
           ) : null}
         </div>
@@ -349,127 +335,46 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024).toFixed(0)} KB`;
 }
 
-function isSelected(
-  selection: VoiceSettings[SegmentKey],
-  candidate: VoiceModelCandidate,
-): boolean {
-  return Boolean(
-    selection &&
-      selection.kind === candidate.kind &&
-      selection.id === candidate.id &&
-      (selection.model ?? undefined) === candidate.model,
-  );
+function modelValue(candidate: VoiceModelCandidate): string {
+  return `${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`;
 }
 
-function CandidateRow({
-  candidate,
-  selected,
-  busy,
-  onSelect,
-  onAction,
-}: {
-  candidate: VoiceModelCandidate;
-  selected: boolean;
-  busy: boolean;
-  onSelect: () => void;
-  onAction: (action: "download" | "cancel" | "remove") => void;
-}) {
-  const download = candidate.download;
-  return (
-    <label
-      className={`flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-ui-base transition-colors hover:bg-hover has-[:checked]:bg-selected ${
-        candidate.unavailableReason ? "cursor-not-allowed opacity-60" : ""
-      }`}
-    >
-      <input
-        type="radio"
-        name={`voice-${candidate.segment}`}
-        value={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
-        checked={selected}
-        disabled={Boolean(candidate.unavailableReason)}
-        onChange={onSelect}
-        className="size-3.5 shrink-0 accent-primary"
-      />
-      <span className="min-w-0 flex-1">
-        {candidate.label}
-        <span className="ml-2 text-ui-sm text-foreground-subtle">
-          {candidateMeta(candidate)}
-        </span>
-        {candidate.unavailableReason ? (
-          <span className="ml-2 text-ui-sm text-destructive">
-            {candidate.unavailableReason}
-          </span>
-        ) : null}
-        {download.error ? (
-          <span className="ml-2 text-ui-sm text-destructive">
-            {download.error}
-          </span>
-        ) : null}
-      </span>
-      {candidate.needsDownload ? (
-        <DownloadControl
-          state={download.state}
-          percent={Math.round(
-            (download.downloadedBytes / Math.max(1, download.totalBytes)) * 100,
-          )}
-          busy={busy}
-          onAction={onAction}
-        />
-      ) : null}
-    </label>
-  );
+function selectionValue(selection: VoiceSettings[SegmentKey]): string {
+  if (!selection) return "none";
+  return `${selection.kind}:${selection.id}:${selection.model ?? ""}`;
 }
 
+/** 选择器里的一行标签：来源 + 体积，够选就行（速度与结论在检测卡片）。 */
 function candidateMeta(candidate: VoiceModelCandidate): string {
-  const parts = [candidate.kind === "builtin" ? "离线" : "在线"];
-  if (candidate.sizeBytes > 0) {
-    parts.push(formatBytes(candidate.sizeBytes));
-  }
-  parts.push(LOCATION_LABELS[candidate.location]);
-  if (candidate.performanceNote) {
-    parts.push(candidate.performanceNote);
-  }
-  return parts.join(" · ");
+  const source = candidate.kind === "builtin" ? "离线" : "在线";
+  return candidate.sizeBytes > 0
+    ? `${source} · ${formatBytes(candidate.sizeBytes)}`
+    : source;
 }
 
-function DownloadControl({
-  state,
-  percent,
-  busy,
-  onAction,
-}: {
-  state: VoiceModelCandidate["download"]["state"];
-  percent: number;
-  busy: boolean;
-  onAction: (action: "download" | "cancel" | "remove") => void;
-}) {
-  const label =
-    state === "downloading"
-      ? `取消 ${percent}%`
-      : state === "ready"
-        ? "删除"
-        : "下载";
-  return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      disabled={busy}
-      onClick={(event) => {
-        event.preventDefault();
-        onAction(
-          state === "downloading"
-            ? "cancel"
-            : state === "ready"
-              ? "remove"
-              : "download",
-        );
-      }}
-      className="shrink-0 px-3"
-    >
-      {label}
-    </Button>
+/** 每段的首选来源：听/说优先本机离线（离线、隐私），想优先在线实例（质量）。 */
+const SEGMENT_PREFERENCE: Record<SegmentKey, "builtin" | "instance"> = {
+  listen: "builtin",
+  think: "instance",
+  speak: "builtin",
+};
+
+/** 每段的推荐模型：同段可选项里按首选来源挑，没有再退回同段第一项。 */
+export function recommendVoiceModels(
+  candidates: readonly VoiceModelCandidate[],
+): Partial<Record<SegmentKey, VoiceModelCandidate>> {
+  const usable = candidates.filter(
+    (candidate) => candidate.unavailableReason === undefined,
   );
+  const picked: Partial<Record<SegmentKey, VoiceModelCandidate>> = {};
+  for (const segment of ["listen", "think", "speak"] as const) {
+    const pool = usable.filter((candidate) => candidate.segment === segment);
+    const choice =
+      pool.find((candidate) => candidate.kind === SEGMENT_PREFERENCE[segment]) ??
+      pool[0];
+    if (choice) picked[segment] = choice;
+  }
+  return picked;
 }
 
 type VoiceProfileAdvice = {
@@ -523,58 +428,4 @@ function insufficientNote(
     parts.push(`想 ${think.ttftSeconds.toFixed(2)}s${speed}`);
   }
   return parts.length > 0 ? `${parts.join(" · ")} · 建议只转文本` : null;
-}
-
-function listenMetric(report: VoiceDiagnoseReport): string {
-  const rtf = report.listen.listen?.rtfMedian;
-  if (rtf === undefined) {
-    return report.listen.state === "unavailable" ? "不可用" : "未实测";
-  }
-  const load = report.listen.listen?.modelLoadMs;
-  return load === undefined
-    ? `${rtf.toFixed(2)}×`
-    : `${rtf.toFixed(2)}× 首载 ${(load / 1000).toFixed(1)}s`;
-}
-
-function thinkMetric(report: VoiceDiagnoseReport): string {
-  const ttft = report.think.think?.ttftSeconds;
-  if (ttft === undefined) {
-    return report.think.state === "unavailable" ? "不可用" : "未实测";
-  }
-  const speed = report.think.think?.tokensPerSecond;
-  return speed === undefined
-    ? `${ttft.toFixed(2)}s`
-    : `${ttft.toFixed(2)}s ${speed.toFixed(0)}t/s`;
-}
-
-function speakMetric(report: VoiceDiagnoseReport): string {
-  const match = report.speak.summary.match(/首包 ([\d.]+)s、实时率 ([\d.]+)/);
-  if (match) {
-    return `${match[2]}× 首包 ${match[1]}s`;
-  }
-  return report.speak.state === "unavailable" ? "不可用" : "未实测";
-}
-
-function isStateMetric(value: string): boolean {
-  return value === "不可用" || value === "未实测";
-}
-
-function segmentSummary(report: VoiceDiagnoseReport): string {
-  const parts: Array<[string, string]> = [
-    ["听", listenMetric(report)],
-    ["想", thinkMetric(report)],
-    ["说", speakMetric(report)],
-  ];
-  const merged: Array<{ labels: string[]; value: string }> = [];
-  for (const [label, value] of parts) {
-    const last = merged[merged.length - 1];
-    if (last && last.value === value && isStateMetric(value)) {
-      last.labels.push(label);
-    } else {
-      merged.push({ labels: [label], value });
-    }
-  }
-  return merged
-    .map((item) => `${item.labels.join("/")} ${item.value}`)
-    .join(" · ");
 }
