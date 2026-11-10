@@ -5,12 +5,11 @@ import type {
   WorkHostEditorsResponse,
   WorkHostStatusResponse,
 } from "@kenfutwork/shared";
-import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   ZCodeStartupLogoBadge,
   ZCodeStartupSpinner,
 } from "@zui/root/RootStartupLoading.js";
-import { ArrowLeft, FolderOpen, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -25,7 +24,6 @@ import {
   chooseWorkDirectory,
   getWorkDirectory,
   refreshWorkDirectory,
-  useWorkDirectory,
 } from "./workProjectDirectory.js";
 import {
   getWorkSurfaceView,
@@ -65,48 +63,6 @@ const MOUNT_LABEL: Record<WorkEditor["mount"], string> = {
 const INSTALL_POLL_MS = 2000;
 /** 编辑器没发就绪信号时（旧包/非 egui 站点）的兜底显示时间；一次性常量。 */
 const EDITOR_READY_FALLBACK_MS = 8000;
-
-/**
- * Work 目录绑定控件：当前工作目录（项目名）与换目录入口。宿主没有系统选择器
- * 能力时不放假按钮——已绑定就只显示目录名，未绑定什么都不显示（不摆空壳）。
- */
-function WorkDirectoryControl() {
-  const selectDirectory = useOptionalPlatform()?.selectDirectory;
-  const { project, choosing, error } = useWorkDirectory();
-  useEffect(() => {
-    void refreshWorkDirectory();
-  }, []);
-  if (!selectDirectory) {
-    return project ? (
-      <span
-        title={project.workDir ?? ""}
-        className="truncate text-xs text-foreground-subtle"
-      >
-        {project.name}
-      </span>
-    ) : null;
-  }
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <button
-        type="button"
-        disabled={choosing}
-        onClick={() => void chooseWorkDirectory(selectDirectory)}
-        aria-label={project ? "更换工作目录" : "选择工作目录"}
-        title={project?.workDir ?? "工作目录"}
-        className="flex min-w-0 items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
-      >
-        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate">{project?.name ?? "选择目录"}</span>
-      </button>
-      {error ? (
-        <span role="alert" className="truncate text-xs text-destructive">
-          {error}
-        </span>
-      ) : null}
-    </div>
-  );
-}
 
 /**
  * Work 主区视图（融合进 Code 壳后的承载面）。
@@ -248,7 +204,6 @@ function EditorsInfoView({
                 ? `${status.registeredEditors} 项已登记`
                 : "未启用"}
           </span>
-          <WorkDirectoryControl />
           <div className="ml-auto">
             <button
               type="button"
@@ -467,7 +422,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
   );
 
   return (
-    <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+    <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card text-sm">
       <div className="flex items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
         <span className="flex-1">字体</span>
         <label className="cursor-pointer rounded-md border border-border px-2 py-0.5 text-foreground transition-colors hover:border-foreground/30">
@@ -724,7 +679,6 @@ function EditorFrame({
         </button>
         <span className="truncate text-sm font-medium">{title}</span>
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <WorkDirectoryControl />
           {saveError ? (
             <span role="alert" className="truncate text-xs text-destructive">
               {saveError}
