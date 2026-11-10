@@ -7,6 +7,8 @@ import {
 } from "@kenfutwork/shared";
 import { PanelsTopLeft, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Dialog,
   DialogClose,
@@ -247,8 +249,38 @@ export function PluginPanelOverlay({
   /** lucide 的 × 只占 viewBox 的 12/24（方形占 18/24）：同 size-4 时墨迹只有 8px，
    *  看起来明显偏小。放大到 22px（墨迹 11px）+ 1.1 描边（视觉 1px），与方形墨迹 12px 配平。 */
   const closeIcon = "size-[22px]";
+  /**
+   * 面板请求宿主预览文件。正文由面板用自己的接口取到后一并带来，
+   * 宿主不自己读盘——路径授权仍只在服务端 `/api/knowledge/read` 一处。
+   */
+  const [preview, setPreview] = useState<{
+    name: string;
+    content: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const receive = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as {
+        type?: unknown;
+        name?: unknown;
+        content?: unknown;
+      } | null;
+      if (!data || data.type !== "kenfutwork:knowledge-preview") return;
+      if (typeof data.content !== "string") return;
+      setPreview({
+        name: typeof data.name === "string" ? data.name : "预览",
+        content: data.content,
+      });
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [active]);
   if (!panel) return null;
   return (
+    <>
     <Dialog
       open={active && panel !== null}
       onOpenChange={(next) => {
@@ -330,6 +362,54 @@ export function PluginPanelOverlay({
             onLoad={(event) => installPanelExternalLinks(event.currentTarget)}
           />
         ) : null}
+      </DialogContent>
+    </Dialog>
+    <KnowledgePreviewDialog target={preview} onClose={() => setPreview(null)} />
+    </>
+  );
+}
+
+/**
+ * 面板（沙箱 iframe）请求的只读预览。正文由面板用自己的接口取到后带过来，
+ * 宿主不自己读盘；markdown 走与壳内同一套库（react-markdown + GFM）。
+ */
+function KnowledgePreviewDialog({
+  target,
+  onClose,
+}: {
+  target: { name: string; content: string } | null;
+  onClose: () => void;
+}) {
+  const isMarkdown =
+    target !== null && /\.(md|mdx|markdown)$/iu.test(target.name);
+  return (
+    <Dialog open={target !== null} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        portalProps={{ keepMounted: true }}
+        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        aria-describedby={undefined}
+      >
+        <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3">
+          <DialogTitle className="min-w-0 truncate text-base font-medium">
+            {target?.name ?? "预览"}
+          </DialogTitle>
+          <DialogClose className="shrink-0 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent">
+            关闭
+          </DialogClose>
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+          {isMarkdown ? (
+            <div className="space-y-3 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_td]:border-b [&_th]:border-b">
+              <Markdown remarkPlugins={[remarkGfm]}>
+                {target?.content ?? ""}
+              </Markdown>
+            </div>
+          ) : (
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground">
+              {target?.content ?? ""}
+            </pre>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

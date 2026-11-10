@@ -277,16 +277,32 @@ function renderGrid() {
   }
 }
 
+/**
+ * 预览交给宿主：正文由本页用服务端接口取到（路径授权仍只在服务端一处），
+ * 再随消息带给父窗口，由宿主用同一套 markdown 渲染。独立打开时才用自己的弹窗。
+ */
 async function openFile(file) {
-  text($("sheet-title"), file.path);
-  text($("sheet-body"), "读取中…");
-  $("sheet").classList.add("on");
+  const embedded = window.parent && window.parent !== window;
+  if (!embedded) {
+    text($("sheet-title"), file.path);
+    text($("sheet-body"), "读取中…");
+    $("sheet").classList.add("on");
+  }
+  let body;
   try {
     const payload = await api("/api/knowledge/read?path=" + encodeURIComponent(file.absolutePath));
-    text($("sheet-body"), payload.content || "（空文件）");
+    body = payload.content || "（空文件）";
   } catch (error) {
-    text($("sheet-body"), error.message);
+    body = error.message;
   }
+  if (embedded) {
+    window.parent.postMessage(
+      { type: "kenfutwork:knowledge-preview", name: file.path, content: body },
+      window.location.origin,
+    );
+    return;
+  }
+  text($("sheet-body"), body);
 }
 
 async function loadLibrary() {
