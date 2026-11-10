@@ -1,9 +1,5 @@
-import type { Theme } from "@zui/useTheme.js";
-import { useState } from "react";
-import { resolveTheme } from "@zui/useTheme.js";
 import { Card, CardContent } from "@zui/components/ui/card.js";
 import { Input } from "@zui/components/ui/input.js";
-import { Switch } from "@zui/components/ui/switch.js";
 import {
   Select,
   SelectContent,
@@ -11,17 +7,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
+import { Switch } from "@zui/components/ui/switch.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { getCodePreviewTheme } from "@zui/lib/codePreviewPreferences.js";
+import {
+  MAX_UI_FONT_SIZE_PX,
+  MIN_UI_FONT_SIZE_PX,
+} from "@zui/lib/uiFontSize.js";
 import {
   getThemeOptionLabel,
   SettingsRow,
+  SettingsSubheading,
   ThemePreviewCard,
   ThemeSelect,
 } from "@zui/settings/SettingsPageParts.js";
-import { getCodePreviewTheme } from "@zui/lib/codePreviewPreferences.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
-import type { CodePreviewSettings } from "@zui/store/index.js";
 import { THEME_MODES } from "@zui/settings/settingsPageConfig.js";
-import { MAX_UI_FONT_SIZE_PX, MIN_UI_FONT_SIZE_PX } from "@zui/lib/uiFontSize.js";
+import type { CodePreviewSettings } from "@zui/store/index.js";
+import type { Theme } from "@zui/useTheme.js";
+import { resolveTheme } from "@zui/useTheme.js";
+import { useState } from "react";
 
 function FontSizeInput({
   value,
@@ -99,16 +103,9 @@ export function AppearanceSectionContent({
   return (
     <>
       <div className="min-w-0 space-y-3">
-        <div>
-          <h3 className="text-ui-lg font-semibold text-foreground">
-            {intl.formatMessage({ id: "settings.appearance.interfaceTitle" })}
-          </h3>
-          <p className="mt-1 text-ui-base leading-6 text-foreground-subtle">
-            {intl.formatMessage({
-              id: "settings.appearance.interfaceDescription",
-            })}
-          </p>
-        </div>
+        <SettingsSubheading>
+          {intl.formatMessage({ id: "settings.appearance.interfaceTitle" })}
+        </SettingsSubheading>
         <Card className="border border-border bg-card py-0 shadow-none">
           <CardContent className="space-y-0 px-0">
             <SettingsRow
@@ -117,8 +114,14 @@ export function AppearanceSectionContent({
                 id: "settings.themeModeDescription",
               })}
               control={
-                <Select value={theme} onValueChange={(value) => setTheme(value as Theme)}>
-                  <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+                <Select
+                  value={theme}
+                  onValueChange={(value) => setTheme(value as Theme)}
+                >
+                  <SelectTrigger
+                    size="lg"
+                    className="w-[260px] min-w-0 justify-between"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -158,16 +161,9 @@ export function AppearanceSectionContent({
 
       <div className="space-y-6">
         <div className="min-w-0 space-y-3">
-          <div>
-            <h3 className="text-ui-lg font-semibold text-foreground">
-              {intl.formatMessage({ id: "settings.appearance.codeTitle" })}
-            </h3>
-            <p className="mt-1 text-ui-base leading-6 text-foreground-subtle">
-              {intl.formatMessage({
-                id: "settings.appearance.codeDescription",
-              })}
-            </p>
-          </div>
+          <SettingsSubheading>
+            {intl.formatMessage({ id: "settings.appearance.codeTitle" })}
+          </SettingsSubheading>
           <Card className="border border-border bg-card py-0 shadow-none [&_[data-slot=select-trigger]]:w-full">
             <CardContent className="space-y-0 px-0">
               <SettingsRow
@@ -178,7 +174,9 @@ export function AppearanceSectionContent({
                 control={
                   <ThemeSelect
                     value={codePreviewSettings.lightTheme}
-                    onValueChange={(value) => setCodePreviewSettings({ lightTheme: value })}
+                    onValueChange={(value) =>
+                      setCodePreviewSettings({ lightTheme: value })
+                    }
                   />
                 }
               />
@@ -190,7 +188,9 @@ export function AppearanceSectionContent({
                 control={
                   <ThemeSelect
                     value={codePreviewSettings.darkTheme}
-                    onValueChange={(value) => setCodePreviewSettings({ darkTheme: value })}
+                    onValueChange={(value) =>
+                      setCodePreviewSettings({ darkTheme: value })
+                    }
                   />
                 }
               />
@@ -233,7 +233,9 @@ export function AppearanceSectionContent({
                     min={12}
                     max={20}
                     value={codePreviewSettings.fontSizePx}
-                    onChange={(fontSizePx) => setCodePreviewSettings({ fontSizePx })}
+                    onChange={(fontSizePx) =>
+                      setCodePreviewSettings({ fontSizePx })
+                    }
                     ariaLabel={intl.formatMessage({ id: "settings.fontSize" })}
                   />
                 }
@@ -243,14 +245,9 @@ export function AppearanceSectionContent({
         </div>
 
         <div className="min-w-0 space-y-4">
-          <div>
-            <h3 className="text-ui-base font-semibold text-foreground">
-              {intl.formatMessage({ id: "settings.previewSectionTitle" })}
-            </h3>
-            <p className="mt-1 text-ui-base leading-6 text-foreground-subtle">
-              {intl.formatMessage({ id: "settings.previewDescription" })}
-            </p>
-          </div>
+          <SettingsSubheading>
+            {intl.formatMessage({ id: "settings.previewSectionTitle" })}
+          </SettingsSubheading>
           <div className="grid gap-4 sm:grid-cols-2">
             <ThemePreviewCard
               mode="light"

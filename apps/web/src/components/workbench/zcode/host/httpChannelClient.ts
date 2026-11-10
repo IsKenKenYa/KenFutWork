@@ -442,6 +442,22 @@ export class CodeHttpChannelClient implements IChannelClient {
     return readHostResponse<T>(response);
   }
 
+  /** PUT 请求（部分更新语音设置等幂等资源）。 */
+  async putRequest<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(
+      `${this.config.apiBase.replace(/\/$/u, "")}${path}`,
+      {
+        method: "PUT",
+        credentials: "include",
+        signal: this.controller.signal,
+        headers: { ...this.headers(), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    );
+    reportAccessLost(response.status);
+    return readHostResponse<T>(response);
+  }
+
   private readonly pluginIcons = new Map<string, Promise<string | undefined>>();
   private readonly pluginIconUrls = new Set<string>();
   async resolvePluginIcon(resource: string): Promise<string | undefined> {

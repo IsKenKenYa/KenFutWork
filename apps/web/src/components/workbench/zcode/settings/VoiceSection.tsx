@@ -3,6 +3,8 @@ import type {
   VoiceModelCandidate,
   VoiceSettings,
 } from "@kenfutwork/shared";
+import { Button } from "@zui/components/ui/button.js";
+import { Switch } from "@zui/components/ui/switch.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -36,6 +38,7 @@ export interface VoiceDataClient {
     body: unknown,
     signal: AbortSignal,
   ): Promise<T>;
+  putRequest<T>(path: string, body: unknown): Promise<T>;
   deleteRequest<T>(path: string): Promise<T>;
 }
 
@@ -100,7 +103,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
       setBusy(label);
       setMessage(null);
       try {
-        const response = await client.request<{ settings: VoiceSettings }>(
+        const response = await client.putRequest<{ settings: VoiceSettings }>(
           "/api/voice/settings",
           body,
         );
@@ -201,9 +204,8 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
             ).map((option) => (
               <label
                 key={option.value}
-                className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-ui-sm ${
-                  settings.mode === option.value ? "border-foreground" : ""
-                }`}
+                data-active={settings.mode === option.value}
+                className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-ui-base transition-colors hover:bg-hover data-[active=true]:border-foreground/40 data-[active=true]:bg-selected"
               >
                 <input
                   type="radio"
@@ -211,7 +213,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   value={option.value}
                   checked={settings.mode === option.value}
                   onChange={() => void patch({ mode: option.value }, "mode")}
-                  className="shrink-0"
+                  className="size-3.5 shrink-0 accent-primary"
                 />
                 {option.label}
               </label>
@@ -225,17 +227,17 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
             aria-label={segment.label}
             className="w-full min-w-0 space-y-2"
           >
-            <legend className="text-ui-sm text-foreground-subtle">
+            <legend className="text-ui-sm font-medium text-foreground-subtle">
               {segment.label}
             </legend>
-            <label className="flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-ui-sm">
+            <label className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-ui-base transition-colors hover:bg-hover">
               <input
                 type="radio"
                 name={`voice-${segment.key}`}
                 value="none"
                 checked={settings[segment.key] === null}
                 onChange={() => void select(segment.key, null)}
-                className="shrink-0"
+                className="size-3.5 shrink-0 accent-primary"
               />
               不用
             </label>
@@ -255,37 +257,34 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
         ))}
 
         {settings.mode === "loop" ? (
-          <label className="flex w-full cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-ui-sm">
+          <div className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-ui-base">
             <span>朗读回复</span>
-            <input
-              type="checkbox"
+            <Switch
               aria-label="朗读回复"
               checked={settings.speakReplies}
-              onChange={(event) =>
-                void patch(
-                  { speakReplies: event.target.checked },
-                  "speakReplies",
-                )
+              onCheckedChange={(checked) =>
+                void patch({ speakReplies: checked }, "speakReplies")
               }
-              className="shrink-0"
             />
-          </label>
+          </div>
         ) : null}
 
         <div className="w-full space-y-2">
           <div className="flex w-full items-center gap-2">
             <span className="text-ui-sm text-foreground-subtle">性能检测</span>
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant="outline"
               onClick={() =>
                 diagnosing ? diagnoseAbort.current?.abort() : void runDiagnose()
               }
-              className="rounded-md border px-3 py-1.5 text-ui-sm disabled:opacity-50"
             >
               {diagnosing ? "取消检测" : "重新检测"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="sm"
               disabled={busy === "advice"}
               onClick={() =>
                 void patch(
@@ -296,13 +295,12 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   "advice",
                 )
               }
-              className="rounded-md border px-3 py-1.5 text-ui-sm disabled:opacity-50"
             >
               应用推荐
-            </button>
+            </Button>
           </div>
           {report ? (
-            <div className="w-full space-y-1 rounded-lg border px-3 py-2 text-ui-sm text-foreground-subtle">
+            <div className="w-full space-y-1 rounded-xl border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtle">
               <p>
                 {report.hardware.cpuModel} · {report.hardware.cpuCores} 核 ·{" "}
                 {formatBytes(report.hardware.totalMemoryBytes)}
@@ -326,7 +324,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
         </div>
 
         {message ? (
-          <p role="status" className="text-ui-sm text-destructive">
+          <p role="status" className="text-ui-base text-destructive">
             {message}
           </p>
         ) : null}
@@ -369,9 +367,10 @@ function CandidateRow({
   const download = candidate.download;
   return (
     <label
-      className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-ui-sm ${
-        selected ? "border-foreground" : ""
-      } ${candidate.unavailableReason ? "opacity-60" : ""}`}
+      data-active={selected}
+      className={`flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-ui-base transition-colors hover:bg-hover data-[active=true]:border-foreground/40 data-[active=true]:bg-selected ${
+        candidate.unavailableReason ? "cursor-not-allowed opacity-60" : ""
+      }`}
     >
       <input
         type="radio"
@@ -380,7 +379,7 @@ function CandidateRow({
         checked={selected}
         disabled={Boolean(candidate.unavailableReason)}
         onChange={onSelect}
-        className="shrink-0"
+        className="size-3.5 shrink-0 accent-primary"
       />
       <span className="min-w-0 flex-1">
         {candidate.label}
@@ -442,8 +441,10 @@ function DownloadControl({
         ? "删除"
         : "下载";
   return (
-    <button
+    <Button
       type="button"
+      size="sm"
+      variant="outline"
       disabled={busy}
       onClick={(event) => {
         event.preventDefault();
@@ -455,10 +456,10 @@ function DownloadControl({
               : "download",
         );
       }}
-      className="inline-flex h-6 shrink-0 items-center rounded-md border px-3 text-ui-sm disabled:opacity-50"
+      className="shrink-0 px-3"
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
