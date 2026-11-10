@@ -318,7 +318,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   <p key={segment.key}>
                     {segment.label}{" "}
                     {pick
-                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}） · ${segmentMetric(report, segment.key, pick)}`
+                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}） · ${segmentMetric(report, segment.key)}`
                       : "无可用模型"}
                   </p>
                 );
@@ -367,13 +367,13 @@ function candidateMeta(candidate: VoiceModelCandidate): string {
 function segmentMetric(
   report: VoiceDiagnoseReport | null,
   segment: SegmentKey,
-  pick: VoiceModelCandidate,
 ): string {
   const measured = report?.[segment];
   if (measured?.state === "measured") {
     return measured.summary;
   }
-  return pick.kind === "instance" ? "未实测" : (pick.performanceNote ?? "未实测");
+  // 没跑过就没有延迟读数：编一个「预估首字 X 秒」比留白更坏。
+  return "未实测";
 }
 
 /** 每段的首选来源：听/说优先本机离线（离线、隐私），想优先在线实例（质量）。 */
