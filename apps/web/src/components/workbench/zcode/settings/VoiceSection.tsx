@@ -11,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
-import { Switch } from "@zui/components/ui/switch.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -27,9 +26,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type SegmentKey = "listen" | "think" | "speak";
 
 const SEGMENTS: Array<{ key: SegmentKey; label: string }> = [
-  { key: "listen", label: "听" },
-  { key: "think", label: "想" },
-  { key: "speak", label: "说" },
+  { key: "listen", label: "转换模型" },
+  { key: "think", label: "思考模型" },
+  { key: "speak", label: "朗读模型" },
 ];
 
 export interface VoiceDataClient {
@@ -189,29 +188,41 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
   return (
     <section aria-label="语音" className="w-full space-y-4">
       <div className="space-y-3">
-        {/* 模式 + 听/想/说：一张卡片，全部下拉选择 */}
-        <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-            <span className="text-ui-base text-foreground">模式</span>
-            <Select
-              value={settings.mode}
-              onValueChange={(value) =>
-                void patch({ mode: value as VoiceSettings["mode"] }, "mode")
-              }
-            >
-              <SelectTrigger size="lg" className="w-[240px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="transcribe">只转文本</SelectItem>
-                <SelectItem value="loop">完整回路</SelectItem>
-              </SelectContent>
-            </Select>
+        {/* 模式：选项卡 */}
+        <fieldset className="w-full min-w-0" aria-label="模式">
+          <div className="inline-flex rounded-full border border-border bg-card p-0.5">
+            {(
+              [
+                { value: "transcribe" as const, label: "只转文本" },
+                { value: "loop" as const, label: "完整回路" },
+              ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
+            ).map((option) => (
+              <label
+                key={option.value}
+                className="cursor-pointer rounded-full px-3 py-1 text-ui-sm font-medium text-foreground-subtle transition-colors has-[:checked]:bg-selected has-[:checked]:text-foreground"
+              >
+                <input
+                  type="radio"
+                  name="voice-mode"
+                  value={option.value}
+                  checked={settings.mode === option.value}
+                  onChange={() => void patch({ mode: option.value }, "mode")}
+                  className="sr-only"
+                />
+                {option.label}
+              </label>
+            ))}
           </div>
-          {SEGMENTS.map((segment) => (
+        </fieldset>
+
+        {/* 三段模型：下拉选择（只转文本只用「转换模型」，想/说隐藏） */}
+        <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
+          {SEGMENTS.filter(
+            (segment) => settings.mode === "loop" || segment.key === "listen",
+          ).map((segment) => (
             <div
               key={segment.key}
-              className="flex items-center justify-between gap-4 border-b border-border px-4 py-3"
+              className="flex items-center justify-between gap-4 border-b border-border px-4 py-3 last:border-b-0"
             >
               <span className="text-ui-base text-foreground">
                 {segment.label}
@@ -219,14 +230,11 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
               <Select
                 value={selectionValue(settings[segment.key])}
                 onValueChange={(value) => void selectByValue(segment.key, value)}
-                disabled={
-                  segment.key !== "listen" && settings.mode === "transcribe"
-                }
               >
                 <SelectTrigger size="lg" className="w-[240px]">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent side="top" align="end">
                   <SelectItem value="none">不用</SelectItem>
                   {models
                     .filter((model) => model.segment === segment.key)
@@ -246,18 +254,6 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
               </Select>
             </div>
           ))}
-          {settings.mode === "loop" ? (
-            <div className="flex items-center justify-between gap-4 px-4 py-3">
-              <span className="text-ui-base text-foreground">朗读回复</span>
-              <Switch
-                aria-label="朗读回复"
-                checked={settings.speakReplies}
-                onCheckedChange={(checked) =>
-                  void patch({ speakReplies: checked }, "speakReplies")
-                }
-              />
-            </div>
-          ) : null}
         </div>
 
         {/* 性能检测：硬件 + 每段推荐 */}
