@@ -395,12 +395,16 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
             : {
                 performanceNote:
                   ready && measured.rtfMedian !== undefined
-                    ? `实测 ${measured.rtfMedian.toFixed(2)}×${
+                    ? `实测 ${
+                        measured.rtfMedian > 0
+                          ? (1 / measured.rtfMedian).toFixed(1)
+                          : "∞"
+                      } 倍速${
                         measured.modelLoadMs === undefined
                           ? ""
                           : ` 首载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
                       }`
-                    : "预估 0.1–0.7×",
+                    : "预估 1.4–10 倍速",
               }),
           license: model.license,
         });

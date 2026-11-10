@@ -100,8 +100,8 @@ export function listenSegment(
       : ` 首载 ${(summary.modelLoadMs / 1000).toFixed(1)}s`;
   return {
     state: "measured",
-    // 只给数字：界面上是「听 0.07× 首载 4.4s」，不是一句话
-    summary: `${rtf.toFixed(2)}×${load}`,
+    // 只给数字：界面上是「12.3 倍速 首载 4.4s」（倍速 = 比音频时长快多少），不是一句话
+    summary: `${rtf > 0 ? (1 / rtf).toFixed(1) : "∞"} 倍速${load}`,
     listen: {
       samples: summary.samples,
       ...(summary.rtfMedian === undefined ? {} : { rtfMedian: rtf }),
@@ -129,13 +129,13 @@ export function thinkSegment(
       summary: "未实测",
     };
   }
-  const speed =
-    measurement.tokensPerSecond === undefined
-      ? ""
-      : ` ${measurement.tokensPerSecond.toFixed(0)}t/s`;
+  const ttft = `首字 ${measurement.ttftSeconds.toFixed(2)}s`;
   return {
     state: "measured",
-    summary: `${measurement.ttftSeconds.toFixed(2)}s${speed}`,
+    summary:
+      measurement.tokensPerSecond === undefined
+        ? ttft
+        : `${ttft} · ${measurement.tokensPerSecond.toFixed(0)} tok/s`,
     think: {
       ttftSeconds: measurement.ttftSeconds,
       ...(measurement.tokensPerSecond === undefined
@@ -159,7 +159,9 @@ export function speakSegment(
   if (measurement) {
     return {
       state: "measured",
-      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s、实时率 ${measurement.rtf.toFixed(2)}`,
+      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s、${
+        measurement.rtf > 0 ? (1 / measurement.rtf).toFixed(1) : "0.0"
+      } 倍速`,
     };
   }
   return {

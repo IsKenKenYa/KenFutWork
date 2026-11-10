@@ -437,7 +437,7 @@ function insufficientNote(
   const parts: string[] = [];
   const rtf = report.listen.listen?.rtfMedian;
   if (report.listen.state === "measured" && rtf !== undefined && rtf > 1) {
-    parts.push(`听 ${rtf.toFixed(2)}×`);
+    parts.push(`听 ${(1 / rtf).toFixed(1)} 倍速`);
   }
   const think = report.think.think;
   if (
@@ -449,8 +449,8 @@ function insufficientNote(
     const speed =
       think.tokensPerSecond === undefined
         ? ""
-        : ` ${think.tokensPerSecond.toFixed(0)}t/s`;
-    parts.push(`想 ${think.ttftSeconds.toFixed(2)}s${speed}`);
+        : ` · ${think.tokensPerSecond.toFixed(0)} tok/s`;
+    parts.push(`想 首字 ${think.ttftSeconds.toFixed(2)}s${speed}`);
   }
   return parts.length > 0 ? `${parts.join(" · ")} · 建议只转文本` : null;
 }

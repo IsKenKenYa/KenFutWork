@@ -676,13 +676,13 @@ describe("voice 服务：候选性能标注（规划 §5 预估 → 实测）", 
   it("未下载：标「预估」并说明下载后会换成实测", async () => {
     const service = createVoiceService(withTimings("missing"));
     const [candidate] = await service.listCandidates(USER, "listen");
-    expect(candidate?.performanceNote).toBe("预估 0.1–0.7×");
+    expect(candidate?.performanceNote).toBe("预估 1.4–10 倍速");
   });
 
   it("就绪但还没实测：仍标注预估（不编一个实测值出来）", async () => {
     const service = createVoiceService(withTimings("ready"));
     const [candidate] = await service.listCandidates(USER, "listen");
-    expect(candidate?.performanceNote).toBe("预估 0.1–0.7×");
+    expect(candidate?.performanceNote).toBe("预估 1.4–10 倍速");
   });
 
   it("就绪 + 有实测：换成实测值，且把首次载入一并写清（别让人以为第一次也这么快）", async () => {
@@ -740,7 +740,9 @@ describe("voice 服务：候选性能标注（规划 §5 预估 → 实测）", 
       );
 
     const [candidate] = await service.listCandidates(USER, "listen");
-    expect(candidate?.performanceNote).toMatch(/^实测 [0-9.]+× 首载 [0-9.]+s$/);
+    expect(candidate?.performanceNote).toMatch(
+      /^实测 (∞|[0-9.]+) 倍速 首载 [0-9.]+s$/,
+    );
     expect(candidate?.performanceNote).not.toContain("预估");
     warn.mockRestore();
   });
