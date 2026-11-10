@@ -4,6 +4,7 @@ import type {
   VoiceSettings,
 } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
+import { LoaderCircleIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -277,7 +278,14 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                     : void runDiagnose()
                 }
               >
-                {diagnosing ? "取消检测" : "重新检测"}
+                {diagnosing ? (
+                  <>
+                    <LoaderCircleIcon className="size-3.5 animate-spin" />
+                    取消检测
+                  </>
+                ) : (
+                  "重新检测"
+                )}
               </Button>
               <Button
                 type="button"
@@ -292,7 +300,8 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
           {report ? (
             <div className="w-full space-y-1 border-t border-border px-4 py-3 text-ui-base text-foreground-subtle">
               <p>
-                CPU {report.hardware.cpuModel} · {report.hardware.cpuCores} 核
+                CPU {report.hardware.cpuModel} · {report.hardware.cpuCores} 核 ·
+                内存 {formatBytes(report.hardware.totalMemoryBytes)}
               </p>
               <p>
                 GPU {report.hardware.gpu ?? "未探到"}
@@ -300,12 +309,12 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   ? ""
                   : ` · 显存 ${formatBytes(report.hardware.gpuMemoryBytes)}`}
               </p>
-              <p>内存 {formatBytes(report.hardware.totalMemoryBytes)}</p>
+              <p className="pt-1 text-foreground">推荐模型</p>
               {SEGMENTS.map((segment) => {
                 const pick = recommendation[segment.key];
                 return (
                   <p key={segment.key}>
-                    推荐 {segment.label}{" "}
+                    {segment.label}{" "}
                     {pick
                       ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}） · ${segmentMetric(report, segment.key, pick)}`
                       : "无可用模型"}
