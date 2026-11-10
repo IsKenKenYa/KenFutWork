@@ -958,7 +958,7 @@ function EngineView() {
         {info?.install.error ? (
           <p className="mt-3 text-xs text-destructive">{info.install.error}</p>
         ) : null}
-        <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+        <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card text-sm">
           {/* 列宽均分 + 居中：定宽 flex 会让「端口」列吃掉剩余宽度，右侧留一大片空白。 */}
           <div className="grid grid-cols-3 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
             <span className="text-center">服务</span>
@@ -1015,7 +1015,7 @@ function EngineView() {
         </div>
 
         {info ? (
-          <div className="mt-4 overflow-hidden rounded-xl border border-border text-sm">
+          <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card text-sm">
             <div className="grid grid-cols-2 items-center gap-3 border-b border-border px-4 py-2 text-xs text-foreground-subtle">
               <span className="text-center">项</span>
               <span className="text-center">值</span>
