@@ -236,7 +236,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                 value={selectionValue(settings[segment.key])}
                 onValueChange={(value) => void selectByValue(segment.key, value)}
               >
-                <SelectTrigger size="lg" className="w-[240px]">
+                <SelectTrigger size="lg" className="w-[300px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent side="top" align="end">
@@ -309,7 +309,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   ? ""
                   : ` · 显存 ${formatBytes(report.hardware.gpuMemoryBytes)}`}
               </p>
-              <p className="pt-1 text-foreground">推荐模型</p>
+              <p className="pt-1">推荐模型：</p>
               {SEGMENTS.map((segment) => {
                 const pick = recommendation[segment.key];
                 return (
@@ -355,7 +355,7 @@ function selectionValue(selection: VoiceSettings[SegmentKey]): string {
 
 /** 选择器里的一行标签：来源 + 体积，够选就行（速度与结论在检测卡片）。 */
 function candidateMeta(candidate: VoiceModelCandidate): string {
-  const source = candidate.kind === "builtin" ? "离线" : "在线";
+  const source = candidate.kind === "builtin" ? "本机" : "在线";
   return candidate.sizeBytes > 0
     ? `${source} · ${formatBytes(candidate.sizeBytes)}`
     : source;

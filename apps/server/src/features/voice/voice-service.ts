@@ -428,7 +428,7 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
             instanceCandidates.push({
               id: instance.id,
               segment: target,
-              label: `${instance.name} · ${model.name}`,
+              label: `${instance.name} / ${model.name}`,
               kind: "instance",
               location: "remote",
               model: model.id,

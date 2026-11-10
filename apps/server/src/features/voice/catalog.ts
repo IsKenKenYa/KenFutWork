@@ -149,7 +149,7 @@ export const KOKORO_MULTI_LANG: BuiltinVoiceModelSpec = {
 export const QWEN3_0_6B_LLAMAFILE: BuiltinVoiceModelSpec = {
   id: "qwen3-0.6b-llamafile",
   segment: "think",
-  label: "Qwen3 0.6B（离线）",
+  label: "Qwen3 0.6B",
   license: "Apache-2.0（Qwen3 权重 + llamafile 运行时）；署名见设置 → 关于",
   layout: { model: "qwen3-0.6b-q4_k_m.llamafile" },
   files: [
