@@ -188,35 +188,39 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
   return (
     <section aria-label="语音" className="w-full space-y-4">
       <div className="space-y-3">
-        {/* 模式：选项卡 */}
-        <fieldset className="w-full min-w-0" aria-label="模式">
-          <div className="inline-flex rounded-full border border-border bg-card p-0.5">
-            {(
-              [
-                { value: "transcribe" as const, label: "只转文本" },
-                { value: "loop" as const, label: "完整回路" },
-              ] satisfies Array<{ value: VoiceSettings["mode"]; label: string }>
-            ).map((option) => (
-              <label
-                key={option.value}
-                className="cursor-pointer rounded-full px-3 py-1 text-ui-sm font-medium text-foreground-subtle transition-colors has-[:checked]:bg-selected has-[:checked]:text-foreground"
-              >
-                <input
-                  type="radio"
-                  name="voice-mode"
-                  value={option.value}
-                  checked={settings.mode === option.value}
-                  onChange={() => void patch({ mode: option.value }, "mode")}
-                  className="sr-only"
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        {/* 三段模型：下拉选择（只转文本只用「转换模型」，想/说隐藏） */}
+        {/* 语音模式 + 三段模型：一张卡片 */}
         <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
+            <span className="text-ui-base text-foreground">语音模式</span>
+            <fieldset className="min-w-0" aria-label="语音模式">
+              <div className="inline-flex rounded-full bg-background p-0.5">
+                {(
+                  [
+                    { value: "transcribe" as const, label: "只转文本" },
+                    { value: "loop" as const, label: "完整回路" },
+                  ] satisfies Array<{
+                    value: VoiceSettings["mode"];
+                    label: string;
+                  }>
+                ).map((option) => (
+                  <label
+                    key={option.value}
+                    className="cursor-pointer rounded-full px-3 py-1 text-ui-sm font-medium text-foreground-subtle transition-colors has-[:checked]:bg-card has-[:checked]:text-foreground has-[:checked]:shadow-xs"
+                  >
+                    <input
+                      type="radio"
+                      name="voice-mode"
+                      value={option.value}
+                      checked={settings.mode === option.value}
+                      onChange={() => void patch({ mode: option.value }, "mode")}
+                      className="sr-only"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </div>
           {SEGMENTS.filter(
             (segment) => settings.mode === "loop" || segment.key === "listen",
           ).map((segment) => (
@@ -303,7 +307,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   <p key={segment.key}>
                     推荐 {segment.label}{" "}
                     {pick
-                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}）${pick.performanceNote ?? ""}`
+                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}） · ${segmentMetric(report, segment.key, pick)}`
                       : "无可用模型"}
                   </p>
                 );
@@ -346,6 +350,22 @@ function candidateMeta(candidate: VoiceModelCandidate): string {
   return candidate.sizeBytes > 0
     ? `${source} · ${formatBytes(candidate.sizeBytes)}`
     : source;
+}
+
+/**
+ * 每段的速度读数：实测优先，未实测才回退到候选的预估标注；
+ * 在线端点没有统一读数，未实测就说「未实测」。
+ */
+function segmentMetric(
+  report: VoiceDiagnoseReport | null,
+  segment: SegmentKey,
+  pick: VoiceModelCandidate,
+): string {
+  const measured = report?.[segment];
+  if (measured?.state === "measured") {
+    return measured.summary;
+  }
+  return pick.kind === "instance" ? "未实测" : (pick.performanceNote ?? "未实测");
 }
 
 /** 每段的首选来源：听/说优先本机离线（离线、隐私），想优先在线实例（质量）。 */
