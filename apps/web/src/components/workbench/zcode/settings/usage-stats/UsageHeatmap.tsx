@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { AppUsageHeatmapCell, AppUsageHeatmapWeek } from "@zcode/shared";
 import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
 import {
   HeatmapColumn,
   type HeatmapDisplayColumn,
@@ -338,11 +339,11 @@ export function UsageHeatmap({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl bg-surface px-3 py-3">
+      <div>
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="min-w-0 truncate text-ui-base font-medium text-foreground">
+          <SettingsSubheading>
             {intl.formatMessage({ id: "settings.usage.heatmapTitle" })}
-          </h3>
+          </SettingsSubheading>
           <Tabs
             value={mode}
             onValueChange={(value) => setMode(value as TokenActivityMode)}

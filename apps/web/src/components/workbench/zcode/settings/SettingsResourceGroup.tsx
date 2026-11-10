@@ -36,7 +36,7 @@ export function SettingsResourceList<T>({
 }) {
   if (items.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-xl bg-surface">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       {items.map((item, index) => (
         <div key={getKey(item)}>
           {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}

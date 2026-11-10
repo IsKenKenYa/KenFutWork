@@ -29,7 +29,6 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { InterfaceMode } from "@zui/lib/interfaceMode.js";
 import { DataBaseDirControl } from "@zui/settings/DataBaseDirControl.js";
 import {
-  SettingsBadge,
   SettingsGroupCard,
   SettingsRow,
 } from "@zui/settings/SettingsPageParts.js";
@@ -945,18 +944,3 @@ export function GeneralSectionContent({
   );
 }
 
-export function GeneralSectionHeader({
-  localePreference,
-}: {
-  localePreference: LocalePreference;
-}) {
-  const { intl } = useZCodeIntl();
-
-  return (
-    <div className="mt-4 flex flex-wrap gap-2">
-      <SettingsBadge>
-        {intl.formatMessage({ id: `settings.locale.${localePreference}` })}
-      </SettingsBadge>
-    </div>
-  );
-}

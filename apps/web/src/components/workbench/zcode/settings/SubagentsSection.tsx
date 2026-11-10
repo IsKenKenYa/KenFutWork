@@ -1679,7 +1679,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   }
 
   const renderAgentList = (items: AgentSummary[]) => (
-    <div className="overflow-hidden rounded-xl bg-surface">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       {items.map((agent, index) => (
         <div key={agent.id}>
           {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}
@@ -1755,7 +1755,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       ) : null}
 
       {capability && !capability.userScopeAvailable ? (
-        <div className="rounded-lg border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtle">
+        <div className="rounded-xl border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
           {intl.formatMessage({
             id: "settings.subagents.userScopeDesktopOnly",
           })}

@@ -119,7 +119,6 @@ import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import {
   createSettingsPageConfig,
   GeneralSectionContent,
-  GeneralSectionHeader,
   resolveSettingsSectionForPlatform,
 } from "./settingsPageHelpers.js";
 
@@ -1900,11 +1899,6 @@ export function SettingsPage({
                             ) : null}
                           </div>
                         </div>
-                        {activeSection === "general" ? (
-                          <GeneralSectionHeader
-                            localePreference={localePreference}
-                          />
-                        ) : null}
                       </div>
                       <div className="space-y-8">
                         {activeSection === "general" ? (

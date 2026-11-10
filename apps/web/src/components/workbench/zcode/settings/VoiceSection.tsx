@@ -193,9 +193,9 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
   return (
     <section aria-label="语音" className="w-full space-y-4">
       <div className="space-y-3">
-        {/* 两个模式横排：能左右就别说上下 */}
+        {/* 模式切换：选项卡 */}
         <fieldset className="w-full min-w-0" aria-label="模式">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="inline-flex rounded-full border border-border bg-card p-0.5">
             {(
               [
                 { value: "transcribe" as const, label: "只转文本" },
@@ -204,8 +204,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
             ).map((option) => (
               <label
                 key={option.value}
-                data-active={settings.mode === option.value}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-ui-base transition-colors hover:bg-hover data-[active=true]:border-foreground/40 data-[active=true]:bg-selected"
+                className="cursor-pointer rounded-full px-3 py-1 text-ui-sm font-medium text-foreground-subtle transition-colors has-[:checked]:bg-selected has-[:checked]:text-foreground"
               >
                 <input
                   type="radio"
@@ -213,7 +212,7 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   value={option.value}
                   checked={settings.mode === option.value}
                   onChange={() => void patch({ mode: option.value }, "mode")}
-                  className="size-3.5 shrink-0 accent-primary"
+                  className="sr-only"
                 />
                 {option.label}
               </label>
@@ -221,43 +220,47 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
           </div>
         </fieldset>
 
-        {SEGMENTS.map((segment) => (
-          <fieldset
-            key={segment.key}
-            aria-label={segment.label}
-            className="w-full min-w-0 space-y-2"
-          >
-            <legend className="text-ui-sm font-medium text-foreground-subtle">
-              {segment.label}
-            </legend>
-            <label className="flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-ui-base transition-colors hover:bg-hover">
-              <input
-                type="radio"
-                name={`voice-${segment.key}`}
-                value="none"
-                checked={settings[segment.key] === null}
-                onChange={() => void select(segment.key, null)}
-                className="size-3.5 shrink-0 accent-primary"
-              />
-              不用
-            </label>
-            {models
-              .filter((model) => model.segment === segment.key)
-              .map((candidate) => (
-                <CandidateRow
-                  key={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
-                  candidate={candidate}
-                  selected={isSelected(settings[segment.key], candidate)}
-                  busy={busy === candidate.id}
-                  onSelect={() => void select(segment.key, candidate)}
-                  onAction={(action) => void modelAction(action, candidate.id)}
+        {/* 听 / 想 / 说 合并成一张卡片 */}
+        <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
+          {SEGMENTS.map((segment, index) => (
+            <div
+              key={segment.key}
+              role="radiogroup"
+              aria-label={segment.label}
+              className={index > 0 ? "border-t border-border" : ""}
+            >
+              <div className="px-4 pb-1 pt-3 text-ui-sm font-medium text-foreground-subtle">
+                {segment.label}
+              </div>
+              <label className="flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-ui-base transition-colors hover:bg-hover has-[:checked]:bg-selected">
+                <input
+                  type="radio"
+                  name={`voice-${segment.key}`}
+                  value="none"
+                  checked={settings[segment.key] === null}
+                  onChange={() => void select(segment.key, null)}
+                  className="size-3.5 shrink-0 accent-primary"
                 />
-              ))}
-          </fieldset>
-        ))}
+                不用
+              </label>
+              {models
+                .filter((model) => model.segment === segment.key)
+                .map((candidate) => (
+                  <CandidateRow
+                    key={`${candidate.kind}:${candidate.id}:${candidate.model ?? ""}`}
+                    candidate={candidate}
+                    selected={isSelected(settings[segment.key], candidate)}
+                    busy={busy === candidate.id}
+                    onSelect={() => void select(segment.key, candidate)}
+                    onAction={(action) => void modelAction(action, candidate.id)}
+                  />
+                ))}
+            </div>
+          ))}
+        </div>
 
         {settings.mode === "loop" ? (
-          <div className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-ui-base">
+          <div className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-ui-base">
             <span>朗读回复</span>
             <Switch
               aria-label="朗读回复"
@@ -269,38 +272,45 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
           </div>
         ) : null}
 
-        <div className="w-full space-y-2">
-          <div className="flex w-full items-center gap-2">
-            <span className="text-ui-sm text-foreground-subtle">性能检测</span>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                diagnosing ? diagnoseAbort.current?.abort() : void runDiagnose()
-              }
-            >
-              {diagnosing ? "取消检测" : "重新检测"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy === "advice"}
-              onClick={() =>
-                void patch(
-                  {
-                    mode: advice.recommendedMode,
-                    speakReplies: advice.recommendedSpeakReplies,
-                  },
-                  "advice",
-                )
-              }
-            >
-              应用推荐
-            </Button>
+        {/* 性能检测 + 应用推荐合并成一张卡片 */}
+        <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex w-full items-center justify-between gap-2 px-4 py-3">
+            <span className="text-ui-base font-medium text-foreground">
+              性能检测
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  diagnosing
+                    ? diagnoseAbort.current?.abort()
+                    : void runDiagnose()
+                }
+              >
+                {diagnosing ? "取消检测" : "重新检测"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy === "advice"}
+                onClick={() =>
+                  void patch(
+                    {
+                      mode: advice.recommendedMode,
+                      speakReplies: advice.recommendedSpeakReplies,
+                    },
+                    "advice",
+                  )
+                }
+              >
+                应用推荐
+              </Button>
+            </div>
           </div>
           {report ? (
-            <div className="w-full space-y-1 rounded-xl border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtle">
+            <div className="w-full space-y-1 border-t border-border px-4 py-3 text-ui-base text-foreground-subtle">
               <p>
                 {report.hardware.cpuModel} · {report.hardware.cpuCores} 核 ·{" "}
                 {formatBytes(report.hardware.totalMemoryBytes)}
@@ -367,8 +377,7 @@ function CandidateRow({
   const download = candidate.download;
   return (
     <label
-      data-active={selected}
-      className={`flex w-full cursor-pointer items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-ui-base transition-colors hover:bg-hover data-[active=true]:border-foreground/40 data-[active=true]:bg-selected ${
+      className={`flex w-full cursor-pointer items-center gap-3 border-t border-border px-4 py-2.5 text-ui-base transition-colors hover:bg-hover has-[:checked]:bg-selected ${
         candidate.unavailableReason ? "cursor-not-allowed opacity-60" : ""
       }`}
     >

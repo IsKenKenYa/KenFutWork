@@ -37,7 +37,7 @@ export function PluginHookDetails({
         {intl.formatMessage({ id: "settings.plugins.detail.hooks" })}
       </div>
       {hooks.length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtle">
+        <div className="rounded-xl border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
           {intl.formatMessage({ id: "settings.plugins.detail.none" })}
         </div>
       ) : (

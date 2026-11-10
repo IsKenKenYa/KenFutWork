@@ -138,7 +138,7 @@ export function HooksList({
               actions={installedEmptyActions}
             />
           ) : (
-            <div className="overflow-hidden rounded-xl bg-surface">
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
               {section.kind === "plugin"
                 ? section.hooks.map((hook, index) => (
                     <div key={`${hook.pluginId}-${hook.detail.sourcePath}-${index}`}>

@@ -479,7 +479,7 @@ function PluginList({
   useEffect(() => { void refreshAfterPluginChange(); }, [refreshAfterPluginChange]);
 
   const renderPluginRows = (items: ZCodePluginInfo[]) => (
-    <div className="overflow-hidden rounded-xl bg-surface">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       {items.map((plugin, index) => (
         <Fragment key={plugin.id}>
           {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}
@@ -636,7 +636,7 @@ function PluginList({
   );
 
   const renderUnavailableComputerUse = () => (
-    <div className="overflow-hidden rounded-xl bg-surface">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       <div className="flex min-w-0 items-center gap-3 px-4 py-3 text-foreground-subtle">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-foreground-subtle">
           <Monitor className="size-4" aria-hidden="true" />

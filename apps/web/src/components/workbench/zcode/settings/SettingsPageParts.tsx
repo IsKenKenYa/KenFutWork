@@ -182,7 +182,7 @@ export function SettingsGroupCard({ children }: { children: ReactNode }) {
 
 export function SettingsBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-md bg-surface px-2.5 py-1 text-ui-base font-medium text-foreground-subtle">
+    <span className="rounded-md border border-border bg-card px-2.5 py-1 text-ui-base font-medium text-foreground-subtle">
       {children}
     </span>
   );
