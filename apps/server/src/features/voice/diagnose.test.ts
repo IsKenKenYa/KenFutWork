@@ -28,7 +28,7 @@ describe("listenSegment（听：用真实使用的实测）", () => {
     });
     expect(segment.state).toBe("measured");
     // 只给数字与「首载」标注，不写句子（界面文案硬约束）
-    expect(segment.summary).toBe("12.0 倍速 首载 2.7s");
+    expect(segment.summary).toBe("比实时快 12.0 倍 首载 2.7s");
     expect(segment.listen).toEqual({
       samples: 12,
       rtfMedian: 0.083,
@@ -60,7 +60,7 @@ describe("listenSegment（听：用真实使用的实测）", () => {
 
   it("summary 只给数字（不写成句子）", () => {
     const summary = listenSegment({ rtfMedian: 0.5, samples: 3 }).summary;
-    expect(summary).toBe("2.0 倍速");
+    expect(summary).toBe("比实时快 2.0 倍");
     // 句子特征（含「，」或「。」）不允许出现在界面读数里
     expect(summary).not.toMatch(/[，。]/);
   });
@@ -70,7 +70,7 @@ describe("thinkSegment（想：首 token 延迟）", () => {
   it("有读数：报首字与（可选）生成速度", () => {
     const segment = thinkSegment({ ttftSeconds: 0.42, tokensPerSecond: 32.5 });
     expect(segment.state).toBe("measured");
-    expect(segment.summary).toBe("首字 0.42s · 33 tok/s");
+    expect(segment.summary).toBe("首字 0.42s · 33 tokens/s");
     expect(segment.think).toEqual({ ttftSeconds: 0.42, tokensPerSecond: 32.5 });
   });
 
@@ -96,7 +96,7 @@ describe("speakSegment（说：首包 + 实时率）", () => {
   it("有实测：报首包与实时率（规划 §6 的门限就靠这两个数）", () => {
     const segment = speakSegment({ firstByteSeconds: 0.42, rtf: 0.28 });
     expect(segment.state).toBe("measured");
-    expect(segment.summary).toBe("首包 0.42s、3.6 倍速");
+    expect(segment.summary).toBe("首包 0.42s · 比实时快 3.6 倍");
   });
 
   it("没测过：pending 并说明点一下就现场合成（不是空白，也不是假读数）", () => {

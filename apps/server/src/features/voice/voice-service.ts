@@ -47,6 +47,7 @@ import {
   buildReport,
   collectHardware,
   listenSegment,
+  realtimeMultiple,
   speakSegment,
   thinkSegment,
 } from "./diagnose.js";
@@ -391,20 +392,16 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
           ...(model.segment === "think"
             ? ready
               ? {}
-              : { performanceNote: "预估 10–20 tok/s" }
+              : { performanceNote: "预估 10–20 tokens/s" }
             : {
                 performanceNote:
                   ready && measured.rtfMedian !== undefined
-                    ? `实测 ${
-                        measured.rtfMedian > 0
-                          ? (1 / measured.rtfMedian).toFixed(1)
-                          : "∞"
-                      } 倍速${
+                    ? `实测 ${realtimeMultiple(measured.rtfMedian)}${
                         measured.modelLoadMs === undefined
                           ? ""
                           : ` 首载 ${(measured.modelLoadMs / 1000).toFixed(1)}s`
                       }`
-                    : "预估 1.4–10 倍速",
+                    : "预估 比实时快 1.4–10 倍",
               }),
           license: model.license,
         });

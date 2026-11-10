@@ -94,10 +94,6 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
   }, [client, downloading]);
 
   const advice = useMemo(() => adviceOf(report), [report]);
-  const performanceWarning = useMemo(
-    () => (report ? insufficientNote(report, advice) : null),
-    [advice, report],
-  );
 
   const patch = useCallback(
     async (body: Record<string, unknown>, label: string) => {
@@ -309,8 +305,14 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   ? ""
                   : ` · 显存 ${formatBytes(report.hardware.gpuMemoryBytes)}`}
               </p>
-              <p className="pt-1">推荐模型：</p>
-              {SEGMENTS.map((segment) => {
+              <p className="pt-1">
+                推荐模式：
+                {advice.recommendedMode === "loop" ? "完整回路" : "只转文本"}
+              </p>
+              <p>推荐模型：</p>
+              {SEGMENTS.filter(
+                (segment) => settings.mode === "loop" || segment.key === "listen",
+              ).map((segment) => {
                 const pick = recommendation[segment.key];
                 return (
                   <p key={segment.key}>
@@ -321,9 +323,6 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                   </p>
                 );
               })}
-              {performanceWarning ? (
-                <p className="text-destructive">{performanceWarning}</p>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -425,32 +424,4 @@ function adviceOf(report: VoiceDiagnoseReport | null): VoiceProfileAdvice {
   return asrOk && llmOk
     ? { recommendedMode: "loop", recommendedSpeakReplies: false }
     : { recommendedMode: "transcribe", recommendedSpeakReplies: false };
-}
-
-function insufficientNote(
-  report: VoiceDiagnoseReport,
-  advice: VoiceProfileAdvice,
-): string | null {
-  if (advice.recommendedMode === "loop") {
-    return null;
-  }
-  const parts: string[] = [];
-  const rtf = report.listen.listen?.rtfMedian;
-  if (report.listen.state === "measured" && rtf !== undefined && rtf > 1) {
-    parts.push(`听 ${(1 / rtf).toFixed(1)} 倍速`);
-  }
-  const think = report.think.think;
-  if (
-    report.think.state === "measured" &&
-    think &&
-    (think.ttftSeconds > 3 ||
-      (think.tokensPerSecond !== undefined && think.tokensPerSecond < 5))
-  ) {
-    const speed =
-      think.tokensPerSecond === undefined
-        ? ""
-        : ` · ${think.tokensPerSecond.toFixed(0)} tok/s`;
-    parts.push(`想 首字 ${think.ttftSeconds.toFixed(2)}s${speed}`);
-  }
-  return parts.length > 0 ? `${parts.join(" · ")} · 建议只转文本` : null;
 }
