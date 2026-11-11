@@ -207,9 +207,7 @@ describe("SagCliProvider（M2）", () => {
       message: expect.stringContaining("语义检索凭据未配置"),
     });
     expect(configCalls).toBe(1);
-    // 失败不缓存：重新初始化（config 已就绪）后语义检索恢复。
-    await expect(service.initialize()).resolves.toMatchObject({ ok: true });
-    expect(configCalls).toBe(2);
+    // 失败不缓存：不手动 initialize、也不重启进程，下一次检索自己重探并恢复。
     await expect(
       service.search({ query: "x", path: "D:/work/project" }),
     ).resolves.toHaveProperty("scope");

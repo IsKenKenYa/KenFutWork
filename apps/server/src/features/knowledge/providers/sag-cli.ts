@@ -339,10 +339,7 @@ export function createSagCliProvider(
    */
   async function probeCredentialAvailability(): Promise<void> {
     if (initResult?.ok) return;
-    if (initResult && !initResult.ok) {
-      credentialMissing = true;
-      return;
-    }
+    // 失败过的 init 不能当缓存：用户补好 key 后要能立刻自愈，否则只能重启进程。
     // 先过安装态/平台门：未安装时绝不能碰 CLI（M2 回归用例锁死过）。
     const inspection = await inspect();
     if (!inspection.ok || !supported) return;
@@ -619,11 +616,18 @@ export function createSagCliProvider(
             "service_unavailable",
             "语义检索凭据未配置：在 jev 插件填写 TypeSafe Key，或配置 typesafe-jev 供应商实例。",
           );
-        if (credentialMissing) throw missing();
         await probeCredentialAvailability();
         if (credentialMissing) throw missing();
       }
-      return doSearch(input);
+      try {
+        const result = await doSearch(input);
+        semanticFailureReason = undefined;
+        return result;
+      } catch (error) {
+        semanticFailureReason =
+          error instanceof Error ? error.message : String(error);
+        throw error;
+      }
     },
     async read(input: KnowledgeReadInput): Promise<KnowledgeReadResult> {
       await assertReady(false);
