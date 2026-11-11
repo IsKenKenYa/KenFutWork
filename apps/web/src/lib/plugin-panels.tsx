@@ -477,7 +477,10 @@ function KnowledgePreviewDialog({
               </Markdown>
             </div>
           ) : (
-            <HighlightedCode code={target?.content ?? ""} name={name} />
+            // 支持范围只到 文档/表格/演示/图片；代码等其它类型不提供预览
+            <p className="px-5 py-4 text-sm text-muted-foreground">
+              该类型不支持预览
+            </p>
           )}
         </div>
       </DialogContent>
@@ -503,77 +506,6 @@ function resolveAssetUrl(src: string, filePath: string): string {
       ? decoded
       : `${base}/${decoded.replace(/^\.\//u, "")}`;
   return `/api/knowledge/file?path=${encodeURIComponent(target)}`;
-}
-
-const LANG_BY_EXT: Record<string, string> = {
-  py: "python",
-  yaml: "yaml",
-  yml: "yaml",
-  ts: "typescript",
-  tsx: "tsx",
-  js: "javascript",
-  jsx: "jsx",
-  json: "json",
-  sh: "bash",
-  bash: "bash",
-  zsh: "bash",
-  rs: "rust",
-  go: "go",
-  java: "java",
-  kt: "kotlin",
-  sql: "sql",
-  css: "css",
-  scss: "scss",
-  html: "html",
-  xml: "xml",
-  toml: "toml",
-  ini: "ini",
-  c: "c",
-  h: "c",
-  cpp: "cpp",
-  cs: "csharp",
-  rb: "ruby",
-  php: "php",
-  swift: "swift",
-  dockerfile: "docker",
-};
-
-/** 代码文件：Shiki 高亮（github-light），语言按扩展名推断，识别不了就纯文本。 */
-function HighlightedCode({ code, name }: { code: string; name: string }) {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const lang = LANG_BY_EXT[ext] ?? "text";
-  const [html, setHtml] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setHtml(null);
-    import("shiki")
-      .then(({ codeToHtml }) =>
-        codeToHtml(
-          code,
-          { lang, theme: "github-light" } as Parameters<typeof codeToHtml>[1],
-        ),
-      )
-      .then((out) => {
-        if (!cancelled) setHtml(out);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [code, lang]);
-  if (!html)
-    return (
-      <pre className="whitespace-pre-wrap break-words px-5 py-4 font-mono text-xs leading-6 text-foreground">
-        {code}
-      </pre>
-    );
-  return (
-    <div
-      className="[&_pre]:m-0 [&_pre]:overflow-auto [&_pre]:bg-transparent [&_pre]:px-5 [&_pre]:py-4 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-6"
-      // shiki 会把代码内容转义后再包 span，插入安全
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
 }
 
 /** pptx：pptx-preview 纯前端渲染（每页按幻灯片画布绘制）。 */
@@ -625,7 +557,7 @@ function PptxView({ url }: { url: string }) {
       {error ? (
         <p className="text-sm text-destructive">{error}</p>
       ) : (
-        <div ref={hostRef} className="space-y-4 [&_.pptx-wrapper]:mx-auto" />
+        <div ref={hostRef} className="space-y-4" />
       )}
     </div>
   );
