@@ -382,10 +382,14 @@ function KnowledgePreviewDialog({
 }) {
   const isMarkdown =
     target !== null && /\.(md|mdx|markdown)$/iu.test(target.name);
+  // 图片走文本接口只会拿到二进制乱码：明确说不可预览，不吐乱码。
+  const isImage =
+    target !== null && /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/iu.test(target.name);
   return (
     <Dialog open={target !== null} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         portalProps={{ keepMounted: true }}
+        showCloseButton={false}
         className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         aria-describedby={undefined}
       >
@@ -398,7 +402,9 @@ function KnowledgePreviewDialog({
           </DialogClose>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
-          {isMarkdown ? (
+          {isImage ? (
+            <p className="text-sm text-muted-foreground">图片暂不支持预览</p>
+          ) : isMarkdown ? (
             <div className="space-y-3 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_td]:border-b [&_th]:border-b">
               <Markdown remarkPlugins={[remarkGfm]}>
                 {target?.content ?? ""}
