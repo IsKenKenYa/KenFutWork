@@ -434,7 +434,7 @@ function KnowledgePreviewDialog({
             <X className="size-[22px]" strokeWidth={1.1} aria-hidden="true" />
           </DialogClose>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-auto bg-muted/30">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-muted/30">
           {isImage && fileUrl ? (
             <div className="flex h-full items-center justify-center p-4">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -597,12 +597,22 @@ function PptxView({ url }: { url: string }) {
         ) => { preview: (data: ArrayBuffer) => Promise<void> | void };
       };
       if (cancelled) return;
-      const width = Math.max(320, Math.min(880, (host.clientWidth || 880) - 48));
+      // 铺满弹窗宽度：不设上限、不吃额外边距（外层已有 px-5）
+      const width = Math.max(320, host.clientWidth || 880);
       const viewer = mod.init(host, {
         width,
-        height: Math.round(width * 0.5625),
+        height: Math.round(width * 0.75),
       });
       await viewer.preview(buf);
+      // 库把画布背景写死成黑色、高度按 16:9 写死：清掉它们，
+      // 让幻灯片按自身比例撑开，避免黑边与内层滚动条。
+      const wrapper = host.querySelector<HTMLElement>(".pptx-preview-wrapper");
+      if (wrapper) {
+        wrapper.style.background = "transparent";
+        wrapper.style.height = "auto";
+        wrapper.style.overflow = "visible";
+        wrapper.style.width = "100%";
+      }
     })().catch((err) => {
       if (!cancelled) setError(err instanceof Error ? err.message : "解析失败");
     });
