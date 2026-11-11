@@ -384,6 +384,10 @@ function KnowledgePreviewDialog({
   target: { name: string; content: string; path: string } | null;
   onClose: () => void;
 }) {
+  /** 与面板同款窗框：normal 常规 / max 全屏；窗控位置与尺寸同面板标题栏。 */
+  const [chrome, setChrome] = useState<"normal" | "max">("normal");
+  const centeredBtn =
+    "absolute top-1/2 -translate-y-1/2 inline-flex size-7 items-center justify-center rounded-[min(var(--radius-md),12px)] border border-transparent text-foreground transition-colors hover:bg-muted hover:text-foreground";
   const name = target?.name ?? "";
   const isMarkdown = /\.(md|mdx|markdown)$/iu.test(name);
   const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/iu.test(name);
@@ -401,19 +405,33 @@ function KnowledgePreviewDialog({
         portalProps={{ keepMounted: true }}
         showCloseButton={false}
         overlayProps={{ className: "hidden" }}
-        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden rounded-xl border border-border p-0 shadow-2xl sm:max-w-4xl"
+        // 与知识库面板同款窗框：同一套标题栏、同一套窗控位置与尺寸
+        className={`flex flex-col gap-0 overflow-hidden border-b-0 p-0 ${
+          chrome === "max"
+            ? "inset-0 h-[100vh] max-h-[100vh] w-auto translate-x-0 translate-y-0 rounded-none sm:max-w-none"
+            : "h-[80vh] max-h-[80vh] sm:max-w-4xl"
+        }`}
         aria-describedby={undefined}
       >
-        <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3">
-          <DialogTitle className="min-w-0 truncate text-base font-medium">
-            {target?.name ?? "预览"}
+        <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-36">
+          <DialogTitle className="flex min-w-0 items-center gap-2 text-base font-medium">
+            <span className="min-w-0 truncate">{target?.name ?? "预览"}</span>
           </DialogTitle>
+          <button
+            type="button"
+            aria-label="最大化"
+            title={chrome === "max" ? "还原" : "最大化"}
+            className={`${centeredBtn} right-10`}
+            onClick={() => setChrome(chrome === "max" ? "normal" : "max")}
+          >
+            <Square className="size-4" strokeWidth={1.5} aria-hidden="true" />
+          </button>
           <DialogClose
+            className={`${centeredBtn} right-2`}
             aria-label="关闭"
             title="关闭"
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
-            <X className="size-4" strokeWidth={1.6} aria-hidden="true" />
+            <X className="size-[22px]" strokeWidth={1.1} aria-hidden="true" />
           </DialogClose>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto bg-muted/30">
