@@ -216,9 +216,8 @@ export function VoiceSettingsSection({
             ).map((option) => (
               <label
                 key={option.value}
-                className={`${SETTINGS_ROW} cursor-pointer ${
-                  settings.mode === option.value ? "border-foreground" : ""
-                }`}
+                data-active={settings.mode === option.value}
+                className={`${SETTINGS_ROW} cursor-pointer transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted`}
               >
                 <input
                   type="radio"
@@ -244,7 +243,9 @@ export function VoiceSettingsSection({
               {segment.label}：
               {selectedLabel(settings[segment.key], models, segment.key)}
             </legend>
-            <label className={`${SETTINGS_ROW} cursor-pointer`}>
+            <label
+              className={`${SETTINGS_ROW} cursor-pointer transition-colors hover:bg-muted/60`}
+            >
               <input
                 type="radio"
                 name={`voice-${segment.key}`}
@@ -269,20 +270,38 @@ export function VoiceSettingsSection({
         ))}
 
         {settings.mode === "loop" ? (
-          <label className={`${SETTINGS_ROW} cursor-pointer justify-between`}>
+          <label
+            className={`${SETTINGS_ROW} cursor-pointer justify-between transition-colors hover:bg-muted/60`}
+          >
             <span>朗读回复</span>
-            <input
-              type="checkbox"
-              aria-label="朗读回复"
-              checked={settings.speakReplies}
-              onChange={(event) =>
-                void patch(
-                  { speakReplies: event.target.checked },
-                  "speakReplies",
-                )
-              }
-              className="shrink-0"
-            />
+            <span className="relative inline-flex h-5 w-9 shrink-0 items-center">
+              <span
+                aria-hidden="true"
+                className={`h-5 w-9 rounded-full transition-colors ${
+                  settings.speakReplies
+                    ? "bg-primary"
+                    : "bg-muted-foreground/30"
+                }`}
+              />
+              <span
+                aria-hidden="true"
+                className={`absolute left-0.5 size-4 rounded-full bg-background transition-transform ${
+                  settings.speakReplies ? "translate-x-4" : ""
+                }`}
+              />
+              <input
+                type="checkbox"
+                aria-label="朗读回复"
+                checked={settings.speakReplies}
+                onChange={(event) =>
+                  void patch(
+                    { speakReplies: event.target.checked },
+                    "speakReplies",
+                  )
+                }
+                className="sr-only"
+              />
+            </span>
           </label>
         ) : null}
 
@@ -294,7 +313,7 @@ export function VoiceSettingsSection({
               onClick={() =>
                 diagnosing ? diagnoseAbort.current?.abort() : void runDiagnose()
               }
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+              className="rounded-md border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
             >
               {diagnosing ? "取消检测" : "重新检测"}
             </button>
@@ -302,7 +321,7 @@ export function VoiceSettingsSection({
               type="button"
               disabled={busy === "advice"}
               onClick={() => void applyAdvice()}
-              className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               应用推荐
             </button>
@@ -524,9 +543,10 @@ function CandidateRow({
   const download = candidate.download;
   return (
     <label
-      className={`${SETTINGS_ROW} ${
-        selected ? "border-foreground" : ""
-      } ${candidate.unavailableReason ? "opacity-60" : ""}`}
+      data-active={selected}
+      className={`${SETTINGS_ROW} transition-colors hover:bg-muted/60 data-[active=true]:border-foreground/40 data-[active=true]:bg-muted ${
+        candidate.unavailableReason ? "cursor-not-allowed opacity-60" : ""
+      }`}
     >
       <input
         type="radio"
@@ -619,7 +639,7 @@ function DownloadControl({
               : "download",
         );
       }}
-      className="inline-flex h-6 shrink-0 items-center rounded-md border px-3 text-xs disabled:opacity-50"
+      className="inline-flex h-6 shrink-0 items-center rounded-md border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted disabled:opacity-50"
     >
       {label}
     </button>
