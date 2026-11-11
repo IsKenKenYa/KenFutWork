@@ -105,8 +105,6 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   knowledgeAutoInject: true,
   /** SAG2 知识库：纯本地匹配档（-F）；显式开启才降级，默认不自动切（KB-4）。 */
   knowledgeLocalMatch: false,
-  /** SAG2 知识库：语义档不可用（缺 Jev）时自动退到 -F 本地匹配（0 配置开箱可用）。 */
-  knowledgeAutoLocalFallback: true,
   /** SAG2 知识库：单次检索结果条数（上游 -m，KB-7 默认 5）。 */
   knowledgeMaxResults: 5,
   /** SAG2 知识库：相关性门槛——命中数低于它则不注入（CLI JSON 无证据分，KB-2）。 */
@@ -196,7 +194,6 @@ export type RuntimeGovernanceKey = (typeof RUNTIME_GOVERNANCE_KEYS)[number];
 export const RUNTIME_GOVERNANCE_BOOL_KEYS = [
   "knowledgeAutoInject",
   "knowledgeLocalMatch",
-  "knowledgeAutoLocalFallback",
 ] as const;
 export type RuntimeGovernanceBoolKey =
   (typeof RUNTIME_GOVERNANCE_BOOL_KEYS)[number];
@@ -259,7 +256,6 @@ export type AgentGovernanceOverrides = {
   computerUseMcpKeepAliveMs?: number | undefined;
   knowledgeAutoInject?: boolean | undefined;
   knowledgeLocalMatch?: boolean | undefined;
-  knowledgeAutoLocalFallback?: boolean | undefined;
   knowledgeMaxResults?: number | undefined;
   knowledgeMinHits?: number | undefined;
   knowledgeSearchTimeoutMs?: number | undefined;
@@ -569,9 +565,6 @@ export function resolveGovernanceEnvOverrides(
     ),
     knowledgeAutoInject: parseBool(source.KENFUTWORK_KNOWLEDGE_AUTO_INJECT),
     knowledgeLocalMatch: parseBool(source.KENFUTWORK_KNOWLEDGE_LOCAL_MATCH),
-    knowledgeAutoLocalFallback: parseBool(
-      source.KENFUTWORK_KNOWLEDGE_AUTO_LOCAL_FALLBACK,
-    ),
     knowledgeMaxResults: parseStrictInt(
       source.KENFUTWORK_KNOWLEDGE_MAX_RESULTS,
     ),

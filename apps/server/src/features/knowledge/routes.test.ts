@@ -75,7 +75,6 @@ function stub(overrides: Partial<KnowledgeService> = {}): KnowledgeService {
 const settings: Awaited<ReturnType<KnowledgeSettingsReader>> = {
   autoInject: true,
   localMatch: false,
-  autoLocalFallback: true,
   maxResults: 5,
   minHits: 1,
   searchTimeoutMs: 30_000,

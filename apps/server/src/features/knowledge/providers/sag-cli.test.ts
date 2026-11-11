@@ -183,7 +183,7 @@ describe("SagCliProvider（M2）", () => {
     ).toBe(true);
   });
 
-  it("初始化失败不缓存：凭据配好后下一次调用自愈", async () => {
+  it("初始化失败不缓存：首次检索报凭据缺失，凭据就位后可检索成功", async () => {
     let configCalls = 0;
     const runner: SagRunner = async (run) => {
       if (run.args[0] === "config" && run.args.length === 1) {
@@ -192,24 +192,27 @@ describe("SagCliProvider（M2）", () => {
       }
       return ok(searchOutput);
     };
-    // 本用例测「初始化失败不缓存」：关掉自动降级，否则会退到本地档而不报错。
     const service = createSagCliProvider({
       runner,
       tryGetPlugins: () => fakePlugins(true),
       readJevCredential: async () => "k",
       platform: "win32",
       arch: "x64",
-      autoLocalFallback: false,
     });
+    // 首次初始化失败（config 输出引导文本）→ 语义档立刻报可读错误，不降级。
     await expect(
       service.search({ query: "x", path: "D:/work/project" }),
     ).rejects.toMatchObject({
       code: "service_unavailable",
+      message: expect.stringContaining("语义检索凭据未配置"),
     });
+    expect(configCalls).toBe(1);
+    // 失败不缓存：重新初始化（config 已就绪）后语义检索恢复。
+    await expect(service.initialize()).resolves.toMatchObject({ ok: true });
+    expect(configCalls).toBe(2);
     await expect(
       service.search({ query: "x", path: "D:/work/project" }),
     ).resolves.toHaveProperty("scope");
-    expect(configCalls).toBe(2);
   });
 
   it("目录命令不要求 Jev 凭据（建库与检索服务解耦）", async () => {
@@ -575,7 +578,7 @@ describe("SagCliProvider（M3：read / 墓碑 / 本地匹配档）", () => {
   });
 });
 
-describe("SagCliProvider（0 配置降级）", () => {
+describe("SagCliProvider（凭据缺失与语义失败：不降级）", () => {
   const matchOutput = JSON.stringify({
     protocol_version: 2,
     scope: "D:/work/project",
@@ -594,7 +597,7 @@ describe("SagCliProvider（0 配置降级）", () => {
     truncated: false,
   });
 
-  it("缺 Jev 凭据时语义档自动退到 -F，并标记 degraded", async () => {
+  it("缺 Jev 凭据时直接报错，不降级成本地匹配", async () => {
     const { service, calls } = harness(
       (args) => {
         if (args[0] === "config" && args.length === 1) return ok(configured);
@@ -618,29 +621,28 @@ describe("SagCliProvider（0 配置降级）", () => {
       },
       { credential: null },
     );
-    const result = await service.search({ query: "知识库负责人" });
-    expect(result.degraded).toBe("local-match");
-    expect(result.results[0]?.matchedLines).toEqual([142]);
-    // 第二次调用确实是本地档（-E 正则）
-    expect(calls.some((call) => call.args[0] === "-E")).toBe(true);
+    await expect(
+      service.search({ query: "知识库负责人" }),
+    ).rejects.toMatchObject({ code: "service_unavailable" });
+    // 不再降级成本地档：不能出现 -E 调用
+    expect(calls.some((call) => call.args[0] === "-E")).toBe(false);
   });
 
-  it("关掉 autoLocalFallback 时语义失败直接抛错（不静默降级）", async () => {
+  it("语义失败直接抛错（不静默降级）", async () => {
     const service = createSagCliProvider({
       runner: async () => ({ code: 1, stdout: "", stderr: "JEV 未配置" }),
       tryGetPlugins: () => fakePlugins(true),
       readJevCredential: async () => null,
       platform: "win32",
       arch: "x64",
-      autoLocalFallback: false,
     });
     await expect(
       service.search({ query: "知识库负责人", path: "D:/work/project" }),
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 
-  it("凭据失效（401 Invalid API Key）也自动降级，并在状态如实报原因", async () => {
-    const { service } = harness((args) => {
+  it("凭据失效（401 Invalid API Key）直接抛 service_unavailable，不产生 -E 调用", async () => {
+    const { service, calls } = harness((args) => {
       if (args[0] === "config") return ok(configured);
       if (args[0] === "list")
         return ok(
@@ -662,15 +664,15 @@ describe("SagCliProvider（0 配置降级）", () => {
         };
       return ok(matchOutput);
     });
-    const result = await service.search({ query: "林远" });
-    expect(result.degraded).toBe("local-match");
-    expect(result.results.length).toBeGreaterThan(0);
-    const status = await service.status();
-    expect(status.active).toBe(true);
-    expect(status.reason ?? "").toContain("本地匹配");
+    await expect(service.search({ query: "林远" })).rejects.toMatchObject({
+      code: "service_unavailable",
+      message: expect.stringContaining("Invalid API Key"),
+    });
+    // 语义失败不静默降级：网络上没有任何本地匹配（-E）补位调用。
+    expect(calls.some((call) => call.args[0] === "-E")).toBe(false);
   });
 
-  it("缺 Jev 时 status 仍判可用，并说明以本地匹配档工作", async () => {
+  it("缺 Jev 时 status.active 为 false，reason 可读", async () => {
     const service = createSagCliProvider({
       runner: async (run) =>
         run.args[0] === "config"
@@ -690,11 +692,12 @@ describe("SagCliProvider（0 配置降级）", () => {
     });
     await service.initialize().catch(() => undefined);
     const status = await service.status();
-    expect(status.active).toBe(true);
-    expect(status.reason ?? "").toContain("本地匹配");
+    // 语义档缺凭据就是不可用：不再把「本地匹配档能跑」算作 active。
+    expect(status.active).toBe(false);
+    expect(status.reason ?? "").toContain("凭据");
   });
 
-  it("关掉降级时缺 Jev 则 status 明确不可用", async () => {
+  it("CLI 在位但缺凭据：status 仍判不可用", async () => {
     const service = createSagCliProvider({
       runner: async (run) =>
         run.args[0] === "config"
@@ -711,10 +714,10 @@ describe("SagCliProvider（0 配置降级）", () => {
       readJevCredential: async () => null,
       platform: "win32",
       arch: "x64",
-      autoLocalFallback: false,
     });
     await service.initialize().catch(() => undefined);
     const status = await service.status();
+    expect(status.cli).toBe("available");
     expect(status.active).toBe(false);
   });
 

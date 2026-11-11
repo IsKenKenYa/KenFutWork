@@ -135,8 +135,6 @@ export function createKnowledgePlugin(
           ensureCli,
           dataDir,
           // 0 配置：语义档不可用时自动退本地匹配（治理可关）。
-          autoLocalFallback:
-            ctx.env.agentGovernance?.knowledgeAutoLocalFallback ?? true,
           cliStatus: async () => {
             const inspected = await installer.inspect();
             if (inspected.kind === "system" || inspected.kind === "managed") {

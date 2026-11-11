@@ -57,7 +57,7 @@ const stubPersistence = {
   query: async () => [],
 };
 
-/** 假 CLI：根已索引 + 命中一条证据，不需要真装 sag。 */
+/** 假 CLI：凭据已就位 + 根已索引 + 命中一条证据，不需要真装 sag。 */
 function fakeSagRunner(): SagRunner {
   return async (run) => {
     const args = run.args;
@@ -66,10 +66,11 @@ function fakeSagRunner(): SagRunner {
       return args.length === 1
         ? ok(
             JSON.stringify({
-              url: "",
-              model: "",
+              url: "https://api.302ai.cn/typesafeai/v1",
+              model: "jev-latest",
               models: [],
-              has_key: false,
+              has_key: true,
+              auth_mode: "bearer",
             }),
           )
         : ok("{}");
@@ -97,7 +98,7 @@ function fakeSagRunner(): SagRunner {
           roots: [],
         }),
       );
-    // 检索（-E 本地档）
+    // 检索（语义档）
     return ok(
       JSON.stringify({
         protocol_version: 2,
@@ -168,7 +169,7 @@ async function assembleKernel(
         probeCli: async () => true,
         runner: fakeSagRunner(),
         // 让知识库「已安装」：市场 bundle 的安装态由 registry 决定
-        readJevCredential: async () => null,
+        readJevCredential: async () => "jev-key-123",
       }),
       createAgentRunsPlugin({
         connectionManager: {
@@ -252,8 +253,9 @@ describe("knowledge × agent-runs 装配缝（证据进入模型输入）", () =
       expect(content).toContain("<knowledge_evidence>");
       expect(content).toContain("D:/kb/note.md:3-3");
       expect(content).toContain("林远是平台组负责人。");
-      // 缺 Jev 时如实标注是本地匹配档
-      expect(content).toContain("本地匹配");
+      // 凭据就位时走语义档：证据块措辞必须是语义检索，不能冒充本地匹配
+      expect(content).toContain("自动检索到的本地知识库证据");
+      expect(content).not.toContain("本地匹配");
     } finally {
       kernel.dispose();
       await app.close();

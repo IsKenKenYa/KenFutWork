@@ -73,7 +73,6 @@ export interface SagCliProviderOptions {
    * 0 配置降级：语义档因缺 Jev 凭据不可用时，自动改用 `-F` 本地匹配并标记
    * `degraded:"local-match"`。默认开；关掉则语义失败直接抛错（KB-4 严格版）。
    */
-  autoLocalFallback?: boolean;
   /**
    * KB-5 三级探测：系统 CLI → 自带 CLI → 按需下载。返回 missing/unsupported 时
    * 调用方 fail loud；成功时安装器已把二进制路径交给 runner（getter）。
@@ -516,20 +515,16 @@ export function createSagCliProvider(
         ? "unsupported_platform"
         : (probed?.state ??
           (initResult?.cli === "available" ? "available" : "missing"));
-      const degradedNote = (message: string) =>
-        options.autoLocalFallback === false
-          ? message
-          : `${message} 当前以本地匹配档工作（不出本机，非语义检索）。`;
       const reason = !inspection.ok
         ? inspection.message
         : !supported
           ? "当前平台没有 SAG CLI 原生二进制（仅 Windows x64 与 macOS Apple Silicon）。"
           : initResult && !initResult.ok
-            ? degradedNote(initResult.reason ?? "语义检索未就绪")
+            ? (initResult.reason ?? "语义检索未就绪")
             : semanticFailureReason
               ? // 语义档实际跑失败过（如 key 失效）：仍然「能用」，但要如实说。
                 // 只留可读要点：上游 stderr 常带长 JSON，原样透出会淹没面板。
-                degradedNote(describeSemanticFailure(semanticFailureReason))
+                describeSemanticFailure(semanticFailureReason)
               : (probed?.reason ?? null);
       return {
         installed: inspection.installed,
@@ -538,7 +533,7 @@ export function createSagCliProvider(
         active:
           inspection.ok &&
           supported &&
-          (initResult?.ok !== false || options.autoLocalFallback !== false),
+          initResult?.ok !== false,
         cli,
         cliVersion: SAG_CLI_VERSION,
         reason,
@@ -616,43 +611,17 @@ export function createSagCliProvider(
     async search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult> {
       // 本地匹配档是显式降级（KB-4）：纯本地、不需 Jev，故不要求凭据就绪。
       const wantLocal = input.localMatch === true;
-      if (!wantLocal && options.autoLocalFallback !== false) {
-        // 0 配置优先：语义档不可用（缺 Jev 凭据/初始化失败）时自动退到本地档，
-        // 由调用方在证据块里如实标注「本地匹配，非语义检索」。
-        // 已知缺凭据时直接走本地档：避免每轮都先白等一次语义超时（真机实测 30s）。
-        if (credentialMissing) {
-          return {
-            ...(await doSearch({ ...input, localMatch: true })),
-            degraded: "local-match",
-          };
-        }
-        // 首轮也先便宜地探一次凭据（读宿主/上游配置，不发起检索），缺了就不必等超时。
+      if (!wantLocal) {
+        // 语义档不兜底：凭据缺失直接报可读错误，让用户去 jev 插件填 TypeSafe Key，
+        // 而不是静默降级成本地正则匹配（那样用户以为在语义检索，其实不是）。
+        const missing = () =>
+          new KnowledgeServiceError(
+            "service_unavailable",
+            "语义检索凭据未配置：在 jev 插件填写 TypeSafe Key，或配置 typesafe-jev 供应商实例。",
+          );
+        if (credentialMissing) throw missing();
         await probeCredentialAvailability();
-        if (credentialMissing) {
-          return {
-            ...(await doSearch({ ...input, localMatch: true })),
-            degraded: "local-match",
-          };
-        }
-        try {
-          return { ...(await doSearch(input)), degraded: undefined };
-        } catch (error) {
-          const unavailable =
-            error instanceof KnowledgeServiceError &&
-            error.code === "service_unavailable" &&
-            // 语义档不可用都算：未配置 / 凭据失效（401 Invalid API Key）/ JEV 请求失败。
-            // 凭据失效尤其常见（换了 key、jev 条目被删），此时静默返回 0 条 = 假装检索过。
-            /JEV|Jev|jev|凭据|未配置|401|Invalid API Key|unauthor|模型请求失败/iu.test(
-              error.message,
-            );
-          if (!unavailable) throw error;
-          credentialMissing = true;
-          semanticFailureReason = error.message;
-          return {
-            ...(await doSearch({ ...input, localMatch: true })),
-            degraded: "local-match",
-          };
-        }
+        if (credentialMissing) throw missing();
       }
       return doSearch(input);
     },

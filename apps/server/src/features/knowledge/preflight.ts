@@ -284,9 +284,7 @@ export function createKnowledgePreflight(
           localMatch: settings.localMatch,
         });
         const deduped = dedupeKnowledgeEvidence(result.results);
-        // 实际档位：设置要求本地档，或 Provider 因缺 Jev 自动降级。
-        const usedLocalMatch =
-          settings.localMatch || result.degraded === "local-match";
+        const usedLocalMatch = settings.localMatch;
         cacheSet(
           cacheKey,
           { at: now(), results: deduped, localMatch: usedLocalMatch },

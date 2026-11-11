@@ -91,7 +91,6 @@ export type InstanceSettingsPatch = Partial<
   executeTimeoutMs?: number | undefined;
   knowledgeAutoInject?: boolean | undefined;
   knowledgeLocalMatch?: boolean | undefined;
-  knowledgeAutoLocalFallback?: boolean | undefined;
 };
 
 export type SettingsService = {
@@ -317,13 +316,6 @@ export function createSettingsService(options: {
         "knowledgeLocalMatch",
         typeof runtimeValues.knowledgeLocalMatch === "boolean"
           ? runtimeValues.knowledgeLocalMatch
-          : undefined,
-        governanceEnv,
-      ),
-      knowledgeAutoLocalFallback: resolveGovernanceBool(
-        "knowledgeAutoLocalFallback",
-        typeof runtimeValues.knowledgeAutoLocalFallback === "boolean"
-          ? runtimeValues.knowledgeAutoLocalFallback
           : undefined,
         governanceEnv,
       ),

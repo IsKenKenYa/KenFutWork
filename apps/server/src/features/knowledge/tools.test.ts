@@ -13,7 +13,6 @@ import { KNOWLEDGE_BUNDLE_ID, type KnowledgeService } from "./types.js";
 const settings: KnowledgeRuntimeSettings = {
   autoInject: true,
   localMatch: false,
-  autoLocalFallback: true,
   maxResults: 5,
   minHits: 1,
   searchTimeoutMs: 30_000,

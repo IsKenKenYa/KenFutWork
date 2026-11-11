@@ -19,7 +19,6 @@ import { dedupeKnowledgeEvidence } from "./types.js";
 const defaults: KnowledgeRuntimeSettings = {
   autoInject: true,
   localMatch: false,
-  autoLocalFallback: true,
   maxResults: 5,
   minHits: 1,
   searchTimeoutMs: 30_000,
