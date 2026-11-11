@@ -9,6 +9,7 @@ import { PanelsTopLeft, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import * as XLSX from "xlsx";
 import {
   Dialog,
   DialogClose,
@@ -256,6 +257,7 @@ export function PluginPanelOverlay({
   const [preview, setPreview] = useState<{
     name: string;
     content: string;
+    path: string;
   } | null>(null);
   useEffect(() => {
     if (!active) return;
@@ -267,12 +269,14 @@ export function PluginPanelOverlay({
         type?: unknown;
         name?: unknown;
         content?: unknown;
+        path?: unknown;
       } | null;
       if (!data || data.type !== "kenfutwork:knowledge-preview") return;
       if (typeof data.content !== "string") return;
       setPreview({
         name: typeof data.name === "string" ? data.name : "预览",
         content: data.content,
+        path: typeof data.path === "string" ? data.path : "",
       });
     };
     window.addEventListener("message", receive);
@@ -377,14 +381,18 @@ function KnowledgePreviewDialog({
   target,
   onClose,
 }: {
-  target: { name: string; content: string } | null;
+  target: { name: string; content: string; path: string } | null;
   onClose: () => void;
 }) {
-  const isMarkdown =
-    target !== null && /\.(md|mdx|markdown)$/iu.test(target.name);
-  // 图片走文本接口只会拿到二进制乱码：明确说不可预览，不吐乱码。
-  const isImage =
-    target !== null && /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/iu.test(target.name);
+  const name = target?.name ?? "";
+  const isMarkdown = /\.(md|mdx|markdown)$/iu.test(name);
+  const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/iu.test(name);
+  const isPdf = /\.pdf$/iu.test(name);
+  const isSheet = /\.(xlsx|xls|csv)$/iu.test(name);
+  const fileUrl =
+    target && target.path
+      ? `/api/knowledge/file?path=${encodeURIComponent(target.path)}`
+      : "";
   return (
     <Dialog open={target !== null} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
@@ -401,23 +409,108 @@ function KnowledgePreviewDialog({
             关闭
           </DialogClose>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
-          {isImage ? (
-            <p className="text-sm text-muted-foreground">图片暂不支持预览</p>
+        <div className="min-h-0 flex-1 overflow-auto bg-muted/30">
+          {isImage && fileUrl ? (
+            <div className="flex h-full items-center justify-center p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={fileUrl}
+                alt={name}
+                className="max-h-full max-w-full rounded-md object-contain shadow-sm"
+              />
+            </div>
+          ) : isPdf && fileUrl ? (
+            <iframe
+              src={fileUrl}
+              title={name}
+              className="h-full w-full border-0 bg-white"
+            />
+          ) : isSheet && fileUrl ? (
+            <SheetTable url={fileUrl} />
           ) : isMarkdown ? (
-            <div className="space-y-3 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_td]:border-b [&_th]:border-b">
+            <div className="space-y-3 px-5 py-4 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_td]:border-b [&_th]:border-b">
               <Markdown remarkPlugins={[remarkGfm]}>
                 {target?.content ?? ""}
               </Markdown>
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-6 text-foreground">
+            <pre className="whitespace-pre-wrap break-words px-5 py-4 font-mono text-xs leading-6 text-foreground">
               {target?.content ?? ""}
             </pre>
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** xlsx/xls/csv：SheetJS 解析成表格渲染（首行作表头）。 */
+function SheetTable({ url }: { url: string }) {
+  const [rows, setRows] = useState<string[][] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setRows(null);
+    setError(null);
+    fetch(url, { credentials: "include" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`读取失败 HTTP ${res.status}`);
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        if (cancelled) return;
+        const wb = XLSX.read(buf, { type: "array" });
+        const first = wb.SheetNames[0];
+        const sheet = first === undefined ? undefined : wb.Sheets[first];
+        if (!sheet) throw new Error("空工作簿");
+        const data = XLSX.utils.sheet_to_json<string[]>(sheet, {
+          header: 1,
+          defval: "",
+          raw: false,
+        });
+        setRows(data.map((r) => r.map((c) => String(c ?? ""))));
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "解析失败");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  if (error)
+    return <p className="px-5 py-4 text-sm text-destructive">{error}</p>;
+  if (!rows)
+    return <p className="px-5 py-4 text-sm text-muted-foreground">解析中…</p>;
+  const [head, ...body] = rows;
+  return (
+    <div className="p-4">
+      <table className="w-full border-collapse text-xs">
+        <thead>
+          <tr>
+            {(head ?? []).map((cell, i) => (
+              <th
+                key={i}
+                className="border border-border bg-muted px-2 py-1 text-left font-medium"
+              >
+                {cell}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {body.map((row, r) => (
+            <tr key={r}>
+              {row.map((cell, c) => (
+                <td key={c} className="border border-border px-2 py-1">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

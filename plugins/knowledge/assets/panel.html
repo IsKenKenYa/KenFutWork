@@ -297,7 +297,12 @@ async function openFile(file) {
   }
   if (embedded) {
     window.parent.postMessage(
-      { type: "kenfutwork:knowledge-preview", name: file.path, content: body },
+      {
+        type: "kenfutwork:knowledge-preview",
+        name: file.path,
+        path: file.absolutePath,
+        content: body,
+      },
       window.location.origin,
     );
     return;

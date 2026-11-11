@@ -27,6 +27,9 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { createReadStream } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, sep } from "node:path";
 import { ZodError } from "zod";
 
 import type { KnowledgeSettingsReader } from "../features/knowledge/settings.js";
@@ -196,6 +199,80 @@ export async function registerKnowledgeRoutes(
       return reply
         .code(200)
         .send(knowledgeRootMutationResponseSchema.parse(result));
+    } catch (error) {
+      return handleError(error, reply);
+    }
+  });
+
+  /**
+   * 原始字节流：png/pdf/xlsx 等二进制预览用。与 read 同一套根包含校验
+   * （realpath 后必须落在某个已注册根内，符号链接不扩权），只读不写。
+   */
+  app.get("/api/knowledge/file", async (request, reply) => {
+    try {
+      const user = await authenticate(request);
+      if (!user) return sendUnauthorized(reply);
+      const query = knowledgeReadQuerySchema.parse(request.query);
+      const path = query.path.trim();
+      if (!path || !isAbsolute(path)) {
+        throw new KnowledgeServiceError("invalid_input", "路径必须是绝对路径。");
+      }
+      let realPath: string;
+      try {
+        realPath = await realpath(path);
+      } catch {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          `文件不存在或不可读：${path}`,
+        );
+      }
+      const roots = await options.knowledge.listRoots();
+      const inside = await Promise.all(
+        roots.map(async (root) => {
+          try {
+            const realRoot = await realpath(root.path);
+            const tail = relative(realRoot, realPath);
+            return (
+              tail !== "" &&
+              !isAbsolute(tail) &&
+              tail !== ".." &&
+              !tail.startsWith(`..${sep}`)
+            );
+          } catch {
+            return false;
+          }
+        }),
+      );
+      if (!inside.some(Boolean)) {
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          "路径不在任何已注册的知识库根内。",
+        );
+      }
+      const info = await stat(realPath);
+      if (!info.isFile()) {
+        throw new KnowledgeServiceError("invalid_input", `不是普通文件：${path}`);
+      }
+      const mime: Record<string, string> = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+        ".bmp": "image/bmp",
+        ".pdf": "application/pdf",
+        ".xlsx":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".xls": "application/vnd.ms-excel",
+      };
+      reply.header(
+        "content-type",
+        mime[extname(realPath).toLowerCase()] ?? "application/octet-stream",
+      );
+      reply.header("content-length", String(info.size));
+      return reply.send(createReadStream(realPath));
     } catch (error) {
       return handleError(error, reply);
     }
