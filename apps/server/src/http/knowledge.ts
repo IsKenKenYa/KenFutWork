@@ -123,6 +123,26 @@ function handleError(error: unknown, reply: FastifyReply) {
   );
 }
 
+/** 可上传的类型：与预览支持的四类严格对齐（代码等其它类型一律不收）。 */
+const KNOWLEDGE_UPLOAD_EXTENSIONS = new Set([
+  "md",
+  "markdown",
+  "docx",
+  "pdf",
+  "xlsx",
+  "xls",
+  "csv",
+  "pptx",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "bmp",
+  "svg",
+  "ico",
+]);
+
 export async function registerKnowledgeRoutes(
   app: FastifyInstance,
   options: KnowledgeRouteDeps,
@@ -411,6 +431,16 @@ export async function registerKnowledgeRoutes(
       }
       if (!uploaded) {
         return sendError(reply, "invalid_input", "请选择一个文件。", 400);
+      }
+      // 只收预览能渲染的四类：文档（Word/md/PDF）、表格（Excel/CSV）、演示、图片。
+      const ext = (uploaded.name.split(".").pop() ?? "").toLowerCase();
+      if (!KNOWLEDGE_UPLOAD_EXTENSIONS.has(ext)) {
+        return sendError(
+          reply,
+          "invalid_input",
+          "只支持 Word / md / PDF / Excel / CSV / PPT / 图片。",
+          400,
+        );
       }
       const result = await options.knowledge.uploadFile(uploaded);
       return reply.code(200).send(knowledgeUploadResponseSchema.parse(result));
