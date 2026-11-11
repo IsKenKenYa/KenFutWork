@@ -407,8 +407,12 @@ function KnowledgePreviewDialog({
           <DialogTitle className="min-w-0 truncate text-base font-medium">
             {target?.name ?? "预览"}
           </DialogTitle>
-          <DialogClose className="shrink-0 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent">
-            关闭
+          <DialogClose
+            aria-label="关闭"
+            title="关闭"
+            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <X className="size-4" strokeWidth={1.6} aria-hidden="true" />
           </DialogClose>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-auto bg-muted/30">
