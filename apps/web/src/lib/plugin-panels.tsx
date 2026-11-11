@@ -389,6 +389,7 @@ function KnowledgePreviewDialog({
   const isImage = /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/iu.test(name);
   const isPdf = /\.pdf$/iu.test(name);
   const isSheet = /\.(xlsx|xls|csv)$/iu.test(name);
+  const isDocx = /\.docx$/iu.test(name);
   const fileUrl =
     target && target.path
       ? `/api/knowledge/file?path=${encodeURIComponent(target.path)}`
@@ -398,7 +399,8 @@ function KnowledgePreviewDialog({
       <DialogContent
         portalProps={{ keepMounted: true }}
         showCloseButton={false}
-        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+        overlayProps={{ className: "hidden" }}
+        className="flex h-[80vh] max-h-[80vh] flex-col gap-0 overflow-hidden rounded-xl border border-border p-0 shadow-2xl sm:max-w-4xl"
         aria-describedby={undefined}
       >
         <DialogHeader className="flex-row items-center justify-between space-y-0 border-b px-5 py-3">
@@ -427,20 +429,182 @@ function KnowledgePreviewDialog({
             />
           ) : isSheet && fileUrl ? (
             <SheetTable url={fileUrl} />
+          ) : isDocx && fileUrl ? (
+            <DocxView url={fileUrl} />
           ) : isMarkdown ? (
-            <div className="space-y-3 px-5 py-4 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_td]:border-b [&_th]:border-b">
-              <Markdown remarkPlugins={[remarkGfm]}>
+            <div className="space-y-3 px-5 py-4 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_img]:max-w-full [&_img]:rounded-md [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1">
+              <Markdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  // md 里的图片是相对知识库目录的路径：改写成字节路由，否则断链。
+                  img: ({ src, alt }) => (
+                    <img
+                      src={resolveAssetUrl(
+                        typeof src === "string" ? src : "",
+                        target?.path ?? "",
+                      )}
+                      alt={alt ?? ""}
+                    />
+                  ),
+                }}
+              >
                 {target?.content ?? ""}
               </Markdown>
             </div>
           ) : (
-            <pre className="whitespace-pre-wrap break-words px-5 py-4 font-mono text-xs leading-6 text-foreground">
-              {target?.content ?? ""}
-            </pre>
+            <HighlightedCode code={target?.content ?? ""} name={name} />
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** md 里的相对图片按所在目录解析成字节路由；绝对 URL 原样返回。 */
+function resolveAssetUrl(src: string, filePath: string): string {
+  if (!src) return src;
+  if (/^(?:https?:|data:|blob:)/iu.test(src)) return src;
+  // markdown 渲染器会先把 URL 编码一次（封面.png → %E5%B0%81…），
+  // 这里先还原，否则再 encode 一遍会变成 %25E5… 导致服务端找不到文件。
+  let decoded = src;
+  try {
+    decoded = decodeURIComponent(src);
+  } catch {
+    // 非法百分号序列就按原样用
+  }
+  const base = filePath.replace(/[\\/][^\\/]*$/u, "");
+  const target =
+    decoded.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(decoded)
+      ? decoded
+      : `${base}/${decoded.replace(/^\.\//u, "")}`;
+  return `/api/knowledge/file?path=${encodeURIComponent(target)}`;
+}
+
+const LANG_BY_EXT: Record<string, string> = {
+  py: "python",
+  yaml: "yaml",
+  yml: "yaml",
+  ts: "typescript",
+  tsx: "tsx",
+  js: "javascript",
+  jsx: "jsx",
+  json: "json",
+  sh: "bash",
+  bash: "bash",
+  zsh: "bash",
+  rs: "rust",
+  go: "go",
+  java: "java",
+  kt: "kotlin",
+  sql: "sql",
+  css: "css",
+  scss: "scss",
+  html: "html",
+  xml: "xml",
+  toml: "toml",
+  ini: "ini",
+  c: "c",
+  h: "c",
+  cpp: "cpp",
+  cs: "csharp",
+  rb: "ruby",
+  php: "php",
+  swift: "swift",
+  dockerfile: "docker",
+};
+
+/** 代码文件：Shiki 高亮（github-light），语言按扩展名推断，识别不了就纯文本。 */
+function HighlightedCode({ code, name }: { code: string; name: string }) {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  const lang = LANG_BY_EXT[ext] ?? "text";
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setHtml(null);
+    import("shiki")
+      .then(({ codeToHtml }) =>
+        codeToHtml(
+          code,
+          { lang, theme: "github-light" } as Parameters<typeof codeToHtml>[1],
+        ),
+      )
+      .then((out) => {
+        if (!cancelled) setHtml(out);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [code, lang]);
+  if (!html)
+    return (
+      <pre className="whitespace-pre-wrap break-words px-5 py-4 font-mono text-xs leading-6 text-foreground">
+        {code}
+      </pre>
+    );
+  return (
+    <div
+      className="[&_pre]:m-0 [&_pre]:overflow-auto [&_pre]:bg-transparent [&_pre]:px-5 [&_pre]:py-4 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-6"
+      // shiki 会把代码内容转义后再包 span，插入安全
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+/**
+ * docx：mammoth 转 HTML（保留标题/列表/表格，图片转 data URI）。
+ * mammoth 的 browser 字段指向纯浏览器实现，不会把 Node 的 fs 带进来。
+ */
+function DocxView({ url }: { url: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setHtml(null);
+    setError(null);
+    (async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error(`读取失败 HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const mod = (await import("mammoth")) as unknown as {
+        convertToHtml?: (o: {
+          arrayBuffer: ArrayBuffer;
+        }) => Promise<{ value: string }>;
+        default?: {
+          convertToHtml: (o: {
+            arrayBuffer: ArrayBuffer;
+          }) => Promise<{ value: string }>;
+        };
+      };
+      const convert = mod.convertToHtml ?? mod.default?.convertToHtml;
+      if (!convert) throw new Error("docx 解析器不可用");
+      const out = await convert({ arrayBuffer: buf });
+      // 只做展示：去掉脚本与内联事件属性
+      return out.value
+        .replace(/<script[\s\S]*?<\/script>/giu, "")
+        .replace(/\son[a-z]+="[^"]*"/giu, "");
+    })()
+      .then((value) => {
+        if (!cancelled) setHtml(value);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "解析失败");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  if (error)
+    return <p className="px-5 py-4 text-sm text-destructive">{error}</p>;
+  if (html === null)
+    return <p className="px-5 py-4 text-sm text-muted-foreground">解析中…</p>;
+  return (
+    <div
+      className="px-5 py-4 text-sm leading-6 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_img]:max-w-full [&_li]:ml-5 [&_li]:list-disc [&_table]:w-full [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1"
+      // mammoth 生成的 HTML 已按文档结构转义，脚本与内联事件在上面被剔除
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
 
