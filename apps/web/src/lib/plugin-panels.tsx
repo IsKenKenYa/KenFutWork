@@ -390,6 +390,7 @@ function KnowledgePreviewDialog({
   const isPdf = /\.pdf$/iu.test(name);
   const isSheet = /\.(xlsx|xls|csv)$/iu.test(name);
   const isDocx = /\.docx$/iu.test(name);
+  const isPptx = /\.(pptx|ppt)$/iu.test(name);
   const fileUrl =
     target && target.path
       ? `/api/knowledge/file?path=${encodeURIComponent(target.path)}`
@@ -435,6 +436,8 @@ function KnowledgePreviewDialog({
             <SheetTable url={fileUrl} />
           ) : isDocx && fileUrl ? (
             <DocxView url={fileUrl} />
+          ) : isPptx && fileUrl ? (
+            <PptxView url={fileUrl} />
           ) : isMarkdown ? (
             <div className="space-y-3 px-5 py-4 text-sm leading-6 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_img]:max-w-full [&_img]:rounded-md [&_li]:ml-5 [&_li]:list-disc [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-3 [&_table]:w-full [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1">
               <Markdown
@@ -552,6 +555,51 @@ function HighlightedCode({ code, name }: { code: string; name: string }) {
       // shiki 会把代码内容转义后再包 span，插入安全
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+}
+
+/** pptx：pptx-preview 纯前端渲染（每页按幻灯片画布绘制）。 */
+function PptxView({ url }: { url: string }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let cancelled = false;
+    host.innerHTML = "";
+    setError(null);
+    (async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error(`读取失败 HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const mod = (await import("pptx-preview")) as unknown as {
+        init: (
+          el: HTMLElement,
+          options: { width: number; height: number },
+        ) => { preview: (data: ArrayBuffer) => Promise<void> | void };
+      };
+      if (cancelled) return;
+      const width = Math.max(320, Math.min(880, (host.clientWidth || 880) - 48));
+      const viewer = mod.init(host, {
+        width,
+        height: Math.round(width * 0.5625),
+      });
+      await viewer.preview(buf);
+    })().catch((err) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : "解析失败");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  return (
+    <div className="px-5 py-4">
+      {error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : (
+        <div ref={hostRef} className="space-y-4 [&_.pptx-wrapper]:mx-auto" />
+      )}
+    </div>
   );
 }
 
