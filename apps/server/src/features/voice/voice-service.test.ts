@@ -668,11 +668,13 @@ describe("voice 服务：重新检测的「听」主动实测", () => {
       synth?: () => Promise<{ audio: Uint8Array; mimeType: string }>;
     } = {},
   ) {
-    const transcribe = vi.fn(async () => {
-      // 真 ASR 不可能 0ms；给一个可测的耗时，避免实时率被算成 0
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      return { text: "这是一次语音合成检测。" };
-    });
+    const transcribe = vi.fn(
+      async (_wav: Uint8Array, _opts?: { signal?: AbortSignal }) => {
+        // 真 ASR 不可能 0ms；给一个可测的耗时，避免实时率被算成 0
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return { text: "这是一次语音合成检测。" };
+      },
+    );
     const synthesize =
       options.synth ??
       vi.fn(async () => ({ audio: probeWav, mimeType: "audio/wav" }));
