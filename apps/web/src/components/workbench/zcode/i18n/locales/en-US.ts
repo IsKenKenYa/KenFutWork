@@ -4219,7 +4219,7 @@ const enUS: Record<string, string> = {
   "settings.skills.diagnostics.code.skill_too_large":
     "SKILL.md too large; content truncated",
   "settings.skills.diagnostics.code.skill_not_found": "Skill not found",
-  "settings.subagents.title": "Subagents",
+  "settings.subagents.title": "Agents",
   "settings.subagents.description":
     "Manage user-level subagent Markdown files consumed by KenFutWork Agent.",
   "settings.subagents.workspaceScopeUnsupported":
@@ -4241,7 +4241,7 @@ const enUS: Record<string, string> = {
   "settings.subagents.group.plugin": "Plugin subagents",
   "settings.subagents.group.plugin.hint":
     "Plugin profiles are loaded from enabled plugins; only the model and reasoning effort can be overridden here.",
-  "settings.subagents.group.builtIn": "Built-in subagents",
+  "settings.subagents.group.builtIn": "Built-in agents",
   "settings.subagents.group.builtIn.hint":
     "Built-in profiles are runtime defaults and cannot be edited here.",
   "settings.subagents.scope.builtIn": "Built-in",

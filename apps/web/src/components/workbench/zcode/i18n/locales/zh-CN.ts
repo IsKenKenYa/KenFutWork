@@ -3990,7 +3990,7 @@ const zhCN: Record<string, string> = {
   "settings.skills.diagnostics.code.skill_duplicate_name": "同名技能已被忽略",
   "settings.skills.diagnostics.code.skill_too_large": "SKILL.md 体积过大已截断",
   "settings.skills.diagnostics.code.skill_not_found": "技能未找到",
-  "settings.subagents.title": "子智能体",
+  "settings.subagents.title": "智能体",
   "settings.subagents.description":
     "管理 KenFutWork Agent 运行时消费的用户级子智能体 Markdown 文件。",
   "settings.subagents.workspaceScopeUnsupported": "暂不支持工作区级创建或编辑",
@@ -4009,7 +4009,7 @@ const zhCN: Record<string, string> = {
   "settings.subagents.group.plugin": "插件子智能体",
   "settings.subagents.group.plugin.hint":
     "插件 profile 来自已启用插件，可覆盖模型与推理档位，其余字段只读。",
-  "settings.subagents.group.builtIn": "内置子智能体",
+  "settings.subagents.group.builtIn": "内置智能体",
   "settings.subagents.group.builtIn.hint":
     "内置 profile 是运行时默认能力，当前不可在这里编辑。",
   "settings.subagents.scope.builtIn": "内置",

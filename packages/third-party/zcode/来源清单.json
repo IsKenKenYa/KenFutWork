@@ -5777,7 +5777,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "a5bd505364bc001db684870828bea1d02ce157b7db7aeeb764e463ff2d58419e",
+      "copiedSha256": "602f680eeb5f923f8a46c1aa7c85602572875d154c08cd733bdc183e32924c18",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5799,14 +5799,15 @@
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
         "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
-        "2026-11-02（三百五十）：settings.plugins.title 改 Plugins · MCP · Skills，与中文导航同名。"
+        "2026-11-02（三百五十）：settings.plugins.title 改 Plugins · MCP · Skills，与中文导航同名。",
+        "2026-11-12（三百八十三）：settings.subagents.title 改 Agents、group.builtIn 改 Built-in agents。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "6b1159e0013a15d9d7598a9d6f29a1ae11aaab4191b0d98412df3f1df989bc4e",
+      "copiedSha256": "fcb418a048bdc933ee1557f130e6df5484c76838cdd18a0e9b58e8d27fabeb29",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5828,7 +5829,8 @@
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
         "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
-        "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。"
+        "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。",
+        "2026-11-12（三百八十三）：settings.subagents.title 改「智能体」、group.builtIn 改「内置智能体」。"
       ]
     },
     {
@@ -10015,9 +10017,10 @@
       "source": "references/zcode/packages/ui/src/settings/SubagentsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SubagentsSection.tsx",
       "sha256": "6c20698aac455217b60c291c24479e2965ca4fd581e05a5680f10d0257572183",
-      "copiedSha256": "e81614f2dcb8485c4fd2caf5dcc6963149a3a1c7afe34bec6a18bcbc6258ca04",
+      "copiedSha256": "20a1f4de3b73490daf5335221bbdd39dc7444a22f9cdced57978e72329111e8c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-12（三百八十三）：设置分区改名智能体；列表顶部新增项目 AGENTS.md 入口（复用宿主打开方式按钮组，不做用户级文件）。"
       ]
     },
     {
