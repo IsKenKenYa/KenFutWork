@@ -10,7 +10,10 @@ import {
 } from "@zui/settings/MemorySettingsViewer.js";
 import { SettingsGroupCard, SettingsRow } from "@zui/settings/SettingsPageParts.js";
 
-type MemoryCatalogService = Pick<IMemoryService, "listProjectMemories">;
+type MemoryCatalogService = Pick<
+  IMemoryService,
+  "listProjectMemories" | "readProjectMemoryFile"
+>;
 
 function normalizeWorkspaceDisplayName(value: string): string {
   const slug = value
@@ -199,6 +202,7 @@ export function MemorySettingsSection({
               failureStage: "local_commit",
             })
           }
+          readFile={(input) => memoryService.readProjectMemoryFile(input)}
         />
       )}
     </div>

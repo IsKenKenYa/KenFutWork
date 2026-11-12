@@ -2142,7 +2142,9 @@ export function SettingsPage({
                               memoryEnabled={memoryEnabled}
                               memoryService={localHostServices.memoryService}
                               onMemoryEnabledChange={handleMemoryEnabledChange}
-                              projectMemoryViewerAvailable={Boolean(isDesktop)}
+                              projectMemoryViewerAvailable={
+                                Boolean(localHostServices.memoryService)
+                              }
                               workspaceDisplayNames={
                                 memoryWorkspaceDisplayNames
                               }
