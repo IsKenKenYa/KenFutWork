@@ -61,8 +61,12 @@ import type {
   ProcessLimits,
   ProcessSandbox,
 } from "../features/process-sandbox/types.js";
-import { resolveConfiguredCommandPrompt } from "../features/settings/command-input.js";
+import {
+  mergeConfiguredCommands,
+  resolveConfiguredCommandPrompt,
+} from "../features/settings/command-input.js";
 import { hooksFor, runHooks } from "../features/settings/hooks.js";
+import type { PluginHookRunResult } from "../features/plugins/plugin-hooks.js";
 import { createScopedHookCommand } from "../features/settings/scoped-hook-command.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
@@ -524,6 +528,15 @@ type CreateAgentRuntimeOptions = {
     | undefined;
   /** 实例设置（读「用户规则」拼进系统提示词；缺省不注入）。 */
   settingsService?: Pick<SettingsService, "getInstanceSettings"> | undefined;
+  /** 插件贡献的斜杠命令（只读；与实例命令合并，实例同名优先）。 */
+  pluginCommands?: () => Promise<
+    ReadonlyArray<{ name: string; description: string; prompt: string }>
+  >;
+  /** 插件 SessionStart 钩子（run 起始期执行，additionalContext 注入系统提示）。 */
+  pluginHookRunner?: (input: { cwd: string; signal?: AbortSignal }) => Promise<{
+    contexts: string[];
+    results: PluginHookRunResult[];
+  }>;
   /** agent 链路用量累积器（turn-stopping 结算，DEC-6）。 */
   runUsage?: RunUsageAccumulator;
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
@@ -1733,6 +1746,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
            * （此前只写 localStorage，服务端没人读）。读失败不阻断 run（规则是增强，不是前置）。
            */
           let userRulesFragment: string[] = [];
+          let pluginHookContext: string[] = [];
           let codeProjectContext: CodeProjectContext | undefined;
           if (toolInstanceId && options.settingsService) {
             const instanceSettings = await options.settingsService
@@ -1746,7 +1760,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ) {
               executionPrompt = resolveConfiguredCommandPrompt(
                 run.prompt,
-                instanceSettings?.commands,
+                mergeConfiguredCommands(
+                  instanceSettings?.commands ?? [],
+                  options.pluginCommands
+                    ? await options.pluginCommands().catch(() => [])
+                    : [],
+                ),
               );
             }
             userRulesFragment = formatUserRulesFragment({
@@ -1861,6 +1880,42 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 : {}),
               ...(hookShell ? { shell: hookShell } : {}),
             })) {
+              yield {
+                type: "run.hook" as const,
+                runId,
+                ...hook,
+                timestamp: now(),
+              };
+            }
+          }
+
+          // 插件 SessionStart 钩子：规则经 stdout 的 additionalContext 回灌系统提示，
+          // 与用户钩子同一生命周期（失败不阻断），但不与实例钩子的命令混用。
+          if (
+            options.pluginHookRunner &&
+            backendResult.sandboxDir &&
+            run.inputOrigin !== "backgroundResult" &&
+            run.inputOrigin !== "controlOperation" &&
+            (run.delegationDepth ?? 0) === 0
+          ) {
+            const outcome = await options
+              .pluginHookRunner({
+                cwd: backendResult.sandboxDir,
+                signal: run.controller.signal,
+              })
+              .catch((error: unknown) => {
+                console.warn(
+                  "[plugins] SessionStart 钩子执行失败：",
+                  error instanceof Error ? error.message : String(error),
+                );
+                return { contexts: [], results: [] };
+              });
+            pluginHookContext = outcome.contexts;
+            for (const {
+              pluginId: _pluginId,
+              pluginName: _pluginName,
+              ...hook
+            } of outcome.results) {
               yield {
                 type: "run.hook" as const,
                 runId,
@@ -2205,6 +2260,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 }
               : {}),
             ...(userRulesFragment.length > 0 ? { userRulesFragment } : {}),
+            ...(pluginHookContext.length > 0 ? { pluginHookContext } : {}),
           };
           const initialPolicy = await codeApproval?.resolve();
           if (run.scopeHandle) {

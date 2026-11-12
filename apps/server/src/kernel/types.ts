@@ -327,6 +327,11 @@ export interface PromptCompositionContext {
    * （autoCompact/hooks 同源），段 provider 纯渲染——避免段内二次读库。
    */
   userRulesFragment?: readonly string[];
+  /**
+   * 插件 SessionStart 钩子回灌的上下文（run 起始期执行、stdout additionalContext）：
+   * 作为提示段注入，保证插件规则每轮生效；与用户规则段同属 run 起始期事实。
+   */
+  pluginHookContext?: readonly string[];
 }
 
 export type PromptExecutionContext = Pick<

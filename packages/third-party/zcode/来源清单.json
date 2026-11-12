@@ -9553,10 +9553,11 @@
       "source": "references/zcode/packages/ui/src/settings/McpServerList.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerList.tsx",
       "sha256": "b6d995f8b215f1db768abdff486da8e36e9ac5c729ddef225e9966609cd21794",
-      "copiedSha256": "c321cc10c6806451af3d17857e640a4d67e418895e690d261316daa33167df55",
+      "copiedSha256": "d9ae4d0b7691e1fc97cb376fced7761af7e9f38ef136d5e93355eca85e3cfe02",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：环境来源记录只读，复用原列表及开关，不将环境配置伪装可写数据库记录"
+        "宿主接口：环境来源记录只读，复用原列表及开关，不将环境配置伪装可写数据库记录",
+        "2026-11-12（三百八十四）：插件贡献的 MCP 也按只读展示（origin=plugin 时禁编辑/停用）"
       ]
     },
     {
@@ -14659,10 +14660,11 @@
       "source": "references/zcode/packages/shared/src/mcp.ts",
       "target": "packages/zcode-shared/src/mcp.ts",
       "sha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "copiedSha256": "4fd7881229b2a80114ed31a8846a97438dc5956b785c862d44732c9d9737debc",
+      "copiedSha256": "aad77723537d68ecfdb058b997285d199bfbb870fc61c76bf67e2d986a59ac49",
       "adaptations": [
         "宿主类型兼容：原记录携带稳定hostRecordId、来源与envKeys，不虚构文件/目录",
-        "安全修复：CUA包规格的路径叶子改为线性尾扫描，保留身份判定语义；消除CodeQL报告的多项式回溯"
+        "安全修复：CUA包规格的路径叶子改为线性尾扫描，保留身份判定语义；消除CodeQL报告的多项式回溯",
+        "2026-11-12（三百八十四）：MCP 来源扩为 managed/env/plugin（插件贡献只读）"
       ]
     },
     {

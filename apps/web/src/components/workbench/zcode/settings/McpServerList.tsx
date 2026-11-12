@@ -78,7 +78,8 @@ function McpServerItem({
   const typeLabel = server.config.command
     ? "stdio"
     : (server.config.type ?? (server.config.url ? "http" : "?"));
-  const canEdit = server.origin !== "env" && (!server.location || server.location.source === "zcode");
+  const readOnlyOrigin = server.origin === "env" || server.origin === "plugin";
+  const canEdit = !readOnlyOrigin && (!server.location || server.location.source === "zcode");
   const canOpenAuthorization = Boolean(server.authorization?.authorizationUrl);
   const openAuthorizationLabel = intl.formatMessage({
     id: "settings.mcp.oauth.openAuthorization",
@@ -122,7 +123,7 @@ function McpServerItem({
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-ui-base font-medium text-foreground">{server.name}</span>
-          {server.origin === "env" ? <span className="text-ui-sm text-foreground-subtle">只读</span> : null}
+          {readOnlyOrigin ? <span className="text-ui-sm text-foreground-subtle">只读</span> : null}
           {!hideMetadata ? <ScopeBadge scope={server.scope} /> : null}
           {!hideMetadata && typeof server.toolCount === "number" && (
             <span className="inline-flex rounded-md bg-surface px-1.5 py-0.5 text-ui-sm text-foreground-subtle ring-1 ring-border">
@@ -160,7 +161,7 @@ function McpServerItem({
             <span className="hidden sm:inline">{openAuthorizationLabel}</span>
           </Button>
         )}
-        <Switch disabled={server.origin === "env"} checked={server.enabled} onCheckedChange={(v) => onToggle(server.id, v)} />
+        <Switch disabled={readOnlyOrigin} checked={server.enabled} onCheckedChange={(v) => onToggle(server.id, v)} />
       </div>
     </div>
   );

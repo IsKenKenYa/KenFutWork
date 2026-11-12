@@ -384,6 +384,18 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
   },
   {
     method: "get",
+    path: "/api/knowledge/file",
+    tag: "knowledge",
+    auth: "local",
+    successStatus: 200,
+    querySchema: knowledgeReadQuerySchema,
+    binaryResponse: "application/octet-stream",
+    summary: "读取知识库文件原始字节",
+    description:
+      "按绝对路径返回原始文件字节流（png/pdf/xlsx 等二进制预览用），与 read 同一套知识库根包含校验；只读不写，路径不在任何已注册根内时拒绝。",
+  },
+  {
+    method: "get",
     path: "/api/knowledge/settings",
     tag: "knowledge",
     auth: "local",

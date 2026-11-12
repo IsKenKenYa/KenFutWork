@@ -653,6 +653,88 @@
         }
       }
     },
+    "/api/knowledge/file": {
+      "get": {
+        "operationId": "getKnowledgeFile",
+        "summary": "读取知识库文件原始字节",
+        "description": "按绝对路径返回原始文件字节流（png/pdf/xlsx 等二进制预览用），与 read 同一套知识库根包含校验；只读不写，路径不在任何已注册根内时拒绝。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "startLine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "endLine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/knowledge/settings": {
       "get": {
         "operationId": "getKnowledgeSettings",
@@ -21236,10 +21318,6 @@
                 "default": false,
                 "type": "boolean"
               },
-              "knowledgeAutoLocalFallback": {
-                "default": true,
-                "type": "boolean"
-              },
               "knowledgeMaxResults": {
                 "default": 5,
                 "type": "integer",
@@ -21376,7 +21454,6 @@
               "computerUseMcpKeepAliveMs",
               "knowledgeAutoInject",
               "knowledgeLocalMatch",
-              "knowledgeAutoLocalFallback",
               "knowledgeMaxResults",
               "knowledgeMinHits",
               "knowledgeSearchTimeoutMs",
@@ -21953,9 +22030,6 @@
             "type": "boolean"
           },
           "knowledgeLocalMatch": {
-            "type": "boolean"
-          },
-          "knowledgeAutoLocalFallback": {
             "type": "boolean"
           },
           "knowledgeMaxResults": {
@@ -34234,6 +34308,11 @@
                       },
                       "gpu": {
                         "type": "string"
+                      },
+                      "gpuMemoryBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [

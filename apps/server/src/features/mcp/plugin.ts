@@ -86,6 +86,9 @@ export function createMcpPlugin(): PluginDefinition {
           ctx.get("persistence"),
           ctx.get("localInstance"),
         ),
+        // 可选依赖：测试装配可以没有插件内核；生产装配在 apply 之后仍可懒解析。
+        pluginServers: async () =>
+          ctx.tryGet("plugins")?.listMcpServers() ?? [],
         resolveTimeoutMs: async () => {
           const actor = await ctx.get("localInstance").serviceActor();
           return (

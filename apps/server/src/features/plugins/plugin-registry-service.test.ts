@@ -1229,7 +1229,10 @@ describe("plugin-registry：同名插件只允许一份启用安装", () => {
       allowLifecycleScripts: false,
       url: EXAMPLE_PLUGIN,
     });
-    const twinId = await seedSameNameTwin(first.installed.id, first.installed.name);
+    const twinId = await seedSameNameTwin(
+      first.installed.id,
+      first.installed.name,
+    );
 
     const { installed } = await service.install({
       allowLifecycleScripts: false,
@@ -1249,5 +1252,94 @@ describe("plugin-registry：同名插件只允许一份启用安装", () => {
     // 双胞胎那一行必须从列表里消失（list 按 id 出行；同名自带目录另按名字标已装，属既有语义）
     const entries = await service.list();
     expect(entries.filter((entry) => entry.id === twinId)).toHaveLength(0);
+  });
+});
+
+describe("插件贡献随启用态收敛", () => {
+  it("安装后可读 MCP/命令/Hook；停用与卸载后不再贡献", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "kenfutwork-contrib-"));
+    tempDirs.push(dir);
+    await mkdir(path.join(dir, "commands"), { recursive: true });
+    await mkdir(path.join(dir, "hooks"), { recursive: true });
+    await writeFile(
+      path.join(dir, "package.json"),
+      JSON.stringify({
+        name: "contrib-probe",
+        version: "1.0.0",
+        type: "module",
+        main: "index.js",
+        kenfutwork: { bundle: { patch: "./cordis.patch.yml" } },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "index.js"),
+      "export const inject = [];\nexport function apply() {}\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "cordis.patch.yml"),
+      "- insert:\n    - id: contrib-probe\n      name: contrib-probe\n      inject: []\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "probe-http": { type: "http", url: "https://example.com/mcp" },
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "commands", "probe.md"),
+      "---\ndescription: Probe\n---\nRun $ARGUMENTS",
+      "utf8",
+    );
+    await writeFile(
+      path.join(dir, "hooks", "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [
+            {
+              hooks: [
+                {
+                  type: "process",
+                  command: "node",
+                  args: ["${ZCODE_PLUGIN_ROOT}/hook.mjs"],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+
+    const { service } = makeService();
+    const { installed } = await service.install({
+      url: dir,
+      allowLifecycleScripts: false,
+    });
+
+    expect(
+      (await service.listMcpServers()).map((server) => server.name),
+    ).toEqual(["probe-http"]);
+    expect(
+      (await service.listCommands()).map((command) => command.name),
+    ).toEqual(["probe"]);
+    const hooks = await service.listHooks();
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0]?.event).toBe("turn-start");
+    expect(hooks[0]?.pluginRoot).toContain(installed.id);
+
+    await service.setEnabled(installed.id, false);
+    expect(await service.listMcpServers()).toEqual([]);
+    expect(await service.listCommands()).toEqual([]);
+    expect(await service.listHooks()).toEqual([]);
+
+    await service.setEnabled(installed.id, true);
+    await service.uninstall(installed.id);
+    expect(await service.listCommands()).toEqual([]);
   });
 });

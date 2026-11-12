@@ -48,6 +48,7 @@ import {
   skillsPromptSection,
 } from "./prompt-sections.js";
 import { createAgentRunRepository } from "./repository.js";
+import { runPluginHooks } from "../plugins/plugin-hooks.js";
 
 export interface AgentRunsPluginDeps {
   connectionManager: ConnectionManager;
@@ -318,6 +319,15 @@ export function createAgentRunsPlugin(
           // 用户规则（settings 同一趟顺带读 autoCompact/hooks）：规则段经
           // systemPromptRegistry 组装，runtime 只负责把读到的片段放进 ctx
           settingsService: ctx.get("settings"),
+          // 插件贡献：命令与实例命令合并（实例优先）；SessionStart 钩子在 run 起始期
+          // 执行，additionalContext 经 promptCompositionContext 注入系统提示。
+          pluginCommands: () => ctx.get("plugins").listCommands("code"),
+          pluginHookRunner: async ({ cwd, signal }) =>
+            runPluginHooks({
+              hooks: await ctx.get("plugins").listHooks("code"),
+              cwd,
+              ...(signal ? { signal } : {}),
+            }),
           runUsage: ctx.get("runUsage"),
           tools: ctx.get("tools"),
           systemPromptRegistry: ctx.get("systemPrompt"),
