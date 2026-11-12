@@ -67,6 +67,7 @@ const preferenceKeys = new Set([
   "onboardingOccupation",
   "terminalFontFamily",
   "terminalInheritSystemProfile",
+  "memoryEnabled",
 ]);
 type WorkspacePreferenceEntry = z.infer<
   typeof appSettingsSchema

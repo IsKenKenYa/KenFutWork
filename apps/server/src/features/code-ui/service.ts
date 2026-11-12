@@ -64,6 +64,7 @@ import type {
 } from "../local-instance/types.js";
 import type { ModelCatalogService } from "../model-providers/model-catalog-service.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
+import type { ProjectMemoryRpc } from "../memory/rpc.js";
 import {
   type CodeUiProviderSettingsRpc,
   createCodeUiProviderSettingsRpc,
@@ -175,6 +176,8 @@ export interface CodeUiServiceDeps {
     method: string,
   ) => CodeUiHostRpcHandler | undefined;
   plugins?: PluginRegistryService;
+  /** 项目长期记忆通道（设置页目录与记忆文件读取）。 */
+  memory?: ProjectMemoryRpc;
   checkpoints?: CheckpointService;
   permissions?: PermissionService;
   /** 六档执行模式（G2/Q7）：缺席时 Code run 按默认 agent 模式执行，不阻塞。 */
@@ -1843,6 +1846,18 @@ export class CodeUiService {
         });
       }
       return controller.call(method, args[0]);
+    }
+    if (service === "memory" && this.deps.memory) {
+      // 记忆只读通道不依赖通知连接；携带绑定时仍校验连接所有权。
+      const owner = await this.deps.localInstance.resolve(user);
+      if (bound !== undefined)
+        this.connections.require(
+          owner.instanceId,
+          bound,
+          false,
+          user.accessClientId,
+        );
+      return this.deps.memory.call(user, method, args);
     }
     if (service === "plugin-management" && this.plugins) {
       const owner = await this.deps.localInstance.resolve(user);

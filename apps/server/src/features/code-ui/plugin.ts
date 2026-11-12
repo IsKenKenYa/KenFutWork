@@ -1,7 +1,14 @@
 import { resolve } from "node:path";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
 import type { PluginDefinition } from "../../kernel/types.js";
+import {
+  createProjectMemoryPromptSection,
+  createMemorySaveTool,
+} from "../memory/consumer.js";
+import { createProjectMemoryService } from "../memory/project-memory.js";
+import { createProjectMemoryRpc } from "../memory/rpc.js";
 import {
   createGoalPrompt,
   createGoalTools,
@@ -57,6 +64,24 @@ export function createCodeUiPlugin(): PluginDefinition {
       "codeGit",
     ],
     apply(ctx) {
+      const repository = createCodeUiRepository(
+        ctx.get("persistence"),
+        ctx.get("goals"),
+      );
+      /**
+       * 项目长期记忆：开关存实例偏好（`memoryEnabled`），正文存应用数据目录。
+       * 三个消费方（设置页目录、系统提示段、写入工具）共用同一份服务，
+       * 不另建第二套状态。
+       */
+      const projectMemory = createProjectMemoryService({
+        dataDir: resolveDesktopDataDir({
+          env: { KENFUTWORK_DATA_DIR: ctx.env.desktopDataDir },
+        }),
+        projects: ctx.get("projects"),
+        localInstance: ctx.get("localInstance"),
+        preferences: repository,
+        settings: ctx.get("settings"),
+      });
       ctx.register("codeUi", () => {
         const userInputs = createUserInputBroker();
         return createCodeUiService({
@@ -85,10 +110,8 @@ export function createCodeUiPlugin(): PluginDefinition {
               ),
           goals: ctx.get("goals"),
           userInputs,
-          repository: createCodeUiRepository(
-            ctx.get("persistence"),
-            ctx.get("goals"),
-          ),
+          repository,
+          memory: createProjectMemoryRpc(projectMemory),
           executionScopes: ctx.get("executionScopes"),
           taskWork: ctx.get("taskWork"),
           permissions: ctx.get("permissions"),
@@ -124,6 +147,10 @@ export function createCodeUiPlugin(): PluginDefinition {
           env: ctx.env,
         });
       });
+      ctx.get("systemPrompt").register(
+        createProjectMemoryPromptSection(projectMemory),
+      );
+      ctx.get("tools").register(createMemorySaveTool(projectMemory));
       ctx.get("systemPrompt").register(
         createGoalPrompt(
           {

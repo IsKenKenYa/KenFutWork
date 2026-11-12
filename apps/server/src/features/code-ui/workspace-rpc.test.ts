@@ -490,6 +490,22 @@ describe("Human-only Code workspace RPC", () => {
       ).rejects.toThrow("尚不支持");
     expect(preferencesApi.updateHumanPreferences).toHaveBeenCalledTimes(1);
   });
+  it("记忆开关进实例偏好：保存后重新读取仍为开启，未保存前保持缺省关闭", async () => {
+    const { rpc, createRpc } = await world();
+    expect(await rpc.call(actor, "setting", "get", [])).toMatchObject({
+      result: { memoryEnabled: false },
+    });
+    await rpc.call(actor, "setting", "update", [{ memoryEnabled: true }]);
+    // 重新装配 RPC（模拟刷新/重启）后再读，值来自偏好存储而不是内存状态。
+    const refreshed = createRpc();
+    expect(await refreshed.call(actor, "setting", "get", [])).toMatchObject({
+      result: { memoryEnabled: true },
+    });
+    await refreshed.call(actor, "setting", "update", [{ memoryEnabled: false }]);
+    expect(await refreshed.call(actor, "setting", "get", [])).toMatchObject({
+      result: { memoryEnabled: false },
+    });
+  });
   it("显式关闭全部最近目录后读取保持空列表，不因Project仍存在复活目录", async () => {
     const { rpc, root, createProject, workspaces } = await world();
     await rpc.call(actor, "workspace", "open", [{ path: root }]);
