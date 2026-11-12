@@ -1,0 +1,23 @@
+{
+  "name": "kenfutwork-godot",
+  "version": "0.4.0",
+  "description": "使用官方 Godot CLI 开发游戏，在原版桌面编辑器中查看每轮场景与运行效果。",
+  "type": "module",
+  "license": "MIT",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README_CN.md",
+    "README.md",
+    "commands",
+    "skills"
+  ],
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Godot",
+    "category": "游戏与 3D"
+  },
+  "main": "index.js"
+}

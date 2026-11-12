@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -120,5 +120,38 @@ describe("自带插件目录解析（打包布局契约）", () => {
 
     expect(bundles.map((bundle) => bundle.name)).toEqual(["kfw-good"]);
     expect(warnings.some((message) => message.includes("bad"))).toBe(true);
+  });
+
+  it("仓库内置的游戏/3D 插件全部通过门禁并带技能文件", () => {
+    const repoPlugins = resolve(import.meta.dirname, "../../../../plugins");
+    const bundles = loadBundledBundles(repoPlugins, 32, silent);
+    const byName = new Map(bundles.map((bundle) => [bundle.name, bundle]));
+
+    for (const name of [
+      "kenfutwork-blender",
+      "kenfutwork-godot",
+      "kenfutwork-hyper3d-rodin",
+      "kenfutwork-tripo-3d",
+      "kenfutwork-unity",
+      "kenfutwork-unreal-engine",
+    ]) {
+      const bundle = byName.get(name);
+      expect(bundle, name).toBeTruthy();
+      expect(bundle?.report.compatible, name).toBe(true);
+      expect(
+        Object.keys(bundle?.files ?? {}).some((path) =>
+          path.startsWith("skills/"),
+        ),
+        name,
+      ).toBe(true);
+    }
+
+    const tripo = byName.get("kenfutwork-tripo-3d");
+    expect(
+      Object.keys(tripo?.files ?? {}).some(
+        (path) => path === "hooks/hooks.json",
+      ),
+    ).toBe(true);
+    expect(tripo?.files["mcp.json"]).toContain("developers.tripo3d.com");
   });
 });

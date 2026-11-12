@@ -165,6 +165,19 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | [Toonflow-app](https://github.com/HBAI-Ltd/Toonflow-app)，`references/toonflow-app`，固定 `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` | MIT；Copyright (c) 2026 HBAI-Ltd，见[上游许可](https://github.com/HBAI-Ltd/Toonflow-app/blob/d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d/LICENSE) | depth 1 只读参考；用于核验本地画布、媒体文件保存与任务恢复，不安装或执行上游，不复制实现，内容不随本仓库产物分发 |
 | 技能市场与 MCP 目录下载的第三方技能/server | 各自许可 | 由你在市场/注册表安装，安装时应核对；本仓库不为其许可背书 |
 
+### F1. 移植的 zcode 官方「游戏/3D」插件（2026-11-12）
+
+来源：`zcode-plugins-official` 插件缓存（各插件版本见括号），技能、命令、Hook 脚本与 MCP 声明原样保留，仅补 `package.json` / `cordis.patch.yml` 以适配本仓 bundle 形态。
+
+| 插件 | 许可与版权 | 义务履行位置 |
+| --- | --- | --- |
+| Blender（0.4.1） | GPL-3.0-or-later（版权归 Blender Foundation 及上游贡献者） | `plugins/blender/LICENSE` 原文随包分发；技能与 README 保留原署名 |
+| Godot（0.4.0） | MIT（上游插件清单声明；源包未附许可全文，**待核**） | `plugins/godot/README.md` 保留上游链接；补齐全文前不宣称完成 |
+| Hyper3D Rodin（0.1.1） | MIT（Copyright Deemos） | `plugins/hyper3d-rodin/LICENSE` |
+| Tripo 3D（0.1.4） | MIT（Copyright VAST；源包未附许可全文，**待核**） | `plugins/tripo-3d/README.md` 与 MCP/Hook 保留原样 |
+| Unity（0.1.5） | 见上游 `THIRD_PARTY_NOTICES.md` | `plugins/unity/THIRD_PARTY_NOTICES.md` 随包分发 |
+| Unreal Engine（0.1.3） | MIT（各技能目录附 `LICENSE.txt`） | `plugins/unreal-engine/skills/*/LICENSE.txt` 原样保留 |
+
 ## G. 分发义务
 
 ### G1. 随产物分发的声明文件
