@@ -652,6 +652,100 @@ describe("voice 服务：真实使用的耗时埋点（规划 §6）", () => {
   });
 });
 
+describe("voice 服务：重新检测的「听」主动实测", () => {
+  const HARDWARE = {
+    cpuModel: "Test CPU",
+    cpuCores: 8,
+    totalMemoryBytes: 16 * 1024 ** 3,
+    platform: "win32",
+  };
+
+  /** TTS 探针音频：2 秒 24k（模拟 Kokoro 的采样率，服务端应归一成 16k 再计时）。 */
+  const probeWav = encodeWav(new Float32Array(48_000), 24_000);
+
+  function probeService(
+    options: {
+      synth?: () => Promise<{ audio: Uint8Array; mimeType: string }>;
+    } = {},
+  ) {
+    const transcribe = vi.fn(async () => {
+      // 真 ASR 不可能 0ms；给一个可测的耗时，避免实时率被算成 0
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { text: "这是一次语音合成检测。" };
+    });
+    const synthesize =
+      options.synth ??
+      vi.fn(async () => ({ audio: probeWav, mimeType: "audio/wav" }));
+    const service = createVoiceService(
+      deps({
+        voice: {
+          mode: "loop",
+          listen: { kind: "builtin", id: "sensevoice-small-int8" },
+          speak: { kind: "builtin", id: "kokoro-multi-lang" },
+        },
+        collectHardware: async () => HARDWARE,
+        probeThink: async () => ({ ttftSeconds: 0.1 }),
+        createBuiltinProvider: (selection) => {
+          if (selection.id === "kokoro-multi-lang") {
+            return {
+              id: "tts",
+              label: "kokoro",
+              location: "cpu",
+              synthesizer: { ready: async () => ({ ok: true }), synthesize },
+            };
+          }
+          return {
+            id: "asr",
+            label: "sensevoice",
+            location: "cpu",
+            transcriber: { ready: async () => ({ ok: true }), transcribe },
+          };
+        },
+      }),
+    );
+    return { service, transcribe, synthesize };
+  }
+
+  it("现场合成一句真语音喂给「听」：冷启动单列首载，稳态那次算 RTF", async () => {
+    const { service, transcribe, synthesize } = probeService();
+    const report = await service.diagnose(USER, "ws-1");
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(report.speak.state).toBe("measured");
+    expect(report.listen.state).toBe("measured");
+    expect(report.listen.listen?.samples).toBe(1);
+    expect(report.listen.listen?.lastClipSeconds).toBeCloseTo(2, 3);
+    expect(report.listen.listen?.rtfMedian).toBeGreaterThan(0);
+    expect(report.listen.listen?.modelLoadMs).toBeGreaterThanOrEqual(0);
+    // 冷启动：第一次含模型载入，第二次才是稳态读数
+    expect(transcribe).toHaveBeenCalledTimes(2);
+
+    // 探针音频先归一到 16k（真实使用路径就是 16k），别把重采样开销算进实时率
+    const fed = transcribe.mock.calls[0]?.[0] as unknown as Uint8Array;
+    expect(decodeWav(fed).sampleRate).toBe(16_000);
+
+    // 再测一次：模型已热，只跑一次；首载耗时仍然保留在报告里
+    const again = await service.diagnose(USER, "ws-1");
+    expect(transcribe).toHaveBeenCalledTimes(3);
+    expect(again.listen.listen?.modelLoadMs).toBe(
+      report.listen.listen?.modelLoadMs,
+    );
+  });
+
+  it("「说」不可用时如实置灰，「听」回退真实使用统计（没有读数就 pending）", async () => {
+    const { service, transcribe } = probeService({
+      synth: async () => {
+        throw new Error("「说」模型文件缺失：model.onnx");
+      },
+    });
+    const report = await service.diagnose(USER, "ws-1");
+    expect(report.speak.state).toBe("unavailable");
+    expect(report.speak.summary).toContain("model.onnx");
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(report.listen.state).toBe("pending");
+  });
+});
+
 describe("voice 服务：候选性能标注（规划 §5 预估 → 实测）", () => {
   function withTimings(modelState: "ready" | "missing") {
     return deps({

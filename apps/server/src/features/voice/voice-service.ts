@@ -32,7 +32,14 @@ import {
 
 import type { LocalActor } from "../local-instance/types.js";
 import type { ModelProviderService } from "../model-providers/model-provider-service.js";
-import { decodeWav, encodeWav, floatToPcm16Array, probeWav } from "./audio.js";
+import {
+  decodeWav,
+  encodeWav,
+  floatToPcm16Array,
+  probeWav,
+  resampleLinear,
+  VOICE_SAMPLE_RATE,
+} from "./audio.js";
 import {
   isValidBuiltinModelId,
   resolveBuiltinModelDir,
@@ -178,6 +185,8 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
   const timingLog = createVoiceTimingLog();
   /** 已经出过首次调用的 provider（用来把「模型载入」从中位 RTF 里单列）。 */
   const warmedProviders = new Set<string>();
+  /** 各 provider 的首次载入耗时（首次实测后一直复用：它不会因为热启动而消失）。 */
+  const modelLoadMsByProvider = new Map<string, number>();
   /** 上次检测报告（启动期读回；没测过为 null）。 */
   let lastDiagnose: VoiceDiagnoseReport | null = null;
 
@@ -554,25 +563,91 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       const settings = await readSettings(user, instanceId);
       const hardware = await (deps.collectHardware ?? collectHardware)();
 
-      // 听：用真实使用的实测汇总（首次载入另计）；未选模型则明确置灰
+      // 说：现场合成一句固定短句，量首包与实时率（规划 §6）。
+      // 这段音频由神经网络 TTS 真念出来，因此**顺带给「听」当探针音频**——「听」不必
+      // 再等用户真说过一句话才有读数（见文件末 measureListenPerformance 的注释）。
+      let speakMeasurement:
+        | { firstByteSeconds: number; rtf: number }
+        | undefined;
+      let speakReason: string | undefined;
+      let probeAudio: Uint8Array | undefined;
+      if (!settings.speak) {
+        speakReason = "未选择「说」模型：到「设置 → 语音」选一个。";
+      } else {
+        const probeText = "这是一次语音合成检测。";
+        try {
+          const { impl: synthesizer } = await this.resolveSynthesizer(
+            user,
+            instanceId,
+          );
+          const started = Date.now();
+          const { audio } = await synthesizer.synthesize(probeText, {
+            ...(signal ? { signal } : {}),
+          });
+          const elapsedSeconds = (Date.now() - started) / 1000;
+          // 内置路径是「一次性合成整段」，首包≈总耗时；按 WAV 头算音频时长得实时率
+          const audioSeconds = wavSeconds(audio);
+          speakMeasurement = {
+            firstByteSeconds: elapsedSeconds,
+            rtf:
+              audioSeconds > 0 ? elapsedSeconds / audioSeconds : elapsedSeconds,
+          };
+          if (audioSeconds > 0) {
+            probeAudio = normalizeProbeAudio(audio);
+          }
+        } catch (error) {
+          speakReason = `「说」段检测失败：${
+            error instanceof Error ? error.message : String(error)
+          }`;
+        }
+      }
+
+      // 听：优先用探针音频现场实测（冷启动单列载入耗时）；拿不到探针音频
+      // （未选/未下载「说」模型）才回退到真实使用的统计。
+      let listenSummary = timingLog.summary();
       let listenReason: string | undefined;
+      let listenProbeError: string | undefined;
       if (!settings.listen) {
         listenReason =
           "未选择「听」模型：到「设置 → 语音」选一个（内置模型需先下载）。";
       } else {
-        const verdict = await resolveProvider(
+        const selection = settings.listen;
+        const provider = await resolveProvider(
           user,
-          settings.listen,
+          selection,
           "listen",
           "听",
-        )
-          .then((provider) => provider.transcriber?.ready())
-          .catch((error: unknown) => ({
+        ).catch((error: unknown) => {
+          listenReason = error instanceof Error ? error.message : String(error);
+          return undefined;
+        });
+        const transcriber = provider?.transcriber;
+        if (provider && !transcriber) {
+          listenReason = `所选「听」模型不提供转写能力（${provider.label}）。`;
+        } else if (transcriber) {
+          const verdict = await transcriber.ready().catch((error: unknown) => ({
             ok: false as const,
             reason: error instanceof Error ? error.message : String(error),
           }));
-        if (verdict && !verdict.ok) {
-          listenReason = verdict.reason ?? "「听」模型不可用。";
+          if (!verdict.ok) {
+            listenReason = verdict.reason ?? "「听」模型不可用。";
+          } else if (probeAudio) {
+            try {
+              listenSummary = await measureListenPerformance({
+                providerKey: `${selection.kind}:${selection.id}`,
+                transcriber,
+                audio: probeAudio,
+                audioSeconds: wavSeconds(probeAudio),
+                // 只有内置档有「载入模型」这回事；在线档每次都是同一条 fetch
+                coldCapable: selection.kind === "builtin",
+                ...(signal ? { signal } : {}),
+              });
+            } catch (error) {
+              listenProbeError = `「听」段实测失败：${
+                error instanceof Error ? error.message : String(error)
+              }`;
+            }
+          }
         }
       }
 
@@ -597,42 +672,14 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
         }
       }
 
-      // 说：现场合成一句固定短句，量首包与实时率（规划 §6）
-      let speakMeasurement:
-        | { firstByteSeconds: number; rtf: number }
-        | undefined;
-      let speakReason: string | undefined;
-      if (!settings.speak) {
-        speakReason = "未选择「说」模型：到「设置 → 语音」选一个。";
-      } else {
-        const probeText = "这是一次语音合成检测。";
-        try {
-          const { impl: synthesizer } = await this.resolveSynthesizer(
-            user,
-            instanceId,
-          );
-          const started = Date.now();
-          const { audio } = await synthesizer.synthesize(probeText, {
-            ...(signal ? { signal } : {}),
-          });
-          const elapsedSeconds = (Date.now() - started) / 1000;
-          // 内置路径是「一次性合成整段」，首包≈总耗时；按 WAV 头算音频时长得实时率
-          const audioSeconds = wavSeconds(audio);
-          speakMeasurement = {
-            firstByteSeconds: elapsedSeconds,
-            rtf:
-              audioSeconds > 0 ? elapsedSeconds / audioSeconds : elapsedSeconds,
-          };
-        } catch (error) {
-          speakReason = `「说」段检测失败：${
-            error instanceof Error ? error.message : String(error)
-          }`;
-        }
-      }
-
       const report = buildReport({
         hardware,
-        listen: listenSegment(timingLog.summary(), listenReason),
+        // 探针失败但历史使用里有读数时，历史读数仍是事实；两者都没有才把失败原因摆出来
+        listen: listenSegment(
+          listenSummary,
+          listenReason ??
+            (listenSummary.samples === 0 ? listenProbeError : undefined),
+        ),
         think: thinkSegment(thinkMeasurement, thinkReason),
         speak: speakSegment(speakMeasurement, speakReason),
       });
@@ -651,6 +698,55 @@ export function createVoiceService(deps: VoiceServiceDeps): VoiceService {
       return report;
     },
   };
+
+  /**
+   * 「听」段的主动实测（点「重新检测」时真跑一次转写）。
+   *
+   * 为什么不是历史统计：耗时日志是**进程内存**里的，重启即空；只看它会让「重新检测」
+   * 在没说过话（或刚重启）时永远回「未实测」。探针音频来自本机/在线 TTS 模型现场
+   * 合成的一句真实语音——不是静音或类语音带（那两种与真语音的 RTF 差 1.3~4.8 倍，
+   * 见 diagnose.ts 文件头）。
+   *
+   * 冷启动那一次单独记成 `modelLoadMs`（与真实使用埋点同口径），稳态那一次算 RTF；
+   * 只有内置档有「载入模型」这回事，在线档只跑一次。
+   */
+  async function measureListenPerformance(input: {
+    providerKey: string;
+    transcriber: VoiceTranscriber;
+    audio: Uint8Array;
+    audioSeconds: number;
+    coldCapable: boolean;
+    signal?: AbortSignal;
+  }): Promise<VoiceListenSummary> {
+    const { providerKey, transcriber, audio, audioSeconds } = input;
+    if (!(audioSeconds > 0)) {
+      throw new Error("探针音频时长读不出来。");
+    }
+    const run = async () => {
+      const started = Date.now();
+      await transcriber.transcribe(
+        audio,
+        input.signal ? { signal: input.signal } : {},
+      );
+      return Date.now() - started;
+    };
+    let modelLoadMs = input.coldCapable
+      ? modelLoadMsByProvider.get(providerKey)
+      : undefined;
+    if (input.coldCapable && !warmedProviders.has(providerKey)) {
+      modelLoadMs = await run();
+      modelLoadMsByProvider.set(providerKey, modelLoadMs);
+      warmedProviders.add(providerKey);
+    }
+    const elapsedMs = await run();
+    return {
+      rtfMedian: elapsedMs / 1000 / audioSeconds,
+      // 一次探针就是一个稳态样本；中位数的语义由 listenSegment 原样消费
+      samples: 1,
+      ...(modelLoadMs === undefined ? {} : { modelLoadMs }),
+      lastClipSeconds: audioSeconds,
+    };
+  }
 
   /**
    * 静音检测是**内部优化**（不是用户可选项）：内置 VAD 模型在本地就直接用。
@@ -687,6 +783,26 @@ function wavSeconds(wav: Uint8Array): number {
     return probeWav(wav).durationSeconds;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * 探针音频统一成 16k 单声道 WAV：TTS 模型（如 Kokoro）产出 24k，而真实使用路径是
+ * 客户端先转成 16k 再上传。不统一的话，内置 ASR 会多做一次线性重采样，把那段开销
+ * 算进「听」的实时率里（系统性偏慢）。解不开的音频原样返回，让转写侧如实失败。
+ */
+function normalizeProbeAudio(wav: Uint8Array): Uint8Array {
+  try {
+    const decoded = decodeWav(wav);
+    if (decoded.sampleRate === VOICE_SAMPLE_RATE) {
+      return wav;
+    }
+    return encodeWav(
+      resampleLinear(decoded.samples, decoded.sampleRate, VOICE_SAMPLE_RATE),
+      VOICE_SAMPLE_RATE,
+    );
+  } catch {
+    return wav;
   }
 }
 

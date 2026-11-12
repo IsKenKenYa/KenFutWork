@@ -152,6 +152,37 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
     void patch(body, "advice");
   }, [advice, patch, recommendation]);
 
+  /**
+   * 内置模型的下载 / 取消。这条设置页原先没有下载入口，选了未下载的模型后
+   * 「重新检测」只能失败（朗读/转换永远量不出来）——所以下载动作就放在模型行上。
+   */
+  const modelAction = useCallback(
+    async (candidate: VoiceModelCandidate) => {
+      const key = modelBusyKey(candidate);
+      setBusy(key);
+      setMessage(null);
+      try {
+        const path = `/api/voice/models/${encodeURIComponent(candidate.id)}/download`;
+        const response =
+          candidate.download.state === "downloading"
+            ? await client.deleteRequest<{ model: VoiceModelCandidate }>(path)
+            : await client.request<{ model: VoiceModelCandidate }>(path, {});
+        setModels((current) =>
+          current.map((entry) =>
+            entry.kind === "builtin" && entry.id === response.model.id
+              ? response.model
+              : entry,
+          ),
+        );
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "下载失败");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [client],
+  );
+
   const runDiagnose = useCallback(async () => {
     const controller = new AbortController();
     diagnoseAbort.current = controller;
@@ -220,41 +251,65 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
           </div>
           {SEGMENTS.filter(
             (segment) => settings.mode === "loop" || segment.key === "listen",
-          ).map((segment) => (
-            <div
-              key={segment.key}
-              className="flex items-center justify-between gap-4 border-b border-border px-4 py-3 last:border-b-0"
-            >
-              <span className="text-ui-base text-foreground">
-                {segment.label}
-              </span>
-              <Select
-                value={selectionValue(settings[segment.key])}
-                onValueChange={(value) => void selectByValue(segment.key, value)}
+          ).map((segment) => {
+            const selected = findSelected(models, settings[segment.key]);
+            const needsDownload =
+              selected !== undefined &&
+              selected.kind === "builtin" &&
+              selected.download.state !== "ready";
+            return (
+              <div
+                key={segment.key}
+                className="flex items-center justify-between gap-4 border-b border-border px-4 py-3 last:border-b-0"
               >
-                <SelectTrigger size="lg" className="w-[300px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent side="top" align="end">
-                  <SelectItem value="none">不用</SelectItem>
-                  {models
-                    .filter((model) => model.segment === segment.key)
-                    .map((candidate) => (
-                      <SelectItem
-                        key={modelValue(candidate)}
-                        value={modelValue(candidate)}
-                        disabled={Boolean(candidate.unavailableReason)}
-                      >
-                        {candidate.label}
-                        {candidate.unavailableReason === undefined
-                          ? ` · ${candidateMeta(candidate)}`
-                          : ` · ${candidate.unavailableReason}`}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ))}
+                <span className="text-ui-base text-foreground">
+                  {segment.label}
+                </span>
+                <div className="flex min-w-0 items-center gap-2">
+                  {needsDownload ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === modelBusyKey(selected)}
+                      onClick={() => void modelAction(selected)}
+                    >
+                      {selected.download.state === "downloading"
+                        ? `取消 ${downloadPercent(selected)}%`
+                        : `下载 ${formatBytes(selected.sizeBytes)}`}
+                    </Button>
+                  ) : null}
+                  <Select
+                    value={selectionValue(settings[segment.key])}
+                    onValueChange={(value) =>
+                      void selectByValue(segment.key, value)
+                    }
+                  >
+                    <SelectTrigger size="lg" className="w-[300px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent side="top" align="end">
+                      <SelectItem value="none">不用</SelectItem>
+                      {models
+                        .filter((model) => model.segment === segment.key)
+                        .map((candidate) => (
+                          <SelectItem
+                            key={modelValue(candidate)}
+                            value={modelValue(candidate)}
+                            disabled={Boolean(candidate.unavailableReason)}
+                          >
+                            {candidate.label}
+                            {candidate.unavailableReason === undefined
+                              ? ` · ${candidateMeta(candidate)}`
+                              : ` · ${candidate.unavailableReason}`}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         {/* 性能检测：硬件 + 每段推荐 */}
@@ -314,12 +369,15 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                 (segment) => settings.mode === "loop" || segment.key === "listen",
               ).map((segment) => {
                 const pick = recommendation[segment.key];
+                const metric = segmentMetric(report, segment.key);
                 return (
                   <p key={segment.key}>
                     {segment.label}{" "}
                     {pick
-                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}） · ${segmentMetric(report, segment.key)}`
-                      : "无可用模型"}
+                      ? `${pick.label}（${pick.kind === "builtin" ? "本机" : "在线"}） · ${metric}`
+                      : // 没有可推荐的模型（未下载/未选/不可用）时，读数位置直接给原因，
+                        // 不写「无可用模型」把可修的缺失藏起来
+                        metric}
                   </p>
                 );
               })}
@@ -352,9 +410,38 @@ function selectionValue(selection: VoiceSettings[SegmentKey]): string {
   return `${selection.kind}:${selection.id}:${selection.model ?? ""}`;
 }
 
-/** 选择器里的一行标签：来源 + 体积，够选就行（速度与结论在检测卡片）。 */
+/** 当前选中的候选（下载按钮要按它的下载态决定文案与动作）。 */
+function findSelected(
+  models: readonly VoiceModelCandidate[],
+  selection: VoiceSettings[SegmentKey],
+): VoiceModelCandidate | undefined {
+  if (!selection) return undefined;
+  return models.find(
+    (candidate) =>
+      candidate.kind === selection.kind &&
+      candidate.id === selection.id &&
+      (candidate.model ?? "") === (selection.model ?? ""),
+  );
+}
+
+function modelBusyKey(candidate: VoiceModelCandidate): string {
+  return `model:${candidate.kind}:${candidate.id}`;
+}
+
+function downloadPercent(candidate: VoiceModelCandidate): number {
+  const { downloadedBytes, totalBytes } = candidate.download;
+  if (totalBytes <= 0) return 0;
+  return Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100));
+}
+
+/** 选择器里的一行标签：来源 + 体积（未下载要说清，否则会以为选了就能用）。 */
 function candidateMeta(candidate: VoiceModelCandidate): string {
   const source = candidate.kind === "builtin" ? "本机" : "在线";
+  if (candidate.kind === "builtin" && candidate.download.state !== "ready") {
+    return candidate.download.state === "downloading"
+      ? `${source} · 下载中`
+      : `${source} · 未下载`;
+  }
   return candidate.sizeBytes > 0
     ? `${source} · ${formatBytes(candidate.sizeBytes)}`
     : source;
@@ -368,12 +455,11 @@ function segmentMetric(
   report: VoiceDiagnoseReport | null,
   segment: SegmentKey,
 ): string {
-  const measured = report?.[segment];
-  if (measured?.state === "measured") {
-    return measured.summary;
-  }
-  // 没跑过就没有延迟读数：编一个「预估首字 X 秒」比留白更坏。
-  return "未实测";
+  const result = report?.[segment];
+  if (!result) return "未实测";
+  // 不可用时 summary 就是可读原因（模型缺失 / 未选模型）：必须原样透出。
+  // 曾经统一写成「未实测」，把可修的缺失伪装成「还没测」，用户点多少次重新检测都没用。
+  return result.summary;
 }
 
 /** 每段的首选来源：听/说优先本机离线（离线、隐私），想优先在线实例（质量）。 */
@@ -388,7 +474,10 @@ export function recommendVoiceModels(
   candidates: readonly VoiceModelCandidate[],
 ): Partial<Record<SegmentKey, VoiceModelCandidate>> {
   const usable = candidates.filter(
-    (candidate) => candidate.unavailableReason === undefined,
+    (candidate) =>
+      candidate.unavailableReason === undefined &&
+      // 未下载的内置模型选上也测不了：推荐不能推一个点下去只会报缺失的档
+      (candidate.kind !== "builtin" || candidate.download.state === "ready"),
   );
   const picked: Partial<Record<SegmentKey, VoiceModelCandidate>> = {};
   for (const segment of ["listen", "think", "speak"] as const) {
