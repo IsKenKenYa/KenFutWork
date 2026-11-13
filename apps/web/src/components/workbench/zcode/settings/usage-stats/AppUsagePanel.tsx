@@ -5,6 +5,7 @@ import type { AppUsageRange, AppUsageSnapshot } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { Tabs, TabsList, TabsTrigger } from "@zui/components/ui/tabs.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
 import { useAppUsageStats } from "@zui/hooks/useUsageStats.js";
 import { UsageChartLoadBoundary } from "@zui/settings/usage-stats/UsageChartLoadBoundary.js";
 import { UsageHeatmap } from "@zui/settings/usage-stats/UsageHeatmap.js";
@@ -42,9 +43,9 @@ export function AppUsagePanel() {
       <div className="space-y-5">
         <AppUsageLifetimeSummaryStrip snapshot={lifetimeSnapshot} />
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-ui-base font-medium text-foreground">
+          <SettingsSubheading>
             {intl.formatMessage({ id: "settings.usage.appUsageRangeTitle" })}
-          </div>
+          </SettingsSubheading>
           <AppUsageRangeTabs range={range} onRangeChange={setRange} />
         </div>
         {/* App Usage 只聚合本地 session 历史，不能复用 Coding Plan 的 monitor API 加载说明。*/}
@@ -63,9 +64,9 @@ export function AppUsagePanel() {
       <div className="space-y-5">
         <AppUsageLifetimeSummaryStrip snapshot={lifetimeSnapshot} />
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-ui-base font-medium text-foreground">
+          <SettingsSubheading>
             {intl.formatMessage({ id: "settings.usage.appUsageRangeTitle" })}
-          </div>
+          </SettingsSubheading>
           <AppUsageRangeTabs range={range} onRangeChange={setRange} />
         </div>
         {error ? <UsageStatsErrorNotice error={error} /> : null}
@@ -86,9 +87,9 @@ export function AppUsagePanel() {
         <UsageHeatmap locale={locale} intl={intl} weeks={lifetimeSnapshot.heatmap.weeks} />
       ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-ui-base font-medium text-foreground">
+        <SettingsSubheading>
           {intl.formatMessage({ id: "settings.usage.appUsageRangeTitle" })}
-        </div>
+        </SettingsSubheading>
         <AppUsageRangeTabs range={range} onRangeChange={setRange} />
       </div>
       {error ? <UsageStatsErrorNotice error={error} /> : null}
@@ -158,7 +159,7 @@ function AppUsageLifetimeSummaryStrip({ snapshot }: { snapshot: AppUsageSnapshot
   ];
 
   return (
-    <section className="flex flex-col overflow-hidden rounded-xl bg-surface sm:flex-row sm:items-center">
+    <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card sm:flex-row sm:items-center">
       {items.map((item, index) => (
         <Fragment key={item.label}>
           {index > 0 ? (

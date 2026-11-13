@@ -244,21 +244,28 @@ export async function pollVideoJob(
   if (result.status === "completed") {
     return {
       state: "succeeded",
-      videos: result.videos.map((video) =>
-        video.type === "url"
-          ? { type: "url" as const, url: video.url, mediaType: video.mediaType }
-          : video.type === "base64"
-            ? {
-                type: "base64" as const,
-                data: video.data,
-                mediaType: video.mediaType,
-              }
-            : {
-                type: "binary" as const,
-                data: video.data,
-                mediaType: video.mediaType,
-              },
-      ),
+      videos: result.videos.map((video) => {
+        if (video.type === "url")
+          return {
+            type: "url" as const,
+            url: video.url,
+            mediaType: video.mediaType,
+          };
+        if (video.type === "base64")
+          return {
+            type: "base64" as const,
+            data: video.data,
+            mediaType: video.mediaType,
+          };
+        if (video.type === "binary")
+          return {
+            type: "binary" as const,
+            data: video.data,
+            mediaType: video.mediaType,
+          };
+        // 供应商已把视频上传到调用方存储，本地没有可消费的字节；不塞空结果。
+        throw new Error("视频已上传到外部存储，请从该存储读取结果。");
+      }),
       warnings: warningsToMessages(result.warnings),
     };
   }

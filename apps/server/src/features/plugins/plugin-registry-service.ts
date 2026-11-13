@@ -46,6 +46,12 @@ import {
   truncatePluginCards,
 } from "./plugin-cards.js";
 import {
+  type PluginCommandContribution,
+  type PluginHookContribution,
+  type PluginMcpServerContribution,
+  readPluginContributions,
+} from "./plugin-contributions.js";
+import {
   exportPluginBundle,
   type PluginExportSpec,
 } from "./plugin-exporter.js";
@@ -204,6 +210,14 @@ export interface PluginRegistryService {
     }>
   >;
   list(limits?: PluginCardLimits): Promise<PluginMarketEntry[]>;
+  /** 启用插件贡献的 MCP server（文件声明，只读）。 */
+  listMcpServers(
+    mode?: "code" | "design",
+  ): Promise<PluginMcpServerContribution[]>;
+  /** 启用插件贡献的斜杠命令（`commands/*.md`）。 */
+  listCommands(mode?: "code" | "design"): Promise<PluginCommandContribution[]>;
+  /** 启用插件贡献的会话钩子（`hooks/hooks.json` 的 SessionStart → turn-start）。 */
+  listHooks(mode?: "code" | "design"): Promise<PluginHookContribution[]>;
   /** 机器包库存读面；可安装bundle与profile feature分开，安装态仍由本registry持有。 */
   readPackageInventory(): Promise<{
     rootPath: string;
@@ -927,6 +941,42 @@ export function createPluginRegistryService(
     return { files: bundled.files, manifest: bundled.manifest };
   };
 
+  /** 已启用插件的声明式贡献快照；前后状态对比防并发安装读到半成品。 */
+  async function readContributionRows(mode?: "code" | "design") {
+    const before = await readState();
+    const rows = await Promise.all(
+      before.installed
+        .filter(
+          (record) =>
+            record.enabled &&
+            (!mode ||
+              !record.manifest.scope ||
+              record.manifest.scope === "shared" ||
+              record.manifest.scope === mode),
+        )
+        .map(async (record) => ({
+          record,
+          contributions: readPluginContributions(
+            (await readPackageFiles(record.id)).files,
+            {
+              pluginId: record.id,
+              pluginName: record.name,
+              pluginRoot: bundleDirOf(record.id),
+            },
+          ),
+        })),
+    );
+    const after = await readState();
+    return rows.filter(({ record }) =>
+      after.installed.some(
+        (item) =>
+          item.id === record.id &&
+          item.installedAt === record.installedAt &&
+          item.enabled,
+      ),
+    );
+  }
+
   const service: PluginRegistryService = {
     async readSkillPackages(mode) {
       const before = await readState();
@@ -961,6 +1011,18 @@ export function createPluginRegistryService(
           },
         ];
       });
+    },
+    async listMcpServers(mode) {
+      const rows = await readContributionRows(mode);
+      return rows.flatMap(({ contributions }) => contributions.mcpServers);
+    },
+    async listCommands(mode) {
+      const rows = await readContributionRows(mode);
+      return rows.flatMap(({ contributions }) => contributions.commands);
+    },
+    async listHooks(mode) {
+      const rows = await readContributionRows(mode);
+      return rows.flatMap(({ contributions }) => contributions.hooks);
     },
     async readPackageInventory() {
       const state = await readState();

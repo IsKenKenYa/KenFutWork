@@ -1,9 +1,9 @@
 /**
- * SAG2 知识库能力缝的 Service Definition（M1 骨架）。
+ * SAG2 知识库能力缝的 Service Definition。
  *
  * 契约属主：《改造计划》§4.2（新增 ctx key 只登记那一处）。
- * 本轮只落地「安装态门控 + 状态」；检索/目录/凭据编排在 M2 挂到同一接口上，
- * 消费方（M3 pre-step preflight、M4 侧边栏面板）不需要改签名。
+ * M2 落地检索/目录/凭据编排；M3 补 read（证据取原文）与 rootsRevision（缓存键），
+ * 消费方（pre-step preflight、shared 工具、侧边栏面板）不需要改签名。
  */
 
 /** 市场 bundle 插件 id，与 `plugins/knowledge/package.json` 的 name 对齐。 */
@@ -22,6 +22,21 @@ export interface KnowledgeEvidence {
   heading?: string;
   content?: string;
   matchedLines?: number[];
+}
+
+/** 证据去重：CLI JSON 无 offset/fileVersion，按 路径+行范围（M0 修正）。 */
+export function dedupeKnowledgeEvidence(
+  results: readonly KnowledgeEvidence[],
+): KnowledgeEvidence[] {
+  const seen = new Set<string>();
+  const out: KnowledgeEvidence[] = [];
+  for (const item of results) {
+    const key = `${item.absolutePath}:${item.startLine}:${item.endLine}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
 }
 
 export type KnowledgeCliState =
@@ -54,6 +69,13 @@ export interface KnowledgeGateVerdict {
 
 /** TypeSafe Jev 凭据在 `modelProviders` 中的约定实例 id（M2 定，M4 可在设置里改）。 */
 export const KNOWLEDGE_JEV_PROVIDER_ID = "typesafe-jev";
+
+/**
+ * jev 判决插件配套的 MCP 条目（`features/mcp/curated-catalog.ts` 的 `jev` 条目）
+ * 与它承载凭据的 env 键。装了 jev 插件并填好 key，知识库就零配置复用同一把凭据。
+ */
+export const KNOWLEDGE_JEV_MCP_SERVER_NAME = "jev";
+export const KNOWLEDGE_JEV_ENV_KEY = "TYPESAFE_API_KEY";
 
 /**
  * 上游 `FileTypes::default()` 是 `code:false, config:false`（M0 §3），
@@ -148,18 +170,31 @@ export interface KnowledgeSearchInput {
   query: string;
   path?: string;
   maxResults?: number;
+  /** 单次检索超时（毫秒）；省略用 runner 默认。 */
+  timeoutMs?: number;
+  /** true = 纯本地固定串匹配（-F，KB-4 显式降级档），不需要 Jev。 */
+  localMatch?: boolean;
+  /** run 取消信号（工具路径传入；pre-step payload 不携带）。 */
+  signal?: AbortSignal;
 }
 
 export interface KnowledgeSearchResult {
   scope: string;
   results: KnowledgeEvidence[];
   truncated: boolean;
+  /**
+   * 本次结果是否为降级档：`local-match` = 语义检索不可用（缺 Jev 凭据等）时
+   * 自动改用 `-F` 本地字面匹配。调用方必须如实标注，不能当成语义检索结果。
+   */
+  degraded?: "local-match" | undefined;
 }
 
 export interface KnowledgeReadInput {
   path: string;
   startLine?: number;
   endLine?: number;
+  /** 单文件读取预算（字节）；调用方按实例设置传入，省略用治理默认值。 */
+  maxBytes?: number;
 }
 
 export interface KnowledgeReadResult {
@@ -202,7 +237,11 @@ export interface KnowledgeService {
   status(): Promise<KnowledgeStatus>;
   /** 幂等初始化：CLI 探测 + Jev 凭据注入（不含注册知识库根，见 `ensureRoot`）。 */
   initialize(): Promise<KnowledgeInitResult>;
-  listRoots(): Promise<KnowledgeRoot[]>;
+  /** 目录清单：service 冷启动可能超过默认 runner 超时，调用方可传治理后的预算。 */
+  listRoots(options?: {
+    timeoutMs?: number;
+    retries?: number;
+  }): Promise<KnowledgeRoot[]>;
   addRoot(input: KnowledgeAddRootInput): Promise<KnowledgeRootMutation>;
   removeRoot(path: string): Promise<KnowledgeRootMutation>;
   /**
@@ -212,4 +251,33 @@ export interface KnowledgeService {
    */
   ensureRoot(path: string): Promise<KnowledgeEnsureResult>;
   search(input: KnowledgeSearchInput): Promise<KnowledgeSearchResult>;
+  /**
+   * 按证据位置取原文片段。路径必须落在某个已注册根内（realpath 后判定，
+   * 符号链接不扩权）；行号 1 起，越界钳回，字节预算截断标记 truncated。
+   */
+  read(input: KnowledgeReadInput): Promise<KnowledgeReadResult>;
+  /**
+   * 根集合修订号：addRoot/removeRoot/ensureRoot(added) 成功时单调递增。
+   * preflight 缓存键的一部分（KB-7「root 集合」的进程内近似；外部变更由 TTL 兜底）。
+   */
+  rootsRevision(): number;
+  /**
+   * 「云盘式」托管目录：用户只传文件，目录本身作为唯一根自动注册并索引。
+   * 返回托管目录的绝对路径与其中文件清单。
+   */
+  library(): Promise<{
+    root: string;
+    files: Array<{
+      path: string;
+      absolutePath: string;
+      sizeBytes: number;
+      category: string;
+    }>;
+  }>;
+  /** 把一个文件写入托管目录，并确保该目录已注册为根（幂等）。 */
+  uploadFile(input: { name: string; bytes: Buffer }): Promise<{
+    file: { path: string; absolutePath: string; sizeBytes: number };
+    root: string;
+    indexed: boolean;
+  }>;
 }

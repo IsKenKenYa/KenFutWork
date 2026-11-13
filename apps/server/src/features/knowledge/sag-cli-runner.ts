@@ -44,12 +44,17 @@ export function redactSecrets(
 
 export function createProcessSagRunner(
   options: {
-    binary?: string;
+    /** 可传 getter：三级探测在运行期才确定最终二进制路径（系统/自带/下载）。 */
+    binary?: string | (() => string);
     timeoutMs?: number;
     maxBufferBytes?: number;
   } = {},
 ): SagRunner {
-  const binary = options.binary ?? "sag";
+  const binaryOption = options.binary;
+  const resolveBinary =
+    typeof binaryOption === "function"
+      ? binaryOption
+      : () => binaryOption ?? "sag";
   const timeoutMs = options.timeoutMs ?? SAG_RUNNER_DEFAULT_TIMEOUT_MS;
   const maxBuffer = options.maxBufferBytes ?? SAG_RUNNER_DEFAULT_MAX_BUFFER;
 
@@ -64,7 +69,7 @@ export function createProcessSagRunner(
       }
       const secrets = run.stdin ? [run.stdin, run.stdin.trim()] : [];
       const child = execFile(
-        binary,
+        resolveBinary(),
         [...run.args],
         {
           ...(run.cwd ? { cwd: run.cwd } : {}),

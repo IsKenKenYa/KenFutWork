@@ -13,7 +13,10 @@ import { SettingsGroupCard, SettingsRow } from "@zui/settings/SettingsPageParts.
 
 type MemoryCatalogService = Pick<
   IMemoryService,
-  "listProjectMemories" | "listTrashedMemories" | "restoreTrashedMemory"
+  | "listProjectMemories"
+  | "listTrashedMemories"
+  | "restoreTrashedMemory"
+  | "readProjectMemoryFile"
 >;
 
 function normalizeWorkspaceDisplayName(value: string): string {
@@ -204,6 +207,7 @@ export function MemorySettingsSection({
                 failureStage: "local_commit",
               })
             }
+            readFile={(input) => memoryService.readProjectMemoryFile(input)}
           />
           {selectedWorkspace ? (
             <MemoryTrashSection

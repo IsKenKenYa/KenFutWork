@@ -554,3 +554,69 @@ describe("MCP 掉线自动重启", () => {
     }
   });
 });
+
+describe("插件贡献的 MCP server（只读来源）", () => {
+  const pluginServers = [
+    {
+      pluginId: "kenfutwork-tripo-3d",
+      name: "tripo",
+      kind: "http" as const,
+      command: "",
+      args: [],
+      url: "http://127.0.0.1:9/mcp",
+      env: { TRIPO_API_KEY: "secret" },
+      headers: { Authorization: "Bearer secret" },
+      enabled: true,
+    },
+  ];
+
+  it("并入状态列表，只下发键名不发值", async () => {
+    const { registry } = fakeRegistry();
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store: fakeStore([]),
+      pluginServers: async () => pluginServers,
+    });
+    const statuses = await service.listStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({
+      name: "tripo",
+      source: "plugin",
+      kind: "http",
+      enabled: true,
+      id: null,
+      envKeys: ["TRIPO_API_KEY"],
+      headerKeys: ["Authorization"],
+    });
+    expect(JSON.stringify(statuses)).not.toContain("secret");
+  });
+
+  it("库内同名条目优先，插件项不覆盖用户配置", async () => {
+    const { registry } = fakeRegistry();
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store: fakeStore([stored({ name: "tripo", enabled: false })]),
+      pluginServers: async () => pluginServers,
+    });
+    const statuses = await service.listStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]?.source).toBe("managed");
+  });
+
+  it("插件条目可按名称重连（没有库内 id）", async () => {
+    const { registry } = fakeRegistry();
+    const base = pluginServers[0];
+    if (!base) throw new Error("fixture 缺少插件 MCP 条目");
+    const service = createMcpService({
+      env: EMPTY_ENV,
+      registry,
+      store: fakeStore([]),
+      pluginServers: async () => [{ ...base, name: "broken-plugin" }],
+    });
+    const status = await service.reconnect("broken-plugin");
+    expect(status?.source).toBe("plugin");
+    expect(status?.status).toBe("error");
+  });
+});

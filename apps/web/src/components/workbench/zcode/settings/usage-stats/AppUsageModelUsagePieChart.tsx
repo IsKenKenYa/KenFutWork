@@ -3,6 +3,7 @@ import { Cell, Pie, PieChart } from "recharts";
 import type { AppUsageSnapshot } from "@zcode/shared";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@zui/components/ui/chart.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
 import {
   buildAppUsageModelPieChartViewModel,
   type AppUsageModelPieSlice,
@@ -64,10 +65,10 @@ export function AppUsageModelUsagePieChart({ snapshot }: { snapshot: AppUsageSna
   );
 
   return (
-    <section className="space-y-3 rounded-xl bg-surface p-4">
-      <h3 className="text-ui-base font-medium text-foreground">
+    <section className="space-y-3">
+      <SettingsSubheading>
         {intl.formatMessage({ id: "settings.usage.modelChartTitle" })}
-      </h3>
+      </SettingsSubheading>
       {totalModelTokens <= 0 ? (
         <UsageEmptyState
           title={intl.formatMessage({ id: "settings.usage.emptyTitle" })}
@@ -76,7 +77,7 @@ export function AppUsageModelUsagePieChart({ snapshot }: { snapshot: AppUsageSna
           })}
         />
       ) : (
-        <div className="grid gap-4 px-3 py-3 md:grid-cols-2">
+        <div className="grid gap-4 rounded-xl border border-border bg-card p-4 md:grid-cols-2">
           <div className="relative mx-auto h-56 w-full max-w-64 self-center md:h-64 md:max-w-72">
             <ChartContainer config={chartConfig} className="relative z-20 h-56 w-full md:h-64">
               <PieChart accessibilityLayer margin={APP_USAGE_MODEL_PIE_CHART_MARGIN}>

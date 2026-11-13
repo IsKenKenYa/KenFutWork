@@ -55,6 +55,7 @@ import { SettingsResourceGroupHeader } from "@zui/settings/SettingsResourceGroup
 import { SettingsResourceHeaderActions } from "@zui/settings/SettingsResourceHeaderActions.js";
 import { SettingsBreadcrumbReporter } from "@zui/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsFormTextarea } from "@zui/settings/SettingsFormTextarea.js";
+import { AgentsInstructionRow } from "@zui/settings/AgentsInstructionRow.js";
 import {
   SubagentReasoningField,
   type SubagentReasoningFieldState,
@@ -1263,7 +1264,10 @@ function SubagentForm({
   );
 }
 
-export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
+export function SubagentsSection({
+  onManageModels,
+  workspacePath,
+}: SubagentsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const plugins = usePluginManagementStore((state) => state.plugins);
@@ -1308,6 +1312,15 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   );
   const targetWorkspacePath = selectedWorkspace?.workspacePath ?? "";
   const targetWorkspaceIdentity = undefined;
+  // 顶部 AGENTS.md 入口跟随分区作用域；用户作用域回退到设置页当前打开的本地项目，
+  // 远端路径不在本机打开，宁可不显示也不打开错误目录。
+  const agentsInstructionWorkspacePath = useMemo(() => {
+    if (targetWorkspacePath) return targetWorkspacePath;
+    const activeWorkspacePath = workspacePath ?? "";
+    return workspaceTabs.some((tab) => tab.workspacePath === activeWorkspacePath)
+      ? activeWorkspacePath
+      : "";
+  }, [targetWorkspacePath, workspacePath, workspaceTabs]);
   const { pluginManagementService, subagentsService } = localHostServices;
   const activeScope = selectedWorkspace ? "workspace" : "user";
   const latestRequestIdRef = useRef(0);
@@ -1679,7 +1692,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   }
 
   const renderAgentList = (items: AgentSummary[]) => (
-    <div className="overflow-hidden rounded-xl bg-surface">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       {items.map((agent, index) => (
         <div key={agent.id}>
           {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}
@@ -1713,6 +1726,9 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   const hasSearchResultEmpty = Boolean(query.trim()) && filteredAgentCount === 0;
   return (
     <div className="space-y-6">
+      {agentsInstructionWorkspacePath ? (
+        <AgentsInstructionRow workspacePath={agentsInstructionWorkspacePath} />
+      ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
@@ -1755,7 +1771,7 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       ) : null}
 
       {capability && !capability.userScopeAvailable ? (
-        <div className="rounded-lg border border-border bg-surface px-3 py-2 text-ui-base text-foreground-subtle">
+        <div className="rounded-xl border border-border bg-card px-3 py-2 text-ui-base text-foreground-subtle">
           {intl.formatMessage({
             id: "settings.subagents.userScopeDesktopOnly",
           })}

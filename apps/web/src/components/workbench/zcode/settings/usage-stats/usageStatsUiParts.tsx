@@ -4,7 +4,7 @@ import { formatCompactTokenNumber } from "@zui/lib/tokenNumberFormat.js";
 
 export const RANGE_OPTIONS: AppUsageRange[] = ["7d", "30d"];
 export const USAGE_STATS_TABS_LIST_CLASS =
-  "flex h-7 rounded-full bg-surface p-0.5 group-data-horizontal/tabs:h-7";
+  "flex h-7 rounded-full border border-border bg-card p-0.5 group-data-horizontal/tabs:h-7";
 export const USAGE_STATS_TABS_TRIGGER_CLASS =
   "h-6 flex-none justify-center rounded-full border-transparent bg-transparent px-2.5 py-0 text-ui-sm font-medium text-foreground-subtle data-active:border-transparent data-active:bg-background data-active:text-foreground data-active:shadow-none dark:data-active:border-transparent dark:data-active:bg-background";
 

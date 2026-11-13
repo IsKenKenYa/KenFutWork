@@ -5080,15 +5080,29 @@ export class CodeUiService {
       actor,
       target.instanceId,
     );
+    const pluginCommands = this.deps.plugins
+      ? await this.deps.plugins.listCommands("code").catch(() => [])
+      : [];
+    const instanceNames = new Set(
+      settings.commands.map((command) => command.name.toLowerCase()),
+    );
     return {
       mode: "build",
-      slashCommands: mergeBuiltinSlashCommands(
-        settings.commands.map((command) => ({
+      slashCommands: mergeBuiltinSlashCommands([
+        ...settings.commands.map((command) => ({
           name: command.name,
           description: command.description,
           source: "custom" as const,
         })),
-      ),
+        // 插件命令与实例命令同名时实例优先：先放实例命令，合并器按名称去重。
+        ...pluginCommands
+          .filter((command) => !instanceNames.has(command.name.toLowerCase()))
+          .map((command) => ({
+            name: command.name,
+            description: command.description,
+            source: "custom" as const,
+          })),
+      ]),
     };
   }
 

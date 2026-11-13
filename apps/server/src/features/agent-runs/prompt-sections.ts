@@ -116,6 +116,13 @@ export function createRulesPromptSection(deps: {
       for (const rule of rules) {
         if (rule.trim().length > 0) parts.push(rule);
       }
+      const hookContext = ctx.pluginHookContext ?? [];
+      const hookSections = hookContext
+        .map((section) => section.trim())
+        .filter((section) => section.length > 0);
+      if (hookSections.length > 0) {
+        parts.push(`## 插件钩子上下文\n\n${hookSections.join("\n\n")}`);
+      }
       const fragments = deps
         .pluginFragments()
         .filter((section) => section.trim().length > 0);

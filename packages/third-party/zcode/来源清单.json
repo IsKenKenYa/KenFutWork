@@ -677,7 +677,7 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "a4f1b86d693411b44b1cc82e8488eb71e67d6a6ba94fef1432f2359c6171f664",
+      "copiedSha256": "d5471c283fb36b6a4f15ecd8b9cda86f4a55467373d54e932e40ae831ed1337b",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -691,7 +691,8 @@
         "KenFutWork 宿主偏差：集成终端 Shell 行在宿主无 shell 选项时隐藏（宿主未接 system.listIntegratedTerminalShells；shell 切换由终端工具栏菜单承担）",
         "2026-11-02（三百四十七）：撤掉 openDesign 分区渲染分支与宿主件引用——宿主自动配置，设置页不再要用户填地址/密钥。",
         "KenFutWork 宿主偏差：新增 voice 分区渲染分支与 voiceClient 可见性过滤（语音助手设置接线，二百五十七）",
-        "2026-11-02（三百四十九）：插件·MCP·技能并成一个分区——删除 mcp/skill 两处独立渲染分支。"
+        "2026-11-02（三百四十九）：插件·MCP·技能并成一个分区——删除 mcp/skill 两处独立渲染分支。",
+        "2026-11-12：记忆分区可用性改由 memoryService 决定，Web 端不再显示「仅桌面端可用」。"
       ]
     },
     {
@@ -5827,7 +5828,7 @@
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "c32874b8f93890aa8bdb9855fa849c42397aaf29be44d28244fe462e0d071067",
+      "copiedSha256": "fd8895b4b50aae1a8e83ed6b799b90bf0a3428f899298094fa22a7c02c2740d5",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5849,14 +5850,15 @@
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
         "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
-        "2026-11-02（三百五十）：settings.plugins.title 改 Plugins · MCP · Skills，与中文导航同名。"
+        "2026-11-02（三百五十）：settings.plugins.title 改 Plugins · MCP · Skills，与中文导航同名。",
+        "2026-11-12（三百八十三）：settings.subagents.title 改 Agents、group.builtIn 改 Built-in agents。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "db400354c9ff9b15cde0f7cb47bea902f8bf903d4fdc3b292755c501ed830af3",
+      "copiedSha256": "14b725765fd65b785ad15d3417bf42b9cd7f6f1e24dd44d184837b095ef281b9",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5878,7 +5880,8 @@
         "2026-10-19 侧栏画布页（61ea2cb4）：新增 workspaceSidebar.organizeCanvas 词条。",
         "KenFutWork 宿主偏差：新增 settings.voice.title 词条（语音设置分区标题）",
         "2026-10-26（二百七十一/二百五十九）：删除界面模式与计划标记文案键。",
-        "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。"
+        "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。",
+        "2026-11-12（三百八十三）：settings.subagents.title 改「智能体」、group.builtIn 改「内置智能体」。"
       ]
     },
     {
@@ -18243,7 +18246,7 @@
       "source": "references/zcode/packages/ui/src/settings/HooksList.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/HooksList.tsx",
       "sha256": "3ff125270a3e0d76cd05e46adcdbd70f4e1d03f9a7751c0a7779e5db4ddf8acc",
-      "copiedSha256": "7a463f83402489d87fdcad396fd0fb27b9212b082804f7a7e1acf8e5133a6e41",
+      "copiedSha256": "2c5f264d9c0e093a81338aa5d73ef3fe6a3c78ef1a0980331cec0e43756c3fd3",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -18261,7 +18264,7 @@
       "source": "references/zcode/packages/ui/src/settings/InstalledPluginManagement.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/InstalledPluginManagement.tsx",
       "sha256": "cda4d6ae04abd48c35845d98fc3562c14b6fa1812cb0461986d3ae32fa36b4f7",
-      "copiedSha256": "f2c698b8e14508492ebbc1544fd41583d6df7a5f1ba462fcfdb60890fbb67ab0",
+      "copiedSha256": "1503e44799dc2edc15ba8bc240e34f263c80834d4ab134676a89211c251fae92",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -18290,10 +18293,11 @@
       "source": "references/zcode/packages/ui/src/settings/McpServerList.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/McpServerList.tsx",
       "sha256": "b6d995f8b215f1db768abdff486da8e36e9ac5c729ddef225e9966609cd21794",
-      "copiedSha256": "c321cc10c6806451af3d17857e640a4d67e418895e690d261316daa33167df55",
+      "copiedSha256": "d9ae4d0b7691e1fc97cb376fced7761af7e9f38ef136d5e93355eca85e3cfe02",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主接口：环境来源记录只读，复用原列表及开关，不将环境配置伪装可写数据库记录"
+        "宿主接口：环境来源记录只读，复用原列表及开关，不将环境配置伪装可写数据库记录",
+        "2026-11-12（三百八十四）：插件贡献的 MCP 也按只读展示（origin=plugin 时禁编辑/停用）"
       ]
     },
     {
@@ -18311,18 +18315,20 @@
       "source": "references/zcode/packages/ui/src/settings/MemorySettingsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/MemorySettingsSection.tsx",
       "sha256": "5838865b128e7950f8dab1a9eb88f7e4e55a3320ce4fa644d47c4383169707ed",
-      "copiedSha256": "b1e07faf0688017fdf4893e5638cfddc774f695c8c581af581887fbee08b655a",
+      "copiedSha256": "7d111b6eb823684cac93258cdbcef81bceede53a3805e8615a11fa9e258d58a7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-12：记忆目录按 memoryService 可用性展示（原按 isDesktop 门禁），并把 readProjectMemoryFile 传给预览。"
       ]
     },
     {
       "source": "references/zcode/packages/ui/src/settings/MemorySettingsViewer.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/MemorySettingsViewer.tsx",
       "sha256": "662c049bd1c4c68f1bbbdf67b19ac2ca6d01f86d6c41c3de2d783c1ec15f2289",
-      "copiedSha256": "11de7a98a055b101b35c27a30f6ff4abb8cfa02217d1e3b0636a75dda6de355d",
+      "copiedSha256": "9e4eb757ede8c5ff0bee11b21000fef20439c5d20a615dfc8470438f8a2d40e3",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-12：记忆文件行可点开，页内只读预览正文（Web 与桌面同一入口；读取经 memory 通道 readProjectMemoryFile）；切项目收起预览。"
       ]
     },
     {
@@ -18522,7 +18528,7 @@
       "source": "references/zcode/packages/ui/src/settings/PluginsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/PluginsSection.tsx",
       "sha256": "65954a8df4701a1aebdd6fba0e88ef370b45d88a739ee601c838acea0a65a5d6",
-      "copiedSha256": "8af856571e641bfcf81747969551cf334620f74362a96480f38c38a980b8a66f",
+      "copiedSha256": "cbb49572e69fe4e29940bbfe05d504e401e2ed93d9bd674d3b9f26c13dd8ea5e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：真实实例插件、MCP及技能无需Project，原表单按本机作用域接原接口，不伪装目录或Task",
@@ -18632,7 +18638,7 @@
       "source": "references/zcode/packages/ui/src/settings/SettingsPageParts.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SettingsPageParts.tsx",
       "sha256": "15e03f262fe165692fa3716e496dd61cc2529000edb82e8122ad1e1b8660894b",
-      "copiedSha256": "cb689c2338ffa8afeca3cd6e4d6ed6c66e1af9bf0f4c5b99f8ea831b32276912",
+      "copiedSha256": "2231c0f87d176e7fce2e3d10f85ca437c2b5d95f0835ef67f2fc993b7d3a9f84",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -18641,7 +18647,7 @@
       "source": "references/zcode/packages/ui/src/settings/SettingsResourceGroup.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SettingsResourceGroup.tsx",
       "sha256": "13d3883aac31f69e56a0317340d2c2a61313aaff6eabad9a6fb0ff7ff78c2246",
-      "copiedSha256": "13d3883aac31f69e56a0317340d2c2a61313aaff6eabad9a6fb0ff7ff78c2246",
+      "copiedSha256": "486a384f8718f52ba8d52d0db6f468c9008d621762f73a201939d4b487d99b74",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -18713,7 +18719,7 @@
       "source": "references/zcode/packages/ui/src/settings/ShortcutSettingsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/ShortcutSettingsSection.tsx",
       "sha256": "20eaa7242f039e8afca3a75d133fc8c010cad5cf7967d0fd8688108c338df7b3",
-      "copiedSha256": "93c66a9c220eebdcf5365ab2705b82a47bcb4b823d9d1145dce43dafd49b6dc5",
+      "copiedSha256": "ddbef739e9a1652f4770ef95f0e67c7c08550d69fb271338aa452b997852c7cf",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -18752,9 +18758,10 @@
       "source": "references/zcode/packages/ui/src/settings/SubagentsSection.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SubagentsSection.tsx",
       "sha256": "6c20698aac455217b60c291c24479e2965ca4fd581e05a5680f10d0257572183",
-      "copiedSha256": "e81614f2dcb8485c4fd2caf5dcc6963149a3a1c7afe34bec6a18bcbc6258ca04",
+      "copiedSha256": "20a1f4de3b73490daf5335221bbdd39dc7444a22f9cdced57978e72329111e8c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "2026-11-12（三百八十三）：设置分区改名智能体；列表顶部新增项目 AGENTS.md 入口（复用宿主打开方式按钮组，不做用户级文件）。"
       ]
     },
     {
@@ -19847,7 +19854,7 @@
       "source": "references/zcode/packages/ui/src/settings/usage-stats/AppUsageDailyModelTrendChart.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/usage-stats/AppUsageDailyModelTrendChart.tsx",
       "sha256": "640f9359d5901af46d2e6f90aeb73d3c70fb9f5fe94dd11f362b8e87721884de",
-      "copiedSha256": "4c5b4e6253762bc1606160dc2b59d9f516148639c699c6425658e37223af8ae0",
+      "copiedSha256": "4ae181e223692a1b5268b06aee1b12873a056ecab422c6699880dd4df8167272",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -19856,7 +19863,7 @@
       "source": "references/zcode/packages/ui/src/settings/usage-stats/AppUsageModelUsagePieChart.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/usage-stats/AppUsageModelUsagePieChart.tsx",
       "sha256": "6c7af4eebbcaeba55e9ca647199dad0fd098bf100e6e867c7a364ad2c86eda7e",
-      "copiedSha256": "d54482cd8f9480092ba57d3fd29176e1a4d7205d08f5688deecc24f30952e914",
+      "copiedSha256": "73337a4540daada35055e8bdf50a9bfbafc02a154416fdceac887b487a303da2",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -19865,7 +19872,7 @@
       "source": "references/zcode/packages/ui/src/settings/usage-stats/AppUsagePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/usage-stats/AppUsagePanel.tsx",
       "sha256": "88d102c410bc44a357e5b12819b17f452a29d690ab0223d5bda737ecc3139f8b",
-      "copiedSha256": "8d59e506637b6949ac9776d07947bd2efd7b4a2193ec590e5e37b46e4b93167b",
+      "copiedSha256": "89ae60b00b9072ec7a2ae64a761ed890c5ade477b948a14ed3db2f18b53cd405",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -19910,7 +19917,7 @@
       "source": "references/zcode/packages/ui/src/settings/usage-stats/UsageHeatmap.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/usage-stats/UsageHeatmap.tsx",
       "sha256": "ca6b4e1a3a29f634491a330805cd6349b1649d1375830520a9ce7df6713847c8",
-      "copiedSha256": "5bee6f793214cf2a1f10512ac5c61153ae4e1f83c2b1bee1cfa3df383bb51f99",
+      "copiedSha256": "afc155df8c0c9c9a5da29a56dacef80a736c829a07e65c8303e9693c18d2f2e6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -19964,7 +19971,7 @@
       "source": "references/zcode/packages/ui/src/settings/usage-stats/usageStatsUiParts.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/usage-stats/usageStatsUiParts.tsx",
       "sha256": "77837e46a0cb3f1e0f886398f17b464f7691466076916cabee340da22cd92738",
-      "copiedSha256": "a99f7e8f94d93b0450a5a1ad0817a239ced06202d48b817ed75c20c0ddee28e5",
+      "copiedSha256": "578b1e23176f3b3112fb963f6e0d114582f5624900eeffd9882ea9fdef9982dc",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -20036,7 +20043,7 @@
       "source": "references/zcode/packages/ui/src/settingsCodePreview.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsCodePreview.tsx",
       "sha256": "0ee409cd9388d6b29ab7512c20e28bdf0f986aa51cc7165ee6d24e89c1bbd20c",
-      "copiedSha256": "f4ae55194831cc43d7fd19dee21bb723d49416887aed27fbf5f13611d5d4cc58",
+      "copiedSha256": "4ba54066c988263efe2a39631ee7297ed04bd88fb0f5ef190d32da7a883e18cc",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -20045,7 +20052,7 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "775f85c0f53a6ce8180451f67db607c6ec261ef138a3c5a21a51d1a4af28c43b",
+      "copiedSha256": "19ae031c5632f95695adfad5d6f742035ffe6750e523dec999ec60a18a057527",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
@@ -24196,10 +24203,11 @@
       "source": "references/zcode/packages/shared/src/mcp.ts",
       "target": "packages/zcode-shared/src/mcp.ts",
       "sha256": "20903fb8806923434dcf5c319cb1becc5cbaa3418bc6c6e9bcf56848ad9312ac",
-      "copiedSha256": "4fd7881229b2a80114ed31a8846a97438dc5956b785c862d44732c9d9737debc",
+      "copiedSha256": "aad77723537d68ecfdb058b997285d199bfbb870fc61c76bf67e2d986a59ac49",
       "adaptations": [
         "宿主类型兼容：原记录携带稳定hostRecordId、来源与envKeys，不虚构文件/目录",
-        "安全修复：CUA包规格的路径叶子改为线性尾扫描，保留身份判定语义；消除CodeQL报告的多项式回溯"
+        "安全修复：CUA包规格的路径叶子改为线性尾扫描，保留身份判定语义；消除CodeQL报告的多项式回溯",
+        "2026-11-12（三百八十四）：MCP 来源扩为 managed/env/plugin（插件贡献只读）"
       ]
     },
     {

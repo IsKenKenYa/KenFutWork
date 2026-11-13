@@ -23,7 +23,7 @@ export function readManagementSettingsTarget(): ManagementTarget {
   const usageTab = consumePendingSettingsUsageTab();
   clearPendingSettingsPluginOrigin();
   clearPendingSettingsPluginScopeKey();
-  return managementTargetSchema.parse({
+  const parsed = managementTargetSchema.safeParse({
     page: "settings",
     section,
     ...(model ? { modelProviderId: model.providerId } : {}),
@@ -32,6 +32,10 @@ export function readManagementSettingsTarget(): ManagementTarget {
     ...(pluginScope ? { pluginScopeKey: "user" } : {}),
     ...(usageTab === "app" ? { usageTab } : {}),
   });
+  // 分区偏好由上游独立演进并持久化，未知值只回退默认入口：抛异常会让设置按钮静默变砖。
+  return parsed.success
+    ? parsed.data
+    : { page: "settings", section: "general" };
 }
 
 export function requestManagementOpen(target: ManagementTarget) {

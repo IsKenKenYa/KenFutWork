@@ -13,7 +13,12 @@ import {
   unauthenticatedErrorResponseSchema,
   workDirectoryTargetSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type {
+  FastifyContextConfig,
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+} from "fastify";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ExecutionScopes } from "../features/execution/scope-service.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
@@ -355,12 +360,20 @@ export async function registerPluginRoutes(
    * 面板页面若由插件自带，iframe 可以直接加载这里（无需鉴权头）。仅在清单声明
    * `kenfutwork.assets: true` 时开放；越界/点文件/node_modules/超限一律 404。
    */
-  app.get<{ Params: { pluginId: string; "*": string } }>(
+  const assetsRouteConfig: FastifyContextConfig & { skipLocalAccess: true } = {
+    skipLocalAccess: true,
+  };
+  app.get(
     "/api/plugins/:pluginId/assets/*",
+    // 面板 iframe 直接加载本路由，不带任何鉴权头；声明 skipLocalAccess 才不会被
+    // 本机总门拦成 401（否则「面板白屏/报错」）。资源本身只读、只暴露已安装插件
+    // 清单内的静态文件，且仅 `assets: true` 时开放。
+    { config: assetsRouteConfig },
     async (request, reply) => {
+      const params = request.params as { pluginId: string; "*": string };
       const asset = await options.registry.readAsset({
-        pluginId: request.params.pluginId,
-        relativePath: request.params["*"] ?? "",
+        pluginId: params.pluginId,
+        relativePath: params["*"] ?? "",
       });
       if (!asset) {
         return sendError(reply, "plugin_asset_not_found", "资源不存在。", 404);

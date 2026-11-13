@@ -74,7 +74,7 @@ export interface NativeMcpFileReference {
 export interface NativeMcpServerRecord {
   /** 宿主数据库身份与来源，不表示文件或目录。 */
   hostRecordId?: string;
-  origin?: "managed" | "env";
+  origin?: "managed" | "env" | "plugin";
   envKeys?: string[];
   source: McpSource;
   scope: McpScope;
@@ -118,7 +118,7 @@ export interface McpConfig {
 
 export interface ZCodeMcpServer {
   hostRecordId?: string;
-  origin?: "managed" | "env";
+  origin?: "managed" | "env" | "plugin";
   envKeys?: string[];
   id: string;
   name: string;

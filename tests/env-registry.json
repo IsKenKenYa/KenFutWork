@@ -727,6 +727,97 @@
       "status": "active",
       "note": "工具卡终态输出保留头尾的字节上限；超出走 truncated.ref 分页取回（DEC-18）"
     },
+    "KENFUTWORK_KNOWLEDGE_AUTO_INJECT": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库每轮自动检索注入开关（KB-2 默认开）；库值 ?? env ?? DEFAULTS"
+    },
+    "KENFUTWORK_KNOWLEDGE_LOCAL_MATCH": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库纯本地匹配档（-F），显式开启才降级（KB-4）"
+    },
+    "KENFUTWORK_KNOWLEDGE_MAX_RESULTS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库单次检索结果条数（上游 -m，默认 5）"
+    },
+    "KENFUTWORK_KNOWLEDGE_MIN_HITS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库相关性门槛：命中数低于它则不注入证据（KB-2）"
+    },
+    "KENFUTWORK_KNOWLEDGE_SEARCH_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库单次检索超时（毫秒）"
+    },
+    "KENFUTWORK_KNOWLEDGE_MAX_CONCURRENT_SEARCHES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库同时进行的自动检索上限，超出本轮跳过"
+    },
+    "KENFUTWORK_KNOWLEDGE_EVIDENCE_MAX_CHARS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库每轮证据块字符预算"
+    },
+    "KENFUTWORK_KNOWLEDGE_CACHE_TTL_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库检索缓存有效期（毫秒，0 = 不缓存）"
+    },
+    "KENFUTWORK_KNOWLEDGE_READ_MAX_BYTES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库 knowledge_read 单文件读取预算（字节）"
+    },
+    "KENFUTWORK_KNOWLEDGE_LIST_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库目录/状态命令超时（service 冷启动实测可超过 30s）"
+    },
+    "KENFUTWORK_KNOWLEDGE_CHECK_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库注册根前 check 的短预算（冷启动超时按未知覆盖继续 add）"
+    },
+    "KENFUTWORK_KNOWLEDGE_ADD_TIMEOUT_MS": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库 add 首次建库预算（拉起 service 并索引）"
+    },
+    "KENFUTWORK_KNOWLEDGE_LIST_RETRIES": {
+      "surface": "server",
+      "readers": ["packages/shared/src/governance.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "SAG2 知识库目录/状态命令有限重试次数（0 = 不重试）"
+    },
     "KENFUTWORK_SEARCH_API_KEY": {
       "surface": "server",
       "readers": ["apps/server/src/config/env.ts"],

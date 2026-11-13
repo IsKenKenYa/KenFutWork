@@ -50,7 +50,7 @@ export const computerUseMcpEventStreamSchema = z
  * 授权设置经原宿主按稳定记录 ID 读取凭据；目录、工具参数和事件不携带值。
  */
 
-export const mcpServerSourceSchema = z.enum(["env", "managed"]);
+export const mcpServerSourceSchema = z.enum(["env", "managed", "plugin"]);
 export type McpServerSource = z.infer<typeof mcpServerSourceSchema>;
 
 export const mcpServerStatusSchema = z.enum(["connected", "error", "disabled"]);

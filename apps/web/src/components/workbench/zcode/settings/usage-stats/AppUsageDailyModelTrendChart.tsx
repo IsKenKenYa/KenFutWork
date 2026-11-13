@@ -8,6 +8,7 @@ import {
   type ChartConfig,
 } from "@zui/components/ui/chart.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
 import {
   UsageEmptyState,
   formatCompactTokenUsage,
@@ -249,10 +250,10 @@ export function AppUsageDailyModelTrendChart({ snapshot }: { snapshot: AppUsageS
   );
 
   return (
-    <section className="space-y-3 rounded-xl bg-surface p-4">
-      <h3 className="text-ui-base font-medium text-foreground">
+    <section className="space-y-3">
+      <SettingsSubheading>
         {intl.formatMessage({ id: "settings.usage.dailyChartTitle" })}
-      </h3>
+      </SettingsSubheading>
       {maxTokens <= 0 ? (
         <UsageEmptyState
           title={intl.formatMessage({ id: "settings.usage.emptyTitle" })}
@@ -261,7 +262,7 @@ export function AppUsageDailyModelTrendChart({ snapshot }: { snapshot: AppUsageS
           })}
         />
       ) : (
-        <div className="px-3 py-3">
+        <div className="rounded-xl border border-border bg-card p-4">
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2" role="list">
             {topModels.map((model, index) => (
               <div

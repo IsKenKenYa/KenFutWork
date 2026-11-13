@@ -6,6 +6,7 @@ import {
   clampSubagentMaxContinuations,
   clampSubagentMaxDepth,
   modelDefaultsSchema,
+  RUNTIME_GOVERNANCE_BOOL_KEYS,
   RUNTIME_GOVERNANCE_KEYS,
   resolveGovernanceNumber,
 } from "@kenfutwork/shared";
@@ -157,13 +158,16 @@ function governanceWrites({
       ),
     );
   }
-  const runtimePatch = Object.fromEntries(
-    RUNTIME_GOVERNANCE_KEYS.flatMap((key) =>
+  const runtimePatch = Object.fromEntries([
+    ...RUNTIME_GOVERNANCE_KEYS.flatMap((key) =>
       patch[key] === undefined
         ? []
         : [[key, resolveGovernanceNumber(key, patch[key])]],
     ),
-  );
+    ...RUNTIME_GOVERNANCE_BOOL_KEYS.flatMap((key) =>
+      patch[key] === undefined ? [] : [[key, patch[key] === true]],
+    ),
+  ]);
   if (Object.keys(runtimePatch).length > 0) {
     writes.push(writer.upsertRuntimeGovernance(instanceId, runtimePatch));
   }

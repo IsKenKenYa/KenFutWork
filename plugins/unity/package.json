@@ -1,0 +1,23 @@
+{
+  "name": "kenfutwork-unity",
+  "version": "0.1.5",
+  "description": "在 Unity 中搭建游戏场景、编辑物体和资源、编写 C# 脚本，运行并调试游戏原型。",
+  "type": "module",
+  "license": "SEE THIRD_PARTY_NOTICES.md",
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README_CN.md",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "skills"
+  ],
+  "kenfutwork": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "title": "Unity",
+    "category": "游戏与 3D"
+  },
+  "main": "index.js"
+}

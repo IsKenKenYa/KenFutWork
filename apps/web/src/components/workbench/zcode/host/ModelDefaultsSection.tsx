@@ -15,6 +15,7 @@ import {
 import { useProviderSettingsServiceView } from "@zui/hooks/useProviderSettingsView.js";
 import { useServices } from "@zui/hooks/useServices.js";
 import { projectProviderSettingsViewToFormProviders } from "@zui/lib/providerSettingsFormProjection.js";
+import { SettingsSubheading } from "@zui/settings/SettingsPageParts.js";
 import { useEffect, useRef, useState } from "react";
 import { modelKind } from "./ModelSettingsSummary.js";
 
@@ -129,11 +130,11 @@ export function ModelDefaultsSection({
   return (
     <section
       aria-label={approvalOnly ? "审批" : "默认模型"}
-      className="space-y-3 rounded-lg border border-border bg-surface p-3"
+      className="space-y-3 rounded-xl border border-border bg-card p-3"
     >
-      <h3 className="text-ui-base font-medium">
+      <SettingsSubheading>
         {approvalOnly ? "审批" : "默认模型"}
-      </h3>
+      </SettingsSubheading>
       <div className="flex flex-wrap gap-x-4 gap-y-3">
         {kinds.map((kind) => {
           const policy = defaults?.[kind];

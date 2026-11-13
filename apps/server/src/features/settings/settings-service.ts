@@ -24,6 +24,7 @@ import {
   HOOK_EVENTS,
   modelDefaultsSchema,
   RUNTIME_GOVERNANCE_KEYS,
+  resolveGovernanceBool,
   resolveGovernanceNumber,
 } from "@kenfutwork/shared";
 import {
@@ -89,6 +90,8 @@ export type InstanceSettingsPatch = Partial<
   llmRequestMaxRetries?: number | undefined;
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
+  knowledgeAutoInject?: boolean | undefined;
+  knowledgeLocalMatch?: boolean | undefined;
 };
 
 export type SettingsService = {
@@ -310,6 +313,20 @@ export function createSettingsService(options: {
         },
       ),
       ...runtimeGovernance,
+      knowledgeAutoInject: resolveGovernanceBool(
+        "knowledgeAutoInject",
+        typeof runtimeValues.knowledgeAutoInject === "boolean"
+          ? runtimeValues.knowledgeAutoInject
+          : undefined,
+        governanceEnv,
+      ),
+      knowledgeLocalMatch: resolveGovernanceBool(
+        "knowledgeLocalMatch",
+        typeof runtimeValues.knowledgeLocalMatch === "boolean"
+          ? runtimeValues.knowledgeLocalMatch
+          : undefined,
+        governanceEnv,
+      ),
       codeUiReconnectDelayMs: (
         await getCodeUiTransportSettings(actor, instanceId)
       ).reconnectDelayMs,

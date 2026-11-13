@@ -1,9 +1,6 @@
-import type { CSSProperties, ReactNode } from "react";
-import type { BundledTheme } from "shiki";
 import { CodeBlock } from "@zui/components/ai-elements/code-block.js";
+import { cn } from "@zui/components/lib/utils.js";
 import { Card, CardContent } from "@zui/components/ui/card.js";
-import { CODE_PREVIEW_THEME_OPTIONS, SETTINGS_PREVIEW_CODE } from "@zui/lib/codePreviewPreferences.js";
-import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   Select,
   SelectContent,
@@ -11,7 +8,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
-import { cn } from "@zui/components/lib/utils.js";
+import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import {
+  CODE_PREVIEW_THEME_OPTIONS,
+  SETTINGS_PREVIEW_CODE,
+} from "@zui/lib/codePreviewPreferences.js";
+import type { CSSProperties, ReactNode } from "react";
+import type { BundledTheme } from "shiki";
 
 /**
  * Settings 与同级管理页在窗口框架内共享同一内容列。
@@ -29,7 +32,10 @@ export function ThemeSelect({
   onValueChange: (value: BundledTheme) => void;
 }) {
   return (
-    <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as BundledTheme)}>
+    <Select
+      value={value}
+      onValueChange={(nextValue) => onValueChange(nextValue as BundledTheme)}
+    >
       <SelectTrigger size="lg" className="w-64 min-w-0 justify-between">
         <SelectValue />
       </SelectTrigger>
@@ -64,7 +70,8 @@ export function ThemePreviewCard({
   fontSizePx: number;
 }) {
   const { intl } = useZCodeIntl();
-  const previewSurfaceClassName = mode === "light" ? "ring-1 ring-black/5" : "ring-1 ring-white/8";
+  const previewSurfaceClassName =
+    mode === "light" ? "ring-1 ring-black/5" : "ring-1 ring-white/8";
   const previewThemeStyle = {
     "--color-background": mode === "light" ? "#f8f8f8" : "#161616",
     "--color-card": mode === "light" ? "#f8f8f8" : "#161616",
@@ -75,16 +82,22 @@ export function ThemePreviewCard({
     <div className="overflow-hidden rounded-xl border border-border bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div>
-          <div className="text-ui-base font-semibold text-foreground">{title}</div>
+          <div className="text-ui-base font-semibold text-foreground">
+            {title}
+          </div>
           <div className="text-ui-base text-foreground-subtle">{themeName}</div>
         </div>
         <span
           className={`rounded-md px-2.5 py-1 text-ui-xs font-medium ${
-            isActive ? "bg-selected text-foreground" : "bg-surface text-foreground-subtle"
+            isActive
+              ? "bg-selected text-foreground"
+              : "bg-surface text-foreground-subtle"
           }`}
         >
           {intl.formatMessage({
-            id: isActive ? "settings.previewBadge.active" : `settings.previewBadge.${mode}`,
+            id: isActive
+              ? "settings.previewBadge.active"
+              : `settings.previewBadge.${mode}`,
           })}
         </span>
       </div>
@@ -130,9 +143,13 @@ export function SettingsRow({
         )}
       >
         <div className="min-w-0">
-          <div className="text-ui-base font-medium text-foreground">{label}</div>
+          <div className="text-ui-base font-medium text-foreground">
+            {label}
+          </div>
           {description ? (
-            <div className="mt-1 text-ui-base leading-6 text-foreground-subtle">{description}</div>
+            <div className="mt-1 text-ui-base leading-6 text-foreground-subtle">
+              {description}
+            </div>
           ) : null}
         </div>
         <div className="flex w-full flex-nowrap items-center justify-end gap-2">
@@ -140,8 +157,18 @@ export function SettingsRow({
           {control}
         </div>
       </div>
-      {detail && controlLayout !== "wide" ? <div className="mt-3">{detail}</div> : null}
+      {detail && controlLayout !== "wide" ? (
+        <div className="mt-3">{detail}</div>
+      ) : null}
     </div>
+  );
+}
+
+export function SettingsSubheading({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="text-ui-sm font-medium text-foreground-subtle">
+      {children}
+    </h3>
   );
 }
 
@@ -155,12 +182,15 @@ export function SettingsGroupCard({ children }: { children: ReactNode }) {
 
 export function SettingsBadge({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-md bg-surface px-2.5 py-1 text-ui-base font-medium text-foreground-subtle">
+    <span className="rounded-md border border-border bg-card px-2.5 py-1 text-ui-base font-medium text-foreground-subtle">
       {children}
     </span>
   );
 }
 
 export function getThemeOptionLabel(value: BundledTheme): string {
-  return CODE_PREVIEW_THEME_OPTIONS.find((option) => option.value === value)?.label ?? value;
+  return (
+    CODE_PREVIEW_THEME_OPTIONS.find((option) => option.value === value)
+      ?.label ?? value
+  );
 }

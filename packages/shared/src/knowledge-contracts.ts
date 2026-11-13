@@ -15,6 +15,13 @@ export const knowledgeCliStateSchema = z.enum([
   "unsupported_platform",
 ]);
 
+/** 最近一轮 preflight 的结果（面板状态条）；从未触发为 null。 */
+export const knowledgePreflightOutcomeSchema = z.object({
+  at: z.string(),
+  outcome: z.enum(["injected", "no-evidence", "skipped", "failed"]),
+  reason: z.string().nullable(),
+});
+
 export const knowledgeStatusResponseSchema = z.object({
   installed: z.boolean(),
   enabled: z.boolean(),
@@ -22,6 +29,7 @@ export const knowledgeStatusResponseSchema = z.object({
   cli: knowledgeCliStateSchema,
   cliVersion: z.string(),
   reason: z.string().nullable(),
+  preflight: knowledgePreflightOutcomeSchema.nullable().optional(),
 });
 
 export const knowledgeRootSchema = z.object({
@@ -74,6 +82,8 @@ export const knowledgeSearchResponseSchema = z.object({
   scope: z.string(),
   results: z.array(knowledgeEvidenceSchema),
   truncated: z.boolean(),
+  /** 降级标记：语义档不可用时自动改用 -F 本地匹配，界面/工具必须如实标注。 */
+  degraded: z.enum(["local-match"]).optional(),
 });
 
 export const knowledgeReadQuerySchema = z.object({
@@ -88,6 +98,64 @@ export const knowledgeReadResponseSchema = z.object({
   truncated: z.boolean(),
 });
 
+/** 面板可调的检索设置（字段名去 `knowledge` 前缀，路由侧映射到实例设置键）。 */
+export const knowledgeSettingsSchema = z.object({
+  autoInject: z.boolean(),
+  localMatch: z.boolean(),
+  maxResults: z.number().int(),
+  minHits: z.number().int(),
+  searchTimeoutMs: z.number().int(),
+  maxConcurrentSearches: z.number().int(),
+  evidenceMaxChars: z.number().int(),
+  cacheTtlMs: z.number().int(),
+  readMaxBytes: z.number().int(),
+});
+
+/** 部分更新：只带要改的字段；服务端按治理护栏钳回。 */
+export const knowledgeSettingsPatchSchema = z.object({
+  autoInject: z.boolean().optional(),
+  localMatch: z.boolean().optional(),
+  maxResults: z.number().int().optional(),
+  minHits: z.number().int().optional(),
+  searchTimeoutMs: z.number().int().optional(),
+  maxConcurrentSearches: z.number().int().optional(),
+  evidenceMaxChars: z.number().int().optional(),
+  cacheTtlMs: z.number().int().optional(),
+  readMaxBytes: z.number().int().optional(),
+});
+
+/** 文件分类（网盘式分组）：按扩展名归到固定几类，前端只按 key 分组渲染。 */
+export const knowledgeFileCategorySchema = z.enum([
+  "doc",
+  "code",
+  "sheet",
+  "slide",
+  "image",
+  "other",
+]);
+
+/** 托管目录（云盘式上传）里的一个文件。 */
+export const knowledgeLibraryFileSchema = z.object({
+  path: z.string(),
+  absolutePath: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  /** 分类 key；前端据此分组，不在前端重复扩展名映射。 */
+  category: knowledgeFileCategorySchema,
+});
+
+export const knowledgeLibraryResponseSchema = z.object({
+  /** 托管目录绝对路径（它是唯一被注册的知识库根）。 */
+  root: z.string(),
+  files: z.array(knowledgeLibraryFileSchema),
+});
+
+/** 上传结果：落盘位置 + 是否已触发注册/索引。 */
+export const knowledgeUploadResponseSchema = z.object({
+  file: knowledgeLibraryFileSchema,
+  root: z.string(),
+  indexed: z.boolean(),
+});
+
 export const knowledgeInitResponseSchema = z.object({
   ok: z.boolean(),
   credential: z.enum(["reused", "injected", "missing"]),
@@ -95,6 +163,9 @@ export const knowledgeInitResponseSchema = z.object({
   reason: z.string().nullable(),
 });
 
+export type KnowledgePreflightOutcome = z.infer<
+  typeof knowledgePreflightOutcomeSchema
+>;
 export type KnowledgeStatusResponse = z.infer<
   typeof knowledgeStatusResponseSchema
 >;
@@ -117,4 +188,15 @@ export type KnowledgeSearchResponse = z.infer<
   typeof knowledgeSearchResponseSchema
 >;
 export type KnowledgeReadResponse = z.infer<typeof knowledgeReadResponseSchema>;
+export type KnowledgeLibraryFile = z.infer<typeof knowledgeLibraryFileSchema>;
+export type KnowledgeLibraryResponse = z.infer<
+  typeof knowledgeLibraryResponseSchema
+>;
+export type KnowledgeUploadResponse = z.infer<
+  typeof knowledgeUploadResponseSchema
+>;
+export type KnowledgeSettingsResponse = z.infer<typeof knowledgeSettingsSchema>;
+export type KnowledgeSettingsPatch = z.infer<
+  typeof knowledgeSettingsPatchSchema
+>;
 export type KnowledgeInitResponse = z.infer<typeof knowledgeInitResponseSchema>;

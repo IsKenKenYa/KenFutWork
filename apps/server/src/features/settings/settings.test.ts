@@ -871,9 +871,11 @@ describe("实例归属与本机访问治理", () => {
   });
 
   it("ticket/session 治理从 env 兜底并可保存，库值优先且部分 JSON 更新不覆盖其他键", async () => {
-    const stored: Record<string, number> = { codeReadMaxBytes: 8192 };
-    const writes: Array<{ instanceId: string; patch: Record<string, number> }> =
-      [];
+    const stored: Record<string, number | boolean> = { codeReadMaxBytes: 8192 };
+    const writes: Array<{
+      instanceId: string;
+      patch: Record<string, number | boolean>;
+    }> = [];
     const service = createSettingsService({
       localInstance,
       repository: createRepositoryFake({

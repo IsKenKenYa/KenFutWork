@@ -45,7 +45,7 @@ export type McpServerStatusState = "connected" | "error" | "disabled";
 export interface McpServerStatus {
   id: string | null;
   name: string;
-  source: "env" | "managed";
+  source: "env" | "managed" | "plugin";
   enabled: boolean;
   status: McpServerStatusState;
   kind: "stdio" | "http";
@@ -80,7 +80,7 @@ export interface McpService {
 export interface McpSettingsConfiguration {
   id: string | null;
   name: string;
-  source: "env" | "managed";
+  source: "env" | "managed" | "plugin";
   enabled: boolean;
   kind: "stdio" | "http";
   command: string;
@@ -102,10 +102,25 @@ export type McpConnectionConfiguration = Pick<
   "name" | "kind" | "command" | "url" | "args" | "env" | "headers"
 >;
 
+/** 插件贡献的 MCP server（只读；启停随插件安装态，不进 mcp_servers 表）。 */
+export interface McpPluginServerConfig {
+  pluginId: string;
+  name: string;
+  kind: "stdio" | "http";
+  command: string;
+  args: string[];
+  url: string | null;
+  env: Record<string, string>;
+  headers: Record<string, string>;
+  enabled: boolean;
+}
+
 export function createMcpService(options: {
   env: ServerEnv;
   registry: ToolRegistry;
   store: McpServerStore;
+  /** 已启用插件声明的 MCP server（文件贡献，只读）。 */
+  pluginServers?: () => Promise<McpPluginServerConfig[]>;
   resolveTimeoutMs?: () => Promise<number>;
   executeTool?: (
     source: McpConnectionConfiguration,
@@ -137,6 +152,10 @@ export function createMcpService(options: {
 
   function envServers() {
     return options.env.mcpServers ?? [];
+  }
+
+  async function pluginServers() {
+    return (await options.pluginServers?.()) ?? [];
   }
 
   async function connect(
@@ -353,7 +372,7 @@ export function createMcpService(options: {
   async function toStatus(server: {
     id: string | null;
     name: string;
-    source: "env" | "managed";
+    source: "env" | "managed" | "plugin";
     enabled: boolean;
     kind: "stdio" | "http";
     command: string;
@@ -377,7 +396,7 @@ export function createMcpService(options: {
     };
   }
 
-  /** 合并来源：库内（managed）优先，环境变量补充未重名的项。 */
+  /** 合并来源：库内（managed）优先，环境变量次之，启用插件贡献的同名项最后。 */
   async function effectiveServers() {
     const managed = await options.store.list();
     const managedNames = new Set(managed.map((server) => server.name));
@@ -395,9 +414,28 @@ export function createMcpService(options: {
         enabled: true,
         source: "env" as const,
       }));
+    const takenNames = new Set([
+      ...managedNames,
+      ...fromEnv.map((server) => server.name),
+    ]);
+    const fromPlugin = (await pluginServers())
+      .filter((server) => !takenNames.has(server.name))
+      .map((server) => ({
+        id: null,
+        name: server.name,
+        kind: server.kind,
+        command: server.command,
+        url: server.url,
+        args: server.args,
+        env: server.env,
+        headers: server.headers,
+        enabled: server.enabled,
+        source: "plugin" as const,
+      }));
     return [
       ...managed.map((server) => ({ ...server, source: "managed" as const })),
       ...fromEnv,
+      ...fromPlugin,
     ];
   }
 
@@ -563,12 +601,14 @@ export function createMcpService(options: {
 
     async reconnect(idOrName) {
       ensureOpen();
-      // 库内条目按 id 定位；环境变量条目没有 id（只读），允许按名称重连
+      // 库内条目按 id 定位；env / plugin 条目没有 id（只读），允许按名称重连
       const statuses = await this.listStatuses();
       const target =
         statuses.find((status) => status.id === idOrName) ??
         statuses.find(
-          (status) => status.source === "env" && status.name === idOrName,
+          (status) =>
+            (status.source === "env" || status.source === "plugin") &&
+            status.name === idOrName,
         );
       if (!target) {
         return null;
@@ -577,6 +617,9 @@ export function createMcpService(options: {
         (server) => server.id === target.id,
       );
       const envFallback = envServers().find(
+        (server) => server.name === target.name,
+      );
+      const pluginFallback = (await pluginServers()).find(
         (server) => server.name === target.name,
       );
       const config =
@@ -591,6 +634,18 @@ export function createMcpService(options: {
               env: envFallback.env ?? {},
               headers: {},
               enabled: true,
+            }
+          : null) ??
+        (pluginFallback
+          ? {
+              name: pluginFallback.name,
+              kind: pluginFallback.kind,
+              command: pluginFallback.command,
+              url: pluginFallback.url,
+              args: pluginFallback.args,
+              env: pluginFallback.env,
+              headers: pluginFallback.headers,
+              enabled: pluginFallback.enabled,
             }
           : null);
       if (!config) {

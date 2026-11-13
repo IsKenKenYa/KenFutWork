@@ -68,6 +68,16 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 义务履行 | 技能同目录 `LICENSE.txt` 带 MIT 全文与 Joey Kudish 版权行；SKILL.md 的 Attribution 段保留完整改编链；插件包其余文件（index.js / 清单 / 图标）为本项目自有，按 GPL-3.0 |
 | 运行时依赖 | MCP 精选目录 `jev` 条目钉 `@jkudish/jev-mcp@0.10.0`（npm 运行时下载，不签入仓库），与 ZCode 插件同版本；TypeSafe Jev API 为商业服务，凭据由用户自持（BYOK） |
 
+### A7. SAG Wiki / SAG2 CLI（MIT，运行时调用，不复制代码）
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | [Zleap-AI/SAG-Wiki](https://github.com/Zleap-AI/SAG-Wiki)：本地文件知识库（SQLite FTS5 索引 + SAG2 检索链）；钉版本 npm 包 [`@zleap-ai/sag@0.1.8`](https://www.npmjs.com/package/@zleap-ai/sag)（tarball SHA-1 `22d9c5ae11d34f17042cce70971a3cda6c0ed454`） |
+| 许可 | MIT（上游 README 声明；仓库带 LICENSE）。本仓**只经 `sag ... --json` 的 CLI 契约调用**，不复制、不移植其源码/协议/schema |
+| 落点 | `apps/server/src/features/knowledge/`（CLI Provider 与契约探针）；`plugins/knowledge/`（安装开关与侧栏面板） |
+| 义务履行 | 本仓不随产物分发上游二进制：优先复用用户本机已装的 `sag`；未来按需下载时在下载器内保留版本与校验和，并在本表更新分发说明 |
+| 说明 | 语义检索依赖上游 Jev 服务（TypeSafe，商业服务）；凭据由用户自持（BYOK），不得把本仓凭据写回上游配置以外的位置 |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。
@@ -167,6 +177,19 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | `references/` 全部子模块（Codex、Cherry Studio、Jaaz、kimi-code、langgraph、MCP SDK、Octop、nomifun-tauri、Loomic 等） | 各自许可（Apache-2.0/MIT 等） | **只作方向参考，未复制代码、schema、字段名与素材**（`flow/` 与 Code 模式的 ZCode 全量移植是明确例外，见 `AGENTS.md`）。子模块内容不随本仓库产物分发 |
 | [Toonflow-app](https://github.com/HBAI-Ltd/Toonflow-app)，`references/toonflow-app`，固定 `d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d` | MIT；Copyright (c) 2026 HBAI-Ltd，见[上游许可](https://github.com/HBAI-Ltd/Toonflow-app/blob/d2e94aca7b59659ff6b4ca15f03cf134ec7f0e1d/LICENSE) | depth 1 只读参考；用于核验本地画布、媒体文件保存与任务恢复，不安装或执行上游，不复制实现，内容不随本仓库产物分发 |
 | 技能市场与 MCP 目录下载的第三方技能/server | 各自许可 | 由你在市场/注册表安装，安装时应核对；本仓库不为其许可背书 |
+
+### F1. 移植的 zcode 官方「游戏/3D」插件（2026-11-12）
+
+来源：`zcode-plugins-official` 插件缓存（各插件版本见括号），技能、命令、Hook 脚本与 MCP 声明原样保留，仅补 `package.json` / `cordis.patch.yml` 以适配本仓 bundle 形态。
+
+| 插件 | 许可与版权 | 义务履行位置 |
+| --- | --- | --- |
+| Blender（0.4.1） | GPL-3.0-or-later（版权归 Blender Foundation 及上游贡献者） | `plugins/blender/LICENSE` 原文随包分发；技能与 README 保留原署名 |
+| Godot（0.4.0） | MIT（上游插件清单声明；源包未附许可全文，**待核**） | `plugins/godot/README.md` 保留上游链接；补齐全文前不宣称完成 |
+| Hyper3D Rodin（0.1.1） | MIT（Copyright Deemos） | `plugins/hyper3d-rodin/LICENSE` |
+| Tripo 3D（0.1.4） | MIT（Copyright VAST；源包未附许可全文，**待核**） | `plugins/tripo-3d/README.md` 与 MCP/Hook 保留原样 |
+| Unity（0.1.5） | 见上游 `THIRD_PARTY_NOTICES.md` | `plugins/unity/THIRD_PARTY_NOTICES.md` 随包分发 |
+| Unreal Engine（0.1.3） | MIT（各技能目录附 `LICENSE.txt`） | `plugins/unreal-engine/skills/*/LICENSE.txt` 原样保留 |
 
 ## G. 分发义务
 

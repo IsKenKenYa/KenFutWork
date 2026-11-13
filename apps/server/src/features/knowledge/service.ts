@@ -14,6 +14,8 @@ export interface PluginsServiceLike {
   list(): Promise<
     Array<{ id: string; name: string; installed: boolean; enabled?: boolean }>
   >;
+  /** 同步的已装载 UI 贡献视图：动态工具 resolve 的运行期门控用（可选）。 */
+  listUiEntries?: () => Array<{ pluginId: string; id: string }>;
 }
 
 export interface KnowledgeGateInspection {

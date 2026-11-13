@@ -7,8 +7,9 @@
  *   （静音反而更慢：RTF 0.371 vs 真实 0.078），拿它当样本会误导；
  * ② 真语音样本要从第三方语料里挑一段打进仓库，许可来源无法逐一交代。
  * 故改为**用真实使用中录下的音频**做统计（只记音频时长与耗时，不记内容，符合 §8），
- * 首次调用单独记「模型载入耗时」。这样读数既真又无许可负担；代价是「还没说过话」
- * 时只能给 `pending` 与一句引导。想段的 TTFT 是主动探针（不依赖历史使用）。
+ * 首次调用单独记「模型载入耗时」。点「重新检测」时还会用「说」模型现场合成一句
+ * 真语音（神经网络 TTS，不是静音/类语音带）喂给「听」做主动探针，所以不必先说过话
+ * 才有读数；两者都没有时给 `pending` 与一句引导。想段的 TTFT 同样是主动探针。
  *
  * 硬件面用 `os` + `nvidia-smi` 尽力探测：探不到 GPU 不影响任何功能（规划 §3.4）。
  */
@@ -42,23 +43,43 @@ export async function collectHardware(): Promise<VoiceDiagnoseHardware> {
   };
 }
 
-/** GPU 尽力探测（`nvidia-smi --query-gpu=name`）：没装/没卡都只是「探不到」。 */
-async function probeGpu(): Promise<{ gpu?: string }> {
+/** GPU 尽力探测（`nvidia-smi --query-gpu=name,memory.total`）：没装/没卡都只是「探不到」。 */
+async function probeGpu(): Promise<{ gpu?: string; gpuMemoryBytes?: number }> {
   try {
     const { stdout } = await execFileAsync(
       "nvidia-smi",
-      ["--query-gpu=name", "--format=csv,noheader"],
+      ["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
       { timeout: GPU_PROBE_TIMEOUT_MS },
     );
-    const names = stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    return names.length > 0 ? { gpu: names.join("、") } : {};
+    const names: string[] = [];
+    let memoryBytes = 0;
+    for (const row of stdout.split("\n")) {
+      const line = row.trim();
+      if (!line) continue;
+      const [name, memoryMiB] = line.split(",").map((part) => part.trim());
+      if (name) names.push(name);
+      const mib = Number(memoryMiB);
+      if (Number.isFinite(mib) && mib > 0) memoryBytes += mib * 1024 * 1024;
+    }
+    return {
+      ...(names.length > 0 ? { gpu: names.join("、") } : {}),
+      ...(memoryBytes > 0 ? { gpuMemoryBytes: memoryBytes } : {}),
+    };
   } catch {
     // 没装 nvidia-smi / 没卡 / 超时：都不影响功能（规划 §3.4），静默即正确
     return {};
   }
+}
+
+/**
+ * 实时率 → 人话：rtf = 处理耗时 ÷ 音频时长。rtf < 1 是比实时快，> 1 是比实时慢。
+ * 直接报「0.08×」没人看得懂，报「比实时快 12.0 倍」才是一眼能读的结论。
+ */
+export function realtimeMultiple(rtf: number): string {
+  if (!Number.isFinite(rtf) || rtf <= 0) return "比实时快 ∞ 倍";
+  return rtf >= 1
+    ? `比实时慢 ${rtf.toFixed(1)} 倍`
+    : `比实时快 ${(1 / rtf).toFixed(1)} 倍`;
 }
 
 /** 「听」段的结论：有实测就给读数，没有就给一句怎么拿到读数的引导。 */
@@ -88,8 +109,8 @@ export function listenSegment(
       : ` 首载 ${(summary.modelLoadMs / 1000).toFixed(1)}s`;
   return {
     state: "measured",
-    // 只给数字：界面上是「听 0.07× 首载 4.4s」，不是一句话
-    summary: `${rtf.toFixed(2)}×${load}`,
+    // 只给数字：界面上是「比实时快 12.3 倍 首载 4.4s」，不是一句话
+    summary: `${realtimeMultiple(rtf)}${load}`,
     listen: {
       samples: summary.samples,
       ...(summary.rtfMedian === undefined ? {} : { rtfMedian: rtf }),
@@ -117,13 +138,13 @@ export function thinkSegment(
       summary: "未实测",
     };
   }
-  const speed =
-    measurement.tokensPerSecond === undefined
-      ? ""
-      : ` ${measurement.tokensPerSecond.toFixed(0)}t/s`;
+  const ttft = `首字 ${measurement.ttftSeconds.toFixed(2)}s`;
   return {
     state: "measured",
-    summary: `${measurement.ttftSeconds.toFixed(2)}s${speed}`,
+    summary:
+      measurement.tokensPerSecond === undefined
+        ? ttft
+        : `${ttft} · ${measurement.tokensPerSecond.toFixed(0)} tokens/s`,
     think: {
       ttftSeconds: measurement.ttftSeconds,
       ...(measurement.tokensPerSecond === undefined
@@ -147,7 +168,7 @@ export function speakSegment(
   if (measurement) {
     return {
       state: "measured",
-      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s、实时率 ${measurement.rtf.toFixed(2)}`,
+      summary: `首包 ${measurement.firstByteSeconds.toFixed(2)}s · ${realtimeMultiple(measurement.rtf)}`,
     };
   }
   return {

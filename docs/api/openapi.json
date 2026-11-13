@@ -450,6 +450,394 @@
         }
       }
     },
+    "/api/knowledge/library": {
+      "get": {
+        "operationId": "getKnowledgeLibrary",
+        "summary": "列出托管知识库文件",
+        "description": "返回「传文件即入库」托管目录的绝对路径与文件清单；该目录本身是唯一的知识库根，用户只需上传文件。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/knowledgeLibraryResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postKnowledgeLibrary",
+        "summary": "上传文件到托管知识库",
+        "description": "以 multipart 上传单个文件：落到托管目录（重名自动加序号、不覆盖），并把该目录幂等注册为知识库根；索引由上游增量维护。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/knowledgeUploadResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/read": {
+      "get": {
+        "operationId": "getKnowledgeRead",
+        "summary": "按证据位置取原文片段",
+        "description": "按检索证据的绝对路径与行号读取原文件片段；路径必须落在已注册的知识库根内（realpath 后判定，符号链接不扩权），超出读取预算时标记截断。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "startLine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "endLine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/knowledgeReadResponseSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/file": {
+      "get": {
+        "operationId": "getKnowledgeFile",
+        "summary": "读取知识库文件原始字节",
+        "description": "按绝对路径返回原始文件字节流（png/pdf/xlsx 等二进制预览用），与 read 同一套知识库根包含校验；只读不写，路径不在任何已注册根内时拒绝。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "startLine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "endLine",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/settings": {
+      "get": {
+        "operationId": "getKnowledgeSettings",
+        "summary": "读取知识库检索设置",
+        "description": "返回当前实例的自动注入开关、结果条数、相关性门槛、超时、并发、证据预算、缓存与读取预算（库值 ?? env ?? 默认值，越界已钳回）。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/knowledgeSettingsSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postKnowledgeSettings",
+        "summary": "更新知识库检索设置",
+        "description": "部分更新当前实例的知识库检索设置；写入前按治理护栏钳回，返回更新后的完整设置。关闭自动注入时侧边栏常驻提示，不静默停止检索。",
+        "tags": [
+          "knowledge"
+        ],
+        "security": [
+          {
+            "localCookie": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/knowledgeSettingsPatchSchema"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/knowledgeSettingsSchema"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证或令牌无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/unauthenticatedErrorResponseSchema"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "业务错误（错误码为封闭枚举，见 ApplicationError 契约）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/applicationErrorResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/canvases/{canvasId}/assets/{assetId}/move": {
       "post": {
         "operationId": "postCanvasesByCanvasIdAssetsByAssetIdMove",
@@ -24874,6 +25262,80 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 86400000
+              },
+              "knowledgeAutoInject": {
+                "default": true,
+                "type": "boolean"
+              },
+              "knowledgeLocalMatch": {
+                "default": false,
+                "type": "boolean"
+              },
+              "knowledgeMaxResults": {
+                "default": 5,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "knowledgeMinHits": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "knowledgeSearchTimeoutMs": {
+                "default": 30000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 300000
+              },
+              "knowledgeMaxConcurrentSearches": {
+                "default": 2,
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8
+              },
+              "knowledgeEvidenceMaxChars": {
+                "default": 6000,
+                "type": "integer",
+                "minimum": 256,
+                "maximum": 64000
+              },
+              "knowledgeCacheTtlMs": {
+                "default": 300000,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3600000
+              },
+              "knowledgeReadMaxBytes": {
+                "default": 1048576,
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 67108864
+              },
+              "knowledgeListTimeoutMs": {
+                "default": 120000,
+                "type": "integer",
+                "minimum": 5000,
+                "maximum": 600000
+              },
+              "knowledgeListRetries": {
+                "default": 1,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "knowledgeCheckTimeoutMs": {
+                "default": 8000,
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 120000
+              },
+              "knowledgeAddTimeoutMs": {
+                "default": 120000,
+                "type": "integer",
+                "minimum": 5000,
+                "maximum": 600000
               }
             },
             "required": [
@@ -24956,7 +25418,20 @@
               "computerUseAxValueMaxChars",
               "computerUseAxMaxActions",
               "computerUseInputDelayMs",
-              "computerUseMcpKeepAliveMs"
+              "computerUseMcpKeepAliveMs",
+              "knowledgeAutoInject",
+              "knowledgeLocalMatch",
+              "knowledgeMaxResults",
+              "knowledgeMinHits",
+              "knowledgeSearchTimeoutMs",
+              "knowledgeMaxConcurrentSearches",
+              "knowledgeEvidenceMaxChars",
+              "knowledgeCacheTtlMs",
+              "knowledgeReadMaxBytes",
+              "knowledgeListTimeoutMs",
+              "knowledgeListRetries",
+              "knowledgeCheckTimeoutMs",
+              "knowledgeAddTimeoutMs"
             ],
             "additionalProperties": false
           }
@@ -25590,6 +26065,67 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 86400000
+          },
+          "knowledgeAutoInject": {
+            "type": "boolean"
+          },
+          "knowledgeLocalMatch": {
+            "type": "boolean"
+          },
+          "knowledgeMaxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "knowledgeMinHits": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "knowledgeSearchTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 300000
+          },
+          "knowledgeMaxConcurrentSearches": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8
+          },
+          "knowledgeEvidenceMaxChars": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 64000
+          },
+          "knowledgeCacheTtlMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600000
+          },
+          "knowledgeReadMaxBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 67108864
+          },
+          "knowledgeListTimeoutMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 600000
+          },
+          "knowledgeListRetries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "knowledgeCheckTimeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000
+          },
+          "knowledgeAddTimeoutMs": {
+            "type": "integer",
+            "minimum": 5000,
+            "maximum": 600000
           }
         }
       },
@@ -26489,6 +27025,78 @@
           "path"
         ]
       },
+      "knowledgeLibraryResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "absolutePath": {
+                  "type": "string"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "doc",
+                    "code",
+                    "sheet",
+                    "slide",
+                    "image",
+                    "other"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "absolutePath",
+                "sizeBytes",
+                "category"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "root",
+          "files"
+        ],
+        "additionalProperties": false
+      },
+      "knowledgeReadResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
       "knowledgeRemoveRootRequestSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -26644,12 +27252,124 @@
           },
           "truncated": {
             "type": "boolean"
+          },
+          "degraded": {
+            "type": "string",
+            "enum": [
+              "local-match"
+            ]
           }
         },
         "required": [
           "scope",
           "results",
           "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "knowledgeSettingsPatchSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "autoInject": {
+            "type": "boolean"
+          },
+          "localMatch": {
+            "type": "boolean"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "minHits": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "searchTimeoutMs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "maxConcurrentSearches": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "evidenceMaxChars": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "cacheTtlMs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "readMaxBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "knowledgeSettingsSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "autoInject": {
+            "type": "boolean"
+          },
+          "localMatch": {
+            "type": "boolean"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "minHits": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "searchTimeoutMs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "maxConcurrentSearches": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "evidenceMaxChars": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "cacheTtlMs": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "readMaxBytes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "autoInject",
+          "localMatch",
+          "maxResults",
+          "minHits",
+          "searchTimeoutMs",
+          "maxConcurrentSearches",
+          "evidenceMaxChars",
+          "cacheTtlMs",
+          "readMaxBytes"
         ],
         "additionalProperties": false
       },
@@ -26682,6 +27402,42 @@
               "string",
               "null"
             ]
+          },
+          "preflight": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "injected",
+                      "no-evidence",
+                      "skipped",
+                      "failed"
+                    ]
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "at",
+                  "outcome",
+                  "reason"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -26691,6 +27447,58 @@
           "cli",
           "cliVersion",
           "reason"
+        ],
+        "additionalProperties": false
+      },
+      "knowledgeUploadResponseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "absolutePath": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "doc",
+                  "code",
+                  "sheet",
+                  "slide",
+                  "image",
+                  "other"
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "absolutePath",
+              "sizeBytes",
+              "category"
+            ],
+            "additionalProperties": false
+          },
+          "root": {
+            "type": "string"
+          },
+          "indexed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file",
+          "root",
+          "indexed"
         ],
         "additionalProperties": false
       },
@@ -39843,6 +40651,11 @@
                       },
                       "gpu": {
                         "type": "string"
+                      },
+                      "gpuMemoryBytes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
                       }
                     },
                     "required": [

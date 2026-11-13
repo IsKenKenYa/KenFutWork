@@ -4,7 +4,9 @@
  * KB-1：`sag config` 无参数在非交互环境输出脱敏 ModelConfig（上游 main.rs
  * `configure()` 全空选项直接 `return Ok(current)`）。`has_key`/`auth_mode` 已配置
  * → **复用、绝不覆盖**；未配置 → 从宿主 `modelProviders` 取唯一权威 key，
- * 经 `sag config --auth bearer --key-stdin` 的 **stdin** 注入（不进 argv、日志、事件）。
+ * 经 `sag config --key-stdin` 的 **stdin** 注入（不进 argv、日志、事件）。
+ * 注意：0.1.8 实机 `config --help` **没有 `--auth`**（与 main 分支文档不一致，见 M0 记录），
+ * 传了会直接 exit 2「unexpected argument」——因此只传 `--key-stdin`。
  *
  * KB-3：M2 核验确认服务端**没有**「不依赖 run 的全局当前工作区根」服务，
  * 因此「自动注册」从「安装时」改为「首次检索时按 run 的真实工作目录」：
@@ -35,12 +37,32 @@ export interface KnowledgeInitOptions {
   platform?: NodeJS.Platform;
   arch?: string;
   indexExtensions?: readonly string[];
+  /** `check` 的短预算：service 冷启动会超时，超时按「未知覆盖」继续 add。 */
+  checkTimeoutMs?: number;
+  /** `add` 的预算（首次建库要拉起 service 并索引，给足）。 */
+  addTimeoutMs?: number;
 }
 
 function normalized(path: string): string {
-  return resolve(path)
-    .toLowerCase()
-    .replace(/[\\/]+$/, "");
+  // 上游 `list/remove --json` 在 Windows 上返回 `\\?\` 长路径前缀（实采），
+  // 与调用方的普通路径字符串必须按同一口径比较（墓碑/个人目录判定）。
+  const stripped = path
+    .replace(/^\\\\\?\\UNC\\/iu, "\\\\")
+    .replace(/^\\\\\?\\/u, "");
+  // Windows 路径（盘符或反斜杠）按 win32 规则解析：posix 主机会把 D:/work
+  // 当成相对目录拼到 cwd 后面，导致墓键两侧不一致。
+  const resolved =
+    /^[a-z]:[\\/]/iu.test(stripped) ||
+    stripped.includes("\\") ||
+    stripped.startsWith("\\\\")
+      ? win32.resolve(stripped)
+      : resolve(stripped);
+  return resolved.toLowerCase().replace(/[\\/]+$/, "");
+}
+
+/** 根路径的进程内规范化（墓碑/缓存键用）：Windows 大小写不敏感，去尾分隔符。 */
+export function normalizeKnowledgeRootPath(path: string): string {
+  return normalized(path);
 }
 
 /**
@@ -164,7 +186,7 @@ export async function initializeKnowledge(
 
   const result = await options.runner({
     // `--key-stdin` 与 `--key` 互斥；不传 --url/--model 以保留用户现有值。
-    args: ["config", "--auth", "bearer", "--key-stdin"],
+    args: ["config", "--key-stdin"],
     stdin: credential.trim(),
   });
   if (result.code !== SAG_EXIT.ok) {
@@ -205,20 +227,24 @@ export async function ensureKnowledgeRoot(
     };
   }
 
-  const check = await options.runner({ args: ["check", root, "--json"] });
+  // `check` 在 service 未启动时要等冷启动（实机 30s）。用较短预算：超时/失败就
+  // 当作「未知覆盖」，直接走 add——add 会拉起 service 且对已存在的根是幂等的。
+  const check = await options.runner({
+    args: ["check", root, "--json"],
+    ...(options.checkTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.checkTimeoutMs }),
+  });
   // check 未通过是 exit(1) 的正常语义，仍带 JSON 输出，不能当错误吞掉。
-  let parsed: ReturnType<typeof sagCheckOutputSchema.parse>;
+  let parsed: ReturnType<typeof sagCheckOutputSchema.parse> | undefined;
   try {
     parsed = sagCheckOutputSchema.parse(parseJsonOutput(check, "检查索引覆盖"));
-  } catch (error) {
-    return {
-      path: root,
-      action: "deferred",
-      reason: error instanceof Error ? error.message : String(error),
-    };
+  } catch {
+    parsed = undefined;
   }
+  if (check.code === SAG_EXIT_TIMEOUT) parsed = undefined;
 
-  if (parsed.coverage === "included") {
+  if (parsed?.coverage === "included") {
     return {
       path: root,
       action: "already-indexed",
@@ -227,7 +253,7 @@ export async function ensureKnowledgeRoot(
         : { reason: "目录已在索引内，但索引尚未就绪或被禁用。" }),
     };
   }
-  if (parsed.coverage === "partial" || parsed.coverage === "excluded") {
+  if (parsed?.coverage === "partial" || parsed?.coverage === "excluded") {
     return {
       path: root,
       action: "deferred",
@@ -238,6 +264,9 @@ export async function ensureKnowledgeRoot(
   const extensions = options.indexExtensions ?? KNOWLEDGE_INDEX_EXTENSIONS;
   const added = await options.runner({
     args: ["add", root, "--types", extensions.join(","), "--json"],
+    ...(options.addTimeoutMs === undefined
+      ? {}
+      : { timeoutMs: options.addTimeoutMs }),
   });
   if (added.code !== SAG_EXIT.ok) {
     return {
