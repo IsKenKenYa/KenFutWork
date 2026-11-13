@@ -5,6 +5,10 @@
 <h1 align="center">KenFutWork</h1>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/%E7%AE%97%E5%8A%9B%E8%B5%9E%E5%8A%A9-%E5%A4%A9%E6%8A%80%E8%B0%B7%EF%BC%88%E7%A6%8F%E5%B7%9E%EF%BC%89%E7%A7%91%E6%8A%80%E6%9C%89%E9%99%90%E5%85%AC%E5%8F%B8-6C5CE7?labelColor=1F2937" alt="算力赞助：天技谷（福州）科技有限公司">
+</p>
+
+<p align="center">
   <strong>插件化的 BYOK Agent 工作台</strong>——模型、供应商、技能、插件、MCP 全由你自己接。
 </p>
 

@@ -122,6 +122,9 @@ apps/desktop/src-tauri/gen/
 # trae 的本地数据目录
 .trae/*
 
+# zcode 的本地数据目录
+.zcode/*
+
 # Python 字节码（随仓库引入的插件目录在构建时会生成）
 __pycache__/
 *.pyc
