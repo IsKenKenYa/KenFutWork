@@ -174,8 +174,8 @@ function rebuildWithText(
 export function createToolResultOffloadMiddleware(
   options: ToolResultOffloadMiddlewareOptions,
 ): AgentMiddleware {
-  const offloaded = new Set<string>();
-  // 同一 run 内每次模型请求都会走一遍消息列表；已外置的调用 id 不重复写盘。
+  const offloaded = new Map<string, string>();
+  // 缓存外置说明，每次模型请求都替换原始消息，已外置的调用不重复写盘。
   return {
     name: "kenfutworkToolResultOffload",
     async wrapModelCall(
@@ -195,14 +195,13 @@ export function createToolResultOffloadMiddleware(
         if (content.length <= options.maxChars) continue;
         const toolCallId = String(message.tool_call_id ?? "");
         if (toolCallId.length === 0) continue;
-        if (offloaded.has(toolCallId)) continue;
-
-        const target = await options.writer.write(toolCallId, content);
-        offloaded.add(toolCallId);
-        next[index] = rebuildWithText(
-          message,
-          buildToolResultOffloadNotice(target),
-        );
+        let notice = offloaded.get(toolCallId);
+        if (notice === undefined) {
+          const target = await options.writer.write(toolCallId, content);
+          notice = buildToolResultOffloadNotice(target);
+          offloaded.set(toolCallId, notice);
+        }
+        next[index] = rebuildWithText(message, notice);
       }
       return handler({ ...(request as object), messages: next });
     },

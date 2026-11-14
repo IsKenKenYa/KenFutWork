@@ -158,6 +158,44 @@ it("未超过阈值时保持原样且不写文件", async () => {
   ).rejects.toThrow();
 });
 
+it("同一运行的后续和并发模型请求继续替换已外置的原始输出", async () => {
+  const { rootDirectory, writer } = await fixture();
+  const messages = toolMessages();
+  const middleware = createToolResultOffloadMiddleware({
+    writer,
+    maxChars: 100,
+  }) as unknown as OffloadMiddleware;
+  const invoke = () =>
+    middleware.wrapModelCall(
+      { messages },
+      async (request) => request,
+    ) as Promise<{
+      messages: ToolMessage[];
+    }>;
+  const first = await invoke();
+  const notice = first.messages[0]?.content;
+  expect(notice).toContain("工具输出已外置");
+  for (const response of [
+    await invoke(),
+    ...(await Promise.all([invoke(), invoke()])),
+  ]) {
+    expect(response.messages[0]?.content).toBe(notice);
+    expect(response.messages[0]?.tool_call_id).toBe("call-1");
+  }
+  expect((messages[0] as ToolMessage).content).toBe(bigOutput());
+  const directory = join(
+    rootDirectory,
+    ".kenfutwork",
+    "tool-results",
+    TASK_ID,
+    RUN_ID,
+  );
+  expect(await readdir(directory)).toEqual(["call-1.txt"]);
+  expect(await readFile(join(directory, "call-1.txt"), "utf8")).toBe(
+    bigOutput(),
+  );
+});
+
 it("外置文件可被读取工具按行区间分页读取", async () => {
   const { backend, writer } = await fixture();
   const original = bigOutput();
