@@ -1,7 +1,8 @@
-import type { ChildProcess } from "node:child_process";
+import { type ChildProcess, execFile } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import type { BlobStore } from "../blob/types.js";
 import {
@@ -59,6 +60,46 @@ import {
   RESPONSE_BODY_MAX_BYTES,
 } from "./network-log.js";
 import { samePageUrl } from "./view-stream.js";
+
+// 关闭浏览器子进程的系统等待期限，不参与桌面动作治理。
+const BROWSER_EXIT_TIMEOUT_MS = 5_000;
+const execFileAsync = promisify(execFile);
+
+async function stopOwnedBrowser(child: ChildProcess): Promise<void> {
+  const pid = child.pid;
+  if (!pid || child.exitCode != null || child.signalCode != null) return;
+  let resolveExit = () => {};
+  const exited = new Promise<void>((resolve) => {
+    resolveExit = resolve;
+  });
+  child.once("exit", resolveExit);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (process.platform === "win32") {
+      await execFileAsync("taskkill", ["/pid", String(pid), "/T", "/F"], {
+        windowsHide: true,
+        timeout: BROWSER_EXIT_TIMEOUT_MS,
+      });
+    } else {
+      child.kill("SIGTERM");
+    }
+    await Promise.race([
+      exited,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new CdpError("command_failed", "浏览器尚未退出，请关闭后重试。"),
+            ),
+          BROWSER_EXIT_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    child.removeListener("exit", resolveExit);
+    clearTimeout(timer);
+  }
+}
 
 /**
  * CDP 浏览器会话（R5-4「连接到 Chrome」/「自动截图」的执行面）。
@@ -299,6 +340,7 @@ export function createCdpBrowserSession(deps: {
   let state: CdpStatus = { status: "disconnected" };
   let client: CdpClient | null = null;
   let child: ChildProcess | null = null;
+  let disconnecting: Promise<CdpStatus> | undefined;
   let sessionId: string | null = null;
   let portrait = { width: 1280, height: 720 };
   /**
@@ -600,6 +642,7 @@ export function createCdpBrowserSession(deps: {
       return state.status === "connected";
     },
     async connect(options = {}) {
+      if (disconnecting) await disconnecting;
       if (state.status === "connected" && client) return state;
       state = { status: "connecting" };
       const headless = options.headless ?? false;
@@ -966,37 +1009,30 @@ export function createCdpBrowserSession(deps: {
       return { windowId, bounds };
     },
     async disconnect() {
+      if (disconnecting) return await disconnecting;
       detachPageTracking();
       networkStartedAt.clear();
       client?.close();
       client = null;
       sessionId = null;
-      const pid = child?.pid;
-      child = null;
-      if (pid) {
-        // 自己起的实例：整棵进程树收掉（Windows 上 kill 只杀外壳那条老坑）
-        if (process.platform === "win32") {
-          const { spawn } = await import("node:child_process");
-          spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
-            windowsHide: true,
-            stdio: "ignore",
-          });
-        } else {
-          try {
-            process.kill(pid, "SIGTERM");
-          } catch {
-            // 已经没了
-          }
-        }
-      }
       state = { status: "disconnected" };
-      return state;
+      const owned = child;
+      if (!owned) return state;
+      disconnecting = stopOwnedBrowser(owned).then(() => {
+        if (child === owned) child = null;
+        return state;
+      });
+      try {
+        return await disconnecting;
+      } finally {
+        disconnecting = undefined;
+      }
     },
     async clearData(mode) {
       const profileDir = join(dataDir, "chrome-profile");
       // 先收掉会话：运行中的浏览器会锁住缓存/数据库文件，删一半会留下坏 profile。
-      await this.disconnect();
       try {
+        await this.disconnect();
         if (mode === "all") {
           await rm(profileDir, { recursive: true, force: true });
           return { success: true };
