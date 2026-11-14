@@ -1,6 +1,8 @@
-import type {
-  ComputerUseHelperAxNode,
-  ComputerUseHelperWindow,
+import { setTimeout as delay } from "node:timers/promises";
+import {
+  AGENT_GOVERNANCE_DEFAULTS,
+  type ComputerUseHelperAxNode,
+  type ComputerUseHelperWindow,
 } from "@kenfutwork/shared";
 import { type AxNode, type AxWindowRef, flattenAxTree } from "./ax-tree.js";
 import type {
@@ -15,6 +17,7 @@ import type {
   CuWindowRow,
 } from "./executor.js";
 import { CU_AX_DEFAULT_LIMITS } from "./executor.js";
+import { ensureAppRunning } from "./executor-macos.js";
 import { HelperRpcError } from "./helper-client.js";
 import type { HelperProcessManager } from "./helper-manager.js";
 import { normalizeRole } from "./jxa.js";
@@ -250,6 +253,51 @@ export function createHelperExecutor(options: {
       signal,
     );
 
+  const resolveObservationTarget = async (
+    appRef: ParsedAppRef,
+    context?: CuOperationContext,
+  ) => {
+    const timeoutMs =
+      context?.timeoutMs ??
+      AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs;
+    const deadline = Date.now() + timeoutMs;
+    try {
+      return await resolveTarget(appRef, context);
+    } catch (error) {
+      if (
+        !(error instanceof HelperExecutorError) ||
+        error.code !== "app_not_found" ||
+        appRef.pid !== undefined ||
+        appRef.windowId !== undefined ||
+        (!appRef.bundleId && !appRef.name)
+      )
+        throw error;
+    }
+    context?.signal.throwIfAborted();
+    await ensureAppRunning(appRef, timeoutMs, context);
+    while (Date.now() < deadline) {
+      try {
+        return await resolveTarget(appRef, context);
+      } catch (error) {
+        if (
+          !(error instanceof HelperExecutorError) ||
+          !["app_not_found", "window_not_found"].includes(error.code)
+        )
+          throw error;
+      }
+      const interval = AGENT_GOVERNANCE_DEFAULTS.computerUseInputDelayMs;
+      await delay(
+        Math.min(interval, Math.max(0, deadline - Date.now())),
+        undefined,
+        { signal: context?.signal },
+      );
+    }
+    throw new HelperExecutorError(
+      "timeout",
+      "应用启动后未在期限内出现可用窗口",
+    );
+  };
+
   const resolveInputTarget = async (
     appRef: ParsedAppRef,
     context?: CuOperationContext,
@@ -322,7 +370,7 @@ export function createHelperExecutor(options: {
       appRef: ParsedAppRef,
       context?: CuOperationContext,
     ): Promise<CuObservation> {
-      const target = await resolveTarget(appRef, context);
+      const target = await resolveObservationTarget(appRef, context);
       const latest = await observeRoot(target, context);
       latestByPid.set(target.pid, latest);
       const window: AxWindowRef = {

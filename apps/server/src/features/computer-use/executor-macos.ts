@@ -71,7 +71,7 @@ async function jxaJson<T>(
 }
 
 /** 应用未运行时按 bundleId 拉起后重试一次（getApp 透明拉起语义）。 */
-async function ensureAppRunning(
+export async function ensureAppRunning(
   appRef: ParsedAppRef,
   timeoutMs: number,
   context?: CuOperationContext,
