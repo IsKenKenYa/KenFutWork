@@ -9,6 +9,7 @@ import {
 } from "@kenfutwork/shared";
 import { describe, expect, it } from "vitest";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
+import { createCodeSessionFixture } from "./host-session.fixture.js";
 import { createProjectGitFixture } from "./project-git.fixture.js";
 
 async function openGitClient(
@@ -40,6 +41,57 @@ async function openGitClient(
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "Project文件面板的真实Git与无Task工作域 integration",
   () => {
+    it("可写 Task 经真实 Git RPC 暂存，改为只读后拒绝写入", async () => {
+      const fixture = await createCodeUiHttpFixture({
+        ...(process.env.KENFUTWORK_TEST_GIT_BIN_DIR
+          ? { gitBinDir: process.env.KENFUTWORK_TEST_GIT_BIN_DIR }
+          : {}),
+      });
+      let host:
+        | Awaited<ReturnType<typeof createCodeSessionFixture>>
+        | undefined;
+      try {
+        const task = await createCodeSessionFixture(fixture.baseUrl, {
+          client: fixture.client,
+        });
+        host = task;
+        const path = join(task.workspacePath, "staged-by-task.txt");
+        await writeFile(path, "Task Git proof\n");
+        const git = (method: string) =>
+          task.client.request("/api/code-ui/rpc", {
+            service: "git",
+            method,
+            args: [
+              {
+                workspacePath: task.workspacePath,
+                viewerScope: { kind: "task", taskId: task.sessionId },
+                paths: [path],
+              },
+            ],
+          });
+        const staged = await git("stagePaths");
+        expect(staged.status, JSON.stringify(staged.body)).toBe(200);
+        const status = await git("refresh");
+        expect(status.body.result.stagedChanges).toEqual(
+          expect.arrayContaining([expect.objectContaining({ path })]),
+        );
+        const readOnly = await task.client.request(
+          `/api/code-ui/tasks/${task.sessionId}/scope`,
+          { sandboxMode: "read-only" },
+          "PATCH",
+        );
+        expect(readOnly.status, JSON.stringify(readOnly.body)).toBe(200);
+        const denied = await git("unstagePaths");
+        expect(denied.status).toBeGreaterThanOrEqual(400);
+        expect((await git("refresh")).body.result.stagedChanges).toEqual(
+          status.body.result.stagedChanges,
+        );
+      } finally {
+        await host?.dispose();
+        await fixture.close();
+      }
+    }, 120_000);
+
     it("没有Task的Project读取真实变更及忽略状态，读取后仍没有Task", async () => {
       const fixture = await createCodeUiHttpFixture();
       try {

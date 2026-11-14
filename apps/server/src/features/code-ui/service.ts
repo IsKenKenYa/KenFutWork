@@ -569,7 +569,7 @@ export class CodeUiService {
       ? createCodeUiHostGitRpc({
           resolveTarget: (actor, request) =>
             this.resolveHostTarget(actor, request),
-          withSession: async (actor, target, connection, read) => {
+          withSession: async (actor, target, connection, read, access) => {
             const settings = await deps.settings.getInstanceSettings(
               actor,
               target.instanceId,
@@ -609,7 +609,10 @@ export class CodeUiService {
                 actor,
                 target.viewerScope.taskId,
               )
-            ).derive("review", `human-git:${randomUUID()}`);
+            ).derive(
+              access === "write" ? "worker" : "review",
+              `human-git:${randomUUID()}`,
+            );
             return read({
               rootDirectory: scope.describe().rootDirectory,
               available,

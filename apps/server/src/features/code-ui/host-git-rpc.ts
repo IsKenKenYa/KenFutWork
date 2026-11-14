@@ -264,6 +264,7 @@ export function createCodeUiHostGitRpc(deps: {
     target: CodeUiHostTarget,
     connection: CodeUiHostConnection,
     read: (session: CodeUiHostGitSession) => Promise<unknown>,
+    access: "read" | "write",
   ): Promise<unknown>;
   generateCommitMessage?: GenerateGitCommitMessage;
 }): CodeUiHostGitRpc {
@@ -308,6 +309,7 @@ export function createCodeUiHostGitRpc(deps: {
               : undefined,
           );
         },
+        writeMethods.has(method) ? "write" : "read",
       );
       return { result };
     },

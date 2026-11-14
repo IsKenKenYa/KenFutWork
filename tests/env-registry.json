@@ -1667,6 +1667,13 @@
       "status": "active",
       "note": "launcher冷启动健康复核间隔与单请求等待预算；启动期env ?? DEFAULTS"
     },
+    "KENFUTWORK_TEST_GIT_BIN_DIR": {
+      "surface": "test",
+      "readers": ["apps/server/src/features/code-ui/project-git.integration.test.ts"],
+      "inExamples": false,
+      "status": "active",
+      "note": "为真实 Task Git 集成测试指定 Git 目录，供系统 Git 需要沙箱外开发工具的本机使用。"
+    },
     "KENFUTWORK_CRUD_TEST_PG": {
       "surface": "test",
       "readers": [
