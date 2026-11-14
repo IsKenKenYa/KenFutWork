@@ -26,6 +26,61 @@ async function getExport(fixture: Fixture, path: string) {
   };
 }
 
+async function moveTaskWithHistory(
+  fixture: Fixture,
+  host: Host,
+  runId: string,
+) {
+  const projectId = randomUUID();
+  const sql = fixture.database.persistence.forInstance(
+    fixture.actor.instanceId,
+  );
+  await sql.execute(
+    "insert into public.projects(id,instance_id,name,slug,kind,work_dir,enabled_modes) values($1,:instance,'运行历史目标项目',$2,'code',$3,array['code'])",
+    [projectId, `timeline-${projectId}`, host.workspacePath],
+  );
+  const snapshot = await host.snapshot();
+  const moved = await fixture.client.request("/api/code-ui/rpc", {
+    connectionId: host.stream.ready.hello.connectionId,
+    service: "project",
+    method: "moveTask",
+    args: [
+      {
+        task: { taskId: host.sessionId, workspacePath: host.workspacePath },
+        sourceProjectId: host.projectId,
+        projectId,
+        observedRevision: snapshot.revision,
+        addMissingRoot: false,
+      },
+    ],
+  });
+  expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+  const path = `/api/agent/tasks/${host.sessionId}/runs/${runId}/timeline/export?projectId=${projectId}`;
+  expect((await getExport(fixture, path)).status).toBe(200);
+  const runs = await fixture.client.request(
+    `/api/agent/tasks/${host.sessionId}/runs?projectId=${projectId}`,
+  );
+  expect(runs.status, JSON.stringify(runs.body)).toBe(200);
+  expect(runs.body.runs.map((run: { runId: string }) => run.runId)).toContain(
+    runId,
+  );
+  expect(
+    (await getExport(fixture, path.replace(projectId, host.projectId))).status,
+  ).toBe(404);
+  expect(
+    await sql.queryOne(
+      "select project_id from public.agent_turn_boundaries where instance_id=:instance and run_id=$1 and phase='pre'",
+      [runId],
+    ),
+  ).toMatchObject({ project_id: host.projectId });
+  await sql.execute(
+    "update public.projects set archived_at=now() where instance_id=:instance and id=$1",
+    [host.projectId],
+  );
+  expect((await getExport(fixture, path)).status).toBe(200);
+  return path;
+}
+
 /**
  * 真实 Postgres 集成用例，默认跳过；手动执行：
  * RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run \
@@ -129,12 +184,14 @@ describe.skipIf(!enabled)("Task 运行时间线 Markdown 导出", () => {
         );
       }
 
-      const path = `/api/agent/tasks/${host.sessionId}/runs/${runId}/timeline/export?projectId=${host.projectId}`;
+      let path = `/api/agent/tasks/${host.sessionId}/runs/${runId}/timeline/export?projectId=${host.projectId}`;
       const normal = await getExport(fixture, path);
       expect(normal.status).toBe(200);
       expect(String(normal.contentType)).toContain("text/markdown");
       expect(normal.body).toContain("Bash");
       expect(normal.body).not.toContain("导出已截断");
+
+      path = await moveTaskWithHistory(fixture, host, runId);
 
       const settingsBefore = await fixture.client.request(
         "/api/instance/settings",

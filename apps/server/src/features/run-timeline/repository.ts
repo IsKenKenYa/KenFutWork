@@ -119,10 +119,10 @@ export function createRunTimelineRepository(
              join public.agent_runs r on r.id = b.run_id
              join public.code_ui_sessions t on t.id = b.task_id
                and t.instance_id = b.instance_id
-             join public.projects p on p.id = b.project_id
+             join public.projects p on p.id = t.project_id
                and p.instance_id = b.instance_id
             where b.instance_id = :instance
-              and b.project_id = $1
+              and t.project_id = $1
               and b.task_id = $2
               and b.run_id = $3
               and b.task_kind = 'code'
@@ -228,7 +228,9 @@ export function createRunTimelineRepository(
                   u.input_tokens, u.output_tokens, u.cost_usd, u.calls
              from public.agent_turn_boundaries b
              join public.agent_runs r on r.id = b.run_id
-             join public.projects p on p.id = b.project_id
+             join public.code_ui_sessions t on t.id = b.task_id
+               and t.instance_id = b.instance_id
+             join public.projects p on p.id = t.project_id
                and p.instance_id = b.instance_id
              left join (
                select run_id,
@@ -241,10 +243,11 @@ export function createRunTimelineRepository(
                 group by run_id
              ) u on u.run_id = r.id::text
             where b.instance_id = :instance
-              and b.project_id = $1
+              and t.project_id = $1
               and b.task_id = $2
               and b.task_kind = 'code'
               and b.phase = 'pre'
+              and not t.archived and t.deleted_at is null
               and p.archived_at is null
             order by r.created_at desc
             limit $3`,
