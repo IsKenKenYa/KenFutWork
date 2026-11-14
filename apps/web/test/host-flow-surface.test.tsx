@@ -89,7 +89,15 @@ function ready(source: Window, projectId: string, generation: number) {
 }
 async function handshake(source: Window) {
   const outbound = vi.spyOn(source, "postMessage");
-  message(source, { type: "ff-embed/hello", version: "v1" });
+  await act(async () => {
+    window.dispatchEvent(
+      new MessageEvent("message", {
+        origin,
+        source,
+        data: { type: "ff-embed/hello", version: "v1" },
+      }),
+    );
+  });
   await waitFor(() =>
     expect(outbound).toHaveBeenCalledWith(
       { type: "ff-embed/identity", version: "v1", hostToken: "ticket" },
@@ -163,8 +171,10 @@ describe("FlowSurface project binding consumer", () => {
     const oldSource = frameWindow();
     await handshake(oldSource);
     ready(oldSource, projectA, 2);
-    select(projectA, 3);
-    view.rerender(<HostFlowSurface />);
+    await act(async () => {
+      select(projectA, 3);
+      view.rerender(<HostFlowSurface />);
+    });
     const newSource = frameWindow();
     expect(screen.getByTitle("Flow 工作流画布")).not.toBe(oldFrame);
     const outbound = await handshake(newSource);
