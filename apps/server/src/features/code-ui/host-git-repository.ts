@@ -792,7 +792,7 @@ export class CodeUiHostGitRepository {
         "--quiet",
         "HEAD",
         "--",
-        ...cleanup,
+        ...Array.from(cleanup, literalPath),
       ]);
       return hash;
     } finally {
@@ -1181,6 +1181,23 @@ export class CodeUiHostGitRepository {
       }
     } else {
       output = await this.command([...args, "--cached"]);
+    }
+    if (includeUnstaged && output.length <= maxChars) {
+      const root = await this.repositoryRoot();
+      const names = await this.commandAt(root, [
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ]);
+      for (const name of names.split("\0").filter(Boolean)) {
+        const file = await this.worktreeText(join(root, name));
+        output +=
+          file.content && !file.truncated && !file.binary
+            ? createTwoFilesPatch("/dev/null", name, "", file.content)
+            : `\n新增文件：${JSON.stringify(name)}\n`;
+        if (output.length > maxChars) break;
+      }
     }
     if (output.length > maxChars)
       return `${output.slice(0, maxChars)}\n（差异过长，已截断）`;

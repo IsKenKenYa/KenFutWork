@@ -620,6 +620,16 @@ it("提交信息生成用实例默认模型读取真实暂存差异，只返回�
   expect(provider.requests[0]?.headers["x-custom"]).toBe("fixture-header");
 });
 
+it("只有未跟踪文件时也能生成提交信息且不修改索引", async () => {
+  const f = await fixture({ withGenerator: true });
+  await f.call("discardPaths", { paths: ["tracked.txt"], staged: true });
+  await f.call("generateCommitMessage", { includeUnstaged: true });
+  const body = JSON.stringify(f.provider?.requests[0]?.body);
+  expect(body).toContain("new.txt");
+  expect(body).toContain("new content");
+  expect((await f.raw(["diff", "--cached", "--name-only"])).stdout).toBe("");
+});
+
 it("暂存区为空不调用模型，默认模型未选也给可读原因", async () => {
   const empty = await fixture({ withGenerator: true });
   await empty.call("unstagePaths", { paths: ["tracked.txt"] });
@@ -768,6 +778,24 @@ it("暂存与丢弃符号链接只操作链接名并保留真实正文", async (
   await f.call("discardPaths", { paths: [link] });
   await expect(stat(link)).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(join(f.root, "new.txt"), "utf8")).toBe("new content\n");
+});
+
+it("提交含通配符号的文件名不会清除其他文件的暂存", async () => {
+  const f = await fixture();
+  for (const name of ["[a].txt", "a.txt"]) {
+    await writeFile(join(f.root, name), `${name}\n`);
+    await f.call("stagePaths", { paths: [name] });
+  }
+  await f.call("commit", {
+    message: "提交字面路径",
+    paths: ["[a].txt"],
+    stagedOnly: true,
+  });
+  const staged = (
+    await f.raw(["diff", "--cached", "--name-only", "-z"])
+  ).stdout.split("\0");
+  expect(staged).toContain("a.txt");
+  expect(staged).not.toContain("[a].txt");
 });
 
 it("丢弃暂存删除会从 HEAD 恢复文件和索引", async () => {
