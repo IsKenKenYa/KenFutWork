@@ -2,7 +2,7 @@ import type {
   ComputerUseHelperAxNode,
   ComputerUseHelperWindow,
 } from "@kenfutwork/shared";
-import type { AxNode, AxWindowRef } from "./ax-tree.js";
+import { type AxNode, type AxWindowRef, flattenAxTree } from "./ax-tree.js";
 import type {
   ComputerUseExecutor,
   CuActionResult,
@@ -189,49 +189,53 @@ export function createHelperExecutor(options: {
         binding: `helper:${target.pid}:${target.window.windowId}`,
         windowBounds: bounds,
       };
-      latestByPid.set(target.pid, observation);
       return observation;
     } catch (error) {
       return wrap(error);
     }
   };
 
-  const elementCenter = (
-    latest: LatestObservation,
-    index: number,
-  ): { x: number; y: number } => {
-    const rect = latest.positions.get(index);
-    if (!rect)
-      throw new HelperExecutorError(
-        "element_stale",
-        "元素没有可点击的位置，请重新观察",
-      );
-    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-  };
-
-  const targetPoint = (
+  const actionPoints = (
     resolved: ResolvedTarget,
-    latest: LatestObservation | undefined,
-    target: CuTarget | undefined,
     context: CuOperationContext | undefined,
-  ): { x: number; y: number } | undefined => {
-    if (!target) return undefined;
-    if (target.kind === "element") {
-      if (!latest)
+  ) => {
+    const previous = latestByPid.get(resolved.pid);
+    let refreshed: Promise<LatestObservation> | undefined;
+    return async (target: CuTarget | undefined) => {
+      if (!target) return undefined;
+      if (target.kind === "element") {
+        const binding = `helper:${resolved.pid}:${resolved.window.windowId}`;
+        if (
+          previous?.binding !== binding ||
+          (context?.binding && context.binding !== binding)
+        )
+          throw new HelperExecutorError(
+            "element_stale",
+            "目标窗口已变化，请重新观察",
+          );
+        refreshed ??= observeRoot(resolved, context);
+        return helperElementPoint(
+          previous,
+          await refreshed,
+          target.index,
+          context?.expectedElement,
+        );
+      }
+      const raster = context?.raster ?? latestRasterByPid.get(resolved.pid);
+      if (!raster)
         throw new HelperExecutorError(
           "element_stale",
-          "还没有观察结果，请先观察再按元素操作",
+          "坐标目标需要先截图并绑定 frameId",
         );
-      return elementCenter(latest, target.index);
-    }
-    const raster = context?.raster ?? latestRasterByPid.get(resolved.pid);
-    if (!raster)
-      throw new HelperExecutorError(
-        "element_stale",
-        "坐标目标需要先截图并绑定 frameId",
-      );
-    return helperCoordinate(resolved.window, raster, target);
+      return helperCoordinate(resolved.window, raster, target);
+    };
   };
+
+  const focus = (target: ResolvedTarget) =>
+    options.manager.focus({
+      pid: target.pid,
+      windowId: target.window.windowId,
+    });
 
   const executor: ComputerUseExecutor = {
     id: "macos-helper",
@@ -295,6 +299,7 @@ export function createHelperExecutor(options: {
     ): Promise<CuObservation> {
       const target = await resolveTarget(appRef);
       const latest = await observeRoot(target, context);
+      latestByPid.set(target.pid, latest);
       const window: AxWindowRef = {
         windowId: latest.windowId,
         title: target.window.title,
@@ -359,12 +364,7 @@ export function createHelperExecutor(options: {
       context?: CuOperationContext,
     ): Promise<CuActionResult> {
       const resolved = await resolveTarget(appRef);
-      const latest =
-        latestByPid.get(resolved.pid) ??
-        (target.kind === "element"
-          ? await observeRoot(resolved, context)
-          : undefined);
-      const point = targetPoint(resolved, latest, target, context);
+      const point = await actionPoints(resolved, context)(target);
       if (!point)
         throw new HelperExecutorError("invalid_target", "点击缺少目标", false);
       try {
@@ -388,8 +388,7 @@ export function createHelperExecutor(options: {
       context?: CuOperationContext,
     ): Promise<CuActionResult> {
       const resolved = await resolveTarget(appRef);
-      const latest = latestByPid.get(resolved.pid);
-      const point = targetPoint(resolved, latest, target, context);
+      const point = await actionPoints(resolved, context)(target);
       try {
         if (point) {
           await options.manager.click({
@@ -399,7 +398,7 @@ export function createHelperExecutor(options: {
             button: "left",
             clickCount: 1,
           });
-        }
+        } else await focus(resolved);
         await options.manager.typeText({
           pid: resolved.pid,
           text,
@@ -472,13 +471,11 @@ export function createHelperExecutor(options: {
       context: CuOperationContext,
     ): Promise<CuActionResult> {
       const resolved = await resolveTarget(appRef);
-      const latest = latestByPid.get(resolved.pid);
-      const pointFor = (target: CuTarget | undefined) =>
-        targetPoint(resolved, latest, target, context);
+      const pointFor = actionPoints(resolved, context);
       try {
         switch (action.kind) {
           case "click": {
-            const point = pointFor(action.target);
+            const point = await pointFor(action.target);
             if (!point)
               throw new HelperExecutorError("invalid_target", "点击缺少目标");
             await options.manager.click({
@@ -491,7 +488,7 @@ export function createHelperExecutor(options: {
             return { actionSent: true, detail: "已通过 Helper 发送点击" };
           }
           case "move": {
-            const point = pointFor(action.target);
+            const point = await pointFor(action.target);
             if (!point)
               throw new HelperExecutorError("invalid_target", "移动缺少目标");
             await options.manager.move({
@@ -502,8 +499,8 @@ export function createHelperExecutor(options: {
             return { actionSent: true, detail: "已移动指针" };
           }
           case "drag": {
-            const from = pointFor(action.from);
-            const to = pointFor(action.to);
+            const from = await pointFor(action.from);
+            const to = await pointFor(action.to);
             if (!from || !to)
               throw new HelperExecutorError(
                 "invalid_target",
@@ -520,7 +517,7 @@ export function createHelperExecutor(options: {
             return { actionSent: true, detail: "已通过 Helper 发送拖拽" };
           }
           case "scroll": {
-            const point = action.target ? pointFor(action.target) : undefined;
+            const point = await pointFor(action.target);
             const amount = Math.abs(action.amount);
             await options.manager.scroll({
               pid: resolved.pid,
@@ -543,6 +540,7 @@ export function createHelperExecutor(options: {
           }
           case "keys": {
             const parsed = toHelperKeyRequest(action.keys);
+            await focus(resolved);
             await options.manager.key({
               pid: resolved.pid,
               key: parsed.key,
@@ -552,10 +550,7 @@ export function createHelperExecutor(options: {
             return { actionSent: true, detail: "已通过 Helper 发送按键" };
           }
           case "focus": {
-            await options.manager.focus({
-              pid: resolved.pid,
-              windowId: resolved.window.windowId,
-            });
+            await focus(resolved);
             return { actionSent: true, detail: "已聚焦目标窗口" };
           }
         }
@@ -570,6 +565,55 @@ export function createHelperExecutor(options: {
   };
 
   return executor;
+}
+
+export function helperElementPoint(
+  previous: Pick<LatestObservation, "root" | "positions" | "windowBounds">,
+  current: Pick<LatestObservation, "root" | "positions" | "windowBounds">,
+  index: number,
+  expected?: CuOperationContext["expectedElement"],
+): { x: number; y: number } {
+  const original = flattenAxTree(previous.root)[index]?.node;
+  const node = flattenAxTree(current.root)[index]?.node;
+  const last = previous.positions.get(index);
+  const rect = current.positions.get(index);
+  const identity = expected ?? original;
+  const [x, y, width, height] = current.windowBounds;
+  if (
+    !original ||
+    !identity ||
+    !node ||
+    !last ||
+    !rect ||
+    node.role !== identity.role ||
+    (node.title ?? "") !== (identity.title ?? "") ||
+    original.role !== node.role ||
+    (original.title ?? "") !== (node.title ?? "") ||
+    rect.x !== last.x ||
+    rect.y !== last.y ||
+    rect.width !== last.width ||
+    rect.height !== last.height ||
+    rect.width <= 0 ||
+    rect.height <= 0 ||
+    current.windowBounds.some((value, i) => value !== previous.windowBounds[i])
+  ) {
+    throw new HelperExecutorError(
+      "element_stale",
+      "目标元素已变化，请重新观察",
+    );
+  }
+  const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  if (
+    point.x < x ||
+    point.x >= x + width ||
+    point.y < y ||
+    point.y >= y + height
+  )
+    throw new HelperExecutorError(
+      "element_stale",
+      "目标元素已移出窗口，请重新观察",
+    );
+  return point;
 }
 
 export function helperCoordinate(

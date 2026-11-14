@@ -1,6 +1,34 @@
 import { describe, expect, it } from "vitest";
 import type { CuRaster } from "./executor.js";
-import { helperCoordinate, toHelperKeyRequest } from "./executor-helper.js";
+import {
+  helperCoordinate,
+  helperElementPoint,
+  toHelperKeyRequest,
+} from "./executor-helper.js";
+
+it("元素位置、身份或窗口变化后拒绝发送输入", () => {
+  const before: Parameters<typeof helperElementPoint>[0] = {
+    root: { role: "button", title: "打开" },
+    positions: new Map([[0, { x: 20, y: 30, width: 40, height: 20 }]]),
+    windowBounds: [10, 10, 200, 200],
+  };
+  expect(helperElementPoint(before, before, 0)).toEqual({ x: 40, y: 40 });
+  for (const after of [
+    { ...before, root: { role: "button", title: "删除" } },
+    {
+      ...before,
+      positions: new Map([[0, { x: 20, y: 90, width: 40, height: 20 }]]),
+    },
+    { ...before, positions: new Map() },
+  ]) {
+    expect(() => helperElementPoint(before, after, 0)).toThrow(
+      expect.objectContaining({ code: "element_stale", actionSent: false }),
+    );
+  }
+  expect(() => helperElementPoint(before, before, 0, { role: "link" })).toThrow(
+    expect.objectContaining({ code: "element_stale" }),
+  );
+});
 
 it("只将当前目标窗口的有效截图坐标换算成屏幕坐标", () => {
   const window = {
