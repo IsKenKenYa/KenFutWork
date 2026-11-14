@@ -315,6 +315,7 @@ export async function maintainMemoryDirectory(options: {
   const dropped = new Set<number>();
   const added: MemoryIndexEntry[] = [];
   const removed = new Set<string>();
+  const pendingTrash: Parameters<typeof moveToTrash>[0][] = [];
   let merged = 0;
   let trashed = 0;
 
@@ -341,7 +342,7 @@ export async function maintainMemoryDirectory(options: {
           lineByName.set(keeper, lineIndex);
         }
       }
-      await moveToTrash({
+      pendingTrash.push({
         memoryRoot: options.memoryRoot,
         fileName: name,
         reason: "duplicate",
@@ -369,7 +370,7 @@ export async function maintainMemoryDirectory(options: {
     const fileName = line.entry.fileName;
     if (removed.has(fileName) || nameSet.has(fileName)) continue;
     dropped.add(index);
-    await moveToTrash({
+    pendingTrash.push({
       memoryRoot: options.memoryRoot,
       fileName: null,
       reason: "dangling-index",
@@ -398,7 +399,7 @@ export async function maintainMemoryDirectory(options: {
     if (metadata.size > options.maxFileBytes) continue;
     if (options.now - metadata.mtimeMs < options.orphanRetentionDays * DAY_MS)
       continue;
-    await moveToTrash({
+    pendingTrash.push({
       memoryRoot: options.memoryRoot,
       fileName: name,
       reason: "orphan",
@@ -409,12 +410,6 @@ export async function maintainMemoryDirectory(options: {
     trashed += 1;
   }
 
-  const purged = await purgeExpiredTrash({
-    memoryRoot: options.memoryRoot,
-    recoverableWindowDays: options.recoverableWindowDays,
-    now: options.now,
-  });
-
   const keptLines = parsed
     .filter((_, index) => !dropped.has(index))
     .map((line) => line.raw)
@@ -422,10 +417,19 @@ export async function maintainMemoryDirectory(options: {
   for (const entry of added)
     keptLines.push(renderMemoryIndexLine({ ...entry, raw: "" }));
   const nextRaw = keptLines.length === 0 ? "" : `${keptLines.join("\n")}\n`;
-  if (nextRaw === indexRaw)
-    return { merged, trashed, purged, indexUpdated: false };
-  if (Buffer.byteLength(nextRaw, "utf8") > options.maxFileBytes)
+  const indexUpdated = nextRaw !== indexRaw;
+  if (
+    (indexUpdated || pendingTrash.length > 0) &&
+    Buffer.byteLength(nextRaw, "utf8") > options.maxFileBytes
+  )
     throw new Error("记忆索引超出上限，已停止整理。");
+  for (const item of pendingTrash) await moveToTrash(item);
+  const purged = await purgeExpiredTrash({
+    memoryRoot: options.memoryRoot,
+    recoverableWindowDays: options.recoverableWindowDays,
+    now: options.now,
+  });
+  if (!indexUpdated) return { merged, trashed, purged, indexUpdated };
   const temporary = join(options.memoryRoot, `.MEMORY.md.${randomUUID()}.tmp`);
   await writeFile(temporary, nextRaw, "utf8");
   await rename(temporary, indexPath);

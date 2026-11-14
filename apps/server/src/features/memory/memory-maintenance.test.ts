@@ -35,11 +35,12 @@ async function createFixture(options?: {
   orphanRetentionDays?: number;
   recoverableWindowDays?: number;
   now?: number;
+  maxFileBytes?: number;
 }) {
   const dataDir = await mkdtemp(join(tmpdir(), "kfw-memory-maintain-"));
   fixtures.push(dataDir);
   const settings = {
-    codeReadMaxBytes: 4_000,
+    codeReadMaxBytes: options?.maxFileBytes ?? 4_000,
     codeReadPageCharacters: 300,
     memoryOrphanRetentionDays: options?.orphanRetentionDays ?? 30,
     memoryRecoverableWindowDays: options?.recoverableWindowDays ?? 30,
@@ -180,6 +181,20 @@ it("被索引引用的条目即使很旧也不会自动删除", async () => {
   const result = await memory.maintainProjectMemory(actor, { projectId });
   expect(result.trashed).toBe(0);
   expect(await readFile(join(root, "kept.md"), "utf8")).toContain("长期结论");
+});
+
+it("索引校验失败时不移动仍被引用的重复正文", async () => {
+  const { memory, root } = await createFixture({ maxFileBytes: 100 });
+  const lines = ["- [甲](a.md)", "- [乙](b.md)", "x".repeat(120)];
+  await seed(root, { "a.md": "相同", "b.md": "相同" }, lines);
+  await expect(
+    memory.maintainProjectMemory(actor, { projectId }),
+  ).rejects.toThrow("记忆索引超出上限");
+  await expect(readFile(join(root, "b.md"), "utf8")).resolves.toBe("相同\n");
+  await expect(readFile(join(root, "MEMORY.md"), "utf8")).resolves.toBe(
+    `${lines.join("\n")}\n`,
+  );
+  expect(await memory.listTrashedMemories(actor, { projectId })).toEqual([]);
 });
 
 it("超过读取上限的孤儿正文不回收，恢复后的普通正文重新计时", async () => {
