@@ -16,7 +16,10 @@ import type {
   LocalInstanceService,
 } from "../local-instance/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
-import { createMediaDriverArtifacts } from "./artifacts.js";
+import {
+  createMediaDriverArtifacts,
+  type MediaDriverArtifact,
+} from "./artifacts.js";
 import { describeMediaDriverChanges } from "./changes.js";
 import { createMediaDriverConnections } from "./connections.js";
 import { MediaDriverRegistryError } from "./errors.js";
@@ -199,11 +202,28 @@ export function createMediaDriverService(deps: {
           );
         },
       );
-      if (prepared) await artifacts.finish(artifact);
+      if (prepared)
+        await reconcileArtifact(context.instanceId, artifacts, artifact);
       return result;
     } finally {
       release();
     }
+  }
+
+  async function reconcileArtifact(
+    instanceId: string,
+    artifacts: ReturnType<typeof createMediaDriverArtifacts>,
+    artifact: MediaDriverArtifact,
+  ) {
+    await deps.repository.recoverArtifact(
+      instanceId,
+      artifact.driverId,
+      artifact.versionId,
+      async (referenced) => {
+        if (referenced) await artifacts.finish(artifact);
+        else await artifacts.discard(artifact);
+      },
+    );
   }
 
   async function recover() {
@@ -211,15 +231,7 @@ export function createMediaDriverService(deps: {
     await connections.recover(context.instanceId, context.dataDir);
     const artifacts = createMediaDriverArtifacts(context.dataDir);
     for (const artifact of await artifacts.pending()) {
-      await deps.repository.recoverArtifact(
-        context.instanceId,
-        artifact.driverId,
-        artifact.versionId,
-        async (referenced) => {
-          if (referenced) await artifacts.finish(artifact);
-          else await artifacts.discard(artifact);
-        },
-      );
+      await reconcileArtifact(context.instanceId, artifacts, artifact);
     }
   }
 

@@ -23,6 +23,7 @@ import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createSettingsRepository } from "../settings/repository.js";
 import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
+import { createMediaDriverArtifacts } from "./artifacts.js";
 import { createMediaDriverRepository } from "./repository.js";
 import { createMediaDriverService } from "./service.js";
 
@@ -475,6 +476,85 @@ pgTest("并发安装和恢复保持唯一版本", async () => {
   } finally {
     watcher.close();
     await Promise.all(recovering);
+    await http.app.close();
+    await db.close();
+  }
+});
+
+pgTest("卸载先于安装文件收尾时，安装方清理已无引用的版本", async () => {
+  const db = await createTaskWorkDatabase();
+  let notifyCommit = () => {};
+  let resumeInstall = () => {};
+  const committed = new Promise<void>((resolve) => {
+    notifyCommit = resolve;
+  });
+  const resumable = new Promise<void>((resolve) => {
+    resumeInstall = resolve;
+  });
+  let firstTransaction = true;
+  const http = await createRegistryHttp(db, {
+    ...db.persistence,
+    async withSessionTransaction(operation) {
+      const pause = firstTransaction;
+      firstTransaction = false;
+      const result = await db.persistence.withSessionTransaction(operation);
+      if (pause) {
+        notifyCommit();
+        await resumable;
+      }
+      return result;
+    },
+  });
+  let installing: ReturnType<typeof http.install> | undefined;
+  try {
+    const payload = await http.preview();
+    installing = http.install(payload);
+    await Promise.race([
+      committed,
+      installing.then((response) => {
+        throw new Error(response.body);
+      }),
+    ]);
+    const { instanceId, dataDir } = await db.localInstance.getContext();
+    const repository = createMediaDriverRepository(db.persistence);
+    const artifacts = createMediaDriverArtifacts(dataDir);
+    const driverId = "registry-example";
+    const [artifact] = await artifacts.pending();
+    if (!artifact) throw new Error("安装未创建待处理记录");
+    await repository.remove(
+      {
+        instanceId,
+        driverId,
+        installationId: payload.installationId,
+        expectedGeneration: 1,
+        expectedRevision: 1,
+      },
+      async (versions, signal) => {
+        for (const version of versions)
+          await artifacts.plan(
+            { format: 1, driverId, versionId: version.id },
+            signal,
+          );
+      },
+    );
+    resumeInstall();
+    expect((await installing).statusCode).toBe(201);
+    expect(await artifacts.pending()).toEqual([]);
+    await expect(
+      readFile(
+        join(
+          dataDir,
+          "media-drivers",
+          "versions",
+          driverId,
+          artifact.versionId,
+          "source.ts",
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    resumeInstall();
+    await installing;
     await http.app.close();
     await db.close();
   }
