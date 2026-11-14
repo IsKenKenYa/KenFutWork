@@ -170,6 +170,32 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       90_000,
     );
 
+    it("归档持有源项目锁时，移动立即返回冲突并保留任务", async () => {
+      const fixture = await createCodeUiHttpFixture();
+      let host: Host | undefined;
+      try {
+        const activeHost = await createCodeSessionFixture(fixture.baseUrl, {
+          client: fixture.client,
+        });
+        host = activeHost;
+        const { before, input } = await prepareMove(fixture, activeHost);
+        await fixture.database.persistence.transaction(async (tx) => {
+          await tx
+            .forInstance(fixture.actor.instanceId)
+            .queryOne(
+              "select id from public.projects where instance_id=:instance and id=$1 for update",
+              [input.sourceProjectId],
+            );
+          const rejected = await rpc(fixture, activeHost, [input]);
+          expect(rejected.status, JSON.stringify(rejected.body)).toBe(409);
+        });
+        expect(await readState(fixture, host, input.projectId)).toEqual(before);
+      } finally {
+        await host?.dispose();
+        await fixture.close();
+      }
+    }, 30_000);
+
     it("移动已准备但目标开始归档时，提交仍拒绝改变任务归属", async () => {
       const fixture = await createCodeUiHttpFixture();
       let host: Host | undefined;

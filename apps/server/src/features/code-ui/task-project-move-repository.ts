@@ -102,10 +102,22 @@ async function noPendingWork(sql: InstanceSqlClient, taskId: string) {
 async function projects(sql: InstanceSqlClient, input: TaskProjectMoveInput) {
   if (input.sourceProjectId === input.projectId)
     throw moveConflict("请选择另一个项目。");
-  const records = await sql.query<Project>(
-    "select id,work_dir,additional_directories from public.projects where instance_id=:instance and id=any($1::uuid[]) and archived_at is null and archive_state='open' and enabled_modes && array['code','design']::text[] order by id for update",
-    [[input.sourceProjectId, input.projectId]],
-  );
+  const records = await sql
+    .query<Project>(
+      // 归档先持有 Project，再更新 Task；这里持有 Task 时不能等待 Project。
+      "select id,work_dir,additional_directories from public.projects where instance_id=:instance and id=any($1::uuid[]) and archived_at is null and archive_state='open' and enabled_modes && array['code','design']::text[] order by id for update nowait",
+      [[input.sourceProjectId, input.projectId]],
+    )
+    .catch((error: unknown) => {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "55P03"
+      )
+        throw moveConflict("项目状态正在改变，请刷新后重试。");
+      throw error;
+    });
   const target = records.find((project) => project.id === input.projectId);
   if (records.length !== 2 || !target) throw moveNotFound();
   return target;
