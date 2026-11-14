@@ -6,6 +6,7 @@ import {
   readFile,
   rename,
   rm,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -393,7 +394,8 @@ export async function maintainMemoryDirectory(options: {
         throw error;
       },
     );
-    if (!metadata) continue;
+    if (!metadata?.isFile() || metadata.isSymbolicLink()) continue;
+    if (metadata.size > options.maxFileBytes) continue;
     if (options.now - metadata.mtimeMs < options.orphanRetentionDays * DAY_MS)
       continue;
     await moveToTrash({
@@ -466,10 +468,12 @@ export async function restoreTrashEntry(options: {
       if (!exists) break;
       fileName = `${meta.fileName.replace(/\.md$/u, "")}-restored${suffix === 2 ? "" : `-${suffix}`}.md`;
     }
-    await rename(
-      join(trashDirectory, meta.fileName),
-      join(options.memoryRoot, fileName),
-    );
+    const restoredPath = join(options.memoryRoot, fileName);
+    await rename(join(trashDirectory, meta.fileName), restoredPath);
+    if (meta.reason === "orphan") {
+      const restoredAt = new Date(options.now);
+      await utimes(restoredPath, restoredAt, restoredAt);
+    }
   }
 
   if (typeof meta.indexLine === "string" && meta.indexLine.trim()) {

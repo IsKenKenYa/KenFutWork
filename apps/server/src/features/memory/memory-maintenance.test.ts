@@ -182,6 +182,48 @@ it("被索引引用的条目即使很旧也不会自动删除", async () => {
   expect(await readFile(join(root, "kept.md"), "utf8")).toContain("长期结论");
 });
 
+it("超过读取上限的孤儿正文不回收，恢复后的普通正文重新计时", async () => {
+  const { memory, root, currentTime } = await createFixture({
+    orphanRetentionDays: 1,
+  });
+  const large = "x".repeat(5_000);
+  await seed(root, { "large.md": large, "old.md": "旧正文" }, []);
+  const old = new Date(currentTime() - 2 * DAY);
+  for (const name of ["large.md", "old.md"])
+    await utimes(join(root, name), old, old);
+
+  await memory.maintainProjectMemory(actor, { projectId });
+  await expect(readFile(join(root, "large.md"), "utf8")).resolves.toBe(
+    `${large}\n`,
+  );
+  const [trash] = await memory.listTrashedMemories(actor, { projectId });
+  expect(trash?.fileName).toBe("old.md");
+  if (!trash) throw new Error("旧正文未进入回收区。");
+  await memory.restoreTrashedMemory(actor, { projectId, trashId: trash.id });
+  await memory.maintainProjectMemory(actor, { projectId });
+  await expect(readFile(join(root, "old.md"), "utf8")).resolves.toBe(
+    "旧正文\n",
+  );
+  expect(await memory.listTrashedMemories(actor, { projectId })).toEqual([]);
+});
+
+it("并发保存和整理保留所有新正文及对应索引", async () => {
+  const { memory, root } = await createFixture();
+  await seed(root, {}, ["- [已删除](missing.md)"]);
+  const [first, second] = await Promise.all([
+    memory.saveMemory(actor, { projectId, title: "同名", content: "第一条" }),
+    memory.saveMemory(actor, { projectId, title: "同名", content: "第二条" }),
+    memory.maintainProjectMemory(actor, { projectId }),
+  ]);
+  expect(first.fileName).not.toBe(second.fileName);
+  await expect(readFile(first.path, "utf8")).resolves.toBe("第一条\n");
+  await expect(readFile(second.path, "utf8")).resolves.toBe("第二条\n");
+  const index = await readFile(join(root, "MEMORY.md"), "utf8");
+  expect(index).toContain(`(${first.fileName})`);
+  expect(index).toContain(`(${second.fileName})`);
+  expect(index).not.toContain("missing.md");
+});
+
 it("回收区超过可恢复窗口后永久删除", async () => {
   const { memory, root, advanceDays } = await createFixture({
     recoverableWindowDays: 7,

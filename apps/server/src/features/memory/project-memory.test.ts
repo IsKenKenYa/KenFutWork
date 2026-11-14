@@ -332,6 +332,23 @@ describe("项目记忆召回", () => {
       expect(match.snippet.length).toBeLessThanOrEqual(8);
   });
 
+  it("超限索引和正文不阻断后续文件的搜索", async () => {
+    const { memory } = await createFixture({ codeReadMaxBytes: 100 });
+    const root = memory.memoryDirectory(projectId);
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, "MEMORY.md"), "x".repeat(101));
+    await writeFile(join(root, "a.md"), "x".repeat(101));
+    await writeFile(join(root, "z.md"), "需要检索的结论\n");
+    const result = await memory.searchMemories(actor, {
+      projectId,
+      query: "检索",
+    });
+    expect(result.truncated).toBe(true);
+    expect(result.matches).toEqual([
+      { fileName: "z.md", title: "z", snippet: "需要检索的结论" },
+    ]);
+  });
+
   it("关闭记忆或搜索词为空时快速失败", async () => {
     const disabled = await createFixture({ memoryEnabled: false });
     await expect(

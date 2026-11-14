@@ -228,6 +228,25 @@ export function createProjectMemoryService(options: {
 }): ProjectMemoryService {
   const projectsRoot = join(options.dataDir, "memories", "projects");
   const clock = options.now ?? Date.now;
+  const projectMutations = new Map<string, Promise<void>>();
+
+  // 保存、迁移、恢复和后台整理共用同一个项目队列。
+  const acquireProjectMutation = async (projectId: string) => {
+    const previous = projectMutations.get(projectId);
+    let release = () => {};
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    projectMutations.set(projectId, turn);
+    await previous;
+    return {
+      [Symbol.dispose]() {
+        release();
+        if (projectMutations.get(projectId) === turn)
+          projectMutations.delete(projectId);
+      },
+    };
+  };
 
   const memoryDirectory = (projectId: string) =>
     join(projectsRoot, projectId, MEMORY_DIRECTORY_NAME);
@@ -263,10 +282,10 @@ export function createProjectMemoryService(options: {
   const maintainProject = async (
     actor: LocalActor,
     projectId: string,
+    limits: Awaited<ReturnType<typeof readLimits>>,
   ): Promise<MemoryMaintenanceResult> => {
     await requireMemoryEnabled(actor);
     if (!isValidPathSegment(projectId)) throw new Error("项目标识无效。");
-    const limits = await readLimits(actor);
     return maintainMemoryDirectory({
       memoryRoot: memoryDirectory(projectId),
       now: clock(),
@@ -343,6 +362,7 @@ export function createProjectMemoryService(options: {
       if (files.length === 0 && legacyIndexLines.length === 0)
         return { migrated: 0 };
 
+      using mutation = await acquireProjectMutation(input.projectId);
       const memoryRoot = memoryDirectory(input.projectId);
       await mkdir(memoryRoot, { recursive: true });
       const limits = await readLimits(actor);
@@ -459,8 +479,10 @@ export function createProjectMemoryService(options: {
       return { migrated };
     },
 
-    maintainProjectMemory(actor, input) {
-      return maintainProject(actor, input.projectId);
+    async maintainProjectMemory(actor, input) {
+      const limits = await readLimits(actor);
+      using mutation = await acquireProjectMutation(input.projectId);
+      return await maintainProject(actor, input.projectId, limits);
     },
 
     async listTrashedMemories(actor, input) {
@@ -483,7 +505,8 @@ export function createProjectMemoryService(options: {
       if (!isValidPathSegment(input.projectId))
         throw new Error("项目标识无效。");
       const limits = await readLimits(actor);
-      return restoreTrashEntry({
+      using mutation = await acquireProjectMutation(input.projectId);
+      return await restoreTrashEntry({
         memoryRoot: memoryDirectory(input.projectId),
         trashId: input.trashId,
         recoverableWindowDays: limits.recoverableWindowDays,
@@ -644,12 +667,20 @@ export function createProjectMemoryService(options: {
         );
       const titles = new Map<string, string>();
       const indexPath = join(memoryRoot, MEMORY_INDEX_FILE_NAME);
-      const indexContent = files.includes(MEMORY_INDEX_FILE_NAME)
-        ? await readFile(indexPath, "utf8").catch((error: unknown) => {
-            if (isNotFound(error)) return "";
+      const indexMetadata = files.includes(MEMORY_INDEX_FILE_NAME)
+        ? await lstat(indexPath).catch((error: unknown) => {
+            if (isNotFound(error)) return null;
             throw error;
           })
-        : "";
+        : null;
+      const indexContent =
+        indexMetadata?.isFile() &&
+        indexMetadata.size <= settings.codeReadMaxBytes
+          ? await readFile(indexPath, "utf8").catch((error: unknown) => {
+              if (isNotFound(error)) return "";
+              throw error;
+            })
+          : "";
       for (const line of indexContent.split(/\r?\n/u)) {
         const matched = /^- \[(.+)\]\(([^)]+)\)/u.exec(line.trim());
         if (matched?.[1] && matched[2]) titles.set(matched[2], matched[1]);
@@ -658,14 +689,15 @@ export function createProjectMemoryService(options: {
       const matches: ProjectMemorySearchResult["matches"] = [];
       let used = 0;
       let truncated = false;
+      let budgetExhausted = false;
       for (const fileName of files) {
-        if (truncated) break;
+        if (budgetExhausted) break;
         const filePath = join(memoryRoot, fileName);
         const metadata = await lstat(filePath).catch((error: unknown) => {
           if (isNotFound(error)) return null;
           throw error;
         });
-        if (!metadata) continue;
+        if (!metadata?.isFile() || metadata.isSymbolicLink()) continue;
         if (metadata.size > settings.codeReadMaxBytes) {
           truncated = true;
           continue;
@@ -685,13 +717,18 @@ export function createProjectMemoryService(options: {
           const remaining = settings.codeReadPageCharacters - used;
           if (remaining <= 0) {
             truncated = true;
+            budgetExhausted = true;
             break;
           }
           const snippet =
             trimmed.length <= remaining ? trimmed : trimmed.slice(0, remaining);
-          if (trimmed.length > remaining) truncated = true;
           matches.push({ fileName, title, snippet });
           used += snippet.length;
+          if (trimmed.length > remaining) {
+            truncated = true;
+            budgetExhausted = true;
+            break;
+          }
         }
       }
       return { query, matches, truncated };
@@ -736,6 +773,7 @@ export function createProjectMemoryService(options: {
       if (Buffer.byteLength(content, "utf8") > limits.maxFileBytes)
         throw new Error("记忆正文超过可保存大小。");
 
+      using mutation = await acquireProjectMutation(input.projectId);
       const memoryRoot = memoryDirectory(input.projectId);
       await mkdir(memoryRoot, { recursive: true });
       const slug = memorySlug(title);
@@ -768,7 +806,7 @@ export function createProjectMemoryService(options: {
         throw new Error("记忆索引已满，请先整理 MEMORY.md。");
       await writeFile(indexPath, nextIndex, "utf8");
       // 提炼时机：每写入一条记忆后整理一次，合并重复正文并评估遗忘；失败不静默。
-      await maintainProject(actor, input.projectId);
+      await maintainProject(actor, input.projectId, limits);
       return { fileName, path: filePath, indexUpdated: true };
     },
   };
