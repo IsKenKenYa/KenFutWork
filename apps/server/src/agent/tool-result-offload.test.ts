@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   access,
   mkdir,
@@ -5,11 +6,14 @@ import {
   readdir,
   readFile,
   rm,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { ToolMessage } from "@langchain/core/messages";
 import { afterEach, expect, it } from "vitest";
+import { createGitClient } from "../features/code-git/git-client.js";
 import {
   createScopedBackend,
   type ScopedFilesystemScope,
@@ -24,6 +28,7 @@ import {
 const TASK_ID = "00000000-0000-4000-8000-000000000003";
 const RUN_ID = "run-1";
 const directories: string[] = [];
+const runFile = promisify(execFile);
 
 afterEach(async () => {
   await Promise.all(
@@ -190,7 +195,7 @@ it("同一运行的后续和并发模型请求继续替换已外置的原始输�
     TASK_ID,
     RUN_ID,
   );
-  expect(await readdir(directory)).toEqual(["call-1.txt"]);
+  expect(await readdir(directory)).toEqual([".gitignore", "call-1.txt"]);
   expect(await readFile(join(directory, "call-1.txt"), "utf8")).toBe(
     bigOutput(),
   );
@@ -221,7 +226,7 @@ it("并发同键写入幂等覆盖且不产生重复文件", async () => {
   const files = await readdir(
     join(rootDirectory, ".kenfutwork", "tool-results", TASK_ID, RUN_ID),
   );
-  expect(files).toEqual(["call-same.txt"]);
+  expect(files).toEqual([".gitignore", "call-same.txt"]);
   expect(
     await readFile(
       join(
@@ -256,6 +261,38 @@ it("超过单文件上限时只保留可读前缀并在说明标注", async () =
   );
   expect(stored).toBe(prefixByBytes(original, 64));
   expect(Buffer.byteLength(stored, "utf8")).toBeLessThanOrEqual(64);
+});
+
+it("用户仓库没有忽略规则时，自动提交只提交源码，外置正文仍可读取", async () => {
+  const { backend, rootDirectory, writer } = await fixture();
+  const git = (args: readonly string[]) =>
+    runFile("git", args, {
+      cwd: rootDirectory,
+      env: {
+        ...process.env,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_CONFIG_GLOBAL: join(rootDirectory, ".git", "empty-global-config"),
+      },
+    });
+  await git(["init"]);
+  await git(["config", "user.name", "KenFutWork Test"]);
+  await git(["config", "user.email", "git-test@kenfutwork.invalid"]);
+  await writeFile(join(rootDirectory, "source.txt"), "源码\n");
+  const target = await writer.write("call-git", "工具输出正文\n");
+  expect(
+    (await git(["status", "--porcelain", "--untracked-files=all"])).stdout,
+  ).toBe("?? source.txt\n");
+
+  const client = createGitClient({
+    exec: async (args) => ({ code: 0, ...(await git(args)) }),
+  });
+  await expect(client.autoCommit(rootDirectory)).resolves.toBe(true);
+  expect((await git(["ls-tree", "--name-only", "HEAD"])).stdout).toBe(
+    "source.txt\n",
+  );
+  expect((await backend.readPage({ path: target.relativePath })).content).toBe(
+    "工具输出正文\n",
+  );
 });
 
 it("归档或删除清理只移除该 Task 的目录", async () => {

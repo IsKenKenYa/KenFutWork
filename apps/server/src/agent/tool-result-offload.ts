@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, posix } from "node:path";
 import { ToolMessage } from "@langchain/core/messages";
 import type { AgentMiddleware } from "langchain";
@@ -12,7 +12,7 @@ import type { AgentMiddleware } from "langchain";
  * 总行数、字节数），再用现有读取工具按行区间分段取原文。
  *
  * 落点：工作目录下的 `.kenfutwork/tool-results/<taskId>/<runId>/<toolCallId>.txt`。
- * 该目录已被版本控制忽略，既在读取工具的授权范围内，又不碰用户源码文件。
+ * 写入前在本次运行的目录内建立 Git 忽略规则。读取仍受执行作用域限制。
  * 文件名按工具调用 id 固定，重复写入幂等覆盖，不产生重复文件。
  */
 
@@ -20,6 +20,7 @@ import type { AgentMiddleware } from "langchain";
 const SAFE_SEGMENT = /[^A-Za-z0-9_-]/g;
 const MAX_SEGMENT_CHARS = 120;
 const OFFLOAD_ROOT = posix.join(".kenfutwork", "tool-results");
+const RUN_GIT_IGNORE = "*\n";
 
 export interface ToolResultOffloadTarget {
   /** 相对工作目录的文件路径。 */
@@ -87,22 +88,40 @@ export function createToolResultOffloadWriter(
 ): ToolResultOffloadWriter {
   const taskSegment = sanitizeSegment(options.taskId, "task");
   const runSegment = sanitizeSegment(options.runId, "run");
+  const runDirectory = posix.join(OFFLOAD_ROOT, taskSegment, runSegment);
+  let protectRunDirectory: Promise<void> | undefined;
+  const protect = async () => {
+    const ignorePath = await options.resolvePath(
+      posix.join(runDirectory, ".gitignore"),
+    );
+    await mkdir(dirname(ignorePath), { recursive: true });
+    try {
+      await writeFile(ignorePath, RUN_GIT_IGNORE, { flag: "wx" });
+    } catch (error) {
+      if (
+        typeof error !== "object" ||
+        error === null ||
+        !("code" in error) ||
+        error.code !== "EEXIST"
+      )
+        throw error;
+      if ((await readFile(ignorePath, "utf8")) !== RUN_GIT_IGNORE)
+        throw new Error("工具输出目录已有不同的 Git 忽略规则。");
+    }
+  };
   return {
     async write(toolCallId, text) {
       const name = `${sanitizeSegment(toolCallId, "tool-call")}.txt`;
-      const relativePath = posix.join(
-        OFFLOAD_ROOT,
-        taskSegment,
-        runSegment,
-        name,
-      );
+      const relativePath = posix.join(runDirectory, name);
       const totalBytes = Buffer.byteLength(text, "utf8");
       const stored = prefixByBytes(text, options.maxBytes);
       const storedBytes = Buffer.byteLength(stored, "utf8");
 
       await options.guard();
       const absolutePath = await options.resolvePath(relativePath);
-      await mkdir(dirname(absolutePath), { recursive: true });
+      protectRunDirectory ??= protect();
+      await protectRunDirectory;
+      await options.guard();
       const temporaryPath = `${absolutePath}.${randomUUID()}.tmp`;
       await writeFile(temporaryPath, stored, "utf8");
       await rename(temporaryPath, absolutePath);
