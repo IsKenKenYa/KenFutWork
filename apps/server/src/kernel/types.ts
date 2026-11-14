@@ -332,6 +332,8 @@ export interface PromptCompositionContext {
    * 作为提示段注入，保证插件规则每轮生效；与用户规则段同属 run 起始期事实。
    */
   pluginHookContext?: readonly string[];
+  /** 自定义智能体显式关闭实例级默认 AGENTS.md 注入。 */
+  omitInstanceInstructions?: boolean;
 }
 
 export type PromptExecutionContext = Pick<

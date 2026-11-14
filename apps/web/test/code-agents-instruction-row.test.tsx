@@ -25,7 +25,9 @@ function renderRow(platform: RowPlatform, workspacePath: string) {
   render(
     <PlatformProvider platform={platform}>
       <ZCodeIntlProvider initialLocale="zh-CN">
-        <AgentsInstructionRow workspacePath={workspacePath} />
+        <AgentsInstructionRow
+          filePath={resolveAgentsInstructionPath(workspacePath)}
+        />
       </ZCodeIntlProvider>
     </PlatformProvider>,
   );
@@ -81,4 +83,29 @@ it("Web 端没有已安装软件时仍如实显示文件与路径", () => {
   expect(screen.getByText("AGENTS.md")).toBeTruthy();
   expect(screen.getByText("/home/me/proj/AGENTS.md")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /打开/ })).toBeNull();
+});
+
+it("传入 onEdit 时出现页内编辑入口，未传则不出现", () => {
+  const onEdit = vi.fn();
+  render(
+    <PlatformProvider platform={createWebPlatform()}>
+      <ZCodeIntlProvider initialLocale="zh-CN">
+        <AgentsInstructionRow
+          filePath="/home/me/proj/AGENTS.md"
+          onEdit={onEdit}
+        />
+      </ZCodeIntlProvider>
+    </PlatformProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+  expect(onEdit).toHaveBeenCalled();
+  cleanup();
+  render(
+    <PlatformProvider platform={createWebPlatform()}>
+      <ZCodeIntlProvider initialLocale="zh-CN">
+        <AgentsInstructionRow filePath="/home/me/proj/AGENTS.md" />
+      </ZCodeIntlProvider>
+    </PlatformProvider>,
+  );
+  expect(screen.queryByRole("button", { name: "编辑" })).toBeNull();
 });

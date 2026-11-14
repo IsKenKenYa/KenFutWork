@@ -22,7 +22,12 @@ export function createCodeChildHarness(deps: {
     const child = await deps.sessions.open(request);
     const runId = randomUUID();
     const scope = request.scope.derive(request.role, child.sessionId);
-    const instructions = `角色：${request.role}。${request.role === "worker" ? "在继承权限上限内完成实现。" : "只读分析，不修改文件或通过审批扩大权限。"}\n负责路径：${request.ownership.join("、")}\n完成标准：${request.completionCriteria}\n任务：${request.description}\n你不是独自在代码库，不撤销他人的改动。返回结果、关键路径和验证证据；跟随用户任务的语言。`;
+    const roleTemplate = `角色：${request.role}。${request.role === "worker" ? "在继承权限上限内完成实现。" : "只读分析，不修改文件或通过审批扩大权限。"}`;
+    const instructions = `${request.systemPrompt ?? roleTemplate}
+负责路径：${request.ownership.join("、")}
+完成标准：${request.completionCriteria}
+任务：${request.description}
+你不是独自在代码库，不撤销他人的改动。返回结果、关键路径和验证证据；跟随用户任务的语言。`;
     await deps.metadata.createAcceptedRun({
       runId,
       sessionId: child.sessionId,
@@ -73,6 +78,15 @@ export function createCodeChildHarness(deps: {
         roleInstructions: instructions,
         approvalCeiling: request.approvalCeiling,
         eventSink: child.emit,
+        ...(request.toolAllowlist
+          ? { toolAllowlist: [...request.toolAllowlist] }
+          : {}),
+        ...(request.disallowedTools
+          ? { toolDenylist: [...request.disallowedTools] }
+          : {}),
+        ...(request.omitInstanceInstructions
+          ? { omitInstanceInstructions: true }
+          : {}),
       },
     );
     const cancel = () => {

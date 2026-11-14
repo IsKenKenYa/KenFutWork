@@ -188,6 +188,19 @@ export function resolvePresetForRun(run: {
   return run.preset ?? (run.canvasId ? "design" : "code");
 }
 
+/** 用户自定义智能体的工具白名单/黑名单：缺省不限制，显式声明才收窄。 */
+export function toolAllowedForRun(
+  run: {
+    toolAllowlist?: readonly string[] | undefined;
+    toolDenylist?: readonly string[] | undefined;
+  },
+  toolName: string,
+): boolean {
+  if (run.toolAllowlist && !run.toolAllowlist.includes(toolName)) return false;
+  if (run.toolDenylist?.includes(toolName)) return false;
+  return true;
+}
+
 /**
  * 首轮消息的画布状态摘要（`<canvas_state>`）：**仅 design 注入**。
  *
@@ -450,6 +463,11 @@ type RuntimeRunRecord = RunCreateRequest & {
   approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
   delegationDepth?: number;
   roleInstructions?: string;
+  /** 子智能体（用户自定义）的工具白名单/黑名单；缺省不限制。 */
+  toolAllowlist?: readonly string[];
+  toolDenylist?: readonly string[];
+  /** 自定义智能体显式关闭实例级默认 AGENTS.md 注入。 */
+  omitInstanceInstructions?: boolean;
   eventSink?: (event: StreamEvent) => Promise<void>;
   /** 可信持久宿主在自身事务内结算账本，客户端请求不能选择所有权。 */
   terminalPersistence: "runtime" | "host";
@@ -841,6 +859,11 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         terminalPersistence?: "host";
         delegationDepth?: number;
         roleInstructions?: string;
+        /** 子智能体（用户自定义）的工具白名单/黑名单；缺省不限制。 */
+        toolAllowlist?: readonly string[];
+        toolDenylist?: readonly string[];
+        /** 自定义智能体显式关闭实例级默认 AGENTS.md 注入。 */
+        omitInstanceInstructions?: boolean;
         approvalCeiling?: import("../features/permissions/approval-types.js").CodeApprovalMode;
       },
     ): RunCreateResponse {
@@ -922,6 +945,15 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           : {}),
         ...(runOptions?.roleInstructions
           ? { roleInstructions: runOptions.roleInstructions }
+          : {}),
+        ...(runOptions?.toolAllowlist
+          ? { toolAllowlist: [...runOptions.toolAllowlist] }
+          : {}),
+        ...(runOptions?.toolDenylist
+          ? { toolDenylist: [...runOptions.toolDenylist] }
+          : {}),
+        ...(runOptions?.omitInstanceInstructions
+          ? { omitInstanceInstructions: true }
           : {}),
         ...(runOptions?.approvalCeiling
           ? { approvalCeiling: runOptions.approvalCeiling }
@@ -1794,10 +1826,22 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const preset = resolvePresetForRun(run);
 
           // Task权限由作用域和逐调用审批持有；非Task按可信目标身份取权限场景。
-          const toolGate =
+          const baseToolGate =
             run.threadId && options.toolGateFor
               ? options.toolGateFor(run.threadId, !!run.scopeHandle, run.goalId)
               : undefined;
+          // 自定义智能体的工具清单再叠一层：模型清单已过滤，这里兜住线程历史里
+          // 复述旧工具名的调用，拒绝理由对模型可读。
+          const toolGate =
+            run.toolAllowlist || run.toolDenylist
+              ? (toolName: string, detail?: { subagentReadOnly?: boolean }) =>
+                  !toolAllowedForRun(run, toolName)
+                    ? ({
+                        allowed: false,
+                        reason: `该智能体未配置工具 ${toolName}。`,
+                      } as const)
+                    : (baseToolGate?.(toolName, detail) ?? { allowed: true })
+              : baseToolGate;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
           // （只有它拿得到 runId/时间戳/abort 控制器）
           denialTracker = toolGate ? createToolDenialTracker() : undefined;
@@ -2303,6 +2347,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const kernelToolDefinitions = kernelToolRegistry
             ? kernelToolRegistry
                 .resolveRunTools(toolResolutionContext)
+                .filter((tool) => toolAllowedForRun(run, tool.name))
                 .map((tool) => ({
                   ...tool,
                   execute: (
@@ -2325,7 +2370,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             try {
               const current = kernelToolRegistry
                 ?.resolveRunTools(toolResolutionContext)
-                .find((tool) => tool.name === name);
+                .find(
+                  (tool) =>
+                    tool.name === name && toolAllowedForRun(run, tool.name),
+                );
               if (current?.projectArguments)
                 argumentProjectors.set(name, {
                   projectArguments: current.projectArguments,
@@ -2357,6 +2405,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               : {}),
             ...(userRulesFragment.length > 0 ? { userRulesFragment } : {}),
             ...(pluginHookContext.length > 0 ? { pluginHookContext } : {}),
+            ...(run.omitInstanceInstructions
+              ? { omitInstanceInstructions: true }
+              : {}),
           };
           const initialPolicy = await codeApproval?.resolve();
           if (run.scopeHandle) {

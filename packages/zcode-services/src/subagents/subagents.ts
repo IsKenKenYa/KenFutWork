@@ -38,6 +38,12 @@ export interface ISubagentsService {
 
   /** 删除 agent 文件 */
   deleteAgent(params: AgentDeleteParams): Promise<void>;
+
+  /** 宿主适配：读取实例级默认 AGENTS.md（设置页页内编辑）。 */
+  readDefaultInstructions(): Promise<{ content: string }>;
+
+  /** 宿主适配：写入实例级默认 AGENTS.md。 */
+  writeDefaultInstructions(params: { content: string }): Promise<void>;
 }
 
 export const ISubagentsService = createServiceDescriptor<ISubagentsService>(

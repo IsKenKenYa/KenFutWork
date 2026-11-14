@@ -85,6 +85,11 @@ export interface AgentsListResult {
   pluginAgents: AgentSummary[];
   capability: AgentsCapability;
   diagnostics?: AgentDiagnostic[];
+  /**
+   * 宿主适配：实例级默认指令文件（AGENTS.md）的绝对路径。
+   * ZCode 桌面用 `~/.zcode/AGENTS.md`；本机实例落在数据目录内。
+   */
+  defaultInstructionsPath?: string;
 }
 
 /** Agent 配置，用于创建/更新 agent */
