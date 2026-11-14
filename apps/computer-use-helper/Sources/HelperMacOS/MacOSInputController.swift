@@ -136,7 +136,7 @@ public struct MacOSInputController: HelperInputProviding {
     try requireAccessibility()
     try activate(pid: pid)
     var buffer: [UniChar] = []
-    for character in text.utf16 {
+    for character in Self.normalizedInput(text).utf16 {
       if character == 10 || character == 13 {
         flush(&buffer)
         pressKey(keyCode: 36, flags: [], repeatCount: 1, delayMs: delayMs)
@@ -149,6 +149,10 @@ public struct MacOSInputController: HelperInputProviding {
     }
     flush(&buffer)
     return ComputerUseHelperActionResult(performed: true)
+  }
+
+  static func normalizedInput(_ text: String) -> String {
+    text.replacingOccurrences(of: "\r\n", with: "\n")
   }
 
   public func key(

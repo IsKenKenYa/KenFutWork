@@ -5,6 +5,10 @@ import XCTest
 @testable import HelperMacOS
 
 final class MacOSInputControllerTests: XCTestCase {
+  func testWindowsLineBreakProducesOneReturnAndPreservesStandaloneBreaks() {
+    XCTAssertEqual(MacOSInputController.normalizedInput("甲\r\n乙\r丙\n丁"), "甲\n乙\r丙\n丁")
+  }
+
   func testAnsiKeyMapCoversLettersDigitsAndNamedKeys() {
     XCTAssertEqual(MacOSInputController.keyCode(for: "f"), 3)
     XCTAssertEqual(MacOSInputController.keyCode(for: "F"), 3)
