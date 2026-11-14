@@ -15,11 +15,10 @@ public enum MacOSWindowCatalog {
     else {
       return ComputerUseHelperWindowsResult(windows: [])
     }
-    let pidValue = Int32(pid)
     let windows = raw.compactMap { entry -> ComputerUseHelperWindow? in
       guard
         let ownerPid = entry[kCGWindowOwnerPID as String] as? Int,
-        ownerPid == Int(pidValue),
+        ownerPid == pid,
         let windowNumber = entry[kCGWindowNumber as String] as? Int,
         let layer = entry[kCGWindowLayer as String] as? Int,
         let bounds = entry[kCGWindowBounds as String] as? [String: Any]
@@ -43,10 +42,6 @@ public enum MacOSWindowCatalog {
           height: height
         )
       )
-    }
-    .sorted { left, right in
-      if left.layer != right.layer { return left.layer < right.layer }
-      return left.windowId < right.windowId
     }
     return ComputerUseHelperWindowsResult(windows: windows)
   }
