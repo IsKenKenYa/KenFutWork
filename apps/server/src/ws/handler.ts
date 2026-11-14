@@ -4,7 +4,6 @@ import { wsCommandSchema, wsRpcResponseSchema } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import type { AgentRunService } from "../agent/runtime.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import type { AgentRunMetadataService } from "../features/agent-runs/agent-run-service.js";
 import type { ChatService } from "../features/chat/chat-service.js";
 import type { ThreadService } from "../features/chat/thread-service.js";
@@ -36,7 +35,6 @@ import { createPipelineLogger } from "./logger.js";
 type WsRunPayload = Extract<WsCommand, { action: "agent.run" }>["payload"];
 type RegisterWsOptions = {
   agentRuns: AgentRunService;
-  agentModes?: ExecutionModeService;
   agentRunMetadataService?: AgentRunMetadataService;
   localAccess?: LocalAccessVerifier &
     Partial<Pick<LocalAccessService, "onRevoked">>;

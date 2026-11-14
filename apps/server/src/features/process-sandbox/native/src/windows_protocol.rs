@@ -10,11 +10,25 @@ pub struct PtySize {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectReadOwner {
+    pub kind: String,
+    pub lease_id: String,
+    pub instance_id: String,
+    pub project_id: String,
+    pub connection_id: String,
+    pub revision: String,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Launch {
     #[serde(default)]
     pub unrestricted: bool,
     pub process_id: String,
-    pub task_id: String,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub project_owner: Option<ProjectReadOwner>,
     pub generation: u64,
     pub command: Vec<String>,
     pub cwd: String,

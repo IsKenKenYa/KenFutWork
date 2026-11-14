@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import {
   AGENT_GOVERNANCE_DEFAULTS,
   clampSubagentMaxContinuations,
+  type HookEvent,
   type ImageAttachment,
   type ImageGenerationPreference,
   type InstanceSettings,
@@ -56,7 +57,9 @@ import {
   parseInstanceSpecifier,
   toInstanceSpecifier,
 } from "../features/model-providers/model-catalog-service.js";
+import { estimateModelCostUsd } from "../features/model-providers/model-cost.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
+import type { PluginHookRunResult } from "../features/plugins/plugin-hooks.js";
 import type {
   ProcessLimits,
   ProcessSandbox,
@@ -66,7 +69,6 @@ import {
   resolveConfiguredCommandPrompt,
 } from "../features/settings/command-input.js";
 import { hooksFor, runHooks } from "../features/settings/hooks.js";
-import type { PluginHookRunResult } from "../features/plugins/plugin-hooks.js";
 import { createScopedHookCommand } from "../features/settings/scoped-hook-command.js";
 import type { SettingsService } from "../features/settings/settings-service.js";
 import { formatUserRulesFragment } from "../features/settings/user-rules.js";
@@ -153,6 +155,10 @@ import {
   type ToolDenialRecord,
 } from "./tool-denial.js";
 import { createToolExecutionReceipts } from "./tool-execution-receipts.js";
+import {
+  createToolResultOffloadWriter,
+  type ToolResultOffloadWriter,
+} from "./tool-result-offload.js";
 import {
   type AgentTurnBoundaryFacts,
   captureAgentTurnBoundaryFacts,
@@ -420,6 +426,8 @@ type RuntimeRunStatus =
   | "running";
 
 type RuntimeRunRecord = RunCreateRequest & {
+  /** 持久目标属主确认的运行来源，普通请求不能提供。 */
+  goalId?: string;
   workContext?: protocol.ConversationWorkContext | undefined;
   frozenContributions?: ToolContributionSnapshot;
   acceptedCancellation?: Promise<void>;
@@ -542,7 +550,7 @@ type CreateAgentRuntimeOptions = {
   /** 内核统一工具注册表：按 run 的 preset 过滤后桥接进模型工具列表（§4.5）。 */
   tools?: ToolRegistry;
   contextHistoryArchives?: ContextHistoryArchiveBindings;
-  /** 内核系统提示段注册表：run 起始期组装系统提示（模式段/品牌/skills/规则与插件）。 */
+  /** 内核系统提示段注册表：run 起始期组装品牌、skills、规则与插件指导。 */
   systemPromptRegistry?: SystemPromptRegistry;
   /** 事件缝（DEC-1）：turn 收尾时发射 turn-stopping，插件据此结算。 */
   emitTurnStopping?: (payload: { runId: string }) => Promise<void>;
@@ -557,12 +565,12 @@ type CreateAgentRuntimeOptions = {
     },
   ) => Promise<{ input: unknown }>;
   /**
-   * 执行策略工具门：Task使用接纳快照，独立规划态仍由原Task审批链裁决。
+   * Task使用逐调用审批；非Task按可信目标身份选择权限场景。
    */
   toolGateFor?: (
     threadId: string,
-    executionMode?: import("@kenfutwork/shared").ExecutionMode,
     scoped?: boolean,
+    goalId?: string,
   ) => ToolGate | undefined;
   /**
    * 检查点钩子（checkpoints 缝，可选依赖）：轮次开始/结束时打影子 git 快照。
@@ -604,7 +612,6 @@ function copyRunInput(input: RunCreateRequest): RunCreateRequest {
     ...(input.mentions ? { mentions: input.mentions } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.preset ? { preset: input.preset } : {}),
-    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
   };
 }
 
@@ -713,7 +720,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
     return run.acceptedCancellation;
   };
 
-  // DEC-1 pre-step：把改写权交给事件监听器（执行模式 plan 引导等），无监听器原样返回
+  // pre-step将指导改写交给事件监听器，无监听器时原样返回。
   const applyPreStep = async (
     input: string,
     run: RuntimeRunRecord,
@@ -726,7 +733,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       input,
       runId: run.runId,
       preset: resolvePresetForRun(run),
-      ...(run.executionMode ? { executionMode: run.executionMode } : {}),
       ...(run.threadId ? { threadId: run.threadId } : {}),
       ...(run.sessionId ? { sessionId: run.sessionId } : {}),
       ...(scope ? { instanceId: scope.instanceId, taskId: scope.taskId } : {}),
@@ -816,6 +822,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         /** 已鉴权的原输入身份；retry须回指原client/sourceCommand，不能用新runId代替。 */
         inputIdentity?: { clientId: string; sourceCommandId: string };
         inputOrigin?: "userInput" | "backgroundResult" | "controlOperation";
+        /** 仅由持久目标属主确认，不从公开Run请求读取。 */
+        goalId?: string;
         operation?: { kind: "compact" };
         /** 持久命令已铸造的运行身份；恢复/去重不得再次生成另一轮 run。 */
         runId?: string;
@@ -907,6 +915,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           ? { sandboxScopeId: runOptions.sandboxScopeId }
           : {}),
         ...(runOptions?.threadId ? { threadId: runOptions.threadId } : {}),
+        ...(runOptions?.goalId ? { goalId: runOptions.goalId } : {}),
         ...(runOptions?.eventSink ? { eventSink: runOptions.eventSink } : {}),
         ...(runOptions?.delegationDepth !== undefined
           ? { delegationDepth: runOptions.delegationDepth }
@@ -1411,6 +1420,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (instanceSkillsByInstanceLoader) {
             instanceSkills = await instanceSkillsByInstanceLoader(
               run.actor.instanceId,
+              run.scopeHandle.describe().projectId,
             );
             rlog.lap("workspace_skills_loaded", {
               count: instanceSkills.length,
@@ -1471,10 +1481,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       let modelCapabilities = { image: false, pdf: false };
       let autoCompact: CompactionPlan | undefined;
       let manualCompactPlan: CompactionPlan | undefined;
-      /** 用户钩子（R5-2）：起点在装配前跑，终点在本轮收尾时跑；都是旁路。 */
-      let hookCommands: { start: string[]; end: string[] } = {
-        start: [],
-        end: [],
+      /** 用户钩子（R5-2）：回合起止与工具起止都跑；都是旁路。 */
+      let hookCommands: Record<HookEvent, string[]> = {
+        "turn-start": [],
+        "turn-end": [],
+        "tool-start": [],
+        "tool-end": [],
+        "tool-failed": [],
       };
       let hookShell: InstanceSettings["terminalShell"] | undefined;
       let processLimits: ProcessLimits = {
@@ -1500,6 +1513,28 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
       /** 后台任务续轮上限（DEC-15/18）：防挂死任务导致无限续轮。 */
       let governanceMaxContinuations: number =
         AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations;
+      /** 发给模型时保留的最近图片张数（DEC-18）。 */
+      let contextKeepRecentImages: number =
+        AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
+      /** 超大工具输出外置的阈值与单文件上限（DEC-18）。 */
+      let governanceToolResultOffload: {
+        maxChars: number;
+        maxBytes: number;
+      } = {
+        maxChars: AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxChars,
+        maxBytes: AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxBytes,
+      };
+      let toolResultOffloadBinding:
+        | { writer: ToolResultOffloadWriter; maxChars: number }
+        | undefined;
+      /** 旧工具结果折叠：只改请求副本，最近若干条保留原文（DEC-18）。 */
+      let governanceToolResultPrune: {
+        thresholdChars: number;
+        keepRecentResults: number;
+      } = {
+        thresholdChars: AGENT_GOVERNANCE_DEFAULTS.toolResultPruneThresholdChars,
+        keepRecentResults: AGENT_GOVERNANCE_DEFAULTS.toolResultPruneKeepRecent,
+      };
       /** 统一后台任务注册表（DEC-15）：设置读取后创建；取消/收尾经它连带清理。 */
       let backgroundTaskRegistry: BackgroundTaskRegistry | null = null;
       let taskWorkContext: TaskWorkContext | undefined;
@@ -1550,6 +1585,52 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         await persistBoundary(run, phase, facts);
       };
 
+      /**
+       * 钩子执行器：按事件取命令，逐条跑，结果逐条发 `run.hook`。
+       *
+       * 回合结束点在收尾阶段执行，此时控制器可能已被停止；不把停止信号接进去，
+       * 否则「取消也要跑」的终点钩子会被立刻打断。工具与回合起点仍随本轮停止。
+       */
+      const runHookEvent = async function* (
+        event: HookEvent,
+      ): AsyncGenerator<StreamEvent> {
+        const commands = hookCommands[event];
+        if (commands.length === 0 || !backendResult.sandboxDir) return;
+        for (const hook of await runHooks({
+          event,
+          commands,
+          cwd: backendResult.sandboxDir,
+          timeoutMs: governanceExecuteTimeoutMs,
+          previewMaxChars: processLimits.previewMaxChars,
+          ...(run.scopeHandle
+            ? {
+                runCommand: options.processSandbox
+                  ? createScopedHookCommand({
+                      sandbox: options.processSandbox,
+                      scope: run.scopeHandle,
+                      runId,
+                      event,
+                      limits: processLimits,
+                      ...(event === "turn-end"
+                        ? {}
+                        : { signal: run.controller.signal }),
+                    })
+                  : async () => {
+                      throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
+                    },
+              }
+            : {}),
+          ...(hookShell ? { shell: hookShell } : {}),
+        })) {
+          yield {
+            type: "run.hook" as const,
+            runId,
+            ...hook,
+            timestamp: now(),
+          };
+        }
+      };
+
       try {
         /** 被拒工具调用的记账（含连续拒绝计数）；门存在时才有值。 */
         let denialTracker:
@@ -1598,7 +1679,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (
             resolvedModel &&
             typeof resolvedModel !== "string" &&
-            run.usageMeta
+            run.usageMeta &&
+            resolvedModel.metadata?.[MODEL_USAGE_OWNER_METADATA] === undefined
           ) {
             resolvedModel.metadata = {
               ...resolvedModel.metadata,
@@ -1711,14 +1793,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
 
           const preset = resolvePresetForRun(run);
 
-          // Task工具门消费Run快照；没有Task的旧调用继续使用线程策略。
+          // Task权限由作用域和逐调用审批持有；非Task按可信目标身份取权限场景。
           const toolGate =
             run.threadId && options.toolGateFor
-              ? options.toolGateFor(
-                  run.threadId,
-                  run.executionMode,
-                  !!run.scopeHandle,
-                )
+              ? options.toolGateFor(run.threadId, !!run.scopeHandle, run.goalId)
               : undefined;
           // 被拒调用的可见性与有界失败：门只做判定，记账与中止由运行时负责
           // （只有它拿得到 runId/时间戳/abort 控制器）
@@ -1792,10 +1870,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 compactFallbackKeepMessages:
                   instanceSettings.compactFallbackKeepMessages,
               };
-            // 钩子也从这个对象读（同一趟）：起点钩子在装配 agent 之前跑
+            // 钩子也从这个对象读（同一趟）：按事件各取一份，回合起点在装配前跑
             hookCommands = {
-              start: hooksFor(instanceSettings?.hooks, "turn-start"),
-              end: hooksFor(instanceSettings?.hooks, "turn-end"),
+              "turn-start": hooksFor(instanceSettings?.hooks, "turn-start"),
+              "turn-end": hooksFor(instanceSettings?.hooks, "turn-end"),
+              "tool-start": hooksFor(instanceSettings?.hooks, "tool-start"),
+              "tool-end": hooksFor(instanceSettings?.hooks, "tool-end"),
+              "tool-failed": hooksFor(instanceSettings?.hooks, "tool-failed"),
             };
             hookShell = instanceSettings?.terminalShell;
             if (instanceSettings)
@@ -1827,6 +1908,25 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               instanceSettings?.subagentMaxContinuations ??
                 AGENT_GOVERNANCE_DEFAULTS.subagentMaxContinuations,
             );
+            contextKeepRecentImages =
+              instanceSettings?.contextKeepRecentImages ??
+              AGENT_GOVERNANCE_DEFAULTS.contextKeepRecentImages;
+            governanceToolResultOffload = {
+              maxChars:
+                instanceSettings?.toolResultOffloadMaxChars ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxChars,
+              maxBytes:
+                instanceSettings?.toolResultOffloadMaxBytes ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultOffloadMaxBytes,
+            };
+            governanceToolResultPrune = {
+              thresholdChars:
+                instanceSettings?.toolResultPruneThresholdChars ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultPruneThresholdChars,
+              keepRecentResults:
+                instanceSettings?.toolResultPruneKeepRecent ??
+                AGENT_GOVERNANCE_DEFAULTS.toolResultPruneKeepRecent,
+            };
           }
 
           // 统一后台任务注册表（DEC-15）：每 run 一个（状态随 run 生命周期，
@@ -1844,10 +1944,33 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               signal: run.controller.signal,
             };
             run.branchGeneration = taskWorkContext.branchGeneration;
+            // 超大工具输出外置到本 Run 的运行目录：写盘前经执行作用域复查资格，
+            // 归档/删除撤销后迟到写入会在这里抛错，不会复活目录。
+            const offloadHandle = run.scopeHandle;
+            toolResultOffloadBinding = {
+              writer: createToolResultOffloadWriter({
+                taskId: offloadHandle.describe().taskId,
+                runId,
+                maxBytes: governanceToolResultOffload.maxBytes,
+                guard: async () => {
+                  await offloadHandle.resolvePath(".", "read");
+                },
+                resolvePath: (relativePath) =>
+                  offloadHandle.resolvePath(relativePath, "write"),
+              }),
+              maxChars: governanceToolResultOffload.maxChars,
+            };
             if (run.scopeHandle.role === "main")
               leaveForeground =
                 await options.taskWork.enterForeground(taskWorkContext);
-            else hookCommands = { start: [], end: [] };
+            else {
+              // 子代理不跑用户钩子：钩子属于用户可见的回合与工具节点。
+              for (const hookEvent of Object.keys(
+                hookCommands,
+              ) as HookEvent[]) {
+                hookCommands[hookEvent] = [];
+              }
+            }
           } else {
             backgroundTaskRegistry = createBackgroundTaskRegistry({
               maxConcurrent: governanceConcurrency,
@@ -1855,39 +1978,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             backgroundTaskRegistries.set(run, backgroundTaskRegistry);
           }
 
-          if (hookCommands.start.length > 0 && backendResult.sandboxDir) {
-            for (const hook of await runHooks({
-              event: "turn-start",
-              commands: hookCommands.start,
-              cwd: backendResult.sandboxDir,
-              timeoutMs: governanceExecuteTimeoutMs,
-              previewMaxChars: processLimits.previewMaxChars,
-              ...(run.scopeHandle
-                ? {
-                    runCommand: options.processSandbox
-                      ? createScopedHookCommand({
-                          sandbox: options.processSandbox,
-                          scope: run.scopeHandle,
-                          runId,
-                          event: "turn-start",
-                          limits: processLimits,
-                          signal: run.controller.signal,
-                        })
-                      : async () => {
-                          throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
-                        },
-                  }
-                : {}),
-              ...(hookShell ? { shell: hookShell } : {}),
-            })) {
-              yield {
-                type: "run.hook" as const,
-                runId,
-                ...hook,
-                timestamp: now(),
-              };
-            }
-          }
+          yield* runHookEvent("turn-start");
 
           // 插件 SessionStart 钩子：规则经 stdout 的 additionalContext 回灌系统提示，
           // 与用户钩子同一生命周期（失败不阻断），但不与实例钩子的命令混用。
@@ -1957,7 +2048,10 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             resolvedModel && typeof resolvedModel !== "string"
               ? nativeEffectiveOutputTokens(resolvedModel)
               : declaredMaxOutput;
-          const contextWindow = resolveContextWindow(declaredWindow, specifier);
+          const contextWindow =
+            run.modelInvocation?.contextWindow !== undefined
+              ? run.modelInvocation.contextWindow
+              : resolveContextWindow(declaredWindow, specifier);
           const contextBudget = {
             inputTokenLimit: resolveInputTokenLimit({
               contextWindow,
@@ -2014,7 +2108,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                     entry.provider.instanceId === selection.instanceId &&
                     entry.id === selection.model,
                 );
-              if (selected)
+              if (selected && !run.modelInvocation)
                 modelCapabilities = resolveModelInputCapabilities(
                   selected.model,
                   selected.hints,
@@ -2099,7 +2193,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           });
           toolReceipts = executionReceipts;
           const runToolContext: ToolExecutionContext = {
-            ...(run.executionMode ? { executionMode: run.executionMode } : {}),
+            ...(run.goalId ? { goalId: run.goalId } : {}),
             ...(run.frozenContributions
               ? {
                   frozenContributions: structuredClone(run.frozenContributions),
@@ -2318,10 +2412,13 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 const entry = entries?.find(
                   (candidate) => toInstanceSpecifier(candidate) === specifier,
                 );
-                const nextContextWindow = resolveContextWindow(
-                  entry?.model.contextWindow,
-                  specifier,
-                );
+                const nextContextWindow =
+                  invocation.contextWindow !== undefined
+                    ? invocation.contextWindow
+                    : resolveContextWindow(
+                        entry?.model.contextWindow,
+                        specifier,
+                      );
                 contextBudget.inputTokenLimit = resolveInputTokenLimit({
                   contextWindow: nextContextWindow,
                   maxOutputTokens: execution.effectiveOutputTokens,
@@ -2414,12 +2511,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(manualCompactPlan ? { manualCompactPlan } : {}),
             compactionRetention,
             contextBudget,
+            // 旧工具结果折叠：只改请求副本，最近若干条保留原文；阈值与条数来自治理设置。
+            toolResultPrune: governanceToolResultPrune,
+            ...(toolResultOffloadBinding ?? {}),
+            // 旧图片卸载：只保留最近几张图片，更早的图片在模型请求里换成文字占位。
+            contextKeepRecentImages,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
             ...(persistence ? { store: persistence.store } : {}),
             ...(kernelToolDefinitions.length > 0
               ? { kernelTools: kernelToolDefinitions }
               : {}),
-            // 执行模式工具门（solo/plan 硬约束）：拦截内置与桥接工具的全部调用
+            // 工具权限检查覆盖内置与桥接工具。
             ...(toolGate ? { toolGate } : {}),
             ...(toolGateHooks ? { toolGateHooks } : {}),
             // 子代理派发缝（DEC-14/15/16）：注册表并发上限来自治理设置
@@ -2466,7 +2568,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? {
                   onUsage: (usage: ModelCallUsage) => {
                     const owner = usage.owner ?? run.usageMeta;
+                    // 供应商没回传成本时用随包目录估算；未知模型保持缺省。
+                    const costUsd = owner?.model
+                      ? estimateModelCostUsd(owner.model, usage, owner.provider)
+                      : undefined;
                     return options.runUsage?.update(runId, usage.modelCallId, {
+                      ...(costUsd === undefined ? {} : { costUsd }),
                       inputTokens: usage.inputTokens,
                       outputTokens: usage.outputTokens,
                       provider: owner?.provider ?? "builtin",
@@ -2907,6 +3014,16 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               }
               yield event;
 
+              // 工具钩子：用户配在单个工具调用的开始、结束或失败上。
+              // 失败按权威终态分派，缺失终态的完成事件算正常结束。
+              if (event.type === "tool.started") {
+                yield* runHookEvent("tool-start");
+              } else if (event.type === "tool.completed") {
+                yield* runHookEvent(
+                  event.status === "error" ? "tool-failed" : "tool-end",
+                );
+              }
+
               if (!isTerminalEvent(event) && options.eventDelayMs) {
                 try {
                   await delay(options.eventDelayMs, undefined, {
@@ -3019,38 +3136,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
          * 放在 finally 里是为了「取消/失败也跑得到」——用户配的是「每轮结束」而不是「成功结束」。
          * 事件在此之后才发（客户端按 runId 收，不依赖终态先后）。
          */
-        if (hookCommands.end.length > 0 && backendResult.sandboxDir) {
+        if (hookCommands["turn-end"].length > 0 && backendResult.sandboxDir) {
           try {
-            for (const hook of await runHooks({
-              event: "turn-end",
-              commands: hookCommands.end,
-              cwd: backendResult.sandboxDir,
-              timeoutMs: governanceExecuteTimeoutMs,
-              previewMaxChars: processLimits.previewMaxChars,
-              ...(run.scopeHandle
-                ? {
-                    runCommand: options.processSandbox
-                      ? createScopedHookCommand({
-                          sandbox: options.processSandbox,
-                          scope: run.scopeHandle,
-                          runId,
-                          event: "turn-end",
-                          limits: processLimits,
-                        })
-                      : async () => {
-                          throw new Error("Code 钩子执行器不可用，拒绝裸跑。");
-                        },
-                  }
-                : {}),
-              ...(hookShell ? { shell: hookShell } : {}),
-            })) {
-              yield {
-                type: "run.hook" as const,
-                runId,
-                ...hook,
-                timestamp: now(),
-              };
-            }
+            yield* runHookEvent("turn-end");
           } catch (hookError) {
             // 钩子是旁路：这里再兜一层，绝不让它把收尾流程带崩
             console.warn("[agent-runtime] turn-end hooks failed:", hookError);

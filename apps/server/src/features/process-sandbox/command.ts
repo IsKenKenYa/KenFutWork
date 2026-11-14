@@ -1,5 +1,5 @@
 import { executionEnvironment } from "./environment.js";
-import type { ProcessSpawnRequest } from "./types.js";
+import type { SandboxProcessRequest as ProcessSpawnRequest } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
 function quote(value: string): string {

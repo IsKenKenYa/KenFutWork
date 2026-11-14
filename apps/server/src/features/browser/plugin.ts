@@ -923,4 +923,27 @@ export function registerBrowserRoutes(
       .code(200)
       .send({ cdp: await options.browser.cdp.disconnect() });
   });
+
+  /** 清理受控浏览器的自有 profile（设置页「清理缓存 / 清理全部数据」）。 */
+  app.post("/api/browser/cdp/clear-data", async (request, reply) => {
+    const user = await authenticate(request, reply);
+    if (!user) return;
+    const mode = (request.body as { mode?: unknown } | undefined)?.mode;
+    if (mode !== "cache" && mode !== "all")
+      return reply.code(400).send({
+        error: {
+          code: "invalid_request",
+          message: "清理范围只能是 cache 或 all。",
+        },
+      });
+    const result = await options.browser.cdp.clearData(mode);
+    if (!result.success)
+      return reply.code(502).send({
+        error: {
+          code: "browser_data_clear_failed",
+          message: result.error ?? "清理浏览器数据失败。",
+        },
+      });
+    return reply.code(200).send({ cleared: true, mode });
+  });
 }

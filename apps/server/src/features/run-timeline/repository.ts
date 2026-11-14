@@ -1,0 +1,301 @@
+import { type StreamEvent, streamEventSchema } from "@kenfutwork/shared";
+import type { PersistenceService } from "../persistence/types.js";
+import type {
+  RunTimelineEventRow,
+  RunTimelineRepository,
+  RunTimelineRunRow,
+  RunTimelineUsage,
+} from "./types.js";
+
+const RUN_STATUSES = [
+  "accepted",
+  "running",
+  "completed",
+  "failed",
+  "canceled",
+] as const;
+
+/**
+ * 时间线不消费的流事件类型：模型增量、画布快照与 Task 实时状态只在会话界面使用，
+ * 在 SQL 层直接排除，避免整轮的大量帧占用查询与传输。
+ */
+const TIMELINE_IGNORED_EVENT_TYPES = [
+  "message.delta",
+  "thinking.delta",
+  "canvas.sync",
+  "flowRun.event",
+  "task.work",
+] as const;
+
+const IGNORED_EVENT_TYPES_SQL = TIMELINE_IGNORED_EVENT_TYPES.map(
+  (type) => `'${type}'`,
+).join(", ");
+
+type RawRunRow = {
+  id: string;
+  session_id: string;
+  model: string | null;
+  status: unknown;
+  stop_reason: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string | Date;
+  completed_at: string | Date | null;
+};
+
+type RawChildSessionRow = {
+  child_session_id: string;
+  parent_tool_call_id: string;
+};
+
+type RawEventRow = {
+  seq: string | number;
+  created_at: string | Date;
+  payload: unknown;
+};
+
+type RawUsageRow = {
+  input_tokens: string | number | null;
+  output_tokens: string | number | null;
+  cost_usd: string | number | null;
+  calls: string | number | null;
+};
+
+type RawTaskRunRow = RawRunRow & {
+  input_tokens: string | number | null;
+  output_tokens: string | number | null;
+  cost_usd: string | number | null;
+  calls: string | number | null;
+};
+
+/**
+ * 时间线聚合的数据访问（只读）。
+ * - 运行归属走 `agent_runs → chat_sessions` 的 `instance_id`；
+ * - 事件日志按 `event_key` 前缀（`<runId>/<序号>`）取，`code_ui_events`
+ *   在删除会话时已经级联删除，不额外做墓碑过滤；
+ * - 用量按 `usage_records.run_id` 汇总，成本只在上游声明价格时才有值。
+ */
+export function createRunTimelineRepository(
+  persistence: PersistenceService,
+): RunTimelineRepository {
+  return {
+    async loadRun(instanceId, runId) {
+      const row = await persistence.forInstance(instanceId).queryOne<RawRunRow>(
+        `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+                  r.error_code, r.error_message, r.created_at, r.completed_at
+             from public.agent_runs r
+             join public.chat_sessions s on s.id = r.session_id
+            where r.id = $1
+              and s.instance_id = :instance`,
+        [runId],
+      );
+      if (!row) return null;
+      return {
+        runId: row.id,
+        rootSessionId: row.session_id,
+        model: row.model,
+        status: parseStatus(row.status),
+        stopReason: row.stop_reason,
+        errorCode: row.error_code,
+        errorMessage: row.error_message,
+        startedAt: toIso(row.created_at),
+        completedAt: row.completed_at === null ? null : toIso(row.completed_at),
+      } satisfies RunTimelineRunRow;
+    },
+
+    async loadRunForTask(input) {
+      const row = await persistence.forInstance(input.instanceId).queryOne<
+        RawRunRow & {
+          task_archived: boolean;
+          task_deleted_at: string | Date | null;
+          project_archived_at: string | Date | null;
+        }
+      >(
+        `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+                  r.error_code, r.error_message, r.created_at, r.completed_at,
+                  t.archived as task_archived, t.deleted_at as task_deleted_at,
+                  p.archived_at as project_archived_at
+             from public.agent_turn_boundaries b
+             join public.agent_runs r on r.id = b.run_id
+             join public.code_ui_sessions t on t.id = b.task_id
+               and t.instance_id = b.instance_id
+             join public.projects p on p.id = t.project_id
+               and p.instance_id = b.instance_id
+            where b.instance_id = :instance
+              and t.project_id = $1
+              and b.task_id = $2
+              and b.run_id = $3
+              and b.task_kind = 'code'
+              and b.phase = 'pre'`,
+        [input.projectId, input.taskId, input.runId],
+      );
+      if (!row) return null;
+      return {
+        run: {
+          runId: row.id,
+          rootSessionId: row.session_id,
+          model: row.model,
+          status: parseStatus(row.status),
+          stopReason: row.stop_reason,
+          errorCode: row.error_code,
+          errorMessage: row.error_message,
+          startedAt: toIso(row.created_at),
+          completedAt:
+            row.completed_at === null ? null : toIso(row.completed_at),
+        },
+        archived:
+          row.task_archived ||
+          row.task_deleted_at !== null ||
+          row.project_archived_at !== null,
+      };
+    },
+
+    async loadEvents(instanceId, runId) {
+      const rows = await persistence.forInstance(instanceId).query<RawEventRow>(
+        `select e.seq, e.created_at, e.payload
+             from public.code_ui_events e
+             join public.code_ui_sessions s on s.id = e.root_session_id
+            where e.instance_id = :instance
+              and s.instance_id = :instance
+              and starts_with(e.event_key, $1 || '/')
+              and coalesce(e.payload->>'type', '') not in (${IGNORED_EVENT_TYPES_SQL})
+            order by e.seq asc`,
+        [runId],
+      );
+      return parseEventRows(rows);
+    },
+
+    async loadChildSessions(instanceId, rootSessionId, runId) {
+      const rows = await persistence
+        .forInstance(instanceId)
+        .query<RawChildSessionRow>(
+          `select s.id as child_session_id, s.parent_tool_call_id
+             from public.code_ui_sessions s
+            where s.instance_id = :instance
+              and s.root_session_id = $1
+              and s.parent_tool_call_id is not null
+              and starts_with(s.parent_tool_call_id, $2)
+            order by s.id asc`,
+          [rootSessionId, `${runId}/`],
+        );
+      return rows.map((row) => ({
+        childSessionId: row.child_session_id,
+        parentToolCallId: row.parent_tool_call_id,
+      }));
+    },
+
+    async loadChildEvents(instanceId, rootSessionId, childSessionId) {
+      const rows = await persistence.forInstance(instanceId).query<RawEventRow>(
+        `select e.seq, e.created_at, e.payload
+             from public.code_ui_events e
+            where e.instance_id = :instance
+              and e.root_session_id = $1
+              and starts_with(e.event_key, $2)
+              and coalesce(e.payload->>'type', '') not in (${IGNORED_EVENT_TYPES_SQL})
+            order by e.seq asc`,
+        [rootSessionId, `child-event:${childSessionId}/`],
+      );
+      return parseEventRows(rows);
+    },
+
+    async loadUsage(instanceId, runId) {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<RawUsageRow>(
+          `select coalesce(sum(input_tokens), 0) as input_tokens,
+                  coalesce(sum(output_tokens), 0) as output_tokens,
+                  sum(cost_usd) as cost_usd,
+                  count(*) as calls
+             from public.usage_records
+            where instance_id = :instance
+              and run_id = $1`,
+          [runId],
+        );
+      if (!row || Number(row.calls ?? 0) === 0) return null;
+      return {
+        inputTokens: Number(row.input_tokens ?? 0),
+        outputTokens: Number(row.output_tokens ?? 0),
+        costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
+      } satisfies RunTimelineUsage;
+    },
+
+    async listRunsForTask(input) {
+      const rows = await persistence
+        .forInstance(input.instanceId)
+        .query<RawTaskRunRow>(
+          `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+                  r.error_code, r.error_message, r.created_at, r.completed_at,
+                  u.input_tokens, u.output_tokens, u.cost_usd, u.calls
+             from public.agent_turn_boundaries b
+             join public.agent_runs r on r.id = b.run_id
+             join public.code_ui_sessions t on t.id = b.task_id
+               and t.instance_id = b.instance_id
+             join public.projects p on p.id = t.project_id
+               and p.instance_id = b.instance_id
+             left join (
+               select run_id,
+                      coalesce(sum(input_tokens), 0) as input_tokens,
+                      coalesce(sum(output_tokens), 0) as output_tokens,
+                      sum(cost_usd) as cost_usd,
+                      count(*) as calls
+                 from public.usage_records
+                where instance_id = :instance
+                group by run_id
+             ) u on u.run_id = r.id::text
+            where b.instance_id = :instance
+              and t.project_id = $1
+              and b.task_id = $2
+              and b.task_kind = 'code'
+              and b.phase = 'pre'
+              and not t.archived and t.deleted_at is null
+              and p.archived_at is null
+            order by r.created_at desc
+            limit $3`,
+          [input.projectId, input.taskId, input.limit],
+        );
+      return rows.map((row) => ({
+        runId: row.id,
+        model: row.model,
+        status: parseStatus(row.status),
+        stopReason: row.stop_reason,
+        errorCode: row.error_code,
+        errorMessage: row.error_message,
+        startedAt: toIso(row.created_at),
+        completedAt: row.completed_at === null ? null : toIso(row.completed_at),
+        usage:
+          Number(row.calls ?? 0) === 0
+            ? null
+            : {
+                inputTokens: Number(row.input_tokens ?? 0),
+                outputTokens: Number(row.output_tokens ?? 0),
+                costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
+              },
+      }));
+    },
+  };
+}
+
+function parseStatus(value: unknown): RunTimelineRunRow["status"] {
+  const matched = RUN_STATUSES.find((status) => status === value);
+  if (!matched) throw new Error(`运行状态未知：${String(value)}`);
+  return matched;
+}
+
+/** 历史事件结构可能落后于当前 schema：解析失败的行跳过，不能让一条旧记录拖垮整轮回看。 */
+function parseEventRows(rows: RawEventRow[]): RunTimelineEventRow[] {
+  const events: RunTimelineEventRow[] = [];
+  for (const row of rows) {
+    const parsed = streamEventSchema.safeParse(row.payload);
+    if (!parsed.success) continue;
+    events.push({
+      seq: Number(row.seq),
+      createdAt: toIso(row.created_at),
+      event: parsed.data as StreamEvent,
+    });
+  }
+  return events;
+}
+
+function toIso(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : value;
+}

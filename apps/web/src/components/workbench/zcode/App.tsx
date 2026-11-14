@@ -225,6 +225,8 @@ export function App({
     browserNavigationRequest,
     setBrowserNavigationRequest,
     handleOpenCodeViewer,
+    handleOpenFileManager,
+    handleNavigateFileManager,
     handleOpenCodeViewers,
     handleOpenBrowserUrl,
     handleToggleBrowser,
@@ -252,7 +254,6 @@ export function App({
     handleToggleTerminal,
     handleToggleSidebar,
     handleToggleSidePaneCollapse,
-    handleCloseCodeViewer,
     handleCloseGit,
     handleActivateSidePaneTab,
     handleReorderSidePaneTab,
@@ -610,7 +611,20 @@ export function App({
     },
     [handleOpenTreemapping, workspaceReadOnlyReason],
   );
-  const projectName = getPathLeaf(workspaceAbsPath);
+  const projectId = parseLocalWorkspaceIdentity(
+    workspaceIdentity ?? "",
+    workspaceAbsPath,
+  )?.projectId;
+  const projectName =
+    (projectId
+      ? workspaceTabs.find(
+          (tab) =>
+            parseLocalWorkspaceIdentity(
+              tab.workspaceIdentity ?? "",
+              tab.workspacePath,
+            )?.projectId === projectId,
+        )?.label
+      : undefined) || getPathLeaf(workspaceAbsPath);
   const handleOpenTaskFind = useCallback(() => {
     // Cmd/Ctrl+F 语义是“查找对话”，之前误复用了 Cmd/Ctrl+P 的文件搜索入口，
     // 导致用户在 quick pick 里点 Find 或按快捷键时会跳到打开文件。这里拆成独立状态，避免影响文件搜索链路。
@@ -1319,6 +1333,8 @@ export function App({
         handleToggleSidePane={handleToggleSidePane}
         handleOpenBrowserUrl={handleOpenBrowserUrl}
         handleOpenCodeViewer={handleOpenCodeViewerIfWritable}
+        handleOpenFileManager={handleOpenFileManager}
+        handleNavigateFileManager={handleNavigateFileManager}
         handleAutoOpenAssistantPptx={handleAutoOpenAssistantPptx}
         handleOpenSubagentSession={handleOpenSubagentSession}
         handleOpenBackgroundBash={handleOpenBackgroundBash}
@@ -1331,7 +1347,6 @@ export function App({
         handleOpenWorkflowActorSession={handleOpenWorkflowActorSession}
         handleOpenWorkflowWorkspace={handleOpenWorkflowWorkspace}
         handleOpenWorkflowArtifact={handleOpenWorkflowArtifact}
-        handleCloseCodeViewer={handleCloseCodeViewer}
         handleCloseGit={handleCloseGit}
         handleActivateSidePaneTab={handleActivateSidePaneTab}
         handleReorderSidePaneTab={handleReorderSidePaneTab}

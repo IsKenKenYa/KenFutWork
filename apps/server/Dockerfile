@@ -1,5 +1,5 @@
 # ── Stage 1: Install dependencies ──────────────────────────────────
-FROM node:22-slim AS deps
+FROM node:22.23.4-slim AS deps
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -17,7 +17,7 @@ COPY packages/config/package.json packages/config/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 # ── Stage 2: Build shared packages & prepare runtime ──────────────
-FROM node:22-slim AS builder
+FROM node:22.23.4-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.26.2 --activate
 
@@ -40,7 +40,7 @@ COPY plugins/ plugins/
 RUN pnpm --filter @kenfutwork/shared build
 
 # ── Stage 3: Production image ─────────────────────────────────────
-FROM node:22-slim AS production
+FROM node:22.23.4-slim AS production
 
 WORKDIR /app
 

@@ -37,7 +37,7 @@ function makeDeps(
   };
 }
 
-describe("install_plugin 工具（创造模式的插件产物收尾）", () => {
+describe("install_plugin 工具发布插件产物", () => {
   it("实例主人从工作目录安装：把沙箱内路径传给注册表（不越界）", async () => {
     const calls: unknown[] = [];
     const { deps } = makeDeps({

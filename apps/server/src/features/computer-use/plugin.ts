@@ -34,7 +34,20 @@ import {
 } from "../code-ui/host-rpc-handler.js";
 import { createActiveComputerUseRuns } from "./active-runs.js";
 import { createMacosApplicationIconResolver } from "./application-icon.js";
+import type { ComputerUseExecutor } from "./executor.js";
 import { createUnavailableExecutor } from "./executor.js";
+import { createHelperExecutor } from "./executor-helper.js";
+import {
+  resolveComputerUseHelperLocation,
+  shouldEagerStartComputerUseHelper,
+} from "./helper-location.js";
+import { HelperProcessManager } from "./helper-manager.js";
+import {
+  type ComputerUseHelperRuntime,
+  createHelperPermissionRequestRpc,
+  createHelperPermissionRpc,
+  createHelperRestartRpc,
+} from "./helper-permission-rpc.js";
 import {
   type ComputerUseMcpSource,
   createMcpComputerUseExecutor,
@@ -43,7 +56,6 @@ import {
   type ComputerUseMcpExport,
   createComputerUseMcpServer,
 } from "./mcp-server.js";
-import { createMacosPermissionStatusRpc } from "./permission-status-rpc.js";
 import {
   type CuGovernanceValues,
   createComputerUseService,
@@ -186,6 +198,7 @@ export function createComputerUsePlugin(options?: {
       let disposed = false;
       let selected = "native";
       let native = createUnavailableExecutor("平台执行器装配中。");
+      let helperRuntimeProvider: (() => ComputerUseHelperRuntime) | null = null;
       const service = createComputerUseService({
         executor: createUnavailableExecutor("平台执行器装配中。"),
         governance: () =>
@@ -196,22 +209,87 @@ export function createComputerUsePlugin(options?: {
         () => ctx.tryGet("plugins") as PluginsServiceLike | undefined,
       );
       if ((options?.platform ?? process.platform) === "darwin") {
-        const permissionRpc = createMacosPermissionStatusRpc({
+        let helperManager: HelperProcessManager | null = null;
+        let helperFailure: string | null = null;
+        const helperRuntime = (): ComputerUseHelperRuntime => {
+          if (helperManager) return { available: true, manager: helperManager };
+          if (helperFailure) return { available: false, reason: helperFailure };
+          try {
+            const location = resolveComputerUseHelperLocation({
+              env: process.env,
+              ...(options?.platform !== undefined
+                ? { platform: options.platform }
+                : {}),
+              ...(ctx.env.desktopDataDir
+                ? { dataDir: ctx.env.desktopDataDir }
+                : {}),
+            });
+            if (!location) {
+              helperFailure = "Computer Use Helper 仅支持 macOS。";
+              return { available: false, reason: helperFailure };
+            }
+            helperManager = new HelperProcessManager({
+              appPath: location.appPath,
+              socketPath: location.socketPath,
+              clientVersion: ctx.env.version,
+            });
+            return { available: true, manager: helperManager };
+          } catch (error) {
+            helperFailure = `Computer Use Helper 配置无效：${
+              error instanceof Error ? error.message : String(error)
+            }`;
+            return { available: false, reason: helperFailure };
+          }
+        };
+        const permissionRpc = createHelperPermissionRpc({
           gate,
-          executor: () => native,
-          timeoutMs: async (actor) =>
-            (
-              await ctx
-                .get("settings")
-                .getInstanceSettings(actor, actor.instanceId)
-            ).computerUseActionTimeoutMs,
+          helper: helperRuntime,
         });
+        const restartRpc = createHelperRestartRpc({
+          gate,
+          helper: helperRuntime,
+        });
+        const permissionRequestRpc = createHelperPermissionRequestRpc({
+          gate,
+          helper: helperRuntime,
+        });
+        helperRuntimeProvider = helperRuntime;
+        // 桌面形态随壳启动 Helper，退出时由插件清理；非桌面保持按需启动。
+        if (shouldEagerStartComputerUseHelper(process.env)) {
+          const runtime = helperRuntime();
+          if (runtime.available) {
+            void runtime.manager.start().catch((error: unknown) => {
+              console.warn(
+                "[computer-use] Helper 预启动失败：",
+                error instanceof Error ? error.message : String(error),
+              );
+            });
+          } else {
+            console.warn(`[computer-use] ${runtime.reason}`);
+          }
+        }
         ctx.effect(() =>
           ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
             id: "cua-permission.getStatus",
             value: permissionRpc,
           }),
         );
+        ctx.effect(() =>
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
+            id: "cua-permission.restartHelper",
+            value: restartRpc,
+          }),
+        );
+        ctx.effect(() =>
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, {
+            id: "cua-permission.requestPermission",
+            value: permissionRequestRpc,
+          }),
+        );
+        ctx.effect(() => async () => {
+          await helperManager?.close();
+          helperManager = null;
+        });
       }
       const tools = ctx.get("tools");
       const activeRuns = createActiveComputerUseRuns(tools);
@@ -379,18 +457,26 @@ export function createComputerUsePlugin(options?: {
         );
       }
 
-      // 执行器异步装配：非 darwin / 原生层缺失时保持 unavailable（fail loud）
+      // 执行器异步装配：macOS 只走 Helper；其他平台沿用各自实现。
       const cuGovernance = resolveGovernance(ctx.env);
-      void import("./executor.js")
-        .then(({ createExecutorForPlatform }) =>
-          createExecutorForPlatform({
-            ...(options?.platform !== undefined
-              ? { platform: options.platform }
-              : {}),
-            actionTimeoutMs: cuGovernance.actionTimeoutMs,
-            log: (message) => console.warn(message),
-          }),
-        )
+      void (async (): Promise<ComputerUseExecutor> => {
+        if ((options?.platform ?? process.platform) === "darwin") {
+          const runtime = helperRuntimeProvider?.();
+          if (runtime?.available)
+            return createHelperExecutor({ manager: runtime.manager });
+          return createUnavailableExecutor(
+            runtime?.reason ?? "Computer Use Helper 未装配",
+          );
+        }
+        const { createExecutorForPlatform } = await import("./executor.js");
+        return await createExecutorForPlatform({
+          ...(options?.platform !== undefined
+            ? { platform: options.platform }
+            : {}),
+          actionTimeoutMs: cuGovernance.actionTimeoutMs,
+          log: (message) => console.warn(message),
+        });
+      })()
         .then(async (executor) => {
           if (disposed) {
             await executor.stop();

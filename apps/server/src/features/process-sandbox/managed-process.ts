@@ -1,14 +1,15 @@
 import type {
-  ManagedProcessSnapshot,
   ProcessExit,
   ProcessOutput,
   ProcessOutputStream,
+  SandboxProcessScope,
+  SandboxProcessSnapshot,
 } from "./types.js";
 
 export interface ProcessOwner {
   readonly ready: { promise: Promise<void> };
-  readonly scope: import("@kenfutwork/shared").CodeExecutionScope;
-  snapshot(): ManagedProcessSnapshot;
+  readonly scope: SandboxProcessScope;
+  snapshot(): SandboxProcessSnapshot;
   output(
     offset: number,
     maxBytes: number,

@@ -1,6 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TID_TASK_SETTINGS_BUTTON } from "../../../packages/zcode-shared/dist/index.js";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
@@ -9,6 +8,7 @@ import { StoreProvider } from "@zui/store/StoreProvider";
 import { TabStoreProvider, useTabStore } from "@zui/store/TabStoreProvider";
 import { WorkspaceSidebarFooter } from "@zui/WorkspaceSidebarFooter";
 import { afterEach, expect, it, vi } from "vitest";
+import { TID_TASK_SETTINGS_BUTTON } from "../../../packages/zcode-shared/dist/index.js";
 import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
 import { requestManagementOpen } from "../src/components/workbench/zcode/host/managementNavigation";
 import { createCodePlatform } from "../src/components/workbench/zcode/host/platform";

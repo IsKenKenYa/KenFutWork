@@ -13,7 +13,12 @@ import {
   unauthenticatedErrorResponseSchema,
   workDirectoryTargetSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type {
+  FastifyContextConfig,
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+} from "fastify";
 import type { CanvasRepository } from "../features/canvas/repository.js";
 import type { ExecutionScopes } from "../features/execution/scope-service.js";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
@@ -29,6 +34,7 @@ import {
   listScopedPluginBundles,
 } from "../features/plugins/sandbox-plugin-bundles.js";
 import type { ProjectService } from "../features/projects/project-service.js";
+import type { SettingsService } from "../features/settings/settings-service.js";
 import { resolveInsideRoot } from "../utils/inside-root.js";
 import { resolveWorkDirectoryTarget } from "./sandbox-scope.js";
 
@@ -48,6 +54,8 @@ export interface PluginRoutesDeps {
   projects: Pick<ProjectService, "getProject">;
   executionScopes: Pick<ExecutionScopes, "openTask">;
   localInstance: LocalInstanceService;
+  /** 插件卡片键值上限来自实例设置（治理值），列表按当前值裁剪后返回。 */
+  settings: Pick<SettingsService, "getInstanceSettings">;
   sandboxRoot?: string | undefined;
   canvasWorkDirs?: Record<string, string> | undefined;
   /** 项目绑定的本机工作目录（`projects.work_dir`）；界面绑定优先于环境变量映射。 */
@@ -127,7 +135,16 @@ export async function registerPluginRoutes(
   app.get("/api/plugins", async (request, reply) => {
     const user = await options.localAccess.authenticate(request);
     if (!user) return sendUnauthenticated(reply);
-    return reply.code(200).send({ plugins: await options.registry.list() });
+    const settings = await options.settings.getInstanceSettings(
+      user,
+      user.instanceId,
+    );
+    return reply.code(200).send({
+      plugins: await options.registry.list({
+        maxFields: settings.pluginCardMaxFields,
+        maxValueCharacters: settings.pluginCardFieldValueMaxChars,
+      }),
+    });
   });
 
   // 只校验不安装：让 UI 在用户点「安装」前就能看到门禁结论
@@ -184,7 +201,7 @@ export async function registerPluginRoutes(
   });
 
   // GET /api/plugins/sandbox-bundles?canvasId=… — 列出工作目录里的插件 bundle 候选
-  // （「从工作目录安装」用：agent/创造模式在工作目录里写出来的 bundle 在这里被发现）
+  // 「从工作目录安装」从 Agent 的授权目录发现插件 bundle。
   app.get<{ Querystring: { canvasId?: string; taskId?: string } }>(
     "/api/plugins/sandbox-bundles",
     async (request, reply) => {
@@ -343,16 +360,20 @@ export async function registerPluginRoutes(
    * 面板页面若由插件自带，iframe 可以直接加载这里（无需鉴权头）。仅在清单声明
    * `kenfutwork.assets: true` 时开放；越界/点文件/node_modules/超限一律 404。
    */
-  app.get<{ Params: { pluginId: string; "*": string } }>(
+  const assetsRouteConfig: FastifyContextConfig & { skipLocalAccess: true } = {
+    skipLocalAccess: true,
+  };
+  app.get(
     "/api/plugins/:pluginId/assets/*",
     // 面板 iframe 直接加载本路由，不带任何鉴权头；声明 skipLocalAccess 才不会被
     // 本机总门拦成 401（否则「面板白屏/报错」）。资源本身只读、只暴露已安装插件
     // 清单内的静态文件，且仅 `assets: true` 时开放。
-    { config: { skipLocalAccess: true } },
+    { config: assetsRouteConfig },
     async (request, reply) => {
+      const params = request.params as { pluginId: string; "*": string };
       const asset = await options.registry.readAsset({
-        pluginId: request.params.pluginId,
-        relativePath: request.params["*"] ?? "",
+        pluginId: params.pluginId,
+        relativePath: params["*"] ?? "",
       });
       if (!asset) {
         return sendError(reply, "plugin_asset_not_found", "资源不存在。", 404);

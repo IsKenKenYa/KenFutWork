@@ -48,10 +48,7 @@ async function probeGpu(): Promise<{ gpu?: string; gpuMemoryBytes?: number }> {
   try {
     const { stdout } = await execFileAsync(
       "nvidia-smi",
-      [
-        "--query-gpu=name,memory.total",
-        "--format=csv,noheader,nounits",
-      ],
+      ["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
       { timeout: GPU_PROBE_TIMEOUT_MS },
     );
     const names: string[] = [];

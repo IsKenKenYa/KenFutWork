@@ -8,6 +8,7 @@ import type {
   SessionCreateSource,
   ZCodeTaskRuntimeStatus,
   ZCodeTaskMeta,
+  ZCodeTaskUnreadObservation,
   GitChangeSourceId,
   DesktopWindowChromeState,
   IPlatformService,
@@ -62,6 +63,11 @@ export interface WorkspaceShellZCodeState {
 }
 
 export interface CreateTaskOptions {
+  /** 显式项目选择使用稳定身份，主目录由真实宿主准备。 */
+  projectId?: string;
+  hostId?: "local";
+  /** 等待目录期间，原聊天或草稿改变后不接纳迟到导航。 */
+  isCurrent?: () => boolean;
   /** 异步预填只能提交到解析 Skill 时的同一新任务目标。 */
   expectedWorkspaceKey?: string;
   provider?: ZCodeProvider;
@@ -224,6 +230,7 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
     taskId: string,
     targetWorkspaceIdentity?: string,
     expectedUnreadAt?: number,
+    unreadObservation?: ZCodeTaskUnreadObservation,
   ) => void;
   handleTaskNavBack: () => void;
   handleTaskNavForward: () => void;
@@ -264,6 +271,8 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleToggleSidePane: () => void;
   handleOpenBrowserUrl: (url: string) => void;
   handleOpenCodeViewer: (source: CodeViewerSource) => void;
+  handleOpenFileManager: (target: import("@zui/lib/workspaceSidePane.js").FileManagerTarget) => void;
+  handleNavigateFileManager: (tabId: string, source: CodeViewerSource) => void;
   handleAutoOpenAssistantPptx: (request: AssistantPreviewCardsAutoOpenRequest) => void;
   handleOpenBackgroundBash: (request: OpenBackgroundBashSideTabRequest) => void;
   handleOpenSubagentSession: (request: OpenScopedSubagentSideTabRequest) => void;
@@ -282,7 +291,6 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   handleOpenWorkflowActorSession: (request: OpenScopedWorkflowActorSessionSideTabRequest) => void;
   handleOpenWorkflowWorkspace: (request: OpenScopedWorkflowWorkspaceSideTabRequest) => void;
   handleOpenWorkflowArtifact: (request: OpenScopedWorkflowArtifactSideTabRequest) => void;
-  handleCloseCodeViewer: () => void;
   handleCloseGit: () => void;
   handleActivateSidePaneTab: (tabId: string) => void;
   handleReorderSidePaneTab: (activeTabId: string, overTabId: string) => void;

@@ -1,13 +1,39 @@
-import { zcodeAgentProviderSchema } from "@zcode/shared";
+import { zcodeAgentProviderSchema, zcodeTaskMetaSchema } from "@zcode/shared";
 import {
   conversationSnapshotSchema,
+  conversationTaskControlSchema,
   conversationTopicWireFrameSchema,
   helloMessageSchema,
   sessionsIndexTopicWireFrameSchema,
   workspaceConfigTopicWireFrameSchema,
 } from "@zcode/shared/zcode-protocol-v4";
 import { z } from "zod";
-import { executionModeSchema } from "./capability-contracts.js";
+import {
+  codeProjectEditorDeleteArgsSchema,
+  codeProjectEditorReadDirectorySchema,
+  codeProjectEditorReadProjectsSchema,
+  codeProjectEditorReadTreeArgsSchema,
+  codeProjectEditorSaveArgsSchema,
+  codeProjectPreparedSessionResponseSchema,
+  codeProjectPrepareSessionArgsSchema,
+  codeProjectTreeRpcResponseSchema,
+} from "./code-project-editor.js";
+import {
+  codeTaskGroupAdmissionArgsSchema,
+  codeTaskGroupMoveArgsSchema,
+  codeTaskGroupReadArgsSchema,
+  codeTaskGroupReadResponseSchema,
+  codeTaskGroupSaveArgsSchema,
+  codeTaskGroupSaveResponseSchema,
+  codeTaskGroupUngroupArgsSchema,
+} from "./code-task-groups.js";
+import {
+  codeTaskControllerMutationArgsSchema,
+  codeTaskOrganizationArgsSchema,
+  codeTaskPinArgsSchema,
+  codeTaskUnreadArgsSchema,
+} from "./code-task-organization.js";
+import { codeTaskProjectMoveArgsSchema } from "./code-task-project-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceSetting } from "./governance.js";
 import { canvasDocumentUpdatedMessageSchema } from "./ws-protocol.js";
@@ -74,13 +100,40 @@ export const codeUiWorkspaceListSchema = z.object({
   workspaces: z.array(codeUiWorkspaceSchema),
 });
 
-export const codeUiRpcRequestSchema = z.object({
+const codeUiRpcEnvelopeSchema = z.object({
   service: z.string().min(1),
   method: z.string().min(1),
   args: z.array(z.unknown()),
   connectionId: z.string().optional(),
 });
-export const codeUiRpcResponseSchema = z.object({ result: z.unknown() });
+export const codeTaskUnreadMetaSchema = zcodeTaskMetaSchema.extend({
+  projectId: z.uuid(),
+  taskControl: conversationTaskControlSchema,
+  lastUnreadAt: z.number().int().nonnegative().safe(),
+});
+
+export const codeTaskUnreadRpcResponseSchema = z.object({
+  result: codeTaskUnreadMetaSchema,
+});
+
+export const codeTaskPinMetaSchema = codeTaskUnreadMetaSchema.extend({
+  pinRevision: z.number().int().nonnegative().safe(),
+  pinned: z.boolean(),
+});
+
+export const codeTaskPinRpcResponseSchema = z.object({
+  result: codeTaskPinMetaSchema,
+});
+
+export const codeUiRpcResponseSchema = z.union([
+  codeProjectTreeRpcResponseSchema,
+  codeProjectPreparedSessionResponseSchema,
+  codeTaskGroupReadResponseSchema,
+  codeTaskGroupSaveResponseSchema,
+  codeTaskPinRpcResponseSchema,
+  codeTaskUnreadRpcResponseSchema,
+  z.object({ result: z.unknown() }),
+]);
 
 /**
  * 设置页「子智能体」读取入参（原 `ISubagentsService.list` 的 request 形态）。
@@ -93,13 +146,96 @@ export const codeUiSubagentsListQuerySchema = z.object({
   mode: z.enum(["allRuntimeScopes", "settingsUserOnly"]).optional(),
 });
 
-/** First-party RPC companion; extract only host-owned fields, leaving the original V4 envelope unchanged. */
-export const codeUiCommandCompanionSchema = z.object({
-  executionMode: executionModeSchema.optional(),
-});
-export type CodeUiCommandCompanion = z.infer<
-  typeof codeUiCommandCompanionSchema
->;
+/** 原项目编辑器的已接通调用；通用 RPC 继续承载其他 feature 的贡献。 */
+export const codeProjectEditorRpcRequestSchema = z.discriminatedUnion(
+  "method",
+  [
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("readProjects"),
+      args: z.tuple([codeProjectEditorReadProjectsSchema.nullish()]),
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("readTree"),
+      args: codeProjectEditorReadTreeArgsSchema,
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("prepareSession"),
+      args: codeProjectPrepareSessionArgsSchema,
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("readDirectory"),
+      args: z.tuple([codeProjectEditorReadDirectorySchema.nullish()]),
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("saveProject"),
+      args: codeProjectEditorSaveArgsSchema,
+    }),
+    codeUiRpcEnvelopeSchema.extend({
+      service: z.literal("project"),
+      method: z.literal("deleteProject"),
+      args: codeProjectEditorDeleteArgsSchema,
+    }),
+  ],
+);
+export const codeUiRpcRequestSchema = z.union([
+  codeProjectEditorRpcRequestSchema,
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("zcode-task"),
+    method: z.literal("setTaskPinned"),
+    args: codeTaskPinArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("zcode-task"),
+    method: z.literal("setTaskUnread"),
+    args: codeTaskUnreadArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("window-controller"),
+    method: z.literal("mutateTask"),
+    args: codeTaskControllerMutationArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("project"),
+    method: z.literal("moveTask"),
+    args: codeTaskProjectMoveArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("read"),
+    args: codeTaskGroupReadArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("save"),
+    args: codeTaskGroupSaveArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("ungroup"),
+    args: codeTaskGroupUngroupArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("admit"),
+    args: codeTaskGroupAdmissionArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("task-groups"),
+    method: z.literal("move"),
+    args: codeTaskGroupMoveArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema.extend({
+    service: z.literal("zcode-task"),
+    method: z.enum(["archiveTask", "unarchiveTask", "deleteArchivedTask"]),
+    args: codeTaskOrganizationArgsSchema,
+  }),
+  codeUiRpcEnvelopeSchema,
+]);
 
 /** 原 Window Controller 查询入参；服务定义与结果类型仍直接引用固定原契约。 */
 export const codeUiControllerTaskListQuerySchema = z
@@ -129,6 +265,24 @@ export const codeUiSnapshotParamsSchema = z.object({
 export const codeUiSnapshotResponseSchema = z.object({
   snapshot: conversationSnapshotSchema,
 });
+
+/** 工具卡折叠占位取回原文：先定位所属 Task，再按字节窗口续读。 */
+export const codeUiToolOutputParamsSchema = z.object({
+  sessionId: z.string().uuid(),
+  ref: z.string().trim().min(1),
+});
+export const codeUiToolOutputQuerySchema = z.object({
+  offset: z.coerce.number().int().nonnegative().default(0),
+  limit: z.coerce.number().int().positive().optional(),
+});
+export const codeUiToolOutputResponseSchema = z.object({
+  text: z.string(),
+  totalBytes: z.number().int().nonnegative().safe(),
+  nextOffset: z.number().int().nonnegative().safe().nullable(),
+});
+export type CodeUiToolOutputResponse = z.infer<
+  typeof codeUiToolOutputResponseSchema
+>;
 
 /** HTTP 成功响应是 SSE 文本流；每条事件的原协议定义仍由 codeUiEventSchema 持有。 */
 export const codeUiEventStreamSchema = z

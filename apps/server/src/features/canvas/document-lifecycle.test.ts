@@ -123,7 +123,7 @@ it("项目文档显式创建，按同请求重放与名称字面搜索，不创�
   expect(first.id).toBe(input.requestId);
   expect(replay.id).toBe(first.id);
   expect(await f.service.listCanvases(f.actor, "project", "%")).toEqual([
-    { id: first.id, name: input.name, isPrimary: true },
+    { id: first.id, name: input.name, isPrimary: true, fileMissing: false },
   ]);
   expect(await f.service.listCanvases(f.actor, "project", "missing")).toEqual(
     [],

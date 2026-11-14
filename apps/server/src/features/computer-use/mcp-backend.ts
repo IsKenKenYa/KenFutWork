@@ -27,6 +27,7 @@ const accessSchema = z.object({
     accessibility: permissionSchema,
     screen: permissionSchema,
     postEvents: permissionSchema.optional(),
+    automation: permissionSchema.optional(),
   }),
   hint: z.string(),
 });
@@ -347,6 +348,9 @@ export function createMcpComputerUseExecutor(
         screen: status.permissionStatus.screen,
         ...(status.permissionStatus.postEvents !== undefined
           ? { postEvents: status.permissionStatus.postEvents }
+          : {}),
+        ...(status.permissionStatus.automation !== undefined
+          ? { automation: status.permissionStatus.automation }
           : {}),
         hint: status.hint,
       };

@@ -2,7 +2,7 @@ import { realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { SandboxRuntimeConfig } from "@anthropic-ai/sandbox-runtime";
-import type { CodeExecutionScope } from "@kenfutwork/shared";
+import type { SandboxProcessScope as CodeExecutionScope } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
 export function pathWithin(path: string, root: string): boolean {

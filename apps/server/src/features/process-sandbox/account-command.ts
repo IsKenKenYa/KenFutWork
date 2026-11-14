@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
-import type { ProcessSpawnRequest } from "./types.js";
+import type { SandboxProcessRequest as ProcessSpawnRequest } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
 /** 仅显式完全访问使用账户环境；不继承服务端凭据，也不提升 OS 身份。 */

@@ -13,7 +13,7 @@
 // useDraftSessionPrewarm 只做 effect 接线与 owner-scoped binding 暴露。
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { parseLocalWorkspaceIdentity } from "@zcode/shared";
-import type { CommandAck, CommandType, SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
+import type { CommandAck, CommandType, ConversationTaskControl, SessionConfigState } from "@zcode/shared/zcode-protocol-v4";
 import { logger } from "@zui/logger.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 
@@ -41,7 +41,7 @@ interface DraftPrewarmController {
 function startDraftSessionPrewarm(params: {
   workspaceKey: string;
   dispatchCommand: DispatchCommand;
-  onReady: (sessionId: string) => void;
+  onReady: (sessionId: string, taskControl?: ConversationTaskControl) => void;
   /** single-flight owner 用于等待不可取消的 createSession 收口；无论成功失败都只调用一次。 */
   onSettled?: () => void;
   /** 预热会话初始 config（全局「上次选择」，同步解析）；让投影首帧即全局、不闪。 */
@@ -109,7 +109,9 @@ function startDraftSessionPrewarm(params: {
         sessionId: createdSessionId,
         workspaceKey,
       });
-      onReady(sessionId);
+      onReady(sessionId, ack.result.taskControl
+        ? Object.freeze({ ...ack.result.taskControl })
+        : undefined);
     })
     .catch((error) => {
       logger.warn("[v4-draft-prewarm] createSession 失败，回落无预热路径", {
@@ -156,6 +158,7 @@ interface DraftSessionPrewarm {
 interface DraftPrewarmBinding {
   workspaceKey: string;
   sessionId: string;
+  readonly taskControl?: ConversationTaskControl;
   /** 首条 admission 命令发出前同步占住生命周期；false 表示 binding 已不是当前 owner。 */
   beginPromotion(): boolean;
   /** 首发成功后标记（阻止清理路径 deleteSession 已提升的会话）。 */
@@ -326,7 +329,7 @@ class DraftSessionPrewarmCoordinator {
       dispatchCommand: (type, payload, targetSessionId) =>
         this.dispatchCommand(type, payload, targetSessionId),
       resolveInitialConfig: () => this.resolveInitialConfig?.(),
-      onReady: (sessionId) => {
+      onReady: (sessionId, taskControl) => {
         if (this.current !== current || current.retiring) {
           return;
         }
@@ -334,6 +337,7 @@ class DraftSessionPrewarmCoordinator {
         binding = {
           workspaceKey: this.workspaceKey,
           sessionId,
+          ...(taskControl ? { taskControl } : {}),
           beginPromotion: () => {
             if (this.current !== current || current.binding !== binding) {
               return false;

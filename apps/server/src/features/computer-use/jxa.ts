@@ -316,6 +316,93 @@ ObjC.bindFunction('CGPreflightPostEventAccess', ['bool', []]);
 JSON.stringify({postEventAccess: Boolean($.CGPreflightPostEventAccess())});`;
 }
 
+/**
+ * 自动化（Automation）权限探测。
+ *
+ * 观察与元素动作全部经 `Application('System Events')`，这需要「自动化」授权；
+ * 它和辅助功能/屏幕录制是**三个独立**的 TCC 面，只查前两项会漏掉
+ * 「按提示授了权仍报 mac桥失败」的那类现场。探测器只读一次进程数，不触发
+ * 任何副作用；未授权时错误码 -1743，由调用方归类为 denied。
+ */
+export function buildAutomationProbeScript(): string {
+  return `const se = Application('System Events');
+let ok = false, reason = null, count = null;
+try { count = se.processes.length; ok = !isNaN(Number(count)); }
+catch (e) { reason = String(e); }
+JSON.stringify({ ok, count: ok ? Number(count) : null, reason });`;
+}
+
+/**
+ * 被动权限查询里 Automation 探测的硬上限（毫秒）。
+ *
+ * 未授权时 `Application('System Events')` 会驻留在系统授权确认上，耗时远超普通
+ * 桌面动作。设置页只需要辅助功能与屏幕录制的 TCC 真值，不能被这一项拖成永久
+ * “正在验证”；超时按 not_determined 处理，其余两项照常返回。这是权限查询的
+ * 局部保护上限，不是用户可调的动作超时，故不进入治理表。
+ */
+export const AUTOMATION_PROBE_TIMEOUT_MS = 2_000;
+
+export function automationProbeTimeoutMs(actionTimeoutMs: number): number {
+  return Math.min(actionTimeoutMs, AUTOMATION_PROBE_TIMEOUT_MS);
+}
+
+export function probeAutomationAccess(
+  actionTimeoutMs: number,
+  signal?: AbortSignal,
+  maxOutputBytes?: number,
+): Promise<{ ok?: boolean; reason?: string | null }> {
+  return runJxa(
+    buildAutomationProbeScript(),
+    automationProbeTimeoutMs(actionTimeoutMs),
+    signal,
+    maxOutputBytes,
+  ) as Promise<{ ok?: boolean; reason?: string | null }>;
+}
+
+export type CuAutomationStatus = "granted" | "denied" | "not_determined";
+
+/**
+ * 自动化探测结果归类。系统文案随语言变化，故同时匹配错误码 -1743
+ * （errAEEventNotPermitted）与中英文拒绝措辞；识别不出时保持
+ * not_determined，宁可提示用户手工确认，也不谎报 denied。
+ */
+export function classifyAutomationProbe(raw: {
+  ok?: boolean;
+  reason?: string | null;
+}): CuAutomationStatus {
+  if (raw?.ok === true) return "granted";
+  const reason = typeof raw?.reason === "string" ? raw.reason : "";
+  return /-1743|not authori[sz]ed|不允许|未获授权/iu.test(reason)
+    ? "denied"
+    : "not_determined";
+}
+
+/**
+ * 屏幕上前排到后排的窗口栈（WindowServer 原始顺序）。
+ *
+ * 只取 on-screen 的普通层窗口；判定逻辑在 `occlusion.ts`（纯函数、可单测），
+ * 这里只负责把 ObjC 对象摊平成 JSON——JXA 里做业务判断既难测也难维护。
+ */
+export function buildWindowStackScript(): string {
+  return `ObjC.import('CoreGraphics');
+ObjC.bindFunction('CGWindowListCopyWindowInfo', ['id', ['uint32', 'uint32']]);
+const list = $.CGWindowListCopyWindowInfo(1, 0);
+const rows = [];
+for (let i = 0; i < Number(list.count); i++) {
+  const raw = ObjC.deepUnwrap(list.objectAtIndex(i));
+  const b = raw.kCGWindowBounds || {};
+  rows.push({
+    pid: Number(raw.kCGWindowOwnerPID) || 0,
+    windowId: Number(raw.kCGWindowNumber) || 0,
+    layer: Number(raw.kCGWindowLayer) || 0,
+    alpha: raw.kCGWindowAlpha === undefined ? 1 : Number(raw.kCGWindowAlpha),
+    bounds: [Number(b.X) || 0, Number(b.Y) || 0, Number(b.Width) || 0, Number(b.Height) || 0],
+    name: typeof raw.kCGWindowName === 'string' ? raw.kCGWindowName : null
+  });
+}
+JSON.stringify(rows);`;
+}
+
 export function buildListAppsScript(): string {
   return `
 ObjC.import('AppKit');

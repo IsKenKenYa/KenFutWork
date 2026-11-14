@@ -1,3 +1,10 @@
+/**
+ * Windows 执行器：UIAutomation + 本机 PowerShell，不使用 TCC Helper。
+ *
+ * 边界：进程始终以当前用户权限运行，不自动请求 UAC 提权；目标应用以管理员运行时
+ * 受 UIPI/安全桌面限制，原语失败按 `native_failed` 返回，由模型或用户决定是否
+ * 手动以管理员身份启动目标应用。
+ */
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";

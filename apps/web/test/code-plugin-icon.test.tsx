@@ -63,9 +63,8 @@ it("导航单色图标继承明暗文字色，认证资源复用且市场头像�
   expect(mask.style.backgroundColor).toBe("currentcolor");
   // 不变量是「宿主认证资源只取一次，两个图标共用」；线稿嗅探另有一次本地 blob 读取，
   // 不打到宿主端点，所以按 URL 计而不是按全局 fetch 计。
-  const hostFetches = transport.mock.calls.filter(
-    (call) =>
-      String((call as unknown[])[0] ?? "").startsWith("http://localhost:3001"),
+  const hostFetches = transport.mock.calls.filter((call) =>
+    String((call as unknown[])[0] ?? "").startsWith("http://localhost:3001"),
   );
   expect(hostFetches).toHaveLength(1);
   expect(container.querySelectorAll("img")[1]?.className).toContain(
@@ -245,9 +244,7 @@ it("线稿图标（SVG 含 currentColor）自动走 mask，暗色下不再黑底
   );
   // 调用方没传 monochrome：靠资源自身声明（currentColor）判定
   const mask = await waitFor(() => {
-    const found = container.querySelector<HTMLElement>(
-      '[style*="mask-image"]',
-    );
+    const found = container.querySelector<HTMLElement>('[style*="mask-image"]');
     expect(found).not.toBeNull();
     if (!found) throw new Error("线稿图标未走 mask");
     return found;

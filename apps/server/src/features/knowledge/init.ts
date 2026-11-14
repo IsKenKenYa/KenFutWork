@@ -14,7 +14,7 @@
  */
 
 import { homedir } from "node:os";
-import { isAbsolute, join, parse, resolve, sep } from "node:path";
+import { isAbsolute, join, parse, resolve, sep, win32 } from "node:path";
 import {
   isSagCliPlatformSupported,
   isSagConfigured,
@@ -49,9 +49,15 @@ function normalized(path: string): string {
   const stripped = path
     .replace(/^\\\\\?\\UNC\\/iu, "\\\\")
     .replace(/^\\\\\?\\/u, "");
-  return resolve(stripped)
-    .toLowerCase()
-    .replace(/[\\/]+$/, "");
+  // Windows 路径（盘符或反斜杠）按 win32 规则解析：posix 主机会把 D:/work
+  // 当成相对目录拼到 cwd 后面，导致墓键两侧不一致。
+  const resolved =
+    /^[a-z]:[\\/]/iu.test(stripped) ||
+    stripped.includes("\\") ||
+    stripped.startsWith("\\\\")
+      ? win32.resolve(stripped)
+      : resolve(stripped);
+  return resolved.toLowerCase().replace(/[\\/]+$/, "");
 }
 
 /** 根路径的进程内规范化（墓碑/缓存键用）：Windows 大小写不敏感，去尾分隔符。 */
@@ -204,7 +210,8 @@ export async function ensureKnowledgeRoot(
   options: KnowledgeInitOptions,
   root: string,
 ): Promise<KnowledgeEnsureResult> {
-  if (!isAbsolute(root)) {
+  // SAG CLI 的目录参数可来自 Windows 宿主（D:/...）；posix 主机上也要认这种绝对路径。
+  if (!isAbsolute(root) && !win32.isAbsolute(root)) {
     return {
       path: root,
       action: "rejected",

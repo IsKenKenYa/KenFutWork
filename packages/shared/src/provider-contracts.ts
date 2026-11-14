@@ -113,6 +113,11 @@ export const codeUiProviderMetadataSchema = z
       .strict()
       .optional(),
     modelOrder: z.array(z.string().min(1)).optional(),
+    apiKeyManagementUrl: z
+      .string()
+      .url()
+      .optional()
+      .describe("原供应商设置中的 API Key 管理链接，不包含凭据。"),
     models: z
       .record(
         z.string().min(1),

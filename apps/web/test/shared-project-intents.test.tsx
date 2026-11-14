@@ -369,21 +369,28 @@ it("A的open RPC已在飞，B先成功后A只能登记catalog，不能切回同�
   expect(takeCanvasDocumentOpen(sharedB.projectId)?.documentId).toBe(canvasB);
   expect(takeCanvasDocumentOpen(sharedA.projectId)).toBeUndefined();
 });
-it("初始父Design模式为恢复出的真实项目直接启用Design，不创建执行身份", async () => {
+it("初始父Design模式在真实项目恢复后自动启用；启用失败留提示且重发可成功", async () => {
   const f = await fixture(code, {
-    beforeRender: () => sendNavigation({ mode: "design" }),
+    beforeRender: () => {
+      harness.json.mockRejectedValueOnce(new Error("启用失败"));
+      sendNavigation({ mode: "design" });
+    },
   });
-  await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("design"));
+  expect((await screen.findByRole("alert")).textContent).toContain("启用失败");
+  expect(f.navigation.getSnapshot().mode).toBe("code");
+  expect(screen.getByTestId("main-view").textContent).toBe("chat");
+  expect(patches()).toHaveLength(1);
+  expect(f.rpc).not.toHaveBeenCalled();
+  await act(async () => sendNavigation({ mode: "design" }));
   await waitFor(() =>
     expect(screen.getByTestId("main-view").textContent).toBe("design"),
   );
-  expect(patches()).toHaveLength(1);
-  expect(f.rpc).not.toHaveBeenCalled();
+  expect(f.navigation.getSnapshot().mode).toBe("design");
+  expect(patches()).toHaveLength(2);
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([code.projectId, code.path]),
   );
-  await act(async () => sendNavigation({ mode: "design" }));
-  expect(patches()).toHaveLength(1);
+  expect(f.rpc).not.toHaveBeenCalled();
 });
 it("冷窗口恢复Design-only项目跟随项目方式，不把默认Code当成共享请求", async () => {
   const f = await fixture(design);
@@ -399,7 +406,7 @@ it.each([
   ["design", code],
   ["code", design],
 ] as const)(
-  "明确父%s模式在真实项目延迟恢复后直接启用并保持该方式",
+  "明确父%s模式在真实项目延迟恢复后自动启用并保持该方式",
   async (requestedMode, project) => {
     const f = await fixture(project, {
       deferRestore: true,
@@ -411,26 +418,34 @@ it.each([
     await act(async () => {
       f.restoreInitialProject();
     });
+    await waitFor(() => expect(patches()).toHaveLength(1));
     await waitFor(() =>
       expect(f.navigation.getSnapshot().mode).toBe(requestedMode),
     );
-    expect(patches()).toHaveLength(1);
     expect(f.rpc).not.toHaveBeenCalled();
     expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
       JSON.stringify([project.projectId, project.path]),
     );
   },
 );
-it("恢复Design-only项目后显式点击Code直接启用并保留同一项目", async () => {
+it("恢复Design-only项目后显式点击Code自动启用；失败留提示，重试保留同一项目", async () => {
   const f = await fixture(design, {
-    beforeRender: (navigation) => navigation.setActiveMode("design"),
+    beforeRender: (navigation) => {
+      harness.json.mockRejectedValueOnce(new Error("启用失败"));
+      navigation.setActiveMode("design");
+    },
   });
   await act(async () =>
     fireEvent.click(screen.getByRole("radio", { name: "Code" })),
   );
-  await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
+  expect((await screen.findByRole("alert")).textContent).toContain("启用失败");
+  expect(f.navigation.getSnapshot().mode).toBe("design");
   expect(patches()).toHaveLength(1);
-  expect(f.rpc).not.toHaveBeenCalled();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("radio", { name: "Code" })),
+  );
+  await waitFor(() => expect(f.navigation.getSnapshot().mode).toBe("code"));
+  expect(patches()).toHaveLength(2);
   expect(f.tabs.getState().activeWorkspaceIdentity).toBe(
     JSON.stringify([design.projectId, design.path]),
   );
@@ -482,7 +497,7 @@ it("已选Design时恢复Code-only项目回默认Code，不发起共享", async 
   await act(async () => sendNavigation({}));
   expect(screen.queryByRole("button", { name: "启用 Design" })).toBeNull();
 });
-it("Design-only项目跳到Code内容直接启用Code并显示请求的内容页", async () => {
+it("Design-only项目跳到Code内容自动启用，直达请求的内容页", async () => {
   const f = await fixture(design, {
     beforeRender: (navigation) => navigation.setActiveMode("design"),
   });

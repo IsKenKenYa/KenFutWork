@@ -33,7 +33,7 @@ import { createSettingsService } from "../settings/settings-service.js";
 import { createTaskCommandTools } from "./command-tools.js";
 import { createTaskWorkManager } from "./service.js";
 import { createMemoryTaskWorkStore } from "./test-store.js";
-import type { TaskWorkContext } from "./types.js";
+import type { SubagentUsageLookup, TaskWorkContext } from "./types.js";
 
 /**
  * 真沙箱里冷启动一个 node 进程（bwrap + apply-seccomp + seccomp 过滤器）在 CI 容器上
@@ -60,7 +60,15 @@ const outputResult = z.object({
   }),
 });
 
-async function fixture(preset: "code" | "design" = "code") {
+async function fixture(
+  preset: "code" | "design" = "code",
+  options: {
+    subagentUsage?: () => readonly {
+      id: string;
+      value: SubagentUsageLookup;
+    }[];
+  } = {},
+) {
   const directory = await realpath(
     await mkdtemp(join(tmpdir(), "command-ownership-")),
   );
@@ -142,7 +150,14 @@ async function fixture(preset: "code" | "design" = "code") {
     }),
   });
   const controller = createTaskCommandTools(
-    { manager, sandbox, settings },
+    {
+      manager,
+      sandbox,
+      settings,
+      ...(options.subagentUsage
+        ? { subagentUsage: options.subagentUsage }
+        : {}),
+    },
     { scope: "shared" },
   );
   const tool = (name: string) => {
@@ -543,3 +558,176 @@ it(
   },
   REAL_PROCESS_TEST_MS,
 );
+
+const subagentOutputShape = z.object({
+  canonicalOutput: z.object({
+    status: z.string(),
+    usage: z
+      .object({
+        inputTokens: z.number(),
+        outputTokens: z.number(),
+        totalTokens: z.number(),
+        costUsd: z.number().nullable(),
+        calls: z.number(),
+      })
+      .optional(),
+  }),
+});
+
+it("TaskOutput 对子代理记录按 childSessionId 归因用量", async () => {
+  const seen: Array<{ instanceId: string; childSessionId: string }> = [];
+  const state = await fixture("code", {
+    subagentUsage: () => [
+      {
+        id: "test-provider",
+        value: {
+          summarize: async (instanceId, childSessionId) => {
+            seen.push({ instanceId, childSessionId });
+            return {
+              inputTokens: 120,
+              outputTokens: 30,
+              totalTokens: 150,
+              costUsd: 0.01,
+              calls: 2,
+            };
+          },
+        },
+      },
+    ],
+  });
+  const record = await state.manager.start(
+    state.context,
+    {
+      kind: "subagent",
+      label: "探索",
+      toolCallId: "subagent-call",
+      childSessionId: "child-session-1",
+      detached: true,
+    },
+    {
+      run: async () => ({ status: "completed", summary: "结论" }),
+      stop: async () => {},
+    },
+  );
+  await expect
+    .poll(
+      async () => (await state.manager.find(state.context, record.id))?.status,
+    )
+    .toBe("completed");
+
+  const parsed = subagentOutputShape.parse(
+    await state
+      .tool("TaskOutput")
+      .execute(
+        { task_id: record.id },
+        state.execution(state.main, "read-subagent"),
+      ),
+  );
+
+  expect(parsed.canonicalOutput.usage).toEqual({
+    inputTokens: 120,
+    outputTokens: 30,
+    totalTokens: 150,
+    costUsd: 0.01,
+    calls: 2,
+  });
+  expect(seen).toEqual([
+    {
+      instanceId: state.context.scope.instanceId,
+      childSessionId: "child-session-1",
+    },
+  ]);
+});
+
+it("子代理用量查询失败只丢 usage，TaskOutput 仍返回状态", async () => {
+  const state = await fixture("code", {
+    subagentUsage: () => [
+      {
+        id: "broken-provider",
+        value: {
+          summarize: async () => {
+            throw new Error("usage storage offline");
+          },
+        },
+      },
+    ],
+  });
+  const record = await state.manager.start(
+    state.context,
+    {
+      kind: "subagent",
+      label: "探索",
+      toolCallId: "subagent-call-broken",
+      childSessionId: "child-session-2",
+      detached: true,
+    },
+    {
+      run: async () => ({ status: "completed", summary: "结论" }),
+      stop: async () => {},
+    },
+  );
+  await expect
+    .poll(
+      async () => (await state.manager.find(state.context, record.id))?.status,
+    )
+    .toBe("completed");
+
+  const parsed = subagentOutputShape.parse(
+    await state
+      .tool("TaskOutput")
+      .execute(
+        { task_id: record.id },
+        state.execution(state.main, "read-subagent-broken"),
+      ),
+  );
+
+  expect(parsed.canonicalOutput.status).toBe("completed");
+  expect(parsed.canonicalOutput.usage).toBeUndefined();
+});
+
+it("命令记录不查子代理用量（只有 subagent 才归因）", async () => {
+  let called = 0;
+  const state = await fixture("code", {
+    subagentUsage: () => [
+      {
+        id: "test-provider",
+        value: {
+          summarize: async () => {
+            called += 1;
+            return null;
+          },
+        },
+      },
+    ],
+  });
+  const record = await state.manager.start(
+    state.context,
+    {
+      kind: "command",
+      label: "命令",
+      toolCallId: "command-call",
+      detached: true,
+    },
+    {
+      run: async () => ({ status: "completed", summary: "done" }),
+      stop: async () => {},
+    },
+  );
+  await expect
+    .poll(
+      async () => (await state.manager.find(state.context, record.id))?.status,
+    )
+    .toBe("completed");
+
+  const parsed = subagentOutputShape.parse(
+    await state
+      .tool("TaskOutput")
+      .execute(
+        { task_id: record.id },
+        state.execution(state.main, "read-command"),
+      ),
+  );
+
+  expect(parsed.canonicalOutput.usage).toBeUndefined();
+  expect(called).toBe(0);
+});

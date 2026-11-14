@@ -106,8 +106,33 @@ export async function prepareCuaSettingsReturn(
   return { returned };
 }
 
+/** 直接打开某个权限面板：供自动化这类不参与「必需项」流程的权限使用。 */
+export async function openCuaPermissionPane(
+  permission: "accessibility" | "screen_recording" | "automation",
+): Promise<boolean> {
+  const invoke = localCuaDesktopInvoke();
+  if (!invoke) return false;
+  try {
+    await invoke("open_cua_permission_settings", { permission });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface CuaPermissionPromptResult {
+  requested: boolean;
+  granted?: boolean;
+  reason?: string;
+}
+
+export type CuaPermissionPrompt = (
+  kind: "accessibility" | "screen_recording",
+) => Promise<CuaPermissionPromptResult>;
+
 export function createCuaPermissionOnboarding(
   invoke: NonNullable<ReturnType<typeof localCuaDesktopInvoke>>,
+  capabilities: { requestPermission?: CuaPermissionPrompt } = {},
 ) {
   const operations = new Map<string, AbortController>();
   return {
@@ -124,6 +149,13 @@ export function createCuaPermissionOnboarding(
       try {
         for (const permission of required) {
           controller.signal.throwIfAborted();
+          // 只有 Helper 自己弹权限框，TCC 才会把授权记到 Helper 上；主应用代弹无效。
+          // 弹框已通过时直接进入下一项，否则继续打开系统设置手动批准。
+          if (capabilities.requestPermission) {
+            const prompted = await capabilities.requestPermission(permission);
+            controller.signal.throwIfAborted();
+            if (prompted.requested && prompted.granted === true) continue;
+          }
           const { returned } = await prepareCuaSettingsReturn(
             window,
             controller.signal,
@@ -139,12 +171,12 @@ export function createCuaPermissionOnboarding(
             ),
           ]);
         }
-        // 本后端每次查询拉起新的只读探针，没有需重启的持久Helper。
+        // Helper 由服务端管理，设置返回后必须重启新进程才能读到最新 TCC 状态。
         return {
           success: true,
           sessionId: id,
           returnedFromSettings: true,
-          restartHelperAfterReturn: false,
+          restartHelperAfterReturn: true,
         };
       } catch (error) {
         return controller.signal.aborted &&

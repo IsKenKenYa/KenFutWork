@@ -17,7 +17,13 @@ import { formatDuration } from "@/lib/usage-format";
 
 interface UsageStats {
   rangeDays: number;
-  totals: { tokens: number; inputTokens: number; outputTokens: number };
+  totals: {
+    tokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    /** 窗口内记录到的花费（美元）；供应商没有回传成本时为 null。 */
+    costUsd: number | null;
+  };
   peakDayTokens: number;
   currentStreakDays: number;
   longestStreakDays: number;
@@ -56,6 +62,12 @@ const compact = new Intl.NumberFormat("zh-CN", { notation: "compact" });
 
 function formatTokens(value: number): string {
   return compact.format(value);
+}
+
+/** 成本只展示供应商回传过的记录；没有回传时写明「未上报」，不当成零。 */
+function formatCost(value: number | null): string {
+  if (value === null) return "未上报";
+  return `$${value.toFixed(value > 0 && value < 0.01 ? 4 : 2)}`;
 }
 
 function axisDate(date: string): string {
@@ -567,6 +579,11 @@ export function UsageStatsSection() {
           label: "累计 Token 数",
           value: formatTokens(stats.totals.tokens),
           hint: undefined as string | undefined,
+        },
+        {
+          label: "预估花费",
+          value: formatCost(stats.totals.costUsd),
+          hint: "供应商回传或目录估算",
         },
         {
           label: "峰值 Token 数",

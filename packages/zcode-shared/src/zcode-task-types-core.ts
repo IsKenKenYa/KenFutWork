@@ -6,6 +6,7 @@
 // zcode-task-types.ts / task-realtime.ts 仍保留旧协议兼容面，共用本文件中的核心类型。
 
 import type { ZCodeBackgroundTaskControlItem } from "./background-task-controls.js";
+import type { ConversationTaskControl } from "./zcode-protocol-v4/core.js";
 import type { ToolCallDisplay } from "./zcode-protocol-v4/toolDisplay.js";
 import type {
   ZCodeContextUsageBreakdownItem,
@@ -14,6 +15,18 @@ import type {
   ZCodeSessionActiveTurnKind,
 } from "./zcode-protocol-legacy-types.js";
 import type { ErrorAttribution } from "./zcode-protocol-v4/snapshot.js";
+
+/** 点击时固定的 Task 与未读观察；导航期间不从新缓存补充或升级。 */
+export interface ZCodeTaskUnreadObservation {
+  taskControl: ConversationTaskControl;
+  observedLastUnreadAt: number;
+}
+
+/** 点击时固定的 Task 与置顶观察；独立于正文修订和未读水位。 */
+export interface ZCodeTaskPinObservation {
+  taskControl: ConversationTaskControl;
+  observedPinRevision: number;
+}
 
 /**
  * ZCode task/session 投影共享类型定义
@@ -262,6 +275,10 @@ export interface ZCodeTaskPendingInteraction {
 }
 
 export interface ZCodeTaskMeta {
+  /** 当前项目与执行分支的观察值；旧历史可以省略。 */
+  taskControl?: ConversationTaskControl;
+  /** 当前根会话正文修订；项目移动使用界面实际读取的版本。 */
+  conversationRevision?: number;
   /** Work modes used by the same durable Task; filtering never partitions its history. */
   workModes?: Array<"code" | "design">;
   /** UI taskId 与 ZCode agent sessionId 保持一致，用于列表选择、日志关联和恢复会话。 */
@@ -327,6 +344,10 @@ export interface ZCodeTaskMeta {
   offPeakTaskId?: string;
   /** fork 产物保留来源 taskId，供 UI 做本地化标题兜底和后续追溯。 */
   forkedFromTaskId?: string;
+  /** 最近分配的未读标记；读取清除后仍保留，供下一次明确操作固定观察。 */
+  lastUnreadAt?: number;
+  /** 置顶状态的独立持久修订，不改变 Task 正文或运行权限。 */
+  pinRevision?: number;
   /** 未读任务记录最近一次标记/产生未读的时间，用于跨重启保留蓝点状态。 */
   unreadAt?: number;
   /** 持久化的任务状态，记录最后一次 prompt 的结果 */

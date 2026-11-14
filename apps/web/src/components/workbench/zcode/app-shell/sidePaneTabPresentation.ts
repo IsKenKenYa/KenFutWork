@@ -5,6 +5,7 @@ export interface SidePaneTabPresentationLabels {
   browserTitle: string;
   reviewTitle: string;
   codeViewerTitle: string;
+  fileManagerTitle: string;
   treemappingTitle: string;
   whiteboardTitle: string;
   openDesignTitle: string;
@@ -72,6 +73,7 @@ export function getSidePaneTabSearchHint(tab: WorkspaceSidePaneTab): string {
   }
   if (tab.type === "terminal" || tab.type === "bash-output")
     return `${tab.title} terminal shell command`;
+  if (tab.type === "file-manager") return tab.source?.path ?? tab.target.workspacePath;
   return tab.source.path ?? tab.source.title;
 }
 
@@ -84,6 +86,7 @@ export function getLocalizedSidePaneTabTitle(
       "browser.title": labels.browserTitle,
       "sidePane.review": labels.reviewTitle,
       "codeViewer.title": labels.codeViewerTitle,
+      "fileManager.title": labels.fileManagerTitle,
       "treemapping.title": labels.treemappingTitle,
       "whiteboard.title": labels.whiteboardTitle,
       "sidePane.openDesign": labels.openDesignTitle,
@@ -127,5 +130,6 @@ export function getSidePaneTabTypeLabel(
   if (tab.type === "model-trajectory") return labels.modelTrajectoryTitle;
   if (tab.type === "developer-tools") return labels.developerToolsTitle;
   if (tab.type === "terminal" || tab.type === "bash-output") return labels.terminalTitle;
+  if (tab.type === "file-manager") return labels.fileManagerTitle;
   return labels.codeViewerTitle;
 }

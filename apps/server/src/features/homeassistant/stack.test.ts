@@ -103,7 +103,10 @@ describe("HA 自带实例的拉起判据", () => {
         managedContainerPresent: false,
         haAlreadyAnswering: false,
       }),
-    ).toMatchObject({ action: "skip", reason: expect.stringContaining("非桌面") });
+    ).toMatchObject({
+      action: "skip",
+      reason: expect.stringContaining("非桌面"),
+    });
   });
 
   it("托管容器已在（含 Exited）→ 幂等跳过，不重复 docker run", () => {
@@ -114,7 +117,10 @@ describe("HA 自带实例的拉起判据", () => {
         managedContainerPresent: true,
         haAlreadyAnswering: false,
       }),
-    ).toMatchObject({ action: "skip", reason: expect.stringContaining("不重复拉起") });
+    ).toMatchObject({
+      action: "skip",
+      reason: expect.stringContaining("不重复拉起"),
+    });
   });
 
   it("没有容器运行时时说清下一步做什么", () => {
@@ -136,10 +142,10 @@ describe("HA 容器命令与配置", () => {
   it("docker run 参数：只绑回环、重启策略随机器回来、配置挂数据目录", () => {
     const args = haRunArguments("D:/data/homeassistant");
     expect(args.slice(0, 2)).toEqual(["run", "-d"]);
+    expect(args).toEqual(expect.arrayContaining(["--name", HA_CONTAINER_NAME]));
     expect(args).toEqual(
-      expect.arrayContaining(["--name", HA_CONTAINER_NAME]),
+      expect.arrayContaining(["--restart", "unless-stopped"]),
     );
-    expect(args).toEqual(expect.arrayContaining(["--restart", "unless-stopped"]));
     expect(args).toContain(`127.0.0.1:${HA_HOST_PORT}:${HA_HOST_PORT}`);
     expect(args).toContain("D:/data/homeassistant:/config");
     expect(args.at(-1)).toBe(HA_IMAGE);
@@ -168,15 +174,7 @@ describe("HA 容器命令与配置", () => {
 
   it("端口常量与插件 bundle 的 HA_LOOPBACK_BASE_URL 同值（两处各自声明，必须一起改）", () => {
     const bundle = readFileSync(
-      join(
-        process.cwd(),
-        "..",
-        "..",
-        "plugins",
-        "ha",
-        "lib",
-        "auto-init.js",
-      ),
+      join(process.cwd(), "..", "..", "plugins", "ha", "lib", "auto-init.js"),
       "utf8",
     );
     expect(bundle).toContain(
@@ -242,9 +240,9 @@ describe("HA 自带实例的拉起流程", () => {
     expect(outcome.action).toBe("provisioned");
     const run = docker.calls.find((call) => call.args[0] === "run");
     expect(run?.args).toContain(`127.0.0.1:${HA_HOST_PORT}:${HA_HOST_PORT}`);
-    expect(existsSync(join(dataDir, "homeassistant", "configuration.yaml"))).toBe(
-      true,
-    );
+    expect(
+      existsSync(join(dataDir, "homeassistant", "configuration.yaml")),
+    ).toBe(true);
   });
 
   it("8123 已有 HA：跳过且不碰 docker run", async () => {
@@ -296,7 +294,11 @@ describe("HA 自带实例的拉起流程", () => {
 
   it("docker run 失败时给退出码与 stderr，不谎报已拉起", async () => {
     const docker = fakeDocker({
-      run: result(125, "", "docker: Error response from daemon: port is allocated"),
+      run: result(
+        125,
+        "",
+        "docker: Error response from daemon: port is allocated",
+      ),
     });
     const outcome = await provisionHomeAssistant({
       dataDir: dataDirOf(),

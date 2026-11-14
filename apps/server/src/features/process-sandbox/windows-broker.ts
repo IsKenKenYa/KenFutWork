@@ -5,7 +5,10 @@ import {
   detectTerminalShells,
   resolveTerminalShell,
 } from "../code-git/terminal-runner.js";
-import type { ProcessSpawnRequest } from "./types.js";
+import type {
+  SandboxProcessRequest as ProcessSpawnRequest,
+  ProjectReadSandboxScope,
+} from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 
 export type NativeProcessEvent =
@@ -31,7 +34,16 @@ export interface NativeLaunch {
   /** 仅来自可信 Task danger-full-access；不是隔离失败的降级。 */
   unrestricted?: boolean;
   processId: string;
-  taskId: string;
+  taskId?: string;
+  projectOwner?: Pick<
+    ProjectReadSandboxScope,
+    | "kind"
+    | "leaseId"
+    | "instanceId"
+    | "projectId"
+    | "connectionId"
+    | "revision"
+  >;
   generation: number;
   command: string[];
   cwd: string;

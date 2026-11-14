@@ -2,8 +2,14 @@ import { ChildProcess, execFile } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AUTOMATION_PROBE_TIMEOUT_MS,
+  automationProbeTimeoutMs,
+  buildAutomationProbeScript,
+  buildWindowStackScript,
+  classifyAutomationProbe,
   normalizeAxNode,
   normalizeRole,
+  probeAutomationAccess,
   runJxa,
   toJxaAppSelector,
 } from "./jxa.js";
@@ -86,6 +92,68 @@ describe("toJxaAppSelector（应用定位脚本）", () => {
     expect(toJxaAppSelector({ name: '计算"器"' })).toContain(
       'byName("计算\\"器\\"")',
     );
+  });
+});
+
+describe("classifyAutomationProbe（自动化权限归类）", () => {
+  it("探测成功 → granted（即便同时带了旧 reason）", () => {
+    expect(classifyAutomationProbe({ ok: true, reason: null })).toBe("granted");
+    expect(classifyAutomationProbe({ ok: true, reason: "stale" })).toBe(
+      "granted",
+    );
+  });
+
+  it("errAEEventNotPermitted(-1743) 与中英文拒绝措辞 → denied", () => {
+    expect(classifyAutomationProbe({ ok: false, reason: "(-1743)" })).toBe(
+      "denied",
+    );
+    expect(
+      classifyAutomationProbe({
+        ok: false,
+        reason: "Not authorized to send Apple events to System Events.",
+      }),
+    ).toBe("denied");
+    expect(
+      classifyAutomationProbe({
+        ok: false,
+        reason: "不允许发送 Apple 事件。",
+      }),
+    ).toBe("denied");
+  });
+
+  it("无法识别的失败 → not_determined（不谎报 denied）", () => {
+    expect(classifyAutomationProbe({ ok: false, reason: "(-99999)" })).toBe(
+      "not_determined",
+    );
+    expect(classifyAutomationProbe({ ok: false })).toBe("not_determined");
+    expect(classifyAutomationProbe({})).toBe("not_determined");
+  });
+
+  it("探测器与窗口栈脚本使用约定的系统 API", () => {
+    expect(buildAutomationProbeScript()).toContain("System Events");
+    expect(buildAutomationProbeScript()).toContain("processes.length");
+    // on-screen only(1, 0)：只关心当前屏幕，判定交给 occlusion.ts
+    expect(buildWindowStackScript()).toContain("CGWindowListCopyWindowInfo");
+    expect(buildWindowStackScript()).toContain("(1, 0)");
+  });
+});
+
+describe("probeAutomationAccess（被动权限探测限时）", () => {
+  it("动作超时更长时仍按局部上限执行，短超时保持原值", async () => {
+    execFileMock.mockImplementation((_file, _args, options, callback) => {
+      expect(options).toMatchObject({ timeout: AUTOMATION_PROBE_TIMEOUT_MS });
+      if (typeof callback !== "function")
+        throw new Error("测试需要 execFile callback");
+      callback(null, JSON.stringify({ ok: false, reason: "(-1743)" }), "");
+      return new ChildProcess();
+    });
+
+    await expect(probeAutomationAccess(60_000)).resolves.toEqual({
+      ok: false,
+      reason: "(-1743)",
+    });
+    expect(automationProbeTimeoutMs(60_000)).toBe(AUTOMATION_PROBE_TIMEOUT_MS);
+    expect(automationProbeTimeoutMs(1_500)).toBe(1_500);
   });
 });
 

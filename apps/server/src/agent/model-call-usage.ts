@@ -2,11 +2,19 @@ import { z } from "zod";
 import type { RunUsageTotals } from "../features/usage/run-usage-accumulator.js";
 
 export const MODEL_USAGE_OWNER_METADATA = "kenfutwork_model_usage_owner";
+/**
+ * 模型调用的 agent 归属键：由子代理在创建模型时写入自身派发身份。
+ * 归属只认这一个键，不回退到外层派发栈——并发子代理的事件可能交错到达，
+ * 栈顶推断会把用量记到错误的子代理；缺键时宁可显示「未统计」。
+ */
+export const MODEL_USAGE_AGENT_METADATA = "kenfutwork_model_usage_agent";
 const ownerSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
   providerInstanceId: z.string().min(1).optional(),
   configRevision: z.number().int().nonnegative().optional(),
+  contextWindowTokens: z.number().int().positive().nullable().optional(),
+  maxOutputTokens: z.number().int().positive().nullable().optional(),
 });
 export type ModelUsageOwner = z.infer<typeof ownerSchema>;
 export interface ModelCallUsage extends RunUsageTotals {

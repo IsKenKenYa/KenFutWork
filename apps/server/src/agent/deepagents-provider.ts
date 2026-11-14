@@ -95,7 +95,11 @@ export async function projectKernelToolExecution(
   if (fact.phase === "completed") {
     const [content, artifact] = kernelToolResultParts(fact.output);
     const messageContent =
-      typeof content === "string" || Array.isArray(content)
+      typeof content === "string" ||
+      (Array.isArray(content) &&
+        content.every(
+          (part) => part !== null && typeof part === "object" && "type" in part,
+        ))
         ? content
         : JSON.stringify(content ?? null);
     output = publicToolOutput(

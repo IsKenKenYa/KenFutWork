@@ -64,14 +64,17 @@ export interface TerminalResult {
 }
 
 /** Windows 上 git-bash 不在 PATH 里（bash.exe 躲在 Git 安装目录下），按常见位置兜底。 */
-const EXTRA_BIN_DIRS =
-  process.platform === "win32"
+function extraBinDirs(platform: NodeJS.Platform = process.platform): string[] {
+  return platform === "win32"
     ? [
         "C:\\Program Files\\Git\\bin",
         "C:\\Program Files\\Git\\usr\\bin",
         "C:\\Program Files (x86)\\Git\\bin",
       ]
     : ["/usr/local/bin", "/usr/bin", "/bin"];
+}
+
+const EXTRA_BIN_DIRS = extraBinDirs();
 
 /** 各平台要探测的 shell（顺序即界面顺序）。 */
 function shellCandidates(): Array<{
@@ -124,9 +127,12 @@ export function detectTerminalShells(): TerminalShellOption[] {
 }
 
 /** 该路径是否来自系统安装目录（用于区分「系统自带」与「PATH 上找到」）。 */
-function isSystemShellPath(executable: string): boolean {
+function isSystemShellPath(
+  executable: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
   const normalized = executable.toLowerCase().replace(/\\/g, "/");
-  return EXTRA_BIN_DIRS.some((directory) =>
+  return extraBinDirs(platform).some((directory) =>
     normalized.startsWith(directory.toLowerCase().replace(/\\/g, "/")),
   );
 }
@@ -137,6 +143,7 @@ function isSystemShellPath(executable: string): boolean {
  */
 export function listIntegratedTerminalShellOptions(
   available: readonly TerminalShellOption[] = detectTerminalShells(),
+  platform: NodeJS.Platform = process.platform,
 ): IntegratedTerminalShellOption[] {
   const options: IntegratedTerminalShellOption[] = [];
   for (const shell of available) {
@@ -147,7 +154,8 @@ export function listIntegratedTerminalShellOptions(
       label: shell.id === "cmd" ? "CMD" : "Git Bash",
       path: shell.executable,
       source:
-        shell.id === "git-bash" && !isSystemShellPath(shell.executable)
+        shell.id === "git-bash" &&
+        !isSystemShellPath(shell.executable, platform)
           ? "path"
           : "system",
     });

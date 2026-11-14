@@ -98,11 +98,14 @@ function ToolCallBlockComponent({
   animateDiffCountOnMount = false,
   agentSummaryAction,
   authoritativeAgentType,
+  agentUsage,
   streamingEntranceActive = false,
   streamingEntranceKeyPrefix = "tool",
   cuaGroupEvents,
   renderCuaAssistantMessage,
   renderCuaReasoning,
+  sessionId,
+  onReadToolOutput,
 }: {
   toolCallNode: TaskChatToolCallTreeNode;
   depth?: number;
@@ -142,6 +145,7 @@ function ToolCallBlockComponent({
   animateDiffCountOnMount?: boolean;
   agentSummaryAction?: ToolCallBlockRenderContext["agentSummaryAction"];
   authoritativeAgentType?: ToolCallBlockRenderContext["authoritativeAgentType"];
+  agentUsage?: ToolCallBlockRenderContext["agentUsage"];
   streamingEntranceActive?: boolean;
   streamingEntranceKeyPrefix?: string;
   cuaGroupEvents?: readonly ConversationCuaGroupEvent[];
@@ -151,6 +155,10 @@ function ToolCallBlockComponent({
   renderCuaReasoning?: (
     event: Extract<ConversationCuaGroupEvent, { kind: "reasoning" }>,
   ) => ReactNode;
+  /** 当前 pane 绑定的会话 id；与 onReadToolOutput 同时具备才显示「查看原文」。 */
+  sessionId?: ToolCallBlockRenderContext["sessionId"];
+  /** 工具输出原文只读分页读取；缺席即不显示入口。 */
+  onReadToolOutput?: ToolCallBlockRenderContext["onReadToolOutput"];
 }) {
   const { toolCall, childToolCalls } = toolCallNode;
   const { intl } = useZCodeIntl();
@@ -257,6 +265,8 @@ function ToolCallBlockComponent({
               onOpenPlanDetail={onOpenPlanDetail}
               onOpenWorkflowRun={onOpenWorkflowRun}
               onLoadFullToolCallFields={onLoadFullToolCallFields}
+              sessionId={sessionId}
+              onReadToolOutput={onReadToolOutput}
               suppressSourceLabel={suppressSourceLabel}
               showTodoToolCalls={showTodoToolCalls}
               disableSummaryContentAnimation={disableSummaryContentAnimation}
@@ -275,6 +285,8 @@ function ToolCallBlockComponent({
       onOpenBrowserUrl,
       onOpenPlanDetail,
       onOpenFileLink,
+      onReadToolOutput,
+      sessionId,
       showIcon,
       showTodoToolCalls,
       streamingEntranceActive,
@@ -309,6 +321,7 @@ function ToolCallBlockComponent({
       animateDiffCountOnMount,
       agentSummaryAction,
       authoritativeAgentType,
+      agentUsage,
       onOpenCodeViewer: toolPreviewCodeViewer,
       onOpenFileLink,
       onOpenBrowserUrl,
@@ -325,11 +338,14 @@ function ToolCallBlockComponent({
       workflowRun,
       workflowDraft,
       onLoadFullToolCallFields,
+      sessionId,
+      onReadToolOutput,
     }),
     [
       isOfficeMode,
       agentSummaryAction,
       authoritativeAgentType,
+      agentUsage,
       childToolList,
       codePreviewSettings,
       cuaAppIconClassName,
@@ -348,7 +364,9 @@ function ToolCallBlockComponent({
       onOpenWorkflowWorkspace,
       onOpenWorkflowArtifact,
       onOpenFileLink,
+      onReadToolOutput,
       rawFileSummaries,
+      sessionId,
       showIcon,
       showTodoToolCalls,
       sourceLabel,

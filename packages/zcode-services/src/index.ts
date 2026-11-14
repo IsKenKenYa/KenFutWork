@@ -25,6 +25,30 @@ export {
 
 // Accessor
 export type { IServiceAccessor } from "./accessor.js";
+export { ITaskGroupService } from "./task-groups/contract.js";
+export type {
+  TaskGroup,
+  TaskGroupColor,
+  TaskGroupStructure,
+  GroupTaskRef,
+  GroupNode,
+  MoveGroupNode,
+  GroupTaskFact,
+} from "./task-groups/contract.js";
+export { IProjectService } from "./project/contract.js";
+export type {
+  PrepareProjectSessionInput,
+  PreparedProjectSession,
+  CreateProjectInput,
+  EditProjectInput,
+  PinProjectInput,
+  ProjectRoot,
+  ProjectRootAccess,
+  ProjectTask,
+  ProjectTree,
+  SaveProjectInput,
+  VirtualProject,
+} from "./project/contract.js";
 export {
   ConversationShareServiceError,
   createUnsupportedConversationShareService,
@@ -111,17 +135,6 @@ export type {
   ZCodeTaskListSortBy,
   ZCodeTaskListWorkspaceScope,
   ZCodeTaskReadyOutcome,
-  ZCodeGroupedTaskRef,
-  ZCodeGroupedTaskView,
-  ZCodeGroupedTaskViewNode,
-  ZCodeGroupedTaskViewOrderInput,
-  ZCodeGroupedTaskViewQuery,
-  ZCodeGroupedTaskViewStructure,
-  ZCodeGroupedTaskViewStructureMember,
-  ZCodeGroupedTaskViewStructureTopOrder,
-  ZCodeGroupedTaskViewTopLevelNodeRef,
-  ZCodeTaskGroup,
-  ZCodeTaskGroupColor,
 } from "./session/zcodeTaskService.js";
 export type { ZCodeTaskListItem } from "./session/zcodeTaskListTypes.js";
 
@@ -215,7 +228,11 @@ export {
   PROJECT_MEMORY_FILE_CHANGED_ERROR_CODE,
   PROJECT_MEMORY_PREVIEW_LIMIT_EXCEEDED_ERROR_CODE,
 } from "./memory/memory.js";
-export type { ProjectMemoryFileSummary, ProjectMemoryWorkspaceSummary } from "./memory/memory.js";
+export type {
+  ProjectMemoryFileSummary,
+  ProjectMemoryTrashItem,
+  ProjectMemoryWorkspaceSummary,
+} from "./memory/memory.js";
 
 export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 

@@ -1,5 +1,6 @@
-import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { pathWithin } from "./policy.js";
+import { processOwnerKey } from "./process-identity.js";
+import type { SandboxProcessScope as CodeExecutionScope } from "./types.js";
 
 function roots(scope: CodeExecutionScope) {
   return [
@@ -25,7 +26,7 @@ export function losesExecutionRights(
   if (
     previous.instanceId !== next.instanceId ||
     previous.projectId !== next.projectId ||
-    previous.taskId !== next.taskId ||
+    processOwnerKey(previous) !== processOwnerKey(next) ||
     previous.rootDirectory !== next.rootDirectory
   )
     return true;

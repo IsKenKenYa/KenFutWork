@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Side pane tab 状态集中维护 Browser/Git/CodeViewer/Treemapping/Whiteboard 的打开、复用、关闭和排序规则；拆分需要同步迁移现有内存恢复逻辑。 */
 import { type BrowserTabResidencyState, createUuid } from "@zcode/shared";
+import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import {
   type CodeViewerSource,
   inferMediaPreview,
@@ -37,6 +38,28 @@ export interface GitSidePaneTab {
   ownerTaskId?: string | null;
   workspaceKey?: string | null;
   openedAt?: number;
+}
+
+export interface FileManagerTarget {
+  workspacePath: string;
+  /** 浏览起点独立于真实宿主主目录及 canonical identity。 */
+  browseDirectory?: string;
+  workspaceName?: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string;
+  viewerScope?: CodeUiViewerScope;
+  revealPath?: string;
+  temporaryExternalDirectory?: boolean;
+}
+
+export interface FileManagerSidePaneTab {
+  id: string;
+  type: "file-manager";
+  ownerTaskId?: string | null;
+  workspaceKey?: string | null;
+  openedAt?: number;
+  target: FileManagerTarget;
+  source: CodeViewerSource | null;
 }
 
 export interface CodeViewerSidePaneTab {
@@ -575,6 +598,7 @@ export type WorkspaceSidePaneTab =
   | BrowserSidePaneTab
   | GitSidePaneTab
   | CodeViewerSidePaneTab
+  | FileManagerSidePaneTab
   | TreemappingSidePaneTab
   | WhiteboardSidePaneTab
   | DocumentSidePaneTab
@@ -1058,7 +1082,13 @@ function getCodeViewerTabSourceKey(source: CodeViewerSource): string | null {
   const workspaceScope = source.workspaceIdentity?.trim()
     ? source.workspaceIdentity.trim()
     : (source.workspacePath ?? "");
-  const scopedKeyPrefix = workspaceScope ? `${workspaceScope}:` : "";
+  const viewerId = source.viewerScope?.kind === "task"
+    ? source.viewerScope.taskId
+    : source.viewerScope?.projectId;
+  const viewerScopeKey = source.viewerScope
+    ? `${source.viewerScope.kind}:${viewerId}:`
+    : "";
+  const scopedKeyPrefix = `${workspaceScope ? `${workspaceScope}:` : ""}${viewerScopeKey}`;
   // 文件树把 PPTX 表示为通用 `file` source，引用反向打开则使用带导航意图的
   // `pptx` source。旧 key 直接包含 source.type，导致同一 workspace 路径被拆成两个 tab。
   // source type 只是入口表示，不是文件身份；这里只归一 PPTX，避免扩大其它预览类型的语义。
@@ -1677,6 +1707,40 @@ export function openCodeViewerSidePane(
     current,
     matchedTab ? { ...matchedTab, source: nextTab.source } : nextTab,
   );
+}
+
+export function openFileManagerSidePane(
+  current: WorkspaceSidePaneState | null,
+  target: FileManagerTarget,
+): WorkspaceSidePaneState {
+  return activateSidePaneTab(current, {
+    id: `file-manager:${createUuid()}`,
+    type: "file-manager",
+    target,
+    source: null,
+    openedAt: Date.now(),
+  });
+}
+
+export function navigateFileManagerSidePane(
+  current: WorkspaceSidePaneState | null,
+  tabId: string,
+  source: CodeViewerSource,
+): WorkspaceSidePaneState | null {
+  if (!current) return current;
+  const normalizedSource = normalizeCodeViewerSource(source);
+  return {
+    ...current,
+    // 导航只改变指定标签的内容，保持显示归属与兄弟标签。
+    tabs: current.tabs.map((tab) => {
+      if (tab.id !== tabId) return tab;
+      if (tab.type === "file-manager") return { ...tab, source: normalizedSource };
+      if (tab.type === "code-viewer") {
+        return { ...tab, source: normalizedSource, sourceKey: getCodeViewerTabSourceKey(normalizedSource) };
+      }
+      return tab;
+    }),
+  };
 }
 
 /**

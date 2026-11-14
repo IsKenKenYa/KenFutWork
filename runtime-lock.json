@@ -11,10 +11,10 @@
   "targets": {
     "darwin-arm64": {
       "node": {
-        "version": "22.20.0",
-        "fileName": "node-v22.20.0-darwin-arm64.tar.gz",
-        "sha256": "cc04a76a09f79290194c0646f48fec40354d88969bec467789a5d55dd097f949",
-        "url": "https://nodejs.org/dist/v22.20.0/node-v22.20.0-darwin-arm64.tar.gz"
+        "version": "22.23.4",
+        "fileName": "node-v22.23.4-darwin-arm64.tar.gz",
+        "sha256": "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428",
+        "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-arm64.tar.gz"
       },
       "python": {
         "version": "3.12",

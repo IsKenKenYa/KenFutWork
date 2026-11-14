@@ -1,10 +1,11 @@
+import type { CodeUiViewerScope } from "@kenfutwork/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WorkspaceFileEntry } from "@zcode/shared";
 import {
   packWorkspaceFileEntries,
   unpackWorkspaceFileEntries,
 } from "@zcode/shared/workspaceFileEntriesCodec";
-import { useWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
+import { useFileViewerServices } from "@zui/host/useFileViewerServices.js";
 import { fetchWorkspaceFileEntriesPacked } from "@zui/workspace-file-search/fetchWorkspaceFileEntries.js";
 import { useWorkspaceFileSearchFilterEntries } from "@zui/workspace-file-search/useWorkspaceFileSearchFilter.js";
 
@@ -18,20 +19,25 @@ interface WorkspaceFileSearchIndexState {
 
 export function useWorkspaceFileSearchIndex({
   workspacePath,
+  hostWorkspacePath = workspacePath,
   workspaceIdentity,
   workspaceRemoteSessionId,
+  viewerScope,
   enabled,
 }: {
   workspacePath: string;
+  hostWorkspacePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
+  viewerScope?: CodeUiViewerScope;
   enabled: boolean;
 }): WorkspaceFileSearchIndexState {
-  const { fileService } = useWorkspaceServices(
-    workspacePath,
+  const { fileService } = useFileViewerServices({
+    workspacePath: hostWorkspacePath,
     workspaceRemoteSessionId,
     workspaceIdentity,
-  );
+    viewerScope,
+  });
   // packed 直存（Host 返回列式字符串）：树渲染用 useMemo unpack，搜索态直透 worker。
   const [packed, setPacked] = useState("");
   const entries = useMemo<WorkspaceFileEntry[]>(
@@ -50,7 +56,7 @@ export function useWorkspaceFileSearchIndex({
     setLoaded(false);
     setError(null);
     requestVersionRef.current += 1;
-  }, [workspaceIdentity, workspacePath, workspaceRemoteSessionId]);
+  }, [fileService, workspaceIdentity, workspacePath, workspaceRemoteSessionId]);
 
   const refresh = useCallback(() => {
     setRefreshVersion((current) => current + 1);
@@ -85,6 +91,9 @@ export function useWorkspaceFileSearchIndex({
           setLoading(false);
         }
       });
+    return () => {
+      requestVersionRef.current += 1;
+    };
   }, [enabled, fileService, refreshVersion, workspacePath]);
 
   return {

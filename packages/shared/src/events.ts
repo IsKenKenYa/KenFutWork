@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toolArtifactSchema } from "./artifacts.js";
 import {
   conversationIdSchema,
+  hookEventSchema,
   messageIdSchema,
   runIdSchema,
   sessionIdSchema,
@@ -158,6 +159,17 @@ export const runUsageEventSchema = z.object({
   runId: runIdSchema,
   /** SDK实际模型调用身份；同一次stream/end累计更新共用此键。 */
   modelCallId: z.string().min(1).optional(),
+  /**
+   * 子代理派发调用 id（父 run 的 toolCallId）：出现时下方 `agent*Tokens` 只统计
+   * 该子代理已产生的模型调用累计值，`inputTokens`/`run*Tokens` 仍保持全 run 口径。
+   */
+  agentCallId: z.string().min(1).optional(),
+  /** 该子代理累计输入 token；上游未上报时缺省（界面显示「未统计」而不是 0）。 */
+  agentInputTokens: z.number().int().nonnegative().optional(),
+  /** 该子代理累计输出 token；上游未上报时缺省。 */
+  agentOutputTokens: z.number().int().nonnegative().optional(),
+  /** 该子代理累计命中缓存的输入 token；上游不报时缺省。 */
+  agentCachedInputTokens: z.number().int().nonnegative().optional(),
   /** 本次模型调用的提示词大小（一轮里随工具结果增长）。 */
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
@@ -239,7 +251,7 @@ export const runCompactedEventSchema = z
 export const runHookEventSchema = z.object({
   type: z.literal("run.hook"),
   runId: runIdSchema,
-  event: z.enum(["turn-start", "turn-end"]),
+  event: hookEventSchema,
   command: z.string().min(1),
   /** 被超时杀掉时为 null。 */
   exitCode: z.number().int().nullable(),

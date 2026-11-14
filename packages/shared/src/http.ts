@@ -6,6 +6,7 @@ import {
   canvasSummarySchema,
   chatMessageSchema,
   chatSessionSummarySchema,
+  identifierSchema,
   instanceSettingsSchema,
   modelInfoSchema,
   projectKindSchema,
@@ -55,7 +56,10 @@ export const projectCreateRequestSchema = z.object({
 });
 
 export const projectDirectoryQuerySchema = z.object({
-  path: z.string().trim().min(1),
+  path: z
+    .string()
+    .min(1)
+    .refine((path) => path.trim().length > 0),
 });
 export const projectDirectoryCandidatesSchema = z.object({
   projects: z.array(
@@ -432,6 +436,122 @@ export type AgentRunLatestResponse = z.infer<
   typeof agentRunLatestResponseSchema
 >;
 
+// --- 单轮运行时间线（事件日志投影 + Markdown 导出） ---
+
+/**
+ * 时间线条目类别：run（开始/结束）、tool（工具调用）、subagent（后台子代理
+ * 结算）、command（后台命令结算）、compaction（上下文压缩）、hook（回合钩子）、
+ * retry（自动重试）。
+ */
+export const runTimelineEntryKindSchema = z.enum([
+  "run",
+  "tool",
+  "subagent",
+  "command",
+  "compaction",
+  "hook",
+  "retry",
+]);
+
+/**
+ * 一条时间线条目。由服务端从 `code_ui_events` 的流事件投影而来：
+ * 同一个 `toolCallId` 的开始与完成合并成一条；消息增量与画布同步这类
+ * 高频事件不进时间线。
+ */
+export const runTimelineEntrySchema = z.object({
+  kind: runTimelineEntryKindSchema,
+  /** 事件日志里递增的序号，客户端据此排序与去重。 */
+  seq: z.number().int().positive(),
+  /** 事件时间（ISO）。 */
+  at: z.string().min(1),
+  /** 一行标题（工具名 / 子代理名 / 钩子事件名）。 */
+  title: z.string().min(1),
+  /** 权威终态；纯信息条目不填。 */
+  status: z.enum(["success", "error", "cancelled", "running"]).optional(),
+  /** 工具名或子代理名，便于客户端按名称过滤。 */
+  name: z.string().min(1).optional(),
+  /** 子代理归因名；主 agent 的调用不填。 */
+  agentName: z.string().min(1).optional(),
+  durationMs: z.number().int().nonnegative().optional(),
+  /** 服务端已截断的一行摘要。 */
+  detail: z.string().optional(),
+});
+
+/**
+ * `GET /api/agent/runs/:runId/timeline` 的响应。
+ *
+ * 用途：把一轮运行的完整过程交给界面回看与导出（工具、审批外的钩子、
+ * 压缩、重试、后台子代理结算），并按 `agent_runs` 的终态补上失败原文。
+ * 运行不存在或不属于当前本地实例时返回 404，不返回空壳。
+ */
+export const runTimelineResponseSchema = z.object({
+  run: z.object({
+    runId: runIdSchema,
+    model: z.string().nullable(),
+    status: z.enum(["accepted", "running", "completed", "failed", "canceled"]),
+    stopReason: runStopReasonSchema.nullable(),
+    errorCode: z.string().nullable(),
+    /** 面向用户的失败原因原文（服务端写的可读文案）。 */
+    errorMessage: z.string().nullable(),
+    startedAt: z.string().min(1),
+    completedAt: z.string().nullable(),
+    /** 用量汇总；这一轮还没有落账时缺省，界面显示「未统计」而不是 0。 */
+    usage: z
+      .object({
+        inputTokens: z.number().int().nonnegative(),
+        outputTokens: z.number().int().nonnegative(),
+        /** 成本只在上游声明价格时存在。 */
+        costUsd: z.number().nonnegative().nullable(),
+      })
+      .nullable(),
+  }),
+  entries: z.array(runTimelineEntrySchema),
+});
+
+export type RunTimelineEntry = z.infer<typeof runTimelineEntrySchema>;
+export type RunTimelineEntryKind = z.infer<typeof runTimelineEntryKindSchema>;
+export type RunTimelineResponse = z.infer<typeof runTimelineResponseSchema>;
+
+/**
+ * `GET /api/agent/tasks/:taskId/runs` 的响应。
+ *
+ * 用途：没有检查点的工作区也能按 Task 列出每一轮运行的终态与时间，
+ * 再从 `runId` 进入单轮时间线回看。只返回本实例、本 Task 且所属项目未归档的运行。
+ */
+export const taskRunsResponseSchema = z.object({
+  taskId: identifierSchema,
+  runs: z.array(
+    z.object({
+      runId: runIdSchema,
+      /** 该轮实际使用的模型；历史轮次可能没有记录。 */
+      model: z.string().nullable(),
+      status: z.enum([
+        "accepted",
+        "running",
+        "completed",
+        "failed",
+        "canceled",
+      ]),
+      stopReason: runStopReasonSchema.nullable(),
+      errorCode: z.string().nullable(),
+      errorMessage: z.string().nullable(),
+      startedAt: z.string().min(1),
+      completedAt: z.string().nullable(),
+      /** 用量汇总；这一轮还没有落账时缺省，界面显示「未统计」而不是 0。 */
+      usage: z
+        .object({
+          inputTokens: z.number().int().nonnegative(),
+          outputTokens: z.number().int().nonnegative(),
+          /** 成本只在上游声明价格时存在。 */
+          costUsd: z.number().nonnegative().nullable(),
+        })
+        .nullable(),
+    }),
+  ),
+});
+
+export type TaskRunsResponse = z.infer<typeof taskRunsResponseSchema>;
+
 export const codeGitFileResponseSchema = z.object({
   file: z.object({
     path: z.string().min(1),
@@ -484,6 +604,9 @@ export const applicationErrorCodeSchema = z.enum([
   "project_create_failed",
   "project_delete_failed",
   "project_not_found",
+  "project_revision_conflict",
+  "project_prepare_unavailable",
+  "project_identity_mismatch",
   "project_slug_taken",
   "project_update_failed",
   "invalid_project_modes",
@@ -508,6 +631,10 @@ export const applicationErrorCodeSchema = z.enum([
   "upload_failed",
   "asset_not_found",
   "job_not_found",
+  /** 单轮运行不存在或不属于当前本地实例（404，见运行时间线端点）。 */
+  "run_not_found",
+  /** Task 或项目已归档，取消归档前不能读取或导出运行记录（409）。 */
+  "task_archived",
   "job_create_failed",
   "job_request_conflict",
   "job_query_failed",
@@ -525,13 +652,23 @@ export const applicationErrorCodeSchema = z.enum([
   "marketplace_search_failed",
   "marketplace_detail_failed",
   "instance_create_failed",
+  "instance_not_found",
   "instance_update_failed",
   "instance_delete_failed",
   "instance_query_failed",
+  "instance_revision_conflict",
   "instance_draining",
   "marketplace_install_failed",
   "concurrency_limit",
   "generation_failed",
+  "media_driver_invalid_file",
+  "media_driver_conflict",
+  "media_driver_removed",
+  "media_driver_not_found",
+  "media_driver_storage_error",
+  "media_driver_preview_stale",
+  "media_driver_permissions",
+  "media_driver_in_use",
   // 插件市场（安装前兼容性门禁 + 启停）
   "invalid_request",
   "plugin_not_found",
@@ -575,6 +712,16 @@ export const applicationErrorCodeSchema = z.enum([
   "scope_revoking",
   "scope_unavailable",
   "task_not_found",
+  // 原宿主项目准备、分组和连接的公共错误。
+  "invalid_code_ui_request",
+  "code_ui_not_found",
+  "code_ui_command_conflict",
+  "code_ui_error",
+  "task_group_revision_conflict",
+  "task_group_not_found",
+  "task_groups_not_initialized",
+  "task_unread_conflict",
+  "task_pin_conflict",
   "design_goal_conflict",
   "design_input_conflict",
   "design_restore_conflict",

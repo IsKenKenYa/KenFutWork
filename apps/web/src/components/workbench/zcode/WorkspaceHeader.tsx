@@ -18,6 +18,25 @@ import {
 } from "@zui/WorkspaceHeaderSections.js";
 import type { WorkspaceHeaderVariant } from "@zui/WorkspaceHeaderSections/shared.js";
 
+export function resolveTopOverlayLeadingPaddingClass({
+  isSidebarVisible,
+  isMacDesktop,
+  isMacFullscreen,
+  hasUpdateReady,
+}: {
+  isSidebarVisible: boolean;
+  isMacDesktop?: boolean;
+  isMacFullscreen?: boolean;
+  hasUpdateReady?: boolean;
+}): string | false {
+  if (isSidebarVisible) return false;
+  if (isMacDesktop) {
+    if (hasUpdateReady) return isMacFullscreen ? "pl-48" : "pl-66";
+    return isMacFullscreen ? "pl-38" : "pl-58";
+  }
+  return hasUpdateReady ? "pl-44" : "pl-38";
+}
+
 export function WorkspaceHeader({
   variant = "task",
 
@@ -115,22 +134,15 @@ export function WorkspaceHeader({
   allowOpenWorkspace?: boolean;
 }) {
   const [selectedEditor, setSelectedEditor] = useState<EditorInfo | null>(null);
-  const shouldOffsetHeaderForWindowControls = !isSidebarVisible;
   // Linux 与 Windows 共用内联窗控，不再预留旧悬浮窗控的标题栏区域。
   const usesInlineWindowControls = Boolean(isWindowsDesktop || (isDesktop && !isMacDesktop));
 
-  let headerWindowControlsPaddingClass: string | false = false;
-  if (shouldOffsetHeaderForWindowControls) {
-    if (isMacDesktop) {
-      if (hasUpdateReady) {
-        headerWindowControlsPaddingClass = isMacFullscreen ? "pl-48" : "pl-66";
-      } else {
-        headerWindowControlsPaddingClass = isMacFullscreen ? "pl-38" : "pl-58";
-      }
-    } else {
-      headerWindowControlsPaddingClass = hasUpdateReady ? "pl-44" : "pl-38";
-    }
-  }
+  const headerWindowControlsPaddingClass = resolveTopOverlayLeadingPaddingClass({
+    isSidebarVisible,
+    isMacDesktop,
+    isMacFullscreen,
+    hasUpdateReady,
+  });
 
   return (
     <header

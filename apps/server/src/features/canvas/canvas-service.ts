@@ -138,7 +138,9 @@ async function canvasFilePresent(
 ): Promise<boolean> {
   try {
     return (
-      await stat(join(projectRoot, ".kenfutwork", "canvases", `${canvasId}.json`))
+      await stat(
+        join(projectRoot, ".kenfutwork", "canvases", `${canvasId}.json`),
+      )
     ).isFile();
   } catch {
     return false;

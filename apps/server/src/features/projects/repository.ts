@@ -4,6 +4,11 @@ import type {
   PersistenceService,
   SqlTransaction,
 } from "../persistence/types.js";
+import {
+  createProjectCreationRepository,
+  type ProjectCreationOperation,
+  type ProjectCreationResult,
+} from "./project-creation-repository.js";
 
 export type ProjectListRow = {
   id: string;
@@ -62,6 +67,11 @@ export type CreatedCanvasRow = {
   is_primary: boolean;
 };
 
+export type CreatedProjectResult = {
+  canvas: CreatedCanvasRow | null;
+  project: CreatedProjectRow;
+};
+
 /** 更新补丁：`undefined` = 不改；显式 `null` = 清空（如解绑品牌套件）。 */
 export type ProjectUpdatePatch = {
   name?: string | undefined;
@@ -94,6 +104,12 @@ export class ProjectDirectoryConflictError extends Error {
   }
 }
 
+export class ProjectClosingConflictError extends Error {
+  constructor() {
+    super("项目正在归档，请等待关闭完成。");
+  }
+}
+
 /** 创建与恢复关联必须争用同一把目录锁；目录已由服务层归一化。 */
 export function projectDirectoryLockKey(instanceId: string, path: string) {
   return JSON.stringify([instanceId, path]);
@@ -114,10 +130,10 @@ export interface ProjectRepository {
   /** 归档（软删）活跃项目；返回受影响行数（0 = 不存在或已归档）。 */
   archive(instanceId: string, projectId: string): Promise<number>;
   /** 建项目 + 主画布，同一事务（原子性不依赖 DB 函数）。 */
-  createProject(input: CreateProjectInput): Promise<{
-    canvas: CreatedCanvasRow | null;
-    project: CreatedProjectRow;
-  }>;
+  createProject(input: CreateProjectInput): Promise<CreatedProjectResult>;
+  createProjectOnce(
+    input: ProjectCreationOperation,
+  ): Promise<ProjectCreationResult>;
   findActiveById(
     instanceId: string,
     projectId: string,
@@ -158,6 +174,63 @@ const PROJECT_DETAIL_COLUMNS =
 const PROJECT_CREATED_COLUMNS =
   "id, name, slug, kind, description, created_at, updated_at, instance_id, work_dir, additional_directories, enabled_modes";
 
+async function insertProject(
+  tx: SqlTransaction,
+  input: CreateProjectInput,
+  signal?: AbortSignal,
+): Promise<CreatedProjectResult> {
+  const scoped = tx.forInstance(input.instanceId);
+  if (input.workDir && input.kind !== "flow") {
+    await tx.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [
+      projectDirectoryLockKey(input.instanceId, input.workDir),
+    ]);
+    signal?.throwIfAborted();
+    const existing = await scoped.queryOne<{ id: string }>(
+      "select id from public.projects where instance_id=:instance and work_dir=$1 and archived_at is null limit 1",
+      [input.workDir],
+    );
+    if (existing && input.directoryChoice !== "independent")
+      throw new ProjectDirectoryConflictError();
+  }
+  signal?.throwIfAborted();
+  const project = await scoped.queryOne<CreatedProjectRow>(
+    `insert into public.projects
+            (id, instance_id, name, slug, kind, description, work_dir, created_by_client_id, additional_directories, enabled_modes)
+     values (coalesce($7::uuid, gen_random_uuid()), :instance, $1, $2, $3, $4, $5, $6, $8::jsonb, $9::text[])
+     returning ${PROJECT_CREATED_COLUMNS}`,
+    [
+      input.name,
+      input.slug,
+      input.kind ?? "design",
+      input.description,
+      input.workDir ?? null,
+      input.createdByClientId,
+      input.id ?? null,
+      JSON.stringify(input.additionalDirectories ?? []),
+      [input.kind ?? "design"],
+    ],
+  );
+  if (!project) throw new Error("[projects] 建项目未返回行。");
+  if (project.kind !== "flow") return { canvas: null, project };
+  signal?.throwIfAborted();
+  const canvas = await scoped.queryOne<CreatedCanvasRow>(
+    // canvases 无 instance_id 列，项目父链在同一事务内核对归属。
+    `insert into public.canvases (project_id, name, is_primary, created_by_client_id, root_directory)
+     select p.id, $1, true, $2, $4
+       from public.projects p
+      where p.id = $3 and p.instance_id = :instance
+     returning id, name, is_primary`,
+    [
+      input.canvasName,
+      input.createdByClientId,
+      project.id,
+      input.workDir ?? null,
+    ],
+  );
+  if (!canvas) throw new Error("[projects] 建主画布未返回行。");
+  return { canvas, project };
+}
+
 export function createProjectRepository(
   persistence: PersistenceService,
 ): ProjectRepository {
@@ -171,19 +244,38 @@ export function createProjectRepository(
       );
     },
     async beginCloseProject(instanceId, projectId) {
-      await persistence.forInstance(instanceId).execute(
-        `update public.code_ui_sessions set execution_state = 'revoking',
-                scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
-          where instance_id = :instance and project_id = $1 and deleted_at is null`,
-        [projectId],
-      );
+      await persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        const closed = await sql.execute(
+          `update public.projects set archive_state='closing'
+            where instance_id=:instance and id=$1 and archived_at is null
+              and archive_state in ('open','failed')`,
+          [projectId],
+        );
+        if (closed === 0) throw new ProjectClosingConflictError();
+        await sql.execute(
+          `update public.code_ui_sessions set execution_state = 'revoking',
+                  scope_generation = scope_generation + 1, branch_generation = branch_generation + 1
+            where instance_id = :instance and project_id = $1 and deleted_at is null`,
+          [projectId],
+        );
+      });
     },
     async failCloseProject(instanceId, projectId) {
-      await persistence.forInstance(instanceId).execute(
-        `update public.code_ui_sessions set execution_state = 'failed'
-          where instance_id = :instance and project_id = $1 and execution_state = 'revoking'`,
-        [projectId],
-      );
+      await persistence.transaction(async (tx) => {
+        const sql = tx.forInstance(instanceId);
+        await sql.execute(
+          `update public.projects set archive_state='failed'
+            where instance_id=:instance and id=$1 and archived_at is null
+              and archive_state='closing'`,
+          [projectId],
+        );
+        await sql.execute(
+          `update public.code_ui_sessions set execution_state = 'failed'
+            where instance_id = :instance and project_id = $1 and execution_state = 'revoking'`,
+          [projectId],
+        );
+      });
     },
     async listActive(instanceId, kind = "design") {
       return persistence.forInstance(instanceId).query<ProjectListRow>(
@@ -282,77 +374,19 @@ export function createProjectRepository(
     },
 
     async createProject(input) {
-      const create = async (tx: SqlTransaction) => {
-        const scoped = tx.forInstance(input.instanceId);
-
-        if (input.workDir && input.kind !== "flow") {
-          await tx.query(
-            "select pg_advisory_xact_lock(hashtextextended($1,0))",
-            [projectDirectoryLockKey(input.instanceId, input.workDir)],
-          );
-          const existing = await scoped.queryOne<{ id: string }>(
-            "select id from public.projects where instance_id=:instance and work_dir=$1 and archived_at is null limit 1",
-            [input.workDir],
-          );
-          if (existing && input.directoryChoice !== "independent")
-            throw new ProjectDirectoryConflictError();
-        }
-
-        const project = await scoped.queryOne<CreatedProjectRow>(
-          `insert into public.projects
-                  (id, instance_id, name, slug, kind, description, work_dir, created_by_client_id, additional_directories, enabled_modes)
-           values (coalesce($7::uuid, gen_random_uuid()), :instance, $1, $2, $3, $4, $5, $6, $8::jsonb, $9::text[])
-           returning ${PROJECT_CREATED_COLUMNS}`,
-          [
-            input.name,
-            input.slug,
-            input.kind ?? "design",
-            input.description,
-            input.workDir ?? null,
-            input.createdByClientId,
-            input.id ?? null,
-            JSON.stringify(input.additionalDirectories ?? []),
-            [input.kind ?? "design"],
-          ],
-        );
-
-        if (!project) {
-          throw new Error("[projects] 建项目未返回行。");
-        }
-
-        if (project.kind !== "flow") return { canvas: null, project };
-
-        const canvas = await scoped.queryOne<CreatedCanvasRow>(
-          // canvases 无 instance_id 列：经 projects 父链施加谓词，
-          // 守卫因此同时是「该项目确属本工作区」的归属校验。
-          `insert into public.canvases (project_id, name, is_primary, created_by_client_id, root_directory)
-           select p.id, $1, true, $2, $4
-             from public.projects p
-            where p.id = $3
-              and p.instance_id = :instance
-           returning id, name, is_primary`,
-          [
-            input.canvasName,
-            input.createdByClientId,
-            project.id,
-            input.workDir ?? null,
-          ],
-        );
-
-        if (!canvas) {
-          throw new Error("[projects] 建主画布未返回行。");
-        }
-
-        return { canvas, project };
-      };
       // 等待目录锁不得占普通查询池；恢复关联需要该池关闭已有 Task 资源。
       return input.workDir && input.kind !== "flow"
         ? persistence.withSessionTransaction((tx, signal) => {
             signal.throwIfAborted();
-            return create(tx);
+            return insertProject(tx, input, signal);
           })
-        : persistence.transaction(create);
+        : persistence.transaction((tx) => insertProject(tx, input));
     },
+
+    createProjectOnce: createProjectCreationRepository(
+      persistence,
+      insertProject,
+    ),
 
     async setThumbnailPath(instanceId, projectId, thumbnailPath) {
       return persistence.forInstance(instanceId).execute(

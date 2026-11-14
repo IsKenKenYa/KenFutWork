@@ -51,7 +51,7 @@ export function thoughtLevelLabelId(value: string): string | undefined {
   return THOUGHT_LEVEL_LABEL_IDS[normalizeThoughtLevelText(value)];
 }
 
-export function isNoThoughtLevel(entry: ThoughtLevelEntry): boolean {
+export function isNoThoughtLevel(entry: Pick<ThoughtLevelEntry, "value">): boolean {
   return NO_THOUGHT_LEVEL_VALUES.has(normalizeThoughtLevelText(entry.value));
 }
 

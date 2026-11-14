@@ -53,6 +53,7 @@ export function useSubagents(
     workspaceRpcTarget.remoteTarget,
   );
   const workspaceRpcEnabled = shouldEnableWorkspaceRpc({
+    workspacePath,
     workspaceIdentity,
     remoteSessionId,
     remoteTarget: workspaceRpcTarget.remoteTarget,

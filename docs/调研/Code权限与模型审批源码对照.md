@@ -1,7 +1,115 @@
 # Code 权限与模型审批源码对照
 
-> 角色：**调研**。核验日期：2026-10-17。范围是下列固定提交的源码与装配链；没有运行参考应用、模型、测试、构建或同条件编码基准。源码存在、宿主接线、功能默认值与实际桌面启用分别陈述。
+> 角色：**调研**。2026-10-22 首章补充四项目最新参考提交的执行控制与模式合并依据；其后 2026-10-17 核验保留原固定版本和范围。没有运行参考应用、模型、测试、构建或同条件编码基准。源码存在、宿主接线、功能默认值与实际桌面启用分别陈述。
 > 本文只说明机制与本轮已确认的适配边界，不替代[《Code 工作域与工具内核实施规格》](../方案设计/Code工作域与工具内核实施规格.md)、[《Harness 稳定性与 Goal 实施规格》](../方案设计/Harness稳定性与Goal实施规格.md)或[《改造计划》](../方案设计/改造计划.md)。实施与验收回执由《日志》记录。
+
+## 2026-10-22：四项目的执行控制与 KFW 合并依据
+
+### 固定来源与核查范围
+
+用户提供的三个参考子模块已更新，本节使用当前提交重新核查；ZCode 使用用户提供的独立目录。本轮四个参考仓工作区均无未提交修改，读取过程没有更新引用或切换分支。
+
+| 项目 | 本轮固定提交 | 核查入口 |
+| --- | --- | --- |
+| DeepSeek Harness | `687f282e8625c6b8d11ff58211a90524be2e4317` | base／Web standard／cordis 组合、普通循环、Plan、权限、Goal driver、子代理及实验性 Auto |
+| Codex | `61f34c35af77777db4d77d0ea2aeb8547a6b4523` | Rust CollaborationMode、工具计划、审批／Guardian、执行权限、App Server Goal 和子代理 |
+| Kimi Code | `44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1` | CLI／TUI → Node SDK → agent-core-v2 的主 Agent、Plan、权限、Goal、后台任务和副问题 |
+| ZCode | `3c5b227649371507ddc4eb46ac5133afe6db1cab` | 3.16.2 模式目录、独立 Plan、工具权限、执行状态、持久 Goal 与完成校验 |
+
+这些是源码提交，不能作为当前安装版已启用所有功能或真实运行成功的证明。以下结论只覆盖表中入口。
+
+### 每类机制实际解决什么问题
+
+| 机制 | 作用 | KFW 对应位置 |
+| --- | --- | --- |
+| 普通 Agent 循环 | 一次请求内反复请求模型、执行工具、读取结果，直到本轮结束 | 现有 Harness，无需为普通聊天和工具任务各建一套 |
+| Plan | 调查、澄清并形成方案，按该产品的流程退出规划 | 独立规划状态与已有计划批准 |
+| 审批策略与审批提供方 | 这次动作直接允许、拒绝还是询问；由人或指定模型处理询问 | 当前基础权限、审批 broker 和独立 BYOK 审批模型 |
+| 执行权限与沙箱 | 文件、网络、进程实际能够访问的范围 | Task scope、目录读写授权、OS 沙箱与角色上限 |
+| Goal | 本轮结束后是否继续下一轮、按什么预算推进、何时暂停或完成 | 独立持久目标、验收与继续接纳 |
+| 后台工作与子代理 | 在哪里执行子任务、怎样等待、查询和停止 | 当前 Task Work、父子会话及派生权限 |
+| 技能与插件组合 | 为具体任务提供指导、工具和宿主接口知识 | 现有技能、插件注册表及 ToolSearch 按需发现 |
+
+### 四个项目怎样组合
+
+| 项目 | 实际组织方式 | 对 KFW 有用的部分 |
+| --- | --- | --- |
+| DSH | 一个 `ReactLoopAgent`；Plan、权限、Goal 与子代理由插件组合。Web 默认 standard；Creator 使用 cordis preset，确实增加插件开发技能和 `plugin_manager` | 统一执行循环，同时按任务提供适用能力；Creator 的有用部分是工具与指导组合，安装管理仍独立检查权限。[22-D1][22-D2] |
+| Codex | CollaborationMode 只有 Default／Plan；审批策略、审批接收方、permission profile／sandbox 分开；Goal 通过持久扩展继续同一 thread | 普通任务直接使用 Default；Plan 管规划，Goal 管持续推进，模型审查和文件权限各自负责自己的问题。[22-C1][22-C2] |
+| Kimi | 默认 `agent` profile；独立 Plan、permission、Goal；后台进程与子代理复用任务服务；另有只读 `/btw` 副会话 | 主会话共用 Agent，临时副问题使用有明确能力限制的子会话；持续目标和后台工作各自管理。[22-K1][22-K2] |
+| ZCode | build／guarded／yolo 主要表达审批方式；Plan 使用独立布尔状态，Goal 使用独立会话记录和继续队列；edit 仅保留历史值，auto 在 core 中未实现 | 原盾牌菜单保留权限和规划；目标由真实目标状态控制。菜单项必须与实际消费一致，预留值不能被当作可用功能。[22-Z1][22-Z2] |
+
+Codex 本次源码中 Goals 为 Stable、默认开启，但 App Server 还要求 state DB 和实际 enabled 配置；MultiAgent 默认开启、V2 默认关闭。GuardianApproval flag 默认开启，普通 reviewer 默认仍为 User，GuardianV2 默认关闭。源码默认值、有效配置和具体客户端界面分别核对，不把 feature flag 等同于所有请求都由模型审批。[22-C3]
+
+### 自动、完全访问与模型审批的含义并不相同
+
+| 名称 | 当前版本的实际行为 | 采用时的边界 |
+| --- | --- | --- |
+| ZCode Guarded | 以通常自动执行为基础，已识别危险命令的规则产生单次人工确认；内建 `auto` 分支仍拒绝未实现能力 | 这是确定性规则检查，不能解释为额外 LLM 审批。[22-Z1] |
+| Kimi yolo | CLI 标为 Ask When Needed；用户规则、敏感路径及交互环境危险命令策略仍可能触发询问 | 不能按名称映射为 KFW 完全访问；非交互配置的策略组合另有差别。[22-K3] |
+| Kimi auto | CLI 标为 Never Ask；显式拒绝仍先检查，普通工具随后直接批准，AskUserQuestion 被拒绝 | 这条路径没有额外审批模型；auto 也不因选中就立即退出 Plan。[22-K3][22-K4] |
+| DSH Auto review | 默认关闭的实验性 bundle；逐动作额外调用当前聊天 provider／model，严格解析 risk／decision | 可学习模型审查与工具执行组合；KFW 继续使用独立审批模型和已有故障回人工规则。[22-D3] |
+| Codex AutoReview／Guardian | 真正的审批接收方；普通路由要求适用审批 policy、reviewer 配置及相关 feature，审查会话有自己的限制 | 审批提供方可以替换，允许结果仍不等于新的目录授权；不能从 Guardian flag 默认开启推断全部自动审查。[22-C4] |
+
+DSH 的 `approval=never` 会拒绝仍然发起的审批请求；Codex Never 也不会额外授予文件权限。两者都说明“不询问”和“实际完全访问”需要分别实现。DSH 完全访问组合会让文件和 Bash 执行器使用对应访问方式；ZCode 的路径解析函数则明确允许工作目录之外的绝对路径。具体可访问范围仍需检查真实执行器和 OS 权限，不由菜单名称证明。[22-D4][22-C5][22-Z3]
+
+### Plan 的实现强度需要逐项核查
+
+- **DSH**：Plan 插件主要加入行为指导，不改变工具目录；源码明确由沙箱和审批独立执行限制。批准退出在下一次接纳的 pre-step 应用。[22-D5]
+- **Codex**：Plan 主要通过 collaboration developer 指令要求调查和输出计划，未在本次工具注册路径自动改成只读沙箱；Shell 和 apply_patch 继续按模型及执行权限注册。另有 Plan 专属工具和自动输入规则。[22-C6]
+- **Kimi**：主 Plan 运行检查把 Write／Edit 限制为计划文件，并阻止部分停止／定时操作；Bash、MCP 和普通新建子代理没有被同一检查统一收窄为只读。auto 仍需调用 ExitPlanMode 且有非空计划才能退出；其它权限下还有人工计划审阅。[22-K4]
+- **ZCode**：真实权限服务检查 Plan，但允许非 destructive MCP、部分显式会话控制；`alwaysAsk` 和交互工具也有独立优先级。进入 Plan 时拒绝与活跃 Goal 并存；不是用一个总开关替代所有权限规则。[22-Z2]
+
+KFW 已确认 Plan 要在文件、命令、MCP／插件效果和子代理权限上实际保持相应限制。学习这些项目的职责分离，不降低本项目已经确认的执行要求。
+
+### Goal、后台执行和副问题分别保留用途
+
+四份源码都能看到普通执行循环与持续 Goal 分别管理：DSH 的 driver 调同一 Agent 的 followup；Codex 在真实 thread 空闲时接纳 goal turn；Kimi 在轮次结束后提交 `goal_continuation`；ZCode 使用持久目标与继续命令队列。Goal 负责跨轮推进，普通多工具工作本身无需切到另一种主 Agent。[22-D6][22-C2][22-K2][22-Z4]
+
+DSH 恢复持久目标时，进程内 activation 初始 disarmed；恢复记录不自动获得继续资格。Kimi `/btw` fork 上下文并逐调用拒绝 Read／Grep／Glob 以外的工具，让临时问题与主任务分别进行。这些机制支持 KFW 保留暂停／恢复和受限副会话，同时简化主会话的选择。[22-D6][22-K5]
+
+ZCode 的 Goal 完成校验是独立、无工具的模型请求，但本版本格式错误或部分验证故障仍调用 `failOpenGoalCompletionVerification()`，返回 `passed:true`。DSH Auto 插件卸载则会把现有 Auto 会话改成完全访问。这两项不能直接作为 KFW 的完成或失败处理规则；本项目继续要求真实完成证据，审查失效不自动扩大权限。[22-Z4][22-D3]
+
+### 对已确认合并方案的具体影响
+
+1. **保留一个普通 Agent 入口**：聊天、编码、调研和插件制作共享循环；任务需要的技能和延迟工具通过既有能力提供，不新增固定执行类别。
+2. **保留独立 Plan 和原权限菜单**：规划负责工作流程，权限负责操作许可及资源范围。不同参考项目的 yolo／auto／guarded 不直接成为 KFW 新增的菜单项。
+3. **保留独立 Goal**：目标 ID、修订、预算、完成验证、暂停和继续来源是运行事实。合并旧选择字段时继续核查队列、历史重试、后台及子运行，不能借当前菜单值扩大已接纳权限。
+4. **保留插件制作的专业指导**：DSH Creator 的实际工具组合有用途；KFW 用当前技能、ToolSearch 与安装工具按任务提供同类能力，安装与启用仍走实际检查。
+5. **保留受限子任务**：临时副问题与 explore／review 可以使用受限角色；主会话不必因此增加另一个互斥模式。子任务不能借父任务改权限而自行扩大已取得的上限。
+6. **保留独立模型审批提供方**：它处理仍需审批的具体动作；完全访问仍直接执行，不为每个动作额外调用 reviewer。审批模型与 Goal 验证模型的职责和用量分别记录。
+
+以上为一手源码支持的设计判断，细节与实施状态仍由《Code工作域与工具内核实施规格》§2.7 持有。本轮没有因此修改运行代码或更改已经确认的权限语义。
+
+### 本轮证据
+
+以下链接均固定提交。Kimi 的目录前缀为 `packages/agent-core-v2/src/`；Codex 的前缀为 `codex-rs/`。
+
+- **[22-D1]** [普通循环](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/core/agent-loop/src/agent.ts#L300-L367)。
+- **[22-D2]** [Creator 工具与技能](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/bundle/web-app/presets/cordis.patch.yml#L120-L136)、[插件管理执行检查](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/boot/plugin-manager/src/tools.ts#L79-L109)。
+- **[22-D3]** [Auto 默认关闭](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/boot/app-boot/src/profile.ts#L215-L236)、[额外模型请求](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/experimental/auto-review/src/index.ts#L614-L635)、[执行检查及卸载](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/experimental/auto-review/src/index.ts#L675-L737)。
+- **[22-D4]** [默认权限组合](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/bundle/base/cordis.patch.yml#L237-L276)、[Never 审批](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/interaction/user-approval/src/index.ts#L267-L291)。
+- **[22-D5]** [Plan 职责说明](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/plan/plan-mode/src/index.ts#L1-L17)、[退出与状态应用](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/plan/plan-mode/src/index.ts#L188-L235)。
+- **[22-D6]** [Goal 继续驱动](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/goal/goal-round-driver/src/index.ts#L99-L219)、[初始 activation](https://github.com/deepseek-ai/deepseek-harness/blob/687f282e8625c6b8d11ff58211a90524be2e4317/packages/goal/goal/src/index.ts#L483-L492)。
+- **[22-C1]** [Default／Plan 类型](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/protocol/src/config_types.rs#L674-L711)。
+- **[22-C2]** [Goal 真实继续接纳](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/ext/goal/src/runtime.rs#L436-L502)。
+- **[22-C3]** [Goal 默认配置](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/features/src/lib.rs#L1973-L1977)、[App Server 实际装配](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/app-server/src/extensions.rs#L87-L99)、[普通 reviewer 默认值](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/core/src/config/mod.rs#L3914-L3926)。
+- **[22-C4]** [AutoReview 路由](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/ext/guardian-reviewer/src/routing.rs#L54-L62)、[审查会话限制](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/core/src/guardian/review.rs#L164-L184)。
+- **[22-C5]** [Never 下的权限请求](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/core/src/session/mod.rs#L3149-L3169)。
+- **[22-C6]** [Plan 原指令](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/collaboration-mode-templates/templates/plan.md#L1-L41)、[Shell 工具注册](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/core/src/tools/spec_plan.rs#L1235-L1265)、[apply_patch 注册](https://github.com/openai/codex/blob/61f34c35af77777db4d77d0ea2aeb8547a6b4523/codex-rs/core/src/tools/spec_plan.rs#L1409-L1411)。
+- **[22-K1]** [主 profile 工具目录](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/packages/agent-core-v2/src/session/agentLifecycle/profile/profiles.ts#L11-L44)。
+- **[22-K2]** [Goal 继续执行](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/packages/agent-core-v2/src/features/goal/goalService.ts#L612-L645)。
+- **[22-K3]** [CLI 命名](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/apps/kimi-code/src/cli/commands.ts#L56-L57)、[实际规则顺序](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/packages/agent-core-v2/src/agent/permissionPolicy/permissionPolicyService.ts#L39-L64)。
+- **[22-K4]** [主 Plan 运行检查](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/packages/agent-core-v2/src/features/plan/planService.ts#L93-L140)、[退出工具](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/packages/agent-core-v2/src/features/plan/tools/exit-plan-mode/exitPlanModeTool.ts#L68-L95)。
+- **[22-K5]** [副问题的工具限制与 fork](https://github.com/MoonshotAI/kimi-code/blob/44cdf8f4039e2ff20d3fe8a4e7868bd90fd786e1/packages/agent-core-v2/src/features/btw/btwService.ts#L25-L54)。
+- **[22-Z1]** [模式目录](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-agent-model-state.ts#L19-L45)、[权限顺序](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/permission/service.ts#L101-L170)。
+- **[22-Z2]** [Plan 权限](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/permission/service.ts#L447-L488)、[Plan 与活跃目标](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/runtime/execution-state.ts#L45-L66)。
+- **[22-Z3]** [真实路径解析范围](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/tool/path-policy.ts#L15-L39)。
+- **[22-Z4]** [继续执行](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/runtime/methods/target-continuation-loop.ts#L45-L85)、[独立验证](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/runtime/methods/target-completion-verification.ts#L43-L87)、[验证故障默认通过](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/contracts/src/tools/target.ts#L289-L332)。
+
+---
+
+以下章节为 2026-10-17 的固定版本核验，保留当时范围和实现状态；当前四项目执行控制比较以上方 2026-10-22 章节为准。
 
 ## 结论
 

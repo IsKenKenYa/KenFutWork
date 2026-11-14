@@ -5,6 +5,7 @@ export type SettingsSectionId =
   | "general"
   | "appearance"
   | "migration"
+  | "archives"
   | "browser"
   | "modelProvider"
   | "voice"
@@ -42,23 +43,30 @@ const SETTINGS_SECTION_INTENT_EVENT = "zcode:settings-section-intent",
   SETTINGS_LAST_SECTION_STORAGE_KEY = "zcode-settings-last-section";
 const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
   // 产品语义：定时任务是 workspace 主视图，不能再作为设置页分区出现。
-  // 注意：hooks 已是正式设置页分区，不在此列。
   "automations",
   // 旧插件市场已迁出设置页；保留 id 只用于迁移历史偏好和旧调用。
   "plugins",
   // 工作区搜索（.zcodeignore）设置入口先隐藏：规则文件仍生效并可手动编辑，
   // 编辑页代码保留，放开时从这里移除即可。
   "workspaceFileSearch",
+  // 原 zcode 文件型命令/钩子设置走 commands/hooks 通道，本宿主服务端没有这些
+  // hostRpc 处理器（请求返回 501），也没有对应的可见设置页。先隐藏入口，
+  // 避免按下必失败；命令与钩子字段仍由运行期消费。
+  // 子智能体已接通只读清单（code-subagents 的 subagents.list），入口保留；
+  // 用户作用域写操作由服务端能力位 userScopeAvailable=false 收起。
+  "commands",
+  "hooks",
+  // 电脑控制在宿主适配层按平台解开（见 cuaSettingsNavigationPlugin 的标记）。
   "computerUse",
 ]);
 
 interface SettingsSectionIntentEventDetail {
   section: SettingsSectionId;
-  pluginTab?: SettingsPluginTabTarget;
-  pluginOrigin?: SettingsPluginNavigationOrigin;
-  pluginScopeKey?: string;
-  usageTab?: SettingsUsageTabTarget;
-  modelProviderId?: string;
+  pluginTab?: SettingsPluginTabTarget | undefined;
+  pluginOrigin?: SettingsPluginNavigationOrigin | undefined;
+  pluginScopeKey?: string | undefined;
+  usageTab?: SettingsUsageTabTarget | undefined;
+  modelProviderId?: string | undefined;
 }
 
 export interface SettingsModelProviderTarget {
@@ -70,6 +78,7 @@ function isSettingsSectionId(value: string): value is SettingsSectionId {
     value === "general" ||
     value === "appearance" ||
     value === "migration" ||
+    value === "archives" ||
     value === "browser" ||
     value === "modelProvider" ||
     value === "voice" ||
@@ -213,8 +222,8 @@ export function setPendingSettingsUsageCodingPlanIntent(): void {
 export function setPendingSettingsPluginIntent(
   tab: SettingsPluginTabTarget,
   options: {
-    origin?: SettingsPluginNavigationOrigin;
-    scopeKey?: string;
+    origin?: SettingsPluginNavigationOrigin | undefined;
+    scopeKey?: string | undefined;
   } = {},
 ): void {
   // 插件·MCP·技能同属一个分区：分区只发 plugin，靠 pluginTab 决定停在哪个页签；
@@ -237,11 +246,11 @@ export function setPendingSettingsPluginIntent(
 export function setPendingSettingsSectionIntent(
   section: SettingsSectionId,
   options: {
-    pluginTab?: SettingsPluginTabTarget;
-    pluginOrigin?: SettingsPluginNavigationOrigin;
-    pluginScopeKey?: string;
-    modelProviderId?: string;
-    usageTab?: SettingsUsageTabTarget;
+    pluginTab?: SettingsPluginTabTarget | undefined;
+    pluginOrigin?: SettingsPluginNavigationOrigin | undefined;
+    pluginScopeKey?: string | undefined;
+    modelProviderId?: string | undefined;
+    usageTab?: SettingsUsageTabTarget | undefined;
   } = {},
 ): void {
   if (typeof window === "undefined") {

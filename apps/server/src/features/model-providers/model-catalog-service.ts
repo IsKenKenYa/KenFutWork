@@ -137,6 +137,17 @@ function toCatalogEntry(
   };
 }
 
+export function describeInstanceModels(
+  instances: readonly ProviderInstanceResponse[],
+  snapshot?: ModelsDevSnapshot,
+): ModelCatalogEntry[] {
+  return instances.flatMap((instance) =>
+    instance.models.map((model) =>
+      toCatalogEntry(model, instance, instance.scope, snapshot),
+    ),
+  );
+}
+
 export function createModelCatalogService(options: {
   modelProviders: Pick<ModelProviderService, "listInstances">;
   localInstance: LocalInstanceService;
@@ -146,11 +157,7 @@ export function createModelCatalogService(options: {
   const { modelProviders, localInstance, snapshot } = options;
   return {
     describeInstanceModels(instances) {
-      return instances.flatMap((instance) =>
-        instance.models.map((model) =>
-          toCatalogEntry(model, instance, instance.scope, snapshot),
-        ),
-      );
+      return describeInstanceModels(instances, snapshot);
     },
     async listCatalog(actor) {
       await localInstance.resolve(actor);

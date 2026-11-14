@@ -30,8 +30,8 @@ export type WorkDirValidation =
  * 用户根本不知道文件落到哪去了。
  */
 export function isAbsoluteWorkDir(raw: string): boolean {
-  const value = raw.trim();
-  if (!value) return false;
+  const value = raw;
+  if (!value.trim()) return false;
   if (value.includes("\0")) return false;
   if (value.startsWith("/")) return true;
   if (/^[a-zA-Z]:[\\/]/.test(value)) return true;
@@ -43,8 +43,8 @@ export function isAbsoluteWorkDir(raw: string): boolean {
  * 调用点都是请求处理路径，异步化没有收益）。
  */
 export function validateWorkDir(raw: string): WorkDirValidation {
-  const value = raw.trim();
-  if (!value) {
+  const value = raw;
+  if (!value.trim()) {
     return { ok: false, reason: "工作目录不能为空。" };
   }
   if (!isAbsoluteWorkDir(value)) {
@@ -125,7 +125,7 @@ export function normalizeAdditionalDirectories(
 
 /** 归一化（仅用于已通过 `isAbsoluteWorkDir` 的值）。 */
 export function normalizeWorkDir(raw: string): string {
-  return resolve(raw.trim());
+  return resolve(raw);
 }
 
 /** 只在调用者的可信实例内读取画布所绑定的项目目录，不从资源反推身份。 */

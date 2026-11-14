@@ -55,8 +55,10 @@ describe("自带插件目录解析（打包布局契约）", () => {
   const originalCwd = process.cwd();
   const temps: string[] = [];
   const makeTemp = () => {
-    const dir = mkdtempSync(join(tmpdir(), "kfw-plugins-"));
-    temps.push(dir);
+    const root = mkdtempSync(join(tmpdir(), "kfw-plugins-"));
+    temps.push(root);
+    const dir = join(root, "application", "runtime");
+    mkdirSync(dir, { recursive: true });
     return dir;
   };
   const silent = { warn: () => {} };

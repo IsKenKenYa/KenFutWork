@@ -73,6 +73,7 @@ export const BackgroundBashOutputSidePane = memo(function BackgroundBashOutputSi
                 workspacePath: tab.workspacePath,
                 workspaceIdentity: tab.workspaceIdentity,
                 workspaceRemoteSessionId: tab.remoteSessionId,
+                viewerScope: { kind: "task", taskId: tab.rootSessionId },
               })
             }
           >

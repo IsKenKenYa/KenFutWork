@@ -12,6 +12,7 @@ import { prepareLinuxSandboxArgv } from "./linux-launch.js";
 import type { ProcessOwner } from "./managed-process.js";
 import { ProcessOutputCapture } from "./output-capture.js";
 import { commandDirectory, unixPolicy } from "./policy.js";
+import { processOwnerKey } from "./process-identity.js";
 import type { HelperRequest, HelperResponse } from "./protocol.js";
 import {
   prepareLinuxProcessInspector,
@@ -22,10 +23,11 @@ import { readonlyProbe } from "./readonly-probe.js";
 import { losesExecutionRights } from "./scope-change.js";
 import { waitForSpawnAdmission } from "./spawn-cancellation.js";
 import type {
-  ManagedProcessSnapshot,
+  SandboxProcessSnapshot as ManagedProcessSnapshot,
   ProcessExit,
   ProcessOutputStream,
-  ProcessSpawnRequest,
+  SandboxProcessRequest as ProcessSpawnRequest,
+  ProjectReadSandboxScope,
 } from "./types.js";
 import { ProcessSandboxError } from "./types.js";
 import { UnixManagedProcess } from "./unix-process.js";
@@ -34,7 +36,7 @@ import { windowsLaunch } from "./windows-policy.js";
 import { WindowsManagedProcess } from "./windows-process.js";
 
 interface ProcessInvocation {
-  taskId: string;
+  taskId: string | undefined;
   generation: number;
   fingerprint: string;
   controller: AbortController;
@@ -44,7 +46,8 @@ interface ProcessInvocation {
 }
 
 class TaskProcessHelper {
-  private taskId = "";
+  private ownerKey = "";
+  private projectScope: ProjectReadSandboxScope | undefined;
   private generation = 0;
   private phase: "starting" | "ready" | "revoking" | "closed" | "failed" =
     "starting";
@@ -155,12 +158,32 @@ class TaskProcessHelper {
         "本平台需要原生 Task sandbox broker。",
       );
     }
-    this.taskId = input.taskId;
+    this.ownerKey = processOwnerKey(input.initial.scope);
+    if (
+      "kind" in input.initial.scope
+        ? input.taskId !== undefined ||
+          JSON.stringify(input.projectOwner) !==
+            JSON.stringify(input.initial.scope)
+        : input.taskId !== input.initial.scope.taskId ||
+          input.projectOwner !== undefined
+    )
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "执行 owner 与初始化身份不匹配。",
+      );
+    if ("kind" in input.initial.scope) {
+      this.projectScope = structuredClone(input.initial.scope);
+      if (input.options.network.allowedDomains.length > 0)
+        throw new ProcessSandboxError(
+          "invalid_process_request",
+          "项目读取不允许网络授权。",
+        );
+    }
     this.generation = input.initial.scope.generation;
     this.options = input.options;
     this.privateDirectory = join(
       input.options.captureRoot,
-      createHash("sha256").update(this.taskId).digest("hex"),
+      createHash("sha256").update(this.ownerKey).digest("hex"),
     );
     await mkdir(join(this.privateDirectory, "output"), {
       recursive: true,
@@ -207,11 +230,14 @@ class TaskProcessHelper {
         pty?: string;
         stdio?: string;
         unrestrictedExecution?: boolean;
+        projectReadOnly?: boolean;
       };
       if (
         capability.protocolVersion !== 2 ||
         capability.pty !== "conpty" ||
         capability.stdio !== "ack-stream" ||
+        ("kind" in input.initial.scope &&
+          capability.projectReadOnly !== true) ||
         (input.initial.scope.sandboxMode === "danger-full-access" &&
           capability.unrestrictedExecution !== true)
       )
@@ -337,6 +363,11 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     request: ProcessSpawnRequest,
     internalWriteRoots: readonly string[],
   ): Promise<ManagedProcessSnapshot> {
+    if (this.projectScope && internalWriteRoots.length > 0)
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "项目读取不能签发内部写目录。",
+      );
     this.assertReady(request);
     const fingerprint = processInvocationFingerprint(
       request,
@@ -399,7 +430,7 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
   ): Promise<ManagedProcessSnapshot | null> {
     const invocation = this.invocations.get(input.invocationId);
     if (
-      input.taskId !== this.taskId ||
+      input.taskId !== this.ownerKey ||
       !invocation ||
       invocation.taskId !== input.taskId ||
       invocation.generation !== input.generation ||
@@ -642,7 +673,9 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
     );
     const snapshot: ManagedProcessSnapshot = {
       id,
-      ownerTaskId: this.taskId,
+      ...("kind" in request.scope
+        ? { projectOwner: request.scope }
+        : { ownerTaskId: this.ownerKey }),
       agentId: request.agentId,
       invocationId: request.invocationId,
       generation: request.scope.generation,
@@ -685,11 +718,26 @@ if(denied!==2||readonlyFailures.length)process.stderr.write(JSON.stringify({read
 
   private assertReady(request: ProcessSpawnRequest, probe = false): void {
     if (
+      this.projectScope &&
+      (JSON.stringify(request.scope) !== JSON.stringify(this.projectScope) ||
+        !request.argv ||
+        request.command !== undefined ||
+        request.shell !== undefined ||
+        request.background ||
+        request.pty !== undefined ||
+        request.stdio !== undefined ||
+        request.runtimeReadRoots !== undefined)
+    )
+      throw new ProcessSandboxError(
+        "invalid_process_request",
+        "项目读取身份或执行方式已改变。",
+      );
+    if (
       this.closePromise ||
       (probe
         ? this.phase !== "starting" && this.phase !== "ready"
         : this.phase !== "ready") ||
-      request.scope.taskId !== this.taskId ||
+      processOwnerKey(request.scope) !== this.ownerKey ||
       request.scope.generation < this.generation
     ) {
       throw new ProcessSandboxError(

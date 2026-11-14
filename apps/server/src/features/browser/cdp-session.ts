@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -80,6 +81,17 @@ import { samePageUrl } from "./view-stream.js";
 
 export const CDP_DEFAULT_PORT = 9333;
 
+/** Chromium profile 里纯缓存的子目录（清理缓存只动这些，登录态与站点数据保留）。 */
+const CACHE_DIRECTORIES = [
+  "Default/Cache",
+  "Default/Code Cache",
+  "Default/GPUCache",
+  "Default/DawnCache",
+  "ShaderCache",
+  "GrShaderCache",
+  "GraphiteDawnCache",
+] as const;
+
 export type CdpStatus =
   | { status: "disconnected" }
   | { status: "connecting" }
@@ -104,6 +116,15 @@ export interface CdpBrowserSession {
     executable?: string;
   }): Promise<CdpStatus>;
   disconnect(): Promise<CdpStatus>;
+  /**
+   * 清理我们自己的浏览器 profile：
+   * - `cache`：只删缓存类子目录（登录态与站点数据保留）；
+   * - `all`：删除整个 profile（下次连接重建）。
+   * 清理前先断开会话，避免运行中的浏览器把文件锁住。
+   */
+  clearData(
+    mode: "cache" | "all",
+  ): Promise<{ success: boolean; error?: string }>;
   /**
    * **注入页面内调试控制台**（Eruda，现成第三方）到受控页面，并把它摆成**悬浮窗**
    * （可拖动 / 可关闭；形态改造见 debug-console 的 FLOAT_SCRIPT）。
@@ -970,6 +991,29 @@ export function createCdpBrowserSession(deps: {
       }
       state = { status: "disconnected" };
       return state;
+    },
+    async clearData(mode) {
+      const profileDir = join(dataDir, "chrome-profile");
+      // 先收掉会话：运行中的浏览器会锁住缓存/数据库文件，删一半会留下坏 profile。
+      await this.disconnect();
+      try {
+        if (mode === "all") {
+          await rm(profileDir, { recursive: true, force: true });
+          return { success: true };
+        }
+        await Promise.all(
+          CACHE_DIRECTORIES.map((name) =>
+            rm(join(profileDir, name), { recursive: true, force: true }),
+          ),
+        );
+        return { success: true };
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error ? error.message : "清理浏览器数据失败。",
+        };
+      }
     },
     async navigate(url) {
       const { client: cdp } = requireConnected();

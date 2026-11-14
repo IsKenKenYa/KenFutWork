@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { randomUUID } from "node:crypto";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider.js";
 import {
@@ -20,8 +20,12 @@ import {
 } from "./setup/code-root-host-browser";
 
 beforeEach(installCodeRootBrowser);
-afterEach(() => {
-  cleanup();
+afterEach(async () => {
+  await act(async () => {
+    cleanup();
+    // 原组件在下一轮事件循环恢复焦点，先完成清理再释放测试页面。
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   restoreCodeRootBrowser();

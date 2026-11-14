@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import type { CodeExecutionScope } from "@kenfutwork/shared";
+import type { SandboxProcessScope as CodeExecutionScope } from "./types.js";
 
 /** 探针只尝试创建自己的随机文件；隔离失效时也不覆盖用户文件。 */
 export function readonlyProbe(scope: CodeExecutionScope) {

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
@@ -9,6 +9,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, sep } from "node:path";
+import type { AgentPersistenceService } from "../../agent/persistence/index.js";
+import type { CanvasService } from "../canvas/canvas-service.js";
 import type { CodeUiRepository } from "../code-ui/repository.js";
 import type {
   LocalActor,
@@ -16,11 +18,16 @@ import type {
 } from "../local-instance/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import {
+  listTrashEntries,
+  type MemoryMaintenanceResult,
+  type MemoryTrashEntry,
+  maintainMemoryDirectory,
+  restoreTrashEntry,
+} from "./memory-maintenance.js";
 
 const MEMORY_INDEX_FILE_NAME = "MEMORY.md";
 const MEMORY_DIRECTORY_NAME = "memory";
-/** 有 agent 记忆的项目种类：listProjects 按单个 kind 过滤，取标签要覆盖两种预设。 */
-const PROJECT_KINDS = ["code", "design"] as const;
 
 export interface ProjectMemoryFileSummary {
   name: string;
@@ -38,9 +45,26 @@ export interface ProjectMemoryWorkspaceSummary {
   files: ProjectMemoryFileSummary[];
 }
 
+/** 一次记忆搜索的结果；`truncated` 为 true 时还有命中没装进输出。 */
+export interface ProjectMemorySearchResult {
+  query: string;
+  matches: Array<{ fileName: string; title: string; snippet: string }>;
+  truncated: boolean;
+}
+
+/** 设置页回收区的一行：除条目本身外给出可恢复判定，避免界面自己算窗口。 */
+export interface ProjectMemoryTrashItem extends MemoryTrashEntry {
+  restorable: boolean;
+}
+
 export interface ProjectMemoryService {
   /** 记忆开关的当前事实（读实例偏好，缺省关闭）。 */
   isEnabled(instanceId: string): Promise<boolean>;
+  /** 在项目记忆里按关键词查找正文与索引，供模型召回旧结论。 */
+  searchMemories(
+    actor: LocalActor,
+    input: { projectId: string; query: string },
+  ): Promise<ProjectMemorySearchResult>;
   listProjectMemories(
     actor: LocalActor,
   ): Promise<ProjectMemoryWorkspaceSummary[]>;
@@ -57,6 +81,40 @@ export interface ProjectMemoryService {
     actor: LocalActor,
     input: { projectId: string; title: string; content: string },
   ): Promise<{ fileName: string; path: string; indexUpdated: boolean }>;
+  /**
+   * 解析本次运行的记忆归属：Code 直接用 Task 句柄的项目 id；Design 没有 Task
+   * 句柄时经画布 id 映射到所属项目。画布不存在、越权或不属于同一项目时拒绝。
+   */
+  resolveProjectId(
+    actor: LocalActor,
+    input: { projectId?: string | undefined; canvasId?: string | undefined },
+  ): Promise<string | null>;
+  /**
+   * 旧 Design 记忆通道 `/memories/`（画布级 StoreBackend）迁移到项目记忆目录。
+   * 迁移幂等：同名文件不覆盖，索引行去重，完成后写画布级标记避免每轮重复扫描。
+   */
+  migrateLegacyCanvasMemory(
+    actor: LocalActor,
+    input: { projectId: string; canvasId: string },
+  ): Promise<{ migrated: number }>;
+  /**
+   * 整理项目记忆：合并重复正文、清理索引悬挂行、把闲置超期的孤儿正文移入回收区，
+   * 并清除超过可恢复窗口的回收项。被索引引用的条目不会自动删除。
+   */
+  maintainProjectMemory(
+    actor: LocalActor,
+    input: { projectId: string },
+  ): Promise<MemoryMaintenanceResult>;
+  /** 回收区里的条目；窗口内的可恢复，过窗口的仍列出但标记不可恢复。 */
+  listTrashedMemories(
+    actor: LocalActor,
+    input: { projectId: string },
+  ): Promise<ProjectMemoryTrashItem[]>;
+  /** 把回收区条目恢复到记忆目录；正文同名时自动加后缀，索引行去重追加。 */
+  restoreTrashedMemory(
+    actor: LocalActor,
+    input: { projectId: string; trashId: string },
+  ): Promise<{ fileName: string | null }>;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -88,6 +146,26 @@ function isValidPathSegment(value: string): boolean {
 
 function isMemoryFileName(fileName: string): boolean {
   return fileName === MEMORY_INDEX_FILE_NAME || fileName.endsWith(".md");
+}
+
+/** 旧 StoreBackend 的 FileData 正文：v1 是行数组，v2 是字符串。 */
+function legacyText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const content = (value as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (
+    Array.isArray(content) &&
+    content.every((line) => typeof line === "string")
+  )
+    return content.join("\n");
+  return null;
+}
+
+/** 旧通道键 `/memories/notes/a.md` → 扁平文件名 `notes-a.md`。 */
+function flattenLegacyFileName(relativePath: string): string | null {
+  const flat = relativePath.split("/").join("-");
+  if (!isValidPathSegment(flat) || !flat.endsWith(".md")) return null;
+  return flat;
 }
 
 async function requirePlainFile(filePath: string): Promise<number> {
@@ -141,8 +219,15 @@ export function createProjectMemoryService(options: {
   localInstance: Pick<LocalInstanceService, "resolve">;
   preferences: Pick<CodeUiRepository, "readHumanPreferences">;
   settings: Pick<SettingsService, "getInstanceSettings">;
+  /** Design 记忆归属：画布 → 项目映射与越权校验的唯一来源。 */
+  canvases: Pick<CanvasService, "getCanvas">;
+  /** 旧 `/memories/` 通道的存储；未配置 Postgres 时是进程内 store。 */
+  agentPersistence: Pick<AgentPersistenceService, "getPersistence">;
+  /** 整理与回收的时间源；测试注入固定时钟。 */
+  now?: () => number;
 }): ProjectMemoryService {
   const projectsRoot = join(options.dataDir, "memories", "projects");
+  const clock = options.now ?? Date.now;
 
   const memoryDirectory = (projectId: string) =>
     join(projectsRoot, projectId, MEMORY_DIRECTORY_NAME);
@@ -158,6 +243,8 @@ export function createProjectMemoryService(options: {
     );
     return {
       maxFileBytes: settings.codeReadMaxBytes,
+      orphanRetentionDays: settings.memoryOrphanRetentionDays,
+      recoverableWindowDays: settings.memoryRecoverableWindowDays,
     };
   };
 
@@ -167,10 +254,243 @@ export function createProjectMemoryService(options: {
     return preferences.memoryEnabled === true;
   };
 
+  const requireMemoryEnabled = async (actor: LocalActor) => {
+    const instance = await options.localInstance.resolve(actor);
+    if (!(await isEnabled(instance.instanceId)))
+      throw new Error("记忆功能已关闭，请先在设置里打开。");
+  };
+
+  const maintainProject = async (
+    actor: LocalActor,
+    projectId: string,
+  ): Promise<MemoryMaintenanceResult> => {
+    await requireMemoryEnabled(actor);
+    if (!isValidPathSegment(projectId)) throw new Error("项目标识无效。");
+    const limits = await readLimits(actor);
+    return maintainMemoryDirectory({
+      memoryRoot: memoryDirectory(projectId),
+      now: clock(),
+      orphanRetentionDays: limits.orphanRetentionDays,
+      recoverableWindowDays: limits.recoverableWindowDays,
+      maxFileBytes: limits.maxFileBytes,
+    });
+  };
+
   return {
     memoryDirectory,
 
     isEnabled,
+
+    async resolveProjectId(actor, input) {
+      if (input.projectId) return input.projectId;
+      if (!input.canvasId) return null;
+      if (!isValidPathSegment(input.canvasId))
+        throw new Error("画布标识无效。");
+      const canvas = await options.canvases.getCanvas(actor, input.canvasId);
+      if (!isValidPathSegment(canvas.projectId))
+        throw new Error("画布所属项目标识无效。");
+      return canvas.projectId;
+    },
+
+    async migrateLegacyCanvasMemory(actor, input) {
+      if (
+        !isValidPathSegment(input.projectId) ||
+        !isValidPathSegment(input.canvasId)
+      )
+        throw new Error("画布或项目标识无效。");
+      // 归属校验同时拒绝已删除画布（服务按 actor 取不到记录即抛错）。
+      const canvas = await options.canvases.getCanvas(actor, input.canvasId);
+      if (canvas.projectId !== input.projectId)
+        throw new Error("画布不属于该项目的记忆。");
+      const persistence = await options.agentPersistence.getPersistence();
+      if (!persistence) return { migrated: 0 };
+
+      // 旧通道键是画布级绝对路径（`/memories/...`），namespace 与后端同一处。
+      const namespace = ["projects", input.canvasId, "memories"];
+      const items: Array<{ key: string; value: unknown }> = [];
+      const pageSize = 100;
+      for (let offset = 0; ; offset += pageSize) {
+        const page = (await persistence.store.search(namespace, {
+          limit: pageSize,
+          offset,
+        })) as Array<{ key: string; value: unknown }>;
+        if (page.length === 0) break;
+        items.push(...page);
+        if (page.length < pageSize) break;
+      }
+
+      const files: Array<{ key: string; fileName: string; content: string }> =
+        [];
+      const legacyIndexLines: string[] = [];
+      for (const item of items) {
+        if (!item.key.startsWith("/memories/")) continue;
+        const content = legacyText(item.value);
+        if (content === null || content.trim().length === 0) continue;
+        const relativePath = item.key.slice("/memories/".length);
+        if (relativePath === MEMORY_INDEX_FILE_NAME) {
+          legacyIndexLines.push(
+            ...content
+              .split(/\r?\n/u)
+              .map((line) => line.trim())
+              .filter((line) => line.length > 0),
+          );
+          continue;
+        }
+        const fileName = flattenLegacyFileName(relativePath);
+        if (!fileName) continue;
+        files.push({ key: item.key, fileName, content });
+      }
+      if (files.length === 0 && legacyIndexLines.length === 0)
+        return { migrated: 0 };
+
+      const memoryRoot = memoryDirectory(input.projectId);
+      await mkdir(memoryRoot, { recursive: true });
+      const limits = await readLimits(actor);
+      const indexPath = join(memoryRoot, MEMORY_INDEX_FILE_NAME);
+      const existingIndex = await readFile(indexPath, "utf8").catch(
+        (error: unknown) => {
+          if (isNotFound(error)) return "";
+          throw error;
+        },
+      );
+      const knownLines = new Set(
+        existingIndex
+          .split(/\r?\n/u)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0),
+      );
+      const referencedFiles = new Set(
+        [...knownLines]
+          .map((line) => line.match(/\]\(([^)]+)\)/u)?.[1])
+          .filter((name): name is string => typeof name === "string"),
+      );
+      // 迁移记录按「旧键 + 正文」指纹去重：同一旧文件重复扫描不再生成副本，
+      // 旧通道后续新写的正文仍会被下一轮补进来。
+      const markerPath = join(memoryRoot, `.legacy-${input.canvasId}.json`);
+      const markerRaw = await readFile(markerPath, "utf8").catch(
+        (error: unknown) => {
+          if (isNotFound(error)) return "";
+          throw error;
+        },
+      );
+      const records: Array<{ fingerprint: string; fileName: string }> =
+        markerRaw === ""
+          ? []
+          : (JSON.parse(markerRaw) as Array<{
+              fingerprint: string;
+              fileName: string;
+            }>);
+      const byFingerprint = new Map(
+        records.map((record) => [record.fingerprint, record.fileName]),
+      );
+      const existingNames = new Set(
+        (await readdir(memoryRoot, { withFileTypes: true }))
+          .filter((entry) => entry.isFile())
+          .map((entry) => entry.name),
+      );
+      const additions: string[] = [];
+      let migrated = 0;
+      let recordsChanged = false;
+
+      for (const file of files) {
+        const fingerprint = createHash("sha256")
+          .update(`${file.key}\u0000${file.content}`)
+          .digest("hex");
+        const base = file.fileName.replace(/\.md$/u, "");
+        let targetName = byFingerprint.get(fingerprint);
+        let mustWrite = false;
+        if (!targetName) {
+          // 不覆盖新通道已写下的同名文件；冲突时改名保留旧正文。
+          targetName = file.fileName;
+          for (let suffix = 2; ; suffix += 1) {
+            if (!existingNames.has(targetName)) break;
+            targetName =
+              suffix === 2
+                ? `${base}-legacy.md`
+                : `${base}-legacy-${suffix}.md`;
+          }
+          existingNames.add(targetName);
+          byFingerprint.set(fingerprint, targetName);
+          records.push({ fingerprint, fileName: targetName });
+          recordsChanged = true;
+          mustWrite = true;
+        } else if (!existingNames.has(targetName)) {
+          // 迁移记录在但正文被删：按记录恢复，避免旧数据静默缺失。
+          mustWrite = true;
+        }
+        if (mustWrite) {
+          await writeFile(
+            join(memoryRoot, targetName),
+            `${file.content}\n`,
+            "utf8",
+          );
+          existingNames.add(targetName);
+          migrated += 1;
+        }
+        if (!referencedFiles.has(targetName)) {
+          additions.push(
+            `- [旧记忆：${base}](${targetName}) — ${indexHook(file.content)}`,
+          );
+          referencedFiles.add(targetName);
+        }
+      }
+
+      for (const line of legacyIndexLines) {
+        if (knownLines.has(line)) continue;
+        additions.push(line);
+        knownLines.add(line);
+      }
+      if (additions.length > 0) {
+        const prefix =
+          existingIndex === "" || existingIndex.endsWith("\n")
+            ? existingIndex
+            : `${existingIndex}\n`;
+        const nextIndex = `${prefix}${additions.join("\n")}\n`;
+        // 索引超限时只保留正文文件；正文不丢，设置页仍能列出。
+        if (Buffer.byteLength(nextIndex, "utf8") <= limits.maxFileBytes)
+          await writeFile(indexPath, nextIndex, "utf8");
+      }
+      if (recordsChanged)
+        await writeFile(
+          markerPath,
+          `${JSON.stringify(records, null, 2)}\n`,
+          "utf8",
+        );
+      return { migrated };
+    },
+
+    maintainProjectMemory(actor, input) {
+      return maintainProject(actor, input.projectId);
+    },
+
+    async listTrashedMemories(actor, input) {
+      await requireMemoryEnabled(actor);
+      if (!isValidPathSegment(input.projectId))
+        throw new Error("项目标识无效。");
+      const limits = await readLimits(actor);
+      const entries = await listTrashEntries(memoryDirectory(input.projectId));
+      const now = clock();
+      return entries.map((entry) => ({
+        ...entry,
+        restorable:
+          now - entry.trashedAt <=
+          limits.recoverableWindowDays * 24 * 60 * 60 * 1000,
+      }));
+    },
+
+    async restoreTrashedMemory(actor, input) {
+      await requireMemoryEnabled(actor);
+      if (!isValidPathSegment(input.projectId))
+        throw new Error("项目标识无效。");
+      const limits = await readLimits(actor);
+      return restoreTrashEntry({
+        memoryRoot: memoryDirectory(input.projectId),
+        trashId: input.trashId,
+        recoverableWindowDays: limits.recoverableWindowDays,
+        now: clock(),
+        maxFileBytes: limits.maxFileBytes,
+      });
+    },
 
     async listProjectMemories(actor) {
       const rootMetadata = await lstat(projectsRoot).catch((error: unknown) => {
@@ -181,15 +501,7 @@ export function createProjectMemoryService(options: {
       if (!isPlainDirectory(rootMetadata))
         throw new Error("记忆根目录不是普通目录，已停止读取。");
 
-      // listProjects 按单一种类查，缺省会落到 design；记忆是 Code 的主用法，
-      // 只查 design 会让 Code 项目的标签退化成 UUID。
-      const projects = (
-        await Promise.all(
-          PROJECT_KINDS.map((kind) =>
-            options.projects.listProjects(actor, kind).catch(() => []),
-          ),
-        )
-      ).flat();
+      const projects = await options.projects.listProjects(actor);
       const labelById = new Map(
         projects.map((project) => [project.id, project.name]),
       );
@@ -292,6 +604,99 @@ export function createProjectMemoryService(options: {
       return { content, updatedAt: metadata.mtimeMs };
     },
 
+    async searchMemories(actor, input) {
+      const instance = await options.localInstance.resolve(actor);
+      if (!(await isEnabled(instance.instanceId)))
+        throw new Error("记忆功能已关闭，请先在设置里打开。");
+      if (!isValidPathSegment(input.projectId))
+        throw new Error("项目标识无效。");
+      const query = input.query.trim();
+      if (!query) throw new Error("搜索词不能为空。");
+      const terms = query
+        .toLocaleLowerCase()
+        .split(/\s+/u)
+        .filter((term) => term.length > 0);
+      const settings = await options.settings.getInstanceSettings(
+        actor,
+        instance.instanceId,
+      );
+      const memoryRoot = memoryDirectory(input.projectId);
+      const entries = await readdir(memoryRoot, { withFileTypes: true }).catch(
+        (error: unknown) => {
+          if (isNotFound(error)) return [];
+          throw error;
+        },
+      );
+      const files = entries
+        .filter(
+          (entry) =>
+            entry.isFile() &&
+            !entry.isSymbolicLink() &&
+            isMemoryFileName(entry.name),
+        )
+        .map((entry) => entry.name)
+        .sort((left, right) =>
+          left === MEMORY_INDEX_FILE_NAME
+            ? -1
+            : right === MEMORY_INDEX_FILE_NAME
+              ? 1
+              : left.localeCompare(right, "en"),
+        );
+      const titles = new Map<string, string>();
+      const indexPath = join(memoryRoot, MEMORY_INDEX_FILE_NAME);
+      const indexContent = files.includes(MEMORY_INDEX_FILE_NAME)
+        ? await readFile(indexPath, "utf8").catch((error: unknown) => {
+            if (isNotFound(error)) return "";
+            throw error;
+          })
+        : "";
+      for (const line of indexContent.split(/\r?\n/u)) {
+        const matched = /^- \[(.+)\]\(([^)]+)\)/u.exec(line.trim());
+        if (matched?.[1] && matched[2]) titles.set(matched[2], matched[1]);
+      }
+
+      const matches: ProjectMemorySearchResult["matches"] = [];
+      let used = 0;
+      let truncated = false;
+      for (const fileName of files) {
+        if (truncated) break;
+        const filePath = join(memoryRoot, fileName);
+        const metadata = await lstat(filePath).catch((error: unknown) => {
+          if (isNotFound(error)) return null;
+          throw error;
+        });
+        if (!metadata) continue;
+        if (metadata.size > settings.codeReadMaxBytes) {
+          truncated = true;
+          continue;
+        }
+        const content = await readFile(filePath, "utf8");
+        const lines = content.split(/\r?\n/u);
+        const title =
+          titles.get(fileName) ??
+          (fileName === MEMORY_INDEX_FILE_NAME
+            ? "记忆索引"
+            : fileName.replace(/\.md$/u, ""));
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const lower = trimmed.toLocaleLowerCase();
+          if (!terms.every((term) => lower.includes(term))) continue;
+          const remaining = settings.codeReadPageCharacters - used;
+          if (remaining <= 0) {
+            truncated = true;
+            break;
+          }
+          const snippet =
+            trimmed.length <= remaining ? trimmed : trimmed.slice(0, remaining);
+          if (trimmed.length > remaining) truncated = true;
+          matches.push({ fileName, title, snippet });
+          used += snippet.length;
+        }
+      }
+      return { query, matches, truncated };
+    },
+
     async readIndex(instanceId, projectId) {
       if (!isValidPathSegment(projectId)) return null;
       if (!(await isEnabled(instanceId))) return null;
@@ -362,6 +767,8 @@ export function createProjectMemoryService(options: {
       if (Buffer.byteLength(nextIndex, "utf8") > limits.maxFileBytes)
         throw new Error("记忆索引已满，请先整理 MEMORY.md。");
       await writeFile(indexPath, nextIndex, "utf8");
+      // 提炼时机：每写入一条记忆后整理一次，合并重复正文并评估遗忘；失败不静默。
+      await maintainProject(actor, input.projectId);
       return { fileName, path: filePath, indexUpdated: true };
     },
   };

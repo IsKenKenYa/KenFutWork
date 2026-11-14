@@ -109,7 +109,6 @@ function replayInput(input: CodeAdmittedInput): CodeReplayInput {
     workContext,
   } = input.intent;
   return structuredClone({
-    ...(input.executionMode ? { executionMode: input.executionMode } : {}),
     intent: {
       sourceCommandId,
       clientId,
@@ -234,6 +233,12 @@ export function createCodeUiOwnedHistory(deps: {
           );
         return structuredClone(inherited);
       }
+      if (
+        binding.sessionId !== root.id ||
+        binding.projectId !== root.project_id ||
+        binding.mode !== "code"
+      )
+        return null;
       const pair = await deps.agentRunMetadata.getOwnedTurnBoundaries(actor, {
         taskId: root.id,
         runId: turnId,
@@ -243,7 +248,7 @@ export function createCodeUiOwnedHistory(deps: {
         if (
           boundary &&
           (boundary.instanceId !== actor.instanceId ||
-            boundary.projectId !== root.project_id ||
+            (boundary.taskKind ?? "code") !== "code" ||
             boundary.taskId !== root.id ||
             boundary.runId !== turnId ||
             boundary.threadId !== binding.threadId)

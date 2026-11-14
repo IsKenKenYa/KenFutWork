@@ -1,0 +1,21 @@
+diff --git a/lib/types/icns.js b/lib/types/icns.js
+index 199b0e651b3f9e310a821b80a517c76050fc44e6..6ea2135767f1de2e7e0bdf6fd9a9d49f85fc6dc5 100644
+--- a/lib/types/icns.js
++++ b/lib/types/icns.js
+@@ -71,10 +71,15 @@ var ICON_TYPE_SIZE = {
+ 
+ function readImageHeader(buffer, imageOffset) {
+   var imageLengthOffset = imageOffset + ENTRY_LENGTH_OFFSET;
++  var imageLength = buffer.readUInt32BE(imageLengthOffset);
++  // ICNS 条目包含 8 字节头，拒绝无法推进到下一条目的长度。
++  if (imageLength < 8) {
++    throw new TypeError('Invalid ICNS image entry length');
++  }
+   // returns [type, length]
+   return [
+     buffer.toString('ascii', imageOffset, imageLengthOffset),
+-    buffer.readUInt32BE(imageLengthOffset)
++    imageLength
+   ];
+ }
+ 

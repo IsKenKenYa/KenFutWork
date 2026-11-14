@@ -109,6 +109,9 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
     active_run_id: null,
     archived: false,
     pinned: false,
+    pin_revision: 0,
+    unread_at: null,
+    last_unread_at: 0,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     deleted_at: null,
@@ -200,6 +203,10 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
     },
   } satisfies Partial<CodeUiRepository>;
   const autoCommitRun = vi.fn(async () => {});
+  const scopeHandle = Object.freeze({
+    describe: () => scope,
+    branchGeneration: Number(root.branch_generation),
+  });
   const service = new CodeUiService({
     repository,
     blob: createLocalFsBlobStore({
@@ -231,7 +238,7 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
     threads: {
       resolveOwnedSessionThread: async () => ({ threadId: `thread:${taskId}` }),
     },
-    executionScopes: { openTask: async () => ({ describe: () => scope }) },
+    executionScopes: { openTask: async () => scopeHandle },
     agentRunMetadata: {
       createAcceptedRun: vi.fn(async () => {}),
       updateRun: vi.fn(async () => {}),
@@ -268,9 +275,6 @@ async function fixture(options: { withCodeGit?: boolean } = {}) {
   cleanups.push(async () => {
     signalFinished();
   });
-  const scopeHandle = {
-    describe: () => scope,
-  };
   return {
     actor,
     taskId,

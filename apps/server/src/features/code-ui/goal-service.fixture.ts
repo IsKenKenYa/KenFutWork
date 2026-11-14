@@ -10,6 +10,8 @@ import {
 } from "@kenfutwork/shared";
 import type { ToolContributionSnapshot } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
+import { createScopeRepository } from "../execution/scope-repository.js";
+import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGoalService } from "../goals/service.js";
 import type { CodeApprovalMode } from "../permissions/approval-types.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
@@ -184,14 +186,15 @@ function makeGoalHost(
   taskWork?: CodeUiServiceDeps["taskWork"],
 ) {
   const { database, scope, goals, repository, provider } = base;
+  const { localInstance } = createCodeUiTestInstance(
+    scope.instanceId,
+    null,
+    database.directory,
+  );
   const service = new CodeUiService({
     goals,
     repository,
-    localInstance: createCodeUiTestInstance(
-      scope.instanceId,
-      null,
-      database.directory,
-    ).localInstance,
+    localInstance,
     projects: {
       listProjects: async () => [
         {
@@ -239,21 +242,10 @@ function makeGoalHost(
       }),
       createThreadId: randomUUID,
     },
-    executionScopes: {
-      openTask: async (_actor: unknown, taskId: string) => {
-        const task = await repository.find(scope.instanceId, taskId);
-        return {
-          describe: () => ({
-            ...scope,
-            taskId,
-            generation: Number(task!.scope_generation),
-            rootDirectory: task!.root_directory!,
-            sandboxMode: task!.sandbox_mode,
-            additionalDirectories: task!.additional_directories,
-          }),
-        };
-      },
-    },
+    executionScopes: createExecutionScopes({
+      repository: createScopeRepository(database.persistence),
+      localInstance,
+    }),
     agentRunMetadata: {
       createAcceptedRun: async () => {},
       updateRun: async () => {},
@@ -303,23 +295,59 @@ async function connectGoalHost(
     workspacePath: scope.rootDirectory,
     sessionId: scope.taskId,
   });
+  const commandObservations = new Map<
+    string,
+    Promise<{
+      snapshot: protocol.ConversationSnapshot;
+      taskControl: protocol.ConversationTaskControl | undefined;
+      goalControl: CodeGoalControl | undefined;
+    }>
+  >();
   return Object.assign(
     async (
       type: protocol.CommandType,
       payload: unknown,
       commandId = randomUUID(),
       control?: CodeGoalControl | null,
+      guard?: Partial<
+        Pick<
+          protocol.CommandEnvelope,
+          "baseRevision" | "baseLogEpoch" | "taskControl"
+        >
+      >,
     ) => {
-      const root = await base.repository.find(scope.instanceId, scope.taskId);
-      const snapshot = root?.state?.snapshots.find(
-        (item) => item.sessionId === scope.taskId,
+      const suppliedGuard = structuredClone(guard);
+      const suppliedControl = structuredClone(control);
+      const currentGoalControl = structuredClone(
+        control === undefined ? observed : (control ?? undefined),
       );
-      if (!snapshot) throw new Error("Goal测试没有可用Task快照");
+      let observation = commandObservations.get(commandId);
+      if (!observation) {
+        observation = service.getSnapshot(actor, scope.taskId).then((value) => {
+          const snapshot = protocol.conversationSnapshotSchema.parse(value);
+          if (!snapshot.taskControl)
+            throw new Error("Goal 测试没有公开 Task 观察值");
+          return {
+            snapshot,
+            taskControl: Object.hasOwn(suppliedGuard ?? {}, "taskControl")
+              ? structuredClone(suppliedGuard?.taskControl)
+              : Object.freeze(structuredClone(snapshot.taskControl)),
+            goalControl: currentGoalControl,
+          };
+        });
+        commandObservations.set(commandId, observation);
+      }
+      const captured = await observation;
+      const { snapshot } = captured;
+      const goalControl =
+        suppliedControl === undefined
+          ? captured.goalControl
+          : (suppliedControl ?? undefined);
       const response = await rpc("sendConversationCommandV4", {
         workspacePath: scope.rootDirectory,
         ...(["sendGoalCommand", "pauseGoal", "resumeGoal"].includes(type) &&
-        control !== null
-          ? { goalControl: structuredClone(control ?? observed) }
+        suppliedControl !== null
+          ? { goalControl: structuredClone(goalControl) }
           : {}),
         envelope: {
           clientId,
@@ -327,9 +355,11 @@ async function connectGoalHost(
           sessionId: scope.taskId,
           type,
           payload,
+          taskControl: structuredClone(captured.taskControl),
           baseRevision: snapshot.revision,
           baseLogEpoch: snapshot.logEpoch,
           issuedAt: Date.now(),
+          ...suppliedGuard,
         },
       });
       const settled = response?.publish?.() ?? Promise.resolve();

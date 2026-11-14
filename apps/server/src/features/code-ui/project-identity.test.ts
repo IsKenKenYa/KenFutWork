@@ -94,6 +94,9 @@ async function fixture(
     active_run_id: null,
     archived: false,
     pinned: false,
+    pin_revision: 0,
+    unread_at: null,
+    last_unread_at: 0,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     deleted_at: null,
@@ -171,7 +174,9 @@ async function fixture(
       roots.filter((entry) => entry.project_id === id && !entry.deleted_at),
     listVersion: async () => 1,
     beginCloseTask: async (_workspace: string, id: string) => {
-      const record = roots.find((entry) => entry.id === id && !entry.deleted_at);
+      const record = roots.find(
+        (entry) => entry.id === id && !entry.deleted_at,
+      );
       if (!record)
         throw new CodeUiRepositoryError(
           "not_found",
@@ -200,7 +205,8 @@ async function fixture(
     createRoot,
     delete: async (_instance: string, rootSessionId: string) => {
       for (const entry of roots) {
-        if (entry.root_session_id !== rootSessionId || entry.deleted_at) continue;
+        if (entry.root_session_id !== rootSessionId || entry.deleted_at)
+          continue;
         entry.deleted_at = new Date().toISOString();
         entry.state = null;
         entry.active_run_id = null;
@@ -367,7 +373,26 @@ it("原CodeUI宿主订阅真实workspace目录，固定Task根A不借项目默�
           { id: "model", currentValue: "", options: [] },
           { id: "mode", currentValue: "build" },
         ],
-        slashCommands: [],
+        slashCommands: [
+          {
+            description: "生成或更新项目说明",
+            inputHint: "/init [补充要求]",
+            name: "init",
+            source: "builtin",
+          },
+          {
+            description: "检查当前改动",
+            inputHint: "/review [关注点]",
+            name: "review",
+            source: "builtin",
+          },
+          {
+            description: "把结论存进项目记忆",
+            inputHint: "/memory [要点]",
+            name: "memory",
+            source: "builtin",
+          },
+        ],
       },
     });
     await expect(
@@ -668,7 +693,9 @@ it("计划目录在本内核返回空目录并与当前日志代对齐，不再 
     atSeq: expect.any(Number),
     atLogEpoch: expect.any(String),
   });
-  expect((result?.result as { atLogEpoch: string }).atLogEpoch.length).toBeGreaterThan(0);
+  expect(result?.result).toBeDefined();
+  const payload = result?.result as { atLogEpoch: string } | undefined;
+  expect(payload?.atLogEpoch.length).toBeGreaterThan(0);
 });
 
 it("单Task轻量元数据在工作区全量列表不可用时仍可读，保留真实项目和固定目录", async () => {
@@ -708,11 +735,15 @@ it("明确Human创建真实空Task不依赖模型配置，首次发送仍明确�
     root_directory: pathA,
     active_run_id: null,
   });
-  expect(loaded.host.getSnapshot()).toMatchObject({
+  const snapshot = loaded.host.getSnapshot();
+  expect(snapshot).toMatchObject({
     control: { phase: "draft" },
     config: { model: "" },
     rows: { window: [] },
   });
+  const taskControl = Object.freeze(
+    protocol.conversationTaskControlSchema.parse(snapshot.taskControl),
+  );
   await expect(
     service.transportRpc(actor, undefined, "sendConversationCommandV4", [
       {
@@ -722,6 +753,7 @@ it("明确Human创建真实空Task不依赖模型配置，首次发送仍明确�
           commandId: randomUUID(),
           sessionId,
           type: "sendText",
+          taskControl,
           payload: { text: "开始工作" },
           issuedAt: Date.now(),
         },

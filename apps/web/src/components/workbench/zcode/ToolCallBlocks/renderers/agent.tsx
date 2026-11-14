@@ -15,6 +15,7 @@ import { getLatestExploreChildSummaryFromChildren } from "./explore.js";
 import { AgentPromptSection } from "./agentPromptSection.js";
 import {
   formatAgentMessage,
+  formatAgentUsage,
   getAgentColor,
   getAgentKindLabel,
   getAgentActivityContent,
@@ -260,6 +261,8 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const backgroundAgentInfo = readBackgroundAgentInfo(toolCall);
   const activityContent = getAgentActivityContent(toolCall);
   const activityThought = toolCall.thought?.trim();
+  // 子代理用量：服务端按派发 id 归因后写进 subagentRow；上游没上报就写「未统计」。
+  const usageText = formatAgentUsage(context.agentUsage);
   // Agent 块和它内部的子工具都已经通过层级表达了来源，
   // 继续显示子智能体来源 badge 会制造重复噪音。
   const sourceLabel = undefined;
@@ -319,6 +322,12 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
             onOpenBrowserUrl={context.onOpenBrowserUrl}
           />
         ) : null}
+        <div
+          data-agent-usage
+          className="text-ui-base text-foreground-subtle"
+        >
+          {usageText}
+        </div>
         {activityContent ? (
           <AgentActivitySection
             label={formatAgentMessage(intl, "chat.toolCall.agent.output", "Agent output")}
@@ -360,6 +369,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
       isAgentVisuallyRunning,
       prompt,
       toolCall.status,
+      usageText,
     ],
   );
 
@@ -384,8 +394,8 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
           collapsedChildSummary ? collapsedChildSummary.primaryText : collapsedPrimaryText
         }
         expandedPrimaryText={expandedPrimaryText}
-        secondaryText={collapsedChildSummary?.secondaryText}
-        expandedSecondaryText={null}
+        secondaryText={collapsedChildSummary?.secondaryText ?? usageText}
+        expandedSecondaryText={usageText}
         summaryContentSeparator="·"
         animateSummaryContent
         disableSummaryContentAnimation={context.disableSummaryContentAnimation}

@@ -89,8 +89,11 @@ export function ConversationAgentToolCallRow({
         onOpenFileLink={context.onOpenFileLink}
         onOpenBrowserUrl={context.onOpenBrowserUrl}
         onOpenAutomationsMain={context.onOpenAutomationsMain}
+        sessionId={context.sessionId ?? undefined}
+        onReadToolOutput={context.onReadToolOutput}
         agentSummaryAction={agentSummaryAction}
         authoritativeAgentType={subagentType}
+        agentUsage={item.subagentRow.usage}
       />
     </div>
   );

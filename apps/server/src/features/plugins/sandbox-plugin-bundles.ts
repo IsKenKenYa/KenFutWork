@@ -5,7 +5,7 @@ import type { ExecutionScopeHandle } from "../execution/scope-service.js";
 import { scopedPackageFiles } from "../execution/scoped-package-files.js";
 
 /**
- * 沙箱工作目录里的**插件 bundle**扫描（「从工作目录安装插件」+ 创造模式的插件产物）。
+ * 沙箱工作目录里的**插件 bundle**扫描，供「从工作目录安装插件」使用。
  *
  * 判定：目录的 `package.json` 里声明了 bundle——
  * - 本项目：`kenfutwork.bundle`（旧名 `loomic.bundle` 仍认）

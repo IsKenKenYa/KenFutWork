@@ -802,7 +802,7 @@ function buildSkillFromArchiveEntries(
 }
 
 /**
- * 由「已在内存里的文件列表」构建技能（从**工作目录**导入 / 创造模式的产物）。
+ * 由「已在内存里的文件列表」构建技能，供从**工作目录**导入使用。
  *
  * 直接复用档案包构建器：SKILL.md 判定、frontmatter 解析、`scripts|references|assets`
  * 附带文件与二进制过滤口径与 zip/tarball 完全一致——两条导入路径不会各自漂移。

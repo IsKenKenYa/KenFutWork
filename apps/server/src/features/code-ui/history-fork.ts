@@ -418,6 +418,16 @@ async function prepareFork(
   );
   if (!post) return;
   const id = randomUUID();
+  const targetScope: CodeUiRootInsert["scope"] = {
+    instanceId: operation.loaded.instanceId,
+    projectId: root.project_id,
+    taskId: id,
+    // 与 createRoot 同口径从 1 起铸：Windows 原生 broker 拒绝 generation<=0。
+    generation: 1,
+    rootDirectory: root.root_directory,
+    additionalDirectories: structuredClone(root.additional_directories ?? []),
+    sandboxMode: root.sandbox_mode,
+  };
   const threadId = deps.threads.createThreadId();
   operation.preparationId = await deps.repository.preparations.begin({
     instanceId: root.instance_id,
@@ -440,7 +450,7 @@ async function prepareFork(
     attachmentService,
     operation,
     root,
-    id,
+    targetScope,
     selected,
     turns,
     (path) =>
@@ -511,16 +521,7 @@ async function prepareFork(
     projectId: root.project_id,
     createdByClientId: operation.actor.accessClientId,
     threadId,
-    scope: {
-      instanceId: operation.loaded.instanceId,
-      projectId: root.project_id,
-      taskId: id,
-      // 与 createRoot 同口径从 1 起铸：Windows 原生 broker 拒绝 generation<=0。
-      generation: 1,
-      rootDirectory: root.root_directory,
-      additionalDirectories: structuredClone(root.additional_directories ?? []),
-      sandboxMode: root.sandbox_mode,
-    },
+    scope: targetScope,
     state: forkState(
       deps.goals ?? createGoalService(),
       id,
@@ -744,7 +745,7 @@ async function prepareForkAttachments(
   service: CodeAttachmentsService | undefined,
   operation: ForkOperation,
   root: CodeUiSessionRecord,
-  id: string,
+  scope: CodeUiRootInsert["scope"],
   selected: Selection,
   turns: CodeUiOwnedHistoryTurn[],
   planObject: (path: string) => Promise<void>,
@@ -765,12 +766,12 @@ async function prepareForkAttachments(
       operation.actor,
       root.id,
       {
-        instanceId: root.instance_id,
-        projectId: root.project_id,
-        taskId: id,
-        sessionId: id,
+        instanceId: scope.instanceId,
+        projectId: scope.projectId,
+        taskId: scope.taskId,
+        sessionId: scope.taskId,
         createdByClientId: operation.actor.accessClientId,
-        scopeGeneration: 0,
+        scopeGeneration: scope.generation,
         branchGeneration: 1,
         revision: 0,
         canUpload: true,

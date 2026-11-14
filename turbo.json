@@ -12,6 +12,7 @@
     "LOCALAPPDATA",
     "MOCK_MODEL_ID",
     "MOCK_MODEL_PORT",
+    "MOCK_SPEECH_SECONDS",
     "MOCK_SEARCH_PORT",
     "MOCK_SEARCH_QUERY",
     "SystemRoot"
@@ -20,6 +21,9 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
+    },
+    "@kenfutwork/desktop#build": {
+      "dependsOn": ["^build", "@kenfutwork/web#build"]
     },
     "dev": {
       "cache": false,

@@ -144,17 +144,17 @@ export function createAgentRunRepository(
           `select b.boundary from public.agent_turn_boundaries b
            join public.agent_runs r on r.id=b.run_id
            join public.execution_task_owners o on o.instance_id=b.instance_id
-             and o.task_id=b.task_id and o.project_id=b.project_id and o.task_kind=b.task_kind
+             and o.task_id=b.task_id and o.task_kind=b.task_kind
            join public.chat_sessions c on c.id=r.session_id and c.id=b.task_id
-             and c.instance_id=b.instance_id and c.project_id=b.project_id
-           join public.projects p on p.id=b.project_id and p.instance_id=b.instance_id
+             and c.instance_id=b.instance_id and c.project_id=o.project_id
+           join public.projects p on p.id=o.project_id and p.instance_id=b.instance_id
            left join public.code_ui_sessions code_task on b.task_kind='code'
              and code_task.id=b.task_id and code_task.instance_id=b.instance_id
-             and code_task.project_id=b.project_id and code_task.parent_session_id is null
+             and code_task.project_id=o.project_id and code_task.parent_session_id is null
            left join public.design_task_executions design_task on b.task_kind='design'
              and design_task.task_id=b.task_id and design_task.instance_id=b.instance_id
-             and design_task.project_id=b.project_id
-          where b.instance_id=:instance and b.project_id=$1 and b.task_id=$2 and b.run_id=$3
+             and design_task.project_id=o.project_id
+          where b.instance_id=:instance and o.project_id=$1 and b.task_id=$2 and b.run_id=$3
             and b.task_kind=$5
             and r.thread_id=$4 and c.thread_id=$4 and c.instance_id=:instance
             and c.project_id=$1 and c.mode=$5 and p.archived_at is null

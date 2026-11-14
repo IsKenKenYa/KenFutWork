@@ -3,7 +3,7 @@ import { z } from "zod";
 export const directoryAccessSchema = z.enum(["read-only", "read-write"]);
 export const additionalDirectorySchema = z
   .object({
-    path: z.string().trim().min(1),
+    path: z.string().min(1),
     access: directoryAccessSchema,
   })
   .strict();

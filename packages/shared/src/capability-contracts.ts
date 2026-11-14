@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * 能力层共享契约（《改造计划》§5）：工具注册表条目、执行模式、权限档位、
+ * 能力层共享契约（《改造计划》§5）：工具注册表条目、权限档位、
  * agent-run 事件、用量记录。kernel 侧类型在 apps/server/src/kernel/types.ts，
  * 本文件是跨端（前端可见）的 zod 单一事实源。
  */
@@ -25,8 +25,8 @@ export const toolListResponseSchema = z.object({
 });
 export type ToolListResponse = z.infer<typeof toolListResponseSchema>;
 
-// --- 执行模式（DEC-3：agent/plan/goal/loop/solo + creative 创造引导） ---
-
+// 执行方式枚举：UI 与工具门已按 2026-10-22 统一主 Agent 退役，协议层保留
+// 供管理文档新建任务等历史 wire 字段解析（消费方不据此切换工作方式）。
 export const executionModeSchema = z.enum([
   "agent",
   "plan",
@@ -90,10 +90,6 @@ export function anyPermissionRuleMatches(
 export const permissionScenarioSchema = z.enum(["interactive", "automation"]);
 export type PermissionScenario = z.infer<typeof permissionScenarioSchema>;
 
-/** 哪些执行模式算「自动化任务」（判据只有这一处，服务端与界面共用）。 */
-export function isAutomationExecutionMode(mode: string): boolean {
-  return mode === "goal" || mode === "loop";
-}
 export type PermissionTier = z.infer<typeof permissionTierSchema>;
 
 export const toolPreExecuteDecisionSchema = z.enum(["allow", "deny"]);
@@ -159,6 +155,11 @@ export const usageStatsResponseSchema = z.object({
     tokens: z.number().int().nonnegative(),
     inputTokens: z.number().int().nonnegative(),
     outputTokens: z.number().int().nonnegative(),
+    /**
+     * 窗口内记录到的花费（美元）。只有供应商回传成本时才累加；
+     * 一行成本都没有时如实为 null（「未上报」），不把未知成本伪装成 0。
+     */
+    costUsd: z.number().nonnegative().nullable(),
   }),
   /** 单日峰值 token 数。 */
   peakDayTokens: z.number().int().nonnegative(),

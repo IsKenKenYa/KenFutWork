@@ -596,6 +596,9 @@ export interface IPlatformService {
   /** 打开系统目录选择框，返回选中路径或 null */
   selectDirectory(): Promise<string | null>;
 
+  /** 打开系统多目录选择框，返回 Host 可访问的本地路径；取消返回空数组，Web 不提供 */
+  selectDirectories?(): Promise<string[]>;
+
   /** 打开系统文件选择框，返回选中文件路径或 null */
   selectFile(): Promise<string | null>;
 
@@ -952,8 +955,17 @@ export interface IPlatformService {
     options?: ChromeBrowserDataImportOptions,
   ): Promise<ChromeBrowserDataImportResult>;
 
+  /**
+   * 宿主是否**真的**支持导入 Chrome 登录数据。缺省/false 时设置页不展示导入入口，
+   * 避免按钮存在但按下只会失败（Web 宿主与本项目当前形态都是 false）。
+   */
+  supportsChromeBrowserDataImport?: boolean;
+
   /** 清理内置浏览器持久化分区；cache 模式保留认证数据，all 模式清理全部站点数据。 */
   clearEmbeddedBrowserData?(mode: "cache" | "all"): Promise<EmbeddedBrowserDataClearResult>;
+
+  /** 宿主是否能真的清理内置浏览器数据；缺省/false 时设置页保持禁用并说明仅桌面可用。 */
+  supportsEmbeddedBrowserDataClear?: boolean;
 
   /** 注册新版本已下载完毕的回调，参数为新版本号，返回 disposer */
   onUpdateReady(callback: (version: string) => void): () => void;

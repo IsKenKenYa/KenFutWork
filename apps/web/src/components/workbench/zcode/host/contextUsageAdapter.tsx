@@ -191,7 +191,9 @@ export function ChatContextUsage({
   );
 }
 
-/** 16px 细环：弧长 = 已用百分比（无数据只画空轨道，不编弧）。 */
+/** 16px 细环：弧长 = 已用百分比（无数据只画空轨道，不编弧）。
+ *  弧与轨道用同色系两档透明度（对齐 vendored ContextIcon 的 0.7/0.25 对比），
+ *  低对比的 muted/border 在浅色主题下弧几乎不可见（用户反馈「看不到扇形」）。 */
 function ContextRing({ percent }: { percent: number | null }) {
   const size = 16;
   const stroke = 3;
@@ -213,7 +215,7 @@ function ContextRing({ percent }: { percent: number | null }) {
         r={radius}
         fill="none"
         strokeWidth={stroke}
-        className="stroke-border"
+        className="stroke-foreground/20"
       />
       {percent !== null && usedRatio > 0 ? (
         <circle
@@ -222,8 +224,9 @@ function ContextRing({ percent }: { percent: number | null }) {
           r={radius}
           fill="none"
           strokeWidth={stroke}
+          strokeLinecap="round"
           strokeDasharray={`${circumference * usedRatio} ${circumference}`}
-          className="stroke-muted-foreground"
+          className="stroke-foreground/70"
         />
       ) : null}
     </svg>

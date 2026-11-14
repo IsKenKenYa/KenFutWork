@@ -132,6 +132,7 @@ export async function createCodeUiHttpFixture(
       baseUrl,
       origin,
       client,
+      cookie,
       actor,
       close() {
         closing ??= (async () => {

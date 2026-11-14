@@ -27,6 +27,7 @@ export interface CodeUiModelExecutionSnapshot {
   readonly providerId: string;
   readonly modelId: string;
   readonly configRevision: number;
+  readonly contextWindow?: number | null;
   readonly useResponsesApi?: boolean;
   readonly body: JsonObject;
   readonly inputCapabilities: {
@@ -130,6 +131,7 @@ export function compileCodeUiModelExecution(input: {
     providerId: instance.id,
     modelId: model.id,
     configRevision: instance.configRevision,
+    contextWindow: config.properties.contextWindow,
     ...(instance.protocol === "openai-compatible"
       ? { useResponsesApi: codeUiApiType(instance) === "openai-responses" }
       : {}),

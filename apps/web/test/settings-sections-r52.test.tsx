@@ -121,6 +121,26 @@ describe("设置 → 钩子", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  it("工具钩子按事件显示并可整表保存", async () => {
+    const onSave = vi
+      .fn()
+      .mockResolvedValue([{ event: "tool-failed", command: "echo boom" }]);
+    const { HooksSection } = await import(
+      "../src/components/workbench/hooks-section"
+    );
+    render(
+      <HooksSection
+        hooks={[{ event: "tool-failed", command: "echo boom" }]}
+        onSave={onSave}
+      />,
+    );
+    expect(screen.getByText("工具失败")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "保存钩子" }));
+    expect(onSave).toHaveBeenCalledWith([
+      { event: "tool-failed", command: "echo boom" },
+    ]);
+  });
+
   it("边界写在页面上：只有你能配置 / 在工作目录里跑 / 失败不影响本轮", async () => {
     const { HooksSection } = await import(
       "../src/components/workbench/hooks-section"

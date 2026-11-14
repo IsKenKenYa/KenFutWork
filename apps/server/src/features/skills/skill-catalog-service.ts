@@ -38,12 +38,14 @@ export interface SkillCatalogService {
   listSkills(
     instanceId: string,
     mode?: "code" | "design",
+    projectId?: string,
   ): Promise<SkillCatalogEntry[]>;
   /** 按 slug 取 SKILL.md 全文；未安装/停用即 404 语义。 */
   getSkill(
     instanceId: string,
     slug: string,
     mode?: "code" | "design",
+    projectId?: string,
   ): Promise<SkillCatalogDetail | undefined>;
 }
 
@@ -55,10 +57,10 @@ export function createSkillCatalogService(options: {
   const { repository } = options;
 
   return {
-    async listSkills(instanceId, mode) {
+    async listSkills(instanceId, mode, projectId) {
       if ((await options.localInstance.getContext()).instanceId !== instanceId)
         throw new LocalInstanceError();
-      const rows = await repository.listInstanceSkills(instanceId);
+      const rows = await repository.listInstanceSkills(instanceId, projectId);
 
       const plugins = options.plugins
         ? await options.plugins.readSkillPackages(mode)
@@ -84,7 +86,7 @@ export function createSkillCatalogService(options: {
       ];
     },
 
-    async getSkill(instanceId, slug, mode) {
+    async getSkill(instanceId, slug, mode, projectId) {
       if ((await options.localInstance.getContext()).instanceId !== instanceId)
         throw new LocalInstanceError();
       if (slug.startsWith("kenfutwork-plugin-skill:")) {
@@ -98,7 +100,7 @@ export function createSkillCatalogService(options: {
             }
           : undefined;
       }
-      const rows = await repository.listInstanceSkills(instanceId);
+      const rows = await repository.listInstanceSkills(instanceId, projectId);
 
       const row = rows.find((entry) => entry.slug === slug);
 

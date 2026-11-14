@@ -13,6 +13,14 @@ export type UsageRecordRow = {
   occurred_at: string;
 };
 
+/** 单轮运行/会话最近一轮的用量汇总（子代理用量归因用）。 */
+export type RunUsageAggregate = {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  calls: number;
+};
+
 export type NewUsageRecord = {
   instanceId: string;
   accessClientId?: string | null | undefined;
@@ -72,6 +80,16 @@ export interface UsageRepository {
   >;
   /** 应用用量涉及的去重会话数（distinct run_id）——不能把逐组 runs 相加（跨天/跨模型会重）。 */
   appUsageRunCount(instanceId: string, since: Date | null): Promise<number>;
+  /** 单轮 Run 的用量汇总；没有任何记账行时返回 null（与「有调用但零 token」区分）。 */
+  runSummary(
+    instanceId: string,
+    runId: string,
+  ): Promise<RunUsageAggregate | null>;
+  /** 会话最近一轮 Run 的用量汇总；子代理只持有 childSessionId 时使用。 */
+  runSummaryBySession(
+    instanceId: string,
+    sessionId: string,
+  ): Promise<RunUsageAggregate | null>;
 }
 
 type RawUsageRow = {
@@ -83,6 +101,26 @@ type RawUsageRow = {
   cost_usd: string | number | null;
   occurred_at: string | Date;
 };
+
+type RawUsageAggregateRow = {
+  input_tokens: string | number | null;
+  output_tokens: string | number | null;
+  cost_usd: string | number | null;
+  calls: string | number | null;
+};
+
+function aggregateOf(
+  row: RawUsageAggregateRow | undefined,
+): RunUsageAggregate | null {
+  const calls = Number(row?.calls ?? 0) || 0;
+  if (calls === 0) return null;
+  return {
+    inputTokens: Number(row?.input_tokens ?? 0) || 0,
+    outputTokens: Number(row?.output_tokens ?? 0) || 0,
+    costUsd: row?.cost_usd == null ? null : Number(row.cost_usd),
+    calls,
+  };
+}
 
 export function createUsageRepository(
   persistence: PersistenceService,
@@ -202,6 +240,46 @@ export function createUsageRepository(
           [since],
         );
       return Number(rows[0]?.runs ?? 0) || 0;
+    },
+
+    async runSummary(instanceId, runId) {
+      const rows = await persistence
+        .forInstance(instanceId)
+        .query<RawUsageAggregateRow>(
+          `select coalesce(sum(input_tokens), 0) as input_tokens,
+                  coalesce(sum(output_tokens), 0) as output_tokens,
+                  sum(cost_usd) as cost_usd,
+                  count(*) as calls
+             from public.usage_records
+            where instance_id = :instance and run_id = $1`,
+          [runId],
+        );
+      return aggregateOf(rows[0]);
+    },
+
+    async runSummaryBySession(instanceId, sessionId) {
+      // 子代理只持有 childSessionId；child session 的正常情况下只有一轮 Run，
+      // 重放会追加新 Run，因此取最近创建的一轮作为当前归因。
+      const rows = await persistence
+        .forInstance(instanceId)
+        .query<RawUsageAggregateRow>(
+          `select coalesce(sum(u.input_tokens), 0) as input_tokens,
+                  coalesce(sum(u.output_tokens), 0) as output_tokens,
+                  sum(u.cost_usd) as cost_usd,
+                  count(*) as calls
+             from public.usage_records u
+            where u.instance_id = :instance
+              and u.run_id = (
+                select r.id::text
+                  from public.agent_runs r
+                  join public.chat_sessions s on s.id = r.session_id
+                 where s.instance_id = :instance and r.session_id = $1
+                 order by r.created_at desc
+                 limit 1
+              )`,
+          [sessionId],
+        );
+      return aggregateOf(rows[0]);
     },
   };
 }

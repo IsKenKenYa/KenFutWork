@@ -10,16 +10,27 @@ import type {
 import { projectModesSchema } from "@kenfutwork/shared";
 import type { BlobStore } from "../blob/types.js";
 import type {
+  InstanceContext,
   LocalActor,
   LocalInstanceService,
 } from "../local-instance/types.js";
 import { SQLSTATE_UNIQUE_VIOLATION } from "../persistence/errors.js";
+import {
+  type ProjectCreationAdmission,
+  ProjectCreationConflictError,
+  type ProjectCreationResult,
+  ProjectCreationUnavailableError,
+} from "./project-creation-repository.js";
 import type {
+  CreateProjectInput,
   ProjectDetailRow,
   ProjectRepository,
   ProjectUpdatePatch,
 } from "./repository.js";
-import { ProjectDirectoryConflictError } from "./repository.js";
+import {
+  ProjectClosingConflictError,
+  ProjectDirectoryConflictError,
+} from "./repository.js";
 import {
   normalizeAdditionalDirectories,
   resolveProjectWorkDirectory,
@@ -55,6 +66,11 @@ export type ProjectService = {
     actor: LocalActor,
     input: ProjectCreateRequest,
   ): Promise<ProjectSummary>;
+  createProjectOnce(
+    actor: LocalActor,
+    admission: ProjectCreationAdmission,
+    prepare: () => Promise<ProjectCreateRequest>,
+  ): Promise<ProjectCreationResult>;
   getProject(actor: LocalActor, projectId: string): Promise<ProjectDetailRow>;
   listProjects(
     actor: LocalActor,
@@ -99,6 +115,40 @@ export function createProjectService(options: {
 }): ProjectService {
   const { repository, localInstance } = options;
 
+  async function prepareCreateInput(
+    actor: LocalActor,
+    context: InstanceContext,
+    input: ProjectCreateRequest,
+    projectId: string,
+  ): Promise<CreateProjectInput> {
+    const workDir = await resolveProjectWorkDirectory({
+      instanceId: context.instanceId,
+      projectId,
+      sandboxRoot: options.sandboxRoot ?? join(context.dataDir, "sandbox"),
+      workDir:
+        input.work_dir !== undefined
+          ? requireWorkDir(input.work_dir)
+          : undefined,
+    });
+    return {
+      id: projectId,
+      additionalDirectories: requireAdditionalDirectories(
+        input.additional_directories ?? [],
+      ),
+      ...(input.directory_choice
+        ? { directoryChoice: input.directory_choice }
+        : {}),
+      canvasName: "Main Canvas",
+      description: normalizeDescription(input.description),
+      kind: input.kind ?? "design",
+      name: input.name.trim(),
+      slug: slugify(input.name.trim()),
+      createdByClientId: actor.accessClientId,
+      instanceId: context.instanceId,
+      workDir,
+    };
+  }
+
   return {
     async directoryProjects(actor, path) {
       const context = await localInstance.resolve(actor);
@@ -119,16 +169,27 @@ export function createProjectService(options: {
           PROJECT_NOT_FOUND_MESSAGE,
           404,
         );
-      if (project.kind !== "flow") {
-        if (!options.beforeArchiveCodeProject)
+      const beforeArchive = options.beforeArchiveCodeProject;
+      if (project.kind !== "flow" && !beforeArchive)
+        throw new ProjectServiceError(
+          "project_delete_failed",
+          "Code 执行资源关闭器不可用，项目未归档。",
+          503,
+        );
+      try {
+        await repository.beginCloseProject(context.instanceId, projectId);
+      } catch (error) {
+        if (error instanceof ProjectClosingConflictError)
           throw new ProjectServiceError(
             "project_delete_failed",
-            "Code 执行资源关闭器不可用，项目未归档。",
-            503,
+            error.message,
+            409,
           );
-        await repository.beginCloseProject(context.instanceId, projectId);
+        throw error;
+      }
+      if (project.kind !== "flow" && beforeArchive) {
         try {
-          await options.beforeArchiveCodeProject(actor, projectId);
+          await beforeArchive(actor, projectId);
         } catch (error) {
           await repository.failCloseProject(context.instanceId, projectId);
           throw new ProjectServiceError(
@@ -143,7 +204,8 @@ export function createProjectService(options: {
 
       const archived = await repository
         .archive(context.instanceId, projectId)
-        .catch(() => {
+        .catch(async () => {
+          await repository.failCloseProject(context.instanceId, projectId);
           throw new ProjectServiceError(
             "project_delete_failed",
             PROJECT_DELETE_FAILED_MESSAGE,
@@ -186,41 +248,14 @@ export function createProjectService(options: {
 
     async createProject(actor, input) {
       const context = await localInstance.resolve(actor);
-      const normalizedName = input.name.trim();
-      // 手填的本机工作目录先校验（绝对路径 + 存在 + 是目录）：不合格直接 400，
-      // 不留到 run 时才发现「目录不存在」——那时用户已经等了一轮。
-      const projectId = randomUUID();
-      const kind = input.kind ?? "design";
-      const workDir = await resolveProjectWorkDirectory({
-        instanceId: context.instanceId,
-        projectId,
-        sandboxRoot: options.sandboxRoot ?? join(context.dataDir, "sandbox"),
-        workDir:
-          input.work_dir !== undefined
-            ? requireWorkDir(input.work_dir)
-            : undefined,
-      });
-      const additionalDirectories = requireAdditionalDirectories(
-        input.additional_directories ?? [],
+      const prepared = await prepareCreateInput(
+        actor,
+        context,
+        input,
+        randomUUID(),
       );
-
       const created = await repository
-        .createProject({
-          id: projectId,
-          additionalDirectories,
-          ...(input.directory_choice
-            ? { directoryChoice: input.directory_choice }
-            : {}),
-          canvasName: "Main Canvas",
-          description: normalizeDescription(input.description),
-          // 缺省 design：存量调用方（Design 建项目）语义不变
-          kind,
-          name: normalizedName,
-          slug: slugify(normalizedName),
-          createdByClientId: actor.accessClientId,
-          instanceId: context.instanceId,
-          ...(workDir ? { workDir } : {}),
-        })
+        .createProject(prepared)
         .catch((error: unknown) => {
           throw mapProjectCreateError(error);
         });
@@ -230,6 +265,39 @@ export function createProjectService(options: {
         project: created.project,
         instanceId: context.instanceId,
       });
+    },
+
+    async createProjectOnce(actor, admission, prepare) {
+      const context = await localInstance.resolve(actor);
+      return repository
+        .createProjectOnce({
+          ...admission,
+          instanceId: context.instanceId,
+          prepare: async (projectId) =>
+            prepareCreateInput(actor, context, await prepare(), projectId),
+        })
+        .catch((error: unknown) => {
+          if (error instanceof ProjectCreationUnavailableError)
+            throw new ProjectServiceError(
+              "project_not_found",
+              error.message,
+              404,
+            );
+          if (error instanceof ProjectCreationConflictError)
+            throw new ProjectServiceError(
+              "project_create_failed",
+              error.message,
+              409,
+            );
+          if (
+            error instanceof ProjectDirectoryConflictError ||
+            (error instanceof Error &&
+              "code" in error &&
+              error.code === SQLSTATE_UNIQUE_VIOLATION)
+          )
+            throw mapProjectCreateError(error);
+          throw error;
+        });
     },
 
     async listProjects(actor, kind) {

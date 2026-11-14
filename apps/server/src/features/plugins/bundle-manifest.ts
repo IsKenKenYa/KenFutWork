@@ -1,9 +1,12 @@
 import {
+  AGENT_GOVERNANCE_LIMITS,
   type BundleFormat,
   PLUGIN_UI_SLOTS,
   type PluginBundleManifest,
+  type PluginCardDeclaration,
   type PluginUiSlot,
   pluginBundleManifestSchema,
+  pluginCardDeclarationSchema,
 } from "@kenfutwork/shared";
 
 import { type ModuleScan, scanPluginModule } from "./module-scan.js";
@@ -250,6 +253,30 @@ export function buildBundleManifest(files: BundleFiles): {
         })
         .filter((item) => item.id && item.title && item.url)
     : [];
+  // 声明式卡片：只接受纯数据（工具名、标题、键值行、状态），逐条校验并给出改法。
+  const declaredCards: PluginCardDeclaration[] = Array.isArray(
+    kenfutworkBlock.cards,
+  )
+    ? kenfutworkBlock.cards.map((item, index) => {
+        const parsed = pluginCardDeclarationSchema.safeParse(item);
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0];
+          const path = issue?.path.length ? issue.path.join(".") : "整体";
+          throw new BundleManifestError(
+            `插件卡片声明第 ${index + 1} 条不合法（${path}）：${issue?.message ?? "格式不符"}。请检查 package.json 的 kenfutwork.cards：tools 与 title 不能为空，fields 每行需有 label，value 只能是字符串或数字。`,
+            "manifest_invalid",
+          );
+        }
+        const maxFields = AGENT_GOVERNANCE_LIMITS.pluginCardMaxFields.max;
+        if (parsed.data.fields.length > maxFields) {
+          throw new BundleManifestError(
+            `插件卡片声明第 ${index + 1} 条有 ${parsed.data.fields.length} 行键值，超过上限 ${maxFields} 行。请删减 kenfutwork.cards 的 fields。`,
+            "manifest_invalid",
+          );
+        }
+        return parsed.data;
+      })
+    : [];
 
   const manifest = pluginBundleManifestSchema.parse({
     name,
@@ -275,6 +302,7 @@ export function buildBundleManifest(files: BundleFiles): {
     enginesNode:
       engines && typeof engines.node === "string" ? engines.node : null,
     ui: declaredUi,
+    cards: declaredCards,
     assets: serveAssets,
     // 插件图标：与 `ui[].icon` 同口径（相对包根的静态资源路径），供没有面板的插件也能在市场里显示。
     icon:

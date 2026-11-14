@@ -5,6 +5,7 @@ import {
   type PluginPanelEntry,
   projectPluginPanels,
 } from "@kenfutwork/shared";
+import DOMPurify from "dompurify";
 import { PanelsTopLeft, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
@@ -285,90 +286,93 @@ export function PluginPanelOverlay({
   if (!panel) return null;
   return (
     <>
-    <Dialog
-      open={active && panel !== null}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent
-        portalProps={{ keepMounted: true }}
-        overlayProps={{ hidden: !active }}
-        hidden={!active}
-        inert={!active}
-        aria-hidden={!active}
-        // 默认关闭钮是 top-2 固定像素、与自绘三钮重复，关掉
-        showCloseButton={false}
-        // 只淡入淡出：默认入场带 slide-in 8px + zoom 95%，面板边缘会「跳」一下
-        style={
-          {
-            "--tw-enter-translate-y": "0px",
-            "--tw-enter-scale": "1",
-            "--tw-exit-translate-y": "0px",
-            "--tw-exit-scale": "1",
-          } as React.CSSProperties
-        }
-        className={`flex flex-col gap-0 overflow-hidden border-b-0 p-0 ${
-          chrome === "max"
-            ? "inset-0 h-[100vh] max-h-[100vh] w-auto translate-x-0 translate-y-0 rounded-none sm:max-w-none"
-            : "h-[80vh] max-h-[80vh] sm:max-w-4xl"
-        }`}
-        aria-describedby={undefined}
+      <Dialog
+        open={active && panel !== null}
+        onOpenChange={(next) => {
+          if (!next) onClose();
+        }}
       >
-        <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-36">
-          <DialogTitle className="flex items-center gap-2 text-base font-medium">
-            {/* 中文的墨迹中心比图标盒中心高约 1px（字体 ascent 偏大），
+        <DialogContent
+          portalProps={{ keepMounted: true }}
+          overlayProps={{ hidden: !active }}
+          hidden={!active}
+          inert={!active}
+          aria-hidden={!active}
+          // 默认关闭钮是 top-2 固定像素、与自绘三钮重复，关掉
+          showCloseButton={false}
+          // 只淡入淡出：默认入场带 slide-in 8px + zoom 95%，面板边缘会「跳」一下
+          style={
+            {
+              "--tw-enter-translate-y": "0px",
+              "--tw-enter-scale": "1",
+              "--tw-exit-translate-y": "0px",
+              "--tw-exit-scale": "1",
+            } as React.CSSProperties
+          }
+          className={`flex flex-col gap-0 overflow-hidden border-b-0 p-0 ${
+            chrome === "max"
+              ? "inset-0 h-[100vh] max-h-[100vh] w-auto translate-x-0 translate-y-0 rounded-none sm:max-w-none"
+              : "h-[80vh] max-h-[80vh] sm:max-w-4xl"
+          }`}
+          aria-describedby={undefined}
+        >
+          <DialogHeader className="relative flex-row items-center justify-between space-y-0 border-b px-5 py-3 pr-36">
+            <DialogTitle className="flex items-center gap-2 text-base font-medium">
+              {/* 中文的墨迹中心比图标盒中心高约 1px（字体 ascent 偏大），
                 给图标一像素光学上移，标题字与图标才看着同一条中线 */}
-            <PluginIcon
-              icon={panel?.icon ?? null}
-              slotClass="h-4 w-4 -translate-y-px"
-              {...(panel ? { pluginId: panel.pluginId } : {})}
-            />
-            {panel?.title ?? "插件面板"}
-          </DialogTitle>
-          {panel?.configurable ? (
+              <PluginIcon
+                icon={panel?.icon ?? null}
+                slotClass="h-4 w-4 -translate-y-px"
+                {...(panel ? { pluginId: panel.pluginId } : {})}
+              />
+              {panel?.title ?? "插件面板"}
+            </DialogTitle>
+            {panel?.configurable ? (
+              <button
+                type="button"
+                className="absolute right-18 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
+                onClick={() => {
+                  frameRef.current?.contentWindow?.postMessage(
+                    { type: "kenfutwork:plugin-panel-toggle-config" },
+                    "*",
+                  );
+                }}
+              >
+                配置
+              </button>
+            ) : null}
             <button
               type="button"
-              className="absolute right-18 top-1/2 -translate-y-1/2 rounded-md border px-2.5 py-1 text-sm text-foreground hover:bg-accent"
-              onClick={() => {
-                frameRef.current?.contentWindow?.postMessage(
-                  { type: "kenfutwork:plugin-panel-toggle-config" },
-                  "*",
-                );
-              }}
+              aria-label="最大化"
+              title={chrome === "max" ? "还原" : "最大化"}
+              className={`${centeredBtn} right-10`}
+              onClick={() => setChrome(chrome === "max" ? "normal" : "max")}
             >
-              配置
+              <Square className={icon} strokeWidth={1.5} aria-hidden="true" />
             </button>
+            <DialogClose
+              className={`${centeredBtn} right-2`}
+              aria-label="关闭"
+              title="关闭"
+            >
+              <X className={closeIcon} strokeWidth={1.1} aria-hidden="true" />
+            </DialogClose>
+          </DialogHeader>
+          {panel ? (
+            <iframe
+              ref={frameRef}
+              title={panel.title}
+              src={resolvePanelUrl(panel.url, panel.pluginId)}
+              className="min-h-0 flex-1 border-0"
+              onLoad={(event) => installPanelExternalLinks(event.currentTarget)}
+            />
           ) : null}
-          <button
-            type="button"
-            aria-label="最大化"
-            title={chrome === "max" ? "还原" : "最大化"}
-            className={`${centeredBtn} right-10`}
-            onClick={() => setChrome(chrome === "max" ? "normal" : "max")}
-          >
-            <Square className={icon} strokeWidth={1.5} aria-hidden="true" />
-          </button>
-          <DialogClose
-            className={`${centeredBtn} right-2`}
-            aria-label="关闭"
-            title="关闭"
-          >
-            <X className={closeIcon} strokeWidth={1.1} aria-hidden="true" />
-          </DialogClose>
-        </DialogHeader>
-        {panel ? (
-          <iframe
-            ref={frameRef}
-            title={panel.title}
-            src={resolvePanelUrl(panel.url, panel.pluginId)}
-            className="min-h-0 flex-1 border-0"
-            onLoad={(event) => installPanelExternalLinks(event.currentTarget)}
-          />
-        ) : null}
-      </DialogContent>
-    </Dialog>
-    <KnowledgePreviewDialog target={preview} onClose={() => setPreview(null)} />
+        </DialogContent>
+      </Dialog>
+      <KnowledgePreviewDialog
+        target={preview}
+        onClose={() => setPreview(null)}
+      />
     </>
   );
 }
@@ -591,10 +595,8 @@ function DocxView({ url }: { url: string }) {
       const convert = mod.convertToHtml ?? mod.default?.convertToHtml;
       if (!convert) throw new Error("docx 解析器不可用");
       const out = await convert({ arrayBuffer: buf });
-      // 只做展示：去掉脚本与内联事件属性
-      return out.value
-        .replace(/<script[\s\S]*?<\/script>/giu, "")
-        .replace(/\son[a-z]+="[^"]*"/giu, "");
+      // 文档 HTML 交给 DOMPurify 统一清洗（脚本、内联事件、javascript: 地址全部剔除）。
+      return DOMPurify.sanitize(out.value);
     })()
       .then((value) => {
         if (!cancelled) setHtml(value);
@@ -614,7 +616,7 @@ function DocxView({ url }: { url: string }) {
   return (
     <div
       className="px-5 py-4 text-sm leading-6 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:text-base [&_h2]:font-semibold [&_h3]:font-medium [&_img]:max-w-full [&_li]:ml-5 [&_li]:list-disc [&_table]:w-full [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1"
-      // mammoth 生成的 HTML 已按文档结构转义，脚本与内联事件在上面被剔除
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: html 由 DOMPurify.sanitize 清洗后注入。
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

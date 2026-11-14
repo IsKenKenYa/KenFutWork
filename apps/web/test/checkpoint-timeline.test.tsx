@@ -96,3 +96,83 @@ test("无 Task 或空时间线时入口不渲染（不摆空壳）", async () =>
   await new Promise((resolve) => setTimeout(resolve, 30));
   expect(screen.queryByTestId("checkpoint-timeline-trigger")).toBeNull();
 });
+
+test("检查点对话框可打开所选轮次的运行记录", async () => {
+  getWorkspaceState.mockReturnValue({ activeTaskId: "task-1" });
+  surfaceJson.mockImplementation(async (path: string) => {
+    if (path.includes("/runs?")) {
+      return {
+        taskId: "task-1",
+        runs: [
+          {
+            runId: "r2",
+            model: "glm-5.3-flash",
+            status: "running",
+            stopReason: null,
+            errorCode: null,
+            errorMessage: null,
+            startedAt: "2026-10-12T02:00:00.000Z",
+            completedAt: null,
+            usage: null,
+          },
+        ],
+      };
+    }
+    if (path.includes("/timeline")) {
+      return {
+        run: {
+          runId: "r2",
+          model: "glm-5.3-flash",
+          status: "running",
+          stopReason: null,
+          errorCode: null,
+          errorMessage: null,
+          startedAt: "2026-10-12T02:00:00.000Z",
+          completedAt: null,
+          usage: null,
+        },
+        entries: [
+          {
+            kind: "tool",
+            seq: 3,
+            at: "2026-10-12T02:00:01.000Z",
+            title: "Bash 运行测试",
+            status: "running",
+          },
+        ],
+      };
+    }
+    if (path.includes("/preview")) {
+      return {
+        targetSha: "sha",
+        filesChanged: 0,
+        insertions: 0,
+        deletions: 0,
+        files: [],
+      };
+    }
+    return TIMELINE;
+  });
+  render(
+    <CheckpointTimeline
+      workspacePath="/repo"
+      workspaceIdentity={JSON.stringify([
+        "123e4567-e89b-42d3-a456-426614174000",
+        "/repo",
+      ])}
+    />,
+  );
+  await user.click(await screen.findByTestId("checkpoint-timeline-trigger"));
+  await user.click(screen.getByRole("button", { name: "这一轮运行" }));
+  // 先列轮次，再点选检查点对应的那一轮进入时间线。
+  await waitFor(() => expect(screen.getByText("当前检查点")).toBeTruthy());
+  await user.click(screen.getByTestId("run-row-r2"));
+  await waitFor(() =>
+    expect(surfaceJson).toHaveBeenCalledWith(
+      "/api/agent/tasks/task-1/runs/r2/timeline?projectId=123e4567-e89b-42d3-a456-426614174000",
+      undefined,
+    ),
+  );
+  expect(screen.getByText(/状态 进行中/)).toBeTruthy();
+  expect(screen.getByText(/Bash 运行测试/)).toBeTruthy();
+});

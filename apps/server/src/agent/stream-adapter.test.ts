@@ -10,6 +10,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  MODEL_USAGE_AGENT_METADATA,
   MODEL_USAGE_OWNER_METADATA,
   type ModelCallUsage,
 } from "./model-call-usage.js";
@@ -640,6 +641,155 @@ describe("stream-adapter 用量快照", () => {
     const usage = events.find((event) => event.type === "run.usage");
     expect(usage).toBeDefined();
     expect(usage).not.toHaveProperty("cachedInputTokens");
+  });
+
+  it("子代理模型调用按自身归属元数据累计用量，主 agent 事件不带 agentCallId", async () => {
+    const events = await collectUsage({
+      async *[Symbol.asyncIterator]() {
+        yield* chunkStream("main-call", [usageChunk(100, undefined, 5)]);
+        for (const [modelCallId, input, output] of [
+          ["sub-a", 300, 10],
+          ["sub-b", 200, 8],
+        ] as const) {
+          yield {
+            event: "on_chat_model_start",
+            run_id: modelCallId,
+            metadata: {
+              lc_agent_call_id: "dispatch-1",
+              [MODEL_USAGE_AGENT_METADATA]: "dispatch-1",
+              [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner,
+            },
+            data: { input: { messages: [] } },
+          };
+          yield {
+            event: "on_chat_model_stream",
+            run_id: modelCallId,
+            data: { chunk: usageChunk(input, undefined, output) },
+          };
+          yield {
+            event: "on_chat_model_end",
+            run_id: modelCallId,
+            data: { output: new AIMessage({ content: "" }) },
+          };
+        }
+      },
+    });
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents[0]).not.toHaveProperty("agentCallId");
+    expect(usageEvents.at(-1)).toMatchObject({
+      agentCallId: "dispatch-1",
+      agentInputTokens: 500,
+      agentOutputTokens: 18,
+      runInputTokens: 600,
+      runOutputTokens: 23,
+    });
+    expect(usageEvents.at(-1)).not.toHaveProperty("agentCachedInputTokens");
+  });
+
+  it("并发两个子代理各自累计，用量事件不串账", async () => {
+    const events = await collectUsage({
+      async *[Symbol.asyncIterator]() {
+        for (const [runId, agentId, input, output] of [
+          ["sub-a-1", "sub-a", 120, 7],
+          ["sub-b-1", "sub-b", 80, 3],
+          ["sub-a-2", "sub-a", 60, 5],
+        ] as const) {
+          yield {
+            event: "on_chat_model_start",
+            run_id: runId,
+            metadata: {
+              [MODEL_USAGE_AGENT_METADATA]: agentId,
+              [MODEL_USAGE_OWNER_METADATA]: modelUsageOwner,
+            },
+            data: { input: { messages: [] } },
+          };
+          yield {
+            event: "on_chat_model_stream",
+            run_id: runId,
+            data: { chunk: usageChunk(input, undefined, output) },
+          };
+          yield {
+            event: "on_chat_model_end",
+            run_id: runId,
+            data: { output: new AIMessage({ content: "" }) },
+          };
+        }
+      },
+    });
+    const agentRows = events.filter(
+      (event) => event.type === "run.usage" && event.agentCallId,
+    );
+    expect(agentRows).toHaveLength(3);
+    expect(agentRows[0]).toMatchObject({
+      agentCallId: "sub-a",
+      agentInputTokens: 120,
+      agentOutputTokens: 7,
+      runInputTokens: 120,
+      runOutputTokens: 7,
+    });
+    expect(agentRows[1]).toMatchObject({
+      agentCallId: "sub-b",
+      agentInputTokens: 80,
+      agentOutputTokens: 3,
+      runInputTokens: 200,
+      runOutputTokens: 10,
+    });
+    expect(agentRows[2]).toMatchObject({
+      agentCallId: "sub-a",
+      agentInputTokens: 180,
+      agentOutputTokens: 12,
+      runInputTokens: 260,
+      runOutputTokens: 15,
+    });
+  });
+
+  it("缺少模型归属元数据时不推断子代理用量，降级为未统计", async () => {
+    const events = await collectUsage({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_start",
+          run_id: "sub-without-agent-metadata",
+          metadata: { lc_agent_call_id: "dispatch-3" },
+          data: { input: { messages: [] } },
+        };
+        yield {
+          event: "on_chat_model_stream",
+          run_id: "sub-without-agent-metadata",
+          data: { chunk: usageChunk(200, undefined, 9) },
+        };
+        yield {
+          event: "on_chat_model_end",
+          run_id: "sub-without-agent-metadata",
+          data: { output: new AIMessage({ content: "" }) },
+        };
+      },
+    });
+    const usageEvents = events.filter((event) => event.type === "run.usage");
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      runInputTokens: 200,
+      runOutputTokens: 9,
+    });
+    expect(usageEvents[0]).not.toHaveProperty("agentCallId");
+  });
+
+  it("子代理用量缺上游上报时不下发 agent 字段（界面可区分未统计与 0）", async () => {
+    const events = await collectUsage({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          event: "on_chat_model_start",
+          run_id: "sub-no-usage",
+          metadata: { lc_agent_call_id: "dispatch-2" },
+          data: { input: { messages: [] } },
+        };
+        yield {
+          event: "on_chat_model_end",
+          run_id: "sub-no-usage",
+          data: { output: new AIMessage({ content: "结论" }) },
+        };
+      },
+    });
+    expect(events.filter((event) => event.type === "run.usage")).toEqual([]);
   });
 
   it("不同 call 的相同 input=10 分别累计，void 回调仍投影 Run 总 20/10", async () => {

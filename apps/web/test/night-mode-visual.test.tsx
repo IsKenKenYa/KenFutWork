@@ -17,7 +17,8 @@ import {
  */
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const source = (rel: string) => readFileSync(path.join(ROOT, "src", rel), "utf8");
+const source = (rel: string) =>
+  readFileSync(path.join(ROOT, "src", rel), "utf8");
 
 const STROKE_PLUGIN_ICONS = [
   "documents",
@@ -40,7 +41,9 @@ describe("夜间模式视觉", () => {
         /fill="(?:#fff|#ffffff|white|currentColor)"/i,
       );
     }
-    const resolver = source("components/workbench/zcode/lib/pluginIconSource.ts");
+    const resolver = source(
+      "components/workbench/zcode/lib/pluginIconSource.ts",
+    );
     expect(resolver, "官方图标应指向线稿 SVG").toContain("documents.svg");
     expect(resolver, "不应残留实心 PNG 图标").not.toContain(".png");
   });
@@ -50,7 +53,9 @@ describe("夜间模式视觉", () => {
     expect(resolveBootTheme(null, "zai-dark", false)).toBe("dark");
     expect(resolveBootTheme("system", null, true)).toBe("dark");
     expect(THEME_BOOTSTRAP_SCRIPT).toContain('localStorage.getItem("theme")');
-    expect(THEME_BOOTSTRAP_SCRIPT).toContain('localStorage.getItem("zcode-theme")');
+    expect(THEME_BOOTSTRAP_SCRIPT).toContain(
+      'localStorage.getItem("zcode-theme")',
+    );
     expect(THEME_BOOTSTRAP_SCRIPT).toContain("#0a0a0a");
   });
 

@@ -101,6 +101,36 @@ export const pluginUiEntrySchema = z.object({
 });
 export type PluginUiEntry = z.infer<typeof pluginUiEntrySchema>;
 
+/**
+ * 插件声明式卡片：只允许纯数据，不承载正文、Markdown 或 HTML。
+ * 工具输出已由 Code 宿主的工具卡呈现，插件再带正文会让同一内容出现两处。
+ * `tools` 是匹配的工具名清单；命中后宿主用声明的标题、键值行与状态显示卡片，
+ * 没有命中则回退到既有工具卡。
+ */
+export const PLUGIN_CARD_STATUSES = [
+  "success",
+  "failure",
+  "in_progress",
+] as const;
+export const pluginCardStatusSchema = z.enum(PLUGIN_CARD_STATUSES);
+export type PluginCardStatus = z.infer<typeof pluginCardStatusSchema>;
+
+export const pluginCardFieldSchema = z.object({
+  label: z.string().min(1),
+  value: z.union([z.string(), z.number()]),
+});
+export type PluginCardField = z.infer<typeof pluginCardFieldSchema>;
+
+export const pluginCardDeclarationSchema = z.object({
+  /** 命中的工具名（与工具卡实际工具名逐字比较）。 */
+  tools: z.array(z.string().min(1)).min(1),
+  title: z.string().min(1),
+  fields: z.array(pluginCardFieldSchema).min(1),
+  /** 可选状态标记；缺省不显示。 */
+  status: pluginCardStatusSchema.nullable().default(null),
+});
+export type PluginCardDeclaration = z.infer<typeof pluginCardDeclarationSchema>;
+
 export const pluginBundleManifestSchema = z.object({
   /** 包名（npm 语义；也可作为插件稳定 id） */
   name: z.string().min(1),
@@ -154,6 +184,8 @@ export const pluginBundleManifestSchema = z.object({
    * 点开在面板里以 iframe 渲染 `url`（通常是插件自己的路由或由本项目托管的资源）。
    */
   ui: z.array(pluginUiEntrySchema).default([]),
+  /** 声明式卡片（`kenfutwork.cards`）：只允许纯数据，命中工具名后在工具卡位置显示。 */
+  cards: z.array(pluginCardDeclarationSchema).default([]),
   /** 安装期会执行的包生命周期脚本（危险面） */
   lifecycleScripts: z.array(z.string()).default([]),
   /** 依赖的 in-box dsh bundle（`@deepseek-ai/dsh-*`），需要 dsh 运行时 */
@@ -308,6 +340,8 @@ export const pluginMarketEntrySchema = z.object({
       }),
     )
     .default([]),
+  /** 插件声明式卡片（仅已安装且启用时非空；键值行按治理上限截断）。 */
+  cards: z.array(pluginCardDeclarationSchema).default([]),
 });
 export type PluginMarketEntry = z.infer<typeof pluginMarketEntrySchema>;
 
@@ -387,7 +421,7 @@ export type PluginInstallBuiltinRequest = z.infer<
 >;
 
 /**
- * 从**沙箱工作目录**安装插件 bundle（创造模式产物的人工入口）。
+ * 从已授权工作目录安装插件 bundle。
  *
  * `canvasId` 决定沙箱目录（与技能/agent 同一处解析）；`path` 是相对沙箱根的
  * bundle 目录（其 package.json 需声明 kenfutwork.bundle / dsh.bundle；旧名

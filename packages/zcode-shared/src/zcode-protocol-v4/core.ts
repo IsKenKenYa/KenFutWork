@@ -15,6 +15,17 @@ export const conversationRowTargetSchema = z
   .strict();
 export type ConversationRowTarget = z.infer<typeof conversationRowTargetSchema>;
 
+/** Task 当前项目及分支代际；与正文修订和目录授权代际分别持有。 */
+export const conversationTaskControlSchema = z
+  .object({
+    projectId: z.string().uuid(),
+    branchGeneration: z.number().int().positive().safe(),
+  })
+  .strict();
+export type ConversationTaskControl = z.infer<
+  typeof conversationTaskControlSchema
+>;
+
 // 时钟规则：Unix ms，一律 CLI 时钟；客户端禁止拿本地时钟与协议 Timestamp 相减。
 export const timestampSchema = z.number();
 export type Timestamp = z.infer<typeof timestampSchema>;

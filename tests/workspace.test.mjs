@@ -1496,6 +1496,133 @@ test("ZCode baseline upgrades are driven by inventory metadata and real source/t
   ]);
 });
 
+test("ZCode staged upgrades verify each file against its declared upstream commit", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  Object.assign(f.inventory.records[0], {
+    sourceRevision: revision,
+    sha256: f.hash("new upstream source\n"),
+  });
+  await f.save();
+  await writeFile(
+    path.join(f.donor, "src/example.ts"),
+    "parallel upstream research\n",
+  );
+  const status = await f.git("status", "--porcelain");
+  const refs = await f.git("show-ref");
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, []);
+  assert.equal(await f.git("status", "--porcelain"), status);
+  assert.equal(await f.git("show-ref"), refs);
+});
+
+test("ZCode provenance rejects malformed or unregistered per-file revisions", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  for (const sourceRevision of [null, "HEAD", "f".repeat(40)]) {
+    f.inventory.records[0].sourceRevision = sourceRevision;
+    await f.save();
+    assert.throws(
+      () => verifyZcodeInventory({ root: f.root }),
+      /来源提交无效或未登记/,
+    );
+  }
+});
+
+test("ZCode provenance rejects invalid revision registries and conflicting baseline versions", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  for (const revisions of [
+    null,
+    [],
+    { HEAD: "2.0.0" },
+    { [f.inventory.revision]: "different-version" },
+    { [f.inventory.revision]: "" },
+  ]) {
+    f.inventory.revisions = revisions;
+    await f.save();
+    assert.throws(
+      () => verifyZcodeInventory({ root: f.root }),
+      /提交版本登记无效/,
+    );
+  }
+});
+
+test("ZCode mixed revisions require Git objects instead of one working-tree mirror", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root, sourceRoot: f.root }),
+    /混合来源.*Git/,
+  );
+});
+
+test("ZCode staged sources retain independent version, original and copied-byte checks", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "wrong-version" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单版本/);
+  f.inventory.revisions[revision] = "2.0.0";
+  f.inventory.records[0].source = "references/zcode/src/missing.ts";
+  await f.save();
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["清单基线来源不符"] },
+  ]);
+  f.inventory.records[0].source = "references/zcode/src/example.ts";
+  await f.save();
+  await writeFile(
+    path.join(f.root, "copied/example.ts"),
+    "unregistered edit\n",
+  );
+  assert.deepEqual(verifyZcodeInventory({ root: f.root }).drift, [
+    { target: "copied/example.ts", reasons: ["副本字节漂移"] },
+  ]);
+  const missing = "f".repeat(40);
+  f.inventory.records[0].sourceRevision = missing;
+  f.inventory.revisions[missing] = "3.0.0";
+  await f.save();
+  assert.throws(
+    () => verifyZcodeInventory({ root: f.root }),
+    /--prepare-source/,
+  );
+});
+
+test("ZCode staged CI prepares every declared commit without moving reference refs", async (t) => {
+  const f = await zcodeProvenanceFixture(t);
+  const revision = await f.git("rev-parse", "HEAD");
+  f.inventory.revisions = { [revision]: "2.0.0" };
+  f.inventory.records[0].sourceRevision = revision;
+  f.inventory.records[0].sha256 = f.hash("new upstream source\n");
+  await f.save();
+  await writeFile(path.join(f.donor, "package.json"), '{"version":"3.0.0"}');
+  await f.git("add", "package.json");
+  await f.git("commit", "-qm", "later upstream fixture");
+  const origin = `${f.donor}-origin`;
+  await execFileAsync("git", ["clone", "-q", "--bare", f.donor, origin]);
+  await rm(f.donor, { recursive: true });
+  await execFileAsync("git", [
+    "clone",
+    "-q",
+    "--depth=1",
+    pathToFileURL(origin).href,
+    f.donor,
+  ]);
+  const head = await f.git("rev-parse", "HEAD");
+  const refs = await f.git("show-ref");
+  assert.deepEqual(
+    verifyZcodeInventory({ root: f.root, prepare: true }).drift,
+    [],
+  );
+  assert.equal(await f.git("rev-parse", "HEAD"), head);
+  assert.equal(await f.git("show-ref"), refs);
+  assert.equal(await f.git("status", "--porcelain"), "");
+});
+
 test("ZCode shallow CI preparation fetches baseline objects without moving any existing refs", async (t) => {
   const f = await zcodeProvenanceFixture(t);
   const origin = `${f.donor}-origin`;
@@ -1552,4 +1679,88 @@ test("explicit ZCode source mirrors retain CRLF compatibility and exact binary/t
   f.inventory.records[0].target = "../outside";
   await f.save();
   assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单记录无效/);
+});
+
+test("contribution, CLA, and commercial-license documents are wired", async () => {
+  const required = [
+    "CONTRIBUTING.md",
+    "CLA.md",
+    "GOVERNANCE.md",
+    "MAINTAINERS.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "COMMERCIAL-LICENSING.md",
+    "COPYRIGHT.md",
+    "licenses/loomic-MIT.txt",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    ".github/ISSUE_TEMPLATE/feature_request.yml",
+    ".github/ISSUE_TEMPLATE/config.yml",
+    ".github/CODEOWNERS",
+  ];
+  for (const file of required) {
+    assert.ok(existsSync(path.join(rootDir, file)), `${file} 应存在`);
+  }
+
+  const readme = await readText("README.md");
+  for (const link of [
+    "CONTRIBUTING.md",
+    "CLA.md",
+    "COMMERCIAL-LICENSING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "COPYRIGHT.md",
+  ]) {
+    assert.match(
+      readme,
+      new RegExp(`\\]\\(${link.replaceAll(".", "\\.")}\\)`),
+      `README 应链接 ${link}`,
+    );
+  }
+
+  for (const script of ["scripts/package-mac.mjs", "scripts/package-win.mjs"]) {
+    const source = await readText(script);
+    assert.match(source, /COPYRIGHT\.md/);
+    assert.match(source, /licenses\/loomic-MIT\.txt/);
+  }
+
+  const eula = await readText("EULA.md");
+  assert.match(eula, /社区版/);
+  assert.match(eula, /商业版/);
+  assert.match(eula, /版本：2026-10-21/);
+  assert.match(eula, /不会为了仅在商业版提供/);
+
+  const commercial = await readText("COMMERCIAL-LICENSING.md");
+  assert.match(commercial, /社区版承诺/);
+
+  const cla = await readText("CLA.md");
+  assert.match(cla, /1\.8 \*\*关联方\*\*/);
+  assert.match(cla, /本协议第 3–9、11、12 条（包括第 6 条陈述与保证）/);
+  assert.match(cla, /本协议不授予你对商业版的任何使用许可/);
+  assert.match(cla, /中英文不一致时以中文为准/);
+  assert.match(cla, /13\.1\.1 \*\*个人信息处理告知\*\*/);
+  assert.match(cla, /15\. 项目方签署与授权/);
+  assert.match(cla, /future73807 授权 IsKenKenYa/);
+  assert.match(cla, /8\.5 \*\*社区版永久开源承诺\*\*/);
+  assert.match(cla, /未披露的第三方作品不视为本协议项下的贡献/);
+  assert.match(cla, /你无义务为贡献提供支持/);
+  assert.match(cla, /附件 B-1：授权员工/);
+  assert.match(cla, /issue、讨论、邮件列表/);
+
+  const privacy = await readText("PRIVACY.md");
+  assert.match(privacy, /## 13\. 贡献者 CLA 签署记录/);
+  assert.match(privacy, /SAP/);
+  assert.match(privacy, /## 14\. 变更与联系/);
+
+  const thirdParty = await readText("THIRD-PARTY-NOTICES.md");
+  assert.match(thirdParty, /Loomic/);
+  assert.match(thirdParty, /商业版资产合规/);
+
+  const docsIndex = await readText("docs/README.md");
+  assert.match(docsIndex, /DEC-24/);
+  assert.match(docsIndex, /DEC-25/);
+
+  const plan = await readText("docs/方案设计/改造计划.md");
+  assert.match(plan, /\[DEC-24\]/);
+  assert.match(plan, /\[DEC-25\]/);
 });

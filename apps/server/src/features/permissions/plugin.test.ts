@@ -98,6 +98,42 @@ async function registerBundleTools(tools: ToolRegistry) {
 }
 
 describe("permissions 插件：插件工具 access 判据的整链", () => {
+  it("非Task调用按可信Goal身份选择自动化权限并在切换后重新检查", async () => {
+    const { app, kernel, tools } = assembly();
+    const loaded = await registerBundleTools(tools);
+    const permissions = kernel.get("permissions");
+    const ordinary = { threadId: "ordinary-goal-scenario" };
+    const goal = { ...ordinary, goalId: "trusted-goal" };
+    try {
+      permissions.applySettings({
+        ...permissions.getSettings(),
+        tier: "full-access",
+        automationTier: "default",
+      });
+      await expect(tools.execute("device_write", {}, ordinary)).resolves.toBe(
+        "written",
+      );
+      await expect(tools.execute("device_write", {}, goal)).rejects.toThrow(
+        ToolDeniedError,
+      );
+      permissions.applySettings({
+        ...permissions.getSettings(),
+        tier: "default",
+        automationTier: "full-access",
+      });
+      await expect(tools.execute("device_write", {}, ordinary)).rejects.toThrow(
+        ToolDeniedError,
+      );
+      await expect(tools.execute("device_write", {}, goal)).resolves.toBe(
+        "written",
+      );
+    } finally {
+      loaded.dispose();
+      await kernel.dispose();
+      await app.close();
+    }
+  });
+
   it("默认档：声明 write 与未声明的插件工具都被拦（原因可读），声明 read 放行", async () => {
     const { app, kernel, tools } = assembly();
     const loaded = await registerBundleTools(tools);

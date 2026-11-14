@@ -1,9 +1,17 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ServerEnv } from "../../config/env.js";
-import type { ToolDefinition, ToolRegistry } from "../../kernel/types.js";
+import type {
+  DynamicToolEntry,
+  ToolDefinition,
+  ToolRegistry,
+} from "../../kernel/types.js";
 import { createMcpService } from "./mcp-service.js";
 import type { McpServerStore, StoredMcpServer } from "./server-store.js";
 
@@ -70,15 +78,20 @@ function fakeStore(rows: StoredMcpServer[]): McpServerStore {
 
 function fakeRegistry() {
   const registered = new Map<string, ToolDefinition>();
+  const dynamicEntries = new Map<string, DynamicToolEntry>();
   const registry = {
     register(definition: ToolDefinition) {
       registered.set(definition.name, definition);
       return () => registered.delete(definition.name);
     },
+    registerDynamic(entry: DynamicToolEntry) {
+      dynamicEntries.set(entry.id, entry);
+      return () => dynamicEntries.delete(entry.id);
+    },
     get: (name: string) => registered.get(name),
     list: () => [...registered.values()],
   } as unknown as ToolRegistry;
-  return { registry, registered };
+  return { registry, registered, dynamicEntries };
 }
 
 function stored(
@@ -398,6 +411,147 @@ describe("启动连接的健壮性（曾被 unhandled rejection 带走进程）"
     expect(statuses.map((s) => s.name).sort()).toEqual(["broken", "off"]);
     expect(statuses.find((s) => s.name === "broken")?.status).toBe("error");
     expect(statuses.find((s) => s.name === "off")?.status).toBe("disabled");
+  });
+});
+
+describe("MCP 掉线自动重启", () => {
+  const fixture = new URL("./fixtures/mcp-restart-server.mjs", import.meta.url)
+    .pathname;
+  const temporary: string[] = [];
+
+  afterEach(async () => {
+    for (const directory of temporary.splice(0))
+      await rm(directory, { recursive: true, force: true });
+  });
+
+  async function waitFor(
+    check: () => Promise<boolean>,
+    timeoutMs = 8_000,
+  ): Promise<void> {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (await check()) return;
+      await delay(25);
+    }
+    throw new Error("等待 MCP 自动重启超时。");
+  }
+
+  async function spawnLog(directory: string): Promise<string[]> {
+    const content = await readFile(join(directory, "starts.log"), "utf8");
+    return content.split("\n").filter(Boolean);
+  }
+
+  it("首次掉线自动重启一次并重新注册工具", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-mcp-restart-"));
+    temporary.push(directory);
+    const store = fakeStore([
+      stored({
+        name: "restartable",
+        enabled: true,
+        command: process.execPath,
+        args: [fixture],
+        env: {
+          MCP_TEST_LOG_FILE: join(directory, "starts.log"),
+          MCP_TEST_STATE_FILE: join(directory, "survived"),
+          MCP_TEST_EXIT_MS: "200",
+        },
+      }),
+    ]);
+    const { registry, dynamicEntries } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+    try {
+      await service.connectAll();
+      await waitFor(async () => (await spawnLog(directory)).length >= 2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "connected";
+      });
+      expect(dynamicEntries.size).toBe(1);
+      const [status] = await service.listStatuses();
+      expect(status?.error).toBeNull();
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("重启后仍掉线只报可读原因，不再反复拉起", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-mcp-restart-"));
+    temporary.push(directory);
+    const store = fakeStore([
+      stored({
+        name: "crashing",
+        enabled: true,
+        command: process.execPath,
+        args: [fixture],
+        env: {
+          MCP_TEST_LOG_FILE: join(directory, "starts.log"),
+          MCP_TEST_EXIT_MS: "150",
+        },
+      }),
+    ]);
+    const { registry, dynamicEntries } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+    try {
+      await service.connectAll();
+      await waitFor(async () => (await spawnLog(directory)).length >= 2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "error";
+      });
+      expect((await spawnLog(directory)).length).toBe(2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.error?.includes("自动重启未恢复") ?? false;
+      });
+      const [status] = await service.listStatuses();
+      expect(status?.error).toContain("自动重启未恢复");
+      expect(status?.error).toContain("请在设置里重连");
+      expect(dynamicEntries.size).toBe(0);
+      // 稳定性：不再出现第三次拉起
+      await delay(400);
+      expect((await spawnLog(directory)).length).toBe(2);
+    } finally {
+      await service.shutdown();
+    }
+  });
+
+  it("手动重连会重新获得一次自动重启机会", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "kfw-mcp-restart-"));
+    temporary.push(directory);
+    const store = fakeStore([
+      stored({
+        name: "recovering",
+        enabled: true,
+        command: process.execPath,
+        args: [fixture],
+        env: {
+          MCP_TEST_LOG_FILE: join(directory, "starts.log"),
+          MCP_TEST_EXIT_MS: "150",
+        },
+      }),
+    ]);
+    const { registry } = fakeRegistry();
+    const service = createMcpService({ env: EMPTY_ENV, registry, store });
+    try {
+      await service.connectAll();
+      await waitFor(async () => (await spawnLog(directory)).length >= 2);
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "error";
+      });
+      expect((await spawnLog(directory)).length).toBe(2);
+      await service.reconnect("id-recovering");
+      await waitFor(async () => (await spawnLog(directory)).length >= 4);
+      // 手动重连本身 + 它掉线后的一次自动重启 = 第 4 次拉起
+      await waitFor(async () => {
+        const [status] = await service.listStatuses();
+        return status?.status === "error";
+      });
+      await delay(400);
+      expect((await spawnLog(directory)).length).toBe(4);
+    } finally {
+      await service.shutdown();
+    }
   });
 });
 

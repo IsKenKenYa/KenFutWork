@@ -16,7 +16,6 @@ import {
   listSubagentDefinitions,
   SUBAGENT_DISPATCH_TOOLS,
 } from "../agent/subagent-definitions.js";
-import type { ExecutionModeService } from "../features/agent-modes/execution-mode-service.js";
 import {
   type AgentRunMetadataService,
   AgentRunPersistenceError,
@@ -50,7 +49,6 @@ export async function registerRunRoutes(
       sessionId: string;
       instanceId: string;
     }) => Promise<AgentRunLatestResponse["run"]>;
-    agentModes?: ExecutionModeService;
     agentRunMetadataService?: AgentRunMetadataService;
     localAccess: LocalAccessVerifier;
     settingsService?: SettingsService;

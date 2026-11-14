@@ -18,7 +18,7 @@ export interface SubagentDefinition {
   description: string;
   /** 生效模式：design=画布项目 / code=工作目录项目 / shared=两模式都可派。 */
   preset: "design" | "code" | "shared";
-  /** 只读定义：plan 执行模式白名单的判据（DEC-17）。 */
+  /** 只读定义，供子代理派发权限检查使用。 */
   readOnly: boolean;
   systemPrompt: string;
   /**

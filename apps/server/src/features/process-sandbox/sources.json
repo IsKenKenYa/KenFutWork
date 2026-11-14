@@ -48,7 +48,7 @@
         }
       ],
       "target": "native/src/windows.rs",
-      "targetSha256": "5c679465e1e92b003cd93d5b142910122341d2667e851689eb86654664eb10f0",
+      "targetSha256": "add46aaec91f3f85174c28ac20d62fc963259079ce7a223b12f077f50c00c88d",
       "changes": [
         "KFW Task identity, generation and exact directory DTO replace Codex canonical permission/profile types",
         "Confined scopes use per-command native PSEC read domains via fixed MXC, no global read ACL group or AgentCore",
@@ -59,14 +59,15 @@
         "Pending spawn cancellation, output failure and physical Job termination have separate receipts; unconfirmed range never releases writer",
         "No DACL fallback, permissive learning mode, pipes-as-PTY fallback, or unrestricted fallback after confinement failure",
         "Explicit danger-full-access selects current-OS-account execution without PSEC file/network restrictions or token elevation; controllers and workloads remain inside the original outer Job",
-        "First-party windows_account.rs implements the public SandboxProcess interface with account Child pipes/inherited ConPTY and revalidated Job-member termination; it does not copy an upstream execution implementation"
+        "First-party windows_account.rs implements the public SandboxProcess interface with account Child pipes/inherited ConPTY and revalidated Job-member termination; it does not copy an upstream execution implementation",
+        "Project 只读租约使用独立 projectOwner 身份与能力声明，保留原 Task wire 和 PSEC/Job 执行检查"
       ],
       "licenseFile": "native/licenses/LICENSE-Codex.txt",
       "noticeFile": "native/licenses/NOTICE-Codex.txt",
       "targetFiles": [
         {
           "path": "native/src/windows.rs",
-          "sha256": "5c679465e1e92b003cd93d5b142910122341d2667e851689eb86654664eb10f0"
+          "sha256": "add46aaec91f3f85174c28ac20d62fc963259079ce7a223b12f077f50c00c88d"
         },
         {
           "path": "native/src/windows_conpty.rs",
@@ -94,7 +95,7 @@
         },
         {
           "path": "native/src/windows_protocol.rs",
-          "sha256": "12e873732cf3804e88af6aa9a5c8c12898c9261165d46d3727f054eaff88aeb4"
+          "sha256": "91538de18bf67e909619d3920d9eee575b911d2c5168627c025479722717d57e"
         },
         {
           "path": "native/src/main.rs",

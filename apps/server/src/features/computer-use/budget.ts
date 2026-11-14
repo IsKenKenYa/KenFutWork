@@ -12,10 +12,19 @@ import { PNG } from "pngjs";
 /** 采样点数上限：黑帧判定不需要读完全部像素。 */
 const MAX_SAMPLES = 4096;
 
-/** 逐点判定全黑占比（0~1）；空数据按全黑计（fail closed）。 */
-export function blackFrameRatio(rgb: Uint8Array): number {
-  if (rgb.length < 3) return 1;
-  const step = Math.max(3, Math.floor(rgb.length / MAX_SAMPLES / 3) * 3);
+/** 逐点判定全黑占比（0~1）；空数据按全黑计（fail closed）。
+ *
+ * `channels` 必须与像素缓冲的通道数一致：`pngjs` 解码结果恒为 RGBA(4)，
+ * 而单测里的裸 RGB 数据是 3——步长按 3 取会在 RGBA 上错位采样，
+ * 把「有内容」判成黑帧或反之（这正是接线时最容易踩的坑）。
+ */
+export function blackFrameRatio(rgb: Uint8Array, channels = 3): number {
+  const stride = Number.isInteger(channels) && channels >= 3 ? channels : 3;
+  if (rgb.length < stride) return 1;
+  const step = Math.max(
+    stride,
+    Math.floor(rgb.length / MAX_SAMPLES / stride) * stride,
+  );
   let sampled = 0;
   let black = 0;
   for (let i = 0; i + 2 < rgb.length; i += step) {
@@ -30,8 +39,8 @@ export function blackFrameRatio(rgb: Uint8Array): number {
 /** 全黑占比超过该阈值即判黑帧。 */
 const BLACK_FRAME_THRESHOLD = 0.995;
 
-export function isBlackFrame(rgb: Uint8Array): boolean {
-  return blackFrameRatio(rgb) >= BLACK_FRAME_THRESHOLD;
+export function isBlackFrame(rgb: Uint8Array, channels = 3): boolean {
+  return blackFrameRatio(rgb, channels) >= BLACK_FRAME_THRESHOLD;
 }
 
 /** PNG声明尺寸先过实例资源预算；Adam7路径也先做有界inflate，避免库的无界分支。 */

@@ -1,0 +1,14 @@
+{
+  "name": "kenfutwork-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "KenFutWork 端到端测试：真实启动 server 与 web，用浏览器驱动完整功能。",
+  "scripts": {
+    "test": "playwright test",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}

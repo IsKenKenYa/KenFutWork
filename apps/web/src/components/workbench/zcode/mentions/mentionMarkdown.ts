@@ -1,5 +1,7 @@
 const LINK_MENTION_MARKDOWN_PATTERN =
-  /\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)])*))\)/g;
+  /\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^\\>])*?)>|((?:\\.|[^\\)])*))\)/g;
+export const INLINE_PLUGIN_MENTION_PATTERN =
+  /\[@((?:\\.|[^\\\]])+)\]\(plugin:\/\/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+)\)/g;
 const INLINE_MENTION_TOKEN_PATTERN =
   /(^|\s)(\$[a-zA-Z0-9._-]+|\/[a-zA-Z0-9._-]+|@[a-zA-Z0-9._-]+|#sess_[a-zA-Z0-9._-]+)(?=$|\s)/g;
 

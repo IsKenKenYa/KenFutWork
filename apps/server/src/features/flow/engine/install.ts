@@ -376,10 +376,7 @@ export function planEngineAutoInstall(input: {
     return { action: "skip", reason: "已有安装任务在跑" };
   if (input.stackContainerCount > 0)
     return { action: "skip", reason: "引擎栈容器已在" };
-  if (
-    input.recommended !== "wsl2" &&
-    input.recommended !== "container"
-  ) {
+  if (input.recommended !== "wsl2" && input.recommended !== "container") {
     return {
       action: "skip",
       reason: "本机 docker 承载不可用（自管地址或未探到承载）",

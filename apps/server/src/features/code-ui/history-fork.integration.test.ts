@@ -87,12 +87,26 @@ describe.skipIf(!enabled)("原历史分叉真实宿主 integration", () => {
         await mkdir(referenceDirectory);
         const changedProject = await fixture.client.request(
           `/api/projects/${host.projectId}`,
-          { work_dir: nextProjectDirectory },
+          {
+            additional_directories: [
+              { path: nextProjectDirectory, access: "read-write" },
+            ],
+          },
           "PATCH",
         );
         expect(changedProject.status, JSON.stringify(changedProject.body)).toBe(
           204,
         );
+        const currentProject = await fixture.client.request(
+          `/api/projects/${host.projectId}`,
+        );
+        expect(currentProject.status).toBe(200);
+        expect(currentProject.body.project).toMatchObject({
+          work_dir: host.workspacePath,
+          additional_directories: [
+            { path: nextProjectDirectory, access: "read-write" },
+          ],
+        });
         const scoped = await fixture.client.request(
           `/api/code-ui/tasks/${host.sessionId}/scope`,
           {
@@ -109,7 +123,7 @@ describe.skipIf(!enabled)("原历史分叉真实宿主 integration", () => {
         const sourceTaskId = host.sessionId;
         await host.command("sendText", {
           text: "FORK_B_PARENT_FUTURE_MUST_NOT_LEAK",
-          mode: "yolo",
+          planEnabled: true,
         });
         await vi.waitFor(() => expect(model.requests).toHaveLength(3), {
           timeout: 30_000,
@@ -188,6 +202,7 @@ describe.skipIf(!enabled)("原历史分叉真实宿主 integration", () => {
         });
         const stillRunning = await snapshot(fixture, host.sessionId);
         expect(stillRunning.control.phase).toBe("running");
+        expect(stillRunning.config.planEnabled).toBe(true);
         expect(stillRunning.control.activeWorks).toContainEqual(
           expect.objectContaining({ foregroundExecutionId: foreground }),
         );

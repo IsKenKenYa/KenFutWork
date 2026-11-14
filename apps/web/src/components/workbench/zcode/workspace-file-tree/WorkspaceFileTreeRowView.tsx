@@ -30,6 +30,7 @@ import {
 } from "@zui/lib/workspaceFileDrag.js";
 import {
   getWorkspaceFileRelativePath,
+  isWorkspaceFilePathInside,
   isWorkspaceFileTreeDeletedFile,
   type WorkspaceFileGitStatus,
   type WorkspaceFileTreeRow,
@@ -101,7 +102,9 @@ export function WorkspaceFileTreeRowView({
     isRemoteWorkspace: isRemoteWorkspaceFileTree,
     openFailedMessage: contextMenuLabels.openFailed,
   });
-  const relativePath = getWorkspaceFileRelativePath(workspacePath, row.path);
+  const relativePath = isWorkspaceFilePathInside(workspacePath, row.path)
+    ? getWorkspaceFileRelativePath(workspacePath, row.path)
+    : row.path;
   const isDirectory = row.type === "directory";
   const isDeletedFile = isWorkspaceFileTreeDeletedFile(row, gitStatus);
   const wslFileManagerEditor = resolveWorkspaceFileManagerEditor(installedEditors, remoteTarget);

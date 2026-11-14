@@ -11,6 +11,7 @@ import type { PluginContext, PluginDefinition } from "../../kernel/types.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import { projectWorkDirLoaderFor } from "../projects/work-dir.js";
+import { pluginAuthoringPromptSection } from "./authoring-prompt.js";
 import { type BundleFiles, buildBundleManifest } from "./bundle-manifest.js";
 import { createCodeUiPluginSourceHost } from "./code-ui-host.js";
 import { CompatLoadError } from "./compat-context.js";
@@ -222,8 +223,12 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
       "localInstance",
       "projects",
       "executionScopes",
+      "systemPrompt",
     ],
     apply(ctx) {
+      ctx.effect(() =>
+        ctx.get("systemPrompt").register(pluginAuthoringPromptSection),
+      );
       const pluginsDir = resolvePluginsDir(ctx.env, deps.pluginsDir);
       const hostNodeMajor = resolveHostNodeMajor(deps.hostNodeMajor);
       const bundledBundles = loadBundledBundles(
@@ -328,6 +333,7 @@ export function createPluginsPlugin(deps: PluginsPluginDeps): PluginDefinition {
         projects: ctx.get("projects"),
         executionScopes: ctx.get("executionScopes"),
         localInstance: ctx.get("localInstance"),
+        settings: ctx.get("settings"),
         sandboxRoot: ctx.env.sandboxRoot,
         canvasWorkDirs: ctx.env.canvasWorkDirs,
         projectWorkDirLoader: projectWorkDirLoaderFor(ctx.get("persistence")),

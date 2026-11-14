@@ -4,6 +4,7 @@ import {
   SUBAGENT_DEFINITIONS,
   type SubagentDefinition,
 } from "../../agent/subagent-definitions.js";
+import type { CodeUiHostRpcContext } from "../code-ui/host-rpc-handler.js";
 import { createCodeUiSubagentsHost } from "./code-ui-host.js";
 
 const actor = { instanceId: "instance-1", accessClientId: null };
@@ -16,10 +17,18 @@ const handlers = createCodeUiSubagentsHost({
   definitions: () => SUBAGENT_DEFINITIONS as readonly SubagentDefinition[],
 });
 
+const context: CodeUiHostRpcContext = {
+  actor,
+  connectionId: "test-connection",
+  signal: new AbortController().signal,
+  requireInitialized: () => {},
+  onClose: () => () => {},
+};
+
 function list(args: unknown[] = []): Promise<AgentsListResult> {
   const handler = handlers["subagents.list"];
   if (!handler) throw new Error("subagents.list 未贡献");
-  return handler.call(actor, args) as Promise<AgentsListResult>;
+  return handler.call(actor, args, context) as Promise<AgentsListResult>;
 }
 
 describe("设置页子智能体读取面", () => {

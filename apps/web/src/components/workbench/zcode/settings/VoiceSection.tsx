@@ -4,7 +4,6 @@ import type {
   VoiceSettings,
 } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
-import { LoaderCircleIcon } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -12,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
+import { LoaderCircleIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -240,7 +240,9 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
                       name="voice-mode"
                       value={option.value}
                       checked={settings.mode === option.value}
-                      onChange={() => void patch({ mode: option.value }, "mode")}
+                      onChange={() =>
+                        void patch({ mode: option.value }, "mode")
+                      }
                       className="sr-only"
                     />
                     {option.label}
@@ -366,7 +368,8 @@ export function VoiceSection({ client }: { client: VoiceDataClient }) {
               </p>
               <p>推荐模型：</p>
               {SEGMENTS.filter(
-                (segment) => settings.mode === "loop" || segment.key === "listen",
+                (segment) =>
+                  settings.mode === "loop" || segment.key === "listen",
               ).map((segment) => {
                 const pick = recommendation[segment.key];
                 const metric = segmentMetric(report, segment.key);
@@ -483,8 +486,9 @@ export function recommendVoiceModels(
   for (const segment of ["listen", "think", "speak"] as const) {
     const pool = usable.filter((candidate) => candidate.segment === segment);
     const choice =
-      pool.find((candidate) => candidate.kind === SEGMENT_PREFERENCE[segment]) ??
-      pool[0];
+      pool.find(
+        (candidate) => candidate.kind === SEGMENT_PREFERENCE[segment],
+      ) ?? pool[0];
     if (choice) picked[segment] = choice;
   }
   return picked;
