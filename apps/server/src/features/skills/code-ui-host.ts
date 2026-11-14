@@ -15,7 +15,10 @@ import {
   codeUiSkillsRequestSchema,
   codeUiSkillToggleRequestSchema,
 } from "@kenfutwork/shared";
-import type { SkillsListResult } from "@zcode/shared";
+import {
+  parseLocalWorkspaceIdentity,
+  type SkillsListResult,
+} from "@zcode/shared";
 import { z } from "zod";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 import {
@@ -110,11 +113,27 @@ export function createCodeUiSkillsHost(deps: {
   const resolveProject = async (
     instanceId: string,
     workspacePath: string | undefined,
+    workspaceIdentity: string | undefined,
   ): Promise<{ id: string; name: string } | null> => {
     const path = workspacePath?.trim();
-    if (!path) return null;
-    const rows = await deps.projects.findDirectoryProjects(instanceId, path);
-    const row = rows[0];
+    const identity = parseLocalWorkspaceIdentity(workspaceIdentity, path);
+    if (workspaceIdentity && !identity) throw projectUnavailable();
+    const directory = path ?? identity?.rootDirectory;
+    if (!directory) return null;
+    const rows = await deps.projects.findDirectoryProjects(
+      instanceId,
+      directory,
+    );
+    if (!identity && rows.length > 1)
+      throw new CodeUiHostRpcError(
+        "skill_project_ambiguous",
+        "此目录关联多个项目，请选择项目后重试。",
+        409,
+      );
+    const row = identity
+      ? rows.find((candidate) => candidate.id === identity.projectId)
+      : rows[0];
+    if (identity && !row) throw projectUnavailable();
     return row ? { id: row.id, name: row.name } : null;
   };
   const projectUnavailable = () =>
@@ -252,6 +271,7 @@ export function createCodeUiSkillsHost(deps: {
           const project = await resolveProject(
             owner.instanceId,
             input.workspacePath,
+            input.workspaceIdentity,
           );
           if (!project) throw projectUnavailable();
           const installed = (
@@ -286,6 +306,7 @@ export function createCodeUiSkillsHost(deps: {
         const project = await resolveProject(
           owner.instanceId,
           input.workspacePath,
+          input.workspaceIdentity,
         );
         if (!project) {
           return { projectId: null, projectName: null, skills: [] };
@@ -333,6 +354,7 @@ export function createCodeUiSkillsHost(deps: {
         const project = await resolveProject(
           owner.instanceId,
           input.workspacePath,
+          input.workspaceIdentity,
         );
         const rows = await deps.repository.listInstanceSkills(
           owner.instanceId,

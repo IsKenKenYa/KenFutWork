@@ -44,6 +44,7 @@ function createHarness(
     workspacePath?: string;
     commonSkillsRoot?: string;
     project?: { id: string; name: string } | null;
+    directoryProjects?: Array<{ id: string; name: string }>;
     projectRows?: { skillId: string; enabled: boolean; updatedAt: string }[];
   } = {},
 ) {
@@ -119,24 +120,23 @@ function createHarness(
   };
   const projects = {
     async findDirectoryProjects(_instanceId: string, path: string) {
-      return options.project &&
-        path === (options.workspacePath ?? WORKSPACE_PATH)
-        ? [
-            {
-              id: options.project.id,
-              kind: "design" as const,
-              enabled_modes: ["design" as const],
-              name: options.project.name,
-              slug: "project",
-              description: null,
-              instance_id: INSTANCE_ID,
-              brand_kit_id: null,
-              created_at: "",
-              updated_at: "",
-              work_dir: path,
-              additional_directories: [],
-            },
-          ]
+      const rows =
+        options.directoryProjects ?? (options.project ? [options.project] : []);
+      return path === (options.workspacePath ?? WORKSPACE_PATH)
+        ? rows.map((project) => ({
+            id: project.id,
+            kind: "design" as const,
+            enabled_modes: ["design" as const],
+            name: project.name,
+            slug: "project",
+            description: null,
+            instance_id: INSTANCE_ID,
+            brand_kit_id: null,
+            created_at: "",
+            updated_at: "",
+            work_dir: path,
+            additional_directories: [],
+          }))
         : [];
     },
   };
@@ -392,6 +392,51 @@ it("项目作用域按真实目录解析项目写入，未关联项目或未安�
     code: "skill_not_installed",
     statusCode: 404,
   });
+});
+
+it("同目录的项目技能设置必须按明确身份读写", async () => {
+  const first = {
+    id: "30000000-0000-4000-8000-000000000001",
+    name: "第一个项目",
+  };
+  const second = {
+    id: "30000000-0000-4000-8000-000000000002",
+    name: "第二个项目",
+  };
+  const f = createHarness({ directoryProjects: [first, second] });
+  const settings = f.host["skills.projectSettings"];
+  const toggle = f.host["skills.setEnabled"];
+  if (!settings || !toggle) throw new Error("项目技能入口未注册");
+  const workspacePath = WORKSPACE_PATH;
+  const workspaceIdentity = JSON.stringify([second.id, workspacePath]);
+  await expect(
+    settings.call(f.actor, [{ workspacePath }], f.context),
+  ).rejects.toMatchObject({ code: "skill_project_ambiguous" });
+  await expect(
+    settings.call(f.actor, [{ workspacePath, workspaceIdentity }], f.context),
+  ).resolves.toMatchObject({ projectId: second.id });
+  await toggle.call(
+    f.actor,
+    [
+      {
+        workspacePath,
+        workspaceIdentity,
+        scope: "workspace",
+        skillId: SKILL_ID,
+        installationRevision: "2026-11-04 00:00:00",
+        enabled: false,
+      },
+    ],
+    f.context,
+  );
+  expect(f.upserts).toEqual([
+    {
+      instanceId: INSTANCE_ID,
+      projectId: second.id,
+      skillId: SKILL_ID,
+      enabled: false,
+    },
+  ]);
 });
 
 it("项目设置只返回已安装技能，解析不到项目时返回空，插件技能不能启停", async () => {
