@@ -1944,22 +1944,24 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               signal: run.controller.signal,
             };
             run.branchGeneration = taskWorkContext.branchGeneration;
-            // 超大工具输出外置到本 Run 的运行目录：写盘前经执行作用域复查资格，
-            // 归档/删除撤销后迟到写入会在这里抛错，不会复活目录。
             const offloadHandle = run.scopeHandle;
-            toolResultOffloadBinding = {
-              writer: createToolResultOffloadWriter({
-                taskId: offloadHandle.describe().taskId,
-                runId,
-                maxBytes: governanceToolResultOffload.maxBytes,
-                guard: async () => {
-                  await offloadHandle.resolvePath(".", "read");
-                },
-                resolvePath: (relativePath) =>
-                  offloadHandle.resolvePath(relativePath, "write"),
-              }),
-              maxChars: governanceToolResultOffload.maxChars,
-            };
+            const offloadScope = offloadHandle.describe();
+            // 只读 Task 保留原工具输出。允许写入时，写盘仍须复查执行作用域。
+            if (offloadScope.sandboxMode !== "read-only") {
+              toolResultOffloadBinding = {
+                writer: createToolResultOffloadWriter({
+                  taskId: offloadScope.taskId,
+                  runId,
+                  maxBytes: governanceToolResultOffload.maxBytes,
+                  guard: async () => {
+                    await offloadHandle.resolvePath(".", "read");
+                  },
+                  resolvePath: (relativePath) =>
+                    offloadHandle.resolvePath(relativePath, "write"),
+                }),
+                maxChars: governanceToolResultOffload.maxChars,
+              };
+            }
             if (run.scopeHandle.role === "main")
               leaveForeground =
                 await options.taskWork.enterForeground(taskWorkContext);

@@ -40,6 +40,7 @@ afterEach(async () => {
 async function fixture(
   options: {
     role?: ExecutionRole;
+    sandboxMode?: "read-only" | "workspace-write";
     failFactory?: boolean;
     failHook?: boolean;
     hang?: boolean;
@@ -62,7 +63,7 @@ async function fixture(
     generation: 1,
     rootDirectory: directory,
     additionalDirectories: [],
-    sandboxMode: "workspace-write" as const,
+    sandboxMode: options.sandboxMode ?? ("workspace-write" as const),
   };
   const actor = RUNTIME_TEST_ACTOR;
   const handle = await createExecutionScopes({
@@ -267,6 +268,18 @@ it("Task 运行将外置写入器交给 Agent 并写入本次运行的目录", a
   await expect(
     readFile(join(f.scope.rootDirectory, stored.relativePath), "utf8"),
   ).resolves.toBe(original);
+});
+
+it("只读 Task 继续运行且不启用需要写工作目录的输出外置", async () => {
+  const offloadEnabled: boolean[] = [];
+  const f = await fixture({
+    sandboxMode: "read-only",
+    onAgentOptions: ({ toolResultOffload }) => {
+      offloadEnabled.push(toolResultOffload !== undefined);
+    },
+  });
+  expect((await f.drain()).at(-1)?.type).toBe("run.completed");
+  expect(offloadEnabled).toEqual([false]);
 });
 
 it("共享Code Task的Design Run沿真实提示执行上下文保留冻结画布与目录授权", async () => {
