@@ -3,7 +3,6 @@ import type { KenFutWorkAgentFactory } from "../agent/deep-agent.js";
 import type { AgentRuntimeProvider } from "../agent/provider-contract.js";
 import type { ServerEnv } from "../config/env.js";
 import { isDesktopRuntime } from "../desktop/runtime.js";
-import { createAgentModesPlugin } from "../features/agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../features/agent-runs/plugin.js";
 import { createBlobPlugin } from "../features/blob/plugin.js";
 import { brandKitPlugin } from "../features/brand-kit/plugin.js";
@@ -24,6 +23,8 @@ import { createCodeTerminalPlugin } from "../features/code-terminal/plugin.js";
 import { createCodeToolsPlugin } from "../features/code-tools/plugin.js";
 import { createCodeUiAgentEventsPlugin } from "../features/code-ui/agent-events-plugin.js";
 import { createCodeUiPlugin } from "../features/code-ui/plugin.js";
+import { createTaskOrganizationPlugin } from "../features/code-ui/task-organization-plugin.js";
+import { createTaskProjectMovePlugin } from "../features/code-ui/task-project-move-plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
 import { designReviewPlugin } from "../features/design-review/plugin.js";
@@ -45,6 +46,10 @@ import {
 import { createInstanceRoutesPlugin } from "../features/local-instance/http-plugin.js";
 import { createLocalInstancePlugin } from "../features/local-instance/plugin.js";
 import { createMcpPlugin } from "../features/mcp/plugin.js";
+import {
+  createMediaDriverRoutesPlugin,
+  createMediaDriversPlugin,
+} from "../features/media-drivers/plugin.js";
 import type { ModelProviderService } from "../features/model-providers/model-provider-service.js";
 import {
   createModelProviderRoutesPlugin,
@@ -62,7 +67,9 @@ import { createProcessSandboxPlugin } from "../features/process-sandbox/plugin.j
 import { createProjectFilesPlugin } from "../features/project-files/plugin.js";
 import { createProjectDirectoryRelinkPlugin } from "../features/projects/directory-relink-plugin.js";
 import { createProjectsPlugin } from "../features/projects/plugin.js";
+import { createProjectEditorPlugin } from "../features/projects/project-editor-plugin.js";
 import { createQueuePlugin } from "../features/queue/plugin.js";
+import { createRunTimelinePlugin } from "../features/run-timeline/plugin.js";
 import { createSearchPlugin } from "../features/search/plugin.js";
 import {
   createSettingsPlugin,
@@ -70,6 +77,7 @@ import {
 } from "../features/settings/plugin.js";
 import { createSkillsPlugin } from "../features/skills/plugin.js";
 import { createSystemPlugin } from "../features/system/plugin.js";
+import { createTaskGroupsPlugin } from "../features/task-groups/plugin.js";
 import { createTaskWorkPlugin } from "../features/task-work/plugin.js";
 import { createToolCatalogPlugin } from "../features/tool-catalog/plugin.js";
 import { createUploadsPlugin } from "../features/uploads/plugin.js";
@@ -132,13 +140,6 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     capabilities: ["tools"],
   },
   {
-    name: "agent-modes",
-    title: "执行模式",
-    category: "Agent 能力",
-    description: "会话级 Code / Design · 多档执行模式",
-    capabilities: [],
-  },
-  {
     name: "search",
     title: "联网搜索",
     category: "工具与集成",
@@ -157,6 +158,13 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
     title: "用量统计",
     category: "数据与统计",
     description: "token 与成本计量",
+    capabilities: [],
+  },
+  {
+    name: "run-timeline",
+    title: "运行时间线",
+    category: "数据与统计",
+    description: "单轮运行回看 · Markdown 导出",
     capabilities: [],
   },
   {
@@ -203,6 +211,8 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createChatPlugin(),
     createSettingsPlugin(),
     createSettingsRoutesPlugin(),
+    createMediaDriversPlugin(),
+    createMediaDriverRoutesPlugin(),
     createExecutionScopesPlugin(),
     createProcessSandboxPlugin(),
     createCodeTerminalPlugin(),
@@ -222,9 +232,9 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createJobLoopPlugin({ enabled: isDesktopRuntime, tag: "[desktop-worker]" }),
     createSkillsPlugin(),
     createUsagePlugin(),
+    createRunTimelinePlugin(),
     createPermissionsPlugin({ events: deps.events }),
     createApprovalReviewPlugin(),
-    createAgentModesPlugin(),
     createCodeToolsPlugin(),
     createCodeUiAgentEventsPlugin(),
     // Computer Use（CU 插件重活层）：工具面按安装态门控，非 darwin 显式 unavailable
@@ -277,7 +287,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createAgentRunsPlugin({
       connectionManager: deps.connectionManager,
       events: deps.events,
-      // DEC-1 事件缝：pre-step 改写权交给事件监听器（执行模式指令注入等）
+      // pre-step改写权交给指导事件监听器。
       emitPreStep: (payload) => deps.events.emitPreStep(payload),
       ...(deps.agentFactory ? { agentFactory: deps.agentFactory } : {}),
       ...(deps.runtimeProvider
@@ -289,6 +299,10 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
         : { mockEventDelayMs: deps.mockEventDelayMs }),
     }),
     createCodeUiPlugin(),
+    createProjectEditorPlugin(),
+    createTaskOrganizationPlugin(),
+    createTaskGroupsPlugin(),
+    createTaskProjectMovePlugin(),
     createRealtimePlugin(),
   ];
 }

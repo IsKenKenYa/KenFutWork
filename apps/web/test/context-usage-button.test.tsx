@@ -136,7 +136,7 @@ describe("ContextUsageButton", () => {
  */
 describe("ContextUsageButton：预留输出与阈值", () => {
   it("模型声明了最大输出：显示三段读数与阈值刻度", async () => {
-    const { container } = render(
+    render(
       <ContextUsageButton
         usage={{ inputTokens: 500_000, outputTokens: 1200 }}
         contextWindow={1_000_000}

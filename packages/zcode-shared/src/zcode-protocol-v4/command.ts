@@ -3,7 +3,11 @@ import { localTtftContextSchema, localTtftClockSchema } from "../localTtft.js";
 // conversation rewind 无独立命令（裁决：= editUserQuery 的 UI 入口）；
 // workspace-only 文件撤销走 applyFileRewind，不截断聊天历史。
 import { z } from "zod";
-import { conversationRowTargetSchema, timestampSchema } from "./core.js";
+import {
+  conversationRowTargetSchema,
+  conversationTaskControlSchema,
+  timestampSchema,
+} from "./core.js";
 import { attachmentRefSchema } from "./attachment-ref.js";
 import { v4ConversationFileRewindPreviewResultSchema } from "./transport.js";
 import { modelSelectionSchema } from "../model-selection.js";
@@ -332,6 +336,7 @@ export const commandEnvelopeSchema = z.object({
   clientId: z.string(),
   // createSession 时为 null。
   sessionId: z.string().nullable(),
+  taskControl: conversationTaskControlSchema.optional(),
   baseRevision: z.number().optional(),
   baseLogEpoch: z.string().trim().min(1).optional(),
   type: commandTypeSchema,
@@ -376,6 +381,7 @@ export const commandResultSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.enum(["createSession", "createSelectionSideSession", "forkAssistant"]),
     sessionId: z.string(),
+    taskControl: conversationTaskControlSchema.optional(),
     input: z
       .object({
         delivery: z.enum(["startNow", "queue", "guide"]),

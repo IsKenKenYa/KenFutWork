@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { TerminalShellOption } from "../code-git/terminal-runner.js";
+import type { CodeUiHostRpcContext } from "../code-ui/host-rpc-handler.js";
 import type { LocalActor } from "../local-instance/types.js";
 import { createCodeUiSystemHost } from "./code-ui-host.js";
 
 const actor = {} as LocalActor;
+// system 宿主只消费 actor；context 按接口最小实现即可。
+const context: CodeUiHostRpcContext = {
+  actor,
+  connectionId: "test-connection",
+  signal: new AbortController().signal,
+  requireInitialized: () => {},
+  onClose: () => () => {},
+};
 
 const cmd: TerminalShellOption = {
   id: "cmd",
@@ -33,7 +42,9 @@ describe("Code 设置页 system 宿主", () => {
       resolveHomedir: () => "C:\\Users\\tester",
     });
 
-    await expect(host["system.info"]?.call(actor, [])).resolves.toEqual({
+    await expect(
+      host["system.info"]?.call(actor, [], context),
+    ).resolves.toEqual({
       homedir: "C:\\Users\\tester",
       platform: "win32",
     });
@@ -46,7 +57,7 @@ describe("Code 设置页 system 宿主", () => {
     });
 
     await expect(
-      host["system.listIntegratedTerminalShells"]?.call(actor, []),
+      host["system.listIntegratedTerminalShells"]?.call(actor, [], context),
     ).resolves.toEqual([
       {
         dialect: "cmd",
@@ -72,7 +83,7 @@ describe("Code 设置页 system 宿主", () => {
     });
 
     await expect(
-      host["system.listIntegratedTerminalShells"]?.call(actor, []),
+      host["system.listIntegratedTerminalShells"]?.call(actor, [], context),
     ).resolves.toEqual([
       {
         dialect: "git-bash",
@@ -91,7 +102,7 @@ describe("Code 设置页 system 宿主", () => {
     });
 
     await expect(
-      host["system.listIntegratedTerminalShells"]?.call(actor, []),
+      host["system.listIntegratedTerminalShells"]?.call(actor, [], context),
     ).resolves.toEqual([]);
   });
 });

@@ -11,6 +11,8 @@ import type { CodeCommentLabels } from "@zui/components/ui/code-viewer.js";
 import { MarkdownPreviewContent } from "@zui/previewPaneMarkdownContent.js";
 import { CodeContent } from "@zui/previewPaneCodeContent.js";
 import { ImagePreviewContent, SvgPreviewContent } from "@zui/previewPaneImageContent.js";
+import type { WorkspaceFileDragPayload } from "@zui/lib/workspaceFileDrag.js";
+import type { PreviewImageSourceLoader } from "@zui/lib/previewImageChat.js";
 import { PreviewPaneMediaContent } from "@zui/previewPaneMediaContent.js";
 import { PdfPreviewContent } from "@zui/previewPanePdfContent.js";
 import { PptxPreviewContent } from "@zui/previewPanePptxContent.js";
@@ -33,6 +35,8 @@ interface PreviewPaneContentProps {
   loadingInitial: boolean;
   loadingImagePreview: boolean;
   imagePreview: FileMediaPreview | null;
+  imageFileReference?: WorkspaceFileDragPayload;
+  loadImageDownloadSource?: PreviewImageSourceLoader;
   mediaSource: MediaCodeViewerSource | null;
   loadingMediaPreview: boolean;
   mediaPreviewUrl: string | null;
@@ -94,6 +98,8 @@ export function PreviewPaneContent({
   loadingInitial,
   loadingImagePreview,
   imagePreview,
+  imageFileReference,
+  loadImageDownloadSource,
   mediaSource,
   loadingMediaPreview,
   mediaPreviewUrl,
@@ -215,7 +221,16 @@ export function PreviewPaneContent({
     }
 
     if (isSvgSource && svgViewMode === "preview") {
-      return <SvgPreviewContent title={source.title} svgContent={source.content} />;
+      return (
+        <SvgPreviewContent
+          title={source.title}
+          svgContent={source.content}
+          fileReference={imageFileReference}
+          chatTarget={markdownSelectionTarget}
+          sourcePath={source.path}
+          loadDownloadSource={loadImageDownloadSource}
+        />
+      );
     }
 
     return (
@@ -265,6 +280,9 @@ export function PreviewPaneContent({
         title={source.title}
         imageSource={`data:${imagePreview.mediaType};base64,${imagePreview.dataBase64}`}
         sourcePath={source.path}
+        fileReference={imageFileReference}
+        chatTarget={markdownSelectionTarget}
+        loadDownloadSource={loadImageDownloadSource}
       />
     );
   }
@@ -425,7 +443,16 @@ export function PreviewPaneContent({
   }
 
   if (source.type !== "code-review" && isSvgFile && svgViewMode === "preview") {
-    return <SvgPreviewContent title={source.title} svgContent={filePreview.content} />;
+    return (
+      <SvgPreviewContent
+        title={source.title}
+        svgContent={filePreview.content}
+        fileReference={imageFileReference}
+        chatTarget={markdownSelectionTarget}
+        sourcePath={source.path}
+        loadDownloadSource={loadImageDownloadSource}
+      />
+    );
   }
 
   return (

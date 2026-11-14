@@ -1,10 +1,11 @@
 import type {
-  ManagedProcessSnapshot,
+  SandboxProcessSnapshot as ManagedProcessSnapshot,
   ProcessExit,
   ProcessOutput,
   ProcessOutputStream,
   ProcessSandboxOptions,
-  ProcessSpawnRequest,
+  SandboxProcessRequest as ProcessSpawnRequest,
+  ProjectReadSandboxScope,
   TerminalOutputCursor,
 } from "./types.js";
 
@@ -27,7 +28,8 @@ export type HelperRequest =
   | {
       id: string;
       method: "initialize";
-      taskId: string;
+      taskId?: string;
+      projectOwner?: ProjectReadSandboxScope;
       options: Pick<
         ProcessSandboxOptions,
         | "captureRoot"

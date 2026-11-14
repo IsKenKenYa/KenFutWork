@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { CodeUiToolOutputResponse } from "@kenfutwork/shared";
 import type { WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
 import type { MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
 import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
@@ -203,6 +204,7 @@ export interface WorkflowDraftPosition {
 
 export interface ToolCallBlockRenderContext {
   isOfficeMode?: boolean;
+  isPermissionPreview?: boolean;
   toolCallNode: TaskChatToolCallTreeNode;
   workspacePath: string;
   /**
@@ -242,6 +244,15 @@ export interface ToolCallBlockRenderContext {
   };
   /** v4 已配对 subagentRow 投影出的 runtime 权威类型；流式 input 尚未完整时优先使用。 */
   authoritativeAgentType?: string;
+  /**
+   * v4 已配对 subagentRow 的累计模型用量。字段都可缺省：上游没上报时卡片显示
+   * 「用量 未统计」，不拿 0 冒充。
+   */
+  agentUsage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+  };
   /** ExitPlanMode 计划卡片：由会话宿主绑定 parent/session scope 后打开 Side Pane。 */
   onOpenPlanDetail?: (request: Omit<OpenPlanDetailSideTabRequest, "parentSessionId">) => void;
   /**
@@ -300,6 +311,20 @@ export interface ToolCallBlockRenderContext {
   /** 定时任务工具卡片跳转到管理页；automationId 存在时直接打开详情。 */
   onOpenAutomationsMain?: (automationId?: string) => void;
   onLoadFullToolCallFields?: (toolId: string) => Promise<boolean | void> | boolean | void;
+  /**
+   * 当前 pane 绑定的会话 id；工具卡「查看原文」按它读取事件原文。
+   *
+   * 与 `onReadToolOutput` 同时具备才渲染入口；二者任一缺席时卡片保持只读预览。
+   */
+  sessionId?: string;
+  /**
+   * 只读取回工具输出原文（字节偏移分页）；归档或权限失效直接抛错并显示可读原因。
+   */
+  onReadToolOutput?: (
+    sessionId: string,
+    ref: string,
+    offset: number,
+  ) => Promise<CodeUiToolOutputResponse>;
 }
 
 export interface EditKindSource {

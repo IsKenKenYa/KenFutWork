@@ -110,6 +110,24 @@ export function CodeWorkbenchFrame({
     sentMode.current = mode;
   }, [availableModes, mode, canvasId]);
   useEffect(sendNavigation, [sendNavigation]);
+  useEffect(() => {
+    // 管理页（父页内的另一处 iframe）启用或停用插件后，把变化告诉壳内宿主重读卡片声明。
+    const forwardPluginInventory = () => {
+      frame.current?.contentWindow?.postMessage(
+        { type: "kenfutwork:plugin-inventory-changed" },
+        window.location.origin,
+      );
+    };
+    window.addEventListener(
+      PLUGIN_INVENTORY_CHANGED_EVENT,
+      forwardPluginInventory,
+    );
+    return () =>
+      window.removeEventListener(
+        PLUGIN_INVENTORY_CHANGED_EVENT,
+        forwardPluginInventory,
+      );
+  }, []);
   const bootstrap = useCallback(() => {
     if (!ready.current) return;
     const message: CodeUiBootstrap = {

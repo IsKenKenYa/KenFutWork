@@ -14,7 +14,19 @@ export type AgentGovernanceSettings = Pick<
   | "subagentMaxContinuations"
   | "compactKeepMessages"
   | "compactFallbackKeepMessages"
+  | "contextKeepRecentImages"
+  | "toolResultOffloadMaxChars"
+  | "toolResultOffloadMaxBytes"
+  | "toolResultPruneThresholdChars"
+  | "toolResultPruneKeepRecent"
+  | "toolOutputPreviewBytes"
+  | "memoryOrphanRetentionDays"
+  | "memoryRecoverableWindowDays"
+  | "memoryMaintenanceIntervalMs"
   | "canvasExportMaxBytes"
+  | "taskAutoArchiveScanIntervalMs"
+  | "pluginCardMaxFields"
+  | "pluginCardFieldValueMaxChars"
 >;
 type NumericKey = Exclude<keyof AgentGovernanceSettings, "llmInfiniteRetry">;
 export type AgentGovernanceInputs = Record<NumericKey, string>;
@@ -53,8 +65,56 @@ export const AGENT_GOVERNANCE_FIELDS = [
     label: "压缩保留目标（窗口未知）",
   },
   {
+    key: "contextKeepRecentImages",
+    label: "保留最近图片张数",
+  },
+  {
+    key: "toolResultOffloadMaxChars",
+    label: "工具结果外置阈值（字符）",
+  },
+  {
+    key: "toolResultOffloadMaxBytes",
+    label: "外置文件上限（字节）",
+  },
+  {
+    key: "toolResultPruneThresholdChars",
+    label: "旧工具结果折叠阈值（字符）",
+  },
+  {
+    key: "toolResultPruneKeepRecent",
+    label: "保留原文的最近工具结果条数",
+  },
+  {
+    key: "toolOutputPreviewBytes",
+    label: "工具输出预览上限（字节）",
+  },
+  {
+    key: "memoryOrphanRetentionDays",
+    label: "记忆闲置回收天数",
+  },
+  {
+    key: "memoryRecoverableWindowDays",
+    label: "回收区保留天数",
+  },
+  {
+    key: "memoryMaintenanceIntervalMs",
+    label: "记忆整理间隔（毫秒）",
+  },
+  {
     key: "canvasExportMaxBytes",
     label: "画布导出上限（字节）",
+  },
+  {
+    key: "taskAutoArchiveScanIntervalMs",
+    label: "归档扫描间隔（毫秒）",
+  },
+  {
+    key: "pluginCardMaxFields",
+    label: "插件卡片键值行数上限",
+  },
+  {
+    key: "pluginCardFieldValueMaxChars",
+    label: "插件卡片值长度上限",
   },
 ] as const satisfies readonly {
   key: NumericKey;

@@ -58,6 +58,10 @@ export const managementTargetSchema = z.discriminatedUnion("page", [
           "computerUse",
           "openDesign",
           "about",
+          "archives",
+          "plugins",
+          "automations",
+          "workspaceFileSearch",
         ])
         .optional(),
       modelProviderId: z.string().min(1).optional(),
@@ -77,6 +81,16 @@ export const managementTargetSchema = z.discriminatedUnion("page", [
     .strict(),
 ]);
 export type ManagementTarget = z.infer<typeof managementTargetSchema>;
+
+/** 父→壳：插件库存已变化，壳内宿主需要重读插件列表（启用/停用后卡片立即生效）。 */
+export const pluginInventoryChangedSchema = z
+  .object({
+    type: z.literal("kenfutwork:plugin-inventory-changed"),
+  })
+  .strict();
+export type PluginInventoryChanged = z.infer<
+  typeof pluginInventoryChangedSchema
+>;
 
 /** 父窗口认证与导航缝；原界面的服务调用仍使用原 RPC/帧协议。 */
 export const codeUiBootstrapSchema = z.object({

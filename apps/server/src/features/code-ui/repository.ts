@@ -28,6 +28,9 @@ import {
 } from "./history-preparation.js";
 import type { CodeInputSettlement } from "./queue-control.js";
 import { codeUiRunHasStopIntent, codeUiRunOutcome } from "./run-outcome.js";
+import { createTaskArchiveOperations } from "./task-archive-operations.js";
+import { createTaskPinOperations } from "./task-pin-operations.js";
+import { createTaskUnreadOperations } from "./task-unread-operations.js";
 import { freezeWorkContext, workContextForRun } from "./work-context.js";
 
 export type CodeUiSessionRecord = SqlRow & {
@@ -49,6 +52,9 @@ export type CodeUiSessionRecord = SqlRow & {
   active_run_id: string | null;
   archived: boolean;
   pinned: boolean;
+  pin_revision: number | string;
+  unread_at: number | string | null;
+  last_unread_at: number | string;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -61,6 +67,34 @@ export class CodeUiRepositoryError extends Error {
   ) {
     super(message);
   }
+}
+
+export function codeUiTaskControlRejection(
+  root: CodeUiSessionRecord,
+  envelope: protocol.CommandEnvelope,
+): protocol.CommandAck | null {
+  const observed = envelope.taskControl;
+  if (
+    (!observed &&
+      !["sendText", "stop", "renameSession"].includes(envelope.type)) ||
+    (observed?.projectId === root.project_id &&
+      observed.branchGeneration === Number(root.branch_generation))
+  )
+    return null;
+  const snapshot = root.state?.snapshots.find(
+    (entry) => entry.sessionId === root.id,
+  );
+  if (!snapshot)
+    throw new CodeUiRepositoryError("not_found", "Task 根快照不存在。");
+  return {
+    commandId: envelope.commandId,
+    status: observed ? "stale" : "rejected",
+    reasonCode: observed
+      ? "proto.staleTaskControl"
+      : "proto.missingTaskControl",
+    message: "会话已改变，请刷新后重试。",
+    revisionAtDecision: snapshot.revision,
+  };
 }
 
 /** 提交结果不能确认时，准备者不得把异常当作“未发表”而删除外部资源。 */
@@ -115,7 +149,7 @@ async function readCreationReceipt(
     throw new CodeUiRepositoryError("command_conflict", "命令尚未完成");
   const ack = protocol.commandAckSchema.parse({
     ...previous.ack,
-    status: "duplicate",
+    status: previous.ack.status === "failed" ? "failed" : "duplicate",
   });
   if (ack.result?.type !== "createSession" || ack.result.sessionId !== owner.id)
     throw new CodeUiRepositoryError(
@@ -296,6 +330,7 @@ async function insertRoot(scoped: InstanceSqlClient, input: CodeUiRootInsert) {
   if (!root)
     throw new CodeUiRepositoryError("not_found", "新根 Task 未生成持久索引。");
   await writeChildSessionIndexes(scoped, root, input.state);
+  return root;
 }
 
 async function writeState(
@@ -303,6 +338,7 @@ async function writeState(
   root: CodeUiSessionRecord,
   state: CodeUiConversationState,
   activeRunId: string | null,
+  updateActivity = true,
 ) {
   // 同一Task锁内按持久bit迁移推进epoch；普通流事件/usage不改变批准代际。
   const previousPlan =
@@ -313,11 +349,16 @@ async function writeState(
       .planEnabled === true;
   state.planningEpoch =
     (root.state?.planningEpoch ?? 0) + (previousPlan === currentPlan ? 0 : 1);
-  await scoped.execute(
-    `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
-      where instance_id = :instance and id = $1 and deleted_at is null`,
-    [root.id, jsonbSafeStringify(state), activeRunId],
-  );
+  const statement = updateActivity
+    ? `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3, updated_at = now()
+      where instance_id = :instance and id = $1 and deleted_at is null`
+    : `update public.code_ui_sessions set state = $2::jsonb, revision = revision + 1, active_run_id = $3
+      where instance_id = :instance and id = $1 and deleted_at is null`;
+  await scoped.execute(statement, [
+    root.id,
+    jsonbSafeStringify(state),
+    activeRunId,
+  ]);
   await writeChildSessionIndexes(scoped, root, state);
 }
 
@@ -329,6 +370,18 @@ async function lockRoot(scoped: InstanceSqlClient, sessionId: string) {
   if (!root?.state)
     throw new CodeUiRepositoryError("not_found", "Code 根会话已删除或不存在");
   return root;
+}
+
+async function writeScopeCommandAck(
+  scoped: InstanceSqlClient,
+  envelope: protocol.CommandEnvelope,
+  ack: protocol.CommandAck,
+) {
+  return scoped.execute(
+    `update public.code_ui_commands set ack = $3::jsonb, status = 'accepted'
+      where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
+    [envelope.clientId, envelope.commandId, jsonbSafeStringify(ack)],
+  );
 }
 
 async function claimScopeCommand(
@@ -384,6 +437,20 @@ async function claimScopeCommand(
      values (:instance, $1, $2, $3, $4, 'pending')`,
     [envelope.clientId, envelope.commandId, root.id, fingerprint],
   );
+  const rejectedControl = codeUiTaskControlRejection(root, envelope);
+  if (rejectedControl) {
+    const written = await writeScopeCommandAck(
+      scoped,
+      envelope,
+      rejectedControl,
+    );
+    if (written !== 1)
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "操作回执未保存，请重新连接。",
+      );
+    return { root: null, ack: rejectedControl };
+  }
   return { root, ack: null };
 }
 
@@ -406,6 +473,9 @@ export function createCodeUiRepository(
 ) {
   return {
     preparations: createHistoryPreparations(persistence),
+    taskArchives: createTaskArchiveOperations(persistence),
+    taskUnread: createTaskUnreadOperations(persistence),
+    taskPins: createTaskPinOperations(persistence),
     async recoverRuntimeInputs(owner: {
       hostId: string;
       runtimeId: string;
@@ -496,7 +566,11 @@ export function createCodeUiRepository(
               },
             };
             await scoped.execute(
-              `update public.code_ui_commands set status = 'failed', ack = $4::jsonb where instance_id = :instance and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
+              `update public.code_ui_commands set status = 'failed',
+               ack = case when ack->'result'->>'type' = 'createSession'
+                 then jsonb_set($4::jsonb, '{result}', ack->'result')
+                 else $4::jsonb end
+               where instance_id = :instance and session_id = $1 and client_id = $2 and command_id = $3 and status = 'accepted'`,
               [
                 root.id,
                 record.intent.clientId,
@@ -695,6 +769,11 @@ export function createCodeUiRepository(
         threadId: string;
         state: CodeUiConversationState;
         command: { clientId: string; commandId: string; fingerprint: string };
+        initializeInput?: (root: CodeUiSessionRecord) => {
+          state: CodeUiConversationState;
+          activeRunId: string;
+          inputId: string;
+        };
       },
     ) {
       return persistence.transaction(async (tx) => {
@@ -711,10 +790,14 @@ export function createCodeUiRepository(
         );
         if (previous) return previous;
         const project = await scoped.queryOne<
-          SqlRow & { id: string; enabled_modes: Array<"code" | "design"> }
+          SqlRow & {
+            id: string;
+            additional_directories: CodeExecutionScope["additionalDirectories"];
+          }
         >(
-          `select id from public.projects
-           where instance_id = :instance and id = $1 and $2 = any(enabled_modes) and archived_at is null
+          `select id,additional_directories from public.projects
+           where instance_id = :instance and id = $1 and $2 = any(enabled_modes)
+             and archived_at is null and archive_state = 'open'
            for update`,
           [
             input.projectId,
@@ -732,12 +815,39 @@ export function createCodeUiRepository(
             "Code 项目或 Task 工作域不存在",
           );
         }
-        await insertRoot(scoped, input);
+        const root = await insertRoot(scoped, {
+          ...input,
+          scope: {
+            ...input.scope,
+            additionalDirectories: project.additional_directories,
+          },
+        });
+        const initial = input.initializeInput?.(root);
+        if (initial)
+          await writeState(scoped, root, initial.state, initial.activeRunId);
+        const snapshot = (initial?.state ?? root.state)?.snapshots.find(
+          (entry) => entry.sessionId === root.id,
+        );
+        if (!snapshot)
+          throw new CodeUiRepositoryError(
+            "not_found",
+            "新 Task 根快照不存在。",
+          );
         const ack = protocol.commandAckSchema.parse({
           commandId: input.command.commandId,
           status: "accepted",
-          revisionAtDecision: 0,
-          result: { type: "createSession", sessionId: input.sessionId },
+          revisionAtDecision: initial ? snapshot.revision : 0,
+          result: {
+            type: "createSession",
+            sessionId: root.id,
+            taskControl: {
+              projectId: root.project_id,
+              branchGeneration: Number(root.branch_generation),
+            },
+            ...(initial
+              ? { input: { delivery: "startNow", inputId: initial.inputId } }
+              : {}),
+          },
         });
         await scoped.execute(
           `insert into public.code_ui_commands (instance_id, client_id, command_id, session_id, parameter_fingerprint, ack, status)
@@ -789,6 +899,28 @@ export function createCodeUiRepository(
           "select * from public.code_ui_sessions where instance_id = :instance and id = $1 and deleted_at is null",
           [sessionId],
         );
+    },
+    /** 折叠占位取回原文：只读、只认该根 Task 事件表里的终态工具调用。 */
+    async readToolCompletion(
+      instanceId: string,
+      rootSessionId: string,
+      runId: string,
+      toolCallId: string,
+    ): Promise<Extract<StreamEvent, { type: "tool.completed" }> | null> {
+      const row = await persistence
+        .forInstance(instanceId)
+        .queryOne<SqlRow & { payload: unknown }>(
+          "select payload from public.code_ui_events where instance_id = :instance and root_session_id = $1 and payload->>'type' = 'tool.completed' and payload->>'runId' = $2 and payload->>'toolCallId' = $3 order by seq desc limit 1",
+          [rootSessionId, runId, toolCallId],
+        );
+      if (!row) return null;
+      const parsed = streamEventSchema.safeParse(row.payload);
+      if (!parsed.success || parsed.data.type !== "tool.completed")
+        throw new CodeUiRepositoryError(
+          "command_conflict",
+          "工具输出事件不可读，不能取回原文。",
+        );
+      return parsed.data;
     },
     async list(
       instanceId: string,
@@ -863,6 +995,7 @@ export function createCodeUiRepository(
           });
         }
         const root = await lockRoot(scoped, envelope.sessionId!);
+        const rejectedControl = codeUiTaskControlRejection(root, envelope);
         const project = await lockActiveProject(scoped, root);
         if (!project)
           throw new CodeUiRepositoryError(
@@ -873,6 +1006,7 @@ export function createCodeUiRepository(
           envelope.payload as { workContext?: protocol.ConversationWorkContext }
         ).workContext;
         if (
+          !rejectedControl &&
           requestedContext &&
           !project.enabled_modes.includes(
             freezeWorkContext(requestedContext).preset,
@@ -882,7 +1016,13 @@ export function createCodeUiRepository(
             "command_conflict",
             "项目工作方式已改变，请重新提交。",
           );
-        const decision = decide(root);
+        const decision: ReturnType<typeof decide> = rejectedControl
+          ? {
+              state: null,
+              activeRunId: root.active_run_id,
+              ack: rejectedControl,
+            }
+          : decide(root);
         const admitted = decision.state?.inputs?.find(
           (input) =>
             input.intent.sourceCommandId === envelope.commandId &&
@@ -900,7 +1040,13 @@ export function createCodeUiRepository(
           );
         const ack = protocol.commandAckSchema.parse(decision.ack);
         if (decision.state)
-          await writeState(scoped, root, decision.state, decision.activeRunId);
+          await writeState(
+            scoped,
+            root,
+            decision.state,
+            decision.activeRunId,
+            envelope.type !== "renameSession",
+          );
         for (const settlement of decision.settlements ?? [])
           await scoped.execute(
             `update public.code_ui_commands set ack = $4::jsonb, status = 'failed'
@@ -1045,11 +1191,7 @@ export function createCodeUiRepository(
                 ? root.active_run_id
                 : decision.activeRunId,
             );
-          const written = await scoped.execute(
-            `update public.code_ui_commands set ack = $3::jsonb, status = 'accepted'
-              where instance_id = :instance and client_id = $1 and command_id = $2 and status = 'pending'`,
-            [envelope.clientId, envelope.commandId, jsonbSafeStringify(ack)],
-          );
+          const written = await writeScopeCommandAck(scoped, envelope, ack);
           if (written !== 1)
             throw new CodeUiRepositoryError(
               "not_found",
@@ -1350,7 +1492,7 @@ export function createCodeUiRepository(
       await persistence.transaction(async (tx) => {
         const scoped = tx.forInstance(instanceId);
         await scoped.execute(
-          `update public.code_ui_sessions set deleted_at = now(), state = null, parent_tool_call_id = null, active_run_id = null, root_directory = null, additional_directories = null, scope_generation = scope_generation + 1, execution_state = 'failed', revision = revision + 1
+          `update public.code_ui_sessions set deleted_at = now(), state = null, parent_tool_call_id = null, active_run_id = null, root_directory = null, additional_directories = null, unread_at = null, last_unread_at = 0, pin_revision = 0, scope_generation = scope_generation + 1, execution_state = 'failed', revision = revision + 1
             where instance_id = :instance and root_session_id = $1 and deleted_at is null`,
           [rootSessionId],
         );

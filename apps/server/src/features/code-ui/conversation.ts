@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  AGENT_GOVERNANCE_DEFAULTS,
   zcodeUiProtocol as protocol,
   type StreamEvent,
 } from "@kenfutwork/shared";
@@ -25,6 +26,7 @@ import type { OwnedHistoryOutput } from "./output-history-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import { codeUiRunHasStopIntent } from "./run-outcome.js";
+import { previewToolOutput, resolveToolOutputText } from "./tool-output.js";
 import type { UserInputEvent } from "./user-input-types.js";
 import { freezeWorkContext } from "./work-context.js";
 
@@ -32,7 +34,6 @@ type Snapshot = protocol.ConversationSnapshot;
 type Row = protocol.ConversationRow;
 type Config = protocol.SessionConfigState;
 type ExecutionStart = {
-  executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
   runId: string;
   commandId: string;
   modelSelection?: NonNullable<Config["modelSelection"]>;
@@ -71,9 +72,6 @@ export type CodeUiCompletedTurnView = Pick<
 };
 
 export interface CodeUiConversationState {
-  runExecutionModes?: Array<
-    [string, import("@kenfutwork/shared").ExecutionMode]
-  >;
   runApprovalCeilings?: Array<[string, CodeApprovalMode]>;
   initialWorkContext?: protocol.ConversationWorkContext;
   runWorkContexts?: Array<[string, protocol.ConversationWorkContext]>;
@@ -232,6 +230,7 @@ function completeTool(
   snapshot: Snapshot,
   event: Extract<StreamEvent, { type: "tool.completed" }>,
   at: number,
+  previewBytes: number,
 ) {
   const row = snapshot.rows.window.find(
     (row) =>
@@ -243,24 +242,28 @@ function completeTool(
     !["running", "pendingApproval"].includes(row.status)
   )
     return;
-  const text =
-    // TaskOutput的canonical页已受字节预算约束，原UI不能把模型预览冒充完整分页。
-    event.toolName === "TaskOutput" && event.output
-      ? JSON.stringify(event.output)
-      : (event.outputText ??
-        (event.output
-          ? JSON.stringify(event.output)
-          : (event.outputSummary ?? "")));
-  const output = protocol.toolOutputSchema.safeParse({
+  const text = resolveToolOutputText(event);
+  const preview = previewToolOutput(
     text,
+    previewBytes,
+    `${event.runId}/${event.toolCallId}`,
+  );
+  const output = protocol.toolOutputSchema.safeParse({
+    text: preview.text,
     ...(event.output?.display ? { display: event.output.display } : {}),
+    ...(preview.truncated ? { truncated: preview.truncated } : {}),
   });
   Object.assign(
     row,
     protocol.toolCallRowSchema.parse({
       ...row,
       status: event.status ?? "success",
-      output: output.success ? output.data : { text },
+      output: output.success
+        ? output.data
+        : {
+            text: preview.text,
+            ...(preview.truncated ? { truncated: preview.truncated } : {}),
+          },
       ...(event.status === "error"
         ? { error: { code: "tool_failed", message: text || "工具执行失败" } }
         : {}),
@@ -375,12 +378,18 @@ export function createCodeUiConversation(input: {
   sessionId: string;
   workspacePath: string;
   config: z.input<typeof protocol.sessionConfigStateSchema>;
+  taskControl?: protocol.ConversationTaskControl;
   goals?: GoalService;
   clock?: () => number;
   state?: CodeUiConversationState;
   workContext?: protocol.ConversationWorkContext | undefined;
+  /** 终态工具输出保留头尾的字节预算；未传时按治理默认值。 */
+  toolOutputPreviewBytes?: number | undefined;
 }) {
   const clock = input.clock ?? Date.now;
+  const toolOutputPreviewBytes =
+    input.toolOutputPreviewBytes ??
+    AGENT_GOVERNANCE_DEFAULTS.toolOutputPreviewBytes;
   const snapshots = new Map<string, Snapshot>();
   const childByDispatch = new Map<string, string>();
   const closedRuns = new Set(input.state?.closedRuns ?? []);
@@ -397,7 +406,6 @@ export function createCodeUiConversation(input: {
   const runContributions = new Map(
     structuredClone(input.state?.runContributions ?? []),
   );
-  const runExecutionModes = new Map(input.state?.runExecutionModes ?? []);
   const runApprovalCeilings = new Map(input.state?.runApprovalCeilings ?? []);
   const runOutcomes = new Map(input.state?.runOutcomes ?? []);
   const hostShutdownRuns = new Set(input.state?.hostShutdownRuns ?? []);
@@ -482,8 +490,6 @@ export function createCodeUiConversation(input: {
       mode: turn.mode ?? root.config.mode,
     }).mode;
     runApprovalCeilings.set(turn.runId, mode === "plan" ? "build" : mode);
-    if (turn.executionMode)
-      runExecutionModes.set(turn.runId, turn.executionMode);
     runWorkContexts.set(
       turn.runId,
       freezeWorkContext(turn.workContext ?? initialWorkContext),
@@ -569,7 +575,6 @@ export function createCodeUiConversation(input: {
         initialWorkContext,
         runWorkContexts: [...runWorkContexts],
         runContributions: [...runContributions],
-        runExecutionModes: [...runExecutionModes],
         runApprovalCeilings: [...runApprovalCeilings],
         runOutcomes: [...runOutcomes],
         ...(hostShutdownRuns.size
@@ -837,9 +842,6 @@ export function createCodeUiConversation(input: {
           runContributions: [...runContributions].filter(
             ([id]) => id === event.runId,
           ),
-          runExecutionModes: [...runExecutionModes].filter(
-            ([id]) => id === event.runId,
-          ),
           runApprovalCeilings: [...runApprovalCeilings].filter(
             ([id]) => id === event.runId,
           ),
@@ -874,7 +876,6 @@ export function createCodeUiConversation(input: {
           text: child.meta.title ?? "子任务",
           workContext,
           frozenContributions,
-          executionMode: runExecutionModes.get(event.runId),
         });
       host.recordEvent(event);
       const state = host.exportState();
@@ -882,8 +883,6 @@ export function createCodeUiConversation(input: {
         runWorkContexts.set(id, context);
       for (const [id, contribution] of state.runContributions ?? [])
         runContributions.set(id, contribution);
-      for (const [id, mode] of state.runExecutionModes ?? [])
-        runExecutionModes.set(id, mode);
       for (const [id, ceiling] of state.runApprovalCeilings ?? [])
         runApprovalCeilings.set(id, ceiling);
       for (const [id, outcome] of state.runOutcomes ?? [])
@@ -1005,7 +1004,6 @@ export function createCodeUiConversation(input: {
     },
     startInput(record: CodeAdmittedInput) {
       const execution = {
-        executionMode: record.executionMode,
         runId: record.runId,
         commandId: record.intent.sourceCommandId,
         modelSelection: record.intent.modelSelection!,
@@ -1041,7 +1039,6 @@ export function createCodeUiConversation(input: {
         });
     },
     startTurn(turn: {
-      executionMode?: import("@kenfutwork/shared").ExecutionMode | undefined;
       runId: string;
       commandId: string;
       text: string;
@@ -1079,7 +1076,11 @@ export function createCodeUiConversation(input: {
         });
         projectGoalSnapshot(root, goalRecord);
       }
-      if (!root.meta.title && turn.origin !== "backgroundResult")
+      if (
+        !root.meta.title &&
+        root.meta.titleSource !== "custom" &&
+        turn.origin !== "backgroundResult"
+      )
         root.meta = {
           title: deriveSessionTitle(turn.text),
           titleSource: "generated",
@@ -1311,6 +1312,28 @@ export function createCodeUiConversation(input: {
           outputTokens: event.runOutputTokens,
           ...(cached === undefined ? {} : { cachedInputTokens: cached }),
         });
+        // 子代理卡片用量：按派发 id 找到子代理行并累计写入；上游没报就保持缺省，
+        // 界面显示「未统计」而不是 0（与 run.usage schema 的可选字段一致）。
+        if (
+          event.agentCallId &&
+          event.agentInputTokens !== undefined &&
+          event.agentOutputTokens !== undefined
+        ) {
+          const subagentRow = root.rows.window.find(
+            (row) =>
+              row.kind === "subagent" &&
+              row.parentToolCallId === `${event.runId}/${event.agentCallId}`,
+          );
+          if (subagentRow?.kind === "subagent") {
+            subagentRow.usage = {
+              inputTokens: event.agentInputTokens,
+              outputTokens: event.agentOutputTokens,
+              ...(event.agentCachedInputTokens === undefined
+                ? {}
+                : { cachedInputTokens: event.agentCachedInputTokens }),
+            };
+          }
+        }
         root.usage.cumulative = {
           inputTokens: 0,
           outputTokens: 0,
@@ -1610,7 +1633,7 @@ export function createCodeUiConversation(input: {
           });
       }
       if (event.type === "tool.completed") {
-        completeTool(snapshot, event, at);
+        completeTool(snapshot, event, at, toolOutputPreviewBytes);
         const childId = childByDispatch.get(
           `${event.runId}/${event.toolCallId}`,
         );
@@ -1626,7 +1649,10 @@ export function createCodeUiConversation(input: {
     },
     getSnapshot(sessionId = input.sessionId): Snapshot {
       return protocol.conversationSnapshotSchema.parse(
-        structuredClone(requireSnapshot(sessionId)),
+        structuredClone({
+          ...requireSnapshot(sessionId),
+          ...(input.taskControl ? { taskControl: input.taskControl } : {}),
+        }),
       );
     },
   };

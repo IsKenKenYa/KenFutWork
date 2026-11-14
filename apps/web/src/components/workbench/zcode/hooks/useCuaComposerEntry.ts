@@ -5,7 +5,8 @@
  * 判定规则本身全部在 lib/cuaComposerEntryState.ts，这里不复制任何一条分支。
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { isRemoteWorkspaceIdentity, ZCODE_CUA_OFFICIAL_PLUGIN_ID } from "@zcode/shared";
+import { isRemoteWorkspaceIdentity } from "@zcode/shared";
+import { resolveComputerUsePlugin } from "@zui/host/cuaSharedAdapter.js";
 import { usePlatform } from "@zui/hooks/usePlatform.js";
 import { useServices } from "@zui/hooks/useServices.js";
 import { useSettings } from "@zui/hooks/useSettingService.js";
@@ -74,7 +75,7 @@ export function useCuaComposerEntry({
   // 归属由 store 的 lastFailedPluginId 记录。
   const lastFailedPluginId = usePluginManagementStore((state) => state.lastFailedPluginId);
   const initializePlugins = usePluginManagementStore((state) => state.initialize);
-  const cuaPlugin = plugins.find((plugin) => plugin.id === ZCODE_CUA_OFFICIAL_PLUGIN_ID);
+  const cuaPlugin = resolveComputerUsePlugin(plugins);
   const pluginEnabled = cuaPlugin?.enabled === true;
 
   const pluginManagementService = services.pluginManagementService;
@@ -137,9 +138,10 @@ export function useCuaComposerEntry({
         hiddenBySettings,
         permissionServiceAvailable: Boolean(services.cuaPermissionService),
         pluginEnabled,
-        pluginToggling: togglingPluginId === ZCODE_CUA_OFFICIAL_PLUGIN_ID,
-        pluginError:
-          Boolean(pluginStoreError) && lastFailedPluginId === ZCODE_CUA_OFFICIAL_PLUGIN_ID,
+        pluginToggling: Boolean(cuaPlugin && togglingPluginId === cuaPlugin.id),
+        pluginError: Boolean(
+          cuaPlugin && pluginStoreError && lastFailedPluginId === cuaPlugin.id,
+        ),
         permissionStatus: permissionStatus ?? null,
         sessionBusy,
       }),

@@ -12,6 +12,7 @@
  * - 米家会话只落在插件存储里（值保存在实例私有存储、HTTP 永不回显），进程内另存一份内存副本省往返。
  */
 
+import { randomUUID } from "node:crypto";
 import {
   createSpecResolver,
   describeDevice,
@@ -198,7 +199,7 @@ export function apply(ctx) {
     handler: async (request) => {
       const instanceId = requireInstance(request.instanceId, "获取二维码");
       const { qrUrl, lp, timeout, auth } = await client.createQrLogin();
-      const sessionId = `qr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+      const sessionId = `qr_${randomUUID()}`;
       for (const [id, item] of qrSessions) {
         if (Date.now() - item.at > QR_SESSION_TTL_MS) qrSessions.delete(id);
       }

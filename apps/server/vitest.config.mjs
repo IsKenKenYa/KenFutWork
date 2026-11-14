@@ -1,3 +1,6 @@
+import { realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter } from "node:path";
 import { defineConfig } from "vitest/config";
 
 // Prevent vitest from resolving the root vitest.config (vitest 4 resolves
@@ -6,6 +9,15 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // 临时目录内只发现测试自行初始化的仓库，禁止向上识别主仓。
+    env: {
+      GIT_CEILING_DIRECTORIES: [
+        process.env.GIT_CEILING_DIRECTORIES,
+        realpathSync(tmpdir()),
+      ]
+        .filter(Boolean)
+        .join(delimiter),
+    },
     // 本包含真实进程与大量异步日志；默认并发过高曾触发 worker 日志 RPC 退出竞态。
     // 统一在测试资源配置收敛，CLI --maxWorkers 仍可覆盖，不改变业务行为或忽略错误。
     maxWorkers: 2,

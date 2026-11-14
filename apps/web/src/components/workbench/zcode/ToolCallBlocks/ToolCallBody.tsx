@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { FileMediaPreview } from "@zcode/shared";
+import type { CodeUiToolOutputResponse } from "@kenfutwork/shared";
 import { CodeBlock } from "@zui/components/ai-elements/code-block.js";
 import { MessageResponse, type MessageFileLinkTarget } from "@zui/components/ai-elements/message.js";
 import { ToolInput, ToolOutput } from "@zui/components/ai-elements/tool.js";
@@ -14,6 +15,10 @@ import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
 import type { TaskChatToolCallTreeNode } from "@zui/lib/toolCallTree.js";
 import type { ToolDisplayModel, ToolInlinePreview } from "@zui/lib/toolDisplay.js";
 import type { Theme } from "@zui/useTheme.js";
+import {
+  readToolOutputTruncated,
+  ToolOutputFullTextLink,
+} from "@zui/ToolCallBlocks/ToolOutputFullTextLink.js";
 
 export function ToolCallBody({
   childToolList,
@@ -26,6 +31,8 @@ export function ToolCallBody({
   onOpenCodeViewer,
   onOpenFileLink,
   onOpenBrowserUrl,
+  sessionId,
+  onReadToolOutput,
 }: {
   childToolList: ReactNode;
   displayModel: ToolDisplayModel;
@@ -39,8 +46,17 @@ export function ToolCallBody({
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   onOpenFileLink?: (target: MessageFileLinkTarget) => void;
   onOpenBrowserUrl?: (url: string) => void;
+  /** 当前会话 id；与读取回调同时具备时才显示「查看原文」。 */
+  sessionId?: string;
+  /** 只读分页读取工具输出原文；缺席即不显示入口。 */
+  onReadToolOutput?: (
+    sessionId: string,
+    ref: string,
+    offset: number,
+  ) => Promise<CodeUiToolOutputResponse>;
 }) {
   const inlinePreview = inlinePreviewOverride ?? displayModel.inlinePreview;
+  const truncatedOutput = readToolOutputTruncated(toolCall.raw);
 
   return (
     <>
@@ -77,6 +93,13 @@ export function ToolCallBody({
           ) : null}
           {displayModel.showOutput ? (
             <ToolOutput errorText={toolCall.error} output={toolCall.output} />
+          ) : null}
+          {displayModel.showOutput && truncatedOutput && sessionId && onReadToolOutput ? (
+            <ToolOutputFullTextLink
+              sessionId={sessionId}
+              truncated={truncatedOutput}
+              onReadToolOutput={onReadToolOutput}
+            />
           ) : null}
           {displayModel.showKind ? (
             <p className="text-ui-base text-muted-foreground">{toolCall.kind}</p>

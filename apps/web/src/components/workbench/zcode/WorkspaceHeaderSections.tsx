@@ -7,9 +7,14 @@ import {
   TID_WORKSPACE_MORE_BUTTON,
   TID_WORKSPACE_PATH,
   TID_WORKSPACE_TITLE,
+  isLocalWorkspaceTarget,
   type RemoteTarget,
   type ZCodeTaskMeta,
 } from "@zcode/shared";
+import {
+  type ConversationTaskControl,
+  conversationTaskControlSchema,
+} from "@zcode/shared/zcode-protocol-v4";
 import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { cn } from "@zui/components/lib/utils.js";
@@ -45,7 +50,7 @@ import type {
   WorkspaceHeaderState,
   WorkspaceHeaderTitleSectionProps,
 } from "@zui/WorkspaceHeaderSections/shared.js";
-import { applyTaskQueryCacheMutation } from "@zui/store/taskQueryCacheStore.js";
+import { applyTaskQueryCacheMutation, markTaskQueryCacheScopesStale } from "@zui/store/taskQueryCacheStore.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { useRemotePinnedTaskStore } from "@zui/store/remotePinnedTaskStore.js";
 import { useRemoteTimelineTaskStore } from "@zui/store/remoteTimelineTaskStore.js";
@@ -59,6 +64,11 @@ import { invalidateDeferredDraftSessionForSkillChange } from "@zui/lib/zcodeDraf
 import { refreshSharedSkillStoreForWorkspace } from "@zui/lib/skillStoreRefresh.js";
 import { refreshWorkspacePluginCapabilitiesAfterRemoteSync } from "@zui/lib/remotePluginSyncRefresh.js";
 import { useMcpStore } from "@zui/store/mcpStore.js";
+import { requireTaskUnreadObservation } from "@zui/host/taskUnreadObservation.js";
+import { requireTaskPinObservation } from "@zui/host/taskPinObservation.js";
+import { resolveTaskOperationSnapshot } from "@zui/host/taskOperationObservation.js";
+import { useOptionalProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
+import { bumpTaskListMembershipVersion } from "@zui/v4/taskListMembershipVersion.js";
 
 export type { WorkspaceHeaderState, WorkspaceHeaderTitleSectionProps };
 export {
@@ -73,6 +83,16 @@ function shouldShowRemoteSkillSyncAction(params: {
   hasLocalSourceService?: boolean;
 }): boolean {
   return shouldShowRemoteSyncActions(params);
+}
+
+interface HeaderRenameTarget {
+  taskId: string;
+  local?: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    title: string;
+    taskControl: ConversationTaskControl;
+  };
 }
 
 export function WorkspaceHeaderTitleSection({
@@ -113,6 +133,7 @@ export function WorkspaceHeaderTitleSection({
   const confirmDialog = useConfirmDialog();
   const services = useWorkspaceServices(workspaceAbsPath, remoteSessionId, workspaceIdentity);
   const baseServices = useBaseWorkspaceServices();
+  const projectDirectory = useOptionalProjectDirectory();
   const removeTaskState = useZCodeSessionStore((state) => state.removeTaskState);
   const upsertOptimisticTaskListItem = useZCodeSessionStore(
     (state) => state.upsertOptimisticTaskListItem,
@@ -123,7 +144,8 @@ export function WorkspaceHeaderTitleSection({
   const setTaskUnreadIndicator = useZCodeSessionStore((state) => state.setTaskUnreadIndicator);
   const [taskMenuOpen, setTaskMenuOpen] = useState(false);
   const [workspaceContextOpen, setWorkspaceContextOpen] = useState(false);
-  const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<HeaderRenameTarget | null>(null);
+  const renameTargetRef = useRef<HeaderRenameTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
   const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
@@ -155,10 +177,33 @@ export function WorkspaceHeaderTitleSection({
   });
   const pinnedTasks = headerPinnedTaskList.items;
   const activeTaskMeta = resolvedActiveTaskMeta ?? null;
-  const isPinned = Boolean(
-    activeTaskId && pinnedTasks.some((task) => task.taskId === activeTaskId),
-  );
   const resolvedTaskActionTaskId = activeTaskMeta?.taskId ?? activeTaskId;
+  const taskActionTarget = resolvedTaskActionTaskId
+    ? {
+        taskId: resolvedTaskActionTaskId,
+        workspacePath: workspaceAbsPath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      }
+    : null;
+  const localTaskAction = Boolean(taskActionTarget && isLocalWorkspaceTarget({
+    ...taskActionTarget,
+    remoteSessionId,
+    remoteTarget,
+  }));
+  const taskActionMeta = taskActionTarget
+    ? resolveTaskOperationSnapshot(taskActionTarget, projectDirectory?.tree.tasks ?? [], activeTaskMeta)
+    : undefined;
+  const localPinned = taskActionMeta && "pinned" in taskActionMeta
+    ? taskActionMeta.pinned
+    : undefined;
+  const isPinned = localTaskAction && typeof localPinned === "boolean"
+    ? localPinned
+    : Boolean(activeTaskId && pinnedTasks.some((task) => task.taskId === activeTaskId));
+  const refreshTaskOrganization = (target: { workspacePath: string; workspaceIdentity?: string }) => {
+    markTaskQueryCacheScopesStale([target]);
+    useZCodeSessionStore.getState().bumpTaskListVersion(target.workspacePath, target.workspaceIdentity);
+    bumpTaskListMembershipVersion();
+  };
   // 新建任务在第一次写入数据库前没有稳定 taskId。
   // 之前 Header 更多菜单虽然点击后会被回调里的空 id guard 拦住，但 UI 仍显示为可点，
   // 用户会感知成“菜单无响应”；这里只禁用依赖已落库 task 的动作，保留 workspace 级入口。
@@ -270,12 +315,35 @@ export function WorkspaceHeaderTitleSection({
     if (!resolvedTaskActionTaskId) {
       return;
     }
-    setRenamingTaskId(resolvedTaskActionTaskId);
-    setRenameDraft(activeTaskMeta?.title ?? activeTaskTitle ?? "");
+    const target: HeaderRenameTarget = { taskId: resolvedTaskActionTaskId };
+    let title = activeTaskMeta?.title ?? activeTaskTitle ?? "";
+    if (localTaskAction && taskActionTarget) {
+      const control = conversationTaskControlSchema.safeParse(
+        taskActionMeta?.taskControl,
+      );
+      if (!taskActionMeta || !control.success) {
+        refreshTaskOrganization(taskActionTarget);
+        toast(intl.formatMessage({ id: "taskList.renameFailed" }));
+        return;
+      }
+      title = taskActionMeta.title;
+      target.local = {
+        workspacePath: taskActionTarget.workspacePath,
+        ...(taskActionTarget.workspaceIdentity
+          ? { workspaceIdentity: taskActionTarget.workspaceIdentity }
+          : {}),
+        title,
+        taskControl: Object.freeze(structuredClone(control.data)),
+      };
+    }
+    renameTargetRef.current = target;
+    setRenameTarget(target);
+    setRenameDraft(title);
   };
 
   const handleCancelRenameTask = () => {
-    setRenamingTaskId(null);
+    renameTargetRef.current = null;
+    setRenameTarget(null);
     setRenameDraft("");
   };
 
@@ -298,20 +366,44 @@ export function WorkspaceHeaderTitleSection({
   };
 
   const handleSubmitRenameTask = async () => {
-    if (!renamingTaskId) {
+    const target = renameTarget;
+    if (!target) {
       return;
     }
 
     const normalizedTitle = renameDraft.trim();
-    const currentTitle = activeTaskMeta?.title ?? activeTaskTitle ?? "";
+    const currentTitle =
+      target.local?.title ?? activeTaskMeta?.title ?? activeTaskTitle ?? "";
     if (normalizedTitle === currentTitle.trim()) {
       handleCancelRenameTask();
       return;
     }
 
+    if (target.local) {
+      const local = target.local;
+      try {
+        await baseServices.zcodeTaskService.renameTask({
+          taskId: target.taskId,
+          workspacePath: local.workspacePath,
+          ...(local.workspaceIdentity
+            ? { workspaceIdentity: local.workspaceIdentity }
+            : {}),
+          taskControl: local.taskControl,
+          title: normalizedTitle,
+        });
+        if (renameTargetRef.current === target) handleCancelRenameTask();
+      } catch {
+        if (renameTargetRef.current === target)
+          toast(intl.formatMessage({ id: "taskList.renameFailed" }));
+      } finally {
+        refreshTaskOrganization(local);
+      }
+      return;
+    }
+
     try {
       const renamedTask = await services.zcodeTaskService.renameTask({
-        taskId: renamingTaskId,
+        taskId: target.taskId,
         workspacePath: workspaceAbsPath,
         title: normalizedTitle,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
@@ -401,7 +493,7 @@ export function WorkspaceHeaderTitleSection({
       )}
     >
       <TaskRenameDialog
-        open={!isDraftNewTask && renamingTaskId !== null}
+        open={!isDraftNewTask && renameTarget !== null}
         value={renameDraft}
         inputRef={renameInputRef}
         intl={intl}
@@ -577,6 +669,23 @@ export function WorkspaceHeaderTitleSection({
                   if (!resolvedTaskActionTaskId) {
                     return;
                   }
+                  if (localTaskAction && taskActionTarget) {
+                    const target = taskActionTarget;
+                    const pinTask = async () => {
+                      if (!taskActionMeta) throw new Error("任务状态已改变，请刷新后重试。");
+                      const observation = requireTaskPinObservation(taskActionMeta);
+                      await services.zcodeTaskService.setTaskPinned({
+                        ...target,
+                        ...observation,
+                        pinned: !isPinned,
+                      });
+                    };
+                    void pinTask().then(() => refreshTaskOrganization(target)).catch(() => {
+                      refreshTaskOrganization(target);
+                      toast(intl.formatMessage({ id: "taskList.pinFailed" }));
+                    });
+                    return;
+                  }
                   const optimisticTask = activeTaskMeta ?? null;
                   if (optimisticTask) {
                     // Header 里切换 pin 以前只等 RPC 成功后更新列表缓存，
@@ -678,6 +787,28 @@ export function WorkspaceHeaderTitleSection({
                 }}
                 onMarkTaskAsUnread={() => {
                   if (!resolvedTaskActionTaskId) {
+                    return;
+                  }
+                  const target = {
+                    taskId: resolvedTaskActionTaskId,
+                    workspacePath: workspaceAbsPath,
+                    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+                  };
+                  if (isLocalWorkspaceTarget({ ...target, remoteSessionId, remoteTarget })) {
+                    const markUnread = async () => {
+                      if (!taskActionMeta)
+                        throw new Error("任务状态已改变，请刷新后重试。");
+                      const observation = requireTaskUnreadObservation(taskActionMeta);
+                      await services.zcodeTaskService.setTaskUnread({
+                        ...target,
+                        ...observation,
+                        unread: true,
+                      });
+                    };
+                    void markUnread().then(() => refreshTaskOrganization(target)).catch(() => {
+                      refreshTaskOrganization(target);
+                      toast(intl.formatMessage({ id: "taskList.markAsUnreadFailed" }));
+                    });
                     return;
                   }
                   void services.zcodeTaskService

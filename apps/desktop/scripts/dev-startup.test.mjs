@@ -16,6 +16,36 @@ import {
 
 const exec = promisify(execFile);
 
+test("桌面生产打包等待 Web 与原 Code UI 产物完成", async () => {
+  const { stdout } = await exec(
+    "pnpm",
+    [
+      "--reporter=silent",
+      "exec",
+      "turbo",
+      "run",
+      "build",
+      "--filter=@kenfutwork/desktop",
+      "--dry=json",
+    ],
+    { cwd: new URL("../../../", import.meta.url) },
+  );
+  const graph = JSON.parse(stdout);
+  const tasks = new Map(graph.tasks.map((task) => [task.taskId, task]));
+  const prerequisites = new Set();
+  const pending = ["@kenfutwork/desktop#build"];
+  while (pending.length > 0) {
+    const taskId = pending.pop();
+    if (prerequisites.has(taskId)) continue;
+    prerequisites.add(taskId);
+    const task = tasks.get(taskId);
+    assert.ok(task, `构建图缺少 ${taskId}`);
+    pending.push(...task.dependencies);
+  }
+  assert.ok(prerequisites.has("@kenfutwork/web#build"));
+  assert.ok(prerequisites.has("@zcode/ui#build"));
+});
+
 test("桌面源码启动按依赖图重建宿主与服务端协议，先于界面构建", async () => {
   const commands = [];
   buildSourceArtifacts((program, args) => commands.push({ program, args }));

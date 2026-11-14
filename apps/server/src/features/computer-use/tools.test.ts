@@ -50,6 +50,8 @@ describe("createComputerUseTools（工具面装配）", () => {
       "key",
       "focus_window",
       "get_app_state",
+      "clipboard_read",
+      "clipboard_write",
     ]) {
       const tool = tools.find(
         (entry) => entry.name === `${CU_TOOL_PREFIX}${action}`,
@@ -76,6 +78,7 @@ describe("createComputerUseTools（工具面装配）", () => {
         "list_apps",
         "list_windows",
         "list_displays",
+        "clipboard_read",
       ].includes(action);
       expect(await approvals.admit(input), action).toMatchObject({
         decision: read ? "allow" : "deny",
@@ -85,15 +88,15 @@ describe("createComputerUseTools（工具面装配）", () => {
       });
     }
     expect(requested).toEqual(
-      ["type", "key", "focus_window", "get_app_state"].map(
+      ["type", "key", "focus_window", "get_app_state", "clipboard_write"].map(
         (action) => `${CU_TOOL_PREFIX}${action}`,
       ),
     );
   });
 
-  it("14 个工具全部 mcp__computer-use__ 前缀 + scope:code", () => {
+  it("16 个工具全部 mcp__computer-use__ 前缀 + scope:code", () => {
     const tools = buildTools({ ok: true });
-    expect(tools).toHaveLength(14);
+    expect(tools).toHaveLength(16);
     for (const tool of tools) {
       expect(tool.name.startsWith(CU_TOOL_PREFIX)).toBe(true);
       expect(tool.scope).toBe("code");
@@ -107,6 +110,8 @@ describe("createComputerUseTools（工具面装配）", () => {
       "mcp__computer-use__screenshot",
       "mcp__computer-use__click",
       "mcp__computer-use__type",
+      "mcp__computer-use__clipboard_read",
+      "mcp__computer-use__clipboard_write",
       "mcp__computer-use__stop_computer_control",
       "mcp__computer-use__list_displays",
       "mcp__computer-use__mouse_move",

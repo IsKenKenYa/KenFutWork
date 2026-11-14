@@ -1,6 +1,6 @@
+import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { isDesktopRuntime } from "../../desktop/runtime.js";
 import type { PluginDefinition } from "../../kernel/types.js";
-import { resolveDesktopDataDir } from "../../desktop/paths.js";
 import { provisionHomeAssistant } from "./stack.js";
 
 /**

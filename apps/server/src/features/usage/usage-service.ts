@@ -39,6 +39,25 @@ export interface UsageService {
   summarize(user: LocalActor): Promise<UsageSummaryResponse>;
   /** 用户侧使用统计（R4-2）：按天活动/连续天数/按模型，窗口 rangeDays 天。 */
   stats(user: LocalActor, rangeDays: number): Promise<UsageStatsResponse>;
+  /** 单轮 Run 的用量汇总（子代理结果归因用）；没有记账行时返回 null。 */
+  runSummary(
+    instanceId: string,
+    runId: string,
+  ): Promise<RunUsageSummary | null>;
+  /** 会话最近一轮 Run 的用量汇总；调用方只有 childSessionId 时使用。 */
+  runSummaryBySession(
+    instanceId: string,
+    sessionId: string,
+  ): Promise<RunUsageSummary | null>;
+}
+
+/** 对外暴露的用量汇总形状：在库字段之上补上 totalTokens，便于卡片直接显示。 */
+export interface RunUsageSummary {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number | null;
+  calls: number;
 }
 
 type ModelBucket = {
@@ -118,6 +137,8 @@ export function createUsageService(options: {
     /** 逐日 × 模型：趋势图按模型画多条线（与 daily 同窗口、按下标对齐）。 */
     const modelDaily = new Map<string, Map<string, number>>();
     const totals = { tokens: 0, inputTokens: 0, outputTokens: 0 };
+    /** 成本单独累计并记录「是否有供应商回传」：全都没回传时对外如实给 null。 */
+    const cost = { usd: 0, reported: false };
 
     // 热力图要铺满一年（参考图是一整年的格子），故另起一个窗口的逐日聚合
     const heatmapStart = addUtcDays(today, -(HEATMAP_DAYS - 1));
@@ -133,6 +154,10 @@ export function createUsageService(options: {
       totals.tokens += tokens;
       totals.inputTokens += row.input_tokens;
       totals.outputTokens += row.output_tokens;
+      if (row.cost_usd !== null) {
+        cost.usd += row.cost_usd;
+        cost.reported = true;
+      }
       dailyTotals.set(date, (dailyTotals.get(date) ?? 0) + tokens);
       const bucket = modelTotals.get(row.model) ?? {
         provider: row.provider,
@@ -194,7 +219,10 @@ export function createUsageService(options: {
 
     return {
       rangeDays,
-      totals,
+      totals: {
+        ...totals,
+        costUsd: cost.reported ? cost.usd : null,
+      },
       peakDayTokens: daily.reduce((peak, day) => Math.max(peak, day.tokens), 0),
       currentStreakDays,
       longestStreakDays,
@@ -300,5 +328,33 @@ export function createUsageService(options: {
         longestSessionSeconds,
       );
     },
+
+    async runSummary(instanceId, runId) {
+      const aggregate = await repository.runSummary(instanceId, runId);
+      return aggregate ? toRunUsageSummary(aggregate) : null;
+    },
+
+    async runSummaryBySession(instanceId, sessionId) {
+      const aggregate = await repository.runSummaryBySession(
+        instanceId,
+        sessionId,
+      );
+      return aggregate ? toRunUsageSummary(aggregate) : null;
+    },
+  };
+}
+
+function toRunUsageSummary(aggregate: {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  calls: number;
+}): RunUsageSummary {
+  return {
+    inputTokens: aggregate.inputTokens,
+    outputTokens: aggregate.outputTokens,
+    totalTokens: aggregate.inputTokens + aggregate.outputTokens,
+    costUsd: aggregate.costUsd,
+    calls: aggregate.calls,
   };
 }

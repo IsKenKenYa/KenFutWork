@@ -9,6 +9,7 @@ import {
   isAssistantPreviewHtmlPath,
   parseAssistantFileUrlPath,
   resolveAssistantRawFilePath,
+  stripAssistantUrlTrailingPunctuation,
   type AssistantFileReference,
   type AssistantFilePathResolveOptions,
   type AssistantPreviewFileKind,
@@ -88,7 +89,7 @@ interface PositionedCard {
 }
 
 function normalizeTrailingUrlText(url: string): string {
-  return url.trim().replace(/(?:[*_`]+|[.,;:!?，。！？；：、]+)+$/g, "");
+  return stripAssistantUrlTrailingPunctuation(url.trim());
 }
 
 export function isValidAssistantPreviewWebsiteUrl(url: string): boolean {

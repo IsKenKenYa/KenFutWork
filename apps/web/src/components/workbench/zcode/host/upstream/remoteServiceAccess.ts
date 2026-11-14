@@ -25,6 +25,7 @@ import {
   IPluginManagementService,
   IPluginSyncService,
   IPluginsService,
+  IProjectService,
   IPromptAttachmentTransferService,
   IProviderProvisioningTargetService,
   IProviderSettingsService,
@@ -35,6 +36,7 @@ import {
   ISkillsService,
   ISubagentsService,
   ISystemService,
+  ITaskGroupService,
   ITerminalService,
   IUsageStatsService,
   IWindowControllerService,
@@ -49,6 +51,8 @@ import {
  * 新增服务只需在此添加一个 getter。
  */
 export class RemoteServiceAccess implements IServiceAccessor {
+  readonly taskGroupService: ITaskGroupService;
+  readonly projectService: IProjectService;
   readonly fileService: IFileService;
   readonly mediaPreviewService: IMediaPreviewService;
   readonly gitService: IGitService;
@@ -94,6 +98,12 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
 
   constructor(channelClient: IChannelClient) {
+    this.taskGroupService = ProxyChannel.toService<ITaskGroupService>(
+      channelClient.getChannel(ITaskGroupService.channelName),
+    );
+    this.projectService = ProxyChannel.toService<IProjectService>(
+      channelClient.getChannel(IProjectService.channelName),
+    );
     this.fileService = ProxyChannel.toService<IFileService>(
       channelClient.getChannel(IFileService.channelName),
     );

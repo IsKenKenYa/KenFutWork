@@ -1,5 +1,4 @@
 import type {
-  ExecutionMode,
   zcodeUiProtocol as protocol,
   SandboxMode,
 } from "@kenfutwork/shared";
@@ -8,8 +7,6 @@ import type { ModelInvocationSnapshot } from "../../providers/types.js";
 
 /** Durable canonical input; credentials and attachment bytes remain outside persisted state. */
 export interface CodeAdmittedInput {
-  /** Host execution strategy captured at admission; never re-read from session settings. */
-  executionMode?: ExecutionMode;
   intent: protocol.ConversationInputIntent;
   runId: string;
   modelInvocation: ModelInvocationSnapshot;

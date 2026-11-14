@@ -117,10 +117,14 @@ export async function setPluginEnabledOptimistically(
     }
     return false;
   } finally {
-    if (isCurrentRequest()) {
+    // 上下文切换会让 isCurrentRequest() 变 false；若此时仍不释放 toggling，
+    // 设置页开关会永久置灰。只清理仍属于本次请求、且当前目标仍是该插件的忙碌态。
+    const current = get();
+    const ownsActiveToggle = activeToggleRequests.get(requestKey) === requestId;
+    if (ownsActiveToggle && current.togglingPluginId === pluginId) {
       set({ togglingPluginId: null });
     }
-    if (activeToggleRequests.get(requestKey) === requestId) {
+    if (ownsActiveToggle) {
       activeToggleRequests.delete(requestKey);
     }
   }

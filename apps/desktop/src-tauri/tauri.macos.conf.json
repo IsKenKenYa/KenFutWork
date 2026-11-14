@@ -6,6 +6,7 @@
     "resources": {
       "../../../release/server": "app/server",
       "../../../release/computer-use": "app/computer-use",
+      "../../../release/cua-helper": "app/cua-helper",
       "../../../release/web": "app/web",
       "../../../release/pg": "app/pg",
       "../../../release/runtime": "app/runtime",

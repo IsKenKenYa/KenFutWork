@@ -20,7 +20,7 @@
  * 与 `node:zlib`，网络出口统一收在 `fetchImpl` 上（单测替换成假云服务）。
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
 const ACCOUNT_HOST = "https://account.xiaomi.com";
@@ -46,7 +46,10 @@ const DEVICE_ID_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 
 /** 生成设备标识：登录时作为 `deviceId`，会话 cookie 里同时作为 `PassportDeviceId`。 */
-export function generateDeviceId(random = Math.random, length = 16) {
+export function generateDeviceId(
+  random = () => randomInt(DEVICE_ID_CHARS.length) / DEVICE_ID_CHARS.length,
+  length = 16,
+) {
   let out = "";
   for (let index = 0; index < length; index += 1) {
     out += DEVICE_ID_CHARS[Math.floor(random() * DEVICE_ID_CHARS.length)];

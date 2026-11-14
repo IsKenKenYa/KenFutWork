@@ -76,7 +76,9 @@ function composeWith(
     [
       createKnowledgePlugin({
         platform,
-        // 单元测试不 spawn 真实 CLI：探测直接返回「系统已装」。
+        // 测试固定 win32 x64：本机 arm64 会让 isSagCliPlatformSupported 落到
+        // unsupported_platform；单元测试也不 spawn 真实 CLI。
+        ...(platform === "win32" ? { arch: "x64" } : {}),
         probeCli: async () => true,
         ...(runner ? { runner } : {}),
       }),
@@ -305,6 +307,7 @@ describe("Jev 凭据复用链（0 配置）", () => {
       [
         createKnowledgePlugin({
           platform: "win32",
+          arch: "x64",
           probeCli: async () => true,
           runner,
         }),

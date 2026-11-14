@@ -33,7 +33,10 @@ type ModelTool = {
 it("actual native factory/Catalogue preserves SDK registered tools while refreshing next wire schema and executing current receipts", async () => {
   const task = await archiveTaskFixture();
   const kernel = archiveKernelFixture();
-  const requests: Array<{ tools?: ModelTool[] }> = [];
+  const requests: Array<{
+    tools?: ModelTool[];
+    messages?: Array<{ role: string; tool_call_id?: string; content: unknown }>;
+  }> = [];
   const executed: string[] = [];
   let version = "before";
   const server = createServer(async (request, response) => {
@@ -107,7 +110,7 @@ it("actual native factory/Catalogue preserves SDK registered tools while refresh
           execute: async (args) => {
             executed.push(String(args.version));
             version = "after";
-            return args;
+            return [args];
           },
         };
       },
@@ -205,6 +208,23 @@ it("actual native factory/Catalogue preserves SDK registered tools while refresh
     expect(schemaAt(0)).toEqual(["before"]);
     expect(schemaAt(1)).toEqual(["after"]);
     expect(executed).toEqual(["before", "after"]);
+    expect(
+      requests[1]?.messages?.find(
+        (message) => message.tool_call_id === "dynamic-before",
+      )?.content,
+    ).toBe('[{"version":"before"}]');
+    expect(
+      requests[2]?.messages?.find(
+        (message) => message.tool_call_id === "dynamic-after",
+      )?.content,
+    ).toBe('[{"version":"after"}]');
+    expect(
+      events.flatMap((event) =>
+        event.type === "tool.completed" && event.toolName === "CurrentDynamic"
+          ? [event.outputText]
+          : [],
+      ),
+    ).toEqual(['[{"version":"before"}]', '[{"version":"after"}]']);
     expect(
       events.filter(
         (event) =>

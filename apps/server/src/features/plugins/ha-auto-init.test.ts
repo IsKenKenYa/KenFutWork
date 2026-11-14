@@ -329,7 +329,9 @@ describe("HA 本机自动初始化", () => {
 
     // 冷读必须探一次活（否则 HA 被删过重标时会卡在假「已接入」），但只此一次
     expect(shared.fake.state.calls).toHaveLength(callsBeforeRestart + 1);
-    expect(shared.fake.state.calls.at(-1)).toBe("GET http://127.0.0.1:8123/api/config");
+    expect(shared.fake.state.calls.at(-1)).toBe(
+      "GET http://127.0.0.1:8123/api/config",
+    );
     expect(shared.fake.state.userWrites).toBe(1);
     expect(shared.fake.state.tokenRecords).toHaveLength(1);
   });

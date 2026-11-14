@@ -16,7 +16,6 @@
 | --- | --- | --- |
 | `agent.run` | `runCreateRequestSchema`（同 `POST /api/agent/runs`） | 启动一次智能体运行 |
 | `agent.cancel` | `{ runId, taskId? }`（Design 必填 Task） | 取消进行中的运行 |
-| `task.resume` | `{ taskId, lastSeq }` | Design 持久 Task 的断线续传 |
 | `canvas.resume` | `{ canvasId, lastSeq }` | 断线续传：从 `lastSeq` 起重放画布事件流 |
 | `terminal.start` | `{ taskId, sessionId, cols, rows, cwd?, shell? }` | 显式Task目录与授权中的真实PTY终端，断线等待管理范围退出 |
 | `terminal.input` | `{ sessionId, data }` | 向终端会话写入输入 |
@@ -64,11 +63,15 @@ Window Controller 读面已接原 `listTaskList`、`subscribeControllerV4`、`re
 
 供应商 Settings RPC 的保存装配收口到 `model-providers`，仍沿原 `providerSettingsService`／`modelSelectionService` 消费，不新增服务 key。设置 view 保留所有真实供应商及模型定义；聊天选择仅投影可执行聊天候选，生成／Flow 不进入聊天选择。原 `createPersonalProvider`／稀疏 `savePersonalProviderOverlay`、删除和供应商排序仍可用；共同字段保存不能将生成／Flow 的协议切成聊天缺省协议。实例创建是 unsafe 操作，宿主不自动重发，响应未知时先刷新列表核对。
 
-宿主扩展 `saveManagedModel({ providerId, expectedRevision, originalModelId?, model })`：缺省 originalModelId 表示新增，重复 ID 拒绝；显式 originalModelId 表示编辑，原模型已删除返回 404，修订过期返回 409。`saveManagedProvider({ providerId, patch })` 强制 patch.expectedRevision，其余字段沿共享供应商更新契约保存；原启停、删除和排序操作也消费同一原生模型集合。`getModelDefaults`／`saveModelDefaults` 读取、校验并持久化实例 chat／image／video 策略，无需 Project 或 Task。
+宿主扩展 `saveManagedModel({ providerId, expectedRevision, originalModelId?, model })`：缺省 originalModelId 表示新增，重复 ID 拒绝；显式 originalModelId 表示编辑，原模型已删除返回 404，修订过期返回 409。`saveManagedProvider({ providerId, patch })` 强制 patch.expectedRevision，其余字段沿共享供应商更新定义保存；原启停、删除和排序操作也消费同一原生模型集合。`getModelDefaults`／`saveModelDefaults` 读取、校验并持久化实例 chat／approval／image／video 默认模型，审批与对话选择分别保存，无需 Project 或 Task。
 
-授权设置的 `getView` 可读取本机 Key，用于查看和复制；普通 native 定义、REST 目录、通知与运行读面仅携带 hasCredential／credentialConfigured，不携带秘密值。省略 Key／headers 保留，显式 null 清除 Key，headers={} 清空。保存成功返回权威 view 并广播非敏感 view；原 Hook 同时提交应答 view，通知丢失也可更新列表。草稿修订与供应商 CAS 保留；旧开发数据不转换。默认执行策略、统一设置文档及 Design 消费迁移仍在后续切片，当前管理接口不表示完整统一目标已完成。
+授权设置的 `getView` 可读取本机 Key，用于查看和复制；普通 native 定义、REST 目录、通知与运行读面仅携带 hasCredential／credentialConfigured，不携带秘密值。省略 Key／headers 保留，显式 null 清除 Key，headers={} 清空。保存成功返回权威 view 并广播非敏感 view；原 Hook 同时提交应答 view，通知丢失也可更新列表。草稿修订与供应商 CAS 保留，当前对话模型与审批模型分别由同一供应商服务解析。
+
+原供应商的 `access.apiKeyManagementUrl` 由同一实例的 `compat.codeUi.apiKeyManagementUrl` 持久保存，聊天与生成／Flow 设置共同读取。原创建接口接受初始链接；稀疏保存时省略保留、字符串更新、明确 `null` 只清除链接，`access:null` 同时清除链接与 Key。清除 Key 不影响链接。链接属于公开元数据，凭据仍经原私有接口持有；同值保存保持修订，过期修订继续返回 409。
 
 模型编辑器已接 `resolveModelConfig`、`addPersonalModel` 与 `savePersonalModelDraft`：复用固定原推荐规则及 ModelConfigRules 的精确/手动合成，规则原件由 modelProviders 域持有。精确配置与模式标记保存于同一模型成员，标准运行容量从它推导；新增成员与配置同事务，原添加语义默认启用，新成员保留原模型 ID。草稿保存把改名、原成员位置与配置同事务提交，`basedOnRevision` 对整个 workspace Registry 作 CAS；所有配置写入口先锁工作区修订再锁实例。同修订并发只有一次提交，跨供应商配置变化同样使旧草稿返回 409；重复成员返回 409，已删除供应商/成员返回 404，不部分写入。恢复智能规则复用原结构空判定，删除个人精确配置，刷新沿用原推荐；同值重复保存不增修订，手动空配置仍按原规则拒绝。原 setPersonalModelEnabled 在事务内只修改最新 enabled，保留精确配置与手动/智能模式；Settings 保留停用成员，Selection 移除执行候选，同值保存不增修订。deletePersonalModel 同事务移除成员及精确规则，未知成员 404；删除后迟到的保存/启用请求拒绝，不能重新创建成员。独立改名/排序与指定模型连通性测试仍待接通。
+
+模型输入接纳时将有效容量保存到私有 `modelInvocation.contextWindow`，与选项正文、输入能力及供应商修订共同固定；旧输入缺少该字段时沿原目录解析。初始运行、指导切换、压缩和独立模型请求消费同一容量。实际调用的可信用量归属经已有 `run.usage.contextWindowTokens/maxOutputTokens` 字段发布，输出上限取实际原生请求；新输入不使用展示层的旧模型缓存补写容量。容量未知时保持未知，恢复推荐只改变后续新输入。
 
 重连间隔由 shared/governance.ts 持有默认值与护栏，按 workspace_settings 的 code_ui_reconnect_delay_ms ?? env ?? DEFAULTS 解析。现有 PUT /api/workspace/settings 接 codeUiReconnectDelayMs；读取持久真值，非法范围拒绝。新增列仅由前向迁移 20261003035733_code_ui_reconnect_setting.sql 引入，缺省 NULL 不覆盖 env。OpenAPI 将 /api/code-ui/events 正确标为 text/event-stream；逐条事件定义仍见共享原协议。HTTP 快照按原 conversationSnapshotSchema / conversationRowSchema / toolCallRowSchema 的实例引用生成复用组件，不裁剪字段、不改语义。
 
@@ -132,13 +135,163 @@ Code V4与Design原`agent.run`传输保留用户原文。现有运行设置读�
 
 Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画布引用、选区、生成偏好在 `workContext` 内随输入接纳冻结。Task 持有固定文件目录与授权代际，画布引用不能签发目录授权。Goal、审批、取消、队列及重连使用同一会话协议；后续 Goal Run 重新捕获当时能力，已接纳输入保留自己的能力快照。
 
-`sendConversationCommandV4` 的 RPC 参数可在 `envelope` 同级携带第一方宿主 `executionMode`，唯一载体契约是 `packages/shared/src/code-ui-contracts.ts` 的 `codeUiCommandCompanionSchema`／`CodeUiCommandCompanion`。它与下文的 `goalControl` 都属于宿主 companion，不向原 V4 envelope、payload、SSE 帧或 WS `agent.run` 增加字段。Code、Design 共用原传输、可替换代理与服务客户端；本次点击的可见选择独立于另一标签页随后写入的会话偏好，接纳后持久冻结到原输入与 Run。
+`sendConversationCommandV4` 使用原 V4 `envelope`，RPC 参数同时提供工作目录及项目身份；Goal 命令可使用下文的独立 `goalControl`。模型、思考、基础权限、`planEnabled` 与 `workContext` 使用原命令载荷，在点击发送和服务端接纳时分别冻结。RPC 参数、envelope 与各命令载荷均严格校验字段；Code、Design 共用原传输、可替换代理与服务客户端。
 
-同一命令和策略重放返回原回执；同命令改策略返回冲突，不借旧回执重跑。未提供 companion 时读取会话偏好，读取失败给出可读拒绝；已停用的 `loop` 不能接纳。`plan` 只开启独立规划收窄，不改基础文件／命令审批权限；`solo` 在共享工具门硬禁工具。目标入口仍派发原 `sendGoalCommand`，既有未验收 Goal 的普通补充沿原 `sendText`，不创建第二条目标运行链路。
+同一命令和相同内容重放返回原回执；同一命令更改内容返回冲突，不重复执行。基础权限为 `build`／`edit`／`yolo`，独立 Plan 在其上收窄执行范围；规划退出须经原人工批准流程，模型批准不能扩大角色或目录权限。原输入框直接使用当前规划草稿，普通文本沿 `sendText` 处理，明确目标命令沿 `sendGoalCommand` 处理。Goal 的创建、替换和恢复核验真实目标身份及修订，暂停后普通消息不自动恢复目标。
 
-外部 HTTP `/api/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。旧 `task.resume` 返回 `shared_conversation_required`，不保留第二套 Design 事件回放或独立 Goal/审批端点。
+原会话快照通过 `taskControl: { projectId, branchGeneration }` 提供当前根 Task 的项目与分支事实。根会话和子会话使用同一根 Task 事实，HTTP 与 SSE 使用同一提供方；它与消息 `revision`、文件授权版本分别持有。KFW 的 `sendText` 和 `stop` 在操作时复制该值，附件准备、配置等待和请求传输均保留原值。缺少时回执为 `rejected/proto.missingTaskControl`，项目或分支已改变时为 `stale/proto.staleTaskControl`。根记录事务先处理原命令回执重放，再核对新操作的观察值；同一命令键改变观察值返回 409。
 
-`agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。旧素材参数与非 Agent 的外部执行模式明确拒绝，素材及策略由共享会话接纳。
+创建回执的 `result.taskControl` 来自同一事务内实际插入的根记录，并随回执保存。预热 Task 的首个订阅快照尚未到达时，原首发也使用该初始值；重放创建回执返回原值，不能据此推断当前分支。协议字段为可选，以保留原 ZCode 协议解析范围；上述缺字段拒绝由 KFW 接纳服务执行。其它 Task 控制入口及移动后的历史读取仍按升级计划逐项验证。
+
+`createSession.firstInput` 与新 Task、原生线程、活动输入及创建回执在同一事务保存，回执的 `result.input` 返回 `startNow` 与原命令 ID。首条输入冻结模型、思考、规划、基础权限、工作内容及真实 Task 授权版本；模型执行在 HTTP 回执后通过原发布入口开始。同一实例、`clientId` 与 `commandId` 为创建业务键，首次参数指纹随回执保存；并发或顺序重放返回同一 Task，同键改参数返回 409，删除后迟到创建返回 404。COMMIT 回包丢失后的读取结果沿同一创建身份判断派发责任，不能让重复请求启动第二次执行。首条输入的附件继续要求先在真实 Task 上传。
+
+新 Task 的附加目录在创建事务取得项目行锁后读取，并与 Task 一起保存。项目目录修改先提交时，并发创建使用修改后的目录；已有 Task 的目录、读写权限和授权版本保持原值。创建回执重放仍返回原 Task，不重新继承项目设置。
+
+外部 HTTP `/api/agent/runs` 与 WS `agent.run` 使用同一 `codeUi.admitExternalRun`。必须提供真实 Task 及匹配的项目、授权代际；`inputId` 是稳定命令身份，同身份重放不重新执行。WS 先发送 `command.ack`（含 taskId/sessionId/inputId/runId），再触发同一原会话发布；运行事件与恢复通过原会话订阅读取。
+
+`agent.cancel` 由 canonical Task 输入和运行控制核验身份，先记录停止意图，再等待实际取消。素材、模型、权限与工作内容均由共享 Task 接纳并核验，外部请求不能覆盖已冻结的运行事实。
+
+服务升级后，中断输入需要明确重新提交，相关 Goal 保持暂停并等待明确恢复；模型、目录和权限上限继续使用原授权事实。完整升级规则见[实施规格 §2.7](../方案设计/Code工作域与工具内核实施规格.md)，检查回执与未完成验收见[日志](../日志.md)。
+
+## 原项目编辑器
+
+### 项目文件面板的只读 Git
+
+原 `git` 的只读方法继续使用既有 `workspacePath`、可选 `workspaceIdentity` 和 `viewerScope`；`viewerScope: { kind: "project", projectId }` 指定尚无 Task 的真实项目，参数没有新增字段。主目录和标准身份必须与当前项目一致，不能从当前选中 Task 或任意路径补充来源。
+
+提供方沿已初始化的可信连接，在独立数据库会话事务内取得项目 `FOR SHARE NOWAIT` 行锁和 `editor_revision`，将当前目录集合交给现有 ProcessSandbox 的 Project Read Lease。整个读取、Git 命令序列及进程关闭均在该事务内完成；目录编辑、重新关联和归档使用同一项目行，锁冲突返回 409。连接关闭或数据库会话丢失取消租约并等待实际进程退出，旧连接调用返回 404。项目关闭、归档、主目录改变和目录外路径同样返回 404；旧动作不能恢复项目或目录授权。
+
+租约始终只读无网，复用原 OS 探针、输出上限和退出确认，不创建 Task、Run 或 Task Work，也不发布 Task 进程快照。已授权但不属于当前仓库的附加文件不套用主仓库忽略规则，普通非 Git 目录返回空忽略列表；两种情况仍先核验全部输入路径。写入方法保持原拒绝规则。Task Git 继续沿持久 Task 工作域，项目修改不扩大已有 Task 权限。
+
+原 `ProjectEditor` 经已初始化的连接调用 `project.readProjects`、`project.readDirectory`、`project.saveProject` 与 `project.deleteProject`。提供方沿 `code-ui-host-rpc` 贡献，实例和接入身份由连接持有；本机目录浏览是明确的人类目录选择，不借用当前 Task 授权。
+
+编辑包含项目 `id`、有序 `roots`、固定 `primaryRoot`、`rootPermissions` 及非负 32 位 `expectedRevision`。根目录按真实路径归一化，重复和符号链接别名合并，路径中的空格保持。新增附加目录按明确的只读或可写选择保存；项目修改只影响新 Task，已有 Task 的目录和授权版本保持。
+
+创建省略 `id`，携带原表单生成的稳定 `creationId`、`kind: "code" | "design"`、有序目录和明确权限。实例与 `creationId` 组成创建业务键；规范化名称、目录、权限、工作方式及同目录选择形成参数指纹，同键改参数返回 409。项目与创建回执在同一事务保存，顺序或并发重放返回同一创建结果，不生成 Task 或 Canvas。同名新项目沿原规则追加 ` (2)`、` (3)`，同实例的名称分配在事务内串行完成。读取已提交回执先于再次校验文件系统；项目归档或物理删除后，回执仅保留实例和创建键，迟到请求返回 404，实例物理删除时级联清除。
+
+实例、项目及观察修订组成保存业务键，规范化的名称、目录及权限形成意图指纹。同键同意图返回原回执，意图变化或修订过期返回 409；同值保存不推进修订，也不占用该修订的修改回执。回执与项目变更在同一事务保存，目录后来移除不影响已提交意图的重放。归档或删除后的迟到保存返回 404，不能恢复项目。
+
+保存和归档后沿原 `broadcast.onMessage` 发布 `channel: "state:projects"`、`payload: { projectId }`。窗口重新读取真实项目列表，更新项目名称，不切换 Task、会话或内容标签。通知只提示重读，不能替代项目身份或目录授权。
+
+连接取消后，保存事务继续检查取消信号，宿主等待在途调用退出；旧连接调用和取消后的回执返回可读的 404。关闭中的项目拒绝编辑和新 Task 创建，归档等待原 Task 资源实际关闭。已提交的保存仍由原业务键读取，不自动重放有副作用的请求。
+
+### 项目置顶
+
+`project.saveProject` 的参数固定为单元素元组。置顶使用独立的严格对象 `{ id, expectedRevision, pinned, hostId? }`，`pinned` 必须为布尔值，`hostId` 仅允许 `local`。名称、目录、创建字段、未知字段及额外位置参数返回 400；目录编辑和项目创建继续使用各自既有完整输入。
+
+项目置顶存于同一 `public.projects.pinned`，通过项目读取结果返回；旧持久保存回执缺少该字段时按 `false` 解析。保存业务键仍为实例、项目及观察修订，本次规范化 `{ pinned }` 形成参数指纹，和普通项目编辑共用项目行锁与保存回执。不同意图或过期修订返回 `409/project_revision_conflict`，置顶与取消的真实变更只推进一次项目修订。同键连续或并发重放返回原回执，不覆盖之后的置顶状态；同值不推进修订或占用修改回执。
+
+置顶不依赖当前物理目录仍然存在，不修改项目名称、目录、Task 历史、权限或 Goal，不调用模型。项目归档、关闭及物理删除后的迟到保存保持原拒绝规则，不能恢复项目；连接取消及在途保存清理继续使用同一宿主上下文。保存后仍通过 `state:projects` 通知重新读取。
+
+### 项目新草稿准备
+
+原项目入口通过已初始化的可信连接调用 `project.prepareSession`。参数为单元素元组，其中严格对象包含必填 UUID `projectId`、可省略且只允许 `local` 的 `hostId`，以及 `code`／`design` 的 `preset`；省略 `preset` 使用 `code`。缺少项目身份、未知字段、错误类型或额外位置参数返回 400。
+
+`projects:editor` 提供方先按 Project ID 读取真实主目录，再通过原连接的 `connectionId` 调用已有 `workspace.open`，重新核验当前目录及项目已启用的工作方式。成功结果为严格的 `{ result: { projectId, workspacePath, workspaceIdentity } }`；目录采用原宿主确认的真实路径，身份由该项目 ID 与路径生成标准本机身份。同目录的其他项目不能替代指定项目；项目不存在、已归档、目录不可用或工作方式不匹配沿原宿主拒绝。
+
+准备只读取并核验目录，不创建或修改项目、Task、Canvas 或目录授权，也不调用模型。后续 Task 创建及授权冻结继续使用原 `createSession` 接纳流程。连接取消后拒绝迟到结果，宿主等待在途准备调用退出。
+
+客户端收到准备回执后重新读取真实项目目录，复验指定项目的主目录、标准身份与请求工作方式仍有效，再提交新草稿导航。原 Tab、Task、草稿版本、当前方式或最后选择改变后，旧回执不再导航；有效操作失败由原提示显示处理方法，保留当前 Task、草稿与内容。
+
+## 原分组结构读取与保存
+
+原宿主 RPC 的 `task-groups.read` 只接收空参数元组，由已初始化的可信本机连接调用。所属插件贡献方法，独立读取接口和 PostgreSQL 提供方返回同一只读快照中的 `revision`、`groups`、`members` 及根节点 `order`。读取不登记 Task、不推进组织修订，也不启动 Run。
+
+成员关联实例内的稳定 Task Owner；`workspaceKey` 和根 Task 排序键由当前 Project 身份与 Task 固定目录投影，项目当前目录改变不改写已有 Task 的目录或权限。组织修订独立于执行分支与授权代际。归档和恢复保留成员与顺序，Task 软删除或物理删除在原事务清除成员并推进一次组织修订，之后重复读取不能恢复记录。实例物理删除时级联清理组织数据。
+
+未知参数或额外位置参数返回 400；连接关闭取消尚未开始的读取，宿主等待已有读取结束并拒绝旧连接结果。
+
+`task-groups.save` 接收一个严格对象。创建固定 `creationId` 和 `expectedRevision`，编辑固定分组 `id` 和 `expectedRevision`；`title` 与 `color` 为稀疏字段。省略创建名称和颜色时沿原服务使用 `New group`、`gray`，编辑省略字段则保留已有值。名称先去除两端空白，UUID 业务身份统一小写；名称、颜色和观察修订共同形成保存意图指纹。
+
+创建键为实例与表单创建身份，编辑键为实例、分组身份与观察修订。事务取得实例组织行锁后先读取回执，再核对观察修订；分组、顺序、修订和回执共同提交。同键相同意图返回最初的完整分组结果，不覆盖之后的编辑；异参及过期修订返回 409。当前修订的同值编辑不推进修订，也不占用后续修改回执。新组插入根层顶部，编辑只改变名称和颜色，保留成员与顺序。
+
+提交后通过原 SSE 发布 `broadcast.onMessage`，内容为 `channel: "state:task-groups"`、`payload: {}`；通知用于重新读取，不作为持久组织真相。原客户端完成重连握手及服务恢复后，沿同一失效通知重新读取断线期间的组织更新，保留当前创建和改名意图。写入成功与后续读取分别处理，读取失败仍显示错误，已确认的名称和修订继续供下一次明确保存使用。COMMIT 回包丢失后保留同一保存材料，由原业务键读取已提交回执。连接关闭时取消未接纳保存，等待在途 SQL 退出；已提交结果仍由稳定键持有。组删除时清除相关回执中的结果与参数指纹，保留不透明业务身份及删除状态，迟到保存返回 404；实例物理删除时级联清理。完整原项目侧栏继续接入。
+
+`task-groups.ungroup` 接收一个严格的 `{ id, expectedRevision }` 对象，HTTP 成功回执为 `{ result: null }`。实例、统一小写的组身份与操作时观察修订组成业务键；严格输入的全部字段均属于该键，规范化意图与业务键相同，无额外参数指纹。组织行锁内先检查取消回执，再核验组和观察修订。全部持久成员按原顺序替换根层原组节点的位置，包含归档隐藏成员；成员标记为人工整理，其他根节点保持公开读取的相对次序。取消组不改变 Task、正文、目录、权限、归档及 Goal。
+
+成员返根、组删除、组织修订与删除回执在同一事务提交。取消回执共用原 `code_task_group_save_receipts`，只保留实例、业务键、组身份及 `deleted=true`，不保存名称、路径、结果或内容指纹；保留到实例物理删除并级联清除。同键顺序或并发重放成功，不重复推进组织修订；组仍存在但观察修订过期返回 409，组不存在或不同修订的迟到取消返回 404。非法字段、多余参数及缺少观察值返回 400。组取消后的原创建和编辑请求返回 404，不能恢复分组。成功后沿同一 SSE 通知重新读取，COMMIT 回包丢失保持原取消材料。连接关闭取消尚未接纳事务，宿主等待在途 SQL 退出后拒绝旧连接结果。
+
+`task-groups.admit` 接收严格的 `{ tasks, placement? }` 对象，成功回执为 `{ result: null }`。每个本机引用包含 `hostId: "local"`、`taskId`、精确的 `workspacePath` 和 `workspaceIdentity`。相同引用去重，同 Task 的冲突地址返回 400；活 Task 的地址与当前持久投影不符返回 409。Host 按稳定身份锁定真实 Task，再取得组织行锁；成员以同实例的稳定 Owner 关联。缺失、已删除和子会话不登记。首次成员按 PostgreSQL 原始创建时间及身份由新到旧进入根层顶部，已有成员与人工顺序保持；空、重复及并发登记不重复推进组织修订。
+
+创建归属 `placement: { task, groupId, creationId }` 的完整 Task 引用必须位于 `tasks`，目标组可为空。真实空 Task 以 TaskId 证明创建；首发别名只接受该 Task 保留的原始首条 canonical input，核验其 `clientId`、`sourceCommandId`、`admissionSeq=1`、无 `historyOf`，并联结同实例、同 Task 的有效原命令 ACK。只看命令表的 `status` 不足以证明已接纳；必须验证 `ack.status`、结果类型和输入身份。历史编辑保留的原始输入继续有效，分叉继承正文不提供新 Task 的创建证明。历史 ACK 的项目与分支属于创建事实，当前 Task 地址另行核验。
+
+有效创建别名统一为 TaskId，实例、固定命令命名空间 `code-ui:task-group-placement` 和 TaskId 组成一次创建归属的业务键；去重并按身份排列的完整引用、规范 TaskId 及目标组形成 SHA-256 参数指纹。回执复用该 Task 的 `code_ui_commands`，与自然登记和位置更新同事务提交，整次结构变化最多推进一次修订。同意图连续或并发重放返回原结果，别名不同不形成第二次归属；异参返回 409。命中已接纳回执后保持当前位置，旧请求不能覆盖后续人工整理。首次归属遇到已人工整理的成员只消费创建意图；目标组消失时沿原规则进入根层顶部。Task 软删除清除原指纹与回执内容，保留必要的不透明命令身份及删除状态；迟到归属返回 404，自然登记不恢复成员；Task 或实例物理删除沿原外键级联清理。
+
+登记与创建归属不修改 Task 正文、目录、权限或 Goal，也不启动 Run。结构变化后通过原 `state:task-groups` 通知重新读取；连接关闭取消尚未接纳的操作，宿主等待在途 SQL 退出。COMMIT 回包丢失保留同一规范意图，重放读取原回执，不重复整理。
+
+`task-groups.move` 接收严格的 `{ node, sourceGroupId, groupId, expectedRevision, anchor? }`，成功返回 `{ result: null }`。节点为 `{ type: "group", groupId }` 或 `{ type: "task", task }`；Task 使用上述完整本机引用。目标 `groupId: null` 表示根层，无锚点进入目标层顶部；`anchor: { node, side: "before" | "after" }` 固定动作时的相邻节点。分组仅能在根层排序，组内锚点只能为 Task。
+
+实例、节点类型、规范化节点身份及动作开始时的组织修订组成稳定业务键，全部规范化输入形成 SHA-256 参数指纹。真实 Task 行按身份加锁后取得组织行锁，先读取回执，再核验修订、当前来源、目标与锚点；缺失、已删除或归档 Task 的新移动返回 404，旧目录、来源或位置变化返回 409。同键相同意图重放不覆盖后续人工整理，异参返回 409；非法形状或额外参数返回 400。未登记的真实 Task 可直接进入目标层，并标记为人工整理。
+
+成员、源层与目标层的完整顺序、一次组织修订及移动回执共同提交；归档隐藏成员保持其相对次序。移动节点、来源组、目标组或锚点删除时，回执清除参数指纹和全部关联身份，只保留实例、节点类型、不透明节点身份、原修订及删除状态，迟到请求返回 404；实例物理删除级联清除。连接关闭取消尚未接纳的事务，宿主等待在途 SQL 退出；COMMIT 回包丢失继续使用原意图读取已提交结果。成功沿原 SSE 通知重新读取。该操作只改变分组和排序，不改变 Task 项目归属、目录、权限、正文或 Goal，不启动 Run；Task 跨项目移动使用单独服务。
+
+### Task 跨项目移动的连接边界
+
+`project.moveTask` 经已初始化的可信连接接收严格单元素元组。对象包含 `task`（`taskId`、`workspacePath`、可选 `workspaceIdentity`）、`sourceProjectId`、`projectId`、`observedRevision`，以及可选 `hostId`、`addMissingRoot`；未知字段、缺少参数及多余位置参数返回 400。移动键仍为实例、Task、来源项目、目标项目与观察修订，指纹保留规范化目录身份及明确补目录选择。
+
+项目树及原 Controller 的 Task 元信息同时保留 `taskControl` 和 `conversationRevision`，分别来自当前持久项目／分支与实际正文快照修订。历史元信息允许缺少字段，不能以当前界面选择或新读取的观察值替换已经开始的动作。
+
+历史轮次边界按稳定实例、Task 和 Task 类型关联当前 Owner，并校验当前项目、Run 与原生线程；边界中的项目继续表示生成时来源。继承历史的当前 Owner 项目随移动事务更新，更新前核验原实例、Task 和项目；来源身份、原生引用与文件详情保持。读取继承历史继续核验当前 Owner 和原生线程，不能用跨项目读取扩大文件或新 Run 权限。
+
+连接关闭后，尚未接纳的读取和准备事务检查该连接的取消信号并退出，原请求返回 404，Task 与目标项目保持。同键在线等待者继续使用自己的连接与原观察值；另一连接接纳前取消后，重新检查在途操作，不能覆盖已有在线操作。准备事务已提交的操作继续关闭原资源并完成归属更新，宿主关闭等待在途操作全部退出。原连接不能接收成功回执；结果未知时以同一业务意图读取原持久事实。移动保留 Task 固定目录及权限，Goal 继续保持原暂停或结束状态。
+
+会话租约由宿主绑定建立时实际读取的 Task 授权代际。移动只释放来源项目中属于该移动接纳代际及之前的会话租约；项目往返后重放旧移动回执，不能删除后来建立的合法租约。首次移动前的旧租约继续失效，即使 Task 返回原项目也不能通过旧租约恢复。代际仅由宿主登记，不增加请求参数或 wire 字段。
+
+连接内保存每个来源项目及会话的最大退订代际。初始读取返回后，登记租约前再次核对该记录；期间已经失效的读取返回 `409/code_ui_command_conflict`，不发表迟到初始帧。记录仅含不透明项目／会话身份与代际，连接关闭时清除；新连接重新读取当前 Task。
+
+后台接纳使用宿主记录的真实调用者及其 Task 授权代际，较早读取不能降低已登记代际；移动回执只清除该次接纳之前的调用者记录。后台工作完成后，后续 Run 使用独立 Runnable 上下文及自身取消信号，仍由原 Task、分支、权限及 Run 接纳控制。原 V4 分别投影唯一后台轮次、其唤醒输入和按 `originMeta.workId` 定位的结果摘要；模型输入沿同一工作记录消费，不按后台输入总行数推断运行次数。
+
+## 原项目树与归档管理
+
+原归档页面通过同一目录 owner 调用 `project.readTree`。`includeDeleted: true` 显式包含已归档项目并以 `deleted: true` 标识；普通读取排除这些项目及所属 Task。项目与根 Task 在同一 PostgreSQL 只读快照投影，Task 使用创建时固定目录及当前 Project 身份，不从已打开标签推导归属。`includeDeletedTasks: true` 返回最小删除事实，仅包含不透明 `taskId`、`projectId` 和 `hostId`。归档读取不恢复目录授权或运行。
+
+原 HTTP 客户端解析完整项目树后，只有仍属于当前连接的响应可以更新 Task 身份投影。标准目录身份与控制项目必须一致；项目变化需要更高分支代际，允许跨越多次移动，较早分支或同分支较早正文修订不覆盖当前事实，同分支项目冲突明确报错。Task 固定目录只由既有明确重新关联流程修改，其真实分支回执限制迟到旧读取。普通元信息登记不获得改变项目或目录的能力。
+
+同一投影还接收当前可信连接的 Controller `onDynamicControllerFrame` 中已解析的 Task 行，以及 `zcode-task.onDynamicWorkspaceEvent` 的 `workspace_task_list_changed.taskMeta`。Task／Controller RPC 的完整元信息及嵌套 `meta` 先按原 schema 解析，保存实际初始控制观察；未知服务的同名字段不登记身份。移动不直接产生原 Task workspace 通知，Controller 帧负责即时移动事实，后续真实 Task 通知继续使用当前归属。连接关闭后不发布迟到通知，旧连接的 RPC 回包不修改身份缓存。`task.removed` 不据此删除稳定 Task 身份，因为移动同样会移除来源地址。
+
+通知连接成功恢复后，客户端沿现有 Broadcast 同时发布 `state:projects` 与 `state:task-groups`。原项目和分组 Provider 分别重新读取已有接口，目录集合由共享项目导航同步，Task 树继续消费可信控制观察。该通知沿原 Controller 换代、会话重启与 available 顺序发布，不重放输入或修改 Task 目录授权。
+
+每个 Task 行的 `taskControl: { projectId, branchGeneration }` 供明确操作固定观察值。原 `archiveTask`、`unarchiveTask`、`deleteArchivedTask` 通过所属插件的宿主 RPC 贡献调用，完整参数包含 `taskId`、`workspacePath`、`workspaceIdentity` 及该观察值；客户端保留点击时的完整目标。未知字段、多余参数及缺少观察值返回 400，项目、目录或分支改变后拒绝旧操作。
+
+归档业务键由实例、Task、项目、观察分支和目标归档值生成；明确字段的规范化参数形成 SHA-256 指纹。回执使用原命令存储，顺序和并发重放读取同一结果，同键异参返回 409。归档先在事务内推进授权与分支并进入关闭状态，再等待原资源关闭器确认运行、后台工作、文件操作和进程退出，最后同事务发表归档状态与回执。准备提交回包丢失时，同键操作在业务锁内核验指纹、固定身份、原分支下一代及关闭状态，继续同一次关闭，不重复推进代际。
+
+恢复在原 Task 事务中保留固定目录、附加目录权限及沙箱范围，推进授权和分支后重新开放后续明确操作；同时更新持久 Goal 的 Task 分支与修订，原 SSE 发送新的 Goal 观察值。Goal 的正文、预算、计量、状态和历史保持，不自动发起 Run；用户通过原恢复入口携带当前 Task、Goal 观察值和 `baseRevision` 明确继续。关闭期间失败不能报告恢复完成。页面批次只处理确认时固定的身份集合，取消删除不发送删除请求；后续归档或搜索变化不能扩大确认范围。
+
+`deleteArchivedTask` 在同一 Task 业务锁内核对当前归档及观察分支，再经原资源关闭和删除服务执行；已恢复、已删除或不存在返回 `false`，界面按跳过计数。成功删除后原 Task、事件、输出和命令回执按现有规则清理；命令墓碑清除参数指纹及回执内容，归档／恢复迟到请求返回 404，实例物理删除时级联清除。归档或恢复的完成通知只触发目录重读，不切换当前 Task 或内容标签。
+
+## Task 未读状态
+
+原 `zcode-task.setTaskUnread` 与 `window-controller.mutateTask` 的 `mark-read`、`mark-unread` 使用所属插件贡献的同一提供方。调用绑定已初始化的可信连接，严格单元素参数包含 `taskId`、固定 `workspacePath`、标准本机 `workspaceIdentity`、`taskControl` 和点击时的 `observedLastUnreadAt`。前者另含 `unread` 及可选 `expectedUnreadAt`；后者将地址与 `mutation` 分别传入。原项目、时间线和分组行在点击时固定观察，导航和连接等待期间不从新缓存补充观察值。
+
+项目树、Task 元信息及 Controller 行共同返回 `unreadAt` 和 `lastUnreadAt`。前者缺省表示已读；后者是持久水位，读取清除后仍保留。新标记大于先前水位，取当前时间与水位加一的较大值；并发操作在原根 Task 行锁内串行执行。未读写入不改变消息修订、Task 项目、目录、权限、Run 或 Goal。
+
+实例、稳定 Task、当前项目与分支、观察水位和动作组成业务键。精确目录身份、观察值、动作与比较标记形成规范化参数指纹；标记和回执在同一事务保存到原 Task 与命令存储。同键重放返回原结果，异参及标未读使用旧水位返回 `409/task_unread_conflict`。读取清除按 `expectedUnreadAt` 比较，未命中返回当前元信息并保留新标记。旧回执不直接覆盖当前显示，客户端沿权威列表重新读取。
+
+提供方核对同实例 Owner、当前项目、分支及固定目录。Owner 或 Project 锁冲突返回 409；项目关闭、Task 删除及移动后的旧观察不能更新标记。Task 删除清除两个标记，同时由原命令删除流程清除参数指纹及回执内容，只保留原最小删除身份；实例物理删除沿原外键级联清除。连接关闭取消尚未接纳事务并等待在途操作退出，关闭或换代后的结果不进入客户端。
+
+成功沿既有 Controller 和 Task SSE 通知刷新列表。原菜单关闭后保持其焦点规则；离开行操作状态后显示 Task 未读点，项目收起时显示所属未读提示。点击原 Task 使用该行观察值清除标记，不改变当前内容标签。
+
+## Task 置顶状态
+
+`zcode-task.setTaskPinned` 与原 Controller `mutateTask` 的 `pin` 分支经同一组织插件调用置顶提供方。严格单元素参数包含完整本机 Task 地址、`taskControl`、`observedPinRevision` 和目标 `pinned`；Controller 将地址观察与 `{ kind: "pin", pinned }` 分别传入。客户端在等待连接之前复制点击时的观察，不能从较新缓存补充版本。
+
+原根 Task 的 `pinned` 继续持有唯一置顶事实，独立 `pin_revision` 从零开始，只有实际改变 `pinned` 时推进一次。Task 元信息、项目树和 Controller 保留 `pinRevision`，置顶成员列表使用相同根记录。置顶不改正文、保存用的运行修订、活动时间、未读水位、Task 目录、权限、Run 或 Goal。
+
+服务端以实例、稳定 Task、当前项目与分支、观察修订和目标置顶值生成业务键；完整精确地址及观察参数形成 SHA-256 指纹。核对当前根 Task、稳定 Owner、项目、目录与代际后，沿同一根行锁读取原回执，再比较新操作的观察修订。变更与 `code_ui_commands` 的 accepted 回执同事务提交；同键连续或并发重放返回原结果，较早回执不覆盖后来的取消或再次置顶。同值操作不推进修订，过期新操作及同键异参返回 `409/task_pin_conflict`，未知字段或错误类型返回 400。
+
+置顶和未读共用 Task 身份、事务、回执及连接关闭检查，字段更新分别持有。Owner／Project 锁冲突返回 409；移动后旧项目和分支先于回执检查拒绝。删除沿原 Task 事务清除置顶修订及命令内容，保留既有最小删除身份，迟到写入返回 404；实例物理删除级联清除。关闭取消未接纳操作并等待在途 SQL 退出，连接或 Task 代际变化后客户端拒绝迟到 ACK。
+
+成功或未知写入结果均沿原列表重新读取当前事实，历史 ACK 不进入普通 Task 投影或置顶缓存。原行的临时显示意图只保留到调用和权威刷新结束；失败后释放并重读。当前内容标签和 SessionPane 不因置顶改变。
+
+## Task 标题
+
+原 Task 行与 Header 的 `renameTask` 在浏览器宿主边界转换为既有 V4 `renameSession`。原命令工厂在连接等待前固定 `clientId`、`commandId`、Task、标题及 `taskControl`，复用共享 workspace transport；不打开目标 SessionPane 或改变内容标签。HTTP 使用原 `sendConversationCommandV4`，没有另一套改名写入方法。
+
+服务端沿原根 Task 锁与命令回执更新 `snapshot.meta.title`、`titleSource: "custom"` 及原协议 `seq/revision`。活动时间、正文、当前 Run、Goal、目录权限及其它配置保持；不要求正文 `baseRevision`，可在模型输出期间处理。`taskControl` 缺失或过期沿既有 rejected/stale 原因拒绝新命令，固定目录与根 Task 也分别核验。
+
+幂等域仍为实例、原客户端和命令身份，完整原信封参数沿既有指纹检查。新一次明确改名使用新原命令，同一信封连续或并发重放读取原 ACK；不同参数复用该键返回 409。旧 ACK 不重写后来的标题，原命令查询和删除墓碑继续有效。已为 `custom` 的同值标题返回 `noop`；空字符串仍为自定义标题，后续 Run 不自动覆盖，界面按原空标题标签展示。
+
+上行前在原 pending 账本登记 workspace 来源及摘要，不保存标题正文。改名沿既有非重发类别，只查询原 `{sessionId, commandId}`；传输结果不明时不自动重发，也不创建替代命令。取得确定 ACK 后读取当前 Task 元信息；回执、查询或元信息返回时均核对当前连接及已知 Task 代际。Header 保留本次目标，迟到结果不关闭后来打开的改名框，本机列表沿权威读取更新。
 
 ## 文档资源变更
 
@@ -148,9 +301,9 @@ Code、Design 会话均使用原 V4 命令与 Task 宿主；工作方式、画�
 
 ## 第一方 Code Goal 控制扩展
 
-`sendConversationCommandV4` 的原 V4 envelope 保持字节来源契约；第一方 RPC 参数同级可携 `goalControl: { expectedGoal: {goalId, revision} | null, resumeModelSelection? }`。订阅 Task 时独立 `onGoalControlState` 通知返回该 Task 的真实已观察目标身份与修订。宿主适配器未观察状态时拒绝发送 Goal 控制；替换请求在 Task 根锁内核验旧目标，不能替旧客户端自动读取新目标补 fence。同命令重连保留最初观察值，缓存按 Task 区分；服务端既有命令幂等域不变。
+`sendConversationCommandV4` 的 envelope 结构沿用原 V4，第一方 RPC 参数同级可携 `goalControl: { expectedGoal: {goalId, revision} | null, resumeModelSelection? }`，接口定义位于 `packages/shared/src/code-ui-contracts.ts`。订阅 Task 时独立 `onGoalControlState` 通知返回该 Task 已观察的目标身份与修订。宿主适配器未观察状态时拒绝发送 Goal 控制；替换请求在 Task 根锁内核验原目标，客户端未观察新目标时不能自动补用新状态。同命令重连保留最初观察值，缓存按 Task 区分；服务端既有命令幂等域不变。
 
-Goal 续跑与默认恢复消费持久的无密钥模型调用快照并核验供应商修订。显式重新选择由第一方参数 `goalControl.resumeModelSelection` 精确编译，不把失效选择换成默认模型。原 UI 恢复使用冻结值，本轮没有新增恢复模型 picker；供应商修订变化会给出可读拒绝。
+Goal 续跑与默认恢复消费持久的无密钥模型调用快照并核验供应商修订。显式重新选择由第一方参数 `goalControl.resumeModelSelection` 精确编译，不把失效选择换成默认模型。原 UI 恢复使用冻结值；供应商修订变化会给出可读拒绝。
 
 
 ## Flow 事件代际与续传

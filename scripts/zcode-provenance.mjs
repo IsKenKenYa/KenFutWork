@@ -32,8 +32,31 @@ export function readZcodeInventory(root) {
     !inventory.records.length
   )
     throw new Error("ZCode 清单缺少有效提交、版本或来源记录。");
+  const revisions = inventory.revisions;
+  if (
+    revisions !== undefined &&
+    (!revisions ||
+      typeof revisions !== "object" ||
+      Array.isArray(revisions) ||
+      Object.entries(revisions).some(
+        ([revision, version]) =>
+          !commitPattern.test(revision) ||
+          typeof version !== "string" ||
+          !version.trim() ||
+          (revision === inventory.revision && version !== inventory.version),
+      ))
+  )
+    throw new Error("ZCode 提交版本登记无效。");
   const targets = new Set();
   for (const record of inventory.records) {
+    if (
+      record.sourceRevision !== undefined &&
+      (typeof record.sourceRevision !== "string" ||
+        !commitPattern.test(record.sourceRevision) ||
+        (record.sourceRevision !== inventory.revision &&
+          typeof inventory.revisions?.[record.sourceRevision] !== "string"))
+    )
+      throw new Error(`ZCode 来源提交无效或未登记：${record.target}`);
     if (
       !canonicalPath(record.source) ||
       !record.source.startsWith(prefix) ||
@@ -128,19 +151,14 @@ function matchesSource(bytes, expected) {
           expected))
   );
 }
-export function verifyZcodeInventory({ root, sourceRoot, prepare = false }) {
-  const inventory = readZcodeInventory(root);
-  const donor = join(sourceRoot ?? root, "references/zcode");
-  if (prepare && sourceRoot)
-    throw new Error("--prepare-source 不能与 --source-root 同时使用。");
-  if (prepare) prepareZcodeBaseline(donor, inventory.revision);
+function readRevisionSources(donor, revision, version, records, mirror) {
   const paths = [
     ...new Set([
       "package.json",
-      ...inventory.records.map((record) => record.source.slice(prefix.length)),
+      ...records.map((record) => record.source.slice(prefix.length)),
     ]),
   ];
-  const sources = sourceRoot
+  const sources = mirror
     ? new Map(
         paths.map((path) => [
           path,
@@ -149,20 +167,52 @@ export function verifyZcodeInventory({ root, sourceRoot, prepare = false }) {
             : null,
         ]),
       )
-    : commitSources(donor, inventory.revision, paths);
+    : commitSources(donor, revision, paths);
   const manifest = sources.get("package.json");
-  if (
-    !manifest ||
-    JSON.parse(manifest.toString("utf8")).version !== inventory.version
-  )
+  if (!manifest || JSON.parse(manifest.toString("utf8")).version !== version)
     throw new Error("ZCode 清单版本与所声明提交的 package.json 不一致。");
+  return sources;
+}
+export function verifyZcodeInventory({ root, sourceRoot, prepare = false }) {
+  const inventory = readZcodeInventory(root);
+  const donor = join(sourceRoot ?? root, "references/zcode");
+  if (prepare && sourceRoot)
+    throw new Error("--prepare-source 不能与 --source-root 同时使用。");
+  const groups = new Map([[inventory.revision, []]]);
+  for (const record of inventory.records) {
+    const revision = record.sourceRevision ?? inventory.revision;
+    if (!groups.has(revision)) groups.set(revision, []);
+    groups.get(revision).push(record);
+  }
+  if (sourceRoot && groups.size > 1)
+    throw new Error(
+      "ZCode 混合来源必须按 Git 提交核对，不能使用单份目录镜像。",
+    );
+  const sourcesByRevision = new Map();
+  for (const [revision, records] of groups) {
+    if (prepare) prepareZcodeBaseline(donor, revision);
+    sourcesByRevision.set(
+      revision,
+      readRevisionSources(
+        donor,
+        revision,
+        revision === inventory.revision
+          ? inventory.version
+          : inventory.revisions?.[revision],
+        records,
+        !!sourceRoot,
+      ),
+    );
+  }
   const drift = [];
   for (const record of inventory.records) {
     const target = join(root, record.target);
     const reasons = [];
     if (
       !matchesSource(
-        sources.get(record.source.slice(prefix.length)) ?? null,
+        sourcesByRevision
+          .get(record.sourceRevision ?? inventory.revision)
+          .get(record.source.slice(prefix.length)) ?? null,
         record.sha256,
       )
     )

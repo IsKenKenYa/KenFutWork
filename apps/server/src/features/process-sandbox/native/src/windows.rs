@@ -5,7 +5,7 @@
 use crate::windows_output::{Emitter, emit};
 use crate::windows_process::{NativeProcess, watch};
 use crate::windows_protocol::{Launch, Request};
-use anyhow::{Result, ensure};
+use anyhow::{Result, bail, ensure};
 use appcontainer_common::base_container_runner::BaseContainerRunner;
 use learning_mode_windows::SecurityEnvironmentApi;
 use serde_json::{Value, json};
@@ -70,10 +70,27 @@ pub(crate) fn is_cmd_exe(path: &str) -> bool {
 
 // 此 policy/launch 形状由 Codex mxc-sandbox 的一手实现改编，不含其 AgentLoop。
 fn validate_launch(input: &Launch) -> Result<()> {
-    ensure!(
-        !input.task_id.is_empty() && input.generation > 0,
-        "Task 执行身份或授权版本无效"
-    );
+    match (&input.task_id, &input.project_owner) {
+        (Some(task_id), None) => ensure!(
+            !task_id.is_empty() && input.generation > 0,
+            "Task 执行身份或授权版本无效"
+        ),
+        (None, Some(owner)) => {
+            ensure!(
+                owner.kind == "project-read"
+                    && !owner.lease_id.is_empty()
+                    && !owner.instance_id.is_empty()
+                    && !owner.project_id.is_empty()
+                    && !owner.connection_id.is_empty()
+                    && !owner.revision.is_empty()
+                    && !input.unrestricted
+                    && input.pty.is_none()
+                    && !input.live_streams,
+                "Project 读取身份或执行方式无效"
+            );
+        }
+        _ => bail!("执行 owner 必须是 Task 或 Project 读取租约"),
+    }
     ensure!(
         !input.command.is_empty() && PathBuf::from(&input.cwd).is_absolute(),
         "命令或 cwd 无效"
@@ -245,7 +262,7 @@ fn route(request: Request, processes: &mut Processes, output: &Emitter) -> Resul
                     "Job probe 未为空"
                 );
                 Ok(
-                    json!({"filesystem":if unrestricted {"unrestricted"} else {"enforced"},"processRange":"job-object","protocolVersion":2,"pty":"conpty","stdio":"ack-stream","unrestrictedExecution":true}),
+                    json!({"filesystem":if unrestricted {"unrestricted"} else {"enforced"},"processRange":"job-object","protocolVersion":2,"pty":"conpty","stdio":"ack-stream","unrestrictedExecution":true,"projectReadOnly":true}),
                 )
             })(),
         )?,

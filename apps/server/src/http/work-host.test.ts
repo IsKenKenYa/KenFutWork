@@ -12,8 +12,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
-import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
 import multipart from "@fastify/multipart";
+import type { WorkEditorPinnedRelease } from "@kenfutwork/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
@@ -565,7 +565,9 @@ describe("work 宿主路由", () => {
 
   const workProjectId = "22222222-2222-4222-8222-222222222222";
   const saveForm = (
-    overrides: Partial<Record<"relativePath" | "projectId" | "content", string>> = {},
+    overrides: Partial<
+      Record<"relativePath" | "projectId" | "content", string>
+    > = {},
   ) => {
     const form = new FormData();
     form.append("projectId", overrides.projectId ?? workProjectId);

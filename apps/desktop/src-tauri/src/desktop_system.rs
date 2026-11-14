@@ -20,12 +20,14 @@ use tauri::Manager;
 pub enum CuaPermissionKind {
     Accessibility,
     ScreenRecording,
+    Automation,
 }
 
 fn cua_settings_url(permission: CuaPermissionKind) -> &'static str {
     match permission {
         CuaPermissionKind::Accessibility => "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
         CuaPermissionKind::ScreenRecording => "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+        CuaPermissionKind::Automation => "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
     }
 }
 
@@ -72,6 +74,38 @@ pub fn open_cua_permission_settings(
         let _ = permission;
         Err("该权限入口仅适用于 macOS。".into())
     }
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    /// 仅查询，不弹窗。
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    /// 触发系统原生授权框；用户点过「允许」后本次返回 true。
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+/// 先请求系统原生授权框，让系统把当前应用放进「屏幕录制」列表。
+///
+/// 已授权直接返回 true；用户拒绝或系统不再弹框时返回 false，调用方继续打开设置面板。
+#[tauri::command]
+pub fn request_cua_screen_recording_access(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<bool, String> {
+    // 与打开设置一致：只允许从应用包内调用，页面不能指定别的授权主体。
+    cua_permission_owner(app, window)?;
+    #[cfg(target_os = "macos")]
+    {
+        unsafe {
+            if CGPreflightScreenCaptureAccess() {
+                return Ok(true);
+            }
+            return Ok(CGRequestScreenCaptureAccess());
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    Ok(false)
 }
 
 /// 清洗前端传来的文件名：先按路径分隔符取**末段**（防 `../` 穿越），再剥控制字符；

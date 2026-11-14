@@ -18,7 +18,7 @@
     "@zcode/provider": "workspace:*",
     "@zcode/services": "workspace:*",
     "@zcode/shared": "workspace:*",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "scripts": {
     "build": "tsc --build tsconfig.json --force",

@@ -36,7 +36,10 @@ export function createCodeUiSystemHost(
     "system.listIntegratedTerminalShells": {
       async call(): Promise<IntegratedTerminalShellOption[]> {
         if (platform !== "win32") return [];
-        return listIntegratedTerminalShellOptions(options.detectShells?.());
+        return listIntegratedTerminalShellOptions(
+          options.detectShells?.(),
+          platform,
+        );
       },
     },
   };

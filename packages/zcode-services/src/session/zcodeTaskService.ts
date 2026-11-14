@@ -1,7 +1,7 @@
 /* eslint-disable max-lines -- ZCode task wrapper service 接口集中承载 app/runtime API，拆散会让替换阶段更难追踪。 */
 import type { Event } from "@zcode/rpc";
 import { ServiceChannels } from "@zcode/shared";
-import type { CommandPayloadMap } from "@zcode/shared/zcode-protocol-v4";
+import type { CommandPayloadMap, ConversationTaskControl } from "@zcode/shared/zcode-protocol-v4";
 import { createServiceDescriptor } from "#src/descriptors.js";
 import type {
   ZCodeImportSessionsResult,
@@ -45,12 +45,6 @@ import type {
   ZCodeTaskListSortBy,
   ZCodeTaskListWorkspaceScope,
   ZCodeWorkspaceEventSubscriptionParams,
-  ZCodeGroupedTaskView,
-  ZCodeGroupedTaskViewOrderInput,
-  ZCodeGroupedTaskViewQuery,
-  ZCodeGroupedTaskViewStructure,
-  ZCodeTaskGroup,
-  ZCodeTaskGroupColor,
 } from "#src/session/zcodeTaskListTypes.js";
 
 export interface ZCodeTaskSnapshotWithEtagResult {
@@ -161,17 +155,6 @@ export type {
   ZCodeTaskListSortBy,
   ZCodeTaskListWorkspaceScope,
   ZCodeWorkspaceEventSubscriptionParams,
-  ZCodeGroupedTaskRef,
-  ZCodeGroupedTaskView,
-  ZCodeGroupedTaskViewNode,
-  ZCodeGroupedTaskViewOrderInput,
-  ZCodeGroupedTaskViewQuery,
-  ZCodeGroupedTaskViewStructure,
-  ZCodeGroupedTaskViewStructureMember,
-  ZCodeGroupedTaskViewStructureTopOrder,
-  ZCodeGroupedTaskViewTopLevelNodeRef,
-  ZCodeTaskGroup,
-  ZCodeTaskGroupColor,
 } from "#src/session/zcodeTaskListTypes.js";
 
 /** 一个 task 输入轮次的终态结果，供后台派发（定时任务）回写运行结果。 */
@@ -404,46 +387,6 @@ export interface IZCodeTaskService {
    */
   listTaskList(params: ZCodeTaskListQuery): Promise<ZCodeTaskListResult>;
 
-  /** 创建最小 task group；完整 delete 后续由 group 管理功能补齐 */
-  createTaskGroup(params?: {
-    title?: string;
-    color?: ZCodeTaskGroupColor;
-  }): Promise<ZCodeTaskGroup>;
-
-  /** 重命名 task group；workspaceScopes 只用于通知当前可见 grouped 视图刷新 */
-  renameTaskGroup(params: {
-    groupId: string;
-    title: string;
-    workspaceScopes?: ZCodeTaskListWorkspaceScope[];
-  }): Promise<ZCodeTaskGroup>;
-
-  /** 更新 task group 颜色；workspaceScopes 只用于通知当前可见 grouped 视图刷新 */
-  updateTaskGroupColor(params: {
-    groupId: string;
-    color: ZCodeTaskGroupColor;
-    workspaceScopes?: ZCodeTaskListWorkspaceScope[];
-  }): Promise<ZCodeTaskGroup>;
-
-  /** 删除 task group；调用方应先把组内 task 移回顶层 root */
-  deleteTaskGroup(params: {
-    groupId: string;
-    workspaceScopes?: ZCodeTaskListWorkspaceScope[];
-  }): Promise<void>;
-
-  // 服务端 grouped 查询只回原始结构（不 join tasks 表），
-  // renderer 用 task 行分区 + session detail 统一投影。
-
-  /**
-   * 查询 Grouped 视图原始结构（group/member/顶层排序，不 join tasks 表）。
-   * 客户端以 task 行分区为左表 join 本结构，sessions-index 只补充实时 detail。
-   */
-  listGroupedTaskViewStructure(params: {
-    workspaceScopes: ZCodeTaskListWorkspaceScope[];
-  }): Promise<ZCodeGroupedTaskViewStructure>;
-
-  /** 一次性提交 grouped 视图最终排序和 membership，服务层用 sqlite transaction 落库 */
-  applyGroupedTaskViewOrder(params: ZCodeGroupedTaskViewOrderInput): Promise<ZCodeGroupedTaskView>;
-
   /** 列出 workspace 下所有已归档 task */
   listArchivedTasks(params: {
     workspacePath: string;
@@ -645,6 +588,7 @@ export interface IZCodeTaskService {
     taskId: string;
     workspacePath: string;
     workspaceIdentity?: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<boolean>;
 
   /** 逐项执行归档条件删除，批次结束后统一通知列表；不清理 CLI 会话。 */
@@ -660,6 +604,7 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
     title: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<ZCodeTaskMeta>;
 
   /** 更新 task 置顶状态 */
@@ -668,6 +613,8 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
     pinned: boolean;
+    taskControl?: ConversationTaskControl;
+    observedPinRevision?: number;
   }): Promise<ZCodeTaskMeta>;
 
   /** 更新 task 未读状态 */
@@ -676,6 +623,8 @@ export interface IZCodeTaskService {
     workspacePath: string;
     workspaceIdentity?: string;
     unread: boolean;
+    taskControl?: ConversationTaskControl;
+    observedLastUnreadAt?: number;
     /** 仅用于已读 compare-and-clear；缺省时保持既有无条件写入语义。 */
     expectedUnreadAt?: number;
   }): Promise<ZCodeTaskMeta>;
@@ -685,6 +634,7 @@ export interface IZCodeTaskService {
     taskId: string;
     workspacePath: string;
     workspaceIdentity?: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<ZCodeTaskMeta>;
 
   /** 取消归档 task，使其重新回到默认任务列表 */
@@ -692,6 +642,7 @@ export interface IZCodeTaskService {
     taskId: string;
     workspacePath: string;
     workspaceIdentity?: string;
+    taskControl?: ConversationTaskControl;
   }): Promise<ZCodeTaskMeta>;
 
   /** 基于 source task 的会话配置新建一个空白分支，用于重新编辑某条用户输入。 */

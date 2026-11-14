@@ -13,6 +13,33 @@ export function formatAgentMessage(intl: AgentIntl, id: string, fallback: string
   return message === id ? fallback : message;
 }
 
+function formatTokenCount(value: number): string {
+  if (value >= 1_000) {
+    const thousands = value / 1_000;
+    return `${Number.isInteger(thousands) ? thousands : thousands.toFixed(1)}k`;
+  }
+  return String(value);
+}
+
+/**
+ * 子代理卡片的用量行。上游没上报（整块缺省或单个字段缺省）读作「未统计」，
+ * 不拿 0 冒充；只有真实上报的数字才写进卡片。
+ */
+export function formatAgentUsage(
+  usage: ToolCallBlockRenderContext["agentUsage"],
+): string {
+  const inputTokens = usage?.inputTokens;
+  const outputTokens = usage?.outputTokens;
+  if (inputTokens === undefined && outputTokens === undefined) {
+    return "用量 未统计";
+  }
+  const inputText =
+    inputTokens === undefined ? "未统计" : formatTokenCount(inputTokens);
+  const outputText =
+    outputTokens === undefined ? "未统计" : formatTokenCount(outputTokens);
+  return `用量 输入 ${inputText} 输出 ${outputText}`;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

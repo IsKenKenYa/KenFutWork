@@ -3,7 +3,13 @@ import {
   type CodeUiEvent,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
+import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
+import type {
+  CodeUiHostRpcCleanup,
+  CodeUiHostRpcContext,
+} from "./host-rpc-handler.js";
 import { CodeUiRepositoryError } from "./repository.js";
+import { diffConversationSnapshots } from "./snapshot-diff.js";
 
 type Snapshot =
   | protocol.ConversationSnapshot
@@ -33,9 +39,21 @@ interface Subscription {
   /** 捕获原调用的路由identity；null显式表示path-only，不参与权限判定。 */
   workspaceIdentity?: string | null;
   projectId?: string;
+  /** 会话租约绑定实际读取的Task授权代际，迟到移动不能释放后来的租约。 */
+  taskScopeGeneration?: number;
   ordinal: number;
   cursor: { logEpoch: string; seq: number; retiredEpochs: Set<string> };
-  read: () => Promise<{ snapshot: Snapshot; seq: number }>;
+  /**
+   * 上次成功推送的装饰后视图：online 帧优先对它做增量 diff（流式热路径从
+   * 「每帧重发整个会话」变为「只发变化」）；deltas 发送成功后推进，发送失败
+   * 不推进——客户端按 fromSeq 衔接判定断档，走既有 resync 全量自愈。
+   */
+  lastPushed?: ConversationSnapshot | undefined;
+  read: () => Promise<{
+    snapshot: Snapshot;
+    seq: number;
+    taskScopeGeneration?: number;
+  }>;
 }
 export interface CodeUiWorkspaceConfigRefreshFailure {
   connectionId: string;
@@ -53,12 +71,21 @@ interface Connection {
   send: (event: CodeUiEvent) => Promise<void>;
   close: () => void;
   subscriptions: Map<string, Subscription>;
+  retiredTaskGenerations: Map<string, number>;
   receivesNotifications: boolean;
+  abort: AbortController;
+  cleanups: Set<CodeUiHostRpcCleanup>;
+  disposal?: Promise<void>;
+}
+
+function taskSubscriptionKey(projectId: string, topic: string) {
+  return JSON.stringify([projectId, topic]);
 }
 
 /** 连接只持有 owned 订阅；断线释放租约，权威会话与 Agent 运行独立存活。 */
 export class CodeUiConnections {
   private readonly connections = new Map<string, Connection>();
+  private readonly disposals = new Set<Promise<void>>();
 
   open(
     owner: string,
@@ -89,7 +116,7 @@ export class CodeUiConnections {
         independentPlanState: true,
       },
     });
-    this.connections.set(hello.connectionId, {
+    const connection: Connection = {
       owner,
       accessClientId,
       hello,
@@ -97,17 +124,110 @@ export class CodeUiConnections {
       send,
       close,
       subscriptions: new Map(),
+      retiredTaskGenerations: new Map(),
       receivesNotifications,
-    });
+      abort: new AbortController(),
+      cleanups: new Set(),
+    };
+    this.connections.set(hello.connectionId, connection);
     return {
       hello,
-      dispose: () => this.connections.delete(hello.connectionId),
+      dispose: () => this.dispose(connection),
     };
   }
 
-  closeAll() {
-    for (const connection of this.connections.values()) connection.close();
-    this.connections.clear();
+  async closeAll() {
+    const connections = [...this.connections.values()];
+    for (const connection of connections) this.dispose(connection);
+    const transports = connections.map(async (connection) => {
+      connection.close();
+    });
+    await this.waitForDisposals([...this.disposals, ...transports]);
+  }
+
+  retireTaskSubscriptions(
+    owner: string,
+    taskIds: readonly string[],
+    sourceProjectId: string,
+    scopeGeneration: number,
+  ): void {
+    const topics = new Set(taskIds.map(protocol.conversationTopic));
+    for (const connection of this.connections.values()) {
+      if (connection.owner !== owner) continue;
+      for (const topic of topics) {
+        const key = taskSubscriptionKey(sourceProjectId, topic);
+        const previous = connection.retiredTaskGenerations.get(key);
+        if (previous === undefined || previous < scopeGeneration)
+          connection.retiredTaskGenerations.set(key, scopeGeneration);
+      }
+      for (const [id, subscription] of connection.subscriptions) {
+        if (
+          subscription.projectId === sourceProjectId &&
+          subscription.taskScopeGeneration !== undefined &&
+          subscription.taskScopeGeneration <= scopeGeneration &&
+          topics.has(subscription.topic)
+        )
+          connection.subscriptions.delete(id);
+      }
+    }
+  }
+
+  context(
+    owner: string,
+    id: string | undefined,
+    accessClientId: string | null,
+  ): CodeUiHostRpcContext {
+    const connection = this.require(owner, id, false, accessClientId);
+    const connectionId = connection.hello.connectionId;
+    return Object.freeze({
+      actor: Object.freeze({
+        instanceId: connection.owner,
+        accessClientId: connection.accessClientId,
+      }),
+      connectionId,
+      signal: connection.abort.signal,
+      requireInitialized: () => {
+        this.require(owner, connectionId, true, accessClientId);
+      },
+      onClose: (cleanup: CodeUiHostRpcCleanup) => {
+        this.require(owner, connectionId, false, accessClientId);
+        connection.cleanups.add(cleanup);
+        return () => {
+          connection.cleanups.delete(cleanup);
+        };
+      },
+    });
+  }
+
+  private dispose(connection: Connection): Promise<void> {
+    if (connection.disposal) return connection.disposal;
+    this.connections.delete(connection.hello.connectionId);
+    connection.retiredTaskGenerations.clear();
+    connection.disposal = Promise.resolve().then(async () => {
+      const cleanups = [...connection.cleanups];
+      connection.cleanups.clear();
+      await this.waitForDisposals(
+        cleanups.map(async (cleanup) => {
+          await cleanup();
+        }),
+      );
+    });
+    const disposal = connection.disposal;
+    this.disposals.add(disposal);
+    void disposal.then(
+      () => this.disposals.delete(disposal),
+      () => this.disposals.delete(disposal),
+    );
+    connection.abort.abort();
+    return disposal;
+  }
+
+  private async waitForDisposals(disposals: Promise<void>[]): Promise<void> {
+    const failures = (await Promise.allSettled(disposals)).flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length)
+      throw new AggregateError(failures, "Code连接资源尚未全部确认关闭。");
   }
 
   async send(owner: string, connectionId: string, event: CodeUiEvent) {
@@ -178,7 +298,10 @@ export class CodeUiConnections {
   async subscribe(
     owner: string,
     connectionId: string | undefined,
-    target: Omit<Subscription, "id" | "ordinal" | "cursor">,
+    target: Omit<
+      Subscription,
+      "id" | "ordinal" | "cursor" | "taskScopeGeneration"
+    >,
   ) {
     const connection = this.require(owner, connectionId);
     const initial = await target.read();
@@ -187,9 +310,26 @@ export class CodeUiConnections {
         "not_found",
         "Code连接在订阅准备期间已关闭。",
       );
+    const retiredGeneration = target.projectId
+      ? connection.retiredTaskGenerations.get(
+          taskSubscriptionKey(target.projectId, target.topic),
+        )
+      : undefined;
+    if (
+      retiredGeneration !== undefined &&
+      (initial.taskScopeGeneration === undefined ||
+        initial.taskScopeGeneration <= retiredGeneration)
+    )
+      throw new CodeUiRepositoryError(
+        "command_conflict",
+        "任务已移动，请重新打开任务。",
+      );
     const subscription: Subscription = {
       ...target,
       id: randomUUID(),
+      ...(initial.taskScopeGeneration === undefined
+        ? {}
+        : { taskScopeGeneration: initial.taskScopeGeneration }),
       ordinal: 0,
       cursor: {
         logEpoch: initial.snapshot.logEpoch,
@@ -365,18 +505,40 @@ export class CodeUiConnections {
       !this.isCurrentSnapshot(subscription, current)
     )
       return;
+    // 并发 refresh 的交错读取：比已推送视图更旧的读作废（新读已覆盖它的事实）。
+    // 等值不拦：同 seq 的 recovery 必须照常交付，重复 online 帧由客户端水位去重。
+    if (subscription.lastPushed && current.seq < subscription.lastPushed.seq)
+      return;
     const definition = topicDefinitions.find((entry) =>
       subscription.topic.startsWith(entry.prefix),
     );
     if (!definition)
       throw new CodeUiRepositoryError("not_found", "未知的Code订阅主题。");
+    // 增量 diff 只对 conversation topic 定义（其余 topic 的快照结构不同）：
+    // online 且持有上次视图时优先 deltas；无法表达（epoch 换代/结构变化/零差异）
+    // 一律退化为整体快照——客户端对两种帧的语义都已内建。
+    const conversationSnapshot =
+      definition.prefix === "conversation/"
+        ? (current.snapshot as ConversationSnapshot)
+        : null;
+    const previous = subscription.lastPushed;
+    const diffResult =
+      deliveryKind === "online" &&
+      conversationSnapshot !== null &&
+      previous &&
+      previous.logEpoch === conversationSnapshot.logEpoch
+        ? diffConversationSnapshots(previous, conversationSnapshot)
+        : null;
     const frame = {
       topic: subscription.topic,
       subscriptionId: subscription.id,
-      fromSeq: 0,
+      fromSeq: previous?.seq ?? 0,
       toSeq: current.seq,
       sentAt: Date.now(),
-      payload: { kind: "snapshot" as const, snapshot: current.snapshot },
+      payload:
+        diffResult && !diffResult.fallbackToSnapshot
+          ? { kind: "deltas" as const, deltas: diffResult.deltas }
+          : { kind: "snapshot" as const, snapshot: current.snapshot },
     };
     const parsed = definition.schema.parse(frame);
     const workspaceIdentity =
@@ -407,6 +569,11 @@ export class CodeUiConnections {
       )
         return;
       await connection.send(notification(wire) as CodeUiEvent);
+    }
+    // 全部物理片发送成功才推进已推送视图；中途失败由客户端断档自愈兜底。
+    // 仅 conversation topic 维护该视图，其余 topic 保持原有行为。
+    if (conversationSnapshot !== null) {
+      subscription.lastPushed = conversationSnapshot;
     }
   }
 }

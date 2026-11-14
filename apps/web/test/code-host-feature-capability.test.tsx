@@ -6,6 +6,7 @@ import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { setPendingSettingsSectionIntent } from "@zui/lib/settingsNavigation";
+import { ProjectDirectoryProvider } from "@zui/project-sidebar/ProjectDirectoryProvider";
 import { SettingsPage } from "@zui/SettingsPage";
 import { CodingPlanUpgradeDialogProvider } from "@zui/settings/CodingPlanUpgradeDialogProvider";
 import { StoreProvider } from "@zui/store/StoreProvider";
@@ -98,30 +99,32 @@ async function renderOriginalSurfaces(originalCapabilities = false) {
             <TabStoreProvider>
               <TooltipProvider>
                 <CodingPlanUpgradeDialogProvider>
-                  <App
-                    services={client.services}
-                    baseFeedbackService={client.services.feedbackService}
-                    workspaceAbsPath=""
-                    isDesktop
-                    isMacDesktop
-                    {...(platform.supportsEmbeddedBrowser === undefined
-                      ? {}
-                      : {
-                          supportsEmbeddedBrowser:
-                            platform.supportsEmbeddedBrowser,
-                        })}
-                    onCreateTask={() => {}}
-                    onCreateConversationTask={() => {}}
-                    onOpenWorkspace={() => {}}
-                    onOpenFolderFromWorkspaceMenu={() => {}}
-                    onCreateScratchWorkspace={async () => null}
-                    onConnectRemote={async () => ""}
-                    onSelectRemoteProject={async () => {}}
-                    onCancelRemoteProject={async () => {}}
-                    onReconnectRemoteWorkspace={async () => {}}
-                    reconnectingRemoteWorkspaceKeys={[]}
-                    remoteWorkspaceErrorByWorkspaceKey={{}}
-                  />
+                  <ProjectDirectoryProvider>
+                    <App
+                      services={client.services}
+                      baseFeedbackService={client.services.feedbackService}
+                      workspaceAbsPath=""
+                      isDesktop
+                      isMacDesktop
+                      {...(platform.supportsEmbeddedBrowser === undefined
+                        ? {}
+                        : {
+                            supportsEmbeddedBrowser:
+                              platform.supportsEmbeddedBrowser,
+                          })}
+                      onCreateTask={() => {}}
+                      onCreateConversationTask={() => {}}
+                      onOpenWorkspace={() => {}}
+                      onOpenFolderFromWorkspaceMenu={() => {}}
+                      onCreateScratchWorkspace={async () => null}
+                      onConnectRemote={async () => ""}
+                      onSelectRemoteProject={async () => {}}
+                      onCancelRemoteProject={async () => {}}
+                      onReconnectRemoteWorkspace={async () => {}}
+                      reconnectingRemoteWorkspaceKeys={[]}
+                      remoteWorkspaceErrorByWorkspaceKey={{}}
+                    />
+                  </ProjectDirectoryProvider>
                   <SettingsPage isDesktop isMacDesktop />
                   <V4ComposerCuaEntry workspacePath="/fixture" />
                   <CronCreateAutomationCard

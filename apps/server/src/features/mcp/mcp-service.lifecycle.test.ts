@@ -226,8 +226,7 @@ describe.skipIf(!ENABLED)("MCP 生命周期（真实 stdio 握手）", () => {
   }, 30_000);
 
   it("reconnect 会重建连接（工具不重复、不残留）", async () => {
-    const { registry, tools, context, script, taskOptions } =
-      await trackingRegistry();
+    const { registry, tools, script, taskOptions } = await trackingRegistry();
     const rows = [fixtureRow({ args: [script] })];
     const store = inMemoryStore(rows);
     const service = createMcpService({

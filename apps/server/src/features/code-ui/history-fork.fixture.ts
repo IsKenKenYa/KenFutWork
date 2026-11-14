@@ -35,7 +35,14 @@ export async function waitPhase(
   return result;
 }
 
-export function sendToTask(host: Host, taskId: string, text: string) {
+export async function sendToTask(host: Host, taskId: string, text: string) {
+  const response = await host.client.request(`/api/code-ui/sessions/${taskId}`);
+  expect(response.status, JSON.stringify(response.body)).toBe(200);
+  const current = protocol.conversationSnapshotSchema.parse(
+    response.body.snapshot,
+  );
+  if (!current.taskControl) throw new Error("历史分支测试没有公开 Task 观察值");
+  const taskControl = Object.freeze(structuredClone(current.taskControl));
   return host.stream.rpc("sendConversationCommandV4", [
     {
       workspacePath: host.workspacePath,
@@ -46,6 +53,7 @@ export function sendToTask(host: Host, taskId: string, text: string) {
         commandId: randomUUID(),
         clientId: host.clientId,
         payload: { text },
+        taskControl,
         issuedAt: Date.now(),
       },
     },

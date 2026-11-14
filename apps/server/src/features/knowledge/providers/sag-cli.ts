@@ -527,10 +527,7 @@ export function createSagCliProvider(
         installed: inspection.installed,
         enabled: inspection.enabled,
         // 自动降级开着时，缺 Jev 凭据不影响「能用本地档检索」。
-        active:
-          inspection.ok &&
-          supported &&
-          initResult?.ok !== false,
+        active: inspection.ok && supported && initResult?.ok !== false,
         cli,
         cliVersion: SAG_CLI_VERSION,
         reason,

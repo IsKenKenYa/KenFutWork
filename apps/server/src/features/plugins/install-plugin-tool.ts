@@ -10,7 +10,7 @@ import { createScopedBundleSource } from "./bundle-source.js";
 import type { PluginRegistryService } from "./plugin-registry-service.js";
 
 /**
- * `install_plugin` 工具：把**工作目录里的插件 bundle** 安装到本实例（创造模式的插件产物收尾）。
+ * `install_plugin` 工具：把工作目录里的插件 bundle 安装到本实例。
  *
  * 三个硬约束（缺一不可，都在这里显式表达）：
  * 1. **实例归属**：调用者必须来自可信的本地实例，执行仍经过工具审批；

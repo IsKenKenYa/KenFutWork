@@ -1,7 +1,4 @@
-import {
-  isAutomationExecutionMode,
-  zcodeUiProtocol as protocol,
-} from "@kenfutwork/shared";
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AgentContextBranchService } from "../../agent/context-history.js";
 import type {
@@ -16,7 +13,6 @@ import {
 import type { AgentRuntimeProvider } from "../../agent/provider-contract.js";
 import type { AgentRunExtension } from "../../agent/run-extension.js";
 import { createAgentRunService } from "../../agent/runtime.js";
-import { composeToolGate } from "../../agent/tool-gate.js";
 import {
   createInstanceSkillsByInstanceLoader,
   createInstanceSkillsLoader,
@@ -28,11 +24,8 @@ import type {
   PreStepPayload,
 } from "../../kernel/types.js";
 import type { ConnectionManager } from "../../ws/connection-manager.js";
-import {
-  evaluateToolPolicy,
-  policyForMode,
-} from "../agent-modes/execution-mode-service.js";
 import { createCanvasRepository } from "../canvas/repository.js";
+import { runPluginHooks } from "../plugins/plugin-hooks.js";
 import { createProjectRepository } from "../projects/repository.js";
 import { createProjectWorkDirLoader } from "../projects/work-dir.js";
 import { createSkillCatalogRepository } from "../skills/repository.js";
@@ -48,13 +41,12 @@ import {
   skillsPromptSection,
 } from "./prompt-sections.js";
 import { createAgentRunRepository } from "./repository.js";
-import { runPluginHooks } from "../plugins/plugin-hooks.js";
 
 export interface AgentRunsPluginDeps {
   connectionManager: ConnectionManager;
   /** 内核事件缝：turn 收尾发射 turn-stopping（用量结算挂钩点）。 */
   events: KernelEvents;
-  /** 事件缝（DEC-1）：pre-step waterfall，执行模式/权限插件改写模型输入。 */
+  /** pre-step waterfall，指导插件可以改写模型输入。 */
   emitPreStep?: (
     payload: PreStepPayload & {
       input: string;
@@ -75,7 +67,6 @@ export function createAgentRunsPlugin(
   return {
     name: "agent-runs",
     inject: [
-      "agentModes",
       "localAccess",
       "brandKit",
       "canvas",
@@ -128,59 +119,29 @@ export function createAgentRunsPlugin(
         // 检查点缝（可选依赖）：有 checkpoints 服务时把轮次快照钩子接进 runtime；
         // 缺席（部分装配/未启用）则不打检查点，run 照常
         const checkpoints = ctx.tryGet("checkpoints");
-        // 执行模式工具门：solo/plan 策略归 agent-modes，运行时只拿到判定函数
-        const agentModes = d.get("agentModes");
-        // 注册表按名取工具：桥接工具（MCP/插件）的属主 access 声明从这里带进模式判定
-        const toolRegistry = ctx.get("tools");
-        // 权限档同门：内置工具（execute/write_file/edit_file）不经过 ctx.tools.execute，
-        // tool-pre-execute 事件缝拦不到它们，必须在这里与模式判定合并（见 tool-gate.ts）。
+        // 原生工具不经过注册表，非Task调用在此执行对应场景的权限检查。
         const permissions = ctx.tryGet("permissions");
         const toolGateFor = (
           threadId: string,
-          executionMode?: import("@kenfutwork/shared").ExecutionMode,
           scoped = false,
-        ): ToolGate => {
-          // Task规划由可退出的planEnabled持有；策略快照只强制模式硬约束。
-          const policy = executionMode
-            ? policyForMode(
-                scoped && executionMode === "plan" ? "agent" : executionMode,
-              )
-            : agentModes.resolveToolPolicy(threadId);
-          // 分场景（R5-3）：目标/循环这类无人值守轮次走「自动化任务」那一档
-          const scenario = isAutomationExecutionMode(
-            executionMode ?? agentModes.getMode(threadId),
-          )
-            ? ("automation" as const)
-            : ("interactive" as const);
-          return composeToolGate({
-            modeVerdict: (toolName, detail) => {
-              const access = toolRegistry.get(toolName)?.access;
-              return evaluateToolPolicy(policy, toolName, {
-                ...detail,
-                ...(access ? { toolAccess: access } : {}),
-              });
-            },
-            ...(permissions && !scoped
+          goalId?: string,
+        ): ToolGate | undefined => {
+          if (!permissions || scoped) return undefined;
+          return (toolName) => {
+            const decision = permissions.evaluate({
+              toolName,
+              threadId,
+              scenario: goalId ? "automation" : "interactive",
+            });
+            return decision.decision === "deny"
               ? {
-                  permissionVerdict: (toolName: string) => {
-                    const decision = permissions.evaluate({
-                      toolName,
-                      threadId,
-                      scenario,
-                    });
-                    if (decision.decision !== "deny") {
-                      return { allowed: true } as const;
-                    }
-                    return {
-                      allowed: false as const,
-                      reason:
-                        decision.reason ??
-                        "该工具在当前权限档位下需审批后才能调用。",
-                    };
-                  },
+                  allowed: false,
+                  reason:
+                    decision.reason ??
+                    "该工具在当前权限档位下需审批后才能调用。",
                 }
-              : {}),
-          });
+              : { allowed: true };
+          };
         };
         runtime = createAgentRunService({
           codeProjectContextLoader: (scope, limits, signal) =>
@@ -197,7 +158,7 @@ export function createAgentRunsPlugin(
               limits,
               signal,
             ),
-          resolveCodeApprovalMode: async (handle, actor) => {
+          resolveCodeApprovalMode: async (handle) => {
             const scope = handle.describe();
             const row = await ctx
               .get("persistence")
@@ -354,7 +315,6 @@ export function createAgentRunsPlugin(
           createAgentRunRepository(ctx.get("persistence")).latestForSession(
             input,
           ),
-        agentModes: ctx.get("agentModes"),
         executionScopes: ctx.get("executionScopes"),
         codeUi: ctx.get("codeUi"),
         agentRunMetadataService: ctx.get("agentRunMetadata"),

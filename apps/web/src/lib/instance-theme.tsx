@@ -53,9 +53,7 @@ export function InstanceThemeSync() {
         // 不能用库里的 system/旧值把刷新后的用户选择覆盖掉（原「刷新就丢」根因）。
         // 写回 effect 会因为 persisted !== preference 把本机值同步到实例设置。
         const localTheme =
-          typeof window === "undefined"
-            ? null
-            : localStorage.getItem("theme");
+          typeof window === "undefined" ? null : localStorage.getItem("theme");
         const hasExplicitLocalTheme =
           localTheme === "dark" || localTheme === "light";
         // 读取期间用户已换档时，旧响应不能覆盖新选择；随后按新选择串行写回。

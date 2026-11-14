@@ -2,6 +2,9 @@ import {
   codeUiRpcRequestSchema,
   codeUiRpcResponseSchema,
   codeUiSnapshotParamsSchema,
+  codeUiToolOutputParamsSchema,
+  codeUiToolOutputQuerySchema,
+  codeUiToolOutputResponseSchema,
   codeUiWorkspaceListSchema,
   zcodeUiProtocol as protocol,
 } from "@kenfutwork/shared";
@@ -122,6 +125,7 @@ export async function registerCodeUiRoutes(
       | "closeConnections"
       | "listWorkspaces"
       | "getSnapshot"
+      | "readToolOutput"
       | "hostRpc"
       | "transportRpc"
       | "modelViews"
@@ -340,6 +344,31 @@ export async function registerCodeUiRoutes(
       return sendError(reply, error);
     }
   });
+  app.get("/api/code-ui/tool-output", async (request, reply) => {
+    const user = await deps.localAccess.authenticate(request);
+    if (!user)
+      return reply.code(401).send({
+        error: {
+          code: "unauthenticated",
+          message: "请从桌面重新建立本机连接",
+        },
+      });
+    try {
+      const params = codeUiToolOutputParamsSchema.parse(request.query);
+      const query = codeUiToolOutputQuerySchema.parse(request.query);
+      return codeUiToolOutputResponseSchema.parse(
+        await deps.service.readToolOutput(
+          user,
+          params.sessionId,
+          params.ref,
+          query.offset,
+          query.limit,
+        ),
+      );
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
   app.post("/api/code-ui/rpc", async (request, reply) => {
     const user = await deps.localAccess.authenticate(request);
     if (!user)
@@ -400,21 +429,6 @@ export async function registerCodeUiRoutes(
           | undefined;
         result = (await deps.service.modelViews(user, input?.selection))
           .selection;
-      } else if (
-        service === "zcodeAgentService" &&
-        method === "sendConversationCommandV4"
-      ) {
-        const target = args[0] as { envelope?: unknown } | undefined;
-        const parsed = protocol.parseCommandEnvelope(target?.envelope);
-        if (!parsed.ok) throw parsed.error;
-        if (parsed.envelope.type !== "createSession")
-          return reply.code(501).send({
-            error: {
-              code: "code_ui_command_unavailable",
-              message: `Code 命令 ${parsed.envelope.type} 尚未接通`,
-            },
-          });
-        result = await deps.service.createSession(user, parsed.envelope);
       } else
         return reply.code(501).send({
           error: {

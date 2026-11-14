@@ -34,7 +34,12 @@ it("目录仍在线时快照不再报错，也不进恢复流程", async () => {
   const fetcher = vi.fn(
     async (_url: RequestInfo | URL, _init?: RequestInit) =>
       new Response(
-        JSON.stringify({ projectId, workDir: "/old", tasks: [], missing: false }),
+        JSON.stringify({
+          projectId,
+          workDir: "/old",
+          tasks: [],
+          missing: false,
+        }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
   );
@@ -52,7 +57,12 @@ it("目录真缺失时返回可恢复快照", async () => {
     vi.fn(
       async (_url: RequestInfo | URL, _init?: RequestInit) =>
         new Response(
-          JSON.stringify({ projectId, workDir: "/old", tasks: [], missing: true }),
+          JSON.stringify({
+            projectId,
+            workDir: "/old",
+            tasks: [],
+            missing: true,
+          }),
           { status: 200, headers: { "content-type": "application/json" } },
         ),
     ),
@@ -78,9 +88,9 @@ it("快照读取失败时如实报错，不当作无恢复内容", async () => {
         ),
     ),
   );
-  await expect(client.directoryRelinkSnapshot(randomUUID())).rejects.toMatchObject(
-    { status: 400, message: "旧目录无法确认缺失。" },
-  );
+  await expect(
+    client.directoryRelinkSnapshot(randomUUID()),
+  ).rejects.toMatchObject({ status: 400, message: "旧目录无法确认缺失。" });
   client.dispose();
 });
 function fixture() {

@@ -51,7 +51,12 @@ describe("new-shell project directory recovery", () => {
     api.surfaceFetch.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ projectId, workDir: "/p", tasks: [], missing: true }),
+      json: async () => ({
+        projectId,
+        workDir: "/p",
+        tasks: [],
+        missing: true,
+      }),
     });
     const hook = renderHook(() =>
       useCanvasProjectDirectory("design", projectId),

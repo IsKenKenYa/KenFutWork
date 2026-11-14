@@ -41,6 +41,11 @@ import {
   readBundleSkills,
 } from "./package-description.js";
 import {
+  defaultPluginCardLimits,
+  type PluginCardLimits,
+  truncatePluginCards,
+} from "./plugin-cards.js";
+import {
   type PluginCommandContribution,
   type PluginHookContribution,
   type PluginMcpServerContribution,
@@ -204,6 +209,7 @@ export interface PluginRegistryService {
       skills: ReturnType<typeof readBundleSkills>;
     }>
   >;
+  list(limits?: PluginCardLimits): Promise<PluginMarketEntry[]>;
   /** 启用插件贡献的 MCP server（文件声明，只读）。 */
   listMcpServers(
     mode?: "code" | "design",
@@ -212,7 +218,6 @@ export interface PluginRegistryService {
   listCommands(mode?: "code" | "design"): Promise<PluginCommandContribution[]>;
   /** 启用插件贡献的会话钩子（`hooks/hooks.json` 的 SessionStart → turn-start）。 */
   listHooks(mode?: "code" | "design"): Promise<PluginHookContribution[]>;
-  list(): Promise<PluginMarketEntry[]>;
   /** 机器包库存读面；可安装bundle与profile feature分开，安装态仍由本registry持有。 */
   readPackageInventory(): Promise<{
     rootPath: string;
@@ -310,7 +315,6 @@ export const SYSTEM_PLUGIN_NAMES = new Set([
   "model-providers",
   "agent-runs",
   "permissions",
-  "agent-modes",
   "canvas",
 ]);
 
@@ -359,6 +363,7 @@ function manifestOrPlaceholder(
       enginesNode: null,
       hasClientUi: false,
       ui: [],
+      cards: [],
       assets: false,
       icon: null,
       lifecycleScripts: [],
@@ -1039,7 +1044,7 @@ export function createPluginRegistryService(
       const { files, manifest } = await readPackageFiles(id);
       return describeBundleFiles(files, manifest);
     },
-    async list() {
+    async list(limits = defaultPluginCardLimits()) {
       const state = await readState();
       const entries: PluginMarketEntry[] = deps.builtinCatalog.map((entry) => ({
         id: entry.name,
@@ -1057,6 +1062,7 @@ export function createPluginRegistryService(
         scope: null,
         // 系统插件不带 UI 入口（它们本来就有专门的界面）
         ui: [],
+        cards: [],
       }));
 
       for (const record of state.installed) {
@@ -1102,6 +1108,10 @@ export function createPluginRegistryService(
                 ).values(),
               ]
             : [],
+          // 停用即收回卡片（与 UI 入口同口径）
+          cards: record.enabled
+            ? truncatePluginCards(record.manifest.cards, limits)
+            : [],
         });
       }
 
@@ -1124,6 +1134,7 @@ export function createPluginRegistryService(
           enabled: false,
           scope: bundle.manifest.scope,
           ui: [],
+          cards: [],
         });
       }
       return entries;

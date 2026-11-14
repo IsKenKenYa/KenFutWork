@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, win32 } from "node:path";
 import { accountEnvironment } from "./account-command.js";
 import { executionEnvironment, prependExecutionPath } from "./environment.js";
-import type { ProcessSpawnRequest } from "./types.js";
+import type { SandboxProcessRequest as ProcessSpawnRequest } from "./types.js";
 import type { NativeLaunch } from "./windows-broker.js";
 import { windowsCommand } from "./windows-broker.js";
 
@@ -16,7 +16,8 @@ import { windowsCommand } from "./windows-broker.js";
  * 授 `D:\` 只读会递归放开整盘（Windows native 越权读回归已否决），因此改为只对
  * stdio 子进程注入 preserve-symlinks：改变的是 Node 的路径解析，不是沙箱文件授权。
  */
-export const STDIO_NODE_OPTIONS = "--preserve-symlinks --preserve-symlinks-main";
+export const STDIO_NODE_OPTIONS =
+  "--preserve-symlinks --preserve-symlinks-main";
 
 export function stdioNodeOptions(
   paths: readonly (string | undefined)[],
@@ -133,7 +134,18 @@ export async function windowsLaunch(input: {
   env.TMP = input.temporaryDirectory;
   return {
     processId: input.processId,
-    taskId: scope.taskId,
+    ...("kind" in scope
+      ? {
+          projectOwner: {
+            kind: scope.kind,
+            leaseId: scope.leaseId,
+            instanceId: scope.instanceId,
+            projectId: scope.projectId,
+            connectionId: scope.connectionId,
+            revision: scope.revision,
+          },
+        }
+      : { taskId: scope.taskId }),
     generation: scope.generation,
     command: windowsCommand(input.request),
     cwd: input.cwd,

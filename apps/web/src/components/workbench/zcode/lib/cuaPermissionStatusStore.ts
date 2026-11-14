@@ -32,7 +32,8 @@ interface CuaPermissionStatusSnapshot {
    */
   fresh: boolean;
   /**
-   * 是否已有可展示的确定内容。冷启动缓存命中即成立，拿到过真实结果后只升不降。
+   * 本轮查询是否已有确定结论。冷启动缓存命中、拿到真实结果、退避重试耗尽都会成立；
+   * 失败且没有 lastKnown 时表示「确定不知道」，界面显示未知而不是无限验证中。
    *
    * 与 fresh 的分工：fresh 表达「当前值是否刚确认」，每次查询开始都会落回 false；
    * 展示若跟着它走，授权按钮就会在「打开系统设置」与「验证中…」之间反复切换、
@@ -309,11 +310,13 @@ export function fetchCuaPermissionStatus(params: FetchCuaPermissionStatusParams)
         return;
       }
       if (!completed) {
-        // reject 且重试额度已用尽：保留 lastKnown + fresh=false，等下一次真实事件（见上）。
+        // reject 且重试额度已用尽：保留 lastKnown + fresh=false，但必须结束「验证中」。
+        // 通道故障无法给出真值，继续显示验证中会让授权入口永久不可用；settled=true
+        // 表示「确定不知道」，界面显示未知并恢复打开系统设置的入口。
         publish(slot, {
           status: slot.snapshot.status,
           fresh: false,
-          settled: slot.snapshot.settled,
+          settled: true,
         });
         return;
       }

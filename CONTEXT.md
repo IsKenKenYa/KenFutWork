@@ -1,14 +1,18 @@
 # CONTEXT.md — 领域词汇表
 
 > 本文件是项目领域语言的单一事实源。代码、测试、文档、对话一律使用这里的词汇；新增概念先入表再使用。格式参考 deepseek-harness 的 glossary 纪律：一词一义，拒绝同义词漂移。
+> 当前 Agent 工作流程及升级规则见[《Code工作域与工具内核实施规格》§2.6—2.7](docs/方案设计/Code工作域与工具内核实施规格.md)，验证回执与未完成项目见[日志](docs/日志.md)。
 
 ## 核心实体
 
 - **Instance（实例）** — 拥有项目、任务、配置、插件及本地数据的稳定产品主体；无需账户即可存在。_Avoid_: 用户账户、假用户、工作区账户。
 - **Project（项目）** — 实例内按 Design、Code 或 Flow 组织任务与产出物的工作容器；Code 项目持有默认工作目录及附加授权目录。
 - **Task（任务）** — 用户与 agent 交互的**一等容器**：对话流 + 多次运行 + 产物关联。Code Task 拥有创建时确定的主工作目录。_Avoid_: 独立聊天实体、临时运行目录。
+- **Task Group（任务分组）** — 实例内整理 Task 的命名集合；成员关联稳定 Task 身份，分组与项目归属、目录授权分别持有。
+- **Task Group Revision（组织修订）** — 分组、成员与根节点顺序共同使用的并发观察版本；独立于 Task 执行分支和授权代际，普通读取不推进该版本。
+- **Task Pin Revision（置顶修订）** — 单个 Task 的持久置顶观察版本 `pinRevision`；仅置顶事实实际变化时推进，与正文保存修订、活动时间、未读水位、分组组织修订及授权代际分别持有。
 - **Run（运行）** — agent 的单次执行：工具调用、事件流、产物输出。1 Task → N Run。
-- **Goal（目标）** — Task 会话内持久保存的目标、计量及验收状态，通过已存在的运行接纳机制推动后续 Run。普通 Run 结束不代表 Goal 完成；停止前台执行暂停目标，服务重启后手动恢复。与独立 Flow 工作流执行分开。
+- **Goal（目标）** — 通过明确目标操作创建，在 Task 会话内持久保存目标、计量及验收状态，并通过原运行接纳机制推动后续 Run。普通消息不创建或替换目标，暂停后的消息不自动恢复目标；普通 Run 结束不代表 Goal 完成。停止前台执行暂停目标，服务重启后明确恢复。与独立 Flow 工作流执行分开。
 - **Canvas（画布）** — Project 级可视化编排视图（Excalidraw）。Task 产物可被画布引用，不强制绑定。
 
 ## 身份与连接
@@ -25,16 +29,19 @@
 
 ## 执行与权限
 
-- **Sandbox（沙箱）** — OS 级执行囚禁。三档：`read-only` / `workspace-write`（默认，可写根 = 项目文件夹）/ `danger-full-access`（显式使用执行机器当前OS账户的文件与网络权限，不等于root提权）。只拦「能不能」，不拦「问不问」。主后端为 **srt**（`@anthropic-ai/sandbox-runtime`，三平台 + 网络域名白名单），经自建 Sandbox 缝隔离、可换后端；fail-closed（无 runner 绝不裸奔）+ enforcement 等级报告。
-- **Approval Gate（审批门）** — 应用层逐操作同意：文件编辑 / 危险命令 / 未白名单网络的确认弹窗 + 一次性行内提权。
-- **Planning State（规划状态）** — Code Task 的独立 `planEnabled` 开关；开启时在基础权限与物理工作域上收窄为只读调查/规划，不改写基础权限或 Task 目录。原 `mode=plan` wire 入口的消费者规范化仍在迁移。
+- **Sandbox（沙箱）** — 操作系统级执行隔离，按 `read-only`、`workspace-write`、`danger-full-access` 表达执行范围；完全访问使用当前 OS 账户的权限，不等于 root 提权。当前 Unix 使用 SRT，Windows 使用原生受限执行；通过 ProcessSandbox 接口报告实际能力，无可用执行器时拒绝执行。平台网络支持与产品接入分别核验。
+- **Approval Gate（审批门）** — 应用层逐操作授权，绑定真实 Task、操作参数与授权版本，按策略交人工或审批模型处理；最终执行仍受沙箱和当前权限约束。具体行为由 Code 工作域规格持有。
+- **Approval Reviewer（审批模型）** — 用户独立选择的 BYOK 审批模型，与当前对话模型分别保存。模型建议由原审批门及最终权限检查消费；失败、不明或缺少完整操作事实时交还人工，退出规划仍须人工明确批准。
+- **Planning State（规划状态）** — Code Task 的独立 `planEnabled` 开关；开启时在基础权限与物理工作域上收窄为只读调查/规划，不改写基础权限或 Task 目录。输入框使用当前草稿状态，发送时与模型和基础权限一起冻结。
 - **Planning Epoch（规划代际）** — Task 根锁中按持久规划开关变化推进的版本；批准请求绑定该版本，避免迟到批准退出另一轮规划。与消息 revision、scopeGeneration、branchGeneration 分开。
 - **Approved Plan（批准计划）** — 人明确批准后在同一 Task 事务记录的计划事实，关联宿主管理文件相对引用、SHA-256 与原 Run/工具调用来源。作为实施上下文保留，执行继续遵守当前工作域、角色与审批；Todo 的 `snapshot.plan` 只表示进度。
-- **Permission Mode（基础权限模式）** — Task 的执行审批预设：原 wire `build`（变更逐次确认）、`edit`（仅受控文件编辑自动允许）、`yolo`（自动执行并显式选择账户级完全访问）；每个Run持有接纳时的基础权限上限，仍受独立规划、派生角色和撤权约束。规划状态单独持有；原 wire 的 `plan` 输入归一化仍在迁移。
-- **Execution Strategy（执行策略）** — 会话选择的自主、计划、对话、目标或技能插件创作策略；对应现有 `ExecutionMode` 契约，在输入接纳时冻结。与 Code/Design 工作方式、基础权限及独立规划状态分开。
+- **Permission Mode（基础权限模式）** — Task 的三个执行审批预设：`build`（变更逐次确认）、`edit`（仅受控文件编辑自动允许）、`yolo`（自动执行并显式选择账户级完全访问）。每个 Run 持有接纳时的基础权限上限，仍受独立规划、派生角色和撤权约束。
+- **Agent Workflow（Agent 工作流程）** — 在同一 Task 内处理普通问答与工具任务的统一执行过程。是否先规划由规划状态决定，持续目标由 Goal 持有，具体操作受基础权限和执行作用域约束；创建技能、插件或 MCP 属于该流程中的任务。
 - **Capability Node（能力节点）** — 向服务端注册能力清单的 Worker 进程（云端容器 / 桌面本地 / 移动受限）。任务按能力路由。
 - **Job（队列任务）** — 后台队列的执行单元（图/视频生成等）。与 Task（用户工作项）严格区分；与 Run（agent 执行）严格区分。
 - **Execution Scope（执行作用域）** — 持久 Task 在当前授权代际下可访问的工作目录与可执行操作的边界；与接入客户端身份分开。
+- **Computer Use Helper（电脑控制 Helper）** — 独立签名的 macOS 应用，持有 Accessibility 与 Screen Recording 授权，通过本地 socket 执行桌面观察与输入；服务端不直接申请这两项系统权限。_Avoid_: Node Helper、CUA 主进程。
+- **Project Read Lease（项目只读租约）** — 可信宿主连接在一次项目读取事务内持有的只读进程范围；绑定实例、项目、项目修订和真实目录，关闭连接或结束读取时取消工作并等待退出，不创建 Task 或继承 Task 权限。
 - **Plugin Activation Epoch（插件激活代际）** — 可信宿主在插件撤销及成功激活时推进的贡献版本，用于拒绝迟到审批、旧调用及旧 Run 对新实现的复用。与安装 ID、包版本、安装时间和 Task 授权代际分开；当前 CAD 的运行内代际不代表外部 GUI 桥已具备跨服务重启的持久恢复协议。
 - **Task Work（Task 后台工作）** — 由 Task 持有、可跨越单次 Run 生命周期的命令或子代理工作；停止前台 Run 不等于关闭全部后台工作。
 
@@ -43,6 +50,7 @@
 - **Provider Instance（供应商实例）** — 本地实例中由用户配置的 BYOK 供应商，包含协议、服务地址、供应商凭据引用及模型清单。_Avoid_: 官方账户、接入客户端。
 - **Protocol（线协议）** — 供应商实例的底层协议适配器类型（openai-compatible / anthropic / gemini / 图视频协议），封闭集合。
 - **Model Catalog（模型目录）** — 从供应商实例能力推导的可选模型清单；未来远端模型须保留其来源与授权范围。
+- **Media Driver（媒体驱动）** — 用户安装的供应商文件，声明图片／视频模型、参数、访问地址及单次调用方法；版本固定到 Job，查询时间、恢复、取消和产物保存由共享引擎管理。
 - **Provider Credential（供应商凭据）** — 用户向模型供应商证明调用资格的 Key 或其它秘密值；不代表 KenFutWork 账户或本地接入权。
 - **CLI Provider（CLI 供应商）** — v2 方向：把外部 AI CLI（Claude Code / Codex / Gemini CLI 等）注册为一等 agent 能力的适配层。v1 仅为命令级黑盒执行（沙箱内跑 CLI、取回输出）。
 
@@ -54,7 +62,7 @@
 
 ## 架构
 
-- **Kernel（内核）** — 服务端插件组合内核（`kernel/`）：`definePlugin` + `composePlugins`。服务认领靠 apply 返回值，依赖靠 inject 类型注入（无服务定位符）；拓扑/环检测/逆序回卷复用 Fastify avvio 引擎。
+- **Kernel（内核）** — 服务端插件组合内核（`kernel/`），以 `PluginDefinition` 与 `composePlugins` 组合服务和贡献。当前按 profile 顺序执行 `apply`／`mounted`，使用 `ctx.get` 解析服务；`inject` 检查声明的服务是否存在，正常关闭逆序等待资源释放。接口与目标机制见《改造计划》§4，当前生命周期限制见《GPT6Astra/插件架构检查》。
 - **Plugin（插件）** — 服务型（name 即 ctx key，认领至多一个服务）或挂载型（贡献路由/基础设施，name 用 `<域>:<名>`）。
 - **Profile（装配清单）** — 插件组合清单：`server` / `worker` / `desktop` / `test`，引用同一批插件定义。
 

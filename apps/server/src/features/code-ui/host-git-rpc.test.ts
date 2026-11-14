@@ -3,32 +3,177 @@ import { randomUUID } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
+  readFile,
   realpath,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { instanceSettingsSchema } from "@kenfutwork/shared";
 import { afterEach, expect, it } from "vitest";
-import type { ExecGit } from "../code-git/git-client.js";
+import type { ExecGit, GitCommandResult } from "../code-git/git-client.js";
 import { resolveReadOnlyProjectPath } from "../execution/scope-service.js";
+import { createLocalInstanceService } from "../local-instance/service.js";
 import type { LocalActor } from "../local-instance/types.js";
+import { createLocalCredentialStore } from "../model-providers/local-credential-store.js";
+import { createModelProviderService } from "../model-providers/model-provider-service.js";
+import {
+  createModelProviderRepository,
+  type ProviderInstanceRecord,
+} from "../model-providers/repository.js";
+import {
+  createPersistenceFromRunner,
+  type PostgresQueryRunner,
+} from "../persistence/providers/postgres.js";
+import { createGitCommitMessageGenerator } from "./git-commit-message.js";
 import { createCodeUiHostGitRpc } from "./host-git-rpc.js";
 
 const roots: string[] = [];
+const servers: Array<import("node:http").Server> = [];
 afterEach(async () => {
+  for (const server of servers.splice(0)) {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
-const execute: ExecGit = (args, cwd, input) =>
+
+/** 真实本机 HTTP 供应商：只为提交信息生成提供协议端点，不改变 Git 仓库行为。 */
+async function providerFixture(
+  instanceId: string,
+  options: {
+    hang?: boolean;
+    failFirst?: boolean;
+    defaultModel?: string;
+    maxRetries?: number;
+    idleTimeoutMs?: number;
+  } = {},
+) {
+  const key = "private-provider-key";
+  // 实例 id 必须是 uuid：默认模型 specifier 走 parseInstanceSpecifier 校验。
+  const providerId = randomUUID();
+  const requests: Array<{
+    path: string;
+    body: Record<string, unknown>;
+    headers: Record<string, unknown>;
+  }> = [];
+  const server = createServer(async (request, response) => {
+    let data = "";
+    for await (const chunk of request) data += chunk;
+    requests.push({
+      path: request.url ?? "",
+      body: JSON.parse(data),
+      headers: request.headers,
+    });
+    if (options.hang) return;
+    if (options.failFirst && requests.length === 1) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "上游暂时不可用" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        id: "reply",
+        object: "chat.completion",
+        created: 1,
+        model: "selected-model",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: "```\nfeat(git): 接入提交信息生成\n```",
+            },
+            finish_reason: "stop",
+          },
+        ],
+      }),
+    );
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string")
+    throw new Error("供应商夹具未获得端口。");
+  const row: ProviderInstanceRecord = {
+    id: providerId,
+    instance_id: instanceId,
+    name: "实际供应商",
+    protocol: "openai-compatible",
+    base_url: `http://127.0.0.1:${address.port}/v1`,
+    api_key_ref: "provider",
+    models: [
+      {
+        id: "selected-model",
+        name: "实际模型",
+        capability: "chat",
+      },
+    ],
+    compat: { chatApi: "completions" },
+    headers: { "x-custom": "fixture-header" },
+    enabled: true,
+    config_revision: "1",
+    probe_result: null,
+    probed_at: null,
+  };
+  const runner: PostgresQueryRunner = {
+    query: async () => ({ rowCount: 1, rows: [row] }),
+    acquire: async () => ({
+      query: async () => ({ rowCount: 1, rows: [row] }),
+      release() {},
+    }),
+    acquireSession: async () => {
+      throw new Error("提交信息夹具不建立Task宿主会话。");
+    },
+    end: async () => {},
+  };
+  const dataDir = await mkdtemp(join(tmpdir(), "kfw-commit-message-"));
+  roots.push(dataDir);
+  await createLocalCredentialStore(dataDir).set("provider", key);
+  const modelProviders = createModelProviderService({
+    repository: createModelProviderRepository(
+      createPersistenceFromRunner(runner),
+    ),
+    localInstance: createLocalInstanceService({
+      repository: { ensure: async () => instanceId },
+      dataDir,
+    }),
+  });
+  const settings = {
+    getInstanceSettings: async () =>
+      instanceSettingsSchema.parse({
+        defaultModel: options.defaultModel ?? `${providerId}:selected-model`,
+        llmRequestMaxRetries: options.maxRetries ?? 1,
+        agentStreamIdleTimeoutMs: options.idleTimeoutMs ?? 5000,
+      }),
+  };
+  return {
+    instanceId,
+    providerId,
+    requests,
+    generateCommitMessage: createGitCommitMessageGenerator({
+      settings,
+      modelProviders,
+    }),
+  };
+}
+const execute: ExecGit = (args, cwd, input, env) =>
   new Promise((resolve, reject) => {
     const child = execFile(
       "git",
       [...args],
-      { cwd, encoding: "utf8" },
+      {
+        cwd,
+        encoding: "utf8",
+        ...(env ? { env: { ...process.env, ...env } } : {}),
+      },
       (error, stdout, stderr) => {
         if (error && typeof error.code !== "number") {
           reject(error);
@@ -39,7 +184,31 @@ const execute: ExecGit = (args, cwd, input) =>
     );
     child.stdin?.end(input);
   });
-async function fixture() {
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const parent = dirname(path);
+    if (parent === path) throw error;
+    return join(await canonicalPath(parent), basename(path));
+  }
+}
+async function resolveTaskWritePath(root: string, path: string) {
+  const absolute = isAbsolute(path) ? path : join(root, path);
+  const canonical = await canonicalPath(absolute);
+  const tail = relative(root, canonical);
+  if (isAbsolute(tail) || tail === ".." || tail.startsWith(`..${sep}`))
+    throw new Error("路径越出任务主目录");
+  return canonical;
+}
+async function fixture(
+  options: {
+    withGenerator?: boolean;
+    unborn?: boolean;
+    provider?: Parameters<typeof providerFixture>[1];
+  } = {},
+) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "kfw-host-git-")));
   roots.push(root);
   const setup = async (args: string[]) => {
@@ -49,28 +218,33 @@ async function fixture() {
   await setup(["init", "-b", "main"]);
   await setup(["config", "user.name", "Git DTO测试"]);
   await setup(["config", "user.email", "git@test.invalid"]);
-  await writeFile(join(root, "tracked.txt"), "base\n");
-  await writeFile(join(root, ".gitignore"), "ignored.txt\n");
-  await writeFile(join(root, "binary.dat"), Buffer.from([0, 1, 2]));
-  await writeFile(join(root, "rename.txt"), "rename body\n");
-  await setup([
-    "add",
-    "--",
-    "tracked.txt",
-    ".gitignore",
-    "binary.dat",
-    "rename.txt",
-  ]);
-  // 仅此测试独占临时目录的fixture历史，不提交worktree，也不写远端。
-  await setup(["commit", "-m", "测试基线"]);
-  await writeFile(join(root, "tracked.txt"), "staged\n");
-  await setup(["add", "--", "tracked.txt"]);
-  await writeFile(join(root, "tracked.txt"), "unstaged\n");
-  await writeFile(join(root, "new.txt"), "new content\n");
-  await writeFile(join(root, "ignored.txt"), "ignored\n");
-  await writeFile(join(root, "untracked-binary.dat"), Buffer.from([0, 4, 5]));
+  if (!options.unborn) {
+    await writeFile(join(root, "tracked.txt"), "base\n");
+    await writeFile(join(root, ".gitignore"), "ignored.txt\n");
+    await writeFile(join(root, "binary.dat"), Buffer.from([0, 1, 2]));
+    await writeFile(join(root, "rename.txt"), "rename body\n");
+    await setup([
+      "add",
+      "--",
+      "tracked.txt",
+      ".gitignore",
+      "binary.dat",
+      "rename.txt",
+    ]);
+    // 仅此测试独占临时目录的fixture历史，不提交worktree，也不写远端。
+    await setup(["commit", "-m", "测试基线"]);
+    await writeFile(join(root, "tracked.txt"), "staged\n");
+    await setup(["add", "--", "tracked.txt"]);
+    await writeFile(join(root, "tracked.txt"), "unstaged\n");
+    await writeFile(join(root, "new.txt"), "new content\n");
+    await writeFile(join(root, "ignored.txt"), "ignored\n");
+    await writeFile(join(root, "untracked-binary.dat"), Buffer.from([0, 4, 5]));
+  }
   const instanceId = randomUUID();
   const actor: LocalActor = { instanceId, accessClientId: null };
+  const provider = options.withGenerator
+    ? await providerFixture(instanceId, options.provider ?? {})
+    : undefined;
   const projectId = randomUUID();
   const taskId = randomUUID();
   const requests: Array<readonly string[]> = [];
@@ -93,20 +267,26 @@ async function fixture() {
         viewerScope: request.viewerScope,
       };
     },
-    openSession: async () => ({
-      rootDirectory: root,
-      available,
-      limits: instanceSettingsSchema.parse({ defaultModel: "fixture" }),
-      resolvePath: (path) =>
-        resolveReadOnlyProjectPath(
-          { rootDirectory: root, additionalDirectories: [] },
-          path,
-        ),
-      exec: (args, cwd, input) => {
-        requests.push(args);
-        return execute(args, cwd, input);
-      },
-    }),
+    withSession: async (_actor, target, _connection, read) =>
+      read({
+        rootDirectory: root,
+        available,
+        limits: instanceSettingsSchema.parse({ defaultModel: "fixture" }),
+        resolvePath: (path, operation) =>
+          operation === "write" && target.viewerScope.kind === "task"
+            ? resolveTaskWritePath(root, path)
+            : resolveReadOnlyProjectPath(
+                { rootDirectory: root, additionalDirectories: [] },
+                path,
+              ),
+        exec: (args, cwd, input, env) => {
+          requests.push(args);
+          return execute(args, cwd, input, env);
+        },
+      }),
+    ...(provider
+      ? { generateCommitMessage: provider.generateCommitMessage }
+      : {}),
   });
   const connection = {
     connectionId: randomUUID(),
@@ -118,6 +298,8 @@ async function fixture() {
   };
   const call = (method: string, values = {}) =>
     rpc.call(actor, method, [{ ...params, ...values }], connection);
+  const raw = (args: string[]): Promise<GitCommandResult> =>
+    execute(args, root);
   return {
     root,
     actor,
@@ -128,7 +310,9 @@ async function fixture() {
     params,
     rpc,
     call,
+    raw,
     requests,
+    provider,
     setup,
     unavailable: () => {
       available = false;
@@ -352,21 +536,21 @@ it("原ignore/branches/graph/worktree-info来自真实Git，越界不进入执�
     ),
   ).toBe(true);
 });
-it("Project不伪造Task，connection与workspace核对；未接通写操作明确拒绝", async () => {
+it("Project只读投影保持真实目录，连接与workspace核对；项目作用域写操作被拒绝且有可读原因", async () => {
   const f = await fixture();
-  await expect(
-    f.rpc.call(
+  const projectParams = {
+    ...f.params,
+    viewerScope: { kind: "project" as const, projectId: f.projectId },
+  };
+  expect(
+    await f.rpc.call(
       f.actor,
       "getRepositorySummary",
-      [
-        {
-          ...f.params,
-          viewerScope: { kind: "project", projectId: f.projectId },
-        },
-      ],
+      [projectParams],
       f.connection,
     ),
-  ).rejects.toThrow(/Task/);
+  ).toMatchObject({ result: { isRepository: true, branchName: "main" } });
+  f.requests.splice(0);
   await expect(
     f.rpc.call(f.actor, "getRepositorySummary", [f.params], {
       ...f.connection,
@@ -379,23 +563,111 @@ it("Project不伪造Task，connection与workspace核对；未接通写操作明�
       instanceId: randomUUID(),
     }),
   ).rejects.toThrow(/实例/);
-  for (const method of [
-    "stagePaths",
-    "unstagePaths",
-    "discardPaths",
-    "commit",
-    "push",
-    "generateCommitMessage",
-    "switchBranch",
-    "createBranchAndSwitch",
-  ])
-    await expect(f.call(method)).rejects.toThrow(/尚不支持|未接通/);
+  const writes: Array<[string, Record<string, unknown>]> = [
+    ["stagePaths", { paths: ["tracked.txt"] }],
+    ["unstagePaths", { paths: ["tracked.txt"] }],
+    ["discardPaths", { paths: ["tracked.txt"] }],
+    ["commit", { message: "不会执行", paths: ["new.txt"] }],
+    ["push", {}],
+    ["switchBranch", { targetBranchName: "main" }],
+    ["createBranchAndSwitch", { branchName: "never-created" }],
+  ];
+  for (const [method, values] of writes)
+    await expect(
+      f.rpc.call(
+        f.actor,
+        method,
+        [{ ...projectParams, ...values }],
+        f.connection,
+      ),
+    ).rejects.toThrow("项目文件面板仅支持读取，Git写操作请在任务中进行。");
   expect(f.requests).toEqual([]);
+  await expect(
+    f.call("generateCommitMessage", { message: "x" }),
+  ).rejects.toThrow("当前Git宿主尚未配置提交信息生成模型。");
   f.unavailable();
   expect(await f.call("getRepositorySummary")).toMatchObject({
     result: { isGitAvailable: false, isRepository: false },
   });
   expect(f.requests).toEqual([]);
+});
+
+it("提交信息生成用实例默认模型读取真实暂存差异，只返回一条信息", async () => {
+  const f = await fixture({ withGenerator: true });
+  const provider = f.provider;
+  if (!provider) throw new Error("夹具没有建立供应商。");
+  const result = (
+    await f.call("generateCommitMessage", {
+      locale: "zh-CN",
+      currentSessionFilePaths: ["tracked.txt"],
+    })
+  )?.result as { message: string; providerId: string; model: string };
+  expect(result).toEqual({
+    message: "feat(git): 接入提交信息生成",
+    providerId: provider.providerId,
+    model: "selected-model",
+  });
+  expect(JSON.stringify(result)).not.toContain("private-provider-key");
+  expect(provider.requests).toHaveLength(1);
+  expect(provider.requests[0]?.path).toBe("/v1/chat/completions");
+  expect(provider.requests[0]?.body).toMatchObject({
+    model: "selected-model",
+    stream: false,
+  });
+  const body = JSON.stringify(provider.requests[0]?.body);
+  expect(body).toContain("tracked.txt");
+  expect(body).toContain("staged");
+  expect(provider.requests[0]?.headers.authorization).toBe(
+    "Bearer private-provider-key",
+  );
+  expect(provider.requests[0]?.headers["x-custom"]).toBe("fixture-header");
+});
+
+it("只有未跟踪文件时也能生成提交信息且不修改索引", async () => {
+  const f = await fixture({ withGenerator: true });
+  await f.call("discardPaths", { paths: ["tracked.txt"], staged: true });
+  await f.call("generateCommitMessage", { includeUnstaged: true });
+  const body = JSON.stringify(f.provider?.requests[0]?.body);
+  expect(body).toContain("new.txt");
+  expect(body).toContain("new content");
+  expect((await f.raw(["diff", "--cached", "--name-only"])).stdout).toBe("");
+});
+
+it("暂存区为空不调用模型，默认模型未选也给可读原因", async () => {
+  const empty = await fixture({ withGenerator: true });
+  await empty.call("unstagePaths", { paths: ["tracked.txt"] });
+  await expect(empty.call("generateCommitMessage", {})).rejects.toThrow(
+    "暂存区没有可提交的更改。",
+  );
+  expect(empty.provider?.requests).toEqual([]);
+
+  const unset = await fixture({
+    withGenerator: true,
+    provider: { defaultModel: "" },
+  });
+  await expect(unset.call("generateCommitMessage", {})).rejects.toThrow(
+    "尚未选择默认模型，请到设置中选择后重试。",
+  );
+  expect(unset.provider?.requests).toEqual([]);
+});
+
+it("上游抖动按治理重试次数重发，超时按治理空闲上限终止", async () => {
+  const retried = await fixture({
+    withGenerator: true,
+    provider: { failFirst: true, maxRetries: 2 },
+  });
+  const result = (await retried.call("generateCommitMessage", {}))?.result as {
+    message: string;
+  };
+  expect(result.message).toBe("feat(git): 接入提交信息生成");
+  expect(retried.provider?.requests).toHaveLength(2);
+
+  const timed = await fixture({
+    withGenerator: true,
+    provider: { hang: true, idleTimeoutMs: 300 },
+  });
+  await expect(timed.call("generateCommitMessage", {})).rejects.toThrow(/超时/);
+  expect(timed.provider?.requests).toHaveLength(1);
 });
 
 it("仓库配置里的upstream名称不能变成Git选项，纯读比较不写输出文件", async () => {
@@ -430,4 +702,293 @@ it("仓库配置里的upstream名称不能变成Git选项，纯读比较不写�
         (args) => !args.some((argument) => argument.startsWith("--output=")),
       ),
   ).toBe(true);
+});
+
+it("last-turn差异必须走会话入口，graph按skip分页且不多跑写命令", async () => {
+  const f = await fixture();
+  f.requests.splice(0);
+  await expect(
+    f.call("getDiff", { path: "tracked.txt", sourceId: "last-turn" }),
+  ).rejects.toThrow("上一轮差异必须经真实会话文件变更入口读取。");
+  expect(f.requests).toEqual([]);
+  await f.setup(["commit", "--allow-empty", "-m", "第二笔"]);
+  await f.setup(["commit", "--allow-empty", "-m", "第三笔"]);
+  const newest = (await f.call("getCommitGraph", { maxCount: 2, skip: 0 }))
+    ?.result as { commits: Array<{ subject: string }>; hasMore: boolean };
+  const older = (await f.call("getCommitGraph", { maxCount: 2, skip: 2 }))
+    ?.result as { commits: Array<{ subject: string }>; hasMore: boolean };
+  expect(newest.commits.map((commit) => commit.subject)).toEqual([
+    "第三笔",
+    "第二笔",
+  ]);
+  expect(newest.hasMore).toBe(true);
+  expect(older.commits.map((commit) => commit.subject)).toEqual(["测试基线"]);
+  expect(older.hasMore).toBe(false);
+  expect(
+    f.requests.every(
+      (args) =>
+        !["add", "restore", "clean", "commit", "push", "switch"].includes(
+          args[0] ?? "",
+        ),
+    ),
+  ).toBe(true);
+});
+
+it("Task作用域对真实仓库暂存、取消暂存与丢弃，未跟踪文件被删除", async () => {
+  const f = await fixture();
+  await f.call("stagePaths", { paths: ["tracked.txt"] });
+  const staged = (
+    await f.call("getDiff", { path: "tracked.txt", sourceId: "staged" })
+  )?.result as { beforeContent: string | null; afterContent: string | null };
+  expect(staged).toMatchObject({
+    beforeContent: "base\n",
+    afterContent: "unstaged\n",
+  });
+  await f.call("unstagePaths", { paths: ["tracked.txt"] });
+  expect((await f.call("getChanges", { sourceId: "staged" }))?.result).toEqual(
+    [],
+  );
+  expect(await readFile(join(f.root, "tracked.txt"), "utf8")).toBe(
+    "unstaged\n",
+  );
+  await f.call("discardPaths", { paths: ["tracked.txt"] });
+  expect(await readFile(join(f.root, "tracked.txt"), "utf8")).toBe("base\n");
+  await f.call("discardPaths", { paths: ["new.txt"] });
+  await expect(stat(join(f.root, "new.txt"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await writeFile(join(f.root, "tracked.txt"), "staged again\n");
+  await f.call("stagePaths", { paths: ["tracked.txt"] });
+  await f.call("discardPaths", { paths: ["tracked.txt"], staged: true });
+  expect(await readFile(join(f.root, "tracked.txt"), "utf8")).toBe("base\n");
+  expect((await f.call("getChanges", { sourceId: "staged" }))?.result).toEqual(
+    [],
+  );
+  await expect(
+    f.call("stagePaths", { paths: ["../outside.txt"] }),
+  ).rejects.toThrow(/路径/);
+});
+
+it("暂存与丢弃符号链接只操作链接名并保留真实正文", async () => {
+  const f = await fixture();
+  const link = join(f.root, "link.txt");
+  await symlink("new.txt", link);
+  await f.call("stagePaths", { paths: [link] });
+  expect(
+    (await f.raw(["ls-files", "--stage", "--", "link.txt"])).stdout,
+  ).toMatch(/^120000/u);
+  await f.call("unstagePaths", { paths: [link] });
+  await f.call("discardPaths", { paths: [link] });
+  await expect(stat(link)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readFile(join(f.root, "new.txt"), "utf8")).toBe("new content\n");
+});
+
+it("首次提交前可取消暂存并保留文件", async () => {
+  const f = await fixture({ unborn: true });
+  await writeFile(join(f.root, "first.txt"), "首次提交\n");
+  await f.call("stagePaths", { paths: ["first.txt"] });
+  expect((await f.raw(["ls-files"])).stdout.trim()).toBe("first.txt");
+  await f.call("unstagePaths", { paths: ["first.txt"] });
+  expect((await f.raw(["ls-files"])).stdout).toBe("");
+  expect(await readFile(join(f.root, "first.txt"), "utf8")).toBe("首次提交\n");
+});
+
+it("首次提交前放弃所选暂存文件，保留其他暂存与未跟踪文件", async () => {
+  const f = await fixture({ unborn: true });
+  await writeFile(join(f.root, "[a].txt"), "丢弃\n");
+  await writeFile(join(f.root, "a.txt"), "保留暂存\n");
+  await writeFile(join(f.root, "note.txt"), "保留未跟踪\n");
+  await f.call("stagePaths", { paths: ["[a].txt", "a.txt"] });
+  await f.call("discardPaths", { paths: ["[a].txt"], staged: true });
+  await expect(stat(join(f.root, "[a].txt"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  expect((await f.raw(["ls-files", "-z"])).stdout).toBe("a.txt\0");
+  expect(await readFile(join(f.root, "note.txt"), "utf8")).toBe("保留未跟踪\n");
+});
+
+it("真实索引被锁定时仍返回已完成的提交和清理告警", async () => {
+  const f = await fixture();
+  const lock = join(f.root, ".git", "index.lock");
+  await writeFile(lock, "并发 Git 操作占用索引");
+  try {
+    const res = await f.call("commit", {
+      message: "已提交但未清理索引",
+      paths: ["tracked.txt"],
+      stagedOnly: true,
+    });
+    expect(res?.result).toMatchObject({
+      commitHash: (await f.raw(["rev-parse", "HEAD"])).stdout.trim(),
+      indexCleanupWarning: expect.stringContaining("暂存区未更新"),
+    });
+    expect((await f.raw(["show", "HEAD:tracked.txt"])).stdout).toBe("staged\n");
+  } finally {
+    await rm(lock, { force: true });
+  }
+});
+
+it("提交含通配符号的文件名不会清除其他文件的暂存", async () => {
+  const f = await fixture();
+  for (const name of ["[a].txt", "a.txt"]) {
+    await writeFile(join(f.root, name), `${name}\n`);
+    await f.call("stagePaths", { paths: [name] });
+  }
+  await f.call("commit", {
+    message: "提交字面路径",
+    paths: ["[a].txt"],
+    stagedOnly: true,
+  });
+  const staged = (
+    await f.raw(["diff", "--cached", "--name-only", "-z"])
+  ).stdout.split("\0");
+  expect(staged).toContain("a.txt");
+  expect(staged).not.toContain("[a].txt");
+});
+
+it("丢弃暂存删除会从 HEAD 恢复文件和索引", async () => {
+  const f = await fixture();
+  await f.setup(["rm", "-f", "--", "tracked.txt"]);
+  await expect(stat(join(f.root, "tracked.txt"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await f.call("discardPaths", { paths: ["tracked.txt"], staged: true });
+  expect(await readFile(join(f.root, "tracked.txt"), "utf8")).toBe("base\n");
+  expect((await f.call("getChanges", { sourceId: "staged" }))?.result).toEqual(
+    [],
+  );
+});
+
+it("按选中路径提交回读真实哈希，stagedOnly只提交选中已暂存内容", async () => {
+  const f = await fixture();
+  await f.call("unstagePaths", { paths: ["tracked.txt"] });
+  const first = (
+    await f.call("commit", { message: "只收选中文件", paths: ["tracked.txt"] })
+  )?.result as { commitHash: string; summary: { isDirty: boolean } };
+  expect(first.commitHash).toMatch(/^[a-f0-9]{40}$/);
+  expect((await f.raw(["rev-parse", "HEAD"])).stdout.trim()).toBe(
+    first.commitHash,
+  );
+  expect(
+    (await f.raw(["show", "--pretty=format:", "--name-only", "HEAD"])).stdout
+      .split("\n")
+      .filter(Boolean),
+  ).toEqual(["tracked.txt"]);
+  expect(first.summary.isDirty).toBe(true);
+
+  await writeFile(join(f.root, "staged-new.txt"), "first\n");
+  await writeFile(join(f.root, "tracked.txt"), "staged version\n");
+  await f.call("stagePaths", { paths: ["tracked.txt", "staged-new.txt"] });
+  await writeFile(join(f.root, "tracked.txt"), "worktree later\n");
+  const second = (
+    await f.call("commit", {
+      message: "只提交选中暂存",
+      paths: ["tracked.txt"],
+      stagedOnly: true,
+    })
+  )?.result as { commitHash: string };
+  expect(second.commitHash).toMatch(/^[a-f0-9]{40}$/);
+  expect((await f.raw(["show", "HEAD:tracked.txt"])).stdout).toBe(
+    "staged version\n",
+  );
+  expect(
+    (await f.raw(["show", "--pretty=format:", "--name-only", "HEAD"])).stdout
+      .split("\n")
+      .filter(Boolean),
+  ).toEqual(["tracked.txt"]);
+  expect((await f.raw(["show", "HEAD:staged-new.txt"])).code).not.toBe(0);
+  const status = (await f.raw(["status", "--porcelain=v1"])).stdout;
+  expect(status).toContain("A  staged-new.txt");
+  expect(status).toContain(" M tracked.txt");
+  await expect(f.call("commit", { message: "  " })).rejects.toThrow(/提交信息/);
+  await expect(
+    f.call("commit", {
+      message: "没有改动",
+      paths: ["tracked.txt"],
+      stagedOnly: true,
+    }),
+  ).rejects.toThrow(/没有可提交/);
+});
+
+it("分支创建与切换返回问题码，推送回填远端与上行字段", async () => {
+  const f = await fixture();
+  const created = (
+    await f.call("createBranchAndSwitch", { branchName: "feature/write" })
+  )?.result as {
+    ok: boolean;
+    action: string;
+    branchName: string | null;
+    didChange: boolean;
+    created: boolean;
+    issues: Array<{ code: string }>;
+    summary: { branchName: string | null };
+  };
+  expect(created).toMatchObject({
+    ok: true,
+    action: "create-and-switch",
+    branchName: "feature/write",
+    didChange: true,
+    created: true,
+    issues: [],
+  });
+  expect(created.summary.branchName).toBe("feature/write");
+  const duplicate = (
+    await f.call("createBranchAndSwitch", { branchName: "feature/write" })
+  )?.result as { ok: boolean; issues: Array<{ code: string }> };
+  expect(duplicate.ok).toBe(false);
+  expect(duplicate.issues[0]?.code).toBe("branch-already-exists");
+  const invalid = (
+    await f.call("switchBranch", { targetBranchName: "bad name" })
+  )?.result as { ok: boolean; issues: Array<{ code: string }> };
+  expect(invalid.issues[0]?.code).toBe("invalid-branch-name");
+  const missing = (
+    await f.call("switchBranch", { targetBranchName: "missing-branch" })
+  )?.result as { ok: boolean; issues: Array<{ code: string }> };
+  expect(missing.issues[0]?.code).toBe("target-branch-not-found");
+  const back = (await f.call("switchBranch", { targetBranchName: "main" }))
+    ?.result as {
+    ok: boolean;
+    didChange: boolean;
+    summary: { branchName: string | null };
+  };
+  expect(back).toMatchObject({ ok: true, didChange: true });
+  expect(back.summary.branchName).toBe("main");
+  const same = (await f.call("switchBranch", { targetBranchName: "main" }))
+    ?.result as { ok: boolean; didChange: boolean };
+  expect(same).toMatchObject({ ok: true, didChange: false });
+
+  const worktree = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-host-git-worktree-")),
+  );
+  roots.push(worktree);
+  await f.setup(["worktree", "add", worktree, "-b", "side"]);
+  const occupied = (await f.call("switchBranch", { targetBranchName: "side" }))
+    ?.result as { ok: boolean; issues: Array<{ code: string }> };
+  expect(occupied.issues[0]?.code).toBe("branch-in-other-worktree");
+  await f.setup(["worktree", "remove", "--force", worktree]);
+
+  const remoteRoot = await realpath(
+    await mkdtemp(join(tmpdir(), "kfw-host-git-remote-")),
+  );
+  roots.push(remoteRoot);
+  await execute(["init", "--bare", remoteRoot], f.root);
+  await f.setup(["remote", "add", "origin", remoteRoot]);
+  const pushed = (await f.call("push"))?.result as {
+    branchName: string | null;
+    trackingBranchName: string | null;
+    remoteName: string | null;
+    setUpstream: boolean;
+    summary: { branchName: string | null };
+  };
+  expect(pushed).toMatchObject({
+    branchName: "main",
+    trackingBranchName: "origin/main",
+    remoteName: "origin",
+    setUpstream: true,
+  });
+  expect(pushed.summary.branchName).toBe("main");
+  const again = (await f.call("push"))?.result as { setUpstream: boolean };
+  expect(again.setUpstream).toBe(false);
+
+  const bare = await fixture();
+  await expect(bare.call("push")).rejects.toThrow(/远端/);
 });

@@ -6,6 +6,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
 import { PlatformProvider } from "@zui/hooks/usePlatform";
 import { ServiceProvider } from "@zui/hooks/useServices";
@@ -49,6 +50,12 @@ async function openSkillsPage(
     importDialog?: boolean;
     root?: boolean;
     workspacePath?: string;
+    workspaceScope?: boolean;
+    projectSettings?: {
+      projectId: string | null;
+      projectName: string | null;
+      skills: Array<{ skillId: string; enabled: boolean }>;
+    };
     deferToggle?: boolean;
     pluginSkill?: boolean;
     onCreateTask?: (request?: unknown) => void;
@@ -133,6 +140,55 @@ async function openSkillsPage(
               : { statuses: {} },
         });
       }
+      if (call.service === "settings-sync") {
+        calls.push(call);
+        if (call.method === "detect") {
+          return Response.json({
+            result: {
+              agents: [
+                {
+                  agent: "claudeCode",
+                  discovered: true,
+                  categories: [
+                    {
+                      category: "skills",
+                      discoveredCount: 1,
+                      importableCount: 1,
+                      skippedCount: 0,
+                      sourcePaths: ["/home/.claude/skills"],
+                      sourceRoots: [
+                        {
+                          scope: "global",
+                          path: "/home/.claude/skills",
+                          discoveredCount: 1,
+                          importableCount: 1,
+                          skippedCount: 0,
+                          skills: [
+                            {
+                              name: "writer",
+                              path: "/home/.claude/skills/writer",
+                              importable: true,
+                            },
+                          ],
+                        },
+                      ],
+                      selectedByDefault: true,
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+        }
+        return Response.json({
+          result: {
+            successCount: 0,
+            skippedCount: 0,
+            failedCount: 0,
+            taskResults: [],
+          },
+        });
+      }
       if (call.service === "skills") {
         calls.push(call);
         if (call.method === "list") {
@@ -153,8 +209,8 @@ async function openSkillsPage(
               capability: {
                 userScopeAvailable: true,
                 databaseRecords: true,
-                workspaceScopeAvailable: false,
-                externalImportAvailable: false,
+                workspaceScopeAvailable: true,
+                externalImportAvailable: true,
               },
             },
           });
@@ -163,6 +219,21 @@ async function openSkillsPage(
           record.enabled = call.args[0].enabled;
           if (scenario.unknownToggle) throw new TypeError("网络中断");
           if (scenario.deferToggle) return pendingToggle;
+          return Response.json({ result: null });
+        }
+        if (call.method === "projectSettings") {
+          return Response.json({
+            result: scenario.projectSettings ?? {
+              projectId: null,
+              projectName: null,
+              skills: [],
+            },
+          });
+        }
+        if (call.method === "copyToCommon") {
+          return Response.json({ result: { newPath: "/common/native-skill" } });
+        }
+        if (call.method === "removeFromCommon") {
           return Response.json({ result: null });
         }
       }
@@ -203,10 +274,7 @@ async function openSkillsPage(
               ) : (
                 <SkillsSection
                   {...(workspacePath ? { workspacePath } : {})}
-                  {...(scenario.onCreateTask
-                    ? { onCreateTask: scenario.onCreateTask }
-                    : {})}
-                  scopeFilter="user"
+                  scopeFilter={scenario.workspaceScope ? "workspace" : "user"}
                   searchQuery=""
                 />
               )}
@@ -252,26 +320,6 @@ it("原技能页保留停用插件的只读定义与正文，不展示DB卸载/�
     expect(screen.queryByRole("heading", { name: "技能正文" })).toBeNull(),
   );
   expect(screen.queryByRole("button", { name: /native-skill/ })).toBeNull();
-});
-
-it("设置页新建技能入口以创造模式创建新任务", async () => {
-  const onCreateTask = vi.fn();
-  await openSkillsPage({ onCreateTask });
-  const button = await waitFor(() => {
-    const el = document.querySelector<HTMLButtonElement>(
-      '[data-settings-create-action="settings.skills.create.open"]',
-    );
-    expect(el).not.toBeNull();
-    expect(el?.disabled).toBe(false);
-    return el as HTMLButtonElement;
-  });
-  fireEvent.click(button);
-  expect(onCreateTask).toHaveBeenCalledWith(
-    expect.objectContaining({
-      initialPrompt: "创建一个技能：\n",
-      executionMode: "creative",
-    }),
-  );
 });
 
 it("无Project原技能页显示真实本机包，启停写回相同安装记录", async () => {
@@ -334,24 +382,101 @@ it("技能读取失败显示错误，不显示尚未安装的假空态", async (
   expect(screen.queryByText("尚未安装技能")).toBeNull();
 });
 
-it("原外部技能导入页明确未接入，禁止扫描、导入和假空结果", async () => {
+it("外部技能导入页接真实扫描通道，不再显示未接入或假空结果", async () => {
   const { calls } = await openSkillsPage({ importDialog: true });
-  await screen.findByText("未接入");
-  expect(calls.filter((call) => call.service === "settings-sync")).toEqual([]);
+  await waitFor(() =>
+    expect(
+      calls.filter(
+        (call) => call.service === "settings-sync" && call.method === "detect",
+      ),
+    ).toHaveLength(1),
+  );
+  expect(screen.queryByText("未接入")).toBeNull();
   expect(screen.queryByText(/暂无可导入技能/)).toBeNull();
+});
+
+it("项目分档解析不到项目时不摆空档，也不显示未接入", async () => {
+  await openSkillsPage({
+    workspaceScope: true,
+    workspacePath: "/project",
+    projectSettings: { projectId: null, projectName: null, skills: [] },
+  });
+  await waitFor(() => expect(screen.queryByText("已安装技能")).toBeNull());
+  expect(screen.queryByText("未接入")).toBeNull();
+  expect(screen.queryByRole("switch")).toBeNull();
+});
+
+it("项目分档只列出已安装技能并按项目写入启停", async () => {
+  const { calls } = await openSkillsPage({
+    workspaceScope: true,
+    workspacePath: "/project",
+    projectSettings: {
+      projectId: "project-1",
+      projectName: "项目",
+      skills: [
+        {
+          skillId: "51000000-0000-4000-8000-000000000001",
+          enabled: false,
+        },
+      ],
+    },
+  });
+  const toggle = await screen.findByRole("switch");
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(screen.queryByRole("button", { name: "卸载" })).toBeNull();
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(
+      calls.filter(
+        (call) => call.service === "skills" && call.method === "setEnabled",
+      )[0]?.args[0],
+    ).toMatchObject({
+      scope: "workspace",
+      skillId: "51000000-0000-4000-8000-000000000001",
+      enabled: true,
+    }),
+  );
+});
+
+it("技能详情菜单可复制到通用目录并可移除", async () => {
+  const { calls } = await openSkillsPage();
+  fireEvent.click(await screen.findByRole("button", { name: /native-skill/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "更多" }));
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "复制到通用目录" }),
+  );
+  await waitFor(() =>
+    expect(
+      calls.filter(
+        (call) => call.service === "skills" && call.method === "copyToCommon",
+      ),
+    ).toHaveLength(1),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "更多" }));
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "从通用目录移除" }),
+  );
+  await waitFor(() =>
+    expect(
+      calls.filter(
+        (call) =>
+          call.service === "skills" && call.method === "removeFromCommon",
+      ),
+    ).toHaveLength(1),
+  );
 });
 
 it("原Code侧栏提供技能与MCP直达原页，入口不创建新Task", async () => {
   const { calls } = await openSkillsPage({ root: true });
   fireEvent.click(await screen.findByRole("button", { name: /^技能$/ }));
+  // 技能与 MCP 已并入「插件·MCP·技能」分区，用页签承载。
   await screen.findByRole("heading", { name: "插件·MCP·技能", level: 2 });
   await screen.findByRole("button", { name: /native-skill/ });
   const back = screen.getAllByRole("button", { name: "返回工作区" })[0];
   if (!back) throw new Error("原返回工作区入口缺失");
   fireEvent.click(back);
   fireEvent.click(await screen.findByRole("button", { name: /^MCP 服务器$/ }));
-  // 侧栏 MCP 入口落到 MCP 分区：空态标题只在 mcps 页签激活时渲染。
-  await screen.findByText("尚未安装 MCP 服务器");
+  await screen.findByRole("heading", { name: "插件·MCP·技能", level: 2 });
   expect(
     calls.filter((call) =>
       ["createTask", "ensureConversationWorkspace"].includes(call.method),

@@ -5,6 +5,10 @@ import { losesExecutionRights } from "../process-sandbox/scope-change.js";
 import { createTaskCommandTools } from "./command-tools.js";
 import { createTaskWorkStore } from "./repository.js";
 import { createTaskWorkManager } from "./service.js";
+import {
+  SUBAGENT_USAGE_CAPABILITY,
+  type SubagentUsageLookup,
+} from "./types.js";
 
 export function createTaskWorkPlugin(): PluginDefinition {
   return {
@@ -47,6 +51,10 @@ export function createTaskWorkPlugin(): PluginDefinition {
                 manifest: (context) =>
                   ctx.get("codeUi").outputHistory.manifest(context),
               },
+              subagentUsage: () =>
+                ctx
+                  .get("capabilities")
+                  .list<SubagentUsageLookup>(SUBAGENT_USAGE_CAPABILITY),
             },
             { scope: ownerKind },
           );

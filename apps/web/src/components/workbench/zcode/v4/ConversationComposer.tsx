@@ -20,6 +20,7 @@ import {
 import type {
   AttachmentRef,
   ConversationSnapshot,
+  ConversationTaskControl,
   SessionConfigState,
 } from "@zcode/shared/zcode-protocol-v4";
 import {
@@ -54,6 +55,7 @@ import { Spinner } from "@zui/components/ui/spinner.js";
 import type { ModelSelectionState } from "@zui/hooks/useModelSelectionView.js";
 import { useOptionalServices } from "@zui/hooks/useServices.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { formatConversationWorkDuration } from "@zui/v4/conversationWorkDuration.js";
 import type { LexicalChatInputHandle } from "@zui/LexicalChatInput.js";
 import {
   type ChatComposerAttachment,
@@ -136,8 +138,6 @@ import { usePptxElementReferences } from "@zui/v4/composer/usePptxElementReferen
 import { usePrimaryFollowupModifier } from "@zui/v4/composer/usePrimaryFollowupModifier.js";
 import { useWebElementContexts } from "@zui/v4/composer/useWebElementContexts.js";
 import { V4ComposerCuaEntry } from "@zui/v4/composer/V4ComposerCuaEntry.js";
-// 原模式菜单与发送瞬间冻结共用唯一宿主策略owner。
-import { useExecutionModeController } from "@zui/host/ExecutionModeChip.js";
 import {
   type ModelSelectionSource,
   V4ComposerModelControls,
@@ -188,7 +188,8 @@ const MODEL_SELECTION_LOADING_STATE: ModelSelectionState = { status: "loading",
 };
 
 export interface ConversationComposerSendOptions {
-  executionMode?: import("@kenfutwork/shared").ExecutionMode;
+  /** 点击发送时的 Task 控制事实，等待附件和配置期间保持原值。 */
+  taskControl?: ConversationTaskControl | null;
   /** 点击发送时复制的配置；null 表示未完成选择，Host 不得从 Session 补齐。 */
   submission?: ComposerSubmissionConfig | null;
   heldQueueDisposition?: "clearQueueAndSend" | "keepQueueAndSend";
@@ -223,7 +224,6 @@ interface ExternalTextInsertRequest {
   text: string;
   mention?: ComposerMentionPrefill;
   mode?: "replace" | "prepend-if-missing";
-  executionMode?: import("@kenfutwork/shared").ExecutionMode;
 }
 
 function restorePersistedComposerDraftIntoInput({
@@ -408,6 +408,9 @@ interface ConversationComposerProps {
   contextHeader?: ReactNode;
   /** 居中草稿布局（旧 shouldUseCenteredDraftChatLayout）：收窄 max-w-2xl、去 sticky。 */
   centered?: boolean;
+  /** 完整视图浮窗使用同一编辑器的单行布局。 */
+  layout?: "stacked" | "inline";
+  workingDurationMs?: number;
   /**
    * v4 bottom dock 阻塞交互 id。存在时 composer 只隐藏不卸载，保留草稿、附件与编辑器实例。
    */
@@ -528,6 +531,8 @@ function ConversationComposerImpl({
   telemetryDraftConfig,
   contextHeader,
   centered = false,
+  layout = "stacked",
+  workingDurationMs,
   blockingRequestId = null,
   disabled = false,
   autoFocusEnabled = true,
@@ -583,13 +588,6 @@ function ConversationComposerImpl({
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
-  const executionModeController = useExecutionModeController({
-    sessionId,
-    planEnabled: draftConfig?.planEnabled ?? snapshot?.config.planEnabled,
-    onSwitchMode,
-    initialMode: sessionId ? undefined : composerDraft.executionMode,
-  });
-  const executionMode = executionModeController.mode;
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
     activePicker: V4ComposerConfigPicker | null;
@@ -668,6 +666,7 @@ function ConversationComposerImpl({
     remoteSessionId,
     scopeId: draftScopeId,
     attachmentSessionId,
+    composerSessionId: sessionId ?? null,
     attachmentPut,
     attachmentBudget,
     onRuntimeRestart,
@@ -1088,11 +1087,6 @@ function ConversationComposerImpl({
       appliedExternalTextInsertRequestRef.current = nextAppliedRequestId;
       if (applied) {
         onExternalTextInsertApplied?.(externalTextInsertRequest.requestId);
-        if (externalTextInsertRequest.executionMode) {
-          executionModeController.applyDraftMode(
-            externalTextInsertRequest.executionMode,
-          );
-        }
       }
       return applied;
     };
@@ -1101,7 +1095,6 @@ function ConversationComposerImpl({
     const frame = requestAnimationFrame(applyRequest);
     return () => cancelAnimationFrame(frame);
   }, [
-    executionModeController,
     externalTextInsertRequest,
     onExternalTextInsertApplied,
     requestComposerFocus,
@@ -1221,7 +1214,9 @@ function ConversationComposerImpl({
       const submittedDraft = snapshotDraftOfEditor();
       let cleanupRevision = contentRevisionRef.current;
       const submission = createSubmissionFromComposer?.() ?? null;
-      const submittedExecutionMode = executionMode;
+      const taskControl = snapshotRef.current?.taskControl
+        ? { ...snapshotRef.current.taskControl }
+        : null;
       const submittedAttachmentIds = attachmentsApi.attachments.map((item) => item.id,
       );
       if (
@@ -1408,8 +1403,8 @@ function ConversationComposerImpl({
           editorClearedOptimistically = true;
         }
         const sendResult = await onSendText(promptText, {
-          ...(submittedExecutionMode ? { executionMode: submittedExecutionMode } : {}),
           submission,
+          taskControl,
           telemetrySeed,
           ...(requestedDelivery ? { requestedDelivery } : {}),
           ...(heldQueueDisposition ? { heldQueueDisposition } : {}),
@@ -1513,7 +1508,6 @@ function ConversationComposerImpl({
       conversationTelemetry,
       draftConfig,
       createSubmissionFromComposer,
-      executionMode,
       submissionReady,
       getCodeCommentContexts,
       telemetryDraftConfig,
@@ -1711,7 +1705,7 @@ function ConversationComposerImpl({
 
   // ── 「加入对话」全局事件（workspace file tree 右键/按钮）→ mention 插入 ──
   useEffect(() => {
-    if (!listenAddToChatEvents || typeof window === "undefined") {
+    if (!listenAddToChatEvents || disabled || typeof window === "undefined") {
       return;
     }
     const handleWorkspaceFileAddToChat = (event: Event) => {
@@ -1734,17 +1728,23 @@ function ConversationComposerImpl({
       window.removeEventListener(WORKSPACE_FILE_ADD_TO_CHAT_EVENT, handleWorkspaceFileAddToChat,
       );
     };
-  }, [listenAddToChatEvents, updateText, workspaceIdentity, workspacePath]);
+  }, [disabled, listenAddToChatEvents, updateText, workspaceIdentity, workspacePath]);
 
   // 动态 placeholder（旧 chatViewPlaceholder 语义）：无历史 → newTask；
   // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue。
+  const workingDurationLabel =
+    layout === "inline" && canStop
+      ? formatConversationWorkDuration(workingDurationMs, intl, locale)
+      : null;
   const placeholder = voice?.recording
     ? "开始说话"
-    : intl.formatMessage({
+    : workingDurationLabel
+      ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: workingDurationLabel })
+      : intl.formatMessage({
         id: resolveChatPlaceholderKey({
           hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
           isTaskProcessing: canStop,
-          compactNewTask: false,
+          compactNewTask: layout === "inline",
         }),
       });
   const sendTooltipTitle = intl.formatMessage({
@@ -2321,8 +2321,7 @@ function ConversationComposerImpl({
           disabled={disabled}
           activeConfigPicker={activeConfigPicker}
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
-          onSwitchMode={executionModeController.switchCollaborationMode}
-          executionModeController={executionModeController}
+          onSwitchMode={onSwitchMode}
         />
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
@@ -2352,10 +2351,7 @@ function ConversationComposerImpl({
       provider,
       remoteSessionId,
       runningSubagentCount,
-      executionModeController,
-      sessionId,
       snapshot?.backgroundWorks,
-      snapshot?.config.planEnabled,
       workspaceIdentity,
       workspacePath,
     ],
@@ -2465,6 +2461,7 @@ function ConversationComposerImpl({
           enableMentionPanel={true}
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}
+          layout={layout}
           className="p-0"
           onChange={handleEditorChange}
           onFocus={handleEditorFocus}

@@ -10,7 +10,6 @@ import type {
 import type { ServerEnv } from "../../config/env.js";
 import { composePlugins } from "../../kernel/compose.js";
 import { AgentRunEventBus, createKernelEvents } from "../../kernel/context.js";
-import { createAgentModesPlugin } from "../agent-modes/plugin.js";
 import { createAgentRunsPlugin } from "../agent-runs/plugin.js";
 import { createContextHistoryPlugin } from "../context-history/plugin.js";
 import { createKnowledgePlugin } from "../knowledge/plugin.js";
@@ -149,6 +148,9 @@ async function assembleKernel(
     },
     listPromptFragments: () => [],
     readSkillPackages: async () => [],
+    // 插件贡献接口：本测试不贡献命令/钩子，返回空列表即可。
+    listCommands: async () => [],
+    listHooks: async () => [],
     readPackageInventory: async () => ({
       rootPath: tmpdir(),
       bundled: [],
@@ -162,10 +164,10 @@ async function assembleKernel(
   const kernel = composePlugins(
     makeEnv(),
     [
-      createAgentModesPlugin(),
       createContextHistoryPlugin(),
       createKnowledgePlugin({
         platform: "win32",
+        arch: "x64",
         probeCli: async () => true,
         runner: fakeSagRunner(),
         // 让知识库「已安装」：市场 bundle 的安装态由 registry 决定

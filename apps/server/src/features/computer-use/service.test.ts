@@ -230,6 +230,35 @@ describe("ComputerUseService：观察", () => {
     expect(result.structuredContent?.permissionStatus).toEqual({
       accessibility: "granted",
       screen: "granted",
+      pending: false,
+    });
+  });
+
+  it("requestAccess：仍有权限未授予时标记 pending 并要求稍后再查", async () => {
+    const { executor } = fakeExecutor({
+      async accessStatus() {
+        return {
+          accessibility: "granted",
+          screen: "denied",
+          automation: "denied",
+          hint: "缺少权限：屏幕录制（截屏）、自动化（System Events 桥接）",
+        };
+      },
+    });
+    const service = createComputerUseService({
+      executor,
+      governance: () => governance,
+    });
+    const result = await service.requestAccess();
+    expect(result.structuredContent?.pending).toBe(true);
+    expect(result.structuredContent?.permissionStatus).toMatchObject({
+      screen: "denied",
+      automation: "denied",
+      pending: true,
+    });
+    expect(result.content[0]).toMatchObject({
+      type: "text",
+      text: expect.stringContaining("不要结束回合"),
     });
   });
 });

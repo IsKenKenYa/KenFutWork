@@ -7,6 +7,7 @@ import {
   type CommandEnvelope,
   type CommandPayloadMap,
   type CommandType,
+  type ConversationTaskControl,
 } from "@zcode/shared/zcode-protocol-v4";
 import { uuidv7 } from "@zcode/shared";
 export { uuidv7 } from "@zcode/shared";
@@ -45,6 +46,7 @@ interface CreateCommandEnvelopeInput<T extends CommandType> {
   sessionId: string | null;
   baseRevision?: number;
   baseLogEpoch?: string;
+  taskControl?: ConversationTaskControl;
 }
 
 /** 构造命令信封；CAS 命令缺 baseRevision 直接抛（客户端编程错误就地暴露）。 */
@@ -61,6 +63,7 @@ export function createCommandEnvelope<T extends CommandType>(
     commandId: uuidv7(),
     clientId: getV4ClientId(),
     sessionId: input.sessionId,
+    ...(input.taskControl ? { taskControl: { ...input.taskControl } } : {}),
     ...(input.baseRevision !== undefined ? { baseRevision: input.baseRevision } : {}),
     ...(input.baseLogEpoch ? { baseLogEpoch: input.baseLogEpoch } : {}),
     type: input.type,

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { resolveInsideRoot } from "../../utils/inside-root.js";
 import { readBinary } from "../code-tools/file-media.js";
@@ -8,7 +8,7 @@ import { scopedPackageFiles } from "../execution/scoped-package-files.js";
 import { parseSkillManifest } from "./skill-import-service.js";
 
 /**
- * 沙箱工作目录里的技能包读取（「从工作目录导入」+ 创造模式的产物）。
+ * 沙箱工作目录里的技能包读取，供「从工作目录导入」使用。
  *
  * 技能包的判定：**目录里有 `SKILL.md`**（大小写不敏感），同目录/子目录的其它文件作为
  * 附带文件（scripts/ references/ assets/ 等）。所有路径都相对**沙箱根**——调用方拿到的
@@ -21,7 +21,7 @@ import { parseSkillManifest } from "./skill-import-service.js";
  */
 
 /** 扫描时跳过的目录名：依赖、版本库、缓存、构建产物。 */
-const SKIP_DIRS = new Set([
+export const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
   ".venv",
@@ -35,12 +35,13 @@ const SKIP_DIRS = new Set([
   ".turbo",
 ]);
 
-const MAX_DEPTH = 3;
-const MAX_DIRS = 2000;
-const MAX_FILES = 200;
-const MAX_FILE_BYTES = 256 * 1024;
+/** 扫描与读取上限：外部目录导入与沙箱导入共用，避免两条路径各自放宽。 */
+export const MAX_DEPTH = 3;
+export const MAX_DIRS = 2000;
+export const MAX_FILES = 200;
+export const MAX_FILE_BYTES = 256 * 1024;
 /** SKILL.md 允许更大（正文可能很长）。 */
-const MAX_SKILL_MD_BYTES = 1024 * 1024;
+export const MAX_SKILL_MD_BYTES = 1024 * 1024;
 
 export interface SandboxSkillPackageCandidate {
   /** 相对沙箱根的目录路径（`/` 分隔） */
@@ -120,7 +121,8 @@ export function listSandboxSkillPackages(
       if (SKIP_DIRS.has(entry) || entry.startsWith(".")) continue;
       const child = join(current.dir, entry);
       try {
-        if (!statSync(child).isDirectory()) continue;
+        // lstat：符号链接既不当目录也不当文件，不跟随到白名单之外。
+        if (!lstatSync(child).isDirectory()) continue;
       } catch {
         continue;
       }
@@ -163,9 +165,9 @@ export function readSandboxSkillPackage(
     for (const entry of readdirSync(dir)) {
       if (entry.startsWith(".") || SKIP_DIRS.has(entry)) continue;
       const child = join(dir, entry);
-      let stat: ReturnType<typeof statSync>;
+      let stat: ReturnType<typeof lstatSync>;
       try {
-        stat = statSync(child);
+        stat = lstatSync(child);
       } catch {
         continue;
       }

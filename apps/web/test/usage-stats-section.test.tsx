@@ -17,7 +17,7 @@ vi.mock("@/lib/local-instance-context", () => ({
 
 const STATS_7D = {
   rangeDays: 7,
-  totals: { tokens: 1960, inputTokens: 1350, outputTokens: 610 },
+  totals: { tokens: 1960, inputTokens: 1350, outputTokens: 610, costUsd: 0.25 },
   peakDayTokens: 1560,
   currentStreakDays: 3,
   longestStreakDays: 4,
@@ -84,6 +84,28 @@ describe("UsageStatsSection（R4-2 用户侧使用统计）", () => {
     expect(screen.getByText("4 天")).toBeInTheDocument();
     // 最长聊天时长（R4-2 剩下的那张卡）：42300 秒 = 11 小时 45 分钟
     expect(screen.getByText("11 小时 45 分钟")).toBeInTheDocument();
+  });
+
+  it("供应商回传成本时汇总条显示美元金额", async () => {
+    vi.stubGlobal("fetch", mockFetchWith(STATS_7D));
+    render(<UsageStatsSection />);
+
+    expect(await screen.findByText("预估花费")).toBeInTheDocument();
+    expect(screen.getByText("$0.25")).toBeInTheDocument();
+  });
+
+  it("没有回传成本时显示「未上报」，不写成 0", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchWith({
+        ...STATS_7D,
+        totals: { ...STATS_7D.totals, costUsd: null },
+      }),
+    );
+    render(<UsageStatsSection />);
+
+    expect(await screen.findByText("预估花费")).toBeInTheDocument();
+    expect(screen.getByText("未上报")).toBeInTheDocument();
   });
 
   it("请求带 days=7 且默认展示近 7 日", async () => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ProcessSpawnRequest } from "./types.js";
+import type { SandboxProcessRequest as ProcessSpawnRequest } from "./types.js";
 
 /** 沿用 helper 的请求指纹；本地取消信号不属于可重放的执行参数。 */
 export function processInvocationFingerprint(

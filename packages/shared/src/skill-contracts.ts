@@ -156,6 +156,135 @@ export type SandboxSkillPackageListResponse = z.infer<
   typeof sandboxSkillPackageListResponseSchema
 >;
 
+// === 项目级技能启停 ===
+
+/**
+ * 项目级启停按真实项目 id 生效，不复用旧工作区身份。
+ * 解析不到项目时服务端返回 `projectId=null`，界面不显示项目分档。
+ */
+export const codeUiSkillProjectToggleRequestSchema =
+  codeUiSkillsRequestSchema.extend({
+    projectId: z.uuid(),
+    skillId: z.uuid(),
+    enabled: z.boolean(),
+  });
+export type CodeUiSkillProjectToggleRequest = z.infer<
+  typeof codeUiSkillProjectToggleRequestSchema
+>;
+
+export const skillProjectSkillStateSchema = z.object({
+  skillId: z.uuid(),
+  enabled: z.boolean(),
+  updatedAt: z.iso.datetime({ offset: true }),
+});
+export type SkillProjectSkillState = z.infer<
+  typeof skillProjectSkillStateSchema
+>;
+
+export const skillProjectSettingsResponseSchema = z.object({
+  /** null 表示项目不存在或不属于当前实例；界面据此不显示项目分档。 */
+  projectId: z.uuid().nullable(),
+  projectName: z.string().nullable(),
+  skills: z.array(skillProjectSkillStateSchema),
+});
+export type SkillProjectSettingsResponse = z.infer<
+  typeof skillProjectSettingsResponseSchema
+>;
+
+// === 外部技能目录扫描与导入 ===
+
+/**
+ * 只读扫描白名单目录里的技能包（含 `SKILL.md` 的目录）。
+ * `roots` 是用户显式选择的绝对目录；服务端一律 `realpath` 后再校验，
+ * 不信任前端传来的路径。
+ */
+export const externalSkillScanRequestSchema = z.object({
+  roots: z.array(z.string().trim().min(1).max(4096)).min(1).max(20),
+});
+export type ExternalSkillScanRequest = z.infer<
+  typeof externalSkillScanRequestSchema
+>;
+
+export const externalSkillCandidateSchema = z.object({
+  /** 规范化（realpath）后的源根目录 */
+  rootPath: z.string().min(1),
+  /** 相对源根目录的技能包路径，`/` 分隔 */
+  relativePath: z.string().min(1),
+  /** 源目录名，导入后作为 slug 来源 */
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  /** 技能包全文摘要，用于同源变更判定 */
+  digest: z.string().regex(/^[0-9a-f]{64}$/u),
+  /** 同一来源与摘要已导入 */
+  imported: z.boolean(),
+  /** 同一来源存在但摘要不同，导入会返回冲突 */
+  changed: z.boolean(),
+  /** 该来源的技能已删除，迟到导入只会返回已删除 */
+  deleted: z.boolean(),
+});
+export type ExternalSkillCandidate = z.infer<
+  typeof externalSkillCandidateSchema
+>;
+
+export const externalSkillScanDiagnosticSchema = z.object({
+  rootPath: z.string(),
+  reason: z.string(),
+});
+export type ExternalSkillScanDiagnostic = z.infer<
+  typeof externalSkillScanDiagnosticSchema
+>;
+
+export const externalSkillScanResponseSchema = z.object({
+  candidates: z.array(externalSkillCandidateSchema),
+  diagnostics: z.array(externalSkillScanDiagnosticSchema),
+});
+export type ExternalSkillScanResponse = z.infer<
+  typeof externalSkillScanResponseSchema
+>;
+
+export const externalSkillImportRequestSchema = z.object({
+  /** 扫描结果里的规范化源根目录 */
+  rootPath: z.string().trim().min(1).max(4096),
+  /** 扫描结果里的技能包相对路径 */
+  relativePath: z.string().trim().min(1).max(1024),
+});
+export type ExternalSkillImportRequest = z.infer<
+  typeof externalSkillImportRequestSchema
+>;
+
+export const externalSkillImportResponseSchema = z.object({
+  skillId: z.uuid(),
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  /** 同源同摘要重放时为 true */
+  replayed: z.boolean(),
+});
+export type ExternalSkillImportResponse = z.infer<
+  typeof externalSkillImportResponseSchema
+>;
+
+/** 复制到通用技能目录；`skillId` 接受实例技能库或项目内已安装技能。 */
+export const codeUiSkillCopyRequestSchema = codeUiSkillsRequestSchema.extend({
+  skillId: z.uuid(),
+});
+export type CodeUiSkillCopyRequest = z.infer<
+  typeof codeUiSkillCopyRequestSchema
+>;
+
+export const codeUiSkillCopyResponseSchema = z.object({
+  newPath: z.string(),
+});
+export type CodeUiSkillCopyResponse = z.infer<
+  typeof codeUiSkillCopyResponseSchema
+>;
+
+export const codeUiSkillRemoveFromCommonRequestSchema =
+  codeUiSkillCopyRequestSchema;
+export type CodeUiSkillRemoveFromCommonRequest = z.infer<
+  typeof codeUiSkillRemoveFromCommonRequestSchema
+>;
+
 // === Response Schemas ===
 
 export const skillListResponseSchema = z.object({

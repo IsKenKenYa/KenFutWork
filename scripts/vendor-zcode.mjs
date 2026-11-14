@@ -31,8 +31,14 @@ if (existsSync(inventoryPath)) {
     ...(sourceOption >= 0 ? { sourceRoot } : {}),
     prepare: process.argv.includes("--prepare-source"),
   });
+  const revisions = new Set([
+    inventory.revision,
+    ...inventory.records.map(
+      (record) => record.sourceRevision ?? inventory.revision,
+    ),
+  ]);
   process.stdout.write(
-    `已按清单提交 ${inventory.revision} 核对 ${inventory.records.length} 个来源文件，漂移 ${drift.length} 个。\n`,
+    `已按清单核对 ${inventory.records.length} 个来源文件（${revisions.size} 个提交，默认 ${inventory.revision}），漂移 ${drift.length} 个。\n`,
   );
   if (drift.length) {
     process.stdout.write(

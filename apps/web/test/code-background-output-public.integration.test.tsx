@@ -6,6 +6,10 @@ import type { CodeViewerSource } from "@zui/lib/codeViewer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodeUiTestClient } from "../../server/src/features/code-ui/host-client.fixture.js";
 import type { createCodeSessionFixture } from "../../server/src/features/code-ui/host-session.fixture.js";
+import {
+  type OriginalSessionBrowser,
+  openOriginalSessionBrowser,
+} from "./setup/code-public-browser.fixture.mjs";
 import { installCodePublicHostDom } from "./setup/code-public-host-dom";
 import { loadCodePublicHostProviders } from "./setup/code-public-host-ui";
 
@@ -13,6 +17,7 @@ type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
 type PublicFixture = {
   client: CodeUiTestClient;
   baseUrl: string;
+  origin: string;
   app: {
     kernel: { get(key: "localAccess"): { getDesktopToken(): Promise<string> } };
   };
@@ -80,6 +85,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         toolsByRequest: tools,
       });
       let host: Host | undefined;
+      let browser: OriginalSessionBrowser | undefined;
       let releaseServices: (() => void) | undefined;
       let disposeClient: (() => void) | undefined;
       try {
@@ -201,13 +207,15 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           workspacePath: host.workspacePath,
           workspaceIdentity: identity,
           path: expect.stringContaining(`code-output:${host.sessionId}/`),
+          viewerScope: { kind: "task", taskId: host.sessionId },
         });
         if (!fullFile) throw new Error("原文件服务未收到全文读取");
         expect((await fullFile).content).toBe(
           "ORIGINAL_GUI_BOOT\nGUI_DONE:中文🙂\n",
         );
         const source = opened[0];
-        if (!source) throw new Error("原文件查看器缺少全文按钮的真实来源");
+        if (!source || source.type !== "file")
+          throw new Error("原文件查看器缺少全文按钮的真实来源");
         view.rerender(originalPane(true, source));
         await waitFor(
           () => {
@@ -220,14 +228,54 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           { timeout: 30_000 },
         );
         view.unmount();
+        const requestsBeforePreview = model.requests.length;
+        browser = await openOriginalSessionBrowser({
+          backendBaseUrl: fixture.baseUrl,
+          backendOrigin: fixture.origin,
+          accessToken: await fixture.app.kernel
+            .get("localAccess")
+            .getDesktopToken(),
+          workspacePath: host.workspacePath,
+          projectId: host.projectId,
+          sessionId: host.sessionId,
+          clientId: host.clientId,
+          fileManagerPreview: true,
+          initialPreview: {
+            type: "file",
+            path: source.path,
+            title: source.title,
+            mediaType: "text/plain",
+          },
+        });
+        const page = browser;
+        const readFullPreview = async () => {
+          const content = await page.evaluate<string | null>(
+            `document.querySelector('[data-file-manager-pane] [data-testid="preview-pane"] diffs-container')?.shadowRoot?.textContent ?? null`,
+          );
+          expect(content, JSON.stringify(page.pageErrors)).toContain(
+            "ORIGINAL_GUI_BOOT",
+          );
+          expect(content).toContain("GUI_DONE:中文🙂");
+        };
+        await vi.waitFor(readFullPreview, { timeout: 30_000 });
+        expect(
+          await page.evaluate(
+            'document.querySelectorAll("[data-file-manager-pane] [data-testid=workspace-file-tree-panel]").length',
+          ),
+        ).toBe(0);
+        expect(model.requests).toHaveLength(requestsBeforePreview);
       } finally {
         cleanup();
-        releaseServices?.();
-        disposeClient?.();
-        if (host) await host.dispose();
-        await model.close();
-        await fixture.close();
+        try {
+          await browser?.close();
+        } finally {
+          releaseServices?.();
+          disposeClient?.();
+          if (host) await host.dispose();
+          await model.close();
+          await fixture.close();
+        }
       }
-    }, 120_000);
+    }, 180_000); // 真实后台进程、原组件、独占Chrome全文预览与全部资源关闭期限。
   },
 );

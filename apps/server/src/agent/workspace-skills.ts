@@ -37,6 +37,7 @@ export type InstanceSkillsLoader = (
 
 export type InstanceSkillsByInstanceLoader = (
   instanceId: string,
+  projectId?: string,
 ) => Promise<InstanceSkillEntry[]>;
 
 /** Code用可信工作区身份读取安装包，不经Canvas JOIN，不签发物理FS路径。 */
@@ -45,9 +46,9 @@ export function createInstanceSkillsByInstanceLoader(options: {
   plugins?: Pick<PluginRegistryService, "readSkillPackages">;
   mode?: "code" | "design";
 }): InstanceSkillsByInstanceLoader {
-  return async (instanceId) => {
+  return async (instanceId, projectId) => {
     const installed = await options.skills
-      .listInstanceSkills(instanceId)
+      .listInstanceSkills(instanceId, projectId)
       .catch(() => []);
     const enabled = installed.filter((entry) => entry.enabled);
     const files = await options.skills
@@ -121,11 +122,13 @@ export function createInstanceSkillsLoader(options: {
       .findById(instanceId, canvasId)
       .catch(() => null);
     if (!canvas) return [];
-    return (await loadWorkspace(instanceId)).map((entry) => ({
-      ...entry,
-      path: entry.path.startsWith("kenfutwork-plugin-skill:")
-        ? entry.path
-        : `/workspace-skills/${entry.name}/SKILL.md`,
-    }));
+    return (await loadWorkspace(instanceId, canvas.project_id)).map(
+      (entry) => ({
+        ...entry,
+        path: entry.path.startsWith("kenfutwork-plugin-skill:")
+          ? entry.path
+          : `/workspace-skills/${entry.name}/SKILL.md`,
+      }),
+    );
   };
 }

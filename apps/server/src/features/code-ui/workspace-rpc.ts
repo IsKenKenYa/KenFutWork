@@ -1,4 +1,4 @@
-import { readdir, realpath, stat } from "node:fs/promises";
+import { access, readdir, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import {
   type CodeUiWorkspace,
@@ -21,12 +21,34 @@ import type { CodeUiRepository } from "./repository.js";
 import { CodeUiRepositoryError } from "./repository.js";
 
 const directoryParams = z.object({
-  path: z.string().min(1),
+  path: z
+    .string()
+    .min(1)
+    .refine((path) => path.trim().length > 0),
   includeHidden: z.boolean().optional(),
   humanPurpose: z.literal("directory-picker"),
 });
 // 原 UI 最近项目历史固定展示前10项，不是 Agent 运行时限额。
 const CODE_UI_RECENT_PROJECT_LIMIT = 10;
+
+function throwDirectoryLookupError(error: unknown): never {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  )
+    throw new CodeUiRepositoryError("not_found", "目录不存在，请重新选择。");
+  throw error;
+}
+
+async function readPickerDirectory(input: string) {
+  try {
+    const path = await realpath(input);
+    return { path, children: await readdir(path, { withFileTypes: true }) };
+  } catch (error) {
+    throwDirectoryLookupError(error);
+  }
+}
 
 function normalizeRecentProjects(paths: readonly string[]): string[] {
   return [...new Set(paths)].slice(0, CODE_UI_RECENT_PROJECT_LIMIT);
@@ -67,7 +89,22 @@ const preferenceKeys = new Set([
   "onboardingOccupation",
   "terminalFontFamily",
   "terminalInheritSystemProfile",
+  "computerUseComposerEntryHidden",
   "memoryEnabled",
+  "httpProxy",
+  "httpProxyNoProxy",
+  "httpProxyCaCertPath",
+  "taskAutoArchiveEnabled",
+  "taskAutoArchiveOlderThanDays",
+]);
+/**
+ * 清空即删除：界面清空代理地址/证书时传空串（RPC 会丢弃 undefined），
+ * 这几个键不参与 `appSettingsSchema.parse`（非空字符串），由偏好写入显式移除。
+ */
+const removablePreferenceKeys = new Set([
+  "httpProxy",
+  "httpProxyNoProxy",
+  "httpProxyCaCertPath",
 ]);
 type WorkspacePreferenceEntry = z.infer<
   typeof appSettingsSchema
@@ -206,6 +243,11 @@ export function createHumanWorkspaceRpc(options: {
     taskId: string,
   ) => Promise<{ projectId: string; rootDirectory: string } | null>;
   maxEntries: (actor: LocalActor) => Promise<number>;
+  /** 偏好保存后的消费通知（例如任务自动归档按新天数立刻扫描）。 */
+  onPreferencesUpdated?: (
+    instanceId: string,
+    changedKeys: readonly string[],
+  ) => void | Promise<void>;
 }): HumanWorkspaceRpc {
   const opening = new Map<string, Promise<CodeUiWorkspace>>();
   const conversationOpening = new Map<string, Promise<ConversationWorkspace>>();
@@ -294,9 +336,7 @@ export function createHumanWorkspaceRpc(options: {
         ...project,
         created: true,
         workspacePurpose: "conversation",
-        ...(replacedMissingDirectory
-          ? { replacedMissingDirectory: true }
-          : {}),
+        ...(replacedMissingDirectory ? { replacedMissingDirectory: true } : {}),
       };
     })();
     conversationOpening.set(openingKey, ensuring);
@@ -352,7 +392,7 @@ export function createHumanWorkspaceRpc(options: {
   ): Promise<CodeUiWorkspace> => {
     if (!isAbsolute(inputPath))
       throw new CodeUiRepositoryError("not_found", "请选择绝对目录路径。");
-    const path = await realpath(inputPath);
+    const path = await realpath(inputPath).catch(throwDirectoryLookupError);
     if (!(await stat(path)).isDirectory())
       throw new CodeUiRepositoryError("not_found", "选中的路径不是目录。");
     const instanceId = await options.instanceId(actor);
@@ -503,10 +543,10 @@ export function createHumanWorkspaceRpc(options: {
             "not_found",
             "目录选择器只接受绝对路径。",
           );
-        const path = await realpath(params.path);
+        const { path, children } = await readPickerDirectory(params.path);
         const maxEntries = await options.maxEntries(actor);
         const entries: FileEntry[] = [];
-        for (const entry of await readdir(path, { withFileTypes: true })) {
+        for (const entry of children) {
           if (!params.includeHidden && entry.name.startsWith(".")) continue;
           const child = join(path, entry.name);
           const linked = entry.isSymbolicLink();
@@ -579,20 +619,59 @@ export function createHumanWorkspaceRpc(options: {
             "command_conflict",
             `当前宿主尚不支持设置：${unsupported}`,
           );
+        const removeKeys = Object.keys(patch).filter(
+          (key) => removablePreferenceKeys.has(key) && patch[key] === "",
+        );
+        const effectivePatch = Object.fromEntries(
+          Object.entries(patch).filter(([key]) => !removeKeys.includes(key)),
+        );
         const parsed = appSettingsSchema.parse({
           ...appSettingsSchema.parse(
             await options.preferences.readHumanPreferences(
               await options.instanceId(actor),
             ),
           ),
-          ...patch,
+          ...effectivePatch,
         });
         const normalized = Object.fromEntries(
-          Object.keys(patch).map((key) => [
+          Object.keys(effectivePatch).map((key) => [
             key,
             parsed[key as keyof typeof parsed],
           ]),
         );
+        if (typeof parsed.httpProxy === "string" && parsed.httpProxy) {
+          // 保存期就校验：非法地址留到下次启动才炸会让用户打不开设置页。
+          let url: URL;
+          try {
+            url = new URL(parsed.httpProxy);
+          } catch {
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "HTTP 代理地址不是合法 URL。",
+            );
+          }
+          if (url.protocol !== "http:" && url.protocol !== "https:")
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "HTTP 代理地址只支持 http/https。",
+            );
+        }
+        if (
+          typeof parsed.httpProxyCaCertPath === "string" &&
+          parsed.httpProxyCaCertPath
+        ) {
+          if (!isAbsolute(parsed.httpProxyCaCertPath))
+            throw new CodeUiRepositoryError(
+              "command_conflict",
+              "自定义 CA 证书路径必须是绝对路径。",
+            );
+          await access(parsed.httpProxyCaCertPath).catch(() => {
+            throw new CodeUiRepositoryError(
+              "not_found",
+              "自定义 CA 证书文件不可读，请检查路径。",
+            );
+          });
+        }
         if ("messageStreamShowReasoning" in patch)
           normalized.messageStreamShowReasoningMigrationInitialized =
             parsed.messageStreamShowReasoningMigrationInitialized;
@@ -674,6 +753,7 @@ export function createHumanWorkspaceRpc(options: {
                 return owner ? [owner.projectId] : [];
               }),
             ],
+            removeKeys,
           },
         );
         if (!saved)
@@ -681,6 +761,10 @@ export function createHumanWorkspaceRpc(options: {
             "not_found",
             "设置中的 Code 项目已归档，偏好未保存。",
           );
+        await options.onPreferencesUpdated?.(await options.instanceId(actor), [
+          ...Object.keys(effectivePatch),
+          ...removeKeys,
+        ]);
         return { result: undefined };
       }
       return null;

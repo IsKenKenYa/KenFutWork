@@ -83,6 +83,7 @@ export type ExecGit = (
   args: readonly string[],
   cwd: string,
   input?: string,
+  env?: Readonly<Record<string, string>>,
 ) => Promise<GitCommandResult>;
 
 /**

@@ -347,7 +347,13 @@ describe("Work 保存落到绑定项目目录", () => {
     });
     const post = vi.spyOn(window.parent, "postMessage");
     const frame = await openInstalledEditor([WORK_PROJECT]);
-    await waitFor(() => expect(screen.getByText("书本项目")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        host.surfaceJson.mock.calls.some((call) =>
+          String(call[0]).includes("/api/projects?kind=work"),
+        ),
+      ).toBe(true),
+    );
     postEditorMessage(frame, {
       type: "kenfutwork:editor-save",
       saveId: "save-project",
@@ -368,7 +374,13 @@ describe("Work 保存落到绑定项目目录", () => {
   it("回显说清落在项目里的哪个文件", async () => {
     const post = vi.spyOn(window.parent, "postMessage");
     const frame = await openInstalledEditor([WORK_PROJECT]);
-    await waitFor(() => expect(screen.getByText("书本项目")).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        host.surfaceJson.mock.calls.some((call) =>
+          String(call[0]).includes("/api/projects?kind=work"),
+        ),
+      ).toBe(true),
+    );
     postEditorMessage(frame, {
       type: "kenfutwork:editor-save",
       saveId: "save-note",

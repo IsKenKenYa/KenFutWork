@@ -1,6 +1,7 @@
 // v4 行渲染上下文（ai-elements / ToolCallBlocks 回接所需的宿主注入面）。
 // 注入模式对齐 PermissionDialog（store 耦合剥离）：展示组件不自取 store，
 // theme / codePreviewSettings 在宿主（SessionPane）处取，向下走稳定 props。
+import type { CodeUiToolOutputResponse } from "@kenfutwork/shared";
 import type { CodePreviewSettings } from "@zui/lib/codePreviewSettings.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
@@ -49,6 +50,14 @@ export interface ConversationRowRenderContext {
   sessionId?: string | null;
   /** 当前下钻树的顶层 session；详情 tab 跨嵌套层级按该 id 分组。 */
   rootSessionId?: string | null;
+  /**
+   * 工具输出原文只读分页读取；与 `sessionId` 同时具备才显示工具卡「查看原文」。
+   */
+  onReadToolOutput?: (
+    sessionId: string,
+    ref: string,
+    offset: number,
+  ) => Promise<CodeUiToolOutputResponse>;
   /** @deprecated 旧内联下钻标记；新的子会话统一打开侧栏详情。 */
   inSubagentDrilldown?: boolean;
   /** 手机 /remote 紧凑模式：隐藏外部 App 打开下拉，只保留应用内预览。 */

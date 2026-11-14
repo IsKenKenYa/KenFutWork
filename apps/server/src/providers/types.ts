@@ -33,6 +33,8 @@ export interface ModelInvocationSnapshot {
   providerId: string;
   modelId: string;
   configRevision: number;
+  /** 接纳时固定的容量；旧持久输入缺少此字段时沿现有目录解析。 */
+  contextWindow?: number | null;
   /** 冻结实际界面选定的OpenAI方言；缺省调用方仍可使用探测。 */
   useResponsesApi?: boolean;
   body: Record<string, unknown>;

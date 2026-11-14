@@ -153,14 +153,16 @@ function ManagementDocument({
                             user={user}
                             voiceClient={client}
                             onCreateTask={(request) => {
-                              if (typeof request === "string" || !request) return;
+                              if (typeof request === "string" || !request)
+                                return;
                               const prompt = request.initialPrompt?.trim();
                               if (!prompt) return;
                               window.parent.postMessage(
                                 {
                                   type: "kenfutwork:management-new-task",
                                   prompt,
-                                  executionMode: request.executionMode ?? "agent",
+                                  executionMode:
+                                    request.executionMode ?? "agent",
                                 },
                                 window.location.origin,
                               );

@@ -63,6 +63,12 @@ export interface CuToolDeps {
       runId: string,
       context?: CuRequestContext,
     ): Promise<CuToolResult>;
+    readClipboard(context?: CuRequestContext): Promise<CuToolResult>;
+    writeClipboard(
+      text: string,
+      runId: string,
+      context?: CuRequestContext,
+    ): Promise<CuToolResult>;
     stop(runId: string): Promise<CuToolResult>;
     listDisplays?(context?: CuRequestContext): Promise<CuToolResult>;
     perform?(
@@ -232,7 +238,7 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
       name: `${CU_TOOL_PREFIX}request_access`,
       access: "read",
       description:
-        "检查 Computer Use 权限（辅助功能/屏幕录制）状态并返回引导。首次使用桌面控制前先调用它；permissionStatus 为 denied 时按提示去系统设置授权。",
+        "检查 Computer Use 权限（辅助功能/屏幕录制/自动化）状态并返回引导。首次使用桌面控制前先调用它；permissionStatus 为 denied 时按提示去系统设置授权；pending 为 true 表示仍有未授予项，稍后再次调用（不要结束回合）。",
       scope: "code",
       parameters: { type: "object", properties: {} },
       execute: async (_args, execCtx) =>
@@ -365,6 +371,34 @@ export function createComputerUseTools(deps: CuToolDeps): ToolDefinition[] {
             args.app,
             String(args.text ?? ""),
             args.target,
+            runIdOf(execCtx),
+            execCtx,
+          ),
+        ),
+    },
+    {
+      name: `${CU_TOOL_PREFIX}clipboard_read`,
+      access: "read",
+      description:
+        "读取系统剪贴板文本。内容可能包含用户隐私，只在任务确实需要时调用。",
+      scope: "code",
+      parameters: { type: "object", properties: {} },
+      execute: async (_args, execCtx) =>
+        guarded(deps, () => deps.service.readClipboard(execCtx)),
+    },
+    {
+      name: `${CU_TOOL_PREFIX}clipboard_write`,
+      description: "把文本写入系统剪贴板，覆盖用户原有剪贴板内容。",
+      scope: "code",
+      parameters: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+      },
+      execute: async (args, execCtx) =>
+        guarded(deps, () =>
+          deps.service.writeClipboard(
+            String(args.text ?? ""),
             runIdOf(execCtx),
             execCtx,
           ),

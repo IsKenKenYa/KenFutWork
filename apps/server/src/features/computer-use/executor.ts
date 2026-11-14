@@ -101,6 +101,8 @@ export interface CuOperationContext {
   timeoutMs?: number | undefined;
   treeLimits?: CuTreeLimits | undefined;
   maxOutputBytes?: number | undefined;
+  /** 截图内联预算（字节）；截图 action 必须用它，不能复用进程输出预算。 */
+  screenshotMaxBytes?: number | undefined;
   inputDelayMs?: number | undefined;
   raster?: CuRaster | undefined;
 }
@@ -115,6 +117,8 @@ export interface CuAccessStatus {
   accessibility: "granted" | "denied" | "not_determined";
   screen: "granted" | "denied" | "not_determined";
   postEvents?: "granted" | "denied" | "not_determined";
+  /** 自动化（AppleEvent → System Events）：JXA 观察/输入路径的必要授权。 */
+  automation?: "granted" | "denied" | "not_determined";
   hint: string;
 }
 
@@ -147,6 +151,11 @@ export interface ComputerUseExecutor {
     target?: CuTarget,
     context?: CuOperationContext,
   ): Promise<CuActionResult>;
+  readClipboard?(context?: CuOperationContext): Promise<{ text: string }>;
+  writeClipboard?(
+    text: string,
+    context?: CuOperationContext,
+  ): Promise<{ written: boolean }>;
   accessStatus(context?: CuOperationContext): Promise<CuAccessStatus>;
   listDisplays?(context: CuOperationContext): Promise<CuDisplay[]>;
   perform?(

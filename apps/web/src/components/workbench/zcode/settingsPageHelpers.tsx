@@ -10,7 +10,6 @@ import {
   TID_SETTINGS_ASK_USER_QUESTION_AUTO_RESOLUTION_SWITCH,
   TID_SETTINGS_LOCALE_SELECT_ITEM,
   TID_SETTINGS_LOCALE_SELECT_TRIGGER,
-  TID_SETTINGS_NATIVE_SEARCH_SWITCH,
   testId,
 } from "@zcode/shared";
 import { Button } from "@zui/components/ui/button.js";
@@ -66,7 +65,6 @@ export function GeneralSectionContent({
   terminalFontFamily = "",
   integratedTerminalShell = { mode: "auto" },
   integratedTerminalShellOptions = [],
-  nativeSearchEnhancementsEnabled,
   httpProxy = "",
   httpProxyNoProxy = "",
   httpProxyCaCertPath = "",
@@ -92,7 +90,6 @@ export function GeneralSectionContent({
   onTerminalInheritSystemProfileChange = async () => {},
   onTerminalFontFamilyChange = async () => {},
   onIntegratedTerminalShellChange = async () => {},
-  onNativeSearchEnhancementsEnabledChange,
   onHttpProxyChange = async () => {},
   onHttpProxyNoProxyChange = async () => {},
   onHttpProxyCaCertPathChange = async () => {},
@@ -128,7 +125,6 @@ export function GeneralSectionContent({
   terminalFontFamily: string;
   integratedTerminalShell?: IntegratedTerminalShellSelection;
   integratedTerminalShellOptions?: IntegratedTerminalShellOption[];
-  nativeSearchEnhancementsEnabled: boolean;
   httpProxy?: string;
   httpProxyNoProxy?: string;
   httpProxyCaCertPath?: string;
@@ -157,7 +153,6 @@ export function GeneralSectionContent({
   onIntegratedTerminalShellChange?: (
     selection: IntegratedTerminalShellSelection,
   ) => Promise<void>;
-  onNativeSearchEnhancementsEnabledChange: (enabled: boolean) => Promise<void>;
   onHttpProxyChange?: (httpProxy: string) => Promise<void>;
   onHttpProxyNoProxyChange?: (noProxy: string) => Promise<void>;
   onHttpProxyCaCertPathChange?: (caCertPath: string) => Promise<void>;
@@ -432,26 +427,6 @@ export function GeneralSectionContent({
             }
           />
         ) : null}
-        <SettingsRow
-          label={intl.formatMessage({
-            id: "settings.nativeSearchEnhancements",
-          })}
-          description={intl.formatMessage({
-            id: "settings.nativeSearchEnhancementsDescription",
-          })}
-          control={
-            <Switch
-              aria-label={intl.formatMessage({
-                id: "settings.nativeSearchEnhancements",
-              })}
-              checked={nativeSearchEnhancementsEnabled}
-              data-testid={TID_SETTINGS_NATIVE_SEARCH_SWITCH}
-              onCheckedChange={(checked) => {
-                void onNativeSearchEnhancementsEnabledChange(checked);
-              }}
-            />
-          }
-        />
       </SettingsGroupCard>
 
       <SettingsGroupCard>

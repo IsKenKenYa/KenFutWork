@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { toolArtifactSchema } from "./artifacts.js";
 import { brandKitAssetTypeSchema } from "./brand-kit-contracts.js";
-import { executionModeSchema } from "./capability-contracts.js";
 import { additionalDirectorySchema } from "./execution-contracts.js";
 import { governanceBoolSetting, governanceSetting } from "./governance.js";
 import { modelDefaultsSchema } from "./model-policy.js";
@@ -72,33 +71,31 @@ export const videoGenerationPreferenceSchema = z.object({
   models: z.array(z.string().min(1)),
 });
 
-export const runCreateRequestSchema = z.object({
-  sessionId: sessionIdSchema,
-  conversationId: conversationIdSchema,
-  /** Code 的持久 Task/Project 声明；服务端核对归属，不从 Canvas 推导工作目录。 */
-  projectId: projectIdSchema.optional(),
-  taskId: sessionIdSchema.optional(),
-  prompt: z.string(),
-  inputId: identifierSchema.optional(),
-  scopeGeneration: z.number().int().nonnegative().safe().optional(),
-  branchGeneration: z.number().int().positive().safe().optional(),
-  workContext: conversationWorkContextSchema.optional(),
-  canvasId: canvasIdSchema.optional(),
-  attachments: z.array(imageAttachmentSchema).optional(),
-  imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
-  videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
-  mentions: z.array(messageMentionSchema).optional(),
-  model: z.string().optional(),
-  /**
-   * 本次输入请求的工作方式；由统一Task宿主核验项目启用列表并冻结到Run。
-   * 画布是资源引用，preset不改变Task固定目录、文件授权或当前Run。
-   */
-  preset: z.enum(["design", "code"]).optional(),
-  /**
-   * 旧传输策略字段；共享宿主只接受agent，其余方式通过原会话控制切换。
-   */
-  executionMode: executionModeSchema.optional(),
-});
+export const runCreateRequestSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    conversationId: conversationIdSchema,
+    /** Code 的持久 Task/Project 声明；服务端核对归属，不从 Canvas 推导工作目录。 */
+    projectId: projectIdSchema.optional(),
+    taskId: sessionIdSchema.optional(),
+    prompt: z.string(),
+    inputId: identifierSchema.optional(),
+    scopeGeneration: z.number().int().nonnegative().safe().optional(),
+    branchGeneration: z.number().int().positive().safe().optional(),
+    workContext: conversationWorkContextSchema.optional(),
+    canvasId: canvasIdSchema.optional(),
+    attachments: z.array(imageAttachmentSchema).optional(),
+    imageGenerationPreference: imageGenerationPreferenceSchema.optional(),
+    videoGenerationPreference: videoGenerationPreferenceSchema.optional(),
+    mentions: z.array(messageMentionSchema).optional(),
+    model: z.string().optional(),
+    /**
+     * 本次输入请求的工作方式；由统一Task宿主核验项目启用列表并冻结到Run。
+     * 画布是资源引用，preset不改变Task固定目录、文件授权或当前Run。
+     */
+    preset: z.enum(["design", "code"]).optional(),
+  })
+  .strict();
 
 export const runCreateResponseSchema = z.object({
   runId: runIdSchema,
@@ -212,6 +209,23 @@ export type TerminalShellId = z.infer<typeof terminalShellSchema>;
  */
 export const CODE_AUTO_COMMIT_ENABLED_DEFAULT = true;
 
+/**
+ * 用户钩子的触发点。新增一项必须同步事件契约、服务端执行点、设置页与时间线标签。
+ *
+ * 触发点由宿主在回合与工具调用节点上发出，模型无法触发（钩子不进工具注册表）。
+ */
+export const HOOK_EVENTS = [
+  "turn-start",
+  "turn-end",
+  "tool-start",
+  "tool-end",
+  "tool-failed",
+] as const;
+
+export const hookEventSchema = z.enum(HOOK_EVENTS);
+
+export type HookEvent = (typeof HOOK_EVENTS)[number];
+
 export const themePreferenceSchema = z.enum([
   "system",
   "zai-light",
@@ -260,8 +274,8 @@ export const instanceSettingsSchema = z.object({
   hooks: z
     .array(
       z.object({
-        /** 钩子点：本轮开始 / 本轮结束。 */
-        event: z.enum(["turn-start", "turn-end"]),
+        /** 钩子点：回合开始 / 回合结束，或单个工具调用的开始 / 结束 / 失败。 */
+        event: hookEventSchema,
         command: z.string().trim().min(1).max(2_000),
       }),
     )
@@ -300,6 +314,26 @@ export const instanceSettingsSchema = z.object({
   compactKeepMessages: governanceSetting("compactKeepMessages"),
   /** 窗口未知时的保留目标；自动与手动维护共用，独立于自动压缩开关。 */
   compactFallbackKeepMessages: governanceSetting("compactFallbackKeepMessages"),
+  /** 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。 */
+  contextKeepRecentImages: governanceSetting("contextKeepRecentImages"),
+  /** 工具结果超过该字符数时外置为工作目录文件，模型只收到一段说明。 */
+  toolResultOffloadMaxChars: governanceSetting("toolResultOffloadMaxChars"),
+  /** 单个外置文件最多写入的字节数。 */
+  toolResultOffloadMaxBytes: governanceSetting("toolResultOffloadMaxBytes"),
+  /** 较早工具结果折叠为摘要占位的字符阈值（最近若干条不受影响）。 */
+  toolResultPruneThresholdChars: governanceSetting(
+    "toolResultPruneThresholdChars",
+  ),
+  /** 每次模型请求保留原文的最近工具结果条数。 */
+  toolResultPruneKeepRecent: governanceSetting("toolResultPruneKeepRecent"),
+  /** 工具卡终态输出保留头尾的字节上限；超出部分按 truncated.ref 分页取回。 */
+  toolOutputPreviewBytes: governanceSetting("toolOutputPreviewBytes"),
+  /** 未被索引引用的记忆正文闲置多少天后进入回收区。 */
+  memoryOrphanRetentionDays: governanceSetting("memoryOrphanRetentionDays"),
+  /** 回收区保留天数，过期后才永久删除。 */
+  memoryRecoverableWindowDays: governanceSetting("memoryRecoverableWindowDays"),
+  /** 记忆整理周期扫描间隔（毫秒）。 */
+  memoryMaintenanceIntervalMs: governanceSetting("memoryMaintenanceIntervalMs"),
   /**
    * run 失败自动重试上限（含首次尝试；0 = 不重试）。
    * 缺省 10；服务端对「已执行工具」的轮次一律不重试（副作用安全），见 agent/run-retry.ts。
@@ -324,8 +358,20 @@ export const instanceSettingsSchema = z.object({
   executeTimeoutMs: governanceSetting("executeTimeoutMs"),
   /** 模型请求无输出上限；工具与人审等待分别治理，0关闭。 */
   agentStreamIdleTimeoutMs: governanceSetting("agentStreamIdleTimeoutMs"),
+  /** 流式 delta 合批刷新间隔；决定落库事务与快照帧的推送节奏。 */
+  agentStreamFlushIntervalMs: governanceSetting("agentStreamFlushIntervalMs"),
   /** Code 宿主通知通道重连间隔；与执行超时分别治理。 */
   codeUiReconnectDelayMs: governanceSetting("codeUiReconnectDelayMs"),
+  /** Task 自动归档的周期扫描间隔；只影响发现旧 Task 的时延。 */
+  taskAutoArchiveScanIntervalMs: governanceSetting(
+    "taskAutoArchiveScanIntervalMs",
+  ),
+  /** 插件声明卡片最多展示的键值行数。 */
+  pluginCardMaxFields: governanceSetting("pluginCardMaxFields"),
+  /** 插件声明卡片单个值的字符上限。 */
+  pluginCardFieldValueMaxChars: governanceSetting(
+    "pluginCardFieldValueMaxChars",
+  ),
   localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
   localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
   localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),
@@ -340,6 +386,7 @@ export const instanceSettingsSchema = z.object({
   codeSearchMaxResults: governanceSetting("codeSearchMaxResults"),
   codeSearchMaxBytes: governanceSetting("codeSearchMaxBytes"),
   codePatchMaxBytes: governanceSetting("codePatchMaxBytes"),
+  mediaDriverMaxSourceBytes: governanceSetting("mediaDriverMaxSourceBytes"),
   codePdfMaxPages: governanceSetting("codePdfMaxPages"),
   codePdfRenderScale: governanceSetting("codePdfRenderScale"),
   codeAttachmentMaxBytes: governanceSetting("codeAttachmentMaxBytes"),

@@ -46,6 +46,8 @@ const LEGAL_DOCUMENTS = [
   ["EULA.md", "EULA.md"],
   ["PRIVACY.md", "PRIVACY.md"],
   ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+  ["COPYRIGHT.md", "COPYRIGHT.md"],
+  ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
 ];
 /** 上游许可文本：随移植代码与素材分发，源路径即仓库内的属主位置。 */
 const LEGAL_UPSTREAM = [
@@ -61,6 +63,8 @@ const LEGAL_UPSTREAM = [
   ],
   ["patches/LICENSE-langchain.txt", "langchain-LICENSE.txt"],
   ["patches/LICENSE-sandbox-runtime.txt", "sandbox-runtime-LICENSE.txt"],
+  ["licenses/tauri-dialog-MIT.txt", "tauri-dialog-MIT.txt"],
+  ["licenses/rfd-MIT.txt", "rfd-MIT.txt"],
 ];
 
 function stageLegalDocuments() {

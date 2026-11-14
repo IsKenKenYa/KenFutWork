@@ -9,6 +9,9 @@
  * `read` 与 `settings` 路由顺延 M4（侧边栏跳原文与开关），本期不注册。
  */
 
+import { createReadStream } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, sep } from "node:path";
 import {
   applicationErrorResponseSchema,
   knowledgeAddRootRequestSchema,
@@ -27,9 +30,6 @@ import {
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
-import { extname, isAbsolute, relative, sep } from "node:path";
 import { ZodError } from "zod";
 
 import type { KnowledgeSettingsReader } from "../features/knowledge/settings.js";
@@ -235,7 +235,10 @@ export async function registerKnowledgeRoutes(
       const query = knowledgeReadQuerySchema.parse(request.query);
       const path = query.path.trim();
       if (!path || !isAbsolute(path)) {
-        throw new KnowledgeServiceError("invalid_input", "路径必须是绝对路径。");
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          "路径必须是绝对路径。",
+        );
       }
       let realPath: string;
       try {
@@ -271,7 +274,10 @@ export async function registerKnowledgeRoutes(
       }
       const info = await stat(realPath);
       if (!info.isFile()) {
-        throw new KnowledgeServiceError("invalid_input", `不是普通文件：${path}`);
+        throw new KnowledgeServiceError(
+          "invalid_input",
+          `不是普通文件：${path}`,
+        );
       }
       const mime: Record<string, string> = {
         ".png": "image/png",

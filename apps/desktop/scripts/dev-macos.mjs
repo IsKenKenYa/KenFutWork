@@ -15,6 +15,7 @@ import {
 import net from "node:net";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveBundleDescriptor } from "../../computer-use-helper/scripts/bundle-config.mjs";
 import { ensureMacosAppSeal } from "./macos-signing.mjs";
 
 const repo = join(import.meta.dirname, "..", "..", "..");
@@ -83,6 +84,21 @@ export function buildSourceArtifacts(runCommand = command) {
     "--filter=@zcode/window-controller",
     "--concurrency=1",
   ]);
+}
+
+/** 开发 Helper 与发布 Helper 使用同一条打包脚本，只换输出目录。 */
+export function buildCuaHelper(runCommand = command) {
+  const descriptor = resolveBundleDescriptor({
+    configuration: "dev",
+    version: "0.1.0",
+  });
+  const out = join(stateRoot, "cua-helper", "dev");
+  runCommand("node", [
+    join(repo, "apps/computer-use-helper/scripts/build-helper.mjs"),
+    "--out",
+    out,
+  ]);
+  return join(out, descriptor.appName);
 }
 
 async function shellHash() {
@@ -302,6 +318,7 @@ async function run() {
       await closeApp(existing);
     }
     buildSourceArtifacts();
+    const cuaHelperPath = buildCuaHelper();
     const apiPort = await freePort(3301, 3301),
       webPort = await freePort(3400, 3400);
     const webUrl = `http://127.0.0.1:${webPort}`;
@@ -340,6 +357,7 @@ async function run() {
       KENFUTWORK_SERVER_PORT: String(apiPort),
       KENFUTWORK_WEB_ORIGIN: webUrl,
       KENFUTWORK_DESKTOP_WEB_URL: webUrl,
+      KENFUTWORK_CUA_HELPER_PATH: cuaHelperPath,
     };
     if (process.env.KENFUTWORK_DATA_DIR)
       values.KENFUTWORK_DATA_DIR = process.env.KENFUTWORK_DATA_DIR;

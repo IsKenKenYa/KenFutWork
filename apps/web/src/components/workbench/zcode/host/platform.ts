@@ -8,6 +8,7 @@ import type {
   HostWorkbenchNavigation,
   IPlatformService,
 } from "@zcode/shared";
+import { logger } from "@zui/logger.js";
 import {
   createCuaPermissionOnboarding,
   localCuaDesktopInvoke,
@@ -45,6 +46,49 @@ export function createCodePlatform(
   return {
     ...createWebPlatform(),
     ...createMacDesktopChrome(),
+    ...(desktop
+      ? {
+          selectDirectory: async () => {
+            const selected = await desktop("select_directory");
+            if (selected === null || typeof selected === "string")
+              return selected;
+            throw new Error("系统未返回有效目录，请重新选择。");
+          },
+          selectDirectories: async () => {
+            const selected = await desktop("select_directories");
+            if (
+              Array.isArray(selected) &&
+              selected.every((path) => typeof path === "string")
+            )
+              return selected;
+            throw new Error("系统未返回有效目录，请重新选择。");
+          },
+          /**
+           * 桌面形态的「内置浏览器数据」指服务端受控浏览器自己的 profile
+           * （`<数据目录>/browser/chrome-profile`），不是用户日常浏览器：
+           * 清理走 `/api/browser/cdp/clear-data`，断开会话后删除。
+           */
+          supportsEmbeddedBrowserDataClear: true,
+          clearEmbeddedBrowserData: async (mode: "cache" | "all") => {
+            await client.request("/api/browser/cdp/clear-data", { mode });
+            return { success: true };
+          },
+          /**
+           * 录制快捷键时让桌面壳收掉原生菜单：否则 macOS 的 Cmd+W/Cmd+Q
+           * 会在页面录制监听之前被系统菜单消费，改键永远录不到。
+           * 页面内的应用快捷键由 shortcuts 内核的录制标记短路，两处同时生效。
+           */
+          setShortcutRecordingActive: (active: boolean) => {
+            void desktop("set_shortcut_recording_active", { active }).catch(
+              (error: unknown) => {
+                logger.error("[shortcuts] 原生菜单接管失败", {
+                  error: String(error),
+                });
+              },
+            );
+          },
+        }
+      : {}),
     ...(options.selectDirectory
       ? { selectDirectory: options.selectDirectory }
       : {}),
@@ -82,7 +126,12 @@ export function createCodePlatform(
     supportsComputerUse: Boolean(macDesktop),
     ...(macDesktop
       ? {
-          ...createCuaPermissionOnboarding(desktop),
+          ...createCuaPermissionOnboarding(desktop, {
+            requestPermission: (kind) =>
+              client
+                .getChannel("cua-permission")
+                .call("requestPermission", [{ kind }]),
+          }),
           executeDesktopCommand: async (command: string) => {
             if (command === "getCuaOsSupport") return { kind: "supported" };
             throw new Error("当前桌面宿主未提供该操作。");
@@ -92,7 +141,7 @@ export function createCodePlatform(
     supportsRemoteWorkspaces: false,
     supportsUserOnboarding: false,
     supportsSettingsImport: false,
-    supportsExternalAgentSettingsSync: false,
+    supportsExternalAgentSettingsSync: true,
     supportsAppRuntimePreferences: false,
     sessionMetadataSource: "task-index",
     getApplicationIcon: (request) =>
@@ -110,7 +159,7 @@ export function createCodePlatform(
       databaseRecords: true,
       projectScope: false,
       oauth: false,
-      httpHeaders: false,
+      httpHeaders: true,
       serverParameters: false,
       sse: false,
     },

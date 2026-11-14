@@ -1,0 +1,137 @@
+import {
+  type CodeUiViewerScope,
+  codeUiViewerScopeSchema,
+} from "@kenfutwork/shared";
+import { Event, type IChannel, ProxyChannel } from "@zcode/rpc";
+import type {
+  IFileService,
+  IFileWatcherService,
+  IGitService,
+  IServiceAccessor,
+} from "@zcode/services";
+import { isLocalWorkspaceTarget } from "@zcode/shared";
+import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
+import {
+  getContainingDirectoryPath,
+  isAbsoluteFilePath,
+} from "@zui/lib/path.js";
+import type { FileManagerTarget } from "@zui/lib/workspaceSidePane.js";
+import { isWorkspaceFilePathInside } from "@zui/workspace-file-tree/model.js";
+import type { CodeHttpChannelClient } from "./httpChannelClient.js";
+
+const clientsByFiles = new WeakMap<
+  IServiceAccessor["fileService"],
+  CodeHttpChannelClient
+>();
+const missingSourceChannel: IChannel = {
+  call: () => Promise.reject(new Error("文件来源不可用，请重新打开文件")),
+  listen: () => Event.None,
+};
+const missingSourceFileServices: Pick<
+  IServiceAccessor,
+  "fileService" | "fileWatcherService" | "gitService"
+> = {
+  fileService: ProxyChannel.toService<IFileService>(missingSourceChannel),
+  fileWatcherService:
+    ProxyChannel.toService<IFileWatcherService>(missingSourceChannel),
+  gitService: ProxyChannel.toService<IGitService>(missingSourceChannel),
+};
+
+export interface CodeViewerOrigin {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  workspaceRemoteSessionId?: string | null;
+  taskId: string | null;
+}
+
+export function registerCodeFileViewerClient(client: CodeHttpChannelClient) {
+  clientsByFiles.set(client.services.fileService, client);
+}
+
+/** 原文件标签只从打开时的来源取得目录；日志引用与内联内容不创建目录权限。 */
+export function fileManagerTargetForCodeViewer(
+  source: CodeViewerSource,
+): FileManagerTarget {
+  const workspacePath =
+    source.viewerScope &&
+    source.workspacePath &&
+    source.path &&
+    isAbsoluteFilePath(source.path)
+      ? source.workspacePath
+      : "";
+  const browseDirectory =
+    workspacePath &&
+    source.path &&
+    !isWorkspaceFilePathInside(workspacePath, source.path)
+      ? getContainingDirectoryPath(source.path)
+      : null;
+  return {
+    workspacePath,
+    ...(source.workspaceIdentity
+      ? { workspaceIdentity: source.workspaceIdentity }
+      : {}),
+    ...(source.workspaceRemoteSessionId
+      ? { workspaceRemoteSessionId: source.workspaceRemoteSessionId }
+      : {}),
+    ...(source.viewerScope ? { viewerScope: source.viewerScope } : {}),
+    ...(browseDirectory
+      ? { browseDirectory, temporaryExternalDirectory: true }
+      : {}),
+  };
+}
+
+/** 在打开文件时保留来源；服务端仍逐次校验该 Task 或 Project 的当前授权。 */
+export function freezeCodeViewerSource(
+  services: IServiceAccessor,
+  source: CodeViewerSource,
+  origin: CodeViewerOrigin,
+): CodeViewerSource {
+  const client = clientsByFiles.get(services.fileService);
+  if (!client) return source;
+  if (source.viewerScope) {
+    return {
+      ...source,
+      viewerScope: Object.freeze(
+        codeUiViewerScopeSchema.parse(source.viewerScope),
+      ),
+    };
+  }
+  const workspacePath = source.workspacePath ?? origin.workspacePath;
+  const workspaceIdentity =
+    source.workspaceIdentity ?? origin.workspaceIdentity;
+  const remoteSessionId =
+    source.workspaceRemoteSessionId ?? origin.workspaceRemoteSessionId;
+  if (
+    !isLocalWorkspaceTarget({
+      workspacePath,
+      workspaceIdentity,
+      remoteSessionId,
+    })
+  )
+    return source;
+  const project = client.projectForPath(workspacePath, workspaceIdentity);
+  const scope: CodeUiViewerScope | undefined = origin.taskId
+    ? { kind: "task", taskId: origin.taskId }
+    : project?.path === workspacePath
+      ? { kind: "project", projectId: project.projectId }
+      : undefined;
+  if (!scope) throw new Error("文件来源不可用，请重新打开文件");
+  return {
+    ...source,
+    workspacePath,
+    ...(workspaceIdentity ? { workspaceIdentity } : {}),
+    viewerScope: Object.freeze(codeUiViewerScopeSchema.parse(scope)),
+  };
+}
+
+export function codeFileServicesForViewer(
+  services: Pick<IServiceAccessor, "fileService">,
+  scope: CodeUiViewerScope | undefined,
+):
+  | Pick<IServiceAccessor, "fileService" | "fileWatcherService" | "gitService">
+  | undefined {
+  const client = clientsByFiles.get(services.fileService);
+  if (!client) return undefined;
+  if (!scope) return missingSourceFileServices;
+  return client.fileServicesForViewer(scope);
+}

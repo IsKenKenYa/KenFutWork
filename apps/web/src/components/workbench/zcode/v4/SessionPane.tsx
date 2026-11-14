@@ -1,4 +1,5 @@
 import { ComposerContextHeader } from "@zui/v4/composer/ComposerContext.js";
+import type { CodeUiToolOutputResponse } from "@kenfutwork/shared";
 import type {
   ConversationShareAllowedArtifact,
   ConversationShareTurnPreflightResult,
@@ -15,6 +16,7 @@ import type {
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   buildCustomSupplierKey,
+  isLocalWorkspaceTarget,
   localizeConversationShareUrl,
   TID_CHAT_EMPTY,
   TID_V4_SESSION_PANE,
@@ -28,6 +30,7 @@ import type {
   CommandType,
   ConversationRowTarget,
   ConversationSnapshot,
+  ConversationTaskControl,
   SessionErrorInfo,
   SessionModelTransition,
   V4ConversationFileChangesResult,
@@ -44,6 +47,8 @@ import { useIsOfficeMode } from "@zui/hooks/useInterfaceMode.js";
 import { usePlanIdentitySnapshot } from "@zui/hooks/usePlanIdentitySnapshot.js";
 import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import { useServices } from "@zui/hooks/useServices.js";
+import { freezeCodeViewerSource } from "@zui/host/fileViewerServices.js";
+import { surfaceJson } from "@zui/host/surfaceApi.js";
 import { useSettings } from "@zui/hooks/useSettingService.js";
 import { useSlashCommands } from "@zui/hooks/useSlashCommands.js";
 import { useStartPlanRecommendation } from "@zui/hooks/useStartPlanRecommendation.js";
@@ -51,6 +56,7 @@ import { useWorkflowRunJournalSummaries } from "@zui/hooks/useWorkflowRunJournal
 import { useWorkspaceHomePath } from "@zui/hooks/useWorkspaceHomePath.js";
 import { prepareWorkspaceWithZCodeSessionService } from "@zui/hooks/useWorkspacePrepare.js";
 import { useBaseWorkspaceServices, useWorkspaceServicesResolution } from "@zui/hooks/useWorkspaceServices.js";
+import { useOptionalProjectDirectory } from "@zui/project-sidebar/ProjectDirectoryProvider.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { AssistantPreviewCardsAutoOpenRequest } from "@zui/lib/assistantPreviewCards.js";
 import { isProviderNotReadyError } from "@zui/lib/chatPrepareError.js";
@@ -150,6 +156,8 @@ import {
 } from "@zui/v4/ConversationComposer.js";
 import { ConversationDraftEmptyState } from "@zui/v4/ConversationDraftEmptyState.js";
 import { ConversationDraftSuggestedPromptsContainer } from "@zui/v4/ConversationDraftSuggestedPromptsContainer.js";
+import { useConversationPanePresentation } from "@zui/side-pane-full-view/index.js";
+import type { ConversationLatestTurnSummary } from "@zui/v4/conversationTimelineLiveTail.js";
 import {
   ConversationHeader,
   type PaneWorkspaceBadge,
@@ -539,7 +547,7 @@ export function SessionPane({
   onOpenGitReview,
   onOpenBrowserUrl,
   onOpenAutomationsMain: requestedOnOpenAutomationsMain,
-  onOpenCodeViewer,
+  onOpenCodeViewer: requestedOnOpenCodeViewer,
   onAutoOpenAssistantPptx,
   onOpenFileLink,
   onOpenSubagentSession,
@@ -576,12 +584,26 @@ export function SessionPane({
   const onOpenAutomationsMain = platform?.supportsAutomations === false
     ? undefined
     : requestedOnOpenAutomationsMain;
+  const services = useServices();
   const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService, zcodeAgentService,
-  } =
-    useServices();
+  } = services;
+  const onOpenCodeViewer = useMemo(
+    () => requestedOnOpenCodeViewer
+      ? (source: CodeViewerSource) => requestedOnOpenCodeViewer(
+          freezeCodeViewerSource(services, source, {
+            workspacePath,
+            workspaceIdentity,
+            workspaceRemoteSessionId: remoteSessionId,
+            taskId: rootSessionId ?? sessionId ?? null,
+          }),
+        )
+      : undefined,
+    [remoteSessionId, requestedOnOpenCodeViewer, rootSessionId, services, sessionId, workspaceIdentity, workspacePath],
+  );
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const baseWorkspaceServices = useBaseWorkspaceServices();
+  const refreshTaskGroups = useOptionalProjectDirectory()?.groups.refresh;
   const configWorkspaceServices = useWorkspaceServicesResolution(workspacePath, remoteSessionId, workspaceIdentity);
   const workspaceHomePath = useWorkspaceHomePath({
     workspacePath,
@@ -1120,9 +1142,19 @@ export function SessionPane({
       if (!onAutoOpenAssistantPptx || request.sources.length === 0) return;
       if (autoOpenedAssistantPptxKeysRef.current.has(request.key)) return;
       autoOpenedAssistantPptxKeysRef.current.add(request.key);
-      onAutoOpenAssistantPptx(request);
+      onAutoOpenAssistantPptx({
+        ...request,
+        sources: request.sources.map((source) =>
+          freezeCodeViewerSource(services, source, {
+            workspacePath,
+            workspaceIdentity,
+            workspaceRemoteSessionId: remoteSessionId,
+            taskId: rootSessionId ?? sessionId ?? null,
+          }),
+        ),
+      });
     },
-    [onAutoOpenAssistantPptx],
+    [onAutoOpenAssistantPptx, remoteSessionId, rootSessionId, services, sessionId, workspaceIdentity, workspacePath],
   );
   const composerDraftStateRef = useRef({ hasContent: false, busy: false });
   const [queueEditOperation, setQueueEditOperation] = useState<{
@@ -1157,6 +1189,9 @@ export function SessionPane({
   );
 
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
+  const activeTaskId = useZCodeSessionStore(
+    (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId,
+  );
   const workspaceConfigOptions = useZCodeSessionStore(
     (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).configOptions,
   );
@@ -1250,6 +1285,49 @@ export function SessionPane({
     snapshot?.pendingInteractions.find(
       (interaction) => interaction.payload.kind !== "workspaceHookReview",
     )?.interactionId ?? null;
+  const panePresentation = useConversationPanePresentation();
+  const isFloatingPresentation = panePresentation.presentation === "floating";
+  const isRunning = Boolean(snapshot?.control.canStop);
+  const { reportFloatingStatus } = panePresentation;
+  const floatingOwnerKey = sessionId ?? "__draft__";
+  const [floatingLatestTurn, setFloatingLatestTurn] = useState<{
+    ownerKey: string;
+    summary: ConversationLatestTurnSummary;
+  } | null>(null);
+  const handleFloatingLatestTurnSummaryChange = useCallback(
+    (summary: ConversationLatestTurnSummary) =>
+      setFloatingLatestTurn({ ownerKey: floatingOwnerKey, summary }),
+    [floatingOwnerKey],
+  );
+  const floatingLatestTurnSummary =
+    isFloatingPresentation && floatingLatestTurn?.ownerKey === floatingOwnerKey
+      ? floatingLatestTurn.summary
+      : null;
+  const floatingTurnKey = floatingLatestTurnSummary?.turnKey ?? null;
+  const floatingTurnRunning = floatingLatestTurnSummary?.running ?? false;
+  const floatingTurnAnswer = floatingLatestTurnSummary?.answer ?? null;
+  const hasFloatingLatestTurn = floatingLatestTurnSummary !== null;
+  useEffect(() => {
+    if (!focused) return;
+    reportFloatingStatus({
+      running: isRunning,
+      blockingInteractionId,
+      ownerKey: floatingOwnerKey,
+      latestTurn: hasFloatingLatestTurn
+        ? { turnKey: floatingTurnKey, running: floatingTurnRunning, answer: floatingTurnAnswer }
+        : null,
+    });
+  }, [
+    blockingInteractionId,
+    floatingOwnerKey,
+    floatingTurnAnswer,
+    floatingTurnKey,
+    floatingTurnRunning,
+    focused,
+    hasFloatingLatestTurn,
+    isRunning,
+    reportFloatingStatus,
+  ]);
   const selectionSideChatKey = sessionId
     ? buildSelectionSideChatKey(workspaceKey, sessionId)
     : null;
@@ -1363,6 +1441,56 @@ export function SessionPane({
     },
     [platform, workspacePath, workspaceIdentity, remoteSessionId, isDesktop],
   );
+  const organizeCreatedGroupedTask = useCallback((
+    createdSessionId: string,
+    groupedDraftTask: GroupedDraftTaskState,
+    messageId?: string,
+  ) => {
+    const task = {
+      hostId: "local",
+      taskId: createdSessionId,
+      workspacePath: groupedDraftTask.workspacePath,
+      workspaceIdentity: groupedDraftTask.workspaceIdentity,
+    };
+    const placement = {
+      task,
+      groupId: groupedDraftTask.placement.type === "group"
+        ? groupedDraftTask.placement.groupId : null,
+      creationId: messageId ?? createdSessionId,
+    };
+    let flight: Promise<void> | undefined;
+    const attempt = (): Promise<void> => {
+      if (flight) return flight;
+      flight = (async () => {
+        try {
+          if (!task.workspaceIdentity || !isLocalWorkspaceTarget(task))
+            throw new Error("task-group.local-task-identity-required");
+          if (!baseWorkspaceServices.taskGroupService)
+            throw new Error("task-group.service-unavailable");
+          await baseWorkspaceServices.taskGroupService.admit({ tasks: [task], placement });
+          useZCodeSessionStore.getState().clearPromotedGroupedDraftTask(
+            task.workspacePath, task.taskId, task.workspaceIdentity,
+          );
+          // 已接受首发不等待组织重读；重读失败由目录 owner 保留错误。
+          void refreshTaskGroups?.().catch((cause) =>
+            logger.error("[task-groups] 新任务归属重读失败", cause),
+          );
+        } catch (cause) {
+          // 创建已接纳；重试只持有原 placement，不再次创建 Task 或发送消息。
+          logger.error("[task-groups] 新任务归属提交失败", cause);
+          toast(intl.formatMessage({ id: "taskGroup.updateFailed" }), {
+            variant: "warning",
+            durationMs: 0,
+            actionLabel: intl.formatMessage({ id: "common.retry" }),
+            onAction: () => void attempt(),
+            dedupeKey: `task-group:${createdSessionId}`,
+          });
+        }
+      })().finally(() => { flight = undefined; });
+      return flight;
+    };
+    void attempt();
+  }, [baseWorkspaceServices.taskGroupService, refreshTaskGroups, intl]);
   const handleDraftSessionCreated = useCallback(
     (
       createdSessionId: string,
@@ -1381,31 +1509,36 @@ export function SessionPane({
       // sessionId 直接交给同一 hook。预热 lease 还保留草稿期的 startedAt 与空 snapshot timing，
       // 因而把数小时闲置时间误记为 total/react。创建边界先标记本 pane 的首次绑定；离开后
       // 再次显式打开同一 Session 时标记会清除，恢复正常的已有 Session 打开测量。
-      newlyCreatedSessionIdRef.current = createdSessionId;
-      promoteComposerDraft(createdSessionId);
+      const ownsDraft = !groupedDraftTask || useZCodeSessionStore.getState()
+        .getWorkspaceState(groupedDraftTask.workspacePath, groupedDraftTask.workspaceIdentity)
+        .groupedDraftTask?.draftId === groupedDraftTask.draftId;
+      if (ownsDraft) {
+        newlyCreatedSessionIdRef.current = createdSessionId;
+        promoteComposerDraft(createdSessionId);
+      }
       // 只有 draft create/promote 的 accepted 边界能继承 grouped placement。
       // fork 和普通任务导航仍复用 onSessionCreated，但不会污染已有 task 的分组排序。
       if (groupedDraftTask) {
         promoteGroupedDraftTask(
-          workspacePath,
+          groupedDraftTask.workspacePath,
           createdSessionId,
           groupedDraftTask,
-          workspaceIdentity,
+          groupedDraftTask.workspaceIdentity,
         );
         logger.debug("[v4-pane] grouped draft 已显式提升", {
           createdSessionId,
           draftId: groupedDraftTask.draftId,
         });
+        organizeCreatedGroupedTask(createdSessionId, groupedDraftTask, messageId);
       }
-      onSessionCreated?.(createdSessionId);
+      if (ownsDraft) onSessionCreated?.(createdSessionId);
     },
     [
       reportDraftCreated,
       onSessionCreated,
       promoteComposerDraft,
       promoteGroupedDraftTask,
-      workspaceIdentity,
-      workspacePath,
+      organizeCreatedGroupedTask,
     ],
   );
   const { settings: sharedSettings } = useSettings();
@@ -1455,7 +1588,10 @@ export function SessionPane({
       telemetrySeed?: ConversationPromptTelemetrySeed,
       onEnvelopeCreated?: (envelope: CommandEnvelope) => void,
       sessionCreateSource?: SessionCreateSource,
-      executionMode?: Parameters<typeof sendCommand>[1],
+      taskControl: ConversationTaskControl | null | undefined =
+        targetSessionId === snapshotRef.current?.sessionId
+          ? snapshotRef.current.taskControl
+          : undefined,
     ): Promise<CommandAck> => {
       const submission = submissionConfigFromCommand(type, payload);
       const acceptRecent = submission
@@ -1470,6 +1606,7 @@ export function SessionPane({
         type,
         sessionId: targetSessionId,
         payload: payload as never,
+        ...(taskControl ? { taskControl } : {}),
         ...(baseRevision === undefined ? {} : { baseRevision }),
         ...(baseLogEpoch ? { baseLogEpoch } : {}),
       });
@@ -1513,7 +1650,7 @@ export function SessionPane({
             targetSessionId,
           );
         }
-        ack = executionMode ? await sendCommand(envelope, executionMode) : await sendCommand(envelope);
+        ack = await sendCommand(envelope);
         if (telemetrySeed?.localTtft && ack.reasonCode === "guard.heldQueueConfirmationStale")
           getLocalTtftObserver()?.confirmationRetry(telemetrySeed.localTtft);
         else if (telemetrySeed?.localTtft)
@@ -2240,6 +2377,20 @@ export function SessionPane({
     [sessionId, snapshot?.config, snapshot?.sessionId],
   );
 
+  // 工具卡「查看原文」的唯一取数入口：按会话 id 与 runId/toolCallId 引用分页读取事件原文。
+  // 归档、引用缺失与权限失效由服务端拒绝，错误消息原样交给弹层显示。
+  const handleReadToolOutput = useCallback(
+    (targetSessionId: string, ref: string, offset: number) => {
+      const query = new URLSearchParams({
+        sessionId: targetSessionId,
+        ref,
+        offset: String(offset),
+      });
+      return surfaceJson<CodeUiToolOutputResponse>(`/api/code-ui/tool-output?${query}`);
+    },
+    [],
+  );
+
   const rowContext = useMemo<ConversationRowRenderContext>(
     () => ({
       workspacePath,
@@ -2252,6 +2403,7 @@ export function SessionPane({
       codePreviewSettings,
       sessionId,
       rootSessionId: rootSessionId ?? sessionId,
+      onReadToolOutput: sessionId ? handleReadToolOutput : undefined,
       chatLoadingBlockedByActiveWork,
       chatLoadingBlockedByInteraction,
       messageStreamShowReasoning,
@@ -2310,6 +2462,7 @@ export function SessionPane({
       codePreviewSettings,
       sessionId,
       rootSessionId,
+      handleReadToolOutput,
       chatLoadingBlockedByActiveWork,
       chatLoadingBlockedByInteraction,
       messageStreamShowReasoning,
@@ -2533,7 +2686,6 @@ export function SessionPane({
       expectedHeldQueueItemIds?: readonly string[],
       submission?: ComposerSubmissionConfig,
       onAccepted?: (messageId: string) => void,
-      executionMode?: Parameters<typeof sendCommand>[1],
     ): Promise<boolean | "confirmationRequired"> => {
       let type: CommandType | null = null;
       let payload: Record<string, unknown> = {};
@@ -2583,8 +2735,6 @@ export function SessionPane({
         payload,
         targetSessionId,
         withBaseRevision ? baseRevision : undefined,
-        undefined, undefined, undefined, undefined,
-        type === "sendGoalCommand" || type === "compact" ? executionMode : undefined,
       );
       if (ack.status === "accepted") onAccepted?.(ack.commandId);
       if (ack.reasonCode === "guard.heldQueueConfirmationStale") {
@@ -2615,10 +2765,11 @@ export function SessionPane({
       text: string,
       options: ConversationComposerSendOptions | undefined,
       createSourceAtSend: SessionCreateSource,
+      groupedDraftTaskAtSend: GroupedDraftTaskState | null,
     ) => {
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
-        args[8] = options?.executionMode;
+        if (args[2] !== null) args[8] ??= options?.taskControl;
         const ack = await dispatchCommand(...args);
         // 在原 accepted 边界写回推荐选择，早于新 Session 的草稿转移；失败不改用户意图。
         if (ack.status === "accepted" && submissionConfigFromCommand(args[0], args[1]))
@@ -2634,13 +2785,7 @@ export function SessionPane({
       const contextAttachmentCount = options?.contextAttachmentCount ?? 0;
       let slashCommand = parseV4VisibleSlashCommand(text, readyAttachments, {
         contextAttachmentCount,
-        executionMode: options?.executionMode,
-        goalStatus: snapshotRef.current?.goal?.status,
       });
-      if (slashCommand?.kind === "unsupportedGoal" && slashCommand.action === "attachments") {
-        toast("目标仅支持文本");
-        return "blocked" as const;
-      }
 
       // `/plan` 首版只消费纯文本。必须在 provider readiness 和任何 command admission 之前
       // 拒绝附件/context，否则原始 `/plan ...` 会退化成普通 prompt，既绕过产品边界又清空草稿。
@@ -2667,13 +2812,6 @@ export function SessionPane({
         // 命令只负责配置 shortcut；后续必须走普通 sendText，不能进入 goal/compact command 分支。
         slashCommand = null;
       }
-      // create/send ACK 期间用户可能切换任务或创建另一份 draft。
-      // placement 必须绑定发送开始时的稳定 identity，不能在完成回调里读取当前 workspace 草稿。
-      const groupedDraftTaskAtSend =
-        sessionId === null
-          ? useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity)
-              .groupedDraftTask
-          : null;
       const selectionSideSlashCommand =
         sessionId && (appSlashCommands?.length ?? 0) > 0
           ? parseSelectionSideSlashCommand(text, readyAttachments, {
@@ -2743,8 +2881,6 @@ export function SessionPane({
           heldQueueDisposition,
           expectedHeldQueueItemIds,
           submission,
-          undefined,
-          options?.executionMode,
         );
         if (consumed === "confirmationRequired") return consumed;
         if (consumed) {
@@ -2836,7 +2972,6 @@ export function SessionPane({
           expectedHeldQueueItemIds,
           submission,
           (messageId) => reportDraftCreated(newSessionId, createSourceAtSend, messageId),
-          options?.executionMode,
         );
         return;
       }
@@ -2858,6 +2993,9 @@ export function SessionPane({
               undefined,
               undefined,
               options?.telemetrySeed,
+              undefined,
+              undefined,
+              prewarm.taskControl ?? null,
             );
             if (ack.status === "accepted") {
               prewarm.promote();
@@ -3033,14 +3171,20 @@ export function SessionPane({
         .getWorkspaceState(workspacePath, workspaceIdentity).draftCreateSource;
       const submissionOptions = {
         ...options,
+        taskControl: options?.taskControl === undefined
+          ? snapshotRef.current?.taskControl ? { ...snapshotRef.current.taskControl } : null
+          : options.taskControl,
         submission:
           options?.submission === undefined ? createSubmissionFromComposer() : options.submission,
       };
+      const groupedDraftTaskAtSend = sessionId === null
+        ? useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity).groupedDraftTask
+        : null;
       // followupMode 仍通过 Session CAS 同步；模型和模式已封装进 Submission，不再
       // 依赖“配置命令先到、sendText 后到”的跨命令时序。
       return configCommandBarrier.enqueue(async () => {
         try {
-          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource,
+          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource, groupedDraftTaskAtSend,
           );
         } catch (error) {
           if (sessionId === null && isProviderNotReadyError(error)) {
@@ -3433,7 +3577,7 @@ export function SessionPane({
           const ack = await dispatchCommand(type, payload, targetSessionId, baseRevision,
           );
           lastAck = ack;
-          if (ack.status === "stale") {
+          if (ack.status === "stale" && ack.reasonCode === "proto.staleRevision") {
             baseRevision = ack.revisionAtDecision;
             continue;
           }
@@ -3985,9 +4129,11 @@ export function SessionPane({
         backgroundWorks: snapshot?.backgroundWorks ?? [],
         runningSubagents: subagents.running,
         workflowRuns: snapshot?.workflowRuns?.runs ?? [],
+        hasActiveTask: Boolean(activeTaskId) && !selectionSideChat,
       }),
     [
       isOfficeMode,
+      activeTaskId,
       gitDirtyFileCount,
       gitSummary,
       gitWorktreeChangeSummary,
@@ -4532,11 +4678,15 @@ export function SessionPane({
       submissionReady={composerSubmissionReady}
       updateComposerContent={updateComposerContent}
       createSubmissionFromComposer={createSubmissionFromComposer}
-      contextHeader={<>
+      contextHeader={isFloatingPresentation ? undefined : <>
         {isDraft ? draftComposerHeader : null}
         {!readOnly ? <ComposerContextHeader workspacePath={workspacePath} {...(workspaceIdentity ? { workspaceIdentity } : {})} {...(composerDraft.workContext ? { contextOverride: composerDraft.workContext } : {})} onChangeContext={(context) => replaceComposerDraft({ ...composerDraft, workContext: context })} /> : null}
       </>}
       centered={isDraft}
+      layout={isFloatingPresentation ? "inline" : "stacked"}
+      workingDurationMs={
+        floatingTurnRunning ? floatingLatestTurnSummary?.workDurationMs : undefined
+      }
       blockingRequestId={blockingInteractionId}
       listenAddToChatEvents={focused}
       // Q5 外部插入按 host 语义放开到 Live 会话：右栏浏览器拾取的坐标引用
@@ -4712,7 +4862,7 @@ export function SessionPane({
       ) : null}
       {composerNode}
       {/* 办公模式显示主动任务推荐；编程模式保留原有小型场景入口。 */}
-      {isDraft && (!isOfficeMode || sharedSettings?.proactiveSuggestionsEnabled === true) ? (
+      {isDraft && !isFloatingPresentation && (!isOfficeMode || sharedSettings?.proactiveSuggestionsEnabled === true) ? (
         <ConversationDraftSuggestedPromptsContainer
           className={isOfficeMode ? "mt-4" : "mt-6"}
           proactive={isOfficeMode}
@@ -4813,6 +4963,7 @@ export function SessionPane({
             runningSubagents={subagents.running}
             workflowRuns={snapshot?.workflowRuns?.runs ?? []}
             endedSubagentCount={subagents.endedTotal}
+            hasActiveTask={Boolean(activeTaskId) && !selectionSideChat}
             rootSessionId={rootSessionId ?? sessionId ?? undefined}
             parentSessionId={sessionId ?? undefined}
             layoutMode={statusPanelLayout}
@@ -4950,7 +5101,18 @@ export function SessionPane({
                   </div>
                 ) : null
               }
-              centerEmptyStateWithDock={isDraft}
+              centerEmptyStateWithDock={isDraft && !isFloatingPresentation}
+              floatingComposerDock={isFloatingPresentation}
+              onComposerDockHeightChange={
+                isFloatingPresentation && focused
+                  ? panePresentation.reportComposerDockHeight
+                  : undefined
+              }
+              onLatestTurnSummaryChange={
+                isFloatingPresentation && focused
+                  ? handleFloatingLatestTurnSummaryChange
+                  : undefined
+              }
               summaryPanelLayout={statusPanelLayout}
               conversationFindQuery={!isDraft && focused ? conversationFindQuery : ""}
               conversationFindActiveIndex={!isDraft && focused ? conversationFindActiveIndex : -1}

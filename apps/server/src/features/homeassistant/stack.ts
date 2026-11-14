@@ -141,9 +141,7 @@ export async function isHomeAssistantAnswering(
 }
 
 /** 我们托管的容器是否已存在（`docker ps -a` 按名字过滤，含 Exited）。 */
-export async function hasManagedHaContainer(
-  run: RunCommand,
-): Promise<boolean> {
+export async function hasManagedHaContainer(run: RunCommand): Promise<boolean> {
   const result = await run("docker", [
     "ps",
     "-a",
@@ -231,7 +229,9 @@ export async function provisionHomeAssistant(deps: {
 }): Promise<HaProvisionResult> {
   const run = deps.run ?? createDockerRunCommand();
   const [answering, containerPresent, carrierAvailable] = await Promise.all([
-    isHomeAssistantAnswering({ ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}) }),
+    isHomeAssistantAnswering({
+      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+    }),
     hasManagedHaContainer(run),
     hasContainerRuntime(run),
   ]);

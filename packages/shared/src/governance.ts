@@ -16,6 +16,24 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   compactKeepMessages: 20,
   /** 窗口未知时的保留目标，自动与显式维护共用。 */
   compactFallbackKeepMessages: 6,
+  /** 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。 */
+  contextKeepRecentImages: 2,
+  /** 工具结果超过该字符数时外置到工作目录文件，模型只收到一段说明。 */
+  toolResultOffloadMaxChars: 32_000,
+  /** 单个外置文件最多写入的字节数；超出只保留前缀并在说明里标注。 */
+  toolResultOffloadMaxBytes: 33_554_432,
+  /** 较早的工具结果超过该字符数时折叠成摘要占位；较新的原文保持不动。 */
+  toolResultPruneThresholdChars: 8_000,
+  /** 每次模型请求保留原文的最近工具结果条数；更早的才按阈值折叠。 */
+  toolResultPruneKeepRecent: 6,
+  /** 工具卡终态输出超过该字节数时保留头尾，余下按 truncated.ref 取回。 */
+  toolOutputPreviewBytes: 8_192,
+  /** 未被索引引用的记忆正文闲置超过该天数才进入回收区。 */
+  memoryOrphanRetentionDays: 30,
+  /** 回收区文件保留天数，过期后才永久删除。 */
+  memoryRecoverableWindowDays: 30,
+  /** 记忆整理（重复合并/孤立回收/过期清理）的周期扫描间隔，单位毫秒。 */
+  memoryMaintenanceIntervalMs: 3_600_000,
   /** 子代理派生深度上限：1 = 子代理不得再派生（禁孙代理）。 */
   subagentMaxDepth: 1,
   /** 后台任务（子代理/长命令）同时运行上限。 */
@@ -30,8 +48,19 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   executeTimeoutMs: 120_000,
   /** 仅计真实模型请求无事件时间；工具执行和人审等待不计，0关闭。 */
   agentStreamIdleTimeoutMs: 180_000,
+  /**
+   * 流式 delta 合批刷新间隔（毫秒）。模型 token 事件先拼进缓冲，按该节奏落库并推送
+   * 快照帧；间隔越大服务端事务与前端整帧渲染越少，过大则输出显得迟滞。
+   */
+  agentStreamFlushIntervalMs: 80,
   /** Code 宿主通知通道断线后的重连间隔（毫秒）。 */
   codeUiReconnectDelayMs: 1_000,
+  /** Task 自动归档的周期扫描间隔；只影响发现旧 Task 的时延。 */
+  taskAutoArchiveScanIntervalMs: 3_600_000,
+  /** 插件声明卡片最多展示的键值行数；超出按顺序截掉。 */
+  pluginCardMaxFields: 8,
+  /** 插件声明卡片单个值的字符上限；超出截断并保留开头。 */
+  pluginCardFieldValueMaxChars: 120,
   /** 本机浏览器一次性连接入口有效期。 */
   localAccessTicketTtlMs: 60_000,
   /** 浏览器接入会话期限；不涉及官方账户登录。 */
@@ -50,6 +79,8 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   codeSearchMaxResults: 1_000,
   codeSearchMaxBytes: 1_048_576,
   codePatchMaxBytes: 1_048_576,
+  /** 导入媒体供应商 TypeScript 文件的字节预算。 */
+  mediaDriverMaxSourceBytes: 1_048_576,
   codePdfMaxPages: 10,
   codePdfRenderScale: 1,
   /** Code 附件：宿主协商分块预算，已提交私有内容随 Task 生命周期保留。 */
@@ -134,9 +165,22 @@ export type AgentGovernanceValue = keyof typeof AGENT_GOVERNANCE_DEFAULTS;
 /** 新工作域数值落同一设置表 JSON 对象，避免每项重复增加列与存取分支。 */
 export const RUNTIME_GOVERNANCE_KEYS = [
   "agentStreamIdleTimeoutMs",
+  "agentStreamFlushIntervalMs",
   "compactKeepMessages",
   "compactFallbackKeepMessages",
+  "contextKeepRecentImages",
+  "toolResultOffloadMaxChars",
+  "toolResultOffloadMaxBytes",
+  "toolResultPruneThresholdChars",
+  "toolResultPruneKeepRecent",
+  "toolOutputPreviewBytes",
+  "memoryOrphanRetentionDays",
+  "memoryRecoverableWindowDays",
+  "memoryMaintenanceIntervalMs",
   "codeUiReconnectDelayMs",
+  "taskAutoArchiveScanIntervalMs",
+  "pluginCardMaxFields",
+  "pluginCardFieldValueMaxChars",
   "localAccessTicketTtlMs",
   "localAccessSessionMaxAgeMs",
   "localDataMigrationPollMs",
@@ -148,6 +192,7 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "codeSearchMaxResults",
   "codeSearchMaxBytes",
   "codePatchMaxBytes",
+  "mediaDriverMaxSourceBytes",
   "processMaxOutputBytes",
   "processPreviewMaxChars",
   "processYieldMs",
@@ -202,13 +247,26 @@ export type RuntimeGovernanceBoolKey =
 export type AgentGovernanceOverrides = {
   compactKeepMessages?: number | undefined;
   compactFallbackKeepMessages?: number | undefined;
+  contextKeepRecentImages?: number | undefined;
+  toolResultOffloadMaxChars?: number | undefined;
+  toolResultOffloadMaxBytes?: number | undefined;
+  toolResultPruneThresholdChars?: number | undefined;
+  toolResultPruneKeepRecent?: number | undefined;
+  toolOutputPreviewBytes?: number | undefined;
+  memoryOrphanRetentionDays?: number | undefined;
+  memoryRecoverableWindowDays?: number | undefined;
+  memoryMaintenanceIntervalMs?: number | undefined;
   subagentMaxDepth?: number | undefined;
   subagentMaxConcurrency?: number | undefined;
   llmRequestMaxRetries?: number | undefined;
   llmInfiniteRetry?: boolean | undefined;
   executeTimeoutMs?: number | undefined;
   agentStreamIdleTimeoutMs?: number | undefined;
+  agentStreamFlushIntervalMs?: number | undefined;
   codeUiReconnectDelayMs?: number | undefined;
+  taskAutoArchiveScanIntervalMs?: number | undefined;
+  pluginCardMaxFields?: number | undefined;
+  pluginCardFieldValueMaxChars?: number | undefined;
   localAccessTicketTtlMs?: number | undefined;
   localAccessSessionMaxAgeMs?: number | undefined;
   localDataMigrationPollMs?: number | undefined;
@@ -220,6 +278,7 @@ export type AgentGovernanceOverrides = {
   codeSearchMaxResults?: number | undefined;
   codeSearchMaxBytes?: number | undefined;
   codePatchMaxBytes?: number | undefined;
+  mediaDriverMaxSourceBytes?: number | undefined;
   codePdfMaxPages?: number | undefined;
   codePdfRenderScale?: number | undefined;
   codeAttachmentMaxBytes?: number | undefined;
@@ -318,13 +377,26 @@ export const coerceLlmInfiniteRetry = (value: unknown): boolean =>
 export const AGENT_GOVERNANCE_LIMITS = {
   compactKeepMessages: { min: 1, max: 10_000 },
   compactFallbackKeepMessages: { min: 1, max: 10_000 },
+  contextKeepRecentImages: { min: 0, max: 20 },
+  toolResultOffloadMaxChars: { min: 1_024, max: 1_048_576 },
+  toolResultOffloadMaxBytes: { min: 1_024, max: 1_073_741_824 },
+  toolResultPruneThresholdChars: { min: 512, max: 1_048_576 },
+  toolResultPruneKeepRecent: { min: 1, max: 100 },
+  toolOutputPreviewBytes: { min: 1_024, max: 1_048_576 },
+  memoryOrphanRetentionDays: { min: 1, max: 3_650 },
+  memoryRecoverableWindowDays: { min: 1, max: 3_650 },
+  memoryMaintenanceIntervalMs: { min: 60_000, max: 86_400_000 },
   subagentMaxDepth: { min: 1, max: 4 },
   subagentMaxConcurrency: { min: 1, max: 16 },
   llmRequestMaxRetries: { min: 0, max: 100 },
   executeTimeoutMs: { min: 5_000, max: 1_800_000 },
   // setTimeout的有符号32位上限；0显式关闭模型无输出计时。
   agentStreamIdleTimeoutMs: { min: 0, max: 2_147_483_647 },
+  agentStreamFlushIntervalMs: { min: 20, max: 500 },
   codeUiReconnectDelayMs: { min: 100, max: 60_000 },
+  taskAutoArchiveScanIntervalMs: { min: 10_000, max: 86_400_000 },
+  pluginCardMaxFields: { min: 1, max: 20 },
+  pluginCardFieldValueMaxChars: { min: 16, max: 2_000 },
   localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
   localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
   localDataMigrationPollMs: { min: 10, max: 60_000 },
@@ -336,6 +408,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   codeSearchMaxResults: { min: 1, max: 100_000 },
   codeSearchMaxBytes: { min: 1_024, max: 67_108_864 },
   codePatchMaxBytes: { min: 1_024, max: 67_108_864 },
+  mediaDriverMaxSourceBytes: { min: 1_024, max: 67_108_864 },
   codePdfMaxPages: { min: 1, max: 1_000 },
   codePdfRenderScale: { min: 0.25, max: 4 },
   // 私有附件驻内存 staging 最多 1GiB；单块还受固定 1MiB wire frame 物理护栏约束。
@@ -415,6 +488,33 @@ export function resolveGovernanceEnvOverrides(
     compactFallbackKeepMessages: parseStrictInt(
       source.KENFUTWORK_COMPACT_FALLBACK_KEEP_MESSAGES,
     ),
+    contextKeepRecentImages: parseStrictInt(
+      source.KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES,
+    ),
+    toolResultOffloadMaxChars: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_CHARS,
+    ),
+    toolResultOffloadMaxBytes: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_OFFLOAD_MAX_BYTES,
+    ),
+    toolResultPruneThresholdChars: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_PRUNE_THRESHOLD_CHARS,
+    ),
+    toolResultPruneKeepRecent: parseStrictInt(
+      source.KENFUTWORK_TOOL_RESULT_PRUNE_KEEP_RECENT,
+    ),
+    toolOutputPreviewBytes: parseStrictInt(
+      source.KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES,
+    ),
+    memoryOrphanRetentionDays: parseStrictInt(
+      source.KENFUTWORK_MEMORY_ORPHAN_RETENTION_DAYS,
+    ),
+    memoryRecoverableWindowDays: parseStrictInt(
+      source.KENFUTWORK_MEMORY_RECOVERABLE_WINDOW_DAYS,
+    ),
+    memoryMaintenanceIntervalMs: parseStrictInt(
+      source.KENFUTWORK_MEMORY_MAINTENANCE_INTERVAL_MS,
+    ),
     localDataMigrationPollMs: parseStrictInt(
       source.KENFUTWORK_LOCAL_DATA_MIGRATION_POLL_MS,
     ),
@@ -445,6 +545,9 @@ export function resolveGovernanceEnvOverrides(
       );
       return value !== undefined && value >= 0 ? value : undefined;
     })(),
+    agentStreamFlushIntervalMs: parseStrictInt(
+      source.KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS,
+    ),
     codeUiReconnectDelayMs:
       /^[+-]?\d+$/u.test(
         source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS?.trim() ?? "",
@@ -452,6 +555,15 @@ export function resolveGovernanceEnvOverrides(
       Number.isSafeInteger(Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS))
         ? Number(source.KENFUTWORK_CODE_UI_RECONNECT_DELAY_MS)
         : undefined,
+    taskAutoArchiveScanIntervalMs: parseStrictInt(
+      source.KENFUTWORK_TASK_AUTO_ARCHIVE_SCAN_INTERVAL_MS,
+    ),
+    pluginCardMaxFields: parseStrictInt(
+      source.KENFUTWORK_PLUGIN_CARD_MAX_FIELDS,
+    ),
+    pluginCardFieldValueMaxChars: parseStrictInt(
+      source.KENFUTWORK_PLUGIN_CARD_FIELD_VALUE_MAX_CHARS,
+    ),
     canvasExportMaxBytes: (() => {
       const value = parseStrictInt(source.KENFUTWORK_CANVAS_EXPORT_MAX_BYTES);
       return value !== undefined && value > 0 ? value : undefined;
@@ -465,6 +577,9 @@ export function resolveGovernanceEnvOverrides(
     ),
     codeSearchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_SEARCH_MAX_BYTES),
     codePatchMaxBytes: parseStrictInt(source.KENFUTWORK_CODE_PATCH_MAX_BYTES),
+    mediaDriverMaxSourceBytes: parseStrictInt(
+      source.KENFUTWORK_MEDIA_DRIVER_MAX_SOURCE_BYTES,
+    ),
     codePdfMaxPages: parseStrictInt(source.KENFUTWORK_CODE_PDF_MAX_PAGES),
     codePdfRenderScale:
       source.KENFUTWORK_CODE_PDF_RENDER_SCALE?.trim() &&

@@ -264,12 +264,7 @@ describe("Human-only Code workspace RPC", () => {
     );
     await rm(first.path, { recursive: true, force: true });
     const recoveredResult = (
-      await createRpc().call(
-        actor,
-        "file",
-        "ensureConversationWorkspace",
-        [],
-      )
+      await createRpc().call(actor, "file", "ensureConversationWorkspace", [])
     )?.result;
     const recovered = codeUiWorkspaceSchema.parse(recoveredResult);
     expect(recoveredResult).toMatchObject({ replacedMissingDirectory: true });
@@ -501,10 +496,74 @@ describe("Human-only Code workspace RPC", () => {
     expect(await refreshed.call(actor, "setting", "get", [])).toMatchObject({
       result: { memoryEnabled: true },
     });
-    await refreshed.call(actor, "setting", "update", [{ memoryEnabled: false }]);
+    await refreshed.call(actor, "setting", "update", [
+      { memoryEnabled: false },
+    ]);
     expect(await refreshed.call(actor, "setting", "get", [])).toMatchObject({
       result: { memoryEnabled: false },
     });
+  });
+  it("代理与任务自动归档偏好可保存；清空代理键会真的删除旧值", async () => {
+    const { rpc, root } = await world();
+    const caPath = join(root, "ca.pem");
+    await writeFile(caPath, "certificate", "utf8");
+    await rpc.call(actor, "setting", "update", [
+      {
+        httpProxy: "http://127.0.0.1:7890",
+        httpProxyNoProxy: "localhost, *.local",
+        httpProxyCaCertPath: caPath,
+        taskAutoArchiveEnabled: true,
+        taskAutoArchiveOlderThanDays: 30,
+      },
+    ]);
+    expect(await rpc.call(actor, "setting", "get", [])).toMatchObject({
+      result: {
+        httpProxy: "http://127.0.0.1:7890",
+        httpProxyNoProxy: "localhost, *.local",
+        httpProxyCaCertPath: caPath,
+        taskAutoArchiveEnabled: true,
+        taskAutoArchiveOlderThanDays: 30,
+      },
+    });
+    await rpc.call(actor, "setting", "update", [
+      {
+        httpProxy: "",
+        httpProxyNoProxy: "",
+        httpProxyCaCertPath: "",
+      },
+    ]);
+    const cleared = (await rpc.call(actor, "setting", "get", [])) as {
+      result: Record<string, unknown>;
+    };
+    expect(cleared.result).not.toHaveProperty("httpProxy");
+    expect(cleared.result).not.toHaveProperty("httpProxyNoProxy");
+    expect(cleared.result).not.toHaveProperty("httpProxyCaCertPath");
+    expect(cleared.result.taskAutoArchiveEnabled).toBe(true);
+  });
+  it("非法代理地址、相对或不可读的 CA 在保存期就被拒绝", async () => {
+    const { rpc } = await world();
+    await expect(
+      rpc.call(actor, "setting", "update", [{ httpProxy: "not a url" }]),
+    ).rejects.toThrow("合法 URL");
+    await expect(
+      rpc.call(actor, "setting", "update", [
+        { httpProxy: "ftp://127.0.0.1:21" },
+      ]),
+    ).rejects.toThrow("只支持 http/https");
+    await expect(
+      rpc.call(actor, "setting", "update", [{ httpProxyCaCertPath: "ca.pem" }]),
+    ).rejects.toThrow("绝对路径");
+    await expect(
+      rpc.call(actor, "setting", "update", [
+        { httpProxyCaCertPath: "/definitely/missing-ca.pem" },
+      ]),
+    ).rejects.toThrow("不可读");
+    // 拒绝后偏好里没有写入任何一项。
+    const stored = (await rpc.call(actor, "setting", "get", [])) as {
+      result: Record<string, unknown>;
+    };
+    expect(stored.result).not.toHaveProperty("httpProxy");
+    expect(stored.result).not.toHaveProperty("httpProxyCaCertPath");
   });
   it("显式关闭全部最近目录后读取保持空列表，不因Project仍存在复活目录", async () => {
     const { rpc, root, createProject, workspaces } = await world();

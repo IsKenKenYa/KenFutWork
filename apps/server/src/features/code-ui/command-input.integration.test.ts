@@ -1,12 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  canvasCreateResponseSchema,
+  codeUiWorkspaceListSchema,
   modelListResponseSchema,
   projectCreateResponseSchema,
   zcodeUiProtocol as protocol,
-  type StreamEvent,
-  sessionCreateResponseSchema,
-  wsServerEventSchema,
+  wsServerErrorSchema,
 } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
@@ -17,6 +18,60 @@ import { modelRequestSchema } from "./user-question-model.fixture.js";
 
 type Fixture = Awaited<ReturnType<typeof createCodeUiHttpFixture>>;
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
+
+async function createDesignTask(fixture: Fixture, provider: Host) {
+  const created = await fixture.client.request("/api/projects", {
+    name: "命令Design验收",
+    kind: "design",
+  });
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  const project = projectCreateResponseSchema.parse(created.body).project;
+  const canvasResponse = await fixture.client.request(
+    `/api/projects/${project.id}/canvases`,
+    { name: "命令Design画布" },
+  );
+  expect(canvasResponse.status, JSON.stringify(canvasResponse.body)).toBe(201);
+  const { canvas } = canvasCreateResponseSchema.parse(canvasResponse.body);
+  const workspaceResponse = await fixture.client.request(
+    "/api/code-ui/workspaces",
+  );
+  expect(workspaceResponse.status).toBe(200);
+  const workspace = codeUiWorkspaceListSchema
+    .parse(workspaceResponse.body)
+    .workspaces.find((entry) => entry.projectId === project.id);
+  if (!workspace) throw new Error("Design 项目缺少真实工作目录。");
+  const source = protocol.conversationSnapshotSchema.parse(
+    await provider.snapshot(),
+  );
+  const sessionResponse = await provider.stream.rpc(
+    "sendConversationCommandV4",
+    [
+      {
+        workspacePath: workspace.path,
+        projectId: project.id,
+        envelope: {
+          commandId: randomUUID(),
+          clientId: provider.clientId,
+          sessionId: null,
+          type: "createSession",
+          payload: {
+            workspaceId: project.id,
+            config: { modelSelection: source.config.modelSelection },
+            workContext: { preset: "design", canvasId: canvas.id },
+          },
+          issuedAt: Date.now(),
+        },
+      },
+    ],
+  );
+  expect(sessionResponse.status, JSON.stringify(sessionResponse.body)).toBe(
+    200,
+  );
+  const task = protocol.commandAckSchema.parse(sessionResponse.body.result);
+  if (task.result?.type !== "createSession")
+    throw new Error("Design 创建缺少真实 Task 身份。");
+  return { sessionId: task.result.sessionId, canvasId: canvas.id };
+}
 
 /** 原V4/实际Task/Harness/PG；仅外部模型HTTP为可控输出。 */
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
@@ -119,25 +174,10 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           "PATCH",
         );
         expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-        const created = await fixture.client.request("/api/projects", {
-          name: "命令Design验收",
-          kind: "design",
-        });
-        expect(created.status, JSON.stringify(created.body)).toBe(201);
-        const project = projectCreateResponseSchema.parse(created.body).project;
-        if (project.kind !== "design" || !project.primaryCanvas)
-          throw new Error("测试夹具需要显式创建 Design 画布。");
-        const sessionResponse = await fixture.client.request(
-          `/api/canvases/${project.primaryCanvas.id}/sessions`,
-          {},
+        const { sessionId, canvasId } = await createDesignTask(
+          fixture,
+          provider,
         );
-        expect(
-          sessionResponse.status,
-          JSON.stringify(sessionResponse.body),
-        ).toBe(201);
-        const session = sessionCreateResponseSchema.parse(
-          sessionResponse.body,
-        ).session;
         const token = (
           await readFile(
             join(fixture.directory, "local-access/desktop-token"),
@@ -153,12 +193,12 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             },
           },
         );
-        const events: StreamEvent[] = [];
+        const errors: string[] = [];
         socket.on("message", (data) => {
-          const parsed = wsServerEventSchema.safeParse(
+          const parsed = wsServerErrorSchema.safeParse(
             JSON.parse(data.toString()),
           );
-          if (parsed.success) events.push(parsed.data.event);
+          if (parsed.success) errors.push(parsed.data.message);
         });
         await new Promise<void>((resolve, reject) => {
           socket?.once("open", resolve);
@@ -169,17 +209,23 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             type: "command",
             action: "agent.run",
             payload: {
-              sessionId: session.id,
-              conversationId: project.primaryCanvas.id,
-              canvasId: project.primaryCanvas.id,
+              sessionId,
+              conversationId: canvasId,
+              canvasId,
               prompt: "/summary Unicode😀",
               preset: "design",
             },
           }),
         );
-        await vi.waitFor(() => expect(model.requests).toHaveLength(1), {
-          timeout: 30_000,
-        });
+        await vi.waitFor(
+          () =>
+            expect(model.requests.length > 0 || errors.length > 0).toBe(true),
+          {
+            timeout: 30_000,
+          },
+        );
+        expect(errors).toEqual([]);
+        expect(model.requests).toHaveLength(1);
         const request = modelRequestSchema.parse(model.requests[0]?.body);
         const input = JSON.stringify(
           request.messages.filter((entry) => entry.role === "user").at(-1)
@@ -189,10 +235,16 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(input).toContain("概括资料\\n\\nUser arguments:\\nUnicode😀");
         model.finish(0);
         await vi.waitFor(
-          () =>
-            expect(events.some((event) => event.type === "run.completed")).toBe(
-              true,
-            ),
+          async () => {
+            const ended = await fixture?.client.request(
+              `/api/code-ui/sessions/${sessionId}`,
+            );
+            expect(ended?.status).toBe(200);
+            expect(
+              protocol.conversationSnapshotSchema.parse(ended?.body.snapshot)
+                .control.phase,
+            ).toBe("completedSuccess");
+          },
           { timeout: 30_000 },
         );
       } finally {
@@ -201,7 +253,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         await fixture?.close();
         await model.close();
       }
-    });
+    }, 90_000);
 
     it("原shell预展开明确失败，不执行命令或发模型请求", async () => {
       const model = await heldModel();

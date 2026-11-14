@@ -12,17 +12,54 @@ const hooks = [
   { event: "turn-start" as const, command: "echo start" },
   { event: "turn-end" as const, command: "echo end" },
   { event: "turn-end" as const, command: "   " },
+  { event: "tool-start" as const, command: "echo tool-start" },
+  { event: "tool-failed" as const, command: "echo tool-failed" },
 ];
 
 describe("钩子筛选", () => {
   it("按事件取命令，空命令丢掉", () => {
     expect(hooksFor(hooks, "turn-start")).toEqual(["echo start"]);
     expect(hooksFor(hooks, "turn-end")).toEqual(["echo end"]);
+    expect(hooksFor(hooks, "tool-start")).toEqual(["echo tool-start"]);
+    expect(hooksFor(hooks, "tool-failed")).toEqual(["echo tool-failed"]);
+    expect(hooksFor(hooks, "tool-end")).toEqual([]);
     expect(hooksFor(undefined, "turn-end")).toEqual([]);
+  });
+
+  it("工具钩子与回合钩子互不串场", () => {
+    expect(hooksFor(hooks, "tool-end")).not.toContain("echo tool-start");
+    expect(hooksFor(hooks, "turn-end")).not.toContain("echo tool-failed");
   });
 });
 
 describe("钩子执行", () => {
+  it("工具事件原样写回结果（界面按事件分档展示）", async () => {
+    const runCommand = vi.fn().mockResolvedValue({
+      command: "x",
+      shell: "cmd",
+      exitCode: 0,
+      timedOut: false,
+      stdout: "ok",
+      stderr: "",
+      truncated: false,
+      durationMs: 1,
+    });
+    const results = await runHooks({
+      event: "tool-failed",
+      commands: ["x"],
+      cwd: "/tmp/work",
+      runCommand: runCommand as never,
+    });
+    expect(results).toEqual([
+      expect.objectContaining({
+        event: "tool-failed",
+        command: "x",
+        exitCode: 0,
+        output: "ok",
+      }),
+    ]);
+  });
+
   it("逐条跑：顺序保持，退出码与输出如实带回", async () => {
     const runCommand = vi
       .fn()

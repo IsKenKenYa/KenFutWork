@@ -107,6 +107,9 @@ export function HostWorkSurface({
   useEffect(() => {
     if (!active) return;
     void refresh();
+    // 目录选择入口已移除，但保存落点仍依赖模块级项目绑定：激活时按服务端
+    // 最近更新的 work 项目自动绑定（与 54a23487 的行为一致，不摆入口）。
+    void refreshWorkDirectory();
   }, [active, refresh]);
 
   const installing = Object.values(editors?.install ?? {}).some(
@@ -332,7 +335,8 @@ function EditorsInfoView({
           </div>
         ) : null}
 
-        <WorkFontsSection active={active} />
+        {/* 探针失败时顶部已透出可读原因，字体面板不再重复请求与叠加错误。 */}
+        <WorkFontsSection active={active && !loadError} />
       </div>
     </div>
   );
@@ -352,18 +356,20 @@ function WorkFontsSection({ active }: { active: boolean }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (initial: boolean) => {
     try {
       const data = await surfaceJson<WorkFontsResponse>("/api/work/host/fonts");
       setFonts(data);
       setDir(data.dir);
       setNotice(null);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "读取字体失败");
+      // 自动首载失败静默：引擎探针失败时顶部已透出可读原因，这里不再叠加同一错误。
+      if (!initial)
+        setNotice(error instanceof Error ? error.message : "读取字体失败");
     }
   }, []);
   useEffect(() => {
-    if (active) void load();
+    if (active) void load(true);
   }, [active, load]);
 
   const upload = useCallback(
@@ -382,7 +388,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
         };
         if (!response.ok)
           throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
-        await load();
+        await load(false);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "上传失败");
       } finally {
@@ -404,7 +410,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
           `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
           { method: "DELETE" },
         );
-        await load();
+        await load(false);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "删除失败");
       } finally {
@@ -504,7 +510,8 @@ function useEditorTheme(): "light" | "dark" {
       });
       return () => observer.disconnect();
     },
-    () => (document.documentElement.classList.contains("dark") ? "dark" : "light"),
+    () =>
+      document.documentElement.classList.contains("dark") ? "dark" : "light",
     () => "light",
   );
 }

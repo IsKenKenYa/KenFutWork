@@ -9,7 +9,31 @@ import type {
   TaskWorkManager,
   TaskWorkRecord,
 } from "../task-work/types.js";
+import type { RunUsageSummary } from "../usage/usage-service.js";
 import type { CodeChildRequest, CodeChildResult } from "./types.js";
+
+/** 子代理用量查询失败只影响展示，不影响 Task 结果本身（计量是旁路）。 */
+async function readChildUsage(
+  lookup:
+    | ((
+        context: TaskWorkContext,
+        childRunId: string,
+      ) => Promise<RunUsageSummary | null>)
+    | undefined,
+  context: TaskWorkContext,
+  childRunId: string | undefined,
+): Promise<RunUsageSummary | null> {
+  if (!lookup || !childRunId) return null;
+  try {
+    return await lookup(context, childRunId);
+  } catch (error) {
+    console.warn(
+      "[code-subagents] 子代理用量查询失败：",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
 
 const schema = z
   .object({
@@ -70,6 +94,11 @@ export function createCodeSubagentTool(deps: {
   limitsFor(
     context: TaskWorkContext,
   ): Promise<{ maxDepth: number; previewMaxChars: number }>;
+  /** 前台 Task 完成后按 childRunId 归因用量；缺省时结果不含 usage。 */
+  usageFor?(
+    context: TaskWorkContext,
+    childRunId: string,
+  ): Promise<RunUsageSummary | null>;
 }): ToolDefinition {
   return {
     name: "Task",
@@ -118,9 +147,7 @@ export function createCodeSubagentTool(deps: {
           input.subagent_type === "worker" ? "write" : "read",
         );
       const request: CodeChildRequest = {
-        ...(execution.executionMode
-          ? { executionMode: execution.executionMode }
-          : {}),
+        ...(execution.goalId ? { goalId: execution.goalId } : {}),
         ...(execution.frozenContributions
           ? {
               frozenContributions: structuredClone(
@@ -153,6 +180,7 @@ export function createCodeSubagentTool(deps: {
       };
       const controller = new AbortController();
       let running: Promise<CodeChildResult> | undefined;
+      let childResult: CodeChildResult | undefined;
       const record = await deps.manager.start(
         context,
         {
@@ -170,6 +198,7 @@ export function createCodeSubagentTool(deps: {
               signals.push(execution.signal);
             running = deps.runChild(request, AbortSignal.any(signals));
             const result = await running;
+            childResult = result;
             return {
               status: result.status,
               summary: result.summary.slice(0, limits.previewMaxChars),
@@ -192,6 +221,11 @@ export function createCodeSubagentTool(deps: {
             "子任务属于当前Task，完成后自动通知；TaskOutput可读取完整结果。",
         };
       const terminal = await waitForWork(deps.manager, context, record.id);
+      const usage = await readChildUsage(
+        deps.usageFor,
+        context,
+        childResult?.childRunId,
+      );
       return {
         taskId: terminal.id,
         childSessionId: terminal.childSessionId,
@@ -199,6 +233,7 @@ export function createCodeSubagentTool(deps: {
         summary: terminal.summary,
         outputPath: terminal.outputRef,
         outputStats: terminal.outputStats,
+        ...(usage ? { usage } : {}),
       };
     },
   };

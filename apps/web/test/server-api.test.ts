@@ -103,6 +103,7 @@ describe("本机Cookie与显式Bearer API", () => {
             branchGeneration: 3,
           },
         ],
+        missing: true,
       }),
     });
 

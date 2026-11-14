@@ -1,4 +1,4 @@
-import type { InstanceSettings } from "@kenfutwork/shared";
+import type { HookEvent, InstanceSettings } from "@kenfutwork/shared";
 import { AGENT_GOVERNANCE_DEFAULTS } from "@kenfutwork/shared";
 
 import {
@@ -22,8 +22,8 @@ import {
  * 3. **失败不阻断**：钩子是旁路，退出码与输出如实进转录，本轮照常继续。
  */
 
-/** 钩子点。 */
-export type HookEvent = "turn-start" | "turn-end";
+/** 钩子点。定义在共享契约里，设置页与事件契约共用同一份清单。 */
+export type { HookEvent };
 
 /** 钩子超时：比终端的默认值短——它是旁路，不该拖住一轮。 */
 export const HOOK_TIMEOUT_MS = AGENT_GOVERNANCE_DEFAULTS.executeTimeoutMs;

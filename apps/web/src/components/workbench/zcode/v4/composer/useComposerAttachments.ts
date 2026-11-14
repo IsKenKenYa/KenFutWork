@@ -37,6 +37,10 @@ import {
   OPEN_DESIGN_CANVAS_ADD_TO_CHAT_EVENT,
 } from "@zui/lib/openDesignCanvasChat.js";
 import {
+  isPreviewImageAddToChatEvent,
+  PREVIEW_IMAGE_ADD_TO_CHAT_EVENT,
+} from "@zui/lib/previewImageChat.js";
+import {
   buildWhiteboardWorkspaceKey,
   createWhiteboardPngFile,
   isWhiteboardAddToChatEvent,
@@ -123,6 +127,8 @@ interface UseComposerAttachmentsOptions {
   remoteSessionId?: string;
   scopeId: string;
   attachmentSessionId?: string | null;
+  /** 界面当前会话；null 表示新草稿，附件仍由实际 attachmentSessionId 持有。 */
+  composerSessionId?: string | null;
   attachmentPut: AttachmentPutFn;
   attachmentBudget: (sessionId?: string) => Promise<V4AttachmentBudget>;
   onRuntimeRestart?: (listener: () => void) => () => void;
@@ -222,6 +228,7 @@ export function useComposerAttachments(
     remoteSessionId,
     scopeId,
     attachmentSessionId = null,
+    composerSessionId = attachmentSessionId,
     attachmentPut,
     attachmentBudget,
     onRuntimeRestart,
@@ -248,6 +255,29 @@ export function useComposerAttachments(
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const currentScopeRef = useRef(scopeKey);
   currentScopeRef.current = scopeKey;
+  // 只标记当前输入框的本地请求所有者，不表示服务端 Task 的目录授权版本。
+  const previewImageOwnerRef = useRef({
+    scopeKey,
+    attachmentSessionId,
+    composerSessionId,
+    disabled,
+    listenAddToChatEvents,
+  });
+  const previousPreviewOwner = previewImageOwnerRef.current;
+  if (
+    previousPreviewOwner.scopeKey !== scopeKey ||
+    previousPreviewOwner.attachmentSessionId !== attachmentSessionId ||
+    previousPreviewOwner.composerSessionId !== composerSessionId ||
+    previousPreviewOwner.disabled !== disabled ||
+    previousPreviewOwner.listenAddToChatEvents !== listenAddToChatEvents
+  )
+    previewImageOwnerRef.current = {
+      scopeKey,
+      attachmentSessionId,
+      composerSessionId,
+      disabled,
+      listenAddToChatEvents,
+    };
   const budgetRef = useRef<V4AttachmentBudget | null>(null);
   const readBudget = useCallback(async (): Promise<V4AttachmentBudget> => {
     const value = await attachmentBudget(attachmentSessionId ?? undefined);
@@ -723,19 +753,19 @@ export function useComposerAttachments(
 
   const addPreparedAttachments = useCallback(
     (selectedAttachments: ChatComposerAttachment[]) => {
-      if (selectedAttachments.length === 0) return;
+      if (selectedAttachments.length === 0) return 0;
       const current = readComposerAttachmentScope(scopeKey);
       const budget = budgetRef.current;
       if (!budget) {
         selectedAttachments.forEach(revokeChatComposerAttachment);
         setAttachmentError("附件预算尚未读取，请稍后重试。");
-        return;
+        return 0;
       }
       const remainingSlots = budget.maxPerInput - current.length;
       if (remainingSlots <= 0) {
         selectedAttachments.forEach(revokeChatComposerAttachment);
         showAttachmentLimitWarning();
-        return;
+        return 0;
       }
       const accepted = selectedAttachments.slice(0, remainingSlots);
       selectedAttachments
@@ -749,7 +779,7 @@ export function useComposerAttachments(
       ) {
         accepted.forEach(revokeChatComposerAttachment);
         setAttachmentError("选择的附件超过工作区容量预算。");
-        return;
+        return 0;
       }
       const target = targetsRef.current.get(scopeKey);
       const items: ComposerAttachmentUploadItem[] = accepted.map(
@@ -776,13 +806,14 @@ export function useComposerAttachments(
       for (const item of items) {
         if (item.uploadStatus === "queued") enqueueUpload(scopeKey, item.id);
       }
+      return items.length;
     },
     [commitScope, enqueueUpload, scopeKey, showAttachmentLimitWarning],
   );
 
   const addAttachmentFiles = useCallback(
     (selectedFiles: File[]) => {
-      addPreparedAttachments(
+      return addPreparedAttachments(
         selectedFiles.map((file) => {
           let localPath: string | undefined;
           try {
@@ -1110,6 +1141,59 @@ export function useComposerAttachments(
   }, [
     addAttachmentFiles,
     listenAddToChatEvents,
+    workspaceIdentity,
+    workspacePath,
+  ]);
+
+  useEffect(() => {
+    if (disabled || !listenAddToChatEvents || typeof window === "undefined")
+      return;
+    const pending = new Set<AbortController>();
+    const handle = (event: Event) => {
+      if (!isPreviewImageAddToChatEvent(event) || event.defaultPrevented) return;
+      const owner = previewImageOwnerRef.current;
+      if (
+        owner.scopeKey !== scopeKey ||
+        owner.disabled ||
+        !owner.listenAddToChatEvents ||
+        event.detail.workspaceKey !== (workspaceIdentity?.trim() || workspacePath) ||
+        event.detail.targetSessionId !== owner.composerSessionId
+      )
+        return;
+      const controller = new AbortController();
+      const claimed = event.detail.claim(controller.signal, async (signal) => {
+        try {
+          await readBudget();
+          signal.throwIfAborted();
+          if (previewImageOwnerRef.current !== owner) return false;
+          const file = await event.detail.loadFile(signal);
+          signal.throwIfAborted();
+          if (previewImageOwnerRef.current !== owner) return false;
+          return addAttachmentFiles([file]) > 0;
+        } catch (error) {
+          if (signal.aborted || previewImageOwnerRef.current !== owner)
+            return false;
+          throw error;
+        } finally {
+          pending.delete(controller);
+        }
+      });
+      if (claimed) pending.add(controller);
+    };
+    window.addEventListener(PREVIEW_IMAGE_ADD_TO_CHAT_EVENT, handle);
+    return () => {
+      window.removeEventListener(PREVIEW_IMAGE_ADD_TO_CHAT_EVENT, handle);
+      for (const controller of pending) controller.abort();
+      pending.clear();
+    };
+  }, [
+    addAttachmentFiles,
+    attachmentSessionId,
+    composerSessionId,
+    disabled,
+    listenAddToChatEvents,
+    readBudget,
+    scopeKey,
     workspaceIdentity,
     workspacePath,
   ]);

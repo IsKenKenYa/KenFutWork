@@ -168,7 +168,12 @@ export async function registerWorkHostRoutes(
       for await (const part of request.parts({
         // 全局 multipart 上限 10MB 装不下设计/视频类文档；这里是本机落盘的本地护栏，
         // 不是 agent 治理数值，不进 `packages/shared/src/governance.ts`。
-        limits: { files: 1, fields: 4, parts: 5, fileSize: WORK_SAVE_MAX_BYTES },
+        limits: {
+          files: 1,
+          fields: 4,
+          parts: 5,
+          fileSize: WORK_SAVE_MAX_BYTES,
+        },
       })) {
         if (part.type === "file") {
           if (part.fieldname !== "file" || bytes)

@@ -1,5 +1,15 @@
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import type { LocalActor } from "../local-instance/types.js";
+import type { RunUsageSummary } from "../usage/usage-service.js";
+
+/** 子代理用量归因：Provider 在 code-subagents，Consumer 在 TaskOutput。 */
+export const SUBAGENT_USAGE_CAPABILITY = "subagent-usage";
+export interface SubagentUsageLookup {
+  summarize(
+    instanceId: string,
+    childSessionId: string,
+  ): Promise<RunUsageSummary | null>;
+}
 
 /** Work 属于用户 Task；originRunId 只标记派发事实，不决定生命周期。 */
 export type TaskWorkKind = "command" | "subagent";

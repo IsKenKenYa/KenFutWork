@@ -25,7 +25,7 @@ import { SETTINGS_TITLE } from "@/lib/settings-layout";
  */
 type HookRow = {
   id: string;
-  event: "turn-start" | "turn-end";
+  event: InstanceSettings["hooks"][number]["event"];
   command: string;
 };
 
@@ -100,7 +100,11 @@ export function HooksSection({
                 setRows((current) =>
                   current.map((item, i) =>
                     i === index
-                      ? { ...item, event: next as "turn-start" | "turn-end" }
+                      ? {
+                          ...item,
+                          event:
+                            next as InstanceSettings["hooks"][number]["event"],
+                        }
                       : item,
                   ),
                 );
@@ -108,6 +112,9 @@ export function HooksSection({
               items={[
                 { value: "turn-start", label: "本轮开始" },
                 { value: "turn-end", label: "本轮结束" },
+                { value: "tool-start", label: "工具开始" },
+                { value: "tool-end", label: "工具结束" },
+                { value: "tool-failed", label: "工具失败" },
               ]}
             >
               {/* 原生 select 与旁边的输入框永远差几像素高（用户口径：下拉框错位），
@@ -121,6 +128,9 @@ export function HooksSection({
               <SelectContent>
                 <SelectItem value="turn-start">本轮开始</SelectItem>
                 <SelectItem value="turn-end">本轮结束</SelectItem>
+                <SelectItem value="tool-start">工具开始</SelectItem>
+                <SelectItem value="tool-end">工具结束</SelectItem>
+                <SelectItem value="tool-failed">工具失败</SelectItem>
               </SelectContent>
             </Select>
             <input

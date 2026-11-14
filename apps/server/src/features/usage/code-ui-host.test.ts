@@ -1,5 +1,6 @@
 import type { AppUsageSnapshot } from "@zcode/shared";
 import { describe, expect, it } from "vitest";
+import type { CodeUiHostRpcContext } from "../code-ui/host-rpc-handler.js";
 import type {
   LocalActor,
   LocalInstanceService,
@@ -13,6 +14,14 @@ import { createUsageRepository } from "./repository.js";
 
 const INSTANCE_ID = "instance-usage-host";
 const ACTOR: LocalActor = { instanceId: INSTANCE_ID, accessClientId: null };
+// usage 宿主只消费 actor；context 按接口最小实现即可。
+const CONTEXT: CodeUiHostRpcContext = {
+  actor: ACTOR,
+  connectionId: "test-connection",
+  signal: new AbortController().signal,
+  requireInitialized: () => {},
+  onClose: () => () => {},
+};
 
 const LOCAL_INSTANCE_STUB: LocalInstanceService = {
   getContext: async () => ({ instanceId: INSTANCE_ID, dataDir: "/data" }),
@@ -104,6 +113,7 @@ describe("usage code-ui 宿主：usage-stats.getAppUsageSnapshot", () => {
     const snapshot = (await HOST["usage-stats.getAppUsageSnapshot"]?.call(
       ACTOR,
       [{ range: "7d", timeZone: "Asia/Shanghai" }],
+      CONTEXT,
     )) as AppUsageSnapshot;
     expect(snapshot).toMatchObject({
       range: "7d",
@@ -161,6 +171,7 @@ describe("usage code-ui 宿主：usage-stats.getAppUsageSnapshot", () => {
     const snapshot = (await emptyHost["usage-stats.getAppUsageSnapshot"]?.call(
       ACTOR,
       [{ range: "all" }],
+      CONTEXT,
     )) as AppUsageSnapshot;
     expect(snapshot?.summary.totalTokens).toBe(0);
     expect(snapshot?.summary.favoriteModel).toBeNull();
@@ -170,7 +181,11 @@ describe("usage code-ui 宿主：usage-stats.getAppUsageSnapshot", () => {
 
   it("非法 range 拒绝并给可读原因", async () => {
     await expect(
-      HOST["usage-stats.getAppUsageSnapshot"]?.call(ACTOR, [{ range: "42d" }]),
+      HOST["usage-stats.getAppUsageSnapshot"]?.call(
+        ACTOR,
+        [{ range: "42d" }],
+        CONTEXT,
+      ),
     ).rejects.toThrow(/7d \/ 30d \/ all/);
   });
 

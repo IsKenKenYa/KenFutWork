@@ -510,6 +510,64 @@ describe("Code 会话用量的公共投影与恢复", () => {
       cacheWriteTokens: 0,
     });
   });
+
+  it("子代理用量按 agentCallId 写入父会话子代理行，缺缓存字段不伪造 0", () => {
+    const host = createCodeUiConversation(input);
+    host.startTurn({ runId: "run-a", commandId: "send-a", text: "派发检查" });
+    host.registerChildDispatch({
+      parentSessionId: "usage-root",
+      parentRunId: "run-a",
+      toolCallId: "task-usage",
+      childSessionId: "usage-child",
+      role: "explore",
+      title: "检查子任务",
+      at: Date.parse(timestamp),
+      detached: false,
+    });
+    const subagentRow = () =>
+      host
+        .getSnapshot()
+        .rows.window.find(
+          (row) =>
+            row.kind === "subagent" &&
+            row.parentToolCallId === "run-a/task-usage",
+        );
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "sub-call-a",
+      agentCallId: "task-usage",
+      agentInputTokens: 30,
+      agentOutputTokens: 9,
+      inputTokens: 30,
+      outputTokens: 9,
+      runInputTokens: 30,
+      runOutputTokens: 9,
+      timestamp,
+    });
+    expect(subagentRow()).toMatchObject({
+      usage: { inputTokens: 30, outputTokens: 9 },
+    });
+    expect(subagentRow()).not.toHaveProperty("usage.cachedInputTokens");
+
+    host.recordEvent({
+      type: "run.usage",
+      runId: "run-a",
+      modelCallId: "sub-call-b",
+      agentCallId: "task-usage",
+      agentInputTokens: 50,
+      agentOutputTokens: 12,
+      agentCachedInputTokens: 8,
+      inputTokens: 50,
+      outputTokens: 12,
+      runInputTokens: 50,
+      runOutputTokens: 12,
+      timestamp,
+    });
+    expect(subagentRow()).toMatchObject({
+      usage: { inputTokens: 50, outputTokens: 12, cachedInputTokens: 8 },
+    });
+  });
 });
 
 describe("Code 宿主会话快照", () => {
@@ -991,5 +1049,100 @@ describe("Code 宿主会话快照", () => {
       child: "completedInterrupted",
       text: ["已有进度。"],
     });
+  });
+
+  it("工具输出超预览预算保留头尾并登记 truncated.ref，事件原文不受影响", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-preview",
+      workspacePath: "/workspace/project",
+      toolOutputPreviewBytes: 1_024,
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-preview",
+      commandId: "command-preview",
+      text: "读取大文件",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-preview",
+      toolCallId: "read-big",
+      toolName: "read_file",
+      timestamp,
+    });
+    const full = `${"头".repeat(2_000)}${"尾".repeat(2_000)}`;
+    const event = {
+      type: "tool.completed" as const,
+      runId: "run-preview",
+      toolCallId: "read-big",
+      toolName: "read_file",
+      outputText: full,
+      timestamp,
+    };
+    host.recordEvent(event);
+    const row = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "toolCall");
+    if (row?.kind !== "toolCall" || !row.output) throw new Error("缺少工具行");
+    const preview = row.output.text;
+    expect(preview.startsWith("头")).toBe(true);
+    expect(preview.endsWith("尾")).toBe(true);
+    expect(preview).toContain("\n…\n");
+    expect(Buffer.byteLength(preview, "utf8")).toBeLessThanOrEqual(1_024);
+    expect(row.output.truncated).toEqual({
+      totalBytes: Buffer.byteLength(full, "utf8"),
+      ref: "run-preview/read-big",
+    });
+    // 消费方只拿到投影，原始事件文本保持完整。
+    expect(event.outputText).toBe(full);
+  });
+
+  it("工具输出未超预算时不登记截断引用，多字节字符不切断", () => {
+    const host = createCodeUiConversation({
+      sessionId: "root-short",
+      workspacePath: "/workspace/project",
+      toolOutputPreviewBytes: 1_024,
+      config: {
+        provider: "zcode",
+        model: "glm-4.5-air",
+        thought: "",
+        followupMode: "queue",
+        mode: "build",
+      },
+    });
+    const timestamp = "2026-10-02T12:00:00.000Z";
+    host.startTurn({
+      runId: "run-short",
+      commandId: "command-short",
+      text: "读取",
+    });
+    host.recordEvent({
+      type: "tool.started",
+      runId: "run-short",
+      toolCallId: "read-short",
+      toolName: "read_file",
+      timestamp,
+    });
+    host.recordEvent({
+      type: "tool.completed",
+      runId: "run-short",
+      toolCallId: "read-short",
+      toolName: "read_file",
+      outputText: "短结果".repeat(20),
+      timestamp,
+    });
+    const row = host
+      .getSnapshot()
+      .rows.window.find((row) => row.kind === "toolCall");
+    if (row?.kind !== "toolCall" || !row.output) throw new Error("缺少工具行");
+    expect(row.output).toEqual({ text: "短结果".repeat(20) });
+    expect(row.output).not.toHaveProperty("truncated");
   });
 });

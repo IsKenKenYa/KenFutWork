@@ -8,7 +8,9 @@ pub mod browser_embed;
 pub mod data_location;
 pub mod desktop_access;
 pub mod desktop_system;
+pub mod directory_picker;
 pub mod server_handle;
+pub mod shortcut_recording;
 
 pub use server_handle::{
     ensure_server_running, port_is_free, probe_health, probe_serves_ui, HealthStatus,
@@ -448,6 +450,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_dialog::init())
         // Tauri的invoke_handler会覆盖前一个；全部命令在唯一入口装配。
         .invoke_handler(tauri::generate_handler![
             ping,
@@ -456,6 +459,9 @@ pub fn run() {
             desktop_system::open_external,
             desktop_system::cua_permission_owner,
             desktop_system::open_cua_permission_settings,
+            desktop_system::request_cua_screen_recording_access,
+            directory_picker::select_directory,
+            directory_picker::select_directories,
             data_location::open_in_browser,
             data_location::open_data_directory,
             data_location::move_data_directory,
@@ -465,9 +471,13 @@ pub fn run() {
             browser_embed::browser_embed_console,
             browser_embed::browser_embed_devtools,
             browser_embed::browser_embed_close,
+            shortcut_recording::set_shortcut_recording_active,
         ]);
-    // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs
-    browser_embed::register_embed_commands(builder)
+    // 右栏浏览器的真内核嵌入（子 webview + WebView2 DevTools）——见 browser_embed.rs；
+    // 快捷键录制态（录制期收掉原生菜单）——见 shortcut_recording.rs。
+    shortcut_recording::register_shortcut_commands(browser_embed::register_embed_commands(
+        builder,
+    ))
         .setup(|app| {
             let config_dir = std::env::var("KENFUTWORK_CONFIG_DIR")
                 .ok()

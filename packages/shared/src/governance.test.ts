@@ -55,6 +55,7 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       executeTimeoutMs: 120000,
       codeUiReconnectDelayMs: 1000,
       subagentMaxContinuations: 50,
+      agentStreamFlushIntervalMs: 80,
       // Computer Use 五项（CU 插件里程碑 1 拍板档）
       computerUseActionTimeoutMs: 10_000,
       computerUseObserveMaxBytes: 32_768,
@@ -62,6 +63,43 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
       computerUseMaxActionsPerRun: 200,
       computerUseSessionMaxMs: 1_800_000,
     });
+  });
+
+  it("流式刷新间隔：默认 80ms，schema 拒绝越界，env 兜底合法解析", () => {
+    expect(
+      instanceSettingsSchema.parse({ defaultModel: "fixture" })
+        .agentStreamFlushIntervalMs,
+    ).toBe(80);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamFlushIntervalMs: 10,
+      }).success,
+    ).toBe(false);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        agentStreamFlushIntervalMs: 501,
+      }).success,
+    ).toBe(false);
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS: "120",
+      }),
+    ).toEqual({ agentStreamFlushIntervalMs: 120 });
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_AGENT_STREAM_FLUSH_INTERVAL_MS: "abc",
+      }),
+    ).toEqual({});
+    expect(
+      resolveGovernanceNumber("agentStreamFlushIntervalMs", null, {
+        agentStreamFlushIntervalMs: 200,
+      }),
+    ).toBe(200);
+    expect(
+      resolveGovernanceNumber("agentStreamFlushIntervalMs", null, {}),
+    ).toBe(80);
   });
 
   it("clamp 把越界值钳回护栏，非法输入落区间下限", () => {
@@ -111,5 +149,76 @@ describe("agent 治理默认值与护栏（DEC-17/DEC-18）", () => {
     ).toEqual({ llmInfiniteRetry: true });
 
     expect(resolveGovernanceEnvOverrides({})).toEqual({});
+  });
+
+  it("旧图片卸载张数：默认值与 env 覆盖（0 有效）", () => {
+    expect(resolveGovernanceNumber("contextKeepRecentImages", null, {})).toBe(
+      2,
+    );
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES: "0",
+      }),
+    ).toEqual({ contextKeepRecentImages: 0 });
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_CONTEXT_KEEP_RECENT_IMAGES: "abc",
+      }),
+    ).toEqual({});
+  });
+
+  it("工具输出预览字节：默认 8192、区间护栏、env 覆盖与库值优先", () => {
+    expect(
+      instanceSettingsSchema.parse({ defaultModel: "fixture" })
+        .toolOutputPreviewBytes,
+    ).toBe(8_192);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        toolOutputPreviewBytes: 1_023,
+      }).success,
+    ).toBe(false);
+    expect(
+      instanceSettingsSchema.safeParse({
+        defaultModel: "fixture",
+        toolOutputPreviewBytes: 1_048_577,
+      }).success,
+    ).toBe(false);
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES: " 4096 ",
+      }),
+    ).toEqual({ toolOutputPreviewBytes: 4_096 });
+    for (const value of ["abc", "1.5", ""]) {
+      expect(
+        resolveGovernanceEnvOverrides({
+          KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES: value,
+        }),
+      ).toEqual({});
+    }
+    // 越界整数值照常解析，由读侧护栏钳回区间，不静默丢弃用户设置。
+    expect(
+      resolveGovernanceEnvOverrides({
+        KENFUTWORK_TOOL_OUTPUT_PREVIEW_BYTES: "0",
+      }),
+    ).toEqual({ toolOutputPreviewBytes: 0 });
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", undefined, {
+        toolOutputPreviewBytes: 0,
+      }),
+    ).toBe(1_024);
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", 16_384, {
+        toolOutputPreviewBytes: 4_096,
+      }),
+    ).toBe(16_384);
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", undefined, {
+        toolOutputPreviewBytes: 4_096,
+      }),
+    ).toBe(4_096);
+    expect(
+      resolveGovernanceNumber("toolOutputPreviewBytes", undefined, {}),
+    ).toBe(8_192);
   });
 });

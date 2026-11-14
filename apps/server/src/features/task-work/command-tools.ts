@@ -17,7 +17,9 @@ import type {
   ProcessSandbox,
 } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import type { RunUsageSummary } from "../usage/usage-service.js";
 import type {
+  SubagentUsageLookup,
   TaskWorkContext,
   TaskWorkManager,
   TaskWorkOutcome,
@@ -98,6 +100,29 @@ function outputStats(process: ManagedProcess) {
     discardedBytes: snapshot.discardedBytes,
   };
 }
+/** 子代理用量查询失败只影响展示，不影响 TaskOutput 读取本身（计量是旁路）。 */
+async function readSubagentUsage(
+  lookup:
+    | (() => readonly { id: string; value: SubagentUsageLookup }[])
+    | undefined,
+  instanceId: string,
+  record: TaskWorkRecord,
+): Promise<RunUsageSummary | null> {
+  if (record.kind !== "subagent" || !record.childSessionId || !lookup)
+    return null;
+  try {
+    const provider = lookup()[0]?.value;
+    return provider
+      ? await provider.summarize(instanceId, record.childSessionId)
+      : null;
+  } catch (error) {
+    console.warn(
+      "[task-work] 子代理用量查询失败：",
+      error instanceof Error ? error.message : error,
+    );
+    return null;
+  }
+}
 function projection(
   output: ProcessOutput,
   process: ManagedProcess,
@@ -136,6 +161,11 @@ export function createTaskCommandTools(
     sandbox: ProcessSandbox;
     settings: SettingsService;
     historicalOutputs?: Pick<CodeUiOutputHistory, "read" | "manifest">;
+    /** 子代理用量归因 Provider（code-subagents 注册的 capability）。 */
+    subagentUsage?: () => readonly {
+      id: string;
+      value: SubagentUsageLookup;
+    }[];
   },
   options: { scope?: ToolDefinition["scope"] } = {},
 ) {
@@ -422,6 +452,13 @@ export function createTaskCommandTools(
       const output = record
         ? await readOutput(record, input.offset, pageSize)
         : inherited?.output;
+      const usage = record
+        ? await readSubagentUsage(
+            deps.subagentUsage,
+            context.scope.instanceId,
+            record,
+          )
+        : null;
       const canonicalOutput = {
         taskId: result.id,
         status: result.status,
@@ -430,6 +467,7 @@ export function createTaskCommandTools(
         outputRef: result.outputRef,
         statisticsComplete:
           inherited?.statisticsComplete ?? result.status !== "interrupted",
+        ...(usage ? { usage } : {}),
         ...(inherited ? { readOnly: true } : {}),
         ...(inherited?.frozenAt ? { frozenAt: inherited.frozenAt } : {}),
         display: {

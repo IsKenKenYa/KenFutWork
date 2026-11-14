@@ -131,10 +131,14 @@ if (LOCALIZATION_PATCHES[app]) {
     console.log(`[zh] 已应用 ${app} 弹窗与按钮中文补丁`);
   } catch (error) {
     try {
-      execFileSync("git", ["apply", "--reverse", "--check", "--unidiff-zero", patchFile], {
-        cwd: source,
-        stdio: "pipe",
-      });
+      execFileSync(
+        "git",
+        ["apply", "--reverse", "--check", "--unidiff-zero", patchFile],
+        {
+          cwd: source,
+          stdio: "pipe",
+        },
+      );
       console.log(`[zh] ${app} 弹窗与按钮中文补丁已应用，跳过`);
     } catch {
       throw new Error(
@@ -153,10 +157,14 @@ if (CATALOG_PATCHES[app]) {
   const patchFile = resolve(import.meta.dirname, CATALOG_PATCHES[app]);
   try {
     // 零上下文字典补丁先查已应用，避免重复插入同一行。
-    execFileSync("git", ["apply", "--reverse", "--check", "--unidiff-zero", patchFile], {
-      cwd: i18nDir,
-      stdio: "pipe",
-    });
+    execFileSync(
+      "git",
+      ["apply", "--reverse", "--check", "--unidiff-zero", patchFile],
+      {
+        cwd: i18nDir,
+        stdio: "pipe",
+      },
+    );
     console.log(`[zh] ${app} 中文目录补丁已应用，跳过`);
   } catch {
     try {
@@ -840,7 +848,7 @@ const ZERO_PATCHES = {
   wordcraft: [
     [
       "crates/fonts/build.rs",
-      'if wasm && !scripts.split(\',\').any(|s| s.trim() == "Geor") {',
+      "if wasm && !scripts.split(',').any(|s| s.trim() == \"Geor\") {",
       'let chinese = scripts.split(\',\').any(|s| matches!(s.trim(), "Hani" | "Hans"));\n        if wasm && !chinese && !scripts.split(\',\').any(|s| s.trim() == "Geor") {',
     ],
   ],
@@ -962,7 +970,8 @@ if (packagedCjkFont) {
   if (!wasmBytes.includes(Buffer.from(family)))
     throw new Error(`${app} 产物缺少 ${family} 中文字形`);
   const license = join(fonts, "fonts", packagedCjkFont, "OFL.txt");
-  if (!existsSync(license)) throw new Error(`缺少 Noto CJK 许可文件：${license}`);
+  if (!existsSync(license))
+    throw new Error(`缺少 Noto CJK 许可文件：${license}`);
   cpSync(license, join(target, `OFL-${packagedCjkFont}.txt`));
 }
 console.log(

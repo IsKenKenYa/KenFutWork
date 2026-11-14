@@ -56,6 +56,7 @@ import type { AgentContextHistory } from "./context-history.js";
 import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { MODEL_USAGE_AGENT_METADATA } from "./model-call-usage.js";
 import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
@@ -85,6 +86,11 @@ import {
 } from "./subagent-tools.js";
 import { createTaskNotificationMiddleware } from "./task-notifications.js";
 import type { NativeToolProof } from "./tool-execution-receipts.js";
+import {
+  createToolResultOffloadMiddleware,
+  type ToolResultOffloadWriter,
+} from "./tool-result-offload.js";
+import { createToolResultPruneMiddleware } from "./tool-result-prune.js";
 
 export type KenFutWorkAgent = Pick<
   ReturnType<typeof createDeepAgent>,
@@ -96,12 +102,12 @@ export type KenFutWorkAgent = Pick<
 };
 
 /**
- * 执行模式工具门（solo/plan 硬约束）：拦截 deepagents 内置工具
+ * 工具权限检查：拦截 deepagents 内置工具
  * （write_file/edit_file/execute/task 等）与桥接工具的全部调用。
  */
 export type ToolGate = (
   toolName: string,
-  /** 子代理派发细节（DEC-17）：plan 档按目标定义只读性放行 task/task_background。 */
+  /** 子代理派发时提供目标定义的只读属性。 */
   detail?: { subagentReadOnly?: boolean },
 ) => { allowed: true } | { allowed: false; reason: string };
 
@@ -336,7 +342,7 @@ export type KenFutWorkAgentFactory = (options: {
     observe(proof: NativeToolProof): Promise<void>;
   };
   contextHistoryArchives?: ContextHistoryArchiveBindings;
-  /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
+  /** 工具权限检查，覆盖内置工具与桥接工具。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
@@ -346,6 +352,27 @@ export type KenFutWorkAgentFactory = (options: {
    */
   autoCompact?: CompactionPlan;
   contextBudget?: AgentContextBudget;
+  /**
+   * 旧工具结果预修剪：最近 `keepRecentResults` 条保留原文，更早且超过
+   * `thresholdChars` 的折叠成摘要占位。只改发给模型的请求副本。
+   */
+  toolResultPrune?: {
+    thresholdChars: number;
+    keepRecentResults: number;
+  };
+  /**
+   * 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。
+   * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
+   */
+  contextKeepRecentImages?: number;
+  /**
+   * 超大工具输出外置：超过阈值的结果写入执行作用域内的运行目录，
+   * 模型只收到一段说明。阈值来自治理设置 `toolResultOffloadMaxChars`。
+   */
+  toolResultOffload?: {
+    writer: ToolResultOffloadWriter;
+    maxChars: number;
+  };
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   /** 原生维护适配器缺省预算仍消费本 Run 已解析的实例保留目标。 */
@@ -394,13 +421,34 @@ export function createKenFutWorkDeepAgent(options: {
     observe(proof: NativeToolProof): Promise<void>;
   };
   contextHistoryArchives?: ContextHistoryArchiveBindings;
-  /** 执行模式工具门（solo/plan 硬约束），拦截包括内置工具在内的全部调用。 */
+  /** 工具权限检查，覆盖内置工具与桥接工具。 */
   toolGate?: ToolGate;
   /** 工具门旁路钩子（拒绝可见性 + 连续拒绝计数）。 */
   toolGateHooks?: ToolGateHooks;
   /** 上下文自动压缩的口径（见 agent/auto-compact.ts）。 */
   autoCompact?: CompactionPlan;
   contextBudget?: AgentContextBudget;
+  /**
+   * 旧工具结果预修剪：最近 `keepRecentResults` 条保留原文，更早且超过
+   * `thresholdChars` 的折叠成摘要占位。只改发给模型的请求副本。
+   */
+  toolResultPrune?: {
+    thresholdChars: number;
+    keepRecentResults: number;
+  };
+  /**
+   * 发给模型时保留的最近图片张数；更早的图片换成文字占位，0 表示全部卸载。
+   * 值来自治理设置 `contextKeepRecentImages`；缺省按治理默认值处理。
+   */
+  contextKeepRecentImages?: number;
+  /**
+   * 超大工具输出外置：超过阈值的结果写入执行作用域内的运行目录，
+   * 模型只收到一段说明。阈值来自治理设置 `toolResultOffloadMaxChars`。
+   */
+  toolResultOffload?: {
+    writer: ToolResultOffloadWriter;
+    maxChars: number;
+  };
   /** 手动operation沿同一保留策略；停用auto时仍可显式维护历史。 */
   manualCompactPlan?: CompactionPlan;
   compactionRetention?: CompactionRetention;
@@ -514,8 +562,13 @@ export function createKenFutWorkDeepAgent(options: {
           }),
         ),
       );
+      // 用量归属挂在子代理自己的模型配置上：每次模型调用都带本实例 id，
+      // 不依赖父 run 的派发栈，也不与并发子代理共享归属。
+      const childModel = resolvedModel.withConfig({
+        metadata: { [MODEL_USAGE_AGENT_METADATA]: callId },
+      }) as typeof resolvedModel;
       const child = createAgent({
-        model: resolvedModel,
+        model: childModel,
         name: definition.name,
         // 语言规则单点追加（子代理结论回填主对话，英文结论会带偏主对话语言）：
         // 定义里的 systemPrompt 是中文，但其工具面（deepagents 文件工具等）描述是英文
@@ -572,8 +625,7 @@ export function createKenFutWorkDeepAgent(options: {
       registry,
       definitions: resolveSubagentDefinitions(preset),
       childRunner,
-      // plan 档派发门（DEC-17）：按目标定义只读性判定——复用同一把工具门，
-      // solo/plan 的拒绝理由与普通工具一致
+      // 子代理派发与普通工具使用同一权限检查，并提供定义的只读属性。
       ...(toolGateForDispatch
         ? {
             dispatchGate: (def: SubagentDefinition) =>
@@ -732,13 +784,11 @@ export function createKenFutWorkDeepAgent(options: {
     // 固定装配满足不了后台化与目录治理，自建缝声明/装配/消费三元组齐备。
     systemPrompt,
     // 待办表（`write_todos`）：deepagents 只在它的 Codex profile 里挂 todoListMiddleware，
-    // 非 Codex 模型默认**没有这个工具**——不挂的话「目标 + 进度」面板永远没有数据源，
-    // 执行模式的 plan 只读白名单里的 write_todos 也形同虚设。这里显式挂上：
+    // 非 Codex 模型默认没有这个工具，此处挂载后为目标进度面板提供数据。
     // 工具是整表替换语义（langchain todoListMiddleware），前端据工具事件推导进度。
     // 该中间件自带 state 泛型（todos 通道），与 deepagents 的宽松 middleware 签名不同型，
     // 按 deepagents 内部同样的做法擦除一次类型。
-    // 未知工具兜底恒挂；模型响应守卫挂最外层（收敛非法形状）；执行模式工具门在
-    // 标准中间件之后应用，覆盖全部工具调用
+    // 未知工具处理和模型响应检查保持挂载；权限检查覆盖全部工具调用。
     ...(options.toolGate
       ? {
           middleware: [
@@ -755,6 +805,28 @@ export function createKenFutWorkDeepAgent(options: {
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
+            ...(options.toolResultOffload === undefined
+              ? []
+              : [
+                  createToolResultOffloadMiddleware({
+                    writer: options.toolResultOffload.writer,
+                    maxChars: options.toolResultOffload.maxChars,
+                  }),
+                ]),
+            ...(options.toolResultPrune === undefined
+              ? []
+              : [
+                  createToolResultPruneMiddleware({
+                    thresholdChars: options.toolResultPrune.thresholdChars,
+                    keepRecentResults:
+                      options.toolResultPrune.keepRecentResults,
+                    ...(options.contextKeepRecentImages === undefined
+                      ? {}
+                      : {
+                          keepRecentImages: options.contextKeepRecentImages,
+                        }),
+                  }),
+                ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,
@@ -781,6 +853,28 @@ export function createKenFutWorkDeepAgent(options: {
             ...runExtensions.map((extension) =>
               extension.createMiddleware({}, options.extensionContext),
             ),
+            ...(options.toolResultOffload === undefined
+              ? []
+              : [
+                  createToolResultOffloadMiddleware({
+                    writer: options.toolResultOffload.writer,
+                    maxChars: options.toolResultOffload.maxChars,
+                  }),
+                ]),
+            ...(options.toolResultPrune === undefined
+              ? []
+              : [
+                  createToolResultPruneMiddleware({
+                    thresholdChars: options.toolResultPrune.thresholdChars,
+                    keepRecentResults:
+                      options.toolResultPrune.keepRecentResults,
+                    ...(options.contextKeepRecentImages === undefined
+                      ? {}
+                      : {
+                          keepRecentImages: options.contextKeepRecentImages,
+                        }),
+                  }),
+                ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
             llmRetryMiddleware,

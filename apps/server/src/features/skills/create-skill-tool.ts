@@ -9,7 +9,7 @@ import { buildSkillFromFiles } from "./skill-import-service.js";
 import { generateSlug } from "./slug.js";
 
 /**
- * `create_skill` 工具：把技能包**发布到当前实例技能库**（创造模式的收尾动作）。
+ * `create_skill` 工具：把技能包**发布到当前实例技能库**。
  *
  * 抽成工厂（而不是内联在插件里）是为了可测：插件只负责接线，本模块只依赖
  * 「仓库 + 实例缝」两个接口，单测直接注入假实现即可覆盖成功/缺实例/缺实例/坏 frontmatter。
@@ -26,7 +26,7 @@ export function createCreateSkillTool(options: {
     access: "write",
     exposure: "deferred",
     description:
-      "把刚写好的技能包**发布到当前实例技能库**（写入 SKILL.md 全文与可选附带文件），发布即启用、下一次会话即可用。用于「创造」模式：先在沙箱里写出 SKILL.md，再用本工具发布；名称重复会失败，需换名。",
+      "把技能包发布到当前实例技能库，写入 SKILL.md 全文与可选附带文件，发布后启用。根据用户要求编写并检查技能，再用本工具发布；名称重复时需要换名。",
     scope: "shared",
     parameters: {
       type: "object",

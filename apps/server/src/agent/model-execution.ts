@@ -70,17 +70,24 @@ export async function resolveInstanceModelExecution(options: {
     },
     invocation?.body ?? row?.extraBody,
   );
+  const effectiveOutputTokens = nativeEffectiveOutputTokens(model);
   const owner: ModelUsageOwner = {
     provider: "instance",
     model: spec.model,
     providerInstanceId: spec.instanceId,
     ...(invocation ? { configRevision: invocation.configRevision } : {}),
+    ...(invocation?.contextWindow === undefined
+      ? {}
+      : {
+          contextWindowTokens: invocation.contextWindow,
+          maxOutputTokens: effectiveOutputTokens,
+        }),
   };
   model.metadata = { ...model.metadata, [MODEL_USAGE_OWNER_METADATA]: owner };
   return {
     model,
     owner,
-    effectiveOutputTokens: nativeEffectiveOutputTokens(model),
+    effectiveOutputTokens,
     capabilities: {
       ...(invocation?.inputCapabilities ??
         resolveModelInputCapabilities(row ?? {})),

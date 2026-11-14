@@ -58,7 +58,10 @@ export interface CodeUiProviderSettingsRpcDeps {
     | "updateInstance"
     | "deleteInstance"
   >;
-  modelCatalog: Pick<ModelCatalogService, "listCatalog">;
+  modelCatalog: Pick<
+    ModelCatalogService,
+    "listCatalog" | "describeInstanceModels"
+  >;
   settings: Pick<
     SettingsService,
     "getInstanceSettings" | "updateInstanceSettings"
@@ -92,6 +95,8 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
   private readonly models: ReturnType<typeof createProviderModelMutations>;
   constructor(private readonly deps: CodeUiProviderSettingsRpcDeps) {
     this.models = createProviderModelMutations({
+      describeModels: (instances) =>
+        this.deps.modelCatalog.describeInstanceModels(instances),
       load: (actor, id) => this.load(actor, id),
       save: (actor, instance, patch) => this.save(actor, instance, patch),
       revision: async (actor) =>
@@ -325,6 +330,9 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
             : {}),
         codeUi: {
           ...(input.templateId ? { templateId: input.templateId } : {}),
+          ...(config.access?.apiKeyManagementUrl
+            ? { apiKeyManagementUrl: config.access.apiKeyManagementUrl }
+            : {}),
           ...(config.group ? { group: config.group } : {}),
           ...(config.logo ? { logo: config.logo } : {}),
           ...(config.modelOrder ? { modelOrder: [...config.modelOrder] } : {}),
@@ -369,6 +377,10 @@ class ProviderSettingsRpc implements CodeUiProviderSettingsRpc {
       },
     };
     const chatProtocol = isCodeChatProtocol(instance.protocol);
+    if (config.access === null || config.access?.apiKeyManagementUrl === null)
+      delete compat.codeUi.apiKeyManagementUrl;
+    else if (config.access?.apiKeyManagementUrl !== undefined)
+      compat.codeUi.apiKeyManagementUrl = config.access.apiKeyManagementUrl;
     if (chatProtocol) {
       if (config.api?.type === "openai-responses") compat.chatApi = "responses";
       else if (config.api?.type === "openai-chat-completions")

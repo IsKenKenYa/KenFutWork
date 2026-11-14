@@ -64,6 +64,8 @@ const LEGAL_DOCUMENTS = [
   ["EULA.md", "EULA.md"],
   ["PRIVACY.md", "PRIVACY.md"],
   ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+  ["COPYRIGHT.md", "COPYRIGHT.md"],
+  ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
 ];
 /** 上游许可文本：随移植代码与素材分发，源路径即仓库内的属主位置。 */
 const LEGAL_UPSTREAM = [
@@ -79,6 +81,8 @@ const LEGAL_UPSTREAM = [
   ],
   ["patches/LICENSE-langchain.txt", "langchain-LICENSE.txt"],
   ["patches/LICENSE-sandbox-runtime.txt", "sandbox-runtime-LICENSE.txt"],
+  ["licenses/tauri-dialog-MIT.txt", "tauri-dialog-MIT.txt"],
+  ["licenses/rfd-MIT.txt", "rfd-MIT.txt"],
 ];
 
 function stageLegalDocuments() {
@@ -217,6 +221,18 @@ function main() {
   run("构建macOS桌面控制输入helper", process.execPath, [
     "apps/server/src/features/computer-use/build-helper.mjs",
     join(RELEASE, "computer-use"),
+  ]);
+  const packageVersion = JSON.parse(
+    readFileSync(join(ROOT, "package.json"), "utf8"),
+  ).version;
+  run("构建原生 Computer Use Helper.app", process.execPath, [
+    "apps/computer-use-helper/scripts/build-helper.mjs",
+    "--out",
+    join(RELEASE, "cua-helper"),
+    "--configuration",
+    "production",
+    "--version",
+    packageVersion,
   ]);
 
   // 2) esbuild 打包服务端为单文件 CJS（external 口径与 Windows 一致；多一个

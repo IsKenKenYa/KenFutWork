@@ -71,7 +71,7 @@ const TARGET = (() => {
 const SPECS = {
   "win-x64": {
     node: {
-      version: "22.20.0",
+      version: "22.23.4",
       probe: "node.exe",
       resolve: async (version) => ({
         url: `https://nodejs.org/dist/v${version}/node-v${version}-win-x64.zip`,
@@ -108,7 +108,7 @@ const SPECS = {
   },
   "darwin-arm64": {
     node: {
-      version: "22.20.0",
+      version: "22.23.4",
       // darwin tarball 顶层是 node-v22…/bin/node（拍平后即 bin/node，非 Windows 的根上 node.exe）
       probe: join("bin", "node"),
       resolve: async (version) => ({

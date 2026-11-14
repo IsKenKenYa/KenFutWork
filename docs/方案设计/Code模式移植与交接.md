@@ -1,9 +1,276 @@
 # Code 模式 ZCode 移植与交接
 
 > 角色：**方案稿 + 执行手册 + 施工回执 + 临时交接**（四合一，按「为什么这么做 → 怎么施工 → 已做了什么 → 现在接到哪」的顺序成章）。
-> 唯一源码基线：ZCode 3.14.3 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；逐文件来源、校验和与宿主适配偏差由 [`packages/third-party/zcode/来源清单.json`](../../packages/third-party/zcode/来源清单.json) 单处持有。
+> 当前已移植源码基线：ZCode 3.14.3 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`；逐文件来源、校验和与宿主适配记录由 [`packages/third-party/zcode/来源清单.json`](../../packages/third-party/zcode/来源清单.json) 单处持有。3.16.2 的升级分析与计划见下一章；计划不代表运行代码已升级。
 > Code 的工作域、工具与权限契约见 [《Code工作域与工具内核实施规格》](./Code工作域与工具内核实施规格.md)；服务 key 与扩展点仍由 [《改造计划》](./改造计划.md) 持有；落轮次与回执记 [《日志》](../日志.md)。
-> 当前口径：下文施工与交接正文按当时检查点保留，其中「实施中」「active」「待验」、独立 Design 壳及旧身份/凭据描述不作为当前状态。Code/Design 的共享会话、持久 Task、内容标签及 2026-10-16 本轮完成状态，以《Code工作域与工具内核实施规格》「Code/Design 统一实施」和《日志》「Code/Design 统一工作台本轮最终验收（2026-10-16）」为准；本篇历史回执不覆盖现行产品不变量。
+> 当前口径：下方 3.14.3 施工与交接正文按当时检查点保留，其中「实施中」「active」「待验」、独立 Design 壳及旧身份/凭据描述不作为当前状态。Code/Design 的共享会话、持久 Task、内容标签及 2026-10-16 本轮完成状态，以《Code工作域与工具内核实施规格》「Code/Design 统一实施」和《日志》「Code/Design 统一工作台本轮最终验收（2026-10-16）」为准；本篇历史回执不覆盖现行产品不变量。
+
+## ZCode 3.16.2 界面升级分析与计划（2026-10-22）
+
+> **角色：升级实施规格。** 2026-10-22 用户确认开始全部批次，优先直接移植新版原组件、功能及装配，在宿主边界连接 KFW 现有服务。项目编辑、多目录、Task 跨项目移动、Plugin UI／Gen UI 均纳入实施和独立验收。当前已移植基线仍为 3.14.3；下文按实际批次更新，不把计划或校验器更新计为 UI 升级完成。
+
+### 1. 比较依据与完成条件
+
+比较使用三个固定对象：原移植基线 `29628c9acdb81b703bbd4080c207a0e7ce5e276e`（3.14.3）、KFW `da07da8a`、上游 `3c5b227649371507ddc4eb46ac5133afe6db1cab`（3.16.2）。新版位于用户提供的 `/Users/shigaoyu/Develop/ReferenceRepo/ZCode`。3.15.1 的 `aac4755666d09fdcd70272fcf063c077a639015f` 用于识别此前已经出现的变化，不作为 KFW 已完成升级的证据。
+
+判断单位为真实功能及其调用路径。新版新增文件、字节不同、旧文件被删除，都不能单独证明 KFW 缺少功能。每一批记录原始源码、当前适配、新版原件、实际消费方、验证结果与需要删除的旧引用。原始源码哈希和适配后哈希分别维护；不以更新清单掩盖不明变化。
+
+升级完成需要同时满足：
+
+- 使用新版原组件和实际装配，项目编辑、输入框、内容标签、消息展示、插件管理均连接真实服务。
+- 项目、模型、插件安装、工具发现、Task、权限、运行与媒体仍由现有 KFW 服务管理；没有第二份业务存储或 Agent 执行循环。
+- 既有 Canvas、Flow、OpenDesign、浏览器、子会话、审批、Goal 和恢复操作通过相应回归；同一操作只有一个有效入口和消费者。
+- 新来源可独立核对，每批 HEAD 可以构建；最终通过串行包测试、类型、lint、构建、实际本机交互和已改变接口的真实服务验收。
+
+### 2. 差异与复用清单
+
+| 功能 | 上游 3.16.2 的实际变化 | KFW 当前实现与升级处理 |
+| --- | --- | --- |
+| 项目与目录 | `WorkspaceSidebar` 转为 `ProjectSidebar`；独立 Project ID、多目录编辑和按项目导航 | 已有服务端 Project、主目录、附加读写目录及 Task。采用原 `ProjectEditor`／`ProjectSidebar`，由适配器连接这些服务，替换旧目录入口。[U1][K1] |
+| 项目名称 | 编辑名称并持久保存，保持项目 ID | 已有项目名称 PATCH，当前项目菜单没有编辑操作；连接原输入框，保持物理目录与 Task 归属。[U1][K1] |
+| 历史归档 | 设置页增加按项目分组、默认收起、搜索及批量操作 | 已有归档、置顶和任务操作；升级组织方式和列表，不建立第二套归档数据。[U2][K1] |
+| 会话分组服务 | 原分组方法改为独立 `ITaskGroupService`，项目目录 Provider 统一消费 | 已有任务列表和界面分组组织，但新版独立服务与完整持久化尚未接通。复用现有 Task 身份和设置；补齐分组保存、移动、移出及通知，不能用项目归属代替手动分组。[U15] |
+| 模型与思考 | `ComposerModelMenu` 将模型、连接与思考滑杆整合到同一弹层 | 已有模型选择、思考档位、供应商实例及发送配置固定。更新原菜单，消费当前候选；审批模型保持独立，不导入套餐连接服务。[U3][K2] |
+| 权限与 Plan | 独立菜单继续存在，新增 Guarded 展示，隐藏 Edit 选择但能显示历史 Edit | KFW 原盾牌菜单提供三种基础权限与独立 Plan；模型审批单独设置，普通聊天与任务共用 Agent。已实施规则见《Code工作域与工具内核实施规格》§2.7。[U4][K2] |
+| 文件面板 | 新 `FileManagerPane` 将目录树与文件预览放到独立、多标签内容面板 | 已有文件、Canvas、浏览器、OpenDesign 标签。采用新版文件面板并保留当前内容宿主；每个文件目标携带真实项目或 Task 身份。[U5][K3] |
+| 图片预览 | 文件图片增加复制、下载、添加到聊天；Markdown 图片另有自己的预览入口 | 已有附件预览、媒体消息和画布／OpenDesign 送入素材。更新原图片操作，统一进入现有可信附件处理，保留上传完成和新草稿保护。[U6][K3] |
+| 分享弹层与资源预览 | 原分享改为顶栏弹层，新增预检、进度、工作流和资源展示 | KFW 已有组件和代理，但服务端没有会话分享处理方，按当前派发逻辑会返回 501；本轮未发送实际 HTTP 请求。分享组件可以复用；公开发布入口需按真实能力隐藏。上游 OAuth 公网发布服务属于独立功能，不随 UI 更新引入。OpenDesign 静态发布是另一项已有能力。[U7][K7] |
+| 插件商店 | 同页管理、按服务实例隔离状态、侧面板商店及安装后打开插件界面 | 已有官方 bundle、本机包、来源安装、启停、卸载和独立管理文档。更新原商店，继续使用同一注册表；市场源和通用配置的现有缺口单独处理。[U8][K4] |
+| Plugin UI | MCP Apps 工具卡片、侧面板、后台页面、上下文及后续消息 | 现有静态插件面板只覆盖部分承载能力。补齐 bridge、资源、沙箱通信、会话作用域和生命周期后再接原卡片，完整范围见第 4 节。[U9][K4] |
+| Gen UI | 完成消息中的 visualize 指令显示交互页面，支持状态、主题与后续消息 | 补齐原 `IGenUiService` 对应的页面、状态、文件与上下文消费者；复用 Task 文件权限、消息服务和沙箱宿主，不增加另一套聊天或生成循环。[U10][K3] |
+| 工具搜索 | 新增 auto／local／off 设置和上游延迟工具机制，默认 off | KFW 已有真实 `ToolSearch`、延迟 schema 激活和执行权限检查。继续使用现有实现；不能用新版默认 off 静默关闭当前能力，也不能展示无执行支持的 native 选择。[U11][K5] |
+| Computer Use | 开源版没有完整执行提供方 | KFW 保留现有原界面、宿主权限检测及 `plugins/computer-use` 混合实现。开关从真实库存取得安装 ID，启停与输入入口消费同一记录；安装启用与 macOS 系统授权分别显示、分别验证。 |
+| 消息与工具展示 | 长命令展开、MCP 进度、独立 `ToolPresentation`、Plugin UI／Gen UI 展示 | 复用当前完整输出、真实 diff、媒体 renderer 和父子会话。只有真实进度事件才显示进度；新 renderer 不替换既有贡献入口。[U9][U10][K3] |
+| 内容完整视图 | 新内容面板完整视图及浮动输入区 | 采用原布局控制和同一 SessionPane 的浮动承载，Canvas 保持挂载，Flow 主区保持原样。未保存宽度时 Code 会话区域默认 52%、Design 约 33%；用户保存宽度优先。[U12][K3] |
+| 远程设备、手机登录、团队套餐 | 新页面依赖官方账户、远程 Host、relay 和套餐服务 | 按现行本机产品范围保持能力显隐，不随 UI 更新接入另一套账户、计费或远程执行服务。[U13][K6] |
+| Windows 未读提醒 | renderer 加 Electron 原生 overlay／托盘逻辑 | 界面状态可更新，原生提醒需要 Tauri 对应实现与 Windows 验证；不能宣称更新 React 文件即可完成。[U14] |
+
+源码中存在但本次未发现实际挂载的 `TaskSearchDialog`、`TodoPanel`、`MessageChangeSummaryPanel`、`ChatModeSwitchControl`，不自动加入产品入口。现有搜索仍有 `CommandCenterDialog` 消费，不因文件名称相似再建立一个搜索弹窗。
+
+### 3. 项目编辑与多目录的具体适配
+
+新版原 UI → KFW `projectService` 适配 → 现有项目 API／数据库；创建会话 → 现有持久 Task／executionScopes。`IProjectService` 是新版 UI 需要的接口，不能借此引入上游 `project-storage`／SQLite。
+
+| 操作 | 处理方式 |
+| --- | --- |
+| 创建项目、多选目录 | 原编辑器保存一个项目。选定主目录写 `work_dir`，其余目录写 `additional_directories`；每个附加目录提供现有只读／可写选择。确认前保持草稿。 |
+| 编辑名称 | 更新原项目 ID 的名称；刷新侧栏及标签显示，保持文件夹名称、会话与目录身份。 |
+| 编辑已有项目目录 | 普通编辑保持主目录固定，附加目录修改影响新建 Task。目录缺失的恢复继续使用已有专门流程；不连接为任意替换旧 Task 主目录。 |
+| 同目录、重复选择、符号链接 | 沿现有真实路径校验与目录冲突选择。用户选择复用或独立创建；不按路径自动合并项目。 |
+| 旧 Task 更新权限 | 使用现有 Task scope 操作明确修改，保留授权版本、并发检查与旧执行资源关闭；项目保存不自动为旧 Task 增加权限。 |
+| 打开历史会话与查看文件 | 继续解析真实 Task 目录；项目前置查看使用项目只读范围，不能从当前 UI 选中路径推导 Agent 权限。 |
+| 分组、归档与工作方式 | 新侧栏读取当前项目 ID 与任务分组；保存现有手动分组、归档与置顶。Code／Design 列表按已启用工作方式显示，Flow 按插件可用状态显示。 |
+
+项目多目录细节与固定源码证据见[《ZCode 3.16.2 多文件夹项目源码分析》](../调研/ZCode-3.16.2多文件夹项目源码分析.md)。本章不另建一份项目数据规格。
+
+**Task 跨项目移动（2026-10-22 用户确认）**：采用新版任务行拖到项目行的原交互。移动前要求没有活动 Run、后台工作、待处理输入或审批，Goal 已暂停或结束；停止结果未知时拒绝移动并说明原因。Task 主目录、附加目录与原权限保持，目标项目补充目录须明确确认。历史画布、OpenDesign 文档和媒体保留原项目归属，按精确引用继续读取；新 Run 使用目标项目资源，原项目写入需要单独授权。Goal 保留正文、预算、计量和历史，移动不自动恢复；沿用原恢复入口，服务端重验当前项目及资源，失败时说明需要调整或授权的对象。
+
+移动使用实例、Task、源项目、目标项目及观察修订组成稳定业务键，规范化参数指纹用于同键冲突检查，冲突返回 409。前向迁移区分当前项目归属与历史来源，历史资源关联稳定 Task Owner 并保留实例和类型隔离；更新当前归属、必要读取授权与状态投影在同一事务完成，并使旧控制请求失效。删除后迟到请求不得恢复 Task 或资源。不能只修改两处 project_id，也不能级联改写全部历史资源的来源。
+
+**分组持久化与并发**：原 `task-groups` 的 `read`、`save`、`ungroup`、`move`、`admit` 经所属插件的宿主 RPC 贡献接入同一 PostgreSQL。分组属于本地实例，成员通过 `execution_task_owners(instance_id, task_id, task_kind)` 关联稳定 Task；界面 `workspaceKey` 和排序键由当前项目及 Task 固定目录投影，不作为持久归属。Code／Design 共用 Task 的实际类型取其 Owner，不能从当前工作方式推导。
+
+读取在同一只读快照返回分组、成员、根节点顺序和独立组织修订；不因读取登记 Task 或推进修订。创建、编辑、取消组及手动移动固定操作时的组织修订，事务内重新核对来源组、目标组及锚点，冲突返回 409。创建使用表单持有的稳定创建身份；编辑、取消组和移动以实例、稳定目标及观察修订组成业务键，规范化参数形成指纹，回执与变更同事务提交。连接关闭取消未接纳事务并等待在途操作退出，不用重新读取的新修订替换旧动作。
+
+`admit` 仅登记经过宿主核验的稳定 Task；重复登记不改变现有顺序和人工整理结果。创建 placement 绑定真实 Task 创建身份，同一次重放保持原结果，不能覆盖之后的人工移动。取消组把原成员按原顺序放回根层，不删除 Task。Task 软删除时清除对应成员和顺序，迟到登记不能恢复它；归档保留成员，恢复仍归原组。组及操作的删除墓碑只保留必要的不透明身份，不保留名称、路径或内容指纹；实例物理删除时级联清除。前向迁移分别验证历史 SHA、空库重放和第二次无变化。
+
+### 4. Plugin UI／Gen UI 完整接入要求
+
+**共用实现**：现有插件注册表的 `listUiEntries()`、`readAsset()`、插件入口、安装启用态、LocalActor、Task 文件读取和内容标签继续使用。沙箱页面的创建、消息通道、可见性与关闭清理共用一个宿主实现；两类页面分别提供其业务接口。
+
+**Plugin UI** 需要完整处理 MCP Apps 资源与模板读取、资源订阅、工具 `_meta`、`McpAppInstance` 身份及代际、模型上下文、sampling、App-Provided Tools、实时增量和后续消息。工具卡片、用户主动打开的侧面板与后台页面使用原页面复用逻辑。安装／启用／项目范围改变后重新核查，不让旧页面继续使用被撤销能力。
+
+**Gen UI** 同时包含生成端与展示端。为当前 Task 准备持久输出目录并建立目录授权，成功后才由现有系统提示扩展点提供目录和生成指导；生成指导通过现有 Skills／官方插件能力提供，不建立第二套技能目录。模型生成 HTML 文件后，在已完成消息中提供原格式引用，再由原卡片读取和显示。还需要原 `IGenUiService` 对应的状态读写、模型上下文、页面引用投影、受 Task 授权的 HTML 读取、页面资源与生命周期。流式参数未完成时不执行指令。原卡片使用现有主题与原调节控件；后续消息由当前会话控制入口发送，不能直接启动另一套执行过程。[U17]
+
+**共同验证边界**：页面使用沙箱和 MessagePort；原 Electron `ownerWebContentsId` 在宿主边界映射为 KFW 可信窗口及页面身份，不接受 renderer 自报身份。校验页面实例、消息来源、当前 Task／项目与可见性。资源读取沿当前授权，不把本机接入凭据写进工具参数、普通事件或生成 HTML。页面发起的工具、模型和写入操作经过现有审批、Plan、角色及目录限制；页面内按钮不代表任意执行授权。关闭、取消、切换项目、停用插件后清理订阅，忽略迟到响应。用户交互或后续消息确认沿实际操作逐项核查。
+
+现有静态插件面板继续通过同一注册表工作；完整 MCP Apps 和 Gen UI 需各自真实验证，不能用静态面板能打开作为完成证据。新增服务定义、提供方和消费者在所属 feature 内共同提交，不在 `app.ts`／`worker.ts` 增加手工分发。
+
+### 5. 分批实施与提交顺序
+
+各批次按依赖推进，每批同时提交原组件、需要的接口、实际适配、测试和来源记录。存在跨文件依赖时，以可编译的完整调用路径为批次范围，不按目录机械分割。下面是完整目标的依赖顺序，全部批次验收后才算升级完成。
+
+| 批次 | 文件／职责 | 交付与验证 |
+| --- | --- | --- |
+| 0：来源与基准 | `scripts/zcode-provenance.mjs`、`vendor-zcode.mjs`、来源清单、仓库来源测试 | 支持分批记录真实上游提交；保留本机参考目录与并行修改。增加来源变化、目标变化、缺源、错误提交及新旧混合来源的真实 Git 对象测试。此批只改变校验，不改变产品。 |
+| 1：新版 UI 所需接口 | `packages/zcode-shared`／`zcode-services` 的浏览器接口、V4、`host/upstream/remoteServiceAccess.ts`、当前 feature RPC | 统一 Agent 的接纳与旧选择清理已由 `199a44f0` 完成，制作指导已由 `e2143604` 提供，本轮保持并验证。按实际依赖升级接口与客户端实现，连接已有文件／模型方法及新增 accessor；项目和分组完整接口随第 3 批共同引入。新增方法必须有真实提供方，原 UI 仍可工作，类型和构建通过。 |
+| 2：输入框与通用展示 | 原 `ComposerModelMenu`、模型控件、图片预览、长命令／进度与共享展示组件 | 使用已有模型、附件、完整工具输出、媒体和审批服务。验证模型与思考选择、发送期间新草稿、Plan、权限、剪贴板／下载失败及 Unicode／长输出。 |
+| 3：项目侧栏与归档 | 原 `project-sidebar/*`、`ProjectDirectoryProvider`、项目编辑器、项目／分组接口与提供方、必要前向迁移、现有设置服务 | 同批连接同一项目多目录与改名、独立分组持久化／置顶／归档、同目录选择、历史 Task 与跨工作方式导航。切换根装配时删除被取代的旧侧栏和目录入口引用；通过真实项目 API 与临时 PG 验证。 |
+| 4：文件面板与统一内容标签 | 原 `FileManagerPane`、`workspaceSidePane`、`AnimatedSidePanePanel`、`DocumentPane` 及宿主适配 | 多目录多标签、文件身份、浏览器／OpenDesign／子会话与完整视图共同工作。保留 Canvas 持续挂载、视口／选区与当前文件；发送、审批、Goal 和恢复不切换内容。 |
+| 5：插件管理与 Plugin UI | 原商店管理、`plugin-ui/*`、现有 plugins／MCP feature、新 bridge 与共用沙箱宿主 | 使用同一安装注册表、管理文档和作用域；补齐第 4 节 MCP Apps 能力后连接原工具卡片和侧面板。验收安装停用、资源更新、真实 MCP App 通信及撤销后的迟到事件。 |
+| 6：Gen UI 与分享能力显隐 | 原 `gen-ui/*`、Task 输出目录与生成指导、提示扩展、正文引用、共用沙箱、页面状态／Task 文件／会话消费者；分享能力检查 | 完成模型生成文件→完成消息引用→原页面显示，以及交互、状态与后续消息；未连接发布服务时不显示可点击的公开分享入口。验证生成目录失败、引用识别、刷新恢复、文件权限、交互来源和重复操作，不重建聊天服务。 |
+| 7：完整装配与清理 | App／Root／SettingsPage、构建别名、公共资源、来源清单与文档 | 检查未采用的新入口、已取代文件与所有引用；移除因本轮替换产生的无用实现。复核样式、主题、焦点和原生平台适配；完成全量检查及本机交互。 |
+
+批次 2 中的叶子更新与批次 3 的项目组织可以分别准备，实际写入共享 App／Root／SessionPane／样式／语言文件时串行集成。禁止同时运行多个测试或构建实例。
+
+### 6. 来源、构建与数据处理
+
+- `verifyZcodeInventory` 支持记录上的可选 `sourceRevision`，默认使用全局 `revision`；额外提交及 package 版本由 `revisions` 对象登记。按提交分组校验版本和原始字节，`copiedSha256` 继续验证当前适配文件。非法或未登记提交直接报错，单份 `--source-root` 镜像不用于混合提交；`--prepare-source` 逐提交准备 Git 对象，保持参考仓分支和工作目录。现有 `syncSource` 是 KFW 历史同步记录，不用它冒充上游提交。
+- 全局版本仅在所声明范围完成统一复核后更新；仍使用旧来源的文件保留明确来源。删除来源记录必须同时证明对应文件及消费者已退役，或登记其真实新路径。
+- 不删除来源清单后重跑复制脚本；该分支会清理目标目录。也不把新版目录当旧 `--source-root` 镜像校验。参考仓的工作分支、暂存指针和用户目录保持独立；所需 Git 对象由来源准备流程获取。
+- `@zcode/client` 在 KFW 已由宿主实现接管；Vite／类型／测试别名和 `host/upstream` 适配必须共同核对。`@zcode/services` 只引入 UI 实际依赖，禁止整包带入上游 Node 装配、SQLite、CLI 或账户服务。
+- 新 accessor 的必选成员逐项处理：`sourceServerWorkspaceService` 的本机身份解析映射到现有 Task／项目登记，远程操作继续按能力控制；`highspeedCardService` 的 SessionPane 直接调用必须加真实能力守卫；`outputStyleService` 本轮未发现实际 UI 消费，不因此创建新的持久化与提示风格功能。没有提供方的能力在宿主接口中明确可选并在消费前检查，不用固定空列表或成功结果满足类型。[U18]
+- 新版 V4 包含 `runtimeInitialization`、`historyFirst`、`retryInitialization`、`sourceCommandId` 等变化。每项同时检查产生端、HTTP／SSE、解析、状态合并和原 UI 消费；当前宿主没有实现的能力不宣告支持。创建和发送中的附加目录、页面来源、模型及执行材料都须由服务端验证，不直接信任 renderer 新增字段。[U16]
+- Plugin UI 的资源变化、实例关闭和页面工具调用属于 live-only delta，包含页面作用域和代际。冷历史不能重放这些执行请求；重连重新登记页面。只进入页面的 `_meta`、`privateContent` 和平台身份不得混入模型上下文；可进入模型的 `modelContent` 标记为不可信内容。[U16]
+- 项目、Task、供应商、插件、技能、命令和钩子继续使用当前存储。若新版确实需要新增持久字段，按现有前向迁移规则提供首次执行、二次无变化及历史校验；不修改历史 SQL，不删除现有开发数据。
+- 新依赖与资产先查许可、来源和注册表可用性，仅登记实际引入部分。法律文件修改遵守现有共同所有者批准规则；不整体覆盖本项目 notices 或变更公开许可。
+
+### 7. 验证矩阵与完整命令
+
+| 行为 | 必须证明的结果 |
+| --- | --- |
+| 新建／编辑项目 | 多选保存一个项目；取消、关闭和迟到选择均不写入；重复及符号链接路径归一化；名称修改保持 ID。 |
+| 项目与 Task | 项目修改后，新 Task 使用新设置，旧 Task 保留原授权；明确撤销后旧请求不能执行；目录失效提供处理方法。 |
+| 输入框 | 新菜单只显示可用模型；思考选择有效；点击发送时的配置保持原值，等待期间的新正文／附件／选择不被清除。 |
+| 权限／Plan／Goal | 独立 Plan、审批模型和完全访问保持真实语义；计划状态与只读角色不能借新按钮扩大权限；停止和重试仍指向真实执行与修订。 |
+| 内容标签 | 同名文件、多目录、连续打开／关闭／重开使用正确身份；Canvas、OpenDesign 和浏览器保留状态；后台文档不接收输入。 |
+| 插件管理 | 无项目管理、官方／本机来源、安装与启用区分、未知响应只读核查、并发编辑与删除后迟到请求均正确。 |
+| Plugin UI／Gen UI | 各自使用真实资源和消息通道；Gen UI 验证 Agent 生成文件、完成引用和原页面显示；刷新恢复、多个页面、重复交互、取消／关闭、权限撤销、卸载及迟到响应都有行为验证。 |
+| 媒体与子会话 | 生成结果保持原片读取与原消息归属；复制／下载失败可恢复；子会话继续复用 SessionPane 和真实订阅。 |
+
+实施时先运行对应批次的真实组件／服务回归，再按以下顺序运行；本轮分析只运行文档和来源核查，不把以下命令记为已通过：
+
+```bash
+node scripts/vendor-zcode.mjs
+pnpm test:workspace
+pnpm exec turbo run test --concurrency=1
+pnpm typecheck
+pnpm lint
+pnpm build
+```
+
+项目与宿主改变后，单独开启已有真实临时 PG 测试：
+
+```bash
+TMPDIR="$PWD/.scratch" KENFUTWORK_CRUD_TEST_PG=1 pnpm --filter @kenfutwork/server exec vitest run src/features/projects/projects.integration.test.ts --maxWorkers=1
+TMPDIR="$PWD/.scratch" RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/server exec vitest run src/features/code-ui/host.integration.test.ts --maxWorkers=1
+TMPDIR="$PWD/.scratch" RUN_CODE_UI_INTEGRATION=1 pnpm --filter @kenfutwork/web exec vitest run test/code-approval-session-public.integration.test.tsx test/code-queue-session-public.integration.test.tsx test/code-file-rewind-session-public.integration.test.tsx --maxWorkers=1
+```
+
+原有相关回归包括 `shared-project-navigation`、`code-directory-choice-race`、`code-directory-recovery`、`code-model-defaults`、`code-attachment-composer`、`animated-side-pane-panel-model`、`code-plugin-store`、`code-plugin-source-install`、`code-goal-control`、`open-design-pane` 等；实施时按实际改变的公开行为补充用例，不重复测试内部函数形状，不使用伪造结果证明完成。
+
+HTTP 接口变化时同步 shared、中文 OpenAPI registry、`pnpm api:spec` 与 Apifox AI 分支；WS／流字段变化更新各自协议文档。原生目录多选、剪贴板、下载和布局还需 `pnpm desktop` 的实际交互验证，使用 DOM／可访问性与行为结果；未执行 Windows 的原生功能不得计为已验。真实模型沿当前供应商设置读取，不写入固定实例 ID、Key 或另建模型配置。
+
+### 8. 当前证据与状态
+
+新 Task 创建事务在项目行锁内读取当前附加目录，已通过原项目 PATCH、创建命令及真实 PostgreSQL 锁竞争回归；项目保存先提交时新 Task 使用当前目录，已有 Task 的授权保持。
+
+已有项目采用 3.16.2 原 `ProjectEditor`，通过现有宿主贡献接口连接真实 PostgreSQL 项目、目录和归档服务。原项目菜单可改名及修改附加目录，新旧 Task 的授权分别保留；目录选择保持真实路径中的空格，绑定失败可再次确认。保存按观察修订处理同值、并发、重放和冲突，跨连接广播重新读取项目，关闭等待在途事务退出。原 Root 浏览器验证确认名称、Task、草稿和内容目标保持；该证据使用原组件生产构建、真实 HTTP／SSE、临时 PostgreSQL 和独占浏览器，不计为 Tauri 原生交互或真实模型验收。Apifox AI 分支 `ai/20261023-from-main-project-editor`（8768607）的两个接口及五个模型已导入并读回核对，主分支未合并。
+
+已有项目编辑及其归档调用已提交。原项目创建表单已连接真实创建输入与 PostgreSQL，Code／Design、多目录权限、原主目录选择、明确目录确认和保持当前 Task／草稿／内容的行为已取得真实回归；同名并发创建、同键重放、参数冲突及归档／物理删除后的迟到请求已通过。真实 COMMIT 回包丢失后沿同一创建身份恢复唯一项目的回归已通过，项目创建已提交为 `8eefdf9c`。原生目录的剩余生命周期验证、完整原 ProjectSidebar、分组、排序、跨项目移动和第 4–7 批仍待完成；全局来源基线保持 3.14.3，不能按已更新文件数量计算整轮升级完成。
+
+同目录创建沿原表单明确选择复用或独立创建。复用重新核验活动项目及真实主目录，保留原设置、工作方式与当前 Task，不写项目；独立创建沿原稳定创建身份保存名称、目录和权限。候选读取、选择队列及表单关闭使用本次取消信号和所属 Provider 身份，关闭等待已有保存或归档退出；旧响应不能进入下一轮选择。复用只消费目录归属复验结果，不再读取无人使用的完整项目；真实只读响应延迟的原组件回归已取得失败与修复证据。归档旧候选返回可读原因并保留名称、目录草稿，实际验证命令和范围见《日志》对应记录。
+
+原生目录单选／多选已连接原平台接口、可信 Tauri 命令与原 `ProjectEditor`，Web 保留原目录浏览。`pnpm desktop` 重建后，系统多选、取消、重复选择、主要目录调整、附加目录明确权限、关闭不保存及重开空草稿已取得原生交互证据；Root 单目录入口的系统选择框与取消也已验证。真实桌面 API 与 PostgreSQL 确认保存恰好一个项目、两个附加目录、目录末尾空格和权限完整，Task／Canvas 为零，关闭草稿未产生项目。系统选择等待期间经菜单正常退出应用，再以源码开发入口重开，新表单为空、创建禁用且可再次打开并取消系统选择；API 与只读 PostgreSQL 确认等待草稿没有创建项目，原保存结果保持。切换 Task 的迟到结果及 Windows 系统选择仍待验收。许可已由 `6d9b457c` 交付；完整原侧栏继续按依赖装配，当前旧标签侧栏尚未展示刚保存的空项目。
+
+分叉附件使用新 Task 的同一可信作用域，七项真实附件回归通过；普通分叉保留当前 Task 的只读目录及完成轮配置，两项正常／提交回包丢失回归通过。宿主工具结果的非空普通记录列表现完整保留为 JSON 文本，明确的图像内容块继续保持原字节；原 TaskOutput 完整输出、再分叉及冷恢复，以及默认模型线与宿主回执回归通过。项目创建已从首条真实回归的 400 继续连接，当前验收范围见上一段。压缩目录的三项预算／摘要识别回归继续核查，未计入完成验收。实际命令与提交见《日志》对应记录。
+
+截至 2026-10-23，已提交分来源 Git 校验 `e0d66b97`、可信连接与关闭清理 `ec7fe8c4`、原长命令与审批预览 `e0af10ac`、Computer Use 真实库存开关 `bf46e68b`、原合并模型与思考菜单 `37dd79e0`。原 Composer 的禁用文件事件已取得真实回归，并覆盖禁用／恢复编辑的两次往返；具体命令与提交范围见《日志》。当前仍为逐文件升级，全局原移植基线保持 3.14.3。
+
+图片操作采用新版原菜单、复制及下载实现，图片和 SVG 沿打开时固定的真实 Task／Project 读取原字节，添加到聊天复用原素材预算、采集及预传。可见草稿与实际附件 Task 分别保存，关闭或切换目标后取消在途添加；缺少来源只在原预览中显示错误。当前公共回归及提交范围见《日志》同日“原图片操作与固定文件来源”。文件面板、多目录、Git、编辑器及内容完整视图的其余消费者继续按第 4 批实施。
+
+Git 忽略查询保留仓库内符号链接的名称，并逐项验证真实 Task 的读取权限；其他 Git 内容与写入操作保持原真实路径规则。真实 HTTP／SSE／临时 PostgreSQL 已验证 `.gitignore` 变化、未授权 Task 拒绝、仓库外原路径拒绝和权限保持。该服务修复独立交付，不代表完整文件面板验收；实际命令与范围见《日志》“Git 忽略查询保留仓库链接路径”。
+
+原 `TaskGroupedView`、原分组组件和独立 `taskGroupService` 代理已装配到同一 Code 壳；Root 常驻目录持有组织及名称草稿，复用已交付的 PostgreSQL 接口。首发归属使用真实接纳命令身份，等待期间重新定位的草稿保持独立。原文件按钮固定所选 Task 的身份，目录、搜索、watcher、Git 和预览共同消费该身份。原菜单、拖动、选色、取消组及吸顶键盘操作已通过原 Root 的真实回归；保存等待、读取故障和连接恢复分别保留已确认修订及后来输入。旧分组组件与六个旧服务方法已清理，仍被其他 Task 行消费的共享按钮保留。
+
+本轮公开组合为 12 文件 13 项全部通过，使用原组件生产构建、独占 Chrome、真实 HTTP／SSE、临时 PostgreSQL、文件及本机受控模型 HTTP 流。来源为 3054 项、两个提交、零漂移；全局基线继续保持 3.14.3。完整原 ProjectSidebar、跨项目移动、第 4–7 批、压缩目录、剩余原生与外部真实模型验收继续按依赖实施，完整 Goal 保持 active。具体回执与提交检查见《日志》“原持久分组界面与固定文件身份”。
+
+原 `ProjectComposerMenu` 已装配到同一 SessionPane 的草稿头部，按真实 Project ID 展示当前工作方式可用的项目，包含尚未打开的空项目；同目录项目分别选择。`project.prepareSession` 经所属 feature 的原宿主 RPC 贡献连接现有目录准备，返回真实主目录及标准身份，后续 Task 仍使用原预热／首发接纳。客户端收到回执后复验目录、身份及工作方式，导航同时核验原 Tab、Task、草稿版本和当前方式；旧响应保留后来的选择。创建与编辑继续复用已交付的原表单，准备失败通过原提示显示处理方法。完整原侧栏仍待装配，当前证据与提交检查见《日志》“原项目选择与新草稿准备”。
+
+项目侧栏、多目录、分组与移动继续按第 3 批实施。移动候选已有准备事务提交后回包丢失、同键并发及顺序重放、参数冲突、删除后迟到请求的真实回归回执。原输入框发送及 Stop 按钮已通过独占浏览器的项目往返回归：旧请求使用原 Task 观察值返回 stale，发送期间的新正文及当前模型流保持。空 Task 创建回执返回数据库生成的初始观察值，预热首发在快照未到时也能使用该回执。原项目侧栏、历史资源精确读取、其余控制命令与预热清理及 Goal 移动恢复仍需完整连接，不能作为移动功能交付。
+
+创建时的首条输入沿原 Task 创建事务与运行接纳机制保存，真实 HTTP／SSE／PostgreSQL 已验证唯一运行、并发与顺序重放、参数冲突、删除后迟到创建、COMMIT 回包丢失及首次回执读取同时失败后的恢复。该行为独立于项目移动候选；完整命令、审查和提交范围见《日志》“Task 创建首条输入原子接纳”。
+
+原模型设置的同值保存已补真实 HTTP／PostgreSQL 回归：当前修订的同值普通配置保持修订，旧修订仍返回冲突；并发修改只接受一个请求，重新读取后可保留两项修改。真实凭据变化继续推进修订，删除后的迟到保存返回可解析的 404。中文 OpenAPI 与 Apifox AI 分支 `ai/20261023-from-main-model-revision`（8765515）同步，主分支未合并；提交与完整检查回执见《日志》。
+
+原供应商设置的管理链接使用现有实例元数据保存，聊天与生成设置读取同一记录；省略保留、单独清除链接与清除完整访问配置分别验证，供应商协议和模型保持原值。真实 HTTP／PostgreSQL 回归与 Apifox AI 分支 `ai/20261023-from-main-provider-management-url`（8767356）读回通过，主分支未合并；完整检查和提交以《日志》对应回执为准。
+
+原模型恢复推荐沿原 `clearManualModelConfig` 保留系统声明，并重新计算现有模型记录中的容量、输出与输入能力；空个人配置不再发布为个人精确规则。原设置的真实 HTTP／PostgreSQL 回归验证停用、Text／Audio、名称与扩展参数保留，思考映射和手动能力恢复默认，刷新及同值保存保持结果。连续两轮运行曾复现容量显示保留旧缓存，现由接纳输入固定有效容量，实际调用通过既有用量事件回报；同一 Task 的第一轮 260000／9000、恢复推荐后第二轮 200000／32000 与历史保留回归已通过，其余运行消费者按《日志》继续扩大验证。
+
+原归档管理已在工作区连接本机项目树、条件删除与恢复服务。项目与 Task 在同一 PostgreSQL 快照读取，归档操作固定当前项目及分支；恢复承接 Goal 分支与修订，保持目标内容、计量和暂停状态，由用户明确继续。真实服务 11 项与原组件创建／编辑／归档组合 8 项通过，包括 COMMIT 回包丢失、并发、删除后迟到请求、明确继续 Goal、删除取消和当前草稿保留；完整命令与提交检查由《日志》记录。本次归档管理不代表完整原侧栏、持久分组、排序和跨项目移动已完成。
+
+Plugin UI／MCP Apps、Gen UI 的完整生成与页面服务、内容标签及 Canvas／Flow／OpenDesign 往返、`pnpm desktop` 和真实模型验收仍未完成。最终串行全包测试、lint、构建及新增行为的真实服务验收随对应批次继续执行。2026-10-23 用户恢复原 Goal 后，实时读回已为 active，目标仍覆盖全部 0–7 批次。逐文件来源仍由来源清单持有，媒体线程文件与共享修改段按归属逐项核查。
+
+本轮源码比较材料保存在已忽略的 `.scratch/ZCode界面升级/`；可交接的结论和计划由本章持有。后续按各批实际提交和验证结果更新本章状态及《日志》，未完成的批次保持未完成。
+
+分组结构读取已通过所属插件的 `task-groups.read` 接入真实 PostgreSQL，只读快照返回分组、稳定 Task 成员、根节点顺序及独立组织修订。真实 HTTP／SSE 回归覆盖空实例、重复读取、多连接、非法参数、项目当前目录变化后的固定 Task 身份，以及两次归档／恢复、删除后的成员清除和迟到删除；没有把读取作为首次登记。完整原侧栏、分组界面、排序及登记仍按本章继续实施；实际验证和提交由《日志》对应回执记录。
+
+分组创建与编辑已通过 `task-groups.save` 连接同一 PostgreSQL 和原 SSE 状态通知。真实回归覆盖稳定创建、改名及改色、同键并发创建、同修订编辑竞争、同值保存、规范化重放、错误输入、SQL 等待期间关闭连接，以及 COMMIT 回包丢失后的原回执读取。旧创建回放不覆盖后续编辑。原分组服务代理、操作开始时固定修订的界面与排序仍需完整接入；本次服务验证不计为原分组界面交互完成。
+
+取消组通过所属插件的 `task-groups.ungroup` 连接同一组织事务与最小删除回执。原组节点由全部持久成员按原顺序替换，归档隐藏成员保留，Task 正文、目录及权限保持。公开读取和取消共用完整投影键排序，已通过相同位置而目录身份与 Task ID 次序相反的真实回归；连续及并发重放只推进一次组织修订，迟到创建和编辑不能恢复分组。当前仍需完整原侧栏消费，服务与最终验证回执由《日志》持有。
+
+首次登记与创建时分组归属通过 `task-groups.admit` 接入同一真实 Task Owner、组织事务和原 SSE 通知。重复登记不改变人工顺序，新成员按真实创建时间进入根层顶部；创建别名绑定该 Task 的持久首发事实，并与真实 TaskId 归为同一意图。登记、归属与回执同事务保存，尊重既有人工位置，取消组及 Task 删除后的迟到请求不恢复原组织。真实组合 18 项通过，覆盖首发与 Stop 区分、批量顺序、非法及旧地址、连接关闭、SSE、COMMIT 回包丢失和删除后的重放；具体命令与范围由《日志》持有。原分组界面、手动移动与排序、完整侧栏和跨项目移动仍按依赖继续，不将服务回归计为完整第 3 批验收。
+
+手动分组移动与排序已通过 `task-groups.move` 的 shared 定义、所属 feature 提供方与原宿主 RPC 贡献连接同一 PostgreSQL。真实公共回归验证组和 Task 的组间／返根／根排序、未登记 Task、隐藏归档成员、精确来源与锚点、并发和同键重放、连接关闭及删除后的迟到请求。真实 COMMIT 确认后抑制回包，沿原意图读取唯一顺序，不重复推进组织修订；迁移通过历史 SHA、135 项空库重放、第二次零变化及实际 Schema／删除清理。该服务只改变组织事实，Task 项目、目录、权限和 Goal 保持。原代理与完整原分组界面、ProjectSidebar、跨项目移动及第 4–7 批继续；自动化、原生和外部真实模型证据分别以《日志》记账。
+
+原项目侧栏所需的项目置顶事实已由同一 PostgreSQL `projects.pinned` 持有。`project.saveProject` 接收携带项目观察修订的严格稀疏输入，复用原锁、保存回执、关闭上下文及状态通知；项目读取投影返回置顶状态，旧回执缺字段按 `false` 解析。真实回归覆盖置顶／取消、双连接并发、旧回执重放、COMMIT 回包丢失、目录失效、连接关闭、归档及隔离维护删除后的迟到请求。已有 Task 所属项目置顶后再完整编辑，置顶、旧 Task 目录、权限、历史和控制保持。该阶段交付原节点依赖的持久接口，不计为完整 ProjectSidebar 的界面装配；命令、迁移与接口读回证据见《日志》“原项目置顶持久接口”。
+
+Task 移动的原 RPC 参数已改为严格单元素，准备事务接纳前使用当前连接取消信号，关闭等待在途操作退出；接纳后的移动继续完成资源关闭与归属提交。同键在线等待者保留自己的连接与原观察值，项目树和原 Controller 的元信息保留当前项目、分支及正文修订。历史边界按稳定 Task 与当前 Owner 校验，原来源项目保持；继承历史只随同一移动事务更新当前 Owner 的项目。原 Controller 往返及已接纳关闭的三项真实回归通过，完整命令与其余验证以《日志》“Task 移动观察与连接生命周期”持有。完整侧栏、客户端移动身份、文件与其他历史资源消费者继续实施，本段不代表第 3 批全部完成。
+
+旧移动回执的退订通知现携带实际接纳代际，宿主按会话租约读取时的 Task 代际限制清理。项目往返后，新租约可继续恢复，首次移动前的旧租约继续失效；实际公开 SSE 回归与提交检查由《日志》“旧移动回执保留新会话租约”记录。
+
+后台接纳调用者也绑定实际 Task 授权代际，移动只清理更早记录，较早读取不降低已有代际。后台终态通过原 Run 接纳继续执行，复用现有独立子代理的 SDK 上下文隔离方式，保持当前权限、模型及取消控制。任务往返后重放旧移动，原 SSE、真实父子模型 HTTP 和 PostgreSQL 已验证唯一后续轮次及工作结果；完整命令和检查由《日志》“移动重放后的后台接纳”记录。客户端可信移动身份与完整侧栏继续实施。
+
+原 `project.readTree` 的客户端消费现在解析完整 shared 定义，并核对响应仍属于当前连接。Task 项目投影核对标准目录身份、控制项目、分支及正文修订，允许跨越代际并保留固定目录；普通元信息登记继续拒绝修改项目或目录。明确目录重新关联使用真实回执的分支观察值，较早读取不能重新登记旧目录。真实客户端、HTTP／SSE／临时 PostgreSQL 已验证另一连接移动后的重读，纯状态回归覆盖同代际冲突及目录重新关联后的旧登记。具体检查和提交见《日志》“项目树读取连接 Task 身份投影”。
+
+原 Controller 的已解析任务帧、`zcode-task` 的真实 workspace 通知及相应 RPC 元信息也消费同一投影。初始 RPC 或帧保存实际控制观察值，移动后的帧与通知可更新项目归属；未知服务的 `taskMeta` 不登记身份，关闭后的通知及旧连接回包不更新缓存。真实回归分别验证没有补读项目树的 Controller 更新，以及没有 Controller／项目树帮助的原 Task RPC 与两轮模型通知更新。原侧栏与跨项目拖动消费者继续；实际检查和提交由《日志》“可信 Controller 与 Task 元信息通知”持有。
+
+重连现在沿已有 Broadcast 同时通知原项目与分组消费者重新读取。真实原 Provider、独立 DOM、TCP 中断及 HTTP／SSE／临时 PostgreSQL 已验证三次项目往返后，Task 当前项目与控制代际、固定目录和目标项目附加目录共同恢复，模型 HTTP 请求保持一次。原组件自行读取，测试恢复后不主动刷新。该证据属于原组件自动化，完整原 ProjectSidebar、拖动与原生交互继续；实际检查与提交见《日志》“项目目录随原连接恢复”。
+
+原 `ProjectSidebar` 已接入原 Shell：项目、分组、时间线、空项目名称、项目菜单和 Task 行使用固定 3.16.2 原组件，Code／Design／Flow、插件导航、Canvas 和原 SessionPane 保持现有宿主。项目目录 Provider 同时提供原显示设置及现有服务；文件入口暂由现有 `WorkspaceFileTree` 消费可信 Project／Task 目标，第 4 批继续连接原 FileManagerPane。
+
+原 Task 行的浏览器拖动固定来源项目、Task 目录和正文修订，沿已交付的移动服务执行。取消补充目录确认保持原归属；明确确认后目标项目补充目录，Task 固定工作目录保持。确认期间真实新输入完成后，旧拖动收到 409，未移动 Task 或补充目录。新建导航连接原目录不可用状态；独立 DOM 回归验证禁用、恢复及再次禁用。来源、原组件公开组合和本批提交检查由《日志》“原 ProjectSidebar 装配与跨项目拖动”持有；这些证据不计为原生桌面或外部供应商模型验收。
+
+原项目树现消费现有 Controller 列表中的活动、交互及未读显示，按完整 Task 地址匹配已有行，并复用原对象稳定处理。项目服务继续持有行集合、项目归属、目录和控制观察。真实 Bash 审批公开回归已验证侧栏等待提示、原允许按钮、工具输出、后续模型 HTTP 和 Task 目录权限保持；未读操作、连续项目选择及本批最终检查继续由同一日志记录。
+
+原菜单与 Task 点击的未读操作现通过 `mutateTask`／`setTaskUnread` 连接同一 PostgreSQL 提供方，所属插件贡献宿主 RPC。项目树、Task 元信息及 Controller 共同投影当前标记和持久水位；点击固定 Task 观察，读取清除按原标记比较，重放返回原回执且不覆盖当前列表。原 Root、真实 HTTP／SSE／临时 PostgreSQL 已验证 Task 点、项目收起提示、展开保持，以及项目、时间线和分组三种视图的点击清除，正文、目录授权与控制状态保持。双入口反复操作、同键并发与异参、旧清除、新标记、移动后的旧代际拒绝、删除后迟到、连接关闭、独立实例隔离及真正 COMMIT 后回包丢失已有真实回归；来源、仓库、全包测试、类型、lint 和构建分次通过，完整命令与失败范围以《日志》持有。本项覆盖明确菜单和读取动作；原 Task 改名继续接入，后台终态自动标记及 Windows 原生提醒仍需各自生产链与实际平台证据。
+
+原 Task 置顶已提交 `8ea352cc`，两个入口共用持久 `pinned` 和独立 `pinRevision`，原侧栏与 Header 均消费固定观察。反复置顶、同值、并发、重放、运行持续输出、移动／删除、关闭、实例隔离、真实 COMMIT 回包丢失和浏览器迟到 ACK 已取得定向证据。2026-10-25 门禁发现的类型及测试导入问题已修正，来源、仓库、全包测试、全量类型、lint 和构建分次通过；完整回执由《日志》“原 Task 置顶门禁与类型修正”持有。
+
+原 Task 行与 Header 的改名已连接既有 V4 `renameSession`，在等待连接前固定原命令与 Task 控制观察；未知回执只查询原命令，确定后读取当前名称。标题保持 `custom`，空标题也不被后续 Run 自动覆盖，活动时间、正文、Goal 和目录权限保持。三项真实 HTTP／PostgreSQL 服务回归及三项原组件浏览器回归已通过，包含并发重放、运行持续输出、移动／删除后的旧观察及回包未知处理；来源、仓库、全包测试、全量类型、lint 和构建均通过，完整回执由《日志》“原 Task 改名与同一标题投影”持有。Apifox AI 分支 `ai/20261025-from-main-task-rename`（8772719）的 RPC 与四份模型已读回核对，主分支未合并。第 4–7 批及剩余原生和外部模型验收继续，Goal 保持 active。
+
+`4113f131` 首批将原 `FileManagerPane` 连接 Task 与项目目录的显式打开动作，在独立内容标签内展示目录和预览；页内导航保留标签、显示归属及固定读取来源。原预览头部、目录宽度与显隐偏好复用上游实现。单 Task 目录及 A 会话查看 B 文件的两项真实原组件／HTTP／临时 PostgreSQL 回归通过，A 的正文、草稿和权限保持，旧内容节点保留；来源零漂移、仓库、Web 默认测试、全量类型、lint 及原 UI 构建通过。该首批交付仅覆盖文件标签装配，多目录后续结果见下一段，不计为第 4 批全部完成。
+
+多目录的文件浏览目标现分别保存宿主主目录、标准身份和 `browseDirectory`；项目侧栏只允许选择该项目已有 root。目录、搜索和 watcher 消费浏览目录，宿主服务、Git 请求及编辑器目标继续携带真实主目录；页内预览保留固定 Project／Task 来源。两个目录的同名文件、多标签返回、附加目录搜索及实际路径复制已取得真实回归，旧 Task 的目录授权保持，不能从项目修改获得附加目录权限。目录外复制及素材引用使用完整路径，避免被解释为主目录同名文件。当前 Project Git 提供方仍明确要求 Task，本批只验证其调用地址与身份，不计为 Project Git 功能完成；只读 Project Git、本机编辑器身份判定、撤权／迟到请求和完整视图继续，具体门禁及提交由《日志》“FileManager 多目录与宿主身份”持有。
+
+原 CodeViewer 的文件消息入口现与目录标签共用 3.16.2 原 `FileManagerPane`，保持原标签身份、固定来源和媒体全屏期间的内容保留。目录目标仅取打开时已有的真实源目录，`code-output` 等非文件路径和内联内容继续显示原预览，不创建目录导航。关闭一个文件标签的真实 `unwatch` 已通过，兄弟标签继续显示实际文件变化；原完成消息文件链接也已通过真实 Root／HTTP／文件回归。后台全文按钮补齐原标签根 Task 的 `viewerScope`，实际后台命令全文在原 PreviewPane 与独占 Chrome FileManager 中完整显示，不借用当前 Task。门禁及提交由《日志》“原 CodeViewer 统一文件面板与日志来源”记录；Project Git、本机编辑器、撤权／迟到请求和完整视图仍待完成。
+
+消息文件路径打开现固定点击时的 Task／Project 来源；真实 `stat` 响应等待期间切换 Task 后，旧动作不改变新 Task 内容，不借用新 Task 权限。目录、HTML 打开及失败回退使用同一取消检查，成功与回退文件源保留原 viewerScope。实际回包在暂停前后保持原字节，A／B 的目录授权分别验证，切回 A 的新动作仍可打开文件；本项实际结果见《日志》“消息文件等待期间的 Task 归属”。原完整视图及其它未完成项继续，Goal 保持 active。
+
+原完整视图已采用固定 3.16.2 的九份 `side-pane-full-view` 组件与原消费者，直接复用同一 SessionPane、编辑器和内容面板。控制状态沿当前 Shell、工作目录身份和会话 owner 保存，本机 Web、Code 和 Design 共用原控制器，Flow 使用既有主区。浮动时仅显示当前焦点会话，其余会话与文件、Canvas、浏览器、OpenDesign 内容保持挂载；显示对话标签时更新其它内容的实际可见状态。进入、展开、收起、最小化、恢复、切换对话和返回文件的真实原 Root 回归已通过，同一输入节点、草稿、文件节点及 Task 权限保持。运行状态、回答气泡和本批检查结果见《日志》“原完整视图与浮动会话”；剩余第 4 批及第 5–7 批继续，Goal 保持 active。
+
+完整视图代码已提交 `0b0daa08`，五项真实原组件／HTTP／SSE／临时 PostgreSQL 组合和本批仓库、Web、全量类型、lint、原 UI 构建检查通过。`pnpm desktop` 的固定 macOS 应用另经系统可访问性完成进入、展开、最小化、恢复和退出；此项原生证据没有发送模型请求，不代替 Canvas／Flow 往返、指针拖动或其它平台验收。
+
+创建 Task 之前的项目只读 Git 已连接既有 ProcessSandbox。原文件面板的 Project viewer 读取真实状态和忽略列表，实例、项目、可信连接、项目修订和当前目录由提供方核验；项目行锁持有到读取及进程关闭，读取不创建 Task、Run 或 Task Work。原 Root 查看另一个无 Task 项目的 Git 状态已通过真实组件／HTTP／SSE／临时 PostgreSQL／OS 沙箱回归，原输入、草稿、Task 目录与权限保持。普通非 Git 目录和已授权的仓库外目录使用原忽略列表语义，目录撤销、关闭旧连接及归档后的旧请求保持拒绝。正常关闭及取消后的临时目录由父端在确认 helper 退出后清理，失败关闭和 Task 历史诊断保持。Apifox 同步使用 AI 分支 `ai/20261025-from-main-project-git`（8773077），主分支未合并。当前提交、完整检查及平台证据边界见《日志》“创建 Task 前的项目只读 Git”；第 4 批其它内容和第 5–7 批继续。
+
+### 9. 源码依据
+
+上游链接均固定到 3.16.2 的提交；以下 KFW 路径基于本轮 `da07da8a`，行号是核查位置，不代替后续实时读取。
+
+- **[U1] 项目**：[侧栏导出](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/WorkspaceSidebar.tsx#L1-L3)、[ProjectEditor](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ProjectEditor.tsx#L173-L361)。
+- **[U2] 归档**：[ArchiveManagement](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ArchiveManagement.tsx#L31-L50)、[默认收起](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/project-sidebar/ArchiveGroupCard.tsx#L45-L109)。
+- **[U3] 模型**：[ComposerModelMenu](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/chat-input-toolbar/ComposerModelMenu.tsx#L102-L195)、[原工具栏消费](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/v4/composer/V4ComposerToolbar.tsx#L1304-L1378)。
+- **[U4] 权限**：[V4ComposerModeControls](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/v4/composer/V4ComposerModeControls.tsx#L43-L103)。
+- **[U5] 文件**：[FileManagerTarget](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/lib/workspaceSidePane.ts#L50-L77)、[真实渲染](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx#L1294-L1337)。
+- **[U6] 图片**：[原预览操作](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/previewPaneImageContent.tsx#L54-L154)。
+- **[U7] 分享**：[ConversationSharePopover](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/conversation-share-interaction/ConversationSharePopover.tsx#L17-L78)。
+- **[U8] 商店**：[PluginStorePage](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/settings/PluginStorePage.tsx#L72-L136)。
+- **[U9] Plugin UI**：[真实能力检查](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/plugin-ui/adapters/usePluginUiHost.ts#L18-L60)、[会话能力提供方](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/plugin-ui/adapters/PluginUiProviders.tsx#L32-L68)。
+- **[U10] Gen UI**：[正文消费](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/v4/ConversationRowView.tsx#L1699-L1718)、[服务及沙箱检查](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/hooks/useGenUi.ts#L13-L43)。
+- **[U11] 工具搜索**：[设置入口](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/settingsPageHelpers.tsx#L522-L557)。
+- **[U12] 内容完整视图**：[控制器消费](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/app-shell/WorkspaceShellLayout.tsx#L558-L581)。
+- **[U13] 远程功能**：[设置能力条件](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/ui/src/SettingsPage.tsx#L1944-L1975)、[手机入口](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/web/src/main.tsx#L396-L445)。
+- **[U14] 未读提醒**：[原生实现](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/desktop/src/main/desktopWindowLifecycle.ts#L331-L399)。
+- **[U15] 分组与项目目录服务**：[task-groups/contract.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/task-groups/contract.ts#L4-L50)、[window-project-directory/contract.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/window-project-directory/contract.ts#L7-L27)。当前 KFW 已处理的任务列表方法见 [service.ts](../../apps/server/src/features/code-ui/service.ts) 第 1998–2012 行。
+- **[U16] V4 与页面元信息**：[snapshot.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-protocol-v4/snapshot.ts#L476-L492)、[transport.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-protocol-v4/transport.ts#L341-L353)、[live-only delta](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/zcode-protocol-v4/delta.ts#L122-L154)、[Gen UI 状态格式](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/gen-ui/contract.ts#L30-L62)。
+- **[U17] Gen UI 生成端**：[提示段](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/context/sections/desktop.ts#L4-L19)、[输出目录准备](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/apps/zcode-cli/packages/core/src/runtime/helpers/gen-ui-output.ts#L4-L20)。
+- **[U18] 必选服务与窗口身份**：[accessor.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/accessor.ts#L92-L120)、[页面沙箱接口](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/shared/src/mcp-apps/contract.ts#L183-L198)。
+- **[K1] 项目与 Task**：[project-service.ts](../../apps/server/src/features/projects/project-service.ts) 第 190–222、373–405 行；[service.ts](../../apps/server/src/features/code-ui/service.ts) 第 5025–5078、5099–5108 行；[SharedProjectNavigation.tsx](../../apps/web/src/components/workbench/zcode/host/SharedProjectNavigation.tsx) 第 55–73、190–211 行。
+- **[K2] 模型与审批**：[V4ComposerToolbar.tsx](../../apps/web/src/components/workbench/zcode/v4/composer/V4ComposerToolbar.tsx) 第 1025–1091 行；[composerSubmissionConfig.ts](../../apps/web/src/components/workbench/zcode/v4/composer/composerSubmissionConfig.ts) 第 14–45 行；[V4ComposerModeControls.tsx](../../apps/web/src/components/workbench/zcode/v4/composer/V4ComposerModeControls.tsx) 第 171–251 行；[ModelDefaultsSection.tsx](../../apps/web/src/components/workbench/zcode/host/ModelDefaultsSection.tsx) 第 47–95、154–208 行。
+- **[K3] 文档与媒体**：[DocumentPane.tsx](../../apps/web/src/components/workbench/zcode/host/DocumentPane.tsx) 第 41–64 行；[AnimatedSidePanePanel.tsx](../../apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx) 第 1112–1346 行；[GeneratedMediaRenderer.tsx](../../apps/web/src/components/workbench/zcode/host/GeneratedMediaRenderer.tsx) 第 139–195 行；[useComposerAttachments.ts](../../apps/web/src/components/workbench/zcode/v4/composer/useComposerAttachments.ts) 第 1031–1084 行。
+- **[K4] 插件**：[managementDocument.tsx](../../apps/web/src/components/workbench/zcode/host/managementDocument.tsx) 第 139–167 行；[plugins.ts](../../apps/server/src/features/code-ui/plugins.ts) 第 215–300 行；[platform.ts](../../apps/web/src/components/workbench/zcode/host/platform.ts) 第 86–122 行；[PluginSidebarNavigation.tsx](../../apps/web/src/components/workbench/zcode/host/PluginSidebarNavigation.tsx) 第 22–78 行。
+- **[K5] ToolSearch**：[catalogue.ts](../../apps/server/src/features/tool-catalog/catalogue.ts) 第 55–165、168–232 行；每次发现和执行重新检查当前权限、定义与代际。
+- **[K6] 现有宿主与校验**：[main.tsx](../../apps/web/src/components/workbench/zcode/host/main.tsx) 第 166–197 行；[platform.ts](../../apps/web/src/components/workbench/zcode/host/platform.ts) 第 59–99 行；[zcode-provenance.mjs](../../scripts/zcode-provenance.mjs) 第 131–180 行；[vite.config.mjs](../../apps/web/src/components/workbench/zcode/vite.config.mjs) 的别名装配。
+- **[K7] 分享尚未接入**：[service.ts](../../apps/server/src/features/code-ui/service.ts) 第 1995 行最终返回未处理；[code-ui.ts](../../apps/server/src/http/code-ui.ts) 第 418–424 行返回 501。上游发布提供方使用独立公网与 OAuth 服务，见 [node.ts](https://github.com/zai-org/ZCode/blob/3c5b227649371507ddc4eb46ac5133afe6db1cab/packages/services/src/node.ts#L2613-L2635)。
 
 ---
 

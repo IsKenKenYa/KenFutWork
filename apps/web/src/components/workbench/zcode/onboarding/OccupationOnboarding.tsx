@@ -81,7 +81,9 @@ export function OccupationOnboarding({
     loadDeviceMid,
     update,
   });
-  const onboardingVisible = requested || (needsOnboarding === true && !dismissed);
+  const onboardingVisible =
+    platform.supportsUserOnboarding !== false &&
+    (requested || (needsOnboarding === true && !dismissed));
   const captureEnd = useOnboardingTelemetry({
     platform,
     visible:

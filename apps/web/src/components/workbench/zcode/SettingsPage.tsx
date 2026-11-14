@@ -77,6 +77,7 @@ import { ComputerUseSection } from "@zui/settings/ComputerUseSection.js";
 import { HooksSection } from "@zui/settings/HooksSection.js";
 import { MemorySettingsSection } from "@zui/settings/MemorySettingsSection.js";
 import { MigrationSection } from "@zui/settings/MigrationSection.js";
+import { ArchiveManagement } from "@zui/project-sidebar/ArchiveManagement.js";
 import { ModelProviderSection } from "@zui/settings/ModelProviderSection.js";
 import { useEnterpriseCodingPlanProducts } from "@zui/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { SegmentPill } from "@zui/settings/PluginStoreListView.js";
@@ -114,6 +115,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { saveNetworkSetting } from "./network-settings-save.js";
 import { type VoiceDataClient, VoiceSection } from "./settings/VoiceSection.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
 import {
@@ -807,8 +809,6 @@ export function SettingsPage({
     return [...names];
   }, [sharedSettings?.recentProjects, workspaceTabs]);
   const memoryEnabled = sharedSettings?.memoryEnabled === true;
-  const nativeSearchEnhancementsEnabled =
-    sharedSettings?.nativeSearchEnhancementsEnabled !== false;
   const askUserQuestionAutoResolutionEnabled =
     sharedSettings?.askUserQuestionAutoResolutionEnabled !== false;
   const modelIoFullRetentionEnabled =
@@ -1057,22 +1057,6 @@ export function SettingsPage({
     },
     [services.settingService],
   );
-  const handleNativeSearchEnhancementsEnabledChange = useCallback(
-    async (enabled: boolean) => {
-      await runSettingsActionAsync({
-        featureId: "settings.search",
-        action: "toggle_native_search",
-        trigger: "switch",
-        operation: () =>
-          updateSharedSettings({ nativeSearchEnhancementsEnabled: enabled }),
-        completed: {
-          resultSource: "shared_settings",
-          stateAfter: enabled ? "enabled" : "disabled",
-        },
-      });
-    },
-    [updateSharedSettings],
-  );
   const handleAskUserQuestionAutoResolutionEnabledChange = useCallback(
     async (enabled: boolean) => {
       await runSettingsActionAsync({
@@ -1133,23 +1117,32 @@ export function SettingsPage({
   const handleHttpProxyChange = useCallback(
     async (proxy: string) => {
       const normalizedProxy = proxy.trim();
-      await runSettingsActionAsync({
-        featureId: "settings.network",
-        action: "save_http_proxy",
-        trigger: "button",
-        operation: () =>
-          services.settingService.update({
-            // Bugfix: RPC 会丢弃 undefined；清空代理必须传空串，由服务层删除旧字段。
-            httpProxy: normalizedProxy,
+      const saved = await saveNetworkSetting({
+        save: () =>
+          runSettingsActionAsync({
+            featureId: "settings.network",
+            action: "save_http_proxy",
+            trigger: "button",
+            operation: () =>
+              services.settingService.update({
+                // Bugfix: RPC 会丢弃 undefined；清空代理必须传空串，由服务层删除旧字段。
+                httpProxy: normalizedProxy,
+              }),
+            completed: {
+              resultSource: "setting_service",
+              configured: normalizedProxy.length > 0,
+              requiresRestart: true,
+            },
           }),
-        completed: {
-          resultSource: "setting_service",
-          configured: normalizedProxy.length > 0,
-          requiresRestart: true,
+        notify: toast,
+        hints: {
+          savedHint: intl.formatMessage({ id: "settings.httpProxySavedHint" }),
+          invalidHint: intl.formatMessage({
+            id: "settings.httpProxyInvalidHint",
+          }),
         },
       });
-      setHttpProxy(normalizedProxy);
-      toast(intl.formatMessage({ id: "settings.httpProxySavedHint" }));
+      if (saved) setHttpProxy(normalizedProxy);
     },
     [services.settingService, intl],
   );
@@ -1182,23 +1175,32 @@ export function SettingsPage({
   const handleHttpProxyCaCertPathChange = useCallback(
     async (caCertPath: string) => {
       const normalizedCaCertPath = caCertPath.trim();
-      await runSettingsActionAsync({
-        featureId: "settings.network",
-        action: "save_ca_certificate",
-        trigger: "button",
-        operation: () =>
-          services.settingService.update({
-            // Bugfix: 清空自定义 CA 必须传空串，否则旧 NODE_EXTRA_CA_CERTS 路径会残留。
-            httpProxyCaCertPath: normalizedCaCertPath,
+      const saved = await saveNetworkSetting({
+        save: () =>
+          runSettingsActionAsync({
+            featureId: "settings.network",
+            action: "save_ca_certificate",
+            trigger: "button",
+            operation: () =>
+              services.settingService.update({
+                // Bugfix: 清空自定义 CA 必须传空串，否则旧 NODE_EXTRA_CA_CERTS 路径会残留。
+                httpProxyCaCertPath: normalizedCaCertPath,
+              }),
+            completed: {
+              resultSource: "setting_service",
+              configured: normalizedCaCertPath.length > 0,
+              requiresRestart: true,
+            },
           }),
-        completed: {
-          resultSource: "setting_service",
-          configured: normalizedCaCertPath.length > 0,
-          requiresRestart: true,
+        notify: toast,
+        hints: {
+          savedHint: intl.formatMessage({ id: "settings.httpProxySavedHint" }),
+          invalidHint: intl.formatMessage({
+            id: "settings.httpProxyCaCertInvalidHint",
+          }),
         },
       });
-      setHttpProxyCaCertPath(normalizedCaCertPath);
-      toast(intl.formatMessage({ id: "settings.httpProxySavedHint" }));
+      if (saved) setHttpProxyCaCertPath(normalizedCaCertPath);
     },
     [services.settingService, intl],
   );
@@ -1931,9 +1933,6 @@ export function SettingsPage({
                             integratedTerminalShellOptions={
                               integratedTerminalShellOptions
                             }
-                            nativeSearchEnhancementsEnabled={
-                              nativeSearchEnhancementsEnabled
-                            }
                             httpProxy={httpProxy}
                             httpProxyNoProxy={httpProxyNoProxy}
                             httpProxyCaCertPath={httpProxyCaCertPath}
@@ -2012,9 +2011,6 @@ export function SettingsPage({
                             }
                             onIntegratedTerminalShellChange={
                               handleIntegratedTerminalShellChange
-                            }
-                            onNativeSearchEnhancementsEnabledChange={
-                              handleNativeSearchEnhancementsEnabledChange
                             }
                             onModelIoFullRetentionEnabledChange={
                               handleModelIoFullRetentionEnabledChange
@@ -2176,6 +2172,8 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             isDesktop={isDesktop}
                           />
+                        ) : activeSection === "archives" ? (
+                          <ArchiveManagement />
                         ) : activeSection === "usage" ? (
                           <UsageStatsSection
                             activeTab={usageActiveTab}

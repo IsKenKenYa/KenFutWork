@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  type ExecutionMode,
-  zcodeUiProtocol as protocol,
-} from "@kenfutwork/shared";
+import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
@@ -27,16 +24,14 @@ const toolNames = (body: Record<string, unknown>) =>
 function historyCommand(
   host: Host,
   type: "editUserQuery" | "retryTurn",
-  payload: unknown,
+  payload: Record<string, unknown>,
   commandId: string,
   guard: Guard,
-  executionMode: ExecutionMode | undefined,
 ) {
   return host.stream.rpc("sendConversationCommandV4", [
     {
       workspacePath: host.workspacePath,
       projectId: host.projectId,
-      ...(executionMode ? { executionMode } : {}),
       envelope: {
         type,
         sessionId: host.sessionId,
@@ -74,7 +69,6 @@ async function completeOriginal(fixture: Fixture, host: Host, model: Model) {
   const snapshot = await waitPhase(fixture, host.sessionId, "completedSuccess");
   const { input: original } = await lastInput(fixture, host);
   const originalCapabilities = structuredClone(original.frozenContributions);
-  expect(original.executionMode).toBe("agent");
   expect(originalCapabilities?.entries).toContainEqual(
     expect.objectContaining({ id: "history_original_capability" }),
   );
@@ -98,28 +92,19 @@ async function expectCurrentModelRequest(model: Model) {
 async function expectReplay(
   host: Host,
   type: "editUserQuery" | "retryTurn",
-  payload: unknown,
+  payload: Record<string, unknown>,
   commandId: string,
   guard: Guard,
-  requested: ExecutionMode | undefined,
 ) {
-  const repeated = await historyCommand(
-    host,
-    type,
-    payload,
-    commandId,
-    guard,
-    requested,
-  );
+  const repeated = await historyCommand(host, type, payload, commandId, guard);
   expect(repeated.body.result).toMatchObject({ status: "duplicate" });
   if (type !== "editUserQuery") return;
   const conflict = await historyCommand(
     host,
     type,
-    payload,
+    { ...payload, newText: `${INPUT}，补充内容` },
     commandId,
     guard,
-    requested === "agent" ? "solo" : "agent",
   );
   expect(conflict.status, JSON.stringify(conflict.body)).toBe(409);
 }
@@ -128,13 +113,9 @@ async function expectReplay(
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "历史重跑逐Run能力接纳 integration",
   () => {
-    it.each([
-      { type: "editUserQuery", requested: undefined, expected: "solo" },
-      { type: "editUserQuery", requested: "agent", expected: "agent" },
-      { type: "retryTurn", requested: "solo", expected: "agent" },
-    ] as const)(
-      "$type显式方式$requested：新Run捕获当前能力与代际，工作方式为$expected，重放不再执行",
-      async ({ type, requested, expected }) => {
+    it.each(["editUserQuery", "retryTurn"] as const)(
+      "%s无需执行选择字段：新Run捕获当前能力与代际，重放不再执行",
+      async (type) => {
         const fixture = await createCodeUiHttpFixture();
         const model = await heldModel();
         const registry = fixture.app.kernel.get("tools");
@@ -162,15 +143,6 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           );
           removeOriginal();
           removeCurrent = register("history_current_capability");
-          expect(
-            (
-              await host.client.request(
-                `/api/execution-modes/${host.sessionId}`,
-                { mode: "solo" },
-                "PUT",
-              )
-            ).status,
-          ).toBe(200);
           const snapshot = protocol.conversationSnapshotSchema.parse(
             await host.snapshot(),
           );
@@ -183,8 +155,9 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           if (!target) throw new Error("历史命令缺少原输入或回复边界");
           const payload = {
             target: { rowId: target.rowId, entityId: target.entityId },
-            workspaceMode: "preserve",
-            ...(type === "editUserQuery" ? { newText: INPUT } : {}),
+            ...(type === "editUserQuery"
+              ? { workspaceMode: "preserve", newText: INPUT }
+              : {}),
           };
           const guard = {
             baseRevision: snapshot.revision,
@@ -197,13 +170,11 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             payload,
             commandId,
             guard,
-            requested,
           );
           expect(edited.status, JSON.stringify(edited.body)).toBe(200);
           expect(edited.body.result).toMatchObject({ status: "accepted" });
           const { root, input: rerun } = await lastInput(fixture, host);
           expect(rerun.runId).not.toBe(original.runId);
-          expect(rerun.executionMode).toBe(expected);
           expect(rerun.frozenContributions).toEqual(currentCapabilities);
           expect(rerun.frozenContributions).not.toEqual(originalCapabilities);
           expect(rerun.scopeGeneration).toBe(Number(root.scope_generation));
@@ -217,7 +188,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           removeLate = register("history_after_admission_capability");
           await expectCurrentModelRequest(model);
           expect(original.frozenContributions).toEqual(originalCapabilities);
-          await expectReplay(host, type, payload, commandId, guard, requested);
+          await expectReplay(host, type, payload, commandId, guard);
           expect(model.requests).toHaveLength(2);
           model.finish(1);
           await waitPhase(fixture, host.sessionId, "completedSuccess");
