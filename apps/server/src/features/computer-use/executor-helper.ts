@@ -611,9 +611,9 @@ export function createHelperExecutor(options: {
               ...(point ? { x: point.x, y: point.y } : {}),
               deltaX:
                 action.direction === "left"
-                  ? -amount
+                  ? amount
                   : action.direction === "right"
-                    ? amount
+                    ? -amount
                     : 0,
               deltaY:
                 action.direction === "up"
