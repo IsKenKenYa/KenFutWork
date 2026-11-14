@@ -21,7 +21,8 @@ final class MacOSInputControllerTests: XCTestCase {
         pid: Int(ProcessInfo.processInfo.processIdentifier),
         key: "definitely-not-a-key",
         modifiers: [],
-        repeatCount: 1
+        repeatCount: 1,
+        delayMs: 100
       )
     ) { error in
       XCTAssertEqual(

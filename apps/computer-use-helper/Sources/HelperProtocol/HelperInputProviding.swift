@@ -22,7 +22,8 @@ public protocol HelperInputProviding {
     pid: Int,
     key: String,
     modifiers: [String],
-    repeatCount: Int
+    repeatCount: Int,
+    delayMs: Int
   ) throws -> ComputerUseHelperActionResult
   func scroll(
     pid: Int,

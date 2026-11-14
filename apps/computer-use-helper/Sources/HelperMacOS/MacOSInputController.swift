@@ -139,12 +139,10 @@ public struct MacOSInputController: HelperInputProviding {
     for character in text.utf16 {
       if character == 10 || character == 13 {
         flush(&buffer)
-        pressKey(keyCode: 36, flags: [], repeatCount: 1)
-        delay(delayMs)
+        pressKey(keyCode: 36, flags: [], repeatCount: 1, delayMs: delayMs)
       } else if character == 9 {
         flush(&buffer)
-        pressKey(keyCode: 48, flags: [], repeatCount: 1)
-        delay(delayMs)
+        pressKey(keyCode: 48, flags: [], repeatCount: 1, delayMs: delayMs)
       } else {
         buffer.append(character)
       }
@@ -157,7 +155,8 @@ public struct MacOSInputController: HelperInputProviding {
     pid: Int,
     key: String,
     modifiers: [String],
-    repeatCount: Int
+    repeatCount: Int,
+    delayMs: Int
   ) throws -> ComputerUseHelperActionResult {
     let normalized = key.lowercased()
     guard let keyCode = Self.keyCode(for: normalized) else {
@@ -181,7 +180,8 @@ public struct MacOSInputController: HelperInputProviding {
     pressKey(
       keyCode: keyCode,
       flags: flags,
-      repeatCount: repeatCount
+      repeatCount: repeatCount,
+      delayMs: delayMs
     )
     return ComputerUseHelperActionResult(performed: true)
   }
@@ -320,7 +320,8 @@ public struct MacOSInputController: HelperInputProviding {
   private func pressKey(
     keyCode: CGKeyCode,
     flags: CGEventFlags,
-    repeatCount: Int
+    repeatCount: Int,
+    delayMs: Int
   ) {
     for _ in 0..<max(1, repeatCount) {
       let down = CGEvent(
@@ -336,8 +337,9 @@ public struct MacOSInputController: HelperInputProviding {
       down?.flags = flags
       up?.flags = flags
       down?.post(tap: .cghidEventTap)
+      delay(delayMs)
       up?.post(tap: .cghidEventTap)
-      usleep(20_000)
+      delay(delayMs)
     }
   }
 

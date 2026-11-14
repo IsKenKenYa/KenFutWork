@@ -412,6 +412,7 @@ it("输入动作限定按钮、按键、滚动单位与拖拽时长", () => {
       key: "return",
       modifiers: ["cmd", "shift"],
       repeat: 2,
+      delayMs: 2_000,
     }).success,
   ).toBe(true);
   expect(

@@ -312,6 +312,7 @@ export const computerUseHelperKeyParamsSchema = z
       .max(4)
       .optional(),
     repeat: z.number().int().min(1).max(20).optional(),
+    delayMs: governedInteger(AGENT_GOVERNANCE_LIMITS.computerUseInputDelayMs),
   })
   .strict();
 

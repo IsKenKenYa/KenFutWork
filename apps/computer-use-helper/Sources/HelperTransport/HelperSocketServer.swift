@@ -735,15 +735,17 @@ public final class HelperSocketServer {
       }
       let modifiers = (params["modifiers"] as? [String]) ?? []
       let repeatCount = integer(params["repeat"]) ?? 1
+      let delayMs = integer(params["delayMs"]) ?? 0
       let allowedModifiers = ["cmd", "shift", "option", "control"]
       guard
         modifiers.allSatisfy(allowedModifiers.contains),
-        (1...20).contains(repeatCount)
+        (1...20).contains(repeatCount),
+        (0...60_000).contains(delayMs)
       else {
         sendError(
           id: id,
           code: "invalid_request",
-          message: "修饰键或重复次数不合法",
+          message: "修饰键、重复次数或输入间隔不合法",
           to: clientDescriptor
         )
         return true
@@ -756,7 +758,8 @@ public final class HelperSocketServer {
             pid: pid,
             key: key,
             modifiers: modifiers,
-            repeatCount: repeatCount
+            repeatCount: repeatCount,
+            delayMs: delayMs
           )
         }
       )

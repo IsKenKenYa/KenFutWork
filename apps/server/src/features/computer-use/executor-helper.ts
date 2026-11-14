@@ -582,7 +582,12 @@ export function createHelperExecutor(options: {
             const parsed = toHelperKeyRequest(action.keys);
             await focus(resolved, context.signal);
             await options.manager.key(
-              { pid: resolved.pid, ...parsed, repeat: 1 },
+              {
+                pid: resolved.pid,
+                ...parsed,
+                repeat: 1,
+                delayMs: context.inputDelayMs,
+              },
               context.signal,
             );
             return { actionSent: true, detail: "已通过 Helper 发送按键" };
