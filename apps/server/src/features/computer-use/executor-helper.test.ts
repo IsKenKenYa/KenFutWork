@@ -3,8 +3,25 @@ import type { CuRaster } from "./executor.js";
 import {
   helperCoordinate,
   helperElementPoint,
+  helperElementTitle,
   toHelperKeyRequest,
 } from "./executor-helper.js";
+
+it("无标题控件仍可用辅助功能标识或描述区分", () => {
+  expect(
+    helperElementTitle({
+      title: "标题",
+      identifier: "标识",
+      description: "说明",
+    }),
+  ).toBe("标题");
+  expect(
+    helperElementTitle({ title: "", identifier: "标识", description: "说明" }),
+  ).toBe("标识");
+  expect(helperElementTitle({ identifier: "", description: "说明" })).toBe(
+    "说明",
+  );
+});
 
 it("元素位置、身份或窗口变化后拒绝发送输入", () => {
   const before: Parameters<typeof helperElementPoint>[0] = {

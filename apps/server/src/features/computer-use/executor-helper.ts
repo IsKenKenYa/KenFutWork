@@ -172,9 +172,10 @@ export function createHelperExecutor(options: {
         if (node.actions?.includes("AXPress")) states.push("pressable");
         if (node.role === "AXTextField" || node.role === "AXTextArea")
           states.push("editable");
+        const title = helperElementTitle(node);
         const mapped: AxNode = {
           role: normalizeRole(node.role),
-          ...(node.title ? { title: node.title } : {}),
+          ...(title ? { title } : {}),
           ...(node.value ? { value: node.value } : {}),
           ...(node.actions?.length ? { actions: node.actions } : {}),
           ...(states.length ? { states } : {}),
@@ -244,6 +245,18 @@ export function createHelperExecutor(options: {
       { pid: target.pid, windowId: target.window.windowId },
       signal,
     );
+
+  const resolveInputTarget = async (
+    appRef: ParsedAppRef,
+    context?: CuOperationContext,
+  ) => {
+    const target = await resolveTarget(appRef, context);
+    await focus(target, context?.signal);
+    return await resolveTarget(
+      { pid: target.pid, windowId: target.window.windowId },
+      context,
+    );
+  };
 
   const executor: ComputerUseExecutor = {
     id: "macos-helper",
@@ -372,7 +385,7 @@ export function createHelperExecutor(options: {
       target: CuTarget,
       context?: CuOperationContext,
     ): Promise<CuActionResult> {
-      const resolved = await resolveTarget(appRef, context);
+      const resolved = await resolveInputTarget(appRef, context);
       const point = await actionPoints(resolved, context)(target);
       if (!point)
         throw new HelperExecutorError("invalid_target", "点击缺少目标", false);
@@ -393,7 +406,7 @@ export function createHelperExecutor(options: {
       target?: CuTarget,
       context?: CuOperationContext,
     ): Promise<CuActionResult> {
-      const resolved = await resolveTarget(appRef, context);
+      const resolved = await resolveInputTarget(appRef, context);
       const point = await actionPoints(resolved, context)(target);
       try {
         if (point) {
@@ -401,7 +414,7 @@ export function createHelperExecutor(options: {
             { pid: resolved.pid, ...point, button: "left", clickCount: 1 },
             context?.signal,
           );
-        } else await focus(resolved, context?.signal);
+        }
         const request = {
           pid: resolved.pid,
           text,
@@ -474,7 +487,10 @@ export function createHelperExecutor(options: {
       action: CuInputAction,
       context: CuOperationContext,
     ): Promise<CuActionResult> {
-      const resolved = await resolveTarget(appRef, context);
+      const resolved =
+        action.kind === "focus" || action.kind === "keys"
+          ? await resolveTarget(appRef, context)
+          : await resolveInputTarget(appRef, context);
       const pointFor = actionPoints(resolved, context);
       try {
         switch (action.kind) {
@@ -570,6 +586,12 @@ export function createHelperExecutor(options: {
   };
 
   return executor;
+}
+
+export function helperElementTitle(
+  node: Pick<ComputerUseHelperAxNode, "title" | "identifier" | "description">,
+): string | undefined {
+  return node.title || node.identifier || node.description || undefined;
 }
 
 export function helperElementPoint(
