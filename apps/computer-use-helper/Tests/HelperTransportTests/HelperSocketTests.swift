@@ -16,6 +16,7 @@ final class HelperSocketTests: XCTestCase {
   private var probedFlags: [Bool] = []
   private var axTimeoutMs: Int?
   private var axWindowId: Int?
+  private var axLimits: ComputerUseHelperAxTreeLimits?
 
   override func setUpWithError() throws {
     socketPath =
@@ -104,6 +105,7 @@ final class HelperSocketTests: XCTestCase {
       accessibilityTree: { [weak self] pid, windowId, limits in
         self?.axTimeoutMs = limits.timeoutMs
         self?.axWindowId = windowId
+        self?.axLimits = limits
         guard pid == 501 else {
           throw HelperOperationError(
             code: "permission_denied",
@@ -406,12 +408,16 @@ final class HelperSocketTests: XCTestCase {
     try client.send([
       "id": "ax",
       "method": "ax.tree",
-      "params": ["pid": 501, "windowId": 42, "maxDepth": 2, "maxNodes": 20, "timeoutMs": 30_000],
+      "params": ["pid": 501, "windowId": 42, "maxDepth": 2, "maxNodes": 20,
+        "timeoutMs": 30_000, "maxChildren": 2_000, "titleMaxChars": 1_000, "valueMaxChars": 0],
     ])
     let tree = try client.receive()
     XCTAssertEqual(tree["ok"] as? Bool, true)
     XCTAssertEqual(axTimeoutMs, 30_000)
     XCTAssertEqual(axWindowId, 42)
+    XCTAssertEqual(axLimits?.maxChildren, 2_000)
+    XCTAssertEqual(axLimits?.titleMaxChars, 1_000)
+    XCTAssertEqual(axLimits?.valueMaxChars, 0)
     let treeResult = try XCTUnwrap(tree["result"] as? [String: Any])
     XCTAssertEqual(treeResult["nodeCount"] as? Int, 2)
     let root = try XCTUnwrap(treeResult["root"] as? [String: Any])

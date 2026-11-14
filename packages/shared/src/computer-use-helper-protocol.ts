@@ -206,12 +206,20 @@ export const computerUseHelperAxTreeParamsSchema = z
   .object({
     pid: z.number().int().positive(),
     windowId: z.number().int().positive().optional(),
-    maxDepth: z.number().int().min(1).max(64).optional(),
-    maxChildren: z.number().int().min(1).max(1000).optional(),
+    maxDepth: governedInteger(AGENT_GOVERNANCE_LIMITS.computerUseAxMaxDepth),
+    maxChildren: governedInteger(
+      AGENT_GOVERNANCE_LIMITS.computerUseAxMaxChildren,
+    ),
     maxNodes: z.number().int().min(1).max(10000).optional(),
-    titleMaxChars: z.number().int().min(1).max(500).optional(),
-    valueMaxChars: z.number().int().min(1).max(10000).optional(),
-    maxActions: z.number().int().min(1).max(100).optional(),
+    titleMaxChars: governedInteger(
+      AGENT_GOVERNANCE_LIMITS.computerUseAxTitleMaxChars,
+    ),
+    valueMaxChars: governedInteger(
+      AGENT_GOVERNANCE_LIMITS.computerUseAxValueMaxChars,
+    ),
+    maxActions: governedInteger(
+      AGENT_GOVERNANCE_LIMITS.computerUseAxMaxActions,
+    ),
     timeoutMs: z
       .number()
       .int()
@@ -220,6 +228,10 @@ export const computerUseHelperAxTreeParamsSchema = z
       .optional(),
   })
   .strict();
+
+function governedInteger(range: { min: number; max: number }) {
+  return z.number().int().min(range.min).max(range.max).optional();
+}
 
 export const computerUseHelperAxTreeResultSchema = z
   .object({

@@ -274,12 +274,21 @@ it("AX 树限定深度、节点数、文本长度与超时范围", () => {
   expect(
     computerUseHelperAxTreeParamsSchema.parse({ pid: 501, timeoutMs: 120_000 }),
   ).toEqual({ pid: 501, timeoutMs: 120_000 });
+  const expanded = {
+    pid: 501,
+    maxDepth: 128,
+    maxChildren: 2_000,
+    titleMaxChars: 1_000,
+    valueMaxChars: 0,
+    maxActions: 200,
+  };
+  expect(computerUseHelperAxTreeParamsSchema.parse(expanded)).toEqual(expanded);
   for (const invalid of [
     { ...params, pid: 0 },
     { ...params, maxDepth: 0 },
-    { ...params, maxChildren: 1001 },
+    { ...params, maxChildren: 100_001 },
     { ...params, maxNodes: 0 },
-    { ...params, valueMaxChars: 10001 },
+    { ...params, valueMaxChars: 1_048_577 },
     { ...params, timeoutMs: 50 },
     { ...params, timeoutMs: 120_001 },
     { ...params, extra: true },

@@ -220,12 +220,13 @@ public struct ComputerUseHelperAxTreeLimits: Equatable, Sendable {
     maxActions: Int = 20,
     timeoutMs: Int = 2_000
   ) {
-    self.maxDepth = Self.clamp(maxDepth, 1, 64)
-    self.maxChildren = Self.clamp(maxChildren, 1, 1_000)
+    // 可调字段采用共享 governance.ts 的区间；maxNodes 是 socket 单次响应的独立护栏。
+    self.maxDepth = Self.clamp(maxDepth, 1, 128)
+    self.maxChildren = Self.clamp(maxChildren, 1, 100_000)
     self.maxNodes = Self.clamp(maxNodes, 1, 10_000)
-    self.titleMaxChars = Self.clamp(titleMaxChars, 1, 500)
-    self.valueMaxChars = Self.clamp(valueMaxChars, 1, 10_000)
-    self.maxActions = Self.clamp(maxActions, 1, 100)
+    self.titleMaxChars = Self.clamp(titleMaxChars, 0, 1_048_576)
+    self.valueMaxChars = Self.clamp(valueMaxChars, 0, 1_048_576)
+    self.maxActions = Self.clamp(maxActions, 1, 100_000)
     // 上限与共享治理设置 computerUseActionTimeoutMs 一致。
     self.timeoutMs = Self.clamp(timeoutMs, 100, 120_000)
   }

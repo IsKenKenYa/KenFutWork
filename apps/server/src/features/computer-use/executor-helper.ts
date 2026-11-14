@@ -137,7 +137,10 @@ export function createHelperExecutor(options: {
         windowId: target.window.windowId,
         maxDepth: limits.maxDepth,
         maxChildren: limits.maxChildren,
-        maxNodes: Math.max(1, limits.maxChildren * limits.maxDepth),
+        maxNodes: Math.min(
+          10_000, // 单次 Helper 查询的节点上限，保持 socket 响应有界。
+          Math.max(1, limits.maxChildren * limits.maxDepth),
+        ),
         titleMaxChars: limits.titleMaxChars,
         valueMaxChars: limits.valueMaxChars,
         maxActions: limits.maxActions,
@@ -537,7 +540,7 @@ export function createHelperExecutor(options: {
                   : action.direction === "down"
                     ? -amount
                     : 0,
-              unit: "pixel" as const,
+              unit: "line" as const,
             };
             await options.manager.scroll(request, context.signal);
             return { actionSent: true, detail: "已通过 Helper 发送滚动" };
