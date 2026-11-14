@@ -41,6 +41,21 @@ public struct MacOSInputController: HelperInputProviding {
     CGEventSource(stateID: .hidSystemState)
   }
 
+  public func focus(pid: Int, windowId: Int) throws -> ComputerUseHelperActionResult {
+    try requireAccessibility()
+    guard pid <= Int(Int32.max), let target = MacOSWindowCatalog.list(pid: pid)
+      .windows.first(where: { $0.windowId == windowId })
+    else {
+      throw HelperOperationError(code: "window_not_found", message: "目标窗口不存在")
+    }
+    let window = try MacOSAccessibilityTree.window(pid: pid, matching: target)
+    try activate(pid: pid)
+    guard AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success else {
+      throw HelperOperationError(code: "focus_failed", message: "无法聚焦目标窗口")
+    }
+    return ComputerUseHelperActionResult(performed: true)
+  }
+
   public func move(pid: Int, x: Double, y: Double) throws
     -> ComputerUseHelperActionResult
   {
@@ -325,7 +340,7 @@ public struct MacOSInputController: HelperInputProviding {
 
   private func delay(_ milliseconds: Int) {
     guard milliseconds > 0 else { return }
-    usleep(useconds_t(milliseconds * 1_000))
+    Thread.sleep(forTimeInterval: Double(milliseconds) / 1_000)
   }
 
   static func keyCode(for key: String) -> CGKeyCode? {

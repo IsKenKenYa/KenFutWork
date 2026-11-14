@@ -509,6 +509,17 @@ final class HelperSocketTests: XCTestCase {
       "input_unavailable"
     )
 
+    for (method, params, expected) in [
+      ("input.focus", ["pid": 501], "invalid_request"),
+      ("input.focus", ["pid": 501, "windowId": 42], "input_unavailable"),
+      ("input.type", ["pid": 501, "text": "输入", "delayMs": 60_000], "input_unavailable"),
+      ("input.type", ["pid": 501, "text": "输入", "delayMs": 60_001], "invalid_request"),
+    ] as [(String, [String: Any], String)] {
+      try client.send(["id": method, "method": method, "params": params])
+      let reply = try client.receive()
+      XCTAssertEqual((reply["error"] as? [String: Any])?["code"] as? String, expected)
+    }
+
     try client.send(["id": "clipboard", "method": "clipboard.read"])
     let clipboard = try client.receive()
     XCTAssertEqual(

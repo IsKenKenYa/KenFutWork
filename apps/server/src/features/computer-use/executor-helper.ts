@@ -210,6 +210,7 @@ export function createHelperExecutor(options: {
   };
 
   const targetPoint = (
+    resolved: ResolvedTarget,
     latest: LatestObservation | undefined,
     target: CuTarget | undefined,
     context: CuOperationContext | undefined,
@@ -223,31 +224,13 @@ export function createHelperExecutor(options: {
         );
       return elementCenter(latest, target.index);
     }
-    const raster =
-      context?.raster ??
-      (latest ? latestRasterByPid.get(latest.pid) : undefined);
+    const raster = context?.raster ?? latestRasterByPid.get(resolved.pid);
     if (!raster)
       throw new HelperExecutorError(
         "element_stale",
         "坐标目标需要先截图并绑定 frameId",
       );
-    if (target.frameId && target.frameId !== raster.frameId)
-      throw new HelperExecutorError(
-        "element_stale",
-        "frameId 已过期，请重新截图",
-      );
-    if (target.x >= raster.width || target.y >= raster.height)
-      throw new HelperExecutorError("invalid_target", "坐标超出截图范围");
-    const bounds = raster.bounds ?? latest?.windowBounds;
-    if (!bounds)
-      throw new HelperExecutorError(
-        "invalid_target",
-        "截图缺少窗口边界，无法换算坐标",
-      );
-    return {
-      x: bounds[0] + target.x * (bounds[2] / raster.width),
-      y: bounds[1] + target.y * (bounds[3] / raster.height),
-    };
+    return helperCoordinate(resolved.window, raster, target);
   };
 
   const executor: ComputerUseExecutor = {
@@ -381,7 +364,7 @@ export function createHelperExecutor(options: {
         (target.kind === "element"
           ? await observeRoot(resolved, context)
           : undefined);
-      const point = targetPoint(latest, target, context);
+      const point = targetPoint(resolved, latest, target, context);
       if (!point)
         throw new HelperExecutorError("invalid_target", "点击缺少目标", false);
       try {
@@ -406,7 +389,7 @@ export function createHelperExecutor(options: {
     ): Promise<CuActionResult> {
       const resolved = await resolveTarget(appRef);
       const latest = latestByPid.get(resolved.pid);
-      const point = targetPoint(latest, target, context);
+      const point = targetPoint(resolved, latest, target, context);
       try {
         if (point) {
           await options.manager.click({
@@ -491,7 +474,7 @@ export function createHelperExecutor(options: {
       const resolved = await resolveTarget(appRef);
       const latest = latestByPid.get(resolved.pid);
       const pointFor = (target: CuTarget | undefined) =>
-        targetPoint(latest, target, context);
+        targetPoint(resolved, latest, target, context);
       try {
         switch (action.kind) {
           case "click": {
@@ -569,16 +552,9 @@ export function createHelperExecutor(options: {
             return { actionSent: true, detail: "已通过 Helper 发送按键" };
           }
           case "focus": {
-            const observation =
-              latest ?? (await observeRoot(resolved, context));
-            const width = observation.windowBounds[2];
-            const height = observation.windowBounds[3];
-            await options.manager.click({
+            await options.manager.focus({
               pid: resolved.pid,
-              x: observation.windowBounds[0] + width / 2,
-              y: observation.windowBounds[1] + height / 2,
-              button: "left",
-              clickCount: 1,
+              windowId: resolved.window.windowId,
             });
             return { actionSent: true, detail: "已聚焦目标窗口" };
           }
@@ -594,6 +570,40 @@ export function createHelperExecutor(options: {
   };
 
   return executor;
+}
+
+export function helperCoordinate(
+  window: ComputerUseHelperWindow,
+  raster: Pick<CuRaster, "binding" | "bounds" | "frameId" | "width" | "height">,
+  target: Extract<CuTarget, { kind: "coordinate" }>,
+): { x: number; y: number } {
+  const bounds = raster.bounds;
+  const current = window.bounds;
+  if (
+    !bounds ||
+    (target.frameId && target.frameId !== raster.frameId) ||
+    raster.binding !== `helper:${window.pid}:${window.windowId}` ||
+    current.x !== bounds[0] ||
+    current.y !== bounds[1] ||
+    current.width !== bounds[2] ||
+    current.height !== bounds[3]
+  ) {
+    throw new HelperExecutorError(
+      "element_stale",
+      "窗口或截图已改变，请重新截图",
+    );
+  }
+  if (
+    target.x < 0 ||
+    target.y < 0 ||
+    target.x >= raster.width ||
+    target.y >= raster.height
+  )
+    throw new HelperExecutorError("invalid_target", "坐标超出截图范围");
+  return {
+    x: bounds[0] + target.x * (bounds[2] / raster.width),
+    y: bounds[1] + target.y * (bounds[3] / raster.height),
+  };
 }
 
 export function toHelperKeyRequest(keys: string[]): {

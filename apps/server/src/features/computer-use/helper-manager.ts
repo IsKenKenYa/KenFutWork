@@ -175,6 +175,13 @@ export class HelperProcessManager {
     return await this.requestAction("input.type", params);
   }
 
+  async focus(params: {
+    pid: number;
+    windowId: number;
+  }): Promise<ComputerUseHelperActionResult> {
+    return await this.requestAction("input.focus", params);
+  }
+
   async move(
     params: Pick<ComputerUseHelperClickParams, "pid" | "x" | "y">,
   ): Promise<ComputerUseHelperActionResult> {

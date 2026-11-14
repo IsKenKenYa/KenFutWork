@@ -4,6 +4,30 @@ import Foundation
 import HelperProtocol
 
 public enum MacOSAccessibilityTree {
+  static func window(
+    pid: Int,
+    matching target: ComputerUseHelperWindow
+  ) throws -> AXUIElement {
+    let application = AXUIElementCreateApplication(pid_t(pid))
+    let matchingBounds = elements(application, kAXWindowsAttribute).filter { window in
+      guard let origin = point(window, kAXPositionAttribute),
+        let extent = size(window, kAXSizeAttribute)
+      else { return false }
+      return origin.x == target.bounds.x && origin.y == target.bounds.y
+        && extent.width == target.bounds.width && extent.height == target.bounds.height
+    }
+    let windows = matchingBounds.count > 1 && !target.title.isEmpty
+      ? matchingBounds.filter { string($0, kAXTitleAttribute) == target.title }
+      : matchingBounds
+    guard windows.count == 1, let window = windows.first else {
+      throw HelperOperationError(
+        code: "window_not_found",
+        message: "无法唯一识别要聚焦的窗口"
+      )
+    }
+    return window
+  }
+
   /// 读取应用的 AX 树。遍历有节点数、深度、子节点数和文本长度上限；
   /// 安全输入框的值一律不采集，避免把密码送进模型上下文。
   public static func read(

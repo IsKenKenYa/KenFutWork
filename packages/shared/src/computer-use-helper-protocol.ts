@@ -280,7 +280,12 @@ export const computerUseHelperTypeParamsSchema = z
   .object({
     pid: computerUseHelperPidSchema,
     text: z.string().min(1).max(100_000),
-    delayMs: z.number().int().min(0).max(1_000).optional(),
+    delayMs: z
+      .number()
+      .int()
+      .min(AGENT_GOVERNANCE_LIMITS.computerUseInputDelayMs.min)
+      .max(AGENT_GOVERNANCE_LIMITS.computerUseInputDelayMs.max)
+      .optional(),
   })
   .strict();
 

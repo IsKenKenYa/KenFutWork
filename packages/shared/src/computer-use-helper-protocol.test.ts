@@ -383,9 +383,16 @@ it("输入动作限定按钮、按键、滚动单位与拖拽时长", () => {
     computerUseHelperTypeParamsSchema.safeParse({
       pid: 501,
       text: "你好，世界",
-      delayMs: 20,
+      delayMs: 60_000,
     }).success,
   ).toBe(true);
+  expect(
+    computerUseHelperTypeParamsSchema.safeParse({
+      pid: 501,
+      text: "输入",
+      delayMs: 60_001,
+    }).success,
+  ).toBe(false);
   expect(
     computerUseHelperTypeParamsSchema.safeParse({ pid: 501, text: "" }).success,
   ).toBe(false);

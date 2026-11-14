@@ -592,6 +592,23 @@ public final class HelperSocketServer {
         )
         return true
       }
+    case "input.focus":
+      guard let params = object["params"] as? [String: Any],
+        let pid = integer(params["pid"]), pid > 0,
+        let windowId = integer(params["windowId"]), windowId > 0
+      else {
+        sendError(id: id, code: "invalid_request", message: "input.focus 需要 pid、windowId", to: clientDescriptor)
+        return true
+      }
+      guard let input else {
+        sendError(id: id, code: "input_unavailable", message: "当前 Helper 未接入输入", to: clientDescriptor)
+        return true
+      }
+      return sendOperation(
+        id: id,
+        to: clientDescriptor,
+        operation: { try input.focus(pid: pid, windowId: windowId) }
+      )
     case "input.move", "input.click":
       guard
         let params = object["params"] as? [String: Any],
@@ -668,21 +685,22 @@ public final class HelperSocketServer {
         )
         return true
       }
+      let delayMs = integer(params["delayMs"]) ?? 0
+      // 区间与共享治理设置 computerUseInputDelayMs 一致。
+      guard (0...60_000).contains(delayMs) else {
+        sendError(
+          id: id,
+          code: "invalid_request",
+          message: "输入间隔超出允许范围",
+          to: clientDescriptor
+        )
+        return true
+      }
       guard let input else {
         sendError(
           id: id,
           code: "input_unavailable",
           message: "当前 Helper 未接入输入",
-          to: clientDescriptor
-        )
-        return true
-      }
-      let delayMs = integer(params["delayMs"]) ?? 0
-      guard (0...1_000).contains(delayMs) else {
-        sendError(
-          id: id,
-          code: "invalid_request",
-          message: "输入间隔超出允许范围",
           to: clientDescriptor
         )
         return true
