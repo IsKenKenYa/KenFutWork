@@ -435,8 +435,8 @@ export function createProjectMemoryService(options: {
           recordsChanged = true;
           mustWrite = true;
         } else if (!existingNames.has(targetName)) {
-          // 迁移记录在但正文被删：按记录恢复，避免旧数据静默缺失。
-          mustWrite = true;
+          // 回执在正文写完后才保存；后续整理或删除不应使旧正文重新导入。
+          continue;
         }
         if (mustWrite) {
           await writeFile(
@@ -457,6 +457,8 @@ export function createProjectMemoryService(options: {
 
       for (const line of legacyIndexLines) {
         if (knownLines.has(line)) continue;
+        const fileName = line.match(/\]\(([^)]+)\)/u)?.[1];
+        if (fileName && !existingNames.has(fileName)) continue;
         additions.push(line);
         knownLines.add(line);
       }
@@ -806,8 +808,13 @@ export function createProjectMemoryService(options: {
         throw new Error("记忆索引已满，请先整理 MEMORY.md。");
       await writeFile(indexPath, nextIndex, "utf8");
       // 提炼时机：每写入一条记忆后整理一次，合并重复正文并评估遗忘；失败不静默。
-      await maintainProject(actor, input.projectId, limits);
-      return { fileName, path: filePath, indexUpdated: true };
+      const result = await maintainProject(actor, input.projectId, limits);
+      const keptName = result.keptDuplicates.get(fileName) ?? fileName;
+      return {
+        fileName: keptName,
+        path: join(memoryRoot, keptName),
+        indexUpdated: true,
+      };
     },
   };
 }

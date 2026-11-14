@@ -51,6 +51,8 @@ export interface MemoryMaintenanceResult {
   /** 回收窗口过期后永久删除的回收项数量。 */
   purged: number;
   indexUpdated: boolean;
+  /** 重复正文被移走后仍可读取的保留文件。 */
+  keptDuplicates: ReadonlyMap<string, string>;
 }
 
 function isNotFound(error: unknown): boolean {
@@ -278,7 +280,13 @@ export async function maintainMemoryDirectory(options: {
     },
   );
   if (!rootMetadata) {
-    return { merged: 0, trashed: 0, purged: 0, indexUpdated: false };
+    return {
+      merged: 0,
+      trashed: 0,
+      purged: 0,
+      indexUpdated: false,
+      keptDuplicates: new Map(),
+    };
   }
   if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink())
     throw new Error("记忆目录不是普通目录，已停止整理。");
@@ -316,6 +324,7 @@ export async function maintainMemoryDirectory(options: {
   const added: MemoryIndexEntry[] = [];
   const removed = new Set<string>();
   const pendingTrash: Parameters<typeof moveToTrash>[0][] = [];
+  const keptDuplicates = new Map<string, string>();
   let merged = 0;
   let trashed = 0;
 
@@ -332,6 +341,7 @@ export async function maintainMemoryDirectory(options: {
         : [...bucket].sort()[0]!;
     for (const name of bucket) {
       if (name === keeper) continue;
+      keptDuplicates.set(name, keeper);
       const lineIndex = lineByName.get(name);
       if (lineIndex !== undefined) {
         if (lineByName.has(keeper)) dropped.add(lineIndex);
@@ -341,6 +351,9 @@ export async function maintainMemoryDirectory(options: {
           parsed[lineIndex]!.raw = renderMemoryIndexLine(entry);
           lineByName.set(keeper, lineIndex);
         }
+      }
+      for (const [index, line] of parsed.entries()) {
+        if (line.entry?.fileName === name) dropped.add(index);
       }
       pendingTrash.push({
         memoryRoot: options.memoryRoot,
@@ -429,11 +442,12 @@ export async function maintainMemoryDirectory(options: {
     recoverableWindowDays: options.recoverableWindowDays,
     now: options.now,
   });
-  if (!indexUpdated) return { merged, trashed, purged, indexUpdated };
+  if (!indexUpdated)
+    return { merged, trashed, purged, indexUpdated, keptDuplicates };
   const temporary = join(options.memoryRoot, `.MEMORY.md.${randomUUID()}.tmp`);
   await writeFile(temporary, nextRaw, "utf8");
   await rename(temporary, indexPath);
-  return { merged, trashed, purged, indexUpdated: true };
+  return { merged, trashed, purged, indexUpdated: true, keptDuplicates };
 }
 
 export async function restoreTrashEntry(options: {

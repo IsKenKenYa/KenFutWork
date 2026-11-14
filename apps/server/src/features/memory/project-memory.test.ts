@@ -139,6 +139,22 @@ describe("项目长期记忆服务", () => {
     expect(read.updatedAt).toBeGreaterThan(0);
   });
 
+  it("保存重复正文时返回整理后仍可读取的文件", async () => {
+    const { memory } = await createFixture();
+    const first = await memory.saveMemory(actor, {
+      projectId,
+      title: "已有",
+      content: "相同",
+    });
+    const second = await memory.saveMemory(actor, {
+      projectId,
+      title: "重复",
+      content: "相同",
+    });
+    expect(second.path).toBe(first.path);
+    await expect(readFile(second.path, "utf8")).resolves.toBe("相同\n");
+  });
+
   it("同名标题追加序号，不覆盖已有记忆", async () => {
     const { memory } = await createFixture();
     await memory.saveMemory(actor, {
@@ -539,6 +555,34 @@ describe("Design 记忆归属与旧通道迁移", () => {
       } as never,
     });
     expect(await memory.listProjectMemories(actor)).toEqual([]);
+  });
+
+  it("已整理的旧正文和索引不会在再次迁移时出现", async () => {
+    const { memory } = await createFixture({
+      legacyItems: [
+        { key: "/memories/a.md", value: { content: ["相同"] } },
+        { key: "/memories/b.md", value: { content: ["相同"] } },
+        {
+          key: "/memories/MEMORY.md",
+          value: { content: ["- [旧引用](b.md)"] },
+        },
+      ],
+    });
+    const target = { projectId, canvasId };
+    expect(await memory.migrateLegacyCanvasMemory(actor, target)).toEqual({
+      migrated: 2,
+    });
+    await memory.maintainProjectMemory(actor, { projectId });
+    expect(await memory.migrateLegacyCanvasMemory(actor, target)).toEqual({
+      migrated: 0,
+    });
+    const root = memory.memoryDirectory(projectId);
+    await expect(readFile(join(root, "b.md"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(join(root, "MEMORY.md"), "utf8")).not.toContain(
+      "(b.md)",
+    );
   });
 
   it("迁移幂等：重复扫描不生成副本，晚到的旧写入下一轮补进来", async () => {
