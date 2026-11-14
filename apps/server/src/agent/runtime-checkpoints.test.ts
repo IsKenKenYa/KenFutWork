@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -48,6 +48,7 @@ async function fixture(
     vision?: boolean;
     pdf?: boolean;
     workContext?: protocol.ConversationWorkContext;
+    onAgentOptions?: (input: Parameters<KenFutWorkAgentFactory>[0]) => void;
   } = {},
 ) {
   const directory = await realpath(
@@ -111,6 +112,7 @@ async function fixture(
     ready = resolve;
   });
   const factory = ((input) => {
+    options.onAgentOptions?.(input);
     prompts.push(input.systemPrompt ?? "");
     if (input.runToolContext?.signal) signals.push(input.runToolContext.signal);
     if (options.failFactory) throw new Error("factory failed");
@@ -245,6 +247,27 @@ async function fixture(
     messages,
   };
 }
+
+it("Task 运行将外置写入器交给 Agent 并写入本次运行的目录", async () => {
+  const bindings: NonNullable<
+    Parameters<KenFutWorkAgentFactory>[0]["toolResultOffload"]
+  >[] = [];
+  const f = await fixture({
+    onAgentOptions: ({ toolResultOffload }) => {
+      if (toolResultOffload) bindings.push(toolResultOffload);
+    },
+  });
+  const events = await f.drain();
+  expect(events.at(-1)?.type).toBe("run.completed");
+  const binding = bindings[0];
+  if (!binding) throw new Error("Task 运行没有传入工具输出外置配置。");
+  const original = "从 Task 工作目录读取的输出";
+  const stored = await binding.writer.write("tool-call", original);
+  expect(stored.relativePath).toContain(f.created.runId);
+  await expect(
+    readFile(join(f.scope.rootDirectory, stored.relativePath), "utf8"),
+  ).resolves.toBe(original);
+});
 
 it("共享Code Task的Design Run沿真实提示执行上下文保留冻结画布与目录授权", async () => {
   const workContext: protocol.ConversationWorkContext = {

@@ -2513,7 +2513,9 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             contextBudget,
             // 旧工具结果折叠：只改请求副本，最近若干条保留原文；阈值与条数来自治理设置。
             toolResultPrune: governanceToolResultPrune,
-            ...(toolResultOffloadBinding ?? {}),
+            ...(toolResultOffloadBinding
+              ? { toolResultOffload: toolResultOffloadBinding }
+              : {}),
             // 旧图片卸载：只保留最近几张图片，更早的图片在模型请求里换成文字占位。
             contextKeepRecentImages,
             // execute 工具由 LocalShellBackend 自动提供，无需手动传递
