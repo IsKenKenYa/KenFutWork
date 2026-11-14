@@ -640,7 +640,26 @@ export class CodeUiHostGitRepository {
       .filter(Boolean);
     const under = (list: string[], target: string) =>
       list.some((entry) => entry === target || entry.startsWith(`${target}/`));
-    const restoreTargets = targets.filter((target) => under(cached, target));
+    const deleted = staged
+      ? (
+          await this.commandAt(root, [
+            "diff",
+            "--cached",
+            "--name-only",
+            "--diff-filter=D",
+            "--no-renames",
+            "-z",
+            "--",
+            ...specs,
+          ])
+        )
+          .split("\0")
+          .filter(Boolean)
+      : [];
+    const restorePaths = [...cached, ...deleted];
+    const restoreTargets = targets.filter((target) =>
+      under(restorePaths, target),
+    );
     const cleanTargets = targets.filter((target) => under(others, target));
     if (restoreTargets.length)
       await this.commandAt(

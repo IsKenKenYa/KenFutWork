@@ -755,6 +755,19 @@ it("Task作用域对真实仓库暂存、取消暂存与丢弃，未跟踪文件
   ).rejects.toThrow(/路径/);
 });
 
+it("丢弃暂存删除会从 HEAD 恢复文件和索引", async () => {
+  const f = await fixture();
+  await f.setup(["rm", "-f", "--", "tracked.txt"]);
+  await expect(stat(join(f.root, "tracked.txt"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  await f.call("discardPaths", { paths: ["tracked.txt"], staged: true });
+  expect(await readFile(join(f.root, "tracked.txt"), "utf8")).toBe("base\n");
+  expect((await f.call("getChanges", { sourceId: "staged" }))?.result).toEqual(
+    [],
+  );
+});
+
 it("按选中路径提交回读真实哈希，stagedOnly只提交选中已暂存内容", async () => {
   const f = await fixture();
   await f.call("unstagePaths", { paths: ["tracked.txt"] });
