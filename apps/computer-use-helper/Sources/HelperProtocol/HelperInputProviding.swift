@@ -2,6 +2,8 @@ import Foundation
 
 /// Helper 的输入与剪贴板能力；由 macOS 实现，socket 层只做协议解析与错误映射。
 public protocol HelperInputProviding {
+  func move(pid: Int, x: Double, y: Double) throws
+    -> ComputerUseHelperActionResult
   func click(
     pid: Int,
     x: Double,

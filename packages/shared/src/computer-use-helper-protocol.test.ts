@@ -271,6 +271,9 @@ it("AX 树限定深度、节点数、文本长度与超时范围", () => {
     timeoutMs: 2_000,
   };
   expect(computerUseHelperAxTreeParamsSchema.parse(params)).toEqual(params);
+  expect(
+    computerUseHelperAxTreeParamsSchema.parse({ pid: 501, timeoutMs: 120_000 }),
+  ).toEqual({ pid: 501, timeoutMs: 120_000 });
   for (const invalid of [
     { ...params, pid: 0 },
     { ...params, maxDepth: 0 },
@@ -278,6 +281,7 @@ it("AX 树限定深度、节点数、文本长度与超时范围", () => {
     { ...params, maxNodes: 0 },
     { ...params, valueMaxChars: 10001 },
     { ...params, timeoutMs: 50 },
+    { ...params, timeoutMs: 120_001 },
     { ...params, extra: true },
   ])
     expect(computerUseHelperAxTreeParamsSchema.safeParse(invalid).success).toBe(

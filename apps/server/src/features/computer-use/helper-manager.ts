@@ -4,6 +4,7 @@ import { access, chmod, mkdir, unlink } from "node:fs/promises";
 import { dirname } from "node:path";
 import { promisify } from "node:util";
 import {
+  AGENT_GOVERNANCE_DEFAULTS,
   type ComputerUseHelperActionResult,
   type ComputerUseHelperApplicationsResult,
   type ComputerUseHelperAxTreeParams,
@@ -38,7 +39,6 @@ import { HelperClient, HelperRpcError } from "./helper-client.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_STARTUP_TIMEOUT_MS = 5_000;
-const DEFAULT_CLIENT_TIMEOUT_MS = 10_000;
 
 export class HelperProcessError extends Error {
   constructor(
@@ -63,6 +63,7 @@ export interface HelperProcessManagerOptions {
   clientVersion?: string;
   startupTimeoutMs?: number;
   clientTimeoutMs?: number;
+  actionTimeoutMs?: () => number;
 }
 
 /** 真实 Helper.app 的启动、握手、权限查询、重启与关闭。 */
@@ -73,6 +74,7 @@ export class HelperProcessManager {
   private readonly clientVersion: string;
   private readonly startupTimeoutMs: number;
   private readonly clientTimeoutMs: number;
+  private readonly actionTimeoutMs: () => number;
   private appInfoPromise: Promise<HelperAppInfo> | undefined;
   private client: HelperClient | null = null;
   private startPromise: Promise<HelperClient> | null = null;
@@ -84,7 +86,11 @@ export class HelperProcessManager {
     this.clientVersion = options.clientVersion ?? "0.1.0";
     this.startupTimeoutMs =
       options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
-    this.clientTimeoutMs = options.clientTimeoutMs ?? DEFAULT_CLIENT_TIMEOUT_MS;
+    this.clientTimeoutMs =
+      options.clientTimeoutMs ??
+      AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs;
+    this.actionTimeoutMs =
+      options.actionTimeoutMs ?? (() => this.clientTimeoutMs);
   }
 
   async status(probe = false): Promise<ComputerUseHelperPermissionStatus> {
@@ -139,7 +145,13 @@ export class HelperProcessManager {
     params: ComputerUseHelperAxTreeParams,
   ): Promise<ComputerUseHelperAxTreeResult> {
     const client = await this.ensureClient();
-    const raw = await this.request("ax.tree", params, client);
+    const timeoutMs = params.timeoutMs ?? this.actionTimeoutMs();
+    const raw = await this.request(
+      "ax.tree",
+      { ...params, timeoutMs },
+      client,
+      timeoutMs,
+    );
     return computerUseHelperAxTreeResultSchema.parse(raw);
   }
 
@@ -161,6 +173,12 @@ export class HelperProcessManager {
     params: ComputerUseHelperTypeParams,
   ): Promise<ComputerUseHelperActionResult> {
     return await this.requestAction("input.type", params);
+  }
+
+  async move(
+    params: Pick<ComputerUseHelperClickParams, "pid" | "x" | "y">,
+  ): Promise<ComputerUseHelperActionResult> {
+    return await this.requestAction("input.move", params);
   }
 
   async key(
@@ -243,7 +261,7 @@ export class HelperProcessManager {
     method: string,
     params: Record<string, unknown> | undefined,
     client: HelperClient,
-    timeoutMs?: number,
+    timeoutMs = this.actionTimeoutMs(),
   ): Promise<T> {
     try {
       return await client.request<T>(method, params, timeoutMs);

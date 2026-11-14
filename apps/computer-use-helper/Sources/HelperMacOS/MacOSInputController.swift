@@ -41,6 +41,23 @@ public struct MacOSInputController: HelperInputProviding {
     CGEventSource(stateID: .hidSystemState)
   }
 
+  public func move(pid: Int, x: Double, y: Double) throws
+    -> ComputerUseHelperActionResult
+  {
+    try requireAccessibility()
+    try activate(pid: pid)
+    guard let event = CGEvent(
+      mouseEventSource: source(),
+      mouseType: .mouseMoved,
+      mouseCursorPosition: CGPoint(x: x, y: y),
+      mouseButton: .left
+    ) else {
+      throw HelperOperationError(code: "input_unavailable", message: "无法创建指针移动事件")
+    }
+    event.post(tap: .cghidEventTap)
+    return ComputerUseHelperActionResult(performed: true)
+  }
+
   public func click(
     pid: Int,
     x: Double,

@@ -226,7 +226,8 @@ public struct ComputerUseHelperAxTreeLimits: Equatable, Sendable {
     self.titleMaxChars = Self.clamp(titleMaxChars, 1, 500)
     self.valueMaxChars = Self.clamp(valueMaxChars, 1, 10_000)
     self.maxActions = Self.clamp(maxActions, 1, 100)
-    self.timeoutMs = Self.clamp(timeoutMs, 100, 10_000)
+    // 上限与共享治理设置 computerUseActionTimeoutMs 一致。
+    self.timeoutMs = Self.clamp(timeoutMs, 100, 120_000)
   }
 
   public init(json: [String: Any]) {

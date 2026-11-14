@@ -592,7 +592,7 @@ public final class HelperSocketServer {
         )
         return true
       }
-    case "input.click":
+    case "input.move", "input.click":
       guard
         let params = object["params"] as? [String: Any],
         let pid = integer(params["pid"]),
@@ -603,7 +603,7 @@ public final class HelperSocketServer {
         sendError(
           id: id,
           code: "invalid_request",
-          message: "input.click 需要 pid、x、y",
+          message: "\(method) 需要 pid、x、y",
           to: clientDescriptor
         )
         return true
@@ -616,6 +616,13 @@ public final class HelperSocketServer {
           to: clientDescriptor
         )
         return true
+      }
+      if method == "input.move" {
+        return sendOperation(
+          id: id,
+          to: clientDescriptor,
+          operation: { try input.move(pid: pid, x: x, y: y) }
+        )
       }
       let button = (params["button"] as? String) ?? "left"
       let clickCount = integer(params["clickCount"]) ?? 1

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AGENT_GOVERNANCE_LIMITS } from "./governance.js";
 
 /** 原生 Helper 的协议版本。字段改义或删除时必须提升。 */
 export const COMPUTER_USE_HELPER_PROTOCOL_VERSION = 1 as const;
@@ -210,7 +211,12 @@ export const computerUseHelperAxTreeParamsSchema = z
     titleMaxChars: z.number().int().min(1).max(500).optional(),
     valueMaxChars: z.number().int().min(1).max(10000).optional(),
     maxActions: z.number().int().min(1).max(100).optional(),
-    timeoutMs: z.number().int().min(100).max(10000).optional(),
+    timeoutMs: z
+      .number()
+      .int()
+      .min(100)
+      .max(AGENT_GOVERNANCE_LIMITS.computerUseActionTimeoutMs.max)
+      .optional(),
   })
   .strict();
 

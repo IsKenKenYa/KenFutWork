@@ -511,12 +511,10 @@ export function createHelperExecutor(options: {
             const point = pointFor(action.target);
             if (!point)
               throw new HelperExecutorError("invalid_target", "移动缺少目标");
-            await options.manager.click({
+            await options.manager.move({
               pid: resolved.pid,
               x: point.x,
               y: point.y,
-              button: "left",
-              clickCount: 1,
             });
             return { actionSent: true, detail: "已移动指针" };
           }

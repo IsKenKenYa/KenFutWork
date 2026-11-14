@@ -170,9 +170,9 @@ final class MacOSCatalogTests: XCTestCase {
     XCTAssertGreaterThan(shot.frame.width, 0)
     XCTAssertFalse(shot.imageBase64.isEmpty)
     XCTAssertNotNil(Data(base64Encoded: shot.imageBase64))
-    XCTAssertNotNil(
-      ISO8601DateFormatter().date(from: shot.capturedAt)
-    )
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    XCTAssertNotNil(formatter.date(from: shot.capturedAt))
     XCTAssertThrowsError(
       try MacOSWindowCapture.capture(pid: 1, windowId: window.windowId)
     ) { error in

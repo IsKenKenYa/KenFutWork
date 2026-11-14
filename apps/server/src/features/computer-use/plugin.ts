@@ -232,6 +232,9 @@ export function createComputerUsePlugin(options?: {
               appPath: location.appPath,
               socketPath: location.socketPath,
               clientVersion: ctx.env.version,
+              actionTimeoutMs: () =>
+                (runGovernance.getStore() ?? resolveGovernance(ctx.env))
+                  .actionTimeoutMs,
             });
             return { available: true, manager: helperManager };
           } catch (error) {

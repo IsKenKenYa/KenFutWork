@@ -14,6 +14,7 @@ final class HelperSocketTests: XCTestCase {
   private var shutdownExpectation: XCTestExpectation?
   private var requestedKinds: [HelperPermissionRequestKind] = []
   private var probedFlags: [Bool] = []
+  private var axTimeoutMs: Int?
 
   override func setUpWithError() throws {
     socketPath =
@@ -99,7 +100,8 @@ final class HelperSocketTests: XCTestCase {
           )
         ])
       },
-      accessibilityTree: { pid, limits in
+      accessibilityTree: { [weak self] pid, limits in
+        self?.axTimeoutMs = limits.timeoutMs
         guard pid == 501 else {
           throw HelperOperationError(
             code: "permission_denied",
@@ -402,10 +404,11 @@ final class HelperSocketTests: XCTestCase {
     try client.send([
       "id": "ax",
       "method": "ax.tree",
-      "params": ["pid": 501, "maxDepth": 2, "maxNodes": 20],
+      "params": ["pid": 501, "maxDepth": 2, "maxNodes": 20, "timeoutMs": 30_000],
     ])
     let tree = try client.receive()
     XCTAssertEqual(tree["ok"] as? Bool, true)
+    XCTAssertEqual(axTimeoutMs, 30_000)
     let treeResult = try XCTUnwrap(tree["result"] as? [String: Any])
     XCTAssertEqual(treeResult["nodeCount"] as? Int, 2)
     let root = try XCTUnwrap(treeResult["root"] as? [String: Any])
@@ -481,6 +484,28 @@ final class HelperSocketTests: XCTestCase {
     let click = try client.receive()
     XCTAssertEqual(
       (click["error"] as? [String: Any])?["code"] as? String,
+      "input_unavailable"
+    )
+
+    try client.send([
+      "id": "move-missing",
+      "method": "input.move",
+      "params": ["pid": 501, "x": 10],
+    ])
+    let moveMissing = try client.receive()
+    XCTAssertEqual(
+      (moveMissing["error"] as? [String: Any])?["code"] as? String,
+      "invalid_request"
+    )
+
+    try client.send([
+      "id": "move",
+      "method": "input.move",
+      "params": ["pid": 501, "x": 10, "y": 20],
+    ])
+    let move = try client.receive()
+    XCTAssertEqual(
+      (move["error"] as? [String: Any])?["code"] as? String,
       "input_unavailable"
     )
 
