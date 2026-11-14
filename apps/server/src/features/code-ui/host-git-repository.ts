@@ -668,7 +668,20 @@ export class CodeUiHostGitRepository {
       .filter(Boolean);
     const under = (list: string[], target: string) =>
       list.some((entry) => entry === target || entry.startsWith(`${target}/`));
-    const deleted = staged
+    let hasHead = false;
+    if (staged) {
+      const head = await this.runAt(root, [
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        "HEAD",
+      ]);
+      if (head.code !== 1 || head.stderr) {
+        requireSuccess(head);
+        hasHead = true;
+      }
+    }
+    const deleted = hasHead
       ? (
           await this.commandAt(root, [
             "diff",
@@ -689,7 +702,16 @@ export class CodeUiHostGitRepository {
       under(restorePaths, target),
     );
     const cleanTargets = targets.filter((target) => under(others, target));
-    if (restoreTargets.length)
+    if (restoreTargets.length && staged && !hasHead) {
+      await this.commandAt(root, [
+        "rm",
+        "-r",
+        "-f",
+        "--ignore-unmatch",
+        "--",
+        ...restoreTargets.map(literalPath),
+      ]);
+    } else if (restoreTargets.length) {
       await this.commandAt(
         root,
         staged
@@ -703,6 +725,7 @@ export class CodeUiHostGitRepository {
             ]
           : ["restore", "--worktree", "--", ...restoreTargets.map(literalPath)],
       );
+    }
     if (cleanTargets.length)
       await this.commandAt(root, [
         "clean",

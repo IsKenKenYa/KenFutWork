@@ -793,6 +793,20 @@ it("首次提交前可取消暂存并保留文件", async () => {
   expect(await readFile(join(f.root, "first.txt"), "utf8")).toBe("首次提交\n");
 });
 
+it("首次提交前放弃所选暂存文件，保留其他暂存与未跟踪文件", async () => {
+  const f = await fixture({ unborn: true });
+  await writeFile(join(f.root, "[a].txt"), "丢弃\n");
+  await writeFile(join(f.root, "a.txt"), "保留暂存\n");
+  await writeFile(join(f.root, "note.txt"), "保留未跟踪\n");
+  await f.call("stagePaths", { paths: ["[a].txt", "a.txt"] });
+  await f.call("discardPaths", { paths: ["[a].txt"], staged: true });
+  await expect(stat(join(f.root, "[a].txt"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+  expect((await f.raw(["ls-files", "-z"])).stdout).toBe("a.txt\0");
+  expect(await readFile(join(f.root, "note.txt"), "utf8")).toBe("保留未跟踪\n");
+});
+
 it("真实索引被锁定时仍返回已完成的提交和清理告警", async () => {
   const f = await fixture();
   const lock = join(f.root, ".git", "index.lock");
