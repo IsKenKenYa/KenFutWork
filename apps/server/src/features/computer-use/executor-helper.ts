@@ -62,7 +62,11 @@ export function createHelperExecutor(options: {
 
   const wrap = (error: unknown): never => {
     if (error instanceof HelperRpcError)
-      throw new HelperExecutorError(error.code, error.message);
+      throw new HelperExecutorError(
+        error.code,
+        error.message,
+        error.actionSent,
+      );
     throw error;
   };
 
@@ -391,7 +395,13 @@ export function createHelperExecutor(options: {
         throw new HelperExecutorError("invalid_target", "点击缺少目标", false);
       try {
         await options.manager.click(
-          { pid: resolved.pid, ...point, button: "left", clickCount: 1 },
+          {
+            pid: resolved.pid,
+            ...point,
+            button: "left",
+            clickCount: 1,
+            delayMs: context?.inputDelayMs,
+          },
           context?.signal,
         );
         return { actionSent: true, detail: "已通过 Helper 发送点击" };
@@ -411,7 +421,13 @@ export function createHelperExecutor(options: {
       try {
         if (point) {
           await options.manager.click(
-            { pid: resolved.pid, ...point, button: "left", clickCount: 1 },
+            {
+              pid: resolved.pid,
+              ...point,
+              button: "left",
+              clickCount: 1,
+              delayMs: context?.inputDelayMs,
+            },
             context?.signal,
           );
         }
@@ -504,6 +520,7 @@ export function createHelperExecutor(options: {
                 ...point,
                 button: action.button,
                 clickCount: action.count,
+                delayMs: context.inputDelayMs,
               },
               context.signal,
             );

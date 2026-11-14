@@ -631,13 +631,16 @@ public final class HelperSocketServer {
         )
         return true
       }
+      let button = (params["button"] as? String) ?? "left"
+      let clickCount = integer(params["clickCount"]) ?? 1
+      let delayMs = integer(params["delayMs"]) ?? 0
+      if method == "input.click" && (!(["left", "right", "middle"].contains(button))
+        || !(1...3).contains(clickCount) || !(0...60_000).contains(delayMs)) {
+        sendError(id: id, code: "invalid_request", message: "点击按钮、次数或输入间隔不合法", to: clientDescriptor)
+        return true
+      }
       guard let input else {
-        sendError(
-          id: id,
-          code: "input_unavailable",
-          message: "当前 Helper 未接入输入",
-          to: clientDescriptor
-        )
+        sendError(id: id, code: "input_unavailable", message: "当前 Helper 未接入输入", to: clientDescriptor)
         return true
       }
       if method == "input.move" {
@@ -646,20 +649,6 @@ public final class HelperSocketServer {
           to: clientDescriptor,
           operation: { try input.move(pid: pid, x: x, y: y) }
         )
-      }
-      let button = (params["button"] as? String) ?? "left"
-      let clickCount = integer(params["clickCount"]) ?? 1
-      guard
-        ["left", "right", "middle"].contains(button),
-        (1...3).contains(clickCount)
-      else {
-        sendError(
-          id: id,
-          code: "invalid_request",
-          message: "点击按钮或次数不合法",
-          to: clientDescriptor
-        )
-        return true
       }
       return sendOperation(
         id: id,
@@ -670,7 +659,8 @@ public final class HelperSocketServer {
             x: x,
             y: y,
             button: button,
-            clickCount: clickCount
+            clickCount: clickCount,
+            delayMs: delayMs
           )
         }
       )
@@ -1027,14 +1017,16 @@ public final class HelperSocketServer {
     message: String,
     to clientDescriptor: Int32
   ) {
+    var error: [String: Any] = ["code": code, "message": message]
+    if ["unauthorized", "invalid_request", "input_unavailable", "permission_denied",
+      "application_not_found", "window_not_found", "method_not_found"].contains(code) {
+      error["actionSent"] = false
+    }
     _ = send(
       [
         "id": id,
         "ok": false,
-        "error": [
-          "code": code,
-          "message": message,
-        ],
+        "error": error,
       ],
       to: clientDescriptor
     )

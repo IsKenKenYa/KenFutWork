@@ -99,6 +99,7 @@ beforeEach(async () => {
               },
             })}\n`,
           );
+        else if (request.method === "input.click") socket.destroy();
         else if (request.method === "slow") {
           // 由测试主动等待超时。
         } else
@@ -213,6 +214,22 @@ it("连接被关闭后所有等待中的请求都失败", async () => {
   sockets[0]?.destroy();
   await expect(pending).rejects.toMatchObject({ code: "disconnected" });
   client.close();
+});
+
+it("Helper 收到输入后断线时保留未确认的下发状态", async () => {
+  const client = await HelperClient.connect({ socketPath, token });
+  try {
+    await expect(client.request("input.unknown")).rejects.toMatchObject({
+      code: "method_not_found",
+      actionSent: false,
+    });
+    await expect(client.request("input.click")).rejects.toMatchObject({
+      code: "disconnected",
+      actionSent: true,
+    });
+  } finally {
+    client.close();
+  }
 });
 
 it("socket 不存在时连接失败，错误包含可读原因", async () => {

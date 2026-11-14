@@ -521,6 +521,8 @@ final class HelperSocketTests: XCTestCase {
     for (method, params, expected) in [
       ("input.focus", ["pid": 501], "invalid_request"),
       ("input.focus", ["pid": 501, "windowId": 42], "input_unavailable"),
+      ("input.click", ["pid": 501, "x": 10, "y": 20, "delayMs": 60_000], "input_unavailable"),
+      ("input.click", ["pid": 501, "x": 10, "y": 20, "delayMs": 60_001], "invalid_request"),
       ("input.type", ["pid": 501, "text": "输入", "delayMs": 60_000], "input_unavailable"),
       ("input.type", ["pid": 501, "text": "输入", "delayMs": 60_001], "invalid_request"),
     ] as [(String, [String: Any], String)] {

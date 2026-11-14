@@ -22,6 +22,7 @@ interface PendingRequest {
   resolve(value: unknown): void;
   reject(error: Error): void;
   dispose(): void;
+  actionSent?: true;
 }
 
 interface HelperResponse {
@@ -128,11 +129,21 @@ export class HelperClient {
       throw new HelperRpcError("disconnected", "Helper 连接已关闭。");
     const id = String(++this.nextId);
     const payload = { id, method, ...(params ? { params } : {}) };
+    const actionSent =
+      method.startsWith("input.") || method === "clipboard.write"
+        ? true
+        : undefined;
     return await new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         dispose();
         this.pending.delete(id);
-        reject(new HelperRpcError("timeout", `Helper 请求超时：${method}`));
+        reject(
+          new HelperRpcError(
+            "timeout",
+            `Helper 请求超时：${method}`,
+            actionSent,
+          ),
+        );
       }, timeoutMs);
       const abort = () => {
         dispose();
@@ -148,6 +159,7 @@ export class HelperClient {
         resolve: (value) => resolve(value as T),
         reject,
         dispose,
+        ...(actionSent ? { actionSent } : {}),
       });
       this.socket.write(`${JSON.stringify(payload)}\n`, (error) => {
         if (!error) return;
@@ -159,6 +171,7 @@ export class HelperClient {
           new HelperRpcError(
             "disconnected",
             `Helper 写入失败：${error.message}`,
+            pending.actionSent,
           ),
         );
       });
@@ -217,7 +230,9 @@ export class HelperClient {
         typeof error?.message === "string"
           ? error.message
           : "Helper 请求失败。",
-        typeof error?.actionSent === "boolean" ? error.actionSent : undefined,
+        typeof error?.actionSent === "boolean"
+          ? error.actionSent
+          : pending.actionSent,
       ),
     );
   }
@@ -225,7 +240,11 @@ export class HelperClient {
   private fail(error: Error): void {
     for (const [id, pending] of this.pending) {
       pending.dispose();
-      pending.reject(error);
+      pending.reject(
+        error instanceof HelperRpcError && pending.actionSent
+          ? new HelperRpcError(error.code, error.message, pending.actionSent)
+          : error,
+      );
       this.pending.delete(id);
     }
   }

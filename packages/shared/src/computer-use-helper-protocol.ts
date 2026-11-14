@@ -286,6 +286,7 @@ export const computerUseHelperClickParamsSchema = z
     y: z.number(),
     button: z.enum(["left", "right", "middle"]).optional(),
     clickCount: z.number().int().min(1).max(3).optional(),
+    delayMs: governedInteger(AGENT_GOVERNANCE_LIMITS.computerUseInputDelayMs),
   })
   .strict();
 

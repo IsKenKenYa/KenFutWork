@@ -10,7 +10,8 @@ public protocol HelperInputProviding {
     x: Double,
     y: Double,
     button: String,
-    clickCount: Int
+    clickCount: Int,
+    delayMs: Int
   ) throws -> ComputerUseHelperActionResult
   func typeText(
     pid: Int,

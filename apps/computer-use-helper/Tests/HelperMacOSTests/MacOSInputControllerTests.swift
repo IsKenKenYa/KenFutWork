@@ -57,7 +57,8 @@ final class MacOSInputControllerTests: XCTestCase {
         x: 0,
         y: 0,
         button: "left",
-        clickCount: 1
+        clickCount: 1,
+        delayMs: 100
       )
     ) { error in
       XCTAssertEqual(

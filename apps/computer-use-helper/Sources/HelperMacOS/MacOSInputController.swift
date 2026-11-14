@@ -78,7 +78,8 @@ public struct MacOSInputController: HelperInputProviding {
     x: Double,
     y: Double,
     button: String,
-    clickCount: Int
+    clickCount: Int,
+    delayMs: Int
   ) throws -> ComputerUseHelperActionResult {
     try requireAccessibility()
     try activate(pid: pid)
@@ -107,6 +108,7 @@ public struct MacOSInputController: HelperInputProviding {
       mouseCursorPosition: point,
       mouseButton: mouseButton
     )?.post(tap: .cghidEventTap)
+    delay(delayMs)
     for count in 1...max(1, clickCount) {
       for type in [downType, upType] {
         guard
@@ -122,6 +124,7 @@ public struct MacOSInputController: HelperInputProviding {
           value: Int64(count)
         )
         event.post(tap: .cghidEventTap)
+        delay(delayMs)
       }
     }
     return ComputerUseHelperActionResult(performed: true)
