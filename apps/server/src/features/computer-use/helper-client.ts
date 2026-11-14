@@ -73,6 +73,7 @@ export class HelperClient {
     if (!/^[a-f0-9]{64}$/u.test(options.token))
       throw new HelperRpcError("invalid_argument", "Helper token 格式无效。");
     const timeoutMs = options.timeoutMs ?? 10_000;
+    const deadline = performance.now() + timeoutMs;
     const socket = createConnection({ path: options.socketPath });
     const connected = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -98,12 +99,19 @@ export class HelperClient {
     await connected;
     const client = new HelperClient(socket, timeoutMs, {});
     try {
-      const hello = await client.request<Record<string, unknown>>("hello", {
-        protocolVersion: 1,
-        client: "kenfutwork-server",
-        clientVersion: options.clientVersion ?? "0.1.0",
-        token: options.token,
-      });
+      const remainingMs = Math.floor(deadline - performance.now());
+      if (remainingMs <= 0)
+        throw new HelperRpcError("timeout", "Helper 握手超时。");
+      const hello = await client.request<Record<string, unknown>>(
+        "hello",
+        {
+          protocolVersion: 1,
+          client: "kenfutwork-server",
+          clientVersion: options.clientVersion ?? "0.1.0",
+          token: options.token,
+        },
+        remainingMs,
+      );
       const helper = hello;
       if (typeof helper.bundleId !== "string")
         throw new HelperRpcError(

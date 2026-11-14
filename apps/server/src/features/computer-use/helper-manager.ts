@@ -38,7 +38,6 @@ import {
 import { HelperClient, HelperRpcError } from "./helper-client.js";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_STARTUP_TIMEOUT_MS = 5_000;
 
 export class HelperProcessError extends Error {
   constructor(
@@ -61,7 +60,6 @@ export interface HelperProcessManagerOptions {
   socketPath: string;
   token?: string;
   clientVersion?: string;
-  startupTimeoutMs?: number;
   clientTimeoutMs?: number;
   actionTimeoutMs?: () => number;
 }
@@ -72,7 +70,6 @@ export class HelperProcessManager {
   private readonly socketPath: string;
   private readonly token: string;
   private readonly clientVersion: string;
-  private readonly startupTimeoutMs: number;
   private readonly clientTimeoutMs: number;
   private readonly actionTimeoutMs: () => number;
   private appInfoPromise: Promise<HelperAppInfo> | undefined;
@@ -84,8 +81,6 @@ export class HelperProcessManager {
     this.socketPath = options.socketPath;
     this.token = options.token ?? randomBytes(32).toString("hex");
     this.clientVersion = options.clientVersion ?? "0.1.0";
-    this.startupTimeoutMs =
-      options.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
     this.clientTimeoutMs =
       options.clientTimeoutMs ??
       AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs;
@@ -340,8 +335,10 @@ export class HelperProcessManager {
       "--parent-pid",
       String(process.pid),
     ];
+    const startupTimeoutMs = this.actionTimeoutMs();
+    const deadline = performance.now() + startupTimeoutMs;
     try {
-      await execFileAsync("/usr/bin/open", args, { timeout: 5_000 });
+      await execFileAsync("/usr/bin/open", args, { timeout: startupTimeoutMs });
     } catch (error) {
       throw new HelperProcessError(
         "helper_start_failed",
@@ -351,26 +348,28 @@ export class HelperProcessManager {
       );
     }
 
-    const deadline = Date.now() + this.startupTimeoutMs;
     let lastError: unknown;
-    while (Date.now() < deadline) {
+    for (;;) {
+      const remainingMs = Math.floor(deadline - performance.now());
+      if (remainingMs <= 0) break;
       try {
         this.client = await HelperClient.connect({
           socketPath: this.socketPath,
           token: this.token,
-          timeoutMs: this.clientTimeoutMs,
+          timeoutMs: remainingMs,
           clientVersion: this.clientVersion,
         });
         return this.client;
       } catch (error) {
         lastError = error;
-        await delay(50);
+        const retryAfterMs = Math.min(50, deadline - performance.now());
+        if (retryAfterMs > 0) await delay(retryAfterMs);
       }
     }
     throw new HelperProcessError(
       "helper_start_failed",
-      `Helper 未在 ${this.startupTimeoutMs}ms 内就绪：${
-        lastError instanceof Error ? lastError.message : String(lastError)
+      `Helper 未在 ${startupTimeoutMs}ms 内就绪：${
+        lastError instanceof Error ? lastError.message : "启动时间已耗尽"
       }`,
     );
   }

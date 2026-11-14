@@ -158,6 +158,30 @@ it("错误 token 在握手阶段失败，不进入已连接状态", async () => 
   ).rejects.toMatchObject({ code: "unauthorized" });
 });
 
+it("socket 已连接但 Helper 不回复时，握手超时并关闭连接", async () => {
+  const silentServer = createServer((socket) => socket.resume());
+  const silentPath = join(directory, "silent.sock");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      silentServer.once("error", reject);
+      silentServer.listen(silentPath, resolve);
+    });
+    const closed = new Promise<void>((resolve) => {
+      silentServer.once("connection", (socket) => {
+        sockets.push(socket);
+        socket.once("close", () => resolve());
+      });
+    });
+    await expect(
+      HelperClient.connect({ socketPath: silentPath, token, timeoutMs: 100 }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    await closed;
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => silentServer.close(() => resolve()));
+  }
+});
+
 it("Helper 返回错误响应时保留 code、message 与 actionSent", async () => {
   const client = await HelperClient.connect({
     socketPath,

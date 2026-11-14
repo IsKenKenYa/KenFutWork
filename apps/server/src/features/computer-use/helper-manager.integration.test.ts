@@ -38,8 +38,18 @@ it.skipIf(!enabled)(
       version: "0.1.0",
     });
     const socketPath = join(directory, "run", "helper.sock");
-    const manager = new HelperProcessManager({ appPath, socketPath });
+    let startupSettingsReads = 0;
+    const manager = new HelperProcessManager({
+      appPath,
+      socketPath,
+      actionTimeoutMs: () => {
+        startupSettingsReads += 1;
+        return AGENT_GOVERNANCE_DEFAULTS.computerUseActionTimeoutMs;
+      },
+    });
     try {
+      await Promise.all([manager.start(), manager.start()]);
+      expect(startupSettingsReads).toBe(1);
       const status = await manager.status();
       expect(status.available).toBe(true);
       expect((await stat(join(directory, "run"))).mode & 0o777).toBe(0o700);
