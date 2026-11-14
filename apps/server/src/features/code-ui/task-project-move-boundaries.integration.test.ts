@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import { createCodeSessionFixture } from "./host-session.fixture.js";
 import { heldModel } from "./model-stream.fixture.js";
+import { createTaskProjectMoveRepository } from "./task-project-move-repository.js";
 
 type Fixture = Awaited<ReturnType<typeof createCodeUiHttpFixture>>;
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
@@ -139,6 +140,87 @@ async function holdTask(fixture: Fixture, host: Host) {
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "Task跨项目移动参数与连接边界的真实HTTP、SSE和PostgreSQL integration",
   () => {
+    it.each(["closing", "failed"])(
+      "目标项目处于 %s 状态时拒绝准备移动",
+      async (state) => {
+        const fixture = await createCodeUiHttpFixture();
+        let host: Host | undefined;
+        try {
+          host = await createCodeSessionFixture(fixture.baseUrl, {
+            client: fixture.client,
+          });
+          const { input } = await prepareMove(fixture, host);
+          await fixture.database.persistence
+            .forInstance(fixture.actor.instanceId)
+            .execute(
+              "update public.projects set archive_state=$2 where instance_id=:instance and id=$1",
+              [input.projectId, state],
+            );
+          const before = await readState(fixture, host, input.projectId);
+          const rejected = await rpc(fixture, host, [input]);
+          expect(rejected.status, JSON.stringify(rejected.body)).toBe(404);
+          expect(await readState(fixture, host, input.projectId)).toEqual(
+            before,
+          );
+        } finally {
+          await host?.dispose();
+          await fixture.close();
+        }
+      },
+      90_000,
+    );
+
+    it("移动已准备但目标开始归档时，提交仍拒绝改变任务归属", async () => {
+      const fixture = await createCodeUiHttpFixture();
+      let host: Host | undefined;
+      try {
+        host = await createCodeSessionFixture(fixture.baseUrl, {
+          client: fixture.client,
+        });
+        const { before, input } = await prepareMove(fixture, host);
+        const repository = createTaskProjectMoveRepository(
+          fixture.database.persistence,
+        );
+        const fingerprint = createHash("sha256")
+          .update(JSON.stringify(input))
+          .digest("hex");
+        const prepared = await repository.prepare(
+          fixture.actor.instanceId,
+          input,
+          fingerprint,
+          before.scope,
+          new AbortController().signal,
+        );
+        const sql = fixture.database.persistence.forInstance(
+          fixture.actor.instanceId,
+        );
+        await sql.execute(
+          "update public.projects set archive_state='closing' where instance_id=:instance and id=$1",
+          [input.projectId],
+        );
+        await expect(
+          repository.commit(
+            fixture.actor.instanceId,
+            input,
+            fingerprint,
+            prepared.generation,
+          ),
+        ).rejects.toThrow();
+        expect(
+          await sql.queryOne(
+            "select project_id,execution_state from public.code_ui_sessions where instance_id=:instance and id=$1",
+            [host.sessionId],
+          ),
+        ).toMatchObject({
+          project_id: host.projectId,
+          execution_state: "revoking",
+        });
+      } finally {
+        await host?.dispose();
+        await fixture.close();
+      }
+    }, 90_000);
+
     it("仅接受一个完整移动参数，非法调用保留原项目、Task和权限，合法原意图仍可执行", async () => {
       const fixture = await createCodeUiHttpFixture();
       const model = await heldModel();

@@ -103,7 +103,7 @@ async function projects(sql: InstanceSqlClient, input: TaskProjectMoveInput) {
   if (input.sourceProjectId === input.projectId)
     throw moveConflict("请选择另一个项目。");
   const records = await sql.query<Project>(
-    "select id,work_dir,additional_directories from public.projects where instance_id=:instance and id=any($1::uuid[]) and archived_at is null and enabled_modes && array['code','design']::text[] order by id for update",
+    "select id,work_dir,additional_directories from public.projects where instance_id=:instance and id=any($1::uuid[]) and archived_at is null and archive_state='open' and enabled_modes && array['code','design']::text[] order by id for update",
     [[input.sourceProjectId, input.projectId]],
   );
   const target = records.find((project) => project.id === input.projectId);
