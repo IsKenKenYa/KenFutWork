@@ -64,6 +64,7 @@ export function createScopedGitExec(options: {
       managed,
       options.limits.maxOutputBytes,
       "stdout",
+      true,
     );
     const stderr = await collectManagedOutput(
       managed,

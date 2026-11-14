@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import {
   codeProjectEditorProjectSchema,
   codeProjectTreeRpcResponseSchema,
@@ -11,6 +13,8 @@ import { describe, expect, it } from "vitest";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import { createCodeSessionFixture } from "./host-session.fixture.js";
 import { createProjectGitFixture } from "./project-git.fixture.js";
+
+const runGit = promisify(execFile);
 
 async function openGitClient(
   fixture: Awaited<ReturnType<typeof createCodeUiHttpFixture>>,
@@ -57,7 +61,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         host = task;
         const path = join(task.workspacePath, "staged-by-task.txt");
         await writeFile(path, "Task Git proof\n");
-        const git = (method: string) =>
+        const git = (method: string, extra: Record<string, unknown> = {}) =>
           task.client.request("/api/code-ui/rpc", {
             service: "git",
             method,
@@ -66,6 +70,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
                 workspacePath: task.workspacePath,
                 viewerScope: { kind: "task", taskId: task.sessionId },
                 paths: [path],
+                ...extra,
               },
             ],
           });
@@ -75,6 +80,32 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(status.body.result.stagedChanges).toEqual(
           expect.arrayContaining([expect.objectContaining({ path })]),
         );
+        const other = join(task.workspacePath, "第二个文件.txt");
+        await writeFile(other, "第二个暂存版本\n");
+        const both = await git("stagePaths", { paths: [path, other] });
+        expect(both.status, JSON.stringify(both.body)).toBe(200);
+        await writeFile(other, "暂存后修改\n");
+        const commit = await git("commit", {
+          paths: [path, other],
+          message: "提交两个暂存文件",
+          stagedOnly: true,
+        });
+        expect(commit.status, JSON.stringify(commit.body)).toBe(200);
+        const contents = await runGit("git", ["show", "HEAD:第二个文件.txt"], {
+          cwd: task.workspacePath,
+        });
+        expect(contents.stdout).toBe("第二个暂存版本\n");
+        const names = await runGit(
+          "git",
+          ["ls-tree", "-z", "--name-only", "HEAD"],
+          { cwd: task.workspacePath },
+        );
+        expect(names.stdout.split("\0").filter(Boolean)).toEqual(
+          expect.arrayContaining(["staged-by-task.txt", "第二个文件.txt"]),
+        );
+        await writeFile(path, "Task Git proof after commit\n");
+        expect((await git("stagePaths")).status).toBe(200);
+        const beforeReadOnly = await git("refresh");
         const readOnly = await task.client.request(
           `/api/code-ui/tasks/${task.sessionId}/scope`,
           { sandboxMode: "read-only" },
@@ -84,7 +115,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         const denied = await git("unstagePaths");
         expect(denied.status).toBeGreaterThanOrEqual(400);
         expect((await git("refresh")).body.result.stagedChanges).toEqual(
-          status.body.result.stagedChanges,
+          beforeReadOnly.body.result.stagedChanges,
         );
       } finally {
         await host?.dispose();
