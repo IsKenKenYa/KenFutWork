@@ -7,6 +7,7 @@ import {
   realpath,
   rm,
   stat,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -753,6 +754,20 @@ it("Task作用域对真实仓库暂存、取消暂存与丢弃，未跟踪文件
   await expect(
     f.call("stagePaths", { paths: ["../outside.txt"] }),
   ).rejects.toThrow(/路径/);
+});
+
+it("暂存与丢弃符号链接只操作链接名并保留真实正文", async () => {
+  const f = await fixture();
+  const link = join(f.root, "link.txt");
+  await symlink("new.txt", link);
+  await f.call("stagePaths", { paths: [link] });
+  expect(
+    (await f.raw(["ls-files", "--stage", "--", "link.txt"])).stdout,
+  ).toMatch(/^120000/u);
+  await f.call("unstagePaths", { paths: [link] });
+  await f.call("discardPaths", { paths: [link] });
+  await expect(stat(link)).rejects.toMatchObject({ code: "ENOENT" });
+  expect(await readFile(join(f.root, "new.txt"), "utf8")).toBe("new content\n");
 });
 
 it("丢弃暂存删除会从 HEAD 恢复文件和索引", async () => {

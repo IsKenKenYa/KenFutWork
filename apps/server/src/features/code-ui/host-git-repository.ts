@@ -272,7 +272,15 @@ export class CodeUiHostGitRepository {
       const tail = relative(root, canonical);
       if (isAbsolute(tail) || tail === ".." || tail.startsWith(`..${sep}`))
         throw new Error("Git路径越出仓库根。");
-      result.push(slash(tail));
+      // 授权检查解析链接目标；Git 写入应保留用户选择的仓库内链接名。
+      const selected = operation === "write" ? relative(root, requested) : tail;
+      if (
+        isAbsolute(selected) ||
+        selected === ".." ||
+        selected.startsWith(`..${sep}`)
+      )
+        throw new Error("Git路径越出仓库根。");
+      result.push(slash(selected));
     }
     if (result.length > this.session.limits.codeSearchMaxResults)
       throw new Error("Git路径数量超过工作区治理上限。");
