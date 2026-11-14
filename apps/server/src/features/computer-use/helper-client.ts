@@ -21,7 +21,7 @@ export interface HelperClientOptions {
 interface PendingRequest {
   resolve(value: unknown): void;
   reject(error: Error): void;
-  timer: ReturnType<typeof setTimeout>;
+  dispose(): void;
 }
 
 interface HelperResponse {
@@ -121,26 +121,39 @@ export class HelperClient {
     method: string,
     params?: Record<string, unknown>,
     timeoutMs: number = this.timeoutMs,
+    signal?: AbortSignal,
   ): Promise<T> {
+    signal?.throwIfAborted();
     if (this.closed || this.socket.destroyed)
       throw new HelperRpcError("disconnected", "Helper 连接已关闭。");
     const id = String(++this.nextId);
     const payload = { id, method, ...(params ? { params } : {}) };
     return await new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
+        dispose();
         this.pending.delete(id);
         reject(new HelperRpcError("timeout", `Helper 请求超时：${method}`));
       }, timeoutMs);
+      const abort = () => {
+        dispose();
+        this.pending.delete(id);
+        reject(signal?.reason);
+      };
+      const dispose = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+      };
+      signal?.addEventListener("abort", abort, { once: true });
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,
-        timer,
+        dispose,
       });
       this.socket.write(`${JSON.stringify(payload)}\n`, (error) => {
         if (!error) return;
         const pending = this.pending.get(id);
         if (!pending) return;
-        clearTimeout(pending.timer);
+        pending.dispose();
         this.pending.delete(id);
         pending.reject(
           new HelperRpcError(
@@ -191,7 +204,7 @@ export class HelperClient {
     }
     const pending = this.pending.get(response.id);
     if (!pending) return;
-    clearTimeout(pending.timer);
+    pending.dispose();
     this.pending.delete(response.id);
     if (response.ok === true) {
       pending.resolve(response.result);
@@ -211,7 +224,7 @@ export class HelperClient {
 
   private fail(error: Error): void {
     for (const [id, pending] of this.pending) {
-      clearTimeout(pending.timer);
+      pending.dispose();
       pending.reject(error);
       this.pending.delete(id);
     }

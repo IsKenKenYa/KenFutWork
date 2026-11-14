@@ -187,6 +187,22 @@ it("请求超时只失败当前请求，迟到响应不复活客户端状态", a
   await expect(client.request("ping")).rejects.toBeInstanceOf(HelperRpcError);
 });
 
+it("中止等待中的查询，连接仍能处理后续请求", async () => {
+  const client = await HelperClient.connect({ socketPath, token });
+  try {
+    const controller = new AbortController();
+    const query = client.request("slow", undefined, 1_000, controller.signal);
+    controller.abort();
+    await expect(query).rejects.toMatchObject({ name: "AbortError" });
+    await expect(client.request("ping")).resolves.toEqual({ pong: true });
+    await expect(
+      client.request("unknown", undefined, 1_000, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  } finally {
+    client.close();
+  }
+});
+
 it("连接被关闭后所有等待中的请求都失败", async () => {
   const client = await HelperClient.connect({
     socketPath,

@@ -123,15 +123,32 @@ export class HelperProcessManager {
     return { ok: true };
   }
 
-  async applications(): Promise<ComputerUseHelperApplicationsResult> {
+  async applications(
+    signal?: AbortSignal,
+  ): Promise<ComputerUseHelperApplicationsResult> {
     const client = await this.ensureClient();
-    const raw = await this.request("apps.list", undefined, client);
+    const raw = await this.request(
+      "apps.list",
+      undefined,
+      client,
+      undefined,
+      signal,
+    );
     return computerUseHelperApplicationsResultSchema.parse(raw);
   }
 
-  async windows(pid: number): Promise<ComputerUseHelperWindowsResult> {
+  async windows(
+    pid: number,
+    signal?: AbortSignal,
+  ): Promise<ComputerUseHelperWindowsResult> {
     const client = await this.ensureClient();
-    const raw = await this.request("windows.list", { pid }, client);
+    const raw = await this.request(
+      "windows.list",
+      { pid },
+      client,
+      undefined,
+      signal,
+    );
     return computerUseHelperWindowsResultSchema.parse(raw);
   }
 
@@ -143,6 +160,7 @@ export class HelperProcessManager {
 
   async axTree(
     params: ComputerUseHelperAxTreeParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperAxTreeResult> {
     const client = await this.ensureClient();
     const timeoutMs = params.timeoutMs ?? this.actionTimeoutMs();
@@ -151,59 +169,73 @@ export class HelperProcessManager {
       { ...params, timeoutMs },
       client,
       timeoutMs,
+      signal,
     );
     return computerUseHelperAxTreeResultSchema.parse(raw);
   }
 
   async screenshot(
     params: ComputerUseHelperScreenshotParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperScreenshotResult> {
     const client = await this.ensureClient();
-    const raw = await this.request("screenshot.capture", params, client);
+    const raw = await this.request(
+      "screenshot.capture",
+      params,
+      client,
+      undefined,
+      signal,
+    );
     return computerUseHelperScreenshotResultSchema.parse(raw);
   }
 
   async click(
     params: ComputerUseHelperClickParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.click", params);
+    return await this.requestAction("input.click", params, signal);
   }
 
   async typeText(
     params: ComputerUseHelperTypeParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.type", params);
+    return await this.requestAction("input.type", params, signal);
   }
 
-  async focus(params: {
-    pid: number;
-    windowId: number;
-  }): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.focus", params);
+  async focus(
+    params: { pid: number; windowId: number },
+    signal?: AbortSignal,
+  ): Promise<ComputerUseHelperActionResult> {
+    return await this.requestAction("input.focus", params, signal);
   }
 
   async move(
     params: Pick<ComputerUseHelperClickParams, "pid" | "x" | "y">,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.move", params);
+    return await this.requestAction("input.move", params, signal);
   }
 
   async key(
     params: ComputerUseHelperKeyParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.key", params);
+    return await this.requestAction("input.key", params, signal);
   }
 
   async scroll(
     params: ComputerUseHelperScrollParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.scroll", params);
+    return await this.requestAction("input.scroll", params, signal);
   }
 
   async drag(
     params: ComputerUseHelperDragParams,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
-    return await this.requestAction("input.drag", params);
+    return await this.requestAction("input.drag", params, signal);
   }
 
   async readClipboard(): Promise<ComputerUseHelperClipboardReadResult> {
@@ -223,8 +255,12 @@ export class HelperProcessManager {
   private async requestAction(
     method: string,
     params: Record<string, unknown>,
+    signal?: AbortSignal,
   ): Promise<ComputerUseHelperActionResult> {
+    signal?.throwIfAborted();
     const client = await this.ensureClient();
+    // 已发出的原生输入不能撤回，等待 Helper 回包；未发出的输入在此取消。
+    signal?.throwIfAborted();
     const raw = await this.request(method, params, client);
     return computerUseHelperActionResultSchema.parse(raw);
   }
@@ -269,9 +305,10 @@ export class HelperProcessManager {
     params: Record<string, unknown> | undefined,
     client: HelperClient,
     timeoutMs = this.actionTimeoutMs(),
+    signal?: AbortSignal,
   ): Promise<T> {
     try {
-      return await client.request<T>(method, params, timeoutMs);
+      return await client.request<T>(method, params, timeoutMs, signal);
     } catch (error) {
       if (error instanceof HelperRpcError && error.code === "disconnected")
         this.client = null;

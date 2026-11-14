@@ -66,9 +66,9 @@ export function createHelperExecutor(options: {
     throw error;
   };
 
-  const loadApplications = async () => {
+  const loadApplications = async (signal?: AbortSignal) => {
     try {
-      return (await options.manager.applications()).applications;
+      return (await options.manager.applications(signal)).applications;
     } catch (error) {
       return wrap(error);
     }
@@ -76,13 +76,14 @@ export function createHelperExecutor(options: {
 
   const resolveTarget = async (
     appRef: ParsedAppRef,
+    context?: CuOperationContext,
   ): Promise<ResolvedTarget> => {
     if (appRef.displayId)
       throw new HelperExecutorError(
         "unsupported_target",
         "当前执行器不支持整屏目标，请按应用操作",
       );
-    const catalog = await loadApplications();
+    const catalog = await loadApplications(context?.signal);
     const application =
       appRef.pid !== undefined
         ? catalog.find((candidate) => candidate.pid === appRef.pid)
@@ -100,7 +101,9 @@ export function createHelperExecutor(options: {
       throw new HelperExecutorError("app_not_found", "找不到目标应用");
     let windows: ComputerUseHelperWindow[];
     try {
-      windows = (await options.manager.windows(application.pid)).windows;
+      windows = (
+        await options.manager.windows(application.pid, context?.signal)
+      ).windows;
     } catch (error) {
       return wrap(error);
     }
@@ -129,8 +132,9 @@ export function createHelperExecutor(options: {
   ): Promise<LatestObservation> => {
     const limits = context?.treeLimits ?? CU_AX_DEFAULT_LIMITS;
     try {
-      const tree = await options.manager.axTree({
+      const request = {
         pid: target.pid,
+        windowId: target.window.windowId,
         maxDepth: limits.maxDepth,
         maxChildren: limits.maxChildren,
         maxNodes: Math.max(1, limits.maxChildren * limits.maxDepth),
@@ -140,7 +144,8 @@ export function createHelperExecutor(options: {
         ...(context?.timeoutMs === undefined
           ? {}
           : { timeoutMs: context.timeoutMs }),
-      });
+      };
+      const tree = await options.manager.axTree(request, context?.signal);
       const positions = new Map<
         number,
         { x: number; y: number; width: number; height: number }
@@ -231,11 +236,11 @@ export function createHelperExecutor(options: {
     };
   };
 
-  const focus = (target: ResolvedTarget) =>
-    options.manager.focus({
-      pid: target.pid,
-      windowId: target.window.windowId,
-    });
+  const focus = (target: ResolvedTarget, signal?: AbortSignal) =>
+    options.manager.focus(
+      { pid: target.pid, windowId: target.window.windowId },
+      signal,
+    );
 
   const executor: ComputerUseExecutor = {
     id: "macos-helper",
@@ -297,7 +302,7 @@ export function createHelperExecutor(options: {
       appRef: ParsedAppRef,
       context?: CuOperationContext,
     ): Promise<CuObservation> {
-      const target = await resolveTarget(appRef);
+      const target = await resolveTarget(appRef, context);
       const latest = await observeRoot(target, context);
       latestByPid.set(target.pid, latest);
       const window: AxWindowRef = {
@@ -322,15 +327,16 @@ export function createHelperExecutor(options: {
       appRef: ParsedAppRef,
       context?: CuOperationContext,
     ): Promise<CuRaster> {
-      const target = await resolveTarget(appRef);
+      const target = await resolveTarget(appRef, context);
       try {
-        const shot = await options.manager.screenshot({
+        const request = {
           pid: target.pid,
           windowId: target.window.windowId,
           ...(context?.screenshotMaxBytes === undefined
             ? {}
             : { maxBytes: context.screenshotMaxBytes }),
-        });
+        };
+        const shot = await options.manager.screenshot(request, context?.signal);
         const raster: CuRaster = {
           app: {
             pid: target.pid,
@@ -363,18 +369,15 @@ export function createHelperExecutor(options: {
       target: CuTarget,
       context?: CuOperationContext,
     ): Promise<CuActionResult> {
-      const resolved = await resolveTarget(appRef);
+      const resolved = await resolveTarget(appRef, context);
       const point = await actionPoints(resolved, context)(target);
       if (!point)
         throw new HelperExecutorError("invalid_target", "点击缺少目标", false);
       try {
-        await options.manager.click({
-          pid: resolved.pid,
-          x: point.x,
-          y: point.y,
-          button: "left",
-          clickCount: 1,
-        });
+        await options.manager.click(
+          { pid: resolved.pid, ...point, button: "left", clickCount: 1 },
+          context?.signal,
+        );
         return { actionSent: true, detail: "已通过 Helper 发送点击" };
       } catch (error) {
         return wrap(error);
@@ -387,25 +390,23 @@ export function createHelperExecutor(options: {
       target?: CuTarget,
       context?: CuOperationContext,
     ): Promise<CuActionResult> {
-      const resolved = await resolveTarget(appRef);
+      const resolved = await resolveTarget(appRef, context);
       const point = await actionPoints(resolved, context)(target);
       try {
         if (point) {
-          await options.manager.click({
-            pid: resolved.pid,
-            x: point.x,
-            y: point.y,
-            button: "left",
-            clickCount: 1,
-          });
-        } else await focus(resolved);
-        await options.manager.typeText({
+          await options.manager.click(
+            { pid: resolved.pid, ...point, button: "left", clickCount: 1 },
+            context?.signal,
+          );
+        } else await focus(resolved, context?.signal);
+        const request = {
           pid: resolved.pid,
           text,
           ...(context?.inputDelayMs === undefined
             ? {}
             : { delayMs: context.inputDelayMs }),
-        });
+        };
+        await options.manager.typeText(request, context?.signal);
         return { actionSent: true, detail: "已通过 Helper 发送文本" };
       } catch (error) {
         return wrap(error);
@@ -470,7 +471,7 @@ export function createHelperExecutor(options: {
       action: CuInputAction,
       context: CuOperationContext,
     ): Promise<CuActionResult> {
-      const resolved = await resolveTarget(appRef);
+      const resolved = await resolveTarget(appRef, context);
       const pointFor = actionPoints(resolved, context);
       try {
         switch (action.kind) {
@@ -478,24 +479,25 @@ export function createHelperExecutor(options: {
             const point = await pointFor(action.target);
             if (!point)
               throw new HelperExecutorError("invalid_target", "点击缺少目标");
-            await options.manager.click({
-              pid: resolved.pid,
-              x: point.x,
-              y: point.y,
-              button: action.button,
-              clickCount: action.count,
-            });
+            await options.manager.click(
+              {
+                pid: resolved.pid,
+                ...point,
+                button: action.button,
+                clickCount: action.count,
+              },
+              context.signal,
+            );
             return { actionSent: true, detail: "已通过 Helper 发送点击" };
           }
           case "move": {
             const point = await pointFor(action.target);
             if (!point)
               throw new HelperExecutorError("invalid_target", "移动缺少目标");
-            await options.manager.move({
-              pid: resolved.pid,
-              x: point.x,
-              y: point.y,
-            });
+            await options.manager.move(
+              { pid: resolved.pid, ...point },
+              context.signal,
+            );
             return { actionSent: true, detail: "已移动指针" };
           }
           case "drag": {
@@ -506,20 +508,21 @@ export function createHelperExecutor(options: {
                 "invalid_target",
                 "拖拽缺少起点或终点",
               );
-            await options.manager.drag({
+            const request = {
               pid: resolved.pid,
               fromX: from.x,
               fromY: from.y,
               toX: to.x,
               toY: to.y,
               durationMs: DRAG_DURATION_MS,
-            });
+            };
+            await options.manager.drag(request, context.signal);
             return { actionSent: true, detail: "已通过 Helper 发送拖拽" };
           }
           case "scroll": {
             const point = await pointFor(action.target);
             const amount = Math.abs(action.amount);
-            await options.manager.scroll({
+            const request = {
               pid: resolved.pid,
               ...(point ? { x: point.x, y: point.y } : {}),
               deltaX:
@@ -534,23 +537,22 @@ export function createHelperExecutor(options: {
                   : action.direction === "down"
                     ? -amount
                     : 0,
-              unit: "pixel",
-            });
+              unit: "pixel" as const,
+            };
+            await options.manager.scroll(request, context.signal);
             return { actionSent: true, detail: "已通过 Helper 发送滚动" };
           }
           case "keys": {
             const parsed = toHelperKeyRequest(action.keys);
-            await focus(resolved);
-            await options.manager.key({
-              pid: resolved.pid,
-              key: parsed.key,
-              modifiers: parsed.modifiers,
-              repeat: 1,
-            });
+            await focus(resolved, context.signal);
+            await options.manager.key(
+              { pid: resolved.pid, ...parsed, repeat: 1 },
+              context.signal,
+            );
             return { actionSent: true, detail: "已通过 Helper 发送按键" };
           }
           case "focus": {
-            await focus(resolved);
+            await focus(resolved, context.signal);
             return { actionSent: true, detail: "已聚焦目标窗口" };
           }
         }

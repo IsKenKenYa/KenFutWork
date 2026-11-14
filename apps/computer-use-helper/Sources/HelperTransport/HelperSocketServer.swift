@@ -56,7 +56,7 @@ public final class HelperSocketServer {
   private let displays: (() -> ComputerUseHelperDisplaysResult)?
   private let accessibilityTree:
     (
-      (Int, ComputerUseHelperAxTreeLimits) throws
+      (Int, Int?, ComputerUseHelperAxTreeLimits) throws
         -> ComputerUseHelperAxTreeResult
     )?
   private let screenshot:
@@ -80,7 +80,7 @@ public final class HelperSocketServer {
     windows: ((Int) -> ComputerUseHelperWindowsResult)? = nil,
     displays: (() -> ComputerUseHelperDisplaysResult)? = nil,
     accessibilityTree: (
-      (Int, ComputerUseHelperAxTreeLimits) throws
+      (Int, Int?, ComputerUseHelperAxTreeLimits) throws
         -> ComputerUseHelperAxTreeResult
     )? = nil,
     screenshot: (
@@ -493,6 +493,11 @@ public final class HelperSocketServer {
         )
         return true
       }
+      let windowId = integer(params["windowId"])
+      if params["windowId"] != nil && (windowId ?? 0) <= 0 {
+        sendError(id: id, code: "invalid_request", message: "ax.tree 需要合法的 windowId", to: clientDescriptor)
+        return true
+      }
       guard let accessibilityTree else {
         sendError(
           id: id,
@@ -505,6 +510,7 @@ public final class HelperSocketServer {
       do {
         let result = try accessibilityTree(
           pid,
+          windowId,
           ComputerUseHelperAxTreeLimits(json: params)
         )
         return sendResult(id: id, result: result, to: clientDescriptor)

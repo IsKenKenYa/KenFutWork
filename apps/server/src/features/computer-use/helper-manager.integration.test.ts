@@ -121,7 +121,7 @@ it.skipIf(!enabled)(
         );
         try {
           const observation = await executor.observe({ pid: finder.pid });
-          expect(observation.root.role).toBe("application");
+          expect(observation.root.role).toBe("window");
           expect(observation.app.pid).toBe(finder.pid);
         } catch (error) {
           expect((error as { code?: string }).code).toBe("permission_denied");

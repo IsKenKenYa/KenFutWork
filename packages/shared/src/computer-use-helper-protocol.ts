@@ -205,6 +205,7 @@ export const computerUseHelperWindowsResultSchema = z
 export const computerUseHelperAxTreeParamsSchema = z
   .object({
     pid: z.number().int().positive(),
+    windowId: z.number().int().positive().optional(),
     maxDepth: z.number().int().min(1).max(64).optional(),
     maxChildren: z.number().int().min(1).max(1000).optional(),
     maxNodes: z.number().int().min(1).max(10000).optional(),

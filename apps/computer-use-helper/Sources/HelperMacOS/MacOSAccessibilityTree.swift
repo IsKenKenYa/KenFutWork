@@ -6,9 +6,13 @@ import HelperProtocol
 public enum MacOSAccessibilityTree {
   static func window(
     pid: Int,
-    matching target: ComputerUseHelperWindow
+    matching target: ComputerUseHelperWindow,
+    timeoutMs: Int? = nil
   ) throws -> AXUIElement {
     let application = AXUIElementCreateApplication(pid_t(pid))
+    if let timeoutMs {
+      AXUIElementSetMessagingTimeout(application, Float(timeoutMs) / 1_000)
+    }
     let matchingBounds = elements(application, kAXWindowsAttribute).filter { window in
       guard let origin = point(window, kAXPositionAttribute),
         let extent = size(window, kAXSizeAttribute)
@@ -32,6 +36,7 @@ public enum MacOSAccessibilityTree {
   /// 安全输入框的值一律不采集，避免把密码送进模型上下文。
   public static func read(
     pid: Int,
+    windowId: Int? = nil,
     limits: ComputerUseHelperAxTreeLimits
   ) throws -> ComputerUseHelperAxTreeResult {
     guard AXIsProcessTrusted() else {
@@ -58,10 +63,19 @@ public enum MacOSAccessibilityTree {
       )
     }
 
+    let element: AXUIElement
+    if let windowId {
+      guard let target = MacOSWindowCatalog.list(pid: pid).windows.first(where: { $0.windowId == windowId }) else {
+        throw HelperOperationError(code: "window_not_found", message: "目标窗口不存在")
+      }
+      element = try window(pid: pid, matching: target, timeoutMs: limits.timeoutMs)
+    } else {
+      element = application
+    }
     let builder = Builder(limits: limits)
     guard
       let root = builder.build(
-        element: application,
+        element: element,
         depth: 0,
         visited: Set()
       )
