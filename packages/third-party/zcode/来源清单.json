@@ -341,9 +341,10 @@
       "source": "references/zcode/packages/ui/src/GitActionMenu.tsx",
       "target": "apps/web/src/components/workbench/zcode/GitActionMenu.tsx",
       "sha256": "8294cbc20eb673de849c055f7d080a386dadab75cfce2e3c510fabcfd7644bd3",
-      "copiedSha256": "178580809ea1179111a1a3728b9d1b80745ab75d4001aa367ca52e150f6ab462",
+      "copiedSha256": "a425914352ed9d7a0dba4c272c8641ba368d1aa3d875f511a85b64e1de8cb5e7",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "提交成功后独立显示暂存区未更新的提示"
       ]
     },
     {
@@ -24100,8 +24101,8 @@
       "source": "references/zcode/packages/shared/src/git.ts",
       "target": "packages/zcode-shared/src/git.ts",
       "sha256": "02e1d5ee5e94ad07e57cc743cc17f0c3d064163e1cd35148a5faaff3d6c797a9",
-      "copiedSha256": "02e1d5ee5e94ad07e57cc743cc17f0c3d064163e1cd35148a5faaff3d6c797a9",
-      "adaptations": []
+      "copiedSha256": "91d6d88f0e4b3a98b57938e9e1b3ebb290238b79a467083ffd57aceafea22663",
+      "adaptations": ["提交结果可携带暂存区未更新的提示"]
     },
     {
       "source": "references/zcode/packages/shared/src/handshake.ts",

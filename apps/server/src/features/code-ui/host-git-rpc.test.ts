@@ -205,6 +205,7 @@ async function resolveTaskWritePath(root: string, path: string) {
 async function fixture(
   options: {
     withGenerator?: boolean;
+    unborn?: boolean;
     provider?: Parameters<typeof providerFixture>[1];
   } = {},
 ) {
@@ -217,26 +218,28 @@ async function fixture(
   await setup(["init", "-b", "main"]);
   await setup(["config", "user.name", "Git DTO测试"]);
   await setup(["config", "user.email", "git@test.invalid"]);
-  await writeFile(join(root, "tracked.txt"), "base\n");
-  await writeFile(join(root, ".gitignore"), "ignored.txt\n");
-  await writeFile(join(root, "binary.dat"), Buffer.from([0, 1, 2]));
-  await writeFile(join(root, "rename.txt"), "rename body\n");
-  await setup([
-    "add",
-    "--",
-    "tracked.txt",
-    ".gitignore",
-    "binary.dat",
-    "rename.txt",
-  ]);
-  // 仅此测试独占临时目录的fixture历史，不提交worktree，也不写远端。
-  await setup(["commit", "-m", "测试基线"]);
-  await writeFile(join(root, "tracked.txt"), "staged\n");
-  await setup(["add", "--", "tracked.txt"]);
-  await writeFile(join(root, "tracked.txt"), "unstaged\n");
-  await writeFile(join(root, "new.txt"), "new content\n");
-  await writeFile(join(root, "ignored.txt"), "ignored\n");
-  await writeFile(join(root, "untracked-binary.dat"), Buffer.from([0, 4, 5]));
+  if (!options.unborn) {
+    await writeFile(join(root, "tracked.txt"), "base\n");
+    await writeFile(join(root, ".gitignore"), "ignored.txt\n");
+    await writeFile(join(root, "binary.dat"), Buffer.from([0, 1, 2]));
+    await writeFile(join(root, "rename.txt"), "rename body\n");
+    await setup([
+      "add",
+      "--",
+      "tracked.txt",
+      ".gitignore",
+      "binary.dat",
+      "rename.txt",
+    ]);
+    // 仅此测试独占临时目录的fixture历史，不提交worktree，也不写远端。
+    await setup(["commit", "-m", "测试基线"]);
+    await writeFile(join(root, "tracked.txt"), "staged\n");
+    await setup(["add", "--", "tracked.txt"]);
+    await writeFile(join(root, "tracked.txt"), "unstaged\n");
+    await writeFile(join(root, "new.txt"), "new content\n");
+    await writeFile(join(root, "ignored.txt"), "ignored\n");
+    await writeFile(join(root, "untracked-binary.dat"), Buffer.from([0, 4, 5]));
+  }
   const instanceId = randomUUID();
   const actor: LocalActor = { instanceId, accessClientId: null };
   const provider = options.withGenerator
@@ -778,6 +781,36 @@ it("暂存与丢弃符号链接只操作链接名并保留真实正文", async (
   await f.call("discardPaths", { paths: [link] });
   await expect(stat(link)).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(join(f.root, "new.txt"), "utf8")).toBe("new content\n");
+});
+
+it("首次提交前可取消暂存并保留文件", async () => {
+  const f = await fixture({ unborn: true });
+  await writeFile(join(f.root, "first.txt"), "首次提交\n");
+  await f.call("stagePaths", { paths: ["first.txt"] });
+  expect((await f.raw(["ls-files"])).stdout.trim()).toBe("first.txt");
+  await f.call("unstagePaths", { paths: ["first.txt"] });
+  expect((await f.raw(["ls-files"])).stdout).toBe("");
+  expect(await readFile(join(f.root, "first.txt"), "utf8")).toBe("首次提交\n");
+});
+
+it("真实索引被锁定时仍返回已完成的提交和清理告警", async () => {
+  const f = await fixture();
+  const lock = join(f.root, ".git", "index.lock");
+  await writeFile(lock, "并发 Git 操作占用索引");
+  try {
+    const res = await f.call("commit", {
+      message: "已提交但未清理索引",
+      paths: ["tracked.txt"],
+      stagedOnly: true,
+    });
+    expect(res?.result).toMatchObject({
+      commitHash: (await f.raw(["rev-parse", "HEAD"])).stdout.trim(),
+      indexCleanupWarning: expect.stringContaining("暂存区未更新"),
+    });
+    expect((await f.raw(["show", "HEAD:tracked.txt"])).stdout).toBe("staged\n");
+  } finally {
+    await rm(lock, { force: true });
+  }
 });
 
 it("提交含通配符号的文件名不会清除其他文件的暂存", async () => {

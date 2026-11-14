@@ -609,7 +609,27 @@ export class CodeUiHostGitRepository {
   async unstagePaths(paths: string[]): Promise<void> {
     const targets = await this.writeTargets(paths);
     if (!targets.length) return;
-    await this.commandAt(await this.writeRoot(), [
+    const root = await this.writeRoot();
+    const head = await this.runAt(root, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "HEAD",
+    ]);
+    if (head.code === 1 && !head.stderr) {
+      await this.commandAt(root, [
+        "rm",
+        "--cached",
+        "-r",
+        "-f",
+        "--ignore-unmatch",
+        "--",
+        ...targets.map(literalPath),
+      ]);
+      return;
+    }
+    requireSuccess(head);
+    await this.commandAt(root, [
       "restore",
       "--staged",
       "--",
@@ -787,14 +807,19 @@ export class CodeUiHostGitRepository {
       const hash = (
         await this.runAt(root, ["rev-parse", "HEAD"])
       ).stdout.trim();
-      await this.commandAt(root, [
+      const cleanupResult = await this.runAt(root, [
         "reset",
         "--quiet",
         "HEAD",
         "--",
         ...Array.from(cleanup, literalPath),
       ]);
-      return hash;
+      return {
+        commitHash: hash,
+        ...(cleanupResult.code !== 0
+          ? { indexCleanupWarning: "提交已完成，暂存区未更新，请刷新后检查。" }
+          : {}),
+      };
     } finally {
       await rm(indexFile, { force: true });
     }
@@ -810,9 +835,9 @@ export class CodeUiHostGitRepository {
     if (!summary.isRepository) throw new Error("当前目录不是Git仓库。");
     const targets = paths.length ? await this.writeTargets(paths) : [];
     const root = await this.writeRoot();
-    let commitHash: string;
+    let outcome: Pick<GitCommitResult, "commitHash" | "indexCleanupWarning">;
     if (stagedOnly && targets.length) {
-      commitHash = await this.commitStagedOnly(root, trimmed, targets);
+      outcome = await this.commitStagedOnly(root, trimmed, targets);
     } else {
       const result = await this.runAt(
         root,
@@ -821,9 +846,11 @@ export class CodeUiHostGitRepository {
           : ["commit", "-m", trimmed],
       );
       if (result.code !== 0) throw new Error(commitFailure(result));
-      commitHash = (await this.commandAt(root, ["rev-parse", "HEAD"])).trim();
+      outcome = {
+        commitHash: (await this.commandAt(root, ["rev-parse", "HEAD"])).trim(),
+      };
     }
-    return { commitHash, summary: await this.summary() };
+    return { ...outcome, summary: await this.summary() };
   }
   async switchBranch(
     targetBranchName: string,

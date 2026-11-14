@@ -210,6 +210,7 @@ export interface GitCommitRequest extends GitRepositoryRequest {
 export interface GitCommitResult {
   commitHash: string;
   summary: GitRepositorySummary;
+  indexCleanupWarning?: string;
 }
 
 export interface GitGenerateCommitMessageRequest extends GitRepositoryRequest {
