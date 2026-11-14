@@ -327,10 +327,11 @@ export async function scanExternalSkillDirectories(input: {
       }
 
       const sourceSlug = basename(realPackageDir);
+      const sourcePath = toPosixPath(root.rootPath, realPackageDir);
       const digest = externalSkillPackageDigest(files);
       const receipt = await input.receipts.findImportReceipt(
         input.instanceId,
-        skillImportRequestKey(root.rootPath, sourceSlug),
+        skillImportRequestKey(root.rootPath, sourcePath),
       );
       candidates.push({
         rootPath: root.rootPath,
@@ -392,21 +393,20 @@ export async function importExternalSkill(input: {
       error instanceof Error ? error.message : "技能包不可读。",
     );
   }
+  const sourcePath = toPosixPath(root.rootPath, realPackageDir);
   const imported = buildSkillFromFiles(files, {
     label: "sandbox",
-    url: `external:${root.agent}:${toPosixPath(root.rootPath, realPackageDir)}`,
+    url: `external:${root.agent}:${sourcePath}`,
   });
   const sourceSlug = basename(realPackageDir);
+  const requestKey = skillImportRequestKey(root.rootPath, sourcePath);
   const digest = externalSkillPackageDigest(files);
   const slug = buildImportSlug(imported.manifest.name, sourceSlug, digest);
 
   const existing = await input.receipts.findSkillBySlug(input.instanceId, slug);
   if (
     existing &&
-    !(await input.receipts.findImportReceipt(
-      input.instanceId,
-      skillImportRequestKey(root.rootPath, sourceSlug),
-    ))
+    !(await input.receipts.findImportReceipt(input.instanceId, requestKey))
   ) {
     throw new ExternalSkillSlugConflictError();
   }
@@ -415,10 +415,10 @@ export async function importExternalSkill(input: {
   try {
     admission = await input.receipts.admitImport({
       instanceId: input.instanceId,
-      requestKey: skillImportRequestKey(root.rootPath, sourceSlug),
+      requestKey,
       parameterFingerprint: digest,
       sourceRootPath: root.rootPath,
-      sourceSlug,
+      sourceSlug: sourcePath,
       create: async (client) => {
         const skillRow = await insertOwnedSkillRecord(client, {
           author: imported.manifest.author ?? "system",

@@ -67,6 +67,59 @@ afterAll(() => {
 
 describe("外部技能目录导入（真实 Postgres）", () => {
   it.skipIf(process.env.KENFUTWORK_CRUD_TEST_PG !== "1")(
+    "不同父目录下的同名技能包独立导入和重放",
+    async () => {
+      const database = await createTaskWorkDatabase();
+      const homeDir = createHome();
+      const rootPath = writePackage(homeDir, "vendor-a/common");
+      writePackage(homeDir, "vendor-b/common", concurrentManifest);
+      try {
+        const instanceId = await createLocalInstanceRepository(
+          database.persistence,
+        ).ensure();
+        const receipts = createSkillImportReceiptRepository(
+          database.persistence,
+        );
+        const catalog = createSkillCatalogRepository(database.persistence);
+        const input = {
+          instanceId,
+          homeDir,
+          rootPath,
+          installedByClientId: null,
+          receipts,
+          catalog,
+        };
+        const first = await importExternalSkill({
+          ...input,
+          relativePath: "vendor-a/common",
+        });
+        const second = await importExternalSkill({
+          ...input,
+          relativePath: "vendor-b/common",
+        });
+        expect(first.skillId).not.toBe(second.skillId);
+        const replay = await importExternalSkill({
+          ...input,
+          relativePath: "vendor-a/common",
+        });
+        expect(replay.skillId).toBe(first.skillId);
+        const scan = await scanExternalSkillDirectories({
+          instanceId,
+          homeDir,
+          receipts,
+        });
+        for (const relativePath of ["vendor-a/common", "vendor-b/common"]) {
+          expect(
+            scan.candidates.find((row) => row.relativePath === relativePath),
+          ).toMatchObject({ imported: true });
+        }
+      } finally {
+        await database.close();
+      }
+    },
+  );
+
+  it.skipIf(process.env.KENFUTWORK_CRUD_TEST_PG !== "1")(
     "导入落库、重放、变更冲突、删除墓碑与并发同键都一致",
     async () => {
       const database = await createTaskWorkDatabase();
