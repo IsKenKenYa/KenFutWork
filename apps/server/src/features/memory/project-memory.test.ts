@@ -557,6 +557,53 @@ describe("Design 记忆归属与旧通道迁移", () => {
     expect(await memory.listProjectMemories(actor)).toEqual([]);
   });
 
+  it("同名旧记忆改名后，旧索引指向迁移正文且重放不重复追加", async () => {
+    const body = {
+      key: "/memories/notes/decision.md",
+      value: { content: "旧正文" },
+    };
+    const { memory, store } = await createFixture({ legacyItems: [body] });
+    const root = memory.memoryDirectory(projectId);
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, "notes-decision.md"), "项目正文\n");
+    const target = { projectId, canvasId };
+    expect(await memory.migrateLegacyCanvasMemory(actor, target)).toEqual({
+      migrated: 1,
+    });
+
+    store.search = async () => [
+      body,
+      {
+        key: "/memories/MEMORY.md",
+        value: {
+          content: [
+            "- [旧约定](notes/decision.md)",
+            "- [旧索引](notes-decision.md)",
+            "- [缺失正文](missing.md)",
+          ],
+        },
+      },
+    ];
+    expect(await memory.migrateLegacyCanvasMemory(actor, target)).toEqual({
+      migrated: 0,
+    });
+    const indexPath = join(root, "MEMORY.md");
+    const index = await readFile(indexPath, "utf8");
+    expect(index).toContain("- [旧约定](notes-decision-legacy.md)");
+    expect(index).toContain("- [旧索引](notes-decision-legacy.md)");
+    expect(index).not.toContain("missing.md");
+    expect(await readFile(join(root, "notes-decision-legacy.md"), "utf8")).toBe(
+      "旧正文\n",
+    );
+    expect(await readFile(join(root, "notes-decision.md"), "utf8")).toBe(
+      "项目正文\n",
+    );
+    expect(await memory.migrateLegacyCanvasMemory(actor, target)).toEqual({
+      migrated: 0,
+    });
+    expect(await readFile(indexPath, "utf8")).toBe(index);
+  });
+
   it("已整理的旧正文和索引不会在再次迁移时出现", async () => {
     const { memory } = await createFixture({
       legacyItems: [

@@ -338,8 +338,12 @@ export function createProjectMemoryService(options: {
         if (page.length < pageSize) break;
       }
 
-      const files: Array<{ key: string; fileName: string; content: string }> =
-        [];
+      const files: Array<{
+        key: string;
+        relativePath: string;
+        fileName: string;
+        content: string;
+      }> = [];
       const legacyIndexLines: string[] = [];
       for (const item of items) {
         if (!item.key.startsWith("/memories/")) continue;
@@ -357,12 +361,12 @@ export function createProjectMemoryService(options: {
         }
         const fileName = flattenLegacyFileName(relativePath);
         if (!fileName) continue;
-        files.push({ key: item.key, fileName, content });
+        files.push({ key: item.key, relativePath, fileName, content });
       }
       if (files.length === 0 && legacyIndexLines.length === 0)
         return { migrated: 0 };
 
-      using mutation = await acquireProjectMutation(input.projectId);
+      using _mutation = await acquireProjectMutation(input.projectId);
       const memoryRoot = memoryDirectory(input.projectId);
       await mkdir(memoryRoot, { recursive: true });
       const limits = await readLimits(actor);
@@ -409,6 +413,8 @@ export function createProjectMemoryService(options: {
           .map((entry) => entry.name),
       );
       const additions: string[] = [];
+      const targetsByLegacyPath = new Map<string, string>();
+      const targetsByFlatName = new Map<string, string | null>();
       let migrated = 0;
       let recordsChanged = false;
 
@@ -434,7 +440,13 @@ export function createProjectMemoryService(options: {
           records.push({ fingerprint, fileName: targetName });
           recordsChanged = true;
           mustWrite = true;
-        } else if (!existingNames.has(targetName)) {
+        }
+        targetsByLegacyPath.set(file.relativePath, targetName);
+        targetsByFlatName.set(
+          file.fileName,
+          targetsByFlatName.has(file.fileName) ? null : targetName,
+        );
+        if (!existingNames.has(targetName)) {
           // 回执在正文写完后才保存；后续整理或删除不应使旧正文重新导入。
           continue;
         }
@@ -456,11 +468,20 @@ export function createProjectMemoryService(options: {
       }
 
       for (const line of legacyIndexLines) {
-        if (knownLines.has(line)) continue;
-        const fileName = line.match(/\]\(([^)]+)\)/u)?.[1];
-        if (fileName && !existingNames.has(fileName)) continue;
-        additions.push(line);
-        knownLines.add(line);
+        const link = /\]\(([^)]+)\)/u.exec(line);
+        const legacyPath = link?.[1]?.replace(/^(?:\.\/|\/memories\/)/u, "");
+        const targetName = legacyPath
+          ? (targetsByLegacyPath.get(legacyPath) ??
+            targetsByFlatName.get(legacyPath))
+          : undefined;
+        if (link && (!targetName || !existingNames.has(targetName))) continue;
+        const migratedLine =
+          link && targetName
+            ? line.replace(link[0], () => `](${targetName})`)
+            : line;
+        if (knownLines.has(migratedLine)) continue;
+        additions.push(migratedLine);
+        knownLines.add(migratedLine);
       }
       if (additions.length > 0) {
         const prefix =
