@@ -343,15 +343,7 @@ export async function maintainMemoryDirectory(options: {
       if (name === keeper) continue;
       keptDuplicates.set(name, keeper);
       const lineIndex = lineByName.get(name);
-      if (lineIndex !== undefined) {
-        if (lineByName.has(keeper)) dropped.add(lineIndex);
-        else {
-          const entry = parsed[lineIndex]!.entry!;
-          entry.fileName = keeper;
-          parsed[lineIndex]!.raw = renderMemoryIndexLine(entry);
-          lineByName.set(keeper, lineIndex);
-        }
-      }
+      const indexLine = lineIndex === undefined ? null : parsed[lineIndex]?.raw;
       for (const [index, line] of parsed.entries()) {
         if (line.entry?.fileName === name) dropped.add(index);
       }
@@ -359,7 +351,7 @@ export async function maintainMemoryDirectory(options: {
         memoryRoot: options.memoryRoot,
         fileName: name,
         reason: "duplicate",
-        indexLine: null,
+        indexLine: indexLine ?? null,
         now: options.now,
       });
       removed.add(name);
@@ -486,16 +478,16 @@ export async function restoreTrashEntry(options: {
       if (!exists) break;
       fileName = `${meta.fileName.replace(/\.md$/u, "")}-restored${suffix === 2 ? "" : `-${suffix}`}.md`;
     }
-    const restoredPath = join(options.memoryRoot, fileName);
-    await rename(join(trashDirectory, meta.fileName), restoredPath);
-    if (meta.reason === "orphan") {
-      const restoredAt = new Date(options.now);
-      await utimes(restoredPath, restoredAt, restoredAt);
-    }
   }
 
+  const indexPath = join(options.memoryRoot, INDEX_FILE_NAME);
+  let nextIndex: string | undefined;
   if (typeof meta.indexLine === "string" && meta.indexLine.trim()) {
-    const indexPath = join(options.memoryRoot, INDEX_FILE_NAME);
+    const entry = parseMemoryIndexLine(meta.indexLine);
+    const indexLine =
+      fileName && entry && entry.fileName !== fileName
+        ? renderMemoryIndexLine({ ...entry, fileName })
+        : meta.indexLine.trim();
     const indexRaw = await readOptional(indexPath);
     const known = new Set(
       indexRaw
@@ -503,14 +495,22 @@ export async function restoreTrashEntry(options: {
         .map((line) => line.trim())
         .filter((line) => line.length > 0),
     );
-    if (!known.has(meta.indexLine.trim())) {
-      const nextRaw = `${indexRaw}${indexRaw.endsWith("\n") || indexRaw === "" ? "" : "\n"}${meta.indexLine.trim()}\n`;
-      if (Buffer.byteLength(nextRaw, "utf8") > options.maxFileBytes)
+    if (!known.has(indexLine)) {
+      nextIndex = `${indexRaw}${indexRaw.endsWith("\n") || indexRaw === "" ? "" : "\n"}${indexLine}\n`;
+      if (Buffer.byteLength(nextIndex, "utf8") > options.maxFileBytes)
         throw new Error("记忆索引超出上限，已停止恢复。");
-      await writeFile(indexPath, nextRaw, "utf8");
     }
   }
 
+  if (fileName && typeof meta.fileName === "string") {
+    const restoredPath = join(options.memoryRoot, fileName);
+    await rename(join(trashDirectory, meta.fileName), restoredPath);
+    if (meta.reason === "orphan") {
+      const restoredAt = new Date(options.now);
+      await utimes(restoredPath, restoredAt, restoredAt);
+    }
+  }
+  if (nextIndex !== undefined) await writeFile(indexPath, nextIndex, "utf8");
   await rm(trashDirectory, { recursive: true, force: true });
   return { fileName };
 }

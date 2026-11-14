@@ -109,6 +109,8 @@ it("重复正文只保留被索引引用的一份并把另一份送进回收区"
   expect(trash).toHaveLength(1);
   expect(trash[0]?.fileName).toBe("b.md");
   expect(trash[0]?.reason).toBe("duplicate");
+  expect(trash[0]?.title).toBe("结论乙");
+  expect(trash[0]?.indexLine).toBe("- [结论乙](b.md) — 同一结论");
 });
 
 it("索引悬挂行进回收区且可在窗口内恢复", async () => {
@@ -245,7 +247,7 @@ it("回收区超过可恢复窗口后永久删除", async () => {
   });
   await seed(root, { "b.md": "同一结论", "a.md": "同一结论" }, [
     "- [甲](a.md) — 同一结论",
-    "- [乙](b.md) — 同一结论",
+    "- [乙](b.md) — 原摘要",
   ]);
   await memory.maintainProjectMemory(actor, { projectId });
   expect(await readdir(join(root, ".trash"))).toHaveLength(1);
@@ -282,21 +284,30 @@ it("恢复同名正文时自动加后缀，索引行去重", async () => {
   const { memory, root } = await createFixture();
   await seed(root, { "a.md": "同一结论", "b.md": "同一结论" }, [
     "- [甲](a.md) — 同一结论",
-    "- [乙](b.md) — 同一结论",
+    "- [乙](b.md) — 原摘要",
   ]);
   await memory.maintainProjectMemory(actor, { projectId });
   const trash = await memory.listTrashedMemories(actor, { projectId });
+  const [entry] = trash;
+  if (!entry) throw new Error("未找到回收项。");
   await writeFile(join(root, "b.md"), "后来的新内容\n", "utf8");
 
   const restored = await memory.restoreTrashedMemory(actor, {
     projectId,
-    trashId: trash[0]!.id,
+    trashId: entry.id,
   });
   expect(restored.fileName).toBe("b-restored.md");
   expect(await readFile(join(root, "b-restored.md"), "utf8")).toContain(
     "同一结论",
   );
   expect(await readFile(join(root, "b.md"), "utf8")).toContain("后来的新内容");
+  const index = await readFile(join(root, "MEMORY.md"), "utf8");
+  expect(index).toContain("- [乙](b-restored.md) — 原摘要");
+  expect(index).not.toContain("- [乙](b.md)");
+  await expect(
+    memory.restoreTrashedMemory(actor, { projectId, trashId: entry.id }),
+  ).rejects.toThrow("回收项不存在");
+  expect(await readFile(join(root, "MEMORY.md"), "utf8")).toBe(index);
 });
 
 it("记忆关闭时整理与恢复都拒绝", async () => {
