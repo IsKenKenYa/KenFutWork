@@ -138,16 +138,16 @@ public struct MacOSInputController: HelperInputProviding {
     var buffer: [UniChar] = []
     for character in Self.normalizedInput(text).utf16 {
       if character == 10 || character == 13 {
-        flush(&buffer)
+        flush(&buffer, delayMs: delayMs)
         pressKey(keyCode: 36, flags: [], repeatCount: 1, delayMs: delayMs)
       } else if character == 9 {
-        flush(&buffer)
+        flush(&buffer, delayMs: delayMs)
         pressKey(keyCode: 48, flags: [], repeatCount: 1, delayMs: delayMs)
       } else {
         buffer.append(character)
       }
     }
-    flush(&buffer)
+    flush(&buffer, delayMs: delayMs)
     return ComputerUseHelperActionResult(performed: true)
   }
 
@@ -292,7 +292,7 @@ public struct MacOSInputController: HelperInputProviding {
     )
   }
 
-  private func flush(_ buffer: inout [UniChar]) {
+  private func flush(_ buffer: inout [UniChar], delayMs: Int) {
     guard !buffer.isEmpty else { return }
     let characters = buffer
     buffer.removeAll(keepingCapacity: true)
@@ -317,8 +317,8 @@ public struct MacOSInputController: HelperInputProviding {
         )
       }
       event.post(tap: .cghidEventTap)
+      delay(delayMs)
     }
-    usleep(5_000)
   }
 
   private func pressKey(
