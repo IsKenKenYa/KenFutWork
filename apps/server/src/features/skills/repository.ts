@@ -211,7 +211,10 @@ export interface SkillCatalogRepository {
     }[],
   ): Promise<number>;
   /** 实例已安装 skill（含停用；工具侧自行过滤启用项）。 */
-  listInstanceSkills(instanceId: string): Promise<InstanceSkillRecord[]>;
+  listInstanceSkills(
+    instanceId: string,
+    projectId?: string,
+  ): Promise<InstanceSkillRecord[]>;
   /** 已安装列表（含 skill 明细，供管理视图；嵌套形状与旧 PostgREST 查询一致）。 */
   listInstalled(instanceId: string): Promise<InstalledSkillRow[]>;
   /** 当前实例的本地目录，包括内置/社区缓存及自定义技能。 */
@@ -688,15 +691,23 @@ export function createSkillCatalogRepository(
       );
     },
 
-    async listInstanceSkills(instanceId) {
+    async listInstanceSkills(instanceId, projectId) {
       const rows = await persistence
         .forInstance(instanceId)
         .query<JoinedSkillRow>(
-          `select ws.enabled, s.id, s.slug, s.name, s.description, s.skill_content,
+          `select coalesce(ps.enabled, ws.enabled) as enabled,
+                  s.id, s.slug, s.name, s.description, s.skill_content,
                   (ws.installed_at at time zone 'UTC')::text as installation_revision
              from public.instance_skills ws
              join public.skills s on s.id = ws.skill_id
-            where ws.instance_id = :instance and s.instance_id = :instance`,
+             left join public.project_skills ps on ps.instance_id = ws.instance_id
+               and ps.skill_id = ws.skill_id and ps.project_id = $1::uuid
+            where ws.instance_id = :instance and s.instance_id = :instance
+              and ($1::uuid is null or exists (
+                select 1 from public.projects p where p.id = $1::uuid
+                  and p.instance_id = :instance and p.archived_at is null
+              ))`,
+          [projectId ?? null],
         );
 
       return rows.map((row) => ({

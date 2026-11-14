@@ -24,7 +24,7 @@ import {
   createSkillCatalogService,
   type SkillCatalogService,
 } from "./skill-catalog-service.js";
-import { resolveSkillActor } from "./skill-context.js";
+import { resolveSkillActor, resolveSkillProject } from "./skill-context.js";
 import { createInstanceSkillResourceReader } from "./skill-resource-service.js";
 
 /**
@@ -64,6 +64,7 @@ export function createSkillsPlugin(): PluginDefinition {
         ctx.get("persistence"),
       );
       projectRepository = createProjectRepository(ctx.get("persistence"));
+      const canvases = createCanvasRepository(ctx.get("persistence"));
       const catalog: SkillCatalogService = createSkillCatalogService({
         repository: skillsRepository,
         localInstance: ctx.get("localInstance"),
@@ -90,6 +91,7 @@ export function createSkillsPlugin(): PluginDefinition {
           const skills = await catalog.listSkills(
             actor.instanceId,
             execCtx.scopeHandle ? "code" : "design",
+            await resolveSkillProject(actor.instanceId, execCtx, canvases),
           );
           return {
             skills: skills
@@ -130,6 +132,11 @@ export function createSkillsPlugin(): PluginDefinition {
             ctx.get("localInstance"),
             execCtx,
           );
+          const projectId = await resolveSkillProject(
+            actor.instanceId,
+            execCtx,
+            canvases,
+          );
           if (args.resource_path !== undefined) {
             if (typeof args.resource_path !== "string")
               throw new Error("resource_path需要包内相对路径字符串。");
@@ -138,6 +145,7 @@ export function createSkillsPlugin(): PluginDefinition {
               name,
               args.resource_path,
               execCtx.scopeHandle ? "code" : "design",
+              projectId,
             );
             if (!resource)
               throw new Error(`skill ${name} 的资源未安装、已停用或不存在`);
@@ -147,6 +155,7 @@ export function createSkillsPlugin(): PluginDefinition {
             actor.instanceId,
             name,
             execCtx.scopeHandle ? "code" : "design",
+            projectId,
           );
           if (!detail) {
             throw new Error(`skill ${name} 未安装或未启用`);

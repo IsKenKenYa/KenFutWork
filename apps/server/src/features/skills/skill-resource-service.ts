@@ -36,6 +36,7 @@ export interface InstanceSkillResourceReader {
     slug: string,
     resourcePath?: string,
     mode?: "code" | "design",
+    projectId?: string,
   ): Promise<InstanceSkillResource | undefined>;
 }
 /** 安装包是只读DB资源；读取不签发本机路径、执行权限或NativeRead observation。 */
@@ -63,7 +64,7 @@ export function createInstanceSkillResourceReader(options: {
   plugins?: Pick<PluginRegistryService, "readSkillPackages">;
 }): InstanceSkillResourceReader {
   return {
-    async read(instanceId, slug, resourcePath = "SKILL.md", mode) {
+    async read(instanceId, slug, resourcePath = "SKILL.md", mode, projectId) {
       if ((await options.localInstance.getContext()).instanceId !== instanceId)
         throw new LocalInstanceError();
       const path = canonicalResourcePath(resourcePath);
@@ -81,7 +82,7 @@ export function createInstanceSkillResourceReader(options: {
         return { name: slug, resourceRef: slug, resourcePath: path, content };
       }
       const installed = (
-        await options.repository.listInstanceSkills(instanceId)
+        await options.repository.listInstanceSkills(instanceId, projectId)
       ).find((row) => row.slug === slug && row.enabled);
       if (!installed) return undefined;
       let content = installed.skillContent;
@@ -99,7 +100,7 @@ export function createInstanceSkillResourceReader(options: {
       }
       // 已卸载/停用的迟到读取不得返回包内容；DB安装态与资源相对路径都再次核对。
       const current = (
-        await options.repository.listInstanceSkills(instanceId)
+        await options.repository.listInstanceSkills(instanceId, projectId)
       ).find(
         (row) =>
           row.skillId === installed.skillId && row.slug === slug && row.enabled,

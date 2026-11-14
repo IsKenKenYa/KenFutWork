@@ -1420,6 +1420,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (instanceSkillsByInstanceLoader) {
             instanceSkills = await instanceSkillsByInstanceLoader(
               run.actor.instanceId,
+              run.scopeHandle.describe().projectId,
             );
             rlog.lap("workspace_skills_loaded", {
               count: instanceSkills.length,

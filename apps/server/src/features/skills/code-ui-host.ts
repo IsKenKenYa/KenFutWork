@@ -330,7 +330,14 @@ export function createCodeUiSkillsHost(deps: {
         const input = codeUiSkillsRequestSchema
           .extend({ prompt: z.string() })
           .parse(args[0]);
-        const rows = await deps.repository.listInstanceSkills(owner.instanceId);
+        const project = await resolveProject(
+          owner.instanceId,
+          input.workspacePath,
+        );
+        const rows = await deps.repository.listInstanceSkills(
+          owner.instanceId,
+          project?.id,
+        );
         const activated = rows.filter((row) => {
           const slug = row.slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
           return (
