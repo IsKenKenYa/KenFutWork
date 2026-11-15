@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { generationFileTargetSchema } from "@kenfutwork/shared";
+import {
+  generationFileTargetSchema,
+  zcodeUiProtocol as protocol,
+} from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import {
   createUnifiedMediaRecoveryFixture,
@@ -10,6 +13,92 @@ import {
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "共享Task已受理媒体的完整宿主恢复 integration",
   () => {
+    it.each(["image", "video"] as const)(
+      "已接纳的 %s 任务读取异常时保留原任务编号",
+      async (media) => {
+        const f = await createUnifiedMediaRecoveryFixture({
+          media,
+          submit: false,
+          submitThroughTool: true,
+        });
+        try {
+          const db = f.database.persistence;
+          await db.query(
+            "alter table public.background_jobs rename to temporarily_unavailable_jobs",
+          );
+          try {
+            await vi.waitFor(() => expect(f.model.requests).toHaveLength(2), {
+              timeout: 15_000,
+            });
+            const messages = f.model.requests[1]?.body.messages;
+            if (!Array.isArray(messages)) throw new Error("模型请求没有消息");
+            const reply = messages.find(
+              (message) =>
+                message.role === "tool" &&
+                message.tool_call_id === "owned-generation-wait",
+            );
+            expect(reply?.content).toContain("请勿重复提交");
+            expect(reply?.content).not.toContain(
+              "temporarily_unavailable_jobs",
+            );
+            if (typeof reply?.content !== "string")
+              throw new Error("模型没有收到生成工具结果");
+            expect(JSON.parse(reply.content)).toMatchObject({
+              jobId: f.jobId,
+              jobStatus: "status_unavailable",
+              errorCode: "status_unavailable",
+              isError: true,
+            });
+          } finally {
+            await db.query(
+              "alter table public.temporarily_unavailable_jobs rename to background_jobs",
+            );
+          }
+          const snapshot = protocol.conversationSnapshotSchema.parse(
+            await f.host.snapshot(),
+          );
+          const tool = snapshot.rows.window.find(
+            (row) =>
+              row.kind === "toolCall" && row.toolName === `generate_${media}`,
+          );
+          expect(tool).toMatchObject({
+            status: "error",
+            error: { code: "status_unavailable" },
+          });
+          if (tool?.kind !== "toolCall")
+            throw new Error("生成工具结果未进入会话");
+          expect(tool.output?.text).toContain(f.jobId);
+          expect(tool.output?.text).not.toContain(
+            "temporarily_unavailable_jobs",
+          );
+          f.model.finish(1);
+          await vi.waitFor(
+            async () => {
+              const latest = await f
+                .client()
+                .request(
+                  `/api/agent/runs/latest?sessionId=${f.host.sessionId}`,
+                );
+              expect(latest.body.run).toMatchObject({ status: "completed" });
+            },
+            { timeout: 15_000 },
+          );
+          expect(await f.job()).toMatchObject({
+            id: f.jobId,
+            status: "queued",
+            error_code: null,
+          });
+          expect(
+            await f.app().kernel.get("jobs").listJobs(f.actor),
+          ).toHaveLength(1);
+          expect(f.supplier.requests.submissions).toBe(0);
+        } finally {
+          await f.close();
+        }
+      },
+      120_000,
+    );
+
     it("host_shutdown后同一Job仅续查原句柄、保存并发布一次，不重启Agent或重提生成", async () => {
       const f = await createUnifiedMediaRecoveryFixture();
       try {

@@ -40,7 +40,7 @@ import type { TrustedCodeInput } from "../features/code-ui/attachments/input-typ
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
-import { readMediaJobWaitIssue } from "../features/generation/media-job-wait.js";
+import { readAcceptedMediaJob } from "../features/generation/media-job-wait.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type {
@@ -1119,6 +1119,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         const canvasId = run.canvasId;
         const sessionId = run.sessionId;
         const runId = run.runId;
+        const cancelMediaWait = async (jobId: string) => {
+          if (run.stopReason !== "host_shutdown")
+            await jobSvc.cancelJob(actor, jobId).catch(() => {});
+          throw new OwnedToolInterruption();
+        };
+        const readMediaWait = async (jobId: string) => {
+          if (run.controller.signal.aborted) await cancelMediaWait(jobId);
+          const read = await readAcceptedMediaJob(jobSvc, jobId);
+          if (run.controller.signal.aborted) await cancelMediaWait(jobId);
+          return read;
+        };
         const generationOrigin = () => {
           const scope = run.scopeHandle?.describe();
           if (!scope) return run.projectId ? { projectId: run.projectId } : {};
@@ -1192,13 +1203,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             await delay(POLL_INTERVAL);
             pollCount++;
 
-            if (run.controller.signal.aborted) {
-              if (run.stopReason !== "host_shutdown")
-                await jobSvc.cancelJob(actor, job.id).catch(() => {});
-              throw new OwnedToolInterruption();
+            const read = await readMediaWait(job.id);
+            if ("issue" in read) {
+              jobLap("job_poll_done", { pollCount, status: read.issue.kind });
+              return { jobId: job.id, issue: read.issue };
             }
-
-            const current = await jobSvc.getJobForWorker(job.id);
+            const current = read.job;
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
@@ -1235,12 +1245,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   : {}),
                 mimeType: result.mime_type ?? "image/png",
               };
-            }
-
-            const issue = readMediaJobWaitIssue(current);
-            if (issue) {
-              jobLap("job_poll_done", { pollCount, status: issue.kind });
-              return { jobId: job.id, issue };
             }
           }
 
@@ -1314,13 +1318,12 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             await delay(POLL_INTERVAL);
             pollCount++;
 
-            if (run.controller.signal.aborted) {
-              if (run.stopReason !== "host_shutdown")
-                await jobSvc.cancelJob(actor, job.id).catch(() => {});
-              throw new OwnedToolInterruption();
+            const read = await readMediaWait(job.id);
+            if ("issue" in read) {
+              jobLap("job_poll_done", { pollCount, status: read.issue.kind });
+              return { jobId: job.id, issue: read.issue };
             }
-
-            const current = await jobSvc.getJobForWorker(job.id);
+            const current = read.job;
 
             if (current.status === "succeeded" && current.result) {
               const result = current.result as {
@@ -1359,12 +1362,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                   ? { durationSeconds: result.duration_seconds }
                   : {}),
               };
-            }
-
-            const issue = readMediaJobWaitIssue(current);
-            if (issue) {
-              jobLap("job_poll_done", { pollCount, status: issue.kind });
-              return { jobId: job.id, issue };
             }
           }
 

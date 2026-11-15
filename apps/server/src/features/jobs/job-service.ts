@@ -49,8 +49,9 @@ export class JobServiceError extends Error {
     code: JobServiceError["code"],
     message: string,
     statusCode: number,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "JobServiceError";
     this.code = code;
     this.statusCode = statusCode;
@@ -667,11 +668,12 @@ export function createJobService(options: {
     },
 
     async getJobForWorker(jobId) {
-      const job = await repository.findById(jobId).catch(() => {
+      const job = await repository.findById(jobId).catch((cause: unknown) => {
         throw new JobServiceError(
           "job_query_failed",
           "Failed to query job.",
           500,
+          { cause },
         );
       });
 

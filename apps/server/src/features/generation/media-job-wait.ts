@@ -4,7 +4,7 @@ import {
 } from "@kenfutwork/shared";
 import { findOwnedToolInterruption } from "../../kernel/owned-tool-interruption.js";
 import { describeErrorDetail } from "../../utils/error-sanitizer.js";
-import { JobServiceError } from "../jobs/job-service.js";
+import { type JobService, JobServiceError } from "../jobs/job-service.js";
 
 /** 任务接纳服务的公开拒绝可直接说明；其他错误保留在诊断日志。 */
 export function describeMediaJobAccessFailure(error: unknown) {
@@ -32,6 +32,7 @@ export function describeMediaJobAccessFailure(error: unknown) {
 export type MediaJobWaitIssue =
   | { kind: "waiting" }
   | { kind: "canceled" }
+  | { kind: "status_unavailable" }
   | { kind: "submission_unknown" }
   | { kind: "failed"; code: string };
 
@@ -55,6 +56,26 @@ export function readMediaJobWaitIssue(
   return null;
 }
 
+/** 原任务已接纳；查询失败只结束本次等待，保留任务供后续查询。 */
+export async function readAcceptedMediaJob(
+  jobs: Pick<JobService, "getJobForWorker">,
+  jobId: string,
+): Promise<{ job: BackgroundJob } | { issue: MediaJobWaitIssue }> {
+  let job: BackgroundJob;
+  try {
+    job = await jobs.getJobForWorker(jobId);
+  } catch (error) {
+    if (findOwnedToolInterruption(error)) throw error;
+    console.error("[generation] 已接纳任务的进度查询失败", {
+      jobId,
+      detail: describeErrorDetail(error),
+    });
+    return { issue: { kind: "status_unavailable" } };
+  }
+  const issue = readMediaJobWaitIssue(job);
+  return issue ? { issue } : { job };
+}
+
 /** 工具正文只使用应用文案，不转交供应商错误原文。 */
 export function describeMediaJobWaitIssue(issue: MediaJobWaitIssue) {
   const jobStatus = issue.kind;
@@ -67,8 +88,10 @@ export function describeMediaJobWaitIssue(issue: MediaJobWaitIssue) {
   const error =
     issue.kind === "canceled"
       ? "生成任务已停止。"
-      : (getMediaJobErrorMessage(errorCode) ??
-        "生成失败，请检查供应商设置或任务记录。");
+      : issue.kind === "status_unavailable"
+        ? "生成任务已接纳，暂时无法查询进度。请查看原任务，请勿重复提交。"
+        : (getMediaJobErrorMessage(errorCode) ??
+          "生成失败，请检查供应商设置或任务记录。");
   return {
     jobStatus,
     errorCode,

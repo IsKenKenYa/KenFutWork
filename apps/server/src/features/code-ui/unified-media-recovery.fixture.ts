@@ -355,6 +355,7 @@ export async function createUnifiedMediaRecoveryFixture(
     }
     return {
       actor: fixture.actor,
+      database: fixture.database,
       host,
       runId,
       target,
