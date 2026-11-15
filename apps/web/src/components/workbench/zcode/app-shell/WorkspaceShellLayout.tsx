@@ -39,6 +39,7 @@ import { parseLocalWorkspaceIdentity, type ZCodeTaskUnreadObservation } from "@z
 import { OPEN_DOCUMENT_EVENT, takeCanvasDocumentOpen, type OpenCanvasDocumentRequest } from "@zui/host/conversationWorkContext.js";
 import { CANVAS_DOCUMENT_DELETED_EVENT, designCanvasReferenceReplaced, ensureDesignCanvasEntry, hasPendingDocumentWorkspaceRestore, resolveDesignDocumentEntry, type CanvasDocumentDeleted } from "@zui/host/canvasDocumentNavigation.js";
 import { HostFlowSurface } from "@zui/host/FlowSurface.js";
+import { MacWorkspaceTitlebarSpace } from "@zui/host/MacWorkspaceTitlebarSpace.js";
 import { HostWorkSurface } from "@zui/host/WorkSurface.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@zui/lib/assistantPreviewCards.js";
@@ -1986,11 +1987,14 @@ export const WorkspaceShellLayout = memo(
               hasDesktopPanelInset ? "p-1 pl-0 pt-0" : "p-0",
             )}
           >
-            {
-              hasDesktopPanelInset && (
-                <div className="h-1 w-full [app-region:drag]" />
-              ) /* 修复 macOS 顶部窗口控制按钮被 header 遮挡无法点击的问题 */
-            }
+            {isMacDesktop ? (
+              <MacWorkspaceTitlebarSpace
+                hasHeader={shouldRenderWorkspaceHeader || isFullView}
+                fullscreen={isMacFullscreen}
+              />
+            ) : hasDesktopPanelInset ? (
+              <div className="h-1 w-full [app-region:drag]" />
+            ) : null}
             <ResizablePanelGroup
               // 保留既有布局存储身份，由原组件恢复保存的宽度。
               layoutId="workspace-body-layout-v2"

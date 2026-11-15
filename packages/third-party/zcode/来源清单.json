@@ -2,7 +2,8 @@
   "revision": "29628c9acdb81b703bbd4080c207a0e7ce5e276e",
   "version": "3.14.3",
   "revisions": {
-    "3c5b227649371507ddc4eb46ac5133afe6db1cab": "3.16.2"
+    "3c5b227649371507ddc4eb46ac5133afe6db1cab": "3.16.2",
+    "fec975905a2abd4c07e35c40d51fa097a2258ec9": "3.18.2"
   },
   "license": "Apache-2.0",
   "records": [
@@ -254,13 +255,15 @@
     {
       "source": "references/zcode/packages/ui/src/DesktopTopOverlay.tsx",
       "target": "apps/web/src/components/workbench/zcode/DesktopTopOverlay.tsx",
-      "sha256": "5d7ea8687a3e2a31762685664ffcf90ec9b277594cfcb483346590972bccee40",
-      "copiedSha256": "d50f220f6b0b3ce2b1021e1f800f0f585ab5f8b4c49fffc074e60507707bd74a",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "306214aa69bfc58ab0ac714ff9114f16628e2d9f2c1a71844a26beb70ca1c479",
+      "copiedSha256": "f5626217bb651f9e3780e4c5a59927b7ab5f805a32e21b05a96dc675f4d442e0",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "品牌适配：应用 chrome 标识换 KenFutWork 自有标",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
-        "2026-10-20 收起 rail（f992490b）：顶部浮层新建任务按钮仅桌面 chrome 显示，web/内嵌形态由侧栏 rail 承载。"
+        "2026-10-20 收起 rail（f992490b）：顶部浮层新建任务按钮仅桌面 chrome 显示，web/内嵌形态由侧栏 rail 承载。",
+        "采用 3.18.2 的淡入淡出，取消宽度动画；保留宿主导航和品牌，并尊重系统减少动态效果设置。"
       ]
     },
     {
@@ -2149,7 +2152,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "2ef57d6a13004d3f89e5333a2c3bde9c99d5c6ad808417dfef1ba73839bd9bdb",
+      "copiedSha256": "340afc1992b29ab859df0e6ae84044017a59ddede785b30e09bac8ed852823db",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2160,7 +2163,8 @@
         "2026-10-20 画布标签化（二百〇二）：透传 onOpenDesignMetaChange，保持一块画布一个标签。",
         "2026-10-25 Work 模式（二百五十八）：work 进 keep-alive 内嵌面（isEmbeddedSurfaceView/visitedEmbeddedSurfaces 扩 work 并挂载 HostWorkSurface）。",
         "2026-10-27（二百八十五）：Work 引擎入口回调与 HostWorkSurface 返回会话。",
-        "宿主修复：随添加项目入口移除侧栏打开文件夹/远程菜单透传属性"
+        "宿主修复：随添加项目入口移除侧栏打开文件夹/远程菜单透传属性",
+        "macOS 右侧缺少会话标题时保留窗口拖动区；全屏不占用主区。"
       ]
     },
     {
