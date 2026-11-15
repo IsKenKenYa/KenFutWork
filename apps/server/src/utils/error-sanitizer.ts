@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import { getMediaJobErrorMessage } from "@kenfutwork/shared";
 import { classifyRateLimitError } from "@langchain/core/utils/async_caller";
 
@@ -136,37 +137,42 @@ export function describeErrorDetail(error: unknown, maxLength = 300): string {
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
 
-export function sanitizeErrorForClient(error: unknown): string {
+function inspectErrorMetadata(value: unknown): string {
+  // SDK 错误可能附带循环对象或 BigInt。诊断只读摘要，不调用对象自带的转换方法。
+  return redactSecrets(
+    inspect(value, {
+      customInspect: false,
+      getters: false,
+      maxStringLength: 2000,
+    }),
+  ).slice(0, 2000);
+}
+
+export function sanitizeErrorForClient(error: unknown, runId?: string): string {
   const raw = error instanceof Error ? error.message : String(error);
+  const label = runId ? `[error-sanitizer] Run ${runId}` : "[error-sanitizer]";
   // 与客户端详情共用脱敏器，错误原文与cause不得把凭据写进日志。
-  console.error("[error-sanitizer] Error:", describeErrorDetail(error, 2000));
+  console.error(`${label} Error:`, describeErrorDetail(error, 2000));
   if (error instanceof Error) {
     const metadata = error as Error & {
       response?: { status?: unknown; data?: unknown; body?: unknown };
       details?: unknown;
     };
     if (metadata.response) {
+      console.error(`${label} Response status:`, metadata.response.status);
       console.error(
-        "[error-sanitizer] Response status:",
-        metadata.response.status,
-      );
-      console.error(
-        "[error-sanitizer] Response data:",
-        redactSecrets(
-          JSON.stringify(
-            metadata.response.data ?? metadata.response.body ?? "",
-          ),
-        ).slice(0, 2000),
+        `${label} Response data:`,
+        inspectErrorMetadata(metadata.response.data ?? metadata.response.body),
       );
     }
     if (metadata.details)
       console.error(
-        "[error-sanitizer] Details:",
-        redactSecrets(JSON.stringify(metadata.details)).slice(0, 2000),
+        `${label} Details:`,
+        inspectErrorMetadata(metadata.details),
       );
     if (error.stack)
       console.error(
-        "[error-sanitizer] Stack:",
+        `${label} Stack:`,
         redactSecrets(error.stack).slice(0, 8000),
       );
   }

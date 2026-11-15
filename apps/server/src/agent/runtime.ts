@@ -3012,10 +3012,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             // Catch DB / checkpoint errors that bubble up from the LangGraph stream
             // (e.g. Supabase circuit-breaker, connection pool exhaustion).
             // Instead of crashing the process, yield a clean failure event.
-            console.error(
-              "[agent-runtime] Stream iteration failed:",
-              streamError,
-            );
             const failedEvent = toFailedEvent(runId, now, streamError);
             run.status = "failed";
             await updatePersistedRunFailure(
@@ -3245,13 +3241,10 @@ function toFailedEvent(
   now: () => string,
   error: unknown,
 ): StreamEvent {
-  // Log full error detail server-side
-  console.error(`[runtime] Agent run failed for run ${runId}:`, error);
-
   return {
     error: {
       code: "run_failed",
-      message: sanitizeErrorForClient(error),
+      message: sanitizeErrorForClient(error, runId),
     },
     runId,
     timestamp: now(),

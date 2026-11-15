@@ -10,6 +10,53 @@ import {
 } from "./error-sanitizer.js";
 
 it.each([
+  [
+    "循环引用",
+    () => {
+      const response: { data?: unknown } = {};
+      response.data = response;
+      return response;
+    },
+  ],
+  ["BigInt 字段", () => ({ data: { providerRequestNumber: 12n } })],
+])("供应商诊断包含%s时仍发送一次明确的失败通知", async (_name, metadata) => {
+  const runId = randomUUID();
+  const upstream = Object.assign(new Error("PRIVATE_PROVIDER_DETAIL"), {
+    code: "insufficient_quota",
+    response: { status: 429, ...metadata() },
+  });
+  const stream: AsyncIterable<unknown> = {
+    async *[Symbol.asyncIterator]() {
+      yield { event: "on_chat_model_start", run_id: "provider" };
+      throw upstream;
+    },
+  };
+  const events = [];
+  for await (const event of adaptDeepAgentStream({
+    conversationId: randomUUID(),
+    sessionId: randomUUID(),
+    runId,
+    stream,
+  })) {
+    events.push(event);
+  }
+  expect(
+    events.filter(({ type }) =>
+      ["run.failed", "run.completed", "run.canceled"].includes(type),
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      type: "run.failed",
+      runId,
+      error: {
+        code: "run_failed",
+        message: "供应商额度不足，请检查账户余额。",
+      },
+    }),
+  ]);
+});
+
+it.each([
   {
     code: "insufficient_quota",
     message: "调用失败 PRIVATE_PROVIDER_DETAIL",

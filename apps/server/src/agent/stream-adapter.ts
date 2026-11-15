@@ -749,16 +749,10 @@ export async function* adaptDeepAgentStream(
       return;
     }
 
-    // Log full error detail server-side
-    console.error(
-      `[stream-adapter] Stream error for run ${options.runId}:`,
-      error,
-    );
-
     yield {
       error: {
         code: "run_failed",
-        message: sanitizeErrorForClient(error),
+        message: sanitizeErrorForClient(error, options.runId),
       },
       runId: options.runId,
       timestamp: now(),
