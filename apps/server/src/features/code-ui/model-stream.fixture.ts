@@ -14,6 +14,7 @@ export async function heldModel(
     >;
     usage?: { promptTokens: number; completionTokens: number };
     rejectStatus?: number;
+    rejectError?: { message: string; code?: string; type?: string };
   } = {},
 ) {
   const requests: Array<{ closed: boolean; body: Record<string, unknown> }> =
@@ -60,7 +61,9 @@ export async function heldModel(
         "content-type": "application/json",
       });
       response.end(
-        JSON.stringify({ error: { message: "测试供应商原始错误" } }),
+        JSON.stringify({
+          error: options.rejectError ?? { message: "测试供应商原始错误" },
+        }),
       );
       return;
     }

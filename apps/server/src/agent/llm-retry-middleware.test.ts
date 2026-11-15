@@ -1,6 +1,9 @@
 import { setImmediate, setTimeout } from "node:timers/promises";
+import { getRetryable } from "@langchain/core/errors";
 import { describe, expect, it } from "vitest";
 import { heldModel } from "../features/code-ui/model-stream.fixture.js";
+import { testInstanceModelConnectivity } from "../features/model-providers/model-connectivity.js";
+import { createInstanceChatModel } from "../providers/openai-compatible/index.js";
 
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 
@@ -35,6 +38,87 @@ function run(middleware: unknown, handler: Handler) {
 }
 
 describe("LLM 请求重试中间件（DEC-18）", () => {
+  it.each([
+    { status: 429, code: "insufficient_quota", message: "额度不足" },
+    { status: 429, code: "rate_limit_exceeded", message: "Out of credits" },
+    { status: 400, code: "invalid_request_error", message: "network 参数无效" },
+    { status: 401, code: "invalid_api_key", message: "429 gateway 密钥无效" },
+    { status: 403, code: "permission_denied", message: "timeout 权限不足" },
+  ])(
+    "SDK 已拒绝重试的 HTTP $status / $code 只发送一次",
+    async ({ status, code, message }) => {
+      const provider = await heldModel({
+        rejectStatus: status,
+        rejectError: { code, message },
+      });
+      const failures: unknown[] = [];
+      try {
+        const model = createInstanceChatModel("retry-model", {
+          apiKey: "local-test-key",
+          baseUrl: provider.baseUrl,
+          invocationMaxRetries: 0,
+        });
+        const invoke = run(
+          createLlmRequestRetryMiddleware({
+            maxAttempts: 3,
+            infinite: false,
+            delayMs: () => Promise.resolve(),
+          }),
+          async () => {
+            try {
+              await model.invoke("检查不可重试错误");
+            } catch (error) {
+              failures.push(error);
+              throw error;
+            }
+            return "请求成功";
+          },
+        );
+        const outcome = await invoke({ messages: ["检查不可重试错误"] }).catch(
+          (error: unknown) => error,
+        );
+        expect(getRetryable(outcome)).toBe(false);
+        expect(outcome).toBe(failures[0]);
+        expect(outcome).toMatchObject({ status });
+        expect(provider.requests).toHaveLength(1);
+        expect(failures).toHaveLength(1);
+      } finally {
+        await provider.close();
+      }
+    },
+  );
+
+  it("无限连接测试遇到供应商额度不足时只发送一次并返回原错误码", async () => {
+    const provider = await heldModel({
+      rejectStatus: 429,
+      rejectError: { code: "insufficient_quota", message: "额度不足" },
+    });
+    try {
+      const result = await testInstanceModelConnectivity(
+        async () => ({
+          instanceId: "local-provider",
+          name: "本机测试供应商",
+          protocol: "openai-compatible",
+          apiKey: "local-test-key",
+          baseUrl: provider.baseUrl,
+          useResponsesApi: false,
+          models: [{ id: "retry-model", name: "测试模型", capability: "chat" }],
+          configRevision: 1,
+        }),
+        { instanceId: "local-provider", modelId: "retry-model" },
+        { infinite: true, maxAttempts: 1, timeoutMs: 3000 },
+      );
+      expect(result).toMatchObject({
+        success: false,
+        error: { code: "insufficient_quota" },
+      });
+      expect(result.error?.message).toContain("额度不足");
+      expect(provider.requests).toHaveLength(1);
+    } finally {
+      await provider.close();
+    }
+  });
+
   it("maxAttempts=1：不重试，失败直接抛", async () => {
     const middleware = createLlmRequestRetryMiddleware({
       maxAttempts: 1,

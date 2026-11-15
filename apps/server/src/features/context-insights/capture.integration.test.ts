@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { createAgent } from "langchain";
 import { describe, expect, it, vi } from "vitest";
+import { createLlmRequestRetryMiddleware } from "../../agent/llm-retry-middleware.js";
+import { createModelObservationMiddleware } from "../../agent/model-observation.js";
 import { createModelRequestPort } from "../../agent/model-request.js";
 import { createInstanceChatModel } from "../../providers/openai-compatible/index.js";
 import { heldModel } from "../code-ui/model-stream.fixture.js";
@@ -108,6 +111,58 @@ async function captureFixture(httpStatus?: number) {
 describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
   "真实模型流的上下文终态",
   () => {
+    it.each([429, 503])(
+      "外层重试分别保存 HTTP %s 的独立失败请求",
+      async (status) => {
+        const f = await captureFixture(status);
+        try {
+          const retry = createLlmRequestRetryMiddleware({
+            maxAttempts: 3,
+            infinite: false,
+            signal: f.controller.signal,
+            delayMs: () => Promise.resolve(),
+          });
+          const agent = createAgent({
+            model: f.model,
+            tools: [],
+            middleware: [
+              retry,
+              ...createModelObservationMiddleware(
+                [
+                  {
+                    preset: "code",
+                    createMiddleware: () => retry,
+                    createModelCallbacks: () => f.callbacks,
+                  },
+                ],
+                {},
+              ),
+            ],
+          });
+          await expect(
+            agent.invoke({ messages: [new HumanMessage("检查外层重试记录")] }),
+          ).rejects.toThrow();
+          expect(f.provider.requests).toHaveLength(3);
+          const saved = await f.summaries();
+          expect(saved).toHaveLength(3);
+          expect(new Set(saved.map((request) => request.id)).size).toBe(3);
+          expect(saved).toEqual(
+            Array.from({ length: 3 }, () =>
+              expect.objectContaining({
+                status: "failed",
+                httpStatus: status,
+                purpose: "agent",
+                usage: null,
+              }),
+            ),
+          );
+          expect(f.usageCount()).toBe(0);
+        } finally {
+          await f.close();
+        }
+      },
+    );
+
     it("请求输入保存原生工具状态但不保存宿主数据", async () => {
       const f = await captureFixture();
       try {

@@ -1,4 +1,5 @@
 import { setTimeout } from "node:timers/promises";
+import { getRetryable } from "@langchain/core/errors";
 import type { AgentMiddleware } from "langchain";
 
 /**
@@ -19,6 +20,9 @@ const RETRYABLE_PATTERN =
   /(429|rate.?limit|too many requests|\b5\d\d\b|internal server|bad gateway|service unavailable|overloaded|timeout|timed out|econn|enotfound|eai_again|socket|fetch failed|network)/i;
 
 export function isRetryableLlmError(error: unknown): boolean {
+  // 保留 SDK 对配额、鉴权及输入错误的判定，避免错误正文触发额外请求。
+  const retryable = getRetryable(error);
+  if (retryable !== undefined) return retryable;
   const message =
     error instanceof Error
       ? `${error.name} ${error.message}`
