@@ -67,3 +67,7 @@
 	path = references/toonflow-app
 	url = https://github.com/HBAI-Ltd/Toonflow-app.git
 	shallow = true
+[submodule "references/dsh-context"]
+	path = references/dsh-context
+	url = https://github.com/bowenliang123/dsh-context.git
+	shallow = true
