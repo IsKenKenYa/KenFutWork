@@ -1787,10 +1787,11 @@ export const WorkspaceShellLayout = memo(
     // 手机远控无 active task 时仍不渲染桌面 chrome，继续遵守 replayable overlay 边界。
     // design/flow/work 内嵌面自带顶栏（项目切换 / 画布-引擎切换 / Work 引擎信息页），
     // 不吃壳的 Task Header。
+    const isWorkEngineView = workspaceMainView === "work";
     const isEmbeddedSurfaceView =
-      workspaceMainView === "flow" || workspaceMainView === "work";
+      workspaceMainView === "flow" || isWorkEngineView;
     // 内嵌面首次进入后持续挂载（hidden + inert），design/flow/work → code → 回来不重载画布；
-    // 对话等其余主区视图维持原有「切换即卸载」行为不变。
+    // Work 引擎在共享会话之外显式打开；引擎打开时保持原会话挂载。
     const [visitedEmbeddedSurfaces, setVisitedEmbeddedSurfaces] = useState<
       ReadonlySet<"design" | "flow" | "work">
     >(() => new Set());
@@ -2272,7 +2273,7 @@ export const WorkspaceShellLayout = memo(
                             />
                           </div>
                         ) : null}
-                        {isEmbeddedSurfaceView ? null : workspaceMainView ===
+                        {workspaceMainView === "flow" ? null : workspaceMainView ===
                           "automations" ? (
                           <main
                             id={AUTOMATIONS_TOAST_ANCHOR_ID}
@@ -2365,9 +2366,11 @@ export const WorkspaceShellLayout = memo(
                         ) : (
                           <main
                             className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+                            hidden={isWorkEngineView}
+                            inert={isWorkEngineView || undefined}
                             data-window-drag-top={hasMacDraftDragArea ? "" : undefined}
                           >
-                            {renderChatFindDialog()}
+                            {isWorkEngineView ? null : renderChatFindDialog()}
                             <ScopedErrorBoundary
                               scope="workspace-chat"
                               resetKeys={workspaceDraftResetKeys}
@@ -2382,7 +2385,7 @@ export const WorkspaceShellLayout = memo(
                                   绑定语义与 testid 契约（paneId=workspace-main）不变。 */}
                               <V4WorkspaceChatArea
                                 readOnly={Boolean(workspaceReadOnlyReason)}
-                                foregroundEnabled={isWorkspaceVisible}
+                                foregroundEnabled={isWorkspaceVisible && !isWorkEngineView}
                                 workspacePath={workspaceAbsPath}
                                 workspaceIdentity={workspaceIdentity}
                                 isDesktop={isDesktop === true}

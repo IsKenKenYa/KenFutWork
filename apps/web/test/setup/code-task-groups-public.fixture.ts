@@ -6,6 +6,8 @@ import {
   codeTaskGroupStructureSchema,
   codeTaskScopeResponseSchema,
   zcodeUiProtocol as protocol,
+  WORK_PLUGIN_BUNDLE_NAME,
+  workHostStatusResponseSchema,
 } from "@kenfutwork/shared";
 import { expect, vi } from "vitest";
 import {
@@ -48,7 +50,9 @@ const fixturePath = fileURLToPath(
 
 async function loadPublicFixtures() {
   const httpLoading: Promise<{
-    createCodeUiHttpFixture(): Promise<HttpFixture>;
+    createCodeUiHttpFixture(options?: {
+      builtinPluginsDir?: string;
+    }): Promise<HttpFixture>;
   }> = import(fixturePath);
   return Promise.all([
     httpLoading,
@@ -304,15 +308,34 @@ export async function dismissGroupSetup(page: OriginalSessionBrowser) {
 
 export async function withTaskGroupPublicPage(
   work: (context: TaskGroupPublicPageContext) => Promise<void>,
-  options: { seedTaskHistory?: boolean } = {},
+  options: { seedTaskHistory?: boolean; enableWork?: boolean } = {},
 ) {
   const [http, sessions, models] = await loadPublicFixtures();
-  const fixture = await http.createCodeUiHttpFixture();
+  const fixture = await http.createCodeUiHttpFixture(
+    options.enableWork
+      ? {
+          builtinPluginsDir: fileURLToPath(
+            new URL("../../../../plugins", import.meta.url),
+          ),
+        }
+      : undefined,
+  );
   let model: Model | undefined;
   let host: Host | undefined;
   let browser: OriginalSessionBrowser | undefined;
   const failures: unknown[] = [];
   try {
+    if (options.enableWork) {
+      const installed = await fixture.client.request("/api/plugins/install", {
+        builtin: WORK_PLUGIN_BUNDLE_NAME,
+      });
+      expect(installed.status, JSON.stringify(installed.body)).toBe(201);
+      const status = await fixture.client.request("/api/work/host/status");
+      expect(status.status).toBe(200);
+      expect(workHostStatusResponseSchema.parse(status.body).enabled).toBe(
+        true,
+      );
+    }
     model = await models.heldModel();
     host = await sessions.createCodeSessionFixture(model.baseUrl, {
       client: fixture.client,
@@ -353,6 +376,9 @@ export async function withTaskGroupPublicPage(
       sessionId: host.sessionId,
       clientId: host.clientId,
       workspaceShell: true,
+      ...(options.enableWork
+        ? { workbenchModes: ["code", "design", "work"] }
+        : {}),
     });
     await openTaskFile(browser, host, previewPath, previewTitle);
     const draft = "分组整理期间保留的草稿";

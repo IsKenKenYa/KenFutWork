@@ -6,6 +6,7 @@ import {
 import {
   instanceResponseSchema,
   localAccessConnectResponseSchema,
+  type WorkbenchModes,
 } from "@kenfutwork/shared";
 import { SortableSidePaneTabTrigger } from "@zui/app-shell/SidePaneTabTrigger.js";
 import { Tabs, TabsList } from "@zui/components/ui/tabs.js";
@@ -23,6 +24,7 @@ import { ContextInspectionProvider } from "../../src/components/workbench/zcode/
 import { fileManagerTargetForCodeViewer } from "../../src/components/workbench/zcode/host/fileViewerServices.js";
 import { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient.js";
 import { setSurfaceApiBase } from "../../src/components/workbench/zcode/host/surfaceApi.js";
+import { createHostWorkbenchNavigation } from "../../src/components/workbench/zcode/host/workbenchNavigation.js";
 import { bindCodeWorkspaceServices } from "../../src/components/workbench/zcode/host/workspaceServices.js";
 import { loadCodePublicHostProviders } from "./code-public-host-ui.js";
 import "@zui/styles.css";
@@ -37,6 +39,7 @@ declare global {
       clientId: string;
       newDraft?: boolean;
       workspaceShell?: boolean;
+      workbenchModes?: WorkbenchModes;
       restoreSession?: boolean;
       initialPreview?: {
         type?: "file" | "image";
@@ -61,6 +64,7 @@ if (!rootElement) throw new Error("原组件浏览器缺少页面容器");
 const root = createRoot(rootElement);
 let releaseServices: (() => void) | undefined;
 let releaseClient: (() => void) | undefined;
+let releaseNavigation: (() => void) | undefined;
 let disposed = false;
 const dispose = () => {
   if (disposed) return;
@@ -69,6 +73,7 @@ const dispose = () => {
   root.unmount();
   releaseServices?.();
   releaseClient?.();
+  releaseNavigation?.();
 };
 window.__codePublicSessionDispose = dispose;
 window.addEventListener("pagehide", dispose, { once: true });
@@ -267,7 +272,14 @@ try {
         "../../src/components/workbench/zcode/host/ProjectDirectoryChoice.js"
       ),
     ]);
-    const codePlatform = platform.createCodePlatform(client);
+    const navigation = bootstrap.workbenchModes
+      ? createHostWorkbenchNavigation(window, bootstrap.workbenchModes)
+      : null;
+    releaseNavigation = navigation?.dispose;
+    const codePlatform = platform.createCodePlatform(
+      client,
+      navigation ? { workbenchNavigation: navigation } : {},
+    );
     const directoryServices = client.directoryServices();
     const onWorkspaceContextChange =
       context.createCodeWorkspaceContextResolver(client);
