@@ -75,10 +75,12 @@ export function classifyJobFailure(
       code: "provider_balance_insufficient",
       message,
     };
+  if (info.status === 401 || info.status === 403)
+    return { kind: "terminal" as const, code: "provider_auth_failed", message };
   if (
     TERMINAL_CODES.has(code) ||
     (info.status !== undefined &&
-      [400, 401, 402, 403, 404, 405, 413, 415, 422].includes(info.status))
+      [400, 402, 404, 405, 413, 415, 422].includes(info.status))
   )
     return { kind: "terminal" as const, code, message };
   // 已发出的生成请求只有明确的限流拒绝可重发；网络/网关失败不能证明上游未受理。
@@ -100,7 +102,14 @@ export function classifyJobFailure(
       (1 + Math.random());
   return {
     kind: "retry" as const,
-    code: info.status === 429 ? "provider_rate_limited" : code,
+    code:
+      execution.phase === "saving" && code === "executor_error"
+        ? "media_output_save_failed"
+        : execution.phase === "publishing" && code === "executor_error"
+          ? "media_output_publish_failed"
+          : info.status === 429
+            ? "provider_rate_limited"
+            : code,
     message,
     delaySeconds,
     ...(execution.phase === "submitting"

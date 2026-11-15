@@ -1,9 +1,13 @@
 import { createServer } from "node:http";
+import { ToolMessage } from "@langchain/core/messages";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGenerationTargets } from "../generation/file-targets.js";
+import { readMediaJobWaitIssue } from "../generation/media-job-wait.js";
+import { createImageGenerateToolDefinition } from "../generation/tools/image-generate.js";
 import { createModelProviderService } from "../model-providers/model-provider-service.js";
 import { createModelProviderRepository } from "../model-providers/repository.js";
 import { createInProcessQueue } from "../queue/providers/in-process.js";
@@ -192,6 +196,11 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           expect(
             (await f.jobs.getJob(db.actor, f.job.id)).error_message,
           ).toContain(mode === "auth" ? "模拟鉴权失败" : "模拟余额不足");
+          expect((await f.jobs.getJob(db.actor, f.job.id)).error_code).toBe(
+            mode === "auth"
+              ? "provider_auth_failed"
+              : "provider_balance_insufficient",
+          );
           expect(f.submittedAt).toHaveLength(1);
         } finally {
           await f.close();
@@ -213,6 +222,30 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           id: f.job.id,
           status: "failed",
         });
+        const record = await f.jobs.getJob(db.actor, f.job.id);
+        const definition = createImageGenerateToolDefinition({
+          submitImageJob: async () => {
+            const issue = readMediaJobWaitIssue(record);
+            if (!issue) throw new Error("工具应立即获知提交结果待确认");
+            return { jobId: record.id, issue };
+          },
+        });
+        const result = await kernelToolToStructuredTool(definition).invoke({
+          type: "tool_call",
+          name: definition.name,
+          id: "media-unknown",
+          args: { title: "测试图片", prompt: "猫", model: "gpt-image-1" },
+        });
+        expect(ToolMessage.isInstance(result)).toBe(true);
+        expect(result.status).toBe("error");
+        if (typeof result.content !== "string")
+          throw new Error("工具没有返回可读取的任务状态");
+        expect(JSON.parse(result.content)).toMatchObject({
+          jobStatus: "submission_unknown",
+          errorCode: "submission_unknown",
+          error: "提交结果待确认，请核对供应商记录。",
+        });
+        expect(result.content).not.toContain("仍在生成");
         expect(f.submittedAt).toHaveLength(1);
       } finally {
         await f.close();

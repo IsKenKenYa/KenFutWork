@@ -1,6 +1,9 @@
 "use client";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import type { BackgroundJob } from "@kenfutwork/shared";
+import {
+  type BackgroundJob,
+  getMediaJobErrorMessage,
+} from "@kenfutwork/shared";
 import { useEffect, useRef } from "react";
 import { cancelBackgroundJob, fetchGenerationRequest } from "../lib/server-api";
 
@@ -169,10 +172,14 @@ export function useCanvasGenerationJobs(options: {
       ) {
         patch(id, requestId, { jobIds, status: "completed" }, true);
       } else {
+        const failure = jobs.find(
+          (job) =>
+            job.status !== "succeeded" && (job.error_code || job.error_message),
+        );
         const reason =
           cancellationMessage(jobs) ??
-          jobs.find((job) => job.status !== "succeeded" && job.error_message)
-            ?.error_message ??
+          getMediaJobErrorMessage(failure?.error_code) ??
+          failure?.error_message ??
           (actual < expected ? "返回数量不足。" : "生成已停止，请重新生成。");
         patch(id, requestId, {
           jobIds,

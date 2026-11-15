@@ -29,6 +29,7 @@ export * from "./knowledge-contracts.js";
 export * from "./local-access-contracts.js";
 export * from "./mcp-contracts.js";
 export * from "./media-driver-contracts.js";
+export * from "./media-job-errors.js";
 export * from "./model-context-windows.js";
 export * from "./model-management.js";
 export * from "./model-policy.js";

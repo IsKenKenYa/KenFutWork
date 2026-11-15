@@ -1,3 +1,4 @@
+import { ToolMessage } from "@langchain/core/messages";
 import {
   type StructuredTool,
   type ToolRunnableConfig,
@@ -64,7 +65,31 @@ export function kernelToolToStructuredTool(
           args as Record<string, unknown>,
           effectiveCtx,
         );
-        return kernelToolResultParts(output);
+        const parts = kernelToolResultParts(output);
+        if (
+          toolCallId &&
+          output !== null &&
+          typeof output === "object" &&
+          "isError" in output &&
+          output.isError === true
+        ) {
+          const [content, artifact] = parts;
+          return [
+            new ToolMessage({
+              tool_call_id: toolCallId,
+              name: definition.name,
+              status: "error",
+              content: Array.isArray(content)
+                ? content
+                : typeof content === "string"
+                  ? content
+                  : JSON.stringify(content),
+              artifact,
+            }),
+            artifact,
+          ];
+        }
+        return parts;
       } catch (error) {
         /**
          * 权限拒绝是**工具级结果**，不是运行级失败。

@@ -1,3 +1,5 @@
+import type { MediaJobWaitIssue } from "./media-job-wait.js";
+
 /**
  * 生成工具的跨层函数签名（kernel 的 per-run 工具解析上下文与 runtime/
  * 工具实现共用）。独立成模块：不 import kernel，避免类型循环。
@@ -33,7 +35,7 @@ export type SubmitImageJobFn = (input: {
   width?: number;
   height?: number;
   mimeType?: string;
-  error?: string;
+  issue?: MediaJobWaitIssue;
 }>;
 
 /** 提交视频生成 job 并等待完成（PGMQ → worker → 落画布，runtime 闭包实现）。 */
@@ -62,5 +64,5 @@ export type SubmitVideoJobFn = (input: {
   height?: number;
   durationSeconds?: number;
   mimeType?: string;
-  error?: string;
+  issue?: MediaJobWaitIssue;
 }>;

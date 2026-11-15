@@ -118,17 +118,19 @@ it("成功视频工具投影真实资源，未知尺寸保持未知", async () =
 
 it("超时和失败仅保留Job查询身份，不伪造成功媒体投影", async () => {
   const jobId = randomUUID();
-  const submit = vi.fn<SubmitImageJobFn>(async () => ({
+  const submit: SubmitImageJobFn = async () => ({
     jobId,
-    error: "timed out",
-  }));
+    issue: { kind: "waiting" },
+  });
   const result = await runImageGenerate(
     { title: "海报", prompt: "海报", model: "provider/image" },
     undefined,
     submit,
   );
   expect(result.jobId).toBe(jobId);
-  expect(result.error).toBe("timed out");
+  expect(result.jobStatus).toBe("waiting");
+  expect(result.summary).toContain("请勿重复提交");
+  expect(result.error).toBeUndefined();
   expect(result.display).toBeUndefined();
   expect(result.assetId).toBeUndefined();
 });
@@ -137,14 +139,19 @@ it.each([
   { source: "Job返回错误", throws: false },
   { source: "提交抛出异常", throws: true },
 ])(
-  "$source时图片工具保留存储失败原因，不建议换模型或简化提示词",
+  "$source时图片工具只返回可公开的原因，不建议换模型或简化提示词",
   async ({ throws }) => {
     const jobId = randomUUID();
-    const message = "写入超过工作区字节预算";
-    const submit = vi.fn<SubmitImageJobFn>(async () => {
-      if (throws) throw new Error(message);
-      return { jobId, error: message };
-    });
+    const rawMessage = "文件系统内部错误与敏感路径";
+    let calls = 0;
+    const submit: SubmitImageJobFn = async () => {
+      calls++;
+      if (throws) throw new Error(rawMessage);
+      return {
+        jobId,
+        issue: { kind: "failed", code: "media_output_save_failed" },
+      };
+    };
     const tool = createImageGenerateToolDefinition({ submitImageJob: submit });
 
     const result = await tool.execute(
@@ -152,8 +159,15 @@ it.each([
       { instanceId: "instance" },
     );
 
-    expect(result).toMatchObject({ error: message });
-    expect(result).toHaveProperty("summary", expect.stringContaining(message));
+    const message = throws
+      ? "无法提交或读取图片任务，请检查生成设置和任务记录。"
+      : "生成结果保存失败，请检查存储空间和写入权限。";
+    expect(result).toMatchObject({
+      error: message,
+      summary: message,
+      isError: true,
+    });
+    expect(JSON.stringify(result)).not.toContain(rawMessage);
     expect(result).toHaveProperty(
       "summary",
       expect.not.stringMatching(/different model|simplifying the prompt/i),
@@ -162,7 +176,7 @@ it.each([
       expect(result).toMatchObject({ jobId, jobType: "image_generation" });
     expect(result).not.toHaveProperty("display");
     expect(result).not.toHaveProperty("assetId");
-    expect(submit).toHaveBeenCalledTimes(1);
+    expect(calls).toBe(1);
   },
 );
 

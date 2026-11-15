@@ -40,6 +40,7 @@ import type { TrustedCodeInput } from "../features/code-ui/attachments/input-typ
 import { codeInputContent } from "../features/code-ui/attachments/model-input.js";
 import type { ContextHistoryArchiveBindings } from "../features/context-history/types.js";
 import type { ExecutionScopeHandle } from "../features/execution/scope-service.js";
+import { readMediaJobWaitIssue } from "../features/generation/media-job-wait.js";
 // execute 工具由 deepagents 内置提供（LocalShellBackend 作为 sandbox backend）
 // 不需要自定义代码执行工具
 import type {
@@ -1236,37 +1237,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
             }
 
-            if (
-              current.status === "dead_letter" ||
-              current.status === "canceled"
-            ) {
-              jobLap("job_poll_done", { pollCount, status: current.status });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? `Job ${current.status}`,
-              };
-            }
-
-            // "failed" with attempts exhausted
-            if (
-              current.status === "failed" &&
-              current.attempt_count >= current.max_attempts
-            ) {
-              jobLap("job_poll_done", {
-                pollCount,
-                status: "failed_max_retries",
-              });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? "Job failed after max retries",
-              };
+            const issue = readMediaJobWaitIssue(current);
+            if (issue) {
+              jobLap("job_poll_done", { pollCount, status: issue.kind });
+              return { jobId: job.id, issue };
             }
           }
 
           jobLap("job_poll_done", { pollCount, status: "timeout" });
           return {
             jobId: job.id,
-            error: `Job timed out after ${MAX_WAIT / 1000}s`,
+            issue: { kind: "waiting" },
           };
         };
 
@@ -1380,36 +1361,17 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               };
             }
 
-            if (
-              current.status === "dead_letter" ||
-              current.status === "canceled"
-            ) {
-              jobLap("job_poll_done", { pollCount, status: current.status });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? `Job ${current.status}`,
-              };
-            }
-
-            if (
-              current.status === "failed" &&
-              current.attempt_count >= current.max_attempts
-            ) {
-              jobLap("job_poll_done", {
-                pollCount,
-                status: "failed_max_retries",
-              });
-              return {
-                jobId: job.id,
-                error: current.error_message ?? "Job failed after max retries",
-              };
+            const issue = readMediaJobWaitIssue(current);
+            if (issue) {
+              jobLap("job_poll_done", { pollCount, status: issue.kind });
+              return { jobId: job.id, issue };
             }
           }
 
           jobLap("job_poll_done", { pollCount, status: "timeout" });
           return {
             jobId: job.id,
-            error: `Job timed out after ${MAX_WAIT / 1000}s`,
+            issue: { kind: "waiting" },
           };
         };
       }
