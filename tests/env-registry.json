@@ -386,11 +386,12 @@
     "KENFUTWORK_SETTINGS_TEST_PG": {
       "surface": "test",
       "readers": [
-        "apps/server/src/features/settings/settings.integration.test.ts"
+        "apps/server/src/features/settings/settings.integration.test.ts",
+        "apps/server/src/http/permissions.integration.test.ts"
       ],
       "inExamples": false,
       "status": "test-gate",
-      "note": "=1 启用真实PG的实例设置/CAS回归；生产无读者"
+      "note": "=1 启用真实 PG 的实例设置、并发版本检查和权限设置写入失败回归；生产无读者"
     },
     "KENFUTWORK_MCP_SERVERS": {
       "surface": "server",

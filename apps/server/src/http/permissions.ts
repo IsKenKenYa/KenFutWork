@@ -1,13 +1,35 @@
 import {
+  type ApplicationErrorResponse,
   applicationErrorResponseSchema,
   permissionRulesSchema,
   permissionTierSchema,
   unauthenticatedErrorResponseSchema,
 } from "@kenfutwork/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { LocalAccessVerifier } from "../features/local-access/types.js";
 import type { PermissionService } from "../features/permissions/permission-service.js";
 import type { PermissionSettingsStore } from "../features/permissions/tier-store.js";
+import { describeErrorDetail } from "../utils/error-sanitizer.js";
+
+const saveFailureMessages = {
+  settings: "权限设置未保存，原设置仍有效，请稍后再试。",
+  approval: "永久批准未保存，当前仍有效，请稍后再试。",
+};
+
+function sendSaveFailure(
+  reply: FastifyReply,
+  operation: keyof typeof saveFailureMessages,
+  error: unknown,
+) {
+  reply.log.error(
+    { operation, detail: describeErrorDetail(error) },
+    "权限配置写入失败",
+  );
+  const body: ApplicationErrorResponse = {
+    error: { code: "settings_failed", message: saveFailureMessages[operation] },
+  };
+  return reply.code(500).send(applicationErrorResponseSchema.parse(body));
+}
 
 export async function registerPermissionRoutes(
   app: FastifyInstance,
@@ -126,16 +148,7 @@ export async function registerPermissionRoutes(
       try {
         await options.tierStore.save(next);
       } catch (error) {
-        return reply.code(500).send(
-          applicationErrorResponseSchema.parse({
-            error: {
-              code: "internal_error",
-              message: `权限设置保存失败，档位未变更：${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            },
-          }),
-        );
+        return sendSaveFailure(reply, "settings", error);
       }
     }
     options.permissions.applySettings(next);
@@ -189,16 +202,7 @@ export async function registerPermissionRoutes(
         try {
           await options.tierStore.save(options.permissions.getSettings());
         } catch (error) {
-          return reply.code(500).send(
-            applicationErrorResponseSchema.parse({
-              error: {
-                code: "internal_error",
-                message: `永久批准保存失败（本次运行内仍生效）：${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              },
-            }),
-          );
+          return sendSaveFailure(reply, "approval", error);
         }
       }
       return reply.code(204).send();
