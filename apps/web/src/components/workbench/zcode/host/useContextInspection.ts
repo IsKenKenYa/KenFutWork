@@ -43,9 +43,15 @@ export function useContextInspection(call: InspectionCall, taskId: string) {
   const list = useContextRequestList(call, taskId);
   const [error, setError] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
-  const [contents, setContents] = useState(new Map<string, InspectedContent>());
-  const cache = useRef(new Map<string, InspectedContent>());
-  const generation = useRef(list.generation);
+  const scope = useMemo(
+    () => ({ call, taskId, cache: new Map<string, InspectedContent>() }),
+    [call, taskId],
+  );
+  const [loaded, setLoaded] = useState({
+    scope,
+    contents: new Map<string, InspectedContent>(),
+  });
+  const contents = loaded.scope === scope ? loaded.contents : null;
   const activeRead = useRef<AbortController | null>(null);
   const selected = list.requests.find((r) => r.id === list.selectedId) ?? null;
   const stream = useMemo(
@@ -62,16 +68,17 @@ export function useContextInspection(call: InspectionCall, taskId: string) {
       setError(null);
       try {
         for (const target of targets) {
-          if (cache.current.has(target.id)) continue;
+          if (scope.cache.get(target.id)?.summary.status === target.status)
+            continue;
           const value = await loadRequest(
-            call,
-            taskId,
+            scope.call,
+            scope.taskId,
             target,
             controller.signal,
           );
           controller.signal.throwIfAborted();
-          cache.current.set(target.id, value);
-          setContents(new Map(cache.current));
+          scope.cache.set(target.id, value);
+          setLoaded({ scope, contents: new Map(scope.cache) });
         }
       } catch {
         const cancelled = controller.signal.aborted;
@@ -81,17 +88,12 @@ export function useContextInspection(call: InspectionCall, taskId: string) {
         if (activeRead.current === controller) setReading(false);
       }
     },
-    [call, taskId],
+    [scope],
   );
 
   useEffect(() => {
     activeRead.current?.abort();
-    if (generation.current !== list.generation) {
-      generation.current = list.generation;
-      cache.current.clear();
-      setContents(new Map());
-    }
-    if (!selected || list.busy) {
+    if (!selected) {
       setReading(false);
       return;
     }
@@ -99,23 +101,25 @@ export function useContextInspection(call: InspectionCall, taskId: string) {
     const previous = index > 0 ? stream[index - 1] : undefined;
     void readSequence([selected, ...(previous ? [previous] : [])]);
     return () => activeRead.current?.abort();
-  }, [list.generation, list.busy, selected, stream, readSequence]);
+  }, [selected, stream, readSequence]);
 
   const inspected = useMemo(
     () =>
       stream.flatMap((r) => {
-        const item = contents.get(r.id);
-        return item ? [item] : [];
+        const item = contents?.get(r.id);
+        return item ? [{ input: item.input, summary: r }] : [];
       }),
     [stream, contents],
   );
+  const content = selected ? (contents?.get(selected.id) ?? null) : null;
   return {
     ...list,
     selected,
     error: list.error ?? error,
     reading,
     inspected,
-    content: list.selectedId ? (contents.get(list.selectedId) ?? null) : null,
+    content,
+    outputPending: !!content && content.summary.status !== selected?.status,
     readHistory: () => readSequence(stream),
     cancelRead: () => {
       activeRead.current?.abort();

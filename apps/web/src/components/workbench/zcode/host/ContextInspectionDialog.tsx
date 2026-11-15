@@ -58,8 +58,10 @@ export default function ContextInspectionDialog({
           <h1 id={titleId}>上下文分析</h1>
           <button
             type="button"
-            disabled={state.busy}
-            onClick={() => void state.refresh()}
+            aria-disabled={state.busy}
+            onClick={() => {
+              if (!state.busy) void state.refresh();
+            }}
           >
             刷新
           </button>
@@ -68,10 +70,16 @@ export default function ContextInspectionDialog({
           </button>
         </header>
         <div className="context-inspection-layout">
-          <nav className="context-inspection-requests" aria-label="模型请求">
+          <nav
+            className="context-inspection-requests"
+            aria-label="模型请求"
+            aria-busy={state.busy}
+          >
             <h2>请求记录</h2>
             {state.busy ? <p role="status">读取请求…</p> : null}
-            {!state.busy && !state.requests.length ? <p>暂无请求记录</p> : null}
+            {!state.busy && !state.error && !state.requests.length ? (
+              <p>暂无请求记录</p>
+            ) : null}
             <ol>
               {state.requests.map((r) => (
                 <li key={r.id}>
@@ -168,7 +176,9 @@ export default function ContextInspectionDialog({
                     </details>
                     <details>
                       <summary>模型响应</summary>
-                      {state.content.output === "null" ? (
+                      {state.outputPending ? (
+                        <p>响应待重新读取</p>
+                      ) : state.content.output === "null" ? (
                         <p>
                           {state.selected.status === "running"
                             ? "等待模型响应"
