@@ -13,7 +13,7 @@ import { type AgentMiddleware, countTokensApproximately } from "langchain";
 import type { CompactionPlan } from "./auto-compact.js";
 import type { AgentBackendFactory } from "./backends/index.js";
 import type { AgentContextHistory } from "./context-history.js";
-import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
+import { withLlmRequestRetry } from "./llm-retry-middleware.js";
 import type { NativeCheckpointArchive } from "./native-checkpoint-archive.js";
 import {
   effectiveNativeMessages,
@@ -164,14 +164,13 @@ export function createNativeManualCompaction(
         store: options.store,
       },
     } as Parameters<NonNullable<AgentMiddleware["wrapModelCall"]>>[0];
-    const retry = createLlmRequestRetryMiddleware({
+    // 终端continuation的返回被SDK丢弃；不执行normal LLM、不写入任何消息/转录行。
+    const summarize = async () =>
+      hook(request, () => new AIMessage({ content: "" }));
+    const result = await withLlmRequestRetry(summarize, {
       ...options.llmRetry,
       ...(signal ? { signal } : {}),
-    }).wrapModelCall;
-    if (!retry) throw new Error("压缩模型重试治理未装配。");
-    // 终端continuation的返回被SDK丢弃；不执行normal LLM、不写入任何消息/转录行。
-    const summarize = () => hook(request, () => new AIMessage({ content: "" }));
-    const result = await retry(request, summarize as never);
+    });
     signal?.throwIfAborted();
     if (!isCommand(result))
       return {

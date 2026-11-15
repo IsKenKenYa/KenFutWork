@@ -15,6 +15,8 @@ export async function heldModel(
     usage?: { promptTokens: number; completionTokens: number };
     rejectStatus?: number;
     rejectError?: { message: string; code?: string; type?: string };
+    rejectRequestIndexes?: readonly number[];
+    onRequest?(index: number): void;
   } = {},
 ) {
   const requests: Array<{ closed: boolean; body: Record<string, unknown> }> =
@@ -53,10 +55,15 @@ export async function heldModel(
     requests.push(entry);
     responses.push(response);
     firstRequestReceived();
+    options.onRequest?.(requests.length - 1);
     response.on("close", () => {
       entry.closed = true;
     });
-    if (options.rejectStatus !== undefined) {
+    if (
+      options.rejectStatus !== undefined &&
+      (options.rejectRequestIndexes === undefined ||
+        options.rejectRequestIndexes.includes(requests.length - 1))
+    ) {
       response.writeHead(options.rejectStatus, {
         "content-type": "application/json",
       });

@@ -5,8 +5,13 @@ import {
   mergeConfigs,
   Runnable,
   RunnableBinding,
+  type RunnableConfig,
 } from "@langchain/core/runnables";
 import type { AgentMiddleware } from "langchain";
+import {
+  type LlmRequestRetryPolicy,
+  withLlmRequestRetry,
+} from "./llm-retry-middleware.js";
 import type {
   AgentEventIdentity,
   AgentRunExtension,
@@ -25,12 +30,12 @@ export function createRunModelCallbacks(
   );
 }
 
-/** 保留原模型 profile 与归档代理，只观察中间件自身发出的模型请求。 */
+/** 保留模型与归档代理，按每次内部请求执行重试并绑定观察者。 */
 export function observeInternalModelCalls(
   middleware: AgentMiddleware,
   callbacks: BaseCallbackHandler[],
+  retry: LlmRequestRetryPolicy,
 ): AgentMiddleware {
-  if (!callbacks.length) return middleware;
   const wrap = middleware.wrapModelCall;
   if (!wrap) throw new Error("模型请求中间件缺少调用入口。");
   return {
@@ -41,13 +46,26 @@ export function observeInternalModelCalls(
         get(target, property) {
           const value = Reflect.get(target, property, target);
           if (property === "invoke")
-            return (...args: Parameters<typeof target.invoke>) =>
-              target.invoke(
-                args[0],
-                continuing
-                  ? args[1]
-                  : mergeConfigs(ensureConfig(args[1]), { callbacks }),
+            return (...args: Parameters<typeof target.invoke>) => {
+              if (continuing) return target.invoke(...args);
+              const config = mergeConfigs<RunnableConfig>(
+                ensureConfig(args[1]),
+                { callbacks },
               );
+              const signals = [request.runtime.signal, config.signal].filter(
+                (value) => value !== undefined,
+              );
+              const signal =
+                signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+              return withLlmRequestRetry(
+                () =>
+                  target.invoke(args[0], {
+                    ...config,
+                    ...(signal ? { signal } : {}),
+                  }),
+                { ...retry, ...(signal ? { signal } : {}) },
+              );
+            };
           return typeof value === "function" ? value.bind(target) : value;
         },
       });

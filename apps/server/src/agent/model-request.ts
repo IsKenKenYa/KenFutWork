@@ -5,6 +5,7 @@ import {
   type StreamEvent,
 } from "@kenfutwork/shared";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
+import { stampRetryable } from "@langchain/core/errors";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import {
   AIMessage,
@@ -20,6 +21,10 @@ import { estimateModelCostUsd } from "../features/model-providers/model-cost.js"
 import type { RunUsageAccumulator } from "../features/usage/run-usage-accumulator.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
 import { resolveInputTokenLimit } from "./auto-compact.js";
+import {
+  type LlmRequestRetryPolicy,
+  withLlmRequestRetry,
+} from "./llm-retry-middleware.js";
 import type { ModelCallUsage, ModelUsageOwner } from "./model-call-usage.js";
 import { resolveInstanceModelExecution } from "./model-execution.js";
 import { assertNativeInputTokenLimit } from "./native-context-budget.js";
@@ -84,15 +89,19 @@ async function invokeModelRequest(
     const usage = parsed.data;
     usagePending = Promise.resolve().then(async () => {
       options.usageSignal.throwIfAborted();
-      await options.onUsage({
-        modelCallId,
-        owner: options.owner,
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        ...(usage.input_token_details?.cache_read === undefined
-          ? {}
-          : { cachedInputTokens: usage.input_token_details.cache_read }),
-      });
+      try {
+        await options.onUsage({
+          modelCallId,
+          owner: options.owner,
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens,
+          ...(usage.input_token_details?.cache_read === undefined
+            ? {}
+            : { cachedInputTokens: usage.input_token_details.cache_read }),
+        });
+      } catch (error) {
+        throw stampRetryable(error, false);
+      }
       if (!options.usageSignal.aborted) usageObserved = true;
     });
     return usagePending;
@@ -155,7 +164,42 @@ async function invokeModelRequest(
   };
 }
 
+function readModelRequestResult(
+  result: AIMessage,
+  usageObserved: boolean,
+  observedFinishReason: string | undefined,
+): ModelRequestResult {
+  const content = result.content;
+  const finishReason =
+    result.response_metadata?.finish_reason ??
+    result.response_metadata?.stop_reason ??
+    result.response_metadata?.finishReason ??
+    observedFinishReason;
+  return {
+    text:
+      typeof content === "string"
+        ? content
+        : content
+            .map((part) =>
+              typeof part === "string"
+                ? part
+                : part.type === "text"
+                  ? part.text
+                  : "",
+            )
+            .join(""),
+    hasToolCalls:
+      !!result.tool_calls?.length ||
+      !!result.invalid_tool_calls?.length ||
+      !!result.additional_kwargs.tool_calls?.length ||
+      !!result.additional_kwargs.function_call,
+    usageObserved,
+    ...(typeof finishReason === "string" ? { finishReason } : {}),
+  };
+}
+
 export function createModelRequestPort(options: {
+  llmRetry: LlmRequestRetryPolicy;
   resolve(invocation: ModelInvocationSnapshot): Promise<{
     model: BaseLanguageModel;
     owner: ModelUsageOwner;
@@ -173,70 +217,56 @@ export function createModelRequestPort(options: {
       ? AbortSignal.any([options.signal, request.signal])
       : options.signal;
     signal.throwIfAborted();
-    const execution = await options.resolve(request.invocation);
     const messages = [
       new SystemMessage(request.system),
       new HumanMessage(request.input),
     ];
-    assertNativeInputTokenLimit(messages, null, execution.inputTokenLimit);
-    if (
-      request.remainingTokens !== null &&
-      (execution.effectiveOutputTokens === null ||
-        countTokensApproximately(messages) + execution.effectiveOutputTokens >
-          request.remainingTokens)
-    )
-      throw new Error("剩余目标预算不足以执行独立评估，请调整预算后恢复。");
-    signal.throwIfAborted();
+    const callbacks = options.createModelCallbacks?.(request.purpose) ?? [];
     const {
       result,
       usageObserved,
       finishReason: observedFinishReason,
-    } = await invokeModelRequest(messages, {
-      model: execution.model,
-      owner: execution.owner,
-      signal,
-      usageSignal: options.signal,
-      onUsage: options.onUsage,
-      callbacks: options.createModelCallbacks?.(request.purpose) ?? [],
-    });
+    } = await withLlmRequestRetry(
+      async () => {
+        const execution = await options
+          .resolve(request.invocation)
+          .catch((error) => {
+            throw stampRetryable(error, false);
+          });
+        assertNativeInputTokenLimit(messages, null, execution.inputTokenLimit);
+        if (
+          request.remainingTokens !== null &&
+          (execution.effectiveOutputTokens === null ||
+            countTokensApproximately(messages) +
+              execution.effectiveOutputTokens >
+              request.remainingTokens)
+        )
+          throw new Error("剩余目标预算不足以执行独立评估，请调整预算后恢复。");
+        signal.throwIfAborted();
+        return invokeModelRequest(messages, {
+          model: execution.model,
+          owner: execution.owner,
+          signal,
+          usageSignal: options.signal,
+          onUsage: options.onUsage,
+          callbacks,
+        });
+      },
+      { ...options.llmRetry, signal },
+    );
     signal.throwIfAborted();
     if (!AIMessage.isInstance(result))
       throw new Error("模型请求未返回助手结果。");
     // Recheck the frozen configuration after an asynchronous provider response.
     await options.resolve(request.invocation);
     signal.throwIfAborted();
-    const content = result.content;
-    const finishReason =
-      result.response_metadata?.finish_reason ??
-      result.response_metadata?.stop_reason ??
-      result.response_metadata?.finishReason ??
-      observedFinishReason;
-    return {
-      text:
-        typeof content === "string"
-          ? content
-          : content
-              .map((part) =>
-                typeof part === "string"
-                  ? part
-                  : part.type === "text"
-                    ? part.text
-                    : "",
-              )
-              .join(""),
-      hasToolCalls:
-        !!result.tool_calls?.length ||
-        !!result.invalid_tool_calls?.length ||
-        !!result.additional_kwargs.tool_calls?.length ||
-        !!result.additional_kwargs.function_call,
-      usageObserved,
-      ...(typeof finishReason === "string" ? { finishReason } : {}),
-    };
+    return readModelRequestResult(result, usageObserved, observedFinishReason);
   };
 }
 
 /** Default Run-bound provider for the private request port. */
 export function createRunModelRequestPort(options: {
+  llmRetry: LlmRequestRetryPolicy;
   actor: LocalActor;
   runId: string;
   sessionId: string;
@@ -255,6 +285,7 @@ export function createRunModelRequestPort(options: {
   ): BaseCallbackHandler[];
 }): ModelRequestPort {
   return createModelRequestPort({
+    llmRetry: options.llmRetry,
     signal: options.signal,
     ...(options.createModelCallbacks
       ? { createModelCallbacks: options.createModelCallbacks }

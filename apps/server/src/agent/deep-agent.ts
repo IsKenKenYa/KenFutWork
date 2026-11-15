@@ -713,6 +713,10 @@ export function createKenFutWorkDeepAgent(options: {
   }
 
   options.onToolInventory?.(tools);
+  const llmRetry = options.llmRetry ?? {
+    maxAttempts: AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
+    infinite: AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
+  };
 
   // Native SDK remains the sole trigger/keep/count implementation. Archive receipts bind
   // exact durable checkpoints; ReadHistory is the only consumer, never ordinary file Read.
@@ -739,6 +743,7 @@ export function createKenFutWorkDeepAgent(options: {
       options.extensionContext,
       "automatic-compaction",
     ),
+    llmRetry,
   );
   const compactionTracker = options.autoCompact
     ? createNativeCompactionTracker(nativeSummarization)
@@ -807,13 +812,7 @@ export function createKenFutWorkDeepAgent(options: {
 
   // LLM 请求级重试（DEC-18）：maxAttempts 含首次；infinite 为用户显式开启。
   // 默认档（10 次/不无限）也挂——治上游抖动是基线行为，不是可选项。
-  const llmRetryMiddleware = createLlmRequestRetryMiddleware({
-    maxAttempts:
-      options.llmRetry?.maxAttempts ??
-      AGENT_GOVERNANCE_DEFAULTS.llmRequestMaxRetries,
-    infinite:
-      options.llmRetry?.infinite ?? AGENT_GOVERNANCE_DEFAULTS.llmInfiniteRetry,
-  });
+  const llmRetryMiddleware = createLlmRequestRetryMiddleware(llmRetry);
 
   agent = createDeepAgent({
     backend: backendResult.factory,
@@ -871,13 +870,13 @@ export function createKenFutWorkDeepAgent(options: {
                 ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
-            llmRetryMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             createToolGateMiddleware(options.toolGate, options.toolGateHooks),
             ...finalContextBudgetMiddleware,
+            llmRetryMiddleware,
             ...createModelObservationMiddleware(
               runExtensions,
               {},
@@ -924,12 +923,12 @@ export function createKenFutWorkDeepAgent(options: {
                 ]),
             ...summarizationMiddleware,
             ...notificationMiddleware,
-            llmRetryMiddleware,
             todoListMiddleware() as unknown as AgentMiddleware,
             createToolErrorGuardMiddleware(),
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             ...finalContextBudgetMiddleware,
+            llmRetryMiddleware,
             ...createModelObservationMiddleware(
               runExtensions,
               {},
@@ -1039,6 +1038,8 @@ export function createStreamingChatModel(
           `[model] Using Vertex AI for: ${modelName} (project=${vertexProject}, location=${vertexLocation})`,
         );
         return new ChatVertexAI({
+          // 请求重试由宿主治理入口控制。
+          maxRetries: 0,
           model: modelName,
           location: vertexLocation,
           authOptions: { projectId: vertexProject },
@@ -1052,6 +1053,7 @@ export function createStreamingChatModel(
         );
       }
       return new ChatGoogleGenerativeAI({
+        maxRetries: 0,
         model: modelName,
         apiKey: googleApiKey,
         streaming: true,
@@ -1062,6 +1064,7 @@ export function createStreamingChatModel(
       });
     default:
       return new ChatOpenAI({
+        maxRetries: 0,
         model: modelName,
         streaming: true,
         streamUsage: false,

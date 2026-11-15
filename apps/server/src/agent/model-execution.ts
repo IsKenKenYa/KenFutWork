@@ -61,6 +61,8 @@ export async function resolveInstanceModelExecution(options: {
     spec.model,
     {
       apiKey: credentials.apiKey,
+      // SDK 不独立重试；宿主按本轮治理设置执行每次实际模型请求。
+      invocationMaxRetries: 0,
       ...(useResponsesApi === undefined ? {} : { useResponsesApi }),
       ...(credentials.responsesApi === undefined
         ? {}

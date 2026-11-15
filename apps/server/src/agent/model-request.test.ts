@@ -99,6 +99,7 @@ function fixture(
     resolve,
     onUsage,
     port: createModelRequestPort({
+      llmRetry: { maxAttempts: 1, infinite: false },
       resolve,
       signal: controller.signal,
       onUsage,
@@ -311,6 +312,7 @@ it("预算不足时不发模型请求，不改变冻结输出参数", async () =
 it("没有Goal总预算也必须在发送前拒绝超出模型窗口的完整请求", async () => {
   const f = fixture();
   const port = createModelRequestPort({
+    llmRetry: { maxAttempts: 1, infinite: false },
     signal: f.controller.signal,
     onUsage: f.onUsage,
     resolve: async () => ({ ...(await f.resolve()), inputTokenLimit: 100 }),
@@ -522,6 +524,7 @@ it("真实协议适配器发送冻结无工具请求，用量加入原Run账本�
       ]),
     };
     const port = createRunModelRequestPort({
+      llmRetry: { maxAttempts: 1, infinite: false },
       actor,
       runId: "run",
       sessionId: "task",

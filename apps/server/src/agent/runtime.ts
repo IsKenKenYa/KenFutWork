@@ -2419,6 +2419,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           const eventSink = run.eventSink;
           if (options.modelProviders && options.runUsage && eventSink) {
             runToolContext.requestModel = createRunModelRequestPort({
+              llmRetry: governanceLlmRetry,
               actor: run.actor,
               runId,
               sessionId: run.sessionId,

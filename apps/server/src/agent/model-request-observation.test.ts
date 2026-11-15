@@ -25,6 +25,7 @@ async function requestFixture() {
   const usage = createRunUsageAccumulator();
   const controller = new AbortController();
   const port = createRunModelRequestPort({
+    llmRetry: { maxAttempts: 1, infinite: false },
     actor: { instanceId: randomUUID(), accessClientId: null },
     runId,
     sessionId: randomUUID(),

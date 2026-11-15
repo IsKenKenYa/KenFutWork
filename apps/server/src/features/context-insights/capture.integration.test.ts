@@ -41,6 +41,7 @@ async function captureFixture(httpStatus?: number) {
   const controller = new AbortController();
   let usageCount = 0;
   const port = createModelRequestPort({
+    llmRetry: { maxAttempts: 1, infinite: false },
     signal: controller.signal,
     resolve: async () => ({
       model,

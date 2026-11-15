@@ -4,6 +4,7 @@ import {
   type ModelCallPurpose,
 } from "@kenfutwork/shared";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
+import { stampRetryable } from "@langchain/core/errors";
 import {
   AIMessage,
   type BaseMessage,
@@ -11,6 +12,14 @@ import {
 } from "@langchain/core/messages";
 import { z } from "zod";
 import type { ContextRequestOwner, ContextRequestWriter } from "./types.js";
+
+async function writeCapture(write: () => Promise<void>) {
+  try {
+    await write();
+  } catch (error) {
+    throw stampRetryable(error, false);
+  }
+}
 
 const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -119,13 +128,15 @@ export function createContextRequestCallbacks(
           }),
         ),
       );
-      await writer.start({
-        purpose,
-        id,
-        owner,
-        input,
-        startedAt: new Date().toISOString(),
-      });
+      await writeCapture(() =>
+        writer.start({
+          purpose,
+          id,
+          owner,
+          input,
+          startedAt: new Date().toISOString(),
+        }),
+      );
     },
     async handleLLMEnd(result, id) {
       const generations = result.generations.flat();
@@ -170,19 +181,21 @@ export function createContextRequestCallbacks(
                 : {}),
             }
           : null;
-      await writer.finish({
-        id,
-        owner,
-        endedAt: new Date().toISOString(),
-        status: "completed",
-        output: replies.map(({ message, finishReason }) => {
-          const serialized = serializeMessage(message);
-          if (finishReason !== undefined)
-            serialized.data.finishReason = finishReason;
-          return serialized;
+      await writeCapture(() =>
+        writer.finish({
+          id,
+          owner,
+          endedAt: new Date().toISOString(),
+          status: "completed",
+          output: replies.map(({ message, finishReason }) => {
+            const serialized = serializeMessage(message);
+            if (finishReason !== undefined)
+              serialized.data.finishReason = finishReason;
+            return serialized;
+          }),
+          usage,
         }),
-        usage,
-      });
+      );
     },
     async handleLLMError(error, id) {
       const status = error.name === "AbortError" ? "cancelled" : "failed";
@@ -191,18 +204,20 @@ export function createContextRequestCallbacks(
       const httpStatus = contextRequestHttpStatusSchema.safeParse(
         sdkError?.status ?? sdkError?.statusCode,
       );
-      await writer.finish({
-        id,
-        owner,
-        endedAt: new Date().toISOString(),
-        status,
-        ...(status === "failed" && httpStatus.success
-          ? { httpStatus: httpStatus.data }
-          : {}),
-        // 错误原文可能包含服务商请求信息，不进入上下文正文记录。
-        output: null,
-        usage: null,
-      });
+      await writeCapture(() =>
+        writer.finish({
+          id,
+          owner,
+          endedAt: new Date().toISOString(),
+          status,
+          ...(status === "failed" && httpStatus.success
+            ? { httpStatus: httpStatus.data }
+            : {}),
+          // 错误原文可能包含服务商请求信息，不进入上下文正文记录。
+          output: null,
+          usage: null,
+        }),
+      );
     },
   });
   handler.raiseError = true;

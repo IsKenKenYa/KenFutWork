@@ -6,53 +6,95 @@ import type { AgentMiddleware } from "langchain";
  * LLM 请求级重试中间件（DEC-18）：`llmRequestMaxRetries`（含首次）与
  * `llmInfiniteRetry`（用户显式开启）两个治理设置的**消费方**。
  *
+ * 普通调用、摘要与独立评估共用请求执行函数；运行模型不再叠加 SDK 重试。
+ *
  * 定位与边界：
- * - 挂在 `wrapModelCall` 上，对内建模型与 BYOK 实例模型**统一**生效（两者都在
- *   这一层发起模型调用），不需要动各 provider 的构造参数；
+ * - 普通调用挂在 `wrapModelCall` 上，摘要与独立评估直接消费执行函数；
  * - 只重试**可重试错误**（429/5xx/超时/网络抖动）；400 类语法与鉴权错误一次都不
  *   多打——无限重试也不是无脑重试（kimi `KIMI_CODE_INFINITE_RETRY` 同口径）；
  * - 信号中止立即停止：用户取消 > 一切重试意图；
  * - 退避 1s 起指数翻倍、30s 封顶（测试可注入 delayMs）。
- * 底层 SDK 自带的重试与本中间件是叠加关系（先 SDK 后本层），如实知悉。
  */
 
 const RETRYABLE_PATTERN =
   /(429|rate.?limit|too many requests|\b5\d\d\b|internal server|bad gateway|service unavailable|overloaded|timeout|timed out|econn|enotfound|eai_again|socket|fetch failed|network)/i;
 
 export function isRetryableLlmError(error: unknown): boolean {
-  // 保留 SDK 对配额、鉴权及输入错误的判定，避免错误正文触发额外请求。
-  const retryable = getRetryable(error);
-  if (retryable !== undefined) return retryable;
-  const message =
-    error instanceof Error
-      ? `${error.name} ${error.message}`
-      : String(error ?? "");
-  return RETRYABLE_PATTERN.test(message);
+  // MiddlewareError 会包装 SDK 错误；任何明确的禁止重试判定都继续保留。
+  const seen = new Set<unknown>();
+  let current = error;
+  let retryable = false;
+  while (current != null && !seen.has(current)) {
+    seen.add(current);
+    const classified = getRetryable(current);
+    if (classified === false) return false;
+    const message =
+      current instanceof Error
+        ? `${current.name} ${current.message}`
+        : String(current);
+    retryable ||= classified === true || RETRYABLE_PATTERN.test(message);
+    current =
+      typeof current === "object"
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+  return retryable;
 }
 
-export function createLlmRequestRetryMiddleware(options: {
+export interface LlmRequestRetryPolicy {
   /** 最大尝试次数（含首次；<1 视为 1）。infinite=true 时忽略。 */
   maxAttempts: number;
   /** 用户显式开启的无限重试。 */
   infinite: boolean;
+}
+
+export interface LlmRequestRetryOptions extends LlmRequestRetryPolicy {
   signal?: AbortSignal;
   /** 退避注入点（测试用）；默认 1s 起指数翻倍、30s 封顶。 */
   delayMs?: (ms: number, signal?: AbortSignal) => Promise<void>;
-}): AgentMiddleware {
+}
+
+export async function withLlmRequestRetry<T>(
+  invoke: () => Promise<T>,
+  options: LlmRequestRetryOptions,
+): Promise<T> {
   const delay =
     options.delayMs ??
     ((ms: number, signal?: AbortSignal) =>
       setTimeout(ms, undefined, { signal }));
 
+  const maxAttempts = options.infinite
+    ? Number.POSITIVE_INFINITY
+    : Math.max(1, Math.floor(options.maxAttempts));
+  const signal = options.signal;
+  let attempt = 0;
+  while (true) {
+    signal?.throwIfAborted();
+    attempt += 1;
+    try {
+      return await invoke();
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (attempt >= maxAttempts || !isRetryableLlmError(error)) throw error;
+      try {
+        await delay(Math.min(30_000, 1_000 * 2 ** (attempt - 1)), signal);
+      } catch (delayError) {
+        signal?.throwIfAborted();
+        throw delayError;
+      }
+    }
+  }
+}
+
+export function createLlmRequestRetryMiddleware(
+  options: LlmRequestRetryOptions,
+): AgentMiddleware {
   return {
     name: "llmRequestRetry",
     async wrapModelCall(
       request: unknown,
       handler: (req: unknown) => Promise<unknown>,
     ) {
-      const maxAttempts = options.infinite
-        ? Number.POSITIVE_INFINITY
-        : Math.max(1, Math.floor(options.maxAttempts));
       const source = request as {
         runtime?: { signal?: AbortSignal };
         config?: { signal?: AbortSignal };
@@ -64,26 +106,10 @@ export function createLlmRequestRetryMiddleware(options: {
         options.signal,
       ].filter((candidate) => candidate !== undefined);
       const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
-      let attempt = 0;
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        signal?.throwIfAborted();
-        attempt += 1;
-        try {
-          return await handler(request);
-        } catch (error) {
-          signal?.throwIfAborted();
-          if (attempt >= maxAttempts) throw error;
-          if (!isRetryableLlmError(error)) throw error;
-          try {
-            await delay(Math.min(30_000, 1_000 * 2 ** (attempt - 1)), signal);
-          } catch (delayError) {
-            // Node 的计时器会生成自己的 AbortError；保留原任务的停止原因。
-            signal?.throwIfAborted();
-            throw delayError;
-          }
-        }
-      }
+      return withLlmRequestRetry(() => handler(request), {
+        ...options,
+        ...(signal ? { signal } : {}),
+      });
     },
   } as unknown as AgentMiddleware;
 }
