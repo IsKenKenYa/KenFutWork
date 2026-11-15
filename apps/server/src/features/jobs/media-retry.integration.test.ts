@@ -8,7 +8,10 @@ import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createGenerationTargets } from "../generation/file-targets.js";
-import { readMediaJobWaitIssue } from "../generation/media-job-wait.js";
+import {
+  describeMediaJobWaitIssue,
+  readMediaJobWaitIssue,
+} from "../generation/media-job-wait.js";
 import { createImageGenerateToolDefinition } from "../generation/tools/image-generate.js";
 import { createModelProviderService } from "../model-providers/model-provider-service.js";
 import { createModelProviderRepository } from "../model-providers/repository.js";
@@ -20,6 +23,35 @@ import { startJobLoop } from "./job-loop.js";
 import { createJobService } from "./job-service.js";
 import { createJobRepository } from "./repository.js";
 import "./executors/image-generation.js";
+import "./executors/video-generation.js";
+
+const videoFailures = {
+  input: [
+    "InputAudioSensitiveContentDetected.PolicyViolation",
+    "media_input_audio_copyright",
+    "参考音频可能涉及版权限制，请更换音频。",
+  ],
+  output: [
+    "OutputAudioSensitiveContentDetected.PolicyViolation",
+    "media_output_audio_copyright",
+    "生成的音频可能涉及版权限制，请调整提示词或参考素材。",
+  ],
+  constraint: [
+    "InvalidParameter.TaskTypeConstraint",
+    "media_task_type_constraint",
+    "生成参数与模型识别的任务类型不兼容，请检查生成设置。",
+  ],
+  mismatch: [
+    "InvalidParameter.TaskTypeMismatch",
+    "media_task_type_mismatch",
+    "模型识别的任务类型与请求不一致，请调整提示词和参考素材。",
+  ],
+  unknown: [
+    "UnknownVendorFailure",
+    "provider_task_failed",
+    "供应商已确认生成失败，请核对供应商任务记录。",
+  ],
+} as const;
 
 describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
   "媒体Job实际HTTP错误与重试",
@@ -31,13 +63,46 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
     afterAll(async () => {
       await db?.close();
     });
-    async function fixture(mode: "limited" | "auth" | "balance" | "lost") {
+    async function fixture(
+      mode:
+        | "limited"
+        | "auth"
+        | "balance"
+        | "lost"
+        | keyof typeof videoFailures,
+      rejectSubmission = false,
+    ) {
       const submittedAt: number[] = [];
+      const methods: string[] = [];
+      const video = Object.hasOwn(videoFailures, mode)
+        ? videoFailures[mode as keyof typeof videoFailures]
+        : undefined;
+      const model = video ? "seedance-test" : "gpt-image-1";
       const server = createServer(async (request, response) => {
         for await (const _chunk of request) {
           /* 消费模拟供应商输入 */
         }
         submittedAt.push(Date.now());
+        methods.push(request.method ?? "");
+        if (video) {
+          response.statusCode = rejectSubmission ? 400 : 200;
+          response.setHeader("content-type", "application/json");
+          const error = {
+            code: video[0],
+            message:
+              "内部内容 test-only OTHER-SECRET InputAudioSensitiveContentDetected.PolicyViolation",
+          };
+          response.end(
+            JSON.stringify(
+              rejectSubmission
+                ? { error }
+                : request.method === "POST"
+                  ? { id: "accepted-video" }
+                  : { id: "accepted-video", status: "failed", error },
+            ),
+          );
+          return;
+        }
         if (mode === "lost") {
           request.socket.destroy();
           return;
@@ -91,11 +156,16 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       });
       const provider = await modelProviders.createInstance(db.actor, {
         name: "重试模拟供应商",
-        protocol: "openai-compatible",
-        baseUrl: `${baseUrl}/v1`,
+        protocol: video ? "volces" : "openai-compatible",
+        baseUrl: `${baseUrl}${video ? "/api/v3" : "/v1"}`,
         apiKey: "test-only",
+        ...(video ? { headers: { "x-private": "OTHER-SECRET" } } : {}),
         models: [
-          { id: "gpt-image-1", name: "模拟图片模型", capability: "image" },
+          {
+            id: model,
+            name: "回环模型",
+            capability: video ? "video" : "image",
+          },
         ],
       });
       const queue = createInProcessQueue();
@@ -114,10 +184,12 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       });
       const input = {
         requestId: crypto.randomUUID(),
-        jobType: "image_generation" as const,
+        jobType: video
+          ? ("video_generation" as const)
+          : ("image_generation" as const),
         payload: {
           prompt: "猫",
-          model: "gpt-image-1",
+          model,
           provider_instance_id: provider.id,
         },
       };
@@ -151,15 +223,17 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
             version: "test",
             webOrigin: baseUrl,
             workerPollIntervalMs: 30_000,
+            videoPollDelaySeconds: 1,
           },
         },
-        { queues: ["image_generation_jobs"] },
+        { queues: [video ? "video_generation_jobs" : "image_generation_jobs"] },
       );
       return {
         jobs,
         job,
         input,
         submittedAt,
+        methods,
         read: (url: string) =>
           app.inject({
             method: "GET",
@@ -175,6 +249,56 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         },
       };
     }
+    it.each([
+      ["input", true],
+      ["input", false],
+      ["output", false],
+      ["constraint", true],
+      ["mismatch", false],
+      ["unknown", false],
+    ] as const)(
+      "视频 %s（提交拒绝=%s）从真实供应商协议、持久任务到公开接口保留原因",
+      async (mode, rejectSubmission) => {
+        const f = await fixture(mode, rejectSubmission);
+        try {
+          const [source, code, message] = videoFailures[mode];
+          await vi.waitFor(
+            async () =>
+              expect(await f.jobs.getJobForWorker(f.job.id)).toMatchObject({
+                status: "dead_letter",
+              }),
+            { timeout: 4000 },
+          );
+          const record = await f.jobs.getJobForWorker(f.job.id);
+          expect(record.error_message).toContain(source);
+          expect(record.error_message).toContain("内部内容");
+          expect(record.error_message).not.toContain("test-only");
+          expect(record.error_message).not.toContain("OTHER-SECRET");
+          expect(record.provider_job_id !== null).toBe(!rejectSubmission);
+          const response = await f.read(`/api/jobs/${f.job.id}`);
+          expect(response.statusCode).toBe(200);
+          expect(response.json().job).toMatchObject({
+            status: "dead_letter",
+            error_code: code,
+            error_message: message,
+          });
+          expect(response.body).not.toContain("内部内容");
+          expect(response.body).not.toContain(source);
+          const issue = readMediaJobWaitIssue(record);
+          if (!issue) throw new Error("工具应读到已持久化的失败");
+          expect(describeMediaJobWaitIssue(issue)).toMatchObject({
+            isError: true,
+            errorCode: code,
+            error: message,
+          });
+          expect(f.methods).toEqual(
+            rejectSubmission ? ["POST"] : ["POST", "GET"],
+          );
+        } finally {
+          await f.close();
+        }
+      },
+    );
     it("429优先遵守Retry-After，恢复原Job并由引擎单次重发", async () => {
       const f = await fixture("limited");
       try {

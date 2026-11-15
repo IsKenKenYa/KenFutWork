@@ -7,6 +7,19 @@ const messages: ReadonlyMap<string, string> = new Map([
   ["provider_task_failed", "供应商已确认生成失败，请核对供应商任务记录。"],
   ["video_job_timeout", "视频任务已超时，请核对供应商任务记录。"],
   ["safety_filter", "供应商未通过内容审核，请调整输入。"],
+  ["media_input_audio_copyright", "参考音频可能涉及版权限制，请更换音频。"],
+  [
+    "media_output_audio_copyright",
+    "生成的音频可能涉及版权限制，请调整提示词或参考素材。",
+  ],
+  [
+    "media_task_type_constraint",
+    "生成参数与模型识别的任务类型不兼容，请检查生成设置。",
+  ],
+  [
+    "media_task_type_mismatch",
+    "模型识别的任务类型与请求不一致，请调整提示词和参考素材。",
+  ],
   ["invalid_input", "生成参数无效，请检查模型和参考素材。"],
   ["unsupported_parameter", "当前模型不支持此参数，请修改生成设置。"],
   ["no_output", "供应商未返回可用内容，请检查生成参数。"],

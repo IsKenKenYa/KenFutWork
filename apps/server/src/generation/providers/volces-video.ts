@@ -9,7 +9,8 @@ import type {
   VideoModelInfo,
   VideoProvider,
 } from "../types.js";
-import { createGenerationFetch, GenerationError } from "../utils.js";
+import { GenerationError } from "../utils.js";
+import { createVolcesVideoFetch } from "./volces-video-failure.js";
 
 /**
  * volces（火山方舟）视频 provider——Seedance 系（G4 关闭项）。
@@ -92,10 +93,16 @@ export class VolcesVideoProvider implements VideoProvider {
     this.headers = headers;
   }
 
-  private videoModel(modelId: string): Experimental_VideoModelV4 {
+  private videoModel(
+    modelId: string,
+    polling = false,
+  ): Experimental_VideoModelV4 {
     return createVolcesProvider({
       apiKey: this.apiKey,
-      fetch: createGenerationFetch("volces", [this.apiKey]),
+      fetch: createVolcesVideoFetch(
+        [this.apiKey, ...Object.values(this.headers ?? {})],
+        polling,
+      ),
       ...(this.baseUrl ? { baseUrl: this.baseUrl } : {}),
       ...(this.headers ? { headers: this.headers } : {}),
     }).videoModel(modelId);
@@ -156,7 +163,7 @@ export class VolcesVideoProvider implements VideoProvider {
         "持久化的任务引用不是合法 JSON（可能被手改）",
       );
     }
-    const result = await pollVideoJob(this.videoModel(""), operation);
+    const result = await pollVideoJob(this.videoModel("", true), operation);
     if (result.state === "succeeded") {
       const urlVideo = result.videos.find((video) => video.type === "url");
       if (!urlVideo) {
