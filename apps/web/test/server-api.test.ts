@@ -329,7 +329,9 @@ describe("本机Cookie与显式Bearer API", () => {
       }),
     });
 
-    await expect(fetchProjects("expired")).rejects.toThrow("unauthorized");
+    await expect(fetchProjects("expired")).rejects.toBeInstanceOf(
+      ApiAccessError,
+    );
   });
 });
 

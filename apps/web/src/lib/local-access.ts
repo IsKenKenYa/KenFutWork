@@ -2,6 +2,7 @@ import {
   type InstanceContext,
   instanceResponseSchema,
 } from "@kenfutwork/shared";
+import { readPublicHttpError } from "./api-error";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 
@@ -35,11 +36,8 @@ export async function serverFetch(
 
 async function assertConnected(response: Response) {
   if (response.ok) return;
-  const payload = await response.json().catch(() => null);
-  throw new LocalAccessError(
-    response.status,
-    payload?.error?.message ?? `本机服务请求失败（HTTP ${response.status}）。`,
-  );
+  const { message } = await readPublicHttpError(response);
+  throw new LocalAccessError(response.status, message);
 }
 
 export function loadLocalInstance(): Promise<InstanceContext> {

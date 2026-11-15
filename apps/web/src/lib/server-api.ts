@@ -57,26 +57,11 @@ import {
 } from "@kenfutwork/shared";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
 
+import { ApiApplicationError, handleErrorResponse } from "./api-error";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
 
-// --- Error types ---
-
-export class ApiAccessError extends Error {
-  constructor(message = "unauthorized") {
-    super(message);
-    this.name = "ApiAccessError";
-  }
-}
-
-export class ApiApplicationError extends Error {
-  code: string;
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = "ApiApplicationError";
-    this.code = code;
-  }
-}
+export { ApiAccessError, ApiApplicationError } from "./api-error";
 
 // --- Existing ---
 
@@ -97,9 +82,7 @@ export async function createRun(
     body: JSON.stringify(payload),
   });
 
-  if (!response.ok) {
-    throw new Error(`Run creation failed with status ${response.status}`);
-  }
+  if (!response.ok) return handleErrorResponse(response);
 
   return (await response.json()) as RunCreateResponse;
 }
@@ -119,16 +102,6 @@ function authJsonHeaders(
     ...bearerHeaders(accessToken),
     "content-type": "application/json",
   };
-}
-
-async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ApiAccessError();
-  }
-  const body = await response.json().catch(() => null);
-  const code = body?.error?.code ?? "application_error";
-  const message = body?.error?.message ?? "Request failed";
-  throw new ApiApplicationError(code, message);
 }
 
 export async function fetchProjects(
@@ -870,9 +843,7 @@ export async function fetchProviderPresets(
     `${getServerBaseUrl()}/api/provider-instances/presets`,
     { headers: authJsonHeaders(accessToken) },
   );
-  if (!response.ok) {
-    throw new Error(`Failed to fetch provider presets: ${response.status}`);
-  }
+  if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { presets: ProviderPreset[] };
 }
 
@@ -880,9 +851,7 @@ export async function fetchVideoModels(): Promise<{
   models: VideoModelInfo[];
 }> {
   const response = await serverFetch(`${getServerBaseUrl()}/api/video-models`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch video models: ${response.status}`);
-  }
+  if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { models: VideoModelInfo[] };
 }
 

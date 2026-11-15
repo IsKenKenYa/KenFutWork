@@ -8,11 +8,9 @@ import type {
   BrandKitUpdateRequest,
 } from "@kenfutwork/shared";
 import { bearerHeaders, serverFetch } from "@/lib/local-access";
+import { handleErrorResponse } from "./api-error";
 import { dedupeRequest } from "./dedupe-request";
 import { getServerBaseUrl } from "./env";
-import { ApiAccessError, ApiApplicationError } from "./server-api";
-
-// --- Internal helpers (mirrored from server-api.ts, not exported there) ---
 
 function authHeaders(accessToken: string | null): Record<string, string> {
   return bearerHeaders(accessToken);
@@ -23,16 +21,6 @@ function authJsonHeaders(accessToken: string | null): Record<string, string> {
     ...bearerHeaders(accessToken),
     "content-type": "application/json",
   };
-}
-
-async function handleErrorResponse(response: Response): Promise<never> {
-  if (response.status === 401) {
-    throw new ApiAccessError();
-  }
-  const body = await response.json().catch(() => null);
-  const code = body?.error?.code ?? "application_error";
-  const message = body?.error?.message ?? "Request failed";
-  throw new ApiApplicationError(code, message);
 }
 
 // --- Brand Kit CRUD ---
