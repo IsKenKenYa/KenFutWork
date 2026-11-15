@@ -9,7 +9,7 @@
 | 事实 | 出处 |
 | --- | --- |
 | 打包链**不能交叉编译**：mac 只认 darwin/arm64，win 只认 win32，运行时下载也没有 `--platform` | `scripts/package-mac.mjs:135`、`scripts/package-win.mjs:79`、`scripts/fetch-runtimes.mjs` 的 `darwin-x64: null` |
-| 两条管线**有意不抽公共库**（分属两台打包机、两人维护） | `scripts/package-mac.mjs:12-19` |
+| macOS 与 Windows 的平台组装步骤分别维护，随包许可、声明与来源记录共用一份清单 | `scripts/package-legal.mjs`；两条打包脚本调用 `stageLegalDocuments(ROOT, RELEASE)` |
 | 仓库已转公开 → 标准 runner 分钟不计费；安装包体积（DMG ~285MB / setup.exe ~69MB）适合走 Actions 产物与 Release 资产 | GitHub 计费文档；`apps/desktop/README.md:39,64` |
 | 体积预算实测：`node_modules` 1.8G + `target/release` 3.1G + `release/` 0.7G + `runtime/` 0.44G ≈ 6.0G | `du -sh` 实测，托管 runner 14GB 盘 / 7GB 内存 |
 

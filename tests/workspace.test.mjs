@@ -18,6 +18,7 @@ import { promisify } from "node:util";
 import { checkActions } from "../scripts/check-actions.mjs";
 import { checkDocs, updateFrozenLock } from "../scripts/check-docs.mjs";
 import * as envModule from "../scripts/check-env.mjs";
+import { stageLegalDocuments } from "../scripts/package-legal.mjs";
 import { verifyZcodeInventory } from "../scripts/zcode-provenance.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -1681,6 +1682,54 @@ test("explicit ZCode source mirrors retain CRLF compatibility and exact binary/t
   assert.throws(() => verifyZcodeInventory({ root: f.root }), /清单记录无效/);
 });
 
+test("桌面分发保留上下文分析的两份许可、声明和文件来源", async (t) => {
+  const scratch = path.join(rootDir, ".scratch");
+  await mkdir(scratch, { recursive: true });
+  const release = await mkdtemp(path.join(scratch, "package-legal-"));
+  t.after(() => rm(release, { recursive: true, force: true }));
+  const expected = [
+    ["COPYRIGHT.md", "COPYRIGHT.md"],
+    ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
+    [
+      "packages/context-insights-ui/vendor/dsh-context/LICENSE",
+      "upstream/dsh-context-LICENSE.txt",
+    ],
+    [
+      "packages/context-insights-ui/vendor/deepseek-harness/LICENSE",
+      "upstream/deepseek-harness-LICENSE.txt",
+    ],
+    [
+      "packages/context-insights-ui/NOTICE",
+      "upstream/context-insights-NOTICE.txt",
+    ],
+    [
+      "packages/context-insights-ui/来源清单.json",
+      "upstream/context-insights-provenance.json",
+    ],
+  ];
+  for (let round = 0; round < 2; round += 1) {
+    stageLegalDocuments(rootDir, release);
+    for (const [source, target] of expected) {
+      assert.deepEqual(
+        await readFile(path.join(release, "legal", target)),
+        await readFile(path.join(rootDir, source)),
+        `第 ${round + 1} 次准备的 ${target} 应保持原文`,
+      );
+    }
+  }
+});
+
+test("桌面声明的来源文件缺失时停止准备", async (t) => {
+  const scratch = path.join(rootDir, ".scratch");
+  await mkdir(scratch, { recursive: true });
+  const directory = await mkdtemp(path.join(scratch, "package-legal-missing-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  assert.throws(
+    () => stageLegalDocuments(directory, path.join(directory, "release")),
+    { code: "ENOENT" },
+  );
+});
+
 test("contribution, CLA, and commercial-license documents are wired", async () => {
   const required = [
     "CONTRIBUTING.md",
@@ -1720,8 +1769,11 @@ test("contribution, CLA, and commercial-license documents are wired", async () =
 
   for (const script of ["scripts/package-mac.mjs", "scripts/package-win.mjs"]) {
     const source = await readText(script);
-    assert.match(source, /COPYRIGHT\.md/);
-    assert.match(source, /licenses\/loomic-MIT\.txt/);
+    assert.match(
+      source,
+      /import \{ stageLegalDocuments \} from "\.\/package-legal\.mjs"/,
+    );
+    assert.match(source, /stageLegalDocuments\(ROOT, RELEASE\)/);
   }
 
   const eula = await readText("EULA.md");

@@ -10,8 +10,8 @@
  * `runtime/node/bin/node server/server.cjs` 拉起。
  *
  * 与 scripts/package-win.mjs 是**镜像脚本**（pg/sharp/node-pty/运行时组装同构），
- * 有意不抽公共库：两条管线分属两台打包机、由不同人维护，耦合在一起会让每次合并都
- * 冲突。差异点（都标注在对应步骤）：
+ * 平台组装步骤分别维护，随包声明共用 package-legal.mjs 的清单。
+ * 差异点（都标注在对应步骤）：
  *   - 服务端不产 SEA 单文件，而是 server.cjs + 随包静态 node（原因见上）；
  *   - darwin 的 PG 包带 pg-symlinks.json（libicudata 等未带版本号的 dylib 软链），
  *     直接 cp 会丢链接 → initdb 报 image not found（docs/日志.md libicudata 前车之鉴）；
@@ -43,6 +43,7 @@ import {
   packageCodeNativeRuntime,
   packageRipgrepRuntime,
 } from "./package-code-native.mjs";
+import { stageLegalDocuments } from "./package-legal.mjs";
 
 const ROOT = process.cwd();
 const RELEASE = join(ROOT, "release");
@@ -54,48 +55,6 @@ const SHARP_PACKAGE = "@img/sharp-darwin-arm64";
 const SUPABASE_DIR = join(ROOT, "supabase");
 /** pgmq 兼容 shim（历史迁移 CREATE EXTENSION pgmq 需要，见 desktop/pgmq-shim.ts）。 */
 const SHIM_DIR = join(ROOT, "docker", "pg-dev-shim");
-/**
- * 随包分发的许可与声明文本：GPL-3.0 第 4 条要求分发物带许可证与版权声明，
- * Apache-2.0 第 4 条 d 款与 MIT/ISC 的 attribution 同理（清单见 THIRD-PARTY-NOTICES.md §G1）。
- */
-const LEGAL_DOCUMENTS = [
-  ["LICENSE", "GPL-3.0.txt"],
-  ["NOTICE.md", "NOTICE.md"],
-  ["EULA.md", "EULA.md"],
-  ["PRIVACY.md", "PRIVACY.md"],
-  ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
-  ["COPYRIGHT.md", "COPYRIGHT.md"],
-  ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
-];
-/** 上游许可文本：随移植代码与素材分发，源路径即仓库内的属主位置。 */
-const LEGAL_UPSTREAM = [
-  ["apps/web/src/components/workbench/zcode/LICENSE", "zcode-LICENSE.txt"],
-  ["apps/web/src/components/workbench/zcode/NOTICE.md", "zcode-NOTICE.md"],
-  [
-    "apps/web/src/components/workbench/zcode/THIRD-PARTY-NOTICES.md",
-    "zcode-THIRD-PARTY-NOTICES.txt",
-  ],
-  [
-    "apps/web/src/components/workbench/zcode/public/material-icons/LICENSE",
-    "material-icon-theme-LICENSE.txt",
-  ],
-  ["patches/LICENSE-langchain.txt", "langchain-LICENSE.txt"],
-  ["patches/LICENSE-sandbox-runtime.txt", "sandbox-runtime-LICENSE.txt"],
-  ["licenses/tauri-dialog-MIT.txt", "tauri-dialog-MIT.txt"],
-  ["licenses/rfd-MIT.txt", "rfd-MIT.txt"],
-];
-
-function stageLegalDocuments() {
-  const legal = join(RELEASE, "legal");
-  mkdirSync(join(legal, "upstream"), { recursive: true });
-  for (const [source, name] of LEGAL_DOCUMENTS) {
-    copyFileSync(join(ROOT, source), join(legal, name));
-  }
-  for (const [source, name] of LEGAL_UPSTREAM) {
-    copyFileSync(join(ROOT, source), join(legal, "upstream", name));
-  }
-}
-
 function run(label, command, args, options = {}) {
   console.log(`[package-mac] ${label}…`);
   const result = spawnSync(command, args, {
@@ -414,7 +373,7 @@ function main() {
 
   // 4e) 许可与声明文本（release/legal/）：由 tauri.macos.conf.json 的 resources 映射进
   //     .app/Contents/Resources/app/legal，使「声明随分发光一并分发」成立。
-  stageLegalDocuments();
+  stageLegalDocuments(ROOT, RELEASE);
   console.log("[package-mac] 捆绑许可与声明文本（legal/）");
 
   // Adoptium 等上游带只读文件（classes.jsa=444），tauri-build 二次构建覆盖拷贝时会
