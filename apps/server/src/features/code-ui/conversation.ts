@@ -26,7 +26,11 @@ import type { OwnedHistoryOutput } from "./output-history-types.js";
 import type { CodeApprovedPlan } from "./planning-types.js";
 import { codeInputRouting, resolveHeldQueue } from "./queue-control.js";
 import { codeUiRunHasStopIntent } from "./run-outcome.js";
-import { previewToolOutput, resolveToolOutputText } from "./tool-output.js";
+import {
+  previewToolOutput,
+  resolveToolError,
+  resolveToolOutputText,
+} from "./tool-output.js";
 import type { UserInputEvent } from "./user-input-types.js";
 import { freezeWorkContext } from "./work-context.js";
 
@@ -243,6 +247,7 @@ function completeTool(
   )
     return;
   const text = resolveToolOutputText(event);
+  const error = resolveToolError(event, text);
   const preview = previewToolOutput(
     text,
     previewBytes,
@@ -264,9 +269,7 @@ function completeTool(
             text: preview.text,
             ...(preview.truncated ? { truncated: preview.truncated } : {}),
           },
-      ...(event.status === "error"
-        ? { error: { code: "tool_failed", message: text || "工具执行失败" } }
-        : {}),
+      ...(error ? { error } : {}),
       endedAt: at,
     }),
   );

@@ -3,10 +3,27 @@ import {
   parseToolOutputRef,
   previewToolOutput,
   readUtf8Window,
+  resolveToolError,
   resolveToolOutputText,
 } from "./tool-output.js";
 
 describe("工具输出原文分页", () => {
+  it("查询到失败任务与取消操作均不显示为工具错误", () => {
+    const event = {
+      type: "tool.completed" as const,
+      runId: "run",
+      toolCallId: "tool",
+      toolName: "get_job",
+      output: { job: { status: "failed", error: "生成失败" } },
+      timestamp: "2026-10-02T12:00:00.000Z",
+    };
+    for (const status of ["success", "cancelled"] as const)
+      expect(resolveToolError({ ...event, status }, "")).toBeUndefined();
+    expect(
+      resolveToolError({ ...event, status: "error" }, "无法读取任务"),
+    ).toEqual({ code: "tool_failed", message: "无法读取任务" });
+  });
+
   it("落在预算内时原样返回，不制造截断引用", () => {
     expect(previewToolOutput("短输出", 1_024, "run/tool")).toEqual({
       text: "短输出",

@@ -68,7 +68,10 @@ async function binding(
       `select id as project_id, enabled_modes from public.projects where instance_id=:instance and id=$1 and archived_at is null`,
       [input.projectId],
     );
-    if (!row) throw new GenerationTargetError("生成任务的项目不存在或已关闭");
+    if (!row)
+      throw new GenerationTargetError(
+        "生成任务的项目不存在或已关闭，请打开其他项目后重试。",
+      );
     if (input.canvasId) {
       const canvas = await scoped.queryOne<SqlRow & { project_id: string }>(
         `select c.project_id from public.canvases c join public.projects p on p.id=c.project_id where c.id=$1 and p.instance_id=:instance and p.archived_at is null and c.deleted_at is null`,

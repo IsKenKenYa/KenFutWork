@@ -1,11 +1,11 @@
 import type { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { AvailableVideoModel } from "../../../generation/types.js";
-import { findOwnedToolInterruption } from "../../../kernel/owned-tool-interruption.js";
 import type { ToolDefinition } from "../../../kernel/types.js";
 import type { CanvasDocumentAccess } from "../../canvas/document-access.js";
 import { generatedMediaDisplay } from "../media-display.js";
 import {
+  describeMediaJobAccessFailure,
   describeMediaJobWaitIssue,
   type MediaJobWaitIssue,
 } from "../media-job-wait.js";
@@ -328,13 +328,7 @@ export async function runVideoGenerate(
       }
       return result;
     } catch (error) {
-      if (findOwnedToolInterruption(error)) throw error;
-      const message = "无法提交或读取视频任务，请检查生成设置和任务记录。";
-      return {
-        summary: message,
-        error: message,
-        isError: true,
-      };
+      return describeMediaJobAccessFailure(error);
     }
   }
 

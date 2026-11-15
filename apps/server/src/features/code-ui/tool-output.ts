@@ -15,6 +15,24 @@ export function resolveToolOutputText(event: ToolCompleted): string {
           : (event.outputSummary ?? "")));
 }
 
+/** 工具显式失败时单独展示原因，原输出仍用于查看详情。 */
+export function resolveToolError(event: ToolCompleted, outputText: string) {
+  if (event.status !== "error") return undefined;
+  const output = event.output;
+  if (output?.isError === true && typeof output.error === "string") {
+    const message = output.error.trim();
+    if (message)
+      return {
+        code:
+          typeof output.errorCode === "string" && output.errorCode.trim()
+            ? output.errorCode
+            : "tool_failed",
+        message,
+      };
+  }
+  return { code: "tool_failed", message: outputText || "工具执行失败" };
+}
+
 /** 按 UTF-8 字节裁切，按码点推进，避免切断代理对。 */
 function clipUtf8(text: string, maxBytes: number, fromEnd: boolean): string {
   if (maxBytes <= 0) return "";

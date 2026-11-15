@@ -1,23 +1,155 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { backgroundJobSchema } from "@kenfutwork/shared";
+import { ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
+import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
+import { projectCanonicalToolEvent } from "../../agent/stream-adapter.js";
+import type { AvailableVideoModel } from "../../generation/types.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createCanvasRepository } from "../canvas/repository.js";
 import { createCodeUiConversation } from "../code-ui/conversation.js";
 import { createCodeUiRepository } from "../code-ui/repository.js";
+import { publicToolOutput } from "../code-ui/tool-lifecycle.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
 import { createJobService } from "../jobs/job-service.js";
 import { createJobRepository } from "../jobs/repository.js";
 import { createProjectService } from "../projects/project-service.js";
 import { createProjectRepository } from "../projects/repository.js";
+import { createInProcessQueue } from "../queue/providers/in-process.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createGenerationTargets } from "./file-targets.js";
+import { createImageGenerateToolDefinition } from "./tools/image-generate.js";
+import { createVideoGenerateToolDefinition } from "./tools/video-generate.js";
+
+const videoModel: AvailableVideoModel = {
+  id: "provider/model",
+  displayName: "测试视频模型",
+  description: "支持文字生成视频",
+  provider: "metaso",
+  capabilities: {
+    textToVideo: true,
+    imageToVideo: false,
+    videoToVideo: false,
+    audio: false,
+  },
+  limits: { maxDuration: 15, maxResolution: "1080p" },
+};
 
 describe.skipIf(process.env.KENFUTWORK_GENERATION_FILES_TEST_PG !== "1")(
   "生成来源真实数据库边界",
   () => {
+    it("图片和视频工具保留任务接纳失败的公开原因且不创建任务", async () => {
+      const db = await createTaskWorkDatabase();
+      const queue = createInProcessQueue();
+      try {
+        const repository = createJobRepository(db.persistence);
+        const targets = createGenerationTargets({
+          persistence: db.persistence,
+          executionScopes: createExecutionScopes({
+            repository: createScopeRepository(db.persistence),
+            localInstance: db.localInstance,
+          }),
+        });
+        const jobs = createJobService({
+          repository,
+          queue,
+          generationTargets: targets,
+          localInstance: db.localInstance,
+        });
+        const projectId = randomUUID();
+        const submit =
+          (jobType: "image_generation" | "video_generation") => async () => {
+            const job = await jobs.createJob(db.actor, {
+              projectId,
+              jobType,
+              payload: { prompt: "生成纸鹤" },
+            });
+            return { jobId: job.id };
+          };
+        const model = videoModel.id;
+        const identity = {
+          runId: randomUUID(),
+          sessionId: db.context.scope.taskId,
+          conversationId: db.context.scope.taskId,
+        };
+        const session = {
+          sessionId: identity.sessionId,
+          workspacePath: db.context.scope.rootDirectory,
+          config: {
+            provider: "zcode",
+            model,
+            thought: "",
+            followupMode: "queue" as const,
+          },
+        };
+        const host = createCodeUiConversation(session);
+        host.startTurn({
+          runId: identity.runId,
+          commandId: randomUUID(),
+          text: "生成纸鹤",
+        });
+        const definitions = [
+          createImageGenerateToolDefinition({
+            submitImageJob: submit("image_generation"),
+          }),
+          createVideoGenerateToolDefinition({
+            availableModels: [videoModel],
+            submitVideoJob: submit("video_generation"),
+          }),
+        ];
+        const message = "生成任务的项目不存在或已关闭，请打开其他项目后重试。";
+        for (const definition of definitions) {
+          const tool = kernelToolToStructuredTool(definition);
+          const toolCallId = randomUUID();
+          const result = await tool.invoke({
+            type: "tool_call",
+            id: toolCallId,
+            name: definition.name,
+            args: { model, title: "纸鹤", prompt: "生成纸鹤" },
+          });
+          if (
+            !ToolMessage.isInstance(result) ||
+            typeof result.content !== "string"
+          )
+            throw new Error("工具未返回原生文本消息");
+          expect(result.status).toBe("error");
+          expect(JSON.parse(result.content)).toMatchObject({
+            errorCode: "job_create_failed",
+            error: message,
+            isError: true,
+          });
+          const entry = { toolCallId, toolName: definition.name };
+          for (const data of [
+            { ...entry, phase: "started" },
+            { ...entry, phase: "completed", output: publicToolOutput(result) },
+          ]) {
+            for await (const event of projectCanonicalToolEvent(data, identity))
+              host.recordEvent(event);
+          }
+        }
+        expect(await repository.listForInstance(db.instanceId, {})).toEqual([]);
+        const restored = createCodeUiConversation({
+          ...session,
+          state: host.exportState(),
+        });
+        const rows = restored
+          .getSnapshot()
+          .rows.window.filter((row) => row.kind === "toolCall");
+        expect(rows).toHaveLength(2);
+        for (const row of rows) {
+          expect(row).toMatchObject({
+            status: "error",
+            error: { code: "job_create_failed", message },
+          });
+        }
+      } finally {
+        await queue.shutdown();
+        await db.close();
+      }
+    });
+
     it("Design生成使用项目固定目录，普通更新拒绝换根，撤权阻止接纳和发布", async () => {
       const db = await createTaskWorkDatabase();
       try {

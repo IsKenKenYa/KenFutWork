@@ -5,11 +5,11 @@ import type {
   ImageQuality,
   OutputFormat,
 } from "../../../generation/types.js";
-import { findOwnedToolInterruption } from "../../../kernel/owned-tool-interruption.js";
 import type { ToolDefinition } from "../../../kernel/types.js";
 import type { CanvasDocumentAccess } from "../../canvas/document-access.js";
 import { generatedMediaDisplay } from "../media-display.js";
 import {
+  describeMediaJobAccessFailure,
   describeMediaJobWaitIssue,
   type MediaJobWaitIssue,
 } from "../media-job-wait.js";
@@ -232,13 +232,7 @@ export async function runImageGenerate(
       }
       return result;
     } catch (error) {
-      if (findOwnedToolInterruption(error)) throw error;
-      const message = "无法提交或读取图片任务，请检查生成设置和任务记录。";
-      return {
-        summary: message,
-        error: message,
-        isError: true,
-      };
+      return describeMediaJobAccessFailure(error);
     }
   }
 

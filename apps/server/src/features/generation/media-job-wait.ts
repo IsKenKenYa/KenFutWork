@@ -2,6 +2,32 @@ import {
   type BackgroundJob,
   getMediaJobErrorMessage,
 } from "@kenfutwork/shared";
+import { findOwnedToolInterruption } from "../../kernel/owned-tool-interruption.js";
+import { describeErrorDetail } from "../../utils/error-sanitizer.js";
+import { JobServiceError } from "../jobs/job-service.js";
+
+/** 任务接纳服务的公开拒绝可直接说明；其他错误保留在诊断日志。 */
+export function describeMediaJobAccessFailure(error: unknown) {
+  if (findOwnedToolInterruption(error)) throw error;
+  const rejected =
+    error instanceof JobServiceError &&
+    error.statusCode >= 400 &&
+    error.statusCode < 500;
+  const message = rejected
+    ? error.message
+    : "无法确认生成任务结果，请先查看任务记录。";
+  if (!rejected)
+    console.error(
+      "[generation] 无法确认生成任务结果",
+      describeErrorDetail(error),
+    );
+  return {
+    summary: message,
+    error: message,
+    ...(rejected ? { errorCode: error.code } : {}),
+    isError: true as const,
+  };
+}
 
 export type MediaJobWaitIssue =
   | { kind: "waiting" }

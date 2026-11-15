@@ -160,7 +160,7 @@ it.each([
     );
 
     const message = throws
-      ? "无法提交或读取图片任务，请检查生成设置和任务记录。"
+      ? "无法确认生成任务结果，请先查看任务记录。"
       : "生成结果保存失败，请检查存储空间和写入权限。";
     expect(result).toMatchObject({
       error: message,
