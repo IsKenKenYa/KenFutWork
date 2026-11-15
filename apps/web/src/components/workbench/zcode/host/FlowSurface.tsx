@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@zui/components/ui/select.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
 import {
   ZCodeStartupLogoBadge,
   ZCodeStartupSpinner,
@@ -51,10 +52,13 @@ import {
 import {
   getFlowSurfaceView,
   registerFlowNavigate,
+  resetFlowSurfaceView,
   setFlowSurfaceView,
   subscribeFlowSurface,
 } from "./flowSurfaceState.js";
 import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
+
+const noSubscription = () => () => {};
 
 /** 引擎安装状态（与 shared 的 flowEngineInstallStatusSchema.state 同一枚举）。 */
 type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
@@ -180,6 +184,26 @@ function useFlowEngineInstall(): {
  * 把手共享于 flowSurfaceState.ts（模块级存储）。
  */
 export function HostFlowSurface({ active = true }: { active?: boolean }) {
+  const navigation = useOptionalPlatform()?.workbenchNavigation;
+  const available = useSyncExternalStore(
+    navigation?.subscribe ?? noSubscription,
+    () => navigation?.getSnapshot().availableModes.includes("flow") ?? true,
+  );
+  useEffect(() => {
+    if (!available) resetFlowSurfaceView();
+  }, [available]);
+  return available ? <AvailableFlowSurface active={active} /> : null;
+}
+
+function AvailableFlowSurface({ active }: { active: boolean }) {
+  const [opened, setOpened] = useState(active);
+  useEffect(() => {
+    if (active) setOpened(true);
+  }, [active]);
+  return opened || active ? <FlowSurfaceContent active={active} /> : null;
+}
+
+function FlowSurfaceContent({ active }: { active: boolean }) {
   const view = useSyncExternalStore(subscribeFlowSurface, getFlowSurfaceView);
   const { selectedProjectId, projects } = useFlowProjectsSnapshot();
   const selectedProject =

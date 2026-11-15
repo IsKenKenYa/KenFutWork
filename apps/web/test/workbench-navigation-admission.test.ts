@@ -88,6 +88,32 @@ it("能力列表更新保留已选模式，不重复准入，也不抹掉正在�
   });
   expect(admit).not.toHaveBeenCalled();
 });
+it.each([
+  ["flow", "design"],
+  ["work", "code"],
+] as const)("停用 %s 后返回 %s，重新启用只恢复入口", (mode, fallback) => {
+  const navigation = createHostWorkbenchNavigation(window, [
+    "code",
+    "design",
+    mode,
+  ]);
+  cleanups.push(navigation.dispose);
+  navigation.open(mode);
+  expect(navigation.getSnapshot().mode).toBe(mode);
+
+  send({ availableModes: ["code", "design"] });
+  expect(navigation.getSnapshot()).toEqual({
+    mode: fallback,
+    availableModes: ["code", "design"],
+  });
+  navigation.setActiveMode(mode);
+  expect(navigation.getSnapshot().mode).toBe(fallback);
+
+  send({ availableModes: ["code", "design", mode] });
+  expect(navigation.getSnapshot().mode).toBe(fallback);
+  navigation.open(mode);
+  expect(navigation.getSnapshot().mode).toBe(mode);
+});
 it("后发父导航撤销在飞旧模式切换；旧评估回执和卸载后回执不能覆盖新目标", async () => {
   let confirm!: (allowed: boolean) => void;
   const navigation = createHostWorkbenchNavigation(

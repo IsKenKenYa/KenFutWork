@@ -32,6 +32,11 @@ export function setFlowSurfaceView(next: FlowSurfaceView): void {
   for (const listener of listeners) listener();
 }
 
+export function resetFlowSurfaceView(): void {
+  pendingPath = null;
+  setFlowSurfaceView("canvas");
+}
+
 export function getFlowNavigationReady(): boolean {
   return navigateToFlow !== null;
 }
