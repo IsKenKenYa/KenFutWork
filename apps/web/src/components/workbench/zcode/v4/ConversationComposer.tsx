@@ -115,6 +115,7 @@ import {
 import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@zui/v4/composer/composerDraftWorkspaceTransfer.js";
 import {
   countComposerPromptContexts,
+  type parseComposerPromptContexts,
   serializeComposerPromptContexts,
 } from "@zui/v4/composer/composerPromptContexts.js";
 import type { ComposerSubmissionConfig } from "@zui/v4/composer/composerSubmissionConfig.js";
@@ -320,6 +321,7 @@ export interface ComposerRestoreRequest {
   inputKind: "sendText" | "sendGoalCommand";
   text: string;
   attachments: readonly AttachmentRef[];
+  promptContexts?: ReturnType<typeof parseComposerPromptContexts>;
   config?: Pick<V4ComposerDraft, "mode" | "planEnabled" | "modelSelection" | "workContext">;
 }
 
@@ -381,6 +383,7 @@ function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly s
 
 interface ConversationComposerProps {
   queueEdit?: {
+    kind: "queue" | "history";
     editorId: string;
     scopeId: string;
     onCancel: () => Promise<boolean>;
@@ -594,6 +597,9 @@ function ConversationComposerImpl({
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
+  const [historyContexts, setHistoryContexts] = useState(composerRestoreRequest?.promptContexts);
+  const hasHistoryContexts = historyContexts !== undefined && countComposerPromptContexts(historyContexts) > 0;
+  const historyEdit = queueEdit?.kind === "history";
   const [pending, setPending] = useState(false);
   const [configPickerState, setConfigPickerState] = useState<{
     scopeKey: string;
@@ -795,7 +801,7 @@ function ConversationComposerImpl({
     limitReason: conversationSelectionLimitReason,
     removeReference: removeConversationSelectionReference,
     clearReferences: clearConversationSelectionReferences,
-  } = useConversationSelectionReferences({ sessionId, workspaceKey });
+  } = useConversationSelectionReferences({ sessionId: queueEdit?.scopeId ?? sessionId, workspaceKey });
   const hasConversationSelectionReferences = conversationSelectionReferences.length > 0;
 
   // ── 草稿 per-session 持久化（切会话/刷新不丢；mention pill 经 editorStateJson 保真）──
@@ -1163,6 +1169,7 @@ function ConversationComposerImpl({
     hasWebElementContexts ||
     hasPptxElementReferences ||
     hasConversationSelectionReferences ||
+    hasHistoryContexts ||
     Boolean(pendingShareContext);
   const hasComposerDraftContent =
     text.length > 0 ||
@@ -1171,6 +1178,7 @@ function ConversationComposerImpl({
     hasWebElementContexts ||
     hasPptxElementReferences ||
     hasConversationSelectionReferences ||
+    hasHistoryContexts ||
     Boolean(pendingShareContext);
   const draftUploadsRunning = attachmentsApi.attachments.some((item) =>
     item.uploadStatus === "queued" || item.uploadStatus === "uploading" || item.uploadStatus === "committing",
@@ -1253,6 +1261,7 @@ function ConversationComposerImpl({
           !hasPendingWebElementContexts &&
           !hasPendingPptxElementReferences &&
           !hasPendingConversationSelections &&
+          !hasHistoryContexts &&
           !submittedShareContext) ||
         disabled || pendingRef.current ||
         !submissionReady ||
@@ -1391,10 +1400,10 @@ function ConversationComposerImpl({
         // share URL 塞进发给模型的正文。模型侧内容由隐藏的 shared_context 消息经
         // inputIntent.sharedContextRefs 注入，与正文无关。
         const promptText = serializeComposerPromptContexts(trimmed, {
-          codeComments: currentCodeCommentContexts,
-          conversationSelections: currentConversationSelections,
-          webElements: currentWebElementContexts,
-          pptxElements: currentPptxElementReferences,
+          codeComments: [...(historyContexts?.codeComments ?? []), ...currentCodeCommentContexts],
+          conversationSelections: [...(historyContexts?.conversationSelections ?? []), ...currentConversationSelections],
+          webElements: [...(historyContexts?.webElements ?? []), ...currentWebElementContexts],
+          pptxElements: [...(historyContexts?.pptxElements ?? []), ...currentPptxElementReferences],
         });
         const contextAttachmentCount =
           countComposerPromptContexts({
@@ -1536,6 +1545,8 @@ function ConversationComposerImpl({
       conversationTelemetry,
       disabled,
       draftConfig,
+      hasHistoryContexts,
+      historyContexts,
       createSubmissionFromComposer,
       submissionReady,
       getCodeCommentContexts,
@@ -1866,12 +1877,24 @@ function ConversationComposerImpl({
       codeCommentContexts.length === 0 &&
       webElementContexts.length === 0 &&
       pptxElementReferences.length === 0 &&
-      conversationSelectionReferences.length === 0
+      conversationSelectionReferences.length === 0 && !hasHistoryContexts
     ) {
       return null;
     }
     return (
       <div className="flex max-w-full flex-col items-start gap-2">
+        {historyContexts && hasHistoryContexts ? (
+          <div className="flex max-w-full flex-wrap items-center gap-2">
+            <CodeCommentAttachmentChip comments={historyContexts.codeComments} onRemove={(item) =>
+              setHistoryContexts({ ...historyContexts, codeComments: historyContexts.codeComments.filter((entry) => entry.id !== item.id) })} />
+            <WebElementContextAttachmentChip contexts={historyContexts.webElements} onRemove={(id) =>
+              setHistoryContexts({ ...historyContexts, webElements: historyContexts.webElements.filter((entry) => entry.id !== id) })} />
+            <PptxElementReferenceChip references={historyContexts.pptxElements} onOpen={openPptxElementReference} onRemove={(id) =>
+              setHistoryContexts({ ...historyContexts, pptxElements: historyContexts.pptxElements.filter((entry) => entry.id !== id) })} />
+            <ConversationSelectionReferenceChip references={historyContexts.conversationSelections} onRemove={(id) =>
+              setHistoryContexts({ ...historyContexts, conversationSelections: historyContexts.conversationSelections.filter((entry) => !("id" in entry) || entry.id !== id) })} />
+          </div>
+        ) : null}
         {composerAttachments.length > 0 ? (
           <Attachments
             variant="inline"
@@ -2171,6 +2194,8 @@ function ConversationComposerImpl({
   }, [
     attachmentPreviewTitle,
     attachmentsApi,
+    hasHistoryContexts,
+    historyContexts,
     clearCodeCommentContexts,
     clearConversationSelectionReferences,
     clearWebElementContexts,
@@ -2218,7 +2243,7 @@ function ConversationComposerImpl({
     () => (
       <div className="flex min-w-0 items-center gap-1">
         <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden empty:hidden">
-          <V4ComposerModelControls
+          {!historyEdit ? <V4ComposerModelControls
             workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
             modelSelectionView={modelSelectionView}
@@ -2238,7 +2263,7 @@ function ConversationComposerImpl({
             onSwitchMode={onSwitchMode}
             onRecoverCustomModelSelection={onRecoverCustomModelSelection}
             onSendCompressionCommand={onSendCompressionCommand}
-          />
+          /> : null}
         </span>
         {/* 语音入口（可见麦克风）：常显，点击开麦 / 再点提交转写；按住输入卡的手势并存 */}
         {voice ? (
@@ -2303,6 +2328,7 @@ function ConversationComposerImpl({
     ),
     [
       canSend,
+      historyEdit,
       activeConfigPicker,
       composerPhase,
       composerUsage,
@@ -2343,7 +2369,7 @@ function ConversationComposerImpl({
   const leadingActionsNode = useMemo(
     () => (
       <>
-        <V4ComposerModeSwitch
+        {!historyEdit ? <V4ComposerModeSwitch
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}
           provider={provider}
@@ -2352,7 +2378,7 @@ function ConversationComposerImpl({
           activeConfigPicker={activeConfigPicker}
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={onSwitchMode}
-        />
+        /> : null}
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry
@@ -2371,6 +2397,7 @@ function ConversationComposerImpl({
     ),
     [
       activeConfigPicker,
+      historyEdit,
       canStop,
       disabled,
       draftConfig,
@@ -2456,7 +2483,7 @@ function ConversationComposerImpl({
         ) : null}
         {queueEdit ? (
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2 pb-2 text-ui-base">
-            <span role="status">{intl.formatMessage({ id: "chat.queue.editing" })}</span>
+            <span role="status">{intl.formatMessage({ id: queueEdit.kind === "history" ? "chat.edit.history" : "chat.queue.editing" })}</span>
             <button type="button" disabled={pending} className="rounded-md px-2 py-1 hover:bg-hover focus-visible:outline" onClick={() => void cancelQueueEdit()}>
               {intl.formatMessage({ id: "chat.queue.cancelEdit" })}
             </button>
@@ -2478,7 +2505,8 @@ function ConversationComposerImpl({
             hasAttachments ||
             hasWebElementContexts ||
             hasPptxElementReferences ||
-            hasConversationSelectionReferences
+            hasConversationSelectionReferences ||
+            hasHistoryContexts
           }
           enterSubmits={enterSubmits}
           onModifiedSubmit={modifiedEnterSubmits ? handleModifiedEditorSubmit : undefined}

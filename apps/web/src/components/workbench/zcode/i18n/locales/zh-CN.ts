@@ -4907,6 +4907,8 @@ const zhCN: Record<string, string> = {
   "chat.queue.editDraftConflict": "请等待当前发送完成",
   "chat.queue.editRestoreFailed": "排队消息编辑失败，请重试",
   "chat.queue.editing": "正在编辑排队消息",
+  "chat.edit.history": "正在编辑历史消息",
+  "chat.edit.historyChanged": "对话已更新，请重新编辑最后一条消息",
   "chat.queue.editingElsewhere": "其他窗口正在编辑",
   "chat.queue.cancelEdit": "取消编辑",
   "chat.queue.releaseEdit": "解除编辑",

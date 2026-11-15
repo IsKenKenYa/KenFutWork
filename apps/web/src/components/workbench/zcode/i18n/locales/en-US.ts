@@ -5185,6 +5185,8 @@ const enUS: Record<string, string> = {
   "chat.queue.editDraftConflict": "Wait for the current send to finish",
   "chat.queue.editRestoreFailed": "Couldn't edit the queued message. Try again.",
   "chat.queue.editing": "Editing queued message",
+  "chat.edit.history": "Editing a previous message",
+  "chat.edit.historyChanged": "Conversation changed. Reopen the last message to edit it.",
   "chat.queue.editingElsewhere": "Editing in another window",
   "chat.queue.cancelEdit": "Cancel edit",
   "chat.queue.releaseEdit": "Release edit",

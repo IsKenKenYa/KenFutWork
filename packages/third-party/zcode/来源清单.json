@@ -5838,7 +5838,7 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
-      "copiedSha256": "b48d5800bea4aad512247e5c485268c6590cc864ba01dc04018de5ed200e9365",
+      "copiedSha256": "b44a8f208b28f4ef4393b83735536b2e578939872aad866d13b8193d44d7c17d",
       "adaptations": [
         "排队消息编辑、取消与解除锁定文案。",
         "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
@@ -5871,7 +5871,7 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
-      "copiedSha256": "ecafd0e8121f1f8a05506509e7b023924dd6beed16171f22da800e6a484e2bfd",
+      "copiedSha256": "468aaeaa8f7bf7c33d6a35d94282e02b97d408eec36c670cc6e7c4ff38824213",
       "adaptations": [
         "排队消息编辑、取消与解除锁定文案。",
         "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
@@ -20789,8 +20789,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "5cad922584019c7e6317db98c5dc00b7f72e94e07907bb4b70000bea8740d6d5",
+      "copiedSha256": "5e0bb9037e96b443580fd91a4629f6a84b7929edf923841b17107b33188467d9",
       "adaptations": [
+        "参考 ZCode 3.18.2：历史消息、原附件和引用使用底部输入框编辑。",
         "参考 ZCode 3.18.2：排队消息使用底部输入框与独立编辑草稿。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
@@ -20914,8 +20915,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationRowView.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationRowView.tsx",
       "sha256": "7a59deebd2233684fcac992f2c5ff2d247e480d504dcd1452b7f068cc131644c",
-      "copiedSha256": "fe196936432da257a93e8c80d78932ec75f96a7c03c43d4d7aa1b7c1feadbc3e",
+      "copiedSha256": "60a13ace6808268448f98812f01f3da17bd611c053d304ac61b63cfaa15fd389",
       "adaptations": [
+        "参考 ZCode 3.18.2：普通消息行只发起编辑，附件预览仍由原组件提供。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -21014,8 +21016,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationTimeline.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationTimeline.tsx",
       "sha256": "e6cd02d962628dfc66679ec8363482a63151117243abac816ab3154f87fcacb9",
-      "copiedSha256": "d76fc1ccc64827cbb7b3a14a2136415bcc3117ac34168d10a50c260a52d4d7a3",
+      "copiedSha256": "1d1fac1bf8338f9771d84c48c9e0312b2839af6c9d433da781d2bdccbec40ed2",
       "adaptations": [
+        "转发底部输入框的历史消息编辑入口。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -21023,8 +21026,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationTurnGroup.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationTurnGroup.tsx",
       "sha256": "8faf4a22fdeb885a51553dcefdb12dcaf36549ade25b38bc7b48286597297be6",
-      "copiedSha256": "021dee0a02f32a0ff7f937319f8a90204d295e594be4efc46b8bdc965d827617",
+      "copiedSha256": "cf5208e706d7add2c981c1dfd4995bf859bf9af0103529f281836b6faad02e40",
       "adaptations": [
+        "转发底部输入框的历史消息编辑入口，文件恢复仍由轮次操作负责。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -21041,8 +21045,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationTurnRow.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationTurnRow.tsx",
       "sha256": "c4ef9723c2bd53d40f14046cfff15856ff9f19423414078efa24db2bee8d5425",
-      "copiedSha256": "bfca5d6b41ba0993e24b8fba000d553adc57d1fc1783952543e6d3ceaf758c7b",
+      "copiedSha256": "7f9ae47f7966484a90563abb880b020b73a4ae66c4695c7baba517bf215f2ee3",
       "adaptations": [
+        "历史消息行只转发打开编辑器操作。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -21122,8 +21127,9 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "9faf47b7d41a69f22cbdd73bb269700b957924aaa0a2f08dfab507585f135ef3",
+      "copiedSha256": "391e161abb10889a313cf8ce6fff13ed6065500219177c327cf24045d2552487",
       "adaptations": [
+        "参考 ZCode 3.18.2：以当前 Task 及历史目标打开独立编辑草稿，保存只更新对话。",
         "参考 ZCode 3.18.2：以真实 Task 调用冻结和原地编辑命令，保留各会话草稿。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",

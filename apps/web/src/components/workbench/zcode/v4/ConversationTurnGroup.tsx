@@ -13,8 +13,6 @@ import {
 } from "@zcode/shared";
 import type {
   ApiRetryState,
-  AttachmentRef,
-  CommandAck,
   ConversationRowTarget,
   WorkflowNotificationMeta,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -71,7 +69,7 @@ import { ConversationAssistantTextActions } from "@zui/v4/ConversationRowView.js
 import { readAssistantFeedback } from "@zui/v4/ConversationRowView.js";
 import type {
   AssistantFeedbackHandler,
-  EditWorkspaceRewindAvailability,
+  UserInputEditHandler,
 } from "@zui/v4/ConversationRowView.js";
 import {
   isConversationReasoningRowVisible,
@@ -96,12 +94,7 @@ interface ConversationTurnGroupProps {
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
-  onEdit?: (
-    target: ConversationRowTarget,
-    newText: string,
-    attachments?: readonly AttachmentRef[],
-    workspaceMode?: "preserve" | "rewind",
-  ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
+  onEdit?: UserInputEditHandler;
   /** 分享选择阶段在正文左侧显示本轮勾选入口。 */
   shareSelection?: {
     eligibleRowIds: ReadonlySet<number>;
@@ -621,7 +614,6 @@ function ConversationWorkSegmentFlow({
   onFork,
   onRetry,
   onEdit,
-  editWorkspaceRewindAvailability,
   assistantCopyText,
   assistantPreviewCards,
   assistantPreviewCardsAutoOpenKey,
@@ -637,7 +629,6 @@ function ConversationWorkSegmentFlow({
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onEdit?: ConversationTurnGroupProps["onEdit"];
-  editWorkspaceRewindAvailability: EditWorkspaceRewindAvailability;
   assistantCopyText?: string;
   assistantPreviewCards: AssistantPreviewCard[];
   assistantPreviewCardsAutoOpenKey?: string;
@@ -687,7 +678,6 @@ function ConversationWorkSegmentFlow({
               row={item.row}
               context={context}
               onEdit={item.row.actions?.canEdit === true ? onEdit : undefined}
-              editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
             />
           );
           content =
@@ -779,7 +769,6 @@ function ConversationTurnFlow({
   onFork,
   onRetry,
   onEdit,
-  editWorkspaceRewindAvailability,
   assistantCopyText,
   assistantCodeCommentCards,
   assistantCodeCommentProjectionEnabled,
@@ -793,7 +782,6 @@ function ConversationTurnFlow({
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onEdit?: ConversationTurnGroupProps["onEdit"];
-  editWorkspaceRewindAvailability: EditWorkspaceRewindAvailability;
   assistantCopyText?: string;
   assistantCodeCommentCards: AssistantCodeCommentCard[];
   assistantCodeCommentProjectionEnabled: boolean;
@@ -885,7 +873,6 @@ function ConversationTurnFlow({
           onFork={onFork}
           onRetry={onRetry}
           onEdit={onEdit}
-          editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
           assistantCopyText={assistantCopyText}
           assistantPreviewCards={assistantPreviewCards}
           assistantPreviewCardsAutoOpenKey={assistantPreviewCardsAutoOpenKey}
@@ -1229,16 +1216,6 @@ function ConversationTurnGroupImpl({
     canRenderAssistantActions ||
     hasHookActions ||
     workflowTurnDigests.length > 0;
-  const editWorkspaceRewindAvailability = useMemo<EditWorkspaceRewindAvailability>(() => {
-    const fileChanges = unit.header?.fileChanges;
-    if (!fileChanges || fileChanges.files <= 0) return { enabled: false, reason: "noFiles" };
-    if (fileChanges.state === "reverted") return { enabled: false, reason: "reverted" };
-    if (unit.isRunning) return { enabled: false, reason: "running" };
-    if (unit.header?.actions?.canRewindFiles !== true) {
-      return { enabled: false, reason: "unavailable" };
-    }
-    return { enabled: true, reason: "available" };
-  }, [unit.header?.actions?.canRewindFiles, unit.header?.fileChanges, unit.isRunning]);
 
   // workflow 通知卡开头的轮去掉轮顶 padding：卡片只贴上一轮 pb-5 的常规流内间距。
   const startsWithWorkflowNotificationCard =
@@ -1336,7 +1313,6 @@ function ConversationTurnGroupImpl({
                       row={row}
                       context={context}
                       onEdit={row.actions?.canEdit === true ? onEdit : undefined}
-                      editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
                     />
                   </div>
                 ) : (
@@ -1345,7 +1321,6 @@ function ConversationTurnGroupImpl({
                     row={row}
                     context={context}
                     onEdit={row.actions?.canEdit === true ? onEdit : undefined}
-                    editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
                   />
                 ),
               )}
@@ -1374,7 +1349,6 @@ function ConversationTurnGroupImpl({
               onFork={canForkLatestAssistant ? onFork : undefined}
               onRetry={onRetry}
               onEdit={onEdit}
-              editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
               shareSelectionToggle={shareSelectionToggle}
               shareSelectionRowId={shareSelectionRows[0]?.rowId}
               assistantCopyText={assistantCopyText}
@@ -1456,7 +1430,6 @@ function ConversationTurnGroupImpl({
           apiRetry={apiRetry}
           context={assistantRowContext}
           onEdit={onEdit}
-          editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
           shareSelectionToggle={shareSelectionToggle}
           shareSelectionRowId={shareSelectionRows[0]?.rowId}
           assistantCopyText={assistantCopyText}

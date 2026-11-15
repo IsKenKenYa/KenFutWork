@@ -183,6 +183,7 @@ import {
 import { recordV4CommandAck } from "@zui/v4/commandAckObservability.js";
 import { createCommandEnvelope, uuidv7 } from "@zui/v4/commandFactory.js";
 import { clearV4ComposerDraft, queueComposerEditScope } from "@zui/v4/composer/composerDraftStore.js";
+import { parseComposerPromptContexts } from "@zui/v4/composer/composerPromptContexts.js";
 import {
   type ComposerSubmissionConfig,
   createComposerSubmissionConfig,
@@ -477,6 +478,14 @@ interface QueueEditOperation {
   sessionId: string;
   workspaceKey: string;
   phase: "locking" | "loading" | "ready";
+}
+
+interface HistoryEditOperation {
+  editorId: string;
+  sessionId: string;
+  workspaceKey: string;
+  logEpoch: string;
+  target: ConversationRowTarget;
 }
 
 function resolveQueuedComposerRestore(
@@ -1162,6 +1171,7 @@ export function SessionPane({
   queueEditOperationRef.current = queueEditOperation;
   const [composerRestoreRequest, setComposerRestoreRequest] =
     useState<ComposerRestoreRequest | null>(null);
+  const [historyEdit, setHistoryEdit] = useState<HistoryEditOperation | null>(null);
   const nextComposerRestoreRequestIdRef = useRef(1);
   const timelineScrollToBottomRef = useRef<(() => void) | null>(null);
   const timelineScrollToQueryRef = useRef<
@@ -1185,10 +1195,12 @@ export function SessionPane({
   );
 
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
+  const currentHistoryEdit = historyEdit?.sessionId === sessionId && historyEdit.workspaceKey === workspaceKey ? historyEdit : null;
   const currentQueueEdit = queueEditOperation?.sessionId === sessionId &&
     queueEditOperation.workspaceKey === workspaceKey ? queueEditOperation : null;
-  const editScopeId = currentQueueEdit && currentQueueEdit.phase !== "locking"
-    ? queueComposerEditScope(currentQueueEdit.editorId) : undefined;
+  const editScopeId = currentHistoryEdit ? queueComposerEditScope(currentHistoryEdit.editorId)
+    : currentQueueEdit && currentQueueEdit.phase !== "locking"
+      ? queueComposerEditScope(currentQueueEdit.editorId) : undefined;
   const activeTaskId = useZCodeSessionStore(
     (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId,
   );
@@ -3226,6 +3238,21 @@ export function SessionPane({
         heldQueueDisposition: options?.heldQueueDisposition,
       });
       try {
+        if (currentHistoryEdit) {
+          const current = snapshotRef.current;
+          if (current?.sessionId !== currentHistoryEdit.sessionId || current.logEpoch !== currentHistoryEdit.logEpoch ||
+            !current.rows.window.some((row) => row.kind === "userInput" && row.rowId === currentHistoryEdit.target.rowId &&
+              row.entityId === currentHistoryEdit.target.entityId && row.actions?.canEdit === true)) {
+            toast(intl.formatMessage({ id: "chat.edit.historyChanged" }));
+            return "blocked";
+          }
+          const ack = await dispatchCommand("editUserQuery", {
+            target: currentHistoryEdit.target, newText: text, attachments: options?.attachments ?? [], workspaceMode: "preserve",
+          }, currentHistoryEdit.sessionId, current.revision, current.logEpoch);
+          if (!acceptedQueueEdit(ack)) throw new Error(ack.message || intl.formatMessage({ id: "chat.error.sendFailed" }));
+          setSendSubmissionError(null);
+          return "sent";
+        }
         if (editScopeId && currentQueueEdit) {
           if (currentQueueEdit.phase !== "ready" || !options?.submission) return "blocked";
           const { modelSelection, mode, planEnabled } = options.submission;
@@ -3270,7 +3297,7 @@ export function SessionPane({
         throw error;
       }
     },
-    [currentQueueEdit, dispatchCommand, dispatchSendText, editScopeId, focusTimelineToLatest, intl, sessionId],
+    [currentHistoryEdit, currentQueueEdit, dispatchCommand, dispatchSendText, editScopeId, focusTimelineToLatest, intl, sessionId],
   );
 
   const handleComposerDraftStateChange = useCallback(
@@ -3286,6 +3313,13 @@ export function SessionPane({
     setQueueEditOperation(null);
     setComposerRestoreRequest(null);
   }, [workspacePath, workspaceIdentity]);
+
+  const finishHistoryEdit = useCallback((editorId: string) => {
+    clearV4ComposerDraft(workspacePath, workspaceIdentity, queueComposerEditScope(editorId));
+    setHistoryEdit((current) => current?.editorId === editorId ? null : current);
+    setComposerRestoreRequest((current) => current?.sessionId === sessionId ? null : current);
+  }, [sessionId, workspacePath, workspaceIdentity]);
+  const cancelHistoryEdit = useCallback(async () => true, []);
   const handleComposerRestoreApplied = useCallback(
     (requestId: number) => {
       setComposerRestoreRequest((current) =>
@@ -3341,41 +3375,19 @@ export function SessionPane({
   );
 
   const handleEdit = useCallback(
-    async (
-      target: ConversationRowTarget,
-      newText: string,
-      attachments?: readonly AttachmentRef[],
-      workspaceMode: "preserve" | "rewind" = "preserve",
-    ) => {
+    (target: ConversationRowTarget, text: string, attachments: readonly AttachmentRef[] = []) => {
       const current = snapshotRef.current;
-      if (!sessionId || current === null) return false;
-      if (!newText.trim() && (!attachments || attachments.length === 0)) {
-        logger.warn("[v4-pane] edit 跳过：行内编辑内容为空且无附件");
-        return false;
-      }
-      const ack = await dispatchCommand(
-        "editUserQuery",
-        {
-          target,
-          newText,
-          workspaceMode,
-          // editUserQuery 的 attachments 缺省表示保留 canonical 原附件；
-          // 只有显式透传 []，CLI 才能区分“用户删除全部”与“调用方未修改附件”。
-          ...(attachments ? { attachments: [...attachments] } : {}),
-        },
-        sessionId,
-        current.revision,
-        current.logEpoch,
-      );
-      if (ack.status !== "accepted" && ack.status !== "duplicate") {
-        logger.warn(`[v4-pane] edit 被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
-        );
-        return false;
-      }
-      // fork ACK 只做旧协议解码兼容；新 edit 永不导航 child。blocked 由行内冲突弹窗处理。
-      return ack;
+      if (!sessionId || current?.sessionId !== sessionId || historyEdit || queueEditOperationRef.current || composerDraftStateRef.current.busy) return;
+      if (!current.rows.window.some((row) => row.kind === "userInput" && row.rowId === target.rowId &&
+        row.entityId === target.entityId && row.actions?.canEdit === true)) return;
+      const promptContexts = parseComposerPromptContexts(text, { workspacePath, workspaceIdentity });
+      setHistoryEdit({ editorId: uuidv7(), sessionId, workspaceKey, target, logEpoch: current.logEpoch });
+      setComposerRestoreRequest({
+        requestId: nextComposerRestoreRequestIdRef.current++, sessionId, workspaceKey,
+        inputKind: "sendText", text: promptContexts.visibleContent, attachments, promptContexts,
+      });
     },
-    [dispatchCommand, sessionId],
+    [historyEdit, sessionId, workspaceIdentity, workspaceKey, workspacePath],
   );
 
   const dispatchRetryTurn = useCallback(
@@ -3462,7 +3474,7 @@ export function SessionPane({
   const handleEditQueueItem = useCallback(
     async (queueItemId: string): Promise<void> => {
       const current = snapshotRef.current;
-      if (!sessionId || current === null || queueEditOperationRef.current) return;
+      if (!sessionId || current === null || historyEdit || queueEditOperationRef.current) return;
       if (composerDraftStateRef.current.busy) {
         toast(intl.formatMessage({ id: "chat.queue.editDraftConflict" }));
         return;
@@ -3515,7 +3527,7 @@ export function SessionPane({
         clearQueueEditOperation(operation.editorId);
       }
     },
-    [clearQueueEditOperation, dispatchCommand, intl, releaseQueueEdit, sessionId, workspaceKey],
+    [clearQueueEditOperation, dispatchCommand, historyEdit, intl, releaseQueueEdit, sessionId, workspaceKey],
   );
 
   const handleSendQueuedNow = useCallback(
@@ -4694,7 +4706,11 @@ export function SessionPane({
   const composerNode = readOnly ? null : (
     <ConversationComposer
       key={editScopeId ?? "conversation-composer"}
-      queueEdit={editScopeId && currentQueueEdit ? {
+      queueEdit={editScopeId && currentHistoryEdit ? {
+        kind: "history", editorId: currentHistoryEdit.editorId, scopeId: editScopeId,
+        onCancel: cancelHistoryEdit, onFinish: finishHistoryEdit,
+      } : editScopeId && currentQueueEdit ? {
+        kind: "queue",
         editorId: currentQueueEdit.editorId,
         scopeId: editScopeId,
         onCancel: handleCancelQueueEdit,
@@ -4710,9 +4726,9 @@ export function SessionPane({
       draftConfig={draftConfig}
       composerDraft={composerDraft}
       replaceComposerDraft={replaceComposerDraft}
-      submissionReady={composerSubmissionReady}
+      submissionReady={currentHistoryEdit !== null || composerSubmissionReady}
       updateComposerContent={updateComposerContent}
-      createSubmissionFromComposer={createSubmissionFromComposer}
+      createSubmissionFromComposer={currentHistoryEdit ? undefined : createSubmissionFromComposer}
       contextHeader={isFloatingPresentation || editScopeId ? undefined : <>
         {isDraft ? draftComposerHeader : null}
         {!readOnly ? <ComposerContextHeader workspacePath={workspacePath} {...(workspaceIdentity ? { workspaceIdentity } : {})} {...(composerDraft.workContext ? { contextOverride: composerDraft.workContext } : {})} onChangeContext={(context) => replaceComposerDraft({ ...composerDraft, workContext: context })} /> : null}
@@ -4733,6 +4749,7 @@ export function SessionPane({
         connecting ||
         draftRuntimeRebuilding ||
         (currentQueueEdit !== null && currentQueueEdit.phase !== "ready") ||
+        (currentHistoryEdit !== null && composerRestoreRequest !== null) ||
         quotaBanner.state.blocksSubmit
       }
       workspacePath={workspacePath}

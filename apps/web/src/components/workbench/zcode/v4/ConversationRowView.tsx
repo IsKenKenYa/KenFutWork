@@ -6,7 +6,6 @@ import {
   ArrowRightLeftIcon,
   CheckIcon,
   CopyIcon,
-  FileClockIcon,
   FileIcon,
   GitBranchIcon,
   GoalIcon,
@@ -14,15 +13,9 @@ import {
   ThumbsDownIcon,
   ThumbsUpIcon,
   TrendingUpDownIcon,
-  XIcon,
 } from "lucide-react";
 import {
   TID_V4_EDIT,
-  TID_V4_EDIT_ATTACHMENT_REMOVE,
-  TID_V4_EDIT_CANCEL,
-  TID_V4_EDIT_INPUT,
-  TID_V4_EDIT_SUBMIT,
-  TID_V4_EDIT_REWIND_WORKSPACE,
   TID_V4_FEEDBACK_DISLIKE,
   TID_V4_FEEDBACK_LIKE,
   TID_V4_FORK,
@@ -34,7 +27,6 @@ import type {
   AttachmentRef,
   ArtifactRow,
   AssistantTextRow,
-  CommandAck,
   ConversationRow,
   ConversationRowTarget,
   HookInvocationRow,
@@ -44,7 +36,6 @@ import type {
   ToolCallRow,
   TurnHeaderRow,
   UserInputRow,
-  V4ConversationFileRewindPreviewResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import { AssistantPreviewCards } from "@zui/AssistantPreviewCards.js";
 import { AssistantCodeCommentCards } from "@zui/AssistantCodeCommentCards.js";
@@ -52,7 +43,6 @@ import { useAssistantCodeCommentFeatureEnabled } from "@zui/AssistantCodeComment
 import {
   Attachment,
   AttachmentPreview,
-  AttachmentRemove,
   Attachments,
 } from "@zui/components/ai-elements/attachments.js";
 import { ImagePreviewDialog } from "@zui/components/ai-elements/image-preview-dialog.js";
@@ -73,7 +63,6 @@ import {
 } from "@zui/components/ai-elements/reasoning.js";
 import { cn } from "@zui/components/lib/utils.js";
 import { Button } from "@zui/components/ui/button.js";
-import { ControlHintTooltip } from "@zui/ControlHintTooltip.js";
 import { WorkflowToolSummary } from "@zui/v4/WorkflowToolSummary.js";
 import {
   readWorkflowName,
@@ -91,17 +80,13 @@ import { runUserAction, runUserActionAsync } from "@zui/lib/userActionTelemetry.
 import { logger } from "@zui/logger.js";
 import type { AssistantPreviewCard } from "@zui/lib/assistantPreviewCards.js";
 import {
-  FileDisplayIcon,
   FileDisplayInline,
-  resolveFileDisplayDescriptor,
 } from "@zui/lib/fileDisplay.js";
 import {
   projectAssistantCodeComments,
   type AssistantCodeCommentCard,
 } from "@zui/lib/assistantCodeComment.js";
 import { resolveProviderLabel } from "@zui/lib/registryProviderView.js";
-import type { LexicalChatInputHandle } from "@zui/LexicalChatInput.js";
-import { ChatPromptEditor } from "@zui/prompt-editor/ChatPromptEditor.js";
 import { resolveToolCallIdentity } from "@zui/lib/toolIdentity.js";
 import {
   isConversationReasoningRowVisible,
@@ -118,7 +103,6 @@ import { WebElementContextAttachmentChip } from "@zui/v4/composer/WebElementCont
 import { ConversationSelectionReferenceChip } from "@zui/v4/composer/ConversationSelectionReferenceChip.js";
 import { PptxElementReferenceChip } from "@zui/v4/composer/PptxElementReferenceChip.js";
 import { useOpenPptxElementReference } from "@zui/v4/composer/useOpenPptxElementReference.js";
-import { ConversationFileRewindDialog } from "@zui/v4/ConversationFileRewindDialog.js";
 import { ConversationUserInputBody } from "@zui/v4/ConversationUserInputBody.js";
 import { ConversationUserInputContent } from "@zui/v4/ConversationUserInputContent.js";
 import {
@@ -206,23 +190,13 @@ const CopyRowAction = memo(function CopyRowAction({
   );
 });
 
-type UserInputEditHandler = (
+export type UserInputEditHandler = (
   target: ConversationRowTarget,
   newText: string,
   attachments?: readonly AttachmentRef[],
-  workspaceMode?: "preserve" | "rewind",
-) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
+) => void;
 
 type AssistantMessageFeedback = "like" | "dislike";
-
-function getAttachmentTypeLabel(filename: string, mimeType: string): string {
-  const leaf = filename.split(/[\\/]/u).at(-1) ?? filename;
-  const dotIndex = leaf.lastIndexOf(".");
-  if (dotIndex > 0 && dotIndex < leaf.length - 1) {
-    return leaf.slice(dotIndex + 1).toUpperCase();
-  }
-  return (mimeType.split("/").at(-1) ?? mimeType).toUpperCase();
-}
 
 export type AssistantFeedbackHandler = (
   target: ConversationRowTarget,
@@ -235,11 +209,6 @@ export function readAssistantFeedback(row: AssistantTextRow): AssistantMessageFe
   return feedback === "like" || feedback === "dislike" ? feedback : null;
 }
 
-export interface EditWorkspaceRewindAvailability {
-  enabled: boolean;
-  reason: "available" | "noFiles" | "reverted" | "running" | "unavailable";
-}
-
 interface ConversationRowViewProps {
   row: ConversationRow;
   /** 渲染上下文（theme/codePreviewSettings/workspacePath）；宿主保证引用稳定。 */
@@ -250,9 +219,8 @@ interface ConversationRowViewProps {
   onFeedbackChange?: AssistantFeedbackHandler;
   /** 协议兼容：上层仍可提供 retryTurn capability，但产品 UI 不渲染普通重试入口。 */
   onRetry?: (target: ConversationRowTarget) => void;
-  /** user 行的 edit 入口（editUserQuery command，用行内编辑文本替换该轮）。 */
+  /** 将用户消息载入底部输入框。 */
   onEdit?: UserInputEditHandler;
-  editWorkspaceRewindAvailability?: EditWorkspaceRewindAvailability;
   /** 嵌套在工具 Group 内时去掉 Reasoning 内容的重复左导线与缩进。 */
   reasoningContentVariant?: "default" | "nested";
   /** renderer-only 提交状态；不写入协议 row，也不冒充已 drain 的历史事实。 */
@@ -290,7 +258,6 @@ const UserInputAttachmentList = memo(function UserInputAttachmentList({
   entityId,
   attachmentKind = "all",
   directItems = false,
-  onRemove,
   rowId,
   sessionId,
   readAttachment,
@@ -302,7 +269,6 @@ const UserInputAttachmentList = memo(function UserInputAttachmentList({
   entityId?: string;
   attachmentKind?: "all" | "media" | "file";
   directItems?: boolean;
-  onRemove?: (index: number) => void;
   rowId: number;
   sessionId?: string;
   readAttachment?: NonNullable<ConversationRowRenderContext["readAttachment"]>;
@@ -691,10 +657,7 @@ const UserInputAttachmentList = memo(function UserInputAttachmentList({
     const isImage = attachment.mime.startsWith("image/");
     const isVideo = attachment.mime.startsWith("video/");
     const isPdf = attachment.mime.split(";", 1)[0]?.trim().toLowerCase() === "application/pdf";
-    const isMedia = isImage || isVideo;
-    const isEditingAttachment = attachmentKind === "all";
-    const isThumbnail = attachmentKind === "media" || (isEditingAttachment && isMedia);
-    const fileDisplayDescriptor = resolveFileDisplayDescriptor(attachment.fileName);
+    const isThumbnail = attachmentKind === "media";
     const isUnavailable = failedRefs.has(ref);
     const thumbnailUrl = thumbnailUrls.get(ref) ?? "";
     const previewItemIndex = previewEntries.findIndex((entry) => entry.index === index);
@@ -707,30 +670,13 @@ const UserInputAttachmentList = memo(function UserInputAttachmentList({
       <Attachment
         key={`${attachment.ref}-${index}`}
         variant={isThumbnail ? "grid" : "inline"}
-        data-v4-user-edit-attachment-kind={
-          isEditingAttachment
-            ? isImage
-              ? "image"
-              : isVideo
-                ? "video"
-                : isPdf
-                  ? "pdf"
-                  : "file"
-            : undefined
-        }
         data-v4-user-input-attachment-pill={isThumbnail ? undefined : "true"}
         data-v4-user-input-media-attachment={isThumbnail ? "true" : undefined}
         className={cn(
-          isThumbnail &&
-            (isEditingAttachment
-              ? "relative size-12 overflow-hidden rounded-lg bg-surface p-0 after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:border after:border-border after:content-[''] hover:bg-surface-hover"
-              : "relative size-20 overflow-hidden rounded-xl bg-surface p-0 after:pointer-events-none after:absolute after:inset-0 after:rounded-xl after:border after:border-border after:content-[''] hover:bg-surface-hover"),
-          !isThumbnail &&
-            (isEditingAttachment
-              ? "h-12 w-fit max-w-full min-w-0 gap-2 rounded-lg border border-border bg-surface p-1.5 pr-6 [--attachment-bg:var(--color-surface)] hover:bg-surface-hover"
-              : "rounded-full border-0 bg-surface px-3 py-1.5 hover:bg-surface-hover"),
+          isThumbnail
+            ? "relative size-20 overflow-hidden rounded-xl bg-surface p-0 after:pointer-events-none after:absolute after:inset-0 after:rounded-xl after:border after:border-border after:content-[''] hover:bg-surface-hover"
+            : "rounded-full border-0 bg-surface px-3 py-1.5 hover:bg-surface-hover",
         )}
-        onRemove={onRemove ? () => onRemove(index) : undefined}
         onOpen={
           canOpen
             ? () =>
@@ -761,27 +707,6 @@ const UserInputAttachmentList = memo(function UserInputAttachmentList({
           <div className="relative size-full">
             <AttachmentPreview className="size-full rounded-none" />
           </div>
-        ) : isEditingAttachment ? (
-          <>
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-background">
-              <FileDisplayIcon
-                src={fileDisplayDescriptor.fileIconSrc}
-                size={16}
-                className="size-4 shrink-0"
-              />
-            </div>
-            <div className="min-w-0 max-w-40 flex-1">
-              <span
-                className="block truncate text-ui-base font-medium text-foreground"
-                title={attachment.fileName}
-              >
-                {attachment.fileName}
-              </span>
-              <span className="block truncate text-ui-sm font-normal text-foreground-subtle">
-                {getAttachmentTypeLabel(attachment.fileName, attachment.mime)}
-              </span>
-            </div>
-          </>
         ) : (
           <FileDisplayInline
             path={attachment.fileName}
@@ -792,19 +717,6 @@ const UserInputAttachmentList = memo(function UserInputAttachmentList({
             }}
           />
         )}
-        {onRemove && isEditingAttachment ? (
-          <AttachmentRemove
-            placement="corner"
-            size="icon"
-            variant="default"
-            aria-label={intl.formatMessage({ id: "chat.attachments.remove" })}
-            label={intl.formatMessage({ id: "chat.attachments.remove" })}
-            data-testid={testId(TID_V4_EDIT_ATTACHMENT_REMOVE, `${rowId}-${index}`)}
-            className="absolute top-0.5 right-0.5 z-10 size-3.5 rounded-full p-0 text-primary-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
-          >
-            <XIcon className="size-2.5" />
-          </AttachmentRemove>
-        ) : null}
       </Attachment>
     );
   });
@@ -852,13 +764,11 @@ const UserInputRowView = memo(function UserInputRowView({
   row,
   context,
   onEdit,
-  editWorkspaceRewindAvailability,
   status,
 }: {
   row: UserInputRow;
   context: ConversationRowRenderContext;
   onEdit?: UserInputEditHandler;
-  editWorkspaceRewindAvailability?: EditWorkspaceRewindAvailability;
   status?: string;
 }) {
   const { intl } = useZCodeIntl();
@@ -880,38 +790,6 @@ const UserInputRowView = memo(function UserInputRowView({
     () => parseConversationShareContext(parsedPrompt.visibleContent),
     [parsedPrompt.visibleContent],
   );
-  const [editing, setEditing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [draft, setDraft] = useState(row.text);
-  const [editAttachments, setEditAttachments] = useState<AttachmentRef[]>(() => [
-    ...(row.attachments ?? []),
-  ]);
-  // 编辑态删除附件后，持久 FilePart 列表仍保留全部附件；序号数组把可见列表
-  // 映射回原 index，避免 video 预览等按 attachmentIndex 的读取指错分块。
-  const [editAttachmentIndices, setEditAttachmentIndices] = useState<number[]>(() =>
-    (row.attachments ?? []).map((_, index) => index),
-  );
-  const [editPromptContexts, setEditPromptContexts] = useState(() => parsedPrompt);
-  const [conflictPreview, setConflictPreview] =
-    useState<V4ConversationFileRewindPreviewResult | null>(null);
-  const [conflictOpen, setConflictOpen] = useState(false);
-  const inputApiRef = useRef<LexicalChatInputHandle | null>(null);
-  const editContextCount = countComposerPromptContexts(editPromptContexts);
-  const canSubmit = draft.trim().length > 0 || editAttachments.length > 0 || editContextCount > 0;
-  const submitLabel = intl.formatMessage({ id: "chat.send" });
-  const cancelLabel = intl.formatMessage({ id: "common.cancel" });
-  const rewindWorkspaceLabel = intl.formatMessage({
-    id: "chat.edit.resetConversationAndFiles",
-  });
-  const rewindWorkspaceTooltipTitle = intl.formatMessage({
-    id: "chat.edit.resetConversationAndFiles.tooltip",
-  });
-  const rewindWorkspaceTooltipDescription =
-    editWorkspaceRewindAvailability?.reason === "available"
-      ? undefined
-      : intl.formatMessage({
-          id: `chat.edit.resetConversationAndFiles.${editWorkspaceRewindAvailability?.reason ?? "noFiles"}`,
-        });
   const visibleText = parsedShareContext.visibleContent;
   const codeCommentContexts = parsedPrompt.codeComments;
   const webElementContexts = parsedPrompt.webElements;
@@ -944,252 +822,11 @@ const UserInputRowView = memo(function UserInputRowView({
     onOpenCodeViewer: context.onOpenCodeViewer,
   });
 
-  useEffect(() => {
-    if (!editing) {
-      setDraft(parsedShareContext.visibleContent);
-      setEditAttachments([...(row.attachments ?? [])]);
-      setEditAttachmentIndices((row.attachments ?? []).map((_, index) => index));
-      setEditPromptContexts(parsedPrompt);
-      return;
-    }
-    const focusEditor = () => inputApiRef.current?.focus();
-    if (typeof requestAnimationFrame === "function") {
-      requestAnimationFrame(focusEditor);
-      return;
-    }
-    focusEditor();
-  }, [editing, parsedPrompt, row.attachments]);
-
-  useEffect(() => {
-    if (!onEdit) {
-      setEditing(false);
-      setSubmitting(false);
-    }
-  }, [onEdit]);
-
   const handleOpenEdit = useCallback(() => {
-    // v4 迁移时把 user query 编辑误接成“直接读取主 composer 提交”，
-    // 主 composer 为空时点击只会 warn。这里恢复旧行内编辑态。
-    setDraft(parsedShareContext.visibleContent);
-    setEditAttachments([...(row.attachments ?? [])]);
-    setEditAttachmentIndices((row.attachments ?? []).map((_, index) => index));
-    setEditPromptContexts(parsedPrompt);
-    setEditing(true);
-  }, [parsedPrompt, parsedShareContext, row.attachments]);
-
-  const handleCancelEdit = useCallback(() => {
-    setDraft(parsedShareContext.visibleContent);
-    setEditAttachments([...(row.attachments ?? [])]);
-    setEditAttachmentIndices((row.attachments ?? []).map((_, index) => index));
-    setEditPromptContexts(parsedPrompt);
-    setEditing(false);
-  }, [parsedPrompt, parsedShareContext, row.attachments]);
-
-  const handleRemoveEditAttachment = useCallback((index: number) => {
-    setEditAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index));
-    setEditAttachmentIndices((current) => current.filter((_, itemIndex) => itemIndex !== index));
-  }, []);
-
-  const handleSubmitEdit = useCallback(
-    async (nextText: string, workspaceMode: "preserve" | "rewind" = "preserve") => {
-      if (!onEdit) return;
-      if (!nextText.trim() && editAttachments.length === 0 && editContextCount === 0) return;
-      setSubmitting(true);
-      try {
-        const result = await onEdit(
-          { rowId: row.rowId, entityId: row.entityId! },
-          // 不再回写 share URL 尾块：它没有任何消费者，编辑历史消息时顺手清掉。
-          serializeComposerPromptContexts(nextText, editPromptContexts),
-          // 省略空数组会让 CLI 按 attachments 缺省语义恢复 canonical 原附件，
-          // 因此 edit 必须始终提交当前完整列表，显式 [] 才能表达“删除全部”。
-          editAttachments,
-          workspaceMode,
-        );
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          result.result?.type === "editUserQuery" &&
-          result.result.disposition === "blocked" &&
-          result.result.preview
-        ) {
-          setConflictPreview(result.result.preview);
-          setConflictOpen(true);
-          return;
-        }
-        if (result !== false) {
-          setEditing(false);
-          setConflictOpen(false);
-        }
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [editAttachments, editContextCount, editPromptContexts, onEdit, row.entityId, row.rowId],
-  );
-  const rewindWorkspaceDisabled = submitting || editWorkspaceRewindAvailability?.enabled !== true;
-  const rewindWorkspaceButton = (
-    <Button
-      type="button"
-      variant="outline"
-      size="icon-md"
-      disabled={rewindWorkspaceDisabled}
-      data-testid={testId(TID_V4_EDIT_REWIND_WORKSPACE, String(row.rowId))}
-      aria-label={rewindWorkspaceLabel}
-      onClick={() => {
-        void handleSubmitEdit(draft, "rewind");
-      }}
-    >
-      <FileClockIcon className="size-4" />
-    </Button>
-  );
-
-  if (editing) {
-    return (
-      <RowShell rowId={row.rowId} className="flex flex-col items-end">
-        <ChatPromptEditor
-          workspacePath={context.workspacePath}
-          taskId={context.sessionId ?? null}
-          initialValue={parsedPrompt.visibleContent}
-          submitting={submitting}
-          submitDisabled={!canSubmit || submitting}
-          allowSubmitWhenEmpty={editAttachments.length > 0 || editContextCount > 0}
-          submitLabel={submitLabel}
-          cancelLabel={cancelLabel}
-          showMentionButton
-          showSlashButton
-          enableWorkspaceFileDrop
-          topContent={
-            editAttachments.length > 0 || editContextCount > 0 ? (
-              <div className="flex max-w-full flex-col items-start gap-2">
-                {editAttachments.length > 0 ? (
-                  <UserInputAttachmentList
-                    attachments={editAttachments}
-                    attachmentIndices={editAttachmentIndices}
-                    entityId={row.entityId}
-                    rowId={row.rowId}
-                    onRemove={handleRemoveEditAttachment}
-                    sessionId={context.sessionId ?? undefined}
-                    readAttachment={context.readAttachment}
-                    readAttachmentRange={context.readAttachmentRange}
-                  />
-                ) : null}
-                {editContextCount > 0 ? (
-                  <div
-                    className="flex max-w-full flex-wrap items-center gap-2"
-                    data-v4-user-edit-context-attachments-row="true"
-                  >
-                    <CodeCommentAttachmentChip
-                      comments={editPromptContexts.codeComments}
-                      onRemove={(comment) =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          codeComments: current.codeComments.filter((item) => item !== comment),
-                        }))
-                      }
-                      onRemoveAll={() =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          codeComments: [],
-                        }))
-                      }
-                    />
-                    <WebElementContextAttachmentChip
-                      contexts={editPromptContexts.webElements}
-                      onRemove={(id) =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          webElements: current.webElements.filter((item) => item.id !== id),
-                        }))
-                      }
-                      onRemoveAll={() =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          webElements: [],
-                        }))
-                      }
-                    />
-                    <PptxElementReferenceChip
-                      references={editPromptContexts.pptxElements}
-                      onOpen={context.onOpenCodeViewer ? openPptxElementReference : undefined}
-                      onRemove={(id) =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          pptxElements: current.pptxElements.filter((item) => item.id !== id),
-                        }))
-                      }
-                      onRemoveAll={() =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          pptxElements: [],
-                        }))
-                      }
-                    />
-                    <ConversationSelectionReferenceChip
-                      references={editPromptContexts.conversationSelections}
-                      onRemove={(id) =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          conversationSelections: current.conversationSelections.filter(
-                            (item) => !("id" in item) || item.id !== id,
-                          ),
-                        }))
-                      }
-                      onRemoveAll={() =>
-                        setEditPromptContexts((current) => ({
-                          ...current,
-                          conversationSelections: [],
-                        }))
-                      }
-                    />
-                  </div>
-                ) : null}
-              </div>
-            ) : null
-          }
-          inputApiRef={inputApiRef}
-          inputTestId={testId(TID_V4_EDIT_INPUT, String(row.rowId))}
-          submitTestId={testId(TID_V4_EDIT_SUBMIT, String(row.rowId))}
-          cancelTestId={testId(TID_V4_EDIT_CANCEL, String(row.rowId))}
-          betweenCancelAndSubmitAction={
-            <ControlHintTooltip
-              title={rewindWorkspaceTooltipTitle}
-              description={rewindWorkspaceTooltipDescription}
-            >
-              {rewindWorkspaceDisabled ? (
-                // Button disabled 会应用 pointer-events-none，TooltipTrigger 直接落在
-                // 按钮上时收不到 hover。禁用态用外层 span 承接 hover，实际按钮仍保持 disabled。
-                <span className="inline-flex" data-disabled-tooltip-trigger="true">
-                  {rewindWorkspaceButton}
-                </span>
-              ) : (
-                rewindWorkspaceButton
-              )}
-            </ControlHintTooltip>
-          }
-          className="w-full max-w-xl"
-          shellClassName="min-h-32"
-          onChange={setDraft}
-          onSubmit={(nextText) => {
-            void handleSubmitEdit(nextText, "preserve");
-          }}
-          onCancel={handleCancelEdit}
-        />
-        <ConversationFileRewindDialog
-          variant="editConflict"
-          open={conflictOpen}
-          onOpenChange={setConflictOpen}
-          preview={conflictPreview}
-          previewLoading={false}
-          applying={submitting}
-          error={null}
-          onApply={() => {}}
-          onConversationOnly={() => {
-            void handleSubmitEdit(draft, "preserve");
-          }}
-        />
-      </RowShell>
-    );
-  }
+    if (!row.entityId) return;
+    onEdit?.({ rowId: row.rowId, entityId: row.entityId },
+      serializeComposerPromptContexts(visibleText, parsedPrompt), row.attachments);
+  }, [onEdit, parsedPrompt, row, visibleText]);
 
   return (
     <RowShell rowId={row.rowId} className="group/user-row flex flex-col items-end">
@@ -2101,7 +1738,6 @@ function ConversationRowViewImpl({
   onRetry,
   onFeedbackChange,
   onEdit,
-  editWorkspaceRewindAvailability,
   hideAssistantActions,
   deferAssistantActions,
   assistantCopyText,
@@ -2119,7 +1755,6 @@ function ConversationRowViewImpl({
           row={row}
           context={context}
           onEdit={onEdit}
-          editWorkspaceRewindAvailability={editWorkspaceRewindAvailability}
           status={userInputStatus}
         />
       );

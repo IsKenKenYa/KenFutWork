@@ -19,8 +19,6 @@ import { ArrowDownIcon } from "lucide-react";
 import { TID_V4_TIMELINE, TID_V4_TIMELINE_BOTTOM } from "@zcode/shared";
 import type {
   ApiRetryState,
-  AttachmentRef,
-  CommandAck,
   ConversationRow,
   ConversationRowTarget,
   QueueItem,
@@ -33,7 +31,7 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import { logger } from "@zui/logger.js";
 import { ConversationTurnGroup } from "@zui/v4/ConversationTurnGroup.js";
 import { ConversationPendingGuideList } from "@zui/v4/ConversationPendingGuideList.js";
-import type { AssistantFeedbackHandler } from "@zui/v4/ConversationRowView.js";
+import type { AssistantFeedbackHandler, UserInputEditHandler } from "@zui/v4/ConversationRowView.js";
 import { ConversationTurnNavigator } from "@zui/v4/ConversationTurnNavigator.js";
 import { syncConversationShareSelectionPanelLayout } from "@zui/v4/conversationShareSelectionPanelLayout.js";
 import type { ConversationRowRenderContext } from "@zui/v4/conversationRowContext.js";
@@ -271,12 +269,7 @@ interface ConversationTimelineProps {
   onFork?: (target: ConversationRowTarget) => void;
   onRetry?: (target: ConversationRowTarget) => void;
   onFeedbackChange?: AssistantFeedbackHandler;
-  onEdit?: (
-    target: ConversationRowTarget,
-    newText: string,
-    attachments?: readonly AttachmentRef[],
-    workspaceMode?: "preserve" | "rewind",
-  ) => Promise<CommandAck | boolean | void> | CommandAck | boolean | void;
+  onEdit?: UserInputEditHandler;
   /** 还有更早历史可拉（窗口首行 > 全序首行）。 */
   canLoadOlder?: boolean;
   /** loadOlder 在途，抑制重复触发。 */
