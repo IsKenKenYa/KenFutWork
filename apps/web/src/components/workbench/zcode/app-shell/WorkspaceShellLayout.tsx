@@ -1619,6 +1619,7 @@ export const WorkspaceShellLayout = memo(
       <AnimatedSidePanePanel
         services={services}
         isDesktop={isDesktop}
+        windowDraggable={isDesktop || (isMacDesktop && !isMacFullscreen)}
         isWindowsDesktop={isWindowsDesktop}
         frameClassName={resolveWorkspaceShellWindowChromeClass({
           isMacDesktop,
@@ -1823,6 +1824,12 @@ export const WorkspaceShellLayout = memo(
       !isEmbeddedSurfaceView;
     const shouldRenderWorkspaceHeader =
       shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
+    const hasMacDraftDragArea =
+      isMacDesktop && !isMacFullscreen && !isFullView &&
+      shouldRenderMainViewHeader && !shouldRenderWorkspaceHeader;
+    // 内嵌面没有可为左上角窗控留出横向空间的宿主标题栏。
+    const reserveMacOverlayRow =
+      !isSidebarVisible && !shouldRenderMainViewHeader && !isFullView;
     // ErrorBoundary resetKeys 的数组如果每次 render 都重新创建，
     // 即使 workspace/task 没变化也会在 React DevTools Components 轨道里持续表现为子树 props 变化。
     const workspaceOnlyResetKeys = useMemo(
@@ -1989,7 +1996,7 @@ export const WorkspaceShellLayout = memo(
           >
             {isMacDesktop ? (
               <MacWorkspaceTitlebarSpace
-                hasHeader={shouldRenderWorkspaceHeader || isFullView}
+                reserveOverlay={reserveMacOverlayRow}
                 fullscreen={isMacFullscreen}
               />
             ) : hasDesktopPanelInset ? (
@@ -2251,7 +2258,10 @@ export const WorkspaceShellLayout = memo(
                             </AutomationsMainBreadcrumbFrame>
                           </main>
                         ) : (
-                          <main className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                          <main
+                            className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden"
+                            data-window-drag-top={hasMacDraftDragArea ? "" : undefined}
+                          >
                             {renderChatFindDialog()}
                             <ScopedErrorBoundary
                               scope="workspace-chat"

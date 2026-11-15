@@ -1895,7 +1895,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/AnimatedSidePanePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/AnimatedSidePanePanel.tsx",
       "sha256": "0c5980f1abab4d9351e25abaef00a21ad50c861f98a9d6710adeeeea10306804",
-      "copiedSha256": "afbce11d5f2fe9f248738d62c8057e320bee06cfcee795aff418c538bf94b24d",
+      "copiedSha256": "9e3382c48c316c4a0421df3d259dd079b9682b953c5a8eb50ace85a0d4071d1e",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork 宿主偏差：browser 页签内容换宿主件 BrowserPane（G1/Q4 CDP MJPEG；HumanBrowserView 桌面主进程视图不再被消费）",
@@ -1908,7 +1908,8 @@
         "2026-10-20 G1 按 a110b8de^ 旧版 UI 重建宿主件 BrowserPane：紧凑工具条（后退/前进/刷新/地址/自由尺寸开关/选择网页元素加入聊天/⋯菜单：在默认浏览器中打开+打开调试工具）、居中的分辨率输入+窗口比例（适应窗口/50%/75%/100%）、画面按真实视口尺寸等比缩放不变形、无初始地址进开始态；本地地址默认 http（见《日志》二百〇五）",
         "2026-10-20 画布「+」选择器（二百〇九）：面板透传 onOpenBrowserTab。",
         "2026-10-22 项目资源页：右侧「新增标签」增加新建草图/新建文档入口；OpenDesign 面板按当前项目绑定并传 initialAction。",
-        "2026-10-22 收口：侧栏「+」移除新建草图/新建文档（创建改到项目资源页「+」）；OpenDesign initialAction 机制移除，再次打开保留已回写标题。"
+        "2026-10-22 收口：侧栏「+」移除新建草图/新建文档（创建改到项目资源页「+」）；OpenDesign initialAction 机制移除，再次打开保留已回写标题。",
+        "macOS 宿主复用右侧标签栏的窗口拖动区域。"
       ]
     },
     {
@@ -2152,7 +2153,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "340afc1992b29ab859df0e6ae84044017a59ddede785b30e09bac8ed852823db",
+      "copiedSha256": "4db3db5d5126ac32ee7b4b8aa6a99814671055c225ef2cb0dcae39d5eff6ef29",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2164,7 +2165,7 @@
         "2026-10-25 Work 模式（二百五十八）：work 进 keep-alive 内嵌面（isEmbeddedSurfaceView/visitedEmbeddedSurfaces 扩 work 并挂载 HostWorkSurface）。",
         "2026-10-27（二百八十五）：Work 引擎入口回调与 HostWorkSurface 返回会话。",
         "宿主修复：随添加项目入口移除侧栏打开文件夹/远程菜单透传属性",
-        "macOS 右侧缺少会话标题时保留窗口拖动区；全屏不占用主区。"
+        "macOS 工作台保留 4px 面板边缘，草稿顶部空白与右侧标签栏支持窗口拖动。"
       ]
     },
     {

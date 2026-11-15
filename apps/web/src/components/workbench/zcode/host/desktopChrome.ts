@@ -80,11 +80,16 @@ export function installDesktopTitlebarDrag(target: Document): () => void {
       if (
         node.classList.contains("[app-region:no-drag]") ||
         node.matches(
-          "button,a,input,textarea,select,[role=button],[role=radio],[contenteditable=true]",
+          "button,a,input,textarea,select,[role=button],[role=radio],[role=tab],[role=separator],[contenteditable=true]",
         )
       )
         return false;
       if (node.classList.contains("[app-region:drag]")) drag = true;
+      if (node.hasAttribute("data-window-drag-top")) {
+        // 草稿顶部借用会话标题的 48px 命中高度，不增加布局高度。
+        const top = event.clientY - node.getBoundingClientRect().top;
+        if (top >= 0 && top < 48) drag = true;
+      }
     }
     return drag;
   };

@@ -53,6 +53,17 @@ it("原标题栏按钮与红绿灯安全区共行，拖动不吞按钮，全屏�
   expect(native.startDragging).toHaveBeenCalledOnce();
   fireEvent.doubleClick(region);
   expect(native.toggleMaximize).toHaveBeenCalledOnce();
+  const draft = document.createElement("section");
+  draft.dataset.windowDragTop = "";
+  const splitter = document.createElement("div");
+  splitter.setAttribute("role", "separator");
+  draft.append(splitter);
+  view.container.append(draft);
+  fireEvent.mouseDown(draft, { button: 0, clientY: 20 });
+  expect(native.startDragging).toHaveBeenCalledTimes(2);
+  fireEvent.mouseDown(draft, { button: 0, clientY: 48 });
+  fireEvent.mouseDown(splitter, { button: 0, clientY: 20 });
+  expect(native.startDragging).toHaveBeenCalledTimes(2);
   await waitFor(() =>
     expect(
       view.container
@@ -83,7 +94,7 @@ it("原标题栏按钮与红绿灯安全区共行，拖动不吞按钮，全屏�
   release();
   release = undefined;
   fireEvent.mouseDown(region, { button: 0 });
-  expect(native.startDragging).toHaveBeenCalledOnce();
+  expect(native.startDragging).toHaveBeenCalledTimes(2);
 });
 
 it("普通浏览器保留原布局，不渲染原生工具栏或接管页面鼠标", () => {

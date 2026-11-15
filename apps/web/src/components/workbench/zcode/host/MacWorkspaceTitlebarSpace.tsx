@@ -1,8 +1,8 @@
 export function MacWorkspaceTitlebarSpace({
-  hasHeader = false,
+  reserveOverlay = false,
   fullscreen = false,
 }: {
-  hasHeader?: boolean;
+  reserveOverlay?: boolean;
   fullscreen?: boolean;
 }) {
   if (fullscreen) return null;
@@ -10,9 +10,9 @@ export function MacWorkspaceTitlebarSpace({
     <div
       aria-hidden="true"
       className={
-        hasHeader
-          ? "h-1 w-full shrink-0 [app-region:drag]"
-          : "h-[var(--workspace-mac-titlebar-height)] w-full shrink-0 select-none [app-region:drag]"
+        reserveOverlay
+          ? "h-13 w-full shrink-0 [app-region:drag]"
+          : "h-1 w-full shrink-0 [app-region:drag]"
       }
     />
   );

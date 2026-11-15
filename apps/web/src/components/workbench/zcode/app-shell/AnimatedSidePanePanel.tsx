@@ -327,6 +327,7 @@ function useWindowResizeSettling(enabled: boolean) {
 export function AnimatedSidePanePanel({
   services,
   isDesktop,
+  windowDraggable = isDesktop,
   isWindowsDesktop,
   isVisible,
   sidePaneState,
@@ -408,6 +409,7 @@ export function AnimatedSidePanePanel({
   fullViewSlotRef?: (element: HTMLDivElement | null) => void;
   defaultExpandedRatio?: number;
   isDesktop?: boolean;
+  windowDraggable?: boolean;
   isWindowsDesktop?: boolean;
   isVisible: boolean;
   sidePaneState: WorkspaceSidePaneState | null;
@@ -965,7 +967,7 @@ export function AnimatedSidePanePanel({
         <div
           className={cn(
             "flex h-12 shrink-0 items-center justify-end px-2",
-            isDesktop && "[app-region:drag]",
+            windowDraggable && "[app-region:drag]",
           )}
           style={captionControlsStyle}
         >
@@ -1120,7 +1122,7 @@ export function AnimatedSidePanePanel({
                     "flex justify-start w-full rounded-none p-0 border-0 border-b border-border/50 bg-transparent shadow-none !h-12 overflow-hidden",
                     fullView?.leadingInsetClassName,
                     // 独立面板将标签栏移至窗口顶部，需补充窗口拖拽区域；标签和按钮仍处理自身交互。
-                    isDesktop &&
+                    windowDraggable &&
                       "[app-region:drag] [&_button]:[app-region:no-drag] [&_[data-side-pane-tab-id]]:[app-region:no-drag]",
                   )}
                 >
