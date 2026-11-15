@@ -230,7 +230,11 @@ async function prepareUndo(
   f.send.mockImplementation(async (_application, macroPath) =>
     f.publish(macroPath, { ...source, ...sourceFields }),
   );
-  await f.controller.execute(f.input, f.binding, f.context);
+  const sourceOutcome = await f.controller.execute(
+    f.input,
+    f.binding,
+    f.context,
+  );
   const sourceRecord = await operation(f);
   const input = {
     application: f.input.application,
@@ -248,7 +252,7 @@ async function prepareUndo(
     runId: "undo-run",
     toolCallId: "undo-call",
   };
-  return { source, sourceRecord, input, binding };
+  return { source, sourceRecord, sourceOutcome, input, binding };
 }
 
 type UndoFixture = Awaited<ReturnType<typeof prepareUndo>>;
@@ -309,9 +313,15 @@ function configureUndo(
   });
 }
 
-test("当前Run用持久源提交的原post snapshot撤销自身事务，匹配完整撤销回执", async () => {
-  const f = await fixture();
+test("当前Run用持久源提交的原post snapshot撤销自身事务，匹配完整撤销回执", async ({
+  task,
+}) => {
+  const f = await fixture(task.timeout);
   const prepared = await prepareUndo(f);
+  expect(prepared.sourceOutcome).toMatchObject({
+    state: "terminal",
+    outcome: "committed",
+  });
   configureUndo(f, prepared);
   expect(
     await f.controller.undoOperation(
