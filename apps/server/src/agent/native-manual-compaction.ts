@@ -1,3 +1,4 @@
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import {
   AIMessage,
@@ -22,6 +23,7 @@ import { encodeNativeContextReference } from "./native-context-reference.js";
 import { createNativeRecoveryMiddleware } from "./native-recovery-middleware.js";
 
 export interface NativeManualCompactionOptions {
+  modelCallbacks?: BaseCallbackHandler[];
   model: BaseLanguageModel;
   backend: AgentBackendFactory;
   store?: BaseStore;
@@ -91,34 +93,44 @@ export function createNativeManualCompaction(
     const snapshot = await options.agent.graph.getState(config);
     const messages = (snapshot.values.messages ?? []) as BaseMessage[];
     const callbacks = [
-      {
-        name: "manual-compaction-usage",
-        handleLLMEnd(output: LLMResult, modelCallId: string) {
-          for (const generations of output.generations) {
-            for (const generation of generations) {
-              const message = (generation as { message?: unknown }).message;
-              if (!AIMessage.isInstance(message)) continue;
-              const usage = (
-                message as unknown as {
-                  usage_metadata?: {
-                    input_tokens: number;
-                    output_tokens: number;
-                    input_token_details?: { cache_read?: number };
-                  };
-                }
-              ).usage_metadata;
-              if (!usage) continue;
-              const cached = usage.input_token_details?.cache_read;
-              onUsage?.({
-                modelCallId,
-                inputTokens: usage.input_tokens,
-                outputTokens: usage.output_tokens,
-                ...(cached !== undefined ? { cachedInputTokens: cached } : {}),
-              });
+      ...(options.modelCallbacks ?? []),
+      Object.assign(
+        BaseCallbackHandler.fromMethods({
+          handleLLMEnd(output: LLMResult, modelCallId: string) {
+            for (const generations of output.generations) {
+              for (const generation of generations) {
+                const message = (generation as { message?: unknown }).message;
+                if (!AIMessage.isInstance(message)) continue;
+                const usage = (
+                  message as unknown as {
+                    usage_metadata?: {
+                      input_tokens: number;
+                      output_tokens: number;
+                      input_token_details?: { cache_read?: number };
+                    };
+                  }
+                ).usage_metadata;
+                if (!usage) continue;
+                const cached = usage.input_token_details?.cache_read;
+                onUsage?.({
+                  modelCallId,
+                  inputTokens: usage.input_tokens,
+                  outputTokens: usage.output_tokens,
+                  ...(cached !== undefined
+                    ? { cachedInputTokens: cached }
+                    : {}),
+                });
+              }
             }
-          }
+          },
+        }),
+        {
+          // 手动维护没有事件流宿主，显式使用 SDK 原生流聚合并保留供应商用量。
+          lc_prefer_streaming: true,
+          awaitHandlers: true,
+          raiseError: true,
         },
-      },
+      ),
     ];
     const model = options.model.withConfig({
       ...(signal ? { signal } : {}),

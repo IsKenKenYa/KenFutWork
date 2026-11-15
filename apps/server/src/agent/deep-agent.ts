@@ -57,7 +57,11 @@ import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import { MODEL_USAGE_AGENT_METADATA } from "./model-call-usage.js";
-import { createModelObservationMiddleware } from "./model-observation.js";
+import {
+  createModelObservationMiddleware,
+  createRunModelCallbacks,
+  observeInternalModelCalls,
+} from "./model-observation.js";
 import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
@@ -697,15 +701,23 @@ export function createKenFutWorkDeepAgent(options: {
       : {}),
   };
   // Until Design has a real Task, preserve its SDK history rather than inventing an archive owner.
-  const nativeSummarization = archive
-    ? createNativeRecoveryMiddleware({
-        ...summaryOptions,
-        archive,
-        inputTokenLimit: () => options.contextBudget?.inputTokenLimit ?? null,
-      })
-    : (createSummarizationMiddleware(
-        summaryOptions,
-      ) as unknown as AgentMiddleware);
+  const nativeSummarization = observeInternalModelCalls(
+    archive
+      ? createNativeRecoveryMiddleware({
+          ...summaryOptions,
+          archive,
+          inputTokenLimit: () => options.contextBudget?.inputTokenLimit ?? null,
+        })
+      : (createSummarizationMiddleware(
+          summaryOptions,
+        ) as unknown as AgentMiddleware),
+    createRunModelCallbacks(
+      runExtensions,
+      {},
+      options.extensionContext,
+      "automatic-compaction",
+    ),
+  );
   const compactionTracker = options.autoCompact
     ? createNativeCompactionTracker(nativeSummarization)
     : undefined;
@@ -924,6 +936,12 @@ export function createKenFutWorkDeepAgent(options: {
     ...(options.checkpointer
       ? {
           contextHistory: createNativeContextHistory(agent, {
+            modelCallbacks: createRunModelCallbacks(
+              runExtensions,
+              {},
+              options.extensionContext,
+              "manual-compaction",
+            ),
             model: resolvedModel,
             backend: backendResult.factory,
             ...(archive ? { archive } : {}),

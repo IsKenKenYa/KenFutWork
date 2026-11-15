@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { resolveContextWindow, type StreamEvent } from "@kenfutwork/shared";
+import {
+  type ModelCallPurpose,
+  resolveContextWindow,
+  type StreamEvent,
+} from "@kenfutwork/shared";
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import {
   AIMessage,
@@ -22,6 +27,7 @@ import { withStreamIdleGuard } from "./stream-idle-guard.js";
 
 /** Private host port: a fresh, tool-free request, accounted to the owning Run. */
 export interface ModelRequest {
+  purpose: Extract<ModelCallPurpose, "goal-evaluation" | "approval-review">;
   invocation: ModelInvocationSnapshot;
   system: string;
   input: string;
@@ -54,10 +60,16 @@ async function invokeModelRequest(
     signal: AbortSignal;
     usageSignal: AbortSignal;
     onUsage(usage: ModelCallUsage): Promise<void>;
+    callbacks: BaseCallbackHandler[];
   },
-): Promise<{ result: unknown; usageObserved: boolean }> {
+): Promise<{
+  result: unknown;
+  usageObserved: boolean;
+  finishReason?: string;
+}> {
   const modelCallId = randomUUID();
   let usageObserved = false;
+  let finishReason: string | undefined;
   const controller = new AbortController();
   const signal = AbortSignal.any([options.signal, controller.signal]);
   let usagePending: Promise<void> | undefined;
@@ -85,22 +97,31 @@ async function invokeModelRequest(
     });
     return usagePending;
   };
+  const usageCallback = Object.assign(
+    BaseCallbackHandler.fromMethods({
+      async handleLLMEnd(output) {
+        const generation = output.generations[0]?.[0];
+        const reason = generation?.generationInfo?.finish_reason;
+        if (typeof reason === "string") finishReason = reason;
+        await observeUsage(
+          generation && "message" in generation
+            ? generation.message
+            : undefined,
+        );
+      },
+    }),
+    {
+      // 使用 SDK 原生流聚合；普通 invoke 会在收齐流后联网下载分词数据。
+      lc_prefer_streaming: true,
+      awaitHandlers: true,
+      raiseError: true,
+    },
+  );
   const pending = options.model
     .invoke(messages, {
       runId: modelCallId,
       signal,
-      callbacks: [
-        {
-          async handleLLMEnd(output) {
-            const generation = output.generations[0]?.[0];
-            await observeUsage(
-              generation && "message" in generation
-                ? generation.message
-                : undefined,
-            );
-          },
-        },
-      ],
+      callbacks: [...options.callbacks, usageCallback],
     })
     .then(async (result) => {
       // SDK callbacks may run in the background; returned native usage is the same call's receipt.
@@ -127,7 +148,11 @@ async function invokeModelRequest(
   } finally {
     controller.abort();
   }
-  return { result, usageObserved };
+  return {
+    result,
+    usageObserved,
+    ...(finishReason === undefined ? {} : { finishReason }),
+  };
 }
 
 export function createModelRequestPort(options: {
@@ -139,6 +164,9 @@ export function createModelRequestPort(options: {
   }>;
   signal: AbortSignal;
   onUsage(usage: ModelCallUsage): Promise<void>;
+  createModelCallbacks?(
+    purpose: ModelRequest["purpose"],
+  ): BaseCallbackHandler[];
 }): ModelRequestPort {
   return async (request) => {
     const signal = request.signal
@@ -159,12 +187,17 @@ export function createModelRequestPort(options: {
     )
       throw new Error("剩余目标预算不足以执行独立评估，请调整预算后恢复。");
     signal.throwIfAborted();
-    const { result, usageObserved } = await invokeModelRequest(messages, {
+    const {
+      result,
+      usageObserved,
+      finishReason: observedFinishReason,
+    } = await invokeModelRequest(messages, {
       model: execution.model,
       owner: execution.owner,
       signal,
       usageSignal: options.signal,
       onUsage: options.onUsage,
+      callbacks: options.createModelCallbacks?.(request.purpose) ?? [],
     });
     signal.throwIfAborted();
     if (!AIMessage.isInstance(result))
@@ -176,7 +209,8 @@ export function createModelRequestPort(options: {
     const finishReason =
       result.response_metadata?.finish_reason ??
       result.response_metadata?.stop_reason ??
-      result.response_metadata?.finishReason;
+      result.response_metadata?.finishReason ??
+      observedFinishReason;
     return {
       text:
         typeof content === "string"
@@ -216,9 +250,15 @@ export function createRunModelRequestPort(options: {
   assertCurrent(): void;
   publish(event: Extract<StreamEvent, { type: "run.usage" }>): Promise<void>;
   now(): string;
+  createModelCallbacks?(
+    purpose: ModelRequest["purpose"],
+  ): BaseCallbackHandler[];
 }): ModelRequestPort {
   return createModelRequestPort({
     signal: options.signal,
+    ...(options.createModelCallbacks
+      ? { createModelCallbacks: options.createModelCallbacks }
+      : {}),
     resolve: async (invocation) => {
       const execution = await resolveInstanceModelExecution({
         actor: options.actor,

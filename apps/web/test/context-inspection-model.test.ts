@@ -17,6 +17,7 @@ const summary = (
   id: `00000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`,
   runId: "00000000-0000-4000-8000-000000000100",
   sequence,
+  purpose: "agent",
   agentCallId,
   agentName: null,
   startedAt: "2026-11-15T01:00:00.000Z",
@@ -121,22 +122,36 @@ describe("冻结请求的 dsh-context 数据适配", () => {
     expect(data.headerContent.get(current.header?.seq ?? -1)?.system).toBe("");
     expect(buildContextTimeline([]).timeline.current.total).toBe(0);
   });
-  it("不同 Run 与子 Agent 不参与同一条比较曲线", () => {
+  it("不同 Run、Agent 和用途不参与同一条比较曲线", () => {
     const parent = summary(1);
     const child = summary(2, "child-1");
+    const review = { ...summary(4), purpose: "goal-evaluation" as const };
     const nextRun = {
       ...summary(3),
       runId: "00000000-0000-4000-8000-000000000101",
     };
     expect(
-      inspectionStream([nextRun, child, parent], parent).map((r) => r.sequence),
+      inspectionStream([nextRun, child, parent, review], parent).map(
+        (r) => r.sequence,
+      ),
     ).toEqual([1]);
+    expect(
+      inspectionStream([nextRun, child, parent, review], review).map(
+        (r) => r.sequence,
+      ),
+    ).toEqual([4]);
     expect(() =>
       buildContextTimeline([
         { summary: parent, input: input("A") },
         { summary: child, input: input("B") },
       ]),
     ).toThrow();
+    expect(() =>
+      buildContextTimeline([
+        { summary: parent, input: input("A") },
+        { summary: review, input: input("B") },
+      ]),
+    ).toThrow("请选择同一 Run、Agent 和用途的请求。");
   });
   it("正文按页读取且保留 Unicode", async () => {
     const text = "A😀中文B";

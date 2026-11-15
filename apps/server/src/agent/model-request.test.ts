@@ -75,6 +75,7 @@ const invocation = {
   inputCapabilities: { image: false, pdf: false },
 };
 const request = {
+  purpose: "goal-evaluation" as const,
   invocation,
   system: "Review independently",
   input: "Real receipt",

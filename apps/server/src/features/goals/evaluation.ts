@@ -24,6 +24,7 @@ export async function evaluateGoal(options: {
     if (!options.request || !options.invocation)
       return { error: "独立评估不可用，请检查模型选择后恢复目标。" };
     const result = await options.request({
+      purpose: "goal-evaluation",
       invocation: options.invocation,
       remainingTokens:
         options.goal.tokenBudget === null

@@ -13,12 +13,20 @@ import {
 import type {
   ContextRequestInput,
   ContextRequestSummary,
+  ModelCallPurpose,
 } from "@kenfutwork/shared";
 
 export interface InspectedRequest {
   summary: ContextRequestSummary;
   input: ContextRequestInput;
 }
+export const contextRequestPurposeLabels: Record<ModelCallPurpose, string> = {
+  agent: "对话",
+  "automatic-compaction": "自动摘要",
+  "manual-compaction": "手动摘要",
+  "goal-evaluation": "目标验收",
+  "approval-review": "审批评估",
+};
 export function inspectionStream(
   requests: ContextRequestSummary[],
   selected: ContextRequestSummary,
@@ -26,7 +34,9 @@ export function inspectionStream(
   return requests
     .filter(
       (r) =>
-        r.runId === selected.runId && r.agentCallId === selected.agentCallId,
+        r.runId === selected.runId &&
+        r.agentCallId === selected.agentCallId &&
+        r.purpose === selected.purpose,
     )
     .sort((a, b) => a.sequence - b.sequence);
 }
@@ -190,10 +200,11 @@ export function buildContextTimeline(
     sorted.some(
       (r) =>
         r.summary.runId !== sorted[0]?.summary.runId ||
-        r.summary.agentCallId !== sorted[0]?.summary.agentCallId,
+        r.summary.agentCallId !== sorted[0]?.summary.agentCallId ||
+        r.summary.purpose !== sorted[0]?.summary.purpose,
     )
   )
-    throw new Error("请选择同一 Run 与 Agent 的请求。");
+    throw new Error("请选择同一 Run、Agent 和用途的请求。");
   const nodes: SurfaceNode[] = [];
   const archive: SurfaceNode[] = [];
   const convNodes: ConversationNodeLike[] = [];

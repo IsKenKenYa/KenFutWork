@@ -50,9 +50,7 @@ export function ContextInspectionViews({
     <>
       <div className="lc-card">
         <h2>已读取请求趋势</h2>
-        <span className="context-inspection-note">
-          同一 Run 与 Agent · 组成估算
-        </span>
+        <span className="context-inspection-note">同类请求 · 组成估算</span>
         <button
           type="button"
           aria-pressed={delta}

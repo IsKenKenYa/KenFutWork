@@ -26,17 +26,21 @@ export function createContextInsightsPlugin(): PluginDefinition {
       const extension: AgentRunExtension = {
         preset: "shared",
         createMiddleware: () => ({ name: "ContextInsights" }),
-        createModelCallbacks(identity, context) {
+        createModelCallbacks(identity, context, purpose) {
           const execution = context?.execution;
           const scope = execution?.scopeHandle?.describe();
           if (!scope || !execution?.runId) return [];
           return [
-            createContextRequestCallbacks(service.writer, {
-              instanceId: scope.instanceId,
-              taskId: scope.taskId,
-              runId: execution.runId,
-              ...identity,
-            }),
+            createContextRequestCallbacks(
+              service.writer,
+              {
+                instanceId: scope.instanceId,
+                taskId: scope.taskId,
+                runId: execution.runId,
+                ...identity,
+              },
+              purpose,
+            ),
           ];
         },
       };

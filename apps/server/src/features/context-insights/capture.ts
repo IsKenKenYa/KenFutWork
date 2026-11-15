@@ -1,4 +1,7 @@
-import { contextRequestInputSchema } from "@kenfutwork/shared";
+import {
+  contextRequestInputSchema,
+  type ModelCallPurpose,
+} from "@kenfutwork/shared";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import { z } from "zod";
@@ -42,6 +45,7 @@ function serializeMessage(message: BaseMessage) {
 export function createContextRequestCallbacks(
   writer: ContextRequestWriter,
   owner: ContextRequestOwner,
+  purpose: ModelCallPurpose = "agent",
 ): BaseCallbackHandler {
   const handler = BaseCallbackHandler.fromMethods({
     async handleChatModelStart(
@@ -66,6 +70,7 @@ export function createContextRequestCallbacks(
         ),
       );
       await writer.start({
+        purpose,
         id,
         owner,
         input,

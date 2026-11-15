@@ -56,6 +56,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           model: "actual-model",
           usage: null,
           outputCharacters: null,
+          purpose: "agent",
         });
         await expect(
           first.writer.start({
@@ -104,6 +105,25 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         ).toMatchObject({ status: "completed", usage: finish.usage });
         await expect(
           first.writer.finish({ ...finish, status: "failed" }),
+        ).rejects.toMatchObject({ statusCode: 409 });
+        const auxiliary = {
+          ...request,
+          id: randomUUID(),
+          purpose: "goal-evaluation" as const,
+        };
+        await first.writer.start(auxiliary);
+        await cold.writer.start(structuredClone(auxiliary));
+        expect(
+          (
+            await cold.list(database.actor, { taskId: request.owner.taskId })
+          ).requests.find((row) => row.id === auxiliary.id),
+        ).toMatchObject({
+          purpose: "goal-evaluation",
+          runId: request.owner.runId,
+          agentCallId: null,
+        });
+        await expect(
+          cold.writer.start({ ...auxiliary, purpose: "approval-review" }),
         ).rejects.toMatchObject({ statusCode: 409 });
         await database.persistence
           .forInstance(database.instanceId)

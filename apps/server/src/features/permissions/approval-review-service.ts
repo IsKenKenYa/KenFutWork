@@ -155,6 +155,7 @@ export function createApprovalReviewService(
       pending.providerId = reference.providerId;
       signal.throwIfAborted();
       const result = await context.requestModel({
+        purpose: "approval-review",
         invocation,
         system: SYSTEM,
         input: JSON.stringify({

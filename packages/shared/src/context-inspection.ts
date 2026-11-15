@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+export const modelCallPurposeSchema = z.enum([
+  "agent",
+  "automatic-compaction",
+  "manual-compaction",
+  "goal-evaluation",
+  "approval-review",
+]);
+export type ModelCallPurpose = z.infer<typeof modelCallPurposeSchema>;
+
 export const contextMessageSchema = z
   .object({
     type: z.string(),
@@ -28,6 +37,7 @@ export const contextRequestSummarySchema = z
     id: z.uuid(),
     runId: z.uuid(),
     sequence: z.number().int().positive(),
+    purpose: modelCallPurposeSchema,
     agentCallId: z.string().nullable(),
     agentName: z.string().nullable(),
     startedAt: z.iso.datetime(),

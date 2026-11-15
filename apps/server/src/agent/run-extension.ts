@@ -1,3 +1,4 @@
+import type { ModelCallPurpose } from "@kenfutwork/shared";
 import type { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AgentMiddleware } from "langchain";
@@ -30,10 +31,11 @@ export interface AgentRunExtensionContext {
 export interface AgentRunExtension {
   preset: "code" | "design" | "shared";
   canonicalToolEvents?: boolean;
-  /** 最终模型调用的只读观察；在提示组装、工具筛选和压缩之后绑定。 */
+  /** 实际模型调用的只读观察；用途由真实调用方声明，身份沿用所属 Run。 */
   createModelCallbacks?(
     identity: AgentEventIdentity,
     context?: AgentRunExtensionContext,
+    purpose?: ModelCallPurpose,
   ): BaseCallbackHandler[];
   createMiddleware(
     identity: AgentEventIdentity,

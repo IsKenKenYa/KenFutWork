@@ -131,6 +131,7 @@ import {
   createRunModelControl,
   resolveInstanceModelExecution,
 } from "./model-execution.js";
+import { createRunModelCallbacks } from "./model-observation.js";
 import { createRunModelRequestPort } from "./model-request.js";
 import { nativeEffectiveOutputTokens } from "./native-context-budget.js";
 import type { AgentPersistenceService } from "./persistence/index.js";
@@ -146,6 +147,7 @@ import {
 import { createAgentProviderTools } from "./provider-tools.js";
 import type {
   AgentRunExtension,
+  AgentRunExtensionContext,
   AgentRunModelControl,
 } from "./run-extension.js";
 import { withBoundWorkDir } from "./sandbox-dir.js";
@@ -2205,31 +2207,6 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ? { workContext: structuredClone(run.workContext) }
               : {}),
             observeToolExecution: executionReceipts.observe,
-            ...(options.modelProviders && options.runUsage && run.eventSink
-              ? {
-                  requestModel: createRunModelRequestPort({
-                    actor: run.actor,
-                    runId,
-                    sessionId: run.sessionId,
-                    threadId: run.threadId,
-                    signal: run.controller.signal,
-                    providers: options.modelProviders,
-                    catalog: options.modelCatalog,
-                    usage: options.runUsage,
-                    now,
-                    assertCurrent: () => {
-                      if (completions.get(runId)?.settled)
-                        throw new Error("模型请求所属Run已结束。");
-                    },
-                    publish: async (event) => {
-                      if (completions.get(runId)?.settled)
-                        throw new Error("模型请求所属Run已结束。");
-                      await run.eventSink!(event);
-                    },
-                  }),
-                }
-              : {}),
-
             ...(run.eventSink
               ? {
                   publishToolEvent: async (
@@ -2453,6 +2430,60 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             });
           }
 
+          const runExtensions =
+            options
+              .runExtensions?.()
+              .filter(
+                (extension) =>
+                  extension.preset === preset || extension.preset === "shared",
+              ) ?? [];
+          const extensionContext: AgentRunExtensionContext | undefined =
+            kernelToolRegistry
+              ? {
+                  ...(modelControl ? { modelControl } : {}),
+                  registry: kernelToolRegistry,
+                  resolution: toolResolutionContext,
+                  execution: runToolContext,
+                  ...(options.systemPromptRegistry
+                    ? {
+                        prompt: {
+                          registry: options.systemPromptRegistry,
+                          composition: promptCompositionContext,
+                        },
+                      }
+                    : {}),
+                }
+              : undefined;
+          const eventSink = run.eventSink;
+          if (options.modelProviders && options.runUsage && eventSink) {
+            runToolContext.requestModel = createRunModelRequestPort({
+              actor: run.actor,
+              runId,
+              sessionId: run.sessionId,
+              threadId: run.threadId,
+              signal: run.controller.signal,
+              providers: options.modelProviders,
+              catalog: options.modelCatalog,
+              usage: options.runUsage,
+              now,
+              createModelCallbacks: (purpose) =>
+                createRunModelCallbacks(
+                  runExtensions,
+                  {},
+                  extensionContext,
+                  purpose,
+                ),
+              assertCurrent: () => {
+                if (completions.get(runId)?.settled)
+                  throw new Error("模型请求所属Run已结束。");
+              },
+              publish: async (event) => {
+                if (completions.get(runId)?.settled)
+                  throw new Error("模型请求所属Run已结束。");
+                await eventSink(event);
+              },
+            });
+          }
           const nativeOptions: Parameters<KenFutWorkAgentFactory>[0] = {
             nativeToolProof: {
               identity: receiptIdentity,
@@ -2461,35 +2492,8 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             ...(options.contextHistoryArchives
               ? { contextHistoryArchives: options.contextHistoryArchives }
               : {}),
-            ...(options.runExtensions
-              ? {
-                  runExtensions: options
-                    .runExtensions()
-                    .filter(
-                      (extension) =>
-                        extension.preset === preset ||
-                        extension.preset === "shared",
-                    ),
-                }
-              : {}),
-            ...(kernelToolRegistry
-              ? {
-                  extensionContext: {
-                    ...(modelControl ? { modelControl } : {}),
-                    registry: kernelToolRegistry,
-                    resolution: toolResolutionContext,
-                    execution: runToolContext,
-                    ...(options.systemPromptRegistry
-                      ? {
-                          prompt: {
-                            registry: options.systemPromptRegistry,
-                            composition: promptCompositionContext,
-                          },
-                        }
-                      : {}),
-                  },
-                }
-              : {}),
+            runExtensions,
+            ...(extensionContext ? { extensionContext } : {}),
             backendResult,
             preset,
             // 系统提示经内核段注册表组装（模式段/品牌/skills/规则与插件段）；

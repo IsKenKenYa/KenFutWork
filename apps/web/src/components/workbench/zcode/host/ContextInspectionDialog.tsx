@@ -1,7 +1,10 @@
 import { Modal } from "@kenfutwork/context-insights-ui";
 import { type RefObject, useId, useLayoutEffect, useMemo } from "react";
 import { mountContextInspectionIcons } from "./contextInspectionIcons.js";
-import { buildContextTimeline } from "./contextInspectionModel.js";
+import {
+  buildContextTimeline,
+  contextRequestPurposeLabels,
+} from "./contextInspectionModel.js";
 import type { InspectionCall } from "./contextInspectionReader.js";
 import { ContextInspectionViews } from "./contextInspectionViews.js";
 import { useContextInspection } from "./useContextInspection.js";
@@ -83,6 +86,7 @@ export default function ContextInspectionDialog({
                       #{r.sequence} · {statusLabels[r.status]}
                     </span>
                     <span>{r.model ?? "模型未知"}</span>
+                    <span>{contextRequestPurposeLabels[r.purpose]}</span>
                     <span>
                       {r.agentName ?? (r.agentCallId ? "子 Agent" : "主 Agent")}
                     </span>

@@ -19,6 +19,7 @@ const record: ContextRequestSummary = {
   id: "00000000-0000-4000-8000-000000000001",
   runId: "00000000-0000-4000-8000-000000000100",
   sequence: 7,
+  purpose: "agent",
   agentCallId: null,
   agentName: null,
   startedAt: "2026-11-15T01:00:00.000Z",

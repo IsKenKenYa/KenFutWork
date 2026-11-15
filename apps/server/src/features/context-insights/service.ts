@@ -4,6 +4,7 @@ import {
   contextRequestListInputSchema,
   contextRequestListSchema,
   contextRequestReadInputSchema,
+  modelCallPurposeSchema,
 } from "@kenfutwork/shared";
 import { CodeUiHostRpcError } from "../code-ui/host-rpc-handler.js";
 import type {
@@ -57,14 +58,20 @@ export function createContextInspectionService(deps: {
   const writer: ContextRequestWriter = {
     async start(input) {
       const text = JSON.stringify(input.input);
-      const hash = fingerprint({ owner: input.owner, input: input.input });
+      const purpose = modelCallPurposeSchema.parse(input.purpose ?? "agent");
+      // 普通对话沿用已有指纹，历史请求可继续幂等重放。
+      const hash = fingerprint({
+        owner: input.owner,
+        input: input.input,
+        ...(purpose === "agent" ? {} : { purpose }),
+      });
       await deps.persistence.transaction(async (tx) => {
         const sql = tx.forInstance(input.owner.instanceId);
         await requireTask(sql, input.owner.taskId, true);
         const row = await sql.queryOne<SqlRow & { input_fingerprint: string }>(
           `insert into public.context_model_requests
-            (id,instance_id,task_id,run_id,agent_call_id,agent_name,started_at,model,input_text,input_fingerprint,input_characters,message_count,tool_count)
-           values ($1,:instance,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            (id,instance_id,task_id,run_id,agent_call_id,agent_name,started_at,model,input_text,input_fingerprint,input_characters,message_count,tool_count,purpose)
+           values ($1,:instance,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            on conflict (id) do update set id=excluded.id
              where context_model_requests.instance_id=:instance
            returning input_fingerprint`,
@@ -84,6 +91,7 @@ export function createContextInspectionService(deps: {
               0,
             ),
             input.input.tools?.length ?? null,
+            purpose,
           ],
         );
         if (row?.input_fingerprint !== hash)
@@ -148,7 +156,7 @@ export function createContextInspectionService(deps: {
       const sql = deps.persistence.forInstance(instanceId);
       await requireTask(sql, input.taskId);
       const rows = await sql.query<SqlRow & { summary: ContextRequestSummary }>(
-        `select jsonb_build_object('id',r.id,'runId',r.run_id,'sequence',r.sequence,
+        `select jsonb_build_object('id',r.id,'runId',r.run_id,'sequence',r.sequence,'purpose',r.purpose,
           'agentCallId',r.agent_call_id,'agentName',r.agent_name,
           'startedAt',to_char(r.started_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'endedAt',to_char(r.ended_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
