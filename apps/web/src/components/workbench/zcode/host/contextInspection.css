@@ -1,68 +1,70 @@
+/* 遮罩和原组件的菜单挂在面板外，打开时也从 Code 文档根继承同一套颜色。 */
 :root:has(.context-inspection), .context-inspection {
-  --dsw-alias-bg-base: var(--background);
-  --dsw-alias-bg-layer-1: var(--card);
-  --dsw-alias-bg-layer-2: var(--muted);
-  --dsw-alias-bg-mask-1: color-mix(in srgb, var(--background) 85%, transparent);
-  --dsw-alias-label-primary: var(--foreground);
-  --dsw-alias-label-secondary: var(--muted-foreground);
-  --dsw-alias-label-tertiary: var(--muted-foreground);
-  --dsw-alias-label-caption: var(--muted-foreground);
-  --dsw-alias-label-dimmed: var(--muted-foreground);
-  --dsw-alias-label-primary-foreground: var(--primary-foreground);
-  --dsw-alias-border-l1: var(--border);
-  --dsw-alias-border-l2: var(--border);
-  --dsw-alias-border-l3: var(--border);
-  --dsw-alias-border-l4: var(--border);
-  --dsw-alias-interactive-bg-hover: var(--accent);
-  --dsw-alias-interactive-bg-active: var(--accent);
-  --dsw-alias-interactive-bg-hover-danger: color-mix(in srgb, var(--destructive) 12%, transparent);
-  --dsw-alias-menu-icon: var(--muted-foreground);
-  --dsw-alias-scrollbar-bg-l2: var(--border);
-  --dsw-alias-scrollbar-hover-l2: var(--muted-foreground);
-  --dsw-alias-tooltip-bg: var(--popover);
-  --dsw-alias-tooltip-label: var(--popover-foreground);
-  --dsw-alias-tooltip-key-bg: var(--accent);
-  --dsw-alias-hovercard-bg: var(--popover);
-  --dsw-alias-hovercard-label-primary: var(--popover-foreground);
-  --dsw-menu-surface-fill: var(--popover);
+  --context-inspection-label-muted: color-mix(in srgb, var(--color-foreground) 82%, var(--color-background));
+  --dsw-alias-bg-base: var(--color-background);
+  --dsw-alias-bg-layer-1: var(--color-card);
+  --dsw-alias-bg-layer-2: var(--color-panel);
+  --dsw-alias-bg-mask-1: color-mix(in srgb, var(--color-background) 85%, transparent);
+  --dsw-alias-label-primary: var(--color-foreground);
+  --dsw-alias-label-secondary: var(--context-inspection-label-muted);
+  --dsw-alias-label-tertiary: var(--context-inspection-label-muted);
+  --dsw-alias-label-caption: var(--context-inspection-label-muted);
+  --dsw-alias-label-dimmed: var(--context-inspection-label-muted);
+  --dsw-alias-label-primary-foreground: var(--color-primary-foreground);
+  --dsw-alias-border-l1: var(--color-border);
+  --dsw-alias-border-l2: var(--color-border);
+  --dsw-alias-border-l3: var(--color-border);
+  --dsw-alias-border-l4: var(--color-border);
+  --dsw-alias-interactive-bg-hover: var(--color-hover);
+  --dsw-alias-interactive-bg-active: var(--color-selected);
+  --dsw-alias-interactive-bg-hover-danger: color-mix(in srgb, var(--color-destructive) 12%, transparent);
+  --dsw-alias-menu-icon: var(--context-inspection-label-muted);
+  --dsw-alias-scrollbar-bg-l2: var(--color-border);
+  --dsw-alias-scrollbar-hover-l2: var(--context-inspection-label-muted);
+  --dsw-alias-tooltip-bg: var(--color-popover);
+  --dsw-alias-tooltip-label: var(--color-popover-foreground);
+  --dsw-alias-tooltip-key-bg: var(--color-hover);
+  --dsw-alias-hovercard-bg: var(--color-popover);
+  --dsw-alias-hovercard-label-primary: var(--color-popover-foreground);
+  --dsw-menu-surface-fill: var(--color-popover);
   --dsw-menu-backdrop-filter: none;
   --dsw-mask-blur: none;
-  --dsw-elevation-stroke-color: var(--border);
+  --dsw-elevation-stroke-color: var(--color-border);
   --dsw-elevation-panel: 0 3px 12px #0002;
   --dsw-elevation-prominent: 0 8px 32px #0003;
   --dsw-radius-panel: 12px;
   --dsw-specific-menu: 400 13px/1.5 system-ui;
-  --dsw-alias-button-primary-fill: var(--primary);
-  --dsw-alias-brand-primary: var(--ring);
-  --dsw-alias-state-business-primary: var(--primary);
-  --dsw-alias-state-error-primary: var(--destructive);
-  --dsw-alias-state-success-primary: var(--color-green-500);
-  --dsw-alias-state-warn-primary: var(--color-amber-500);
-  --dsw-static-neutral-bluish-75: var(--background);
-  --dsw-static-neutral-1000: var(--foreground);
-  --dsw-static-neutral-bluish-300: var(--muted-foreground);
+  --dsw-alias-button-primary-fill: var(--color-primary);
+  --dsw-alias-brand-primary: var(--color-primary);
+  --dsw-alias-state-business-primary: var(--color-primary);
+  --dsw-alias-state-error-primary: var(--color-destructive);
+  --dsw-alias-state-success-primary: var(--color-success);
+  --dsw-alias-state-warn-primary: var(--color-warning);
+  --dsw-static-neutral-bluish-75: var(--color-background);
+  --dsw-static-neutral-1000: var(--color-foreground);
+  --dsw-static-neutral-bluish-300: var(--context-inspection-label-muted);
   --dsw-static-green-500: var(--color-green-500);
-  --dsw-static-red-600: var(--destructive);
+  --dsw-static-red-600: var(--color-destructive);
   --dsw-static-amber-400: var(--color-amber-500);
   --dsw-static-amber-500: var(--color-amber-500);
-  --dsw-static-deepseek-450: var(--ring);
-  --dsw-static-deepseek-500: var(--ring);
-  --dsw-alias-json-tree-hover: var(--accent);
-  --dsw-alias-json-tree-icon: var(--muted-foreground);
+  --dsw-static-deepseek-450: var(--color-primary);
+  --dsw-static-deepseek-500: var(--color-primary);
+  --dsw-alias-json-tree-hover: var(--color-hover);
+  --dsw-alias-json-tree-icon: var(--context-inspection-label-muted);
   --dsw-alias-json-tree-keyword: var(--color-violet-500);
   --dsw-alias-json-tree-number: var(--color-orange-500);
-  --dsw-alias-json-tree-property: var(--foreground);
-  --dsw-alias-json-tree-punctuation: var(--muted-foreground);
+  --dsw-alias-json-tree-property: var(--color-foreground);
+  --dsw-alias-json-tree-punctuation: var(--context-inspection-label-muted);
   --dsw-alias-json-tree-string: var(--color-green-500);
-  --dsw-alias-link: var(--primary);
-  --dsw-alias-markdown-code-block: var(--muted);
-  --dsw-alias-markdown-code-block-banner: var(--accent);
-  --dsw-alias-markdown-inline-code: var(--muted);
+  --dsw-alias-link: var(--color-primary);
+  --dsw-alias-markdown-code-block: var(--color-panel);
+  --dsw-alias-markdown-code-block-banner: var(--color-selected);
+  --dsw-alias-markdown-inline-code: var(--color-surface);
   --dsw-alias-file-diff-added-bg: color-mix(in srgb, var(--color-green-500) 12%, transparent);
   --dsw-alias-file-diff-added-marker: var(--color-green-500);
-  --dsw-alias-file-diff-deleted-bg: color-mix(in srgb, var(--destructive) 12%, transparent);
-  --dsw-alias-file-diff-deleted-marker: var(--destructive);
-  --dsw-focus-ring-color: var(--ring);
+  --dsw-alias-file-diff-deleted-bg: color-mix(in srgb, var(--color-destructive) 12%, transparent);
+  --dsw-alias-file-diff-deleted-marker: var(--color-destructive);
+  --dsw-focus-ring-color: var(--color-primary);
   --dsw-focus-ring-width: 2px;
   --dsw-font-family: inherit;
   --ds-font-family-code: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -86,12 +88,12 @@
   --dsw-shadow-lv2: 0 3px 10px #0002;
   --dsw-shadow-lv3: 0 6px 20px #0003;
   --lc-gap: 8px;
-  --lc-canvas: var(--background);
-  --lc-subpanel-bg: var(--muted);
-  --lc-control-track: var(--muted);
-  --lc-line-fine: 1px solid var(--border);
-  --lc-line-strong: 1px solid var(--border);
-  --lc-line-dashed: 1px dashed var(--border);
+  --lc-canvas: var(--color-background);
+  --lc-subpanel-bg: var(--color-panel);
+  --lc-control-track: var(--color-surface);
+  --lc-line-fine: 1px solid var(--color-border);
+  --lc-line-strong: 1px solid var(--color-border);
+  --lc-line-dashed: 1px dashed var(--color-border);
   --lc-shadow-card: none;
   --lc-shadow-tile: none;
   --lc-shadow-hover: none;
@@ -105,15 +107,17 @@
   max-width: none;
   height: min(820px, calc(100dvh - 48px));
   max-height: none;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  color-scheme: light;
   font: 13px/1.5 system-ui;
 }
+.dark .context-inspection { color-scheme: dark; }
 .context-inspection { overscroll-behavior: contain; }
 .context-inspection-frame { display: flex; height: 100%; min-width: 0; flex-direction: column; }
-.context-inspection-header { display: flex; flex: none; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.context-inspection-header { display: flex; flex: none; align-items: center; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--color-border); }
 .context-inspection h1 { font-size: 15px; font-weight: 600; margin: 0 auto 0 0; }
 .context-inspection h2 { font-size: 13px; font-weight: 600; margin: 4px 0 8px; }
 .context-inspection button, .context-inspection summary { cursor: pointer; min-height: 24px; }
@@ -121,34 +125,34 @@
 .context-inspection :focus-visible { outline: 2px solid var(--color-primary) !important; outline-offset: 2px; }
 .context-inspection button:is(:disabled, [aria-disabled="true"]) { opacity: .5; cursor: default; }
 .context-inspection-header button, .context-inspection-summary > button { padding: 4px 8px; border-radius: 5px; }
-.context-inspection button:hover { background: var(--accent); }
+.context-inspection button:hover { background: var(--color-hover); }
 .context-inspection-layout { display: grid; grid-template-columns: 210px minmax(0,1fr); flex: 1; min-height: 0; }
-.context-inspection-requests { overflow: auto; padding: 8px; border-right: 1px solid var(--border); overscroll-behavior: contain; }
+.context-inspection-requests { overflow: auto; padding: 8px; border-right: 1px solid var(--color-border); overscroll-behavior: contain; }
 .context-inspection-requests ol { list-style: decimal inside; padding: 0; margin: 0; }
 .context-inspection-requests li { margin-bottom: 4px; }
 .context-inspection-requests li::marker { font-size: 0; }
-.context-inspection-requests button { display: flex; flex-direction: column; align-items: start; width: 100%; gap: 2px; padding: 6px 8px; border-radius: 6px; text-align: start; overflow-wrap: anywhere; }
-.context-inspection-requests [aria-current] { background: var(--accent); box-shadow: inset 2px 0 var(--ring); }
-.context-inspection-requests button span:not(:first-child), .context-inspection-requests time, .context-inspection-note { color: var(--muted-foreground); font-size: 12px; }
+.context-inspection-requests button { display: flex; flex-direction: column; align-items: start; width: 100%; gap: 2px; padding: 6px 8px; border-inline-start: 2px solid transparent; border-radius: 6px; text-align: start; overflow-wrap: anywhere; }
+.context-inspection-requests button[aria-current] { background: var(--color-selected); border-inline-start-color: var(--color-primary); }
+.context-inspection-requests button span:not(:first-child), .context-inspection-requests time, .context-inspection-note { color: var(--context-inspection-label-muted); font-size: 12px; }
 .context-inspection-content { min-width: 0; height: auto; overscroll-behavior: contain; }
-.context-inspection-content > details { margin: 8px 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+.context-inspection-content > details { margin: 8px 0; padding: 8px; border: 1px solid var(--color-border); border-radius: 6px; }
 .context-inspection pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .context-inspection-summary { padding: 8px; }
 .context-inspection-attempts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 8px; }
-.context-inspection-attempts span { color: var(--muted-foreground); }
-.context-inspection-attempts button { padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; }
-.context-inspection-attempts button[aria-current] { background: var(--accent); border-color: var(--ring); }
+.context-inspection-attempts span { color: var(--context-inspection-label-muted); }
+.context-inspection-attempts button { padding: 2px 8px; border: 1px solid var(--color-border); border-radius: 5px; }
+.context-inspection-attempts button[aria-current] { background: var(--color-selected); border-color: var(--color-primary); }
 .context-inspection dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
-.context-inspection dt { color: var(--muted-foreground); }
+.context-inspection dt { color: var(--context-inspection-label-muted); }
 .context-inspection dd { margin: 0; font-variant-numeric: tabular-nums; }
 .context-inspection table { width: 100%; text-align: start; font-variant-numeric: tabular-nums; }
-.context-inspection td, .context-inspection th { padding: 4px; border-bottom: 1px solid var(--border); }
-.context-inspection-content [role="alert"] { color: var(--destructive); padding: 8px; }
-.context-inspection-loading { position: fixed; inset: auto 16px 16px auto; padding: 12px; border-radius: 8px; background: var(--popover); color: var(--popover-foreground); }
+.context-inspection td, .context-inspection th { padding: 4px; border-bottom: 1px solid var(--color-border); }
+.context-inspection-content [role="alert"] { color: var(--color-destructive); padding: 8px; }
+.context-inspection-loading { position: fixed; inset: auto 16px 16px auto; padding: 12px; border-radius: 8px; background: var(--color-popover); color: var(--color-popover-foreground); }
 @media (max-width: 640px) {
   .context-inspection { width: 100%; height: 100dvh; border-radius: 0; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
   .context-inspection-layout { grid-template-columns: minmax(0,1fr); grid-template-rows: minmax(100px, 24%) minmax(0,1fr); }
-  .context-inspection-requests { border-right: 0; border-bottom: 1px solid var(--border); }
+  .context-inspection-requests { border-right: 0; border-bottom: 1px solid var(--color-border); }
 }
 @media (pointer: coarse) {
   .context-inspection button, .context-inspection summary { min-height: 44px; }

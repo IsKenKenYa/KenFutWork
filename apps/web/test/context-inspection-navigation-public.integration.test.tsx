@@ -123,6 +123,107 @@ async function expectDialogTabFocus(page: OriginalSessionBrowser) {
   ).toEqual({ inside: true, label: "刷新", outlined: true });
 }
 
+async function readInspectorTheme(
+  page: OriginalSessionBrowser,
+  theme: "zai-light" | "zai-dark",
+) {
+  await page.evaluate(
+    `window.dispatchEvent(new CustomEvent("kenfutwork:theme-preference", { detail: ${JSON.stringify(theme)} }))`,
+  );
+  return page.evaluate<{
+    dark: boolean;
+    background: string;
+    foreground: string;
+    border: string;
+    selection: string;
+    primary: string;
+    card: string;
+  }>(`(() => {
+    const dialog = document.querySelector(${JSON.stringify(inspector)});
+    const content = dialog.querySelector('.lc-root');
+    const header = dialog.querySelector('header');
+    const selected = dialog.querySelector('nav[aria-label="模型请求"] [aria-current="true"]');
+    const mask = dialog.previousElementSibling;
+    const probe = document.createElement('span');
+    dialog.append(probe);
+    const token = name => {
+      probe.style.color = 'var(' + name + ')';
+      return getComputedStyle(probe).color;
+    };
+    const surface = getComputedStyle(dialog);
+    const row = getComputedStyle(selected);
+    const background = token('--color-background');
+    const foreground = token('--color-foreground');
+    const result = {
+      dark: document.documentElement.classList.contains('dark'),
+      background, foreground,
+      dialog: surface.backgroundColor,
+      content: getComputedStyle(content).backgroundColor,
+      ink: surface.color,
+      contentInk: getComputedStyle(content).color,
+      nativeScheme: surface.colorScheme,
+      chart: getComputedStyle(content.querySelector('.lc-card')).backgroundColor,
+      card: token('--color-card'),
+      divider: getComputedStyle(header).borderBottomColor,
+      border: token('--color-border'),
+      selected: row.backgroundColor,
+      selection: token('--color-selected'),
+      marker: row.borderInlineStartColor,
+      markerVisible: row.borderInlineStartWidth !== '0px',
+      primary: token('--color-primary'),
+      shaded: getComputedStyle(mask, '::after').backgroundColor !== 'rgba(0, 0, 0, 0)',
+    };
+    probe.remove();
+    return result;
+  })()`);
+}
+
+it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
+  "分析窗口和选中请求随工作台亮暗主题更新",
+  async () => {
+    await withTaskGroupPublicPage(
+      async ({ page }) => {
+        await focusInspectorEntry(page);
+        await openWithKeyboard(page);
+        await vi.waitFor(async () =>
+          expect(
+            await page.evaluate(
+              `Boolean(document.querySelector(${JSON.stringify(`${inspector} .lc-card`)}))`,
+            ),
+          ).toBe(true),
+        );
+        const read = async (theme: "zai-light" | "zai-dark") => {
+          const palette = await readInspectorTheme(page, theme);
+          const { background, foreground, border, selection, primary, card } =
+            palette;
+          expect(palette).toMatchObject({
+            dark: theme === "zai-dark",
+            dialog: background,
+            content: background,
+            ink: foreground,
+            contentInk: foreground,
+            nativeScheme: theme === "zai-dark" ? "dark" : "light",
+            chart: card,
+            divider: border,
+            selected: selection,
+            marker: primary,
+            markerVisible: true,
+            shaded: true,
+          });
+          return palette;
+        };
+        const light = await read("zai-light");
+        const dark = await read("zai-dark");
+        expect(light.background).not.toBe(dark.background);
+        expect(light.foreground).not.toBe(dark.foreground);
+        expect(await read("zai-light")).toEqual(light);
+      },
+      { seedTaskHistory: true },
+    );
+  },
+  180_000,
+);
+
 it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "窄窗通过键盘打开上下文分析，返回原 Task 草稿和入口",
   async () => {
