@@ -3426,9 +3426,11 @@
     {
       "source": "references/zcode/packages/ui/src/components/ai-elements/message.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ai-elements/message.tsx",
-      "sha256": "6c35829ed11321e850cd59e20c1c88fdd452e8e2d9b5da45f808371021aabf99",
-      "copiedSha256": "e876a6c05dc8f2493cce0ba5d89eeafe26d63f883b08fc83cd30cda2f80b7682",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "657292e6818a4777973cddcbe547734292731894f643bdb70dd900afa5f94cd6",
+      "copiedSha256": "27e69fb357941d6983134ce26d8ceaa0a2a0a750a6acb58132a24c64709680d1",
       "adaptations": [
+        "从 3.18.2 移植正文链接菜单，保留原 Markdown 渲染及打开回调。复制结果使用本仓库提示与状态播报。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主扩展（动态 UI）：code 覆写里新增 viz 数据图表分支，交给共享组件 @kenfutwork/ui 渲染（与 Design 侧同一份实现）；流式态不升级、坏 spec 回落 CodeBlock。验证见 apps/web/test/zcode-message.test.tsx 的 viz 用例与 visualization-block.test.tsx，哈希随本次改动更新。"
       ]
@@ -5832,9 +5834,11 @@
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/en-US.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
-      "sha256": "ca1ea1321e3de199f7e09864784020041265d2096b56221e352d0742468af1d9",
-      "copiedSha256": "fd8895b4b50aae1a8e83ed6b799b90bf0a3428f899298094fa22a7c02c2740d5",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
+      "copiedSha256": "4e04e3c3d350ac7dfa847e88ef4f65243f06fe16b30a66f09e46104397d3d81c",
       "adaptations": [
+        "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
         "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",
@@ -5862,9 +5866,11 @@
     {
       "source": "references/zcode/packages/ui/src/i18n/locales/zh-CN.ts",
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
-      "sha256": "7fb2202f7179a24fcbb2b1bc6f820da621fa205f7f6faa4ccd53120734ca9fc6",
-      "copiedSha256": "14b725765fd65b785ad15d3417bf42b9cd7f6f1e24dd44d184837b095ef281b9",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
+      "copiedSha256": "852a0d102650ce34c21cccc076495a0ae78a418397206c38c2aee86a4cd011ed",
       "adaptations": [
+        "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
         "宿主 BYOK 文案：真实配置状态与明确 clear，不显示旧 Key",

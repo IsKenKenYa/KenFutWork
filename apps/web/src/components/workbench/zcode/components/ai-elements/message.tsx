@@ -15,7 +15,7 @@ import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import type { EditorInfo, FileStat, OpenInEditorOptions } from "@zcode/shared";
 import type { UIMessage } from "ai";
-import { ChevronLeftIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon, PanelRightIcon } from "lucide-react";
 import remarkCjkFriendlyGfmStrikethrough from "remark-cjk-friendly-gfm-strikethrough";
 import type {
   ComponentProps,
@@ -49,6 +49,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@zui/components/ui/context-menu.js";
+import { toast } from "@zui/components/ui/toast.js";
 import { MarkdownBlockquote } from "@zui/components/ai-elements/markdown-blockquote.js";
 import {
   MarkdownListItem,
@@ -1012,6 +1013,7 @@ function MessageExternalLink({
 }: MessageExternalLinkProps) {
   const { intl } = useZCodeIntl();
   const platform = useOptionalPlatform();
+  const [copyFeedback, setCopyFeedback] = useState("");
   const handleOpen = useCallback(
     (options: { forceExternal?: boolean; forceInApp?: boolean } = {}) => {
       // 交互语义：本机/私网白名单只决定左键单击的默认目标；右键菜单两项各自强制一个目标。
@@ -1047,6 +1049,20 @@ function MessageExternalLink({
     [handleOpen, onClick],
   );
 
+  const handleCopyLink = async () => {
+    setCopyFeedback("");
+    try {
+      await navigator.clipboard.writeText(href);
+      const message = intl.formatMessage({ id: "chat.message.copy.copied" });
+      setCopyFeedback(message);
+      toast(message, { dedupeKey: "message-link-copy" });
+    } catch {
+      const message = intl.formatMessage({ id: "chat.message.link.copyFailed" });
+      setCopyFeedback(message);
+      toast(message, { variant: "warning", dedupeKey: "message-link-copy" });
+    }
+  };
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -1066,16 +1082,22 @@ function MessageExternalLink({
           {children}
         </button>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-44">
+      <ContextMenuContent className="w-52">
         <ContextMenuItem onSelect={() => handleOpen({ forceInApp: true })}>
-          {intl.formatMessage({ id: "common.open" })}
+          <PanelRightIcon aria-hidden="true" className="size-4" />
+          <span>{intl.formatMessage({ id: "chat.message.link.openInWorkbench" })}</span>
         </ContextMenuItem>
-        <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => handleOpen({ forceExternal: true })}>
-          <ExternalLinkIcon className="size-4" />
+          <ExternalLinkIcon aria-hidden="true" className="size-4" />
           <span>{intl.formatMessage({ id: "chat.previewCards.openExternal" })}</span>
         </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => void handleCopyLink()}>
+          <CopyIcon aria-hidden="true" className="size-4" />
+          <span>{intl.formatMessage({ id: "chat.previewCards.copyLink" })}</span>
+        </ContextMenuItem>
       </ContextMenuContent>
+      <span className="sr-only" role="status">{copyFeedback}</span>
     </ContextMenu>
   );
 }
