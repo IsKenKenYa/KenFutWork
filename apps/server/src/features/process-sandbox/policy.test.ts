@@ -1,5 +1,10 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { unixRuntimeReadRoots } from "./policy.js";
+import { unixPolicy, unixRuntimeReadRoots } from "./policy.js";
 
 describe("沙箱运行时读取基线", () => {
   it("darwin 授予第三方工具链前缀（git 装在 /opt/homebrew，不在 /usr 之下）", () => {
@@ -39,4 +44,56 @@ describe("沙箱运行时读取基线", () => {
     expect(roots).toContain("/opt/custom/runtime");
     expect(roots.filter((path) => path === "/usr")).toHaveLength(1);
   });
+
+  it.skipIf(process.platform !== "darwin")(
+    "系统选择的开发工具仅授予自身资源，不授予安装卷和写入权限",
+    async () => {
+      const { stdout } = await promisify(execFile)(
+        "/usr/bin/xcode-select",
+        ["--print-path"],
+        { env: {} },
+      );
+      const developer = await realpath(stdout.trim());
+      const directory = await mkdtemp(join(tmpdir(), "kfw-developer-policy-"));
+      const root = join(directory, "project");
+      const temporaryDirectory = join(directory, "temporary");
+      const privateDirectory = join(directory, "private");
+      try {
+        await Promise.all([
+          mkdir(root),
+          mkdir(temporaryDirectory),
+          mkdir(privateDirectory),
+        ]);
+        const policy = await unixPolicy({
+          scope: {
+            instanceId: "instance",
+            projectId: "project",
+            taskId: "developer-policy",
+            generation: 1,
+            rootDirectory: root,
+            additionalDirectories: [],
+            sandboxMode: "read-only",
+          },
+          temporaryDirectory,
+          privateDirectory,
+          network: { allowedDomains: [], deniedDomains: [] },
+        });
+        expect(policy.filesystem.allowRead).toContain(developer);
+        if (developer.endsWith(".app/Contents/Developer")) {
+          expect(policy.filesystem.allowRead).toContain(dirname(developer));
+          expect(policy.filesystem.allowRead).not.toContain(
+            dirname(dirname(developer)),
+          );
+        } else {
+          expect(policy.filesystem.allowRead).not.toContain(dirname(developer));
+        }
+        expect(policy.filesystem.allowRead).not.toContain("/Volumes");
+        expect(policy.filesystem.allowWrite).not.toContain(developer);
+        expect(policy.filesystem.allowWrite).not.toContain(dirname(developer));
+        expect(policy.filesystem.allowWrite).not.toContain(root);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });

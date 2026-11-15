@@ -96,6 +96,21 @@ function directorySpellings(path: string): string[] {
   return [path];
 }
 
+/** 系统选择器由 macOS 管理；Xcode 同时需要读取自身的应用资源与动态库。 */
+async function selectedDeveloperReadRoots(): Promise<string[]> {
+  if (process.platform !== "darwin") return [];
+  try {
+    const developer = await realpath("/var/select/developer_dir");
+    return developer.endsWith(".app/Contents/Developer")
+      ? [developer, dirname(developer)]
+      : [developer];
+  } catch (error) {
+    // 未显式选择工具链时系统链接可以不存在，标准工具目录仍由读取基线覆盖。
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
 export async function unixPolicy(input: {
   scope: CodeExecutionScope;
   temporaryDirectory: string;
@@ -144,7 +159,10 @@ export async function unixPolicy(input: {
         ...additional.map((directory) => directory.path),
         temporaryDirectory,
         ...(input.internalWriteRoots ?? []),
-        ...unixRuntimeReadRoots(input.runtimeReadRoots),
+        ...unixRuntimeReadRoots([
+          ...(input.runtimeReadRoots ?? []),
+          ...(await selectedDeveloperReadRoots()),
+        ]),
       ].flatMap(directorySpellings),
       allowWrite: [
         ...writable,
