@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- workspace shell 当前集中编排 sidebar、chat、terminal 和 browser pane 的布局联动，先保持单文件收口，避免为满足行数限制打散关键布局状态。*/
 
-import { TID_APP_HEADER } from "@zcode/shared";
+import { TID_APP_HEADER, TID_SIDE_PANE_TOGGLE } from "@zcode/shared";
 import { AnimatedSidePanePanel } from "@zui/app-shell/AnimatedSidePanePanel.js";
 import { AnimatedTerminalPanel } from "@zui/app-shell/AnimatedTerminalPanel.js";
 import {
@@ -120,7 +120,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
 const WORKSPACE_SIDEBAR_DEFAULT_WIDTH_PX = 240;
@@ -144,6 +144,15 @@ const CONVERSATION_AUTO_COLLAPSE_RESIZE_IDLE_MS = 300;
 // 会跟随 chat streaming render 重算布局上下文；固定数组语义上不会随消息变化。
 const WORKSPACE_BODY_PANEL_IDS = ["conversation-column", "browser"];
 const WORKSPACE_CONVERSATION_PANEL_IDS = ["conversation", "terminal"];
+// 浏览器需要同时容纳导航、拖动条和可操作的主区；更窄时一次显示一个内容面。
+const COMPACT_WORKSPACE_QUERY = "(width < 640px)";
+const readCompactWorkspace = () => window.matchMedia?.(COMPACT_WORKSPACE_QUERY).matches ?? false;
+const readServerCompactWorkspace = () => false;
+function observeCompactWorkspace(onChange: () => void) {
+  const query = window.matchMedia?.(COMPACT_WORKSPACE_QUERY);
+  query?.addEventListener("change", onChange);
+  return () => query?.removeEventListener("change", onChange);
+}
 
 type WorkspaceSidebarResizeSession = {
   containerWidthPx: number;
@@ -479,7 +488,39 @@ export const WorkspaceShellLayout = memo(
           Boolean(entry.workspaceKey) && !retained.has(entry.workspaceKey),
       );
     }, [openWorkspaceKeys]);
-    const isSidebarPanelVisible = isSidebarVisible;
+    const isCompactViewport = useSyncExternalStore(
+      observeCompactWorkspace,
+      readCompactWorkspace,
+      readServerCompactWorkspace,
+    );
+    const isCompactWorkspace = !isDesktop && isCompactViewport;
+    const [compactSidebarOpen, setCompactSidebarOpen] = useState(false);
+    const [compactSurface, setCompactSurface] = useState<"conversation" | "content" | null>(null);
+    const focusSidebarToggleRef = useRef(false);
+    const focusContentToggleRef = useRef(false);
+    const isSidebarPanelVisible = isCompactWorkspace ? compactSidebarOpen : isSidebarVisible;
+    const toggleCompactSidebar = useCallback(() => {
+      focusSidebarToggleRef.current = true;
+      setCompactSidebarOpen((open) => !open);
+    }, []);
+    useEffect(() => {
+      if (!isCompactWorkspace) {
+        setCompactSidebarOpen(false);
+        setCompactSurface(null);
+        focusSidebarToggleRef.current = false;
+        focusContentToggleRef.current = false;
+        return;
+      }
+      if (!focusSidebarToggleRef.current) return;
+      focusSidebarToggleRef.current = false;
+      workspaceSidebarPanelElementRef.current
+        ?.querySelector<HTMLButtonElement>('button[aria-controls="sidebar"]')
+        ?.focus();
+    }, [isCompactWorkspace, compactSidebarOpen]);
+    useEffect(() => {
+      setCompactSidebarOpen(false);
+      setCompactSurface(null);
+    }, [workspaceMainView]);
     const sidePaneFullView = useSidePaneFullView({
       workspacePath: workspaceAbsPath,
       workspaceIdentity,
@@ -488,7 +529,7 @@ export const WorkspaceShellLayout = memo(
       enabled: true,
     });
     const activeFullView =
-      workspaceMainView === "chat" || workspaceMainView === "design"
+      !isCompactWorkspace && (workspaceMainView === "chat" || workspaceMainView === "design")
         ? sidePaneFullView.fullView
         : null;
     const isFullView = activeFullView !== null;
@@ -538,6 +579,33 @@ export const WorkspaceShellLayout = memo(
       rememberExpandedSize: true,
       resizeOnInitialVisibleMount: false,
     });
+    const compactShowingContent = isCompactWorkspace && isSidePaneVisible &&
+      (compactSurface ? compactSurface === "content" : workspaceMainView === "design");
+    const toggleWorkspaceContent = useCallback(() => {
+      if (!isCompactWorkspace) return handleToggleSidePane();
+      if (!isSidePaneOpen) handleToggleSidePane();
+      focusContentToggleRef.current = true;
+      setCompactSurface(compactShowingContent ? "conversation" : "content");
+    }, [compactShowingContent, handleToggleSidePane, isCompactWorkspace, isSidePaneOpen]);
+    useEffect(() => {
+      if (!isCompactWorkspace || !focusContentToggleRef.current || compactSidebarOpen) return;
+      const visiblePanelId = compactShowingContent ? "browser" : "conversation-column";
+      const toggle = workspaceShellRef.current?.querySelector<HTMLButtonElement>(
+        `#${visiblePanelId} button[data-testid="${TID_SIDE_PANE_TOGGLE}"]`,
+      );
+      if (toggle) {
+        focusContentToggleRef.current = false;
+        toggle.focus();
+      }
+    }, [compactShowingContent, compactSidebarOpen, isCompactWorkspace]);
+    const openSidebarFile = useCallback<typeof handleOpenCodeViewer>((request) => {
+      handleOpenCodeViewer(request);
+      if (isCompactWorkspace) {
+        focusContentToggleRef.current = true;
+        setCompactSidebarOpen(false);
+        setCompactSurface("content");
+      }
+    }, [handleOpenCodeViewer, isCompactWorkspace]);
     const workspaceSessionActionDisabled =
       Boolean(workspaceReadOnlyReason) ||
       reloadSessionDisabled ||
@@ -572,7 +640,7 @@ export const WorkspaceShellLayout = memo(
         null;
 
       const runAutoCollapseForWindowResize = () => {
-        if (isFullViewRef.current) return;
+        if (isFullViewRef.current || (!isDesktop && readCompactWorkspace())) return;
         const widthPx = readConversationWidthPx();
         if (widthPx === null) {
           return;
@@ -630,7 +698,7 @@ export const WorkspaceShellLayout = memo(
         }
         window.removeEventListener("resize", handleWindowResize);
       };
-    }, [workspaceMainView]);
+    }, [isDesktop, workspaceMainView]);
 
     useEffect(() => {
       workspaceSidebarPanelWidthPxRef.current = workspaceSidebarPanelWidthPx;
@@ -962,8 +1030,12 @@ export const WorkspaceShellLayout = memo(
       [],
     );
     const showChatMainView = useCallback(() => {
+      if (isCompactWorkspace) {
+        setCompactSidebarOpen(false);
+        setCompactSurface("conversation");
+      }
       onWorkspaceMainViewChange("chat");
-    }, [onWorkspaceMainViewChange]);
+    }, [isCompactWorkspace, onWorkspaceMainViewChange]);
     const primaryNavigationBack =
       workspaceMainView === "plugin-store"
         ? handleManageInstalledPlugins
@@ -1632,9 +1704,10 @@ export const WorkspaceShellLayout = memo(
         })}
         showWindowControls={usesInlineWindowControls}
         isVisible={isSidePaneVisible}
-        onCloseSidePane={handleToggleSidePane}
+        compact={isCompactWorkspace}
+        onCloseSidePane={toggleWorkspaceContent}
         toggleSidePaneShortcutLabel={toggleSidePaneShortcutLabel}
-        fullViewToggle={{ active: isFullView, onToggle: sidePaneFullView.toggle }}
+        fullViewToggle={isCompactWorkspace ? undefined : { active: isFullView, onToggle: sidePaneFullView.toggle }}
         fullView={activeFullView ? {
           surface: activeFullView.surface,
           conversationTitle: fullViewConversationTitle,
@@ -1857,6 +1930,12 @@ export const WorkspaceShellLayout = memo(
         <div
           ref={workspaceShellRef}
           data-workspace-shell="true"
+          onKeyDown={(event) => {
+            if (isCompactWorkspace && compactSidebarOpen && event.key === "Escape" && !event.defaultPrevented) {
+              event.preventDefault();
+              toggleCompactSidebar();
+            }
+          }}
           style={workspaceShellSplitStyle}
           className={cn(
             "relative flex h-full min-h-0 w-full overflow-hidden",
@@ -1878,6 +1957,8 @@ export const WorkspaceShellLayout = memo(
               isSidebarPanelVisible || !hasDesktopPanelInset
                 ? "opacity-100"
                 : "pointer-events-none opacity-0",
+              isCompactWorkspace && compactSidebarOpen &&
+                "absolute inset-y-0 left-0 z-30 w-full max-w-none bg-background",
             )}
           >
             <aside
@@ -1907,7 +1988,7 @@ export const WorkspaceShellLayout = memo(
                       activePreviewPath={activePreviewPath}
                       onSelectTask={handleSelectTaskInChat}
                       onStartDraftInWorkspace={handleCreateProjectDraft}
-                      onOpenCodeViewer={handleOpenCodeViewer}
+                      onOpenCodeViewer={openSidebarFile}
                       onOpenFileManager={handleOpenFileManager}
                       onOpenBrowserUrl={handleOpenBrowserUrl}
                       fileTreeOpenRequest={fileTreeOpenRequest}
@@ -1936,8 +2017,8 @@ export const WorkspaceShellLayout = memo(
                       isDesktop={isDesktop}
                       isMacDesktop={isMacDesktop}
                       isWindowsDesktop={isWindowsDesktop}
-                      isSidebarVisible={isSidebarVisible}
-                      onToggleSidebar={handleToggleSidebar}
+                      isSidebarVisible={isSidebarPanelVisible}
+                      onToggleSidebar={isCompactWorkspace ? toggleCompactSidebar : handleToggleSidebar}
                       toggleSidebarShortcutLabel={toggleSidebarShortcutLabel}
                       canGoBack={canPrimaryNavigationBack}
                       canGoForward={canTaskNavForward}
@@ -1959,7 +2040,7 @@ export const WorkspaceShellLayout = memo(
             </aside>
           </div>
 
-          {isSidebarVisible ? (
+          {isSidebarPanelVisible && !isCompactWorkspace ? (
             <div
               role="separator"
               tabIndex={0}
@@ -1989,8 +2070,9 @@ export const WorkspaceShellLayout = memo(
           <div
             data-panel=""
             id="content"
+            inert={isCompactWorkspace && compactSidebarOpen}
             className={cn(
-              "flex min-w-[320px] flex-1 flex-col",
+              "flex min-w-0 flex-1 flex-col",
               hasDesktopPanelInset ? "p-1 pl-0 pt-0" : "p-0",
             )}
           >
@@ -2006,7 +2088,14 @@ export const WorkspaceShellLayout = memo(
               // 保留既有布局存储身份，由原组件恢复保存的宽度。
               layoutId="workspace-body-layout-v2"
               panelIds={WORKSPACE_BODY_PANEL_IDS}
-              className={cn("min-h-0 flex-1", isFullView && "relative")}
+              persistUserLayoutOnly
+              disabled={isCompactWorkspace}
+              className={cn(
+                "min-h-0 flex-1",
+                (isFullView || isCompactWorkspace) && "relative",
+                isCompactWorkspace && "[&>#conversation-column]:absolute [&>#conversation-column]:inset-0 [&>#browser]:absolute [&>#browser]:inset-0",
+                isCompactWorkspace && (compactShowingContent ? "[&>#conversation-column]:invisible" : "[&>#browser]:invisible"),
+              )}
             >
               <ResizablePanel
                 id="conversation-column"
@@ -2114,11 +2203,11 @@ export const WorkspaceShellLayout = memo(
                             isDesktop={isDesktop}
                             isSidebarVisible={isSidebarVisible}
                             isTerminalOpen={isTerminalOpen}
-                            isSidePaneOpen={isSidePaneOpen}
+                            isSidePaneOpen={isCompactWorkspace ? compactShowingContent : isSidePaneOpen}
                             onRefreshGit={handleRefreshGit}
                             onToggleTerminal={handleToggleTerminal}
                             onToggleBrowser={handleToggleBrowser}
-                            onToggleSidePane={handleToggleSidePane}
+                            onToggleSidePane={toggleWorkspaceContent}
                             toggleSidePaneShortcutLabel={
                               toggleSidePaneShortcutLabel
                             }

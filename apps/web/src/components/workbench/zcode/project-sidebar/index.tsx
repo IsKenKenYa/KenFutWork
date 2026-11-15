@@ -366,6 +366,8 @@ export const ProjectSidebar = memo(function ProjectSidebar(props: ProjectSidebar
               <button
                 type="button"
                 aria-label="收起侧栏"
+                aria-controls="sidebar"
+                aria-expanded={true}
                 title="收起侧栏"
                 onClick={props.onToggleSidebar}
                 className="rounded-md p-1 text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"

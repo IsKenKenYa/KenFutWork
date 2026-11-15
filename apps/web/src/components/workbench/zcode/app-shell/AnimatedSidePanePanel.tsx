@@ -330,6 +330,7 @@ export function AnimatedSidePanePanel({
   windowDraggable = isDesktop,
   isWindowsDesktop,
   isVisible,
+  compact = false,
   sidePaneState,
   recentClosedSidePaneTabs,
   isBrowserOpen,
@@ -412,6 +413,7 @@ export function AnimatedSidePanePanel({
   windowDraggable?: boolean;
   isWindowsDesktop?: boolean;
   isVisible: boolean;
+  compact?: boolean;
   sidePaneState: WorkspaceSidePaneState | null;
   recentClosedSidePaneTabs: RecentClosedSidePaneTab[];
   isBrowserOpen: boolean;
@@ -1562,7 +1564,7 @@ export function AnimatedSidePanePanel({
 
   return (
     <>
-      {isVisible && !fullView ? (
+      {isVisible && !fullView && !compact ? (
         <ResizableHandle
           data-workspace-side-pane-resize-handle="true"
           className={cn(
@@ -1580,7 +1582,7 @@ export function AnimatedSidePanePanel({
         panelRef={panelRef}
         elementRef={panelElementRef}
         defaultSize={panelLayout.defaultSize}
-        minSize={panelLayout.minSize}
+        minSize={compact ? "0px" : panelLayout.minSize}
         maxSize={panelLayout.maxSize}
         collapsedSize={panelLayout.collapsedSize}
         // 右侧面板常驻声明成 collapsible 时，拖到最小宽度会被库判定为 collapse。
@@ -1588,7 +1590,7 @@ export function AnimatedSidePanePanel({
         collapsible={isDragCollapsible}
         // preview/side pane 收起时没有 ResizableHandle，但库仍会暴露 collapsed panel 边缘拖拽区。
         // 收起后禁用面板 resize target，避免用户绕过显式开关从右侧边缘拖出面板。
-        disabled={isResizeDisabled}
+        disabled={compact || isResizeDisabled}
         className={cn(
           "!overflow-hidden transition-opacity duration-200 ease-out",
           // 截图期间 panel 仍保持 opacity=1，避免 opacity=0 让 Chromium 丢弃 guest
