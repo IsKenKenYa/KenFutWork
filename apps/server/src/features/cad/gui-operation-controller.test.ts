@@ -28,7 +28,8 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true });
 });
 
-async function fixture() {
+/** 缺省一秒供期限重放测试；成功回执使用测试运行器的等待预算。 */
+async function fixture(timeoutMs = 1000) {
   const root = await realpath(
     await mkdtemp(join(tmpdir(), "kfw-cad-controller-")),
   );
@@ -76,7 +77,7 @@ async function fixture() {
   const signal = new AbortController();
   const context = {
     signal: signal.signal,
-    timeoutMs: 1000,
+    timeoutMs,
     maxOutputBytes: 65_536,
   };
   const publish = async (
@@ -142,8 +143,8 @@ async function fixture() {
   };
 }
 
-test("先持久认领再派发固定写入宏，匹配回执后返回已提交", async () => {
-  const f = await fixture();
+test("先持久认领再派发固定写入宏，匹配回执后返回已提交", async ({ task }) => {
+  const f = await fixture(task.timeout);
   const result = await f.controller.execute(f.input, f.binding, f.context);
   expect(result).toMatchObject({
     operationId: f.input.operationId,
@@ -156,8 +157,10 @@ test("先持久认领再派发固定写入宏，匹配回执后返回已提交",
   expect(f.probe.verify).toHaveBeenCalled();
 });
 
-test("复制当前文档后仅匹配私有native副本回执，不宣称Task文件已发布", async () => {
-  const f = await fixture();
+test("复制当前文档后仅匹配私有native副本回执，不宣称Task文件已发布", async ({
+  task,
+}) => {
+  const f = await fixture(task.timeout);
   const input = configureCopy(f);
   expect(
     await f.controller.copyDocument(input, f.binding, f.context),
