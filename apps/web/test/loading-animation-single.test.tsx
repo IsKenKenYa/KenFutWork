@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { render, screen } from "@testing-library/react";
+import { StrictMode } from "react";
 import { describe, expect, it } from "vitest";
 import { LoadingScreen } from "../src/components/loading-screen";
+import { StartupOverlayHandoff } from "../src/components/workbench/zcode/host/startupOverlay";
 
 /**
  * 用户口径（2026-10-19）：加载动画只留一种——黑色 logo、无底板、下方转圈。
@@ -75,11 +77,32 @@ describe("全站唯一加载动画", () => {
       'label="加载 Code 工作台"',
     );
     expect(source("components/workbench/zcode/host/main.tsx")).toContain(
-      "dismissStartupOverlay",
+      "StartupOverlayHandoff",
     );
     const frame = source("components/workbench/code-workbench-frame.tsx");
     expect(frame).toContain("kenfutwork:code-mounted");
     expect(frame).toContain("<LoadingScreen />");
+  });
+
+  it("React 提交后立即移除启动遮罩 不等待浏览器动画帧", () => {
+    const overlay = document.createElement("div");
+    overlay.id = "zcode-boot";
+    document.body.append(overlay);
+    try {
+      expect(overlay.isConnected).toBe(true);
+      const view = render(
+        <StrictMode>
+          <StartupOverlayHandoff>
+            <button type="button">打开工作台</button>
+          </StartupOverlayHandoff>
+        </StrictMode>,
+      );
+      expect(overlay.isConnected).toBe(false);
+      expect(screen.getByRole("button", { name: "打开工作台" })).not.toBeNull();
+      view.unmount();
+    } finally {
+      overlay.remove();
+    }
   });
 
   it("暗色旋转弧取白，不用品牌色（黑底上品牌浅岚几乎看不见）", () => {

@@ -73,7 +73,7 @@ import { CodeDirectoryRecoveryProvider } from "./ProjectDirectoryRecovery.js";
 import { requestParentBootstrap } from "./parentBridge.js";
 
 import { createCodePlatform } from "./platform.js";
-import { dismissStartupOverlay } from "./startupOverlay.js";
+import { StartupOverlayHandoff } from "./startupOverlay.js";
 import { setSurfaceApiBase } from "./surfaceApi.js";
 import { createHostWorkbenchNavigation } from "./workbenchNavigation.js";
 import { installHostWorkspaceActivity } from "./workspaceActivity.js";
@@ -290,30 +290,30 @@ try {
         )
       : undefined;
     root.render(
-      <CodeVoiceProvider transport={voiceTransport}>
-        <CodeHost
-          {...(workspace ? { workspace } : {})}
-          // 父窗口 bootstrap 带来的本地实例主人（免账户形态下的当前用户），
-          // 侧栏底部据此显示用户而不是「连接使用」。
-          user={bootstrap?.user ?? null}
-          clientMode={hello.clientMode}
-        />
-      </CodeVoiceProvider>,
+      <StartupOverlayHandoff>
+        <CodeVoiceProvider transport={voiceTransport}>
+          <CodeHost
+            {...(workspace ? { workspace } : {})}
+            // 父窗口 bootstrap 带来的本地实例主人（免账户形态下的当前用户），
+            // 侧栏底部据此显示用户而不是「连接使用」。
+            user={bootstrap?.user ?? null}
+            clientMode={hello.clientMode}
+          />
+        </CodeVoiceProvider>
+      </StartupOverlayHandoff>,
     );
   }
 } catch (error) {
   console.error("Code 工作台启动失败", error);
   root.render(
-    <RootStartupLoading
-      label={error instanceof Error ? error.message : "Code 工作台启动失败"}
-      busy={false}
-    />,
+    <StartupOverlayHandoff>
+      <RootStartupLoading
+        label={error instanceof Error ? error.message : "Code 工作台启动失败"}
+        busy={false}
+      />
+    </StartupOverlayHandoff>,
   );
 }
-// 应用（或失败屏）已提交：等两帧确认画出来了，再摘掉预渲染加载层并让父页撤下同一形态的那一屏。
-requestAnimationFrame(() =>
-  requestAnimationFrame(() => dismissStartupOverlay()),
-);
 window.addEventListener(
   "pagehide",
   () => {

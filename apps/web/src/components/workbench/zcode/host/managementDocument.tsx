@@ -31,6 +31,7 @@ import type { Root } from "react-dom/client";
 import { createMacDesktopChrome } from "./desktopChrome.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { createCodePlatform } from "./platform.js";
+import { StartupOverlayHandoff } from "./startupOverlay.js";
 
 function prepareTarget(target: ManagementTarget) {
   if (target.page === "settings" && target.section)
@@ -209,11 +210,13 @@ export function renderManagementDocument(
 ) {
   prepareTarget(target);
   root.render(
-    <ManagementDocument
-      client={client}
-      initialTarget={target}
-      user={user}
-      onClose={onClose}
-    />,
+    <StartupOverlayHandoff>
+      <ManagementDocument
+        client={client}
+        initialTarget={target}
+        user={user}
+        onClose={onClose}
+      />
+    </StartupOverlayHandoff>,
   );
 }
