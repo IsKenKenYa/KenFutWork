@@ -1,3 +1,4 @@
+import { setTimeout } from "node:timers/promises";
 import type { AgentMiddleware } from "langchain";
 
 /**
@@ -32,11 +33,12 @@ export function createLlmRequestRetryMiddleware(options: {
   infinite: boolean;
   signal?: AbortSignal;
   /** 退避注入点（测试用）；默认 1s 起指数翻倍、30s 封顶。 */
-  delayMs?: (ms: number) => Promise<void>;
+  delayMs?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }): AgentMiddleware {
   const delay =
     options.delayMs ??
-    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    ((ms: number, signal?: AbortSignal) =>
+      setTimeout(ms, undefined, { signal }));
 
   return {
     name: "llmRequestRetry",
@@ -47,21 +49,35 @@ export function createLlmRequestRetryMiddleware(options: {
       const maxAttempts = options.infinite
         ? Number.POSITIVE_INFINITY
         : Math.max(1, Math.floor(options.maxAttempts));
-      const signal =
-        (request as { config?: { signal?: AbortSignal } }).config?.signal ??
-        options.signal;
+      const source = request as {
+        runtime?: { signal?: AbortSignal };
+        config?: { signal?: AbortSignal };
+      };
+      // SDK 的模型中间件用 runtime.signal；兼容显式调用传入的信号。
+      const signals = [
+        source.runtime?.signal,
+        source.config?.signal,
+        options.signal,
+      ].filter((candidate) => candidate !== undefined);
+      const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
       let attempt = 0;
       // eslint-disable-next-line no-constant-condition
       while (true) {
+        signal?.throwIfAborted();
         attempt += 1;
         try {
           return await handler(request);
         } catch (error) {
-          if (signal?.aborted) throw error;
+          signal?.throwIfAborted();
           if (attempt >= maxAttempts) throw error;
           if (!isRetryableLlmError(error)) throw error;
-          await delay(Math.min(30_000, 1_000 * 2 ** (attempt - 1)));
-          if (signal?.aborted) throw error;
+          try {
+            await delay(Math.min(30_000, 1_000 * 2 ** (attempt - 1)), signal);
+          } catch (delayError) {
+            // Node 的计时器会生成自己的 AbortError；保留原任务的停止原因。
+            signal?.throwIfAborted();
+            throw delayError;
+          }
         }
       }
     },

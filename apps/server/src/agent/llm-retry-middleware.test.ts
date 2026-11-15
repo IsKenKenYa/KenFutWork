@@ -1,4 +1,6 @@
+import { setImmediate, setTimeout } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
+import { heldModel } from "../features/code-ui/model-stream.fixture.js";
 
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 
@@ -25,8 +27,11 @@ function run(middleware: unknown, handler: Handler) {
       wrapModelCall: (req: unknown, hnd: unknown) => Promise<unknown>;
     }
   ).wrapModelCall.bind(middleware);
-  return (request: { messages: string[] }) =>
-    wrap(request, handler) as Promise<string>;
+  return (request: {
+    messages: string[];
+    runtime?: { signal?: AbortSignal };
+    config?: { signal?: AbortSignal };
+  }) => wrap(request, handler) as Promise<string>;
 }
 
 describe("LLM 请求重试中间件（DEC-18）", () => {
@@ -112,7 +117,72 @@ describe("LLM 请求重试中间件（DEC-18）", () => {
     };
     await expect(
       run(middleware, handler)({ messages: ["hi"] }),
-    ).rejects.toThrow("429");
+    ).rejects.toMatchObject({ name: "AbortError" });
     expect(attempts).toBe(2);
+  });
+
+  it("收到真实 HTTP 429 后可立即取消等待，且不会发起第二次请求", async () => {
+    const provider = await heldModel({ rejectStatus: 429 });
+    const controller = new AbortController();
+    const fallback = new AbortController();
+    const deadline = new AbortController();
+    const cancelled = new DOMException("用户停止任务", "AbortError");
+    let responseStatus: number | undefined;
+    let failed!: () => void;
+    const failureObserved = new Promise<void>((resolve) => {
+      failed = resolve;
+    });
+    try {
+      const invoke = run(
+        createLlmRequestRetryMiddleware({
+          maxAttempts: 3,
+          infinite: false,
+          signal: fallback.signal,
+        }),
+        async ({ messages }) => {
+          const response = await fetch(`${provider.baseUrl}/chat/completions`, {
+            method: "POST",
+            body: JSON.stringify({ messages }),
+          });
+          responseStatus = response.status;
+          await response.text();
+          failed();
+          throw new Error(`HTTP ${response.status}`);
+        },
+      );
+      const outcome = invoke({
+        messages: ["检查退避取消"],
+        runtime: { signal: controller.signal },
+      }).catch((error: unknown) => error);
+      await Promise.race([failureObserved, outcome]);
+      await setImmediate();
+      controller.abort(cancelled);
+      const result = await Promise.race([
+        outcome,
+        setTimeout(500, "仍在等待重试", { signal: deadline.signal }),
+      ]);
+      expect(result).toBe(cancelled);
+      expect(responseStatus).toBe(429);
+      expect(provider.requests).toHaveLength(1);
+      expect(fallback.signal.aborted).toBe(false);
+    } finally {
+      deadline.abort();
+      fallback.abort();
+      await provider.close();
+    }
+  });
+
+  it("开始前配置已取消，不调用模型", async () => {
+    const controller = new AbortController();
+    const cancelled = new DOMException("请求已取消", "AbortError");
+    controller.abort(cancelled);
+    const { handler, calls } = makeHandler(["不应请求模型"]);
+    await expect(
+      run(
+        createLlmRequestRetryMiddleware({ maxAttempts: 2, infinite: false }),
+        handler,
+      )({ messages: [], config: { signal: controller.signal } }),
+    ).rejects.toBe(cancelled);
+    expect(calls()).toBe(0);
   });
 });
