@@ -2155,7 +2155,7 @@
       "source": "references/zcode/packages/ui/src/app-shell/WorkspaceShellLayout.tsx",
       "target": "apps/web/src/components/workbench/zcode/app-shell/WorkspaceShellLayout.tsx",
       "sha256": "57ab98aaf8f6953f7a31575b201546982d9b1d7969c1e426f4b9921b2c4e2210",
-      "copiedSha256": "f25b9b1f4bde9d5ad3ba98838f6250b62fca83eb5bd8336a08332e2c5417fd57",
+      "copiedSha256": "34647b31abd2371710872464a6da121a836ea88a735f79c54b4cdd70dd281447",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
@@ -2168,7 +2168,8 @@
         "2026-10-27（二百八十五）：Work 引擎入口回调与 HostWorkSurface 返回会话。",
         "宿主修复：随添加项目入口移除侧栏打开文件夹/远程菜单透传属性",
         "macOS 工作台保留 4px 面板边缘，草稿顶部空白与右侧标签栏支持窗口拖动。",
-        "浏览器窄窗口按需显示全宽导航、会话或内容，保持实际面板和桌面宽度设置；切换时移动键盘焦点。"
+        "浏览器窄窗口按需显示全宽导航、会话或内容，保持实际面板和桌面宽度设置；切换时移动键盘焦点。",
+        "Design 窄窗口的草稿会话保留返回画布按钮，复用原内容面与切换焦点。"
       ]
     },
     {

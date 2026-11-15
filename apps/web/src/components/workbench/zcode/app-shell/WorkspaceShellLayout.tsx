@@ -1897,6 +1897,8 @@ export const WorkspaceShellLayout = memo(
       !isEmbeddedSurfaceView;
     const shouldRenderWorkspaceHeader =
       shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop);
+    const showCompactDraftCanvasReturn = isCompactWorkspace &&
+      workspaceMainView === "design" && isSidePaneVisible && !shouldRenderWorkspaceHeader;
     const hasMacDraftDragArea =
       isMacDesktop && !isMacFullscreen && !isFullView &&
       shouldRenderMainViewHeader && !shouldRenderWorkspaceHeader;
@@ -2221,6 +2223,20 @@ export const WorkspaceShellLayout = memo(
                             allowOpenWorkspace={allowOpenWorkspace}
                           />
                         </ScopedErrorBoundary>
+                      ) : null}
+                      {showCompactDraftCanvasReturn ? (
+                        <div className="flex shrink-0 justify-end px-2 py-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            data-testid={TID_SIDE_PANE_TOGGLE}
+                            aria-controls="browser"
+                            onClick={toggleWorkspaceContent}
+                          >
+                            返回画布
+                          </Button>
+                        </div>
                       ) : null}
                       <div
                         className="min-h-0 flex-1 overflow-hidden"
