@@ -1,4 +1,7 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { BaseMessage } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import {
   mergeInvocationParameters,
@@ -7,6 +10,9 @@ import {
 import type { InstanceCredentials } from "../types.js";
 
 class InstanceGeminiModel extends ChatGoogleGenerativeAI {
+  private readonly invocationSignal = new AsyncLocalStorage<
+    AbortSignal | undefined
+  >();
   readonly requestBody: Record<string, unknown>;
   constructor(
     config: ConstructorParameters<typeof ChatGoogleGenerativeAI>[0],
@@ -14,6 +20,26 @@ class InstanceGeminiModel extends ChatGoogleGenerativeAI {
   ) {
     super(config);
     this.requestBody = structuredClone(body);
+  }
+  override _generate(
+    messages: BaseMessage[],
+    options: this["ParsedCallOptions"],
+    runManager?: CallbackManagerForLLMRun,
+  ) {
+    // 当前 SDK 的非流式路径未继续传递 signal；每次调用独立保存，含未提供信号的调用。
+    return this.invocationSignal.run(options.signal, () =>
+      super._generate(messages, options, runManager),
+    );
+  }
+  override completionWithRetry(
+    request: Parameters<ChatGoogleGenerativeAI["completionWithRetry"]>[0],
+    options?: this["ParsedCallOptions"],
+  ) {
+    const signal = options?.signal ?? this.invocationSignal.getStore();
+    return super.completionWithRetry(
+      request,
+      signal ? { ...options, signal } : options,
+    );
   }
   override invocationParams(options?: this["ParsedCallOptions"]) {
     return mergeInvocationParameters(
