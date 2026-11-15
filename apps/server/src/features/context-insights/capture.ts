@@ -1,4 +1,5 @@
 import {
+  contextRequestHttpStatusSchema,
   contextRequestInputSchema,
   type ModelCallPurpose,
 } from "@kenfutwork/shared";
@@ -180,11 +181,20 @@ export function createContextRequestCallbacks(
       });
     },
     async handleLLMError(error, id) {
+      const status = error.name === "AbortError" ? "cancelled" : "failed";
+      // 只读取 SDK 暴露的数字状态，不解析错误消息或响应正文。
+      const sdkError = object(error);
+      const httpStatus = contextRequestHttpStatusSchema.safeParse(
+        sdkError?.status ?? sdkError?.statusCode,
+      );
       await writer.finish({
         id,
         owner,
         endedAt: new Date().toISOString(),
-        status: error.name === "AbortError" ? "cancelled" : "failed",
+        status,
+        ...(status === "failed" && httpStatus.success
+          ? { httpStatus: httpStatus.data }
+          : {}),
         // 错误原文可能包含服务商请求信息，不进入上下文正文记录。
         output: null,
         usage: null,

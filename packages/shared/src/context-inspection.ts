@@ -32,6 +32,11 @@ export const contextRequestUsageSchema = z
     cachedInputTokens: z.number().int().nonnegative().optional(),
   })
   .strict();
+export const contextRequestHttpStatusSchema = z
+  .number()
+  .int()
+  .min(400)
+  .max(599);
 export const contextRequestSummarySchema = z
   .object({
     id: z.uuid(),
@@ -43,6 +48,7 @@ export const contextRequestSummarySchema = z
     startedAt: z.iso.datetime(),
     endedAt: z.iso.datetime().nullable(),
     status: z.enum(["running", "completed", "failed", "cancelled"]),
+    httpStatus: contextRequestHttpStatusSchema.nullable().optional(),
     model: z.string().nullable(),
     messageCount: z.number().int().nonnegative(),
     toolCount: z.number().int().nonnegative().nullable(),

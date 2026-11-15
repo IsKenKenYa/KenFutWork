@@ -122,6 +122,12 @@ export default function ContextInspectionDialog({
                 <div className="context-inspection-summary">
                   <h2>请求 #{state.selected.sequence}</h2>
                   <dl>
+                    {state.selected.httpStatus != null ? (
+                      <div>
+                        <dt>供应商状态</dt>
+                        <dd>HTTP {state.selected.httpStatus}</dd>
+                      </div>
+                    ) : null}
                     <div>
                       <dt>实际输入</dt>
                       <dd>{state.selected.usage?.inputTokens ?? "未知"}</dd>

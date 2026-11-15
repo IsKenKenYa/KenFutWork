@@ -7,9 +7,11 @@ import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createContextRequestCallbacks } from "./capture.js";
 import { createContextInspectionService } from "./service.js";
 
-async function captureFixture() {
+async function captureFixture(httpStatus?: number) {
   const database = await createTaskWorkDatabase();
-  const provider = await heldModel();
+  const provider = await heldModel({
+    ...(httpStatus ? { rejectStatus: httpStatus } : {}),
+  });
   let providerClosed = false;
   const closeProvider = async () => {
     if (providerClosed) return;
@@ -139,7 +141,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         await rejection;
         await vi.waitFor(async () => {
           expect(await f.summaries()).toMatchObject([
-            { status: "failed", usage: null },
+            { status: "failed", httpStatus: null, usage: null },
           ]);
         });
         expect(await f.output()).toBeNull();
@@ -149,6 +151,24 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         await f.close();
       }
     });
+
+    it.each([401, 429, 503])(
+      "仅记录真实供应商的 HTTP %s 状态",
+      async (status) => {
+        const f = await captureFixture(status);
+        try {
+          await expect(f.port(f.request)).rejects.toThrow();
+          expect(f.provider.requests).toHaveLength(1);
+          expect(await f.summaries()).toMatchObject([
+            { status: "failed", httpStatus: status, usage: null },
+          ]);
+          expect(await f.output()).toBeNull();
+          expect(f.usageCount()).toBe(0);
+        } finally {
+          await f.close();
+        }
+      },
+    );
 
     it.each([
       ["length", "length"],

@@ -13,6 +13,7 @@ export async function heldModel(
       { id: string; name: string; arguments: Record<string, unknown> }
     >;
     usage?: { promptTokens: number; completionTokens: number };
+    rejectStatus?: number;
   } = {},
 ) {
   const requests: Array<{ closed: boolean; body: Record<string, unknown> }> =
@@ -54,6 +55,15 @@ export async function heldModel(
     response.on("close", () => {
       entry.closed = true;
     });
+    if (options.rejectStatus !== undefined) {
+      response.writeHead(options.rejectStatus, {
+        "content-type": "application/json",
+      });
+      response.end(
+        JSON.stringify({ error: { message: "测试供应商原始错误" } }),
+      );
+      return;
+    }
     response.writeHead(200, { "content-type": "text/event-stream" });
     const tool =
       options.toolsByRequest?.[requests.length - 1] ??

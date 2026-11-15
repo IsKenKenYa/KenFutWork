@@ -19,6 +19,7 @@ export interface ContextRequestFinish {
   owner: ContextRequestOwner;
   endedAt: string;
   status: "completed" | "failed" | "cancelled";
+  httpStatus?: number;
   output: unknown;
   usage: {
     inputTokens: number;

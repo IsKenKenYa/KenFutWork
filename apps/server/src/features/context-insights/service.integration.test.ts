@@ -53,6 +53,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         expect(list.requests.map((item) => item.id)).toEqual([request.id]);
         expect(list.requests[0]).toMatchObject({
           status: "running",
+          httpStatus: null,
           model: "actual-model",
           usage: null,
           outputCharacters: null,
@@ -125,6 +126,27 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         await expect(
           cold.writer.start({ ...auxiliary, purpose: "approval-review" }),
         ).rejects.toMatchObject({ statusCode: 409 });
+        const failure = {
+          ...finish,
+          id: auxiliary.id,
+          status: "failed" as const,
+          output: null,
+          usage: null,
+          httpStatus: 429,
+        };
+        await Promise.all([
+          first.writer.finish(failure),
+          cold.writer.finish(failure),
+        ]);
+        await cold.writer.finish(failure);
+        await expect(
+          cold.writer.finish({ ...failure, httpStatus: 503 }),
+        ).rejects.toMatchObject({ statusCode: 409 });
+        expect(
+          (
+            await cold.list(database.actor, { taskId: request.owner.taskId })
+          ).requests.find((row) => row.id === auxiliary.id),
+        ).toMatchObject({ status: "failed", httpStatus: 429 });
         await database.persistence
           .forInstance(database.instanceId)
           .execute(
@@ -132,6 +154,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             [request.owner.taskId],
           );
         await first.writer.finish(finish);
+        await first.writer.finish(failure);
         await expect(first.writer.start(request)).rejects.toMatchObject({
           statusCode: 404,
         });
@@ -143,8 +166,8 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           }),
         ).rejects.toMatchObject({ statusCode: 404 });
         const stored = await database.persistence.queryOne<{ count: string }>(
-          "select count(*)::text as count from public.context_model_requests where id=$1",
-          [request.id],
+          "select count(*)::text as count from public.context_model_requests where id in ($1, $2)",
+          [request.id, auxiliary.id],
         );
         expect(stored?.count).toBe("0");
       } finally {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type ContextRequestSummary,
+  contextRequestHttpStatusSchema,
   contextRequestListInputSchema,
   contextRequestListSchema,
   contextRequestReadInputSchema,
@@ -104,10 +105,16 @@ export function createContextInspectionService(deps: {
     },
     async finish(input) {
       const text = JSON.stringify(input.output);
+      const httpStatus =
+        input.httpStatus === undefined
+          ? null
+          : contextRequestHttpStatusSchema.parse(input.httpStatus);
       const hash = fingerprint({
         status: input.status,
         output: input.output,
         usage: input.usage,
+        // 空值保持旧指纹；升级前的终态仍可幂等重放。
+        ...(httpStatus === null ? {} : { httpStatus }),
       });
       await deps.persistence.transaction(async (tx) => {
         const sql = tx.forInstance(input.owner.instanceId);
@@ -131,7 +138,7 @@ export function createContextInspectionService(deps: {
         }
         await sql.execute(
           `update public.context_model_requests set ended_at=$4,status=$5,output_text=$6,
-             output_fingerprint=$7,output_characters=$8,usage=$9::jsonb
+             output_fingerprint=$7,output_characters=$8,usage=$9::jsonb,http_status=$10
            where instance_id=:instance and id=$1 and task_id=$2 and run_id=$3`,
           [
             input.id,
@@ -143,6 +150,7 @@ export function createContextInspectionService(deps: {
             hash,
             text.length,
             input.usage === null ? null : JSON.stringify(input.usage),
+            httpStatus,
           ],
         );
       });
@@ -160,7 +168,7 @@ export function createContextInspectionService(deps: {
           'agentCallId',r.agent_call_id,'agentName',r.agent_name,
           'startedAt',to_char(r.started_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'endedAt',to_char(r.ended_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-          'status',r.status,'model',r.model,'messageCount',r.message_count,'toolCount',r.tool_count,
+          'status',r.status,'httpStatus',r.http_status,'model',r.model,'messageCount',r.message_count,'toolCount',r.tool_count,
           'inputCharacters',r.input_characters,'outputCharacters',r.output_characters,'usage',r.usage) summary
          from public.context_model_requests r join public.code_ui_sessions t on t.id=r.task_id and t.instance_id=r.instance_id
          where r.instance_id=:instance and r.task_id=$1 and t.deleted_at is null
