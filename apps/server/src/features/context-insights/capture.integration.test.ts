@@ -77,15 +77,19 @@ async function captureFixture() {
         await service.list(database.actor, { taskId: owner.taskId })
       ).requests[0];
       if (!request) throw new Error("请求记录尚未保存");
-      return JSON.parse(
-        (
-          await service.read(database.actor, {
-            taskId: owner.taskId,
-            requestId: request.id,
-            part: "output",
-          })
-        ).text,
-      );
+      const chunks: string[] = [];
+      let offset: number | null = 0;
+      while (offset !== null) {
+        const page = await service.read(database.actor, {
+          taskId: owner.taskId,
+          requestId: request.id,
+          part: "output",
+          offset,
+        });
+        chunks.push(page.text);
+        offset = page.nextOffset;
+      }
+      return JSON.parse(chunks.join(""));
     },
     usageCount: () => usageCount,
     async close() {
@@ -146,24 +150,36 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
       }
     });
 
-    it("模型完成后收到取消信号保持已完成记录，未上报用量保持未知", async () => {
-      const f = await captureFixture();
-      try {
-        const pending = f.port(f.request);
-        await Promise.race([f.provider.firstRequest, pending]);
-        f.provider.finish(0);
-        expect(await pending).toMatchObject({
-          text: "正在运行 1",
-          usageObserved: false,
-        });
-        const before = await f.summaries();
-        expect(before).toMatchObject([{ status: "completed", usage: null }]);
-        f.controller.abort(new Error("完成后取消"));
-        expect(await f.summaries()).toEqual(before);
-        expect(f.usageCount()).toBe(0);
-      } finally {
-        await f.close();
-      }
-    });
+    it.each([
+      ["length", "length"],
+      [null, undefined],
+      ["fixture-private-reason", undefined],
+    ])(
+      "已完成请求保留已知的停止原因 %s，并忽略迟到的取消信号",
+      async (providerReason, recordedReason) => {
+        const f = await captureFixture();
+        try {
+          const pending = f.port(f.request);
+          await Promise.race([f.provider.firstRequest, pending]);
+          f.provider.finish(0, providerReason);
+          expect(await pending).toMatchObject({
+            text: "正在运行 1",
+            usageObserved: false,
+          });
+          const before = await f.summaries();
+          expect(before).toMatchObject([{ status: "completed", usage: null }]);
+          const output = await f.output();
+          expect(output).toMatchObject([
+            { type: "ai", data: { content: "正在运行 1" } },
+          ]);
+          expect(output[0].data.finishReason).toBe(recordedReason);
+          f.controller.abort(new Error("完成后取消"));
+          expect(await f.summaries()).toEqual(before);
+          expect(f.usageCount()).toBe(0);
+        } finally {
+          await f.close();
+        }
+      },
+    );
   },
 );

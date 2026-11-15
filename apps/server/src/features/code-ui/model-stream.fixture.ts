@@ -148,7 +148,7 @@ export async function heldModel(
       );
     },
     // index与requests一致，从0开始；旧消费者不调用时仍永久保留流。
-    finish(index: number) {
+    finish(index: number, reason: string | null = "stop") {
       const response = responses[index];
       if (!response || response.destroyed || response.writableEnded)
         throw new Error("指定的模型流尚未打开或已经结束。");
@@ -158,7 +158,7 @@ export async function heldModel(
           object: "chat.completion.chunk",
           created: 1,
           model: "stop-model",
-          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          choices: [{ index: 0, delta: {}, finish_reason: reason }],
         })}\n\n`,
       );
       writeUsage(response, index);

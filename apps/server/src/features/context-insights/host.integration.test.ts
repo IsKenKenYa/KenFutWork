@@ -48,6 +48,20 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           inputTokens: 37,
           outputTokens: 9,
         });
+        const outputResponse = await host.client.request("/api/code-ui/rpc", {
+          service: "context-insights",
+          method: "read",
+          args: [
+            { taskId: host.sessionId, requestId: record.id, part: "output" },
+          ],
+        });
+        expect(outputResponse.status).toBe(200);
+        const output = contextRequestPageSchema.parse(
+          outputResponse.body.result,
+        );
+        expect(JSON.parse(output.text)).toMatchObject([
+          { type: "ai", data: { content: "正在运行 1", finishReason: "stop" } },
+        ]);
         const chunks: string[] = [];
         let offset = 0;
         for (;;) {

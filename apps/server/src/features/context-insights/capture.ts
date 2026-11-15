@@ -19,6 +19,51 @@ const sdkUsageSchema = z.object({
     .optional(),
 });
 
+// 只保留供应商定义的停止原因，不保存任意理由文本或其他响应元数据。
+const knownFinishReasons = new Set([
+  "stop",
+  "length",
+  "tool_calls",
+  "function_call",
+  "content_filter",
+  "end_turn",
+  "max_tokens",
+  "stop_sequence",
+  "tool_use",
+  "pause_turn",
+  "refusal",
+  "safety",
+  "recitation",
+  "language",
+  "blocklist",
+  "prohibited_content",
+  "spii",
+  "malformed_function_call",
+  "unexpected_tool_call",
+  "other",
+  "image_safety",
+  "image_prohibited_content",
+  "image_recitation",
+  "no_image",
+  "max_output_tokens",
+  "model_context_window_exceeded",
+]);
+
+function readFinishReason(
+  ...metadata: (Record<string, unknown> | undefined)[]
+) {
+  for (const entry of metadata) {
+    const value =
+      entry?.finish_reason ?? entry?.stop_reason ?? entry?.finishReason;
+    if (
+      typeof value === "string" &&
+      knownFinishReasons.has(value.toLowerCase())
+    )
+      return value;
+  }
+  return undefined;
+}
+
 /** 排除仅供宿主使用的 artifact、响应头和计量元数据。 */
 function serializeMessage(message: BaseMessage) {
   const serialized = message.toDict();
@@ -79,17 +124,25 @@ export function createContextRequestCallbacks(
     },
     async handleLLMEnd(result, id) {
       const generations = result.generations.flat();
-      const messages: AIMessage[] = generations.flatMap((generation) =>
+      const replies = generations.flatMap((generation) =>
         "message" in generation && AIMessage.isInstance(generation.message)
-          ? [generation.message]
+          ? [
+              {
+                message: generation.message,
+                finishReason: readFinishReason(
+                  generation.generationInfo,
+                  generation.message.response_metadata,
+                ),
+              },
+            ]
           : [],
       );
-      const observed = messages.flatMap((message) => {
+      const observed = replies.flatMap(({ message }) => {
         const value = object(message)?.usage_metadata;
         return value == null ? [] : [sdkUsageSchema.parse(value)];
       });
       const usage =
-        observed.length > 0 && observed.length === messages.length
+        observed.length > 0 && observed.length === replies.length
           ? {
               inputTokens: observed.reduce(
                 (sum, item) => sum + item.input_tokens,
@@ -117,7 +170,12 @@ export function createContextRequestCallbacks(
         owner,
         endedAt: new Date().toISOString(),
         status: "completed",
-        output: messages.map(serializeMessage),
+        output: replies.map(({ message, finishReason }) => {
+          const serialized = serializeMessage(message);
+          if (finishReason !== undefined)
+            serialized.data.finishReason = finishReason;
+          return serialized;
+        }),
         usage,
       });
     },
