@@ -78,6 +78,17 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 义务履行 | 本仓不随产物分发上游二进制：优先复用用户本机已装的 `sag`；未来按需下载时在下载器内保留版本与校验和，并在本表更新分发说明 |
 | 说明 | 语义检索依赖上游 Jev 服务（TypeSafe，商业服务）；凭据由用户自持（BYOK），不得把本仓凭据写回上游配置以外的位置 |
 
+### A8. dsh-context 与 DeepSeek Harness 界面组件
+
+| 项 | 内容 |
+| --- | --- |
+| 上游 | [dsh-context](https://github.com/bowenliang123/dsh-context)，0.84.1，提交 `c1c129a56bd317cd9a0516fe5223d99505a83c3e` |
+| 许可与版权 | Apache-2.0，Copyright 2025 bowenliang123；完整 LICENSE 保留于 `packages/context-insights-ui/vendor/dsh-context/LICENSE` |
+| 使用位置 | `packages/context-insights-ui/vendor/dsh-context/`：原 ContextBrowser、TrendChart、RequestDetail、组成图与相应数据处理、样式和语言资源；宿主连接到本机真实请求记录 |
+| 修改记录 | 包内 `来源清单.json` 固定上游提交、源文件哈希、当前哈希与修改说明；DSH 专用注册类型由本机宿主适配，React 19 ref 类型包含 null |
+| DeepSeek 依赖 | [`@deepseek-ai/dsh-client-ui-primitives@0.2.2-rc.3`](https://www.npmjs.com/package/@deepseek-ai/dsh-client-ui-primitives)，MIT，Copyright (c) 2026 DeepSeek；复用真实 Markdown、JSON、图标、剪贴板组件；图标安装适配来自 DeepSeek Harness `ui-theme/icon-sprite.ts`，MIT 全文在 `packages/context-insights-ui/vendor/deepseek-harness/LICENSE` |
+| 分发义务 | 随包保留上述许可、来源和修改说明；商业版允许使用但须保留声明；商标不在代码许可授权范围内 |
+
 ## B. 运行时与构建期开源依赖
 
 以下按 `package.json` 与 `pnpm-lock.yaml` 的真实依赖核对，未凭记忆填写。完整传递依赖清单以 lockfile 为准（数百个包，逐包许可文本见「分发义务」§G2 的待办）。

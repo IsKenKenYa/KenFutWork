@@ -1,0 +1,724 @@
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type UIEvent } from 'react'
+import type { Category, ContextEventRecord, RequestRecord } from '../../shared/types'
+import { CATS } from '../categories'
+import { bandsMaximaOf, deltaBandsOf, deltaTotalsOf, dnaBaseLabel } from '../dna'
+import { lruTouch, lruTrim } from '../boundedCache'
+import type { DeltaMaxima, DnaDelta, TrendBand } from '../dna'
+import { containHorizontalOverscroll } from '../overscroll'
+import { scrollToPos } from '../revealScroll'
+import type { ViewKit } from '../viewkit'
+import { DnaBar, DnaDeltaBar, DnaHighlights, RISE_CLASS, STAGGER_CAP } from './trendDnaBars'
+import { DurationCurve } from './trendDurationCurve'
+import { BAR_GAP, BAR_W, TREND_WINDOW_MIN, WINDOW_HYSTERESIS_BARS, WINDOW_OVERSCAN_BARS, initialBarWindow, nextBarWindow, windowPads, windowRangeFor } from './trendWindow'
+import type { BarWindow } from './trendWindow'
+import { preprocessTrend, TURN_FILLS, trendMaxima, trendTipRows, turnStepsOf } from './trendModel'
+import { clampTipLeft } from './tip'
+import { useElementSize } from './useElementMetrics'
+
+export const RISE_CAP = 200
+
+const DNA_WINDOW_OVERSCAN = 8
+const DNA_WINDOW_HYSTERESIS = 2
+
+const BAND_STORE_MAX = 512
+
+export interface TrendChartProps {
+  requests: RequestRecord[]
+  markers: (ContextEventRecord | undefined)[]
+  selectedSeq: number | null
+  hoveredSeq: number | null
+  activeTurn: number | null
+  granularity: 'step' | 'turn'
+  mode: 'total' | 'delta'
+  focusTurn: number | null
+  focusSeq: number | null
+  hoverCat: string | null
+  focusCat?: string | null
+  adaptive?: boolean
+  durationCurve?: boolean
+  dna?: TrendBand[][] | null
+  dnaAt?: ((seq: number) => TrendBand[]) | null
+  deltaMaxima?: DeltaMaxima | null
+  onPickBand?: (seq: number, band: { key: string; cat: Category | 'system' | 'tools' }) => void
+  onSelect: (seq: number | null) => void
+  onHover: (seq: number | null) => void
+  onHoverTurn: (turn: number | null) => void
+  hoverLock?: { current: number }
+  onPickTurn: (turn: number) => void
+  onFocusTurnHandled: () => void
+  onFocusSeqHandled: () => void
+}
+
+export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactElement {
+  const { t, fmt, fmtDuration, eventLabel, eventAt, catLabel } = kit
+
+  const centerBar = (el: HTMLDivElement, idx: number): void => {
+    scrollToPos(el, { left: Math.max(0, idx * (BAR_W + BAR_GAP) + BAR_W / 2 - el.clientWidth / 2) })
+  }
+
+  const CHART_H = 112
+  const fmtSigned = (v: number): string => (v > 0 ? '+' : '') + fmt(v)
+  const STEP_FLAG_EVERY = 5
+  const LABEL_OVERHANG = 48
+  const LABEL_GAP = 2
+  const LABEL_FONT = 10
+  const LABEL_FONT_MIN = 6
+  const estTurnLabel = (turn: number): number => 6.5 * String(turn).length
+
+  interface VisibleMax {
+    total: number
+    up: number
+    activeMs: number
+  }
+
+  interface ChartBarProps {
+    req: RequestRecord
+    marker: ContextEventRecord | undefined
+    selected: boolean
+    hovered: boolean
+    inTurn: boolean
+    maxTotal: number
+    deltaScale?: number
+    enterIndex: number
+    rise: boolean
+    flag: number | null
+    dna: TrendBand[] | null
+    dnaDelta: DnaDelta | null
+    dnaScale: number | undefined
+    onDnaHit: (key: string | null) => void
+    onPickBand?: (seq: number, band: { key: string; cat: Category | 'system' | 'tools' }) => void
+    onSelect: (seq: number | null) => void
+    onHover: (seq: number | null) => void
+  }
+
+  const ChartBar = memo(function ChartBar(props: ChartBarProps): ReactElement {
+    kit.useLocaleTick()
+    const { req, marker } = props
+    const markerAt = marker !== undefined ? eventAt(marker) : null
+    const deltaBar = props.deltaScale !== undefined
+    const enterStyle = { '--lc-i': Math.min(props.enterIndex, STAGGER_CAP) } as CSSProperties
+    const riseCls = props.rise ? RISE_CLASS : ''
+    const label = req.stepCount !== undefined && req.stepCount > 1
+      ? t('tip.turn', { t: req.turn ?? 0, n: req.stepCount })
+      : t('browser.stepAt', { t: req.turn ?? 0, s: req.step ?? 0 })
+    return (
+      <div
+        className={'lc-bar hover:bg-(--dsw-alias-interactive-bg-hover)'
+          + (props.selected ? ' lc-bar-selected' : '')
+          + (props.hovered ? ' lc-bar-hovered' : '')
+          + (props.inTurn ? ' lc-bar-in-turn' : '')}
+        data-seq={req.seq}
+        style={{ width: `${BAR_W}px` }}
+        role="button"
+        tabIndex={0}
+        aria-label={label + ' · ' + t('tip.total', { n: fmt(req.total) })}
+        aria-pressed={props.selected}
+        onClick={() => { props.onSelect(props.selected ? null : req.seq) }}
+        onKeyDown={(ev) => {
+          if (ev.key !== 'Enter' && ev.key !== ' ') return
+          ev.preventDefault()
+          props.onSelect(props.selected ? null : req.seq)
+        }}
+        onMouseEnter={() => { props.onHover(req.seq) }}
+      >
+        {props.flag !== null ? (
+          <span className="lc-trend-flag" aria-hidden="true"><span className="lc-trend-flag-label">{props.flag}</span></span>
+        ) : null}
+        {marker !== undefined ? (
+          <span
+            className="lc-bar-marker"
+            title={'✂ ' + (markerAt !== null ? markerAt + ' — ' : '') + eventLabel(marker)}
+          >{'✂'}</span>
+        ) : null}
+        {props.dna !== null ? (
+          props.dnaDelta !== null && props.dnaScale !== undefined ? (
+            <DnaDeltaBar
+              bands={props.dnaDelta.up}
+              scale={props.dnaScale}
+              enterIndex={props.enterIndex}
+              rise={props.rise}
+              seq={req.seq}
+              onHit={props.onDnaHit}
+              onPick={props.onPickBand}
+            />
+          ) : (
+            <DnaBar
+              chartHeight={CHART_H}
+              bands={props.dna}
+              total={req.total}
+              maxTotal={props.maxTotal}
+              enterIndex={props.enterIndex}
+              rise={props.rise}
+              seq={req.seq}
+              onHit={props.onDnaHit}
+              onPick={props.onPickBand}
+            />
+          )
+        ) : deltaBar ? (
+          <div className={'lc-bar-up' + riseCls} style={{ bottom: 0, ...enterStyle }}>
+            {CATS.map((c) => {
+              const d = req[c.key] || 0
+              if (d <= 0) return null
+              return <div key={c.key} data-cat={c.key} className="lc-cat-seg" style={{ height: `${Math.max(1, Math.round(d * (props.deltaScale as number)))}px`, background: c.color }} />
+            })}
+          </div>
+        ) : (
+          <div className={'lc-bar-stack' + riseCls} style={enterStyle}>
+            {CATS.map((c) => {
+              const v = req[c.key] || 0
+              if (!v) return null
+              return <div key={c.key} data-cat={c.key} className="lc-cat-seg" style={{ height: `${Math.max(1, Math.round(v / props.maxTotal * CHART_H))}px`, background: c.color }} />
+            })}
+          </div>
+        )}
+      </div>
+    )
+  })
+
+  return function TrendChart(props: TrendChartProps): ReactElement {
+    const dnaArray = props.dna ?? null
+    const dnaAt = props.dnaAt ?? null
+    const dnaOn = dnaArray !== null || dnaAt !== null
+    const delta = props.mode === 'delta'
+    const dnaDeltaOn = dnaOn && delta
+    const durationOn = props.durationCurve === true
+    const [dnaHit, setDnaHit] = useState<string | null>(null)
+    const [localHover, setLocalHover] = useState<number | null>(null)
+    const hoverSeq = localHover ?? props.hoveredSeq
+    const handleBarHover = useCallback((seq: number | null): void => {
+      if (seq !== null && props.hoverLock !== undefined && performance.now() < props.hoverLock.current) return
+      setLocalHover(seq)
+      props.onHover(seq)
+    }, [props.onHover, props.hoverLock])
+    useEffect(() => {
+      setLocalHover(prev => (prev === null || props.hoveredSeq === prev ? prev : null))
+    }, [props.hoveredSeq])
+    const { requests, focus } = useMemo(
+      () => preprocessTrend(props.requests, delta, dnaOn ? null : props.focusCat),
+      [props.requests, delta, props.focusCat, dnaOn],
+    )
+    const bandStore = useMemo(() => ({
+      bands: new Map<number, TrendBand[]>(),
+      deltas: new Map<number, DnaDelta>(),
+    }), [dnaAt, dnaArray])
+    const bandAt = useCallback((idx: number): TrendBand[] => {
+      const seq = requests[idx].seq
+      const hit = bandStore.bands.get(seq)
+      if (hit !== undefined) {
+        lruTouch(bandStore.bands, seq)
+        return hit
+      }
+      const bands = dnaAt !== null ? dnaAt(seq) : (dnaArray as TrendBand[][])[idx]
+      bandStore.bands.set(seq, bands)
+      lruTrim(bandStore.bands, BAND_STORE_MAX)
+      return bands
+    }, [bandStore, requests, dnaAt, dnaArray])
+    const deltaAt = useCallback((idx: number): DnaDelta => {
+      const hit = bandStore.deltas.get(idx)
+      if (hit !== undefined) {
+        lruTouch(bandStore.deltas, idx)
+        return hit
+      }
+      const d = deltaBandsOf(bandAt(idx), idx > 0 ? bandAt(idx - 1) : null)
+      bandStore.deltas.set(idx, d)
+      lruTrim(bandStore.deltas, BAND_STORE_MAX)
+      return d
+    }, [bandStore, bandAt])
+    const markers = props.markers
+    const adaptive = props.adaptive === true
+    const [visMax, setVisMax] = useState<VisibleMax | null>(null)
+    const measureVisible = (el: HTMLDivElement): void => {
+      if (!adaptive) return
+      const n = requests.length
+      if (n === 0 || el.clientWidth <= 0) return
+      const pitch = BAR_W + BAR_GAP
+      const sl = el.scrollLeft
+      const vr = sl + el.clientWidth
+      let total = 0
+      let up = 0
+      let activeMs = 0
+      const from = Math.max(0, Math.floor(sl / pitch))
+      const to = Math.min(n - 1, Math.max(from, Math.floor((vr - 1) / pitch)))
+      for (let i = from; i <= to; i++) {
+        const col = i * pitch
+        if (col >= vr || col + BAR_W <= sl) continue
+        const req = requests[i]
+        const m = req.activeMs ?? 0
+        if (m > activeMs) activeMs = m
+        if (delta) {
+          let bu = 0
+          if (dnaDeltaOn) {
+            for (const b of deltaAt(i).up) bu += b.tokens
+          } else {
+            for (const c of CATS) {
+              const d = req[c.key] || 0
+              if (d > 0) bu += d
+            }
+          }
+          if (bu > up) up = bu
+        } else if (req.total > total) {
+          total = req.total
+        }
+      }
+      setVisMax(prev => prev !== null && prev.total === total && prev.up === up && prev.activeMs === activeMs
+        ? prev
+        : { total, up, activeMs })
+    }
+    const dnaMaxUp = useMemo(() => {
+      if (dnaArray !== null) return dnaDeltaOn ? bandsMaximaOf(dnaArray).up : 0
+      if (props.deltaMaxima !== undefined && props.deltaMaxima !== null) return props.deltaMaxima.up
+      let up = 0
+      if (dnaDeltaOn && dnaAt !== null && (!adaptive || visMax === null)) {
+        let prev: TrendBand[] | null = null
+        for (let i = 0; i < requests.length; i++) {
+          const bands = dnaAt(requests[i].seq)
+          const totals = deltaTotalsOf(bands, prev)
+          if (totals.up > up) up = totals.up
+          prev = bands
+        }
+      }
+      return up
+    }, [requests, dnaDeltaOn, dnaAt, dnaArray, adaptive, visMax, props.deltaMaxima])
+    let maxTotal = 1
+    let maxUp = 0
+    if (dnaDeltaOn) {
+      maxUp = dnaMaxUp
+    } else {
+      const maxima = trendMaxima(requests, delta)
+      maxTotal = maxima.maxTotal
+      maxUp = maxima.maxUp
+    }
+    if (adaptive && visMax !== null) {
+      if (delta && visMax.up > 0) maxUp = visMax.up
+      else if (!delta) maxTotal = Math.max(1, visMax.total)
+    }
+    let maxActiveMs = 0
+    if (durationOn) {
+      for (const req of requests) {
+        const m = req.activeMs ?? 0
+        if (m > maxActiveMs) maxActiveMs = m
+      }
+      if (adaptive && visMax !== null) maxActiveMs = visMax.activeMs
+    }
+    const durationGeometry = useMemo(() => {
+      const runs: string[] = []
+      const dots: [number, number][] = []
+      if (!durationOn) return { runs, dots }
+      const scale = CHART_H / Math.max(1, maxActiveMs)
+      let run: [number, number][] = []
+      const flushRun = (): void => {
+        if (run.length >= 2) runs.push(run.map(p => `${p[0]},${p[1]}`).join(' '))
+        else if (run.length === 1) dots.push(run[0])
+        run = []
+      }
+      for (let i = 0; i < requests.length; i++) {
+        const m = requests[i].activeMs
+        if (m === undefined) {
+          flushRun()
+          continue
+        }
+        run.push([i * (BAR_W + BAR_GAP) + BAR_W / 2, Math.round((CHART_H - m * scale) * 100) / 100])
+      }
+      flushRun()
+      return { runs, dots }
+    }, [requests, durationOn, maxActiveMs])
+    const span = Math.max(1, maxUp)
+    const deltaScale = CHART_H / span
+    const q3Value = Math.round(maxUp * 3 / 4)
+    const q1Value = Math.round(maxUp / 4)
+    const midValue = Math.round(maxUp / 2)
+
+    const groups: { turn: number; count: number; span: number; agg: boolean }[] = []
+    for (const req of requests) {
+      let grp = groups.length > 0 ? groups[groups.length - 1] : null
+      if (grp === null || grp.turn !== (req.turn ?? 0)) {
+        grp = { turn: req.turn ?? 0, count: 0, span: 0, agg: req.stepCount !== undefined }
+        groups.push(grp)
+      }
+      grp.count++
+      grp.span += req.stepCount ?? 1
+    }
+
+    const turnOffsets: number[] = []
+    const turnWidths: number[] = []
+    {
+      let x = 0
+      for (const grp of groups) {
+        const w = grp.agg ? BAR_W : grp.span * (BAR_W + BAR_GAP) - BAR_GAP
+        turnOffsets.push(x)
+        turnWidths.push(w)
+        x += w + BAR_GAP
+      }
+    }
+
+    const riseFrom = Math.max(0, requests.length - RISE_CAP)
+
+    let labelFont = ''
+    {
+      let scale = 1
+      for (let i = 0; i + 1 < groups.length; i++) {
+        const avail = (turnWidths[i] + turnWidths[i + 1]) / 2 + BAR_GAP
+        const need = (estTurnLabel(groups[i].turn) + estTurnLabel(groups[i + 1].turn)) / 2 + LABEL_GAP
+        if (need > avail) scale = Math.min(scale, avail / need)
+      }
+      if (scale < 1) labelFont = `${Math.max(LABEL_FONT_MIN, Math.floor(LABEL_FONT * scale))}px`
+    }
+
+    const scrollRef = useRef<HTMLDivElement | null>(null)
+    const chartWidth = useElementSize(scrollRef).width
+    const scrolledOnce = useRef(false)
+    const lastGranRef = useRef(props.granularity)
+    const lastSeqRef = useRef(0)
+    const prevScrollWidthRef = useRef(0)
+    const cwRef = useRef(0)
+    const slRef = useRef(0)
+    const windowed = requests.length > TREND_WINDOW_MIN
+    const windowOverscan = dnaOn ? DNA_WINDOW_OVERSCAN : WINDOW_OVERSCAN_BARS
+    const windowHysteresis = dnaOn ? DNA_WINDOW_HYSTERESIS : WINDOW_HYSTERESIS_BARS
+    const [barWindow, setBarWindow] = useState<BarWindow>(() => initialBarWindow(requests.length, windowOverscan))
+    const barWindowRef = useRef(barWindow)
+    useLayoutEffect(() => { barWindowRef.current = barWindow }, [barWindow])
+    const winRafRef = useRef<number | null>(null)
+    const syncWindow = (el: HTMLDivElement): void => {
+      if (requests.length <= TREND_WINDOW_MIN) return
+      const desired = windowRangeFor(el.scrollLeft, el.clientWidth, requests.length, windowOverscan)
+      const prev = barWindowRef.current
+      const next = nextBarWindow(prev, desired, requests.length, windowHysteresis)
+      if (next === prev) return
+      barWindowRef.current = next
+      setBarWindow(next)
+    }
+    const syncWindowRef = useRef(syncWindow)
+    useLayoutEffect(() => { syncWindowRef.current = syncWindow })
+    const scheduleWindow = (el: HTMLDivElement): void => {
+      if (winRafRef.current !== null) return
+      winRafRef.current = requestAnimationFrame(() => {
+        winRafRef.current = null
+        syncWindowRef.current(el)
+      })
+    }
+    useEffect(() => () => {
+      if (winRafRef.current !== null) cancelAnimationFrame(winRafRef.current)
+    }, [])
+    const prevDnaOn = useRef<boolean | null>(null)
+    useLayoutEffect(() => {
+      const first = prevDnaOn.current === null
+      const changed = prevDnaOn.current !== dnaOn
+      prevDnaOn.current = dnaOn
+      const el = scrollRef.current
+      if (el === null || requests.length <= TREND_WINDOW_MIN || (first && !dnaOn) || (!first && !changed)) return
+      const overscan = dnaOn ? DNA_WINDOW_OVERSCAN : WINDOW_OVERSCAN_BARS
+      const hysteresis = dnaOn ? DNA_WINDOW_HYSTERESIS : WINDOW_HYSTERESIS_BARS
+      const desired = windowRangeFor(el.scrollLeft, el.clientWidth, requests.length, overscan)
+      const next = {
+        from: Math.max(0, desired.from - hysteresis),
+        to: Math.min(requests.length - 1, desired.to + hysteresis),
+      }
+      if (next.from !== barWindowRef.current.from || next.to !== barWindowRef.current.to) {
+        barWindowRef.current = next
+        setBarWindow(next)
+      }
+    }, [dnaOn])
+    const updateTurnLabels = (el: HTMLDivElement): void => {
+      const labels = el.querySelectorAll<HTMLElement>('.lc-turn-label')
+      const n = Math.min(labels.length, turnOffsets.length)
+      const sl = el.scrollLeft
+      const vr = sl + el.clientWidth
+      const writes: [HTMLElement, string, string][] = []
+      let chainR = -Infinity
+      for (let i = 0; i < n; i++) {
+        const off = turnOffsets[i]
+        const w = turnWidths[i]
+        let dx = 0
+        let vis = ''
+        if (off + w + LABEL_OVERHANG > sl && off - LABEL_OVERHANG < vr) {
+          const lw = labels[i].offsetWidth
+          const visL = Math.max(off, sl)
+          const visR = Math.min(off + w, vr)
+          if (visR > visL && lw < w) {
+            const center = (visL + visR) / 2 - off
+            dx = Math.min(Math.max(center, lw / 2), w - lw / 2) - w / 2
+          }
+          const left = off + w / 2 + dx - lw / 2
+          if (left < chainR) vis = 'hidden'
+          else chainR = left + lw + LABEL_GAP
+        }
+        const next = dx !== 0 ? `translateX(${dx}px)` : ''
+        if (labels[i].style.transform !== next || labels[i].style.visibility !== vis) writes.push([labels[i], next, vis])
+      }
+      for (const [label, next, vis] of writes) {
+        label.style.transform = next
+        label.style.visibility = vis
+      }
+    }
+    useLayoutEffect(() => {
+      const el = scrollRef.current
+      /* v8 ignore next 1 */
+      if (el === null) return
+      const newestSeq = requests.length === 0 ? 0 : requests[requests.length - 1].seq
+      const grew = newestSeq !== lastSeqRef.current
+      const widthBeforeAppend = prevScrollWidthRef.current
+      if (props.granularity !== lastGranRef.current) {
+        lastGranRef.current = props.granularity
+        scrolledOnce.current = false
+      }
+      if (props.focusSeq !== null) {
+        const idx = requests.findIndex(r => r.seq === props.focusSeq)
+        if (idx >= 0) {
+          scrolledOnce.current = true
+          centerBar(el, idx)
+        }
+        props.onFocusSeqHandled()
+      } else if (props.focusTurn !== null) {
+        const gi = groups.findIndex(g => g.turn === props.focusTurn)
+        if (gi >= 0) {
+          scrolledOnce.current = true
+          centerBar(el, gi)
+        }
+        props.onFocusTurnHandled()
+      } else if (!scrolledOnce.current) {
+        scrolledOnce.current = true
+        el.scrollLeft = el.scrollWidth
+      } else if (grew && el.scrollLeft + el.clientWidth >= widthBeforeAppend - 24) {
+        el.scrollLeft = el.scrollWidth
+      }
+      lastSeqRef.current = newestSeq
+      prevScrollWidthRef.current = el.scrollWidth
+      slRef.current = el.scrollLeft
+      cwRef.current = el.clientWidth
+      updateTurnLabels(el)
+      syncTip(el)
+      measureVisible(el)
+      syncWindowRef.current(el)
+    }, [props.granularity, props.focusTurn, props.focusSeq, requests, adaptive, dnaDeltaOn])
+
+    const measureRef = useRef(measureVisible)
+    useLayoutEffect(() => { measureRef.current = measureVisible })
+    useLayoutEffect(() => {
+      const el = scrollRef.current
+      /* v8 ignore next 1 */
+      if (el === null) return
+      cwRef.current = chartWidth
+      measureRef.current(el)
+      syncWindowRef.current(el)
+    }, [chartWidth])
+    useLayoutEffect(() => {
+      const el = scrollRef.current
+      /* v8 ignore next 1 */
+      if (el === null) return
+      return containHorizontalOverscroll(el)
+    }, [])
+
+    const shownFrom = windowed ? Math.min(Math.max(barWindow.from, 0), Math.max(0, requests.length - 1)) : 0
+    const shownTo = windowed
+      ? Math.max(shownFrom, Math.min(barWindow.to, requests.length - 1))
+      : Math.max(0, requests.length - 1)
+    const pads = windowPads(shownFrom, shownTo, requests.length)
+    const shownBars = requests.slice(shownFrom, shownTo + 1)
+
+    const stepsOf = useMemo(() => turnStepsOf(props.requests), [props.requests])
+    const hoveredIdx = hoverSeq !== null ? requests.findIndex(r => r.seq === hoverSeq) : -1
+    const hoveredReq = hoveredIdx >= 0 ? requests[hoveredIdx] : null
+    const hoveredBands = dnaOn && !dnaDeltaOn && hoveredIdx >= 0 ? bandAt(hoveredIdx) : null
+    const hitBand = hoveredBands !== null && dnaHit !== null
+      ? hoveredBands.find(b => b.key === dnaHit && b.tokens > 0) ?? null
+      : null
+    const hoveredDelta = dnaDeltaOn && hoveredIdx >= 0
+      ? (() => {
+        const d = deltaAt(hoveredIdx)
+        return d.up.find(b => b.key === dnaHit) ?? null
+      })()
+      : null
+    type Slice = { bottom: number; height: number }
+    const dnaSliceIndex = useMemo(() => {
+      if (!dnaOn) return null
+      const index = new Map<number, Map<string, Slice>>()
+      for (let i = shownFrom; i <= shownTo; i++) {
+        const byKey = new Map<string, Slice>()
+        if (dnaDeltaOn) {
+          const d = deltaAt(i)
+          for (const b of d.up) {
+            byKey.set(b.key, {
+              bottom: Math.round(b.off * deltaScale),
+              height: Math.max(1, Math.round(b.tokens * deltaScale)),
+            })
+          }
+        } else {
+          for (const b of bandAt(i)) {
+            if (b.tokens <= 0) continue
+            byKey.set(b.key, {
+              bottom: Math.round(b.off / maxTotal * CHART_H),
+              height: Math.max(1, Math.round(b.tokens / maxTotal * CHART_H)),
+            })
+          }
+        }
+        index.set(i, byKey)
+      }
+      return index
+    }, [dnaOn, dnaDeltaOn, deltaScale, maxTotal, shownFrom, shownTo, bandAt, deltaAt])
+    const dnaSlices = useMemo(() => {
+      if (dnaSliceIndex === null || dnaHit === null) return null
+      const slices: (Slice | null)[] = Array.from({ length: requests.length }, () => null)
+      for (let i = shownFrom; i <= shownTo; i++) slices[i] = dnaSliceIndex.get(i)?.get(dnaHit) ?? null
+      return slices
+    }, [dnaSliceIndex, dnaHit, shownFrom, shownTo, requests.length])
+    const tipRowsOf = (req: RequestRecord): string[] => {
+      const band = hitBand ?? hoveredDelta
+      return trendTipRows(kit, {
+        granularity: props.granularity,
+        stepsOf,
+        delta,
+        focus,
+        durationOn,
+        metric: band !== null
+          ? t('trend.dnaItem', { label: dnaBaseLabel(band, t, catLabel), n: dnaDeltaOn ? fmtSigned(band.tokens) : fmt(band.tokens) })
+          : undefined,
+      }, req)
+    }
+
+    const tipColRef = useRef(0)
+
+    const syncTip = (el: HTMLDivElement): void => {
+      /* v8 ignore next 1 */
+      const tip = (el.parentElement ?? document.body).querySelector<HTMLElement>('.lc-chart-tip')
+      if (tip === null) return
+      const lw = tip.offsetWidth
+      const cw = cwRef.current
+      const next = `translate(${clampTipLeft(tipColRef.current - slRef.current, lw, cw)}px, 0)`
+      if (tip.style.transform !== next) tip.style.transform = next
+    }
+
+    useLayoutEffect(() => {
+      /* v8 ignore next 1 */
+      if (scrollRef.current === null) return
+      tipColRef.current = hoveredIdx >= 0 ? hoveredIdx * (BAR_W + BAR_GAP) + BAR_W / 2 : 0
+      syncTip(scrollRef.current)
+    }, [hoveredIdx, dnaHit])
+
+    return (
+      <div className="lc-chartrow">
+        <div className="lc-axis">
+          {delta ? (
+            <>
+              <span className="lc-axis-top">{fmtSigned(maxUp)}</span>
+              <span className="lc-axis-q3">{fmtSigned(q3Value)}</span>
+              <span className="lc-axis-mid">{fmtSigned(midValue)}</span>
+              <span className="lc-axis-q1">{fmtSigned(q1Value)}</span>
+              <span className="lc-axis-bot">{'0'}</span>
+            </>
+          ) : (
+            <>
+              <span className="lc-axis-top">{fmt(maxTotal)}</span>
+              <span className="lc-axis-q3">{fmt(Math.round(maxTotal * 3 / 4))}</span>
+              <span className="lc-axis-mid">{fmt(Math.round(maxTotal / 2))}</span>
+              <span className="lc-axis-q1">{fmt(Math.round(maxTotal / 4))}</span>
+              <span className="lc-axis-bot">{'0'}</span>
+            </>
+          )}
+        </div>
+        <div className="lc-chart-wrap">
+          <div
+            className={'lc-chart-scroll' + (props.activeTurn !== null ? ' lc-chart-dim' : '')}
+            ref={scrollRef}
+            onScroll={(e: UIEvent<HTMLDivElement>) => {
+              slRef.current = e.currentTarget.scrollLeft
+              cwRef.current = e.currentTarget.clientWidth
+              updateTurnLabels(e.currentTarget)
+              syncTip(e.currentTarget)
+              measureVisible(e.currentTarget)
+              scheduleWindow(e.currentTarget)
+            }}
+          >
+            <div
+              className="lc-chart"
+              data-lc-bars={requests.length}
+              data-catdim={props.hoverCat ?? undefined}
+              onMouseLeave={() => { props.onHover(null); setLocalHover(null); setDnaHit(null) }}
+            >
+              <div className="lc-grid lc-grid-top" />
+              <div className="lc-grid lc-grid-q3" />
+              <div className="lc-grid lc-grid-q1" />
+              <div className="lc-grid lc-grid-mid" />
+              <div className="lc-grid lc-grid-zero" />
+              {pads.left > 0 ? <div className="lc-bar-pad" style={{ width: `${pads.left}px`, flex: 'none' }} aria-hidden="true" /> : null}
+              {shownBars.map((req, k) => {
+                const i = shownFrom + k
+                return (
+                  <ChartBar
+                    key={`${req.seq}:${props.granularity}:${props.mode}`}
+                    req={req}
+                    marker={markers[i]}
+                    selected={props.selectedSeq === req.seq}
+                    hovered={hoverSeq === req.seq}
+                    inTurn={props.activeTurn !== null && (req.turn ?? 0) === props.activeTurn}
+                    flag={props.granularity === 'step' && (i + 1) % STEP_FLAG_EVERY === 0 ? i + 1 : null}
+                    maxTotal={maxTotal}
+                    deltaScale={delta ? deltaScale : undefined}
+                    enterIndex={Math.max(0, i - riseFrom)}
+                    rise={i >= riseFrom}
+                    dna={dnaOn ? bandAt(i) : null}
+                    dnaDelta={dnaDeltaOn ? deltaAt(i) : null}
+                    dnaScale={dnaDeltaOn ? deltaScale : undefined}
+                    onDnaHit={setDnaHit}
+                    onPickBand={props.onPickBand}
+                    onSelect={props.onSelect}
+                    onHover={handleBarHover}
+                  />
+                )
+              })}
+              {pads.right > 0 ? <div className="lc-bar-pad" style={{ width: `${pads.right}px`, flex: 'none' }} aria-hidden="true" /> : null}
+              {dnaOn ? <DnaHighlights slices={dnaSlices} from={shownFrom} to={shownTo} pads={pads} /> : null}
+              {durationOn && (durationGeometry.runs.length > 0 || durationGeometry.dots.length > 0) ? (
+                <DurationCurve
+                  width={requests.length * (BAR_W + BAR_GAP) - BAR_GAP}
+                  height={CHART_H}
+                  runs={durationGeometry.runs}
+                  dots={durationGeometry.dots}
+                />
+              ) : null}
+            </div>
+            {props.requests.some(r => r.turn !== undefined) ? <div className="lc-turns" style={labelFont !== '' ? { fontSize: labelFont } : undefined} onMouseLeave={() => { props.onHoverTurn(null) }}>
+              {groups.map((grp, gi) => {
+                const on = props.activeTurn === grp.turn
+                return (
+                  <span
+                    key={`turn-${gi}`}
+                    className={'lc-turn' + (on ? ' lc-turn-on' : '')}
+                    style={{
+                      width: `${turnWidths[gi]}px`,
+                      background: TURN_FILLS[gi % TURN_FILLS.length],
+                    }}
+                    title={`T${grp.turn}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={t('tip.turn1', { t: grp.turn })}
+                    aria-pressed={on}
+                    onKeyDown={(ev) => {
+                      if (ev.key !== 'Enter' && ev.key !== ' ') return
+                      ev.preventDefault()
+                      props.onPickTurn(grp.turn)
+                    }}
+                    onMouseEnter={() => { props.onHoverTurn(grp.turn) }}
+                    onClick={() => { props.onPickTurn(grp.turn) }}
+                  ><span className="lc-turn-label">{`${grp.turn}`}</span></span>
+                )
+              })}
+            </div> : null}
+          </div>
+          {hoveredReq !== null ? (
+            <div className="lc-chart-tip">{tipRowsOf(hoveredReq).map((row, i) => <span key={i}>{row}</span>)}</div>
+          ) : null}
+        </div>
+        {durationOn ? (
+          <div className="lc-axis lc-axis-r">
+            <span className="lc-axis-top">{fmtDuration(maxActiveMs)}</span>
+            <span className="lc-axis-q3">{fmtDuration(Math.round(maxActiveMs * 3 / 4))}</span>
+            <span className="lc-axis-mid">{fmtDuration(Math.round(maxActiveMs / 2))}</span>
+            <span className="lc-axis-q1">{fmtDuration(Math.round(maxActiveMs / 4))}</span>
+            <span className="lc-axis-bot">{'0'}</span>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+}

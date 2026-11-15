@@ -1,0 +1,17 @@
+KenFutWork context inspection
+
+Includes dsh-context 0.84.1
+Copyright 2025 bowenliang123
+Licensed under the Apache License, Version 2.0.
+Source: https://github.com/bowenliang123/dsh-context
+Revision: c1c129a56bd317cd9a0516fe5223d99505a83c3e
+
+Includes @deepseek-ai/dsh-client-ui-primitives 0.2.2-rc.3
+and an adaptation of the DeepSeek Harness icon sprite installer.
+Copyright (c) 2026 DeepSeek
+Licensed under the MIT License.
+Source: https://github.com/deepseek-ai/deepseek-harness
+
+KenFutWork modifications: host-owned data types and authorized request reads,
+React 19 nullable refs, raw text as the initial non-JSON display, theme mapping,
+and React-managed icon installation. File-level provenance is in 来源清单.json.

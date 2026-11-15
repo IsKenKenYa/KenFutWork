@@ -16,6 +16,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@zui/components/ui/hover-card.js";
+import { useOpenContextInspection } from "./ContextInspectionProvider.js";
 
 interface AdapterTaskUsage {
   used: number;
@@ -120,7 +121,9 @@ export function getContextCompressionCommand(): string {
 
 export function ChatContextUsage({
   taskUsage,
+  sessionId,
 }: {
+  sessionId?: string | null;
   codingPlanUsageRemaining?: unknown;
   startPlanBalance?: unknown;
   taskUsage: AdapterTaskUsage | null;
@@ -130,6 +133,7 @@ export function ChatContextUsage({
   onSendCompressionCommand?: (command: string) => void;
   compressionDisabled?: boolean;
 }) {
+  const openInspection = useOpenContextInspection();
   const cache = taskUsage?.cache as
     | {
         cacheReadTokens?: number;
@@ -146,10 +150,13 @@ export function ChatContextUsage({
       <HoverCardTrigger asChild>
         <button
           type="button"
-          aria-label="上下文容量"
+          aria-label={sessionId && openInspection ? "上下文分析" : "上下文容量"}
           title={view.fineLine ?? view.line ?? "上下文容量"}
           className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors outline-none hover:bg-hover"
           data-testid="context-usage-ring"
+          onClick={() => {
+            if (sessionId) openInspection?.(sessionId);
+          }}
         >
           <ContextRing percent={view.percent} />
         </button>

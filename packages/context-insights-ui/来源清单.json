@@ -1,0 +1,659 @@
+{
+  "version": "0.84.1",
+  "license": "Apache-2.0",
+  "revision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+  "records": [
+    {
+      "source": "references/dsh-context/LICENSE",
+      "target": "packages/context-insights-ui/vendor/dsh-context/LICENSE",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "919857728c4e1d0f76be03af00437d9910c943f883d04c8c58a6a0cb1c3225b0",
+      "currentSha256": "919857728c4e1d0f76be03af00437d9910c943f883d04c8c58a6a0cb1c3225b0",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/boundedCache.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/boundedCache.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "c0d26c670dab9930a198d0d54ef6c7d5596ad3df7a0513fe44bef051e77bac7f",
+      "currentSha256": "c0d26c670dab9930a198d0d54ef6c7d5596ad3df7a0513fe44bef051e77bac7f",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/brief.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/brief.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "8f8fff9910bf6e1228330daeb2951135411528b99bb00f212490a48638bd5302",
+      "currentSha256": "8f8fff9910bf6e1228330daeb2951135411528b99bb00f212490a48638bd5302",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/callSummary.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/callSummary.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "b7e590080c9fb5af44ba2b3f76eaafba7df04b006d12bc87835cae0928127fba",
+      "currentSha256": "b7e590080c9fb5af44ba2b3f76eaafba7df04b006d12bc87835cae0928127fba",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/categories.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/categories.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "a6575a72ebe3bf9c4598e81dc53a273d3fbb178977e8d10a1b21444f5ab96ae2",
+      "currentSha256": "a6575a72ebe3bf9c4598e81dc53a273d3fbb178977e8d10a1b21444f5ab96ae2",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/attachments.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/attachments.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "4b842d1fb12c346272e6de27a0c10a2bed37cd463f37e6aa79f7810744e0150f",
+      "currentSha256": "4b842d1fb12c346272e6de27a0c10a2bed37cd463f37e6aa79f7810744e0150f",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browser.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browser.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "ebbf4a0eddd5eb55c908d68117dd6b593cf40d67d8f0e6c10efb71e416cccfe7",
+      "currentSha256": "34dfed4f1bccdc4f732ec70b9418298d343a14c8a1f00648220dd89760297e5f",
+      "adaptations": [
+        "输入未提供真实轮次时隐藏轮次分组与轮次比较；逐请求行为保持原组件"
+      ]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserHelpers.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserHelpers.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "0f8faa0c5524cc3c7efd83f589ac435f4fc5fe3e86d92f8b9711608e7ee8d635",
+      "currentSha256": "0f8faa0c5524cc3c7efd83f589ac435f4fc5fe3e86d92f8b9711608e7ee8d635",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserNodes.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserNodes.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "3cd6f43dce6f14946f0eaf3be72d23c091de1938e55e91ec2e78e6e0035a5e41",
+      "currentSha256": "3cd6f43dce6f14946f0eaf3be72d23c091de1938e55e91ec2e78e6e0035a5e41",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserPick.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserPick.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "07ca9b983700c40feee4d2fefeef7cb3798dcda78cd9887a405fce6da897c7dc",
+      "currentSha256": "07ca9b983700c40feee4d2fefeef7cb3798dcda78cd9887a405fce6da897c7dc",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserProps.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserProps.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "9c1a61c80cfd8bc914e47459b4dba092282d66dca4ff6eb89cc2dc3ee22d31f7",
+      "currentSha256": "9c1a61c80cfd8bc914e47459b4dba092282d66dca4ff6eb89cc2dc3ee22d31f7",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserRows.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserRows.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "ae3ccee9d69b4752a1daec9977a6909595b30c607ea2709467269461cc81360f",
+      "currentSha256": "ae3ccee9d69b4752a1daec9977a6909595b30c607ea2709467269461cc81360f",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserSchema.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserSchema.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "1f87224121fd4c9e5701cdb080a1f32b1c6fa23e268e6b8a77d6ac15b4860bd5",
+      "currentSha256": "1e396dc46e2d3fb28070ad6bf68db5d0a36d9503e44c46f0cdc690aa58ddd474",
+      "adaptations": ["统一文件末尾换行；组件与算法保留原文"]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserToolCard.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserToolCard.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "7b19b4a46247eb6cfaf5ef9335c50e32f41b44f87a11d25c17e3e1f617d40763",
+      "currentSha256": "feb56d7c4626904cc59cee09a087b1bb567616dd8b468407385fd35888f2b401",
+      "adaptations": ["统一文件末尾换行；组件与算法保留原文"]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/browserTreemap.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserTreemap.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "6c8fcb2ac695291c50ed4db42a472b67dc2b93fadd8ef5fdb364dc64efa50a82",
+      "currentSha256": "6c8fcb2ac695291c50ed4db42a472b67dc2b93fadd8ef5fdb364dc64efa50a82",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/clearableInput.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/clearableInput.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "458395c35b954e443af40bf0ca2e0774d254c09fc4923af5238bbf0da18fdc7d",
+      "currentSha256": "56e48bf9c4e9c4b92cf90e096c97335ac23c48411c4389c9ed8919f2f07720aa",
+      "adaptations": ["React 19 RefObject 类型包含 null"]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/currentComposition.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/currentComposition.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "74b5abb15623d4b1528ff37895c021b86b21a32d1bfe2603f34f78502f45341d",
+      "currentSha256": "74b5abb15623d4b1528ff37895c021b86b21a32d1bfe2603f34f78502f45341d",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/derivedCache.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/derivedCache.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "217d71724d533aec299daa522bd174bdf04d4b70d1de6d44cd320114da28f869",
+      "currentSha256": "217d71724d533aec299daa522bd174bdf04d4b70d1de6d44cd320114da28f869",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/detailNote.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/detailNote.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "8e6d94b1ed460940bb53d2e26b0c037c8659e590c3f753e5a36fa8dd997bd9e3",
+      "currentSha256": "8e6d94b1ed460940bb53d2e26b0c037c8659e590c3f753e5a36fa8dd997bd9e3",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/escapeClose.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/escapeClose.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "3ced31946796a97b6005b87c391e4466b2094b4b3f8a12b7b66962f286adbb45",
+      "currentSha256": "3ced31946796a97b6005b87c391e4466b2094b4b3f8a12b7b66962f286adbb45",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/events.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/events.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "7afe59571a3d3d5dff6ff580a0847c790aab650de712526b3ca5f534eb85f480",
+      "currentSha256": "7afe59571a3d3d5dff6ff580a0847c790aab650de712526b3ca5f534eb85f480",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/fetchOnMiss.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/fetchOnMiss.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "364e34eceb54709db8569862a9526e5e8198bfc9fa2ad955a47e8abe6905c2c1",
+      "currentSha256": "364e34eceb54709db8569862a9526e5e8198bfc9fa2ad955a47e8abe6905c2c1",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/nodes.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/nodes.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "0acc822c6395443bddb9d7255981e78b748691a5e9173a5f571cea8035a2952b",
+      "currentSha256": "0acc822c6395443bddb9d7255981e78b748691a5e9173a5f571cea8035a2952b",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/requestDetail.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/requestDetail.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "0583a948017b579c79f3baf6ea85fbbf786c4a00bb280469c6210acffbebeb5b",
+      "currentSha256": "0583a948017b579c79f3baf6ea85fbbf786c4a00bb280469c6210acffbebeb5b",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/richText.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/richText.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "7c4851b69d2367c66452f1db9d8126a952a07c0f964416d14fa2dca6e1b5586d",
+      "currentSha256": "230ccf438afb57915021c038a93663235863292584857dd9f8e7b2f4d4d0a392",
+      "adaptations": [
+        "React 19 RefObject 类型包含 null；非 JSON 正文默认显示原文；Markdown 由用户显式切换"
+      ]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/section.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/section.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "2e0efe56ceea0ec7e6862d43da877274ef67720a5b5dcb834304dbe6a918ea5d",
+      "currentSha256": "2e0efe56ceea0ec7e6862d43da877274ef67720a5b5dcb834304dbe6a918ea5d",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/skeleton.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/skeleton.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "365c88f13e016ac9311bf6745ffe1fea43a2525189fdccf0f9c1b527e60bd9ce",
+      "currentSha256": "365c88f13e016ac9311bf6745ffe1fea43a2525189fdccf0f9c1b527e60bd9ce",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/stackedBar.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/stackedBar.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "09a8c9aa863d5f1b43d3a7f7770de8a843730315bfde0aad70884edc2cce4cf0",
+      "currentSha256": "09a8c9aa863d5f1b43d3a7f7770de8a843730315bfde0aad70884edc2cce4cf0",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/tip.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/tip.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "fc524cc6ac0541aab4e9b88c13a6a5fc7329881a7aef520838fe9e358c177ab3",
+      "currentSha256": "fc524cc6ac0541aab4e9b88c13a6a5fc7329881a7aef520838fe9e358c177ab3",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/trendChart.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/trendChart.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "0cd09019bc320a7b38d25d1d94fc0c3d4d69b90506a7a97ef848a03e2efdf0d1",
+      "currentSha256": "a914f88abce0a6e8bd94cfcd3a5be84e0480e4f7c032070684d912e618b67061",
+      "adaptations": [
+        "输入未提供真实轮次时隐藏轮次分组与轮次比较；逐请求行为保持原组件"
+      ]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/trendDnaBars.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/trendDnaBars.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "d15c5ba62ffb948afd4811be5fc6e319afc46615e2c42eaeabbd13df3afe6755",
+      "currentSha256": "8a5c5dc89def6cf0711e75d55e89c6354efda8912eae8658969e4d21d1ffdc8d",
+      "adaptations": ["统一文件末尾换行；组件与算法保留原文"]
+    },
+    {
+      "source": "references/dsh-context/src/client/components/trendDurationCurve.tsx",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/trendDurationCurve.tsx",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "be4fa7b4d2f2f20bdd45d547f803aa79909a95e15cbfa1b4062c165f40b3299f",
+      "currentSha256": "be4fa7b4d2f2f20bdd45d547f803aa79909a95e15cbfa1b4062c165f40b3299f",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/trendModel.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/trendModel.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "3b75bcbc0ca77b80c537e9ec9dfaf76df43b77e025e11620197bdf7d359da0ff",
+      "currentSha256": "3b75bcbc0ca77b80c537e9ec9dfaf76df43b77e025e11620197bdf7d359da0ff",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/trendWindow.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/trendWindow.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "af98d269425e6218a03794f45b4acabf5d1b6757ea3be72e1f09af32f1552da2",
+      "currentSha256": "af98d269425e6218a03794f45b4acabf5d1b6757ea3be72e1f09af32f1552da2",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/useBrowserDelta.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/useBrowserDelta.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "ee98d361db9190ecb13d07c8af4a07a92bb48c88775213592002f434f22d2588",
+      "currentSha256": "ee98d361db9190ecb13d07c8af4a07a92bb48c88775213592002f434f22d2588",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/useElementMetrics.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/useElementMetrics.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "d6b6d71f19320395a2fbb207e301aa99d3834a25ea12d089d8afc571936db27d",
+      "currentSha256": "d6b6d71f19320395a2fbb207e301aa99d3834a25ea12d089d8afc571936db27d",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/useLinkedToggle.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/useLinkedToggle.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "981783458167a9fe59b602ca6ffc3e2ff6470291d22c51d807b97f3748847e57",
+      "currentSha256": "981783458167a9fe59b602ca6ffc3e2ff6470291d22c51d807b97f3748847e57",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/useRemoteState.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/useRemoteState.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "faccbbe0fb7114a1d158398dca2ed1aa34489c9697206099ac4a67a336d31314",
+      "currentSha256": "faccbbe0fb7114a1d158398dca2ed1aa34489c9697206099ac4a67a336d31314",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/components/useRowWindow.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/useRowWindow.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "3a8406dc7c449cd52e21821e1f40d795e27a2ba0340082381a2dd300319d05de",
+      "currentSha256": "3a8406dc7c449cd52e21821e1f40d795e27a2ba0340082381a2dd300319d05de",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/dna.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/dna.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "68dec6966da07ff40b20874027278cbee6d1595f7d347394ac07dfcc88192970",
+      "currentSha256": "68dec6966da07ff40b20874027278cbee6d1595f7d347394ac07dfcc88192970",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/format.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/format.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "11d51ce0197098affcf59ecddc90e2a0b33d17c81b1af8c213e39574359847b0",
+      "currentSha256": "11d51ce0197098affcf59ecddc90e2a0b33d17c81b1af8c213e39574359847b0",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/headline.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/headline.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "447dd9a1cdf0ffebc3ebbeb59435427bdf44b4340deca44a847a802077a253ea",
+      "currentSha256": "447dd9a1cdf0ffebc3ebbeb59435427bdf44b4340deca44a847a802077a253ea",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/i18n.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/i18n.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "ee7420501d3b1067c972c7a7ea013c7d5b054440a929836d9381abaaeb5bc911",
+      "currentSha256": "39e40cb9ae67c58284c13c62123322e4b7eaccc5c2f22de895d3651544dec325",
+      "adaptations": ["仅保留 Translate 类型；宿主使用原词典翻译"]
+    },
+    {
+      "source": "references/dsh-context/src/client/i18nEn.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/i18nEn.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "f07945527a889572c340bc64208588b16129b167be7480a0182dfcc2b6895565",
+      "currentSha256": "f07945527a889572c340bc64208588b16129b167be7480a0182dfcc2b6895565",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/i18nZh.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/i18nZh.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "57945bbddfcedc60601dabc14bd1d060f38d9ea194bde95d9095dfa0d32e6739",
+      "currentSha256": "51810fc35badfaf2dccc6d2807fd5b452ec6b0589581c6576855d1fdfdd3d7b4",
+      "adaptations": ["统一文件末尾换行；组件与算法保留原文"]
+    },
+    {
+      "source": "references/dsh-context/src/client/labels.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/labels.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "c82d3fe489fce0d780d1b88455ea62c718c0b4af369f10fd9af54985541370d9",
+      "currentSha256": "c82d3fe489fce0d780d1b88455ea62c718c0b4af369f10fd9af54985541370d9",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/overscroll.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/overscroll.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "36562605b1c0d557bdb2b324ecbe0f1182c7429a37b02481a33daeb43ad54a5b",
+      "currentSha256": "36562605b1c0d557bdb2b324ecbe0f1182c7429a37b02481a33daeb43ad54a5b",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/primitives.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/primitives.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "ff6e3cf2df8d16d03314b76b624d3da7f5b3d6a0e7edb6cd8c0375cc859b23d2",
+      "currentSha256": "ff6e3cf2df8d16d03314b76b624d3da7f5b3d6a0e7edb6cd8c0375cc859b23d2",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/reserve.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/reserve.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "35d19b405c46fc6550983d37cce51fb237de942733f6dc717ceb5fc4bc23bffc",
+      "currentSha256": "35d19b405c46fc6550983d37cce51fb237de942733f6dc717ceb5fc4bc23bffc",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/retention.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/retention.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "ccfcbfe8c0f7102c60707236cfd513e109d0e51399ede5f016088a1cfaafa53a",
+      "currentSha256": "ccfcbfe8c0f7102c60707236cfd513e109d0e51399ede5f016088a1cfaafa53a",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/revealScroll.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/revealScroll.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "1b59fcbe41e363eddba836300695b90f2dd73805711ecae713f8e311d110b896",
+      "currentSha256": "1b59fcbe41e363eddba836300695b90f2dd73805711ecae713f8e311d110b896",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/seats.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/seats.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "8994c536d87f5c18acc68b11d254511e6e6083312073678e6a26273a8f91d9ae",
+      "currentSha256": "8994c536d87f5c18acc68b11d254511e6e6083312073678e6a26273a8f91d9ae",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/services.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/services.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "20d4006e45ca09db7e05227540a5ac5dad1c710279be2502091b0580fd967279",
+      "currentSha256": "6435e7688d871c7ea2a245746ce260cbd4adcfb5d94baf394f5e65498a41f6bb",
+      "adaptations": ["从原 dshFaces/seats 提取组件使用的类型；不装配 DSH 服务"]
+    },
+    {
+      "source": "references/dsh-context/src/client/settings.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/settings.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "6478e0e30bcacce60f71066a294a6c85872012d4af4991b9672fe978bc2c095c",
+      "currentSha256": "6478e0e30bcacce60f71066a294a6c85872012d4af4991b9672fe978bc2c095c",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/attachments.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/attachments.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "e907c9cb9165f6b90d9b7d3deb21057aa731c24a13835ce16fd8b90acab5b3e9",
+      "currentSha256": "e907c9cb9165f6b90d9b7d3deb21057aa731c24a13835ce16fd8b90acab5b3e9",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/base.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/base.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "f6911a1f93c0685bb99cd06a440f077718c6c3ad16863d0ffa9e00ec99bb1a8d",
+      "currentSha256": "f6911a1f93c0685bb99cd06a440f077718c6c3ad16863d0ffa9e00ec99bb1a8d",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/browser.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/browser.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "1d0c33be11d30181a9848d3713cc7abac997e2efb554a11976eb2fdefd84c902",
+      "currentSha256": "1d0c33be11d30181a9848d3713cc7abac997e2efb554a11976eb2fdefd84c902",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/detailSections.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/detailSections.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "6f75dc8044115e04dc84e130bbe68fae259a9d977654564a55bd88929996037c",
+      "currentSha256": "6f75dc8044115e04dc84e130bbe68fae259a9d977654564a55bd88929996037c",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/events.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/events.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "2fd4d5e28c290928690860b32ddc87cd0a3014fe0d65767a8dba55d51712886f",
+      "currentSha256": "2fd4d5e28c290928690860b32ddc87cd0a3014fe0d65767a8dba55d51712886f",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/requestDetail.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/requestDetail.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "19b39474b39e2f7ab3a68f2c696442331b9ea810dcd1e52c32dd9007a698d12f",
+      "currentSha256": "19b39474b39e2f7ab3a68f2c696442331b9ea810dcd1e52c32dd9007a698d12f",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/stackedBar.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/stackedBar.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "43906b1b709ea7a8d76dc9324ab1b1bd67f58d503cb2a945d46c233a2655f6f3",
+      "currentSha256": "43906b1b709ea7a8d76dc9324ab1b1bd67f58d503cb2a945d46c233a2655f6f3",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/stats.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/stats.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "6913e1a7dd0212977833899015bbac7220eb1bb59800bea76ff708fc65f8986d",
+      "currentSha256": "6913e1a7dd0212977833899015bbac7220eb1bb59800bea76ff708fc65f8986d",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/tailwind.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/tailwind.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "31155f3a7671df5783a41bd411cde86c1527ddea9e0950e5a817d3dceddf50a1",
+      "currentSha256": "31155f3a7671df5783a41bd411cde86c1527ddea9e0950e5a817d3dceddf50a1",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/styles/trendChart.css",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/styles/trendChart.css",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "1c296542c4ddfac056b081e5a0eac7a21da9cceef6f110f0ed0a0cccc549ba0e",
+      "currentSha256": "1c296542c4ddfac056b081e5a0eac7a21da9cceef6f110f0ed0a0cccc549ba0e",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/timelineSource.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/timelineSource.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "35128ba0fa64a39d1574e37fc469208dcddb9a825b3543068bd5938978d65c78",
+      "currentSha256": "d90bacaa08cfc477c32698cb0cf9fdb76dae58a46918bb09c7f78a09e6a5ede8",
+      "adaptations": [
+        "保留 DeltaFetcher 和 DetailState 类型；授权读取由宿主提供"
+      ]
+    },
+    {
+      "source": "references/dsh-context/src/client/treemap.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/treemap.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "f1f7209ca2c8daf671ce9a7f3c192e4e73d37a54286f3b9d8982662483896fb3",
+      "currentSha256": "f1f7209ca2c8daf671ce9a7f3c192e4e73d37a54286f3b9d8982662483896fb3",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/client/viewkit.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/client/viewkit.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "152d86b3ab1859beb5081c1768f7c4a4facac44ae816fc7ce3959d0edcbe1828",
+      "currentSha256": "152d86b3ab1859beb5081c1768f7c4a4facac44ae816fc7ce3959d0edcbe1828",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/assemble.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/assemble.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "551dc8a1f4dc5d0db5060c55c770e7ca7ba0371609b7e2a2883c7ae60a163a85",
+      "currentSha256": "551dc8a1f4dc5d0db5060c55c770e7ca7ba0371609b7e2a2883c7ae60a163a85",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/attachment.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/attachment.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "9d50648ff73dc11a0ee32867197e25b08db6e5e6418948a820c1e0862563e91e",
+      "currentSha256": "9d50648ff73dc11a0ee32867197e25b08db6e5e6418948a820c1e0862563e91e",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/categories.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/categories.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "aa611f985497060d31573773d14b39325a2c31ba39abea811ac064f70369d3f6",
+      "currentSha256": "aa611f985497060d31573773d14b39325a2c31ba39abea811ac064f70369d3f6",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/decode.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/decode.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "255caac6c5196963f9b9918a66d27e0ef7b5824eefe66f1e1a2e95cf4beec6f9",
+      "currentSha256": "255caac6c5196963f9b9918a66d27e0ef7b5824eefe66f1e1a2e95cf4beec6f9",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/delta.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/delta.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "9fbd41de0d9ed2e519e45ed1ddf4118657380a05b114cde1aa0f955e9a87c2d3",
+      "currentSha256": "9fbd41de0d9ed2e519e45ed1ddf4118657380a05b114cde1aa0f955e9a87c2d3",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/estimate.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/estimate.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "9e1186371fe68107c21160d2a241fcf306b4a0647a9384121898097d7b4b3c4d",
+      "currentSha256": "9e1186371fe68107c21160d2a241fcf306b4a0647a9384121898097d7b4b3c4d",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/fileOps.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/fileOps.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "6c48c7a8153e60c5dddd8d9ef1ec3069ab02e961dd32ec130580856243c1b39e",
+      "currentSha256": "6c48c7a8153e60c5dddd8d9ef1ec3069ab02e961dd32ec130580856243c1b39e",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/fileTokens.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/fileTokens.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "aa52693c108c2ff48eb7c997c89bf734e35ead5d837798c8657675e49934ee99",
+      "currentSha256": "aa52693c108c2ff48eb7c997c89bf734e35ead5d837798c8657675e49934ee99",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/imageTokens.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/imageTokens.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "13ab1857935eb6e510013bde96af07d770c7ae89e93b877a0599ce6b64637b6e",
+      "currentSha256": "13ab1857935eb6e510013bde96af07d770c7ae89e93b877a0599ce6b64637b6e",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/increment.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/increment.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "598fe8922c50a495964d7045b655e172d29e418b1fe1e749b14377f8ce786ca0",
+      "currentSha256": "598fe8922c50a495964d7045b655e172d29e418b1fe1e749b14377f8ce786ca0",
+      "adaptations": []
+    },
+    {
+      "source": "references/dsh-context/src/shared/types.ts",
+      "target": "packages/context-insights-ui/vendor/dsh-context/src/shared/types.ts",
+      "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
+      "sha256": "b7ea5257241b041f32920261b79113c6cb359cf2f6ee87716b1f090acd0db681",
+      "currentSha256": "d3ca6a038fb9ff5e277b7939a8a9eb528a9cfcc4ee4704b1414510371186f324",
+      "adaptations": [
+        "保留原数据类型；移除 DSH 服务端 projection 注册与专属类型导入"
+      ]
+    },
+    {
+      "source": "references/deepseek-harness/LICENSE",
+      "target": "packages/context-insights-ui/vendor/deepseek-harness/LICENSE",
+      "sourceRevision": "39163dd30f703a79079e2d2446545cff3c453738",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+      "currentSha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be",
+      "adaptations": []
+    },
+    {
+      "source": "references/deepseek-harness/packages/client/ui-theme/src/client/icon-sprite.ts",
+      "target": "apps/web/src/components/workbench/zcode/host/contextInspectionIcons.ts",
+      "sourceRevision": "39163dd30f703a79079e2d2446545cff3c453738",
+      "sha256": "6611f70b0a892bcd6268b260fa61e00dc460f4f50910d0afa0119e0fa68e377c",
+      "currentSha256": "55ff0535cfa8a0cf35e8472e4ff43ff1344c1fa456883d8b000faed4375312fe",
+      "adaptations": [
+        "使用原 SVG 转 symbol 算法；React 生命周期安装与清理；不装配 Cordis 主题服务"
+      ]
+    }
+  ]
+}

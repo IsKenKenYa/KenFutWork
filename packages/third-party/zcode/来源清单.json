@@ -3110,9 +3110,10 @@
       "source": "references/zcode/packages/ui/src/chat-input-toolbar/contextUsage.tsx",
       "target": "apps/web/src/components/workbench/zcode/chat-input-toolbar/contextUsage.tsx",
       "sha256": "a6cc7dc5f10c4d4895b2c5ede83cd639f3ed35d728fac1b03c13a335d87b49de",
-      "copiedSha256": "fb621f24e94abc25525cc1d0f0f3163b7f51cb519c2de0b9953c12d89358f140",
+      "copiedSha256": "abf3c30aa5a07273b501ec8b9f5048d7bb8fdadcff9a770bbeaa16d4810ec3ce",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "上下文分析宿主：容量组件类型接受真实 sessionId；原组件外观不变"
       ]
     },
     {
@@ -20624,12 +20625,13 @@
       "source": "references/zcode/packages/ui/src/styles.css",
       "target": "apps/web/src/components/workbench/zcode/styles.css",
       "sha256": "22d5b58e44cdebdbe7154c418ee05fef6dde689e384f0dd590d4057739487be7",
-      "copiedSha256": "2a46cfea3cba8ef0da2c9a85e272c79c9e2c4d047c3d7e2f41aa5a85e9cf3897",
+      "copiedSha256": "9f17c40a6bca5fcdbf2ce4fcc21493f479b71c30ed15fd28bb974b80a401cbb6",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "机械调整 streamdown source 路径适配包位置",
         "机械追加共享语音包扫描面（@source packages/voice-ui/src）：语音状态行在共享包渲染，漏扫会只剩「碰巧命中」的通用类。",
-        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。"
+        "主线 c5dcc32e 宿主融合及原组件增强：目标源码与该提交逐字一致，补齐主线遗漏的复制哈希；保留固定上游原始哈希。",
+        "上下文分析宿主：扫描原 dsh-context 组件并编译其 Tailwind 分类色与动画"
       ]
     },
     {
@@ -21431,10 +21433,11 @@
       "source": "references/zcode/packages/ui/src/v4/composer/V4ComposerToolbar.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/V4ComposerToolbar.tsx",
       "sha256": "fb0e3863fd51487d43e8201c19407b16ead3d53731d5eac7a1697412cfacacbf",
-      "copiedSha256": "1e1670a8e8711c14b79ac4f9ab55966fe01f1bc440be4d98ad5277b176fba17e",
+      "copiedSha256": "8119cf4489eff8dcd9f0e7f46a45d1e41c7e0428dc2f820e77e14fc7163f3d8d",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "2026-10-17统一模式入口：仅增加Composer唯一ExecutionModeController的可选透传类型，不新增策略状态。"
+        "2026-10-17统一模式入口：仅增加Composer唯一ExecutionModeController的可选透传类型，不新增策略状态。",
+        "上下文分析宿主：将当前 Task 的 sessionId 显式传给容量入口"
       ]
     },
     {

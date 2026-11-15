@@ -75,7 +75,12 @@ export default defineConfig({
     server: {
       deps: {
         // 真实 restoreElements 测试由 Vite 解析 JSON 依赖，避免 Node 24 裸加载 JSON。
-        inline: ["@excalidraw/excalidraw", "open-color"],
+        inline: [
+          "@excalidraw/excalidraw",
+          "open-color",
+          "@kenfutwork/context-insights-ui",
+          "@deepseek-ai/dsh-client-ui-primitives",
+        ],
       },
     },
     // 并行跑全仓时（turbo 同时拉起多个包）用例会明显变慢：默认 5s 的**单测超时**会在

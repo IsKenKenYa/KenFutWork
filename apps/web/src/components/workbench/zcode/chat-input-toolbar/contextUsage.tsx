@@ -240,6 +240,7 @@ export function ChatContextUsage({
   intl,
   locale,
 }: {
+  sessionId?: string | null;
   codingPlanUsageRemaining?: ChatCodingPlanUsageRemainingConfig;
   startPlanBalance?: ChatStartPlanBalanceConfig;
   taskUsage: {

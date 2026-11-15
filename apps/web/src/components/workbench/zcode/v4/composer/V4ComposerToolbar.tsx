@@ -366,6 +366,7 @@ export interface V4ComposerToolbarProps {
 
 /** 模型 / 思考深度 / context usage 簇（渲染在发送键左侧，与旧 UI 同位）。 */
 function V4ComposerModelControlsImpl({
+  sessionId,
   workspacePath,
   workspaceIdentity,
   modelSelectionView = null,
@@ -1024,6 +1025,7 @@ function V4ComposerModelControlsImpl({
         className="hidden"
       />
       <ChatContextUsage
+        sessionId={sessionId}
         codingPlanUsageRemaining={codingPlanUsageRemaining}
         taskUsage={taskUsage}
         startPlanBalance={contextStartPlanBalance}

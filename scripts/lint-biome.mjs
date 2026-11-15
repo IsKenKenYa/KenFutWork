@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
+import { verifyContextInventory } from "./verify-context-vendor.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
@@ -25,6 +26,11 @@ const inventory = JSON.parse(
   ),
 );
 const upstream = new Set(inventory.records.map((record) => record.target));
+for (const target of verifyContextInventory()) {
+  // 明确适配的第一方图标安装模块仍按 Biome 检查。
+  if (target.startsWith("packages/context-insights-ui/vendor/"))
+    upstream.add(target);
+}
 const kimiInventory = JSON.parse(
   readFileSync(
     resolve(root, "packages/third-party/kimi-edit/来源清单.json"),

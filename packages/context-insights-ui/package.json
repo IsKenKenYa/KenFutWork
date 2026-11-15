@@ -1,0 +1,35 @@
+{
+  "name": "@kenfutwork/context-insights-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./estimate": {
+      "types": "./dist/vendor/dsh-context/src/shared/estimate.d.ts",
+      "default": "./dist/vendor/dsh-context/src/shared/estimate.js"
+    },
+    "./assemble": {
+      "types": "./dist/vendor/dsh-context/src/shared/assemble.d.ts",
+      "default": "./dist/vendor/dsh-context/src/shared/assemble.js"
+    },
+    "./styles.css": "./styles.css"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
