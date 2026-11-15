@@ -1,3 +1,6 @@
+import { getMediaJobErrorMessage } from "@kenfutwork/shared";
+import { classifyRateLimitError } from "@langchain/core/utils/async_caller";
+
 /**
  * Sanitize error messages before sending to the frontend.
  * Logs full error detail server-side, returns user-friendly message.
@@ -12,7 +15,7 @@ const AUTH_PATTERN =
 const AUTH_STATUS_PATTERN =
   /\b(?:HTTP(?:\s+status)?|status(?:\s+code)?)\s*[:=]?\s*401\b/i;
 
-function hasHttp401(error: unknown): boolean {
+function httpFailureMessage(error: unknown): string | undefined {
   let current: unknown = error;
   let depth = 0;
   while (current !== undefined && current !== null && depth < 5) {
@@ -22,17 +25,26 @@ function hasHttp401(error: unknown): boolean {
       statusCode?: unknown;
       response?: { status?: unknown; statusCode?: unknown } | null;
     };
+    // 复用 SDK 的配额与临时限流分类，公开提示沿用媒体任务的相同原因文案。
+    const rateLimit = classifyRateLimitError(current);
+    if (rateLimit) {
+      return getMediaJobErrorMessage(
+        rateLimit.action === "stop"
+          ? "provider_balance_insufficient"
+          : "provider_rate_limited",
+      );
+    }
     if (
       record.status === 401 ||
       record.statusCode === 401 ||
       record.response?.status === 401 ||
       record.response?.statusCode === 401
     )
-      return true;
+      return withRawDetail("认证失败，请在模型或工具设置中检查凭据。", error);
     current = record.cause;
     depth += 1;
   }
-  return false;
+  return undefined;
 }
 const INFRA_PATTERN =
   /econnrefused|econnreset|etimedout|dns|socket|tls|certificate/i;
@@ -164,9 +176,10 @@ export function sanitizeErrorForClient(error: unknown): string {
   if (clientFacing && clientFacing.length <= 200) {
     return redactSecrets(clientFacing);
   }
+  const httpMessage = httpFailureMessage(error);
+  if (httpMessage) return httpMessage;
   const classificationDetail = describeErrorDetail(error, 2000);
   if (
-    hasHttp401(error) ||
     AUTH_STATUS_PATTERN.test(classificationDetail) ||
     AUTH_PATTERN.test(classificationDetail)
   ) {
