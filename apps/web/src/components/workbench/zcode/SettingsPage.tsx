@@ -33,6 +33,8 @@ import { useUsageEntitlement } from "@zui/hooks/useUsageEntitlement.js";
 import { useBaseWorkspaceServices } from "@zui/hooks/useWorkspaceServices.js";
 import { HostAboutSection } from "@zui/host/AboutSection.js";
 import { PermissionTierSection } from "@zui/host/PermissionTierControl.js";
+import { PersonalRulesSection } from "@zui/host/PersonalRulesSection.js";
+import { usePersonalRules } from "@zui/host/usePersonalRules.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import {
   resolveEntitledAccountProviderAccess,
@@ -388,6 +390,7 @@ export function SettingsPage({
     writeLastSettingsSectionPreference(visibleInitialSection);
     return visibleInitialSection;
   });
+  const personalRules = usePersonalRules(activeSection === "personalRules");
   const [pluginTab, setPluginTab] = useState(() =>
     consumePendingSettingsPluginTab(),
   );
@@ -2131,6 +2134,8 @@ export function SettingsPage({
                               }
                             />
                           </ServiceProvider>
+                        ) : activeSection === "personalRules" ? (
+                          <PersonalRulesSection editor={personalRules} />
                         ) : activeSection === "memory" ? (
                           <ServiceProvider services={localHostServices}>
                             {/* Memory catalog 始终使用本地 Host，避免远程 workspace 误读本机数据。 */}

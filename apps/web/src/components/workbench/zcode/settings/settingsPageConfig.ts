@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Sun,
   Terminal,
+  User,
 } from "lucide-react";
 
 export const THEME_MODES: Array<{
@@ -85,6 +86,12 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     icon: AudioLines,
     titleId: "settings.voice.title",
     groupId: "basics",
+  },
+  {
+    id: "personalRules",
+    icon: User,
+    titleId: "settings.personalRules.title",
+    groupId: "agentCapabilities",
   },
   {
     id: "memory",

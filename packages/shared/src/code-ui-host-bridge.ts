@@ -45,6 +45,7 @@ export const managementTargetSchema = z.discriminatedUnion("page", [
           "browser",
           "modelProvider",
           "voice",
+          "personalRules",
           "memory",
           "permissions",
           "plugin",
