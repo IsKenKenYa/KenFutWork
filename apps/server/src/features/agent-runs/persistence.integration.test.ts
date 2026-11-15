@@ -106,9 +106,25 @@ describe.skipIf(!enabled)("Harness真实数据库持久化 integration", () => {
       );
       const events: StreamEvent[] = [];
       for await (const event of f.runtime.streamRun(runId)) events.push(event);
-      expect(events.at(-1)?.type).toBe("run.failed");
+      const failure = events.at(-1);
+      if (failure?.type !== "run.failed") throw new Error("本轮应发出失败通知");
       expect(events.some((event) => event.type === "run.completed")).toBe(
         false,
+      );
+      const history = await createAgentRunRepository(
+        database.persistence,
+      ).latestForSession({
+        sessionId: f.scope.taskId,
+        instanceId: f.scope.instanceId,
+      });
+      expect(history).toMatchObject({
+        status: "failed",
+        errorCode: failure.error.code,
+        errorMessage: failure.error.message,
+        completedAt: failure.timestamp,
+      });
+      expect(failure.error.message).toBe(
+        "无法读取会话数据，请确认本机服务正常后重试。",
       );
       expect(f.model.requests).toEqual([]);
     } finally {

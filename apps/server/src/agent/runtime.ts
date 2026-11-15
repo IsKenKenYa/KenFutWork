@@ -1077,20 +1077,19 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           hasStore: !!persistence?.store,
         });
       } catch (error) {
-        const failedEvent = toFailedEvent(runId, now, error);
+        const failedEvent = toSessionPersistenceFailedEvent(runId, now, error);
         run.status = "failed";
         await updatePersistedRunFailure(
           options.agentRunMetadataService,
           run,
-          now,
-          error,
+          failedEvent,
         );
         yield failedEvent;
         return;
       }
 
       if (run.threadId && !persistence) {
-        const failedEvent = toFailedEvent(
+        const failedEvent = toSessionPersistenceFailedEvent(
           runId,
           now,
           new Error(
@@ -1101,10 +1100,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
         await updatePersistedRunFailure(
           options.agentRunMetadataService,
           run,
-          now,
-          new Error(
-            "KENFUTWORK_DATABASE_URL（或 DATABASE_URL）是持久化 agent 线程的必需项。",
-          ),
+          failedEvent,
         );
         yield failedEvent;
         return;
@@ -2617,8 +2613,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           await updatePersistedRunFailure(
             options.agentRunMetadataService,
             run,
-            now,
-            error,
+            failedEvent,
           );
           yield failedEvent;
           return;
@@ -2841,8 +2836,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           await updatePersistedRunFailure(
             options.agentRunMetadataService,
             run,
-            now,
-            error,
+            failedEvent,
           );
           yield failedEvent;
           return;
@@ -2874,23 +2868,23 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               if (fatalDenial) {
                 run.controller.abort();
                 run.status = "failed";
+                const failedEvent: FailedRunEvent = {
+                  error: { code: "run_failed", message: fatalDenial },
+                  runId,
+                  timestamp: now(),
+                  type: "run.failed",
+                };
                 await updatePersistedRunFailure(
                   options.agentRunMetadataService,
                   run,
-                  now,
-                  new Error(fatalDenial),
+                  failedEvent,
                 ).catch((persistErr) =>
                   console.error(
                     "[agent-runtime] Failed to persist tool-denial abort:",
                     persistErr,
                   ),
                 );
-                yield {
-                  error: { code: "run_failed", message: fatalDenial },
-                  runId,
-                  timestamp: now(),
-                  type: "run.failed",
-                };
+                yield failedEvent;
                 return;
               }
               // 轮末闸门（DEC-15）：后台任务未结算就不让 run 收尾——吞掉
@@ -2946,7 +2940,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
               ) {
                 const message =
                   denialTracker.fatalReason() ?? "工具连续被拒，已中止本轮。";
-                const failedEvent: StreamEvent = {
+                const failedEvent: FailedRunEvent = {
                   error: { code: "run_failed", message },
                   runId,
                   timestamp: now(),
@@ -2956,8 +2950,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
                 await updatePersistedRunFailure(
                   options.agentRunMetadataService,
                   run,
-                  now,
-                  new Error(message),
+                  failedEvent,
                 ).catch((persistErr) =>
                   console.error(
                     "[agent-runtime] Failed to persist tool-denial abort:",
@@ -3017,8 +3010,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             await updatePersistedRunFailure(
               options.agentRunMetadataService,
               run,
-              now,
-              streamError,
+              failedEvent,
             ).catch((persistErr) =>
               console.error(
                 "[agent-runtime] Failed to persist run failure:",
@@ -3055,7 +3047,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
           if (!sawTerminalEvent && run.status === "running") {
             // 统一持久化失败终态，可读原因由 message 承载。
             const message = "运行被中止且未产生结束事件（无终态事件）。";
-            const failedEvent: StreamEvent = {
+            const failedEvent: FailedRunEvent = {
               error: { code: "run_failed", message },
               runId,
               timestamp: now(),
@@ -3065,8 +3057,7 @@ export function createAgentRunService(options: CreateAgentRuntimeOptions) {
             await updatePersistedRunFailure(
               options.agentRunMetadataService,
               run,
-              now,
-              new Error(message),
+              failedEvent,
             ).catch((persistErr) =>
               console.error(
                 "[agent-runtime] Failed to persist silent-abort run failure:",
@@ -3236,11 +3227,13 @@ function mapEventToStatus(event: StreamEvent): RuntimeRunStatus {
   }
 }
 
+type FailedRunEvent = Extract<StreamEvent, { type: "run.failed" }>;
+
 function toFailedEvent(
   runId: string,
   now: () => string,
   error: unknown,
-): StreamEvent {
+): FailedRunEvent {
   return {
     error: {
       code: "run_failed",
@@ -3250,6 +3243,21 @@ function toFailedEvent(
     timestamp: now(),
     type: "run.failed",
   };
+}
+
+function toSessionPersistenceFailedEvent(
+  runId: string,
+  now: () => string,
+  cause: unknown,
+): FailedRunEvent {
+  return toFailedEvent(
+    runId,
+    now,
+    Object.assign(
+      new Error("无法读取会话数据，请确认本机服务正常后重试。", { cause }),
+      { exposeToClient: true },
+    ),
+  );
 }
 
 async function updatePersistedRunStatus(
@@ -3277,8 +3285,7 @@ async function updatePersistedRunStatus(
 async function updatePersistedRunFailure(
   agentRunMetadataService: AgentRunMetadataService | undefined,
   run: RuntimeRunRecord,
-  now: () => string,
-  error: unknown,
+  failure: FailedRunEvent,
 ) {
   if (run.terminalPersistence === "host") return;
   if (!agentRunMetadataService || !run.threadId) {
@@ -3286,10 +3293,9 @@ async function updatePersistedRunFailure(
   }
 
   await agentRunMetadataService.updateRun({
-    completedAt: now(),
-    errorCode: "run_failed",
-    errorMessage:
-      error instanceof Error ? error.message : "Deep agent runtime failed.",
+    completedAt: failure.timestamp,
+    errorCode: failure.error.code,
+    errorMessage: failure.error.message,
     runId: run.runId,
     status: "failed",
   });
@@ -3310,12 +3316,7 @@ async function syncPersistedRunFromEvent(
   }
 
   if (event.type === "run.failed") {
-    await updatePersistedRunFailure(
-      agentRunMetadataService,
-      run,
-      now,
-      new Error(event.error.message),
-    );
+    await updatePersistedRunFailure(agentRunMetadataService, run, event);
     return;
   }
 
