@@ -181,7 +181,8 @@ import {
   hasChatLoadingBlockingInteraction,
 } from "@zui/v4/chatLoadingVisibility.js";
 import { recordV4CommandAck } from "@zui/v4/commandAckObservability.js";
-import { createCommandEnvelope } from "@zui/v4/commandFactory.js";
+import { createCommandEnvelope, uuidv7 } from "@zui/v4/commandFactory.js";
+import { clearV4ComposerDraft, queueComposerEditScope } from "@zui/v4/composer/composerDraftStore.js";
 import {
   type ComposerSubmissionConfig,
   createComposerSubmissionConfig,
@@ -465,13 +466,17 @@ function isConversationFileDrag(dataTransfer: DataTransfer): boolean {
 }
 
 interface QueuedComposerRestoreTarget {
-  baseRevision: number;
-  queueItemId: string;
-  sourceCommandId: string;
-  inputKind: "sendText" | "sendGoalCommand";
   text: string;
   attachments: readonly AttachmentRef[];
   config?: ComposerRestoreRequest["config"];
+}
+
+interface QueueEditOperation {
+  queueItemId: string;
+  editorId: string;
+  sessionId: string;
+  workspaceKey: string;
+  phase: "locking" | "loading" | "ready";
 }
 
 function resolveQueuedComposerRestore(
@@ -480,7 +485,7 @@ function resolveQueuedComposerRestore(
 ): QueuedComposerRestoreTarget | null {
   const item = snapshot.queue.items.find((candidate) => candidate.queueItemId === queueItemId,
   );
-  if (!item || item.kind === "compact") return null;
+  if (!item || item.kind !== "sendText" || item.editLock || item.dispatch.state !== "queued") return null;
   const config = {
     ...(item.workContext ? { workContext: structuredClone(item.workContext) } : {}),
     ...(item.mode ? { mode: item.mode } : {}),
@@ -488,19 +493,14 @@ function resolveQueuedComposerRestore(
     ...(item.modelSelection ? { modelSelection: item.modelSelection } : {}),
   };
   return {
-    baseRevision: snapshot.revision,
-    queueItemId,
-    sourceCommandId: item.sourceCommandId,
-    inputKind: item.kind,
     text: v4QueuedCommandText(item.kind, item.text),
     attachments: item.attachments.map((attachment) => ({ ...attachment })),
     ...(Object.keys(config).length > 0 ? { config } : {}),
   };
 }
 
-function shouldRestoreQueuedComposerFromAck(status: CommandAck["status"],
-): boolean {
-  return status === "accepted" || status === "duplicate";
+function acceptedQueueEdit(ack: CommandAck): boolean {
+  return ack.status === "accepted" || (ack.status === "duplicate" && !ack.reasonCode);
 }
 
 /**
@@ -1157,11 +1157,7 @@ export function SessionPane({
     [onAutoOpenAssistantPptx, remoteSessionId, rootSessionId, services, sessionId, workspaceIdentity, workspacePath],
   );
   const composerDraftStateRef = useRef({ hasContent: false, busy: false });
-  const [queueEditOperation, setQueueEditOperation] = useState<{
-    queueItemId: string;
-    sessionId: string;
-    workspaceKey: string;
-  } | null>(null);
+  const [queueEditOperation, setQueueEditOperation] = useState<QueueEditOperation | null>(null);
   const queueEditOperationRef = useRef(queueEditOperation);
   queueEditOperationRef.current = queueEditOperation;
   const [composerRestoreRequest, setComposerRestoreRequest] =
@@ -1189,6 +1185,10 @@ export function SessionPane({
   );
 
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
+  const currentQueueEdit = queueEditOperation?.sessionId === sessionId &&
+    queueEditOperation.workspaceKey === workspaceKey ? queueEditOperation : null;
+  const editScopeId = currentQueueEdit && currentQueueEdit.phase !== "locking"
+    ? queueComposerEditScope(currentQueueEdit.editorId) : undefined;
   const activeTaskId = useZCodeSessionStore(
     (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).activeTaskId,
   );
@@ -1380,6 +1380,7 @@ export function SessionPane({
     workspaceIdentity,
     provider,
     sessionId,
+    editScopeId,
     sessionConfig: snapshot?.sessionId === sessionId ? snapshot.config : null,
     agentStartupAllowed: draftAgentStartupAllowed,
     modelSelectionService,
@@ -3225,6 +3226,22 @@ export function SessionPane({
         heldQueueDisposition: options?.heldQueueDisposition,
       });
       try {
+        if (editScopeId && currentQueueEdit) {
+          if (currentQueueEdit.phase !== "ready" || !options?.submission) return "blocked";
+          const { modelSelection, mode, planEnabled } = options.submission;
+          const ack = await dispatchCommand("editQueueItem", {
+            queueItemId: currentQueueEdit.queueItemId,
+            editorId: currentQueueEdit.editorId,
+            newText: text,
+            attachments: options.attachments ?? [],
+            modelSelection,
+            mode,
+            planEnabled,
+          }, currentQueueEdit.sessionId, undefined, undefined, undefined, undefined, undefined, options.taskControl);
+          if (!acceptedQueueEdit(ack)) throw new Error(ack.message || intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
+          setSendSubmissionError(null);
+          return "sent";
+        }
         const sendResult = await dispatchSendText(text, options);
         if (sendResult === "blocked" || sendResult === "confirmationRequired") {
           return sendResult;
@@ -3253,7 +3270,7 @@ export function SessionPane({
         throw error;
       }
     },
-    [dispatchSendText, focusTimelineToLatest, intl, sessionId],
+    [currentQueueEdit, dispatchCommand, dispatchSendText, editScopeId, focusTimelineToLatest, intl, sessionId],
   );
 
   const handleComposerDraftStateChange = useCallback(
@@ -3262,19 +3279,40 @@ export function SessionPane({
     },
     [],
   );
-  const clearQueueEditOperation = useCallback(() => {
+  const clearQueueEditOperation = useCallback((editorId: string) => {
+    clearV4ComposerDraft(workspacePath, workspaceIdentity, queueComposerEditScope(editorId));
+    if (queueEditOperationRef.current?.editorId !== editorId) return;
     queueEditOperationRef.current = null;
     setQueueEditOperation(null);
-  }, []);
+    setComposerRestoreRequest(null);
+  }, [workspacePath, workspaceIdentity]);
   const handleComposerRestoreApplied = useCallback(
     (requestId: number) => {
       setComposerRestoreRequest((current) =>
         current?.requestId === requestId ? null : current,
       );
-      clearQueueEditOperation();
+      setQueueEditOperation((current) => current?.phase === "loading"
+        ? { ...current, phase: "ready" } : current);
     },
-    [clearQueueEditOperation],
+    [],
   );
+
+  const releaseQueueEdit = useCallback(async (
+    queueItemId: string, editorId: string, targetSessionId: string,
+  ) => {
+    try {
+      const ack = await dispatchCommand("releaseQueueItemEdit", { queueItemId, editorId }, targetSessionId);
+      if (acceptedQueueEdit(ack) || ack.status === "noop" || ack.reasonCode === "guard.queueEditLockLost") return true;
+    } catch (error) {
+      logger.warn("[v4-pane] 解除队列编辑失败", error);
+    }
+    toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
+    return false;
+  }, [dispatchCommand, intl]);
+
+  const handleCancelQueueEdit = useCallback(() => currentQueueEdit
+    ? releaseQueueEdit(currentQueueEdit.queueItemId, currentQueueEdit.editorId, currentQueueEdit.sessionId)
+    : Promise.resolve(false), [currentQueueEdit, releaseQueueEdit]);
 
   const handleFork = useCallback(
     (target: ConversationRowTarget) => {
@@ -3425,7 +3463,7 @@ export function SessionPane({
     async (queueItemId: string): Promise<void> => {
       const current = snapshotRef.current;
       if (!sessionId || current === null || queueEditOperationRef.current) return;
-      if (composerDraftStateRef.current.hasContent || composerDraftStateRef.current.busy) {
+      if (composerDraftStateRef.current.busy) {
         toast(intl.formatMessage({ id: "chat.queue.editDraftConflict" }));
         return;
       }
@@ -3435,45 +3473,38 @@ export function SessionPane({
         );
         return;
       }
-      const operation = { queueItemId, sessionId, workspaceKey };
+      const operation: QueueEditOperation = { queueItemId, sessionId, workspaceKey, editorId: uuidv7(), phase: "locking" };
       queueEditOperationRef.current = operation;
       setQueueEditOperation(operation);
       try {
         const ack = await dispatchCommand(
-          "deleteQueueItem",
-          { queueItemId },
+          "lockQueueItemEdit",
+          { queueItemId, editorId: operation.editorId },
           sessionId,
-          restoreTarget.baseRevision,
         );
-        if (!shouldRestoreQueuedComposerFromAck(ack.status)) {
+        if (!acceptedQueueEdit(ack)) {
           logger.warn(`[v4-pane] queue 撤回编辑被拒绝: ${ack.status} ${ack.reasonCode ?? ""}`,
           );
           toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
-          clearQueueEditOperation();
+          clearQueueEditOperation(operation.editorId);
           return;
         }
-        pendingCommandRegistry.settle(sessionId, restoreTarget.sourceCommandId);
         const currentBinding = composerBindingRef.current;
         if (
           currentBinding.sessionId !== sessionId ||
           currentBinding.workspaceKey !== workspaceKey
         ) {
-          // delete ACK 异步返回时 pane 可能已切 task；旧实现若直接 setText，
-          // 会把原 session 的 queue payload 写进新 task。权威删除保留，但本地恢复必须放弃。
-          logger.warn("[v4-pane] queue 撤回编辑未恢复：ACK 返回前 composer 已切换", {
-            queueItemId,
-            sessionId,
-            workspaceKey,
-          },
-          );
-          clearQueueEditOperation();
+          // 已离开发起编辑的会话；解除自己的锁，不向新会话写入草稿。
+          await releaseQueueEdit(queueItemId, operation.editorId, sessionId);
+          clearQueueEditOperation(operation.editorId);
           return;
         }
+        setQueueEditOperation({ ...operation, phase: "loading" });
         setComposerRestoreRequest({
           requestId: nextComposerRestoreRequestIdRef.current++,
           sessionId,
           workspaceKey,
-          inputKind: restoreTarget.inputKind,
+          inputKind: "sendText",
           text: restoreTarget.text,
           attachments: restoreTarget.attachments,
           config: restoreTarget.config,
@@ -3481,10 +3512,10 @@ export function SessionPane({
       } catch (error) {
         logger.warn("[v4-pane] queue 撤回编辑命令失败", error);
         toast(intl.formatMessage({ id: "chat.queue.editRestoreFailed" }));
-        clearQueueEditOperation();
+        clearQueueEditOperation(operation.editorId);
       }
     },
-    [clearQueueEditOperation, dispatchCommand, intl, sessionId, workspaceKey],
+    [clearQueueEditOperation, dispatchCommand, intl, releaseQueueEdit, sessionId, workspaceKey],
   );
 
   const handleSendQueuedNow = useCallback(
@@ -3961,8 +3992,6 @@ export function SessionPane({
   // subscribe ACK 会先把 store 置 live，initial snapshot 稍后才到；只看
   // status 会在无投影窗口提前启用编辑器。正式 session 必须等首个 snapshot 才可输入。
   const connecting = sessionId !== null && (state.status === "connecting" || snapshot === null);
-  const queueEditActiveForCurrentComposer =
-    queueEditOperation?.sessionId === sessionId && queueEditOperation.workspaceKey === workspaceKey;
   const errored = sessionId !== null && state.status === "error";
   useSessionSubscriptionErrorTelemetry({
     supervisor: conversationTelemetry,
@@ -4664,7 +4693,13 @@ export function SessionPane({
   // 若仍创建 composer，会让用户误以为可以直接向 child session 继续输入。
   const composerNode = readOnly ? null : (
     <ConversationComposer
-      key="conversation-composer"
+      key={editScopeId ?? "conversation-composer"}
+      queueEdit={editScopeId && currentQueueEdit ? {
+        editorId: currentQueueEdit.editorId,
+        scopeId: editScopeId,
+        onCancel: handleCancelQueueEdit,
+        onFinish: clearQueueEditOperation,
+      } : undefined}
       // Snapshot 仍服务用量、路由与运行态；工具栏的 mode/model 只读下方 Composer Draft。
       snapshot={snapshot}
       sessionId={sessionId}
@@ -4678,7 +4713,7 @@ export function SessionPane({
       submissionReady={composerSubmissionReady}
       updateComposerContent={updateComposerContent}
       createSubmissionFromComposer={createSubmissionFromComposer}
-      contextHeader={isFloatingPresentation ? undefined : <>
+      contextHeader={isFloatingPresentation || editScopeId ? undefined : <>
         {isDraft ? draftComposerHeader : null}
         {!readOnly ? <ComposerContextHeader workspacePath={workspacePath} {...(workspaceIdentity ? { workspaceIdentity } : {})} {...(composerDraft.workContext ? { contextOverride: composerDraft.workContext } : {})} onChangeContext={(context) => replaceComposerDraft({ ...composerDraft, workContext: context })} /> : null}
       </>}
@@ -4697,7 +4732,7 @@ export function SessionPane({
       disabled={
         connecting ||
         draftRuntimeRebuilding ||
-        queueEditActiveForCurrentComposer ||
+        (currentQueueEdit !== null && currentQueueEdit.phase !== "ready") ||
         quotaBanner.state.blocksSubmit
       }
       workspacePath={workspacePath}
@@ -4840,8 +4875,10 @@ export function SessionPane({
           onDeleteItem={handleDeleteQueueItem}
           onEditItem={handleEditQueueItem}
           pendingEditQueueItemId={
-            queueEditActiveForCurrentComposer ? queueEditOperation.queueItemId : null
+            currentQueueEdit?.queueItemId ?? null
           }
+          ownEditorId={currentQueueEdit?.editorId}
+          onReleaseEdit={sessionId ? (queueItemId, editorId) => void releaseQueueEdit(queueItemId, editorId, sessionId) : undefined}
           onSendNow={handleSendQueuedNow}
           onMoveItem={handleReorderQueueItem}
           onResume={handleResumeQueue}

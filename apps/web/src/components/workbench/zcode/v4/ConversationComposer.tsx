@@ -380,6 +380,12 @@ function arePromptHistoryEntriesEqual(left: readonly string[], right: readonly s
 }
 
 interface ConversationComposerProps {
+  queueEdit?: {
+    editorId: string;
+    scopeId: string;
+    onCancel: () => Promise<boolean>;
+    onFinish: (editorId: string) => void;
+  };
   snapshot: ConversationSnapshot | null;
   /** 草稿 scope（sessionId；draft 态 null → "__draft__" scope）。 */
   sessionId?: string | null;
@@ -571,6 +577,7 @@ function ConversationComposerImpl({
   externalTextInsertRequest = null,
   onExternalTextInsertApplied,
   composerRestoreRequest = null,
+  queueEdit,
   onComposerRestoreApplied,
   suppressGoalCommands = false,
   appSlashCommands,
@@ -583,7 +590,7 @@ function ConversationComposerImpl({
     ...(workspaceIdentity ? { workspaceIdentity } : {}),
     ...(remoteSessionId ? { remoteSessionId } : {}),
   });
-  const draftScopeId = sessionId ?? V4_DRAFT_SCOPE_ROOT;
+  const draftScopeId = queueEdit?.scopeId ?? sessionId ?? V4_DRAFT_SCOPE_ROOT;
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const configPickerScopeKey = `${workspaceKey}\0${draftScopeId}`;
   const [text, setText] = useState("");
@@ -979,6 +986,8 @@ function ConversationComposerImpl({
 
   // scope 切换：先落旧 scope 草稿，再恢复新 scope（editorStateJson 优先，退纯文本）。
   useEffect(() => {
+    // 首次进入队列编辑由恢复请求写入正文和附件，避免下一帧的空草稿覆盖它。
+    if (queueEdit && composerRestoreRequest) return;
     const previousTarget = draftTargetRef.current;
     const targetChanged =
       previousTarget.scopeId !== draftScopeId ||
@@ -1163,12 +1172,15 @@ function ConversationComposerImpl({
     hasPptxElementReferences ||
     hasConversationSelectionReferences ||
     Boolean(pendingShareContext);
+  const draftUploadsRunning = attachmentsApi.attachments.some((item) =>
+    item.uploadStatus === "queued" || item.uploadStatus === "uploading" || item.uploadStatus === "committing",
+  );
   useEffect(() => {
     onDraftStateChange?.({
       hasContent: hasComposerDraftContent,
-      busy: pending,
+      busy: pending || draftUploadsRunning,
     });
-  }, [hasComposerDraftContent, onDraftStateChange, pending]);
+  }, [draftUploadsRunning, hasComposerDraftContent, onDraftStateChange, pending]);
   // choice 保留正常发送按钮；提交后由 SessionPane 按 slash 语义决定是否弹确认框。
   // V4 重构时把 guide 当成“不可提交”状态，导致按钮和 Enter 同时失效；
   // guide 是 CLI 已授权的 busy 输入路由，是否最终 steer 或回退 queue 由命令层裁决。
@@ -1182,7 +1194,22 @@ function ConversationComposerImpl({
     attachmentsReady &&
     submissionReady;
   // 旧 UI 状态机：streaming + 空草稿 → Stop；有草稿 → 发送键（入队）。
-  const showStopControl = canStop && !hasDraftToSubmit;
+  const showStopControl = !queueEdit && canStop && !hasDraftToSubmit;
+
+  const cancelQueueEdit = async () => {
+    if (!queueEdit || pendingRef.current) return;
+    pendingRef.current = true;
+    setPending(true);
+    try {
+      if (await queueEdit.onCancel()) {
+        attachmentsApi.clearAttachments();
+        queueEdit.onFinish(queueEdit.editorId);
+      }
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
+  };
 
   useEffect(() => {
     if (!canSend) setSendTooltipOpen(false);
@@ -1207,7 +1234,7 @@ function ConversationComposerImpl({
       const hasPendingPptxElementReferences = currentPptxElementReferences.length > 0;
       const currentConversationSelections = conversationSelectionReferences;
       const hasPendingConversationSelections = currentConversationSelections.length > 0;
-      const submittedShareContext = pendingShareContext;
+      const submittedShareContext = queueEdit ? null : pendingShareContext;
       // 草稿首发 accepted 后同一 composer 会原地从 __draft__ promotion 到
       // session scope；若成功清理时再读可变 ref，会误清新 scope，并把首条输入残留在
       // __draft__，下次新建任务又恢复。发送开始时冻结真正提交的 scope。
@@ -1227,7 +1254,7 @@ function ConversationComposerImpl({
           !hasPendingPptxElementReferences &&
           !hasPendingConversationSelections &&
           !submittedShareContext) ||
-        pendingRef.current ||
+        disabled || pendingRef.current ||
         !submissionReady ||
         (createSubmissionFromComposer !== undefined && submission === null) ||
         attachmentsApi.hasUnreadyAttachments
@@ -1376,7 +1403,7 @@ function ConversationComposerImpl({
             webElements: currentWebElementContexts,
             pptxElements: currentPptxElementReferences,
           }) + (submittedShareContext ? 1 : 0);
-        if (trimmed) {
+        if (trimmed && !queueEdit) {
           promptHistoryBeforeSend = readPromptHistoryEntries(workspacePath);
           promptHistoryAfterAppend = appendPromptHistoryEntry(promptHistoryBeforeSend, trimmed,
           );
@@ -1393,7 +1420,7 @@ function ConversationComposerImpl({
           }
         }
         claimSubmittedDraft();
-        if (requestedDelivery === "startNow") {
+        if (requestedDelivery === "startNow" && !queueEdit) {
           // 原子抢占需要等旧 turn 退出并提交新 TurnStarted ACK；
           // 若编辑器也等整条链路才清空，用户会误以为快捷键未生效。
           // 先清空可见正文；命令拒绝时用冻结 editor state 原样恢复。
@@ -1480,6 +1507,7 @@ function ConversationComposerImpl({
         // 发送成功：清本次提交捕获的 scope 草稿；prompt history 已在真实发送前同步写盘，
         // 避免首发 promote 丢失或误清 promotion 后的新 scope。
         finalizeSubmittedDraft();
+        queueEdit?.onFinish(queueEdit.editorId);
         sendAction.complete({ resultSource: "authority_ack", admissionResult: "accepted",
         });
       } catch (error) {
@@ -1506,6 +1534,7 @@ function ConversationComposerImpl({
       attachmentsApi,
       conversationSelectionReferences,
       conversationTelemetry,
+      disabled,
       draftConfig,
       createSubmissionFromComposer,
       submissionReady,
@@ -1515,6 +1544,7 @@ function ConversationComposerImpl({
       onSendText,
       pendingShareContext,
       provider,
+      queueEdit,
       readPlanIdentitySnapshot,
       removeCodeCommentContext,
       removeConversationSelectionReference,
@@ -1748,10 +1778,10 @@ function ConversationComposerImpl({
         }),
       });
   const sendTooltipTitle = intl.formatMessage({
-    id: mode === "enqueue" ? "chat.queue.enqueue" : "chat.send",
+    id: queueEdit ? "common.save" : mode === "enqueue" ? "chat.queue.enqueue" : "chat.send",
   });
   const modifierTooltip = resolveFollowupModifierTooltip({
-    enabled: modifiedEnterReversesDelivery,
+    enabled: !queueEdit && modifiedEnterReversesDelivery,
     canSend,
     modifierPressed: primaryModifierPressed,
     followupMode: snapshot?.config.followupMode,
@@ -2422,6 +2452,14 @@ function ConversationComposerImpl({
             {intl.formatMessage({
               id: `chat.selections.limit.${conversationSelectionLimitReason}`,
             })}
+          </div>
+        ) : null}
+        {queueEdit ? (
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2 pb-2 text-ui-base">
+            <span role="status">{intl.formatMessage({ id: "chat.queue.editing" })}</span>
+            <button type="button" disabled={pending} className="rounded-md px-2 py-1 hover:bg-hover focus-visible:outline" onClick={() => void cancelQueueEdit()}>
+              {intl.formatMessage({ id: "chat.queue.cancelEdit" })}
+            </button>
           </div>
         ) : null}
         <ChatPromptEditor

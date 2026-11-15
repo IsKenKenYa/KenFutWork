@@ -1,12 +1,47 @@
 import { randomUUID } from "node:crypto";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
+import { attachmentChecksum } from "./attachments/bytes.js";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
 import { createCodeSessionFixture } from "./host-session.fixture.js";
 import { heldModel } from "./model-stream.fixture.js";
 
 const enabled = process.env.RUN_CODE_UI_INTEGRATION === "1";
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
+
+async function uploadAttachment(host: Host, fileName: string) {
+  const content = Buffer.from(fileName);
+  const identity = { sessionId: host.sessionId, uploadId: randomUUID() };
+  const mime = "text/plain";
+  const opened = await host.stream.rpc("attachmentBeginV4", [
+    {
+      ...identity,
+      fileName,
+      mime,
+      totalBytes: content.length,
+      totalChunks: 1,
+      checksum: attachmentChecksum(content),
+    },
+  ]);
+  expect(opened.status).toBe(200);
+  const chunk = await host.stream.rpc("attachmentChunkV4", [
+    {
+      ...identity,
+      chunkIndex: 0,
+      dataBase64: content.toString("base64"),
+    },
+  ]);
+  expect(chunk.status).toBe(200);
+  const committed = await host.stream.rpc("attachmentCommitV4", [identity]);
+  expect(committed.status).toBe(200);
+  return {
+    fileName,
+    mime,
+    bytes: content.length,
+    ref: protocol.v4AttachmentCommitResultSchema.parse(committed.body.result)
+      .ref,
+  };
+}
 
 async function waitForRunning(host: Host, text: string) {
   // 仅测试同步期限：等待真实模型流和公开转录，不是产品超时配置。
@@ -69,7 +104,14 @@ describe.skipIf(!enabled)("原队列公开宿主 integration", () => {
         protocol.conversationSnapshotSchema.parse(await currentHost.snapshot());
       await host.command("sendText", { text: "前台轮次" });
       await waitForRunning(host, "正在运行 1");
-      await host.command("sendText", { text: "需要编辑的原文" });
+      const previousAttachment = await uploadAttachment(
+        host,
+        "before-edit.txt",
+      );
+      await host.command("sendText", {
+        text: "需要编辑的原文",
+        attachments: [previousAttachment],
+      });
       const queued = await snapshot();
       const item = queued.queue.items[0];
       if (!item) throw new Error("未形成真实的排队输入");
@@ -141,7 +183,12 @@ describe.skipIf(!enabled)("原队列公开宿主 integration", () => {
         status: "rejected",
         reasonCode: "guard.queueEditLockLost",
       });
-      const edit = { ...challenger, newText: "保留身份的新版文字" };
+      const edit = {
+        ...challenger,
+        newText: "保留身份的新版文字",
+        planEnabled: true,
+        attachments: [await uploadAttachment(host, "after-edit.txt")],
+      };
       const editCommand = randomUUID();
       expect(await command("editQueueItem", edit, editCommand)).toMatchObject({
         status: "accepted",
@@ -161,7 +208,15 @@ describe.skipIf(!enabled)("原队列公开宿主 integration", () => {
       ).toMatchObject({
         text: edit.newText,
         sourceCommandId: item.sourceCommandId,
+        attachments: edit.attachments,
       });
+      expect(running.config.planEnabled).toBe(true);
+      expect(JSON.stringify(model.requests[1]?.body.messages)).toContain(
+        "after-edit.txt",
+      );
+      expect(JSON.stringify(model.requests[1]?.body.messages)).not.toContain(
+        "before-edit.txt",
+      );
       expect(running.queue.items.map((entry) => entry.text)).toEqual([
         "应排到后面",
       ]);

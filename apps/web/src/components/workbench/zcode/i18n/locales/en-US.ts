@@ -5182,10 +5182,12 @@ const enUS: Record<string, string> = {
   "chat.queue.sendNow": "Steer",
   "chat.queue.runNow": "Run now",
   "chat.queue.edit": "Edit",
-  "chat.queue.editDraftConflict":
-    "Send or clear the current draft before editing a queued message.",
-  "chat.queue.editRestoreFailed":
-    "Couldn't return the queued message to the composer. Try again.",
+  "chat.queue.editDraftConflict": "Wait for the current send to finish",
+  "chat.queue.editRestoreFailed": "Couldn't edit the queued message. Try again.",
+  "chat.queue.editing": "Editing queued message",
+  "chat.queue.editingElsewhere": "Editing in another window",
+  "chat.queue.cancelEdit": "Cancel edit",
+  "chat.queue.releaseEdit": "Release edit",
   "chat.queue.remove": "Remove queued message",
   "chat.queue.turnSteer.steering": "Steering conversation",
   "chat.queue.paused.stopped":

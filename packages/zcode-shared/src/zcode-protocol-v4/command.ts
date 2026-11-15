@@ -175,7 +175,18 @@ export const commandPayloadSchemas = {
   sendQueuedNow: z.object({ queueItemId: z.string() }),
   lockQueueItemEdit: z.object({ queueItemId: z.string(), editorId: z.uuid() }),
   releaseQueueItemEdit: z.object({ queueItemId: z.string(), editorId: z.uuid() }),
-  editQueueItem: z.object({ queueItemId: z.string(), newText: z.string(), editorId: z.uuid().optional() }),
+  editQueueItem: z.object({
+    queueItemId: z.string(),
+    newText: z.string(),
+    editorId: z.uuid().optional(),
+    attachments: z.array(attachmentRefSchema).optional(),
+    modelSelection: modelSelectionSchema.optional(),
+    mode: submissionModeSchema.optional(),
+    planEnabled: z.boolean().optional(),
+  }).refine((input) => input.editorId !== undefined || (
+    input.attachments === undefined && input.modelSelection === undefined &&
+    input.mode === undefined && input.planEnabled === undefined
+  ), "编辑附件或配置需要当前编辑身份"),
   // beforeQueueItemId = null → 移到队尾。
   reorderQueueItem: z.object({
     queueItemId: z.string(),

@@ -5838,8 +5838,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
-      "copiedSha256": "4e04e3c3d350ac7dfa847e88ef4f65243f06fe16b30a66f09e46104397d3d81c",
+      "copiedSha256": "b48d5800bea4aad512247e5c485268c6590cc864ba01dc04018de5ed200e9365",
       "adaptations": [
+        "排队消息编辑、取消与解除锁定文案。",
         "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -5870,8 +5871,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
-      "copiedSha256": "852a0d102650ce34c21cccc076495a0ae78a418397206c38c2aee86a4cd011ed",
+      "copiedSha256": "ecafd0e8121f1f8a05506509e7b023924dd6beed16171f22da800e6a484e2bfd",
       "adaptations": [
+        "排队消息编辑、取消与解除锁定文案。",
         "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "模式文案：原 coding/office 菜单显示 Code/Design",
@@ -20787,8 +20789,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationComposer.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationComposer.tsx",
       "sha256": "9bfa3d1365cfa7bf10e45d521a3d7201381aa27697c79b4f33b356cd2f4a3c2d",
-      "copiedSha256": "1e0af2a7b3c0110b3c2d9c802a30e0cbaf380a299888c1f459c1c81b0a164d19",
+      "copiedSha256": "5cad922584019c7e6317db98c5dc00b7f72e94e07907bb4b70000bea8740d6d5",
       "adaptations": [
+        "参考 ZCode 3.18.2：排队消息使用底部输入框与独立编辑草稿。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "宿主接线：输入卡摊语音手势（onPointerDown）与状态行，转写经 inputApiRef.appendText 受控写回；完整回路在撤销窗口后走组件自身 submit——等 appendText 经 Lexical 事件回传草稿后再提交（立即提交会读到旧文本而空转，真机验收抓到并修复）。transport 由 @zui/voice/binding.js 宿主桥注入（host/main.tsx 装配），验证见 voice-wiring-guard 与 code-voice.test 及台账一百三十八补。",
@@ -20892,8 +20895,9 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationQueuePanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationQueuePanel.tsx",
       "sha256": "5e9a446f981e895add453b765b379ae09b942d56748b6474b9535a489328b213",
-      "copiedSha256": "825f9f48b51eb4212e96fd790adc251b32239ad24e84c6b0558ce4b365fdf244",
+      "copiedSha256": "795ed1d36e16a9a67f0758ad4f55fd10b7a3cf544b656723f5a0df71fd89a914",
       "adaptations": [
+        "显示本地宿主投影的编辑状态，其他窗口按观察到的编辑身份解除。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -21118,8 +21122,9 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "8b2dc3a4ff4d7d07980f608fc52fda30284cada48ea64e36f3b538905e7f8c2d",
+      "copiedSha256": "9faf47b7d41a69f22cbdd73bb269700b957924aaa0a2f08dfab507585f135ef3",
       "adaptations": [
+        "参考 ZCode 3.18.2：以真实 Task 调用冻结和原地编辑命令，保留各会话草稿。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：未接通自动化服务时撤下原行上下文与草稿建议的全部跳转回调；原会话装配不变",
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
@@ -21490,8 +21495,9 @@
       "source": "references/zcode/packages/ui/src/v4/composer/composerDraftStore.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/composerDraftStore.ts",
       "sha256": "e7ff44bcffc2f718704ab805ff57d87d2700a54b112c6411731396a86a6eb90f",
-      "copiedSha256": "ad8ff7ab6f4d626395e9dde9bc40e620cbd7d87c5a7ea22b95df5a043a928c21",
+      "copiedSha256": "42701d916409bf65edc9d62691ee8b65633d72fdebe514625eb3e6724b63e490",
       "adaptations": [
+        "参考 ZCode 3.18.2：排队消息的编辑草稿只保存在窗口内存。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "Code/Design统一实施：原草稿持有可验证工作上下文，资源引用随队列撤回恢复。"
       ]
@@ -21657,8 +21663,9 @@
       "source": "references/zcode/packages/ui/src/v4/composer/useDraftConfigControl.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/useDraftConfigControl.ts",
       "sha256": "b15dbbec55333de143b739bdf082af6ee912f8cd603621c114909c867bc7e5e9",
-      "copiedSha256": "41d2a70bdfdb79ef80a7cafcd9bbd4068c59524eafd31d01744cb3c23ecfb254",
+      "copiedSha256": "588c0d6f54de9ff1a24f6e1d7d295faea93c9367a15a5d1f662ce529be21ad41",
       "adaptations": [
+        "编辑中的工具栏配置属于独立草稿，会话投影不覆盖编辑选择。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "Workspace配置消费：只读目录prepare传实际目标agent与resolved endpoint，保持Task选择与Composer原意图"
       ]
@@ -24937,8 +24944,9 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/command.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/command.ts",
       "sha256": "9597a0499a7dd82de9580a9e7c69d2e3ff1ce2655c87154e73dd2c8d05d76223",
-      "copiedSha256": "81fa7fe1354857e950c5cef018ab845c0fedc040f2b1c3a9c0f2b0c0f136e212",
+      "copiedSha256": "99766f8cdaa7c0983c8a0ab9d997e5563de3c356188624bdc80728b31e8fa358",
       "adaptations": [
+        "持锁编辑命令可同时提交正文、附件和执行配置。",
         "Code/Design统一实施：原命令可携冻结工作上下文，Goal与输入沿原命令幂等域。",
         "参考 ZCode 3.18.2 fec97590 的队列编辑命令，按编辑身份冻结和解除队列项，保留旧客户端的版本校验。"
       ]

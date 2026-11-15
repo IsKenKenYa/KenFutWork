@@ -1,6 +1,15 @@
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import type { CodeUiConversationState } from "./conversation.js";
 import type { CodeAdmittedInput } from "./input-intents.js";
+import { prepareCodeInputExecution } from "./input-preparation.js";
+
+export interface PreparedQueueEdit {
+  attachments?: protocol.AttachmentRef[];
+  model?: {
+    selection: NonNullable<protocol.SessionConfigState["modelSelection"]>;
+    modelInvocation: NonNullable<CodeAdmittedInput["modelInvocation"]>;
+  };
+}
 
 export const CODE_QUEUE_COMMANDS = new Set<protocol.CommandType>([
   "setAutoDrain",
@@ -112,6 +121,7 @@ export function applyCodeQueueCommand(
   state: CodeUiConversationState,
   sessionId: string,
   envelope: protocol.CommandEnvelope,
+  prepared?: PreparedQueueEdit,
 ): {
   ack: protocol.CommandAck;
   settlements: CodeInputSettlement[];
@@ -282,21 +292,59 @@ export function applyCodeQueueCommand(
         },
       });
     } else if (envelope.type === "editQueueItem") {
+      const edit = protocol.commandPayloadSchemas.editQueueItem.parse(
+        envelope.payload,
+      );
       if (
         item.editLock?.editorId !== payload.editorId ||
         (item.editLock && item.editLock.clientId !== envelope.clientId)
       )
         return reject("guard.queueEditLockLost", "这次编辑已失效。");
       if (
-        item.kind === "compact" ||
-        (!payload.newText?.trim() && !item.attachments.length)
+        (edit.attachments !== undefined &&
+          prepared?.attachments === undefined) ||
+        (edit.modelSelection !== undefined && prepared?.model === undefined)
+      )
+        return reject("guard.queueEditLockLost", "这次编辑已失效。");
+      const attachments = prepared?.attachments ?? item.attachments;
+      if (
+        item.kind !== "sendText" ||
+        (!edit.newText.trim() && !attachments.length)
       )
         return reject(
           "guard.queueItemUnavailable",
           "此队列项不能编辑为空输入。",
         );
-      item.text = payload.newText!;
-      record.intent.text = payload.newText!;
+      const { execution, requestedSandboxMode } = prepareCodeInputExecution(
+        {
+          mode: item.mode ?? snapshot.config.mode,
+          planEnabled: item.planEnabled,
+        },
+        edit,
+      );
+      const changes = {
+        text: edit.newText,
+        attachments,
+        ...(edit.mode !== undefined || edit.planEnabled !== undefined
+          ? {
+              mode: protocol.commandPayloadSchemas.switchCollaborationMode.parse(
+                {
+                  mode: execution.mode,
+                },
+              ).mode,
+              planEnabled: execution.planEnabled,
+            }
+          : {}),
+        ...(prepared?.model
+          ? { modelSelection: prepared.model.selection }
+          : {}),
+      };
+      Object.assign(item, changes);
+      Object.assign(record.intent, changes);
+      if (prepared?.model)
+        record.modelInvocation = prepared.model.modelInvocation;
+      if (requestedSandboxMode)
+        record.pendingScopeSelection = requestedSandboxMode;
       delete item.editLock;
     } else return reject("guard.capabilityUnavailable", "此队列命令不可用。");
   }

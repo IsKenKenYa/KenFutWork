@@ -140,7 +140,10 @@ import {
 import { createCodePlanningControl } from "./planning-control.js";
 import { createCodeUiPluginsHost } from "./plugins.js";
 import type { CodeUiProjectGitSessions } from "./project-git-session.js";
-import type { CodeInputSettlement } from "./queue-control.js";
+import type {
+  CodeInputSettlement,
+  PreparedQueueEdit,
+} from "./queue-control.js";
 import {
   applyCodeQueueCommand,
   CODE_QUEUE_COMMANDS,
@@ -3738,6 +3741,58 @@ export class CodeUiService {
         "not_found",
         "队列命令不属于根Task工作目录。",
       );
+    let preparedEdit: PreparedQueueEdit | undefined;
+    if (envelope.type === "editQueueItem") {
+      const edit = protocol.commandPayloadSchemas.editQueueItem.parse(
+        envelope.payload,
+      );
+      if (edit.attachments !== undefined || edit.modelSelection !== undefined) {
+        const replay = await this.verifiedInputReplay(
+          loaded.instanceId,
+          envelope,
+        );
+        if (replay) return { result: replay };
+        const lock = loaded.host
+          .getSnapshot()
+          .queue.items.find(
+            (item) => item.queueItemId === edit.queueItemId,
+          )?.editLock;
+        if (
+          lock &&
+          lock.editorId === edit.editorId &&
+          lock.clientId === envelope.clientId
+        ) {
+          if (edit.attachments?.length && !this.attachments)
+            throw new CodeAttachmentError(
+              "fault.attachment.unavailable",
+              "Code附件存储不可用。",
+              503,
+            );
+          if (edit.attachments?.length) this.attachmentsUsed = true;
+          const [attachments, model] = await Promise.all([
+            edit.attachments?.length
+              ? this.attachments!.readForInput(
+                  user,
+                  loaded.root.id,
+                  edit.attachments,
+                )
+              : undefined,
+            edit.modelSelection
+              ? this.prepareInputModel(user, edit.modelSelection)
+              : undefined,
+          ]);
+          preparedEdit = {
+            ...(edit.attachments !== undefined
+              ? {
+                  attachments:
+                    attachments?.map((input) => input.attachment) ?? [],
+                }
+              : {}),
+            ...(model ? { model } : {}),
+          };
+        }
+      }
+    }
     let dispatch: CodeAdmittedInput | undefined;
     const ack = await this.deps.repository.applyCommand(
       loaded.instanceId,
@@ -3750,7 +3805,12 @@ export class CodeUiService {
             "Task已关闭，不能调整队列。",
           );
         const state = structuredClone(root.state!);
-        const result = applyCodeQueueCommand(state, root.id, envelope);
+        const result = applyCodeQueueCommand(
+          state,
+          root.id,
+          envelope,
+          preparedEdit,
+        );
         dispatch = result.dispatch;
         return {
           state,
