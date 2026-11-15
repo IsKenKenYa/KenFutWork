@@ -1,4 +1,7 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
+import type { ContextRequestAttempt } from "@kenfutwork/shared";
 import { getRetryable } from "@langchain/core/errors";
 import type { AgentMiddleware } from "langchain";
 
@@ -54,6 +57,12 @@ export interface LlmRequestRetryOptions extends LlmRequestRetryPolicy {
   delayMs?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
+const currentAttempt = new AsyncLocalStorage<Readonly<ContextRequestAttempt>>();
+
+export function readCurrentLlmAttempt() {
+  return currentAttempt.getStore();
+}
+
 export async function withLlmRequestRetry<T>(
   invoke: () => Promise<T>,
   options: LlmRequestRetryOptions,
@@ -67,12 +76,13 @@ export async function withLlmRequestRetry<T>(
     ? Number.POSITIVE_INFINITY
     : Math.max(1, Math.floor(options.maxAttempts));
   const signal = options.signal;
+  const callId = randomUUID();
   let attempt = 0;
   while (true) {
     signal?.throwIfAborted();
     attempt += 1;
     try {
-      return await invoke();
+      return await currentAttempt.run({ callId, number: attempt }, invoke);
     } catch (error) {
       signal?.throwIfAborted();
       if (attempt >= maxAttempts || !isRetryableLlmError(error)) throw error;

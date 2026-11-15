@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
+import { ContextAttemptLinks } from "../src/components/workbench/zcode/host/ContextInspectionDialog.js";
 import { mountContextInspectionIcons } from "../src/components/workbench/zcode/host/contextInspectionIcons.js";
 import { buildContextTimeline } from "../src/components/workbench/zcode/host/contextInspectionModel.js";
 import { ContextInspectionViews } from "../src/components/workbench/zcode/host/contextInspectionViews.js";
@@ -55,6 +56,68 @@ const data = buildContextTimeline([
 ]);
 
 describe("dsh-context 原界面接入", () => {
+  it("同次调用只列真实关联的尝试，可用键盘查看前一次请求", async () => {
+    const callId = "00000000-0000-4000-8000-000000000010";
+    const first: ContextRequestSummary = {
+      ...record,
+      status: "failed",
+      sequence: 5,
+      attempt: { callId, number: 1 },
+    };
+    const second: ContextRequestSummary = {
+      ...record,
+      id: "00000000-0000-4000-8000-000000000002",
+      status: "completed",
+      attempt: { callId, number: 2 },
+    };
+    const legacy: ContextRequestSummary = {
+      ...record,
+      id: "00000000-0000-4000-8000-000000000003",
+      sequence: 6,
+    };
+    const unrelated: ContextRequestSummary = {
+      ...record,
+      id: "00000000-0000-4000-8000-000000000004",
+      sequence: 4,
+      attempt: { callId: legacy.id, number: 1 },
+    };
+    const requests = [second, legacy, first, unrelated];
+    function Fixture() {
+      const [selected, setSelected] = useState(second);
+      return (
+        <ContextAttemptLinks
+          selected={selected}
+          requests={requests}
+          onSelect={(id) => {
+            const target = requests.find((request) => request.id === id);
+            if (target) setSelected(target);
+          }}
+        />
+      );
+    }
+    const user = userEvent.setup();
+    const view = render(<Fixture />);
+    const nav = within(screen.getByRole("navigation", { name: "同次调用" }));
+    const [earlier, current] = nav.getAllByRole("button");
+    expect(earlier?.textContent).toBe("第 1 次 · #5");
+    expect(current?.textContent).toBe("第 2 次 · #7");
+    expect(current?.getAttribute("aria-current")).toBe("true");
+    await user.tab();
+    expect(document.activeElement).toBe(earlier);
+    await user.keyboard("{Enter}");
+    expect(document.activeElement).toBe(earlier);
+    expect(earlier?.getAttribute("aria-current")).toBe("true");
+    expect(current?.hasAttribute("aria-current")).toBe(false);
+    view.rerender(
+      <ContextAttemptLinks
+        selected={legacy}
+        requests={requests}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("navigation", { name: "同次调用" })).toBeNull();
+  });
+
   it("打开工具结果可查看原调用参数与失败状态", async () => {
     const timeline = buildContextTimeline([
       {

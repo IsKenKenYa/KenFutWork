@@ -11,10 +11,16 @@ import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createContextRequestCallbacks } from "./capture.js";
 import { createContextInspectionService } from "./service.js";
 
-async function captureFixture(httpStatus?: number) {
+async function captureFixture(
+  httpStatus?: number,
+  options: { rejectedIndexes?: number[]; maxAttempts?: number } = {},
+) {
   const database = await createTaskWorkDatabase();
   const provider = await heldModel({
     ...(httpStatus ? { rejectStatus: httpStatus } : {}),
+    ...(options.rejectedIndexes
+      ? { rejectRequestIndexes: options.rejectedIndexes }
+      : {}),
   });
   let providerClosed = false;
   const closeProvider = async () => {
@@ -41,7 +47,7 @@ async function captureFixture(httpStatus?: number) {
   const controller = new AbortController();
   let usageCount = 0;
   const port = createModelRequestPort({
-    llmRetry: { maxAttempts: 1, infinite: false },
+    llmRetry: { maxAttempts: options.maxAttempts ?? 1, infinite: false },
     signal: controller.signal,
     resolve: async () => ({
       model,
@@ -112,6 +118,65 @@ async function captureFixture(httpStatus?: number) {
 describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
   "真实模型流的上下文终态",
   () => {
+    it("同一调用重试共享关联，同 Run 的并发同正文调用保持独立", async () => {
+      const f = await captureFixture(503, {
+        rejectedIndexes: [0],
+        maxAttempts: 2,
+      });
+      try {
+        const calls = Promise.allSettled([
+          f.port(f.request),
+          f.port(f.request),
+        ]);
+        await vi.waitFor(() => expect(f.provider.requests).toHaveLength(3), {
+          timeout: 15_000,
+        });
+        f.provider.finish(1);
+        f.provider.finish(2);
+        expect((await calls).map((item) => item.status)).toEqual([
+          "fulfilled",
+          "fulfilled",
+        ]);
+        const saved = await f.summaries();
+        expect(saved).toHaveLength(3);
+        expect(new Set(saved.map(({ id }) => id)).size).toBe(3);
+        expect(new Set(saved.map(({ runId }) => runId)).size).toBe(1);
+        expect(saved).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              status: "failed",
+              httpStatus: 503,
+              attempt: { callId: expect.any(String), number: 1 },
+            }),
+            expect.objectContaining({
+              status: "completed",
+              attempt: { callId: expect.any(String), number: 2 },
+            }),
+          ]),
+        );
+        const failed = saved.find(({ status }) => status === "failed");
+        if (!failed?.attempt) throw new Error("首次失败没有调用关联");
+        const related = saved.filter(
+          ({ attempt }) => attempt?.callId === failed.attempt?.callId,
+        );
+        expect(
+          related.map(({ attempt, status }) => [attempt?.number, status]),
+        ).toEqual([
+          [2, "completed"],
+          [1, "failed"],
+        ]);
+        const other = saved.filter(
+          ({ id }) => !related.some((r) => r.id === id),
+        );
+        expect(other).toMatchObject([
+          { status: "completed", attempt: { number: 1 } },
+        ]);
+        expect(other[0]?.attempt?.callId).toEqual(expect.any(String));
+      } finally {
+        await f.close();
+      }
+    }, 30_000);
+
     it.each([429, 503])(
       "外层重试分别保存 HTTP %s 的独立失败请求",
       async (status) => {
@@ -147,6 +212,12 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           const saved = await f.summaries();
           expect(saved).toHaveLength(3);
           expect(new Set(saved.map((request) => request.id)).size).toBe(3);
+          expect(saved.map((request) => request.attempt?.number)).toEqual([
+            3, 2, 1,
+          ]);
+          expect(
+            new Set(saved.map((request) => request.attempt?.callId)).size,
+          ).toBe(1);
           expect(saved).toEqual(
             Array.from({ length: 3 }, () =>
               expect.objectContaining({
@@ -207,6 +278,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           },
         });
         expect(JSON.stringify(saved)).not.toContain("private-output-path");
+        expect((await f.summaries())[0]).not.toHaveProperty("attempt");
       } finally {
         await f.close();
       }

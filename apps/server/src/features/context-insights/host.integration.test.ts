@@ -12,10 +12,14 @@ import { heldModel } from "../code-ui/model-stream.fixture.js";
 describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
   "上下文检查公开宿主链路",
   () => {
-    it("模型实际调用保存最终输入，受保护RPC可分页回读并关联供应商用量", async () => {
-      const fixture = await createCodeUiHttpFixture();
+    it("实际重试经受保护RPC公开关联，仍可分页回读输入和供应商用量", async () => {
+      const fixture = await createCodeUiHttpFixture({
+        governanceEnv: { llmRequestMaxRetries: 2 },
+      });
       const model = await heldModel({
         usage: { promptTokens: 37, completionTokens: 9 },
+        rejectStatus: 503,
+        rejectRequestIndexes: [0],
       });
       const host = await createCodeSessionFixture(model.baseUrl, {
         client: fixture.client,
@@ -33,14 +37,22 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         expect((await list()).requests).toEqual([]);
         await host.command("sendText", { text: "INSPECT_ACTUAL_USER_CONTEXT" });
         await model.firstRequest;
-        await vi.waitFor(async () =>
-          expect((await list()).requests).toHaveLength(1),
-        );
-        model.finish(0);
+        await vi.waitFor(() => expect(model.requests).toHaveLength(2), {
+          timeout: 15_000,
+        });
+        model.finish(1);
         await waitPhase(fixture, host.sessionId, "completedSuccess");
         const records = await list();
         const record = records.requests[0];
-        if (!record) throw new Error("请求记录未保存。");
+        if (!record?.attempt) throw new Error("请求关联未保存。");
+        expect(records.requests.map((entry) => entry.attempt)).toEqual([
+          { callId: record.attempt.callId, number: 2 },
+          { callId: record.attempt.callId, number: 1 },
+        ]);
+        expect(records.requests[1]).toMatchObject({
+          status: "failed",
+          httpStatus: 503,
+        });
         await vi.waitFor(async () =>
           expect((await list()).requests[0]?.status).toBe("completed"),
         );
@@ -60,7 +72,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           outputResponse.body.result,
         );
         expect(JSON.parse(output.text)).toMatchObject([
-          { type: "ai", data: { content: "正在运行 1", finishReason: "stop" } },
+          { type: "ai", data: { content: "正在运行 2", finishReason: "stop" } },
         ]);
         const chunks: string[] = [];
         let offset = 0;
@@ -86,7 +98,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         const input = contextRequestInputSchema.parse(
           JSON.parse(chunks.join("")),
         );
-        const wire = model.requests[0]?.body;
+        const wire = model.requests[1]?.body;
         if (!wire) throw new Error("模型没有实际请求。");
         expect(JSON.stringify(input)).toContain("INSPECT_ACTUAL_USER_CONTEXT");
         expect(input.tools).toEqual(wire.tools);

@@ -59,6 +59,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           outputCharacters: null,
           purpose: "agent",
         });
+        expect(list.requests[0]).not.toHaveProperty("attempt");
         await expect(
           first.writer.start({
             ...request,
@@ -111,6 +112,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           ...request,
           id: randomUUID(),
           purpose: "goal-evaluation" as const,
+          attempt: { callId: randomUUID(), number: 1 },
         };
         await first.writer.start(auxiliary);
         await cold.writer.start(structuredClone(auxiliary));
@@ -122,10 +124,20 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           purpose: "goal-evaluation",
           runId: request.owner.runId,
           agentCallId: null,
+          attempt: auxiliary.attempt,
         });
         await expect(
           cold.writer.start({ ...auxiliary, purpose: "approval-review" }),
         ).rejects.toMatchObject({ statusCode: 409 });
+        await expect(
+          cold.writer.start({
+            ...auxiliary,
+            attempt: { ...auxiliary.attempt, number: 2 },
+          }),
+        ).rejects.toMatchObject({ statusCode: 409 });
+        await expect(
+          cold.writer.start({ ...auxiliary, id: randomUUID() }),
+        ).rejects.toMatchObject({ code: "23505" });
         const failure = {
           ...finish,
           id: auxiliary.id,

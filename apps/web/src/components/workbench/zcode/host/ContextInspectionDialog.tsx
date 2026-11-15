@@ -1,4 +1,5 @@
 import { Modal } from "@kenfutwork/context-insights-ui";
+import type { ContextRequestSummary } from "@kenfutwork/shared";
 import { type RefObject, useId, useLayoutEffect, useMemo } from "react";
 import { mountContextInspectionIcons } from "./contextInspectionIcons.js";
 import {
@@ -17,6 +18,46 @@ const statusLabels = {
   failed: "失败",
   cancelled: "已取消",
 };
+
+export function ContextAttemptLinks({
+  selected,
+  requests,
+  onSelect,
+}: {
+  selected: ContextRequestSummary;
+  requests: readonly ContextRequestSummary[];
+  onSelect: (id: string) => void;
+}) {
+  const callId = selected.attempt?.callId;
+  if (!callId) return null;
+  const related = requests
+    .flatMap((request) =>
+      request.attempt?.callId === callId &&
+      request.runId === selected.runId &&
+      request.agentCallId === selected.agentCallId &&
+      request.purpose === selected.purpose
+        ? [{ request, number: request.attempt.number }]
+        : [],
+    )
+    .sort((a, b) => a.number - b.number);
+  if (related.length < 2) return null;
+  return (
+    <nav className="context-inspection-attempts" aria-label="同次调用">
+      <span>同次调用</span>
+      {related.map(({ request, number }) => (
+        <button
+          key={request.id}
+          type="button"
+          aria-current={request.id === selected.id ? "true" : undefined}
+          onClick={() => onSelect(request.id)}
+        >
+          第 {number} 次 · #{request.sequence}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 export default function ContextInspectionDialog({
   taskId,
   call,
@@ -95,6 +136,9 @@ export default function ContextInspectionDialog({
                     </span>
                     <span>{r.model ?? "模型未知"}</span>
                     <span>{contextRequestPurposeLabels[r.purpose]}</span>
+                    {r.attempt && r.attempt.number > 1 ? (
+                      <span>第 {r.attempt.number} 次尝试</span>
+                    ) : null}
                     <span>
                       {r.agentName ?? (r.agentCallId ? "子 Agent" : "主 Agent")}
                     </span>
@@ -130,6 +174,12 @@ export default function ContextInspectionDialog({
                 <div className="context-inspection-summary">
                   <h2>请求 #{state.selected.sequence}</h2>
                   <dl>
+                    {state.selected.attempt ? (
+                      <div>
+                        <dt>调用尝试</dt>
+                        <dd>第 {state.selected.attempt.number} 次</dd>
+                      </div>
+                    ) : null}
                     {state.selected.httpStatus != null ? (
                       <div>
                         <dt>供应商状态</dt>
@@ -155,6 +205,11 @@ export default function ContextInspectionDialog({
                       <dd>{state.selected.toolCount ?? "未记录"}</dd>
                     </div>
                   </dl>
+                  <ContextAttemptLinks
+                    selected={state.selected}
+                    requests={state.requests}
+                    onSelect={state.select}
+                  />
                   <button
                     type="button"
                     disabled={state.reading}

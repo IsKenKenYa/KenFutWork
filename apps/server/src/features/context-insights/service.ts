@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type ContextRequestSummary,
+  contextRequestAttemptSchema,
   contextRequestHttpStatusSchema,
   contextRequestListInputSchema,
   contextRequestListSchema,
@@ -60,19 +61,23 @@ export function createContextInspectionService(deps: {
     async start(input) {
       const text = JSON.stringify(input.input);
       const purpose = modelCallPurposeSchema.parse(input.purpose ?? "agent");
-      // 普通对话沿用已有指纹，历史请求可继续幂等重放。
+      const attempt = contextRequestAttemptSchema
+        .optional()
+        .parse(input.attempt);
+      // 缺少新字段时沿用已有指纹，历史请求可继续幂等重放。
       const hash = fingerprint({
         owner: input.owner,
         input: input.input,
         ...(purpose === "agent" ? {} : { purpose }),
+        ...(attempt ? { attempt } : {}),
       });
       await deps.persistence.transaction(async (tx) => {
         const sql = tx.forInstance(input.owner.instanceId);
         await requireTask(sql, input.owner.taskId, true);
         const row = await sql.queryOne<SqlRow & { input_fingerprint: string }>(
           `insert into public.context_model_requests
-            (id,instance_id,task_id,run_id,agent_call_id,agent_name,started_at,model,input_text,input_fingerprint,input_characters,message_count,tool_count,purpose)
-           values ($1,:instance,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            (id,instance_id,task_id,run_id,agent_call_id,agent_name,started_at,model,input_text,input_fingerprint,input_characters,message_count,tool_count,purpose,logical_call_id,attempt_number)
+           values ($1,:instance,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
            on conflict (id) do update set id=excluded.id
              where context_model_requests.instance_id=:instance
            returning input_fingerprint`,
@@ -93,6 +98,8 @@ export function createContextInspectionService(deps: {
             ),
             input.input.tools?.length ?? null,
             purpose,
+            attempt?.callId ?? null,
+            attempt?.number ?? null,
           ],
         );
         if (row?.input_fingerprint !== hash)
@@ -169,7 +176,10 @@ export function createContextInspectionService(deps: {
           'startedAt',to_char(r.started_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'endedAt',to_char(r.ended_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
           'status',r.status,'httpStatus',r.http_status,'model',r.model,'messageCount',r.message_count,'toolCount',r.tool_count,
-          'inputCharacters',r.input_characters,'outputCharacters',r.output_characters,'usage',r.usage) summary
+          'inputCharacters',r.input_characters,'outputCharacters',r.output_characters,'usage',r.usage)
+          || case when r.logical_call_id is not null then
+              jsonb_build_object('attempt',jsonb_build_object('callId',r.logical_call_id,'number',r.attempt_number))
+            else '{}'::jsonb end summary
          from public.context_model_requests r join public.code_ui_sessions t on t.id=r.task_id and t.instance_id=r.instance_id
          where r.instance_id=:instance and r.task_id=$1 and t.deleted_at is null
            and ($2::bigint is null or r.sequence<$2)

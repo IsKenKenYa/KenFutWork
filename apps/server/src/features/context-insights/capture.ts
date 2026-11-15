@@ -11,6 +11,7 @@ import {
   ToolMessage,
 } from "@langchain/core/messages";
 import { z } from "zod";
+import { readCurrentLlmAttempt } from "../../agent/llm-retry-middleware.js";
 import type { ContextRequestOwner, ContextRequestWriter } from "./types.js";
 
 async function writeCapture(write: () => Promise<void>) {
@@ -116,6 +117,7 @@ export function createContextRequestCallbacks(
       _tags,
       metadata,
     ) {
+      const attempt = readCurrentLlmAttempt();
       const parameters = object(extra?.invocation_params);
       const model =
         parameters?.model ?? parameters?.model_name ?? metadata?.ls_model_name;
@@ -131,6 +133,7 @@ export function createContextRequestCallbacks(
       await writeCapture(() =>
         writer.start({
           purpose,
+          ...(attempt ? { attempt } : {}),
           id,
           owner,
           input,

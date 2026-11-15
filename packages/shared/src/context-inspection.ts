@@ -37,6 +37,14 @@ export const contextRequestHttpStatusSchema = z
   .int()
   .min(400)
   .max(599);
+export const contextRequestAttemptSchema = z
+  .object({
+    callId: z.uuid(),
+    number: z.number().int().positive(),
+  })
+  .strict();
+export type ContextRequestAttempt = z.infer<typeof contextRequestAttemptSchema>;
+
 export const contextRequestSummarySchema = z
   .object({
     id: z.uuid(),
@@ -49,6 +57,7 @@ export const contextRequestSummarySchema = z
     endedAt: z.iso.datetime().nullable(),
     status: z.enum(["running", "completed", "failed", "cancelled"]),
     httpStatus: contextRequestHttpStatusSchema.nullable().optional(),
+    attempt: contextRequestAttemptSchema.optional(),
     model: z.string().nullable(),
     messageCount: z.number().int().nonnegative(),
     toolCount: z.number().int().nonnegative().nullable(),

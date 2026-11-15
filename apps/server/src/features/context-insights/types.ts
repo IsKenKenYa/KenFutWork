@@ -1,4 +1,8 @@
-import type { ContextRequestInput, ModelCallPurpose } from "@kenfutwork/shared";
+import type {
+  ContextRequestAttempt,
+  ContextRequestInput,
+  ModelCallPurpose,
+} from "@kenfutwork/shared";
 
 export interface ContextRequestOwner {
   instanceId: string;
@@ -9,6 +13,7 @@ export interface ContextRequestOwner {
 }
 export interface ContextRequestStart {
   purpose?: ModelCallPurpose;
+  attempt?: ContextRequestAttempt;
   id: string;
   owner: ContextRequestOwner;
   startedAt: string;

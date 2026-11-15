@@ -133,6 +133,10 @@
 .context-inspection-content > details { margin: 8px 0; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
 .context-inspection pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .context-inspection-summary { padding: 8px; }
+.context-inspection-attempts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-bottom: 8px; }
+.context-inspection-attempts span { color: var(--muted-foreground); }
+.context-inspection-attempts button { padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; }
+.context-inspection-attempts button[aria-current] { background: var(--accent); border-color: var(--ring); }
 .context-inspection dl { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 8px 0; }
 .context-inspection dt { color: var(--muted-foreground); }
 .context-inspection dd { margin: 0; font-variant-numeric: tabular-nums; }
