@@ -30,31 +30,74 @@ const BALANCE_CODES = new Set([
   "credits_exhausted",
 ]);
 
-function details(error: unknown) {
-  let current = error;
-  let status: number | undefined;
-  let retryAfter: string | undefined;
-  let upstreamCode: string | undefined;
-  while (current && typeof current === "object") {
-    const entry = current as {
-      status?: number;
-      statusCode?: number;
-      retryAfter?: string;
-      upstreamCode?: string;
-      code?: string;
-      responseHeaders?: Record<string, string>;
-      cause?: unknown;
-    };
-    status ??= entry.status ?? entry.statusCode;
-    retryAfter ??= entry.retryAfter ?? entry.responseHeaders?.["retry-after"];
-    upstreamCode ??= entry.upstreamCode ?? entry.code;
-    current = entry.cause;
-  }
-  return { status, retryAfter, upstreamCode };
+type FailureHeaders = Headers | Record<string, unknown>;
+
+function httpFailureStatus(value: unknown): number | undefined {
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 400 &&
+    value <= 599
+    ? value
+    : undefined;
 }
 
-function retryAfterSeconds(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
+function retryAfterHeader(headers: FailureHeaders | undefined) {
+  return headers instanceof Headers
+    ? headers.get("retry-after")
+    : headers?.["retry-after"];
+}
+
+function details(error: unknown) {
+  const seen = new Set<object>();
+  let current = error;
+  let status: number | undefined;
+  let delaySeconds: number | undefined;
+  let upstreamCode: string | undefined;
+  let balanceAlias = false;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    const entry = current as {
+      status?: unknown;
+      statusCode?: unknown;
+      retryAfter?: unknown;
+      upstreamCode?: unknown;
+      code?: unknown;
+      responseHeaders?: FailureHeaders;
+      response?: {
+        status?: unknown;
+        statusCode?: unknown;
+        headers?: FailureHeaders;
+      };
+      cause?: unknown;
+    };
+    status ??=
+      httpFailureStatus(entry.status) ??
+      httpFailureStatus(entry.statusCode) ??
+      httpFailureStatus(entry.response?.status) ??
+      httpFailureStatus(entry.response?.statusCode);
+    delaySeconds ??=
+      retryAfterSeconds(entry.retryAfter) ??
+      retryAfterSeconds(retryAfterHeader(entry.responseHeaders)) ??
+      retryAfterSeconds(retryAfterHeader(entry.response?.headers));
+    if (typeof entry.upstreamCode === "string" && entry.upstreamCode.trim())
+      upstreamCode ??= entry.upstreamCode;
+    // 通用包装码不能盖住内层供应商码；没有显式来源码时才看已知额度别名。
+    balanceAlias ||=
+      typeof entry.code === "string" && BALANCE_CODES.has(entry.code);
+    current = entry.cause;
+  }
+  return {
+    status,
+    delaySeconds,
+    balanceInsufficient:
+      upstreamCode === undefined
+        ? balanceAlias
+        : BALANCE_CODES.has(upstreamCode),
+  };
+}
+
+function retryAfterSeconds(value: unknown): number | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds >= 0) return seconds;
   const date = Date.parse(value);
@@ -69,11 +112,15 @@ export function classifyJobFailure(
   attempt: number,
   retryBaseDelayMs: number,
 ) {
-  const code = (error as { code?: string })?.code ?? "executor_error";
+  const reportedCode = (error as { code?: unknown })?.code;
+  const code =
+    typeof reportedCode === "string" && reportedCode
+      ? reportedCode
+      : "executor_error";
   const message = error instanceof Error ? error.message : String(error);
   const info = details(error);
   const execution = readJobExecution(job);
-  if (BALANCE_CODES.has(info.upstreamCode ?? ""))
+  if (info.balanceInsufficient)
     return {
       kind: "terminal" as const,
       code: "provider_balance_insufficient",
@@ -100,7 +147,7 @@ export function classifyJobFailure(
     };
   // 沿用部署的worker轮询间隔作为缺省退避基准；指数与随机抖动是调度算法，不另设业务上限。
   const delaySeconds =
-    retryAfterSeconds(info.retryAfter) ??
+    info.delaySeconds ??
     (retryBaseDelayMs / 1000) *
       2 ** Math.max(0, attempt - 1) *
       (1 + Math.random());
