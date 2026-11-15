@@ -193,8 +193,7 @@ export function ImagePreviewContent({
     setAddingSource(sourceIdentity);
     try {
       const added = await requestPreviewImageAddToChat({
-        workspaceKey: chatTarget.workspaceKey,
-        targetSessionId: chatTarget.sessionId,
+        target: chatTarget,
         signal,
         loadFile: (requestSignal) =>
           loadPreviewImageFile(loadDownloadSource, fileReference.name, requestSignal, sourceMediaType),

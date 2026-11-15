@@ -3357,8 +3357,9 @@
       "source": "references/zcode/packages/ui/src/components/ai-elements/image-preview-dialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/components/ai-elements/image-preview-dialog.tsx",
       "sha256": "47d4ecdefc84d39f2deda93119ce400b36224276bb6c7dab6a914868914ac8de",
-      "copiedSha256": "e2536e22fe5dc074631a81e114dd161886a521bdd3295a82b9a3d8c492d7acb8",
+      "copiedSha256": "641a091d5195d8b1157d6e914eccaaafd3f6fc77e3137737a010b2fb8af34509",
       "adaptations": [
+        "接入 3.18.2 图片标注内容面，保留宿主原件下载、视频预览、图库导航和调用方接口。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -5838,8 +5839,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
-      "copiedSha256": "b44a8f208b28f4ef4393b83735536b2e578939872aad866d13b8193d44d7c17d",
+      "copiedSha256": "9034b9f2fd0143a0d8b32ca77d6bbcbdb4478c80dd53d54286d0ccf2f9c8b066",
       "adaptations": [
+        "接入 3.18.2 图片标注工具词条，新增聊天草稿和 PNG 导出提示。",
         "排队消息编辑、取消与解除锁定文案。",
         "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
@@ -5871,8 +5873,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
-      "copiedSha256": "468aaeaa8f7bf7c33d6a35d94282e02b97d408eec36c670cc6e7c4ff38824213",
+      "copiedSha256": "b2f9dec5a0d9deea6ceb997876efcc9cf7df4668cd9d38762fd7940ad605bd02",
       "adaptations": [
+        "接入 3.18.2 图片标注工具词条，新增聊天草稿和 PNG 导出提示。",
         "排队消息编辑、取消与解除锁定文案。",
         "从 3.18.2 采用复制链接文案，工作台打开和剪贴板失败提示使用本仓库文案。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
@@ -5898,6 +5901,41 @@
         "2026-11-02（三百五十）：settings.plugins.title 改「插件·MCP·技能」（三页签并成一个分区后的导航名）。",
         "2026-11-12（三百八十三）：settings.subagents.title 改「智能体」、group.builtIn 改「内置智能体」。"
       ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/image-preview-editor/ImageEditorToolbar.tsx",
+      "target": "apps/web/src/components/workbench/zcode/image-preview-editor/ImageEditorToolbar.tsx",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "5df4e63c52b210b3b1a97cf377369e98172bc3e4c9e5aab4ed22e24307a3b202",
+      "copiedSha256": "da0c0138d955a9ea5717a5252143e0458f044765b965947feb23ea0b3283d1b7",
+      "adaptations": ["调整组件与类型导入路径。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/image-preview-editor/ImagePreviewSurface.tsx",
+      "target": "apps/web/src/components/workbench/zcode/image-preview-editor/ImagePreviewSurface.tsx",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "2e0dbadbf9d75c626eaaf783e1925b87c7d45bf2487292125f8dfbeb28343c72",
+      "copiedSha256": "dbd1c4bde12c4221bc478f7db404c416fb2e9f87c2f76ba2da33005a9fb069ba",
+      "adaptations": [
+        "复用上游缩放、指针绘制、撤销和离开确认；图库保留原件下载，标注操作放到固定工具区。",
+        "通过宿主当前输入框的附件请求认领、预算与取消机制添加 PNG。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/image-preview-editor/annotations.tsx",
+      "target": "apps/web/src/components/workbench/zcode/image-preview-editor/annotations.tsx",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "d129c50ee4d1763cbebd26cbafc4c1b9ff0ea5aafc7af8100a484cb9031ccc2f",
+      "copiedSha256": "00b5aa51e22ab9d2caa7994b51fc428328e45ad0badff7e23ce017279f86ef56",
+      "adaptations": ["调整标注类型导入路径。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/image-preview-editor/geometry.ts",
+      "target": "apps/web/src/components/workbench/zcode/image-preview-editor/geometry.ts",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "17a4f49ac42589955252435275183ce6cea0ee5c4be860bc9a149b6ba4108ae5",
+      "copiedSha256": "17a4f49ac42589955252435275183ce6cea0ee5c4be860bc9a149b6ba4108ae5",
+      "adaptations": []
     },
     {
       "source": "references/zcode/packages/web/index.html",
@@ -8648,8 +8686,9 @@
       "source": "references/zcode/packages/ui/src/previewPaneImageContent.tsx",
       "target": "apps/web/src/components/workbench/zcode/previewPaneImageContent.tsx",
       "sha256": "a0215b3c903ab47ad209bf1cf592a6480b6ab526a9ef251b5ccb06f50863ec3e",
-      "copiedSha256": "b9fc76ef4812579c40e90e8043b76bb4446d8d92a156d57b62eee85166c387a0",
+      "copiedSha256": "e1dc5db674fd9032bb686c3b444c0f1c0350e665048211707b5419818e185c60",
       "adaptations": [
+        "右侧文件预览在共享图片附件请求中继续指定工作区与会话。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -21648,8 +21687,9 @@
       "source": "references/zcode/packages/ui/src/v4/composer/useComposerAttachments.ts",
       "target": "apps/web/src/components/workbench/zcode/v4/composer/useComposerAttachments.ts",
       "sha256": "6d490d5f91461c5ce8e79748fd79eacbab7f71309b5666c456bfe7f535eea8bf",
-      "copiedSha256": "601bf9c1ac4b31ba54719d6c9519c111e16a167c81b8e1551194db81c577b5b8",
+      "copiedSha256": "63ea9be202f34f09ab721600c9c00ac57e5fca9ba07ebd2b8c7a7b90b5e2cbba",
       "adaptations": [
+        "图库标注由当前输入框认领，读取预算及导出后复核同一附件归属，关闭或切换输入框取消请求。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "KenFutWork附件接线：原输入器消费Task/client/upload身份、真实分片提交ref、校验和与预算、取消和迟到结果回收；不重写组件或用显示DTO授权。验证见原组件附件公开回归与Code内核施工回执。",
         "2026-10-20 KenFutWork 宿主偏差：增浏览器截图进对话事件分支（BROWSER_SCREENSHOT_ADD_TO_CHAT_EVENT，与画布截图同路；右栏浏览器面板「截图到对话」）",

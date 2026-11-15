@@ -62,7 +62,7 @@ import {
   uploadComposerAttachment,
 } from "@zui/v4/composer/attachmentUpload.js";
 import { nanoid } from "nanoid";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 // 仅完成态视觉过渡，不是执行 deadline、重试间隔或容量预算。
 const COMPOSER_ATTACHMENT_COMPLETE_VISIBLE_MS = 300;
@@ -1145,19 +1145,21 @@ export function useComposerAttachments(
     workspacePath,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (disabled || !listenAddToChatEvents || typeof window === "undefined")
       return;
     const pending = new Set<AbortController>();
     const handle = (event: Event) => {
       if (!isPreviewImageAddToChatEvent(event) || event.defaultPrevented) return;
       const owner = previewImageOwnerRef.current;
+      const { target } = event.detail;
       if (
         owner.scopeKey !== scopeKey ||
         owner.disabled ||
         !owner.listenAddToChatEvents ||
-        event.detail.workspaceKey !== (workspaceIdentity?.trim() || workspacePath) ||
-        event.detail.targetSessionId !== owner.composerSessionId
+        (target !== "focused" &&
+          (target.workspaceKey !== (workspaceIdentity?.trim() || workspacePath) ||
+            target.sessionId !== owner.composerSessionId))
       )
         return;
       const controller = new AbortController();

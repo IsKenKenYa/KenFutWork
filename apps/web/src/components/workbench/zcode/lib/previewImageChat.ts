@@ -24,8 +24,7 @@ export async function loadPreviewImageFile(
 }
 
 interface PreviewImageChatSource {
-  workspaceKey: string;
-  targetSessionId: string | null;
+  target: "focused" | { workspaceKey: string; sessionId: string | null };
   signal: AbortSignal;
   loadFile(signal: AbortSignal): Promise<File>;
 }
