@@ -11,6 +11,7 @@ export * from "./code-task-project-contracts.js";
 export * from "./code-ui-contracts.js";
 export * from "./code-ui-host-bridge.js";
 export * from "./computer-use-helper-protocol.js";
+export * from "./context-inspection.js";
 export * from "./contracts.js";
 export * from "./design-review.js";
 export * from "./errors.js";

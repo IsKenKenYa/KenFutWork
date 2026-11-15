@@ -1,3 +1,4 @@
+import type { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import type { AgentMiddleware } from "langchain";
 import type {
@@ -29,6 +30,11 @@ export interface AgentRunExtensionContext {
 export interface AgentRunExtension {
   preset: "code" | "design" | "shared";
   canonicalToolEvents?: boolean;
+  /** 最终模型调用的只读观察；在提示组装、工具筛选和压缩之后绑定。 */
+  createModelCallbacks?(
+    identity: AgentEventIdentity,
+    context?: AgentRunExtensionContext,
+  ): BaseCallbackHandler[];
   createMiddleware(
     identity: AgentEventIdentity,
     context?: AgentRunExtensionContext,

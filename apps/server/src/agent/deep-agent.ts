@@ -57,6 +57,7 @@ import { createExecuteBackgroundTool } from "./execute-background.js";
 import { bridgeKernelTools } from "./kernel-tools-bridge.js";
 import { createLlmRequestRetryMiddleware } from "./llm-retry-middleware.js";
 import { MODEL_USAGE_AGENT_METADATA } from "./model-call-usage.js";
+import { createModelObservationMiddleware } from "./model-observation.js";
 import { referenceFromNativeArchiveUri } from "./native-checkpoint-archive.js";
 import { attachNativeCheckpointDurability } from "./native-checkpoint-durability.js";
 import { createNativeCompactionTracker } from "./native-compaction.js";
@@ -577,7 +578,14 @@ export function createKenFutWorkDeepAgent(options: {
           "\n\n始终用中文思考、工作与汇报（用户消息为其他语言时跟随用户语言）；" +
           "代码、命令、路径、专有名词保留原文。",
         tools: picked,
-        middleware,
+        middleware: [
+          ...middleware,
+          ...createModelObservationMiddleware(
+            runExtensions,
+            { agentCallId: callId, agentName: definition.name },
+            options.extensionContext,
+          ),
+        ],
       });
       const result = (await child.invoke(
         { messages: [new HumanMessage(description)] },
@@ -836,6 +844,11 @@ export function createKenFutWorkDeepAgent(options: {
             createUnknownToolGuardMiddleware(),
             createToolGateMiddleware(options.toolGate, options.toolGateHooks),
             ...finalContextBudgetMiddleware,
+            ...createModelObservationMiddleware(
+              runExtensions,
+              {},
+              options.extensionContext,
+            ),
           ],
         }
       : {
@@ -883,6 +896,11 @@ export function createKenFutWorkDeepAgent(options: {
             createModelResponseGuardMiddleware(),
             createUnknownToolGuardMiddleware(),
             ...finalContextBudgetMiddleware,
+            ...createModelObservationMiddleware(
+              runExtensions,
+              {},
+              options.extensionContext,
+            ),
           ],
         }),
     tools,

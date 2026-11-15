@@ -27,6 +27,7 @@ import { createTaskOrganizationPlugin } from "../features/code-ui/task-organizat
 import { createTaskProjectMovePlugin } from "../features/code-ui/task-project-move-plugin.js";
 import { createComputerUsePlugin } from "../features/computer-use/plugin.js";
 import { createContextHistoryPlugin } from "../features/context-history/plugin.js";
+import { createContextInsightsPlugin } from "../features/context-insights/plugin.js";
 import { designReviewPlugin } from "../features/design-review/plugin.js";
 import { createDynamicUiPlugin } from "../features/dynamic-ui/plugin.js";
 import { createExecutionScopesPlugin } from "../features/execution/plugin.js";
@@ -220,6 +221,7 @@ export function serverProfile(deps: ServerProfileDeps): PluginDefinition[] {
     createCodeSubagentsPlugin(),
     createToolCatalogPlugin(),
     createContextHistoryPlugin(),
+    createContextInsightsPlugin(),
     createUploadsPlugin(),
     createProjectsPlugin(),
     createProjectDirectoryRelinkPlugin(),

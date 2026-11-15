@@ -1,6 +1,6 @@
 # KenFutWork 隐私政策
 
-版本：2026-10-20 · 适用软件：KenFutWork（桌面端 / 本地免账户 Web / 自托管服务端）· 中文文本为准
+版本：2026-11-15 · 适用软件：KenFutWork（桌面端 / 本地免账户 Web / 自托管服务端）· 中文文本为准
 
 本政策描述**软件实际做了什么**，每条都可以在源码中核对（文中给出路径）。它不承诺我们「不会做」的事，只说明当前实现；实现变化时本文件随《日志》同轮刷新。
 
@@ -44,6 +44,7 @@
 | 对话 | `chat_messages`（`content`、`content_blocks`） | 你与 agent 的全部消息正文 |
 | Agent 运行 | `agent_runs`、`agent_turn_boundaries`、`task_works`、`background_jobs` | 运行记录、任务与工具调用轨迹 |
 | Agent 状态 | LangGraph `checkpoints`、`checkpoint_blobs`、`store` | 续跑所需的完整线程状态（含提示词与工具输出） |
+| 上下文检查 | `context_model_requests` | 真实模型调用的系统消息、对话、工具定义、响应、终态和用量；仅本机保存，不自动设保留期限；删除 Task 时清除对应记录（`apps/server/src/features/context-insights/`） |
 | 代码模式 | `code_ui_*`、`code_attachments` | Code 界面事件与附件引用 |
 | 设置 | `instance_settings` | 供应商实例、默认模型、治理档位、语音设置等 |
 | 扩展 | `skills`、`skill_files`、`mcp_servers`、插件目录 | 你安装的技能文件正文与 MCP 配置 |
