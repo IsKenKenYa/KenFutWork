@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it, vi } from "vitest";
 import { createModelRequestPort } from "../../agent/model-request.js";
 import { createInstanceChatModel } from "../../providers/openai-compatible/index.js";
@@ -53,6 +54,8 @@ async function captureFixture(httpStatus?: number) {
   });
   return {
     port,
+    model,
+    callbacks: [createContextRequestCallbacks(service.writer, owner)],
     provider,
     controller,
     closeProvider,
@@ -74,7 +77,7 @@ async function captureFixture(httpStatus?: number) {
       return (await service.list(database.actor, { taskId: owner.taskId }))
         .requests;
     },
-    async output() {
+    async read(part: "input" | "output") {
       const request = (
         await service.list(database.actor, { taskId: owner.taskId })
       ).requests[0];
@@ -85,7 +88,7 @@ async function captureFixture(httpStatus?: number) {
         const page = await service.read(database.actor, {
           taskId: owner.taskId,
           requestId: request.id,
-          part: "output",
+          part,
           offset,
         });
         chunks.push(page.text);
@@ -105,6 +108,54 @@ async function captureFixture(httpStatus?: number) {
 describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
   "真实模型流的上下文终态",
   () => {
+    it("请求输入保存原生工具状态但不保存宿主数据", async () => {
+      const f = await captureFixture();
+      try {
+        const pending = f.model.invoke(
+          [
+            new HumanMessage("生成图片"),
+            new AIMessage({
+              content: "",
+              tool_calls: [
+                {
+                  id: "image-1",
+                  name: "generate_image",
+                  args: { prompt: "海报" },
+                },
+              ],
+            }),
+            new ToolMessage({
+              status: "error",
+              tool_call_id: "image-1",
+              content: "生成结果保存失败",
+              artifact: { internalPath: "private-output-path" },
+            }),
+          ],
+          { callbacks: f.callbacks, signal: f.controller.signal },
+        );
+        await Promise.race([f.provider.firstRequest, pending]);
+        f.provider.finish(0);
+        await pending;
+        expect(f.provider.requests[0]?.body.messages).toContainEqual({
+          role: "tool",
+          tool_call_id: "image-1",
+          content: "生成结果保存失败",
+        });
+        const saved = await f.read("input");
+        expect(saved.messages[0][2]).toMatchObject({
+          type: "tool",
+          data: {
+            tool_call_id: "image-1",
+            content: "生成结果保存失败",
+            status: "error",
+          },
+        });
+        expect(JSON.stringify(saved)).not.toContain("private-output-path");
+      } finally {
+        await f.close();
+      }
+    });
+
     it.each(["run", "request"])(
       "%s 取消保存取消状态，任意取消原因不进入正文",
       async (kind) => {
@@ -121,7 +172,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
               { status: "cancelled", purpose: "goal-evaluation", usage: null },
             ]);
           });
-          expect(await f.output()).toBeNull();
+          expect(await f.read("output")).toBeNull();
           expect(f.usageCount()).toBe(0);
           expect(caller.signal.aborted).toBe(kind === "request");
           expect(f.controller.signal.aborted).toBe(kind === "run");
@@ -144,7 +195,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
             { status: "failed", httpStatus: null, usage: null },
           ]);
         });
-        expect(await f.output()).toBeNull();
+        expect(await f.read("output")).toBeNull();
         expect(f.controller.signal.aborted).toBe(false);
         expect(f.usageCount()).toBe(0);
       } finally {
@@ -162,7 +213,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           expect(await f.summaries()).toMatchObject([
             { status: "failed", httpStatus: status, usage: null },
           ]);
-          expect(await f.output()).toBeNull();
+          expect(await f.read("output")).toBeNull();
           expect(f.usageCount()).toBe(0);
         } finally {
           await f.close();
@@ -188,7 +239,7 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           });
           const before = await f.summaries();
           expect(before).toMatchObject([{ status: "completed", usage: null }]);
-          const output = await f.output();
+          const output = await f.read("output");
           expect(output).toMatchObject([
             { type: "ai", data: { content: "正在运行 1" } },
           ]);

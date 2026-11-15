@@ -4,7 +4,11 @@ import {
   type ModelCallPurpose,
 } from "@kenfutwork/shared";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
-import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import {
+  AIMessage,
+  type BaseMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { z } from "zod";
 import type { ContextRequestOwner, ContextRequestWriter } from "./types.js";
 
@@ -77,14 +81,14 @@ function serializeMessage(message: BaseMessage) {
     "invalid_tool_calls",
     "additional_kwargs",
   ];
-  return {
-    type: serialized.type,
-    data: Object.fromEntries(
-      Object.entries(serialized.data).filter(
-        ([key, value]) => fields.includes(key) && value !== undefined,
-      ),
+  const data: Record<string, unknown> = Object.fromEntries(
+    Object.entries(serialized.data).filter(
+      ([key, value]) => fields.includes(key) && value !== undefined,
     ),
-  };
+  );
+  const status = ToolMessage.isInstance(message) ? message.status : undefined;
+  if (status === "error" || status === "success") data.status = status;
+  return { type: serialized.type, data };
 }
 
 /** 只选择实际模型输入；不读取模型序列化参数、网络头或连接配置。 */

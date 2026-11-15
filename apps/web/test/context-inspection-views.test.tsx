@@ -55,6 +55,63 @@ const data = buildContextTimeline([
 ]);
 
 describe("dsh-context 原界面接入", () => {
+  it("打开工具结果可查看原调用参数与失败状态", async () => {
+    const timeline = buildContextTimeline([
+      {
+        summary: record,
+        input: {
+          model: "local",
+          tools: null,
+          messages: [
+            [
+              {
+                type: "ai",
+                data: {
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "read-1",
+                      name: "read_file",
+                      args: { path: "missing.txt" },
+                    },
+                  ],
+                },
+              },
+              {
+                type: "tool",
+                data: {
+                  tool_call_id: "read-1",
+                  content: "找不到指定文件",
+                  status: "error",
+                },
+              },
+            ],
+          ],
+        },
+      },
+    ]);
+    render(
+      <ContextInspectionViews
+        data={timeline}
+        requestId={record.id}
+        onSelect={() => {}}
+      />,
+    );
+    const group = screen
+      .getAllByRole("button", { name: /工具结果/ })
+      .find((item) => item.hasAttribute("aria-expanded"));
+    if (!group) throw new Error("工具结果入口缺失");
+    fireEvent.click(group);
+    const button = await screen.findByRole("button", {
+      name: /read_file.*missing\.txt/,
+    });
+    if (button.getAttribute("aria-expanded") === "false")
+      fireEvent.click(button);
+    expect(await screen.findByText("失败")).toBeTruthy();
+    expect(screen.getByText("path")).toBeTruthy();
+    expect(screen.getByText("找不到指定文件")).toBeTruthy();
+  });
+
   it("显示真实供应商读数与原分类浏览器", () => {
     render(
       <ContextInspectionViews

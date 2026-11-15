@@ -19,6 +19,7 @@ const dictionary: Record<string, string> = {
   "detail.step": "请求 #{s}",
   "tip.step": "请求 #{s}",
   "browser.stepAtTip": "首次出现在请求 #{s}",
+  "call.ok": "已返回",
 };
 const kit = makeViewKit((key, params) => {
   let value = dictionary[key] ?? key;

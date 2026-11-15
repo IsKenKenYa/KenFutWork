@@ -64,8 +64,55 @@ function categoryOf(type: string): SurfaceNode["cat"] {
   return "inject";
 }
 
+type ContextMessage = ContextRequestInput["messages"][number][number];
+type RecordedToolCall = NonNullable<ConversationNodeLike["call"]>;
+
+function toolCallBlocks(message: ContextMessage) {
+  const calls = message.data.tool_calls;
+  return Array.isArray(calls)
+    ? calls.map((call) => {
+        const item = object(call);
+        return {
+          type: "tool-call",
+          name: item?.name,
+          argsRaw: item?.args === undefined ? "" : textOf(item.args),
+          id: item?.id,
+        };
+      })
+    : [];
+}
+
+/** 只匹配同一批消息里已出现的调用；重复 ID 无法确认参数归属。 */
+function contextEntries(input: ContextRequestInput) {
+  return input.messages.flatMap((batch) => {
+    const calls = new Map<string, RecordedToolCall | null>();
+    return batch
+      .filter((message) => message.type !== "system")
+      .map((message) => {
+        const blocks = toolCallBlocks(message);
+        if (message.type === "ai") {
+          for (const { id, name, argsRaw } of blocks) {
+            if (typeof id !== "string" || !id) continue;
+            calls.set(
+              id,
+              !calls.has(id) && typeof name === "string"
+                ? { name, argsRaw }
+                : null,
+            );
+          }
+        }
+        const id = message.data.tool_call_id;
+        const call =
+          message.type === "tool" && typeof id === "string"
+            ? (calls.get(id) ?? undefined)
+            : undefined;
+        return { message, blocks, call };
+      });
+  });
+}
+
 function messageView(
-  message: ContextRequestInput["messages"][number][number],
+  { message, blocks: calls, call }: ReturnType<typeof contextEntries>[number],
   seq: number,
   time: number,
 ) {
@@ -81,32 +128,23 @@ function messageView(
         : [];
     })
     .join("\n");
-  const calls = Array.isArray(message.data.tool_calls)
-    ? message.data.tool_calls
-    : [];
-  const blocks: unknown[] = [
-    ...content,
-    ...calls.map((call) => {
-      const item = object(call);
-      return {
-        type: "tool-call",
-        name: item?.name,
-        argsRaw: textOf(item?.args),
-        id: item?.id,
-      };
-    }),
-  ];
+  const blocks = [...content, ...calls];
+  const { status, ...inputData } = message.data;
+  const isError =
+    message.type === "tool" && (status === "error" || status === "success")
+      ? status === "error"
+      : undefined;
+  const tool = call?.name ?? message.data.name;
   const node: SurfaceNode = {
     seq,
     time,
     cat,
     text,
-    tokens: estimateTextTokens(JSON.stringify(message.data)),
-    ...(typeof message.data.name === "string"
-      ? { tool: message.data.name }
-      : {}),
+    tokens: estimateTextTokens(JSON.stringify(inputData)),
+    ...(typeof tool === "string" ? { tool } : {}),
+    ...(isError === undefined ? {} : { err: isError }),
     ...(calls.length
-      ? { calls: calls.map((c) => String(object(c)?.name ?? "tool")) }
+      ? { calls: calls.map((c) => String(c.name ?? "tool")) }
       : {}),
   };
   const conv: ConversationNodeLike = {
@@ -118,6 +156,8 @@ function messageView(
           ? "assistant"
           : "user",
     ...(cat === "assistant" ? { blocks } : { content: blocks }),
+    ...(call ? { call } : {}),
+    ...(isError === undefined ? {} : { isError }),
   };
   return { node, conv };
 }
@@ -138,7 +178,6 @@ function inputHeader(input: ContextRequestInput) {
     tools,
     systemTokens: estimateSystemTokens(system),
     headerTools,
-    messages: all.filter((m) => m.type !== "system"),
   };
 }
 
@@ -218,8 +257,7 @@ export function buildContextTimeline(
   for (const { summary, input } of sorted) {
     const headerSeq = ++sequence;
     const time = Date.parse(summary.startedAt);
-    const { system, tools, systemTokens, headerTools, messages } =
-      inputHeader(input);
+    const { system, tools, systemTokens, headerTools } = inputHeader(input);
     headers.headers.push({
       seq: headerSeq,
       time,
@@ -228,12 +266,12 @@ export function buildContextTimeline(
     });
     headerContent.set(headerSeq, { system, tools });
     let prefix = true;
-    const current = messages.map((message, index) => {
-      const key = JSON.stringify(message);
+    const current = contextEntries(input).map((entry, index) => {
+      const key = JSON.stringify([entry.message, entry.call]);
       const prior = previous[index];
       if (prefix && prior?.key === key) return prior;
       prefix = false;
-      const { node, conv } = messageView(message, ++sequence, time);
+      const { node, conv } = messageView(entry, ++sequence, time);
       convNodes.push(conv);
       return { key, node };
     });

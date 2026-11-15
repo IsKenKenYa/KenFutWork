@@ -41,6 +41,89 @@ const input = (
 });
 
 describe("冻结请求的 dsh-context 数据适配", () => {
+  it("同名工具按同一批消息中的调用 ID 对应参数与结果", () => {
+    const value: ContextRequestInput = {
+      model: "local",
+      tools: null,
+      messages: [
+        [
+          {
+            type: "ai",
+            data: {
+              content: "",
+              tool_calls: [
+                { id: "a", name: "read_file", args: { path: "first.txt" } },
+                { id: "b", name: "read_file", args: { path: "second.txt" } },
+              ],
+            },
+          },
+          {
+            type: "tool",
+            data: { tool_call_id: "b", content: "找不到文件", status: "error" },
+          },
+          {
+            type: "tool",
+            data: { tool_call_id: "a", content: "文件正文", status: "success" },
+          },
+        ],
+        [{ type: "tool", data: { tool_call_id: "b", content: "历史结果" } }],
+      ],
+    };
+    const data = buildContextTimeline([{ summary: summary(1), input: value }]);
+    const [, failed, succeeded, unmatched] = data.convNodes;
+    expect(failed).toMatchObject({
+      call: {
+        name: "read_file",
+        argsRaw: expect.stringContaining("second.txt"),
+      },
+      isError: true,
+    });
+    expect(succeeded).toMatchObject({
+      call: {
+        name: "read_file",
+        argsRaw: expect.stringContaining("first.txt"),
+      },
+      isError: false,
+    });
+    expect(unmatched?.call).toBeUndefined();
+    expect(unmatched?.isError).toBeUndefined();
+    expect(data.timeline.nodes[1]).toMatchObject({
+      tool: "read_file",
+      err: true,
+    });
+  });
+
+  it("旧请求的调用参数不会补到新请求失去来源的工具结果", () => {
+    const call = {
+      type: "ai",
+      data: {
+        content: "",
+        tool_calls: [{ id: "read", name: "read_file", args: { path: "A" } }],
+      },
+    };
+    const result = {
+      type: "tool",
+      data: { tool_call_id: "read", content: "结果", status: "error" },
+    };
+    const scope = { model: "local", tools: null };
+    const data = buildContextTimeline([
+      { summary: summary(1), input: { ...scope, messages: [[call, result]] } },
+      {
+        summary: summary(2),
+        input: { ...scope, messages: [[result, call, call, result]] },
+      },
+    ]);
+    const results = data.convNodes.filter(
+      (node) => node.kind === "tool-result",
+    );
+    expect(results.map((node) => node.call?.name)).toEqual([
+      "read_file",
+      undefined,
+      undefined,
+    ]);
+    expect(results.map((node) => node.isError)).toEqual([true, true, true]);
+  });
+
   it("保留推理与图片块的实际类型", () => {
     const blocks = [
       { type: "reasoning", text: "计划" },
