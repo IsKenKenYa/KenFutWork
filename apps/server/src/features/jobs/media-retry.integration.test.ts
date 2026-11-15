@@ -1,7 +1,9 @@
 import { createServer } from "node:http";
 import { ToolMessage } from "@langchain/core/messages";
+import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { kernelToolToStructuredTool } from "../../agent/kernel-tools-bridge.js";
+import { registerJobRoutes } from "../../http/jobs.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createScopeRepository } from "../execution/scope-repository.js";
 import { createExecutionScopes } from "../execution/scope-service.js";
@@ -120,6 +122,13 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         },
       };
       const job = await jobs.createJob(db.actor, input);
+      const app = Fastify();
+      await registerJobRoutes(app, {
+        localAccess: db.localAccess,
+        localInstance: db.localInstance,
+        jobService: jobs,
+        modelProviders,
+      });
       const loop = startJobLoop(
         {
           queue,
@@ -151,8 +160,15 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         job,
         input,
         submittedAt,
+        read: (url: string) =>
+          app.inject({
+            method: "GET",
+            url,
+            headers: { authorization: `Bearer ${db.desktopToken}` },
+          }),
         async close() {
           await loop.shutdown();
+          await app.close();
           await new Promise<void>((resolve, reject) =>
             server.close((error) => (error ? reject(error) : resolve())),
           );
@@ -177,6 +193,13 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           3000,
         );
         expect((await f.jobs.getJob(db.actor, f.job.id)).attempt_count).toBe(1);
+        const reply = await f.read(`/api/jobs/${f.job.id}`);
+        expect(reply.statusCode).toBe(200);
+        expect(reply.json().job).toMatchObject({
+          status: "succeeded",
+          error_code: null,
+          error_message: null,
+        });
       } finally {
         await f.close();
       }
@@ -194,12 +217,32 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
             { timeout: 4000 },
           );
           expect(
-            (await f.jobs.getJob(db.actor, f.job.id)).error_message,
+            (await f.jobs.getJobForWorker(f.job.id)).error_message,
           ).toContain(mode === "auth" ? "模拟鉴权失败" : "模拟余额不足");
-          expect((await f.jobs.getJob(db.actor, f.job.id)).error_code).toBe(
-            mode === "auth"
-              ? "provider_auth_failed"
-              : "provider_balance_insufficient",
+          const expected = {
+            id: f.job.id,
+            status: "dead_letter",
+            error_code:
+              mode === "auth"
+                ? "provider_auth_failed"
+                : "provider_balance_insufficient",
+            error_message:
+              mode === "auth"
+                ? "供应商拒绝访问，请在供应商设置中检查密钥和权限。"
+                : "供应商额度不足，请检查账户余额。",
+          };
+          const detail = await f.read(`/api/jobs/${f.job.id}`);
+          expect(detail.statusCode).toBe(200);
+          expect(detail.json().job).toMatchObject(expected);
+          const list = await f.read(
+            `/api/jobs?request_id=${f.input.requestId}`,
+          );
+          expect(list.statusCode).toBe(200);
+          expect(list.json().jobs).toMatchObject([expected]);
+          const replay = await f.jobs.createJob(db.actor, f.input);
+          expect(replay).toMatchObject(expected);
+          expect(`${detail.body}${list.body}`).not.toContain(
+            mode === "auth" ? "模拟鉴权失败" : "模拟余额不足",
           );
           expect(f.submittedAt).toHaveLength(1);
         } finally {

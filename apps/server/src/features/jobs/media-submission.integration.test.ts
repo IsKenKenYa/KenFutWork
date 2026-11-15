@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { registerGenerateRoutes } from "../../http/generate.js";
+import { registerJobRoutes } from "../../http/jobs.js";
 import {
   canvasContentPath,
   createCanvasFileStore,
@@ -55,17 +56,25 @@ async function createSubmissionFixture(
     models: [model],
   });
   const app = Fastify();
-  await registerGenerateRoutes(app, {
+  const services = {
     localAccess: db.localAccess,
     localInstance: db.localInstance,
     jobService: jobs,
     modelProviders: models,
-  });
+  };
+  await registerGenerateRoutes(app, services);
+  await registerJobRoutes(app, services);
   return {
     jobs,
     models,
     model,
     provider,
+    jobRequest: (method: "GET" | "POST", url: string) =>
+      app.inject({
+        method,
+        url,
+        headers: { authorization: `Bearer ${db.desktopToken}` },
+      }),
     submit: (payload: Record<string, unknown>) =>
       app.inject({
         method: "POST",
@@ -160,6 +169,56 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
     }, 30_000);
     afterAll(async () => {
       await db?.close();
+    });
+
+    it("取消待确认时查询仍返回原任务且不暴露供应商错误原文", async () => {
+      const fixture = await createSubmissionFixture(db);
+      const requestId = randomUUID();
+      try {
+        expect((await fixture.submit({ requestId })).statusCode).toBe(202);
+        const [job] = await fixture.jobs.listJobs(db.actor, { requestId });
+        if (!job) throw new Error("任务未受理");
+        const url = `/api/jobs/${job.id}`;
+        expect(
+          (await fixture.jobRequest("POST", `${url}/cancel`)).statusCode,
+        ).toBe(200);
+        const token = randomUUID();
+        expect(await fixture.jobs.claimJob(job.id, token, 10)).toMatchObject({
+          status: "canceled",
+        });
+        const raw = "供应商取消回执含内部连接信息";
+        await fixture.jobs.saveCancellation(
+          job.id,
+          {
+            state: "unknown",
+            attempts: 1,
+            errorCode: "provider_auth_failed",
+            errorMessage: raw,
+          },
+          0,
+          token,
+        );
+        const reply = await fixture.jobRequest("GET", url);
+        expect(reply.statusCode).toBe(200);
+        expect(reply.json().job).toMatchObject({
+          id: job.id,
+          status: "canceled",
+          payload: {
+            _generation_cancel: {
+              state: "unknown",
+              errorCode: "provider_auth_failed",
+              errorMessage: "取消结果待确认，请到供应商确认。",
+            },
+          },
+        });
+        expect(reply.body).not.toContain(raw);
+        expect(
+          (await fixture.jobs.getJobForWorker(job.id)).payload
+            ._generation_cancel,
+        ).toMatchObject({ errorMessage: raw });
+      } finally {
+        await fixture.close();
+      }
     });
 
     it("未知原生多图能力拆单，并发同键HTTP重放返回同一完整任务组", async () => {

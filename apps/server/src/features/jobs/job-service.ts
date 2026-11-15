@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
-import type {
-  BackgroundJob,
-  BackgroundJobStatus,
-  BackgroundJobType,
+import {
+  type BackgroundJob,
+  type BackgroundJobStatus,
+  type BackgroundJobType,
+  getMediaJobErrorMessage,
 } from "@kenfutwork/shared";
 import {
   GenerationTargetError,
@@ -15,11 +16,12 @@ import type {
 import type { QueueClient } from "../queue/types.js";
 import type { UploadService } from "../uploads/upload-service.js";
 import { JobInputError, persistJobInputs } from "./job-inputs.js";
-import type {
-  JobCancellation,
-  JobExecution,
-  JobExecutionWrite,
-  JobRetry,
+import {
+  type JobCancellation,
+  type JobExecution,
+  type JobExecutionWrite,
+  type JobRetry,
+  readJobCancellation,
 } from "./job-progress.js";
 import {
   type BackgroundJobRecord,
@@ -215,6 +217,35 @@ function mapJobRow(row: BackgroundJobRecord): BackgroundJob {
   };
 }
 
+/** 本机界面与 API 只读取可公开的提示，执行与排查仍读取原任务。 */
+function mapPublicJobRow(row: BackgroundJobRecord): BackgroundJob {
+  const job = mapJobRow(row);
+  if (job.status === "succeeded")
+    return { ...job, error_code: null, error_message: null };
+
+  const cancellation = readJobCancellation(job);
+  if (cancellation) {
+    const { state, attempts, errorCode } = cancellation;
+    job.payload = {
+      ...job.payload,
+      _generation_cancel: {
+        state,
+        attempts,
+        ...(errorCode === undefined ? {} : { errorCode }),
+        ...(state === "unknown"
+          ? { errorMessage: "取消结果待确认，请到供应商确认。" }
+          : {}),
+      },
+    };
+  }
+  job.error_message =
+    job.status === "failed" || job.status === "dead_letter"
+      ? (getMediaJobErrorMessage(job.error_code) ??
+        "生成任务失败，请检查供应商设置或任务记录。")
+      : null;
+  return job;
+}
+
 function assertLeaseWrite(count: number, token?: string) {
   if (token && count === 0)
     throw Object.assign(new Error("任务执行租约已失效"), {
@@ -339,7 +370,7 @@ export function createJobService(options: {
       input,
       outputCounts !== undefined,
     );
-    if (prepared.existing.length) return prepared.existing.map(mapJobRow);
+    if (prepared.existing.length) return prepared.existing.map(mapPublicJobRow);
     validateNewRequest?.();
     const queueName = QUEUE_MAP[input.jobType];
     const stored = await persistJobInputs(
@@ -414,7 +445,7 @@ export function createJobService(options: {
       throw new JobServiceError("job_create_failed", "生成任务保存失败。", 500);
     if (rows[0]?.requestReplay) {
       await stored.discard();
-      return rows.map(mapJobRow);
+      return rows.map(mapPublicJobRow);
     }
     await Promise.all(
       rows.map(async (job) => {
@@ -431,7 +462,7 @@ export function createJobService(options: {
         }
       }),
     );
-    return rows.map(mapJobRow);
+    return rows.map(mapPublicJobRow);
   }
 
   return {
@@ -583,7 +614,7 @@ export function createJobService(options: {
       if (!job) {
         throw new JobServiceError("job_not_found", "Job not found.", 404);
       }
-      return mapJobRow(job);
+      return mapPublicJobRow(job);
     },
 
     async listJobs(actor, filters) {
@@ -603,7 +634,7 @@ export function createJobService(options: {
           );
         });
 
-      return jobs.map(mapJobRow);
+      return jobs.map(mapPublicJobRow);
     },
 
     async cancelJob(actor, jobId) {
@@ -632,7 +663,7 @@ export function createJobService(options: {
       } catch (error) {
         console.error("[job-service] cancellation wakeup failed:", error);
       }
-      return mapJobRow(job);
+      return mapPublicJobRow(job);
     },
 
     async getJobForWorker(jobId) {
