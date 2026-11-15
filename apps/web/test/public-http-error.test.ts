@@ -1,6 +1,11 @@
 import { once } from "node:events";
 import { createServer, type ServerResponse } from "node:http";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient";
+import {
+  setSurfaceApiBase,
+  surfaceRequest,
+} from "../src/components/workbench/zcode/host/surfaceApi";
 import { fetchBrandKits } from "../src/lib/brand-kit-api";
 import {
   LOCAL_ACCESS_LOST_EVENT,
@@ -23,6 +28,7 @@ function json(response: ServerResponse, status: number, body: unknown) {
 
 const requestId = "aaaaaaaa-1111-4111-8111-111111111111";
 const jobId = "bbbbbbbb-1111-4111-8111-111111111111";
+let apiBase: string;
 const accepted = {
   request_id: requestId,
   jobs: [{ job_id: jobId, status: "queued" }],
@@ -44,6 +50,21 @@ const server = createServer((request, response) => {
     return response
       .writeHead(503, { "content-type": "text/html" })
       .end("<h1>upstream connection refused</h1>");
+  }
+  if (request.url === "/api/voice/transcribe") {
+    request.resume();
+    return response
+      .writeHead(503, { "content-type": "text/html" })
+      .end("<h1>upstream connection refused</h1>");
+  }
+  if (request.url === "/api/voice/speak") {
+    request.resume();
+    return json(response, 422, {
+      error: {
+        code: "voice_model_required",
+        message: "请先在语音设置选择播报模型。",
+      },
+    });
   }
   if (request.url === "/api/code/shells") {
     return json(response, 409, {
@@ -71,7 +92,8 @@ beforeAll(async () => {
   const address = server.address();
   if (!address || typeof address === "string")
     throw new Error("HTTP 回归服务未启动");
-  vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", `http://127.0.0.1:${address.port}`);
+  apiBase = `http://127.0.0.1:${address.port}`;
+  vi.stubEnv("NEXT_PUBLIC_SERVER_BASE_URL", apiBase);
 });
 
 afterAll(async () => {
@@ -111,6 +133,55 @@ it("保留结构正确的业务码和文案，客户端可接收以后新增的�
     code: "shell_selection_changed",
     message: "请重新选择终端。",
   });
+});
+
+it("Code 请求和壳内内容保留相同的状态、业务码和处理提示", async () => {
+  const client = new CodeHttpChannelClient({ apiBase });
+  setSurfaceApiBase(apiBase);
+  try {
+    const error = {
+      status: 409,
+      code: "shell_selection_changed",
+      message: "请重新选择终端。",
+    };
+    await expect(client.request("/api/code/shells")).rejects.toMatchObject(
+      error,
+    );
+    await expect(surfaceRequest("/api/code/shells")).rejects.toMatchObject(
+      error,
+    );
+    await expect(surfaceRequest("/api/brand-kits")).rejects.toMatchObject({
+      status: 503,
+      message: "本机服务暂不可用，请确认 KenFutWork 正在运行。",
+    });
+  } finally {
+    setSurfaceApiBase("");
+    client.dispose();
+  }
+});
+
+it("语音转写的网关页面转成处理提示，播报保留服务端给出的原因", async () => {
+  const client = new CodeHttpChannelClient({ apiBase });
+  try {
+    await expect(
+      client.transcribeVoice(new Uint8Array([1])),
+    ).rejects.toMatchObject({
+      status: 503,
+      message: "本机服务暂不可用，请确认 KenFutWork 正在运行。",
+    });
+    await expect(
+      client.speakVoice({
+        text: "你好",
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toMatchObject({
+      status: 422,
+      code: "voice_model_required",
+      message: "请先在语音设置选择播报模型。",
+    });
+  } finally {
+    client.dispose();
+  }
 });
 
 it("无有效文案的错误不会显示空白，保留本机连接的 HTTP 状态", async () => {

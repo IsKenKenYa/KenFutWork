@@ -38,6 +38,7 @@ export * from "./plugin-contracts.js";
 export * from "./project-directory-contracts.js";
 export * from "./project-file-contracts.js";
 export * from "./provider-contracts.js";
+export * from "./public-http-error.js";
 export * from "./skill-contracts.js";
 export * from "./voice-contracts.js";
 export * from "./work-host.js";

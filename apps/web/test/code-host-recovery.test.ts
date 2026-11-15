@@ -55,10 +55,14 @@ it("Code 宿主认证失效立即拒绝等待调用，关闭页面后不继续�
   vi.stubGlobal("fetch", fetcher);
   const client = new CodeHttpChannelClient({ apiBase: "https://host.example" });
   try {
-    await expect(client.connect()).rejects.toThrow("401");
+    const failure = {
+      status: 401,
+      message: "本机连接已失效，请从桌面重新打开。",
+    };
+    await expect(client.connect()).rejects.toMatchObject(failure);
     await expect(
       client.services.providerSettingsService.getView(),
-    ).rejects.toThrow("401");
+    ).rejects.toMatchObject(failure);
     expect(fetcher).toHaveBeenCalledTimes(1);
   } finally {
     client.dispose();

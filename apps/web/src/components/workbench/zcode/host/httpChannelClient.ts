@@ -1,5 +1,6 @@
 import {
   AGENT_GOVERNANCE_DEFAULTS,
+  ApiApplicationError,
   type CodeGoalControl,
   type CodeGoalControlState,
   type CodeUiViewerScope,
@@ -16,6 +17,7 @@ import {
   type ProjectDirectoryRelinkSnapshot,
   projectDirectoryRelinkResponseSchema,
   projectDirectoryRelinkSnapshotSchema,
+  throwPublicHttpError,
 } from "@kenfutwork/shared";
 import {
   Emitter,
@@ -103,31 +105,8 @@ function notificationReader(reader: ReadableStreamDefaultReader<Uint8Array>) {
   };
 }
 
-class CodeHostHttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly code?: string,
-  ) {
-    super(message);
-  }
-}
-
-/**
- * 宿主 5xx 可能回纯文本（Fastify 默认体就是 `Internal Server Error`）：
- * 解析失败不能让 SyntaxError 顶替真实报错，兜底给状态码。
- */
 async function readHostResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const failure = (await response.json().catch(() => ({}))) as {
-      error?: { code?: string; message?: string };
-    };
-    throw new CodeHostHttpError(
-      response.status,
-      failure.error?.message ?? `Code 宿主请求失败：${response.status}`,
-      failure.error?.code,
-    );
-  }
+  if (!response.ok) return throwPublicHttpError(response);
   return (await response.json()) as T;
 }
 
@@ -317,7 +296,7 @@ export class CodeHttpChannelClient implements IChannelClient {
     } catch (error) {
       if (
         choice === "independent" ||
-        !(error instanceof CodeHostHttpError) ||
+        !(error instanceof ApiApplicationError) ||
         error.status !== 409 ||
         error.code !== "project_directory_conflict"
       )
@@ -407,7 +386,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       if (
         projectId ||
         independent ||
-        !(error instanceof CodeHostHttpError) ||
+        !(error instanceof ApiApplicationError) ||
         error.status !== 409 ||
         error.code !== "project_directory_conflict"
       )
@@ -585,7 +564,11 @@ export class CodeHttpChannelClient implements IChannelClient {
       )
     ) {
       await response.body?.cancel();
-      throw new CodeHostHttpError(response.status, errorMessage);
+      throw new ApiApplicationError(
+        "application_error",
+        errorMessage,
+        response.status,
+      );
     }
     return response.blob();
   }
@@ -613,15 +596,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    const result = (await response.json()) as {
-      text?: string;
-      error?: { message?: string };
-    };
-    if (!response.ok)
-      throw new CodeHostHttpError(
-        response.status,
-        result.error?.message ?? `语音转写失败：${response.status}`,
-      );
+    const result = await readHostResponse<{ text?: string }>(response);
     return result.text ?? "";
   }
 
@@ -644,15 +619,7 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    if (!response.ok) {
-      const result = (await response.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      throw new CodeHostHttpError(
-        response.status,
-        result?.error?.message ?? `语音播报失败：${response.status}`,
-      );
-    }
+    if (!response.ok) return throwPublicHttpError(response);
     return await response.blob();
   }
 
@@ -694,11 +661,12 @@ export class CodeHttpChannelClient implements IChannelClient {
       },
     );
     reportAccessLost(response.status);
-    if (!response.ok || !response.body) {
-      await response.body?.cancel();
-      throw new CodeHostHttpError(
+    if (!response.ok) return throwPublicHttpError(response);
+    if (!response.body) {
+      throw new ApiApplicationError(
+        "application_error",
+        "工作台无法接收更新，请重新打开。",
         response.status,
-        `Code 通知通道不可用：${response.status}`,
       );
     }
     const reader = response.body.getReader();
@@ -769,7 +737,7 @@ export class CodeHttpChannelClient implements IChannelClient {
         this.connectionId = "";
         this.goalStates.clear();
         if (
-          error instanceof CodeHostHttpError &&
+          error instanceof ApiApplicationError &&
           (error.status === 401 || error.status === 403)
         )
           throw error;

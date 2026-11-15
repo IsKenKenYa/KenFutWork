@@ -1,3 +1,5 @@
+import { throwPublicHttpError } from "@kenfutwork/shared";
+
 /**
  * 壳内嵌面（Design/Flow 主区视图）的服务端访问缝。
  *
@@ -25,18 +27,13 @@ export async function surfaceFetch(
   });
 }
 
-/** 数据面请求：非 2xx 时抛出服务端给的可读原因（error.message）。 */
+/** 数据面请求保留状态、业务码和可读原因。 */
 export async function surfaceRequest(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
   const response = await surfaceFetch(path, init);
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as {
-      error?: { message?: string };
-    };
-    throw new Error(body.error?.message ?? `HTTP ${response.status}`);
-  }
+  if (!response.ok) return throwPublicHttpError(response);
   return response;
 }
 

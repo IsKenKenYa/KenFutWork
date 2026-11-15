@@ -793,6 +793,9 @@ describe("Code 宿主数据面请求", () => {
     await expect(request("/api/projects/project")).rejects.toThrow(
       "项目已关闭，请重新打开",
     );
-    await expect(request("/api/projects/project")).rejects.toThrow("HTTP 502");
+    await expect(request("/api/projects/project")).rejects.toMatchObject({
+      status: 502,
+      message: "本机服务未能完成请求，请检查工作台状态。",
+    });
   });
 });
