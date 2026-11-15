@@ -52,7 +52,8 @@ test.skipIf(process.platform !== "darwin")(
       invocationId: "apple-git-status",
       command: "/usr/bin/git status --porcelain=v1 --untracked-files=all",
       background: true,
-      timeoutMs: 5000,
+      // 系统 Git 首次查找开发工具也需要时间；本用例验证成功执行。
+      timeoutMs: task.timeout,
       limits: {
         maxOutputBytes: 65536,
         previewMaxChars: 8000,
@@ -65,6 +66,7 @@ test.skipIf(process.platform !== "darwin")(
     const output = await child.readOutput({ offset: 0, maxBytes: 8192 });
     expect(exit, output.data).toMatchObject({
       exitCode: 0,
+      reason: null,
       stopped: false,
       rangeEmpty: true,
     });
