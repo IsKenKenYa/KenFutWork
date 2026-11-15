@@ -24,7 +24,7 @@ const cleanups: Array<() => Promise<unknown>> = [];
 
 test.skipIf(process.platform !== "darwin")(
   "macOS 系统 Git 在真实只读沙箱内可读取开发工具选择器并列出未跟踪文件",
-  async () => {
+  async ({ task }) => {
     const fixture = await realpath(
       await mkdtemp(join(tmpdir(), "kfw-apple-git-")),
     );
@@ -57,7 +57,8 @@ test.skipIf(process.platform !== "darwin")(
         maxOutputBytes: 65536,
         previewMaxChars: 8000,
         yieldMs: 50,
-        killGraceMs: 2000,
+        // 该入口也准备开发态 native helper，成功用例沿测试运行器的等待预算。
+        killGraceMs: task.timeout,
       },
     });
     const exit = await child.waitForExit();
