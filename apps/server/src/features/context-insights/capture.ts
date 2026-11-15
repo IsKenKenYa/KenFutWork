@@ -26,6 +26,27 @@ const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+
+function readModelHttpFailureStatus(error: unknown): number | undefined {
+  // SDK 可把 HTTP 响应放在 response 内，也可能被适配器包装到 cause。只读取数字状态。
+  let current = object(error);
+  for (let depth = 0; current && depth < 5; depth++) {
+    const response = object(current.response);
+    for (const candidate of [
+      current.status,
+      current.statusCode,
+      response?.status,
+      response?.statusCode,
+    ]) {
+      if (typeof candidate !== "number") continue;
+      const status = contextRequestHttpStatusSchema.safeParse(candidate);
+      if (status.success) return status.data;
+    }
+    current = object(current.cause);
+  }
+  return undefined;
+}
+
 const sdkUsageSchema = z.object({
   input_tokens: z.number().int().nonnegative(),
   output_tokens: z.number().int().nonnegative(),
@@ -202,20 +223,15 @@ export function createContextRequestCallbacks(
     },
     async handleLLMError(error, id) {
       const status = error.name === "AbortError" ? "cancelled" : "failed";
-      // 只读取 SDK 暴露的数字状态，不解析错误消息或响应正文。
-      const sdkError = object(error);
-      const httpStatus = contextRequestHttpStatusSchema.safeParse(
-        sdkError?.status ?? sdkError?.statusCode,
-      );
+      const httpStatus =
+        status === "failed" ? readModelHttpFailureStatus(error) : undefined;
       await writeCapture(() =>
         writer.finish({
           id,
           owner,
           endedAt: new Date().toISOString(),
           status,
-          ...(status === "failed" && httpStatus.success
-            ? { httpStatus: httpStatus.data }
-            : {}),
+          ...(httpStatus === undefined ? {} : { httpStatus }),
           // 错误原文可能包含服务商请求信息，不进入上下文正文记录。
           output: null,
           usage: null,

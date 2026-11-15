@@ -6,6 +6,7 @@ import { createLlmRequestRetryMiddleware } from "../../agent/llm-retry-middlewar
 import { createModelObservationMiddleware } from "../../agent/model-observation.js";
 import { createModelRequestPort } from "../../agent/model-request.js";
 import { createInstanceChatModel } from "../../providers/openai-compatible/index.js";
+import { BoundaryModel } from "../agent-runs/test-harness.js";
 import { heldModel } from "../code-ui/model-stream.fixture.js";
 import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
 import { createContextRequestCallbacks } from "./capture.js";
@@ -172,6 +173,51 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           { status: "completed", attempt: { number: 1 } },
         ]);
         expect(other[0]?.attempt?.callId).toEqual(expect.any(String));
+      } finally {
+        await f.close();
+      }
+    }, 30_000);
+
+    it("保存适配器包装的真实 HTTP 状态，正文有数字的本地失败仍保持未知", async () => {
+      const f = await captureFixture(422);
+      try {
+        const wrapped = new BoundaryModel(async () => {
+          const response = await fetch(
+            `${f.provider.baseUrl}/chat/completions`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                messages: [{ role: "user", content: "请求失败测试" }],
+              }),
+            },
+          );
+          const body = await response.text();
+          expect(response.ok).toBe(false);
+          throw new Error("模型适配器调用失败", {
+            cause: Object.assign(new Error(body), {
+              status: "failed",
+              response,
+            }),
+          });
+        });
+        await expect(
+          wrapped.invoke("检查失败记录", { callbacks: f.callbacks }),
+        ).rejects.toThrow("模型适配器调用失败");
+        expect(f.provider.requests).toHaveLength(1);
+        const saved = await f.summaries();
+        expect(saved).toMatchObject([{ status: "failed", httpStatus: 422 }]);
+        expect(await f.read("output")).toBeNull();
+
+        const local = new BoundaryModel(async () => {
+          throw new Error("本地解析失败，输入中包含 HTTP 429 字样");
+        });
+        await expect(
+          local.invoke("检查本地失败记录", { callbacks: f.callbacks }),
+        ).rejects.toThrow("本地解析失败");
+        expect(await f.summaries()).toMatchObject([
+          { status: "failed", httpStatus: null },
+          { status: "failed", httpStatus: 422 },
+        ]);
       } finally {
         await f.close();
       }
