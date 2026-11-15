@@ -71,7 +71,7 @@ describe("resolveFlowEntry（入口门控）", () => {
     });
   });
 
-  it("插件已装但适配层未配齐 → 入口照常出现，原因点名缺失环境变量", () => {
+  it("插件已装但适配层未配齐 → 隐藏入口并保留配置原因", () => {
     const entry = resolveFlowEntry({
       pluginInstalled: true,
       pluginEnabled: true,
@@ -84,35 +84,28 @@ describe("resolveFlowEntry（入口门控）", () => {
         ],
       },
     });
-    expect(entry.available).toBe(true);
-    expect(entry.available && entry.frontendUrl).toBeNull();
-    expect(entry.available && entry.reason).toContain(
-      "KENFUTWORK_FLOW_EMBED_SECRET",
-    );
-    expect(entry.available && entry.reason).toContain(
-      "KENFUTWORK_FLOW_FRONTEND_URL",
-    );
+    expect(entry.available).toBe(false);
+    expect(entry.reason).toContain("KENFUTWORK_FLOW_EMBED_SECRET");
+    expect(entry.reason).toContain("KENFUTWORK_FLOW_FRONTEND_URL");
   });
 
-  it("插件已装但探针失败（status=null）→ 入口照常出现，原因指到 host/status", () => {
+  it("插件已装但状态无法读取 → 隐藏入口并提示检查本机服务", () => {
     const entry = resolveFlowEntry({
       pluginInstalled: true,
       pluginEnabled: true,
       status: null,
     });
-    expect(entry.available).toBe(true);
-    expect(entry.available && entry.frontendUrl).toBeNull();
-    expect(entry.available && entry.reason).toContain("host/status");
+    expect(entry.available).toBe(false);
+    expect(entry.reason).toContain("检查本机服务");
   });
 
-  it("enabled 但 frontendUrl 缺失（防御：服务端契约不该给这种组合）→ 入口出现且未就绪", () => {
+  it("状态已启用但未提供前端地址 → 隐藏入口", () => {
     const entry = resolveFlowEntry({
       pluginInstalled: true,
       pluginEnabled: true,
       status: { enabled: true, frontendUrl: null, reasons: [] },
     });
-    expect(entry.available).toBe(true);
-    expect(entry.available && entry.frontendUrl).toBeNull();
+    expect(entry.available).toBe(false);
   });
 
   it("插件停用 → 不出现入口（停用是配置态，不是运行期状态）", () => {

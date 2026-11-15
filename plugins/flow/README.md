@@ -1,6 +1,6 @@
 # Flow 工作流插件（kenfutwork-flow）
 
-Flow 是 KenFutWork 的第三种工作模式（design / code 之外的 flow）：可视化 AI 工作流，
+Flow 是 KenFutWork 的可视化工作流模式，
 覆盖编排、发布快照、执行与审计。本插件是它的**产品入口**（`FORM-11`）。
 
 ## 安装后发生什么
@@ -15,6 +15,7 @@ Flow 是 KenFutWork 的第三种工作模式（design / code 之外的 flow）�
 ```
 KENFUTWORK_FLOW_EMBED_SECRET=<与 flow 网关 HOST_SHARED_SECRET 相同的共享密钥，≥16 位>
 KENFUTWORK_FLOW_FRONTEND_URL=<flow 前端地址，origin 形式，如 http://127.0.0.1:8080>
+KENFUTWORK_FLOW_GATEWAY_URL=<flow 网关地址，如 http://127.0.0.1:5010>
 ```
 
 配齐与否可用 `GET /api/flow/host/status` 探测（未配齐会如实返回缺失原因）。

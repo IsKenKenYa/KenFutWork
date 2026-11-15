@@ -348,10 +348,8 @@ export type FlowHostEngineLogsResponse = z.infer<
 export type FlowEntry =
   | {
       available: true;
-      /** 适配层就绪时的 flow 前端地址；未就绪为 null（主区报 reason 并引导去引擎页）。 */
-      frontendUrl: string | null;
-      /** 未就绪原因；已就绪为 null。 */
-      reason: string | null;
+      frontendUrl: string;
+      reason: null;
     }
   | { available: false; reason: string };
 
@@ -372,15 +370,13 @@ export function resolveFlowEntry(input: {
     return { available: false, reason: "Flow 插件已停用。" };
   if (!input.status) {
     return {
-      available: true,
-      frontendUrl: null,
-      reason: "无法获取 flow 宿主状态（/api/flow/host/status 不可达）。",
+      available: false,
+      reason: "无法读取 Flow 状态，请检查本机服务后重试。",
     };
   }
   if (!input.status.enabled || !input.status.frontendUrl) {
     return {
-      available: true,
-      frontendUrl: null,
+      available: false,
       reason: input.status.reasons.length
         ? `宿主适配层未配齐：${input.status.reasons.join(" ")}`
         : "宿主适配层未配齐。",

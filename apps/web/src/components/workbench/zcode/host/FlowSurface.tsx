@@ -194,7 +194,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
   const [entry, setEntry] = useState<FlowEntry | null>(null);
   useEffect(() => {
     let cancelled = false;
-    // 门控与父页同一份规则（插件安装态决定入口，运行态只决定主区显示什么）。
+    // 父页已验证插件安装态；进入主区后再读取适配层地址。
     const resolve = (status: FlowHostStatusResponse | null) =>
       resolveFlowEntry({ pluginInstalled: true, pluginEnabled: true, status });
     surfaceJson<FlowHostStatusResponse>("/api/flow/host/status")
@@ -232,10 +232,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
         >
           正在获取 flow 宿主状态…
         </div>
-      ) : entry.available &&
-        entry.frontendUrl &&
-        selectedProjectId &&
-        directoryReady ? (
+      ) : entry.available && selectedProjectId && directoryReady ? (
         <FlowCanvasEmbed
           key={`${selectedProjectId}:${bindingGeneration}`}
           projectId={selectedProjectId}
@@ -243,7 +240,7 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
           frontendUrl={entry.frontendUrl}
           active={active}
         />
-      ) : entry.available && entry.frontendUrl ? (
+      ) : entry.available ? (
         <div
           role="status"
           aria-busy={directory.checking && !directory.error ? true : undefined}
@@ -286,21 +283,6 @@ export function HostFlowSurface({ active = true }: { active?: boolean }) {
               {directory.snapshot.flow.receipt.remoteOutstanding} 远端待确认
             </span>
           ) : null}
-        </div>
-      ) : entry.available ? (
-        // 插件在、适配层/引擎没就绪：如实报原因并给一条去引擎页的路（不放空壳）。
-        <div
-          role="status"
-          className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-sm text-foreground-subtle"
-        >
-          <span>{entry.reason}</span>
-          <button
-            type="button"
-            onClick={() => setFlowSurfaceView("engine")}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30 hover:text-foreground"
-          >
-            打开引擎页
-          </button>
         </div>
       ) : (
         <div
