@@ -117,7 +117,8 @@
 .context-inspection h1 { font-size: 15px; font-weight: 600; margin: 0 auto 0 0; }
 .context-inspection h2 { font-size: 13px; font-weight: 600; margin: 4px 0 8px; }
 .context-inspection button, .context-inspection summary { cursor: pointer; min-height: 24px; }
-.context-inspection :is(button,summary):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+/* 恢复键盘焦点轮廓，覆盖工作台的全局 outline 重置。 */
+.context-inspection :focus-visible { outline: 2px solid var(--color-primary) !important; outline-offset: 2px; }
 .context-inspection button:is(:disabled, [aria-disabled="true"]) { opacity: .5; cursor: default; }
 .context-inspection-header button, .context-inspection-summary > button { padding: 4px 8px; border-radius: 5px; }
 .context-inspection button:hover { background: var(--accent); }

@@ -19,6 +19,7 @@ import { V4PaneConversationProvider } from "@zui/v4/V4ConversationContext.js";
 import { FileManagerPane } from "@zui/WorkspaceFileTree.js";
 import { useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
+import { ContextInspectionProvider } from "../../src/components/workbench/zcode/host/ContextInspectionProvider.js";
 import { fileManagerTargetForCodeViewer } from "../../src/components/workbench/zcode/host/fileViewerServices.js";
 import { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient.js";
 import { setSurfaceApiBase } from "../../src/components/workbench/zcode/host/surfaceApi.js";
@@ -307,7 +308,11 @@ try {
         </ZCodeIntlProvider>
       );
     }
-    root.render(<OriginalWorkspaceSurface />);
+    root.render(
+      <ContextInspectionProvider client={client}>
+        <OriginalWorkspaceSurface />
+      </ContextInspectionProvider>,
+    );
   } else {
     root.render(
       <Providers client={client}>

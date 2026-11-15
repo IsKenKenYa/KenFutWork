@@ -16,6 +16,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@zui/components/ui/hover-card.js";
+import { useState } from "react";
 import { useOpenContextInspection } from "./ContextInspectionProvider.js";
 
 interface AdapterTaskUsage {
@@ -134,6 +135,7 @@ export function ChatContextUsage({
   compressionDisabled?: boolean;
 }) {
   const openInspection = useOpenContextInspection();
+  const [previewOpen, setPreviewOpen] = useState(false);
   const cache = taskUsage?.cache as
     | {
         cacheReadTokens?: number;
@@ -146,16 +148,23 @@ export function ChatContextUsage({
   const view = usageView(taskUsage?.used ?? 0, window, cache);
 
   return (
-    <HoverCard openDelay={0} closeDelay={120}>
+    <HoverCard
+      open={previewOpen}
+      onOpenChange={setPreviewOpen}
+      openDelay={0}
+      closeDelay={120}
+    >
       <HoverCardTrigger asChild>
         <button
           type="button"
           aria-label={sessionId && openInspection ? "上下文分析" : "上下文容量"}
           title={view.fineLine ?? view.line ?? "上下文容量"}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors outline-none hover:bg-hover"
+          className="inline-flex h-6 w-6 items-center justify-center rounded-full transition-colors hover:bg-hover focus-visible:outline-2! focus-visible:outline-offset-2 focus-visible:outline-primary!"
           data-testid="context-usage-ring"
           onClick={() => {
-            if (sessionId) openInspection?.(sessionId);
+            if (!sessionId || !openInspection) return;
+            setPreviewOpen(false);
+            openInspection(sessionId);
           }}
         >
           <ContextRing percent={view.percent} />
@@ -165,7 +174,8 @@ export function ChatContextUsage({
         side="top"
         align="start"
         sideOffset={8}
-        className="w-72 rounded-xl border border-border bg-popover p-3 text-xs text-popover-foreground shadow-md"
+        // 关闭时立即释放 Radix 的 Escape 监听，避免消费分析窗口的首次 Escape。
+        className="w-72 rounded-xl border border-border bg-popover p-3 text-xs text-popover-foreground shadow-md data-closed:animate-none"
       >
         <div className="flex items-baseline justify-between gap-2">
           <span className="font-medium">上下文容量</span>
