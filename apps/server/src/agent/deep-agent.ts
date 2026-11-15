@@ -9,7 +9,7 @@ import {
 } from "@langchain/core/messages";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatVertexAI } from "@langchain/google-vertexai";
-import { isCommand } from "@langchain/langgraph";
+import { isCommand, isGraphBubbleUp } from "@langchain/langgraph";
 import type {
   BaseCheckpointSaver,
   BaseStore,
@@ -41,6 +41,7 @@ import {
 } from "../features/task-work/model-mailbox.js";
 import { findOwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
+import { redactSecrets } from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type {
   AgentContextBudget,
@@ -197,25 +198,46 @@ export function createToolErrorGuardMiddleware(
 ): AgentMiddleware {
   const limit = options.maxConsecutiveFailures ?? 3;
   const failures = new Map<string, number>();
+  const countFailure = (toolName: string) => {
+    const count = (failures.get(toolName) ?? 0) + 1;
+    failures.set(toolName, count);
+    return count;
+  };
+  const stopAdvice = (count: number) =>
+    `该工具已连续失败 ${count} 次，**不要再重试它**：改用其它工具或向用户说明限制。`;
   return {
     name: "kenfutwork-tool-error-guard",
     wrapToolCall: async (request, handler) => {
       const toolName = request.toolCall.name;
       try {
         const result = await handler(request);
+        if (ToolMessage.isInstance(result) && result.status === "error") {
+          const count = countFailure(toolName);
+          if (count < limit) return result;
+          const advice = stopAdvice(count);
+          return new ToolMessage({
+            ...result,
+            content:
+              typeof result.content === "string"
+                ? `${result.content}\n\n${advice}`
+                : [...result.content, { type: "text", text: advice }],
+          });
+        }
         failures.delete(toolName);
         return result;
       } catch (error) {
-        if (findOwnedToolInterruption(error)) throw error;
-        const reason = error instanceof Error ? error.message : String(error);
-        const count = (failures.get(toolName) ?? 0) + 1;
-        failures.set(toolName, count);
+        if (isGraphBubbleUp(error) || findOwnedToolInterruption(error))
+          throw error;
+        const reason = redactSecrets(
+          error instanceof Error ? error.message : String(error),
+        );
+        const count = countFailure(toolName);
         console.warn(
           `[agent] 工具执行失败降级为工具级结果：${toolName}（第 ${count} 次）：${reason}`,
         );
         const advice =
           count >= limit
-            ? `该工具已连续失败 ${count} 次，**不要再重试它**：改用其它工具或直接说明限制后收尾。`
+            ? stopAdvice(count)
             : "这是工具级失败（不影响本轮其它步骤）：可换关键词/换方案重试，但不要重复同样的调用。";
         return new ToolMessage({
           tool_call_id: request.toolCall.id ?? toolName,

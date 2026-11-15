@@ -1,3 +1,13 @@
+import { ToolMessage } from "@langchain/core/messages";
+import {
+  Annotation,
+  Command,
+  END,
+  interrupt,
+  MemorySaver,
+  START,
+  StateGraph,
+} from "@langchain/langgraph";
 import { describe, expect, it } from "vitest";
 
 import { createToolErrorGuardMiddleware } from "./deep-agent.js";
@@ -36,12 +46,15 @@ describe("工具失败兜底中间件", () => {
   it("工具抛错 → 回带原因的 ToolMessage，而不是让异常冒出去", async () => {
     const mw = createToolErrorGuardMiddleware();
     const handler = async () => {
-      throw new Error("web_search 请求失败（上游 5002）");
+      throw new Error(
+        "web_search 请求失败（上游 5002） Bearer test-secret-value",
+      );
     };
     const result = await wrapToolCall(mw, request("web_search"), handler);
 
     expect(String(result.content)).toContain("web_search 执行失败");
     expect(String(result.content)).toContain("5002");
+    expect(String(result.content)).not.toContain("test-secret-value");
     expect(result.tool_call_id).toBe("call-1");
     expect(result.status).toBe("error");
   });
@@ -67,6 +80,74 @@ describe("工具失败兜底中间件", () => {
     await wrapToolCall(mw, request("web_search"), fail);
     const second = await wrapToolCall(mw, request("web_search"), fail);
     expect(String(second.content)).toContain("不要再重试");
+  });
+
+  it("返回式失败与异常共用计数，保留原工具结果和调用身份", async () => {
+    const mw = createToolErrorGuardMiddleware({ maxConsecutiveFailures: 2 });
+    await wrapToolCall(mw, request("generate_image"), async () => {
+      throw new Error("供应商暂不可用");
+    });
+    const original = new ToolMessage({
+      name: "generate_image",
+      tool_call_id: "render-2",
+      status: "error",
+      content: [{ type: "text", text: "生成结果保存失败" }],
+      artifact: { canonicalOutput: { jobId: "job-2" } },
+    });
+    const reported = await wrapToolCall(
+      mw,
+      request("generate_image", "render-2"),
+      async () => original,
+    );
+    expect(reported).toMatchObject({
+      name: "generate_image",
+      tool_call_id: "render-2",
+      status: "error",
+      artifact: { canonicalOutput: { jobId: "job-2" } },
+      content: [
+        { type: "text", text: "生成结果保存失败" },
+        { type: "text", text: expect.stringContaining("不要再重试") },
+      ],
+    });
+    expect(original.content).toEqual([
+      { type: "text", text: "生成结果保存失败" },
+    ]);
+  });
+
+  it("LangGraph 审批可以暂停和恢复，暂停不产生工具错误", async () => {
+    const mw = createToolErrorGuardMiddleware();
+    const graph = new StateGraph(
+      Annotation.Root({ result: Annotation<string>() }),
+    )
+      .addNode("tool", async () => {
+        const message = await wrapToolCall(
+          mw,
+          request("write_file"),
+          async () => {
+            const approval: string = interrupt("是否保存文件？");
+            return new ToolMessage({
+              content: approval,
+              tool_call_id: "call-1",
+            });
+          },
+        );
+        return { result: String(message.content) };
+      })
+      .addEdge(START, "tool")
+      .addEdge("tool", END)
+      .compile({ checkpointer: new MemorySaver() });
+    const config = { configurable: { thread_id: "approval" } };
+    await expect(
+      graph.invoke({ result: "等待审批" }, config),
+    ).resolves.toMatchObject({
+      result: "等待审批",
+      __interrupt__: [{ value: "是否保存文件？" }],
+    });
+    await expect(
+      graph.invoke(new Command({ resume: "已批准" }), config),
+    ).resolves.toEqual({
+      result: "已批准",
+    });
   });
 
   it("换工具重试不受别的工具的失败计数影响", async () => {
