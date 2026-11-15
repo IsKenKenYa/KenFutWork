@@ -1,7 +1,16 @@
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import type { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
-import { type BaseMessage, ToolMessage } from "@langchain/core/messages";
-import type { ChatGenerationChunk, ChatResult } from "@langchain/core/outputs";
+import {
+  AIMessage,
+  type BaseMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
+import type {
+  ChatGenerationChunk,
+  ChatResult,
+  LLMResult,
+} from "@langchain/core/outputs";
 import { ChatOpenAICompletions, ChatOpenAIResponses } from "@langchain/openai";
 import type OpenAI from "openai";
 
@@ -20,6 +29,28 @@ import type {
 
 /** 探测缓存纠偏回调：运行期发现 Responses 不可用时触发（写探测缓存用）。 */
 export type OnResponsesFallback = () => void;
+
+/** 直接 invoke 与 Agent 事件流共用 SDK 原生聚合，避免完成后额外下载分词数据。 */
+class NativeStreamingCallback extends BaseCallbackHandler {
+  name = "KenFutWorkNativeStreaming";
+  readonly lc_prefer_streaming = true;
+  awaitHandlers = true;
+
+  handleLLMEnd(result: LLMResult) {
+    for (const generation of result.generations.flat()) {
+      if (
+        !("message" in generation) ||
+        !AIMessage.isInstance(generation.message)
+      )
+        continue;
+      // 原生聚合保留 generationInfo；维持普通 invoke 已有的消息元数据形状。
+      generation.message.response_metadata = {
+        ...generation.generationInfo,
+        ...generation.message.response_metadata,
+      };
+    }
+  }
+}
 
 /** 工具纯文本数组在 Chat 边界转为字符串，不改持久历史或多模态内容。 */
 function normalizeCompletionsToolText(messages: BaseMessage[]): BaseMessage[] {
@@ -220,6 +251,7 @@ export function createInstanceChatModel(
     ...(credentials.headers ? { defaultHeaders: credentials.headers } : {}),
   };
   const useResponsesApi = credentials.responsesApi === true;
+  const streaming = credentials.invocationStreaming ?? true;
   const fields = {
     model,
     apiKey: credentials.apiKey,
@@ -229,7 +261,8 @@ export function createInstanceChatModel(
     ...(Object.keys(clientOptions).length > 0
       ? { configuration: clientOptions }
       : {}),
-    streaming: credentials.invocationStreaming ?? true,
+    streaming,
+    ...(streaming ? { callbacks: [new NativeStreamingCallback()] } : {}),
     // 用量统计（DEC-6）：token 用量经 streamUsage 采集，落 usage 表
     streamUsage: true,
   };

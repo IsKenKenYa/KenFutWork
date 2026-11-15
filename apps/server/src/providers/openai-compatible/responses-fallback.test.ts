@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { HumanMessage } from "@langchain/core/messages";
 import { ChatOpenAIResponses } from "@langchain/openai";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createInstanceChatModel, isResponsesUnavailable } from "./index.js";
 
@@ -40,11 +40,13 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
   let server: Server;
   let baseUrl = "";
   const chatCompletionsHits: string[] = [];
+  let responsesHits = 0;
 
   beforeAll(async () => {
     server = createServer((request, response) => {
       const url = request.url ?? "";
       if (url === "/v1/responses") {
+        responsesHits++;
         response.writeHead(404, { "content-type": "application/json" });
         response.end(
           JSON.stringify({
@@ -77,14 +79,10 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  // 豁免（2026-09-27，诊断见《日志》五十五 补记）：@langchain/openai 1.5.13 的
-  // ChatOpenAI 流式消费对「不回 usage chunk 的手写 SSE 桩」永不结算（裸 openai SDK
-  // 7.20 同桩正常；带不带 stream_options 均挂；Node 24.11 + worktree 在 base
-  // 7a4d0ddb 复现一致）。属 provider-headers 特性的既有环境问题，与本分支无关。
-  // 修复跟进：属主换用「真实 OpenAI 线格式 + usage 尾块」的桩或升级 langchain 后
-  // 移除 skip 恢复用例。
-  it.skip("probe.responsesApi=true：Responses 404 → 同请求自动回落 completions，回调触发一次", async () => {
-    const onResponsesFallback = vi.fn();
+  it("probe.responsesApi=true：Responses 404 → 同请求自动回落 completions，回调触发一次", async () => {
+    responsesHits = 0;
+    chatCompletionsHits.length = 0;
+    let fallbackCount = 0;
     const model = createInstanceChatModel(
       "gpt-x",
       {
@@ -93,24 +91,27 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
         responsesApi: true,
       },
       undefined,
-      onResponsesFallback,
+      () => {
+        fallbackCount++;
+      },
     );
 
     const result = await model.invoke([new HumanMessage("ping")]);
     expect(String(result.content)).toContain("回落成功");
     expect(chatCompletionsHits).toHaveLength(1);
-    expect(onResponsesFallback).toHaveBeenCalledTimes(1);
+    expect(fallbackCount).toBe(1);
+    expect(responsesHits).toBe(1);
+    expect(String((await model.invoke("再次请求")).content)).toContain(
+      "回落成功",
+    );
+    expect(chatCompletionsHits).toHaveLength(2);
+    expect(responsesHits).toBe(1);
+    expect(fallbackCount).toBe(1);
   });
 
-  // 豁免（2026-09-27，诊断见《日志》五十五 补记）：@langchain/openai 1.5.13 的
-  // ChatOpenAI 流式消费对「不回 usage chunk 的手写 SSE 桩」永不结算（裸 openai SDK
-  // 7.20 同桩正常；带不带 stream_options 均挂；Node 24.11 + worktree 在 base
-  // 7a4d0ddb 复现一致）。属 provider-headers 特性的既有环境问题，与本分支无关。
-  // 修复跟进：属主换用「真实 OpenAI 线格式 + usage 尾块」的桩或升级 langchain 后
-  // 移除 skip 恢复用例。
-  it.skip("probe 缺省（未探测）→ 直接走 completions，不碰 Responses", async () => {
+  it("probe 缺省（未探测）→ 直接走 completions，不碰 Responses", async () => {
     chatCompletionsHits.length = 0;
-    const onResponsesFallback = vi.fn();
+    responsesHits = 0;
     const model = createInstanceChatModel("gpt-x", {
       apiKey: "sk-probe",
       baseUrl,
@@ -119,7 +120,7 @@ describe("createInstanceChatModel（Responses 自动回落，真实 HTTP 桩）"
     const result = await model.invoke([new HumanMessage("ping")]);
     expect(String(result.content)).toContain("回落成功");
     expect(chatCompletionsHits).toHaveLength(1);
-    expect(onResponsesFallback).not.toHaveBeenCalled();
+    expect(responsesHits).toBe(0);
   });
 
   it("probe 确认 Responses 后构造原生 Responses 模型", () => {
