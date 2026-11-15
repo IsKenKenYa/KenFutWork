@@ -56,6 +56,128 @@ async function queueCommand(
 
 // 真实HTTP/SSE、原V4命令、独占PG和真实Harness；仅外部模型保留确定性的流。
 describe.skipIf(!enabled)("原队列公开宿主 integration", () => {
+  it("编辑冻结队首且不改输入身份，过期解除不能释放新锁", async () => {
+    const fixture = await createCodeUiHttpFixture();
+    const model = await heldModel();
+    let host: Host | undefined;
+    try {
+      const currentHost = await createCodeSessionFixture(model.baseUrl, {
+        client: fixture.client,
+      });
+      host = currentHost;
+      const snapshot = async () =>
+        protocol.conversationSnapshotSchema.parse(await currentHost.snapshot());
+      await host.command("sendText", { text: "前台轮次" });
+      await waitForRunning(host, "正在运行 1");
+      await host.command("sendText", { text: "需要编辑的原文" });
+      const queued = await snapshot();
+      const item = queued.queue.items[0];
+      if (!item) throw new Error("未形成真实的排队输入");
+      const firstEditor = {
+        queueItemId: item.queueItemId,
+        editorId: randomUUID(),
+      };
+      const nextEditor = { ...firstEditor, editorId: randomUUID() };
+      const command = async (type: string, payload: unknown, id?: string) => {
+        const result = await currentHost.command(type, payload, id);
+        expect(result.status, JSON.stringify(result.body)).toBe(200);
+        return protocol.commandAckSchema.parse(result.body.result);
+      };
+      const contenders = await Promise.all([
+        command("lockQueueItemEdit", firstEditor),
+        command("lockQueueItemEdit", nextEditor),
+      ]);
+      expect(contenders.map((ack) => ack.status).sort()).toEqual([
+        "accepted",
+        "rejected",
+      ]);
+      const [owner, challenger] =
+        contenders[0]?.status === "accepted"
+          ? [firstEditor, nextEditor]
+          : [nextEditor, firstEditor];
+      expect((await snapshot()).queue.items[0]).toMatchObject({
+        queueItemId: item.queueItemId,
+        editLock: { editorId: owner.editorId },
+      });
+      expect(await command("releaseQueueItemEdit", owner)).toMatchObject({
+        status: "accepted",
+      });
+      expect(await command("releaseQueueItemEdit", owner)).toMatchObject({
+        status: "noop",
+      });
+      expect(await command("lockQueueItemEdit", challenger)).toMatchObject({
+        status: "accepted",
+      });
+      expect(
+        await queueCommand(
+          host,
+          "sendQueuedNow",
+          { queueItemId: item.queueItemId },
+          await snapshot(),
+        ),
+      ).toMatchObject({
+        status: "rejected",
+        reasonCode: "guard.queueItemEditLocked",
+      });
+      model.finish(0);
+      await vi.waitFor(async () =>
+        expect((await snapshot()).control.phase).toBe("completedSuccess"),
+      );
+      expect((await snapshot()).inputRouting.mode).toBe("enqueue");
+      expect(await command("sendText", { text: "应排到后面" })).toMatchObject({
+        result: { delivery: "queue" },
+      });
+      expect(model.requests).toHaveLength(1);
+      expect(await command("releaseQueueItemEdit", owner)).toMatchObject({
+        status: "rejected",
+        reasonCode: "guard.queueEditLockLost",
+      });
+      expect(
+        await command("editQueueItem", {
+          ...owner,
+          newText: "不能被写入",
+        }),
+      ).toMatchObject({
+        status: "rejected",
+        reasonCode: "guard.queueEditLockLost",
+      });
+      const edit = { ...challenger, newText: "保留身份的新版文字" };
+      const editCommand = randomUUID();
+      expect(await command("editQueueItem", edit, editCommand)).toMatchObject({
+        status: "accepted",
+      });
+      expect(await command("editQueueItem", edit, editCommand)).toMatchObject({
+        status: "duplicate",
+      });
+      const conflict = await host.command(
+        "editQueueItem",
+        { ...edit, newText: "同键不同正文" },
+        editCommand,
+      );
+      expect(conflict.status).toBe(409);
+      const running = await waitForRunning(host, "正在运行 2");
+      expect(
+        running.rows.window.filter((row) => row.kind === "userInput").at(-1),
+      ).toMatchObject({
+        text: edit.newText,
+        sourceCommandId: item.sourceCommandId,
+      });
+      expect(running.queue.items.map((entry) => entry.text)).toEqual([
+        "应排到后面",
+      ]);
+    } finally {
+      if (host) {
+        const current = protocol.conversationSnapshotSchema.parse(
+          await host.snapshot(),
+        );
+        if (current.control.canStop) await host.command("stop", {});
+        await host.dispose();
+      }
+      await model.close();
+      await fixture.close();
+    }
+  }, 90_000);
+
   it("排队撤回、重排与指定立即发送保留输入身份，停止后队列可恢复且迟到重放不能再次抢占", async () => {
     const fixture = await createCodeUiHttpFixture();
     const model = await heldModel();

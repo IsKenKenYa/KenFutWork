@@ -666,6 +666,7 @@ export function createCodeUiConversation(input: {
       )
         return;
       const item = root.queue.items[0]!;
+      if (item.editLock) return;
       const record = inputs.find(
         (entry) =>
           entry.status === "queued" &&

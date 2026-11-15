@@ -6,6 +6,8 @@ export const CODE_QUEUE_COMMANDS = new Set<protocol.CommandType>([
   "setAutoDrain",
   "reorderQueueItem",
   "deleteQueueItem",
+  "lockQueueItemEdit",
+  "releaseQueueItemEdit",
   "editQueueItem",
   "sendQueuedNow",
 ]);
@@ -40,7 +42,9 @@ export function codeInputRouting(
           : "enqueue"
         : !snapshot.queue.autoDrain && snapshot.queue.items.length
           ? "choice"
-          : "startNow",
+          : snapshot.queue.autoDrain && snapshot.queue.items[0]?.editLock
+            ? "enqueue"
+            : "startNow",
   };
 }
 
@@ -126,7 +130,13 @@ export function applyCodeQueueCommand(
     },
     settlements: [],
   });
-  if (envelope.baseRevision !== snapshot.revision)
+  const lockScoped =
+    envelope.type === "lockQueueItemEdit" ||
+    envelope.type === "releaseQueueItemEdit" ||
+    (envelope.type === "editQueueItem" &&
+      protocol.commandPayloadSchemas.editQueueItem.parse(envelope.payload)
+        .editorId !== undefined);
+  if (!lockScoped && envelope.baseRevision !== snapshot.revision)
     return reject("proto.staleRevision", "队列已改变，请刷新后再操作。");
   if (
     envelope.baseLogEpoch !== undefined &&
@@ -149,6 +159,7 @@ export function applyCodeQueueCommand(
       queueItemId: string;
       beforeQueueItemId?: string | null;
       newText?: string;
+      editorId?: string;
     };
     const index = snapshot.queue.items.findIndex(
       (entry) => entry.queueItemId === payload.queueItemId,
@@ -159,11 +170,41 @@ export function applyCodeQueueCommand(
         entry.status === "queued" &&
         entry.intent.queueItemId === payload.queueItemId,
     );
+    if (envelope.type === "releaseQueueItemEdit" && !item?.editLock)
+      return {
+        ack: {
+          commandId: envelope.commandId,
+          status: "noop",
+          revisionAtDecision: snapshot.revision,
+        },
+        settlements,
+      };
     if (!item || !record)
       return reject("guard.queueItemUnavailable", "排队输入已消费或不可编辑。");
     if (item.dispatch.state !== "queued")
       return reject("guard.queueItemReserved", "排队输入已被运行认领。");
-    if (envelope.type === "sendQueuedNow") {
+    if (
+      item.editLock &&
+      envelope.type !== "releaseQueueItemEdit" &&
+      envelope.type !== "editQueueItem"
+    )
+      return reject("guard.queueItemEditLocked", "排队消息正在编辑。");
+    if (envelope.type === "lockQueueItemEdit") {
+      if (item.kind !== "sendText")
+        return reject("guard.queueItemUnavailable", "此队列项不可编辑。");
+      const { editorId } =
+        protocol.commandPayloadSchemas.lockQueueItemEdit.parse(
+          envelope.payload,
+        );
+      item.editLock = {
+        editorId,
+        clientId: envelope.clientId,
+      };
+    } else if (envelope.type === "releaseQueueItemEdit") {
+      if (item.editLock?.editorId !== payload.editorId)
+        return reject("guard.queueEditLockLost", "这次编辑已失效。");
+      delete item.editLock;
+    } else if (envelope.type === "sendQueuedNow") {
       if (state.inputs?.some((entry) => entry.status === "reserved"))
         return reject(
           "guard.preemptionPending",
@@ -242,6 +283,11 @@ export function applyCodeQueueCommand(
       });
     } else if (envelope.type === "editQueueItem") {
       if (
+        item.editLock?.editorId !== payload.editorId ||
+        (item.editLock && item.editLock.clientId !== envelope.clientId)
+      )
+        return reject("guard.queueEditLockLost", "这次编辑已失效。");
+      if (
         item.kind === "compact" ||
         (!payload.newText?.trim() && !item.attachments.length)
       )
@@ -251,6 +297,7 @@ export function applyCodeQueueCommand(
         );
       item.text = payload.newText!;
       record.intent.text = payload.newText!;
+      delete item.editLock;
     } else return reject("guard.capabilityUnavailable", "此队列命令不可用。");
   }
   snapshot.queue.items.forEach((item, index) => {

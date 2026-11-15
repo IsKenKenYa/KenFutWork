@@ -4058,6 +4058,9 @@ export class CodeUiService {
           ? "guide"
           : (!preempt && busy) ||
               payload.requestedDelivery === "queue" ||
+              (payload.requestedDelivery !== "startNow" &&
+                current.queue.autoDrain &&
+                !!current.queue.items[0]?.editLock) ||
               (compact &&
                 !current.queue.autoDrain &&
                 current.queue.items.length > 0)
@@ -4843,6 +4846,7 @@ export class CodeUiService {
       loaded.root.active_run_id ||
       !snapshot.queue.autoDrain ||
       !snapshot.queue.items.length ||
+      snapshot.queue.items[0]?.editLock ||
       loaded.root.archived ||
       loaded.root.execution_state !== "ready"
     )

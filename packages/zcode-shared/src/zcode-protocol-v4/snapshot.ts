@@ -205,12 +205,13 @@ export const sessionUsageStateSchema = z.object({
 });
 export type SessionUsageState = z.infer<typeof sessionUsageStateSchema>;
 
-// ── queue（不持久化，裁决：CLI 进程死亡即丢，客户端对账后由用户决定重发）──
+// ── queue（工作台宿主裁决）──
 export const queueItemSchema = conversationInputIntentSchema.extend({
   dispatch: conversationInputDispatchSchema.extend({
     state: z.enum(["queued", "reserved", "promoting"]),
   }),
   toolDisallowlist: z.array(z.string().min(1)).optional(),
+  editLock: z.object({ editorId: z.uuid(), clientId: z.string() }).optional(),
 });
 export type QueueItem = z.infer<typeof queueItemSchema>;
 

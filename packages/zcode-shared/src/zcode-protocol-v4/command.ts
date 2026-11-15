@@ -173,7 +173,9 @@ export const commandPayloadSchemas = {
     feedback: z.enum(["like", "dislike"]).nullable(),
   }),
   sendQueuedNow: z.object({ queueItemId: z.string() }),
-  editQueueItem: z.object({ queueItemId: z.string(), newText: z.string() }),
+  lockQueueItemEdit: z.object({ queueItemId: z.string(), editorId: z.uuid() }),
+  releaseQueueItemEdit: z.object({ queueItemId: z.string(), editorId: z.uuid() }),
+  editQueueItem: z.object({ queueItemId: z.string(), newText: z.string(), editorId: z.uuid().optional() }),
   // beforeQueueItemId = null → 移到队尾。
   reorderQueueItem: z.object({
     queueItemId: z.string(),
@@ -309,7 +311,6 @@ export const COMMANDS_REQUIRING_BASE_REVISION: ReadonlySet<CommandType> = new Se
   "retryTurn",
   "setAssistantFeedback",
   "sendQueuedNow",
-  "editQueueItem",
   "reorderQueueItem",
   "deleteQueueItem",
   "setAutoDrain",
@@ -355,7 +356,8 @@ export function parseCommandEnvelope(
   const payload = commandPayloadSchemas[envelope.data.type].safeParse(envelope.data.payload);
   if (!payload.success) return { ok: false, error: payload.error };
   if (
-    (COMMANDS_REQUIRING_BASE_REVISION.has(envelope.data.type) &&
+    ((COMMANDS_REQUIRING_BASE_REVISION.has(envelope.data.type) ||
+      (envelope.data.type === "editQueueItem" && !Object.hasOwn(payload.data as object, "editorId"))) &&
       envelope.data.baseRevision === undefined) ||
     (ROW_TARGETING_COMMANDS.has(envelope.data.type) && envelope.data.baseLogEpoch === undefined)
   ) {

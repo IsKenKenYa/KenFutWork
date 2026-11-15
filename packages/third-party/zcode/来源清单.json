@@ -24937,9 +24937,10 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/command.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/command.ts",
       "sha256": "9597a0499a7dd82de9580a9e7c69d2e3ff1ce2655c87154e73dd2c8d05d76223",
-      "copiedSha256": "70d9d38c80db591258326ad0d1c3032cdd4ae64bac01223e083bb49ba200ef5a",
+      "copiedSha256": "81fa7fe1354857e950c5cef018ab845c0fedc040f2b1c3a9c0f2b0c0f136e212",
       "adaptations": [
-        "Code/Design统一实施：原命令可携冻结工作上下文，Goal与输入沿原命令幂等域。"
+        "Code/Design统一实施：原命令可携冻结工作上下文，Goal与输入沿原命令幂等域。",
+        "参考 ZCode 3.18.2 fec97590 的队列编辑命令，按编辑身份冻结和解除队列项，保留旧客户端的版本校验。"
       ]
     },
     {
@@ -25055,8 +25056,8 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/snapshot.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/snapshot.ts",
       "sha256": "6d2c0a0f23e1d2037f5f0c642bd3ad1888b6df38f5bc55029adefa401fc4fcff",
-      "copiedSha256": "7f089a6377d9de312f3ee383646de6cb50c2530ee39f063e8ea1094391b2bb57",
-      "adaptations": []
+      "copiedSha256": "043cdff8b36786e101eca1e53d94be9fc847d637310d3c4e5c3e2ca11de30730",
+      "adaptations": ["参考 ZCode 3.18.2 fec97590，队列项公开当前编辑身份，由本机宿主裁决。"]
     },
     {
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/submission.ts",
