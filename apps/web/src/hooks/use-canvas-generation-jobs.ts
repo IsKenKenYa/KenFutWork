@@ -4,10 +4,13 @@ import {
   type BackgroundJob,
   getMediaJobErrorMessage,
 } from "@kenfutwork/shared";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cancelBackgroundJob, fetchGenerationRequest } from "../lib/server-api";
 
 const TERMINAL = new Set(["succeeded", "failed", "dead_letter", "canceled"]);
+
+type GenerationIssue = "read" | "sync";
+type GenerationRequest = { id: string; requestId: string };
 
 function cancellationState(job: BackgroundJob): string | undefined {
   const value = job.payload._generation_cancel;
@@ -74,13 +77,48 @@ export function useCanvasGenerationJobs(options: {
   const current = useRef(options);
   current.current = options;
   const { api, canvasId, projectId } = options;
+  const [notice, setNotice] = useState<{
+    api: ExcalidrawImperativeAPI;
+    issue: GenerationIssue;
+  } | null>(null);
   useEffect(() => {
     if (!api) return;
+    const scene = api;
     const completed = new Set<string>();
     const canceled = new Set<string>();
     const refreshed = new Map<string, Set<string>>();
+    const issues = new Map<string, GenerationIssue>();
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let visibleIssue: GenerationIssue | undefined;
+    setNotice((previous) => (previous?.api === scene ? null : previous));
+
+    function activeRequests(): GenerationRequest[] {
+      return scene.getSceneElements().flatMap((element) => {
+        const data = element.customData;
+        return !element.isDeleted &&
+          data?.status === "generating" &&
+          typeof data.requestId === "string" &&
+          !completed.has(data.requestId)
+          ? [{ id: element.id, requestId: data.requestId }]
+          : [];
+      });
+    }
+
+    function publishIssues() {
+      if (controller.signal.aborted) return;
+      if (issues.size === 0 && visibleIssue === undefined) return;
+      const active = new Set(
+        activeRequests().map(({ requestId }) => requestId),
+      );
+      for (const requestId of issues.keys())
+        if (!active.has(requestId)) issues.delete(requestId);
+      const kinds = [...issues.values()];
+      const issue = kinds.includes("read") ? "read" : kinds[0];
+      if (issue === visibleIssue) return;
+      visibleIssue = issue;
+      setNotice(issue ? { api: scene, issue } : null);
+    }
     function patch(
       id: string,
       requestId: string,
@@ -189,68 +227,81 @@ export function useCanvasGenerationJobs(options: {
       }
       completed.add(requestId);
     }
+    async function requestCancellation(
+      job: BackgroundJob,
+      request: GenerationRequest,
+    ) {
+      if (TERMINAL.has(job.status) || canceled.has(job.id)) return job;
+      try {
+        const result = await cancelBackgroundJob(
+          current.current.accessToken,
+          job.id,
+        );
+        canceled.add(job.id);
+        return result;
+      } catch {
+        patch(request.id, request.requestId, {
+          errorMessage: "停止请求待确认",
+        });
+        return job;
+      }
+    }
+
+    async function refreshRequest(request: GenerationRequest) {
+      const { id, requestId } = request;
+      let jobs: BackgroundJob[];
+      try {
+        const response = await fetchGenerationRequest(
+          current.current.accessToken,
+          requestId,
+          controller.signal,
+        );
+        jobs = response.jobs;
+      } catch {
+        issues.set(requestId, "read");
+        publishIssues();
+        return;
+      }
+      if (controller.signal.aborted) return;
+      const generator = scene
+        .getSceneElements()
+        .find(
+          (element) =>
+            element.id === id &&
+            !element.isDeleted &&
+            element.customData?.requestId === requestId &&
+            element.customData?.status === "generating",
+        );
+      if (!generator) {
+        publishIssues();
+        return;
+      }
+      try {
+        if (
+          generator.customData?.cancelRequested === true &&
+          jobs.every(
+            (job) =>
+              job.canvas_id === canvasId &&
+              job.project_id === projectId &&
+              job.payload.generator_id === id,
+          )
+        ) {
+          jobs = await Promise.all(
+            jobs.map((job) => requestCancellation(job, request)),
+          );
+        }
+        await project(id, requestId, jobs);
+        issues.delete(requestId);
+      } catch {
+        issues.set(requestId, "sync");
+      }
+      publishIssues();
+    }
+
     async function scan() {
       try {
-        const elements = api?.getSceneElements() ?? [];
-        await Promise.all(
-          elements.map(async (element) => {
-            const data = element.customData;
-            if (
-              element.isDeleted ||
-              data?.status !== "generating" ||
-              typeof data.requestId !== "string" ||
-              completed.has(data.requestId)
-            )
-              return;
-            try {
-              const response = await fetchGenerationRequest(
-                current.current.accessToken,
-                data.requestId,
-                controller.signal,
-              );
-              let jobs = response.jobs;
-              const generator = api
-                ?.getSceneElements()
-                .find(
-                  (entry) =>
-                    entry.id === element.id &&
-                    entry.customData?.requestId === data.requestId,
-                );
-              if (
-                generator?.customData?.cancelRequested === true &&
-                jobs.every(
-                  (job) =>
-                    job.canvas_id === canvasId &&
-                    job.project_id === projectId &&
-                    job.payload.generator_id === element.id,
-                )
-              ) {
-                jobs = await Promise.all(
-                  jobs.map(async (job) => {
-                    if (TERMINAL.has(job.status) || canceled.has(job.id))
-                      return job;
-                    try {
-                      const result = await cancelBackgroundJob(
-                        current.current.accessToken,
-                        job.id,
-                      );
-                      canceled.add(job.id);
-                      return result;
-                    } catch {
-                      patch(element.id, data.requestId, {
-                        errorMessage: "停止请求待确认",
-                      });
-                      return job;
-                    }
-                  }),
-                );
-              }
-              await project(element.id, data.requestId, jobs);
-            } catch {
-              // GET失败只停止本次读取；不能据此重发付费生成或把Job改成失败。
-            }
-          }),
-        );
+        publishIssues();
+        await Promise.all(activeRequests().map(refreshRequest));
       } finally {
         if (!controller.signal.aborted)
           // 仅刷新本地画布状态，不限制后台生成/请求数量；固定UI刷新节奏。
@@ -265,4 +316,5 @@ export function useCanvasGenerationJobs(options: {
       if (timer) clearTimeout(timer);
     };
   }, [api, canvasId, projectId]);
+  return notice?.api === api ? notice.issue : null;
 }
