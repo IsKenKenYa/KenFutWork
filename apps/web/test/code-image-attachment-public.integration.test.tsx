@@ -244,9 +244,27 @@ async function annotateDraftImage(page: OriginalSessionBrowser) {
   const sessionId = page.target.sessionId;
   const click = (selector: string) =>
     clickOn(page.cdp, sessionId, { selector });
+  const resize = async (width: number, height: number) => {
+    await page.cdp.send(
+      "Emulation.setDeviceMetricsOverride",
+      { width, height, deviceScaleFactor: 1, mobile: false },
+      sessionId,
+    );
+    await vi.waitFor(async () => {
+      expect(
+        await page.evaluate(`(() => {
+        const dialog = document.querySelector('[role="dialog"]');
+        const box = dialog?.getBoundingClientRect();
+        return innerWidth === ${width} && innerHeight === ${height} && !!box &&
+          box.left >= 0 && box.right <= innerWidth && box.height <= innerHeight;
+      })()`),
+      ).toBe(true);
+    });
+  };
   const surface = "[data-image-preview-surface]";
   const attachment = '[data-composer-attachment-kind="image"]';
   await click(`${attachment}[role="button"]`);
+  await resize(390, 720);
   await click("[data-image-preview-annotate]");
   const pen = '[data-image-preview-tool="pen"]';
   await vi.waitFor(async () => {
@@ -306,12 +324,29 @@ async function annotateDraftImage(page: OriginalSessionBrowser) {
   await vi.waitFor(async () =>
     expect(await hasMark(), JSON.stringify(page.pageErrors)).toBe(true),
   );
+  await resize(320, 448);
+  expect(await hasMark()).toBe(true);
   await click('button[aria-label="撤销"]');
   await vi.waitFor(async () => expect(await hasMark()).toBe(false));
   await click('button[aria-label="重做"]');
   await vi.waitFor(async () => expect(await hasMark()).toBe(true));
 
   await click('[role="dialog"] button[aria-label="关闭"]');
+  await vi.waitFor(async () => {
+    const confirmation = await page.evaluate(`(() => {
+      const dialog = document.querySelector('[role="alertdialog"]');
+      const button = dialog?.querySelector('button:focus');
+      const rect = button?.getBoundingClientRect();
+      if (!rect) return null;
+      const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      return { focused: button.textContent.trim(), hit: button.contains(hit), buttonTop: rect.top,
+        buttonBottom: rect.bottom, hitText: hit?.textContent?.trim().slice(0, 80) };
+    })()`);
+    expect(confirmation, JSON.stringify(confirmation)).toMatchObject({
+      focused: "继续编辑",
+      hit: true,
+    });
+  });
   await click('[role="alertdialog"] button:focus');
   await vi.waitFor(async () => {
     expect(
