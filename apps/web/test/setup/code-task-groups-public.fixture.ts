@@ -308,7 +308,11 @@ export async function dismissGroupSetup(page: OriginalSessionBrowser) {
 
 export async function withTaskGroupPublicPage(
   work: (context: TaskGroupPublicPageContext) => Promise<void>,
-  options: { seedTaskHistory?: boolean; enableWork?: boolean } = {},
+  options: {
+    seedTaskHistory?: boolean;
+    enableWork?: boolean;
+    prepareTaskContent?: boolean;
+  } = {},
 ) {
   const [http, sessions, models] = await loadPublicFixtures();
   const fixture = await http.createCodeUiHttpFixture(
@@ -364,7 +368,8 @@ export async function withTaskGroupPublicPage(
     );
     const previewTitle = "分组操作保留内容.txt";
     const previewPath = join(host.workspacePath, previewTitle);
-    await writeFile(previewPath, "分组操作保留原内容\n", "utf8");
+    if (options.prepareTaskContent !== false)
+      await writeFile(previewPath, "分组操作保留原内容\n", "utf8");
     browser = await openOriginalSessionBrowser({
       backendBaseUrl: fixture.baseUrl,
       backendOrigin: fixture.origin,
@@ -380,9 +385,11 @@ export async function withTaskGroupPublicPage(
         ? { workbenchModes: ["code", "design", "work"] }
         : {}),
     });
-    await openTaskFile(browser, host, previewPath, previewTitle);
     const draft = "分组整理期间保留的草稿";
-    await enterGroupView(browser, draft);
+    if (options.prepareTaskContent !== false) {
+      await openTaskFile(browser, host, previewPath, previewTitle);
+      await enterGroupView(browser, draft);
+    }
     await work({
       fixture,
       host,

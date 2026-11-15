@@ -92,6 +92,12 @@ function workSaveCalls(post: ReturnType<typeof vi.spyOn>) {
   );
 }
 
+function forwardedSaveId(post: ReturnType<typeof vi.spyOn>, index = 0) {
+  const data = workSaveCalls(post)[index]?.[0] as { saveId?: unknown };
+  if (typeof data?.saveId !== "string") throw new Error("未转发实际保存编号");
+  return data.saveId;
+}
+
 function postSaveResult(
   saveId: string,
   ok: boolean,
@@ -248,13 +254,18 @@ describe("HostWorkSurface 统一保存桥", () => {
     ];
     expect(request).toMatchObject({
       type: "kenfutwork:work-save",
-      saveId: "save-1",
+      saveId: expect.any(String),
       fileName: "Book1.xlsx",
       bytes,
     });
     expect(targetOrigin).toBe(window.location.origin);
     expect(transfer).toEqual([bytes]);
-    postSaveResult("save-1", true, undefined, "D:\\Desktop\\test\\Book1.xlsx");
+    postSaveResult(
+      forwardedSaveId(post),
+      true,
+      undefined,
+      "D:\\Desktop\\test\\Book1.xlsx",
+    );
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     // 成功必须说清落到哪：以前只清错误态，用户点了保存没有任何反馈。
     await waitFor(() =>
@@ -273,7 +284,7 @@ describe("HostWorkSurface 统一保存桥", () => {
     };
 
     postEditorMessage(frame, message);
-    postSaveResult("save-failed", false, "磁盘不可写");
+    postSaveResult(forwardedSaveId(post), false, "磁盘不可写");
     await waitFor(() =>
       expect(screen.getByRole("alert").textContent).toContain("磁盘不可写"),
     );
@@ -282,7 +293,7 @@ describe("HostWorkSurface 统一保存桥", () => {
 
     postEditorMessage(frame, { ...message, saveId: "save-retry" });
     await waitFor(() => expect(workSaveCalls(post)).toHaveLength(2));
-    postSaveResult("save-retry", true);
+    postSaveResult(forwardedSaveId(post, 1), true);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     // 浏览器形态拿不到落盘路径，也要给一句「已保存」，不能静默。
     await waitFor(() => expect(screen.getByText("已保存")).toBeTruthy());
@@ -335,7 +346,12 @@ describe("Work 保存落到绑定项目目录", () => {
     const calls = workSaveCalls(post);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.[0]).not.toHaveProperty("projectId");
-    postSaveResult("save-download", true, null, "C:\\Downloads\\Book1.xlsx");
+    postSaveResult(
+      forwardedSaveId(post),
+      true,
+      null,
+      "C:\\Downloads\\Book1.xlsx",
+    );
     await waitFor(() =>
       expect(screen.getByText("已保存 C:\\Downloads\\Book1.xlsx")).toBeTruthy(),
     );
@@ -389,7 +405,7 @@ describe("Work 保存落到绑定项目目录", () => {
       bytes: new ArrayBuffer(8),
     });
     expect(workSaveCalls(post)).toHaveLength(1);
-    postSaveResult("save-note", true, null, null, "Book1.xlsx");
+    postSaveResult(forwardedSaveId(post), true, null, null, "Book1.xlsx");
     await waitFor(() =>
       expect(
         screen.getByText("已保存 D:\\work\\books\\Book1.xlsx"),
