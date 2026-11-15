@@ -427,6 +427,14 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
   );
   // 没有明确深链时由壳恢复窗口选择，父页仅同步可用工作方式；
   // 旧「code-navigate 换壳请求」已随契约删除——迟到的该消息被 schema 拒之门外。
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-mounted" },
+    }),
+  );
   await waitFor(() =>
     expect(send).toHaveBeenCalledWith(
       {
@@ -483,6 +491,7 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
       }),
     );
   event({ type: "kenfutwork:code-ready" });
+  event({ type: "kenfutwork:code-mounted" });
   expect(send).toHaveBeenCalledWith(
     expect.objectContaining({ type: "kenfutwork:code-bootstrap" }),
     window.location.origin,
@@ -492,7 +501,10 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
     window.location.origin,
   );
   // 模式变化（父页深链解析）在隐藏期间照常推送；恢复时补活动状态，不换文档。
-  view.rerender(<CodeWorkbenchFrame active mode="design" />);
+  const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
+  view.rerender(
+    <CodeWorkbenchFrame active mode="design" canvasId={canvasId} />,
+  );
   expect(screen.getByTitle("Code 工作台")).toBe(frame);
   expect(send).toHaveBeenCalledWith(
     { type: "kenfutwork:workspace-activity", active: true },
@@ -503,12 +515,31 @@ it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与
       type: "kenfutwork:workbench-navigation",
       availableModes: ["code", "design"],
       mode: "design",
+      documentTarget: { resourceType: "canvas", documentId: canvasId },
     },
     window.location.origin,
   );
+  view.rerender(
+    <CodeWorkbenchFrame
+      active
+      mode="design"
+      canvasId={canvasId}
+      availableModes={["code", "design", "flow"]}
+    />,
+  );
+  expect(send).toHaveBeenCalledWith(
+    {
+      type: "kenfutwork:workbench-navigation",
+      availableModes: ["code", "design", "flow"],
+    },
+    window.location.origin,
+  );
+  expect(
+    send.mock.calls.filter(([payload]) => payload.documentTarget),
+  ).toHaveLength(1);
 });
 
-it("管理文档创建任务在壳 ready 后按 id 推送一次，重复渲染不重复建草稿", async () => {
+it("管理文档创建任务在壳挂载后按 id 推送一次，重复渲染不重复建草稿", async () => {
   vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
   const request = {
     id: 1,
@@ -524,7 +555,7 @@ it("管理文档创建任务在壳 ready 后按 id 推送一次，重复渲染�
       ([message]) =>
         (message as { type?: unknown }).type === "kenfutwork:host-new-task",
     );
-  // ready 之前不推：壳内监听器尚未就位，消息会丢。
+  // 请求启动配置时，壳内的任务监听器尚未就位。
   expect(taskPosts()).toHaveLength(0);
   fireEvent(
     window,
@@ -532,6 +563,15 @@ it("管理文档创建任务在壳 ready 后按 id 推送一次，重复渲染�
       origin: window.location.origin,
       source: frame.contentWindow,
       data: { type: "kenfutwork:code-ready" },
+    }),
+  );
+  expect(taskPosts()).toHaveLength(0);
+  fireEvent(
+    window,
+    new MessageEvent("message", {
+      origin: window.location.origin,
+      source: frame.contentWindow,
+      data: { type: "kenfutwork:code-mounted" },
     }),
   );
   await waitFor(() => expect(taskPosts()).toHaveLength(1));

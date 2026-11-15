@@ -87,6 +87,7 @@ export function CodeWorkbenchFrame({
   const [shellReady, setShellReady] = useState(false);
   const workSaves = useRef(new Map<string, Promise<void>>());
   const sentMode = useRef<WorkbenchMode | undefined>(undefined);
+  const sentCanvasId = useRef<string | undefined>(undefined);
   const sendActivity = useCallback(() => {
     frame.current?.contentWindow?.postMessage(
       { type: "kenfutwork:workspace-activity", active },
@@ -95,20 +96,23 @@ export function CodeWorkbenchFrame({
   }, [active]);
   useEffect(sendActivity, [sendActivity]);
   const sendNavigation = useCallback(() => {
-    if (!ready.current) return;
+    if (!shellReady || !ready.current) return;
+    const documentTarget =
+      canvasId && sentCanvasId.current !== canvasId
+        ? { resourceType: "canvas" as const, documentId: canvasId }
+        : undefined;
     frame.current?.contentWindow?.postMessage(
       {
         type: "kenfutwork:workbench-navigation",
         availableModes,
         ...(mode !== undefined && sentMode.current !== mode ? { mode } : {}),
-        ...(canvasId
-          ? { documentTarget: { resourceType: "canvas", documentId: canvasId } }
-          : {}),
+        ...(documentTarget ? { documentTarget } : {}),
       },
       window.location.origin,
     );
     sentMode.current = mode;
-  }, [availableModes, mode, canvasId]);
+    sentCanvasId.current = canvasId;
+  }, [availableModes, mode, canvasId, shellReady]);
   useEffect(sendNavigation, [sendNavigation]);
   useEffect(() => {
     // 管理页（父页内的另一处 iframe）启用或停用插件后，把变化告诉壳内宿主重读卡片声明。
@@ -264,16 +268,18 @@ export function CodeWorkbenchFrame({
           });
       } else if (parsed.data.type === "kenfutwork:code-access-lost")
         window.dispatchEvent(new Event(LOCAL_ACCESS_LOST_EVENT));
-      else if (parsed.data.type === "kenfutwork:code-mounted")
+      else if (parsed.data.type === "kenfutwork:code-mounted") {
         setShellMounted(true);
-      else if (parsed.data.type === "kenfutwork:code-ready") {
-        ready.current = true;
         setShellReady(true);
+      } else if (parsed.data.type === "kenfutwork:code-ready") {
+        ready.current = true;
+        setShellReady(false);
+        sentMode.current = undefined;
+        sentCanvasId.current = undefined;
         bootstrap();
         // iframe 的主题监听器这时才就位，补推当前外观主题
         postTheme(themeRef.current);
         sendActivity();
-        sendNavigation();
       }
     };
     window.addEventListener("message", receive);
@@ -287,7 +293,6 @@ export function CodeWorkbenchFrame({
     active,
     sendActivity,
     onOpenManagement,
-    sendNavigation,
     postTheme,
     setTheme,
   ]);

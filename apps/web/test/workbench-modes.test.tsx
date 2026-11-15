@@ -131,6 +131,11 @@ async function renderCodeFrame(tree = host()) {
       }),
     );
   message({ type: "kenfutwork:code-ready" });
+  expect(send).not.toHaveBeenCalledWith(
+    expect.objectContaining({ type: "kenfutwork:workbench-navigation" }),
+    window.location.origin,
+  );
+  message({ type: "kenfutwork:code-mounted" });
   return { view, frame, send, message };
 }
 
@@ -150,20 +155,26 @@ it("工作台恒渲染Code壳：深链design也不换壳，mode经导航消息�
   );
 });
 
-it("深链design向壳推mode=design；无flow插件时availableModes只有code/design", async () => {
+it("画布深链在壳挂载后传递一次，重复的挂载信号不重开画布", async () => {
   installFixture();
-  navigation.query = "mode=design";
-  const { send } = await renderCodeFrame();
+  const canvasId = "aaaaaaaa-1111-4111-8111-111111111111";
+  navigation.query = `mode=design&canvasId=${canvasId}`;
+  const { send, message } = await renderCodeFrame();
   await waitFor(() => {
     expect(send).toHaveBeenCalledWith(
       {
         type: "kenfutwork:workbench-navigation",
         availableModes: ["code", "design"],
         mode: "design",
+        documentTarget: { resourceType: "canvas", documentId: canvasId },
       },
       window.location.origin,
     );
   });
+  message({ type: "kenfutwork:code-mounted" });
+  expect(
+    send.mock.calls.filter(([payload]) => payload.documentTarget),
+  ).toHaveLength(1);
 });
 
 it("刷新没有深链时只同步可用方式，让壳恢复当前窗口的选择", async () => {
