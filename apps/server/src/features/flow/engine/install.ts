@@ -369,11 +369,13 @@ export function readStackRuntime(dataDir: string): EngineLaunch {
  */
 export function planEngineAutoInstall(input: {
   installState: EngineInstallSnapshot["state"];
-  stackContainerCount: number;
+  stackContainerCount: number | null;
   recommended: FlowEnginePathId | null;
 }): { action: "install" } | { action: "skip"; reason: string } {
   if (input.installState === "installing")
     return { action: "skip", reason: "已有安装任务在跑" };
+  if (input.stackContainerCount === null)
+    return { action: "skip", reason: "无法读取容器清单" };
   if (input.stackContainerCount > 0)
     return { action: "skip", reason: "引擎栈容器已在" };
   if (input.recommended !== "wsl2" && input.recommended !== "container") {

@@ -79,6 +79,17 @@ function stackEnvFile(options: EngineInstallOptions): string {
     : "";
 }
 
+function readManagedEngineStack(
+  options: EngineInstallOptions,
+  launch: EngineLaunch,
+): ReturnType<typeof listEngineStackContainers> {
+  const envFile = stackEnvFile(options);
+  // 首次安装前还没有托管凭据，查询不会创建它们。
+  return envFile
+    ? listEngineStackContainers(options.composeFile, { envFile, launch })
+    : Promise.resolve({ containers: [] });
+}
+
 /**
  * flow 宿主适配层是否配齐：三件套缺任何一件，Flow 模式都不会出现在工作台里
  * （status 端点如实回答 disabled）。既是入口判据，也是「要不要为引擎栈自动下载」的闸门
@@ -337,17 +348,13 @@ export function createFlowHostPlugin(deps: {
       const autoInstallEngineStack = async (): Promise<void> => {
         const dataRoot = dataRootFor(ctx);
         const options = engineInstallOptions(dataRoot);
-        const envFile = stackEnvFile(options);
         const [carrier, stack] = await Promise.all([
           probeCarrier(),
-          listEngineStackContainers(options.composeFile, {
-            ...(envFile ? { envFile } : {}),
-            launch: readStackRuntime(dataRoot),
-          }),
+          readManagedEngineStack(options, readStackRuntime(dataRoot)),
         ]);
         const plan = planEngineAutoInstall({
           installState: getEngineInstallSnapshot().state,
-          stackContainerCount: stack.containers.length,
+          stackContainerCount: stack.error ? null : stack.containers.length,
           recommended: carrier.recommended,
         });
         if (plan.action === "skip") return;
@@ -438,17 +445,9 @@ export function createFlowHostPlugin(deps: {
             const dataRoot = dataRootFor(ctx);
             const launch = readStackRuntime(dataRoot);
             const options = engineInstallOptions(dataRoot);
-            // 密钥 env 不存在 = 从未安装过：没有可查的栈，空清单即可（不拿 compose 的
-            // 插值报错当答案）；存在则与安装同一口径查询运行期事实。
-            const envFile = stackEnvFile(options);
             const [probe, stack] = await Promise.all([
               probeCarrier(),
-              envFile
-                ? listEngineStackContainers(options.composeFile, {
-                    envFile,
-                    launch,
-                  })
-                : Promise.resolve({ containers: [] }),
+              readManagedEngineStack(options, launch),
             ]);
             const install = getEngineInstallSnapshot();
             // 进程重启后 current.logFile 为空：按数据目录里的标准日志名补读，

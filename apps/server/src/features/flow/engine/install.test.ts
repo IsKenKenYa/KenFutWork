@@ -628,6 +628,16 @@ describe("引擎栈「装上即用」自动安装判据", () => {
     ).toBe("skip");
   });
 
+  it("容器清单查询失败时即使 Docker 可用也不自动安装", () => {
+    expect(
+      planEngineAutoInstall({
+        installState: "idle",
+        stackContainerCount: null,
+        recommended: "container",
+      }).action,
+    ).toBe("skip");
+  });
+
   it("承载是用户自管地址或压根没探到 → 不自动装本机栈", () => {
     for (const recommended of ["remote", null] as const) {
       expect(
