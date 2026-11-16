@@ -17582,9 +17582,10 @@
       "source": "references/zcode/packages/ui/src/quickpick/HighlightedMatchText.tsx",
       "target": "apps/web/src/components/workbench/zcode/quickpick/HighlightedMatchText.tsx",
       "sha256": "63fed4897dd4a3d98bcba35f7f98519e262204f4e9c87409cc3af656070c0f74",
-      "copiedSha256": "63fed4897dd4a3d98bcba35f7f98519e262204f4e9c87409cc3af656070c0f74",
+      "copiedSha256": "7a65679e0cec1b47ecb8a1d6c48ad9df66ecc295f20ab81768be4620532d1abe",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "将小写后的搜索命中位置换算回原文，并保留组合字符的完整显示"
       ]
     },
     {

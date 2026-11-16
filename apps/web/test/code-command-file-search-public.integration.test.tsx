@@ -21,7 +21,8 @@ import { withTaskGroupPublicPage } from "./setup/code-task-groups-public.fixture
 
 const query = "@command-file-proof";
 const oldFile = "command-file-proof-older.txt";
-const newFile = "command-file-proof-current.txt";
+const newFile = "İ-command-file-proof-current.txt";
+const emojiFile = "👩🏽‍💻.txt";
 const newContent = "重新搜索后读取到的真实内容";
 const preview = '[data-testid="preview-pane"]';
 const indexLength = "listWorkspaceFilesLength";
@@ -58,6 +59,12 @@ function readSearch(page: OriginalSessionBrowser) {
 async function expectNames(page: OriginalSessionBrowser, ...names: string[]) {
   await vi.waitFor(async () =>
     expect((await readSearch(page)).names).toEqual(names),
+  );
+}
+
+function readFirstMark(page: OriginalSessionBrowser) {
+  return page.evaluate(
+    `document.querySelector('[role="dialog"] [role="option"] mark')?.textContent`,
   );
 }
 
@@ -152,6 +159,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             );
             await unlink(join(root, oldFile));
             await writeFile(join(root, newFile), newContent, "utf8");
+            await writeFile(join(root, emojiFile), "组合字符文件", "utf8");
             await openCommandCenter(page);
             await enterCommandQuery(page, query);
             await expectNames(page, newFile);
@@ -162,8 +170,14 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
                 noResults: true,
               }),
             );
+            await enterCommandQuery(page, "@💻");
+            await expectNames(page, emojiFile);
+            expect(await readFirstMark(page)).toBe("👩🏽‍💻");
             await enterCommandQuery(page, "@command-file-proof-current");
             await expectNames(page, newFile);
+            expect(await readFirstMark(page)).toBe(
+              "command-file-proof-current",
+            );
             const scans = [...observation.requests.values()].filter(
               ({ service, method }) =>
                 service === "file" && method === indexLength,
