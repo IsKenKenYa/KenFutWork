@@ -1,5 +1,6 @@
 import type { ProjectDirectoryRelinkSnapshot } from "@kenfutwork/shared";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HostFlowSurface } from "@/components/workbench/zcode/host/FlowSurface";
 import {
@@ -46,6 +47,7 @@ vi.mock(
 const projectA = "11111111-1111-4111-8111-111111111111";
 const projectB = "22222222-2222-4222-8222-222222222222";
 const origin = "http://127.0.0.1:8080";
+const expiresAt = "2026-11-16T12:00:00.000Z";
 function binding(
   projectId: string,
   generation: number,
@@ -120,7 +122,7 @@ beforeEach(() => {
   });
   host.surfaceFetch.mockResolvedValue({
     ok: true,
-    json: async () => ({ token: "ticket" }),
+    json: async () => ({ token: "ticket", expiresAt }),
   });
 });
 afterEach(() => {
@@ -215,11 +217,39 @@ describe("FlowSurface project binding consumer", () => {
       origin,
     );
   });
+  it("reconnects the same project with a new iframe after a peer error", async () => {
+    const input = userEvent.setup();
+    select(projectA, 2);
+    render(<HostFlowSurface />);
+    await screen.findByTitle("Flow 工作流画布");
+    const oldSource = frameWindow();
+    await handshake(oldSource);
+    message(oldSource, { type: "ff-embed/error" });
+    expect(screen.getByRole("alert").textContent).toContain("连接已中断");
+    screen.getByRole("button", { name: "重新连接" }).focus();
+    await input.keyboard("{Enter}");
+    await screen.findByTitle("Flow 工作流画布");
+    const newSource = frameWindow();
+    expect(newSource).not.toBe(oldSource);
+    expect(document.activeElement).toBe(
+      screen.getByRole("region", { name: "Flow 工作流" }),
+    );
+    await handshake(newSource);
+    ready(oldSource, projectA, 2);
+    expect(getFlowNavigationReady()).toBe(false);
+    ready(newSource, projectA, 2);
+    await waitFor(() => expect(getFlowNavigationReady()).toBe(true));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(host.surfaceFetch.mock.calls.map(([, init]) => init.body)).toEqual([
+      JSON.stringify({ projectId: projectA }),
+      JSON.stringify({ projectId: projectA }),
+    ]);
+  });
   it("discards a ticket response and ready arriving from the previous selected project", async () => {
     let resolveTicket:
       | ((response: {
           ok: boolean;
-          json: () => Promise<{ token: string }>;
+          json: () => Promise<{ token: string; expiresAt: string }>;
         }) => void)
       | undefined;
     host.surfaceFetch.mockImplementationOnce(
@@ -244,7 +274,7 @@ describe("FlowSurface project binding consumer", () => {
     await act(async () => {
       resolveTicket?.({
         ok: true,
-        json: async () => ({ token: "old-ticket" }),
+        json: async () => ({ token: "old-ticket", expiresAt }),
       });
     });
     ready(oldSource, projectB, 1);

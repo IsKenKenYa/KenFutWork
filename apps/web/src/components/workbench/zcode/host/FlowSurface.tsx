@@ -7,13 +7,17 @@ import type {
   FlowHostStatusResponse,
 } from "@kenfutwork/shared";
 import {
+  ApiAccessError,
+  ApiApplicationError,
   buildFlowHelloAck,
   buildFlowIdentity,
   buildFlowNavigate,
   FLOW_EMBED_PROTOCOL_VERSION,
+  flowHostIdentityTicketResponseSchema,
   isFlowProjectReady,
   parseFlowInbound,
   resolveFlowEntry,
+  throwPublicHttpError,
 } from "@kenfutwork/shared";
 import {
   Select,
@@ -66,23 +70,31 @@ type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
 /**
  * 换一张一次性身份票据（本地实例身份缝）：宿主凭本机接入（cookie）换票，
  * 随 `ff-embed/identity` 注入 flow；票据由 flow 网关带回宿主验签。
- * 换票失败返回 null——不拿假身份硬握，flow 侧会如实降级并给出原因。
  */
-async function fetchIdentityTicket(projectId: string): Promise<string | null> {
-  try {
-    const response = await surfaceFetch("/api/flow/host/identity-ticket", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    });
-    if (!response.ok) return null;
-    const body = (await response.json()) as { token?: unknown };
-    return typeof body.token === "string" && body.token.length > 0
-      ? body.token
-      : null;
-  } catch {
-    return null;
+async function fetchIdentityTicket(projectId: string, signal: AbortSignal) {
+  const response = await surfaceFetch("/api/flow/host/identity-ticket", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId }),
+    signal,
+  });
+  if (!response.ok) return throwPublicHttpError(response);
+  return flowHostIdentityTicketResponseSchema.parse(await response.json())
+    .token;
+}
+
+type FlowConnectionFailure = { message: string; retryable: boolean };
+
+function explainIdentityFailure(error: unknown): FlowConnectionFailure {
+  if (error instanceof ApiApplicationError) {
+    if (error.status === 401)
+      return { message: new ApiAccessError().message, retryable: false };
+    if (error.status === 403)
+      return { message: "无法访问此项目，请检查访问设置。", retryable: false };
+    if (error.status === 400 || error.status === 404 || error.status === 409)
+      return { message: "Flow 项目不可用，请重新选择项目。", retryable: false };
   }
+  return { message: "无法连接 Flow，请重试。", retryable: true };
 }
 
 /** 引擎栈托管安装（与原「引擎」页同一条状态机：POST → 轮询到 ready/error/超时）。 */
@@ -320,22 +332,48 @@ function FlowSurfaceContent({ active }: { active: boolean }) {
   );
 }
 
-/** flow 前端 iframe 与 `ff-embed/v1` 握手（hello-ack + 一次性身份票据注入 + 站内导航）。 */
-function FlowCanvasEmbed({
-  frontendUrl,
-  active,
-  projectId,
-  generation,
-}: {
+type FlowCanvasEmbedProps = {
   frontendUrl: string;
   active: boolean;
   projectId: string;
   generation: number;
-}) {
+};
+
+function FlowCanvasEmbed(props: FlowCanvasEmbedProps) {
+  const [attempt, setAttempt] = useState(0);
+  const regionRef = useRef<HTMLElement>(null);
+  return (
+    <section
+      ref={regionRef}
+      aria-label="Flow 工作流"
+      tabIndex={-1}
+      className="relative h-full w-full outline-none"
+    >
+      <FlowCanvasConnection
+        {...props}
+        key={attempt}
+        onRetry={() => {
+          regionRef.current?.focus();
+          setAttempt((current) => current + 1);
+        }}
+      />
+    </section>
+  );
+}
+
+/** flow 前端 iframe 与 `ff-embed/v1` 握手（hello-ack + 一次性身份票据注入 + 站内导航）。 */
+function FlowCanvasConnection({
+  frontendUrl,
+  active,
+  projectId,
+  generation,
+  onRetry,
+}: FlowCanvasEmbedProps & { onRetry: () => void }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [frameSource, setFrameSource] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [connectionError, setConnectionError] =
+    useState<FlowConnectionFailure | null>(null);
   const [frameLoaded, setFrameLoaded] = useState(false);
   // 引擎没起时 iframe 永远不 onLoad：8 秒后把「正在打开」换成去引擎页的引导，
   // 不让用户对着无限加载发呆（fail loud，不猜「也许马上好」）。
@@ -355,14 +393,43 @@ function FlowCanvasEmbed({
 
   useEffect(() => {
     if (!flowOrigin) return;
-    let disposed = false;
-    let identityAttempt = 0;
+    let closed = false;
+    let identityRequest: AbortController | null = null;
     let identitySent = false;
+    function endAttempt(failure: FlowConnectionFailure) {
+      closed = true;
+      identityRequest?.abort();
+      window.clearTimeout(handshakeTimer);
+      setConnected(false);
+      setConnectionError(failure);
+    }
     const handshakeTimer = window.setTimeout(() => {
-      if (!disposed) setConnectionError("Flow 握手超时，请检查网关状态。");
+      endAttempt({ message: "连接 Flow 超时，请重试。", retryable: true });
     }, 15_000);
+    const sendIdentity = (frame: Window) => {
+      identityRequest?.abort();
+      const controller = new AbortController();
+      identityRequest = controller;
+      const isCurrent = () =>
+        !closed &&
+        !controller.signal.aborted &&
+        frameRef.current?.contentWindow === frame;
+      void fetchIdentityTicket(projectId, controller.signal).then(
+        (hostToken) => {
+          if (!isCurrent()) return;
+          frame.postMessage(
+            buildFlowIdentity(FLOW_EMBED_PROTOCOL_VERSION, hostToken),
+            flowOrigin,
+          );
+          identitySent = true;
+        },
+        (error: unknown) => {
+          if (isCurrent()) endAttempt(explainIdentityFailure(error));
+        },
+      );
+    };
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== flowOrigin) return;
+      if (closed || event.origin !== flowOrigin) return;
       const frame = frameRef.current?.contentWindow;
       if (!frame || event.source !== frame) return;
       const message = parseFlowInbound(event.data, {
@@ -371,56 +438,41 @@ function FlowCanvasEmbed({
       });
       if (!message) return;
       if (message.type === "ff-embed/hello") {
-        const attempt = ++identityAttempt;
         identitySent = false;
         frame.postMessage(
           buildFlowHelloAck(FLOW_EMBED_PROTOCOL_VERSION),
           flowOrigin,
         );
         setConnected(false);
-        void fetchIdentityTicket(projectId).then((hostToken) => {
-          const target = frameRef.current?.contentWindow;
-          if (
-            !disposed &&
-            attempt === identityAttempt &&
-            hostToken &&
-            target === frame
-          ) {
-            target.postMessage(
-              buildFlowIdentity(FLOW_EMBED_PROTOCOL_VERSION, hostToken),
-              flowOrigin,
-            );
-            identitySent = true;
-          } else if (!disposed && attempt === identityAttempt && !hostToken) {
-            setConnectionError("Flow 身份验证失败，请检查网关配置。");
-          }
-        });
+        sendIdentity(frame);
         return;
       }
       if (message.type === "ff-embed/ready") {
+        if (!identitySent) return;
         window.clearTimeout(handshakeTimer);
         const valid =
-          identitySent &&
           isFlowProjectReady(message, projectId) &&
           message.generation === generation;
         setConnected(valid);
         setConnectionError(
-          valid ? null : "Flow 项目绑定不匹配，请重新打开项目。",
+          valid
+            ? null
+            : { message: "Flow 项目绑定不匹配，请重新连接。", retryable: true },
         );
       }
       if (
         message.type === "ff-embed/error" ||
         message.type === "ff-embed/bye"
       ) {
-        setConnected(false);
-        setConnectionError("Flow 连接失败，请检查网关状态。");
+        endAttempt({ message: "Flow 连接已中断，请重试。", retryable: true });
       }
     };
     window.addEventListener("message", onMessage);
     // Flow 子页只发送一次 hello，监听就绪后才能开始加载子页。
     setFrameSource(frontendUrl);
     return () => {
-      disposed = true;
+      closed = true;
+      identityRequest?.abort();
       window.clearTimeout(handshakeTimer);
       window.removeEventListener("message", onMessage);
     };
@@ -454,14 +506,22 @@ function FlowCanvasEmbed({
     );
   }
   return (
-    <div className="relative h-full w-full">
+    <>
       {connectionError ? (
-        <p
-          role="alert"
-          className="absolute inset-x-0 top-0 z-10 bg-background px-3 py-2 text-xs text-destructive"
-        >
-          {connectionError}
-        </p>
+        <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-background px-3 py-2 text-xs">
+          <p role="alert" className="min-w-0 text-destructive">
+            {connectionError.message}
+          </p>
+          {connectionError.retryable ? (
+            <button
+              type="button"
+              className="rounded-md border border-border px-2 py-1 hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+              onClick={onRetry}
+            >
+              重新连接
+            </button>
+          ) : null}
+        </div>
       ) : null}
       {frameSource ? (
         <iframe
@@ -496,7 +556,7 @@ function FlowCanvasEmbed({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
