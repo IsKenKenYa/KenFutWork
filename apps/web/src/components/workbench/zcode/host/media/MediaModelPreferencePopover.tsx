@@ -2,7 +2,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { MediaModelListNotice } from "./MediaModelListNotice.js";
 import { useImageModelPreference } from "./useImageModelPreference.js";
+import { useMediaModelList } from "./useMediaModelList.js";
 import { useVideoModelPreference } from "./useVideoModelPreference.js";
 export interface MediaModelInfo {
   id: string;
@@ -11,9 +13,9 @@ export interface MediaModelInfo {
   provider: string;
   iconUrl?: string;
 }
-type ImageModelInfo = MediaModelInfo;
-type VideoModelInfo = MediaModelInfo;
-type LoadModels = () => Promise<{ models: MediaModelInfo[] }>;
+type LoadModels = (
+  signal?: AbortSignal,
+) => Promise<{ models: MediaModelInfo[] }>;
 
 import {
   type MediaModelPreference,
@@ -41,26 +43,16 @@ export function MediaModelPreferencePopover({
   }) => void;
 }) {
   const { preference, setMode, toggleModel } = useImageModelPreference();
-  const [models, setModels] = useState<ImageModelInfo[]>([]);
+  const images = useMediaModelList(loadImages, open);
   const [activeTab, setActiveTab] = useState<"image" | "video">("image");
   const videoPreference = useVideoModelPreference();
-  const [videoModels, setVideoModels] = useState<VideoModelInfo[]>([]);
+  const videos = useMediaModelList(loadVideos, open);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{
     top: number;
     left: number;
     above: boolean;
   } | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    loadImages()
-      .then((data) => setModels(data.models))
-      .catch(() => {});
-    loadVideos()
-      .then((data) => setVideoModels(data.models))
-      .catch(() => {});
-  }, [open, loadImages, loadVideos]);
 
   // Calculate position — auto-detect direction based on available space
   useLayoutEffect(() => {
@@ -107,7 +99,7 @@ export function MediaModelPreferencePopover({
   const currentPreference =
     preferences?.[activeTab] ??
     (activeTab === "image" ? preference : videoPreference.preference);
-  const currentModels = activeTab === "image" ? models : videoModels;
+  const catalog = activeTab === "image" ? images : videos;
   const currentSetMode =
     preferences && onPreferencesChange
       ? (mode: "auto" | "manual") =>
@@ -170,12 +162,13 @@ export function MediaModelPreferencePopover({
             </span>
             <button
               type="button"
+              disabled={catalog.state.status !== "ready"}
               onClick={() =>
                 currentSetMode(
                   currentPreference.mode === "auto" ? "manual" : "auto",
                 )
               }
-              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
                 currentPreference.mode === "auto"
                   ? "bg-accent/15 text-accent-foreground"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -195,7 +188,11 @@ export function MediaModelPreferencePopover({
 
         {/* Model list */}
         <div className="scrollbar-hidden max-h-[300px] space-y-0.5 overflow-y-auto px-1">
-          {currentModels.map((m) => {
+          <MediaModelListNotice
+            state={catalog.state}
+            onRetry={catalog.reload}
+          />
+          {catalog.models.map((m) => {
             const selected = currentPreference.models.includes(m.id);
             return (
               <button

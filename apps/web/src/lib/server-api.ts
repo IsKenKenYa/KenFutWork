@@ -774,13 +774,14 @@ export type ImageModelInfo = {
   minTier?: string;
 };
 
-export async function fetchImageModels(): Promise<{
+export async function fetchImageModels(signal?: AbortSignal): Promise<{
   models: ImageModelInfo[];
 }> {
-  const response = await serverFetch(`${getServerBaseUrl()}/api/image-models`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image models: ${response.status}`);
-  }
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/image-models`,
+    signal ? { signal } : undefined,
+  );
+  if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { models: ImageModelInfo[] };
 }
 
@@ -847,10 +848,13 @@ export async function fetchProviderPresets(
   return (await response.json()) as { presets: ProviderPreset[] };
 }
 
-export async function fetchVideoModels(): Promise<{
+export async function fetchVideoModels(signal?: AbortSignal): Promise<{
   models: VideoModelInfo[];
 }> {
-  const response = await serverFetch(`${getServerBaseUrl()}/api/video-models`);
+  const response = await serverFetch(
+    `${getServerBaseUrl()}/api/video-models`,
+    signal ? { signal } : undefined,
+  );
   if (!response.ok) return handleErrorResponse(response);
   return (await response.json()) as { models: VideoModelInfo[] };
 }

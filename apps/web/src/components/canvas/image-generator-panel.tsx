@@ -5,6 +5,10 @@ import {
   hasImageGenerationInput,
   type ImageGenerationCaps,
 } from "@kenfutwork/shared";
+import {
+  MediaModelListNotice,
+  useMediaModelList,
+} from "@zcode/ui/design-shared";
 import { ImageUp } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -16,7 +20,6 @@ import {
   resizeImageGeneratorElement,
   updateImageGeneratorElement,
 } from "../../lib/canvas-image-generator";
-import type { ImageModelInfo } from "../../lib/server-api";
 import {
   ApiAccessError,
   ApiApplicationError,
@@ -99,7 +102,11 @@ export function ImageGeneratorPanel({
   const [loading, setLoading] = useState(data.status === "generating");
   const [stopping, setStopping] = useState(data.cancelRequested === true);
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
-  const [models, setModels] = useState<ImageModelInfo[]>([]);
+  const {
+    models,
+    state: modelList,
+    reload: reloadModels,
+  } = useMediaModelList(fetchImageModels);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
 
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
@@ -125,21 +132,6 @@ export function ImageGeneratorPanel({
     setStopping(data.cancelRequested === true);
     setError(data.errorMessage ?? null);
   }, [data.status, data.errorMessage, data.cancelRequested]);
-
-  // Fetch available models with error logging
-  useEffect(() => {
-    let cancelled = false;
-    fetchImageModels()
-      .then((r) => {
-        if (!cancelled) setModels(r.models);
-      })
-      .catch((err) => {
-        console.warn("[image-gen] Failed to fetch models:", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
@@ -589,7 +581,9 @@ export function ImageGeneratorPanel({
                 />
               )}
               <span className="text-foreground">
-                {currentModel?.displayName ?? "选择模型"}
+                {modelList.status === "error"
+                  ? "模型读取失败"
+                  : (currentModel?.displayName ?? "选择模型")}
               </span>
               <svg
                 aria-hidden="true"
@@ -602,6 +596,10 @@ export function ImageGeneratorPanel({
             </button>
             {showModelDropdown && (
               <div className="absolute bottom-full left-0 z-50 mb-1 max-h-[280px] w-[260px] overflow-y-auto rounded-xl border-[0.5px] border-border bg-card py-1 shadow-card">
+                <MediaModelListNotice
+                  state={modelList}
+                  onRetry={reloadModels}
+                />
                 {models.map((m) => (
                   <button
                     key={m.id}

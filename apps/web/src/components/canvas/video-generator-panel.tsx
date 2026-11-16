@@ -1,6 +1,10 @@
 "use client";
 
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import {
+  MediaModelListNotice,
+  useMediaModelList,
+} from "@zcode/ui/design-shared";
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -139,7 +143,11 @@ export function VideoGeneratorPanel({
   const [loading, setLoading] = useState(data.status === "generating");
   const [stopping, setStopping] = useState(data.cancelRequested === true);
   const [error, setError] = useState<string | null>(data.errorMessage ?? null);
-  const [models, setModels] = useState<VideoModelInfo[]>([]);
+  const {
+    models,
+    state: modelList,
+    reload: reloadModels,
+  } = useMediaModelList(fetchVideoModels);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [referenceUploads, setReferenceUploads] = useState<
     Record<string, ReferenceUploadState>
@@ -168,22 +176,6 @@ export function VideoGeneratorPanel({
     setStopping(data.cancelRequested === true);
     setError(data.errorMessage ?? null);
   }, [data.status, data.errorMessage, data.cancelRequested]);
-
-  // Fetch available models with error logging
-  useEffect(() => {
-    let cancelled = false;
-    fetchVideoModels()
-      .then((r) => {
-        if (cancelled) return;
-        setModels(r.models);
-      })
-      .catch((err) => {
-        console.warn("[video-gen] Failed to fetch models:", err);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Close dropdowns when clicking outside the panel
   useEffect(() => {
@@ -849,7 +841,9 @@ export function VideoGeneratorPanel({
                 />
               )}
               <span className="text-foreground">
-                {currentModel?.displayName ?? "选择模型"}
+                {modelList.status === "error"
+                  ? "模型读取失败"
+                  : (currentModel?.displayName ?? "选择模型")}
               </span>
               <svg
                 aria-hidden="true"
@@ -862,6 +856,10 @@ export function VideoGeneratorPanel({
             </button>
             {showModelDropdown && (
               <div className="absolute bottom-full right-0 z-50 mb-1 max-h-[280px] w-[260px] overflow-y-auto rounded-xl border-[0.5px] border-border bg-card py-1 shadow-card">
+                <MediaModelListNotice
+                  state={modelList}
+                  onRetry={reloadModels}
+                />
                 {models.map((m) => (
                   <button
                     key={m.id}
