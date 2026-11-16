@@ -382,18 +382,22 @@ export class CodeUiControllerHost {
     if (method !== "listTaskList") return null;
     const query = codeUiControllerTaskListQuerySchema.parse(value);
     await this.synchronizeSources();
-    const workspaceScopes = query.workspaceScopes.map((scope) => {
+    // 目录被删除、项目已归档或客户端还持有过期 tab 时，来源名单里没有对应项。
+    // 这些 scope 按空来源处理：整个任务列表查询不能因为个别过期作用域失败，
+    // 目录失效的提示由项目行的可用状态与重新关联入口承担。
+    const workspaceScopes = query.workspaceScopes.flatMap((scope) => {
       const resolved = this.resolveSource(scope);
-      if (!resolved)
-        throw new CodeUiRepositoryError(
-          "not_found",
-          "Controller 工作目录不属于当前工作区或已归档。",
-        );
-      return {
-        workspacePath: resolved.source.rootDirectory,
-        workspaceIdentity: resolved.source.workspaceIdentity,
-      };
+      return resolved
+        ? [
+            {
+              workspacePath: resolved.source.rootDirectory,
+              workspaceIdentity: resolved.source.workspaceIdentity,
+            },
+          ]
+        : [];
     });
+    if (!workspaceScopes.length)
+      return { result: { items: [], total: 0, hasMore: false } };
     const result = await this.readIndex({
       kind: query.kind,
       sortBy: query.sortBy,

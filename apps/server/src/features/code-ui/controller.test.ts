@@ -87,6 +87,56 @@ describe("Code Controller 公共宿主", () => {
       await host.dispose();
     }
   });
+  it("过期作用域被忽略：已知目录照常返回，全部过期时给空列表而不报错", async () => {
+    const host = new CodeUiControllerHost({
+      sources: async () => [{ projectId, rootDirectory: oldRoot }],
+      sourceCall: async (_source, service, method) => {
+        if (service !== "zcode-task")
+          throw Object.assign(new Error("没有现存 Agent 运行时"), {
+            code: ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE,
+          });
+        if (method === "listTasks")
+          return [task("old-task", oldRoot, "现存 Task")];
+        if (method === "listPinnedTasks" || method === "listArchivedTasks")
+          return [];
+        throw new Error(`非只读索引操作：${method}`);
+      },
+      send: async () => {},
+      disposeSource: async () => {},
+      deliveryFailed: (error) => {
+        throw error;
+      },
+    });
+    const removedScope = {
+      workspacePath: "/projects/removed",
+      workspaceIdentity: '["removed-project","/projects/removed"]',
+    };
+    try {
+      expect(
+        (
+          await host.call("listTaskList", {
+            kind: "active",
+            workspaceScopes: [
+              { workspacePath: oldRoot, workspaceIdentity: oldIdentity },
+              removedScope,
+            ],
+            sortBy: "updated",
+          })
+        )?.result,
+      ).toMatchObject({ total: 1, items: [{ taskId: "old-task" }] });
+      expect(
+        (
+          await host.call("listTaskList", {
+            kind: "active",
+            workspaceScopes: [removedScope],
+            sortBy: "updated",
+          })
+        )?.result,
+      ).toMatchObject({ items: [], total: 0, hasMore: false });
+    } finally {
+      await host.dispose();
+    }
+  });
   it("关闭 Controller 等待在途只读 source 调用，迟到结果不能恢复连接", async () => {
     let finishRead: ((value: ReturnType<typeof task>[]) => void) | undefined;
     let markStarted: (() => void) | undefined;
@@ -729,15 +779,17 @@ describe("Code Controller 公共宿主", () => {
           },
         ],
       });
-      await expect(
-        host.call("listTaskList", {
-          kind: "active",
-          workspaceScopes: [
-            { workspacePath: newRoot, workspaceIdentity: otherIdentity },
-          ],
-          sortBy: "updated",
-        }),
-      ).rejects.toMatchObject({ code: "not_found" });
+      expect(
+        (
+          await host.call("listTaskList", {
+            kind: "active",
+            workspaceScopes: [
+              { workspacePath: newRoot, workspaceIdentity: otherIdentity },
+            ],
+            sortBy: "updated",
+          })
+        )?.result,
+      ).toMatchObject({ items: [], total: 0, hasMore: false });
       expect(await host.call("execute", { command: "whoami" })).toBeNull();
     } finally {
       await host.dispose();
@@ -821,9 +873,9 @@ describe("Code Controller 公共宿主", () => {
           },
         ],
       });
-      await expect(
-        host.call("listTaskList", query(oldRoot, oldIdentity)),
-      ).rejects.toMatchObject({ code: "not_found" });
+      expect(
+        (await host.call("listTaskList", query(oldRoot, oldIdentity)))?.result,
+      ).toMatchObject({ items: [], total: 0, hasMore: false });
     } finally {
       release?.();
       await Promise.allSettled([first, second]);
