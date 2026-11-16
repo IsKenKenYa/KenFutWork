@@ -1,14 +1,10 @@
 import { expect, it } from "vitest";
 import { projectMcpArguments, toKernelTool } from "./mcp-tools.js";
-import type { TaskMcpService } from "./task-mcp-service.js";
 import { createTaskMcpTools } from "./task-mcp-tools.js";
 
 it("Code创建/安装/卸载入口是execute，状态只读；参数投影幂等但真实env照常送达服务", async () => {
   const calls: unknown[] = [];
-  const service: TaskMcpService = {
-    callConfigured: async () => null,
-    closeSource: async () => {},
-    computerUseConnections: async () => [],
+  const tools = createTaskMcpTools({
     create: async (input) => {
       calls.push(input);
       return {
@@ -31,11 +27,7 @@ it("Code创建/安装/卸载入口是execute，状态只读；参数投影幂等
     },
     remove: async () => {},
     list: async () => [],
-    closeTask: async () => {},
-    revoke: async () => {},
-    shutdown: async () => {},
-  };
-  const tools = createTaskMcpTools(service);
+  });
   expect(tools.map((entry) => [entry.name, entry.scope, entry.access])).toEqual(
     [
       ["create_mcp_server", "shared", "execute"],

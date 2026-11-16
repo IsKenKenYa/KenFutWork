@@ -8,6 +8,12 @@ import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { losesExecutionRights } from "../process-sandbox/scope-change.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import {
+  type McpResourceRequest,
+  type McpResourceResult,
+  registerMcpResourceTools,
+  requestMcpResource,
+} from "./mcp-resource-tools.js";
 import type { McpConnectionConfiguration } from "./mcp-service.js";
 import {
   assertMcpContribution,
@@ -53,6 +59,11 @@ export interface TaskMcpStatus {
   error?: string;
 }
 export interface TaskMcpService {
+  readConfiguredResource(
+    source: McpConnectionConfiguration,
+    request: McpResourceRequest,
+    context: ToolExecutionContext,
+  ): Promise<McpResourceResult>;
   callConfigured(
     source: McpConnectionConfiguration,
     tool: McpServerToolLike,
@@ -155,10 +166,8 @@ export function createTaskMcpService(deps: {
     };
   };
 
-  const call = async (
+  const requireConnection = async (
     record: Connection,
-    name: string,
-    args: Record<string, unknown>,
     execution: ToolExecutionContext,
   ) => {
     const owner = taskMcpContext(execution);
@@ -174,6 +183,24 @@ export function createTaskMcpService(deps: {
       );
     await refreshMcpScope(owner);
     ensureOpen(record);
+    if (
+      records.get(record.key) !== record ||
+      losesExecutionRights(record.scope, owner.scope)
+    )
+      throw new TaskMcpError(
+        "mcp_closed",
+        "MCP工具所属授权已经收紧或连接已失效。",
+      );
+    return owner;
+  };
+
+  const call = async (
+    record: Connection,
+    name: string,
+    args: Record<string, unknown>,
+    execution: ToolExecutionContext,
+  ) => {
+    const owner = await requireConnection(record, execution);
     if (!record.toolSchemas.has(name))
       throw new TaskMcpError(
         "mcp_tool_not_model_visible",
@@ -186,14 +213,6 @@ export function createTaskMcpService(deps: {
         `mcp:${record.key}:${name}`,
         execution,
       );
-    if (
-      records.get(record.key) !== record ||
-      losesExecutionRights(record.scope, owner.scope)
-    )
-      throw new TaskMcpError(
-        "mcp_closed",
-        "MCP工具所属授权已经收紧或连接已失效。",
-      );
     try {
       return await record.client.callTool(
         { name, arguments: args },
@@ -202,6 +221,23 @@ export function createTaskMcpService(deps: {
       );
     } catch (error) {
       throw mcpFailure(error, record.input.env, "mcp_call_failed");
+    }
+  };
+
+  const readResource = async (
+    record: Connection,
+    request: McpResourceRequest,
+    execution: ToolExecutionContext,
+  ): Promise<McpResourceResult> => {
+    try {
+      const config = await requestOptions(taskMcpContext(execution));
+      await requireConnection(record, execution);
+      const result = await requestMcpResource(record.client, request, config);
+      await requireConnection(record, execution);
+      return result;
+    } catch (error) {
+      execution.signal?.throwIfAborted();
+      throw mcpFailure(error, record.input.env, "mcp_resource_failed");
     }
   };
 
@@ -339,10 +375,12 @@ export function createTaskMcpService(deps: {
         await requestOptions(record.owner),
       );
       ensureOpen(record);
-      const discovered = await record.client.listTools(
-        undefined,
-        await requestOptions(record.owner),
-      );
+      const discovered = record.client.getServerCapabilities()?.tools
+        ? await record.client.listTools(
+            undefined,
+            await requestOptions(record.owner),
+          )
+        : { tools: [] };
       ensureOpen(record);
       const tools = discovered.tools.filter(isModelVisibleMcpTool);
       for (const tool of tools)
@@ -353,7 +391,33 @@ export function createTaskMcpService(deps: {
             inputSchema: tool.inputSchema,
           }),
         );
-      if (!record.sourceName) registerTools(record, tools);
+      if (!record.sourceName) {
+        registerTools(record, tools);
+        if (record.client.getServerCapabilities()?.resources) {
+          const resources = registerMcpResourceTools({
+            registry: deps.registry,
+            sourceId: `task:${record.key}`,
+            sourceName: record.input.name,
+            configurationVersion: mcpConfigurationVersion({
+              configuration: record.signature,
+              branchGeneration: record.owner.branchGeneration,
+            }),
+            allowRun: ({ scopeHandle }) =>
+              !closed &&
+              !record.closing &&
+              record.status === "connected" &&
+              Boolean(
+                scopeHandle &&
+                  taskKey(scopeHandle.describe()) === taskKey(record.scope) &&
+                  scopeHandle.branchGeneration ===
+                    record.owner.branchGeneration,
+              ),
+            call: (request, context) => readResource(record, request, context),
+          });
+          record.toolNames.push(...resources.names);
+          record.disposeTools.push(resources.dispose);
+        }
+      }
       record.status = "connected";
       return publicStatus(record);
     } catch (error) {
@@ -473,31 +537,43 @@ export function createTaskMcpService(deps: {
     if (failure?.status === "rejected") throw failure.reason;
   };
 
+  const configuredConnection = async (
+    source: McpConnectionConfiguration,
+    context: ToolExecutionContext,
+  ) => {
+    const owner = taskMcpContext(context);
+    const input = taskMcpInstallSchema.parse({
+      name: `instance_${source.name}`,
+      command: source.command,
+      args: source.args,
+      env: source.env,
+    });
+    await start(input, context, source.name);
+    const record = records.get(
+      JSON.stringify([owner.scope.instanceId, owner.scope.taskId, input.name]),
+    );
+    if (!record)
+      throw new TaskMcpError("mcp_closed", "MCP连接已关闭，请重新连接。");
+    return record;
+  };
+
   return {
+    async readConfiguredResource(source, request, context) {
+      return readResource(
+        await configuredConnection(source, context),
+        request,
+        context,
+      );
+    },
     async callConfigured(source, tool, args, context) {
       assertModelVisibleMcpTool(tool);
-      const owner = taskMcpContext(context);
-      const input = taskMcpInstallSchema.parse({
-        name: `instance_${source.name}`,
-        command: source.command,
-        args: source.args,
-        env: source.env,
-      });
-      await start(input, context, source.name);
-      const record = records.get(
-        JSON.stringify([
-          owner.scope.instanceId,
-          owner.scope.taskId,
-          input.name,
-        ]),
-      );
+      const record = await configuredConnection(source, context);
       if (
-        !record ||
         record.toolSchemas.get(tool.name) !==
-          mcpConfigurationVersion({
-            name: tool.name,
-            inputSchema: tool.inputSchema,
-          })
+        mcpConfigurationVersion({
+          name: tool.name,
+          inputSchema: tool.inputSchema,
+        })
       )
         throw new TaskMcpError(
           "mcp_schema_changed",

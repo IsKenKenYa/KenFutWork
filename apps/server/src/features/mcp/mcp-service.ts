@@ -8,6 +8,12 @@ import type { ServerEnv } from "../../config/env.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import {
+  type McpResourceRequest,
+  type McpResourceResult,
+  registerMcpResourceTools,
+  requestMcpResource,
+} from "./mcp-resource-tools.js";
+import {
   assertMcpContribution,
   assertModelVisibleMcpTool,
   isModelVisibleMcpTool,
@@ -131,6 +137,11 @@ export function createMcpService(options: {
     context: ToolExecutionContext,
     remoteCall: () => Promise<unknown>,
   ) => Promise<unknown>;
+  readConfiguredResource?: (
+    source: McpConnectionConfiguration,
+    request: McpResourceRequest,
+    context: ToolExecutionContext,
+  ) => Promise<McpResourceResult>;
   onDisconnect?: (name: string) => Promise<void>;
 }): McpService {
   /** name → 已连接（含工具注销器）。 */
@@ -177,6 +188,10 @@ export function createMcpService(options: {
       name: "kenfutwork-server",
       version: options.env.version,
     });
+    const registrations: Array<() => void> = [];
+    const disposeRegistrations = () => {
+      for (const dispose of registrations.splice(0).reverse()) dispose();
+    };
     let closedDuringConnect = false;
     mcpClient.onclose = () => {
       closedDuringConnect = true;
@@ -263,7 +278,9 @@ export function createMcpService(options: {
             await requestOptions(signal),
           ),
       };
-      const { tools } = await client.listTools();
+      const { tools } = mcpClient.getServerCapabilities()?.tools
+        ? await client.listTools()
+        : { tools: [] };
       const modelTools = tools.filter(isModelVisibleMcpTool);
       ensureOpen();
       if (closedDuringConnect) throw new Error("MCP握手期间连接已经关闭。");
@@ -292,24 +309,78 @@ export function createMcpService(options: {
           );
         },
       };
-      const disposeTools = registerMcpServerTools(
-        options.registry,
-        name,
-        modelTools,
-        taskClient,
-        mcpConfigurationVersion(source),
+      registrations.push(
+        registerMcpServerTools(
+          options.registry,
+          name,
+          modelTools,
+          taskClient,
+          mcpConfigurationVersion(source),
+        ),
       );
+      let resourceCount = 0;
+      if (mcpClient.getServerCapabilities()?.resources) {
+        const resources = registerMcpResourceTools({
+          registry: options.registry,
+          sourceId: `instance:${name}`,
+          sourceName: name,
+          configurationVersion: mcpConfigurationVersion(source),
+          async call(request, context) {
+            const owner = taskMcpContext(context);
+            const current = () => {
+              ensureOpen();
+              if (connections.get(name)?.client !== mcpClient)
+                throw new Error("MCP资源连接已改变，请重新发起读取。");
+            };
+            try {
+              let result: McpResourceResult;
+              if (source.kind === "stdio") {
+                if (!options.readConfiguredResource)
+                  throw new Error("MCP资源缺少Task执行接线，请重启应用。");
+                current();
+                result = await options.readConfiguredResource(
+                  source,
+                  request,
+                  context,
+                );
+              } else {
+                const requestConfig = await requestOptions(owner.signal);
+                await refreshMcpScope(owner);
+                current();
+                result = await requestMcpResource(
+                  mcpClient,
+                  request,
+                  requestConfig,
+                );
+              }
+              await refreshMcpScope(owner);
+              current();
+              return result;
+            } catch (error) {
+              owner.signal?.throwIfAborted();
+              throw mcpFailure(
+                error,
+                { ...source.env, ...source.headers },
+                "mcp_resource_failed",
+              );
+            }
+          },
+        });
+        registrations.push(resources.dispose);
+        resourceCount = resources.names.length;
+      }
       connections.set(name, {
         client: mcpClient,
-        disposeTools,
-        toolCount: modelTools.length,
+        disposeTools: disposeRegistrations,
+        toolCount: modelTools.length + resourceCount,
         call: taskClient.callTool,
       });
       failures.delete(name);
       console.log(
-        `[mcp] server ${name} connected, ${modelTools.length} tools registered.`,
+        `[mcp] server ${name} connected, ${modelTools.length + resourceCount} tools registered.`,
       );
     } catch (error) {
+      disposeRegistrations();
       await mcpClient.close().catch(() => {});
       const message = mcpFailure(error, spec.env, "mcp_connect_failed").message;
       failures.set(name, message);

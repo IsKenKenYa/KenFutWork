@@ -103,6 +103,10 @@ export function createMcpPlugin(): PluginDefinition {
             ? tasks.callConfigured(source, tool, args, context)
             : remoteCall();
         },
+        readConfiguredResource: (source, request, context) => {
+          if (!tasks) throw new Error("MCP Task工作域未加载，请重启应用。");
+          return tasks.readConfiguredResource(source, request, context);
+        },
         onDisconnect: (name) => tasks?.closeSource(name) ?? Promise.resolve(),
       });
     },

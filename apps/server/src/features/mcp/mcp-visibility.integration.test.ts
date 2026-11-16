@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -10,18 +10,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ServerEnv } from "../../config/env.js";
-import { AgentRunEventBus, ToolRegistryImpl } from "../../kernel/context.js";
-import type { ToolExecutionContext } from "../../kernel/types.js";
-import { createScopeRepository } from "../execution/scope-repository.js";
-import { createExecutionScopes } from "../execution/scope-service.js";
-import { createProcessSandbox } from "../process-sandbox/service.js";
-import { createSettingsRepository } from "../settings/repository.js";
-import { createSettingsService } from "../settings/settings-service.js";
-import { createTaskWorkDatabase } from "../task-work/test-postgres-schema.js";
-import { createMcpService } from "./mcp-service.js";
-import { createMcpServerStore } from "./server-store.js";
-import { createTaskMcpService } from "./task-mcp-service.js";
+import { createMcpIntegrationFixture } from "./mcp-integration.fixture.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -46,75 +35,9 @@ const toolList = () => [
 ];
 
 async function fixture() {
-  const database = await createTaskWorkDatabase();
-  cleanups.push(() => database.close());
-  const scope = database.context.scope;
-  const sql = database.persistence.forInstance(database.instanceId);
-  await sql.execute(
-    "insert into public.chat_sessions(id,instance_id,project_id,mode,created_by_client_id,thread_id) values($1,:instance,$2,'code',$3,$4)",
-    [
-      scope.taskId,
-      scope.projectId,
-      database.actor.accessClientId,
-      randomUUID(),
-    ],
+  return createMcpIntegrationFixture(toolList(), (close) =>
+    cleanups.push(close),
   );
-  await sql.execute(
-    "update public.code_ui_sessions set chat_session_id=$1 where instance_id=:instance and id=$1",
-    [scope.taskId],
-  );
-  const handle = await createExecutionScopes({
-    repository: createScopeRepository(database.persistence),
-    localInstance: database.localInstance,
-  }).openTask(database.actor, scope.taskId);
-  const registry = new ToolRegistryImpl(new AgentRunEventBus());
-  const settings = createSettingsService({
-    repository: createSettingsRepository(database.persistence),
-    localInstance: database.localInstance,
-  });
-  const sandbox = createProcessSandbox({
-    captureRoot: join(database.directory, "capture"),
-    network: { allowedDomains: [], deniedDomains: [] },
-  });
-  cleanups.push(() => sandbox.close("可见性测试结束"));
-  const tasks = createTaskMcpService({
-    sandbox,
-    settings,
-    registry,
-    version: "test",
-  });
-  cleanups.push(() => tasks.shutdown("可见性测试结束"));
-  const service = createMcpService({
-    env: { version: "test" } as ServerEnv,
-    registry,
-    store: createMcpServerStore(database.persistence, database.localInstance),
-    executeTool: (source, metadata, args, context, remoteCall) =>
-      source.kind === "stdio"
-        ? tasks.callConfigured(source, metadata, args, context)
-        : remoteCall(),
-  });
-  cleanups.push(() => service.shutdown());
-  const context: ToolExecutionContext = {
-    scopeHandle: handle,
-    actor: database.actor,
-    instanceId: database.instanceId,
-    runId: database.context.runId,
-    toolCallId: "visibility-test",
-    taskWorkContext: database.context,
-  };
-  const resolved = () =>
-    registry.resolveRunTools({
-      preset: "code",
-      scopeHandle: handle,
-      backendFactory: () => handle.backend,
-    });
-  const root = scope.rootDirectory;
-  await copyFile(
-    new URL("./fixtures/mcp-visibility-server.mjs", import.meta.url),
-    join(root, "server.mjs"),
-  );
-  await writeFile(join(root, "tools.json"), JSON.stringify(toolList()));
-  return { database, root, context, registry, service, tasks, resolved };
 }
 
 async function httpServer(tools: Tool[]) {

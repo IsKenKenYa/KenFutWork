@@ -27,7 +27,9 @@ function definition(
   };
 }
 
-export function createTaskMcpTools(service: TaskMcpService): ToolDefinition[] {
+export function createTaskMcpTools(
+  service: Pick<TaskMcpService, "create" | "install" | "remove" | "list">,
+): ToolDefinition[] {
   const nameSchema = z.object({ name: z.string().trim().min(1) }).strict();
   return [
     definition(
