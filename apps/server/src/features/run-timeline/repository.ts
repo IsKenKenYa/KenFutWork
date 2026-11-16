@@ -68,6 +68,34 @@ type RawTaskRunRow = RawRunRow & {
   calls: string | number | null;
 };
 
+type RawTaskOwner = {
+  task_archived: boolean;
+  task_deleted_at: string | Date | null;
+  project_archived_at: string | Date | null;
+};
+
+// 尚未建立 agent_runs 的失败只读取原 Task 已保存的公开事件，不补写运行或执行边界。
+const FAILED_START_RUNS_SQL = `
+  select e.payload->>'runId' as id, e.root_session_id as session_id,
+         null::text as model, 'failed'::text as status, null::text as stop_reason,
+         'run_not_started'::text as error_code,
+         e.payload #>> '{error,message}' as error_message,
+         e.created_at, e.created_at as completed_at,
+         t.project_id, t.archived as task_archived, t.deleted_at as task_deleted_at,
+         p.archived_at as project_archived_at, e.seq, e.payload
+    from public.code_ui_events e
+    join public.code_ui_sessions t on t.id = e.root_session_id
+      and t.instance_id = e.instance_id
+    join public.projects p on p.id = t.project_id and p.instance_id = t.instance_id
+   where e.instance_id = :instance
+     and t.parent_session_id is null
+     and e.payload->>'type' = 'run.failed'
+     and jsonb_typeof(e.payload #> '{error,message}') = 'string'
+     and e.event_key = (e.payload->>'runId') || '/1'
+     and not exists (
+       select 1 from public.agent_runs r where r.id::text = e.payload->>'runId'
+     )`;
+
 /**
  * 时间线聚合的数据访问（只读）。
  * - 运行归属走 `agent_runs → chat_sessions` 的 `instance_id`；
@@ -90,28 +118,16 @@ export function createRunTimelineRepository(
         [runId],
       );
       if (!row) return null;
-      return {
-        runId: row.id,
-        rootSessionId: row.session_id,
-        model: row.model,
-        status: parseStatus(row.status),
-        stopReason: row.stop_reason,
-        errorCode: row.error_code,
-        errorMessage: row.error_message,
-        startedAt: toIso(row.created_at),
-        completedAt: row.completed_at === null ? null : toIso(row.completed_at),
-      } satisfies RunTimelineRunRow;
+      return runRow(row);
     },
 
     async loadRunForTask(input) {
       const row = await persistence.forInstance(input.instanceId).queryOne<
-        RawRunRow & {
-          task_archived: boolean;
-          task_deleted_at: string | Date | null;
-          project_archived_at: string | Date | null;
-          pre_checkpoint_failed: boolean;
-          post_checkpoint_failed: boolean;
-        }
+        RawRunRow &
+          RawTaskOwner & {
+            pre_checkpoint_failed: boolean;
+            post_checkpoint_failed: boolean;
+          }
       >(
         `select r.id, r.session_id, r.model, r.status, r.stop_reason,
                   r.error_code, r.error_message, r.created_at, r.completed_at,
@@ -137,24 +153,27 @@ export function createRunTimelineRepository(
               and b.phase = 'pre'`,
         [input.projectId, input.taskId, input.runId],
       );
-      if (!row) return null;
+      if (!row) {
+        const failedStart = await persistence
+          .forInstance(input.instanceId)
+          .queryOne<RawRunRow & RawEventRow & RawTaskOwner>(
+            `select * from (${FAILED_START_RUNS_SQL}) f
+           where f.project_id = $1 and f.session_id = $2 and f.id = $3`,
+            [input.projectId, input.taskId, input.runId],
+          );
+        if (!failedStart) return null;
+        const [failedStartEvent] = parseEventRows([failedStart]);
+        if (!failedStartEvent) return null;
+        return {
+          run: runRow(failedStart),
+          archived: isArchived(failedStart),
+          checkpointFailures: { pre: false, post: false },
+          failedStartEvent,
+        };
+      }
       return {
-        run: {
-          runId: row.id,
-          rootSessionId: row.session_id,
-          model: row.model,
-          status: parseStatus(row.status),
-          stopReason: row.stop_reason,
-          errorCode: row.error_code,
-          errorMessage: row.error_message,
-          startedAt: toIso(row.created_at),
-          completedAt:
-            row.completed_at === null ? null : toIso(row.completed_at),
-        },
-        archived:
-          row.task_archived ||
-          row.task_deleted_at !== null ||
-          row.project_archived_at !== null,
+        run: runRow(row),
+        archived: isArchived(row),
         checkpointFailures: {
           pre: row.pre_checkpoint_failed,
           post: row.post_checkpoint_failed,
@@ -235,7 +254,8 @@ export function createRunTimelineRepository(
       const rows = await persistence
         .forInstance(input.instanceId)
         .query<RawTaskRunRow>(
-          `select r.id, r.session_id, r.model, r.status, r.stop_reason,
+          `select * from (
+           select r.id::text as id, r.session_id, r.model, r.status, r.stop_reason,
                   r.error_code, r.error_message, r.created_at, r.completed_at,
                   u.input_tokens, u.output_tokens, u.cost_usd, u.calls
              from public.agent_turn_boundaries b
@@ -261,7 +281,17 @@ export function createRunTimelineRepository(
               and b.phase = 'pre'
               and not t.archived and t.deleted_at is null
               and p.archived_at is null
-            order by r.created_at desc
+            union all
+           select f.id, f.session_id, f.model, f.status, f.stop_reason,
+                  f.error_code, f.error_message, f.created_at, f.completed_at,
+                  null::bigint as input_tokens, null::bigint as output_tokens,
+                  null::numeric as cost_usd, null::bigint as calls
+             from (${FAILED_START_RUNS_SQL}) f
+            where f.project_id = $1 and f.session_id = $2
+              and not f.task_archived and f.task_deleted_at is null
+              and f.project_archived_at is null
+           ) runs
+            order by runs.created_at desc, runs.id desc
             limit $3`,
           [input.projectId, input.taskId, input.limit],
         );
@@ -285,6 +315,28 @@ export function createRunTimelineRepository(
       }));
     },
   };
+}
+
+function runRow(row: RawRunRow): RunTimelineRunRow {
+  return {
+    runId: row.id,
+    rootSessionId: row.session_id,
+    model: row.model,
+    status: parseStatus(row.status),
+    stopReason: row.stop_reason,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+    startedAt: toIso(row.created_at),
+    completedAt: row.completed_at === null ? null : toIso(row.completed_at),
+  };
+}
+
+function isArchived(row: RawTaskOwner): boolean {
+  return (
+    row.task_archived ||
+    row.task_deleted_at !== null ||
+    row.project_archived_at !== null
+  );
 }
 
 function parseStatus(value: unknown): RunTimelineRunRow["status"] {

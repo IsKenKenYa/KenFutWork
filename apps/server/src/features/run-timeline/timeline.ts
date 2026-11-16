@@ -248,7 +248,8 @@ export function buildRunTimeline(input: {
         kind: "run",
         seq: row.seq,
         at: event.timestamp,
-        title: "运行失败",
+        title:
+          input.run.errorCode === "run_not_started" ? "未开始运行" : "运行失败",
         status: "error",
         name: event.error.code,
         detail: withAfterCheckpoint(event.error.message),

@@ -84,15 +84,18 @@ function formatDuration(milliseconds: number): string {
     : `${(milliseconds / 1000).toFixed(1)}s`;
 }
 
-function spanDurationMs(
-  startedAt: string,
-  completedAt: string | null,
-): number | null {
-  if (!completedAt) return null;
-  const started = new Date(startedAt).getTime();
-  const completed = new Date(completedAt).getTime();
+function runDurationMs(run: RunSummary): number | null {
+  if (!run.completedAt || run.errorCode === "run_not_started") return null;
+  const started = new Date(run.startedAt).getTime();
+  const completed = new Date(run.completedAt).getTime();
   if (Number.isNaN(started) || Number.isNaN(completed)) return null;
   return Math.max(0, completed - started);
+}
+
+function statusLabel(run: RunSummary): string {
+  return run.errorCode === "run_not_started"
+    ? "未开始"
+    : RUN_STATUS_LABEL[run.status];
 }
 
 function usageLabel(run: RunSummary): string {
@@ -169,7 +172,7 @@ function RunTimelineContent({
     detailRead.state.status === "error" ? detailRead.state.message : null;
 
   const run = payload?.run;
-  const duration = run ? spanDurationMs(run.startedAt, run.completedAt) : null;
+  const duration = run ? runDurationMs(run) : null;
   const canShowMore =
     runs !== null && runs.length >= limit && limit < RUNS_MAX_LIMIT;
   const reachedLimit = runs !== null && runs.length >= RUNS_MAX_LIMIT;
@@ -201,10 +204,7 @@ function RunTimelineContent({
               <>
                 <ul className="max-h-72 space-y-1 overflow-auto text-ui-sm">
                   {runs.map((row) => {
-                    const rowDuration = spanDurationMs(
-                      row.startedAt,
-                      row.completedAt,
-                    );
+                    const rowDuration = runDurationMs(row);
                     return (
                       <li key={row.runId}>
                         <button
@@ -220,7 +220,7 @@ function RunTimelineContent({
                             {formatStarted(row.startedAt)}
                           </span>
                           <span className="shrink-0 text-foreground-subtle">
-                            {RUN_STATUS_LABEL[row.status]}
+                            {statusLabel(row)}
                           </span>
                           <span className="min-w-0 flex-1 truncate">
                             {row.model ?? "模型 未记录"}
@@ -288,7 +288,7 @@ function RunTimelineContent({
             ) : (
               <>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-ui-sm">
-                  <span>状态 {RUN_STATUS_LABEL[run.status]}</span>
+                  <span>状态 {statusLabel(run)}</span>
                   <span>模型 {run.model ?? "未记录"}</span>
                   {duration === null ? null : (
                     <span>耗时 {formatDuration(duration)}</span>

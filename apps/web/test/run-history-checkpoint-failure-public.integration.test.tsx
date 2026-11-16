@@ -27,6 +27,7 @@ type Fixture = PublicFixture & {
   database: {
     persistence: {
       query<T>(sql: string, values: unknown[]): Promise<T[]>;
+      execute(sql: string, values?: unknown[]): Promise<number>;
     };
   };
 };
@@ -63,24 +64,28 @@ async function readBoundaryFiles(fixture: Fixture, runId: string) {
   );
 }
 
+async function historyTestRuntime() {
+  const fixturePath = fileURLToPath(
+    new URL(
+      "../../server/src/features/code-ui/code-ui-http.fixture.ts",
+      import.meta.url,
+    ),
+  );
+  return Promise.all([
+    import(fixturePath) as Promise<{
+      createCodeUiHttpFixture(options: {
+        governanceEnv: AgentGovernanceOverrides;
+      }): Promise<Fixture>;
+    }>,
+    import("../../server/src/features/code-ui/host-session.fixture.js"),
+    import("../../server/src/features/code-ui/model-stream.fixture.js"),
+  ]);
+}
+
 it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "实际检查点保存失败会出现在对应轮次且不改变完成状态",
   async () => {
-    const fixturePath = fileURLToPath(
-      new URL(
-        "../../server/src/features/code-ui/code-ui-http.fixture.ts",
-        import.meta.url,
-      ),
-    );
-    const [http, sessions, models] = await Promise.all([
-      import(fixturePath) as Promise<{
-        createCodeUiHttpFixture(options: {
-          governanceEnv: AgentGovernanceOverrides;
-        }): Promise<Fixture>;
-      }>,
-      import("../../server/src/features/code-ui/host-session.fixture.js"),
-      import("../../server/src/features/code-ui/model-stream.fixture.js"),
-    ]);
+    const [http, sessions, models] = await historyTestRuntime();
     // 运行真实本机助手，避免编译器首启的耗时成为第二个故障源。
     const fixture = await http.createCodeUiHttpFixture({
       governanceEnv: {
@@ -204,6 +209,102 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       await view.findByText(afterMessage, { exact: false });
       expect(view.getByText("状态 已完成")).toBeTruthy();
       expect(view.queryByText(beforeMessage, { exact: false })).toBeNull();
+    } finally {
+      view?.unmount();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      releaseDom?.();
+      vi.unstubAllGlobals();
+      await host?.dispose();
+      await model.close();
+      await fixture.close();
+    }
+  },
+  120_000,
+);
+
+it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
+  "启动前失败在原运行记录显示未开始并保留处理方法",
+  async () => {
+    const [http, sessions, models] = await historyTestRuntime();
+    const fixture = await http.createCodeUiHttpFixture({ governanceEnv: {} });
+    const model = await models.heldModel();
+    let host: Host | undefined;
+    let releaseDom: (() => void) | undefined;
+    let view: ReturnType<typeof render> | undefined;
+    try {
+      const task = await sessions.createCodeSessionFixture(model.baseUrl, {
+        client: fixture.client,
+        initializeGit: false,
+      });
+      host = task;
+      await fixture.database.persistence.execute(
+        "create function public.reject_start_history() returns trigger language plpgsql as $$ begin raise exception 'PRIVATE_START_HISTORY_FAILURE'; end $$",
+      );
+      await fixture.database.persistence.execute(
+        "create trigger reject_start_history before insert on public.agent_runs for each row execute function public.reject_start_history()",
+      );
+      expect(
+        (await task.command("sendText", { text: "这次无法开始" })).body.result
+          .status,
+      ).toBe("accepted");
+      await vi.waitFor(
+        async () =>
+          expect(
+            zcodeUiProtocol.conversationSnapshotSchema.parse(
+              await task.snapshot(),
+            ).control.phase,
+          ).toBe("error"),
+        { timeout: 30_000 },
+      );
+      expect(model.requests).toHaveLength(0);
+      const history = await task.client.request(
+        `/api/agent/tasks/${task.sessionId}/runs?projectId=${task.projectId}`,
+      );
+      const [attempt] = taskRunsResponseSchema.parse(history.body).runs;
+      if (!attempt) throw new Error("未开始的尝试没有保存到原任务");
+      releaseDom = await installCodePublicHostDom();
+      const [
+        { RunHistoryEntry },
+        { setSurfaceApiBase },
+        { useZCodeSessionStore },
+      ] = await Promise.all([
+        import("../src/components/workbench/zcode/host/RunTimelineDialog.js"),
+        import("../src/components/workbench/zcode/host/surfaceApi.js"),
+        import("@zui/store/zcodeSessionStore.js"),
+      ]);
+      const nativeFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+        nativeFetch(url, {
+          ...init,
+          headers: { origin: fixture.origin, cookie: fixture.cookie },
+        }),
+      );
+      setSurfaceApiBase(fixture.baseUrl);
+      const identity = JSON.stringify([task.projectId, task.workspacePath]);
+      useZCodeSessionStore
+        .getState()
+        .setActiveTaskId(task.workspacePath, task.sessionId, identity);
+      view = render(
+        <RunHistoryEntry
+          workspacePath={task.workspacePath}
+          workspaceIdentity={identity}
+        />,
+      );
+      fireEvent.click(view.getByTestId("run-history-trigger"));
+      const row = await view.findByTestId(`run-row-${attempt.runId}`);
+      expect(row.textContent).toContain("未开始");
+      expect(row.textContent).not.toContain("耗时");
+      fireEvent.click(row);
+      await view.findByText("状态 未开始");
+      expect(view.getByText("未开始运行")).toBeTruthy();
+      expect(
+        view.getAllByText("无法保存运行记录，请检查本机存储后重试。").length,
+      ).toBeGreaterThan(0);
+      expect(view.queryByText(/耗时/)).toBeNull();
+      expect(view.container.textContent).not.toContain(
+        "PRIVATE_START_HISTORY_FAILURE",
+      );
+      expect(model.requests).toHaveLength(0);
     } finally {
       view?.unmount();
       await new Promise<void>((resolve) => setTimeout(resolve, 0));

@@ -1,5 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
+import {
+  zcodeUiProtocol as protocol,
+  runTimelineResponseSchema,
+  taskRunsResponseSchema,
+} from "@kenfutwork/shared";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { createCodeUiHttpFixture } from "./code-ui-http.fixture.js";
@@ -98,6 +102,159 @@ async function insertBarrier(fixture: Fixture, taskId: string) {
 
 async function snapshot(host: Host) {
   return protocol.conversationSnapshotSchema.parse(await host.snapshot());
+}
+
+async function readFailedStartHistory(
+  fixture: Fixture,
+  task: Host,
+  message: string,
+) {
+  const historyPath = `/api/agent/tasks/${task.sessionId}/runs?projectId=${task.projectId}`;
+  const history = await fixture.client.request(historyPath);
+  expect(history.status).toBe(200);
+  const attempts = taskRunsResponseSchema.parse(history.body);
+  expect(attempts.runs).toHaveLength(1);
+  const attempt = attempts.runs[0];
+  if (!attempt) throw new Error("失败的尝试未出现在运行记录中");
+  expect(attempt).toMatchObject({
+    status: "failed",
+    errorCode: "run_not_started",
+    errorMessage: message,
+    model: null,
+    usage: null,
+  });
+  const timelinePath = `/api/agent/tasks/${task.sessionId}/runs/${attempt.runId}/timeline?projectId=${task.projectId}`;
+  const detail = await fixture.client.request(timelinePath);
+  expect(detail.status).toBe(200);
+  const timeline = runTimelineResponseSchema.parse(detail.body);
+  expect(timeline.run).toMatchObject(attempt);
+  expect(timeline.entries).toEqual([
+    expect.objectContaining({
+      title: "未开始运行",
+      status: "error",
+      detail: message,
+    }),
+  ]);
+  const exported = await fetch(
+    `${fixture.baseUrl}${timelinePath.replace("/timeline?", "/timeline/export?")}`,
+    {
+      headers: {
+        origin: fixture.origin,
+        cookie: fixture.cookie,
+        connection: "close",
+      },
+    },
+  );
+  expect(exported.status).toBe(200);
+  const markdown = await exported.text();
+  expect(markdown).toContain("状态：未开始");
+  expect(markdown).toContain(message);
+  expect(markdown).not.toContain("- 开始：");
+  expect(markdown).not.toContain("PRIVATE_RUN_RECORD_FAILURE");
+  return { historyPath, timelinePath, attempts, attempt };
+}
+
+async function verifyFailedStartOwnership(
+  fixture: Fixture,
+  task: Host,
+  runId: string,
+) {
+  const sibling = await task.stream.rpc("sendConversationCommandV4", [
+    {
+      workspacePath: task.workspacePath,
+      projectId: task.projectId,
+      envelope: {
+        commandId: randomUUID(),
+        clientId: task.clientId,
+        sessionId: null,
+        type: "createSession",
+        payload: { workspaceId: task.projectId },
+        issuedAt: Date.now(),
+      },
+    },
+  ]);
+  expect(sibling.status).toBe(200);
+  const siblingId = sibling.body.result.result.sessionId as string;
+  const path = `/api/agent/tasks/${task.sessionId}/runs/${runId}/timeline`;
+  expect(
+    (
+      await fixture.client.request(
+        `${path.replace(task.sessionId, siblingId)}?projectId=${task.projectId}`,
+      )
+    ).status,
+  ).toBe(404);
+  const projectId = randomUUID();
+  const sql = fixture.database.persistence.forInstance(
+    fixture.actor.instanceId,
+  );
+  await sql.execute(
+    "insert into public.projects(id,instance_id,name,slug,kind,work_dir,enabled_modes) values($1,:instance,'失败历史归属',$2,'code',$3,array['code'])",
+    [projectId, `start-failure-${projectId}`, task.workspacePath],
+  );
+  const moved = await task.client.request("/api/code-ui/rpc", {
+    service: "project",
+    method: "moveTask",
+    args: [
+      {
+        task: { taskId: task.sessionId, workspacePath: task.workspacePath },
+        sourceProjectId: task.projectId,
+        projectId,
+        observedRevision: (await snapshot(task)).revision,
+        addMissingRoot: false,
+      },
+    ],
+  });
+  expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+  expect(
+    (await fixture.client.request(`${path}?projectId=${projectId}`)).status,
+  ).toBe(200);
+  expect(
+    (await fixture.client.request(`${path}?projectId=${task.projectId}`))
+      .status,
+  ).toBe(404);
+  const list = await fixture.client.request(
+    `/api/agent/tasks/${task.sessionId}/runs?projectId=${projectId}`,
+  );
+  expect(
+    taskRunsResponseSchema.parse(list.body).runs.map((run) => run.runId),
+  ).toContain(runId);
+  await sql.execute(
+    "update public.projects set archived_at=now() where id=$1 and instance_id=:instance",
+    [projectId],
+  );
+  expect(
+    (await fixture.client.request(`${path}?projectId=${projectId}`)).status,
+  ).toBe(409);
+  const archived = await fixture.client.request(
+    `/api/agent/tasks/${task.sessionId}/runs?projectId=${projectId}`,
+  );
+  expect(taskRunsResponseSchema.parse(archived.body).runs).toEqual([]);
+  await sql.execute(
+    "update public.projects set archived_at=null where id=$1 and instance_id=:instance",
+    [projectId],
+  );
+  const deleted = await task.client.request("/api/code-ui/rpc", {
+    service: "zcode-task",
+    method: "deleteTask",
+    args: [
+      {
+        taskId: task.sessionId,
+        projectId,
+        workspacePath: task.workspacePath,
+        workspaceIdentity: JSON.stringify([projectId, task.workspacePath]),
+      },
+    ],
+  });
+  expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
+  expect(
+    (await fixture.client.request(`${path}?projectId=${projectId}`)).status,
+  ).toBe(404);
+  expect(
+    await sql.query(
+      "select seq from public.code_ui_events where root_session_id=$1 and instance_id=:instance",
+      [task.sessionId],
+    ),
+  ).toEqual([]);
 }
 
 async function dispatchInvalidatedInput(
@@ -242,6 +399,11 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(event?.payload).toMatchObject({
           error: { message: failed.control.lastError?.message },
         });
+        const { historyPath, attempts, attempt } = await readFailedStartHistory(
+          fixture,
+          task,
+          "无法保存运行记录，请检查本机存储后重试。",
+        );
         await fixture.database.persistence.execute(
           "drop trigger reject_test_run_record on public.agent_runs",
         );
@@ -253,6 +415,11 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(replay.body.result.status).toBe("duplicate");
         expect(model.requests).toHaveLength(0);
         expect(
+          taskRunsResponseSchema.parse(
+            (await fixture.client.request(historyPath)).body,
+          ).runs,
+        ).toEqual(attempts.runs);
+        expect(
           (await task.command("sendText", { text: "修复存储后的新一轮" })).body
             .result.status,
         ).toBe("accepted");
@@ -261,6 +428,15 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         await vi.waitFor(async () =>
           expect((await snapshot(task)).control.phase).toBe("completedSuccess"),
         );
+        const recovered = taskRunsResponseSchema.parse(
+          (await fixture.client.request(historyPath)).body,
+        );
+        expect(recovered.runs).toHaveLength(2);
+        expect(
+          recovered.runs.filter((run) => run.runId === attempt.runId),
+        ).toEqual([attempt]);
+        expect(recovered.runs[0]?.status).toBe("completed");
+        await verifyFailedStartOwnership(fixture, task, attempt.runId);
       } finally {
         await host?.dispose();
         await model.close();

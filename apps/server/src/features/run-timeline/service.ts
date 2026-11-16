@@ -15,8 +15,14 @@ export function createRunTimelineService(deps: {
   const load = async (
     instanceId: string,
     runId: string,
-    checkpointFailures: RunTimelineTaskRunRow["checkpointFailures"],
+    scoped: RunTimelineTaskRunRow,
   ): Promise<RunTimelineResult> => {
+    if (scoped.failedStartEvent)
+      return buildRunTimeline({
+        run: scoped.run,
+        events: [scoped.failedStartEvent],
+        usage: null,
+      });
     const run = await deps.repository.loadRun(instanceId, runId);
     if (!run) throw new RunTimelineError("not_found");
     const [events, usage, childSessions] = await Promise.all([
@@ -42,7 +48,7 @@ export function createRunTimelineService(deps: {
         children,
       }),
       usage,
-      checkpointFailures,
+      checkpointFailures: scoped.checkpointFailures,
     });
   };
 
@@ -51,18 +57,14 @@ export function createRunTimelineService(deps: {
       const scoped = await deps.repository.loadRunForTask(input);
       if (!scoped) throw new RunTimelineError("not_found");
       if (scoped.archived) throw new RunTimelineError("archived");
-      return load(input.instanceId, input.runId, scoped.checkpointFailures);
+      return load(input.instanceId, input.runId, scoped);
     },
 
     async exportMarkdown(input) {
       const scoped = await deps.repository.loadRunForTask(input);
       if (!scoped) throw new RunTimelineError("not_found");
       if (scoped.archived) throw new RunTimelineError("archived");
-      const timeline = await load(
-        input.instanceId,
-        input.runId,
-        scoped.checkpointFailures,
-      );
+      const timeline = await load(input.instanceId, input.runId, scoped);
       return {
         markdown: renderRunTimelineMarkdown(timeline, {
           maxBytes: input.maxBytes,

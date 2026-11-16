@@ -33,14 +33,19 @@ export function renderRunTimelineMarkdown(
   options?: { maxBytes?: number },
 ): string {
   const run = timeline.run;
+  const notStarted = run.errorCode === "run_not_started";
   const lines: string[] = [
     `# 运行时间线 · ${escapeInline(run.runId)}`,
     "",
-    `- 状态：${escapeInline(run.status)}`,
+    `- 状态：${notStarted ? "未开始" : escapeInline(run.status)}`,
     `- 模型：${run.model ? escapeInline(run.model) : "未记录"}`,
-    `- 开始：${escapeInline(run.startedAt)}`,
-    `- 完成：${run.completedAt ? escapeInline(run.completedAt) : "仍在运行或未收尾"}`,
-    `- 时长：${describeDuration(run.startedAt, run.completedAt)}`,
+    ...(notStarted
+      ? [`- 记录时间：${escapeInline(run.startedAt)}`]
+      : [
+          `- 开始：${escapeInline(run.startedAt)}`,
+          `- 完成：${run.completedAt ? escapeInline(run.completedAt) : "仍在运行或未收尾"}`,
+          `- 时长：${describeDuration(run.startedAt, run.completedAt)}`,
+        ]),
     `- 用量：${describeUsage(run.usage)}`,
   ];
   if (run.stopReason) lines.push(`- 停止原因：${escapeInline(run.stopReason)}`);
