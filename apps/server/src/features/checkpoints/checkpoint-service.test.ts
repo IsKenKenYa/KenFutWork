@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   mkdir,
   mkdtemp,
@@ -25,10 +24,8 @@ import {
   createCheckpointService,
 } from "./checkpoint-service.js";
 import { createInMemoryCheckpointRepository } from "./repository.js";
-import {
-  createShadowGitClient,
-  type ExecShadowGit,
-} from "./shadow-git-client.js";
+import { createShadowGitClient } from "./shadow-git-client.js";
+import { execTestShadowGit as exec } from "./shadow-git-test.fixture.js";
 
 const INSTANCE_ID = "2cdb5c27-a1f7-4109-9927-40e0b0822956";
 const PROJECT_ID = "c15b75a5-b7ef-46b5-8b0c-d543dd7769d5";
@@ -45,33 +42,6 @@ afterEach(async () => {
       .map((path) => rm(path, { recursive: true, force: true })),
   );
 });
-// Git 存储语义的测试执行替身；不作为真实 ProcessSandbox enforcement 证据。
-const exec: ExecShadowGit = async (args, directory, input) => {
-  try {
-    return {
-      code: 0,
-      stderr: "",
-      stdout: execFileSync("git", ["--no-optional-locks", ...args], {
-        cwd: directory.workTree,
-        env: {
-          ...process.env,
-          GIT_DIR: directory.gitDir,
-          GIT_WORK_TREE: directory.workTree,
-        },
-        encoding: "utf8",
-        ...(input === undefined ? {} : { input }),
-        stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-      }),
-    };
-  } catch (error) {
-    const failure = error as { status?: number; stderr?: Buffer };
-    return {
-      code: failure.status ?? 1,
-      stderr: failure.stderr?.toString() ?? "失败",
-      stdout: "",
-    };
-  }
-};
 async function world() {
   const base = await realpath(
     await mkdtemp(join(tmpdir(), "kfw-checkpoint-task-")),

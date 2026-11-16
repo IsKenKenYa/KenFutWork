@@ -11,12 +11,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExecShadowGit } from "./shadow-git-client.js";
 import {
   createShadowGitClient,
   SHADOW_EXCLUDES,
   type ShadowGitScope,
 } from "./shadow-git-client.js";
+import { execTestShadowGit as exec } from "./shadow-git-test.fixture.js";
 
 /**
  * 影子 git（Code 模式检查点核心）。
@@ -26,37 +26,6 @@ import {
  * 「嵌套仓库隐形」「read-tree 恢复含删除」「ignore 文件不动」这些行为。
  */
 
-// 纯 Git 客户端语义测试的执行替身；生产执行只走 ProcessSandbox。
-const exec: ExecShadowGit = async (args, scope, input) => {
-  try {
-    return {
-      code: 0,
-      stderr: "",
-      stdout: execFileSync("git", ["--no-optional-locks", ...args], {
-        cwd: scope.workTree,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          GIT_DIR: scope.gitDir,
-          GIT_WORK_TREE: scope.workTree,
-        },
-        ...(input === undefined ? {} : { input }),
-        stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-      }),
-    };
-  } catch (error) {
-    const failure = error as {
-      status?: number;
-      stderr?: Buffer;
-      stdout?: Buffer;
-    };
-    return {
-      code: failure.status ?? 1,
-      stderr: failure.stderr?.toString() ?? "失败",
-      stdout: failure.stdout?.toString() ?? "",
-    };
-  }
-};
 const client = createShadowGitClient({
   exec,
   writeTextFile: async (path, content) => {
