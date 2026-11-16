@@ -4,7 +4,7 @@ import { createProcessRunCommand, type RunCommand } from "./exec.js";
 import { composeCommand, type EngineLaunch } from "./install.js";
 
 /**
- * 引擎栈容器清单：`docker compose -f <file> --profile dify ps --format json` 的
+ * 引擎栈容器清单：`docker compose -f <file> --profile dify ps --all --format json` 的
  * **运行期事实**（引擎信息页「各种各样的信息」里最实的那一块——容器在不在、健康不健康、
  * 端口映射是什么，全部来自 docker 自己报的，不猜配置文件）。
  *
@@ -44,7 +44,7 @@ export async function listEngineStackContainers(
       ...(options.envFile ? { envFile: options.envFile } : {}),
       ...(options.launch ? { launch: options.launch } : {}),
     },
-    ["--profile", "dify", "ps", "--format", "json"],
+    ["--profile", "dify", "ps", "--all", "--format", "json"],
   );
   const result = await run(command.command, command.args);
   if (result.code !== 0) {

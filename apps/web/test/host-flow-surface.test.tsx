@@ -379,8 +379,8 @@ it("shows an installed stack as ready after the host process restarts", async ()
     engineInfoResponse({
       containers: [
         {
-          service: "dify",
-          name: "kenfutwork-dify-dify-1",
+          service: "api",
+          name: "kenfutwork-dify-api-1",
           state: "running",
           health: "healthy",
           ports: ["127.0.0.1:15001->5001/tcp"],

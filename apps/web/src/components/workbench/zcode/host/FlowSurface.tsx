@@ -64,8 +64,7 @@ import { surfaceFetch, surfaceJson } from "./surfaceApi.js";
 
 const noSubscription = () => () => {};
 
-/** 引擎安装状态（与 shared 的 flowEngineInstallStatusSchema.state 同一枚举）。 */
-type FlowEngineInstallState = "idle" | "installing" | "ready" | "error";
+type FlowEngineInstallState = FlowHostEngineInfoResponse["install"]["state"];
 
 /**
  * 换一张一次性身份票据（本地实例身份缝）：宿主凭本机接入（cookie）换票，
@@ -560,8 +559,26 @@ function FlowCanvasConnection({
   );
 }
 
-/** `unreachable` = 查询容器清单失败（Docker 无响应等），与「未安装」不是一回事。 */
-type EngineDisplayState = FlowEngineInstallState | "unreachable";
+type EngineDisplayState = FlowEngineInstallState | "stopped" | "unreachable";
+
+export function resolveFlowEngineDisplayState(
+  state: FlowEngineInstallState,
+  info: Pick<FlowHostEngineInfoResponse, "install" | "stack"> | null,
+): EngineDisplayState {
+  const installState =
+    state === "idle" ? (info?.install.state ?? state) : state;
+  if (installState === "installing" || installState === "error" || !info)
+    return installState;
+  const { containers, error } = info.stack;
+  if (error) return "unreachable";
+  if (!containers.length) return "idle";
+  // 数据库或一次性初始化容器的状态不能代替 Dify API 的状态。
+  return containers.some(
+    ({ service, state }) => service === "api" && state === "running",
+  )
+    ? "ready"
+    : "stopped";
+}
 
 const ENGINE_STATE_META: Record<
   EngineDisplayState,
@@ -570,6 +587,7 @@ const ENGINE_STATE_META: Record<
   idle: { label: "未安装", className: "bg-hover text-foreground-subtle" },
   installing: { label: "安装中", className: "bg-hover text-foreground" },
   ready: { label: "已就绪", className: "bg-emerald-500/10 text-emerald-600" },
+  stopped: { label: "已停止", className: "bg-hover text-foreground-subtle" },
   error: { label: "安装失败", className: "bg-destructive/10 text-destructive" },
   unreachable: {
     label: "状态未知",
@@ -857,21 +875,8 @@ function EngineView() {
     void refresh();
   }, [refresh]);
 
-  // 状态以运行期事实为准：本进程的安装动作 > 安装记录 > 容器清单。
-  // 服务重启后安装记录归零（`idle`），栈在跑却不能显示成「未安装」；
-  // 容器清单读不到（Docker 无响应）也不是「未安装」，单独给 `unreachable`。
-  const stackContainers = info?.stack.containers ?? [];
   const stackError = info?.stack.error ?? null;
-  const engineState: EngineDisplayState =
-    state !== "idle"
-      ? state
-      : info?.install.state && info.install.state !== "idle"
-        ? info.install.state
-        : stackContainers.length > 0
-          ? "ready"
-          : stackError
-            ? "unreachable"
-            : "idle";
+  const engineState = resolveFlowEngineDisplayState(state, info);
   // 安装中静默轮询：日志尾随和容器状态都跟着走，不闪 loading。
   // 查询失败（Docker 未就绪）按 10s 自愈重试，容器服务回来后不用手动刷新。
   // 一次性局部常量：页面轮询节奏，不进治理表（治理表管 agent 限额与工具超时）。
@@ -894,6 +899,7 @@ function EngineView() {
   const wslPath = info?.probe.paths.find((path) => path.id === "wsl2");
   const wslUsable = Boolean(wslPath?.available && wslPath?.distro);
   const activeLaunch: FlowEngineLaunch =
+    (engineState === "stopped" ? info?.runtime : undefined) ??
     launchChoice ??
     (info?.probe.recommended === "wsl2" && wslUsable
       ? { kind: "wsl2", distro: wslPath?.distro ?? "" }
@@ -983,7 +989,7 @@ function EngineView() {
               )
             ) : engineState === "unreachable" ? null : (
               <>
-                {wslUsable ? (
+                {wslUsable && engineState !== "stopped" ? (
                   <div className="flex items-center gap-1 rounded-full bg-hover/60 p-1">
                     <button
                       type="button"
@@ -1013,7 +1019,11 @@ function EngineView() {
                   onClick={() => void install(activeLaunch)}
                   className="rounded-lg bg-primary px-3 py-1.5 text-xs text-primary-foreground transition-opacity hover:opacity-90"
                 >
-                  {engineState === "error" ? "重试安装" : "安装引擎栈"}
+                  {engineState === "stopped"
+                    ? "启动引擎"
+                    : engineState === "error"
+                      ? "重试安装"
+                      : "安装引擎栈"}
                 </button>
               </>
             )}
