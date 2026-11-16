@@ -54,6 +54,8 @@ export interface EngineInstallSnapshot {
 }
 
 const LOG_LINES_KEEP = 50;
+// 只保留本次安装的末尾输出用于识别错误，完整内容仍写入安装日志。
+const INSTALL_OUTPUT_TAIL_CHARS = 16_384;
 
 /** 进程内单例状态（服务重启后按 compose ps 重新探测，不持久化状态本身）。 */
 let current: {
@@ -387,6 +389,23 @@ export function planEngineAutoInstall(input: {
   return { action: "install" };
 }
 
+export function explainEngineStartFailure(output: string): string {
+  const daemonUnavailable =
+    /cannot connect to the docker daemon|failed to connect to the docker api/iu;
+  if (daemonUnavailable.test(output)) {
+    return "无法连接 Docker，请启动 Docker 后重试。";
+  }
+  const imagePullFailed =
+    /failed to resolve reference|failed to pull|error pulling/iu;
+  const timedOut =
+    /context deadline exceeded|i\/o timeout|connection timed out/iu;
+  const imageTimeout = output
+    .split(/\r?\n/u)
+    .some((line) => imagePullFailed.test(line) && timedOut.test(line));
+  if (imageTimeout) return "下载引擎镜像超时，请检查 Docker 的网络连接后重试。";
+  return "无法启动引擎，请查看安装日志后重试。";
+}
+
 /**
  * 启动安装（幂等）：已在安装中 → 409 由调用方处理；本函数只在 idle/error 时拉起。
  * detached spawn：node 重启不杀安装进程，但状态归零——重启后按 compose ps 重新探测（后续增量）。
@@ -439,10 +458,13 @@ export function startEngineInstall(
   });
   current.child = child;
   const installation = current;
+  let recentOutput = "";
 
   const append = (chunk: Buffer | string): void => {
+    const text = String(chunk);
+    recentOutput = (recentOutput + text).slice(-INSTALL_OUTPUT_TAIL_CHARS);
     try {
-      writeFileSync(logFile, String(chunk), { flag: "a" });
+      writeFileSync(logFile, text, { flag: "a" });
     } catch {
       // 日志写失败不影响安装本身
     }
@@ -459,7 +481,8 @@ export function startEngineInstall(
       if (current !== installation || current.state !== "installing") return;
       if (code !== 0) {
         current.state = "error";
-        current.error = `docker compose 退出码 ${code}（详见日志）`;
+        current.error = explainEngineStartFailure(recentOutput);
+        append(`\nDocker Compose 退出码：${code ?? "进程中断"}\n`);
         return;
       }
       try {

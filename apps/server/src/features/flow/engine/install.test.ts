@@ -6,6 +6,7 @@ import {
   cancelEngineInstall,
   composeCommand,
   ensureStackEnvFile,
+  explainEngineStartFailure,
   getEngineInstallSnapshot,
   planEngineAutoInstall,
   purgeEngineStack,
@@ -18,6 +19,17 @@ import {
   toWslPath,
   writeStackRuntime,
 } from "./install.js";
+
+it("镜像仓库超时提示检查网络，容器就绪超时仍引导查看日志", () => {
+  expect(
+    explainEngineStartFailure(
+      'Error response from daemon: failed to resolve reference "cr.weaviate.io/semitechnologies/weaviate:1.39.2": failed to do request: Head "https://registry-1.docker.io/v2/semitechnologies/weaviate/manifests/1.39.2": context deadline exceeded',
+    ),
+  ).toBe("下载引擎镜像超时，请检查 Docker 的网络连接后重试。");
+  expect(
+    explainEngineStartFailure("container api: health check timeout exceeded"),
+  ).toBe("无法启动引擎，请查看安装日志后重试。");
+});
 
 /**
  * 引擎栈停止/卸载（FORM-11 生命周期）：
