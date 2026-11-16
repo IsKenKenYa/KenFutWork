@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
-import type { createCodeUiHttpFixture } from "../../server/src/features/code-ui/code-ui-http.fixture.js";
 import { createCodeSessionFixture } from "../../server/src/features/code-ui/host-session.fixture.js";
 import { heldModel } from "../../server/src/features/code-ui/model-stream.fixture.js";
 import {
@@ -12,6 +11,7 @@ import {
   openOriginalSessionBrowser,
 } from "./setup/code-public-browser.fixture.mjs";
 import { clickExactText } from "./setup/code-public-browser-actions.js";
+import type { PublicFixture } from "./setup/code-public-session";
 
 const fixturePath = fileURLToPath(
   new URL(
@@ -22,16 +22,19 @@ const fixturePath = fileURLToPath(
 const iframe = 'iframe[title="插件页面"]';
 
 async function activate(page: OriginalSessionBrowser, label: string) {
-  await vi.waitFor(async () => {
-    const clicked = await page.evaluate(`(() => {
+  await vi.waitFor(
+    async () => {
+      const clicked = await page.evaluate(`(() => {
       const button = Array.from(document.querySelectorAll('button')).find(node =>
         node.textContent.trim() === ${JSON.stringify(label)} && node.checkVisibility());
       if (!button) return false;
       button.click();
       return true;
     })()`);
-    expect(clicked).toBe(true);
-  }, { timeout: 10_000 });
+      expect(clicked).toBe(true);
+    },
+    { timeout: 10_000 },
+  );
 }
 
 const runIntegration = process.env.RUN_CODE_UI_INTEGRATION === "1";
@@ -39,8 +42,9 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
   it("原 Task 连接交付页面与私有结果；关闭或停用后移除沙箱", async () => {
     const {
       createCodeUiHttpFixture: start,
-    }: { createCodeUiHttpFixture: typeof createCodeUiHttpFixture } =
-      await import(fixturePath);
+    }: {
+      createCodeUiHttpFixture(): Promise<PublicFixture & { origin: string }>;
+    } = await import(fixturePath);
     const fixture = await start();
     const name = "mcp__app_probe__show_card";
     const model = await heldModel({
@@ -63,7 +67,10 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       });
       const script = join(host.workspacePath, "app-probe.mjs");
       await copyFile(
-        new URL("../../server/src/features/mcp/fixtures/mcp-app-server.mjs", import.meta.url),
+        new URL(
+          "../../server/src/features/mcp/fixtures/mcp-app-server.mjs",
+          import.meta.url,
+        ),
         script,
       );
       const installed = await fixture.client.request("/api/mcp/servers", {
@@ -78,12 +85,15 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       expect(sent.status, JSON.stringify(sent.body)).toBe(200);
       const result = await vi.waitFor(
         async () => {
-          const current = protocol.conversationSnapshotSchema.parse(await snapshot());
-          const row = current.rows.window.find((item) =>
-            item.kind === "toolCall" && item.toolName === name,
+          const current = protocol.conversationSnapshotSchema.parse(
+            await snapshot(),
+          );
+          const row = current.rows.window.find(
+            (item) => item.kind === "toolCall" && item.toolName === name,
           );
           if (
-            row?.kind !== "toolCall" || row.output?.display?.kind !== "mcp_tool" ||
+            row?.kind !== "toolCall" ||
+            row.output?.display?.kind !== "mcp_tool" ||
             !row.output.display.appRef
           )
             throw new Error(JSON.stringify({ row }));
@@ -98,7 +108,9 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       model.finish(2);
       await vi.waitFor(
         async () => {
-          const current = protocol.conversationSnapshotSchema.parse(await snapshot());
+          const current = protocol.conversationSnapshotSchema.parse(
+            await snapshot(),
+          );
           expect(current.control.phase).toBe("completedSuccess");
         },
         { timeout: 15_000 },
@@ -112,23 +124,36 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       browser = await openOriginalSessionBrowser({
         backendBaseUrl: fixture.baseUrl,
         backendOrigin: fixture.origin,
-        accessToken: await fixture.app.kernel.get("localAccess").getDesktopToken(),
+        accessToken: await fixture.app.kernel
+          .get("localAccess")
+          .getDesktopToken(),
         workspacePath: host.workspacePath,
         projectId: host.projectId,
         sessionId: host.sessionId,
         clientId: host.clientId,
       });
       const page = browser;
-      const frameHeight = () => page.evaluate(
-        `document.querySelector(${JSON.stringify(iframe)})?.style.height ?? null`,
-      );
-      const requirePage = () => vi.waitFor(async () => {
-        const detail = await page.evaluate(
-          `Array.from(document.querySelectorAll('[role="alert"]')).map(node => node.textContent)`,
+      const frameHeight = () =>
+        page.evaluate(
+          `document.querySelector(${JSON.stringify(iframe)})?.style.height ?? null`,
         );
-        expect(await frameHeight(), JSON.stringify({ detail, errors: page.pageErrors })).toBe("173px");
-      }, { timeout: 15_000 });
-      const requireClosed = () => vi.waitFor(async () => expect(await frameHeight()).toBeNull(), { timeout: 10_000 });
+      const requirePage = () =>
+        vi.waitFor(
+          async () => {
+            const detail = await page.evaluate(
+              `Array.from(document.querySelectorAll('[role="alert"]')).map(node => node.textContent)`,
+            );
+            expect(
+              await frameHeight(),
+              JSON.stringify({ detail, errors: page.pageErrors }),
+            ).toBe("173px");
+          },
+          { timeout: 15_000 },
+        );
+      const requireClosed = () =>
+        vi.waitFor(async () => expect(await frameHeight()).toBeNull(), {
+          timeout: 10_000,
+        });
       expect(await frameHeight()).toBeNull();
       const historyButton = 'button[data-history-open="false"]';
       const history = await vi.waitFor(
