@@ -8,7 +8,7 @@ import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { losesExecutionRights } from "../process-sandbox/scope-change.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
-import { mcpAppClientCapabilities, type McpAppPages } from "./mcp-app-pages.js";
+import { type McpAppPages, mcpAppClientCapabilities } from "./mcp-app-pages.js";
 import {
   type McpResourceRequest,
   type McpResourceResult,
@@ -226,18 +226,23 @@ export function createTaskMcpService(deps: {
         { name, arguments: args },
         await requestOptions(owner),
       );
-      return tool && deps.pages ? deps.pages.capture({
+      if (!tool || !deps.pages) return result;
+      return deps.pages.capture({
         source: {
           client: record.client,
           current: () => !record.closing && records.get(record.key) === record,
-          read: async (uri, signal) => record.client.readResource({ uri }, await requestOptions({ ...owner, signal })),
+          read: async (uri, signal) =>
+            record.client.readResource(
+              { uri },
+              await requestOptions({ ...owner, signal }),
+            ),
         },
         tool,
         serverName: record.sourceName ?? record.input.name,
         context: execution,
         args,
         result,
-      }) : result;
+      });
     } catch (error) {
       throw mcpFailure(error, record.input.env, "mcp_call_failed");
     }

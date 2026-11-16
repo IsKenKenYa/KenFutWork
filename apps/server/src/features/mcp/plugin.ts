@@ -4,11 +4,11 @@ import type { PluginDefinition } from "../../kernel/types.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import { createCodeUiMcpHost } from "./code-ui-host.js";
-import { createMcpAppPages } from "./mcp-app-pages.js";
 import {
   createMcpEnvCredentialReader,
   MCP_ENV_CREDENTIAL_CAPABILITY,
 } from "./env-credential.js";
+import { createMcpAppPages } from "./mcp-app-pages.js";
 import { createMcpService, type McpService } from "./mcp-service.js";
 import { mcpConfigurationVersion } from "./mcp-tools.js";
 import { createMcpServerStore } from "./server-store.js";
@@ -131,7 +131,9 @@ export function createMcpPlugin(): PluginDefinition {
       }
       for (const [id, value] of Object.entries(pages.handlers))
         ctx.effect(() =>
-          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+          ctx
+            .get("capabilities")
+            .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
         );
       // 两种工作方式都通过固定Task目录与同一沙箱创建MCP工具源。
       // 注册放 mounted（不是 apply）：apply 期 ctx.get 只解析得到「更早 apply 的插件」的
@@ -222,9 +224,11 @@ export function createMcpPlugin(): PluginDefinition {
           .get("executionScopes")
           .onRevoke(({ previous, next }) => taskService.revoke(previous, next)),
       );
-      ctx.effect(() => ctx.get("executionScopes").onUpdated(async ({ previous }) => {
-        pages.closeTask(previous.instanceId, previous.taskId);
-      }));
+      ctx.effect(() =>
+        ctx.get("executionScopes").onUpdated(async ({ previous }) => {
+          pages.closeTask(previous.instanceId, previous.taskId);
+        }),
+      );
       ctx.effect(() =>
         ctx
           .get("taskWork")

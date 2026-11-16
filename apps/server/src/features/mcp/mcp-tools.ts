@@ -215,7 +215,8 @@ export function createMcpToolDefinition(
         ...(result.isError === undefined ? {} : { isError: result.isError }),
       };
       const view = result[mcpAppView];
-      return view ? {
+      if (!view) return output;
+      return {
         canonicalOutput: output,
         modelContent: [{ type: "text", text: JSON.stringify(output) }],
         display: {
@@ -224,7 +225,7 @@ export function createMcpToolDefinition(
           toolName: view.toolName,
           appRef: view.ref,
         },
-      } : output;
+      };
     },
   };
 }

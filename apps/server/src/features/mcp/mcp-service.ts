@@ -8,7 +8,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerEnv } from "../../config/env.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
-import { mcpAppClientCapabilities, type McpAppPages } from "./mcp-app-pages.js";
+import { type McpAppPages, mcpAppClientCapabilities } from "./mcp-app-pages.js";
 import {
   type McpResourceRequest,
   type McpResourceResult,
@@ -318,7 +318,8 @@ export function createMcpService(options: {
             source: {
               client: mcpClient,
               current: () => connections.get(name)?.client === mcpClient,
-              read: async (uri, signal) => mcpClient.readResource({ uri }, await requestOptions(signal)),
+              read: async (uri, signal) =>
+                mcpClient.readResource({ uri }, await requestOptions(signal)),
             },
             tool: metadata,
             serverName: name,

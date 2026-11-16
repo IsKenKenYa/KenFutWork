@@ -51,6 +51,10 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")("MCP App 原工具�
       expect(JSON.stringify(model.requests)).not.toContain(result.ref);
       await vi.waitFor(() => expect(model.requests).toHaveLength(3));
       model.finish(2);
+      await vi.waitFor(async () => {
+        const current = protocol.conversationSnapshotSchema.parse(await snapshot());
+        expect(current.control.phase).toBe("completedSuccess");
+      }, { timeout: 15_000 });
       const wrong = await host.client.request("/api/code-ui/rpc", {
         service: "mcp-apps", method: "open", args: [{ ...result, toolCallId: "another-run/another-tool" }],
       });
@@ -64,6 +68,13 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")("MCP App 原工具�
       const page = browser;
       const frameHeight = () => page.evaluate(`document.querySelector(${JSON.stringify(iframe)})?.style.height ?? null`);
       expect(await frameHeight()).toBeNull();
+      const historyButton = 'button[data-history-open="false"]';
+      const history = await vi.waitFor(async () => {
+        const label = await page.evaluate<string | null>(`document.querySelector(${JSON.stringify(historyButton)})?.textContent?.trim() ?? null`);
+        if (!label) throw new Error("未见已完成的工具过程");
+        return label;
+      }, { timeout: 10_000 });
+      await clickExactText(page, historyButton, history);
       await clickExactText(page, "button", "打开插件页面");
       await vi.waitFor(async () => expect(await frameHeight(), JSON.stringify(page.pageErrors)).toBe("173px"), { timeout: 15_000 });
       await clickExactText(page, "button", "关闭插件页面");
