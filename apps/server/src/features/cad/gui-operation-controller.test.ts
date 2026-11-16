@@ -1504,7 +1504,7 @@ test("public Undo参数不能携带自行伪造的undoSource", async () => {
   expect(f.send).toHaveBeenCalledTimes(1);
 });
 
-test.each([
+test.for([
   { operationId: "57ac0119-b842-4968-bc10-81c922722911" },
   { fingerprint: "0".repeat(64) },
   { pid: 9876 },
@@ -1564,27 +1564,34 @@ test.each([
   },
   { undoHistory: { count: 1, sha256: "a".repeat(64) } },
   { redoHistory: { count: 0, sha256: "a".repeat(64) } },
-])("Undo回执身份、原事务或反向结果不匹配时保持unknown：%j", async (changed) => {
-  const f = await fixture();
-  const prepared = await prepareUndo(f);
-  configureUndo(f, prepared, changed);
+])(
+  "Undo回执身份、原事务或反向结果不匹配时保持unknown：%j",
+  async (changed, { task }) => {
+    const f = await fixture(task.timeout);
+    const prepared = await prepareUndo(f);
+    expect(prepared.sourceOutcome).toMatchObject({
+      state: "terminal",
+      outcome: "committed",
+    });
+    configureUndo(f, prepared, changed);
 
-  expect(
-    await f.controller.undoOperation(
-      prepared.input,
-      prepared.binding,
-      f.context,
-    ),
-  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
-  expect(
-    await restart(f).undoOperation(
-      prepared.input,
-      { ...prepared.binding, runId: "later-run" },
-      f.context,
-    ),
-  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
-  expect(f.send).toHaveBeenCalledTimes(2);
-});
+    expect(
+      await f.controller.undoOperation(
+        prepared.input,
+        prepared.binding,
+        f.context,
+      ),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(
+      await restart(f).undoOperation(
+        prepared.input,
+        { ...prepared.binding, runId: "later-run" },
+        f.context,
+      ),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(f.send).toHaveBeenCalledTimes(2);
+  },
+);
 
 test("Undo成功回执必须包含源提交的完整批次，不能只恢复其中一项", async () => {
   const f = await fixture();
