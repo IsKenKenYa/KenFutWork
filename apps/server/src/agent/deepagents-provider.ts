@@ -91,9 +91,15 @@ export async function projectKernelToolExecution(
   identity: { runId: string; sessionId: string; conversationId: string },
 ) {
   if (!fact.toolCallId) throw new Error("工具执行缺少调用身份。");
+  const denial =
+    fact.phase === "failed" && typeof fact.error === "object"
+      ? fact.error
+      : undefined;
   let output: unknown;
-  if (fact.phase === "completed") {
-    const [content, artifact] = kernelToolResultParts(fact.output);
+  if (fact.phase === "completed" || denial) {
+    const [content, artifact] = denial
+      ? [denial.error, { canonicalOutput: denial }]
+      : kernelToolResultParts(fact.output);
     const messageContent =
       typeof content === "string" ||
       (Array.isArray(content) &&
@@ -114,14 +120,16 @@ export async function projectKernelToolExecution(
   const events = [];
   for await (const event of projectCanonicalToolEvent(
     {
-      phase: fact.phase,
+      phase: denial ? "completed" : fact.phase,
       toolCallId: fact.toolCallId,
       toolName: fact.definition.name,
       ...(fact.phase === "started"
         ? { input: publicToolArguments(fact.definition, fact.args) }
         : {}),
-      ...(fact.phase === "completed" ? { output } : {}),
-      ...(fact.error ? { error: fact.error } : {}),
+      ...(fact.phase === "completed" || denial ? { output } : {}),
+      ...(typeof fact.error === "string" && fact.error
+        ? { error: fact.error }
+        : {}),
     },
     identity,
   ))

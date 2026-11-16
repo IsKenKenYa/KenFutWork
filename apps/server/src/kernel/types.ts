@@ -368,6 +368,13 @@ export interface SystemPromptRegistry {
   compose(ctx: PromptCompositionContext): Promise<string>;
 }
 
+export type ToolDenial = {
+  isError: true;
+  errorCode: "tool_denied";
+  status: "denied";
+  error: string;
+};
+
 /** Private executor observation; providers receive no capability to mint these facts. */
 export type ToolExecutionObservation = {
   phase: "started" | "completed" | "failed" | "cancelled";
@@ -377,7 +384,7 @@ export type ToolExecutionObservation = {
   definition: ToolDefinition;
   args: Record<string, unknown>;
   output?: unknown;
-  error?: string;
+  error?: string | ToolDenial;
 };
 
 export interface ToolExecutionContext {

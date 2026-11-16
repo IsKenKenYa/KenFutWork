@@ -1,9 +1,19 @@
+import { ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { CanvasService } from "../features/canvas/canvas-service.js";
+import {
+  resolveToolError,
+  resolveToolOutputText,
+} from "../features/code-ui/tool-output.js";
 import { archiveTaskFixture } from "../features/context-history/test-fixture.js";
-import { ToolDeniedError } from "../kernel/context.js";
+import {
+  AgentRunEventBus,
+  ToolDeniedError,
+  ToolRegistryImpl,
+} from "../kernel/context.js";
 import type { ToolDefinition } from "../kernel/types.js";
+import { projectKernelToolExecution } from "./deepagents-provider.js";
 import {
   bridgeKernelTools,
   jsonSchemaToZod,
@@ -282,6 +292,91 @@ describe("kernelToolToStructuredTool（模型可调用桥）", () => {
  * 一个与因果无关的 LangChain 中间件错误收场（实测）。拒绝应作为工具级结果交回模型。
  */
 describe("权限拒绝转工具级结果（回归）", () => {
+  it.each([
+    ["工具授权已失效，请重新打开任务。", "工具授权已失效，请重新打开任务。"],
+    [undefined, "工具未获授权，请检查任务权限。"],
+  ])("实际权限拒绝为模型和会话保留同一原因：%s", async (reason, message) => {
+    const bus = new AgentRunEventBus();
+    const registry = new ToolRegistryImpl(bus);
+    const identity = {
+      runId: "run-permission",
+      sessionId: "session-permission",
+      conversationId: "conversation-permission",
+    };
+    const toolName = "read_project_notes";
+    const deniedCall = "denied-call";
+    let executions = 0;
+    const definition: ToolDefinition = {
+      name: toolName,
+      description: "读取项目备注",
+      scope: "shared",
+      parameters: { type: "object" },
+      execute: async () => {
+        executions += 1;
+        return "已读取项目备注";
+      },
+    };
+    registry.register(definition);
+    const removePolicy = bus.on("tool-pre-execute", async (payload) => ({
+      ...payload,
+      decision: "deny",
+      ...(reason ? { denyReason: reason } : {}),
+    }));
+    const receipts: Awaited<ReturnType<typeof projectKernelToolExecution>> = [];
+    const tool = kernelToolToStructuredTool(
+      {
+        ...definition,
+        execute: (args, ctx) => registry.execute(toolName, args, ctx),
+      },
+      {
+        runId: identity.runId,
+        async observeToolExecution(fact) {
+          receipts.push(...(await projectKernelToolExecution(fact, identity)));
+        },
+      },
+    );
+    const denied = await tool.invoke({
+      type: "tool_call",
+      name: toolName,
+      id: deniedCall,
+      args: {},
+    });
+    expect(ToolMessage.isInstance(denied)).toBe(true);
+    expect(denied).toMatchObject({
+      tool_call_id: deniedCall,
+      status: "error",
+      content: message,
+    });
+    expect(executions).toBe(0);
+    const finished = receipts.flatMap((event) =>
+      event.type === "tool.completed" ? [event] : [],
+    );
+    expect(finished).toHaveLength(1);
+    const [deniedReceipt] = finished;
+    if (!deniedReceipt) throw new Error("缺少权限拒绝回执");
+    expect(deniedReceipt).toMatchObject({
+      runId: identity.runId,
+      toolCallId: deniedCall,
+      status: "error",
+    });
+    expect(
+      resolveToolError(deniedReceipt, resolveToolOutputText(deniedReceipt)),
+    ).toEqual({ code: "tool_denied", message });
+
+    removePolicy();
+    const allowed = await tool.invoke({
+      type: "tool_call",
+      name: toolName,
+      id: "allowed-call",
+      args: {},
+    });
+    expect(allowed).toMatchObject({
+      tool_call_id: "allowed-call",
+      content: "已读取项目备注",
+    });
+    expect(executions).toBe(1);
+  });
+
   function deniedTool(): ToolDefinition {
     return {
       name: "mcp__srv__danger",

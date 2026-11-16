@@ -36,6 +36,29 @@ export function kernelToolResultParts(output: unknown) {
   ] as const;
 }
 
+function failedToolResult(
+  name: string,
+  toolCallId: string | undefined,
+  parts: ReturnType<typeof kernelToolResultParts>,
+) {
+  if (!toolCallId) return parts;
+  const [content, artifact] = parts;
+  return [
+    new ToolMessage({
+      tool_call_id: toolCallId,
+      name,
+      status: "error",
+      content: Array.isArray(content)
+        ? content
+        : typeof content === "string"
+          ? content
+          : JSON.stringify(content),
+      artifact,
+    }),
+    artifact,
+  ];
+}
+
 /** ToolDefinition → LangChain StructuredTool（透传 execute 与执行上下文）。 */
 export function kernelToolToStructuredTool(
   definition: ToolDefinition,
@@ -67,42 +90,25 @@ export function kernelToolToStructuredTool(
         );
         const parts = kernelToolResultParts(output);
         if (
-          toolCallId &&
           output !== null &&
           typeof output === "object" &&
           "isError" in output &&
           output.isError === true
         ) {
-          const [content, artifact] = parts;
-          return [
-            new ToolMessage({
-              tool_call_id: toolCallId,
-              name: definition.name,
-              status: "error",
-              content: Array.isArray(content)
-                ? content
-                : typeof content === "string"
-                  ? content
-                  : JSON.stringify(content),
-              artifact,
-            }),
-            artifact,
-          ];
+          return failedToolResult(definition.name, toolCallId, parts);
         }
         return parts;
       } catch (error) {
-        /**
-         * 权限拒绝是**工具级结果**，不是运行级失败。
-         *
-         * 原先 `ToolDeniedError` 从工具节点抛出，会中断整轮 run（实测表现为默认权限档下
-         * 任何 `mcp__*` 调用都以一个与因果无关的 LangChain 中间件错误收场）。这里转成
-         * 结构化结果交回模型，让它改道（请求审批 / 换方案），而不是把整轮打断。
-         */
+        // 权限拒绝按原调用回复；没有调用编号的直接调用继续返回可读文本。
         if (error instanceof ToolDeniedError) {
-          // 用纯字符串：工具结果的最兼容形态。结构化对象虽也能用，但在
-          // 「模型偶发返回异常工具调用」时更易触发上游中间件的消息校验问题。
-          const text = `工具 ${definition.name} 被拒绝（当前权限档位需审批，需用户批准或改用它法）。原因：${error.message}`;
-          return [text, { canonicalOutput: { error: text, status: "denied" } }];
+          const { denial } = error;
+          const text = toolCallId
+            ? denial.error
+            : `工具 ${definition.name} 未执行：${denial.error}`;
+          return failedToolResult(definition.name, toolCallId, [
+            text,
+            { canonicalOutput: denial },
+          ]);
         }
         throw error;
       }

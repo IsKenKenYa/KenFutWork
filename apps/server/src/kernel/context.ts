@@ -30,6 +30,7 @@ import type {
   SystemPromptRegistry,
   ToolContributionSnapshot,
   ToolDefinition,
+  ToolDenial,
   ToolExecutionContext,
   ToolExecutionObservation,
   ToolRegistry,
@@ -46,11 +47,19 @@ type RegisterFn = <K extends ServiceKey>(
 type GetFn = <K extends ServiceKey>(key: K) => ServiceMap[K];
 
 export class ToolDeniedError extends Error {
+  readonly denial: ToolDenial;
+
   constructor(toolName: string, reason: string | undefined) {
     super(
       `工具 ${toolName} 被 tool-pre-execute 拦截拒绝${reason ? `：${reason}` : ""}`,
     );
     this.name = "ToolDeniedError";
+    this.denial = {
+      isError: true,
+      errorCode: "tool_denied",
+      status: "denied",
+      error: reason?.trim() || "工具未获授权，请检查任务权限。",
+    };
   }
 }
 
@@ -413,7 +422,7 @@ export class ToolRegistryImpl implements ToolRegistry {
     const observe = async (
       phase: ToolExecutionObservation["phase"],
       output?: unknown,
-      error?: string,
+      error?: ToolExecutionObservation["error"],
     ) => {
       await execCtx.observeToolExecution?.({
         phase,
@@ -673,9 +682,11 @@ export class ToolRegistryImpl implements ToolRegistry {
           undefined,
           interruption
             ? undefined
-            : error instanceof Error
-              ? error.message
-              : String(error),
+            : error instanceof ToolDeniedError
+              ? error.denial
+              : error instanceof Error
+                ? error.message
+                : String(error),
         );
       }
       throw error;
