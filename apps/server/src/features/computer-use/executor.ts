@@ -241,6 +241,6 @@ export async function createExecutorForPlatform(options: {
     }
   }
   return createUnavailableExecutor(
-    `当前平台 ${platform} 尚未实现 Computer Use 执行器（里程碑 1 仅支持 darwin）。`,
+    `当前平台 ${platform} 尚未实现 Computer Use 执行器。`,
   );
 }

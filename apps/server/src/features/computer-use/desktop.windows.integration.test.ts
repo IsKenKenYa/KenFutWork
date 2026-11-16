@@ -106,11 +106,18 @@ describe.skipIf(!enabled)("真实Windows登录桌面→同Harness/MCP", () => {
           app,
           target: { type: "element", index: button },
         });
+        const afterClick = await call("get_app_state", { app });
+        expect(JSON.stringify(afterClick.content)).toContain("点击数：1");
+        // 元素索引只属于最近一次观察；点击后重新观察再取输入框索引。
+        const entry = Number(
+          JSON.stringify(afterClick.content).match(
+            /\[(\d+)\] textfield 验收输入/,
+          )?.[1],
+        );
         expect(
-          JSON.stringify((await call("get_app_state", { app })).content),
-        ).toContain("点击数：1");
-        const entry = Number(tree.match(/\[(\d+)\] textfield 验收输入/)?.[1]);
-        expect(Number.isInteger(entry), tree).toBe(true);
+          Number.isInteger(entry),
+          JSON.stringify(afterClick.content),
+        ).toBe(true);
         await call("type", {
           app,
           text: "中文🙂🚀",

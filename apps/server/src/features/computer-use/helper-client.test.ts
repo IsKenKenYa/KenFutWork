@@ -2,8 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it as itBase } from "vitest";
 import { HelperClient, HelperRpcError } from "./helper-client.js";
+
+/** Helper 走 Unix domain socket，只在 macOS 上运行。 */
+const it = itBase.skipIf(process.platform !== "darwin");
 
 const token = "a".repeat(64);
 let directory: string;
