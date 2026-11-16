@@ -11,7 +11,11 @@ import {
   runCodeUiHostRpc,
 } from "../code-ui/host-rpc-handler.js";
 import type { LocalActor } from "../local-instance/types.js";
-import { type McpServerToolLike, mcpAppResourceUri, mcpAppView } from "./mcp-tools.js";
+import {
+  type McpServerToolLike,
+  mcpAppResourceUri,
+  mcpAppView,
+} from "./mcp-tools.js";
 
 // ZCode 的 HTML 资源上限；同时限制仅在连接存续期保留的私有消息总量。
 const MAX_PAGE_BYTES = 16 * 1024 * 1024;
@@ -103,7 +107,10 @@ export function createMcpAppPages() {
       invalidated: new AbortController(),
     });
     bytes += size;
-    return { ...result, [mcpAppView]: { ref, serverName, toolName: tool.name } };
+    return {
+      ...result,
+      [mcpAppView]: { ref, serverName, toolName: tool.name },
+    };
   }
 
   async function requirePage(
@@ -149,13 +156,15 @@ export function createMcpAppPages() {
   ) {
     const entry = await requirePage(actor, requested, signal);
     const readSignal = AbortSignal.any([signal, entry.invalidated.signal]);
-    const response = await entry.source.read(entry.uri, readSignal).catch(() => {
-      throw new CodeUiHostRpcError(
-        "mcp_app_unavailable",
-        "插件页面读取失败，请检查连接后重试。",
-        404,
-      );
-    });
+    const response = await entry.source
+      .read(entry.uri, readSignal)
+      .catch(() => {
+        throw new CodeUiHostRpcError(
+          "mcp_app_unavailable",
+          "插件页面读取失败，请检查连接后重试。",
+          404,
+        );
+      });
     await requirePage(actor, requested, signal);
     const document = response.contents.find(
       (item) => item.uri === entry.uri && "text" in item,
@@ -214,7 +223,10 @@ export function createMcpAppPages() {
     },
     closeTask(instanceId: string, taskId: string) {
       for (const [ref, entry] of pages)
-        if (entry.scope.instanceId === instanceId && entry.scope.taskId === taskId)
+        if (
+          entry.scope.instanceId === instanceId &&
+          entry.scope.taskId === taskId
+        )
           remove(ref, entry);
     },
   };

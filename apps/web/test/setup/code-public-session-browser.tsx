@@ -14,6 +14,7 @@ import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
 import type { CodeViewerSource } from "@zui/lib/codeViewer.js";
 import type { CodeViewerSidePaneTab } from "@zui/lib/workspaceSidePane.js";
 import { PreviewPane } from "@zui/PreviewPane.js";
+import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { ensureAgentV4ConnectionHandshake } from "@zui/v4/agentV4ConnectionHandshake.js";
 import { SessionPane } from "@zui/v4/SessionPane.js";
 import { V4PaneConversationProvider } from "@zui/v4/V4ConversationContext.js";
@@ -23,6 +24,7 @@ import { createRoot } from "react-dom/client";
 import { ContextInspectionProvider } from "../../src/components/workbench/zcode/host/ContextInspectionProvider.js";
 import { fileManagerTargetForCodeViewer } from "../../src/components/workbench/zcode/host/fileViewerServices.js";
 import { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient.js";
+import { createMcpAppRenderer } from "../../src/components/workbench/zcode/host/mcpAppRenderer.js";
 import { setSurfaceApiBase } from "../../src/components/workbench/zcode/host/surfaceApi.js";
 import { createHostWorkbenchNavigation } from "../../src/components/workbench/zcode/host/workbenchNavigation.js";
 import { bindCodeWorkspaceServices } from "../../src/components/workbench/zcode/host/workspaceServices.js";
@@ -346,5 +348,3 @@ try {
   root.render(<div role="alert">{String(error)}</div>);
   throw error;
 }
-import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
-import { createMcpAppRenderer } from "../../src/components/workbench/zcode/host/mcpAppRenderer.js";

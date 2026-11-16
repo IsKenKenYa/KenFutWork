@@ -36,11 +36,24 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (id === undefined) continue;
   let result;
   if (method === "initialize") {
-    supportsPage = params.capabilities.extensions?.["io.modelcontextprotocol/ui"]
-      ?.mimeTypes?.includes("text/html;profile=mcp-app") ?? false;
-    result = { protocolVersion: params.protocolVersion, capabilities: { tools: {}, resources: {} }, serverInfo: { name: "probe", version: "1" } };
+    supportsPage =
+      params.capabilities.extensions?.[
+        "io.modelcontextprotocol/ui"
+      ]?.mimeTypes?.includes("text/html;profile=mcp-app") ?? false;
+    result = {
+      protocolVersion: params.protocolVersion,
+      capabilities: { tools: {}, resources: {} },
+      serverInfo: { name: "probe", version: "1" },
+    };
   } else if (method === "tools/list") {
-    result = { tools: [{ ...tool, ...(supportsPage ? { _meta: { ui: { resourceUri: uri } } } : {}) }] };
+    result = {
+      tools: [
+        {
+          ...tool,
+          ...(supportsPage ? { _meta: { ui: { resourceUri: uri } } } : {}),
+        },
+      ],
+    };
   } else if (method === "tools/call" && params.name === tool.name) {
     result = {
       content: [{ type: "text", text: "PUBLIC_RESULT" }],
@@ -48,8 +61,14 @@ for await (const line of createInterface({ input: process.stdin })) {
       _meta: { process: process.pid },
     };
   } else if (method === "resources/read" && params.uri === uri) {
-    result = { contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: page() }] };
+    result = {
+      contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: page() }],
+    };
   }
-  const response = result ? { result } : { error: { code: -32601, message: "Unknown method" } };
-  process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id, ...response })}\n`);
+  const response = result
+    ? { result }
+    : { error: { code: -32601, message: "Unknown method" } };
+  process.stdout.write(
+    `${JSON.stringify({ jsonrpc: "2.0", id, ...response })}\n`,
+  );
 }
