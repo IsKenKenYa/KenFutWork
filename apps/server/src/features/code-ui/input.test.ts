@@ -10,6 +10,7 @@ import {
 import Fastify from "fastify";
 import { afterEach, expect, it, vi } from "vitest";
 import { registerCodeUiRoutes } from "../../http/code-ui.js";
+import { ClientFacingRunError } from "../../utils/error-sanitizer.js";
 import { createLocalFsBlobStore } from "../blob/providers/local-fs.js";
 import { createGoalService } from "../goals/service.js";
 import type {
@@ -851,7 +852,8 @@ it("未启用Design或文档provider拒绝时不写输入、不启动模型", as
 it("画布在排队后被删除，派发前复核拒绝并发布原会话失败，不启动模型或替换目标", async () => {
   let available = true;
   const revalidate = vi.fn(async () => {
-    if (!available) throw new Error("画布已删除，请重新选择画布。");
+    if (!available)
+      throw new ClientFacingRunError("画布已删除，请重新选择画布。");
   });
   const host = await fixture({
     hang: true,

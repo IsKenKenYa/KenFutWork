@@ -141,7 +141,20 @@ async function dispatchInvalidatedInput(
     );
     expect(changed.status, JSON.stringify(changed.body)).toBe(200);
     expect(changed.body.result.status).toBe("accepted");
-    expect((await snapshot(host)).config.mode).toBe("plan");
+    expect((await snapshot(host)).config).toMatchObject({
+      mode: before.config.mode,
+      planEnabled: true,
+    });
+    const planningScope = await repository.find(
+      fixture.actor.instanceId,
+      host.sessionId,
+    );
+    expect(planningScope?.scope_generation).toBe(
+      originalScope.scope_generation,
+    );
+    await fixture.app.kernel
+      .get("executionScopes")
+      .updateTask(fixture.actor, host.sessionId, { sandboxMode: "read-only" });
     const advancedScope = await repository.find(
       fixture.actor.instanceId,
       host.sessionId,
@@ -187,7 +200,75 @@ async function dispatchInvalidatedInput(
 describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "Code已accepted输入派发失效 integration",
   () => {
-    it("createAcceptedRun INSERT等待时真实mode变更使旧派发失效，V4收口且同Task新输入可执行", async () => {
+    it("运行记录无法保存时原会话显示本机存储提示且不调用模型", async () => {
+      const fixture = await createCodeUiHttpFixture();
+      const model = await heldModel();
+      let host: Host | undefined;
+      try {
+        const task = await createCodeSessionFixture(model.baseUrl, {
+          client: fixture.client,
+        });
+        host = task;
+        await fixture.database.persistence.execute(
+          `create function public.reject_test_run_record() returns trigger language plpgsql as $$ begin if new.session_id = '${task.sessionId}'::uuid then raise exception 'PRIVATE_RUN_RECORD_FAILURE'; end if; return new; end $$`,
+        );
+        await fixture.database.persistence.execute(
+          "create trigger reject_test_run_record before insert on public.agent_runs for each row execute function public.reject_test_run_record()",
+        );
+        const commandId = randomUUID();
+        const first = await task.command(
+          "sendText",
+          { text: "暂时无法开始" },
+          commandId,
+        );
+        expect(first.body.result.status).toBe("accepted");
+        await vi.waitFor(
+          async () =>
+            expect((await snapshot(task)).control.phase).toBe("error"),
+          { timeout: 15_000 },
+        );
+        const failed = await snapshot(task);
+        expect(failed.control.lastError?.message).toBe(
+          "无法保存运行记录，请检查本机存储后重试。",
+        );
+        expect(failed.control.canStop).toBe(false);
+        expect(model.requests).toHaveLength(0);
+        const event = await fixture.database.persistence.queryOne<{
+          payload: unknown;
+        }>(
+          "select payload from public.code_ui_events where root_session_id = $1 and payload->>'type' = 'run.failed'",
+          [task.sessionId],
+        );
+        expect(event?.payload).toMatchObject({
+          error: { message: failed.control.lastError?.message },
+        });
+        await fixture.database.persistence.execute(
+          "drop trigger reject_test_run_record on public.agent_runs",
+        );
+        const replay = await task.command(
+          "sendText",
+          { text: "暂时无法开始" },
+          commandId,
+        );
+        expect(replay.body.result.status).toBe("duplicate");
+        expect(model.requests).toHaveLength(0);
+        expect(
+          (await task.command("sendText", { text: "修复存储后的新一轮" })).body
+            .result.status,
+        ).toBe("accepted");
+        await model.firstRequest;
+        model.finish(0);
+        await vi.waitFor(async () =>
+          expect((await snapshot(task)).control.phase).toBe("completedSuccess"),
+        );
+      } finally {
+        await host?.dispose();
+        await model.close();
+        await fixture.close();
+      }
+    }, 120_000);
+
+    it("派发记录写入等待时规划设置不改变授权，收窄工作区权限后旧输入失效", async () => {
       const fixture = await createCodeUiHttpFixture();
       const model = await heldModel();
       let host: Host | undefined;

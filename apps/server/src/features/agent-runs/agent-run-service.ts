@@ -15,8 +15,8 @@ export class AgentRunPersistenceError extends Error {
   readonly statusCode: number;
   readonly code: "application_error";
 
-  constructor(message: string, statusCode = 500) {
-    super(message);
+  constructor(message: string, statusCode = 500, options?: ErrorOptions) {
+    super(message, options);
     this.code = "application_error";
     this.statusCode = statusCode;
   }
@@ -124,8 +124,10 @@ export function createAgentRunMetadataService(options: {
           status: "accepted",
           threadId: input.threadId,
         })
-        .catch(() => {
-          throw new AgentRunPersistenceError("Failed to persist accepted run.");
+        .catch((cause: unknown) => {
+          throw new AgentRunPersistenceError("无法保存运行记录。", 500, {
+            cause,
+          });
         });
     },
 

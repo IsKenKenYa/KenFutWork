@@ -37,9 +37,19 @@ import type {
   ToolExecutionContext,
 } from "../../kernel/types.js";
 import type { ModelInvocationSnapshot } from "../../providers/types.js";
-import type { AgentRunMetadataService } from "../agent-runs/agent-run-service.js";
-import type { BlobStore } from "../blob/types.js";
-import type { ThreadService } from "../chat/thread-service.js";
+import {
+  ClientFacingRunError,
+  sanitizeErrorForClient,
+} from "../../utils/error-sanitizer.js";
+import {
+  type AgentRunMetadataService,
+  AgentRunPersistenceError,
+} from "../agent-runs/agent-run-service.js";
+import { BlobError, type BlobStore } from "../blob/types.js";
+import {
+  type ThreadService,
+  ThreadServiceError,
+} from "../chat/thread-service.js";
 import type { CheckpointService } from "../checkpoints/checkpoint-service.js";
 import type { CodeGitService } from "../code-git/code-git-service.js";
 import { createScopedGitExec } from "../code-git/scoped-git-exec.js";
@@ -79,7 +89,10 @@ import type { PluginRegistryService } from "../plugins/plugin-registry-service.j
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { ProjectService } from "../projects/project-service.js";
 import { resolveProjectWorkDirectory } from "../projects/work-dir.js";
-import type { SettingsService } from "../settings/settings-service.js";
+import {
+  type SettingsService,
+  SettingsServiceError,
+} from "../settings/settings-service.js";
 import type {
   TaskWorkContext,
   TaskWorkManager,
@@ -3833,29 +3846,13 @@ export class CodeUiService {
           dispatch &&
           (await this.preemptInput(user, loaded.root.id, dispatch))
         ) {
-          const codeInputs = dispatch.intent.attachments.length
-            ? await this.attachments!.readForInput(
-                user,
-                loaded.root.id,
-                dispatch.intent.attachments,
-              )
-            : [];
-          const thread = await this.deps.threads.resolveOwnedSessionThread(
-            user,
-            loaded.root.id,
-          );
-          const selection = dispatch.intent.modelSelection!;
-          await this.runTurn(
+          const started = await this.dispatchQueuedInput(
             user,
             loaded.project,
             loaded.root.id,
-            thread.threadId,
-            dispatch.runId,
-            dispatch.intent.text,
-            `${selection.providerId}:${selection.modelId}`,
-            dispatch.modelInvocation,
-            codeInputs,
+            dispatch,
           );
+          await started?.completion;
           return;
         }
         if (ack.status === "accepted")
@@ -4853,19 +4850,12 @@ export class CodeUiService {
       await flusher?.flush();
       if (error instanceof CodeUiRepositoryError && error.code === "not_found")
         return;
-      await this.recordRunEvent(
+      await this.recordDispatchFailure(
         user,
         project,
         sessionId,
-        {
-          type: "run.failed",
-          runId,
-          error: {
-            code: "run_failed",
-            message: error instanceof Error ? error.message : "Code 运行失败",
-          },
-          timestamp: new Date().toISOString(),
-        },
+        runId,
+        error,
         ++ordinal,
       );
     } finally {
@@ -4886,6 +4876,122 @@ export class CodeUiService {
         console.warn("[code-ui] Goal continuation admission失败：", error),
       );
     }
+  }
+
+  private async recordDispatchFailure(
+    user: LocalActor,
+    project: CodeUiWorkspace,
+    taskId: string,
+    runId: string,
+    error: unknown,
+    ordinal: number,
+  ) {
+    let message: string | undefined;
+    if (error instanceof AgentRunPersistenceError)
+      message = "无法保存运行记录，请检查本机存储后重试。";
+    else if (error instanceof ThreadServiceError)
+      message = "无法继续原会话，请在新任务中发送这条消息。";
+    else if (error instanceof SettingsServiceError)
+      message = "无法读取工作台设置，请检查本机服务后重试。";
+    else if (
+      error instanceof CodeUiRepositoryError ||
+      error instanceof ExecutionScopeError
+    )
+      message = error.message;
+    const publicError = message
+      ? new ClientFacingRunError(message, { cause: error })
+      : error;
+    await this.recordRunEvent(
+      user,
+      project,
+      taskId,
+      {
+        type: "run.failed",
+        runId,
+        timestamp: new Date().toISOString(),
+        error: {
+          code: "run_failed",
+          message: sanitizeErrorForClient(publicError, runId),
+        },
+      },
+      ordinal,
+    );
+  }
+
+  private async readQueuedAttachments(
+    user: LocalActor,
+    taskId: string,
+    attachments: CodeAdmittedInput["intent"]["attachments"],
+  ): Promise<TrustedCodeInput[]> {
+    if (!attachments.length) return [];
+    if (!this.attachments)
+      throw new ClientFacingRunError(
+        "附件存储暂不可用，请检查本机服务后重试。",
+      );
+    this.attachmentsUsed = true;
+    try {
+      return await this.attachments.readForInput(user, taskId, attachments);
+    } catch (error) {
+      if (
+        (error instanceof BlobError && error.operation === "download") ||
+        (error instanceof CodeAttachmentError &&
+          [
+            "fault.attachment.notAuthorized",
+            "fault.attachment.contentChanged",
+          ].includes(error.code))
+      ) {
+        throw new ClientFacingRunError(
+          "无法读取排队消息的附件，请重新添加附件后发送。",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async dispatchQueuedInput(
+    user: LocalActor,
+    project: CodeUiWorkspace,
+    taskId: string,
+    selected: CodeAdmittedInput,
+  ) {
+    let threadId: string;
+    let codeInputs: TrustedCodeInput[];
+    try {
+      codeInputs = await this.readQueuedAttachments(
+        user,
+        taskId,
+        selected.intent.attachments,
+      );
+      ({ threadId } = await this.deps.threads.resolveOwnedSessionThread(
+        user,
+        taskId,
+      ));
+    } catch (error) {
+      await this.recordDispatchFailure(
+        user,
+        project,
+        taskId,
+        selected.runId,
+        error,
+        1,
+      );
+      return null;
+    }
+    const selection = selected.intent.modelSelection!;
+    return {
+      completion: this.runTurn(
+        user,
+        project,
+        taskId,
+        threadId,
+        selected.runId,
+        selected.intent.text,
+        `${selection.providerId}:${selection.modelId}`,
+        selected.modelInvocation,
+        codeInputs,
+      ),
+    };
   }
 
   private async drainQueuedInput(
@@ -4950,50 +5056,15 @@ export class CodeUiService {
       },
     );
     if (!selected) return;
-    try {
-      const codeInputs = selected.intent.attachments.length
-        ? await this.attachments!.readForInput(
-            user,
-            taskId,
-            selected.intent.attachments,
-          )
-        : [];
-      const thread = await this.deps.threads.resolveOwnedSessionThread(
-        user,
-        taskId,
-      );
-      const selection = selected.intent.modelSelection!;
-      void this.runTurn(
-        user,
-        loaded.project,
-        taskId,
-        thread.threadId,
-        selected.runId,
-        selected.intent.text,
-        `${selection.providerId}:${selection.modelId}`,
-        selected.modelInvocation,
-        codeInputs,
-      ).catch((error: unknown) =>
-        console.error("[code-ui] 队列运行收口失败：", error),
-      );
-    } catch (error) {
-      await this.recordRunEvent(
-        user,
-        loaded.project,
-        taskId,
-        {
-          type: "run.failed",
-          runId: selected.runId,
-          timestamp: new Date().toISOString(),
-          error: {
-            code: "run_failed",
-            message:
-              error instanceof Error ? error.message : "排队输入准备失败。",
-          },
-        },
-        1,
-      );
-    }
+    const started = await this.dispatchQueuedInput(
+      user,
+      loaded.project,
+      taskId,
+      selected,
+    );
+    void started?.completion.catch((error: unknown) =>
+      console.error("[code-ui] 队列运行收口失败：", error),
+    );
   }
 
   async listWorkspaces(user: LocalActor): Promise<CodeUiWorkspace[]> {

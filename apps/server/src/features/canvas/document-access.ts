@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { z } from "zod";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import { ClientFacingRunError } from "../../utils/error-sanitizer.js";
 import type { BrandKitService } from "../brand-kit/brand-kit-service.js";
 import { binaryMimeType } from "../code-tools/file-media.js";
 import type { CodeUiConversationState } from "../code-ui/conversation.js";
@@ -73,11 +74,13 @@ export function createCanvasDocumentAccess(deps: {
       !project.enabled_modes.includes(preset) ||
       (canvasId && !project.enabled_modes.includes("design"))
     )
-      throw new Error("请先为项目启用相应工作方式。");
+      throw new ClientFacingRunError("请先为项目启用相应工作方式。");
     if (!canvasId) return null;
     const canvas = await deps.canvases.findById(actor.instanceId, canvasId);
     if (!canvas || canvas.project_id !== projectId)
-      throw new Error("画布已删除或不属于当前项目，请重新选择。 ");
+      throw new ClientFacingRunError(
+        "画布已删除或不属于当前项目，请重新选择。",
+      );
     return canvas;
   };
   const revalidate = async (input: WorkContextBinding) => {
@@ -125,7 +128,7 @@ export function createCanvasDocumentAccess(deps: {
       !frozen ||
       !isDeepStrictEqual(frozen, context)
     )
-      throw new Error("画布任务或运行授权已改变，请重新提交。 ");
+      throw new ClientFacingRunError("画布任务或运行授权已改变，请重新提交。");
     await checkDocument(
       input.actor,
       input.projectId,
@@ -139,7 +142,8 @@ export function createCanvasDocumentAccess(deps: {
           `select id from public.brand_kits where instance_id=:instance and id=$1`,
           [context.brandKitId],
         );
-      if (!kit) throw new Error("品牌素材已删除或不可用，请重新选择。 ");
+      if (!kit)
+        throw new ClientFacingRunError("品牌素材已删除或不可用，请重新选择。");
     }
   };
   const access: CanvasDocumentAccess = {

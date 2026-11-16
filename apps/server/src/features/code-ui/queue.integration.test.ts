@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
 import { describe, expect, it, vi } from "vitest";
 import { attachmentChecksum } from "./attachments/bytes.js";
@@ -91,6 +93,91 @@ async function queueCommand(
 
 // 真实HTTP/SSE、原V4命令、独占PG和真实Harness；仅外部模型保留确定性的流。
 describe.skipIf(!enabled)("原队列公开宿主 integration", () => {
+  it.each(["自动派发", "立即发送"])(
+    "%s遇到无法读取的附件时结束该轮并保留后续队列",
+    async (delivery) => {
+      const fixture = await createCodeUiHttpFixture();
+      const model = await heldModel();
+      let host: Host | undefined;
+      try {
+        const task = await createCodeSessionFixture(model.baseUrl, {
+          client: fixture.client,
+        });
+        host = task;
+        await task.command("sendText", { text: "保持会话有正在运行的输入" });
+        await waitForRunning(task, "正在运行 1");
+        const attachment = await uploadAttachment(task, "queue-attachment.txt");
+        await task.command("sendText", {
+          text: "带附件",
+          attachments: [attachment],
+        });
+        await task.command("sendText", { text: "附件失败后仍留在队列" });
+        const row = await fixture.database.persistence.queryOne<{
+          object_path: string;
+        }>(
+          `select record->>'objectPath' as object_path from public.code_attachments
+            where task_id = $1 and status = 'committed' and record->>'ref' = $2`,
+          [task.sessionId, attachment.ref],
+        );
+        if (!row?.object_path) throw new Error("测试附件没有已提交的存储对象");
+        await unlink(
+          join(fixture.directory, "blobs", "code-attachments", row.object_path),
+        );
+        const snapshot = async () =>
+          protocol.conversationSnapshotSchema.parse(await task.snapshot());
+        const before = await snapshot();
+        const [missing, next] = before.queue.items;
+        if (!missing || !next) throw new Error("未生成两个待发送的输入");
+
+        if (delivery === "立即发送") {
+          expect(
+            await queueCommand(
+              task,
+              "sendQueuedNow",
+              { queueItemId: missing.queueItemId },
+              before,
+            ),
+          ).toMatchObject({ status: "accepted" });
+        } else {
+          model.finish(0);
+        }
+        await vi.waitFor(
+          async () => expect((await snapshot()).control.phase).toBe("error"),
+          { timeout: 15_000 },
+        );
+        const failed = await snapshot();
+        expect(failed.control.lastError?.message).toBe(
+          "无法读取排队消息的附件，请重新添加附件后发送。",
+        );
+        expect(failed.control.canStop).toBe(false);
+        expect(failed.queue.autoDrain).toBe(false);
+        expect(
+          failed.queue.items.map(({ queueItemId }) => queueItemId),
+        ).toEqual([next.queueItemId]);
+        expect(model.requests).toHaveLength(1);
+
+        expect(
+          await queueCommand(
+            task,
+            "sendQueuedNow",
+            { queueItemId: next.queueItemId },
+            failed,
+          ),
+        ).toMatchObject({ status: "accepted" });
+        await waitForRunning(task, "正在运行 2");
+        model.finish(1);
+        await vi.waitFor(async () =>
+          expect((await snapshot()).control.phase).toBe("completedSuccess"),
+        );
+      } finally {
+        await host?.dispose();
+        await model.close();
+        await fixture.close();
+      }
+    },
+    120_000,
+  );
+
   it("编辑冻结队首且不改输入身份，过期解除不能释放新锁", async () => {
     const fixture = await createCodeUiHttpFixture();
     const model = await heldModel();
