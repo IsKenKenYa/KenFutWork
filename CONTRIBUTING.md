@@ -5,8 +5,8 @@ KenFutWork 是 BYOK AI 工作台，社区版以 GPL-3.0-only 发布。感谢你�
 ## 1. 先读这几份
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)：本文。
-- [`CLA.md`](CLA.md)：提交 PR 前必须签署。
-- [`GOVERNANCE.md`](GOVERNANCE.md)：角色、决策、双仓边界与收益原则。
+- [`legal/CLA.md`](legal/CLA.md)：提交 PR 前必须签署。
+- [`legal/GOVERNANCE.md`](legal/GOVERNANCE.md)：角色、决策、双仓边界与收益原则。
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)：行为准则。
 - [`SECURITY.md`](SECURITY.md)：安全漏洞私报。
 - [`AGENTS.md`](AGENTS.md)：开发命令、测试与提交纪律的唯一权威。
@@ -22,15 +22,15 @@ KenFutWork 是 BYOK AI 工作台，社区版以 GPL-3.0-only 发布。感谢你�
 ## 3. 贡献前必须签 CLA
 
 - 本项目**不使用 DCO**。DCO 只能证明你有权按项目许可证贡献，不能授予再许可权，无法支持商业版。
-- 首次 PR 会被托管 CLA Assistant App 要求签署 [`CLA.md`](CLA.md)。按评论提示回复：
+- 首次 PR 会被托管 CLA Assistant App 要求签署 [`legal/CLA.md`](legal/CLA.md)。按评论提示回复：
 
   ```text
   I have read the CLA Document and I hereby sign the CLA
   ```
 
 - 公司贡献者：签署 CLA 附件 B（CCLA），通过 GitHub 联系 `@IsKenKenYa` 安排提交与核验；核验后加入 allowlist。
-- 托管 CLA Assistant 使用 `CLA.md` 的 Gist 副本作为签署文本；仓库 `CLA.md` 是编辑源，更新后需同步 Gist。
-- 如不希望使用托管服务，可按 `CLA.md` 附件 A 线下签署，并联系 `@IsKenKenYa` 登记。个人信息处理见 [PRIVACY.md](PRIVACY.md) §13。
+- 托管 CLA Assistant 使用 `legal/CLA.md` 的 Gist 副本作为签署文本；仓库 `legal/CLA.md` 是编辑源，更新后需同步 Gist。
+- 如不希望使用托管服务，可按 `legal/CLA.md` 附件 A 线下签署，并联系 `@IsKenKenYa` 登记。个人信息处理见 [PRIVACY.md](legal/PRIVACY.md) §13。
 - 未签 CLA 的 PR 不合并。
 - Issue 不需要 CLA；提交即表示允许项目在讨论与改进中使用该内容。
 
@@ -84,14 +84,14 @@ KenFutWork 是 BYOK AI 工作台，社区版以 GPL-3.0-only 发布。感谢你�
 
 ## 9. 第三方资产
 
-- 新依赖、图标、字体、模型权重、vendored 代码必须在同一 PR 登记到 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)：来源、许可、版权人、义务履行位置、商业版可用性。
+- 新依赖、图标、字体、模型权重、vendored 代码必须在同一 PR 登记到 [`legal/THIRD-PARTY-NOTICES.md`](legal/THIRD-PARTY-NOTICES.md)：来源、许可、版权人、义务履行位置、商业版可用性。
 - 无 LICENSE 的资产如实标「待核」，不能默认按 GPL 或 MIT 分发。
-- 未满足许可证义务的 GPL/无许可资产不得进入商业版；具体分级见 `THIRD-PARTY-NOTICES.md` §H。
+- 未满足许可证义务的 GPL/无许可资产不得进入商业版；具体分级见 `legal/THIRD-PARTY-NOTICES.md` §H。
 - 品牌图标仅作指示性使用；不要暗示背书或隶属关系。
 
 ## 10. 商业版与贡献者
 
-- 你的贡献可能出现在商业版；商业版许可见 [`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md)。
+- 你的贡献可能出现在商业版；商业版许可见 [`legal/COMMERCIAL-LICENSING.md`](legal/COMMERCIAL-LICENSING.md)。
 - 普通贡献者不自动参与收益分配；项目可对特定任务发放一次性奖励，需书面确认。
 - 主要人员（共同所有者 + 签署内部协议的核心维护者）另签保密/收益协议；商业版私有仓仅对其开放。
 - 不要在公开 PR 中提交客户合同、报价、签名、个人邮箱或私有仓代码。
@@ -105,12 +105,12 @@ KenFutWork 是 BYOK AI 工作台，社区版以 GPL-3.0-only 发布。感谢你�
 
 ## 12. 许可与版权
 
-- 社区版 GPL-3.0-only；CLA 授予项目方再许可权；版权归属见 [`COPYRIGHT.md`](COPYRIGHT.md)。
+- 社区版 GPL-3.0-only；CLA 授予项目方再许可权；版权归属见 [`legal/COPYRIGHT.md`](legal/COPYRIGHT.md)。
 - 贡献不改变第三方组件许可；不要移除版权、许可或 NOTICE 声明。
 
 ## 13. 联系
 
 - 代码与文档：GitHub Issues。
 - 安全：GitHub Security Advisories。
-- 商业许可：[`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md)，通过 GitHub 联系 `@IsKenKenYa`。
+- 商业许可：[`legal/COMMERCIAL-LICENSING.md`](legal/COMMERCIAL-LICENSING.md)，通过 GitHub 联系 `@IsKenKenYa`。
 - 行为准则：[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。

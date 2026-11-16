@@ -35,12 +35,12 @@ const THIRD_PARTY_NOTICES: ReadonlyArray<readonly [string, string]> = [
 const LEGAL_DOCUMENTS: ReadonlyArray<readonly [string, string]> = [
   [
     "最终用户许可协议",
-    "https://github.com/IsKenKenYa/KenFutWork/blob/main/EULA.md",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/legal/EULA.md",
   ],
-  ["隐私政策", "https://github.com/IsKenKenYa/KenFutWork/blob/main/PRIVACY.md"],
+  ["隐私政策", "https://github.com/IsKenKenYa/KenFutWork/blob/main/legal/PRIVACY.md"],
   [
     "第三方声明",
-    "https://github.com/IsKenKenYa/KenFutWork/blob/main/THIRD-PARTY-NOTICES.md",
+    "https://github.com/IsKenKenYa/KenFutWork/blob/main/legal/THIRD-PARTY-NOTICES.md",
   ],
 ];
 

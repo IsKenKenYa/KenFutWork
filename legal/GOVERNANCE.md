@@ -65,13 +65,13 @@
 
 ## 8. 修订
 
-- 本文修订需两位共同所有者一致同意，并在 [`docs/日志.md`](docs/日志.md) 记账。
+- 本文修订需两位共同所有者一致同意，并在 [`docs/日志.md`](../docs/日志.md) 记账。
 - 涉及 CLA、EULA、COPYRIGHT、THIRD-PARTY-NOTICES 的修订，按各自版本规则与律师意见处理。
 - 修订不追溯减损已授予的 GPL 权利或已签署的 CLA 许可。
 
 ## 9. 联系
 
 - 治理与贡献：GitHub Issues。
-- 安全：GitHub Security Advisories，见 [`SECURITY.md`](SECURITY.md)。
+- 安全：GitHub Security Advisories，见 [`SECURITY.md`](../SECURITY.md)。
 - 商业许可：见 [`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md)。
-- 行为准则：见 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
+- 行为准则：见 [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md)。

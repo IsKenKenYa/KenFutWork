@@ -52,7 +52,7 @@ KENFUTWORK_OPEN_DESIGN_EMBED_SECRET=<与 OpenDesign 栈 OD_API_TOKEN 成对；�
   以 env 为准，界面会如实标出来源）。
 
 - 镜像钉 digest（`ghcr.io/nexu-io/od@sha256:587a99…`，2026-10-15 观测 = release
-  `open-design-v0.24.1`），升级走 compose 改动 + 回归；归属登记 `THIRD-PARTY-NOTICES.md` §F。
+  `open-design-v0.24.1`），升级走 compose 改动 + 回归；归属登记 `legal/THIRD-PARTY-NOTICES.md` §F。
 
 ## BYOK 凭证下发（O3 / `OD-4`）
 

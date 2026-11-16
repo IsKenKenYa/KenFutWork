@@ -305,25 +305,41 @@ Code UI 移植携带的素材按来源分四层，归属与义务如下：
 - **第三方品牌 logo**（`provider-icons/`、`channel-icons/` 等处的 OpenAI、Anthropic、Discord、微信等图标）：**无开源许可**，版权归各品牌权利人。仅以指示性方式使用——logo 紧邻其对应的供应商/渠道名称，用于标识功能入口，不暗示背书；未被代码引用的品牌图标（支付类等 28 个文件）已从仓库移除。
 - **商标声明**：Apache-2.0 第 3 条不授予商标权。ZCode、Z.ai、GLM 及各供应商、渠道的名称与 logo 商标归其各自权利人；本项目与上述各方无隶属或背书关系。
 
-以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。**逐项归属、义务履行位置与待核清单以根 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) 为准**，本段是摘要。
+以上各项目版权归其各自权利人所有，按其原生许可授权使用；本仓库的 GPL-3.0 不改变上游组件的许可与版权归属。**逐项归属、义务履行位置与待核清单以 [`legal/THIRD-PARTY-NOTICES.md`](legal/THIRD-PARTY-NOTICES.md) 为准**，本段是摘要。
 
 ## Contributing
 
-社区版以 GPL-3.0 发布。提交代码、文档、测试或素材前，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 并签署 [CLA.md](CLA.md)。
+社区版以 GPL-3.0 发布。提交代码、文档、测试或素材前，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 并签署 [CLA.md](legal/CLA.md)。
 
 - 行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - 安全漏洞：[SECURITY.md](SECURITY.md)（走私报，不要公开 issue）
-- 商业版与商业许可：[COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md)
+- 商业版与商业许可：[COMMERCIAL-LICENSING.md](legal/COMMERCIAL-LICENSING.md)
 
 ---
 
 ## License
 
-**社区版**：GPL-3.0-only（见 [LICENSE](LICENSE)）。**商业版**：按 [商业许可](COMMERCIAL-LICENSING.md) 单独授权；商业许可不影响社区版的 GPL 权利。版权归属见 [COPYRIGHT.md](COPYRIGHT.md)。
+**社区版**：GPL-3.0-only（见 [LICENSE](LICENSE)）。**商业版**：按 [商业许可](legal/COMMERCIAL-LICENSING.md) 单独授权；商业许可不影响社区版的 GPL 权利。版权归属见 [COPYRIGHT.md](legal/COPYRIGHT.md)。
 
-所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)，逐项义务与履行位置见 [第三方声明与素材归属](THIRD-PARTY-NOTICES.md)。
+所引用开源组件的归属与许可见 [§13 鸣谢](#13-鸣谢)，逐项义务与履行位置见 [第三方声明与素材归属](legal/THIRD-PARTY-NOTICES.md)。
 
-授权边界与使用声明见 [最终用户许可协议](EULA.md)（本文件不改动 GPL-3.0 授予你的权利，只处理它未覆盖的事项）；数据实际存在哪里、发给谁，见 [隐私政策](PRIVACY.md)。
+授权边界与使用声明见 [最终用户许可协议](legal/EULA.md)（本文件不改动 GPL-3.0 授予你的权利，只处理它未覆盖的事项）；数据实际存在哪里、发给谁，见 [隐私政策](legal/PRIVACY.md)。
+
+### 用户协议与法律文件（`legal/`）
+
+涉及用户权利、数据与授权的文档集中在根目录 `legal/`：
+
+| 文件 | 说明 |
+| --- | --- |
+| [`legal/EULA.md`](legal/EULA.md) | 最终用户许可协议：授权边界、商标与免责 |
+| [`legal/PRIVACY.md`](legal/PRIVACY.md) | 隐私政策：数据存放位置、外发范围与已知缺口 |
+| [`legal/CLA.md`](legal/CLA.md) | 贡献者许可协议：提交 PR 前签署 |
+| [`legal/COPYRIGHT.md`](legal/COPYRIGHT.md) | 版权归属 |
+| [`legal/THIRD-PARTY-NOTICES.md`](legal/THIRD-PARTY-NOTICES.md) | 第三方组件、素材与商标归属 |
+| [`legal/GOVERNANCE.md`](legal/GOVERNANCE.md) | 治理与收益原则 |
+| [`legal/COMMERCIAL-LICENSING.md`](legal/COMMERCIAL-LICENSING.md) | 商业版与商业许可 |
+
+`LICENSE`、`NOTICE.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md` 保持在根目录，以符合 GitHub 的识别约定。
 
 ### 第三方素材（字体等）
 
@@ -334,4 +350,4 @@ Code UI 移植携带的素材按来源分四层，归属与义务如下：
 
 ### 本项目自有的名称与标识
 
-**KenFutWork 名称、KF 标识、应用图标与界面美术等非代码资产，归其权利人（本项目维护者／标识创作者）所有，同样不在 GPL-3.0 的授权范围内**——GPL 授的是著作权，不含商标与品牌授权。向本仓库贡献代码或素材不因此取得标识权利，后续加入的协作者亦然。再分发修改版请使用可区分的项目名并自绘或替换标识；生成方式与版本沿革登记见 [THIRD-PARTY-NOTICES.md §E2](THIRD-PARTY-NOTICES.md)，完整规则见 [最终用户许可协议 §6](EULA.md)。
+**KenFutWork 名称、KF 标识、应用图标与界面美术等非代码资产，归其权利人（本项目维护者／标识创作者）所有，同样不在 GPL-3.0 的授权范围内**——GPL 授的是著作权，不含商标与品牌授权。向本仓库贡献代码或素材不因此取得标识权利，后续加入的协作者亦然。再分发修改版请使用可区分的项目名并自绘或替换标识；生成方式与版本沿革登记见 [THIRD-PARTY-NOTICES.md §E2](legal/THIRD-PARTY-NOTICES.md)，完整规则见 [最终用户许可协议 §6](legal/EULA.md)。

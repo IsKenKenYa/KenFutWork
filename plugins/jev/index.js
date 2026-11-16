@@ -7,7 +7,7 @@
  * `features/mcp/curated-catalog.ts` 的 `jev` 条目），装好插件即可在设置里点一下接上。
  *
  * 随包技能 `skills/jev-judgment/SKILL.md`（移植自 ZCode 官方插件 jev-decisions，
- * MIT，归属见根 THIRD-PARTY-NOTICES.md A6）由 bundle 技能扫描自动发现：插件启用后
+ * MIT，归属见 legal/THIRD-PARTY-NOTICES.md A6）由 bundle 技能扫描自动发现：插件启用后
  * 进入 agent 的可用技能清单，教会它何时调判决工具而不是凭阅读作答。
  *
  * 为什么不在这里直接 spawn MCP 进程：MCP 连接的生命周期归宿主 MCP 服务管（要按 Task

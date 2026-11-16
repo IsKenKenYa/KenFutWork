@@ -4,7 +4,7 @@
 
 ## 社区版
 
-KenFutWork 社区版以 **GPL-3.0-only** 发布，全文见 [`LICENSE`](LICENSE)。
+KenFutWork 社区版以 **GPL-3.0-only** 发布，全文见 [`LICENSE`](../LICENSE)。
 
 你可以免费运行、研究、修改和分发社区版；使用社区版**不需要**购买商业许可。GPL-3.0 授予你的权利不因本文件而缩减。
 

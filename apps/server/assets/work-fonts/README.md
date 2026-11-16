@@ -35,4 +35,4 @@
 
 - 只收 SIL OFL 1.1 许可的字体；改名、改写字形都不做，保留 Reserved Font Name。
 - 新增字体：放 ttf/otf + 许可全文到本目录，登记 `apps/server/src/features/work/fonts.ts` 的
-  `BUNDLED_LICENSES` / `BUNDLED_CJK`，并在根 `THIRD-PARTY-NOTICES.md` 登记来源与许可。
+  `BUNDLED_LICENSES` / `BUNDLED_CJK`，并在 `legal/THIRD-PARTY-NOTICES.md` 登记来源与许可。

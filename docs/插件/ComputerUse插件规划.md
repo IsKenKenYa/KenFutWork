@@ -835,7 +835,7 @@ Windows Helper 可以复用同一套 JSON-RPC 协议：
 | Helper 被其他进程调用 | 本机权限被滥用 | socket 权限、token、peer 代码签名、run lease |
 | Helper 更新失败 | 旧进程继续持有权限 | 版本握手、健康检查、退出清理、失败关闭 |
 | Windows 提升权限 | UAC 打断流程 | 默认非提升；需要时明确提示，不自动提升 |
-| 许可证与来源 | 第三方代码进入仓库 | 只使用 Apple 系统 API 和自写代码；新增第三方依赖按 `THIRD-PARTY-NOTICES.md` 登记 |
+| 许可证与来源 | 第三方代码进入仓库 | 只使用 Apple 系统 API 和自写代码；新增第三方依赖按 `legal/THIRD-PARTY-NOTICES.md` 登记 |
 
 需要用户或发布负责人确认的事项：
 

@@ -1684,13 +1684,13 @@ test("explicit ZCode source mirrors retain CRLF compatibility and exact binary/t
 test("contribution, CLA, and commercial-license documents are wired", async () => {
   const required = [
     "CONTRIBUTING.md",
-    "CLA.md",
-    "GOVERNANCE.md",
+    "legal/CLA.md",
+    "legal/GOVERNANCE.md",
     "MAINTAINERS.md",
     "CODE_OF_CONDUCT.md",
     "SECURITY.md",
-    "COMMERCIAL-LICENSING.md",
-    "COPYRIGHT.md",
+    "legal/COMMERCIAL-LICENSING.md",
+    "legal/COPYRIGHT.md",
     "licenses/loomic-MIT.txt",
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
@@ -1705,11 +1705,11 @@ test("contribution, CLA, and commercial-license documents are wired", async () =
   const readme = await readText("README.md");
   for (const link of [
     "CONTRIBUTING.md",
-    "CLA.md",
-    "COMMERCIAL-LICENSING.md",
+    "legal/CLA.md",
+    "legal/COMMERCIAL-LICENSING.md",
     "CODE_OF_CONDUCT.md",
     "SECURITY.md",
-    "COPYRIGHT.md",
+    "legal/COPYRIGHT.md",
   ]) {
     assert.match(
       readme,
@@ -1724,16 +1724,16 @@ test("contribution, CLA, and commercial-license documents are wired", async () =
     assert.match(source, /licenses\/loomic-MIT\.txt/);
   }
 
-  const eula = await readText("EULA.md");
+  const eula = await readText("legal/EULA.md");
   assert.match(eula, /社区版/);
   assert.match(eula, /商业版/);
   assert.match(eula, /版本：2026-10-21/);
   assert.match(eula, /不会为了仅在商业版提供/);
 
-  const commercial = await readText("COMMERCIAL-LICENSING.md");
+  const commercial = await readText("legal/COMMERCIAL-LICENSING.md");
   assert.match(commercial, /社区版承诺/);
 
-  const cla = await readText("CLA.md");
+  const cla = await readText("legal/CLA.md");
   assert.match(cla, /1\.8 \*\*关联方\*\*/);
   assert.match(cla, /本协议第 3–9、11、12 条（包括第 6 条陈述与保证）/);
   assert.match(cla, /本协议不授予你对商业版的任何使用许可/);
@@ -1747,12 +1747,12 @@ test("contribution, CLA, and commercial-license documents are wired", async () =
   assert.match(cla, /附件 B-1：授权员工/);
   assert.match(cla, /issue、讨论、邮件列表/);
 
-  const privacy = await readText("PRIVACY.md");
+  const privacy = await readText("legal/PRIVACY.md");
   assert.match(privacy, /## 13\. 贡献者 CLA 签署记录/);
   assert.match(privacy, /SAP/);
   assert.match(privacy, /## 14\. 变更与联系/);
 
-  const thirdParty = await readText("THIRD-PARTY-NOTICES.md");
+  const thirdParty = await readText("legal/THIRD-PARTY-NOTICES.md");
   assert.match(thirdParty, /Loomic/);
   assert.match(thirdParty, /商业版资产合规/);
 

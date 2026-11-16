@@ -87,14 +87,14 @@ graph LR
 | 存储 / 认证 / blob / 队列 / 凭证 / toolsGateway 缝 | 《多端》§5 | 《改造计划》§4.8 只引用 |
 | 插件目录约定与 profile 机制 | 《改造计划》§4.9 | 《多端》§3 只引用 |
 | 沙箱执行后端（三档 + 平台后端） | 《多端》§7 | 《改造计划》§4.6 只引用 |
-| 第三方许可与素材归属 | 根 `THIRD-PARTY-NOTICES.md` | `README.md` §13、根 `NOTICE.md`、`AGENTS.md` 只引用不复制；新增 vendored 资产须同 PR 登记，产物内的副本装配点见该文件 §G1 |
-| 授权边界、商标与免责 | 根 `EULA.md` | 其余文档与界面只给链接，不复述条款；本文件不得用于缩减 GPL-3.0 授予的权利 |
-| 数据行为与隐私缺口 | 根 `PRIVACY.md` | 按当前代码实现撰写；实现变化时同轮刷新（与《日志》回执对齐） |
-| 贡献者许可与双版本发布 | 根 `CLA.md` | `CONTRIBUTING.md`/`GOVERNANCE.md`/`COMMERCIAL-LICENSING.md` 只引用，不复述条款 |
-| 版权归属 | 根 `COPYRIGHT.md` | 组件归属仍以 `THIRD-PARTY-NOTICES.md` 为准 |
+| 第三方许可与素材归属 | `legal/THIRD-PARTY-NOTICES.md` | `README.md` §13、根 `NOTICE.md`、`AGENTS.md` 只引用不复制；新增 vendored 资产须同 PR 登记，产物内的副本装配点见该文件 §G1 |
+| 授权边界、商标与免责 | `legal/EULA.md` | 其余文档与界面只给链接，不复述条款；本文件不得用于缩减 GPL-3.0 授予的权利 |
+| 数据行为与隐私缺口 | `legal/PRIVACY.md` | 按当前代码实现撰写；实现变化时同轮刷新（与《日志》回执对齐） |
+| 贡献者许可与双版本发布 | `legal/CLA.md` | `CONTRIBUTING.md`/`legal/GOVERNANCE.md`/`legal/COMMERCIAL-LICENSING.md` 只引用，不复述条款 |
+| 版权归属 | `legal/COPYRIGHT.md` | 组件归属仍以 `legal/THIRD-PARTY-NOTICES.md` 为准 |
 | 贡献流程 | 根 `CONTRIBUTING.md` | 开发命令引用 `AGENTS.md`，不复制 |
-| 治理与收益原则 | 根 `GOVERNANCE.md` | 具体内部协议不入公开仓 |
-| 商业许可 | 根 `COMMERCIAL-LICENSING.md` | 第三方许可事实引用 `THIRD-PARTY-NOTICES.md` §H |
+| 治理与收益原则 | `legal/GOVERNANCE.md` | 具体内部协议不入公开仓 |
+| 商业许可 | `legal/COMMERCIAL-LICENSING.md` | 第三方许可事实引用 `legal/THIRD-PARTY-NOTICES.md` §H |
 | 安全与行为准则 | 根 `SECURITY.md`、`CODE_OF_CONDUCT.md` | 举报渠道以文档为准 |
 
 2. **决策稳定 ID**：跨文档引用决策一律用 ID，不复述、不重编号。**一个决策只有一个 ID**（同一决策若已出现在两张清单，登记表标注别名，引用必须用主 ID）。拍板后把**结论与理由**写进《改造计划》§6（`DEC-*`）或《多端》§14/《改造计划》§6.1（`FORM-*`），并在本登记表标注状态与日期；**不再单独维护 ADR 文件或 decisions/ 目录**（2026-09-13 起，含历史 `DEC-1`…`DEC-9` 的理由已并入§6）。

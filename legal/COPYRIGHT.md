@@ -1,10 +1,10 @@
 # 版权与归属
 
-本文件是 KenFutWork 仓库层版权归属声明，不替代 [`LICENSE`](LICENSE)、[`EULA.md`](EULA.md)、[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) 或 [`CLA.md`](CLA.md)。
+本文件是 KenFutWork 仓库层版权归属声明，不替代 [`LICENSE`](../LICENSE)、[`EULA.md`](EULA.md)、[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) 或 [`CLA.md`](CLA.md)。
 
 ## 1. 社区版
 
-KenFutWork 社区版（本仓库及其构建产物）按 GNU General Public License v3.0 only 发布，全文见 [`LICENSE`](LICENSE)。
+KenFutWork 社区版（本仓库及其构建产物）按 GNU General Public License v3.0 only 发布，全文见 [`LICENSE`](../LICENSE)。
 
 除非另有说明，本仓库第一方代码的版权归其各自贡献者所有；贡献者通过 [`CLA.md`](CLA.md) 授予项目方再许可权。
 
@@ -14,7 +14,7 @@ KenFutWork 社区版（本仓库及其构建产物）按 GNU General Public Lice
 
 ## 3. 项目前身与主要上游
 
-- **Loomic**：本项目早期以 Loomic 名义开发，部分基础代码源自 Loomic。Loomic 以 MIT 许可发布，Copyright (c) 2026 Xinmin Zeng；全文见 [`licenses/loomic-MIT.txt`](licenses/loomic-MIT.txt)。社区版与商业版均保留该版权与许可声明。
+- **Loomic**：本项目早期以 Loomic 名义开发，部分基础代码源自 Loomic。Loomic 以 MIT 许可发布，Copyright (c) 2026 Xinmin Zeng；全文见 [`licenses/loomic-MIT.txt`](../licenses/loomic-MIT.txt)。社区版与商业版均保留该版权与许可声明。
 - **ZCode**：Code 模式 UI 移植自 ZCode 3.14.3（Apache-2.0，版权人 Z.AI Co., Ltd，待核）。保留上游 `LICENSE`、`NOTICE.md` 与移植来源清单。
 - **futureFlow**：flow 子系统上游，MIT，Copyright (c) 2026 future73807。保留版权与许可。
 - **其他第三方**：逐项见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
@@ -33,4 +33,4 @@ KenFutWork 名称、KF 标识、应用图标与界面美术等非代码资产归
 
 ## 6. 联系
 
-版权与许可问题通过 GitHub Issues 联系 `@IsKenKenYa`；安全漏洞走 [`SECURITY.md`](SECURITY.md) 的私报渠道。
+版权与许可问题通过 GitHub Issues 联系 `@IsKenKenYa`；安全漏洞走 [`SECURITY.md`](../SECURITY.md) 的私报渠道。

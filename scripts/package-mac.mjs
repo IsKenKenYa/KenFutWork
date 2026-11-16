@@ -56,15 +56,15 @@ const SUPABASE_DIR = join(ROOT, "supabase");
 const SHIM_DIR = join(ROOT, "docker", "pg-dev-shim");
 /**
  * 随包分发的许可与声明文本：GPL-3.0 第 4 条要求分发物带许可证与版权声明，
- * Apache-2.0 第 4 条 d 款与 MIT/ISC 的 attribution 同理（清单见 THIRD-PARTY-NOTICES.md §G1）。
+ * Apache-2.0 第 4 条 d 款与 MIT/ISC 的 attribution 同理（清单见 legal/THIRD-PARTY-NOTICES.md §G1）。
  */
 const LEGAL_DOCUMENTS = [
   ["LICENSE", "GPL-3.0.txt"],
   ["NOTICE.md", "NOTICE.md"],
-  ["EULA.md", "EULA.md"],
-  ["PRIVACY.md", "PRIVACY.md"],
-  ["THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
-  ["COPYRIGHT.md", "COPYRIGHT.md"],
+  ["legal/EULA.md", "EULA.md"],
+  ["legal/PRIVACY.md", "PRIVACY.md"],
+  ["legal/THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"],
+  ["legal/COPYRIGHT.md", "COPYRIGHT.md"],
   ["licenses/loomic-MIT.txt", "loomic-MIT.txt"],
 ];
 /** 上游许可文本：随移植代码与素材分发，源路径即仓库内的属主位置。 */

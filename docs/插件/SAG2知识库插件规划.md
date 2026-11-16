@@ -18,7 +18,7 @@
 | 侧边栏 | bundle 清单声明 `slot: "sidebar"`，面板数据走宿主 `/api/knowledge/*`（不走 bundle 私有路由） | §5 |
 | 凭据 | **宿主 `modelProviders` 为唯一权威源**；SAG 侧未配置时用 `sag config --key-stdin` 注入一次；已配置则复用、绝不覆盖；不做 Jev 协议桥 | §3.4／KB-1；`DEC-7` |
 | CLI 分发 | **三级探测**：复用本机已装 `sag` → 按需下载钉版本＋校验和 → 离线安装指引 | §3.3／KB-5 |
-| 许可证 | 上游 MIT × 本仓 GPL-3.0 可组合；随包／按需下载二进制须同 PR 登记 `THIRD-PARTY-NOTICES.md` | §9.1 |
+| 许可证 | 上游 MIT × 本仓 GPL-3.0 可组合；随包／按需下载二进制须同 PR 登记 `legal/THIRD-PARTY-NOTICES.md` | §9.1 |
 | 验收指标 | 只用本仓 §8 自定场景，**不采信公众号的 7000 倍／Recall 数字** | §1.5 |
 
 ## 1. 需求与边界
@@ -379,7 +379,7 @@ M3 pre-step 从 run 上下文解析出真实工作目录 → ensureRoot(root)
 | **M1 能力缝骨架** | `features/knowledge` + §4.2 登记 key + 安装态动态门控 + `DisabledProvider`；**不改产品行为** | 插件定义、门控单测 | `pnpm --filter @kenfutwork/server test`；`pnpm typecheck` |
 | **M2 CLI Provider + 初始化 + 路由**（**已完成 2026-11-08**） | `SagCliProvider` + `sag-cli-runner` + `init.ts` 凭据 stdin 注入 + `ensureRoot` 幂等编排 + `packages/shared` 契约 + 5 条 HTTP 路由 + OpenAPI 三连；**KB-3 时机修订**（见 §4.3） | `providers/sag-cli.ts`、`sag-cli-runner.ts`、`init.ts`、`http/knowledge.ts`、`knowledge-contracts.ts`、`registry.ts`、4 个测试文件 + 1 个默认跳过的集成用例 | `pnpm --filter @kenfutwork/server typecheck`；shared 单测 176/176；knowledge 单测 53/53（1 skipped）；`pnpm api:spec`（247 端点）；`test:docs`；`test:workspace` 41/41；Biome 全绿 |
 | **M3 全模式优先调用** | pre-step preflight + 意图门 + 相关性门槛 + 置顶提示段 + shared 工具；双 preset 与 Work/Flow 壳内回归 | `preflight.ts`、`prompt.ts`、`tools.ts` | 单测 + 双模式手工验收 |
-| **M4 侧边栏 bundle** | 清单／面板／安装态联动；顺手修 ZCode 壳硬编码 mode；文档地图与许可证登记 | `plugins/knowledge/`、`docs/README.md` 一行、`THIRD-PARTY-NOTICES.md` | `pnpm test:docs`；装／卸走查 |
+| **M4 侧边栏 bundle** | 清单／面板／安装态联动；顺手修 ZCode 壳硬编码 mode；文档地图与许可证登记 | `plugins/knowledge/`、`docs/README.md` 一行、`legal/THIRD-PARTY-NOTICES.md` | `pnpm test:docs`；装／卸走查 |
 | **M5 平台覆盖与调优** | 平台矩阵收口、按需下载兜底、预算／缓存／延迟调优、§8 全量验收 | 平台状态、验收回执 | §8 全量验收；`pnpm test` + `pnpm typecheck` |
 
 每阶段遵守 `AGENTS.md` 提交纪律：一步一提交、一步一测试、显式 `git add <path>`（禁 `-A`）、共享文件逐 hunk 复核、`packages/shared` 改动跑全量门禁、`docs/日志.md` **同一提交**记账（问题／方案／验证命令／遗留项）。测试资源护栏：需要串行时用 `pnpm exec turbo run test --concurrency=1`。
@@ -417,7 +417,7 @@ M3 pre-step 从 run 上下文解析出真实工作目录 → ensureRoot(root)
 
 ## 9. 合规与治理
 
-1. **许可证**：SAG-Wiki 为 MIT，本仓 GPL-3.0 系；MIT 与 GPL-3.0 可组合，但须保留 MIT 版权与许可声明。若随包或按需下载 `@zleap-ai/sag` 二进制，**同一 PR** 在根 `THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置，并核对上游 `src-tauri/licenses/` 的依赖许可（`AGENTS.md` 提交纪律 8）。只调用 CLI，**不复制上游代码／schema／字段名**（`AGENTS.md:11` references 纪律）。
+1. **许可证**：SAG-Wiki 为 MIT，本仓 GPL-3.0 系；MIT 与 GPL-3.0 可组合，但须保留 MIT 版权与许可声明。若随包或按需下载 `@zleap-ai/sag` 二进制，**同一 PR** 在`legal/THIRD-PARTY-NOTICES.md` 登记来源、许可、版权人与义务履行位置，并核对上游 `src-tauri/licenses/` 的依赖许可（`AGENTS.md` 提交纪律 8）。只调用 CLI，**不复制上游代码／schema／字段名**（`AGENTS.md:11` references 纪律）。
 2. **文档登记**：本稿已按 `docs/README.md` 规则 5／6 登记进文档地图并在文头声明角色；否则 `pnpm test:docs`／`tests/workspace.test.mjs` 会红。
 3. **决策 ID**：本稿 `KB-*` 是**方案级定稿结论的编号，不是架构决策 ID**。架构级结论（新增 ctx key、凭据口径、全模式优先级机制）在 **M1 落地 PR** 按流程写进《改造计划》§6 并取正式 `DEC-*` 编号，同时登记 `docs/README.md` 决策表；本稿只引用已登记的 `DEC-1`／`DEC-7`／`DEC-18`，不自造编号。
 4. **隐私**：语义检索会把问题与候选段落发往 Jev 服务（上游 README 明示）。**只自动注册当前工作区根，绝不扫描 Home／Desktop／Downloads 或磁盘根**；面板常驻隐私提示与关闭开关；卸载不删用户 SAG 配置与知识库。

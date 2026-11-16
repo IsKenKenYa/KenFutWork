@@ -14,7 +14,7 @@
 | 版权人 | Z.AI Co., Ltd（待核；上游 LICENSE/NOTICE 无 Copyright 行） |
 | 许可 | Apache License 2.0 |
 | 落点 | `apps/web/src/components/workbench/zcode/`（仓库内别名 `@zui/*`）、`packages/zcode-*`（由 `scripts/vendor-zcode.mjs` 装配，`package.json` 声明 `license: "Apache-2.0"`） |
-| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
+| 义务履行 | 移植目录内保留上游 `LICENSE`、`NOTICE.md`、`THIRD-PARTY-NOTICES.md`（逐字节一致）；根 [`NOTICE.md`](../NOTICE.md) 声明移植范围；逐文件来源、校验和与宿主适配偏差登记在 `packages/third-party/zcode/来源清单.json`（3029 条记录），`scripts/vendor-zcode.mjs` 在清单建立后只核对漂移、不再复制 |
 | 商标 | Apache-2.0 第 3 条不授予商标权；ZCode、Z.ai、GLM 归各自权利人，见 [`EULA.md`](EULA.md) §6 |
 
 ### A2. ai-elements（Apache-2.0，Vercel）与 ZCode 第一方包装
@@ -54,7 +54,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | 项 | 内容 |
 | --- | --- |
 | 上游 | 项目前身 Loomic（品牌改名前的项目），MIT，Copyright (c) 2026 Xinmin Zeng |
-| 许可 | MIT；全文见 [`licenses/loomic-MIT.txt`](licenses/loomic-MIT.txt) |
+| 许可 | MIT；全文见 [`licenses/loomic-MIT.txt`](../licenses/loomic-MIT.txt) |
 | 落点 | 本仓库早期代码与基础能力；`references/loomic/` 为上游参考副本 |
 | 义务履行 | 社区版与商业版均保留 Copyright 与 MIT 全文；[`COPYRIGHT.md`](COPYRIGHT.md) 与安装包 `release/legal/loomic-MIT.txt` 承担随包声明；商业版使用前取得 Xinmin Zeng 的书面来源确认（见 `DEC-24`） |
 
