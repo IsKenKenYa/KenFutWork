@@ -20,15 +20,23 @@ describe("沙箱运行时读取基线", () => {
     expect(roots).not.toContain("/opt/homebrew");
     expect(roots).not.toContain("/[v]ar");
     expect(roots).not.toContain("/private/[v]ar");
+    expect(roots).not.toContain("/var/[d]b");
+    expect(roots).not.toContain("/var/db/xcode_select_link");
   });
 
   it("darwin 缺失开发工具选择器的查询仅开放父目录自身", () => {
     const roots = unixRuntimeReadRoots([], "darwin");
     expect(roots).toContain("/[v]ar");
     expect(roots).toContain("/private/[v]ar");
+    expect(roots).toContain("/var/[d]b");
+    expect(roots).toContain("/private/var/[d]b");
+    expect(roots).toContain("/var/db/xcode_select_link");
+    expect(roots).toContain("/private/var/db/xcode_select_link");
     expect(roots).not.toContain("/private/var");
     expect(roots).not.toContain("/var/select/*");
     expect(roots).not.toContain("/private/var/select/*");
+    expect(roots).not.toContain("/var/db");
+    expect(roots).not.toContain("/private/var/db");
   });
 
   it("基线只覆盖软件目录，不放开用户数据目录", () => {
@@ -78,7 +86,12 @@ describe("沙箱运行时读取基线", () => {
           privateDirectory,
           network: { allowedDomains: [], deniedDomains: [] },
         });
-        expect(policy.filesystem.allowRead).toContain(developer);
+        expect(
+          policy.filesystem.allowRead?.some(
+            (allowed) =>
+              developer === allowed || developer.startsWith(`${allowed}/`),
+          ),
+        ).toBe(true);
         if (developer.endsWith(".app/Contents/Developer")) {
           expect(policy.filesystem.allowRead).toContain(dirname(developer));
           expect(policy.filesystem.allowRead).not.toContain(
@@ -88,6 +101,7 @@ describe("沙箱运行时读取基线", () => {
           expect(policy.filesystem.allowRead).not.toContain(dirname(developer));
         }
         expect(policy.filesystem.allowRead).not.toContain("/Volumes");
+        expect(policy.filesystem.allowRead).not.toContain("/");
         expect(policy.filesystem.allowWrite).not.toContain(developer);
         expect(policy.filesystem.allowWrite).not.toContain(dirname(developer));
         expect(policy.filesystem.allowWrite).not.toContain(root);

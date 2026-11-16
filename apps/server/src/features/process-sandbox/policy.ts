@@ -72,6 +72,11 @@ export function unixRuntimeReadRoots(
             // 固定 SRT 将单字符 glob 编译为首尾锚定 regex，不开放任何子树。
             "/[v]ar",
             "/private/[v]ar",
+            // xcode-select 查询当前工具链；父目录只开放自身，链接单独允许读取。
+            "/var/[d]b",
+            "/private/var/[d]b",
+            "/var/db/xcode_select_link",
+            "/private/var/db/xcode_select_link",
           ]
         : []),
       // Darwin 的 /bin/sh 经此系统 selector 解析；只允许系统 selector，不放开 /var。
