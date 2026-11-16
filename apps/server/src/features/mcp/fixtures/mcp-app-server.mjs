@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const uri = "ui://probe/card";
+const invalidPage = new URL("invalid-mcp-page", import.meta.url);
 const tool = {
   name: "show_card",
   description: "Show the page probe",
@@ -62,7 +64,11 @@ for await (const line of createInterface({ input: process.stdin })) {
     };
   } else if (method === "resources/read" && params.uri === uri) {
     result = {
-      contents: [{ uri, mimeType: "text/html;profile=mcp-app", text: page() }],
+      contents: [
+        existsSync(invalidPage)
+          ? { uri, mimeType: "text/plain", text: "PRIVATE_INVALID_PAGE" }
+          : { uri, mimeType: "text/html;profile=mcp-app", text: page() },
+      ],
     };
   }
   const response = result

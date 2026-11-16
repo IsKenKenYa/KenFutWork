@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { copyFile } from "node:fs/promises";
+import { copyFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
@@ -156,6 +156,15 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
         vi.waitFor(async () => expect(await frameHeight()).toBeNull(), {
           timeout: 10_000,
         });
+      const requireHint = (hint: string) =>
+        vi.waitFor(async () => {
+          const alerts = await page.evaluate<string[]>(
+            `Array.from(document.querySelectorAll('[role="alert"]'), node => node.textContent)`,
+          );
+          expect(alerts).toContain(hint);
+          expect(alerts.join(" ")).not.toContain("PRIVATE_INVALID_PAGE");
+          expect(await frameHeight()).toBeNull();
+        });
       expect(await frameHeight()).toBeNull();
       const historyButton = 'button[data-history-open="false"]';
       const history = await vi.waitFor(
@@ -173,6 +182,11 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await requirePage();
       await activate(page, "关闭插件页面");
       await requireClosed();
+      const invalidPage = join(host.workspacePath, "invalid-mcp-page");
+      await writeFile(invalidPage, "");
+      await activate(page, "打开插件页面");
+      await requireHint("无法读取插件页面，请检查插件资源。");
+      await unlink(invalidPage);
       await activate(page, "打开插件页面");
       await requirePage();
       const stopped = await fixture.client.request(
@@ -181,7 +195,10 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
         "PATCH",
       );
       expect(stopped.status, JSON.stringify(stopped.body)).toBe(200);
-      await requireClosed();
+      const expired = "插件页面已失效，请重新运行工具。";
+      await requireHint(expired);
+      await activate(page, "打开插件页面");
+      await requireHint(expired);
     } finally {
       await browser?.close();
       await model.close();
