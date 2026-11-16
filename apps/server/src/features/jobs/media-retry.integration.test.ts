@@ -53,6 +53,36 @@ const videoFailures = {
   ],
 } as const;
 
+const localRefusals = {
+  format: {
+    protocol: "volces",
+    model: "seedream-test",
+    video: false,
+    payload: { output_format: "webp" },
+    code: "unsupported",
+    diagnostic: "WebP",
+    message: "生成服务不支持所选方式或参数，请调整设置或更换模型。",
+  },
+  audio: {
+    protocol: "metaso",
+    model: "metaso/minimax-h3",
+    video: true,
+    payload: { enable_audio: true },
+    code: "unsupported_input",
+    diagnostic: "audio generation",
+    message: "生成服务不支持所选参考素材或音频选项，请修改设置或更换模型。",
+  },
+  model: {
+    protocol: "metaso",
+    model: "missing-model",
+    video: true,
+    payload: {},
+    code: "model_not_found",
+    diagnostic: "Unknown Metaso video model",
+    message: "找不到所选模型，请在供应商设置中检查模型 ID。",
+  },
+} as const;
+
 describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
   "媒体Job实际HTTP错误与重试",
   () => {
@@ -69,6 +99,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         | "auth"
         | "balance"
         | "lost"
+        | keyof typeof localRefusals
         | keyof typeof videoFailures,
       rejectSubmission = false,
     ) {
@@ -77,7 +108,11 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       const video = Object.hasOwn(videoFailures, mode)
         ? videoFailures[mode as keyof typeof videoFailures]
         : undefined;
-      const model = video ? "seedance-test" : "gpt-image-1";
+      const local = Object.hasOwn(localRefusals, mode)
+        ? localRefusals[mode as keyof typeof localRefusals]
+        : undefined;
+      const isVideo = Boolean(video || local?.video);
+      const model = local?.model ?? (video ? "seedance-test" : "gpt-image-1");
       const server = createServer(async (request, response) => {
         for await (const _chunk of request) {
           /* 消费模拟供应商输入 */
@@ -156,7 +191,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       });
       const provider = await modelProviders.createInstance(db.actor, {
         name: "重试模拟供应商",
-        protocol: video ? "volces" : "openai-compatible",
+        protocol: local?.protocol ?? (video ? "volces" : "openai-compatible"),
         baseUrl: `${baseUrl}${video ? "/api/v3" : "/v1"}`,
         apiKey: "test-only",
         ...(video ? { headers: { "x-private": "OTHER-SECRET" } } : {}),
@@ -164,7 +199,7 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
           {
             id: model,
             name: "回环模型",
-            capability: video ? "video" : "image",
+            capability: isVideo ? "video" : "image",
           },
         ],
       });
@@ -184,13 +219,14 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
       });
       const input = {
         requestId: crypto.randomUUID(),
-        jobType: video
+        jobType: isVideo
           ? ("video_generation" as const)
           : ("image_generation" as const),
         payload: {
           prompt: "猫",
           model,
           provider_instance_id: provider.id,
+          ...local?.payload,
         },
       };
       const job = await jobs.createJob(db.actor, input);
@@ -226,7 +262,9 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
             videoPollDelaySeconds: 1,
           },
         },
-        { queues: [video ? "video_generation_jobs" : "image_generation_jobs"] },
+        {
+          queues: [isVideo ? "video_generation_jobs" : "image_generation_jobs"],
+        },
       );
       return {
         jobs,
@@ -249,6 +287,54 @@ describe.skipIf(process.env.KENFUTWORK_MEDIA_JOBS_TEST_PG !== "1")(
         },
       };
     }
+    it.each(["format", "audio", "model"] as const)(
+      "本机适配器拒绝 %s 后，查询、重放和模型提示保留可操作原因",
+      async (mode) => {
+        const expected = localRefusals[mode];
+        const f = await fixture(mode);
+        try {
+          await vi.waitFor(
+            async () =>
+              expect(await f.jobs.getJobForWorker(f.job.id)).toMatchObject({
+                status: "dead_letter",
+                error_code: expected.code,
+              }),
+            { timeout: 4000 },
+          );
+          const record = await f.jobs.getJobForWorker(f.job.id);
+          expect(record.error_message).toContain(expected.diagnostic);
+          expect(record.attempt_count).toBe(1);
+          expect(record.provider_job_id).toBeNull();
+          const publicFailure = {
+            id: f.job.id,
+            status: "dead_letter",
+            error_code: expected.code,
+            error_message: expected.message,
+          };
+          const detail = await f.read(`/api/jobs/${f.job.id}`);
+          expect(detail.statusCode).toBe(200);
+          expect(detail.json().job).toMatchObject(publicFailure);
+          const list = await f.read(
+            `/api/jobs?request_id=${f.input.requestId}`,
+          );
+          expect(list.statusCode).toBe(200);
+          expect(list.json().jobs).toMatchObject([publicFailure]);
+          expect(await f.jobs.createJob(db.actor, f.input)).toMatchObject(
+            publicFailure,
+          );
+          const issue = readMediaJobWaitIssue(record);
+          if (!issue) throw new Error("工具应读取到已保存的适配器拒绝");
+          expect(describeMediaJobWaitIssue(issue)).toMatchObject({
+            isError: true,
+            errorCode: expected.code,
+            error: expected.message,
+          });
+          expect(f.methods).toEqual([]);
+        } finally {
+          await f.close();
+        }
+      },
+    );
     it.each([
       ["input", true],
       ["input", false],

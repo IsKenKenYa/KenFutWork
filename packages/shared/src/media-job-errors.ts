@@ -21,6 +21,12 @@ const messages: ReadonlyMap<string, string> = new Map([
     "模型识别的任务类型与请求不一致，请调整提示词和参考素材。",
   ],
   ["invalid_input", "生成参数无效，请检查模型和参考素材。"],
+  ["unsupported", "生成服务不支持所选方式或参数，请调整设置或更换模型。"],
+  [
+    "unsupported_input",
+    "生成服务不支持所选参考素材或音频选项，请修改设置或更换模型。",
+  ],
+  ["model_not_found", "找不到所选模型，请在供应商设置中检查模型 ID。"],
   ["unsupported_parameter", "当前模型不支持此参数，请修改生成设置。"],
   ["no_output", "供应商未返回可用内容，请检查生成参数。"],
   ["media_output_save_failed", "生成结果保存失败，请检查存储空间和写入权限。"],
