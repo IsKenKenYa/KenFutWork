@@ -1,3 +1,4 @@
+import { ApiAccessError, ApiApplicationError } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
 import type { ToolCallRendererContribution } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { McpToolCallBlock } from "@zui/ToolCallBlocks/renderers/mcp.js";
@@ -6,6 +7,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { z } from "zod";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { McpAppFrame, mcpAppPageSchema } from "./McpAppFrame.js";
+
+const expiredMessage = "插件页面已失效，请重新运行工具。";
+const retryMessage = "插件页面打不开，请重新打开。";
+
+function pageFailure(error: unknown): string {
+  if (!(error instanceof ApiApplicationError)) return retryMessage;
+  if (error.status === 401) return new ApiAccessError().message;
+  // 仅展示 MCP 页面服务公开的消息；宿主意外错误可能含本机细节。
+  if (
+    error.code === "mcp_app_unavailable" ||
+    error.code === "mcp_app_invalid_page"
+  )
+    return error.message;
+  return retryMessage;
+}
 
 function readRef(context: ToolCallBlockRenderContext): string | undefined {
   const { status, raw } = context.toolCallNode.toolCall;
@@ -55,10 +71,14 @@ function McpAppView({
     setPage(null);
     control.current?.focus();
   }, []);
-  const failed = useCallback(() => {
-    close();
-    setError("插件页面加载失败");
-  }, [close]);
+  const showFailure = useCallback(
+    (message: string) => {
+      close();
+      setError(message);
+    },
+    [close],
+  );
+  const failFrame = useCallback(() => showFailure(retryMessage), [showFailure]);
   useEffect(() => {
     if (!open) return;
     const request = new AbortController();
@@ -72,16 +92,13 @@ function McpAppView({
         if (request.signal.aborted) return;
         setPage(mcpAppPageSchema.parse(received));
         await client.callMcpApp("waitForClose", target, request.signal);
-        if (!request.signal.aborted) {
-          close();
-          setError("页面已失效，请重新运行工具");
-        }
-      } catch {
-        if (!request.signal.aborted) failed();
+        if (!request.signal.aborted) showFailure(expiredMessage);
+      } catch (error) {
+        if (!request.signal.aborted) showFailure(pageFailure(error));
       }
     })();
     return () => request.abort();
-  }, [open, target, client, close, failed]);
+  }, [open, target, client, showFailure]);
   return (
     <div className="grid min-w-0 gap-2 px-2 py-1">
       <Button
@@ -114,7 +131,7 @@ function McpAppView({
         <McpAppFrame
           page={page}
           theme={theme}
-          onError={failed}
+          onError={failFrame}
           onClose={close}
         />
       ) : null}
