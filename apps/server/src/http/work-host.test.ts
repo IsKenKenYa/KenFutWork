@@ -494,6 +494,53 @@ describe("work 宿主路由", () => {
     expect(missing.json().error.message).toContain("尚未落位");
   });
 
+  it("字体上传区分无效文件、存储失败与保存成功", async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), "work-host-data-"));
+    createdDirs.push(dataDir);
+    const app = await fixture({ dataDir });
+    const fonts = join(dataDir, "work", "fonts");
+    const validFont = await readFile(
+      new URL("../features/work/__fixtures__/test-font.ttf", import.meta.url),
+    );
+    async function upload(bytes: Uint8Array<ArrayBuffer>) {
+      const body = new FormData();
+      body.set("file", new Blob([bytes]), "font.ttf");
+      const request = new Request("http://localhost/api/work/host/fonts", {
+        method: "POST",
+        body,
+      });
+      return app.inject({
+        method: "POST",
+        path: "/api/work/host/fonts",
+        headers: Object.fromEntries(request.headers),
+        payload: Buffer.from(await request.arrayBuffer()),
+      });
+    }
+
+    const invalid = await upload(new TextEncoder().encode("invalid font"));
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error).toEqual({
+      code: "application_error",
+      message: "字体文件无效 请重新选择",
+    });
+    await mkdir(join(dataDir, "work"));
+    await writeFile(fonts, "无法创建字体目录");
+    const broken = await upload(Uint8Array.from(validFont));
+    expect(broken.statusCode).toBe(500);
+    expect(broken.json().error).toEqual({
+      code: "application_error",
+      message: "无法上传字体 请检查字体目录后重试",
+    });
+    await rm(fonts);
+    const saved = await upload(Uint8Array.from(validFont));
+    expect(saved.statusCode).toBe(200);
+    const snapshot = saved.json();
+    expect(snapshot.fonts).toContainEqual(snapshot.added);
+    expect(await readFile(join(fonts, snapshot.added.fileName))).toEqual(
+      validFont,
+    );
+  });
+
   it("用户字体：清单接在包内清单之后，字体文件从数据目录同源提供", async () => {
     const editorsDir = await emptyEditorsDir();
     const dataDir = await mkdtemp(join(tmpdir(), "work-host-data-"));

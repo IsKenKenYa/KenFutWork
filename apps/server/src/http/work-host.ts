@@ -27,6 +27,7 @@ import {
   MAX_FONT_BYTES,
   manifestFor,
   removeFont,
+  WorkFontInputError,
   workFontsDir,
 } from "../features/work/fonts.js";
 import {
@@ -215,12 +216,41 @@ export async function registerWorkHostRoutes(
   // 编辑器是 WASM 自绘、读不到系统字体：用户把 ttf/otf 放进实例数据目录，宿主在
   // 托管编辑器时映射到站点 `fonts/user/` 并生成 manifest，运行时加载字体的编辑器即可用。
 
+  const fontFailure = (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    error: unknown,
+    message: string,
+  ) => {
+    if (error instanceof WorkFontInputError)
+      return applicationError(reply, 400, error.message);
+    request.log.error({ err: error }, message);
+    return applicationError(reply, 500, message);
+  };
+  const sendFontSnapshot = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    added?: Awaited<ReturnType<typeof addFont>>,
+  ) => {
+    try {
+      return reply.send({
+        dir: workFontsDir(options.dataDir),
+        fonts: await listFonts(options.dataDir),
+        ...(added ? { added } : {}),
+      });
+    } catch (error) {
+      return fontFailure(
+        request,
+        reply,
+        error,
+        "无法读取字体 请检查字体目录后重试",
+      );
+    }
+  };
+
   app.get("/api/work/host/fonts", async (request, reply) => {
     if (!(await requireLocalAccess(request, reply))) return;
-    return reply.send({
-      dir: workFontsDir(options.dataDir),
-      fonts: await listFonts(options.dataDir),
-    });
+    return sendFontSnapshot(request, reply);
   });
 
   app.post("/api/work/host/fonts", async (request, reply) => {
@@ -246,16 +276,23 @@ export async function registerWorkHostRoutes(
         fileName,
         bytes,
       });
-      return reply.send({
-        dir: workFontsDir(options.dataDir),
-        fonts: await listFonts(options.dataDir),
-        added: font,
-      });
+      return sendFontSnapshot(request, reply, font);
     } catch (error) {
-      return applicationError(
+      if (error instanceof app.multipartErrors.RequestFileTooLargeError)
+        return applicationError(
+          reply,
+          400,
+          `请选择不超过 ${MAX_FONT_BYTES / 1024 / 1024} MB 的字体`,
+        );
+      if (error instanceof app.multipartErrors.FilesLimitError)
+        return applicationError(reply, 400, "一次只能上传一个字体");
+      if (error instanceof app.multipartErrors.InvalidMultipartContentTypeError)
+        return applicationError(reply, 400, "请选择一个字体文件");
+      return fontFailure(
+        request,
         reply,
-        400,
-        error instanceof Error ? error.message : "字体上传失败。",
+        error,
+        "无法上传字体 请检查字体目录后重试",
       );
     }
   });
@@ -266,16 +303,14 @@ export async function registerWorkHostRoutes(
     try {
       await removeFont(options.dataDir, fileName);
     } catch (error) {
-      return applicationError(
+      return fontFailure(
+        request,
         reply,
-        400,
-        error instanceof Error ? error.message : "删除失败。",
+        error,
+        "无法删除字体 请检查字体目录后重试",
       );
     }
-    return reply.send({
-      dir: workFontsDir(options.dataDir),
-      fonts: await listFonts(options.dataDir),
-    });
+    return sendFontSnapshot(request, reply);
   });
 
   // ---- 编辑器静态托管（WASM iframe 内嵌的承载面）----

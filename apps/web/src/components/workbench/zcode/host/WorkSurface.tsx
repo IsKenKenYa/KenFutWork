@@ -1,9 +1,12 @@
-import type {
-  WorkEditor,
-  WorkEditorInstallStatus,
-  WorkFontsResponse,
-  WorkHostEditorsResponse,
-  WorkHostStatusResponse,
+import {
+  ApiAccessError,
+  ApiApplicationError,
+  type WorkEditor,
+  type WorkEditorInstallStatus,
+  type WorkFontsResponse,
+  type WorkHostEditorsResponse,
+  type WorkHostStatusResponse,
+  workFontsResponseSchema,
 } from "@kenfutwork/shared";
 import {
   ZCodeStartupLogoBadge,
@@ -337,97 +340,95 @@ function EditorsInfoView({
           </div>
         ) : null}
 
-        {/* 探针失败时顶部已透出可读原因，字体面板不再重复请求与叠加错误。 */}
-        <WorkFontsSection active={active && !loadError} />
+        {editors ? <WorkFontsSection active={active && !loadError} /> : null}
       </div>
     </div>
   );
 }
 
-/**
- * 字体区：编辑器是 WASM 自绘、读不到系统字体，只能用它自带的或站点同源提供的字体。
- * 这里把用户自己的 ttf/otf 放进实例数据目录，宿主托管编辑器时映射到 `fonts/user/`
- * 并生成 manifest——Photocraft / VectorCraft 这类运行时加载字体的编辑器立刻可用。
- *
- * 边界：上传的是用户自己的字体，只在本机实例使用；商业字体（宋体/雅黑/方正系列）
- * 的授权由用户自行保证，产品不随包分发。
- */
-function WorkFontsSection({ active }: { active: boolean }) {
+const fontFallback = {
+  read: "无法读取字体 请检查本机连接",
+  upload: "无法上传字体 请检查本机连接",
+  remove: "无法删除字体 请检查本机连接",
+};
+
+async function requestFonts(path = "/api/work/host/fonts", init?: RequestInit) {
+  return workFontsResponseSchema.parse(await surfaceJson<unknown>(path, init));
+}
+
+function useWorkFonts(active: boolean) {
   const [fonts, setFonts] = useState<WorkFontsResponse | null>(null);
-  const [dir, setDir] = useState<string>("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{
+    action: keyof typeof fontFallback;
+    message: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
 
-  const load = useCallback(async (initial: boolean) => {
-    try {
-      const data = await surfaceJson<WorkFontsResponse>("/api/work/host/fonts");
-      setFonts(data);
-      setDir(data.dir);
-      setNotice(null);
-    } catch (error) {
-      // 自动首载失败静默：引擎探针失败时顶部已透出可读原因，这里不再叠加同一错误。
-      if (!initial)
-        setNotice(error instanceof Error ? error.message : "读取字体失败");
-    }
-  }, []);
-  useEffect(() => {
-    if (active) void load(true);
-  }, [active, load]);
-
-  const upload = useCallback(
-    async (file: File) => {
+  const run = useCallback(
+    async (
+      action: keyof typeof fontFallback,
+      operation: () => Promise<void>,
+    ) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
       setBusy(true);
-      setNotice(null);
       try {
-        const body = new FormData();
-        body.append("file", file, file.name);
-        const response = await surfaceFetch("/api/work/host/fonts", {
-          method: "POST",
-          body,
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          error?: { message?: string };
-        };
-        if (!response.ok)
-          throw new Error(payload.error?.message ?? `HTTP ${response.status}`);
-        await load(false);
+        await operation();
+        setNotice(null);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "上传失败");
+        const message =
+          error instanceof ApiApplicationError
+            ? error.status === 401
+              ? new ApiAccessError().message
+              : error.message
+            : fontFallback[action];
+        setNotice({ action, message });
       } finally {
+        inFlight.current = false;
         setBusy(false);
       }
     },
-    [load],
+    [],
   );
+  const load = useCallback(
+    () => run("read", async () => setFonts(await requestFonts())),
+    [run],
+  );
+  useEffect(() => {
+    if (active) void load();
+  }, [active, load]);
 
+  function upload(file: File) {
+    return run("upload", async () => {
+      const body = new FormData();
+      body.append("file", file, file.name);
+      setFonts(await requestFonts(undefined, { method: "POST", body }));
+    });
+  }
+
+  function removeAll(fileNames: string[]) {
+    return run("remove", async () => {
+      for (const fileName of fileNames) {
+        setFonts(
+          await requestFonts(
+            `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
+            { method: "DELETE" },
+          ),
+        );
+      }
+    });
+  }
+
+  return { busy, fonts, notice, load, upload, removeAll };
+}
+
+/** 编辑器从该实例读取用户上传的字体。字体不会随应用分发。 */
+function WorkFontsSection({ active }: { active: boolean }) {
+  const { busy, fonts, notice, load, upload, removeAll } = useWorkFonts(active);
   // 一个家族一份记录：同名的版本注释（预览测试版/轻便版）先归一化再合并，
   // 排序规则见 fontFamilies——英文字体在前、中文在后，各自升序。
   const families = useMemo(() => fontFamilies(fonts?.fonts ?? []), [fonts]);
-
-  const remove = useCallback(
-    async (fileName: string) => {
-      setBusy(true);
-      try {
-        await surfaceFetch(
-          `/api/work/host/fonts/${encodeURIComponent(fileName)}`,
-          { method: "DELETE" },
-        );
-        await load(false);
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : "删除失败");
-      } finally {
-        setBusy(false);
-      }
-    },
-    [load],
-  );
-
-  const removeAll = useCallback(
-    async (fileNames: string[]) => {
-      for (const fileName of fileNames) await remove(fileName);
-    },
-    [remove],
-  );
 
   return (
     <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card text-sm">
@@ -439,7 +440,7 @@ function WorkFontsSection({ active }: { active: boolean }) {
             type="file"
             accept=".ttf,.otf,.ttc"
             className="hidden"
-            disabled={busy}
+            disabled={busy || !fonts}
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
@@ -448,7 +449,15 @@ function WorkFontsSection({ active }: { active: boolean }) {
           />
         </label>
       </div>
-      {families.length === 0 ? (
+      {!fonts && !notice ? (
+        <p
+          role="status"
+          className="px-4 py-3 text-center text-xs text-foreground-subtle"
+        >
+          读取字体中…
+        </p>
+      ) : null}
+      {fonts && families.length === 0 ? (
         <p className="px-4 py-3 text-center text-xs text-foreground-subtle">
           暂无字体
         </p>
@@ -481,18 +490,30 @@ function WorkFontsSection({ active }: { active: boolean }) {
           </div>
         ))
       )}
-      {dir ? (
+      {fonts?.dir ? (
         <p
           className="truncate border-t border-border px-4 py-2 font-mono text-[11px] text-foreground-subtle"
-          title={dir}
+          title={fonts.dir}
         >
-          {dir}
+          {fonts.dir}
         </p>
       ) : null}
       {notice ? (
-        <p className="border-t border-border px-4 py-2 text-xs text-destructive">
-          {notice}
-        </p>
+        <div className="flex items-center gap-3 border-t border-border px-4 py-2 text-xs">
+          <p role="alert" className="flex-1 text-destructive">
+            {notice.message}
+          </p>
+          {notice.action !== "upload" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void load()}
+              className="rounded-md border border-border px-2 py-0.5 disabled:opacity-50"
+            >
+              刷新字体
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

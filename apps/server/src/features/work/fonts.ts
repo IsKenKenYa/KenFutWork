@@ -67,6 +67,8 @@ const FORMAT_BY_EXT: Record<string, WorkFontFormat> = {
 /** 单个字体上限：24MB——常见中文字体（含 CJK 全集）在 10–20MB 量级。 */
 export const MAX_FONT_BYTES = 24 * 1024 * 1024;
 
+export class WorkFontInputError extends Error {}
+
 export function workFontsDir(dataDir: string): string {
   return join(dataDir, ...FONT_DIR.split("/"));
 }
@@ -337,14 +339,15 @@ export async function addFont(input: {
   bytes: Buffer;
 }): Promise<StoredFont> {
   const format = fontFormatOf(input.fileName);
-  if (!format) throw new Error("只支持 ttf / otf / ttc 字体文件。");
-  if (input.bytes.length === 0) throw new Error("字体文件是空的。");
+  if (!format) throw new WorkFontInputError("请选择 TTF、OTF 或 TTC 字体");
+  if (input.bytes.length === 0)
+    throw new WorkFontInputError("字体文件为空 请重新选择");
   if (input.bytes.length > MAX_FONT_BYTES)
-    throw new Error(
-      `字体超过上限：${Math.round(input.bytes.length / 1024 / 1024)}MB > ${MAX_FONT_BYTES / 1024 / 1024}MB。`,
+    throw new WorkFontInputError(
+      `请选择不超过 ${MAX_FONT_BYTES / 1024 / 1024} MB 的字体`,
     );
   if (fontFamilyName(input.bytes) === null && !hasSfntHeader(input.bytes))
-    throw new Error("这不是有效的字体文件（缺少 sfnt 头）。");
+    throw new WorkFontInputError("字体文件无效 请重新选择");
   const dir = workFontsDir(input.dataDir);
   await mkdir(dir, { recursive: true });
   const digest = createHash("sha256").update(input.bytes).digest("hex");
@@ -357,10 +360,10 @@ export async function addFont(input: {
 
 export async function removeFont(dataDir: string, fileName: string) {
   if (fileName.startsWith(BUNDLED_PREFIX))
-    throw new Error("内置字体不能删除。");
+    throw new WorkFontInputError("内置字体不能删除");
   // 只允许删字体目录里的直接文件：文件名不参与路径拼接。
   const safe = fontFormatOf(fileName) !== null && !/[\\/]/u.test(fileName);
-  if (!safe) throw new Error("字体名不合法。");
+  if (!safe) throw new WorkFontInputError("字体名不合法 请刷新字体列表");
   await rm(join(workFontsDir(dataDir), fileName), { force: true });
 }
 

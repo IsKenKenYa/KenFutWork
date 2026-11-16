@@ -98,17 +98,17 @@ describe("用户字体库", () => {
     const dataDir = tmp();
     await expect(
       addFont({ dataDir, fileName: "x.ttf", bytes: Buffer.from("nope") }),
-    ).rejects.toThrow(/有效的字体/);
+    ).rejects.toThrow("字体文件无效 请重新选择");
     await expect(
       addFont({ dataDir, fileName: "x.ttf", bytes: Buffer.alloc(0) }),
-    ).rejects.toThrow(/空的/);
+    ).rejects.toThrow("字体文件为空 请重新选择");
     await expect(
       addFont({
         dataDir,
         fileName: "x.ttf",
         bytes: Buffer.concat([REAL_FONT, Buffer.alloc(MAX_FONT_BYTES)]),
       }),
-    ).rejects.toThrow(/上限/);
+    ).rejects.toThrow(`请选择不超过 ${MAX_FONT_BYTES / 1024 / 1024} MB 的字体`);
     expect((await listFonts(dataDir)).filter((font) => !font.builtin)).toEqual(
       [],
     );
