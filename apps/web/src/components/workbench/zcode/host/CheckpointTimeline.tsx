@@ -66,10 +66,12 @@ async function readPreview(path: string, signal: AbortSignal) {
 export function CheckpointTimeline({
   workspacePath,
   workspaceIdentity,
+  completedTurnId,
   onRestored,
 }: {
   workspacePath: string;
   workspaceIdentity?: string;
+  completedTurnId?: string;
   onRestored?: () => void;
 }) {
   const taskId = useZCodeSessionStore(
@@ -85,6 +87,7 @@ export function CheckpointTimeline({
       key={taskId}
       taskId={taskId}
       projectId={projectId}
+      completedTurnId={completedTurnId}
       onRestored={onRestored}
     />
   );
@@ -93,13 +96,18 @@ export function CheckpointTimeline({
 function TaskCheckpointTimeline({
   taskId,
   projectId,
+  completedTurnId,
   onRestored,
 }: {
   taskId: string;
   projectId: string | null;
+  completedTurnId: string | undefined;
   onRestored?: (() => void) | undefined;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openedList, setOpenedList] = useState<{
+    completedTurnId: string | undefined;
+  } | null>(null);
+  const open = openedList !== null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -109,6 +117,8 @@ function TaskCheckpointTimeline({
     `/api/code/checkpoints?${query}`,
     readCheckpoints,
     "无法读取检查点 请重试",
+    // 预览期间保留用户选择的清单；关闭后才按最新轮次重新读取。
+    openedList ? openedList.completedTurnId : completedTurnId,
   );
   const checkpoints = list.state.status === "ready" ? list.state.value : [];
   const selectedCheckpoint = checkpoints.find((row) => row.id === selectedId);
@@ -126,7 +136,7 @@ function TaskCheckpointTimeline({
       : null;
 
   function close() {
-    setOpen(false);
+    setOpenedList(null);
     setSelectedId(null);
     setRestoreError(null);
     previewRead.reload();
@@ -180,7 +190,7 @@ function TaskCheckpointTimeline({
         data-testid="checkpoint-timeline-trigger"
         onClick={() => {
           setSelectedId((current) => current ?? checkpoints[0]?.id ?? null);
-          setOpen(true);
+          setOpenedList({ completedTurnId });
         }}
       >
         <HistoryIcon className="size-3.5" />

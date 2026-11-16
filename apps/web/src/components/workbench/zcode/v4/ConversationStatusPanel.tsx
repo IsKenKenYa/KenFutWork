@@ -129,6 +129,7 @@ interface ConversationStatusPanelProps {
   endedSubagentCount?: number;
   /** 宿主已为当前会话绑定 activeTaskId；运行记录入口不依赖 Git 摘要。 */
   hasActiveTask?: boolean;
+  completedCheckpointTurnId?: string;
   rootSessionId?: string;
   parentSessionId?: string;
   /** 当前 pane 是否由手机 Web 远控壳承载。 */
@@ -1734,6 +1735,7 @@ function ConversationStatusPanelImpl({
   endedWorkflowRunCount = 0,
   endedSubagentCount = 0,
   hasActiveTask = false,
+  completedCheckpointTurnId,
   rootSessionId,
   parentSessionId,
   isMobileViewport = false,
@@ -2090,6 +2092,7 @@ function ConversationStatusPanelImpl({
                 <CheckpointTimeline
                   workspacePath={workspacePath}
                   workspaceIdentity={workspaceIdentity}
+                  completedTurnId={completedCheckpointTurnId}
                   onRestored={onRefreshGit}
                 />
                 <RunHistoryEntry

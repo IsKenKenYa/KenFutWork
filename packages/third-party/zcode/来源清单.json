@@ -21125,10 +21125,11 @@
       "source": "references/zcode/packages/ui/src/v4/ConversationStatusPanel.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/ConversationStatusPanel.tsx",
       "sha256": "6d4d0efc27e23b635a59f047c04aadfab7aab73b84d2c3991a6007c174a61da4",
-      "copiedSha256": "40933bc39de120e456d07b2e637dd6b7448d04f12e667dfd5694e90d956cb104",
+      "copiedSha256": "fdd3ec5c8239b5e5c9665b0e1eacd74d41dcfb0a8c432d6b7ef567dfa5d9293a",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "KenFutWork 的检查点和运行记录在同一固定区块显示，不依赖用户仓库 Git 工具"
+        "KenFutWork 的检查点和运行记录在同一固定区块显示，不依赖用户仓库 Git 工具",
+        "已结束的主轮次通知检查点清单重新读取。"
       ]
     },
     {
@@ -21246,8 +21247,9 @@
       "source": "references/zcode/packages/ui/src/v4/SessionPane.tsx",
       "target": "apps/web/src/components/workbench/zcode/v4/SessionPane.tsx",
       "sha256": "70542a0b03f61e3b4b4d61e29a7b69ca8cf354e3a51f71d0c21fde1d930e9629",
-      "copiedSha256": "391e161abb10889a313cf8ce6fff13ed6065500219177c327cf24045d2552487",
+      "copiedSha256": "1a17f68627c4a16ccceea11de6f9e7205ba4d2aaf1f0ebb23f4b908baf2fc467",
       "adaptations": [
+        "从当前 Task 的已结束 Agent 轮次更新检查点清单。",
         "参考 ZCode 3.18.2：以当前 Task 及历史目标打开独立编辑草稿，保存只更新对话。",
         "参考 ZCode 3.18.2：以真实 Task 调用冻结和原地编辑命令，保留各会话草稿。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",

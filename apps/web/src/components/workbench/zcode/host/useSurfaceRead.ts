@@ -14,15 +14,17 @@ export type SurfaceReadState<T> =
   | { status: "ready"; value: T }
   | { status: "error"; message: string };
 
-/** 路径或读取次数改变后，只允许本次请求更新当前页面。 */
+/** 路径、来源版本或读取次数改变后，只允许本次请求更新当前页面。 */
 export function useSurfaceRead<T>(
   path: string | null,
   read: (path: string, signal: AbortSignal) => Promise<T>,
   fallback: string,
+  revision?: string,
 ) {
   const [result, setResult] = useState<{
     path: string;
     attempt: number;
+    revision: string | undefined;
     state: Exclude<SurfaceReadState<T>, { status: "loading" }>;
   } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -36,13 +38,19 @@ export function useSurfaceRead<T>(
     void read(path, signal).then(
       (value) => {
         if (!signal.aborted)
-          setResult({ path, attempt, state: { status: "ready", value } });
+          setResult({
+            path,
+            attempt,
+            revision,
+            state: { status: "ready", value },
+          });
       },
       (failure: unknown) => {
         if (!signal.aborted)
           setResult({
             path,
             attempt,
+            revision,
             state: {
               status: "error",
               message: readableSurfaceError(failure, fallback),
@@ -51,9 +59,12 @@ export function useSurfaceRead<T>(
       },
     );
     return () => controller.abort();
-  }, [path, attempt, read, fallback]);
+  }, [path, attempt, read, fallback, revision]);
   const state: SurfaceReadState<T> =
-    path && result?.path === path && result.attempt === attempt
+    path &&
+    result?.path === path &&
+    result.attempt === attempt &&
+    result.revision === revision
       ? result.state
       : { status: "loading" };
   return { state, reload };

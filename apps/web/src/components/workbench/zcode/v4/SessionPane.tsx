@@ -4248,6 +4248,12 @@ export function SessionPane({
   const statusPanelVariant = resolveConversationStatusPanelVariant({
     variantOverride: effectiveSummaryPanelVariantOverride,
   });
+  // 主轮次终态在检查点保存之后发布；没有文件变更也可能有检查点。
+  const completedCheckpointTurnId = activeTaskId && snapshot?.sessionId === activeTaskId
+    ? snapshot.rows.window.findLast((row) =>
+        row.kind === "turnHeader" && row.state !== "running" && row.executionKind !== "controlOnly",
+      )?.turnId
+    : undefined;
   // 若只有 status panel 内部知道自动展开态，而 timeline/composer 未同步调整布局，
   // 宽屏下就会出现面板覆盖内容。因此外层布局也必须使用同一展开状态。
   const shouldUseStatusPanelInlineLayout =
@@ -5018,6 +5024,7 @@ export function SessionPane({
             workflowRuns={snapshot?.workflowRuns?.runs ?? []}
             endedSubagentCount={subagents.endedTotal}
             hasActiveTask={Boolean(activeTaskId) && !selectionSideChat}
+            completedCheckpointTurnId={completedCheckpointTurnId}
             rootSessionId={rootSessionId ?? sessionId ?? undefined}
             parentSessionId={sessionId ?? undefined}
             layoutMode={statusPanelLayout}
