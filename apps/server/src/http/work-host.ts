@@ -446,6 +446,32 @@ const EDITOR_THEME_SCRIPT = `<script>(function(){
 
 const EDITOR_SHELL_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}try{Object.defineProperty(Navigator.prototype,"language",{get:function(){return "zh-CN";}});Object.defineProperty(Navigator.prototype,"languages",{get:function(){return ["zh-CN","zh"];}});}catch(error){}var BOOT="kfw-editor-boot";function ready(){var el=document.getElementById(BOOT);if(el&&!el.dataset.done){el.dataset.done="1";el.style.opacity="0";setTimeout(function(){el.remove();},220);}try{parent.postMessage({type:"kenfutwork:editor-ready"},TARGET_ORIGIN);}catch(error){}}function boot(){if(document.getElementById(BOOT))return;var style=document.createElement("style");style.textContent="#kfw-editor-boot{position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:var(--kfw-editor-boot-bg,#fff);transition:opacity .2s ease}#kfw-editor-boot img{height:56px;width:auto;filter:var(--kfw-editor-boot-filter,brightness(0))}#kfw-editor-boot i{width:24px;height:24px;border:2px solid var(--kfw-editor-boot-border,rgba(115,115,115,.3));border-top-color:var(--kfw-editor-boot-border-top,rgba(60,60,60,.75));border-radius:9999px;animation:kfw-editor-spin .8s linear infinite}@keyframes kfw-editor-spin{to{transform:rotate(360deg)}}";document.head.appendChild(style);var wrap=document.createElement("div");wrap.id=BOOT;wrap.setAttribute("role","status");wrap.innerHTML='<img src="/logo-mark.png" alt=""><i></i>';document.body.appendChild(wrap);}function start(){boot();var hadLoading=!!document.querySelector('[id$="_loading"]');if(hadLoading){var observer=new MutationObserver(function(){if(!document.querySelector('[id$="_loading"]')){observer.disconnect();ready();}});observer.observe(document.body,{childList:true,subtree:true});}else{window.addEventListener("load",function(){setTimeout(ready,300);},{once:true});}window.addEventListener("TrunkApplicationStarted",ready,{once:true});setTimeout(ready,30000);}if(document.readyState==="loading"){document.addEventListener("DOMContentLoaded",start,{once:true});}else{start();}})();</script>`;
 
+/** 绑定项目时，让上游编辑器自己的 Blob 导出分支交给宿主保存。 */
+const EDITOR_SAVE_TARGET_SCRIPT = `<script>(function(){
+  if(window.parent===window || typeof window.showSaveFilePicker!=="function")return;
+  var targetOrigin;
+  try{targetOrigin=new URL(document.referrer).origin;}catch(error){targetOrigin=location.origin;}
+  var pickerProperty=Object.getOwnPropertyDescriptor(window,"showSaveFilePicker");
+  var toProject=false;
+  function apply(next){
+    if(next===toProject)return;
+    if(next){
+      Object.defineProperty(window,"showSaveFilePicker",{value:undefined,configurable:true});
+    }else if(pickerProperty){
+      Object.defineProperty(window,"showSaveFilePicker",pickerProperty);
+    }else{
+      delete window.showSaveFilePicker;
+    }
+    toProject=next;
+  }
+  apply(new URLSearchParams(location.search).get("saveTarget")==="project");
+  window.addEventListener("message",function(event){
+    if(event.source!==parent||event.origin!==targetOrigin)return;
+    var data=event.data;
+    if(data&&data.type==="kenfutwork:editor-save-target"&&typeof data.toProject==="boolean")apply(data.toProject);
+  });
+})();</script>`;
+
 /**
  * Craft 的共同保存出口：上游最终都会点击 Blob 锚点；在 iframe 内截住这一次点击，
  * 把字节交给宿主统一下载缝。非 Blob 与普通链接保持原行为，不碰各应用的文档逻辑。
@@ -453,22 +479,15 @@ const EDITOR_SHELL_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_OR
 const EDITOR_SAVE_BRIDGE_SCRIPT = `<script>(function(){var TARGET_ORIGIN;try{TARGET_ORIGIN=new URL(document.referrer).origin;}catch(error){TARGET_ORIGIN=location.origin;}if(window.__kfwEditorSaveBridge)return;window.__kfwEditorSaveBridge=true;var nativeClick=HTMLAnchorElement.prototype.click;var sequence=0;HTMLAnchorElement.prototype.click=function(){var anchor=this;if(!anchor.download||!/^blob:/i.test(anchor.href)){return nativeClick.call(anchor);}var saveId=Date.now().toString(36)+"-"+(++sequence);fetch(anchor.href).then(function(response){if(!response.ok)throw new Error("blob read failed");return response.blob();}).then(function(blob){return blob.arrayBuffer().then(function(bytes){parent.postMessage({type:"kenfutwork:editor-save",saveId:saveId,fileName:anchor.download,mimeType:blob.type||"application/octet-stream",bytes:bytes},TARGET_ORIGIN,[bytes]);});}).catch(function(){parent.postMessage({type:"kenfutwork:editor-save-error",saveId:saveId,message:"读取保存内容失败"},TARGET_ORIGIN);});};})();</script>`;
 
 export function injectEditorShell(html: string): string {
-  const head = /<head[^>]*>/iu.exec(html);
-  if (!head)
-    return (
-      EDITOR_THEME_SCRIPT +
-      EDITOR_SHELL_SCRIPT +
-      EDITOR_SAVE_BRIDGE_SCRIPT +
-      html
-    );
-  const at = head.index + head[0].length;
-  return (
-    html.slice(0, at) +
+  const scripts =
     EDITOR_THEME_SCRIPT +
     EDITOR_SHELL_SCRIPT +
-    EDITOR_SAVE_BRIDGE_SCRIPT +
-    html.slice(at)
-  );
+    EDITOR_SAVE_TARGET_SCRIPT +
+    EDITOR_SAVE_BRIDGE_SCRIPT;
+  const head = /<head[^>]*>/iu.exec(html);
+  if (!head) return scripts + html;
+  const at = head.index + head[0].length;
+  return html.slice(0, at) + scripts + html.slice(at);
 }
 
 /**

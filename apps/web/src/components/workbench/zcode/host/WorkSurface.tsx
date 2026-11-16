@@ -24,6 +24,7 @@ import { useWorkEditorSave } from "./useWorkEditorSave.js";
 import {
   chooseWorkDirectory,
   refreshWorkDirectory,
+  useWorkDirectory,
 } from "./workProjectDirectory.js";
 import {
   getWorkSurfaceView,
@@ -528,7 +529,13 @@ function EditorFrame({
   const [ready, setReady] = useState(false);
   const editorTheme = useEditorTheme();
   const initialTheme = useRef(editorTheme);
-  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}`;
+  const { project } = useWorkDirectory();
+  // 这两个已锁定的编辑器通过检测系统保存能力来选择其下载备选路径。
+  const toProject =
+    (editorId === "gridcraft" || editorId === "wordcraft") &&
+    Boolean(project?.workDir);
+  const initialSaveTarget = useRef(toProject ? "&saveTarget=project" : "");
+  const src = `${getSurfaceApiBase()}/api/work/host/editors/${encodeURIComponent(editorId)}/index.html?theme=${initialTheme.current}${initialSaveTarget.current}`;
   const saveFeedback = useWorkEditorSave(frameRef, src, setReady);
 
   useEffect(() => {
@@ -540,6 +547,15 @@ function EditorFrame({
       new URL(src).origin,
     );
   }, [editorTheme, ready, src]);
+
+  useEffect(() => {
+    if (!ready) return;
+    // 目录更新只通知原子页，保留其中尚未保存的编辑内容。
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "kenfutwork:editor-save-target", toProject },
+      new URL(src).origin,
+    );
+  }, [ready, src, toProject]);
 
   useEffect(() => {
     if (!frameLoaded) return;

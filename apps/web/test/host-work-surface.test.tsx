@@ -300,8 +300,8 @@ describe("HostWorkSurface 统一保存桥", () => {
   });
 });
 
-describe("HostWorkSurface 主题桥", () => {
-  it("editor-ready 前不发送主题，ready 后发送当前主题", async () => {
+describe("HostWorkSurface 编辑器设置", () => {
+  it("editor-ready 后才发送当前主题和保存目标", async () => {
     const post = vi.fn();
     vi.spyOn(
       HTMLIFrameElement.prototype,
@@ -314,10 +314,17 @@ describe("HostWorkSurface 主题桥", () => {
     fireEvent.load(frame);
     expect(post).not.toHaveBeenCalled();
     postEditorMessage(frame, { type: "kenfutwork:editor-ready" });
-    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-    expect(post).toHaveBeenCalledWith(
-      { type: "kenfutwork:editor-theme", theme: "light" },
-      "http://127.0.0.1:3001",
+    await waitFor(() =>
+      expect(post.mock.calls).toEqual([
+        [
+          { type: "kenfutwork:editor-theme", theme: "light" },
+          "http://127.0.0.1:3001",
+        ],
+        [
+          { type: "kenfutwork:editor-save-target", toProject: false },
+          "http://127.0.0.1:3001",
+        ],
+      ]),
     );
   });
 });

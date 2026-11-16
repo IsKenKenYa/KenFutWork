@@ -144,6 +144,20 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         const { page } = context;
         const directory = await prepareWorkSave(context);
         await openEditor(page, "gridcraft", "表格");
+        await vi.waitFor(async () =>
+          expect(
+            await page.evaluate(`(() => {
+              const frame = document.querySelector('iframe[title="表格"]');
+              return {
+                parent: typeof window.showSaveFilePicker,
+                embedded: typeof frame.contentWindow.showSaveFilePicker,
+              };
+            })()`),
+          ).toEqual({
+            parent: "function",
+            embedded: "undefined",
+          }),
+        );
         await saveFromEditor(page, "表格", "旧错误.xlsx", "", false);
         await saveFromEditor(page, "表格", "新版本.xlsx", "new workbook", true);
         const current = {
