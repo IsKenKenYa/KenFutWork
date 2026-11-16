@@ -1,3 +1,4 @@
+import type { BrowserOpenTarget } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
 import {
   Select,
@@ -13,7 +14,8 @@ import {
 } from "@zui/settings/SettingsPageParts.js";
 // biome-ignore lint/style/useImportType: 保留 value 导入以便 typeof 对齐原组件 props 签名（漂移即编译错）
 import { BrowserSettingsSection as OriginalBrowserSettingsSection } from "@zui-original/settings/BrowserSettingsSection.js";
-import { type ComponentProps, useEffect, useId, useState } from "react";
+import { type ComponentProps, useId } from "react";
+import { useBrowserOpenTarget } from "./useBrowserOpenTarget.js";
 import {
   type BrowserPermissionView,
   useBrowserSettingsState,
@@ -28,7 +30,7 @@ import {
  * - 服务端开关：GET/PUT `/api/permissions/tier`（browserControlEnabled 等，cookie 会话）；
  * - CDP 外部浏览器：`/api/browser/cdp/*`（status/connect/disconnect）；
  * - 「AI 任务默认浏览器」：localStorage `workbench:browser-open-target`
- *   （与 web 端 markdown-renderer 读的同一份偏好，同源 iframe 共享）。
+ *   （同源 iframe 共享）。
  * 旧页里「默认搜索引擎」「面板历史导入/清除」的读取方已随旧画布工作台退役，无消费方即不摆开关。
  */
 
@@ -51,24 +53,11 @@ const SERVER_FLAGS: ReadonlyArray<{
   { key: "browserEvalEnabled", label: "允许 AI 在页面执行脚本" },
 ];
 
-type BrowserOpenTarget = "panel" | "system";
-
-const OPEN_TARGET_KEY = "workbench:browser-open-target";
 const OPEN_TARGETS: ReadonlyArray<{ value: BrowserOpenTarget; label: string }> =
   [
     { value: "panel", label: "内置浏览器" },
     { value: "system", label: "外部浏览器" },
   ];
-
-function readOpenTarget(): BrowserOpenTarget {
-  try {
-    return window.localStorage.getItem(OPEN_TARGET_KEY) === "system"
-      ? "system"
-      : "panel";
-  } catch {
-    return "panel";
-  }
-}
 
 /** 原组件 props 只为签名对齐（分区挂载点传参不变），宿主行不消费。 */
 export function BrowserSettingsSection(
@@ -79,11 +68,8 @@ export function BrowserSettingsSection(
   const cdpBusy = state.saving === "cdp";
   const permissionsErrorId = useId();
   const cdpErrorId = useId();
-  const [openTarget, setOpenTarget] = useState<BrowserOpenTarget>("panel");
-
-  useEffect(() => {
-    setOpenTarget(readOpenTarget());
-  }, []);
+  const openTarget = useBrowserOpenTarget();
+  const openTargetErrorId = useId();
 
   const cdpDetail =
     cdp === null
@@ -214,23 +200,25 @@ export function BrowserSettingsSection(
             label="AI 任务默认浏览器"
             control={
               <Select
-                value={openTarget}
+                value={openTarget.value ?? ""}
+                disabled={openTarget.value === null}
                 onValueChange={(next) => {
                   if (next !== "panel" && next !== "system") return;
-                  setOpenTarget(next);
-                  try {
-                    window.localStorage.setItem(OPEN_TARGET_KEY, next);
-                  } catch {
-                    // 存储失败不阻塞设置
-                  }
+                  openTarget.save(next);
                 }}
               >
                 <SelectTrigger
                   size="lg"
                   aria-label="AI 任务默认浏览器"
-                  className="w-[192px] min-w-0 justify-between"
+                  aria-describedby={
+                    openTarget.error ? openTargetErrorId : undefined
+                  }
+                  aria-invalid={Boolean(openTarget.error)}
+                  className="w-full min-w-0 justify-between"
                 >
-                  <SelectValue />
+                  <SelectValue
+                    placeholder={openTarget.error ? "未读取" : "读取中…"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {OPEN_TARGETS.map((target) => (
@@ -243,6 +231,26 @@ export function BrowserSettingsSection(
             }
           />
         </SettingsGroupCard>
+        {openTarget.error ? (
+          <div className="space-y-2">
+            <p
+              id={openTargetErrorId}
+              role="alert"
+              className="text-ui-base text-destructive"
+            >
+              {openTarget.error}
+            </p>
+            {openTarget.value === null ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={openTarget.reload}
+              >
+                重新读取默认浏览器
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </div>
   );

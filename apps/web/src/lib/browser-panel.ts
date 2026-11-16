@@ -8,6 +8,12 @@
  * （新标签打开），绝不把点击吞掉。
  */
 
+import {
+  type BrowserOpenTarget,
+  readBrowserOpenTarget,
+  writeBrowserOpenTarget,
+} from "@kenfutwork/shared";
+
 const listeners = new Set<(url: string) => void>();
 
 /** 是否有面板在监听（没有就别拦截点击）。 */
@@ -33,18 +39,14 @@ export function onBrowserOpen(listener: (url: string) => void): () => void {
 }
 
 /** 「AI 任务里的链接默认在哪儿打开」偏好（设置 → 浏览器 → 通用）。 */
-export type BrowserOpenTarget = "panel" | "system";
-
-const OPEN_TARGET_KEY = "workbench:browser-open-target";
+export type { BrowserOpenTarget } from "@kenfutwork/shared";
 
 export function getBrowserOpenTarget(): BrowserOpenTarget {
   if (typeof window === "undefined") return "panel";
-  return window.localStorage.getItem(OPEN_TARGET_KEY) === "system"
-    ? "system"
-    : "panel";
+  return readBrowserOpenTarget(window.localStorage);
 }
 
 export function setBrowserOpenTarget(target: BrowserOpenTarget): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(OPEN_TARGET_KEY, target);
+  writeBrowserOpenTarget(window.localStorage, target);
 }

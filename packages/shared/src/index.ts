@@ -1,6 +1,7 @@
 // 本地实例与跨端产品契约的公开入口。
 
 export * from "./brand-kit-contracts.js";
+export * from "./browser-open-target.js";
 export * from "./capability-contracts.js";
 export * from "./checkpoints.js";
 export * from "./code-goal-control-contracts.js";

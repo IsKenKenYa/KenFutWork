@@ -5,7 +5,6 @@ import { buffer } from "node:stream/consumers";
 import { fileURLToPath } from "node:url";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { BrowserSettingsSection } from "../src/components/workbench/zcode/host/BrowserSettingsSectionAdapter.js";
 import { setSurfaceApiBase } from "../src/components/workbench/zcode/host/surfaceApi.js";
 import { installCodePublicHostDom } from "./setup/code-public-host-dom.js";
 
@@ -112,8 +111,10 @@ async function withSettings(
   check: (input: {
     forwarder: Forwarder;
     view: View;
+    remount(): void;
     readFlags(): Promise<Record<string, boolean>>;
   }) => Promise<void>,
+  options: { url?: string } = {},
 ) {
   const http: { createCodeUiHttpFixture(): Promise<ApiFixture> } = await import(
     fixturePath
@@ -126,12 +127,21 @@ async function withSettings(
   try {
     forwarder = await createForwarder(fixture);
     prepare(forwarder);
-    releaseDom = await installCodePublicHostDom();
+    releaseDom = await installCodePublicHostDom(options);
     setSurfaceApiBase(forwarder.baseUrl);
-    view = render(<BrowserSettingsSection isDesktop={false} />);
+    const { BrowserSettingsSection } = await import(
+      "../src/components/workbench/zcode/host/BrowserSettingsSectionAdapter.js"
+    );
+    const mounted = render(<BrowserSettingsSection isDesktop={false} />);
+    view = mounted;
     await check({
       forwarder,
       view,
+      remount() {
+        mounted.rerender(
+          <BrowserSettingsSection key="read-saved" isDesktop={false} />,
+        );
+      },
       async readFlags() {
         const response = await fetch(`${fixture.baseUrl}${permissionsPath}`, {
           headers: {
@@ -205,6 +215,37 @@ it
 );
 
 it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
+  "实际浏览器拒绝本地存储时显示处理方法，不显示未经读取的默认选择",
+  async () => {
+    await withSettings(
+      () => {},
+      async ({ view }) => {
+        const error = await view.findByRole("alert");
+        expect(error.textContent).toBe(
+          "浏览器选择无法访问，请允许本地存储后重试。",
+        );
+        const trigger = view.getByRole("combobox", {
+          name: "AI 任务默认浏览器",
+        });
+        expect(trigger).toBeDisabled();
+        expect(trigger.textContent).toContain("未读取");
+        expect(trigger).toHaveAttribute("aria-describedby", error.id);
+        expect(trigger).toHaveAttribute("aria-invalid", "true");
+        fireEvent.click(
+          view.getByRole("button", { name: "重新读取默认浏览器" }),
+        );
+        expect(trigger.textContent).not.toContain("内置浏览器");
+        await waitFor(() =>
+          expect(view.getAllByRole("switch")).toHaveLength(5),
+        );
+      },
+      { url: "about:blank" },
+    );
+  },
+  60_000,
+);
+
+it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
   "保存期间阻止重复操作，只显示已确认值，拒绝保存保留原值",
   async () => {
     await withSettings(
@@ -251,6 +292,65 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         ).toHaveAttribute("aria-checked", String(original.browserHeadless));
         expect((await readFlags()).browserHeadless).toBe(
           original.browserHeadless,
+        );
+      },
+    );
+  },
+  60_000,
+);
+
+it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
+  "实际存储配额不足时保留默认浏览器，释放空间后可保存并恢复",
+  async () => {
+    await withSettings(
+      () => {},
+      async ({ view, remount }) => {
+        const preferenceKey = "workbench:browser-open-target";
+        const paddingKey = "browser-preference-quota-test";
+        const trigger = view.getByRole("combobox", {
+          name: "AI 任务默认浏览器",
+        });
+        await waitFor(() =>
+          expect(trigger.textContent).toContain("内置浏览器"),
+        );
+        window.localStorage.setItem(preferenceKey, "panel");
+        let used = 0;
+        for (let index = 0; index < window.localStorage.length; index++) {
+          const key = window.localStorage.key(index);
+          if (key !== null)
+            used +=
+              key.length + (window.localStorage.getItem(key)?.length ?? 0);
+        }
+        // JSDOM 的既有独占 DOM 默认配额为 5,000,000 个 UTF-16 单元。
+        window.localStorage.setItem(
+          paddingKey,
+          "x".repeat(5_000_000 - used - paddingKey.length),
+        );
+        const selectExternal = async () => {
+          fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+          fireEvent.click(
+            await view.findByRole("option", { name: "外部浏览器" }),
+          );
+        };
+        await selectExternal();
+        expect((await view.findByRole("alert")).textContent).toContain(
+          "存储空间不足",
+        );
+        expect(trigger.textContent).toContain("内置浏览器");
+        expect(window.localStorage.getItem(preferenceKey)).toBe("panel");
+        window.localStorage.removeItem(paddingKey);
+        await selectExternal();
+        await waitFor(() =>
+          expect(trigger.textContent).toContain("外部浏览器"),
+        );
+        expect(window.localStorage.getItem(preferenceKey)).toBe("system");
+        expect(view.queryByRole("alert")).toBeNull();
+        remount();
+        await waitFor(() =>
+          expect(
+            view.getByRole("combobox", { name: "AI 任务默认浏览器" })
+              .textContent,
+          ).toContain("外部浏览器"),
         );
       },
     );
