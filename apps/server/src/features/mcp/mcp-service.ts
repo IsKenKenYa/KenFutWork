@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import type { ServerEnv } from "../../config/env.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
@@ -16,6 +17,7 @@ import {
 import {
   assertMcpContribution,
   assertModelVisibleMcpTool,
+  callMcpTool,
   isModelVisibleMcpTool,
   type McpClientLike,
   type McpServerToolLike,
@@ -135,8 +137,8 @@ export function createMcpService(options: {
     tool: McpServerToolLike,
     args: Record<string, unknown>,
     context: ToolExecutionContext,
-    remoteCall: () => Promise<unknown>,
-  ) => Promise<unknown>;
+    remoteCall: () => Promise<CallToolResult>,
+  ) => Promise<CallToolResult>;
   readConfiguredResource?: (
     source: McpConnectionConfiguration,
     request: McpResourceRequest,
@@ -269,12 +271,12 @@ export function createMcpService(options: {
           return { tools: result.tools };
         },
         callTool: async (callArgs, signal) =>
-          await mcpClient.callTool(
+          await callMcpTool(
+            mcpClient,
             {
               name: callArgs.name,
               ...(callArgs.arguments ? { arguments: callArgs.arguments } : {}),
             },
-            undefined,
             await requestOptions(signal),
           ),
       };

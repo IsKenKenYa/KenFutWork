@@ -49,7 +49,7 @@ describe("MCP Apps 工具调用范围", () => {
 describe("MCP 工具注册（P4d）", () => {
   it("工具按 mcp__<server>__<tool> 命名，execute 透传 callTool", async () => {
     const callTool = vi.fn(async (args: { name: string }) => ({
-      content: `called:${args.name}`,
+      content: [{ type: "text" as const, text: `called:${args.name}` }],
     }));
     const client: McpClientLike = {
       listTools: async () => ({
@@ -80,7 +80,9 @@ describe("MCP 工具注册（P4d）", () => {
       undefined,
       f.context,
     );
-    expect(result).toEqual({ content: "called:read_file" });
+    expect(result).toEqual({
+      content: [{ type: "text", text: "called:read_file" }],
+    });
   });
 
   it("实例MCP按真实Task动态注册，两个模式均共享，缺工作域和只读角色不曝光", async () => {
@@ -91,7 +93,9 @@ describe("MCP 工具注册（P4d）", () => {
       [{ name: "a" }, { name: "b" }],
       {
         listTools: async () => ({ tools: [] }),
-        callTool: async () => null,
+        callTool: async () => {
+          throw new Error("本测试不执行工具。");
+        },
       },
       "configuration-1",
     );
@@ -125,7 +129,9 @@ describe("MCP 工具注册（P4d）", () => {
     const f = await fixture();
     const client = {
       listTools: async () => ({ tools: [] }),
-      callTool: vi.fn(async () => null),
+      callTool: vi.fn(async () => {
+        throw new Error("本测试不执行工具。");
+      }),
     };
     const config = {
       command: "node",

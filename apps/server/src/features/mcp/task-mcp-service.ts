@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { losesExecutionRights } from "../process-sandbox/scope-change.js";
@@ -18,10 +19,12 @@ import type { McpConnectionConfiguration } from "./mcp-service.js";
 import {
   assertMcpContribution,
   assertModelVisibleMcpTool,
+  callMcpTool,
   createMcpToolDefinition,
   isModelVisibleMcpTool,
   type McpServerToolLike,
   mcpConfigurationVersion,
+  mcpToolContractVersion,
 } from "./mcp-tools.js";
 import {
   createScopedMcpTransport,
@@ -69,7 +72,7 @@ export interface TaskMcpService {
     tool: McpServerToolLike,
     args: Record<string, unknown>,
     context: ToolExecutionContext,
-  ): Promise<unknown>;
+  ): Promise<CallToolResult>;
   closeSource(name: string): Promise<void>;
   computerUseConnections(
     context: ToolExecutionContext,
@@ -103,7 +106,7 @@ interface Connection {
   closing: boolean;
   scope: CodeExecutionScope;
   toolNames: string[];
-  toolSchemas: Map<string, string>;
+  modelToolVersions: Map<string, string>;
   disposeTools: Array<() => void>;
   client: Client;
   transport?: ScopedMcpTransport;
@@ -201,7 +204,7 @@ export function createTaskMcpService(deps: {
     execution: ToolExecutionContext,
   ) => {
     const owner = await requireConnection(record, execution);
-    if (!record.toolSchemas.has(name))
+    if (!record.modelToolVersions.has(name))
       throw new TaskMcpError(
         "mcp_tool_not_model_visible",
         "MCP工具未向模型开放，请检查工具声明。",
@@ -214,9 +217,9 @@ export function createTaskMcpService(deps: {
         execution,
       );
     try {
-      return await record.client.callTool(
+      return await callMcpTool(
+        record.client,
         { name, arguments: args },
-        undefined,
         await requestOptions(owner),
       );
     } catch (error) {
@@ -329,8 +332,7 @@ export function createTaskMcpService(deps: {
           configurationVersion: mcpConfigurationVersion({
             configuration: record.signature,
             branchGeneration: record.owner.branchGeneration,
-            name: metadata.name,
-            parameters: tool.parameters,
+            contract: mcpToolContractVersion(metadata),
           }),
           resolve(run) {
             const handle = run.scopeHandle;
@@ -384,13 +386,7 @@ export function createTaskMcpService(deps: {
       ensureOpen(record);
       const tools = discovered.tools.filter(isModelVisibleMcpTool);
       for (const tool of tools)
-        record.toolSchemas.set(
-          tool.name,
-          mcpConfigurationVersion({
-            name: tool.name,
-            inputSchema: tool.inputSchema,
-          }),
-        );
+        record.modelToolVersions.set(tool.name, mcpToolContractVersion(tool));
       if (!record.sourceName) {
         registerTools(record, tools);
         if (record.client.getServerCapabilities()?.resources) {
@@ -491,7 +487,7 @@ export function createTaskMcpService(deps: {
       closing: false,
       scope: owner.scope,
       toolNames: [],
-      toolSchemas: new Map(),
+      modelToolVersions: new Map(),
       disposeTools: [],
       client: new Client({ name: "kenfutwork-task", version: deps.version }),
       ready: ready.promise,
@@ -569,11 +565,7 @@ export function createTaskMcpService(deps: {
       assertModelVisibleMcpTool(tool);
       const record = await configuredConnection(source, context);
       if (
-        record.toolSchemas.get(tool.name) !==
-        mcpConfigurationVersion({
-          name: tool.name,
-          inputSchema: tool.inputSchema,
-        })
+        record.modelToolVersions.get(tool.name) !== mcpToolContractVersion(tool)
       )
         throw new TaskMcpError(
           "mcp_schema_changed",

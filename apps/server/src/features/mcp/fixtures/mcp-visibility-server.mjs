@@ -44,6 +44,12 @@ createInterface({ input: process.stdin })
       result = {
         content: [{ type: "text", text: `executed:${request.params.name}` }],
       };
+      if (request.params.name === "panel_result")
+        result = {
+          content: [{ type: "text", text: "公开正文" }],
+          structuredContent: { private: "view" },
+          _meta: { private: "tool-result" },
+        };
     } else {
       process.stdout.write(
         `${JSON.stringify({ jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Method not found" } })}\n`,

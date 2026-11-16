@@ -1,3 +1,10 @@
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import {
+  type CallToolResult,
+  CallToolResultSchema,
+  type ContentBlock,
+} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { contributionFingerprint } from "../../kernel/contribution-fingerprint.js";
 import type {
@@ -25,15 +32,53 @@ export interface McpServerToolLike {
   _meta?: Record<string, unknown> | undefined;
 }
 
-const visibilitySchema = z.object({
+const toolMetadataSchema = z.object({
   ui: z
-    .object({ visibility: z.array(z.enum(["model", "app"])).optional() })
+    .object({
+      visibility: z.array(z.enum(["model", "app"])).optional(),
+      resourceUri: z.unknown().optional(),
+    })
     .optional(),
+  "ui/resourceUri": z.unknown().optional(),
+  "openai/outputTemplate": z.unknown().optional(),
 });
+
+export const isMcpAppResource = (uri: string) =>
+  uri.trimStart().toLowerCase().startsWith("ui:");
+
+function mcpAppResourceUri(tool: McpServerToolLike): string | undefined {
+  const parsed = toolMetadataSchema.safeParse(tool._meta ?? {});
+  if (!parsed.success) return undefined;
+  const meta = parsed.data;
+  const uri =
+    meta.ui?.resourceUri ??
+    meta["ui/resourceUri"] ??
+    meta["openai/outputTemplate"];
+  return typeof uri === "string" && isMcpAppResource(uri) ? uri : undefined;
+}
+
+export function mcpToolContractVersion(tool: McpServerToolLike): string {
+  return mcpConfigurationVersion({
+    name: tool.name,
+    inputSchema: tool.inputSchema,
+    appResourceUri: mcpAppResourceUri(tool),
+  });
+}
+
+function projectContent(block: ContentBlock): ContentBlock[] {
+  const { _meta: _blockMetadata, ...content } = block;
+  if (content.type === "resource") {
+    const { _meta: _resourceMetadata, ...resource } = content.resource;
+    return isMcpAppResource(resource.uri) ? [] : [{ ...content, resource }];
+  }
+  if (content.type === "resource_link" && isMcpAppResource(content.uri))
+    return [];
+  return [content];
+}
 
 /** MCP Apps 的可见范围独立于页面资源；只有未声明时默认向模型开放。 */
 export function isModelVisibleMcpTool(tool: McpServerToolLike): boolean {
-  const parsed = visibilitySchema.safeParse(tool._meta ?? {});
+  const parsed = toolMetadataSchema.safeParse(tool._meta ?? {});
   if (!parsed.success)
     throw new TaskMcpError(
       "mcp_visibility_invalid",
@@ -61,7 +106,20 @@ export interface McpClientLike {
     },
     signal?: AbortSignal,
     context?: ToolExecutionContext,
-  ): Promise<unknown>;
+  ): Promise<CallToolResult>;
+}
+
+export function callMcpTool(
+  client: Client,
+  params: Parameters<Client["callTool"]>[0],
+  options: RequestOptions,
+): Promise<CallToolResult> {
+  // SDK 在这里按显式 schema 校验；类型声明仍包含未选用的历史兼容 schema。
+  return client.callTool(
+    params,
+    CallToolResultSchema,
+    options,
+  ) as Promise<CallToolResult>;
 }
 
 export function toKernelTool(
@@ -125,9 +183,13 @@ export function createMcpToolDefinition(
   serverName: string,
   tool: McpServerToolLike,
   scope: ToolScope,
-  execute: ToolDefinition["execute"],
+  execute: (
+    args: Record<string, unknown>,
+    context: ToolExecutionContext,
+  ) => Promise<CallToolResult>,
 ): ToolDefinition {
   assertModelVisibleMcpTool(tool);
+  const app = mcpAppResourceUri(tool) !== undefined;
   return {
     name: `mcp__${serverName}__${tool.name}`,
     description: tool.description ?? `MCP tool ${tool.name}`,
@@ -137,7 +199,17 @@ export function createMcpToolDefinition(
     access: "execute",
     projectArguments: projectMcpArguments,
     parameters: tool.inputSchema ?? { type: "object" },
-    execute,
+    async execute(args, context) {
+      // 模型与通用运行记录共用这个出口；不转交页面专用字段。
+      const result = await execute(args, context);
+      return {
+        content: result.content.flatMap(projectContent),
+        ...(!app && result.structuredContent !== undefined
+          ? { structuredContent: result.structuredContent }
+          : {}),
+        ...(result.isError === undefined ? {} : { isError: result.isError }),
+      };
+    },
   };
 }
 
@@ -162,8 +234,7 @@ export function registerMcpServerTools(
           scope: "shared",
           configurationVersion: mcpConfigurationVersion({
             configurationVersion,
-            name: metadata.name,
-            parameters: tool.parameters,
+            contract: mcpToolContractVersion(metadata),
           }),
           resolve(run) {
             const handle = run.scopeHandle;

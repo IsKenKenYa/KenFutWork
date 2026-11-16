@@ -54,6 +54,33 @@ async function httpServer(tools: Tool[]) {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     calls.push(request.params.name);
+    if (request.params.name.endsWith("_result"))
+      return {
+        content: [
+          { type: "text", text: "公开正文", _meta: { private: "block" } },
+          {
+            type: "resource",
+            resource: {
+              uri: "demo://public",
+              text: "公开资源",
+              _meta: { private: "embedded" },
+            },
+          },
+          {
+            type: "resource",
+            resource: { uri: "ui://visibility/card", text: "私有界面" },
+          },
+          {
+            type: "resource_link",
+            name: "私有页面",
+            uri: "ui://visibility/card",
+          },
+        ],
+        structuredContent: { value: 42 },
+        _meta: { private: "tool-result" },
+        privateContent: { private: "extension" },
+        isError: request.params.name === "legacy_result",
+      };
     return {
       content: [{ type: "text", text: `executed:${request.params.name}` }],
     };
@@ -165,6 +192,87 @@ describe.skipIf(process.env.KENFUTWORK_MCP_LIFECYCLE !== "1")(
       ).rejects.toThrow();
     });
 
+    it("工具出口向模型和运行记录提供公开内容，普通结构化数据与工具错误保持", async () => {
+      const remote = await httpServer([
+        tool("ordinary_result"),
+        {
+          ...tool("app_result"),
+          _meta: { ui: { resourceUri: "ui://visibility/card" } },
+        },
+        {
+          ...tool("legacy_result"),
+          _meta: { "ui/resourceUri": "ui://visibility/card" },
+        },
+      ]);
+      const f = await fixture();
+      await f.service.create({
+        name: "visibility",
+        kind: "http",
+        url: remote.url,
+        args: [],
+        env: {},
+        headers: {},
+        enabled: true,
+      });
+      const content = [
+        { type: "text", text: "公开正文" },
+        {
+          type: "resource",
+          resource: { uri: "demo://public", text: "公开资源" },
+        },
+      ];
+      for (const definition of f.resolved()) {
+        const ordinary = definition.name.endsWith("__ordinary_result");
+        const observed: unknown[] = [];
+        const expected = {
+          content,
+          ...(ordinary ? { structuredContent: { value: 42 } } : {}),
+          isError: definition.name.endsWith("__legacy_result"),
+        };
+        expect(
+          await f.registry.executeDefinition(
+            definition,
+            {},
+            {
+              ...f.context,
+              toolCallId: randomUUID(),
+              observeToolExecution: async ({ phase, output }) => {
+                if (phase === "completed") observed.push(output);
+              },
+            },
+          ),
+        ).toEqual(expected);
+        expect(observed).toEqual([expected]);
+      }
+      expect(remote.calls.sort()).toEqual([
+        "app_result",
+        "legacy_result",
+        "ordinary_result",
+      ]);
+    });
+
+    it("Task stdio 工具也会隔离页面数据", async () => {
+      const f = await fixture();
+      await writeFile(
+        join(f.root, "tools.json"),
+        JSON.stringify([
+          {
+            ...tool("panel_result"),
+            _meta: { ui: { resourceUri: "ui://visibility/card" } },
+          },
+        ]),
+      );
+      await f.tasks.install(
+        { name: "visibility", command: "node", args: ["server.mjs"] },
+        f.context,
+      );
+      const [definition] = f.resolved();
+      if (!definition) throw new Error("没有登记 Task 工具。");
+      expect(
+        await f.registry.executeDefinition(definition, {}, f.context),
+      ).toEqual({ content: [{ type: "text", text: "公开正文" }] });
+    });
+
     it.each(["model", ["unknown"], null])(
       "错误的可见范围 %j 明确报错且不留下部分工具",
       async (visibility) => {
@@ -190,12 +298,15 @@ describe.skipIf(process.env.KENFUTWORK_MCP_LIFECYCLE !== "1")(
       },
     );
 
-    it("实例声明与Task实际服务的可见范围变化后拒绝旧工具调用", async () => {
+    it.each([
+      ["可见范围", { ui: { visibility: ["app"] } }],
+      ["页面来源", { ui: { resourceUri: "ui://visibility/card" } }],
+    ])("实例声明与 Task 实际服务的%s变化后拒绝旧工具调用", async (_, meta) => {
       const f = await fixture();
       const metadata = tool("model_tool", ["model"]);
       await writeFile(
         join(f.root, "tools.json"),
-        JSON.stringify([tool("model_tool", ["app"])]),
+        JSON.stringify([{ ...tool("model_tool"), _meta: meta }]),
       );
       await expect(
         f.tasks.callConfigured(

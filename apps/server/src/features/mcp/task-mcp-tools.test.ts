@@ -63,7 +63,12 @@ it("实例MCP工具共享真实Task上下文；readOnlyHint不是执行权限", 
   const tool = toKernelTool(
     "legacy",
     { name: "lookup", inputSchema: { type: "object" } },
-    { listTools: async () => ({ tools: [] }), callTool: async () => null },
+    {
+      listTools: async () => ({ tools: [] }),
+      callTool: async () => {
+        throw new Error("本测试不执行工具。");
+      },
+    },
   );
   expect(tool.scope).toBe("shared");
   expect(tool.access).toBe("execute");
