@@ -654,7 +654,7 @@ test.each([
   expect(f.send).toHaveBeenCalledOnce();
 });
 
-test.each([
+test.for([
   { operationId: "a8279e10-eabe-41db-b731-abf856ef9115" },
   { fingerprint: "0".repeat(64) },
   { pid: 9876 },
@@ -662,8 +662,8 @@ test.each([
   { extraField: true },
 ])(
   "回执schema或身份不匹配时保持unknown，不接受成功且不重发：%j",
-  async (changed) => {
-    const f = await fixture();
+  async (changed, { task }) => {
+    const f = await fixture(task.timeout);
     f.send.mockImplementation(async (_app, macroPath) =>
       f.publish(macroPath, changed),
     );
@@ -687,8 +687,10 @@ test.each([
   },
 );
 
-test("损坏JSON回执保持unknown，status不调用probe或transport", async () => {
-  const f = await fixture();
+test("损坏JSON回执保持unknown，status不调用probe或transport", async ({
+  task,
+}) => {
+  const f = await fixture(task.timeout);
   f.send.mockImplementation(async (_app, macroPath) =>
     f.publish(macroPath, {}, "{"),
   );
@@ -708,7 +710,7 @@ test("损坏JSON回执保持unknown，status不调用probe或transport", async (
   expect(f.send).toHaveBeenCalledOnce();
 });
 
-test.each([
+test.for([
   { changes: [] },
   {
     changes: [
@@ -836,23 +838,31 @@ test.each([
     commitObserved: false,
     changes: [],
   },
-])("合法JSON不能伪造成功：修改条目必须匹配完整原批次：%j", async (changed) => {
-  const f = await fixture();
-  f.send.mockImplementation(async (_app, macroPath) =>
-    f.publish(macroPath, changed),
-  );
+])(
+  "合法JSON不能伪造成功：修改条目必须匹配完整原批次：%j",
+  async (changed, { task }) => {
+    const f = await fixture(task.timeout);
+    f.send.mockImplementation(async (_app, macroPath) =>
+      f.publish(macroPath, changed),
+    );
 
-  expect(
-    await f.controller.execute(f.input, f.binding, f.context),
-  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
-  expect(
-    await restart(f).status({ ...f.binding, operationId: f.input.operationId }),
-  ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
-  expect(f.send).toHaveBeenCalledOnce();
-});
+    expect(
+      await f.controller.execute(f.input, f.binding, f.context),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(
+      await restart(f).status({
+        ...f.binding,
+        operationId: f.input.operationId,
+      }),
+    ).toMatchObject({ outcome: "unknown", reason: "invalid_receipt" });
+    expect(f.send).toHaveBeenCalledOnce();
+  },
+);
 
-test("claim后send前撤销授权会持久取消，保留未知认领且不发送", async () => {
-  const f = await fixture();
+test("claim后send前撤销授权会持久取消，保留未知认领且不发送", async ({
+  task,
+}) => {
+  const f = await fixture(task.timeout);
   const guard = async () => {
     const record = await f.store.lookup({
       ...f.binding,
@@ -877,8 +887,8 @@ test("claim后send前撤销授权会持久取消，保留未知认领且不发�
   expect(f.send).not.toHaveBeenCalled();
 });
 
-test("进程身份在claim后变化时阻止send并持久取消", async () => {
-  const f = await fixture();
+test("进程身份在claim后变化时阻止send并持久取消", async ({ task }) => {
+  const f = await fixture(task.timeout);
   f.probe.verify
     .mockResolvedValueOnce(f.input.application)
     .mockRejectedValueOnce(
@@ -900,8 +910,10 @@ test("进程身份在claim后变化时阻止send并持久取消", async () => {
   expect(f.send).not.toHaveBeenCalled();
 });
 
-test("send后等待期间取消会持久墓碑，结果保持unknown并保留全部请求文件", async () => {
-  const f = await fixture();
+test("send后等待期间取消会持久墓碑，结果保持unknown并保留全部请求文件", async ({
+  task,
+}) => {
+  const f = await fixture(task.timeout);
   f.send.mockImplementation(async () => {
     queueMicrotask(() => f.signal.abort());
   });
