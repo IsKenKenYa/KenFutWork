@@ -74,7 +74,7 @@ type RawTaskOwner = {
   project_archived_at: string | Date | null;
 };
 
-// 尚未建立 agent_runs 的失败只读取原 Task 已保存的公开事件，不补写运行或执行边界。
+// 尚未开始的失败读取原 Task 的公开事件；有执行边界的轮次仍走正常记录。
 const FAILED_START_RUNS_SQL = `
   select e.payload->>'runId' as id, e.root_session_id as session_id,
          null::text as model, 'failed'::text as status, null::text as stop_reason,
@@ -87,14 +87,20 @@ const FAILED_START_RUNS_SQL = `
     join public.code_ui_sessions t on t.id = e.root_session_id
       and t.instance_id = e.instance_id
     join public.projects p on p.id = t.project_id and p.instance_id = t.instance_id
+    left join public.agent_runs r on r.id::text = e.payload->>'runId'
    where e.instance_id = :instance
      and t.parent_session_id is null
      and e.payload->>'type' = 'run.failed'
      and jsonb_typeof(e.payload #> '{error,message}') = 'string'
      and e.event_key = (e.payload->>'runId') || '/1'
-     and not exists (
-       select 1 from public.agent_runs r where r.id::text = e.payload->>'runId'
-     )`;
+     and (r.id is null or (
+       r.session_id = t.chat_session_id and r.status = 'failed'
+       and r.error_code = 'run_not_started'
+       and not exists (
+         select 1 from public.agent_turn_boundaries b
+          where b.run_id = r.id and b.phase = 'pre'
+       )
+     ))`;
 
 /**
  * 时间线聚合的数据访问（只读）。

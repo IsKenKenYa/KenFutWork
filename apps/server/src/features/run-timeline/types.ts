@@ -155,7 +155,7 @@ export type RunTimelineRepository = {
   /**
    * 读取该 Task 的轮次列表（按开始时间倒序）。
    * 归属走 `agent_turn_boundaries`（写入时已按实例、项目、Task 与有效期校验），
-   * 尚未建立运行记录的失败从同一 Task 已保存的失败事件读取。
+   * 尚未开始的失败从同一 Task 已保存的失败事件读取。
    */
   listRunsForTask(input: {
     instanceId: string;

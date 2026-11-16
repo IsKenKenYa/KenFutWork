@@ -1285,6 +1285,7 @@ export function createCodeUiRepository(
       apply: (root: CodeUiSessionRecord) => {
         state: CodeUiConversationState;
         activeRunId: string | null;
+        unstartedFailure?: Extract<StreamEvent, { type: "run.failed" }>;
         childChat?: {
           sessionId: string;
           threadId: string;
@@ -1313,6 +1314,28 @@ export function createCodeUiRepository(
         }
         const decision = apply(root);
         await writeState(scoped, root, decision.state, decision.activeRunId);
+        const failure = decision.unstartedFailure;
+        if (
+          failure &&
+          root.chat_session_id &&
+          root.active_run_id === failure.runId &&
+          codeUiRunOutcome(root.state, failure.runId) === "active" &&
+          !codeUiRunHasStopIntent(root.state, failure.runId)
+        )
+          await scoped.execute(
+            `update public.agent_runs r
+                set status = 'failed', error_code = 'run_not_started',
+                    error_message = $3, completed_at = $4
+              where r.id = $1 and r.session_id = $2 and r.status = 'accepted'
+                and exists (select 1 from public.chat_sessions s
+                             where s.id = r.session_id and s.instance_id = :instance)`,
+            [
+              failure.runId,
+              root.chat_session_id,
+              failure.error.message,
+              failure.timestamp,
+            ],
+          );
         for (const settlement of decision.settlements ?? [])
           await scoped.execute(
             `update public.code_ui_commands set ack = $4::jsonb, status = 'failed'

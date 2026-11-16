@@ -4362,7 +4362,7 @@ export class CodeUiService {
     sessionId: string,
     event: StreamEvent,
     ordinal: number,
-    toolOutputPreviewBytes?: number,
+    options?: { toolOutputPreviewBytes?: number; settleUnstartedRun?: boolean },
   ) {
     const workspace = await this.deps.localInstance.resolve(user);
     const applied = await this.deps.repository.appendEvent(
@@ -4385,12 +4385,15 @@ export class CodeUiService {
           workspacePath: project.path,
           config: rootSnapshot.config,
           state: root.state!,
-          toolOutputPreviewBytes,
+          toolOutputPreviewBytes: options?.toolOutputPreviewBytes,
         });
         host.recordEvent(event);
         const state = host.exportState();
         return {
           state,
+          ...(options?.settleUnstartedRun && event.type === "run.failed"
+            ? { unstartedFailure: event }
+            : {}),
           activeRunId:
             host.getSnapshot().control.phase === "running"
               ? (host
@@ -4652,6 +4655,7 @@ export class CodeUiService {
     backgroundInputIdentity?: { clientId: string; sourceCommandId: string },
   ) {
     let ordinal = 0;
+    let dispatched = false;
     let flusher: StreamingEventFlusher | null = null;
     try {
       if (this.closing)
@@ -4673,14 +4677,9 @@ export class CodeUiService {
       flusher = createStreamingEventFlusher({
         flushIntervalMs: settings.agentStreamFlushIntervalMs,
         sink: (event) =>
-          this.recordRunEvent(
-            user,
-            project,
-            sessionId,
-            event,
-            ++ordinal,
-            settings.toolOutputPreviewBytes,
-          ),
+          this.recordRunEvent(user, project, sessionId, event, ++ordinal, {
+            toolOutputPreviewBytes: settings.toolOutputPreviewBytes,
+          }),
       });
       const current = await this.deps.repository.find(
         scopeHandle.describe().instanceId,
@@ -4839,6 +4838,7 @@ export class CodeUiService {
         );
         return;
       }
+      dispatched = true;
       for await (const _event of this.deps.agentRuns.streamRun(runId)) {
         /* 持久事件由共享 Harness eventSink 投影。 */
       }
@@ -4857,6 +4857,7 @@ export class CodeUiService {
         runId,
         error,
         ++ordinal,
+        !dispatched,
       );
     } finally {
       // streamRun 的 finally 已释放真实前台租约；终态 eventSink 内不可提前启动下一轮。
@@ -4885,6 +4886,7 @@ export class CodeUiService {
     runId: string,
     error: unknown,
     ordinal: number,
+    settleUnstartedRun = true,
   ) {
     let message: string | undefined;
     if (error instanceof AgentRunPersistenceError)
@@ -4915,6 +4917,7 @@ export class CodeUiService {
         },
       },
       ordinal,
+      { settleUnstartedRun },
     );
   }
 

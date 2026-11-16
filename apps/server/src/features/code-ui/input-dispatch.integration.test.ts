@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  canvasCreateResponseSchema,
   zcodeUiProtocol as protocol,
   runTimelineResponseSchema,
   taskRunsResponseSchema,
@@ -438,6 +439,95 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(recovered.runs[0]?.status).toBe("completed");
         await verifyFailedStartOwnership(fixture, task, attempt.runId);
       } finally {
+        await host?.dispose();
+        await model.close();
+        await fixture.close();
+      }
+    }, 120_000);
+
+    it("运行已登记后删除画布会结算为未开始并保留处理建议", async () => {
+      const fixture = await createCodeUiHttpFixture();
+      const model = await heldModel();
+      let host: Host | undefined;
+      let barrier: Awaited<ReturnType<typeof insertBarrier>> | undefined;
+      try {
+        const task = await createCodeSessionFixture(model.baseUrl, {
+          client: fixture.client,
+        });
+        host = task;
+        const sql = fixture.database.persistence.forInstance(
+          fixture.actor.instanceId,
+        );
+        await sql.execute(
+          "update public.projects set enabled_modes=array['code','design'] where instance_id=:instance and id=$1",
+          [task.projectId],
+        );
+        const created = await fixture.client.request(
+          `/api/projects/${task.projectId}/canvases`,
+          { name: "等待运行的画布" },
+        );
+        expect(created.status, JSON.stringify(created.body)).toBe(201);
+        const { canvas } = canvasCreateResponseSchema.parse(created.body);
+        barrier = await insertBarrier(fixture, task.sessionId);
+        const commandId = randomUUID();
+        const input = {
+          text: "检查当前画布",
+          workContext: { preset: "design", canvasId: canvas.id },
+        };
+        const sent = await task.command("sendText", input, commandId);
+        expect(sent.body.result.status, JSON.stringify(sent.body)).toBe(
+          "accepted",
+        );
+        await barrier.waitBlocked();
+        const deleted = await fixture.client.request(
+          `/api/canvases/${canvas.id}`,
+          { expectedRevision: canvas.revision },
+          "DELETE",
+        );
+        expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
+        await barrier.release();
+        const failed = await vi.waitFor(
+          async () => {
+            const current = await snapshot(task);
+            expect(current.control.phase).toBe("error");
+            return current;
+          },
+          { timeout: 30_000 },
+        );
+        const message = "画布已删除或不属于当前项目，请重新选择。";
+        expect(failed.control.lastError?.message).toBe(message);
+        const persisted = await fixture.database.persistence.queryOne(
+          "select status, error_code, error_message, completed_at from public.agent_runs where session_id=$1",
+          [task.sessionId],
+        );
+        expect(persisted).toMatchObject({
+          status: "failed",
+          error_code: "run_not_started",
+          error_message: message,
+          completed_at: expect.anything(),
+        });
+        const { attempt, historyPath } = await readFailedStartHistory(
+          fixture,
+          task,
+          message,
+        );
+        expect(
+          await sql.query(
+            "select phase from public.agent_turn_boundaries where instance_id=:instance and run_id=$1",
+            [attempt.runId],
+          ),
+        ).toEqual([]);
+        expect(
+          (await task.command("sendText", input, commandId)).body.result.status,
+        ).toBe("duplicate");
+        expect(model.requests).toHaveLength(0);
+        expect(
+          taskRunsResponseSchema.parse(
+            (await fixture.client.request(historyPath)).body,
+          ).runs,
+        ).toEqual([attempt]);
+      } finally {
+        await barrier?.close();
         await host?.dispose();
         await model.close();
         await fixture.close();
