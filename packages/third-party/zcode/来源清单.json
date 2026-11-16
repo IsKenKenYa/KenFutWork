@@ -3214,8 +3214,9 @@
       "source": "references/zcode/packages/ui/src/command-center/CommandCenterDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/command-center/CommandCenterDialog.tsx",
       "sha256": "b125579407826ebd89143476cc019d93449e0f6c231115e743049bf779315c46",
-      "copiedSha256": "5535498c0db1b4459311090fae24804aa7c0c4ca714d5be619d22aa25187df97",
+      "copiedSha256": "71d5c4868f1e613a6c337bbfcdea0c6e5f3d2ea84a9b80d9ae6181f070cb35bb",
       "adaptations": [
+        "重进文件搜索时重新读取当前目录；文件与任务共用公开错误提示及键盘重试。",
         "任务搜索与最近任务读取失败时原位提示；键盘重试返回搜索框。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
@@ -5901,8 +5902,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
-      "copiedSha256": "e6d275f206cb812104ba1a8ad46bd9a2d294e1ec1d2e22c2288afb3a80c87877",
+      "copiedSha256": "4b8e2898d4ba988e94cace278b095a5a265f65ab0976dd1e3d6a73b67b8b2a94",
       "adaptations": [
+        "增加文件索引读取失败和重试的英文文案。",
         "增加任务搜索与最近任务读取的英文报错及重试文案。",
         "补入 3.18.2 原设置搜索的英文标签。",
         "增加实例个人指令分区的英文标签与错误提示。",
@@ -5938,8 +5940,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
-      "copiedSha256": "81b7dfac4f564c5a71dba3429575ebeba08ca05b3fb15573deb366a5b2e29110",
+      "copiedSha256": "b255dae57ba20b4fd5ff968c769ab3a894bb4993444c6dd9bb7ae9d8d0bb85eb",
       "adaptations": [
+        "增加文件索引读取失败和重试的中文文案。",
         "增加任务搜索与最近任务读取的中文报错及重试文案。",
         "补入 3.18.2 原设置搜索的中文标签。",
         "增加实例个人指令分区的中文标签与错误提示。",
@@ -22793,8 +22796,9 @@
       "source": "references/zcode/packages/ui/src/workspace-file-search/fetchWorkspaceFileEntries.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-search/fetchWorkspaceFileEntries.ts",
       "sha256": "20431ab576eda8e85fa04798dfbae010ec76fb19859ba3a16b7ca48e92aadc1e",
-      "copiedSha256": "20431ab576eda8e85fa04798dfbae010ec76fb19859ba3a16b7ca48e92aadc1e",
+      "copiedSha256": "27778cfbb97d688469c6392fc31b0834ae837067119ebeed6d92f6105d93008f",
       "adaptations": [
+        "允许调用方在退出搜索时停止后续分块读取。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },

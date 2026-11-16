@@ -10,15 +10,20 @@ import { WORKSPACE_FILE_ENTRIES_CHUNK_SIZE } from "@zcode/shared/workspaceFileEn
 export async function fetchWorkspaceFileEntriesPacked(
   fileService: Pick<IFileService, "listWorkspaceFilesLength" | "listWorkspaceFilesRange">,
   rootPath: string,
+  signal?: AbortSignal,
 ): Promise<string> {
+  signal?.throwIfAborted();
   const totalLength = await fileService.listWorkspaceFilesLength({ rootPath });
+  signal?.throwIfAborted();
   let packed = "";
   for (let offset = 0; offset < totalLength; offset += WORKSPACE_FILE_ENTRIES_CHUNK_SIZE) {
+    signal?.throwIfAborted();
     const chunk = await fileService.listWorkspaceFilesRange({
       rootPath,
       offset,
       length: WORKSPACE_FILE_ENTRIES_CHUNK_SIZE,
     });
+    signal?.throwIfAborted();
     packed += chunk;
     // 块间让出：处理下一块前先放行排队的输入/渲染任务。
     await new Promise<void>((resolve) => setTimeout(resolve, 0));

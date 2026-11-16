@@ -2,15 +2,15 @@
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
-  clickOn,
-  pressKey,
-  typeText,
-} from "../../server/src/features/browser/cdp-client.js";
+  activateCommandButton,
+  enterCommandQuery,
+  commandSearchInput as input,
+  openCommandCenter,
+} from "./setup/code-command-center-public.js";
 import type { OriginalSessionBrowser } from "./setup/code-public-browser.fixture.mjs";
 import { withTaskGroupPublicPage } from "./setup/code-task-groups-public.fixture.js";
 
 const dialog = '[role="dialog"]';
-const input = '[role="combobox"][placeholder="搜索操作、任务或文件"]';
 const retry = "重新搜索";
 const title = "会话搜索验证甲乙";
 const older = "验证甲乙";
@@ -140,15 +140,7 @@ async function observeSearchTransport(page: OriginalSessionBrowser) {
 }
 
 async function enterSearch(page: OriginalSessionBrowser, query: string) {
-  expect(
-    await page.evaluate(`(() => {
-    const field = document.querySelector(${JSON.stringify(input)});
-    field.focus();
-    field.select();
-    return document.activeElement === field;
-  })()`),
-  ).toBe(true);
-  await typeText(page.cdp, page.target.sessionId, `#${query}`);
+  await enterCommandQuery(page, `#${query}`);
 }
 
 function searchState(page: OriginalSessionBrowser) {
@@ -170,16 +162,6 @@ function searchState(page: OriginalSessionBrowser) {
   })()`);
 }
 
-async function waitVisible(page: OriginalSessionBrowser, selector: string) {
-  await vi.waitFor(async () =>
-    expect(
-      await page.evaluate(
-        `document.querySelector(${JSON.stringify(selector)})?.checkVisibility()`,
-      ),
-    ).toBe(true),
-  );
-}
-
 async function expectSearchState(
   page: OriginalSessionBrowser,
   state: Partial<Awaited<ReturnType<typeof searchState>>>,
@@ -187,22 +169,6 @@ async function expectSearchState(
   await vi.waitFor(async () =>
     expect(await searchState(page)).toMatchObject(state),
   );
-}
-
-async function retryWithKeyboard(page: OriginalSessionBrowser) {
-  const { cdp, target } = page;
-  for (let index = 0; index < 8; index += 1) {
-    await pressKey(cdp, target.sessionId, "Tab");
-    if (
-      await page.evaluate<boolean>(
-        `document.activeElement?.textContent.trim() === ${JSON.stringify(retry)}`,
-      )
-    ) {
-      await pressKey(cdp, target.sessionId, "Enter");
-      return;
-    }
-  }
-  throw new Error("键盘焦点未到达重新搜索按钮");
 }
 
 it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
@@ -229,10 +195,7 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(expected.body.result.items).toContainEqual(
           expect.objectContaining({ title, taskId: host.sessionId }),
         );
-        const launcher = '[data-testid="sidebar-search-open"]';
-        await waitVisible(page, launcher);
-        await clickOn(page.cdp, page.target.sessionId, { selector: launcher });
-        await waitVisible(page, input);
+        await openCommandCenter(page);
         const transport = await observeSearchTransport(page);
         try {
           await enterSearch(page, title);
@@ -242,7 +205,7 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             noResults: false,
             inputFocused: true,
           });
-          await retryWithKeyboard(page);
+          await activateCommandButton(page, retry);
           await expectSearchState(page, {
             alert: null,
             result: true,
