@@ -61,6 +61,10 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   pluginCardMaxFields: 8,
   /** 插件声明卡片单个值的字符上限；超出截断并保留开头。 */
   pluginCardFieldValueMaxChars: 120,
+  /** MCP 页面的单页与私有结果缓存容量，单位字节。 */
+  mcpAppMaxBytes: 16_777_216,
+  /** MCP 缓存的结果条数与同时打开的页面数量。 */
+  mcpAppMaxPages: 128,
   /** 本机浏览器一次性连接入口有效期。 */
   localAccessTicketTtlMs: 60_000,
   /** 浏览器接入会话期限；不涉及官方账户登录。 */
@@ -181,6 +185,8 @@ export const RUNTIME_GOVERNANCE_KEYS = [
   "taskAutoArchiveScanIntervalMs",
   "pluginCardMaxFields",
   "pluginCardFieldValueMaxChars",
+  "mcpAppMaxBytes",
+  "mcpAppMaxPages",
   "localAccessTicketTtlMs",
   "localAccessSessionMaxAgeMs",
   "localDataMigrationPollMs",
@@ -267,6 +273,8 @@ export type AgentGovernanceOverrides = {
   taskAutoArchiveScanIntervalMs?: number | undefined;
   pluginCardMaxFields?: number | undefined;
   pluginCardFieldValueMaxChars?: number | undefined;
+  mcpAppMaxBytes?: number | undefined;
+  mcpAppMaxPages?: number | undefined;
   localAccessTicketTtlMs?: number | undefined;
   localAccessSessionMaxAgeMs?: number | undefined;
   localDataMigrationPollMs?: number | undefined;
@@ -397,6 +405,8 @@ export const AGENT_GOVERNANCE_LIMITS = {
   taskAutoArchiveScanIntervalMs: { min: 10_000, max: 86_400_000 },
   pluginCardMaxFields: { min: 1, max: 20 },
   pluginCardFieldValueMaxChars: { min: 16, max: 2_000 },
+  mcpAppMaxBytes: { min: 1_024, max: 1_073_741_824 },
+  mcpAppMaxPages: { min: 1, max: 10_000 },
   localAccessTicketTtlMs: { min: 1_000, max: 3_600_000 },
   localAccessSessionMaxAgeMs: { min: 60_000, max: 31_536_000_000 },
   localDataMigrationPollMs: { min: 10, max: 60_000 },
@@ -564,6 +574,8 @@ export function resolveGovernanceEnvOverrides(
     pluginCardFieldValueMaxChars: parseStrictInt(
       source.KENFUTWORK_PLUGIN_CARD_FIELD_VALUE_MAX_CHARS,
     ),
+    mcpAppMaxBytes: parseStrictInt(source.KENFUTWORK_MCP_APP_MAX_BYTES),
+    mcpAppMaxPages: parseStrictInt(source.KENFUTWORK_MCP_APP_MAX_PAGES),
     canvasExportMaxBytes: (() => {
       const value = parseStrictInt(source.KENFUTWORK_CANVAS_EXPORT_MAX_BYTES);
       return value !== undefined && value > 0 ? value : undefined;

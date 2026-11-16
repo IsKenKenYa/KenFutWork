@@ -55,6 +55,16 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
           arguments: { query: name, max_results: 1 },
         },
         1: { id: "open-card", name, arguments: { name: "PAGE_INPUT" } },
+        3: {
+          id: "discover-limited",
+          name: "ToolSearch",
+          arguments: { query: name, max_results: 1 },
+        },
+        4: {
+          id: "open-limited-card",
+          name,
+          arguments: { name: "LARGE_INPUT" },
+        },
       },
     });
     let host: Awaited<ReturnType<typeof createCodeSessionFixture>> | undefined;
@@ -225,6 +235,63 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await requirePage();
       await activate(page, "关闭插件页面");
       await requireClosed();
+      const settingsPath = "/api/instance/settings";
+      const originalSettings = await fixture.client.request(
+        settingsPath,
+        undefined,
+        "GET",
+      );
+      expect(originalSettings.status).toBe(200);
+      const originalLimits = {
+        mcpAppMaxBytes: originalSettings.body.settings.mcpAppMaxBytes,
+        mcpAppMaxPages: originalSettings.body.settings.mcpAppMaxPages,
+      };
+      const limited = await fixture.client.request(
+        settingsPath,
+        { mcpAppMaxBytes: 1_024 },
+        "PATCH",
+      );
+      expect(limited.status).toBe(200);
+      expect(limited.body.settings.mcpAppMaxBytes).toBe(1_024);
+      await activate(page, "打开插件页面");
+      await requireHint("插件页面超过容量限制，请在 Agent 治理中调大。");
+      expect(
+        (await fixture.client.request(settingsPath, originalLimits, "PATCH"))
+          .status,
+      ).toBe(200);
+      const concurrentLimit = await fixture.client.request(
+        settingsPath,
+        { mcpAppMaxPages: 1 },
+        "PATCH",
+      );
+      expect(concurrentLimit.status).toBe(200);
+      const concurrentClient = host.client;
+      const concurrent = await Promise.all(
+        ["first", "second"].map(() =>
+          concurrentClient.request("/api/code-ui/rpc", {
+            service: "mcp-apps",
+            method: "open",
+            args: [result],
+          }),
+        ),
+      );
+      expect(concurrent.map((response) => response.status).sort()).toEqual([
+        200, 429,
+      ]);
+      const admitted = concurrent.find((response) => response.status === 200);
+      expect(
+        (
+          await host.client.request("/api/code-ui/rpc", {
+            service: "mcp-apps",
+            method: "close",
+            args: [admitted?.body.result.viewId],
+          })
+        ).status,
+      ).toBe(200);
+      expect(
+        (await fixture.client.request(settingsPath, originalLimits, "PATCH"))
+          .status,
+      ).toBe(200);
       const invalidPage = join(host.workspacePath, "invalid-mcp-page");
       await writeFile(invalidPage, "");
       await activate(page, "打开插件页面");
@@ -249,6 +316,25 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
           method,
           args,
         });
+      expect(
+        (
+          await fixture.client.request(
+            settingsPath,
+            { mcpAppMaxPages: 1 },
+            "PATCH",
+          )
+        ).status,
+      ).toBe(200);
+      const overLimit = await appRpc("open", [result]);
+      expect(overLimit.status).toBe(429);
+      expect(overLimit.body.error.message).toBe(
+        "打开的插件页面已达上限，请关闭部分页面。",
+      );
+      expect(await frameHeight()).toBe("173px");
+      expect(
+        (await fixture.client.request(settingsPath, originalLimits, "PATCH"))
+          .status,
+      ).toBe(200);
       const secondView = await appRpc("open", [result]);
       expect(secondView.status).toBe(200);
       const { viewId, catalogs } = secondView.body.result;
@@ -413,6 +499,70 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       expect(await readFile(calls, "utf8")).toBe("refresh_card:from_page\n");
       expect(await readFile(reads, "utf8")).toBe("approved\n");
       expect(model.requests).toHaveLength(3);
+      expect(
+        (
+          await fixture.client.request(
+            `/api/mcp/servers/${installed.body.server.id}`,
+            { enabled: true },
+            "PATCH",
+          )
+        ).status,
+      ).toBe(200);
+      expect(
+        (
+          await fixture.client.request(
+            settingsPath,
+            { mcpAppMaxBytes: 1_024, mcpAppMaxPages: 1 },
+            "PATCH",
+          )
+        ).status,
+      ).toBe(200);
+      await writeFile(join(host.workspacePath, "oversized-mcp-result"), "");
+      expect(
+        (await host.command("sendText", { text: "显示较大的插件结果" })).status,
+      ).toBe(200);
+      await acceptApproval((await requireApproval(name)).interactionId);
+      const largeResult = await vi.waitFor(
+        async () => {
+          const current = protocol.conversationSnapshotSchema.parse(
+            await snapshot(),
+          );
+          const row = current.rows.window.find(
+            (item) =>
+              item.kind === "toolCall" &&
+              item.toolName === name &&
+              item.toolCallId !== result.toolCallId,
+          );
+          if (
+            row?.kind !== "toolCall" ||
+            row.output?.display?.kind !== "mcp_tool" ||
+            !row.output.display.appRef
+          )
+            throw new Error("未看到较大结果的插件页面入口");
+          expect(JSON.stringify(current)).not.toContain("PRIVATE_VIEW");
+          return { ref: row.output.display.appRef, toolCallId: row.toolCallId };
+        },
+        { timeout: 35_000 },
+      );
+      const largePage = await appRpc("open", [largeResult]);
+      expect(largePage.status).toBe(413);
+      expect(largePage.body.error.message).toBe(
+        "页面结果过大，请调大容量后重新运行工具。",
+      );
+      await vi.waitFor(() => expect(model.requests).toHaveLength(6));
+      expect(JSON.stringify(model.requests[5]?.body)).toContain(
+        "PUBLIC_RESULT",
+      );
+      expect(JSON.stringify(model.requests[5]?.body)).not.toContain(
+        "PRIVATE_VIEW",
+      );
+      model.finish(5);
+      await vi.waitFor(async () => {
+        expect(
+          protocol.conversationSnapshotSchema.parse(await snapshot()).control
+            .phase,
+        ).toBe("completedSuccess");
+      });
     } finally {
       await browser?.close();
       await model.close();

@@ -87,4 +87,25 @@ describe("公开治理表单输入与真实响应选择", () => {
       );
     }
   });
+
+  it("插件页面容量与数量可独立保存，拒绝无效限制", () => {
+    const selected = selectAgentGovernanceSettings(settings());
+    expect(selected.mcpAppMaxBytes).toBe(16_777_216);
+    expect(selected.mcpAppMaxPages).toBe(128);
+    const values = governanceInputValues(selected);
+    values.mcpAppMaxBytes = " 1024 ";
+    values.mcpAppMaxPages = "1";
+    expect(parseAgentGovernanceInputs(values, false)).toEqual({
+      ...selected,
+      mcpAppMaxBytes: 1_024,
+      mcpAppMaxPages: 1,
+    });
+    for (const key of ["mcpAppMaxBytes", "mcpAppMaxPages"] as const) {
+      for (const value of ["", "0", "-1", "1.5", "invalid", "1073741825"]) {
+        const invalid = governanceInputValues(selected);
+        invalid[key] = value;
+        expect(parseAgentGovernanceInputs(invalid, false)).toBeNull();
+      }
+    }
+  });
 });

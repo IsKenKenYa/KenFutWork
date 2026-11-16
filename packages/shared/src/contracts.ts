@@ -372,6 +372,10 @@ export const instanceSettingsSchema = z.object({
   pluginCardFieldValueMaxChars: governanceSetting(
     "pluginCardFieldValueMaxChars",
   ),
+  /** MCP 单页与私有结果缓存的容量限制。 */
+  mcpAppMaxBytes: governanceSetting("mcpAppMaxBytes"),
+  /** MCP 缓存条数及同时打开的页面数量限制。 */
+  mcpAppMaxPages: governanceSetting("mcpAppMaxPages"),
   localAccessTicketTtlMs: governanceSetting("localAccessTicketTtlMs"),
   localAccessSessionMaxAgeMs: governanceSetting("localAccessSessionMaxAgeMs"),
   localDataMigrationPollMs: governanceSetting("localDataMigrationPollMs"),

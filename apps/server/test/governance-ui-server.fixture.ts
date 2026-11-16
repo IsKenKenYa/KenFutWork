@@ -9,8 +9,12 @@ import { join } from "node:path";
 import {
   instanceSettingsResponseSchema,
   localAccessTicketResponseSchema,
+  RUNTIME_GOVERNANCE_KEYS,
 } from "@kenfutwork/shared";
-import { selectAgentGovernanceSettings } from "../../web/src/lib/agent-governance-settings.js";
+import {
+  AGENT_GOVERNANCE_FIELDS,
+  selectAgentGovernanceSettings,
+} from "../../web/src/lib/agent-governance-settings.js";
 import type {
   Command,
   GateSummary,
@@ -374,6 +378,7 @@ async function start() {
         repository.findRuntimeGovernance(id),
       ]);
       const governance = runtime as Record<string, number>;
+      const runtimeKeys = new Set<string>(RUNTIME_GOVERNANCE_KEYS);
       return {
         instanceId: id,
         values,
@@ -383,17 +388,17 @@ async function start() {
         },
         collections: { commands: settings.commands, hooks: settings.hooks },
         stored: {
+          ...Object.fromEntries(
+            AGENT_GOVERNANCE_FIELDS.filter(({ key }) =>
+              runtimeKeys.has(key),
+            ).map(({ key }) => [key, governance[key] ?? null]),
+          ),
           subagentMaxDepth: depth,
           subagentMaxConcurrency: concurrency,
           llmRequestMaxRetries: retries,
           llmInfiniteRetry: infinite,
           executeTimeoutMs: timeout,
-          agentStreamIdleTimeoutMs: governance.agentStreamIdleTimeoutMs ?? null,
           subagentMaxContinuations: continuations,
-          canvasExportMaxBytes: governance.canvasExportMaxBytes ?? null,
-          compactKeepMessages: governance.compactKeepMessages ?? null,
-          compactFallbackKeepMessages:
-            governance.compactFallbackKeepMessages ?? null,
         },
         gates: relay.summaries(),
         requests: relay.requests,

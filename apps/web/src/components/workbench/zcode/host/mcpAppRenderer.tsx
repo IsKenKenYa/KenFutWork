@@ -23,7 +23,8 @@ function pageFailure(error: unknown): string {
   // 仅展示 MCP 页面服务公开的消息；宿主意外错误可能含本机细节。
   if (
     error.code === "mcp_app_unavailable" ||
-    error.code === "mcp_app_invalid_page"
+    error.code === "mcp_app_invalid_page" ||
+    error.code === "mcp_app_limit_exceeded"
   )
     return error.message;
   return retryMessage;

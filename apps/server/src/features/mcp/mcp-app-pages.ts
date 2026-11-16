@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { addAbortListener } from "node:events";
+import type { InstanceSettings } from "@kenfutwork/shared";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   type CallToolResult,
@@ -29,10 +30,8 @@ import {
   mcpAppView,
 } from "./mcp-tools.js";
 
-// ZCode 的 HTML 资源上限；同时限制仅在连接存续期保留的私有消息总量。
-const MAX_PAGE_BYTES = 16 * 1024 * 1024;
-const MAX_RESULTS = 128;
 const MIMES = new Set(["text/html;profile=mcp-app", "text/html"]);
+type McpAppLimits = Pick<InstanceSettings, "mcpAppMaxBytes" | "mcpAppMaxPages">;
 export const mcpAppClientCapabilities = {
   extensions: {
     "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] },
@@ -65,6 +64,7 @@ const reportCloseFailure = () =>
 
 export function createMcpAppPages(
   getPermissions: () => CodeApprovalService | undefined,
+  resolveLimits: (actor: LocalActor) => Promise<McpAppLimits>,
 ) {
   type Entry = {
     source: McpAppSource;
@@ -74,7 +74,7 @@ export function createMcpAppPages(
     scope: ReturnType<
       NonNullable<ToolExecutionContext["scopeHandle"]>["describe"]
     >;
-    payload: string;
+    payload: string | null;
     bytes: number;
     invalidated: AbortController;
     authorization?: McpAppAuthorization;
@@ -156,7 +156,7 @@ export function createMcpAppPages(
       if (view.ref === ref) void view.close().catch(reportCloseFailure);
   }
 
-  function capture(input: {
+  async function capture(input: {
     source: McpAppSource;
     tool: McpServerToolLike;
     serverName: string;
@@ -170,6 +170,7 @@ export function createMcpAppPages(
     if (
       !uri?.startsWith("ui://") ||
       !handle ||
+      !context.actor ||
       !context.runId ||
       !context.toolCallId ||
       result.isError ||
@@ -179,6 +180,8 @@ export function createMcpAppPages(
     )
       return result;
 
+    const limits = await resolveLimits(context.actor);
+    if (context.signal?.aborted || !source.current()) return result;
     const scope = handle.describe();
     const { content, structuredContent, _meta } = result;
     const payload = JSON.stringify({
@@ -186,8 +189,12 @@ export function createMcpAppPages(
       result: { content, structuredContent, _meta },
     });
     const size = Buffer.byteLength(payload);
-    if (size > MAX_PAGE_BYTES) return result;
-    while (pages.size >= MAX_RESULTS || bytes + size > MAX_PAGE_BYTES) {
+    const retained = size <= limits.mcpAppMaxBytes;
+    const retainedBytes = retained ? size : 0;
+    while (
+      pages.size >= limits.mcpAppMaxPages ||
+      bytes + retainedBytes > limits.mcpAppMaxBytes
+    ) {
       const oldest = pages.entries().next().value;
       if (!oldest) break;
       remove(...oldest);
@@ -199,8 +206,8 @@ export function createMcpAppPages(
       toolCallId: `${context.runId}/${context.toolCallId}`,
       handle,
       scope,
-      payload,
-      bytes: size,
+      payload: retained ? payload : null,
+      bytes: retainedBytes,
       invalidated: new AbortController(),
       ...(context.codeApproval
         ? {
@@ -213,7 +220,7 @@ export function createMcpAppPages(
           }
         : {}),
     });
-    bytes += size;
+    bytes += retainedBytes;
     return {
       ...result,
       [mcpAppView]: { ref, serverName, toolName: tool.name },
@@ -263,6 +270,14 @@ export function createMcpAppPages(
   ) {
     const signal = requestSignal(context);
     const entry = await requirePage(actor, requested, signal);
+    const limits = await resolveLimits(actor);
+    if (entry.payload === null)
+      throw new CodeUiHostRpcError(
+        "mcp_app_limit_exceeded",
+        "页面结果过大，请调大容量后重新运行工具。",
+        413,
+      );
+    requireViewCapacity(limits.mcpAppMaxPages);
     const readSignal = AbortSignal.any([signal, entry.invalidated.signal]);
     const response = await entry.source.client
       .readResource({ uri: entry.uri }, await entry.source.options(readSignal))
@@ -280,17 +295,24 @@ export function createMcpAppPages(
     if (
       !document ||
       !("text" in document) ||
-      !MIMES.has(document.mimeType ?? "") ||
-      Buffer.byteLength(document.text) > MAX_PAGE_BYTES
+      !MIMES.has(document.mimeType ?? "")
     )
       throw new CodeUiHostRpcError(
         "mcp_app_invalid_page",
         "无法读取插件页面，请检查插件资源。",
         422,
       );
+    if (
+      entry.bytes > limits.mcpAppMaxBytes ||
+      Buffer.byteLength(document.text) > limits.mcpAppMaxBytes
+    )
+      throw new CodeUiHostRpcError(
+        "mcp_app_limit_exceeded",
+        "插件页面超过容量限制，请在 Agent 治理中调大。",
+        413,
+      );
     const { ref } = referenceSchema.parse(requested);
-    if (views.size >= MAX_RESULTS)
-      void views.values().next().value?.close().catch(reportCloseFailure);
+    requireViewCapacity(limits.mcpAppMaxPages);
     const viewId = randomUUID();
     const abort = new AbortController();
     let closing: Promise<void> | undefined;
@@ -323,6 +345,15 @@ export function createMcpAppPages(
         interactive && Boolean(capabilities?.resources?.subscribe),
       catalogs: catalogVersions(entry),
     };
+  }
+
+  function requireViewCapacity(maxPages: number) {
+    if (views.size >= maxPages)
+      throw new CodeUiHostRpcError(
+        "mcp_app_limit_exceeded",
+        "打开的插件页面已达上限，请关闭部分页面。",
+        429,
+      );
   }
 
   const requestSignal = (context: CodeUiHostRpcContext) =>

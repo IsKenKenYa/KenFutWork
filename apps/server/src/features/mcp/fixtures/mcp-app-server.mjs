@@ -175,7 +175,11 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (method === "tools/call" && params.name === tool.name) {
     result = {
       content: [{ type: "text", text: "PUBLIC_RESULT" }],
-      structuredContent: { value: "PRIVATE_VIEW" },
+      structuredContent: {
+        value: existsSync(new URL("oversized-mcp-result", import.meta.url))
+          ? "PRIVATE_VIEW".repeat(2_048)
+          : "PRIVATE_VIEW",
+      },
       _meta: { process: process.pid },
     };
   } else if (method === "tools/call") {

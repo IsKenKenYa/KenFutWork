@@ -707,6 +707,26 @@
       "status": "active",
       "note": "插件卡片单字段值字符上限；库值 ?? env ?? defaults（DEC-18）"
     },
+    "KENFUTWORK_MCP_APP_MAX_BYTES": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/local-runtime-governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "MCP 页面与私有结果缓存容量；库值 ?? env ?? defaults（DEC-18）"
+    },
+    "KENFUTWORK_MCP_APP_MAX_PAGES": {
+      "surface": "server",
+      "readers": [
+        "packages/shared/src/governance.ts",
+        "packages/shared/src/local-runtime-governance.test.ts"
+      ],
+      "inExamples": true,
+      "status": "active",
+      "note": "MCP 结果缓存条数及同时打开的页面数；库值 ?? env ?? defaults（DEC-18）"
+    },
     "KENFUTWORK_TOOL_RESULT_PRUNE_THRESHOLD_CHARS": {
       "surface": "server",
       "readers": ["packages/shared/src/governance.ts"],

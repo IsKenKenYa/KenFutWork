@@ -27,6 +27,8 @@ export type AgentGovernanceSettings = Pick<
   | "taskAutoArchiveScanIntervalMs"
   | "pluginCardMaxFields"
   | "pluginCardFieldValueMaxChars"
+  | "mcpAppMaxBytes"
+  | "mcpAppMaxPages"
 >;
 type NumericKey = Exclude<keyof AgentGovernanceSettings, "llmInfiniteRetry">;
 export type AgentGovernanceInputs = Record<NumericKey, string>;
@@ -115,6 +117,14 @@ export const AGENT_GOVERNANCE_FIELDS = [
   {
     key: "pluginCardFieldValueMaxChars",
     label: "插件卡片值长度上限",
+  },
+  {
+    key: "mcpAppMaxBytes",
+    label: "插件页面容量（字节）",
+  },
+  {
+    key: "mcpAppMaxPages",
+    label: "插件页面数量上限",
   },
 ] as const satisfies readonly {
   key: NumericKey;

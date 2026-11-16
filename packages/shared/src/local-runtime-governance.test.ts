@@ -14,6 +14,8 @@ const fields = [
   ["localDataMigrationPollMs", 250],
   ["localServiceStartupTimeoutMs", 120_000],
   ["localServiceStartupPollMs", 1_000],
+  ["mcpAppMaxBytes", 16_777_216],
+  ["mcpAppMaxPages", 128],
 ] as const;
 
 it.each(fields)("%s的默认、持久设置与运行时护栏一致", (key, fallback) => {
@@ -41,6 +43,8 @@ const envFields = [
     "KENFUTWORK_LOCAL_SERVICE_STARTUP_TIMEOUT_MS",
   ],
   ["localServiceStartupPollMs", "KENFUTWORK_LOCAL_SERVICE_STARTUP_POLL_MS"],
+  ["mcpAppMaxBytes", "KENFUTWORK_MCP_APP_MAX_BYTES"],
+  ["mcpAppMaxPages", "KENFUTWORK_MCP_APP_MAX_PAGES"],
 ] as const;
 
 it.each(envFields)(

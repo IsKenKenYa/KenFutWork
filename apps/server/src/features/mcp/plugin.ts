@@ -4,6 +4,7 @@ import type { PluginDefinition } from "../../kernel/types.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import type { CodeApprovalService } from "../permissions/approval-types.js";
+import type { SettingsService } from "../settings/settings-service.js";
 import { createCodeUiMcpHost } from "./code-ui-host.js";
 import {
   createMcpEnvCredentialReader,
@@ -69,7 +70,14 @@ export function createMcpPlugin(): PluginDefinition {
   let service: McpService | undefined;
   let tasks: TaskMcpService | undefined;
   let permissions: CodeApprovalService | undefined;
-  const pages = createMcpAppPages(() => permissions);
+  let settings: SettingsService | undefined;
+  const pages = createMcpAppPages(
+    () => permissions,
+    (actor) => {
+      if (!settings) throw new Error("MCP 实例设置未加载，请重启应用。");
+      return settings.getInstanceSettings(actor, actor.instanceId);
+    },
+  );
 
   return {
     name: "mcp",
@@ -83,6 +91,7 @@ export function createMcpPlugin(): PluginDefinition {
       "taskWork",
     ],
     apply(ctx) {
+      settings = ctx.get("settings");
       service = createMcpService({
         env: ctx.env as ServerEnv,
         pages,
