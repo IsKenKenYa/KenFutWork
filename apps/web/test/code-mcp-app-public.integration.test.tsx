@@ -102,9 +102,11 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
         },
         { timeout: 35_000 },
       );
-      expect(JSON.stringify(model.requests)).not.toContain("PRIVATE_VIEW");
-      expect(JSON.stringify(model.requests)).not.toContain(result.ref);
       await vi.waitFor(() => expect(model.requests).toHaveLength(3));
+      const modelInput = JSON.stringify(model.requests[2]?.body);
+      expect(modelInput).toContain("PUBLIC_RESULT");
+      expect(modelInput).not.toContain("PRIVATE_VIEW");
+      expect(modelInput).not.toContain(result.ref);
       model.finish(2);
       await vi.waitFor(
         async () => {
