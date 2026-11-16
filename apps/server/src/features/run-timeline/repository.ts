@@ -109,18 +109,26 @@ export function createRunTimelineRepository(
           task_archived: boolean;
           task_deleted_at: string | Date | null;
           project_archived_at: string | Date | null;
+          pre_checkpoint_failed: boolean;
+          post_checkpoint_failed: boolean;
         }
       >(
         `select r.id, r.session_id, r.model, r.status, r.stop_reason,
                   r.error_code, r.error_message, r.created_at, r.completed_at,
                   t.archived as task_archived, t.deleted_at as task_deleted_at,
-                  p.archived_at as project_archived_at
+                  p.archived_at as project_archived_at,
+                  coalesce(b.boundary #>> '{files,status}' = 'failed', false) as pre_checkpoint_failed,
+                  coalesce(a.boundary #>> '{files,status}' = 'failed', false) as post_checkpoint_failed
              from public.agent_turn_boundaries b
              join public.agent_runs r on r.id = b.run_id
              join public.code_ui_sessions t on t.id = b.task_id
                and t.instance_id = b.instance_id
              join public.projects p on p.id = t.project_id
                and p.instance_id = b.instance_id
+             left join public.agent_turn_boundaries a on a.run_id = b.run_id
+               and a.phase = 'post' and a.instance_id = b.instance_id
+               and a.project_id = b.project_id and a.task_id = b.task_id
+               and a.task_kind = b.task_kind
             where b.instance_id = :instance
               and t.project_id = $1
               and b.task_id = $2
@@ -147,6 +155,10 @@ export function createRunTimelineRepository(
           row.task_archived ||
           row.task_deleted_at !== null ||
           row.project_archived_at !== null,
+        checkpointFailures: {
+          pre: row.pre_checkpoint_failed,
+          post: row.post_checkpoint_failed,
+        },
       };
     },
 

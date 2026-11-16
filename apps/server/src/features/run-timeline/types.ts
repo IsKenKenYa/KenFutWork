@@ -119,6 +119,7 @@ export type RunTimelineChildSession = {
 export type RunTimelineTaskRunRow = {
   run: RunTimelineRunRow;
   archived: boolean;
+  checkpointFailures: { pre: boolean; post: boolean };
 };
 
 export type RunTimelineRepository = {

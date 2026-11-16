@@ -219,6 +219,42 @@ describe("buildRunTimeline", () => {
     });
   });
 
+  it.each(["canceled", "failed"] as const)(
+    "快照失败时保留 %s 的原有终态和原因",
+    (status) => {
+      const stopped = status === "canceled";
+      const message = "供应商拒绝当前输入";
+      const timeline = buildRunTimeline({
+        run: run({ status, errorMessage: stopped ? null : message }),
+        events: rows(
+          stopped
+            ? {
+                type: "run.canceled",
+                runId: RUN_ID,
+                stopReason: "user_cancelled",
+                timestamp: T0,
+              }
+            : {
+                type: "run.failed",
+                runId: RUN_ID,
+                error: { code: "run_failed", message },
+                timestamp: T0,
+              },
+        ),
+        usage: null,
+        checkpointFailures: { pre: false, post: true },
+      });
+      expect(timeline.run.status).toBe(status);
+      expect(timeline.entries).toMatchObject([
+        {
+          seq: 1,
+          status: stopped ? "cancelled" : "error",
+          detail: `${stopped ? "用户停止" : message} · 无法保存运行后的检查点，请检查本机数据目录。`,
+        },
+      ]);
+    },
+  );
+
   it("自动压缩写出触发线来源，手动压缩写出未生效原因", () => {
     const timeline = buildRunTimeline({
       run: run(),

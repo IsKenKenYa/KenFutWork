@@ -5,6 +5,7 @@ import {
   type RunTimelineRepository,
   type RunTimelineResult,
   type RunTimelineService,
+  type RunTimelineTaskRunRow,
 } from "./types.js";
 
 /** 时间线服务的 Provider：读仓储、投影条目、渲染导出。 */
@@ -14,6 +15,7 @@ export function createRunTimelineService(deps: {
   const load = async (
     instanceId: string,
     runId: string,
+    checkpointFailures: RunTimelineTaskRunRow["checkpointFailures"],
   ): Promise<RunTimelineResult> => {
     const run = await deps.repository.loadRun(instanceId, runId);
     if (!run) throw new RunTimelineError("not_found");
@@ -40,6 +42,7 @@ export function createRunTimelineService(deps: {
         children,
       }),
       usage,
+      checkpointFailures,
     });
   };
 
@@ -48,14 +51,18 @@ export function createRunTimelineService(deps: {
       const scoped = await deps.repository.loadRunForTask(input);
       if (!scoped) throw new RunTimelineError("not_found");
       if (scoped.archived) throw new RunTimelineError("archived");
-      return load(input.instanceId, input.runId);
+      return load(input.instanceId, input.runId, scoped.checkpointFailures);
     },
 
     async exportMarkdown(input) {
       const scoped = await deps.repository.loadRunForTask(input);
       if (!scoped) throw new RunTimelineError("not_found");
       if (scoped.archived) throw new RunTimelineError("archived");
-      const timeline = await load(input.instanceId, input.runId);
+      const timeline = await load(
+        input.instanceId,
+        input.runId,
+        scoped.checkpointFailures,
+      );
       return {
         markdown: renderRunTimelineMarkdown(timeline, {
           maxBytes: input.maxBytes,

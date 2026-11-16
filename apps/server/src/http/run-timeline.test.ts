@@ -32,7 +32,11 @@ function repository(
 ): RunTimelineRepository {
   return {
     loadRun: async () => RUN_ROW,
-    loadRunForTask: async () => ({ run: RUN_ROW, archived: false }),
+    loadRunForTask: async () => ({
+      run: RUN_ROW,
+      archived: false,
+      checkpointFailures: { pre: false, post: false },
+    }),
     loadEvents: async () => [
       {
         seq: 1,
@@ -352,7 +356,11 @@ describe("GET /api/agent/tasks/:taskId/runs/:runId/timeline/export", () => {
     const app = buildApp(
       true,
       repository({
-        loadRunForTask: async () => ({ run: RUN_ROW, archived: true }),
+        loadRunForTask: async () => ({
+          run: RUN_ROW,
+          archived: true,
+          checkpointFailures: { pre: false, post: false },
+        }),
       }),
     );
     try {

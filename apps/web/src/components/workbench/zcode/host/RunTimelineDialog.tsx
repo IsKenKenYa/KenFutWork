@@ -321,10 +321,19 @@ function RunTimelineContent({
                         <span className="shrink-0 text-foreground-subtle">
                           {formatClock(entry.at)}
                         </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {entry.title}
-                          {entry.agentName ? ` · ${entry.agentName}` : ""}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate">
+                            {entry.title}
+                            {entry.agentName ? ` · ${entry.agentName}` : ""}
+                          </div>
+                          {entry.kind === "run" &&
+                          entry.detail &&
+                          entry.detail !== run.errorMessage ? (
+                            <p className="break-words text-foreground-subtle">
+                              {entry.detail}
+                            </p>
+                          ) : null}
+                        </div>
                         {entry.durationMs === undefined ? null : (
                           <span className="shrink-0 text-foreground-subtle">
                             {formatDuration(entry.durationMs)}

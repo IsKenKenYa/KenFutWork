@@ -5,6 +5,7 @@ import type {
   RunTimelineEventRow,
   RunTimelineResult,
   RunTimelineRunRow,
+  RunTimelineTaskRunRow,
   RunTimelineUsage,
 } from "./types.js";
 
@@ -124,6 +125,7 @@ export function buildRunTimeline(input: {
   run: RunTimelineRunRow;
   events: RunTimelineEventRow[];
   usage: RunTimelineUsage | null;
+  checkpointFailures?: RunTimelineTaskRunRow["checkpointFailures"];
 }): RunTimelineResult {
   const ordered = [...input.events].sort((a, b) => a.seq - b.seq);
   const entries: RunTimelineEntry[] = [];
@@ -132,6 +134,14 @@ export function buildRunTimeline(input: {
     { entry: RunTimelineEntry; startedMs: number }
   >();
   let eventUsage: RunTimelineUsage | null = null;
+  const beforeCheckpoint = input.checkpointFailures?.pre
+    ? "无法保存运行前的检查点，请检查本机数据目录。"
+    : undefined;
+  const afterCheckpoint = input.checkpointFailures?.post
+    ? "无法保存运行后的检查点，请检查本机数据目录。"
+    : undefined;
+  const withAfterCheckpoint = (detail?: string) =>
+    [detail, afterCheckpoint].filter(Boolean).join(" · ");
 
   for (const row of ordered) {
     const event = row.event;
@@ -187,6 +197,7 @@ export function buildRunTimeline(input: {
         seq: row.seq,
         at: event.timestamp,
         title: "开始运行",
+        ...(beforeCheckpoint ? { detail: beforeCheckpoint } : {}),
       });
       continue;
     }
@@ -205,27 +216,29 @@ export function buildRunTimeline(input: {
               }）`,
         );
       }
+      const detail = withAfterCheckpoint(parts.join(" · "));
       entries.push({
         kind: "run",
         seq: row.seq,
         at: event.timestamp,
         title: "运行完成",
         status: "success",
-        ...(parts.length ? { detail: parts.join(" · ") } : {}),
+        ...(detail ? { detail } : {}),
       });
       continue;
     }
 
     if (event.type === "run.canceled") {
+      const detail = withAfterCheckpoint(
+        event.stopReason ? STOP_REASON_LABELS[event.stopReason] : undefined,
+      );
       entries.push({
         kind: "run",
         seq: row.seq,
         at: event.timestamp,
         title: "运行已停止",
         status: "cancelled",
-        ...(event.stopReason
-          ? { detail: STOP_REASON_LABELS[event.stopReason] }
-          : {}),
+        ...(detail ? { detail } : {}),
       });
       continue;
     }
@@ -238,7 +251,7 @@ export function buildRunTimeline(input: {
         title: "运行失败",
         status: "error",
         name: event.error.code,
-        detail: event.error.message,
+        detail: withAfterCheckpoint(event.error.message),
       });
       continue;
     }
