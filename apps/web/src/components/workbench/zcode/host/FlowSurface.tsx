@@ -258,7 +258,7 @@ function FlowSurfaceContent({ active }: { active: boolean }) {
         </div>
       ) : entry.available && selectedProjectId && directoryReady ? (
         <FlowCanvasEmbed
-          key={`${selectedProjectId}:${bindingGeneration}`}
+          key={`${selectedProjectId}:${bindingGeneration}:${entry.frontendUrl}`}
           projectId={selectedProjectId}
           generation={bindingGeneration}
           frontendUrl={entry.frontendUrl}
@@ -333,6 +333,7 @@ function FlowCanvasEmbed({
   generation: number;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [frameSource, setFrameSource] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [frameLoaded, setFrameLoaded] = useState(false);
@@ -416,12 +417,14 @@ function FlowCanvasEmbed({
       }
     };
     window.addEventListener("message", onMessage);
+    // Flow 子页只发送一次 hello，监听就绪后才能开始加载子页。
+    setFrameSource(frontendUrl);
     return () => {
       disposed = true;
       window.clearTimeout(handshakeTimer);
       window.removeEventListener("message", onMessage);
     };
-  }, [flowOrigin, projectId, generation]);
+  }, [flowOrigin, frontendUrl, projectId, generation]);
 
   // 站内导航把手（握手前点击是 no-op，flow 会按默认页落地）；注册进共享状态，
   // 壳侧栏的 flow 导航项经 flowSurfaceState 驱动这里的 iframe 路由。
@@ -460,18 +463,20 @@ function FlowCanvasEmbed({
           {connectionError}
         </p>
       ) : null}
-      <iframe
-        ref={frameRef}
-        src={frontendUrl}
-        title="Flow 工作流画布"
-        className={`h-full w-full border-0 transition-opacity duration-300 ${
-          frameLoaded ? "opacity-100" : "opacity-0"
-        }`}
-        inert={!active}
-        tabIndex={active ? 0 : -1}
-        onLoad={() => setFrameLoaded(true)}
-        allow="clipboard-read; clipboard-write; fullscreen"
-      />
+      {frameSource ? (
+        <iframe
+          ref={frameRef}
+          src={frameSource}
+          title="Flow 工作流画布"
+          className={`h-full w-full border-0 transition-opacity duration-300 ${
+            frameLoaded ? "opacity-100" : "opacity-0"
+          }`}
+          inert={!active}
+          tabIndex={active ? 0 : -1}
+          onLoad={() => setFrameLoaded(true)}
+          allow="clipboard-read; clipboard-write; fullscreen"
+        />
+      ) : null}
       {!frameLoaded ? (
         <div
           role="status"

@@ -135,6 +135,28 @@ describe("FlowSurface project binding consumer", () => {
     expect(screen.queryByTitle("Flow 工作流画布")).toBeNull();
     expect(host.surfaceFetch).not.toHaveBeenCalled();
   });
+  it("registers the handshake listener before the iframe starts loading", async () => {
+    select(projectA, 2);
+    const register = window.addEventListener;
+    const frameAtRegistration: string[] = [];
+    window.addEventListener = (...args: Parameters<typeof register>) => {
+      if (args[0] === "message") {
+        const frame = document.querySelector<HTMLIFrameElement>(
+          'iframe[title="Flow 工作流画布"][src]',
+        );
+        frameAtRegistration.push(frame?.src ?? "");
+      }
+      Reflect.apply(register, window, args);
+    };
+    try {
+      render(<HostFlowSurface />);
+      const frame = await screen.findByTitle("Flow 工作流画布");
+      expect(frame.getAttribute("src")).toBe(`${origin}/`);
+      expect(frameAtRegistration).toEqual([""]);
+    } finally {
+      window.addEventListener = register;
+    }
+  });
   it("requests a project-bound ticket and opens navigation only for the authoritative generation", async () => {
     select(projectA, 2);
     const view = render(<HostFlowSurface />);
@@ -211,15 +233,8 @@ describe("FlowSurface project binding consumer", () => {
     await screen.findByTitle("Flow 工作流画布");
     const oldSource = frameWindow();
     const oldOutbound = vi.spyOn(oldSource, "postMessage");
-    // 屏障：反复发 hello 直到监听器就位并触发挂起的换票（一次性 mockImplementationOnce
-    // 若被新项目的 hello 消费，identity 永远发不出去；CI 上 effect 落地偶发晚于首帧）。
-    await waitFor(
-      () => {
-        message(oldSource, { type: "ff-embed/hello", version: "v1" });
-        expect(host.surfaceFetch).toHaveBeenCalledTimes(1);
-      },
-      { timeout: 5000 },
-    );
+    message(oldSource, { type: "ff-embed/hello", version: "v1" });
+    expect(host.surfaceFetch).toHaveBeenCalledTimes(1);
     select(projectB, 1);
     view.rerender(<HostFlowSurface />);
     const newSource = frameWindow();
