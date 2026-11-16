@@ -41,7 +41,10 @@ import {
 } from "../features/task-work/model-mailbox.js";
 import { findOwnedToolInterruption } from "../kernel/owned-tool-interruption.js";
 import type { ToolDefinition, ToolExecutionContext } from "../kernel/types.js";
-import { redactSecrets } from "../utils/error-sanitizer.js";
+import {
+  ClientFacingRunError,
+  redactSecrets,
+} from "../utils/error-sanitizer.js";
 import type { ConnectionManager } from "../ws/connection-manager.js";
 import type {
   AgentContextBudget,
@@ -264,13 +267,15 @@ ${advice}`,
 function createModelResponseGuardMiddleware(): AgentMiddleware {
   const requireResponse = (message: AIMessage) => {
     if (message.invalid_tool_calls?.length)
-      throw new Error("模型工具调用参数格式异常，请修正模型配置后重试。");
+      throw new ClientFacingRunError(
+        "模型工具调用参数格式异常，请修正模型配置后重试。",
+      );
     const hasContent =
       typeof message.content === "string"
         ? Boolean(message.content.trim())
         : message.content.length > 0;
     if (!hasContent && !message.tool_calls?.length)
-      throw new Error("模型返回空响应，请重试或更换模型。");
+      throw new ClientFacingRunError("模型返回空响应，请重试或更换模型。");
     return message;
   };
   return {
@@ -287,9 +292,10 @@ function createModelResponseGuardMiddleware(): AgentMiddleware {
           console.warn(
             `[model-response-guard] 内层模型响应形状校验失败：${message}`,
           );
-          throw new Error("模型响应格式异常，请重试或更换模型。", {
-            cause: error,
-          });
+          throw new ClientFacingRunError(
+            "模型响应格式异常，请重试或更换模型。",
+            { cause: error },
+          );
         }
         throw error;
       }

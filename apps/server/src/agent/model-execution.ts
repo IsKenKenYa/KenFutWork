@@ -10,6 +10,7 @@ import {
 } from "../providers/instance-headers.js";
 import { resolveInstanceChatModel } from "../providers/resolve.js";
 import type { ModelInvocationSnapshot } from "../providers/types.js";
+import { ClientFacingRunError } from "../utils/error-sanitizer.js";
 import {
   MODEL_USAGE_OWNER_METADATA,
   type ModelUsageOwner,
@@ -33,13 +34,17 @@ export async function resolveInstanceModelExecution(options: {
   effectiveOutputTokens: number | null;
 }> {
   const spec = parseInstanceSpecifier(options.specifier);
-  if (!spec) throw new Error("模型执行需要真实供应商实例选择。");
+  if (!spec) throw new ClientFacingRunError("请先选择供应商和模型再发送。");
   if (options.catalog) {
     const verdict = await options.catalog.validateSpecifier(
       options.actor,
       options.specifier,
     );
-    if (!verdict.ok) throw new Error(verdict.message);
+    if (!verdict.ok)
+      throw new ClientFacingRunError(
+        "所选模型已不可用，请在供应商设置中确认模型已启用。",
+        { cause: new Error(verdict.message) },
+      );
   }
   const credentials = await options.providers.resolveCredentials(
     options.actor,
@@ -52,7 +57,9 @@ export async function resolveInstanceModelExecution(options: {
       invocation.modelId !== spec.model ||
       invocation.configRevision !== credentials.configRevision)
   )
-    throw new Error("本轮供应商或模型配置已改变，请重新确认模型选择后发送。");
+    throw new ClientFacingRunError(
+      "本轮供应商或模型配置已改变，请重新确认模型选择后发送。",
+    );
   const row = credentials.models?.find((model) => model.id === spec.model);
   const useResponsesApi =
     invocation?.useResponsesApi ?? credentials.useResponsesApi;

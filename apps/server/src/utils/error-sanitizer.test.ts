@@ -21,20 +21,15 @@ describe("error-sanitizer 的面向用户错误透传", () => {
       'Invalid response from "wrapModelCall" in middleware "patchToolCallsMiddleware": expected AIMessage or Command, got object',
     );
     const message = sanitizeErrorForClient(internal);
-    // 通用文案在前，后面挂脱敏后的原始错误（用户要求能读到原文，便于排查/贴给上游）
-    expect(message.startsWith("请求处理失败，请重试。")).toBe(true);
-    expect(message).toContain("原始错误：");
-    expect(message).toContain("patchToolCallsMiddleware");
+    expect(message).toBe("请求处理失败，请重试。");
+    expect(describeErrorDetail(internal)).toContain("patchToolCallsMiddleware");
   });
 
   it("超长文案不透传（长度上限守住，防堆栈/JSON 直出）", () => {
     const long = new Error("x".repeat(400));
     Object.defineProperty(long, "exposeToClient", { value: true });
     const message = sanitizeErrorForClient(long);
-    // 面向用户的自述文案有 200 字上限；原文另走「原始错误」段，且必须被截断
-    expect(message.startsWith("请求处理失败，请重试。")).toBe(true);
-    expect(message.length).toBeLessThan(400);
-    expect(message.endsWith("…")).toBe(true);
+    expect(message).toBe("请求处理失败，请重试。");
   });
 
   /**
@@ -107,23 +102,43 @@ describe("error-sanitizer 的面向用户错误透传", () => {
     }
   });
 
-  it("cause 链里没有面向用户的错误时仍走通用文案", () => {
+  it("嵌套网络异常只显示可以采取的操作", () => {
     const inner = new Error("connect ECONNREFUSED 127.0.0.1:9099");
     const wrapped = new Error("Tool execution failed", { cause: inner });
     const message = sanitizeErrorForClient(wrapped);
-    expect(message.startsWith("请求处理失败，请重试。")).toBe(true);
-    // cause 链一并带出（顶层 + 内层），否则「Tool execution failed」等于没说
-    expect(message).toContain("Tool execution failed");
-    expect(message).toContain("ECONNREFUSED");
+    expect(message).toBe("网络连接异常，请检查网络后重试。");
+    expect(describeErrorDetail(wrapped)).toContain(
+      "ECONNREFUSED 127.0.0.1:9099",
+    );
+  });
+
+  it.each([
+    [403, "供应商拒绝访问，请在供应商设置中检查密钥和权限。"],
+    [404, "供应商找不到模型或接口，请检查模型和供应商地址。"],
+    [413, "提交内容太大，请缩短输入或减少附件后重试。"],
+    [503, "AI 服务暂时不可用，请稍后重试。"],
+  ])("从包裹的 HTTP %s 读取公开原因", (status, expected) => {
+    const upstream = Object.assign(new Error("PRIVATE_PROVIDER_DETAIL"), {
+      response: new Response(null, { status }),
+    });
+    const wrapped = new Error("模型调用失败", { cause: upstream });
+    expect(sanitizeErrorForClient(wrapped)).toBe(expected);
+  });
+
+  it("供应商错误文案出现取消字样时仍是失败", () => {
+    expect(sanitizeErrorForClient(new Error("provider canceled request"))).toBe(
+      "请求处理失败，请重试。",
+    );
+  });
+
+  it("循环的异常原因不会阻止返回公开报错", () => {
+    const error = new Error("错误中的循环引用");
+    Object.defineProperty(error, "cause", { value: error });
+    expect(describeErrorDetail(error)).toBe("错误中的循环引用");
+    expect(sanitizeErrorForClient(error)).toBe("请求处理失败，请重试。");
   });
 });
 
-/**
- * 原始错误的落点：结构化日志（ws/handler 的 run_failed）与用户可见文案同源。
- *
- * 背景（实测）：上游每轮 run 都失败时，原始错误只 `console.error` 到 stderr，
- * 终端一关就没了——既回溯不了上游返回了什么，也贴不给上游排查。
- */
 describe("原始错误详情：脱敏与截断", () => {
   it("取顶层 message + cause 链 + 上游 HTTP 状态", () => {
     const inner = Object.assign(new Error("Bad Request"), { status: 400 });
@@ -149,12 +164,12 @@ describe("原始错误详情：脱敏与截断", () => {
     expect(detail.endsWith("…")).toBe(true);
   });
 
-  it("普通短文案脱敏后进用户可见文案（AI 服务暂时不可用 + 原始错误）", () => {
+  it("没有结构化状态时仅通过可识别的类别生成提示", () => {
     const err = new Error(
       'fetch failed: 400 {"error":{"message":"model not found"}}',
     );
     const message = sanitizeErrorForClient(err);
-    expect(message).toContain("AI 服务暂时不可用");
-    expect(message).toContain("model not found");
+    expect(message).toBe("AI 服务暂时不可用，请稍后重试。");
+    expect(describeErrorDetail(err)).toContain("model not found");
   });
 });

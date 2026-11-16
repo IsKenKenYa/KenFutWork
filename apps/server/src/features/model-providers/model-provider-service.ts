@@ -40,6 +40,7 @@ import type {
  */
 
 export class ModelProviderServiceError extends Error {
+  readonly exposeToClient = true;
   readonly statusCode: number;
   readonly code:
     | "instance_not_found"

@@ -4,6 +4,8 @@ import type { LocalActor } from "../../local-instance/types.js";
 import type { InstanceSqlClient } from "../../persistence/types.js";
 
 export class CodeAttachmentError extends Error {
+  readonly exposeToClient = true;
+
   constructor(
     readonly code: string,
     message: string,

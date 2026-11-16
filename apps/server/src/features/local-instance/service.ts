@@ -10,6 +10,7 @@ import type {
 export class LocalInstanceError extends Error {
   readonly code = "instance_forbidden";
   readonly statusCode = 403;
+  readonly exposeToClient = true;
 
   constructor() {
     super("调用上下文不属于当前本地实例。");
@@ -19,6 +20,7 @@ export class LocalInstanceError extends Error {
 export class LocalInstanceMaintenanceError extends Error {
   readonly code = "instance_draining";
   readonly statusCode = 503;
+  readonly exposeToClient = true;
   constructor() {
     super("本地实例正在准备数据目录迁移，暂不接收新任务。");
   }

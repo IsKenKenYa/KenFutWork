@@ -435,11 +435,11 @@ it("Code主运行无需Canvas，快照钩子绑定同一持久Task目录", async
   expect(f.runtime.hasActiveRunForTask(f.scope.taskId)).toBe(false);
 });
 
-it("factory失败仍保存收尾快照，保留真实run.failed原因", async () => {
+it("factory 内部失败仍公开报错并保存收尾快照", async () => {
   const f = await fixture({ failFactory: true });
   expect((await f.drain()).at(-1)).toMatchObject({
     type: "run.failed",
-    error: { message: expect.stringContaining("factory failed") },
+    error: { message: "请求处理失败，请重试。" },
   });
   expect(f.calls.map((call) => call.hook)).toEqual(["after"]);
 });
