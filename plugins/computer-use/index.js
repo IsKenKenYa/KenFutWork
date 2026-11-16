@@ -1,7 +1,7 @@
 /**
  * computer-use 插件：Computer Use 的**产品入口条目**（FORM-11 flow 同款分层）。
  *
- * 分工（docs/方案设计/ComputerUse集成设计.md）：
+ * 分工（docs/插件/ComputerUse插件规划.md）：
  * - 本插件 = 产品入口：安装态决定能力是否可用（服务端 features/computer-use
  *   在工具调用时查询 `GET /api/plugins` 里的 kenfutwork-computer-use）；
  * - `apps/server/src/features/computer-use/` = 能力实现（ctx.tools 注册
