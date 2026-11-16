@@ -543,7 +543,11 @@ export function createProcessSandbox(
       );
       request = { ...request, runtimeReadRoots: [...new Set(roots)] };
     }
-    const admission = restore.reserve(request);
+    // 只有 spawnCheckpoint 已验证并传入影子仓的私有目录。
+    const admission = restore.reserve(
+      request,
+      internalWriteRoots.length > 0 ? "checkpoint" : "command",
+    );
     let dispatched = false;
     let entry: TaskEntry;
     let connection: TaskConnection;

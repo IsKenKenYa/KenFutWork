@@ -13,11 +13,24 @@ interface Admission {
   scope: CodeExecutionScope;
   agentId: string;
   invocationId: string;
+  purpose: "command" | "checkpoint";
   domain: Promise<WriteDomain>;
 }
+type TaskOwner = Pick<
+  CodeExecutionScope,
+  "instanceId" | "projectId" | "taskId"
+>;
 interface Barrier {
-  taskId: string;
+  owner: TaskOwner;
   roots: string[];
+}
+
+function sameTask(left: TaskOwner, right: TaskOwner): boolean {
+  return (
+    left.taskId === right.taskId &&
+    left.instanceId === right.instanceId &&
+    left.projectId === right.projectId
+  );
 }
 
 async function writeDomain(scope: CodeExecutionScope): Promise<WriteDomain> {
@@ -79,7 +92,7 @@ export function createProcessRestoreCoordinator() {
   const barriers = new Map<symbol, Barrier>();
   let admissionRevision = 0;
   return {
-    reserve(request: ProcessSpawnRequest) {
+    reserve(request: ProcessSpawnRequest, purpose: Admission["purpose"]) {
       const id = Symbol("process-admission");
       if (request.scope.sandboxMode === "read-only") return id;
       const scope = structuredClone(request.scope);
@@ -89,6 +102,7 @@ export function createProcessRestoreCoordinator() {
         scope,
         agentId: request.agentId,
         invocationId: request.invocationId,
+        purpose,
         domain,
       }); // 第一次 await 前预留，覆盖冷helper与policy准备。
       admissionRevision++;
@@ -99,8 +113,14 @@ export function createProcessRestoreCoordinator() {
       if (!admission) return;
       const domain = await admission.domain;
       if (
-        [...barriers.values()].some((barrier) =>
-          intersects(domain, barrier.roots),
+        [...barriers.values()].some(
+          (barrier) =>
+            intersects(domain, barrier.roots) &&
+            // 回滚保留目录保护，只有这次回滚所属 Task 的影子仓 Git 可完成快照。
+            !(
+              admission.purpose === "checkpoint" &&
+              sameTask(admission.scope, barrier.owner)
+            ),
         )
       )
         throw conflict();
@@ -148,16 +168,21 @@ export function createProcessRestoreCoordinator() {
         if (
           pending.some(
             ({ admission, domain }) =>
-              (admission.scope.taskId !== scope.taskId ||
-                admission.scope.instanceId !== scope.instanceId ||
-                admission.scope.projectId !== scope.projectId) &&
+              !sameTask(admission.scope, scope) &&
               intersects(domain, canonical),
           )
         )
           throw conflict();
         // 最终检查与安装同一同步步骤。检查中的临时barrier不能撤销已有pending请求。
         const id = Symbol("restore-barrier");
-        barriers.set(id, { taskId: scope.taskId, roots: canonical });
+        barriers.set(id, {
+          owner: {
+            instanceId: scope.instanceId,
+            projectId: scope.projectId,
+            taskId: scope.taskId,
+          },
+          roots: canonical,
+        });
         return {
           release() {
             barriers.delete(id);

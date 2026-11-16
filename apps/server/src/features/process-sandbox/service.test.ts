@@ -793,6 +793,20 @@ test("恢复barrier也拒绝冷helper中的pending RW，readonly checkpoint先�
   const barrier = await sandbox.acquireRestoreBarrier(scope, [root]);
   const privateFile = join(metadata, "snapshot.txt");
   try {
+    const checkpointRequest = {
+      ...request(
+        `require("node:fs").writeFileSync(${JSON.stringify(privateFile)},"private snapshot")`,
+      ),
+      scope,
+      agentId: "checkpoint-git",
+      invocationId: "checkpoint-during-restore",
+    };
+    await expect(sandbox.spawn(checkpointRequest)).rejects.toMatchObject({
+      code: "restore_conflict",
+    });
+    await expect(
+      sandbox.spawnCheckpoint({ ...checkpointRequest, scope: otherScope }),
+    ).rejects.toMatchObject({ code: "restore_conflict" });
     const snapshot = await sandbox.spawnCheckpoint({
       ...request(
         `require("node:fs").writeFileSync(${JSON.stringify(privateFile)},"private snapshot")`,
@@ -806,6 +820,11 @@ test("恢复barrier也拒绝冷helper中的pending RW，readonly checkpoint先�
       rangeEmpty: true,
     });
     expect(await readFile(privateFile, "utf8")).toBe("private snapshot");
+    const finalized = await sandbox.spawnCheckpoint(checkpointRequest);
+    expect(await finalized.waitForExit()).toMatchObject({
+      exitCode: 0,
+      rangeEmpty: true,
+    });
   } finally {
     await barrier.release();
   }
