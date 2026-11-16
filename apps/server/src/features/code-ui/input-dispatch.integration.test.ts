@@ -1,4 +1,8 @@
+import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import {
   canvasCreateResponseSchema,
   zcodeUiProtocol as protocol,
@@ -103,6 +107,38 @@ async function insertBarrier(fixture: Fixture, taskId: string) {
 
 async function snapshot(host: Host) {
   return protocol.conversationSnapshotSchema.parse(await host.snapshot());
+}
+
+async function prepareSend(
+  fixture: Fixture,
+  task: Host,
+  payload: protocol.CommandPayloadMap["sendText"],
+) {
+  const envelope = {
+    commandId: randomUUID(),
+    clientId: task.clientId,
+    sessionId: task.sessionId,
+    type: "sendText",
+    payload,
+    taskControl: (await snapshot(task)).taskControl,
+    issuedAt: Date.now(),
+  };
+  // 等待本机 HTTP 使用的同一个发布函数，确认 Git 等收尾操作已经完成。
+  return () =>
+    fixture.app.kernel
+      .get("codeUi")
+      .transportRpc(
+        fixture.actor,
+        task.stream.ready.hello.connectionId,
+        "sendConversationCommandV4",
+        [
+          {
+            workspacePath: task.workspacePath,
+            projectId: task.projectId,
+            envelope,
+          },
+        ],
+      );
 }
 
 async function readFailedStartHistory(
@@ -445,16 +481,34 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       }
     }, 120_000);
 
-    it("运行已登记后删除画布会结算为未开始并保留处理建议", async () => {
+    it("运行已登记后删除画布会结算为未开始并保留未提交改动", async () => {
       const fixture = await createCodeUiHttpFixture();
       const model = await heldModel();
       let host: Host | undefined;
       let barrier: Awaited<ReturnType<typeof insertBarrier>> | undefined;
+      let publishing: Promise<void> | undefined;
       try {
         const task = await createCodeSessionFixture(model.baseUrl, {
           client: fixture.client,
         });
         host = task;
+        const settings = await fixture.client.request(
+          "/api/instance/settings",
+          { codeAutoCommitEnabled: true },
+          "PATCH",
+        );
+        expect(settings.status, JSON.stringify(settings.body)).toBe(200);
+        const git = async (...args: string[]) =>
+          (
+            await promisify(execFile)("git", args, { cwd: task.workspacePath })
+          ).stdout.trim();
+        await git("commit", "--allow-empty", "-m", "测试起点");
+        const initialHead = await git("rev-parse", "HEAD");
+        const fileName = "pending-note.txt";
+        await writeFile(join(task.workspacePath, fileName), "用户自己的改动\n");
+        expect(await git("status", "--porcelain", "--", fileName)).toBe(
+          `?? ${fileName}`,
+        );
         const sql = fixture.database.persistence.forInstance(
           fixture.actor.instanceId,
         );
@@ -469,15 +523,16 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(created.status, JSON.stringify(created.body)).toBe(201);
         const { canvas } = canvasCreateResponseSchema.parse(created.body);
         barrier = await insertBarrier(fixture, task.sessionId);
-        const commandId = randomUUID();
-        const input = {
+        const send = await prepareSend(fixture, task, {
           text: "检查当前画布",
           workContext: { preset: "design", canvasId: canvas.id },
-        };
-        const sent = await task.command("sendText", input, commandId);
-        expect(sent.body.result.status, JSON.stringify(sent.body)).toBe(
+        });
+        const sent = await send();
+        expect(protocol.commandAckSchema.parse(sent?.result).status).toBe(
           "accepted",
         );
+        if (!sent?.publish) throw new Error("发送未提供运行发布函数");
+        publishing = sent.publish();
         await barrier.waitBlocked();
         const deleted = await fixture.client.request(
           `/api/canvases/${canvas.id}`,
@@ -486,14 +541,9 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         );
         expect(deleted.status, JSON.stringify(deleted.body)).toBe(200);
         await barrier.release();
-        const failed = await vi.waitFor(
-          async () => {
-            const current = await snapshot(task);
-            expect(current.control.phase).toBe("error");
-            return current;
-          },
-          { timeout: 30_000 },
-        );
+        await publishing;
+        const failed = await snapshot(task);
+        expect(failed.control.phase).toBe("error");
         const message = "画布已删除或不属于当前项目，请重新选择。";
         expect(failed.control.lastError?.message).toBe(message);
         const persisted = await fixture.database.persistence.queryOne(
@@ -518,7 +568,7 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
           ),
         ).toEqual([]);
         expect(
-          (await task.command("sendText", input, commandId)).body.result.status,
+          protocol.commandAckSchema.parse((await send())?.result).status,
         ).toBe("duplicate");
         expect(model.requests).toHaveLength(0);
         expect(
@@ -526,10 +576,37 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
             (await fixture.client.request(historyPath)).body,
           ).runs,
         ).toEqual([attempt]);
+        expect(await git("rev-parse", "HEAD")).toBe(initialHead);
+        expect(await git("status", "--porcelain", "--", fileName)).toBe(
+          `?? ${fileName}`,
+        );
+
+        const sendNext = await prepareSend(fixture, task, {
+          text: "继续工作",
+          workContext: { preset: "code" },
+        });
+        const next = await sendNext();
+        expect(protocol.commandAckSchema.parse(next?.result).status).toBe(
+          "accepted",
+        );
+        if (!next?.publish) throw new Error("后续请求未提供运行发布函数");
+        publishing = next.publish();
+        await Promise.race([
+          model.firstRequest,
+          publishing.then(() => {
+            throw new Error("后续运行未请求模型便已结束");
+          }),
+        ]);
+        model.finish(0);
+        await publishing;
+        expect((await snapshot(task)).control.phase).toBe("completedSuccess");
+        expect(await git("log", "-1", "--format=%P")).toBe(initialHead);
+        expect(await git("show", `HEAD:${fileName}`)).toBe("用户自己的改动");
       } finally {
         await barrier?.close();
-        await host?.dispose();
         await model.close();
+        await publishing?.catch(() => {});
+        await host?.dispose();
         await fixture.close();
       }
     }, 120_000);

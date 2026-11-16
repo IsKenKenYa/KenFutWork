@@ -4362,7 +4362,7 @@ export class CodeUiService {
     sessionId: string,
     event: StreamEvent,
     ordinal: number,
-    options?: { toolOutputPreviewBytes?: number; settleUnstartedRun?: boolean },
+    options?: { toolOutputPreviewBytes?: number; beforeDispatch?: boolean },
   ) {
     const workspace = await this.deps.localInstance.resolve(user);
     const applied = await this.deps.repository.appendEvent(
@@ -4391,7 +4391,7 @@ export class CodeUiService {
         const state = host.exportState();
         return {
           state,
-          ...(options?.settleUnstartedRun && event.type === "run.failed"
+          ...(options?.beforeDispatch && event.type === "run.failed"
             ? { unstartedFailure: event }
             : {}),
           activeRunId:
@@ -4424,10 +4424,8 @@ export class CodeUiService {
         ["run.completed", "run.failed", "run.canceled"].includes(event.type)
       ) {
         await this.notifyTask(user, project, sessionId, "task_status_changed");
-        // Run 终态自动提交（G3/Q8）：先于 drainQueuedInput 的下一轮派发（runTurn 的
-        // finally 在事件流之后），保证提交的就是本轮变更；autoCommitRun 永不抛，
-        // 开关关/非仓库/干净/失败全在 code-git 侧静默收口，不阻塞终态链路。
-        if (this.deps.codeGit)
+        // 未交给 Harness 执行的任务不提交。已执行任务的自动提交在下一轮派发前完成。
+        if (this.deps.codeGit && !options?.beforeDispatch)
           await this.deps.codeGit.autoCommitRun(user, sessionId);
       }
     }
@@ -4835,6 +4833,7 @@ export class CodeUiService {
           sessionId,
           { type: "run.canceled", runId, timestamp: new Date().toISOString() },
           ++ordinal,
+          { beforeDispatch: true },
         );
         return;
       }
@@ -4886,7 +4885,7 @@ export class CodeUiService {
     runId: string,
     error: unknown,
     ordinal: number,
-    settleUnstartedRun = true,
+    beforeDispatch = true,
   ) {
     let message: string | undefined;
     if (error instanceof AgentRunPersistenceError)
@@ -4917,7 +4916,7 @@ export class CodeUiService {
         },
       },
       ordinal,
-      { settleUnstartedRun },
+      { beforeDispatch },
     );
   }
 
