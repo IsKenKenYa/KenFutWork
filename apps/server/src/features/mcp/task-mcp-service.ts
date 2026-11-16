@@ -3,12 +3,12 @@ import { stat } from "node:fs/promises";
 import type { CodeExecutionScope } from "@kenfutwork/shared";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import { losesExecutionRights } from "../process-sandbox/scope-change.js";
 import type { ProcessSandbox } from "../process-sandbox/types.js";
 import type { SettingsService } from "../settings/settings-service.js";
+import { mcpAppClientCapabilities, type McpAppPages } from "./mcp-app-pages.js";
 import {
   type McpResourceRequest,
   type McpResourceResult,
@@ -23,6 +23,7 @@ import {
   createMcpToolDefinition,
   isModelVisibleMcpTool,
   type McpServerToolLike,
+  type McpToolCallResult,
   mcpConfigurationVersion,
   mcpToolContractVersion,
 } from "./mcp-tools.js";
@@ -72,7 +73,7 @@ export interface TaskMcpService {
     tool: McpServerToolLike,
     args: Record<string, unknown>,
     context: ToolExecutionContext,
-  ): Promise<CallToolResult>;
+  ): Promise<McpToolCallResult>;
   closeSource(name: string): Promise<void>;
   computerUseConnections(
     context: ToolExecutionContext,
@@ -129,6 +130,7 @@ export function createTaskMcpService(deps: {
   registry: ToolRegistry;
   settings: Pick<SettingsService, "getInstanceSettings">;
   version: string;
+  pages?: McpAppPages;
 }): TaskMcpService {
   const records = new Map<string, Connection>();
   const closedTasks = new Set<string>();
@@ -152,6 +154,7 @@ export function createTaskMcpService(deps: {
       );
   };
   const forget = (record: Connection) => {
+    deps.pages?.closeSource(record.client);
     for (const dispose of record.disposeTools.splice(0).reverse()) dispose();
     if (records.get(record.key) === record) records.delete(record.key);
   };
@@ -202,6 +205,7 @@ export function createTaskMcpService(deps: {
     name: string,
     args: Record<string, unknown>,
     execution: ToolExecutionContext,
+    tool?: McpServerToolLike,
   ) => {
     const owner = await requireConnection(record, execution);
     if (!record.modelToolVersions.has(name))
@@ -217,11 +221,23 @@ export function createTaskMcpService(deps: {
         execution,
       );
     try {
-      return await callMcpTool(
+      const result = await callMcpTool(
         record.client,
         { name, arguments: args },
         await requestOptions(owner),
       );
+      return tool && deps.pages ? deps.pages.capture({
+        source: {
+          client: record.client,
+          current: () => !record.closing && records.get(record.key) === record,
+          read: async (uri, signal) => record.client.readResource({ uri }, await requestOptions({ ...owner, signal })),
+        },
+        tool,
+        serverName: record.sourceName ?? record.input.name,
+        context: execution,
+        args,
+        result,
+      }) : result;
     } catch (error) {
       throw mcpFailure(error, record.input.env, "mcp_call_failed");
     }
@@ -322,7 +338,7 @@ export function createTaskMcpService(deps: {
           description: `${record.input.name}/${metadata.name}: ${metadata.description ?? "MCP工具"}`,
         },
         "shared",
-        (args, context) => call(record, metadata.name, args, context),
+        (args, context) => call(record, metadata.name, args, context, metadata),
       );
       record.toolNames.push(tool.name);
       record.disposeTools.push(
@@ -489,7 +505,10 @@ export function createTaskMcpService(deps: {
       toolNames: [],
       modelToolVersions: new Map(),
       disposeTools: [],
-      client: new Client({ name: "kenfutwork-task", version: deps.version }),
+      client: new Client(
+        { name: "kenfutwork-task", version: deps.version },
+        deps.pages ? { capabilities: mcpAppClientCapabilities } : undefined,
+      ),
       ready: ready.promise,
       transportReady: transport.promise,
     };
@@ -501,6 +520,7 @@ export function createTaskMcpService(deps: {
 
   const stop = (record: Connection, reason: string): Promise<void> => {
     record.closing = true;
+    deps.pages?.closeSource(record.client);
     record.status = "closing";
     if (record.stopping) return record.stopping;
     record.stopping = (async () => {
@@ -571,7 +591,7 @@ export function createTaskMcpService(deps: {
           "mcp_schema_changed",
           "MCP在当前Task返回了不同工具定义，请重新连接后发起新运行。",
         );
-      return call(record, tool.name, args, context);
+      return call(record, tool.name, args, context, tool);
     },
     async closeSource(name) {
       await closeRecords(

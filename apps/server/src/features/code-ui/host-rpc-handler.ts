@@ -9,6 +9,7 @@ export interface CodeUiHostRpcContext {
   readonly actor: LocalActor;
   readonly connectionId: string;
   readonly signal: AbortSignal;
+  readonly requestSignal?: AbortSignal | undefined;
   requireInitialized(): void;
   onClose(cleanup: CodeUiHostRpcCleanup): () => void;
 }

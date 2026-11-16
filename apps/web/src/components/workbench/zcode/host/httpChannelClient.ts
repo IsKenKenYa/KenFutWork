@@ -462,6 +462,24 @@ export class CodeHttpChannelClient implements IChannelClient {
     return readHostResponse<T>(response);
   }
 
+  async callMcpApp<T>(
+    method: "open" | "waitForClose",
+    target: { ref: string; toolCallId: string },
+    signal: AbortSignal,
+  ): Promise<T> {
+    await this.connect();
+    const connectionId = this.connectionId;
+    const reply = await this.requestWithSignal<{ result: T }>(
+      "/api/code-ui/rpc",
+      { service: "mcp-apps", method, args: [target], connectionId },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (connectionId !== this.connectionId)
+      throw new Error("工作台连接已改变，请重新打开插件页面。");
+    return reply.result;
+  }
+
   /** DELETE 请求（语音模型删除等资源操作）。 */
   async deleteRequest<T>(path: string): Promise<T> {
     const response = await fetch(

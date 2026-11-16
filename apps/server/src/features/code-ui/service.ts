@@ -1984,6 +1984,7 @@ export class CodeUiService {
     method: string,
     args: unknown[],
     connectionId?: string,
+    requestSignal?: AbortSignal,
   ) {
     this.assertConnectionHostOpen();
     const contributed = this.deps.hostRpcHandler?.(service, method);
@@ -1998,7 +1999,12 @@ export class CodeUiService {
           bound,
           user.accessClientId,
         );
-        return { result: await contributed.call(context.actor, args, context) };
+        return {
+          result: await contributed.call(context.actor, args, {
+            ...context,
+            requestSignal,
+          }),
+        };
       }
       this.connections.require(
         owner.instanceId,

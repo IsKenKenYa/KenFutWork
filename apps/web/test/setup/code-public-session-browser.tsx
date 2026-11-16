@@ -324,15 +324,19 @@ try {
     }
     root.render(
       <ContextInspectionProvider client={client}>
-        <OriginalWorkspaceSurface />
+        <ToolCallRendererProvider renderers={[createMcpAppRenderer(client)]}>
+          <OriginalWorkspaceSurface />
+        </ToolCallRendererProvider>
       </ContextInspectionProvider>,
     );
   } else {
     root.render(
       <Providers client={client}>
-        <V4PaneConversationProvider scope={scope}>
-          <PublicSessionSurface />
-        </V4PaneConversationProvider>
+        <ToolCallRendererProvider renderers={[createMcpAppRenderer(client)]}>
+          <V4PaneConversationProvider scope={scope}>
+            <PublicSessionSurface />
+          </V4PaneConversationProvider>
+        </ToolCallRendererProvider>
       </Providers>,
     );
   }
@@ -342,3 +346,5 @@ try {
   root.render(<div role="alert">{String(error)}</div>);
   throw error;
 }
+import { ToolCallRendererProvider } from "@zui/ToolCallBlocks/contributedRenderers.js";
+import { createMcpAppRenderer } from "../../src/components/workbench/zcode/host/mcpAppRenderer.js";

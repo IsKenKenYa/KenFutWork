@@ -53,6 +53,7 @@ import {
 import { useMemo, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { ContextInspectionProvider } from "./ContextInspectionProvider.js";
+import { createMcpAppRenderer } from "./mcpAppRenderer.js";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
   createMacDesktopChrome,
@@ -175,7 +176,7 @@ function CodeHost({
     getPluginCardsVersion,
   );
   const toolCallRenderers = useMemo(
-    () => [...generatedToolCallRenderers],
+    () => [createMcpAppRenderer(client), ...generatedToolCallRenderers],
     [pluginCardsVersion],
   );
   const workspaceIdentity = workspace

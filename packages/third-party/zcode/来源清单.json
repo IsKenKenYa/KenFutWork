@@ -25218,10 +25218,11 @@
       "source": "references/zcode/packages/shared/src/zcode-protocol-v4/toolDisplay.ts",
       "target": "packages/zcode-shared/src/zcode-protocol-v4/toolDisplay.ts",
       "sha256": "a0400e1c7e37e757a2187b70c6f281eb0f4cefd3cc657d17feda163c82c023ed",
-      "copiedSha256": "284fe8eef4ad752aad27f26227ae1d991bf1a659b452bd7051635e95f59958ef",
+      "copiedSha256": "75c649f8bfc1a2b0475debae408f32849824f3fe61dd24aa4928112f0f0d83b5",
       "adaptations": [
         "原ToolOutput结果展示联合增加真实ApplyPatch的file_diffs复用file_diff schema；row顶层display联合保持原契约",
-        "Code/Design统一实施：注册真实assetId的图片/视频结构化display契约，不持久化临时预览URL。"
+        "Code/Design统一实施：注册真实assetId的图片/视频结构化display契约，不持久化临时预览URL。",
+        "MCP Apps 工具终态附带短期页面引用；正文、私有结果与连接信息不进入展示字段。"
       ]
     },
     {

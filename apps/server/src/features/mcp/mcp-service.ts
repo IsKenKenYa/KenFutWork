@@ -8,6 +8,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ServerEnv } from "../../config/env.js";
 import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
+import { mcpAppClientCapabilities, type McpAppPages } from "./mcp-app-pages.js";
 import {
   type McpResourceRequest,
   type McpResourceResult,
@@ -21,6 +22,7 @@ import {
   isModelVisibleMcpTool,
   type McpClientLike,
   type McpServerToolLike,
+  type McpToolCallResult,
   mcpConfigurationVersion,
   registerMcpServerTools,
 } from "./mcp-tools.js";
@@ -132,13 +134,14 @@ export function createMcpService(options: {
   /** 已启用插件声明的 MCP server（文件贡献，只读）。 */
   pluginServers?: () => Promise<McpPluginServerConfig[]>;
   resolveTimeoutMs?: () => Promise<number>;
+  pages?: McpAppPages;
   executeTool?: (
     source: McpConnectionConfiguration,
     tool: McpServerToolLike,
     args: Record<string, unknown>,
     context: ToolExecutionContext,
     remoteCall: () => Promise<CallToolResult>,
-  ) => Promise<CallToolResult>;
+  ) => Promise<McpToolCallResult>;
   readConfiguredResource?: (
     source: McpConnectionConfiguration,
     request: McpResourceRequest,
@@ -186,10 +189,10 @@ export function createMcpService(options: {
   ) {
     ensureOpen();
     await disconnect(name);
-    const mcpClient = new Client({
-      name: "kenfutwork-server",
-      version: options.env.version,
-    });
+    const mcpClient = new Client(
+      { name: "kenfutwork-server", version: options.env.version },
+      options.pages ? { capabilities: mcpAppClientCapabilities } : undefined,
+    );
     const registrations: Array<() => void> = [];
     const disposeRegistrations = () => {
       for (const dispose of registrations.splice(0).reverse()) dispose();
@@ -197,6 +200,7 @@ export function createMcpService(options: {
     let closedDuringConnect = false;
     mcpClient.onclose = () => {
       closedDuringConnect = true;
+      options.pages?.closeSource(mcpClient);
       const connection = connections.get(name);
       if (connection?.client !== mcpClient) return;
       connections.delete(name);
@@ -302,13 +306,26 @@ export function createMcpService(options: {
             `mcp:instance:mcp__${name}__${metadata.name}`,
             context,
           );
-          return options.executeTool(
+          const result = await options.executeTool(
             source,
             metadata,
             args.arguments ?? {},
             context,
             () => client.callTool(args, signal),
           );
+          if (source.kind !== "http" || !options.pages) return result;
+          return options.pages.capture({
+            source: {
+              client: mcpClient,
+              current: () => connections.get(name)?.client === mcpClient,
+              read: async (uri, signal) => mcpClient.readResource({ uri }, await requestOptions(signal)),
+            },
+            tool: metadata,
+            serverName: name,
+            context,
+            args: args.arguments ?? {},
+            result,
+          });
         },
       };
       registrations.push(
@@ -399,6 +416,7 @@ export function createMcpService(options: {
       return;
     }
     connections.delete(name);
+    options.pages?.closeSource(connection.client);
     try {
       connection.disposeTools();
     } catch (error) {

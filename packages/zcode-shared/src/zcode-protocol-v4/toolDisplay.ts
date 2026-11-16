@@ -142,6 +142,7 @@ const toolResultDisplaySchema = z.discriminatedUnion("kind", [
     kind: z.literal("mcp_tool"),
     serverName: z.string().min(1).max(256),
     toolName: z.string().min(1).max(256),
+    appRef: z.uuid().optional(),
     description: z
       .string()
       .min(1)

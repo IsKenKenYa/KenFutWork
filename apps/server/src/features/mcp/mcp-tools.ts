@@ -32,6 +32,11 @@ export interface McpServerToolLike {
   _meta?: Record<string, unknown> | undefined;
 }
 
+export const mcpAppView = Symbol("mcp-app-view");
+export type McpToolCallResult = CallToolResult & {
+  [mcpAppView]?: { ref: string; serverName: string; toolName: string };
+};
+
 const toolMetadataSchema = z.object({
   ui: z
     .object({
@@ -46,7 +51,7 @@ const toolMetadataSchema = z.object({
 export const isMcpAppResource = (uri: string) =>
   uri.trimStart().toLowerCase().startsWith("ui:");
 
-function mcpAppResourceUri(tool: McpServerToolLike): string | undefined {
+export function mcpAppResourceUri(tool: McpServerToolLike): string | undefined {
   const parsed = toolMetadataSchema.safeParse(tool._meta ?? {});
   if (!parsed.success) return undefined;
   const meta = parsed.data;
@@ -106,7 +111,7 @@ export interface McpClientLike {
     },
     signal?: AbortSignal,
     context?: ToolExecutionContext,
-  ): Promise<CallToolResult>;
+  ): Promise<McpToolCallResult>;
 }
 
 export function callMcpTool(
@@ -186,7 +191,7 @@ export function createMcpToolDefinition(
   execute: (
     args: Record<string, unknown>,
     context: ToolExecutionContext,
-  ) => Promise<CallToolResult>,
+  ) => Promise<McpToolCallResult>,
 ): ToolDefinition {
   assertModelVisibleMcpTool(tool);
   const app = mcpAppResourceUri(tool) !== undefined;
@@ -202,13 +207,24 @@ export function createMcpToolDefinition(
     async execute(args, context) {
       // 模型与通用运行记录共用这个出口；不转交页面专用字段。
       const result = await execute(args, context);
-      return {
+      const output = {
         content: result.content.flatMap(projectContent),
         ...(!app && result.structuredContent !== undefined
           ? { structuredContent: result.structuredContent }
           : {}),
         ...(result.isError === undefined ? {} : { isError: result.isError }),
       };
+      const view = result[mcpAppView];
+      return view ? {
+        canonicalOutput: output,
+        modelContent: [{ type: "text", text: JSON.stringify(output) }],
+        display: {
+          kind: "mcp_tool",
+          serverName: view.serverName,
+          toolName: view.toolName,
+          appRef: view.ref,
+        },
+      } : output;
     },
   };
 }

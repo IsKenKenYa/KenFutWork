@@ -381,13 +381,13 @@ export async function registerCodeUiRoutes(
     try {
       const { service, method, args, connectionId } =
         codeUiRpcRequestSchema.parse(request.body);
-      const hostResult = await deps.service.hostRpc(
-        user,
-        service,
-        method,
-        args,
-        connectionId,
-      );
+      const rpc = new AbortController();
+      const cancel = () => rpc.abort();
+      reply.raw.once("close", cancel);
+      if (reply.raw.destroyed) cancel();
+      const hostResult = await deps.service
+        .hostRpc(user, service, method, args, connectionId, rpc.signal)
+        .finally(() => reply.raw.off("close", cancel));
       if (hostResult) return codeUiRpcResponseSchema.parse(hostResult);
       if (service === "zcodeAgentService") {
         const prepared = await deps.service.transportRpc(

@@ -4,6 +4,7 @@ import type { PluginDefinition } from "../../kernel/types.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
 import { createCodeUiMcpHost } from "./code-ui-host.js";
+import { createMcpAppPages } from "./mcp-app-pages.js";
 import {
   createMcpEnvCredentialReader,
   MCP_ENV_CREDENTIAL_CAPABILITY,
@@ -66,6 +67,7 @@ export function createMcpPlugin(): PluginDefinition {
   // 两处各建一个实例会让路由拿到空连接表——状态恒为 error、重连会开出第二条连接
   let service: McpService | undefined;
   let tasks: TaskMcpService | undefined;
+  const pages = createMcpAppPages();
 
   return {
     name: "mcp",
@@ -81,6 +83,7 @@ export function createMcpPlugin(): PluginDefinition {
     apply(ctx) {
       service = createMcpService({
         env: ctx.env as ServerEnv,
+        pages,
         registry: ctx.get("tools"),
         store: createMcpServerStore(
           ctx.get("persistence"),
@@ -126,6 +129,10 @@ export function createMcpPlugin(): PluginDefinition {
             .register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
         );
       }
+      for (const [id, value] of Object.entries(pages.handlers))
+        ctx.effect(() =>
+          ctx.get("capabilities").register(CODE_UI_HOST_RPC_CAPABILITY, { id, value }),
+        );
       // 两种工作方式都通过固定Task目录与同一沙箱创建MCP工具源。
       // 注册放 mounted（不是 apply）：apply 期 ctx.get 只解析得到「更早 apply 的插件」的
       // key，后装配的能力依赖会因顺序而 fail loud（probe 装配实测踩中）。
@@ -135,6 +142,7 @@ export function createMcpPlugin(): PluginDefinition {
         registry: tools,
         settings: ctx.get("settings"),
         version: ctx.env.version,
+        pages,
       });
       tasks = taskService;
       ctx.effect(() =>
@@ -188,8 +196,10 @@ export function createMcpPlugin(): PluginDefinition {
         ctx.get("capabilities").register("task-before-process-close", {
           id: "mcp:task-connections",
           value: {
-            close: (instanceId: string, taskId: string) =>
-              taskService.closeTask(instanceId, taskId, "Task已关闭"),
+            close: (instanceId: string, taskId: string) => {
+              pages.closeTask(instanceId, taskId);
+              return taskService.closeTask(instanceId, taskId, "Task已关闭");
+            },
           },
         }),
       );
@@ -212,6 +222,9 @@ export function createMcpPlugin(): PluginDefinition {
           .get("executionScopes")
           .onRevoke(({ previous, next }) => taskService.revoke(previous, next)),
       );
+      ctx.effect(() => ctx.get("executionScopes").onUpdated(async ({ previous }) => {
+        pages.closeTask(previous.instanceId, previous.taskId);
+      }));
       ctx.effect(() =>
         ctx
           .get("taskWork")
