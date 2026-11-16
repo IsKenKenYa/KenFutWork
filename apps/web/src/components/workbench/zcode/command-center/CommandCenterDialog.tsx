@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- 聚合命令、任务、文件三类搜索结果，后续可按 result section 拆分。 */
-import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ApiAccessError, ApiApplicationError } from "@kenfutwork/shared";
 import { unpackWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import { fetchWorkspaceFileEntriesPacked } from "@zui/workspace-file-search/fetchWorkspaceFileEntries.js";
 import { Command as CommandPrimitive } from "cmdk";
@@ -430,6 +431,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
   const { fileService } = useServices();
   const { intl } = useZCodeIntl();
   const workspaceKey = workspaceIdentity?.trim() || workspaceAbsPath;
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [rawQuery, setRawQuery] = useState("");
   const [manualScope, setManualScope] = useState<CommandCenterSearchScope>("all");
   const [expandedSections, setExpandedSections] = useState<Set<CommandCenterSectionId>>(
@@ -771,7 +773,10 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     rows?: ZCodeTaskMeta[];
     showEmpty?: boolean;
   } = {}) => {
-    if (hasSearchQuery || (rows.length === 0 && !showEmpty)) {
+    if (
+      hasSearchQuery ||
+      (rows.length === 0 && (!showEmpty || recentTaskList.loading || recentTaskList.error))
+    ) {
       return null;
     }
 
@@ -953,8 +958,17 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
     (shouldShowCommandSection && commandOptions.length > 0) ||
     (shouldShowConversationSection && conversationRows.length > 0) ||
     (shouldShowFileSection && fileRows.length > 0);
+  const activeTaskList = hasSearchQuery ? taskList : recentTaskList;
+  const taskListError = shouldShowConversationSection ? activeTaskList.error : null;
+  const taskErrorCause = taskListError?.cause;
+  const taskErrorMessage =
+    taskErrorCause instanceof ApiAccessError || taskErrorCause instanceof ApiApplicationError
+      ? taskErrorCause.message
+      : intl.formatMessage({
+          id: hasSearchQuery ? "commandCenter.error.taskSearch" : "commandCenter.error.recentTasks",
+        });
   const hasSearchStatus =
-    taskList.loading ||
+    (shouldShowConversationSection && taskList.loading) ||
     workspaceFilesLoading ||
     (shouldShowFileSection && Boolean(workspaceFilesError));
 
@@ -990,6 +1004,7 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
           <div className="flex h-8 items-center gap-2 rounded-full border border-input-border bg-input px-2.5 transition-colors hover:border-input-border-hover focus-within:border-input-border-focused focus-within:bg-input-focused">
             <SearchIcon className="size-4 shrink-0 text-foreground-subtlest" />
             <CommandPrimitive.Input
+              ref={searchInputRef}
               value={rawQuery}
               onValueChange={setRawQuery}
               placeholder={intl.formatMessage({ id: "commandCenter.placeholder" })}
@@ -1031,6 +1046,29 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
             </CommandCenterScopeButton>
           </div>
         </div>
+        {taskListError ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
+            <p role="alert" className="min-w-0 text-ui-base text-destructive">
+              {taskErrorMessage}
+            </p>
+            <button
+              type="button"
+              className="shrink-0 rounded-md border border-border px-2 py-1 text-ui-base hover:bg-menu-hover"
+              onKeyDown={(event) => {
+                // Enter 由当前按钮处理，不触发命令列表的选中项。
+                if (event.key === "Enter") event.stopPropagation();
+              }}
+              onClick={() => {
+                searchInputRef.current?.focus();
+                void activeTaskList.refresh();
+              }}
+            >
+              {intl.formatMessage({
+                id: hasSearchQuery ? "commandCenter.retry.taskSearch" : "commandCenter.retry.recentTasks",
+              })}
+            </button>
+          </div>
+        ) : null}
         <CommandList className={commandCenterListClassName}>
           {!hasSearchQuery ? (
             renderDefaultSections()
@@ -1040,11 +1078,11 @@ export const CommandCenterDialog = memo(function CommandCenterDialogComponent({
               {renderConversationSection()}
               {renderFileSection()}
             </>
-          ) : (
+          ) : !taskListError ? (
             <CommandEmpty className="px-4 py-5 text-foreground-subtle">
               {intl.formatMessage({ id: "commandCenter.noResults" })}
             </CommandEmpty>
-          )}
+          ) : null}
         </CommandList>
         {showHistory ? (
           <CommandCenterSearchHistory

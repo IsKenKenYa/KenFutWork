@@ -3214,8 +3214,9 @@
       "source": "references/zcode/packages/ui/src/command-center/CommandCenterDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/command-center/CommandCenterDialog.tsx",
       "sha256": "b125579407826ebd89143476cc019d93449e0f6c231115e743049bf779315c46",
-      "copiedSha256": "e1656b4c8ab398dad792dfc2d989aab77e9657237daca3cf3bc4545b3b8f4ff8",
+      "copiedSha256": "5535498c0db1b4459311090fae24804aa7c0c4ca714d5be619d22aa25187df97",
       "adaptations": [
+        "任务搜索与最近任务读取失败时原位提示；键盘重试返回搜索框。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -5218,8 +5219,9 @@
       "source": "references/zcode/packages/ui/src/hooks/useGlobalTaskList.ts",
       "target": "apps/web/src/components/workbench/zcode/hooks/useGlobalTaskList.ts",
       "sha256": "a13417fead63bbdf342bf0984b718aefdd8e530546150efbf68ec701f7ddb9a0",
-      "copiedSha256": "cb4669a595562be33405303aa4588bce94b3bac771d65216883d2730af2a5169",
+      "copiedSha256": "7f126d758bedb7869a40c1a165578ed9c934b879e7088169c8c93fd960b87f4d",
       "adaptations": [
+        "保留当前查询的错误状态；工作区与查询切换不显示旧结果或接收迟到响应。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -5899,8 +5901,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
-      "copiedSha256": "e8a42267fa3a0f9e7baae34da0fbc1318bbe491d89ca92d7f87d95dff294aeed",
+      "copiedSha256": "e6d275f206cb812104ba1a8ad46bd9a2d294e1ec1d2e22c2288afb3a80c87877",
       "adaptations": [
+        "增加任务搜索与最近任务读取的英文报错及重试文案。",
         "补入 3.18.2 原设置搜索的英文标签。",
         "增加实例个人指令分区的英文标签与错误提示。",
         "接入 3.18.2 图片标注工具词条，新增聊天草稿和 PNG 导出提示。",
@@ -5935,8 +5938,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
-      "copiedSha256": "d50ac71bac3c891d2fcaac1dfd7270c96a705f962f2d8fedade8abe15ee8d4dd",
+      "copiedSha256": "81b7dfac4f564c5a71dba3429575ebeba08ca05b3fb15573deb366a5b2e29110",
       "adaptations": [
+        "增加任务搜索与最近任务读取的中文报错及重试文案。",
         "补入 3.18.2 原设置搜索的中文标签。",
         "增加实例个人指令分区的中文标签与错误提示。",
         "接入 3.18.2 图片标注工具词条，新增聊天草稿和 PNG 导出提示。",
