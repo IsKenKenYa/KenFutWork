@@ -8,6 +8,57 @@
   "license": "Apache-2.0",
   "records": [
     {
+      "source": "references/zcode/packages/ui/src/settings-search/SettingsSearch.tsx",
+      "target": "apps/web/src/components/workbench/zcode/settings-search/SettingsSearch.tsx",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "a4a990134b8abe685fec5fc2b82e47f6b608721e2819aedcf7cbb4d719729a41",
+      "copiedSha256": "06a1c583f01db4e5ca13d81560fe0a039180fbc7207f5d13581b7b1fc62c5836",
+      "adaptations": [
+        "@/ 导入映射为 @zui/；采用 3.18.2 原设置搜索组件，分类由宿主可见导航提供，具体设置项由实际可定位的行提供。",
+        "复用现有 Radix Dialog 与 Command；输入命名、自动完成设置、装饰图标及窄窗口字号适配当前客户端，结果列表使用局部滚动。"
+      ]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/settings-search/SettingsSearchTarget.tsx",
+      "target": "apps/web/src/components/workbench/zcode/settings-search/SettingsSearchTarget.tsx",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "2b8f930bf37cf3e251dd3ed17a7877370ab8d260353b165cf1a87f16499ea79b",
+      "copiedSha256": "732c0fe7af21827d1a85a53bd29b99f852ccd036d3312e137e2bd238d90cfb19",
+      "adaptations": ["@/ 导入映射为 @zui/；其余保持原设置行定位与高亮生命周期。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/settings-search/settingsNavigationSearch.ts",
+      "target": "apps/web/src/components/workbench/zcode/settings-search/settingsNavigationSearch.ts",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "f7096e006322656107d07d7b047c2786a9e58aac890f701fa97ecd5d0d9da059",
+      "copiedSha256": "f7096e006322656107d07d7b047c2786a9e58aac890f701fa97ecd5d0d9da059",
+      "adaptations": []
+    },
+    {
+      "source": "references/zcode/packages/ui/src/settings-search/settingsSearchIndex.ts",
+      "target": "apps/web/src/components/workbench/zcode/settings-search/settingsSearchIndex.ts",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "46e980b07d989ab01a42a625f26c106a39dc21678b685dc1755c1010167a790e",
+      "copiedSha256": "58b8c6341ef2e7dade6bf1bbd0327d8c247ce9f053147caedcbb788b231ce723",
+      "adaptations": ["@/ 导入映射为 @zui/；保留当前通用与外观设置中实际连接的 22 项，沿用本项目的分区归属，补入现有工具分组设置。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/settings-search/contract.ts",
+      "target": "apps/web/src/components/workbench/zcode/settings-search/contract.ts",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "6ea6375649de29d19b9dc32392def52b3505a7958b791174473e8d36a3c074e3",
+      "copiedSha256": "cbb479c28519f0c9acad06f9ea4a3971dc3fb5e30ff4d97d8e7d8bc32ef4daf3",
+      "adaptations": ["@/ 导入映射为 @zui/。"]
+    },
+    {
+      "source": "references/zcode/packages/ui/src/settings-search/index.ts",
+      "target": "apps/web/src/components/workbench/zcode/settings-search/index.ts",
+      "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
+      "sha256": "24b68b3e2544f229496bfa8420ac17a0c20aaca174bea188d005091b7521573c",
+      "copiedSha256": "7940a9012cb5b20129a8920dce00a35c8046eb9d646ff9eca49680897927d1a2",
+      "adaptations": ["@/ 导入映射为 @zui/。"]
+    },
+    {
       "source": "references/zcode/config/provider/zcode-builtin.json",
       "target": "apps/server/src/features/model-providers/zcode-model-config-rules.json",
       "sha256": "0b3d735e0c2334353eecadfa8c0756a1a19fc4f7938fc62882048d6630c5f424",
@@ -681,8 +732,9 @@
       "source": "references/zcode/packages/ui/src/SettingsPage.tsx",
       "target": "apps/web/src/components/workbench/zcode/SettingsPage.tsx",
       "sha256": "0f3d3b06be4fdb675f870e06dcc8bf89aeff9ad9fc880ca1f0f6338a6e76916a",
-      "copiedSha256": "c389e9dd8261d36e1950902f5a186279ec750a4b661f933d0d5653c5c9e22e9a",
+      "copiedSha256": "333e23990ed96d97a2e73f741e2dd83418adc9c2e011576da87e775f1eb1b060",
       "adaptations": [
+        "接入 3.18.2 设置搜索，复用当前可见分类与导航，设置行由目标 context 定位。",
         "参考 3.18.2 的个人指令设置，接入现有实例用户规则；设置页持有分区草稿。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：原设置导航消费宿主能力，隐藏分区的导航意图沿原平台解析回落",
@@ -5845,8 +5897,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/en-US.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "4ace2c86a5d7b66f590e0c482e3ef6db711aaf67c10ab2e6e68dd361d37deaf9",
-      "copiedSha256": "c0ba72f4997c1b653e16076b4bb87101a8a128c71432068455b860a6966a8783",
+      "copiedSha256": "e8a42267fa3a0f9e7baae34da0fbc1318bbe491d89ca92d7f87d95dff294aeed",
       "adaptations": [
+        "补入 3.18.2 原设置搜索的英文标签。",
         "增加实例个人指令分区的英文标签与错误提示。",
         "接入 3.18.2 图片标注工具词条，新增聊天草稿和 PNG 导出提示。",
         "排队消息编辑、取消与解除锁定文案。",
@@ -5880,8 +5933,9 @@
       "target": "apps/web/src/components/workbench/zcode/i18n/locales/zh-CN.ts",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "8650c2bc2ecbb87b0ed2aeb95d0194359b9338cb758231085bdd11e5f6d22627",
-      "copiedSha256": "310a0231253bfcad7df27864548c3bd9e468f7c72a941824304acb3206d5caaf",
+      "copiedSha256": "d50ac71bac3c891d2fcaac1dfd7270c96a705f962f2d8fedade8abe15ee8d4dd",
       "adaptations": [
+        "补入 3.18.2 原设置搜索的中文标签。",
         "增加实例个人指令分区的中文标签与错误提示。",
         "接入 3.18.2 图片标注工具词条，新增聊天草稿和 PNG 导出提示。",
         "排队消息编辑、取消与解除锁定文案。",
@@ -18702,8 +18756,10 @@
       "source": "references/zcode/packages/ui/src/settings/SettingsPageParts.tsx",
       "target": "apps/web/src/components/workbench/zcode/settings/SettingsPageParts.tsx",
       "sha256": "15e03f262fe165692fa3716e496dd61cc2529000edb82e8122ad1e1b8660894b",
-      "copiedSha256": "2231c0f87d176e7fce2e3d10f85ca437c2b5d95f0835ef67f2fc993b7d3a9f84",
+      "copiedSha256": "670508e6d32242cd285fd49e571798999f0057a4077381d6b76275c3198ed5b0",
       "adaptations": [
+        "接入 3.18.2 设置行定位 Hook，为实际设置行提供可访问焦点和主题高亮。",
+        "默认控件列随可用宽度收缩，桌面保留 192px 上限，窄窗口保留标签空间。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -20108,8 +20164,9 @@
       "source": "references/zcode/packages/ui/src/settingsCodePreview.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsCodePreview.tsx",
       "sha256": "0ee409cd9388d6b29ab7512c20e28bdf0f986aa51cc7165ee6d24e89c1bbd20c",
-      "copiedSha256": "4ba54066c988263efe2a39631ee7297ed04bd88fb0f5ef190d32da7a883e18cc",
+      "copiedSha256": "1210c9461b5ff634139f5f3b6fd93d5a3f223e917009343b09ffb8ea8054c787",
       "adaptations": [
+        "为 3.18.2 设置搜索登记外观分区的实际目标行。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -20117,8 +20174,9 @@
       "source": "references/zcode/packages/ui/src/settingsPageHelpers.tsx",
       "target": "apps/web/src/components/workbench/zcode/settingsPageHelpers.tsx",
       "sha256": "d65c95c659bcf92416f068255bc2d0a62a7e673bf9d967a4e5e485dff0f41e83",
-      "copiedSha256": "19ae031c5632f95695adfad5d6f742035ffe6750e523dec999ec60a18a057527",
+      "copiedSha256": "59439afe002ec3147d76f94ba2955acba49d15279465c250e61fd83b87f86911",
       "adaptations": [
+        "为 3.18.2 设置搜索登记通用分区的实际目标行。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "能力显隐：隐藏未接引导与运行偏好对应原控件，缺省原行为",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",

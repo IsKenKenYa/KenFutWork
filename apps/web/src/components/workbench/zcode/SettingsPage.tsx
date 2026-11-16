@@ -36,6 +36,7 @@ import { PermissionTierSection } from "@zui/host/PermissionTierControl.js";
 import { PersonalRulesSection } from "@zui/host/PersonalRulesSection.js";
 import { usePersonalRules } from "@zui/host/usePersonalRules.js";
 import { useZCodeIntl } from "@zui/i18n/IntlProvider.js";
+import { SettingsSearch, SettingsSearchTargetContext, type SettingsSearchId } from "@zui/settings-search/index.js";
 import {
   resolveEntitledAccountProviderAccess,
   resolveEntitledAccountProviderAccessFingerprint,
@@ -390,6 +391,7 @@ export function SettingsPage({
     writeLastSettingsSectionPreference(visibleInitialSection);
     return visibleInitialSection;
   });
+  const [searchTarget, setSearchTarget] = useState<{ id: SettingsSearchId } | null>(null);
   const personalRules = usePersonalRules(activeSection === "personalRules");
   const [pluginTab, setPluginTab] = useState(() =>
     consumePendingSettingsPluginTab(),
@@ -717,6 +719,7 @@ export function SettingsPage({
         fallbackSection,
       );
       setActiveSection(resolvedSection);
+      setSearchTarget(null);
       writeLastSettingsSectionPreference(resolvedSection);
     },
     [activeSection, visibleSections],
@@ -1595,7 +1598,7 @@ export function SettingsPage({
     (activeSection === "plugin" && pluginNavigationOrigin === "plugin-store");
 
   return (
-    <>
+    <SettingsSearchTargetContext.Provider value={searchTarget}>
       <DesktopWindowFrame
         title={intl.formatMessage({ id: "settings.title" })}
         isDesktop={isDesktop}
@@ -1677,6 +1680,15 @@ export function SettingsPage({
                   </ControlHintTooltip>
                 ) : null}
 
+                <div className="px-1">
+                  <SettingsSearch
+                    sections={visibleSections}
+                    onSelect={({ section, setting }) => {
+                      setActiveSettingsSection(section);
+                      if (setting) setSearchTarget({ id: setting });
+                    }}
+                  />
+                </div>
                 {/* <div className={onBack ? "mt-5" : "pt-2"}>
                     <h1 className="flex items-center gap-2 px-2.5 text-ui-lg font-medium text-foreground-subtle">
                       {intl.formatMessage({ id: "settings.title" })}
@@ -2262,6 +2274,6 @@ export function SettingsPage({
           </section>
         </div>
       </DesktopWindowFrame>
-    </>
+    </SettingsSearchTargetContext.Provider>
   );
 }
