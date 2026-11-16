@@ -283,7 +283,25 @@ test
     const program = join(root, "background-job.cjs");
     await writeFile(
       program,
-      `const fs=require("node:fs");process.on("SIGHUP",()=>{});process.on("SIGTERM",()=>{});const procStat=process.platform==="linux"?fs.readFileSync("/proc/self/stat","utf8"):null;const stat=procStat?procStat.split(") ")[1].split(" "):null;let count=0;setInterval(()=>fs.writeFileSync(${JSON.stringify(marker)},JSON.stringify({pid:process.pid,procPid:procStat?Number(procStat.split(" ")[0]):null,groupId:stat?Number(stat[2]):null,count:++count})),20);process.stdout.write("JOB_READY\\n")`,
+      `const fs = require("node:fs");
+process.on("SIGHUP", () => {});
+process.on("SIGTERM", () => {});
+const procStat = process.platform === "linux" ? fs.readFileSync("/proc/self/stat", "utf8") : null;
+const stat = procStat ? procStat.split(") ")[1].split(" ") : null;
+const marker = ${JSON.stringify(marker)};
+const nextMarker = marker + ".next";
+let count = 0;
+setInterval(() => {
+  // 读方只会读到已完整发布的记录。
+  fs.writeFileSync(nextMarker, JSON.stringify({
+    pid: process.pid,
+    procPid: procStat ? Number(procStat.split(" ")[0]) : null,
+    groupId: stat ? Number(stat[2]) : null,
+    count: ++count,
+  }));
+  fs.renameSync(nextMarker, marker);
+}, 20);
+process.stdout.write("JOB_READY\\n");`,
     );
     const sandbox = createProcessSandbox({
       captureRoot: join(root, "capture"),
