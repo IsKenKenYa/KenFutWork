@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { render } from "@testing-library/react";
+import { expect } from "vitest";
+import { z } from "zod";
 import type { CodeUiTestClient } from "../../../server/src/features/code-ui/host-client.fixture.js";
 import type { createCodeSessionFixture } from "../../../server/src/features/code-ui/host-session.fixture.js";
 import type { CodeHttpChannelClient } from "../../src/components/workbench/zcode/host/httpChannelClient";
@@ -6,6 +9,26 @@ import { installCodePublicHostDom } from "./code-public-host-dom";
 import { loadCodePublicHostProviders } from "./code-public-host-ui";
 
 type Host = Awaited<ReturnType<typeof createCodeSessionFixture>>;
+
+export async function createPublicSiblingTask(host: Host) {
+  const result = await host.stream.rpc("sendConversationCommandV4", [
+    {
+      workspacePath: host.workspacePath,
+      projectId: host.projectId,
+      envelope: {
+        commandId: randomUUID(),
+        clientId: host.clientId,
+        sessionId: null,
+        type: "createSession",
+        payload: { workspaceId: host.projectId },
+        issuedAt: Date.now(),
+      },
+    },
+  ]);
+  expect(result.status, JSON.stringify(result.body)).toBe(200);
+  return z.object({ sessionId: z.uuid() }).parse(result.body.result.result)
+    .sessionId;
+}
 export type PublicFixture = {
   client: CodeUiTestClient;
   baseUrl: string;

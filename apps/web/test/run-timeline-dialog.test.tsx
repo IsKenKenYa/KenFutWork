@@ -1,4 +1,8 @@
-import type { RunTimelineResponse, TaskRunsResponse } from "@kenfutwork/shared";
+import {
+  ApiApplicationError,
+  type RunTimelineResponse,
+  type TaskRunsResponse,
+} from "@kenfutwork/shared";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
@@ -124,7 +128,7 @@ test("先列轮次：状态、模型、耗时、用量与失败原因", async ()
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/agent/tasks/task-1/runs?projectId=project-1&limit=20",
-      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     ),
   );
   expect(screen.getByText("失败")).toBeTruthy();
@@ -146,7 +150,7 @@ test("点选轮次进入单轮时间线，返回后仍在轮次列表", async ()
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/agent/tasks/task-1/runs/r2/timeline?projectId=project-1",
-      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     ),
   );
   expect(screen.getByText(/Read 读取文件/)).toBeTruthy();
@@ -174,7 +178,9 @@ test("空列表与缺少项目信息都给出可读说明", async () => {
 
 test("轮次读取失败后重新读取", async () => {
   surfaceJson
-    .mockRejectedValueOnce(new Error("项目不存在"))
+    .mockRejectedValueOnce(
+      new ApiApplicationError("run_not_found", "项目不存在", 404),
+    )
     .mockResolvedValueOnce(RUNS);
   renderDialog();
 

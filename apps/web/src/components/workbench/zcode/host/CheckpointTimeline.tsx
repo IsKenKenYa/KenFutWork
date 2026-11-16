@@ -1,6 +1,4 @@
 import {
-  ApiAccessError,
-  ApiApplicationError,
   type CheckpointSummary,
   checkpointListResponseSchema,
   checkpointPreviewResponseSchema,
@@ -25,9 +23,14 @@ import {
 } from "@zui/components/ui/select.js";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore.js";
 import { HistoryIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { RunTimelineDialog } from "./RunTimelineDialog.js";
 import { surfaceJson } from "./surfaceApi.js";
+import {
+  readableSurfaceError,
+  type SurfaceReadState,
+  useSurfaceRead,
+} from "./useSurfaceRead.js";
 
 type RestorePreview = ReturnType<typeof checkpointPreviewResponseSchema.parse>;
 
@@ -45,63 +48,6 @@ function formatTimestamp(iso: string): string {
 
 function optionLabel(row: CheckpointSummary): string {
   return `${formatTimestamp(row.createdAt)} · ${row.filesChanged} 个文件 +${row.insertions} −${row.deletions}`;
-}
-
-function readableError(error: unknown, fallback: string): string {
-  if (!(error instanceof ApiApplicationError)) return fallback;
-  if (error.status === 401) return new ApiAccessError().message;
-  if (error.code === "application_error" && (error.status ?? 0) >= 500)
-    return fallback;
-  return error.message;
-}
-
-type ReadState<T> =
-  | { status: "loading" }
-  | { status: "ready"; value: T }
-  | { status: "error"; message: string };
-
-function useCheckpointRead<T>(
-  path: string | null,
-  read: (path: string, signal: AbortSignal) => Promise<T>,
-  fallback: string,
-) {
-  const [result, setResult] = useState<{
-    path: string;
-    attempt: number;
-    state: Exclude<ReadState<T>, { status: "loading" }>;
-  } | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const reload = useCallback(() => {
-    setAttempt((previous) => previous + 1);
-  }, []);
-  useEffect(() => {
-    if (!path) return;
-    const controller = new AbortController();
-    const { signal } = controller;
-    void read(path, signal).then(
-      (value) => {
-        if (!signal.aborted)
-          setResult({ path, attempt, state: { status: "ready", value } });
-      },
-      (failure: unknown) => {
-        if (!signal.aborted)
-          setResult({
-            path,
-            attempt,
-            state: {
-              status: "error",
-              message: readableError(failure, fallback),
-            },
-          });
-      },
-    );
-    return () => controller.abort();
-  }, [path, attempt, read, fallback]);
-  const state: ReadState<T> =
-    path && result?.path === path && result.attempt === attempt
-      ? result.state
-      : { status: "loading" };
-  return { state, reload };
 }
 
 async function readCheckpoints(path: string, signal: AbortSignal) {
@@ -159,7 +105,7 @@ function TaskCheckpointTimeline({
   const [busy, setBusy] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const query = `taskId=${encodeURIComponent(taskId)}`;
-  const list = useCheckpointRead(
+  const list = useSurfaceRead(
     `/api/code/checkpoints?${query}`,
     readCheckpoints,
     "无法读取检查点 请重试",
@@ -169,7 +115,7 @@ function TaskCheckpointTimeline({
   const selectedPath = selectedCheckpoint
     ? `/api/code/checkpoints/${encodeURIComponent(selectedCheckpoint.id)}`
     : null;
-  const previewRead = useCheckpointRead(
+  const previewRead = useSurfaceRead(
     open && selectedPath ? `${selectedPath}/preview?${query}` : null,
     readPreview,
     "无法读取回滚预览 请重试",
@@ -203,7 +149,7 @@ function TaskCheckpointTimeline({
         }),
       );
     } catch (error) {
-      setRestoreError(readableError(error, "无法回滚 请检查工作目录"));
+      setRestoreError(readableSurfaceError(error, "无法回滚 请检查工作目录"));
       return;
     } finally {
       setBusy(false);
@@ -345,7 +291,7 @@ function CheckpointPreviewContent({
   restoreError,
   retry,
 }: {
-  state: ReadState<RestorePreview>;
+  state: SurfaceReadState<RestorePreview>;
   restoreError: string | null;
   retry(): void;
 }) {

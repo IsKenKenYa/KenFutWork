@@ -11,10 +11,12 @@ import {
   within,
 } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { z } from "zod";
 import type { createCodeSessionFixture } from "../../server/src/features/code-ui/host-session.fixture.js";
 import { installCodePublicHostDom } from "./setup/code-public-host-dom.js";
-import type { PublicFixture } from "./setup/code-public-session.js";
+import {
+  createPublicSiblingTask,
+  type PublicFixture,
+} from "./setup/code-public-session.js";
 
 const fixturePath = fileURLToPath(
   new URL(
@@ -51,26 +53,6 @@ function checkpointGate() {
     release = resolve;
   });
   return { promise, resolve: release };
-}
-
-async function createSiblingTask(host: Host) {
-  const result = await host.stream.rpc("sendConversationCommandV4", [
-    {
-      workspacePath: host.workspacePath,
-      projectId: host.projectId,
-      envelope: {
-        commandId: randomUUID(),
-        clientId: host.clientId,
-        sessionId: null,
-        type: "createSession",
-        payload: { workspaceId: host.projectId },
-        issuedAt: Date.now(),
-      },
-    },
-  ]);
-  expect(result.status, JSON.stringify(result.body)).toBe(200);
-  return z.object({ sessionId: z.uuid() }).parse(result.body.result.result)
-    .sessionId;
 }
 
 function bindCheckpointTransport(fixture: Fixture) {
@@ -223,7 +205,7 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       expect(transport.replies).toContainEqual([restorePath, 200]);
       expect(await readFile(path, "utf8")).toBe("检查点原内容\n");
 
-      const siblingTaskId = await createSiblingTask(host);
+      const siblingTaskId = await createPublicSiblingTask(host);
       transport.holdPreview = true;
       fireEvent.click(await panel.findByRole("button", { name: "检查点" }));
       await transport.receivedPreview.promise;
