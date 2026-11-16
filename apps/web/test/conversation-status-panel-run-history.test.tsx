@@ -2,11 +2,14 @@ import { cleanup, render, screen } from "@testing-library/react";
 import type { GitRepositorySummary } from "@zcode/shared";
 import { TID_CHAT_SUMMARY_PANEL } from "@zcode/shared";
 import { TooltipProvider } from "@zui/components/ui/tooltip";
+import { ServiceProvider } from "@zui/hooks/useServices";
 import { ZCodeIntlProvider } from "@zui/i18n/IntlProvider";
 import { useZCodeSessionStore } from "@zui/store/zcodeSessionStore";
 import { ConversationStatusPanel } from "@zui/v4/ConversationStatusPanel";
 import { buildConversationStatusPanelModel } from "@zui/v4/conversationStatusPanelModel";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it } from "vitest";
+import { CodeHttpChannelClient } from "../src/components/workbench/zcode/host/httpChannelClient.js";
 
 const WORKSPACE_PATH = "/workspace/run-history";
 
@@ -55,16 +58,23 @@ describe("运行记录入口不看 Git 状态", () => {
   });
 });
 
-function renderPanel(hasActiveTask = false) {
-  return render(
+function statusPanel(hasActiveTask = false, showGit = false) {
+  return (
     <ZCodeIntlProvider initialLocale="zh-CN">
       <TooltipProvider>
         <ConversationStatusPanel
           workspacePath={WORKSPACE_PATH}
           hasActiveTask={hasActiveTask}
+          {...(showGit
+            ? {
+                gitSummary,
+                gitWorktreeChangeSummary: { added: 1, removed: 0 },
+                onRefreshGit: () => {},
+              }
+            : {})}
         />
       </TooltipProvider>
-    </ZCodeIntlProvider>,
+    </ZCodeIntlProvider>
   );
 }
 
@@ -73,7 +83,7 @@ describe("运行记录入口渲染", () => {
     useZCodeSessionStore
       .getState()
       .setActiveTaskId(WORKSPACE_PATH, "task-run-history");
-    renderPanel(true);
+    render(statusPanel(true));
 
     expect(screen.getByTestId(TID_CHAT_SUMMARY_PANEL)).toBeTruthy();
     expect(screen.getAllByTestId("run-history-trigger")).toHaveLength(1);
@@ -81,8 +91,39 @@ describe("运行记录入口渲染", () => {
     expect(screen.getAllByText("运行记录").length).toBeGreaterThan(1);
   });
 
+  it("Git 工具出现或消失时，保留同一个运行记录入口和键盘焦点", () => {
+    useZCodeSessionStore
+      .getState()
+      .setActiveTaskId(WORKSPACE_PATH, "task-run-history");
+    const client = new CodeHttpChannelClient({
+      apiBase: window.location.origin,
+    });
+    const view = render(statusPanel(true), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <ServiceProvider services={client.services}>{children}</ServiceProvider>
+      ),
+    });
+    try {
+      const entry = screen.getByRole("button", { name: "运行记录" });
+      entry.focus();
+
+      view.rerender(statusPanel(true, true));
+      expect(screen.getByText("Git 工具")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "运行记录" })).toBe(entry);
+      expect(document.activeElement).toBe(entry);
+
+      view.rerender(statusPanel(true));
+      expect(screen.queryByText("Git 工具")).toBeNull();
+      expect(screen.getByRole("button", { name: "运行记录" })).toBe(entry);
+      expect(document.activeElement).toBe(entry);
+    } finally {
+      view.unmount();
+      client.dispose();
+    }
+  });
+
   it("无 Git 摘要且无 Task 时不渲染面板", () => {
-    renderPanel();
+    render(statusPanel());
     expect(screen.queryByTestId(TID_CHAT_SUMMARY_PANEL)).toBeNull();
   });
 });

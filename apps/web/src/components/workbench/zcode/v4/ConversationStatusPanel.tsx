@@ -455,15 +455,6 @@ function GitStatusSection({
           triggerLayout="status-row"
           className="w-full"
         />
-        <CheckpointTimeline
-          workspacePath={workspacePath}
-          workspaceIdentity={workspaceIdentity}
-          onRestored={onRefreshGit}
-        />
-        <RunHistoryEntry
-          workspacePath={workspacePath}
-          workspaceIdentity={workspaceIdentity}
-        />
       </div>
     </StatusSection>
   );
@@ -1836,8 +1827,6 @@ function ConversationStatusPanelImpl({
   // 已结束目录入口过去渲染在 Agent StatusSection 之后，视觉和 DOM 都被提升成
   // 并列顶层 section。Agent 的运行态和已结束目录属于同一领域，统一由 Agent 折叠分组承载。
   const canRenderAgents = model.runningSubagentWorks.length > 0 || canRenderEndedAgents;
-  // Git 状态区里已经有同一个入口；只在它缺席时独立成块，避免同一入口出现两次。
-  const canRenderRunHistory = model.runHistory && !canRenderGit;
   const hasPriorStatusSection =
     canRenderGit ||
     canRenderGoal ||
@@ -2090,14 +2079,19 @@ function ConversationStatusPanelImpl({
                 onOpenSubagentDirectory={onOpenSubagentDirectory}
               />
             ) : null}
-            {canRenderRunHistory ? (
+            {model.runHistory ? (
               <div
                 data-status-block="run-history"
                 className={cn(
-                  "min-w-0 flex-none px-2 pb-1",
+                  "flex min-w-0 flex-none flex-wrap items-center gap-x-1 px-2 pb-1",
                   hasPriorStatusSection && "border-t border-[var(--color-border)] pt-2",
                 )}
               >
+                <CheckpointTimeline
+                  workspacePath={workspacePath}
+                  workspaceIdentity={workspaceIdentity}
+                  onRestored={onRefreshGit}
+                />
                 <RunHistoryEntry
                   workspacePath={workspacePath}
                   workspaceIdentity={workspaceIdentity}

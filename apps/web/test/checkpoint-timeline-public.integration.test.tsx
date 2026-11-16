@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -110,7 +110,7 @@ function bindCheckpointTransport(fixture: Fixture) {
 }
 
 it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
-  "真实检查点读取与预览可原位恢复，回滚提交当前预览并还原实盘文件",
+  "没有用户 Git 仓库也能从状态面板打开真实检查点并安全回滚",
   async () => {
     const fixtureLoading: Promise<{
       createCodeUiHttpFixture(): Promise<Fixture>;
@@ -129,9 +129,20 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       model = await models.heldModel();
       host = await sessions.createCodeSessionFixture(model.baseUrl, {
         client: fixture.client,
+        initializeGit: false,
       });
       const workspacePath = host.workspacePath;
       const taskId = host.sessionId;
+      await expect(stat(join(workspacePath, ".git"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      const gitSummary = await host.client.request("/api/code-ui/rpc", {
+        service: "git",
+        method: "getRepositorySummary",
+        args: [{ workspacePath, viewerScope: { kind: "task", taskId } }],
+      });
+      expect(gitSummary.status).toBe(200);
+      expect(gitSummary.body.result.isRepository).toBe(false);
       const path = join(workspacePath, "checkpoint.txt");
       const actor = fixture.actor;
       const scope = await fixture.app.kernel
@@ -146,11 +157,15 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
 
       releaseDom = await installCodePublicHostDom();
       const [
-        { CheckpointTimeline },
+        { ConversationStatusPanel },
+        { ZCodeIntlProvider },
+        { TooltipProvider },
         { setSurfaceApiBase },
         { useZCodeSessionStore },
       ] = await Promise.all([
-        import("../src/components/workbench/zcode/host/CheckpointTimeline.js"),
+        import("@zui/v4/ConversationStatusPanel.js"),
+        import("@zui/i18n/IntlProvider.js"),
+        import("@zui/components/ui/tooltip.js"),
         import("../src/components/workbench/zcode/host/surfaceApi.js"),
         import("@zui/store/zcodeSessionStore.js"),
       ]);
@@ -159,9 +174,19 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       const transport = bindCheckpointTransport(fixture);
 
       const panel = render(
-        <CheckpointTimeline workspacePath={workspacePath} />,
+        <ZCodeIntlProvider initialLocale="zh-CN">
+          <TooltipProvider>
+            <ConversationStatusPanel
+              workspacePath={workspacePath}
+              hasActiveTask
+              summaryPanelVariantOverride="panel"
+            />
+          </TooltipProvider>
+        </ZCodeIntlProvider>,
       );
       view = panel;
+      expect(panel.getByRole("button", { name: "运行记录" })).toBeTruthy();
+      expect(panel.queryByText("Git 工具")).toBeNull();
       const listError = await panel.findByRole("alert");
       expect(listError.textContent).toContain("本机连接已失效");
       expect(transport.replies).toContainEqual(["/api/code/checkpoints", 401]);
@@ -218,6 +243,9 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       });
       await panel.findByRole("button", { name: "检查点" });
       expect(dialogQuery()).toBeNull();
+      await expect(stat(join(workspacePath, ".git"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
     } finally {
       view?.unmount();
       // 等待 Radix 的卸载焦点事件在当前 DOM 中发出。

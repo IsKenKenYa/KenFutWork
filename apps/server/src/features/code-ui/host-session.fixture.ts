@@ -141,6 +141,7 @@ export async function createCodeSessionFixture(
   options: {
     client: Pick<CodeUiTestClient, "request" | "openCodeStream">;
     initialConfig?: InitialConfig;
+    initializeGit?: boolean;
   },
 ) {
   const transport = options.client;
@@ -178,7 +179,7 @@ export async function createCodeSessionFixture(
     }
   };
   try {
-    await initializeTaskRepository(dir);
+    if (options.initializeGit !== false) await initializeTaskRepository(dir);
     const hello = await stream.rpc("initializeConversationV4", [
       {
         kind: "clientHello",
