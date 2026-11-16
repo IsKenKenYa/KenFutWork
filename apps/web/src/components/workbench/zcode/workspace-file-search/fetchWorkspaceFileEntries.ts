@@ -13,13 +13,14 @@ export async function fetchWorkspaceFileEntriesPacked(
   signal?: AbortSignal,
 ): Promise<string> {
   signal?.throwIfAborted();
-  const totalLength = await fileService.listWorkspaceFilesLength({ rootPath });
+  const scan = { rootPath, scanId: crypto.randomUUID() };
+  const totalLength = await fileService.listWorkspaceFilesLength(scan);
   signal?.throwIfAborted();
   let packed = "";
   for (let offset = 0; offset < totalLength; offset += WORKSPACE_FILE_ENTRIES_CHUNK_SIZE) {
     signal?.throwIfAborted();
     const chunk = await fileService.listWorkspaceFilesRange({
-      rootPath,
+      ...scan,
       offset,
       length: WORKSPACE_FILE_ENTRIES_CHUNK_SIZE,
     });

@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from "node:crypto";
 import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { codeUiViewerScopeSchema } from "@kenfutwork/shared";
@@ -28,6 +29,10 @@ const indexRange = "listWorkspaceFilesRange";
 const filepath = z.object({
   rootPath: z.string(),
   viewerScope: codeUiViewerScopeSchema,
+});
+const indexScan = filepath.extend({ scanId: z.uuid() });
+const rangeEnvelope = z.looseObject({
+  args: z.tuple([z.looseObject({ scanId: z.uuid() })]),
 });
 
 function readSearch(page: OriginalSessionBrowser) {
@@ -59,6 +64,7 @@ async function expectNames(page: OriginalSessionBrowser, ...names: string[]) {
 async function interruptOneIndexChunk(
   page: OriginalSessionBrowser,
   root: string,
+  failure: "network" | "unknown_scan",
 ) {
   const { cdp, target } = page;
   let interrupted = false;
@@ -78,11 +84,25 @@ async function interruptOneIndexChunk(
       rpc.data.method === indexRange &&
       filepath.parse(rpc.data.args[0]).rootPath === root;
     if (interrupt) interrupted = true;
+    const failNetwork = interrupt && failure === "network";
+    // 交给真实宿主处理未知扫描编号，保留原目录、授权与读取偏移。
+    const replacement =
+      interrupt && failure === "unknown_scan" && postData
+        ? rangeEnvelope.parse(JSON.parse(postData))
+        : null;
+    if (replacement) replacement.args[0].scanId = randomUUID();
     const command = cdp.send(
-      interrupt ? "Fetch.failRequest" : "Fetch.continueRequest",
+      failNetwork ? "Fetch.failRequest" : "Fetch.continueRequest",
       {
         requestId: event.requestId,
-        ...(interrupt ? { errorReason: "ConnectionReset" } : {}),
+        ...(failNetwork ? { errorReason: "ConnectionReset" } : {}),
+        ...(replacement
+          ? {
+              postData: Buffer.from(JSON.stringify(replacement)).toString(
+                "base64",
+              ),
+            }
+          : {}),
       },
       target.sessionId,
     );
@@ -160,6 +180,21 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
                 status: 200,
               })),
             );
+            const scanIds = scans.map(
+              ({ args }) => indexScan.parse(args[0]).scanId,
+            );
+            expect(new Set(scanIds).size).toBe(2);
+            expect(
+              [...observation.requests.values()]
+                .filter(
+                  ({ service, method }) =>
+                    service === "file" && method === indexRange,
+                )
+                .map(({ args, status }) => ({
+                  scanId: indexScan.parse(args[0]).scanId,
+                  status,
+                })),
+            ).toEqual(scanIds.map((scanId) => ({ scanId, status: 200 })));
             await pressKey(page.cdp, page.target.sessionId, "ArrowDown");
             await pressKey(page.cdp, page.target.sessionId, "Enter");
             await vi.waitFor(async () =>
@@ -196,44 +231,56 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
       );
     }, 120_000);
 
-    it("文件索引分块中断时原位报错，重试保留查询与键盘焦点", async () => {
-      await withTaskGroupPublicPage(
-        async ({ host, page }) => {
-          await writeFile(
-            join(host.workspacePath, newFile),
-            newContent,
-            "utf8",
-          );
-          await openCommandCenter(page);
-          const transport = await interruptOneIndexChunk(
-            page,
-            host.workspacePath,
-          );
-          try {
-            await enterCommandQuery(page, query);
-            await vi.waitFor(() => expect(transport.interrupted).toBe(true));
-            await vi.waitFor(async () =>
-              expect(await readSearch(page)).toMatchObject({
-                alert: "文件读取失败",
-                names: [],
-                noResults: false,
-              }),
+    it.each([
+      { name: "网络中断", failure: "network", alert: "文件读取失败" },
+      {
+        name: "文件列表已失效",
+        failure: "unknown_scan",
+        alert: "文件列表已过期，请重新读取。",
+      },
+    ] as const)(
+      "$name 时原位报错并保留搜索词",
+      async ({ failure, alert }) => {
+        await withTaskGroupPublicPage(
+          async ({ host, page }) => {
+            await writeFile(
+              join(host.workspacePath, newFile),
+              newContent,
+              "utf8",
             );
-            await activateCommandButton(page, "重新读取文件");
-            await vi.waitFor(async () =>
-              expect(await readSearch(page)).toMatchObject({
-                alert: null,
-                names: [newFile],
-                inputFocused: true,
-                query,
-              }),
+            await openCommandCenter(page);
+            const transport = await interruptOneIndexChunk(
+              page,
+              host.workspacePath,
+              failure,
             );
-          } finally {
-            await transport.close();
-          }
-        },
-        { prepareTaskContent: false },
-      );
-    }, 120_000);
+            try {
+              await enterCommandQuery(page, query);
+              await vi.waitFor(() => expect(transport.interrupted).toBe(true));
+              await vi.waitFor(async () =>
+                expect(await readSearch(page)).toMatchObject({
+                  alert,
+                  names: [],
+                  noResults: false,
+                }),
+              );
+              await activateCommandButton(page, "重新读取文件");
+              await vi.waitFor(async () =>
+                expect(await readSearch(page)).toMatchObject({
+                  alert: null,
+                  names: [newFile],
+                  inputFocused: true,
+                  query,
+                }),
+              );
+            } finally {
+              await transport.close();
+            }
+          },
+          { prepareTaskContent: false },
+        );
+      },
+      120_000,
+    );
   },
 );

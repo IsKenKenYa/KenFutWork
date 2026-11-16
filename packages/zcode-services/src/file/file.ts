@@ -47,19 +47,20 @@ export interface IFileService {
   /**
    * workspace 文件索引的列式打包长度（字符数）。与 listWorkspaceFilesRange 配对，
    * 调用方按长度分块拉取（见 fetchWorkspaceFileEntriesPacked）。
-   * 返回 number：RPC Int 快速路径。
+   * 每次扫描使用新的 scanId，后续分块沿用该编号。返回 number：RPC Int 快速路径。
    */
-  listWorkspaceFilesLength(params: { rootPath: string }): Promise<number>;
+  listWorkspaceFilesLength(params: { rootPath: string; scanId?: string }): Promise<number>;
   /**
    * 分块返回列式打包字符串（workspaceFileEntriesCodec 格式，[offset, offset+length)）。
    * 必须是裸 string 顶层返回：RPC String 快速路径（长度前缀+原始字节）；Object 会
    * JSON 转义大字符串（实测 6-9s 主线程长任务）。单块不超过 ~4MB：大消息在
    * renderer 接收端的分帧重组是秒级长任务（实测 4.6-6.3s），分块 + 块间让出后
    * 主线程每次只处理一小块（~50ms），输入永不冻结。
-   * Host 侧有 60s TTL + .zcodeignore 指纹签名的整包缓存，分块只是切片。
+   * Host 按扫描编号保留分页内容，超出保留预算时要求重新读取。
    */
   listWorkspaceFilesRange(params: {
     rootPath: string;
+    scanId?: string;
     offset: number;
     length: number;
   }): Promise<string>;

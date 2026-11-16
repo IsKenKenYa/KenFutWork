@@ -22796,9 +22796,10 @@
       "source": "references/zcode/packages/ui/src/workspace-file-search/fetchWorkspaceFileEntries.ts",
       "target": "apps/web/src/components/workbench/zcode/workspace-file-search/fetchWorkspaceFileEntries.ts",
       "sha256": "20431ab576eda8e85fa04798dfbae010ec76fb19859ba3a16b7ca48e92aadc1e",
-      "copiedSha256": "27778cfbb97d688469c6392fc31b0834ae837067119ebeed6d92f6105d93008f",
+      "copiedSha256": "3e9fa4b724f557533309b63014213b2dfa4149c61c3e052b7fae39ac0d50be08",
       "adaptations": [
         "允许调用方在退出搜索时停止后续分块读取。",
+        "文件树和命令中心每次读取使用独立扫描编号。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
       ]
     },
@@ -23547,10 +23548,11 @@
       "source": "references/zcode/packages/services/src/file/file.ts",
       "target": "packages/zcode-services/src/file/file.ts",
       "sha256": "9cd8de18048a2834cbba5da953a568012f58cc47191b9bad85e7b292ac07a0a9",
-      "copiedSha256": "db47a11e1c3b862dca55abac86d996a5703312dede75318c7cccd199748c8c63",
+      "copiedSha256": "d8227c583b8a323a980b7d26422e7934a06de6f005c21a20e4c80d47a7c2f9bb",
       "adaptations": [
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "原3创建入口消费完整: ensure/default/scratch均验证真实CodeUiWorkspace DTO并返回opaque identity，Project登记不创建Task/Scope"
+        "原3创建入口消费完整: ensure/default/scratch均验证真实CodeUiWorkspace DTO并返回opaque identity，Project登记不创建Task/Scope",
+        "分块读取可携带扫描编号，保留原数字和字符串返回值。"
       ],
       "syncSource": {
         "commit": "3f5c38732f151fa64e99856f456623b303dbe14e",

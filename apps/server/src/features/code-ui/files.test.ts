@@ -220,35 +220,110 @@ describe("人工viewer scope", () => {
       ),
     ).toContain("late.txt");
   });
+  it("同一连接的两次文件扫描交错读取时各自保留结果", async () => {
+    const { root, call } = await world();
+    const first = { rootPath: root, scanId: randomUUID() };
+    const second = { rootPath: root, scanId: randomUUID() };
+    const read = async (scan: typeof first, offset: number, length: number) =>
+      (await call("listWorkspaceFilesRange", { ...scan, offset, length }))
+        ?.result as string;
+    await mkdir(join(root, "src"));
+    await writeFile(join(root, "src", "old.txt"), "old");
+    const firstLength = (await call("listWorkspaceFilesLength", first))
+      ?.result as number;
+    const prefix = await read(first, 0, 4);
+    await writeFile(join(root, "aaa.txt"), "new");
+    const secondLength = (await call("listWorkspaceFilesLength", second))
+      ?.result as number;
+    expect(await call("listWorkspaceFilesLength", first)).toEqual({
+      result: firstLength,
+    });
+    const newerPrefix = await read(second, 0, 4);
+    const older = prefix + (await read(first, 4, firstLength));
+    const newer = newerPrefix + (await read(second, 4, secondLength));
+
+    expect(older).toHaveLength(firstLength);
+    expect(newer).toHaveLength(secondLength);
+    const paths = (packed: string) =>
+      unpackWorkspaceFileEntries(packed, root).map(
+        (entry) => entry.relativePath,
+      );
+    expect(paths(older)).toEqual(["src", "src/old.txt"]);
+    expect(paths(newer)).toEqual(["aaa.txt", "src", "src/old.txt"]);
+    await expect(
+      read({ ...second, rootPath: join(root, "src") }, 0, secondLength),
+    ).rejects.toThrow("请重新读取");
+    await expect(
+      read({ ...second, scanId: randomUUID() }, 0, secondLength),
+    ).rejects.toThrow("请重新读取");
+  });
+  it("保留预算不足时仍能读取最新扫描并明确拒绝过期扫描", async () => {
+    const { root, call } = await world();
+    const first = { rootPath: root, scanId: randomUUID() };
+    const last = { rootPath: root, scanId: randomUUID() };
+    const filename = `${"long-name-".repeat(17)}.txt`;
+    await writeFile(join(root, filename), "data");
+    const firstLength = (await call("listWorkspaceFilesLength", first))
+      ?.result as number;
+    for (let index = 0; index < 2; index++)
+      await call("listWorkspaceFilesLength", {
+        ...first,
+        scanId: randomUUID(),
+      });
+    const lastLength = (await call("listWorkspaceFilesLength", last))
+      ?.result as number;
+    expect(lastLength).toBe(firstLength);
+    await expect(
+      call("listWorkspaceFilesRange", {
+        ...first,
+        offset: 0,
+        length: firstLength,
+      }),
+    ).rejects.toMatchObject({
+      code: "command_conflict",
+      message: "文件列表已过期，请重新读取。",
+    });
+    const result = (
+      await call("listWorkspaceFilesRange", {
+        ...last,
+        offset: 0,
+        length: lastLength,
+      })
+    )?.result as string;
+    expect(
+      unpackWorkspaceFileEntries(result, root).map((entry) => entry.name),
+    ).toEqual([filename]);
+  });
   it("缓存文件树仍复验viewer授权，错身份/撤销/超预算不返回旧快照", async () => {
-    const { root, viewerScope, call } = await world();
+    const { root, viewerScope, resolvePath, call } = await world();
     await writeFile(join(root, "file.txt"), "data");
     await expect(
       call("listWorkspaceFilesRange", { rootPath: root, offset: 0, length: 5 }),
     ).rejects.toThrow("刷新");
     await call("listWorkspaceFilesLength", { rootPath: root });
     const fileIndex = new CodeUiFileIndex();
-    fileIndex.capture(viewerScope, root, [
-      {
-        name: "file.txt",
-        path: join(root, "file.txt"),
-        relativePath: "file.txt",
-        type: "file",
+    const indexInput = {
+      fileIndex,
+      limits: {
+        codeReadMaxBytes: 1024,
+        codeSearchMaxResults: 5,
+        codeSearchMaxBytes: 1024,
       },
-    ]);
+    };
+    await codeUiViewerRpc({
+      ...indexInput,
+      method: "listWorkspaceFilesLength",
+      value: { rootPath: root, viewerScope },
+      resolvePath,
+    });
     await expect(
       codeUiViewerRpc({
+        ...indexInput,
         method: "listWorkspaceFilesRange",
         value: { rootPath: root, viewerScope, offset: 0, length: 5 },
-        fileIndex,
         resolvePath: async (_viewer, path) => {
           if (path !== root) throw new Error("授权撤销");
           return path;
-        },
-        limits: {
-          codeReadMaxBytes: 1024,
-          codeSearchMaxResults: 5,
-          codeSearchMaxBytes: 1024,
         },
       }),
     ).rejects.toThrow("授权撤销");

@@ -40,13 +40,22 @@ const indexParamsSchema = z.object({
   rootPath: z.string().min(1),
   viewerScope: codeUiViewerScopeSchema,
 });
+const pagedIndexParamsSchema = indexParamsSchema.extend({
+  scanId: z.uuid().optional(),
+  offset: z.number().int().nonnegative().optional(),
+  length: z.number().int().positive().optional(),
+});
+type FileIndexScope = Pick<
+  z.infer<typeof pagedIndexParamsSchema>,
+  "viewerScope" | "rootPath" | "scanId"
+>;
 
 async function viewerTree(
   viewer: CodeUiViewerScope,
   root: string,
   resolvePath: ViewerResolver,
   limits: ViewerLimits,
-): Promise<WorkspaceFileEntry[]> {
+) {
   const result: WorkspaceFileEntry[] = [];
   const directories = [root];
   let bytes = 0;
@@ -98,38 +107,71 @@ async function viewerTree(
     }
   }
   await resolvePath(viewer, root);
-  return result;
+  return { entries: result, bytes };
 }
 
-/** One packed snapshot per owned connection keeps length/range on the same directory scan. */
+type FileIndexSnapshot = {
+  scopeKey: string;
+  packed: string;
+  entries: WorkspaceFileEntry[];
+  bytes: number;
+};
+
+function indexScopeKey(scope: FileIndexScope) {
+  return JSON.stringify([scope.viewerScope, scope.rootPath, scope.scanId]);
+}
+
+/** 同一连接内的各次扫描独立保存；旧调用方沿用一个兼容位置。 */
 export class CodeUiFileIndex {
-  private snapshot: {
-    key: string;
-    packed: string;
-    entries: WorkspaceFileEntry[];
-  } | null = null;
+  private readonly snapshots = new Map<string, FileIndexSnapshot>();
+  private retainedBytes = 0;
+
   capture(
-    viewer: CodeUiViewerScope,
-    root: string,
-    entries: WorkspaceFileEntry[],
+    scope: FileIndexScope,
+    scan: Awaited<ReturnType<typeof viewerTree>>,
+    maxBytes: number,
   ) {
-    const packed = packWorkspaceFileEntries(entries);
-    this.snapshot = { key: JSON.stringify([viewer, root]), packed, entries };
+    const scopeKey = indexScopeKey(scope);
+    const key = scope.scanId ? scopeKey : "";
+    const existing = this.snapshots.get(key);
+    if (scope.scanId && existing) return existing.packed.length;
+    const packed = packWorkspaceFileEntries(scan.entries);
+    const bytes = Math.max(
+      scan.bytes,
+      Buffer.byteLength(packed),
+      Buffer.byteLength(scopeKey),
+    );
+    if (existing) this.remove(key, existing);
+    // 文件树与命令中心可各使用一份完整扫描预算；空目录也计入范围标识的字节数。
+    const cacheBudget = 2 * maxBytes;
+    for (const [oldKey, snapshot] of this.snapshots) {
+      if (this.retainedBytes + bytes <= cacheBudget) break;
+      this.remove(oldKey, snapshot);
+    }
+    this.snapshots.set(key, { scopeKey, packed, entries: scan.entries, bytes });
+    this.retainedBytes += bytes;
     return packed.length;
   }
+
+  private remove(key: string, snapshot: FileIndexSnapshot) {
+    this.snapshots.delete(key);
+    this.retainedBytes -= snapshot.bytes;
+  }
+
   async read(
-    viewer: CodeUiViewerScope,
-    root: string,
+    scope: FileIndexScope,
     offset: number,
     length: number,
     resolvePath: ViewerResolver,
     limits: ViewerLimits,
   ) {
-    const snapshot = this.snapshot;
-    if (!snapshot || snapshot.key !== JSON.stringify([viewer, root]))
+    const scopeKey = indexScopeKey(scope);
+    const key = scope.scanId ? scopeKey : "";
+    const snapshot = this.snapshots.get(key);
+    if (!snapshot || snapshot.scopeKey !== scopeKey)
       throw new CodeUiRepositoryError(
         "command_conflict",
-        "请先刷新当前项目或 Task 的文件索引。",
+        scope.scanId ? "文件列表已过期，请重新读取。" : "请先刷新文件列表。",
       );
     if (
       snapshot.entries.length > limits.codeSearchMaxResults ||
@@ -140,16 +182,16 @@ export class CodeUiFileIndex {
         "文件索引超过当前治理预算，请重新扫描。",
       );
     for (const entry of snapshot.entries)
-      if ((await resolvePath(viewer, entry.path)) !== entry.path)
+      if ((await resolvePath(scope.viewerScope, entry.path)) !== entry.path)
         throw new CodeUiRepositoryError(
           "command_conflict",
           "文件索引路径已改变，请重新扫描。",
         );
-    await resolvePath(viewer, root);
-    if (this.snapshot !== snapshot)
+    await resolvePath(scope.viewerScope, scope.rootPath);
+    if (this.snapshots.get(key) !== snapshot)
       throw new CodeUiRepositoryError(
         "command_conflict",
-        "文件索引在分页期间已刷新，请重新读取。",
+        "文件列表已过期，请重新读取。",
       );
     const chunk = snapshot.packed.slice(offset, offset + length);
     if (Buffer.byteLength(chunk) > limits.codeSearchMaxBytes)
@@ -224,22 +266,22 @@ async function viewerIndexRpc(input: ViewerRpcInput) {
       "command_conflict",
       "文件索引必须绑定已连接的人工 viewer。",
     );
-  const params = indexParamsSchema
-    .extend({
-      offset: z.number().int().nonnegative().optional(),
-      length: z.number().int().positive().optional(),
-    })
-    .parse(input.value);
+  const params = pagedIndexParamsSchema.parse(input.value);
   const root = await input.resolvePath(params.viewerScope, params.rootPath);
+  const scope = { ...params, rootPath: root };
   if (input.method === "listWorkspaceFilesLength") {
-    const entries = await viewerTree(
+    const scan = await viewerTree(
       params.viewerScope,
       root,
       input.resolvePath,
       input.limits,
     );
     return {
-      result: input.fileIndex.capture(params.viewerScope, root, entries),
+      result: input.fileIndex.capture(
+        scope,
+        scan,
+        input.limits.codeSearchMaxBytes,
+      ),
     };
   }
   if (params.offset === undefined || params.length === undefined)
@@ -249,8 +291,7 @@ async function viewerIndexRpc(input: ViewerRpcInput) {
     );
   return {
     result: await input.fileIndex.read(
-      params.viewerScope,
-      root,
+      scope,
       params.offset,
       params.length,
       input.resolvePath,
@@ -304,7 +345,7 @@ async function viewerSearchRpc(input: ViewerRpcInput) {
     params.limit ?? input.limits.codeSearchMaxResults,
     input.limits.codeSearchMaxResults,
   );
-  const entries = await viewerTree(
+  const { entries } = await viewerTree(
     params.viewerScope,
     root,
     input.resolvePath,
