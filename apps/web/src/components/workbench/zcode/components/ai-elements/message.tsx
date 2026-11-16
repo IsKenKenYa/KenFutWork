@@ -1016,13 +1016,24 @@ function MessageExternalLink({
   const [copyFeedback, setCopyFeedback] = useState("");
   const handleOpen = useCallback(
     (options: { forceExternal?: boolean; forceInApp?: boolean } = {}) => {
-      // 交互语义：本机/私网白名单只决定左键单击的默认目标；右键菜单两项各自强制一个目标。
-      // 菜单「打开」过去复用左键默认行为，公网链接（如飞书文档）两项都会跳系统浏览器。
-      const target = resolveMessageLinkOpenTarget({ href, ...options });
+      let target = resolveMessageLinkOpenTarget({ href, ...options });
+      if (
+        !options.forceExternal && !options.forceInApp && platform &&
+        "readMessageBrowserTarget" in platform && typeof platform.readMessageBrowserTarget === "function"
+      ) {
+        try {
+          target = platform.readMessageBrowserTarget() === "system" ? "external-browser" : "app-browser";
+        } catch {
+          toast(intl.formatMessage({ id: "kenfutwork.message.browserSettingUnreadable" }), {
+            variant: "warning",
+            dedupeKey: "message-link-browser-preference",
+          });
+          return;
+        }
+      }
       logger.debug("[MessageExternalLink] 打开 Markdown 外链", {
         forceExternal: Boolean(options.forceExternal),
         forceInApp: Boolean(options.forceInApp),
-        href,
         target,
       });
 
@@ -1033,9 +1044,18 @@ function MessageExternalLink({
         return;
       }
 
-      platform.openExternal(href);
+      if ("openMessageLinkExternally" in platform && typeof platform.openMessageLinkExternally === "function") {
+        void Promise.resolve(platform.openMessageLinkExternally(href)).catch(() => {
+          toast(intl.formatMessage({ id: "kenfutwork.message.openBrowserFailed" }), {
+            variant: "warning",
+            dedupeKey: "message-link-open-browser",
+          });
+        });
+      } else {
+        platform.openExternal(href);
+      }
     },
-    [href, onOpenExternalUrl, platform],
+    [href, intl, onOpenExternalUrl, platform],
   );
   const handleClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -1075,8 +1095,6 @@ function MessageExternalLink({
           )}
           title={href}
           {...props}
-          // markdown 外链之前被统一降级成 span，用户看得到链接却点不开。
-          // 这里仍阻断原生 a 标签跳转，但不再把所有 http/https 都默认送进内置浏览器。
           onClick={handleClick}
         >
           {children}

@@ -1,7 +1,9 @@
 import {
+  type BrowserOpenTarget,
   type ManagementTarget,
   type PluginMarketEntry,
   projectPluginPanels,
+  readBrowserOpenTarget,
 } from "@kenfutwork/shared";
 import type {
   ApplicationIconInfo,
@@ -22,6 +24,8 @@ import { createWebPlatform } from "./upstream/browserPlatform.js";
 /** 宿主管理入口带显式目标；`IPlatformService` 的声明保持无参兼容。 */
 export type CodePlatform = IPlatformService & {
   openSettingsDocument?: (target?: ManagementTarget) => void;
+  readMessageBrowserTarget(): BrowserOpenTarget;
+  openMessageLinkExternally?(url: string): Promise<unknown>;
 };
 
 /** e58fe8ce宿主能力缝；目录仍经真实Project UUID解析，不建立Canvas或隐式Task。 */
@@ -46,8 +50,11 @@ export function createCodePlatform(
   return {
     ...createWebPlatform(),
     ...createMacDesktopChrome(),
+    readMessageBrowserTarget: () => readBrowserOpenTarget(window.localStorage),
     ...(desktop
       ? {
+          openMessageLinkExternally: async (url: string) =>
+            desktop("open_external", { url: new URL(url).href }),
           selectDirectory: async () => {
             const selected = await desktop("select_directory");
             if (selected === null || typeof selected === "string")

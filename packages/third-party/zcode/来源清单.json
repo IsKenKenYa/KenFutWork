@@ -3488,9 +3488,10 @@
       "target": "apps/web/src/components/workbench/zcode/components/ai-elements/message.tsx",
       "sourceRevision": "fec975905a2abd4c07e35c40d51fa097a2258ec9",
       "sha256": "657292e6818a4777973cddcbe547734292731894f643bdb70dd900afa5f94cd6",
-      "copiedSha256": "27e69fb357941d6983134ce26d8ceaa0a2a0a750a6acb58132a24c64709680d1",
+      "copiedSha256": "cd28f4363973dee1a38441e3d4d83da5b517dd7ffdad06c754ce6f10cd199b0f",
       "adaptations": [
         "从 3.18.2 移植正文链接菜单，保留原 Markdown 渲染及打开回调。复制结果使用本仓库提示与状态播报。",
+        "默认打开链接读取宿主浏览器设置，明确指定的打开方式仍优先；桌面调用失败显示公开提示。",
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主扩展（动态 UI）：code 覆写里新增 viz 数据图表分支，交给共享组件 @kenfutwork/ui 渲染（与 Design 侧同一份实现）；流式态不升级、坏 spec 回落 CodeBlock。验证见 apps/web/test/zcode-message.test.tsx 的 viz 用例与 visualization-block.test.tsx，哈希随本次改动更新。"
       ]

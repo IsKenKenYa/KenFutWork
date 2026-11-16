@@ -312,6 +312,7 @@ export async function withTaskGroupPublicPage(
     seedTaskHistory?: boolean;
     enableWork?: boolean;
     prepareTaskContent?: boolean;
+    supportsEmbeddedBrowser?: boolean;
   } = {},
 ) {
   const [http, sessions, models] = await loadPublicFixtures();
@@ -381,6 +382,7 @@ export async function withTaskGroupPublicPage(
       sessionId: host.sessionId,
       clientId: host.clientId,
       workspaceShell: true,
+      supportsEmbeddedBrowser: options.supportsEmbeddedBrowser ?? false,
       ...(options.enableWork
         ? { workbenchModes: ["code", "design", "work"] }
         : {}),

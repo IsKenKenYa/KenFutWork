@@ -10,6 +10,14 @@ const labels: Record<string, [string, string]> = {
   "kenfutwork.cua.listDisplays": ["查看显示器", "List displays"],
   "kenfutwork.cua.listBackends": ["查看控制后端", "List control backends"],
   "kenfutwork.cua.selectBackend": ["切换控制后端", "Switch control backend"],
+  "kenfutwork.message.openBrowserFailed": [
+    "请检查系统默认浏览器后重试",
+    "Check the system default browser and try again",
+  ],
+  "kenfutwork.message.browserSettingUnreadable": [
+    "浏览器设置无法读取，请右键选择打开方式",
+    "Browser setting unavailable. Right-click to choose how to open the link.",
+  ],
 };
 
 /** 宿主扩展动作的短标签；原语言状态与其它翻译继续使用原Provider。 */

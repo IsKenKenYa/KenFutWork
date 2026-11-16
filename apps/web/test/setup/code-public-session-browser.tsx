@@ -39,6 +39,7 @@ declare global {
       clientId: string;
       newDraft?: boolean;
       workspaceShell?: boolean;
+      supportsEmbeddedBrowser?: boolean;
       workbenchModes?: WorkbenchModes;
       restoreSession?: boolean;
       initialPreview?: {
@@ -312,7 +313,9 @@ try {
                     })}
                 restoreSession={bootstrap.restoreSession ?? false}
                 allowRemoteWorkspace={false}
-                supportsEmbeddedBrowser={false}
+                supportsEmbeddedBrowser={
+                  bootstrap.supportsEmbeddedBrowser ?? false
+                }
                 preferDirectoryBrowser
               />
             </SharedProjectNavigationProvider>
