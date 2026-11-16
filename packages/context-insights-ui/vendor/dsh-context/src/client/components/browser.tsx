@@ -52,7 +52,9 @@ export function makeContextBrowser(
 
   return function ContextBrowser(props: ContextBrowserProps): ReactElement {
     const { data, headers } = props
-    const [sel, setSel] = useState<'live' | number>('live')
+    const [localSel, setSel] = useState<'live' | number>('live')
+    const selection = props.selection
+    const sel = selection ? selection.seq ?? 'live' : localSel
     const [openCat, setOpenCat] = useState<string | null>(null)
     const [openElem, setOpenElem] = useState<string | null>(null)
     const [rowQuery, setRowQuery] = useState('')
@@ -99,7 +101,7 @@ export function makeContextBrowser(
       setSel(pinSeq === null || pinSeq === undefined ? 'live' : pinSeq)
       setCat(null)
       setOpenElem(null)
-    }, [pinSeq, onOpenCat])
+    }, [pinSeq, selection?.seq, onOpenCat])
     const rootRef = useRef<HTMLDivElement | null>(null)
     const scrollRef = useRef<HTMLDivElement | null>(null)
     const idBase = useId()
@@ -189,7 +191,8 @@ export function makeContextBrowser(
       ? requests.find(r => r.seq === props.previewSeq) ?? null
       : null
     const req = hoverReq ?? (sel === 'live' ? null : requests.find(r => r.seq === sel) ?? null)
-    const actual = req ?? requests.reduce<RequestRecord | null>((a, r) => (a === null || r.seq > a.seq ? r : a), null)
+    const latest = useMemo(() => requests.reduce<RequestRecord | null>((a, r) => (a === null || r.seq > a.seq ? r : a), null), [requests])
+    const actual = req ?? latest
     const seq = req !== null ? req.seq : null
     const pickOption = useMemo(() => {
       const live: StepPickOption = { value: 'live', label: t('browser.live') }
@@ -239,7 +242,7 @@ export function makeContextBrowser(
     const shownByCat = inc !== null ? inc.byCat : byCat
 
     const toolsElemOpen = (): boolean => openElem === 'tools' || (openElem !== null && openElem.startsWith('tool:'))
-    const fetchHeader = props.fetchHeader
+    const fetchHeader = props.headerContent === undefined ? props.fetchHeader : undefined
     const headerSeq = shownView.header !== null ? shownView.header.seq : null
     const systemSeq = shownView.system !== null ? shownView.system.seq : null
     const sysOpen = shownView.system !== null && (openCat === 'system' || openElem === 'sys')
@@ -251,7 +254,7 @@ export function makeContextBrowser(
       'dsh-context: header content fetch failed',
       sessionScope,
     )
-    const headerContent = epoch.values
+    const headerContent = props.headerContent ?? epoch.values
     const headerNote = fetchMissNote(t, fetchHeader, epoch.state, epoch.retry, 'browser.headerMetaOnly')
 
     const breakdown = req !== null ? req : data.current
@@ -260,7 +263,13 @@ export function makeContextBrowser(
     const catTokensOf = (c: IncrementCat): number => inc !== null ? inc.tokens[c] : breakdown[c] || 0
     const pinKey = openCat !== null && catTokensOf(openCat as IncrementCat) > 0 ? openCat : null
     const pick = (v: string) => {
-      setSel(v === 'live' ? 'live' : Number(v))
+      const next = v === 'live' ? 'live' : Number(v)
+      if (selection) {
+        const target = next === 'live' ? latest?.seq : next
+        if (target !== undefined) selection.onChange(target)
+      } else {
+        setSel(next)
+      }
       setCat(null)
       setOpenElem(null)
     }

@@ -56,9 +56,10 @@
       "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browser.tsx",
       "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
       "sha256": "ebbf4a0eddd5eb55c908d68117dd6b593cf40d67d8f0e6c10efb71e416cccfe7",
-      "currentSha256": "34dfed4f1bccdc4f732ec70b9418298d343a14c8a1f00648220dd89760297e5f",
+      "currentSha256": "e2b851891639d7fccbae022d043eae6fd6b956019136c9878c580cef9c7378ad",
       "adaptations": [
-        "输入未提供真实轮次时隐藏轮次分组与轮次比较；逐请求行为保持原组件"
+        "输入未提供真实轮次时隐藏轮次分组与轮次比较；逐请求行为保持原组件",
+        "与宿主共用已选请求及已读取的头部内容；最近入口选择当前历史中的最新请求"
       ]
     },
     {
@@ -82,16 +83,16 @@
       "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserPick.tsx",
       "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
       "sha256": "07ca9b983700c40feee4d2fefeef7cb3798dcda78cd9887a405fce6da897c7dc",
-      "currentSha256": "07ca9b983700c40feee4d2fefeef7cb3798dcda78cd9887a405fce6da897c7dc",
-      "adaptations": []
+      "currentSha256": "bd859ca9b401189bd6e75cbee61ec9612b07f028f2b44a9d13de250ab30fda35",
+      "adaptations": ["等待选择面板完成定位并可见后聚焦搜索框"]
     },
     {
       "source": "references/dsh-context/src/client/components/browserProps.ts",
       "target": "packages/context-insights-ui/vendor/dsh-context/src/client/components/browserProps.ts",
       "sourceRevision": "c1c129a56bd317cd9a0516fe5223d99505a83c3e",
       "sha256": "9c1a61c80cfd8bc914e47459b4dba092282d66dca4ff6eb89cc2dc3ee22d31f7",
-      "currentSha256": "9c1a61c80cfd8bc914e47459b4dba092282d66dca4ff6eb89cc2dc3ee22d31f7",
-      "adaptations": []
+      "currentSha256": "b8af640b1577fd6eef1ee6cc68c89b33da9c60e00c8c67865a659d2b0199daaf",
+      "adaptations": ["新增可选的宿主请求选择和已读取头部内容"]
     },
     {
       "source": "references/dsh-context/src/client/components/browserRows.ts",

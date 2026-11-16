@@ -221,6 +221,11 @@ export default function ContextInspectionDialog({
                 {state.content ? (
                   <>
                     <ContextInspectionViews
+                      key={JSON.stringify([
+                        state.selected.runId,
+                        state.selected.agentCallId,
+                        state.selected.purpose,
+                      ])}
                       data={data}
                       requestId={state.selected.id}
                       onSelect={state.select}

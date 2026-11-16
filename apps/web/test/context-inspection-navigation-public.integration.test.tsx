@@ -1,6 +1,10 @@
 // @vitest-environment node
+import { contextRequestListSchema } from "@kenfutwork/shared";
 import { expect, it, vi } from "vitest";
-import { pressKey } from "../../server/src/features/browser/cdp-client.js";
+import {
+  pressKey,
+  typeText,
+} from "../../server/src/features/browser/cdp-client.js";
 import type { OriginalSessionBrowser } from "./setup/code-public-browser.fixture.mjs";
 import {
   expectContentPreserved,
@@ -9,6 +13,7 @@ import {
 
 const opener = 'button[aria-label="上下文分析"]';
 const inspector = '[role="dialog"][aria-label="上下文分析"]';
+const requestPicker = `${inspector} .lc-br-pick`;
 
 async function narrowViewport(page: OriginalSessionBrowser) {
   await page.cdp.send(
@@ -27,6 +32,13 @@ async function narrowViewport(page: OriginalSessionBrowser) {
 }
 
 async function focusInspectorEntry(page: OriginalSessionBrowser) {
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(
+        `document.querySelector(${JSON.stringify(opener)})?.checkVisibility()`,
+      ),
+    ).toBe(true),
+  );
   await page.evaluate(
     `document.querySelector(${JSON.stringify(opener)}).focus()`,
   );
@@ -218,7 +230,156 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         expect(light.foreground).not.toBe(dark.foreground);
         expect(await read("zai-light")).toEqual(light);
       },
-      { seedTaskHistory: true },
+      { seedTaskHistory: true, prepareTaskContent: false },
+    );
+  },
+  180_000,
+);
+
+async function chooseAnalyzedRequest(
+  page: OriginalSessionBrowser,
+  label: string,
+) {
+  const before = await page.evaluate(`(() => {
+    const picker = document.querySelector(${JSON.stringify(requestPicker)});
+    picker.scrollIntoView({ block: 'center' });
+    picker.focus();
+    return { focused: document.activeElement === picker, expanded: picker.getAttribute('aria-expanded') };
+  })()`);
+  expect(before).toEqual({ focused: true, expanded: "false" });
+  await pressKey(page.cdp, page.target.sessionId, "Enter");
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(`({
+        expanded: document.querySelector(${JSON.stringify(requestPicker)})?.getAttribute('aria-expanded'),
+        active: document.activeElement?.outerHTML.slice(0, 240),
+        role: document.activeElement?.getAttribute('role'),
+      })`),
+    ).toMatchObject({ expanded: "true", role: "combobox" }),
+  );
+  await typeText(page.cdp, page.target.sessionId, label);
+  await vi.waitFor(async () =>
+    expect(
+      await page.evaluate(
+        `Array.from(document.querySelectorAll('.lc-br [role="option"]')).map(node => node.textContent.trim())`,
+      ),
+    ).toEqual([label]),
+  );
+  await pressKey(page.cdp, page.target.sessionId, "Enter");
+}
+
+async function expectAnalyzedRequest(
+  page: OriginalSessionBrowser,
+  sequence: number,
+  output: string,
+) {
+  await vi.waitFor(async () => {
+    const state = await page.evaluate<{
+      list: string;
+      picker: string;
+      chart: string;
+      detail: string;
+      output: string;
+      pickerFocused: boolean;
+    }>(`(() => {
+      const dialog = document.querySelector(${JSON.stringify(inspector)});
+      const picker = dialog.querySelector('.lc-br-pick');
+      const response = Array.from(dialog.querySelectorAll('details')).find(node => node.querySelector('summary')?.textContent === '模型响应');
+      return {
+        list: dialog.querySelector('nav [aria-current="true"] span')?.textContent,
+        picker: picker?.textContent.trim(),
+        chart: dialog.querySelector('.lc-bar[aria-pressed="true"][data-seq]')?.getAttribute('aria-label'),
+        detail: dialog.querySelector('.context-inspection-summary h2')?.textContent,
+        output: response?.querySelector('pre')?.textContent,
+        pickerFocused: document.activeElement === picker,
+      };
+    })()`);
+    expect(state).toEqual({
+      list: `#${sequence} · 已完成`,
+      picker: `请求 #${sequence}`,
+      chart: expect.stringContaining(`请求 #${sequence} ·`),
+      detail: `请求 #${sequence}`,
+      output: expect.stringContaining(output),
+      pickerFocused: true,
+    });
+  });
+}
+
+it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
+  "分类浏览器的请求切换同步列表、趋势和原响应，并保留键盘焦点",
+  async () => {
+    await withTaskGroupPublicPage(
+      async (context) => {
+        const { host, model, page } = context;
+        expect(
+          (await host.command("sendText", { text: "查看上下文请求选择" }))
+            .status,
+        ).toBe(200);
+        await vi.waitFor(() => expect(model.requests).toHaveLength(2), {
+          timeout: 30_000,
+        });
+        const finalOutput = "同次运行的第二条原响应";
+        model.writeText(1, finalOutput);
+        model.finish(1);
+        const [latest, earlier] = await vi.waitFor(
+          async () => {
+            const response = await host.client.request("/api/code-ui/rpc", {
+              service: "context-insights",
+              method: "list",
+              args: [{ taskId: host.sessionId }],
+            });
+            expect(response.status).toBe(200);
+            const list = contextRequestListSchema.parse(
+              response.body.result,
+            ).requests;
+            expect(list.map((r) => r.status)).toEqual([
+              "completed",
+              "completed",
+            ]);
+            expect(list[0]?.runId).toBe(list[1]?.runId);
+            return list;
+          },
+          { timeout: 30_000 },
+        );
+        if (!latest || !earlier)
+          throw new Error("同一次运行缺少两条上下文记录");
+        await narrowViewport(page);
+        await focusInspectorEntry(page);
+        await openWithKeyboard(page);
+        await vi.waitFor(async () =>
+          expect(
+            await page.evaluate(
+              `document.querySelectorAll('.lc-bar[data-seq]').length`,
+            ),
+          ).toBe(2),
+        );
+        await chooseAnalyzedRequest(page, `请求 #${earlier.sequence}`);
+        await expectAnalyzedRequest(
+          page,
+          earlier.sequence,
+          "read-context-fixture",
+        );
+        await chooseAnalyzedRequest(page, "最近已读取");
+        await expectAnalyzedRequest(page, latest.sequence, finalOutput);
+        await pressKey(page.cdp, page.target.sessionId, "Escape");
+        await expectFocusRestored(page);
+        await page.cdp.send(
+          "Emulation.clearDeviceMetricsOverride",
+          {},
+          page.target.sessionId,
+        );
+        await expectContentPreserved(context);
+        expect(model.requests).toHaveLength(2);
+      },
+      {
+        modelOptions: {
+          initialTool: {
+            id: "read-context-fixture",
+            name: "read_file",
+            arguments: { file_path: "/分组操作保留内容.txt" },
+          },
+        },
+      },
     );
   },
   180_000,

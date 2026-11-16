@@ -66,10 +66,10 @@ export function StepPick(props: StepPickProps): ReactElement {
     setPanelLeft(clampPopoverLeft(rect.right, panelEl.offsetWidth, window.innerWidth, VIEWPORT_MARGIN) - rect.left)
   }, [open])
 
-  useEffect(() => {
-    if (!open) return
+  useLayoutEffect(() => {
+    if (!open || panelLeft === null) return
     searchRef.current?.focus({ preventScroll: true })
-  }, [open])
+  }, [open, panelLeft])
 
   useEffect(() => {
     if (!open) return

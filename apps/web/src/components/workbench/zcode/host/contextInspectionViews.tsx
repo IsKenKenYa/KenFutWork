@@ -47,6 +47,10 @@ export function ContextInspectionViews({
   const [delta, setDelta] = useState(false);
   const seq = data.seqByRequest.get(requestId) ?? null;
   const request = data.timeline.requests.find((r) => r.seq === seq) ?? null;
+  const select = (value: number | null) => {
+    const id = value === null ? null : data.idBySeq.get(value);
+    if (id) onSelect(id);
+  };
   return (
     <>
       <div className="lc-card">
@@ -70,10 +74,7 @@ export function ContextInspectionViews({
           focusTurn={null}
           focusSeq={null}
           hoverCat={null}
-          onSelect={(value) => {
-            const id = value === null ? null : data.idBySeq.get(value);
-            if (id) onSelect(id);
-          }}
+          onSelect={select}
           onHover={setHover}
           onHoverTurn={noop}
           onPickTurn={noop}
@@ -107,14 +108,12 @@ export function ContextInspectionViews({
       </div>
       <RequestDetail request={request} />
       <Browser
-        key={requestId}
-        session={requestId}
         locale="zh-CN"
         data={data.timeline}
         headers={data.headers}
         convNodes={data.convNodes}
-        pinSeq={seq}
-        fetchHeader={async (value) => data.headerContent.get(value) ?? null}
+        selection={{ seq, onChange: select }}
+        headerContent={data.headerContent}
       />
     </>
   );

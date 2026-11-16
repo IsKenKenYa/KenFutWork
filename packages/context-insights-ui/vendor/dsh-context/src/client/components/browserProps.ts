@@ -1,4 +1,4 @@
-import type { Category, ContextHeaders, ContextTimeline } from '../../shared/types'
+import type { Category, ContextHeaders, ContextTimeline, HeaderEpochContent } from '../../shared/types'
 import type { AttachmentOpener, ContentFetcher, ConversationNodeLike, HeaderFetcher, ImageLoader } from '../services'
 import type { DeltaFetcher, DetailState } from '../timelineSource'
 import type { CatFocus } from './browserHelpers'
@@ -10,9 +10,11 @@ export interface ContextBrowserProps {
   convNodes?: readonly ConversationNodeLike[]
   fetchContent?: ContentFetcher
   fetchHeader?: HeaderFetcher
+  headerContent?: ReadonlyMap<number, HeaderEpochContent>
   fetchDelta?: DeltaFetcher
   previewSeq?: number | null
   pinSeq?: number | null
+  selection?: { seq: number | null; onChange: (seq: number) => void }
   dna?: boolean
   onDnaChange?: (on: boolean) => void
   delta?: boolean

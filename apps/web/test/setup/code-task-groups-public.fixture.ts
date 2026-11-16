@@ -313,6 +313,7 @@ export async function withTaskGroupPublicPage(
     enableWork?: boolean;
     prepareTaskContent?: boolean;
     supportsEmbeddedBrowser?: boolean;
+    modelOptions?: Parameters<typeof heldModel>[0];
   } = {},
 ) {
   const [http, sessions, models] = await loadPublicFixtures();
@@ -341,7 +342,7 @@ export async function withTaskGroupPublicPage(
         true,
       );
     }
-    model = await models.heldModel();
+    model = await models.heldModel(options.modelOptions);
     host = await sessions.createCodeSessionFixture(model.baseUrl, {
       client: fixture.client,
     });
