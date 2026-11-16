@@ -3,8 +3,8 @@ import { addAbortListener } from "node:events";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   type CallToolResult,
-  RequestIdSchema,
   ResourceListChangedNotificationSchema,
+  ResourceUpdatedNotificationSchema,
   ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -17,12 +17,11 @@ import {
 } from "../code-ui/host-rpc-handler.js";
 import type { LocalActor } from "../local-instance/types.js";
 import type { CodeApprovalService } from "../permissions/approval-types.js";
+import type { McpAppAuthorization, McpAppSource } from "./mcp-app-approval.js";
 import {
-  executeApprovedMcpAppOperation,
-  type McpAppAuthorization,
-  type McpAppExecution,
-  type McpAppSource,
-} from "./mcp-app-approval.js";
+  createMcpAppSubscriptions,
+  readMcpAppResource,
+} from "./mcp-app-resources.js";
 import { executeMcpAppTool, listMcpAppTools } from "./mcp-app-tools.js";
 import {
   type McpServerToolLike,
@@ -43,17 +42,12 @@ export const mcpAppClientCapabilities = {
 const referenceSchema = z
   .object({ ref: z.uuid(), toolCallId: z.string().min(1) })
   .strict();
-const resourceRequestSchema = z
-  .object({
-    uri: z.string().refine((uri) => URL.canParse(uri)),
-    requestId: RequestIdSchema,
-  })
-  .strict();
 const pageRequestSchema = z.object({ cursor: z.string().optional() }).strict();
 const catalogVersionSchema = z
   .object({
     tools: z.int().nonnegative().optional(),
     resources: z.int().nonnegative().optional(),
+    subscriptions: z.record(z.string(), z.int().nonnegative()).optional(),
   })
   .strict();
 
@@ -62,31 +56,12 @@ type McpAppMethod =
   | "callTool"
   | "listResources"
   | "listResourceTemplates"
-  | "readResource";
+  | "readResource"
+  | "subscribeResource"
+  | "unsubscribeResource";
 
-function readMcpAppResource(input: McpAppExecution, requested: unknown) {
-  const { uri, requestId } = resourceRequestSchema.parse(requested);
-  const { serverName } = input.authorization;
-  const displayUri = new URL(uri);
-  displayUri.username = "";
-  displayUri.password = "";
-  displayUri.search = "";
-  displayUri.hash = "";
-  return executeApprovedMcpAppOperation(input, {
-    requestId,
-    toolName: `mcp__${serverName}__read_resource`,
-    summary: "插件页面请求读取资源",
-    args: { uri },
-    displayArgs: {
-      uri: displayUri.href.startsWith(`${displayUri.protocol}//`)
-        ? displayUri.href
-        : displayUri.protocol,
-    },
-    display: { kind: "mcp_tool", serverName, toolName: "read_resource" },
-    // URI 是原 MCP 服务的资源标识，不交给本机文件系统或网络请求。
-    execute: (options) => input.source.client.readResource({ uri }, options),
-  });
-}
+const reportCloseFailure = () =>
+  console.warn("[mcp] 插件页面资源退订未确认，请检查 MCP 连接。");
 
 export function createMcpAppPages(
   getPermissions: () => CodeApprovalService | undefined,
@@ -109,10 +84,18 @@ export function createMcpAppPages(
     ref: string;
     connectionId: string;
     abort: AbortController;
-    close(): void;
+    changed: AbortController;
+    close(): Promise<void>;
   };
   const pages = new Map<string, Entry>();
   const views = new Map<string, View>();
+  const subscriptions = createMcpAppSubscriptions((viewId) => {
+    const view = views.get(viewId);
+    if (!view) return;
+    const previous = view.changed;
+    view.changed = new AbortController();
+    previous.abort();
+  });
   const catalogs = new WeakMap<
     Client,
     {
@@ -145,6 +128,10 @@ export function createMcpAppPages(
     client.setNotificationHandler(ResourceListChangedNotificationSchema, () =>
       change("resources"),
     );
+    client.setNotificationHandler(
+      ResourceUpdatedNotificationSchema,
+      ({ params }) => subscriptions.updated(client, params.uri),
+    );
   }
 
   function catalogVersions(entry: Entry) {
@@ -165,7 +152,8 @@ export function createMcpAppPages(
     if (!pages.delete(ref)) return;
     bytes -= entry.bytes;
     entry.invalidated.abort();
-    for (const view of views.values()) if (view.ref === ref) view.close();
+    for (const view of views.values())
+      if (view.ref === ref) void view.close().catch(reportCloseFailure);
   }
 
   function capture(input: {
@@ -301,20 +289,26 @@ export function createMcpAppPages(
         422,
       );
     const { ref } = referenceSchema.parse(requested);
-    if (views.size >= MAX_RESULTS) views.values().next().value?.close();
+    if (views.size >= MAX_RESULTS)
+      void views.values().next().value?.close().catch(reportCloseFailure);
     const viewId = randomUUID();
     const abort = new AbortController();
+    let closing: Promise<void> | undefined;
     const close = () => {
+      if (closing) return closing;
       abort.abort();
       views.delete(viewId);
       release();
+      closing = subscriptions.closeView(viewId);
+      return closing;
     };
-    const release = context.onClose(close);
+    const release = context.onClose(() => close().catch(reportCloseFailure));
     views.set(viewId, {
       id: viewId,
       ref,
       connectionId: context.connectionId,
       abort,
+      changed: new AbortController(),
       close,
     });
     const interactive = Boolean(entry.authorization && getPermissions());
@@ -325,6 +319,8 @@ export function createMcpAppPages(
       viewId,
       serverTools: interactive && Boolean(capabilities?.tools),
       serverResources: interactive && Boolean(capabilities?.resources),
+      resourceSubscribe:
+        interactive && Boolean(capabilities?.resources?.subscribe),
       catalogs: catalogVersions(entry),
     };
   }
@@ -365,17 +361,20 @@ export function createMcpAppPages(
     const requested = { ref: view.ref, toolCallId: entry.toolCallId };
     try {
       await requirePage(actor, requested, lifetime);
-      const current = catalogVersions(entry);
-      if (
-        current.tools !== cursor.tools ||
-        current.resources !== cursor.resources
-      )
-        return current;
+      const current = {
+        ...catalogVersions(entry),
+        ...subscriptions.versions(view.id),
+      };
+      if (JSON.stringify(current) !== JSON.stringify(cursor)) return current;
       const changed =
         current.tools !== undefined || current.resources !== undefined
           ? catalogs.get(entry.source.client)?.changed.signal
           : undefined;
-      const signal = changed ? AbortSignal.any([lifetime, changed]) : lifetime;
+      const signal = AbortSignal.any([
+        lifetime,
+        view.changed.signal,
+        ...(changed ? [changed] : []),
+      ]);
       if (!signal.aborted)
         await new Promise<void>((resolve) => {
           const listener = addAbortListener(signal, () => {
@@ -385,13 +384,13 @@ export function createMcpAppPages(
         });
       if (lifetime.aborted) return null;
       await requirePage(actor, requested, lifetime);
-      return catalogVersions(entry);
+      return { ...catalogVersions(entry), ...subscriptions.versions(view.id) };
     } catch (error) {
       if (lifetime.aborted) return null;
-      view.close();
+      await view.close();
       throw error;
     } finally {
-      if (lifetime.aborted) view.close();
+      if (lifetime.aborted) await view.close();
     }
   }
 
@@ -438,6 +437,10 @@ export function createMcpAppPages(
               return await executeMcpAppTool(execution, args[1]);
             if (method === "readResource")
               return await readMcpAppResource(execution, args[1]);
+            if (method === "subscribeResource")
+              return await subscriptions.subscribe(execution, args[1]);
+            if (method === "unsubscribeResource")
+              return await subscriptions.unsubscribe(view.id, args[1]);
             const { cursor } = pageRequestSchema.parse(args[1]);
             if (method === "listTools") {
               const result = await listMcpAppTools(
@@ -486,7 +489,7 @@ export function createMcpAppPages(
     "mcp-apps.close": {
       call(_actor, args, context) {
         return runCodeUiHostRpc(context, async () => {
-          readView(args[0], context)?.close();
+          await readView(args[0], context)?.close();
           return null;
         });
       },
@@ -496,6 +499,8 @@ export function createMcpAppPages(
     "mcp-apps.listResources": operationHandler("listResources"),
     "mcp-apps.listResourceTemplates": operationHandler("listResourceTemplates"),
     "mcp-apps.readResource": operationHandler("readResource"),
+    "mcp-apps.subscribeResource": operationHandler("subscribeResource"),
+    "mcp-apps.unsubscribeResource": operationHandler("unsubscribeResource"),
   };
 
   return {
@@ -503,11 +508,13 @@ export function createMcpAppPages(
     handlers,
     observeSource,
     closeSource(client: Client) {
+      subscriptions.closeSource(client);
       if (catalogs.delete(client)) {
         client.removeNotificationHandler("notifications/tools/list_changed");
         client.removeNotificationHandler(
           "notifications/resources/list_changed",
         );
+        client.removeNotificationHandler("notifications/resources/updated");
       }
       for (const [ref, entry] of pages)
         if (entry.source.client === client) remove(ref, entry);

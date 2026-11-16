@@ -255,6 +255,13 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       expect(catalogs).toEqual({ tools: 0, resources: 0 });
       const waiting = appRpc("watch", [viewId, catalogs]);
       await approveVisible("page://probe/items/approved");
+      const subscribeTool = "mcp__app_probe__subscribe_resource";
+      await requireApproval(subscribeTool);
+      const subscriptions = join(host.workspacePath, "mcp-page-subscriptions");
+      await expect(readFile(subscriptions, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await approveVisible("page://probe/items/approved");
       await requireApproval("mcp__app_probe__refresh_card");
       const update = await waiting;
       expect(update.status).toBe(200);
@@ -262,7 +269,72 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
         "PRIVATE_CATALOG_SIGNAL",
       );
       expect(Object.values(update.body.result)).toContain(1);
+      const subscriptionUri =
+        "page://probe/items/approved?token=PRIVATE_RESOURCE_TOKEN";
+      expect(
+        (
+          await appRpc("subscribeResource", [
+            viewId,
+            { uri: "invalid", requestId: "invalid-uri" },
+          ])
+        ).status,
+      ).toBe(422);
+      const secondSubscription = appRpc("subscribeResource", [
+        viewId,
+        { uri: subscriptionUri, requestId: "subscribe-second-view" },
+      ]);
+      const duplicateSubscription = appRpc("subscribeResource", [
+        viewId,
+        { uri: subscriptionUri, requestId: "subscribe-second-view-concurrent" },
+      ]);
+      const secondApproval = await requireApproval(subscribeTool);
+      expect(JSON.stringify(secondApproval)).not.toContain(
+        "PRIVATE_RESOURCE_TOKEN",
+      );
+      await acceptApproval(secondApproval.interactionId);
+      expect((await secondSubscription).status).toBe(200);
+      expect((await duplicateSubscription).status).toBe(200);
+      expect(
+        (
+          await appRpc("subscribeResource", [
+            viewId,
+            { uri: subscriptionUri, requestId: "subscribe-same-view-again" },
+          ])
+        ).status,
+      ).toBe(200);
+      const owned = await appRpc("watch", [viewId, update.body.result]);
+      expect(owned.body.result.subscriptions).toEqual({ [subscriptionUri]: 0 });
+      for (const attempt of ["first", "repeat"]) {
+        const unsubscribed = await appRpc("unsubscribeResource", [
+          viewId,
+          { uri: subscriptionUri },
+        ]);
+        expect(unsubscribed.status, attempt).toBe(200);
+      }
+      const withdrawn = appRpc("subscribeResource", [
+        viewId,
+        { uri: subscriptionUri, requestId: "withdraw-before-approval" },
+      ]);
+      await requireApproval(subscribeTool);
+      expect(
+        (
+          await appRpc("unsubscribeResource", [
+            viewId,
+            { uri: subscriptionUri },
+          ])
+        ).status,
+      ).toBe(200);
+      expect((await withdrawn).status).not.toBe(200);
+      const closedDuringApproval = appRpc("subscribeResource", [
+        viewId,
+        { uri: subscriptionUri, requestId: "close-before-approval" },
+      ]);
+      await requireApproval(subscribeTool);
       expect((await appRpc("close", [viewId])).status).toBe(200);
+      expect((await closedDuringApproval).status).not.toBe(200);
+      expect(await readFile(subscriptions, "utf8")).toBe(
+        "resources/subscribe\n",
+      );
       expect((await appRpc("listResources", [viewId, {}])).status).toBe(404);
       expect(
         (await appRpc("watch", [viewId, update.body.result])).body.result,
@@ -285,6 +357,36 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       expect(await readFile(calls, "utf8")).toBe("refresh_card:from_page\n");
       await activate(page, "关闭插件页面");
       await requireClosed();
+      await vi.waitFor(async () => {
+        expect(await readFile(subscriptions, "utf8")).toBe(
+          "resources/subscribe\nresources/unsubscribe\n",
+        );
+      });
+      const lateView = await appRpc("open", [result]);
+      expect(lateView.status).toBe(200);
+      const lateViewId = lateView.body.result.viewId;
+      const lateSubscription = appRpc("subscribeResource", [
+        lateViewId,
+        {
+          uri: "page://probe/delayed?token=PRIVATE_RESOURCE_TOKEN",
+          requestId: "late-subscription",
+        },
+      ]);
+      await acceptApproval(
+        (await requireApproval(subscribeTool)).interactionId,
+      );
+      await vi.waitFor(async () => {
+        expect(await readFile(subscriptions, "utf8")).toBe(
+          "resources/subscribe\nresources/unsubscribe\nresources/subscribe:delayed\n",
+        );
+      });
+      const closeLateView = appRpc("close", [lateViewId]);
+      expect((await lateSubscription).status).not.toBe(200);
+      await writeFile(join(host.workspacePath, "release-mcp-subscription"), "");
+      expect((await closeLateView).status).toBe(200);
+      expect(await readFile(subscriptions, "utf8")).toBe(
+        "resources/subscribe\nresources/unsubscribe\nresources/subscribe:delayed\nresources/unsubscribe:delayed\n",
+      );
       await activate(page, "打开插件页面");
       await requirePage();
       expect((await requireApproval(resourceRead)).interactionId).not.toBe(

@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync } from "node:fs";
+import { appendFileSync, existsSync, unwatchFile, watchFile } from "node:fs";
 import { createInterface } from "node:readline";
 
 const uri = "ui://probe/card";
@@ -6,7 +6,9 @@ const invalidPage = new URL("invalid-mcp-page", import.meta.url);
 const interactive = new URL("interactive-mcp-page", import.meta.url);
 const calls = new URL("mcp-page-calls", import.meta.url);
 const reads = new URL("mcp-page-resource-reads", import.meta.url);
+const subscriptions = new URL("mcp-page-subscriptions", import.meta.url);
 const resourceUri = "page://probe/items/approved?token=PRIVATE_RESOURCE_TOKEN";
+const delayedUri = "page://probe/delayed?token=PRIVATE_RESOURCE_TOKEN";
 const resourceTemplate = "page://probe/items/{item}";
 const tool = {
   name: "show_card",
@@ -42,11 +44,13 @@ function page() {
     let resourcesChanged = false;
     let listUpdates = false;
     let inspectedCatalogs = false;
+    let canSubscribe = false;
+    let unexpectedUpdate = false;
     const send = (method, params, id) => parent.postMessage({ jsonrpc: '2.0', method, params, ...(id === undefined ? {} : { id }) }, '*');
     const inspectCatalogs = () => {
       if (replayRejected && toolsChanged && resourcesChanged && !inspectedCatalogs) {
         inspectedCatalogs = true;
-        send('tools/list', {}, 2);
+        if (canSubscribe) send('resources/subscribe', { uri: ${JSON.stringify(resourceUri)} }, 12);
       }
     };
     addEventListener('message', async ({ data, source }) => {
@@ -55,7 +59,12 @@ function page() {
         resourceCapability = Boolean(data.result.hostCapabilities?.serverResources);
         listUpdates = data.result.hostCapabilities?.serverResources?.listChanged === true &&
           data.result.hostCapabilities?.serverTools?.listChanged === true;
+        canSubscribe = Boolean(data.result.hostCapabilities?.experimental?.['zcode/resourceSubscribe']);
         send('ui/notifications/initialized', {});
+      }
+      if (data.method === 'notifications/resources/updated') {
+        if (data.params?.uri !== ${JSON.stringify(resourceUri)} || data.params?._meta) unexpectedUpdate = true;
+        else if (!unexpectedUpdate) send('tools/list', {}, 2);
       }
       if (listUpdates && !data.params?._meta?.hidden && data.method === 'notifications/resources/list_changed') {
         send('resources/list', {}, 10);
@@ -135,6 +144,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   if (id === undefined) continue;
   let result;
   let emitCatalogChanges = false;
+  let emitResourceUpdate = false;
   if (method === "initialize") {
     supportsPage =
       params.capabilities.extensions?.[
@@ -144,7 +154,7 @@ for await (const line of createInterface({ input: process.stdin })) {
       protocolVersion: params.protocolVersion,
       capabilities: {
         tools: { listChanged: true },
-        resources: { listChanged: true },
+        resources: { listChanged: true, subscribe: true },
       },
       serverInfo: { name: "probe", version: "1" },
     };
@@ -217,6 +227,30 @@ for await (const line of createInterface({ input: process.stdin })) {
     };
   } else if (method === "resources/read") {
     appendFileSync(reads, "unexpected\n");
+  } else if (
+    method === "resources/subscribe" ||
+    method === "resources/unsubscribe"
+  ) {
+    const delayed = params.uri === delayedUri;
+    const valid = params.uri === resourceUri || delayed;
+    appendFileSync(
+      subscriptions,
+      `${valid ? method : "unexpected"}${delayed ? ":delayed" : ""}\n`,
+    );
+    if (delayed && method === "resources/subscribe") {
+      const released = new URL("release-mcp-subscription", import.meta.url);
+      await new Promise((resolve) => {
+        const check = () => {
+          if (!existsSync(released)) return;
+          unwatchFile(released, check);
+          resolve();
+        };
+        watchFile(released, { interval: 10 }, check);
+        check();
+      });
+    }
+    result = {};
+    emitResourceUpdate = !delayed && valid && method === "resources/subscribe";
   }
   const response = result
     ? { result }
@@ -231,6 +265,15 @@ for await (const line of createInterface({ input: process.stdin })) {
           jsonrpc: "2.0",
           method: `notifications/${kind}/list_changed`,
           params: { _meta: { hidden: "PRIVATE_CATALOG_SIGNAL" } },
+        })}\n`,
+      );
+  if (emitResourceUpdate)
+    for (const target of ["page://probe/unsubscribed", resourceUri])
+      process.stdout.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/resources/updated",
+          params: { uri: target, _meta: { private: "NOTIFICATION_PRIVATE" } },
         })}\n`,
       );
 }

@@ -470,7 +470,9 @@ export class CodeHttpChannelClient implements IChannelClient {
       | "callTool"
       | "listResources"
       | "listResourceTemplates"
-      | "readResource",
+      | "readResource"
+      | "subscribeResource"
+      | "unsubscribeResource",
     args: unknown[],
     signal: AbortSignal,
   ): Promise<T> {

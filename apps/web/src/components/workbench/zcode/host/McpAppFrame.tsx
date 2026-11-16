@@ -2,12 +2,16 @@ import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   CallToolResultSchema,
+  EmptyResultSchema,
   JSONRPCMessageSchema,
   ListResourcesResultSchema,
   ListResourceTemplatesResultSchema,
   ListToolsRequestSchema,
   ListToolsResultSchema,
   ReadResourceResultSchema,
+  type ResourceUpdatedNotification,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -16,6 +20,7 @@ import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 export const mcpAppCatalogSchema = z.object({
   tools: z.int().nonnegative().optional(),
   resources: z.int().nonnegative().optional(),
+  subscriptions: z.record(z.string(), z.int().nonnegative()).optional(),
 });
 export type McpAppCatalogs = z.infer<typeof mcpAppCatalogSchema>;
 
@@ -26,6 +31,7 @@ export const mcpAppPageSchema = z.object({
   viewId: z.uuid(),
   serverTools: z.boolean(),
   serverResources: z.boolean().default(false),
+  resourceSubscribe: z.boolean().default(false),
   catalogs: mcpAppCatalogSchema,
 });
 
@@ -141,6 +147,37 @@ function bindPageRequests(
         ),
       );
   }
+  if (page.resourceSubscribe) {
+    bridge.setRequestHandler(SubscribeRequestSchema, async (message, extra) =>
+      EmptyResultSchema.parse(
+        await request(
+          "subscribeResource",
+          { uri: message.params.uri, requestId: extra.requestId },
+          extra.signal,
+        ),
+      ),
+    );
+    bridge.setRequestHandler(UnsubscribeRequestSchema, async (message, extra) =>
+      EmptyResultSchema.parse(
+        await request(
+          "unsubscribeResource",
+          { uri: message.params.uri },
+          extra.signal,
+        ),
+      ),
+    );
+  }
+}
+
+function notifyResourceUpdated(bridge: AppBridge, uri: string) {
+  // ZCode 的显式扩展；SDK 的 AppNotification 尚未包含此 MCP 通知。
+  const resourceBridge = bridge as unknown as {
+    notification(message: ResourceUpdatedNotification): Promise<void>;
+  };
+  return resourceBridge.notification({
+    method: "notifications/resources/updated",
+    params: { uri },
+  });
 }
 
 export function McpAppFrame({
@@ -178,6 +215,9 @@ export function McpAppFrame({
       null,
       { name: "KenFutWork", version: "1" },
       {
+        ...(page.resourceSubscribe
+          ? { experimental: { "zcode/resourceSubscribe": {} } }
+          : {}),
         ...(page.serverTools
           ? { serverTools: { listChanged: page.catalogs.tools !== undefined } }
           : {}),
@@ -218,6 +258,11 @@ export function McpAppFrame({
               changed.push(bridge.sendToolListChanged());
             if ((latest.resources ?? -1) > (previous.resources ?? -1))
               changed.push(bridge.sendResourceListChanged());
+            for (const [uri, version] of Object.entries(
+              latest.subscriptions ?? {},
+            ))
+              if (version > (previous.subscriptions?.[uri] ?? 0))
+                changed.push(notifyResourceUpdated(bridge, uri));
             previous = latest;
             void Promise.all(changed).catch(() => {
               if (!closed) onError();
