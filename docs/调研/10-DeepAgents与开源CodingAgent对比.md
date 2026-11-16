@@ -321,7 +321,7 @@ flowchart TB
 - **[K3] 子代理定义与工具桥**：[subagent-definitions.ts](../../apps/server/src/agent/subagent-definitions.ts)，`8–34,131–175`；[kernel-tools-bridge.ts](../../apps/server/src/agent/kernel-tools-bridge.ts)，`6–10,67–114`。
 - **[K4] 持久化选择**：[persistence/index.ts](../../apps/server/src/agent/persistence/index.ts)，`20–65`。只核对接线，未注入故障执行恢复测试。
 - **[K5] 本地执行后端**：[backends/prod.ts](../../apps/server/src/agent/backends/prod.ts)，`19–36,59–88,95–127`；[backends/index.ts](../../apps/server/src/agent/backends/index.ts)，`33–66`。
-- **[K6] 既有架构方向**：[改造计划](../方案设计/改造计划.md)，§2.3、§4.10、§4.11；[多端产品设计](../方案设计/多端产品设计.md)，§7；[子代理与后台任务设计](../方案设计/子代理与后台任务设计.md)。文档中的旧 SDK 版本和规划条目不代替当前源码事实。
+- **[K6] 既有架构方向**：[改造计划](../方案设计/改造计划.md)，§2.3、§4.10、§4.11、§10；[多端产品设计](../方案设计/多端产品设计.md)，§7。文档中的旧 SDK 版本和规划条目不代替当前源码事实。
 - **[K7] 运行时替换入口与类型耦合**：[deep-agent.ts](../../apps/server/src/agent/deep-agent.ts)，`51–54,261–307`；[runtime.ts](../../apps/server/src/agent/runtime.ts)，`373–397,486–494,1938–1955,2232–2249`；[run-extension.ts](../../apps/server/src/agent/run-extension.ts)，`1–10`。
 - **[K8] 插件与事件接线**：[agent-runs/plugin.ts](../../apps/server/src/features/agent-runs/plugin.ts)，`1–10,31–43,131–134`；[code-ui/agent-events-plugin.ts](../../apps/server/src/features/code-ui/agent-events-plugin.ts)，`11–19`；[stream-adapter.ts](../../apps/server/src/agent/stream-adapter.ts)，`3–8,22–32,77–94,138–140`。
 - **[R1] 本地对象的产品定位**：`references/{langgraph,loomic,cherry-studio,nomifun-tauri,jaaz,jellyfish}/README.md`，分别核对了简介与 Features；仅用于本文分类。主比较对象的固定提交见下文。

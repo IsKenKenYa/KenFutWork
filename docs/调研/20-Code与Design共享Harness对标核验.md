@@ -1,7 +1,7 @@
 # Code 与 Design 共享 Harness 对标核验
 
 > **角色：调研快照**。核验日期：2026-10-16（北京时间）。本文提供公开证据与验收建议，不新增架构决策，不代表 KenFutWork 已通过对应验收。
-> **目标属主**：[Code 工作域与工具内核实施规格](../方案设计/Code工作域与工具内核实施规格.md)「Code/Design 统一实施」；生命周期与 Goal 见 [Harness 稳定性与 Goal 实施规格](../方案设计/Harness稳定性与Goal实施规格.md)。本文不复述工具契约、ctx key 表或 API schema。
+> **目标属主**：[Code 工作域与工具内核实施规格](../方案设计/Code工作域与工具内核实施规格.md)「Code/Design 统一实施」；生命周期与 Goal 见同一文档 §7。本文不复述工具契约、ctx key 表或 API schema。
 > **本轮范围**：同一本地实例内多标签页、Agent 修改、媒体回填与重启恢复；暂不增加多人实时协作。共享 Harness，Code/Design 可以贡献不同工具；已有项目隔离、显式共享、Run 冻结与内容标签约定保持有效。
 
 ## 1. 结论与证据口径
@@ -34,7 +34,7 @@
 
 **公开事实**：本地参考树为 `aac4755666d09fdcd70272fcf063c077a639015f`，本轮只读核对且工作树无改动。恢复路径按同一 session 读取持久消息与目录、重建运行上下文；权限等待进入 turn 状态机，由工具调用 ID 关联待审批与解决记录。子会话详情真实复用 `SessionPane`，传入 child/root session 身份和文件、浏览器等打开回调。[固定版本恢复源码](https://github.com/zai-org/ZCode/blob/aac4755666d09fdcd70272fcf063c077a639015f/apps/zcode-cli/packages/core/src/runtime/methods/resume.ts#L61-L145)、[权限状态机](https://github.com/zai-org/ZCode/blob/aac4755666d09fdcd70272fcf063c077a639015f/apps/zcode-cli/packages/core/src/agent/turn-machine.ts#L238-L273)、[子会话详情装配](https://github.com/zai-org/ZCode/blob/aac4755666d09fdcd70272fcf063c077a639015f/packages/ui/src/app-shell/SubagentSessionSidePane.tsx#L41-L66)
 
-**对当前目标的判断**：复用原 `SessionPane` 时，应保留 provider、事件投影、审批、恢复与宿主打开回调，不能只复用消息 JSX。源码中存在“打开浏览器/文件”的回调不等于已经证明“任何发送/审批都不切内容标签”；后者应由 KenFutWork 的真实宿主操作回归和桌面观察锁定。固定源码比较详见 [ZCode UI 更新分析](ZCode-3.15.1界面更新源码分析.md)。
+**对当前目标的判断**：复用原 `SessionPane` 时，应保留 provider、事件投影、审批、恢复与宿主打开回调，不能只复用消息 JSX。源码中存在“打开浏览器/文件”的回调不等于已经证明“任何发送/审批都不切内容标签”；后者应由 KenFutWork 的真实宿主操作回归和桌面观察锁定。固定源码比较详见 [ZCode UI 更新分析](../zcode/3.15.1.md)。
 
 ### Claude Code
 
@@ -122,6 +122,6 @@
 
 ## 7. 与既有调研的关系
 
-- [DeepAgents 与开源 Coding Agent 对比](09-DeepAgents与开源CodingAgent对比.md)：负责运行时、执行环境、模型适配与候选比较；本文不改变其选型。
-- [ZCode 目标核对](10-目标与完成判定源码核对.md#zcode)与 [Codex 目标核对](10-目标与完成判定源码核对.md#codex)：负责目标状态和完成判定的固定源码；本文不以页面文案替代真实完成证据。
+- [DeepAgents 与开源 Coding Agent 对比](10-DeepAgents与开源CodingAgent对比.md)：负责运行时、执行环境、模型适配与候选比较；本文不改变其选型。
+- [ZCode 目标核对](11-目标与完成判定源码核对.md#zcode)与 [Codex 目标核对](11-目标与完成判定源码核对.md#codex)：负责目标状态和完成判定的固定源码；本文不以页面文案替代真实完成证据。
 - 本文只补充本轮 Code/Design 对标的公开行为、Excalidraw 集成边界与现行目标验收映射；实施回执仍归权威规格和日志。

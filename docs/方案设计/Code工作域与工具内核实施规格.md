@@ -1,6 +1,7 @@
 # Code 工作域与工具内核实施规格
 
-> 角色：本 Goal 的实施规格与验收账本（2026-10-03，实施中）。产品方向仍以《改造计划》和《多端产品设计》为权威。既有《模式能力分离方案》记录第一轮分离；本规格承接其目录、工具与后台任务遗留。当前产品为无用户的 MVP，允许破坏性调整 Code 契约，不保留旧调试数据的运行兼容层。
+> 角色：本 Goal 的实施规格与验收账本（2026-10-03，实施中）。产品方向仍以《改造计划》和《多端产品设计》为权威。第一轮模式分离记录见《改造计划》§12；本规格承接其目录、工具与后台任务遗留。当前产品为无用户的 MVP，允许破坏性调整 Code 契约，不保留旧调试数据的运行兼容层。
+> 2026-11-16 合并《Harness稳定性与Goal实施规格》（并入 §7）与《现有能力接线与入口统一》（并入 §8），两份原文件删除。
 > 当前阅读入口（2026-10-22）：统一 Agent 见 §2.7，共享 Code/Design 见同名实施章；§5 及带日期检查点保留当时结果。当前提交和未完成事项以[日志](../日志.md)的最新对应记录为准；不要根据旧检查点的分支或 Goal 状态恢复旧操作。
 
 ## 1. 已确认的产品语义
@@ -119,7 +120,7 @@ Code先对标实际ZCode应用：双方明确使用GLM5.3Flash、同一任务与
 
 普通聊天、读取文件、编码、媒体、CAD、技能和插件任务使用同一 Harness。模型按用户请求选择已启用能力，真实执行检查 Task、角色、规划、审批、工具启用、目录与授权版本。规划、基础权限和 Goal 分别持有事实。
 
-参考项目的执行控制比较见[《Code权限与模型审批源码对照》](../调研/Code权限与模型审批源码对照.md)首章。KFW 使用统一循环与独立控制，Plan 的实际执行限制以 §2.6 为准。
+参考项目的执行控制比较见[《Code权限与模型审批源码对照》](../调研/19-Code权限与模型审批源码对照.md)首章。KFW 使用统一循环与独立控制，Plan 的实际执行限制以 §2.6 为准。
 
 #### 交互与执行规则
 
@@ -188,15 +189,15 @@ Code先对标实际ZCode应用：双方明确使用GLM5.3Flash、同一任务与
 
 2026-10-06原队列更新：原SessionPane实际指针排序、删除、撤回到原composer、立即发送真实抢占、Esc停止与原恢复已通过服务端/DOM双侧验收，并与原审批/全文/子停止交叉。完整视觉/其它操作、用户旧页面、媒体/历史截点/全部产物、Design/Flow及三平台继续，证据与命令见《日志》本条。
 
-2026-10-06审批计时更新：模型start/end/error事实决定无输出计时，人审/工具等待不再误报模型停滞，取消与真实模型超时仍保护；agentStreamIdleTimeoutMs接实例治理、0关闭与原env兜底。真实服务等待/批准/停止/迟到回执及当前原审批卡通过，Code/Design治理十六条实际通过。用户旧页面构建/呈现状态、全GUI视觉/媒体/历史截点/产物、三平台继续；回执见审批等待与模型无输出计时实施回执。
+2026-10-06审批计时更新：模型start/end/error事实决定无输出计时，人审/工具等待不再误报模型停滞，取消与真实模型超时仍保护；agentStreamIdleTimeoutMs接实例治理、0关闭与原env兜底。真实服务等待/批准/停止/迟到回执及当前原审批卡通过，Code/Design治理十六条实际通过。用户旧页面构建/呈现状态、全GUI视觉/媒体/历史截点/产物、三平台继续；回执见《日志》。
 
-2026-10-06原PreviewPane文本更新：原全文按钮的真实来源已由原PreviewPane/CodeViewer在公开Shadow DOM实际显示中文emoji完整日志，原后台面板及子停止两GUI交叉通过。其它文件类型/大文件、原Root全操作和视觉等继续，具体证据见原后台Bash详情接线实施回执。
+2026-10-06原PreviewPane文本更新：原全文按钮的真实来源已由原PreviewPane/CodeViewer在公开Shadow DOM实际显示中文emoji完整日志，原后台面板及子停止两GUI交叉通过。其它文件类型/大文件、原Root全操作和视觉等继续，具体证据见《日志》。
 
-2026-10-06原后台详情更新：backgroundBashOutputV4与code-output全文读取已接原宿主，真实日志/错误/Unicode/历史副本14条交叉与原组件两GUI通过。完整门禁与范围见《日志》和原后台Bash详情接线实施回执；原PreviewPane完整渲染、全部GUI/视觉、运行中历史截点、全部生成产物、Design/Flow及三平台仍未完成。
+2026-10-06原后台详情更新：backgroundBashOutputV4与code-output全文读取已接原宿主，真实日志/错误/Unicode/历史副本14条交叉与原组件两GUI通过。完整门禁与范围见《日志》；原PreviewPane完整渲染、全部GUI/视觉、运行中历史截点、全部生成产物、Design/Flow及三平台仍未完成。
 
-2026-10-06更新：共享checkout的Code原宿主已接Task删除、历史编辑/重试/分叉、结构化提问与同Run指导、模型/权限/规划控制；Task工作域、角色与后台生命周期沿同一Harness。独立Plan、压缩预算与保留目标、实例治理设置以及附件/完整文件/子转录的历史归属已按功能提交。098d5bd7原前台/嵌套子独立Stop含原组件实际点击与完整门禁通过。当前完整子/Bash输出批次已获真实父删除、再次分叉、冷服务、新摘要及SQL发表失败清理证据，具体提交与命令以《日志》和完整输出历史独立归属实施回执为准。原GUI全操作/视觉、旧Code清零与完整Design/Flow、运行中日志截点/持久准备、全生成产物及三平台验收仍未完成，完整Goal保持active；不将已通过的范围替代整体产品验收。
+2026-10-06更新：共享checkout的Code原宿主已接Task删除、历史编辑/重试/分叉、结构化提问与同Run指导、模型/权限/规划控制；Task工作域、角色与后台生命周期沿同一Harness。独立Plan、压缩预算与保留目标、实例治理设置以及附件/完整文件/子转录的历史归属已按功能提交。098d5bd7原前台/嵌套子独立Stop含原组件实际点击与完整门禁通过。当前完整子/Bash输出批次已获真实父删除、再次分叉、冷服务、新摘要及SQL发表失败清理证据，具体提交与命令以《日志》为准。原GUI全操作/视觉、旧Code清零与完整Design/Flow、运行中日志截点/持久准备、全生成产物及三平台验收仍未完成，完整Goal保持active；不将已通过的范围替代整体产品验收。
 
-2026-10-05更新：已回到主checkout，Code/用户系统/Computer Use共享同一分支。c0aa9f59已独立提交同Run mode指导与拒绝事件；独立规划boolean取得9446真实RED→32492三条GREEN、82942八文件12条交叉、14938全包16/16及42407全类型13/13；随后94110冷起点与原场景4条再次通过。对应独立提交以Git历史及《日志》为准。Code完整Goal继续active。Enter已独立提交e707c7ea；Exit明确批准与管理文件初链已取得真实GREEN及server2009/类型13/13最终门禁；2026-10-06批准owner/PromptSection取得真实compact排除旧Exit→新Run正文消费GREEN、篡改零模型请求与macOS FD路径竞态RED→GREEN，类型13/13与workspace/API25通过，两个全server回归各有旧时序/搜索断言失败待独立处理，原plan输入归一化、审批取消/撤权/冷恢复/压缩、guided历史/工时、媒体/子任务/摘要组合、原GUI/Design与三平台完整验收继续待完成。命令与剩余项见 `apps/server/src/features/code-ui/独立Plan开关实施回执.md`，不将默认skip计为能力通过。
+2026-10-05更新：已回到主checkout，Code/用户系统/Computer Use共享同一分支。c0aa9f59已独立提交同Run mode指导与拒绝事件；独立规划boolean取得9446真实RED→32492三条GREEN、82942八文件12条交叉、14938全包16/16及42407全类型13/13；随后94110冷起点与原场景4条再次通过。对应独立提交以Git历史及《日志》为准。Code完整Goal继续active。Enter已独立提交e707c7ea；Exit明确批准与管理文件初链已取得真实GREEN及server2009/类型13/13最终门禁；2026-10-06批准owner/PromptSection取得真实compact排除旧Exit→新Run正文消费GREEN、篡改零模型请求与macOS FD路径竞态RED→GREEN，类型13/13与workspace/API25通过，两个全server回归各有旧时序/搜索断言失败待独立处理，原plan输入归一化、审批取消/撤权/冷恢复/压缩、guided历史/工时、媒体/子任务/摘要组合、原GUI/Design与三平台完整验收继续待完成。命令与剩余项见《日志》（原独立回执已清理），不将默认skip计为能力通过。
 
 以下为2026-10-03初始快照，保留当时施工位置与证据，不作为当前checkout或完成状态：
 
@@ -346,3 +347,318 @@ Goal 为本节完整目标，阶段回执不能代替完成。起点 `ec13c97f`�
 - 最终`pnpm exec turbo run test --concurrency=1`19任务通过（server3096/shared160/Web1049），`pnpm typecheck`26任务、`pnpm test:workspace`38项及`pnpm lint`通过；核心五文件48项通过。默认skipped不计作真实PG或平台实测，既有lint warning/info保留。
 - 固定源码提交后，原仓`pnpm desktop`冷启动完成11任务构建，API3301/Web3400就绪；显式重新打开原Task、切Design并选回原画布，100%视口与12图层保留，已有视频实际播放。随后只读PG/API确认原Run未重启、零active work、同Job仍成功、旧失败未动，原10元素/完整几何和H不变。原生截图与结构化回执在ignored`统一Harness最终冷启动复验-20261016.*`。
 - 本节已确认增量完成；前文历史检查点保持当时事实，不代表所有旧Harness或三平台事项均已验。多人实时协作、Office/Flow/OpenDesign编辑与未来审批模型实现不扩入本轮；型号和入口布局等待grilling项继续保存在《Code与Design共享Harness对标核验》。OpenAPI/Apifox AI分支已同步且未合并main，main/future保护引用不变。
+
+## 6. Code 宿主 Git 服务接线方案（未实施）
+
+> 来源：2026-11-04 方案稿，未实施；2026-11-16 自《Code宿主Git服务接线方案》并入本节，原文件删除。事实取自当时分支「啃啃在开发」的源码、测试与提交记录，用户确认后再决定实施顺序。
+
+### 6.1 现状结论
+
+- 前端实际调用 `gitService` 的 13 个方法，共 21 处调用。
+- 服务端 Code 宿主已接通 10 个只读方法，并明确拒绝 8 个写方法。
+- 8 个写方法里，7 个在 Task 作用域具备实现条件，项目作用域因只读租约全部不能写；`generateCommitMessage` 当前没有服务端实现。
+- 前端另有 5 个接口方法没有真实调用；`useGitActions` 里的暂存、取消暂存、撤销、提交、刷新只是占位提示，不发请求。
+- 本方案不修改 `IGitService` 接口。宿主通道按方法名动态转发，新增方法不需要改前端类型；只有返回字段需要增补时才改 `packages/zcode-shared` 的 Git 类型。
+
+### 6.2 前端调用清单
+
+调用入口在 `apps/web/src/components/workbench/zcode/host/httpChannelClient.ts` 与 `remoteServiceAccess.ts`，通过 `IGitService.channelName` 取通道。通道层自动把 `viewerScope`（项目或 Task）与 `workspaceIdentity` 注入第一个参数，前端调用点只传业务字段。
+
+| 方法 | 调用位置 | 传入参数 | 期望返回字段 | 当前宿主状态 |
+| --- | --- | --- | --- | --- |
+| `refresh` | `hooks/useGitRepository.ts:467` | `workspacePath`、`includeIdentity`、`includeBranchComparison` | `summary`、`identity`、`unstagedChanges`、`stagedChanges`、`branchComparison` | 已接通 |
+| `refresh` | `GitActionMenu.tsx:930` | `workspacePath`、`includeIdentity` | `summary`、`identity`、`unstagedChanges`、`stagedChanges` | 已接通 |
+| `refresh` | `workspace-file-tree/gitStatus.ts:17` | `workspacePath` | `summary`、`unstagedChanges`、`stagedChanges` | 已接通 |
+| `getLocalBranches` | `hooks/useGitBranchSwitcher.ts:71` | `workspacePath` | `headRefType`、`currentBranchName`、`branches` | 已接通 |
+| `getCommitGraph` | `git-graph/GitGraphDialog.tsx:59`、`:98`、`:128` | `workspacePath`、`maxCount`、`skip` | `commits`、`hasMore` | 已接通 |
+| `getChanges` | `git-branch-switcher/switchAssist.ts:55`、`:59` | `workspacePath`、`sourceId`（`unstaged` / `staged`） | `GitFileChange[]` | 已接通 |
+| `getIdentity` | `git-branch-switcher/switchAssist.ts:63` | `workspacePath` | `userName`、`userEmail`、`nameSource`、`emailSource`、`scopeLabel` | 已接通 |
+| `getDiff` | `GitPane.tsx:213` | `workspacePath`、`path`、`sourceId` | `availability`、`patch`、`beforeContent`、`afterContent`、`summary` | 已接通；`last-turn` 拒绝 |
+| `getIgnoredPaths` | `workspace-file-tree/useWorkspaceFileTreeData.ts:238` | `workspacePath`、`paths` | `string[]` | 已接通 |
+| `switchBranch` | `hooks/useGitBranchSwitcher.ts:252`、`:352` | `workspacePath`、`targetBranchName` | `ok`、`action`、`branchName`、`didChange`、`created`、`summary`、`issues` | 宿主拒绝 |
+| `createBranchAndSwitch` | `hooks/useGitBranchSwitcher.ts:284` | `workspacePath`、`branchName` | 同上 | 宿主拒绝 |
+| `stagePaths` | `GitActionMenu.tsx:1173`、`hooks/useGitBranchSwitcher.ts:341` | `workspacePath`、`paths` | 无 | 宿主拒绝 |
+| `commit` | `GitActionMenu.tsx:1178`、`hooks/useGitBranchSwitcher.ts:346` | `workspacePath`、`message`、`paths`、`stagedOnly` | `commitHash`、`summary` | 宿主拒绝 |
+| `push` | `GitActionMenu.tsx:1081` | `workspacePath` | `branchName`、`trackingBranchName`、`remoteName`、`setUpstream`、`summary` | 宿主拒绝 |
+| `generateCommitMessage` | `GitActionMenu.tsx:1002` | `workspacePath`、`workspaceIdentity`、`locale`、`includeUnstaged`、`currentSessionFilePaths`、`conversationContext` | `message`、`providerId`、`model` | 宿主拒绝 |
+
+接口里存在、当前前端没有真实调用的方法：
+
+- `getRepositorySummary`
+- `getWorkspaceRepositoryInfo`
+- `getBranchComparison`
+- `unstagePaths`
+- `discardPaths`
+
+`useGitActions.ts` 中的 `stagePaths`、`unstagePaths`、`discardPaths`、`commit`、`refresh` 只记录日志并弹出 `diff.placeholder.toast`，不调用 `gitService`。`WorktreeMenu` 走 `/api/code/git` 的 HTTP 接口，不经过 `gitService`。
+
+### 6.3 服务端现状
+
+#### 6.3.1 已接通的只读方法
+
+`apps/server/src/features/code-ui/host-git-rpc.ts` 的只读集合包含：
+
+`getRepositorySummary`、`getWorkspaceRepositoryInfo`、`getLocalBranches`、`getCommitGraph`、`getChanges`、`getIgnoredPaths`、`getDiff`、`getBranchComparison`、`getIdentity`、`refresh`。
+
+实现要点：
+
+- `refresh` 一次返回 `summary`、可选的 `identity`、`unstagedChanges`、`stagedChanges`、可选的 `branchComparison`，与前端三处调用一致。
+- `getDiff` 支持 `staged`、`unstaged`、`branch`；`last-turn` 直接拒绝，提示「上一轮差异必须经真实会话文件变更入口读取」。
+- 所有方法先校验连接身份与目标实例一致，再校验目标目录与可信来源一致。
+- 项目作用域走 `project-git-session.ts`：读取项目行时要求 `archived_at is null`、`archive_state = 'open'`、已启用 `code` 或 `design`，缺失返回 404「项目读取来源已失效，请重新打开文件面板」。
+- Task 作用域走 `executionScopes.openTask(...).derive("review", ...)`：Task 删除或不属于当前实例返回 404；执行授权处于撤销中或撤销失败返回 409。
+- 项目会话只打开只读租约 `openProjectReadLease`，`resolvePath` 收到写操作时直接返回 403「项目文件面板仅支持读取，请在任务中修改文件」。
+- 路径先经 `session.resolvePath` 解析真实路径，再经 `host-git-repository.ts` 的 `paths()` 校验是否位于仓库根内；NUL 路径拒绝；路径数量超过 `codeSearchMaxResults` 拒绝。
+- 附加授权目录按只读处理，并且不套用主仓库的忽略规则。
+- Git 命令由 `git-client.js` 执行，参数以数组传递，不经 shell。
+
+#### 6.3.2 明确拒绝的写方法
+
+`host-git-rpc.ts` 的不可用集合：
+
+`switchBranch`、`createBranchAndSwitch`、`stagePaths`、`unstagePaths`、`discardPaths`、`generateCommitMessage`、`commit`、`push`。
+
+调用任一方法返回错误「当前Git宿主尚不支持 <method>，该能力仍未接通」。
+
+#### 6.3.3 Task 级 HTTP Git 能力
+
+`apps/server/src/features/code-git/code-git-service.ts` 已有 Task 作用域能力，入口在 `/api/code/git`：
+
+- 只读：`status`、`diffStat`、`graph`、`changes`、`fileDiff`、`readFile`、`listFiles`、`listWorktrees`
+- 写：`checkout`、`setFileStaged`（暂存 / 取消暂存单个文件）、`applyFileHunk`、`discardFile`、`discardAllChanges`、`init`、`commit`、`push`、`createBranch`、`createWorktree`、`deleteWorktree`
+- 终端：`runTerminal`
+
+这些能力全部要求真实 `taskId`，并由执行作用域校验归属。它们与 `gitService` 的请求形状、返回字段和路径口径不同，不能直接按方法名转发。
+
+### 6.4 能力分类
+
+#### 6.4.1 能接（已完成）
+
+10 个只读方法已经接通，不需要再改。现有测试覆盖：
+
+- `host-git-rpc.test.ts` 使用真实临时仓库验证 staged / unstaged 内容、未跟踪文件行数、rename 路径、graph 引用、ignore 与分支、越界路径、连接身份、写操作拒绝。
+- `project-git.integration.test.ts` 验证没有 Task 的项目读取、非仓库空忽略列表、目录外请求拒绝、附加目录撤销后拒绝。
+- `task-git-isolation.integration.test.ts` 验证 Task 提交只进入自己的临时仓库，主仓 HEAD 不变。
+
+边界：
+
+- 只读，不写数据库，不写 Git 索引和引用。
+- 项目读取在数据库只读事务内完成，只打开只读租约。
+- 路径限制在仓库根内；附加授权目录只读，不继承主仓库忽略规则。
+- 项目归档、项目删除、Task 删除、执行授权撤销、连接身份不匹配都会拒绝，并给出可读原因。
+
+#### 6.4.2 只能部分接
+
+这一类的共同边界：只在 Task 作用域可行，路径必须同时通过 `scope.resolvePath(path, "write")` 与仓库根校验；只读 Task、已删除 Task、撤销中的 Task、项目作用域都拒绝；不写数据库，只改 Git 索引、工作区或引用；全部属于不安全操作，禁止自动重试。
+
+| 方法 | 可接部分 | 缺口 | 工作量 |
+| --- | --- | --- | --- |
+| `getDiff` 的 `last-turn` | `staged`、`unstaged`、`branch` 已接通 | `last-turn` 必须读真实会话的文件变更记录，不能由 `git diff` 伪造 | 小到中；复用 `file-changes.ts` / `owned-history.ts` 的既有入口 |
+| `switchBranch` | Task 作用域可执行 `git switch`，返回新的 `summary` | `GitBranchMutationResult.issues` 需要把 Git 错误映射为分支问题码，否则前端“提交后切换”辅助流程不出现 | 中；错误映射是主要工作 |
+| `createBranchAndSwitch` | Task 作用域可执行 `git switch -c` | 同上，另需保留 `created` 与 `didChange` 语义 | 中 |
+| `stagePaths` | Task 作用域可逐路径 `git add` 或 `git restore --staged` | 需要批量路径授权、数量上限与部分失败时的可读结果 | 小 |
+| `unstagePaths` | 与 `stagePaths` 同一实现路径 | 前端当前没有真实调用，只有占位按钮 | 小；补消费方后才能验收 |
+| `commit` | Task 作用域可执行提交 | 现有 `CodeGitService.commit` 是 `add -A` 后提交全部改动，不遵守前端的 `paths` 与 `stagedOnly`；`CodeGitStatus` 不含 `commitHash` | 中；需要按选中路径提交并回读 HEAD |
+| `discardPaths` | Task 作用域可撤销已跟踪文件改动，未跟踪文件需要删除 | 前端当前没有真实调用；删除未跟踪文件不可恢复，需要明确确认语义 | 中 |
+| `push` | Task 作用域可执行 `git push` | 需要解析 `branchName`、`trackingBranchName`、`remoteName`、`setUpstream`；无上游分支要返回可读原因 | 中 |
+
+补充说明：
+
+- 前端在提交前检查 `GitIdentity`。宿主侧也必须在提交入口检查 `user.name` 与 `user.email`，缺失时返回可读原因，不能等 Git 报英文错误。
+- `GitActionMenu` 的提交流程会先 `stagePaths` 再 `commit`。两步失败可能留下已暂存但未提交的状态，返回值必须如实说明“已提交 / 未提交”，不能把部分成功报成整体失败或整体成功。
+- 同一 Task 的写操作没有宿主级互斥。Git 自身的 `index.lock` 会在并发写时失败，宿主需要把该错误转成可读原因；不新增数据库锁。
+- `push` 有网络外部副作用，属于不安全操作，不能自动重试；`commit`、`discard` 同样不能重试。
+
+#### 6.4.3 当前无法接
+
+| 能力 | 原因 | 需要的前置条件 | 工作量 |
+| --- | --- | --- | --- |
+| `generateCommitMessage` | 服务端没有提交消息生成服务；模型选择、Provider 调用、会话上下文裁剪都不存在 | 新建模型调用能力，复用实例模型设置与 BYOK 边界；只使用前端传入的 `conversationContext`，不额外读取会话内容 | 大 |
+| 项目作用域的 7 个写方法 | 项目会话只打开只读租约，`resolvePath` 对写操作固定返回 403，项目文件面板按产品规则只读 | 需要产品确认项目面板是否允许写；确认后要新增写租约、写权限代际与并发保护 | 大；涉及产品行为不变量 |
+| `getRepositorySummary`、`getWorkspaceRepositoryInfo`、`getBranchComparison` | 宿主已经接通，但前端当前没有调用点 | 需要真实消费方；只补方法没有验收对象 | 小；当前无消费方，暂不接 |
+| `unstagePaths`、`discardPaths` | 宿主未接通，前端也只有占位按钮 | 需要把占位按钮改为真实调用，并补确认与错误展示 | 小到中；当前无消费方，暂不接 |
+| 工作树创建与删除 | 不在 `IGitService` 接口内，属于 `/api/code/git` 的独立 HTTP 能力 | 若要迁入宿主通道，需要扩充接口与前端调用 | 中；不属于本方案范围 |
+
+### 6.5 实施顺序建议
+
+用户确认后按以下顺序，每一步可独立提交并带测试：
+
+1. `stagePaths`、`unstagePaths`、`commit`：先补 Task 作用域写路径与选中路径提交语义，覆盖真实临时仓库、部分失败、只读 Task、已删除 Task、路径越界、并发 `index.lock`。
+2. `switchBranch`、`createBranchAndSwitch`：补错误码映射，覆盖分支已存在、目标不存在、覆盖风险、冲突、进行中操作、其他工作树占用。
+3. `push`：补结果字段解析与无上游分支错误，覆盖成功、无上游、远端拒绝、网络失败。
+4. `discardPaths`：补撤销与未跟踪删除，覆盖确认语义与不可恢复提示。
+5. `getDiff` 的 `last-turn`：接真实会话文件变更记录，覆盖没有上一轮、上一轮跨会话、记录缺失。
+6. `generateCommitMessage`：单独设计模型调用与上下文边界，最后实施。
+7. 项目作用域写能力：等待产品确认，不进入前六步。
+
+### 6.6 测试要求
+
+所有实施必须使用真实临时仓库与真实文件系统，禁止 mock Git 行为。每个写方法至少覆盖：
+
+- 正常路径与返回字段完整。
+- 路径逃逸、符号链接、NUL、数量超限。
+- 只读 Task、已删除 Task、撤销中 Task、项目归档。
+- 连接身份或实例不匹配。
+- 删除后的迟到请求。
+- 同一 Task 并发写与 `index.lock`。
+- 部分失败后的真实状态与可读错误。
+- 不安全操作不自动重试。
+
+## 7. Harness 稳定性与 Goal 实施规格
+
+> 来源：2026-10-11 用户确认的实施规格；2026-11-16 自《Harness稳定性与Goal实施规格》并入本章，原文件删除。服务端插件扩展点与服务 key 唯一权威仍为[改造计划](改造计划.md) §4.2、§4.10；Code 工作域和工具权限沿用本文 §1–§6。实施回执写入[日志](../日志.md)，阶段通过不等于整体交付。
+
+本稿承接 2026-10-11 用户确认的实施计划。Code 工作域和工具权限沿用本文 §1–§6。
+
+### 7.1 Code/Design 统一后的实施依据
+
+本稿早期Design独立宿主、输入框及传输描述属于迁移起点。当前实施以本文的「Code/Design统一实施」为准：Code/Design共用原SessionPane、持久Task、队列/Goal/审批与恢复。每个新Run冻结当次工作上下文和能力；Goal保留模型/目标，后续新Run重新接纳当前能力，已入队输入不扩权。画布是文档引用，原文件作用域继续由Task持有；已退役Design端点不作为现行调用方式。
+
+### 7.2 范围
+
+本稿定义真实模型与原仓库本地桌面验收的目标范围，不代表这些验收已经完成。GLM、GUI 与远端验收须以可追溯的实际记录为准；本稿不要求更改既有供应商配置。ZCode 来源保持保真。Design 主区始终为画布，Flow 维持独立插件工作流系统；Goal 是持久 Task 内跨 Run 推进的能力，不新增 Agent 循环。
+
+2026-10-11 用户暂缓原生 Computer Use 系统授权和控制测试。本轮继续校验通用工具权限、审批与真实画布页面 RPC；原生控制结果不冒充已验收。
+
+### 7.3 运行与工具契约
+
+KenFutWork 持有 Run 身份、取消、终态、审批、工具执行及事件契约。默认 DeepAgents Provider 封装原生消息与事件转换，Provider Session 消费方使用产品事件、历史维护端口与释放端口；模型、checkpoint 与 backend 的原生绑定仍保留，不能据此宣称整个运行时完全中立。
+
+- Run 只绑定真实 Task 工作域。工具发现、动态 schema、实际授权与调用属于同一注册表；无效参数和未知工具返回错误，不能生成成功工具证据。
+- Provider 必须首先发出一次 `run.started`，终态唯一。替代 Provider 忽略取消或停滞时，宿主仍能终止消费；取消之后的迟到事件不能改写终态或停止下一 Run。
+- 工具执行及审批等待不计为模型闲置。断线恢复读取持久状态，不自动重放有副作用的调用。
+- 正常结束与输出上限分别使用 `completed`、`output_limit`；取消分为 `user_cancelled`、`task_stopped`、`host_shutdown`。新终态保存到事件和 Run 主账本，旧记录不推测原因。失败保留错误代码与可读信息。
+- 注册撤销必须对正在等待审批的调用生效；旧注销回执不能注销后来同名注册。schema 或权限变化不能继续执行旧调用，也不能自动重放。
+
+### 7.4 项目文件
+
+布局为独立 JSON，素材为普通文件，数据库保存归属与可重建索引。文件保存与 Agent 插入共享项目文件端口，使用内容版本检查与原子发布。日常保存不重编码未变化素材、不扫描整棵项目目录。
+
+2026-10-12 用户明确以 Project 为稳定目录单位。`projects.work_dir` 是主目录真相；Canvas 定位和 Task 主目录是绑定该目录的索引与执行快照，不提供同项目多个默认根目录的分流语义。正常设置不改写已存在的项目目录；目录缺失时提示显式重新关联，验证确切新目录并处理授权代际、停机和恢复，不猜测文件或静默搬迁。历史目录快照冲突时明确报错，保留恢复源。应用数据目录迁移只移动托管路径，外部项目目录保持原路径。无会话的画布上传和生成使用真实 Canvas→Project→Instance 归属；有 Task 的生成仍使用真实 Task，不降级为独立项目操作。
+
+布局中的完整素材身份、路径与内容版本是 Git 恢复的依据。GET 不用较新的数据库索引覆盖恢复后的旧布局；索引不一致时不返回另一份素材 URL，并提示显式恢复索引。恢复只读取布局声明的确切文件，核对所有版本后原子更新索引；缺失文件要求重新关联，不全盘猜测。移动、重新关联、导出、恢复操作先保存草稿并取得当前 revision，保存冲突保留草稿且阻止后续操作。
+
+用户项目 Git 管理布局和素材，Task 影子 Git 保留检查点用途。旧 blob 迁移核对字节后切换引用，保留源供恢复。自包含导出核对布局和素材版本，不能导出半旧半新的结果。
+
+Flow 文件消费通过现有宿主插件接线，保持 `ff-embed/v1`：一次性身份票据绑定真实 Flow Project，身份交换签发独立 opaque 文件绑定，网关将其放入该会话的已验签声明，不维护全局“当前项目”。文件回调同时验证部署密钥和项目绑定，浏览器不提供绝对目录。素材复用项目文件端口；工作流布局是项目内独立 JSON，保存必须携带客户端读取的内容版本，数据库只保留归属、索引及发布历史。媒体任务与触发器固定原始项目绑定，迟到结果不能跟随另一会话切换项目。绑定过期、撤销或服务重启后，等待显式重新授权，不补跑已产生副作用的工作。入口握手须确认 `projectFiles:v1` 扩展及确切项目，旧网关丢弃扩展不能被当作文件桥就绪。Flow Agent 工具与节点仍独立后置。
+
+稳定目录参考已核对本地源码：ZCode v3.14.3 的 Task 持久 workspace path；DSH dsh-v0.2.1-alpha.2 保留不可变 SessionHeader.cwd，当前目录变化独立记录；Kimi Code `3395f5b` 的 `/workspaces/{workspace_id}` PATCH 仅修改名称。仅取已确认的边界，不复制上游字段或实现。
+
+### 7.5 上下文与 Goal
+
+Design 输入只在新指令首次接纳时捕获模型调用快照；重复输入读取原回执，不因默认模型变化重新捕获。普通 Run 与 Goal 消费同一冻结调用边界；Goal 创建时冻结所选模型，后续 Run 与后台结果沿用快照，执行及恢复均核验配置修订。显式恢复选择可重新捕获；历史 NULL 快照要求用户明确选择，不推测历史模型。快照仅保存模型引用与调用参数，凭据仍由既有接入层持有。
+
+上下文预算按冻结请求的实际输出上限计算；工具和提示装饰完成后再计完整请求。已知窗口不扩大剩余预算，无法压缩到上限时明确拒绝发送；未知窗口不捏造硬上限。压缩保留目标、权限、未完成工作与验收证据，并通过实际历史 Provider 与 `ReadHistory` Consumer 回取原记录。
+
+Goal 插件保存目标、状态、可选预算和证据，使用现有受控输入启动后续 Run。同一 Task 同时只持有一个前台 Run。用户输入先持久化并进入 FIFO，优先于自动 Goal step；自动输入身份不可伪造。暂停阻止后续续跑，停止当前 Task 同时暂停 Goal；审批等待保持阻塞。服务退出保留进度，重启后手动恢复，重新核对权限与预算。
+
+完成以可验证结果和模型判断共同决定。工具执行声称须有真实结果，纯文本成果不能冒充文件或命令操作。达到预算、失败、未满足目标均应透出原因。已结束 Goal 可以由携带旧 Goal revision 的显式创建请求替换，不无条件覆盖。
+
+2026-10-13 用户纠正交互范围：Goal 沿用既有输入框与会话模式，移除 Design 助手的独立「持续目标 / 开始目标」表单，不新增 Goal 管理面板或类型确认弹窗。目标已明确声明成果类型时采用声明；未声明时由 Agent 使用既有会话提问确认一次，再继续工作。预算、恢复与验收状态仍属于真实 Task 内部元数据。
+
+2026-10-13 用户确认进一步收口完成判据：Goal 明确文字成果或文件/命令操作类型及验收条件；既有未声明类型的目标保留进度，在显式恢复时补选，不根据自然语言猜测。执行模型可以提出完成申请，独立评估请求才有权给出最终通过判定。评估沿用 Goal 冻结的模型调用配置，消费目标、验收条件及真实成果/工具回执，工具列表为空，用量计入同一 Goal 预算；独立请求不等于另换供应商或强制另选模型。模型自述不能证明文件或命令已执行。评估网络失败、非法结构、意外工具调用或预算不足均不能变为完成；保留进度与可读原因，等待恢复或用户复核。
+
+2026-10-13 用户确认验收清单由 Agent 从目标和明确要求中提炼，用户可补充或修改；启动不强制手填或逐项人工确认。原始目标始终保留为评估依据，Agent 不能通过缩减清单降低要求。参考源码比较见文档地图中的 ZCode、Kimi/DSH 与 Codex Goal 核对稿：ZCode 使用独立请求但评估故障会 fail-open；另三者默认由执行模型更新完成状态。上述实现事实只作方向参考，不复制其完成状态或失败策略。2026-10-13 Code/Design 完成消费者已改为独立无工具请求：执行模型只提交申请，评估请求沿用冻结配置并在 Run 结算前归账；请求、证据、工具名称与原始输入先在 Task 锁内保存，模型调用在锁外执行，旧修订或授权代际的结果不能回写。评估故障暂停 Goal，公共 HTTP 与原 ZCode wire 不暴露私有申请快照。成果类型、验收清单提炼及编辑入口仍待实施；本阶段的 SDK/协议桩回归不替代 GLM 与真实桌面验收。
+
+2026-10-13 独立评估请求已复用普通 native Run 的完整输入计数与输入上限：依据确切供应商/模型目录及冻结 wire 输出上限预留空间，再检查系统提示和完整证据正文。超限时不调用模型、不截断证据；窗口未知保持未知，目录读取失败明确拒绝，不降级为未知窗口。计数沿用 SDK 的近似 token 估算，真实用量仍仅采用模型回执。
+
+用户修改执行中的验收清单时，先暂停 Goal 并停止当前 Run；保留进度、已有文件及用量，废弃旧评估。修改后由用户显式恢复，不自动重放工具。独立评估在当前 Run 结算前完成，申请与证据快照在锁内保存，模型请求在锁外执行，回写再次核对 Goal 修订、Run 与授权/分支代际；用户暂停、取消或修改后到达的旧结果不得把目标改成完成。
+
+### 7.6 验收与集成
+
+验收覆盖单/多 Task、批准/拒绝、文本/图片、长历史、取消与重试、断线重连、服务重启；文件覆盖保存、生成插入、二进制移动、外部编辑版本冲突、重新关联、自包含导出和 Git 恢复；Goal 覆盖多 Run、用户插话、暂停恢复、预算、审批阻塞、完成证据与重启手动恢复。
+
+真实模型及界面验收只使用合成样本，不外传私有仓库上下文。mock 模型、临时数据库与 API 回归各自证明其覆盖范围，不替代真实桌面验收。Flow 调 Agent 的工具及 Agent 节点后置，待子系统接口核对后独立实施。
+
+冻结最终实现后串行执行：
+
+```bash
+pnpm test:workspace
+pnpm exec turbo run test --concurrency=1
+pnpm typecheck
+pnpm lint
+```
+
+每个行为变化独立提交，明确暂存路径，共享文件逐 hunk 复核，HEAD 不得引用未跟踪依赖。路由或契约变化同步 OpenAPI；Apifox 使用 AI 分支供审阅，其主分支合并遵守仓库确认规则。最终按开发分支→啃啃在开发、同步 main→main 集成，保护并行作者改动。
+
+## 8. 现有能力接线与入口统一
+
+> 来源：2026-10-09 用户确认的实施规格；2026-11-16 自《现有能力接线与入口统一》并入本章，原文件删除。固定 ZCode 原源码与 KenFutWork 现有服务共同承接，不以列表可读代替运行消费。
+
+### 8.1 已确认边界
+
+Code／Design 共用原管理页和配置来源；保持各自 Task／画布工作区。顶部模式按钮复用现有实现，当前只展示 Code／Design 及按真实安装、启用、宿主配置出现的 Flow。Work／OpenDesign 按既有规划继续，本期不新增模式。
+
+必要深化仅为原子智能体定义管理与双模式真实派发，以及命令参数展开；不另建插件、模型配置体系或 Agent 引擎。原模型页消费已落地的统一供应商服务。旧开发数据不转换、不兼容、不恢复；历史 SQL 不改写。
+
+用户本轮明确的入口例外：确实缺少能力的既有业务保留原页面并标注「未接入」，对应操作禁用；不得用假空清单、假成功、假开关效果掩盖缺口。先检查本仓服务和上游实际 Provider／运行消费，不能只因缺 RPC 就判缺业务。此例外不恢复已退役账户、套餐，也不提前展示未来模式。
+
+### 8.2 接线清单与验收落点
+
+| 原 UI 操作 | 现有权威／可复用实现 | 当前状态与目标 |
+| --- | --- | --- |
+| 市场目录、详情、安装、启停、卸载 | PluginRegistryService；原 plugin-management RPC | 库存已接；修复公开分类、图标、installed／enabled 混用与无项目管理 |
+| 链接、本机／工作目录安装、检查、导出 | 现有 plugins HTTP 与 registry.inspect/install/exportPlugin | 原来源对话框已接链接／本机目录检查和安装，实例操作无需Project，未知响应只读对账；原市场源页未接入禁用，工作目录授权安装与导出仍继续 |
+| 市场源目录、通用插件配置 | 原 ZCode 管理页；本仓无对应完整服务 | 保留原页面，标未接入；不能以重读库存冒充市场源刷新或配置校验 |
+| 插件侧栏／其他 UI 槽 | 清单 ui 与 registry.listUiEntries；现有面板与私有路由 | Code 原侧栏已接同一安装目录与现有面板；清单／运行时同键优先，按启用态及作用域过滤；Design 各运行槽已过滤，共用管理与跨文档生命周期仍继续 |
+| 米家面板 | 现有插件资源、扫码／设备／控制／断开路由 | 复用完整现有链路与图标；Code导航以认证图片引用及currentColor mask适配明暗，市场头像保持原色，不重写米家、不新增令牌握手 |
+| MCP 管理／连接／重连／检索 | 现有 McpService 与 mcp HTTP | 本机CRUD、授权编辑、真实状态与重连接同一McpService；普通投影不带env值，稳定ID及读写代际保护；项目/授权/参数能力按真实状态禁用，市场检索/外部扫描/同步继续 |
+| 技能 CRUD、导入、安装、启停、详情、检索 | 现有技能服务、skills／skills-marketplace HTTP | 本机安装态/启停/卸载/正文和原侧栏直达已接同一仓库，修正实例误投项目层并核安装修订；插件只读定义、包内资源及Code／Design原运行目录已接注册表；新建路径按用户要求暂缓取舍，目录及链接安装/检索继续 |
+| 外部 Agent 扫描／同步、MCP OAuth | 原页面；本仓无完整对应服务 | 保留页面和未接入状态，禁用相应操作 |
+| 子智能体定义 CRUD、启停、覆盖 | 原 SubagentsService/parser/serializer；现有 Code 与 Design 子代理消费 | 缺定义管理和动态消费；一个定义 Provider 供两模式管理／派发，统一真实内置清单 |
+| 运行中的子代理目录 | 原 V4、持久 Task 与独立子会话 | 已接；不能用于伪装设置页定义清单；稳定 childSessionId／parentToolCallId 保持 |
+| 命令编辑与执行 | instance_settings.commands；原参数展开源码 | 共用运行输入已接固定原参数展开，原转录保留命令文本；原CRUD、启停／修订、插件定义及指导消息仍继续；本期不执行shell预展开 |
+| 钩子编辑与执行 | instance_settings.hooks；现有 turn-start／turn-end 消费 | 原界面只开放这两类真实事件，其余标未接入，不冒充完整上游生命周期 |
+| 使用统计 | 现有 UsageService 与 usage HTTP | 接真实字段与已支持时间范围；不恢复套餐／额度，不伪造费用 |
+| 项目记忆 | 原 Memory 页面与上游实现；本仓 checkpoint 非项目记忆 | 本期保留原页面标未接入，不新建提取／召回循环 |
+| 自动化入口 | 原侧栏 Button／CalendarClock、AutomationsSection 与原创建控件 | 原导航及页面保留；宿主缺完整调度链路时显示未接入并禁用创建，不挂列表／模板／套餐／闲时消费者，不计运行能力完成 |
+| 顶部模式按钮／共用管理文档 | 现有 CanvasSidebar 按钮、原 ZCode 页面与宿主桥 | 已访问文档与面板保持挂载；独立原管理文档已承接Code设置／市场和Design的MCP／技能／市场，保持窗口／origin校验、原路返回和加载失败关闭，不启动Root工作区；顶部展示已复用同一横排组件及父宿主Flow可用态，其他Design设置入口继续 |
+
+### 8.3 接入规则
+
+- 市场保留原装配，分类为公开／本机；随发行清单提供的可信包归公开并标官方，用户来源归本机。来源、安装、启用独立；图标来自真实清单与现有认证资源读取。缺失或读取失败才用通用图标，品牌使用已有 KenFutWork 资源。
+- 技能、MCP 位于插件市场下方。插件声明的入口安装并启用后自动显示，停用／卸载即移除；不新增固定、排序、隐藏偏好系统。
+- 同一管理文档承载原设置、市场、MCP、技能等页面；入口不改变模式或项目，不创建隐式 Task。实例管理无需 Project；项目操作解析真实 Project 与授权目录。Code 保持 coding，样式／主题／portal 隔离。
+- 管理文档复用原Provider／Store／RootShell、SettingsPage与市场容器，不挂工作区Root。Code原TabStore和市场导航由真实宿主接口委托；Design已替代的三个旧弹窗及引用退役。原本机插件／MCP／技能根据真实实例能力放开无Project读写，不把空路径展示为目录。加载／启动失败也可由宿主关闭；市场到已安装管理携带来源，原返回按钮先回市场。
+- 工作区按访问次序懒挂载，切换保留文档、输入和面板；非活动文档及其portal不可接受焦点／快捷键，数据订阅与运行继续。活动消息只接受同源父窗口；子页错过初始消息时读取父iframe的inert属性，跨Realm不使用构造器判断。画布项目通知只接受当前画布窗口，并从真实目录核对kind，后台Flow不能消费Design项目通知。
+- 子智能体本机／项目定义仅存实例根 settings/subagents，项目按 projectId 分层；插件定义只读已安装包。执行目录仍来自实际 Task／Project 权威，不能从配置目录推导。双模式派发冻结定义和模型引用，按模式／父权限／工具能力取交集，模型、技能和 MCP 引用已有权威。
+- 命令／钩子保留现有数据库唯一存储，不同时引入上游文件配置。适配器在所属 feature 注册原宿主 RPC 贡献，三元组完整；不向 app.ts／worker.ts 堆分发。原契约从 shared 导出；服务 key 仅登记《改造计划》§4.2。
+- 写操作不自动重试，未知响应先读回对账；并发旧草稿、删除后迟到写入和取消后迟到结果不能覆盖新状态。凭据沿现有授权边界，不进入普通目录、运行事件和日志。
+
+### 8.4 切片与验证
+
+按目录／图标／安装态 → 生命周期与侧栏 → MCP／技能 → 定义与双模式派发 → 命令／钩子／统计 → 共用管理文档与模式保持顺序实施。每片显式暂存所属路径、测试、提交、同提交记日志，保护并行改动；不保留旧 UI 回退开关。
+
+TDD 仅在已确认的公共契约、Code 宿主、原组件操作及 Design 不变量边界进行；替身位于外部 HTTP／模型／数据库／文件系统。覆盖正常、失败、并发、重放、晚到、Unicode、无项目管理、双模式返回和连续切换。子定义须真实派发，命令／钩子须真实消费；未接入操作必须零写入。
+
+顺序执行 pnpm test、pnpm typecheck、pnpm lint、pnpm build、pnpm api:spec；不得与其他 Agent 测试／构建重叠。API 契约同步中文 registry／文档／Apifox AI 分支，合并须用户确认。原件偏差与许可证逐项登记；pnpm desktop 实测明暗主题、图标、模式按钮、管理页和未接入状态，未接入项不计能力完成。未通过门禁区分本次与无关问题，不批量改写无关代码。
+
+进度、提交、验证结果和未通过事项见《日志》；完整目标尚未完成。
+
+### 8.5 2026-10-10 原命令参数的共用运行消费
+
+- 原CLI contracts的参数分词、$ARGUMENTS、位置参数、缺省参数追加、提示装配与动态shell拒绝声明机械提取，函数正文保持原算法，来源及类型偏差登记。现有Settings仍是唯一命令存储；无新库、服务key或Agent循环。
+- 在现有运行设置读取后、媒体／上下文装配前编译真实用户输入，两模式及三个输入分支共用结果；原run.prompt和用户转录不改写。已开始的这次执行使用取得的字符串，后台结果、控制输入及已声明子派发深度不作为用户命令解析；指导消息及冷恢复须另行验证。
+- Design空态停止客户端{{args}}替换，文字和语音均传原文本；旧展开模块、无消费者辅助函数及旧实现测试删除。原编辑器、画布、助手及参数样式保持，未把旧配置转换为新语法。
+- 真实HTTP／临时PG／原Harness验证Code引用与Unicode、Design原WS消费及终态、shell预展开失败且零模型请求／零标记文件；原编辑器使用原件浏览器输入驱动，只断言可见文本及父宿主提交。完整命令CRUD、并发编辑、取消及冷恢复仍不能计完成。
+
+### 8.6 2026-10-10 顶部模式切换切片
+
+- 从既有CanvasSidebar提取横排及收起按钮，Code原侧栏与Design／Flow共用；沿原品牌资源及字标主题。原Code界面模式菜单在宿主提供切换器时隐藏，coding执行树不变。
+- 父宿主统一读取Flow安装、启用、宿主配置；bootstrap及同源更新下发真实可用模式。拒绝非当前iframe、错误origin及停用后迟到导航；不卸载已访问工作区。能力更新不再取消正在打开的插件面板读取。
+- TDD：公共原Root／宿主／模式状态33条聚焦回归通过，两轴只读复审无阻断；桌面已完成Code→Design→Code并保留同一canvas／assistant session，截图见日志。红绿灯同行及主题图标进入下一切片，完整目标仍active。
+
+### 8.7 2026-10-10 原生标题栏切片
+
+- macOS Tauri主窗改Overlay／hiddenTitle，按固定ZCode窗口坐标预留红绿灯；Code保留原DesktopTopOverlay装配，Design／Flow仅消费同一原工具层。宿主映射原drag/no-drag区域为主窗拖动，排除按钮／表单并支持双击缩放；窗口命令权限仍仅授予可信main。
+- 不把原生外观当作完整Electron宿主。Root仍用原键盘与能力消费路径，仅向真实窗口几何平台接原全屏与主题接口；未支持的缩放、资源管理器／关于命令不因标题栏而开放。设置／市场保留原生控制区，Code内部coding及实例管理边界不变。
+- 原更新弹窗静态品牌资源导入适配Next；Design库只编译ESM，关闭依赖AMD分支，解决Next重新解析公共图片及AMD模块的问题。原组件／布局／Markdown装配保留，本轮图标与标题栏共四处原件偏差已核对；本期无新增模式或偏好系统。
+- 桌面验收：Code原工具收起／展开，深浅图标，原生全屏／退出，Cmd+O打开真实原目录对话后取消，Design侧栏折叠／恢复与同一canvas／assistant session，共用MCP管理进入／关闭返回。未发送任务、改插件或选择目录，恢复原Code深色。完整接线目标仍active；本片不能替代子定义、命令、统计及其他管理能力验收。
+
+### 8.8 2026-10-10 插件技能声明与运行目录
+
+- 插件注册表从已安装包发现只读SKILL.md与相对资源；原技能页通过原RPC合并实例DB技能及插件定义，保留真实启用态和原列表／分组／Markdown详情。实例直达页沿instanceScope初始化真实插件库存；停用定义仍可查阅，启停／卸载通知刷新目录及详情。
+- 同名定义通过pluginId与包内canonical路径形成稳定资源引用，实际list_skills／use_skill消费该身份与已有实例验证，按Code／Design作用域过滤。轮次开始由原loader读取同一注册表，后续配置不会改写已取得的目录对象；权限仍由原工具与Task边界持有。包文本不映射为本机文件夹、软链或Native Read。
+- 新增读能力落在既有plugins Definition／Provider，技能UI、工具及轮次loader为消费者；skills的apply只声明延迟消费，避免读取后注册服务，不改app.ts／worker.ts或另建Agent循环／配置存储。
+- 原技能详情正文切分从固定ZCode的readFrontmatter及依赖函数提取，运行保留完整包文本；源码和返回边界偏差均登记。无Project插件启停沿原store承接空实例上下文，未知写入只读对账；切换宿主清理旧忙碌态，迟到响应不改新库存或提示结果。
+- 用户在2026-10-10明确暂缓技能新建方式的取舍，并提出Agent不应要求显式Project／工作目录的优化方向。目前ensureConversationWorkspace可无需显式选择而建立默认对话Project；这仍属于Project绑定实现。后续须单独区分显式Project、默认目录和持久Task执行身份；本片未改变该边界，未把新建CRUD计为完成。
