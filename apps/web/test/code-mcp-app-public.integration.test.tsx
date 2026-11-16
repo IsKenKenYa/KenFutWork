@@ -81,14 +81,16 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       });
       expect(installed.status, JSON.stringify(installed.body)).toBe(201);
       const snapshot = host.snapshot;
-      const requireApproval = () =>
+      const requireApproval = (toolName?: string) =>
         vi.waitFor(
           async () => {
             const current = protocol.conversationSnapshotSchema.parse(
               await snapshot(),
             );
             const pending = current.pendingInteractions.find(
-              (entry) => entry.payload.kind === "permission",
+              (entry) =>
+                entry.payload.kind === "permission" &&
+                (!toolName || entry.payload.toolName === toolName),
             );
             if (!pending) throw new Error("未看到插件工具的 Task 审批请求");
             return pending;
@@ -161,6 +163,21 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
         clientId: host.clientId,
       });
       const page = browser;
+      const approveVisible = (argument: string) =>
+        vi.waitFor(
+          async () => {
+            const clicked = await page.evaluate(`(() => {
+              const args = document.querySelector('[data-mcp-page-tool-arguments]');
+              const button = document.querySelector('[data-permission-option-kind="allowOnce"][aria-selected="true"]');
+              if (!args?.textContent.includes(${JSON.stringify(argument)}) || !button?.checkVisibility()) return false;
+              if (args.textContent.includes('PRIVATE_RESOURCE_TOKEN')) throw new Error('审批面板有私有参数');
+              button.click();
+              return true;
+            })()`);
+            expect(clicked, JSON.stringify(page.pageErrors)).toBe(true);
+          },
+          { timeout: 15_000 },
+        );
       const frameHeight = () =>
         page.evaluate(
           `document.querySelector(${JSON.stringify(iframe)})?.style.height ?? null`,
@@ -216,24 +233,23 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await writeFile(join(host.workspacePath, "interactive-mcp-page"), "");
       await activate(page, "打开插件页面");
       await requirePage();
-      const pending = await requireApproval();
+      const resourceRead = "mcp__app_probe__read_resource";
+      const resourceApproval = await requireApproval(resourceRead);
+      const reads = join(host.workspacePath, "mcp-page-resource-reads");
+      await expect(readFile(reads, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      expect(JSON.stringify(resourceApproval)).not.toContain(
+        "PRIVATE_RESOURCE_TOKEN",
+      );
+      await approveVisible("page://probe/items/approved");
+      await requireApproval("mcp__app_probe__refresh_card");
+      expect(await readFile(reads, "utf8")).toBe("approved\n");
       const calls = join(host.workspacePath, "mcp-page-calls");
       await expect(readFile(calls, "utf8")).rejects.toMatchObject({
         code: "ENOENT",
       });
-      await vi.waitFor(
-        async () => {
-          const clicked = await page.evaluate(`(() => {
-            const args = document.querySelector('[data-mcp-page-tool-arguments]');
-            const button = document.querySelector('[data-permission-option-kind="allowOnce"][aria-selected="true"]');
-            if (!args?.textContent.includes('from_page') || !button?.checkVisibility()) return false;
-            button.click();
-            return true;
-          })()`);
-          expect(clicked, JSON.stringify(page.pageErrors)).toBe(true);
-        },
-        { timeout: 15_000 },
-      );
+      await approveVisible("from_page");
       await vi.waitFor(
         async () => {
           expect(await readFile(calls, "utf8")).toBe(
@@ -248,8 +264,8 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await requireClosed();
       await activate(page, "打开插件页面");
       await requirePage();
-      expect((await requireApproval()).interactionId).not.toBe(
-        pending.interactionId,
+      expect((await requireApproval(resourceRead)).interactionId).not.toBe(
+        resourceApproval.interactionId,
       );
       const stopped = await fixture.client.request(
         `/api/mcp/servers/${installed.body.server.id}`,
@@ -266,8 +282,12 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
           await snapshot(),
         );
         expect(current.pendingInteractions).toEqual([]);
+        expect(JSON.stringify(current)).not.toContain("PRIVATE_RESOURCE_TEXT");
+        expect(JSON.stringify(current)).not.toContain("PRIVATE_RESOURCE_TOKEN");
       });
       expect(await readFile(calls, "utf8")).toBe("refresh_card:from_page\n");
+      expect(await readFile(reads, "utf8")).toBe("approved\n");
+      expect(model.requests).toHaveLength(3);
     } finally {
       await browser?.close();
       await model.close();

@@ -5,6 +5,9 @@ const uri = "ui://probe/card";
 const invalidPage = new URL("invalid-mcp-page", import.meta.url);
 const interactive = new URL("interactive-mcp-page", import.meta.url);
 const calls = new URL("mcp-page-calls", import.meta.url);
+const reads = new URL("mcp-page-resource-reads", import.meta.url);
+const resourceUri = "page://probe/items/approved?token=PRIVATE_RESOURCE_TOKEN";
+const resourceTemplate = "page://probe/items/{item}";
 const tool = {
   name: "show_card",
   description: "Show the page probe",
@@ -32,11 +35,35 @@ function page() {
   return `<h1>MCP App</h1><script>
     let input;
     let approved = false;
+    let resourceCapability = false;
+    let resourceReceived = false;
     const send = (method, params, id) => parent.postMessage({ jsonrpc: '2.0', method, params, ...(id === undefined ? {} : { id }) }, '*');
     addEventListener('message', async ({ data, source }) => {
       if (source !== parent || data.jsonrpc !== '2.0') return;
       if (data.id === 1 && data.result?.protocolVersion) {
+        resourceCapability = Boolean(data.result.hostCapabilities?.serverResources);
         send('ui/notifications/initialized', {});
+      }
+      if (data.id === 5 && data.result?.nextCursor === 'page-remainder') {
+        send('resources/list', { cursor: data.result.nextCursor }, 6);
+      }
+      if (data.id === 6 && data.result?.resources?.some(item => item.uri === ${JSON.stringify(resourceUri)})) {
+        send('resources/templates/list', {}, 7);
+      }
+      if (data.id === 7 && data.result?.resourceTemplates?.some(item => item.uriTemplate === ${JSON.stringify(resourceTemplate)})) {
+        send('resources/read', { uri: '../relative-resource' }, 9);
+      }
+      if (data.id === 9 && data.error) {
+        send('resources/read', { uri: ${JSON.stringify(resourceUri)} }, 8);
+      }
+      if (data.id === 8 && data.result?.contents?.[0]?.text === 'PRIVATE_RESOURCE_TEXT' &&
+          data.result.contents[0]._meta?.process === ${process.pid} &&
+          data.result.contents[1]?.blob === 'AAEC' && !resourceReceived) {
+        resourceReceived = true;
+        send('resources/read', { uri: ${JSON.stringify(resourceUri)} }, 8);
+      }
+      if (data.id === 8 && resourceReceived && data.error) {
+        send('tools/list', {}, 2);
       }
       if (data.id === 2 && data.result?.tools?.some(tool => tool.name === 'refresh_card') &&
           !data.result.tools.some(tool => tool.name === 'model_only')) {
@@ -66,7 +93,7 @@ function page() {
           data.params.structuredContent?.value === 'PRIVATE_VIEW' &&
           input === 'PAGE_INPUT' && parentBlocked && networkBlocked;
         send('ui/notifications/size-changed', { height: matches ? 173 : 111 });
-        if (matches && ${existsSync(interactive)}) send('tools/list', {}, 2);
+        if (matches && resourceCapability && ${existsSync(interactive)}) send('resources/list', {}, 5);
       }
     });
     send('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'probe', version: '1' }, appCapabilities: {} }, 1);
@@ -107,6 +134,33 @@ for await (const line of createInterface({ input: process.stdin })) {
   } else if (method === "tools/call") {
     appendFileSync(calls, `${params.name}:${params.arguments?.confirmation}\n`);
     result = { content: [], structuredContent: { process: process.pid } };
+  } else if (method === "resources/list") {
+    result =
+      params?.cursor === "page-remainder"
+        ? { resources: [{ name: "Task resource", uri: resourceUri }] }
+        : { resources: [{ name: "Page", uri }], nextCursor: "page-remainder" };
+  } else if (method === "resources/templates/list") {
+    result = {
+      resourceTemplates: [
+        { name: "Task items", uriTemplate: resourceTemplate },
+      ],
+    };
+  } else if (method === "resources/read" && params.uri === resourceUri) {
+    appendFileSync(reads, "approved\n");
+    result = {
+      contents: [
+        {
+          uri: resourceUri,
+          text: "PRIVATE_RESOURCE_TEXT",
+          _meta: { process: process.pid },
+        },
+        {
+          uri: "page://probe/data",
+          mimeType: "application/octet-stream",
+          blob: "AAEC",
+        },
+      ],
+    };
   } else if (method === "resources/read" && params.uri === uri) {
     result = {
       contents: [
@@ -115,6 +169,8 @@ for await (const line of createInterface({ input: process.stdin })) {
           : { uri, mimeType: "text/html;profile=mcp-app", text: page() },
       ],
     };
+  } else if (method === "resources/read") {
+    appendFileSync(reads, "unexpected\n");
   }
   const response = result
     ? { result }

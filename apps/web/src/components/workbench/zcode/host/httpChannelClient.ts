@@ -463,7 +463,14 @@ export class CodeHttpChannelClient implements IChannelClient {
   }
 
   async callMcpApp<T>(
-    method: "open" | "waitForClose" | "listTools" | "callTool",
+    method:
+      | "open"
+      | "waitForClose"
+      | "listTools"
+      | "callTool"
+      | "listResources"
+      | "listResourceTemplates"
+      | "readResource",
     args: unknown[],
     signal: AbortSignal,
   ): Promise<T> {

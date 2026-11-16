@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { addAbortListener } from "node:events";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import {
+  type CallToolResult,
+  RequestIdSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolExecutionContext } from "../../kernel/types.js";
 import {
@@ -13,10 +16,12 @@ import {
 import type { LocalActor } from "../local-instance/types.js";
 import type { CodeApprovalService } from "../permissions/approval-types.js";
 import {
-  executeMcpAppTool,
-  listMcpAppTools,
+  executeApprovedMcpAppOperation,
+  type McpAppAuthorization,
+  type McpAppExecution,
   type McpAppSource,
-} from "./mcp-app-tools.js";
+} from "./mcp-app-approval.js";
+import { executeMcpAppTool, listMcpAppTools } from "./mcp-app-tools.js";
 import {
   type McpServerToolLike,
   mcpAppResourceUri,
@@ -36,6 +41,44 @@ export const mcpAppClientCapabilities = {
 const referenceSchema = z
   .object({ ref: z.uuid(), toolCallId: z.string().min(1) })
   .strict();
+const resourceRequestSchema = z
+  .object({
+    uri: z.string().refine((uri) => URL.canParse(uri)),
+    requestId: RequestIdSchema,
+  })
+  .strict();
+const pageRequestSchema = z.object({ cursor: z.string().optional() }).strict();
+
+type McpAppMethod =
+  | "listTools"
+  | "callTool"
+  | "listResources"
+  | "listResourceTemplates"
+  | "readResource";
+
+function readMcpAppResource(input: McpAppExecution, requested: unknown) {
+  const { uri, requestId } = resourceRequestSchema.parse(requested);
+  const { serverName } = input.authorization;
+  const displayUri = new URL(uri);
+  displayUri.username = "";
+  displayUri.password = "";
+  displayUri.search = "";
+  displayUri.hash = "";
+  return executeApprovedMcpAppOperation(input, {
+    requestId,
+    toolName: `mcp__${serverName}__read_resource`,
+    summary: "插件页面请求读取资源",
+    args: { uri },
+    displayArgs: {
+      uri: displayUri.href.startsWith(`${displayUri.protocol}//`)
+        ? displayUri.href
+        : displayUri.protocol,
+    },
+    display: { kind: "mcp_tool", serverName, toolName: "read_resource" },
+    // URI 是原 MCP 服务的资源标识，不交给本机文件系统或网络请求。
+    execute: (options) => input.source.client.readResource({ uri }, options),
+  });
+}
 
 export function createMcpAppPages(
   getPermissions: () => CodeApprovalService | undefined,
@@ -51,7 +94,7 @@ export function createMcpAppPages(
     payload: string;
     bytes: number;
     invalidated: AbortController;
-    authorization?: Parameters<typeof executeMcpAppTool>[0]["authorization"];
+    authorization?: McpAppAuthorization;
   };
   type View = {
     id: string;
@@ -220,15 +263,14 @@ export function createMcpAppPages(
       abort,
       close,
     });
+    const interactive = Boolean(entry.authorization && getPermissions());
+    const capabilities = entry.source.client.getServerCapabilities();
     return {
       html: document.text,
       ...JSON.parse(entry.payload),
       viewId,
-      serverTools: Boolean(
-        entry.authorization &&
-          getPermissions() &&
-          entry.source.client.getServerCapabilities()?.tools,
-      ),
+      serverTools: interactive && Boolean(capabilities?.tools),
+      serverResources: interactive && Boolean(capabilities?.resources),
     };
   }
 
@@ -248,7 +290,7 @@ export function createMcpAppPages(
     return view;
   }
 
-  function toolHandler(method: "listTools" | "callTool"): CodeUiHostRpcHandler {
+  function operationHandler(method: McpAppMethod): CodeUiHostRpcHandler {
     return {
       call(actor, args, context) {
         return runCodeUiHostRpc(context, async () => {
@@ -265,38 +307,58 @@ export function createMcpAppPages(
           try {
             await requireLive();
             const permissions = getPermissions();
+            const capability =
+              method === "listTools" || method === "callTool"
+                ? "tools"
+                : "resources";
             if (
               !entry?.authorization ||
               !permissions ||
-              !entry.source.client.getServerCapabilities()?.tools
+              !entry.source.client.getServerCapabilities()?.[capability]
             )
               throw new CodeUiHostRpcError(
-                "mcp_app_tool_unavailable",
-                "此页面没有可调用的插件工具。",
+                "mcp_app_operation_unavailable",
+                "此页面不能执行该操作。",
                 403,
               );
+            const execution = {
+              source: entry.source,
+              authorization: entry.authorization,
+              permissions,
+              requireLive,
+              viewId: view.id,
+              signal,
+            };
             if (method === "callTool")
-              return await executeMcpAppTool({
-                source: entry.source,
-                authorization: entry.authorization,
-                permissions,
-                requireLive,
-                requested: args[1],
-                viewId: view.id,
+              return await executeMcpAppTool(execution, args[1]);
+            if (method === "readResource")
+              return await readMcpAppResource(execution, args[1]);
+            const { cursor } = pageRequestSchema.parse(args[1]);
+            if (method === "listTools") {
+              const result = await listMcpAppTools(
+                entry.source,
+                cursor,
                 signal,
-              });
-            const { cursor } = z
-              .object({ cursor: z.string().optional() })
-              .strict()
-              .parse(args[1]);
-            const result = await listMcpAppTools(entry.source, cursor, signal);
+              );
+              await requireLive();
+              return result;
+            }
+            const options = await entry.source.options(signal);
+            const params = cursor === undefined ? undefined : { cursor };
+            const result =
+              method === "listResources"
+                ? await entry.source.client.listResources(params, options)
+                : await entry.source.client.listResourceTemplates(
+                    params,
+                    options,
+                  );
             await requireLive();
             return result;
           } catch (error) {
             if (error instanceof CodeUiHostRpcError) throw error;
             throw new CodeUiHostRpcError(
-              "mcp_app_tool_failed",
-              "插件工具请求失败，请检查工具或重新打开页面。",
+              "mcp_app_operation_failed",
+              "插件操作失败，请检查插件或重新打开页面。",
               422,
             );
           }
@@ -333,8 +395,11 @@ export function createMcpAppPages(
         });
       },
     },
-    "mcp-apps.listTools": toolHandler("listTools"),
-    "mcp-apps.callTool": toolHandler("callTool"),
+    "mcp-apps.listTools": operationHandler("listTools"),
+    "mcp-apps.callTool": operationHandler("callTool"),
+    "mcp-apps.listResources": operationHandler("listResources"),
+    "mcp-apps.listResourceTemplates": operationHandler("listResourceTemplates"),
+    "mcp-apps.readResource": operationHandler("readResource"),
   };
 
   return {

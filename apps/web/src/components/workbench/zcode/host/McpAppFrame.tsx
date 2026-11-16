@@ -3,8 +3,11 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   CallToolResultSchema,
   JSONRPCMessageSchema,
+  ListResourcesResultSchema,
+  ListResourceTemplatesResultSchema,
   ListToolsRequestSchema,
   ListToolsResultSchema,
+  ReadResourceResultSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
@@ -16,6 +19,7 @@ export const mcpAppPageSchema = z.object({
   result: CallToolResultSchema,
   viewId: z.uuid(),
   serverTools: z.boolean(),
+  serverResources: z.boolean().default(false),
 });
 
 // 中转文档是宿主代码；插件只进入第二层 iframe，不能拿到宿主 MessagePort。
@@ -65,6 +69,73 @@ function portTransport(port: MessagePort): Transport {
   return transport;
 }
 
+function bindPageRequests(
+  bridge: AppBridge,
+  client: CodeHttpChannelClient,
+  page: z.infer<typeof mcpAppPageSchema>,
+  lifetime: AbortSignal,
+) {
+  const request = (
+    method: Parameters<CodeHttpChannelClient["callMcpApp"]>[0],
+    params: unknown,
+    signal: AbortSignal,
+  ) =>
+    client.callMcpApp(
+      method,
+      [page.viewId, params],
+      AbortSignal.any([signal, lifetime]),
+    );
+  if (page.serverTools) {
+    bridge.setRequestHandler(ListToolsRequestSchema, async (message, extra) =>
+      ListToolsResultSchema.parse(
+        await request(
+          "listTools",
+          { cursor: message.params?.cursor },
+          extra.signal,
+        ),
+      ),
+    );
+    bridge.oncalltool = async (params, extra) =>
+      CallToolResultSchema.parse(
+        await request(
+          "callTool",
+          {
+            name: params.name,
+            arguments: params.arguments,
+            requestId: extra.requestId,
+          },
+          extra.signal,
+        ),
+      );
+  }
+  if (page.serverResources) {
+    bridge.onlistresources = async (params, extra) =>
+      ListResourcesResultSchema.parse(
+        await request(
+          "listResources",
+          { cursor: params?.cursor },
+          extra.signal,
+        ),
+      );
+    bridge.onlistresourcetemplates = async (params, extra) =>
+      ListResourceTemplatesResultSchema.parse(
+        await request(
+          "listResourceTemplates",
+          { cursor: params?.cursor },
+          extra.signal,
+        ),
+      );
+    bridge.onreadresource = async (params, extra) =>
+      ReadResourceResultSchema.parse(
+        await request(
+          "readResource",
+          { uri: params.uri, requestId: extra.requestId },
+          extra.signal,
+        ),
+      );
+  }
+}
+
 export function McpAppFrame({
   client,
   page,
@@ -89,7 +160,10 @@ export function McpAppFrame({
     const bridge = new AppBridge(
       null,
       { name: "KenFutWork", version: "1" },
-      page.serverTools ? { serverTools: {} } : {},
+      {
+        ...(page.serverTools ? { serverTools: {} } : {}),
+        ...(page.serverResources ? { serverResources: {} } : {}),
+      },
       {
         hostContext: {
           theme,
@@ -100,39 +174,7 @@ export function McpAppFrame({
     );
     let closed = false;
     let transferred = false;
-    if (page.serverTools) {
-      const request = (
-        method: "listTools" | "callTool",
-        params: unknown,
-        signal: AbortSignal,
-      ) =>
-        client.callMcpApp(
-          method,
-          [page.viewId, params],
-          AbortSignal.any([signal, lifetime.signal]),
-        );
-      bridge.setRequestHandler(ListToolsRequestSchema, async (message, extra) =>
-        ListToolsResultSchema.parse(
-          await request(
-            "listTools",
-            { cursor: message.params?.cursor },
-            extra.signal,
-          ),
-        ),
-      );
-      bridge.oncalltool = async (params, extra) =>
-        CallToolResultSchema.parse(
-          await request(
-            "callTool",
-            {
-              name: params.name,
-              arguments: params.arguments,
-              requestId: extra.requestId,
-            },
-            extra.signal,
-          ),
-        );
-    }
+    bindPageRequests(bridge, client, page, lifetime.signal);
     bridge.addEventListener("sizechange", ({ height }) => {
       if (typeof height === "number" && Number.isFinite(height))
         setHeight(Math.max(56, Math.min(560, Math.ceil(height))));
