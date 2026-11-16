@@ -10,6 +10,7 @@ import {
   inspectionStream,
 } from "./contextInspectionModel.js";
 import {
+  contextInspectionErrorMessage,
   type InspectionCall,
   readContextPart,
 } from "./contextInspectionReader.js";
@@ -80,10 +81,16 @@ export function useContextInspection(call: InspectionCall, taskId: string) {
           scope.cache.set(target.id, value);
           setLoaded({ scope, contents: new Map(scope.cache) });
         }
-      } catch {
+      } catch (error) {
         const cancelled = controller.signal.aborted;
         controller.abort();
-        if (!cancelled) setError("上下文读取失败，请重新读取。");
+        if (!cancelled)
+          setError(
+            contextInspectionErrorMessage(
+              error,
+              "上下文读取失败，请重新读取。",
+            ),
+          );
       } finally {
         if (activeRead.current === controller) setReading(false);
       }

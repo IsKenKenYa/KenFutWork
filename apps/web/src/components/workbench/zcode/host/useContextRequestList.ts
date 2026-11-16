@@ -3,7 +3,10 @@ import {
   contextRequestListSchema,
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { InspectionCall } from "./contextInspectionReader.js";
+import {
+  contextInspectionErrorMessage,
+  type InspectionCall,
+} from "./contextInspectionReader.js";
 
 async function readPages(
   call: InspectionCall,
@@ -121,7 +124,10 @@ export function useContextRequestList(call: InspectionCall, taskId: string) {
         if (controller.signal.aborted) return;
         update((old) => ({
           ...(cannotAccessRequests(error) ? initial : old),
-          error: "请求列表读取失败，请重试。",
+          error: contextInspectionErrorMessage(
+            error,
+            "请求列表读取失败，请重试。",
+          ),
           busy: false,
         }));
       }

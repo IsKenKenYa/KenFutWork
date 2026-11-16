@@ -1,4 +1,14 @@
-import { contextRequestPageSchema } from "@kenfutwork/shared";
+import {
+  ApiApplicationError,
+  contextRequestPageSchema,
+} from "@kenfutwork/shared";
+
+/** 仅公开 HTTP 错误带可展示的原因；本地异常继续使用对应读取提示。 */
+export function contextInspectionErrorMessage(error: unknown, message: string) {
+  return error instanceof ApiApplicationError && error.message.trim()
+    ? error.message
+    : message;
+}
 
 export type InspectionCall = (
   method: string,
