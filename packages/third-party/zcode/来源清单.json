@@ -252,9 +252,10 @@
       "source": "references/zcode/packages/ui/src/ConfirmDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/ConfirmDialog.tsx",
       "sha256": "3f8d542fdbc5557341cdab04c06b4e4c9a031798908c837dc637f82d4f27a2a3",
-      "copiedSha256": "e5345fce1d3212ba38cf75b8d3938a77eb8aa6f2e9e353e8b504976718b3bba9",
+      "copiedSha256": "6407d4426ac9aa44c1321ec251d5ad894ab991ad447d6c5a5d6e2924db733317",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "采用 ZCode 3.18.2（fec975905a2abd4c07e35c40d51fa097a2258ec9）的删除确认焦点与按钮提示行为；键盘激活交给实际焦点按钮。"
       ]
     },
     {

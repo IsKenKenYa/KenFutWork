@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Checkbox } from "@zui/components/ui/checkbox.js";
 import { XIcon } from "lucide-react";
 import { TID_CONFIRM_DIALOG_CONFIRM } from "@zcode/shared";
@@ -45,6 +45,8 @@ export function ConfirmDialogHost() {
     displayedRequest?.confirmLabel ?? intl.formatMessage({ id: "common.confirm" });
   const cancelLabel = displayedRequest?.cancelLabel ?? intl.formatMessage({ id: "common.cancel" });
   const compact = displayedRequest?.compact === true;
+  const destructive = displayedRequest?.confirmVariant === "destructive";
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -61,40 +63,16 @@ export function ConfirmDialogHost() {
     settleConfirmation(true);
   }, [settleConfirmation]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Enter") {
-        return;
-      }
-
-      // 带复选框的选择对话框保留焦点按钮的键盘语义，避免“不了”按 Enter 变成切换。
-      if (
-        displayedRequest?.checkbox &&
-        event.target instanceof HTMLElement &&
-        event.target.closest("button,input")
-      )
-        return;
-      // 二次确认场景下如果不接 Enter，键盘用户会只能切到按钮再触发，
-      // 体验和桌面端的确认弹窗不一致。这里在弹窗打开时统一兜住 Enter，保持可预期的确认手势。
-      event.preventDefault();
-      event.stopPropagation();
-      settleConfirmation(true);
-    }
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [open, settleConfirmation, displayedRequest]);
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         data-testid={displayedRequest?.testId}
+        onOpenAutoFocus={(event) => {
+          if (destructive) {
+            event.preventDefault();
+            cancelRef.current?.focus();
+          }
+        }}
         showCloseButton={false}
         overlayClassName={
           compact ? "bg-black/20 supports-backdrop-filter:backdrop-blur-[2px]" : undefined
@@ -149,6 +127,7 @@ export function ConfirmDialogHost() {
           >
             <Button
               type="button"
+              ref={cancelRef}
               variant={compact ? "outline" : "secondary"}
               size={"lg"}
               onClick={() => settleConfirmation(false)}
@@ -164,7 +143,7 @@ export function ConfirmDialogHost() {
             </Button>
             <Button
               type="button"
-              autoFocus
+              autoFocus={!destructive}
               // 普通确认沿用主按钮；仅显式声明 destructive 的不可恢复动作使用危险色。
               variant={displayedRequest?.confirmVariant ?? "default"}
               size={"lg"}
@@ -176,7 +155,7 @@ export function ConfirmDialogHost() {
               )}
             >
               <span>{confirmLabel}</span>
-              {displayedRequest?.showKeyboardHints !== false ? (
+              {!destructive && displayedRequest?.showKeyboardHints !== false ? (
                 <span
                   className={
                     displayedRequest?.confirmVariant === "destructive"
