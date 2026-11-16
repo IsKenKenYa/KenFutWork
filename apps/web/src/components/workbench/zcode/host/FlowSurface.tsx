@@ -13,6 +13,7 @@ import {
   buildFlowIdentity,
   buildFlowNavigate,
   FLOW_EMBED_PROTOCOL_VERSION,
+  flowEngineInstallStatusSchema,
   flowHostIdentityTicketResponseSchema,
   isFlowProjectReady,
   parseFlowInbound,
@@ -105,9 +106,11 @@ function useFlowEngineInstall(): {
 } {
   const [state, setState] = useState<FlowEngineInstallState>("idle");
   const [notice, setNotice] = useState<string | null>(null);
+  const installAttempt = useRef(0);
   const install = useCallback(
     async (launch?: FlowEngineLaunch) => {
       if (state === "installing") return;
+      const attempt = ++installAttempt.current;
       setState("installing");
       setNotice(null);
       try {
@@ -126,6 +129,13 @@ function useFlowEngineInstall(): {
           };
           throw new Error(body.error?.message ?? `HTTP ${start.status}`);
         }
+        if (start.ok) {
+          const initial = flowEngineInstallStatusSchema.parse(
+            await start.json(),
+          );
+          if (initial.state === "error")
+            throw new Error(initial.error ?? "请查看安装日志");
+        }
         // 轮询安装状态（拉镜像分钟级；上限 30 分钟防挂死）
         const deadline = Date.now() + 30 * 60 * 1000;
         let snapshot: { state: string; error?: string } = {
@@ -133,6 +143,7 @@ function useFlowEngineInstall(): {
         };
         while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 3000));
+          if (installAttempt.current !== attempt) return;
           const response = await surfaceFetch(
             "/api/flow/host/engine/install/status",
           );
@@ -141,6 +152,7 @@ function useFlowEngineInstall(): {
             state: string;
             error?: string;
           };
+          if (installAttempt.current !== attempt) return;
           if (snapshot.state === "ready" || snapshot.state === "error") break;
         }
         if (snapshot.state === "ready") {
@@ -153,6 +165,7 @@ function useFlowEngineInstall(): {
           setState("error");
         }
       } catch (error) {
+        if (installAttempt.current !== attempt) return;
         setNotice(
           `安装失败：${error instanceof Error ? error.message : "未知错误"}`,
         );
@@ -175,6 +188,7 @@ function useFlowEngineInstall(): {
       if (!response.ok) {
         throw new Error(body.error?.message ?? `HTTP ${response.status}`);
       }
+      installAttempt.current += 1;
       setState("idle");
     } catch (error) {
       setNotice(
@@ -569,15 +583,15 @@ export function resolveFlowEngineDisplayState(
     state === "idle" ? (info?.install.state ?? state) : state;
   if (installState === "installing" || installState === "error" || !info)
     return installState;
-  const { containers, error } = info.stack;
+  const { containers, error, stoppedByUser } = info.stack;
+  const apiRunning = containers.some(
+    ({ service, state }) => service === "api" && state === "running",
+  );
+  if (stoppedByUser && !apiRunning) return "stopped";
   if (error) return "unreachable";
   if (!containers.length) return "idle";
   // 数据库或一次性初始化容器的状态不能代替 Dify API 的状态。
-  return containers.some(
-    ({ service, state }) => service === "api" && state === "running",
-  )
-    ? "ready"
-    : "stopped";
+  return apiRunning ? "ready" : "stopped";
 }
 
 const ENGINE_STATE_META: Record<
@@ -871,6 +885,10 @@ function EngineView() {
     }
   }, []);
   const refresh = useCallback(() => load(false), [load]);
+  const stopAndRefresh = async (deleteData: boolean) => {
+    await stop({ deleteData });
+    await refresh();
+  };
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -942,7 +960,7 @@ function EngineView() {
             {engineState === "installing" ? (
               <button
                 type="button"
-                onClick={() => void stop({ deleteData: false })}
+                onClick={() => void stopAndRefresh(false)}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground"
               >
                 取消安装
@@ -954,7 +972,7 @@ function EngineView() {
                     type="button"
                     onClick={() => {
                       setStopAsk(false);
-                      void stop({ deleteData: false });
+                      void stopAndRefresh(false);
                     }}
                     className="rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground/30"
                   >
@@ -964,7 +982,7 @@ function EngineView() {
                     type="button"
                     onClick={() => {
                       setStopAsk(false);
-                      void stop({ deleteData: true });
+                      void stopAndRefresh(true);
                     }}
                     className="rounded-lg border border-destructive/40 px-3 py-1.5 text-xs text-destructive transition-colors hover:border-destructive"
                   >

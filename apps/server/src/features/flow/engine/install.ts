@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -65,6 +66,7 @@ let current: {
   logFile?: string;
   child?: ReturnType<typeof spawn>;
 } = { state: "idle" };
+let stopInProgress = false;
 
 export function getEngineInstallSnapshot(): EngineInstallSnapshot {
   const logTail = readLogTail(current.logFile);
@@ -270,6 +272,7 @@ export interface EngineInstallOptions {
 
 /** 引擎承载目标（FORM-11 双 Provider）：宿主 docker 或 WSL2 发行版内 docker。 */
 export type EngineLaunch = { kind: "host" } | { kind: "wsl2"; distro: string };
+export type EngineRuntime = EngineLaunch & { stoppedByUser?: true };
 
 /** 承载记录文件名（数据目录内）：安装时写，停止/查询读。 */
 export const STACK_RUNTIME_FILE = "dify-stack.runtime.json";
@@ -330,27 +333,40 @@ export function composeCommand(
 }
 
 /** 写承载记录（安装时调用；下次停止/查询按它执行）。 */
-export function writeStackRuntime(dataDir: string, launch: EngineLaunch): void {
+export function writeStackRuntime(
+  dataDir: string,
+  runtime: EngineRuntime,
+): void {
   mkdirSync(dataDir, { recursive: true });
-  writeFileSync(
-    join(dataDir, STACK_RUNTIME_FILE),
-    `${JSON.stringify(launch, null, 2)}\n`,
-  );
+  const path = join(dataDir, STACK_RUNTIME_FILE);
+  const pending = `${path}.${randomBytes(8).toString("hex")}`;
+  try {
+    writeFileSync(pending, `${JSON.stringify(runtime, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    renameSync(pending, path);
+  } finally {
+    rmSync(pending, { force: true });
+  }
 }
 
 /** 读承载记录；无记录/坏文件一律回落 `host`（fail-safe，不猜）。 */
-export function readStackRuntime(dataDir: string): EngineLaunch {
+export function readStackRuntime(dataDir: string): EngineRuntime {
   try {
     const raw = JSON.parse(
       readFileSync(join(dataDir, STACK_RUNTIME_FILE), "utf8"),
     ) as unknown;
     if (raw && typeof raw === "object") {
+      const stopped =
+        (raw as { stoppedByUser?: unknown }).stoppedByUser === true
+          ? { stoppedByUser: true as const }
+          : {};
       const kind = (raw as { kind?: unknown }).kind;
-      if (kind === "host") return { kind: "host" };
+      if (kind === "host") return { kind: "host", ...stopped };
       if (kind === "wsl2") {
         const distro = (raw as { distro?: unknown }).distro;
         if (typeof distro === "string" && distro.trim()) {
-          return { kind: "wsl2", distro: distro.trim() };
+          return { kind: "wsl2", distro: distro.trim(), ...stopped };
         }
       }
     }
@@ -373,7 +389,10 @@ export function planEngineAutoInstall(input: {
   installState: EngineInstallSnapshot["state"];
   stackContainerCount: number | null;
   recommended: FlowEnginePathId | null;
+  stoppedByUser?: true | undefined;
 }): { action: "install" } | { action: "skip"; reason: string } {
+  if (input.stoppedByUser)
+    return { action: "skip", reason: "用户已手动停止引擎" };
   if (input.installState === "installing")
     return { action: "skip", reason: "已有安装任务在跑" };
   if (input.stackContainerCount === null)
@@ -421,6 +440,16 @@ export function startEngineInstall(
   started: boolean;
   snapshot: EngineInstallSnapshot;
 } {
+  if (stopInProgress) {
+    return {
+      started: false,
+      snapshot: {
+        state: "error",
+        logTail: [],
+        error: "引擎正在停止，请稍后再启动。",
+      },
+    };
+  }
   if (current.state === "installing") {
     return { started: false, snapshot: getEngineInstallSnapshot() };
   }
@@ -437,14 +466,23 @@ export function startEngineInstall(
   syncGatewayCredentials(envFile, options.gatewayEnvFiles ?? []);
   const logFile = join(options.dataDir, STACK_LOG_FILE);
   // 承载目标落盘：停止/查询必须用同一个目标（否则 down 找不到另一侧起的容器）
-  writeStackRuntime(options.dataDir, options.launch ?? { kind: "host" });
+  const runtime = readStackRuntime(options.dataDir);
+  const target = options.launch ?? runtime;
+  const launch: EngineLaunch =
+    target.kind === "wsl2"
+      ? { kind: "wsl2", distro: target.distro }
+      : { kind: "host" };
+  writeStackRuntime(
+    options.dataDir,
+    runtime.stoppedByUser ? { ...launch, stoppedByUser: true } : launch,
+  );
   current = {
     state: "installing",
     startedAt: new Date().toISOString(),
     logFile,
   };
 
-  const command = composeCommand({ ...options, envFile }, [
+  const command = composeCommand({ ...options, launch, envFile }, [
     "--profile",
     "dify",
     "up",
@@ -513,8 +551,10 @@ export function startEngineInstall(
             { cause: error },
           );
         }
-        if (current === installation && current.state === "installing")
+        if (current === installation && current.state === "installing") {
+          if (runtime.stoppedByUser) writeStackRuntime(options.dataDir, launch);
           current.state = "ready";
+        }
       } catch (error) {
         if (current !== installation || current.state !== "installing") return;
         current.state = "error";
@@ -557,19 +597,35 @@ export interface FlowEngineHostService {
  * `--volumes`（全删容器卷，含 Dify 库与文件——**显式选择才动数据**，§9.1③）。
  * 安装中先取消：`up` 还在跑时 `down` 会互相打架。
  */
+type StopEngineOptions = EngineInstallOptions & {
+  deleteData?: boolean;
+  /** 连镜像一起删（`--rmi all`；卸载 purge 用，普通停止不动镜像）。 */
+  purgeImages?: boolean;
+};
+
 export async function stopEngineStack(
-  options: EngineInstallOptions & {
-    deleteData?: boolean;
-    /** 连镜像一起删（`--rmi all`；卸载 purge 用，普通停止不动镜像）。 */
-    purgeImages?: boolean;
-  },
+  options: StopEngineOptions,
   deps: { run?: RunCommand } = {},
+): Promise<EngineStopResult> {
+  if (stopInProgress) return { ok: false, error: "引擎正在停止，请稍后刷新。" };
+  stopInProgress = true;
+  try {
+    return await stopAndRecordEngineStack(options, deps.run);
+  } finally {
+    stopInProgress = false;
+  }
+}
+
+async function stopAndRecordEngineStack(
+  options: StopEngineOptions,
+  runCommand?: RunCommand,
 ): Promise<EngineStopResult> {
   if (current.state === "installing") cancelEngineInstall();
   // 停止是交互式操作（用户点了按钮）：超时只作兜底，给 compose 收尾留足时间。
-  const run = deps.run ?? createProcessRunCommand({ timeoutMs: 120_000 });
+  const run = runCommand ?? createProcessRunCommand({ timeoutMs: 120_000 });
   const envFile = ensureStackEnvFile(options.dataDir);
-  const command = composeCommand({ ...options, envFile }, [
+  const launch = options.launch ?? readStackRuntime(options.dataDir);
+  const command = composeCommand({ ...options, launch, envFile }, [
     "--profile",
     "dify",
     "down",
@@ -586,6 +642,7 @@ export async function stopEngineStack(
         (detail ? `：${detail.slice(0, 200)}` : ""),
     };
   }
+  writeStackRuntime(options.dataDir, { ...launch, stoppedByUser: true });
   /**
    * WSL2 承载：栈停掉之后回收发行版（§9-② 的「不用 flow 时零常驻」）。
    *
@@ -594,10 +651,8 @@ export async function stopEngineStack(
    * terminate 只停这套栈所在的那个发行版。**尽力而为**——回收失败不影响「栈已停」
    * 的结论（下次启动会自行把发行版拉起来），故只吞错误、不改判返回。
    */
-  if (options.launch?.kind === "wsl2") {
-    await run("wsl.exe", ["--terminate", options.launch.distro]).catch(
-      () => undefined,
-    );
+  if (launch.kind === "wsl2") {
+    await run("wsl.exe", ["--terminate", launch.distro]).catch(() => undefined);
   }
   current = { state: "idle" };
   return { ok: true };

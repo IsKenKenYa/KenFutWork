@@ -37,3 +37,17 @@ it("初始化容器正常退出时仍可显示运行中的引擎", () => {
   expect(resolveFlowEngineDisplayState("idle", info)).toBe("ready");
   expect(resolveFlowEngineDisplayState("installing", info)).toBe("installing");
 });
+
+it("手动停止后即使清单为空或 Docker 离线也可以手动启动", () => {
+  const info = engineInfo([]);
+  const stack = { ...info.stack, stoppedByUser: true as const };
+  expect(resolveFlowEngineDisplayState("idle", { ...info, stack })).toBe(
+    "stopped",
+  );
+  expect(
+    resolveFlowEngineDisplayState("idle", {
+      ...info,
+      stack: { ...stack, error: "Docker 不可用" },
+    }),
+  ).toBe("stopped");
+});

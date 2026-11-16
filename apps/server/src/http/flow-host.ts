@@ -3,7 +3,7 @@ import {
   FLOW_EMBED_PROTOCOL_VERSION,
   type FlowEngineInstallStatus,
   type FlowEngineLaunch,
-  type FlowEngineStackContainer,
+  type FlowHostEngineInfoResponse,
   type FlowHostEngineLogsQuery,
   type FlowHostEngineLogsResponse,
   type FlowHostEngineResponse,
@@ -111,7 +111,7 @@ export async function registerFlowHostRoutes(
       info(): Promise<{
         install: FlowEngineInstallStatus;
         probe: FlowHostEngineResponse;
-        stack: { containers: FlowEngineStackContainer[]; error?: string };
+        stack: FlowHostEngineInfoResponse["stack"];
         runtime: FlowEngineLaunch;
         addresses: { composeFile: string; dataDir: string };
       }>;

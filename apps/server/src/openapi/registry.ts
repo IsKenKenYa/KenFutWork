@@ -1630,7 +1630,7 @@ export const OPENAPI_ROUTES: OpenApiRouteEntry[] = [
     responseSchema: flowHostEngineInfoResponseSchema,
     summary: "查询 flow 引擎信息页数据",
     description:
-      "汇总安装状态、环境探测与引擎栈容器运行态（安装态为进程内快照，有运行中容器时按已就绪校正）；身份回调地址按本次请求主机名拼。数据面未装配时 503。",
+      "汇总安装状态、环境探测与容器状态。用户手动停止时保留停止选择，等待手动启动。身份回调地址取本次请求的主机名。数据面未装配时返回 503。",
   },
   {
     method: "get",

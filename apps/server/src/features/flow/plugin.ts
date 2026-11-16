@@ -271,10 +271,11 @@ export function createFlowHostPlugin(deps: {
       });
       flowFiles = files;
       /** 承载探测：引擎信息页与「装上即用」的自动安装共用同一份判据。 */
-      const probeCarrier = () =>
+      const probeCarrier = (skipWsl = false) =>
         probeEnginePaths({
           platform: process.platform,
           release: os.release(),
+          skipWsl,
           run: createProcessRunCommand(),
           listInstances: async () =>
             ctx
@@ -348,14 +349,17 @@ export function createFlowHostPlugin(deps: {
       const autoInstallEngineStack = async (): Promise<void> => {
         const dataRoot = dataRootFor(ctx);
         const options = engineInstallOptions(dataRoot);
+        const runtime = readStackRuntime(dataRoot);
+        if (runtime.stoppedByUser) return;
         const [carrier, stack] = await Promise.all([
           probeCarrier(),
-          readManagedEngineStack(options, readStackRuntime(dataRoot)),
+          readManagedEngineStack(options, runtime),
         ]);
         const plan = planEngineAutoInstall({
           installState: getEngineInstallSnapshot().state,
           stackContainerCount: stack.error ? null : stack.containers.length,
           recommended: carrier.recommended,
+          stoppedByUser: readStackRuntime(dataRoot).stoppedByUser,
         });
         if (plan.action === "skip") return;
         console.log(
@@ -446,8 +450,10 @@ export function createFlowHostPlugin(deps: {
             const launch = readStackRuntime(dataRoot);
             const options = engineInstallOptions(dataRoot);
             const [probe, stack] = await Promise.all([
-              probeCarrier(),
-              readManagedEngineStack(options, launch),
+              probeCarrier(launch.stoppedByUser),
+              launch.kind === "wsl2" && launch.stoppedByUser
+                ? Promise.resolve({ containers: [] })
+                : readManagedEngineStack(options, launch),
             ]);
             const install = getEngineInstallSnapshot();
             // 进程重启后 current.logFile 为空：按数据目录里的标准日志名补读，
@@ -457,7 +463,12 @@ export function createFlowHostPlugin(deps: {
             return {
               install,
               probe,
-              stack,
+              stack: {
+                ...stack,
+                ...(launch.stoppedByUser
+                  ? { stoppedByUser: true as const }
+                  : {}),
+              },
               runtime: launch,
               addresses: {
                 composeFile: options.composeFile,

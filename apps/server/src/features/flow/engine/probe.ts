@@ -28,9 +28,17 @@ export async function probeEnginePaths(deps: {
   release: string;
   run: RunCommand;
   listInstances: Parameters<typeof probeRemotePath>[0]["listInstances"];
+  skipWsl?: boolean;
 }): Promise<FlowHostEngineResponse> {
   const [wsl2, container, remote] = await Promise.all([
-    probeWsl2Path(deps),
+    deps.skipWsl && deps.platform === "win32"
+      ? {
+          id: "wsl2" as const,
+          label: "WSL2",
+          available: false,
+          reason: "手动启动引擎时检查 WSL2。",
+        }
+      : probeWsl2Path(deps),
     probeContainerPath(deps),
     probeRemotePath({ listInstances: deps.listInstances }),
   ]);

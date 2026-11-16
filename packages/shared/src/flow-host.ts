@@ -286,6 +286,8 @@ export const flowHostEngineInfoResponseSchema = z.object({
   stack: z.object({
     containers: z.array(flowEngineStackContainerSchema),
     error: z.string().optional(),
+    /** 用户已停止托管引擎；等待手动启动。 */
+    stoppedByUser: z.literal(true).optional(),
   }),
   /** 当前承载目标（落盘记录；缺省 host）。停止/查询都按它执行。 */
   runtime: flowEngineLaunchSchema,
