@@ -513,6 +513,7 @@ export function createTaskMcpService(deps: {
       ready: ready.promise,
       transportReady: transport.promise,
     };
+    deps.pages?.observeSource(record.client);
     records.set(key, record);
     void ready.promise.catch(() => {});
     void connect(record, transport.resolve).then(ready.resolve, ready.reject);

@@ -4,6 +4,8 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   type CallToolResult,
   RequestIdSchema,
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { ToolExecutionContext } from "../../kernel/types.js";
@@ -48,6 +50,12 @@ const resourceRequestSchema = z
   })
   .strict();
 const pageRequestSchema = z.object({ cursor: z.string().optional() }).strict();
+const catalogVersionSchema = z
+  .object({
+    tools: z.int().nonnegative().optional(),
+    resources: z.int().nonnegative().optional(),
+  })
+  .strict();
 
 type McpAppMethod =
   | "listTools"
@@ -105,7 +113,53 @@ export function createMcpAppPages(
   };
   const pages = new Map<string, Entry>();
   const views = new Map<string, View>();
+  const catalogs = new WeakMap<
+    Client,
+    {
+      versions: { tools: number; resources: number };
+      changed: AbortController;
+    }
+  >();
   let bytes = 0;
+
+  function observeSource(client: Client) {
+    const state = {
+      versions: { tools: 0, resources: 0 },
+      changed: new AbortController(),
+    };
+    catalogs.set(client, state);
+    const change = (kind: "tools" | "resources") => {
+      if (
+        catalogs.get(client) !== state ||
+        !client.getServerCapabilities()?.[kind]?.listChanged
+      )
+        return;
+      state.versions[kind] += 1;
+      const previous = state.changed;
+      state.changed = new AbortController();
+      previous.abort();
+    };
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () =>
+      change("tools"),
+    );
+    client.setNotificationHandler(ResourceListChangedNotificationSchema, () =>
+      change("resources"),
+    );
+  }
+
+  function catalogVersions(entry: Entry) {
+    const state = catalogs.get(entry.source.client);
+    const capabilities = entry.source.client.getServerCapabilities();
+    if (!state || !entry.authorization || !getPermissions()) return {};
+    return {
+      ...(capabilities?.tools?.listChanged
+        ? { tools: state.versions.tools }
+        : {}),
+      ...(capabilities?.resources?.listChanged
+        ? { resources: state.versions.resources }
+        : {}),
+    };
+  }
 
   function remove(ref: string, entry: Entry) {
     if (!pages.delete(ref)) return;
@@ -271,6 +325,7 @@ export function createMcpAppPages(
       viewId,
       serverTools: interactive && Boolean(capabilities?.tools),
       serverResources: interactive && Boolean(capabilities?.resources),
+      catalogs: catalogVersions(entry),
     };
   }
 
@@ -279,15 +334,65 @@ export function createMcpAppPages(
       ? AbortSignal.any([context.requestSignal, context.signal])
       : context.signal;
 
-  function requireView(id: unknown, context: CodeUiHostRpcContext): View {
+  function readView(id: unknown, context: CodeUiHostRpcContext) {
     const view = typeof id === "string" ? views.get(id) : undefined;
-    if (!view || view.connectionId !== context.connectionId)
+    return view?.connectionId === context.connectionId ? view : undefined;
+  }
+
+  function requireView(id: unknown, context: CodeUiHostRpcContext): View {
+    const view = readView(id, context);
+    if (!view)
       throw new CodeUiHostRpcError(
         "mcp_app_unavailable",
         "插件页面已失效，请重新运行工具。",
         404,
       );
     return view;
+  }
+
+  async function watch(
+    actor: LocalActor,
+    args: unknown[],
+    context: CodeUiHostRpcContext,
+  ) {
+    const request = requestSignal(context);
+    const view = readView(args[0], context);
+    if (!view) return null;
+    const entry = pages.get(view.ref);
+    if (!entry) return null;
+    const cursor = catalogVersionSchema.parse(args[1]);
+    const lifetime = AbortSignal.any([view.abort.signal, request]);
+    const requested = { ref: view.ref, toolCallId: entry.toolCallId };
+    try {
+      await requirePage(actor, requested, lifetime);
+      const current = catalogVersions(entry);
+      if (
+        current.tools !== cursor.tools ||
+        current.resources !== cursor.resources
+      )
+        return current;
+      const changed =
+        current.tools !== undefined || current.resources !== undefined
+          ? catalogs.get(entry.source.client)?.changed.signal
+          : undefined;
+      const signal = changed ? AbortSignal.any([lifetime, changed]) : lifetime;
+      if (!signal.aborted)
+        await new Promise<void>((resolve) => {
+          const listener = addAbortListener(signal, () => {
+            listener[Symbol.dispose]();
+            resolve();
+          });
+        });
+      if (lifetime.aborted) return null;
+      await requirePage(actor, requested, lifetime);
+      return catalogVersions(entry);
+    } catch (error) {
+      if (lifetime.aborted) return null;
+      view.close();
+      throw error;
+    } finally {
+      if (lifetime.aborted) view.close();
+    }
   }
 
   function operationHandler(method: McpAppMethod): CodeUiHostRpcHandler {
@@ -373,25 +478,16 @@ export function createMcpAppPages(
         return runCodeUiHostRpc(context, () => open(actor, args[0], context));
       },
     },
-    "mcp-apps.waitForClose": {
+    "mcp-apps.watch": {
+      call(actor, args, context) {
+        return runCodeUiHostRpc(context, () => watch(actor, args, context));
+      },
+    },
+    "mcp-apps.close": {
       call(_actor, args, context) {
         return runCodeUiHostRpc(context, async () => {
-          const request = requestSignal(context);
-          const view = views.get(typeof args[0] === "string" ? args[0] : "");
-          if (!view || view.connectionId !== context.connectionId) return null;
-          const signal = AbortSignal.any([view.abort.signal, request]);
-          try {
-            if (!signal.aborted)
-              await new Promise<void>((resolve) => {
-                const listener = addAbortListener(signal, () => {
-                  listener[Symbol.dispose]();
-                  resolve();
-                });
-              });
-            return null;
-          } finally {
-            view.close();
-          }
+          readView(args[0], context)?.close();
+          return null;
         });
       },
     },
@@ -405,7 +501,14 @@ export function createMcpAppPages(
   return {
     capture,
     handlers,
+    observeSource,
     closeSource(client: Client) {
+      if (catalogs.delete(client)) {
+        client.removeNotificationHandler("notifications/tools/list_changed");
+        client.removeNotificationHandler(
+          "notifications/resources/list_changed",
+        );
+      }
       for (const [ref, entry] of pages)
         if (entry.source.client === client) remove(ref, entry);
     },

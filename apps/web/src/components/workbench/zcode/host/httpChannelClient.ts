@@ -465,7 +465,7 @@ export class CodeHttpChannelClient implements IChannelClient {
   async callMcpApp<T>(
     method:
       | "open"
-      | "waitForClose"
+      | "watch"
       | "listTools"
       | "callTool"
       | "listResources"
@@ -485,6 +485,17 @@ export class CodeHttpChannelClient implements IChannelClient {
     if (connectionId !== this.connectionId)
       throw new Error("工作台连接已改变，请重新打开插件页面。");
     return reply.result;
+  }
+
+  async closeMcpApp(viewId: string) {
+    const connectionId = this.connectionId;
+    const { signal } = this.controller;
+    if (!connectionId || signal.aborted) return;
+    await this.requestWithSignal(
+      "/api/code-ui/rpc",
+      { service: "mcp-apps", method: "close", args: [viewId], connectionId },
+      signal,
+    );
   }
 
   /** DELETE 请求（语音模型删除等资源操作）。 */

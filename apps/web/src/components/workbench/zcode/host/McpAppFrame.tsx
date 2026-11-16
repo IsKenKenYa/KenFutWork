@@ -13,6 +13,12 @@ import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 
+export const mcpAppCatalogSchema = z.object({
+  tools: z.int().nonnegative().optional(),
+  resources: z.int().nonnegative().optional(),
+});
+export type McpAppCatalogs = z.infer<typeof mcpAppCatalogSchema>;
+
 export const mcpAppPageSchema = z.object({
   html: z.string(),
   arguments: z.record(z.string(), z.unknown()),
@@ -20,6 +26,7 @@ export const mcpAppPageSchema = z.object({
   viewId: z.uuid(),
   serverTools: z.boolean(),
   serverResources: z.boolean().default(false),
+  catalogs: mcpAppCatalogSchema,
 });
 
 // 中转文档是宿主代码；插件只进入第二层 iframe，不能拿到宿主 MessagePort。
@@ -139,18 +146,28 @@ function bindPageRequests(
 export function McpAppFrame({
   client,
   page,
+  catalogs,
   theme,
   onError,
   onClose,
 }: {
   client: CodeHttpChannelClient;
   page: z.infer<typeof mcpAppPageSchema>;
+  catalogs: McpAppCatalogs;
   theme: "light" | "dark";
   onError(): void;
   onClose(): void;
 }) {
   const iframe = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(240);
+  const currentCatalogs = useRef(catalogs);
+  const notifyCatalogs = useRef<((latest: McpAppCatalogs) => void) | null>(
+    null,
+  );
+  useEffect(() => {
+    currentCatalogs.current = catalogs;
+    notifyCatalogs.current?.(catalogs);
+  }, [catalogs]);
 
   useEffect(() => {
     const frame = iframe.current;
@@ -161,8 +178,16 @@ export function McpAppFrame({
       null,
       { name: "KenFutWork", version: "1" },
       {
-        ...(page.serverTools ? { serverTools: {} } : {}),
-        ...(page.serverResources ? { serverResources: {} } : {}),
+        ...(page.serverTools
+          ? { serverTools: { listChanged: page.catalogs.tools !== undefined } }
+          : {}),
+        ...(page.serverResources
+          ? {
+              serverResources: {
+                listChanged: page.catalogs.resources !== undefined,
+              },
+            }
+          : {}),
       },
       {
         hostContext: {
@@ -181,9 +206,25 @@ export function McpAppFrame({
     });
     bridge.addEventListener("requestteardown", onClose);
     bridge.addEventListener("initialized", () => {
+      let previous = page.catalogs;
       void bridge
         .sendToolInput({ arguments: page.arguments })
         .then(() => bridge.sendToolResult(page.result))
+        .then(() => {
+          if (closed) return;
+          notifyCatalogs.current = (latest) => {
+            const changed: Array<Promise<void>> = [];
+            if ((latest.tools ?? -1) > (previous.tools ?? -1))
+              changed.push(bridge.sendToolListChanged());
+            if ((latest.resources ?? -1) > (previous.resources ?? -1))
+              changed.push(bridge.sendResourceListChanged());
+            previous = latest;
+            void Promise.all(changed).catch(() => {
+              if (!closed) onError();
+            });
+          };
+          notifyCatalogs.current(currentCatalogs.current);
+        })
         .catch(() => {
           if (!closed) onError();
         });
@@ -217,6 +258,7 @@ export function McpAppFrame({
     frame.srcdoc = relay;
     return () => {
       closed = true;
+      notifyCatalogs.current = null;
       lifetime.abort();
       window.removeEventListener("message", attach);
       channel.port1.close();

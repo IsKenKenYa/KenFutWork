@@ -37,12 +37,39 @@ function page() {
     let approved = false;
     let resourceCapability = false;
     let resourceReceived = false;
+    let replayRejected = false;
+    let toolsChanged = false;
+    let resourcesChanged = false;
+    let listUpdates = false;
+    let inspectedCatalogs = false;
     const send = (method, params, id) => parent.postMessage({ jsonrpc: '2.0', method, params, ...(id === undefined ? {} : { id }) }, '*');
+    const inspectCatalogs = () => {
+      if (replayRejected && toolsChanged && resourcesChanged && !inspectedCatalogs) {
+        inspectedCatalogs = true;
+        send('tools/list', {}, 2);
+      }
+    };
     addEventListener('message', async ({ data, source }) => {
       if (source !== parent || data.jsonrpc !== '2.0') return;
       if (data.id === 1 && data.result?.protocolVersion) {
         resourceCapability = Boolean(data.result.hostCapabilities?.serverResources);
+        listUpdates = data.result.hostCapabilities?.serverResources?.listChanged === true &&
+          data.result.hostCapabilities?.serverTools?.listChanged === true;
         send('ui/notifications/initialized', {});
+      }
+      if (listUpdates && !data.params?._meta?.hidden && data.method === 'notifications/resources/list_changed') {
+        send('resources/list', {}, 10);
+      }
+      if (listUpdates && !data.params?._meta?.hidden && data.method === 'notifications/tools/list_changed') {
+        send('tools/list', {}, 11);
+      }
+      if (data.id === 10 && data.result?.resources?.some(item => item.name === 'Updated page')) {
+        resourcesChanged = true;
+        inspectCatalogs();
+      }
+      if (data.id === 11 && data.result?.tools?.some(item => item.description === 'Updated tool')) {
+        toolsChanged = true;
+        inspectCatalogs();
       }
       if (data.id === 5 && data.result?.nextCursor === 'page-remainder') {
         send('resources/list', { cursor: data.result.nextCursor }, 6);
@@ -63,7 +90,8 @@ function page() {
         send('resources/read', { uri: ${JSON.stringify(resourceUri)} }, 8);
       }
       if (data.id === 8 && resourceReceived && data.error) {
-        send('tools/list', {}, 2);
+        replayRejected = true;
+        inspectCatalogs();
       }
       if (data.id === 2 && data.result?.tools?.some(tool => tool.name === 'refresh_card') &&
           !data.result.tools.some(tool => tool.name === 'model_only')) {
@@ -101,10 +129,12 @@ function page() {
 }
 
 let supportsPage = false;
+let catalogsChanged = false;
 for await (const line of createInterface({ input: process.stdin })) {
   const { id, method, params } = JSON.parse(line);
   if (id === undefined) continue;
   let result;
+  let emitCatalogChanges = false;
   if (method === "initialize") {
     supportsPage =
       params.capabilities.extensions?.[
@@ -112,7 +142,10 @@ for await (const line of createInterface({ input: process.stdin })) {
       ]?.mimeTypes?.includes("text/html;profile=mcp-app") ?? false;
     result = {
       protocolVersion: params.protocolVersion,
-      capabilities: { tools: {}, resources: {} },
+      capabilities: {
+        tools: { listChanged: true },
+        resources: { listChanged: true },
+      },
       serverInfo: { name: "probe", version: "1" },
     };
   } else if (method === "tools/list") {
@@ -122,7 +155,11 @@ for await (const line of createInterface({ input: process.stdin })) {
           ...tool,
           ...(supportsPage ? { _meta: { ui: { resourceUri: uri } } } : {}),
         },
-        ...followupTools,
+        ...followupTools.map((item) =>
+          catalogsChanged && item.name === "refresh_card"
+            ? { ...item, description: "Updated tool" }
+            : item,
+        ),
       ],
     };
   } else if (method === "tools/call" && params.name === tool.name) {
@@ -138,7 +175,12 @@ for await (const line of createInterface({ input: process.stdin })) {
     result =
       params?.cursor === "page-remainder"
         ? { resources: [{ name: "Task resource", uri: resourceUri }] }
-        : { resources: [{ name: "Page", uri }], nextCursor: "page-remainder" };
+        : {
+            resources: [
+              { name: catalogsChanged ? "Updated page" : "Page", uri },
+            ],
+            nextCursor: "page-remainder",
+          };
   } else if (method === "resources/templates/list") {
     result = {
       resourceTemplates: [
@@ -147,6 +189,10 @@ for await (const line of createInterface({ input: process.stdin })) {
     };
   } else if (method === "resources/read" && params.uri === resourceUri) {
     appendFileSync(reads, "approved\n");
+    if (!catalogsChanged) {
+      catalogsChanged = true;
+      emitCatalogChanges = true;
+    }
     result = {
       contents: [
         {
@@ -178,4 +224,13 @@ for await (const line of createInterface({ input: process.stdin })) {
   process.stdout.write(
     `${JSON.stringify({ jsonrpc: "2.0", id, ...response })}\n`,
   );
+  if (emitCatalogChanges)
+    for (const kind of ["resources", "tools"])
+      process.stdout.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          method: `notifications/${kind}/list_changed`,
+          params: { _meta: { hidden: "PRIVATE_CATALOG_SIGNAL" } },
+        })}\n`,
+      );
 }

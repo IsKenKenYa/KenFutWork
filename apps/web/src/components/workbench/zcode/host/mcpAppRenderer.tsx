@@ -1,12 +1,18 @@
 import { ApiAccessError, ApiApplicationError } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
+import { logger } from "@zui/logger.js";
 import type { ToolCallRendererContribution } from "@zui/ToolCallBlocks/contributedRenderers.js";
 import { McpToolCallBlock } from "@zui/ToolCallBlocks/renderers/mcp.js";
 import type { ToolCallBlockRenderContext } from "@zui/ToolCallBlocks/shared.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { z } from "zod";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
-import { McpAppFrame, mcpAppPageSchema } from "./McpAppFrame.js";
+import {
+  type McpAppCatalogs,
+  McpAppFrame,
+  mcpAppCatalogSchema,
+  mcpAppPageSchema,
+} from "./McpAppFrame.js";
 
 const expiredMessage = "插件页面已失效，请重新运行工具。";
 const retryMessage = "插件页面打不开，请重新打开。";
@@ -61,6 +67,7 @@ function McpAppView({
   const [page, setPage] = useState<z.infer<typeof mcpAppPageSchema> | null>(
     null,
   );
+  const [catalogs, setCatalogs] = useState<McpAppCatalogs>({});
   const control = useRef<HTMLButtonElement>(null);
   const target = useMemo(
     () => ({ ref: refId, toolCallId }),
@@ -82,6 +89,7 @@ function McpAppView({
   useEffect(() => {
     if (!open) return;
     const request = new AbortController();
+    let viewId: string | undefined;
     void (async () => {
       try {
         const received = await client.callMcpApp(
@@ -91,18 +99,35 @@ function McpAppView({
         );
         if (request.signal.aborted) return;
         const payload = mcpAppPageSchema.parse(received);
+        viewId = payload.viewId;
+        let cursor = payload.catalogs;
+        setCatalogs(cursor);
         setPage(payload);
-        await client.callMcpApp(
-          "waitForClose",
-          [payload.viewId],
-          request.signal,
-        );
-        if (!request.signal.aborted) showFailure(expiredMessage);
+        while (!request.signal.aborted) {
+          const result = await client.callMcpApp(
+            "watch",
+            [payload.viewId, cursor],
+            request.signal,
+          );
+          if (request.signal.aborted) return;
+          if (result === null) {
+            showFailure(expiredMessage);
+            return;
+          }
+          cursor = mcpAppCatalogSchema.parse(result);
+          setCatalogs(cursor);
+        }
       } catch (error) {
         if (!request.signal.aborted) showFailure(pageFailure(error));
       }
     })();
-    return () => request.abort();
+    return () => {
+      request.abort();
+      if (viewId)
+        void client.closeMcpApp(viewId).catch(() => {
+          logger.warn("插件页面关闭请求未确认");
+        });
+    };
   }, [open, target, client, showFailure]);
   return (
     <div className="grid min-w-0 gap-2 px-2 py-1">
@@ -136,6 +161,7 @@ function McpAppView({
         <McpAppFrame
           client={client}
           page={page}
+          catalogs={catalogs}
           theme={theme}
           onError={failFrame}
           onClose={close}

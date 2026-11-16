@@ -193,6 +193,7 @@ export function createMcpService(options: {
       { name: "kenfutwork-server", version: options.env.version },
       options.pages ? { capabilities: mcpAppClientCapabilities } : undefined,
     );
+    options.pages?.observeSource(mcpClient);
     const registrations: Array<() => void> = [];
     const disposeRegistrations = () => {
       for (const dispose of registrations.splice(0).reverse()) dispose();

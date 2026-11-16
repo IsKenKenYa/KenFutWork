@@ -242,8 +242,31 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       expect(JSON.stringify(resourceApproval)).not.toContain(
         "PRIVATE_RESOURCE_TOKEN",
       );
+      const watcher = host.client;
+      const appRpc = (method: string, args: unknown[]) =>
+        watcher.request("/api/code-ui/rpc", {
+          service: "mcp-apps",
+          method,
+          args,
+        });
+      const secondView = await appRpc("open", [result]);
+      expect(secondView.status).toBe(200);
+      const { viewId, catalogs } = secondView.body.result;
+      expect(catalogs).toEqual({ tools: 0, resources: 0 });
+      const waiting = appRpc("watch", [viewId, catalogs]);
       await approveVisible("page://probe/items/approved");
       await requireApproval("mcp__app_probe__refresh_card");
+      const update = await waiting;
+      expect(update.status).toBe(200);
+      expect(JSON.stringify(update.body)).not.toContain(
+        "PRIVATE_CATALOG_SIGNAL",
+      );
+      expect(Object.values(update.body.result)).toContain(1);
+      expect((await appRpc("close", [viewId])).status).toBe(200);
+      expect((await appRpc("listResources", [viewId, {}])).status).toBe(404);
+      expect(
+        (await appRpc("watch", [viewId, update.body.result])).body.result,
+      ).toBeNull();
       expect(await readFile(reads, "utf8")).toBe("approved\n");
       const calls = join(host.workspacePath, "mcp-page-calls");
       await expect(readFile(calls, "utf8")).rejects.toMatchObject({
