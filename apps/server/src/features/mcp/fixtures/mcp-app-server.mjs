@@ -1,20 +1,54 @@
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const uri = "ui://probe/card";
 const invalidPage = new URL("invalid-mcp-page", import.meta.url);
+const interactive = new URL("interactive-mcp-page", import.meta.url);
+const calls = new URL("mcp-page-calls", import.meta.url);
 const tool = {
   name: "show_card",
   description: "Show the page probe",
   inputSchema: { type: "object", properties: { name: { type: "string" } } },
 };
+const followupTools = [
+  {
+    name: "refresh_card",
+    inputSchema: {
+      type: "object",
+      properties: { confirmation: { type: "string" } },
+      required: ["confirmation"],
+      additionalProperties: false,
+    },
+    _meta: { ui: { visibility: ["app"] } },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "model_only",
+    inputSchema: { type: "object" },
+    _meta: { ui: { visibility: ["model"] } },
+  },
+];
 function page() {
   return `<h1>MCP App</h1><script>
     let input;
     const send = (method, params, id) => parent.postMessage({ jsonrpc: '2.0', method, params, ...(id === undefined ? {} : { id }) }, '*');
     addEventListener('message', async ({ data, source }) => {
       if (source !== parent || data.jsonrpc !== '2.0') return;
-      if (data.id === 1 && data.result?.protocolVersion) send('ui/notifications/initialized', {});
+      if (data.id === 1 && data.result?.protocolVersion) {
+        send('ui/notifications/initialized', {});
+        if (${existsSync(interactive)}) send('tools/list', {}, 2);
+      }
+      if (data.id === 2 && data.result?.tools?.some(tool => tool.name === 'refresh_card') &&
+          !data.result.tools.some(tool => tool.name === 'model_only')) {
+        send('tools/call', { name: 'model_only', arguments: {} }, 3);
+      }
+      if (data.id === 3 && (data.error || data.result?.isError)) {
+        send('tools/call', { name: 'refresh_card', arguments: { confirmation: 'from_page' } }, 4);
+      }
+      if (data.id === 4) {
+        const matches = data.result?.structuredContent?.process === ${process.pid};
+        send('ui/notifications:size-changed', { height: matches ? 211 : 196 });
+      }
       if (data.method === 'ui/notifications/tool-input') input = data.params.arguments?.name;
       if (data.method === 'ui/notifications/tool-result') {
         let parentBlocked = false;
@@ -54,6 +88,7 @@ for await (const line of createInterface({ input: process.stdin })) {
           ...tool,
           ...(supportsPage ? { _meta: { ui: { resourceUri: uri } } } : {}),
         },
+        ...followupTools,
       ],
     };
   } else if (method === "tools/call" && params.name === tool.name) {
@@ -62,6 +97,9 @@ for await (const line of createInterface({ input: process.stdin })) {
       structuredContent: { value: "PRIVATE_VIEW" },
       _meta: { process: process.pid },
     };
+  } else if (method === "tools/call") {
+    appendFileSync(calls, `${params.name}:${params.arguments?.confirmation}\n`);
+    result = { content: [], structuredContent: { process: process.pid } };
   } else if (method === "resources/read" && params.uri === uri) {
     result = {
       contents: [

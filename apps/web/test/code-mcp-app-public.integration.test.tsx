@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { copyFile, unlink, writeFile } from "node:fs/promises";
+import { copyFile, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zcodeUiProtocol as protocol } from "@kenfutwork/shared";
@@ -187,8 +187,50 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await activate(page, "打开插件页面");
       await requireHint("无法读取插件页面，请检查插件资源。");
       await unlink(invalidPage);
+      const changedMode = await host.command("switchCollaborationMode", {
+        mode: "build",
+      });
+      expect(protocol.commandAckSchema.parse(changedMode.body.result).status).toBe(
+        "accepted",
+      );
+      await writeFile(join(host.workspacePath, "interactive-mcp-page"), "");
+      const requireApproval = () =>
+        vi.waitFor(
+          async () => {
+            const current = protocol.conversationSnapshotSchema.parse(
+              await snapshot(),
+            );
+            const pending = current.pendingInteractions.find(
+              (entry) => entry.payload.kind === "permission",
+            );
+            if (!pending) throw new Error("未看到插件工具的 Task 审批请求");
+            return pending;
+          },
+          { timeout: 15_000 },
+        );
       await activate(page, "打开插件页面");
       await requirePage();
+      const pending = await requireApproval();
+      const calls = join(host.workspacePath, "mcp-page-calls");
+      await expect(readFile(calls, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      const approved = await host.command("resolveInteraction", {
+        interactionId: pending.interactionId,
+        answer: { optionId: "allowOnce", action: "accept" },
+      });
+      expect(protocol.commandAckSchema.parse(approved.body.result).status).toBe(
+        "accepted",
+      );
+      await vi.waitFor(async () => expect(await frameHeight()).toBe("211px"));
+      expect(await readFile(calls, "utf8")).toBe("refresh_card:from_page\n");
+      await activate(page, "关闭插件页面");
+      await requireClosed();
+      await activate(page, "打开插件页面");
+      await requirePage();
+      expect((await requireApproval()).interactionId).not.toBe(
+        pending.interactionId,
+      );
       const stopped = await fixture.client.request(
         `/api/mcp/servers/${installed.body.server.id}`,
         { enabled: false },
@@ -199,6 +241,13 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await requireHint(expired);
       await activate(page, "打开插件页面");
       await requireHint(expired);
+      await vi.waitFor(async () => {
+        const current = protocol.conversationSnapshotSchema.parse(
+          await snapshot(),
+        );
+        expect(current.pendingInteractions).toEqual([]);
+      });
+      expect(await readFile(calls, "utf8")).toBe("refresh_card:from_page\n");
     } finally {
       await browser?.close();
       await model.close();
