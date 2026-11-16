@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { contributionFingerprint } from "../../kernel/contribution-fingerprint.js";
 import type {
   ToolDefinition,
@@ -5,7 +6,11 @@ import type {
   ToolRegistry,
   ToolScope,
 } from "../../kernel/types.js";
-import { refreshMcpScope, taskMcpContext } from "./task-mcp-context.js";
+import {
+  refreshMcpScope,
+  TaskMcpError,
+  taskMcpContext,
+} from "./task-mcp-context.js";
 
 /**
  * MCP 工具注册逻辑（P4d，纯函数可测）：
@@ -17,6 +22,34 @@ export interface McpServerToolLike {
   name: string;
   description?: string | undefined;
   inputSchema?: Record<string, unknown> | undefined;
+  _meta?: Record<string, unknown> | undefined;
+}
+
+const visibilitySchema = z.object({
+  ui: z
+    .object({ visibility: z.array(z.enum(["model", "app"])).optional() })
+    .optional(),
+});
+
+/** MCP Apps 的可见范围独立于页面资源；只有未声明时默认向模型开放。 */
+export function isModelVisibleMcpTool(tool: McpServerToolLike): boolean {
+  const parsed = visibilitySchema.safeParse(tool._meta ?? {});
+  if (!parsed.success)
+    throw new TaskMcpError(
+      "mcp_visibility_invalid",
+      "MCP工具调用范围无效，请检查服务端工具声明。",
+    );
+  const visibility = parsed.data.ui?.visibility;
+  return visibility === undefined || visibility.includes("model");
+}
+
+export function assertModelVisibleMcpTool(tool: McpServerToolLike): void {
+  if (!isModelVisibleMcpTool(tool))
+    throw new TaskMcpError(
+      "mcp_tool_not_model_visible",
+      "MCP工具未向模型开放，请检查工具声明。",
+      403,
+    );
 }
 
 export interface McpClientLike {
@@ -94,6 +127,7 @@ export function createMcpToolDefinition(
   scope: ToolScope,
   execute: ToolDefinition["execute"],
 ): ToolDefinition {
+  assertModelVisibleMcpTool(tool);
   return {
     name: `mcp__${serverName}__${tool.name}`,
     description: tool.description ?? `MCP tool ${tool.name}`,
@@ -120,7 +154,7 @@ export function registerMcpServerTools(
 ): () => void {
   const disposers: Array<() => void> = [];
   try {
-    for (const metadata of tools) {
+    for (const metadata of tools.filter(isModelVisibleMcpTool)) {
       const tool = toKernelTool(serverName, metadata, client);
       disposers.push(
         registry.registerDynamic({

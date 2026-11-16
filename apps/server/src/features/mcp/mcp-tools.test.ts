@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseMcpServers } from "../../config/env.js";
 import {
   assertMcpContribution,
+  isModelVisibleMcpTool,
   type McpClientLike,
   mcpConfigurationVersion,
   registerMcpServerTools,
@@ -15,6 +16,35 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 const fixture = () => taskMcpFixture({}, (cleanup) => cleanups.push(cleanup));
+
+describe("MCP Apps 工具调用范围", () => {
+  it.each([
+    [undefined, true],
+    [{}, true],
+    [{ "ui/resourceUri": "ui://legacy" }, true],
+    [{ ui: { resourceUri: "ui://page" } }, true],
+    [{ ui: { visibility: ["model"] } }, true],
+    [{ ui: { visibility: ["app", "model", "model"] } }, true],
+    [{ ui: { visibility: ["app"] } }, false],
+    [{ ui: { visibility: [] } }, false],
+  ] as const)("声明 %j 的模型可见性为 %j", (metadata, expected) => {
+    expect(isModelVisibleMcpTool({ name: "example", _meta: metadata })).toBe(
+      expected,
+    );
+  });
+
+  it.each([null, "model", ["unknown"], ["model", 1], false])(
+    "错误的调用范围 %j 提示检查服务端声明",
+    (visibility) => {
+      expect(() =>
+        isModelVisibleMcpTool({
+          name: "example",
+          _meta: { ui: { visibility } },
+        }),
+      ).toThrow("MCP工具调用范围无效，请检查服务端工具声明。");
+    },
+  );
+});
 
 describe("MCP 工具注册（P4d）", () => {
   it("工具按 mcp__<server>__<tool> 命名，execute 透传 callTool", async () => {

@@ -11,7 +11,9 @@ import type { SettingsService } from "../settings/settings-service.js";
 import type { McpConnectionConfiguration } from "./mcp-service.js";
 import {
   assertMcpContribution,
+  assertModelVisibleMcpTool,
   createMcpToolDefinition,
+  isModelVisibleMcpTool,
   type McpServerToolLike,
   mcpConfigurationVersion,
 } from "./mcp-tools.js";
@@ -172,6 +174,12 @@ export function createTaskMcpService(deps: {
       );
     await refreshMcpScope(owner);
     ensureOpen(record);
+    if (!record.toolSchemas.has(name))
+      throw new TaskMcpError(
+        "mcp_tool_not_model_visible",
+        "MCP工具未向模型开放，请检查工具声明。",
+        403,
+      );
     if (!record.sourceName)
       assertMcpContribution(
         deps.registry,
@@ -331,11 +339,12 @@ export function createTaskMcpService(deps: {
         await requestOptions(record.owner),
       );
       ensureOpen(record);
-      const { tools } = await record.client.listTools(
+      const discovered = await record.client.listTools(
         undefined,
         await requestOptions(record.owner),
       );
       ensureOpen(record);
+      const tools = discovered.tools.filter(isModelVisibleMcpTool);
       for (const tool of tools)
         record.toolSchemas.set(
           tool.name,
@@ -466,6 +475,7 @@ export function createTaskMcpService(deps: {
 
   return {
     async callConfigured(source, tool, args, context) {
+      assertModelVisibleMcpTool(tool);
       const owner = taskMcpContext(context);
       const input = taskMcpInstallSchema.parse({
         name: `instance_${source.name}`,

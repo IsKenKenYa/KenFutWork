@@ -9,6 +9,8 @@ import type { ToolExecutionContext, ToolRegistry } from "../../kernel/types.js";
 import type { ComputerUseMcpConnection } from "../computer-use/mcp-backend.js";
 import {
   assertMcpContribution,
+  assertModelVisibleMcpTool,
+  isModelVisibleMcpTool,
   type McpClientLike,
   type McpServerToolLike,
   mcpConfigurationVersion,
@@ -262,6 +264,7 @@ export function createMcpService(options: {
           ),
       };
       const { tools } = await client.listTools();
+      const modelTools = tools.filter(isModelVisibleMcpTool);
       ensureOpen();
       if (closedDuringConnect) throw new Error("MCP握手期间连接已经关闭。");
       const source = structuredClone({ ...spec, name });
@@ -274,6 +277,7 @@ export function createMcpService(options: {
           const metadata = tools.find((tool) => tool.name === args.name);
           if (!metadata || connections.get(name)?.client !== mcpClient)
             throw new Error("MCP工具或连接已改变，请重新发起调用。");
+          assertModelVisibleMcpTool(metadata);
           assertMcpContribution(
             options.registry,
             `mcp:instance:mcp__${name}__${metadata.name}`,
@@ -291,19 +295,19 @@ export function createMcpService(options: {
       const disposeTools = registerMcpServerTools(
         options.registry,
         name,
-        tools,
+        modelTools,
         taskClient,
         mcpConfigurationVersion(source),
       );
       connections.set(name, {
         client: mcpClient,
         disposeTools,
-        toolCount: tools.length,
+        toolCount: modelTools.length,
         call: taskClient.callTool,
       });
       failures.delete(name);
       console.log(
-        `[mcp] server ${name} connected, ${tools.length} tools registered.`,
+        `[mcp] server ${name} connected, ${modelTools.length} tools registered.`,
       );
     } catch (error) {
       await mcpClient.close().catch(() => {});
