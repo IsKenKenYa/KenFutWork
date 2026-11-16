@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList } from "@zui/components/ui/tabs.js";
 import { getPathLeaf } from "@zui/lib/path.js";
 import { TerminalTabTrigger } from "@zui/terminal/TerminalTabTrigger.js";
 import { TerminalSession } from "@zui/terminal/TerminalSession.js";
-import { TerminalShellMenu } from "@zui/host/TerminalShellMenu.js";
+import { TerminalShellMenu, TerminalShellReadNotice } from "@zui/host/TerminalShellMenu.js";
+import { useTerminalShellCatalog } from "@zui/host/useTerminalShellCatalog.js";
 import {
   closeTerminalSession,
   createTerminalSession,
@@ -48,6 +49,7 @@ export function Terminal({
 }) {
   const { intl } = useZCodeIntl();
   const isOfficeMode = useIsOfficeMode();
+  const shellCatalog = useTerminalShellCatalog(isVisible && !isOfficeMode);
   const workspaceKey = workspaceIdentity?.trim() || cwd || "__default__";
   const [panelState, setPanelState] = useState<TerminalPanelState>(() => {
     const { session, workspace } = createWorkspaceTerminalState({
@@ -349,6 +351,8 @@ export function Terminal({
               <TerminalShellMenu
                 activeShell={activeSession?.shell}
                 onSelectShell={handleSelectShell}
+                read={shellCatalog.read}
+                triggerRef={shellCatalog.menuTriggerRef}
               />
             )}
             {!isOfficeMode && (
@@ -377,6 +381,9 @@ export function Terminal({
           </div>
         </div>
 
+        {!isOfficeMode && (
+          <TerminalShellReadNotice read={shellCatalog.read} onRetry={shellCatalog.retry} />
+        )}
         <div className="min-h-0 flex-1 overflow-hidden">
           {allSessions.map((session) => (
             <TabsContent

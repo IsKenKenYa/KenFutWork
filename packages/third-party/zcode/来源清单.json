@@ -865,10 +865,11 @@
       "source": "references/zcode/packages/ui/src/Terminal.tsx",
       "target": "apps/web/src/components/workbench/zcode/Terminal.tsx",
       "sha256": "168fc27f0c9d8079a90fcff1588ef74cead789b00c29f25f41e173b8fa1639cc",
-      "copiedSha256": "3ad474fef6599d1086da8ecc6630511752b7649a4af143a83c79cf70147515cb",
+      "copiedSha256": "7268747f14c85cf1d9288591c6ea688e8f0d9073622a1ec46b74572bf0a956c4",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
-        "宿主适配：工具栏挂 TerminalShellMenu（shell 切换菜单，G9/Q17），换 shell=换会话（switchTerminalSessionShell 替换 descriptor），会话 descriptor 透传 shell"
+        "宿主适配：工具栏挂 TerminalShellMenu（shell 切换菜单，G9/Q17），换 shell=换会话（switchTerminalSessionShell 替换 descriptor），会话 descriptor 透传 shell",
+        "Shell 清单读取失败时在终端工具栏下展示原因与重试，不切换当前终端。"
       ]
     },
     {
