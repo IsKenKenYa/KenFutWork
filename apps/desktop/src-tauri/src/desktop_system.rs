@@ -150,10 +150,13 @@ pub fn dedupe_download_path(dir: &Path, name: &str) -> PathBuf {
 
 /// 外链白名单：只放 http/https（`file:`、自定义 scheme、`javascript:` 一律不交给系统）。
 pub fn validate_external_url(url: &str) -> Result<(), String> {
-    if url.starts_with("http://") || url.starts_with("https://") {
+    if (url.starts_with("http://") || url.starts_with("https://"))
+        && !url.chars().any(char::is_control)
+        && tauri::Url::parse(url).is_ok_and(|url| url.has_host())
+    {
         return Ok(());
     }
-    Err(format!("只允许打开 http/https 外链，收到：{url}"))
+    Err("请使用有效的 http 或 https 网页链接".to_string())
 }
 
 /// 下载落盘：base64 字节 → 系统下载目录（重名顺延）。返回最终绝对路径（前端拿它定位）。
@@ -207,16 +210,42 @@ pub fn reveal_path(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_external(url: String) -> Result<(), String> {
     validate_external_url(&url)?;
-    #[cfg(target_os = "macos")]
-    let (command, args): (&str, Vec<String>) = ("open", vec![url]);
-    #[cfg(target_os = "windows")]
-    // `start` 的第一个带引号参数是窗口标题，占位空串，否则 URL 会被当标题吞掉
-    let (command, args): (&str, Vec<String>) =
-        ("cmd", vec!["/C".into(), "start".into(), String::new(), url]);
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let (command, args): (&str, Vec<String>) = ("xdg-open", vec![url]);
+    open_external_url(&url)
+}
+
+#[cfg(windows)]
+fn open_external_url(url: &str) -> Result<(), String> {
+    use std::ptr::null;
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+
+    let url: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+    // URL 已校验且以空字符结束；系统直接按 URL 协议选择浏览器。
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            null(),
+            url.as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if result > 32 {
+        Ok(())
+    } else {
+        Err(format!("打开系统浏览器失败：{result}"))
+    }
+}
+
+#[cfg(unix)]
+fn open_external_url(url: &str) -> Result<(), String> {
+    let command = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     std::process::Command::new(command)
-        .args(&args)
+        .arg(url)
         .spawn()
         .map(|_| ())
         .map_err(|error| format!("打开系统浏览器失败：{error}"))
@@ -280,6 +309,9 @@ mod tests {
     fn external_url_whitelist_only_http_https() {
         assert!(validate_external_url("https://example.com/docs").is_ok());
         assert!(validate_external_url("http://localhost:3000/x").is_ok());
+        assert!(validate_external_url("https://example.com/?q=a&next=b#c").is_ok());
+        assert!(validate_external_url("https://example.com/\0private").is_err());
+        assert!(validate_external_url("https://").is_err());
         assert!(validate_external_url("file:///etc/passwd").is_err());
         assert!(validate_external_url("javascript:alert(1)").is_err());
         assert!(validate_external_url("ms-settings:update").is_err());
