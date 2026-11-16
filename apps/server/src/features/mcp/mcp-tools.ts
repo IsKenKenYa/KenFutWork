@@ -81,8 +81,7 @@ function projectContent(block: ContentBlock): ContentBlock[] {
   return [content];
 }
 
-/** MCP Apps 的可见范围独立于页面资源；只有未声明时默认向模型开放。 */
-export function isModelVisibleMcpTool(tool: McpServerToolLike): boolean {
+function isVisibleMcpTool(tool: McpServerToolLike, audience: "model" | "app") {
   const parsed = toolMetadataSchema.safeParse(tool._meta ?? {});
   if (!parsed.success)
     throw new TaskMcpError(
@@ -90,7 +89,15 @@ export function isModelVisibleMcpTool(tool: McpServerToolLike): boolean {
       "MCP工具调用范围无效，请检查服务端工具声明。",
     );
   const visibility = parsed.data.ui?.visibility;
-  return visibility === undefined || visibility.includes("model");
+  return visibility === undefined || visibility.includes(audience);
+}
+
+export function isModelVisibleMcpTool(tool: McpServerToolLike): boolean {
+  return isVisibleMcpTool(tool, "model");
+}
+
+export function isAppVisibleMcpTool(tool: McpServerToolLike): boolean {
+  return isVisibleMcpTool(tool, "app");
 }
 
 export function assertModelVisibleMcpTool(tool: McpServerToolLike): void {

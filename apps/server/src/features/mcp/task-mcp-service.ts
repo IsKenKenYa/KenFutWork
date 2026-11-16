@@ -231,11 +231,7 @@ export function createTaskMcpService(deps: {
         source: {
           client: record.client,
           current: () => !record.closing && records.get(record.key) === record,
-          read: async (uri, signal) =>
-            record.client.readResource(
-              { uri },
-              await requestOptions({ ...owner, signal }),
-            ),
+          options: (signal) => requestOptions({ ...owner, signal }),
         },
         tool,
         serverName: record.sourceName ?? record.input.name,

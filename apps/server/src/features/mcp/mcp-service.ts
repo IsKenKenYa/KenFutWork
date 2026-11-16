@@ -318,8 +318,7 @@ export function createMcpService(options: {
             source: {
               client: mcpClient,
               current: () => connections.get(name)?.client === mcpClient,
-              read: async (uri, signal) =>
-                mcpClient.readResource({ uri }, await requestOptions(signal)),
+              options: requestOptions,
             },
             tool: metadata,
             serverName: name,

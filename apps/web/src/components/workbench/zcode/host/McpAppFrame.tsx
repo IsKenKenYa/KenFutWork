@@ -3,14 +3,19 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   CallToolResultSchema,
   JSONRPCMessageSchema,
+  ListToolsRequestSchema,
+  ListToolsResultSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 
 export const mcpAppPageSchema = z.object({
   html: z.string(),
   arguments: z.record(z.string(), z.unknown()),
   result: CallToolResultSchema,
+  viewId: z.uuid(),
+  serverTools: z.boolean(),
 });
 
 // 中转文档是宿主代码；插件只进入第二层 iframe，不能拿到宿主 MessagePort。
@@ -61,11 +66,13 @@ function portTransport(port: MessagePort): Transport {
 }
 
 export function McpAppFrame({
+  client,
   page,
   theme,
   onError,
   onClose,
 }: {
+  client: CodeHttpChannelClient;
   page: z.infer<typeof mcpAppPageSchema>;
   theme: "light" | "dark";
   onError(): void;
@@ -78,10 +85,11 @@ export function McpAppFrame({
     const frame = iframe.current;
     if (!frame) return;
     const channel = new MessageChannel();
+    const lifetime = new AbortController();
     const bridge = new AppBridge(
       null,
       { name: "KenFutWork", version: "1" },
-      {},
+      page.serverTools ? { serverTools: {} } : {},
       {
         hostContext: {
           theme,
@@ -92,6 +100,39 @@ export function McpAppFrame({
     );
     let closed = false;
     let transferred = false;
+    if (page.serverTools) {
+      const request = (
+        method: "listTools" | "callTool",
+        params: unknown,
+        signal: AbortSignal,
+      ) =>
+        client.callMcpApp(
+          method,
+          [page.viewId, params],
+          AbortSignal.any([signal, lifetime.signal]),
+        );
+      bridge.setRequestHandler(ListToolsRequestSchema, async (message, extra) =>
+        ListToolsResultSchema.parse(
+          await request(
+            "listTools",
+            { cursor: message.params?.cursor },
+            extra.signal,
+          ),
+        ),
+      );
+      bridge.oncalltool = async (params, extra) =>
+        CallToolResultSchema.parse(
+          await request(
+            "callTool",
+            {
+              name: params.name,
+              arguments: params.arguments,
+              requestId: extra.requestId,
+            },
+            extra.signal,
+          ),
+        );
+    }
     bridge.addEventListener("sizechange", ({ height }) => {
       if (typeof height === "number" && Number.isFinite(height))
         setHeight(Math.max(56, Math.min(560, Math.ceil(height))));
@@ -134,12 +175,13 @@ export function McpAppFrame({
     frame.srcdoc = relay;
     return () => {
       closed = true;
+      lifetime.abort();
       window.removeEventListener("message", attach);
       channel.port1.close();
       if (!transferred) channel.port2.close();
       void bridge.close();
     };
-  }, [page, theme, onError, onClose]);
+  }, [client, page, theme, onError, onClose]);
 
   return (
     <iframe

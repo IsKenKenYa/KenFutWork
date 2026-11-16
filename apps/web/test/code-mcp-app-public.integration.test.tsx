@@ -62,7 +62,7 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
     try {
       host = await createCodeSessionFixture(model.baseUrl, {
         client: fixture.client,
-        initialConfig: { mode: "yolo", planEnabled: false },
+        initialConfig: { mode: "build", planEnabled: false },
         initializeGit: false,
       });
       const script = join(host.workspacePath, "app-probe.mjs");
@@ -81,8 +81,34 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       });
       expect(installed.status, JSON.stringify(installed.body)).toBe(201);
       const snapshot = host.snapshot;
+      const requireApproval = () =>
+        vi.waitFor(
+          async () => {
+            const current = protocol.conversationSnapshotSchema.parse(
+              await snapshot(),
+            );
+            const pending = current.pendingInteractions.find(
+              (entry) => entry.payload.kind === "permission",
+            );
+            if (!pending) throw new Error("未看到插件工具的 Task 审批请求");
+            return pending;
+          },
+          { timeout: 15_000 },
+        );
+      const acceptApproval = async (interactionId: string) => {
+        if (!host) throw new Error("未建立 Task 宿主");
+        const approved = await host.command("resolveInteraction", {
+          interactionId,
+          answer: { optionId: "allowOnce", action: "accept" },
+        });
+        expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+        expect(
+          protocol.commandAckSchema.parse(approved.body.result).status,
+        ).toBe("accepted");
+      };
       const sent = await host.command("sendText", { text: "显示插件页面" });
       expect(sent.status, JSON.stringify(sent.body)).toBe(200);
+      await acceptApproval((await requireApproval()).interactionId);
       const result = await vi.waitFor(
         async () => {
           const current = protocol.conversationSnapshotSchema.parse(
@@ -187,27 +213,7 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await activate(page, "打开插件页面");
       await requireHint("无法读取插件页面，请检查插件资源。");
       await unlink(invalidPage);
-      const changedMode = await host.command("switchCollaborationMode", {
-        mode: "build",
-      });
-      expect(protocol.commandAckSchema.parse(changedMode.body.result).status).toBe(
-        "accepted",
-      );
       await writeFile(join(host.workspacePath, "interactive-mcp-page"), "");
-      const requireApproval = () =>
-        vi.waitFor(
-          async () => {
-            const current = protocol.conversationSnapshotSchema.parse(
-              await snapshot(),
-            );
-            const pending = current.pendingInteractions.find(
-              (entry) => entry.payload.kind === "permission",
-            );
-            if (!pending) throw new Error("未看到插件工具的 Task 审批请求");
-            return pending;
-          },
-          { timeout: 15_000 },
-        );
       await activate(page, "打开插件页面");
       await requirePage();
       const pending = await requireApproval();
@@ -215,14 +221,28 @@ describe.skipIf(!runIntegration)("MCP App 原工具卡片 integration", () => {
       await expect(readFile(calls, "utf8")).rejects.toMatchObject({
         code: "ENOENT",
       });
-      const approved = await host.command("resolveInteraction", {
-        interactionId: pending.interactionId,
-        answer: { optionId: "allowOnce", action: "accept" },
-      });
-      expect(protocol.commandAckSchema.parse(approved.body.result).status).toBe(
-        "accepted",
+      await vi.waitFor(
+        async () => {
+          const clicked = await page.evaluate(`(() => {
+            const args = document.querySelector('[data-mcp-page-tool-arguments]');
+            const button = document.querySelector('[data-permission-option-kind="allowOnce"][aria-selected="true"]');
+            if (!args?.textContent.includes('from_page') || !button?.checkVisibility()) return false;
+            button.click();
+            return true;
+          })()`);
+          expect(clicked, JSON.stringify(page.pageErrors)).toBe(true);
+        },
+        { timeout: 15_000 },
       );
-      await vi.waitFor(async () => expect(await frameHeight()).toBe("211px"));
+      await vi.waitFor(
+        async () => {
+          expect(await readFile(calls, "utf8")).toBe(
+            "refresh_card:from_page\n",
+          );
+          expect(await frameHeight()).toBe("211px");
+        },
+        { timeout: 10_000 },
+      );
       expect(await readFile(calls, "utf8")).toBe("refresh_card:from_page\n");
       await activate(page, "关闭插件页面");
       await requireClosed();

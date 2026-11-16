@@ -463,15 +463,15 @@ export class CodeHttpChannelClient implements IChannelClient {
   }
 
   async callMcpApp<T>(
-    method: "open" | "waitForClose",
-    target: { ref: string; toolCallId: string },
+    method: "open" | "waitForClose" | "listTools" | "callTool",
+    args: unknown[],
     signal: AbortSignal,
   ): Promise<T> {
     await this.connect();
     const connectionId = this.connectionId;
     const reply = await this.requestWithSignal<{ result: T }>(
       "/api/code-ui/rpc",
-      { service: "mcp-apps", method, args: [target], connectionId },
+      { service: "mcp-apps", method, args, connectionId },
       signal,
     );
     signal.throwIfAborted();

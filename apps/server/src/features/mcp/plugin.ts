@@ -3,6 +3,7 @@ import { registerMcpRoutes } from "../../http/mcp.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import { CODE_UI_HOST_RPC_CAPABILITY } from "../code-ui/host-rpc-handler.js";
 import type { ComputerUseMcpSource } from "../computer-use/mcp-backend.js";
+import type { CodeApprovalService } from "../permissions/approval-types.js";
 import { createCodeUiMcpHost } from "./code-ui-host.js";
 import {
   createMcpEnvCredentialReader,
@@ -67,7 +68,8 @@ export function createMcpPlugin(): PluginDefinition {
   // 两处各建一个实例会让路由拿到空连接表——状态恒为 error、重连会开出第二条连接
   let service: McpService | undefined;
   let tasks: TaskMcpService | undefined;
-  const pages = createMcpAppPages();
+  let permissions: CodeApprovalService | undefined;
+  const pages = createMcpAppPages(() => permissions);
 
   return {
     name: "mcp",
@@ -117,6 +119,7 @@ export function createMcpPlugin(): PluginDefinition {
       if (!service) {
         throw new Error("[mcp] service 未初始化（apply 未执行）。");
       }
+      permissions = ctx.tryGet("permissions");
       for (const [id, value] of Object.entries(
         createCodeUiMcpHost({
           service,

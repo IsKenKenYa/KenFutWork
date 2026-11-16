@@ -31,12 +31,12 @@ const followupTools = [
 function page() {
   return `<h1>MCP App</h1><script>
     let input;
+    let approved = false;
     const send = (method, params, id) => parent.postMessage({ jsonrpc: '2.0', method, params, ...(id === undefined ? {} : { id }) }, '*');
     addEventListener('message', async ({ data, source }) => {
       if (source !== parent || data.jsonrpc !== '2.0') return;
       if (data.id === 1 && data.result?.protocolVersion) {
         send('ui/notifications/initialized', {});
-        if (${existsSync(interactive)}) send('tools/list', {}, 2);
       }
       if (data.id === 2 && data.result?.tools?.some(tool => tool.name === 'refresh_card') &&
           !data.result.tools.some(tool => tool.name === 'model_only')) {
@@ -47,7 +47,13 @@ function page() {
       }
       if (data.id === 4) {
         const matches = data.result?.structuredContent?.process === ${process.pid};
-        send('ui/notifications:size-changed', { height: matches ? 211 : 196 });
+        if (matches && !approved) {
+          approved = true;
+          send('tools/call', { name: 'refresh_card', arguments: { confirmation: 'from_page' } }, 4);
+        } else {
+          const replayDenied = approved && (data.error || data.result?.isError);
+          send('ui/notifications/size-changed', { height: replayDenied ? 211 : 196 });
+        }
       }
       if (data.method === 'ui/notifications/tool-input') input = data.params.arguments?.name;
       if (data.method === 'ui/notifications/tool-result') {
@@ -60,6 +66,7 @@ function page() {
           data.params.structuredContent?.value === 'PRIVATE_VIEW' &&
           input === 'PAGE_INPUT' && parentBlocked && networkBlocked;
         send('ui/notifications/size-changed', { height: matches ? 173 : 111 });
+        if (matches && ${existsSync(interactive)}) send('tools/list', {}, 2);
       }
     });
     send('ui/initialize', { protocolVersion: '2026-01-26', appInfo: { name: 'probe', version: '1' }, appCapabilities: {} }, 1);

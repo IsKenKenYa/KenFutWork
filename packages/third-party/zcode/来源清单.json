@@ -656,9 +656,10 @@
       "source": "references/zcode/packages/ui/src/PermissionDialog.tsx",
       "target": "apps/web/src/components/workbench/zcode/PermissionDialog.tsx",
       "sha256": "402da6e509554a0dffda982eb2c2d20809629ee98fcd47677029b9bb5e6f37e9",
-      "copiedSha256": "e4aa658e80c5b3488d5163e04f31ccef697fbc2b1e167a91d855a459970a8a0a",
+      "copiedSha256": "ff65da49baffc1deaf9b858a4d55bbdcfd5a20879a86a529c7ddeebe39827d79",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "MCP 页面请求使用原审批面板并显示确认参数"
       ]
     },
     {

@@ -86,12 +86,17 @@ function McpAppView({
       try {
         const received = await client.callMcpApp(
           "open",
-          target,
+          [target],
           request.signal,
         );
         if (request.signal.aborted) return;
-        setPage(mcpAppPageSchema.parse(received));
-        await client.callMcpApp("waitForClose", target, request.signal);
+        const payload = mcpAppPageSchema.parse(received);
+        setPage(payload);
+        await client.callMcpApp(
+          "waitForClose",
+          [payload.viewId],
+          request.signal,
+        );
         if (!request.signal.aborted) showFailure(expiredMessage);
       } catch (error) {
         if (!request.signal.aborted) showFailure(pageFailure(error));
@@ -129,6 +134,7 @@ function McpAppView({
       ) : null}
       {open && page ? (
         <McpAppFrame
+          client={client}
           page={page}
           theme={theme}
           onError={failFrame}
