@@ -3,25 +3,35 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 const surfaceJson = vi.fn();
-const getWorkspaceState = vi.fn();
 
 vi.mock("@zui/host/surfaceApi.js", () => ({
   surfaceJson: (path: string, init?: RequestInit) => surfaceJson(path, init),
 }));
 
-vi.mock("@zui/store/zcodeSessionStore.js", () => ({
-  useZCodeSessionStore: { getState: () => ({ getWorkspaceState }) },
-}));
-
 const { CheckpointTimeline } = await import(
   "../src/components/workbench/zcode/host/CheckpointTimeline.js"
 );
+const { useZCodeSessionStore } = await import(
+  "@zui/store/zcodeSessionStore.js"
+);
 
 const user = userEvent.setup();
+const projectId = "123e4567-e89b-42d3-a456-426614174000";
+const workspaceIdentity = JSON.stringify([projectId, "/repo"]);
+const shadowCommit = "a".repeat(40);
+const expectedVersion = "checkpoint-preview-version";
+const summary = {
+  projectId,
+  taskId: "task-1",
+  kind: "turn",
+  label: "检查点",
+  shadowCommit,
+};
 
 const TIMELINE = {
   checkpoints: [
     {
+      ...summary,
       id: "cp-1",
       runId: "r1",
       createdAt: "2026-10-12T01:00:00.000Z",
@@ -30,6 +40,7 @@ const TIMELINE = {
       deletions: 2,
     },
     {
+      ...summary,
       id: "cp-2",
       runId: "r2",
       createdAt: "2026-10-12T02:00:00.000Z",
@@ -43,19 +54,23 @@ const TIMELINE = {
 afterEach(() => {
   cleanup();
   surfaceJson.mockReset();
-  getWorkspaceState.mockReset();
+  useZCodeSessionStore.getState().setActiveTaskId("/repo", null);
+  useZCodeSessionStore
+    .getState()
+    .setActiveTaskId("/repo", null, workspaceIdentity);
 });
 
 test("时间线倒序渲染、预览随目标切换、确认回滚 POST restore", async () => {
-  getWorkspaceState.mockReturnValue({ activeTaskId: "task-1" });
+  useZCodeSessionStore.getState().setActiveTaskId("/repo", "task-1");
   surfaceJson.mockImplementation(async (path: string, init?: RequestInit) => {
     if (init?.method === "POST" && path.includes("/preview")) {
       return {
-        targetSha: "sha",
+        expectedVersion,
+        targetSha: shadowCommit,
         filesChanged: 2,
         insertions: 8,
         deletions: 3,
-        files: [{ path: "a.ts", additions: 5, deletions: 3 }],
+        files: [{ rootDirectory: "/repo", path: "a.ts", added: 5, deleted: 3 }],
       };
     }
     if (init?.method === "POST" && path.includes("/restore")) {
@@ -76,21 +91,24 @@ test("时间线倒序渲染、预览随目标切换、确认回滚 POST restore"
   await waitFor(() =>
     expect(surfaceJson).toHaveBeenCalledWith(
       "/api/code/checkpoints/cp-2/restore?taskId=task-1",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ expectedVersion }),
+      }),
     ),
   );
   expect(onRestored).toHaveBeenCalled();
 });
 
 test("无 Task 或空时间线时入口不渲染（不摆空壳）", async () => {
-  getWorkspaceState.mockReturnValue({ activeTaskId: null });
+  useZCodeSessionStore.getState().setActiveTaskId("/repo", null);
   const { rerender } = render(
     <CheckpointTimeline workspacePath="/repo" onRestored={() => {}} />,
   );
   await new Promise((resolve) => setTimeout(resolve, 30));
   expect(screen.queryByTestId("checkpoint-timeline-trigger")).toBeNull();
 
-  getWorkspaceState.mockReturnValue({ activeTaskId: "task-2" });
+  useZCodeSessionStore.getState().setActiveTaskId("/repo", "task-2");
   surfaceJson.mockImplementation(async () => ({ checkpoints: [] }));
   rerender(<CheckpointTimeline workspacePath="/repo" onRestored={() => {}} />);
   await new Promise((resolve) => setTimeout(resolve, 30));
@@ -98,7 +116,9 @@ test("无 Task 或空时间线时入口不渲染（不摆空壳）", async () =>
 });
 
 test("检查点对话框可打开所选轮次的运行记录", async () => {
-  getWorkspaceState.mockReturnValue({ activeTaskId: "task-1" });
+  useZCodeSessionStore
+    .getState()
+    .setActiveTaskId("/repo", "task-1", workspaceIdentity);
   surfaceJson.mockImplementation(async (path: string) => {
     if (path.includes("/runs?")) {
       return {
@@ -144,7 +164,8 @@ test("检查点对话框可打开所选轮次的运行记录", async () => {
     }
     if (path.includes("/preview")) {
       return {
-        targetSha: "sha",
+        expectedVersion,
+        targetSha: shadowCommit,
         filesChanged: 0,
         insertions: 0,
         deletions: 0,
@@ -156,10 +177,7 @@ test("检查点对话框可打开所选轮次的运行记录", async () => {
   render(
     <CheckpointTimeline
       workspacePath="/repo"
-      workspaceIdentity={JSON.stringify([
-        "123e4567-e89b-42d3-a456-426614174000",
-        "/repo",
-      ])}
+      workspaceIdentity={workspaceIdentity}
     />,
   );
   await user.click(await screen.findByTestId("checkpoint-timeline-trigger"));
