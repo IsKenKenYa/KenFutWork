@@ -1329,15 +1329,22 @@ async function prepareUndoWithoutClaim(f: Fixture, prepared: UndoFixture) {
   return storedUndo(f, prepared.input);
 }
 
-test("Undo终态重放只读取冻结来源，不依赖已删除的源记录或存活GUI", async () => {
-  const f = await fixture();
+test("Undo终态重放只读取冻结来源，不依赖已删除的源记录或存活GUI", async ({
+  task,
+}) => {
+  const f = await fixture(task.timeout);
   const prepared = await prepareUndo(f);
+  expect(prepared.sourceOutcome).toMatchObject({
+    state: "terminal",
+    outcome: "committed",
+  });
   configureUndo(f, prepared);
   const original = await f.controller.undoOperation(
     prepared.input,
     prepared.binding,
     f.context,
   );
+  expect(original).toMatchObject({ state: "terminal", outcome: "undone" });
   await rm(prepared.sourceRecord.directory, { recursive: true });
   f.probe.verify.mockRejectedValue(new Error("原GUI已关闭"));
 
