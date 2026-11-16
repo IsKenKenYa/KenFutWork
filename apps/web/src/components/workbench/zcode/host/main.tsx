@@ -53,7 +53,6 @@ import {
 import { useMemo, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { ContextInspectionProvider } from "./ContextInspectionProvider.js";
-import { createMcpAppRenderer } from "./mcpAppRenderer.js";
 import { CuaSnapshotReader } from "./cuaScreenshotSectionAdapter.js";
 import {
   createMacDesktopChrome,
@@ -66,6 +65,7 @@ import {
 } from "./httpChannelClient.js";
 import { renderManagementDocument } from "./managementDocument.js";
 import { requestManagementOpen } from "./managementNavigation.js";
+import { createMcpAppRenderer } from "./mcpAppRenderer.js";
 import { CodeDirectoryRecoveryProvider } from "./ProjectDirectoryRecovery.js";
 import { requestParentBootstrap } from "./parentBridge.js";
 

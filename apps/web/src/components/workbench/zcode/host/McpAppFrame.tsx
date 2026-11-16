@@ -1,6 +1,9 @@
 import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { CallToolResultSchema, JSONRPCMessageSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolResultSchema,
+  JSONRPCMessageSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 
@@ -45,7 +48,9 @@ function portTransport(port: MessagePort): Transport {
         if (parsed.success) transport.onmessage?.(parsed.data);
       };
     },
-    async send(message) { port.postMessage(message); },
+    async send(message) {
+      port.postMessage(message);
+    },
     async close() {
       port.onmessage = null;
       port.close();
@@ -55,7 +60,12 @@ function portTransport(port: MessagePort): Transport {
   return transport;
 }
 
-export function McpAppFrame({ page, theme, onError, onClose }: {
+export function McpAppFrame({
+  page,
+  theme,
+  onError,
+  onClose,
+}: {
   page: z.infer<typeof mcpAppPageSchema>;
   theme: "light" | "dark";
   onError(): void;
@@ -68,9 +78,18 @@ export function McpAppFrame({ page, theme, onError, onClose }: {
     const frame = iframe.current;
     if (!frame) return;
     const channel = new MessageChannel();
-    const bridge = new AppBridge(null, { name: "KenFutWork", version: "1" }, {}, {
-      hostContext: { theme, locale: navigator.language, displayMode: "inline" },
-    });
+    const bridge = new AppBridge(
+      null,
+      { name: "KenFutWork", version: "1" },
+      {},
+      {
+        hostContext: {
+          theme,
+          locale: navigator.language,
+          displayMode: "inline",
+        },
+      },
+    );
     let closed = false;
     let transferred = false;
     bridge.addEventListener("sizechange", ({ height }) => {
@@ -79,18 +98,37 @@ export function McpAppFrame({ page, theme, onError, onClose }: {
     });
     bridge.addEventListener("requestteardown", onClose);
     bridge.addEventListener("initialized", () => {
-      void bridge.sendToolInput({ arguments: page.arguments })
+      void bridge
+        .sendToolInput({ arguments: page.arguments })
         .then(() => bridge.sendToolResult(page.result))
-        .catch(() => { if (!closed) onError(); });
+        .catch(() => {
+          if (!closed) onError();
+        });
     });
     const attach = (event: MessageEvent) => {
       const view = frame.contentWindow;
-      if (!view || event.source !== view || event.origin !== "null" ||
-          event.data?.type !== "kf:mcp-page-ready" || transferred) return;
+      if (
+        !view ||
+        event.source !== view ||
+        event.origin !== "null" ||
+        event.data?.type !== "kf:mcp-page-ready" ||
+        transferred
+      )
+        return;
       transferred = true;
-      void bridge.connect(portTransport(channel.port1)).then(() => {
-        if (!closed) view.postMessage({ type: "kf:mcp-page", html: documentPrefix + page.html }, "*", [channel.port2]);
-      }).catch(() => { if (!closed) onError(); });
+      void bridge
+        .connect(portTransport(channel.port1))
+        .then(() => {
+          if (!closed)
+            view.postMessage(
+              { type: "kf:mcp-page", html: documentPrefix + page.html },
+              "*",
+              [channel.port2],
+            );
+        })
+        .catch(() => {
+          if (!closed) onError();
+        });
     };
     window.addEventListener("message", attach);
     frame.srcdoc = relay;
@@ -103,6 +141,14 @@ export function McpAppFrame({ page, theme, onError, onClose }: {
     };
   }, [page, theme, onError, onClose]);
 
-  return <iframe ref={iframe} title="插件页面" sandbox="allow-scripts" referrerPolicy="no-referrer"
-    style={{ height }} className="w-full rounded-md border border-border bg-surface" />;
+  return (
+    <iframe
+      ref={iframe}
+      title="插件页面"
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      style={{ height }}
+      className="w-full rounded-md border border-border bg-surface"
+    />
+  );
 }

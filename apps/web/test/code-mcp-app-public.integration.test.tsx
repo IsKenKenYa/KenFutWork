@@ -67,6 +67,22 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")("MCP App 原工具�
       });
       const page = browser;
       const frameHeight = () => page.evaluate(`document.querySelector(${JSON.stringify(iframe)})?.style.height ?? null`);
+      const activate = async (label: string) => {
+        await vi.waitFor(async () => {
+          const focused = await page.evaluate(`(() => {
+            const button = Array.from(document.querySelectorAll('button')).find(node =>
+              node.textContent.trim() === ${JSON.stringify(label)} && node.checkVisibility());
+            if (!button) return false;
+            button.focus();
+            return button === document.activeElement;
+          })()`);
+          expect(focused).toBe(true);
+        }, { timeout: 10_000 });
+        for (const type of ["keyDown", "keyUp"])
+          await page.cdp.send("Input.dispatchKeyEvent", {
+            type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13,
+          }, page.target.sessionId);
+      };
       expect(await frameHeight()).toBeNull();
       const historyButton = 'button[data-history-open="false"]';
       const history = await vi.waitFor(async () => {
@@ -75,11 +91,11 @@ describe.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")("MCP App 原工具�
         return label;
       }, { timeout: 10_000 });
       await clickExactText(page, historyButton, history);
-      await clickExactText(page, "button", "打开插件页面");
+      await activate("打开插件页面");
       await vi.waitFor(async () => expect(await frameHeight(), JSON.stringify(page.pageErrors)).toBe("173px"), { timeout: 15_000 });
-      await clickExactText(page, "button", "关闭插件页面");
-      await vi.waitFor(async () => expect(await frameHeight()).toBeNull());
-      await clickExactText(page, "button", "打开插件页面");
+      await activate("关闭插件页面");
+      await vi.waitFor(async () => expect(await frameHeight()).toBeNull(), { timeout: 10_000 });
+      await activate("打开插件页面");
       await vi.waitFor(async () => {
         const detail = await page.evaluate(`Array.from(document.querySelectorAll('[role="alert"]')).map(node => node.textContent)`);
         expect(await frameHeight(), JSON.stringify({ detail, errors: page.pageErrors })).toBe("173px");
