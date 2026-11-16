@@ -57,6 +57,20 @@ export function createCodePlatform(
       ? {
           openMessageLinkExternally: async (url: string) =>
             desktop("open_external", { url: new URL(url).href }),
+          openInFileManager: async (path: string) => {
+            try {
+              await desktop("reveal_path", { path });
+              return { success: true };
+            } catch (error) {
+              return {
+                success: false,
+                error:
+                  typeof error === "string"
+                    ? error
+                    : "无法打开文件位置，请检查路径和权限。",
+              };
+            }
+          },
           selectDirectory: async () => {
             const selected = await desktop("select_directory");
             if (selected === null || typeof selected === "string")
