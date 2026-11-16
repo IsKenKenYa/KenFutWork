@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
+import { ModelAbortError } from "@langchain/core/errors";
+import {
+  AIMessage,
+  AIMessageChunk,
+  HumanMessage,
+  ToolMessage,
+} from "@langchain/core/messages";
 import { createAgent } from "langchain";
 import { describe, expect, it, vi } from "vitest";
 import { createLlmRequestRetryMiddleware } from "../../agent/llm-retry-middleware.js";
@@ -209,7 +216,9 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         expect(await f.read("output")).toBeNull();
 
         const local = new BoundaryModel(async () => {
-          throw new Error("本地解析失败，输入中包含 HTTP 429 字样");
+          throw new Error(
+            "本地解析失败，输入中包含 HTTP 429 和 AbortError 字样",
+          );
         });
         await expect(
           local.invoke("检查本地失败记录", { callbacks: f.callbacks }),
@@ -218,6 +227,27 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
           { status: "failed", httpStatus: null },
           { status: "failed", httpStatus: 422 },
         ]);
+      } finally {
+        await f.close();
+      }
+    }, 30_000);
+
+    it("SDK 聚合流的取消错误不保存部分输出或错误正文", async () => {
+      const f = await captureFixture();
+      try {
+        const model = new BoundaryModel(async () => {
+          throw new ModelAbortError(
+            "PRIVATE_STOP_REASON",
+            new AIMessageChunk("PRIVATE_PARTIAL_OUTPUT"),
+          );
+        });
+        await expect(
+          model.invoke("检查聚合流取消记录", { callbacks: f.callbacks }),
+        ).rejects.toBeInstanceOf(ModelAbortError);
+        expect(await f.summaries()).toMatchObject([
+          { status: "cancelled", httpStatus: null, usage: null },
+        ]);
+        expect(await f.read("output")).toBeNull();
       } finally {
         await f.close();
       }
@@ -355,6 +385,73 @@ describe.skipIf(process.env.KENFUTWORK_HARNESS_TEST_PG !== "1")(
         }
       },
     );
+
+    it("原 Agent 流取消后记录取消状态，保留请求身份", async () => {
+      const f = await captureFixture();
+      try {
+        const agent = createAgent({
+          model: f.model,
+          tools: [],
+          middleware: createModelObservationMiddleware(
+            [
+              {
+                preset: "code",
+                createMiddleware: () => ({ name: "CaptureCancellation" }),
+                createModelCallbacks: () => f.callbacks,
+              },
+            ],
+            {},
+          ),
+        });
+        const pending = agent.invoke(
+          { messages: [new HumanMessage("取消当前模型请求")] },
+          { signal: f.controller.signal },
+        );
+        const rejected = expect(pending).rejects.toThrow();
+        await f.provider.firstRequest;
+        f.controller.abort(new Error("PRIVATE_STOP_REASON"));
+        await rejected;
+        await vi.waitFor(async () => {
+          expect(await f.summaries()).toMatchObject([
+            { status: "cancelled", purpose: "agent", usage: null },
+          ]);
+        });
+        expect(await f.read("output")).toBeNull();
+        expect(f.provider.requests).toHaveLength(1);
+      } finally {
+        await f.close();
+      }
+    }, 30_000);
+
+    it("模型返回结束片段时取消仍记录为取消", async () => {
+      const f = await captureFixture();
+      try {
+        const cancelOnFinish = Object.assign(
+          BaseCallbackHandler.fromMethods({
+            handleLLMNewToken(_token, _indices, _id, _parent, _tags, fields) {
+              if (fields?.chunk?.generationInfo?.finish_reason === "stop")
+                f.controller.abort(new Error("PRIVATE_LATE_STOP_REASON"));
+            },
+          }),
+          { lc_prefer_streaming: true, awaitHandlers: true },
+        );
+        const pending = f.model.invoke("检查取消记录", {
+          callbacks: [...f.callbacks, cancelOnFinish],
+          signal: f.controller.signal,
+        });
+        const rejected = pending.catch((error: unknown) => error);
+        await f.provider.firstRequest;
+        f.provider.finish(0);
+        expect(await rejected).toMatchObject({ message: "AbortError" });
+        expect(f.controller.signal.aborted).toBe(true);
+        expect(await f.summaries()).toMatchObject([
+          { status: "cancelled", usage: null },
+        ]);
+        expect(await f.read("output")).toBeNull();
+      } finally {
+        await f.close();
+      }
+    }, 30_000);
 
     it("供应商流意外断开保存失败，错误正文不进入请求记录", async () => {
       const f = await captureFixture();

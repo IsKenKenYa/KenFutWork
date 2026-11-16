@@ -4,7 +4,7 @@ import {
   type ModelCallPurpose,
 } from "@kenfutwork/shared";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
-import { stampRetryable } from "@langchain/core/errors";
+import { ModelAbortError, stampRetryable } from "@langchain/core/errors";
 import {
   AIMessage,
   type BaseMessage,
@@ -222,7 +222,12 @@ export function createContextRequestCallbacks(
       );
     },
     async handleLLMError(error, id) {
-      const status = error.name === "AbortError" ? "cancelled" : "failed";
+      // OpenAI 流结束时使用 Error("AbortError")；SDK 聚合流还会使用 ModelAbortError。
+      const cancelled =
+        error.name === "AbortError" ||
+        ModelAbortError.isInstance(error) ||
+        (error.name === "Error" && error.message === "AbortError");
+      const status = cancelled ? "cancelled" : "failed";
       const httpStatus =
         status === "failed" ? readModelHttpFailureStatus(error) : undefined;
       await writeCapture(() =>
