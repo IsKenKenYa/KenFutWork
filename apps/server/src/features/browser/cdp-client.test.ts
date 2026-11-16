@@ -277,7 +277,7 @@ describe("面板画面流与输入回填", () => {
     await dispatchKey(client, "S1", { key: "Enter" });
     const [down, up] = fake.commands.slice(-2);
     expect(down?.params).toMatchObject({
-      type: "rawKeyDown",
+      type: "keyDown",
       key: "Enter",
       code: "Enter",
       windowsVirtualKeyCode: 13,

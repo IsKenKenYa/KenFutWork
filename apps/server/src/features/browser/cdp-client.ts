@@ -678,18 +678,24 @@ export async function pressKey(
   sessionId: string,
   key: string,
 ): Promise<void> {
+  if (NAMED_KEYS[key]) return dispatchKey(client, sessionId, { key });
   const isNamed = key.length > 1;
-  const code = isNamed ? key : `Key${key.toUpperCase()}`;
-  const base: Record<string, unknown> = {
+  await sendKeyPress(client, sessionId, {
     key,
-    code,
-    windowsVirtualKeyCode: isNamed
-      ? keyCodeFor(key)
-      : key.toUpperCase().charCodeAt(0),
-  };
+    code: isNamed ? key : `Key${key.toUpperCase()}`,
+    windowsVirtualKeyCode: isNamed ? 0 : key.toUpperCase().charCodeAt(0),
+  });
+}
+
+async function sendKeyPress(
+  client: CdpClient,
+  sessionId: string,
+  base: Record<string, unknown>,
+  text?: string,
+) {
   await client.send(
     "Input.dispatchKeyEvent",
-    { type: "keyDown", ...base },
+    { type: "keyDown", ...base, ...(text ? { text } : {}) },
     sessionId,
   );
   await client.send(
@@ -697,10 +703,6 @@ export async function pressKey(
     { type: "keyUp", ...base },
     sessionId,
   );
-}
-
-function keyCodeFor(key: string): number {
-  return NAMED_KEYS[key]?.vk ?? 0;
 }
 
 // ─────────────────────────── 面板内实时视图（画面流 + 交互转发）───────────────────────────
@@ -917,18 +919,6 @@ export async function dispatchKey(
     nativeVirtualKeyCode: named.vk,
     modifiers: event.modifiers ?? 0,
   };
-  await client.send(
-    "Input.dispatchKeyEvent",
-    {
-      type: "rawKeyDown",
-      ...base,
-      ...(named.text ? { text: named.text } : {}),
-    },
-    sessionId,
-  );
-  await client.send(
-    "Input.dispatchKeyEvent",
-    { type: "keyUp", ...base },
-    sessionId,
-  );
+  // rawKeyDown 只派发按下事件；Enter 和空格需要字符才能激活原生按钮。
+  await sendKeyPress(client, sessionId, base, named.text);
 }
