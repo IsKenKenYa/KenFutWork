@@ -11,7 +11,7 @@ export async function openFolderFromWorkspaceEntry({
   selectDirectory?: () => Promise<string | null>;
   openDirectoryBrowser?: () => void;
   preferDirectoryBrowser?: boolean;
-  onSelectProject: (path: string) => void;
+  onSelectProject: (path: string) => void | Promise<void>;
 }) {
   if (preferDirectoryBrowser) {
     if (!openDirectoryBrowser) {
@@ -34,7 +34,7 @@ export async function openFolderFromWorkspaceEntry({
     const dir = await selectDirectory();
     logger.info("[openWorkspaceFolderEntry] selectDirectory returned:", dir);
     if (dir) {
-      onSelectProject(dir);
+      await onSelectProject(dir);
     } else {
       logger.info("[openWorkspaceFolderEntry] user cancelled or dir is null");
     }

@@ -27,6 +27,7 @@ import { getPathLeaf } from "@zui/lib/path.js";
 import { logger } from "@zui/logger.js";
 import { Folder, FolderPlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { NativeDirectoryPickerUnavailableError } from "../host/directoryPicker.js";
 import { useProjectDirectoryServices } from "./useProjectDirectoryServices.js";
 import {
   ProjectFolderTrustDialog,
@@ -140,7 +141,13 @@ export function ProjectEditor({
     setBrowsing(false);
   };
   const browse = () => {
-    const select = platform?.selectDirectories?.bind(platform);
+    const selectMultiple = platform?.selectDirectories?.bind(platform);
+    const select = selectMultiple ?? (platform
+        ? async () => {
+            const path = await platform.selectDirectory();
+            return path === null ? [] : [path];
+          }
+        : null);
     if (select) {
       void startFlight((flight) => selectDirectories(flight, select));
       return;
@@ -172,7 +179,10 @@ export function ProjectEditor({
       if (canCommit() && selected.length) addRoots(selected);
     } catch (cause) {
       logger.warn("[ProjectEditor] native directory selection failed", cause);
-      if (canCommit()) setError(cause instanceof Error ? cause.message : String(cause));
+      if (canCommit()) {
+        if (cause instanceof NativeDirectoryPickerUnavailableError) setBrowsing(true);
+        else setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
       if (saveFlight.current === flight) saveFlight.current = null;
       if (alive.current) setBusy(false);

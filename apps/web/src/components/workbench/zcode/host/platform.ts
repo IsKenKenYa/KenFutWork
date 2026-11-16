@@ -16,6 +16,7 @@ import {
   localCuaDesktopInvoke,
 } from "./cuaPermissionPlatform.js";
 import { createMacDesktopChrome } from "./desktopChrome.js";
+import { createServerDirectoryPicker } from "./directoryPicker.js";
 import type { CodeHttpChannelClient } from "./httpChannelClient.js";
 import { readManagementSettingsTarget } from "./managementNavigation.js";
 import { openPluginPanel } from "./parentBridge.js";
@@ -49,6 +50,7 @@ export function createCodePlatform(
     !/iPhone|iPad/u.test(navigator.userAgent);
   return {
     ...createWebPlatform(),
+    selectDirectory: createServerDirectoryPicker(),
     ...createMacDesktopChrome(),
     readMessageBrowserTarget: () => readBrowserOpenTarget(window.localStorage),
     ...(desktop

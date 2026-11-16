@@ -8907,13 +8907,13 @@
       "target": "apps/web/src/components/workbench/zcode/project-sidebar/ProjectEditor.tsx",
       "sourceRevision": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
       "sha256": "92ce18a330dd23d39884b488c2ae468640f97feed55316cb496b804ccf9fe8b9",
-      "copiedSha256": "47da4ea08573798b74396e28ff0e5c7f0b911323703a694c0365b413ee72f504",
+      "copiedSha256": "ea43903705fe2133a80b9b51f2343141defa2a9a04555cb2402505e59ee475fb",
       "adaptations": [
         "@/ 导入映射为 @zui/；装配原本机创建与编辑表单、控件、草稿及 saveFlight/epoch/alive 生命周期，创建使用真实目录浏览、主目录选择和原信任确认。",
         "保留已有主目录，附加目录须明确选择只读或可写；编辑携带真实 Project ID 和观察修订，创建携带稳定 creationId 并缓存已创建结果，归档复用原项目服务。",
         "使用原 suspended 与 isCurrent 处理 tab/Task/草稿变化，创建只刷新项目列表，迟到结果不切换 Task 或内容标签。",
         "创建前经宿主确认同目录复用或独立创建；关闭和挂起取消候选读取及信任确认，关闭等待在途保存或归档结束。",
-        "原本机多目录分流接入平台 selectDirectories，Web 保持原 DirectoryBrowser；原生选择共用本次在途操作和取消代际，迟到结果不修改草稿，关闭等待系统选择结束。"
+        "目录选择优先复用平台多选或单选，服务端明确报告系统选择器不可用后才浏览服务端目录；选择共用在途操作和取消代际，迟到结果不修改草稿，关闭等待系统选择结束。"
       ]
     },
     {
@@ -17919,9 +17919,10 @@
       "source": "references/zcode/packages/ui/src/root/openWorkspaceFolderEntry.ts",
       "target": "apps/web/src/components/workbench/zcode/root/openWorkspaceFolderEntry.ts",
       "sha256": "b8fe9c6f2a0fbdc1de3e87d0d8e042cbc3ec9d543c0978e6ebfc9b2c2a5aee90",
-      "copiedSha256": "b5e76b94994cb90a026d95d7c976cd91084ac8cf6328037fe2b68187794524b1",
+      "copiedSha256": "ffacd4a6ec7798219f2628bdf01f71227396d5ff040ad0923b1a15221a73967c",
       "adaptations": [
-        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径"
+        "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
+        "目录选择入口等待项目关联完成，供重新关联入口复用；取消和明确不可用仍分别处理。"
       ]
     },
     {
@@ -18116,7 +18117,7 @@
       "source": "references/zcode/packages/ui/src/root/useRootWorkspaceActions.ts",
       "target": "apps/web/src/components/workbench/zcode/root/useRootWorkspaceActions.ts",
       "sha256": "3c8ebfe29150dcc21e53e17feca678aa58f93c59c5d875fe5db162cda65c79cb",
-      "copiedSha256": "62b34f275e24a2bcae882e058a2c5fdafca68b4e011e4b406bdbd18a8a7ac21e",
+      "copiedSha256": "59f7ac757bbe264eee0d465c5120a62527f8ef5988f9f05faa8ade43c023a902",
       "adaptations": [
         "@/ 导入机械映射为 @zui/；独立构建保持上游 TypeScript 检查口径",
         "宿主接口：增加可选选择错误回调，Code 宿主交回原目录选择器；原 UI 装配不变",
@@ -18124,7 +18125,8 @@
         "阶段同步 e58fe8ce029be5ea0462fdf9d6e8a3c599b05fe5: 原宿主能力显隐/目录异步失败; SessionPane保留Task附件预算和传输",
         "第2阶段宿主适配: 项目选择后草稿沿用新tab的qualified workspaceIdentity",
         "阶段同步92fad1ca: 原Root与能力守卫；宿主canonical identity、新Task默认解析、layout viewer和Human目录metadata缝；保留原附件/Terminal/watch/Controller链",
-        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。"
+        "2026-10-04 合并：保留原UI品牌/Design与Task固定根、原协议/附件预算/配置租约接线；逐hunk理由及验证在Code界面阶段同步记录。",
+        "两个打开目录入口均传入服务端目录浏览动作，仅在系统选择器明确不可用时使用。"
       ]
     },
     {

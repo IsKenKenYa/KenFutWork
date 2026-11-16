@@ -316,7 +316,6 @@ try {
                 supportsEmbeddedBrowser={
                   bootstrap.supportsEmbeddedBrowser ?? false
                 }
-                preferDirectoryBrowser
               />
             </SharedProjectNavigationProvider>
           </ProjectDirectoryChoiceProvider>

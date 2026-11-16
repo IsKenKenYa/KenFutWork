@@ -4,12 +4,15 @@ import type {
 } from "@kenfutwork/shared";
 import { Button } from "@zui/components/ui/button.js";
 import { DirectoryBrowser } from "@zui/DirectoryBrowser.js";
+import { useOptionalPlatform } from "@zui/hooks/usePlatform.js";
+import { openFolderFromWorkspaceEntry } from "@zui/root/openWorkspaceFolderEntry.js";
 import { useTabStore, useTabStoreApi } from "@zui/store/TabStoreProvider.js";
 import {
   createContext,
   type ReactNode,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -159,6 +162,39 @@ function ConnectedDirectoryRecovery({
     selected,
     retryBinding,
   } = useDirectoryRecovery(client);
+  const platform = useOptionalPlatform();
+  const [picking, setPicking] = useState(false);
+  const pickingRef = useRef(false);
+  const currentSnapshot = useRef(snapshot);
+  currentSnapshot.current = snapshot;
+  useEffect(
+    () => () => {
+      currentSnapshot.current = null;
+    },
+    [],
+  );
+  const chooseDirectory = async () => {
+    if (busy || pickingRef.current || !snapshot) return;
+    pickingRef.current = true;
+    setPicking(true);
+    try {
+      await openFolderFromWorkspaceEntry({
+        ...(platform
+          ? { selectDirectory: () => platform.selectDirectory() }
+          : {}),
+        preferDirectoryBrowser: !platform,
+        openDirectoryBrowser: () => {
+          if (currentSnapshot.current === snapshot) setOpen(true);
+        },
+        onSelectProject: async (path) => {
+          if (currentSnapshot.current === snapshot) await selected(path);
+        },
+      });
+    } finally {
+      pickingRef.current = false;
+      setPicking(false);
+    }
+  };
   if (!snapshot && !pendingReceipt && !error) return null;
   return (
     <div className="px-3 pb-2">
@@ -166,8 +202,8 @@ function ConnectedDirectoryRecovery({
         <Button
           variant="outline"
           size="sm"
-          disabled={busy}
-          onClick={() => setOpen(true)}
+          disabled={busy || picking}
+          onClick={() => void chooseDirectory()}
         >
           重新关联
         </Button>

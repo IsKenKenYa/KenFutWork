@@ -580,6 +580,7 @@ export function useRootWorkspaceActions({
 
     void openFolderFromWorkspaceEntry({
       selectDirectory: () => platform.selectDirectory(),
+      openDirectoryBrowser,
       onSelectProject: (path) => {
         void handleSelectProject(path);
       },
@@ -623,6 +624,7 @@ export function useRootWorkspaceActions({
 
     void openFolderFromWorkspaceEntry({
       selectDirectory: () => platform.selectDirectory(),
+      openDirectoryBrowser,
       onSelectProject: (path) => {
         void handleSelectProject(path);
       },
