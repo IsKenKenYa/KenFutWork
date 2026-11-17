@@ -128,9 +128,11 @@ console.log(`[dev] 单实例锁：${HOST}:${PORT} 空闲，启动 dev 服务端`
 
 // .env.local 由本脚本的 `--env-file` 载入（环境变量优先于文件，与 node 的语义一致），
 // 子进程（watcher 与它拉起的 server 子进程）直接继承，无需重复传参。
+// tsx 自带的 watch 只跟踪被导入的模块；`node --watch` + tsx 在 monorepo 里会把
+// 整个工作区纳入监听，Web 编译写 `.next` 时会把服务端一起重启（真机踩到）。
 const child = spawn(
   process.execPath,
-  ["--watch", "--import", "tsx", "./src/server.ts"],
+  ["node_modules/tsx/dist/cli.mjs", "watch", "./src/server.ts"],
   { stdio: "inherit" },
 );
 // Ctrl-C / SIGTERM 让子进程（watcher）先收尾，本进程等它退出后再走——

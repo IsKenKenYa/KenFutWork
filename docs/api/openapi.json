@@ -25197,10 +25197,10 @@
                 "maximum": 120000
               },
               "flowEngineBootstrapAttempts": {
-                "default": 90,
+                "default": 300,
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 120
+                "maximum": 600
               },
               "flowEngineBootstrapRetryMs": {
                 "default": 2000,
@@ -26017,7 +26017,7 @@
           "flowEngineBootstrapAttempts": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 120
+            "maximum": 600
           },
           "flowEngineBootstrapRetryMs": {
             "type": "integer",

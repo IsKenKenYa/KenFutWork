@@ -467,6 +467,40 @@ it("仅向当前 Code 文档发送宿主配置；bootstrap 带本地实例主人
   window.removeEventListener(LOCAL_ACCESS_LOST_EVENT, lost);
 });
 
+it("壳挂载后补发模式导航：加载期间落定的 Flow 入口不因监听未就位丢失", async () => {
+  vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
+  render(
+    <CodeWorkbenchFrame
+      availableModes={["code", "design", "flow"]}
+      mode="flow"
+    />,
+  );
+  const frame = screen.getByTitle("Code 工作台") as HTMLIFrameElement;
+  if (!frame.contentWindow) throw new Error("测试 Code 文档未创建");
+  const send = vi.spyOn(frame.contentWindow, "postMessage");
+  const event = (data: unknown) =>
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data,
+      }),
+    );
+  const navigation = {
+    type: "kenfutwork:workbench-navigation",
+    availableModes: ["code", "design", "flow"],
+    mode: "flow",
+  };
+  event({ type: "kenfutwork:code-ready" });
+  expect(send).toHaveBeenCalledWith(navigation, window.location.origin);
+  // ready 时壳的导航监听可能尚未注册（插件卡片等启动请求仍在进行）：挂载完成后必须补发，
+  // 否则 Flow 入口只能靠刷新出现。
+  send.mockClear();
+  event({ type: "kenfutwork:code-mounted" });
+  expect(send).toHaveBeenCalledWith(navigation, window.location.origin);
+});
+
 it("隐藏Code窗口继续bootstrap，恢复时同一文档收到活动状态与最新模式", async () => {
   vi.stubGlobal("fetch", async () => Response.json({ plugins: [] }));
   const view = render(<CodeWorkbenchFrame active={false} />);

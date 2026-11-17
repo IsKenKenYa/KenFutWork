@@ -374,8 +374,10 @@ export function planEngineAutoInstall(input: {
 }): { action: "install" } | { action: "skip"; reason: string } {
   if (input.installState === "installing")
     return { action: "skip", reason: "已有安装任务在跑" };
-  if (input.stackContainerCount > 0)
-    return { action: "skip", reason: "引擎栈容器已在" };
+  // 容器已在也要再跑一次：上次可能在 compose up 之后、Dify 初始化之前被中断
+  // （应用重启/进程被杀），只跳过会留下「容器在、管理员没建」的半装栈。
+  // compose up 与 bootstrap 都是幂等的，已在就绪状态时只做检查。
+  if (input.stackContainerCount > 0) return { action: "install" };
   if (input.recommended !== "wsl2" && input.recommended !== "container") {
     return {
       action: "skip",

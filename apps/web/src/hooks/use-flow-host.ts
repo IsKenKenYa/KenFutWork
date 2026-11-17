@@ -8,7 +8,7 @@ import {
 } from "@kenfutwork/shared";
 import { useCallback, useEffect, useState } from "react";
 import { getServerBaseUrl } from "@/lib/env";
-import { serverFetch } from "@/lib/local-access";
+import { loadLocalInstance, serverFetch } from "@/lib/local-access";
 import { PLUGIN_INVENTORY_CHANGED_EVENT } from "@/lib/plugin-panels";
 
 /**
@@ -64,6 +64,9 @@ export function useFlowHostEntry(enabled = true): {
     let cancelled = false;
 
     void (async () => {
+      // 首次带 `#connect` 打开时，本机接入换票是异步的：先等它完成，
+      // 否则两路探针会撞上 401，Flow 入口要等用户手动刷新才出现。
+      await loadLocalInstance().catch(() => undefined);
       const [plugin, status] = await Promise.all([
         (async () => {
           try {

@@ -158,6 +158,13 @@ describe("flow 运行时托管", () => {
     });
     await supervisor.ensure();
     expect(supervisor.snapshot().state).toBe("ready");
+    // 旧端口上的 Flow 前端是遗留监听：不能复用，必须由本进程在新端口启动，
+    // 否则旧进程一退出，工作台就会打开一个空 iframe。
+    const served = supervisor.snapshot().frontendUrl;
+    expect(served).not.toBe(`http://127.0.0.1:${frontendPort}`);
+    const response = await fetch(`${served}/`);
+    expect(response.headers.get("x-kenfutwork-flow")).toBe("1");
+    await response.body?.cancel();
     await supervisor.stop();
     expect(supervisor.snapshot().state).toBe("stopped");
   });

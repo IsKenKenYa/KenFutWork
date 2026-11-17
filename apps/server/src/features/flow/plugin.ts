@@ -436,6 +436,15 @@ export function createFlowHostPlugin(deps: {
             );
           });
         };
+        const requestEngineAutoInstall = (reason: string): void => {
+          void autoInstallEngineStack().catch((error: unknown) => {
+            // 自动安装没跑起来不能静默：状态机与引擎页日志是用户唯一的可见面。
+            console.warn(
+              `[flow] 引擎栈自动安装未启动（${reason}）：`,
+              error instanceof Error ? error.message : String(error),
+            );
+          });
+        };
         ctx.effect(() =>
           ctx.get("capabilities").register(PLUGIN_STATE_LIFECYCLE_CAPABILITY, {
             id: "flow-runtime",
@@ -449,8 +458,12 @@ export function createFlowHostPlugin(deps: {
                 const active =
                   event.current?.name === FLOW_PLUGIN_BUNDLE_NAME &&
                   event.current.enabled !== false;
-                if (active) ensureFlowStack(`插件状态 ${event.reason}`);
-                else void supervisor.stop();
+                if (active) {
+                  ensureFlowStack(`插件状态 ${event.reason}`);
+                  // 挂载期的库存查询可能早于注册表装载（应用启动恢复），
+                  // 引擎安装必须跟着生命周期再跑一次，否则只能到引擎页手动装。
+                  requestEngineAutoInstall(`插件状态 ${event.reason}`);
+                } else void supervisor.stop();
               },
             },
           }),
@@ -459,7 +472,9 @@ export function createFlowHostPlugin(deps: {
           void supervisor.stop();
         });
         void bundleActive().then((active) => {
-          if (active) ensureFlowStack("应用启动");
+          if (!active) return;
+          ensureFlowStack("应用启动");
+          requestEngineAutoInstall("应用启动");
         });
       }
       /** 承载探测：引擎信息页与「装上即用」的自动安装共用同一份判据。 */
@@ -496,6 +511,11 @@ export function createFlowHostPlugin(deps: {
         // 装完补一次网关控制面授权：网关只在启动期窗口自动授权，晚装的窗口早过。
         // 走宿主共享密钥端点（与项目控制同一 Guard），不直连带 AdminGuard 的 /admin/*。
         onReady: async () => {
+          // 本机托管：先按新凭据重启网关（自动授权保持关闭，避免授权失败拖垮启动），
+          // 再走共享密钥端点补授权；外部实例只有后一步。
+          if (flowAdapter?.mode === "managed" && flowAdapter.supervisor) {
+            await flowAdapter.supervisor.refreshGateway();
+          }
           const gatewayUrl = flowAdapter?.gatewayUrl;
           const secret = flowAdapter?.secret;
           if (!gatewayUrl || !secret) {
@@ -536,8 +556,9 @@ export function createFlowHostPlugin(deps: {
       /**
        * 装上即用：Flow 模式真的会出现在工作台里（适配层配齐）时，引擎栈自己装上，
        * 不要用户去「引擎」页点安装按钮。判据见 `planEngineAutoInstall`。
+       * 函数声明而非表达式：生命周期回调在挂载期注册，提升后可安全调用。
        */
-      const autoInstallEngineStack = async (): Promise<void> => {
+      async function autoInstallEngineStack(): Promise<void> {
         const dataRoot = dataRootFor(ctx);
         const options = engineInstallOptions(
           dataRoot,
@@ -562,7 +583,7 @@ export function createFlowHostPlugin(deps: {
           "[flow] 引擎栈不在且本机承载可用：自动开始安装（装上即用）。",
         );
         startEngineInstall(engineInstallInput());
-      };
+      }
       void registerFlowProjectFileRoutes(ctx.app, {
         files,
         secret: flowAdapter?.secret,
@@ -679,20 +700,6 @@ export function createFlowHostPlugin(deps: {
         gatewayUrl: flowAdapter?.gatewayUrl,
         runtime: () => flowAdapter?.runtime() ?? { state: "stopped" },
       });
-      if (flowAdapter && flowAdapterConfigured(flowAdapter)) {
-        void bundleActive()
-          .then((active) => {
-            if (!active) return;
-            return autoInstallEngineStack();
-          })
-          .catch((error: unknown) => {
-            // 自动安装没跑起来不能静默：状态机与引擎页日志是用户唯一的可见面。
-            console.warn(
-              "[flow] 引擎栈自动安装未启动：",
-              error instanceof Error ? error.message : String(error),
-            );
-          });
-      }
     },
   };
 }

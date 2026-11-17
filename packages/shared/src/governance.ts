@@ -105,11 +105,11 @@ export const AGENT_GOVERNANCE_DEFAULTS = {
   flowGatewayControlTimeoutMs: 10_000,
   /**
    * Dify 容器拉起后的初始化重试与单请求预算。
-   * 全新卷首次冷启动要跑数据库迁移 + api 就绪，实测约 100s；原先 30×2s=60s
-   * 会在 api 尚未监听时耗尽，误报 `fetch failed` 并把安装态置为 error。
-   * 90×2s=180s 留足余量，用户仍可通过实例设置调小/调大。
+   * 全新卷首次冷启动要跑数据库迁移 + api 就绪；本机实测 gunicorn 监听前约 5 分 20 秒，
+   * 90×2s=180s 仍会在 api 尚未监听时耗尽，误报 `fetch failed` 并把安装态置为 error。
+   * 300×2s=600s 覆盖慢盘冷启动，用户仍可通过实例设置调小/调大。
    */
-  flowEngineBootstrapAttempts: 90,
+  flowEngineBootstrapAttempts: 300,
   flowEngineBootstrapRetryMs: 2_000,
   flowEngineBootstrapRequestTimeoutMs: 10_000,
   /** Computer Use：单个桌面动作（点击/输入/截屏）超时（毫秒）。 */
@@ -428,7 +428,7 @@ export const AGENT_GOVERNANCE_LIMITS = {
   terminalMaxSessions: { min: 1, max: 100 },
   sandboxProbeTimeoutMs: { min: 100, max: 60_000 },
   flowGatewayControlTimeoutMs: { min: 1_000, max: 120_000 },
-  flowEngineBootstrapAttempts: { min: 1, max: 120 },
+  flowEngineBootstrapAttempts: { min: 1, max: 600 },
   flowEngineBootstrapRetryMs: { min: 0, max: 30_000 },
   flowEngineBootstrapRequestTimeoutMs: { min: 1_000, max: 120_000 },
   subagentMaxContinuations: { min: 1, max: 200 },

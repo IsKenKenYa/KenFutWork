@@ -292,7 +292,9 @@ export function buildFlowGatewayEnv(input: {
     DIFY_API_BASE: stackEnv.DIFY_API_BASE ?? "http://127.0.0.1:15001/v1",
     DIFY_CONSOLE_BASE:
       stackEnv.DIFY_CONSOLE_BASE ?? "http://127.0.0.1:15001/console/api",
-    DIFY_AUTO_BOOTSTRAP: "true",
+    // 启动期由实际探测决定：Dify 没就绪时不强行自动授权，否则网关会在
+    // 重试 30 次后拒绝启动（首次安装镜像还没拉完时必然发生）。
+    DIFY_AUTO_BOOTSTRAP: "false",
     DIFY_SYNC_LLM_PROVIDER: "false",
     DIFY_KEY_ENCRYPTION_SECRET: input.config.encryptionSecret,
     MEDIA_CREDENTIAL_ENCRYPTION_SECRET: input.config.encryptionSecret,
@@ -331,21 +333,26 @@ export function writeFlowRuntimeEnv(
   return writeEnvFile(join(dir, ENV_FILE), env);
 }
 
+/** 托管网关的工作目录：env 与运行期相对路径都落在数据目录，不写仓库。 */
+export function flowGatewayRuntimeDir(dataDir: string): string {
+  return join(flowRuntimeDir(dataDir), "gateway-runtime");
+}
+
 /**
  * 网关自己的最高优先级 env 文件。
  *
  * Nest 的 `ConfigModule` 会先读 env 文件、再读进程环境；只把值放进 spawn env
  * 会被 flow 开发目录里遗留的 `.env` 覆盖（实测连错数据库、拿旧密钥解密失败）。
- * 写到网关目录的 `.futureflow.runtime.env`（envFilePath 的第一位）才真正决定
- * 本次托管运行的数据库、密钥与宿主回调地址。
+ * 这里让网关**以数据目录为工作目录**启动，`.futureflow.runtime.env` 就是它读到的
+ * 第一份配置；同时避免向仓库写文件触发开发态 `node --watch` 重启。
  */
 export function writeGatewayRuntimeEnv(
-  flowDir: string,
+  dataDir: string,
   env: Record<string, string>,
 ): string {
-  const gatewayDir = join(flowDir, "gateway");
-  mkdirSync(gatewayDir, { recursive: true });
-  return writeEnvFile(join(gatewayDir, ".futureflow.runtime.env"), env);
+  const dir = flowGatewayRuntimeDir(dataDir);
+  mkdirSync(dir, { recursive: true });
+  return writeEnvFile(join(dir, ".futureflow.runtime.env"), env);
 }
 
 async function probeHttp(
@@ -510,6 +517,8 @@ function startFrontendServer(
 export interface FlowStackSupervisor {
   ensure(): Promise<void>;
   stop(): Promise<void>;
+  /** 引擎就绪后重新探测 Dify 并以自动授权模式拉起网关（无需重启应用）。 */
+  refreshGateway(): Promise<void>;
   snapshot(): FlowRuntimeSnapshot;
   /** 引擎安装时把管理员凭据同源写入的 env 文件。 */
   gatewayEnvFiles(): string[];
@@ -652,7 +661,9 @@ export function createFlowStackSupervisor(deps: {
     const logFile = join(flowRuntimeDir(deps.dataDir), GATEWAY_LOG);
     const fd = openSync(logFile, "a");
     const spawned = spawnImpl(process.execPath, [distMain], {
-      cwd: join(deps.flowDir, "gateway"),
+      // 数据目录作为工作目录：网关读取这里的 .futureflow.runtime.env，
+      // 相对运行路径也落在数据目录，不向仓库写文件。
+      cwd: flowGatewayRuntimeDir(deps.dataDir),
       env: { ...process.env, ...env },
       stdio: ["ignore", fd, fd],
       windowsHide: true,
@@ -685,22 +696,64 @@ export function createFlowStackSupervisor(deps: {
     );
   }
 
+  /**
+   * 启动后补一次 Dify 控制面授权：网关以「不自动授权」启动后，这一步用宿主
+   * 共享密钥让网关按当前管理员凭据重新登录并落库。失败只记录，不影响画布可用。
+   */
+  async function reauthorizeDify(): Promise<void> {
+    const url = new URL(
+      "/host/ff-embed/v1/dify/reauthorize",
+      gatewayUrl(),
+    ).toString();
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await fetchImpl(url, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${config.sharedSecret}`,
+            "x-ff-embed-protocol": "v1",
+          },
+          signal: AbortSignal.timeout(15_000),
+        });
+        await response.body?.cancel();
+        if (response.ok) return;
+        if (attempt === 3) {
+          console.warn(
+            `[flow] Dify 授权刷新失败（HTTP ${response.status}），画布可用，执行前需重新授权。`,
+          );
+        }
+      } catch (error) {
+        if (attempt === 3) {
+          console.warn(
+            `[flow] Dify 授权刷新失败：${error instanceof Error ? error.message : String(error)}`,
+          );
+          return;
+        }
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 1000));
+    }
+  }
+
   async function startFrontend(): Promise<void> {
     const url = frontendUrl();
     const existing = await fetchImpl(`${url}/`, {
       signal: AbortSignal.timeout(1500),
     }).catch(() => null);
-    if (existing?.ok && existing.headers.get("x-kenfutwork-flow") === "1") {
-      await existing.body?.cancel();
-      return;
-    }
+    // 端口上已有服务也不能复用：它可能是上一次进程遗留的 Flow 前端（或被别的
+    // 程序占着）。复用会让本进程以为运行时 ready，但那个监听随旧进程退出就消失，
+    // 工作台随即打开一个空 iframe。这里一律由本进程重新启动，占用则换端口。
     await existing?.body?.cancel().catch(() => undefined);
     if (existing) {
-      // 端口被别的服务占着：换一个端口并落盘（前端端口不进构建产物）。
       const nextPort = await pickFreePort(config.frontendPort + 1, isFree);
       config = { ...config, frontendPort: nextPort };
       writeFlowManagedConfig(deps.dataDir, config);
-      console.warn(`[flow] 前端端口 ${url} 被占用，已改用 ${frontendUrl()}。`);
+      console.warn(
+        `[flow] 前端端口 ${url} 已被${
+          existing.headers.get("x-kenfutwork-flow") === "1"
+            ? "遗留的 Flow 前端"
+            : "其它服务"
+        }占用，已改用 ${frontendUrl()}。`,
+      );
     }
     const server = await startFrontendServer(
       join(deps.flowDir, "frontend", "dist"),
@@ -709,24 +762,36 @@ export function createFlowStackSupervisor(deps: {
     frontendServer = server;
   }
 
+  /**
+   * 生成并落盘一份网关注入环境。托管形态一律关闭网关启动期的 Dify 自动授权：
+   * 账号未建好/授权过期都会让网关在重试后拒绝启动。画布与编排先可用，
+   * 引擎装好后由 `refreshGateway` 重启网关并调用授权端点补上控制面授权。
+   */
+  async function prepareGatewayEnv(): Promise<Record<string, string>> {
+    const managed = prepare();
+    await ensureDatabase(deps.databaseUrl);
+    const env = buildFlowGatewayEnv({
+      config: managed,
+      dataDir: deps.dataDir,
+      database: deps.databaseUrl,
+      serverPort: deps.serverPort,
+      webOrigin: deps.webOrigin,
+    });
+    // 自动授权失败会让网关拒绝启动（账号未建好/授权过期都会走到那条路）。
+    // 托管形态一律先保证网关可用，Dify 授权由引擎装好后的 refresh + 授权端点补。
+    env.DIFY_AUTO_BOOTSTRAP = "false";
+    writeFlowRuntimeEnv(deps.dataDir, env);
+    writeGatewayRuntimeEnv(deps.dataDir, env);
+    return env;
+  }
+
   async function runEnsure(): Promise<void> {
     state = "starting";
     detail = undefined;
     try {
       const managed = prepare();
       const gatewayOrigin = flowGatewayUrl(managed.gatewayPort);
-      if (!(await probeHttp(`${gatewayOrigin}/healthz`, fetchImpl)))
-        state = "starting";
-      await ensureDatabase(deps.databaseUrl);
-      const env = buildFlowGatewayEnv({
-        config: managed,
-        dataDir: deps.dataDir,
-        database: deps.databaseUrl,
-        serverPort: deps.serverPort,
-        webOrigin: deps.webOrigin,
-      });
-      writeFlowRuntimeEnv(deps.dataDir, env);
-      writeGatewayRuntimeEnv(deps.flowDir, env);
+      const env = await prepareGatewayEnv();
       const frontendEnv: NodeJS.ProcessEnv = {
         ...process.env,
         ...env,
@@ -768,11 +833,12 @@ export function createFlowStackSupervisor(deps: {
         env.DIFY_KEY_ENCRYPTION_SECRET = legacy;
         env.MEDIA_CREDENTIAL_ENCRYPTION_SECRET = legacy;
         writeFlowRuntimeEnv(deps.dataDir, env);
-        writeGatewayRuntimeEnv(deps.flowDir, env);
+        writeGatewayRuntimeEnv(deps.dataDir, env);
         state = "starting";
         detail = undefined;
         await startGateway(env);
       }
+      await reauthorizeDify();
       state = "ready";
     } catch (error) {
       detail = error instanceof Error ? error.message : String(error);
@@ -804,6 +870,26 @@ export function createFlowStackSupervisor(deps: {
     }
   }
 
+  async function refreshGateway(): Promise<void> {
+    if (pending) await pending.catch(() => undefined);
+    const target = child;
+    child = undefined;
+    target?.kill();
+    const deadline = Date.now() + 10_000;
+    while (
+      Date.now() < deadline &&
+      (await probeHttp(`${gatewayUrl()}/healthz`, fetchImpl))
+    ) {
+      await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+    }
+    const env = await prepareGatewayEnv();
+    state = "starting";
+    detail = undefined;
+    await startGateway(env);
+    await reauthorizeDify();
+    state = "ready";
+  }
+
   return {
     async ensure() {
       if (state === "ready") return;
@@ -813,9 +899,10 @@ export function createFlowStackSupervisor(deps: {
       return pending;
     },
     stop: stopRuntime,
+    refreshGateway,
     snapshot,
     gatewayEnvFiles() {
-      return [join(deps.flowDir, "gateway", ".futureflow.runtime.env")];
+      return [join(flowGatewayRuntimeDir(deps.dataDir), ".futureflow.runtime.env")];
     },
   };
 }

@@ -264,9 +264,13 @@ export function CodeWorkbenchFrame({
           });
       } else if (parsed.data.type === "kenfutwork:code-access-lost")
         window.dispatchEvent(new Event(LOCAL_ACCESS_LOST_EVENT));
-      else if (parsed.data.type === "kenfutwork:code-mounted")
+      else if (parsed.data.type === "kenfutwork:code-mounted") {
         setShellMounted(true);
-      else if (parsed.data.type === "kenfutwork:code-ready") {
+        // 壳完成挂载说明导航监听已就位；探针在壳加载期间落定的可用方式/深链模式
+        // 早于监听注册会丢失，这里补发一次（含当前模式），保证入口不靠刷新出现。
+        sentMode.current = undefined;
+        sendNavigation();
+      } else if (parsed.data.type === "kenfutwork:code-ready") {
         ready.current = true;
         setShellReady(true);
         bootstrap();
