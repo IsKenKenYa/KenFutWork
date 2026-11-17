@@ -15,10 +15,28 @@ Flow 是 KenFutWork 的第三种工作模式（design / code 之外的 flow）�
 ```
 KENFUTWORK_FLOW_EMBED_SECRET=<与 flow 网关 HOST_SHARED_SECRET 相同的共享密钥，≥16 位>
 KENFUTWORK_FLOW_FRONTEND_URL=<flow 前端地址，origin 形式，如 http://127.0.0.1:8080>
+KENFUTWORK_FLOW_GATEWAY_URL=<flow 网关地址，如 http://127.0.0.1:15010>
 ```
 
 配齐与否可用 `GET /api/flow/host/status` 探测（未配齐会如实返回缺失原因）。
 flow 侧（futureFlow 网关）按 `flow/docs/ff-embed-v1.md` 配置 `HOST_MODE=embedded` 等变量。
+
+## 本机联调
+
+网关与前端是两套进程，前端与网关的地址在**启动时**决定；地址对不上时 Flow 主区只会停在加载或握手报错。
+
+```
+# 网关（读取 flow/.futureflow.runtime.env 与 flow/.env）
+pnpm run start:dev            # 在 flow/gateway 下执行
+
+# 前端（在 flow/frontend 下执行；网关地址是编译期常量，不读 flow/.env）
+# PowerShell：
+$env:FRONTEND_PORT='8190'; $env:PUBLIC_GATEWAY_URL='http://127.0.0.1:15010'; pnpm run start
+# bash：
+FRONTEND_PORT=8190 PUBLIC_GATEWAY_URL=http://127.0.0.1:15010 pnpm run start
+```
+
+两端地址要与服务端 `KENFUTWORK_FLOW_FRONTEND_URL` / `KENFUTWORK_FLOW_GATEWAY_URL`、网关 `HOST_SHARED_SECRET` 与 `KENFUTWORK_FLOW_EMBED_SECRET` 成对一致。
 
 ## 引擎说明
 

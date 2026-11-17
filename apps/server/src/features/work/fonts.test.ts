@@ -255,13 +255,28 @@ describe("内置开源字体（OFL）", () => {
     expect(listed.filter((font) => font.builtin)).toHaveLength(bundled.length);
   });
 
-  it("内置字体名不能越出资产目录，也不能被删除", async () => {
+  it("内置字体删除只写本机隐藏名单，不改仓库资产", async () => {
     expect(bundledFontPath("bundled-../package.json")).toBeNull();
     expect(bundledFontPath("Inter-Regular.ttf")).toBeNull();
     const dataDir = mkdtempSync(join(tmpdir(), "kfw-fonts-"));
-    await expect(
-      removeFont(dataDir, "bundled-Inter-Regular.ttf"),
-    ).rejects.toThrow("内置字体不能删除");
+    const target = "bundled-Inter-Regular.ttf";
+    expect(
+      (await listFonts(dataDir)).some((font) => font.fileName === target),
+    ).toBe(true);
+
+    await removeFont(dataDir, target);
+    expect(
+      (await listFonts(dataDir)).some((font) => font.fileName === target),
+    ).toBe(false);
+    // 仓库里的字体文件仍在：删除只影响本机实例的列表与清单。
+    expect(bundledFontPath(target)).toBeTruthy();
+    // 重复删除幂等。
+    await removeFont(dataDir, target);
+    expect(
+      (await listFonts(dataDir)).some((font) => font.fileName === target),
+    ).toBe(false);
+    // 其它内置字体不受影响。
+    expect((await listFonts(dataDir)).some((font) => font.builtin)).toBe(true);
   });
 
   it("清单把内置字体标成 OFL-1.1，用户字体仍标 User-supplied", async () => {

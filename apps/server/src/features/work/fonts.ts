@@ -27,8 +27,10 @@ import type { WorkFont, WorkFontFormat } from "@kenfutwork/shared";
  */
 
 const FONT_DIR = "work/fonts";
-/** 内置字体的存储名前缀：随产品分发（OFL），不随用户删除。 */
+/** 内置字体的存储名前缀：随产品分发（OFL）。删除时只记录隐藏，不改仓库资产。 */
 const BUNDLED_PREFIX = "bundled-";
+/** 被用户删除的内置字体名单（数据目录内，仅影响本机实例的展示与清单）。 */
+const HIDDEN_BUNDLED_FILE = ".hidden-bundled.json";
 /** 内置字体 → 许可全文。家族名与文件名一一对应（assets/work-fonts）。 */
 const BUNDLED_LICENSES: Record<string, string> = {
   Inter: "OFL-Inter.txt",
@@ -105,6 +107,35 @@ async function readBundled(): Promise<StoredFont[]> {
 export function listBundledFonts(): Promise<StoredFont[]> {
   bundledCache ??= readBundled().catch(() => []);
   return bundledCache;
+}
+
+/** 本机实例隐藏的内置字体（用户点过删除）。坏文件按空名单处理，不阻塞字体列表。 */
+async function readHiddenBundled(dataDir: string): Promise<Set<string>> {
+  try {
+    const raw = await readFile(
+      join(workFontsDir(dataDir), HIDDEN_BUNDLED_FILE),
+      "utf8",
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed.filter((name): name is string => typeof name === "string"),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+async function writeHiddenBundled(
+  dataDir: string,
+  hidden: ReadonlySet<string>,
+): Promise<void> {
+  const dir = workFontsDir(dataDir);
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, HIDDEN_BUNDLED_FILE),
+    `${JSON.stringify([...hidden].sort(), null, 2)}\n`,
+  );
 }
 
 /** `bundled-<file>` → 仓库内字体文件的绝对路径；不是内置名或文件缺失时返回 null。 */
@@ -312,7 +343,10 @@ async function describe(
 }
 
 export async function listFonts(dataDir: string): Promise<StoredFont[]> {
-  const bundled = await listBundledFonts();
+  const hidden = await readHiddenBundled(dataDir);
+  const bundled = (await listBundledFonts()).filter(
+    (font) => !hidden.has(font.fileName),
+  );
   const dir = workFontsDir(dataDir);
   if (!existsSync(dir)) return bundled;
   const names = await readdir(dir);
@@ -356,8 +390,16 @@ export async function addFont(input: {
 }
 
 export async function removeFont(dataDir: string, fileName: string) {
-  if (fileName.startsWith(BUNDLED_PREFIX))
-    throw new Error("内置字体不能删除。");
+  if (fileName.startsWith(BUNDLED_PREFIX)) {
+    // 内置字体是只读仓库资产：删除 = 在本机实例的隐藏名单里记一笔。
+    if (!bundledFontPath(fileName)) throw new Error("字体名不合法。");
+    const hidden = await readHiddenBundled(dataDir);
+    if (!hidden.has(fileName)) {
+      hidden.add(fileName);
+      await writeHiddenBundled(dataDir, hidden);
+    }
+    return;
+  }
   // 只允许删字体目录里的直接文件：文件名不参与路径拼接。
   const safe = fontFormatOf(fileName) !== null && !/[\\/]/u.test(fileName);
   if (!safe) throw new Error("字体名不合法。");

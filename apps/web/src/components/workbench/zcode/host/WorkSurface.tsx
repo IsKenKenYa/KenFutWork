@@ -460,21 +460,14 @@ function WorkFontsSection({ active }: { active: boolean }) {
           >
             <span className="min-w-0 truncate">{family.name}</span>
             <span className="flex items-center gap-2">
-              {family.builtin ? (
-                <span className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle">
-                  内置
-                </span>
-              ) : null}
-              {family.userFiles.length > 0 && !family.builtin ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void removeAll(family.userFiles)}
-                  className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
-                >
-                  删除
-                </button>
-              ) : null}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void removeAll(family.files)}
+                className="rounded-md border border-border px-2 py-0.5 text-xs text-foreground-subtle transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-50"
+              >
+                删除
+              </button>
             </span>
           </div>
         ))
