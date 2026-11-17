@@ -104,8 +104,50 @@ describe("useFlowHostEntry", () => {
     const view = render(<Harness />);
     await waitFor(() =>
       expect(view.getByTestId("entry").textContent).toBe(
-        "available:宿主适配层未配齐：未配置 Flow 网关共享密钥。",
+        "available:Flow 运行时未就绪：未配置 Flow 网关共享密钥。",
       ),
     );
+  });
+
+  it("本机托管启动期每 2 秒重试：就绪后入口自动可用", async () => {
+    let statusCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/plugins"))
+          return Response.json({
+            plugins: [
+              { name: "kenfutwork-flow", installed: true, enabled: true },
+            ],
+          });
+        if (url.includes("/api/flow/host/status")) {
+          statusCalls += 1;
+          return Response.json(
+            statusCalls === 1
+              ? {
+                  enabled: false,
+                  frontendUrl: null,
+                  reasons: ["Flow 运行时正在启动。"],
+                  runtime: { state: "starting" },
+                }
+              : {
+                  enabled: true,
+                  frontendUrl: "http://127.0.0.1:8190",
+                  reasons: [],
+                  runtime: { state: "ready" },
+                },
+          );
+        }
+        return Response.json({});
+      }),
+    );
+
+    const view = render(<Harness />);
+    await waitFor(
+      () => expect(view.getByTestId("entry").textContent).toBe("available:-"),
+      { timeout: 5_000 },
+    );
+    expect(statusCalls).toBeGreaterThanOrEqual(2);
   });
 });

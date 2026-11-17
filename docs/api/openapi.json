@@ -24026,6 +24026,29 @@
             "items": {
               "type": "string"
             }
+          },
+          "runtime": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "external",
+                  "starting",
+                  "ready",
+                  "error",
+                  "stopped"
+                ]
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 1000
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

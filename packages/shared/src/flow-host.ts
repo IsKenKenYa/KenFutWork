@@ -39,6 +39,16 @@ export const flowHostStatusResponseSchema = z.object({
   frontendUrl: z.string().nullable(),
   /** 未启用时缺什么（每条一句可读原因）；启用后为空数组。 */
   reasons: z.array(z.string()),
+  /**
+   * 托管运行时的状态（本机自动托管形态）：前端据此在启动期间重试探针，
+   * 不在「正在启动」时把入口当成坏掉。外部实例为 external。
+   */
+  runtime: z
+    .object({
+      state: z.enum(["external", "starting", "ready", "error", "stopped"]),
+      detail: z.string().max(1000).optional(),
+    })
+    .optional(),
 });
 export type FlowHostStatusResponse = z.infer<
   typeof flowHostStatusResponseSchema
@@ -382,8 +392,8 @@ export function resolveFlowEntry(input: {
       available: true,
       frontendUrl: null,
       reason: input.status.reasons.length
-        ? `宿主适配层未配齐：${input.status.reasons.join(" ")}`
-        : "宿主适配层未配齐。",
+        ? `Flow 运行时未就绪：${input.status.reasons.join(" ")}`
+        : "Flow 运行时未就绪。",
     };
   }
   return {

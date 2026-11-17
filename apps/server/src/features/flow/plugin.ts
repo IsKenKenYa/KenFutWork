@@ -13,6 +13,10 @@ import { registerFlowHostRoutes } from "../../http/flow-host.js";
 import { registerFlowProjectFileRoutes } from "../../http/flow-project-files.js";
 import type { PluginDefinition } from "../../kernel/types.js";
 import type { LocalActor } from "../local-instance/types.js";
+import {
+  PLUGIN_STATE_LIFECYCLE_CAPABILITY,
+  type PluginStateChangedEvent,
+} from "../plugins/state-lifecycle.js";
 import { createProcessRunCommand } from "./engine/exec.js";
 import {
   type EngineInstallOptions,
@@ -34,6 +38,12 @@ import {
   createFlowProjectFiles,
   type FlowProjectFiles,
 } from "./project-files.js";
+import {
+  createFlowStackSupervisor,
+  type FlowRuntimeState,
+  type FlowStackSupervisor,
+  loadOrCreateFlowManagedConfig,
+} from "./runtime.js";
 import { createFlowGatewayTools } from "./tools.js";
 
 /**
@@ -76,7 +86,10 @@ export function resolveFlowDir(): string {
       "flow",
     );
   }
-  return join(fileURLToPath(new URL("../../../../..", import.meta.url)), "flow");
+  return join(
+    fileURLToPath(new URL("../../../../..", import.meta.url)),
+    "flow",
+  );
 }
 
 /**
@@ -104,25 +117,135 @@ function stackEnvFile(options: EngineInstallOptions): string {
  * （status 端点如实回答 disabled）。既是入口判据，也是「要不要为引擎栈自动下载」的闸门
  * ——用不到的模式不该拉 8GB。
  */
-function flowAdapterConfigured(deps: {
-  secret?: string | undefined;
-  frontendUrl?: string | undefined;
-  gatewayUrl?: string | undefined;
-}): boolean {
-  return Boolean(
-    deps.secret?.trim() && deps.frontendUrl?.trim() && deps.gatewayUrl?.trim(),
-  );
+type FlowAdapterRuntimeView = {
+  state: FlowRuntimeState | "external";
+  detail?: string;
+  frontendUrl?: string;
+  gatewayUrl?: string;
+};
+
+type FlowAdapter = {
+  mode: "external" | "managed" | "disabled";
+  readonly secret: string | undefined;
+  readonly frontendUrl: string | undefined;
+  readonly gatewayUrl: string | undefined;
+  reasons: string[];
+  supervisor?: FlowStackSupervisor;
+  runtime(): FlowAdapterRuntimeView;
+};
+
+function flowAdapterConfigured(adapter: FlowAdapter): boolean {
+  return adapter.mode !== "disabled";
+}
+
+/**
+ * 适配层来源决策：
+ * - 三项 env 都配了 → 外部实例（自托管/反代），宿主不接管进程；
+ * - 一项都没配 → 本机托管：配置落数据目录，插件按安装态自动启停网关与前端；
+ * - 只配了一部分 → 显式报错，不猜也不悄悄覆盖用户的半套配置。
+ */
+function resolveFlowAdapter(
+  deps: {
+    secret?: string | undefined;
+    frontendUrl?: string | undefined;
+    gatewayUrl?: string | undefined;
+  },
+  env: {
+    desktopDataDir?: string | undefined;
+    databaseUrl?: string | undefined;
+    port: number;
+    webOrigin: string;
+  },
+): FlowAdapter {
+  const secret = deps.secret?.trim();
+  const frontendUrl = deps.frontendUrl?.trim();
+  const gatewayUrl = deps.gatewayUrl?.trim();
+  const provided = [secret, frontendUrl, gatewayUrl].filter(Boolean).length;
+  if (provided === 3) {
+    return {
+      mode: "external",
+      secret,
+      frontendUrl,
+      gatewayUrl,
+      reasons: [],
+      runtime: () => ({ state: "external" }),
+    };
+  }
+  if (provided > 0) {
+    return {
+      mode: "disabled",
+      secret: undefined,
+      frontendUrl: undefined,
+      gatewayUrl: undefined,
+      reasons: [
+        "Flow 地址或密钥只配置了一部分，请三项同时配置或全部留空由宿主托管。",
+      ],
+      runtime: () => ({ state: "stopped" }),
+    };
+  }
+  if (!env.databaseUrl) {
+    return {
+      mode: "disabled",
+      secret: undefined,
+      frontendUrl: undefined,
+      gatewayUrl: undefined,
+      reasons: ["当前实例没有应用数据库，无法托管 Flow 运行时。"],
+      runtime: () => ({ state: "stopped" }),
+    };
+  }
+  const dataDir = resolveDesktopDataDir({
+    env: { KENFUTWORK_DATA_DIR: env.desktopDataDir },
+  });
+  const config = loadOrCreateFlowManagedConfig({ dataDir });
+  const supervisor = createFlowStackSupervisor({
+    flowDir: resolveFlowDir(),
+    dataDir,
+    databaseUrl: env.databaseUrl,
+    serverPort: env.port,
+    webOrigin: env.webOrigin,
+  });
+  return {
+    mode: "managed",
+    get secret() {
+      return config.sharedSecret;
+    },
+    get frontendUrl() {
+      return supervisor.snapshot().frontendUrl;
+    },
+    get gatewayUrl() {
+      return supervisor.snapshot().gatewayUrl;
+    },
+    reasons: [],
+    supervisor,
+    runtime() {
+      const snapshot = supervisor.snapshot();
+      // 插件刚装/应用刚启动、首次 ensure 尚未调用：按「正在启动」回答，
+      // 前端会持续重试，不把等待期当成坏配置。
+      const state =
+        snapshot.state === "stopped" ? ("starting" as const) : snapshot.state;
+      const detail =
+        snapshot.detail ??
+        (state === "starting" ? "Flow 运行时正在启动。" : undefined);
+      return {
+        state,
+        ...(detail ? { detail } : {}),
+        frontendUrl: snapshot.frontendUrl,
+        gatewayUrl: snapshot.gatewayUrl,
+      };
+    },
+  };
 }
 
 /** 引擎栈托管选项（compose 文件 + env/日志的数据目录；承载目标由调用方给或读落盘记录）。 */
 function engineInstallOptions(
   dataRoot: string,
   launch?: EngineInstallOptions["launch"],
+  envFiles: string[] = gatewayEnvFiles(),
 ): EngineInstallOptions {
   return {
     composeFile: join(resolveDifyDir(), "docker-compose.dify.yml"),
     dataDir: dataRoot,
-    gatewayEnvFiles: gatewayEnvFiles(),
+    gatewayEnvFiles: envFiles,
     ...(launch ? { launch } : {}),
   };
 }
@@ -158,6 +281,10 @@ export function createFlowHostPlugin(deps: {
   gatewayUrl?: string | undefined;
 }): PluginDefinition {
   let flowFiles: FlowProjectFiles | undefined;
+  let flowAdapter: FlowAdapter | undefined;
+  /** 引擎安装/卸载时管理员凭据同源的落点：托管形态写运行时 env，外部形态沿用 flow/.env。 */
+  const engineEnvFiles = () =>
+    flowAdapter?.supervisor?.gatewayEnvFiles() ?? gatewayEnvFiles();
   const identityTickets = createFlowIdentityTickets();
   let issueIdentity:
     | ((
@@ -177,8 +304,12 @@ export function createFlowHostPlugin(deps: {
       "projectFiles",
       "blob",
       "tools",
+      "plugins",
+      "capabilities",
     ],
     apply(ctx) {
+      flowAdapter = resolveFlowAdapter(deps, ctx.env);
+      const adapter = flowAdapter;
       issueIdentity = async (actor, projectId) => {
         if (projectId) {
           // 任意工作方式的项目都可绑定 Flow：绑定后该项目会话共享工作流上下文。
@@ -194,9 +325,9 @@ export function createFlowHostPlugin(deps: {
           ...(projectId ? { projectId } : {}),
         });
       };
-      if (deps.gatewayUrl?.trim() && deps.secret?.trim()) {
+      if (adapter.gatewayUrl && adapter.secret) {
         for (const tool of createFlowGatewayTools({
-          gatewayUrl: deps.gatewayUrl,
+          gatewayUrl: adapter.gatewayUrl,
           issueHostToken: async (actor) => {
             if (!issueIdentity) throw new Error("Flow 身份缝尚未初始化。");
             return (await issueIdentity(actor)).token;
@@ -216,10 +347,10 @@ export function createFlowHostPlugin(deps: {
         }
       }
       ctx.register("flowProjectControl", () => {
-        if (deps.gatewayUrl && deps.secret)
+        if (adapter.gatewayUrl && adapter.secret)
           return createFlowProjectControl({
-            gatewayUrl: deps.gatewayUrl,
-            sharedSecret: deps.secret,
+            gatewayUrl: adapter.gatewayUrl,
+            sharedSecret: adapter.secret,
             // 等待预算走治理表（库值 ?? env ?? 默认），不在这里写字面量。
             timeoutMs: async () => {
               const actor = await ctx.get("localInstance").serviceActor();
@@ -241,11 +372,10 @@ export function createFlowHostPlugin(deps: {
           completeRelink: unavailable,
         };
       });
-      if (!flowAdapterConfigured(deps)) {
+      if (!flowAdapterConfigured(adapter)) {
         // 不视为错误：status 端点会如实回答 disabled + 缺什么，前端不摆空壳入口。
         console.log(
-          "[flow] flow 宿主适配层未配齐（KENFUTWORK_FLOW_EMBED_SECRET / KENFUTWORK_FLOW_FRONTEND_URL / KENFUTWORK_FLOW_GATEWAY_URL）：" +
-            "身份交换不可用，工作台不出现 Flow 模式入口（GET /api/flow/host/status 可查原因）。",
+          `[flow] Flow 运行时未就绪：${adapter.reasons.join(" ")}（GET /api/flow/host/status 可查原因）。`,
         );
       }
       /**
@@ -258,7 +388,7 @@ export function createFlowHostPlugin(deps: {
           if (!pluginId.endsWith(FLOW_PLUGIN_BUNDLE_NAME)) return { ok: true };
           const dataRoot = dataRootFor(ctx);
           return purgeEngineStack({
-            ...engineInstallOptions(dataRoot),
+            ...engineInstallOptions(dataRoot, undefined, engineEnvFiles()),
             launch: readStackRuntime(dataRoot),
           });
         },
@@ -279,6 +409,59 @@ export function createFlowHostPlugin(deps: {
         blob: ctx.get("blob"),
       });
       flowFiles = files;
+      /** flow 产品插件是否已安装并启用：运行时与引擎下载都只在该状态下发生。 */
+      const bundleActive = async (): Promise<boolean> => {
+        try {
+          return (await ctx.get("plugins").list()).some(
+            (entry) =>
+              entry.name === FLOW_PLUGIN_BUNDLE_NAME &&
+              entry.installed &&
+              entry.enabled !== false,
+          );
+        } catch {
+          return false;
+        }
+      };
+      /**
+       * 本机托管运行时：插件安装/启用即拉起网关与前端，禁用/卸载即停止；
+       * 应用启动时若插件已安装，也在装配完成后自动拉起（重启应用/电脑无需手工配置）。
+       */
+      const supervisor = flowAdapter?.supervisor;
+      if (supervisor) {
+        const ensureFlowStack = (reason: string): void => {
+          void supervisor.ensure().catch((error: unknown) => {
+            console.warn(
+              `[flow] 运行时启动失败（${reason}）：`,
+              error instanceof Error ? error.message : String(error),
+            );
+          });
+        };
+        ctx.effect(() =>
+          ctx.get("capabilities").register(PLUGIN_STATE_LIFECYCLE_CAPABILITY, {
+            id: "flow-runtime",
+            value: {
+              afterStateChanged(event: PluginStateChangedEvent) {
+                const touches =
+                  event.current?.name === FLOW_PLUGIN_BUNDLE_NAME ||
+                  event.previous?.name === FLOW_PLUGIN_BUNDLE_NAME;
+                if (!touches) return;
+                // 事件里的 current 只承载已安装记录（非空即已安装）。
+                const active =
+                  event.current?.name === FLOW_PLUGIN_BUNDLE_NAME &&
+                  event.current.enabled !== false;
+                if (active) ensureFlowStack(`插件状态 ${event.reason}`);
+                else void supervisor.stop();
+              },
+            },
+          }),
+        );
+        ctx.effect(() => () => {
+          void supervisor.stop();
+        });
+        void bundleActive().then((active) => {
+          if (active) ensureFlowStack("应用启动");
+        });
+      }
       /** 承载探测：引擎信息页与「装上即用」的自动安装共用同一份判据。 */
       const probeCarrier = () =>
         probeEnginePaths({
@@ -295,7 +478,7 @@ export function createFlowHostPlugin(deps: {
        * bootstrap 读治理表里的重试预算，onReady 补网关控制面授权。
        */
       const engineInstallInput = (launch?: EngineLaunch) => ({
-        ...engineInstallOptions(dataRootFor(ctx), launch),
+        ...engineInstallOptions(dataRootFor(ctx), launch, engineEnvFiles()),
         bootstrap: async () => {
           const actor = await ctx.get("localInstance").serviceActor();
           const settings = await ctx
@@ -307,14 +490,14 @@ export function createFlowHostPlugin(deps: {
             attempts: settings.flowEngineBootstrapAttempts,
             retryDelayMs: settings.flowEngineBootstrapRetryMs,
             requestTimeoutMs: settings.flowEngineBootstrapRequestTimeoutMs,
-            credentialEnvFiles: gatewayEnvFiles(),
+            credentialEnvFiles: engineEnvFiles(),
           };
         },
         // 装完补一次网关控制面授权：网关只在启动期窗口自动授权，晚装的窗口早过。
         // 走宿主共享密钥端点（与项目控制同一 Guard），不直连带 AdminGuard 的 /admin/*。
         onReady: async () => {
-          const gatewayUrl = deps.gatewayUrl?.trim();
-          const secret = deps.secret?.trim();
+          const gatewayUrl = flowAdapter?.gatewayUrl;
+          const secret = flowAdapter?.secret;
           if (!gatewayUrl || !secret) {
             throw new Error(
               "Flow 网关地址或宿主控制密钥未配置，无法补控制面授权。",
@@ -356,7 +539,11 @@ export function createFlowHostPlugin(deps: {
        */
       const autoInstallEngineStack = async (): Promise<void> => {
         const dataRoot = dataRootFor(ctx);
-        const options = engineInstallOptions(dataRoot);
+        const options = engineInstallOptions(
+          dataRoot,
+          undefined,
+          engineEnvFiles(),
+        );
         const envFile = stackEnvFile(options);
         const [carrier, stack] = await Promise.all([
           probeCarrier(),
@@ -378,7 +565,7 @@ export function createFlowHostPlugin(deps: {
       };
       void registerFlowProjectFileRoutes(ctx.app, {
         files,
-        secret: deps.secret,
+        secret: flowAdapter?.secret,
       });
       void registerFlowHostRoutes(ctx.app, {
         localAccess: ctx.get("localAccess"),
@@ -487,18 +674,24 @@ export function createFlowHostPlugin(deps: {
             };
           },
         },
-        secret: deps.secret,
-        frontendUrl: deps.frontendUrl,
-        gatewayUrl: deps.gatewayUrl,
+        secret: flowAdapter?.secret,
+        frontendUrl: flowAdapter?.frontendUrl,
+        gatewayUrl: flowAdapter?.gatewayUrl,
+        runtime: () => flowAdapter?.runtime() ?? { state: "stopped" },
       });
-      if (flowAdapterConfigured(deps)) {
-        autoInstallEngineStack().catch((error: unknown) => {
-          // 自动安装没跑起来不能静默：状态机与引擎页日志是用户唯一的可见面。
-          console.warn(
-            "[flow] 引擎栈自动安装未启动：",
-            error instanceof Error ? error.message : String(error),
-          );
-        });
+      if (flowAdapter && flowAdapterConfigured(flowAdapter)) {
+        void bundleActive()
+          .then((active) => {
+            if (!active) return;
+            return autoInstallEngineStack();
+          })
+          .catch((error: unknown) => {
+            // 自动安装没跑起来不能静默：状态机与引擎页日志是用户唯一的可见面。
+            console.warn(
+              "[flow] 引擎栈自动安装未启动：",
+              error instanceof Error ? error.message : String(error),
+            );
+          });
       }
     },
   };
