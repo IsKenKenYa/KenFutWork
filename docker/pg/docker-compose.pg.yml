@@ -1,12 +1,12 @@
 # 纯 Postgres 开发库（M1.5）：替代 Supabase 供给栈（12 个容器）用于本地开发。
 #
 # 为什么可以只要一个 Postgres：自管 Postgres 迁移完成后，应用对「Supabase 供给对象」的
-# 依赖已被 `supabase/bootstrap/` 前导物化（extensions/auth/storage schema、角色、pgmq 替身），
+# 依赖已被 `docker/pg/bootstrap/` 前导物化（extensions/auth/storage schema、角色、pgmq 替身），
 # 认证换成自管（M1.4）、对象存储换成 blob 缝（M3.1）、队列可走进程内（M3.2）。
 # 空库重放由迁移执行器验证（`migrate replay`），本文件只负责「起一个空库」。
 #
 # 用法：
-#   docker compose -f docker-compose.pg.yml up -d --build
+#   docker compose -f docker/pg/docker-compose.pg.yml up -d --build
 #   KENFUTWORK_DATABASE_URL=postgres://kenfutwork:kenfutwork@127.0.0.1:5433/kenfutwork \
 #     pnpm --filter @kenfutwork/server migrate apply
 #
@@ -15,7 +15,7 @@
 services:
   postgres:
     build:
-      context: ./docker/pg-dev-shim
+      context: ./pg-dev-shim
     image: kenfutwork-pg-dev:17
     container_name: kenfutwork_pg_dev
     restart: unless-stopped

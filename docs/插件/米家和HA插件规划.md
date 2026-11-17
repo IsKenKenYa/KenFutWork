@@ -119,7 +119,7 @@
 
 ### 3.5 桌面发布包的缺口（本轮新发现，影响所有自带 bundle）——**已修（2026-10-09）**
 
-`scripts/package-win.mjs` 组装 `release/` 时只拷：静态 UI（`web/`）、内嵌 Postgres（`pg/`）、迁移 SQL（`supabase/`）、flow 引擎资源（`dify/`）、sharp/node-pty 原生包、运行时（`runtime/`）——**没有拷贝 `plugins/`**，且桌面入口（`apps/server/src/desktop/`）不注入 `KENFUTWORK_BUILTIN_PLUGINS_DIR`。后果：装好的桌面端里「自带插件」列表为空，米家/flow 与本次的 HA 插件都只能走「从链接安装」。
+`scripts/package-win.mjs` 组装 `release/` 时只拷：静态 UI（`web/`）、内嵌 Postgres（`pg/`）、迁移 SQL（`db/`）、flow 引擎资源（`dify/`）、sharp/node-pty 原生包、运行时（`runtime/`）——**没有拷贝 `plugins/`**，且桌面入口（`apps/server/src/desktop/`）不注入 `KENFUTWORK_BUILTIN_PLUGINS_DIR`。后果：装好的桌面端里「自带插件」列表为空，米家/flow 与本次的 HA 插件都只能走「从链接安装」。
 
 **修法（已落地）**：`package-win.mjs` / `package-mac.mjs` 各加一步 `plugins/ → release/plugins` 拷贝，tauri 资源映射补 `release/plugins → app/plugins`（mac 侧替换原先只映射 `computer-use` 的窄条目），`apps/server/Dockerfile` 补 `COPY plugins/ plugins/`（容器 cwd 是 `/app/apps/server`，命中 `<cwd>/../../plugins` 候选）。壳以应用目录为服务端 cwd 拉起（`src/lib.rs` 的 `packaged_spawn_config`），加载器的 `<cwd>/plugins` 候选即命中——这条**打包布局契约**由 `apps/server/src/features/plugins/plugin-bundled-dir.test.ts` 锁死（cwd 命中 + env 覆盖优先 + 目录不存在返回空 + 坏目录只跳过自己）。
 **Windows 例外**：`computer-use` 不进 Windows 包——该形态是 Node SEA（`import.meta.url` 为空），执行原语 `windows-native.ps1` 既未随包也无法按入口定位，装了也用不了，不发半成品（`package-win.mjs` 的 cpSync filter 里写明；mac 侧照常交付）。
@@ -328,7 +328,7 @@ HA ≥ 2025.2 自带 MCP Server（`POST /api/mcp`）。两条接法：
 
 - **MCP 通道**：MCP server 以 stdio 子进程连接（`apps/server/src/features/mcp/mcp-service.ts:2`），`command/args/env` 存 `mcp_servers` 表（`features/mcp/server-store.ts`，env 写库、HTTP 只回键名），运行时增删/重连有管理界面。
 - **危险工具表**：`mcp__*` 前缀命中 `/^mcp__/`（`apps/server/src/features/permissions/permission-service.ts:31-42`）→ 默认档下 MCP 工具调用需要审批。
-- **存储缝范式**（仅 B 路线需要）：`persistence.forWorkspace(id)` + SQL 必须显式带 `:workspace` 谓词，漏写立即失败（`apps/server/src/features/persistence/types.ts:17-25`）；凭证加密复用 `features/model-providers/secret-store.ts`（scrypt 派生 AES-256-GCM，密钥来自 `KENFUTWORK_CREDENTIAL_SECRET`）；迁移模板见 `supabase/migrations/20260917230000_api_tokens.sql`。
+- **存储缝范式**（仅 B 路线需要）：`persistence.forWorkspace(id)` + SQL 必须显式带 `:workspace` 谓词，漏写立即失败（`apps/server/src/features/persistence/types.ts:17-25`）；凭证加密复用 `features/model-providers/secret-store.ts`（scrypt 派生 AES-256-GCM，密钥来自 `KENFUTWORK_CREDENTIAL_SECRET`）；迁移模板见 `docker/pg/migrations/20260917230000_api_tokens.sql`。
 - 工具执行上下文里有 `workspaceId`（`apps/server/src/kernel/types.ts:203`），但插件路由的 handler 目前**拿不到工作区/用户身份**（只知是否登录）。
 
 ### 2. 现成方案调研：能不能顶替手机米家 App

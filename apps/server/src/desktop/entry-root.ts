@@ -38,7 +38,7 @@ export function isPackagedRuntime(
 }
 
 /**
- * 入口资源根目录（`pg/`、`supabase/`、`runtime/`、`tmp/` 等资源相对它定位）。
+ * 入口资源根目录（`pg/`、`db/`、`runtime/`、`tmp/` 等资源相对它定位）。
  *
  * 三种形态：
  * - **源码态（dev / 自托管源码）**：入口文件是 `<仓库根>/apps/server/{src|dist}/server.js`，

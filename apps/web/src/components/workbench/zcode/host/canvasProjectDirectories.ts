@@ -126,6 +126,19 @@ function useDirectorySnapshot(
           const snapshot = await readDirectorySnapshot(projectId, kind);
           if (current)
             setState({ projectId, snapshot, checking: false, error: null });
+          // 网关不可达时的降级读（回执为空、代际是占位值）：目录事实照常展示，
+          // 但按同一节奏继续续读，网关恢复后真实代际自动收敛（画布按 key 重挂载）。
+          // 不计失败预算——这是成功的读取，只是数据面暂缺一块。
+          if (
+            current &&
+            kind === "flow" &&
+            snapshot?.flow &&
+            !snapshot.flow.receipt
+          )
+            timer = window.setTimeout(
+              () => void read(attempt),
+              DIRECTORY_RETRY_MS,
+            );
         } catch (failure) {
           if (!current) return;
           setState({

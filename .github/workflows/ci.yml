@@ -103,7 +103,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/hadolint"
           "$RUNNER_TEMP/hadolint" --version
           "$RUNNER_TEMP/hadolint" --failure-threshold=error \
-            apps/server/Dockerfile docker/pg-dev-shim/Dockerfile
+            apps/server/Dockerfile docker/pg/pg-dev-shim/Dockerfile
 
       - name: 工作流安全审计（zizmor）
         # 钉版纪律的执法者。本仓有 contents: write 的发版链：第三方 action 的 movable tag
@@ -409,7 +409,7 @@ jobs:
           probe_url="${KENFUTWORK_DATABASE_URL%/*}/drift_probe"
           KENFUTWORK_DATABASE_URL="$probe_url" \
             pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts apply
-          target="$(find supabase/migrations -name '*.sql' | sort | head -1)"
+          target="$(find docker/pg/migrations -name '*.sql' | sort | head -1)"
           printf '\n-- CI 篡改探针\n' >> "$target"
           if KENFUTWORK_DATABASE_URL="$probe_url" \
             pnpm --filter @kenfutwork/server exec node --import tsx src/migrate.ts status; then

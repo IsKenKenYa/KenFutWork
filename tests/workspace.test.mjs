@@ -518,7 +518,7 @@ test("去 Supabase 残留只许减不许增（棘轮门禁）", async () => {
 
 // --- 项目类型契约 ↔ 库约束一致性（《flow 集成方案》P1 接缝 #2）---
 //
-// `projects.kind` 的枚举（packages/shared）与 CHECK（supabase/migrations）是**必须同改**的
+// `projects.kind` 的枚举（packages/shared）与 CHECK（docker/pg/migrations）是**必须同改**的
 // 两处：只改一处时，要么写入被库拒绝（契约先扩），要么契约拒绝一个库里合法的值（库先扩）。
 // 加第三类 `flow` 时补上这条对账——跨文件的契约靠脚本校验落地，不靠自觉。
 test("projects.kind 的库约束与共享契约枚举一致", async () => {
@@ -533,7 +533,7 @@ test("projects.kind 的库约束与共享契约枚举一致", async () => {
 
   // 迁移按文件名顺序执行，故取**最后一处**定义（后面的 drop/add 覆盖前面的）。
   let constraintKinds = null;
-  for (const dir of ["supabase/bootstrap", "supabase/migrations"]) {
+  for (const dir of ["docker/pg/bootstrap", "docker/pg/migrations"]) {
     for (const name of readdirSync(path.join(rootDir, dir)).sort()) {
       if (!name.endsWith(".sql")) continue;
       const sql = readFileSync(path.join(rootDir, dir, name), "utf8");
@@ -570,7 +570,7 @@ test("chat_sessions.mode 的库约束与共享契约枚举一致", async () => {
   );
 
   let constraintKinds = null;
-  for (const dir of ["supabase/bootstrap", "supabase/migrations"]) {
+  for (const dir of ["docker/pg/bootstrap", "docker/pg/migrations"]) {
     for (const name of readdirSync(path.join(rootDir, dir)).sort()) {
       if (!name.endsWith(".sql")) continue;
       const sql = readFileSync(path.join(rootDir, dir, name), "utf8");
@@ -615,11 +615,11 @@ test("provider_instances.protocol 的库约束与共享契约枚举一致", asyn
   // 迁移按文件名顺序执行，取**最后一处**定义（前向迁移的 drop/add 覆盖建表时的初值）。
   let constraintProtocols = null;
   for (const name of readdirSync(
-    path.join(rootDir, "supabase/migrations"),
+    path.join(rootDir, "docker/pg/migrations"),
   ).sort()) {
     if (!name.endsWith(".sql")) continue;
     const sql = readFileSync(
-      path.join(rootDir, "supabase/migrations", name),
+      path.join(rootDir, "docker/pg/migrations", name),
       "utf8",
     );
     for (const match of sql.matchAll(/CHECK \(protocol IN \(([^)]*)\)\)/gi)) {

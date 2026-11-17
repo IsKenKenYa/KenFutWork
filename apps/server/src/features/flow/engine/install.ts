@@ -23,7 +23,7 @@ import {
 /**
  * Dify 无头栈的**托管安装状态机**（FORM-11 探测后的「下载 → 确认 → 托管」流程）。
  *
- * 职责：flow 插件启用且承载路径可用时，把 `dify/docker-compose.dify.yml --profile dify`
+ * 职责：flow 插件启用且承载路径可用时，把 `docker/dify/docker-compose.dify.yml --profile dify`
  * 拉起来（镜像 ~8.3GB 随 up 自动拉取）。安装是**长任务**（拉镜像分钟级）——
  * detached spawn + 日志落文件 + 状态轮询，不占请求连接。
  *
@@ -38,7 +38,7 @@ import {
  *    flow 插件**卸载**走 purge：`down --volumes --rmi all` + 清本地 env/日志/记录——
  *    下次安装重新拉镜像即可（用户口径：卸载就把 dify 那些删掉，代码保留才能二次安装）。
  *
- * 边界：compose 文件与数据目录由调用方解析传入（开发=仓库根 `dify/`，打包=资源根 `dify/`）。
+ * 边界：compose 文件与数据目录由调用方解析传入（开发=仓库根 `docker/dify/`，打包=资源根 `dify/`）。
  */
 
 export type EngineInstallState = "idle" | "installing" | "ready" | "error";

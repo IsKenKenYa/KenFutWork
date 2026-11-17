@@ -41,7 +41,7 @@
 | `apps/server` | 后端（Fastify 5 + 插件内核 + LangChain/deepagents 运行时 + PGMQ worker） |
 | `packages/shared` | 跨端 zod 契约（HTTP / WS / job 事件 / 凭据 / 插件 / 技能） |
 | `packages/ui`、`packages/config` | 共享 UI 与 TS 配置 |
-| `supabase/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL，目录名沿用历史） |
+| `docker/pg/migrations` | **唯一**数据库 Schema 迁移源（原生 SQL；发布包内为 `db/`） |
 | `plugins/` | 参考插件（`example-clock` 最小工具插件；`demo-panel` 演示四种能力） |
 | `scripts/` | 构建/打包/诊断脚本（含本地搜索代理与本地模型替身） |
 | `references/` | 外部开源参考项目（git 子模块），**只作方向参考**、不直接复制代码；上游清单与鸣谢见 §13 |
@@ -56,7 +56,7 @@
 # 依赖：Node 22+、pnpm 10、Docker（只用它起开发库）
 
 # 1) 起开发库（纯 Postgres，端口 5433，避开老 Supabase 栈）
-docker compose -f docker-compose.pg.yml up -d --build
+docker compose -f docker/pg/docker-compose.pg.yml up -d --build
 
 # 2) 配置：复制模板并按需修改（见下一节）
 cp .env.example .env.local

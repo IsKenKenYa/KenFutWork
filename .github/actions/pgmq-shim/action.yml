@@ -26,7 +26,7 @@ runs:
         ext="$(docker exec "$cid" sh -c 'pg_config --sharedir')/extension"
         docker exec "$cid" mkdir -p "$ext"
         for file in pgmq.control pgmq--1.0.sql; do
-          docker cp "docker/pg-dev-shim/$file" "$cid:$ext/$file"
+          docker cp "docker/pg/pg-dev-shim/$file" "$cid:$ext/$file"
         done
         # 不重启也可见：pg_available_extensions 是按需扫目录的。
         echo "· 已装入 $ext：$(docker exec "$cid" sh -c "ls -1 $ext | grep -c '^pgmq'") 个 pgmq 文件"

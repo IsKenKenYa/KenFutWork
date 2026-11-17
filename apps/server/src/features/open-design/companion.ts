@@ -108,7 +108,7 @@ export interface OpenDesignCompanionController {
 }
 
 export function createOpenDesignCompanionController(deps: {
-  /** compose 文件绝对路径（源码态=仓库根 `open-design/`，打包态=资源根，见 plugin.ts）。 */
+  /** compose 文件绝对路径（源码态=仓库根 `docker/open-design/`，打包态=资源根，见 plugin.ts）。 */
   composeFile: string;
   /** 注入容器的 `OD_API_TOKEN`（= KENFUTWORK_OPEN_DESIGN_EMBED_SECRET，成对值）。 */
   apiToken?: string | undefined;

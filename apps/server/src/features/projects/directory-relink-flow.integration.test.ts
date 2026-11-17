@@ -23,6 +23,7 @@ async function flowFixture() {
   let quiesceUnknown = false,
     completeUnknown = false,
     inconsistentCompleteObservation = false,
+    gatewayDown = false,
     remoteOutstanding = 0;
   let held: { promise: Promise<void>; entered: () => void } | undefined;
   const createProject = async (name: string) => {
@@ -63,6 +64,8 @@ async function flowFixture() {
   };
   const control: FlowProjectControl = {
     async snapshot(_actor, projectId) {
+      // 网关进程不在/不可达：宿主的 observe 会把这里的失败降级为空回执。
+      if (gatewayDown) throw new Error("fetch failed");
       return structuredClone(readReceipt(projectId));
     },
     async quiesce(_actor, projectId, input) {
@@ -160,6 +163,9 @@ async function flowFixture() {
     unknownComplete: () => {
       completeUnknown = true;
     },
+    setGatewayDown(value: boolean) {
+      gatewayDown = value;
+    },
     setRemoteOutstanding(value: number) {
       remoteOutstanding = value;
       for (const receipt of receipts.values())
@@ -243,6 +249,69 @@ describe.skipIf(process.env.KENFUTWORK_LOCAL_ROOT_PG_TEST !== "1")(
         expect(f.quiesced).toEqual([]);
         expect(f.db.localInstance.isDraining()).toBe(false);
         expect(f.readReceipt(f.primary.projectId).generation).toBe(1);
+      } finally {
+        await f.close();
+      }
+    }, 60000);
+    it("网关不可达不阻塞目录状态：健康/缺失如实返回，恢复动作给可读原因，网关回来后代际收敛", async () => {
+      const f = await flowFixture();
+      try {
+        await rename(`${f.primary.oldRoot}-missing`, f.primary.oldRoot);
+        f.setGatewayDown(true);
+        // 目录健康 + 网关不在：快照必须成功（画布门禁不再被 503 挡死），回执为空。
+        const healthy = await f.service.snapshot(
+          f.db.actor,
+          f.primary.projectId,
+        );
+        expect(healthy).toMatchObject({
+          workDir: f.primary.oldRoot,
+          missing: false,
+          flow: { phase: "available", receipt: null, generation: 1 },
+        });
+        // 目录缺失 + 网关不在：恢复入口保留（idle），同样不报错。
+        await rename(f.primary.oldRoot, `${f.primary.oldRoot}-missing`);
+        const missing = await f.service.snapshot(
+          f.db.actor,
+          f.primary.projectId,
+        );
+        expect(missing).toMatchObject({
+          missing: true,
+          flow: { phase: "idle", receipt: null, generation: 1 },
+        });
+        // 真正需要网关的恢复动作：明确说网关不在（可读 503），不留半途操作。
+        const degradedInput = await f.input();
+        await expect(
+          f.service.relink(f.db.actor, f.primary.projectId, degradedInput),
+        ).rejects.toMatchObject({
+          statusCode: 503,
+          message: "Flow 网关未启动或不可达，请先启动 Flow 网关再恢复目录。",
+        });
+        expect(f.quiesced).toEqual([]);
+        expect(f.db.localInstance.isDraining()).toBe(false);
+        const leftover = await f.db.persistence
+          .forInstance(f.db.instanceId)
+          .queryOne<{ count: string | number }>(
+            "select count(*) as count from public.project_directory_relink_operations where instance_id=:instance and project_id=$1",
+            [f.primary.projectId],
+          );
+        expect(Number(leftover?.count ?? 0)).toBe(0);
+        // 网关回来（期间项目经历过一次迁移，代际已到 2）：续读自动收敛真实代际。
+        f.setGatewayDown(false);
+        Object.assign(f.readReceipt(f.primary.projectId), {
+          generation: 2,
+          localSettled: true,
+          quiesceSettled: true,
+          activeRunIds: [],
+        });
+        const converged = await f.service.snapshot(
+          f.db.actor,
+          f.primary.projectId,
+        );
+        expect(converged.flow).toMatchObject({
+          phase: "idle",
+          generation: 2,
+          receipt: { generation: 2 },
+        });
       } finally {
         await f.close();
       }

@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   providerInstanceResponseSchema,
   type StreamEvent,
@@ -9,6 +12,16 @@ import { CanvasEventBuffer, flowEventScopeKey } from "../../ws/event-buffer.js";
 import type { LocalInstanceService } from "../local-instance/types.js";
 import type { ResolvedInstanceCredentials } from "../model-providers/model-provider-service.js";
 import { createFlowIdentityTickets } from "./identity.js";
+import { resolveDifyDir, resolveFlowDir } from "./plugin.js";
+
+describe("源码态资源路径", () => {
+  it("dify 与 flow 指向仓库 docker/dify 与根级 flow", () => {
+    expect(existsSync(join(resolveDifyDir(), "docker-compose.dify.yml"))).toBe(
+      true,
+    );
+    expect(existsSync(join(resolveFlowDir(), "gateway"))).toBe(true);
+  });
+});
 
 const INSTANCE_ID = "11111111-1111-4111-8111-111111111111";
 const PROVIDER_ID = "22222222-2222-4222-8222-222222222222";

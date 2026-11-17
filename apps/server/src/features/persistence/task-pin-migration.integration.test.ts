@@ -16,7 +16,7 @@ const versions = ["20261024130716", "20261024130940"];
 async function expectHistoricalBytes() {
   const files = await run(
     "git",
-    ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", "supabase/migrations"],
+    ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", "docker/pg/migrations"],
     { cwd: root },
   );
   for (const path of files.stdout.split("\0").filter(Boolean)) {
@@ -36,7 +36,7 @@ async function expectHistoricalBytes() {
       await readFile(
         join(
           root,
-          "supabase/migrations/20261024130716_code_task_pin_revision.sql",
+          "docker/pg/migrations/20261024130716_code_task_pin_revision.sql",
         ),
       )
     ).byteLength,
@@ -62,8 +62,8 @@ it.skipIf(process.env.RUN_CODE_UI_INTEGRATION !== "1")(
         [previous.context.scope.taskId],
       );
       const files = loadMigrationSet({
-        bootstrapDir: join(root, "supabase/bootstrap"),
-        migrationsDir: join(root, "supabase/migrations"),
+        bootstrapDir: join(root, "docker/pg/bootstrap"),
+        migrationsDir: join(root, "docker/pg/migrations"),
       });
       const sql = {
         async query<T>(text: string, values?: unknown[]) {

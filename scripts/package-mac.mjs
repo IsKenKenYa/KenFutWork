@@ -51,9 +51,9 @@ const PG_PACKAGE = "@embedded-postgres/darwin-arm64";
 /** sharp 的 darwin 原生扩展（运行时按 <exeDir>/node_modules/@img/ 解析）。 */
 const SHARP_PACKAGE = "@img/sharp-darwin-arm64";
 /** 同源迁移与供给前导（桌面首启动即建全 schema）。 */
-const SUPABASE_DIR = join(ROOT, "supabase");
+const DB_DIR = join(ROOT, "docker", "pg");
 /** pgmq 兼容 shim（历史迁移 CREATE EXTENSION pgmq 需要，见 desktop/pgmq-shim.ts）。 */
-const SHIM_DIR = join(ROOT, "docker", "pg-dev-shim");
+const SHIM_DIR = join(ROOT, "docker", "pg", "pg-dev-shim");
 /**
  * 随包分发的许可与声明文本：GPL-3.0 第 4 条要求分发物带许可证与版权声明，
  * Apache-2.0 第 4 条 d 款与 MIT/ISC 的 attribution 同理（清单见 legal/THIRD-PARTY-NOTICES.md §G1）。
@@ -282,32 +282,30 @@ function main() {
   }
 
   // 4b) 同源迁移
-  cpSync(
-    join(SUPABASE_DIR, "migrations"),
-    join(RELEASE, "supabase", "migrations"),
-    { recursive: true },
-  );
-  cpSync(
-    join(SUPABASE_DIR, "bootstrap"),
-    join(RELEASE, "supabase", "bootstrap"),
-    { recursive: true },
-  );
+  cpSync(join(DB_DIR, "migrations"), join(RELEASE, "db", "migrations"), {
+    recursive: true,
+  });
+  cpSync(join(DB_DIR, "bootstrap"), join(RELEASE, "db", "bootstrap"), {
+    recursive: true,
+  });
   console.log(
-    "[package-mac] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（supabase/）+ pgmq shim",
+    "[package-mac] 捆绑内嵌 Postgres（pg/）+ 迁移 SQL（db/）+ pgmq shim",
   );
 
-  // 4b-2) flow 引擎资源（dify/：compose 文件 + ssrf_proxy 配置）：服务端按资源根解析
+  // 4b-2) flow 引擎资源（docker/dify/：compose 文件 + ssrf_proxy 配置）：服务端按资源根解析
   //       （desktop/entry-root.ts → <app>/dify/），打包后 `docker compose -f` 用它起
   //       无头栈；镜像不随包（首次安装按需拉取）。
-  cpSync(join(ROOT, "dify"), join(RELEASE, "dify"), { recursive: true });
+  cpSync(join(ROOT, "docker", "dify"), join(RELEASE, "dify"), {
+    recursive: true,
+  });
   console.log(
     "[package-mac] 捆绑 flow 引擎资源（dify/：compose + ssrf_proxy）",
   );
 
-  // 4b-2b) OpenDesign 伴随容器资源（open-design/：compose 文件）：服务端按资源根解析
+  // 4b-2b) OpenDesign 伴随容器资源（docker/open-design/：compose 文件）：服务端按资源根解析
   //        （desktop/entry-root.ts → <app>/open-design/），装配即 up -d、退出 down
   //        （§9-3 拍板：伴随容器随主程序起停）；镜像不随包（伴随启动时按需拉取）。
-  cpSync(join(ROOT, "open-design"), join(RELEASE, "open-design"), {
+  cpSync(join(ROOT, "docker", "open-design"), join(RELEASE, "open-design"), {
     recursive: true,
   });
   console.log(

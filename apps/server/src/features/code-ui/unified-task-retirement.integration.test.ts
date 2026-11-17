@@ -147,8 +147,8 @@ describe.skipIf(process.env.KENFUTWORK_CODE_INPUT_TEST_PG !== "1")(
         );
         // 只验证退役迁移本身：目录里此后并入的并行域迁移不属于本测试范围。
         const files = loadMigrationSet({
-          bootstrapDir: join(repoRoot, "supabase/bootstrap"),
-          migrationsDir: join(repoRoot, "supabase/migrations"),
+          bootstrapDir: join(repoRoot, "docker/pg/bootstrap"),
+          migrationsDir: join(repoRoot, "docker/pg/migrations"),
         }).filter((file) => file.version <= "20261015091000");
         const queryable = {
           async query<T = Record<string, unknown>>(

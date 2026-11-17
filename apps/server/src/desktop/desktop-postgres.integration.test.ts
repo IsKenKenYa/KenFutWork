@@ -26,8 +26,8 @@ describe.skipIf(!ENABLED)("内嵌 Postgres 真实启动（桌面供给）", () =
 
     const repoRoot = join(process.cwd(), "..", "..");
     const migrationSet = loadMigrationSet({
-      bootstrapDir: join(repoRoot, "supabase", "bootstrap"),
-      migrationsDir: join(repoRoot, "supabase", "migrations"),
+      bootstrapDir: join(repoRoot, "docker", "pg", "bootstrap"),
+      migrationsDir: join(repoRoot, "docker", "pg", "migrations"),
     });
     expect(migrationSet.length).toBeGreaterThanOrEqual(40);
 

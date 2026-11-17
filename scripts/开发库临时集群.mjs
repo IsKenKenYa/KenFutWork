@@ -7,7 +7,7 @@
  *     apps/server 已全平台声明依赖，按本机 platform+arch 自动选）：
  *   - 数据目录 `.kenfutwork-data/pg-dev`（已 gitignore，删除即重置）
  *   - 只监听 127.0.0.1，端口默认 55432（避开 5432/5433 上的既有库）
- *   - 装 `pgmq` 最小 shim（与 `docker/pg-dev-shim` 同一份文件）：历史迁移
+ *   - 装 `pgmq` 最小 shim（与 `docker/pg/pg-dev-shim` 同一份文件）：历史迁移
  *     `20260325200000_background_jobs.sql` 里的 `create extension if not exists pgmq`
  *     在官方镜像上没有，缺它迁移链会在那一条停住。它**不是队列实现**，
  *     本地开发请配 `KENFUTWORK_QUEUE_DRIVER=in-process`。
@@ -91,7 +91,7 @@ function run(exe, args, { allowFailure = false } = {}) {
 /** pgmq 最小 shim：只保证 `create extension pgmq` 不报错（没有 send/read）。 */
 function installPgmqShim(bin) {
   const share = join(bin, "..", "share", "extension");
-  const shim = join(ROOT, "docker", "pg-dev-shim");
+  const shim = join(ROOT, "docker", "pg", "pg-dev-shim");
   for (const file of ["pgmq.control", "pgmq--1.0.sql"]) {
     copyFileSync(join(shim, file), join(share, file));
   }

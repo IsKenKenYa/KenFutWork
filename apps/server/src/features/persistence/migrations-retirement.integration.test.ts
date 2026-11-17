@@ -42,8 +42,8 @@ it.skipIf(process.env.KENFUTWORK_DESKTOP_PG_IT !== "1")(
       },
     };
     const baseline = loadMigrationSet({
-      bootstrapDir: join(process.cwd(), "../../supabase/bootstrap"),
-      migrationsDir: join(process.cwd(), "../../supabase/migrations"),
+      bootstrapDir: join(process.cwd(), "../../docker/pg/bootstrap"),
+      migrationsDir: join(process.cwd(), "../../docker/pg/migrations"),
     });
     const db = {
       async query<T>(sql: string, values?: unknown[]) {

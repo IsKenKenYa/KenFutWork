@@ -11,7 +11,7 @@
 - `apps/server` — 后端：Fastify 5 + LangChain 1.x / deepagents agent 运行时 + PGMQ 队列 worker。装配层在 `src/app.ts` 与 `src/worker.ts`；agent 相关在 `src/agent/`（backends / tools / prompts / persistence / sub-agents）；领域服务在 `src/features/`；生成 provider 在 `src/generation/providers/`；HTTP 路由在 `src/http/`；WS 在 `src/ws/`；队列在 `src/queue/`；环境变量解析在 `src/config/env.ts`。
 - `packages/shared` — 跨端 zod 接口定义（HTTP API、WS 协议、job 事件、usage、skills 等），构建到 `dist/` 后被前后端引用；修改接口定义先修改这里，两端跟着编译器走。
 - `packages/ui`、`packages/config` — 内部共享组件与 TS 配置。
-- `supabase/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL）。
+- `docker/pg/migrations/` — 唯一数据库 Schema 迁移源（原生 SQL；桌面发布包内复制为 `db/`）。
 - `references/` — 外部参考项目（deepseek-harness、langgraph、jaaz 等），**只作方向参考**，禁止直接复制代码/schema/字段名；不要批量删除或忽略该目录。**例外**：`references/loomic` 是项目前身 Loomic 的 MIT 上游副本，本仓库早期代码在其基础上开发，按 MIT 保留声明（见 `legal/COPYRIGHT.md`），不受本节「禁止复制」约束；根级 `flow/` 是**待合并的 flow 子系统**（futureFlow 上游，作者 future73807 即本仓协作者，`DEC-10`…`DEC-13` 已确认），按 `docs/方案设计/flow集成方案.md` 分阶段并入（子模块指针跟随 → iframe 内嵌 → 收编），不受本节「禁止复制」约束。
 - `docs/` — 技术文档与架构决策；入口与治理规则见 `docs/README.md`（文档地图、单源原则、决策 ID、快照刷新规则）；`docs/方案设计/改造计划.md` 是服务端架构演进蓝图，`docs/方案设计/多端产品设计.md` 是多端形态设计；`docs/调研/02-当前项目实现状态.md` 是代码现状快照。
 
@@ -264,11 +264,11 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - 参照先例：kimi-code 的 `KIMI_LOOP_MAX_ATTEMPTS_PER_STEP` / `KIMI_CODE_INFINITE_RETRY`（重试档位可调 + 无限重试显式开启）。
 
 ## 数据库迁移（硬约束）
-> 方向说明：存储统一自管 Postgres（桌面捆绑本机实例 / 自部署连用户 Postgres，见《多端产品设计》§5）；代码与部署现状以《日志》为准。`supabase/migrations/` 目录名沿用，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
-- `supabase/migrations/` 中的原生 SQL 是唯一 Schema 迁移来源；不要引入 ORM Schema 或第二套迁移历史。
-- 新迁移使用 `YYYYMMDDHHmmss_description.sql` UTC 时间戳命名（用 `supabase migration new <描述>` 生成）。迁移一旦被共享或执行就不可修改、重命名或删除；错误必须新增前向修复迁移。
+> 方向说明：存储统一自管 Postgres（桌面捆绑本机实例 / 自部署连用户 Postgres，见《多端产品设计》§5）；代码与部署现状以《日志》为准。源码迁移目录为 `docker/pg/migrations/`，桌面发布包内复制为 `db/`，内容为 Postgres SQL，且同样约束未来新增的存储适配器。
+- `docker/pg/migrations/` 中的原生 SQL 是唯一 Schema 迁移来源；不要引入 ORM Schema 或第二套迁移历史。
+- 新迁移使用 `YYYYMMDDHHmmss_description.sql` UTC 时间戳命名。迁移一旦被共享或执行就不可修改、重命名或删除；错误必须新增前向修复迁移。
 - 每次迁移必须通过历史 SHA-256、实际 Schema 定义、空数据库全量重放和二次 no-op 检查。禁止覆盖账本校验和或静默重跑已执行版本。
-- 本地开发（`supabase db reset` 等）仅允许在开发环境运行；Schema 校验保持只读严格校验，用于 CI 与发布前检查。生产迁移只能通过显式命令执行。
+- 本地开发库重建仅允许在开发环境运行；Schema 校验保持只读严格校验，用于 CI 与发布前检查。生产迁移只能通过显式命令执行。
 - 生产迁移只能由发布流水线的一次性迁移任务执行；API 与 Worker 使用无 DDL 权限的运行角色，并在 Schema、迁移历史或权限不匹配时拒绝启动。
 - 有真实部署兼容约束的破坏性变更采用 Expand/Contract；不得把应用代码回滚到与已迁移数据库不兼容的版本。本轮 `DEC-20` 已确认无 release/真实用户，测试数据无需保留，可以直接以前向迁移清理旧账户与商业对象；仍须检查历史 SHA、最终 schema、空库重放及二次 no-op，禁止改写旧迁移。
 - 发布必须先备份，再执行角色 bootstrap、迁移、运行权限授权、运行角色验证和 smoke test。迁移集合或校验和变化后禁止自动降级，只能前向修复或显式恢复匹配备份。

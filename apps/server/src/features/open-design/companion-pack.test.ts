@@ -8,13 +8,14 @@ import { OPEN_DESIGN_COMPANION_ORIGIN } from "./companion.js";
 /**
  * 伴随容器**资源面**的一致性锁（§201-D 的打包面收敛）：
  * 完整 win/mac 打包不在每次门禁里跑，但「打包会带上什么、宿主按什么找」这三方
- * 契约必须每次都对齐——compose 文件在仓库根、打包脚本捆绑同一目录、
+ * 契约必须每次都对齐——compose 文件在 docker/open-design、打包脚本捆绑同一目录、
  * 伴随 origin 常量与 compose 发布端口同源。任何一侧漂移，这里先红。
  */
 
 const REPO_ROOT = join(__dirname, "../../../../..");
 const COMPOSE_FILE = join(
   REPO_ROOT,
+  "docker",
   "open-design",
   "docker-compose.open-design.yml",
 );
@@ -41,11 +42,11 @@ describe("OpenDesign 伴随容器资源面", () => {
     expect(published?.[1]).toBe(port);
   });
 
-  it("win/mac 打包脚本都捆绑 open-design/ 资源目录（与 dify 同段）", () => {
+  it("win/mac 打包脚本都捆绑 docker/open-design 资源目录（与 dify 同段）", () => {
     for (const script of ["package-win.mjs", "package-mac.mjs"]) {
       const text = readFileSync(join(REPO_ROOT, "scripts", script), "utf8");
       expect(text, `${script} 缺少 open-design 资源捆绑`).toContain(
-        'cpSync(join(ROOT, "open-design")',
+        'cpSync(join(ROOT, "docker", "open-design")',
       );
     }
   });

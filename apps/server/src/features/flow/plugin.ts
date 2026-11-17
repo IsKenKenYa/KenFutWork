@@ -37,13 +37,13 @@ import {
 import { createFlowGatewayTools } from "./tools.js";
 
 /**
- * 引擎资源目录（`dify/`，内含 `docker-compose.dify.yml` 与 `ssrf_proxy/squid.conf`）。
+ * 引擎资源目录（`docker/dify/`，内含 `docker-compose.dify.yml` 与 `ssrf_proxy/squid.conf`）。
  *
  * 两种形态一条规则：**源码态**本模块 = `<repo>/apps/server/src/features/flow/plugin.ts`，
- * 上溯 5 级到仓库根；**打包态**资源与可执行体同级（Windows SEA = exe 目录、mac CJS =
- * `<app>`），由 `resolveEntryRoot` 解析（与 `runtime/`、`pg/` 同一口径）。
+ * 上溯 5 级到仓库根后进入 `docker/`；**打包态**资源与可执行体同级（Windows SEA = exe 目录、
+ * mac CJS = `<app>`），由 `resolveEntryRoot` 解析（与 `runtime/`、`pg/` 同一口径）。
  */
-function resolveDifyDir(): string {
+export function resolveDifyDir(): string {
   if (isPackagedRuntime(import.meta.url)) {
     return join(
       resolveEntryRoot({
@@ -55,8 +55,28 @@ function resolveDifyDir(): string {
   }
   return join(
     fileURLToPath(new URL("../../../../..", import.meta.url)),
+    "docker",
     "dify",
   );
+}
+
+/**
+ * flow 子模块目录：源码态在仓库根，打包态与可执行体同级。
+ *
+ * 网关 env 的写入位置必须按 flow 自己的目录解析，不能再靠 `dify/../flow`：
+ * 源码态 dify 已移入 `docker/`，两者不再是兄弟目录。
+ */
+export function resolveFlowDir(): string {
+  if (isPackagedRuntime(import.meta.url)) {
+    return join(
+      resolveEntryRoot({
+        entryFileUrl: import.meta.url,
+        execPath: process.execPath,
+      }),
+      "flow",
+    );
+  }
+  return join(fileURLToPath(new URL("../../../../..", import.meta.url)), "flow");
 }
 
 /**
@@ -64,7 +84,7 @@ function resolveDifyDir(): string {
  * 安装时宿主把自动生成的凭据补进这些文件；网关自动授权与 init/setup 用同一份。
  */
 function gatewayEnvFiles(): string[] {
-  const flowDir = join(resolveDifyDir(), "..", "flow");
+  const flowDir = resolveFlowDir();
   // 顺序必须与 flow/gateway/src/app.module.ts 的 envFilePath 一致：
   // `.futureflow.runtime.env` 优先于 `.env`。管理员凭据反向对齐以「网关实际
   // 读到的那份」为准，取错文件会让 bootstrap 建号口令与 loginConsole 不一致

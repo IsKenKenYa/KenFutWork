@@ -125,10 +125,13 @@ function flowState(
   directoryAvailable = false,
 ) {
   return {
+    // 无回执也无操作时取 1：网关 gate 首次即 1（project-control.service 的 ensure
+    // 以 generation=1 建行），且接口契约要求代际为正数。这是网关不可达期间的
+    // 占位值，续读拿到真实回执后即被替换。
     generation:
       receipt?.generation ??
       operation?.gateway_receipt?.generation ??
-      Number(operation?.expected_flow_generation ?? 0),
+      Number(operation?.expected_flow_generation ?? 1),
     operationId: operation?.operation_id ?? randomUUID(),
     phase:
       operation?.phase ??
@@ -282,9 +285,11 @@ export function createFlowDirectoryRelink(deps: FlowRelinkDeps) {
           : operation.previous_root)
     )
       throw deps.error("项目或Flow操作已改变，请重新加载后关联。");
+    // 网关回执是降级可用的数据，不是目录状态的前置条件：网关（独立 futureFlow
+    // 进程）不在时目录事实（缺失与否、迁移阶段）本地仍可回答，快照必须成功返回
+    // ——回执为空时客户端按同一节奏续读，网关恢复后真实代际自动收敛。此前这里
+    // 无条件抛 503，网关一起不来 Flow 主区就被「Flow状态不可读取」整面挡死。
     const receipt = await observe(actor, projectId);
-    if (!receipt && !operation)
-      throw deps.error("Flow状态不可读取，请恢复网关连接。", 503);
     if (receipt && receipt.projectId !== projectId)
       throw deps.error("项目或Flow操作已改变，请重新加载后关联。");
     return {
@@ -337,7 +342,16 @@ export function createFlowDirectoryRelink(deps: FlowRelinkDeps) {
     }
     if (await flowOperation(sql, projectId))
       throw deps.error("项目或Flow操作已改变，请重新加载后关联。");
-    const receipt = await control().snapshot(actor, projectId);
+    // 恢复动作必须真实经过网关（quiesce 屏障不能跳过）：网关不在时给出可读原因，
+    // 不让底层 fetch 错误以 500 顶出来。
+    const receipt = await control()
+      .snapshot(actor, projectId)
+      .catch(() => {
+        throw deps.error(
+          "Flow 网关未启动或不可达，请先启动 Flow 网关再恢复目录。",
+          503,
+        );
+      });
     if (
       receipt.projectId !== projectId ||
       receipt.generation !== expectedFlow.generation ||

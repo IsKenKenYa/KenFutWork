@@ -25,13 +25,14 @@ import {
  * 用有 DDL 权限的连接执行（运行角色无 DDL），与 API/Worker 的 persistence 口径分开。
  */
 
-// 目录名沿用 `supabase/`（《AGENTS.md》约定：迁移目录名不改），但内容已是自管 Postgres SQL
+// 迁移根：源码态仓库 `docker/pg/`；发布包复制为同级 `db/`（内容仍是自管 Postgres SQL）
 const MIGRATIONS_ROOT = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
   "..",
-  "supabase",
+  "docker",
+  "pg",
 );
 
 const MIGRATIONS_DIR = join(MIGRATIONS_ROOT, "migrations");

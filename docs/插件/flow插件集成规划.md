@@ -142,7 +142,7 @@ graph TB
 
 - **A. 子模块独立运行（现状，已落地）**：主仓与 futureFlow 双栈各自跑，零耦合。flow 上游仍在 MVP 冲刺期的最优解——子模块指针跟随上游，零维护成本。
 - **B. iframe 集成内嵌（推荐目标）**：主仓加 flow 模式骨架（P1）+ futureFlow 侧宿主适配层与 `ff-embed/v1`（P2–P5）；NestJS 网关与本地 Dify 栈作为**独立子系统**保留，不折叠进主仓进程。React 18 vs 19、Rsbuild vs Next 的双版本问题靠 iframe 天然隔离，反而安全。
-- **C. 深度代码收编（远期可选）**：frontend 折叠进 `apps/web`、网关改写为 Fastify `features/flow/`、TypeORM 迁移翻译进 `supabase/migrations`。成本最高，且与「迁移单源」「插件形状」纪律的对接代价大；等上游稳定 + B 跑通后再评估。
+- **C. 深度代码收编（远期可选）**：frontend 折叠进 `apps/web`、网关改写为 Fastify `features/flow/`、TypeORM 迁移翻译进 `docker/pg/migrations`。成本最高，且与「迁移单源」「插件形状」纪律的对接代价大；等上游稳定 + B 跑通后再评估。
 - **架构主轴（B/C 共用）**：futureFlow 已有 FlowGram→Dify 中间转换层，把它正式化为**引擎 SPI**（create/publish/run/stream 四接口 + 多 Provider，**全部本地执行**：本地 Dify 适配器 / FlowGram runtime-js 轻量适配器）。画布协议稳定、引擎可插拔（Coze Studio 先例已验证该解耦），同时为桌面零 Docker 形态铺路。
 
 ## 6. 分阶段实施（PR 拓扑）

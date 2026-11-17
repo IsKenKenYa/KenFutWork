@@ -1737,13 +1737,13 @@
       "reason": "漏改（2026-09-17 盘点 B3）；env.ts 兼容映射仍能跑，改为 KENFUTWORK_DATABASE_URL 属后续清理"
     },
     "LOOMIC_QUEUE_DRIVER": {
-      "allowedIn": ["docker/pg-dev-shim/Dockerfile"],
+      "allowedIn": ["docker/pg/pg-dev-shim/Dockerfile"],
       "reason": "注释漏改（盘点 B5）；现名 KENFUTWORK_QUEUE_DRIVER"
     },
     "LOOMIC_MCP_SERVERS": {
       "allowedIn": [
         ".gitignore",
-        "supabase/migrations/20260914250000_mcp_servers.sql"
+        "docker/pg/migrations/20260914250000_mcp_servers.sql"
       ],
       "reason": "注释漏改（盘点 B6）+ 已执行迁移的历史陈述（不可改）"
     }

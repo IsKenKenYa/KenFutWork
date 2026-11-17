@@ -39,8 +39,8 @@ export async function createTaskWorkDatabase(
       shimDir: resolvePgmqShimDir({ env: {}, repoRoot: root }),
     });
     const available = loadMigrationSet({
-      bootstrapDir: join(root, "supabase", "bootstrap"),
-      migrationsDir: join(root, "supabase", "migrations"),
+      bootstrapDir: join(root, "docker", "pg", "bootstrap"),
+      migrationsDir: join(root, "docker", "pg", "migrations"),
     });
     const cutoff = options.stopAtMigration;
     if (cutoff && !available.some((file) => file.version === cutoff))
