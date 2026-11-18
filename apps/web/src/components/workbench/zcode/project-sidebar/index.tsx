@@ -121,6 +121,9 @@ function SidebarFooter({ props }: { props: ProjectSidebarProps }) {
     onThemeChange={changeTheme}
     onSettingsButtonClick={openSettings}
     onUsageClick={openSettings}
+    user={props.user}
+    onLogin={props.onLogin}
+    onLogout={props.onLogout}
     workspacePath={props.workspacePath}
     workspaceIdentity={props.workspaceIdentity}
     workspaceRemoteSessionId={props.workspaceRemoteSessionId}
