@@ -352,3 +352,18 @@ chat 三协议:anthropic(`apps/server/src/providers/anthropic/index.ts`,ChatAnth
 - nut.js： [上游 README](https://github.com/nut-tree/nut.js/blob/develop/README.md)、[API docs](https://nut-tree.github.io/apidoc/)、[npm scoped package 4.2.0](https://www.npmjs.com/package/@computer-use/nut-js/v/4.2.0)。实现依据还包括本仓 `pnpm-lock.yaml`、`apps/server/package.json` 及 pnpm 安装快照的 package metadata、`.d.ts`、`screen.class.js` 和 `libnut` 2.7.1 二进制静态依赖。
 - 外部 MCP： [`computer-use-mcp` README](https://github.com/domdomegg/computer-use-mcp)、[`package.json`](https://github.com/domdomegg/computer-use-mcp/blob/master/package.json)、[`src/main.ts`](https://github.com/domdomegg/computer-use-mcp/blob/master/src/main.ts)；[`Windows-MCP` README](https://github.com/CursorTouch/Windows-MCP)、[`pyproject.toml`](https://github.com/CursorTouch/Windows-MCP/blob/main/pyproject.toml)、[`LICENSE.md`](https://github.com/CursorTouch/Windows-MCP/blob/main/LICENSE.md)；[`MacOS-MCP` README](https://github.com/CursorTouch/MacOS-MCP)、[`pyproject.toml`](https://github.com/CursorTouch/MacOS-MCP/blob/main/pyproject.toml)、[MIT LICENSE](https://github.com/CursorTouch/MacOS-MCP/blob/main/LICENSE)。
 （本章即前序生态调研，见上）；现有方案稿：[`docs/插件/ComputerUse插件规划.md`](../插件/ComputerUse插件规划.md)。前文结论用于上下文，不替代本文重新核实过的包契约与 OS API。
+
+### 依赖与来源（2026-10-05，并入自原《后端依赖与来源》）
+
+第一方 executor/桥接代码由 KenFutWork 实现，未复制外部参考项目代码。平台原语通过各平台公开 API/CLI 调用。
+
+| 后端 | 运行依赖 | 上游许可/来源 | 当前验收 |
+| --- | --- | --- | --- |
+| macOS | 系统 osascript/JXA、AppKit/CoreGraphics、screencapture；已锁定的 @computer-use/nut-js 用于键盘原语 | Apple SDK 系统 API；nut.js Apache-2.0，现有包许可证随依赖保留 | 源码和 CJS/helper 资源形态共 4 条真实回归通过，含 Unicode/恢复、强制取消及双窗口；完整 Task、原 UI 与签名安装包仍待验收 |
+| Linux X11 | 同桌面会话 DISPLAY、窗口管理器、xdotool、xprop、xrandr、ImageMagick import；可选 python3-pyatspi/AT-SPI 会话总线 | xdotool BSD-3-Clause，AT-SPI LGPL-2.1+；其余由发行版包保留版权/许可证 | Provider 已接现有 service/平台 dispatch，未在 Linux 实际桌面验收 |
+| Linux Wayland | ScreenCast/RemoteDesktop portal、PipeWire、用户选择及会话授权 | XDG/GNOME 官方 API；PipeWire MIT 及例外 | portal/PipeWire helper 及执行器已静态接线，仅支持已授权像素源；应用发现/AT-SPI 组合与真实 Wayland 验收仍缺，不以 XWayland/X11 替代 |
+| Windows | UIAutomation/User32 及系统截图、输入 helper | Microsoft 公开 API/.NET 系统库 | UIA/User32/GDI Provider 已静态接线，未获得可用 Windows 交互环境，尚未实机验收 |
+
+X11 的输入坐标是 X server 根窗口坐标，截图与输入使用同一坐标空间；返回 `scaleFactor=1` 表达此映射，不声称 LCD 物理像素/桌面 UI 缩放相同。真实测试仍需覆盖负原点、旋转与 RandR 变换。窗口绑定使用真实 XID 及可用 `_NET_WM_PID`；无进程属性时不伪造 PID，无障碍接口明确不可用。缺失 AT-SPI 或应用不暴露树时给明确原因，允许截图/其他后端，不返回假 AX 树。
+
+原生依赖必须在对应 OS/架构发行产物及真实登录桌面验证。新后台实现必须通过同一 ComputerUseExecutor、service、工具注册/权限/结果事件消费，并记录取消、断连及恢复边界。

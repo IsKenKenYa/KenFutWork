@@ -1,7 +1,7 @@
 # SAG2 本地知识库插件规划
 
 > 角色：**方案规划（已定稿）**（参考级，非权威）。落地回执写《日志》台账，架构级决策登记走《改造计划》§6。
-> 状态：**已定稿 + 实施中**（2026-11-08 成稿；同日用户授权本代理拍板，§10 的 `KB-1`…`KB-8` 已全部收敛为单一方案，无待决项；架构级结论已登记 `DEC-26`（拍板晚于法务 `DEC-24`，顺延））。**进度：M0～M5 已完成**，事实核验、6 条偏差与 M2 追加结论见 `apps/server/src/features/knowledge/M0-核验记录.md`；实机验收与遗留项见《日志》三百七十七。**KB-3 的自动注册时机已按 M2 核验调整**：服务端没有「不依赖 run 的全局工作区根」服务，故改为首次检索时按 run 的真实工作目录幂等注册（§4.3）。
+> 状态：**已定稿 + 实施中**（2026-11-08 成稿；同日用户授权本代理拍板，§10 的 `KB-1`…`KB-8` 已全部收敛为单一方案，无待决项；架构级结论已登记 `DEC-26`（拍板晚于法务 `DEC-24`，顺延））。**进度：M0～M5 已完成**，事实核验、偏差与 M2 追加结论见本文附录；实机验收与遗留项见《日志》三百七十七。**KB-3 的自动注册时机已按 M2 核验调整**：服务端没有「不依赖 run 的全局工作区根」服务，故改为首次检索时按 run 的真实工作目录幂等注册（§4.3）。
 > 需求来源：2026-11-08 用户口径（§1.1）。
 > 证据口径：本稿区分**一手事实**（SAG-Wiki 官方 README／架构设计／CLI 文档／内置 MCP 工具文档，以及本仓源码 `文件:行号`）与**二手材料**（公众号实测与宣传数字）。二手数据只作背景，**不作为验收指标**，见 §1.5。
 
@@ -74,7 +74,7 @@
 | 稳定性 | `sag ... --json` 有稳定语义：`list`／`check`／`add`／`remove`／搜索；`check --json` 的 `coverage` 为 `included/partial/none/excluded`，退出码 0／1／2 | `docs/en/cli-and-harness.md` |
 | 配置复用 | CLI 与桌面**共享**索引、检索实现、用户数据目录、`sag.sqlite`、密钥与忽略规则；「Existing usable API Key or no-authentication settings are reused automatically」 | `docs/en/cli-and-harness.md`「Sharing with desktop」 |
 | 文件类型 | Markdown／纯文本／RTF／Office／表格／EPUB／文本型 PDF 默认启用；**M0 已核实 `FileTypes::default()` 为 `code:false, config:false`，代码与配置文件默认不索引**，需 `sag add --types` 显式指定 | `protocol/src/types.rs`；`cli/src/main.rs` |
-| CLI 输出字段 | `list` 顶层是数组；`check/add/remove/search/match --json` 的精确 serde 键名与退出码 0/1/2/130 见 `apps/server/src/features/knowledge/M0-核验记录.md` §1。**`sag status` 不输出 JSON**，只列文本 | `protocol/src/cli.rs`；`cli/src/main.rs` |
+| CLI 输出字段 | `list` 顶层是数组；`check/add/remove/search/match --json` 的精确 serde 键名与退出码 0/1/2/130 见本文附录。**`sag status` 不输出 JSON**，只列文本 | `protocol/src/cli.rs`；`cli/src/main.rs` |
 | 平台／体积 | npm 包 `@zleap-ai/sag` 仅含 macOS Apple Silicon 与 Windows x64 原生二进制；桌面约 14 MB；`SAG_DATA_DIR` 可隔离数据目录；**已钉版本 0.1.8** | README；CLI 文档；npm registry |
 | 许可／论文 | MIT；论文 arXiv:2610.22588；复现代码 `Zleap-AI/SAG-Benchmark` | README |
 
@@ -126,7 +126,7 @@
 
 | | 内容 |
 | --- | --- |
-| **Service Definition** | `features/knowledge/types.ts`：`KnowledgeService`（M1 骨架为 `isActive() / status()`，M2 补 `listRoots / addRoot / removeRoot / check / search / read`）；证据对象按上游 CLI 真实字段归一化为 `path / absolutePath / startLine / endLine / heading? / content? / matchedLines?`——**没有** offset/length/sourceId/fileVersion，那些只存在于 core 内部 `Candidate`，不进 CLI JSON（见 `apps/server/src/features/knowledge/M0-核验记录.md` §1） |
+| **Service Definition** | `features/knowledge/types.ts`：`KnowledgeService`（M1 骨架为 `isActive() / status()`，M2 补 `listRoots / addRoot / removeRoot / check / search / read`）；证据对象按上游 CLI 真实字段归一化为 `path / absolutePath / startLine / endLine / heading? / content? / matchedLines?`——**没有** offset/length/sourceId/fileVersion，那些只存在于 core 内部 `Candidate`，不进 CLI JSON（见本文附录） |
 | **Service Provider** | `SagCliProvider`（默认，调 CLI `--json`）；`DisabledProvider`（未安装／不支持平台，返回显式状态而非静默 null）。**只有这两个真实实现，不写 `NativeSag2Provider` 占位类**——接口即替换缝（KB-6） |
 | **Consumer** | ① `pre-step` 每轮 preflight ② 置顶提示段 ③ `shared` 工具 ④ `/api/knowledge/*` 路由 ⑤ 侧边栏面板 |
 
@@ -209,7 +209,7 @@
 
 | 规则 | 内容 |
 | --- | --- |
-| 唯一权威源 | 宿主 `modelProviders` 中的 TypeSafe 凭据条目。**M0 实测偏差**：`features/mcp/curated-catalog.ts:171-188` 的 `jev` 条目走用户填的 `env`（`TYPESAFE_API_KEY`），当前**并未**从 `modelProviders` 取；M2 以 `modelProviders` 为唯一源，若该实例不存在则不擅自创建、不覆盖 SAG 已有配置，改由侧栏引导。jeve MCP 条目的凭据统一另记遗留项（见 `M0-核验记录.md` §2） |
+| 唯一权威源 | 宿主 `modelProviders` 中的 TypeSafe 凭据条目。**M0 实测偏差**：`features/mcp/curated-catalog.ts:171-188` 的 `jev` 条目走用户填的 `env`（`TYPESAFE_API_KEY`），当前**并未**从 `modelProviders` 取；M2 以 `modelProviders` 为唯一源，若该实例不存在则不擅自创建、不覆盖 SAG 已有配置，改由侧栏引导。jeve MCP 条目的凭据统一另记遗留项（见本文附录） |
 | 已配置则复用 | 先读 `sag config` 的脱敏输出；若已有可用 key 或 `--auth none` 的本地服务，**不覆盖、不改写**（上游亦明确「Existing usable ... settings are reused automatically」） |
 | 未配置则注入 | 宿主在初始化时把凭据经 **stdin** 交给 `sag config --auth bearer --key-stdin`；**不进命令行参数、不进日志、不进事件、不进快照**（同时符合 `DEC-7` 与上游「Do not paste keys into chat or place them in command arguments」） |
 | SAG 侧副本定位 | 0600 私有文件是**派生缓存**，不是第二个权威源；宿主凭据轮换时幂等重放一次注入 |
@@ -375,7 +375,7 @@ M3 pre-step 从 run 上下文解析出真实工作目录 → ensureRoot(root)
 
 | 阶段 | 目标 | 交付物 | 验证 |
 | --- | --- | --- | --- |
-| **M0 事实核验**（**已完成 2026-11-08**） | 四项前置已全部落文字记录：① 钉 `@zleap-ai/sag@0.1.8` + 锁定 `--json` 真实字段 ② `modelProviders` 凭据入口与 stdin 注入路径 ③ **确认 `code:false/config:false` 默认不索引，解法是 `--types`** ④ 确认无统一下载服务、面板走 `credentials:"include"` | `sag-cli-contract.ts` + fixture + `sag-cli-contract.test.ts` + `probe/collect.mjs` + `apps/server/src/features/knowledge/M0-核验记录.md`（含 6 条偏差汇总） | 契约单测；`pnpm test:docs`。**本机未装 sag，fixture 为 serde 推导值，实采待有 CLI 的机器执行探针** |
+| **M0 事实核验**（**已完成 2026-11-08**） | 四项前置已全部落文字记录：① 钉 `@zleap-ai/sag@0.1.8` + 锁定 `--json` 真实字段 ② `modelProviders` 凭据入口与 stdin 注入路径 ③ **确认 `code:false/config:false` 默认不索引，解法是 `--types`** ④ 确认无统一下载服务、面板走 `credentials:"include"` | `sag-cli-contract.ts` + fixture + `sag-cli-contract.test.ts` + `probe/collect.mjs` + 本文附录（含偏差汇总） | 契约单测；`pnpm test:docs`。**本机未装 sag，fixture 为 serde 推导值，2026-11-09 已补 Windows 实机采集** |
 | **M1 能力缝骨架** | `features/knowledge` + §4.2 登记 key + 安装态动态门控 + `DisabledProvider`；**不改产品行为** | 插件定义、门控单测 | `pnpm --filter @kenfutwork/server test`；`pnpm typecheck` |
 | **M2 CLI Provider + 初始化 + 路由**（**已完成 2026-11-08**） | `SagCliProvider` + `sag-cli-runner` + `init.ts` 凭据 stdin 注入 + `ensureRoot` 幂等编排 + `packages/shared` 契约 + 5 条 HTTP 路由 + OpenAPI 三连；**KB-3 时机修订**（见 §4.3） | `providers/sag-cli.ts`、`sag-cli-runner.ts`、`init.ts`、`http/knowledge.ts`、`knowledge-contracts.ts`、`registry.ts`、4 个测试文件 + 1 个默认跳过的集成用例 | `pnpm --filter @kenfutwork/server typecheck`；shared 单测 176/176；knowledge 单测 53/53（1 skipped）；`pnpm api:spec`（247 端点）；`test:docs`；`test:workspace` 41/41；Biome 全绿 |
 | **M3 全模式优先调用** | pre-step preflight + 意图门 + 相关性门槛 + 置顶提示段 + shared 工具；双 preset 与 Work/Flow 壳内回归 | `preflight.ts`、`prompt.ts`、`tools.ts` | 单测 + 双模式手工验收 |
@@ -461,3 +461,58 @@ M3 pre-step 从 run 上下文解析出真实工作目录 → ensureRoot(root)
 | `docs/en/mcp-tools.md`（上游） | 内置 MCP 仅进程内、不对外；六个 `sag2_` 工具的检索语义与「Combining tools」豁免规则 |
 | 本仓 `apps/server/src/kernel/`、`features/plugins/`、`features/agent-runs/`、`apps/web/src/lib/plugin-panels.tsx`、`packages/shared/src/plugin-contracts.ts` | 扩展点、事件缝、提示段 order、UI 槽位与模式过滤（正文已带行号） |
 | `docs/插件/语音助手插件规划.md` §1.2／§1.3 | 「默认开启」机制与市场插件硬边界的既有实测结论 |
+
+## 附：M0 核验记录（2026-11-08，并入自原《M0-核验记录》）
+
+> 范围：§7 M0 的四项前置。方法：上游 GitHub main 分支一手源码／文档 + npm registry + 本仓源码逐行核对；本机未安装 `sag` CLI，协议字段按 serde 定义推导，2026-11-09 已补 Windows x64 实机采集。
+
+### 版本与分发事实
+
+- 固定 `@zleap-ai/sag@0.1.8`；tarball shasum `22d9c5ae11d34f17042cce70971a3cda6c0ed454`，integrity `sha512-VqKNCWvzy1gui3nUpcmFKpH7D2h1a+46hJ76O2xLFD1+FWIXfw0RaLGzxQfccr5nGUiAD4ntKcTB3ZRp0hf2YA==`。
+- `engines.node >=18`；`os: [darwin, win32]`、`cpu: [arm64, x64]`，只支持 macOS Apple Silicon + Windows x64 原生二进制；`isSagCliPlatformSupported()` 按交叉组合判断，不能按 os×cpu 笛卡尔积推断。
+
+### CLI JSON 字段（权威来源：`protocol/src/cli.rs`、`protocol/src/types.rs`、`cli/src/main.rs`）
+
+| 命令 | 顶层 | 精确键 |
+| --- | --- | --- |
+| `list --json` | 数组（无包装对象） | `path, name, status, count, error`（`error` 为 `Option<String>`，正常输出 `null`） |
+| `check --json` | 对象 | `extensions?, path, coverage, index_ready, enabled, indexed_files, roots[]` |
+| `add --json` | 对象 | `path, index_status, cli_authorized` |
+| `remove --json` | 对象 | `path`（`main.rs` 唯一 `json!` 精确键） |
+| 搜索 `--json` | 对象 | `protocol_version, scope, results[], truncated` |
+| `results[]` | 对象 | `heading?, path, absolute_path, start_line, end_line, content?, matched_lines?` |
+| `-E/-F --json` | 对象 | `protocol_version, scope, results[], files[], matched, truncated`；`files[]` = `path, absolute_path, count?` |
+| `config` | 对象（总是 pretty JSON，无 `--json`） | `url, model, models, has_key, auth_mode, reasoning_effort?` |
+| `service status` | pretty JSON（`client.info()`） | 可见 `build_id, protocol_version, pid, executable`（serde 定义未核到） |
+
+- 枚举：`IndexCoverage`、`ModelAuthMode` 均带 `#[serde(rename_all = "snake_case")]` → coverage `included|partial|excluded|none`、auth `bearer|none`。
+- 退出码：`0` 成功 / `1` 检查未通过或运行错误 / `2` 参数或执行错误（含空或 >2000 字符 query、`check` 出错）/ `130` Ctrl-C。`check` 通过条件 = `coverage=included && index_ready && enabled && indexed_files>0`。
+- `sag status` 不输出 JSON（文本 println）；搜索结果没有 `offset` / `length` / `source_id` / `file_version`，这些只存在于 core 内部 `Candidate`。
+- `FileTypes::default()` 为 `markdown: true, text: true, code: false, config: false`；默认排除 `.git, node_modules, dist, target, .venv, venv, __pycache__`。初始化顺序 = `check --json` 读 `extensions` → 新根用 `add <root> --types <扩展名>` → 再 `check` 复验；既有根不自动改 `--types`。
+
+### 与定稿计划的偏差（均已回写正文）
+
+| # | 定稿表述 | 核验结果 | 处置 |
+| --- | --- | --- | --- |
+| 1 | 证据对象带 `offset/length/sourceId/fileVersion` | CLI 输出只有 `start_line/end_line/path/absolute_path/heading/content/matched_lines` | 改 `types.ts` 与 §2.2；归一化在 `toKnowledgeEvidence()` |
+| 2 | `modelProviders` 与 `plugins/jev` 共用同一把 key | jev MCP 条目走用户填的 `env`，与 `modelProviders` 无自动关联 | M2 以 `modelProviders` 为唯一源；jev 条目统一另记遗留项 |
+| 3 | 「复用既有按需下载机制」 | 无统一服务，只有 voice/work 两套范式 | 按 voice/work 范式自建轻量下载器 |
+| 4 | 「新增 ctx key 只改《改造计划》§4.2」 | `kernel/types.ts::ServiceMap` 是封闭联合，也必须加 | 两处同改；§4.2 已登记 `knowledge` |
+| 5 | `sag status` 列在 JSON 命令表 | `status` 无 `--json`，只输出文本；`config` 反而总是 pretty JSON | `sagStatusSchema` 标为内部类型；状态聚合改用 `list/check/config` |
+| 6 | 「代码类型需 M0 核验」 | 默认 `code:false, config:false` | 初始化用 `--types` 显式指定；既有根不自动改 |
+| 7 | 「安装时自动注册当前工作区根」 | 服务端没有不依赖 run 的全局工作区根服务 | 时机改为首次检索时按 run 的真实工作目录幂等注册 |
+| 8 | 计划 §4.2 列 5 类路由含 `read` / `settings` | `read` 需跨文件位置校验、`settings` 需面板开关，M2 做会变空壳 | M2 只落地 status / roots GET·POST / roots/remove / search；`read`、`settings` 顺延 M4 |
+| 9 | 「TypeSafe 凭据与 modelProviders 单一源」 | 无现成实例 id 约定 | 定 `KNOWLEDGE_JEV_PROVIDER_ID = "typesafe-jev"`；不存在时返回「尚未配置」引导，不擅自创建、不覆盖 |
+
+### 2026-11-09 实机核验（Windows x64 / `@zleap-ai/sag@0.1.8`）
+
+CLI 装在临时目录，直接调 `native/win32-x64/sag.exe`，`SAG_DATA_DIR` 指向隔离目录。
+
+- `sag --build-info` 无条件输出 JSON，可作为最稳的可用性探测。
+- 全新未配置数据目录下 `sag config` 正常输出 ModelConfig JSON，未阻塞、未进入交互；发布版字段为 `{url, model, models, has_key}`，**没有 `auth_mode`**，接口按 `.optional()` 处理并以 `has_key` 判定。
+- `sag check <dir> --json` 字段与 schema 一致，`coverage="none"`，`extensions` 可选。
+- `sag list --json` 首次调用冷启动超时（探针 120s 上限）；产品侧要给 `list` 留更长超时与有限重试。
+- 无 Jev 凭据时语义检索 exit 1 并明示「JEV 未配置」；service 就绪后 `-F` 本地匹配可用。
+- `KNOWLEDGE_INDEX_EXTENSIONS` 原有 7 个 0.1.8 不支持的扩展名（csv / log / mts / cts / less / graphql / proto）已移除；`--types` 整单校验，任一非法项会让新根注册整体失败。
+- 探针初版会覆盖 fixture 样例字段；已改为原始输出落 `SAG_DATA_DIR/sag-last-collection.json`，fixture 只更新 `_meta`。
+- 门禁：server typecheck、shared 176/176、knowledge 定向 55/56（1 个实机集成默认 skipped）、`pnpm api:spec`、`test:docs`、`test:workspace`、Biome 通过。集成用例用 `describe.skip`，不引入新环境变量。
