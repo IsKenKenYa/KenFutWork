@@ -163,6 +163,13 @@ API 文档是单源链，任何一环脱节都会腐烂，纪律如下：
 - **脚本内部面向用户的内容用中文**：echo、提示、错误消息等用户可见输出用中文；脚本文件名可保留英文。
 - **历史文件不改名**：现有文件保持原名，新文件按新约定。
 
+### Markdown 文档位置（硬约束）
+- **说明类 Markdown 只放 `docs/`**：方案、设计、调研、规划、规格、说明、报告一律放 `docs/` 对应子目录，并按 `docs/README.md` 的文档地图登记；源码目录、`apps/`、`packages/`、`scripts/`、`patches/` 不再新增说明类 Markdown，就近说明写代码注释。
+- **执行日志与阶段报告只写 `docs/日志.md`**：实施回执、验收记录、诊断结论、测试证据一律追加到该文件，禁止另建独立回执文件。
+- **根目录只保留平台与工具要求的入口**：`README.md`、`AGENTS.md`、`CONTEXT.md`、`NOTICE.md`、`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、`MAINTAINERS.md`、`LICENSE`；法务文件在 `legal/`，GitHub 模板在 `.github/`。
+- **不计入本规则**：外部仓库与子模块（`references/`、`flow/`）、依赖、`**/skills/`（含 `.agents/skills` 与插件 bundle 内的技能）、MCP 服务自带文档、`plugins/` 内随插件分发的 Markdown、逐字节保真的移植目录（`apps/web/src/components/workbench/zcode/`）、资产目录内随资产分发的许可与来源说明（如 `apps/server/assets/work-fonts/README.md`）。
+- **既有散落文档随模块迁移**：现存于其他位置的说明类 Markdown，在下次改动对应模块时迁入 `docs/` 并同步更新引用，避免一次性大搬移打断并行改动。
+
 ## 行为准则（硬约束）
 
 ### 任务理解与证据
