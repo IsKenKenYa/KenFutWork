@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { LocalActor } from "../local-instance/types.js";
 import type { ToolExecutionContext } from "../../kernel/types.js";
+import type { LocalActor } from "../local-instance/types.js";
 import { cuContextDenial } from "./context-guard.js";
 
 const actor: LocalActor = {
@@ -44,7 +44,9 @@ describe("cuContextDenial（桌面工具执行上下文）", () => {
       },
     } as unknown as NonNullable<ToolExecutionContext["taskWorkContext"]>;
     expect(
-      cuContextDenial(base({ scopeHandle: scopeHandle("main"), taskWorkContext: work })),
+      cuContextDenial(
+        base({ scopeHandle: scopeHandle("main"), taskWorkContext: work }),
+      ),
     ).toBeNull();
   });
 
@@ -78,7 +80,9 @@ describe("cuContextDenial（桌面工具执行上下文）", () => {
       },
     } as unknown as NonNullable<ToolExecutionContext["taskWorkContext"]>;
     expect(
-      cuContextDenial(base({ scopeHandle: scopeHandle("main"), taskWorkContext: work })),
+      cuContextDenial(
+        base({ scopeHandle: scopeHandle("main"), taskWorkContext: work }),
+      ),
     ).not.toBeNull();
   });
 });

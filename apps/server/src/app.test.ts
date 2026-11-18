@@ -331,7 +331,7 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
     }
   });
 
-  it("flow 网关回调自带共享密钥门：跳过本机接入总门（未配密钥 503），宿主前端换票仍走本机门（401）", async () => {
+  it("flow 网关回调自带共享密钥门：跳过本机接入总门（伪造密钥 401 来自网关），宿主前端换票仍走本机门（401）", async () => {
     const app = buildProbeApp();
     try {
       for (const probe of [
@@ -348,16 +348,24 @@ describe("buildApp 装配完整性（插件清单防漏挂）", () => {
         },
       ] as const) {
         const response = await app.inject(probe);
-        // 未配 KENFUTWORK_FLOW_EMBED_SECRET：路由自己的门回 503；
-        // 若仍被本机接入总门拦住会是 401（历史回归：合并后网关侧三条路由全被总门拦死）。
-        expect(response.statusCode, `${probe.url}`).toBe(503);
+        // managed 模式自动生成共享密钥：伪造的 Bearer 必须由网关自己的门拒掉（401 +
+        // 「Flow 网关共享密钥不匹配」）。若被本机接入总门拦住，错误信息会是
+        // 「本机连接凭据缺失或无效」——历史回归正是网关侧三条路由全被总门拦死。
+        expect(response.statusCode, `${probe.url}`).toBe(401);
+        expect(response.json().error.message, `${probe.url}`).toBe(
+          "Flow 网关共享密钥不匹配。",
+        );
       }
       const ticket = await app.inject({
         method: "POST",
         url: "/api/flow/host/identity-ticket",
         payload: {},
       });
+      // 宿主前端换票不属于网关回调，仍必须走本机接入总门。
       expect(ticket.statusCode).toBe(401);
+      expect(ticket.json().error.message).toBe(
+        "本机连接凭据缺失或无效，请从桌面重新连接。",
+      );
     } finally {
       await app.close();
     }

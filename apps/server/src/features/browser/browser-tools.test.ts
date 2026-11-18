@@ -61,6 +61,8 @@ function buildPluginTools(options: {
     ),
   };
   const services = new Map<string, unknown>();
+  // 插件挂载时注册浏览器提示段；这里只要一个能接收注册的替身。
+  services.set("systemPrompt", { register: () => () => {} });
   const settings = {
     browserControlEnabled: options.browserControl ?? true,
     browserDevtoolsReadEnabled: options.devtoolsRead ?? true,

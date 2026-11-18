@@ -6,9 +6,7 @@ import type { ToolExecutionContext } from "../../kernel/types.js";
  * 保留实例、Run 与主代理隔离；Task/项目一致性只在两侧都存在时校验，
  * 使 code/design 及无 Task 形态的运行都能使用，同时子代理和外部 Run 仍被拒绝。
  */
-export function cuContextDenial(
-  context: ToolExecutionContext,
-): string | null {
+export function cuContextDenial(context: ToolExecutionContext): string | null {
   const actor = context.actor;
   if (!actor || !context.runId || !context.toolCallId)
     return "桌面控制缺少可信实例和Run上下文";

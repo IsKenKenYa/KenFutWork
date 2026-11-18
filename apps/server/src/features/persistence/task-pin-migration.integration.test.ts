@@ -16,7 +16,15 @@ const versions = ["20261024130716", "20261024130940"];
 async function expectHistoricalBytes() {
   const files = await run(
     "git",
-    ["ls-tree", "-r", "-z", "--name-only", "HEAD", "--", "docker/pg/migrations"],
+    [
+      "ls-tree",
+      "-r",
+      "-z",
+      "--name-only",
+      "HEAD",
+      "--",
+      "docker/pg/migrations",
+    ],
     { cwd: root },
   );
   for (const path of files.stdout.split("\0").filter(Boolean)) {

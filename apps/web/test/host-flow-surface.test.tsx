@@ -89,15 +89,25 @@ function ready(source: Window, projectId: string, generation: number) {
 }
 async function handshake(source: Window) {
   const outbound = vi.spyOn(source, "postMessage");
-  await act(async () => {
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        origin,
-        source,
-        data: { type: "ff-embed/hello", version: "v1" },
-      }),
-    );
-  });
+  // 屏障：iframe 出现在 DOM 可能早于挂载 effect 装上 message 监听，单发 hello 在 CI
+  // 负载下会丢。hello 可重发（组件按 attempt 只采纳最后一次），直到换票被触发。
+  const baseline = host.surfaceFetch.mock.calls.length;
+  const deadline = Date.now() + 5000;
+  while (host.surfaceFetch.mock.calls.length === baseline) {
+    if (Date.now() > deadline) {
+      throw new Error("Flow 身份握手未触发换票：message 监听未在 5 秒内就位");
+    }
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          origin,
+          source,
+          data: { type: "ff-embed/hello", version: "v1" },
+        }),
+      );
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
   await waitFor(() =>
     expect(outbound).toHaveBeenCalledWith(
       { type: "ff-embed/identity", version: "v1", hostToken: "ticket" },

@@ -19,12 +19,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const MIGRATIONS_DIR = join(
-  process.cwd(),
-  "docker",
-  "pg",
-  "migrations",
-);
+const MIGRATIONS_DIR = join(process.cwd(), "docker", "pg", "migrations");
 
 const countMatches = (text, re) => (text.match(re) ?? []).length;
 

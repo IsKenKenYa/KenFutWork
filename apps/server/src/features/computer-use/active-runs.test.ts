@@ -12,9 +12,7 @@ const actor: LocalActor = {
   accessClientId: "client-1",
 };
 
-const scopeHandle = (
-  role: "main" | "worker",
-): ExecutionScopeHandle =>
+const scopeHandle = (role: "main" | "worker"): ExecutionScopeHandle =>
   ({
     role,
     resolvePath: async () => ".",
@@ -41,9 +39,7 @@ function build() {
   return createActiveComputerUseRuns(registry);
 }
 
-function runContext(
-  execution: ToolExecutionContext,
-): AgentRunExtensionContext {
+function runContext(execution: ToolExecutionContext): AgentRunExtensionContext {
   return {
     registry: undefined as unknown as AgentRunExtensionContext["registry"],
     resolution: {} as AgentRunExtensionContext["resolution"],

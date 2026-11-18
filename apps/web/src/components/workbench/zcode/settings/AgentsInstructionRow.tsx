@@ -1,8 +1,8 @@
+import { Button } from "@zui/components/ui/button.js";
 import {
   FileDisplayIcon,
   resolveFileDisplayDescriptor,
 } from "@zui/lib/fileDisplay.js";
-import { Button } from "@zui/components/ui/button.js";
 import {
   SettingsGroupCard,
   SettingsRow,
@@ -51,7 +51,12 @@ export function AgentsInstructionRow({
         control={
           <span className="flex items-center gap-2">
             {onEdit ? (
-              <Button type="button" variant="outline" size="sm" onClick={onEdit}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onEdit}
+              >
                 编辑
               </Button>
             ) : null}

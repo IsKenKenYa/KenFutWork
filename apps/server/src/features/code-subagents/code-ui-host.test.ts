@@ -108,9 +108,11 @@ describe("设置页子智能体读取面", () => {
     if (!create || !update || !toggle || !remove)
       throw new Error("智能体写接口未贡献");
 
-    const created = (await create.call(actor, [
-      { config, provider: "glm", scope: "user" },
-    ], context)) as { agent: { id: string; name: string; path: string } };
+    const created = (await create.call(
+      actor,
+      [{ config, provider: "glm", scope: "user" }],
+      context,
+    )) as { agent: { id: string; name: string; path: string } };
     expect(created.agent.id).toBe("user:user:doc-reviewer");
     expect(created.agent.path).toBe(
       join(userAgentsDirectory(dataDir), "doc-reviewer.md"),
@@ -125,25 +127,35 @@ describe("设置页子智能体读取面", () => {
       }),
     ]);
 
-    await toggle.call(actor, [{ agentId: created.agent.id, enabled: false }], context);
+    await toggle.call(
+      actor,
+      [{ agentId: created.agent.id, enabled: false }],
+      context,
+    );
     expect((await list()).userAgents[0]?.enabled).toBe(false);
 
-    await update.call(actor, [
-      {
-        agentId: created.agent.id,
-        config: { ...config, name: "doc-reviewer-2", description: "改过" },
-        provider: "glm",
-        scope: "user",
-      },
-    ], context);
+    await update.call(
+      actor,
+      [
+        {
+          agentId: created.agent.id,
+          config: { ...config, name: "doc-reviewer-2", description: "改过" },
+          provider: "glm",
+          scope: "user",
+        },
+      ],
+      context,
+    );
     const renamed = await list();
     expect(renamed.userAgents.map((agent) => agent.name)).toEqual([
       "doc-reviewer-2",
     ]);
 
-    await remove.call(actor, [
-      { agentId: "user:user:doc-reviewer-2", filePath: "" },
-    ], context);
+    await remove.call(
+      actor,
+      [{ agentId: "user:user:doc-reviewer-2", filePath: "" }],
+      context,
+    );
     expect((await list()).userAgents).toEqual([]);
   });
 
@@ -153,14 +165,18 @@ describe("设置页子智能体读取面", () => {
       const handlers = createHandlers();
       const create = handlers["subagents.createAgent"];
       if (!create) throw new Error("智能体写接口未贡献");
-      const created = (await create.call(actor, [
-        {
-          config,
-          provider: "glm",
-          scope: "workspace",
-          workspacePath: workspace,
-        },
-      ], context)) as { agent: { path: string } };
+      const created = (await create.call(
+        actor,
+        [
+          {
+            config,
+            provider: "glm",
+            scope: "workspace",
+            workspacePath: workspace,
+          },
+        ],
+        context,
+      )) as { agent: { path: string } };
       expect(created.agent.path).toBe(
         join(workspace, ".zcode", "agents", "doc-reviewer.md"),
       );

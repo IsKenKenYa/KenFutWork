@@ -902,7 +902,9 @@ export function createFlowStackSupervisor(deps: {
     refreshGateway,
     snapshot,
     gatewayEnvFiles() {
-      return [join(flowGatewayRuntimeDir(deps.dataDir), ".futureflow.runtime.env")];
+      return [
+        join(flowGatewayRuntimeDir(deps.dataDir), ".futureflow.runtime.env"),
+      ];
     },
   };
 }
