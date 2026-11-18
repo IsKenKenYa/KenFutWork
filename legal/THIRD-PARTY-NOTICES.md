@@ -111,7 +111,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 
 | 项 | 许可 | 说明 |
 | --- | --- | --- |
-| LangChain 1.5.11 发行入口补丁 | MIT（原代码） | 修复 afterModel 显式模型续跑路由。原许可全文保存在 `patches/LICENSE-langchain.txt`；来源哈希、改动与验证见 `patches/LangChain路由修复说明.md` |
+| LangChain 1.5.11 发行入口补丁 | MIT（原代码） | 修复 afterModel 显式模型续跑路由。原许可全文保存在 `patches/LICENSE-langchain.txt`；来源哈希、改动与验证见 `docs/方案设计/CI-CD与发版方案.md` §九 |
 | `packages/third-party/codex-patch/` | 见目录内 `LICENSE`、`NOTICE` | 对 OpenAI Codex 发行物的补丁，保留上游版权与许可声明 |
 | `packages/third-party/kimi-edit/` | 见目录内 `LICENSE` | 同上，Kimi 相关 |
 | `apps/server/src/features/process-sandbox/native/licenses/` | Apache-2.0（Codex）、Microsoft 开源许可（MXC） | `LICENSE-Codex.txt`、`LICENSE-Microsoft-MXC.txt`、`NOTICE-Codex.txt`，进程沙箱原生组件的来源声明 |
@@ -157,7 +157,7 @@ npm 依赖，**未把 SVG 签入仓库**：`lucide-react@1.47.0`（`apps/web/pac
 | --- | --- | --- |
 | 现行 KF 标识（2026-09-15 换版） | `apps/web/src/components/icons/kenfutwork-logo.tsx`、`docs/视觉设计/logo/新版.png`（源图）、`docs/视觉设计/logo/应用图标-白底圆角.png` | 组件注释记载为 **GPT 生成图定稿**，源图即上表 PNG |
 | Web 静态标识 | `apps/web/public/` 的 `logo.png`、`logo-mark.png`、`app-icon.png`、`apple-touch-icon.png`、`favicon.png`、`og-image.png` | 由现行源图派生 |
-| 落地页标识与点阵 | `apps/landing/public/assets/logo-mark.png`、`apps/landing/public/favicon.png` | 复用正式 Web 品牌；浏览器通过格点遮罩呈现点阵，不重画 Logo。装饰使用上列 Lucide 图标；动效视觉参考与独立实现说明见 `apps/landing/素材生成说明.md` |
+| 落地页标识与点阵 | `apps/landing/public/assets/logo-mark.png`、`apps/landing/public/favicon.png` | 复用正式 Web 品牌；浏览器通过格点遮罩呈现点阵，不重画 Logo。装饰使用上列 Lucide 图标；动效视觉参考与独立实现说明见 `docs/方案设计/CI-CD与发版方案.md` §十一 |
 | 桌面/移动应用图标 | `apps/desktop/src-tauri/icons/`（含 android `mipmap-*`、Windows `SquareNxNLogo.png`、StoreLogo） | 由 `apps/desktop/scripts/icons.mjs` 从**同一份墨迹**批量生成（2026-09-26 口径：墨迹占画布 80%） |
 | 旧版字标 KF-2 骨架版 C（留档） | `docs/视觉设计/旧版/品牌Logo说明.md`（权威说明与几何/色值）、`docs/视觉设计/旧版/字体风格对比.html` | 纯手写 SVG；白字形是 **Chakra Petch Italic**（SIL OFL-1.1）字形的 K 轮廓 + 裁短 F 顶横的布尔并集，样张 `docs/视觉设计/logo/字体/ChakraPetch.woff2` |
 
